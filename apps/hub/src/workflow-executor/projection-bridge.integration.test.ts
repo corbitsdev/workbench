@@ -26,6 +26,7 @@ import {
   projectWorkflowRunRepo,
   seedMissingRunRecordsFromRepo,
   type OnNewlyAwaitingFn,
+  type OnRunTerminalFn,
 } from "./projection-bridge";
 import { createRunLivenessSweep } from "../services/run-liveness-sweep";
 
@@ -103,6 +104,27 @@ const WORKFLOW_RUN_STEP_DDL = `
   );
 `;
 
+// The deployment-index table the bridge reads for deploy provenance (version /
+// sha) on a run's first failed transition. No foreign keys; a failed run with a
+// deploymentId triggers the `meta` read even when no row exists (degrades to
+// "no version in log").
+const WORKFLOW_RUN_DDL = `
+  CREATE TABLE workflow_run (
+    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    deployment_id text,
+    tenant_id text NOT NULL,
+    principal_id text NOT NULL,
+    kind text NOT NULL,
+    status text NOT NULL,
+    input jsonb,
+    output jsonb,
+    meta jsonb,
+    created_at timestamp NOT NULL DEFAULT now(),
+    updated_at timestamp NOT NULL DEFAULT now(),
+    deleted_at timestamp
+  );
+`;
+
 let tempDir: string;
 let repoStore: RepoStore;
 let signingKey: KeyPair;
@@ -151,6 +173,7 @@ beforeEach(async () => {
   client = new PGlite();
   await client.exec(WORKFLOW_RUN_RECORD_DDL);
   await client.exec(WORKFLOW_RUN_STEP_DDL);
+  await client.exec(WORKFLOW_RUN_DDL);
   db = drizzle(client, { schema }) as unknown as HubDb;
 });
 
@@ -486,6 +509,63 @@ describe("projectWorkflowRunRepo — on-disk -> DB seam", () => {
       onNewlyAwaiting,
     );
     expect(calls).toHaveLength(2);
+  });
+
+  // CL-3517: the terminal-mail hook fires exactly once on the real non-terminal
+  // → terminal transition, driven by the actual on-disk fold (not a mocked
+  // becameTerminal), carrying the failure reason the fold composed.
+  test("fires onRunTerminalMail once on the real failed transition", async () => {
+    const runId = "wfr-terminalmail";
+    await seedRun(runId);
+    const calls: Parameters<OnRunTerminalFn>[0][] = [];
+    const onRunTerminalMail: OnRunTerminalFn = (a) => calls.push(a);
+
+    await commitEvent(runId, 1, { type: "RunStarted" });
+    await commitEvent(runId, 2, { type: "StepStarted", stepId: "fetch" });
+    await commitEvent(runId, 3, {
+      type: "StepFailed",
+      stepId: "fetch",
+      error: { message: "upstream 500" },
+    });
+    await commitEvent(runId, 4, {
+      type: "RunFailed",
+      error: { message: "one or more steps failed" },
+    });
+
+    await projectWorkflowRunRepo(
+      repoStore,
+      db,
+      REPO_ID,
+      undefined,
+      undefined,
+      undefined,
+      onRunTerminalMail,
+    );
+
+    expect(calls).toHaveLength(1);
+    expect(calls[0]).toMatchObject({
+      runId,
+      kind: "test-workflow",
+      tenantId: "tn-it",
+      principalId: "prn-it",
+      status: "failed",
+    });
+    expect(calls[0]?.error).toContain("fetch");
+    expect(calls[0]?.failedSteps).toEqual([
+      { stepId: "fetch", message: "upstream 500" },
+    ]);
+
+    // Re-projecting the already-failed run is not a transition — no re-fire.
+    await projectWorkflowRunRepo(
+      repoStore,
+      db,
+      REPO_ID,
+      undefined,
+      undefined,
+      undefined,
+      onRunTerminalMail,
+    );
+    expect(calls).toHaveLength(1);
   });
 
   test("re-projection updates a step's phase in place (idempotent upsert)", async () => {

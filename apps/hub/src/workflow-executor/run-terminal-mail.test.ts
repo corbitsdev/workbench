@@ -45,6 +45,9 @@ mock.module("@intx/log", () => ({
 }));
 
 const { deliverRunTerminalMail } = await import("./run-terminal-mail");
+const { resetFailureNotificationBreaker } = await import(
+  "./failure-notification-breaker"
+);
 
 const RUN = {
   runId: "wfr-1",
@@ -74,6 +77,7 @@ afterEach(() => {
   errorLogs.length = 0;
   storedPrefs = {};
   deploymentMeta = null;
+  resetFailureNotificationBreaker();
 });
 
 describe("deliverRunTerminalMail", () => {
@@ -202,5 +206,153 @@ describe("deliverRunTerminalMail", () => {
     expect(insertCalls[0]?.subject).toBe(
       "Workflow run failed: pain-point-collateral",
     );
+  });
+
+  it("truncates a giant error blob to a bounded length", async () => {
+    const db = makeDb({
+      owner: { id: "prn-alice", kind: "user", refId: "alice" },
+      tenant: { domain: "tenant.example" },
+    });
+
+    await deliverRunTerminalMail(deps(db), {
+      ...RUN,
+      status: "failed",
+      error: "x".repeat(5000),
+    });
+
+    const body = insertCalls[0]?.body ?? "";
+    // The 5000-char blob must not survive whole; the cap is ~500 + a fence.
+    expect(body).toContain("…");
+    expect(body.length).toBeLessThan(1000);
+  });
+
+  it("renders a markdown-injection error string inert (fenced), never as live markup", async () => {
+    const db = makeDb({
+      owner: { id: "prn-alice", kind: "user", refId: "alice" },
+      tenant: { domain: "tenant.example" },
+    });
+
+    await deliverRunTerminalMail(deps(db), {
+      ...RUN,
+      status: "failed",
+      error: "[click me](javascript:alert(1))",
+    });
+
+    const body = insertCalls[0]?.body ?? "";
+    // The raw injection text is preserved verbatim but wrapped in a code fence,
+    // so the markdown renderer treats it as literal text, not a link.
+    expect(body).toContain("```");
+    expect(body).toContain("[click me](javascript:alert(1))");
+    const fenceIdx = body.indexOf("```");
+    const linkIdx = body.indexOf("[click me]");
+    expect(fenceIdx).toBeLessThan(linkIdx);
+  });
+
+  it("uses a longer fence when the error text contains a triple backtick", async () => {
+    const db = makeDb({
+      owner: { id: "prn-alice", kind: "user", refId: "alice" },
+      tenant: { domain: "tenant.example" },
+    });
+
+    await deliverRunTerminalMail(deps(db), {
+      ...RUN,
+      status: "failed",
+      error: "before ``` after",
+    });
+
+    const body = insertCalls[0]?.body ?? "";
+    // A fence longer than the embedded run so the content cannot break out.
+    expect(body).toContain("````");
+  });
+
+  it("skips mail entirely for a cancelled run (folded to failed with error 'cancelled')", async () => {
+    const db = makeDb({
+      owner: { id: "prn-alice", kind: "user", refId: "alice" },
+      tenant: { domain: "tenant.example" },
+    });
+
+    await deliverRunTerminalMail(deps(db), {
+      ...RUN,
+      status: "failed",
+      error: "cancelled",
+    });
+
+    expect(insertCalls).toHaveLength(0);
+    expect(errorLogs).toHaveLength(0);
+  });
+
+  it("suppresses failure mail after 3 consecutive failures, then a success resets it", async () => {
+    const db = makeDb({
+      owner: { id: "prn-alice", kind: "user", refId: "alice" },
+      tenant: { domain: "tenant.example" },
+    });
+    storedPrefs = { notifyRunCompletion: true };
+
+    // Three consecutive failures of the same kind → three mails.
+    for (let i = 0; i < 3; i += 1) {
+      await deliverRunTerminalMail(deps(db), {
+        ...RUN,
+        runId: `wfr-f${i}`,
+        status: "failed",
+        error: "boom",
+      });
+    }
+    expect(insertCalls).toHaveLength(3);
+    // The 3rd mail warns that notifications are now paused.
+    expect(insertCalls[2]?.body).toContain("paused");
+
+    // Fourth failure is suppressed.
+    await deliverRunTerminalMail(deps(db), {
+      ...RUN,
+      runId: "wfr-f3",
+      status: "failed",
+      error: "boom",
+    });
+    expect(insertCalls).toHaveLength(3);
+
+    // A success for the same kind resets the breaker (completion mail is on).
+    await deliverRunTerminalMail(deps(db), {
+      ...RUN,
+      runId: "wfr-ok",
+      status: "completed",
+    });
+    expect(insertCalls).toHaveLength(4);
+
+    // The next failure delivers again — the budget re-armed.
+    await deliverRunTerminalMail(deps(db), {
+      ...RUN,
+      runId: "wfr-f4",
+      status: "failed",
+      error: "boom",
+    });
+    expect(insertCalls).toHaveLength(5);
+  });
+
+  it("does not let a different workflow kind's failures share a suppression budget", async () => {
+    const db = makeDb({
+      owner: { id: "prn-alice", kind: "user", refId: "alice" },
+      tenant: { domain: "tenant.example" },
+    });
+
+    for (let i = 0; i < 4; i += 1) {
+      await deliverRunTerminalMail(deps(db), {
+        ...RUN,
+        runId: `wfr-a${i}`,
+        status: "failed",
+        error: "boom",
+      });
+    }
+    // kind A: 3 delivered, 4th suppressed.
+    expect(insertCalls).toHaveLength(3);
+
+    // A different kind still has its full budget.
+    await deliverRunTerminalMail(deps(db), {
+      ...RUN,
+      kind: "other-workflow",
+      runId: "wfr-b0",
+      status: "failed",
+      error: "boom",
+    });
+    expect(insertCalls).toHaveLength(4);
   });
 });
