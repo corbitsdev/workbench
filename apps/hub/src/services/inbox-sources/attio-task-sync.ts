@@ -133,15 +133,17 @@ function attioTaskDue(attioTask: AttioRawTask): string | undefined {
   return attioTask.deadline_at ?? undefined;
 }
 
-/** Only actionable when the member's own Attio workspace-member id is known
- * (`attioMemberId`, set via the Owner/member preferences surface — see
- * `packages/workbench-shared/src/index.ts` `MemberPreferences`) AND the task
- * carries at least one assignee. Absent either, the task is still synced
- * (title/status/due) but assignee is left untouched — Attio's assignee ids
- * are workspace-member ids, and this poller has no directory mapping every
- * workspace member id to a Workbench principal, only the polling member's
- * own. Assigning a synced task to a DIFFERENT teammate is therefore out of
- * scope for this pass. */
+/** True only when the member's own Attio workspace-member id (`attioMemberId`,
+ * set via the Owner/member preferences surface — see
+ * `packages/workbench-shared/src/index.ts` `MemberPreferences`) is known AND
+ * the task carries a matching assignee. Callers deciding whether to CREATE a
+ * task must check `selfAttioMemberId !== undefined` themselves first (review
+ * fix C) — a `false` return here is ambiguous between "known id, no match"
+ * and "no id at all", and only the former is safe to read as "don't create".
+ * Attio's assignee ids are workspace-member ids, and this poller has no
+ * directory mapping every workspace member id to a Workbench principal, only
+ * the polling member's own — assigning a synced task to a DIFFERENT teammate
+ * is out of scope for this pass. */
 function isAssignedToSelf(
   attioTask: AttioRawTask,
   selfAttioMemberId: string | undefined,
@@ -192,6 +194,12 @@ export async function syncOneTask(
   });
 
   if (existing === null) {
+    // No attioMemberId preference set (review fix C): this member has no
+    // known Attio identity to scope creation to, so creating here would sync
+    // EVERY workspace task into their list — skip creation entirely.
+    // Reconciliation of already-synced tasks (below, `existing !== null`) is
+    // unaffected; it never depends on `selfAttioMemberId`.
+    if (selfAttioMemberId === undefined) return;
     // Never surface a task that was already done before we ever saw it, or
     // one created before this source's lookback window — bounds the backlog
     // a member sees the moment they flip the toggle on.
@@ -201,10 +209,7 @@ export async function syncOneTask(
         ? new Date(attioTask.created_at)
         : null;
     if (createdAt !== null && createdAt < cutoff) return;
-    if (
-      selfAttioMemberId !== undefined &&
-      !isAssignedToSelf(attioTask, selfAttioMemberId)
-    ) {
+    if (!isAssignedToSelf(attioTask, selfAttioMemberId)) {
       return;
     }
     const due = attioTaskDue(attioTask);
@@ -330,6 +335,15 @@ async function handle(ctx: MemberInboxSourceContext): Promise<void> {
     ctx.member.memberPrincipalId,
   );
   const selfAttioMemberId = prefs.attioMemberId;
+  if (selfAttioMemberId === undefined) {
+    log.debug(
+      "attio-task-sync: no attioMemberId preference set; skipping task creation this tick",
+      {
+        tenantId: ctx.tenantId,
+        memberPrincipalId: ctx.member.memberPrincipalId,
+      },
+    );
+  }
 
   const attioTasks = await fetchAttioTasks(
     config,

@@ -72,7 +72,17 @@ export interface InboxIntakeDeps {
   /** Per-tenant enablement (env override OR owner grant), re-read each tick. */
   isTenantEnabled: (tenantId: string) => Promise<boolean>;
   /** Owner-level enablement for a workspace-scope source, keyed by tenant +
-   * source key. Default OFF when omitted (workspace sources are opt-in). */
+   * source key. Default OFF when omitted (workspace sources are opt-in).
+   *
+   * NOTE (CL-3577 review fix L): production (`apps/hub/src/index.ts`) wires
+   * this and `isMemberSourceEnabled` to the literal same underlying check
+   * (`isWorkspaceInboxSourceEnabledForTenant`) today — there is only one
+   * owner-enablement grant, not two. They stay as separate deps because the
+   * member and workspace call sites gate structurally different things (a
+   * per-member ceiling vs. a once-per-tenant gate) and existing tests
+   * (`inbox-intake-registry.test.ts`, `inbox-intake-owner-cascade.test.ts`)
+   * exercise each independently with different mock values. If the two
+   * checks are ever meant to diverge, split the underlying grant first. */
   isWorkspaceSourceEnabled?: (
     tenantId: string,
     sourceKey: string,
@@ -82,7 +92,8 @@ export interface InboxIntakeDeps {
    * (CL-3584): an owner-disabled source is skipped for EVERY member regardless
    * of their preference. Defaults to ALLOW when omitted so tests and legacy
    * callers gate on the member preference alone; production wires the owner
-   * grant. */
+   * grant. See the `isWorkspaceSourceEnabled` note above — same underlying
+   * check today. */
   isMemberSourceEnabled?: (
     tenantId: string,
     sourceKey: string,
@@ -139,6 +150,26 @@ export function createInboxIntake(deps: InboxIntakeDeps): InboxIntake {
   const workspaceSources = registry.filter((e) => e.scope === "workspace");
   let timer: ReturnType<typeof setInterval> | undefined;
   let running = false;
+
+  // Per-scope-key cursor of the last SUCCESSFUL poll (CL-3577 review fix A):
+  // member scope keys on (memberPrincipalId, sourceKey), workspace scope keys
+  // on (tenantId, sourceKey). In-process only — a restart does one wide
+  // (lookbackMs) poll, which is already the documented single-replica
+  // assumption for this ticker. Set ONLY after the handler resolves without
+  // throwing, so a failing tick never advances the cursor past work it never
+  // actually delivered.
+  const lastPollAtByScopeKey = new Map<string, Date>();
+
+  function memberScopeKey(
+    memberPrincipalId: string,
+    sourceKey: string,
+  ): string {
+    return `member:${memberPrincipalId}:${sourceKey}`;
+  }
+
+  function workspaceScopeKey(tenantId: string, sourceKey: string): string {
+    return `workspace:${tenantId}:${sourceKey}`;
+  }
 
   /** Write + SSE-publish + triage-enqueue each item for a member (deduped by
    * `inbox:<source>:<externalId>` messageKey). Returns the newly delivered
@@ -210,6 +241,9 @@ export function createInboxIntake(deps: InboxIntakeDeps): InboxIntake {
       return;
     }
 
+    const scopeKey = memberScopeKey(member.memberPrincipalId, entry.key);
+    const previousLastPollAt = lastPollAtByScopeKey.get(scopeKey);
+
     await withTimeout(async (signal) => {
       const ctx: MemberInboxSourceContext = {
         scope: "member",
@@ -224,12 +258,20 @@ export function createInboxIntake(deps: InboxIntakeDeps): InboxIntake {
         log,
         deliverItems: (items) =>
           deliverItemsForMember(member, entry.key, items),
+        ...(previousLastPollAt !== undefined
+          ? { lastPollAt: previousLastPollAt }
+          : {}),
         ...(deps.fetchers?.[entry.key] !== undefined
           ? { fetcherOverride: deps.fetchers[entry.key] }
           : {}),
       };
       await entry.handle(ctx);
     });
+
+    // Reached only if the handler resolved without throwing — a throw
+    // propagates out of `withTimeout` and is caught by the tick loop, which
+    // never advances the cursor for a failed poll.
+    lastPollAtByScopeKey.set(scopeKey, new Date(now()));
   }
 
   async function runWorkspaceSource(
@@ -253,6 +295,9 @@ export function createInboxIntake(deps: InboxIntakeDeps): InboxIntake {
       return;
     }
 
+    const scopeKey = workspaceScopeKey(tenantId, entry.key);
+    const previousLastPollAt = lastPollAtByScopeKey.get(scopeKey);
+
     await withTimeout(async (signal) => {
       const ctx: InboxSourceContext = {
         scope: "workspace",
@@ -263,12 +308,17 @@ export function createInboxIntake(deps: InboxIntakeDeps): InboxIntake {
         perSourceLimit,
         signal,
         log,
+        ...(previousLastPollAt !== undefined
+          ? { lastPollAt: previousLastPollAt }
+          : {}),
         ...(deps.fetchers?.[entry.key] !== undefined
           ? { fetcherOverride: deps.fetchers[entry.key] }
           : {}),
       };
       await entry.handle(ctx);
     });
+
+    lastPollAtByScopeKey.set(scopeKey, new Date(now()));
   }
 
   async function tick(): Promise<void> {

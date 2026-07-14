@@ -18,6 +18,18 @@ const log = getLogger(["services", "granola-call-pipeline"]);
  * artifact — the check survives restarts because it reads durable rows). */
 export const GRANOLA_CALL_ARTIFACT_KIND = "granola-call";
 
+/** The `artifact.source_ref` value for one Granola call, unique per tenant
+ * (`artifact_tenant_source_ref_uniq`, migration 0055). This is the DB-level
+ * backstop for the SELECT-then-INSERT race below: two concurrent
+ * `processCall` runs for the same note can both pass `findExistingArtifactId`
+ * and both run the LLM turn (that double-spend window is not closed by this
+ * column — only a lock would close it), but only one of their inserts can
+ * land; the loser's insert conflicts on this column and re-reads the
+ * winner's row instead of creating a second artifact. */
+function granolaCallSourceRef(noteId: string): string {
+  return `granola:call:${noteId}`;
+}
+
 /** One participant/task actor: an assignee is matched to a member downstream
  * by email first, then unambiguous name (see the fan-out). */
 export const CallActionSchema = type({
@@ -265,13 +277,15 @@ export function createGranolaCallPipeline(
       );
     }
 
-    const [row] = await deps.db
+    const sourceRef = granolaCallSourceRef(note.id);
+    const inserted = await deps.db
       .insert(artifact)
       .values({
         tenantId,
         kind: GRANOLA_CALL_ARTIFACT_KIND,
         title: note.title ?? "Call",
         content: renderArtifactContent(note, classification, analysis),
+        sourceRef,
         source: {
           granolaNoteId: note.id,
           classification,
@@ -279,11 +293,40 @@ export function createGranolaCallPipeline(
           ...(note.createdAt ? { callCreatedAt: note.createdAt } : {}),
         },
       })
+      .onConflictDoNothing({
+        target: [artifact.tenantId, artifact.sourceRef],
+        where: sql`${artifact.sourceRef} IS NOT NULL`,
+      })
       .returning({ id: artifact.id });
-    if (!row) {
-      throw new Error(
-        `granola call ${note.id}: artifact insert returned no row`,
-      );
+
+    let artifactId: string;
+    let alreadyProcessed: boolean;
+    if (inserted[0]) {
+      artifactId = inserted[0].id;
+      alreadyProcessed = false;
+    } else {
+      // Lost the race: another insert for this noteId landed first. Re-read
+      // the winner's row rather than creating a duplicate — the LLM turn
+      // above was already spent for this attempt (that double-spend window
+      // is not closeable without a lock; only the duplicate row is closed
+      // here), but fan-out is skipped so the recipient never gets two mails
+      // for one call.
+      const winnerId = await findExistingArtifactId(deps.db, tenantId, note.id);
+      if (winnerId === null) {
+        throw new Error(
+          `granola call ${note.id}: artifact insert conflicted but no existing row was found`,
+        );
+      }
+      artifactId = winnerId;
+      alreadyProcessed = true;
+    }
+
+    if (alreadyProcessed) {
+      log.info("granola call lost the create race; skipping fan-out {noteId}", {
+        noteId: note.id,
+        tenantId,
+      });
+      return { status: "skipped-duplicate" };
     }
 
     const { delivered } = await deps.fanout.fanOut({
@@ -291,10 +334,10 @@ export function createGranolaCallPipeline(
       note,
       classification,
       analysis,
-      artifactId: row.id,
+      artifactId,
     });
 
-    return { status: "processed", artifactId: row.id, delivered };
+    return { status: "processed", artifactId, delivered };
   }
 
   return { processCall };

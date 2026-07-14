@@ -274,33 +274,47 @@ export type WorkflowRunStepRow = typeof workflowRunStep.$inferSelect;
 // A first-class output of any workflow or agent. `kind` is free-form text
 // (validated at the application edge, not a pg enum, so kinds can grow without
 // migrations). Nesting via parent_id.
-export const artifact = pgTable("artifact", {
-  id: uuid("id").primaryKey().defaultRandom(),
-  tenantId: text("tenant_id"),
-  principalId: text("principal_id"),
-  ownerPrincipalId: text("owner_principal_id"),
-  // Null for artifacts created directly by agents via the artifact_* tools
-  // or write_artifact (they are tenant/principal scoped, not workflow_run scoped).
-  // Workflow paths always supply a valid id.
-  parentId: uuid("parent_id").references((): AnyPgColumn => artifact.id, {
-    onDelete: "cascade",
+export const artifact = pgTable(
+  "artifact",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: text("tenant_id"),
+    principalId: text("principal_id"),
+    ownerPrincipalId: text("owner_principal_id"),
+    // Null for artifacts created directly by agents via the artifact_* tools
+    // or write_artifact (they are tenant/principal scoped, not workflow_run scoped).
+    // Workflow paths always supply a valid id.
+    parentId: uuid("parent_id").references((): AnyPgColumn => artifact.id, {
+      onDelete: "cascade",
+    }),
+    kind: text("kind").notNull(),
+    title: text("title").notNull(),
+    content: text("content").notNull(),
+    source: jsonb("source").$type<Record<string, unknown>>(),
+    status: text("status", { enum: artifactStatus }).notNull().default("draft"),
+    version: integer("version").notNull().default(1),
+    // Soft-archive (CL-3156): null = visible, a timestamp = hidden from default
+    // listings. Reversible; distinct from `status` so archiving never clobbers a
+    // draft/approved/rejected state.
+    archivedAt: timestamp("archived_at"),
+    // Idempotency backstop for a source that can race a duplicate insert past
+    // an app-level existence check (CL-3577 review fix B — the Granola call
+    // pipeline sets `granola:call:<noteId>`). Null for every artifact created
+    // through the artifact_* tools / write_artifact; the partial unique index
+    // only constrains rows that opt in by setting this column.
+    sourceRef: text("source_ref"),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at")
+      .notNull()
+      .defaultNow()
+      .$onUpdate(() => new Date()),
+  },
+  (t) => ({
+    artifactTenantSourceRefUniq: uniqueIndex("artifact_tenant_source_ref_uniq")
+      .on(t.tenantId, t.sourceRef)
+      .where(sql`${t.sourceRef} IS NOT NULL`),
   }),
-  kind: text("kind").notNull(),
-  title: text("title").notNull(),
-  content: text("content").notNull(),
-  source: jsonb("source").$type<Record<string, unknown>>(),
-  status: text("status", { enum: artifactStatus }).notNull().default("draft"),
-  version: integer("version").notNull().default(1),
-  // Soft-archive (CL-3156): null = visible, a timestamp = hidden from default
-  // listings. Reversible; distinct from `status` so archiving never clobbers a
-  // draft/approved/rejected state.
-  archivedAt: timestamp("archived_at"),
-  createdAt: timestamp("created_at").notNull().defaultNow(),
-  updatedAt: timestamp("updated_at")
-    .notNull()
-    .defaultNow()
-    .$onUpdate(() => new Date()),
-});
+);
 
 // CL-2668: durable agent memory moved out of the artifact table into its own
 // table. No version history — a save is a plain overwrite. One row per
