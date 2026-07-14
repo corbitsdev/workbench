@@ -1,7 +1,13 @@
 /// <reference types="bun" />
 import "../test-setup";
 import { afterEach, describe, expect, it, mock } from "bun:test";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter } from "react-router";
 import type {
@@ -138,23 +144,58 @@ describe("InboxSourcesToggles", () => {
     expect(screen.queryByText("What counts as activity")).toBeNull();
   });
 
-  it("renders nothing while loading or on error", () => {
+  it("shows a loading state while inbox sources are fetching", () => {
     getMeInboxSources.mockImplementationOnce(
       () => new Promise<AvailableInboxSource[]>(() => {}),
     );
-    const { container } = renderComponent();
-    expect(container.textContent).toBe("");
+    renderComponent();
+    expect(screen.getByText("Loading…")).toBeDefined();
+  });
+
+  it("shows an error state when inbox sources fail to load", async () => {
+    getMeInboxSources.mockImplementationOnce(() =>
+      Promise.reject(new Error("boom")),
+    );
+    renderComponent();
+    await screen.findByText(
+      "Could not load inbox sources. Try again in a moment.",
+    );
+  });
+
+  it("disables the toggle for a source that still needs connection", async () => {
+    renderComponent();
+    await screen.findByText("Linear");
+    const toggle = screen.getByLabelText("Linear") as HTMLButtonElement;
+    expect(toggle.disabled).toBe(true);
+  });
+
+  it("does not disable the toggle for a source using a workspace key", async () => {
+    renderComponent();
+    await screen.findByText("Granola");
+    const toggle = screen.getByLabelText("Granola") as HTMLButtonElement;
+    expect(toggle.disabled).toBe(false);
   });
 
   it("renders nothing when no sources are available (owner-disabled/unconfigured sources filtered server-side)", async () => {
     getMeInboxSources.mockImplementationOnce(async () => []);
     const { container } = renderComponent();
-    await new Promise((resolve) => setTimeout(resolve, 0));
-    expect(container.textContent).toBe("");
+    await waitFor(() => expect(container.textContent).toBe(""));
   });
 });
 
 describe("InboxSourcesToggles — Linear enabled", () => {
+  it("shows a loading placeholder instead of default select values while settings are still fetching", async () => {
+    getMeInboxSources.mockImplementationOnce(async () => [
+      { ...INBOX_SOURCES[0]!, enabled: true },
+    ]);
+    getMePreferenceSettings.mockImplementationOnce(
+      () => new Promise<PreferenceSetting[]>(() => {}),
+    );
+    renderComponent();
+    await screen.findByText("Loading options…");
+    expect(screen.queryByText("What counts as activity")).toBeNull();
+  });
+
   it("renders the scope and backfill selects when Linear is enabled, seeded with the stored values", async () => {
     getMeInboxSources.mockImplementationOnce(async () => [
       { ...INBOX_SOURCES[0]!, enabled: true },

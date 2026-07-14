@@ -215,6 +215,42 @@ describe("OwnerCapabilities", () => {
     );
   });
 
+  it("optimistically flips the inbox source status label before the mutation resolves, and rolls back on failure", async () => {
+    inboxSourcesOutcome = {
+      kind: "resolve",
+      data: {
+        sources: [
+          {
+            key: "granola",
+            label: "Granola",
+            description: "Call notes from meetings.",
+            enabled: true,
+          },
+        ],
+      },
+    };
+    let resolveToggle: (() => void) | undefined;
+    setOwnerInboxSourceEnabledMock.mockImplementationOnce(
+      () =>
+        new Promise((_resolve, reject) => {
+          resolveToggle = () => reject(new Error("boom"));
+        }),
+    );
+    renderCapabilities();
+    await waitFor(() => expect(screen.getByText("Granola")));
+    screen.getByRole("button", { name: "Disable" }).click();
+
+    await waitFor(() => expect(screen.getByText("Disabled")));
+
+    resolveToggle?.();
+    await waitFor(() => expect(screen.getByText("Enabled")));
+    expect(
+      screen.getByText(
+        "Could not update the inbox source. Try again in a moment.",
+      ),
+    ).toBeDefined();
+  });
+
   it("toggles an OAuth capability on click, calling the hub API with the flipped state", async () => {
     oauthCapabilitiesOutcome = {
       kind: "resolve",
