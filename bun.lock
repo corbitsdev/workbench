@@ -51,6 +51,7 @@
         "@workbench/myra": "workspace:*",
         "@workbench/openapi-arktype": "workspace:*",
         "@workbench/pricing": "workspace:*",
+        "@workbench/prompts": "workspace:*",
         "@workbench/sentry": "workspace:*",
         "@workbench/shared": "workspace:*",
         "@workbench/storage-isogit": "workspace:*",

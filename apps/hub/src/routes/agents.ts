@@ -76,6 +76,10 @@ const LaunchSessionResponse = type({
   sessionId: "string | null",
 });
 
+const LaunchSessionRequest = type({
+  "pageContext?": "string",
+});
+
 const ReconcileGrantsResponse = type({
   templateKey: "string",
   reconciled: "number",
@@ -531,6 +535,16 @@ export function createAgentProvisioningRouter(
       const userId = c.get("userId");
       const instanceId = c.req.param("instanceId");
 
+      let pageContext: string | undefined;
+      const rawBody = await c.req.json().catch(() => undefined);
+      if (rawBody !== undefined) {
+        const parsed = LaunchSessionRequest(rawBody);
+        if (parsed instanceof type.errors) {
+          return c.json({ error: "Invalid launch session request" }, 400);
+        }
+        pageContext = parsed.pageContext;
+      }
+
       const instance = await db.query.agentInstance.findFirst({
         where: eq(agentInstance.id, instanceId),
       });
@@ -641,6 +655,7 @@ export function createAgentProvisioningRouter(
             tenantDomain: tenantRow.domain,
             systemPrompt,
             now,
+            ...(pageContext !== undefined ? { pageContext } : {}),
           }),
         );
         sessionId = result.sessionId;
