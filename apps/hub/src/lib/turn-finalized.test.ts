@@ -7,6 +7,7 @@ type TurnSummary = {
   turnId: string;
   status: string;
   text: string;
+  reasoning: string;
   hadReply: boolean;
   hadError: boolean;
   errors: unknown[];
@@ -27,6 +28,7 @@ function createOnTurnFinalized(
         turnId: turn.turnId,
         status: turn.status,
         text: turn.text,
+        reasoning: turn.reasoning,
         hadReply: turn.hadReply,
         hadError: turn.hadError,
         errors: turn.errors,
@@ -46,6 +48,7 @@ describe("onTurnFinalized", () => {
       turnId: "turn-123",
       status: "completed",
       text: "Hello",
+      reasoning: "let me think",
       hadReply: true,
       hadError: false,
       errors: [],
@@ -62,6 +65,7 @@ describe("onTurnFinalized", () => {
         turnId: "turn-123",
         status: "completed",
         text: "Hello",
+        reasoning: "let me think",
         hadReply: true,
         hadError: false,
         errors: [],
@@ -79,6 +83,7 @@ describe("onTurnFinalized", () => {
       turnId: "turn-456",
       status: "error",
       text: "",
+      reasoning: "",
       hadReply: false,
       hadError: true,
       errors: [{ message: "timeout" }],

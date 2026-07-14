@@ -558,6 +558,7 @@ const eventCollectors = createEventCollectorRegistry({
         errors: turn.errors,
         toolCalls: turn.toolCalls,
         toolErrors: turn.toolErrors,
+        reasoning: turn.reasoning,
       },
     });
 

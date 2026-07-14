@@ -75,6 +75,12 @@ mock.module("@workbench/event-collector", () => ({
               turnId: "t1",
               status: "completed",
               text: agentReply,
+              hadReply: true,
+              hadError: false,
+              errors: [],
+              toolCalls: [],
+              toolErrors: [],
+              reasoning: "",
             });
           }
           return Promise.resolve();
