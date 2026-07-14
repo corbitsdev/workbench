@@ -4,11 +4,14 @@
 // same artifact (CL-3512). Stateless and navigation-agnostic: the host
 // supplies the actual navigation via onOpenSession/onOpenParent callbacks.
 
+import { Fragment, type ReactNode } from "react";
 import { Badge, type BadgeTone } from "@workbench/ui";
 import type { SessionStatus } from "@workbench/shared";
 
 export interface ArtifactMetaProps {
   kindLabel?: string | undefined;
+  version?: number | undefined;
+  statusLabel?: string | undefined;
   createdAt: string | null;
   sessionId: string | null;
   sessionName: string | null;
@@ -39,6 +42,8 @@ export function formatArtifactDate(iso: string): string {
 
 export function ArtifactMeta({
   kindLabel,
+  version,
+  statusLabel,
   createdAt,
   sessionId,
   sessionName,
@@ -51,13 +56,22 @@ export function ArtifactMeta({
   const canOpenSession = sessionId !== null && onOpenSession !== undefined;
   const canOpenParent = parentId !== null && onOpenParent !== undefined;
 
+  const summaryParts: ReactNode[] = [];
+  if (kindLabel) summaryParts.push(<span>{kindLabel}</span>);
+  if (version !== undefined) summaryParts.push(<span>{`v${version}`}</span>);
+  if (statusLabel) summaryParts.push(<span>{statusLabel}</span>);
+  if (createdAt) summaryParts.push(<span>{formatArtifactDate(createdAt)}</span>);
+
   return (
     <div className={className}>
-      {(kindLabel ?? createdAt) && (
+      {summaryParts.length > 0 && (
         <div className="text-[11px] text-text-3">
-          {kindLabel && <span>{kindLabel}</span>}
-          {kindLabel && createdAt && <span> · </span>}
-          {createdAt && <span>{formatArtifactDate(createdAt)}</span>}
+          {summaryParts.map((part, index) => (
+            <Fragment key={index}>
+              {index > 0 && <span> · </span>}
+              {part}
+            </Fragment>
+          ))}
         </div>
       )}
       {(sessionName !== null || sessionStatus !== null) && (
