@@ -3,7 +3,7 @@ import type { ChatMessage } from "@workbench/chat";
 import {
   clearReasoningExpanded,
   migrateReasoningExpandedSlotKeys,
-  readReasoningExpanded,
+  readReasoningExpandedForDisplay,
   reconcileReasoningExpandedAliases,
   reasoningExpandedMessageKey,
   writeReasoningExpanded,
@@ -19,7 +19,8 @@ export type MyraReasoningExpandedPrefs = {
  * Per-message reasoning disclosure prefs for Myra (localStorage). Migrates an
  * expand choice made on the live streaming bubble when the settled mail id
  * replaces {@link STREAMING_BUBBLE_ID}, and when composeChat remaps turn/mail
- * ids (including after a hard reload).
+ * ids (including after a hard reload). Aged turns (24h+) auto-collapse on
+ * display even when expand was persisted; see {@link readReasoningExpandedForDisplay}.
  */
 export function useMyraReasoningExpanded(
   messages: ChatMessage[],
@@ -32,12 +33,27 @@ export function useMyraReasoningExpanded(
 
   const bump = useCallback(() => setRevision((n) => n + 1), []);
 
+  const createdAtByKey = useCallback(() => {
+    const map = new Map<string, string>();
+    for (const message of messages) {
+      if (message.role !== "agent") continue;
+      const key = reasoningExpandedMessageKey(message);
+      map.set(key, message.createdAt);
+      map.set(message.id, message.createdAt);
+      if (message.feedbackId !== undefined) {
+        map.set(message.feedbackId, message.createdAt);
+      }
+    }
+    return map;
+  }, [messages]);
+
   const isReasoningExpanded = useCallback(
     (messageKey: string) => {
       void revision;
-      return readReasoningExpanded(messageKey);
+      const createdAt = createdAtByKey().get(messageKey);
+      return readReasoningExpandedForDisplay(messageKey, createdAt);
     },
-    [revision],
+    [revision, createdAtByKey],
   );
 
   const setReasoningExpanded = useCallback(
@@ -53,7 +69,11 @@ export function useMyraReasoningExpanded(
     const ids = messages.map((m) => m.id);
     const hadStreaming = prevIdsRef.current.includes(STREAMING_BUBBLE_ID);
     const hasStreaming = ids.includes(STREAMING_BUBBLE_ID);
-    if (hadStreaming && !hasStreaming && readReasoningExpanded(STREAMING_BUBBLE_ID)) {
+    if (
+      hadStreaming &&
+      !hasStreaming &&
+      readReasoningExpandedForDisplay(STREAMING_BUBBLE_ID, undefined)
+    ) {
       const lastAgent = [...messages].reverse().find((m) => m.role === "agent");
       if (lastAgent !== undefined) {
         const key = reasoningExpandedMessageKey(lastAgent);

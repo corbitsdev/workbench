@@ -4,10 +4,12 @@ import {
   clearReasoningExpanded,
   migrateReasoningExpandedSlotKeys,
   readReasoningExpanded,
+  readReasoningExpandedForDisplay,
   reconcileReasoningExpandedAliases,
   reasoningExpandedMessageKey,
   writeReasoningExpanded,
 } from "./reasoning-expanded-prefs";
+import { MYRA_AGED_HISTORY_MS } from "./aged-history";
 
 describe("reasoning-expanded-prefs", () => {
   let storage: Storage;
@@ -87,6 +89,19 @@ describe("reasoning-expanded-prefs", () => {
     expect(changed).toBe(true);
     expect(readReasoningExpanded("turn-t", storage)).toBe(true);
     expect(readReasoningExpanded("mail-a", storage)).toBe(false);
+  });
+
+  it("readReasoningExpandedForDisplay hides persisted expand on aged turns", () => {
+    const now = Date.parse("2026-07-14T12:00:00.000Z");
+    const agedAt = new Date(now - MYRA_AGED_HISTORY_MS - 1).toISOString();
+    writeReasoningExpanded("m1", true, storage);
+    expect(readReasoningExpandedForDisplay("m1", agedAt, storage, now)).toBe(
+      false,
+    );
+    const freshAt = new Date(now - 60_000).toISOString();
+    expect(readReasoningExpandedForDisplay("m1", freshAt, storage, now)).toBe(
+      true,
+    );
   });
 
   it("migrateReasoningExpandedSlotKeys moves prefs when the slot id changes", () => {
