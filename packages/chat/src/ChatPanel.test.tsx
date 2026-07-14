@@ -381,7 +381,8 @@ describe("ChatPanel busy state", () => {
 });
 
 describe("ChatPanel composer interaction", () => {
-  it("does not fire onSend when busy", async () => {
+  it("keeps the composer editable and queues instead of firing onSend when busy (CL-2988)", async () => {
+    const user = userEvent.setup();
     const onSend = mock((_text: string) => {});
     render(
       <ChatPanel
@@ -392,8 +393,10 @@ describe("ChatPanel composer interaction", () => {
       />,
     );
     const input = screen.getByLabelText("Message") as HTMLTextAreaElement;
-    expect(input.disabled).toBe(true);
+    expect(input.disabled).toBe(false);
+    await user.type(input, "hang tight{Enter}");
     expect(onSend).not.toHaveBeenCalled();
+    expect(screen.getByText("Queued")).toBeDefined();
   });
 });
 
