@@ -133,6 +133,7 @@ function PreviewImage({ url }: { url: string }) {
     <img
       src={url}
       alt=""
+      role="presentation"
       loading="lazy"
       className="h-28 w-full rounded-t-lg object-cover"
       onError={() => setFailed(true)}
