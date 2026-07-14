@@ -423,6 +423,10 @@ describe("ToolNarrative", () => {
     // Individual rows are hidden until expanded.
     expect(screen.queryByText("summary-of-c1")).toBeNull();
     fireEvent.click(screen.getByText("Did a bunch of things"));
+    // Roll-up line hides when expanded — detail replaces it, not stacks under it.
+    expect(screen.queryByTestId("tool-group-summary")).toBeNull();
+    expect(screen.queryByText("· 3 tools")).toBeNull();
+    screen.getByTestId("tool-group-detail");
     screen.getByText("summary-of-c1");
     screen.getByText("summary-of-c3");
   });
@@ -478,5 +482,107 @@ describe("ToolNarrative", () => {
     expect(screen.queryByText("Did a bunch of things")).toBeNull();
     screen.getByText("summary-of-c1");
     screen.getByText("summary-of-c3");
+  });
+
+  it("hides the tool summary line while tool output is expanded", () => {
+    const calls: ToolCall[] = [
+      {
+        id: "c1",
+        name: "Exa Search",
+        arguments: { query: "minimax m3" },
+        result: "the full result body",
+        isError: false,
+      },
+    ];
+    render(<ToolNarrative toolCalls={calls} />);
+    fireEvent.click(screen.getByTestId("tool-row-summary"));
+    expect(screen.queryByTestId("tool-row-summary")).toBeNull();
+    expect(screen.queryByTestId("tool-row-args")).toBeNull();
+    screen.getByTestId("tool-row-detail");
+    screen.getByText("the full result body");
+  });
+
+  it("restores the tool summary line when tool output is collapsed again", () => {
+    const calls: ToolCall[] = [
+      {
+        id: "c1",
+        name: "Exa Search",
+        arguments: { query: "minimax m3" },
+        result: "the full result body",
+        isError: false,
+      },
+    ];
+    render(<ToolNarrative toolCalls={calls} />);
+    const toggle = screen.getByTestId("tool-row-summary").closest("button");
+    expect(toggle).not.toBeNull();
+    fireEvent.click(toggle!);
+    expect(screen.queryByTestId("tool-row-summary")).toBeNull();
+    fireEvent.click(toggle!);
+    screen.getByTestId("tool-row-summary");
+    expect(screen.queryByTestId("tool-row-detail")).toBeNull();
+  });
+
+  it("hides the compact roll-up summary while the tool group is expanded", () => {
+    const calls = [
+      settled("c1", "attio_get_record"),
+      settled("c2", "attio_get_record"),
+      settled("c3", "linear_get_issue"),
+    ];
+    render(
+      <ToolNarrative
+        toolCalls={calls}
+        compact
+        summarizeCalls={() => "Did a bunch of things"}
+        formatSummary={(c) => `summary-of-${c.id}`}
+      />,
+    );
+    const toggle = screen.getByTestId("tool-group-summary").closest("button");
+    fireEvent.click(toggle!);
+    expect(screen.queryByTestId("tool-group-summary")).toBeNull();
+    screen.getByTestId("tool-group-detail");
+  });
+
+  it("restores the compact roll-up summary when the tool group is collapsed again", () => {
+    const calls = [
+      settled("c1", "attio_get_record"),
+      settled("c2", "attio_get_record"),
+      settled("c3", "linear_get_issue"),
+    ];
+    render(
+      <ToolNarrative
+        toolCalls={calls}
+        compact
+        summarizeCalls={() => "Did a bunch of things"}
+        formatSummary={(c) => `summary-of-${c.id}`}
+      />,
+    );
+    const toggle = screen.getByTestId("tool-group-summary").closest("button");
+    expect(toggle).not.toBeNull();
+    fireEvent.click(toggle!);
+    expect(screen.queryByTestId("tool-group-summary")).toBeNull();
+    fireEvent.click(toggle!);
+    screen.getByTestId("tool-group-summary");
+    screen.getByText("· 3 tools");
+    expect(screen.queryByTestId("tool-group-detail")).toBeNull();
+  });
+
+  it("exposes aria-expanded and a collapse label on an expanded tool row", () => {
+    const calls: ToolCall[] = [
+      {
+        id: "c1",
+        name: "Exa Search",
+        arguments: { query: "minimax m3" },
+        result: "the full result body",
+        isError: false,
+      },
+    ];
+    render(<ToolNarrative toolCalls={calls} />);
+    const toggle = screen.getByTestId("tool-row-summary").closest("button");
+    expect(toggle?.getAttribute("aria-expanded")).toBe("false");
+    fireEvent.click(toggle!);
+    expect(toggle?.getAttribute("aria-expanded")).toBe("true");
+    expect(toggle?.getAttribute("aria-label")).toBe(
+      "Collapse Exa search · minimax m3",
+    );
   });
 });

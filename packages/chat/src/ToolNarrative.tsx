@@ -279,6 +279,12 @@ function ToolRow({
         type="button"
         disabled={!expandable}
         onClick={() => setOpen((v) => !v)}
+        aria-expanded={expandable ? open : undefined}
+        aria-label={
+          expandable && open
+            ? `Collapse ${summary}${argsSummary !== null ? ` · ${argsSummary}` : ""}`
+            : undefined
+        }
         className={cn(
           "flex items-start gap-2.5 text-left",
           expandable && cn("cursor-pointer", TOUCH_TARGET),
@@ -300,15 +306,29 @@ function ToolRow({
             pending ? "text-text-2" : call.isError ? "text-red" : "text-text-3",
           )}
         >
-          <span className="shrink-0">{summary}</span>
-          {argsSummary !== null && (
-            <span className="truncate text-text-3/70">· {argsSummary}</span>
+          {!(open && expandable) && (
+            <>
+              <span className="shrink-0" data-testid="tool-row-summary">
+                {summary}
+              </span>
+              {argsSummary !== null && (
+                <span
+                  className="truncate text-text-3/70"
+                  data-testid="tool-row-args"
+                >
+                  · {argsSummary}
+                </span>
+              )}
+            </>
           )}
           {expandable && <ChevronIcon open={open} />}
         </span>
       </button>
       <ExpandReveal open={open} reduceMotion={reduceMotion === true}>
-        <div className="mt-1.5 ml-[26px] space-y-2 text-xs">
+        <div
+          className="mt-1.5 ml-[26px] space-y-2 text-xs"
+          data-testid="tool-row-detail"
+        >
           {humanized ? (
             <>
               {structuredBlock !== null && (
@@ -465,6 +485,9 @@ function CollapsedToolSummary({
         type="button"
         onClick={() => setOpen((v) => !v)}
         aria-expanded={open}
+        aria-label={
+          open ? `Collapse ${summary} · ${count} tools` : undefined
+        }
         className={cn(
           "flex items-start gap-2.5 text-left cursor-pointer",
           TOUCH_TARGET,
@@ -479,13 +502,21 @@ function CollapsedToolSummary({
             hasError ? "text-red" : "text-text-3",
           )}
         >
-          <span className="min-w-0 truncate">{summary}</span>
-          <span className="shrink-0 text-text-3/70">· {count} tools</span>
+          {!open && (
+            <>
+              <span className="min-w-0 truncate" data-testid="tool-group-summary">
+                {summary}
+              </span>
+              <span className="shrink-0 text-text-3/70">· {count} tools</span>
+            </>
+          )}
           <ChevronIcon open={open} />
         </span>
       </button>
       <ExpandReveal open={open} reduceMotion={reduceMotion === true}>
-        <div className={cn("mt-1.5", ROW_GAP)}>{children}</div>
+        <div className={cn("mt-1.5", ROW_GAP)} data-testid="tool-group-detail">
+          {children}
+        </div>
       </ExpandReveal>
     </div>
   );
