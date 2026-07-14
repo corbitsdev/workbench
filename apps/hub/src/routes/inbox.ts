@@ -27,8 +27,9 @@ import {
 import { isUuid } from "../lib/uuid";
 import type { MailboxEventBus } from "../lib/mailbox-events";
 import { UuidParam } from "../lib/uuid";
-import { ErrorResponse } from "../lib/openapi";
-import { clampLimit, decodeCursor, MAX_PAGE_LIMIT } from "../lib/keyset";
+import { ErrorResponse, requestBodySchema } from "../lib/openapi";
+import { decodeMailboxListCursor } from "../lib/mailbox-list-cursor";
+import { clampLimit, MAX_PAGE_LIMIT } from "../lib/keyset";
 import type { HubDb } from "../db";
 
 const log = getLogger(["api", "inbox"]);
@@ -76,7 +77,7 @@ export function createInboxRouter(
           required: false,
           schema: { type: "string" },
           description:
-            "Opaque keyset cursor from a previous page's nextCursor; omit for the first page",
+            "Opaque nextCursor from a prior page of the same view; must match the view query param that issued it",
         },
         {
           name: "view",
@@ -98,7 +99,8 @@ export function createInboxRouter(
           },
         },
         400: {
-          description: "Invalid limit",
+          description:
+            "Invalid limit, malformed cursor, invalid inbox view, or cursor issued for a different view",
           content: { "application/json": { schema: resolver(ErrorResponse) } },
         },
         409: {
@@ -115,17 +117,23 @@ export function createInboxRouter(
       if (limit === null) {
         return c.json({ error: "limit must be a positive integer" }, 400);
       }
-      const rawCursor = c.req.query("cursor");
-      const cursor =
-        rawCursor === undefined ? undefined : decodeCursor(rawCursor);
-      if (rawCursor !== undefined && cursor === null) {
-        return c.json({ error: "malformed cursor" }, 400);
-      }
       const rawView = c.req.query("view");
       const view =
         rawView === undefined ? ("all" as const) : MailboxInboxView(rawView);
       if (view instanceof type.errors) {
         return c.json({ error: "invalid inbox view" }, 400);
+      }
+      const rawCursor = c.req.query("cursor");
+      let cursor: { createdAt: string; id: string } | undefined;
+      if (rawCursor !== undefined) {
+        const decoded = decodeMailboxListCursor(rawCursor);
+        if (decoded === null) {
+          return c.json({ error: "malformed cursor" }, 400);
+        }
+        if (decoded.view !== view) {
+          return c.json({ error: "cursor does not match inbox view" }, 400);
+        }
+        cursor = { createdAt: decoded.createdAt, id: decoded.id };
       }
       const member = await resolveCallerMember(db, userId);
       if (!member) {
@@ -353,15 +361,25 @@ export function createInboxRouter(
     describeRoute({
       tags: ["Me"],
       summary: "Apply a bulk inbox action to multiple mailbox messages",
+      description:
+        "Partial success: `updated` and `ids` list only rows that matched the action (unknown ids are skipped; archive skips trashed rows; mark_unread applies only to active inbox rows).",
+      requestBody: {
+        required: true,
+        content: {
+          "application/json": { schema: requestBodySchema(MailboxBulkRequest) },
+        },
+      },
       responses: {
         200: {
-          description: "Bulk action result",
+          description:
+            "Subset of requested ids that were updated (may be fewer than input when some ids are out of scope)",
           content: {
             "application/json": { schema: resolver(MailboxBulkResponse) },
           },
         },
         400: {
-          description: "Invalid request body",
+          description:
+            "Invalid JSON, invalid bulk request shape, non-UUID id, or too many ids",
           content: { "application/json": { schema: resolver(ErrorResponse) } },
         },
         409: {

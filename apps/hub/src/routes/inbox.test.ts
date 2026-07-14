@@ -107,7 +107,7 @@ mock.module("../lib/mailbox-mutations", () => ({
 
 import { Hono } from "hono";
 import type { HubDb } from "../db";
-import { encodeCursor } from "../lib/keyset";
+import { encodeMailboxListCursor } from "../lib/mailbox-list-cursor";
 import { createInboxRouter } from "./inbox";
 import {
   createMailboxEventBus,
@@ -200,10 +200,13 @@ describe("GET /me/inbox", () => {
   });
 
   it("decodes a valid cursor and forwards the keyset position to the store", async () => {
-    const cursor = encodeCursor({
-      createdAt: new Date("2026-07-10T07:00:00.000Z"),
-      id: "5e0f8c9a-0000-4000-8000-000000000001",
-    });
+    const cursor = encodeMailboxListCursor(
+      {
+        createdAt: new Date("2026-07-10T07:00:00.000Z"),
+        id: "5e0f8c9a-0000-4000-8000-000000000001",
+      },
+      "all",
+    );
     const res = await mountApp().request(
       new Request(
         `http://localhost/api/v1/me/inbox?cursor=${encodeURIComponent(cursor)}`,
@@ -214,6 +217,23 @@ describe("GET /me/inbox", () => {
       createdAt: "2026-07-10T07:00:00.000Z",
       id: "5e0f8c9a-0000-4000-8000-000000000001",
     });
+  });
+
+  it("400s when cursor was issued for a different inbox view", async () => {
+    const cursor = encodeMailboxListCursor(
+      {
+        createdAt: new Date("2026-07-10T07:00:00.000Z"),
+        id: "5e0f8c9a-0000-4000-8000-000000000001",
+      },
+      "trash",
+    );
+    const res = await mountApp().request(
+      new Request(
+        `http://localhost/api/v1/me/inbox?view=all&cursor=${encodeURIComponent(cursor)}`,
+      ),
+    );
+    expect(res.status).toBe(400);
+    expect(listUserMailbox.mock.calls).toHaveLength(0);
   });
 
   it("400s on a malformed cursor without touching the store", async () => {
@@ -567,6 +587,20 @@ describe("POST /me/inbox/bulk", () => {
     expect(res.status).toBe(409);
     expect(applyMailboxBulkAction.mock.calls).toHaveLength(0);
   });
+
+  it("returns partial bulk results when the store updates only some ids", async () => {
+    const other = "5e0f8c9a-0000-4000-8000-000000000099";
+    applyMailboxBulkAction.mockImplementation(async () => [id]);
+    const res = await mountApp().request(
+      new Request("http://localhost/api/v1/me/inbox/bulk", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ action: "archive", ids: [id, other] }),
+      }),
+    );
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ updated: 1, ids: [id] });
+  });
 });
 
 describe("POST /me/inbox/:id folder mutations", () => {
@@ -631,5 +665,16 @@ describe("POST /me/inbox/:id folder mutations", () => {
     );
     expect(res.status).toBe(404);
     expect(archiveMailboxMessage.mock.calls).toHaveLength(1);
+  });
+
+  it("mark unread 404s when the message is archived (active inbox guard)", async () => {
+    markMailboxMessageUnread.mockImplementation(async () => false);
+    const res = await mountApp().request(
+      new Request(`http://localhost/api/v1/me/inbox/${id}/unread`, {
+        method: "POST",
+      }),
+    );
+    expect(res.status).toBe(404);
+    expect(markMailboxMessageUnread.mock.calls).toHaveLength(1);
   });
 });

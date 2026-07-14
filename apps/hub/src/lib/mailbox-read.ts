@@ -10,7 +10,8 @@ import {
 } from "@workbench/shared";
 import { principalMailbox, type PrincipalMailboxRow } from "../db/schema";
 import type { HubDb } from "../db";
-import { keysetBefore, takePage, type KeysetCursor } from "./keyset";
+import { encodeMailboxListCursor } from "./mailbox-list-cursor";
+import { keysetBefore, type KeysetCursor } from "./keyset";
 import type { MailboxInboxView } from "@workbench/shared";
 import { extractConversationBodyFromRaw } from "./conversation-mail-body";
 import {
@@ -57,6 +58,18 @@ export type MailboxPage = {
   items: MailboxMessage[];
   nextCursor?: string;
 };
+
+function takeMailboxPage<T extends { createdAt: Date; id: string }>(
+  rows: T[],
+  limit: number,
+  view: MailboxInboxView,
+): { items: T[]; nextCursor?: string } {
+  if (rows.length <= limit) return { items: rows };
+  const items = rows.slice(0, limit);
+  const last = items[items.length - 1];
+  if (!last) return { items };
+  return { items, nextCursor: encodeMailboxListCursor(last, view) };
+}
 
 const SNIPPET_MAX_CHARS = 160;
 
@@ -170,12 +183,13 @@ export async function listUserMailbox(
     );
     if (before) conditions.push(before);
   }
+  const view = scope.view ?? "all";
   const rows = await db.query.principalMailbox.findMany({
     where: and(...conditions),
     orderBy: [desc(principalMailbox.createdAt), desc(principalMailbox.id)],
     limit: scope.limit + 1,
   });
-  const page = takePage(rows, scope.limit);
+  const page = takeMailboxPage(rows, scope.limit, view);
   const baseItems = page.items.map(toMailboxMessage);
   const displays = await resolveSenderDisplayNames(
     db,

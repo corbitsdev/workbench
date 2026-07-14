@@ -93,4 +93,47 @@ describe("mailbox mutations", () => {
       .where(and(eq(principalMailbox.id, a)));
     expect(row[0]?.trashedAt).not.toBeNull();
   });
+
+  test("archive returns false for trashed rows", async () => {
+    const id = "00000000-0000-4000-8000-000000000012";
+    await seed(id, true);
+    await trashMailboxMessage(db, { tenantId: TENANT, principalId: PRINCIPAL, id });
+    const ok = await archiveMailboxMessage(db, {
+      tenantId: TENANT,
+      principalId: PRINCIPAL,
+      id,
+    });
+    expect(ok).toBe(false);
+  });
+
+  test("bulk archive skips trashed ids", async () => {
+    const active = "00000000-0000-4000-8000-000000000013";
+    const trashed = "00000000-0000-4000-8000-000000000014";
+    await seed(active, true);
+    await seed(trashed, true);
+    await trashMailboxMessage(db, {
+      tenantId: TENANT,
+      principalId: PRINCIPAL,
+      id: trashed,
+    });
+    const ids = await applyMailboxBulkAction(
+      db,
+      { tenantId: TENANT, principalId: PRINCIPAL },
+      "archive",
+      [active, trashed],
+    );
+    expect(ids).toEqual([active]);
+  });
+
+  test("mark unread does not apply to archived rows", async () => {
+    const id = "00000000-0000-4000-8000-000000000015";
+    await seed(id, true);
+    await archiveMailboxMessage(db, { tenantId: TENANT, principalId: PRINCIPAL, id });
+    const ok = await markMailboxMessageUnread(db, {
+      tenantId: TENANT,
+      principalId: PRINCIPAL,
+      id,
+    });
+    expect(ok).toBe(false);
+  });
 });

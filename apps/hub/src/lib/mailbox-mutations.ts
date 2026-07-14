@@ -20,6 +20,17 @@ function scopedInbound(
   );
 }
 
+function scopedActiveInbound(
+  scope: MailboxMutationScope,
+  extra: Parameters<typeof and>[0][] = [],
+) {
+  return scopedInbound(scope, [
+    isNull(principalMailbox.archivedAt),
+    isNull(principalMailbox.trashedAt),
+    ...extra,
+  ]);
+}
+
 export async function markMailboxMessageUnread(
   db: HubDb,
   scope: MailboxMutationScope & { id: string },
@@ -27,7 +38,7 @@ export async function markMailboxMessageUnread(
   const updated = await db
     .update(principalMailbox)
     .set({ readAt: null })
-    .where(scopedInbound(scope, [eq(principalMailbox.id, scope.id)]))
+    .where(scopedActiveInbound(scope, [eq(principalMailbox.id, scope.id)]))
     .returning({ id: principalMailbox.id });
   return updated.length > 0;
 }
@@ -118,7 +129,9 @@ export async function applyMailboxBulkAction(
       const updated = await db
         .update(principalMailbox)
         .set({ readAt: null })
-        .where(baseWhere)
+        .where(
+          scopedActiveInbound(scope, [inArray(principalMailbox.id, ids)]),
+        )
         .returning({ id: principalMailbox.id });
       return updated.map((row) => row.id);
     }

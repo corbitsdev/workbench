@@ -1,6 +1,6 @@
 -- CL-3514: inbox folder markers on durable principal_mailbox rows.
 -- archived_at and trashed_at are mutually used views: trash wins when set;
--- default inbox lists exclude trashed rows; unread counts exclude trashed rows.
+-- default inbox lists exclude trashed rows; unread counts exclude archived and trashed rows.
 
 ALTER TABLE "principal_mailbox"
   ADD COLUMN IF NOT EXISTS "archived_at" timestamptz;
