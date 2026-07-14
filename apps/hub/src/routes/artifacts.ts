@@ -1094,6 +1094,30 @@ export function createArtifactsRouter(
       return c.body(bytes.buffer as ArrayBuffer);
     }
 
+    // File artifacts created by the parse-file route (chat uploads) carry
+    // their bytes as a data: URL in `content` with no upload-table row. Serve
+    // them under the same disposition rules as upload-backed files so a
+    // persisted attachment chip stays downloadable after reload (CL-3671).
+    if (art.kind === "file") {
+      const dataUrl = /^data:([^;,]+);base64,(.*)$/s.exec(art.content);
+      if (dataUrl) {
+        const mimeType = dataUrl[1]!;
+        const bytes = new Uint8Array(Buffer.from(dataUrl[2]!, "base64"));
+        c.header("Content-Type", mimeType);
+        c.header("X-Content-Type-Options", "nosniff");
+        const wantsInline = c.req.query("inline") === "1";
+        const disposition =
+          wantsInline && mimeType === "application/pdf"
+            ? "inline"
+            : "attachment";
+        c.header(
+          "Content-Disposition",
+          `${disposition}; filename="${uploadDownloadFilename(art.title)}"`,
+        );
+        return c.body(bytes.buffer as ArrayBuffer);
+      }
+    }
+
     if (!DOWNLOADABLE_ARTIFACT_KINDS.has(art.kind)) {
       return c.json(
         { error: `Artifact kind "${art.kind}" is not downloadable` },

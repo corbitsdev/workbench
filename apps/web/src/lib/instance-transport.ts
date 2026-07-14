@@ -49,6 +49,28 @@ export async function fetchBlobObjectUrl(
   return URL.createObjectURL(blob);
 }
 
+// Authenticated binary GET for a file artifact's bytes (a chat upload diverted
+// through the parse-file route). Mirrors fetchBlobObjectUrl; the caller owns
+// (and must revoke) the returned object URL.
+export async function fetchArtifactObjectUrl(
+  artifactId: string,
+): Promise<string> {
+  const path = `/api/v1/artifacts/${artifactId}/download`;
+  const res = await fetch(toUrl(path), {
+    method: "GET",
+    credentials: "include",
+  });
+  if (!res.ok) {
+    throw new ApiError(
+      res.status,
+      "artifact_fetch_failed",
+      `HTTP ${res.status}`,
+    );
+  }
+  const blob = await res.blob();
+  return URL.createObjectURL(blob);
+}
+
 export function createHubTransport(transportOpts?: {
   onStreamError?: (error: Error) => void;
 }): Transport {

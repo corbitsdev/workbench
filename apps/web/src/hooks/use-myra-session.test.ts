@@ -97,6 +97,8 @@ mock.module("../lib/hub-api", () => ({
   getOutputFeedback: () => Promise.resolve([]),
   saveOutputFeedback: () => Promise.resolve(),
   upsertRating: (prev: unknown) => prev ?? [],
+  getMailAttachmentRefs: () => Promise.resolve([]),
+  saveMailAttachmentRefs: () => Promise.resolve(),
 }));
 
 let capturedOnStreamError: ((err: Error) => void) | null = null;
@@ -119,6 +121,8 @@ mock.module("../lib/instance-transport", () => ({
   },
   fetchBlobObjectUrl: (_tenantId: string, _blobId: string) =>
     Promise.resolve("blob:test"),
+  fetchArtifactObjectUrl: (_artifactId: string) =>
+    Promise.resolve("blob:artifact-test"),
 }));
 
 const trackerStops = {

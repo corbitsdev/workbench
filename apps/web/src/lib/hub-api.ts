@@ -48,6 +48,8 @@ import {
   type MemberConnections,
   ConnectionAuthorizeResponse,
   type ConnectionAuthorize,
+  MailAttachmentRefsResponse,
+  type MailAttachmentRef,
 } from "@workbench/shared";
 
 // Fetch helper for hub-api routes mounted at /api/ (not /api/v1/).
@@ -920,6 +922,36 @@ export async function getOutputFeedback(
     throw new Error(`Malformed feedback response: ${parsed.summary}`);
   }
   return parsed.ratings;
+}
+
+export async function getMailAttachmentRefs(
+  instanceId: string,
+): Promise<MailAttachmentRef[]> {
+  const res = await hubFetch<unknown>(
+    "GET",
+    `v1/instances/${instanceId}/mail-attachments`,
+  );
+  const parsed = MailAttachmentRefsResponse(res);
+  if (parsed instanceof type.errors) {
+    throw new Error(`Malformed mail attachments response: ${parsed.summary}`);
+  }
+  return parsed.refs;
+}
+
+export async function saveMailAttachmentRefs(
+  instanceId: string,
+  mailId: string,
+  attachments: readonly {
+    artifactId: string;
+    name: string;
+    type: string;
+    size: number;
+  }[],
+): Promise<void> {
+  await hubFetch<void>("POST", `v1/instances/${instanceId}/mail-attachments`, {
+    mailId,
+    attachments,
+  });
 }
 
 export async function saveOutputFeedback(

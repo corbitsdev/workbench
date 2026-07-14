@@ -650,6 +650,36 @@ export const outputFeedback = pgTable(
 
 export type OutputFeedbackRow = typeof outputFeedback.$inferSelect;
 
+// Chat uploads are diverted through the parse-file route (file artifact +
+// parsed text folded into the message), so the mail record carries no
+// attachment. These references key the artifact back to its mail id BY VALUE
+// so the transcript chip survives reload (CL-3671). No FK into interchange.
+export const mailAttachmentRef = pgTable(
+  "mail_attachment_ref",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: text("tenant_id").notNull(),
+    principalId: text("principal_id").notNull(),
+    instanceId: text("instance_id").notNull(),
+    mailId: text("mail_id").notNull(),
+    artifactId: text("artifact_id").notNull(),
+    name: text("name").notNull(),
+    mimeType: text("mime_type").notNull(),
+    size: integer("size").notNull(),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (t) => ({
+    mailAttachmentRefMailArtifactUniq: unique(
+      "mail_attachment_ref_mail_artifact_uniq",
+    ).on(t.mailId, t.artifactId),
+    mailAttachmentRefInstanceIdx: index("mail_attachment_ref_instance_idx").on(
+      t.instanceId,
+    ),
+  }),
+);
+
+export type MailAttachmentRefRow = typeof mailAttachmentRef.$inferSelect;
+
 // ─── Admin audit (CL-2735) ─────────────────────────────────────────
 //
 // Compliance record of cross-principal activity reads and admin grant/role

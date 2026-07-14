@@ -36,11 +36,14 @@ mock.module("../lib/hub-api", () => ({
   getOutputFeedback: () => Promise.resolve([]),
   saveOutputFeedback: () => Promise.resolve(),
   upsertRating: (prev: unknown) => prev ?? [],
+  getMailAttachmentRefs: () => Promise.resolve([]),
+  saveMailAttachmentRefs: () => Promise.resolve(),
 }));
 
 mock.module("../lib/instance-transport", () => ({
   createHubTransport: () => ({}),
   fetchBlobObjectUrl: () => Promise.resolve("blob:test"),
+  fetchArtifactObjectUrl: () => Promise.resolve("blob:artifact-test"),
 }));
 
 mock.module("@workbench/agents/browser", () => ({

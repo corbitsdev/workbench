@@ -142,4 +142,63 @@ describe("GET /artifacts/:id/download", () => {
     const res = await app.request("/artifacts/art-1/download");
     expect(res.status).toBe(403);
   });
+
+  // Chat-upload artifacts (POST /instances/:id/parse-file) carry their bytes
+  // as a data: URL in `content` with no upload-table row — the download route
+  // must decode and serve them so persisted attachment chips stay downloadable
+  // after reload.
+  describe("data-URL file artifacts (chat uploads)", () => {
+    const PAYLOAD = Buffer.from("hello-doc");
+    const DATA_URL_ROW = {
+      ...ARTIFACT_ROW,
+      kind: "file",
+      title: "notes.pdf",
+      content: `data:application/pdf;base64,${PAYLOAD.toString("base64")}`,
+      source: {
+        origin: "imported",
+        upload: { filename: "notes.pdf", mimeType: "application/pdf" },
+      },
+    };
+
+    it("serves the decoded bytes with the stored mime type", async () => {
+      const app = appWith(makeDb({ artifact: DATA_URL_ROW }));
+      const res = await app.request("/artifacts/art-1/download");
+      expect(res.status).toBe(200);
+      expect(res.headers.get("Content-Type")).toBe("application/pdf");
+      expect(res.headers.get("X-Content-Type-Options")).toBe("nosniff");
+      expect(res.headers.get("Content-Disposition")).toContain("attachment");
+      expect(Buffer.from(await res.arrayBuffer())).toEqual(PAYLOAD);
+    });
+
+    it("serves inline disposition for a PDF with ?inline=1", async () => {
+      const app = appWith(makeDb({ artifact: DATA_URL_ROW }));
+      const res = await app.request("/artifacts/art-1/download?inline=1");
+      expect(res.headers.get("Content-Disposition")).toContain("inline");
+    });
+
+    it("stays attachment for a non-PDF data URL even with ?inline=1", async () => {
+      const app = appWith(
+        makeDb({
+          artifact: {
+            ...DATA_URL_ROW,
+            title: "pic.png",
+            content: `data:image/png;base64,${PAYLOAD.toString("base64")}`,
+          },
+        }),
+      );
+      const res = await app.request("/artifacts/art-1/download?inline=1");
+      expect(res.headers.get("Content-Disposition")).toContain("attachment");
+      expect(res.headers.get("Content-Type")).toBe("image/png");
+    });
+
+    it("still 400s for a file artifact whose content is not a data URL", async () => {
+      const app = appWith(
+        makeDb({
+          artifact: { ...DATA_URL_ROW, content: "not-a-data-url" },
+        }),
+      );
+      const res = await app.request("/artifacts/art-1/download");
+      expect(res.status).toBe(400);
+    });
+  });
 });

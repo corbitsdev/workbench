@@ -146,6 +146,7 @@ import {
 } from "./services/mailbox-triage";
 import { createArtifactsRouter } from "./routes/artifacts";
 import { createFileParseRouter } from "./routes/file-parse";
+import { createMailAttachmentsRouter } from "./routes/mail-attachments";
 import { createSearchRouter } from "./routes/search";
 import { createActorSearchRouter } from "./routes/actor-search";
 import { createActorDetailRouter } from "./routes/actor-detail";
@@ -1328,6 +1329,7 @@ v1.route("/", createMembersRouter(db));
 v1.route("/", createMyraThreadsRouter(db, sessionService, analyticsSubscriber));
 v1.route("/", createArtifactsRouter(db, grantStore));
 v1.route("/", createFileParseRouter(db));
+v1.route("/", createMailAttachmentsRouter(db));
 v1.route("/", createGammaTemplatesRouter(db));
 v1.route("/", createApprovalsRouter(db, approvalsEventBus));
 v1.route("/", createFeedbackRouter(db));

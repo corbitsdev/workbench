@@ -31,8 +31,10 @@ import type {
 import {
   abortInstanceTurn,
   ensureMeSynced,
+  getMailAttachmentRefs,
   getOutputFeedback,
   launchInstanceSession,
+  saveMailAttachmentRefs,
   type LaunchInstanceSessionOptions,
   saveOutputFeedback,
   upsertRating,
@@ -40,8 +42,16 @@ import {
 import type { FeedbackSubjectKind, SavedRating } from "../lib/hub-api";
 import {
   createHubTransport,
+  fetchArtifactObjectUrl,
   fetchBlobObjectUrl,
 } from "../lib/instance-transport";
+import {
+  buildAttachmentRefMap,
+  isMailBlobId,
+  mergeAttachmentRefs,
+  upsertMailAttachmentRefs,
+  type MailAttachmentRef,
+} from "./mail-attachment-refs";
 import { classifyLaunchState } from "../components/agent-launch-helpers";
 import { useReportConnectionStatus } from "./use-report-connection-status";
 
@@ -491,15 +501,12 @@ export function useMyraSession(
     [],
   );
 
-  // Optimistic document chips keyed by the mail id they were sent with. The
-  // document itself is diverted through the parse route (never sent inline), so
-  // the transcript bubble carries no attachment — we merge the chip onto the
-  // bubble that renders from this mail. `docChipUrlsRef` holds an object URL
-  // built from the original File so the chip's download works with no server
-  // round-trip. Both are cleared and revoked on session teardown.
-  const [docChips, setDocChips] = useState<
-    ReadonlyMap<string, ChatAttachment[]>
-  >(new Map());
+  // Attachment chips render from persisted mail-attachment references (the
+  // query below), for live sends and reloads alike — a just-sent chip is
+  // upserted into the query cache so both paths render identically.
+  // `docChipUrlsRef` holds an object URL built from the original File at send
+  // time so a fresh chip's download needs no server round-trip; it is cleared
+  // and revoked on session teardown (reloads resolve via the artifact route).
   const docChipUrlsRef = useRef<Map<string, string>>(new Map());
 
   useEffect(() => {
@@ -742,7 +749,6 @@ export function useMyraSession(
       for (const url of chipUrls.values()) {
         URL.revokeObjectURL(url);
       }
-      setDocChips(new Map());
     };
   }, [attempt, instanceId, tenantId, enabled]);
 
@@ -764,6 +770,20 @@ export function useMyraSession(
         ]),
       ),
     [ratingsData],
+  );
+
+  // Persisted attachment references for this instance's mails. A just-sent
+  // chip is upserted into this cache by sendWithAttachments, so live and
+  // reloaded transcripts render from the same source.
+  const { data: attachmentRefs } = useQuery({
+    queryKey: ["mail-attachments", resolvedInstanceId],
+    queryFn: () => getMailAttachmentRefs(resolvedInstanceId as string),
+    enabled: resolvedInstanceId !== null,
+    staleTime: 5 * 60_000,
+  });
+  const attachmentRefMap = useMemo(
+    () => buildAttachmentRefMap(attachmentRefs ?? []),
+    [attachmentRefs],
   );
 
   const { mutateAsync: rateMutateAsync } = useMutation({
@@ -853,20 +873,14 @@ export function useMyraSession(
       ? lastMessagesRef.current
       : composed;
 
-  // Merge optimistic document chips onto the bubble that renders from the mail
-  // they were sent with, so the user sees the document they attached even though
-  // it was diverted through the parse route rather than sent as a mail blob.
-  const mergedMessages: ChatMessage[] =
-    docChips.size === 0
-      ? baseMessages
-      : baseMessages.map((m) => {
-          const chips = docChips.get(m.id);
-          if (chips === undefined) return m;
-          return {
-            ...m,
-            attachments: [...(m.attachments ?? []), ...chips],
-          };
-        });
+  // Merge persisted attachment references onto the bubble that renders from
+  // the mail they were sent with, so the user sees the document they attached
+  // even though it was diverted through the parse route rather than sent as a
+  // mail blob — and still sees it after a reload (CL-3671).
+  const mergedMessages: ChatMessage[] = mergeAttachmentRefs(
+    baseMessages,
+    attachmentRefMap,
+  );
 
   // Optimistic bubbles for sends queued while disconnected; removed as each
   // flushes and the real mail event renders in its place (CL-3280).
@@ -972,7 +986,36 @@ export function useMyraSession(
         launchOptionsRef.current,
       );
       if (chips.length > 0 && mailId !== null) {
-        setDocChips((prev) => new Map(prev).set(mailId, chips));
+        const refs: MailAttachmentRef[] = chips.map((c) => ({
+          mailId,
+          artifactId: c.blobId,
+          name: c.name,
+          type: c.type,
+          size: c.size,
+        }));
+        // Seed the cache first so the chip renders immediately, then persist.
+        // The message itself was already delivered, so a failed persist must
+        // not fail the send — the chip stays for this session and is simply
+        // absent after reload.
+        queryClient.setQueryData<MailAttachmentRef[]>(
+          ["mail-attachments", iid],
+          (prev) => upsertMailAttachmentRefs(prev, refs),
+        );
+        try {
+          await saveMailAttachmentRefs(
+            iid,
+            mailId,
+            chips.map((c) => ({
+              artifactId: c.blobId,
+              name: c.name,
+              type: c.type,
+              size: c.size,
+            })),
+          );
+        } catch {
+          // Persistence failure only: the optimistic cache entry above keeps
+          // the chip visible for this session.
+        }
       } else {
         releaseChipUrls();
       }
@@ -1072,7 +1115,13 @@ export function useMyraSession(
       const cache = attachmentUrlsRef.current;
       const existing = cache.get(blobId);
       if (existing !== undefined) return existing;
-      const pending = fetchBlobObjectUrl(tenantId, blobId).catch((err) => {
+      // Interchange MIME-part blob ids resolve via the mail-blob route;
+      // anything else is a parse-file artifact id and resolves via the
+      // workbench artifact download route (persisted chips after reload).
+      const fetchUrl = isMailBlobId(blobId)
+        ? fetchBlobObjectUrl(tenantId, blobId)
+        : fetchArtifactObjectUrl(blobId);
+      const pending = fetchUrl.catch((err) => {
         // A failed fetch must not poison the cache — drop it so a retry can
         // refetch, and rethrow so the tile falls back.
         cache.delete(blobId);

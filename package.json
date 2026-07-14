@@ -1,6 +1,6 @@
 {
+  "version": "0.6.104",
   "name": "gtm-workbench",
-  "version": "0.6.103",
   "private": true,
   "workspaces": [
     "apps/*",
