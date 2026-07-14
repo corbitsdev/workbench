@@ -303,6 +303,16 @@ describe("ReviewGate — humanized context", () => {
     );
     expect(container.textContent).not.toContain("Working on");
   });
+
+  it("shows a friendly tool caption instead of a semi-raw tool resource id", async () => {
+    const { container } = renderGate();
+    await waitFor(() => {
+      screen.getByTestId(`approval-${withContext.id}`);
+    });
+    expect(container.textContent).not.toContain("tool:notion__create_page");
+    expect(container.textContent).not.toContain("notion · create_page");
+    screen.getByText("Creating a Notion page");
+  });
 });
 
 describe("ReviewGate — tool:mail_send headline", () => {
@@ -339,6 +349,15 @@ describe("ReviewGate — tool:mail_send headline", () => {
     });
     screen.getByText("Send mail to Ada Lovelace");
     expect(container.textContent).not.toContain("usr_ada@example.com");
+  });
+
+  it("omits a secondary resource caption for mail send approvals", async () => {
+    const { container } = renderGate();
+    await waitFor(() => {
+      screen.getByTestId(`approval-${mailSend.id}`);
+    });
+    expect(container.textContent).not.toContain("tool:mail_send");
+    expect(container.textContent).not.toContain("mail · send");
   });
 });
 

@@ -73,12 +73,23 @@ function headlineFor(
   );
 }
 
-function resourceCaption(resource: string): string | null {
-  if (resource === "tool:mail_send") return null;
-  if (resource.startsWith("tool:")) {
-    return resource.replace(/^tool:/u, "").replace(/__/gu, " · ");
+/**
+ * Secondary label under the headline. Recognized tools use the catalog phrase
+ * with no argument interpolation (same idle frame as chat `formatToolName`).
+ * Unknown tools omit the line so we never show a soft "Working on …" caption
+ * under a backend action headline. Mail send omits the line too.
+ */
+function resourceCaption(approval: Approval): string | null {
+  if (isMailSendApproval(approval.resource)) return null;
+  if (approval.resource.startsWith("tool:")) {
+    const call = approvalToToolCall(approval);
+    return friendlyToolSummaryKnown({
+      id: call.id,
+      name: call.name,
+      arguments: {},
+    });
   }
-  return resource;
+  return approval.resource;
 }
 
 function humanizeKey(key: string): string {
@@ -349,7 +360,12 @@ export function ReviewGate({
             approval.context !== null && mailSend === null
               ? Object.entries(approval.context)
               : [];
-          const resourceLine = resourceCaption(approval.resource);
+          const resourceLine = (() => {
+            const caption = resourceCaption(approval);
+            if (caption === null) return null;
+            if (caption === headline) return null;
+            return caption;
+          })();
 
           const restOpacity = isPending ? 1 : 0.5;
 
