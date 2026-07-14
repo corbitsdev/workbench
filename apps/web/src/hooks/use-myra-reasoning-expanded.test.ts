@@ -54,4 +54,39 @@ describe("useMyraReasoningExpanded", () => {
     expect(readReasoningExpanded("mail-9")).toBe(true);
     expect(readReasoningExpanded(STREAMING_BUBBLE_ID)).toBe(false);
   });
+
+  it("reconciles expand saved under mail id after reload pins feedbackId to turn id", () => {
+    writeReasoningExpanded("mail-a", true);
+    const afterReload = [
+      agent("mail-a", { feedbackId: "turn-t", reasoning: "Because" }),
+    ];
+    const { result } = renderHook(() => useMyraReasoningExpanded(afterReload));
+    expect(readReasoningExpanded("turn-t")).toBe(true);
+    expect(readReasoningExpanded("mail-a")).toBe(false);
+    expect(result.current.isReasoningExpanded("turn-t")).toBe(true);
+  });
+
+  it("migrates expand when the assistant slot id changes turn → mail live", () => {
+    writeReasoningExpanded("turn-t", true);
+    const { rerender, result } = renderHook(
+      ({ msgs }: { msgs: ChatMessage[] }) => useMyraReasoningExpanded(msgs),
+      { initialProps: { msgs: [agent("turn-t")] } },
+    );
+    rerender({
+      msgs: [agent("mail-a", { feedbackId: "turn-t", reasoning: "Because" })],
+    });
+    expect(readReasoningExpanded("turn-t")).toBe(true);
+    expect(result.current.isReasoningExpanded("turn-t")).toBe(true);
+  });
+
+  it("migrates expand when the slot settles to mail id before feedbackId exists", () => {
+    writeReasoningExpanded("turn-t", true);
+    const { rerender, result } = renderHook(
+      ({ msgs }: { msgs: ChatMessage[] }) => useMyraReasoningExpanded(msgs),
+      { initialProps: { msgs: [agent("turn-t")] } },
+    );
+    rerender({ msgs: [agent("mail-a")] });
+    expect(readReasoningExpanded("mail-a")).toBe(true);
+    expect(result.current.isReasoningExpanded("mail-a")).toBe(true);
+  });
 });
