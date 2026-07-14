@@ -6,7 +6,10 @@ export type ArtifactCardPreviewProps = {
   excerpt?: string | undefined;
 };
 
-function previewFillProps(fill: string, excerpt?: string | undefined): { fill: string; excerpt?: string } {
+function previewFillProps(
+  fill: string,
+  excerpt?: string | undefined,
+): { fill: string; excerpt?: string } {
   if (excerpt === undefined) return { fill };
   return { fill, excerpt };
 }

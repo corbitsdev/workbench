@@ -8,17 +8,6 @@ import {
   visualForKind,
 } from "@workbench/artifact";
 import type { ArtifactStatus } from "@workbench/shared";
-
-function artifactStatusLabel(status: ArtifactStatus): string {
-  switch (status) {
-    case "approved":
-      return "Approved";
-    case "rejected":
-      return "Rejected";
-    default:
-      return "Draft";
-  }
-}
 import { useArchiveArtifact, useArtifact } from "@workbench/client/react";
 
 import { getMe } from "../lib/hub-api";
@@ -30,6 +19,17 @@ import { useActiveWorkbench } from "../lib/active-workbench-context";
 import { useChatLauncher } from "../lib/chat-launcher-context";
 import { buildArtifactMessage } from "../lib/artifact-chat-message";
 import { usePublishActiveContext } from "../lib/active-context-store";
+
+function artifactStatusLabel(status: ArtifactStatus): string {
+  switch (status) {
+    case "approved":
+      return "Approved";
+    case "rejected":
+      return "Rejected";
+    default:
+      return "Draft";
+  }
+}
 
 function CenteredNotice({ children }: { children: React.ReactNode }) {
   return (
