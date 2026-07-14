@@ -65,7 +65,7 @@ describe("ArtifactCard", () => {
     expect(chip.className).toContain("truncate");
   });
 
-  it("renders solid fill hero and footer status on default gallery cards", () => {
+  it("renders footer status and a real excerpt preview on default gallery cards", () => {
     const { container } = render(
       React.createElement(ArtifactCard, { artifact, index: 1 }),
     );
@@ -73,11 +73,11 @@ describe("ArtifactCard", () => {
     expect(card.getAttribute("data-preview-family")).toBe("email");
     expect(screen.getByText("Draft")).toBeDefined();
     expect(card.querySelector("pre")).toBeNull();
-    expect(screen.queryByText("Quick follow-up on our call")).toBeNull();
+    expect(screen.getByText("Quick follow-up on our call")).toBeDefined();
     expect(card.querySelector(".bg-orange")).not.toBeNull();
   });
 
-  it("renders excerpt preview when experimental cards are enabled", () => {
+  it("renders the same excerpt preview when experimental cards are enabled", () => {
     render(
       React.createElement(ArtifactCard, {
         artifact,
@@ -86,6 +86,19 @@ describe("ArtifactCard", () => {
       }),
     );
     expect(screen.getByText("Quick follow-up on our call")).toBeDefined();
+  });
+
+  it("renders the kind-appropriate preview shell without an excerpt when none is provided", () => {
+    const { container } = render(
+      React.createElement(ArtifactCard, {
+        artifact: { ...artifact, previewExcerpt: undefined },
+        index: 1,
+      }),
+    );
+    const preview = container.querySelector('[class*="min-h-[120px]"]');
+    expect(screen.queryByText("Quick follow-up on our call")).toBeNull();
+    expect(screen.getByText("Email body preview")).toBeDefined();
+    expect(preview?.querySelector("svg")).toBeNull();
   });
 
   it("uses charcoal index badge on cream fills for contrast", () => {
