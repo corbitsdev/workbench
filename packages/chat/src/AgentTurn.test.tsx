@@ -10,7 +10,6 @@ import {
 import React from "react";
 
 import { AgentTurn } from "./AgentTurn";
-import { MYRA_AGED_HISTORY_MS } from "./aged-history";
 import { type ChatMessage } from "./types";
 
 afterEach(() => {
@@ -28,7 +27,7 @@ function agentMessage(extra?: Partial<ChatMessage>): ChatMessage {
 }
 
 describe("AgentTurn", () => {
-  it("renders the process trace (reasoning, then tools) before the answer", () => {
+  it("gathers reasoning and tools into one activity block above the answer", () => {
     const message = agentMessage({
       reasoning: "I weighed the options",
       toolCalls: [
@@ -46,18 +45,21 @@ describe("AgentTurn", () => {
         formatToolSummary={() => "Searching Attio"}
       />,
     );
-    fireEvent.click(screen.getByRole("button", { name: "Expand reasoning" }));
+    // A single activity block wraps the whole trace.
+    expect(screen.getAllByTestId("activity-block")).toHaveLength(1);
+    fireEvent.click(screen.getByRole("button", { name: "Show activity" }));
     const text = container.textContent ?? "";
-    const reasoningAt = text.indexOf("Reasoning");
-    const toolAt = text.indexOf("Searching Attio");
+    const blockAt = text.indexOf("Searching Attio");
     const answerAt = text.indexOf("Final answer");
-    expect(reasoningAt).toBeGreaterThanOrEqual(0);
-    expect(toolAt).toBeGreaterThan(reasoningAt);
-    expect(answerAt).toBeGreaterThan(toolAt);
     expect(text.indexOf("I weighed the options")).toBeGreaterThanOrEqual(0);
+    expect(blockAt).toBeGreaterThanOrEqual(0);
+    // The answer follows the activity block.
+    expect(answerAt).toBeGreaterThan(
+      text.indexOf("I weighed the options"),
+    );
   });
 
-  it("keeps reasoning collapsed by default while streaming", () => {
+  it("keeps the activity block collapsed by default while streaming", () => {
     render(
       <AgentTurn
         message={agentMessage({
@@ -67,11 +69,11 @@ describe("AgentTurn", () => {
         })}
       />,
     );
-    expect(screen.queryByText("Working through it")).toBeNull();
+    expect(screen.queryByTestId("activity-reasoning")).toBeNull();
     expect(
-      screen.getByRole("button", { name: "Expand reasoning" }).getAttribute(
-        "aria-expanded",
-      ),
+      screen
+        .getByRole("button", { name: "Show activity" })
+        .getAttribute("aria-expanded"),
     ).toBe("false");
   });
 
@@ -92,12 +94,14 @@ describe("AgentTurn", () => {
         }}
       />,
     );
-    fireEvent.click(screen.getByRole("button", { name: "Expand reasoning" }));
+    fireEvent.click(screen.getByRole("button", { name: "Show activity" }));
     expect(prefs.get("m1")).toBe(true);
-    expect(screen.getByText("Working through it")).toBeDefined();
+    expect(screen.getByTestId("activity-reasoning").textContent).toContain(
+      "Working through it",
+    );
   });
 
-  it("renders feedback once, after the tool narrative, keyed on feedbackId", async () => {
+  it("renders feedback once, after the activity block, keyed on feedbackId", async () => {
     const onRate = mock(() => Promise.resolve());
     const message = agentMessage({
       feedbackId: "t1",
@@ -122,14 +126,14 @@ describe("AgentTurn", () => {
     expect(screen.getAllByRole("button", { name: "Thumbs up" })).toHaveLength(
       1,
     );
-    // Feedback footer comes after the narrative content in DOM order.
-    const narrative = container.querySelector('[data-testid="tool-narrative"]');
+    // Feedback footer comes after the activity block in DOM order.
+    const block = container.querySelector('[data-testid="activity-block"]');
     const feedback = screen
       .getByRole("button", { name: "Thumbs up" })
       .closest("div");
-    expect(narrative).not.toBeNull();
+    expect(block).not.toBeNull();
     expect(
-      narrative!.compareDocumentPosition(feedback!) &
+      block!.compareDocumentPosition(feedback!) &
         Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Thumbs down" }));
@@ -156,30 +160,13 @@ describe("AgentTurn", () => {
     expect(getRating).toHaveBeenCalledWith("t1", "turn_part");
   });
 
-  it("applies shared trace stack rhythm without extra left padding", () => {
-    const message = agentMessage({
-      reasoning: "Thinking",
-      toolCalls: [
-        { id: "c1", name: "search", result: "ok", isError: false },
-      ],
-    });
-    const { getByTestId } = render(
-      <AgentTurn message={message} formatToolSummary={() => "Searching"} />,
-    );
-    const trace = getByTestId("agent-trace");
-    expect(trace.className).toContain("gap-3.5");
-    expect(trace.className).not.toContain("pl-1");
-  });
-
   it("renders the sender label exactly once", () => {
     render(<AgentTurn message={agentMessage({ senderLabel: "Oat" })} />);
     expect(screen.getAllByText("From: Oat")).toHaveLength(1);
   });
 
-  it("forces compact tool roll-up on aged turns even when compact pref is off", () => {
-    const agedAt = new Date(Date.now() - MYRA_AGED_HISTORY_MS - 60_000).toISOString();
+  it("rolls a settled turn's tools into the collapsed block summary", () => {
     const message = agentMessage({
-      createdAt: agedAt,
       toolCalls: [
         { id: "c1", name: "a", result: "1", isError: false },
         { id: "c2", name: "b", result: "2", isError: false },
@@ -189,12 +176,17 @@ describe("AgentTurn", () => {
     render(
       <AgentTurn
         message={message}
-        compactToolActivity={false}
         summarizeToolCalls={() => "Did three things"}
         formatToolSummary={() => "Tool"}
       />,
     );
-    expect(screen.getByTestId("tool-group-summary")).toBeDefined();
+    // The roll-up is the collapsed block summary; tool rows stay hidden until expanded.
+    expect(screen.getByTestId("activity-summary").textContent).toBe(
+      "Did three things",
+    );
+    expect(screen.getByTestId("activity-count").textContent).toContain(
+      "3 tools",
+    );
     expect(screen.queryByTestId("tool-row-summary")).toBeNull();
   });
 
