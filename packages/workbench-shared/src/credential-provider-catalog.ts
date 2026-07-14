@@ -17,6 +17,14 @@ export interface CredentialProviderCatalogEntry {
     defaultEnabled?: boolean;
     tool?: string;
   };
+  /** Inbox-specific copy for the member Settings → Inbox surface (CL-3577).
+   * Falls back to `briefSource.description` when absent — most sources read
+   * fine with brief-oriented copy, but a source whose inbox behavior reads
+   * differently from its brief behavior (e.g. "syncs into your tasks" vs
+   * "in your next brief") should set this explicitly. */
+  inboxSource?: {
+    description: string;
+  };
 }
 
 export const BIFROST_PROVIDER_NAME = "corbits-default-bifrost" as const;
@@ -108,14 +116,20 @@ const TOOL_OAUTH_APP_CREDENTIAL_ENTRIES: CredentialProviderCatalogEntry[] = [
 /** Owner UI fields not yet modeled on per-package tool manifests. */
 const TOOL_CREDENTIAL_SUPPLEMENTS: Record<
   string,
-  Pick<CredentialProviderCatalogEntry, "defaultMetadata" | "briefSource">
+  Pick<
+    CredentialProviderCatalogEntry,
+    "defaultMetadata" | "briefSource" | "inboxSource"
+  >
 > = {
   granola: {
     defaultMetadata: { baseURL: "https://public-api.granola.ai/v1" },
     briefSource: {
       description: "Call notes from meetings since your last brief.",
-      defaultEnabled: true,
       tool: "granola_list_notes",
+    },
+    inboxSource: {
+      description:
+        "New Granola calls are classified and summarized; participants get the summary and their action items by mail.",
     },
   },
   firecrawl: {
@@ -127,12 +141,19 @@ const TOOL_CREDENTIAL_SUPPLEMENTS: Record<
       description: "Issues updated since your last brief.",
       tool: "linear_list_issues",
     },
+    inboxSource: {
+      description: "New Linear activity assigned to you lands in your inbox.",
+    },
   },
   attio: {
     defaultMetadata: { baseURL: "https://api.attio.com" },
     briefSource: {
       description: "New CRM records and open tasks since your last brief.",
       tool: "attio_recent_activity",
+    },
+    inboxSource: {
+      description:
+        "Your Attio tasks sync into Workbench tasks — created, updated, and completed in step.",
     },
   },
   vercel: {
@@ -147,6 +168,9 @@ const TOOL_CREDENTIAL_SUPPLEMENTS: Record<
   },
   slack: {
     defaultMetadata: { baseURL: "https://slack.com/api" },
+    inboxSource: {
+      description: "Slack mentions of you land in your inbox.",
+    },
   },
 };
 
@@ -173,6 +197,9 @@ function buildDerivedToolCredentialCatalogEntries(): CredentialProviderCatalogEn
         : {}),
       ...(supplement?.briefSource !== undefined
         ? { briefSource: supplement.briefSource }
+        : {}),
+      ...(supplement?.inboxSource !== undefined
+        ? { inboxSource: supplement.inboxSource }
         : {}),
     };
   });

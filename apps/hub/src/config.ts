@@ -436,6 +436,28 @@ export function loadConfig() {
     tasksReconciler: {
       enabled: parseBooleanEnv("TASKS_RECONCILER_ENABLED"),
     },
+    // Live per-source inbox intake (CL-3511/CL-3577). The tick runs on a 60s
+    // cadence by default; override with INBOX_INTAKE_TICK_MS (positive integer
+    // milliseconds) for slower/faster polling.
+    inboxIntake: {
+      tickIntervalMs: parsePositiveIntEnv(
+        "INBOX_INTAKE_TICK_MS",
+        60_000,
+        "milliseconds",
+      ),
+      // CL-3585: optional Linear webhook receiver. When set, the hub mounts a
+      // public POST endpoint at /webhooks/linear that verifies the
+      // `linear-signature` HMAC against this secret and lands Issue/Comment
+      // data-change events on the assignee's inbox — an additive low-latency
+      // path alongside the 60s poller. Unset ⇒ the route is not mounted.
+      linearWebhookSecret: optionalEnv("LINEAR_WEBHOOK_SECRET"),
+      // CL-3586: same additive pattern for Attio — verifies `Attio-Signature`
+      // and reuses the poller's task upsert. Unset ⇒ route not mounted.
+      attioWebhookSecret: optionalEnv("ATTIO_WEBHOOK_SECRET"),
+      // CL-3581: Slack Events API receiver. Verifies the `X-Slack-Signature`
+      // v0 HMAC against this app signing secret. Unset ⇒ route not mounted.
+      slackSigningSecret: optionalEnv("SLACK_SIGNING_SECRET"),
+    },
     // Owner-managed feature grants (scheduler/triage/tasks-reconciler) replace
     // the env-only kill switches above as the day-to-day toggle; the env vars
     // stay as an emergency global override (see feature-grants.ts). Each

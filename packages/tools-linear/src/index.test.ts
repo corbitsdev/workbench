@@ -199,6 +199,30 @@ describe("linear_list_issues handler", () => {
     });
   });
 
+  it("forwards createdAfter as an IssueFilter createdAt.gt bound for non-brief callers", async () => {
+    const fetcher = makeFetchStub({ data: { issues: { nodes: [] } } });
+    const runner = createToolRunner(
+      createLinearTools({ apiKey: "k", fetcher }),
+    );
+
+    await runner.run(
+      {
+        id: "c1",
+        name: "linear_list_issues",
+        arguments: {
+          createdAfter: "2026-07-01T00:00:00.000Z",
+        },
+      },
+      new AbortController().signal,
+    );
+
+    const body = lastBody(fetcher);
+    expect(body.variables).toEqual({
+      first: 10,
+      filter: { createdAt: { gt: "2026-07-01T00:00:00.000Z" } },
+    });
+  });
+
   it("accepts a hub-enriched heartbeat trigger payload (extra mail fields)", async () => {
     const nodes = [{ id: "uuid-1", identifier: "ENG-1" }];
     const fetcher = makeFetchStub({ data: { issues: { nodes } } });
@@ -658,6 +682,31 @@ describe("error handling", () => {
 
     expect(result.isError).toBe(true);
     expect(result.content).toContain("Linear API error: 502 Bad Gateway");
+  });
+
+  it("prefers HTTP body over statusText when both are present", async () => {
+    const fetcher: LinearFetch = mock(() =>
+      Promise.resolve(
+        new Response(JSON.stringify({ message: "upstream rate limited" }), {
+          status: 502,
+          statusText: "Bad Gateway",
+        }),
+      ),
+    );
+    const runner = createToolRunner(
+      createLinearTools({ apiKey: "k", fetcher }),
+    );
+
+    const result = await runner.run(
+      { id: "c1", name: "linear_list_teams", arguments: {} },
+      new AbortController().signal,
+    );
+
+    expect(result.isError).toBe(true);
+    expect(result.content).toContain(
+      "Linear API error: 502 upstream rate limited",
+    );
+    expect(result.content).not.toContain("Bad Gateway");
   });
 
   it("errors when the response is missing data", async () => {
