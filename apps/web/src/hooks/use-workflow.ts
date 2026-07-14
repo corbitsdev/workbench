@@ -68,6 +68,13 @@ const workflowRunSchema = type({
   kind: "string",
   status: "string",
   createdAt: "string",
+  // CL-3667: the run's starter identity, so the run-history surface can show
+  // and filter by who started each run. `isSelf` and `principalId` are always
+  // present; `ownerDisplayName` is omitted when the principal has no resolvable
+  // display name.
+  "principalId?": "string",
+  "isSelf?": "boolean",
+  "ownerDisplayName?": "string",
 });
 export type WorkflowRun = typeof workflowRunSchema.infer;
 const workflowRunListSchema = workflowRunSchema.array();
@@ -92,10 +99,16 @@ export function runListIsActive(runs: readonly { status: string }[]): boolean {
 
 export function useWorkflowRuns(
   tenantId?: string | null,
-  options?: { idleRefetchInterval?: number | false },
+  options?: {
+    idleRefetchInterval?: number | false;
+    // CL-3667: `tenant` lists every run in the workbench (for the actor-filtered
+    // run history); the default `own` keeps the caller-scoped sidebar behavior.
+    scope?: "own" | "tenant";
+  },
 ) {
+  const scope = options?.scope ?? "own";
   return useQuery<WorkflowRun[]>({
-    queryKey: ["workflow-runs", tenantId ?? null],
+    queryKey: ["workflow-runs", tenantId ?? null, scope],
     refetchInterval: (query) => {
       const runs = query.state.data;
       if (runs && runListIsActive(runs)) return 5000;
@@ -104,10 +117,11 @@ export function useWorkflowRuns(
       return options?.idleRefetchInterval ?? false;
     },
     queryFn: async () => {
-      const raw = await api<unknown>(
-        "GET",
-        withTenant("/workflow-exec/records", tenantId),
-      );
+      const path =
+        scope === "tenant"
+          ? "/workflow-exec/records?scope=tenant"
+          : "/workflow-exec/records";
+      const raw = await api<unknown>("GET", withTenant(path, tenantId));
       const parsed = workflowRunListSchema(raw);
       if (parsed instanceof type.errors) {
         throw new Error(

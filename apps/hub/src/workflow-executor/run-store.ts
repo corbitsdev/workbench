@@ -578,21 +578,27 @@ export async function listRunRecords(
   tenantIds: readonly string[],
   principalId: string,
   kind?: string,
-  filters?: { originConversationId?: string },
+  filters?: { originConversationId?: string; scope?: "own" | "tenant" },
 ): Promise<
   {
     runId: string;
     kind: string;
     status: string;
+    principalId: string;
     createdAt: Date;
     originConversationId: string | null;
   }[]
 > {
   const conditions = [
     inArray(workflowRunRecord.tenantId, [...tenantIds]),
-    eq(workflowRunRecord.principalId, principalId),
     isNull(workflowRunRecord.deletedAt),
   ];
+  // CL-3667: the run-history surface (Insights) lists every run in the workbench
+  // so it can be filtered by who started it; the default (sidebar / chat dock)
+  // stays scoped to the caller's own runs.
+  if (filters?.scope !== "tenant") {
+    conditions.push(eq(workflowRunRecord.principalId, principalId));
+  }
   if (kind !== undefined) conditions.push(eq(workflowRunRecord.kind, kind));
   if (filters?.originConversationId !== undefined) {
     conditions.push(
@@ -604,6 +610,7 @@ export async function listRunRecords(
       runId: workflowRunRecord.id,
       kind: workflowRunRecord.kind,
       status: workflowRunRecord.status,
+      principalId: workflowRunRecord.principalId,
       createdAt: workflowRunRecord.createdAt,
       originConversationId: workflowRunRecord.originConversationId,
     })

@@ -10,9 +10,11 @@ import {
   type WorkflowRun,
 } from "../../hooks/use-workflow";
 import {
+  ALL_ACTORS,
   ALL_KINDS,
   DEFAULT_RUN_FILTERS,
   applyRunFilters,
+  distinctRunActors,
   distinctRunKinds,
   type RunFilters,
   type RunSort,
@@ -78,6 +80,11 @@ function RunRow({
   archiving: boolean;
   onArchive: () => void;
 }) {
+  // Only the run's starter can archive it (the server gates archive to the
+  // owner); hide the control on other members' runs so it never dangles into a
+  // 403 (CL-3667). `isSelf` is absent only on legacy payloads — treat that as
+  // the caller's own run to preserve the pre-tenant-scope behavior.
+  const canArchive = run.isSelf !== false;
   // Two-tap confirm mirrors the app's destructive-confirm pattern: archiving is
   // a permanent teardown, so the first click arms and the second commits.
   const [confirming, setConfirming] = useState(false);
@@ -109,45 +116,54 @@ function RunRow({
               {statusLabel(run.status)}
             </span>
           </span>
-          <span className="text-[11px] tabular-nums text-text-3">
-            {formatRunWhen(run.createdAt)}
+          <span className="flex items-center gap-1.5 text-[11px] text-text-3">
+            <span className="tabular-nums">{formatRunWhen(run.createdAt)}</span>
+            {run.ownerDisplayName !== undefined && (
+              <>
+                <span aria-hidden="true">·</span>
+                <span className="truncate">
+                  {run.isSelf ? "You" : run.ownerDisplayName}
+                </span>
+              </>
+            )}
           </span>
         </span>
       </Link>
-      {confirming ? (
-        <div className="flex shrink-0 items-center gap-1 pr-1">
+      {canArchive &&
+        (confirming ? (
+          <div className="flex shrink-0 items-center gap-1 pr-1">
+            <button
+              type="button"
+              disabled={archiving}
+              onClick={() => {
+                setConfirming(false);
+                onArchive();
+              }}
+              aria-label={`Confirm: stop and remove ${run.kind} run — frees its resources, cannot be undone`}
+              className="rounded-[7px] bg-red-500 px-2 py-1 text-[11px] font-medium text-white transition-transform hover:bg-red-600 active:scale-[0.97] disabled:opacity-50 motion-reduce:active:scale-100"
+            >
+              {archiving ? "Stopping…" : "Confirm"}
+            </button>
+            <button
+              type="button"
+              onClick={() => setConfirming(false)}
+              aria-label={`Cancel archiving ${run.kind} run`}
+              className="rounded-[7px] px-2 py-1 text-[11px] text-text-3 transition-transform hover:text-text active:scale-[0.97] motion-reduce:active:scale-100"
+            >
+              Cancel
+            </button>
+          </div>
+        ) : (
           <button
             type="button"
-            disabled={archiving}
-            onClick={() => {
-              setConfirming(false);
-              onArchive();
-            }}
-            aria-label={`Confirm: stop and remove ${run.kind} run — frees its resources, cannot be undone`}
-            className="rounded-[7px] bg-red-500 px-2 py-1 text-[11px] font-medium text-white transition-transform hover:bg-red-600 active:scale-[0.97] disabled:opacity-50 motion-reduce:active:scale-100"
+            onClick={() => setConfirming(true)}
+            title="Archive — stops the run and frees its resources (cannot be undone)"
+            aria-label={`Archive ${run.kind} run`}
+            className="shrink-0 px-2.5 text-[11px] text-text-3 opacity-100 transition-[opacity,transform] hover:text-text focus:opacity-100 active:scale-[0.97] hover-hover:opacity-0 hover-hover:focus:opacity-100 hover-hover:group-hover:opacity-100 motion-reduce:active:scale-100"
           >
-            {archiving ? "Stopping…" : "Confirm"}
+            Archive
           </button>
-          <button
-            type="button"
-            onClick={() => setConfirming(false)}
-            aria-label={`Cancel archiving ${run.kind} run`}
-            className="rounded-[7px] px-2 py-1 text-[11px] text-text-3 transition-transform hover:text-text active:scale-[0.97] motion-reduce:active:scale-100"
-          >
-            Cancel
-          </button>
-        </div>
-      ) : (
-        <button
-          type="button"
-          onClick={() => setConfirming(true)}
-          title="Archive — stops the run and frees its resources (cannot be undone)"
-          aria-label={`Archive ${run.kind} run`}
-          className="shrink-0 px-2.5 text-[11px] text-text-3 opacity-100 transition-[opacity,transform] hover:text-text focus:opacity-100 active:scale-[0.97] hover-hover:opacity-0 hover-hover:focus:opacity-100 hover-hover:group-hover:opacity-100 motion-reduce:active:scale-100"
-        >
-          Archive
-        </button>
-      )}
+        ))}
     </div>
   );
 }
@@ -169,7 +185,9 @@ export function WorkflowRunHistory() {
     isLoading,
     isError,
     refetch,
-  } = useWorkflowRuns(activeTenantId);
+    // CL-3667: the run-history surface lists every run in the workbench so it
+    // can be filtered by who started it, unlike the caller-scoped sidebar.
+  } = useWorkflowRuns(activeTenantId, { scope: "tenant" });
   const [filters, setFilters] = useState<RunFilters>(DEFAULT_RUN_FILTERS);
   const archiveRun = useArchiveWorkflowRun(activeTenantId);
 
@@ -181,10 +199,12 @@ export function WorkflowRunHistory() {
       ),
     [allRuns],
   );
+  const actorOptions = useMemo(() => distinctRunActors(allRuns), [allRuns]);
   const filtersAreDefault =
     filters.status === DEFAULT_RUN_FILTERS.status &&
     filters.kind === DEFAULT_RUN_FILTERS.kind &&
     filters.sort === DEFAULT_RUN_FILTERS.sort &&
+    filters.actor === DEFAULT_RUN_FILTERS.actor &&
     filters.search.trim() === "";
   const visibleRuns = useMemo(
     () => applyRunFilters(allRuns, filters),
@@ -244,6 +264,23 @@ export function WorkflowRunHistory() {
                   </option>
                 ))}
               </select>
+              {actorOptions.length > 1 && (
+                <select
+                  aria-label="Filter by who started the run"
+                  className={toolbarSelectClass}
+                  value={filters.actor}
+                  onChange={(e) =>
+                    setFilters((f) => ({ ...f, actor: e.target.value }))
+                  }
+                >
+                  <option value={ALL_ACTORS}>All people</option>
+                  {actorOptions.map((actor) => (
+                    <option key={actor.principalId} value={actor.principalId}>
+                      {actor.label}
+                    </option>
+                  ))}
+                </select>
+              )}
               <select
                 aria-label="Sort runs"
                 className={toolbarSelectClass}
