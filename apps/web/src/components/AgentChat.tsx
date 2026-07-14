@@ -30,6 +30,8 @@ import { useCompactToolActivity, useToolSummaryStyle } from "@workbench/ui";
 import { createArtifact } from "@workbench/client";
 import { type AgentActivity } from "@intx/hub-client";
 import { clientOptions } from "../lib/client-options";
+import { createChatToolSummaryFormatter } from "../lib/chat-tool-summary";
+import { useApprovalDisplayLookups } from "../hooks/use-approval-display-lookups";
 import { renderChatToolMarker } from "./ToolCallProviderMarker";
 import {
   abortInstanceTurn,
@@ -100,6 +102,12 @@ export function AgentChat({
   const identity: ChatAgentIdentity = { name: agentName };
   const { compact: compactToolActivity } = useCompactToolActivity();
   const { style: toolSummaryStyle } = useToolSummaryStyle();
+  const { lookups, isLoading: approvalLookupsLoading } =
+    useApprovalDisplayLookups(tenantId);
+  const formatToolSummary = useMemo(
+    () => createChatToolSummaryFormatter(lookups, approvalLookupsLoading),
+    [lookups, approvalLookupsLoading],
+  );
   const summarize = (calls: ToolCall[]) =>
     summarizeToolCalls(calls, toolSummaryStyle);
 
@@ -607,7 +615,7 @@ export function AgentChat({
         ratingsMap.get(`${subjectId}:${subjectKind}`) ?? null
       }
       resolveAttachmentUrl={resolveAttachmentUrl}
-      formatToolSummary={friendlyToolSummary}
+      formatToolSummary={formatToolSummary}
       formatToolResult={friendlyToolResult}
       formatToolName={(name) => friendlyToolSummary({ id: "", name })}
       compactToolActivity={compactToolActivity}

@@ -174,3 +174,18 @@ export function mailSendBodyText(context: MailSendContext): string | null {
   if (typeof content === "string" && content.trim() !== "") return content;
   return null;
 }
+
+/** Headline for mail_send tool rows and approval cards (chat + ReviewGate). */
+export function mailSendToolSummaryHeadline(
+  to: unknown,
+  lookups: ApprovalDisplayLookups,
+  lookupsLoading: boolean,
+): string {
+  if (typeof to === "string" && to.trim() !== "") {
+    const recipient = lookupsLoading
+      ? "Recipient"
+      : formatMailboxAddress(to, lookups);
+    return `Send mail to ${recipient}`;
+  }
+  return "Send mail";
+}

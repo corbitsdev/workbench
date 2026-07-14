@@ -12,10 +12,10 @@ import {
 import type { Approval } from "../lib/approvals-api";
 import { logger } from "../lib/logger";
 import {
-  formatMailboxAddress,
   humanizeApprovalValue,
   isMailSendApproval,
   mailSendContext,
+  mailSendToolSummaryHeadline,
 } from "../lib/approval-display";
 import { useApprovalDisplayLookups } from "../hooks/use-approval-display-lookups";
 import { MailSendApprovalDetails } from "./MailSendApprovalDetails";
@@ -61,19 +61,12 @@ function approvalToToolCall(approval: Approval): ToolCall {
  */
 function headlineFor(
   approval: Approval,
-  lookups: Parameters<typeof formatMailboxAddress>[1],
+  lookups: Parameters<typeof mailSendToolSummaryHeadline>[1],
   lookupsLoading: boolean,
 ): string {
   if (isMailSendApproval(approval.resource)) {
     const ctx = mailSendContext(approval.context);
-    const to = ctx?.to;
-    if (typeof to === "string" && to.trim() !== "") {
-      const recipient = lookupsLoading
-        ? "Recipient"
-        : formatMailboxAddress(to, lookups);
-      return `Send mail to ${recipient}`;
-    }
-    return "Send mail";
+    return mailSendToolSummaryHeadline(ctx?.to, lookups, lookupsLoading);
   }
   return (
     friendlyToolSummaryKnown(approvalToToolCall(approval)) ?? approval.action

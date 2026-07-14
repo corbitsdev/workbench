@@ -1,4 +1,10 @@
-import { useCallback, useEffect, useState, type ReactNode } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+  type ReactNode,
+} from "react";
 import { createPortal } from "react-dom";
 import { AnimatePresence, motion } from "framer-motion";
 import { Minimize2 } from "lucide-react";
@@ -33,6 +39,8 @@ import { useActiveContext } from "../lib/active-context-store";
 import { resolveResumePayload } from "../lib/resume-payload";
 import { useAttachShortcut } from "../hooks/use-attach-shortcut";
 import { useMyraReasoningExpanded } from "../hooks/use-myra-reasoning-expanded";
+import { useApprovalDisplayLookups } from "../hooks/use-approval-display-lookups";
+import { createChatToolSummaryFormatter } from "../lib/chat-tool-summary";
 import { ActiveContextPills } from "./ActiveContextPills";
 import { ReviewGate } from "./ReviewGate";
 import { renderChatToolMarker } from "./ToolCallProviderMarker";
@@ -201,6 +209,12 @@ export function MyraChatSurface({
   const { compact: compactToolActivity } = useCompactToolActivity();
   const { style: toolSummaryStyle } = useToolSummaryStyle();
   const reasoningExpandedPrefs = useMyraReasoningExpanded(session.messages);
+  const { lookups, isLoading: approvalLookupsLoading } =
+    useApprovalDisplayLookups(tenantId ?? "");
+  const formatToolSummary = useMemo(
+    () => createChatToolSummaryFormatter(lookups, approvalLookupsLoading),
+    [lookups, approvalLookupsLoading],
+  );
   const summarize = (calls: ToolCall[]) =>
     summarizeToolCalls(calls, toolSummaryStyle);
 
@@ -535,7 +549,7 @@ export function MyraChatSurface({
         ? { resolveAttachmentUrl: session.resolveAttachmentUrl }
         : {})}
       hideToolCall={hideMyraSelfManagement}
-      formatToolSummary={friendlyToolSummary}
+      formatToolSummary={formatToolSummary}
       formatToolResult={friendlyToolResult}
       formatToolName={(name) => friendlyToolSummary({ id: "", name })}
       compactToolActivity={compactToolActivity}
