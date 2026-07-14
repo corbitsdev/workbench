@@ -42,6 +42,7 @@ function TemplateForm({
   const [name, setName] = useState(initial.name);
   const [gammaId, setGammaId] = useState(initial.gammaId);
   const [description, setDescription] = useState(initial.description);
+  const [systemPrompt, setSystemPrompt] = useState(initial.systemPrompt ?? "");
   const fieldId = useId();
 
   const canSubmit =
@@ -59,6 +60,9 @@ function TemplateForm({
           name: name.trim(),
           gammaId: gammaId.trim(),
           description: description.trim(),
+          ...(systemPrompt.trim().length > 0
+            ? { systemPrompt: systemPrompt.trim() }
+            : {}),
         });
       }}
     >
@@ -105,6 +109,26 @@ function TemplateForm({
           rows={2}
           className={inputFieldClass}
         />
+      </div>
+      <div className="space-y-1">
+        <label
+          className="block text-[12px] text-text-3"
+          htmlFor={`${fieldId}-system-prompt`}
+        >
+          System prompt (optional)
+        </label>
+        <textarea
+          id={`${fieldId}-system-prompt`}
+          value={systemPrompt}
+          onChange={(e) => setSystemPrompt(e.target.value)}
+          rows={4}
+          placeholder="Extra authoring guidance applied when generating decks from this template."
+          className={inputFieldClass}
+        />
+        <p className="text-[11px] text-text-3">
+          Extra authoring guidance applied when generating decks from this
+          template.
+        </p>
       </div>
       <div className="flex items-center gap-2">
         <Button
@@ -181,6 +205,9 @@ function TemplateRow({
             name: template.name,
             gammaId: template.gammaId,
             description: template.description,
+            ...(template.systemPrompt
+              ? { systemPrompt: template.systemPrompt }
+              : {}),
           }}
           submitLabel="Save changes"
           pending={updateMutation.isPending}

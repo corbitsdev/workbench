@@ -44,21 +44,40 @@ export default function GammaPresentationBody({
   if (!isHttps) return invalid();
 
   const showPdf = hasPdf === true && artifactId !== undefined;
+  const downloadUrl = showPdf
+    ? buildApiUrl(`/artifacts/${artifactId}/download`)
+    : undefined;
 
   return (
     <div className="w-full space-y-2">
       {deck.description.length > 0 && (
         <p className="text-sm text-text-2">{deck.description}</p>
       )}
-      <PresentationBody url={deck.url} />
-      {showPdf && (
-        <div>
+      {showPdf && downloadUrl !== undefined ? (
+        <iframe
+          src={downloadUrl}
+          title="Presentation PDF"
+          className="h-[80vh] w-full rounded border border-border bg-surface"
+        />
+      ) : (
+        <PresentationBody url={deck.url} />
+      )}
+      {showPdf && downloadUrl !== undefined && (
+        <div className="flex items-center gap-3">
           <a
-            href={buildApiUrl(`/artifacts/${artifactId}/download`)}
+            href={downloadUrl}
             download
             className="inline-block rounded bg-accent px-4 py-2 text-sm font-medium text-white"
           >
             Download PDF
+          </a>
+          <a
+            href={deck.url}
+            target="_blank"
+            rel="noreferrer"
+            className="text-sm font-medium text-text-2 underline hover:text-text"
+          >
+            Open in Gamma
           </a>
         </div>
       )}

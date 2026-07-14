@@ -61,6 +61,17 @@ describe("GammaPresentationBody", () => {
     expect(link?.getAttribute("href")).toContain("/artifacts/art_9/download");
   });
 
+  it("renders the PDF inline via the download route and links back to Gamma when a PDF is present", () => {
+    const { container } = renderContent(JSON.stringify(deck), {
+      artifactId: "art_9",
+      hasPdf: true,
+    });
+    const iframe = container.querySelector("iframe");
+    expect(iframe?.getAttribute("src")).toContain("/artifacts/art_9/download");
+    const gammaLink = screen.getByText(/open in gamma/i).closest("a");
+    expect(gammaLink?.getAttribute("href")).toBe(deck.url);
+  });
+
   it("omits the PDF download when no PDF is attached", () => {
     renderContent(JSON.stringify(deck), { artifactId: "art_9", hasPdf: false });
     expect(screen.queryByText(/download pdf/i)).toBeNull();
