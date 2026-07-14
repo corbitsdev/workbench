@@ -3,6 +3,7 @@ import path from "node:path";
 import {
   readAdapterManifest,
   resolveAgentGCPolicy,
+  resolveSidecarBuildTimeoutMs,
   resolveSidecarHeartbeat,
   resolveSidecarIdleEviction,
   resolveToolPackageCache,
@@ -50,6 +51,38 @@ describe("resolveSidecarIdleEviction", () => {
   it("rejects a non-integer threshold", () => {
     expect(() =>
       resolveSidecarIdleEviction({ SIDECAR_AGENT_IDLE_EVICT_MS: "abc" }),
+    ).toThrow(/non-negative integer/);
+  });
+});
+
+describe("resolveSidecarBuildTimeoutMs", () => {
+  it("defaults to a 3-minute wedge-guard bound", () => {
+    expect(resolveSidecarBuildTimeoutMs({})).toBe(180_000);
+  });
+
+  it("honors an override", () => {
+    expect(
+      resolveSidecarBuildTimeoutMs({
+        SIDECAR_HARNESS_BUILD_TIMEOUT_MS: "30000",
+      }),
+    ).toBe(30_000);
+  });
+
+  it("treats 0 as disabling the bound", () => {
+    expect(
+      resolveSidecarBuildTimeoutMs({ SIDECAR_HARNESS_BUILD_TIMEOUT_MS: "0" }),
+    ).toBe(0);
+  });
+
+  it("rejects a negative value", () => {
+    expect(() =>
+      resolveSidecarBuildTimeoutMs({ SIDECAR_HARNESS_BUILD_TIMEOUT_MS: "-1" }),
+    ).toThrow(/non-negative integer/);
+  });
+
+  it("rejects a non-integer value", () => {
+    expect(() =>
+      resolveSidecarBuildTimeoutMs({ SIDECAR_HARNESS_BUILD_TIMEOUT_MS: "abc" }),
     ).toThrow(/non-negative integer/);
   });
 });
