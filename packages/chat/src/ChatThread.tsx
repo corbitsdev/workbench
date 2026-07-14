@@ -127,6 +127,8 @@ export interface ChatThreadProps {
   ) => 1 | -1 | null | undefined;
   /** Resolves a message attachment's blob to a displayable/downloadable URL. */
   resolveAttachmentUrl?: (blobId: string) => Promise<string>;
+  isReasoningExpanded?: (messageKey: string) => boolean;
+  setReasoningExpanded?: (messageKey: string, expanded: boolean) => void;
   className?: string;
 }
 
@@ -153,6 +155,8 @@ export function ChatThread({
   onRate,
   getRating,
   resolveAttachmentUrl,
+  isReasoningExpanded,
+  setReasoningExpanded,
   className,
 }: ChatThreadProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -230,6 +234,8 @@ export function ChatThread({
         {...(resolveAttachmentUrl !== undefined
           ? { resolveAttachmentUrl }
           : {})}
+        {...(isReasoningExpanded !== undefined ? { isReasoningExpanded } : {})}
+        {...(setReasoningExpanded !== undefined ? { setReasoningExpanded } : {})}
       />
     );
   }

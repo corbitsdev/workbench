@@ -84,6 +84,8 @@ export interface ChatPanelProps {
   isExternalTool?: ChatThreadProps["isExternalTool"];
   /** Optional provider brand mark for external tool rows. */
   renderToolMarker?: ChatThreadProps["renderToolMarker"];
+  isReasoningExpanded?: ChatThreadProps["isReasoningExpanded"];
+  setReasoningExpanded?: ChatThreadProps["setReasoningExpanded"];
   className?: string;
   notice?: React.ReactNode;
   /**
@@ -144,6 +146,8 @@ export function ChatPanel({
   isQuietTool,
   isExternalTool,
   renderToolMarker,
+  isReasoningExpanded,
+  setReasoningExpanded,
   className,
   notice,
   headerLeft,
@@ -245,6 +249,8 @@ export function ChatPanel({
         {...(isQuietTool !== undefined ? { isQuietTool } : {})}
         {...(isExternalTool !== undefined ? { isExternalTool } : {})}
         {...(renderToolMarker !== undefined ? { renderToolMarker } : {})}
+        {...(isReasoningExpanded !== undefined ? { isReasoningExpanded } : {})}
+        {...(setReasoningExpanded !== undefined ? { setReasoningExpanded } : {})}
       />
 
       {quickReplies !== undefined &&
