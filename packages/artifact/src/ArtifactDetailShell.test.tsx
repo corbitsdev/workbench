@@ -11,7 +11,7 @@ describe("ArtifactDetailShell", () => {
   it("renders hero accent, main stage, and metadata rail", () => {
     render(
       React.createElement(ArtifactDetailShell, {
-        accentClass: "bg-emerald-500",
+        accentClass: "bg-green",
         header: React.createElement("h1", null, "Title"),
         rail: React.createElement("span", null, "Meta"),
         children: React.createElement("article", null, "Body"),

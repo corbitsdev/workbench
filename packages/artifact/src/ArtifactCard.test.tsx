@@ -76,6 +76,32 @@ describe("ArtifactCard", () => {
     expect(screen.getByText("Quick follow-up on our call")).toBeDefined();
   });
 
+  it("uses charcoal index badge on cream fills for contrast", () => {
+    const { container } = render(
+      React.createElement(ArtifactCard, {
+        artifact: { ...artifact, fill: "bg-cream", kind: "report" },
+        index: 4,
+      }),
+    );
+    const badge = screen.getByText("E04");
+    expect(badge.className).toContain("text-charcoal-deep");
+    expect(badge.className).not.toContain("text-white");
+    const chipRow = container.querySelector(".absolute.inset-x-\\[10px\\]");
+    expect(chipRow?.className).toContain("flex");
+  });
+
+  it("styles approved status with workbench green tokens", () => {
+    render(
+      React.createElement(ArtifactCard, {
+        artifact: { ...artifact, status: "approved" },
+        index: 1,
+      }),
+    );
+    const approved = screen.getByText("Approved");
+    expect(approved.className).toContain("bg-green/10");
+    expect(approved.className).toContain("text-green");
+  });
+
   it("honors experimental fill and span overrides", () => {
     const { container } = render(
       React.createElement(ArtifactCard, {
