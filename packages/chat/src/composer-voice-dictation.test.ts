@@ -1,6 +1,6 @@
 /// <reference types="bun" />
-import { afterEach, describe, expect, it, mock } from "bun:test";
-import { act, renderHook, waitFor } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, mock } from "bun:test";
+import { act, renderHook } from "@testing-library/react";
 
 import {
   VOICE_AUTO_SEND_DELAY_SEC,
@@ -10,6 +10,18 @@ import {
   type SpeechRecognitionEventLike,
   type SpeechRecognitionLike,
 } from "./composer-voice-dictation";
+import {
+  installFakeTimers,
+  type FakeTimers,
+} from "./test-support/fake-timers";
+
+const VOICE_COUNTDOWN_TICK_MS = 1000;
+
+function advanceVoiceCountdown(timers: FakeTimers) {
+  act(() => {
+    timers.advance(VOICE_AUTO_SEND_DELAY_SEC * VOICE_COUNTDOWN_TICK_MS);
+  });
+}
 
 describe("composer-voice-dictation helpers", () => {
   it("ticks countdown down to null at one", () => {
@@ -98,6 +110,16 @@ afterEach(() => {
 });
 
 describe("useComposerVoiceDictation", () => {
+  let timers: FakeTimers;
+
+  beforeEach(() => {
+    timers = installFakeTimers();
+  });
+
+  afterEach(() => {
+    timers.restore();
+  });
+
   it("transcribes speech into the draft while listening", () => {
     const { hook, getDraft, getRecognition } = setupVoiceHook();
 
@@ -115,7 +137,7 @@ describe("useComposerVoiceDictation", () => {
     expect(hook.result.current.phase).toBe("listening");
   });
 
-  it("auto-sends after end-of-speech countdown", async () => {
+  it("auto-sends after end-of-speech countdown", () => {
     const { hook, getRecognition, onSend } = setupVoiceHook();
 
     act(() => {
@@ -131,15 +153,13 @@ describe("useComposerVoiceDictation", () => {
     expect(hook.result.current.phase).toBe("countdown");
     expect(hook.result.current.countdownSec).toBe(VOICE_AUTO_SEND_DELAY_SEC);
 
-    await act(async () => {
-      await new Promise((resolve) => setTimeout(resolve, 3200));
-    });
+    advanceVoiceCountdown(timers);
 
-    await waitFor(() => expect(onSend).toHaveBeenCalledTimes(1));
+    expect(onSend).toHaveBeenCalledTimes(1);
     expect(hook.result.current.phase).toBe("listening");
   });
 
-  it("defers auto-send while the composer is blocked", async () => {
+  it("defers auto-send while the composer is blocked", () => {
     let draft = "";
     let recognition: MockSpeechRecognition | null = null;
     const onSend = mock(() => {});
@@ -172,19 +192,17 @@ describe("useComposerVoiceDictation", () => {
       recognition!.emitSpeechEnd();
     });
 
-    await act(async () => {
-      await new Promise((resolve) => setTimeout(resolve, 3200));
-    });
+    advanceVoiceCountdown(timers);
     expect(onSend).not.toHaveBeenCalled();
 
     act(() => {
       hook.rerender({ sendBlocked: false });
     });
 
-    await waitFor(() => expect(onSend).toHaveBeenCalledTimes(1));
+    expect(onSend).toHaveBeenCalledTimes(1);
   });
 
-  it("cancels the countdown without sending", async () => {
+  it("cancels the countdown without sending", () => {
     const { hook, getRecognition, onSend } = setupVoiceHook();
 
     act(() => {
@@ -204,9 +222,7 @@ describe("useComposerVoiceDictation", () => {
     expect(hook.result.current.phase).toBe("listening");
     expect(hook.result.current.countdownSec).toBeNull();
 
-    await act(async () => {
-      await new Promise((resolve) => setTimeout(resolve, 3200));
-    });
+    advanceVoiceCountdown(timers);
     expect(onSend).not.toHaveBeenCalled();
   });
 });
