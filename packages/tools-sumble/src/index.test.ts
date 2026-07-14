@@ -140,6 +140,21 @@ describe("v9 argument-to-body mapping", () => {
     expect(bodyOf(stub).filter).toEqual({ organization_ids: [42] });
   });
 
+  it("list_jobs accepts organizationId without slug", async () => {
+    const stub = makeFetchStub({ jobs: [] });
+    await runTool(stub, "sumble_list_jobs", { organizationId: 42 });
+    expect(stub.mock.calls).toHaveLength(1);
+    expect(bodyOf(stub).filter).toEqual({ organization_ids: [42] });
+  });
+
+  it("list_teams rejects missing organization ref", async () => {
+    const stub = makeFetchStub({ teams: [] });
+    const result = await runTool(stub, "sumble_list_teams", {});
+    expect(result.isError).toBe(true);
+    expect(result.content).toContain("requires organizationId or organizationSlug");
+    expect(stub.mock.calls).toHaveLength(0);
+  });
+
   it("search_people maps email into list-mode person ref", async () => {
     const stub = makeFetchStub({ people: [] });
     await runTool(stub, "sumble_search_people", {
