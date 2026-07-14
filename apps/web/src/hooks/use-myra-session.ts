@@ -110,13 +110,6 @@ export async function deliverMessage(
   }
 }
 
-// Wire shape the mail route accepts alongside `content` (SendMessage schema).
-export interface OutboundAttachment {
-  mimeType: string;
-  data: string;
-  name?: string;
-}
-
 function fileToBase64(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -174,20 +167,22 @@ export function attachmentErrorMessage(err: unknown): string {
   }
 }
 
-// Attachments cannot ride the string-only `sendMail`; POST them to the same
-// mail route the session uses, with the one-shot relaunch recovery.
-// Returns the created mail's id so the caller can key optimistic UI (e.g. a
-// document chip) to the transcript bubble that renders from that mail event.
-export async function deliverMessageWithAttachments(
+// POST a message to the mail route the session uses, with the one-shot relaunch
+// recovery. Unlike the string-only `sendMail`, this returns the created mail's
+// id so the caller can key optimistic UI (e.g. a file chip) to the transcript
+// bubble that renders from that mail event. Nothing rides inline — every
+// attachment is diverted through the File Parser and folded into `content` — so
+// the wire `attachments` is always empty (the SendMessage schema expects the
+// field present).
+export async function deliverMailMessage(
   transport: Transport,
   tenantId: string,
   instanceId: string,
   content: string,
-  attachments: OutboundAttachment[],
   launchOptions?: LaunchInstanceSessionOptions,
 ): Promise<string | null> {
   const path = `/api/tenants/${tenantId}/agents/instances/${instanceId}/mail`;
-  const body = { content, attachments };
+  const body = { content, attachments: [] };
   try {
     const res = await transport.fetch<{ id?: string }>("POST", path, body);
     return res?.id ?? null;
@@ -969,12 +964,11 @@ export function useMyraSession(
 
     try {
       // Nothing rides inline anymore — the parsed text is in `content`.
-      const mailId = await deliverMessageWithAttachments(
+      const mailId = await deliverMailMessage(
         transport,
         tenantId,
         iid,
         content,
-        [],
         launchOptionsRef.current,
       );
       if (chips.length > 0 && mailId !== null) {

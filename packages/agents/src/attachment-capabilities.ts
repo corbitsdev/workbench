@@ -74,14 +74,15 @@ export function attachmentPolicyForAgent(
     attachmentCapabilityForAgent(agentName),
   );
   // A parse-capable agent can also read images through the File Parser. Only add
-  // them when the model is not already natively vision-capable (otherwise the
-  // native set already carries images and they ride inline, which is higher
-  // fidelity than an OCR pass).
+  // them when the model does not already accept images natively (otherwise they
+  // ride inline, which is higher fidelity than an OCR pass). Check for native
+  // image support explicitly rather than an empty native set, so a future
+  // documents-but-not-images capability would still route images to the parser.
+  const nativeAcceptsImages = IMAGE_MIME_TYPES.some((mime) =>
+    nativeMimeTypes.includes(mime),
+  );
   const parserFiles = PARSER_DOCS_BY_AGENT_NAME.get(agentName)
-    ? [
-        ...DOCUMENT_MIME_TYPES,
-        ...(nativeMimeTypes.length === 0 ? IMAGE_MIME_TYPES : []),
-      ]
+    ? [...DOCUMENT_MIME_TYPES, ...(nativeAcceptsImages ? [] : IMAGE_MIME_TYPES)]
     : [];
   const mimeTypes = [...new Set([...nativeMimeTypes, ...parserFiles])];
   if (mimeTypes.length === 0) return undefined;
