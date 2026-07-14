@@ -2,6 +2,7 @@ import { useState, type ReactNode } from "react";
 import { cn, toHumanLabel } from "@workbench/ui";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import type { ToolCall } from "./types";
+import { toSingleLine } from "./reasoning-summary";
 import {
   parseToolResult,
   UIBlockView,
@@ -350,12 +351,17 @@ function ToolRow({
         >
           {!(open && expandable) && (
             <>
-              <span className="shrink-0" data-testid="tool-row-summary">
+              <span
+                className="min-w-0 truncate"
+                title={summary}
+                data-testid="tool-row-summary"
+              >
                 {summary}
               </span>
               {argsSummary !== null && (
                 <span
                   className="truncate text-text-3/70"
+                  title={argsSummary}
                   data-testid="tool-row-args"
                 >
                   · {argsSummary}
@@ -366,6 +372,21 @@ function ToolRow({
           {expandable && <ChevronIcon open={open} />}
         </span>
       </button>
+      {/* Failures surface the provider's own message inline, grouped with the
+          row — never a bare, detached red line. The full text is available on
+          expand; this preview is truncated with a native tooltip. */}
+      {call.isError === true &&
+        call.result !== undefined &&
+        call.result.trim() !== "" &&
+        !(open && expandable) && (
+          <p
+            className={cn(CHAT_TRACE_DETAIL_OFFSET, "mt-1 truncate text-xs text-red")}
+            title={call.result}
+            data-testid="tool-row-error"
+          >
+            {toSingleLine(call.result)}
+          </p>
+        )}
       <ExpandReveal open={open} reduceMotion={reduceMotion === true}>
         <div
           className={cn(
