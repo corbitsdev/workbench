@@ -7,6 +7,8 @@ import {
 } from "@tanstack/react-query";
 import { type } from "arktype";
 import {
+  MailboxBulkAction,
+  MailboxBulkResponse,
   MailboxInboxView,
   MailboxListResponse,
   MailboxMessageDetail,
@@ -18,12 +20,7 @@ import { api, ApiError } from "../lib/api";
 
 export type { MailboxMessage, MailboxMessageDetail };
 
-export type MailboxBulkAction =
-  | "mark_read"
-  | "mark_unread"
-  | "trash"
-  | "archive"
-  | "restore";
+export type { MailboxBulkAction };
 
 // One shared cache entry per inbox view so folder tabs stay independent while
 // the bell keeps its own "all" list for recent messages.
@@ -205,7 +202,7 @@ export function useMailboxBulkAction() {
   return useMutation({
     mutationFn: async (input: { action: MailboxBulkAction; ids: string[] }) => {
       const raw = await api<unknown>("POST", "/me/inbox/bulk", input);
-      const parsed = type({ updated: "number", ids: "string[]" })(raw);
+      const parsed = MailboxBulkResponse(raw);
       if (parsed instanceof type.errors) {
         throw new Error(`Unexpected bulk response: ${parsed.summary}`);
       }

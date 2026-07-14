@@ -24,6 +24,7 @@ import {
   useMarkMailboxUnread,
   type MailboxBulkAction,
 } from "../hooks/use-mailbox";
+import { ApiError } from "../lib/api";
 import { isTaskNotFound, useTask, useTasks } from "../hooks/use-tasks";
 import { useWorkflowRuns } from "../hooks/use-workflow";
 import { useActiveWorkbench } from "../lib/active-workbench-context";
@@ -58,16 +59,24 @@ export function InboxPage() {
   const reduceMotion = useReducedMotion();
   const { activeTenantId, activeWorkbench } = useActiveWorkbench();
   const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
+  const [inboxActionError, setInboxActionError] = useState<string | null>(null);
   const {
     data,
     isLoading,
     isError,
     refetch,
-    hasNextPage: mailboxHasNextPage,
-    fetchNextPage: fetchNextMailboxPage,
-    isFetchingNextPage: isFetchingNextMailboxPage,
   } = useMailbox({
     view: inboxView,
+    refetchInterval: NOW_POLL_MS,
+  });
+  const {
+    data: nowFeedMessages,
+    isLoading: nowMailboxLoading,
+    hasNextPage: nowMailboxHasNextPage,
+    fetchNextPage: fetchNextNowMailboxPage,
+    isFetchingNextPage: isFetchingNextNowMailboxPage,
+  } = useMailbox({
+    view: "all",
     refetchInterval: NOW_POLL_MS,
   });
   const tasks = useTasks({ refetchInterval: NOW_POLL_MS });
@@ -87,12 +96,13 @@ export function InboxPage() {
     () =>
       buildNowFeed({
         runs: runList ?? [],
-        messages: data ?? [],
+        messages: nowFeedMessages ?? [],
         tasks: taskList ?? [],
       }),
-    [runList, data, taskList],
+    [runList, nowFeedMessages, taskList],
   );
-  const nowReady = !isLoading && !tasks.isLoading && !runs.isLoading;
+  const nowReady =
+    !nowMailboxLoading && !tasks.isLoading && !runs.isLoading;
   const taskInFeed =
     selectedTaskId !== null &&
     nowItems.some(
@@ -140,9 +150,22 @@ export function InboxPage() {
     setSelectedIds(new Set());
   }, [inboxView]);
 
+  const reportInboxActionError = (err: unknown) => {
+    if (err instanceof ApiError) {
+      setInboxActionError(err.message || "Couldn't update your inbox.");
+      return;
+    }
+    if (err instanceof Error) {
+      setInboxActionError(err.message);
+      return;
+    }
+    setInboxActionError("Couldn't update your inbox.");
+  };
+
   const runBulk = (action: MailboxBulkAction) => {
     const ids = [...selectedIds];
     if (ids.length === 0) return;
+    setInboxActionError(null);
     bulkAction
       .mutateAsync({ action, ids })
       .then(() => {
@@ -151,9 +174,7 @@ export function InboxPage() {
           navigate(inboxPath(inboxView));
         }
       })
-      .catch(() => {
-        /* mutation error surfaces via query refetch; avoid unhandled rejection */
-      });
+      .catch(reportInboxActionError);
   };
 
   return (
@@ -186,6 +207,11 @@ export function InboxPage() {
             setSearchParams(params, { replace: true });
           }}
         />
+        {inboxActionError && (
+          <p className="mx-3 mb-2 text-sm text-red-600" role="alert">
+            {inboxActionError}
+          </p>
+        )}
         {selectedIds.size > 0 && (
           <InboxBulkBar
             count={selectedIds.size}
@@ -232,28 +258,34 @@ export function InboxPage() {
               busy={itemAction.isPending || markUnread.isPending}
               onMarkUnread={() => {
                 if (!messageId) return;
-                markUnread.mutateAsync(messageId).catch(() => {});
+                setInboxActionError(null);
+                markUnread
+                  .mutateAsync(messageId)
+                  .catch(reportInboxActionError);
               }}
               onTrash={() => {
                 if (!messageId) return;
+                setInboxActionError(null);
                 itemAction
                   .mutateAsync({ id: messageId, action: "trash" })
                   .then(() => navigate(inboxPath("trash")))
-                  .catch(() => {});
+                  .catch(reportInboxActionError);
               }}
               onArchive={() => {
                 if (!messageId) return;
+                setInboxActionError(null);
                 itemAction
                   .mutateAsync({ id: messageId, action: "archive" })
                   .then(() => navigate(inboxPath("archived")))
-                  .catch(() => {});
+                  .catch(reportInboxActionError);
               }}
               onRestore={() => {
                 if (!messageId) return;
+                setInboxActionError(null);
                 itemAction
                   .mutateAsync({ id: messageId, action: "restore" })
                   .then(() => navigate(inboxPath("all")))
-                  .catch(() => {});
+                  .catch(reportInboxActionError);
               }}
             />
           ) : (
@@ -273,13 +305,14 @@ export function InboxPage() {
               />
               <LoadMoreControl
                 hasMore={
-                  Boolean(mailboxHasNextPage) || Boolean(tasks.hasNextPage)
+                  Boolean(nowMailboxHasNextPage) || Boolean(tasks.hasNextPage)
                 }
                 loading={
-                  isFetchingNextMailboxPage || Boolean(tasks.isFetchingNextPage)
+                  isFetchingNextNowMailboxPage ||
+                  Boolean(tasks.isFetchingNextPage)
                 }
                 onClick={() => {
-                  if (mailboxHasNextPage) void fetchNextMailboxPage();
+                  if (nowMailboxHasNextPage) void fetchNextNowMailboxPage();
                   if (tasks.hasNextPage) void tasks.fetchNextPage();
                 }}
               />

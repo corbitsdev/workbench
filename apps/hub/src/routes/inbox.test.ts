@@ -58,11 +58,38 @@ const getMailboxMessage = mock(
   ) => detailResult,
 );
 const countUnreadActiveMailbox = mock(async () => 2);
-const applyMailboxBulkAction = mock(async () => ["5e0f8c9a-0000-4000-8000-000000000001"]);
-const markMailboxMessageUnread = mock(async () => true);
-const trashMailboxMessage = mock(async () => true);
-const archiveMailboxMessage = mock(async () => true);
-const restoreMailboxMessage = mock(async () => true);
+const applyMailboxBulkAction = mock(
+  async (
+    _db: unknown,
+    _scope: { tenantId: string; principalId: string },
+    _action: string,
+    _ids: string[],
+  ) => ["5e0f8c9a-0000-4000-8000-000000000001"],
+);
+const markMailboxMessageUnread = mock(
+  async (
+    _db: unknown,
+    _args: { tenantId: string; principalId: string; id: string },
+  ) => true,
+);
+const trashMailboxMessage = mock(
+  async (
+    _db: unknown,
+    _args: { tenantId: string; principalId: string; id: string },
+  ) => true,
+);
+const archiveMailboxMessage = mock(
+  async (
+    _db: unknown,
+    _args: { tenantId: string; principalId: string; id: string },
+  ) => true,
+);
+const restoreMailboxMessage = mock(
+  async (
+    _db: unknown,
+    _args: { tenantId: string; principalId: string; id: string },
+  ) => true,
+);
 
 mock.module("../lib/mailbox-read", () => ({
   listUserMailbox,
@@ -458,5 +485,151 @@ describe("GET /me/inbox/events", () => {
       await new Promise((r) => setTimeout(r, 10));
     }
     expect(unsubscribed).toBe(true);
+  });
+});
+
+describe("POST /me/inbox/bulk", () => {
+  const id = "5e0f8c9a-0000-4000-8000-000000000001";
+
+  beforeEach(() => {
+    applyMailboxBulkAction.mockClear();
+  });
+
+  it("applies the bulk action for the caller's principal", async () => {
+    const res = await mountApp().request(
+      new Request("http://localhost/api/v1/me/inbox/bulk", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ action: "trash", ids: [id] }),
+      }),
+    );
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({
+      updated: 1,
+      ids: [id],
+    });
+    expect(applyMailboxBulkAction.mock.calls[0]?.[1]).toMatchObject({
+      tenantId: "ten-1",
+      principalId: "pri-a",
+    });
+    expect(applyMailboxBulkAction.mock.calls[0]?.[2]).toBe("trash");
+    expect(applyMailboxBulkAction.mock.calls[0]?.[3]).toEqual([id]);
+  });
+
+  it("400s on invalid JSON without touching the store", async () => {
+    const res = await mountApp().request(
+      new Request("http://localhost/api/v1/me/inbox/bulk", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: "not-json",
+      }),
+    );
+    expect(res.status).toBe(400);
+    expect(applyMailboxBulkAction.mock.calls).toHaveLength(0);
+  });
+
+  it("400s when an id is not a UUID", async () => {
+    const res = await mountApp().request(
+      new Request("http://localhost/api/v1/me/inbox/bulk", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ action: "trash", ids: ["not-a-uuid"] }),
+      }),
+    );
+    expect(res.status).toBe(400);
+    expect(applyMailboxBulkAction.mock.calls).toHaveLength(0);
+  });
+
+  it("400s when ids exceed the bulk cap", async () => {
+    const ids = Array.from({ length: 51 }, (_, i) =>
+      `5e0f8c9a-0000-4000-8000-${String(i).padStart(12, "0")}`,
+    );
+    const res = await mountApp().request(
+      new Request("http://localhost/api/v1/me/inbox/bulk", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ action: "mark_read", ids }),
+      }),
+    );
+    expect(res.status).toBe(400);
+    expect(applyMailboxBulkAction.mock.calls).toHaveLength(0);
+  });
+
+  it("409s when the caller has no provisioned membership", async () => {
+    member = null;
+    const res = await mountApp().request(
+      new Request("http://localhost/api/v1/me/inbox/bulk", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ action: "archive", ids: [id] }),
+      }),
+    );
+    expect(res.status).toBe(409);
+    expect(applyMailboxBulkAction.mock.calls).toHaveLength(0);
+  });
+});
+
+describe("POST /me/inbox/:id folder mutations", () => {
+  const id = "5e0f8c9a-0000-4000-8000-000000000001";
+
+  beforeEach(() => {
+    markMailboxMessageUnread.mockClear();
+    trashMailboxMessage.mockClear();
+    archiveMailboxMessage.mockClear();
+    restoreMailboxMessage.mockClear();
+    markMailboxMessageUnread.mockImplementation(async () => true);
+    trashMailboxMessage.mockImplementation(async () => true);
+    archiveMailboxMessage.mockImplementation(async () => true);
+    restoreMailboxMessage.mockImplementation(async () => true);
+  });
+
+  it.each([
+    ["unread", markMailboxMessageUnread],
+    ["trash", trashMailboxMessage],
+    ["archive", archiveMailboxMessage],
+    ["restore", restoreMailboxMessage],
+  ] as const)(
+    "POST /me/inbox/:id/%s scopes to the caller and returns ok",
+    async (action, fn) => {
+      const res = await mountApp().request(
+        new Request(`http://localhost/api/v1/me/inbox/${id}/${action}`, {
+          method: "POST",
+        }),
+      );
+      expect(res.status).toBe(200);
+      expect(await res.json()).toEqual({ id, ok: true });
+      expect(fn.mock.calls[0]?.[1]).toEqual({
+        tenantId: "ten-1",
+        principalId: "pri-a",
+        id,
+      });
+    },
+  );
+
+  it.each(["unread", "trash", "archive", "restore"] as const)(
+    "POST /me/inbox/:id/%s 404s when the message is out of scope",
+    async (action) => {
+      trashMailboxMessage.mockImplementation(async () => false);
+      archiveMailboxMessage.mockImplementation(async () => false);
+      restoreMailboxMessage.mockImplementation(async () => false);
+      markMailboxMessageUnread.mockImplementation(async () => false);
+      const res = await mountApp().request(
+        new Request(`http://localhost/api/v1/me/inbox/${id}/${action}`, {
+          method: "POST",
+        }),
+      );
+      expect(res.status).toBe(404);
+    },
+  );
+
+  it("archive does not match trashed rows (store returns false)", async () => {
+    archiveMailboxMessage.mockImplementation(async () => false);
+    const res = await mountApp().request(
+      new Request(`http://localhost/api/v1/me/inbox/${id}/archive`, {
+        method: "POST",
+      }),
+    );
+    expect(res.status).toBe(404);
+    expect(archiveMailboxMessage.mock.calls).toHaveLength(1);
   });
 });

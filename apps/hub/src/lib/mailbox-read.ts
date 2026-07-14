@@ -11,7 +11,7 @@ import {
 import { principalMailbox, type PrincipalMailboxRow } from "../db/schema";
 import type { HubDb } from "../db";
 import { keysetBefore, takePage, type KeysetCursor } from "./keyset";
-import type { MailboxInboxView } from "./mailbox-inbox-view";
+import type { MailboxInboxView } from "@workbench/shared";
 import { extractConversationBodyFromRaw } from "./conversation-mail-body";
 import {
   attachFromDisplay,
@@ -242,6 +242,7 @@ export async function markMailboxMessageRead(
         eq(principalMailbox.id, args.id),
         eq(principalMailbox.tenantId, args.tenantId),
         eq(principalMailbox.principalId, args.principalId),
+        eq(principalMailbox.direction, "inbound"),
       ),
     )
     .returning({ id: principalMailbox.id });

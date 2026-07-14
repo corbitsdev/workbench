@@ -23,7 +23,8 @@ import {
   MailboxBulkResponse,
   MailboxInboxView,
   MailboxUnreadCountResponse,
-} from "../lib/mailbox-inbox-view";
+} from "@workbench/shared";
+import { isUuid } from "../lib/uuid";
 import type { MailboxEventBus } from "../lib/mailbox-events";
 import { UuidParam } from "../lib/uuid";
 import { ErrorResponse } from "../lib/openapi";
@@ -33,7 +34,9 @@ import type { HubDb } from "../db";
 const log = getLogger(["api", "inbox"]);
 
 const MarkReadResponse = type({ id: "string", read: "boolean" });
+const MutationOkResponse = type({ id: "string", ok: "true" });
 const DEFAULT_INBOX_LIMIT = 50;
+const MAX_BULK_INBOX_IDS = 50;
 
 function publishMailboxSignal(
   bus: MailboxEventBus,
@@ -369,9 +372,22 @@ export function createInboxRouter(
     }),
     async (c) => {
       const userId = c.get("userId");
-      const body = MailboxBulkRequest(await c.req.json());
+      const raw = await c.req.json().catch(() => null);
+      if (raw === null) {
+        return c.json({ error: "invalid JSON body" }, 400);
+      }
+      const body = MailboxBulkRequest(raw);
       if (body instanceof type.errors) {
         return c.json({ error: "invalid bulk inbox request" }, 400);
+      }
+      if (body.ids.length > MAX_BULK_INBOX_IDS) {
+        return c.json(
+          { error: `ids must contain at most ${MAX_BULK_INBOX_IDS} items` },
+          400,
+        );
+      }
+      if (!body.ids.every((id) => isUuid(id))) {
+        return c.json({ error: "each id must be a UUID" }, 400);
       }
       const member = await resolveCallerMember(db, userId);
       if (!member) {
@@ -418,33 +434,173 @@ export function createInboxRouter(
     return c.json({ id, ok: true as const });
   }
 
-  app.post("/me/inbox/:id/unread", async (c) => {
-    const id = c.req.param("id");
-    return singleMessageMutation(c, id, (scope) =>
-      markMailboxMessageUnread(db, scope),
-    );
-  });
+  app.post(
+    "/me/inbox/:id/unread",
+    describeRoute({
+      tags: ["Me"],
+      summary: "Mark one of the caller's mailbox messages as unread",
+      parameters: [
+        {
+          name: "id",
+          in: "path",
+          required: true,
+          schema: { type: "string", format: "uuid" },
+        },
+      ],
+      responses: {
+        200: {
+          description: "The message is now unread",
+          content: {
+            "application/json": { schema: resolver(MutationOkResponse) },
+          },
+        },
+        400: {
+          description: "Invalid message id",
+          content: { "application/json": { schema: resolver(ErrorResponse) } },
+        },
+        404: {
+          description: "No such message in the caller's mailbox",
+          content: { "application/json": { schema: resolver(ErrorResponse) } },
+        },
+        409: {
+          description: "Caller has no provisioned membership yet",
+          content: { "application/json": { schema: resolver(ErrorResponse) } },
+        },
+      },
+    }),
+    async (c) => {
+      const id = c.req.param("id");
+      return singleMessageMutation(c, id, (scope) =>
+        markMailboxMessageUnread(db, scope),
+      );
+    },
+  );
 
-  app.post("/me/inbox/:id/trash", async (c) => {
-    const id = c.req.param("id");
-    return singleMessageMutation(c, id, (scope) =>
-      trashMailboxMessage(db, scope),
-    );
-  });
+  app.post(
+    "/me/inbox/:id/trash",
+    describeRoute({
+      tags: ["Me"],
+      summary: "Move one of the caller's mailbox messages to trash",
+      parameters: [
+        {
+          name: "id",
+          in: "path",
+          required: true,
+          schema: { type: "string", format: "uuid" },
+        },
+      ],
+      responses: {
+        200: {
+          description: "The message is now in trash",
+          content: {
+            "application/json": { schema: resolver(MutationOkResponse) },
+          },
+        },
+        400: {
+          description: "Invalid message id",
+          content: { "application/json": { schema: resolver(ErrorResponse) } },
+        },
+        404: {
+          description: "No such message in the caller's mailbox",
+          content: { "application/json": { schema: resolver(ErrorResponse) } },
+        },
+        409: {
+          description: "Caller has no provisioned membership yet",
+          content: { "application/json": { schema: resolver(ErrorResponse) } },
+        },
+      },
+    }),
+    async (c) => {
+      const id = c.req.param("id");
+      return singleMessageMutation(c, id, (scope) =>
+        trashMailboxMessage(db, scope),
+      );
+    },
+  );
 
-  app.post("/me/inbox/:id/archive", async (c) => {
-    const id = c.req.param("id");
-    return singleMessageMutation(c, id, (scope) =>
-      archiveMailboxMessage(db, scope),
-    );
-  });
+  app.post(
+    "/me/inbox/:id/archive",
+    describeRoute({
+      tags: ["Me"],
+      summary: "Archive one of the caller's mailbox messages",
+      parameters: [
+        {
+          name: "id",
+          in: "path",
+          required: true,
+          schema: { type: "string", format: "uuid" },
+        },
+      ],
+      responses: {
+        200: {
+          description: "The message is now archived",
+          content: {
+            "application/json": { schema: resolver(MutationOkResponse) },
+          },
+        },
+        400: {
+          description: "Invalid message id",
+          content: { "application/json": { schema: resolver(ErrorResponse) } },
+        },
+        404: {
+          description: "No such message in the caller's mailbox",
+          content: { "application/json": { schema: resolver(ErrorResponse) } },
+        },
+        409: {
+          description: "Caller has no provisioned membership yet",
+          content: { "application/json": { schema: resolver(ErrorResponse) } },
+        },
+      },
+    }),
+    async (c) => {
+      const id = c.req.param("id");
+      return singleMessageMutation(c, id, (scope) =>
+        archiveMailboxMessage(db, scope),
+      );
+    },
+  );
 
-  app.post("/me/inbox/:id/restore", async (c) => {
-    const id = c.req.param("id");
-    return singleMessageMutation(c, id, (scope) =>
-      restoreMailboxMessage(db, scope),
-    );
-  });
+  app.post(
+    "/me/inbox/:id/restore",
+    describeRoute({
+      tags: ["Me"],
+      summary: "Restore one archived or trashed mailbox message to the active inbox",
+      parameters: [
+        {
+          name: "id",
+          in: "path",
+          required: true,
+          schema: { type: "string", format: "uuid" },
+        },
+      ],
+      responses: {
+        200: {
+          description: "The message is restored to the active inbox",
+          content: {
+            "application/json": { schema: resolver(MutationOkResponse) },
+          },
+        },
+        400: {
+          description: "Invalid message id",
+          content: { "application/json": { schema: resolver(ErrorResponse) } },
+        },
+        404: {
+          description: "No such message in the caller's mailbox",
+          content: { "application/json": { schema: resolver(ErrorResponse) } },
+        },
+        409: {
+          description: "Caller has no provisioned membership yet",
+          content: { "application/json": { schema: resolver(ErrorResponse) } },
+        },
+      },
+    }),
+    async (c) => {
+      const id = c.req.param("id");
+      return singleMessageMutation(c, id, (scope) =>
+        restoreMailboxMessage(db, scope),
+      );
+    },
+  );
 
   return app;
 }

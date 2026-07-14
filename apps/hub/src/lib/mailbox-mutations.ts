@@ -1,7 +1,7 @@
 import { and, eq, inArray, isNull, sql } from "drizzle-orm";
 import { principalMailbox } from "../db/schema";
 import type { HubDb } from "../db";
-import type { MailboxBulkAction } from "./mailbox-inbox-view";
+import type { MailboxBulkAction } from "@workbench/shared";
 
 export type MailboxMutationScope = {
   tenantId: string;
