@@ -112,16 +112,19 @@ const setupSteps: Record<string, Primitive> = {
         { from: "steps.describe.output" },
       ],
     },
+    // render is a stringTool step: its deck result is encoded as
+    // { content: "<json>" }, so the deck fields (gammaUrl, gammaId, exportUrl)
+    // are read via `fromJson` out of `content` — including the NEW deck's
+    // gammaId, not the template id that also rides on the intake payload.
+    // exportUrl is always present (empty when Gamma returns no export link);
+    // an empty value passes through and the persist handler treats it as
+    // "no PDF". title/description come from the intake and describe outputs.
     argMap: {
       title: { from: "deckTitle" },
-      url: { from: "gammaUrl" },
       description: { from: "reply" },
-      gammaId: { from: "gammaId" },
-      // render always emits an exportUrl (empty string when Gamma returns no
-      // export link) so this mapping never hits the harness's absent-field
-      // throw; the persist handler downloads it and stores the PDF durably,
-      // treating an empty value as "no PDF".
-      pdfUrl: { from: "exportUrl" },
+      url: { fromJson: "content", field: "gammaUrl" },
+      gammaId: { fromJson: "content", field: "gammaId" },
+      pdfUrl: { fromJson: "content", field: "exportUrl" },
     },
   }),
 };

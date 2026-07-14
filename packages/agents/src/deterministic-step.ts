@@ -62,16 +62,26 @@ export const STEP_NONFATAL_TAG = "workbench.nonFatal";
 export const STEP_INLINE_RETRY_MAX_TAG = "workbench.inlineRetryMaxAttempts";
 
 /**
- * Per-tool-argument reshape spec. Maps a TOOL argument name to either a
- * top-level field on the evaluated step input (`{ from: 'fieldName' }`) or a
- * JSON-serializable constant (`{ literal: value }`). Must be
- * JSON-serializable: the workflow definition is JSON-deployed, so no
- * functions.
+ * Per-tool-argument reshape spec. Maps a TOOL argument name to one of:
+ * - `{ from: 'fieldName' }` — a top-level field on the evaluated step input.
+ * - `{ literal: value }` — a JSON-serializable constant.
+ * - `{ fromJson: 'envelopeField', field: 'name' }` — reads `envelopeField`
+ *   off the input, JSON-parses it when it is a string (an already-object
+ *   value is tolerated), then pulls top-level `field` from the parsed object.
+ *   Use this when a deterministic step consumes another deterministic tool
+ *   step's output: `stringTool` tools encode their result as
+ *   `{ content: "<json>" }`, so the fields are only reachable after parsing.
+ *
+ * `optional` (on `from` and `fromJson`) treats an absent-or-empty value as a
+ * skip of the whole tool call rather than a throw. Must be JSON-serializable:
+ * the workflow definition is JSON-deployed, so no functions.
  */
 export const ArgMapSpec = type({
   from: "string",
   "optional?": "boolean",
-}).or({ literal: "unknown" });
+})
+  .or({ literal: "unknown" })
+  .or({ fromJson: "string", field: "string", "optional?": "boolean" });
 export type ArgMapSpec = typeof ArgMapSpec.infer;
 
 export const ArgMap = type({ "[string]": ArgMapSpec });

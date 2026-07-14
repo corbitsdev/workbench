@@ -139,7 +139,7 @@ describe("artifact → gamma deck workflow (single-shot)", () => {
       throw new Error("persist is missing an argMap tag");
     }
     expect(JSON.parse(rawArgMap)).toMatchObject({
-      pdfUrl: { from: "exportUrl" },
+      pdfUrl: { fromJson: "content", field: "exportUrl" },
     });
   });
 
@@ -199,10 +199,10 @@ describe("artifact → gamma deck workflow (single-shot)", () => {
     );
     expect(JSON.parse(persist.agent.tags?.[STEP_ARGMAP_TAG] ?? "{}")).toEqual({
       title: { from: "deckTitle" },
-      url: { from: "gammaUrl" },
       description: { from: "reply" },
-      gammaId: { from: "gammaId" },
-      pdfUrl: { from: "exportUrl" },
+      url: { fromJson: "content", field: "gammaUrl" },
+      gammaId: { fromJson: "content", field: "gammaId" },
+      pdfUrl: { fromJson: "content", field: "exportUrl" },
     });
   });
 
