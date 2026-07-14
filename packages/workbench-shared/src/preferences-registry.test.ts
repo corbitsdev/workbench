@@ -253,13 +253,13 @@ describe("resolveAvailableBriefSources", () => {
   });
 
   test("resolves enabled from stored preferences, defaulting per catalog entry", () => {
-    const enabledByDefault = resolveAvailableBriefSources(["granola"], {});
-    expect(enabledByDefault[0]?.enabled).toBe(true);
+    const disabledByDefault = resolveAvailableBriefSources(["granola"], {});
+    expect(disabledByDefault[0]?.enabled).toBe(false);
 
-    const disabled = resolveAvailableBriefSources(["granola"], {
-      [briefSourcePreferenceKey("granola")]: false,
+    const enabled = resolveAvailableBriefSources(["granola"], {
+      [briefSourcePreferenceKey("granola")]: true,
     });
-    expect(disabled[0]?.enabled).toBe(false);
+    expect(enabled[0]?.enabled).toBe(true);
   });
 
   test("ignores a configured provider name absent from the brief-source catalog", () => {

@@ -258,10 +258,9 @@ export function briefSourcePreferenceKey(sourceKey: string): string {
  * to `CredentialProviderCatalogEntry` and derive this catalog from it
  * instead of re-using `BRIEF_SOURCE_CATALOG`.
  *
- * Unlike the brief (opt-in, `defaultEnabled` per source, commonly `false`),
- * inbox sources default to ENABLED so a member's inbox does not go dark the
- * moment this dimension ships — nothing new is disabled by having a second,
- * independent toggle appear.
+ * Every inbox source defaults OFF (CL-3577): intake is strictly opt-in, so a
+ * member's inbox pulls from a source only once they explicitly enable it —
+ * mirroring the brief sources, which are likewise opt-in.
  */
 export const INBOX_SOURCE_CATALOG: readonly {
   key: string;
@@ -272,7 +271,7 @@ export const INBOX_SOURCE_CATALOG: readonly {
   key: source.key,
   label: source.label,
   description: source.description,
-  defaultEnabled: true,
+  defaultEnabled: false,
 }));
 
 /** The registry key an inbox source's enablement toggle is stored under. */
@@ -582,8 +581,8 @@ export function resolveAvailableBriefSources(
 
 /**
  * Resolves the member's currently-enabled inbox source keys against their
- * stored preferences, defaulting each source to ENABLED when unset (see
- * `INBOX_SOURCE_CATALOG`'s default-enabled note). This is the resolver
+ * stored preferences, defaulting each source to OFF when unset (see
+ * `INBOX_SOURCE_CATALOG`'s default-off note, CL-3577). This is the resolver
  * inbox-side consumers (triage source filtering, task-mail generation per
  * source) MUST resolve through — never read the raw `inboxSource:<key>`
  * preference key directly, so the enabled-by-default semantics stay in one

@@ -114,7 +114,6 @@ const TOOL_CREDENTIAL_SUPPLEMENTS: Record<
     defaultMetadata: { baseURL: "https://public-api.granola.ai/v1" },
     briefSource: {
       description: "Call notes from meetings since your last brief.",
-      defaultEnabled: true,
       tool: "granola_list_notes",
     },
   },
