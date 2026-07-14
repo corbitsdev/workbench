@@ -33,6 +33,10 @@ export const ToolCredentialsRequest = type({
   tenantId: "string",
   agentId: "string",
   providerNames: "string[]",
+  /** When set, hub resolves member creds from this run's creator principal. */
+  "workflowRunId?": "string",
+  /** Live-agent path: session owner's user principal (validated server-side). */
+  "memberPrincipalId?": "string",
 });
 export type ToolCredentialsRequest = typeof ToolCredentialsRequest.infer;
 

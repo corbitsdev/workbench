@@ -829,6 +829,7 @@ export function createStepToolContextResolver(
       logger.warn`step tool-context: failed to read grants for ${stepAgentId}, falling back to deny-all: ${reason}`;
       grants = [];
     }
+    const runId = req.authzContext.runId;
     return {
       hubHttpUrl: args.hubHttpUrl,
       sidecarToken: args.sidecarToken,
@@ -836,6 +837,7 @@ export function createStepToolContextResolver(
       stepAgentId,
       stepAddress: stepAgentId,
       principalId: stepAgentId,
+      ...(runId !== undefined ? { workflowRunId: runId } : {}),
       grants,
       cacheRoot: args.cacheRoot,
       cacheMaxBytes: args.cacheMaxBytes,

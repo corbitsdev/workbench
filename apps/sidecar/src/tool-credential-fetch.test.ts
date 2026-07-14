@@ -27,6 +27,31 @@ describe("fetchToolCredentials", () => {
     expect(called).toBe(false);
   });
 
+  test("threads workflowRunId and memberPrincipalId in the request body", async () => {
+    globalThis.fetch = (async (
+      _input: string | URL | Request,
+      init?: RequestInit,
+    ) => {
+      const parsed = JSON.parse(String(init?.body)) as {
+        workflowRunId?: string;
+        memberPrincipalId?: string;
+      };
+      expect(parsed.workflowRunId).toBe("run-42");
+      expect(parsed.memberPrincipalId).toBe("prn-live");
+      return new Response(
+        JSON.stringify({ credentials: {} }),
+        { headers: { "content-type": "application/json" } },
+      );
+    }) as unknown as typeof fetch;
+
+    await fetchToolCredentials({
+      ...baseArgs,
+      providerNames: ["exa"],
+      workflowRunId: "run-42",
+      memberPrincipalId: "prn-live",
+    });
+  });
+
   test("maps resolved credentials onto provider-namespaced env keys", async () => {
     globalThis.fetch = (async (
       input: string | URL | Request,

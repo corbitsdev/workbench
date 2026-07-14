@@ -23,6 +23,18 @@ const agentToolPackages = [
   { name: "@workbench/tools-github", version: "^0.1.0" },
 ];
 
+const emptyMemberPrincipalDbStubs = {
+  agentInstance: {
+    findFirst: async () => undefined,
+  },
+  principal: {
+    findFirst: async () => undefined,
+  },
+  workflowRunRecord: {
+    findFirst: async () => undefined,
+  },
+};
+
 const fakeDb = {
   query: {
     agent: {
@@ -31,6 +43,7 @@ const fakeDb = {
     provider: {
       findFirst: async () => ({ metadata: { baseURL: "https://api.example" } }),
     },
+    ...emptyMemberPrincipalDbStubs,
   },
 } as unknown as Parameters<typeof createToolCredentialsRouter>[0];
 
@@ -100,6 +113,141 @@ describe("POST /tools/credentials", () => {
   });
 });
 
+describe("POST /tools/credentials member principal", () => {
+  const fakeMemberResolve = async (
+    _db: unknown,
+    _tenantId: string,
+    memberPrincipalId: string,
+    providerName: string,
+  ) => {
+    if (memberPrincipalId === "prn-user" && providerName === "exa") {
+      return {
+        apiKey: "member-exa-secret",
+        baseURL: "https://api.example",
+        source: "member" as const,
+      };
+    }
+    return null;
+  };
+
+  const memberDb = {
+    query: {
+      agent: {
+        findFirst: async () => ({ id: "a1", toolPackages: agentToolPackages }),
+      },
+      provider: {
+        findFirst: async () => ({ metadata: { baseURL: "https://api.example" } }),
+      },
+      principal: {
+        findFirst: async () => ({ id: "prn-user" }),
+      },
+      agentInstance: {
+        findFirst: async () => undefined,
+      },
+      workflowRunRecord: {
+        findFirst: async () => undefined,
+      },
+    },
+  } as unknown as Parameters<typeof createToolCredentialsRouter>[0];
+
+  const memberRouter = createToolCredentialsRouter(
+    memberDb,
+    "sidecar-token",
+    fakeResolve,
+    fakeMemberResolve,
+  );
+
+  test("uses member-or-tenant resolution when memberPrincipalId is validated", async () => {
+    const res = await memberRouter.request("/tools/credentials", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: "Bearer sidecar-token",
+      },
+      body: JSON.stringify({
+        tenantId: "t1",
+        agentId: "a1",
+        providerNames: ["exa"],
+        memberPrincipalId: "prn-user",
+      }),
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { credentials: Record<string, unknown> };
+    expect(body.credentials).toEqual({
+      exa: { apiKey: "member-exa-secret", baseURL: "https://api.example" },
+    });
+  });
+
+  test("uses run creator principal when workflowRunId matches step deployment", async () => {
+    const runMemberResolve = async (
+      _db: unknown,
+      _tenantId: string,
+      memberPrincipalId: string,
+      providerName: string,
+    ) => {
+      if (memberPrincipalId === "prn-run-creator" && providerName === "exa") {
+        return {
+          apiKey: "run-member-exa",
+          baseURL: "https://api.example",
+          source: "member" as const,
+        };
+      }
+      return null;
+    };
+
+    const runDb = {
+      query: {
+        agent: {
+          findFirst: async () => ({ id: "a1", toolPackages: agentToolPackages }),
+        },
+        provider: {
+          findFirst: async () => ({
+            metadata: { baseURL: "https://api.example" },
+          }),
+        },
+        workflowRunRecord: {
+          findFirst: async () => ({
+            principalId: "prn-run-creator",
+            deploymentId: "ses_dep-1",
+          }),
+        },
+        agentInstance: {
+          findFirst: async () => undefined,
+        },
+        principal: {
+          findFirst: async () => undefined,
+        },
+      },
+    } as unknown as Parameters<typeof createToolCredentialsRouter>[0];
+
+    const runRouter = createToolCredentialsRouter(
+      runDb,
+      "sidecar-token",
+      fakeResolve,
+      runMemberResolve,
+    );
+
+    const res = await runRouter.request("/tools/credentials", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: "Bearer sidecar-token",
+      },
+      body: JSON.stringify({
+        tenantId: "t1",
+        agentId: "ins_ses_dep-1-heartbeat-intake-linear",
+        providerNames: ["exa"],
+        workflowRunId: "run-1",
+      }),
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { credentials: Record<string, unknown> };
+    expect(body.credentials).toEqual({
+      exa: { apiKey: "run-member-exa", baseURL: "https://api.example" },
+    });
+  });
+});
+
 describe("POST /tools/credentials provider gating from pinned packages", () => {
   // A workflow step is provisioned as a real agent row carrying its step pins,
   // so it is gated identically: reddit's package authorizes the scrapecreators
@@ -119,6 +267,7 @@ describe("POST /tools/credentials provider gating from pinned packages", () => {
           metadata: { baseURL: "https://api.example" },
         }),
       },
+      ...emptyMemberPrincipalDbStubs,
     },
   } as unknown as Parameters<typeof createToolCredentialsRouter>[0];
 

@@ -94,6 +94,8 @@ export interface StepToolContext {
   stepAddress: string;
   /** Synthetic per-step principal id used for grant evaluation. */
   principalId: string;
+  /** Workflow run id for run-creator member OAuth on tool-credentials. */
+  workflowRunId?: string;
   /** The step's grants, read from its agent-state repo. */
   grants: GrantRule[];
   cacheRoot: string;
@@ -278,6 +280,9 @@ async function buildStepTools(args: {
     agentId: ctx.stepAgentId,
     providerNames: [...requiredProviders],
     agentAddress: ctx.stepAddress,
+    ...(ctx.workflowRunId !== undefined
+      ? { workflowRunId: ctx.workflowRunId }
+      : {}),
   });
   const credMs = performance.now() - credStart;
 

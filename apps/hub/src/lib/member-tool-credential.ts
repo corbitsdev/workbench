@@ -38,10 +38,11 @@ export async function resolveMemberOrTenantToolCredential(
   providerName: string,
 ): Promise<MemberToolCredential | null> {
   const providerRow = await resolveProviderByName(db, tenantId, providerName);
-  const baseURL =
-    providerRow && typeof providerRow.metadata === "object"
-      ? ((providerRow.metadata as { baseURL?: string }).baseURL ?? "")
-      : "";
+  const metadata =
+    providerRow?.metadata != null && typeof providerRow.metadata === "object"
+      ? (providerRow.metadata as { baseURL?: string })
+      : undefined;
+  const baseURL = metadata?.baseURL ?? "";
 
   const memberToken = await resolveOAuthToken(
     db,
