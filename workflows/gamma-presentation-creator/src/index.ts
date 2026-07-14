@@ -1,5 +1,5 @@
-import { awaitSignal, defineWorkflow, gate } from "@intx/workflow";
-import type { Primitive, Selector } from "@intx/workflow";
+import { awaitSignal, defineWorkflow } from "@intx/workflow";
+import type { Primitive } from "@intx/workflow";
 import {
   deterministicToolStep,
   inlineInferenceStep,
@@ -9,125 +9,16 @@ import {
   PRESENTATION_DESCRIBE_SYSTEM_PROMPT,
   PRESENTATION_GENERATE_SYSTEM_PROMPT,
 } from "./prompts";
-import { MAX_ROUNDS } from "./constants";
 
 export const label = "Gamma Presentation Creator";
 export const description =
-  "Turn any artifact, call, or pasted text into a Gamma deck, refining it round by round until you approve it.";
+  "Turn any artifact, call, or pasted text into a Gamma deck.";
 export const kind = "gamma-presentation-creator";
 
 // Re-export the user-facing display flow so it travels with the workflow package
 // for the server catalog classifier; the client panel imports it from the same
 // browser-safe module.
 export { DISPLAY_STEPS } from "./display-steps";
-
-// Number of generate → render → preview rounds (defined in ./constants so the
-// browser panel can share it without importing this server-only module). Each
-// round re-renders a fresh Gamma deck from the user's feedback (Gamma cannot
-// edit a deck in place), and the preview gate lets the user approve — which
-// skips the remaining rounds via `gate()` — or refine with notes. The last
-// round has no gate: its preview leads straight to persistence.
-export { MAX_ROUNDS };
-
-// The source feeding every round: the intake brief plus both readers. The
-// generate prompt uses whichever source resolved (or the pasted text).
-// Branching the readers with gates was tried and rejected: nested gates
-// converging on `generate` raced and corrupted the diamond.
-const SOURCE_MERGE: Selector[] = [
-  { from: "steps.intake.output" },
-  { from: "steps.fetch-artifact.output" },
-  { from: "steps.fetch-note.output" },
-];
-
-function roundSteps(round: number): Record<string, Primitive> {
-  const gen = `generate-${round}`;
-  const rnd = `render-${round}`;
-  const dsc = `describe-${round}`;
-  const prev = `preview-${round}`;
-  const chk = `check-${round}`;
-  const per = `persist-${round}`;
-  const isLast = round === MAX_ROUNDS;
-
-  const genInput: Selector =
-    round === 1
-      ? { merge: SOURCE_MERGE }
-      : {
-          merge: [
-            ...SOURCE_MERGE,
-            { from: `steps.generate-${round - 1}.output` },
-            { from: `steps.preview-${round - 1}.output` },
-          ],
-        };
-
-  const steps: Record<string, Primitive> = {
-    [gen]: inlineInferenceStep({
-      id: `presentation-${gen}`,
-      title: round === 1 ? "Draft the deck" : "Revise the deck",
-      systemPrompt: PRESENTATION_GENERATE_SYSTEM_PROMPT,
-      after:
-        round === 1 ? ["fetch-artifact", "fetch-note"] : [`check-${round - 1}`],
-      input: genInput,
-    }),
-    [rnd]: deterministicToolStep({
-      id: `presentation-${rnd}`,
-      title:
-        round === 1 ? "Build the deck in Gamma" : "Rebuild the deck in Gamma",
-      tool: "gamma_create_from_template",
-      after: [gen],
-      input: {
-        merge: [
-          { from: "steps.intake.output" },
-          { from: `steps.${gen}.output` },
-        ],
-      },
-      argMap: { gammaId: { from: "gammaId" }, prompt: { from: "reply" } },
-    }),
-    [dsc]: inlineInferenceStep({
-      id: `presentation-${dsc}`,
-      title: "Summarize the deck",
-      systemPrompt: PRESENTATION_DESCRIBE_SYSTEM_PROMPT,
-      model: LLM_DEFAULT_MODEL,
-      after: [gen],
-      input: { from: `steps.${gen}.output` },
-    }),
-    [prev]: awaitSignal({ name: prev, after: [rnd] }),
-    [per]: deterministicToolStep({
-      id: `presentation-${per}`,
-      title: "Save the deck",
-      tool: "artifact_link_gamma_presentation",
-      after: isLast ? [prev, dsc] : [chk, dsc],
-      input: {
-        merge: [
-          { from: "steps.intake.output" },
-          { from: `steps.${rnd}.output` },
-          { from: `steps.${dsc}.output` },
-        ],
-      },
-      argMap: {
-        title: { from: "deckTitle" },
-        url: { from: "gammaUrl" },
-        description: { from: "reply" },
-        gammaId: { from: "gammaId" },
-        // render-N always emits an exportUrl (empty string when Gamma returns
-        // no export link) so this mapping never hits the harness's absent-field
-        // throw; the persist handler downloads it and stores the PDF durably,
-        // treating an empty value as "no PDF".
-        pdfUrl: { from: "exportUrl" },
-      },
-    }),
-  };
-
-  if (!isLast) {
-    steps[chk] = gate({
-      when: { from: `steps.${prev}.output.approved` },
-      then: per,
-      else: `generate-${round + 1}`,
-      after: [prev],
-    });
-  }
-
-  return steps;
-}
 
 const setupSteps: Record<string, Primitive> = {
   // Root steps receive the run's initial input; the argMap replaces that input
@@ -154,13 +45,16 @@ const setupSteps: Record<string, Primitive> = {
     name: "intake",
     after: ["list-artifacts", "list-notes"],
   }),
+  // `artifactId`/`noteId` are OPTIONAL argMap fields: a text-source intake
+  // carries neither, so the harness skips the tool call (no throw, no error
+  // log) instead of degrading through the nonFatal isError path.
   "fetch-artifact": deterministicToolStep({
     id: "presentation-fetch-artifact",
     title: "Load the chosen artifact",
     tool: "artifact_read",
     after: ["intake"],
     input: { from: "steps.intake.output" },
-    argMap: { artifactId: { from: "artifactId" } },
+    argMap: { artifactId: { from: "artifactId", optional: true } },
     nonFatal: true,
   }),
   "fetch-note": deterministicToolStep({
@@ -169,20 +63,71 @@ const setupSteps: Record<string, Primitive> = {
     tool: "granola_get_note",
     after: ["intake"],
     input: { from: "steps.intake.output" },
-    argMap: { noteId: { from: "noteId" } },
+    argMap: { noteId: { from: "noteId", optional: true } },
     nonFatal: true,
   }),
-};
-
-const steps: Record<string, Primitive> = {
-  ...setupSteps,
-  ...roundSteps(1),
-  ...roundSteps(2),
-  ...roundSteps(3),
+  generate: inlineInferenceStep({
+    id: "presentation-generate",
+    title: "Draft the deck",
+    systemPrompt: PRESENTATION_GENERATE_SYSTEM_PROMPT,
+    after: ["fetch-artifact", "fetch-note"],
+    input: {
+      merge: [
+        { from: "steps.intake.output" },
+        { from: "steps.fetch-artifact.output" },
+        { from: "steps.fetch-note.output" },
+      ],
+    },
+  }),
+  render: deterministicToolStep({
+    id: "presentation-render",
+    title: "Build the deck in Gamma",
+    tool: "gamma_create_from_template",
+    after: ["generate"],
+    input: {
+      merge: [
+        { from: "steps.intake.output" },
+        { from: "steps.generate.output" },
+      ],
+    },
+    argMap: { gammaId: { from: "gammaId" }, prompt: { from: "reply" } },
+  }),
+  describe: inlineInferenceStep({
+    id: "presentation-describe",
+    title: "Summarize the deck",
+    systemPrompt: PRESENTATION_DESCRIBE_SYSTEM_PROMPT,
+    model: LLM_DEFAULT_MODEL,
+    after: ["generate"],
+    input: { from: "steps.generate.output" },
+  }),
+  persist: deterministicToolStep({
+    id: "presentation-persist",
+    title: "Save the deck",
+    tool: "artifact_link_gamma_presentation",
+    after: ["render", "describe"],
+    input: {
+      merge: [
+        { from: "steps.intake.output" },
+        { from: "steps.render.output" },
+        { from: "steps.describe.output" },
+      ],
+    },
+    argMap: {
+      title: { from: "deckTitle" },
+      url: { from: "gammaUrl" },
+      description: { from: "reply" },
+      gammaId: { from: "gammaId" },
+      // render always emits an exportUrl (empty string when Gamma returns no
+      // export link) so this mapping never hits the harness's absent-field
+      // throw; the persist handler downloads it and stores the PDF durably,
+      // treating an empty value as "no PDF".
+      pdfUrl: { from: "exportUrl" },
+    },
+  }),
 };
 
 export const workflow = defineWorkflow({
   id: kind,
   trigger: { type: "manual" },
-  steps,
+  steps: setupSteps,
 });

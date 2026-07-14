@@ -1,9 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { type } from "arktype";
-import {
-  GammaIntakePayloadSchema,
-  GammaPreviewPayloadSchema,
-} from "./gamma-presentation";
+import { GammaIntakePayloadSchema } from "./gamma-presentation";
 
 const rejects = (schema: (v: unknown) => unknown, value: unknown): boolean =>
   schema(value) instanceof type.errors;
@@ -42,23 +39,14 @@ describe("GammaIntakePayloadSchema", () => {
       rejects(GammaIntakePayloadSchema, { deckTitle: "A deck", gammaId: "" }),
     ).toBe(true);
   });
-});
 
-describe("GammaPreviewPayloadSchema", () => {
-  test("accepts an approve with no feedback", () => {
-    expect(rejects(GammaPreviewPayloadSchema, { approved: true })).toBe(false);
-  });
-
-  test("accepts a refine with feedback", () => {
+  test("accepts an intake carrying an optional templateSystemPrompt", () => {
     expect(
-      rejects(GammaPreviewPayloadSchema, {
-        approved: false,
-        feedback: "Tighten the opener.",
+      rejects(GammaIntakePayloadSchema, {
+        deckTitle: "A deck",
+        gammaId: "tmpl_1",
+        templateSystemPrompt: "Use a formal, security-audience tone.",
       }),
     ).toBe(false);
-  });
-
-  test("rejects a refine with no feedback (guidance-less re-roll)", () => {
-    expect(rejects(GammaPreviewPayloadSchema, { approved: false })).toBe(true);
   });
 });

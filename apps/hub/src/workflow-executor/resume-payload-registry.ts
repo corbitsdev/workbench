@@ -9,7 +9,6 @@ import {
   RedditReviewPayloadSchema,
   RedditSelectionPayloadSchema,
   GammaIntakePayloadSchema,
-  GammaPreviewPayloadSchema,
   PainPointContextPayloadSchema,
   PainPointFormatSelectionPayloadSchema,
   PainPointNoteSelectionPayloadSchema,
@@ -21,15 +20,11 @@ import {
   TaskSelectionPayloadSchema,
 } from "@workbench/shared";
 
-// The gamma-presentation-creator workflow parks a `preview-<round>` gate per
-// round (MAX_ROUNDS = 3 in the workflow def); every one carries the same
-// approve/refine decision shape, so validate each with the same schema. The
-// one-shot `intake` gate up front carries the deck brief (CL-2684).
+// The gamma-presentation-creator workflow is single-shot (CL-3614): one
+// `intake` gate carries the deck brief (CL-2684); there is no preview/round
+// gate anymore.
 const GAMMA_SIGNALS: Record<string, Type> = {
   intake: GammaIntakePayloadSchema,
-  ...Object.fromEntries(
-    [1, 2, 3].map((round) => [`preview-${round}`, GammaPreviewPayloadSchema]),
-  ),
 };
 
 // Per-workflow-kind → per-signal-name resume-payload validators. The /resume
@@ -69,14 +64,10 @@ const RESUME_PAYLOAD_SCHEMAS: Record<string, Record<string, Type>> = {
     "ab-config": AbPresetConfigPayloadSchema,
     "ab-decision": AbDecisionPayloadSchema,
   },
-  // gamma-presentation-creator: the `intake` gate REQUIRES a deck title + a
-  // Gamma template (CL-2684) — the render step reads both. Each preview gate's
-  // approve/refine decision REQUIRES a boolean `approved` (CL-2730) — the
-  // `check-N` gate branches on it, so a payload with no decision is rejected
-  // here rather than mis-routing the round. A refine (`approved: false`)
-  // additionally REQUIRES a non-empty `feedback` — the next round's generate
-  // step revises from it, so a guidance-less refine is rejected rather than
-  // blind re-rolling; an approve needs no note.
+  // gamma-presentation-creator (single-shot, CL-3614): the `intake` gate
+  // REQUIRES a deck title + a Gamma template (CL-2684) — the render step
+  // reads both. There is no preview/round gate; the run generates once and
+  // persists.
   "gamma-presentation-creator": GAMMA_SIGNALS,
   // last30days-research (CL-2765): the one `intake` gate REQUIRES a non-empty
   // topic — every source query and the report title derive from it, so a
