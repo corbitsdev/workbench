@@ -14,7 +14,7 @@ function createToolRunner(tools: ReturnType<typeof createLinearTools>) {
 describe("representative Linear workflows (stubbed)", () => {
   it("create issue then add comment", async () => {
     const fetcher = makeRoutingFetchStub([
-      { includes: "GetTeam", data: { team: { id: "t1" } } },
+      { includes: "TeamByName", data: { teams: { nodes: [{ id: "t1" }] } } },
       {
         includes: "issueCreate",
         data: {

@@ -11,6 +11,7 @@ import {
   MAX_LIST_LIMIT,
   optionalString,
   parseArgs,
+  requireMutationSuccess,
   type LinearToolsConfig,
 } from "./shared";
 
@@ -113,7 +114,7 @@ export async function createIssueLabel(
     { input },
     signal,
   );
-  return data.issueLabelCreate ?? { success: false };
+  return requireMutationSuccess(data, "issueLabelCreate");
 }
 
 export async function listProjectLabels(

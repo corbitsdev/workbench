@@ -41,6 +41,35 @@ mock.module("../lib/tenant-tools", () => ({
   resolveAvailableProviderNames,
 }));
 
+// `/me/inbox-sources` resolves per-member (member OAuth preferred, tenant key
+// fallback) rather than tenant-only — mocked independently of
+// `availableProviderNames` above so tests can distinguish "member has their
+// own connection" from "tenant has a shared key" from "neither".
+let memberCredentialSource = new Map<string, "member" | "tenant">();
+const resolveMemberOrTenantToolCredential = mock(
+  async (_db, _tenantId, _memberPrincipalId, providerName: string) => {
+    const source = memberCredentialSource.get(providerName);
+    if (!source) return null;
+    return { apiKey: "secret", baseURL: "", source };
+  },
+);
+mock.module("../lib/member-tool-credential", () => ({
+  resolveMemberOrTenantToolCredential,
+}));
+
+// Owner ceiling for inbox sources (CL-3584): the `/me/inbox-sources` route
+// intersects credentialed sources with the owner-enabled set. Default to all
+// enabled so the brief-source and pre-cascade tests are unaffected; the
+// cascade tests below narrow it.
+let ownerEnabledInboxSources = new Set<string>(["granola"]);
+mock.module("../lib/workflow-run-gate", () => ({
+  loadMemberRoleGrantsForTenantChain: async () => [],
+}));
+mock.module("../lib/workspace-inbox-source-gate", () => ({
+  isInboxSourceEnabledFromGrants: async (_grants: unknown, key: string) =>
+    ownerEnabledInboxSources.has(key),
+}));
+
 let capabilityAllowed = true;
 const capabilityGrantCalls: { provider: string; enabled: boolean }[] = [];
 mock.module("../lib/capability-grants", () => ({
@@ -67,9 +96,12 @@ function mountApp() {
   });
   v1.route(
     "/",
-    createMePreferencesRouter({} as unknown as HubDb, {
-      authorize: async () => ({ effect: "allow" }),
-    } as never),
+    createMePreferencesRouter(
+      {} as unknown as HubDb,
+      {
+        authorize: async () => ({ effect: "allow" }),
+      } as never,
+    ),
   );
   const app = new Hono();
   app.route("/api/v1", v1);
@@ -215,7 +247,7 @@ describe("GET /api/v1/me/brief-sources", () => {
     });
   }
 
-  it("returns a source whose provider is configured for the tenant", async () => {
+  it("returns a source whose provider is configured for the tenant, disabled by default", async () => {
     member = { tenantId: "ten-1", principalId: "pri-1" };
     availableProviderNames = new Set(["granola"]);
     readMemberPreferences.mockResolvedValueOnce({});
@@ -225,7 +257,7 @@ describe("GET /api/v1/me/brief-sources", () => {
       sources: { key: string; enabled: boolean; description: string }[];
     };
     expect(body.sources.map((s) => s.key)).toEqual(["granola"]);
-    expect(body.sources[0]?.enabled).toBe(true);
+    expect(body.sources[0]?.enabled).toBe(false);
     expect(body.sources[0]?.description).toBe(
       "Call notes from meetings since your last brief.",
     );
@@ -267,12 +299,42 @@ describe("GET /api/v1/me/inbox-sources", () => {
     });
   }
 
-  it("returns a source whose provider is configured for the tenant, enabled by default", async () => {
+  it("returns a source whose provider is configured for the tenant, disabled by default", async () => {
     member = { tenantId: "ten-1", principalId: "pri-1" };
-    availableProviderNames = new Set(["granola"]);
+    memberCredentialSource = new Map([["granola", "tenant"]]);
+    ownerEnabledInboxSources = new Set(["granola"]);
     readMemberPreferences.mockResolvedValueOnce({});
     const res = await mountApp().request(inboxSourcesRequest());
     expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      sources: { key: string; enabled: boolean }[];
+    };
+    expect(body.sources.map((s) => s.key)).toEqual(["granola"]);
+    expect(body.sources[0]?.enabled).toBe(false);
+  });
+
+  it("hides an owner-disabled source entirely even when the member enabled it", async () => {
+    member = { tenantId: "ten-1", principalId: "pri-1" };
+    memberCredentialSource = new Map([["granola", "tenant"]]);
+    ownerEnabledInboxSources = new Set(); // owner has not enabled granola
+    readMemberPreferences.mockResolvedValueOnce({
+      "inboxSource:granola": true,
+    });
+    const res = await mountApp().request(inboxSourcesRequest());
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { sources: unknown[] };
+    expect(body.sources).toEqual([]);
+  });
+
+  it("restores the member's preserved choice when the owner re-enables the source", async () => {
+    member = { tenantId: "ten-1", principalId: "pri-1" };
+    memberCredentialSource = new Map([["granola", "tenant"]]);
+    ownerEnabledInboxSources = new Set(["granola"]);
+    // The member's prior opt-in preference was never deleted while disabled.
+    readMemberPreferences.mockResolvedValueOnce({
+      "inboxSource:granola": true,
+    });
+    const res = await mountApp().request(inboxSourcesRequest());
     const body = (await res.json()) as {
       sources: { key: string; enabled: boolean }[];
     };
@@ -282,12 +344,23 @@ describe("GET /api/v1/me/inbox-sources", () => {
 
   it("omits a source whose provider has no configured credential", async () => {
     member = { tenantId: "ten-1", principalId: "pri-1" };
-    availableProviderNames = new Set();
+    memberCredentialSource = new Map();
     readMemberPreferences.mockResolvedValueOnce({});
     const res = await mountApp().request(inboxSourcesRequest());
     expect(res.status).toBe(200);
     const body = (await res.json()) as { sources: unknown[] };
     expect(body.sources).toEqual([]);
+  });
+
+  it("returns a source the member has connected via their own OAuth, with no tenant key configured", async () => {
+    member = { tenantId: "ten-1", principalId: "pri-1" };
+    memberCredentialSource = new Map([["granola", "member"]]);
+    ownerEnabledInboxSources = new Set(["granola"]);
+    readMemberPreferences.mockResolvedValueOnce({});
+    const res = await mountApp().request(inboxSourcesRequest());
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { sources: { key: string }[] };
+    expect(body.sources.map((s) => s.key)).toEqual(["granola"]);
   });
 
   it("returns no sources when the caller has no membership", async () => {
@@ -299,7 +372,8 @@ describe("GET /api/v1/me/inbox-sources", () => {
 
   it("reflects a disabled stored preference independent of the brief-source toggle", async () => {
     member = { tenantId: "ten-1", principalId: "pri-1" };
-    availableProviderNames = new Set(["granola"]);
+    memberCredentialSource = new Map([["granola", "tenant"]]);
+    ownerEnabledInboxSources = new Set(["granola"]);
     readMemberPreferences.mockResolvedValueOnce({
       "inboxSource:granola": false,
       "briefSource:granola": true,

@@ -149,3 +149,18 @@ export function flatBareToolNames(
 ): string[] {
   return factories.flatMap((m) => m.bareToolNames).sort();
 }
+
+/** Every bare tool name classified `sideEffect: "write"` in committed manifests. */
+export function writeBareToolNamesFromFactories(
+  factories: readonly ToolFactoryManifest[],
+): string[] {
+  const out: string[] = [];
+  for (const manifest of factories) {
+    for (const name of manifest.bareToolNames) {
+      if (manifest.sideEffects[name] === "write") {
+        out.push(name);
+      }
+    }
+  }
+  return out.sort();
+}

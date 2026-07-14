@@ -60,7 +60,8 @@ export async function fetchLinearGraphQL(
     const bodyText = errorMessageFromBody(
       await response.text().catch(() => ""),
     );
-    const detail = response.statusText || bodyText;
+    // Prefer a non-empty body (gateways often leave statusText empty/generic).
+    const detail = bodyText || response.statusText;
     throw new Error(`Linear API error: ${response.status} ${detail ?? ""}`);
   }
 

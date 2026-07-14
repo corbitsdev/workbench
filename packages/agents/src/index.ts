@@ -18,7 +18,9 @@ export {
   INTERNAL_WRITE_EXCLUSIONS,
   NATIVE_APPROVAL_GATED_TOOL_NAMES,
   approvalGatedWriteNames,
+  buildApprovalGatedToolNames,
 } from "./tool-side-effects";
+export { HUB_ONLY_TOOL_SIDE_EFFECTS } from "./hub-only-tool-side-effects";
 export {
   deterministicToolStep,
   inlineInferenceStep,
