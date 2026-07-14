@@ -105,6 +105,25 @@ export function resolveSidecarIdleEviction(
   return { idleEvictMs, sweepIntervalMs };
 }
 
+// Harness-build wedge guard. A single agent's harness build that never settles
+// (an isogit per-directory lock the build waits on, a stalled tool/credential
+// fetch, a wedged context-store load for a long-history agent) otherwise pins
+// the wake in flight forever: the hub's session.start ack times out with no
+// diagnostic and the agent is unreachable until the sidecar restarts. This
+// bound abandons the wedged build and fails the attempt loudly. Default 3
+// minutes — generous over any real cold build; `0` disables the bound.
+export const DEFAULT_SIDECAR_HARNESS_BUILD_TIMEOUT_MS = 180_000;
+
+export function resolveSidecarBuildTimeoutMs(
+  env: Record<string, string | undefined>,
+): number {
+  return parseNonNegativeInt(
+    "SIDECAR_HARNESS_BUILD_TIMEOUT_MS",
+    env.SIDECAR_HARNESS_BUILD_TIMEOUT_MS,
+    DEFAULT_SIDECAR_HARNESS_BUILD_TIMEOUT_MS,
+  );
+}
+
 export type ToolPackageCache = {
   cacheRoot: string;
   cacheMaxBytes: number;
