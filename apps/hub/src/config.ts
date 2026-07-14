@@ -445,6 +445,12 @@ export function loadConfig() {
         60_000,
         "milliseconds",
       ),
+      // CL-3585: optional Linear webhook receiver. When set, the hub mounts a
+      // public POST endpoint at /webhooks/linear that verifies the
+      // `linear-signature` HMAC against this secret and lands Issue/Comment
+      // data-change events on the assignee's inbox — an additive low-latency
+      // path alongside the 60s poller. Unset ⇒ the route is not mounted.
+      linearWebhookSecret: optionalEnv("LINEAR_WEBHOOK_SECRET"),
     },
     // Owner-managed feature grants (scheduler/triage/tasks-reconciler) replace
     // the env-only kill switches above as the day-to-day toggle; the env vars

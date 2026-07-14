@@ -171,6 +171,7 @@ import { createMeBriefRunRouter } from "./routes/me-brief-run";
 import { createMeSchedulesRouter } from "./routes/me-schedules";
 import { createMeWebhookTriggersRouter } from "./routes/me-webhook-triggers";
 import { createWebhookTriggerFireRouter } from "./routes/webhook-trigger-fire";
+import { createLinearWebhookRouter } from "./routes/webhooks-linear";
 import { deriveUserMailAddress } from "@workbench/hub-agent";
 import { createMeProfileRouter } from "./routes/me-profile";
 import { readMemberPreferences } from "./lib/member-preferences";
@@ -1428,6 +1429,24 @@ const runStarter = createWorkflowRunStarter({
 // session-auth wall.
 app.route("/", createWebhookTriggerFireRouter({ db, runStarter }));
 
+// Public Linear webhook receiver (CL-3585): additive low-latency intake
+// alongside the poller. Mounted only when a signing secret is configured; the
+// request is authenticated by the `linear-signature` HMAC, not a session.
+if (config.inboxIntake.linearWebhookSecret) {
+  app.route(
+    "/",
+    createLinearWebhookRouter({
+      db,
+      secret: config.inboxIntake.linearWebhookSecret,
+      listMembers: () => listInboxMembers(),
+      isSourceEnabledForTenant: (tenantId, sourceKey) =>
+        isWorkspaceInboxSourceEnabledForTenant(db, tenantId, sourceKey),
+      mailboxEventBus,
+      mailboxTriage,
+    }),
+  );
+}
+
 // Public OAuth callback (CL-3356). Outside the v1 session-auth wall — a provider
 // redirect is a top-level browser navigation authenticated by the signed state,
 // not a session cookie. Shares the pending PKCE store with the authorize route.
@@ -1670,11 +1689,16 @@ const listInboxMembers = async () => {
     .select({
       memberPrincipalId: schema.memberAgentInstance.memberPrincipalId,
       refId: intxSchema.principal.refId,
+      email: intxSchema.user.email,
     })
     .from(schema.memberAgentInstance)
     .innerJoin(
       intxSchema.principal,
       eq(intxSchema.principal.id, schema.memberAgentInstance.memberPrincipalId),
+    )
+    .innerJoin(
+      intxSchema.user,
+      eq(intxSchema.user.id, intxSchema.principal.refId),
     )
     .where(
       and(
@@ -1690,6 +1714,7 @@ const listInboxMembers = async () => {
       domain: config.rootTenant.domain,
     }),
     tenantDomain: config.rootTenant.domain,
+    email: row.email ?? null,
   }));
 };
 
@@ -1706,7 +1731,12 @@ const granolaPipeline = createGranolaCallPipeline({
   resolveInferenceSource: async (tenantId) => {
     const def = await resolveMyraDefinition(db, tenantId);
     if (!def) return null;
-    const res = await resolveInstanceSourcesFromDefinition(db, tenantId, def, null);
+    const res = await resolveInstanceSourcesFromDefinition(
+      db,
+      tenantId,
+      def,
+      null,
+    );
     return res.ok ? (res.sources[0] ?? null) : null;
   },
   fanout: granolaFanout,
