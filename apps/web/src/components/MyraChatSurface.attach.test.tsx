@@ -24,7 +24,9 @@ const ARTIFACT: ActiveContext = {
   body: "The full body the agent should load via the tool.",
 };
 
-function readySession(send: (text: string) => void): MyraSession {
+function readySession(
+  send: (text: string, attachments?: unknown) => void,
+): MyraSession {
   return {
     state: { phase: "ready", session: {} as never },
     messages: [],
@@ -50,6 +52,25 @@ function pressAttach() {
         bubbles: true,
       }),
     );
+  });
+}
+
+function makeImageFile(name: string): File {
+  return new File([new Uint8Array(64)], name, { type: "image/png" });
+}
+
+function pasteFilesOn(textarea: HTMLTextAreaElement, files: File[]) {
+  fireEvent.paste(textarea, {
+    clipboardData: {
+      files,
+      items: files.map((file) => ({
+        kind: "file",
+        type: file.type,
+        getAsFile: () => file,
+      })),
+      types: ["Files"],
+      getData: () => "",
+    },
   });
 }
 
@@ -152,5 +173,69 @@ describe("MyraChatSurface active-context attach", () => {
     const remove = screen.getByLabelText("Remove Artifact Launch brief");
     fireEvent.click(remove);
     expect(screen.queryByText("Launch brief")).toBeNull();
+  });
+});
+
+describe("MyraChatSurface clipboard paste (CL-3541)", () => {
+  it("attaches a pasted image as a removable chip and sends it with the message", () => {
+    const send = mock((_text: string, _attachments?: unknown) => {});
+    render(
+      <ActiveContextProvider>
+        <MyraChatSurface session={readySession(send)} />
+      </ActiveContextProvider>,
+    );
+
+    const input = screen.getByPlaceholderText(
+      "Message Myra…",
+    ) as HTMLTextAreaElement;
+    pasteFilesOn(input, [makeImageFile("clipboard.png")]);
+    expect(screen.getByText("clipboard.png")).toBeDefined();
+
+    fireEvent.change(input, { target: { value: "see this" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+
+    expect(send).toHaveBeenCalledTimes(1);
+    expect(send.mock.calls[0]![0]).toBe("see this");
+    const attachments = send.mock.calls[0]![1] as { name: string }[] | undefined;
+    expect(attachments).toHaveLength(1);
+    expect(attachments?.[0]?.name).toBe("clipboard.png");
+    expect(screen.queryByText("clipboard.png")).toBeNull();
+  });
+
+  it("still pastes plain text when the clipboard has no files", () => {
+    const send = mock((_text: string) => {});
+    render(
+      <ActiveContextProvider>
+        <MyraChatSurface session={readySession(send)} />
+      </ActiveContextProvider>,
+    );
+
+    const input = screen.getByPlaceholderText(
+      "Message Myra…",
+    ) as HTMLTextAreaElement;
+    fireEvent.paste(input, {
+      clipboardData: {
+        getData: (type: string) => (type === "text/plain" ? "plain note" : ""),
+        types: ["text/plain"],
+      },
+    });
+    expect(input.value).toBe("plain note");
+    expect(screen.queryByLabelText(/Remove/)).toBeNull();
+  });
+
+  it("removes a pasted file chip before send", () => {
+    const send = mock((_text: string) => {});
+    render(
+      <ActiveContextProvider>
+        <MyraChatSurface session={readySession(send)} />
+      </ActiveContextProvider>,
+    );
+
+    const input = screen.getByPlaceholderText(
+      "Message Myra…",
+    ) as HTMLTextAreaElement;
+    pasteFilesOn(input, [makeImageFile("drop-me.png")]);
+    fireEvent.click(screen.getByLabelText("Remove drop-me.png"));
+    expect(screen.queryByText("drop-me.png")).toBeNull();
   });
 });

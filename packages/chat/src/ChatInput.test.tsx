@@ -34,6 +34,21 @@ function fileInputOf(container: HTMLElement): HTMLInputElement {
   return input as HTMLInputElement;
 }
 
+function pasteFilesOn(textarea: HTMLTextAreaElement, files: File[]) {
+  fireEvent.paste(textarea, {
+    clipboardData: {
+      files,
+      items: files.map((file) => ({
+        kind: "file",
+        type: file.type,
+        getAsFile: () => file,
+      })),
+      types: ["Files"],
+      getData: () => "",
+    },
+  });
+}
+
 afterEach(() => {
   cleanup();
 });
@@ -261,6 +276,33 @@ describe("ChatInput", () => {
     });
     expect(screen.getByRole("alert").textContent).toContain("clip.mp4");
     expect(screen.getByText("ok.png")).toBeDefined();
+  });
+
+  it("adds a chip when an allowed image is pasted from the clipboard (Ctrl+V)", () => {
+    render(<ChatInput onSend={() => {}} attachmentPolicy={IMG_PDF_POLICY} />);
+    const textarea = screen.getByLabelText("Message") as HTMLTextAreaElement;
+    pasteFilesOn(textarea, [makeFile("screenshot.png", "image/png")]);
+    expect(screen.getByText("screenshot.png")).toBeDefined();
+    expect(textarea.value).toBe("");
+  });
+
+  it("leaves plain-text paste unchanged when the clipboard has no files", async () => {
+    const user = userEvent.setup();
+    const onSend = mock((_text: string) => {});
+    render(<ChatInput onSend={onSend} attachmentPolicy={IMG_PDF_POLICY} />);
+    const textarea = screen.getByLabelText("Message") as HTMLTextAreaElement;
+    await user.click(textarea);
+    await user.paste("hello from clipboard");
+    expect(textarea.value).toBe("hello from clipboard");
+    expect(screen.queryByLabelText(/Remove/)).toBeNull();
+  });
+
+  it("removes a pasted attachment via its remove button", () => {
+    render(<ChatInput onSend={() => {}} attachmentPolicy={IMG_PDF_POLICY} />);
+    const textarea = screen.getByLabelText("Message") as HTMLTextAreaElement;
+    pasteFilesOn(textarea, [makeFile("paste.png", "image/png")]);
+    fireEvent.click(screen.getByLabelText("Remove paste.png"));
+    expect(screen.queryByText("paste.png")).toBeNull();
   });
 });
 
