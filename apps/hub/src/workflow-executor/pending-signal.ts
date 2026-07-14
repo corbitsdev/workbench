@@ -10,5 +10,9 @@ export const PendingRunSignalSchema = type({
   signalName: "string",
   payload: "unknown",
   receivedAt: "string",
+  // Count of reconciler redeliveries so far; absent (legacy record) counts as
+  // 0. Read by the reconciler's dead-letter cap so a signal that can never
+  // fold (e.g. the run's event log was lost) stops being redelivered forever.
+  "redeliveries?": "number",
 });
 export type PendingRunSignal = typeof PendingRunSignalSchema.infer;

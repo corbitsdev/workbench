@@ -1221,6 +1221,7 @@ describe("registerAwaitingSupervisorPrewarm (CL-2756 periodic backstop)", () => 
             hibernated: 0,
             dormant: 0,
             redelivered: 0,
+            deadLettered: 0,
           });
         },
       },
