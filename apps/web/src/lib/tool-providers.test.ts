@@ -1,5 +1,10 @@
 import { describe, expect, it } from "bun:test";
-import { providerLabel, providerLogoFile } from "./tool-providers";
+import {
+  providerKeyForToolLogo,
+  providerLabel,
+  providerLogoFile,
+  toolProviderLogoFilename,
+} from "./tool-providers";
 
 describe("providerLogoFile", () => {
   it("maps known providers to a brands-library filename", () => {
@@ -19,6 +24,25 @@ describe("providerLogoFile", () => {
 
   it("returns null for a provider we have no mark for", () => {
     expect(providerLogoFile("totally-unknown")).toBeNull();
+  });
+});
+
+describe("toolProviderLogoFilename", () => {
+  it("resolves linear and attio marks from LLM wire names", () => {
+    expect(toolProviderLogoFilename("linear__get_issue")).toBe("linear.svg");
+    expect(toolProviderLogoFilename("attio__create_record")).toBe(
+      "attio-dark.svg",
+    );
+  });
+
+  it("resolves bare integration op ids when the wire name has no prefix", () => {
+    expect(providerKeyForToolLogo("exa_search")).toBe("exa");
+    expect(toolProviderLogoFilename("exa_search")).toBe("exa-dark.svg");
+  });
+
+  it("returns null when the call is not attributable", () => {
+    expect(toolProviderLogoFilename("read_file")).toBeNull();
+    expect(toolProviderLogoFilename("totally_unknown__thing")).toBeNull();
   });
 });
 

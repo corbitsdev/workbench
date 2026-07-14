@@ -313,6 +313,29 @@ describe("ToolNarrative", () => {
     ).toBeNull();
   });
 
+  it("renders a host-supplied brand marker for external tools when provided", () => {
+    const calls: ToolCall[] = [
+      {
+        id: "e1",
+        name: "linear__list_issues",
+        result: "[]",
+        isError: false,
+      },
+    ];
+    render(
+      <ToolNarrative
+        toolCalls={calls}
+        formatSummary={() => "Looking through Linear issues"}
+        isExternalTool={() => true}
+        renderToolMarker={() => (
+          <span data-testid="tool-provider-logo">linear</span>
+        )}
+      />,
+    );
+    screen.getByTestId("tool-provider-logo");
+    expect(screen.queryByTestId("tool-marker-bullet")).toBeNull();
+  });
+
   it("keeps a distinct error marker on failed tool calls", () => {
     const calls: ToolCall[] = [
       {

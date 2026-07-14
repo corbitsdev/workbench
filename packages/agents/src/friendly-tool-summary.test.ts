@@ -5,6 +5,7 @@ import {
   friendlyToolSummaryKnown,
   isCatalogMetaTool,
   isExternalIntegrationTool,
+  integrationToolProviderKey,
   summarizeToolCalls,
   toolOperationKey,
 } from "./friendly-tool-summary";
@@ -24,6 +25,35 @@ function call(
     ...extra,
   };
 }
+
+describe("integrationToolProviderKey", () => {
+  it("reads LLM and FQN provider segments", () => {
+    expect(integrationToolProviderKey("attio__create_record")).toBe("attio");
+    expect(integrationToolProviderKey("linear__list_issues")).toBe("linear");
+    expect(
+      integrationToolProviderKey(
+        "@workbench/tools-linear/linear:linear_list_issues",
+      ),
+    ).toBe("linear");
+  });
+
+  it("uses load_tools package for the provider slug", () => {
+    expect(
+      integrationToolProviderKey("load_tools", { package: "attio" }),
+    ).toBe("attio");
+    expect(integrationToolProviderKey("load_tools", {})).toBeNull();
+  });
+
+  it("returns null for workbench-internal providers and local runners", () => {
+    expect(integrationToolProviderKey("artifact__memory_save")).toBeNull();
+    expect(integrationToolProviderKey("read_file")).toBeNull();
+  });
+
+  it("resolves bare integration op ids when the wire name has no prefix", () => {
+    expect(integrationToolProviderKey("exa_search")).toBe("exa");
+    expect(integrationToolProviderKey("linear_get_issue")).toBe("linear");
+  });
+});
 
 describe("toolOperationKey", () => {
   it("takes the substring after the last colon in a fully-qualified name", () => {
@@ -202,9 +232,10 @@ describe("friendlyToolSummary", () => {
         "@workbench/tools-artifact/artifact:memory_save",
       ),
     ).toBe(false);
-    // Provider-less bare names are local runners / plumbing.
+    // Local runners stay internal; bare integration ops attribute by prefix.
     expect(isExternalIntegrationTool("read_file")).toBe(false);
     expect(isExternalIntegrationTool("ask_principal")).toBe(false);
+    expect(isExternalIntegrationTool("exa_search")).toBe(true);
     // Identity/roster and compose presets are workbench plumbing too.
     expect(isExternalIntegrationTool("agents__list_agents")).toBe(false);
     expect(isExternalIntegrationTool("compose__ab_preset_compose")).toBe(false);

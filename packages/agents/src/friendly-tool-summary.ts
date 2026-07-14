@@ -533,25 +533,74 @@ const INTERNAL_TOOL_PROVIDERS: ReadonlySet<string> = new Set([
   "workflows",
 ]);
 
+/** Bare op ids (`exa_search`, …) when the wire name has no `provider__` prefix. */
+const BARE_INTEGRATION_TOOL_PREFIXES: ReadonlySet<string> = new Set([
+  "attio",
+  "bluesky",
+  "exa",
+  "firecrawl",
+  "gamma",
+  "github",
+  "granola",
+  "linear",
+  "notion",
+  "reddit",
+  "slack",
+  "sumble",
+  "vercel",
+  "xai",
+  "youtube",
+]);
+
 /**
  * External integration tools act on outside services (Attio, Linear, Exa, …).
  * Classification keys on the provider segment of the wire name — the prefix of
  * the LLM-safe `provider__operation` form or the `@scope/pkg/provider:operation`
- * raw factory form. Provider-less bare names are local runners / plumbing and
- * count as internal, as do the {@link INTERNAL_TOOL_PROVIDERS} packages. Chat
- * uses this to give external tool lines a bullet marker and render internal
- * ones plain.
+ * raw factory form — and on known bare integration op ids (`exa_search`, …).
+ * Other provider-less names are local runners / plumbing and count as internal,
+ * as do the {@link INTERNAL_TOOL_PROVIDERS} packages. Chat uses this to give
+ * external tool lines a bullet marker and render internal ones plain.
  */
 export function isExternalIntegrationTool(name: string): boolean {
-  const llmProvider = /^([a-z0-9-]+)__/.exec(name)?.[1];
+  return integrationToolProviderKey(name) !== null;
+}
+
+/**
+ * Provider slug for brand-logo lookup on a tool call, or null when the call is
+ * workbench-internal or provider-less. Honors `load_tools` package args and both
+ * LLM (`attio__…`), FQN (`…/exa:exa_search`), and bare integration op ids.
+ */
+export function integrationToolProviderKey(
+  name: string,
+  args?: Record<string, unknown>,
+): string | null {
+  const opKey = toolOperationKey(name);
+  if (opKey === "load_tools") {
+    const pkg = args?.package;
+    if (typeof pkg === "string" && pkg.trim() !== "") {
+      return pkg.trim().toLowerCase();
+    }
+    return null;
+  }
+
+  const llmProvider =
+    /^([a-z0-9-]+)__/.exec(name)?.[1] ??
+    /^([a-z0-9-]+)__/.exec(opKey)?.[1];
   if (llmProvider !== undefined) {
-    return !INTERNAL_TOOL_PROVIDERS.has(llmProvider);
+    return INTERNAL_TOOL_PROVIDERS.has(llmProvider) ? null : llmProvider;
   }
   const rawProvider = /\/([a-z0-9-]+):/.exec(name)?.[1];
   if (rawProvider !== undefined) {
-    return !INTERNAL_TOOL_PROVIDERS.has(rawProvider);
+    return INTERNAL_TOOL_PROVIDERS.has(rawProvider) ? null : rawProvider;
   }
-  return false;
+  const barePrefix = opKey.split("_")[0]?.toLowerCase();
+  if (
+    barePrefix !== undefined &&
+    BARE_INTEGRATION_TOOL_PREFIXES.has(barePrefix)
+  ) {
+    return barePrefix;
+  }
+  return null;
 }
 
 /**

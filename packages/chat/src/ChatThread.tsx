@@ -99,6 +99,8 @@ export interface ChatThreadProps {
   isQuietTool?: ToolNarrativeProps["isQuietTool"];
   /** External integration tools get a bullet marker; internal tools render plain. */
   isExternalTool?: ToolNarrativeProps["isExternalTool"];
+  /** Optional provider brand mark for external tool rows. */
+  renderToolMarker?: ToolNarrativeProps["renderToolMarker"];
   /**
    * Predicate to hide individual tool calls from the narrative (the call still
    * runs; it is just not rendered). Used to abstract an agent's private
@@ -144,6 +146,7 @@ export function ChatThread({
   summarizeToolCalls,
   isQuietTool,
   isExternalTool,
+  renderToolMarker,
   hideToolCall,
   onRespond,
   onAction,
@@ -219,6 +222,7 @@ export function ChatThread({
         {...(summarizeToolCalls !== undefined ? { summarizeToolCalls } : {})}
         {...(isQuietTool !== undefined ? { isQuietTool } : {})}
         {...(isExternalTool !== undefined ? { isExternalTool } : {})}
+        {...(renderToolMarker !== undefined ? { renderToolMarker } : {})}
         {...(onRespond !== undefined ? { onRespond } : {})}
         {...(onAction !== undefined ? { onAction } : {})}
         {...(onRate !== undefined ? { onRate } : {})}

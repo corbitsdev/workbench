@@ -22,6 +22,7 @@ export {
   toolOperationKey,
   isCatalogMetaTool,
   isExternalIntegrationTool,
+  integrationToolProviderKey,
   isToolSummaryStyle,
   TOOL_SUMMARY_STYLES,
   TOOL_SUMMARY_STYLE_LABELS,

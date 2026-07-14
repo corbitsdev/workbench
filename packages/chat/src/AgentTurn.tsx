@@ -20,6 +20,7 @@ export interface AgentTurnProps {
   summarizeToolCalls?: ToolNarrativeProps["summarizeCalls"];
   isQuietTool?: ToolNarrativeProps["isQuietTool"];
   isExternalTool?: ToolNarrativeProps["isExternalTool"];
+  renderToolMarker?: ToolNarrativeProps["renderToolMarker"];
   onRespond?: (response: UIResponse) => void;
   onAction?: (
     action: "copy" | "download" | "save-artifact",
@@ -54,6 +55,7 @@ export function AgentTurn({
   summarizeToolCalls,
   isQuietTool,
   isExternalTool,
+  renderToolMarker,
   onRespond,
   onAction,
   onRate,
@@ -105,6 +107,7 @@ export function AgentTurn({
                 : {})}
               {...(isQuietTool !== undefined ? { isQuietTool } : {})}
               {...(isExternalTool !== undefined ? { isExternalTool } : {})}
+              {...(renderToolMarker !== undefined ? { renderToolMarker } : {})}
               {...(onRespond !== undefined ? { onRespond } : {})}
               {...(onAction !== undefined ? { onAction } : {})}
             />
