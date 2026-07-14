@@ -7,6 +7,10 @@
       "types": "./src/index.ts",
       "default": "./src/index.ts"
     },
+    "./comparison-schema": {
+      "types": "./src/comparison-schema.ts",
+      "default": "./src/comparison-schema.ts"
+    },
     "./styles.css": "./src/styles.css"
   },
   "scripts": {

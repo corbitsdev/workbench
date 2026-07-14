@@ -14,14 +14,16 @@ export {
 export { FileInput } from "./FileInput";
 export { Markdown } from "./Markdown";
 export {
-  ComparisonView,
+  ComparisonRankingEntrySchema,
   ComparisonResultSchema,
   ComparisonVariantSchema,
-  ComparisonRankingEntrySchema,
   parseComparisonResult,
+  type ComparisonRankingEntry,
   type ComparisonResult,
   type ComparisonVariant,
-  type ComparisonRankingEntry,
+} from "./comparison-schema";
+export {
+  ComparisonView,
   type ComparisonViewProps,
 } from "./comparison";
 export { PagePanel } from "./PagePanel";

@@ -16,7 +16,10 @@
  */
 
 import { type } from "arktype";
-import { ComparisonResultSchema, type ComparisonResult } from "@workbench/ui";
+import {
+  ComparisonResultSchema,
+  type ComparisonResult,
+} from "@workbench/ui/comparison-schema";
 
 export const DocumentActionsSchema = type({
   "copy?": "boolean",
