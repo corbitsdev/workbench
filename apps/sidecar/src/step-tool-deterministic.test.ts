@@ -364,4 +364,72 @@ describe("runDeterministicToolStep", () => {
       }),
     ).rejects.toThrow(/input field "reply"/);
   });
+
+  test("a non-optional argMap field that is an empty string on the input passes through verbatim", async () => {
+    stubHubFetch();
+    const { env } = await makeEnv();
+    const result = await runDeterministicToolStep({
+      env: env as never,
+      toolName: "write_file",
+      input: { path: "out.txt", reply: "" },
+      argMapJson: JSON.stringify({
+        content: { from: "reply" },
+        path: { from: "path" },
+      }),
+      signal: new AbortController().signal,
+    });
+    const tr = result.output as Record<string, unknown>;
+    expect(tr).toHaveProperty("callId");
+    expect(tr.isError).not.toBe(true);
+  });
+
+  test("an optional argMap field absent from the input skips the tool call without throwing", async () => {
+    stubHubFetch();
+    const { env } = await makeEnv();
+    const result = await runDeterministicToolStep({
+      env: env as never,
+      toolName: "write_file",
+      input: { path: "out.txt" },
+      argMapJson: JSON.stringify({
+        content: { from: "reply", optional: true },
+        path: { from: "path" },
+      }),
+      signal: new AbortController().signal,
+    });
+    expect(result.output).toEqual({ skipped: true });
+  });
+
+  test("an optional argMap field that is an empty string on the input also skips", async () => {
+    stubHubFetch();
+    const { env } = await makeEnv();
+    const result = await runDeterministicToolStep({
+      env: env as never,
+      toolName: "write_file",
+      input: { path: "out.txt", reply: "" },
+      argMapJson: JSON.stringify({
+        content: { from: "reply", optional: true },
+        path: { from: "path" },
+      }),
+      signal: new AbortController().signal,
+    });
+    expect(result.output).toEqual({ skipped: true });
+  });
+
+  test("an optional argMap field present with a real value is used, not skipped", async () => {
+    stubHubFetch();
+    const { env } = await makeEnv();
+    const result = await runDeterministicToolStep({
+      env: env as never,
+      toolName: "write_file",
+      input: { path: "out.txt", reply: "real content" },
+      argMapJson: JSON.stringify({
+        content: { from: "reply", optional: true },
+        path: { from: "path" },
+      }),
+      signal: new AbortController().signal,
+    });
+    const tr = result.output as Record<string, unknown>;
+    expect(tr).toHaveProperty("callId");
+    expect(tr.isError).not.toBe(true);
+  });
 });

@@ -104,6 +104,37 @@ describe("configToRow", () => {
     expect(row.description).toBe("");
   });
 
+  it("surfaces systemPrompt as its own row field, independent of the description fallback", () => {
+    const row = configToRow(
+      BASE.templateId,
+      BASE.version,
+      BASE.name,
+      {
+        gammaId: "g-abc",
+        description: "Human label",
+        systemPrompt: "Use a formal, security-audience tone.",
+      },
+      BASE.authorId,
+      BASE.createdAt,
+    );
+
+    expect(row.description).toBe("Human label");
+    expect(row.systemPrompt).toBe("Use a formal, security-audience tone.");
+  });
+
+  it("defaults systemPrompt to empty string when config carries none", () => {
+    const row = configToRow(
+      BASE.templateId,
+      BASE.version,
+      BASE.name,
+      { gammaId: "g-abc", description: "A label" },
+      BASE.authorId,
+      BASE.createdAt,
+    );
+
+    expect(row.systemPrompt).toBe("");
+  });
+
   it("throws when gammaId is missing from config", () => {
     expect(() =>
       configToRow(

@@ -68,7 +68,10 @@ export const STEP_INLINE_RETRY_MAX_TAG = "workbench.inlineRetryMaxAttempts";
  * JSON-serializable: the workflow definition is JSON-deployed, so no
  * functions.
  */
-export const ArgMapSpec = type({ from: "string" }).or({ literal: "unknown" });
+export const ArgMapSpec = type({
+  from: "string",
+  "optional?": "boolean",
+}).or({ literal: "unknown" });
 export type ArgMapSpec = typeof ArgMapSpec.infer;
 
 export const ArgMap = type({ "[string]": ArgMapSpec });
@@ -90,6 +93,12 @@ export interface DeterministicToolStepOpts {
    * Each key is a TOOL argument name; the value pulls a top-level field off
    * the evaluated input (`{ from }`) or supplies a constant (`{ literal }`).
    * When absent, the evaluated input is passed verbatim as the tool args.
+   * A `{ from }` spec may set `optional: true` to mean "this field may
+   * legitimately be absent (or an empty string) on the evaluated input" —
+   * e.g. an intake field that only exists for one run source. The sidecar's
+   * `reshapeWithArgMap` treats an absent/empty OPTIONAL field as a skip
+   * (no tool call, no throw) rather than the loud failure a non-optional
+   * `{ from }` still raises for a missing field.
    */
   argMap?: ArgMap;
   /** Step ids this step depends on. */
