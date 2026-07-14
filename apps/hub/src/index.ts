@@ -67,6 +67,7 @@ import {
   backfillMissingWorkflowFacts,
   projectWorkflowRunFacts,
 } from "./workflow-executor/workflow-run-facts";
+import { deliverRunTerminalMail } from "./workflow-executor/run-terminal-mail";
 import { deliverPendingGateMail } from "./workflow-executor/gate-mail";
 import { createWorkflowAnalyticsRouter } from "./routes/workflow-analytics";
 import {
@@ -403,6 +404,24 @@ const repoStore = wrapRepoStoreWithProjection(
         },
       ).catch((err: unknown) => {
         log.error("workflow gate mail delivery failed", {
+          runId: args.runId,
+          error: err instanceof Error ? err : new Error(String(err)),
+        });
+      });
+    },
+    // Deliver a "your run finished" mailbox item to the run creator when a
+    // run reaches a terminal status. Fire-and-forget; the deliverer owns its
+    // errors and must never block pack receipt.
+    deliverRunMail: (args) => {
+      void deliverRunTerminalMail(
+        {
+          db,
+          deploymentDomain: config.rootTenant.domain,
+          mailboxEventBus,
+        },
+        args,
+      ).catch((err: unknown) => {
+        log.error("workflow run terminal mail delivery failed", {
           runId: args.runId,
           error: err instanceof Error ? err : new Error(String(err)),
         });

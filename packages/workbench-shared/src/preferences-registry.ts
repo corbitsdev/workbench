@@ -127,6 +127,23 @@ const PREFERENCE_REGISTRY_BASE: readonly PreferenceEntry[] = [
       "Notify me in my inbox when a task is created for me, assigned to me, or waiting on me.",
     category: "Notifications",
   },
+  {
+    key: "notifyRunFailure",
+    type: "boolean",
+    default: true,
+    label: "Workflow run failures",
+    description: "Notify me in my inbox when a workflow run I started fails.",
+    category: "Notifications",
+  },
+  {
+    key: "notifyRunCompletion",
+    type: "boolean",
+    default: false,
+    label: "Workflow run completions",
+    description:
+      "Notify me in my inbox when a workflow run I started completes successfully.",
+    category: "Notifications",
+  },
   // Tasks toggles from the task design spike. Triage's own task creation
   // defaults ON so prepare-only members keep getting the tasks it already
   // prepares today; the other two default OFF because they are additive

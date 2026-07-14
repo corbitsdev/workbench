@@ -32,6 +32,31 @@ describe("Markdown", () => {
     expect(link.getAttribute("rel")).toContain("noopener");
   });
 
+  it("renders a javascript: link as inert text, never a clickable anchor", () => {
+    render(<Markdown>{"[click me](javascript:alert(1))"}</Markdown>);
+    expect(screen.queryByRole("link")).toBeNull();
+    // Streamdown may append a "[blocked]" suffix when it strips the href.
+    expect(screen.getByText(/click me/)).toBeTruthy();
+  });
+
+  it("renders a data: link as inert text", () => {
+    render(<Markdown>{"[x](data:text/html,<script>)"}</Markdown>);
+    expect(screen.queryByRole("link")).toBeNull();
+    expect(screen.getByText(/^x/)).toBeTruthy();
+  });
+
+  it("keeps app-relative links clickable", () => {
+    render(<Markdown>{"[trace](/insights/trace/wfr-1)"}</Markdown>);
+    const link = screen.getByRole("link", { name: "trace" });
+    expect(link.getAttribute("href")).toBe("/insights/trace/wfr-1");
+  });
+
+  it("keeps mailto links clickable", () => {
+    render(<Markdown>{"[mail](mailto:a@b.com)"}</Markdown>);
+    const link = screen.getByRole("link", { name: "mail" });
+    expect(link.getAttribute("href")).toContain("mailto:a@b.com");
+  });
+
   it("renders a chat mention token as a pill, not a link", () => {
     render(<Markdown>{"cc @[Jane Doe](#usr_abc123) please review"}</Markdown>);
     expect(screen.queryByRole("link", { name: "Jane Doe" })).toBeNull();
