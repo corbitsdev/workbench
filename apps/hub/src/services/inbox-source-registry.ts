@@ -13,6 +13,12 @@ export interface InboxIntakeMember {
   /** The member's inbox address the rows are filed under (their `usr_` addr). */
   inboxAddress: string;
   tenantDomain: string;
+  /** The member's account email, used to scope a source that has no member
+   * OAuth identity (a tenant-shared key) to this member — e.g. Linear's
+   * `assignee: { email: { eq } }` filter. Null when the account carries no
+   * email; such members are skipped for email-scoped tenant-key fetches
+   * rather than guessed at (CL-3580). */
+  email: string | null;
 }
 
 /** One new external item an intake source surfaces. `externalId` is the
@@ -36,6 +42,10 @@ export type InboxSourceFetcher = (
   cutoff: Date,
   limit: number,
   signal: AbortSignal,
+  /** The member's account email, when known — lets a fetcher scope a
+   * tenant-shared credential to this member (the source has no per-member
+   * OAuth identity to scope to). Undefined for workspace-scope fetches. */
+  memberEmail?: string | null,
 ) => Promise<IntakeItem[]>;
 
 /** Whether a source runs per enabled MEMBER (`member`, gated by the member's
@@ -124,6 +134,7 @@ export function defineFetchInboxSource(
         ctx.cutoff,
         ctx.perSourceLimit,
         ctx.signal,
+        ctx.member.email,
       );
       await ctx.deliverItems(items);
     },

@@ -5,7 +5,7 @@ import {
   resolveEnabledInboxSources,
 } from "@workbench/shared";
 import type { HubDb } from "../db";
-import { buildMailFrame, writeMailboxMessage } from "../lib/mailbox-write";
+import { deliverInboxItems } from "../lib/inbox-delivery";
 import type { MailboxEventBus } from "../lib/mailbox-events";
 import { isMemberSelfServiceCapabilityActive } from "../lib/capability-grants";
 import { readMemberPreferences } from "../lib/member-preferences";
@@ -14,7 +14,6 @@ import {
   resolveTenantToolCredential,
 } from "../lib/member-tool-credential";
 import type { MailboxTriage } from "./mailbox-triage";
-import type { UserMailboxRowEvent } from "../lib/principal-mailbox";
 import {
   INBOX_SOURCE_REGISTRY,
   type InboxIntakeMember,
@@ -131,44 +130,18 @@ export function createInboxIntake(deps: InboxIntakeDeps): InboxIntake {
     sourceKey: string,
     items: IntakeItem[],
   ): Promise<number> {
-    const fromAddress = `${sourceKey}@${member.tenantDomain}`;
-    let delivered = 0;
-    for (const item of items) {
-      const written = await writeMailboxMessage(
-        deps.db,
-        {
-          tenantId: member.tenantId,
-          principalId: member.memberPrincipalId,
-          address: member.inboxAddress,
-          fromAddress,
-          subject: item.subject,
-          body: item.body,
-          messageKey: `inbox:${sourceKey}:${item.externalId}`,
-        },
-        deps.mailboxEventBus,
-      );
-      if (!written) continue; // already delivered (dedupe)
-      delivered += 1;
-      if (deps.mailboxTriage) {
-        const event: UserMailboxRowEvent = {
-          rowId: written.id,
-          tenantId: member.tenantId,
-          memberPrincipalId: member.memberPrincipalId,
-          recipientAddress: member.inboxAddress,
-          senderAddress: fromAddress,
-          subject: item.subject,
-          fromAddress,
-          raw: buildMailFrame({
-            from: fromAddress,
-            to: member.inboxAddress,
-            subject: item.subject,
-            body: item.body,
-          }),
-        };
-        deps.mailboxTriage.enqueue(event);
-      }
-    }
-    return delivered;
+    return deliverInboxItems(
+      {
+        db: deps.db,
+        ...(deps.mailboxEventBus
+          ? { mailboxEventBus: deps.mailboxEventBus }
+          : {}),
+        ...(deps.mailboxTriage ? { mailboxTriage: deps.mailboxTriage } : {}),
+      },
+      member,
+      sourceKey,
+      items,
+    );
   }
 
   async function withTimeout(
