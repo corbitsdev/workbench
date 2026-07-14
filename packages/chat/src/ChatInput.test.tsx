@@ -1,5 +1,5 @@
 /// <reference types="bun" />
-import { afterEach, describe, expect, it, mock } from "bun:test";
+import { afterEach, beforeEach, describe, expect, it, mock } from "bun:test";
 import {
   cleanup,
   fireEvent,
@@ -503,5 +503,80 @@ describe("ChatInput abort (stop button)", () => {
       await user.type(screen.getByLabelText("Message"), "hey @jan");
       expect(screen.queryByRole("listbox")).toBeNull();
     });
+  });
+});
+
+describe("ChatInput voice dictation", () => {
+  let lastRecognition: {
+    onresult: ((event: unknown) => void) | null;
+    onspeechend: (() => void) | null;
+    start: () => void;
+  } | null = null;
+
+  class WindowSpeechRecognition {
+    continuous = false;
+    interimResults = false;
+    lang = "en-US";
+    onresult: ((event: unknown) => void) | null = null;
+    onspeechend: (() => void) | null = null;
+    onerror: ((event: { error: string }) => void) | null = null;
+    onend: (() => void) | null = null;
+    start() {
+      lastRecognition = this;
+    }
+    stop() {}
+    abort() {}
+  }
+
+  beforeEach(() => {
+    lastRecognition = null;
+    (
+      window as Window & { SpeechRecognition?: typeof WindowSpeechRecognition }
+    ).SpeechRecognition = WindowSpeechRecognition;
+  });
+
+  it("shows the mic control only when voiceInput is enabled", () => {
+    render(<ChatInput onSend={() => {}} />);
+    expect(screen.queryByRole("button", { name: "Start voice input" })).toBeNull();
+
+    render(<ChatInput onSend={() => {}} voiceInput />);
+    expect(screen.getByRole("button", { name: "Start voice input" })).toBeDefined();
+  });
+
+  it("writes transcripts into the message field and auto-sends after silence", async () => {
+    const user = userEvent.setup();
+    const onSend = mock((_text: string) => {});
+    render(<ChatInput onSend={onSend} voiceInput />);
+
+    await user.click(screen.getByRole("button", { name: "Start voice input" }));
+    expect(screen.getByTestId("composer-voice-status").textContent).toContain(
+      "Listening",
+    );
+
+    const input = screen.getByLabelText("Message") as HTMLTextAreaElement;
+    lastRecognition?.onresult?.({
+      resultIndex: 0,
+      results: {
+        length: 1,
+        0: { isFinal: true, 0: { transcript: "hello myra" } },
+      },
+    });
+    expect(input.value).toBe("hello myra");
+
+    lastRecognition?.onspeechend?.();
+    expect(screen.getByTestId("composer-voice-status").textContent).toContain(
+      "Sending in 3",
+    );
+
+    await waitFor(() => expect(onSend).toHaveBeenCalledTimes(1), {
+      timeout: 4000,
+    });
+    expect(onSend.mock.calls[0]?.[0]).toBe("hello myra");
+    expect(input.value).toBe("");
+    expect(
+      screen.getByRole("button", { name: "Stop voice input" }).getAttribute(
+        "aria-pressed",
+      ),
+    ).toBe("true");
   });
 });

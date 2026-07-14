@@ -240,6 +240,7 @@ export function MyraChatSurface({
     ...(mentionCandidates !== undefined && mentionCandidates.length > 0
       ? { mentionCandidates }
       : {}),
+    voiceInput: true,
   };
 
   const { state } = session;
