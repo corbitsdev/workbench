@@ -72,7 +72,7 @@ export default function GammaPresentationBody({
         ref={pdfIframeRef}
         src={downloadUrl}
         title="Presentation PDF"
-        className="min-h-[24rem] h-[80vh] w-full rounded border border-border bg-surface"
+        className="min-h-[28rem] h-[min(75vh,900px)] max-h-[900px] w-full rounded border border-border bg-surface"
       />
     );
   }
