@@ -13,8 +13,14 @@ import { createGrantStore } from "@intx/db";
 
 import { schema } from "../db";
 import type { HubDb } from "../db";
-import { isAdmin } from "../lib/admin-grant";
-import { assignRole, removeRole } from "./admin-governance";
+import { isAdmin, isOwner } from "../lib/admin-grant";
+import {
+  assignRole,
+  countOwners,
+  demoteFromOwner,
+  LastOwnerError,
+  removeRole,
+} from "./admin-governance";
 
 // Real-Postgres exercise of the enforced management seam: assignRole/removeRole
 // write real `principal_role` rows, and the admin gate (`isAdmin` -> native
@@ -88,5 +94,59 @@ describe("elevate/demote over the real grant store", () => {
 
     // Gate denies again.
     expect(await isAdmin(grantStore, USER_PRINCIPAL, TENANT)).toBe(false);
+  });
+});
+
+// CL-3634: owner role delegation reuses the exact same native
+// principal_role/grant mechanism — no bespoke concept — but adds the
+// last-owner guardrail on top of `removeRole`.
+describe("owner role delegation (CL-3634) over the real grant store", () => {
+  const OWNER_ROLE = "rol-owner";
+  const FIRST_OWNER = "prn-owner-1";
+  const SECOND_OWNER = "prn-owner-2";
+
+  beforeEach(async () => {
+    await client.query(
+      `insert into role (id, tenant_id, name, is_system) values ($1, $2, 'owner', true)`,
+      [OWNER_ROLE, TENANT],
+    );
+    await client.query(
+      `insert into "grant" (id, tenant_id, role_id, resource, action, effect, origin)
+       values ('grt-owner', $1, $2, '*', '*', 'allow', 'role')`,
+      [TENANT, OWNER_ROLE],
+    );
+    await assignRole(db, TENANT, FIRST_OWNER, OWNER_ROLE);
+  });
+
+  test("assigning the owner role flips the owner gate to allow", async () => {
+    const grantStore = createGrantStore(db);
+    expect(await isOwner(grantStore, SECOND_OWNER, TENANT)).toBe(false);
+    await assignRole(db, TENANT, SECOND_OWNER, OWNER_ROLE);
+    expect(await isOwner(grantStore, SECOND_OWNER, TENANT)).toBe(true);
+  });
+
+  test("demoteFromOwner removes the role when another owner remains", async () => {
+    await assignRole(db, TENANT, SECOND_OWNER, OWNER_ROLE);
+    expect(await countOwners(db, OWNER_ROLE)).toBe(2);
+
+    await demoteFromOwner(db, TENANT, OWNER_ROLE, SECOND_OWNER);
+
+    expect(await countOwners(db, OWNER_ROLE)).toBe(1);
+    const grantStore = createGrantStore(db);
+    expect(await isOwner(grantStore, SECOND_OWNER, TENANT)).toBe(false);
+    expect(await isOwner(grantStore, FIRST_OWNER, TENANT)).toBe(true);
+  });
+
+  test("demoteFromOwner refuses to remove the last remaining owner", async () => {
+    expect(await countOwners(db, OWNER_ROLE)).toBe(1);
+
+    await expect(
+      demoteFromOwner(db, TENANT, OWNER_ROLE, FIRST_OWNER),
+    ).rejects.toBeInstanceOf(LastOwnerError);
+
+    // The role assignment survives the refused demote.
+    expect(await countOwners(db, OWNER_ROLE)).toBe(1);
+    const grantStore = createGrantStore(db);
+    expect(await isOwner(grantStore, FIRST_OWNER, TENANT)).toBe(true);
   });
 });

@@ -51,6 +51,7 @@ import { OwnerCatalog } from "./pages/admin/OwnerCatalog";
 import { OwnerGammaTemplates } from "./pages/admin/OwnerGammaTemplates";
 import { OwnerCapabilities } from "./pages/admin/OwnerCapabilities";
 import { OwnerWorkflows } from "./pages/admin/OwnerWorkflows";
+import { OwnerMembers } from "./pages/admin/OwnerMembers";
 import { OwnerDemos } from "./pages/admin/OwnerDemos";
 
 // Preserves the tool name when redirecting the legacy /tools/:name path to its
@@ -181,35 +182,35 @@ function AppShell() {
           <CommandPaletteProvider>
             <ActiveContextProvider>
               <PageChromeProvider>
-              <ConnectionStatusProvider>
-                <OnboardingTourProvider>
-                  <div className="flex h-dvh flex-row overflow-hidden bg-page">
-                    <AppSidebar
-                      mobileOpen={drawerOpen}
-                      onNavigate={() => setDrawerOpen(false)}
-                    />
-                    {drawerOpen && (
-                      <button
-                        type="button"
-                        aria-label="Close menu"
-                        onClick={() => setDrawerOpen(false)}
-                        className="fixed inset-0 z-40 bg-black/40 md:hidden"
+                <ConnectionStatusProvider>
+                  <OnboardingTourProvider>
+                    <div className="flex h-dvh flex-row overflow-hidden bg-page">
+                      <AppSidebar
+                        mobileOpen={drawerOpen}
+                        onNavigate={() => setDrawerOpen(false)}
                       />
-                    )}
-                    <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
-                      <AppTopBar onOpenMenu={() => setDrawerOpen(true)} />
-                      <main
-                        data-tour="myra-chat"
-                        className="flex-1 overflow-hidden"
-                      >
-                        <Outlet />
-                      </main>
-                      <PersonalAgentChat />
+                      {drawerOpen && (
+                        <button
+                          type="button"
+                          aria-label="Close menu"
+                          onClick={() => setDrawerOpen(false)}
+                          className="fixed inset-0 z-40 bg-black/40 md:hidden"
+                        />
+                      )}
+                      <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
+                        <AppTopBar onOpenMenu={() => setDrawerOpen(true)} />
+                        <main
+                          data-tour="myra-chat"
+                          className="flex-1 overflow-hidden"
+                        >
+                          <Outlet />
+                        </main>
+                        <PersonalAgentChat />
+                      </div>
+                      <WhatsNewPopup />
                     </div>
-                    <WhatsNewPopup />
-                  </div>
-                </OnboardingTourProvider>
-              </ConnectionStatusProvider>
+                  </OnboardingTourProvider>
+                </ConnectionStatusProvider>
               </PageChromeProvider>
             </ActiveContextProvider>
           </CommandPaletteProvider>
@@ -301,6 +302,7 @@ export const router = createBrowserRouter([
               { path: "capabilities/gamma", element: <OwnerGammaTemplates /> },
               { path: "workflows", element: <OwnerWorkflows /> },
               { path: "demos", element: <OwnerDemos /> },
+              { path: "members", element: <OwnerMembers /> },
               // Legacy owner routes → their new homes.
               {
                 path: "templates",

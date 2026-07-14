@@ -3,18 +3,14 @@ import {
   buildWebSitePreviewHtml,
   parseWebSiteContentJson,
   WebSiteContentError,
+  type SessionStatus,
 } from "@workbench/shared";
-import {
-  useEffect,
-  useLayoutEffect,
-  useRef,
-  useState,
-  type ReactNode,
-} from "react";
-import { FileWarning, Link2Off, User } from "lucide-react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { Link2Off, User } from "lucide-react";
 import { buttonVariants, Markdown } from "@workbench/ui";
 import CompareBody from "./CompareBody";
 import { CsvTable, CsvTooLarge } from "./CsvTable";
+import { EmptyContentNotice, PreviewFallback } from "./ArtifactContentNotice";
 import GammaPresentationBody from "./GammaPresentationBody";
 import PresentationBody from "./PresentationBody";
 import ResearchBody, { parseResearchBrief } from "./ResearchBody";
@@ -31,28 +27,9 @@ interface ArtifactBodyArtifact {
   // The real name of the artifact's owner, when known — used to give the
   // LinkedIn preview a genuine identity instead of fabricated chrome text.
   ownerName?: string | null;
-}
-
-// Shared "designed" fallback for weak/unparseable previews (invalid URL,
-// missing id, malformed payload): an icon + message inside the same muted
-// card treatment used elsewhere in this file, never a raw `<pre>` dump or a
-// bare sentence.
-function PreviewFallback({
-  icon: Icon = FileWarning,
-  message,
-  action,
-}: {
-  icon?: typeof FileWarning;
-  message: string;
-  action?: ReactNode;
-}) {
-  return (
-    <div className="flex flex-col items-center gap-3 rounded border border-border bg-surface-2/40 px-6 py-10 text-center">
-      <Icon className="h-8 w-8 text-text-3" aria-hidden="true" />
-      <p className="max-w-[42ch] text-sm text-text-3">{message}</p>
-      {action}
-    </div>
-  );
+  // The originating session's lifecycle state, when known — distinguishes a
+  // genuinely empty artifact from one whose collateral is still generating.
+  sessionStatus?: SessionStatus | null;
 }
 
 interface ArtifactBodyProps {
@@ -74,7 +51,16 @@ function extractBrief(source: unknown): unknown {
   return undefined;
 }
 
-function EmailBody({ body }: { body: string }) {
+function EmailBody({
+  body,
+  sessionStatus,
+}: {
+  body: string;
+  sessionStatus?: SessionStatus | null;
+}) {
+  if (body.trim().length === 0) {
+    return <EmptyContentNotice sessionStatus={sessionStatus} />;
+  }
   return (
     <div className="font-mono text-sm text-text-2 leading-relaxed whitespace-pre-wrap bg-surface-2 rounded border border-border p-5">
       {body}
@@ -95,10 +81,15 @@ function initialsFromName(name: string): string {
 function LinkedInBody({
   body,
   authorName,
+  sessionStatus,
 }: {
   body: string;
   authorName?: string | null;
+  sessionStatus?: SessionStatus | null;
 }) {
+  if (body.trim().length === 0) {
+    return <EmptyContentNotice sessionStatus={sessionStatus} />;
+  }
   return (
     <div className="bg-surface-2 rounded border border-border p-5">
       <div className="flex items-center gap-3 mb-4 pb-4 border-b border-border">
@@ -126,10 +117,15 @@ function LinkedInBody({
 function OnePagerBody({
   body,
   layout = "inline",
+  sessionStatus,
 }: {
   body: string;
   layout?: "inline" | "detail";
+  sessionStatus?: SessionStatus | null;
 }) {
+  if (body.trim().length === 0) {
+    return <EmptyContentNotice sessionStatus={sessionStatus} />;
+  }
   return <Markdown className={proseClass(layout)}>{body}</Markdown>;
 }
 
@@ -466,17 +462,37 @@ export default function ArtifactBody({
   const uploadFilename = extractUploadFilename(artifact.source);
 
   if (usesSocialPostPreview(type)) {
-    return <LinkedInBody body={body} authorName={artifact.ownerName} />;
+    return (
+      <LinkedInBody
+        body={body}
+        authorName={artifact.ownerName}
+        sessionStatus={artifact.sessionStatus}
+      />
+    );
   }
 
   switch (type) {
     // uploaded binaries (file/folder import) — served by the download route
     case "image": {
-      if (!artifact.id) return <OnePagerBody body={body} layout={layout} />;
+      if (!artifact.id)
+        return (
+          <OnePagerBody
+            body={body}
+            layout={layout}
+            sessionStatus={artifact.sessionStatus}
+          />
+        );
       return <ImageBody artifactId={artifact.id} filename={uploadFilename} />;
     }
     case "file": {
-      if (!artifact.id) return <OnePagerBody body={body} layout={layout} />;
+      if (!artifact.id)
+        return (
+          <OnePagerBody
+            body={body}
+            layout={layout}
+            sessionStatus={artifact.sessionStatus}
+          />
+        );
       if (isCsvUpload(artifact.source, uploadFilename)) {
         return (
           <UploadedCsvBody artifactId={artifact.id} filename={uploadFilename} />
@@ -501,7 +517,7 @@ export default function ArtifactBody({
     // email
     case "email":
     case "follow-up-email":
-      return <EmailBody body={body} />;
+      return <EmailBody body={body} sessionStatus={artifact.sessionStatus} />;
     // documents
     case "one-pager":
     case "sales-one-pager":
@@ -515,13 +531,31 @@ export default function ArtifactBody({
     case "customer-quote-pulls":
     case "pain-points":
     case "call-transcript":
-      return <OnePagerBody body={body} layout={layout} />;
+      return (
+        <OnePagerBody
+          body={body}
+          layout={layout}
+          sessionStatus={artifact.sessionStatus}
+        />
+      );
     // battlecard
     case "battlecard":
-      return <OnePagerBody body={body} layout={layout} />;
+      return (
+        <OnePagerBody
+          body={body}
+          layout={layout}
+          sessionStatus={artifact.sessionStatus}
+        />
+      );
     // A/B comparison — content is JSON.stringify(ComparisonResult)
     case "ab-comparison":
-      return <CompareBody content={body} layout={layout} />;
+      return (
+        <CompareBody
+          content={body}
+          layout={layout}
+          sessionStatus={artifact.sessionStatus}
+        />
+      );
     // presentation
     case "presentation": {
       let isValidUrl = false;
@@ -543,7 +577,10 @@ export default function ArtifactBody({
     }
     // gamma deck — content is JSON.stringify(GammaPresentationContent); a
     // durable export PDF (source.upload) is offered via the download route.
-    case "gamma_presentation":
+    case "gamma_presentation": {
+      if (body.trim().length === 0) {
+        return <EmptyContentNotice sessionStatus={artifact.sessionStatus} />;
+      }
       return (
         <GammaPresentationBody
           content={body}
@@ -551,6 +588,7 @@ export default function ArtifactBody({
           hasPdf={uploadFilename !== null}
         />
       );
+    }
     // research
     case "research": {
       const parsedBrief = parseResearchBrief(brief);
@@ -562,10 +600,22 @@ export default function ArtifactBody({
           <PreviewFallback message="This research artifact has no readable content — the underlying data couldn't be parsed." />
         );
       }
-      return <OnePagerBody body={body} layout={layout} />;
+      return (
+        <OnePagerBody
+          body={body}
+          layout={layout}
+          sessionStatus={artifact.sessionStatus}
+        />
+      );
     }
     // fallback
     default:
-      return <OnePagerBody body={body} layout={layout} />;
+      return (
+        <OnePagerBody
+          body={body}
+          layout={layout}
+          sessionStatus={artifact.sessionStatus}
+        />
+      );
   }
 }

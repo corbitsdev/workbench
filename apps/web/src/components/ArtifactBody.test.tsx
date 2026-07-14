@@ -561,6 +561,66 @@ describe("ArtifactBody rendering", () => {
       expect(link.className).not.toContain("bg-accent");
     });
 
+    it("shows an explicit empty state instead of a blank box for a contentless document artifact", () => {
+      render(
+        React.createElement(ArtifactBody, {
+          artifact: { content: "", kind: "one-pager" },
+        }),
+      );
+      screen.getByText(/no content yet/i);
+    });
+
+    it("shows a processing state instead of an empty state when the source session is still generating", () => {
+      render(
+        React.createElement(ArtifactBody, {
+          artifact: {
+            content: "",
+            kind: "one-pager",
+            sessionStatus: "generating",
+          },
+        }),
+      );
+      screen.getByText(/still being generated/i);
+      expect(screen.queryByText(/no content yet/i)).toBeNull();
+    });
+
+    it("shows an explicit empty state for a contentless email artifact", () => {
+      render(
+        React.createElement(ArtifactBody, {
+          artifact: { content: "   ", kind: "email" },
+        }),
+      );
+      screen.getByText(/no content yet/i);
+    });
+
+    it("shows an explicit empty state for a contentless LinkedIn/social artifact", () => {
+      render(
+        React.createElement(ArtifactBody, {
+          artifact: { content: "", kind: "linkedin-post" },
+        }),
+      );
+      screen.getByText(/no content yet/i);
+    });
+
+    it("shows an explicit empty state for a contentless ab-comparison artifact", () => {
+      render(
+        React.createElement(ArtifactBody, {
+          artifact: { content: "", kind: "ab-comparison" },
+        }),
+      );
+      screen.getByText(/no content yet/i);
+    });
+
+    it("shows an explicit empty state for a contentless gamma_presentation artifact instead of an invalid-deck message", () => {
+      render(
+        React.createElement(ArtifactBody, {
+          artifact: { content: "", kind: "gamma_presentation" },
+        }),
+      );
+      screen.getByText(/no content yet/i);
+      expect(screen.queryByText(/invalid or unavailable/i)).toBeNull();
+    });
+
     it("renders the non-CSV file download link as the shared Button primitive", () => {
       render(
         React.createElement(ArtifactBody, {

@@ -59,7 +59,11 @@ mock.module("../lib/member-preferences", () => ({
 const { createInboxIntake } = await import("./inbox-intake");
 import { schema } from "../db";
 import type { HubDb } from "../db";
-import type { IntakeItem, InboxSourceFetcher } from "./inbox-intake";
+import type {
+  InboxSourceContext,
+  InboxSourceFetcher,
+  IntakeItem,
+} from "./inbox-intake";
 
 const TENANT = "ten-intake";
 const MEMBER = "prn-member";
@@ -105,6 +109,7 @@ afterAll(async () => {
 
 beforeEach(async () => {
   await client.exec(`DELETE FROM principal_mailbox;`);
+  await client.exec(`DELETE FROM inbox_intake_cursor;`);
 });
 
 afterEach(() => {
@@ -257,6 +262,57 @@ describe("per-source lastPollAt cursor (CL-3577 review fix A)", () => {
     expect(seenLastPollAt).toHaveLength(2);
     expect(seenLastPollAt[0]).toBeUndefined();
     expect(seenLastPollAt[1]).toBeUndefined();
+  });
+});
+
+describe("durable cursor survives a restart (CL-3628)", () => {
+  test("a fresh createInboxIntake instance reads the cursor a prior instance persisted", async () => {
+    const firstSeen: (Date | undefined)[] = [];
+    const registry = [
+      {
+        key: "linear",
+        scope: "member" as const,
+        handle: async (ctx: InboxSourceContext) => {
+          if (ctx.scope === "member") firstSeen.push(ctx.lastPollAt);
+          return undefined;
+        },
+      },
+    ];
+
+    const firstInstance = createInboxIntake({
+      db,
+      grantStore: {} as never,
+      listMembers: async () => [member],
+      isTenantEnabled: async () => true,
+      registry,
+    });
+    await firstInstance.tick();
+    firstInstance.stop();
+
+    // Simulate a replica restart: a brand-new instance, no shared in-process
+    // state with `firstInstance` — the only thing bridging them is `db`.
+    const secondSeen: (Date | undefined)[] = [];
+    const secondInstance = createInboxIntake({
+      db,
+      grantStore: {} as never,
+      listMembers: async () => [member],
+      isTenantEnabled: async () => true,
+      registry: [
+        {
+          key: "linear",
+          scope: "member" as const,
+          handle: async (ctx: InboxSourceContext) => {
+            if (ctx.scope === "member") secondSeen.push(ctx.lastPollAt);
+            return undefined;
+          },
+        },
+      ],
+    });
+    await secondInstance.tick();
+
+    expect(firstSeen).toEqual([undefined]);
+    expect(secondSeen).toHaveLength(1);
+    expect(secondSeen[0]).toBeInstanceOf(Date);
   });
 });
 

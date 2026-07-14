@@ -6,6 +6,7 @@ import {
   fireEvent,
   render,
   waitFor,
+  within,
   type RenderResult,
 } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -21,6 +22,8 @@ let artifactResult: {
     id: string;
     kind: string;
     title: string;
+    content?: string;
+    source?: Record<string, unknown>;
     version?: number;
     status?: string;
     ownerPrincipalId?: string | null;
@@ -160,11 +163,18 @@ describe("ArtifactDetailPage", () => {
     expect(view.queryByRole("button", { name: /back to artifacts/i })).toBeNull();
   });
 
-  it("shows the version and status in the metadata rail", () => {
+  it("shows the kind, status, version, and date in the page header", () => {
     const view = renderAt("art-1");
-    const rail = view.getByTestId("artifact-detail-rail");
-    expect(rail.textContent).toContain("v3");
-    expect(rail.textContent).toContain("Approved");
+    const header = view.getByTestId("artifact-detail-header");
+    expect(header.textContent).toContain("v3");
+    expect(header.textContent).toContain("Approved");
+    expect(header.textContent).toContain("One pager");
+    expect(header.textContent).toContain("January 1, 2026");
+  });
+
+  it("collapses the metadata rail entirely when the artifact has no session or lineage provenance", () => {
+    const view = renderAt("art-1");
+    expect(view.queryByTestId("artifact-detail-rail")).toBeNull();
   });
 
   it("surfaces the Chat about this and Archive actions in the top-bar chrome", async () => {
@@ -174,6 +184,71 @@ describe("ArtifactDetailPage", () => {
     // Archive is gated on the async getMe permission query, so wait for it.
     await view.findByRole("button", { name: /archive/i });
     expect(chrome.textContent).toContain("Archive");
+  });
+
+  it("surfaces a Download action above the fold for a downloadable file artifact", async () => {
+    artifactResult = {
+      data: {
+        id: "art-file",
+        kind: "file",
+        title: "Contract.pdf",
+        content: "",
+        source: { upload: { filename: "Contract.pdf" } },
+      },
+      isLoading: false,
+      isError: false,
+    };
+    const view = renderAt("art-file");
+    const chrome = view.getByTestId("page-chrome");
+    const link = await within(chrome).findByRole("link", { name: /download/i });
+    expect(link.getAttribute("href")).toMatch(/\/artifacts\/art-file\/download$/);
+  });
+
+  it("does not surface a Download action for a non-downloadable kind", () => {
+    const view = renderAt("art-1");
+    const chrome = view.getByTestId("page-chrome");
+    expect(within(chrome).queryByRole("link", { name: /download/i })).toBeNull();
+  });
+
+  it("surfaces an Open in Gamma action for a gamma_presentation artifact with a valid deck", async () => {
+    artifactResult = {
+      data: {
+        id: "art-gamma",
+        kind: "gamma_presentation",
+        title: "Q3 Deck",
+        content: JSON.stringify({
+          url: "https://gamma.app/docs/q3-deck",
+          description: "Q3 deck",
+          gammaId: "gid-1",
+        }),
+      },
+      isLoading: false,
+      isError: false,
+    };
+    const view = renderAt("art-gamma");
+    const chrome = view.getByTestId("page-chrome");
+    const link = await within(chrome).findByRole("link", {
+      name: /open in gamma/i,
+    });
+    expect(link.getAttribute("href")).toBe("https://gamma.app/docs/q3-deck");
+  });
+
+  it("does not surface Open in Gamma for a malformed gamma_presentation payload", () => {
+    artifactResult = {
+      data: {
+        id: "art-gamma-bad",
+        kind: "gamma_presentation",
+        title: "Broken Deck",
+        content: "not json",
+      },
+      isLoading: false,
+      isError: false,
+    };
+    const view = renderAt("art-gamma-bad");
+    const chrome = view.getByTestId("page-chrome");
+    expect(
+      within(chrome).queryByRole("link", { name: /open in gamma/i }),
+    ).toBeNull();
   });
 
   it("shows a not-found state when the artifact fetch fails", () => {

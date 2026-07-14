@@ -2,6 +2,7 @@ import { useState, type ReactNode } from "react";
 import { cn, toHumanLabel } from "@workbench/ui";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import type { ToolCall } from "./types";
+import { toSingleLine } from "./reasoning-summary";
 import {
   parseToolResult,
   UIBlockView,
@@ -12,8 +13,11 @@ import {
   CHAT_MARKER_SLOT,
   CHAT_TRACE_DETAIL_OFFSET,
   CHAT_TRACE_DETAIL_TOP,
+  CHAT_TRACE_INLINE_GAP,
   CHAT_TRACE_LABEL,
-  CHAT_TRACE_MUTED_BODY,
+  CHAT_TRACE_MARKER_ALIGN,
+  CHAT_TRACE_OUTCOME_BODY,
+  CHAT_TRACE_QUIET_BODY,
   CHAT_TRACE_ROW,
 } from "./messageRhythm";
 
@@ -241,7 +245,7 @@ function QuietToolLine({ summary }: { summary: string }) {
         data-testid="tool-marker-spacer"
       />
       <p
-        className={cn("mt-0.5 italic", CHAT_TRACE_MUTED_BODY)}
+        className={cn(CHAT_TRACE_MARKER_ALIGN, CHAT_TRACE_QUIET_BODY)}
         data-testid="quiet-tool-line"
       >
         {summary}
@@ -332,7 +336,7 @@ function ToolRow({
           expandable && cn("cursor-pointer", TOUCH_TARGET),
         )}
       >
-        <span className="mt-0.5">
+        <span className={CHAT_TRACE_MARKER_ALIGN}>
           <ToolMarker
             call={call}
             pending={pending}
@@ -343,19 +347,25 @@ function ToolRow({
         </span>
         <span
           className={cn(
-            "flex min-w-0 items-center gap-1.5",
+            "flex min-w-0 items-center",
+            CHAT_TRACE_INLINE_GAP,
             CHAT_TRACE_LABEL,
             pending ? "text-text-2" : call.isError ? "text-red" : undefined,
           )}
         >
           {!(open && expandable) && (
             <>
-              <span className="shrink-0" data-testid="tool-row-summary">
+              <span
+                className="min-w-0 truncate"
+                title={summary}
+                data-testid="tool-row-summary"
+              >
                 {summary}
               </span>
               {argsSummary !== null && (
                 <span
                   className="truncate text-text-3/70"
+                  title={argsSummary}
                   data-testid="tool-row-args"
                 >
                   · {argsSummary}
@@ -366,6 +376,24 @@ function ToolRow({
           {expandable && <ChevronIcon open={open} />}
         </span>
       </button>
+      {/* Failures surface the provider's own message inline, grouped with the
+          row — never a bare, detached red line. The full text is available on
+          expand; this preview is truncated with a native tooltip. */}
+      {call.isError === true &&
+        call.result !== undefined &&
+        call.result.trim() !== "" &&
+        !(open && expandable) && (
+          <p
+            className={cn(
+              CHAT_TRACE_DETAIL_OFFSET,
+              "mt-1 truncate text-xs text-red",
+            )}
+            title={call.result}
+            data-testid="tool-row-error"
+          >
+            {toSingleLine(call.result)}
+          </p>
+        )}
       <ExpandReveal open={open} reduceMotion={reduceMotion === true}>
         <div
           className={cn(
@@ -389,8 +417,8 @@ function ToolRow({
               {structuredBlock === null && hasFriendly && (
                 <p
                   className={cn(
-                    "leading-relaxed",
-                    call.isError === true ? "text-red" : "text-text-2",
+                    CHAT_TRACE_OUTCOME_BODY,
+                    call.isError === true && "text-red",
                   )}
                 >
                   {friendlyOutcome}
@@ -534,28 +562,26 @@ function CollapsedToolSummary({
         type="button"
         onClick={() => setOpen((v) => !v)}
         aria-expanded={open}
-        aria-label={
-          open ? `Collapse ${summary} · ${count} tools` : undefined
-        }
-        className={cn(
-          CHAT_TRACE_ROW,
-          "cursor-pointer text-left",
-          TOUCH_TARGET,
-        )}
+        aria-label={open ? `Collapse ${summary} · ${count} tools` : undefined}
+        className={cn(CHAT_TRACE_ROW, "cursor-pointer text-left", TOUCH_TARGET)}
       >
-        <span className="mt-0.5">
+        <span className={CHAT_TRACE_MARKER_ALIGN}>
           <SettledMarker isError={hasError} external={external} />
         </span>
         <span
           className={cn(
-            "flex min-w-0 items-center gap-1.5",
+            "flex min-w-0 items-center",
+            CHAT_TRACE_INLINE_GAP,
             CHAT_TRACE_LABEL,
             hasError ? "text-red" : undefined,
           )}
         >
           {!open && (
             <>
-              <span className="min-w-0 truncate" data-testid="tool-group-summary">
+              <span
+                className="min-w-0 truncate"
+                data-testid="tool-group-summary"
+              >
                 {summary}
               </span>
               <span className="shrink-0 text-text-3/70">· {count} tools</span>

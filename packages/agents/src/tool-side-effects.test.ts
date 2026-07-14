@@ -1,7 +1,15 @@
 import { describe, expect, test } from "bun:test";
 import {
+  loadCommittedToolManifestFactories,
+  writeBareToolNamesFromFactories,
+} from "@workbench/tool-manifest";
+import { HUB_ONLY_TOOL_SIDE_EFFECTS } from "./hub-only-tool-side-effects";
+import {
+  APPROVAL_GATED_TOOL_NAMES,
   INTERNAL_WRITE_EXCLUSIONS,
+  NATIVE_APPROVAL_GATED_TOOL_NAMES,
   approvalGatedWriteNames,
+  buildApprovalGatedToolNames,
 } from "./tool-side-effects";
 
 // A representative slice of every `sideEffect: "write"` bare name the hub
@@ -83,5 +91,33 @@ describe("approvalGatedWriteNames", () => {
     }
     expect(INTERNAL_WRITE_EXCLUSIONS.has("attio_update_task")).toBe(false);
     expect(INTERNAL_WRITE_EXCLUSIONS.has("vercel_deploy_artifact")).toBe(false);
+  });
+});
+
+describe("APPROVAL_GATED_TOOL_NAMES", () => {
+  test("equals approvalGatedWriteNames over every manifest and hub-only write bare name", () => {
+    const hubOnlyWrites = Object.entries(HUB_ONLY_TOOL_SIDE_EFFECTS)
+      .filter(([, effect]) => effect === "write")
+      .map(([name]) => name);
+    const writeBare = [
+      ...writeBareToolNamesFromFactories(loadCommittedToolManifestFactories()),
+      ...hubOnlyWrites,
+    ];
+    const expected = new Set([
+      ...approvalGatedWriteNames(writeBare),
+      ...NATIVE_APPROVAL_GATED_TOOL_NAMES,
+    ]);
+    expect(buildApprovalGatedToolNames()).toEqual(expected);
+    expect(APPROVAL_GATED_TOOL_NAMES).toEqual(expected);
+  });
+
+  test("gates every committed manifest linear write, not only create_issue", () => {
+    expect(APPROVAL_GATED_TOOL_NAMES.has("linear__create_issue")).toBe(true);
+    expect(APPROVAL_GATED_TOOL_NAMES.has("linear__update_issue")).toBe(true);
+    expect(APPROVAL_GATED_TOOL_NAMES.has("linear__save_comment")).toBe(true);
+  });
+
+  test("does not gate manifest read tools", () => {
+    expect(APPROVAL_GATED_TOOL_NAMES.has("linear__list_issues")).toBe(false);
   });
 });

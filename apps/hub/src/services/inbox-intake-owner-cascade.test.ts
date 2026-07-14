@@ -40,6 +40,27 @@ mock.module("../lib/member-preferences", () => ({
   mergeMemberPreferences: async () => ({}),
 }));
 
+// CL-3628 durable cursor: this file exercises the owner-cascade gate, not
+// persistence (own coverage in inbox-intake-cursor.test.ts) — faked
+// in-memory, same shape the old in-process map gave these tests before the
+// cursor moved to Postgres.
+const cursorStore = new Map<string, Date>();
+mock.module("../lib/inbox-intake-cursor", () => ({
+  readInboxIntakeCursor: async (_db: unknown, scopeKey: string) =>
+    cursorStore.get(scopeKey),
+  writeInboxIntakeCursor: async (
+    _db: unknown,
+    scopeKey: string,
+    _tenantId: string,
+    lastPollAt: Date,
+  ) => {
+    cursorStore.set(scopeKey, lastPollAt);
+  },
+  withInboxIntakeTickLock: async (_db: unknown, fn: () => Promise<void>) => {
+    await fn();
+  },
+}));
+
 const { createInboxIntake } = await import("./inbox-intake");
 import type {
   InboxIntakeMember,
@@ -84,6 +105,7 @@ function baseDeps() {
 
 beforeEach(() => {
   writes.length = 0;
+  cursorStore.clear();
 });
 
 describe("member-scope owner cascade", () => {

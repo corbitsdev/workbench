@@ -10,14 +10,9 @@ import { VERCEL_DEPLOY_ARTIFACT_HUB_TOOLS } from "../tools/vercel-deploy-artifac
 import { KNOWN_TOOLS } from "./tool-registry";
 
 /**
- * F1 drift guard. `APPROVAL_GATED_TOOL_NAMES` is a static const in
- * `@workbench/agents` (the sidecar imports it directly — no launch-time fetch).
- * The hub is the only place that can hold every tool entry map, so this test
- * DERIVES the gated set from each tool's `sideEffect: "write"` classification
- * and asserts it equals the const. Adding a write tool without gating it — or
- * mis-listing one in the const — fails here in CI. `KNOWN_TOOLS` already unions
- * every credentialed + hub-backed entry except the two vercel writes aggregated
- * into neither map, unioned in explicitly.
+ * Drift guard: `APPROVAL_GATED_TOOL_NAMES` is derived in `@workbench/agents`
+ * from committed manifest `sideEffects` (plus hub-only tools and native mail).
+ * This test recomputes the same set from `KNOWN_TOOLS` and asserts equality.
  */
 function deriveGatedSet(): Set<string> {
   const writeBareNames = new Set([
@@ -32,7 +27,7 @@ function deriveGatedSet(): Set<string> {
 }
 
 describe("APPROVAL_GATED_TOOL_NAMES drift guard", () => {
-  test("the static const equals the set derived from every tool's sideEffect: write", () => {
+  test("manifest-derived gated set matches KNOWN_TOOLS sideEffect writes", () => {
     expect(new Set(APPROVAL_GATED_TOOL_NAMES)).toEqual(deriveGatedSet());
   });
 

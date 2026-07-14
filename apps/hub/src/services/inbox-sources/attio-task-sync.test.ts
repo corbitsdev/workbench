@@ -454,6 +454,161 @@ describe("attioTaskSyncInboxSource", () => {
   });
 });
 
+// CL-3630: paginate the listing so `seenTaskIds` reflects the full open set
+// across pages within a tick, and bound deletion re-verification so a large
+// gap between synced tasks and the listing cannot trigger a re-fetch storm.
+describe("attioTaskSyncInboxSource: pagination (CL-3630)", () => {
+  test("more open tasks than one page: every task across pages is synced, no false deletions", async () => {
+    // 3 pages of 2 (perSourceLimit=2): page 3 is partial, so pagination stops
+    // there rather than hitting the MAX_LIST_PAGES_PER_TICK cap.
+    const pages = [
+      [
+        attioTaskRow({
+          id: "task_1",
+          assignees: [SELF_ATTIO_MEMBER_ID],
+          createdAt: "2026-07-01T00:00:00.000Z",
+        }),
+        attioTaskRow({
+          id: "task_2",
+          assignees: [SELF_ATTIO_MEMBER_ID],
+          createdAt: "2026-07-01T00:01:00.000Z",
+        }),
+      ],
+      [
+        attioTaskRow({
+          id: "task_3",
+          assignees: [SELF_ATTIO_MEMBER_ID],
+          createdAt: "2026-07-01T00:02:00.000Z",
+        }),
+        attioTaskRow({
+          id: "task_4",
+          assignees: [SELF_ATTIO_MEMBER_ID],
+          createdAt: "2026-07-01T00:03:00.000Z",
+        }),
+      ],
+      [
+        attioTaskRow({
+          id: "task_5",
+          assignees: [SELF_ATTIO_MEMBER_ID],
+          createdAt: "2026-07-01T00:04:00.000Z",
+        }),
+      ],
+    ];
+    responder = (url) => {
+      if (!url.includes("/v2/tasks?")) {
+        throw new Error(`unexpected call: ${url}`);
+      }
+      const offset = Number(new URL(url).searchParams.get("offset") ?? "0");
+      const page = offset / 2;
+      return jsonResponse(200, { data: pages[page] ?? [] });
+    };
+
+    const result = await attioTaskSyncInboxSource.handle(
+      baseCtx({ perSourceLimit: 2 }),
+    );
+
+    // Partial final page: pagination is authoritative, no truncation.
+    expect(result).toBeUndefined();
+    // Exactly 3 list calls (one per page) — no re-fetch storm.
+    expect(calls.filter((c) => c.url.includes("/v2/tasks?"))).toHaveLength(3);
+
+    const rows = await tasksForMember();
+    expect(rows.map((r) => r.sourceRef).sort()).toEqual(
+      [
+        "attio:task:task_1",
+        "attio:task:task_2",
+        "attio:task:task_3",
+        "attio:task:task_4",
+        "attio:task:task_5",
+      ].sort(),
+    );
+    // All 5 tasks were seen across pages this tick, so none of them should
+    // have triggered an individual attio_get_task deletion re-check.
+    expect(calls.some((c) => c.url.includes("/v2/tasks/task_"))).toBe(false);
+  });
+
+  test("a sustained backlog beyond the page cap reports a truncated nextCursor", async () => {
+    // Every page is full (perSourceLimit=1) — pagination stops at the
+    // MAX_LIST_PAGES_PER_TICK cap rather than looping forever.
+    let callCount = 0;
+    responder = (url) => {
+      if (!url.includes("/v2/tasks?")) {
+        throw new Error(`unexpected call: ${url}`);
+      }
+      callCount++;
+      return jsonResponse(200, {
+        data: [
+          attioTaskRow({
+            id: `task_${callCount}`,
+            assignees: [SELF_ATTIO_MEMBER_ID],
+            createdAt: `2026-07-01T00:00:${String(callCount).padStart(2, "0")}.000Z`,
+          }),
+        ],
+      });
+    };
+
+    const result = await attioTaskSyncInboxSource.handle(
+      baseCtx({ perSourceLimit: 1 }),
+    );
+
+    // Bounded call count — the page cap, not an unbounded loop.
+    expect(callCount).toBeLessThanOrEqual(10);
+    expect(result?.nextCursor).toBeInstanceOf(Date);
+  });
+
+  test("deletion re-verification is bounded per tick and spreads over ticks for a large backlog", async () => {
+    // Seed 30 previously-synced open tasks, none present in this tick's
+    // listing — a naive implementation would fire 30 individual
+    // attio_get_task calls in one tick.
+    responder = () =>
+      jsonResponse(200, {
+        data: Array.from({ length: 30 }, (_, i) =>
+          attioTaskRow({
+            id: `seed_${i}`,
+            assignees: [SELF_ATTIO_MEMBER_ID],
+            createdAt: "2026-07-01T00:00:00.000Z",
+          }),
+        ),
+      });
+    await attioTaskSyncInboxSource.handle(
+      baseCtx({
+        perSourceLimit: 100,
+        cutoff: new Date("2026-06-01T00:00:00.000Z"),
+      }),
+    );
+    expect(await tasksForMember()).toHaveLength(30);
+
+    calls = [];
+    // Now every task is missing from the listing and every deletion check
+    // would 404 — a naive implementation marks all 30 done in one tick.
+    responder = (url) => {
+      if (url.includes("/v2/tasks?")) {
+        return jsonResponse(200, { data: [] });
+      }
+      if (url.includes("/v2/tasks/seed_")) {
+        return jsonResponse(404, { message: "not found" });
+      }
+      throw new Error(`unexpected call: ${url}`);
+    };
+    await attioTaskSyncInboxSource.handle(
+      baseCtx({
+        perSourceLimit: 100,
+        cutoff: new Date("2026-06-01T00:00:00.000Z"),
+      }),
+    );
+
+    const getTaskCalls = calls.filter((c) => c.url.includes("/v2/tasks/seed_"));
+    expect(getTaskCalls.length).toBeGreaterThan(0);
+    expect(getTaskCalls.length).toBeLessThan(30);
+
+    const doneCount = (await tasksForMember()).filter(
+      (r) => r.status === "done",
+    ).length;
+    expect(doneCount).toBe(getTaskCalls.length);
+    expect(doneCount).toBeLessThan(30);
+  });
+});
+
 // CL-3577 review fix C: a member with no `attioMemberId` preference has no
 // known Attio identity, so creation must be skipped entirely rather than
 // falling through to sync every workspace task into their list.

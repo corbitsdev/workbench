@@ -7,6 +7,11 @@ import {
 } from "@workbench/shared";
 import type { HubDb } from "../db";
 import { deliverInboxItems } from "../lib/inbox-delivery";
+import {
+  readInboxIntakeCursor,
+  withInboxIntakeTickLock,
+  writeInboxIntakeCursor,
+} from "../lib/inbox-intake-cursor";
 import type { MailboxEventBus } from "../lib/mailbox-events";
 import { isMemberSelfServiceCapabilityActive } from "../lib/capability-grants";
 import {
@@ -152,15 +157,6 @@ export function createInboxIntake(deps: InboxIntakeDeps): InboxIntake {
   let timer: ReturnType<typeof setInterval> | undefined;
   let running = false;
 
-  // Per-scope-key cursor of the last SUCCESSFUL poll (CL-3577 review fix A):
-  // member scope keys on (memberPrincipalId, sourceKey), workspace scope keys
-  // on (tenantId, sourceKey). In-process only — a restart does one wide
-  // (lookbackMs) poll, which is already the documented single-replica
-  // assumption for this ticker. Set ONLY after the handler resolves without
-  // throwing, so a failing tick never advances the cursor past work it never
-  // actually delivered.
-  const lastPollAtByScopeKey = new Map<string, Date>();
-
   function memberScopeKey(
     memberPrincipalId: string,
     sourceKey: string,
@@ -243,7 +239,7 @@ export function createInboxIntake(deps: InboxIntakeDeps): InboxIntake {
     }
 
     const scopeKey = memberScopeKey(member.memberPrincipalId, entry.key);
-    const previousLastPollAt = lastPollAtByScopeKey.get(scopeKey);
+    const previousLastPollAt = await readInboxIntakeCursor(deps.db, scopeKey);
     const tickStart = new Date(now());
     const handled: { result?: InboxSourceTickResult | undefined } = {};
 
@@ -277,7 +273,12 @@ export function createInboxIntake(deps: InboxIntakeDeps): InboxIntake {
     // `nextCursor` (a possibly-truncated full page) pins the cursor there
     // instead of advancing to `tickStart`, so the next tick re-fetches the
     // same window and dedupe absorbs the overlap.
-    lastPollAtByScopeKey.set(scopeKey, handled.result?.nextCursor ?? tickStart);
+    await writeInboxIntakeCursor(
+      deps.db,
+      scopeKey,
+      member.tenantId,
+      handled.result?.nextCursor ?? tickStart,
+    );
   }
 
   async function runWorkspaceSource(
@@ -302,7 +303,7 @@ export function createInboxIntake(deps: InboxIntakeDeps): InboxIntake {
     }
 
     const scopeKey = workspaceScopeKey(tenantId, entry.key);
-    const previousLastPollAt = lastPollAtByScopeKey.get(scopeKey);
+    const previousLastPollAt = await readInboxIntakeCursor(deps.db, scopeKey);
     const tickStart = new Date(now());
     const handled: { result?: InboxSourceTickResult | undefined } = {};
 
@@ -326,10 +327,15 @@ export function createInboxIntake(deps: InboxIntakeDeps): InboxIntake {
       handled.result = await entry.handle(ctx);
     });
 
-    lastPollAtByScopeKey.set(scopeKey, handled.result?.nextCursor ?? tickStart);
+    await writeInboxIntakeCursor(
+      deps.db,
+      scopeKey,
+      tenantId,
+      handled.result?.nextCursor ?? tickStart,
+    );
   }
 
-  async function tick(): Promise<void> {
+  async function runTick(): Promise<void> {
     let members: InboxIntakeMember[];
     try {
       members = await deps.listMembers();
@@ -450,6 +456,17 @@ export function createInboxIntake(deps: InboxIntakeDeps): InboxIntake {
         }
       }
     }
+  }
+
+  // Tick leadership (CL-3628): a Postgres advisory lock scopes the WHOLE tick
+  // to a single replica at a time — the durable cursor above stops re-polling
+  // a wide window across a restart, but without this, two replicas' 60s
+  // timers still both run `runTick` concurrently and each could double-fetch
+  // and race the same scope's cursor write. Held for the full tick, not
+  // per-source, so a slow member/source loop can't interleave with another
+  // replica's tick of the same scopes.
+  async function tick(): Promise<void> {
+    await withInboxIntakeTickLock(deps.db, runTick);
   }
 
   return {

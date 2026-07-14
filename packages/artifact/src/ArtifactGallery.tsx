@@ -457,11 +457,10 @@ export function ArtifactGallery({
           />
         ) : (
           <div className="grid auto-rows-[88px] grid-cols-[repeat(auto-fill,minmax(150px,1fr))] gap-[var(--gap)] sm:grid-cols-[repeat(auto-fill,minmax(190px,1fr))]">
-            {tiles.map((tile, i) => (
+            {tiles.map((tile) => (
               <ArtifactCard
                 key={tile.id}
                 artifact={tile}
-                index={i + 1}
                 experimental={experimentalArtifactCards}
                 {...(onOpen ? { onOpen } : {})}
               />

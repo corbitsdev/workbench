@@ -9,6 +9,9 @@ import {
   OwnerWorkflowsResponse,
   type OwnerWorkflows,
   OwnerWorkflowState,
+  OwnerMembersResponse,
+  type OwnerMembersResponse as OwnerMembersState,
+  OwnerMemberRoleChangeResult,
   OwnerCredentialsResponse,
   OwnerCredentialStateSchema,
   type OwnerCredentialState,
@@ -333,6 +336,42 @@ export async function getOwnerWorkflows(): Promise<OwnerWorkflows> {
   const parsed = OwnerWorkflowsResponse(raw);
   if (parsed instanceof type.errors) {
     throw new Error(`Malformed /owner/workflows response: ${parsed.summary}`);
+  }
+  return parsed;
+}
+
+/** Tenant members with their owner-role status (owner-guarded, CL-3634). */
+export async function getOwnerMembers(): Promise<OwnerMembersState> {
+  const raw = await hubFetch<unknown>("GET", "v1/owner/members");
+  const parsed = OwnerMembersResponse(raw);
+  if (parsed instanceof type.errors) {
+    throw new Error(`Malformed /owner/members response: ${parsed.summary}`);
+  }
+  return parsed;
+}
+
+/** Grant the `owner` role to a tenant member (owner-guarded, CL-3634). */
+export async function promoteOwnerMember(principalId: string) {
+  const raw = await hubFetch<unknown>(
+    "POST",
+    `v1/owner/members/${encodeURIComponent(principalId)}/promote`,
+  );
+  const parsed = OwnerMemberRoleChangeResult(raw);
+  if (parsed instanceof type.errors) {
+    throw new Error(`Malformed owner promote response: ${parsed.summary}`);
+  }
+  return parsed;
+}
+
+/** Remove the `owner` role from a tenant member (owner-guarded, CL-3634). */
+export async function demoteOwnerMember(principalId: string) {
+  const raw = await hubFetch<unknown>(
+    "POST",
+    `v1/owner/members/${encodeURIComponent(principalId)}/demote`,
+  );
+  const parsed = OwnerMemberRoleChangeResult(raw);
+  if (parsed instanceof type.errors) {
+    throw new Error(`Malformed owner demote response: ${parsed.summary}`);
   }
   return parsed;
 }
