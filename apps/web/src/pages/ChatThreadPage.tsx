@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef } from "react";
-import { Navigate, useNavigate, useParams } from "react-router";
+import { Link, Navigate, useNavigate, useParams } from "react-router";
 import type { ThreadInsert } from "@workbench/chat";
 import { ErrorBoundary } from "../components/ErrorBoundary";
 import { MyraChatSurface } from "../components/MyraChatSurface";
@@ -42,7 +42,15 @@ export function ChatThreadPage() {
     name: m.name,
   }));
 
-  const active = resolveActiveThread(threads ?? [], threadId);
+  const threadList = threads ?? [];
+  const unknownExplicitThreadId =
+    threadId !== undefined &&
+    threadId.length > 0 &&
+    threadList.length > 0 &&
+    !threadList.some((t) => t.id === threadId);
+  const active = unknownExplicitThreadId
+    ? null
+    : resolveActiveThread(threadList, threadId);
 
   // Remember the resolved thread for the FAB and root redirect. Writes an
   // external store only (no re-render), so an effect is the right tool here.
@@ -184,8 +192,21 @@ export function ChatThreadPage() {
     );
   }
 
-  // Canonicalize the URL to the resolved thread (handles an unknown/stale id or
-  // the bare /chats path). Same instance, so no session churn on the rerender.
+  if (unknownExplicitThreadId) {
+    return (
+      <CenteredNotice>
+        <div className="flex flex-col items-center gap-2">
+          <span>This chat couldn't be found.</span>
+          <Link to="/chats" className="text-orange underline">
+            Back to all chats
+          </Link>
+        </div>
+      </CenteredNotice>
+    );
+  }
+
+  // Canonicalize the URL to the resolved thread (bare /chats or last-active
+  // fallback). Same instance, so no session churn on the rerender.
   if (active && active.id !== threadId) {
     return <Navigate to={`/chats/${active.id}`} replace />;
   }

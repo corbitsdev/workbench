@@ -4,6 +4,7 @@ import { type } from "arktype";
 import {
   taskStatuses,
   TaskLinkSchema,
+  validateTaskLinks,
   type TaskStatus,
 } from "@workbench/shared";
 import type { HubDb } from "../db";
@@ -160,6 +161,12 @@ function createTaskCreateTool(context: TaskToolContext): AgentTool {
         });
         if (existing !== null) {
           return jsonResult(existing);
+        }
+      }
+      if (parsed.links !== undefined) {
+        const linkError = validateTaskLinks(parsed.links);
+        if (linkError !== null) {
+          throw new Error(`task_create: ${linkError}`);
         }
       }
       if (isTriage) {
