@@ -62,6 +62,8 @@ export { ActivityBlock, type ActivityBlockProps } from "./ActivityBlock";
 export {
   splitReasoningSteps,
   toSingleLine,
+  isLowSignalReasoning,
+  dedupeReasoningSteps,
   rollingReasoningLabel,
 } from "./reasoning-summary";
 export {
