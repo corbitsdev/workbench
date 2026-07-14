@@ -12,10 +12,9 @@ import {
   type PricedUsage,
   type TokenCost,
 } from "@workbench/pricing";
-import type { ActivityOverview, UsageByPersonRow } from "../../lib/hub-api";
-import { sumInferenceTokenClasses } from "./metrics";
+import type { ActivityOverview } from "../../lib/hub-api";
 import { ProviderLogoMark } from "./ProviderLogoMark";
-import { CaveatNote, HudCard, Stat, formatNumber } from "./stats";
+import { CaveatNote, HudCard, Stat, formatDollars, formatNumber } from "./stats";
 import { SectionLabel } from "./section-label";
 
 type DateRange = { startDate?: string; endDate?: string };
@@ -55,10 +54,6 @@ function tokenClassSeries(
       })),
     },
   ];
-}
-
-function formatDollars(n: number): string {
-  return `$${n.toFixed(2)}`;
 }
 
 type ModelCostRow = ActivityOverview["byModel"][number] & {
@@ -168,120 +163,6 @@ function CostByModelTable({
   );
 }
 
-function CostByActorTable({ people }: { people: UsageByPersonRow[] }) {
-  const columns: SortableColumn<UsageByPersonRow>[] = [
-    {
-      key: "name",
-      header: "Person",
-      sortValue: (r) => (r.name ?? "Unknown member").toLowerCase(),
-      render: (r) => (
-        <span>
-          {r.name ?? "Unknown member"}
-          {r.isSelf && (
-            <span className="ml-1.5 text-[11px] font-semibold text-accent">
-              (me)
-            </span>
-          )}
-        </span>
-      ),
-    },
-    {
-      key: "cost",
-      header: "Cost",
-      align: "right",
-      sortValue: (r) => r.cost?.cost.total ?? -1,
-      render: (r) => {
-        const cost = r.cost;
-        // "not priced" covers both a missing catalog (`cost === null`) and the
-        // case where every model with usage was unpriced (total stays $0 with
-        // `hasUnpriced`) — the latter must never read as a real $0.00 (CL-2723).
-        if (cost === null || (cost.hasUnpriced && cost.cost.total === 0)) {
-          const title =
-            cost === null
-              ? "Model pricing was unavailable when this was computed"
-              : `No models.dev rate for: ${cost.unpricedModels.join(", ")}`;
-          return (
-            <span
-              title={title}
-              className="rounded-[4px] bg-surface-2 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-[0.06em] text-text-3"
-            >
-              not priced
-            </span>
-          );
-        }
-        return (
-          <span className="font-mono tabular-nums text-text">
-            {formatDollars(cost.cost.total)}
-            {cost.hasUnpriced && (
-              <span
-                title={`No rate for: ${cost.unpricedModels.join(", ")}`}
-                className="ml-1.5 rounded-[4px] bg-surface-2 px-1 py-0.5 text-[9px] font-semibold uppercase tracking-[0.06em] text-text-3"
-              >
-                partial
-              </span>
-            )}
-          </span>
-        );
-      },
-    },
-    {
-      key: "inputTokens",
-      header: "Input",
-      align: "right",
-      sortValue: (r) => r.inputTokens,
-      render: (r) => (
-        <span className="font-mono tabular-nums">
-          {formatNumber(r.inputTokens)}
-        </span>
-      ),
-    },
-    {
-      key: "cacheReadTokens",
-      header: "Cache read",
-      align: "right",
-      sortValue: (r) => r.cacheReadTokens,
-      render: (r) => (
-        <span className="font-mono tabular-nums">
-          {formatNumber(r.cacheReadTokens)}
-        </span>
-      ),
-    },
-    {
-      key: "cacheWriteTokens",
-      header: "Cache write",
-      align: "right",
-      sortValue: (r) => r.cacheWriteTokens,
-      render: (r) => (
-        <span className="font-mono tabular-nums">
-          {formatNumber(r.cacheWriteTokens)}
-        </span>
-      ),
-    },
-    {
-      key: "outputTokens",
-      header: "Output",
-      align: "right",
-      sortValue: (r) => r.outputTokens,
-      render: (r) => (
-        <span className="font-mono tabular-nums">
-          {formatNumber(r.outputTokens)}
-        </span>
-      ),
-    },
-  ];
-  return (
-    <SortableTable
-      columns={columns}
-      rows={people}
-      getRowKey={(r) => r.principalId}
-      caption="Token spend by actor"
-      initialSort={{ key: "cost", dir: "desc" }}
-      pageSize={10}
-      emptyMessage="No attributed usage for this range"
-    />
-  );
-}
-
 /**
  * Cost view for the Insights dashboard (CL-2714). Dollar figures come from the
  * hub-cached models.dev rate catalog; token classes (input, cache read, cache
@@ -310,7 +191,6 @@ export function CostInsights({
 }) {
   const hasDaily = overview.dailySeries.length > 0;
   const classSeries = tokenClassSeries(overview.dailySeries);
-  const totalTokens = sumInferenceTokenClasses(overview.inference.summary);
 
   const modelRows: ModelCostRow[] = overview.byModel.map((row) => {
     const rate = catalog !== null ? resolveModelRate(catalog, row.model) : null;
@@ -347,13 +227,7 @@ export function CostInsights({
       )}
 
       {!pricingLoading && priced && !pricingUnavailable && (
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-2">
-          <Stat
-            label="Total cost"
-            value={formatDollars(priced.cost.total)}
-            sub={`${formatNumber(totalTokens)} tokens`}
-            emphasis
-          />
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           {priced.hasUnpriced ? (
             <Stat
               label="Unpriced models"
@@ -383,19 +257,14 @@ export function CostInsights({
         </HudCard>
       )}
 
-      <div className="grid items-start gap-4 lg:grid-cols-2">
-        <HudCard label="Cost by model">
-          <CostByModelTable tenantId={tenantId} rows={modelRows} />
-        </HudCard>
-        <HudCard label="Token spend by actor">
-          <CaveatNote>
-            Cost is priced per model, per person, then summed (CL-2723) — never
-            a blended cross-model rate. &quot;partial&quot; means some of this
-            person&apos;s usage was on a model with no models.dev rate.
-          </CaveatNote>
-          <CostByActorTable people={overview.byPerson} />
-        </HudCard>
-      </div>
+      <HudCard label="Cost by model">
+        <CaveatNote>
+          Every model with recorded usage is listed, including models with no
+          models.dev rate — those show &quot;no rate&quot; rather than being
+          silently dropped. Per-person cost lives on the People tab.
+        </CaveatNote>
+        <CostByModelTable tenantId={tenantId} rows={modelRows} />
+      </HudCard>
     </div>
   );
 }

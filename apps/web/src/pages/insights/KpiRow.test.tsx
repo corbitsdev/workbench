@@ -1,8 +1,9 @@
 import "../../test-setup";
 import { afterEach, describe, expect, it } from "bun:test";
-import { cleanup, render, screen, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { KpiRow } from "./KpiRow";
 import type { ActivityOverview } from "../../lib/hub-api";
+import type { InsightsTabId } from "./InsightsTabs";
 
 const minimalOverview = {
   tenantId: "t-1",
@@ -70,6 +71,7 @@ describe("KpiRow", () => {
         costTotal={42.5}
         costTokens={185}
         costUnavailable={false}
+        onNavigateTab={() => {}}
       />,
     );
 
@@ -106,10 +108,29 @@ describe("KpiRow", () => {
         costTotal={null}
         costTokens={0}
         costUnavailable
+        onNavigateTab={() => {}}
       />,
     );
 
     expect(screen.getByText("pricing unavailable")).toBeDefined();
     expect(screen.getByText("—")).toBeDefined();
+  });
+
+  it("deep-links the Cost tile into the usage-cost tab instead of repeating the breakdown inline", () => {
+    const visited: InsightsTabId[] = [];
+    render(
+      <KpiRow
+        data={minimalOverview}
+        activePeople={4}
+        costTotal={42.5}
+        costTokens={185}
+        costUnavailable={false}
+        onNavigateTab={(tab) => visited.push(tab)}
+      />,
+    );
+
+    fireEvent.click(screen.getByLabelText("View cost on the usage-cost tab"));
+
+    expect(visited).toEqual(["usage-cost"]);
   });
 });
