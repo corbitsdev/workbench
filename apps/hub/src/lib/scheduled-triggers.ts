@@ -129,21 +129,23 @@ export async function recordScheduleRunStarted(
   db: HubDb,
   args: { scheduleId: string; tenantId: string; runId: string },
 ): Promise<void> {
-  await db
-    .update(scheduledTrigger)
-    .set({ lastRunId: args.runId })
-    .where(
-      and(
-        eq(scheduledTrigger.id, args.scheduleId),
-        eq(scheduledTrigger.tenantId, args.tenantId),
-      ),
-    );
-  await db.insert(scheduledTriggerFire).values({
-    scheduledTriggerId: args.scheduleId,
-    tenantId: args.tenantId,
-    runId: args.runId,
+  await db.transaction(async (tx) => {
+    await tx
+      .update(scheduledTrigger)
+      .set({ lastRunId: args.runId })
+      .where(
+        and(
+          eq(scheduledTrigger.id, args.scheduleId),
+          eq(scheduledTrigger.tenantId, args.tenantId),
+        ),
+      );
+    await tx.insert(scheduledTriggerFire).values({
+      scheduledTriggerId: args.scheduleId,
+      tenantId: args.tenantId,
+      runId: args.runId,
+    });
+    await trimScheduleFireHistory(tx, args.scheduleId);
   });
-  await trimScheduleFireHistory(db, args.scheduleId);
 }
 
 async function trimScheduleFireHistory(

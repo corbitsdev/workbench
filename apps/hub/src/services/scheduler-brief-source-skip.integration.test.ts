@@ -59,7 +59,7 @@ function fireAndCapturePayload(
           userRefId: "principal-1",
         },
       );
-      return { deploymentId: "dep-1", accepted: true };
+      return { deploymentId: "dep-1", accepted: true, runId: "run-brief-skip-test" };
     },
   });
 
