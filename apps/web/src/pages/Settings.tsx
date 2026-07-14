@@ -246,7 +246,7 @@ export default function Settings() {
               title="Schedules"
               description="Workflows you've put on a daily cadence — pause, retime, or remove them here."
             >
-              <MySchedules tenantId={activeTenantId} />
+              <MySchedules tenantId={activeTenantId} embedded />
             </SettingsGroup>
 
             <SettingsGroup id="account" title="Account">

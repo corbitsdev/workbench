@@ -34,6 +34,7 @@ const existingSchedule = {
   triggerPayload: {},
   createdAt: "2026-01-01T00:00:00.000Z",
   lastFiredDayUtc: null,
+  nextFireAt: "2026-01-02T13:00:00.000Z",
 };
 
 function makeFetch(

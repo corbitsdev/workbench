@@ -16,6 +16,8 @@ import {
 
 export interface MySchedulesProps {
   tenantId: string | null;
+  /** Omit the section heading when embedded under Settings. */
+  embedded?: boolean;
 }
 
 function EnabledToggle({
@@ -145,11 +147,7 @@ function ScheduleRow({
         </span>
         <span className="text-xs text-text-3">
           Last fired: {formatLastFired(schedule.lastFiredDayUtc)} · Next:{" "}
-          {formatNextFire(
-            schedule.hourUtc,
-            schedule.lastFiredDayUtc,
-            schedule.enabled,
-          )}
+          {formatNextFire(schedule.nextFireAt, schedule.enabled)}
         </span>
       </div>
       <HourSelect
@@ -174,7 +172,7 @@ function ScheduleRow({
 // The member's automation schedules: one row per scheduled workflow with an
 // enable/pause switch and a confirm-guarded remove. Workflow labels are resolved
 // against the same catalog the schedules were created from.
-export function MySchedules({ tenantId }: MySchedulesProps) {
+export function MySchedules({ tenantId, embedded = false }: MySchedulesProps) {
   const { data: schedules, isPending, isError } = useMeSchedules();
   const catalog = useWorkflowsCatalog(tenantId);
 
@@ -187,15 +185,21 @@ export function MySchedules({ tenantId }: MySchedulesProps) {
   }, [catalog.data]);
 
   return (
-    <section className="mt-10 flex flex-col gap-4">
-      <div className="flex flex-col gap-1">
-        <h2 className="text-sm font-semibold tracking-[-0.01em] text-text">
-          My schedules
-        </h2>
-        <p className="text-[12px] text-text-3">
-          Workflows you&rsquo;ve put on a daily cadence.
-        </p>
-      </div>
+    <section
+      className={
+        embedded ? "flex flex-col gap-4" : "mt-10 flex flex-col gap-4"
+      }
+    >
+      {!embedded && (
+        <div className="flex flex-col gap-1">
+          <h2 className="text-sm font-semibold tracking-[-0.01em] text-text">
+            My schedules
+          </h2>
+          <p className="text-[12px] text-text-3">
+            Workflows you&rsquo;ve put on a daily cadence.
+          </p>
+        </div>
+      )}
 
       {isPending && (
         <p className="py-4 text-[13px] text-text-3">Loading your schedules…</p>

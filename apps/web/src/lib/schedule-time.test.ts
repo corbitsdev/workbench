@@ -6,7 +6,6 @@ import {
   formatUtcHourLocal,
   localHourToUtc,
   localMinutesOfDay,
-  nextFireAt,
   utcHourOptions,
 } from "./schedule-time";
 
@@ -53,49 +52,13 @@ describe("schedule-time", () => {
     expect(formatLastFired(0)).not.toBe("Not yet fired");
   });
 
-  it("computes the next fire as today when the hour hasn't passed and it hasn't fired today", () => {
-    const now = new Date("2026-01-05T10:00:00.000Z");
-    const todayUtcDay = Math.floor(now.getTime() / 86_400_000);
-    const next = nextFireAt(14, null, now);
-    expect(Math.floor(next.getTime() / 86_400_000)).toBe(todayUtcDay);
-    expect(next.getUTCHours()).toBe(14);
+  it("reports paused schedules as paused regardless of hub nextFireAt", () => {
+    expect(formatNextFire("2026-01-05T14:00:00.000Z", false)).toBe("Paused");
+    expect(formatNextFire(null, true)).toBe("Paused");
   });
 
-  it("rolls the next fire to tomorrow once the hour has passed today", () => {
-    const now = new Date("2026-01-05T15:00:00.000Z");
-    const todayUtcDay = Math.floor(now.getTime() / 86_400_000);
-    const next = nextFireAt(14, null, now);
-    expect(Math.floor(next.getTime() / 86_400_000)).toBe(todayUtcDay + 1);
-  });
-
-  it("reports next fire as today (this hour) when now is inside the target hour and it hasn't fired yet", () => {
-    // Mirrors scheduler.shouldFire: hour match + not fired today => fires on
-    // the very next tick, so nextFireAt must not roll to tomorrow here.
-    const now = new Date("2026-01-05T14:30:00.000Z");
-    const todayUtcDay = Math.floor(now.getTime() / 86_400_000);
-    const next = nextFireAt(14, null, now);
-    expect(Math.floor(next.getTime() / 86_400_000)).toBe(todayUtcDay);
-    expect(next.getUTCHours()).toBe(14);
-  });
-
-  it("rolls the next fire to tomorrow when it already fired today", () => {
-    const now = new Date("2026-01-05T10:00:00.000Z");
-    const todayUtcDay = Math.floor(now.getTime() / 86_400_000);
-    const next = nextFireAt(14, todayUtcDay, now);
-    expect(Math.floor(next.getTime() / 86_400_000)).toBe(todayUtcDay + 1);
-  });
-
-  it("reports paused schedules as paused regardless of hour", () => {
-    expect(formatNextFire(14, null, false)).toBe("Paused");
-  });
-
-  it("reports a next-fire label for enabled schedules", () => {
-    const label = formatNextFire(
-      14,
-      null,
-      true,
-      new Date("2026-01-05T10:00:00.000Z"),
-    );
+  it("formats hub nextFireAt for enabled schedules", () => {
+    const label = formatNextFire("2026-01-05T14:00:00.000Z", true);
     expect(label).not.toBe("Paused");
     expect(label.length).toBeGreaterThan(0);
   });

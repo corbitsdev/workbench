@@ -1,5 +1,5 @@
 import { and, desc, eq } from "drizzle-orm";
-import type { ScheduledTrigger } from "@workbench/shared";
+import { nextFireAt, type ScheduledTrigger } from "@workbench/shared";
 import type { HubDb } from "../db";
 import { scheduledTrigger, type ScheduledTriggerRow } from "../db/schema";
 import type { ScheduledTriggerRow as SchedulerRow } from "../services/scheduler";
@@ -29,7 +29,10 @@ function toSchedulerRow(row: ScheduledTriggerRow): SchedulerRow {
   };
 }
 
-export function toApiSchedule(row: ScheduledTriggerRow): ScheduledTrigger {
+export function toApiSchedule(
+  row: ScheduledTriggerRow,
+  now: Date = new Date(),
+): ScheduledTrigger {
   return {
     id: row.id,
     workflowKind: row.workflowKind,
@@ -38,6 +41,9 @@ export function toApiSchedule(row: ScheduledTriggerRow): ScheduledTrigger {
     triggerPayload: row.triggerPayload,
     createdAt: row.createdAt.toISOString(),
     lastFiredDayUtc: row.lastFiredDayUtc,
+    nextFireAt: row.enabled
+      ? nextFireAt(row.hourUtc, row.lastFiredDayUtc, now).toISOString()
+      : null,
   };
 }
 
