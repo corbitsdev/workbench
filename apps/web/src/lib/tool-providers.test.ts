@@ -25,6 +25,11 @@ describe("providerLogoFile", () => {
   it("returns null for a provider we have no mark for", () => {
     expect(providerLogoFile("totally-unknown")).toBeNull();
   });
+
+  it("maps Notion and Slack to brands-library filenames", () => {
+    expect(providerLogoFile("notion")).toBe("notion-light.svg");
+    expect(providerLogoFile("slack")).toBe("slack.svg");
+  });
 });
 
 describe("toolProviderLogoFilename", () => {
@@ -43,6 +48,15 @@ describe("toolProviderLogoFilename", () => {
   it("returns null when the call is not attributable", () => {
     expect(toolProviderLogoFilename("read_file")).toBeNull();
     expect(toolProviderLogoFilename("totally_unknown__thing")).toBeNull();
+  });
+
+  it("resolves Notion and Slack marks from LLM and bare wire names", () => {
+    expect(toolProviderLogoFilename("notion__create_page")).toBe(
+      "notion-light.svg",
+    );
+    expect(toolProviderLogoFilename("slack__post_message")).toBe("slack.svg");
+    expect(toolProviderLogoFilename("notion_search")).toBe("notion-light.svg");
+    expect(toolProviderLogoFilename("slack_list_channels")).toBe("slack.svg");
   });
 });
 
