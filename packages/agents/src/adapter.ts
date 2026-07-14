@@ -124,6 +124,9 @@ export function convertInstanceEvents(
       content: event.content,
       createdAt: event.timestamp,
       ...(toolCalls !== undefined && toolCalls.length > 0 ? { toolCalls } : {}),
+      ...(event.reasoning !== undefined && event.reasoning.trim() !== ""
+        ? { reasoning: event.reasoning }
+        : {}),
       ...(event.isError === true ? { status: "failed" as const } : {}),
     };
   });
