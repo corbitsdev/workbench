@@ -246,6 +246,7 @@ const PHRASES: Record<string, FriendlyPhrase> = {
     if (object !== null) return `Creating an Attio ${object} record`;
     return "Creating an Attio record";
   },
+  attio_recent_activity: "Checking recent Attio activity",
 
   // Firecrawl — web scraping / crawling
   firecrawl_scrape: (args) => {
