@@ -1,6 +1,7 @@
 /// <reference types="bun" />
 import { afterEach, beforeEach, describe, expect, it, mock } from "bun:test";
 import {
+  act,
   cleanup,
   fireEvent,
   render,
@@ -10,6 +11,11 @@ import {
 import userEvent from "@testing-library/user-event";
 
 import { ChatInput } from "./ChatInput";
+import { VOICE_AUTO_SEND_DELAY_SEC } from "./composer-voice-dictation";
+import {
+  installFakeTimers,
+  type FakeTimers,
+} from "./test-support/fake-timers";
 import type { AttachmentPolicy } from "./attachments";
 
 // happy-dom may not implement object URLs; the image-preview branch needs them.
@@ -507,6 +513,8 @@ describe("ChatInput abort (stop button)", () => {
 });
 
 describe("ChatInput voice dictation", () => {
+  let timers: FakeTimers;
+
   let lastRecognition: {
     onresult: ((event: unknown) => void) | null;
     onspeechend: (() => void) | null;
@@ -529,10 +537,15 @@ describe("ChatInput voice dictation", () => {
   }
 
   beforeEach(() => {
+    timers = installFakeTimers();
     lastRecognition = null;
     (
       window as Window & { SpeechRecognition?: typeof WindowSpeechRecognition }
     ).SpeechRecognition = WindowSpeechRecognition;
+  });
+
+  afterEach(() => {
+    timers.restore();
   });
 
   it("shows the mic control only when voiceInput is enabled", () => {
@@ -543,34 +556,38 @@ describe("ChatInput voice dictation", () => {
     expect(screen.getByRole("button", { name: "Start voice input" })).toBeDefined();
   });
 
-  it("writes transcripts into the message field and auto-sends after silence", async () => {
-    const user = userEvent.setup();
+  it("writes transcripts into the message field and auto-sends after silence", () => {
     const onSend = mock((_text: string) => {});
     render(<ChatInput onSend={onSend} voiceInput />);
 
-    await user.click(screen.getByRole("button", { name: "Start voice input" }));
+    fireEvent.click(screen.getByRole("button", { name: "Start voice input" }));
     expect(screen.getByTestId("composer-voice-status").textContent).toContain(
       "Listening",
     );
 
     const input = screen.getByLabelText("Message") as HTMLTextAreaElement;
-    lastRecognition?.onresult?.({
-      resultIndex: 0,
-      results: {
-        length: 1,
-        0: { isFinal: true, 0: { transcript: "hello myra" } },
-      },
+    act(() => {
+      lastRecognition?.onresult?.({
+        resultIndex: 0,
+        results: {
+          length: 1,
+          0: { isFinal: true, 0: { transcript: "hello myra" } },
+        },
+      });
     });
     expect(input.value).toBe("hello myra");
 
-    lastRecognition?.onspeechend?.();
+    act(() => {
+      lastRecognition?.onspeechend?.();
+    });
     expect(screen.getByTestId("composer-voice-status").textContent).toContain(
       "Sending in 3",
     );
 
-    await waitFor(() => expect(onSend).toHaveBeenCalledTimes(1), {
-      timeout: 4000,
+    act(() => {
+      timers.advance(VOICE_AUTO_SEND_DELAY_SEC * 1000);
     });
+    expect(onSend).toHaveBeenCalledTimes(1);
     expect(onSend.mock.calls[0]?.[0]).toBe("hello myra");
     expect(input.value).toBe("");
     expect(
