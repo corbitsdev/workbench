@@ -29,6 +29,10 @@ const MANAGED_KEYS = [
   "WEDGE_SWEEP_INTERVAL_MS",
   "WEDGE_UNROUTABLE_GRACE_MS",
   "AWAITING_SUPERVISOR_PREWARM_INTERVAL_MS",
+  "PREWARM_ENABLED",
+  "PREWARM_ACTIVE_WINDOW_MS",
+  "PREWARM_CONCURRENCY",
+  "PREWARM_SWEEP_INTERVAL_MS",
   "RUN_LIVENESS_STALL_GRACE_MS",
   "RUN_LIVENESS_START_HARD_DEADLINE_MS",
   "RUN_LIVENESS_INTERVAL_MS",
@@ -186,6 +190,41 @@ describe("loadConfig", () => {
         `AWAITING_SUPERVISOR_PREWARM_INTERVAL_MS must be a positive integer (milliseconds); got "${bad}"`,
       );
     }
+  });
+
+  it("defaults personalAgentPrewarm to enabled with 24h/2/30s and honors overrides", () => {
+    setRequiredEnv();
+    expect(loadConfig().personalAgentPrewarm).toEqual({
+      enabled: true,
+      activeWindowMs: 24 * 60 * 60 * 1000,
+      concurrency: 2,
+      intervalMs: 30_000,
+    });
+
+    process.env["PREWARM_ACTIVE_WINDOW_MS"] = "3600000";
+    process.env["PREWARM_CONCURRENCY"] = "4";
+    process.env["PREWARM_SWEEP_INTERVAL_MS"] = "5000";
+    expect(loadConfig().personalAgentPrewarm).toEqual({
+      enabled: true,
+      activeWindowMs: 3_600_000,
+      concurrency: 4,
+      intervalMs: 5_000,
+    });
+  });
+
+  it("treats PREWARM_ENABLED as a default-on kill switch (only false/0 disables)", () => {
+    setRequiredEnv();
+    process.env["PREWARM_ENABLED"] = "false";
+    expect(loadConfig().personalAgentPrewarm.enabled).toBe(false);
+
+    process.env["PREWARM_ENABLED"] = "0";
+    expect(loadConfig().personalAgentPrewarm.enabled).toBe(false);
+
+    process.env["PREWARM_ENABLED"] = "true";
+    expect(loadConfig().personalAgentPrewarm.enabled).toBe(true);
+
+    delete process.env["PREWARM_ENABLED"];
+    expect(loadConfig().personalAgentPrewarm.enabled).toBe(true);
   });
 
   it("rejects a zero, negative, decimal, or non-numeric WEDGE_SWEEP_INTERVAL_MS", () => {
