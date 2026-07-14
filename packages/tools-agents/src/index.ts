@@ -90,6 +90,32 @@ export function parseListLimit(value: unknown): number {
  * exposes the principal directory and the shared, db-free query helpers it
  * reuses.
  */
+export const SEARCH_AGENTS_DEFINITION: ToolDefinition = {
+  name: "search_agents",
+  description:
+    "Search the agents you can address by keyword. Matches against each agent's name and description so you can find the right specialist before messaging it with mail_send. Returns the same fields as list_agents (name, description, mail address, status, definition id, instance id), ranked by match strength, scoped to your own operator's agents (or another operator's via principals, from list_principals).",
+  inputSchema: {
+    type: "object",
+    properties: {
+      query: {
+        type: "string",
+        description: "Keywords to match against agent name and description.",
+      },
+      principals: {
+        type: "array",
+        items: { type: "string" },
+        description:
+          "Member (user) principal ids whose agents to search. Defaults to your own operator. Get ids from list_principals to search another operator's agents.",
+      },
+      limit: {
+        type: "number",
+        description: "Maximum number of matches to return (1-200, default 50).",
+      },
+    },
+    required: ["query"],
+  },
+};
+
 export const LIST_AGENTS_DEFINITION: ToolDefinition = {
   name: "list_agents",
   description:

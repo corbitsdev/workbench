@@ -131,6 +131,7 @@ describe("MAILBOX_PERSONA_TOOLS", () => {
       "workflow_list_runs",
       "list_skills",
       "list_agents",
+      "search_agents",
       "list_principals",
       "identity_get",
       "attio_list_tasks",

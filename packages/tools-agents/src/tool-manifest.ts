@@ -11,6 +11,9 @@ export const toolManifestFile = {
         list_agents: {
           sideEffect: "read",
         },
+        search_agents: {
+          sideEffect: "read",
+        },
         list_principals: {
           sideEffect: "read",
         },

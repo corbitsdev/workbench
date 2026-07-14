@@ -562,6 +562,7 @@ const PHRASES: Record<string, FriendlyPhrase> = {
 
   // Agents directory
   list_agents: "Listing available agents",
+  search_agents: "Searching for an agent",
   list_principals: "Listing workspace members",
 
   // Per-tool account identity (CL-2420)
@@ -761,8 +762,7 @@ export function integrationToolProviderKey(
   }
 
   const llmProvider =
-    /^([a-z0-9-]+)__/.exec(name)?.[1] ??
-    /^([a-z0-9-]+)__/.exec(opKey)?.[1];
+    /^([a-z0-9-]+)__/.exec(name)?.[1] ?? /^([a-z0-9-]+)__/.exec(opKey)?.[1];
   if (llmProvider !== undefined) {
     return INTERNAL_TOOL_PROVIDERS.has(llmProvider) ? null : llmProvider;
   }
