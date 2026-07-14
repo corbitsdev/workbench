@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import {
+  APPROVAL_GATED_TOOL_NAMES,
   INTERNAL_WRITE_EXCLUSIONS,
   approvalGatedWriteNames,
 } from "./tool-side-effects";
@@ -83,5 +84,17 @@ describe("approvalGatedWriteNames", () => {
     }
     expect(INTERNAL_WRITE_EXCLUSIONS.has("attio_update_task")).toBe(false);
     expect(INTERNAL_WRITE_EXCLUSIONS.has("vercel_deploy_artifact")).toBe(false);
+  });
+});
+
+describe("APPROVAL_GATED_TOOL_NAMES", () => {
+  test("gates every committed manifest linear write, not only create_issue", () => {
+    expect(APPROVAL_GATED_TOOL_NAMES.has("linear__create_issue")).toBe(true);
+    expect(APPROVAL_GATED_TOOL_NAMES.has("linear__update_issue")).toBe(true);
+    expect(APPROVAL_GATED_TOOL_NAMES.has("linear__save_comment")).toBe(true);
+  });
+
+  test("does not gate manifest read tools", () => {
+    expect(APPROVAL_GATED_TOOL_NAMES.has("linear__list_issues")).toBe(false);
   });
 });
