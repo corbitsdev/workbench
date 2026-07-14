@@ -83,6 +83,17 @@ There are two kinds of vendoring:
   crash cause never prints. Both sites are fixed and marked
   `// WORKBENCH-LOCAL (CL-2651)`. Still unfixed upstream at pin `13fb9ac`;
   drop these blocks only when upstream interpolates the reason itself.
+- **WORKBENCH-LOCAL change (CL-3641):** `seams/signal-channel.ts` `deliver()`
+  refuses to write when `runs/<runId>/events/` has no existing events
+  (`maxSeq === -1`) instead of writing a seq-0 `SignalReceived`. Upstream
+  computes `nextSeq = maxSeq + 1` unconditionally, so a signal that races a
+  cold start (the reconciler auto-delivers before the workflow-child commits
+  its seq-1 `RunStarted`) lands at seq 0; the state machine rejects seq < 1,
+  permanently poisoning the run log (every fold fails forever). The refusal
+  throws instead; the caller (`child/run-child.ts`'s `signal.deliver` IPC
+  handler) already catches and logs the rejection without crashing, and the
+  hub's durable pending-signal rail re-delivers later, so the failed delivery
+  self-heals once `RunStarted` lands.
 - **Lint:** the package is `eslint`-exempt (`eslint.config.ts` `globalIgnores`,
   same as `interchange/**`) — it is vendored upstream code with its own
   disable-directive conventions.
