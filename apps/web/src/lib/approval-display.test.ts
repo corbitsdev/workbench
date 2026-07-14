@@ -3,6 +3,7 @@ import {
   buildApprovalDisplayLookups,
   formatMailboxAddress,
   humanizeApprovalValue,
+  mailSendToolSummaryHeadline,
 } from "./approval-display";
 import type { AgentInstance } from "./hub-api";
 import type { Member } from "../hooks/use-members";
@@ -54,5 +55,22 @@ describe("approval-display", () => {
     const lookups = buildApprovalDisplayLookups([], []);
     expect(formatMailboxAddress("ins_unknown@x.com", lookups)).toBe("Agent");
     expect(humanizeApprovalValue("prn_unknown", lookups)).toBe("Team member");
+  });
+
+  it("mailSendToolSummaryHeadline uses Recipient while lookups load", () => {
+    const lookups = buildApprovalDisplayLookups(members, instances);
+    expect(
+      mailSendToolSummaryHeadline("usr_ada@example.com", lookups, true),
+    ).toBe("Send mail to Recipient");
+  });
+
+  it("mailSendToolSummaryHeadline humanizes the recipient when lookups are ready", () => {
+    const lookups = buildApprovalDisplayLookups(members, instances);
+    expect(
+      mailSendToolSummaryHeadline("usr_ada@example.com", lookups, false),
+    ).toBe("Send mail to Ada Lovelace");
+    expect(mailSendToolSummaryHeadline(undefined, lookups, false)).toBe(
+      "Send mail",
+    );
   });
 });
