@@ -14,6 +14,7 @@ import {
   type BadgeTone,
   buttonVariants,
   Button,
+  cn,
   ConfirmButton,
 } from "@workbench/ui";
 import {
@@ -62,6 +63,9 @@ const STATUS_TONE: Record<ArtifactStatus, BadgeTone> = {
 // (uploaded binaries and CSV exports). gamma_presentation is handled
 // separately below since it is only downloadable when a PDF was attached.
 const DOWNLOADABLE_ARTIFACT_KINDS = new Set(["image", "file", "csv-export"]);
+
+const ARTIFACT_DETAIL_CHROME_ACTION_CLASS =
+  "inline-flex items-center gap-1.5 text-xs font-medium text-text-2 hover:text-text";
 
 function hasUploadSource(source: unknown): boolean {
   if (typeof source !== "object" || source === null) return false;
@@ -175,12 +179,18 @@ export function ArtifactDetailPage() {
         hasUploadSource(artifact.source));
     const gammaUrl = resolveGammaUrl(artifact.kind, artifact.content);
     return (
-      <>
+      <div
+        data-testid="artifact-detail-chrome-actions"
+        className="flex flex-row flex-wrap items-center justify-end gap-1"
+      >
         {canDownload && (
           <a
             href={buildApiUrl(`/artifacts/${artifact.id}/download`)}
             download
-            className={`${buttonVariants({ variant: "ghost", size: "sm" })} gap-1.5`}
+            className={cn(
+              buttonVariants({ variant: "ghost", size: "sm" }),
+              ARTIFACT_DETAIL_CHROME_ACTION_CLASS,
+            )}
           >
             <Download size={14} aria-hidden />
             Download
@@ -191,7 +201,10 @@ export function ArtifactDetailPage() {
             href={gammaUrl}
             target="_blank"
             rel="noreferrer"
-            className={`${buttonVariants({ variant: "ghost", size: "sm" })} gap-1.5`}
+            className={cn(
+              buttonVariants({ variant: "ghost", size: "sm" }),
+              ARTIFACT_DETAIL_CHROME_ACTION_CLASS,
+            )}
           >
             <ExternalLink size={14} aria-hidden />
             Open in Gamma
@@ -205,7 +218,7 @@ export function ArtifactDetailPage() {
               buildArtifactMessage(artifact, activeTenantId ?? undefined),
             )
           }
-          className="gap-1.5"
+          className={ARTIFACT_DETAIL_CHROME_ACTION_CLASS}
         >
           <MessageSquare size={14} aria-hidden />
           Chat about this
@@ -228,14 +241,14 @@ export function ArtifactDetailPage() {
                   { onSuccess: () => navigate("/artifacts") },
                 )
               }
-              className="gap-1.5"
+              className={ARTIFACT_DETAIL_CHROME_ACTION_CLASS}
             >
               <Archive size={14} />
               {archiveMutation.isPending ? "Archiving…" : "Archive"}
             </ConfirmButton>
           </>
         )}
-      </>
+      </div>
     );
     // Depend on stable/primitive fields only. The full `archiveMutation` and
     // `meQuery.data` objects get fresh identities each render; using them here

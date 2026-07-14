@@ -223,6 +223,7 @@ describe("ArtifactDetailPage", () => {
   it("surfaces the Chat about this and Archive actions in the top-bar chrome", async () => {
     const view = renderAt("art-1");
     const chrome = view.getByTestId("page-chrome");
+    expect(view.getByTestId("artifact-detail-chrome-actions")).toBeDefined();
     expect(chrome.textContent).toContain("Chat about this");
     // Archive is gated on the async getMe permission query, so wait for it.
     await view.findByRole("button", { name: /archive/i });
