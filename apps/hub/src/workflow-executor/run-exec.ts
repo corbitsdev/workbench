@@ -266,6 +266,13 @@ export async function startWorkflowRun(
   }
 
   const runId = mintRunId();
+  const inputObject =
+    typeof opts.input === "object" &&
+    opts.input !== null &&
+    !Array.isArray(opts.input)
+      ? (opts.input as Record<string, unknown>)
+      : {};
+  const triggerPayload = { ...inputObject, runId };
 
   // Durable-first: the run row exists (status `provisioning`, no deployment yet)
   // before we return, so the FE can poll it and show live "Starting…" progress
@@ -276,7 +283,7 @@ export async function startWorkflowRun(
     kind: opts.kind,
     tenantId: definition.tenantId,
     principalId: opts.principalId,
-    input: opts.input,
+    input: triggerPayload,
     originConversationId: opts.originConversationId,
     status: "provisioning",
   });
@@ -284,7 +291,7 @@ export async function startWorkflowRun(
   const backgroundTask = provisionAndTrigger(deps, {
     runId,
     kind: opts.kind,
-    input: opts.input,
+    input: triggerPayload,
     tenantId: definition.tenantId,
     deployPrincipalId: definition.principalId,
   });
