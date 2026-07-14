@@ -30,6 +30,7 @@ const PRINCIPAL_MAILBOX_DDL = `
     subject text,
     from_address text,
     message_key text,
+    refs jsonb,
     created_at timestamp NOT NULL DEFAULT now(),
     read_at timestamp
   );
