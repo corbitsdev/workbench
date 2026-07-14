@@ -8,151 +8,151 @@
   {
     "name": "@workbench/tools-agents",
     "version": "0.1.0",
-    "integrity": "sha512-aThHYVgVRhsndOa0DH/Nqnkuaj0QeurtMV4aLP0GWAAYqUROMQkJG5TXQwkCeuH8cBbvjHKnSY9kGVLncp9fAQ==",
+    "integrity": "sha512-KUWUDqNe/dj29gum0XNWydGyANhOYX3OyznNgH8wsNysZK01Hp29KxJ3rVOZapf3CdcLBpndK0udycvsQMy4SQ==",
     "tarballFilename": "@workbench-tools-agents-0.1.0.tgz"
   },
   {
     "name": "@workbench/tools-artifact",
     "version": "0.1.0",
-    "integrity": "sha512-H888cnIUMrLlZlYnnP9+bN6mW2XoSfXyDVvdWnGbJNdQ8QxDdnUWmbNoPXfO9GyJnkuRNZrrGAs9zzQ2NzDlSQ==",
+    "integrity": "sha512-51iVDuGufF5IlmlQKjpe6W0NIu+vSHYeP6RlSiXer8+WS4gNHJz/x9ndD3JkEiUqllNR/5QJ+F9z2niKYdYONw==",
     "tarballFilename": "@workbench-tools-artifact-0.1.0.tgz"
   },
   {
     "name": "@workbench/tools-attio",
     "version": "0.1.0",
-    "integrity": "sha512-5aTZhfjSVK6SgM6/Aj1/eEpcPChXthVPIbFKQdmEElWCRQVLkbfUdKjSiAu2nIYGtaz+EwoYcvjz6ARb4ESTIw==",
+    "integrity": "sha512-1rZDv80ugm99sooE7rTjIOixqzew/fxALJiDFKMBU+vwvM66lJm/C8sso2hCNk9+g/g2uC4MQZ0BBxxExaFqQA==",
     "tarballFilename": "@workbench-tools-attio-0.1.0.tgz"
   },
   {
     "name": "@workbench/tools-bluesky",
     "version": "0.1.0",
-    "integrity": "sha512-6neK/Eoej2/O4KacfORl+COhJh73ti+q9WJRmSFHBYNuln1S9dflNVzdOjZVxIbp7p83TUg9wANoWWbnkRpFIA==",
+    "integrity": "sha512-ifBvi76sSqEgOCGd3BpT8KkO+u0xeWvkeEhpne00Hu0F+9N3rv6e5+K3vG8ngGAFlA5IClWYpe5YMafRDOf8tw==",
     "tarballFilename": "@workbench-tools-bluesky-0.1.0.tgz"
   },
   {
     "name": "@workbench/tools-dispatch",
     "version": "0.1.0",
-    "integrity": "sha512-A0bAksDSoIU+inxohgXRME/h7/pOEC7OWBRy85/Bhz0nFor64vQcBw0G4fG8ztpkIGHCdcEBulJ7CIwimo7Znw==",
+    "integrity": "sha512-f8HDZMhVqYem727xQQ8Wp4i6a4ujhVko/5zitN6kMfPmmh3w1WsR8s2hpfb05GFgDEhTco334aF99nn7hXTKag==",
     "tarballFilename": "@workbench-tools-dispatch-0.1.0.tgz"
   },
   {
     "name": "@workbench/tools-exa",
     "version": "0.1.0",
-    "integrity": "sha512-Kvf4kbwn+nHtNOv0zIVn8OFQx3Lyvai820veD0yGarVO9CrN3Na3ysX3Tv59xoLf5RG6yW2wS/iwcXy+gJeWoQ==",
+    "integrity": "sha512-cU+hzGQ9PFVVzKdmRcFIqxDtdN5b41IyX9SURDG0FwcibxD4vUMY2mJT2Q5i8Vi33lmcD5QD8A/Rb+tXwERgsQ==",
     "tarballFilename": "@workbench-tools-exa-0.1.0.tgz"
   },
   {
     "name": "@workbench/tools-fileparser",
     "version": "0.1.0",
-    "integrity": "sha512-rOZBEa+KAOBUJMy23ggmGK9hHXm3KjgoodW6z91xIcIiFrEL0t7EizF2V26VwEboAD4ySsCHpDepHObXeB1oIg==",
+    "integrity": "sha512-/WBP0vOQxd7WXwW/G8KaqgeknThc/j9uIxGqjnvfhxpKpA0i/SmdidLgb2k/Q/R5foRBDJwd57oSzEdNBwdzVg==",
     "tarballFilename": "@workbench-tools-fileparser-0.1.0.tgz"
   },
   {
     "name": "@workbench/tools-firecrawl",
     "version": "0.1.0",
-    "integrity": "sha512-STPYAPA+2EpmjvXwfX0qYKiBt38uUbe8AhI9JRqColuHfnre+MepI7DGChMHkmge/avQewtzu+yb3qmuFofQ6w==",
+    "integrity": "sha512-RlhiQvjIyJ6N76Ocv6dkO0dcUfCYbJ9KErn9YSEBeCz7czdJA+DcpUWNkY1xmWqtW5aAtTVsmMRF4iVZpuygEw==",
     "tarballFilename": "@workbench-tools-firecrawl-0.1.0.tgz"
   },
   {
     "name": "@workbench/tools-gamma",
     "version": "0.1.0",
-    "integrity": "sha512-gXGZeG9qV+6JYZ36jyQBVUFOsFgZrLdK3h/6NQIdKnJbsqkuQmsvkWM7JjHeZdf9r2KbaN6tX2S7W68KlI8l5w==",
+    "integrity": "sha512-JoMCa04mcTKBzgVnRf3RE9gPw8o/4aNiH0kWDeM0b7qO1eNVCVzTTLT2knbMlOId/52G3Fi1NQiQJtoGRP+h2A==",
     "tarballFilename": "@workbench-tools-gamma-0.1.0.tgz"
   },
   {
     "name": "@workbench/tools-github",
     "version": "0.1.0",
-    "integrity": "sha512-dm2dfpV2y5wbEzSaEHIhNzP05seJXsLzf0Azo0Pfm3LGxaHZgZ3Mhbhtahy973VTOmy5MJ1L9hrOg2mWLibklQ==",
+    "integrity": "sha512-3wzBHy1mI8AoGEebKMNgYVMTFwFBslIu1Qtaw+/bFfUO8h9kdyBkThgH6VcNXp/lKs9NPi5F9Xq3uY1Q/dzuiQ==",
     "tarballFilename": "@workbench-tools-github-0.1.0.tgz"
   },
   {
     "name": "@workbench/tools-granola",
     "version": "0.1.0",
-    "integrity": "sha512-7X0ltOiSRITFYLcjgEanjNrYhtsAd1xRzAskdDl+wqXG4dlDr9VMIgTFjRSHEx3wizsGvA1OCHHtYAf8wgczCg==",
+    "integrity": "sha512-wePvnx1lUzuNmWmfSVTS8T5rZqjfaVWizhTdyFRAxu8SWkAlO3AHmCrSpyZjPlY3tFm5GPgZWfRqMR/eyLsfoQ==",
     "tarballFilename": "@workbench-tools-granola-0.1.0.tgz"
   },
   {
     "name": "@workbench/tools-hackernews",
     "version": "0.1.0",
-    "integrity": "sha512-12aM3EE8qIUuS1mfDI8taDpNm62SnfAAqT9r5aau5+7nZ/m/+FqhoLcyHA5niCgdkZ14u063Db37rkNjypDmWQ==",
+    "integrity": "sha512-IAnKkhWUMOSdcWA4vdZbRp/6mKSwuxOvslJs7tMRXCBkk2za0cuQxbGBfyVzMRKo1C87LRg8vdrmYz4KrPqF3w==",
     "tarballFilename": "@workbench-tools-hackernews-0.1.0.tgz"
   },
   {
     "name": "@workbench/tools-last30days",
     "version": "0.1.0",
-    "integrity": "sha512-A6Ieur2ytXaF+pAC8pmyuIeEnJSzlzoGSdQrBSDA2pVnMGMUFZeFQSGXVnxoc0L9eLMmWSCunzQ7GCw5Czlp7Q==",
+    "integrity": "sha512-ey2YCSk3IWjywrTfCRHgNJU6Qcbf+yIEh94HyPn1U2GTuDDiy0N8e/xPJVZC/A2AagZMoThd5nVkvtuMkjjkNA==",
     "tarballFilename": "@workbench-tools-last30days-0.1.0.tgz"
   },
   {
     "name": "@workbench/tools-linear",
     "version": "0.1.0",
-    "integrity": "sha512-oNWoJpP+n0b4c3HWAtekTa92QOJa6mY4xPeozUCirQxNJD9MQGP8+3P2c45kxnpchf7ECPWSTc7uylqQUur0cg==",
+    "integrity": "sha512-AI45DDpRiTFQk1sVBUjysENndEkxEHQJ1oUqsfLl9zCezhwd3VYNdP1MpnnI/JwVjefUkB4j9Eu+QooPE2vxcA==",
     "tarballFilename": "@workbench-tools-linear-0.1.0.tgz"
   },
   {
     "name": "@workbench/tools-notion",
     "version": "0.1.0",
-    "integrity": "sha512-YHENGPaWK84AJlpPaLjK3S4RYC8eoUR89Y3fLx147xi//tIlIc9MUiUHINbweVHxSYtcLyScdtcYlds+kWKPiA==",
+    "integrity": "sha512-E1roF6xRRah05Nod50Kg9iPChhZoI/hH4p7GEVwVn3hwoNOyhyaujYQCEAXDz1td8mOUqk/8mYqR7OSjD1UamA==",
     "tarballFilename": "@workbench-tools-notion-0.1.0.tgz"
   },
   {
     "name": "@workbench/tools-polymarket",
     "version": "0.1.0",
-    "integrity": "sha512-uG9XeJowa+zdYHjgd6YlLNWw740KERaL5Dr93qj4uOtd5J7tOLJuXoQKGnAxRaJhSkzTuQQTCNckwY9Q5q/uyA==",
+    "integrity": "sha512-p0Op9nJ82XVe8VORJFsbT21B9vwC1T96IyyC0X9yGwySottKY8XPS7VfAv1tOa1pMQRGY7uuUWX2DLl83cbplg==",
     "tarballFilename": "@workbench-tools-polymarket-0.1.0.tgz"
   },
   {
     "name": "@workbench/tools-reddit",
     "version": "0.1.0",
-    "integrity": "sha512-ZUgW1CJf5/3zjXm8VQlLjKnYft2Azi+t+lIpJgvvO8XAYAItyMPpnkLL/OKcxhKAgxDHN2kAo2MW3kfd5hPgXQ==",
+    "integrity": "sha512-jJKz/9MdA+gnG5f9noVjemVEIBxkLoIkcdvxkGquI+B18ykK7xLwr9LQLYwGqQmpCHXYwU32OxcMf2cA+czQow==",
     "tarballFilename": "@workbench-tools-reddit-0.1.0.tgz"
   },
   {
     "name": "@workbench/tools-scrapecreators",
     "version": "0.1.0",
-    "integrity": "sha512-1V63IkjU9RBYpT5Fytb1NI2KlbyHMhSsnmnIpgFZzPQQmOE5CY43rJ/qr6cfY91NZrWERdqIUtHGLNvAjFaFZg==",
+    "integrity": "sha512-jP4AAmWhs1mnsh228YERD44GmqvwNte4sBgIy7NSVg7rjDRwW99SSAOUu9sUwHbah1Ng1IRWBsAdJNmch5EF/g==",
     "tarballFilename": "@workbench-tools-scrapecreators-0.1.0.tgz"
   },
   {
     "name": "@workbench/tools-skills",
     "version": "0.1.0",
-    "integrity": "sha512-j9ISKS8/+xnzMn5TZjL2L/jpkqVbyE8lJwnv0OsqK85flH0CkY2hsNTiE+SFYnR7mjEtg8k13ymRw8zbYWWXVQ==",
+    "integrity": "sha512-kcH+jgfdTQ5vCoJQeWIpd9Ty4o/it/EPR/cj7BGfnxjODvdMAkrZYWWjbk0nlhYafFSgGi/U3A5CvEw3L4kUOA==",
     "tarballFilename": "@workbench-tools-skills-0.1.0.tgz"
   },
   {
     "name": "@workbench/tools-slack",
     "version": "0.1.0",
-    "integrity": "sha512-i8ZZZAlS1v5/MV+n8n/8ObP2d9yZKcz2cutNldV70noWfOkvvdaYYyGXiPYRJ1qAAxAXSosSoj/OA8nA0GtGdw==",
+    "integrity": "sha512-q/9bRNS8Q3n3owTvN5122orgwIIndg/dPTlH+4rQ0hTQ43IYDV8pgFYnN7slTt9hJhEbhnbeXoIotOVp/rvutQ==",
     "tarballFilename": "@workbench-tools-slack-0.1.0.tgz"
   },
   {
     "name": "@workbench/tools-sumble",
     "version": "0.1.0",
-    "integrity": "sha512-B9zjtVT4jctTUq+mlnt7Jba0FPJswMBfWOVrT0KPHLkGhRfU+PTaBAcRx6+cC7uHB0hgeLFwYcsW2YLbpjEJew==",
+    "integrity": "sha512-h+wbTI2AJI7hfE8y8DwKL/VnmBa5donJtxiFHQKzrBdAJIOtBeUnvNcHrLLYyrXwO7Q8OTU7PuHCazh5HD2qDQ==",
     "tarballFilename": "@workbench-tools-sumble-0.1.0.tgz"
   },
   {
     "name": "@workbench/tools-vercel",
     "version": "0.1.0",
-    "integrity": "sha512-bAWdjC7DkfX9C6w2XI/6KSV3rWqZzQ7sZdBVuf7kK1RJk+8qQAaRc1+E8enwvCbcwTiiHOnj71IvmNN8j9W4Aw==",
+    "integrity": "sha512-1SuF78nvmJFd6/uztgUyu3sDbu6LZn1cXIK/iB8+py5Kjz03+j4iAQY3GIXpPpeowE3sxffOpWewwFOO7XxW7g==",
     "tarballFilename": "@workbench-tools-vercel-0.1.0.tgz"
   },
   {
     "name": "@workbench/tools-workflows",
     "version": "0.1.0",
-    "integrity": "sha512-lvtCd1jykS+rCqmkbYKQUi/thKmTIUATinMaDm380/P1ovI0I7/cEm24yZvapy2SqIiWIRyFLe3Ui5gehZgWjA==",
+    "integrity": "sha512-IQCgNqptGl7Zi4QOXGB2RLZsaT/iXVpssDsZ/fz55ih6hGiptaUZrF/OgObT5aP9YCs0ISVmCkFKAxkF64iIJQ==",
     "tarballFilename": "@workbench-tools-workflows-0.1.0.tgz"
   },
   {
     "name": "@workbench/tools-x",
     "version": "0.1.0",
-    "integrity": "sha512-usKo3FCSYuXAww4dHTxqYZyqesASdmUkf5WcUuTKKBn74Ci+v4UMXMUxv/R7vb71xV9v6D8fAjdbF2jKM8SwAA==",
+    "integrity": "sha512-m91BmM14H0i25AfPh+0Mo4RyafK7VQ9DrNFLABsmY3vpYLDfFZqoPH0u63P9vY/KlBL6rNF3dfO/AzMlwlD08g==",
     "tarballFilename": "@workbench-tools-x-0.1.0.tgz"
   },
   {
     "name": "@workbench/tools-youtube",
     "version": "0.1.0",
-    "integrity": "sha512-MKKcms83KudQELCQJlCaFBkWpbzblzSRjOmmoy2fRCtbcnDXiFu3U+gnWU7DCJ0gL2e0NDjddgfA7c9K8IrzUw==",
+    "integrity": "sha512-PL8bObXr7A/QaytrvEM8dI/4d4cOg5MbsOaM2LW2J+Xt7F/XEOoSKcfaENUR42bV6jyO4u/5wRc4IAvVLeoL/w==",
     "tarballFilename": "@workbench-tools-youtube-0.1.0.tgz"
   }
 ]

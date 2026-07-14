@@ -137,10 +137,11 @@ COPY packages/tasks/ packages/tasks/
 COPY packages/workbench-shared/ packages/workbench-shared/
 COPY workflows/ workflows/
 
-# Serialize workflow TS → embedded JSON at image build (same as `bun run build:workflow-defs`).
-# The hub image does not run `apps/hub` package `build` on Railway; without this step,
-# autopublish would ship stale committed JSON while `workflows/**` on staging had moved.
-RUN bun run --cwd apps/hub build:workflow-defs
+# Hub image does not run `apps/hub` package `build` on Railway. Rebuild embedded
+# workflow defs and tool tarballs from sources in this commit (CL-2593, CL-3626).
+RUN bun run --cwd apps/hub build:workflow-defs && \
+    bun run --cwd apps/hub build:tool-manifests && \
+    bun run --cwd apps/hub build:tool-packages
 
 EXPOSE 4000
 

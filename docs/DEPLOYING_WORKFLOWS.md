@@ -159,6 +159,16 @@ with `TOOL_REGISTRY_NAME`) **before** workflow autopublish runs. Drift detection
 uses tarball integrity (ssri sha512); steady-state boots perform no PUTs. Manual
 `tools publish` / `publish-tool-packages.ts` remains valid.
 
+**CI/CD (hub Docker image):** `apps/hub/Dockerfile` copies `packages/tools-*` (and
+`packages/tool-manifest/`) and runs `bun run build:tool-manifests` then
+`build:tool-packages` during the image build. That regenerates embedded tarballs from
+the tool packages in the same commit Railway built — you do not rely on someone
+remembering to commit `generated/tool-packages` for staging/prod to pick up TS
+changes. The committed embed in git is still the drift-test anchor for PRs
+(`apps/hub/bin/build-tool-packages-embed.test.ts`); keep it in sync when you change
+`packages/tools-*` or manifest metadata, or CI tests fail even though the deployed
+image would have been correct.
+
 ## Auto-publishing on boot
 
 The hub can publish the build-serialized workflow definitions itself on startup,

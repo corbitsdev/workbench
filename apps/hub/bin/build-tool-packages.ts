@@ -5,6 +5,7 @@
 // See docs/CREATING_AGENTS_AND_TOOLS.md.
 
 import { promises as fs } from "node:fs";
+import { tmpdir } from "node:os";
 import path from "node:path";
 import * as tar from "tar";
 import ssri from "ssri";
@@ -313,10 +314,7 @@ export async function computeEmbeddedToolPackageManifest(
   outDir?: string,
 ): Promise<EmbeddedToolPackageManifest> {
   const scratch =
-    outDir ??
-    path.join(
-      await fs.mkdtemp(path.join(path.dirname(DEFAULT_OUT_DIR), ".tool-embed-")),
-    );
+    outDir ?? (await fs.mkdtemp(path.join(tmpdir(), "workbench-tool-embed-")));
   const ownsScratch = outDir === undefined;
   try {
     const built = await buildToolPackages(TOOL_PACKAGES, scratch);

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import { readFile, readdir } from "node:fs/promises";
-import path from "node:path";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import {
   embeddedToolPackagesDir,
   integrityFromTarballBytes,
@@ -29,7 +29,7 @@ describe("committed embedded tool packages are in sync with source", () => {
     const proc = Bun.spawn(
       ["bun", "run", "bin/build-tool-packages.ts", "--print-manifest"],
       {
-        cwd: path.resolve(import.meta.dir, ".."),
+        cwd: join(import.meta.dir, ".."),
         stdout: "pipe",
         stderr: "pipe",
       },
@@ -66,5 +66,20 @@ describe("committed embedded tool packages are in sync with source", () => {
       const bytes = await readFile(join(tarballsDir, row.tarballFilename));
       expect(integrityFromTarballBytes(bytes)).toBe(row.integrity);
     }
+  });
+});
+
+function hubDockerfilePath(): string {
+  const binDir = dirname(fileURLToPath(import.meta.url));
+  return join(dirname(binDir), "Dockerfile");
+}
+
+const HUB_IMAGE_EMBED_RUN =
+  /RUN bun run --cwd apps\/hub build:workflow-defs && \\\n\s+bun run --cwd apps\/hub build:tool-manifests && \\\n\s+bun run --cwd apps\/hub build:tool-packages/;
+
+describe("hub Docker image can run build:tool-packages", () => {
+  it("rebuilds workflow defs, tool manifests, and embedded tarballs in one image-build RUN", async () => {
+    const dockerfile = await readFile(hubDockerfilePath(), "utf8");
+    expect(dockerfile).toMatch(HUB_IMAGE_EMBED_RUN);
   });
 });
