@@ -1,6 +1,6 @@
 import { useMemo } from "react";
 import { Link, useNavigate, useParams } from "react-router";
-import { Archive, ArrowLeft, MessageSquare } from "lucide-react";
+import { Archive, MessageSquare } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { Button, ConfirmButton } from "@workbench/ui";
 import {
@@ -84,21 +84,69 @@ export function ArtifactDetailPage() {
 
   const pageChrome = useMemo(() => {
     if (artifact === undefined) return null;
+    const canArchive =
+      meQuery.data?.isAdmin === true ||
+      meQuery.data?.isOwner === true ||
+      (artifact.ownerPrincipalId !== null &&
+        artifact.ownerPrincipalId === (activeWorkbench?.id ?? null));
     return (
-      <button
-        type="button"
-        onClick={() =>
-          openWithMessage(
-            buildArtifactMessage(artifact, activeTenantId ?? undefined),
-          )
-        }
-        className="inline-flex items-center gap-1.5 rounded-[8px] px-2 py-1 text-xs font-medium text-text-2 transition-colors hover:bg-page hover:text-text"
-      >
-        <MessageSquare size={14} aria-hidden />
-        Chat about this
-      </button>
+      <>
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={() =>
+            openWithMessage(
+              buildArtifactMessage(artifact, activeTenantId ?? undefined),
+            )
+          }
+          className="gap-1.5"
+        >
+          <MessageSquare size={14} aria-hidden />
+          Chat about this
+        </Button>
+        {canArchive && (
+          <>
+            {archiveMutation.isError && (
+              <span className="text-xs text-red">
+                Couldn&apos;t archive — try again
+              </span>
+            )}
+            <ConfirmButton
+              variant="ghost"
+              size="sm"
+              confirmLabel="Confirm archive"
+              disabled={archiveMutation.isPending}
+              onConfirm={() =>
+                archiveMutation.mutate(
+                  { artifactId: artifact.id, tenantId: activeTenantId },
+                  { onSuccess: () => navigate("/artifacts") },
+                )
+              }
+              className="gap-1.5"
+            >
+              <Archive size={14} />
+              {archiveMutation.isPending ? "Archiving…" : "Archive"}
+            </ConfirmButton>
+          </>
+        )}
+      </>
     );
-  }, [artifact, activeTenantId, openWithMessage]);
+    // Depend on stable/primitive fields only. The full `archiveMutation` and
+    // `meQuery.data` objects get fresh identities each render; using them here
+    // regenerated the chrome node every render, and useSetPageChrome's effect
+    // re-published it in a loop ("Maximum update depth exceeded").
+  }, [
+    artifact,
+    activeTenantId,
+    openWithMessage,
+    meQuery.data?.isAdmin,
+    meQuery.data?.isOwner,
+    activeWorkbench?.id,
+    archiveMutation.mutate,
+    archiveMutation.isPending,
+    archiveMutation.isError,
+    navigate,
+  ]);
 
   useSetPageChrome(pageChrome);
 
@@ -117,8 +165,6 @@ export function ArtifactDetailPage() {
     );
   }
 
-  const loadedArtifact = artifact;
-
   function handleOpenSession(sessionId: string) {
     navigate(`/insights/trace/${sessionId}`);
   }
@@ -127,81 +173,25 @@ export function ArtifactDetailPage() {
     navigate(`/artifacts/${parentId}`);
   }
 
-  const canArchive =
-    meQuery.data?.isAdmin === true ||
-    meQuery.data?.isOwner === true ||
-    (loadedArtifact.ownerPrincipalId !== null &&
-      loadedArtifact.ownerPrincipalId === (activeWorkbench?.id ?? null));
-
-  function handleArchive() {
-    archiveMutation.mutate(
-      { artifactId: loadedArtifact.id, tenantId: activeTenantId },
-      { onSuccess: () => navigate("/artifacts") },
-    );
-  }
-
   const kindLabel = resolveKindLabel(artifact.kind);
   const accent = visualForKind(artifact.kind).fill;
 
   return (
     <ArtifactDetailShell
       accentClass={accent}
-      header={
-        <div className="flex items-center gap-3">
-          <button
-            type="button"
-            onClick={() => navigate("/artifacts")}
-            aria-label="Back to artifacts"
-            className="grid h-8 w-8 shrink-0 place-items-center rounded-sm text-text-2 outline-none transition-[color,background-color,transform] hover:bg-page hover:text-text focus-visible:ring-2 focus-visible:ring-orange active:scale-[0.97]"
-          >
-            <ArrowLeft size={18} />
-          </button>
-          <div className="min-w-0 flex-1">
-            <h1 className="truncate text-base font-semibold text-text">
-              {artifact.title}
-            </h1>
-            <p className="mt-0.5 font-mono text-[11px] text-text-3">
-              {kindLabel} · v{artifact.version} ·{" "}
-              {artifactStatusLabel(artifact.status)}
-            </p>
-          </div>
-        </div>
-      }
       rail={
-        <div className="flex flex-col gap-4">
-          <ArtifactMeta
-            kindLabel={kindLabel}
-            createdAt={artifact.createdAt}
-            sessionId={artifact.sessionId}
-            sessionName={artifact.sessionName}
-            sessionStatus={artifact.sessionStatus}
-            parentId={artifact.parentId}
-            onOpenSession={handleOpenSession}
-            onOpenParent={handleOpenParent}
-          />
-          <div className="flex flex-col gap-2">
-            {canArchive && (
-              <>
-                {archiveMutation.isError && (
-                  <span className="text-xs text-red">
-                    Couldn&apos;t archive — try again
-                  </span>
-                )}
-                <ConfirmButton
-                  variant="ghost"
-                  size="sm"
-                  confirmLabel="Confirm archive"
-                  disabled={archiveMutation.isPending}
-                  onConfirm={handleArchive}
-                  className="flex w-full items-center justify-center gap-1.5"
-                >
-                  <Archive size={14} />
-                  {archiveMutation.isPending ? "Archiving…" : "Archive"}
-                </ConfirmButton>
-              </>
-            )}
-          </div>
-        </div>
+        <ArtifactMeta
+          kindLabel={kindLabel}
+          version={artifact.version}
+          statusLabel={artifactStatusLabel(artifact.status)}
+          createdAt={artifact.createdAt}
+          sessionId={artifact.sessionId}
+          sessionName={artifact.sessionName}
+          sessionStatus={artifact.sessionStatus}
+          parentId={artifact.parentId}
+          onOpenSession={handleOpenSession}
+          onOpenParent={handleOpenParent}
+        />
       }
     >
       <ErrorBoundary>
