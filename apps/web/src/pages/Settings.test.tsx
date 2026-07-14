@@ -84,9 +84,19 @@ function jsonResponse(body: unknown, status = 200) {
   });
 }
 
+// Every Settings render mounts the Schedules section, which fetches these two
+// endpoints regardless of which behavior a given test is exercising.
+function handleSchedulesFetches(url: string): Response | null {
+  if (url.includes("/me/schedules")) return jsonResponse({ items: [] });
+  if (url.includes("/workflows")) return jsonResponse({ entries: [] });
+  return null;
+}
+
 function stubVersion(body: unknown, ok = true) {
   globalThis.fetch = (async (input: RequestInfo | URL) => {
     const url = typeof input === "string" ? input : input.toString();
+    const scheduled = handleSchedulesFetches(url);
+    if (scheduled) return scheduled;
     if (url.includes("/version")) {
       return jsonResponse(body, ok ? 200 : 500);
     }
@@ -141,6 +151,8 @@ describe("Settings display name", () => {
   it("seeds the display name field from the persisted userName", async () => {
     globalThis.fetch = (async (input: RequestInfo | URL) => {
       const url = typeof input === "string" ? input : input.toString();
+      const scheduled = handleSchedulesFetches(url);
+      if (scheduled) return scheduled;
       if (url.includes("/api/v1/me"))
         return jsonResponse({ userId: "u1", userName: "Persisted Name" });
       if (url.includes("/version")) return jsonResponse({ buildSha: null });
@@ -165,6 +177,8 @@ describe("Settings display name", () => {
     ) => {
       const url = typeof input === "string" ? input : input.toString();
       calls.push({ url, method: init?.method, body: init?.body ?? null });
+      const scheduled = handleSchedulesFetches(url);
+      if (scheduled) return scheduled;
       if (url.includes("/api/v1/me/profile"))
         return jsonResponse({ userName: "New Name" });
       if (url.includes("/api/v1/me"))
@@ -240,6 +254,8 @@ describe("Settings general preferences", () => {
   it("renders General-category preferences in the Account section", async () => {
     globalThis.fetch = (async (input: RequestInfo | URL) => {
       const url = typeof input === "string" ? input : input.toString();
+      const scheduled = handleSchedulesFetches(url);
+      if (scheduled) return scheduled;
       if (url.includes("/me/preferences/settings"))
         return jsonResponse({
           settings: [

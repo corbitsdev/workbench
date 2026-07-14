@@ -30,8 +30,10 @@ import { useAuth } from "../components/AuthProvider";
 import { PreferencesPanel } from "../components/PreferencesPanel";
 import { ConnectedToInboxPanel } from "../components/ConnectedToInboxPanel";
 import { useTourLauncher } from "../components/tour/OnboardingTour";
+import { useActiveWorkbench } from "../lib/active-workbench-context";
 import { WhatsNewSection } from "../components/whats-new/WhatsNewSection";
 import { MemberConnectionsPanel } from "../components/MemberConnectionsPanel";
+import { MySchedules } from "../components/MySchedules";
 import { SettingsSectionNav } from "./SettingsSectionNav";
 import { MORNING_BRIEF_ANCHOR_ID } from "./settings-section-nav";
 
@@ -118,6 +120,7 @@ function SettingsGroup({
 
 export default function Settings() {
   const location = useLocation();
+  const { activeTenantId } = useActiveWorkbench();
   const { signOut } = useAuth();
   const { startTour } = useTourLauncher();
   const { theme, setTheme } = useTheme();
@@ -236,6 +239,14 @@ export default function Settings() {
               description="Connect your accounts to bring outside data into the workbench."
             >
               <MemberConnectionsPanel />
+            </SettingsGroup>
+
+            <SettingsGroup
+              id="schedules"
+              title="Schedules"
+              description="Workflows you've put on a daily cadence — pause, retime, or remove them here."
+            >
+              <MySchedules tenantId={activeTenantId} embedded />
             </SettingsGroup>
 
             <SettingsGroup id="account" title="Account">

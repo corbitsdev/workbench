@@ -31,14 +31,29 @@ function dbRow(
 
 describe("toApiSchedule", () => {
   it("maps a DB row to the API shape with an ISO createdAt", () => {
-    expect(toApiSchedule(dbRow({ hourUtc: 9, enabled: false }))).toEqual({
+    const now = new Date("2026-01-02T12:00:00.000Z");
+    expect(toApiSchedule(dbRow({ hourUtc: 9, enabled: false }), now)).toEqual({
       id: "sch-1",
       workflowKind: "heartbeat",
       hourUtc: 9,
       enabled: false,
       triggerPayload: { reason: "scheduled-heartbeat" },
       createdAt: "2026-01-02T00:00:00.000Z",
+      lastFiredDayUtc: null,
+      nextFireAt: null,
     });
+  });
+
+  it("computes nextFireAt for enabled schedules from hub clock", () => {
+    const now = new Date("2026-01-02T10:00:00.000Z");
+    const api = toApiSchedule(dbRow({ hourUtc: 13, enabled: true }), now);
+    expect(api.nextFireAt).toBe("2026-01-02T13:00:00.000Z");
+  });
+
+  it("carries a non-null lastFiredDayUtc through", () => {
+    expect(toApiSchedule(dbRow({ lastFiredDayUtc: 42 })).lastFiredDayUtc).toBe(
+      42,
+    );
   });
 });
 

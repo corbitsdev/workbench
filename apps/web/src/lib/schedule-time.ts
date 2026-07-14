@@ -1,3 +1,5 @@
+import { utcDayToDate } from "@workbench/shared";
+
 // The scheduler stores an integer UTC hour (0-23). Users think in their own
 // local time, so the picker offers every UTC hour labelled with the local time
 // it lands at — a lossless mapping (no rounding of half-hour zones) since the
@@ -38,4 +40,27 @@ export function localHourToUtc(localHour: number): number {
   const d = new Date();
   d.setHours(localHour, 0, 0, 0);
   return d.getUTCHours();
+}
+
+/** A short local-date label for the day a schedule last fired, or `null` when
+ * it has never fired. */
+export function formatLastFired(lastFiredDayUtc: number | null): string {
+  if (lastFiredDayUtc === null) return "Not yet fired";
+  return utcDayToDate(lastFiredDayUtc).toLocaleDateString(undefined, {
+    month: "short",
+    day: "numeric",
+  });
+}
+
+/** A local date/time label for the hub-computed next fire, or "Paused". */
+export function formatNextFire(
+  nextFireAtIso: string | null,
+  enabled: boolean,
+): string {
+  if (!enabled || nextFireAtIso === null) return "Paused";
+  return new Date(nextFireAtIso).toLocaleString(undefined, {
+    weekday: "short",
+    hour: "numeric",
+    minute: "2-digit",
+  });
 }

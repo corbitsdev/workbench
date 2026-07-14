@@ -62,6 +62,17 @@ mock.module("../lib/hub-api", () => ({
   getWorkflowsCatalog: async () => ({ workflows: [] }),
   getMeConnections: () => getMeConnections(),
   authorizeMeConnection: async () => ({ redirectUrl: "https://example.test" }),
+  listWorkbenches: async () => [],
+  listMeSchedules: async () => [],
+  createMeSchedule: async () => {
+    throw new Error("not used in this test");
+  },
+  updateMeSchedule: async () => {
+    throw new Error("not used in this test");
+  },
+  deleteMeSchedule: async () => {
+    throw new Error("not used in this test");
+  },
 }));
 
 const { default: Settings } = await import("./Settings");
@@ -105,7 +116,9 @@ describe("Settings connections section", () => {
     renderSettings();
 
     expect(screen.getByRole("heading", { name: "Connections" })).toBeDefined();
-    await waitFor(() => expect(getMeConnections.mock.calls.length).toBeGreaterThan(0));
+    await waitFor(() =>
+      expect(getMeConnections.mock.calls.length).toBeGreaterThan(0),
+    );
     await waitFor(() => expect(screen.getByText("Linear")));
   });
 });

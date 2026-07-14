@@ -8,10 +8,16 @@ import {
   useUpdateSchedule,
 } from "../hooks/use-schedules";
 import { useWorkflowsCatalog } from "../hooks/use-workflows-catalog";
-import { formatUtcHourLocal } from "../lib/schedule-time";
+import {
+  formatLastFired,
+  formatNextFire,
+  utcHourOptions,
+} from "../lib/schedule-time";
 
 export interface MySchedulesProps {
   tenantId: string | null;
+  /** Omit the section heading when embedded under Settings. */
+  embedded?: boolean;
 }
 
 function EnabledToggle({
@@ -51,6 +57,35 @@ function EnabledToggle({
   );
 }
 
+function HourSelect({
+  hourUtc,
+  disabled,
+  label,
+  onChange,
+}: {
+  hourUtc: number;
+  disabled: boolean;
+  label: string;
+  onChange: (hourUtc: number) => void;
+}) {
+  const options = useMemo(() => utcHourOptions(), []);
+  return (
+    <select
+      aria-label={`Change fire time for ${label}`}
+      value={hourUtc}
+      disabled={disabled}
+      onChange={(e) => onChange(Number(e.target.value))}
+      className="rounded-[8px] border border-border bg-surface-2 px-2 py-1 text-xs text-text focus:outline-none focus-visible:ring-2 focus-visible:ring-border-strong disabled:opacity-50"
+    >
+      {options.map((o) => (
+        <option key={o.hourUtc} value={o.hourUtc}>
+          {o.label} ({o.hourUtc}:00 UTC)
+        </option>
+      ))}
+    </select>
+  );
+}
+
 function ScheduleRow({
   schedule,
   label,
@@ -72,6 +107,12 @@ function ScheduleRow({
   const handleDelete = () => {
     deleteSchedule.mutateAsync({ id: schedule.id }).catch(() => {
       /* optimistic removal rolled back in the hook */
+    });
+  };
+
+  const handleHourChange = (hourUtc: number) => {
+    updateSchedule.mutateAsync({ id: schedule.id, hourUtc }).catch(() => {
+      /* optimistic update rolled back in the hook */
     });
   };
 
@@ -105,11 +146,16 @@ function ScheduleRow({
           {label}
         </span>
         <span className="text-xs text-text-3">
-          {schedule.enabled
-            ? `Daily at ${formatUtcHourLocal(schedule.hourUtc)}`
-            : `Paused · was daily at ${formatUtcHourLocal(schedule.hourUtc)}`}
+          Last fired: {formatLastFired(schedule.lastFiredDayUtc)} · Next:{" "}
+          {formatNextFire(schedule.nextFireAt, schedule.enabled)}
         </span>
       </div>
+      <HourSelect
+        hourUtc={schedule.hourUtc}
+        disabled={updateSchedule.isPending}
+        label={label}
+        onChange={handleHourChange}
+      />
       <ConfirmButton
         variant="ghost"
         size="sm"
@@ -126,7 +172,7 @@ function ScheduleRow({
 // The member's automation schedules: one row per scheduled workflow with an
 // enable/pause switch and a confirm-guarded remove. Workflow labels are resolved
 // against the same catalog the schedules were created from.
-export function MySchedules({ tenantId }: MySchedulesProps) {
+export function MySchedules({ tenantId, embedded = false }: MySchedulesProps) {
   const { data: schedules, isPending, isError } = useMeSchedules();
   const catalog = useWorkflowsCatalog(tenantId);
 
@@ -139,15 +185,21 @@ export function MySchedules({ tenantId }: MySchedulesProps) {
   }, [catalog.data]);
 
   return (
-    <section className="mt-10 flex flex-col gap-4">
-      <div className="flex flex-col gap-1">
-        <h2 className="text-sm font-semibold tracking-[-0.01em] text-text">
-          My schedules
-        </h2>
-        <p className="text-[12px] text-text-3">
-          Workflows you&rsquo;ve put on a daily cadence.
-        </p>
-      </div>
+    <section
+      className={
+        embedded ? "flex flex-col gap-4" : "mt-10 flex flex-col gap-4"
+      }
+    >
+      {!embedded && (
+        <div className="flex flex-col gap-1">
+          <h2 className="text-sm font-semibold tracking-[-0.01em] text-text">
+            My schedules
+          </h2>
+          <p className="text-[12px] text-text-3">
+            Workflows you&rsquo;ve put on a daily cadence.
+          </p>
+        </div>
+      )}
 
       {isPending && (
         <p className="py-4 text-[13px] text-text-3">Loading your schedules…</p>

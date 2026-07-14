@@ -20,6 +20,9 @@ export const ScheduledTriggerSchema = type({
   enabled: "boolean",
   triggerPayload: { "[string]": "unknown" },
   createdAt: "string",
+  lastFiredDayUtc: "number.integer | null",
+  /** ISO-8601 instant of the next fire when enabled; null when paused. */
+  nextFireAt: "string | null",
 });
 export type ScheduledTrigger = typeof ScheduledTriggerSchema.infer;
 

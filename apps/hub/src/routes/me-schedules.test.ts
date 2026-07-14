@@ -52,6 +52,8 @@ mock.module("../lib/scheduled-triggers", () => ({
     enabled: r.enabled,
     triggerPayload: r.triggerPayload,
     createdAt: r.createdAt.toISOString(),
+    lastFiredDayUtc: null,
+    nextFireAt: r.enabled ? "2026-01-02T13:00:00.000Z" : null,
   }),
   listOwnerSchedules: async (
     _db: unknown,
@@ -156,18 +158,17 @@ describe("GET /me/schedules", () => {
     );
     expect(res.status).toBe(200);
     const body = await res.json();
-    expect(body).toEqual({
-      items: [
-        {
-          id: "sch-1",
-          workflowKind: "heartbeat",
-          hourUtc: 13,
-          enabled: true,
-          triggerPayload: { reason: "scheduled-heartbeat" },
-          createdAt: "2026-01-01T00:00:00.000Z",
-        },
-      ],
+    expect(body.items).toHaveLength(1);
+    expect(body.items[0]).toMatchObject({
+      id: "sch-1",
+      workflowKind: "heartbeat",
+      hourUtc: 13,
+      enabled: true,
+      triggerPayload: { reason: "scheduled-heartbeat" },
+      createdAt: "2026-01-01T00:00:00.000Z",
+      lastFiredDayUtc: null,
     });
+    expect(body.items[0].nextFireAt).toMatch(/^\d{4}-\d{2}-\d{2}T/);
     expect(storeCalls[0]).toMatchObject({
       fn: "list",
       args: { tenantId: "tenant-root", ownerPrincipalId: "principal-a" },

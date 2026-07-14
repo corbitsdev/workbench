@@ -182,6 +182,14 @@ The scheduler, triage, and task-reconciler engines are owner-managed feature
 grants (see Owner routes below); the legacy environment kill switches remain
 only as emergency overrides — see `IMPLEMENTATION.md`.
 
+The `ScheduledTrigger` shape returned by `/me/schedules` includes
+`lastFiredDayUtc` (the UTC day-number the schedule last fired, `null` if
+never) alongside `hourUtc` and `enabled` — the client derives "last fired"
+and "next fire" display from it rather than the hub computing and returning
+those directly. Settings → Schedules (`apps/web/src/components/MySchedules.tsx`,
+wired into `apps/web/src/pages/Settings.tsx`) is the member-facing surface for
+listing, pausing/resuming, retiming, and deleting these rows.
+
 ### Tasks
 
 ```

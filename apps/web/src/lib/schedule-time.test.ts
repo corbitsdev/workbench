@@ -1,6 +1,8 @@
 /// <reference types="bun" />
 import { describe, expect, it } from "bun:test";
 import {
+  formatLastFired,
+  formatNextFire,
   formatUtcHourLocal,
   localHourToUtc,
   localMinutesOfDay,
@@ -43,5 +45,21 @@ describe("schedule-time", () => {
 
   it("formats a UTC hour as a local wall-clock time", () => {
     expect(formatUtcHourLocal(localHourToUtc(0))).toContain("12:00");
+  });
+
+  it("reports never-fired schedules distinctly from fired ones", () => {
+    expect(formatLastFired(null)).toBe("Not yet fired");
+    expect(formatLastFired(0)).not.toBe("Not yet fired");
+  });
+
+  it("reports paused schedules as paused regardless of hub nextFireAt", () => {
+    expect(formatNextFire("2026-01-05T14:00:00.000Z", false)).toBe("Paused");
+    expect(formatNextFire(null, true)).toBe("Paused");
+  });
+
+  it("formats hub nextFireAt for enabled schedules", () => {
+    const label = formatNextFire("2026-01-05T14:00:00.000Z", true);
+    expect(label).not.toBe("Paused");
+    expect(label.length).toBeGreaterThan(0);
   });
 });
