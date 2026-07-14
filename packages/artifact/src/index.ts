@@ -44,7 +44,9 @@ export {
 export { iconForPreviewFamily } from "./artifact-family-icon";
 export {
   ArtifactGallery,
+  ArtifactGalleryToolbar,
   type ArtifactGalleryProps,
+  type ArtifactGalleryToolbarProps,
   type AdvancedArtifactFilter,
 } from "./ArtifactGallery";
 export {
