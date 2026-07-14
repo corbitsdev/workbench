@@ -10,6 +10,34 @@ import { parseDocument, FileParseError } from "../services/file-parser";
 
 const log = getLogger(["hub", "mailbox-attachment-divert"]);
 
+// This path owns its own ceilings, mirroring the upload route
+// (`routes/file-parse.ts`): inbound EXTERNAL mail is the least-trusted source
+// in the system, and the parse is a synchronous Claude turn running inside the
+// serial triage dequeue, so both a size ceiling and a timeout are load-bearing
+// (without them one oversized or hung attachment stalls the whole per-tenant
+// triage queue).
+const MAX_PARSE_FILE_BYTES = 10 * 1024 * 1024; // 10 MB decoded ceiling.
+const PARSE_TIMEOUT_MS = 90_000;
+
+class ParseTimeoutError extends Error {
+  constructor() {
+    super("The attachment took too long to parse.");
+    this.name = "ParseTimeoutError";
+  }
+}
+
+async function withParseTimeout<T>(work: Promise<T>): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<never>((_resolve, reject) => {
+    timer = setTimeout(() => reject(new ParseTimeoutError()), PARSE_TIMEOUT_MS);
+  });
+  try {
+    return await Promise.race([work, timeout]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
 export type InboundAttachmentDivertResult = {
   /** Attachments the recipient's own model can consume; ride inline unchanged. */
   inlineAttachments: MessageAttachment[];
@@ -25,10 +53,12 @@ export type InboundAttachmentDivertResult = {
  * fix-myra-image-parser-divert fix) but server-side: mail delivery has no
  * client to divert on its behalf, so the triage dequeue path — the point
  * where the recipient's agent definition is already resolved — does it
- * instead. A diverted attachment is stored as a `kind: "file"` artifact (the
- * same shape the upload route produces) so it has a durable record, then
- * parsed; a parse failure for one attachment degrades to a logged note in its
- * own context block rather than losing the whole triage turn.
+ * instead. Each diverted attachment is parsed FIRST (with a timeout), and only
+ * on success is it stored as a `kind: "file"` artifact (the same shape and
+ * ordering as the upload route, so a failed parse never leaves an orphan
+ * artifact); a parse failure, timeout, or oversize/unsupported attachment
+ * degrades to a logged note in its own context block rather than losing the
+ * whole triage turn.
  */
 export async function divertInboundAttachments(
   db: HubDb,
@@ -67,7 +97,59 @@ export async function divertInboundAttachments(
       continue;
     }
 
+    if (attachment.data.length > MAX_PARSE_FILE_BYTES) {
+      log.warn(
+        "Inbound mail attachment exceeds the parse size ceiling; dropping from the turn",
+        {
+          filename: attachment.name,
+          bytes: attachment.data.length,
+          maxBytes: MAX_PARSE_FILE_BYTES,
+        },
+      );
+      contextBlocks.push(
+        `<context>\nAttachment "${attachment.name}" was too large to process and was omitted.\n</context>`,
+      );
+      continue;
+    }
+
+    // Generate the id up front so the parse's audit trace is keyed to the
+    // artifact it will become, but PARSE BEFORE STORING (matching the upload
+    // route) so a failed parse never leaves an orphan `kind: "file"` artifact.
     const artifactId = randomUUID();
+    let parsedText: string;
+    try {
+      parsedText = await withParseTimeout(
+        parseDocument(db, {
+          tenantId: args.tenantId,
+          traceId: artifactId,
+          filename: attachment.name,
+          mimeType: attachment.contentType,
+          bytes: attachment.data,
+        }),
+      );
+    } catch (err) {
+      const timedOut = err instanceof ParseTimeoutError;
+      log.warn(
+        "Inbound mail attachment parse failed; noting the failure instead of dropping the turn",
+        {
+          artifactId,
+          filename: attachment.name,
+          timedOut,
+          error:
+            err instanceof FileParseError || err instanceof ParseTimeoutError
+              ? err.message
+              : String(err),
+        },
+      );
+      const reason = timedOut ? "took too long to process" : "could not be parsed";
+      contextBlocks.push(
+        `<context>\nAttachment "${attachment.name}" ${reason} and was omitted.\n</context>`,
+      );
+      continue;
+    }
+
+    // Parse succeeded — persist the durable file artifact (same shape as the
+    // upload route), then fold the extracted text into the turn.
     const now = new Date();
     const content = `data:${attachment.contentType};base64,${Buffer.from(
       attachment.data,
@@ -103,30 +185,9 @@ export async function divertInboundAttachments(
       });
     });
 
-    try {
-      const parsedText = await parseDocument(db, {
-        tenantId: args.tenantId,
-        traceId: artifactId,
-        filename: attachment.name,
-        mimeType: attachment.contentType,
-        bytes: attachment.data,
-      });
-      contextBlocks.push(
-        `<context>\nAttachment: ${attachment.name}\n\n${parsedText}\n</context>`,
-      );
-    } catch (err) {
-      log.warn(
-        "Inbound mail attachment parse failed; noting the failure instead of dropping the turn",
-        {
-          artifactId,
-          filename: attachment.name,
-          error: err instanceof FileParseError ? err.message : String(err),
-        },
-      );
-      contextBlocks.push(
-        `<context>\nAttachment "${attachment.name}" could not be parsed.\n</context>`,
-      );
-    }
+    contextBlocks.push(
+      `<context>\nAttachment: ${attachment.name}\n\n${parsedText}\n</context>`,
+    );
   }
 
   return { inlineAttachments, contextBlocks };

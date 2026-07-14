@@ -572,6 +572,100 @@ describe("createMailboxTriage", () => {
     await triage.waitForDrain();
   });
 
+  it("stores a kind:file artifact only after a successful parse", async () => {
+    const { db, txInserts } = makeDb({
+      sender: { id: "ins_dep-ext", principalId: "pri-someone-else" },
+    });
+    const session = makeSessionService();
+    const triage = makeTriage(db, session);
+
+    triage.enqueue(ITEM_WITH_IMAGE);
+    await untilCalled(session.sendUserMessage);
+
+    // Exactly one file artifact + its version row are persisted, and only
+    // because the parse succeeded first.
+    const fileArtifacts = txInserts.filter((r) => r.kind === "file");
+    expect(fileArtifacts).toHaveLength(1);
+    expect(fileArtifacts[0]).toMatchObject({ title: "screenshot.png" });
+
+    const sendArgs = session.sendUserMessage.mock.calls[0]![0] as Record<
+      string,
+      unknown
+    >;
+    triage.handleTurnFinalized(
+      sendArgs.agentAddress as string,
+      completedTurn("done"),
+    );
+    await triage.waitForDrain();
+  });
+
+  it("on a parse failure, sends the turn with a note and stores NO orphan artifact", async () => {
+    parseDocumentMock.mockImplementationOnce(async () => {
+      throw new Error("parser exploded");
+    });
+    const { db, txInserts } = makeDb({
+      sender: { id: "ins_dep-ext", principalId: "pri-someone-else" },
+    });
+    const session = makeSessionService();
+    const triage = makeTriage(db, session);
+
+    triage.enqueue(ITEM_WITH_IMAGE);
+    await untilCalled(session.sendUserMessage);
+
+    // The failed parse must not leave a committed artifact behind.
+    expect(txInserts.filter((r) => r.kind === "file")).toHaveLength(0);
+
+    const sendArgs = session.sendUserMessage.mock.calls[0]![0] as Record<
+      string,
+      unknown
+    >;
+    // The turn still goes out, carrying a note instead of the image.
+    expect(sendArgs.attachments).toBeUndefined();
+    expect(sendArgs.content).toContain("could not be parsed");
+    expect(sendArgs.content).not.toContain("Extracted: quarterly numbers.");
+
+    triage.handleTurnFinalized(
+      sendArgs.agentAddress as string,
+      completedTurn("done"),
+    );
+    await triage.waitForDrain();
+  });
+
+  it("drops an oversize attachment without calling the parser or storing an artifact", async () => {
+    const oversize: MessageAttachment = {
+      name: "huge.png",
+      contentType: "image/png",
+      data: new Uint8Array(10 * 1024 * 1024 + 1),
+    };
+    const { db, txInserts } = makeDb({
+      sender: { id: "ins_dep-ext", principalId: "pri-someone-else" },
+    });
+    const session = makeSessionService();
+    const triage = makeTriage(db, session);
+
+    triage.enqueue({
+      ...ITEM,
+      raw: buildRawWithAttachments("See attached.", [oversize]),
+    });
+    await untilCalled(session.sendUserMessage);
+
+    expect(parseDocumentMock).not.toHaveBeenCalled();
+    expect(txInserts.filter((r) => r.kind === "file")).toHaveLength(0);
+
+    const sendArgs = session.sendUserMessage.mock.calls[0]![0] as Record<
+      string,
+      unknown
+    >;
+    expect(sendArgs.attachments).toBeUndefined();
+    expect(sendArgs.content).toContain("too large");
+
+    triage.handleTurnFinalized(
+      sendArgs.agentAddress as string,
+      completedTurn("done"),
+    );
+    await triage.waitForDrain();
+  });
+
   it("mounts the full loadout under execute_with_gates", async () => {
     prefs = { agentAutonomy: "execute_with_gates" };
     const { db } = makeDb({
