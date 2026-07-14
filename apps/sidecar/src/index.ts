@@ -17,6 +17,7 @@ import { createDefaultHarnessBuilder, wsUrlToHttp } from "./default-harness";
 import {
   readAdapterManifest,
   resolveAgentGCPolicy,
+  resolveSidecarBuildTimeoutMs,
   resolveSidecarHeartbeat,
   resolveSidecarHubLinkQueue,
   resolveSidecarIdleEviction,
@@ -71,6 +72,7 @@ const dataDir = requireEnv("SIDECAR_DATA_DIR");
 const toolPackageCache = resolveToolPackageCache(process.env, dataDir);
 const agentGCPolicy = resolveAgentGCPolicy(process.env);
 const idleEviction = resolveSidecarIdleEviction(process.env);
+const harnessBuildTimeoutMs = resolveSidecarBuildTimeoutMs(process.env);
 
 // Operator-configured custom inference adapters, resolved once at the
 // boot edge. `buildWorkbenchAdapterRegistry` merges the statically-linked
@@ -279,6 +281,7 @@ const orchestrator = createSidecarOrchestrator({
   maxReconnectDelayMs: heartbeat.maxReconnectDelayMs,
   maxOutboundQueue: hubLinkQueue.maxOutboundQueue,
   idleEvictMs: idleEviction.idleEvictMs,
+  buildTimeoutMs: harnessBuildTimeoutMs,
   transport,
   buildHarness: createDefaultHarnessBuilder({
     hubHttpUrl: wsUrlToHttp(hubWsUrl),

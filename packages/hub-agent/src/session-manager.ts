@@ -160,6 +160,12 @@ export type SessionManagerConfig = {
   // are folded into one summary line, flushed after this much quiet time.
   /** Debounce window before a batch of sleeping-agent syncs is summarized (default 250ms). */
   sleepingSyncFlushDelayMs?: number;
+  // WORKBENCH-LOCAL: harness-build wedge guard. A single `buildHarness.build`
+  // that never settles (isogit dir-lock contention, a stalled tool/credential
+  // fetch, a wedged context-store load) is abandoned after this long and the
+  // attempt fails loudly instead of pinning the agent in `waking` forever.
+  // `0` disables the bound (unbounded build). Default 180_000ms.
+  buildTimeoutMs?: number;
 };
 
 // WORKBENCH-LOCAL (CL-3103): idle-eviction disabled by default here; the
@@ -175,6 +181,12 @@ const DEFAULT_MAX_PARKED_MAIL = 256;
 // WORKBENCH-LOCAL (CL-3409): sleeping-agent grant/source sync batching default.
 const DEFAULT_SLEEPING_SYNC_FLUSH_DELAY_MS = 250;
 
+// WORKBENCH-LOCAL: harness-build wedge-guard default (3 minutes). Generous over
+// any real cold build (tool-package materialization + credential fetch +
+// context-store load) yet far below the multi-minute silent hang a wedged
+// build produced.
+const DEFAULT_BUILD_TIMEOUT_MS = 180_000;
+
 interface SleepingSyncBatchEntry {
   agentAddress: string;
   grantRuleCount?: number;
@@ -188,6 +200,25 @@ const defaultSleep = (ms: number): Promise<void> =>
 // agent was destroyed (undeploy / challenge.failed) during the build.
 // Never retried — the agent is gone, not transiently failing.
 class WakeAbortedError extends Error {}
+
+// WORKBENCH-LOCAL: a harness build that neither resolves nor rejects within
+// `buildTimeoutMs` is a wedge — an isogit per-directory lock the build is
+// waiting on, an unresolved credential/tool fetch, or a stalled context-store
+// load for a long-history agent. Left unbounded, the wake sits in `waking`
+// forever: it never completes and never fails, so the hub's session.start ack
+// times out with no diagnostic and the agent is unreachable until the sidecar
+// restarts. This turns the wedge into a loud, bounded failure that the wake
+// retry/terminal path reports like any other build error (it is NOT a
+// WakeAbortedError, so it is retried and, if every attempt wedges, surfaced
+// through `onMailDeliveryFailed`).
+export class HarnessBuildTimeoutError extends Error {
+  constructor(agentAddress: string, timeoutMs: number) {
+    super(
+      `Harness build for "${agentAddress}" exceeded ${String(timeoutMs)}ms and was abandoned`,
+    );
+    this.name = "HarnessBuildTimeoutError";
+  }
+}
 
 // WORKBENCH-LOCAL (CL-3339): thrown by `abortTurn` when the agent has no
 // message run in flight (live-but-idle, sleeping, or unknown). The message
@@ -408,7 +439,14 @@ export function createSessionManager(
     now = Date.now,
     // WORKBENCH-LOCAL (CL-3409): sleeping-agent grant/source sync batching.
     sleepingSyncFlushDelayMs = DEFAULT_SLEEPING_SYNC_FLUSH_DELAY_MS,
+    // WORKBENCH-LOCAL: harness-build wedge guard.
+    buildTimeoutMs = DEFAULT_BUILD_TIMEOUT_MS,
   } = config;
+  if (!Number.isInteger(buildTimeoutMs) || buildTimeoutMs < 0) {
+    throw new Error(
+      `createSessionManager: buildTimeoutMs must be a non-negative integer; got ${String(buildTimeoutMs)}`,
+    );
+  }
   if (!Number.isInteger(wakeMaxAttempts) || wakeMaxAttempts < 1) {
     throw new Error(
       `createSessionManager: wakeMaxAttempts must be a positive integer; got ${String(wakeMaxAttempts)}`,
@@ -739,6 +777,68 @@ export function createSessionManager(
     drainParkedMail(agentAddress);
   }
 
+  // WORKBENCH-LOCAL: run one harness build under the wedge guard. A build that
+  // has not settled within `buildTimeoutMs` is abandoned: the returned promise
+  // rejects with HarnessBuildTimeoutError so the caller's normal build-failure
+  // cleanup runs, while the orphaned build is drained in the background —
+  // observing its eventual settlement so a late rejection is not unhandled, and
+  // disposing a bundle that lands after the timeout so a stranded harness does
+  // not leak. The timer is cleared on the settled path so a fast build costs
+  // nothing. `buildTimeoutMs === 0` runs the build unbounded.
+  async function buildHarnessBounded(
+    agentAddress: string,
+    args: Parameters<HarnessBuilder["build"]>[0],
+  ): Promise<HarnessBundle> {
+    const build = buildHarness.build(args);
+    if (buildTimeoutMs <= 0) return build;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let timedOut = false;
+    const timeout = new Promise<never>((_, reject) => {
+      timer = setTimeout(() => {
+        timedOut = true;
+        logger.error`Harness build for ${agentAddress} exceeded ${String(buildTimeoutMs)}ms; abandoning the wedged build`;
+        reject(new HarnessBuildTimeoutError(agentAddress, buildTimeoutMs));
+      }, buildTimeoutMs);
+    });
+    build.then(
+      (bundle) => {
+        if (!timedOut) return;
+        void disposeStrandedBundle(agentAddress, bundle);
+      },
+      (err: unknown) => {
+        if (timedOut) return;
+        // Non-timeout rejection surfaces through the race below; nothing to do.
+        void err;
+      },
+    );
+    try {
+      return await Promise.race([build, timeout]);
+    } finally {
+      if (timer !== undefined) clearTimeout(timer);
+    }
+  }
+
+  // WORKBENCH-LOCAL: dispose a bundle whose build resolved only after the
+  // wedge-guard already gave up on it, so the never-installed harness does not
+  // leak its reactor, transport wiring, or open handles.
+  async function disposeStrandedBundle(
+    agentAddress: string,
+    bundle: HarnessBundle,
+  ): Promise<void> {
+    try {
+      await bundle.harness.close();
+    } catch (err: unknown) {
+      logger.error`Closing stranded harness for ${agentAddress} failed: ${String(err)}`;
+    }
+    for (const disposer of bundle.disposers) {
+      try {
+        await disposer();
+      } catch (err: unknown) {
+        logger.error`Disposer for stranded harness ${agentAddress} failed: ${String(err)}`;
+      }
+    }
+  }
+
   async function startSessionCore(agentAddress: string): Promise<void> {
     const entry = provisioned.get(agentAddress);
     if (entry === undefined) {
@@ -856,7 +956,7 @@ export function createSessionManager(
         if (firstError !== undefined) throw firstError;
       };
 
-      const bundle = await buildHarness.build({
+      const bundle = await buildHarnessBounded(agentAddress, {
         agentAddress,
         agentConfig,
         sources: agentConfig.sources,
