@@ -11,6 +11,7 @@ afterEach(cleanup);
 const artifact: GalleryArtifact = {
   id: "a-1",
   title: "Sales automation ROI",
+  kind: "email",
   from: "Acme Corp",
   time: "2 hours ago",
   provenance: "Workflow",
@@ -18,6 +19,8 @@ const artifact: GalleryArtifact = {
   viz: "lines",
   fill: "bg-orange",
   span: "row-span-3",
+  status: "draft",
+  previewExcerpt: "Quick follow-up on our call",
 };
 
 describe("ArtifactCard", () => {
@@ -62,22 +65,18 @@ describe("ArtifactCard", () => {
     expect(chip.className).toContain("truncate");
   });
 
-  it("leaves the default card treatment unchanged when the experiment is off", () => {
+  it("renders designed preview family chrome and status on gallery cards", () => {
     const { container } = render(
       React.createElement(ArtifactCard, { artifact, index: 1 }),
     );
     const card = container.firstElementChild as HTMLElement;
-    const label = screen.getByText("Email");
-    const viz = card.querySelector(".bg-orange");
-
-    expect(card.className).toContain("hover:rotate-[-1deg]");
-    expect(card.className).toContain("hover:scale-[1.02]");
-    expect(card.className).toContain("row-span-3");
-    expect(label.className).toContain("bg-[rgba(0,0,0,0.32)]");
-    expect(viz).not.toBeNull();
+    expect(card.getAttribute("data-preview-family")).toBe("email");
+    expect(screen.getByText("Draft")).toBeDefined();
+    expect(card.querySelector("pre")).toBeNull();
+    expect(screen.getByText("Quick follow-up on our call")).toBeDefined();
   });
 
-  it("uses restrained motion and stronger overlay contrast when opted in", () => {
+  it("honors experimental fill and span overrides", () => {
     const { container } = render(
       React.createElement(ArtifactCard, {
         artifact: {
@@ -90,14 +89,10 @@ describe("ArtifactCard", () => {
       }),
     );
     const card = container.firstElementChild as HTMLElement;
-    const label = screen.getByText("Email");
     const viz = card.querySelector(".bg-orange\\/85");
 
-    expect(card.className).not.toContain("hover:rotate-[-1deg]");
-    expect(card.className).not.toContain("hover:scale-[1.02]");
     expect(card.className).toContain("hover:-translate-y-1");
     expect(card.className).toContain("row-span-2");
-    expect(label.className).toContain("bg-[rgba(18,18,18,0.58)]");
     expect(viz).not.toBeNull();
   });
 

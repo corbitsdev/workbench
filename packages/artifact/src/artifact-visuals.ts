@@ -4,6 +4,7 @@
 
 import type { ArtifactWithSession } from "@workbench/shared";
 import { isLinkedInPostArtifactKind } from "./artifact-kinds";
+import { previewExcerpt } from "./artifact-preview-family";
 import { parseGalleryArtifact } from "./types";
 import type { ArtifactVisual, GalleryArtifact } from "./types";
 
@@ -265,13 +266,17 @@ export function toGalleryArtifact(
 ): GalleryArtifact {
   const visual = visualForKind(artifact.kind);
   const provenance = artifactProvenance(artifact.source);
+  const excerpt = previewExcerpt(artifact.content);
   return parseGalleryArtifact({
     ...visual,
     id: artifact.id,
     title: artifact.title,
+    kind: artifact.kind,
     from: artifactJobLabel(artifact),
     time: formatRelativeTime(artifact.updatedAt),
     provenance: provenance.label,
     provenanceTone: provenance.tone,
+    status: artifact.status,
+    previewExcerpt: excerpt.length > 0 ? excerpt : undefined,
   });
 }

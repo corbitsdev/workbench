@@ -430,6 +430,18 @@ describe("ArtifactBody rendering", () => {
     expect(prose.className).not.toContain("mx-auto");
   });
 
+  it("expands prose to full width on the artifact detail layout", () => {
+    const { container } = render(
+      React.createElement(ArtifactBody, {
+        artifact: { kind: "blog", content: "# Title\n\nBody copy." },
+        layout: "detail",
+      }),
+    );
+    const prose = container.querySelector("div.wb-markdown");
+    if (prose === null) throw new Error("expected a prose wrapper");
+    expect(prose.className).toContain("max-w-none");
+  });
+
   it("renders a GFM table inside the prose surface in a horizontal-scroll container", () => {
     const { container } = render(
       React.createElement(ArtifactBody, {
