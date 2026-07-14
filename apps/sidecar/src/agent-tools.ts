@@ -320,6 +320,8 @@ export async function fetchToolCredentials(args: {
   agentId: string;
   providerNames: readonly string[];
   agentAddress: string;
+  workflowRunId?: string;
+  memberPrincipalId?: string;
 }): Promise<Record<string, { apiKey: string; baseURL: string }>> {
   if (args.providerNames.length === 0) return {};
   let response: Response;
@@ -336,6 +338,12 @@ export async function fetchToolCredentials(args: {
           tenantId: args.tenantId,
           agentId: args.agentId,
           providerNames: [...args.providerNames],
+          ...(args.workflowRunId !== undefined
+            ? { workflowRunId: args.workflowRunId }
+            : {}),
+          ...(args.memberPrincipalId !== undefined
+            ? { memberPrincipalId: args.memberPrincipalId }
+            : {}),
         }),
       },
     );

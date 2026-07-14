@@ -356,6 +356,7 @@ export function createDefaultHarnessBuilder({
           agentId: agentConfig.agentId,
           providerNames: [...requiredProviders],
           agentAddress,
+          memberPrincipalId: principalId,
         });
 
         // Hub-RPC context for hub-backed native tool packages (artifact,

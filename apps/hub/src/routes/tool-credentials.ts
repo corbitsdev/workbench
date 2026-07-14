@@ -3,7 +3,7 @@ import { type } from "arktype";
 import { describeRoute, resolver } from "hono-openapi";
 import { eq } from "drizzle-orm";
 import { schema as intxSchema, resolveCredentialRequirement } from "@intx/db";
-import type { DB } from "@intx/db";
+import type { HubDb } from "../db";
 import { getLogger } from "@intx/log";
 import {
   ToolCredentialsRequest,
@@ -13,6 +13,11 @@ import { providersForToolPackages } from "@workbench/agents";
 import { ToolPackagePin } from "@intx/types/tool-packages";
 import { requestBodySchema } from "../lib/openapi";
 import { decryptToolCredentialSecret } from "../lib/credential-crypto";
+import { resolveToolCredentialMemberPrincipal } from "../lib/tool-credential-member-principal";
+import {
+  resolveMemberOrTenantToolCredential,
+  type MemberToolCredential,
+} from "../lib/member-tool-credential";
 
 const log = getLogger(["api", "tool-credentials"]);
 
@@ -48,9 +53,15 @@ function allowedProvidersForAgent(toolPackages: unknown): Set<string> {
  * credentials by name). Delivered separately from inference sources.
  */
 export function createToolCredentialsRouter(
-  db: DB["db"],
+  db: HubDb,
   sidecarToken: string,
   resolveCredential: typeof resolveCredentialRequirement = resolveCredentialRequirement,
+  resolveMemberOrTenant: (
+    db: HubDb,
+    tenantId: string,
+    memberPrincipalId: string,
+    providerName: string,
+  ) => Promise<MemberToolCredential | null> = resolveMemberOrTenantToolCredential,
 ): Hono {
   const router = new Hono();
 
@@ -67,11 +78,11 @@ export function createToolCredentialsRouter(
       tags: ["Tool Credentials"],
       summary: "Resolve tool credentials for an agent",
       description:
-        "Sidecar-gated (sidecar token). Resolves the tenant-owned credential for each requested provider and returns its apiKey + baseURL, scoped to the providers the named agent is allowed to use (derived from its pinned tool packages). The response apiKey fields are secrets — callers must not log or persist them. Body fields: `tenantId`, `agentId`, and `providerNames` (the providers to resolve).",
+        "Sidecar-gated (sidecar token). Resolves credentials for each requested provider (member OAuth when `workflowRunId` or `memberPrincipalId` identifies a user principal, otherwise tenant-owned keys), scoped to providers the named agent may use (from pinned tool packages). Response `apiKey` values are secrets. Body: `tenantId`, `agentId`, `providerNames`, optional `workflowRunId` (run creator principal), optional `memberPrincipalId` (live session owner).",
       requestBody: {
         required: true,
         description:
-          "Body fields: `tenantId`, `agentId`, and `providerNames` (the tool providers to resolve).",
+          "Body: `tenantId`, `agentId`, `providerNames`; optional `workflowRunId`, `memberPrincipalId`.",
         content: {
           "application/json": {
             schema: requestBodySchema(ToolCredentialsRequest),
@@ -127,6 +138,12 @@ export function createToolCredentialsRouter(
       if (!agentRow) {
         return c.json({ error: `Agent not found: ${parsed.agentId}` }, 404);
       }
+      if (agentRow.tenantId !== parsed.tenantId) {
+        return c.json(
+          { error: "Agent does not belong to the claimed tenant" },
+          403,
+        );
+      }
       const allowed = allowedProvidersForAgent(agentRow.toolPackages);
       const forbidden = parsed.providerNames.filter((p) => !allowed.has(p));
       if (forbidden.length > 0) {
@@ -138,17 +155,68 @@ export function createToolCredentialsRouter(
         );
       }
 
+      const memberPrincipalId = await resolveToolCredentialMemberPrincipal(db, {
+        tenantId: parsed.tenantId,
+        agentId: parsed.agentId,
+        workflowRunId: parsed.workflowRunId,
+        memberPrincipalId: parsed.memberPrincipalId,
+      });
+
       const credentials: Record<string, ToolCredential> = {};
       for (const providerName of parsed.providerNames) {
-        let resolved: Awaited<ReturnType<typeof resolveCredentialRequirement>>;
         try {
-          resolved = await resolveCredential(
+          if (memberPrincipalId !== null) {
+            const memberCred = await resolveMemberOrTenant(
+              db,
+              parsed.tenantId,
+              memberPrincipalId,
+              providerName,
+            );
+            if (!memberCred) {
+              log.warn(
+                "No member or tenant credential for requested provider; skipping",
+                {
+                  tenantId: parsed.tenantId,
+                  agentId: parsed.agentId,
+                  providerName,
+                  memberPrincipalId,
+                },
+              );
+              continue;
+            }
+            credentials[providerName] = {
+              apiKey: memberCred.apiKey,
+              baseURL: memberCred.baseURL,
+            };
+            continue;
+          }
+
+          const resolved = await resolveCredential(
             db,
             parsed.tenantId,
             { providerName, source: "tenant" },
             null,
             null,
           );
+          if (!resolved) {
+            log.warn(
+              "No credential configured for requested provider; skipping",
+              {
+                tenantId: parsed.tenantId,
+                agentId: parsed.agentId,
+                providerName,
+              },
+            );
+            continue;
+          }
+          const providerRow = await db.query.provider.findFirst({
+            where: (p, { eq: eqp }) => eqp(p.id, resolved.providerId),
+          });
+          const metadata = (providerRow?.metadata ?? {}) as { baseURL?: string };
+          credentials[providerName] = {
+            apiKey: decryptToolCredentialSecret(resolved.secret),
+            baseURL: metadata.baseURL ?? "",
+          };
         } catch (err) {
           log.error("Tool credential resolution failed", {
             tenantId: parsed.tenantId,
@@ -160,30 +228,6 @@ export function createToolCredentialsRouter(
             500,
           );
         }
-        if (!resolved) {
-          // Degrade per-provider: a provider with no configured credential is
-          // omitted from the response rather than failing the whole batch. The
-          // sidecar already skips factories whose credential is absent, so one
-          // unconfigured tool degrades only itself instead of poisoning every
-          // tool the agent has (CL-2603).
-          log.warn(
-            "No credential configured for requested provider; skipping",
-            {
-              tenantId: parsed.tenantId,
-              agentId: parsed.agentId,
-              providerName,
-            },
-          );
-          continue;
-        }
-        const providerRow = await db.query.provider.findFirst({
-          where: (p, { eq: eqp }) => eqp(p.id, resolved.providerId),
-        });
-        const metadata = (providerRow?.metadata ?? {}) as { baseURL?: string };
-        credentials[providerName] = {
-          apiKey: decryptToolCredentialSecret(resolved.secret),
-          baseURL: metadata.baseURL ?? "",
-        };
       }
 
       return c.json({ credentials });
