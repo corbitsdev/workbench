@@ -2,7 +2,9 @@ import { createHmac, timingSafeEqual } from "node:crypto";
 import { type } from "arktype";
 import { Hono } from "hono";
 import { getLogger } from "@intx/log";
+import { resolveEnabledInboxSources } from "@workbench/shared";
 import type { HubDb } from "../db";
+import { readMemberPreferences } from "../lib/member-preferences";
 import { buildMailFrame, writeMailboxMessage } from "../lib/mailbox-write";
 import type { MailboxEventBus } from "../lib/mailbox-events";
 import type { MailboxTriage } from "../services/mailbox-triage";
@@ -313,17 +315,25 @@ async function routeMention(
     );
     if (!member) continue;
 
-    // NOTE (CL-3581 wiring gap): there is deliberately no per-member
-    // `inboxSource:slack` preference check here. `INBOX_SOURCE_CATALOG` in
-    // `packages/workbench-shared/src/preferences-registry.ts` only derives an
-    // inbox-source entry for a `CREDENTIAL_PROVIDER_CATALOG` row that also
-    // sets `briefSource` (Slack rightly has none — it is not a brief source).
-    // That file was mid-edit by another agent this session and is off-limits
-    // here; see the final report's wiring instructions for the one-line
-    // filter change (`briefSource !== undefined || inboxSource !== undefined`)
-    // that unlocks a real member-level toggle. Until then this route is
-    // gated on the owner (tenant) cascade only, same as Linear/Attio's tenant
-    // ceiling.
+    // Member-level gate (CL-3581): the owner cascade above is the ceiling,
+    // not the floor — a mention still requires the member's own
+    // `inboxSource:slack` preference, default OFF like every inbox source.
+    // Slack has no member OAuth credential to gate on (unlike Linear/Attio),
+    // so this is a pure preference read, mirroring how the intake tick gates
+    // member sources without requiring a credential the member can't have.
+    let slackEnabled: boolean;
+    try {
+      const prefs = await readMemberPreferences(
+        ctx.deps.db,
+        tenantId,
+        member.memberPrincipalId,
+      );
+      slackEnabled = resolveEnabledInboxSources(prefs).includes(SOURCE_KEY);
+    } catch {
+      slackEnabled = false;
+    }
+    if (!slackEnabled) continue;
+
     await deliverMention(ctx, teamId, member, message);
     return;
   }

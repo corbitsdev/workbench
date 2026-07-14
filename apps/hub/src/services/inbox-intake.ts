@@ -179,6 +179,7 @@ export function createInboxIntake(deps: InboxIntakeDeps): InboxIntake {
     member: InboxIntakeMember,
     entry: InboxSourceRegistryEntry,
     cutoff: Date,
+    preferences: Readonly<Record<string, unknown>>,
   ): Promise<void> {
     // OAuth-connectable providers require the member's own capability opt-in
     // (the CL-3510 per-principal grant); non-OAuth sources are governed by the
@@ -215,6 +216,7 @@ export function createInboxIntake(deps: InboxIntakeDeps): InboxIntake {
         db: deps.db,
         tenantId: member.tenantId,
         member,
+        memberPreferences: preferences,
         credential: cred,
         cutoff,
         perSourceLimit,
@@ -367,7 +369,7 @@ export function createInboxIntake(deps: InboxIntakeDeps): InboxIntake {
         }
 
         try {
-          await runMemberSource(member, entry, sourceCutoff);
+          await runMemberSource(member, entry, sourceCutoff, prefs);
           if (isFirstLinearPoll) {
             await mergeMemberPreferences(
               deps.db,

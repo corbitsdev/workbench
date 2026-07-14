@@ -46,6 +46,12 @@ export type InboxSourceFetcher = (
    * tenant-shared credential to this member (the source has no per-member
    * OAuth identity to scope to). Undefined for workspace-scope fetches. */
   memberEmail?: string | null,
+  /** The member's raw preference bag (CL-3580), passed through so a
+   * fetcher can read its own per-source options (e.g.
+   * `inboxSource:linear:scope`) without the registry framework knowing about
+   * any particular source's preference keys. Undefined for workspace-scope
+   * fetches. */
+  memberPreferences?: Readonly<Record<string, unknown>>,
 ) => Promise<IntakeItem[]>;
 
 /** Whether a source runs per enabled MEMBER (`member`, gated by the member's
@@ -81,6 +87,9 @@ interface InboxSourceContextBase {
 export interface MemberInboxSourceContext extends InboxSourceContextBase {
   scope: "member";
   member: InboxIntakeMember;
+  /** The member's raw preference bag (CL-3580), for a fetcher to read its own
+   * per-source options (e.g. `inboxSource:linear:scope`). */
+  memberPreferences: Readonly<Record<string, unknown>>;
   /** Write + SSE-publish + triage-enqueue each item (deduped); returns the
    * count of newly delivered rows. */
   deliverItems: (items: IntakeItem[]) => Promise<number>;
@@ -135,6 +144,7 @@ export function defineFetchInboxSource(
         ctx.perSourceLimit,
         ctx.signal,
         ctx.member.email,
+        ctx.memberPreferences,
       );
       await ctx.deliverItems(items);
     },

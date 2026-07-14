@@ -1,8 +1,21 @@
 import { getLogger } from "@intx/log";
+import { LINEAR_SCOPE_PREFERENCE_KEY } from "@workbench/shared";
 import { fetchLinearGraphQL } from "@workbench/tools-linear";
 import { type } from "arktype";
 import type { InboxSourceFetcher, IntakeItem } from "../inbox-source-registry";
 import type { MemberToolCredential } from "../../lib/member-tool-credential";
+
+/** `inboxSource:linear:scope` ("assigned" default | "all", CL-3580). "all"
+ * broadens assigned-issue/comment queries with an `or` against `subscribers`
+ * — Linear's `IssueFilter`/`CommentFilter` support `subscribers: UserFilter`
+ * alongside `assignee`, so this is a genuine schema-supported OR, not an
+ * invented field. Tenant-key path broadens the same way by subscriber email;
+ * Linear's `UserFilter` supports `email` there too, so both credential paths
+ * express "all" identically (only `isMe` vs `email` differs, matching the
+ * existing assigned-issue split). */
+function isAllScope(preferences?: Readonly<Record<string, unknown>>): boolean {
+  return preferences?.[LINEAR_SCOPE_PREFERENCE_KEY] === "all";
+}
 
 const log = getLogger(["services", "inbox-sources", "linear"]);
 
@@ -259,11 +272,24 @@ async function fetchNotifications(
   return items;
 }
 
+/** Actor-scoping issue filter fragment: `assigned` scopes to the assignee
+ * alone; `all` ORs in `subscribers` (Linear's `IssueFilter.subscribers` is a
+ * `UserFilter` relation filter, the same shape as `assignee`) so issues the
+ * viewer merely subscribes to/is involved in also count. */
+function actorIssueFilter(
+  isMe: { isMe: { eq: true } } | { email: { eq: string } },
+  allScope: boolean,
+): Record<string, unknown> {
+  if (!allScope) return { assignee: isMe };
+  return { or: [{ assignee: isMe }, { subscribers: isMe }] };
+}
+
 async function fetchAssignedIssueUpdates(
   cred: MemberToolCredential,
   cutoff: Date,
   limit: number,
   signal: AbortSignal,
+  allScope: boolean,
 ): Promise<IntakeItem[]> {
   const data = await fetchLinearGraphQL(
     { apiKey: cred.apiKey, ...(cred.baseURL ? { baseUrl: cred.baseURL } : {}) },
@@ -271,7 +297,7 @@ async function fetchAssignedIssueUpdates(
     {
       first: limit,
       filter: {
-        assignee: { isMe: { eq: true } },
+        ...actorIssueFilter({ isMe: { eq: true } }, allScope),
         updatedAt: { gt: cutoff.toISOString() },
       },
     },
@@ -295,6 +321,7 @@ async function fetchAssignedIssueUpdatesByEmail(
   cutoff: Date,
   limit: number,
   signal: AbortSignal,
+  allScope: boolean,
 ): Promise<IntakeItem[]> {
   const data = await fetchLinearGraphQL(
     { apiKey: cred.apiKey, ...(cred.baseURL ? { baseUrl: cred.baseURL } : {}) },
@@ -302,7 +329,7 @@ async function fetchAssignedIssueUpdatesByEmail(
     {
       first: limit,
       filter: {
-        assignee: { email: { eq: email } },
+        ...actorIssueFilter({ email: { eq: email } }, allScope),
         updatedAt: { gt: cutoff.toISOString() },
       },
     },
@@ -324,6 +351,7 @@ async function fetchAssignedIssueComments(
   cutoff: Date,
   limit: number,
   signal: AbortSignal,
+  allScope: boolean,
 ): Promise<IntakeItem[]> {
   const data = await fetchLinearGraphQL(
     { apiKey: cred.apiKey, ...(cred.baseURL ? { baseUrl: cred.baseURL } : {}) },
@@ -331,7 +359,7 @@ async function fetchAssignedIssueComments(
     {
       first: limit,
       filter: {
-        issue: { assignee: { isMe: { eq: true } } },
+        issue: actorIssueFilter({ isMe: { eq: true } }, allScope),
         createdAt: { gt: cutoff.toISOString() },
       },
     },
@@ -355,6 +383,7 @@ async function fetchAssignedIssueCommentsByEmail(
   cutoff: Date,
   limit: number,
   signal: AbortSignal,
+  allScope: boolean,
 ): Promise<IntakeItem[]> {
   const data = await fetchLinearGraphQL(
     { apiKey: cred.apiKey, ...(cred.baseURL ? { baseUrl: cred.baseURL } : {}) },
@@ -362,7 +391,7 @@ async function fetchAssignedIssueCommentsByEmail(
     {
       first: limit,
       filter: {
-        issue: { assignee: { email: { eq: email } } },
+        issue: actorIssueFilter({ email: { eq: email } }, allScope),
         createdAt: { gt: cutoff.toISOString() },
       },
     },
@@ -399,12 +428,14 @@ export const fetchLinearInboxItems: InboxSourceFetcher = async (
   limit,
   signal,
   memberEmail,
+  memberPreferences,
 ) => {
+  const allScope = isAllScope(memberPreferences);
   if (cred.source === "member") {
     const [notifications, assignedIssues, comments] = await Promise.all([
       fetchNotifications(cred, limit, signal),
-      fetchAssignedIssueUpdates(cred, cutoff, limit, signal),
-      fetchAssignedIssueComments(cred, cutoff, limit, signal),
+      fetchAssignedIssueUpdates(cred, cutoff, limit, signal, allScope),
+      fetchAssignedIssueComments(cred, cutoff, limit, signal, allScope),
     ]);
     return [...notifications, ...assignedIssues, ...comments];
   }
@@ -424,8 +455,22 @@ export const fetchLinearInboxItems: InboxSourceFetcher = async (
     { source: cred.source },
   );
   const [assignedIssues, comments] = await Promise.all([
-    fetchAssignedIssueUpdatesByEmail(cred, email, cutoff, limit, signal),
-    fetchAssignedIssueCommentsByEmail(cred, email, cutoff, limit, signal),
+    fetchAssignedIssueUpdatesByEmail(
+      cred,
+      email,
+      cutoff,
+      limit,
+      signal,
+      allScope,
+    ),
+    fetchAssignedIssueCommentsByEmail(
+      cred,
+      email,
+      cutoff,
+      limit,
+      signal,
+      allScope,
+    ),
   ]);
   return [...assignedIssues, ...comments];
 };

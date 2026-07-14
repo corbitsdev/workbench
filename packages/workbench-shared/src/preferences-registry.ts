@@ -249,15 +249,13 @@ export function briefSourcePreferenceKey(sourceKey: string): string {
 }
 
 /**
- * Catalog of sources the inbox can pull from. A source eligible for the
- * brief is eligible for the inbox — both dimensions are derived from the
- * same `briefSource`-tagged `CREDENTIAL_PROVIDER_CATALOG` entries. If inbox
- * eligibility ever needs to diverge from brief eligibility (a source that can
- * feed the inbox but not the brief, or vice versa), gate this filter on a
- * dedicated eligibility tag rather than re-using `briefSource !== undefined`.
- * (Copy already diverges per-source via `inboxSource.description` below —
- * that tag governs copy only, not eligibility.)
+ * Catalog of sources the inbox can pull from: every `CREDENTIAL_PROVIDER_CATALOG`
+ * entry tagged `briefSource` (a source eligible for the brief is eligible for
+ * the inbox) OR `inboxSource` (CL-3581: an inbox-only source with no brief
+ * equivalent, e.g. Slack mentions — `briefSource` and `inboxSource` are
+ * independent eligibility tags, not one derived from the other).
  *
+
  * Every inbox source defaults OFF (CL-3577): intake is strictly opt-in, so a
  * member's inbox pulls from a source only once they explicitly enable it —
  * mirroring the brief sources, which are likewise opt-in.
@@ -273,15 +271,18 @@ export const INBOX_SOURCE_CATALOG: readonly {
   description: string;
   defaultEnabled: boolean;
 }[] = CREDENTIAL_PROVIDER_CATALOG.filter(
-  (
-    entry,
-  ): entry is typeof entry & {
-    briefSource: NonNullable<typeof entry.briefSource>;
-  } => entry.briefSource !== undefined,
+  (entry) => entry.briefSource !== undefined || entry.inboxSource !== undefined,
 ).map((entry) => ({
   key: entry.providerName,
   label: entry.label,
-  description: entry.inboxSource?.description ?? entry.briefSource.description,
+  // `inboxSource.description` when the entry sets inbox-specific copy (every
+  // inbox source SHOULD, but fall back to `briefSource.description` for a
+  // brief-eligible entry that hasn't set one); an inbox-only entry (no
+  // `briefSource`) always carries its own `inboxSource.description` (CL-3581).
+  description:
+    entry.inboxSource?.description ??
+    entry.briefSource?.description ??
+    entry.label,
   defaultEnabled: false,
 }));
 
