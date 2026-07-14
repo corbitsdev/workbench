@@ -232,6 +232,43 @@ describe("listUserMailbox", () => {
     ]);
   });
 
+  it("surfaces the structured refs stored on the row's refs column", async () => {
+    const refs = [
+      { kind: "workflow_run" as const, ref: "wfr-1", label: "Open run" },
+      { kind: "linear" as const, ref: "https://linear.app/x/ISSUE-1" },
+    ];
+    const { db } = makeListDb([makeRow({ refs })]);
+    const { items: messages } = await listUserMailbox(db, {
+      tenantId: "ten-1",
+      principalId: "pri-alice",
+      limit: 50,
+    });
+    expect(messages[0]?.refs).toEqual(refs);
+  });
+
+  it("omits refs when the row's refs column is null", async () => {
+    const { db } = makeListDb([makeRow({ refs: null })]);
+    const { items: messages } = await listUserMailbox(db, {
+      tenantId: "ten-1",
+      principalId: "pri-alice",
+      limit: 50,
+    });
+    expect(messages[0]?.refs).toBeUndefined();
+  });
+
+  it("degrades to no refs when the stored refs blob fails the schema", async () => {
+    // A row written under an older ref shape: `kind` is no longer valid.
+    const { db } = makeListDb([
+      makeRow({ refs: [{ kind: "obsolete-kind", ref: "x" }] }),
+    ]);
+    const { items: messages } = await listUserMailbox(db, {
+      tenantId: "ten-1",
+      principalId: "pri-alice",
+      limit: 50,
+    });
+    expect(messages[0]?.refs).toBeUndefined();
+  });
+
   it("falls back to created_at when the Date header is unparseable", async () => {
     const { db } = makeListDb([
       makeRow({

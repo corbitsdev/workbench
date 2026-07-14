@@ -1,7 +1,13 @@
 import { and, desc, eq, sql } from "drizzle-orm";
+import { type } from "arktype";
 import { getLogger } from "@intx/log";
 import { splitMailAddressList } from "@workbench/hub-agent";
-import type { MailboxMessage, MailboxMessageDetail } from "@workbench/shared";
+import {
+  MailboxRefSchema,
+  type MailboxMessage,
+  type MailboxMessageDetail,
+  type MailboxRef,
+} from "@workbench/shared";
 import { principalMailbox, type PrincipalMailboxRow } from "../db/schema";
 import type { HubDb } from "../db";
 import { keysetBefore, takePage, type KeysetCursor } from "./keyset";
@@ -53,6 +59,29 @@ function toISODate(dateHeader: string | undefined, createdAt: Date): string {
   return parsed.toISOString();
 }
 
+const MailboxRefArray = MailboxRefSchema.array();
+
+// Validate the structured refs stored on the row's `refs` jsonb column. A
+// NULL/empty value yields no refs; a value that no longer matches the current
+// MailboxRefSchema (e.g. a row written under an older ref shape) degrades to no
+// refs (logged) rather than failing the read — a bad stored blob must never
+// 500 the inbox.
+function readRowRefs(
+  stored: PrincipalMailboxRow["refs"],
+  rowId: string,
+): MailboxRef[] | undefined {
+  if (stored === null || stored === undefined) return undefined;
+  const parsed = MailboxRefArray(stored);
+  if (parsed instanceof type.errors) {
+    logger.warn("mailbox refs column failed schema; dropping", {
+      rowId,
+      summary: parsed.summary,
+    });
+    return undefined;
+  }
+  return parsed.length > 0 ? parsed : undefined;
+}
+
 function toMailboxMessage(row: PrincipalMailboxRow): MailboxMessage {
   const decoded = decodeMailFrame(row.raw);
   const headers = decoded?.headers;
@@ -75,6 +104,10 @@ function toMailboxMessage(row: PrincipalMailboxRow): MailboxMessage {
   }
   if (decoded !== null && decoded.body.length > 0) {
     message.snippet = decoded.body.slice(0, SNIPPET_MAX_CHARS);
+  }
+  const refs = readRowRefs(row.refs, row.id);
+  if (refs !== undefined) {
+    message.refs = refs;
   }
   return message;
 }

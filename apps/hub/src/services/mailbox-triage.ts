@@ -10,7 +10,7 @@ import type {
 import type { GrantStore } from "@intx/types/authz";
 import type { CryptoProvider } from "@intx/types/runtime";
 import type { TurnFinalized } from "@workbench/event-collector";
-import { resolveAgentAutonomy } from "@workbench/shared";
+import { resolveAgentAutonomy, TRIAGE_SUBJECT_PREFIX } from "@workbench/shared";
 import { splitMailAddress } from "@workbench/hub-agent";
 import { resolveMailboxLoadout } from "@workbench/myra";
 import type { HubDb } from "../db";
@@ -62,9 +62,6 @@ const BOUNCE_SENDER_LOCAL_PARTS = new Set([
   "bounce",
   "bounces",
 ]);
-
-/** Subject prefix `writeMailboxMessage` stamps on every triage handoff. */
-const TRIAGE_HANDOFF_SUBJECT_PREFIX = "Myra triaged: ";
 
 const DEFAULT_TURN_TIMEOUT_MS = 180_000;
 
@@ -130,7 +127,7 @@ function isBounceSender(item: UserMailboxRowEvent): boolean {
 }
 
 function isTriageHandoffSubject(item: UserMailboxRowEvent): boolean {
-  return (item.subject ?? "").startsWith(TRIAGE_HANDOFF_SUBJECT_PREFIX);
+  return (item.subject ?? "").startsWith(TRIAGE_SUBJECT_PREFIX);
 }
 
 function buildTriageMessage(item: UserMailboxRowEvent): {
@@ -364,9 +361,12 @@ export function createMailboxTriage(deps: MailboxTriageDeps): MailboxTriage {
           principalId: item.memberPrincipalId,
           address: item.recipientAddress,
           fromAddress: `myra@${tenantDomain}`,
-          subject: `Myra triaged: ${subject}`,
+          subject: `${TRIAGE_SUBJECT_PREFIX}${subject}`,
           body: text,
           messageKey: `triage:${item.rowId}`,
+          // Links the handoff to the raw mail it triaged, so the Now feed can
+          // collapse the pair by ref instead of the old subject-prefix match.
+          refs: [{ kind: "mail", ref: item.rowId, label: `Open: ${subject}` }],
           ...(inReplyTo !== undefined ? { inReplyTo } : {}),
         },
         deps.mailboxEventBus,

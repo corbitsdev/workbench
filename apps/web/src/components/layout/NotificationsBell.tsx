@@ -16,10 +16,15 @@ import {
 import { useMailboxLive } from "../../hooks/use-mailbox-live";
 import { useTasks } from "../../hooks/use-tasks";
 import { formatRelativeTime } from "../../lib/relative-time";
+import { RefChip } from "../RefChip";
 
 const RECENT_LIMIT = 8;
 const RECENT_TASK_LIMIT = 5;
 const BADGE_MAX = 9;
+// The dropdown is a glanceable digest, not the reading pane: show at most this
+// many ref chips per message and fold the rest into a "+N more" link to the
+// full message, where every ref is listed.
+const BELL_REF_LIMIT = 2;
 
 const OPEN_TASK_STATUSES = new Set(["open", "in_progress", "waiting"]);
 
@@ -192,36 +197,67 @@ interface NotificationItemProps {
 }
 
 function NotificationItem({ message, onSelect }: NotificationItemProps) {
+  const refs = message.refs ?? [];
+  const visibleRefs = refs.slice(0, BELL_REF_LIMIT);
+  const overflow = refs.length - visibleRefs.length;
   return (
-    <Link
-      to={`/inbox/${message.id}`}
-      onClick={onSelect}
-      className="flex items-start gap-2.5 px-4 py-2.5 transition-colors hover:bg-page"
-    >
-      <span className="mt-1.5 flex h-2 w-2 shrink-0 items-center justify-center">
-        {!message.read && (
-          <span className="h-2 w-2 rounded-full bg-orange" aria-hidden="true" />
-        )}
-      </span>
-      <span className="min-w-0 flex-1">
-        <span className="flex items-baseline justify-between gap-2">
-          <span
-            className={cn(
-              "truncate text-[13px]",
-              message.read ? "text-text-2" : "font-semibold text-text",
-            )}
-          >
-            {mailboxSenderLabel(message)}
+    <div>
+      <Link
+        to={`/inbox/${message.id}`}
+        onClick={onSelect}
+        className="flex items-start gap-2.5 px-4 py-2.5 transition-colors hover:bg-page"
+      >
+        <span className="mt-1.5 flex h-2 w-2 shrink-0 items-center justify-center">
+          {!message.read && (
+            <span
+              className="h-2 w-2 rounded-full bg-orange"
+              aria-hidden="true"
+            />
+          )}
+        </span>
+        <span className="min-w-0 flex-1">
+          <span className="flex items-baseline justify-between gap-2">
+            <span
+              className={cn(
+                "truncate text-[13px]",
+                message.read ? "text-text-2" : "font-semibold text-text",
+              )}
+            >
+              {mailboxSenderLabel(message)}
+            </span>
+            <time className="shrink-0 text-[11px] text-text-3">
+              {formatRelativeTime(message.date)}
+            </time>
           </span>
-          <time className="shrink-0 text-[11px] text-text-3">
-            {formatRelativeTime(message.date)}
-          </time>
+          <span className="mt-0.5 block truncate text-[13px] text-text-2">
+            {message.subject ?? "(no subject)"}
+          </span>
         </span>
-        <span className="mt-0.5 block truncate text-[13px] text-text-2">
-          {message.subject ?? "(no subject)"}
-        </span>
-      </span>
-    </Link>
+      </Link>
+      {refs.length > 0 && (
+        <nav
+          aria-label="Related"
+          className="flex flex-wrap items-center gap-1.5 px-4 pb-2 pl-[38px]"
+        >
+          {visibleRefs.map((ref, index) => (
+            <RefChip
+              key={`${ref.kind}:${ref.ref}:${index}`}
+              refItem={ref}
+              onSelect={onSelect}
+            />
+          ))}
+          {overflow > 0 && (
+            <Link
+              to={`/inbox/${message.id}`}
+              onClick={onSelect}
+              className="inline-flex min-h-[40px] items-center rounded-full px-2 text-xs font-medium text-text-3 transition-colors hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-orange"
+            >
+              +{overflow} more
+            </Link>
+          )}
+        </nav>
+      )}
+    </div>
   );
 }
 

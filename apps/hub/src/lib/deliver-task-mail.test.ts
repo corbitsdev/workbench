@@ -184,6 +184,46 @@ describe("deliverTaskMail", () => {
     expect(raw).toContain("/inbox?task=task-1");
   });
 
+  it("carries a task ref, and renders Linear externalRefs as clickable links and refs", async () => {
+    preferences = {};
+    const { db, inserted } = makeDb({
+      principals: {
+        "prn-owner": OWNER_PRINCIPAL,
+        "prn-agent": ACTOR_AGENT_PRINCIPAL,
+      },
+      agents: { "agent-1": { id: "agent-1", name: "Myra" } },
+    });
+    await deliverTaskMail({
+      db,
+      tenantId: "ten-1",
+      task: baseTask({
+        externalRefs: [
+          {
+            adapterId: "linear",
+            externalId: "ISSUE-1",
+            externalUrl: "https://linear.app/x/ISSUE-1",
+            syncState: "synced",
+          },
+        ],
+      }),
+      event: "assigned",
+      actorPrincipalId: "prn-agent",
+    });
+    const row = inserted[0] as Record<string, unknown>;
+    const raw = new TextDecoder().decode(row.raw as Uint8Array);
+    // Clickable Markdown link, not a bare "Synced to: linear" line.
+    expect(raw).toContain("[linear · ISSUE-1](https://linear.app/x/ISSUE-1)");
+    // Refs are persisted structurally on the row's refs column, not in the frame.
+    expect(row.refs).toEqual([
+      { kind: "task", ref: "task-1", label: "Open task" },
+      {
+        kind: "linear",
+        ref: "https://linear.app/x/ISSUE-1",
+        label: "linear · ISSUE-1",
+      },
+    ]);
+  });
+
   it("uses plain 'New task' subject for a non-agent creation", async () => {
     preferences = {};
     const { db, inserted } = makeDb({

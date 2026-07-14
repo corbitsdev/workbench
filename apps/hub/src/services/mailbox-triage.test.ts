@@ -406,6 +406,7 @@ describe("createMailboxTriage", () => {
       body: "Classification: actionable. Draft: hi.",
       messageKey: "triage:row-1",
       inReplyTo: "<orig-123@outside.example>",
+      refs: [{ kind: "mail", ref: "row-1", label: "Open: Partnership intro" }],
     });
 
     expect(session.endSession).toHaveBeenCalled();

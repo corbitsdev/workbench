@@ -4,6 +4,7 @@ import { Link } from "react-router";
 import { ArrowRight, CheckCircle2 } from "lucide-react";
 import { cn } from "@workbench/ui";
 import {
+  deepLinkPath,
   mailboxSenderLabel,
   type NowItem,
   type NowMailItem,
@@ -135,7 +136,7 @@ function NowRow({
   if (item.type === "gate") {
     return (
       <RowShell
-        href={`/workflows/${item.run.runId}`}
+        href={deepLinkPath("workflow_run", item.run.runId)}
         accent="bg-orange"
         title={item.run.kind}
         note="Waiting for your response"
@@ -234,9 +235,12 @@ function TaskRow({
 // `?task=` deep-link still highlights it via the row's `id`, not a href.
 function taskHref(task: Task): string | null {
   const link = task.links[0];
-  if (link?.kind === "workflow_run") return `/workflows/${link.ref}`;
-  if (link?.kind === "mail") return `/inbox/${link.ref}`;
-  if (link?.kind === "artifact") return `/artifacts/${link.ref}`;
+  if (link?.kind === "workflow_run")
+    return deepLinkPath("workflow_run", link.ref);
+  if (link?.kind === "mail") return deepLinkPath("mail", link.ref);
+  if (link?.kind === "artifact") return deepLinkPath("artifact", link.ref);
+  if (link?.kind === "conversation")
+    return deepLinkPath("conversation", link.ref);
   return null;
 }
 

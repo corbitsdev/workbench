@@ -3,7 +3,9 @@ import { principal, tenant } from "@intx/db/schema";
 import { getLogger } from "@intx/log";
 import type { RepoStore } from "@intx/hub-sessions";
 import { deriveUserMailAddress } from "@workbench/hub-agent";
+import { deepLink } from "@workbench/shared";
 import type { HubDb } from "../db";
+import { getConfig } from "../config";
 import { gateMailMessageKey } from "../lib/principal-mailbox";
 import { writeMailboxMessage } from "../lib/mailbox-write";
 import type { MailboxEventBus } from "../lib/mailbox-events";
@@ -11,11 +13,6 @@ import { describePendingGates } from "./pending-gate-info";
 import { loadDeploymentMeta } from "./run-store";
 
 const log = getLogger(["workflow-exec", "gate-mail"]);
-
-// The web run-detail route the deep link targets (apps/web/src/router.tsx:
-// `/insights/trace/:runId`). A path, not a URL — the inbox renders it relative
-// to the app origin.
-const RUN_TRACE_PATH_PREFIX = "/insights/trace";
 
 // The identity of an awaiting run the projection bridge hands us on the
 // running -> awaiting transition. `deploymentId` is always present (an awaiting
@@ -113,7 +110,8 @@ export async function deliverPendingGateMail(
     domain: tenantRow.domain,
   });
   const senderAddress = `hub@${deps.deploymentDomain}`;
-  const deepLinkPath = `${RUN_TRACE_PATH_PREFIX}/${run.runId}`;
+  const baseUrl = getConfig().cors.origins[0] ?? getConfig().auth.baseUrl;
+  const deepLinkPath = deepLink("workflow_run", run.runId, baseUrl);
 
   for (const gate of gates) {
     await writeMailboxMessage(
@@ -132,6 +130,9 @@ export async function deliverPendingGateMail(
           deepLinkPath,
         }),
         messageKey: gateMailMessageKey(run.runId, gate.signalName),
+        refs: [
+          { kind: "workflow_run", ref: run.runId, label: `Open ${label}` },
+        ],
       },
       deps.mailboxEventBus,
     );

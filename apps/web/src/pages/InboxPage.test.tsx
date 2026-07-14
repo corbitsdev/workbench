@@ -324,6 +324,54 @@ describe("InboxPage", () => {
     expect(detailQueryIds.at(-1)).toBe("msg-2");
   });
 
+  it("renders a Related action row from the message refs", () => {
+    mailbox = {
+      data: [
+        makeMessage({
+          id: "msg-2",
+          subject: "A workflow needs you",
+          refs: [
+            { kind: "workflow_run", ref: "wfr-1", label: "Open run" },
+            { kind: "linear", ref: "https://linear.app/x/ISSUE-1" },
+          ],
+        }),
+      ],
+      isLoading: false,
+      isError: false,
+    };
+    detail = {
+      data: {
+        ...makeMessage({
+          id: "msg-2",
+          subject: "A workflow needs you",
+          refs: [
+            { kind: "workflow_run", ref: "wfr-1", label: "Open run" },
+            { kind: "linear", ref: "https://linear.app/x/ISSUE-1" },
+          ],
+        }),
+        body: "Respond here.",
+      },
+      isLoading: false,
+      isError: false,
+    };
+    const rail =
+      renderInbox() && screen.getByRole("list", { name: "Messages" });
+    fireEvent.click(within(rail).getByText("A workflow needs you"));
+    const related = screen.getByRole("navigation", { name: "Related" });
+    const runLink = within(related).getByRole("link", { name: "Open run" });
+    expect(runLink.getAttribute("href")).toBe("/workflows/wfr-1");
+    const linearLink = within(related).getByRole("link", {
+      name: /Open in Linear/,
+    });
+    expect(linearLink.getAttribute("href")).toBe(
+      "https://linear.app/x/ISSUE-1",
+    );
+    expect(linearLink.getAttribute("target")).toBe("_blank");
+    expect(linearLink.getAttribute("rel")).toBe("noreferrer");
+    // The external chip announces its new-tab behavior to assistive tech.
+    expect(linearLink.textContent).toContain("(opens in new tab)");
+  });
+
   it("selects the deep-linked message without a click", () => {
     mailbox = {
       data: [
@@ -551,6 +599,7 @@ describe("InboxPage Now feed", () => {
           id: "msg-handoff",
           subject: "Myra triaged: Pricing question from Acme",
           date: "2026-07-11T10:00:00.000Z",
+          refs: [{ kind: "mail", ref: "msg-raw", label: "Open original" }],
         }),
       ],
       isLoading: false,

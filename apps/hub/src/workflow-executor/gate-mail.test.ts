@@ -35,6 +35,13 @@ mock.module("./run-store", () => ({
   loadDeploymentMeta: async () => deploymentMeta,
 }));
 
+mock.module("../config", () => ({
+  getConfig: () => ({
+    cors: { origins: ["https://app.example"] },
+    auth: { baseUrl: "https://app.example" },
+  }),
+}));
+
 mock.module("@intx/log", () => ({
   getLogger: () => ({
     error: (message: string, ctx: unknown) => errorLogs.push({ message, ctx }),
@@ -112,7 +119,10 @@ describe("deliverPendingGateMail", () => {
       subject: "A workflow needs you: Pain Point Collateral",
       messageKey: "gate:wfr-1:approval",
     });
-    expect(first?.body).toContain("/insights/trace/wfr-1");
+    // Unified with the Now feed: an awaiting run resolves to /workflows/:runId
+    // (CL-3506), as an absolute URL so it autolinks in the Markdown pane.
+    expect(first?.body).toContain("https://app.example/workflows/wfr-1");
+    expect(first?.body).not.toContain("/insights/trace/");
     expect(first?.body).toContain("Gate: approval");
     expect(first?.body).toContain('Expected response: "approve" | "reject"');
     // The second gate has no payload schema, so no "Expected response" line.

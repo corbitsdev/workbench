@@ -9,6 +9,7 @@ import {
   mailboxSenderLabel,
   type MailboxMessage,
   type MailboxMessageDetail,
+  type MailboxRef,
 } from "@workbench/shared";
 import {
   isMessageNotFound,
@@ -23,6 +24,7 @@ import { useActiveWorkbench } from "../lib/active-workbench-context";
 import { formatRelativeTime } from "../lib/relative-time";
 import { ErrorBoundary } from "../components/ErrorBoundary";
 import { NowSection } from "../components/NowSection";
+import { RefChip } from "../components/RefChip";
 
 // The Now feed's liveness cadence, shared with the bell's mailbox poll so the
 // whole dashboard breathes at one rate.
@@ -449,6 +451,7 @@ function ReadingPane({
             </div>
           </>
         )}
+        <RelatedRefs refs={headerSource?.refs ?? detail?.refs} />
         <div
           className={cn(
             "border-t border-border pt-6",
@@ -464,6 +467,26 @@ function ReadingPane({
         </div>
       </motion.article>
     </AnimatePresence>
+  );
+}
+
+// The structured "Related" action row: one clickable chip per typed ref on the
+// message. Internal refs (artifact/workflow_run/task/mail) route in-app via the
+// deepLink helper; external refs (linear/url) open in a new tab.
+function RelatedRefs({ refs }: { refs: MailboxRef[] | undefined }) {
+  if (!refs || refs.length === 0) return null;
+  return (
+    <nav
+      aria-label="Related"
+      className="mt-4 flex flex-wrap items-center gap-2"
+    >
+      <span className="text-xs font-medium uppercase tracking-wide text-text-3">
+        Related
+      </span>
+      {refs.map((ref, index) => (
+        <RefChip key={`${ref.kind}:${ref.ref}:${index}`} refItem={ref} />
+      ))}
+    </nav>
   );
 }
 

@@ -118,6 +118,42 @@ describe("NotificationsBell", () => {
     expect(screen.queryByText("Subject 8")).toBeNull();
   });
 
+  it("caps ref chips at two and folds the rest into a +N more link", () => {
+    bellData = [
+      makeMessage({
+        id: "msg-refs",
+        subject: "A workflow needs you",
+        refs: [
+          { kind: "workflow_run", ref: "wfr-1", label: "Open run" },
+          { kind: "task", ref: "t-1", label: "Open task" },
+          { kind: "artifact", ref: "a-1", label: "Open deck" },
+          { kind: "linear", ref: "https://linear.app/x/I-1", label: "I-1" },
+        ],
+      }),
+    ];
+    renderBell();
+    fireEvent.click(screen.getByRole("button", { name: /notifications/i }));
+    screen.getByText("Open run");
+    screen.getByText("Open task");
+    expect(screen.queryByText("Open deck")).toBeNull();
+    screen.getByText("+2 more");
+  });
+
+  it("never renders a raw enum kind for a ref without a label", () => {
+    bellData = [
+      makeMessage({
+        id: "msg-nolabel",
+        subject: "Heads up",
+        refs: [{ kind: "workflow_run", ref: "wfr-9" }],
+      }),
+    ];
+    renderBell();
+    fireEvent.click(screen.getByRole("button", { name: /notifications/i }));
+    // Shared defaultRefLabel, not the raw "workflow_run" enum.
+    screen.getByText("Open run");
+    expect(screen.queryByText("workflow_run")).toBeNull();
+  });
+
   it("deep-links a message to its inbox detail", () => {
     bellData = [
       makeMessage({ id: "msg-2", from: "Oat", subject: "Deck ready" }),
