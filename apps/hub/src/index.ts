@@ -121,6 +121,7 @@ import {
   registerWedgeSweepReconciler,
   resolveInstanceSourcesFromDefinition,
 } from "./services/agent-provisioning";
+import { registerPersonalAgentPrewarm } from "./services/personal-agent-prewarm";
 import { assessPersonalAgentSync } from "./services/grant-reconcile";
 import {
   myraInstanceIdForMember,
@@ -669,6 +670,28 @@ const stopWedgeSweepReconciler = registerWedgeSweepReconciler({
   intervalMs: config.wedgeSweepIntervalMs,
   graceMs: config.wedgeUnroutableGraceMs,
 });
+
+// Post-reconnect personal-agent prewarm. The wedge sweep above only relaunches
+// instances still holding an active session; a full sidecar restart ends those
+// sessions (disconnect reconciler), leaving each member's personal agent COLD.
+// The first message then pays the ~20s wake on the member's critical path. This
+// sweep pays it in the background: it cold-relaunches the personal instances of
+// recently-active members, bounded so the just-reconnected sidecar is not
+// stampeded. It composes with the wedge sweep and the on-demand /me relaunch —
+// every launch funnels through the same per-instance coalescer, so none can
+// double-launch. Default ON; PREWARM_ENABLED=false disables it.
+const stopPersonalAgentPrewarm = config.personalAgentPrewarm.enabled
+  ? registerPersonalAgentPrewarm({
+      db,
+      router: sidecarRouter,
+      sessionService,
+      grantStore,
+      eventCollectors,
+      activeWindowMs: config.personalAgentPrewarm.activeWindowMs,
+      concurrency: config.personalAgentPrewarm.concurrency,
+      intervalMs: config.personalAgentPrewarm.intervalMs,
+    })
+  : () => {};
 
 // CL-2790: idle chat-session reaper. Sleeps a user-facing chat session (Myra,
 // Oat, …) that has seen no activity for `reapAfterMs` by undeploying it and
@@ -2070,6 +2093,7 @@ for (const signal of ["SIGTERM", "SIGINT"]) {
       scheduler.stop();
       taskReconciler.stop();
       stopWedgeSweepReconciler();
+      stopPersonalAgentPrewarm();
       stopAwaitingSupervisorPrewarm();
       stopStalledScheduledRunReconciler();
       log.info("Closing sidecar connections", {

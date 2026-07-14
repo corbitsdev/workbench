@@ -77,6 +77,16 @@ const DEFAULT_WEDGE_UNROUTABLE_GRACE_MS = 120_000;
 // already-routable supervisors.
 const DEFAULT_AWAITING_PREWARM_INTERVAL_MS = 30_000;
 
+// Personal-agent (Myra) prewarm sweep. After a sidecar restart every agent is
+// asleep; the first message per agent pays a ~20s wake on the member's critical
+// path. This sweep pays that cost in the background: it relaunches the personal
+// instances of members active within `activeWindowMs`, `concurrency` at a time,
+// every `intervalMs`. Values mirror the reconciler's own fallbacks
+// (DEFAULT_PREWARM_* in personal-agent-prewarm.ts), which must stay in sync.
+const DEFAULT_PREWARM_ACTIVE_WINDOW_MS = 24 * 60 * 60 * 1000;
+const DEFAULT_PREWARM_CONCURRENCY = 2;
+const DEFAULT_PREWARM_SWEEP_INTERVAL_MS = 30_000;
+
 // Hibernation grace for gate-parked (awaiting) workflow runs (mirrors the
 // reconciler's DEFAULT_WORKFLOW_HIBERNATION_GRACE_MS). A run parked at an
 // awaitSignal gate longer than this has its deployment hibernated — the
@@ -139,6 +149,14 @@ function parseAutoJoinTenantSlugs(): string[] {
 function parseBooleanEnv(name: string): boolean {
   const value = process.env[name];
   return value === "true" || value === "1";
+}
+
+// Default-ON kill switch: unset (or "") means enabled; only an explicit
+// "false"/"0" disables it. Used for features that ship on by default.
+function parseBooleanEnvDefaultTrue(name: string): boolean {
+  const value = process.env[name];
+  if (value === undefined || value === "") return true;
+  return value !== "false" && value !== "0";
 }
 
 function parsePositiveIntEnv(
@@ -372,6 +390,28 @@ export function loadConfig() {
       DEFAULT_AWAITING_PREWARM_INTERVAL_MS,
       "milliseconds",
     ),
+    // Post-reconnect personal-agent (Myra) prewarm. Default ON; disable with
+    // PREWARM_ENABLED=false. Overrides: PREWARM_ACTIVE_WINDOW_MS (how recently a
+    // member must have used their personal agent to be prewarmed),
+    // PREWARM_CONCURRENCY (parallel launches per tick, clamped to a small max),
+    // PREWARM_SWEEP_INTERVAL_MS (sweep cadence).
+    personalAgentPrewarm: {
+      enabled: parseBooleanEnvDefaultTrue("PREWARM_ENABLED"),
+      activeWindowMs: parsePositiveIntEnv(
+        "PREWARM_ACTIVE_WINDOW_MS",
+        DEFAULT_PREWARM_ACTIVE_WINDOW_MS,
+        "milliseconds",
+      ),
+      concurrency: parsePositiveIntEnv(
+        "PREWARM_CONCURRENCY",
+        DEFAULT_PREWARM_CONCURRENCY,
+      ),
+      intervalMs: parsePositiveIntEnv(
+        "PREWARM_SWEEP_INTERVAL_MS",
+        DEFAULT_PREWARM_SWEEP_INTERVAL_MS,
+        "milliseconds",
+      ),
+    },
     // How long a workflow run may sit parked at an awaitSignal gate before
     // its deployment is hibernated (child killed, durable run state kept;
     // wake is signal-driven). Also the awaiting pre-warm horizon. Default
