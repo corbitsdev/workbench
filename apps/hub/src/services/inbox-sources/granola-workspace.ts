@@ -30,12 +30,20 @@ const NoteListResponse = type({
     "summary?": "string",
     "participants?": "string[]",
   }).array(),
-  // Optional pagination signal (CL-3577 review fix): when the Granola list
-  // response exposes it, `has_more` is authoritative over the length-vs-limit
-  // heuristic below for deciding whether the page may have truncated the
-  // window.
-  "has_more?": "boolean",
+  // Pagination signals from @workbench/tools-granola's `granola_list_notes`
+  // (see packages/tools-granola/src/index.ts `GranolaListResponse`): `hasMore`
+  // is authoritative over the length-vs-limit heuristic below for deciding
+  // whether the page may have truncated the window, and `cursor` (when
+  // present) lets this source page forward within a single tick instead of
+  // waiting a full tick per page.
+  "hasMore?": "boolean",
+  "cursor?": "string",
 });
+
+/** Bounds how many list pages this source will walk in a single tick before
+ * falling back to the max-created-at cursor rule for the remainder — keeps a
+ * single tick from running unbounded against a very large backlog. */
+const MAX_PAGES_PER_TICK = 4;
 
 const TranscriptItem = type({ "text?": "string" });
 const FullNote = type({
@@ -97,6 +105,21 @@ function toGranolaCall(note: typeof FullNote.infer): GranolaCall {
   return parsed;
 }
 
+/** The newest `created_at` among `notes`, or `undefined` when none carry one
+ * — the forward-progress marker for a full/truncated page. */
+function maxCreatedAt(
+  notes: readonly { created_at?: string }[],
+): Date | undefined {
+  let max: Date | undefined;
+  for (const note of notes) {
+    if (note.created_at === undefined) continue;
+    const parsed = new Date(note.created_at);
+    if (Number.isNaN(parsed.getTime())) continue;
+    if (max === undefined || parsed > max) max = parsed;
+  }
+  return max;
+}
+
 async function handleWorkspaceTick(
   ctx: WorkspaceInboxSourceContext,
   pipeline: GranolaCallPipeline,
@@ -111,61 +134,86 @@ async function handleWorkspaceTick(
   // Bound the fetch by the later of the tick lookback and any host cursor.
   const since =
     ctx.lastPollAt && ctx.lastPollAt > ctx.cutoff ? ctx.lastPollAt : ctx.cutoff;
-  const listRaw = await callTool(
-    listTool,
-    {
-      limit: ctx.perSourceLimit,
-      createdAfter: since.toISOString(),
-    },
-    ctx.signal,
-  );
-  const list = NoteListResponse(listRaw);
-  if (list instanceof type.errors) {
-    throw new Error(
-      `granola workspace source: bad list response: ${list.summary}`,
-    );
-  }
 
-  for (const summaryNote of list.notes) {
-    if (ctx.signal.aborted) return;
-    // Fetch the full note (transcript) before handing to the pipeline. The
-    // pipeline is idempotent per call (an already-processed note short-circuits
-    // on its persisted artifact), so re-listing the same note is cheap and safe.
-    const fullRaw = await callTool(
-      getTool,
-      { noteId: summaryNote.id },
+  const processedNotes: { created_at?: string }[] = [];
+  let mayBeTruncated = false;
+  let cursor: string | undefined;
+
+  // Walk list pages within this tick (bounded by MAX_PAGES_PER_TICK) using the
+  // list API's own `cursor` when it offers one — this drains a backlog within
+  // a single tick rather than one page per tick. `createdAfter` stays pinned
+  // to `since` throughout; the cursor param, not the timestamp, advances the
+  // window page to page.
+  for (let page = 0; page < MAX_PAGES_PER_TICK; page++) {
+    const listRaw = await callTool(
+      listTool,
+      {
+        limit: ctx.perSourceLimit,
+        createdAfter: since.toISOString(),
+        ...(cursor !== undefined ? { cursor } : {}),
+      },
       ctx.signal,
     );
-    const fullNote = FullNote(fullRaw);
-    if (fullNote instanceof type.errors) {
-      ctx.log.error("granola workspace source: bad note response; skipping", {
-        noteId: summaryNote.id,
-        error: new Error(fullNote.summary),
-      });
-      continue;
+    const list = NoteListResponse(listRaw);
+    if (list instanceof type.errors) {
+      throw new Error(
+        `granola workspace source: bad list response: ${list.summary}`,
+      );
     }
-    const call = toGranolaCall(fullNote);
-    const result = await pipeline.processCall({
-      tenantId: ctx.tenantId,
-      note: call,
-      signal: ctx.signal,
-    });
-    ctx.log.info("granola workspace source: processed {noteId} -> {status}", {
-      noteId: call.id,
-      status: result.status,
-    });
+
+    for (const summaryNote of list.notes) {
+      if (ctx.signal.aborted) return;
+      // Fetch the full note (transcript) before handing to the pipeline. The
+      // pipeline is idempotent per call (an already-processed note short-circuits
+      // on its persisted artifact), so re-listing the same note is cheap and safe.
+      const fullRaw = await callTool(
+        getTool,
+        { noteId: summaryNote.id },
+        ctx.signal,
+      );
+      const fullNote = FullNote(fullRaw);
+      if (fullNote instanceof type.errors) {
+        ctx.log.error("granola workspace source: bad note response; skipping", {
+          noteId: summaryNote.id,
+          error: new Error(fullNote.summary),
+        });
+        continue;
+      }
+      const call = toGranolaCall(fullNote);
+      const result = await pipeline.processCall({
+        tenantId: ctx.tenantId,
+        note: call,
+        signal: ctx.signal,
+      });
+      ctx.log.info("granola workspace source: processed {noteId} -> {status}", {
+        noteId: call.id,
+        status: result.status,
+      });
+      processedNotes.push(summaryNote);
+    }
+
+    // A full, limit-capped page may hide notes still unseen behind the page
+    // boundary. Prefer the list response's own `hasMore` signal when present;
+    // otherwise fall back to the length-vs-limit heuristic.
+    const pageMayBeTruncated =
+      list.hasMore ?? list.notes.length >= ctx.perSourceLimit;
+    if (!pageMayBeTruncated) {
+      mayBeTruncated = false;
+      break;
+    }
+    mayBeTruncated = true;
+    if (list.cursor === undefined) break; // no page token to keep walking
+    cursor = list.cursor;
   }
 
-  // A full, limit-capped page may hide notes still unseen behind the page
-  // boundary. Prefer the list response's own `has_more` signal when present;
-  // otherwise fall back to the length-vs-limit heuristic. Either way, a
-  // possibly-truncated page pins the cursor at `since` instead of advancing —
-  // the next tick re-fetches the same window and the pipeline's per-note
-  // artifact dedupe absorbs the overlap.
-  const mayBeTruncated =
-    list.has_more ?? list.notes.length >= ctx.perSourceLimit;
   if (mayBeTruncated) {
-    return { nextCursor: since };
+    // Advance to the newest PROCESSED note's created_at (CL-3577 review fix)
+    // instead of pinning at `since` — guarantees forward progress through a
+    // sustained backlog (>= perSourceLimit new notes every tick) rather than
+    // re-issuing the identical query forever. Absent any created_at, fall
+    // back to the unchanged floor and rely on the pipeline's per-note
+    // artifact dedupe to absorb the re-fetched overlap.
+    return { nextCursor: maxCreatedAt(processedNotes) ?? since };
   }
   return undefined;
 }

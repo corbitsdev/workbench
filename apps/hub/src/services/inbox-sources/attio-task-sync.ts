@@ -134,6 +134,20 @@ function attioTaskDue(attioTask: AttioRawTask): string | undefined {
   return attioTask.deadline_at ?? undefined;
 }
 
+/** The newest `created_at` among the fetched tasks, or `undefined` when none
+ * carry one — the forward-progress marker for a full/truncated page (see
+ * `handle`'s cursor comment). */
+function maxCreatedAt(tasks: readonly AttioRawTask[]): Date | undefined {
+  let max: Date | undefined;
+  for (const t of tasks) {
+    if (t.created_at === undefined) continue;
+    const parsed = new Date(t.created_at);
+    if (Number.isNaN(parsed.getTime())) continue;
+    if (max === undefined || parsed > max) max = parsed;
+  }
+  return max;
+}
+
 /** True only when the member's own Attio workspace-member id (`attioMemberId`,
  * set via the Owner/member preferences surface — see
  * `packages/workbench-shared/src/index.ts` `MemberPreferences`) is known AND
@@ -379,11 +393,15 @@ async function handle(
 
   // A full, limit-capped page may hide tasks still unseen behind the page
   // boundary (`/v2/tasks` has no updated-since filter, so a full page is not
-  // necessarily "everything new"). Don't advance the cursor in that case —
-  // the next tick re-fetches the same window and the sourceRef dedupe in
-  // `syncOneTask`/`reconcileDeletions` absorbs the overlap.
+  // necessarily "everything new"). Advance the cursor to the newest
+  // PROCESSED task's `created_at` instead of pinning at `since` (CL-3577
+  // review fix) — that guarantees forward progress through a sustained
+  // backlog (>= perSourceLimit new tasks every tick), where re-issuing the
+  // identical query forever would starve every task past page 1. The
+  // sourceRef dedupe in `syncOneTask`/`reconcileDeletions` absorbs any
+  // boundary overlap this produces.
   if (attioTasks.length >= ctx.perSourceLimit) {
-    return { nextCursor: since };
+    return { nextCursor: maxCreatedAt(attioTasks) ?? since };
   }
   return undefined;
 }

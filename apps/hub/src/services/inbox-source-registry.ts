@@ -30,6 +30,14 @@ export interface IntakeItem {
   subject: string;
   body: string;
   url: string;
+  /** When known, the item's own source timestamp (issue `updatedAt`,
+   * comment/notification `createdAt`, etc.) — lets a full/truncated page
+   * advance its cursor to the newest PROCESSED item instead of pinning at the
+   * unchanged `since` floor. Without it, sustained overflow (>= perSourceLimit
+   * new items every tick) would re-issue the identical query forever and
+   * starve everything past page 1 of the window. A fetcher that cannot supply
+   * this on every item falls back to the pin-at-`since` behavior. */
+  occurredAt?: Date;
 }
 
 /**
@@ -112,11 +120,17 @@ export type InboxSourceContext =
  * START of the tick that just ran (`tickStart`, not completion time — so
  * items created while the handler was in flight are never skipped). A
  * handler that may have truncated its window (a full, limit-capped page)
- * MUST instead return `{ nextCursor: <unchanged since> }` so the core does
- * NOT advance the cursor — the next tick re-fetches the same window and
- * dedupe (externalId / sourceRef) absorbs the overlap. Without this, a
- * limit-capped page would advance past items still sitting beyond the page
- * boundary, making them unreachable forever.
+ * MUST instead return `{ nextCursor: <progress marker> }` so the core does
+ * NOT advance past unseen items in that page. The progress marker is the
+ * newest item's own timestamp actually processed this tick when the source
+ * can supply one (max `occurredAt` / `created_at`) — that advances the
+ * window monotonically so SUSTAINED overflow (>= perSourceLimit new items
+ * every tick) drains the backlog instead of re-issuing the identical query
+ * forever and starving everything past page 1. A source with no per-item
+ * timestamp falls back to pinning the unchanged `since` and relies on
+ * dedupe (externalId / sourceRef) to absorb the re-fetched overlap — that
+ * fallback livelocks under sustained overflow, so a fetcher should supply a
+ * timestamp whenever it has one.
  */
 export interface InboxSourceTickResult {
   nextCursor?: Date;
@@ -148,14 +162,32 @@ export interface InboxSourceRegistryEntry {
  *
  * Cursor contract: when the fetch returns a full, limit-capped page
  * (`items.length >= ctx.perSourceLimit`), the page may have truncated the
- * window — there could be more items still unseen inside it. `IntakeItem` has
- * no per-item timestamp to resume from, so the handler reports
- * `{ nextCursor: since }` (the unchanged lower bound) rather than advancing;
- * the core leaves the cursor alone and the next tick re-fetches the same
- * window, with dedupe absorbing the overlap. A partial page (fewer than the
- * limit) is authoritative for the window, so the handler reports `undefined`
- * and the core advances to the tick's start time.
+ * window — there could be more items still unseen inside it. When at least
+ * one returned item carries `occurredAt` (CL-3577 review fix), the handler
+ * advances `nextCursor` to the MAX `occurredAt` of the items actually
+ * processed this tick — that guarantees forward progress through a
+ * sustained backlog (>= perSourceLimit new items every tick) instead of
+ * re-issuing the identical query forever. A fetcher that supplies no
+ * `occurredAt` on any item falls back to `{ nextCursor: since }` (the
+ * unchanged lower bound); the core leaves the cursor alone and the next tick
+ * re-fetches the same window, with dedupe absorbing the overlap — but that
+ * fallback livelocks under sustained overflow, so a fetcher wanting
+ * overflow-progress must populate `occurredAt`. A partial page (fewer than
+ * the limit) is authoritative for the window, so the handler reports
+ * `undefined` and the core advances to the tick's start time.
  */
+/** The newest `occurredAt` among `items`, or `undefined` when none carry one
+ * — the shared "advance-to-max-processed" rule used by every source that can
+ * supply a per-item timestamp on a full/truncated page. */
+export function maxOccurredAt(items: readonly IntakeItem[]): Date | undefined {
+  let max: Date | undefined;
+  for (const item of items) {
+    if (item.occurredAt === undefined) continue;
+    if (max === undefined || item.occurredAt > max) max = item.occurredAt;
+  }
+  return max;
+}
+
 export function defineFetchInboxSource(
   key: string,
   fetcher: InboxSourceFetcher,
@@ -185,7 +217,8 @@ export function defineFetchInboxSource(
       );
       await ctx.deliverItems(items);
       if (items.length >= ctx.perSourceLimit) {
-        return { nextCursor: since };
+        const progress = maxOccurredAt(items);
+        return { nextCursor: progress ?? since };
       }
       return undefined;
     },

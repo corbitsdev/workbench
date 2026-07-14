@@ -208,6 +208,7 @@ export function buildIssueIntakeItem(
       `Link: ${node.url}`,
     ].join("\n"),
     url: node.url,
+    occurredAt: new Date(node.updatedAt),
   };
 }
 
@@ -229,6 +230,7 @@ export function buildCommentIntakeItem(
       `Link: ${issue.url}`,
     ].join("\n"),
     url: issue.url,
+    occurredAt: new Date(node.createdAt),
   };
 }
 
@@ -267,6 +269,7 @@ async function fetchNotifications(
         .filter((line) => line !== "")
         .join("\n"),
       url: issue?.url ?? "",
+      occurredAt: new Date(node.createdAt),
     });
   }
   return items;
