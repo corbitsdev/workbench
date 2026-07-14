@@ -37,6 +37,7 @@ mock.module("../lib/capability-grants", () => ({
 // The member has opted into granola: their preference enables it.
 mock.module("../lib/member-preferences", () => ({
   readMemberPreferences: async () => ({ "inboxSource:granola": true }),
+  mergeMemberPreferences: async () => ({}),
 }));
 
 const { createInboxIntake } = await import("./inbox-intake");

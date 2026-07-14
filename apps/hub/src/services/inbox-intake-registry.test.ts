@@ -37,6 +37,7 @@ mock.module("../lib/capability-grants", () => ({
 // tests are not gated by the OAuth capability opt-in.
 mock.module("../lib/member-preferences", () => ({
   readMemberPreferences: async () => ({ "inboxSource:granola": true }),
+  mergeMemberPreferences: async () => ({}),
 }));
 
 const { createInboxIntake } = await import("./inbox-intake");

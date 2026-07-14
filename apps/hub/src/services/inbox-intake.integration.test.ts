@@ -1,5 +1,6 @@
 import {
   afterAll,
+  afterEach,
   beforeAll,
   beforeEach,
   describe,
@@ -35,9 +36,24 @@ mock.module("../lib/capability-grants", () => ({
 }));
 
 // Inbox sources default OFF (CL-3577); the member has explicitly enabled the
-// linear source so the tick has something to poll.
+// linear source so the tick has something to poll. Tests that exercise the
+// Linear backfill marker (CL-3577) override `readMemberPreferences` per test
+// via `mockImplementationOnce`; `mergeMemberPreferences` is a plain mock so
+// its calls can be asserted without touching real storage.
+const readMemberPreferences = mock(async () => ({
+  "inboxSource:linear": true,
+}));
+const mergeMemberPreferences = mock(
+  async (
+    _db: unknown,
+    _tenantId: string,
+    _memberPrincipalId: string,
+    _patch: Record<string, unknown>,
+  ) => ({}),
+);
 mock.module("../lib/member-preferences", () => ({
-  readMemberPreferences: async () => ({ "inboxSource:linear": true }),
+  readMemberPreferences,
+  mergeMemberPreferences,
 }));
 
 const { createInboxIntake } = await import("./inbox-intake");
@@ -89,6 +105,11 @@ afterAll(async () => {
 
 beforeEach(async () => {
   await client.exec(`DELETE FROM principal_mailbox;`);
+});
+
+afterEach(() => {
+  readMemberPreferences.mockClear();
+  mergeMemberPreferences.mockClear();
 });
 
 describe("inbox intake tick", () => {
@@ -174,5 +195,103 @@ describe("inbox intake tick", () => {
     });
     await intake.tick();
     expect((await mailboxRows()).rows.length).toBe(0);
+  });
+});
+
+describe("Linear one-time backfill on enable (CL-3577)", () => {
+  test("widens the first poll's cutoff per inboxSource:linear:backfill, then stamps the applied marker", async () => {
+    readMemberPreferences.mockImplementationOnce(async () => ({
+      "inboxSource:linear": true,
+      "inboxSource:linear:backfill": "30d",
+    }));
+    const seenCutoffs: Date[] = [];
+    const intake = createInboxIntake({
+      db,
+      grantStore: {} as never,
+      listMembers: async () => [member],
+      isTenantEnabled: async () => true,
+      lookbackMs: 60_000,
+      fetchers: {
+        linear: async (_credential, cutoff) => {
+          seenCutoffs.push(cutoff);
+          return [];
+        },
+      },
+    });
+
+    await intake.tick();
+
+    expect(seenCutoffs).toHaveLength(1);
+    const defaultCutoff = Date.now() - 60_000;
+    // A 30-day-wide cutoff is far earlier than the 60s default lookback.
+    expect(seenCutoffs[0]!.getTime()).toBeLessThan(defaultCutoff - 1000);
+
+    expect(mergeMemberPreferences).toHaveBeenCalledTimes(1);
+    const call = mergeMemberPreferences.mock.calls[0]!;
+    expect(call[1]).toBe(TENANT);
+    expect(call[2]).toBe(MEMBER);
+    expect(typeof call[3]["inboxSource:linear:backfillAppliedAt"]).toBe(
+      "string",
+    );
+  });
+
+  test("does not widen the cutoff once the marker is already stamped", async () => {
+    readMemberPreferences.mockImplementationOnce(async () => ({
+      "inboxSource:linear": true,
+      "inboxSource:linear:backfill": "30d",
+      "inboxSource:linear:backfillAppliedAt": "2026-01-01T00:00:00.000Z",
+    }));
+    const seenCutoffs: Date[] = [];
+    const intake = createInboxIntake({
+      db,
+      grantStore: {} as never,
+      listMembers: async () => [member],
+      isTenantEnabled: async () => true,
+      lookbackMs: 60_000,
+      fetchers: {
+        linear: async (_credential, cutoff) => {
+          seenCutoffs.push(cutoff);
+          return [];
+        },
+      },
+    });
+
+    await intake.tick();
+
+    expect(seenCutoffs).toHaveLength(1);
+    const defaultCutoff = Date.now() - 60_000;
+    expect(seenCutoffs[0]!.getTime()).toBeGreaterThanOrEqual(
+      defaultCutoff - 1000,
+    );
+    expect(mergeMemberPreferences).not.toHaveBeenCalled();
+  });
+
+  test("backfill 'none' applies no widening but still stamps the marker on first poll", async () => {
+    readMemberPreferences.mockImplementationOnce(async () => ({
+      "inboxSource:linear": true,
+      "inboxSource:linear:backfill": "none",
+    }));
+    const seenCutoffs: Date[] = [];
+    const intake = createInboxIntake({
+      db,
+      grantStore: {} as never,
+      listMembers: async () => [member],
+      isTenantEnabled: async () => true,
+      lookbackMs: 60_000,
+      fetchers: {
+        linear: async (_credential, cutoff) => {
+          seenCutoffs.push(cutoff);
+          return [];
+        },
+      },
+    });
+
+    await intake.tick();
+
+    const defaultCutoff = Date.now() - 60_000;
+    expect(seenCutoffs[0]!.getTime()).toBeGreaterThanOrEqual(
+      defaultCutoff - 1000,
+    );
+    expect(mergeMemberPreferences).toHaveBeenCalledTimes(1);
   });
 });

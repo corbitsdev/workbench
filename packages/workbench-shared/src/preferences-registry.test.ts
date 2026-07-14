@@ -24,6 +24,8 @@ import {
   resolveAvailableInboxSources,
   AvailableInboxSourceSchema,
   AvailabilitySignalSchema,
+  LINEAR_SCOPE_PREFERENCE_KEY,
+  LINEAR_BACKFILL_PREFERENCE_KEY,
 } from "./preferences-registry";
 import { CREDENTIAL_PROVIDER_CATALOG } from "./governance";
 
@@ -181,6 +183,29 @@ describe("PREFERENCE_REGISTRY", () => {
     }
   });
 
+  test("registers the Linear scope option defaulting to assigned (CL-3577)", () => {
+    const entry = getPreferenceEntry(LINEAR_SCOPE_PREFERENCE_KEY);
+    expect(entry?.type).toBe("select");
+    expect(entry?.category).toBe("Inbox");
+    expect(entry?.default).toBe("assigned");
+    expect(entry?.options?.map((o) => o.value).sort()).toEqual([
+      "all",
+      "assigned",
+    ]);
+  });
+
+  test("registers the Linear backfill option defaulting to none (CL-3577)", () => {
+    const entry = getPreferenceEntry(LINEAR_BACKFILL_PREFERENCE_KEY);
+    expect(entry?.type).toBe("select");
+    expect(entry?.category).toBe("Inbox");
+    expect(entry?.default).toBe("none");
+    expect(entry?.options?.map((o) => o.value).sort()).toEqual([
+      "30d",
+      "7d",
+      "none",
+    ]);
+  });
+
   test("no brief or inbox source defaults enabled (CL-3577)", () => {
     for (const source of BRIEF_SOURCE_CATALOG) {
       expect(source.defaultEnabled).toBe(false);
@@ -301,6 +326,24 @@ describe("resolveEnabledInboxSources", () => {
   });
 });
 
+describe("INBOX_SOURCE_CATALOG inbox-specific copy (CL-3577)", () => {
+  test("linear, attio, and granola carry inbox-specific descriptions distinct from their brief copy", () => {
+    for (const key of ["linear", "attio", "granola"]) {
+      const inbox = INBOX_SOURCE_CATALOG.find((s) => s.key === key);
+      const brief = BRIEF_SOURCE_CATALOG.find((s) => s.key === key);
+      expect(inbox?.description).toBeDefined();
+      expect(inbox?.description).not.toBe(brief?.description);
+    }
+  });
+
+  test("linear's inbox description matches the CL-3577 spec copy", () => {
+    const linear = INBOX_SOURCE_CATALOG.find((s) => s.key === "linear");
+    expect(linear?.description).toBe(
+      "New Linear activity assigned to you lands in your inbox.",
+    );
+  });
+});
+
 describe("resolveAvailableInboxSources", () => {
   test("excludes a catalog source with no configured credential", () => {
     expect(resolveAvailableInboxSources([], {})).toEqual([]);
@@ -369,6 +412,21 @@ describe("validatePreferencePatch", () => {
 
   test("rejects an unknown key", () => {
     expect(validatePreferencePatch({ bogusSetting: true })).not.toBeNull();
+  });
+
+  test("accepts valid Linear scope/backfill values and rejects invalid ones", () => {
+    expect(
+      validatePreferencePatch({ [LINEAR_SCOPE_PREFERENCE_KEY]: "all" }),
+    ).toBeNull();
+    expect(
+      validatePreferencePatch({ [LINEAR_BACKFILL_PREFERENCE_KEY]: "7d" }),
+    ).toBeNull();
+    expect(
+      validatePreferencePatch({ [LINEAR_SCOPE_PREFERENCE_KEY]: "bogus" }),
+    ).not.toBeNull();
+    expect(
+      validatePreferencePatch({ [LINEAR_BACKFILL_PREFERENCE_KEY]: "60d" }),
+    ).not.toBeNull();
   });
 
   test("accepts legacy non-registry keys owned by other subsystems", () => {
