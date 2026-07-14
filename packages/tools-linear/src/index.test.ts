@@ -315,7 +315,32 @@ describe("linear_list_issues handler", () => {
 
   it("scopes to a team and caps first at the issue list maximum", async () => {
     const nodes = [{ id: "uuid-1", identifier: "ENG-1" }];
-    const fetcher = makeFetchStub({ data: { team: { issues: { nodes } } } });
+    const fetcher = mock((_input: string, init: RequestInit) => {
+      const body = JSON.parse(String(init.body)) as { query: string };
+      if (body.query.includes("GetTeam")) {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({ data: { team: { id: "team-uuid" } } }),
+            { status: 200, headers: { "Content-Type": "application/json" } },
+          ),
+        );
+      }
+      return Promise.resolve(
+        new Response(
+          JSON.stringify({
+            data: {
+              team: {
+                issues: {
+                  nodes,
+                  pageInfo: { endCursor: null, hasNextPage: false },
+                },
+              },
+            },
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        ),
+      );
+    }) as FetchStub;
     const runner = createToolRunner(
       createLinearTools({ apiKey: "k", fetcher }),
     );
@@ -330,13 +355,34 @@ describe("linear_list_issues handler", () => {
     );
 
     expect(JSON.parse(String(result.content))).toEqual(asConnection(nodes));
-    const body = lastBody(fetcher);
+    const lastCall = fetcher.mock.calls.at(-1);
+    expect(lastCall).toBeDefined();
+    const body = JSON.parse(String(lastCall?.[1].body)) as {
+      query: string;
+      variables: Record<string, unknown>;
+    };
     expect(body.query).toContain("team(id: $teamId)");
     expect(body.variables).toEqual({ teamId: "team-uuid", first: 250 });
   });
 
   it("errors when the scoped team is not found", async () => {
-    const fetcher = makeFetchStub({ data: { team: null } });
+    const fetcher = mock((_input: string, init: RequestInit) => {
+      const body = JSON.parse(String(init.body)) as { query: string };
+      if (body.query.includes("TeamByName")) {
+        return Promise.resolve(
+          new Response(JSON.stringify({ data: { teams: { nodes: [] } } }), {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          }),
+        );
+      }
+      return Promise.resolve(
+        new Response(JSON.stringify({ data: { team: null } }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }),
+      );
+    }) as FetchStub;
     const runner = createToolRunner(
       createLinearTools({ apiKey: "k", fetcher }),
     );

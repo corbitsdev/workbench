@@ -37,6 +37,51 @@ const ListTeamsArgsSchema = type({
 
 const GetTeamArgsSchema = type({ id: "string > 0" });
 
+const TEAM_BY_NAME_QUERY = `query TeamByName($name: String!) {
+  teams(first: 1, filter: { name: { eqIgnoreCase: $name } }) {
+    nodes { id }
+  }
+}`;
+
+export async function resolveTeamId(
+  config: LinearToolsConfig,
+  teamOrId: string,
+  signal: AbortSignal,
+): Promise<string> {
+  const direct = await fetchLinearGraphQL(
+    config,
+    GET_TEAM_QUERY,
+    { id: teamOrId },
+    signal,
+  );
+  if (direct.team !== null && direct.team !== undefined) {
+    const row = direct.team as Record<string, unknown>;
+    const id = optionalString(row.id);
+    if (id !== null) {
+      return id;
+    }
+  }
+  const byName = await fetchLinearGraphQL(
+    config,
+    TEAM_BY_NAME_QUERY,
+    { name: teamOrId },
+    signal,
+  );
+  const nodes = (byName.teams as Record<string, unknown> | undefined)?.nodes;
+  if (!Array.isArray(nodes) || nodes.length === 0) {
+    throw new Error(`Linear team not found: ${teamOrId}`);
+  }
+  const first = nodes[0];
+  if (typeof first !== "object" || first === null) {
+    throw new Error(`Linear team not found: ${teamOrId}`);
+  }
+  const id = optionalString((first as Record<string, unknown>).id);
+  if (id === null) {
+    throw new Error(`Linear team not found: ${teamOrId}`);
+  }
+  return id;
+}
+
 export async function listTeams(
   config: LinearToolsConfig,
   rawArgs: Record<string, unknown>,

@@ -7,6 +7,7 @@ import {
   resolveListPagination,
 } from "./pagination";
 import { IssueIdArgsSchema } from "./schemas";
+import { resolveTeamId } from "./teams";
 import {
   BRIEF_SOURCE_SKIPPED_MARKER,
   DEFAULT_ISSUE_LIMIT,
@@ -20,6 +21,7 @@ import {
   optionalString,
   optionalStringArray,
   parseArgs,
+  requireNonEmptyString,
   requireString,
   type LinearToolsConfig,
 } from "./shared";
@@ -244,7 +246,7 @@ async function resolveWorkflowStateId(
   if (!isRecord(issueData.issue) || !isRecord(issueData.issue.team)) {
     throw new Error(`Linear issue not found: ${issueId}`);
   }
-  const teamId = requireString(issueData.issue.team.id, "team.id");
+  const teamId = requireNonEmptyString(issueData.issue.team.id, "team.id");
   const teamData = await fetchLinearGraphQL(
     config,
     TEAM_STATE_BY_NAME_QUERY,
@@ -262,7 +264,7 @@ async function resolveWorkflowStateId(
   if (!isRecord(first)) {
     throw new Error(`Workflow state not found: ${state}`);
   }
-  return requireString(first.id, "state.id");
+  return requireNonEmptyString(first.id, "state.id");
 }
 
 function buildIssueFilter(
@@ -354,10 +356,11 @@ export async function listIssues(
   };
 
   if (teamId !== null) {
+    const resolvedTeamId = await resolveTeamId(config, teamId, signal);
     const data = await fetchLinearGraphQL(
       config,
       LIST_TEAM_ISSUES_QUERY,
-      { teamId, ...variables },
+      { teamId: resolvedTeamId, ...variables },
       signal,
     );
     if (!isRecord(data.team)) {
@@ -706,6 +709,6 @@ export const LINEAR_LINK_ISSUES_DEFINITION: ToolDefinition = {
       type: { type: "string", description: "Relation type for add." },
       relationId: { type: "string", description: "Relation id for remove." },
     },
-    required: ["action", "issueId", "relatedIssueId"],
+    required: ["action"],
   },
 };

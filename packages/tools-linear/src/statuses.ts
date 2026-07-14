@@ -14,6 +14,7 @@ import {
   parseArgs,
   type LinearToolsConfig,
 } from "./shared";
+import { resolveTeamId } from "./teams";
 
 const LIST_STATUSES_QUERY = `query ListStatuses($teamId: String!, $first: Int!, $after: String) {
   team(id: $teamId) {
@@ -41,8 +42,8 @@ const ListStatusesArgsSchema = type({
 });
 
 const GetStatusArgsSchema = type({
-  team: "string > 0",
-  name: "string > 0",
+  "team?": "string > 0",
+  "name?": "string > 0",
   "id?": "string",
 });
 
@@ -57,10 +58,11 @@ export async function listIssueStatuses(
     "linear_list_issue_statuses",
   );
   const pagination = resolveListPagination(args, DEFAULT_LIST_LIMIT, MAX_LIST_LIMIT);
+  const resolvedTeamId = await resolveTeamId(config, args.team, signal);
   const data = await fetchLinearGraphQL(
     config,
     LIST_STATUSES_QUERY,
-    { teamId: args.team, ...paginationVariables(pagination) },
+    { teamId: resolvedTeamId, ...paginationVariables(pagination) },
     signal,
   );
   if (!isRecord(data.team)) {
@@ -88,10 +90,18 @@ export async function getIssueStatus(
     }
     return data.workflowState;
   }
+  const team = optionalString(args.team);
+  const name = optionalString(args.name);
+  if (team === null || name === null) {
+    throw new Error(
+      "team and name are required when id is omitted for linear_get_issue_status",
+    );
+  }
+  const resolvedTeamId = await resolveTeamId(config, team, signal);
   const data = await fetchLinearGraphQL(
     config,
     GET_STATUS_QUERY,
-    { teamId: args.team, name: args.name },
+    { teamId: resolvedTeamId, name },
     signal,
   );
   if (!isRecord(data.team) || !isRecord(data.team.states)) {
@@ -130,6 +140,6 @@ export const LINEAR_GET_ISSUE_STATUS_DEFINITION: ToolDefinition = {
       name: { type: "string" },
       id: { type: "string" },
     },
-    required: ["team", "name"],
+    required: [],
   },
 };

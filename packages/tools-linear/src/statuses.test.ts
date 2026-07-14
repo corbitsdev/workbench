@@ -1,16 +1,30 @@
 import { describe, expect, it } from "bun:test";
 import { createToolRunner } from "@intx/agent";
 import { createLinearTools } from "./index";
-import { asConnection, lastBody, makeFetchStub } from "./test-helpers";
+import {
+  asConnection,
+  lastBody,
+  makeFetchStub,
+  makeRoutingFetchStub,
+} from "./test-helpers";
 
 describe("linear_list_issue_statuses", () => {
   it("lists team workflow states", async () => {
     const nodes = [{ id: "s1", name: "Done", type: "completed" }];
-    const fetcher = makeFetchStub({
-      data: {
-        team: { states: { nodes, pageInfo: { endCursor: null, hasNextPage: false } } },
+    const fetcher = makeRoutingFetchStub([
+      { includes: "GetTeam", data: { team: { id: "t1", name: "Eng" } } },
+      {
+        includes: "ListStatuses",
+        data: {
+          team: {
+            states: {
+              nodes,
+              pageInfo: { endCursor: null, hasNextPage: false },
+            },
+          },
+        },
       },
-    });
+    ]);
     const runner = createToolRunner(createLinearTools({ apiKey: "k", fetcher }));
 
     const result = await runner.run(
@@ -19,7 +33,7 @@ describe("linear_list_issue_statuses", () => {
     );
 
     expect(JSON.parse(String(result.content))).toEqual(asConnection(nodes));
-    const body = lastBody(fetcher);
+    const body = lastBody(fetcher, 1);
     expect(body.query).toContain("team(id: $teamId)");
     expect(body.variables).toEqual({ teamId: "t1", first: 25 });
   });
@@ -46,7 +60,10 @@ describe("linear_get_issue_status", () => {
 
   it("resolves status by team and name when id is omitted", async () => {
     const nodes = [{ id: "s1", name: "In Progress", type: "started" }];
-    const fetcher = makeFetchStub({ data: { team: { states: { nodes } } } });
+    const fetcher = makeRoutingFetchStub([
+      { includes: "GetTeam", data: { team: { id: "t1", name: "Eng" } } },
+      { includes: "GetStatus", data: { team: { states: { nodes } } } },
+    ]);
     const runner = createToolRunner(createLinearTools({ apiKey: "k", fetcher }));
 
     const result = await runner.run(
@@ -59,7 +76,7 @@ describe("linear_get_issue_status", () => {
     );
 
     expect(JSON.parse(String(result.content))).toEqual(nodes[0]);
-    const body = lastBody(fetcher);
+    const body = lastBody(fetcher, 1);
     expect(body.query).toContain("states(filter:");
     expect(body.variables).toEqual({ teamId: "t1", name: "In Progress" });
   });

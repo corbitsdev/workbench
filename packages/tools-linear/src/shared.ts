@@ -122,6 +122,14 @@ export function requireString(
   return value;
 }
 
+export function requireNonEmptyString(value: unknown, label: string): string {
+  const parsed = optionalString(value);
+  if (parsed === null) {
+    throw new Error(`${label} is required`);
+  }
+  return parsed;
+}
+
 export function extractMutationIssue(
   data: Record<string, unknown>,
   mutationKey: string,
