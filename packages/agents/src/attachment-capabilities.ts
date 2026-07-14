@@ -1,6 +1,7 @@
 import {
   acceptedMimeTypes,
   templateAttachmentCapability,
+  IMAGE_MIME_TYPES,
   type AttachmentCapability,
 } from "@workbench/catalog";
 import {
@@ -32,12 +33,14 @@ export function attachmentCapabilityForAgent(
   return CAPABILITY_BY_AGENT_NAME.get(agentName) ?? "none";
 }
 
-// Documents an agent can reach through the File Parser (CL-2628) even though its
-// own model cannot read them. The composer accepts these so the user can attach
+// Files an agent can reach through the File Parser (CL-2628) even though its own
+// model cannot read them: documents always, and images too when the agent's own
+// model is not natively vision-capable (e.g. Myra on kimi, whose endpoint 400s
+// on inline image_url parts). The composer accepts these so the user can attach
 // them; the client diverts each to the parser upload path rather than sending it
 // inline (which would throw the openai-compatible adapter). The inline-mail hub
 // guard deliberately does NOT consult this — it stays on native capability so a
-// document can never ride inline to a doc-incapable model.
+// document or image can never ride inline to a model that cannot consume it.
 const DOCUMENT_MIME_TYPES: string[] = Object.entries(ATTACHMENT_ALLOWLIST)
   .filter(([, category]) => category === "document")
   .map(([mime]) => mime);
@@ -70,10 +73,18 @@ export function attachmentPolicyForAgent(
   const nativeMimeTypes = acceptedMimeTypes(
     attachmentCapabilityForAgent(agentName),
   );
-  const parserDocs = PARSER_DOCS_BY_AGENT_NAME.get(agentName)
-    ? DOCUMENT_MIME_TYPES
+  // A parse-capable agent can also read images through the File Parser. Only add
+  // them when the model does not already accept images natively (otherwise they
+  // ride inline, which is higher fidelity than an OCR pass). Check for native
+  // image support explicitly rather than an empty native set, so a future
+  // documents-but-not-images capability would still route images to the parser.
+  const nativeAcceptsImages = IMAGE_MIME_TYPES.some((mime) =>
+    nativeMimeTypes.includes(mime),
+  );
+  const parserFiles = PARSER_DOCS_BY_AGENT_NAME.get(agentName)
+    ? [...DOCUMENT_MIME_TYPES, ...(nativeAcceptsImages ? [] : IMAGE_MIME_TYPES)]
     : [];
-  const mimeTypes = [...new Set([...nativeMimeTypes, ...parserDocs])];
+  const mimeTypes = [...new Set([...nativeMimeTypes, ...parserFiles])];
   if (mimeTypes.length === 0) return undefined;
   return {
     acceptedMimeTypes: mimeTypes,

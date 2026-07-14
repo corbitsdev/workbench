@@ -17,6 +17,7 @@ export {
   attachmentCapability,
   acceptedMimeTypes,
   isVisionModel,
+  IMAGE_MIME_TYPES,
   ATTACHMENT_CAPABILITIES,
   type AttachmentCapability,
 } from "./attachment-capabilities";

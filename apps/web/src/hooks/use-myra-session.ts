@@ -110,13 +110,6 @@ export async function deliverMessage(
   }
 }
 
-// Wire shape the mail route accepts alongside `content` (SendMessage schema).
-export interface OutboundAttachment {
-  mimeType: string;
-  data: string;
-  name?: string;
-}
-
 function fileToBase64(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -134,18 +127,6 @@ function fileToBase64(file: File): Promise<string> {
       reject(reader.error ?? new Error("Could not read file"));
     reader.readAsDataURL(file);
   });
-}
-
-async function encodeAttachments(
-  attachments: readonly PendingAttachment[],
-): Promise<OutboundAttachment[]> {
-  return Promise.all(
-    attachments.map(async (a) => ({
-      mimeType: a.mimeType,
-      data: await fileToBase64(a.file),
-      name: a.name,
-    })),
-  );
 }
 
 // A document parse failed at the /parse-file route (timeout, oversize, bad
@@ -186,20 +167,22 @@ export function attachmentErrorMessage(err: unknown): string {
   }
 }
 
-// Attachments cannot ride the string-only `sendMail`; POST them to the same
-// mail route the session uses, with the one-shot relaunch recovery.
-// Returns the created mail's id so the caller can key optimistic UI (e.g. a
-// document chip) to the transcript bubble that renders from that mail event.
-export async function deliverMessageWithAttachments(
+// POST a message to the mail route the session uses, with the one-shot relaunch
+// recovery. Unlike the string-only `sendMail`, this returns the created mail's
+// id so the caller can key optimistic UI (e.g. a file chip) to the transcript
+// bubble that renders from that mail event. Nothing rides inline — every
+// attachment is diverted through the File Parser and folded into `content` — so
+// the wire `attachments` is always empty (the SendMessage schema expects the
+// field present).
+export async function deliverMailMessage(
   transport: Transport,
   tenantId: string,
   instanceId: string,
   content: string,
-  attachments: OutboundAttachment[],
   launchOptions?: LaunchInstanceSessionOptions,
 ): Promise<string | null> {
   const path = `/api/tenants/${tenantId}/agents/instances/${instanceId}/mail`;
-  const body = { content, attachments };
+  const body = { content, attachments: [] };
   try {
     const res = await transport.fetch<{ id?: string }>("POST", path, body);
     return res?.id ?? null;
@@ -276,10 +259,6 @@ export function composeWithDocumentContext(
     .join("\n\n");
   const trimmed = text.trim();
   return `<context>\n${blocks}\n</context>${trimmed !== "" ? `\n\n${trimmed}` : ""}`;
-}
-
-function isImageAttachment(a: PendingAttachment): boolean {
-  return a.mimeType.startsWith("image/");
 }
 
 // The per-session stream trackers, built together and torn down together.
@@ -933,21 +912,24 @@ export function useMyraSession(
     if (transport === null || iid === null || tenantId === null) {
       throw new Error("Not connected yet. Try again in a moment.");
     }
-    const images = attachments.filter(isImageAttachment);
-    const documents = attachments.filter((a) => !isImageAttachment(a));
-
+    // Every attachment — images and documents alike — is diverted through the
+    // File Parser. Myra's model (kimi) cannot read either inline: her
+    // openai-compatible endpoint 400s on image_url parts and throws on document
+    // blocks. The parser stores each as an artifact and returns extracted text,
+    // which is folded into a leading <context> block so Myra receives it as
+    // text regardless of her own model's modality (CL image-upload 400 fix).
     let content = text;
     let chips: ChatAttachment[] = [];
     let chipUrls: { blobId: string; url: string }[] = [];
-    if (documents.length > 0) {
+    if (attachments.length > 0) {
       let parsedDocs: ParsedDocument[];
       try {
         parsedDocs = await Promise.all(
-          documents.map(async (d) => {
-            const data = await fileToBase64(d.file);
+          attachments.map(async (a) => {
+            const data = await fileToBase64(a.file);
             return parseDocumentAttachment(transport, iid, {
-              filename: d.name,
-              mimeType: d.mimeType,
+              filename: a.name,
+              mimeType: a.mimeType,
               data,
             });
           }),
@@ -959,15 +941,15 @@ export function useMyraSession(
       chips = parsedDocs.map((doc, i) => ({
         blobId: doc.artifactId,
         name: doc.filename,
-        type: documents[i]!.mimeType,
-        size: documents[i]!.file.size,
+        type: attachments[i]!.mimeType,
+        size: attachments[i]!.file.size,
       }));
       // Register each object URL in the revocable ref at creation, not after the
       // send resolves — otherwise an unmount during the send leaves the URL held
       // only in this closure and it is never revoked (the teardown revokes the
       // ref's contents). The non-success paths below delete + revoke.
       chipUrls = parsedDocs.map((doc, i) => {
-        const url = URL.createObjectURL(documents[i]!.file);
+        const url = URL.createObjectURL(attachments[i]!.file);
         docChipUrlsRef.current.set(doc.artifactId, url);
         return { blobId: doc.artifactId, url };
       });
@@ -980,14 +962,13 @@ export function useMyraSession(
       }
     };
 
-    const encoded = await encodeAttachments(images);
     try {
-      const mailId = await deliverMessageWithAttachments(
+      // Nothing rides inline anymore — the parsed text is in `content`.
+      const mailId = await deliverMailMessage(
         transport,
         tenantId,
         iid,
         content,
-        encoded,
         launchOptionsRef.current,
       );
       if (chips.length > 0 && mailId !== null) {
