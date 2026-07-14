@@ -5,6 +5,7 @@ import { getLogger } from "@intx/log";
 import { splitMailAddress, USER_ADDRESS_PREFIX } from "@workbench/hub-agent";
 import { principalMailbox } from "../db/schema";
 import type { HubDb } from "../db";
+import { parseWorkbenchRefsFromHeaderMap } from "@workbench/shared";
 import { tryParseHeaderSection } from "./mail-headers";
 
 const logger = getLogger(["hub", "principal-mailbox"]);
@@ -57,12 +58,14 @@ export async function markGateMailboxItemRead(
 function readCachedHeaders(raw: Uint8Array): {
   subject: string | null;
   from: string | null;
+  refs: ReturnType<typeof parseWorkbenchRefsFromHeaderMap>;
 } {
   const parsed = tryParseHeaderSection(raw);
-  if (parsed === null) return { subject: null, from: null };
+  if (parsed === null) return { subject: null, from: null, refs: undefined };
   return {
     subject: parsed.headers.get("subject") ?? null,
     from: parsed.headers.get("from") ?? null,
+    refs: parseWorkbenchRefsFromHeaderMap(parsed.headers),
   };
 }
 
@@ -215,6 +218,7 @@ export function createPrincipalMailboxPersist(
           raw: Buffer.from(raw),
           subject: cached.subject,
           fromAddress: cached.from,
+          refs: cached.refs ?? null,
         })),
       )
       .returning({ id: principalMailbox.id });

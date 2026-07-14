@@ -82,7 +82,7 @@ describe("heartbeat native workflow", () => {
   // -------------------------------------------------------------------------
   test("has no awaitSignal steps — every step is a plain step or map", () => {
     const kinds = Object.values(workflow.steps).map((s) => s.kind);
-    expect(kinds.length).toBe(5 + WIRED_BRIEF_SOURCES.length);
+    expect(kinds.length).toBe(6 + WIRED_BRIEF_SOURCES.length);
     for (const kind of kinds) {
       expect(kind === "step" || kind === "map").toBe(true);
       expect(kind).not.toBe("awaitSignal");
@@ -112,6 +112,7 @@ describe("heartbeat native workflow", () => {
     );
     expect(nonIntakeSteps.sort()).toEqual([
       "brief",
+      "mail-refs",
       "merge-sources",
       "notify",
       "persist",
@@ -299,13 +300,26 @@ describe("heartbeat native workflow", () => {
   // -------------------------------------------------------------------------
   // Mail addressing argMap
   // -------------------------------------------------------------------------
-  test("notify argMap addresses the mail to the firing user with the computed title as subject and the brief as content", () => {
+  test("mail-refs argMap builds artifact refs from the persisted brief id", () => {
+    expect(argMapOf("mail-refs")).toEqual({
+      artifactId: { from: "artifactId" },
+    });
+    expect(stepPrimitive("mail-refs").after).toEqual(["persist"]);
+  });
+
+  test("notify argMap addresses the mail to the firing user with the computed title as subject, the brief as content, and artifact refs", () => {
     expect(argMapOf("notify")).toEqual({
       to: { from: "userAddress" },
       subject: { from: "title" },
       content: { from: "reply" },
+      refs: { from: "refs" },
     });
-    expect(stepPrimitive("notify").after).toEqual(["brief", "title", "persist"]);
+    expect(stepPrimitive("notify").after).toEqual([
+      "brief",
+      "title",
+      "persist",
+      "mail-refs",
+    ]);
   });
 
   // -------------------------------------------------------------------------
@@ -357,6 +371,11 @@ describe("heartbeat native workflow", () => {
         content: { title: "Jordan Lee's Morning Brief - 04/07/26" },
       },
       "heartbeat-persist": { artifactId: "art_1", version: 1 },
+      "heartbeat-mail-refs": {
+        content: {
+          refs: [{ kind: "artifact", ref: "art_1", label: "Open brief" }],
+        },
+      },
       "heartbeat-notify": { messageId: "mail_1" },
     });
 
@@ -378,11 +397,14 @@ describe("heartbeat native workflow", () => {
     expect(ranIds).toContain("heartbeat-brief");
     expect(ranIds).toContain("heartbeat-title");
     expect(ranIds).toContain("heartbeat-persist");
+    expect(ranIds).toContain("heartbeat-mail-refs");
     expect(ranIds).toContain("heartbeat-notify");
     const persistIdx = ranIds.indexOf("heartbeat-persist");
+    const mailRefsIdx = ranIds.indexOf("heartbeat-mail-refs");
     const notifyIdx = ranIds.indexOf("heartbeat-notify");
     expect(persistIdx).toBeGreaterThanOrEqual(0);
-    expect(notifyIdx).toBeGreaterThan(persistIdx);
+    expect(mailRefsIdx).toBeGreaterThan(persistIdx);
+    expect(notifyIdx).toBeGreaterThan(mailRefsIdx);
   });
 
   // -------------------------------------------------------------------------
@@ -415,6 +437,11 @@ describe("heartbeat native workflow", () => {
         content: { title: "Jordan Lee's Morning Brief - 04/07/26" },
       },
       "heartbeat-persist": { artifactId: "art_1", version: 1 },
+      "heartbeat-mail-refs": {
+        content: {
+          refs: [{ kind: "artifact", ref: "art_1", label: "Open brief" }],
+        },
+      },
       "heartbeat-notify": { messageId: "mail_1" },
     });
 
@@ -435,6 +462,9 @@ describe("heartbeat native workflow", () => {
     expect(String(mailArgs.to).startsWith("usr_")).toBe(true);
     expect(mailArgs.subject).toBe("Jordan Lee's Morning Brief - 04/07/26");
     expect(mailArgs.content).toBe(briefReply);
+    expect(mailArgs.refs).toEqual([
+      { kind: "artifact", ref: "art_1", label: "Open brief" },
+    ]);
 
     const persistInput = ran.find((r) => r.id === "heartbeat-persist")
       ?.input as Record<string, unknown> | undefined;

@@ -16,6 +16,7 @@ import {
 import {
   formatHeartbeatBriefTitle,
   mergeHeartbeatBriefSources,
+  morningBriefMailRefs,
 } from "@workbench/shared";
 
 export const LAST30DAYS_CORE_EXTRACT_DEFINITION: ToolDefinition = {
@@ -98,6 +99,22 @@ export const HEARTBEAT_MERGE_BRIEF_SOURCES_DEFINITION: ToolDefinition = {
   inputSchema: {
     type: "object",
     additionalProperties: true,
+  },
+};
+
+export const HEARTBEAT_FORMAT_BRIEF_MAIL_REFS_DEFINITION: ToolDefinition = {
+  name: "heartbeat_format_brief_mail_refs",
+  description:
+    "Internal heartbeat workflow helper. Build mailbox refs for the morning-brief notify mail after persist.",
+  inputSchema: {
+    type: "object",
+    properties: {
+      artifactId: {
+        type: "string",
+        description: "Persisted morning-brief artifact id from heartbeat_persist_mail.",
+      },
+    },
+    required: ["artifactId"],
   },
 };
 
@@ -649,6 +666,31 @@ function createValidateTool(): AgentTool {
   };
 }
 
+function createHeartbeatFormatBriefMailRefsTool(): AgentTool {
+  return {
+    kind: "full",
+    definition: HEARTBEAT_FORMAT_BRIEF_MAIL_REFS_DEFINITION,
+    handler: async (call) => {
+      const args = coerceArgsObject(call.arguments);
+      const artifactId = args.artifactId;
+      if (typeof artifactId !== "string" || artifactId.trim().length === 0) {
+        return {
+          callId: call.id,
+          isError: true,
+          content: "artifactId is required",
+        };
+      }
+      try {
+        const refs = morningBriefMailRefs(artifactId);
+        return { callId: call.id, content: { refs } };
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        return { callId: call.id, isError: true, content: message };
+      }
+    },
+  };
+}
+
 function createHeartbeatFormatBriefTitleTool(): AgentTool {
   return {
     kind: "full",
@@ -689,5 +731,6 @@ export function createLast30daysTools(): AgentTool[] {
     createValidateTool(),
     createHeartbeatMergeBriefSourcesTool(),
     createHeartbeatFormatBriefTitleTool(),
+    createHeartbeatFormatBriefMailRefsTool(),
   ];
 }
