@@ -141,14 +141,21 @@ export function createLinearWebhookRouter(deps: LinearWebhookDeps): Hono {
       return c.json({ error: "unrecognized payload" }, 400);
     }
 
-    if (envelope.webhookTimestamp !== undefined) {
-      const skew = Math.abs(Date.now() - envelope.webhookTimestamp);
-      if (skew > TIMESTAMP_TOLERANCE_MS) {
-        log.warn("linear webhook: stale timestamp; rejecting (replay guard)", {
-          skewMs: skew,
-        });
-        return c.json({ error: "stale timestamp" }, 401);
-      }
+    // Linear always sends `webhookTimestamp`; a signed payload missing it
+    // would otherwise bypass the freshness check and could be replayed
+    // indefinitely, so it is rejected the same as a stale one.
+    if (envelope.webhookTimestamp === undefined) {
+      log.warn(
+        "linear webhook: missing webhookTimestamp; rejecting (replay guard)",
+      );
+      return c.json({ error: "missing timestamp" }, 401);
+    }
+    const skew = Math.abs(Date.now() - envelope.webhookTimestamp);
+    if (skew > TIMESTAMP_TOLERANCE_MS) {
+      log.warn("linear webhook: stale timestamp; rejecting (replay guard)", {
+        skewMs: skew,
+      });
+      return c.json({ error: "stale timestamp" }, 401);
     }
 
     await handleEvent(deps, envelope.action, envelope.type, envelope.data);

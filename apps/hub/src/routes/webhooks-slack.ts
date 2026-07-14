@@ -4,11 +4,14 @@ import { Hono } from "hono";
 import { getLogger } from "@intx/log";
 import { resolveEnabledInboxSources } from "@workbench/shared";
 import type { HubDb } from "../db";
+import {
+  deliverInboxItems,
+  type InboxDeliveryDeps,
+  type InboxDeliveryTarget,
+} from "../lib/inbox-delivery";
 import { readMemberPreferences } from "../lib/member-preferences";
-import { buildMailFrame, writeMailboxMessage } from "../lib/mailbox-write";
 import type { MailboxEventBus } from "../lib/mailbox-events";
 import type { MailboxTriage } from "../services/mailbox-triage";
-import type { UserMailboxRowEvent } from "../lib/principal-mailbox";
 import {
   fetchMessagePermalink,
   fetchSlackUserEmail,
@@ -350,6 +353,10 @@ async function deliverMention(
   member: InboxIntakeMember,
   message: typeof MessageEvent.infer,
 ): Promise<void> {
+  // Permalink fetch is Slack-specific (needs the tenant's bot credential) and
+  // has no equivalent in the shared delivery seam, so it stays local; the
+  // resulting subject/body/externalId are then handed to `deliverInboxItems`
+  // like every other source.
   const credential = await ctx.resolveCredential(member.tenantId);
   const permalink = credential
     ? await fetchMessagePermalink(
@@ -364,40 +371,22 @@ async function deliverMention(
   const bodyLines = [message.text ?? ""];
   if (permalink) bodyLines.push("", permalink);
   const body = bodyLines.join("\n");
-  const fromAddress = `${SOURCE_KEY}@${member.tenantDomain}`;
-  const messageKey = `inbox:${SOURCE_KEY}:${teamId}:${message.channel}:${message.ts}`;
+  // Preserves the pre-CL-3577-overhaul messageKey format
+  // (`inbox:slack:<teamId>:<channel>:<ts>`) so already-delivered mentions do
+  // not re-deliver when routed through the shared helper.
+  const externalId = `${teamId}:${message.channel}:${message.ts}`;
 
-  const written = await writeMailboxMessage(
-    ctx.deps.db,
-    {
-      tenantId: member.tenantId,
-      principalId: member.memberPrincipalId,
-      address: member.inboxAddress,
-      fromAddress,
-      subject,
-      body,
-      messageKey,
-    },
-    ctx.deps.mailboxEventBus,
-  );
-  if (!written) return; // already delivered (dedupe)
-
-  if (ctx.deps.mailboxTriage) {
-    const event: UserMailboxRowEvent = {
-      rowId: written.id,
-      tenantId: member.tenantId,
-      memberPrincipalId: member.memberPrincipalId,
-      recipientAddress: member.inboxAddress,
-      senderAddress: fromAddress,
-      subject,
-      fromAddress,
-      raw: buildMailFrame({
-        from: fromAddress,
-        to: member.inboxAddress,
-        subject,
-        body,
-      }),
-    };
-    ctx.deps.mailboxTriage.enqueue(event);
-  }
+  const target: InboxDeliveryTarget = member;
+  const deliveryDeps: InboxDeliveryDeps = {
+    db: ctx.deps.db,
+    ...(ctx.deps.mailboxEventBus
+      ? { mailboxEventBus: ctx.deps.mailboxEventBus }
+      : {}),
+    ...(ctx.deps.mailboxTriage
+      ? { mailboxTriage: ctx.deps.mailboxTriage }
+      : {}),
+  };
+  await deliverInboxItems(deliveryDeps, target, SOURCE_KEY, [
+    { externalId, subject, body, url: permalink ?? "" },
+  ]);
 }

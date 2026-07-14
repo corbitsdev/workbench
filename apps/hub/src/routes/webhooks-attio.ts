@@ -27,16 +27,37 @@ const MAX_BODY_BYTES = 256 * 1024;
 // event with no actual state change is already a no-op there even after this
 // cache entry expires or the process restarts).
 const IDEMPOTENCY_TTL_MS = 24 * 60 * 60 * 1000;
+// Bounds the cache like its Slack sibling (`slack-event-dedupe.ts`): a size
+// cap plus oldest-first eviction on overflow, on top of the TTL sweep, so an
+// unbounded flood of distinct Idempotency-Keys cannot grow the map forever.
+const MAX_IDEMPOTENCY_KEYS = 5000;
 
-const seenIdempotencyKeys = new Map<string, number>();
+export interface AttioIdempotencyCache {
+  /** Returns true the FIRST time a key is seen within its TTL (i.e. "process
+   * it"), false on every subsequent call with the same key. */
+  remember(key: string, now: number): boolean;
+}
 
-function rememberIdempotencyKey(key: string, now: number): boolean {
-  for (const [k, expiresAt] of seenIdempotencyKeys) {
-    if (expiresAt <= now) seenIdempotencyKeys.delete(k);
-  }
-  if (seenIdempotencyKeys.has(key)) return false;
-  seenIdempotencyKeys.set(key, now + IDEMPOTENCY_TTL_MS);
-  return true;
+/** Overridable for tests via `AttioWebhookDeps.idempotencyCache` so the size
+ * bound can be exercised without sending `MAX_IDEMPOTENCY_KEYS` requests. */
+export function createAttioIdempotencyCache(
+  maxEntries: number = MAX_IDEMPOTENCY_KEYS,
+): AttioIdempotencyCache {
+  const seen = new Map<string, number>();
+  return {
+    remember(key: string, now: number): boolean {
+      for (const [k, expiresAt] of seen) {
+        if (expiresAt <= now) seen.delete(k);
+      }
+      if (seen.has(key)) return false;
+      if (seen.size >= maxEntries) {
+        const oldestKey = seen.keys().next().value;
+        if (oldestKey !== undefined) seen.delete(oldestKey);
+      }
+      seen.set(key, now + IDEMPOTENCY_TTL_MS);
+      return true;
+    },
+  };
 }
 
 /**
@@ -65,6 +86,9 @@ export interface AttioWebhookDeps {
   ) => Promise<boolean>;
   /** Injection seam for tests; defaults to real clock. */
   now?: () => number;
+  /** Injection seam for tests; defaults to a fresh, module-scoped cache
+   * bounded at `MAX_IDEMPOTENCY_KEYS`. */
+  idempotencyCache?: AttioIdempotencyCache;
 }
 
 /** Constant-time compare of two hex-encoded HMAC digests. Any length/format
@@ -100,6 +124,8 @@ function signatureMatches(expected: string, provided: string): boolean {
 export function createAttioWebhookRouter(deps: AttioWebhookDeps): Hono {
   const app = new Hono();
   const now = deps.now ?? Date.now;
+  const idempotencyCache =
+    deps.idempotencyCache ?? createAttioIdempotencyCache();
 
   app.post("/webhooks/attio", async (c) => {
     const signature =
@@ -128,7 +154,7 @@ export function createAttioWebhookRouter(deps: AttioWebhookDeps): Hono {
     }
 
     const idempotencyKey = c.req.header("Idempotency-Key");
-    if (idempotencyKey && !rememberIdempotencyKey(idempotencyKey, now())) {
+    if (idempotencyKey && !idempotencyCache.remember(idempotencyKey, now())) {
       log.debug(
         "attio webhook: duplicate delivery; acking without reprocessing",
         {
