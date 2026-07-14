@@ -2,13 +2,17 @@ import type { GrantStore } from "@intx/authz";
 import { getLogger } from "@intx/log";
 import {
   findOAuthProviderConfig,
+  LINEAR_BACKFILL_PREFERENCE_KEY,
   resolveEnabledInboxSources,
 } from "@workbench/shared";
 import type { HubDb } from "../db";
 import { deliverInboxItems } from "../lib/inbox-delivery";
 import type { MailboxEventBus } from "../lib/mailbox-events";
 import { isMemberSelfServiceCapabilityActive } from "../lib/capability-grants";
-import { readMemberPreferences } from "../lib/member-preferences";
+import {
+  mergeMemberPreferences,
+  readMemberPreferences,
+} from "../lib/member-preferences";
 import {
   resolveMemberOrTenantToolCredential,
   resolveTenantToolCredential,
@@ -38,6 +42,21 @@ const DEFAULT_TICK_INTERVAL_MS = 60_000;
 const DEFAULT_LOOKBACK_MS = 24 * 60 * 60 * 1000;
 const DEFAULT_PER_SOURCE_LIMIT = 25;
 const FETCH_TIMEOUT_MS = 20_000;
+
+// Linear one-time backfill on first enable (CL-3577): widens the cutoff for
+// exactly one poll — the first one after the member enables the source — per
+// `inboxSource:linear:backfill` ("7d" | "30d"; "none"/unset applies no
+// widening). `LINEAR_BACKFILL_APPLIED_PREFERENCE_KEY` is a stamped marker
+// (mirrors `onboarding.welcomeSentAt`'s pattern) written once the first poll
+// completes so every later tick — including a later disable/re-enable —
+// falls back to the normal lookback/lastPollAt cutoff.
+const LINEAR_SOURCE_KEY = "linear";
+const LINEAR_BACKFILL_APPLIED_PREFERENCE_KEY =
+  "inboxSource:linear:backfillAppliedAt";
+const LINEAR_BACKFILL_WINDOW_MS: Readonly<Record<string, number>> = {
+  "7d": 7 * 24 * 60 * 60 * 1000,
+  "30d": 30 * 24 * 60 * 60 * 1000,
+};
 
 export interface InboxIntakeDeps {
   db: HubDb;
@@ -328,8 +347,39 @@ export function createInboxIntake(deps: InboxIntakeDeps): InboxIntake {
           ownerEnabled = false;
         }
         if (!ownerEnabled) continue;
+
+        // Linear one-time backfill (CL-3577): widen this poll's cutoff only
+        // while the member has never had a Linear poll complete before.
+        const isFirstLinearPoll =
+          sourceKey === LINEAR_SOURCE_KEY &&
+          typeof prefs[LINEAR_BACKFILL_APPLIED_PREFERENCE_KEY] !== "string";
+        let sourceCutoff = cutoff;
+        if (isFirstLinearPoll) {
+          const backfill = prefs[LINEAR_BACKFILL_PREFERENCE_KEY];
+          const windowMs =
+            typeof backfill === "string"
+              ? LINEAR_BACKFILL_WINDOW_MS[backfill]
+              : undefined;
+          if (windowMs !== undefined) {
+            const widened = new Date(now() - windowMs);
+            if (widened < sourceCutoff) sourceCutoff = widened;
+          }
+        }
+
         try {
-          await runMemberSource(member, entry, cutoff);
+          await runMemberSource(member, entry, sourceCutoff);
+          if (isFirstLinearPoll) {
+            await mergeMemberPreferences(
+              deps.db,
+              member.tenantId,
+              member.memberPrincipalId,
+              {
+                [LINEAR_BACKFILL_APPLIED_PREFERENCE_KEY]: new Date(
+                  now(),
+                ).toISOString(),
+              },
+            );
+          }
         } catch (err) {
           log.error("inbox intake: source failed", {
             tenantId: member.tenantId,

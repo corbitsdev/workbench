@@ -251,26 +251,37 @@ export function briefSourcePreferenceKey(sourceKey: string): string {
 /**
  * Catalog of sources the inbox can pull from. A source eligible for the
  * brief is eligible for the inbox — both dimensions are derived from the
- * same `briefSource`-tagged `CREDENTIAL_PROVIDER_CATALOG` entries; there is
- * no separate `inboxSource` tag on the catalog today. If inbox eligibility
- * ever needs to diverge from brief eligibility (a source that can feed the
- * inbox but not the brief, or vice versa), add a dedicated `inboxSource` tag
- * to `CredentialProviderCatalogEntry` and derive this catalog from it
- * instead of re-using `BRIEF_SOURCE_CATALOG`.
+ * same `briefSource`-tagged `CREDENTIAL_PROVIDER_CATALOG` entries. If inbox
+ * eligibility ever needs to diverge from brief eligibility (a source that can
+ * feed the inbox but not the brief, or vice versa), gate this filter on a
+ * dedicated eligibility tag rather than re-using `briefSource !== undefined`.
+ * (Copy already diverges per-source via `inboxSource.description` below —
+ * that tag governs copy only, not eligibility.)
  *
  * Every inbox source defaults OFF (CL-3577): intake is strictly opt-in, so a
  * member's inbox pulls from a source only once they explicitly enable it —
  * mirroring the brief sources, which are likewise opt-in.
+ *
+ * Copy is inbox-specific (`CredentialProviderCatalogEntry.inboxSource.description`)
+ * where a source's catalog entry sets it, falling back to the shared
+ * brief-source description otherwise — see `inboxSource` on
+ * `CredentialProviderCatalogEntry` in `credential-provider-catalog.ts`.
  */
 export const INBOX_SOURCE_CATALOG: readonly {
   key: string;
   label: string;
   description: string;
   defaultEnabled: boolean;
-}[] = BRIEF_SOURCE_CATALOG.map((source) => ({
-  key: source.key,
-  label: source.label,
-  description: source.description,
+}[] = CREDENTIAL_PROVIDER_CATALOG.filter(
+  (
+    entry,
+  ): entry is typeof entry & {
+    briefSource: NonNullable<typeof entry.briefSource>;
+  } => entry.briefSource !== undefined,
+).map((entry) => ({
+  key: entry.providerName,
+  label: entry.label,
+  description: entry.inboxSource?.description ?? entry.briefSource.description,
   defaultEnabled: false,
 }));
 
@@ -376,11 +387,63 @@ const CONNECTION_CAPABILITY_ENTRIES: readonly PreferenceEntry[] =
     category: "Inbox",
   }));
 
+/**
+ * Linear inbox-source options (CL-3577): member-level config surfaced under
+ * the Linear row in Settings → Inbox, visible only while that source is
+ * enabled (the web checks `inboxSourcePreferenceKey("linear")`, since
+ * `availableWhen` has no "source enabled" signal kind).
+ *
+ * `inboxSource:linear:scope` narrows what counts as "Linear activity" for the
+ * inbox: `assigned` (default) is issues assigned to the member plus their
+ * mentions/notifications; `all` is every activity on issues they're involved
+ * in. `inboxSource:linear:backfill` is a one-time backfill window applied on
+ * the FIRST poll after the member enables the source — `none` (default),
+ * `7d`, or `30d` — after which normal 24h/lastPollAt behavior takes over. See
+ * `apps/hub/src/services/inbox-intake.ts` for consumption.
+ */
+export const LINEAR_SCOPE_PREFERENCE_KEY = "inboxSource:linear:scope";
+export const LINEAR_BACKFILL_PREFERENCE_KEY = "inboxSource:linear:backfill";
+
+export const LINEAR_SCOPE_OPTIONS = [
+  { value: "assigned", label: "Assigned issues + mentions" },
+  { value: "all", label: "All activity on issues you're involved in" },
+] as const;
+
+export const LINEAR_BACKFILL_OPTIONS = [
+  { value: "none", label: "None — start from now" },
+  { value: "7d", label: "Last 7 days" },
+  { value: "30d", label: "Last 30 days" },
+] as const;
+
+const LINEAR_SOURCE_OPTION_ENTRIES: readonly PreferenceEntry[] = [
+  {
+    key: LINEAR_SCOPE_PREFERENCE_KEY,
+    type: "select",
+    default: "assigned",
+    label: "Linear activity scope",
+    description:
+      "Which Linear activity counts as inbox-worthy: assigned issues and mentions, or all activity on issues you're involved in.",
+    category: "Inbox",
+    options: [...LINEAR_SCOPE_OPTIONS],
+  },
+  {
+    key: LINEAR_BACKFILL_PREFERENCE_KEY,
+    type: "select",
+    default: "none",
+    label: "Linear backfill on enable",
+    description:
+      "One-time lookback window applied the first time you enable Linear — after that, only new activity lands in your inbox.",
+    category: "Inbox",
+    options: [...LINEAR_BACKFILL_OPTIONS],
+  },
+];
+
 export const PREFERENCE_REGISTRY: readonly PreferenceEntry[] = [
   ...PREFERENCE_REGISTRY_BASE,
   ...BRIEF_SOURCE_ENTRIES,
   ...INBOX_SOURCE_ENTRIES,
   ...CONNECTION_CAPABILITY_ENTRIES,
+  ...LINEAR_SOURCE_OPTION_ENTRIES,
 ];
 
 const registryByKey = new Map(PREFERENCE_REGISTRY.map((e) => [e.key, e]));
@@ -424,6 +487,12 @@ export function preferenceValueSchema(entry: PreferenceEntry) {
  * ISO timestamp, not an editable control. It is the idempotency guard for
  * the one-time welcome mail (CL-3448) — `deliverWelcomeMail` is its only
  * writer, set once the mail is durably written to the member's mailbox.
+ *
+ * `inboxSource:linear:backfillAppliedAt` rides this list for the same reason:
+ * a stamped ISO timestamp, not an editable control. It is the idempotency
+ * guard for the one-time Linear backfill on enable (CL-3577) —
+ * `apps/hub/src/services/inbox-intake.ts` is its only writer, set once the
+ * first poll after enabling completes.
  */
 export const NON_REGISTRY_PREFERENCE_KEYS = [
   "theme",
@@ -437,6 +506,7 @@ export const NON_REGISTRY_PREFERENCE_KEYS = [
   "skillsViewMode",
   "changelogSeenVersion",
   "onboarding.welcomeSentAt",
+  "inboxSource:linear:backfillAppliedAt",
 ] as const;
 
 function isNonRegistryKey(key: string): boolean {
