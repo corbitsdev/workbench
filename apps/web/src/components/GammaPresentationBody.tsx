@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useEffect, useState } from "react";
 import { type } from "arktype";
 import { GammaPresentationContentSchema } from "@workbench/shared";
 import { buildApiUrl } from "../lib/api";
@@ -26,13 +26,44 @@ export default function GammaPresentationBody({
   artifactId,
   hasPdf,
 }: GammaPresentationBodyProps) {
+  const showPdf = hasPdf === true && artifactId !== undefined;
+  // The download route sets `Content-Disposition: attachment` unless asked for
+  // `inline` (and only ever obliges for a PDF). An attachment can't render in
+  // an iframe, but it fires no error event either — so a plain <iframe src>
+  // would render a silent blank box on any failure. Probe with a real fetch
+  // first and only mount the iframe on success; render the fallback on any
+  // failure instead of relying on an iframe error handler that never fires.
+  const downloadUrl = showPdf
+    ? buildApiUrl(`/artifacts/${artifactId}/download`)
+    : undefined;
+  const inlineUrl = showPdf
+    ? buildApiUrl(`/artifacts/${artifactId}/download?inline=1`)
+    : undefined;
   const [pdfLoadFailed, setPdfLoadFailed] = useState(false);
-  const pdfIframeRef = useCallback((node: HTMLIFrameElement | null) => {
-    if (node === null) return;
-    node.addEventListener("error", () => setPdfLoadFailed(true), {
-      once: true,
-    });
-  }, []);
+  const [pdfReady, setPdfReady] = useState(false);
+
+  useEffect(() => {
+    if (inlineUrl === undefined) return;
+    let cancelled = false;
+    setPdfReady(false);
+    setPdfLoadFailed(false);
+    fetch(inlineUrl, { credentials: "include" })
+      .then((res) => {
+        if (cancelled) return;
+        if (res.ok) {
+          setPdfReady(true);
+        } else {
+          setPdfLoadFailed(true);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setPdfLoadFailed(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [inlineUrl]);
+
   let raw: unknown;
   try {
     raw = JSON.parse(content);
@@ -51,13 +82,8 @@ export default function GammaPresentationBody({
   }
   if (!isHttps) return invalid();
 
-  const showPdf = hasPdf === true && artifactId !== undefined;
-  const downloadUrl = showPdf
-    ? buildApiUrl(`/artifacts/${artifactId}/download`)
-    : undefined;
-
   function renderBody() {
-    if (!showPdf || downloadUrl === undefined) {
+    if (!showPdf || inlineUrl === undefined) {
       return <PresentationBody url={deck.url} />;
     }
     if (pdfLoadFailed) {
@@ -67,11 +93,18 @@ export default function GammaPresentationBody({
         </p>
       );
     }
+    if (!pdfReady) {
+      return <p className="text-sm text-text-3 p-4">Loading presentation…</p>;
+    }
     return (
       <iframe
-        ref={pdfIframeRef}
-        src={downloadUrl}
+        src={inlineUrl}
         title="Presentation PDF"
+        // Chrome's built-in PDF viewer needs `allow-same-origin` to render —
+        // a fully empty sandbox blocks it, showing a blank frame with no
+        // error. No other flag is granted: no scripts, no popups, no forms,
+        // no top navigation — a PDF has none of those to begin with.
+        sandbox="allow-same-origin"
         className="min-h-[28rem] h-[min(75vh,900px)] max-h-[900px] w-full rounded border border-border bg-surface"
       />
     );

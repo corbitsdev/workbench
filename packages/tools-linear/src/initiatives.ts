@@ -11,6 +11,7 @@ import {
   MAX_LIST_LIMIT,
   optionalString,
   parseArgs,
+  requireMutationSuccess,
   type LinearToolsConfig,
 } from "./shared";
 
@@ -87,7 +88,7 @@ export async function saveInitiative(
       { id: args.id, input },
       signal,
     );
-    return data.initiativeUpdate ?? { success: false };
+    return requireMutationSuccess(data, "initiativeUpdate");
   }
   const data = await fetchLinearGraphQL(
     config,
@@ -95,7 +96,7 @@ export async function saveInitiative(
     { input },
     signal,
   );
-  return data.initiativeCreate ?? { success: false };
+  return requireMutationSuccess(data, "initiativeCreate");
 }
 
 export const LINEAR_LIST_INITIATIVES_DEFINITION: ToolDefinition = {

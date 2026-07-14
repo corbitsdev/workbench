@@ -11,6 +11,7 @@ import {
   MAX_LIST_LIMIT,
   optionalString,
   parseArgs,
+  requireMutationSuccess,
   type LinearToolsConfig,
 } from "./shared";
 
@@ -119,7 +120,7 @@ export async function saveProject(
       { id: args.id, input },
       signal,
     );
-    return data.projectUpdate ?? { success: false };
+    return requireMutationSuccess(data, "projectUpdate");
   }
   const data = await fetchLinearGraphQL(
     config,
@@ -127,7 +128,7 @@ export async function saveProject(
     { input },
     signal,
   );
-  return data.projectCreate ?? { success: false };
+  return requireMutationSuccess(data, "projectCreate");
 }
 
 export const LINEAR_LIST_PROJECTS_DEFINITION: ToolDefinition = {

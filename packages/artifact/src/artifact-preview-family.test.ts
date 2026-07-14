@@ -40,9 +40,25 @@ describe("artifactPreviewFamily", () => {
 describe("previewExcerpt", () => {
   it("truncates long content with an ellipsis", () => {
     const long = "word ".repeat(40);
-    const out = previewExcerpt(long, 20);
+    const out = previewExcerpt(long, { max: 20 });
     expect(out.length).toBeLessThanOrEqual(20);
     expect(out.endsWith("…")).toBe(true);
+  });
+
+  it("cleans markdown syntax before truncating", () => {
+    expect(previewExcerpt("# Heading\n**bold** text")).toBe(
+      "Heading bold text",
+    );
+  });
+
+  it("resolves JSON content through its summary field instead of raw syntax", () => {
+    expect(previewExcerpt('{"summary": "Key finding"}')).toBe("Key finding");
+  });
+
+  it("falls back to the artifact title when JSON has no summary field", () => {
+    expect(previewExcerpt('{"id": 1}', { fallbackTitle: "Data Export" })).toBe(
+      "Data Export",
+    );
   });
 });
 

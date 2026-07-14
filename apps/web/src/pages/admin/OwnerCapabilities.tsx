@@ -4,13 +4,18 @@ import { useState } from "react";
 import { Button } from "@workbench/ui";
 import { adminTableCard } from "./admin-ui";
 import { CredentialRow } from "./CredentialRow";
-import type { OwnerCapabilityState } from "@workbench/shared";
+import type {
+  OwnerCapabilityState,
+  OwnerInboxSourcesResponse,
+} from "@workbench/shared";
 import {
   getOwnerCapabilities,
   getOwnerCredentials,
   getOwnerFeatures,
+  getOwnerInboxSources,
   setOwnerCapabilityEnabled,
   setOwnerFeatureEnabled,
+  setOwnerInboxSourceEnabled,
 } from "../../lib/hub-api";
 
 // Integrations/tools the workbench exposes with a dedicated sub-page. Add a
@@ -56,6 +61,45 @@ export function OwnerCapabilities() {
       queryClient.invalidateQueries({ queryKey: ["owner", "features"] }),
     onError: () =>
       setFeatureError("Could not update the feature. Try again in a moment."),
+  });
+
+  const [inboxSourceError, setInboxSourceError] = useState<string | null>(null);
+  const inboxSources = useQuery({
+    queryKey: ["owner", "inbox-sources"],
+    queryFn: getOwnerInboxSources,
+    staleTime: 5 * 60_000,
+  });
+  const toggleInboxSource = useMutation<
+    unknown,
+    Error,
+    { key: string; enabled: boolean },
+    { previous: OwnerInboxSourcesResponse | undefined }
+  >({
+    mutationFn: ({ key, enabled }) => setOwnerInboxSourceEnabled(key, enabled),
+    onMutate: async ({ key, enabled }) => {
+      const queryKey = ["owner", "inbox-sources"];
+      await queryClient.cancelQueries({ queryKey });
+      const previous =
+        queryClient.getQueryData<OwnerInboxSourcesResponse>(queryKey);
+      if (previous) {
+        queryClient.setQueryData<OwnerInboxSourcesResponse>(queryKey, {
+          sources: previous.sources.map((s) =>
+            s.key === key ? { ...s, enabled } : s,
+          ),
+        });
+      }
+      return { previous };
+    },
+    onError: (_error, _vars, context) => {
+      if (context?.previous) {
+        queryClient.setQueryData(["owner", "inbox-sources"], context.previous);
+      }
+      setInboxSourceError(
+        "Could not update the inbox source. Try again in a moment.",
+      );
+    },
+    onSettled: () =>
+      queryClient.invalidateQueries({ queryKey: ["owner", "inbox-sources"] }),
   });
 
   const [oauthError, setOauthError] = useState<string | null>(null);
@@ -149,12 +193,74 @@ export function OwnerCapabilities() {
       </div>
 
       <div>
+        <h2 className="mb-2 text-sm font-semibold text-text">Inbox sources</h2>
+        <p className="mb-2 text-sm text-text-2">
+          Which intake sources members may pull into their inbox. Disabling a
+          source hides it from every member&apos;s Settings and stops all intake
+          for it; re-enabling restores each member&apos;s previous choice.
+        </p>
+        {inboxSourceError && (
+          <p className="mb-2 text-sm text-red" role="status">
+            {inboxSourceError}
+          </p>
+        )}
+        {inboxSources.isLoading ? (
+          <p className="p-3 text-sm text-text-2">Loading…</p>
+        ) : inboxSources.isError || !inboxSources.data ? (
+          <p className="p-3 text-sm text-text-2">
+            Could not load inbox sources. Try again in a moment.
+          </p>
+        ) : inboxSources.data.sources.length === 0 ? (
+          <p className="p-3 text-sm text-text-2">
+            No inbox sources are configurable for this workbench yet.
+          </p>
+        ) : (
+          <div className={adminTableCard}>
+            <ul className="divide-y divide-border">
+              {inboxSources.data.sources.map((s) => (
+                <li
+                  key={s.key}
+                  className="flex items-center justify-between gap-4 p-3"
+                >
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium text-text">{s.label}</p>
+                    <p className="mt-0.5 text-xs text-text-2">
+                      {s.description}
+                    </p>
+                    <p className="mt-0.5 text-xs text-text-3">
+                      {s.enabled ? "Enabled" : "Disabled"}
+                    </p>
+                  </div>
+                  <Button
+                    type="button"
+                    variant={s.enabled ? "ghost" : "primary"}
+                    size="sm"
+                    disabled={toggleInboxSource.isPending}
+                    onClick={() => {
+                      setInboxSourceError(null);
+                      toggleInboxSource.mutate({
+                        key: s.key,
+                        enabled: !s.enabled,
+                      });
+                    }}
+                  >
+                    {s.enabled ? "Disable" : "Enable"}
+                  </Button>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+      </div>
+
+      <div>
         <h2 className="mb-2 text-sm font-semibold text-text">
           Member connections
         </h2>
         <p className="mb-2 text-sm text-text-2">
           Which OAuth providers members can connect from Settings → Connections.
-          Hiding a provider removes it from Settings → Connections for every member.
+          Hiding a provider removes it from Settings → Connections for every
+          member.
         </p>
         {oauthError && (
           <p className="mb-2 text-sm text-red" role="status">

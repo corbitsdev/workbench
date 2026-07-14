@@ -1191,6 +1191,46 @@ describe("error handling", () => {
     expect(result.content).toContain("Attio API error: 502 Bad Gateway");
   });
 
+  it("surfaces the Attio response body message even when the HTTP status text is non-empty", async () => {
+    // Real fetch() implementations (undici/Bun's own client, browsers) populate
+    // `statusText` from the actual HTTP reason phrase (e.g. "Bad Request" for a
+    // 400), unlike the bare `new Response(...)` used in other tests here which
+    // defaults statusText to "". A create-record call rejected by Attio for a
+    // real reason (e.g. an invalid select option) must surface that reason, not
+    // the generic reason phrase.
+    const fetcher: AttioFetch = mock(() =>
+      Promise.resolve(
+        new Response(
+          JSON.stringify({
+            message: 'Invalid value for attribute "stage": no such option',
+          }),
+          {
+            status: 400,
+            statusText: "Bad Request",
+            headers: { "Content-Type": "application/json" },
+          },
+        ),
+      ),
+    );
+    const runner = createToolRunner(
+      createAttioTools({ apiKey: "test-key", fetcher }),
+    );
+
+    const result = await runner.run(
+      {
+        id: "call_1",
+        name: "attio_create_record",
+        arguments: { object: "deals", values: { stage: "Abridge Test Stage" } },
+      },
+      new AbortController().signal,
+    );
+
+    expect(result.isError).toBe(true);
+    expect(result.content).toContain(
+      'Invalid value for attribute "stage": no such option',
+    );
+  });
+
   it("surfaces a non-JSON error body verbatim", async () => {
     const fetcher: AttioFetch = mock(() =>
       Promise.resolve(

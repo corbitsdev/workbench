@@ -21,8 +21,12 @@ let oauthCapabilitiesOutcome: Outcome = {
   kind: "resolve",
   data: { capabilities: [] },
 };
+let inboxSourcesOutcome: Outcome = { kind: "resolve", data: { sources: [] } };
 const setOwnerFeatureEnabledMock = mock(
   async (name: string, enabled: boolean) => ({ name, enabled }),
+);
+const setOwnerInboxSourceEnabledMock = mock(
+  async (key: string, enabled: boolean) => ({ key, enabled }),
 );
 const setOwnerCapabilityEnabledMock = mock(
   async (provider: string, enabled: boolean) => ({ provider, enabled }),
@@ -45,6 +49,9 @@ mock.module("../../lib/hub-api", () => ({
   getOwnerCapabilities: () => resolveOutcome(oauthCapabilitiesOutcome),
   setOwnerCapabilityEnabled: (provider: string, enabled: boolean) =>
     setOwnerCapabilityEnabledMock(provider, enabled),
+  getOwnerInboxSources: () => resolveOutcome(inboxSourcesOutcome),
+  setOwnerInboxSourceEnabled: (key: string, enabled: boolean) =>
+    setOwnerInboxSourceEnabledMock(key, enabled),
 }));
 
 import { OwnerCapabilities } from "./OwnerCapabilities";
@@ -66,8 +73,10 @@ afterEach(() => {
   credentialsOutcome = { kind: "resolve", data: [] };
   featuresOutcome = { kind: "resolve", data: { features: [] } };
   oauthCapabilitiesOutcome = { kind: "resolve", data: { capabilities: [] } };
+  inboxSourcesOutcome = { kind: "resolve", data: { sources: [] } };
   setOwnerFeatureEnabledMock.mockClear();
   setOwnerCapabilityEnabledMock.mockClear();
+  setOwnerInboxSourceEnabledMock.mockClear();
 });
 
 describe("OwnerCapabilities", () => {
@@ -178,6 +187,68 @@ describe("OwnerCapabilities", () => {
         true,
       ),
     );
+  });
+
+  it("lists inbox sources and toggles one, calling the hub API with the flipped state", async () => {
+    inboxSourcesOutcome = {
+      kind: "resolve",
+      data: {
+        sources: [
+          {
+            key: "granola",
+            label: "Granola",
+            description: "Call notes from meetings.",
+            enabled: true,
+          },
+        ],
+      },
+    };
+    renderCapabilities();
+    await waitFor(() => expect(screen.getByText("Granola")));
+    expect(screen.getByText("Inbox sources"));
+    screen.getByRole("button", { name: "Disable" }).click();
+    await waitFor(() =>
+      expect(setOwnerInboxSourceEnabledMock).toHaveBeenCalledWith(
+        "granola",
+        false,
+      ),
+    );
+  });
+
+  it("optimistically flips the inbox source status label before the mutation resolves, and rolls back on failure", async () => {
+    inboxSourcesOutcome = {
+      kind: "resolve",
+      data: {
+        sources: [
+          {
+            key: "granola",
+            label: "Granola",
+            description: "Call notes from meetings.",
+            enabled: true,
+          },
+        ],
+      },
+    };
+    let resolveToggle: (() => void) | undefined;
+    setOwnerInboxSourceEnabledMock.mockImplementationOnce(
+      () =>
+        new Promise((_resolve, reject) => {
+          resolveToggle = () => reject(new Error("boom"));
+        }),
+    );
+    renderCapabilities();
+    await waitFor(() => expect(screen.getByText("Granola")));
+    screen.getByRole("button", { name: "Disable" }).click();
+
+    await waitFor(() => expect(screen.getByText("Disabled")));
+
+    resolveToggle?.();
+    await waitFor(() => expect(screen.getByText("Enabled")));
+    expect(
+      screen.getByText(
+        "Could not update the inbox source. Try again in a moment.",
+      ),
+    ).toBeDefined();
   });
 
   it("toggles an OAuth capability on click, calling the hub API with the flipped state", async () => {

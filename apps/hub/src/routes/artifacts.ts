@@ -1062,7 +1062,13 @@ export function createArtifactsRouter(
     // File/image artifacts (POST /artifacts/upload) carry their binary in the
     // `upload` table, referenced by `source.upload.id`. Stream those bytes back
     // with the stored content type. Always `attachment` so user-supplied bytes
-    // never execute inline on the app origin.
+    // never execute inline on the app origin — EXCEPT a PDF requested with
+    // `?inline=1`: a PDF renders in the browser's built-in viewer (no script
+    // execution) rather than an origin-execution context, so it is safe to
+    // hand back `inline` and let it render inside an iframe (e.g. a Gamma deck
+    // preview). Any other mime type stays `attachment` regardless of the
+    // param. `X-Content-Type-Options: nosniff` still pins the declared type so
+    // the browser never re-sniffs the bytes as something else.
     const uploadId = uploadIdFromSource(art.source);
     if (uploadId) {
       const uploadRow = await db.query.upload.findFirst({
@@ -1071,15 +1077,18 @@ export function createArtifactsRouter(
       if (!uploadRow || uploadRow.tenantId !== userContext.tenantId) {
         return c.json({ error: "Upload not found" }, 404);
       }
-      c.header(
-        "Content-Type",
+      const mimeType =
         uploadRow.mimeType.length > 0
           ? uploadRow.mimeType
-          : "application/octet-stream",
-      );
+          : "application/octet-stream";
+      c.header("Content-Type", mimeType);
+      c.header("X-Content-Type-Options", "nosniff");
+      const wantsInline = c.req.query("inline") === "1";
+      const disposition =
+        wantsInline && mimeType === "application/pdf" ? "inline" : "attachment";
       c.header(
         "Content-Disposition",
-        `attachment; filename="${uploadDownloadFilename(uploadRow.filename)}"`,
+        `${disposition}; filename="${uploadDownloadFilename(uploadRow.filename)}"`,
       );
       const bytes = Uint8Array.from(uploadRow.content);
       return c.body(bytes.buffer as ArrayBuffer);
