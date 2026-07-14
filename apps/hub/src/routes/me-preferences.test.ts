@@ -215,7 +215,7 @@ describe("GET /api/v1/me/brief-sources", () => {
     });
   }
 
-  it("returns a source whose provider is configured for the tenant", async () => {
+  it("returns a source whose provider is configured for the tenant, disabled by default", async () => {
     member = { tenantId: "ten-1", principalId: "pri-1" };
     availableProviderNames = new Set(["granola"]);
     readMemberPreferences.mockResolvedValueOnce({});
@@ -225,7 +225,7 @@ describe("GET /api/v1/me/brief-sources", () => {
       sources: { key: string; enabled: boolean; description: string }[];
     };
     expect(body.sources.map((s) => s.key)).toEqual(["granola"]);
-    expect(body.sources[0]?.enabled).toBe(true);
+    expect(body.sources[0]?.enabled).toBe(false);
     expect(body.sources[0]?.description).toBe(
       "Call notes from meetings since your last brief.",
     );
@@ -267,7 +267,7 @@ describe("GET /api/v1/me/inbox-sources", () => {
     });
   }
 
-  it("returns a source whose provider is configured for the tenant, enabled by default", async () => {
+  it("returns a source whose provider is configured for the tenant, disabled by default", async () => {
     member = { tenantId: "ten-1", principalId: "pri-1" };
     availableProviderNames = new Set(["granola"]);
     readMemberPreferences.mockResolvedValueOnce({});
@@ -277,7 +277,7 @@ describe("GET /api/v1/me/inbox-sources", () => {
       sources: { key: string; enabled: boolean }[];
     };
     expect(body.sources.map((s) => s.key)).toEqual(["granola"]);
-    expect(body.sources[0]?.enabled).toBe(true);
+    expect(body.sources[0]?.enabled).toBe(false);
   });
 
   it("omits a source whose provider has no configured credential", async () => {
