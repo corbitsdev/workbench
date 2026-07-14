@@ -174,7 +174,7 @@ describe("MomentWalker", () => {
     within(panel).getByText("Errored");
   });
 
-  it("surfaces honest attribution gaps on a tool_call moment", async () => {
+  it("shows a quiet absence for records touched on a tool_call moment", async () => {
     activityEntries = ENTRIES;
     detailResult = {
       kind: "tool_call",
@@ -193,9 +193,10 @@ describe("MomentWalker", () => {
 
     const panel = screen.getByTestId("moment-decomposition");
     await waitFor(() => within(panel).getByTestId("moment-records-gap"));
-    within(panel).getByTestId("moment-grant-gap");
-    within(panel).getByTestId("moment-tokens-gap");
-    within(panel).getByTestId("moment-cost-gap");
+    expect(within(panel).getByTestId("moment-records-gap").textContent).toBe(
+      "—",
+    );
+    expect(within(panel).queryByTestId("moment-grant-gap")).toBeNull();
   });
 
   it("does not mark a successful tool call as errored", async () => {

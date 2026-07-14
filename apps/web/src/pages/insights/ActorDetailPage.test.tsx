@@ -213,8 +213,8 @@ describe("ActorDetailPage", () => {
     expect(screen.queryByRole("listbox")).toBeNull();
     // A needs-approval grant reads as "Needs approval", never "Blocked".
     screen.getByText("Needs approval");
-    // Grant usage is an honest gap, never a fabricated count.
-    expect(screen.getAllByTestId("grant-used-gap").length).toBe(1);
+    // Grant usage is not persisted — the Used column stays empty.
+    expect(screen.queryByTestId("grant-used-gap")).toBeNull();
   });
 
   it("switches the active facet when a tab is clicked", async () => {

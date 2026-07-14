@@ -76,11 +76,11 @@ function buildPrincipalSummary(
 }
 
 const FACETS: FacetDef[] = [
-  { id: "timeline", label: "Timeline", hasGap: true },
+  { id: "timeline", label: "Timeline", hasGap: false },
   { id: "roster", label: "Agents & workflows", hasGap: false },
-  { id: "grants", label: "Grants", hasGap: true },
-  { id: "tools", label: "Tools", hasGap: true },
-  { id: "cost", label: "Cost", hasGap: true },
+  { id: "grants", label: "Grants", hasGap: false },
+  { id: "tools", label: "Tools", hasGap: false },
+  { id: "cost", label: "Cost", hasGap: false },
   { id: "connections", label: "Connections", hasGap: false },
 ];
 

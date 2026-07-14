@@ -1,4 +1,5 @@
 import type { TimelineEntry } from "@workbench/client";
+import { deepLinkPath } from "@workbench/shared/deep-link";
 import { humanizeToken, parseToolResource } from "./activity-naming";
 
 /** A cross-link to another entity's own trace/detail surface. */
@@ -10,29 +11,17 @@ export interface EntityLink {
 /**
  * Cross-link a timeline moment to the entity's own trace/detail surface, when
  * one exists on real data today.
- *
- * Everything entity-shaped should be clickable, but a link is only honest when
- * the entry's `id` maps to a real route:
- * - `workflow_run` — the entry `id` IS the run-record id (see the timeline
- *   registry: `workflow_run_record.id`), so it deep-links to that run's trace.
- * - `artifact` — the entry `id` is the artifact primary key, matching
- *   `/artifacts/:artifactId`.
- *
- * An `artifact_version` entry carries the version id (not the artifact id) and
- * the timeline row exposes no artifact id, so we never guess a route for it —
- * likewise for kinds (session, tool_call, grant, …) that have no dedicated
- * destination page yet. Those render as plain references, never a dead link.
  */
 export function entityLinkForEntry(entry: TimelineEntry): EntityLink | null {
   if (entry.kind === "workflow_run") {
     return {
-      to: `/insights/trace/${encodeURIComponent(entry.id)}`,
+      to: deepLinkPath("workflow_trace", entry.id),
       label: "Open run trace",
     };
   }
   if (entry.kind === "artifact") {
     return {
-      to: `/artifacts/${encodeURIComponent(entry.id)}`,
+      to: deepLinkPath("artifact", entry.id),
       label: "Open artifact",
     };
   }
@@ -49,20 +38,9 @@ export const GRANT_EFFECT_LABEL: Record<GrantEffect, string> = {
   unknown: "Effect not recorded",
 };
 
-/**
- * The canonical, single-source parse of a grant timeline summary. The summary
- * is `<resource> <action> <origin> <effect>` (see the timeline registry) —
- * origin is optional so a legacy `<resource> <action> <effect>` row still
- * parses. The effect is ALWAYS the trailing token; the resource is ALWAYS the
- * first. Every grant-facing surface (Grants facet, moment decomposition,
- * activity headline) reads grants through this one function so they can never
- * disagree — the bug this replaces was two hand-rolled parses reporting
- * different effects for the same row when the action token was empty.
- */
 export interface ParsedGrant {
   resource: string;
   action: string;
-  /** Raw origin token (system/role/creator/invoker), or null if not recorded. */
   origin: string | null;
   effect: GrantEffect;
 }
@@ -82,25 +60,18 @@ export function parseGrant(entry: TimelineEntry): ParsedGrant {
   const resource = parts[0] ?? "";
   const action = parts[1] ?? "";
   const effect = effectFromToken(parts[parts.length - 1] ?? "");
-  // origin sits between action and effect — present only on 4-token rows.
   const origin = parts.length >= 4 ? (parts[parts.length - 2] ?? null) : null;
   return { resource, action, origin, effect };
 }
 
-/**
- * Plain-language, compliance-facing effect for a grant row. Never inferred for
- * a non-grant entry — the effect vocabulary only means anything on a grant.
- */
 export function grantEffect(entry: TimelineEntry): GrantEffect {
   return parseGrant(entry).effect;
 }
 
-/** Raw grant origin token (creator/role/invoker/system), or null. */
 export function grantOrigin(entry: TimelineEntry): string | null {
   return parseGrant(entry).origin;
 }
 
-/** Humanizes a grant resource id into a plain label (tool-aware). */
 export function grantResourceLabel(resource: string): string {
   const tool = parseToolResource(resource);
   if (tool !== null) {
@@ -109,11 +80,6 @@ export function grantResourceLabel(resource: string): string {
   return humanizeToken(resource);
 }
 
-/**
- * Human span between two ISO timestamps, or null when it cannot be trusted:
- * either boundary missing, or a non-finite/negative span (we never invent a
- * duration the record model does not support).
- */
 export function formatElapsedBetween(
   fromIso: string | undefined,
   toIso: string | undefined,
@@ -127,4 +93,56 @@ export function formatElapsedBetween(
   const minutes = Math.floor(seconds / 60);
   const rest = Math.round(seconds % 60);
   return `${minutes}m ${rest}s`;
+}
+
+export type TraceEntityType =
+  | "artifact"
+  | "workflow_run"
+  | "principal"
+  | "session"
+  | "mail";
+
+export type TraceEntityRef = {
+  type: TraceEntityType;
+  id: string;
+  label?: string;
+};
+
+export function entityLink(ref: TraceEntityRef): string {
+  switch (ref.type) {
+    case "artifact":
+      return deepLinkPath("artifact", ref.id);
+    case "workflow_run":
+      return deepLinkPath("workflow_trace", ref.id);
+    case "principal":
+      return `/insights/principal/${ref.id}`;
+    case "session":
+      return deepLinkPath("conversation", ref.id);
+    case "mail":
+      return deepLinkPath("mail", ref.id);
+    default: {
+      const _exhaustive: never = ref.type;
+      return _exhaustive;
+    }
+  }
+}
+
+export function entityLabel(ref: TraceEntityRef): string {
+  if (ref.label) return ref.label;
+  switch (ref.type) {
+    case "artifact":
+      return "Artifact";
+    case "workflow_run":
+      return "Workflow run";
+    case "principal":
+      return "Principal";
+    case "session":
+      return "Session";
+    case "mail":
+      return "Mail";
+    default: {
+      const _exhaustive: never = ref.type;
+      return _exhaustive;
+    }
+  }
 }

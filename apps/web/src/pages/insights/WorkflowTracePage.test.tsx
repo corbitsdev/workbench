@@ -221,9 +221,9 @@ describe("WorkflowTracePage", () => {
       screen.getByText(/Intake/);
     });
     await waitFor(() => {
-      screen.getByTestId("trace-payload");
+      screen.getByTestId("trace-output-tree");
     });
-    const payload = screen.getByTestId("trace-payload");
+    const payload = screen.getByTestId("trace-output-tree");
     expect(payload.textContent).toContain("items");
     expect(payload.textContent).toContain("collected");
     expect(screen.getAllByTestId("trace-step-decomposition").length).toBe(1);
@@ -290,7 +290,7 @@ describe("WorkflowTracePage", () => {
       expect(screen.getAllByTestId("trace-step").length).toBe(2);
     });
     await waitFor(() => {
-      expect(screen.getByTestId("trace-payload").textContent).toContain(
+      expect(screen.getByTestId("trace-output-tree").textContent).toContain(
         "decoded-ok",
       );
     });

@@ -49,6 +49,8 @@ const runRecordSchema = type({
   // deployment so the version badge does not depend on the grant-filtered
   // catalog list. Omitted for deployments that predate version capture.
   "meta?": workflowMetaSchema,
+  "principalId?": "string",
+  "ownerDisplayName?": "string",
 });
 
 function parseRunRecord(raw: unknown): RunRecord {
