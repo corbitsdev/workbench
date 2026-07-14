@@ -112,9 +112,11 @@ export function ExpandedChatOverlay({
 
 const MYRA: ChatAgentIdentity = { name: "Myra", tagline: "Personal agent" };
 
-// Myra runs on Kimi via the openai-compatible adapter, which reads images but
-// not documents; the gate resolves that to images-only. Undefined (attachments
-// hidden) if the capability ever resolves to none.
+// Myra runs on Kimi via the openai-compatible adapter, whose endpoint reads
+// neither images nor documents inline. The gate accepts both anyway — via the
+// File Parser divert path — and the composer routes every attachment through
+// /parse-file so Myra receives extracted text (see use-myra-session send).
+// Undefined (attachments hidden) only if the capability ever resolves to none.
 const MYRA_ATTACHMENT_POLICY = attachmentPolicyForAgent(MYRA.name);
 
 // Myra's file tools are private working memory (MEMORY.md, SCRATCHPAD.md).

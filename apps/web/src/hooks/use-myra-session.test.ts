@@ -805,6 +805,36 @@ describe("document diversion (CL-2628)", () => {
     expect(doc.parsedText).toBe("the parsed text");
   });
 
+  it("POSTs an image to the parse route too (never inline to Myra's text-only model)", async () => {
+    const fetchMock = mock((_m: string, _p: string, _b: unknown) =>
+      Promise.resolve({
+        artifactId: "art_img",
+        filename: "screenshot.png",
+        parsedText: "text extracted from the screenshot",
+      }),
+    );
+    const transport = {
+      fetch: fetchMock,
+      subscribe: () => () => {},
+    } as unknown as DeliverTransport;
+
+    const img = await parseDocumentAttachment(transport, "inst-1", {
+      filename: "screenshot.png",
+      mimeType: "image/png",
+      data: "BASE64",
+    });
+
+    expect(fetchMock.mock.calls[0]?.[1]).toBe(
+      "/api/v1/instances/inst-1/parse-file",
+    );
+    expect(img.parsedText).toBe("text extracted from the screenshot");
+    // Folded into a context block exactly like a document — this is what send()
+    // delivers as the message body, with no inline image attachment.
+    expect(composeWithDocumentContext("what is this?", [img])).toBe(
+      "<context>\n[Attached document: screenshot.png]\ntext extracted from the screenshot\n</context>\n\nwhat is this?",
+    );
+  });
+
   it("rejects a malformed parse response instead of trusting it", async () => {
     const transport = {
       fetch: mock(() => Promise.resolve({ artifactId: "art_1" })),

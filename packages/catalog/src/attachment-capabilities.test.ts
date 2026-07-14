@@ -24,19 +24,18 @@ describe("attachmentCapability", () => {
   });
 
   it("grants images-only on openai adapters for a vision model (adapter throws on documents)", () => {
-    // Kimi is vision-capable but rides the openai-compatible adapter, which
-    // cannot marshal documents — and opencode-zen rejects the `file` part.
-    expect(attachmentCapability("openai-compatible", "kimi-k2.6")).toBe(
-      "images-only",
-    );
     // Plain `openai` plugin throws on documents in the same adapter file.
     expect(attachmentCapability("openai", "gpt-5.5")).toBe("images-only");
   });
 
-  it("disables attachments for a text-only model on an openai adapter", () => {
+  it("disables native attachments for text-only openai-compatible models", () => {
     expect(attachmentCapability("openai-compatible", "deepseek-v4-flash")).toBe(
       "none",
     );
+    // Kimi K2 rides the openai-compatible endpoint, which rejects image_url
+    // parts with HTTP 400 — it is NOT vision-capable, so images must divert
+    // through the File Parser rather than ride inline.
+    expect(attachmentCapability("openai-compatible", "kimi-k2.6")).toBe("none");
   });
 
   it("fails closed to none for an unknown model on a non-document adapter", () => {
