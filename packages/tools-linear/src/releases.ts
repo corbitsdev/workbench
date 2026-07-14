@@ -11,6 +11,7 @@ import {
   MAX_LIST_LIMIT,
   optionalString,
   parseArgs,
+  requireMutationSuccess,
   type LinearToolsConfig,
 } from "./shared";
 
@@ -95,7 +96,7 @@ export async function saveRelease(
       { id: args.id, input },
       signal,
     );
-    return data.releaseUpdate ?? { success: false };
+    return requireMutationSuccess(data, "releaseUpdate");
   }
   const data = await fetchLinearGraphQL(
     config,
@@ -103,7 +104,7 @@ export async function saveRelease(
     { input },
     signal,
   );
-  return data.releaseCreate ?? { success: false };
+  return requireMutationSuccess(data, "releaseCreate");
 }
 
 export const LINEAR_LIST_RELEASES_DEFINITION: ToolDefinition = {

@@ -21,6 +21,7 @@ import {
   optionalString,
   optionalStringArray,
   parseArgs,
+  requireMutationSuccess,
   requireNonEmptyString,
   requireString,
   type LinearToolsConfig,
@@ -273,6 +274,7 @@ async function resolveWorkflowStateId(
 
 function buildIssueFilter(
   args: Record<string, unknown>,
+  briefShaped: boolean,
 ): Record<string, unknown> | null {
   const state = optionalString(args.state);
   const assignee = optionalString(args.assignee);
@@ -280,12 +282,7 @@ function buildIssueFilter(
   const cycle = optionalString(args.cycle);
   const label = optionalString(args.label);
   const query = optionalString(args.query);
-  const priority =
-    typeof args.priority === "number" && Number.isInteger(args.priority)
-      ? args.priority
-      : null;
-  const updatedAfter =
-    optionalString(args.updatedAfter) ?? optionalString(args.createdAfter);
+  const priority = optionalPriority(args.priority);
   const filter: Record<string, unknown> = {};
   if (state !== null) {
     filter.state = { name: { eqIgnoreCase: state } };
@@ -308,8 +305,22 @@ function buildIssueFilter(
   if (priority !== null) {
     filter.priority = { eq: priority };
   }
-  if (updatedAfter !== null) {
-    filter.updatedAt = { gt: updatedAfter };
+  if (briefShaped) {
+    // Brief path: createdAfter is a historical alias for the updatedAt bound.
+    const updatedAfter =
+      optionalString(args.updatedAfter) ?? optionalString(args.createdAfter);
+    if (updatedAfter !== null) {
+      filter.updatedAt = { gt: updatedAfter };
+    }
+  } else {
+    const updatedAfter = optionalString(args.updatedAfter);
+    const createdAfter = optionalString(args.createdAfter);
+    if (updatedAfter !== null) {
+      filter.updatedAt = { gt: updatedAfter };
+    }
+    if (createdAfter !== null) {
+      filter.createdAt = { gt: createdAfter };
+    }
   }
   return Object.keys(filter).length > 0 ? filter : null;
 }
@@ -340,10 +351,9 @@ export async function listIssues(
   );
   const teamId =
     optionalString(args.teamId) ?? optionalString(args.team);
-  const filter = buildIssueFilter(args);
-  const orderBy = buildOrderBy(args);
-
   const briefShaped = enabledSources !== undefined;
+  const filter = buildIssueFilter(args, briefShaped);
+  const orderBy = buildOrderBy(args);
   const shapeResult = (connection: unknown): unknown => {
     const shaped = connectionResult(connection);
     if (!briefShaped) return shaped;
@@ -502,7 +512,7 @@ export async function archiveIssue(
     { id: args.id },
     signal,
   );
-  return data.issueArchive ?? { success: false };
+  return requireMutationSuccess(data, "issueArchive");
 }
 
 export async function deleteIssue(
@@ -517,7 +527,7 @@ export async function deleteIssue(
     { id: args.id },
     signal,
   );
-  return data.issueDelete ?? { success: false };
+  return requireMutationSuccess(data, "issueDelete");
 }
 
 export async function linkIssues(
@@ -539,7 +549,7 @@ export async function linkIssues(
       { id: relationId },
       signal,
     );
-    return data.issueRelationDelete ?? { success: false };
+    return requireMutationSuccess(data, "issueRelationDelete");
   }
   const issueId = optionalString(args.issueId);
   const relatedIssueId = optionalString(args.relatedIssueId);
@@ -573,7 +583,7 @@ export async function linkIssues(
     },
     signal,
   );
-  return data.issueRelationCreate ?? { success: false };
+  return requireMutationSuccess(data, "issueRelationCreate");
 }
 
 export const LINEAR_LIST_ISSUES_DEFINITION: ToolDefinition = {
@@ -603,10 +613,14 @@ export const LINEAR_LIST_ISSUES_DEFINITION: ToolDefinition = {
         type: "string",
         description: "createdAt or updatedAt (descending).",
       },
-      updatedAfter: { type: "string", description: "ISO updatedAt lower bound." },
+      updatedAfter: {
+        type: "string",
+        description: "ISO updatedAt lower bound (updatedAt.gt).",
+      },
       createdAfter: {
         type: "string",
-        description: "Brief-internal updatedAt bound when updatedAfter absent.",
+        description:
+          "ISO createdAt lower bound (createdAt.gt). On brief-shaped calls (enabledSources present), falls back to updatedAt.gt when updatedAfter is absent.",
       },
       enabledSources: {
         type: "array",
