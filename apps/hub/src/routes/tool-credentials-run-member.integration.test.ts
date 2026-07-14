@@ -223,6 +223,39 @@ describe("POST /tools/credentials run-member isolation (CL-3525)", () => {
     expect(body.credentials.linear?.apiKey).toBe("linear-oauth-member-a");
   });
 
+  test("unknown workflowRunId falls back to tenant credential (no member OAuth)", async () => {
+    const body = await postCredentials({
+      tenantId: TENANT,
+      agentId: STEP_AGENT_ID,
+      providerNames: ["linear"],
+      workflowRunId: "run-does-not-exist",
+    });
+
+    expect(body.credentials.linear?.apiKey).toBe("tenant-shared-linear-key");
+  });
+
+  test("provisioning run without deploymentId does not bind member OAuth for step agent", async () => {
+    const runId = "run-provisioning-no-dep";
+    await db.insert(schema.workflowRunRecord).values({
+      id: runId,
+      deploymentId: null,
+      kind: "provisioning",
+      tenantId: TENANT,
+      principalId: MEMBER_A,
+      status: "running",
+    });
+
+    const body = await postCredentials({
+      tenantId: TENANT,
+      agentId: STEP_AGENT_ID,
+      providerNames: ["linear"],
+      workflowRunId: runId,
+    });
+
+    expect(body.credentials.linear?.apiKey).toBe("tenant-shared-linear-key");
+    expect(body.credentials.linear?.apiKey).not.toBe("linear-oauth-member-a");
+  });
+
   test("mismatched workflowRunId and step agent deployment skips member path (tenant fallback)", async () => {
     const runId = "run-other-dep";
     await db.insert(schema.workflowRunRecord).values({

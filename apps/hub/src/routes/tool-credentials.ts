@@ -138,6 +138,12 @@ export function createToolCredentialsRouter(
       if (!agentRow) {
         return c.json({ error: `Agent not found: ${parsed.agentId}` }, 404);
       }
+      if (agentRow.tenantId !== parsed.tenantId) {
+        return c.json(
+          { error: "Agent does not belong to the claimed tenant" },
+          403,
+        );
+      }
       const allowed = allowedProvidersForAgent(agentRow.toolPackages);
       const forbidden = parsed.providerNames.filter((p) => !allowed.has(p));
       if (forbidden.length > 0) {

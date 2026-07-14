@@ -19,7 +19,9 @@ export function stepAgentIdMatchesDeployment(
  * should be used for this tool-credentials request.
  *
  * Precedence:
- * 1. `workflowRunId` → run record `principalId` (run creator), with deployment/agent alignment.
+ * 1. `workflowRunId` → run record `principalId` (run creator) only when the run has a
+ *    non-empty `deploymentId` and the step `agentId` matches that deployment (fail closed
+ *    otherwise — tenant credential path, not member OAuth).
  * 2. Explicit `memberPrincipalId` when it is a user principal in the tenant.
  * 3. `agent_instance` row matching `agentId` (live session owner or step instance owner).
  */
@@ -41,11 +43,11 @@ export async function resolveToolCredentialMemberPrincipal(
       columns: { principalId: true, deploymentId: true },
     });
     if (!run) return null;
-    if (
-      run.deploymentId !== null &&
-      run.deploymentId.length > 0 &&
-      !stepAgentIdMatchesDeployment(args.agentId, run.deploymentId)
-    ) {
+    const deploymentId = run.deploymentId;
+    if (deploymentId === null || deploymentId.length === 0) {
+      return null;
+    }
+    if (!stepAgentIdMatchesDeployment(args.agentId, deploymentId)) {
       return null;
     }
     return run.principalId;
