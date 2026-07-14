@@ -1,6 +1,7 @@
 import { getLogger } from "@intx/log";
 import type { HubDb } from "../db";
 import type { MemberToolCredential } from "../lib/member-tool-credential";
+import { attioTaskSyncInboxSource } from "./inbox-sources/attio-task-sync";
 import { fetchLinearInboxItems } from "./inbox-sources/linear";
 
 /** A member the intake tick delivers to: their principal, external-account
@@ -147,4 +148,5 @@ export const linearInboxSource = defineFetchInboxSource(
  */
 export const INBOX_SOURCE_REGISTRY: readonly InboxSourceRegistryEntry[] = [
   linearInboxSource,
+  attioTaskSyncInboxSource,
 ];
