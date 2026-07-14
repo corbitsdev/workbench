@@ -52,6 +52,12 @@ const INBOX_VIEWS: { id: MailboxInboxView; label: string }[] = [
   { id: "trash", label: "Trash" },
 ];
 
+/** Shared compact control sizing for inbox rail tabs, bulk actions, and load-more. */
+const inboxCompactControlClass =
+  "inline-flex h-8 shrink-0 items-center justify-center rounded-lg px-3 text-xs font-medium transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-orange disabled:cursor-not-allowed disabled:opacity-50";
+
+const inboxMainPaneClass = "mx-auto max-w-[720px] px-6 py-5";
+
 export function InboxPage() {
   const { messageId } = useParams<{ messageId?: string }>();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -183,7 +189,7 @@ export function InboxPage() {
           to="/settings#morning-brief"
           title="Inbox settings"
           aria-label="Inbox settings"
-          className="grid h-7 w-7 place-items-center rounded-[8px] text-text-3 transition-colors hover:bg-page hover:text-text"
+          className="grid h-8 w-8 place-items-center rounded-lg text-text-3 transition-colors hover:bg-page hover:text-text"
         >
           <Settings size={15} aria-hidden="true" />
         </Link>
@@ -285,7 +291,12 @@ export function InboxPage() {
           ) : (
             <>
               {selectedTaskNotice && (
-                <p className="mx-auto max-w-[720px] px-8 pt-4 text-xs text-text-3">
+                <p
+                  className={cn(
+                    inboxMainPaneClass,
+                    "py-0 pt-3 text-xs text-text-3",
+                  )}
+                >
                   {selectedTaskNotice}
                 </p>
               )}
@@ -298,7 +309,7 @@ export function InboxPage() {
                 myPrincipalId={activeWorkbench?.id ?? null}
               />
               {nowReady ? (
-                <div className="mx-auto w-full max-w-[720px] px-8 pb-4">
+                <div className={cn(inboxMainPaneClass, "w-full py-0 pb-3")}>
                   <TasksPanel tasks={taskList ?? []} />
                 </div>
               ) : null}
@@ -401,13 +412,15 @@ function MessageList({
     return (
       <div className="px-3 py-6">
         <p className="text-sm text-text-2">Couldn't load your inbox.</p>
-        <button
+        <Button
           type="button"
+          variant="secondary"
+          size="sm"
+          className="mt-2 h-8 text-xs"
           onClick={onRetry}
-          className="mt-2 rounded-[10px] border border-border px-2.5 py-1.5 text-sm font-medium text-text transition-colors hover:bg-page"
         >
           Try again
-        </button>
+        </Button>
       </div>
     );
   }
@@ -619,7 +632,7 @@ function ReadingPane({
         animate={{ opacity: 1, y: 0 }}
         exit={reduceMotion ? undefined : { opacity: 0, y: -6 }}
         transition={{ duration: 0.2, ease: "easeOut" }}
-        className="mx-auto max-w-[720px] px-8 py-8"
+        className={inboxMainPaneClass}
       >
         {headerSource && (
           <>
@@ -697,15 +710,17 @@ interface LoadMoreControlProps {
 function LoadMoreControl({ hasMore, loading, onClick }: LoadMoreControlProps) {
   if (!hasMore) return null;
   return (
-    <div className="mx-auto max-w-[720px] px-8 pb-8">
-      <button
+    <div className={cn(inboxMainPaneClass, "py-0 pb-5")}>
+      <Button
         type="button"
+        variant="secondary"
+        size="sm"
+        className="h-8 w-full text-xs"
         onClick={onClick}
         disabled={loading}
-        className="w-full rounded-[10px] border border-border px-2.5 py-1.5 text-xs font-medium text-text-2 transition-colors hover:bg-page hover:text-text disabled:cursor-not-allowed disabled:opacity-60"
       >
         {loading ? "Loading…" : "Show older"}
-      </button>
+      </Button>
     </div>
   );
 }
@@ -760,7 +775,7 @@ function InboxViewTabs({
           onClick={() => onChange(tab.id)}
           aria-current={view === tab.id ? "page" : undefined}
           className={cn(
-            "rounded-[8px] px-2.5 py-1 text-xs font-medium transition-colors",
+            inboxCompactControlClass,
             view === tab.id
               ? "bg-page text-text"
               : "text-text-3 hover:bg-page hover:text-text-2",
@@ -770,13 +785,6 @@ function InboxViewTabs({
         </button>
       ))}
     </nav>
-  );
-}
-
-function inboxBulkLinkClass(disabled: boolean): string {
-  return cn(
-    "text-xs font-medium text-text-2 transition-colors hover:text-text",
-    disabled && "pointer-events-none opacity-40",
   );
 }
 
@@ -797,64 +805,76 @@ function InboxBulkBar({
   return (
     <div
       className={cn(
-        "flex min-h-[36px] flex-wrap items-center gap-x-3 gap-y-1 border-b border-border px-3 py-1.5 text-xs transition-opacity",
+        "flex min-h-8 flex-wrap items-center gap-x-2 gap-y-1 border-b border-border px-3 py-1.5 text-xs transition-opacity",
         active ? "opacity-100" : "pointer-events-none opacity-0",
       )}
       aria-hidden={!active}
     >
       <span className="font-medium text-text">{count} selected</span>
       {view === "trash" || view === "archived" ? (
-        <button
+        <Button
           type="button"
+          variant="ghost"
+          size="sm"
+          className="h-8 text-xs"
           disabled={busy}
-          className={inboxBulkLinkClass(busy)}
           onClick={() => onBulk("restore")}
         >
           Restore
-        </button>
+        </Button>
       ) : (
         <>
-          <button
+          <Button
             type="button"
+            variant="ghost"
+            size="sm"
+            className="h-8 text-xs"
             disabled={busy}
-            className={inboxBulkLinkClass(busy)}
             onClick={() => onBulk("mark_read")}
           >
             Mark read
-          </button>
-          <button
+          </Button>
+          <Button
             type="button"
+            variant="ghost"
+            size="sm"
+            className="h-8 text-xs"
             disabled={busy}
-            className={inboxBulkLinkClass(busy)}
             onClick={() => onBulk("mark_unread")}
           >
             Mark unread
-          </button>
-          <button
+          </Button>
+          <Button
             type="button"
+            variant="ghost"
+            size="sm"
+            className="h-8 text-xs"
             disabled={busy}
-            className={inboxBulkLinkClass(busy)}
             onClick={() => onBulk("archive")}
           >
             Archive
-          </button>
-          <button
+          </Button>
+          <Button
             type="button"
+            variant="ghost"
+            size="sm"
+            className="h-8 text-xs"
             disabled={busy}
-            className={inboxBulkLinkClass(busy)}
             onClick={() => onBulk("trash")}
           >
             Trash
-          </button>
+          </Button>
         </>
       )}
-      <button
+      <Button
         type="button"
-        className="text-text-3 hover:text-text"
+        variant="ghost"
+        size="sm"
+        className="h-8 text-xs text-text-3 hover:text-text"
         onClick={onClear}
       >
         Clear
-      </button>
+      </Button>
     </div>
   );
 }
@@ -881,6 +901,7 @@ function InboxMessageActions({
         <Button
           size="sm"
           variant="secondary"
+          className="h-8 text-xs"
           disabled={busy}
           onClick={onRestore}
         >
@@ -891,6 +912,7 @@ function InboxMessageActions({
           <Button
             size="sm"
             variant="secondary"
+            className="h-8 text-xs"
             disabled={busy}
             onClick={onMarkUnread}
           >
@@ -899,6 +921,7 @@ function InboxMessageActions({
           <Button
             size="sm"
             variant="secondary"
+            className="h-8 text-xs"
             disabled={busy}
             onClick={onArchive}
           >
@@ -908,6 +931,7 @@ function InboxMessageActions({
           <Button
             size="sm"
             variant="secondary"
+            className="h-8 text-xs"
             disabled={busy}
             onClick={onTrash}
           >

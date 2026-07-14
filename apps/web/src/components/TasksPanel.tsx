@@ -203,6 +203,7 @@ export function TasksPanel({ tasks }: TasksPanelProps) {
               type="button"
               size="sm"
               variant="secondary"
+              className="h-8 text-xs"
               disabled={busy}
               onClick={() => runBulk("in_progress")}
             >
@@ -212,6 +213,7 @@ export function TasksPanel({ tasks }: TasksPanelProps) {
               type="button"
               size="sm"
               variant="secondary"
+              className="h-8 text-xs"
               disabled={busy}
               onClick={() => runBulk("done")}
             >
@@ -221,6 +223,7 @@ export function TasksPanel({ tasks }: TasksPanelProps) {
               type="button"
               size="sm"
               variant="ghost"
+              className="h-8 text-xs"
               disabled={busy}
               onClick={() => runBulk("cancelled")}
             >

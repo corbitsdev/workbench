@@ -41,7 +41,7 @@ export function NowSection({
 }: NowSectionProps) {
   if (!ready) {
     return (
-      <div className="mx-auto max-w-[720px] px-8 py-8" role="status">
+      <div className="mx-auto max-w-[720px] px-6 py-5" role="status">
         <p className="text-xs text-text-3">Loading your day…</p>
         <div className="mt-5 flex flex-col gap-1">
           {[0, 1, 2].map((i) => (
@@ -84,7 +84,7 @@ export function NowSection({
   }
 
   return (
-    <div className="mx-auto max-w-[720px] px-8 py-8">
+    <div className="mx-auto max-w-[720px] px-6 py-5">
       <h2 className="text-[17px] font-semibold tracking-[-0.01em] text-text">
         Now
       </h2>
