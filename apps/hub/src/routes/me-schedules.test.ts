@@ -33,12 +33,12 @@ mock.module("../lib/workflow-run-gate", () => ({
     runnableKinds.some((k) => k.kind === kind),
 }));
 
-// Attach gate (CL-3508/CL-3509): the route reads gate shapes from the embedded
-// catalog. "deck"/"heartbeat" are unattended; "last30days-research" is
-// intake-gated (its ONLY gate is intake); "multi-gate" has a second human gate,
-// so it is not attachable. A kind absent from this map is treated as
-// not-attachable. The real intake payload validation (resume-payload-registry)
-// is NOT mocked — last30days requires a non-empty topic.
+// Attach gate (CL-3508/CL-3509/CL-3528): the route reads gate shapes from the
+// embedded catalog. "deck"/"heartbeat" are unattended; "last30days-research" is
+// intake-only; "multi-gate" has intake plus a post-intake human gate and is
+// attachable under CL-3528 (Myra drives post-intake gates). A kind absent from
+// this map is treated as not-attachable. The real intake payload validation
+// (resume-payload-registry) is NOT mocked — last30days requires a non-empty topic.
 const gateInfos = new Map<
   string,
   { requiresIntake: boolean; humanGateCount: number }
@@ -299,8 +299,9 @@ describe("POST /me/schedules attach gate (CL-3508/CL-3509)", () => {
     });
   });
 
-  it("rejects a kind with a human gate beyond intake", async () => {
+  it("stores a schedule for an intake-first multi-gate kind (CL-3528)", async () => {
     storeCalls.length = 0;
+    createThrows = null;
     const res = await mountApp().fetch(
       req("/me/schedules", {
         method: "POST",
@@ -312,11 +313,17 @@ describe("POST /me/schedules attach gate (CL-3508/CL-3509)", () => {
         }),
       }),
     );
-    expect(res.status).toBe(400);
-    expect(await res.json()).toMatchObject({
-      error: expect.stringContaining("cannot be scheduled"),
+    expect(res.status).toBe(201);
+    const create = storeCalls.find((c) => c.fn === "create");
+    expect(create?.args).toMatchObject({
+      kind: "multi-gate",
+      hourUtc: 9,
+      payload: {
+        topic: "x",
+        userAddress: "usr_user-a@workbench.example",
+        userRefId: "user-a",
+      },
     });
-    expect(storeCalls.some((c) => c.fn === "create")).toBe(false);
   });
 
   it("rejects a runnable kind that has no embedded gate info", async () => {
