@@ -110,7 +110,7 @@ function InlineImage({ image }: { image: ChatImage }) {
 
   if (failed) {
     return (
-      <div className="flex items-center justify-center rounded-lg bg-zinc-700 px-4 py-3 text-xs text-zinc-400 mt-2 max-w-[600px]">
+      <div className="mt-2 flex max-w-[600px] items-center justify-center rounded-input bg-surface-2 px-4 py-3 text-xs text-text-3">
         Image unavailable
       </div>
     );
@@ -343,9 +343,11 @@ export function MessageBubble({
       {(hasBody || (message.status === "sending" && !hasReasoning)) && (
         <div
           className={cn(
+            "text-library-body-sm break-words",
             message.role === "agent" && CHAT_ASSISTANT_BODY,
             isUser && CHAT_USER_BUBBLE_SURFACE,
-            isUser && "bg-orange text-white whitespace-pre-wrap",
+            isUser && "max-w-[80%] rounded-input px-3 py-2",
+            isUser && "bg-orange text-white whitespace-pre-wrap text-[13px]",
             isUser && "transition-opacity duration-200",
             isUser && message.status === "sending" && "opacity-70",
             isSystem && CHAT_SYSTEM_BUBBLE_SURFACE,

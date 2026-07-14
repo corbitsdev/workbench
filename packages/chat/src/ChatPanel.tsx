@@ -159,21 +159,24 @@ export function ChatPanel({
 }: ChatPanelProps) {
   const busy = typing === true || (activity !== undefined && activity !== null);
 
+  const headerControlClassName =
+    "rounded-[8px] px-2.5 py-1 text-xs font-medium text-text-3 transition-colors hover:bg-page hover:text-text cursor-pointer";
+
   return (
     <div
       className={cn(
-        "flex h-full flex-col overflow-hidden bg-surface border-t-2 transition-colors",
+        "flex h-full flex-col overflow-hidden bg-bg border-t transition-colors",
         busy ? "border-orange" : "border-transparent",
         className,
       )}
     >
-      <header className="flex shrink-0 items-center justify-between gap-2 border-b border-border px-4 py-2">
+      <header className="flex shrink-0 items-center justify-between gap-2 border-b border-border px-4 py-3 sm:px-7">
         <div className="min-w-0 flex-1">
           {headerLeft !== undefined ? (
             headerLeft
           ) : (
-            <div className="flex flex-col">
-              <span className="text-sm font-medium text-text">
+            <div className="flex flex-col gap-0.5">
+              <span className="text-library-title-sm tracking-[-0.01em] text-text">
                 {agent.name}
               </span>
               {agent.tagline !== undefined && (
@@ -188,7 +191,7 @@ export function ChatPanel({
               type="button"
               onClick={onToggleExpand}
               aria-label={expanded === true ? "Collapse chat" : "Expand chat"}
-              className="rounded-md px-2 py-1 text-xs text-text-2 hover:bg-surface-2 hover:text-text cursor-pointer"
+              className={headerControlClassName}
             >
               {expanded === true ? "Collapse" : "Expand"}
             </button>
@@ -198,7 +201,7 @@ export function ChatPanel({
               type="button"
               onClick={onToggleDock}
               aria-label={dockState === "docked" ? "Float chat" : "Dock chat"}
-              className="rounded-md px-2 py-1 text-xs text-text-2 hover:bg-surface-2 hover:text-text cursor-pointer"
+              className={headerControlClassName}
             >
               {dockState === "docked" ? "Float" : "Dock"}
             </button>
@@ -208,7 +211,7 @@ export function ChatPanel({
               type="button"
               onClick={onClose}
               aria-label="Close chat"
-              className="rounded-md px-2 py-1 text-xs text-text-2 hover:bg-surface-2 hover:text-text cursor-pointer"
+              className={headerControlClassName}
             >
               Close
             </button>
@@ -220,7 +223,7 @@ export function ChatPanel({
         <div
           role="status"
           aria-live="polite"
-          className="shrink-0 border-b border-border px-4 py-3 text-[13px] text-text-2"
+          className="shrink-0 border-b border-border px-4 py-3 text-library-body-sm text-text-2 sm:px-7"
         >
           {notice}
         </div>
@@ -256,13 +259,13 @@ export function ChatPanel({
       {quickReplies !== undefined &&
         quickReplies.length > 0 &&
         onQuickReply !== undefined && (
-          <div className="px-4 pb-2">
+          <div className="px-4 pb-2 sm:px-7">
             <QuickReplyChips replies={quickReplies} onSelect={onQuickReply} />
           </div>
         )}
 
       {inputAccessory !== undefined && inputAccessory !== null && (
-        <div className="px-4 pb-1">{inputAccessory}</div>
+        <div className="bg-bg px-4 pb-1 sm:px-7">{inputAccessory}</div>
       )}
 
       <ChatInput

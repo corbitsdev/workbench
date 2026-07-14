@@ -51,7 +51,7 @@ export function FloatingChat({
       animate={{ opacity: 1, y: 0, scale: 1 }}
       transition={{ duration: 0.18 }}
       className={cn(
-        "fixed z-40 flex flex-col overflow-hidden bg-surface",
+        "fixed z-40 flex flex-col overflow-hidden bg-bg",
         expanded === true ? EXPANDED_CLASS : POPUP_CLASS,
         className,
       )}

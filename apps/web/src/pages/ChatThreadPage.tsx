@@ -23,7 +23,7 @@ import {
 
 function CenteredNotice({ children }: { children: React.ReactNode }) {
   return (
-    <div className="grid h-full place-items-center px-6 text-center text-sm text-text-2">
+    <div className="grid h-full place-items-center px-6 text-center text-library-body-sm text-text-2">
       {children}
     </div>
   );

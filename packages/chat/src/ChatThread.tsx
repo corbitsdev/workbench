@@ -8,7 +8,7 @@ import type { UIBlock, UIResponse } from "@workbench/blocks";
 import type { FeedbackSubjectKind } from "./feedback-types";
 import { extractImageURLs } from "./url-image";
 import { UrlImageCard } from "./UrlImageCard";
-import { CHAT_THREAD_PADDING, CHAT_THREAD_TURN_GAP } from "./messageRhythm";
+import { CHAT_THREAD_TURN_GAP } from "./messageRhythm";
 
 function byTimestamp(a: string, b: string): number {
   if (a < b) return -1;
@@ -272,9 +272,9 @@ export function ChatThread({
       className={cn(
         // Inter-turn spacing only — visibly larger than any intra-turn gap
         // (AgentTurn owns those), so whitespace signals turn boundaries.
-        "flex min-h-0 flex-1 flex-col overflow-y-auto",
+        "flex min-h-0 flex-1 flex-col overflow-y-auto bg-page",
         CHAT_THREAD_TURN_GAP,
-        CHAT_THREAD_PADDING,
+        "px-4 py-4 sm:px-7",
         className,
       )}
     >
@@ -283,7 +283,7 @@ export function ChatThread({
         !hasActivity &&
         (emptyState ?? (
           <div className="flex flex-1 items-center justify-center">
-            <p className="text-sm text-text-3">
+            <p className="text-library-body-sm text-text-3">
               Send a message to get started.
             </p>
           </div>
@@ -299,7 +299,7 @@ export function ChatThread({
           aria-live="polite"
           data-testid="busy-indicator"
         >
-          <span className="inline-flex items-center gap-1.5 rounded-full bg-surface-2 px-3 py-1.5 text-xs text-text-3">
+          <span className="inline-flex items-center gap-1.5 rounded-input border border-border bg-bg px-3 py-1.5 text-xs text-text-3">
             <ActivityPulse />
             {busyLabel}
           </span>

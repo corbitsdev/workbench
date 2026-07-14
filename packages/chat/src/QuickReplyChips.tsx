@@ -23,7 +23,7 @@ export function QuickReplyChips({
           key={reply.id}
           type="button"
           onClick={() => onSelect(reply)}
-          className="rounded-full border border-border bg-surface px-3 py-1 text-sm text-text-2 transition-colors hover:bg-surface-2 hover:text-text cursor-pointer"
+          className="rounded-input border border-border bg-page px-3 py-1.5 text-xs text-text-2 transition-colors hover:bg-row-hover hover:text-text cursor-pointer"
         >
           {reply.label}
         </button>
