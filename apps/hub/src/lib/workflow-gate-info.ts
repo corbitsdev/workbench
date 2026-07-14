@@ -52,11 +52,12 @@ export function deriveWorkflowGateInfo(definition: unknown): WorkflowGateInfo {
 
 // Whether a kind can be attached to a schedule at all (structural), ignoring
 // whether intake input has actually been supplied. Fully-unattended workflows (no
-// gates) always qualify. A workflow whose ONLY human gate is `intake` qualifies
-// because the scheduler pre-fills and auto-delivers that one gate. A workflow with
-// any other human gate is NOT attachable yet — no agent drives the remaining gates
-// (CL-3509 follow-up), so it is excluded rather than parked forever.
+// gates) always qualify. A workflow with an `intake` entry gate qualifies: the
+// scheduler pre-fills and auto-delivers intake (CL-3509) and Myra drives every
+// post-intake human gate for scheduler-sourced runs (CL-3528). Workflows whose
+// first human gate is not `intake` are excluded — there is no auto-first-gate
+// path and no agent drives them on a schedule.
 export function isKindStructurallyAttachable(info: WorkflowGateInfo): boolean {
   if (info.humanGateCount === 0) return true;
-  return info.requiresIntake && info.humanGateCount === 1;
+  return info.requiresIntake;
 }

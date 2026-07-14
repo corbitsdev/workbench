@@ -56,6 +56,8 @@ export interface RunState {
   pendingSignal?: PendingRunSignal;
   // Last write time of the record row; read by the hibernation CAS.
   updatedAt?: Date;
+  // "scheduler" when fired by an attached schedule (CL-3509); absent otherwise.
+  triggerSource?: string | null;
 }
 
 // The run-level projection the bridge writes on every pack (CL-2669): the coarse
@@ -105,6 +107,7 @@ function rowToState(row: WorkflowRunRecordRow): RunState {
       ? { pendingSignal }
       : {}),
     updatedAt: row.updatedAt,
+    triggerSource: row.triggerSource,
   };
 }
 

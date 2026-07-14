@@ -82,10 +82,10 @@ describe("isKindStructurallyAttachable", () => {
     ).toBe(true);
   });
 
-  it("does not attach a workflow with a human gate beyond intake", () => {
+  it("attaches a workflow with post-intake human gates when intake is the entry gate (CL-3528)", () => {
     expect(
       isKindStructurallyAttachable({ requiresIntake: true, humanGateCount: 2 }),
-    ).toBe(false);
+    ).toBe(true);
   });
 
   it("does not attach a workflow whose gate is not an intake gate", () => {

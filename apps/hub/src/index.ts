@@ -133,6 +133,10 @@ import {
   sweepStaleTriageInstances,
   type MailboxTriage,
 } from "./services/mailbox-triage";
+import {
+  createScheduledWorkflowGateAgent,
+  type ScheduledWorkflowGateAgent,
+} from "./services/scheduled-workflow-gate-agent";
 import { createArtifactsRouter } from "./routes/artifacts";
 import { createFileParseRouter } from "./routes/file-parse";
 import { createSearchRouter } from "./routes/search";
@@ -415,6 +419,14 @@ const repoStore = wrapRepoStoreWithProjection(
           error: err instanceof Error ? err : new Error(String(err)),
         });
       });
+      scheduledGateAgent?.maybeEnqueue({
+        runId: args.runId,
+        kind: args.kind,
+        tenantId: args.tenantId,
+        principalId: args.principalId,
+        deploymentId: args.deploymentId,
+        repoStore: args.repoStore,
+      });
     },
     // Deliver a "your run finished" mailbox item to the run creator when a
     // run reaches a terminal status. Fire-and-forget; the deliverer owns its
@@ -464,6 +476,7 @@ const mailboxEventBus = createMailboxEventBus();
 // brief window where this is undefined can never drop a real event.
 // eslint-disable-next-line prefer-const -- assigned once, after sessionService below; can't be const at declaration
 let mailboxTriage: MailboxTriage | undefined;
+let scheduledGateAgent: ScheduledWorkflowGateAgent | undefined;
 
 const lookups: SidecarLookups = {
   ...baseLookups,
@@ -564,6 +577,7 @@ const eventCollectors = createEventCollectorRegistry({
 
     fatalErrorRecovery(agentAddress, turn);
     mailboxTriage?.handleTurnFinalized(agentAddress, turn);
+    scheduledGateAgent?.handleTurnFinalized(agentAddress, turn);
   },
 });
 
@@ -617,6 +631,16 @@ mailboxTriage = createMailboxTriage({
   eventCollectors,
   cryptoProvider,
   mailboxEventBus,
+});
+
+scheduledGateAgent = createScheduledWorkflowGateAgent({
+  db,
+  sessionService,
+  grantStore,
+  eventCollectors,
+  cryptoProvider,
+  deploymentDomain: config.rootTenant.domain,
+  schedulerFeatureDefaultEnabled: config.scheduler.enabled,
 });
 
 // Retires any `myra-triage` instances a prior process left behind because
