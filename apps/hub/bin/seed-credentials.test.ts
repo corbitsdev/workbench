@@ -104,6 +104,26 @@ describe("seed-credentials buildEntries", () => {
     expect(entries.find((e) => e.providerName === "attio")).toBeUndefined();
   });
 
+  it("includes slack entry with Web API baseURL when SLACK_BOT_TOKEN is set", () => {
+    process.env["SLACK_BOT_TOKEN"] = "xoxb-test123";
+
+    const entries = buildEntries();
+
+    const slack = entries.find((e) => e.providerName === "slack");
+    expect(slack).toBeDefined();
+    expect(slack?.secret).toBe("xoxb-test123");
+    expect(slack?.providerPlugin).toBe("slack");
+    expect(slack?.metadata?.["baseURL"]).toBe("https://slack.com/api");
+  });
+
+  it("omits slack entry when SLACK_BOT_TOKEN is not set", () => {
+    delete process.env["SLACK_BOT_TOKEN"];
+
+    const entries = buildEntries();
+
+    expect(entries.find((e) => e.providerName === "slack")).toBeUndefined();
+  });
+
   it("includes notion entry with REST baseURL when NOTION_API_KEY is set", () => {
     process.env["NOTION_API_KEY"] = "notion_test123";
 
@@ -435,6 +455,7 @@ describe("seed-credentials buildEntries", () => {
     process.env["SCRAPECREATORS_API_KEY"] = "k";
     process.env["BLUESKY_APP_PASSWORD"] = "k";
     process.env["BLUESKY_HANDLE"] = "test.bsky.social";
+    process.env["SLACK_BOT_TOKEN"] = "k";
 
     const catalogToolProviders = new Set(
       CREDENTIAL_PROVIDER_CATALOG.filter((e) => e.kind === "tool").map(

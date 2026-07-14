@@ -11,6 +11,7 @@ import {
   MAX_LIST_LIMIT,
   isRecord,
   parseArgs,
+  requireMutationSuccess,
   type LinearToolsConfig,
 } from "./shared";
 
@@ -91,7 +92,7 @@ export async function saveMilestone(
       { id: args.id, input },
       signal,
     );
-    return data.projectMilestoneUpdate ?? { success: false };
+    return requireMutationSuccess(data, "projectMilestoneUpdate");
   }
   const data = await fetchLinearGraphQL(
     config,
@@ -99,7 +100,7 @@ export async function saveMilestone(
     { input },
     signal,
   );
-  return data.projectMilestoneCreate ?? { success: false };
+  return requireMutationSuccess(data, "projectMilestoneCreate");
 }
 
 export const LINEAR_LIST_MILESTONES_DEFINITION: ToolDefinition = {

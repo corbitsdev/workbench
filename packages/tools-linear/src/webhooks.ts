@@ -10,6 +10,7 @@ import {
   DEFAULT_LIST_LIMIT,
   MAX_LIST_LIMIT,
   parseArgs,
+  requireMutationSuccess,
   type LinearToolsConfig,
 } from "./shared";
 
@@ -90,7 +91,7 @@ export async function saveWebhook(
       { id: args.id, input },
       signal,
     );
-    return data.webhookUpdate ?? { success: false };
+    return requireMutationSuccess(data, "webhookUpdate");
   }
   const data = await fetchLinearGraphQL(
     config,
@@ -98,7 +99,7 @@ export async function saveWebhook(
     { input },
     signal,
   );
-  return data.webhookCreate ?? { success: false };
+  return requireMutationSuccess(data, "webhookCreate");
 }
 
 export async function deleteWebhook(
@@ -113,7 +114,7 @@ export async function deleteWebhook(
     { id: args.id },
     signal,
   );
-  return data.webhookDelete ?? { success: false };
+  return requireMutationSuccess(data, "webhookDelete");
 }
 
 export const LINEAR_LIST_WEBHOOKS_DEFINITION: ToolDefinition = {

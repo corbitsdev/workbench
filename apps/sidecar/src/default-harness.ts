@@ -505,10 +505,9 @@ export function createDefaultHarnessBuilder({
         // Human approval for irreversible tools is enforced at the runner seam:
         // the wrapper IS the executor of a gated tool, so the model cannot route
         // around it, and the approval record carries the concrete tool arguments
-        // (deploy target, note body) shown in ReviewGate. The gated set is the
-        // static `APPROVAL_GATED_TOOL_NAMES` const (every external write); a hub
-        // drift test keeps it in lockstep with the `sideEffect: "write"`
-        // classification of the tool registry, so no launch-time fetch is needed.
+        // (deploy target, note body) shown in ReviewGate. The gated set is
+        // `APPROVAL_GATED_TOOL_NAMES`, derived from committed manifest
+        // `sideEffects` (external writes minus internal exclusions).
         const gatedRunner = createApprovalGatedRunner(
           allTools as DefinedRunner,
           {

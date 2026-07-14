@@ -34,7 +34,6 @@ describe("ArtifactCard", () => {
     render(
       React.createElement(ArtifactCard, {
         artifact: toGalleryArtifact(artifact),
-        index: 1,
       }),
     );
     expect(screen.getByText("Sales automation ROI")).toBeDefined();
@@ -46,7 +45,6 @@ describe("ArtifactCard", () => {
     render(
       React.createElement(ArtifactCard, {
         artifact: toGalleryArtifact(artifact),
-        index: 1,
         onOpen,
       }),
     );

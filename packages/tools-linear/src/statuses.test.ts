@@ -12,7 +12,7 @@ describe("linear_list_issue_statuses", () => {
   it("lists team workflow states", async () => {
     const nodes = [{ id: "s1", name: "Done", type: "completed" }];
     const fetcher = makeRoutingFetchStub([
-      { includes: "GetTeam", data: { team: { id: "t1", name: "Eng" } } },
+      { includes: "TeamByName", data: { teams: { nodes: [{ id: "t1" }] } } },
       {
         includes: "ListStatuses",
         data: {
@@ -61,7 +61,7 @@ describe("linear_get_issue_status", () => {
   it("resolves status by team and name when id is omitted", async () => {
     const nodes = [{ id: "s1", name: "In Progress", type: "started" }];
     const fetcher = makeRoutingFetchStub([
-      { includes: "GetTeam", data: { team: { id: "t1", name: "Eng" } } },
+      { includes: "TeamByName", data: { teams: { nodes: [{ id: "t1" }] } } },
       { includes: "GetStatus", data: { team: { states: { nodes } } } },
     ]);
     const runner = createToolRunner(createLinearTools({ apiKey: "k", fetcher }));

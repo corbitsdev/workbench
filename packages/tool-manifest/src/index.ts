@@ -16,6 +16,7 @@ export {
   deriveToolCredentialCatalogEntries,
   deriveToolPackageSpecs,
   flatBareToolNames,
+  writeBareToolNamesFromFactories,
   sortFactoryManifests,
   type DerivedMyraCatalogPackage,
   type DerivedToolCredentialCatalogEntry,
