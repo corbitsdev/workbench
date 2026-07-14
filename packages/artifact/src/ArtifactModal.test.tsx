@@ -20,6 +20,7 @@ const artifact: ArtifactWithSession = {
   createdAt: new Date().toISOString(),
   updatedAt: new Date().toISOString(),
   source: { origin: "workflow" },
+  sessionId: "sess-1",
   sessionName: "Acme Corp",
   sessionStatus: "done",
   ownerName: null,
@@ -421,6 +422,68 @@ describe("ArtifactModal", () => {
       );
       expect(
         screen.queryByRole("button", { name: /Open in Myra/i }),
+      ).toBeNull();
+    });
+  });
+
+  describe("CL-3512: session provenance and lineage", () => {
+    it("renders the session name as a clickable link and shows the status badge", () => {
+      const onOpenSession = mock((_sessionId: string) => {});
+      render(
+        React.createElement(ArtifactModal, {
+          open: true,
+          artifact,
+          onClose: () => {},
+          onOpenSession,
+        }),
+      );
+      fireEvent.click(screen.getByRole("button", { name: "Acme Corp" }));
+      expect(onOpenSession).toHaveBeenCalledWith("sess-1");
+      screen.getByText("done");
+    });
+
+    it("renders the session name as plain text when no session handler is given", () => {
+      render(
+        React.createElement(ArtifactModal, {
+          open: true,
+          artifact,
+          onClose: () => {},
+        }),
+      );
+      expect(screen.queryByRole("button", { name: "Acme Corp" })).toBeNull();
+      screen.getByText("Acme Corp");
+    });
+
+    it("renders a 'Derived from' link when parentId is present", () => {
+      const onOpenParent = mock((_parentId: string) => {});
+      const derivedArtifact = { ...artifact, parentId: "art-0" };
+      render(
+        React.createElement(ArtifactModal, {
+          open: true,
+          artifact: derivedArtifact,
+          onClose: () => {},
+          onOpenParent,
+        }),
+      );
+      fireEvent.click(
+        screen.getByRole("button", {
+          name: /derived from a previous version/i,
+        }),
+      );
+      expect(onOpenParent).toHaveBeenCalledWith("art-0");
+    });
+
+    it("does not render a 'Derived from' link when parentId is absent", () => {
+      render(
+        React.createElement(ArtifactModal, {
+          open: true,
+          artifact,
+          onClose: () => {},
+          onOpenParent: mock(() => {}),
+        }),
+      );
+      expect(
+        screen.queryByRole("button", { name: /derived from/i }),
       ).toBeNull();
     });
   });

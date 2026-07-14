@@ -372,6 +372,7 @@ export function createArtifactsRouter(
 
     const row = {
       ...serializeArtifact(art),
+      sessionId: null,
       sessionName: null,
       sessionStatus: null,
       ownerName: null as string | null,
@@ -634,6 +635,7 @@ export function createArtifactsRouter(
 
     const rows = page.map((a) => ({
       ...serializeArtifact(a),
+      sessionId: null,
       sessionName: null,
       sessionStatus: null,
       ownerName: null as string | null,
@@ -681,6 +683,7 @@ export function createArtifactsRouter(
 
     const row = {
       ...serializeArtifact(art),
+      sessionId: null,
       sessionName: null,
       sessionStatus: null,
       ownerName: null as string | null,
@@ -822,6 +825,7 @@ export function createArtifactsRouter(
         {
           artifact: {
             ...serializeArtifact(created),
+            sessionId: null,
             sessionName: null,
             sessionStatus: null,
             ownerName: null,
@@ -1022,6 +1026,7 @@ export function createArtifactsRouter(
         {
           artifacts: created.map((a) => ({
             ...serializeArtifact(a),
+            sessionId: null,
             sessionName: null,
             sessionStatus: null,
             ownerName: null,

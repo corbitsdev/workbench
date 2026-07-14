@@ -149,6 +149,7 @@ export type ArtifactWithVersions = Artifact & { versions: ArtifactVersion[] };
  * without a second round-trip.
  */
 export type ArtifactWithSession = Artifact & {
+  sessionId: string | null;
   sessionName: string | null;
   sessionStatus: SessionStatus | null;
   ownerName: string | null;

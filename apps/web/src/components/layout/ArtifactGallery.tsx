@@ -4,6 +4,7 @@
 // Presentation, layout, and tile mapping all live in @workbench/artifact.
 
 import { useRef, useState } from "react";
+import { useNavigate } from "react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import type { InfiniteData } from "@tanstack/react-query";
 import { useExperimentalArtifactCards, useViewMode } from "@workbench/ui";
@@ -59,6 +60,7 @@ export function ArtifactGallery({
   onOpenArtifact,
 }: ArtifactGalleryProps) {
   const { openWithMessage } = useChatLauncher();
+  const navigate = useNavigate();
   const queryClient = useQueryClient();
   const { activeWorkbench } = useActiveWorkbench();
   const meQuery = useQuery({
@@ -191,6 +193,22 @@ export function ArtifactGallery({
     setSelected(null);
   }
 
+  // `/insights/trace/:runId` resolves a `workflow_run_record` id (see
+  // WorkflowTracePage). `ArtifactWithSession.sessionId` is emitted as null by
+  // the hub today (session enrichment is not wired up — see artifacts.ts), so
+  // this destination is unverified: re-check it resolves a real run once the
+  // hub starts populating sessionId, rather than assuming the old pre-M6
+  // "session" concept lines up with a workflow_run_record id.
+  function handleOpenSession(sessionId: string) {
+    setSelected(null);
+    navigate(`/insights/trace/${sessionId}`);
+  }
+
+  function handleOpenParent(parentId: string) {
+    setSelected(null);
+    navigate(`/artifacts/${parentId}`);
+  }
+
   // The mutation invalidates the artifact list, so the new row refetches into
   // the gallery. Clear any active search/filters so it is guaranteed visible
   // rather than hidden behind a stale facet.
@@ -267,6 +285,8 @@ export function ArtifactGallery({
         onUseInWorkflow={onUseInWorkflow ? handleUseInWorkflow : undefined}
         onArchive={selected && canArchive(selected) ? handleArchive : undefined}
         canUseInWorkflow={(a) => canUseArtifactInWorkflow(a.kind)}
+        onOpenSession={handleOpenSession}
+        onOpenParent={handleOpenParent}
       >
         {selected && <ArtifactBody artifact={selected} />}
       </ArtifactModal>

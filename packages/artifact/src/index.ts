@@ -42,6 +42,7 @@ export {
   type ArtifactModalProps,
   type ArtifactModalAction,
 } from "./ArtifactModal";
+export { ArtifactMeta, type ArtifactMetaProps } from "./ArtifactMeta";
 export {
   isLinkedInPostArtifactKind,
   usesSocialPostPreview,

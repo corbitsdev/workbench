@@ -50,6 +50,7 @@ describe("toGalleryArtifact", () => {
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
     source: { origin: "workflow" },
+    sessionId: null,
     sessionName: "Acme Corp",
     sessionStatus: "done",
     ownerName: null,
@@ -68,6 +69,7 @@ describe("toGalleryArtifact", () => {
   it("labels a session-less artifact with the workflow-supplied jobLabel, not 'Untitled job' (CL-2411)", () => {
     const research = {
       ...base,
+      sessionId: null,
       sessionName: null,
       kind: "research",
       source: {
@@ -82,6 +84,7 @@ describe("toGalleryArtifact", () => {
   it("falls back to 'Untitled job' when a session-less artifact has no jobLabel (CL-2411)", () => {
     const noLabel = {
       ...base,
+      sessionId: null,
       sessionName: null,
       source: { origin: "workflow", citations: [] },
     } as ArtifactWithSession;

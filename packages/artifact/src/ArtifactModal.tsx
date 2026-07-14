@@ -14,6 +14,7 @@ import { Button, ConfirmButton } from "@workbench/ui";
 import type { ArtifactWithSession } from "@workbench/shared";
 import { isLinkedInPostArtifactKind } from "./artifact-kinds";
 import { resolveArtifactClipboardText } from "./linkedin-clipboard";
+import { ArtifactMeta } from "./ArtifactMeta";
 
 export interface ArtifactModalAction {
   label: string;
@@ -50,18 +51,14 @@ export interface ArtifactModalProps {
    * action is offered for any artifact.
    */
   canUseInWorkflow?: (artifact: ArtifactWithSession) => boolean;
+  /** Navigates to the originating session/run when the session name is clicked. */
+  onOpenSession?: (sessionId: string) => void;
+  /** Navigates to the parent artifact when "Derived from" is clicked. */
+  onOpenParent?: (parentId: string) => void;
 }
 
 const FOCUSABLE =
   'a[href], button:not([disabled]), textarea, input, select, [tabindex]:not([tabindex="-1"])';
-
-function formatDate(iso: string): string {
-  return new Date(iso).toLocaleDateString("en-US", {
-    month: "long",
-    day: "numeric",
-    year: "numeric",
-  });
-}
 
 export function ArtifactModal({
   open,
@@ -74,6 +71,8 @@ export function ArtifactModal({
   onUseInWorkflow,
   onArchive,
   canUseInWorkflow,
+  onOpenSession,
+  onOpenParent,
 }: ArtifactModalProps) {
   const showUseInWorkflow = Boolean(
     onUseInWorkflow &&
@@ -158,17 +157,19 @@ export function ArtifactModal({
                   {artifact.title}
                 </div>
                 <div className="mt-0.5 font-mono text-[11px] text-text-3">
-                  {artifact.sessionName ?? "Untitled job"} · v{artifact.version}
+                  v{artifact.version}
                 </div>
-                {(kindLabel ?? artifact.createdAt) && (
-                  <div className="mt-1 text-[11px] text-text-3">
-                    {kindLabel && <span>{kindLabel}</span>}
-                    {kindLabel && artifact.createdAt && <span> · </span>}
-                    {artifact.createdAt && (
-                      <span>{formatDate(artifact.createdAt)}</span>
-                    )}
-                  </div>
-                )}
+                <ArtifactMeta
+                  className="mt-1"
+                  kindLabel={kindLabel}
+                  createdAt={artifact.createdAt}
+                  sessionId={artifact.sessionId}
+                  sessionName={artifact.sessionName}
+                  sessionStatus={artifact.sessionStatus}
+                  parentId={artifact.parentId}
+                  onOpenSession={onOpenSession}
+                  onOpenParent={onOpenParent}
+                />
               </div>
               <button
                 type="button"
