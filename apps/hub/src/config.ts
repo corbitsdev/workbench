@@ -77,6 +77,22 @@ const DEFAULT_WEDGE_UNROUTABLE_GRACE_MS = 120_000;
 // already-routable supervisors.
 const DEFAULT_AWAITING_PREWARM_INTERVAL_MS = 30_000;
 
+// Personal-agent (Myra) prewarm sweep. After a sidecar restart every agent is
+// asleep; the first message per agent pays a ~20s wake on the member's critical
+// path. This sweep pays that cost in the background: it relaunches the personal
+// instances of members active within `activeWindowMs`, `concurrency` at a time,
+// every `intervalMs`, starting `initialDelayMs` after boot so the sidecar
+// reconnect fan-out settles before the first launch attempt (the wedge sweep's
+// 120s sustained-unroutability grace is the precedent for that horizon). This
+// block is the sole owner of these defaults — the service takes them as
+// required options. Concurrency is a validated ceiling, not a clamp: an
+// out-of-range value fails config load.
+const DEFAULT_PREWARM_ACTIVE_WINDOW_MS = 24 * 60 * 60 * 1000;
+const DEFAULT_PREWARM_CONCURRENCY = 2;
+const MAX_PREWARM_CONCURRENCY = 8;
+const DEFAULT_PREWARM_SWEEP_INTERVAL_MS = 30_000;
+const DEFAULT_PREWARM_INITIAL_DELAY_MS = 120_000;
+
 // Hibernation grace for gate-parked (awaiting) workflow runs (mirrors the
 // reconciler's DEFAULT_WORKFLOW_HIBERNATION_GRACE_MS). A run parked at an
 // awaitSignal gate longer than this has its deployment hibernated — the
@@ -141,6 +157,19 @@ function parseBooleanEnv(name: string): boolean {
   return value === "true" || value === "1";
 }
 
+// Default-ON kill switch: unset (or "") means enabled; only an explicit
+// "false"/"0" disables it. Anything else ("off", "no", typos) is rejected
+// loudly rather than silently coerced to enabled.
+function parseBooleanEnvDefaultTrue(name: string): boolean {
+  const value = process.env[name];
+  if (value === undefined || value === "") return true;
+  if (value === "true" || value === "1") return true;
+  if (value === "false" || value === "0") return false;
+  throw new Error(
+    `${name} must be "true", "1", "false", or "0"; got "${value}"`,
+  );
+}
+
 function parsePositiveIntEnv(
   name: string,
   defaultValue: number,
@@ -152,6 +181,18 @@ function parsePositiveIntEnv(
   if (!Number.isInteger(parsed) || parsed <= 0) {
     const unit = unitHint === undefined ? "" : ` (${unitHint})`;
     throw new Error(`${name} must be a positive integer${unit}; got "${raw}"`);
+  }
+  return parsed;
+}
+
+function parseBoundedIntEnv(
+  name: string,
+  defaultValue: number,
+  max: number,
+): number {
+  const parsed = parsePositiveIntEnv(name, defaultValue);
+  if (parsed > max) {
+    throw new Error(`${name} must be at most ${max}; got "${parsed}"`);
   }
   return parsed;
 }
@@ -372,6 +413,35 @@ export function loadConfig() {
       DEFAULT_AWAITING_PREWARM_INTERVAL_MS,
       "milliseconds",
     ),
+    // Post-reconnect personal-agent (Myra) prewarm. Default ON; disable with
+    // PREWARM_ENABLED=false. Overrides: PREWARM_ACTIVE_WINDOW_MS (how recently a
+    // member must have used their personal agent to be prewarmed),
+    // PREWARM_CONCURRENCY (parallel launches per tick, max 8 — rejected above
+    // that), PREWARM_SWEEP_INTERVAL_MS (sweep cadence), PREWARM_INITIAL_DELAY_MS
+    // (post-boot grace before the first tick).
+    personalAgentPrewarm: {
+      enabled: parseBooleanEnvDefaultTrue("PREWARM_ENABLED"),
+      activeWindowMs: parsePositiveIntEnv(
+        "PREWARM_ACTIVE_WINDOW_MS",
+        DEFAULT_PREWARM_ACTIVE_WINDOW_MS,
+        "milliseconds",
+      ),
+      concurrency: parseBoundedIntEnv(
+        "PREWARM_CONCURRENCY",
+        DEFAULT_PREWARM_CONCURRENCY,
+        MAX_PREWARM_CONCURRENCY,
+      ),
+      intervalMs: parsePositiveIntEnv(
+        "PREWARM_SWEEP_INTERVAL_MS",
+        DEFAULT_PREWARM_SWEEP_INTERVAL_MS,
+        "milliseconds",
+      ),
+      initialDelayMs: parsePositiveIntEnv(
+        "PREWARM_INITIAL_DELAY_MS",
+        DEFAULT_PREWARM_INITIAL_DELAY_MS,
+        "milliseconds",
+      ),
+    },
     // How long a workflow run may sit parked at an awaitSignal gate before
     // its deployment is hibernated (child killed, durable run state kept;
     // wake is signal-driven). Also the awaiting pre-warm horizon. Default
