@@ -17,7 +17,7 @@ export function SettingsSectionNav() {
   return (
     <nav
       aria-label="Settings sections"
-      className="flex gap-1 overflow-x-auto pb-2 lg:sticky lg:top-4 lg:flex-col lg:overflow-visible lg:pb-0"
+      className="flex gap-1 overflow-x-auto pb-2 lg:flex-col lg:overflow-visible lg:pb-0"
     >
       {SETTINGS_SECTIONS.map((section) => (
         <a

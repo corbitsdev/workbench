@@ -222,7 +222,9 @@ export default function Settings() {
           Manage your workbench preferences.
         </p>
         <div className="flex flex-col gap-10 lg:flex-row lg:gap-8">
-          <SettingsSectionNav />
+          <div className="lg:sticky lg:top-4 lg:self-start">
+            <SettingsSectionNav />
+          </div>
           <div className="flex min-w-0 flex-1 flex-col gap-12">
             <SettingsGroup
               id="your-agent"

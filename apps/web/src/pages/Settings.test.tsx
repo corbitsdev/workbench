@@ -147,6 +147,20 @@ describe("Settings preferences", () => {
   });
 });
 
+describe("Settings section nav layout", () => {
+  it("wraps the section nav in a sticky column on large breakpoints", () => {
+    neverResolvingVersion();
+    renderSettings();
+    const nav = screen.getByRole("navigation", { name: "Settings sections" });
+    const wrapper = nav.parentElement;
+    expect(wrapper).not.toBeNull();
+    expect(wrapper!.className).toContain("lg:sticky");
+    expect(wrapper!.className).toContain("lg:top-4");
+    expect(wrapper!.className).toContain("lg:self-start");
+    expect(nav.className).not.toContain("lg:sticky");
+  });
+});
+
 describe("Settings display name", () => {
   it("seeds the display name field from the persisted userName", async () => {
     globalThis.fetch = (async (input: RequestInfo | URL) => {
