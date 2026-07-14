@@ -210,15 +210,18 @@ same execution model as manual starts, with two hub automations on human gates:
 
 **Opt-in surface for authors.** A workflow package may export
 `ALLOWS_SCHEDULED_POST_INTAKE_DRIVE = true`; `apps/hub/bin/build-workflow-defs.ts`
-serializes it onto the embedded catalog as `allowsScheduledPostIntakeDrive` (then
-`deploy-workflow.ts` / `loadWorkflow` read that catalog). Test kinds can also
-appear on `SCHEDULED_POST_INTAKE_DRIVE_KIND_ALLOWLIST` in
+reads that export (via the same `loadWorkflow` helper as deploy) and serializes it
+onto the embedded catalog as `allowsScheduledPostIntakeDrive`. Hub attach checks
+load that catalog through `loadWorkflowGateInfos()`. Test kinds can also appear on
+`SCHEDULED_POST_INTAKE_DRIVE_KIND_ALLOWLIST` in
 `apps/hub/src/lib/workflow-gate-info.ts`. Schedule attach APIs reject multi-gate
 kinds via `isKindStructurallyAttachable` (which calls
 `kindAllowsScheduledPostIntakeDrive` for post-intake shapes).
 
-**Backstops.** The gate agent keeps an in-memory queue (default cap 32); when a
-new drive cannot be enqueued, the run is **`failed`** with terminal mail
+**Backstops.** If a scheduler run reaches post-intake gates but the kind is not
+opted in, `maybeEnqueue` **fails the run** with terminal mail (defense in depth
+beyond attach-time rejection). The gate agent keeps an in-memory queue (default cap
+32); when a new drive cannot be enqueued, the run is **`failed`** with terminal mail
 (`Scheduled gate drive failed: agent queue full`). Enqueue and drive retries touch
 `workflow_run_record.updated_at` so the stalled-run reconciler does not
 false-positive while work is queued. A periodic reconciler
