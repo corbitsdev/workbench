@@ -2,6 +2,7 @@ import { type } from "arktype";
 import { Hono } from "hono";
 import { describeRoute, resolver } from "hono-openapi";
 import type { GrantStore } from "@intx/authz";
+import { getLogger } from "@intx/log";
 import {
   AvailableBriefSourcesResponseSchema,
   AvailableInboxSourcesResponseSchema,
@@ -22,6 +23,7 @@ import {
   setPrincipalCapabilityGrant,
 } from "../lib/capability-grants";
 import { resolveAvailableProviderNames } from "../lib/tenant-tools";
+import { resolveMemberOrTenantToolCredential } from "../lib/member-tool-credential";
 import { isInboxSourceEnabledFromGrants } from "../lib/workspace-inbox-source-gate";
 import { loadMemberRoleGrantsForTenantChain } from "../lib/workflow-run-gate";
 import {
@@ -30,6 +32,49 @@ import {
 } from "../lib/member-preferences";
 import { ErrorResponse, requestBodySchema } from "../lib/openapi";
 import type { HubDb } from "../db";
+
+const log = getLogger(["api", "me-preferences"]);
+
+/**
+ * Inbox-source availability for THIS member (CL-3577 greybeard finding): a
+ * source must appear in the member's own list exactly when delivery would
+ * actually use it, so it is resolved through the same
+ * `resolveMemberOrTenantToolCredential` the delivery path (triage/intake)
+ * calls — preferring the member's own connected OAuth token, falling back to
+ * the tenant-owned key. `resolveAvailableProviderNames` (tenant-only) is
+ * intentionally NOT used here: a member with a personal OAuth connection but
+ * no tenant key must see the source, which the tenant-only check would hide.
+ * One resolution per wanted provider for the single requesting member — a
+ * small, fixed set, so this stays cheap despite not being batched.
+ */
+async function resolveMemberAvailableProviderNames(
+  db: HubDb,
+  tenantId: string,
+  memberPrincipalId: string,
+  wanted: Set<string>,
+): Promise<Set<string>> {
+  const available = new Set<string>();
+  await Promise.all(
+    [...wanted].map(async (providerName) => {
+      try {
+        const resolved = await resolveMemberOrTenantToolCredential(
+          db,
+          tenantId,
+          memberPrincipalId,
+          providerName,
+        );
+        if (resolved !== null) available.add(providerName);
+      } catch (error) {
+        log.warn("member credential resolution failed; hiding inbox source", {
+          providerName,
+          tenantId,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }),
+  );
+  return available;
+}
 
 // Read/write the caller's own server-persisted UI preferences. Reads are also
 // folded into GET /v1/me so the bootstrap needs no extra round-trip; this GET
@@ -136,7 +181,7 @@ export function createMePreferencesRouter(
       tags: ["Me"],
       summary: "Get the inbox sources the caller can toggle",
       description:
-        "Every INBOX_SOURCE_CATALOG entry whose provider has a credential configured for the caller's tenant, resolved against their stored enablement — independent of the caller's brief-source toggles. A source with no configured credential is silently absent — never shown disabled.",
+        "Every INBOX_SOURCE_CATALOG entry the caller can actually receive deliveries from — resolved via the member's own connected credential or, failing that, the tenant-owned key (the same precedence delivery uses) — resolved against their stored enablement, independent of the caller's brief-source toggles. A source neither the member nor the tenant has a credential for is silently absent — never shown disabled.",
       responses: {
         200: {
           description: "Available inbox sources",
@@ -155,7 +200,12 @@ export function createMePreferencesRouter(
 
       const wanted = new Set(INBOX_SOURCE_CATALOG.map((s) => s.key));
       const [available, stored, grants] = await Promise.all([
-        resolveAvailableProviderNames(db, member.tenantId, wanted),
+        resolveMemberAvailableProviderNames(
+          db,
+          member.tenantId,
+          member.principalId,
+          wanted,
+        ),
         readMemberPreferences(db, member.tenantId, member.principalId),
         loadMemberRoleGrantsForTenantChain(db, [member.tenantId]),
       ]);
