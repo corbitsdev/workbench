@@ -7,7 +7,7 @@ export function AppTopBar({ onOpenMenu }: { onOpenMenu: () => void }) {
   const pageChrome = usePageChromeSlot();
 
   return (
-    <header className="flex min-h-[44px] shrink-0 items-center gap-2 border-b border-border px-3 py-2">
+    <header className="flex min-h-[44px] shrink-0 flex-wrap items-center gap-2 border-b border-border px-3 py-2">
       <button
         type="button"
         onClick={onOpenMenu}
@@ -19,20 +19,20 @@ export function AppTopBar({ onOpenMenu }: { onOpenMenu: () => void }) {
       <span className="shrink-0 text-sm font-semibold text-text md:hidden">
         Workbench
       </span>
-      <div className="hidden min-w-0 flex-1 items-center gap-3 md:flex">
+      <div className="hidden min-w-0 shrink-0 items-center gap-3 md:flex">
         <AppContextStrip />
-        {pageChrome ? (
-          <div className="flex min-w-0 items-center gap-2 border-l border-border pl-3">
-            {pageChrome}
-          </div>
-        ) : null}
       </div>
-      <div className="ml-auto flex shrink-0 items-center gap-2">
-        <div className="flex min-w-0 items-center gap-2 md:hidden">
-          <AppContextStrip />
+      <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2 md:hidden">
+        <AppContextStrip />
+      </div>
+      {pageChrome ? (
+        <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
+          {pageChrome}
         </div>
-        <NotificationsBell />
-      </div>
+      ) : (
+        <div className="flex-1" />
+      )}
+      <NotificationsBell />
     </header>
   );
 }

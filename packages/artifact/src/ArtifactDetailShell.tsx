@@ -2,8 +2,10 @@ import type { ReactNode } from "react";
 
 export type ArtifactDetailShellProps = {
   accentClass: string;
-  header: ReactNode;
-  rail: ReactNode;
+  /** Optional secondary header band. Omit when the host chrome already names the artifact. */
+  header?: ReactNode;
+  /** Metadata rail content. Omit (or pass null) to collapse the rail entirely when there is nothing real to show. */
+  rail?: ReactNode | null;
   children: ReactNode;
   /** When true, stack rail below hero on narrow surfaces (modal). */
   compactRail?: boolean;
@@ -26,9 +28,14 @@ export function ArtifactDetailShell({
       data-testid="artifact-detail-shell"
     >
       <div className={`h-1.5 w-full shrink-0 ${accentClass}`} aria-hidden />
-      <div className="shrink-0 border-b border-border px-4 py-3 sm:px-6">
-        {header}
-      </div>
+      {header ? (
+        <div
+          className="shrink-0 border-b border-border px-4 py-3 sm:px-6"
+          data-testid="artifact-detail-header"
+        >
+          {header}
+        </div>
+      ) : null}
       <div
         className={
           compactRail
@@ -42,16 +49,18 @@ export function ArtifactDetailShell({
         >
           <div className="mx-auto w-full max-w-none">{children}</div>
         </main>
-        <aside
-          className={
-            compactRail
-              ? "shrink-0 border-t border-border px-4 py-3 sm:px-6"
-              : "w-full shrink-0 overflow-y-auto border-t border-border px-4 py-4 sm:w-72 sm:border-t-0 sm:border-l lg:w-80"
-          }
-          data-testid="artifact-detail-rail"
-        >
-          {rail}
-        </aside>
+        {rail !== null && rail !== undefined ? (
+          <aside
+            className={
+              compactRail
+                ? "shrink-0 border-t border-border px-4 py-3 sm:px-6"
+                : "w-full shrink-0 overflow-y-auto border-t border-border px-4 py-4 sm:w-72 sm:border-t-0 sm:border-l lg:w-80"
+            }
+            data-testid="artifact-detail-rail"
+          >
+            {rail}
+          </aside>
+        ) : null}
       </div>
     </div>
   );

@@ -1,4 +1,6 @@
 import { ComparisonView, Markdown, parseComparisonResult } from "@workbench/ui";
+import type { SessionStatus } from "@workbench/shared";
+import { EmptyContentNotice } from "./ArtifactContentNotice";
 
 // The A/B comparison artifact `content` is the JSON string of a ComparisonResult.
 // Parse it through the shared schema and render the branded comparison view; on a
@@ -6,10 +8,15 @@ import { ComparisonView, Markdown, parseComparisonResult } from "@workbench/ui";
 export default function CompareBody({
   content,
   layout = "inline",
+  sessionStatus,
 }: {
   content: string;
   layout?: "inline" | "detail";
+  sessionStatus?: SessionStatus | null;
 }) {
+  if (content.trim().length === 0) {
+    return <EmptyContentNotice sessionStatus={sessionStatus} />;
+  }
   const result = parseComparisonResult(content);
   if (result !== null) {
     return <ComparisonView result={result} status="final" />;

@@ -918,15 +918,19 @@ async function upsertLinkedArtifact(
     context.db,
     context,
   );
-  assertSessionContext(context);
 
+  // No session assert: a deterministic workflow step creates linked artifacts
+  // with no chat session (its writes are attributed to the deployer principal).
+  // sessionId is provenance only, so record it only when a session is present.
   const row = await context.db.transaction(async (tx) => {
     const uploadRef = await insertUpload(tx);
     const source = {
       origin: "agent",
       type: "inline",
       agentId: context.agentId,
-      sessionId: context.sessionId,
+      ...(context.sessionId.length > 0
+        ? { sessionId: context.sessionId }
+        : {}),
       ...(uploadRef !== null ? { upload: uploadRef } : {}),
     };
 

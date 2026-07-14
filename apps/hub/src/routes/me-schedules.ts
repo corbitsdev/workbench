@@ -181,15 +181,17 @@ export function createMeSchedulesRouter(
         return c.json({ error: `unknown workflow kind "${body.kind}"` }, 400);
       }
 
-      // Attach gate (CL-3508/CL-3509): a schedule fires unattended, so only kinds
-      // that can run to completion without a human belong here — either fully
-      // unattended (no gates), or their ONLY human gate is `intake`, which the
-      // scheduler pre-fills from the stored payload and auto-delivers. A kind with
-      // any other human gate would park forever, so it is rejected. A
-      // requiresIntake kind additionally must carry a valid stored intake payload.
+      // Attach gate (CL-3508/CL-3509/CL-3528): schedules fire unattended. Kinds
+      // with only `intake` (auto-delivered from stored payload), no gates, or
+      // multi-gate shapes opted in via `allowsScheduledPostIntakeDrive` / allowlist
+      // pass `isKindStructurallyAttachable`. Others are rejected. RequiresIntake
+      // kinds must carry a valid stored intake payload.
       const gateInfos = await loadWorkflowGateInfos();
       const gateInfo = gateInfos.get(body.kind);
-      if (gateInfo === undefined || !isKindStructurallyAttachable(gateInfo)) {
+      if (
+        gateInfo === undefined ||
+        !isKindStructurallyAttachable(gateInfo, body.kind)
+      ) {
         return c.json(
           {
             error: `workflow "${body.kind}" cannot be scheduled: it needs input this schedule can't supply`,

@@ -44,7 +44,9 @@ export {
 export { iconForPreviewFamily } from "./artifact-family-icon";
 export {
   ArtifactGallery,
+  ArtifactGalleryToolbar,
   type ArtifactGalleryProps,
+  type ArtifactGalleryToolbarProps,
   type AdvancedArtifactFilter,
 } from "./ArtifactGallery";
 export {
@@ -52,7 +54,11 @@ export {
   type ArtifactModalProps,
   type ArtifactModalAction,
 } from "./ArtifactModal";
-export { ArtifactMeta, type ArtifactMetaProps } from "./ArtifactMeta";
+export {
+  ArtifactMeta,
+  formatArtifactDate,
+  type ArtifactMetaProps,
+} from "./ArtifactMeta";
 export {
   isLinkedInPostArtifactKind,
   usesSocialPostPreview,

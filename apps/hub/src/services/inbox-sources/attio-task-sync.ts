@@ -44,6 +44,26 @@ const log = getLogger(["services", "inbox-sources", "attio-task-sync"]);
 
 const ATTIO_SOURCE_REF_PREFIX = "attio:task:";
 
+// CL-3630: `/v2/tasks` has no updated-since filter, so a single `limit`-sized
+// page could hide open tasks behind the page boundary — `seenTaskIds` would
+// then be missing tasks that are simply on page 2+, and `reconcileDeletions`
+// would misread them as deleted and fire an individual `attio_get_task` check
+// for each. Paginating the listing (bounded by MAX_LIST_PAGES_PER_TICK) keeps
+// `seenTaskIds` accurate for the full open set in the common case (an open
+// backlog that fits within the page cap), so deletion re-verification only
+// ever runs for tasks that are ACTUALLY absent from the full listing.
+const MAX_LIST_PAGES_PER_TICK = 10;
+
+// A previously-synced task's deletion is confirmed with an individual
+// `attio_get_task` 404-check (see `attioTaskStillExists`) — real, but O(1)
+// per missing task per tick. A large simultaneous deletion event (or a
+// listing gap from an upstream Attio hiccup) must not turn into an unbounded
+// re-fetch storm; cap re-verifications per tick and let the rotation below
+// spread the remainder across subsequent ticks — deletion is still detected
+// within a bounded number of ticks (backlog / MAX_DELETION_CHECKS_PER_TICK),
+// just not necessarily the very next one.
+const MAX_DELETION_CHECKS_PER_TICK = 25;
+
 function attioSourceRef(taskId: string): string {
   return `${ATTIO_SOURCE_REF_PREFIX}${taskId}`;
 }
@@ -78,13 +98,14 @@ function toolHandler(config: AttioToolsConfig, name: string) {
   return tool.handler;
 }
 
-async function fetchAttioTasks(
+async function fetchAttioTaskPage(
   config: AttioToolsConfig,
   limit: number,
+  offset: number,
   signal: AbortSignal,
 ): Promise<AttioRawTask[]> {
   const handler = toolHandler(config, "attio_list_tasks");
-  const raw = await handler({ limit, sort: "created_at:desc" }, signal);
+  const raw = await handler({ limit, offset, sort: "created_at:desc" }, signal);
   const parsed: unknown = JSON.parse(raw);
   if (!Array.isArray(parsed)) return [];
   const tasks: AttioRawTask[] = [];
@@ -94,6 +115,44 @@ async function fetchAttioTasks(
     tasks.push(validated);
   }
   return tasks;
+}
+
+/**
+ * Pages through `/v2/tasks` (via `attio_list_tasks`) at `pageSize` per page,
+ * up to `MAX_LIST_PAGES_PER_TICK` pages, so `tasks` reflects the full open
+ * set in the common case rather than just its first page. Stops as soon as a
+ * page returns fewer than `pageSize` rows — that page is authoritative proof
+ * there is nothing more behind it. `truncated: true` means the page cap was
+ * hit while the last page was still full: there may be MORE unseen tasks
+ * beyond what was fetched this tick, so the caller must not treat the
+ * (possibly still incomplete) result as the full open set for cursor
+ * purposes, and must keep re-polling forward via `nextCursor`.
+ */
+async function fetchAttioTasks(
+  config: AttioToolsConfig,
+  pageSize: number,
+  signal: AbortSignal,
+): Promise<{ tasks: AttioRawTask[]; truncated: boolean }> {
+  const tasks: AttioRawTask[] = [];
+  let truncated = false;
+  for (let page = 0; page < MAX_LIST_PAGES_PER_TICK; page++) {
+    const offset = page * pageSize;
+    const pageTasks = await fetchAttioTaskPage(
+      config,
+      pageSize,
+      offset,
+      signal,
+    );
+    tasks.push(...pageTasks);
+    if (pageTasks.length < pageSize) {
+      truncated = false;
+      break;
+    }
+    // Last page in the loop was full: only truncated if we ran out of pages
+    // to keep fetching, not if this was simply the final iteration by luck.
+    truncated = page === MAX_LIST_PAGES_PER_TICK - 1;
+  }
+  return { tasks, truncated };
 }
 
 /** True when a 404 from `attio_get_task` — the one case that means the task
@@ -282,11 +341,35 @@ export async function syncOneTask(
  * on the tasks domain — fully reversible by the member, consistent with
  * every other completion path.
  */
+/**
+ * Selects a bounded, rotating window of `candidates` to re-verify this tick.
+ * When the backlog fits within `cap` every candidate is checked (the common
+ * case). Otherwise the window start rotates with `rotationKey` (the tick's
+ * `since` epoch ms, which advances every tick) so a sustained backlog is
+ * covered in full over `ceil(candidates.length / cap)` ticks rather than
+ * perpetually re-checking the same head of the list while the tail is never
+ * reached.
+ */
+function selectDeletionCandidates<T>(
+  candidates: readonly T[],
+  cap: number,
+  rotationKey: number,
+): T[] {
+  if (candidates.length <= cap) return [...candidates];
+  const start = rotationKey % candidates.length;
+  const window: T[] = [];
+  for (let i = 0; i < cap; i++) {
+    window.push(candidates[(start + i) % candidates.length]!);
+  }
+  return window;
+}
+
 async function reconcileDeletions(
   db: HubDb,
   member: MemberInboxSourceContext["member"],
   config: AttioToolsConfig,
   seenTaskIds: ReadonlySet<string>,
+  since: Date,
   signal: AbortSignal,
 ): Promise<void> {
   const trackedRows = await db
@@ -299,8 +382,10 @@ async function reconcileDeletions(
         like(task.sourceRef, `${ATTIO_SOURCE_REF_PREFIX}%`),
         notInArray(task.status, ["done", "cancelled"]),
       ),
-    );
+    )
+    .orderBy(task.id);
 
+  const missingRows: Array<{ row: TaskRow; attioTaskId: string }> = [];
   for (const row of trackedRows) {
     const sourceRef = row.sourceRef;
     if (sourceRef === null || !sourceRef.startsWith(ATTIO_SOURCE_REF_PREFIX)) {
@@ -308,6 +393,16 @@ async function reconcileDeletions(
     }
     const attioTaskId = sourceRef.slice(ATTIO_SOURCE_REF_PREFIX.length);
     if (seenTaskIds.has(attioTaskId)) continue;
+    missingRows.push({ row, attioTaskId });
+  }
+
+  const candidates = selectDeletionCandidates(
+    missingRows,
+    MAX_DELETION_CHECKS_PER_TICK,
+    since.getTime(),
+  );
+
+  for (const { row, attioTaskId } of candidates) {
     try {
       const stillExists = await attioTaskStillExists(
         config,
@@ -363,7 +458,7 @@ async function handle(
   }
 
   const since = ctx.lastPollAt ?? ctx.cutoff;
-  const attioTasks = await fetchAttioTasks(
+  const { tasks: attioTasks, truncated } = await fetchAttioTasks(
     config,
     ctx.perSourceLimit,
     ctx.signal,
@@ -389,18 +484,26 @@ async function handle(
   }
 
   const seenIds = new Set(attioTasks.map((t) => t.id.task_id));
-  await reconcileDeletions(ctx.db, ctx.member, config, seenIds, ctx.signal);
+  await reconcileDeletions(
+    ctx.db,
+    ctx.member,
+    config,
+    seenIds,
+    since,
+    ctx.signal,
+  );
 
-  // A full, limit-capped page may hide tasks still unseen behind the page
-  // boundary (`/v2/tasks` has no updated-since filter, so a full page is not
-  // necessarily "everything new"). Advance the cursor to the newest
-  // PROCESSED task's `created_at` instead of pinning at `since` (CL-3577
-  // review fix) — that guarantees forward progress through a sustained
-  // backlog (>= perSourceLimit new tasks every tick), where re-issuing the
-  // identical query forever would starve every task past page 1. The
-  // sourceRef dedupe in `syncOneTask`/`reconcileDeletions` absorbs any
-  // boundary overlap this produces.
-  if (attioTasks.length >= ctx.perSourceLimit) {
+  // The listing is now paginated up to MAX_LIST_PAGES_PER_TICK (CL-3630), so
+  // `truncated` (not merely a full single page) is what tells us the page cap
+  // was hit while more might still be unseen behind it. Advance the cursor to
+  // the newest PROCESSED task's `created_at` instead of pinning at `since`
+  // (CL-3577 review fix) — that guarantees forward progress through a
+  // sustained backlog (more open tasks than MAX_LIST_PAGES_PER_TICK *
+  // perSourceLimit every tick), where re-issuing the identical query forever
+  // would starve every task past the page cap. The sourceRef dedupe in
+  // `syncOneTask`/`reconcileDeletions` absorbs any boundary overlap this
+  // produces.
+  if (truncated) {
     return { nextCursor: maxCreatedAt(attioTasks) ?? since };
   }
   return undefined;
