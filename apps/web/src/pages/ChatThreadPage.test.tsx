@@ -185,9 +185,12 @@ describe("ChatThreadPage", () => {
     screen.getByText(/loading your chats/i);
   });
 
-  it("renders the chat surface and passes the Myra thread id as the dock's conversationId (conversationId == Myra thread id contract)", () => {
+  it("renders the chat surface without an in-panel thread switcher and passes the Myra thread id as the dock's conversationId (conversationId == Myra thread id contract)", () => {
     renderAt("/chats/t1");
-    expect(screen.getByTestId("header-left")).toBeDefined();
+    expect(screen.getByTestId("surface")).toBeDefined();
+    // Full-page chat relies on the app top bar for the thread title; the
+    // in-panel ThreadSwitcher (headerLeft) is not mounted.
+    expect(screen.queryByTestId("header-left")).toBeNull();
     // conversationId == Myra thread id; producers (workflow_start tool,
     // chat-initiated starts) stamp the same id as originConversationId — never
     // the instance id.
@@ -200,7 +203,9 @@ describe("ChatThreadPage", () => {
     renderAt("/chats/unknown");
     screen.getByText(/this chat couldn't be found/i);
     expect(
-      screen.getByRole("link", { name: /back to all chats/i }).getAttribute("href"),
+      screen
+        .getByRole("link", { name: /back to all chats/i })
+        .getAttribute("href"),
     ).toBe("/chats");
     expect(screen.queryByTestId("surface")).toBeNull();
   });
