@@ -74,6 +74,7 @@ const TRIGGER_PAYLOAD = {
   userRefId: "usr_abc123",
   userDisplayName: "Jordan Lee",
   createdAfter: "2026-07-04T00:00:00Z",
+  runId: "run-heartbeat-1",
 };
 
 describe("heartbeat native workflow", () => {
@@ -82,7 +83,7 @@ describe("heartbeat native workflow", () => {
   // -------------------------------------------------------------------------
   test("has no awaitSignal steps — every step is a plain step or map", () => {
     const kinds = Object.values(workflow.steps).map((s) => s.kind);
-    expect(kinds.length).toBe(5 + WIRED_BRIEF_SOURCES.length);
+    expect(kinds.length).toBe(6 + WIRED_BRIEF_SOURCES.length);
     for (const kind of kinds) {
       expect(kind === "step" || kind === "map").toBe(true);
       expect(kind).not.toBe("awaitSignal");
@@ -112,6 +113,7 @@ describe("heartbeat native workflow", () => {
     );
     expect(nonIntakeSteps.sort()).toEqual([
       "brief",
+      "mail-refs",
       "merge-sources",
       "notify",
       "persist",
@@ -299,13 +301,28 @@ describe("heartbeat native workflow", () => {
   // -------------------------------------------------------------------------
   // Mail addressing argMap
   // -------------------------------------------------------------------------
-  test("notify argMap addresses the mail to the firing user with the computed title as subject and the brief as content", () => {
+  test("mail-refs argMap builds artifact and workflow_run refs from persist + trigger runId", () => {
+    expect(argMapOf("mail-refs")).toEqual({
+      artifactId: { from: "artifactId" },
+      runId: { from: "runId" },
+      workflowLabel: { literal: "Company Heartbeat" },
+    });
+    expect(stepPrimitive("mail-refs").after).toEqual(["persist"]);
+  });
+
+  test("notify argMap addresses the mail to the firing user with the computed title as subject, the brief as content, and artifact refs", () => {
     expect(argMapOf("notify")).toEqual({
       to: { from: "userAddress" },
       subject: { from: "title" },
       content: { from: "reply" },
+      refs: { from: "refs" },
     });
-    expect(stepPrimitive("notify").after).toEqual(["brief", "title"]);
+    expect(stepPrimitive("notify").after).toEqual([
+      "brief",
+      "title",
+      "persist",
+      "mail-refs",
+    ]);
   });
 
   // -------------------------------------------------------------------------
@@ -324,7 +341,7 @@ describe("heartbeat native workflow", () => {
   // -------------------------------------------------------------------------
   // Full run — completes with ZERO signals (proves gate-free / unattended)
   // -------------------------------------------------------------------------
-  test("runs intake → brief → notify → persist to completion with no human input", async () => {
+  test("runs intake → brief → persist → notify to completion with no human input", async () => {
     const briefReply =
       "# Morning brief\n\n## What happened\n- Discovery call with Acme.";
     const { invoker, ran } = makeRecordingInvoker({
@@ -356,8 +373,20 @@ describe("heartbeat native workflow", () => {
       "heartbeat-title": {
         content: { title: "Jordan Lee's Morning Brief - 04/07/26" },
       },
-      "heartbeat-notify": { messageId: "mail_1" },
       "heartbeat-persist": { artifactId: "art_1", version: 1 },
+      "heartbeat-mail-refs": {
+        content: {
+          refs: [
+            { kind: "artifact", ref: "art_1", label: "Open brief" },
+            {
+              kind: "workflow_run",
+              ref: "run-heartbeat-1",
+              label: "Open Company Heartbeat",
+            },
+          ],
+        },
+      },
+      "heartbeat-notify": { messageId: "mail_1" },
     });
 
     const run = runLocal(workflow, {
@@ -377,8 +406,15 @@ describe("heartbeat native workflow", () => {
     expect(ranIds).toContain("heartbeat-merge-sources");
     expect(ranIds).toContain("heartbeat-brief");
     expect(ranIds).toContain("heartbeat-title");
-    expect(ranIds).toContain("heartbeat-notify");
     expect(ranIds).toContain("heartbeat-persist");
+    expect(ranIds).toContain("heartbeat-mail-refs");
+    expect(ranIds).toContain("heartbeat-notify");
+    const persistIdx = ranIds.indexOf("heartbeat-persist");
+    const mailRefsIdx = ranIds.indexOf("heartbeat-mail-refs");
+    const notifyIdx = ranIds.indexOf("heartbeat-notify");
+    expect(persistIdx).toBeGreaterThanOrEqual(0);
+    expect(mailRefsIdx).toBeGreaterThan(persistIdx);
+    expect(notifyIdx).toBeGreaterThan(mailRefsIdx);
   });
 
   // -------------------------------------------------------------------------
@@ -410,8 +446,20 @@ describe("heartbeat native workflow", () => {
       "heartbeat-title": {
         content: { title: "Jordan Lee's Morning Brief - 04/07/26" },
       },
-      "heartbeat-notify": { messageId: "mail_1" },
       "heartbeat-persist": { artifactId: "art_1", version: 1 },
+      "heartbeat-mail-refs": {
+        content: {
+          refs: [
+            { kind: "artifact", ref: "art_1", label: "Open brief" },
+            {
+              kind: "workflow_run",
+              ref: "run-heartbeat-1",
+              label: "Open Company Heartbeat",
+            },
+          ],
+        },
+      },
+      "heartbeat-notify": { messageId: "mail_1" },
     });
 
     const run = runLocal(workflow, {
@@ -431,6 +479,14 @@ describe("heartbeat native workflow", () => {
     expect(String(mailArgs.to).startsWith("usr_")).toBe(true);
     expect(mailArgs.subject).toBe("Jordan Lee's Morning Brief - 04/07/26");
     expect(mailArgs.content).toBe(briefReply);
+    expect(mailArgs.refs).toEqual([
+      { kind: "artifact", ref: "art_1", label: "Open brief" },
+      {
+        kind: "workflow_run",
+        ref: "run-heartbeat-1",
+        label: "Open Company Heartbeat",
+      },
+    ]);
 
     const persistInput = ran.find((r) => r.id === "heartbeat-persist")
       ?.input as Record<string, unknown> | undefined;

@@ -544,6 +544,47 @@ describe("heartbeat_merge_brief_sources (CL-3485)", () => {
   });
 });
 
+describe("heartbeat_format_brief_mail_refs (CL-3521)", () => {
+  test("returns artifact and workflow_run refs for persist + trigger runId", async () => {
+    const handler = fullTool("heartbeat_format_brief_mail_refs");
+    const result = await handler(
+      {
+        id: "refs",
+        name: "heartbeat_format_brief_mail_refs",
+        arguments: { artifactId: "art_abc", runId: "run_heartbeat-1" },
+      },
+      SIGNAL,
+    );
+    if (typeof result.content === "string") {
+      throw new Error("expected object content");
+    }
+    expect(result.content).toEqual({
+      refs: [
+        { kind: "artifact", ref: "art_abc", label: "Open brief" },
+        {
+          kind: "workflow_run",
+          ref: "run_heartbeat-1",
+          label: "Open Company Heartbeat",
+        },
+      ],
+    });
+  });
+
+  test("returns isError when runId is missing", async () => {
+    const handler = fullTool("heartbeat_format_brief_mail_refs");
+    const result = await handler(
+      {
+        id: "refs",
+        name: "heartbeat_format_brief_mail_refs",
+        arguments: { artifactId: "art_abc" },
+      },
+      SIGNAL,
+    );
+    expect(result.isError).toBe(true);
+    expect(result.content).toBe("runId is required");
+  });
+});
+
 describe("heartbeat_format_brief_title (CL-3502)", () => {
   test("returns a possessive title built from userDisplayName", async () => {
     const handler = fullTool("heartbeat_format_brief_title");

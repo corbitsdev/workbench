@@ -32,20 +32,20 @@ const DISPLAY_STEPS: DisplayStep[] = [
     activityLabel: "Writing your brief",
   },
   {
+    key: "save",
+    label: "Save",
+    stepIds: ["persist"],
+    activityLabel: "Saving to your workbench",
+  },
+  {
     key: "notify",
     label: "Deliver",
     stepIds: ["notify"],
     activityLabel: "Sending to your inbox",
   },
-  {
-    key: "done",
-    label: "Saved",
-    stepIds: ["persist"],
-    activityLabel: "Saving to your workbench",
-  },
 ];
 
-const ALL_STEP_IDS = [...INTAKE_STEP_IDS, "brief", "notify", "persist"];
+const ALL_STEP_IDS = [...INTAKE_STEP_IDS, "brief", "persist", "notify"];
 
 const BriefOutput = type({ reply: "string" });
 
@@ -77,13 +77,13 @@ function briefMarkdown(stepOutputs: Record<string, unknown>): string | null {
 }
 
 function deliveryStatus(state: RunState | null): string {
-  if (phaseFor(state, "persist") === "completed") {
+  if (phaseFor(state, "notify") === "completed") {
     return "Sent to your inbox and saved to your workbench.";
   }
-  if (phaseFor(state, "notify") === "completed") {
-    return "Sent to your inbox. Saving to your workbench…";
+  if (phaseFor(state, "persist") === "completed") {
+    return "Saved to your workbench. Sending to your inbox…";
   }
-  return "Delivering to your inbox…";
+  return "Saving and delivering…";
 }
 
 function Card({

@@ -27,8 +27,9 @@ const MORNING_BRIEF_ARTIFACT_KIND = morningBriefArtifactKind();
 //                      project every intake step → { sources: { … } }
 //   brief             inlineInferenceStep    default model
 //                      merge(payload, merge-sources content)
-//   notify            deterministicToolStep  mail_send   to = userAddress
-//   persist           deterministicToolStep  write_artifact  body = brief reply
+//   persist           deterministicToolStep  write_artifact  body = brief reply (before notify)
+//   mail-refs         deterministicToolStep  heartbeat_format_brief_mail_refs
+//   notify            deterministicToolStep  mail_send   to = userAddress + artifact refs
 //
 // The intake steps are generated from `WIRED_BRIEF_SOURCES`
 // (`@workbench/shared`'s projection of `CREDENTIAL_PROVIDER_CATALOG` entries
@@ -122,29 +123,10 @@ export const workflow = defineWorkflow({
       },
     }),
 
-    // Deliver the brief to the firing user's `usr_` inbox (T3 resolver).
-    notify: deterministicToolStep({
-      id: "heartbeat-notify",
-      title: "Send the brief",
-      tool: "mail_send",
-      input: {
-        merge: [
-          { from: "trigger.payload" },
-          { from: "steps.brief.output" },
-          { from: "steps.title.output.content" },
-        ],
-      },
-      argMap: {
-        to: { from: "userAddress" },
-        subject: { from: "title" },
-        content: { from: "reply" },
-      },
-      after: ["brief", "title"],
-    }),
-
     // Persist the brief as a morning-brief artifact in the user's workbench.
     // `kind` is the stable `morning-brief` literal (CL-3503) — never "report"
-    // — so the artifact's type never drifts across runs.
+    // — so the artifact's type never drifts across runs. Runs before notify so
+    // mail delivery can depend on the saved artifact (CL-3521).
     persist: deterministicToolStep({
       id: "heartbeat-persist",
       title: "Save the brief",
@@ -163,6 +145,47 @@ export const workflow = defineWorkflow({
         jobLabel: { literal: "Morning Brief" },
       },
       after: ["brief", "title"],
+    }),
+
+    // Build mailbox refs from the persisted morning-brief artifact (CL-3521).
+    "mail-refs": deterministicToolStep({
+      id: "heartbeat-mail-refs",
+      title: "Link saved brief in mail",
+      tool: "heartbeat_format_brief_mail_refs",
+      input: {
+        merge: [
+          { from: "trigger.payload" },
+          { from: "steps.persist.output" },
+        ],
+      },
+      argMap: {
+        artifactId: { from: "artifactId" },
+        runId: { from: "runId" },
+        workflowLabel: { literal: label },
+      },
+      after: ["persist"],
+    }),
+
+    // Deliver the brief to the firing user's `usr_` inbox (T3 resolver).
+    notify: deterministicToolStep({
+      id: "heartbeat-notify",
+      title: "Send the brief",
+      tool: "mail_send",
+      input: {
+        merge: [
+          { from: "trigger.payload" },
+          { from: "steps.brief.output" },
+          { from: "steps.title.output.content" },
+          { from: "steps.mail-refs.output.content" },
+        ],
+      },
+      argMap: {
+        to: { from: "userAddress" },
+        subject: { from: "title" },
+        content: { from: "reply" },
+        refs: { from: "refs" },
+      },
+      after: ["brief", "title", "persist", "mail-refs"],
     }),
   },
 });

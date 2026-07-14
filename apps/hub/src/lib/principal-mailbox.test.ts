@@ -15,6 +15,16 @@ const RAW = new TextEncoder().encode(
     "Your brief is ready.\r\n",
 );
 
+const RAW_WITH_REFS = new TextEncoder().encode(
+  "From: ins_dep-heartbeat@tenant.example\r\n" +
+    "To: usr_alice@tenant.example\r\n" +
+    "Subject: Morning brief\r\n" +
+    'X-Workbench-Refs: [{"kind":"artifact","ref":"art_99","label":"Open brief"}]\r\n' +
+    "Date: Fri, 10 Jul 2026 07:00:00 +0000\r\n" +
+    "\r\n" +
+    "Your brief is ready.\r\n",
+);
+
 const SENDER = {
   id: "ins_dep-heartbeat",
   tenantId: "ten-1",
@@ -120,6 +130,28 @@ describe("createPrincipalMailboxPersist", () => {
     });
     // The stored bytes are the frame verbatim — raw stays authoritative.
     expect(new Uint8Array(row?.raw as Uint8Array)).toEqual(RAW);
+  });
+
+  it("stores refs parsed from X-Workbench-Refs on the MIME frame", async () => {
+    const { db, inserted } = makeDb({
+      sender: SENDER,
+      tenantDomain: "tenant.example",
+      memberPrincipal: { id: "pri-alice" },
+    });
+    const { upstream } = makeUpstream();
+    const persist = createPrincipalMailboxPersist(db, upstream);
+
+    await persist({
+      senderAddress: SENDER.address,
+      recipients: ["usr_alice@tenant.example"],
+      raw: RAW_WITH_REFS,
+    });
+
+    expect(inserted).toHaveLength(1);
+    const row = inserted[0]?.[0];
+    expect(row?.refs).toEqual([
+      { kind: "artifact", ref: "art_99", label: "Open brief" },
+    ]);
   });
 
   it("resolves the recipient principal by refId, user kind, and the sender's tenant", async () => {

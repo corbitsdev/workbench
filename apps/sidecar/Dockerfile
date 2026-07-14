@@ -7,7 +7,7 @@ WORKDIR /app
 RUN apt-get update && apt-get install -y git && rm -rf /var/lib/apt/lists/* && \
     git clone --filter=blob:none --no-checkout \
       https://github.com/faremeter/interchange.git interchange && \
-    git -C interchange checkout 13fb9ace3d76f453098e7ea89af030b5d897bd4a
+    git -C interchange checkout 30f07aa36932ebc059d0acd8722180b88f2bfdb3
 
 # Manifests for EVERY workspace member. bun.lock is workspace-global, so
 # `bun install --frozen-lockfile` compares the on-disk member set against the

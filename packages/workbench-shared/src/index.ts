@@ -22,6 +22,8 @@ export * from "./web-site";
 export * from "./preferences-registry";
 export * from "./heartbeat-brief-merge";
 export * from "./heartbeat-brief-title";
+export * from "./heartbeat-brief-mail-refs";
+export * from "./mailbox-refs-header";
 export * from "./changelog";
 export * from "./deep-link";
 export * from "./welcome-mail";

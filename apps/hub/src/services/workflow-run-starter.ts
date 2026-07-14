@@ -138,6 +138,7 @@ export function createWorkflowRunStarter(deps: {
 
     const runId = randomUUID();
     const principalId = creatorPrincipalId ?? deployment.principalId;
+    const triggerPayload = { ...input, runId };
 
     try {
       await insertRunRecord(deps.db, {
@@ -146,7 +147,7 @@ export function createWorkflowRunStarter(deps: {
         kind: deployment.kind,
         tenantId: deployment.tenantId,
         principalId,
-        input,
+        input: triggerPayload,
         originConversationId: null,
         // Mark scheduler-fired runs so the stalled-run reconciler can fail one
         // parked past its timeout without touching interactive runs (CL-3509).
@@ -170,7 +171,7 @@ export function createWorkflowRunStarter(deps: {
         from: `hub@${deps.deploymentDomain}`,
         messageId: runId,
         date: new Date(),
-        content: JSON.stringify(input),
+        content: JSON.stringify(triggerPayload),
         sessionId: randomUUID(),
         tenantId: deployment.tenantId,
         cryptoProvider: deps.cryptoProvider,

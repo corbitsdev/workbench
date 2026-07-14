@@ -218,46 +218,6 @@
           "from": "trigger.payload"
         }
       },
-      "notify": {
-        "kind": "step",
-        "id": "notify",
-        "agent": {
-          "id": "heartbeat-notify",
-          "systemPrompt": "",
-          "toolFactories": [],
-          "capabilities": [
-            "mail_send"
-          ],
-          "inference": {
-            "sources": []
-          },
-          "description": "Deterministic tool call: mail_send",
-          "tags": {
-            "workbench.stepKind": "deterministic-tool",
-            "workbench.tool": "mail_send",
-            "workbench.argMap": "{\"to\":{\"from\":\"userAddress\"},\"subject\":{\"from\":\"title\"},\"content\":{\"from\":\"reply\"}}",
-            "workbench.title": "Send the brief"
-          }
-        },
-        "drainBehavior": "cancel",
-        "input": {
-          "merge": [
-            {
-              "from": "trigger.payload"
-            },
-            {
-              "from": "steps.brief.output"
-            },
-            {
-              "from": "steps.title.output.content"
-            }
-          ]
-        },
-        "after": [
-          "brief",
-          "title"
-        ]
-      },
       "persist": {
         "kind": "step",
         "id": "persist",
@@ -297,6 +257,87 @@
           "brief",
           "title"
         ]
+      },
+      "mail-refs": {
+        "kind": "step",
+        "id": "mail-refs",
+        "agent": {
+          "id": "heartbeat-mail-refs",
+          "systemPrompt": "",
+          "toolFactories": [],
+          "capabilities": [
+            "heartbeat_format_brief_mail_refs"
+          ],
+          "inference": {
+            "sources": []
+          },
+          "description": "Deterministic tool call: heartbeat_format_brief_mail_refs",
+          "tags": {
+            "workbench.stepKind": "deterministic-tool",
+            "workbench.tool": "heartbeat_format_brief_mail_refs",
+            "workbench.argMap": "{\"artifactId\":{\"from\":\"artifactId\"},\"runId\":{\"from\":\"runId\"},\"workflowLabel\":{\"literal\":\"Company Heartbeat\"}}",
+            "workbench.title": "Link saved brief in mail"
+          }
+        },
+        "drainBehavior": "cancel",
+        "input": {
+          "merge": [
+            {
+              "from": "trigger.payload"
+            },
+            {
+              "from": "steps.persist.output"
+            }
+          ]
+        },
+        "after": [
+          "persist"
+        ]
+      },
+      "notify": {
+        "kind": "step",
+        "id": "notify",
+        "agent": {
+          "id": "heartbeat-notify",
+          "systemPrompt": "",
+          "toolFactories": [],
+          "capabilities": [
+            "mail_send"
+          ],
+          "inference": {
+            "sources": []
+          },
+          "description": "Deterministic tool call: mail_send",
+          "tags": {
+            "workbench.stepKind": "deterministic-tool",
+            "workbench.tool": "mail_send",
+            "workbench.argMap": "{\"to\":{\"from\":\"userAddress\"},\"subject\":{\"from\":\"title\"},\"content\":{\"from\":\"reply\"},\"refs\":{\"from\":\"refs\"}}",
+            "workbench.title": "Send the brief"
+          }
+        },
+        "drainBehavior": "cancel",
+        "input": {
+          "merge": [
+            {
+              "from": "trigger.payload"
+            },
+            {
+              "from": "steps.brief.output"
+            },
+            {
+              "from": "steps.title.output.content"
+            },
+            {
+              "from": "steps.mail-refs.output.content"
+            }
+          ]
+        },
+        "after": [
+          "brief",
+          "title",
+          "persist",
+          "mail-refs"
+        ]
       }
     },
     "stepOrder": [
@@ -307,8 +348,9 @@
       "merge-sources",
       "brief",
       "title",
-      "notify",
-      "persist"
+      "persist",
+      "mail-refs",
+      "notify"
     ]
   }
 }
