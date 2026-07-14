@@ -27,6 +27,7 @@ import {
   createEmailMemberResolver,
   type SlackMemberResolver,
 } from "../lib/slack-member-mapping";
+import { resolveTenantForSlackTeam } from "../lib/slack-team-mapping";
 import type { InboxIntakeMember } from "../services/inbox-source-registry";
 
 const log = getLogger(["routes", "webhooks-slack"]);
@@ -82,6 +83,10 @@ export interface SlackWebhookDeps {
   memberResolver?: SlackMemberResolver;
   /** Overridable for tests; defaults to a fresh in-memory dedupe cache. */
   dedupe?: SlackEventDedupe;
+  /** Resolve a Slack workspace's `team_id` to the tenant that enabled it
+   * (CL-3629). Defaults to `resolveTenantForSlackTeam` against `deps.db`;
+   * overridable in tests. Returns null for an unmapped team. */
+  resolveTenantForTeam?: (teamId: string) => Promise<string | null>;
   mailboxEventBus?: MailboxEventBus;
   mailboxTriage?: Pick<MailboxTriage, "enqueue">;
 }
@@ -146,6 +151,9 @@ export function createSlackWebhookRouter(deps: SlackWebhookDeps): Hono {
         return fetchSlackUserEmail(credential, slackUserId, signal);
       },
     });
+  const resolveTenantForTeam =
+    deps.resolveTenantForTeam ??
+    ((teamId: string) => resolveTenantForSlackTeam(deps.db, teamId));
 
   app.post("/webhooks/slack", async (c) => {
     const signature = c.req.header("x-slack-signature");
@@ -203,7 +211,7 @@ export function createSlackWebhookRouter(deps: SlackWebhookDeps): Hono {
         return c.json({ ok: true }, 200);
       }
       await handleEvent(
-        { deps, memberResolver, resolveCredential },
+        { deps, memberResolver, resolveCredential, resolveTenantForTeam },
         envelope.team_id,
         envelope.event,
       );
@@ -220,6 +228,7 @@ interface EventHandlerCtx {
   deps: SlackWebhookDeps;
   memberResolver: SlackMemberResolver;
   resolveCredential: (tenantId: string) => Promise<SlackCredential | null>;
+  resolveTenantForTeam: (teamId: string) => Promise<string | null>;
 }
 
 async function handleEvent(
@@ -257,8 +266,14 @@ async function handleChannelCreated(
   teamId: string,
   channelId: string,
 ): Promise<void> {
-  const tenantId = await firstEnabledTenant(ctx, teamId);
-  if (!tenantId) return;
+  const tenantId = await ctx.resolveTenantForTeam(teamId);
+  if (!tenantId) {
+    log.debug("slack webhook: channel_created for an unmapped team; dropping", {
+      teamId,
+    });
+    return;
+  }
+  if (!(await ctx.deps.isSourceEnabledForTenant(tenantId, SOURCE_KEY))) return;
   const credential = await ctx.resolveCredential(tenantId);
   if (!credential) return;
   await joinNewlyCreatedChannel(
@@ -269,82 +284,70 @@ async function handleChannelCreated(
 }
 
 /**
- * Every tenant that has enrolled Slack members is a candidate for this
- * event's workspace — there is no persisted Slack-team→tenant mapping yet
- * (out of scope for CL-3581; see the final report's assumptions). The first
- * tenant whose Slack source is owner-enabled is treated as the event's home
- * tenant for workspace-scoped actions (auto-join).
+ * Resolves the event's workspace to its mapped tenant (CL-3629) and routes
+ * to that tenant only — an unmapped team (no owner has enabled Slack and
+ * completed the auth.test handshake, or the workspace was never enabled) is
+ * dropped with a debug log rather than fanned out across every tenant.
  */
-async function firstEnabledTenant(
-  ctx: EventHandlerCtx,
-  _teamId: string,
-): Promise<string | null> {
-  const members = await ctx.deps.listMembers();
-  const tenantIds = [...new Set(members.map((m) => m.tenantId))];
-  for (const tenantId of tenantIds) {
-    if (await ctx.deps.isSourceEnabledForTenant(tenantId, SOURCE_KEY)) {
-      return tenantId;
-    }
-  }
-  return null;
-}
-
 async function routeMention(
   ctx: EventHandlerCtx,
   teamId: string,
   slackUserId: string,
   message: typeof MessageEvent.infer,
 ): Promise<void> {
-  const members = await ctx.deps.listMembers();
-  const tenantIds = [...new Set(members.map((m) => m.tenantId))];
-
-  for (const tenantId of tenantIds) {
-    let ownerEnabled: boolean;
-    try {
-      ownerEnabled = await ctx.deps.isSourceEnabledForTenant(
-        tenantId,
-        SOURCE_KEY,
-      );
-    } catch {
-      ownerEnabled = false;
-    }
-    if (!ownerEnabled) continue;
-
-    const signal = new AbortController().signal;
-    const member = await ctx.memberResolver.resolveMember(
-      tenantId,
-      slackUserId,
-      signal,
-    );
-    if (!member) continue;
-
-    // Member-level gate (CL-3581): the owner cascade above is the ceiling,
-    // not the floor — a mention still requires the member's own
-    // `inboxSource:slack` preference, default OFF like every inbox source.
-    // Slack has no member OAuth credential to gate on (unlike Linear/Attio),
-    // so this is a pure preference read, mirroring how the intake tick gates
-    // member sources without requiring a credential the member can't have.
-    let slackEnabled: boolean;
-    try {
-      const prefs = await readMemberPreferences(
-        ctx.deps.db,
-        tenantId,
-        member.memberPrincipalId,
-      );
-      slackEnabled = resolveEnabledInboxSources(prefs).includes(SOURCE_KEY);
-    } catch {
-      slackEnabled = false;
-    }
-    if (!slackEnabled) continue;
-
-    await deliverMention(ctx, teamId, member, message);
+  const tenantId = await ctx.resolveTenantForTeam(teamId);
+  if (!tenantId) {
+    log.debug("slack webhook: event from an unmapped team; dropping", {
+      teamId,
+    });
     return;
   }
 
-  log.debug(
-    "slack webhook: no member matches the mentioned slack user; dropping",
-    { slackUserId },
+  let ownerEnabled: boolean;
+  try {
+    ownerEnabled = await ctx.deps.isSourceEnabledForTenant(
+      tenantId,
+      SOURCE_KEY,
+    );
+  } catch {
+    ownerEnabled = false;
+  }
+  if (!ownerEnabled) return;
+
+  const signal = new AbortController().signal;
+  const member = await ctx.memberResolver.resolveMember(
+    tenantId,
+    slackUserId,
+    signal,
   );
+  if (!member) {
+    log.debug(
+      "slack webhook: no member matches the mentioned slack user; dropping",
+      { slackUserId },
+    );
+    return;
+  }
+
+  // Member-level gate (CL-3581): the owner cascade above is the ceiling,
+  // not the floor — a mention still requires the member's own
+  // `inboxSource:slack` preference, default OFF like every inbox source.
+  // Slack has no member OAuth credential to gate on (unlike Linear/Attio),
+  // so this is a pure preference read, mirroring how the intake tick gates
+  // member sources without requiring a credential the member can't have.
+  let slackEnabled: boolean;
+  try {
+    const prefs = await readMemberPreferences(
+      ctx.deps.db,
+      tenantId,
+      member.memberPrincipalId,
+    );
+    slackEnabled = resolveEnabledInboxSources(prefs).includes(SOURCE_KEY);
+  } catch {
+    slackEnabled = false;
+  }
+  if (!slackEnabled) return;
+
+  await deliverMention(ctx, teamId, member, message);
 }
 
 async function deliverMention(

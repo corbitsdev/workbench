@@ -11,6 +11,7 @@ import {
   MAX_LIST_LIMIT,
   optionalString,
   parseArgs,
+  requireMutationSuccess,
   type LinearToolsConfig,
 } from "./shared";
 
@@ -122,7 +123,7 @@ export async function saveDocument(
       { id: args.id, input },
       signal,
     );
-    return data.documentUpdate ?? { success: false };
+    return requireMutationSuccess(data, "documentUpdate");
   }
   const data = await fetchLinearGraphQL(
     config,
@@ -130,7 +131,7 @@ export async function saveDocument(
     { input },
     signal,
   );
-  return data.documentCreate ?? { success: false };
+  return requireMutationSuccess(data, "documentCreate");
 }
 
 export const LINEAR_LIST_DOCUMENTS_DEFINITION: ToolDefinition = {

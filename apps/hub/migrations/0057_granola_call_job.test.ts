@@ -3,11 +3,11 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
 const sql = readFileSync(
-  join(import.meta.dir, "0056_granola_call_job.sql"),
+  join(import.meta.dir, "0057_granola_call_job.sql"),
   "utf8",
 );
 
-describe("migration 0056_granola_call_job", () => {
+describe("migration 0057_granola_call_job", () => {
   it("creates granola_call_job with status/attempts/backoff columns", () => {
     expect(sql).toContain('CREATE TABLE IF NOT EXISTS "granola_call_job"');
     expect(sql).toContain('"tenant_id"');

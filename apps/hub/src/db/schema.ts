@@ -100,6 +100,33 @@ export const memberIdentity = pgTable(
   }),
 );
 
+// Slack workspace (team) → tenant mapping (CL-3629). Written when the owner
+// enables the Slack inbox source (`auth.test` on the tenant's bot token
+// resolves the team id). `slackTeamId` is globally unique — resolving a
+// webhook's `team_id` yields at most one tenant, so an unmapped team is
+// dropped rather than fanned out across every tenant with Slack enabled.
+// Assumes one signing secret (`SLACK_SIGNING_SECRET`) verifies every mapped
+// team; a distributed Slack app installed to multiple workspaces shares one
+// signing secret, so this holds until per-tenant secrets are needed.
+export const slackTeamTenantMapping = pgTable(
+  "slack_team_tenant_mapping",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: text("tenant_id").notNull(),
+    slackTeamId: text("slack_team_id").notNull(),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at")
+      .notNull()
+      .defaultNow()
+      .$onUpdate(() => new Date()),
+  },
+  (t) => ({
+    slackTeamTenantMappingTeamUniq: unique(
+      "slack_team_tenant_mapping_team_uniq",
+    ).on(t.slackTeamId),
+  }),
+);
+
 // Binary files uploaded before any workflow run exists. Artifacts require a
 // sessionId (FK to workflow_run), but an xlsx arrives ahead of the run that
 // will consume it (CL-1961), so uploads live in their own tenant-owned table

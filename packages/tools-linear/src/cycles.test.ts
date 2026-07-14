@@ -12,7 +12,7 @@ describe("linear_list_cycles", () => {
   it("lists cycles for a team", async () => {
     const nodes = [{ id: "cy1", name: "Cycle 1", number: 1 }];
     const fetcher = makeRoutingFetchStub([
-      { includes: "GetTeam", data: { team: { id: "ENG", name: "Eng" } } },
+      { includes: "TeamByName", data: { teams: { nodes: [{ id: "ENG" }] } } },
       {
         includes: "ListCycles",
         data: { team: { cycles: { nodes, pageInfo: { endCursor: null, hasNextPage: false } } } },
@@ -38,7 +38,7 @@ describe("linear_list_cycles", () => {
 
   it("forwards type current as CycleFilter isActive", async () => {
     const fetcher = makeRoutingFetchStub([
-      { includes: "GetTeam", data: { team: { id: "t1" } } },
+      { includes: "TeamByName", data: { teams: { nodes: [{ id: "t1" }] } } },
       { includes: "ListCycles", data: { team: { cycles: { nodes: [] } } } },
     ]);
     const runner = createToolRunner(createLinearTools({ apiKey: "k", fetcher }));
@@ -62,7 +62,7 @@ describe("linear_list_cycles", () => {
 
   it("forwards type previous as isPast", async () => {
     const fetcher = makeRoutingFetchStub([
-      { includes: "GetTeam", data: { team: { id: "t1" } } },
+      { includes: "TeamByName", data: { teams: { nodes: [{ id: "t1" }] } } },
       { includes: "ListCycles", data: { team: { cycles: { nodes: [] } } } },
     ]);
     const runner = createToolRunner(createLinearTools({ apiKey: "k", fetcher }));
@@ -82,7 +82,7 @@ describe("linear_list_cycles", () => {
 
   it("forwards type next as isFuture", async () => {
     const fetcher = makeRoutingFetchStub([
-      { includes: "GetTeam", data: { team: { id: "t1" } } },
+      { includes: "TeamByName", data: { teams: { nodes: [{ id: "t1" }] } } },
       { includes: "ListCycles", data: { team: { cycles: { nodes: [] } } } },
     ]);
     const runner = createToolRunner(createLinearTools({ apiKey: "k", fetcher }));
@@ -103,7 +103,6 @@ describe("linear_list_cycles", () => {
   it("errors when team is not found", async () => {
     const fetcher = makeRoutingFetchStub([
       { includes: "TeamByName", data: { teams: { nodes: [] } } },
-      { includes: "GetTeam", data: { team: null } },
     ]);
     const runner = createToolRunner(createLinearTools({ apiKey: "k", fetcher }));
 
