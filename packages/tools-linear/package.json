@@ -16,7 +16,8 @@
   },
   "dependencies": {
     "@workbench/tool-credentials": "workspace:*",
-    "@workbench/tool-manifest": "workspace:*"
+    "@workbench/tool-manifest": "workspace:*",
+    "arktype": "catalog:"
   },
   "devDependencies": {
     "@intx/agent": "workspace:*",

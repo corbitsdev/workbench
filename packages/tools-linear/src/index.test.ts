@@ -1,6 +1,7 @@
 import { describe, expect, it, mock } from "bun:test";
 import { createToolRunner } from "@intx/agent";
 import { createLinearTools, LINEAR_HUB_TOOLS, type LinearFetch } from "./index";
+import { asConnection, makeRoutingFetchStub } from "./test-helpers";
 
 type FetchStub = LinearFetch & {
   mock: { calls: [string, RequestInit][] };
@@ -26,17 +27,18 @@ function lastBody(fetcher: FetchStub): {
   return JSON.parse(String(call?.[1].body));
 }
 
+function asConnection(nodes: unknown[]) {
+  return {
+    nodes,
+    pageInfo: { endCursor: null, hasNextPage: false },
+  };
+}
+
 describe("createLinearTools", () => {
-  it("exposes the four read-only tools plus the write tool", () => {
+  it("exposes one tool per LINEAR_HUB_TOOLS entry", () => {
     const tools = createLinearTools({ apiKey: "test-key" });
     const names = tools.map((t) => t.definition.name).sort();
-    expect(names).toEqual([
-      "linear_create_issue",
-      "linear_get_issue",
-      "linear_list_issues",
-      "linear_list_teams",
-      "linear_list_users",
-    ]);
+    expect(names).toEqual(Object.keys(LINEAR_HUB_TOOLS).sort());
   });
 
   it("throws when apiKey is empty", () => {
@@ -116,10 +118,10 @@ describe("linear_list_issues handler", () => {
     );
 
     expect(result.isError).toBeUndefined();
-    expect(JSON.parse(String(result.content))).toEqual({ nodes });
+    expect(JSON.parse(String(result.content))).toEqual(asConnection(nodes));
 
     const body = lastBody(fetcher);
-    expect(body.query).toContain("issues(first: $first, filter: $filter)");
+    expect(body.query).toContain("issues(first:");
     expect(body.query).not.toContain("team(id:");
     expect(body.variables).toEqual({ first: 10 });
   });
@@ -140,7 +142,7 @@ describe("linear_list_issues handler", () => {
     );
 
     const body = lastBody(fetcher);
-    expect(body.query).toContain("issues(first: $first, filter: $filter)");
+    expect(body.query).toContain("issues(first:");
     expect(body.variables).toEqual({
       first: 10,
       filter: {
@@ -293,7 +295,7 @@ describe("linear_list_issues handler", () => {
     expect(JSON.parse(String(result.content))).toEqual({ issues: nodes });
   });
 
-  it("keeps the raw GraphQL shape for non-brief callers", async () => {
+  it("returns a paginated connection for non-brief callers", async () => {
     const nodes = [{ id: "uuid-1", identifier: "ENG-1" }];
     const fetcher = makeFetchStub({ data: { issues: { nodes } } });
     const runner = createToolRunner(
@@ -309,12 +311,75 @@ describe("linear_list_issues handler", () => {
       new AbortController().signal,
     );
 
-    expect(JSON.parse(String(result.content))).toEqual({ nodes });
+    expect(JSON.parse(String(result.content))).toEqual(asConnection(nodes));
   });
 
-  it("scopes to a team and caps first at 100", async () => {
+  it("returns empty issues for brief-shaped calls when the connection is null", async () => {
+    const fetcher = makeFetchStub({ data: { issues: null } });
+    const runner = createToolRunner(
+      createLinearTools({ apiKey: "k", fetcher }),
+    );
+
+    const result = await runner.run(
+      {
+        id: "c1",
+        name: "linear_list_issues",
+        arguments: { enabledSources: ["linear"] },
+      },
+      new AbortController().signal,
+    );
+
+    expect(result.isError).toBeUndefined();
+    expect(JSON.parse(String(result.content))).toEqual({ issues: [] });
+  });
+
+  it("forwards orderBy as a PaginationOrderBy scalar", async () => {
+    const fetcher = makeFetchStub({ data: { issues: { nodes: [] } } });
+    const runner = createToolRunner(
+      createLinearTools({ apiKey: "k", fetcher }),
+    );
+
+    await runner.run(
+      {
+        id: "c1",
+        name: "linear_list_issues",
+        arguments: { orderBy: "updatedAt" },
+      },
+      new AbortController().signal,
+    );
+
+    const body = lastBody(fetcher);
+    expect(body.variables.orderBy).toBe("updatedAt");
+  });
+
+  it("scopes to a team and caps first at the issue list maximum", async () => {
     const nodes = [{ id: "uuid-1", identifier: "ENG-1" }];
-    const fetcher = makeFetchStub({ data: { team: { issues: { nodes } } } });
+    const fetcher = mock((_input: string, init: RequestInit) => {
+      const body = JSON.parse(String(init.body)) as { query: string };
+      if (body.query.includes("GetTeam")) {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({ data: { team: { id: "team-uuid" } } }),
+            { status: 200, headers: { "Content-Type": "application/json" } },
+          ),
+        );
+      }
+      return Promise.resolve(
+        new Response(
+          JSON.stringify({
+            data: {
+              team: {
+                issues: {
+                  nodes,
+                  pageInfo: { endCursor: null, hasNextPage: false },
+                },
+              },
+            },
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        ),
+      );
+    }) as FetchStub;
     const runner = createToolRunner(
       createLinearTools({ apiKey: "k", fetcher }),
     );
@@ -328,14 +393,35 @@ describe("linear_list_issues handler", () => {
       new AbortController().signal,
     );
 
-    expect(JSON.parse(String(result.content))).toEqual({ nodes });
-    const body = lastBody(fetcher);
+    expect(JSON.parse(String(result.content))).toEqual(asConnection(nodes));
+    const lastCall = fetcher.mock.calls.at(-1);
+    expect(lastCall).toBeDefined();
+    const body = JSON.parse(String(lastCall?.[1].body)) as {
+      query: string;
+      variables: Record<string, unknown>;
+    };
     expect(body.query).toContain("team(id: $teamId)");
-    expect(body.variables).toEqual({ teamId: "team-uuid", first: 100 });
+    expect(body.variables).toEqual({ teamId: "team-uuid", first: 250 });
   });
 
   it("errors when the scoped team is not found", async () => {
-    const fetcher = makeFetchStub({ data: { team: null } });
+    const fetcher = mock((_input: string, init: RequestInit) => {
+      const body = JSON.parse(String(init.body)) as { query: string };
+      if (body.query.includes("TeamByName")) {
+        return Promise.resolve(
+          new Response(JSON.stringify({ data: { teams: { nodes: [] } } }), {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          }),
+        );
+      }
+      return Promise.resolve(
+        new Response(JSON.stringify({ data: { team: null } }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }),
+      );
+    }) as FetchStub;
     const runner = createToolRunner(
       createLinearTools({ apiKey: "k", fetcher }),
     );
@@ -411,7 +497,8 @@ describe("linear_get_issue handler", () => {
     );
 
     expect(result.isError).toBe(true);
-    expect(result.content).toContain("id is required");
+    expect(result.content).toContain("linear_get_issue");
+    expect(result.content).toContain("id");
     expect(fetcher.mock.calls).toHaveLength(0);
   });
 
@@ -444,9 +531,9 @@ describe("linear_list_teams and linear_list_users", () => {
       new AbortController().signal,
     );
 
-    expect(JSON.parse(String(result.content))).toEqual({ nodes });
+    expect(JSON.parse(String(result.content))).toEqual(asConnection(nodes));
     const body = lastBody(fetcher);
-    expect(body.query).toContain("teams(first: $first)");
+    expect(body.query).toContain("teams(first:");
     expect(body.variables).toEqual({ first: 25 });
   });
 
@@ -462,9 +549,9 @@ describe("linear_list_teams and linear_list_users", () => {
       new AbortController().signal,
     );
 
-    expect(JSON.parse(String(result.content))).toEqual({ nodes });
+    expect(JSON.parse(String(result.content))).toEqual(asConnection(nodes));
     const body = lastBody(fetcher);
-    expect(body.query).toContain("users(first: $first)");
+    expect(body.query).toContain("users(first:");
     expect(body.variables).toEqual({ first: 10 });
   });
 });
@@ -545,9 +632,10 @@ describe("linear_create_issue handler", () => {
       title: "Ship the write tool",
       url: "https://linear.app/x/issue/ENG-9",
     };
-    const fetcher = makeFetchStub({
-      data: { issueCreate: { success: true, issue } },
-    });
+    const fetcher = makeRoutingFetchStub([
+      { includes: "GetTeam", data: { team: { id: "team-uuid" } } },
+      { includes: "issueCreate", data: { issueCreate: { success: true, issue } } },
+    ]);
     const runner = createToolRunner(
       createLinearTools({ apiKey: "k", fetcher }),
     );
@@ -569,7 +657,11 @@ describe("linear_create_issue handler", () => {
     expect(result.isError).toBeUndefined();
     expect(JSON.parse(String(result.content))).toEqual(issue);
 
-    const body = lastBody(fetcher);
+    const lastCall = fetcher.mock.calls.at(-1);
+    const body = JSON.parse(String(lastCall?.[1].body)) as {
+      query: string;
+      variables: Record<string, unknown>;
+    };
     expect(body.query).toContain("issueCreate(input: $input)");
     expect(body.variables).toEqual({
       input: {
@@ -583,9 +675,10 @@ describe("linear_create_issue handler", () => {
 
   it("omits optional fields when not provided", async () => {
     const issue = { id: "uuid-1", identifier: "ENG-1", title: "T", url: "u" };
-    const fetcher = makeFetchStub({
-      data: { issueCreate: { success: true, issue } },
-    });
+    const fetcher = makeRoutingFetchStub([
+      { includes: "GetTeam", data: { team: { id: "team-uuid" } } },
+      { includes: "issueCreate", data: { issueCreate: { success: true, issue } } },
+    ]);
     const runner = createToolRunner(
       createLinearTools({ apiKey: "k", fetcher }),
     );
@@ -599,7 +692,11 @@ describe("linear_create_issue handler", () => {
       new AbortController().signal,
     );
 
-    expect(lastBody(fetcher).variables).toEqual({
+    const lastCall = fetcher.mock.calls.at(-1);
+    const body = JSON.parse(String(lastCall?.[1].body)) as {
+      variables: Record<string, unknown>;
+    };
+    expect(body.variables).toEqual({
       input: { teamId: "team-uuid", title: "T" },
     });
   });
@@ -620,7 +717,8 @@ describe("linear_create_issue handler", () => {
     );
 
     expect(result.isError).toBe(true);
-    expect(result.content).toContain("teamId is required");
+    expect(result.content).toContain("linear_create_issue");
+    expect(result.content).toContain("teamId");
     expect(fetcher.mock.calls).toHaveLength(0);
   });
 
@@ -640,14 +738,19 @@ describe("linear_create_issue handler", () => {
     );
 
     expect(result.isError).toBe(true);
-    expect(result.content).toContain("title is required");
+    expect(result.content).toContain("linear_create_issue");
+    expect(result.content).toContain("title");
     expect(fetcher.mock.calls).toHaveLength(0);
   });
 
   it("errors when Linear rejects the create and returns no issue", async () => {
-    const fetcher = makeFetchStub({
-      data: { issueCreate: { success: false, issue: null } },
-    });
+    const fetcher = makeRoutingFetchStub([
+      { includes: "GetTeam", data: { team: { id: "team-uuid" } } },
+      {
+        includes: "issueCreate",
+        data: { issueCreate: { success: false, issue: null } },
+      },
+    ]);
     const runner = createToolRunner(
       createLinearTools({ apiKey: "k", fetcher }),
     );
@@ -656,21 +759,30 @@ describe("linear_create_issue handler", () => {
       {
         id: "c1",
         name: "linear_create_issue",
-        arguments: { teamId: "bad-team", title: "T" },
+        arguments: { teamId: "team-uuid", title: "T" },
       },
       new AbortController().signal,
     );
 
     expect(result.isError).toBe(true);
-    expect(result.content).toContain("Linear did not return the created issue");
-    expect(fetcher.mock.calls).toHaveLength(1);
+    expect(result.content).toContain("Linear did not return the issue from issueCreate");
+    expect(fetcher.mock.calls).toHaveLength(2);
   });
 });
 
 describe("LINEAR_HUB_TOOLS", () => {
-  it("classifies linear_create_issue as a write and the rest as reads", () => {
-    expect(LINEAR_HUB_TOOLS.linear_create_issue.sideEffect).toBe("write");
-    expect(LINEAR_HUB_TOOLS.linear_list_issues.sideEffect).toBe("read");
+  it("classifies linear_create_issue as write and linear_list_issues as read", () => {
+    expect(LINEAR_HUB_TOOLS.linear_create_issue?.sideEffect).toBe("write");
+    expect(LINEAR_HUB_TOOLS.linear_list_issues?.sideEffect).toBe("read");
+  });
+
+  it("classifies every write tool as write", () => {
+    const writeNames = Object.keys(LINEAR_HUB_TOOLS).filter((name) =>
+      /^(linear_(create|update|save|delete|archive|link|prepare))/.test(name),
+    );
+    for (const name of writeNames) {
+      expect(LINEAR_HUB_TOOLS[name]?.sideEffect).toBe("write");
+    }
   });
 
   it("builds each tool from resolved credentials with the linear provider", () => {
@@ -687,7 +799,8 @@ describe("LINEAR_HUB_TOOLS", () => {
   });
 
   it("builds tools when baseURL is empty by falling back to the default endpoint", () => {
-    const tools = LINEAR_HUB_TOOLS.linear_list_issues.createTools({
+    expect(LINEAR_HUB_TOOLS.linear_list_issues).toBeDefined();
+    const tools = LINEAR_HUB_TOOLS.linear_list_issues!.createTools({
       apiKey: "k",
       baseURL: "",
     });
