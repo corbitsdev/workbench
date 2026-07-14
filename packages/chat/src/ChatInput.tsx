@@ -43,10 +43,29 @@ export interface MentionCandidate {
   name: string;
 }
 
+/** One skill the `/` composer trigger can invoke as a slash command. */
+export interface SlashCommand {
+  /** Bare skill name, inserted as `/name `. */
+  name: string;
+  description: string;
+  /** Short usage/argument hint shown once the command is selected. */
+  argumentHint?: string;
+}
+
 // Matches an in-progress `@query` at the caret so the trigger only fires
 // while typing a token, not on every `@` anywhere in the draft. No
 // whitespace in the query keeps this from matching across word boundaries.
 const MENTION_TRIGGER = /@([^\s@]*)$/;
+
+// Matches an in-progress `/query` at the start of the draft or right after
+// whitespace, so `/` mid-word (e.g. a URL) never triggers the popover.
+const SLASH_TRIGGER = /(^|\s)\/(\S*)$/;
+
+// Matches a fully-typed command token — same anchor as SLASH_TRIGGER (start
+// of draft or after whitespace) — used to derive the post-selection
+// parameter hint without extra state. Global so the *last* command token in
+// the draft wins when there is more than one match.
+const SLASH_COMMAND_PREFIX = /(?:^|\s)\/(\S+)(?:\s|$)/g;
 
 /**
  * A draft submitted while a turn is in flight (CL-2988). Held here — not
@@ -79,6 +98,19 @@ function findMentionQuery(
   if (match === null) return null;
   const query = match[1] ?? "";
   return { query, start: caret - query.length - 1 };
+}
+
+function findSlashQuery(
+  text: string,
+  caret: number,
+): { query: string; start: number } | null {
+  const upToCaret = text.slice(0, caret);
+  const match = SLASH_TRIGGER.exec(upToCaret);
+  if (match === null) return null;
+  const query = match[2] ?? "";
+  const prefixLen = match[1]?.length ?? 0;
+  const start = (match.index ?? 0) + prefixLen;
+  return { query, start };
 }
 
 // Shared geometry for the composer's circular controls (+ trigger and send)
@@ -132,6 +164,11 @@ export interface ChatInputProps {
    */
   mentionCandidates?: MentionCandidate[];
   /**
+   * Skills eligible for `/` slash-command autocomplete. Omitted or empty
+   * disables the trigger entirely (no dropdown, `/` types literally).
+   */
+  slashCommands?: SlashCommand[];
+  /**
    * Enables microphone dictation with end-of-speech auto-send (Myra composer).
    * Hidden when the browser lacks speech recognition.
    */
@@ -153,6 +190,7 @@ export function ChatInput({
   attachmentPolicy,
   fullWidth,
   mentionCandidates,
+  slashCommands,
   voiceInput,
 }: ChatInputProps) {
   const [draft, setDraft] = useState("");
@@ -166,6 +204,11 @@ export function ChatInput({
   const [queue, setQueue] = useState<QueuedMessage[]>([]);
   const wasBusyRef = useRef(busy === true);
   const [mentionState, setMentionState] = useState<{
+    start: number;
+    query: string;
+    activeIndex: number;
+  } | null>(null);
+  const [slashState, setSlashState] = useState<{
     start: number;
     query: string;
     activeIndex: number;
@@ -186,6 +229,32 @@ export function ChatInput({
     mentionCandidates !== undefined &&
     mentionCandidates.length > 0 &&
     mentionMatches.length > 0;
+
+  const slashMatches = useMemo(() => {
+    if (slashState === null || slashCommands === undefined) return [];
+    const query = slashState.query.toLowerCase();
+    return slashCommands
+      .filter((s) => s.name.toLowerCase().startsWith(query))
+      .slice(0, 6);
+  }, [slashState, slashCommands]);
+
+  const slashOpen =
+    !mentionOpen &&
+    slashState !== null &&
+    slashCommands !== undefined &&
+    slashCommands.length > 0 &&
+    slashMatches.length > 0;
+
+  // Derived (not stored) so the hint disappears the moment the user edits the
+  // command token away, without any extra state to keep in sync.
+  const activeSlashCommand = useMemo(() => {
+    if (slashCommands === undefined || slashCommands.length === 0) return null;
+    const matches = Array.from(draft.matchAll(SLASH_COMMAND_PREFIX));
+    const last = matches[matches.length - 1];
+    if (last === undefined) return null;
+    const name = last[1] ?? "";
+    return slashCommands.find((s) => s.name === name) ?? null;
+  }, [draft, slashCommands]);
 
   const insertMention = useCallback(
     (candidate: MentionCandidate) => {
@@ -225,6 +294,46 @@ export function ChatInput({
       });
     },
     [mentionCandidates],
+  );
+
+  const insertSlashCommand = useCallback(
+    (candidate: SlashCommand) => {
+      if (slashState === null) return;
+      const el = textareaRef.current;
+      const caret = el?.selectionStart ?? draft.length;
+      const before = draft.slice(0, slashState.start);
+      const after = draft.slice(caret);
+      const token = `/${candidate.name} `;
+      const nextDraft = `${before}${token}${after}`;
+      setDraft(nextDraft);
+      setSlashState(null);
+      requestAnimationFrame(() => {
+        const nextCaret = before.length + token.length;
+        el?.focus();
+        el?.setSelectionRange(nextCaret, nextCaret);
+      });
+    },
+    [draft, slashState],
+  );
+
+  const syncSlashState = useCallback(
+    (text: string, caret: number) => {
+      if (slashCommands === undefined || slashCommands.length === 0) {
+        setSlashState(null);
+        return;
+      }
+      const found = findSlashQuery(text, caret);
+      if (found === null) {
+        setSlashState(null);
+        return;
+      }
+      setSlashState({
+        start: found.start,
+        query: found.query,
+        activeIndex: 0,
+      });
+    },
+    [slashCommands],
   );
 
   // Only a genuinely unusable session (loading, provisioning, fatal, etc.)
@@ -284,6 +393,7 @@ export function ChatInput({
     setPending([]);
     setErrors([]);
     setMentionState(null);
+    setSlashState(null);
   };
 
   // Dispatches one message through the host's onSend, handling the
@@ -416,6 +526,45 @@ export function ChatInput({
   };
 
   const handleKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
+    if (slashOpen && !mentionOpen && slashState !== null) {
+      if (event.key === "ArrowDown") {
+        event.preventDefault();
+        setSlashState((prev) =>
+          prev === null
+            ? prev
+            : {
+                ...prev,
+                activeIndex: (prev.activeIndex + 1) % slashMatches.length,
+              },
+        );
+        return;
+      }
+      if (event.key === "ArrowUp") {
+        event.preventDefault();
+        setSlashState((prev) =>
+          prev === null
+            ? prev
+            : {
+                ...prev,
+                activeIndex:
+                  (prev.activeIndex - 1 + slashMatches.length) %
+                  slashMatches.length,
+              },
+        );
+        return;
+      }
+      if (event.key === "Enter" || event.key === "Tab") {
+        event.preventDefault();
+        const candidate = slashMatches[slashState.activeIndex];
+        if (candidate !== undefined) insertSlashCommand(candidate);
+        return;
+      }
+      if (event.key === "Escape") {
+        event.preventDefault();
+        setSlashState(null);
+        return;
+      }
+    }
     if (mentionOpen) {
       if (event.key === "ArrowDown") {
         event.preventDefault();
@@ -583,10 +732,53 @@ export function ChatInput({
         </div>
       )}
 
+      {!slashOpen && activeSlashCommand !== null && (
+        <div className={cn("mb-1.5 px-1 text-xs text-text-2", rowWidth)}>
+          <span className="font-medium text-text">
+            /{activeSlashCommand.name}
+          </span>{" "}
+          <span>
+            {activeSlashCommand.argumentHint ?? activeSlashCommand.description}
+          </span>
+        </div>
+      )}
+
       {/* Centered + capped by default so the prompt box does not stretch
           edge-to-edge across a wide/expanded panel; `fullWidth` lines it up with
           the message column in the docked context. */}
       <div className={cn("relative flex items-end gap-2", rowWidth)}>
+        {slashOpen && slashState !== null && (
+          <ul
+            role="listbox"
+            aria-label="Run a skill"
+            className="absolute bottom-full left-0 z-10 mb-1 max-h-48 w-80 overflow-y-auto rounded-card border border-border bg-surface py-1 shadow-lg"
+          >
+            {slashMatches.map((candidate, index) => (
+              <li key={candidate.name}>
+                <button
+                  type="button"
+                  role="option"
+                  aria-selected={index === slashState.activeIndex}
+                  onClick={() => insertSlashCommand(candidate)}
+                  onMouseEnter={() =>
+                    setSlashState((prev) =>
+                      prev === null ? prev : { ...prev, activeIndex: index },
+                    )
+                  }
+                  className={cn(
+                    "block w-full cursor-pointer px-3 py-1.5 text-left text-sm text-text",
+                    index === slashState.activeIndex && "bg-surface-2",
+                  )}
+                >
+                  <div className="truncate font-medium">/{candidate.name}</div>
+                  <div className="truncate text-xs text-text-2">
+                    {candidate.description}
+                  </div>
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
         {mentionOpen && (
           <ul
             role="listbox"
@@ -687,6 +879,7 @@ export function ChatInput({
             voice.onManualDraftEdit(event.target.value);
             adjustHeight();
             syncMentionState(event.target.value, event.target.selectionStart);
+            syncSlashState(event.target.value, event.target.selectionStart);
           }}
           onInput={adjustHeight}
           onPaste={handlePaste}

@@ -13,7 +13,11 @@ import {
   type ThreadInsert,
 } from "./ChatThread";
 import { QuickReplyChips } from "./QuickReplyChips";
-import { ChatInput, type MentionCandidate } from "./ChatInput";
+import {
+  ChatInput,
+  type MentionCandidate,
+  type SlashCommand,
+} from "./ChatInput";
 import type { AttachmentPolicy, PendingAttachment } from "./attachments";
 import type { UIBlock, UIResponse } from "@workbench/blocks";
 import type { FeedbackSubjectKind } from "./feedback-types";
@@ -107,6 +111,8 @@ export interface ChatPanelProps {
   attachmentPolicy?: AttachmentPolicy;
   /** Workspace members eligible for `@` mention autocomplete in the composer. */
   mentionCandidates?: MentionCandidate[];
+  /** Skills eligible for `/` slash-command autocomplete in the composer. */
+  slashCommands?: SlashCommand[];
   /** Microphone dictation with auto-send after end-of-speech (Myra). */
   voiceInput?: boolean;
 }
@@ -155,6 +161,7 @@ export function ChatPanel({
   inputAccessory,
   attachmentPolicy,
   mentionCandidates,
+  slashCommands,
   voiceInput,
 }: ChatPanelProps) {
   const busy = typing === true || (activity !== undefined && activity !== null);
@@ -292,6 +299,7 @@ export function ChatPanel({
         {...(inputDisabled !== undefined ? { disabled: inputDisabled } : {})}
         {...(attachmentPolicy !== undefined ? { attachmentPolicy } : {})}
         {...(mentionCandidates !== undefined ? { mentionCandidates } : {})}
+        {...(slashCommands !== undefined ? { slashCommands } : {})}
         {...(voiceInput === true ? { voiceInput: true } : {})}
       />
     </div>

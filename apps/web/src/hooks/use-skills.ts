@@ -6,6 +6,7 @@ const skillSchema = type({
   id: "string",
   name: "string",
   displayName: "string|null",
+  "description?": "string|null",
   createdAt: "string",
   updatedAt: "string",
   scope: "'private'|'tenant'",

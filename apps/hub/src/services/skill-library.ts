@@ -94,6 +94,7 @@ export const skillItemSchema = type({
   id: "string",
   name: "string",
   displayName: "string | null",
+  description: "string | null",
   createdAt: "string",
   updatedAt: "string",
   scope: skillAccessScopeSchema,
@@ -510,6 +511,7 @@ type SkillRow = {
   id: string;
   name: string;
   displayName: string | null;
+  description: string | null;
   tenantId: string;
   createdAt: Date;
   updatedAt: Date;
@@ -523,6 +525,7 @@ function toSkillItem(row: SkillRow): SkillItem {
     id: row.id,
     name: row.name,
     displayName: row.displayName ?? null,
+    description: row.description ?? null,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
     scope: row.scope ?? "tenant",
@@ -536,6 +539,7 @@ const skillRowColumns = {
   id: intxSchema.asset.id,
   name: intxSchema.asset.name,
   displayName: intxSchema.asset.displayName,
+  description: skillAccess.description,
   tenantId: intxSchema.asset.tenantId,
   createdAt: intxSchema.asset.createdAt,
   updatedAt: intxSchema.asset.updatedAt,
@@ -969,6 +973,7 @@ export async function createSkill(
       scope: input.scope,
       ownerUserId: input.ownerUserId,
       ownerPrincipalId: userContext.principalId,
+      description: input.description ?? null,
     });
   } catch (err) {
     // populate or access-row write failed — delete the orphaned asset (and any
@@ -993,6 +998,7 @@ export async function createSkill(
     id: asset.id,
     name: asset.name,
     displayName: asset.displayName ?? null,
+    description: input.description ?? null,
     createdAt: asset.createdAt.toISOString(),
     updatedAt: asset.updatedAt.toISOString(),
     scope: input.scope,
@@ -1036,6 +1042,17 @@ export async function updateSkill(
     },
     principal: { kind: "hub" },
   });
+
+  // Keep skill_access.description in sync with the frontmatter written above
+  // so listSkills can read it back without a per-skill git fetch. Only touch
+  // the column when the caller actually sent a description, so a bare
+  // content-only edit doesn't silently blank out a previously set one.
+  if (input.description !== undefined) {
+    await db
+      .update(skillAccess)
+      .set({ description: input.description })
+      .where(eq(skillAccess.assetId, existing.id));
+  }
 
   // Re-resolve through the read path so the response carries the fresh updatedAt
   // and the joined owner name (not a hardcoded null).

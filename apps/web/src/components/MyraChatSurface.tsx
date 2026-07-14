@@ -17,6 +17,7 @@ import {
   type PendingAttachment,
   type SignalRouting,
   type MentionCandidate,
+  type SlashCommand,
 } from "@workbench/chat";
 import {
   friendlyToolSummary,
@@ -42,6 +43,7 @@ import { useMyraReasoningExpanded } from "../hooks/use-myra-reasoning-expanded";
 import { useApprovalDisplayLookups } from "../hooks/use-approval-display-lookups";
 import { createChatToolSummaryFormatter } from "../lib/chat-tool-summary";
 import { useMyraVoiceInput } from "../hooks/use-myra-voice-input";
+import { useSkillLibrary } from "../hooks/use-skills";
 import { ActiveContextPills } from "./ActiveContextPills";
 import { ReviewGate } from "./ReviewGate";
 import { renderChatToolMarker } from "./ToolCallProviderMarker";
@@ -210,9 +212,7 @@ export function MyraChatSurface({
   mentionCandidates,
 }: MyraChatSurfaceProps) {
   const agent: ChatAgentIdentity =
-    threadLabel !== undefined &&
-    threadLabel !== "" &&
-    headerLeft === undefined
+    threadLabel !== undefined && threadLabel !== "" && headerLeft === undefined
       ? { name: threadLabel, tagline: MYRA.tagline }
       : MYRA;
   const { compact: compactToolActivity } = useCompactToolActivity();
@@ -221,6 +221,14 @@ export function MyraChatSurface({
   const reasoningExpandedPrefs = useMyraReasoningExpanded(session.messages);
   const { lookups, isLoading: approvalLookupsLoading } =
     useApprovalDisplayLookups(tenantId ?? "");
+  const { data: skillLibrary } = useSkillLibrary(tenantId);
+  const slashCommands: SlashCommand[] | undefined = useMemo(() => {
+    if (skillLibrary === undefined) return undefined;
+    return skillLibrary.map((skill) => ({
+      name: skill.name,
+      description: skill.description ?? skill.displayName ?? skill.name,
+    }));
+  }, [skillLibrary]);
   const formatToolSummary = useMemo(
     () => createChatToolSummaryFormatter(lookups, approvalLookupsLoading),
     [lookups, approvalLookupsLoading],
@@ -265,6 +273,9 @@ export function MyraChatSurface({
     ...(headerLeft !== undefined ? { headerLeft } : {}),
     ...(mentionCandidates !== undefined && mentionCandidates.length > 0
       ? { mentionCandidates }
+      : {}),
+    ...(slashCommands !== undefined && slashCommands.length > 0
+      ? { slashCommands }
       : {}),
     voiceInput: myraVoiceInput,
   };

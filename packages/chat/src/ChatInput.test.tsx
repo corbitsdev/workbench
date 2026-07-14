@@ -517,6 +517,102 @@ describe("ChatInput abort (stop button)", () => {
       expect(screen.queryByRole("listbox")).toBeNull();
     });
   });
+
+  describe("slash command autocomplete", () => {
+    const SKILLS = [
+      { name: "linear-create", description: "Create a Linear issue" },
+      {
+        name: "linear-update",
+        description: "Update a Linear issue",
+        argumentHint: "issue-id status",
+      },
+    ];
+
+    it("opens a filtered dropdown after typing / and a query at the start of the draft", async () => {
+      const user = userEvent.setup();
+      render(<ChatInput onSend={() => {}} slashCommands={SKILLS} />);
+      await user.type(screen.getByLabelText("Message"), "/linear-c");
+      expect(screen.getByRole("listbox")).toBeTruthy();
+      expect(
+        screen.getByRole("option", { name: /linear-create/ }),
+      ).toBeTruthy();
+      expect(
+        screen.queryByRole("option", { name: /linear-update/ }),
+      ).toBeNull();
+    });
+
+    it("opens after whitespace, not mid-word", async () => {
+      const user = userEvent.setup();
+      render(<ChatInput onSend={() => {}} slashCommands={SKILLS} />);
+      const input = screen.getByLabelText("Message") as HTMLTextAreaElement;
+      await user.type(input, "see docs/linear-c");
+      expect(screen.queryByRole("listbox")).toBeNull();
+      await user.type(input, " /linear-c");
+      expect(screen.getByRole("listbox")).toBeTruthy();
+    });
+
+    it("inserts /name and closes the dropdown on Enter", async () => {
+      const user = userEvent.setup();
+      render(<ChatInput onSend={() => {}} slashCommands={SKILLS} />);
+      const input = screen.getByLabelText("Message") as HTMLTextAreaElement;
+      await user.type(input, "/linear-c{Enter}");
+      expect(input.value).toBe("/linear-create ");
+      expect(screen.queryByRole("listbox")).toBeNull();
+    });
+
+    it("navigates candidates with arrow keys before inserting", async () => {
+      const user = userEvent.setup();
+      render(<ChatInput onSend={() => {}} slashCommands={SKILLS} />);
+      const input = screen.getByLabelText("Message") as HTMLTextAreaElement;
+      await user.type(input, "/linear-");
+      await user.keyboard("{ArrowDown}{Enter}");
+      expect(input.value).toBe("/linear-update ");
+    });
+
+    it("closes the dropdown on Escape without inserting a token", async () => {
+      const user = userEvent.setup();
+      render(<ChatInput onSend={() => {}} slashCommands={SKILLS} />);
+      const input = screen.getByLabelText("Message") as HTMLTextAreaElement;
+      await user.type(input, "/linear-c{Escape}");
+      expect(screen.queryByRole("listbox")).toBeNull();
+      expect(input.value).toBe("/linear-c");
+    });
+
+    it("does not open a dropdown when no slash commands are given", async () => {
+      const user = userEvent.setup();
+      render(<ChatInput onSend={() => {}} />);
+      await user.type(screen.getByLabelText("Message"), "/linear-c");
+      expect(screen.queryByRole("listbox")).toBeNull();
+    });
+
+    it("shows the argument hint once a full command is selected, and hides it when the token is edited away", async () => {
+      const user = userEvent.setup();
+      render(<ChatInput onSend={() => {}} slashCommands={SKILLS} />);
+      const input = screen.getByLabelText("Message") as HTMLTextAreaElement;
+      await user.type(input, "/linear-u{Enter}");
+      expect(screen.getByText("issue-id status")).toBeTruthy();
+
+      await user.clear(input);
+      await user.type(input, "not a command");
+      expect(screen.queryByText("issue-id status")).toBeNull();
+    });
+
+    it("falls back to the description when a command has no argument hint", async () => {
+      const user = userEvent.setup();
+      render(<ChatInput onSend={() => {}} slashCommands={SKILLS} />);
+      const input = screen.getByLabelText("Message") as HTMLTextAreaElement;
+      await user.type(input, "/linear-c{Enter}");
+      expect(screen.getByText("Create a Linear issue")).toBeTruthy();
+    });
+
+    it("shows the hint for a command typed after other text, not just at draft start", async () => {
+      const user = userEvent.setup();
+      render(<ChatInput onSend={() => {}} slashCommands={SKILLS} />);
+      const input = screen.getByLabelText("Message") as HTMLTextAreaElement;
+      await user.type(input, "please /linear-u{Enter}");
+      expect(screen.getByText("issue-id status")).toBeTruthy();
+    });
+  });
 });
 
 describe("ChatInput voice dictation", () => {

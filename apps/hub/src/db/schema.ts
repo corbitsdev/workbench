@@ -591,6 +591,9 @@ export const skillAccess = pgTable("skill_access", {
   scope: text("scope", { enum: skillAccessScope }).notNull(),
   ownerUserId: text("owner_user_id").notNull(),
   ownerPrincipalId: text("owner_principal_id").notNull(),
+  // One-line summary surfaced in listSkills (e.g. slash-command autocomplete);
+  // also baked into the skill's SKILL.md frontmatter at write time.
+  description: text("description"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 

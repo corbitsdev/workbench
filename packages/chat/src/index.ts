@@ -100,6 +100,7 @@ export {
   ChatInput,
   type ChatInputProps,
   type MentionCandidate,
+  type SlashCommand,
 } from "./ChatInput";
 export {
   validateFiles,
