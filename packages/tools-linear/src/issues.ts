@@ -274,6 +274,7 @@ async function resolveWorkflowStateId(
 
 function buildIssueFilter(
   args: Record<string, unknown>,
+  briefShaped: boolean,
 ): Record<string, unknown> | null {
   const state = optionalString(args.state);
   const assignee = optionalString(args.assignee);
@@ -285,8 +286,6 @@ function buildIssueFilter(
     typeof args.priority === "number" && Number.isInteger(args.priority)
       ? args.priority
       : null;
-  const updatedAfter =
-    optionalString(args.updatedAfter) ?? optionalString(args.createdAfter);
   const filter: Record<string, unknown> = {};
   if (state !== null) {
     filter.state = { name: { eqIgnoreCase: state } };
@@ -309,8 +308,22 @@ function buildIssueFilter(
   if (priority !== null) {
     filter.priority = { eq: priority };
   }
-  if (updatedAfter !== null) {
-    filter.updatedAt = { gt: updatedAfter };
+  if (briefShaped) {
+    // Brief path: createdAfter is a historical alias for the updatedAt bound.
+    const updatedAfter =
+      optionalString(args.updatedAfter) ?? optionalString(args.createdAfter);
+    if (updatedAfter !== null) {
+      filter.updatedAt = { gt: updatedAfter };
+    }
+  } else {
+    const updatedAfter = optionalString(args.updatedAfter);
+    const createdAfter = optionalString(args.createdAfter);
+    if (updatedAfter !== null) {
+      filter.updatedAt = { gt: updatedAfter };
+    }
+    if (createdAfter !== null) {
+      filter.createdAt = { gt: createdAfter };
+    }
   }
   return Object.keys(filter).length > 0 ? filter : null;
 }
@@ -341,10 +354,9 @@ export async function listIssues(
   );
   const teamId =
     optionalString(args.teamId) ?? optionalString(args.team);
-  const filter = buildIssueFilter(args);
-  const orderBy = buildOrderBy(args);
-
   const briefShaped = enabledSources !== undefined;
+  const filter = buildIssueFilter(args, briefShaped);
+  const orderBy = buildOrderBy(args);
   const shapeResult = (connection: unknown): unknown => {
     const shaped = connectionResult(connection);
     if (!briefShaped) return shaped;
@@ -604,10 +616,14 @@ export const LINEAR_LIST_ISSUES_DEFINITION: ToolDefinition = {
         type: "string",
         description: "createdAt or updatedAt (descending).",
       },
-      updatedAfter: { type: "string", description: "ISO updatedAt lower bound." },
+      updatedAfter: {
+        type: "string",
+        description: "ISO updatedAt lower bound (updatedAt.gt).",
+      },
       createdAfter: {
         type: "string",
-        description: "Brief-internal updatedAt bound when updatedAfter absent.",
+        description:
+          "ISO createdAt lower bound (createdAt.gt). On brief-shaped calls (enabledSources present), falls back to updatedAt.gt when updatedAfter is absent.",
       },
       enabledSources: {
         type: "array",
