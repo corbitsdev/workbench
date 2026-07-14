@@ -127,11 +127,26 @@ Slack mention intake ships in the same release as this guide. Setup:
 4. Set the app's signing secret as `SLACK_SIGNING_SECRET`, and the bot token
    as `SLACK_BOT_TOKEN` (this also seeds the tenant `slack` tool credential
    used for user lookup, permalinks, and channel auto-join).
-5. Turn Slack on in Owner → Inbox sources.
+5. Turn Slack on in Owner → Inbox sources. This calls `auth.test` with the
+   tenant's bot token to resolve the workspace's `team_id` and persists a
+   `team_id → tenant` mapping (`slack_team_tenant_mapping`, CL-3629) — the
+   webhook uses this to route an incoming event to the one tenant that
+   enabled that workspace, instead of scanning every tenant with Slack
+   enabled. If `auth.test` fails or returns no `team_id`, enablement still
+   succeeds but no mapping is recorded (a warning is logged) — the auto-join
+   sweep still runs, but webhook events for that workspace will drop until
+   Slack is re-enabled successfully. **Constraint:** every mapped workspace is
+   verified with the single `SLACK_SIGNING_SECRET` — this only works when all
+   connected workspaces are installs of the same distributed Slack app (one
+   signing secret, many team installs). A second Slack app with a different
+   signing secret is not supported yet; per-tenant signing secrets are
+   tracked as follow-up work.
 6. Behavior: the bot mirrors any `@mention` of a workspace member into that
    member's inbox, resolving the Slack user to a member by email. On
    `channel_created`, the bot auto-joins the new public channel so mentions
-   there are caught without manual re-invites.
+   there are caught without manual re-invites. An event whose `team_id` has
+   no mapping (Slack never successfully enabled for that workspace) is
+   dropped with a debug log; Slack still gets a `200` so it does not retry.
 7. **Members must opt in.** Slack has a per-member preference like Linear and
    Attio, default off — after the owner turns Slack on, each member enables
    the Slack source in their own settings before their mentions are mirrored.
