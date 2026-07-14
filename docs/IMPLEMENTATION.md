@@ -120,7 +120,17 @@ cited `research` artifact. Detail lives with the code:
 
 ### `packages/chat` (`@workbench/chat`)
 
-Transport-agnostic chat UI components. No dependency on a specific agent transport or WebSocket implementation.
+Transport-agnostic chat UI for Myra and workspace agents — no WebSocket or hub client dependency.
+
+| Area | Modules | Notes |
+| ---- | ------- | ----- |
+| Composer | `ChatInput.tsx`, `attachments.ts`, `composer-voice-dictation.ts` | File picker, drag-drop, clipboard paste (`filesFromClipboard`), attachment validation chips; optional Web Speech dictation with auto-send on stop. |
+| Message chrome | `MessageBubble.tsx`, `messageRhythm.ts`, `AgentTurn.tsx` | Shared trace spacing/typography; rhythm tokens reference repo-root [`DESIGN.md`](../DESIGN.md). |
+| Reasoning | `ReasoningDisclosure.tsx`, `reasoning-expanded-prefs.ts` | Collapsed by default; per-message expand persisted in `localStorage` (`cw-myra-reasoning-expanded`). |
+| Tools | `ToolNarrative.tsx`, `compactMessages.ts`, `CollapsedGroup.tsx` | Humanized summaries via `@workbench/agents` `friendly-tool-summary`; aged threads compact consecutive `kind: "tool"` messages; web adds provider logos. |
+| Shell | `ChatPanel.tsx`, `ChatThread.tsx`, `FloatingChat.tsx`, `DockedChatBar.tsx` | Docked and full-page chat hosts consume the same components. |
+
+**Persistence seam with `@workbench/agents`.** Live chat state is not stored in React context long-term: `composeChatMessages` rebuilds visible history from session events on each hub update (`apps/web/src/hooks/use-myra-session.ts`, `AgentChat.tsx`). Reasoning prefs and (separately) feedback ratings are client-owned keyed by message id / `feedbackId`. After hard reload, event replay reproduces bubbles; prefs hooks reconcile ids when streaming → settled mail.
 
 ## Naming Conventions
 

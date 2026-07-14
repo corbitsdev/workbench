@@ -113,7 +113,7 @@ export function ActivityPulse() {
 // and more informative than a roll-up sentence.
 const COLLAPSE_THRESHOLD = 3;
 
-// Brand ease-out (DESIGN.md), shared with ReasoningDisclosure: snappy settle for
+// Brand ease-out (repo-root DESIGN.md), shared with ReasoningDisclosure: snappy settle for
 // small disclosures.
 const EASE_OUT = [0.23, 1, 0.32, 1] as const;
 

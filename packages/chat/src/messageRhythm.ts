@@ -1,6 +1,6 @@
 /**
  * Shared spacing and typography for Myra / chat message surfaces.
- * Values follow DESIGN.md (--gap 14px): prefer gap-3.5 / p-3.5 for standard rhythm.
+ * Values follow repo-root DESIGN.md (--gap 14px): prefer gap-3.5 / p-3.5 for standard rhythm.
  */
 
 /** 16px marker column (reasoning pulse, tool markers). */

@@ -90,6 +90,12 @@ Every user gets a personal AI agent named **Myra**. Myra acts as a Chief of Staf
 
 **Document understanding.** A user can attach an image or a **document (PDF)** to a Myra message. Images Myra reads directly. Documents she reads through a dedicated **File Parser** — the uploaded file is turned into text and handed to Myra — so she understands PDFs **regardless of her own chat model**, which cannot read documents natively. The attached document appears as a chip on the message. Myra can also read a document a user or workflow saved earlier as an artifact.
 
+**Composer affordances.** The Myra composer supports the same attachment policy as before (paperclip picker and drag-and-drop), plus **paste from the clipboard** (Ctrl/Cmd+V with image or file items) so screenshots and exports land as pending attachments without opening the file dialog. A **microphone control** starts browser speech recognition, streams dictated text into the draft, and **auto-sends** when the user stops dictation (with a stop control while listening). Mention autocomplete (`@`) still targets workspace members.
+
+**Disclosure defaults.** Assistant **reasoning** traces and **tool activity** render in a compact process-trace column: reasoning is **collapsed by default** on each message, and the user can expand a turn to read it. Tool steps show humanized action lines (not raw `package__tool` names) with optional provider logos where Brand API coverage exists. Long threads **auto-collapse older tool-only stretches** into expandable groups so recent user and assistant messages stay readable; errors, artifacts, and user sends are never collapsed. Expand/collapse choices for reasoning **persist across reload** per message id.
+
+**Approvals in chat.** When Myra or another agent requests a gated action (for example outbound mail), the approval card shows **real names** for principals and agents (members roster + agent instances), not opaque `prn_` / `ins_` ids or raw mailbox locals where a display name is known.
+
 ### Oat — Workspace Granola Agent
 
 **Oat** is a shared workspace agent that processes Granola call recordings and surfaces them as call document artifacts in the workbench. Oat runs in the shared GTM Workbench Interchange tenant. Oat processes calls when prompted; recurring, scheduled ingestion is moving to workflows.
