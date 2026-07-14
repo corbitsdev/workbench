@@ -34,10 +34,11 @@ need in `capabilities.tools`.
 | `search.ts` | Issue search by term |
 | `views.ts` | Saved views list (read-only) |
 | `webhooks.ts` | Webhook list, create/update, delete |
+| `integrations.ts` | Workspace integration metadata (read-only) |
 | `analytics.ts` | Dashboard list (may return unsupported marker) |
 | `interchange-tools.ts` / `tool-manifest.ts` | Sidecar package wiring |
 
-## Tool catalog (40 tools)
+## Tool catalog (41 tools)
 
 Side effects come from `LINEAR_HUB_TOOLS`. **Write** tools mutate Linear (or
 prepare mutations such as signed upload URLs) and are classified
@@ -107,13 +108,14 @@ through ReviewGate unless workflow grants use `allow`.
 | `linear_search` | read |
 | `linear_list_views` | read |
 | `linear_list_webhooks` | read |
+| `linear_list_integrations` | read |
 | `linear_save_webhook` | write |
 | `linear_delete_webhook` | write |
 | `linear_list_dashboards` | read |
 
 ## Read vs write summary
 
-- **24 read tools** — GraphQL queries only; no Linear mutations.
+- **25 read tools** — GraphQL queries only; no Linear mutations.
 - **16 write tools** — create, update, save, delete, archive, link, upload-prep,
   and webhook mutations as listed above.
 

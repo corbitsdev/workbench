@@ -1,6 +1,5 @@
 import type { AgentTool } from "@intx/agent";
 import type { ToolDefinition } from "@intx/types/runtime";
-import { fetchLinearGraphQL } from "./client";
 import { LINEAR_DEFINITIONS, LINEAR_HUB_TOOLS } from "./hub-tools";
 import { validateConfig, type LinearToolsConfig } from "./shared";
 import { createLinearToolFor } from "./tool-runtime";
