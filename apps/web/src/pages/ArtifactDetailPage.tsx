@@ -14,6 +14,7 @@ import {
   ArtifactDetailShell,
   ArtifactMeta,
   formatArtifactDate,
+  shouldShowArtifactStatusBadge,
   visualForKind,
 } from "@workbench/artifact";
 import {
@@ -97,7 +98,9 @@ function ArtifactSummaryHeader({
   return (
     <div className="flex flex-wrap items-center gap-2 text-sm">
       {kindLabel && <span className="font-medium text-text">{kindLabel}</span>}
-      <Badge tone={STATUS_TONE[status]}>{artifactStatusLabel(status)}</Badge>
+      {shouldShowArtifactStatusBadge(status) ? (
+        <Badge tone={STATUS_TONE[status]}>{artifactStatusLabel(status)}</Badge>
+      ) : null}
       <span className="text-text-3">v{version}</span>
       <span className="text-text-3">{formatArtifactDate(createdAt)}</span>
     </div>

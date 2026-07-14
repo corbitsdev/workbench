@@ -207,7 +207,7 @@ The current workflow is the first concrete version of a more general workbench m
 1. **Sources** — Input material such as call documents, uploaded files, brain/context files, URLs, or prior artifacts reused as inputs
 2. **Jobs** — One run of a workflow against selected sources and options
 3. **Review Gates** — Human decisions that steer the job without exposing the full internal pipeline
-4. **Artifacts** — Generated or curated outputs, including collateral, briefs, summaries, and packages
+4. **Artifacts** — Generated or curated outputs, including collateral, briefs, summaries, and packages. New rows default to **draft** in storage; the gallery and artifact detail UI only show status badges for **approved** or **rejected**, not for that default draft state (so users are not told every artifact is still a draft).
 5. **Hooks** — Optional delivery actions such as copy, export, draft, schedule, post, send, or **publish a web artifact to Vercel** (preview by default; production only when the user asks)
 
 The product should surface named outcomes such as "Create sales collateral" or "Draft LinkedIn posts" rather than raw internal steps.

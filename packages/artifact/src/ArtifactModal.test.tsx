@@ -40,6 +40,18 @@ describe("ArtifactModal", () => {
     expect(screen.queryByRole("dialog")).toBeNull();
   });
 
+  it("does not show Draft in the subtitle when status is draft", () => {
+    render(
+      React.createElement(ArtifactModal, {
+        open: true,
+        artifact: { ...artifact, status: "draft" },
+        onClose: () => {},
+      }),
+    );
+    expect(screen.getByText(/^v2$/)).not.toBeNull();
+    expect(screen.queryByText(/Draft/)).toBeNull();
+  });
+
   it("renders the artifact content when open", () => {
     render(
       React.createElement(ArtifactModal, {

@@ -41,6 +41,7 @@ export {
   previewExcerpt,
   type ArtifactPreviewFamily,
 } from "./artifact-preview-family";
+export { shouldShowArtifactStatusBadge } from "./artifact-status-badge";
 export { iconForPreviewFamily } from "./artifact-family-icon";
 export {
   ArtifactGallery,

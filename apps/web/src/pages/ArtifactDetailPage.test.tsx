@@ -172,6 +172,30 @@ describe("ArtifactDetailPage", () => {
     expect(header.textContent).toContain("January 1, 2026");
   });
 
+  it("does not show a Draft badge when the artifact status is draft", () => {
+    artifactResult = {
+      data: {
+        id: "art-draft",
+        kind: "one-pager",
+        title: "Acme One-Pager",
+        version: 1,
+        status: "draft",
+        ownerPrincipalId: null,
+        createdAt: "2026-01-01T00:00:00.000Z",
+        sessionId: null,
+        sessionName: null,
+        sessionStatus: null,
+        parentId: null,
+      },
+      isLoading: false,
+      isError: false,
+    };
+    const view = renderAt("art-draft");
+    const header = view.getByTestId("artifact-detail-header");
+    expect(header.textContent).not.toContain("Draft");
+    expect(within(header).queryByText("Draft", { exact: true })).toBeNull();
+  });
+
   it("collapses the metadata rail entirely when the artifact has no session or lineage provenance", () => {
     const view = renderAt("art-1");
     expect(view.queryByTestId("artifact-detail-rail")).toBeNull();

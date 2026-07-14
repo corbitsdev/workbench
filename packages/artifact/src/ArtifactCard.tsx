@@ -8,6 +8,7 @@ import {
   artifactPreviewFamily,
   labelForArtifactStatus,
 } from "./artifact-preview-family";
+import { shouldShowArtifactStatusBadge } from "./artifact-status-badge";
 import { iconForPreviewFamily } from "./artifact-family-icon";
 
 interface ArtifactCardProps {
@@ -26,13 +27,6 @@ function statusChipClass(status: GalleryArtifact["status"]): string {
     default:
       return "bg-surface-2 text-text-3";
   }
-}
-
-// Draft is the default status every artifact starts in, so it carries no
-// signal on a card — only surface the badge for a status that means something
-// happened (approved/rejected).
-function shouldShowStatusBadge(status: GalleryArtifact["status"]): boolean {
-  return status !== "draft";
 }
 
 export function ArtifactCard({
@@ -76,7 +70,7 @@ export function ArtifactCard({
             <FamilyIcon className="h-3 w-3 shrink-0 opacity-90" aria-hidden />
             <span className="truncate">{artifact.label}</span>
           </span>
-          {shouldShowStatusBadge(artifact.status) ? (
+          {shouldShowArtifactStatusBadge(artifact.status) ? (
             <span
               className={`shrink-0 rounded-full px-2 py-[3px] text-[10px] font-semibold tracking-[0.02em] backdrop-blur-[6px] ${statusChipClass(artifact.status)}`}
             >
@@ -113,7 +107,7 @@ export function ArtifactCard({
           <div className="min-w-0 flex-1 truncate text-[13.5px] font-semibold text-text">
             {artifact.title}
           </div>
-          {!experimental && shouldShowStatusBadge(artifact.status) ? (
+          {!experimental && shouldShowArtifactStatusBadge(artifact.status) ? (
             <span
               className={`shrink-0 rounded-sm px-1.5 py-0.5 text-[10px] font-medium ${statusChipClass(artifact.status)}`}
             >
