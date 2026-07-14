@@ -2,6 +2,7 @@ import { describe, expect, mock, test } from "bun:test";
 import type { CryptoProvider } from "@intx/types/runtime";
 import type { SessionService } from "@intx/hub-sessions";
 import type { HubDb } from "../db";
+import { isUuid } from "../lib/uuid";
 import type { RunState } from "./run-store";
 
 // CL-2755: the async-start contract of `startWorkflowRun`. The run row is seeded
@@ -221,6 +222,7 @@ describe("startWorkflowRun async-start contract (CL-2755)", () => {
     await result.backgroundTask;
 
     const runId = result.state.runId;
+    expect(isUuid(runId)).toBe(true);
     expect(insertedInputs.get(runId)).toEqual({ topic: "Acme", runId });
     expect(sent).toHaveLength(1);
     expect(sent[0]?.messageId).toBe(runId);

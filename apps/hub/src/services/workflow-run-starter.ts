@@ -9,6 +9,7 @@ import type { HubDb } from "../db";
 import { workflowRun } from "../db/schema";
 import type { EnsureDeploymentRoutableFn } from "../routes/workflow-runs";
 import { slidingWindowLimiter } from "../lib/sliding-window";
+import { mintWorkflowRunId } from "../workflow-executor/mint-workflow-run-id";
 import {
   failRunIfStillRunning,
   insertRunRecord,
@@ -136,7 +137,7 @@ export function createWorkflowRunStarter(deps: {
       };
     }
 
-    const runId = randomUUID();
+    const runId = mintWorkflowRunId();
     const principalId = creatorPrincipalId ?? deployment.principalId;
     const triggerPayload = { ...input, runId };
 

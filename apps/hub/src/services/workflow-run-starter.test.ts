@@ -4,6 +4,7 @@ import { deriveDeploymentAddress } from "@intx/workflow-deploy";
 import * as intxDb from "@intx/db";
 import type { SessionService } from "@intx/hub-sessions";
 import type { HubDb } from "../db";
+import { isUuid } from "../lib/uuid";
 
 // getAncestorChain walks the tenant table via the db; the run-starter imports it
 // as a singleton from @intx/db. Steer the chain per test while preserving every
@@ -111,7 +112,7 @@ describe("createWorkflowRunStarter", () => {
     expect(result.ok).toBe(true);
     expect(result).toMatchObject({ ok: true, deploymentId: "dep-child" });
     if (!result.ok) throw new Error("expected ok result");
-    expect(typeof result.runId).toBe("string");
+    expect(isUuid(result.runId)).toBe(true);
     expect(sent).toHaveLength(1);
     expect(sent[0]?.agentAddress).toBe(
       deriveDeploymentAddress({

@@ -1,4 +1,4 @@
-import { randomBytes, randomUUID } from "node:crypto";
+import { randomUUID } from "node:crypto";
 import { and, desc, eq, inArray, isNotNull, isNull } from "drizzle-orm";
 import { getLogger } from "@intx/log";
 import { deriveDeploymentAddress } from "@intx/workflow-deploy";
@@ -19,6 +19,7 @@ import type {
 import type { ReclaimDeploymentFn } from "../services/workflow-deploy";
 import { getAwaitingSignalNames } from "./run-awaiting-signals";
 import { validateResumePayload } from "./resume-payload-registry";
+import { mintWorkflowRunId } from "./mint-workflow-run-id";
 import {
   failRunIfStillProvisioning,
   insertRunRecord,
@@ -121,10 +122,6 @@ function deployInProgressFailure(): RunExecFailure {
     error:
       "The workbench is finishing an update — this run will resume automatically. Try again in a moment.",
   };
-}
-
-function mintRunId(): string {
-  return `wfr_${randomBytes(16).toString("hex")}`;
 }
 
 // Resolve a gate's "needs you" mailbox item once its signal is accepted:
@@ -265,7 +262,7 @@ export async function startWorkflowRun(
     };
   }
 
-  const runId = mintRunId();
+  const runId = mintWorkflowRunId();
   const inputObject =
     typeof opts.input === "object" &&
     opts.input !== null &&
