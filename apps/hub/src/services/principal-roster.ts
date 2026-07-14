@@ -22,6 +22,9 @@ export const RosterInstanceSchema = type({
   instanceId: "string",
   // The instance's synthetic principal — the id its own trace is keyed by.
   principalId: "string",
+  // The agent definition this instance runs — groups instances by definition
+  // in the Agents tab (CL-3667) instead of a flat 100+ row list.
+  agentId: "string",
   name: "string",
   status: "string",
   sessionCount: "number",
@@ -59,6 +62,7 @@ export async function getPrincipalRoster(args: {
     .select({
       instanceId: memberAgentInstance.instanceId,
       principalId: agentInstance.principalId,
+      agentId: agentInstance.agentId,
       name: agent.name,
       status: agentInstance.status,
     })
@@ -103,6 +107,7 @@ export async function getPrincipalRoster(args: {
     .map((r) => ({
       instanceId: r.instanceId,
       principalId: r.principalId,
+      agentId: r.agentId,
       name: r.name,
       status: r.status,
       sessionCount: sessionCounts.get(r.principalId) ?? 0,
@@ -154,6 +159,7 @@ export async function getTenantRoster(args: {
     .selectDistinctOn([memberAgentInstance.instanceId], {
       instanceId: memberAgentInstance.instanceId,
       principalId: agentInstance.principalId,
+      agentId: agentInstance.agentId,
       name: agent.name,
       status: agentInstance.status,
     })
@@ -193,6 +199,7 @@ export async function getTenantRoster(args: {
     .map((r) => ({
       instanceId: r.instanceId,
       principalId: r.principalId,
+      agentId: r.agentId,
       name: r.name,
       status: r.status,
       sessionCount: sessionCounts.get(r.principalId) ?? 0,

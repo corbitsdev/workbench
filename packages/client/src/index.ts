@@ -819,6 +819,7 @@ export async function getTenantActivity(
 export const RosterInstanceSchema = type({
   instanceId: "string",
   principalId: "string",
+  agentId: "string",
   name: "string",
   status: "string",
   sessionCount: "number",
