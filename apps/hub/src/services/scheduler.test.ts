@@ -84,7 +84,11 @@ describe("createScheduler", () => {
       ...store,
       startWorkflowRun: async (a) => {
         calls.push(a);
-        return { deploymentId: `dep-${a.creatorPrincipalId}`, accepted: true };
+        return {
+          deploymentId: `dep-${a.creatorPrincipalId}`,
+          accepted: true,
+          runId: `run-${a.creatorPrincipalId}`,
+        };
       },
     });
 
@@ -119,7 +123,7 @@ describe("createScheduler", () => {
       ...store,
       startWorkflowRun: async () => {
         fires += 1;
-        return { deploymentId: "dep-1", accepted: true };
+        return { deploymentId: "dep-1", accepted: true, runId: "run-1" };
       },
     });
 
@@ -143,7 +147,7 @@ describe("createScheduler", () => {
           throw new Error("run-start blew up");
         }
         fired.push(a.creatorPrincipalId);
-        return { deploymentId: "dep-b", accepted: true };
+        return { deploymentId: "dep-b", accepted: true, runId: "run-b" };
       },
     });
 
@@ -160,7 +164,7 @@ describe("createScheduler", () => {
       ...store,
       startWorkflowRun: async () => {
         fires += 1;
-        return { deploymentId: "dep-1", accepted: true };
+        return { deploymentId: "dep-1", accepted: true, runId: "run-1" };
       },
       tickIntervalMs: 1,
       now: () => AT_13,
@@ -181,7 +185,7 @@ describe("createScheduler", () => {
       ...store,
       startWorkflowRun: async () => {
         fires += 1;
-        return { deploymentId: "dep-1", accepted: true };
+        return { deploymentId: "dep-1", accepted: true, runId: "run-1" };
       },
       tickIntervalMs: 5,
       now: () => AT_13,
@@ -209,7 +213,7 @@ describe("createScheduler", () => {
       },
       startWorkflowRun: async () => {
         fires += 1;
-        return { deploymentId: "dep-1", accepted: true };
+        return { deploymentId: "dep-1", accepted: true, runId: "run-1" };
       },
     });
 
@@ -229,12 +233,44 @@ describe("createScheduler", () => {
       ...store,
       startWorkflowRun: async (a) => {
         fired.push(a.tenantId);
-        return { deploymentId: `dep-${a.tenantId}`, accepted: true };
+        return {
+          deploymentId: `dep-${a.tenantId}`,
+          accepted: true,
+          runId: `run-${a.tenantId}`,
+        };
       },
     });
 
     await scheduler.tick(AT_13);
 
     expect(fired).toEqual(["tenant-a"]);
+  });
+
+  it("records the started run id when recordRunStarted is wired", async () => {
+    const recorded: { scheduleId: string; tenantId: string; runId: string }[] =
+      [];
+    const store = makeStore([row()]);
+    const scheduler = createScheduler({
+      isTenantEnabled: async () => true,
+      ...store,
+      recordRunStarted: async (args) => {
+        recorded.push(args);
+      },
+      startWorkflowRun: async () => ({
+        deploymentId: "dep-1",
+        accepted: true,
+        runId: "run-sched-1",
+      }),
+    });
+
+    await scheduler.tick(AT_13);
+
+    expect(recorded).toEqual([
+      {
+        scheduleId: "sch-1",
+        tenantId: "tenant-root",
+        runId: "run-sched-1",
+      },
+    ]);
   });
 });

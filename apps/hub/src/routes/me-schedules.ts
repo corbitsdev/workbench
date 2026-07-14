@@ -19,6 +19,7 @@ import {
   deleteOwnerSchedule,
   listOwnerSchedules,
   toApiSchedule,
+  toApiSchedulesForOwner,
   updateOwnerSchedule,
 } from "../lib/scheduled-triggers";
 import { ErrorResponse, requestBodySchema } from "../lib/openapi";
@@ -119,8 +120,13 @@ export function createMeSchedulesRouter(
         member.principalId,
         { limit, ...(cursor ? { cursor } : {}) },
       );
+      const items = await toApiSchedulesForOwner(
+        db,
+        member.tenantId,
+        page.items,
+      );
       return c.json({
-        items: page.items.map(toApiSchedule),
+        items,
         ...(page.nextCursor !== undefined
           ? { nextCursor: page.nextCursor }
           : {}),

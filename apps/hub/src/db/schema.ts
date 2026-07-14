@@ -710,6 +710,8 @@ export const scheduledTrigger = pgTable(
       .default({}),
     enabled: boolean("enabled").notNull().default(true),
     lastFiredDayUtc: integer("last_fired_day_utc"),
+    // Most recent run id the scheduler started for this schedule (CL-3526).
+    lastRunId: text("last_run_id"),
     createdAt: timestamp("created_at").notNull().defaultNow(),
     updatedAt: timestamp("updated_at")
       .notNull()
@@ -724,6 +726,28 @@ export const scheduledTrigger = pgTable(
 );
 
 export type ScheduledTriggerRow = typeof scheduledTrigger.$inferSelect;
+
+// One row per scheduler fire for a schedule (CL-3526). Join workflow_run_record
+// for live status when serving the owner's fire history.
+export const scheduledTriggerFire = pgTable(
+  "scheduled_trigger_fire",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    scheduledTriggerId: uuid("scheduled_trigger_id")
+      .notNull()
+      .references(() => scheduledTrigger.id, { onDelete: "cascade" }),
+    tenantId: text("tenant_id").notNull(),
+    runId: text("run_id").notNull(),
+    firedAt: timestamp("fired_at").notNull().defaultNow(),
+  },
+  (t) => ({
+    scheduledTriggerFireScheduleFiredIdx: index(
+      "scheduled_trigger_fire_schedule_fired_idx",
+    ).on(t.scheduledTriggerId, t.firedAt),
+  }),
+);
+
+export type ScheduledTriggerFireRow = typeof scheduledTriggerFire.$inferSelect;
 
 // Webhook-triggered workflow runs: a durable per-trigger secret lets
 // an external system fire a workflow run over HTTP, without a session.

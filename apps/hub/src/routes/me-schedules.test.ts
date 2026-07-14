@@ -77,8 +77,27 @@ mock.module("../lib/scheduled-triggers", () => ({
     triggerPayload: r.triggerPayload,
     createdAt: r.createdAt.toISOString(),
     lastFiredDayUtc: null,
+    lastRunId: null,
+    recentFires: [],
     nextFireAt: r.enabled ? "2026-01-02T13:00:00.000Z" : null,
   }),
+  toApiSchedulesForOwner: async (
+    _db: unknown,
+    _tenantId: string,
+    rows: OwnerRow[],
+  ) =>
+    rows.map((r) => ({
+      id: r.id,
+      workflowKind: r.workflowKind,
+      hourUtc: r.hourUtc,
+      enabled: r.enabled,
+      triggerPayload: r.triggerPayload,
+      createdAt: r.createdAt.toISOString(),
+      lastFiredDayUtc: null,
+      lastRunId: null,
+      recentFires: [],
+      nextFireAt: r.enabled ? "2026-01-02T13:00:00.000Z" : null,
+    })),
   listOwnerSchedules: async (
     _db: unknown,
     tenantId: string,
