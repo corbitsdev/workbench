@@ -72,9 +72,8 @@ describe("ChatPanel", () => {
     expect(shell.className).toContain("bg-page");
     const thread = container.querySelector('[role="log"]') as HTMLElement;
     expect(thread.className).toContain("bg-page");
-    const composer = container.querySelector(
-      'textarea[aria-label="Message"]',
-    )?.parentElement?.parentElement as HTMLElement;
+    const composer = container.querySelector('textarea[aria-label="Message"]')
+      ?.parentElement?.parentElement as HTMLElement;
     expect(composer.className).toContain("bg-page");
   });
 
@@ -265,10 +264,37 @@ describe("ChatPanel single merged header", () => {
     expect(screen.queryByText("Personal agent")).toBeNull();
   });
 
-  it("still shows the default agent identity when no headerLeft is provided", () => {
-    render(<ChatPanel agent={agent} messages={messages} onSend={() => {}} />);
+  it("shows the default agent identity when chrome controls are present without headerLeft", () => {
+    render(
+      <ChatPanel
+        agent={agent}
+        messages={messages}
+        onSend={() => {}}
+        onClose={() => {}}
+      />,
+    );
     expect(screen.getByText("Ada")).toBeDefined();
     expect(screen.getByText("Personal agent")).toBeDefined();
+    expect(screen.getByRole("button", { name: "Close chat" })).toBeDefined();
+  });
+
+  it("omits the header when there is no left content and no chrome controls", () => {
+    render(<ChatPanel agent={agent} messages={messages} onSend={() => {}} />);
+    expect(screen.queryByText("Ada")).toBeNull();
+    expect(screen.queryByText("Personal agent")).toBeNull();
+    expect(screen.queryByRole("banner")).toBeNull();
+  });
+
+  it("omits the header when headerLeft is null and no chrome controls are set", () => {
+    render(
+      <ChatPanel
+        agent={agent}
+        messages={messages}
+        onSend={() => {}}
+        headerLeft={null}
+      />,
+    );
+    expect(screen.queryByRole("banner")).toBeNull();
   });
 });
 

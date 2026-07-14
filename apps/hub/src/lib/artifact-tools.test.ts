@@ -1158,6 +1158,25 @@ describe("artifact_link_gamma_presentation handler", () => {
     });
   });
 
+  it("creates the artifact with no session (deterministic workflow step) and omits sessionId from source", async () => {
+    const base = makeContext();
+    const context = { ...base.context, sessionId: "" };
+    const handler = handlerFor(context, "artifact_link_gamma_presentation");
+
+    const raw = await handler(goodArgs);
+
+    expect(JSON.parse(raw as string)).toMatchObject({
+      artifactId: "art_123",
+      version: 1,
+    });
+    const source = base.artifactInsertValues[0]?.source as Record<
+      string,
+      unknown
+    >;
+    expect(typeof source.agentId).toBe("string");
+    expect("sessionId" in source).toBe(false);
+  });
+
   it("bumps the version for an existing gamma_presentation", async () => {
     const { context, updateSets, calls } = makeQueryContext([
       [

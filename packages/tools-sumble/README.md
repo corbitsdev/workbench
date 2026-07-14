@@ -1,45 +1,54 @@
 # @workbench/tools-sumble
 
-Read tools over the [Sumble](https://sumble.com) v8 API for company, team,
-people, jobs, tech-stack, and buying-signal intelligence.
+Hub tools for the [Sumble](https://sumble.com) **Public API v9** — organizations,
+teams, people, jobs, signals, lookups, saved lists, support, and intelligence
+briefs.
 
 ## Provider
 
 - Provider name: `sumble`
 - Factory id: `@workbench/tools-sumble/sumble`
-- Auth: `Authorization: Bearer <apiKey>` against `https://api.sumble.com/v8`
-  (override with `config.baseUrl`).
+- Auth: `Authorization: Bearer <apiKey>` against `https://api.sumble.com` with
+  `/v9/` paths (override with `config.baseUrl`; a base ending in `/v8` keeps
+  legacy path shape for older deployments).
 - The `sumble` credential is resolved by Interchange at tool execution time.
-- The API key is set by the Owner on the **Capabilities** page (the `sumble`
-  entry in `CREDENTIAL_PROVIDER_CATALOG`); it is not seeded from an env var.
+- Configure the API key on the Owner **Capabilities** page (`sumble` in
+  `CREDENTIAL_PROVIDER_CATALOG`).
 
-## Tools
+## Tool surface
 
-| Tool                            | Endpoint                    | Notes                                    |
-| ------------------------------- | --------------------------- | ---------------------------------------- |
-| `sumble_resolve_organization`   | `POST /organizations`       | Resolve a company by domain/slug/name.   |
-| `sumble_search_organizations`   | `POST /organizations`       | Filter by query/industry/employee range. |
-| `sumble_get_org_tech_stack`     | `POST /organizations`       | Technologies + job-post counts.          |
-| `sumble_list_teams`             | `POST /teams`               | Teams with ICP-fit scores.               |
-| `sumble_search_people`          | `POST /people`              | Async (polled).                          |
-| `sumble_list_jobs`              | `POST /jobs`                | Open jobs with detected technologies.    |
-| `sumble_search_signals`         | `POST /signals`             | Buying/intent signals.                   |
-| `sumble_get_intelligence_brief` | `POST /intelligence-briefs` | Async (polled). **Cost-gated.**          |
+**32 hub tools** cover all **25** documented v9 HTTP operations (see
+`src/operation-coverage.ts` and `src/openapi-parity.test.ts`). Ergonomic tools
+wrap common workflow shapes; `sumble_post_*` tools pass full request bodies for
+advanced queries.
 
-## Cost gate
+| Category        | Examples                                                                                                                           |
+| --------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| Enrich          | `sumble_resolve_organization`, `sumble_search_organizations`, `sumble_get_org_tech_stack`, `sumble_list_teams`, `sumble_list_jobs` |
+| People          | `sumble_search_people` (async polled; optional `revealEmail` + `confirmEmailRevealSpend`)                                          |
+| Signals         | `sumble_search_signals`, `sumble_get_organization_signals`, `sumble_search_priority_signals`                                       |
+| Lookups         | `sumble_lookup_job_titles`, `sumble_lookup_technologies`, `sumble_find_technologies`, …                                            |
+| Lists (write)   | `sumble_create_contact_list`, `sumble_add_contact_list_people`, `sumble_create_organization_list`, …                               |
+| Support (write) | `sumble_create_support_request`, `sumble_create_data_quality_report`                                                               |
+| Brief           | `sumble_get_intelligence_brief` (GET per org id; **cost-gated**)                                                                   |
 
-`sumble_get_intelligence_brief` costs **50 credits per completed brief**. The
-tool refuses unless the caller passes `confirmSpend: true`; without it no API
-call is made and nothing is spent.
+## Cost gates
+
+- `sumble_get_intelligence_brief`: **50 credits** — requires `confirmSpend: true`.
+- `sumble_search_people` with `revealEmail: true`: up to **10 credits per email**
+  revealed — requires `confirmEmailRevealSpend: true`.
+- `sumble_search_people` lookup by **email** identifier: up to **20 credits** —
+  same `confirmEmailRevealSpend: true` gate.
 
 ## Async polling
 
-`sumble_search_people` and `sumble_get_intelligence_brief` may return `202
-Accepted` with a `Retry-After` header while the result is computed. Both tools
-re-POST the same request after `Retry-After` seconds, up to 10 attempts,
-respecting the abort signal. If the work does not complete within the attempt
-cap the tool fails loudly rather than returning a partial result.
+`sumble_search_people` and `sumble_get_intelligence_brief` may return `202` with
+`Retry-After`. The client polls up to 10 times and respects the abort signal.
 
 ## Testing
+
+```bash
+bun run --filter @workbench/tools-sumble test
+```
 
 Follow root [AGENTS.md](../../AGENTS.md) testing standards.

@@ -36,8 +36,14 @@ export function workflowKinds(): string[] {
 export async function serializeWorkflowDef(
   kind: string,
 ): Promise<typeof EmbeddedWorkflowDefSchema.infer> {
-  const { definition, label, description, displayFlow, intakeFields } =
-    await loadWorkflow(kind);
+  const {
+    definition,
+    label,
+    description,
+    displayFlow,
+    intakeFields,
+    allowsScheduledPostIntakeDrive,
+  } = await loadWorkflow(kind);
   const { requiresIntake, humanGateCount } = deriveWorkflowGateInfo(definition);
   const embedded = {
     kind,
@@ -48,6 +54,9 @@ export async function serializeWorkflowDef(
     requiresIntake,
     humanGateCount,
     ...(intakeFields !== undefined ? { intakeFields } : {}),
+    ...(allowsScheduledPostIntakeDrive === true
+      ? { allowsScheduledPostIntakeDrive: true }
+      : {}),
     definition,
   };
   // Validate the serialized shape the hub will parse on boot — a malformed

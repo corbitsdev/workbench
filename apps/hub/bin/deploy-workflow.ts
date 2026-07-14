@@ -200,6 +200,7 @@ export interface LoadedWorkflow {
   description?: string;
   displayFlow?: unknown;
   intakeFields?: unknown;
+  allowsScheduledPostIntakeDrive?: boolean;
 }
 
 function readStringExport(mod: object, key: string): string | undefined {
@@ -227,6 +228,9 @@ export async function loadWorkflow(kind: string): Promise<LoadedWorkflow> {
   // form descriptor — plain serializable data validated through
   // EmbeddedWorkflowDefSchema before committing, like DISPLAY_STEPS.
   const intakeFields = (mod as { INTAKE_FIELDS?: unknown }).INTAKE_FIELDS;
+  const allowsScheduledPostIntakeDrive = (
+    mod as { ALLOWS_SCHEDULED_POST_INTAKE_DRIVE?: unknown }
+  ).ALLOWS_SCHEDULED_POST_INTAKE_DRIVE;
   const label = readStringExport(mod, "label");
   const description = readStringExport(mod, "description");
   // Conditional spreads (not `key: value | undefined`) so the return satisfies
@@ -238,6 +242,9 @@ export async function loadWorkflow(kind: string): Promise<LoadedWorkflow> {
     ...(description !== undefined ? { description } : {}),
     ...(displayFlow !== undefined ? { displayFlow } : {}),
     ...(intakeFields !== undefined ? { intakeFields } : {}),
+    ...(allowsScheduledPostIntakeDrive === true
+      ? { allowsScheduledPostIntakeDrive: true }
+      : {}),
   };
 }
 

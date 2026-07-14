@@ -2,6 +2,8 @@ import { describe, expect, it } from "bun:test";
 import {
   deriveWorkflowGateInfo,
   isKindStructurallyAttachable,
+  kindAllowsScheduledPostIntakeDrive,
+  SCHEDULED_POST_INTAKE_DRIVE_KIND_ALLOWLIST,
 } from "./workflow-gate-info";
 
 function def(steps: Record<string, { kind?: string; name?: string }>): unknown {
@@ -69,31 +71,91 @@ describe("deriveWorkflowGateInfo", () => {
 describe("isKindStructurallyAttachable", () => {
   it("attaches a fully unattended workflow", () => {
     expect(
-      isKindStructurallyAttachable({
-        requiresIntake: false,
-        humanGateCount: 0,
-      }),
+      isKindStructurallyAttachable(
+        {
+          requiresIntake: false,
+          humanGateCount: 0,
+        },
+        "heartbeat",
+      ),
     ).toBe(true);
   });
 
   it("attaches an intake-only workflow", () => {
     expect(
-      isKindStructurallyAttachable({ requiresIntake: true, humanGateCount: 1 }),
+      isKindStructurallyAttachable(
+        { requiresIntake: true, humanGateCount: 1 },
+        "last30days-research",
+      ),
     ).toBe(true);
   });
 
-  it("does not attach a workflow with a human gate beyond intake", () => {
+  it("does not attach multi-gate intake workflows without explicit allowance (CL-3528)", () => {
     expect(
-      isKindStructurallyAttachable({ requiresIntake: true, humanGateCount: 2 }),
+      isKindStructurallyAttachable(
+        { requiresIntake: true, humanGateCount: 2 },
+        "gamma",
+      ),
     ).toBe(false);
+  });
+
+  it("attaches multi-gate workflows on the hub allowlist", () => {
+    const kind = [...SCHEDULED_POST_INTAKE_DRIVE_KIND_ALLOWLIST][0]!;
+    expect(
+      isKindStructurallyAttachable(
+        { requiresIntake: true, humanGateCount: 2 },
+        kind,
+      ),
+    ).toBe(true);
+  });
+
+  it("attaches multi-gate workflows when the catalog sets allowsScheduledPostIntakeDrive", () => {
+    expect(
+      isKindStructurallyAttachable(
+        {
+          requiresIntake: true,
+          humanGateCount: 2,
+          allowsScheduledPostIntakeDrive: true,
+        },
+        "custom-multi",
+      ),
+    ).toBe(true);
   });
 
   it("does not attach a workflow whose gate is not an intake gate", () => {
     expect(
-      isKindStructurallyAttachable({
-        requiresIntake: false,
-        humanGateCount: 1,
+      isKindStructurallyAttachable(
+        {
+          requiresIntake: false,
+          humanGateCount: 1,
+        },
+        "config-first",
+      ),
+    ).toBe(false);
+  });
+});
+
+describe("kindAllowsScheduledPostIntakeDrive", () => {
+  it("requires intake, more than one gate, and allowlist or catalog flag", () => {
+    expect(
+      kindAllowsScheduledPostIntakeDrive("gamma", {
+        requiresIntake: true,
+        humanGateCount: 2,
       }),
     ).toBe(false);
+    expect(
+      kindAllowsScheduledPostIntakeDrive("gamma", {
+        requiresIntake: true,
+        humanGateCount: 2,
+        allowsScheduledPostIntakeDrive: true,
+      }),
+    ).toBe(true);
+    const allowlisted = [...SCHEDULED_POST_INTAKE_DRIVE_KIND_ALLOWLIST][0]!;
+    expect(
+      kindAllowsScheduledPostIntakeDrive(allowlisted, {
+        requiresIntake: true,
+        humanGateCount: 2,
+      }),
+    ).toBe(true);
   });
 });

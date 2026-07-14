@@ -11,12 +11,18 @@ import {
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import React from "react";
 import { MemoryRouter, Route, Routes, useLocation } from "react-router";
+import {
+  PageChromeProvider,
+  usePageChromeSlot,
+} from "../lib/page-chrome";
 
 let artifactResult: {
   data?: {
     id: string;
     kind: string;
     title: string;
+    version?: number;
+    status?: string;
     ownerPrincipalId?: string | null;
     createdAt?: string;
     sessionId?: string | null;
@@ -74,12 +80,23 @@ function LocationProbe() {
   );
 }
 
+// Mirrors AppTopBar: renders whatever the page publishes via useSetPageChrome so
+// the relocated top-bar actions (Chat about this, Archive) are exercised in tests.
+function ChromeSlot() {
+  const chrome = usePageChromeSlot();
+  return React.createElement("div", { "data-testid": "page-chrome" }, chrome);
+}
+
 function renderAt(id: string): RenderResult {
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
   return render(
     React.createElement(
+      PageChromeProvider,
+      null,
+      React.createElement(ChromeSlot),
+      React.createElement(
       QueryClientProvider,
       { client },
       React.createElement(
@@ -103,6 +120,7 @@ function renderAt(id: string): RenderResult {
           }),
         ),
       ),
+      ),
     ),
   );
 }
@@ -113,6 +131,8 @@ beforeEach(() => {
       id: "art-1",
       kind: "one-pager",
       title: "Acme One-Pager",
+      version: 3,
+      status: "approved",
       ownerPrincipalId: null,
       createdAt: "2026-01-01T00:00:00.000Z",
       sessionId: null,
@@ -130,11 +150,30 @@ beforeEach(() => {
 afterEach(() => cleanup());
 
 describe("ArtifactDetailPage", () => {
-  it("renders the artifact full-page", () => {
+  it("renders the artifact full-page without a redundant title header", () => {
     const view = renderAt("art-1");
-    expect(view.getByRole("heading", { name: "Acme One-Pager" })).toBeDefined();
     expect(view.getByTestId("body").textContent).toBe("Acme One-Pager");
     expect(view.getByTestId("artifact-detail-shell")).toBeDefined();
+    // The app top bar already names the artifact; the detail shell must not
+    // repeat it as a secondary <h1>/back-button header band.
+    expect(view.queryByRole("heading", { name: "Acme One-Pager" })).toBeNull();
+    expect(view.queryByRole("button", { name: /back to artifacts/i })).toBeNull();
+  });
+
+  it("shows the version and status in the metadata rail", () => {
+    const view = renderAt("art-1");
+    const rail = view.getByTestId("artifact-detail-rail");
+    expect(rail.textContent).toContain("v3");
+    expect(rail.textContent).toContain("Approved");
+  });
+
+  it("surfaces the Chat about this and Archive actions in the top-bar chrome", async () => {
+    const view = renderAt("art-1");
+    const chrome = view.getByTestId("page-chrome");
+    expect(chrome.textContent).toContain("Chat about this");
+    // Archive is gated on the async getMe permission query, so wait for it.
+    await view.findByRole("button", { name: /archive/i });
+    expect(chrome.textContent).toContain("Archive");
   });
 
   it("shows a not-found state when the artifact fetch fails", () => {
@@ -151,11 +190,9 @@ describe("ArtifactDetailPage", () => {
     expect(view.queryByRole("button", { name: /start chat/i })).toBeNull();
   });
 
-  it("opens the dock seeded with the artifact when 'Chat about this artifact' is clicked", () => {
+  it("opens the dock seeded with the artifact when 'Chat about this' is clicked", () => {
     const view = renderAt("art-1");
-    fireEvent.click(
-      view.getByRole("button", { name: /chat about this artifact/i }),
-    );
+    fireEvent.click(view.getByRole("button", { name: /chat about this/i }));
     expect(openWithMessage).toHaveBeenCalledTimes(1);
     const message = openWithMessage.mock.calls[0][0];
     expect(message).toContain("art-1");

@@ -88,6 +88,15 @@ describe("ArtifactCard", () => {
     expect(screen.getByText("Quick follow-up on our call")).toBeDefined();
   });
 
+  it("renders ArtifactViz in the hero on default cards even when an excerpt exists", () => {
+    const { container } = render(
+      React.createElement(ArtifactCard, { artifact, index: 1 }),
+    );
+    const preview = container.querySelector('[class*="min-h-[120px]"]');
+    expect(screen.queryByText("Quick follow-up on our call")).toBeNull();
+    expect(preview?.querySelector("svg")).not.toBeNull();
+  });
+
   it("uses charcoal index badge on cream fills for contrast", () => {
     const { container } = render(
       React.createElement(ArtifactCard, {

@@ -10,7 +10,7 @@ import { gateMailMessageKey } from "../lib/principal-mailbox";
 import { writeMailboxMessage } from "../lib/mailbox-write";
 import type { MailboxEventBus } from "../lib/mailbox-events";
 import { describePendingGates } from "./pending-gate-info";
-import { loadDeploymentMeta } from "./run-store";
+import { loadDeploymentMeta, loadRunRecord } from "./run-store";
 
 const log = getLogger(["workflow-exec", "gate-mail"]);
 
@@ -66,6 +66,13 @@ export async function deliverPendingGateMail(
   deps: DeliverPendingGateMailDeps,
   run: AwaitingRunContext,
 ): Promise<void> {
+  const record = await loadRunRecord(deps.db, run.runId);
+  // Scheduler-sourced runs are driven by Myra on post-intake gates (CL-3528); the
+  // owner does not need a "workflow needs you" item for unattended automation.
+  if (record?.triggerSource === "scheduler") {
+    return;
+  }
+
   const owner = await deps.db.query.principal.findFirst({
     where: eq(principal.id, run.principalId),
   });

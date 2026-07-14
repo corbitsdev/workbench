@@ -2,7 +2,8 @@ import type { ReactNode } from "react";
 
 export type ArtifactDetailShellProps = {
   accentClass: string;
-  header: ReactNode;
+  /** Optional secondary header band. Omit when the host chrome already names the artifact. */
+  header?: ReactNode;
   rail: ReactNode;
   children: ReactNode;
   /** When true, stack rail below hero on narrow surfaces (modal). */
@@ -26,9 +27,11 @@ export function ArtifactDetailShell({
       data-testid="artifact-detail-shell"
     >
       <div className={`h-1.5 w-full shrink-0 ${accentClass}`} aria-hidden />
-      <div className="shrink-0 border-b border-border px-4 py-3 sm:px-6">
-        {header}
-      </div>
+      {header ? (
+        <div className="shrink-0 border-b border-border px-4 py-3 sm:px-6">
+          {header}
+        </div>
+      ) : null}
       <div
         className={
           compactRail

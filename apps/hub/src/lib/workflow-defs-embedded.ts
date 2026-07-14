@@ -34,6 +34,10 @@ export const EmbeddedWorkflowDefSchema = type({
   // brief without parking forever on a human gate.
   "requiresIntake?": "boolean",
   "humanGateCount?": "number.integer >= 0",
+  // When true, scheduler-sourced runs may use Myra to auto-drive post-intake human
+  // gates (CL-3528). Absent/false keeps multi-gate workflows off schedules unless
+  // the kind is on the hub allowlist.
+  "allowsScheduledPostIntakeDrive?": "boolean",
   // The workflow's first-intake form fields, serialized from its `INTAKE_FIELDS`
   // export (CL-3509), so the attach UI can collect the intake payload without
   // importing workflow code. Absent for workflows that declare none.
