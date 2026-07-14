@@ -632,6 +632,31 @@ describe("error handling", () => {
     expect(result.content).toContain("Linear API error: 502 Bad Gateway");
   });
 
+  it("prefers HTTP body over statusText when both are present", async () => {
+    const fetcher: LinearFetch = mock(() =>
+      Promise.resolve(
+        new Response(JSON.stringify({ message: "upstream rate limited" }), {
+          status: 502,
+          statusText: "Bad Gateway",
+        }),
+      ),
+    );
+    const runner = createToolRunner(
+      createLinearTools({ apiKey: "k", fetcher }),
+    );
+
+    const result = await runner.run(
+      { id: "c1", name: "linear_list_teams", arguments: {} },
+      new AbortController().signal,
+    );
+
+    expect(result.isError).toBe(true);
+    expect(result.content).toContain(
+      "Linear API error: 502 upstream rate limited",
+    );
+    expect(result.content).not.toContain("Bad Gateway");
+  });
+
   it("errors when the response is missing data", async () => {
     const fetcher = makeFetchStub({ notData: {} });
     const runner = createToolRunner(

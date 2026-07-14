@@ -68,3 +68,36 @@ export async function resolveMemberOrTenantToolCredential(
     source: "tenant",
   };
 }
+
+/**
+ * Resolve a provider's TENANT-owned tool credential, with no member fallback.
+ * Used by workspace-scope inbox sources (tenant-wide pollers), which run once
+ * per tenant with no member principal to prefer. Returns null when the tenant
+ * has no configured credential — the caller skips the source legibly.
+ */
+export async function resolveTenantToolCredential(
+  db: HubDb,
+  tenantId: string,
+  providerName: string,
+): Promise<MemberToolCredential | null> {
+  const providerRow = await resolveProviderByName(db, tenantId, providerName);
+  const metadata =
+    providerRow?.metadata != null && typeof providerRow.metadata === "object"
+      ? (providerRow.metadata as { baseURL?: string })
+      : undefined;
+  const baseURL = metadata?.baseURL ?? "";
+
+  const tenantCred = await resolveCredentialRequirement(
+    db,
+    tenantId,
+    { providerName, source: "tenant" },
+    null,
+    null,
+  );
+  if (!tenantCred) return null;
+  return {
+    apiKey: decryptToolCredentialSecret(tenantCred.secret),
+    baseURL,
+    source: "tenant",
+  };
+}

@@ -277,6 +277,18 @@ export function buildEntries(): CredentialEntry[] {
     });
   }
 
+  const slackBotToken = env("SLACK_BOT_TOKEN");
+  if (slackBotToken) {
+    entries.push({
+      providerName: "slack",
+      providerPlugin: "slack",
+      credentialName: "Slack bot token",
+      secret: slackBotToken,
+      kind: "tool",
+      metadata: { baseURL: "https://slack.com/api" },
+    });
+  }
+
   const exaKey = env("EXA_API_KEY");
   if (exaKey) {
     entries.push({
