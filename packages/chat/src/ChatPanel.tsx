@@ -162,6 +162,15 @@ export function ChatPanel({
   const headerControlClassName =
     "rounded-[8px] px-2.5 py-1 text-xs font-medium text-text-3 transition-colors hover:bg-page hover:text-text cursor-pointer";
 
+  // Hosts that own the thread title elsewhere (e.g. full-page chat with
+  // an app top-bar context strip) omit headerLeft and chrome controls.
+  // Skip the header entirely so we don't leave an empty identity row.
+  const showHeader =
+    headerLeft !== undefined ||
+    onToggleDock !== undefined ||
+    onToggleExpand !== undefined ||
+    onClose !== undefined;
+
   return (
     <div
       className={cn(
@@ -170,54 +179,56 @@ export function ChatPanel({
         className,
       )}
     >
-      <header className="flex shrink-0 items-center justify-between gap-2 border-b border-border px-4 py-3 sm:px-7">
-        <div className="min-w-0 flex-1">
-          {headerLeft !== undefined ? (
-            headerLeft
-          ) : (
-            <div className="flex flex-col gap-0.5">
-              <span className="text-library-title-sm tracking-[-0.01em] text-text">
-                {agent.name}
-              </span>
-              {agent.tagline !== undefined && (
-                <span className="text-xs text-text-2">{agent.tagline}</span>
-              )}
-            </div>
-          )}
-        </div>
-        <div className="flex shrink-0 items-center gap-1">
-          {onToggleExpand !== undefined && dockState !== "docked" && (
-            <button
-              type="button"
-              onClick={onToggleExpand}
-              aria-label={expanded === true ? "Collapse chat" : "Expand chat"}
-              className={headerControlClassName}
-            >
-              {expanded === true ? "Collapse" : "Expand"}
-            </button>
-          )}
-          {onToggleDock !== undefined && (
-            <button
-              type="button"
-              onClick={onToggleDock}
-              aria-label={dockState === "docked" ? "Float chat" : "Dock chat"}
-              className={headerControlClassName}
-            >
-              {dockState === "docked" ? "Float" : "Dock"}
-            </button>
-          )}
-          {onClose !== undefined && (
-            <button
-              type="button"
-              onClick={onClose}
-              aria-label="Close chat"
-              className={headerControlClassName}
-            >
-              Close
-            </button>
-          )}
-        </div>
-      </header>
+      {showHeader ? (
+        <header className="flex shrink-0 items-center justify-between gap-2 border-b border-border px-4 py-3 sm:px-7">
+          <div className="min-w-0 flex-1">
+            {headerLeft !== undefined ? (
+              headerLeft
+            ) : (
+              <div className="flex flex-col gap-0.5">
+                <span className="text-library-title-sm tracking-[-0.01em] text-text">
+                  {agent.name}
+                </span>
+                {agent.tagline !== undefined && (
+                  <span className="text-xs text-text-2">{agent.tagline}</span>
+                )}
+              </div>
+            )}
+          </div>
+          <div className="flex shrink-0 items-center gap-1">
+            {onToggleExpand !== undefined && dockState !== "docked" && (
+              <button
+                type="button"
+                onClick={onToggleExpand}
+                aria-label={expanded === true ? "Collapse chat" : "Expand chat"}
+                className={headerControlClassName}
+              >
+                {expanded === true ? "Collapse" : "Expand"}
+              </button>
+            )}
+            {onToggleDock !== undefined && (
+              <button
+                type="button"
+                onClick={onToggleDock}
+                aria-label={dockState === "docked" ? "Float chat" : "Dock chat"}
+                className={headerControlClassName}
+              >
+                {dockState === "docked" ? "Float" : "Dock"}
+              </button>
+            )}
+            {onClose !== undefined && (
+              <button
+                type="button"
+                onClick={onClose}
+                aria-label="Close chat"
+                className={headerControlClassName}
+              >
+                Close
+              </button>
+            )}
+          </div>
+        </header>
+      ) : null}
 
       {notice !== undefined && (
         <div
@@ -253,7 +264,9 @@ export function ChatPanel({
         {...(isExternalTool !== undefined ? { isExternalTool } : {})}
         {...(renderToolMarker !== undefined ? { renderToolMarker } : {})}
         {...(isReasoningExpanded !== undefined ? { isReasoningExpanded } : {})}
-        {...(setReasoningExpanded !== undefined ? { setReasoningExpanded } : {})}
+        {...(setReasoningExpanded !== undefined
+          ? { setReasoningExpanded }
+          : {})}
       />
 
       {quickReplies !== undefined &&
