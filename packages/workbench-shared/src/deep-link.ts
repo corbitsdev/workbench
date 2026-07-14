@@ -26,9 +26,9 @@ export function deepLinkPath(kind: DeepLinkKind, id: string): string {
     case "task":
       return `/inbox?task=${encodeURIComponent(id)}`;
     case "mail":
-      return `/inbox/${id}`;
+      return `/inbox/${encodeURIComponent(id)}`;
     case "conversation":
-      return `/chats/${id}`;
+      return `/chats/${encodeURIComponent(id)}`;
   }
 }
 

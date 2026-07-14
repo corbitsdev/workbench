@@ -20,12 +20,14 @@ describe("deepLinkPath", () => {
     expect(deepLinkPath("task", "task 1")).toBe("/inbox?task=task%201");
   });
 
-  test("mail", () => {
+  test("mail encodes the id in the path segment", () => {
     expect(deepLinkPath("mail", "pm-1")).toBe("/inbox/pm-1");
+    expect(deepLinkPath("mail", "pm/1")).toBe("/inbox/pm%2F1");
   });
 
-  test("conversation", () => {
+  test("conversation encodes the id in the path segment", () => {
     expect(deepLinkPath("conversation", "cnv-1")).toBe("/chats/cnv-1");
+    expect(deepLinkPath("conversation", "cnv x")).toBe("/chats/cnv%20x");
   });
 });
 

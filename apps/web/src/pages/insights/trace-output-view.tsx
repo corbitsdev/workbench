@@ -1,10 +1,12 @@
-import { useMemo, useState } from "react";
-import ReactMarkdown from "react-markdown";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { Check, Clipboard } from "lucide-react";
+import { Markdown } from "@workbench/ui";
 import {
   classifyTraceValue,
   stringifyTraceValue,
   type TraceOutputMode,
 } from "./trace-output-format";
+import { copyText } from "./tracer-shell";
 
 export type { TraceOutputMode } from "./trace-output-format";
 export {
@@ -96,9 +98,9 @@ function FormattedTraceBody({
     return (
       <div
         data-testid="trace-output-markdown"
-        className="wb-markdown max-h-[420px] overflow-auto rounded-[8px] border border-border bg-surface-2 p-3 text-[12px] text-text-2"
+        className="max-h-[420px] overflow-auto rounded-[8px] border border-border bg-surface-2 p-3"
       >
-        <ReactMarkdown>{value}</ReactMarkdown>
+        <Markdown className="text-[12px]">{value}</Markdown>
       </div>
     );
   }
@@ -134,10 +136,44 @@ function FormattedTraceBody({
   );
 }
 
+function CopyOutputButton({ text }: { text: string }) {
+  const [copied, setCopied] = useState(false);
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (timer.current !== null) clearTimeout(timer.current);
+    };
+  }, []);
+
+  return (
+    <button
+      type="button"
+      data-testid="trace-output-copy"
+      onClick={() => {
+        void copyText(text).then((ok) => {
+          if (!ok) return;
+          setCopied(true);
+          if (timer.current !== null) clearTimeout(timer.current);
+          timer.current = setTimeout(() => setCopied(false), 1500);
+        });
+      }}
+      className="flex min-h-[40px] items-center gap-1 rounded-sm border border-border px-2 py-1 text-[11px] font-medium text-text-2 transition-[color,background-color,transform] hover:bg-row-hover hover:text-text focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent active:scale-[0.97]"
+    >
+      {copied ? (
+        <Check className="h-3 w-3 text-green" />
+      ) : (
+        <Clipboard className="h-3 w-3" />
+      )}
+      {copied ? "Copied" : "Copy"}
+    </button>
+  );
+}
+
 export function TraceOutputView({
   value,
   testId = "trace-payload",
-  copyText,
+  copyText: copyTextOverride,
 }: {
   value: unknown;
   testId?: string;
@@ -146,13 +182,14 @@ export function TraceOutputView({
   const kind = useMemo(() => classifyTraceValue(value), [value]);
   const [mode, setMode] = useState<TraceOutputMode>("formatted");
   const rawText = useMemo(
-    () => copyText ?? stringifyTraceValue(value, "raw"),
-    [copyText, value],
+    () => copyTextOverride ?? stringifyTraceValue(value, "raw"),
+    [copyTextOverride, value],
   );
   const formattedCopy = useMemo(
     () => stringifyTraceValue(value, "formatted"),
     [value],
   );
+  const copyPayload = mode === "raw" ? rawText : formattedCopy;
 
   return (
     <div className="mt-2 flex flex-col gap-2">
@@ -173,6 +210,7 @@ export function TraceOutputView({
         >
           Raw
         </button>
+        <CopyOutputButton text={copyPayload} />
       </div>
       {mode === "formatted" ? (
         <FormattedTraceBody value={value} kind={kind} />
@@ -184,7 +222,6 @@ export function TraceOutputView({
           {rawText}
         </pre>
       )}
-      <span className="sr-only" data-copy-formatted={formattedCopy} />
     </div>
   );
 }

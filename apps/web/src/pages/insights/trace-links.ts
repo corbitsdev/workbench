@@ -115,7 +115,7 @@ export function entityLink(ref: TraceEntityRef): string {
     case "workflow_run":
       return deepLinkPath("workflow_trace", ref.id);
     case "principal":
-      return `/insights/principal/${ref.id}`;
+      return `/insights/users/${encodeURIComponent(ref.id)}`;
     case "session":
       return deepLinkPath("conversation", ref.id);
     case "mail":

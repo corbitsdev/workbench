@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useLocation } from "react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { type } from "arktype";
+import { pageContextForPathname } from "../page-context";
 import { invalidateMyraThreads } from "./myra-threads-cache";
 import {
   ApiError,
@@ -31,6 +33,7 @@ import {
   ensureMeSynced,
   getOutputFeedback,
   launchInstanceSession,
+  type LaunchInstanceSessionOptions,
   saveOutputFeedback,
   upsertRating,
 } from "../lib/hub-api";
@@ -93,12 +96,13 @@ export async function deliverMessage(
   session: InstanceSession,
   instanceId: string | null,
   content: string,
+  launchOptions?: LaunchInstanceSessionOptions,
 ): Promise<void> {
   try {
     await session.sendMail(content);
   } catch (err) {
     if (isRecoverableDeliveryError(err) && instanceId !== null) {
-      await launchInstanceSession(instanceId);
+      await launchInstanceSession(instanceId, launchOptions);
       await session.sendMail(content);
       return;
     }
@@ -192,6 +196,7 @@ export async function deliverMessageWithAttachments(
   instanceId: string,
   content: string,
   attachments: OutboundAttachment[],
+  launchOptions?: LaunchInstanceSessionOptions,
 ): Promise<string | null> {
   const path = `/api/tenants/${tenantId}/agents/instances/${instanceId}/mail`;
   const body = { content, attachments };
@@ -200,7 +205,7 @@ export async function deliverMessageWithAttachments(
     return res?.id ?? null;
   } catch (err) {
     if (isRecoverableDeliveryError(err)) {
-      await launchInstanceSession(instanceId);
+      await launchInstanceSession(instanceId, launchOptions);
       const res = await transport.fetch<{ id?: string }>("POST", path, body);
       return res?.id ?? null;
     }
@@ -364,6 +369,16 @@ export function useMyraSession(
   tenantId: string | null,
   enabled = true,
 ): MyraSession {
+  const location = useLocation();
+  const instanceLaunchOptions = useMemo(
+    (): LaunchInstanceSessionOptions => ({
+      pageContext: pageContextForPathname(location.pathname),
+    }),
+    [location.pathname],
+  );
+  const launchOptionsRef = useRef(instanceLaunchOptions);
+  launchOptionsRef.current = instanceLaunchOptions;
+
   const [state, setState] = useState<MyraSessionPhase>({ phase: "loading" });
   // Reset phase to `loading` during render when the identity (instanceId or
   // tenantId) changes, so `identityKey` (derived below) and `state.phase`
@@ -554,7 +569,12 @@ export function useMyraSession(
           inFlightSendIdsRef.current.add(item.id);
           let outcome: "delivered" | "recoverable" | "permanent";
           try {
-            await deliverMessage(session, targetInstanceId, item.content);
+            await deliverMessage(
+              session,
+              targetInstanceId,
+              item.content,
+              launchOptionsRef.current,
+            );
             outcome = "delivered";
           } catch (err) {
             if (cancelled) {
@@ -606,7 +626,10 @@ export function useMyraSession(
     // on screen and schedules a reconnect instead of erroring (CL-3280).
     async function establishLive() {
       try {
-        const launch = await launchInstanceSession(targetInstanceId);
+        const launch = await launchInstanceSession(
+          targetInstanceId,
+          launchOptionsRef.current,
+        );
         if (cancelled) return;
         if (launch.launched) {
           if (
@@ -965,6 +988,7 @@ export function useMyraSession(
         iid,
         content,
         encoded,
+        launchOptionsRef.current,
       );
       if (chips.length > 0 && mailId !== null) {
         setDocChips((prev) => new Map(prev).set(mailId, chips));
@@ -1011,7 +1035,12 @@ export function useMyraSession(
       scheduleReconnect();
       return;
     }
-    void deliverMessage(session, resolvedInstanceIdRef.current, text)
+    void deliverMessage(
+      session,
+      resolvedInstanceIdRef.current,
+      text,
+      launchOptionsRef.current,
+    )
       .then(() => {
         // The hub bumped this thread's lastActivityAt; refresh the list so it
         // reorders to the top rather than waiting for the query to go stale.

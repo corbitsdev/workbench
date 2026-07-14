@@ -215,6 +215,17 @@ mock.module("../workflow-executor/run-awaiting-signals", () => ({
   },
 }));
 
+const resolvePrincipalNames = mock(
+  async (_db: unknown, _tenantId: string, ids: readonly string[]) => {
+    const names = new Map<string, string>();
+    for (const id of ids) {
+      if (id.length > 0) names.set(id, "Test Owner");
+    }
+    return names;
+  },
+);
+mock.module("../services/admin-governance", () => ({ resolvePrincipalNames }));
+
 const { createWorkflowRunRecordsRouter } = await import(
   "./workflow-run-records"
 );
@@ -759,6 +770,9 @@ describe("workflow runs on the sidecar (records router)", () => {
     // The fresh per-run deploymentId the async tail attached round-trips through
     // the read DTO.
     expect(read.json.deploymentId).toBe("ses_run_1");
+    expect(read.json.principalId).toBe("prn-1");
+    expect(read.json.ownerDisplayName).toBe("Test Owner");
+    expect(resolvePrincipalNames).toHaveBeenCalled();
   });
 
   test("GET run state carries the run's deployment version meta", async () => {
@@ -957,6 +971,10 @@ describe("workflow runs on the sidecar (records router)", () => {
   });
 });
 
+/** Valid pain-point resume bodies so gate-guard tests reach CL-2681, not schema 400s. */
+const PAIN_POINT_NOTE_SELECTION = { noteId: "n1" };
+const PAIN_POINT_REVIEW_EMPTY = { approvedPieces: [], decisions: [] };
+
 describe("resume gate-guard: stale/mismatched resume is a 409 (CL-2681)", () => {
   // Seed a run at a given coarse status without going through /start (which
   // always seeds 'running'); the guard must consult the live gate, not trust an
@@ -983,7 +1001,7 @@ describe("resume gate-guard: stale/mismatched resume is a 409 (CL-2681)", () => 
 
     const r = await post(a, `/workflow-exec/records/${runId}/resume`, {
       signalName: "note-selection",
-      payload: {},
+      payload: PAIN_POINT_NOTE_SELECTION,
     });
 
     expect(r.status).toBe(409);
@@ -1002,7 +1020,7 @@ describe("resume gate-guard: stale/mismatched resume is a 409 (CL-2681)", () => 
 
       const r = await post(a, `/workflow-exec/records/${runId}/resume`, {
         signalName: "note-selection",
-        payload: {},
+        payload: PAIN_POINT_NOTE_SELECTION,
       });
 
       expect(r.status).toBe(409);
@@ -1019,7 +1037,7 @@ describe("resume gate-guard: stale/mismatched resume is a 409 (CL-2681)", () => 
 
     const r = await post(a, `/workflow-exec/records/${runId}/resume`, {
       signalName: "note-selection", // wrong gate
-      payload: {},
+      payload: PAIN_POINT_NOTE_SELECTION,
     });
 
     expect(r.status).toBe(409);
@@ -1035,7 +1053,7 @@ describe("resume gate-guard: stale/mismatched resume is a 409 (CL-2681)", () => 
 
     const r = await post(a, `/workflow-exec/records/${runId}/resume`, {
       signalName: "review",
-      payload: { ok: true },
+      payload: PAIN_POINT_REVIEW_EMPTY,
     });
 
     expect(r.status).toBe(200);
@@ -1298,6 +1316,7 @@ async function seedParkedRun(a: AppHono): Promise<string> {
   await settleStart(runId);
   const parked = runs.get(runId);
   if (parked) runs.set(runId, { ...parked, status: "awaiting" });
+  cannedAwaitingSignals = ["note-selection"];
   sidecarProbeCalls = 0;
   return runId;
 }
@@ -1310,7 +1329,7 @@ describe("deploy-window: bounded wait for the sidecar (CL-2707)", () => {
     // sidecarConnectsAtProbe stays 1: connected on the first probe.
     const r = await post(a, `/workflow-exec/records/${runId}/resume`, {
       signalName: "note-selection",
-      payload: {},
+      payload: PAIN_POINT_NOTE_SELECTION,
     });
     expect(r.status).toBe(200);
     expect(sentSignals).toHaveLength(1);
@@ -1326,7 +1345,7 @@ describe("deploy-window: bounded wait for the sidecar (CL-2707)", () => {
 
     const r = await post(a, `/workflow-exec/records/${runId}/resume`, {
       signalName: "note-selection",
-      payload: {},
+      payload: PAIN_POINT_NOTE_SELECTION,
     });
     expect(r.status).toBe(200);
     expect(r.json.status).toBe("running");
@@ -1345,7 +1364,10 @@ describe("deploy-window: bounded wait for the sidecar (CL-2707)", () => {
     const res = await a.request(`/workflow-exec/records/${runId}/resume`, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ signalName: "note-selection", payload: {} }),
+      body: JSON.stringify({
+        signalName: "note-selection",
+        payload: PAIN_POINT_NOTE_SELECTION,
+      }),
     });
     expect(res.status).toBe(503);
     expect(res.headers.get("retry-after")).toBe("10");

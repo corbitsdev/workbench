@@ -505,7 +505,7 @@ export function WorkflowTracePage() {
           label: "Owner",
           value: (
             <Link
-              to={`/insights/principal/${record.principalId}`}
+              to={`/insights/users/${encodeURIComponent(record.principalId)}`}
               className="font-medium text-text underline-offset-2 hover:underline"
             >
               {record.ownerDisplayName}
@@ -517,7 +517,7 @@ export function WorkflowTracePage() {
             label: "Owner",
             value: (
               <Link
-                to={`/insights/principal/${record.principalId}`}
+                to={`/insights/users/${encodeURIComponent(record.principalId)}`}
                 className="font-mono text-[11px] text-text-2 underline-offset-2 hover:underline"
               >
                 {record.principalId}
