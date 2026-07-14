@@ -6,11 +6,11 @@ import {
   useLocation,
   useParams,
 } from "react-router";
-import { Menu } from "lucide-react";
 import type { PaletteResultItem } from "@workbench/shared";
 import { useAuth } from "./components/AuthProvider";
 import { AppSidebar } from "./components/layout/AppSidebar";
-import { NotificationsBell } from "./components/layout/NotificationsBell";
+import { AppTopBar } from "./components/AppTopBar";
+import { PageChromeProvider } from "./lib/page-chrome";
 import { CommandPaletteProvider } from "./components/command-palette-context";
 import { PersonalAgentChat } from "./components/PersonalAgentChat";
 import { ChatLauncherProvider } from "./lib/chat-launcher-context";
@@ -180,6 +180,7 @@ function AppShell() {
         <ChatLauncherProvider>
           <CommandPaletteProvider>
             <ActiveContextProvider>
+              <PageChromeProvider>
               <ConnectionStatusProvider>
                 <OnboardingTourProvider>
                   <div className="flex h-dvh flex-row overflow-hidden bg-page">
@@ -196,22 +197,7 @@ function AppShell() {
                       />
                     )}
                     <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
-                      <header className="flex items-center gap-2 border-b border-border px-3 py-2">
-                        <button
-                          type="button"
-                          onClick={() => setDrawerOpen(true)}
-                          aria-label="Open menu"
-                          className="grid h-9 w-9 place-items-center rounded-[10px] text-text-2 transition-colors hover:bg-page hover:text-text md:hidden"
-                        >
-                          <Menu size={20} />
-                        </button>
-                        <span className="text-sm font-semibold text-text md:hidden">
-                          Workbench
-                        </span>
-                        <div className="ml-auto">
-                          <NotificationsBell />
-                        </div>
-                      </header>
+                      <AppTopBar onOpenMenu={() => setDrawerOpen(true)} />
                       <main
                         data-tour="myra-chat"
                         className="flex-1 overflow-hidden"
@@ -224,6 +210,7 @@ function AppShell() {
                   </div>
                 </OnboardingTourProvider>
               </ConnectionStatusProvider>
+              </PageChromeProvider>
             </ActiveContextProvider>
           </CommandPaletteProvider>
         </ChatLauncherProvider>

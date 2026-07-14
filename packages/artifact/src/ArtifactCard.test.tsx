@@ -65,7 +65,7 @@ describe("ArtifactCard", () => {
     expect(chip.className).toContain("truncate");
   });
 
-  it("renders designed preview family chrome and status on gallery cards", () => {
+  it("renders solid fill hero and footer status on default gallery cards", () => {
     const { container } = render(
       React.createElement(ArtifactCard, { artifact, index: 1 }),
     );
@@ -73,6 +73,18 @@ describe("ArtifactCard", () => {
     expect(card.getAttribute("data-preview-family")).toBe("email");
     expect(screen.getByText("Draft")).toBeDefined();
     expect(card.querySelector("pre")).toBeNull();
+    expect(screen.queryByText("Quick follow-up on our call")).toBeNull();
+    expect(card.querySelector(".bg-orange")).not.toBeNull();
+  });
+
+  it("renders excerpt preview when experimental cards are enabled", () => {
+    render(
+      React.createElement(ArtifactCard, {
+        artifact,
+        index: 1,
+        experimental: true,
+      }),
+    );
     expect(screen.getByText("Quick follow-up on our call")).toBeDefined();
   });
 
@@ -86,8 +98,8 @@ describe("ArtifactCard", () => {
     const badge = screen.getByText("E04");
     expect(badge.className).toContain("text-charcoal-deep");
     expect(badge.className).not.toContain("text-white");
-    const chipRow = container.querySelector(".absolute.inset-x-\\[10px\\]");
-    expect(chipRow?.className).toContain("flex");
+    const footer = container.querySelector(".border-t.border-border");
+    expect(footer?.textContent).toContain("Draft");
   });
 
   it("styles approved status with workbench green tokens", () => {

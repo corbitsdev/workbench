@@ -213,15 +213,13 @@ export function InboxPage() {
             {inboxActionError}
           </p>
         )}
-        {selectedIds.size > 0 && (
-          <InboxBulkBar
-            count={selectedIds.size}
-            view={inboxView}
-            busy={bulkAction.isPending}
-            onClear={() => setSelectedIds(new Set())}
-            onBulk={runBulk}
-          />
-        )}
+        <InboxBulkBar
+          count={selectedIds.size}
+          view={inboxView}
+          busy={bulkAction.isPending}
+          onClear={() => setSelectedIds(new Set())}
+          onBulk={runBulk}
+        />
         <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-3">
           <MessageList
             messages={messages}
@@ -440,6 +438,7 @@ function MessageList({
             message={message}
             selected={message.id === selectedId}
             checked={selectedIds.has(message.id)}
+            selectionActive={selectedIds.size > 0}
             reduceMotion={reduceMotion}
             onOpen={() => onOpen(message.id)}
             onToggleSelect={() => onToggleSelect(message.id)}
@@ -454,6 +453,7 @@ interface MessageRowProps {
   message: MailboxMessage;
   selected: boolean;
   checked: boolean;
+  selectionActive: boolean;
   reduceMotion: boolean;
   onOpen: () => void;
   onToggleSelect: () => void;
@@ -463,6 +463,7 @@ function MessageRow({
   message,
   selected,
   checked,
+  selectionActive,
   reduceMotion,
   onOpen,
   onToggleSelect,
@@ -470,21 +471,30 @@ function MessageRow({
   return (
     <div
       className={cn(
-        "flex w-full items-start gap-2 rounded-[10px] px-2 py-1.5 transition-colors duration-150",
-        selected ? "bg-row-hover" : "hover:bg-page",
+        "group/row flex w-full items-start gap-1.5 border-b border-border/50 px-1 py-1 transition-colors duration-150 last:border-b-0",
+        selected ? "bg-row-hover/80" : "hover:bg-page/80",
       )}
     >
-      <input
-        type="checkbox"
-        checked={checked}
-        aria-label={`Select message from ${mailboxSenderLabel(message)}`}
-        className="mt-3 h-4 w-4 shrink-0 accent-orange"
-        onChange={(event) => {
-          event.stopPropagation();
-          onToggleSelect();
-        }}
-        onClick={(event) => event.stopPropagation()}
-      />
+      <label
+        className={cn(
+          "mt-2.5 flex h-6 w-6 shrink-0 cursor-pointer items-center justify-center rounded-[6px] transition-opacity",
+          selectionActive || checked
+            ? "opacity-100"
+            : "opacity-0 group-hover/row:opacity-100",
+        )}
+      >
+        <input
+          type="checkbox"
+          checked={checked}
+          aria-label={`Select message from ${mailboxSenderLabel(message)}`}
+          className="h-3.5 w-3.5 rounded border-border accent-orange"
+          onChange={(event) => {
+            event.stopPropagation();
+            onToggleSelect();
+          }}
+          onClick={(event) => event.stopPropagation()}
+        />
+      </label>
       <button
         type="button"
         onClick={onOpen}
@@ -762,6 +772,13 @@ function InboxViewTabs({
   );
 }
 
+function inboxBulkLinkClass(disabled: boolean): string {
+  return cn(
+    "text-xs font-medium text-text-2 transition-colors hover:text-text",
+    disabled && "pointer-events-none opacity-40",
+  );
+}
+
 function InboxBulkBar({
   count,
   view,
@@ -775,57 +792,64 @@ function InboxBulkBar({
   onClear: () => void;
   onBulk: (action: MailboxBulkAction) => void;
 }) {
+  const active = count > 0;
   return (
-    <div className="flex flex-wrap items-center gap-2 border-b border-border px-3 py-2">
-      <span className="text-xs text-text-2">{count} selected</span>
+    <div
+      className={cn(
+        "flex min-h-[36px] flex-wrap items-center gap-x-3 gap-y-1 border-b border-border px-3 py-1.5 text-xs transition-opacity",
+        active ? "opacity-100" : "pointer-events-none opacity-0",
+      )}
+      aria-hidden={!active}
+    >
+      <span className="font-medium text-text">{count} selected</span>
       {view === "trash" || view === "archived" ? (
-        <Button
-          size="sm"
-          variant="secondary"
+        <button
+          type="button"
           disabled={busy}
+          className={inboxBulkLinkClass(busy)}
           onClick={() => onBulk("restore")}
         >
           Restore
-        </Button>
+        </button>
       ) : (
         <>
-          <Button
-            size="sm"
-            variant="secondary"
+          <button
+            type="button"
             disabled={busy}
+            className={inboxBulkLinkClass(busy)}
             onClick={() => onBulk("mark_read")}
           >
             Mark read
-          </Button>
-          <Button
-            size="sm"
-            variant="secondary"
+          </button>
+          <button
+            type="button"
             disabled={busy}
+            className={inboxBulkLinkClass(busy)}
             onClick={() => onBulk("mark_unread")}
           >
             Mark unread
-          </Button>
-          <Button
-            size="sm"
-            variant="secondary"
+          </button>
+          <button
+            type="button"
             disabled={busy}
+            className={inboxBulkLinkClass(busy)}
             onClick={() => onBulk("archive")}
           >
             Archive
-          </Button>
-          <Button
-            size="sm"
-            variant="secondary"
+          </button>
+          <button
+            type="button"
             disabled={busy}
+            className={inboxBulkLinkClass(busy)}
             onClick={() => onBulk("trash")}
           >
             Trash
-          </Button>
+          </button>
         </>
       )}
       <button
         type="button"
-        className="text-xs text-text-3 hover:text-text"
+        className="text-text-3 hover:text-text"
         onClick={onClear}
       >
         Clear

@@ -1,3 +1,4 @@
+import { useMemo } from "react";
 import { Link, useNavigate, useParams } from "react-router";
 import { Archive, ArrowLeft, MessageSquare } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
@@ -19,6 +20,7 @@ import { useActiveWorkbench } from "../lib/active-workbench-context";
 import { useChatLauncher } from "../lib/chat-launcher-context";
 import { buildArtifactMessage } from "../lib/artifact-chat-message";
 import { usePublishActiveContext } from "../lib/active-context-store";
+import { useSetPageChrome } from "../lib/page-chrome";
 
 function artifactStatusLabel(status: ArtifactStatus): string {
   switch (status) {
@@ -80,6 +82,26 @@ export function ArtifactDetailPage() {
     artifact ? String(artifact.version) : undefined,
   );
 
+  const pageChrome = useMemo(() => {
+    if (artifact === undefined) return null;
+    return (
+      <button
+        type="button"
+        onClick={() =>
+          openWithMessage(
+            buildArtifactMessage(artifact, activeTenantId ?? undefined),
+          )
+        }
+        className="inline-flex items-center gap-1.5 rounded-[8px] px-2 py-1 text-xs font-medium text-text-2 transition-colors hover:bg-page hover:text-text"
+      >
+        <MessageSquare size={14} aria-hidden />
+        Chat about this
+      </button>
+    );
+  }, [artifact, activeTenantId, openWithMessage]);
+
+  useSetPageChrome(pageChrome);
+
   if (isLoading) return <CenteredNotice>Loading artifact…</CenteredNotice>;
 
   if (isError || artifact === undefined) {
@@ -96,11 +118,6 @@ export function ArtifactDetailPage() {
   }
 
   const loadedArtifact = artifact;
-  function handleChatAboutArtifact() {
-    openWithMessage(
-      buildArtifactMessage(loadedArtifact, activeTenantId ?? undefined),
-    );
-  }
 
   function handleOpenSession(sessionId: string) {
     navigate(`/insights/trace/${sessionId}`);
@@ -163,15 +180,6 @@ export function ArtifactDetailPage() {
             onOpenParent={handleOpenParent}
           />
           <div className="flex flex-col gap-2">
-            <Button
-              variant="secondary"
-              size="sm"
-              onClick={handleChatAboutArtifact}
-              className="flex w-full items-center justify-center gap-1.5"
-            >
-              <MessageSquare size={14} />
-              Chat about this artifact
-            </Button>
             {canArchive && (
               <>
                 {archiveMutation.isError && (

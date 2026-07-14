@@ -692,11 +692,12 @@ describe("InboxPage Now feed", () => {
       isError: false,
     };
     renderInbox("/inbox?task=task-2");
-    const selectedRow = screen
+    const feed = screen.getByRole("list", { name: "Now" });
+    const selectedRow = within(feed)
       .getByText("Selected task")
       .closest('[aria-current="true"]');
     expect(selectedRow).not.toBeNull();
-    const otherRow = screen
+    const otherRow = within(feed)
       .getByText("Not selected")
       .closest("li")
       ?.querySelector('[aria-current="true"]');

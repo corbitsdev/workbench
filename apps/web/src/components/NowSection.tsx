@@ -334,7 +334,7 @@ function RowShell({ href, accent, title, note, source, at }: RowShellProps) {
   );
 
   const rowClass =
-    "flex w-full items-start gap-3 rounded-[10px] px-3 py-2.5 text-left transition-colors duration-150";
+    "flex w-full items-start gap-3 border-b border-border/40 px-2 py-2 text-left transition-colors duration-150 last:border-b-0";
 
   if (href === null) {
     return <div className={rowClass}>{body}</div>;

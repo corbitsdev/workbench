@@ -3,6 +3,7 @@
 
 import type { GalleryArtifact } from "./types";
 import { ArtifactCardPreview } from "./ArtifactCardPreview";
+import { ArtifactViz } from "./ArtifactViz";
 import {
   artifactPreviewFamily,
   labelForArtifactStatus,
@@ -71,28 +72,34 @@ export function ArtifactCard({
       className={`group relative flex cursor-pointer flex-col overflow-hidden rounded-lg border border-border bg-surface focus:outline-none focus-visible:ring-2 focus-visible:ring-orange ${cardMotion} ${span}`}
       data-preview-family={family}
     >
-      <div className="absolute inset-x-[10px] top-[10px] z-[2] flex items-start gap-2">
-        <span className="inline-flex min-w-0 flex-1 items-center gap-1 rounded-full bg-[rgba(18,18,18,0.58)] px-2 py-[3px] text-[10px] font-bold uppercase tracking-[0.03em] text-white backdrop-blur-[6px]">
-          <FamilyIcon className="h-3 w-3 shrink-0 opacity-90" aria-hidden />
-          <span className="truncate">{artifact.label}</span>
-        </span>
-        <span
-          className={`shrink-0 rounded-full px-2 py-[3px] text-[10px] font-semibold tracking-[0.02em] backdrop-blur-[6px] ${statusChipClass(artifact.status)}`}
-        >
-          {labelForArtifactStatus(artifact.status)}
-        </span>
-      </div>
+      {experimental ? (
+        <div className="absolute inset-x-[10px] top-[10px] z-[2] flex items-start gap-2">
+          <span className="inline-flex min-w-0 flex-1 items-center gap-1 rounded-full bg-[rgba(18,18,18,0.58)] px-2 py-[3px] text-[10px] font-bold uppercase tracking-[0.03em] text-white backdrop-blur-[6px]">
+            <FamilyIcon className="h-3 w-3 shrink-0 opacity-90" aria-hidden />
+            <span className="truncate">{artifact.label}</span>
+          </span>
+          <span
+            className={`shrink-0 rounded-full px-2 py-[3px] text-[10px] font-semibold tracking-[0.02em] backdrop-blur-[6px] ${statusChipClass(artifact.status)}`}
+          >
+            {labelForArtifactStatus(artifact.status)}
+          </span>
+        </div>
+      ) : null}
       <div
-        className={`relative min-h-[120px] flex-1 overflow-hidden bg-surface/40 ${fill} bg-opacity-20`}
+        className={`relative min-h-[120px] flex-1 overflow-hidden ${experimental ? `bg-surface/40 ${fill} bg-opacity-20` : fill}`}
       >
-        <div className="h-full w-full transition-transform duration-300 ease-out group-hover:scale-[1.02]">
-          <ArtifactCardPreview
-            family={family}
-            fill={fill}
-            {...(artifact.previewExcerpt === undefined
-              ? {}
-              : { excerpt: artifact.previewExcerpt })}
-          />
+        <div className="flex h-full w-full items-center justify-center transition-transform duration-300 ease-out group-hover:scale-[1.02]">
+          {experimental ? (
+            <ArtifactCardPreview
+              family={family}
+              fill={fill}
+              {...(artifact.previewExcerpt === undefined
+                ? {}
+                : { excerpt: artifact.previewExcerpt })}
+            />
+          ) : (
+            <ArtifactViz kind={artifact.viz} />
+          )}
         </div>
         <span
           className={`absolute bottom-[10px] right-3 font-mono text-[13px] font-bold ${indexBadgeClass(fill)}`}
@@ -102,8 +109,23 @@ export function ArtifactCard({
         </span>
       </div>
       <div className="border-t border-border bg-surface px-[13px] py-[11px]">
-        <div className="truncate text-[13.5px] font-semibold text-text">
-          {artifact.title}
+        <div className="flex items-center gap-2">
+          {!experimental ? (
+            <span className="inline-flex shrink-0 items-center gap-1 text-[10px] font-semibold uppercase tracking-[0.03em] text-text-3">
+              <FamilyIcon className="h-3 w-3 opacity-80" aria-hidden />
+              {artifact.label}
+            </span>
+          ) : null}
+          <div className="min-w-0 flex-1 truncate text-[13.5px] font-semibold text-text">
+            {artifact.title}
+          </div>
+          {!experimental ? (
+            <span
+              className={`shrink-0 rounded-sm px-1.5 py-0.5 text-[10px] font-medium ${statusChipClass(artifact.status)}`}
+            >
+              {labelForArtifactStatus(artifact.status)}
+            </span>
+          ) : null}
         </div>
         <div className="mt-0.5 flex items-center gap-[7px] font-mono text-[11px] text-text-3">
           <span>{artifact.from}</span>·<span>{artifact.time}</span>
