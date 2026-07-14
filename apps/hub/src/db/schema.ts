@@ -780,6 +780,26 @@ export const workflowTrigger = pgTable("workflow_trigger", {
 
 export type WorkflowTriggerRow = typeof workflowTrigger.$inferSelect;
 
+// Durable poll cursor for inbox intake (CL-3628): one row per scope key
+// (`member:<memberPrincipalId>:<sourceKey>` or `workspace:<tenantId>:<sourceKey>`,
+// the same keys `inbox-intake.ts` already used for its in-process
+// `lastPollAtByScopeKey` map). Read at the top of each source's run, upserted
+// only after a successful poll — same advance semantics as the in-memory map,
+// now surviving a replica restart/redeploy instead of resetting to a wide
+// `lookbackMs` poll. `scopeKey` alone is globally unique (it embeds the tenant
+// or member id); `tenantId` is carried alongside for operator debugging/joins.
+export const inboxIntakeCursor = pgTable("inbox_intake_cursor", {
+  scopeKey: text("scope_key").primaryKey(),
+  tenantId: text("tenant_id").notNull(),
+  lastPollAt: timestamp("last_poll_at").notNull(),
+  updatedAt: timestamp("updated_at")
+    .notNull()
+    .defaultNow()
+    .$onUpdate(() => new Date()),
+});
+
+export type InboxIntakeCursorRow = typeof inboxIntakeCursor.$inferSelect;
+
 export {
   analyticsEvent,
   analyticsRollupDaily,
