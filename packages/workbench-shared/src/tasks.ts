@@ -111,6 +111,33 @@ export const UpdateTaskBodySchema = type({
 });
 export type UpdateTaskBody = typeof UpdateTaskBodySchema.infer;
 
+// Request body for POST /me/tasks/bulk — one status transition applied to every
+// owned id that matches (unknown or non-owned ids are skipped).
+export const TaskBulkPatchBodySchema = type({
+  ids: "string[]>=1",
+  status: TaskStatusSchema,
+});
+export type TaskBulkPatchBody = typeof TaskBulkPatchBodySchema.infer;
+
+export const TaskBulkPatchResponseSchema = type({
+  updated: "number",
+  ids: "string[]",
+});
+export type TaskBulkPatchResponse = typeof TaskBulkPatchResponseSchema.infer;
+
+/** Open task statuses — shared with the Now feed composition in `now-feed.ts`. */
+export const openTaskStatuses = ["open", "in_progress", "waiting"] as const;
+
+/** Sort key for open tasks in management surfaces (lower = more urgent). */
+export const taskStatusUrgency: Record<
+  (typeof openTaskStatuses)[number],
+  number
+> = {
+  in_progress: 0,
+  open: 1,
+  waiting: 2,
+};
+
 // Request body for POST /me/tasks/:id/push. The session-authed human's click is
 // the approval; `operation` defaults to `create`.
 export const PushTaskBodySchema = type({
