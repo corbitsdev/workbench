@@ -33,6 +33,7 @@ const MANAGED_KEYS = [
   "PREWARM_ACTIVE_WINDOW_MS",
   "PREWARM_CONCURRENCY",
   "PREWARM_SWEEP_INTERVAL_MS",
+  "PREWARM_INITIAL_DELAY_MS",
   "RUN_LIVENESS_STALL_GRACE_MS",
   "RUN_LIVENESS_START_HARD_DEADLINE_MS",
   "RUN_LIVENESS_INTERVAL_MS",
@@ -192,23 +193,26 @@ describe("loadConfig", () => {
     }
   });
 
-  it("defaults personalAgentPrewarm to enabled with 24h/2/30s and honors overrides", () => {
+  it("defaults personalAgentPrewarm to enabled with 24h/2/30s/120s and honors overrides", () => {
     setRequiredEnv();
     expect(loadConfig().personalAgentPrewarm).toEqual({
       enabled: true,
       activeWindowMs: 24 * 60 * 60 * 1000,
       concurrency: 2,
       intervalMs: 30_000,
+      initialDelayMs: 120_000,
     });
 
     process.env["PREWARM_ACTIVE_WINDOW_MS"] = "3600000";
     process.env["PREWARM_CONCURRENCY"] = "4";
     process.env["PREWARM_SWEEP_INTERVAL_MS"] = "5000";
+    process.env["PREWARM_INITIAL_DELAY_MS"] = "1000";
     expect(loadConfig().personalAgentPrewarm).toEqual({
       enabled: true,
       activeWindowMs: 3_600_000,
       concurrency: 4,
       intervalMs: 5_000,
+      initialDelayMs: 1_000,
     });
   });
 
@@ -225,6 +229,30 @@ describe("loadConfig", () => {
 
     delete process.env["PREWARM_ENABLED"];
     expect(loadConfig().personalAgentPrewarm.enabled).toBe(true);
+  });
+
+  it("rejects PREWARM_ENABLED values outside true/1/false/0 instead of coercing them", () => {
+    setRequiredEnv();
+    for (const bad of ["off", "no", "flase", "TRUE"]) {
+      process.env["PREWARM_ENABLED"] = bad;
+      expect(() => loadConfig()).toThrow(
+        `PREWARM_ENABLED must be "true", "1", "false", or "0"; got "${bad}"`,
+      );
+    }
+  });
+
+  it("rejects a PREWARM_CONCURRENCY above the ceiling or non-positive", () => {
+    setRequiredEnv();
+    process.env["PREWARM_CONCURRENCY"] = "9";
+    expect(() => loadConfig()).toThrow(
+      'PREWARM_CONCURRENCY must be at most 8; got "9"',
+    );
+    process.env["PREWARM_CONCURRENCY"] = "0";
+    expect(() => loadConfig()).toThrow(
+      'PREWARM_CONCURRENCY must be a positive integer; got "0"',
+    );
+    process.env["PREWARM_CONCURRENCY"] = "8";
+    expect(loadConfig().personalAgentPrewarm.concurrency).toBe(8);
   });
 
   it("rejects a zero, negative, decimal, or non-numeric WEDGE_SWEEP_INTERVAL_MS", () => {

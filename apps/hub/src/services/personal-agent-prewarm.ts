@@ -2,6 +2,7 @@ import { and, eq, gte, inArray } from "drizzle-orm";
 import { schema as intxSchema } from "@intx/db";
 import type { DB } from "@intx/db";
 import { getLogger } from "@intx/log";
+import { SessionLaunchError } from "@intx/hub-sessions";
 import type {
   EventCollectorRegistry,
   SessionService,
@@ -10,25 +11,14 @@ import type {
 import type { GrantStore } from "@intx/types/authz";
 import { AGENT_TEMPLATES } from "@workbench/agents";
 import { memberAgentInstance } from "../db/schema";
-import { relaunchInstanceIfNeeded } from "./agent-provisioning";
+import {
+  relaunchInstanceIfNeeded,
+  WEDGE_RELAUNCHABLE_STATUSES,
+} from "./agent-provisioning";
 
 const log = getLogger(["api", "prewarm"]);
 
 const { agentInstance } = intxSchema;
-
-// A member returning to the app after this long is unlikely to open Myra before
-// the next sidecar restart re-sleeps her, so 24h keeps the prewarm set small
-// (only genuinely-active members) while covering everyone likely to chat today.
-export const DEFAULT_PREWARM_ACTIVE_WINDOW_MS = 24 * 60 * 60 * 1000;
-// Launches are serialized through the coalescer/dedup breaker per instance, but
-// distinct instances launch in parallel; a low default keeps the just-
-// reconnected sidecar from being stampeded while it also serves live traffic.
-export const DEFAULT_PREWARM_CONCURRENCY = 2;
-export const MAX_PREWARM_CONCURRENCY = 8;
-// Same cadence as the wedge sweep: frequent enough that a member's personal
-// agent is warm within seconds of a reconnect, cheap because a tick with no
-// cold personal instances is a single indexed select plus a routable-set diff.
-export const DEFAULT_PREWARM_SWEEP_INTERVAL_MS = 30_000;
 
 // The set of template keys whose instances are per-member personal agents
 // (Myra). The "personal" kind is the domain policy owned by @workbench/agents;
@@ -37,25 +27,37 @@ export function personalTemplateKeys(): string[] {
   return AGENT_TEMPLATES.filter((t) => t.kind === "personal").map((t) => t.key);
 }
 
-function clampConcurrency(value: number): number {
-  if (value < 1) return 1;
-  if (value > MAX_PREWARM_CONCURRENCY) return MAX_PREWARM_CONCURRENCY;
-  return value;
+// A provision-phase launch failure whose cause is the router having no sidecar
+// to deploy onto ("No sidecar available/connected for agent ..." thrown by
+// @intx/hub-sessions' sidecar-handler sendAgentDeploy). During the post-boot
+// reconnect window every candidate would fail the same way — and each attempt
+// arms that instance's dedup-breaker cooldown, delaying its REAL prewarm — so
+// a tick aborts on the first such failure instead of iterating the whole
+// candidate set into it. Message-based by necessity: the router throws a bare
+// Error that the launch wraps in a provision-phase SessionLaunchError.
+export function isSidecarUnavailableLaunchError(err: unknown): boolean {
+  return (
+    err instanceof SessionLaunchError &&
+    err.phase === "provision" &&
+    err.message.includes("No sidecar")
+  );
 }
 
 async function drainWithConcurrency<T>(
   items: readonly T[],
   concurrency: number,
-  worker: (item: T) => Promise<void>,
+  worker: (item: T) => Promise<"continue" | "abort">,
 ): Promise<void> {
   let cursor = 0;
+  let aborted = false;
   const runWorker = async (): Promise<void> => {
-    while (cursor < items.length) {
+    while (!aborted && cursor < items.length) {
       const index = cursor;
       cursor += 1;
       const item = items[index];
       if (item === undefined) continue;
-      await worker(item);
+      const verdict = await worker(item);
+      if (verdict === "abort") aborted = true;
     }
   };
   const workers = Array.from(
@@ -67,8 +69,12 @@ async function drainWithConcurrency<T>(
 
 /**
  * One prewarm pass. Selects personal-agent instances of members active within
- * `activeWindowMs`, drops any whose address is already routable, and launches
- * the rest through `relaunchInstanceIfNeeded` under bounded concurrency.
+ * `activeWindowMs` — measured on `member_agent_instance.lastActivityAt`, which
+ * the hub mail middleware bumps on every inbound user message (see
+ * recordMyraThreadActivity in myra-threads.ts) — whose instance is in a
+ * relaunchable status, drops any whose address is already routable, and
+ * launches the rest through `relaunchInstanceIfNeeded` under bounded
+ * concurrency.
  *
  * Every launch is funneled through the same per-instance coalescer/dedup breaker
  * the sessions route uses, so a user-initiated launch and a prewarm of the same
@@ -76,7 +82,11 @@ async function drainWithConcurrency<T>(
  * routability and the session status right before launching, so an instance that
  * became live between the select and its turn in the queue is a no-op. A single
  * instance's launch failure is logged and swallowed so it neither aborts the
- * remaining candidates nor rejects the sweep — the next tick retries it.
+ * remaining candidates nor rejects the sweep — the next tick retries it. The one
+ * exception is a sidecar-unavailable provision failure, which aborts the rest of
+ * the tick (see isSidecarUnavailableLaunchError): the un-attempted candidates
+ * are never launched into the same failure, so their cooldowns stay unarmed and
+ * the next tick prewarms them cleanly.
  */
 export async function prewarmPersonalAgents(
   db: DB["db"],
@@ -86,22 +96,20 @@ export async function prewarmPersonalAgents(
   eventCollectors: EventCollectorRegistry,
   opts: {
     templateKeys: string[];
-    activeWindowMs?: number;
-    concurrency?: number;
+    activeWindowMs: number;
+    concurrency: number;
     now?: number;
   },
 ): Promise<void> {
-  const { templateKeys } = opts;
+  const { templateKeys, activeWindowMs, concurrency } = opts;
   if (templateKeys.length === 0) return;
 
-  const activeWindowMs =
-    opts.activeWindowMs ?? DEFAULT_PREWARM_ACTIVE_WINDOW_MS;
-  const concurrency = clampConcurrency(
-    opts.concurrency ?? DEFAULT_PREWARM_CONCURRENCY,
-  );
   const now = opts.now ?? Date.now();
   const cutoff = new Date(now - activeWindowMs);
 
+  // member_agent_instance carries no index, but it is small (one row per
+  // member thread), so an all-warm tick costs one cheap select plus a
+  // routable-set diff.
   const rows = await db
     .select({
       instanceId: agentInstance.id,
@@ -116,6 +124,9 @@ export async function prewarmPersonalAgents(
       and(
         inArray(memberAgentInstance.templateKey, templateKeys),
         gte(memberAgentInstance.lastActivityAt, cutoff),
+        // Mirrors the wedge sweep's relaunchable-status constraint: a stopped
+        // or errored instance must not be re-selected every tick forever.
+        inArray(agentInstance.status, [...WEDGE_RELAUNCHABLE_STATUSES]),
       ),
     );
 
@@ -130,7 +141,10 @@ export async function prewarmPersonalAgents(
   }
   if (candidates.length === 0) return;
 
-  let prewarmed = 0;
+  // Counts attempts, not proven launches: relaunchInstanceIfNeeded returns
+  // void and no-ops internally (already-routable re-check, active session,
+  // breaker cooldown), so the hub cannot distinguish a real launch here.
+  let attempted = 0;
   await drainWithConcurrency(candidates, concurrency, async (instanceId) => {
     try {
       await relaunchInstanceIfNeeded(
@@ -141,44 +155,44 @@ export async function prewarmPersonalAgents(
         instanceId,
         sidecarRouter,
       );
-      prewarmed += 1;
+      attempted += 1;
+      return "continue";
     } catch (err) {
+      if (isSidecarUnavailableLaunchError(err)) {
+        log.info("Sidecar unavailable; aborting prewarm tick", { instanceId });
+        return "abort";
+      }
       log.warn("Failed to prewarm personal agent instance", {
         instanceId,
         error: err instanceof Error ? err : new Error(String(err)),
       });
+      return "continue";
     }
   });
 
-  if (prewarmed > 0) {
-    log.info("Prewarmed personal agents after sidecar reconnect", {
-      prewarmed,
-    });
+  if (attempted > 0) {
+    log.info("Prewarm pass attempted personal-agent launches", { attempted });
   }
 }
 
 /**
- * Registers the periodic personal-agent prewarm on an interval. Owns a
- * reentrancy flag (a slow tick with many cold instances must not overlap the
- * next) and returns an unsubscribe that clears the timer (mirrors the wedge
- * sweep's teardown contract). The timer is `unref`'d so it never keeps the
- * process alive on its own.
+ * Builds one reentrancy-guarded prewarm tick over fixed deps: a slow sweep
+ * with many cold instances must not overlap the next tick. Exported apart from
+ * the interval owner so tests can drive ticks deterministically.
  */
-export function registerPersonalAgentPrewarm(deps: {
+export function createPersonalAgentPrewarmTick(deps: {
   db: DB["db"];
   router: SidecarRouter;
   sessionService: SessionService;
   grantStore: GrantStore;
   eventCollectors: EventCollectorRegistry;
-  activeWindowMs?: number;
-  concurrency?: number;
-  intervalMs?: number;
+  activeWindowMs: number;
+  concurrency: number;
 }): () => void {
-  const intervalMs = deps.intervalMs ?? DEFAULT_PREWARM_SWEEP_INTERVAL_MS;
   const templateKeys = personalTemplateKeys();
   let sweeping = false;
 
-  const timer = setInterval(() => {
+  return () => {
     if (sweeping) return;
     sweeping = true;
     void prewarmPersonalAgents(
@@ -201,8 +215,44 @@ export function registerPersonalAgentPrewarm(deps: {
       .finally(() => {
         sweeping = false;
       });
-  }, intervalMs);
-  if (typeof timer.unref === "function") timer.unref();
+  };
+}
 
-  return () => clearInterval(timer);
+/**
+ * Registers the periodic personal-agent prewarm. The first tick waits out
+ * `initialDelayMs` so the post-boot sidecar reconnect fan-out settles before
+ * any launch is attempted (the wedge sweep's sustained-unroutability grace is
+ * the precedent for that horizon); subsequent ticks run every `intervalMs`.
+ * Returns an unsubscribe that clears both timers (mirrors the wedge sweep's
+ * teardown contract). Both timers are `unref`'d so they never keep the process
+ * alive on their own.
+ *
+ * All knobs are required: config.ts is the sole owner of their defaults and
+ * their validation (including the concurrency ceiling).
+ */
+export function registerPersonalAgentPrewarm(deps: {
+  db: DB["db"];
+  router: SidecarRouter;
+  sessionService: SessionService;
+  grantStore: GrantStore;
+  eventCollectors: EventCollectorRegistry;
+  activeWindowMs: number;
+  concurrency: number;
+  intervalMs: number;
+  initialDelayMs: number;
+}): () => void {
+  const tick = createPersonalAgentPrewarmTick(deps);
+
+  let interval: ReturnType<typeof setInterval> | undefined;
+  const startTimer = setTimeout(() => {
+    tick();
+    interval = setInterval(tick, deps.intervalMs);
+    if (typeof interval.unref === "function") interval.unref();
+  }, deps.initialDelayMs);
+  if (typeof startTimer.unref === "function") startTimer.unref();
+
+  return () => {
+    clearTimeout(startTimer);
+    if (interval !== undefined) clearInterval(interval);
+  };
 }

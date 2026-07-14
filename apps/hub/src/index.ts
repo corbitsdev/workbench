@@ -680,6 +680,12 @@ const stopWedgeSweepReconciler = registerWedgeSweepReconciler({
 // stampeded. It composes with the wedge sweep and the on-demand /me relaunch —
 // every launch funnels through the same per-instance coalescer, so none can
 // double-launch. Default ON; PREWARM_ENABLED=false disables it.
+//
+// CONFLICT NOTE: the idle-session reaper above is currently disabled. If it is
+// re-enabled at its 5-minute default, this prewarm will relaunch every personal
+// agent the reaper sleeps (any member active in the last 24h), churning
+// sleep/wake forever — re-enable the reaper only with the prewarm window/reaper
+// threshold reconciled (or the prewarm gated off).
 const stopPersonalAgentPrewarm = config.personalAgentPrewarm.enabled
   ? registerPersonalAgentPrewarm({
       db,
@@ -690,6 +696,7 @@ const stopPersonalAgentPrewarm = config.personalAgentPrewarm.enabled
       activeWindowMs: config.personalAgentPrewarm.activeWindowMs,
       concurrency: config.personalAgentPrewarm.concurrency,
       intervalMs: config.personalAgentPrewarm.intervalMs,
+      initialDelayMs: config.personalAgentPrewarm.initialDelayMs,
     })
   : () => {};
 
