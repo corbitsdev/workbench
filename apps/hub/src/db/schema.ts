@@ -780,6 +780,53 @@ export const workflowTrigger = pgTable("workflow_trigger", {
 
 export type WorkflowTriggerRow = typeof workflowTrigger.$inferSelect;
 
+// A queued Granola call: enqueued by the workspace intake tick (cheap,
+// LLM-free) and drained off-tick by the job runner, which does the transcript
+// fetch + reasoning turn + artifact persistence (CL-3627). One row per
+// (tenant, note); the unique constraint is both the enqueue-dedupe backstop
+// (a re-listed note within the same tick window upserts onto its existing row
+// rather than creating a second job) and the durable retry/backoff state —
+// `nextAttemptAt` gates the runner's claim query, `attempts` grows the
+// backoff, and `status = 'dead'` after the attempt ceiling stops a
+// permanently-broken note from being retried forever (logged loudly, not
+// silently dropped).
+export const granolaCallJobStatuses = [
+  "pending",
+  "processing",
+  "done",
+  "dead",
+] as const;
+
+export const granolaCallJob = pgTable(
+  "granola_call_job",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: text("tenant_id").notNull(),
+    noteId: text("note_id").notNull(),
+    status: text("status", { enum: granolaCallJobStatuses })
+      .notNull()
+      .default("pending"),
+    attempts: integer("attempts").notNull().default(0),
+    nextAttemptAt: timestamp("next_attempt_at").notNull().defaultNow(),
+    lastError: text("last_error"),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at")
+      .notNull()
+      .defaultNow()
+      .$onUpdate(() => new Date()),
+  },
+  (t) => ({
+    granolaCallJobTenantNoteUniq: unique(
+      "granola_call_job_tenant_note_uniq",
+    ).on(t.tenantId, t.noteId),
+    granolaCallJobStatusNextAttemptIdx: index(
+      "granola_call_job_status_next_attempt_idx",
+    ).on(t.status, t.nextAttemptAt),
+  }),
+);
+
+export type GranolaCallJobRow = typeof granolaCallJob.$inferSelect;
+
 export {
   analyticsEvent,
   analyticsRollupDaily,
