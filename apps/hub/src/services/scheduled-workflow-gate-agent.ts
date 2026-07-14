@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { eq } from "drizzle-orm";
+import { and, eq, lt } from "drizzle-orm";
 import { schema as intxSchema } from "@intx/db";
 import { generateId } from "@intx/hub-common";
 import { getLogger } from "@intx/log";
@@ -11,7 +11,12 @@ import type { GrantStore } from "@intx/types/authz";
 import type { CryptoProvider } from "@intx/types/runtime";
 import type { TurnFinalized } from "@workbench/event-collector";
 import type { HubDb } from "../db";
-import { memberAgentInstance } from "../db/schema";
+import { agentInstance, memberAgentInstance } from "../db/schema";
+import { loadWorkflowGateInfos } from "../lib/workflow-catalog";
+import {
+  kindAllowsScheduledPostIntakeDrive,
+  type WorkflowGateInfo,
+} from "../lib/workflow-gate-info";
 import { isFeatureEnabledForTenantCached } from "../lib/feature-grants";
 import { slidingWindowLimiter } from "../lib/sliding-window";
 import {
@@ -23,7 +28,7 @@ import type { AwaitingRunContext } from "../workflow-executor/gate-mail";
 import { deliverRunTerminalMail } from "../workflow-executor/run-terminal-mail";
 import { loadRunRecord, setRunStatus } from "../workflow-executor/run-store";
 import { launchAgentSession } from "./agent-provisioning";
-import { resolveMyraDefinition } from "./myra-threads";
+import { resolveMyraDefinition, teardownThreadRows } from "./myra-threads";
 import type { RepoStore } from "@intx/hub-sessions";
 
 const log = getLogger(["services", "scheduled-workflow-gate-agent"]);
@@ -271,6 +276,11 @@ export function createScheduledWorkflowGateAgent(
     ].join("\n");
 
     let address: string | undefined;
+    const teardownOpts = {
+      instanceId,
+      mappingId,
+      instancePrincipalId,
+    };
     try {
       const launched = await launchAgentSession(
         deps.db,
@@ -332,6 +342,35 @@ export function createScheduledWorkflowGateAgent(
         item,
         err instanceof Error ? err.message : "Scheduled gate drive failed",
       );
+    } finally {
+      // Same teardown contract as mailbox-triage: undeploy the sidecar harness
+      // before deleting hub rows, or leave rows for the boot sweep to retry.
+      let sessionEnded = address === undefined;
+      if (address !== undefined) {
+        pendingTurns.delete(address);
+        try {
+          await deps.sessionService.endSession(address, "scheduled_gate_done");
+          sessionEnded = true;
+        } catch (err) {
+          log.warn(
+            "Scheduled gate session end failed; leaving instance for boot sweep",
+            {
+              instanceId,
+              error: err instanceof Error ? err.message : String(err),
+            },
+          );
+        }
+      }
+      if (sessionEnded) {
+        try {
+          await teardownThreadRows(deps.db, teardownOpts);
+        } catch (err) {
+          log.error("Scheduled gate teardown failed for {instanceId}", {
+            instanceId,
+            error: err instanceof Error ? err : new Error(String(err)),
+          });
+        }
+      }
     }
   }
 
@@ -380,6 +419,22 @@ export function createScheduledWorkflowGateAgent(
           record.triggerSource,
           gates,
         );
+        if (targets.length > 0) {
+          const gateInfos = await loadWorkflowGateInfos();
+          const gateInfo: WorkflowGateInfo | undefined = gateInfos.get(
+            args.kind,
+          );
+          if (
+            gateInfo === undefined ||
+            !kindAllowsScheduledPostIntakeDrive(args.kind, gateInfo)
+          ) {
+            log.warn(
+              "scheduled gate agent: skipping drive for kind without post-intake allowance",
+              { runId: args.runId, kind: args.kind },
+            );
+            return;
+          }
+        }
         for (const signalName of targets) {
           const key = queueKey({ runId: args.runId, signalName });
           if (inFlight.has(key)) continue;
@@ -426,4 +481,63 @@ export function createScheduledWorkflowGateAgent(
       });
     },
   };
+}
+
+const SCHEDULED_GATE_SWEEP_STALE_MS = 30 * 60 * 1000;
+const SCHEDULED_GATE_SWEEP_LIMIT = 500;
+
+/**
+ * Best-effort cleanup for myra-scheduled-gate instances left after a failed
+ * endSession (mirrors mailbox-triage sweep).
+ */
+export async function sweepStaleScheduledGateInstances(
+  db: HubDb,
+  sessionService: Pick<SessionService, "endSession">,
+  opts?: { staleAfterMs?: number; limit?: number; now?: () => number },
+): Promise<{ scanned: number; retired: number }> {
+  const staleAfterMs = opts?.staleAfterMs ?? SCHEDULED_GATE_SWEEP_STALE_MS;
+  const limit = opts?.limit ?? SCHEDULED_GATE_SWEEP_LIMIT;
+  const nowFn = opts?.now ?? (() => Date.now());
+  const cutoff = new Date(nowFn() - staleAfterMs);
+
+  const stale = await db
+    .select({
+      mappingId: memberAgentInstance.id,
+      instanceId: memberAgentInstance.instanceId,
+      instancePrincipalId: agentInstance.principalId,
+      address: agentInstance.address,
+    })
+    .from(memberAgentInstance)
+    .innerJoin(
+      agentInstance,
+      eq(memberAgentInstance.instanceId, agentInstance.id),
+    )
+    .where(
+      and(
+        eq(memberAgentInstance.templateKey, SCHEDULED_GATE_TEMPLATE_KEY),
+        lt(memberAgentInstance.createdAt, cutoff),
+      ),
+    )
+    .limit(limit);
+
+  let retired = 0;
+  for (const row of stale) {
+    try {
+      await sessionService.endSession(row.address, "scheduled_gate_boot_sweep");
+    } catch {
+      continue;
+    }
+    try {
+      await teardownThreadRows(db, {
+        instanceId: row.instanceId,
+        mappingId: row.mappingId,
+        instancePrincipalId: row.instancePrincipalId,
+      });
+      retired += 1;
+    } catch {
+      // best-effort
+    }
+  }
+
+  return { scanned: stale.length, retired };
 }

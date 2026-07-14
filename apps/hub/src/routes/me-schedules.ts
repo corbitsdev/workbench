@@ -189,7 +189,10 @@ export function createMeSchedulesRouter(
       // requiresIntake kind additionally must carry a valid stored intake payload.
       const gateInfos = await loadWorkflowGateInfos();
       const gateInfo = gateInfos.get(body.kind);
-      if (gateInfo === undefined || !isKindStructurallyAttachable(gateInfo)) {
+      if (
+        gateInfo === undefined ||
+        !isKindStructurallyAttachable(gateInfo, body.kind)
+      ) {
         return c.json(
           {
             error: `workflow "${body.kind}" cannot be scheduled: it needs input this schedule can't supply`,

@@ -24,8 +24,24 @@ const DefinitionStepsSchema = type({
 export const WorkflowGateInfoSchema = type({
   requiresIntake: "boolean",
   humanGateCount: "number.integer >= 0",
+  "allowsScheduledPostIntakeDrive?": "boolean",
 });
 export type WorkflowGateInfo = typeof WorkflowGateInfoSchema.infer;
+
+/** Kinds explicitly cleared for unattended Myra post-intake gate-drive (CL-3528). */
+export const SCHEDULED_POST_INTAKE_DRIVE_KIND_ALLOWLIST = new Set([
+  "scheduler-multi-gate-test",
+]);
+
+/** Whether a kind may use Myra to auto-drive human gates after intake on scheduler runs. */
+export function kindAllowsScheduledPostIntakeDrive(
+  kind: string,
+  info: WorkflowGateInfo,
+): boolean {
+  if (!info.requiresIntake || info.humanGateCount <= 1) return false;
+  if (SCHEDULED_POST_INTAKE_DRIVE_KIND_ALLOWLIST.has(kind)) return true;
+  return info.allowsScheduledPostIntakeDrive === true;
+}
 
 // Derive a workflow's gate shape from its serialized definition's `steps`.
 // `requiresIntake` is true when the definition has an `awaitSignal` gate named
@@ -52,12 +68,17 @@ export function deriveWorkflowGateInfo(definition: unknown): WorkflowGateInfo {
 
 // Whether a kind can be attached to a schedule at all (structural), ignoring
 // whether intake input has actually been supplied. Fully-unattended workflows (no
-// gates) always qualify. A workflow with an `intake` entry gate qualifies: the
-// scheduler pre-fills and auto-delivers intake (CL-3509) and Myra drives every
-// post-intake human gate for scheduler-sourced runs (CL-3528). Workflows whose
-// first human gate is not `intake` are excluded — there is no auto-first-gate
-// path and no agent drives them on a schedule.
-export function isKindStructurallyAttachable(info: WorkflowGateInfo): boolean {
+// gates) always qualify. Intake-only workflows qualify: the scheduler pre-fills and
+// auto-delivers intake (CL-3509). Workflows with additional post-intake human
+// gates qualify only when explicitly allowlisted or flagged in the embedded
+// catalog (CL-3528 security). Workflows whose first human gate is not `intake`
+// are excluded.
+export function isKindStructurallyAttachable(
+  info: WorkflowGateInfo,
+  kind: string,
+): boolean {
   if (info.humanGateCount === 0) return true;
-  return info.requiresIntake;
+  if (!info.requiresIntake) return false;
+  if (info.humanGateCount === 1) return true;
+  return kindAllowsScheduledPostIntakeDrive(kind, info);
 }

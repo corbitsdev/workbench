@@ -135,6 +135,7 @@ import {
 } from "./services/mailbox-triage";
 import {
   createScheduledWorkflowGateAgent,
+  sweepStaleScheduledGateInstances,
   type ScheduledWorkflowGateAgent,
 } from "./services/scheduled-workflow-gate-agent";
 import { createArtifactsRouter } from "./routes/artifacts";
@@ -654,6 +655,11 @@ const TRIAGE_SWEEP_BOOT_DELAY_MS = 5 * 60_000;
 setTimeout(() => {
   void sweepStaleTriageInstances(db, sessionService).catch((err) => {
     log.error("Triage boot sweep failed", {
+      error: err instanceof Error ? err : new Error(String(err)),
+    });
+  });
+  void sweepStaleScheduledGateInstances(db, sessionService).catch((err) => {
+    log.error("Scheduled gate boot sweep failed", {
       error: err instanceof Error ? err : new Error(String(err)),
     });
   });

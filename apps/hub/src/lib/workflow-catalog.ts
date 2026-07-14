@@ -122,6 +122,9 @@ export async function loadWorkflowGateInfos(
     infos.set(def.kind, {
       requiresIntake: def.requiresIntake,
       humanGateCount: def.humanGateCount,
+      ...(def.allowsScheduledPostIntakeDrive !== undefined
+        ? { allowsScheduledPostIntakeDrive: def.allowsScheduledPostIntakeDrive }
+        : {}),
     });
   }
   return infos;
