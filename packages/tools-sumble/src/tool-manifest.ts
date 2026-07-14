@@ -11,7 +11,7 @@ export const toolManifestFile = {
       myraCatalog: {
         catalogPackage: "sumble",
         summary:
-          "Sumble — account intelligence: resolve organizations, tech stack, teams, people, jobs, and intent signals.",
+          "Sumble v9 — full Public API: organizations, teams, people, jobs, signals, lookups, saved lists, support, and intelligence briefs.",
         tags: [
           "sumble",
           "account",

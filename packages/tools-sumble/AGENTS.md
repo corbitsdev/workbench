@@ -1,13 +1,13 @@
 # @workbench/tools-sumble
 
-Sumble v8 API tools (organizations, teams, people, jobs, signals, intelligence
-briefs). Registered in the hub's tool registry as eight `sumble_*` read tools.
+Sumble **v9** API tools registered in the hub as `sumble_*` read/write tools via
+`SUMBLE_HUB_TOOLS` (`src/registry.ts`).
 
-- Credential (`sumble` provider) is resolved by Interchange at tool execution
-  time — not at agent launch
-- The tool grants `tool:sumble_*/invoke` are synthesized at session launch from
-  the agent's capabilities list; do not add them to the DB
-- Keep the tool schemas in sync with what agents declare in their system prompts
+- Credential (`sumble` provider) resolves at tool execution — not at agent launch
+- Tool grants `tool:sumble_*/invoke` are synthesized from agent capabilities
+- Keep agent prompts aligned with `src/definitions.ts`
+- OpenAPI parity is enforced in `src/openapi-parity.test.ts` and
+  `src/operation-coverage.ts`
 
 ## Testing
 
