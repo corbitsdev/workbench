@@ -9,6 +9,7 @@ import { AgentsSection } from "./insights/AgentsSection";
 import { ActorActivitySection } from "./insights/ActorActivity";
 import { ChartsSection } from "./insights/ChartsSection";
 import { CostInsights } from "./insights/CostInsights";
+import { ToolBreakdownSection } from "./insights/ToolBreakdownSection";
 import { DeferredActivitySection } from "./insights/DeferredActivitySection";
 import { EngagementSection } from "./insights/EngagementSection";
 import { FiltersBar } from "./insights/FiltersBar";
@@ -167,6 +168,9 @@ export function InsightsDashboard() {
                       pricingUnavailable={insights.costUnavailable}
                       pricingLoading={insights.pricingQuery.isLoading}
                     />
+                  </motion.div>
+                  <motion.div variants={SECTION_ITEM}>
+                    <ToolBreakdownSection tenantId={insights.activeTenantId} />
                   </motion.div>
                 </>
               )}

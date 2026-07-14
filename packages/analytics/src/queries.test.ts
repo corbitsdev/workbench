@@ -5,6 +5,7 @@ import type { SQL } from "drizzle-orm";
 import {
   getAnalyticsModelDistribution,
   getCacheBaseline,
+  getTenantToolBreakdown,
   getTokenDataStartDate,
 } from "./queries";
 
@@ -241,5 +242,51 @@ describe("getAnalyticsModelDistribution", () => {
       cacheWriteTokens: 30,
       thinkingTokens: 12,
     });
+  });
+});
+
+function makeExecuteDb(rows: Record<string, unknown>[]) {
+  const captured: { query?: SQL } = {};
+  const execute = mock(async (query: SQL) => {
+    captured.query = query;
+    return rows;
+  });
+  return { db: { execute } as never, captured };
+}
+
+describe("getTenantToolBreakdown", () => {
+  it("maps executed rows to tool/call/error triples", async () => {
+    const { db } = makeExecuteDb([
+      { name: "web_search", calls: 12, errors: 2 },
+      { name: "gamma_generate", calls: 5, errors: 0 },
+    ]);
+
+    const rows = await getTenantToolBreakdown({ db, tenantId: "tnt_1" });
+
+    expect(rows).toEqual([
+      { name: "web_search", calls: 12, errors: 2 },
+      { name: "gamma_generate", calls: 5, errors: 0 },
+    ]);
+  });
+
+  it("coerces missing/blank names to 'Unknown tool' and numeric fields to numbers", async () => {
+    const { db } = makeExecuteDb([{ name: "  ", calls: "3", errors: null }]);
+
+    const rows = await getTenantToolBreakdown({ db, tenantId: "tnt_1" });
+
+    expect(rows[0]).toEqual({ name: "Unknown tool", calls: 3, errors: 0 });
+  });
+
+  it("scopes to the tenant and every tool_call, WITHOUT any principal filter", async () => {
+    const { db, captured } = makeExecuteDb([]);
+
+    await getTenantToolBreakdown({ db, tenantId: "tnt_1" });
+
+    const rendered = new PgDialect().sqlToQuery(captured.query as SQL).sql;
+    expect(rendered).toContain("tenant_id");
+    expect(rendered).toContain("tool_call");
+    // The tenant breakdown is deliberately NOT scoped to any principal set —
+    // that is the whole point of the tenant-wide companion query (CL-3667).
+    expect(rendered).not.toContain("principal_id");
   });
 });

@@ -923,6 +923,42 @@ export async function getPrincipalAnalytics(
   return parsed;
 }
 
+// ─── Tenant tool breakdown (Insights Usage & Cost per-tool table, CL-3667) ──
+
+export const TenantToolBreakdownSchema = type({
+  tools: PrincipalToolRowSchema.array(),
+});
+export type TenantToolBreakdown = typeof TenantToolBreakdownSchema.infer;
+
+export const GetTenantToolBreakdownParamsSchema = type({
+  tenantId: "string",
+});
+export type GetTenantToolBreakdownParams =
+  typeof GetTenantToolBreakdownParamsSchema.infer;
+
+/**
+ * Fetch the tenant-wide per-tool call breakdown
+ * (`GET /api/tenants/:tenantId/activity/tool-breakdown`). Rows carry per-tool
+ * call counts and error counts, aggregated across the whole workbench from the
+ * durable analytics_event fact table — the tenant-level companion to
+ * {@link getPrincipalAnalytics}'s per-principal facet.
+ */
+export async function getTenantToolBreakdown(
+  options: ClientOptions = {},
+  params: GetTenantToolBreakdownParams,
+): Promise<TenantToolBreakdown> {
+  const raw = await request<unknown>(
+    `tenants/${encodeURIComponent(params.tenantId)}/activity/tool-breakdown`,
+    options,
+    TENANT_API_PREFIX,
+  );
+  const parsed = TenantToolBreakdownSchema(raw);
+  if (parsed instanceof type.errors) {
+    throw new Error(`Invalid /tool-breakdown response: ${parsed.summary}`);
+  }
+  return parsed;
+}
+
 // ─── Tenant roster (dashboard-level clickable Agents + runs, CL-2798) ──
 
 export const TenantRosterSchema = type({
