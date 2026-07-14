@@ -58,6 +58,23 @@ anything to any member.
   reset everyone to off, and it does not re-enable anyone who had previously
   turned it off themselves.
 
+### Morning brief without live intake or triage
+
+The daily morning brief, live inbox intake, and triage are three independent
+switches — the brief works with the other two fully off:
+
+1. **Brief only:** enable the `scheduler` feature grant and the heartbeat
+   schedule; members pick their brief sources in settings. The brief arrives
+   as one mail per day. Leave every toggle in Owner → Inbox sources OFF — with
+   no owner-enabled source, the intake tick delivers nothing even though the
+   scheduler grant is on.
+2. **Live intake:** additionally enable individual sources here (step 3) and
+   have members opt in.
+3. **Triage (auto-creating tasks from inbox items):** separately gated by the
+   `triage` feature grant and each member's `tasksTriageCreate` preference.
+   With triage off, brief mail and intake items simply sit in the inbox; no
+   tasks are created.
+
 ## 4. Linear webhook (optional, recommended)
 
 The poller alone picks up new Linear activity within about a minute. The
