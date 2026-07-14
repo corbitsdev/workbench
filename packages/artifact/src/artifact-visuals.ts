@@ -191,11 +191,12 @@ function formatRelativeTime(iso: string): string {
   return "";
 }
 
-// A session-less workflow artifact has no agent session to name it, so the
-// gallery showed "Untitled job". The producing workflow may instead supply a
-// generic `source.jobLabel` string; surface that. No workflow-specific knowledge
-// lives here — the label is the domain's to choose.
-function artifactJobLabel(artifact: ArtifactWithSession): string {
+// A session-less workflow artifact has no agent session to name it. The
+// producing workflow may instead supply a generic `source.jobLabel` string;
+// surface that. No workflow-specific knowledge lives here — the label is the
+// domain's to choose. When neither is present, return undefined rather than
+// inventing filler text — the source kind is already shown via another badge.
+function artifactJobLabel(artifact: ArtifactWithSession): string | undefined {
   if (artifact.sessionName) return artifact.sessionName;
   const source = artifact.source;
   if (source !== null && source !== undefined && typeof source === "object") {
@@ -204,7 +205,7 @@ function artifactJobLabel(artifact: ArtifactWithSession): string {
       return label;
     }
   }
-  return "Untitled job";
+  return undefined;
 }
 
 const ORIGIN_LABELS: Record<string, string> = {
@@ -266,13 +267,16 @@ export function toGalleryArtifact(
 ): GalleryArtifact {
   const visual = visualForKind(artifact.kind);
   const provenance = artifactProvenance(artifact.source);
-  const excerpt = previewExcerpt(artifact.content);
+  const excerpt = previewExcerpt(artifact.content, {
+    fallbackTitle: artifact.title,
+  });
+  const from = artifactJobLabel(artifact);
   return parseGalleryArtifact({
     ...visual,
     id: artifact.id,
     title: artifact.title,
     kind: artifact.kind,
-    from: artifactJobLabel(artifact),
+    ...(from !== undefined ? { from } : {}),
     time: formatRelativeTime(artifact.updatedAt),
     provenance: provenance.label,
     provenanceTone: provenance.tone,
