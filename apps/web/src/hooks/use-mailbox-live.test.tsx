@@ -6,7 +6,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ReactNode } from "react";
 import { createElement } from "react";
 import { useMailboxLive } from "./use-mailbox-live";
-import { MAILBOX_QUERY_KEY } from "./use-mailbox";
+import { mailboxQueryKey } from "./use-mailbox";
 
 class FakeEventSource {
   static instances: FakeEventSource[] = [];
@@ -65,7 +65,7 @@ describe("useMailboxLive", () => {
     const client = new QueryClient({
       defaultOptions: { queries: { retry: false } },
     });
-    client.setQueryData(MAILBOX_QUERY_KEY, [{ id: "stale" }]);
+    client.setQueryData(mailboxQueryKey("all"), [{ id: "stale" }]);
 
     renderHook(() => useMailboxLive(), { wrapper: wrapper(client) });
     await waitFor(() => expect(FakeEventSource.instances.length).toBe(1));
@@ -78,7 +78,9 @@ describe("useMailboxLive", () => {
     });
 
     await waitFor(() =>
-      expect(client.getQueryState(MAILBOX_QUERY_KEY)?.isInvalidated).toBe(true),
+      expect(client.getQueryState(mailboxQueryKey("all"))?.isInvalidated).toBe(
+        true,
+      ),
     );
   });
 
@@ -87,11 +89,13 @@ describe("useMailboxLive", () => {
     const client = new QueryClient({
       defaultOptions: { queries: { retry: false } },
     });
-    client.setQueryData(MAILBOX_QUERY_KEY, [{ id: "stale" }]);
+    client.setQueryData(mailboxQueryKey("all"), [{ id: "stale" }]);
 
     renderHook(() => useMailboxLive(), { wrapper: wrapper(client) });
 
-    expect(client.getQueryState(MAILBOX_QUERY_KEY)?.isInvalidated).toBe(false);
+    expect(client.getQueryState(mailboxQueryKey("all"))?.isInvalidated).toBe(
+      false,
+    );
   });
 
   it("closes the stream connection on unmount", async () => {

@@ -57,10 +57,25 @@ const getMailboxMessage = mock(
     _args: { tenantId: string; principalId: string; id: string },
   ) => detailResult,
 );
+const countUnreadActiveMailbox = mock(async () => 2);
+const applyMailboxBulkAction = mock(async () => ["5e0f8c9a-0000-4000-8000-000000000001"]);
+const markMailboxMessageUnread = mock(async () => true);
+const trashMailboxMessage = mock(async () => true);
+const archiveMailboxMessage = mock(async () => true);
+const restoreMailboxMessage = mock(async () => true);
+
 mock.module("../lib/mailbox-read", () => ({
   listUserMailbox,
   markMailboxMessageRead,
   getMailboxMessage,
+}));
+mock.module("../lib/mailbox-mutations", () => ({
+  countUnreadActiveMailbox,
+  applyMailboxBulkAction,
+  markMailboxMessageUnread,
+  trashMailboxMessage,
+  archiveMailboxMessage,
+  restoreMailboxMessage,
 }));
 
 import { Hono } from "hono";
@@ -177,6 +192,23 @@ describe("GET /me/inbox", () => {
   it("400s on a malformed cursor without touching the store", async () => {
     const res = await mountApp().request(
       new Request("http://localhost/api/v1/me/inbox?cursor=not-a-valid-cursor"),
+    );
+    expect(res.status).toBe(400);
+    expect(listUserMailbox.mock.calls).toHaveLength(0);
+  });
+
+  it("forwards inbox view query to the store", async () => {
+    const app = mountApp();
+    const res = await app.request(
+      new Request("http://localhost/api/v1/me/inbox?view=trash"),
+    );
+    expect(res.status).toBe(200);
+    expect(listUserMailbox.mock.calls[0]?.[1]).toMatchObject({ view: "trash" });
+  });
+
+  it("400s on an invalid inbox view", async () => {
+    const res = await mountApp().request(
+      new Request("http://localhost/api/v1/me/inbox?view=spam"),
     );
     expect(res.status).toBe(400);
     expect(listUserMailbox.mock.calls).toHaveLength(0);
@@ -320,6 +352,20 @@ async function readWithTimeout(
   const { value } = await Promise.race([reader.read(), timeout]);
   return value ? new TextDecoder().decode(value) : "";
 }
+
+describe("GET /me/inbox/unread-count", () => {
+  it("returns unread count for the caller", async () => {
+    const res = await mountApp().request(
+      new Request("http://localhost/api/v1/me/inbox/unread-count"),
+    );
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ unread: 2 });
+    expect(countUnreadActiveMailbox.mock.calls[0]?.[1]).toMatchObject({
+      tenantId: "ten-1",
+      principalId: "pri-a",
+    });
+  });
+});
 
 describe("GET /me/inbox/events", () => {
   it("409s when the caller has no provisioned membership", async () => {

@@ -1,4 +1,4 @@
-import { and, desc, eq, sql } from "drizzle-orm";
+import { and, desc, eq, isNotNull, isNull, sql } from "drizzle-orm";
 import { type } from "arktype";
 import { getLogger } from "@intx/log";
 import { splitMailAddressList } from "@workbench/hub-agent";
@@ -11,6 +11,7 @@ import {
 import { principalMailbox, type PrincipalMailboxRow } from "../db/schema";
 import type { HubDb } from "../db";
 import { keysetBefore, takePage, type KeysetCursor } from "./keyset";
+import type { MailboxInboxView } from "./mailbox-inbox-view";
 import { extractConversationBodyFromRaw } from "./conversation-mail-body";
 import {
   attachFromDisplay,
@@ -25,7 +26,32 @@ export type MailboxScope = {
   principalId: string;
   limit: number;
   cursor?: KeysetCursor;
+  view?: MailboxInboxView;
 };
+
+function viewConditions(view: MailboxInboxView | undefined) {
+  switch (view ?? "all") {
+    case "unread":
+      return [
+        isNull(principalMailbox.trashedAt),
+        isNull(principalMailbox.archivedAt),
+        isNull(principalMailbox.readAt),
+      ];
+    case "archived":
+      return [
+        isNotNull(principalMailbox.archivedAt),
+        isNull(principalMailbox.trashedAt),
+      ];
+    case "trash":
+      return [isNotNull(principalMailbox.trashedAt)];
+    case "all":
+    default:
+      return [
+        isNull(principalMailbox.trashedAt),
+        isNull(principalMailbox.archivedAt),
+      ];
+  }
+}
 
 export type MailboxPage = {
   items: MailboxMessage[];
@@ -134,6 +160,7 @@ export async function listUserMailbox(
     eq(principalMailbox.tenantId, scope.tenantId),
     eq(principalMailbox.principalId, scope.principalId),
     eq(principalMailbox.direction, "inbound"),
+    ...viewConditions(scope.view),
   ];
   if (scope.cursor) {
     const before = keysetBefore(

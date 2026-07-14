@@ -10,8 +10,8 @@ import {
 } from "@workbench/shared";
 import {
   MAILBOX_POLL_MS,
-  unreadCount,
   useMailbox,
+  useMailboxUnreadCount,
 } from "../../hooks/use-mailbox";
 import { useMailboxLive } from "../../hooks/use-mailbox-live";
 import { useTasks } from "../../hooks/use-tasks";
@@ -41,15 +41,14 @@ export function NotificationsBell() {
   const panelId = useId();
   const reduceMotion = useReducedMotion();
   const { data } = useMailbox({ refetchInterval: MAILBOX_POLL_MS });
+  const { data: unreadCount } = useMailboxUnreadCount({
+    refetchInterval: MAILBOX_POLL_MS,
+  });
   useMailboxLive();
   const { data: taskData } = useTasks({ refetchInterval: MAILBOX_POLL_MS });
 
   const messages = data ?? [];
-  // Badge count stays mailbox-only: tasks have no "new since last seen" signal
-  // yet (no per-member last-viewed watermark), so folding them in would fake
-  // an unread state rather than report one — house rule bars fabricated
-  // unread semantics.
-  const unread = unreadCount(messages);
+  const unread = unreadCount ?? 0;
   const recent = messages.slice(0, RECENT_LIMIT);
   const recentTasks = (taskData ?? [])
     .filter((task) => OPEN_TASK_STATUSES.has(task.status))

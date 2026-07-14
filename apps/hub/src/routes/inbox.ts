@@ -1,5 +1,5 @@
 import { type } from "arktype";
-import { Hono } from "hono";
+import { Hono, type Context } from "hono";
 import { describeRoute, resolver } from "hono-openapi";
 import { streamSSE } from "hono/streaming";
 import { getLogger } from "@intx/log";
@@ -10,6 +10,20 @@ import {
   listUserMailbox,
   markMailboxMessageRead,
 } from "../lib/mailbox-read";
+import {
+  applyMailboxBulkAction,
+  archiveMailboxMessage,
+  countUnreadActiveMailbox,
+  markMailboxMessageUnread,
+  restoreMailboxMessage,
+  trashMailboxMessage,
+} from "../lib/mailbox-mutations";
+import {
+  MailboxBulkRequest,
+  MailboxBulkResponse,
+  MailboxInboxView,
+  MailboxUnreadCountResponse,
+} from "../lib/mailbox-inbox-view";
 import type { MailboxEventBus } from "../lib/mailbox-events";
 import { UuidParam } from "../lib/uuid";
 import { ErrorResponse } from "../lib/openapi";
@@ -19,8 +33,15 @@ import type { HubDb } from "../db";
 const log = getLogger(["api", "inbox"]);
 
 const MarkReadResponse = type({ id: "string", read: "boolean" });
-
 const DEFAULT_INBOX_LIMIT = 50;
+
+function publishMailboxSignal(
+  bus: MailboxEventBus,
+  principalId: string,
+  id: string,
+): void {
+  bus.publish(principalId, { type: "mailbox", id });
+}
 
 const HEARTBEAT_INTERVAL_MS = 25_000;
 
@@ -54,6 +75,17 @@ export function createInboxRouter(
           description:
             "Opaque keyset cursor from a previous page's nextCursor; omit for the first page",
         },
+        {
+          name: "view",
+          in: "query",
+          required: false,
+          schema: {
+            type: "string",
+            enum: ["all", "unread", "archived", "trash"],
+          },
+          description:
+            "Inbox folder view (default all — active messages excluding archive and trash)",
+        },
       ],
       responses: {
         200: {
@@ -86,6 +118,12 @@ export function createInboxRouter(
       if (rawCursor !== undefined && cursor === null) {
         return c.json({ error: "malformed cursor" }, 400);
       }
+      const rawView = c.req.query("view");
+      const view =
+        rawView === undefined ? ("all" as const) : MailboxInboxView(rawView);
+      if (view instanceof type.errors) {
+        return c.json({ error: "invalid inbox view" }, 400);
+      }
       const member = await resolveCallerMember(db, userId);
       if (!member) {
         return c.json({ error: "No provisioned membership" }, 409);
@@ -94,6 +132,7 @@ export function createInboxRouter(
         tenantId: member.tenantId,
         principalId: member.principalId,
         limit,
+        view,
         ...(cursor ? { cursor } : {}),
       });
       return c.json({
@@ -156,6 +195,40 @@ export function createInboxRouter(
           unsubscribe();
         }
       });
+    },
+  );
+
+  app.get(
+    "/me/inbox/unread-count",
+    describeRoute({
+      tags: ["Me"],
+      summary: "Count unread messages in the caller's active inbox",
+      responses: {
+        200: {
+          description: "Unread count excluding archived and trashed rows",
+          content: {
+            "application/json": {
+              schema: resolver(MailboxUnreadCountResponse),
+            },
+          },
+        },
+        409: {
+          description: "Caller has no provisioned membership yet",
+          content: { "application/json": { schema: resolver(ErrorResponse) } },
+        },
+      },
+    }),
+    async (c) => {
+      const userId = c.get("userId");
+      const member = await resolveCallerMember(db, userId);
+      if (!member) {
+        return c.json({ error: "No provisioned membership" }, 409);
+      }
+      const unread = await countUnreadActiveMailbox(db, {
+        tenantId: member.tenantId,
+        principalId: member.principalId,
+      });
+      return c.json({ unread });
     },
   );
 
@@ -267,9 +340,111 @@ export function createInboxRouter(
       if (!marked) {
         return c.json({ error: "Message not found" }, 404);
       }
+      publishMailboxSignal(bus, member.principalId, id);
       return c.json({ id, read: true });
     },
   );
+
+  app.post(
+    "/me/inbox/bulk",
+    describeRoute({
+      tags: ["Me"],
+      summary: "Apply a bulk inbox action to multiple mailbox messages",
+      responses: {
+        200: {
+          description: "Bulk action result",
+          content: {
+            "application/json": { schema: resolver(MailboxBulkResponse) },
+          },
+        },
+        400: {
+          description: "Invalid request body",
+          content: { "application/json": { schema: resolver(ErrorResponse) } },
+        },
+        409: {
+          description: "Caller has no provisioned membership yet",
+          content: { "application/json": { schema: resolver(ErrorResponse) } },
+        },
+      },
+    }),
+    async (c) => {
+      const userId = c.get("userId");
+      const body = MailboxBulkRequest(await c.req.json());
+      if (body instanceof type.errors) {
+        return c.json({ error: "invalid bulk inbox request" }, 400);
+      }
+      const member = await resolveCallerMember(db, userId);
+      if (!member) {
+        return c.json({ error: "No provisioned membership" }, 409);
+      }
+      const updatedIds = await applyMailboxBulkAction(
+        db,
+        { tenantId: member.tenantId, principalId: member.principalId },
+        body.action,
+        body.ids,
+      );
+      for (const updatedId of updatedIds) {
+        publishMailboxSignal(bus, member.principalId, updatedId);
+      }
+      return c.json({ updated: updatedIds.length, ids: updatedIds });
+    },
+  );
+
+  async function singleMessageMutation(
+    c: Context<{ Variables: { userId: string } }>,
+    idParam: string,
+    run: (scope: {
+      tenantId: string;
+      principalId: string;
+      id: string;
+    }) => Promise<boolean>,
+  ) {
+    const userId = c.get("userId");
+    const id = UuidParam(idParam);
+    if (id instanceof type.errors) {
+      return c.json({ error: "Message id must be a UUID" }, 400);
+    }
+    const member = await resolveCallerMember(db, userId);
+    if (!member) {
+      return c.json({ error: "No provisioned membership" }, 409);
+    }
+    const ok = await run({
+      tenantId: member.tenantId,
+      principalId: member.principalId,
+      id,
+    });
+    if (!ok) return c.json({ error: "Message not found" }, 404);
+    publishMailboxSignal(bus, member.principalId, id);
+    return c.json({ id, ok: true as const });
+  }
+
+  app.post("/me/inbox/:id/unread", async (c) => {
+    const id = c.req.param("id");
+    return singleMessageMutation(c, id, (scope) =>
+      markMailboxMessageUnread(db, scope),
+    );
+  });
+
+  app.post("/me/inbox/:id/trash", async (c) => {
+    const id = c.req.param("id");
+    return singleMessageMutation(c, id, (scope) =>
+      trashMailboxMessage(db, scope),
+    );
+  });
+
+  app.post("/me/inbox/:id/archive", async (c) => {
+    const id = c.req.param("id");
+    return singleMessageMutation(c, id, (scope) =>
+      archiveMailboxMessage(db, scope),
+    );
+  });
+
+  app.post("/me/inbox/:id/restore", async (c) => {
+    const id = c.req.param("id");
+    return singleMessageMutation(c, id, (scope) =>
+      restoreMailboxMessage(db, scope),
+    );
+  });
 
   return app;
 }

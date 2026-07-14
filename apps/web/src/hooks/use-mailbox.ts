@@ -7,19 +7,30 @@ import {
 } from "@tanstack/react-query";
 import { type } from "arktype";
 import {
+  MailboxInboxView,
   MailboxListResponse,
   MailboxMessageDetail,
+  MailboxUnreadCountResponse,
+  type MailboxInboxView as MailboxInboxViewType,
   type MailboxMessage,
 } from "@workbench/shared";
 import { api, ApiError } from "../lib/api";
 
 export type { MailboxMessage, MailboxMessageDetail };
 
-// One shared cache entry so the /inbox page and the app-frame notifications bell
-// read the SAME mailbox — the bell's unread badge and the page's list can never
-// disagree, and a mark-read from either updates both. The route is user-scoped
-// (/me/inbox resolves the caller's own principal), so the key carries no tenant.
-export const MAILBOX_QUERY_KEY = ["mailbox"] as const;
+export type MailboxBulkAction =
+  | "mark_read"
+  | "mark_unread"
+  | "trash"
+  | "archive"
+  | "restore";
+
+// One shared cache entry per inbox view so folder tabs stay independent while
+// the bell keeps its own "all" list for recent messages.
+export const mailboxQueryKey = (view: MailboxInboxViewType = "all") =>
+  ["mailbox", view] as const;
+
+export const MAILBOX_UNREAD_COUNT_KEY = ["mailbox", "unread-count"] as const;
 
 // Poll cadence for the ambient bell: mailbox deliveries arrive while the user is
 // elsewhere in the app (a brief lands, a gate asks), so the live surface needs a
@@ -35,9 +46,13 @@ export const MAILBOX_PAGE_LIMIT = 50;
 type MailboxPage = typeof MailboxListResponse.infer;
 
 async function fetchMailboxPage(
+  view: MailboxInboxViewType,
   cursor: string | undefined,
 ): Promise<MailboxPage> {
-  const params = new URLSearchParams({ limit: String(MAILBOX_PAGE_LIMIT) });
+  const params = new URLSearchParams({
+    limit: String(MAILBOX_PAGE_LIMIT),
+    view,
+  });
   if (cursor !== undefined) params.set("cursor", cursor);
   const raw = await api<unknown>("GET", `/me/inbox?${params.toString()}`);
   const parsed = MailboxListResponse(raw);
@@ -47,6 +62,7 @@ async function fetchMailboxPage(
   return parsed;
 }
 
+/** @deprecated Prefer useMailboxUnreadCount for the notifications badge. */
 export function unreadCount(
   messages: readonly MailboxMessage[] | undefined,
 ): number {
@@ -55,30 +71,44 @@ export function unreadCount(
 }
 
 export function useMailbox(options?: {
+  view?: MailboxInboxViewType;
   enabled?: boolean;
   refetchInterval?: number | false;
 }) {
+  const view = options?.view ?? "all";
   return useInfiniteQuery({
-    queryKey: MAILBOX_QUERY_KEY,
+    queryKey: mailboxQueryKey(view),
     enabled: options?.enabled ?? true,
     refetchInterval: options?.refetchInterval ?? false,
     initialPageParam: undefined as string | undefined,
-    queryFn: ({ pageParam }) => fetchMailboxPage(pageParam),
+    queryFn: ({ pageParam }) => fetchMailboxPage(view, pageParam),
     getNextPageParam: (lastPage) => lastPage.nextCursor,
     select: (data) => data.pages.flatMap((page) => page.messages),
   });
 }
 
-// The reading pane's full-body fetch. Keyed under the mailbox root so a
-// sweep of ["mailbox"] clears details too; enabled only while a message is
-// selected. Resolves purely by id — independent of whether the message's row
-// is present in the currently-loaded mailbox pages — so a deep link to an
-// older, unloaded message still opens. Typed error channel (ApiError) lets
-// the caller distinguish a 404 (message genuinely gone) from any other
-// failure (network, 5xx).
+export function useMailboxUnreadCount(options?: {
+  enabled?: boolean;
+  refetchInterval?: number | false;
+}) {
+  return useQuery({
+    queryKey: MAILBOX_UNREAD_COUNT_KEY,
+    enabled: options?.enabled ?? true,
+    refetchInterval: options?.refetchInterval ?? false,
+    queryFn: async () => {
+      const raw = await api<unknown>("GET", "/me/inbox/unread-count");
+      const parsed = MailboxUnreadCountResponse(raw);
+      if (parsed instanceof type.errors) {
+        throw new Error(`Unexpected unread count: ${parsed.summary}`);
+      }
+      return parsed.unread;
+    },
+  });
+}
+
 export function useMailboxMessage(id: string | null) {
   return useQuery<MailboxMessageDetail, ApiError>({
-    queryKey: [...MAILBOX_QUERY_KEY, "message", id],
+    queryKey: ["mailbox", "message", id],
     enabled: id !== null,
     queryFn: async () => {
       if (id === null) {
@@ -101,10 +131,29 @@ export function isMessageNotFound(error: unknown): boolean {
   return error instanceof ApiError && error.status === 404;
 }
 
-// Marks one message read (idempotent server-side). Optimistically flips the
-// cached row so the unread badge and the row emphasis update the instant the
-// user opens a message; a failed POST rolls the cache back, and the settle
-// invalidation reconciles against the server's authoritative read state.
+function patchMailboxPages(
+  previous: InfiniteData<MailboxPage> | undefined,
+  ids: Set<string>,
+  patch: (message: MailboxMessage) => MailboxMessage | null,
+): InfiniteData<MailboxPage> | undefined {
+  if (!previous) return previous;
+  return {
+    ...previous,
+    pages: previous.pages.map((page) => ({
+      ...page,
+      messages: page.messages.flatMap((message) => {
+        if (!ids.has(message.id)) return [message];
+        const next = patch(message);
+        return next === null ? [] : [next];
+      }),
+    })),
+  };
+}
+
+function invalidateMailboxQueries(queryClient: ReturnType<typeof useQueryClient>) {
+  void queryClient.invalidateQueries({ queryKey: ["mailbox"] });
+}
+
 export function useMarkMailboxRead() {
   const queryClient = useQueryClient();
   return useMutation({
@@ -113,29 +162,81 @@ export function useMarkMailboxRead() {
       return id;
     },
     onMutate: async (id: string) => {
-      await queryClient.cancelQueries({ queryKey: MAILBOX_QUERY_KEY });
-      const previous =
-        queryClient.getQueryData<InfiniteData<MailboxPage>>(MAILBOX_QUERY_KEY);
-      if (previous) {
-        queryClient.setQueryData<InfiniteData<MailboxPage>>(MAILBOX_QUERY_KEY, {
-          ...previous,
-          pages: previous.pages.map((page) => ({
-            ...page,
-            messages: page.messages.map((message) =>
-              message.id === id ? { ...message, read: true } : message,
-            ),
+      await queryClient.cancelQueries({ queryKey: ["mailbox"] });
+      const snapshots = queryClient.getQueriesData<InfiniteData<MailboxPage>>({
+        queryKey: ["mailbox"],
+      });
+      for (const [key, previous] of snapshots) {
+        if (!Array.isArray(key) || key[0] !== "mailbox" || typeof key[1] !== "string") {
+          continue;
+        }
+        queryClient.setQueryData(
+          key,
+          patchMailboxPages(previous, new Set([id]), (message) => ({
+            ...message,
+            read: true,
           })),
-        });
+        );
       }
-      return { previous };
+      return { snapshots };
     },
     onError: (_error, _id, context) => {
-      if (context?.previous) {
-        queryClient.setQueryData(MAILBOX_QUERY_KEY, context.previous);
+      for (const [key, previous] of context?.snapshots ?? []) {
+        queryClient.setQueryData(key, previous);
       }
     },
-    onSettled: () => {
-      void queryClient.invalidateQueries({ queryKey: MAILBOX_QUERY_KEY });
-    },
+    onSettled: () => invalidateMailboxQueries(queryClient),
   });
+}
+
+export function useMarkMailboxUnread() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (id: string) => {
+      await api("POST", `/me/inbox/${encodeURIComponent(id)}/unread`);
+      return id;
+    },
+    onSettled: () => invalidateMailboxQueries(queryClient),
+  });
+}
+
+export function useMailboxBulkAction() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (input: { action: MailboxBulkAction; ids: string[] }) => {
+      const raw = await api<unknown>("POST", "/me/inbox/bulk", input);
+      const parsed = type({ updated: "number", ids: "string[]" })(raw);
+      if (parsed instanceof type.errors) {
+        throw new Error(`Unexpected bulk response: ${parsed.summary}`);
+      }
+      return parsed;
+    },
+    onSettled: () => invalidateMailboxQueries(queryClient),
+  });
+}
+
+export function useMailboxItemAction() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (input: {
+      id: string;
+      action: "trash" | "archive" | "restore";
+    }) => {
+      await api(
+        "POST",
+        `/me/inbox/${encodeURIComponent(input.id)}/${input.action}`,
+      );
+      return input;
+    },
+    onSettled: () => invalidateMailboxQueries(queryClient),
+  });
+}
+
+export function parseMailboxView(
+  raw: string | null,
+): MailboxInboxViewType | null {
+  if (raw === null || raw === "") return "all";
+  const parsed = MailboxInboxView(raw);
+  if (parsed instanceof type.errors) return null;
+  return parsed;
 }

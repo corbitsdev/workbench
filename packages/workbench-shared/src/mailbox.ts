@@ -64,6 +64,18 @@ export const MailboxListResponse = type({
 });
 export type MailboxListResponse = typeof MailboxListResponse.infer;
 
+export const MailboxInboxView = type.enumerated(
+  "all",
+  "unread",
+  "archived",
+  "trash",
+);
+export type MailboxInboxView = typeof MailboxInboxView.infer;
+
+export const MailboxUnreadCountResponse = type({ unread: "number" });
+export type MailboxUnreadCountResponse =
+  typeof MailboxUnreadCountResponse.infer;
+
 const externalRefKindSet: ReadonlySet<string> = new Set(externalRefKinds);
 
 /** True when the ref opens an external URL in a new tab, not an in-app route. */

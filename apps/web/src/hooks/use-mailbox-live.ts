@@ -1,7 +1,7 @@
 import { useEffect } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { subscribeMailboxEvents } from "../lib/mailbox-api";
-import { MAILBOX_QUERY_KEY } from "./use-mailbox";
+import { MAILBOX_UNREAD_COUNT_KEY } from "./use-mailbox";
 
 /**
  * Subscribes to the caller's mailbox delivery signal (SSE) and invalidates the
@@ -18,7 +18,8 @@ export function useMailboxLive(): void {
 
   useEffect(() => {
     return subscribeMailboxEvents(() => {
-      void queryClient.invalidateQueries({ queryKey: MAILBOX_QUERY_KEY });
+      void queryClient.invalidateQueries({ queryKey: ["mailbox"] });
+      void queryClient.invalidateQueries({ queryKey: MAILBOX_UNREAD_COUNT_KEY });
     });
   }, [queryClient]);
 }

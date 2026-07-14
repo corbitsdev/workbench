@@ -673,6 +673,8 @@ export const principalMailbox = pgTable(
     refs: jsonb("refs").$type<MailboxRef[]>(),
     createdAt: timestamp("created_at").notNull().defaultNow(),
     readAt: timestamp("read_at"),
+    archivedAt: timestamp("archived_at"),
+    trashedAt: timestamp("trashed_at"),
   },
   (t) => ({
     principalMailboxPrincipalCreatedIdx: index(
