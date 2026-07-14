@@ -396,19 +396,6 @@ describe("hub-api network helpers", () => {
     expect(JSON.parse(String(calls[0]!.init?.body))).toEqual({});
   });
 
-  it("launchInstanceSession sends pageContext on chat open (CL-3527)", async () => {
-    const calls = installFetch(() => ({
-      body: { launched: true, sessionId: "ses-9" },
-    }));
-
-    await launchInstanceSession("inst-9", {
-      pageContext: "Inbox home: triage feed.",
-    });
-    expect(JSON.parse(String(calls[0]!.init?.body))).toEqual({
-      pageContext: "Inbox home: triage feed.",
-    });
-  });
-
   it("launchInstanceSession rejects a success body missing sessionId", async () => {
     installFetch(() => ({ body: { launched: true } }));
     await expect(launchInstanceSession("inst-9")).rejects.toThrow(

@@ -4,17 +4,12 @@ import { afterEach, beforeEach, describe, expect, it, mock } from "bun:test";
 import { act, renderHook, waitFor } from "@testing-library/react";
 import React from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { MemoryRouter } from "react-router";
 
 function wrapper({ children }: { children: React.ReactNode }) {
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
-  return React.createElement(
-    MemoryRouter,
-    { initialEntries: ["/inbox"] },
-    React.createElement(QueryClientProvider, { client }, children),
-  );
+  return React.createElement(QueryClientProvider, { client }, children);
 }
 
 class FakeApiError extends Error {
@@ -182,7 +177,7 @@ describe("deliverMessage", () => {
     } as any;
     await deliverMessage(session, "inst-1", "hello");
     expect(session.sendMail).toHaveBeenCalledTimes(2);
-    expect(launchInstanceSession).toHaveBeenCalledWith("inst-1", undefined);
+    expect(launchInstanceSession).toHaveBeenCalledWith("inst-1");
   });
 
   it("relaunches and retries once on a 502, then succeeds", async () => {
@@ -197,7 +192,7 @@ describe("deliverMessage", () => {
     } as any;
     await deliverMessage(session, "inst-1", "hello");
     expect(session.sendMail).toHaveBeenCalledTimes(2);
-    expect(launchInstanceSession).toHaveBeenCalledWith("inst-1", undefined);
+    expect(launchInstanceSession).toHaveBeenCalledWith("inst-1");
   });
 
   it("surfaces a second consecutive 502 instead of relaunching again", async () => {
@@ -226,7 +221,7 @@ describe("deliverMessage", () => {
     } as any;
     await deliverMessage(session, "inst-1", "hello");
     expect(session.sendMail).toHaveBeenCalledTimes(2);
-    expect(launchInstanceSession).toHaveBeenCalledWith("inst-1", undefined);
+    expect(launchInstanceSession).toHaveBeenCalledWith("inst-1");
   });
 
   it("does not relaunch a true gateway 502 carrying an unrelated structured code", async () => {
@@ -288,10 +283,7 @@ describe("useMyraSession launch gating (CL-2309 smoothness)", () => {
   it("launches exactly once for a concrete instance and never uses the paInstanceId fallback", async () => {
     renderHook(() => useMyraSession("inst-1", "tnt-acme", true), { wrapper });
     await waitFor(() => expect(launchInstanceSession).toHaveBeenCalledTimes(1));
-    expect(launchInstanceSession).toHaveBeenCalledWith(
-      "inst-1",
-      expect.objectContaining({ pageContext: expect.any(String) }),
-    );
+    expect(launchInstanceSession).toHaveBeenCalledWith("inst-1");
     await new Promise((r) => setTimeout(r, 20));
     expect(launchInstanceSession).toHaveBeenCalledTimes(1);
   });
@@ -329,10 +321,7 @@ describe("useMyraSession launch gating (CL-2309 smoothness)", () => {
     await waitFor(() => expect(launchInstanceSession).toHaveBeenCalledTimes(1));
     rerender({ id: "inst-2" });
     await waitFor(() => expect(launchInstanceSession).toHaveBeenCalledTimes(2));
-    expect(launchInstanceSession).toHaveBeenLastCalledWith(
-      "inst-2",
-      expect.objectContaining({ pageContext: expect.any(String) }),
-    );
+    expect(launchInstanceSession).toHaveBeenLastCalledWith("inst-2");
     expect(destroyed[0]).toBe(1);
   });
 
@@ -685,7 +674,7 @@ describe("deliverMessageWithAttachments", () => {
       "hi",
       attachments,
     );
-    expect(launchInstanceSession).toHaveBeenCalledWith("inst-1", undefined);
+    expect(launchInstanceSession).toHaveBeenCalledWith("inst-1");
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
@@ -707,7 +696,7 @@ describe("deliverMessageWithAttachments", () => {
       "hi",
       attachments,
     );
-    expect(launchInstanceSession).toHaveBeenCalledWith("inst-1", undefined);
+    expect(launchInstanceSession).toHaveBeenCalledWith("inst-1");
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
@@ -752,7 +741,7 @@ describe("deliverMessageWithAttachments", () => {
       "hi",
       attachments,
     );
-    expect(launchInstanceSession).toHaveBeenCalledWith("inst-1", undefined);
+    expect(launchInstanceSession).toHaveBeenCalledWith("inst-1");
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 

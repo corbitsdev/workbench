@@ -49,7 +49,6 @@
     "@workbench/last30days-core": "workspace:*",
     "@workbench/myra": "workspace:*",
     "@workbench/openapi-arktype": "workspace:*",
-    "@workbench/prompts": "workspace:*",
     "@workbench/pricing": "workspace:*",
     "@workbench/sentry": "workspace:*",
     "@workbench/shared": "workspace:*",

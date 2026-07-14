@@ -15,10 +15,6 @@ import type {
 } from "@intx/hub-sessions";
 import { SessionLaunchError } from "@intx/hub-sessions";
 import type { GrantStore } from "@intx/types/authz";
-import {
-  appendPageContextToPrompt,
-  normalizePageContextInput,
-} from "../lib/page-context";
 import { composePersonalAgentPromptForInstance } from "../lib/operator-profile";
 import {
   buildToolDefinitions,
@@ -297,8 +293,6 @@ export async function launchAgentSession(
      * persona prompt is the authoritative role for the session.
      */
     persona?: { toolNames: string[] };
-    /** Short route summary from the web client (Myra page context, CL-3527). */
-    pageContext?: string;
   },
 ): Promise<{ address: string; sessionId: string }> {
   const {
@@ -383,15 +377,6 @@ export async function launchAgentSession(
         },
       );
     }
-  }
-
-  const pageContext = normalizePageContextInput(opts.pageContext);
-  if (pageContext !== undefined) {
-    effectiveSystemPrompt = appendPageContextToPrompt(
-      effectiveSystemPrompt,
-      pageContext,
-      defaultSourceProvider,
-    );
   }
 
   // Persist the agent's tool grants on the instance principal before collecting.

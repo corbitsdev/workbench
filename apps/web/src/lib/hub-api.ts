@@ -739,22 +739,13 @@ export const LaunchInstanceSessionResponseSchema =
 export type LaunchInstanceSessionResponse =
   typeof LaunchInstanceSessionResponseSchema.infer;
 
-export type LaunchInstanceSessionOptions = {
-  pageContext?: string;
-};
-
 export async function launchInstanceSession(
   instanceId: string,
-  options?: LaunchInstanceSessionOptions,
 ): Promise<LaunchInstanceSessionResponse> {
-  const body: { pageContext?: string } = {};
-  if (options?.pageContext !== undefined) {
-    body.pageContext = options.pageContext;
-  }
   const raw = await hubFetch<unknown>(
     "POST",
     `v1/instances/${instanceId}/sessions`,
-    body,
+    {},
   );
   const parsed = LaunchInstanceSessionResponseSchema(raw);
   if (parsed instanceof type.errors) {
