@@ -118,6 +118,8 @@ export {
   type ToolSummaryStyle,
 } from "./use-tool-summary-style";
 export {
+  setPreference,
+  usePreferenceRaw,
   setPreferencePersister,
   hydrateServerPreferences,
   serverPatchForRawChange,

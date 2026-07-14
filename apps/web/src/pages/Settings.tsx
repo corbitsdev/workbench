@@ -38,59 +38,71 @@ import { MemberConnectionsPanel } from "../components/MemberConnectionsPanel";
 import { MySchedules } from "../components/MySchedules";
 import { SettingsSectionNav } from "./SettingsSectionNav";
 import { MORNING_BRIEF_ANCHOR_ID } from "./settings-section-nav";
+import { useMyraVoiceInput } from "../hooks/use-myra-voice-input";
 
-const SECTIONS: readonly SettingsSectionDescriptor[] = [
-  {
-    id: "profile",
-    title: "Profile",
-    description: "How you appear across the workbench.",
-    fields: [
-      {
-        key: "displayName",
-        label: "Display name",
-        kind: "text",
-        placeholder: "Your name",
-      },
-    ],
-  },
-  {
-    id: "appearance",
-    title: "Appearance",
-    fields: [
-      {
-        key: "theme",
-        label: "Theme",
-        kind: "select",
-        options: THEMES.map((t) => ({ value: t, label: THEME_LABELS[t] })),
-      },
-      {
-        key: "compactToolActivity",
-        label: "Compact tool activity",
-        kind: "toggle",
-        description:
-          "Collapse a turn's tool calls into a single summary line you can expand.",
-      },
-      {
-        key: "toolSummaryStyle",
-        label: "Tool summary style",
-        kind: "select",
-        description:
-          "How the collapsed summary line reads. Applies when compact tool activity is on.",
-        options: TOOL_SUMMARY_STYLES.map((s) => ({
-          value: s,
-          label: TOOL_SUMMARY_STYLE_LABELS[s],
-        })),
-      },
-      {
-        key: "experimentalArtifactCards",
-        label: "Experimental artifact cards",
-        kind: "toggle",
-        description:
-          "Preview calmer, higher-contrast artifact cards before they become the default.",
-      },
-    ],
-  },
-];
+function buildSections(myraVoiceBuildEnabled: boolean): SettingsSectionDescriptor[] {
+  return [
+    {
+      id: "profile",
+      title: "Profile",
+      description: "How you appear across the workbench.",
+      fields: [
+        {
+          key: "displayName",
+          label: "Display name",
+          kind: "text",
+          placeholder: "Your name",
+        },
+      ],
+    },
+    {
+      id: "appearance",
+      title: "Appearance",
+      fields: [
+        {
+          key: "theme",
+          label: "Theme",
+          kind: "select",
+          options: THEMES.map((t) => ({ value: t, label: THEME_LABELS[t] })),
+        },
+        {
+          key: "compactToolActivity",
+          label: "Compact tool activity",
+          kind: "toggle",
+          description:
+            "Collapse a turn's tool calls into a single summary line you can expand.",
+        },
+        {
+          key: "toolSummaryStyle",
+          label: "Tool summary style",
+          kind: "select",
+          description:
+            "How the collapsed summary line reads. Applies when compact tool activity is on.",
+          options: TOOL_SUMMARY_STYLES.map((s) => ({
+            value: s,
+            label: TOOL_SUMMARY_STYLE_LABELS[s],
+          })),
+        },
+        {
+          key: "experimentalArtifactCards",
+          label: "Experimental artifact cards",
+          kind: "toggle",
+          description:
+            "Preview calmer, higher-contrast artifact cards before they become the default.",
+        },
+        {
+          key: "myraVoiceInput",
+          label: "Voice input in Myra",
+          kind: "toggle",
+          disabled: !myraVoiceBuildEnabled,
+          description: myraVoiceBuildEnabled
+            ? "Show the microphone control in the Myra composer to dictate messages."
+            : "Not available in this build. Deploy with VITE_MYRA_VOICE_INPUT enabled to use voice dictation.",
+        },
+      ],
+    },
+  ];
+}
 
 const INITIAL_VALUES: SettingsValues = {};
 
@@ -134,6 +146,15 @@ export default function Settings() {
   } = useExperimentalArtifactCards();
   const { style: toolSummaryStyle, setStyle: setToolSummaryStyle } =
     useToolSummaryStyle();
+  const {
+    buildEnabled: myraVoiceBuildEnabled,
+    enabled: myraVoiceInput,
+    setEnabled: setMyraVoiceInput,
+  } = useMyraVoiceInput();
+  const sections = useMemo(
+    () => buildSections(myraVoiceBuildEnabled),
+    [myraVoiceBuildEnabled],
+  );
   const queryClient = useQueryClient();
   const [values, setValues] = useState<SettingsValues>({ ...INITIAL_VALUES });
   // `undefined` means the field has not been touched this session, so it shows
@@ -175,6 +196,9 @@ export default function Settings() {
     }
     if (key === "experimentalArtifactCards" && typeof value === "boolean") {
       setExperimentalArtifactCards(value);
+    }
+    if (key === "myraVoiceInput" && typeof value === "boolean") {
+      setMyraVoiceInput(value);
     }
     if (key === "displayName" && typeof value === "string") {
       setEditedDisplayName(value);
@@ -268,7 +292,7 @@ export default function Settings() {
                 <SettingsPage
                   title="Profile & appearance"
                   className="w-full max-w-none px-0 py-0"
-                  sections={SECTIONS}
+                  sections={sections}
                   values={{
                     ...values,
                     displayName,
@@ -276,6 +300,7 @@ export default function Settings() {
                     compactToolActivity,
                     toolSummaryStyle,
                     experimentalArtifactCards,
+                    myraVoiceInput,
                   }}
                   onChange={handleChange}
                 />

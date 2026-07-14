@@ -41,7 +41,7 @@ import { useAttachShortcut } from "../hooks/use-attach-shortcut";
 import { useMyraReasoningExpanded } from "../hooks/use-myra-reasoning-expanded";
 import { useApprovalDisplayLookups } from "../hooks/use-approval-display-lookups";
 import { createChatToolSummaryFormatter } from "../lib/chat-tool-summary";
-import { isMyraVoiceInputEnabled } from "../lib/myra-voice-input";
+import { useMyraVoiceInput } from "../hooks/use-myra-voice-input";
 import { ActiveContextPills } from "./ActiveContextPills";
 import { ReviewGate } from "./ReviewGate";
 import { renderChatToolMarker } from "./ToolCallProviderMarker";
@@ -216,6 +216,7 @@ export function MyraChatSurface({
       ? { name: threadLabel, tagline: MYRA.tagline }
       : MYRA;
   const { compact: compactToolActivity } = useCompactToolActivity();
+  const { enabled: myraVoiceInput } = useMyraVoiceInput();
   const { style: toolSummaryStyle } = useToolSummaryStyle();
   const reasoningExpandedPrefs = useMyraReasoningExpanded(session.messages);
   const { lookups, isLoading: approvalLookupsLoading } =
@@ -265,7 +266,7 @@ export function MyraChatSurface({
     ...(mentionCandidates !== undefined && mentionCandidates.length > 0
       ? { mentionCandidates }
       : {}),
-    voiceInput: isMyraVoiceInputEnabled(),
+    voiceInput: myraVoiceInput,
   };
 
   const { state } = session;

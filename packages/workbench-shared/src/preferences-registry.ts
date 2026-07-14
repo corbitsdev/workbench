@@ -500,6 +500,7 @@ export const NON_REGISTRY_PREFERENCE_KEYS = [
   "compactToolActivity",
   "toolSummaryStyle",
   "experimentalArtifactCards",
+  "myraVoiceInput",
   "attioMemberId",
   "favoriteWorkflows",
   "artifactsViewMode",

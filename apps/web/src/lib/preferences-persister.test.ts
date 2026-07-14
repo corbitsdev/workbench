@@ -43,6 +43,13 @@ describe("createPreferencesPersister", () => {
     expect(patchMePreferences).not.toHaveBeenCalled();
   });
 
+  it("does not sync local-only Myra voice preference to the server", () => {
+    const { persist, flush } = createPreferencesPersister();
+    persist("cw-myra-voice", "false");
+    flush();
+    expect(patchMePreferences).not.toHaveBeenCalled();
+  });
+
   it("does not fire a request when nothing is pending", () => {
     const { flush } = createPreferencesPersister();
     flush();
