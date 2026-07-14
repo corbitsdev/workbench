@@ -14,10 +14,10 @@ import {
 } from "@workbench/shared";
 import { formatRelativeTime } from "../lib/relative-time";
 import { createLogger } from "../lib/logger";
-
-const nowSectionLog = createLogger("NowSection");
 import { TaskAssigneePicker } from "./TaskAssigneePicker";
 import { TaskSendToAdapter } from "./TaskSendToAdapter";
+
+const nowSectionLog = createLogger("NowSection");
 
 interface NowSectionProps {
   items: NowItem[];
