@@ -113,6 +113,58 @@ export function capabilityResource(provider: string): string {
   return `capability:${provider}`;
 }
 
+// ─── Owner-level inbox source enablement (CL-3577 / CL-3584) ───────
+//
+// Every inbox intake source — workspace-scope (a tenant-wide poller that runs
+// once per tick for the whole tenant) AND member-scope (per-member pollers
+// gated by the member's `inboxSource:*` preference) — is gated by an
+// OWNER-level enablement. The owner grant is the tenant ceiling: a source the
+// owner has not enabled is skipped for EVERY member regardless of their
+// preference (CL-3584 cascade). Member preferences persist untouched while the
+// owner keeps a source disabled, so re-enabling restores each member's prior
+// choice. Modeled like the feature grants above: deny-by-default (absent any
+// grant the source stays OFF), an `allow` on the tenant's system `member` role
+// for `inbox-source:<key>`/`enable` turns it on for the tenant.
+
+/** Action probed by the owner-level inbox source gate. */
+export const WORKSPACE_INBOX_SOURCE_ACTION = "enable";
+
+/** The resource string gating one inbox source (either scope), keyed by its
+ * `InboxSourceRegistryEntry.key` / `INBOX_SOURCE_CATALOG` key. Deny-by-default:
+ * enabled only by an explicit `member`-role allow (owner-written). */
+export function workspaceInboxSourceResource(sourceKey: string): string {
+  return `inbox-source:${sourceKey}`;
+}
+
+/** Owner-area read/toggle for one inbox source's tenant enablement. `enabled`
+ * reflects the member-role `inbox-source:<key>`/`enable` grant. Mirrors
+ * `OwnerFeatureStateSchema`; catalog copy (label/description) is supplied by the
+ * route from `INBOX_SOURCE_CATALOG`. */
+export const OwnerInboxSourceStateSchema = type({
+  key: "string",
+  label: "string",
+  description: "string",
+  enabled: "boolean",
+});
+export type OwnerInboxSourceState = typeof OwnerInboxSourceStateSchema.infer;
+
+export const OwnerInboxSourcesResponse = type({
+  sources: OwnerInboxSourceStateSchema.array(),
+});
+export type OwnerInboxSourcesResponse = typeof OwnerInboxSourcesResponse.infer;
+
+export const OwnerInboxSourceToggle = type({
+  enabled: "boolean",
+});
+export type OwnerInboxSourceToggle = typeof OwnerInboxSourceToggle.infer;
+
+export const OwnerInboxSourceToggleResult = type({
+  key: "string",
+  enabled: "boolean",
+});
+export type OwnerInboxSourceToggleResult =
+  typeof OwnerInboxSourceToggleResult.infer;
+
 // ─── Connectable (per-user OAuth) providers (CL-3356 #2) ───────────
 //
 // The provider-agnostic OAuth flow engine is parameterized entirely by this

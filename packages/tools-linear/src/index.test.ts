@@ -199,6 +199,30 @@ describe("linear_list_issues handler", () => {
     });
   });
 
+  it("forwards createdAfter as an IssueFilter createdAt.gt bound for non-brief callers", async () => {
+    const fetcher = makeFetchStub({ data: { issues: { nodes: [] } } });
+    const runner = createToolRunner(
+      createLinearTools({ apiKey: "k", fetcher }),
+    );
+
+    await runner.run(
+      {
+        id: "c1",
+        name: "linear_list_issues",
+        arguments: {
+          createdAfter: "2026-07-01T00:00:00.000Z",
+        },
+      },
+      new AbortController().signal,
+    );
+
+    const body = lastBody(fetcher);
+    expect(body.variables).toEqual({
+      first: 10,
+      filter: { createdAt: { gt: "2026-07-01T00:00:00.000Z" } },
+    });
+  });
+
   it("accepts a hub-enriched heartbeat trigger payload (extra mail fields)", async () => {
     const nodes = [{ id: "uuid-1", identifier: "ENG-1" }];
     const fetcher = makeFetchStub({ data: { issues: { nodes } } });
@@ -356,10 +380,10 @@ describe("linear_list_issues handler", () => {
     const nodes = [{ id: "uuid-1", identifier: "ENG-1" }];
     const fetcher = mock((_input: string, init: RequestInit) => {
       const body = JSON.parse(String(init.body)) as { query: string };
-      if (body.query.includes("GetTeam")) {
+      if (body.query.includes("TeamByName")) {
         return Promise.resolve(
           new Response(
-            JSON.stringify({ data: { team: { id: "team-uuid" } } }),
+            JSON.stringify({ data: { teams: { nodes: [{ id: "team-uuid" }] } } }),
             { status: 200, headers: { "Content-Type": "application/json" } },
           ),
         );
@@ -437,6 +461,58 @@ describe("linear_list_issues handler", () => {
 
     expect(result.isError).toBe(true);
     expect(result.content).toContain("Linear team not found: missing");
+  });
+
+  it("forwards in-range priority on list filter and omits out-of-range", async () => {
+    const fetcher = makeFetchStub({ data: { issues: { nodes: [] } } });
+    const runner = createToolRunner(
+      createLinearTools({ apiKey: "k", fetcher }),
+    );
+
+    await runner.run(
+      {
+        id: "c1",
+        name: "linear_list_issues",
+        arguments: { priority: 2 },
+      },
+      new AbortController().signal,
+    );
+    expect(lastBody(fetcher).variables.filter).toEqual({
+      priority: { eq: 2 },
+    });
+
+    const fetcherOut = makeFetchStub({ data: { issues: { nodes: [] } } });
+    const runnerOut = createToolRunner(
+      createLinearTools({ apiKey: "k", fetcher: fetcherOut }),
+    );
+    await runnerOut.run(
+      {
+        id: "c2",
+        name: "linear_list_issues",
+        arguments: { priority: 9 },
+      },
+      new AbortController().signal,
+    );
+    expect(lastBody(fetcherOut).variables.filter).toBeUndefined();
+    expect(lastBody(fetcherOut).variables).toEqual({ first: 10 });
+  });
+
+  it("omits negative and non-integer priority from list filter", async () => {
+    for (const priority of [-1, 1.5, 5]) {
+      const fetcher = makeFetchStub({ data: { issues: { nodes: [] } } });
+      const runner = createToolRunner(
+        createLinearTools({ apiKey: "k", fetcher }),
+      );
+      await runner.run(
+        {
+          id: "c1",
+          name: "linear_list_issues",
+          arguments: { priority },
+        },
+        new AbortController().signal,
+      );
+      expect(lastBody(fetcher).variables).toEqual({ first: 10 });
+    }
   });
 
   it("falls back to default first when given an invalid value", async () => {
@@ -608,6 +684,31 @@ describe("error handling", () => {
     expect(result.content).toContain("Linear API error: 502 Bad Gateway");
   });
 
+  it("prefers HTTP body over statusText when both are present", async () => {
+    const fetcher: LinearFetch = mock(() =>
+      Promise.resolve(
+        new Response(JSON.stringify({ message: "upstream rate limited" }), {
+          status: 502,
+          statusText: "Bad Gateway",
+        }),
+      ),
+    );
+    const runner = createToolRunner(
+      createLinearTools({ apiKey: "k", fetcher }),
+    );
+
+    const result = await runner.run(
+      { id: "c1", name: "linear_list_teams", arguments: {} },
+      new AbortController().signal,
+    );
+
+    expect(result.isError).toBe(true);
+    expect(result.content).toContain(
+      "Linear API error: 502 upstream rate limited",
+    );
+    expect(result.content).not.toContain("Bad Gateway");
+  });
+
   it("errors when the response is missing data", async () => {
     const fetcher = makeFetchStub({ notData: {} });
     const runner = createToolRunner(
@@ -633,7 +734,7 @@ describe("linear_create_issue handler", () => {
       url: "https://linear.app/x/issue/ENG-9",
     };
     const fetcher = makeRoutingFetchStub([
-      { includes: "GetTeam", data: { team: { id: "team-uuid" } } },
+      { includes: "TeamByName", data: { teams: { nodes: [{ id: "team-uuid" }] } } },
       { includes: "issueCreate", data: { issueCreate: { success: true, issue } } },
     ]);
     const runner = createToolRunner(
@@ -676,7 +777,7 @@ describe("linear_create_issue handler", () => {
   it("omits optional fields when not provided", async () => {
     const issue = { id: "uuid-1", identifier: "ENG-1", title: "T", url: "u" };
     const fetcher = makeRoutingFetchStub([
-      { includes: "GetTeam", data: { team: { id: "team-uuid" } } },
+      { includes: "TeamByName", data: { teams: { nodes: [{ id: "team-uuid" }] } } },
       { includes: "issueCreate", data: { issueCreate: { success: true, issue } } },
     ]);
     const runner = createToolRunner(
@@ -745,7 +846,7 @@ describe("linear_create_issue handler", () => {
 
   it("errors when Linear rejects the create and returns no issue", async () => {
     const fetcher = makeRoutingFetchStub([
-      { includes: "GetTeam", data: { team: { id: "team-uuid" } } },
+      { includes: "TeamByName", data: { teams: { nodes: [{ id: "team-uuid" }] } } },
       {
         includes: "issueCreate",
         data: { issueCreate: { success: false, issue: null } },

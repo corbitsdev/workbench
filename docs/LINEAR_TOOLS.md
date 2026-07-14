@@ -58,6 +58,11 @@ through ReviewGate unless workflow grants use `allow`.
 | `linear_delete_issue` | write |
 | `linear_link_issues` | write |
 
+`linear_get_issue` with `includeRelations: true` returns this issue's **outbound**
+relation edges only (blocks, related, duplicate). Inverse edges (for example
+blocked-by created from the other issue) are not included; query the related
+issue to see those.
+
 ### Comments and attachments
 
 | Tool | Side effect |

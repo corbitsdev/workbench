@@ -1,7 +1,7 @@
 import { type } from "arktype";
 import type { ToolDefinition } from "@intx/types/runtime";
 import { fetchLinearGraphQL } from "./client";
-import { parseArgs, type LinearToolsConfig } from "./shared";
+import { parseArgs, requireMutationSuccess, type LinearToolsConfig } from "./shared";
 
 const GET_ATTACHMENT_QUERY = `query GetAttachment($id: String!) {
   attachment(id: $id) {
@@ -112,7 +112,7 @@ export async function createAttachmentFromUpload(
     { input },
     signal,
   );
-  return data.attachmentCreate ?? { success: false };
+  return requireMutationSuccess(data, "attachmentCreate");
 }
 
 export const LINEAR_GET_ATTACHMENT_DEFINITION: ToolDefinition = {

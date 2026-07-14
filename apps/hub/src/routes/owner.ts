@@ -1,5 +1,6 @@
 import { type } from "arktype";
 import { Hono } from "hono";
+import { getLogger } from "@intx/log";
 import { describeRoute, resolver } from "hono-openapi";
 import { type GrantStore } from "@intx/authz";
 import { schema as intxSchema } from "@intx/db";
@@ -12,7 +13,11 @@ import {
   FEATURE_GRANT_CATALOG,
   type FeatureName,
   findOAuthProviderConfig,
+  INBOX_SOURCE_CATALOG,
   MEMBER_ROLE_NAME,
+  OwnerInboxSourcesResponse,
+  OwnerInboxSourceToggle,
+  OwnerInboxSourceToggleResult,
   OwnerCapabilitiesResponse,
   OwnerCapabilityToggle,
   OwnerCapabilityToggleResult,
@@ -35,6 +40,12 @@ import {
 import type { HubDb } from "../db";
 import { workflowRun } from "../db/schema";
 import { createOwnerGrantGuard } from "../lib/admin-grant";
+import {
+  fetchSlackTeamId,
+  resolveSlackCredential,
+} from "../lib/slack-api-client";
+import { joinAllPublicChannels } from "../lib/slack-channel-autojoin";
+import { upsertSlackTeamMapping } from "../lib/slack-team-mapping";
 import { encryptSecret } from "../lib/credential-crypto";
 import {
   listOwnerCapabilityStates,
@@ -42,6 +53,10 @@ import {
 } from "../lib/capability-grants";
 import { demosViewAllowed } from "../lib/demos-gate";
 import { featureGrantAllowed, setFeatureGrant } from "../lib/feature-grants";
+import {
+  isInboxSourceEnabledFromGrants,
+  setWorkspaceInboxSourceGrant,
+} from "../lib/workspace-inbox-source-gate";
 import {
   loadMemberRoleGrantsForTenantChain,
   setWorkflowRunGrant,
@@ -612,6 +627,162 @@ export function createOwnerRouter(
       });
 
       return c.json({ name: catalogEntry.name, enabled: parsed.enabled });
+    },
+  );
+
+  // Owner-level inbox source enablement (CL-3584). Which intake sources are
+  // enabled tenant-wide. Deny-by-default: a source runs for members only once
+  // the owner enables it here (the tenant ceiling above each member's
+  // `inboxSource:*` preference). `enabled` reflects the member-role
+  // `inbox-source:<key>`/`enable` grant. Catalog copy comes from
+  // `INBOX_SOURCE_CATALOG`.
+  router.get(
+    "/owner/inbox-sources",
+    describeRoute({
+      tags: ["Owner"],
+      description:
+        "Owner-managed inbox source enablement (the tenant ceiling above each member's inbox-source preference) and their state.",
+      responses: {
+        200: {
+          description: "Owner inbox sources",
+          content: {
+            "application/json": { schema: resolver(OwnerInboxSourcesResponse) },
+          },
+        },
+      },
+    }),
+    async (c) => {
+      const grants = await loadMemberRoleGrantsForTenantChain(db, [
+        rootTenantId,
+      ]);
+      const sources = await Promise.all(
+        INBOX_SOURCE_CATALOG.map(async (entry) => ({
+          key: entry.key,
+          label: entry.label,
+          description: entry.description,
+          enabled: await isInboxSourceEnabledFromGrants(grants, entry.key),
+        })),
+      );
+      return c.json({ sources });
+    },
+  );
+
+  // Toggle an inbox source's tenant enablement. Enable = write a member-role
+  // `allow` for `inbox-source:<key>`/`enable`; disable = remove it. Member
+  // preferences are never touched, so disabling then re-enabling restores each
+  // member's prior `inboxSource:*` choice.
+  router.put(
+    "/owner/inbox-sources/:key",
+    describeRoute({
+      tags: ["Owner"],
+      description: "Enable or disable an inbox source for the workbench.",
+      parameters: [
+        {
+          name: "key",
+          in: "path",
+          required: true,
+          schema: { type: "string" },
+        },
+      ],
+      responses: {
+        200: {
+          description: "Updated inbox source state",
+          content: {
+            "application/json": {
+              schema: resolver(OwnerInboxSourceToggleResult),
+            },
+          },
+        },
+      },
+    }),
+    async (c) => {
+      const key = c.req.param("key");
+      const catalogEntry = INBOX_SOURCE_CATALOG.find(
+        (entry) => entry.key === key,
+      );
+      if (!catalogEntry) {
+        return c.json({ error: `unknown inbox source: ${key}` }, 404);
+      }
+
+      let body: unknown = {};
+      try {
+        body = await c.req.json();
+      } catch {
+        body = {};
+      }
+      const parsed = OwnerInboxSourceToggle(body);
+      if (parsed instanceof type.errors) {
+        return c.json({ error: `invalid body: ${parsed.summary}` }, 400);
+      }
+
+      const roleId = await memberRoleId(db, rootTenantId);
+      if (!roleId) {
+        return c.json({ error: "Workbench member role not found" }, 404);
+      }
+      const actor = c.get("ownerPrincipalId");
+
+      await setWorkspaceInboxSourceGrant(db, {
+        tenantId: rootTenantId,
+        roleId,
+        sourceKey: catalogEntry.key,
+        enabled: parsed.enabled,
+      });
+      void recordAudit({
+        db,
+        tenantId: rootTenantId,
+        action: parsed.enabled ? "grant_created" : "grant_revoked",
+        actorPrincipalId: actor,
+        resource: `inbox-source:${catalogEntry.key}`,
+        detail: {
+          capability: "inbox-source-grant",
+          effect: parsed.enabled ? "allow" : "none",
+        },
+      });
+
+      // CL-3581: enabling Slack sweeps the bot into every public channel so
+      // mention events start flowing without per-channel invites. Best-effort —
+      // enablement itself never fails on a Slack API error.
+      //
+      // CL-3629: also resolves the workspace's team id (auth.test) and
+      // persists the team_id → tenant mapping the webhook route uses to
+      // target this tenant only. This assumes a single `SLACK_SIGNING_SECRET`
+      // verifies every mapped team — true for one distributed Slack app
+      // installed across workspaces, but a constraint worth calling out: a
+      // second, differently-signed Slack app would need per-tenant signing
+      // secrets (not built here; tracked as follow-up).
+      if (parsed.enabled && catalogEntry.key === "slack") {
+        const credential = await resolveSlackCredential(db, rootTenantId);
+        if (credential) {
+          try {
+            const teamId = await fetchSlackTeamId(
+              credential,
+              AbortSignal.timeout(10_000),
+            );
+            if (teamId) {
+              await upsertSlackTeamMapping(db, rootTenantId, teamId);
+            } else {
+              getLogger(["routes", "owner"]).warn(
+                "slack auth.test returned no team_id; team mapping not recorded",
+              );
+            }
+          } catch (err) {
+            getLogger(["routes", "owner"]).warn(
+              "slack auth.test failed after enablement; team mapping not recorded, webhook events for this workspace will drop until re-enabled",
+              { err },
+            );
+          }
+          joinAllPublicChannels(credential, AbortSignal.timeout(60_000)).catch(
+            (err) => {
+              getLogger(["routes", "owner"]).warn(
+                "slack auto-join sweep failed after enablement; mentions only flow in channels the bot is in",
+                { err },
+              );
+            },
+          );
+        }
+      }
+
+      return c.json({ key: catalogEntry.key, enabled: parsed.enabled });
     },
   );
 

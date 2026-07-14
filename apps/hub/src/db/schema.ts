@@ -100,6 +100,33 @@ export const memberIdentity = pgTable(
   }),
 );
 
+// Slack workspace (team) → tenant mapping (CL-3629). Written when the owner
+// enables the Slack inbox source (`auth.test` on the tenant's bot token
+// resolves the team id). `slackTeamId` is globally unique — resolving a
+// webhook's `team_id` yields at most one tenant, so an unmapped team is
+// dropped rather than fanned out across every tenant with Slack enabled.
+// Assumes one signing secret (`SLACK_SIGNING_SECRET`) verifies every mapped
+// team; a distributed Slack app installed to multiple workspaces shares one
+// signing secret, so this holds until per-tenant secrets are needed.
+export const slackTeamTenantMapping = pgTable(
+  "slack_team_tenant_mapping",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: text("tenant_id").notNull(),
+    slackTeamId: text("slack_team_id").notNull(),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at")
+      .notNull()
+      .defaultNow()
+      .$onUpdate(() => new Date()),
+  },
+  (t) => ({
+    slackTeamTenantMappingTeamUniq: unique(
+      "slack_team_tenant_mapping_team_uniq",
+    ).on(t.slackTeamId),
+  }),
+);
+
 // Binary files uploaded before any workflow run exists. Artifacts require a
 // sessionId (FK to workflow_run), but an xlsx arrives ahead of the run that
 // will consume it (CL-1961), so uploads live in their own tenant-owned table
@@ -274,33 +301,47 @@ export type WorkflowRunStepRow = typeof workflowRunStep.$inferSelect;
 // A first-class output of any workflow or agent. `kind` is free-form text
 // (validated at the application edge, not a pg enum, so kinds can grow without
 // migrations). Nesting via parent_id.
-export const artifact = pgTable("artifact", {
-  id: uuid("id").primaryKey().defaultRandom(),
-  tenantId: text("tenant_id"),
-  principalId: text("principal_id"),
-  ownerPrincipalId: text("owner_principal_id"),
-  // Null for artifacts created directly by agents via the artifact_* tools
-  // or write_artifact (they are tenant/principal scoped, not workflow_run scoped).
-  // Workflow paths always supply a valid id.
-  parentId: uuid("parent_id").references((): AnyPgColumn => artifact.id, {
-    onDelete: "cascade",
+export const artifact = pgTable(
+  "artifact",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: text("tenant_id"),
+    principalId: text("principal_id"),
+    ownerPrincipalId: text("owner_principal_id"),
+    // Null for artifacts created directly by agents via the artifact_* tools
+    // or write_artifact (they are tenant/principal scoped, not workflow_run scoped).
+    // Workflow paths always supply a valid id.
+    parentId: uuid("parent_id").references((): AnyPgColumn => artifact.id, {
+      onDelete: "cascade",
+    }),
+    kind: text("kind").notNull(),
+    title: text("title").notNull(),
+    content: text("content").notNull(),
+    source: jsonb("source").$type<Record<string, unknown>>(),
+    status: text("status", { enum: artifactStatus }).notNull().default("draft"),
+    version: integer("version").notNull().default(1),
+    // Soft-archive (CL-3156): null = visible, a timestamp = hidden from default
+    // listings. Reversible; distinct from `status` so archiving never clobbers a
+    // draft/approved/rejected state.
+    archivedAt: timestamp("archived_at"),
+    // Idempotency backstop for a source that can race a duplicate insert past
+    // an app-level existence check (CL-3577 review fix B — the Granola call
+    // pipeline sets `granola:call:<noteId>`). Null for every artifact created
+    // through the artifact_* tools / write_artifact; the partial unique index
+    // only constrains rows that opt in by setting this column.
+    sourceRef: text("source_ref"),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at")
+      .notNull()
+      .defaultNow()
+      .$onUpdate(() => new Date()),
+  },
+  (t) => ({
+    artifactTenantSourceRefUniq: uniqueIndex("artifact_tenant_source_ref_uniq")
+      .on(t.tenantId, t.sourceRef)
+      .where(sql`${t.sourceRef} IS NOT NULL`),
   }),
-  kind: text("kind").notNull(),
-  title: text("title").notNull(),
-  content: text("content").notNull(),
-  source: jsonb("source").$type<Record<string, unknown>>(),
-  status: text("status", { enum: artifactStatus }).notNull().default("draft"),
-  version: integer("version").notNull().default(1),
-  // Soft-archive (CL-3156): null = visible, a timestamp = hidden from default
-  // listings. Reversible; distinct from `status` so archiving never clobbers a
-  // draft/approved/rejected state.
-  archivedAt: timestamp("archived_at"),
-  createdAt: timestamp("created_at").notNull().defaultNow(),
-  updatedAt: timestamp("updated_at")
-    .notNull()
-    .defaultNow()
-    .$onUpdate(() => new Date()),
-});
+);
 
 // CL-2668: durable agent memory moved out of the artifact table into its own
 // table. No version history — a save is a plain overwrite. One row per
@@ -765,6 +806,73 @@ export const workflowTrigger = pgTable("workflow_trigger", {
 });
 
 export type WorkflowTriggerRow = typeof workflowTrigger.$inferSelect;
+
+// Durable poll cursor for inbox intake (CL-3628): one row per scope key
+// (`member:<memberPrincipalId>:<sourceKey>` or `workspace:<tenantId>:<sourceKey>`,
+// the same keys `inbox-intake.ts` already used for its in-process
+// `lastPollAtByScopeKey` map). Read at the top of each source's run, upserted
+// only after a successful poll — same advance semantics as the in-memory map,
+// now surviving a replica restart/redeploy instead of resetting to a wide
+// `lookbackMs` poll. `scopeKey` alone is globally unique (it embeds the tenant
+// or member id); `tenantId` is carried alongside for operator debugging/joins.
+export const inboxIntakeCursor = pgTable("inbox_intake_cursor", {
+  scopeKey: text("scope_key").primaryKey(),
+  tenantId: text("tenant_id").notNull(),
+  lastPollAt: timestamp("last_poll_at").notNull(),
+  updatedAt: timestamp("updated_at")
+    .notNull()
+    .defaultNow()
+    .$onUpdate(() => new Date()),
+});
+
+export type InboxIntakeCursorRow = typeof inboxIntakeCursor.$inferSelect;
+
+// A queued Granola call: enqueued by the workspace intake tick (cheap,
+// LLM-free) and drained off-tick by the job runner, which does the transcript
+// fetch + reasoning turn + artifact persistence (CL-3627). One row per
+// (tenant, note); the unique constraint is both the enqueue-dedupe backstop
+// (a re-listed note within the same tick window upserts onto its existing row
+// rather than creating a second job) and the durable retry/backoff state —
+// `nextAttemptAt` gates the runner's claim query, `attempts` grows the
+// backoff, and `status = 'dead'` after the attempt ceiling stops a
+// permanently-broken note from being retried forever (logged loudly, not
+// silently dropped).
+export const granolaCallJobStatuses = [
+  "pending",
+  "processing",
+  "done",
+  "dead",
+] as const;
+
+export const granolaCallJob = pgTable(
+  "granola_call_job",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: text("tenant_id").notNull(),
+    noteId: text("note_id").notNull(),
+    status: text("status", { enum: granolaCallJobStatuses })
+      .notNull()
+      .default("pending"),
+    attempts: integer("attempts").notNull().default(0),
+    nextAttemptAt: timestamp("next_attempt_at").notNull().defaultNow(),
+    lastError: text("last_error"),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at")
+      .notNull()
+      .defaultNow()
+      .$onUpdate(() => new Date()),
+  },
+  (t) => ({
+    granolaCallJobTenantNoteUniq: unique(
+      "granola_call_job_tenant_note_uniq",
+    ).on(t.tenantId, t.noteId),
+    granolaCallJobStatusNextAttemptIdx: index(
+      "granola_call_job_status_next_attempt_idx",
+    ).on(t.status, t.nextAttemptAt),
+  }),
+);
+
+export type GranolaCallJobRow = typeof granolaCallJob.$inferSelect;
 
 export {
   analyticsEvent,

@@ -31,6 +31,37 @@ registry-driven onboarding tour (its shown/dismissed state is a persisted user
 preference, not local-only UI state) introduces new users to the inbox model
 on first login.
 
+### Inbox sources — external intake
+
+Beyond mail from other principals, the inbox can be fed by **inbox sources**:
+external systems whose activity is pulled or pushed into a user's mailbox.
+Today's sources are **Linear** (assigned issues, comments, notifications),
+**Attio** (task sync), and **Granola** (call summaries) — Slack (mentions) is
+shipping in the same release. Every source is **off by default at every
+level** — nothing reaches a member's inbox until it is turned on tenant-wide
+by the feature grant, enabled by the owner, and enabled by the member (or, for
+Granola, simply matched as a call participant). See
+[`OWNER_SETUP_INBOX.md`](OWNER_SETUP_INBOX.md) for the full setup sequence and
+[`API.md`](API.md#inbox-sources--webhooks) for the routes.
+
+- **Linear and Attio** are per-member: each member connects (or shares a
+  tenant credential) and opts in from their own settings. Both poll on a 60s
+  cadence; each also has an optional webhook (Linear issue/comment events,
+  Attio task events) that delivers the same item near-instantly and is
+  deduplicated against the poller so nothing doubles up. Linear members can
+  additionally choose what counts as "activity" (assigned-only vs. all) and a
+  one-time backfill window (none, 7 days, or 30 days) applied the first time
+  they turn Linear on.
+- **Granola** is workspace-level: the owner enables it once for the tenant. A
+  60s poller picks up new calls, classifies each as internal or external,
+  extracts pain points, decisions, and action items, and mails a
+  per-recipient summary to every Myra member who attended the call or was
+  mentioned in it — each recipient sees only their own tasks and action
+  items, not the whole team's.
+- An owner-disabled source disappears from member settings entirely (not
+  shown as disabled) — it does not just stop running. Re-enabling it restores
+  each member's prior on/off choice rather than resetting everyone to off.
+
 ## Automations
 
 Two ways work can start without a user opening the app:
@@ -92,7 +123,9 @@ Every user gets a personal AI agent named **Myra**. Myra acts as a Chief of Staf
 
 **Composer affordances.** The Myra composer supports the same attachment policy as before (paperclip picker and drag-and-drop), plus **paste from the clipboard** (Ctrl/Cmd+V with image or file items) so screenshots and exports land as pending attachments without opening the file dialog. A **microphone control** starts browser speech recognition, streams dictated text into the draft, and **auto-sends** when the user stops dictation (with a stop control while listening). Mention autocomplete (`@`) still targets workspace members.
 
-**Disclosure defaults.** Assistant **reasoning** traces and **tool activity** render in a compact process-trace column: reasoning is **collapsed by default** on each message, and the user can expand a turn to read it. Tool steps show humanized action lines (not raw `package__tool` names) with optional provider logos where Brand API coverage exists. Long threads **auto-collapse older tool-only stretches** into expandable groups so recent user and assistant messages stay readable; errors, artifacts, and user sends are never collapsed. Expand/collapse choices for reasoning **persist across reload** per message id.
+**Draft and queue while Myra is responding (CL-2988).** The composer never locks while a turn is in flight: the textarea, attach button, and paste/drop all stay usable while Myra is thinking or running tools. Submitting mid-turn does not send immediately — it queues, showing a "Queued" chip above the input with the pending text (and attachment count) plus **Edit** (pulls it back into the draft) and **Cancel** controls. The queued message auto-sends the moment the current turn ends. If the turn ends but the composer itself has gone unusable (e.g. the session disconnected), the queued message is held rather than dispatched into a broken session; if the auto-send itself fails, the text is restored to the queue (never dropped) and the failure surfaces the same way a normal failed send does. Applies uniformly to the dock, floating, and full-page chat surfaces, which share one `ChatPanel`/`ChatInput`.
+
+**Turn model and disclosure defaults.** Each assistant turn renders as a single **activity block** (all of that turn's reasoning and tool calls) followed by the response body, with thumbs feedback anchored to the response. The activity block is **collapsed by default** and carries a **one-line summary**: while streaming it shows a single rolling label — the latest _meaningful_ reasoning step, with low-signal tool-discovery narration ("Looking for tools about X", "Bringing 4 tools online") filtered out — that replaces in place as the turn progresses; when settled it rolls up what happened. Expanding the block reveals the full raw reasoning trace plus the tool rows. The block renders **identically whether streaming live or reloaded** from a finished thread. Tool rows use **one consistent treatment** across pending/running/succeeded/failed: humanized action lines (not raw `package__tool` names) with optional provider logos where Brand API coverage exists, a native tooltip and click-to-expand on truncated titles, and failures surfaced inline with the **provider's actual error message** grouped with the row. Long threads **auto-collapse older tool-only stretches** into expandable groups so recent user and assistant messages stay readable; errors, artifacts, and user sends are never collapsed. Expand/collapse choices **persist across reload** per message id.
 
 **Approvals in chat.** When Myra or another agent requests a gated action (for example outbound mail), the approval card shows **real names** for principals and agents (members roster + agent instances), not opaque `prn_` / `ins_` ids or raw mailbox locals where a display name is known.
 

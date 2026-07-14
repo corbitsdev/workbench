@@ -30,4 +30,18 @@ describe("ArtifactDetailShell", () => {
       "max-w-none",
     );
   });
+
+  it("omits the metadata rail entirely when rail is null", () => {
+    render(
+      React.createElement(ArtifactDetailShell, {
+        accentClass: "bg-green",
+        rail: null,
+        children: React.createElement("article", null, "Body"),
+      }),
+    );
+    expect(screen.queryByTestId("artifact-detail-rail")).toBeNull();
+    expect(screen.getByTestId("artifact-detail-main").textContent).toContain(
+      "Body",
+    );
+  });
 });

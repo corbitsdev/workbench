@@ -18,6 +18,9 @@ import {
 } from "@workbench/blocks";
 import {
   CHAT_ASSISTANT_BODY,
+  CHAT_META_ERROR_TEXT,
+  CHAT_META_TEXT,
+  CHAT_RESPONSE_STACK,
   CHAT_SYSTEM_BUBBLE_SURFACE,
   CHAT_TURN_STACK,
   CHAT_USER_BUBBLE_SURFACE,
@@ -168,7 +171,7 @@ function FileChip({
         <span className="text-text-3">{formatBytes(attachment.size)}</span>
       </button>
       {failed && (
-        <span role="alert" className="text-xs text-red">
+        <span role="alert" className={CHAT_META_ERROR_TEXT}>
           Couldn't download — try again
         </span>
       )}
@@ -313,7 +316,7 @@ export function MessageBubble({
     if (isUser) return <UserMessageBody content={message.content} />;
     if (extracted !== null) {
       return (
-        <div className="flex flex-col gap-3.5">
+        <div className={CHAT_RESPONSE_STACK}>
           {extracted.text !== "" && <Markdown>{extracted.text}</Markdown>}
           <UIBlockErrorBoundary>
             <UIBlockView
@@ -338,7 +341,7 @@ export function MessageBubble({
       className={cn(CHAT_TURN_STACK, isUser ? "items-end" : "items-start")}
     >
       {message.senderLabel !== undefined && message.senderLabel !== "" && (
-        <span className="text-xs text-text-3">From: {message.senderLabel}</span>
+        <span className={CHAT_META_TEXT}>From: {message.senderLabel}</span>
       )}
       {(hasBody || (message.status === "sending" && !hasReasoning)) && (
         <div
@@ -367,10 +370,10 @@ export function MessageBubble({
         />
       )}
       {isUser && message.status === "sending" && (
-        <span className="text-xs text-text-3">Sending…</span>
+        <span className={CHAT_META_TEXT}>Sending…</span>
       )}
       {message.status === "failed" && (
-        <span role="alert" className="text-xs text-red">
+        <span role="alert" className={CHAT_META_ERROR_TEXT}>
           Failed to send
         </span>
       )}
