@@ -326,6 +326,11 @@ const PHRASES: Record<string, FriendlyPhrase> = {
       : `Posting to Slack ${truncate(channel)}`;
   },
 
+  mail_send: (args) => {
+    const to = firstStringArg(args, ["to"]);
+    return to === null ? "Send mail" : `Send mail to ${truncate(to, 56)}`;
+  },
+
   // Sumble — account intelligence
   sumble_resolve_organization: (args) => {
     const term = firstStringArg(args, ["domain", "slug", "name"]);
