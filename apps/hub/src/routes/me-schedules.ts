@@ -9,6 +9,10 @@ import {
 } from "@workbench/shared";
 import { resolveCallerMember } from "../lib/tenant-provisioning";
 import { isRunnableKind } from "../lib/workflow-run-gate";
+import { loadWorkflowGateInfos } from "../lib/workflow-catalog";
+import { isKindStructurallyAttachable } from "../lib/workflow-gate-info";
+import { INTAKE_SIGNAL_NAME } from "../lib/scheduled-intake";
+import { validateResumePayload } from "../workflow-executor/resume-payload-registry";
 import { UuidParam } from "../lib/uuid";
 import {
   createOwnerSchedule,
@@ -171,11 +175,42 @@ export function createMeSchedulesRouter(
         return c.json({ error: `unknown workflow kind "${body.kind}"` }, 400);
       }
 
+      // Attach gate (CL-3508/CL-3509): a schedule fires unattended, so only kinds
+      // that can run to completion without a human belong here — either fully
+      // unattended (no gates), or their ONLY human gate is `intake`, which the
+      // scheduler pre-fills from the stored payload and auto-delivers. A kind with
+      // any other human gate would park forever, so it is rejected. A
+      // requiresIntake kind additionally must carry a valid stored intake payload.
+      const gateInfos = await loadWorkflowGateInfos();
+      const gateInfo = gateInfos.get(body.kind);
+      if (gateInfo === undefined || !isKindStructurallyAttachable(gateInfo)) {
+        return c.json(
+          {
+            error: `workflow "${body.kind}" cannot be scheduled: it needs input this schedule can't supply`,
+          },
+          400,
+        );
+      }
+
       const clientPayload = Object.fromEntries(
         Object.entries(body.payload ?? {}).filter(
           ([key]) => !RESERVED_PAYLOAD_KEYS.has(key),
         ),
       );
+
+      if (gateInfo.requiresIntake) {
+        const check = validateResumePayload(
+          body.kind,
+          INTAKE_SIGNAL_NAME,
+          clientPayload,
+        );
+        if (!check.ok) {
+          return c.json(
+            { error: `invalid intake for "${body.kind}": ${check.error}` },
+            400,
+          );
+        }
+      }
       const identity = await resolveUserIdentity(member.principalId);
       const payload = {
         ...clientPayload,

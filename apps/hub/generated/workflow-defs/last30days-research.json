@@ -52,6 +52,23 @@
       ]
     }
   ],
+  "requiresIntake": true,
+  "humanGateCount": 1,
+  "intakeFields": [
+    {
+      "kind": "text",
+      "name": "topic",
+      "label": "Topic",
+      "placeholder": "e.g. AI coding agents for GTM teams",
+      "required": true
+    },
+    {
+      "kind": "textarea",
+      "name": "focus",
+      "label": "Focus (optional)",
+      "placeholder": "Narrow the query or angle"
+    }
+  ],
   "definition": {
     "id": "last30days-research",
     "triggers": [

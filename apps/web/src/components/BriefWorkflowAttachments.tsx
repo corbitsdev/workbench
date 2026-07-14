@@ -122,19 +122,54 @@ export function BriefWorkflowAttachments({
     () =>
       (catalog.data?.entries ?? []).filter(
         (entry) =>
-          entry.kind !== HEARTBEAT_KIND && !attachedKinds.has(entry.kind),
+          entry.attachable &&
+          entry.kind !== HEARTBEAT_KIND &&
+          !attachedKinds.has(entry.kind),
       ),
     [catalog.data, attachedKinds],
   );
 
+  const [intakeValues, setIntakeValues] = useState<Record<string, string>>({});
+
+  const selectedEntry = useMemo(
+    () => attachable.find((entry) => entry.kind === selectedKind),
+    [attachable, selectedKind],
+  );
+  const intakeFields = selectedEntry?.intakeFields ?? [];
+
+  const missingRequiredIntake = intakeFields.some(
+    (field) =>
+      field.required === true && (intakeValues[field.name] ?? "").trim() === "",
+  );
+
   const briefHourUtc = briefHourFromSettings(preferenceSettings.data ?? []);
 
-  const handleAttach = () => {
-    if (selectedKind === "") return;
+  const handleSelectKind = (kind: string) => {
+    setSelectedKind(kind);
+    setIntakeValues({});
     setError(null);
+  };
+
+  const handleAttach = () => {
+    if (selectedKind === "" || missingRequiredIntake) return;
+    setError(null);
+    // Only send fields the user actually filled; the server validates the intake
+    // payload against the workflow's intake schema and stores it for auto-delivery.
+    const payload = Object.fromEntries(
+      intakeFields
+        .map((field) => [field.name, (intakeValues[field.name] ?? "").trim()])
+        .filter(([, value]) => value !== ""),
+    );
     createSchedule
-      .mutateAsync({ kind: selectedKind, hourUtc: briefHourUtc })
-      .then(() => setSelectedKind(""))
+      .mutateAsync({
+        kind: selectedKind,
+        hourUtc: briefHourUtc,
+        ...(Object.keys(payload).length > 0 ? { payload } : {}),
+      })
+      .then(() => {
+        setSelectedKind("");
+        setIntakeValues({});
+      })
       .catch(() => {
         setError("Could not attach the workflow. Try again.");
       });
@@ -179,28 +214,76 @@ export function BriefWorkflowAttachments({
       )}
 
       {!isLoading && attachable.length > 0 && (
-        <div className="flex items-center gap-2">
-          <Select
-            aria-label="Choose a workflow to attach"
-            value={selectedKind}
-            onChange={(event) => setSelectedKind(event.target.value)}
-          >
-            <option value="">Choose a workflow…</option>
-            {attachable.map((entry) => (
-              <option key={entry.kind} value={entry.kind}>
-                {entry.label}
-              </option>
-            ))}
-          </Select>
-          <Button
-            type="button"
-            variant="secondary"
-            size="sm"
-            disabled={selectedKind === "" || createSchedule.isPending}
-            onClick={handleAttach}
-          >
-            {createSchedule.isPending ? "Attaching…" : "Attach"}
-          </Button>
+        <div className="flex flex-col gap-2">
+          <div className="flex items-center gap-2">
+            <Select
+              aria-label="Choose a workflow to attach"
+              value={selectedKind}
+              onChange={(event) => handleSelectKind(event.target.value)}
+            >
+              <option value="">Choose a workflow…</option>
+              {attachable.map((entry) => (
+                <option key={entry.kind} value={entry.kind}>
+                  {entry.label}
+                </option>
+              ))}
+            </Select>
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              disabled={
+                selectedKind === "" ||
+                missingRequiredIntake ||
+                createSchedule.isPending
+              }
+              onClick={handleAttach}
+            >
+              {createSchedule.isPending ? "Attaching…" : "Attach"}
+            </Button>
+          </div>
+
+          {intakeFields.length > 0 && (
+            <div className="flex flex-col gap-2 rounded-[14px] border border-border bg-surface p-3">
+              <p className="text-xs text-text-3">
+                This workflow needs input up front. It runs unattended with what
+                you provide here.
+              </p>
+              {intakeFields.map((field) => (
+                <label key={field.name} className="flex flex-col gap-1">
+                  <span className="text-xs font-medium text-text">
+                    {field.label}
+                  </span>
+                  {field.kind === "textarea" ? (
+                    <textarea
+                      className="min-h-[64px] rounded-lg border border-border bg-bg px-2 py-1 text-sm text-text"
+                      placeholder={field.placeholder}
+                      value={intakeValues[field.name] ?? ""}
+                      onChange={(event) =>
+                        setIntakeValues((prev) => ({
+                          ...prev,
+                          [field.name]: event.target.value,
+                        }))
+                      }
+                    />
+                  ) : (
+                    <input
+                      type="text"
+                      className="rounded-lg border border-border bg-bg px-2 py-1 text-sm text-text"
+                      placeholder={field.placeholder}
+                      value={intakeValues[field.name] ?? ""}
+                      onChange={(event) =>
+                        setIntakeValues((prev) => ({
+                          ...prev,
+                          [field.name]: event.target.value,
+                        }))
+                      }
+                    />
+                  )}
+                </label>
+              ))}
+            </div>
+          )}
         </div>
       )}
 

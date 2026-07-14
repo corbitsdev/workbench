@@ -53,7 +53,7 @@ export type StartRunInput = {
 };
 
 export type StartRunResult =
-  | { ok: true; deploymentId: string }
+  | { ok: true; deploymentId: string; runId: string }
   | {
       ok: false;
       reason: "not_found" | "delivery_failed" | "rate_limited";
@@ -148,6 +148,9 @@ export function createWorkflowRunStarter(deps: {
         principalId,
         input,
         originConversationId: null,
+        // Mark scheduler-fired runs so the stalled-run reconciler can fail one
+        // parked past its timeout without touching interactive runs (CL-3509).
+        ...(source === "scheduler" ? { triggerSource: "scheduler" } : {}),
       });
 
       // The supervisor may have been dropped from the hub's addressIndex by a
@@ -187,7 +190,7 @@ export function createWorkflowRunStarter(deps: {
       };
     }
 
-    return { ok: true, deploymentId: deployment.deploymentId };
+    return { ok: true, deploymentId: deployment.deploymentId, runId };
   }
 
   return { startRun };

@@ -54,6 +54,8 @@
       "activityLabel": "Saving to workbench"
     }
   ],
+  "requiresIntake": false,
+  "humanGateCount": 5,
   "definition": {
     "id": "pain-point-collateral",
     "triggers": [

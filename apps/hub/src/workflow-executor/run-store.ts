@@ -158,6 +158,9 @@ export async function insertRunRecord(
     // CL-2755: the run's initial status. Async start seeds `provisioning` before
     // the deployment exists; the default keeps every other caller unchanged.
     status?: RunState["status"];
+    // CL-3509: the trigger path that started the run ("scheduler" for an
+    // attached-workflow schedule fire); omitted for interactive/manual starts.
+    triggerSource?: string;
   },
 ): Promise<RunState> {
   const status = args.status ?? "running";
@@ -170,6 +173,9 @@ export async function insertRunRecord(
     status,
     input: args.input,
     originConversationId: args.originConversationId,
+    ...(args.triggerSource !== undefined
+      ? { triggerSource: args.triggerSource }
+      : {}),
   });
   return {
     runId: args.runId,

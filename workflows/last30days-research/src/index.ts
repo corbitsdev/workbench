@@ -36,6 +36,27 @@ export const kind = "last30days-research";
 // browser-safe module.
 export { DISPLAY_STEPS } from "./display-steps";
 
+// The first-intake form descriptor (CL-3509): the fields the attach UI collects
+// when this workflow is scheduled, so a scheduled run's `intake` gate is
+// pre-filled and auto-delivered without a human. Mirrors the `intakeForm` block
+// (topic required, focus optional); the stored payload validates against
+// Last30daysIntakePayloadSchema at the /resume boundary.
+export const INTAKE_FIELDS = [
+  {
+    kind: "text",
+    name: "topic",
+    label: "Topic",
+    placeholder: "e.g. AI coding agents for GTM teams",
+    required: true,
+  },
+  {
+    kind: "textarea",
+    name: "focus",
+    label: "Focus (optional)",
+    placeholder: "Narrow the query or angle",
+  },
+] as const;
+
 // Each source pulls its query from the grounding step's per-source map rather
 // than the raw topic, so e.g. github_activity gets repo/org names and
 // youtube_search gets video-title phrasing instead of all sources searching the

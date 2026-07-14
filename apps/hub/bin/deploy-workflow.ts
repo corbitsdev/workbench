@@ -199,6 +199,7 @@ export interface LoadedWorkflow {
   label?: string;
   description?: string;
   displayFlow?: unknown;
+  intakeFields?: unknown;
 }
 
 function readStringExport(mod: object, key: string): string | undefined {
@@ -222,6 +223,10 @@ export async function loadWorkflow(kind: string): Promise<LoadedWorkflow> {
   // flow. It is plain serializable data; the build validates its shape through
   // EmbeddedWorkflowDefSchema before committing it.
   const displayFlow = (mod as { DISPLAY_STEPS?: unknown }).DISPLAY_STEPS;
+  // The optional INTAKE_FIELDS export (CL-3509) is the workflow's first-intake
+  // form descriptor — plain serializable data validated through
+  // EmbeddedWorkflowDefSchema before committing, like DISPLAY_STEPS.
+  const intakeFields = (mod as { INTAKE_FIELDS?: unknown }).INTAKE_FIELDS;
   const label = readStringExport(mod, "label");
   const description = readStringExport(mod, "description");
   // Conditional spreads (not `key: value | undefined`) so the return satisfies
@@ -232,6 +237,7 @@ export async function loadWorkflow(kind: string): Promise<LoadedWorkflow> {
     ...(label !== undefined ? { label } : {}),
     ...(description !== undefined ? { description } : {}),
     ...(displayFlow !== undefined ? { displayFlow } : {}),
+    ...(intakeFields !== undefined ? { intakeFields } : {}),
   };
 }
 

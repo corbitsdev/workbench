@@ -66,6 +66,8 @@
       "activityLabel": "Saving to workbench"
     }
   ],
+  "requiresIntake": true,
+  "humanGateCount": 3,
   "definition": {
     "id": "reddit-opportunity-scanner",
     "triggers": [

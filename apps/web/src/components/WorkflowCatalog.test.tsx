@@ -88,6 +88,7 @@ const catalog: WorkflowCatalog = {
         { id: "s1", title: "Load Transcript", kind: "auto" },
         { id: "s2", title: "Approve Draft", kind: "human" },
       ],
+      attachable: false,
     },
     {
       kind: "gamma",
@@ -96,6 +97,7 @@ const catalog: WorkflowCatalog = {
       stepCount: 1,
       pauseCount: 0,
       steps: [{ id: "a", title: "Ingest Content", kind: "auto" }],
+      attachable: false,
     },
   ],
 };

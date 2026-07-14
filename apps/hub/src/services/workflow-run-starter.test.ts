@@ -108,7 +108,9 @@ describe("createWorkflowRunStarter", () => {
       input,
     });
 
-    expect(result).toEqual({ ok: true, deploymentId: "dep-child" });
+    expect(result.ok).toBe(true);
+    expect(result).toMatchObject({ ok: true, deploymentId: "dep-child" });
+    if (result.ok) expect(typeof result.runId).toBe("string");
     expect(sent).toHaveLength(1);
     expect(sent[0]?.agentAddress).toBe(
       deriveDeploymentAddress({
