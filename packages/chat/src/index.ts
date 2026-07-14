@@ -60,6 +60,7 @@ export { MessageBubble, type MessageBubbleProps } from "./MessageBubble";
 export { AgentTurn, type AgentTurnProps } from "./AgentTurn";
 export {
   readReasoningExpanded,
+  readReasoningExpandedForDisplay,
   writeReasoningExpanded,
   clearReasoningExpanded,
   reasoningExpandedMessageKey,
@@ -67,6 +68,10 @@ export {
   migrateReasoningExpandedSlotKeys,
   type ReasoningExpandedMap,
 } from "./reasoning-expanded-prefs";
+export {
+  MYRA_AGED_HISTORY_MS,
+  isMyraHistoryAged,
+} from "./aged-history";
 export {
   ToolNarrative,
   type ToolNarrativeProps,

@@ -3,19 +3,27 @@ import { afterEach, describe, expect, it } from "bun:test";
 import { renderHook, act } from "@testing-library/react";
 import type { ChatMessage } from "@workbench/chat";
 import { STREAMING_BUBBLE_ID } from "@workbench/agents/browser";
-import { readReasoningExpanded, writeReasoningExpanded } from "@workbench/chat";
+import {
+  MYRA_AGED_HISTORY_MS,
+  readReasoningExpanded,
+  writeReasoningExpanded,
+} from "@workbench/chat";
 import { useMyraReasoningExpanded } from "./use-myra-reasoning-expanded";
 
 afterEach(() => {
   localStorage.clear();
 });
 
+function freshCreatedAt(): string {
+  return new Date().toISOString();
+}
+
 function agent(id: string, extra?: Partial<ChatMessage>): ChatMessage {
   return {
     id,
     role: "agent",
     content: "Answer",
-    createdAt: "2026-01-01T00:00:00Z",
+    createdAt: freshCreatedAt(),
     reasoning: "Because",
     ...extra,
   };
@@ -77,6 +85,15 @@ describe("useMyraReasoningExpanded", () => {
     });
     expect(readReasoningExpanded("turn-t")).toBe(true);
     expect(result.current.isReasoningExpanded("turn-t")).toBe(true);
+  });
+
+  it("auto-collapses aged turns on reload even when expand was persisted", () => {
+    const agedAt = new Date(Date.now() - MYRA_AGED_HISTORY_MS - 60_000).toISOString();
+    writeReasoningExpanded("mail-1", true);
+    const messages = [agent("mail-1", { createdAt: agedAt })];
+    const { result } = renderHook(() => useMyraReasoningExpanded(messages));
+    expect(readReasoningExpanded("mail-1")).toBe(true);
+    expect(result.current.isReasoningExpanded("mail-1")).toBe(false);
   });
 
   it("migrates expand when the slot settles to mail id before feedbackId exists", () => {

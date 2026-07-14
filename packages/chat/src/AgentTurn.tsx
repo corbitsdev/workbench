@@ -8,6 +8,7 @@ import { MessageFeedback } from "./MessageFeedback";
 import { CHAT_TRACE_STACK, CHAT_TURN_STACK } from "./messageRhythm";
 import type { FeedbackSubjectKind } from "./feedback-types";
 import type { UIBlock, UIResponse } from "@workbench/blocks";
+import { isMyraHistoryAged } from "./aged-history";
 
 export interface AgentTurnProps {
   message: ChatMessage;
@@ -68,9 +69,13 @@ export function AgentTurn({
   setReasoningExpanded,
 }: AgentTurnProps) {
   const isStreaming = message.status === "sending";
+  const traceAged =
+    !isStreaming && isMyraHistoryAged(message.createdAt);
   const hasReasoning = (message.reasoning ?? "").trim() !== "";
   const toolCalls = visibleToolCalls ?? message.toolCalls;
   const hasTools = toolCalls !== undefined && toolCalls.length > 0;
+  const compactTools =
+    compactToolActivity === true || (traceAged && summarizeToolCalls !== undefined);
   // The turn header owns the sender label; strip it from the nested bubble so
   // it renders exactly once.
   const { senderLabel, ...bubbleMessage } = message;
@@ -108,9 +113,7 @@ export function AgentTurn({
               {...(formatToolResult !== undefined
                 ? { formatResult: formatToolResult }
                 : {})}
-              {...(compactToolActivity !== undefined
-                ? { compact: compactToolActivity }
-                : {})}
+              {...(compactTools ? { compact: true } : {})}
               {...(summarizeToolCalls !== undefined
                 ? { summarizeCalls: summarizeToolCalls }
                 : {})}

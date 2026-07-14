@@ -10,6 +10,7 @@ import {
 import React from "react";
 
 import { AgentTurn } from "./AgentTurn";
+import { MYRA_AGED_HISTORY_MS } from "./aged-history";
 import { type ChatMessage } from "./types";
 
 afterEach(() => {
@@ -173,6 +174,28 @@ describe("AgentTurn", () => {
   it("renders the sender label exactly once", () => {
     render(<AgentTurn message={agentMessage({ senderLabel: "Oat" })} />);
     expect(screen.getAllByText("From: Oat")).toHaveLength(1);
+  });
+
+  it("forces compact tool roll-up on aged turns even when compact pref is off", () => {
+    const agedAt = new Date(Date.now() - MYRA_AGED_HISTORY_MS - 60_000).toISOString();
+    const message = agentMessage({
+      createdAt: agedAt,
+      toolCalls: [
+        { id: "c1", name: "a", result: "1", isError: false },
+        { id: "c2", name: "b", result: "2", isError: false },
+        { id: "c3", name: "c", result: "3", isError: false },
+      ],
+    });
+    render(
+      <AgentTurn
+        message={message}
+        compactToolActivity={false}
+        summarizeToolCalls={() => "Did three things"}
+        formatToolSummary={() => "Tool"}
+      />,
+    );
+    expect(screen.getByTestId("tool-group-summary")).toBeDefined();
+    expect(screen.queryByTestId("tool-row-summary")).toBeNull();
   });
 
   it("shows no feedback while the turn is still streaming", () => {

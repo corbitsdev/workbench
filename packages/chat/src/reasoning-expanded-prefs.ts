@@ -1,3 +1,5 @@
+import { isMyraHistoryAged } from "./aged-history";
+
 const STORAGE_KEY = "cw-myra-reasoning-expanded";
 
 export type ReasoningExpandedMap = Record<string, boolean>;
@@ -34,6 +36,25 @@ export function readReasoningExpanded(
   storage: Storage = localStorage,
 ): boolean {
   return readMap(storage)[messageKey] === true;
+}
+
+/**
+ * Display-time expand state: persisted prefs apply only while the turn is still
+ * fresh. Aged turns (see {@link isMyraHistoryAged}) auto-collapse on reload even
+ * when localStorage still records an expand choice; the user can expand again in
+ * session via ReasoningDisclosure's override.
+ */
+export function readReasoningExpandedForDisplay(
+  messageKey: string,
+  createdAt: string | undefined,
+  storage: Storage = localStorage,
+  nowMs: number = Date.now(),
+): boolean {
+  if (!readReasoningExpanded(messageKey, storage)) return false;
+  if (createdAt !== undefined && isMyraHistoryAged(createdAt, nowMs)) {
+    return false;
+  }
+  return true;
 }
 
 /** Persist per-message reasoning expand/collapse (survives reload). */
