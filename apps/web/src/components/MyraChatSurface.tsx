@@ -34,7 +34,7 @@ import { resolveResumePayload } from "../lib/resume-payload";
 import { useAttachShortcut } from "../hooks/use-attach-shortcut";
 import { ActiveContextPills } from "./ActiveContextPills";
 import { ReviewGate } from "./ReviewGate";
-import { ToolCallProviderMarker } from "./ToolCallProviderMarker";
+import { renderChatToolMarker } from "./ToolCallProviderMarker";
 
 /**
  * Near-full-screen overlay wrapping the whole chat panel while expanded so the
@@ -539,7 +539,7 @@ export function MyraChatSurface({
       summarizeToolCalls={summarize}
       isQuietTool={isCatalogMetaTool}
       isExternalTool={isExternalIntegrationTool}
-      renderToolMarker={(ctx) => <ToolCallProviderMarker call={ctx.call} />}
+      renderToolMarker={renderChatToolMarker}
     />
   );
 }

@@ -30,7 +30,7 @@ import { useCompactToolActivity, useToolSummaryStyle } from "@workbench/ui";
 import { createArtifact } from "@workbench/client";
 import { type AgentActivity } from "@intx/hub-client";
 import { clientOptions } from "../lib/client-options";
-import { ToolCallProviderMarker } from "./ToolCallProviderMarker";
+import { renderChatToolMarker } from "./ToolCallProviderMarker";
 import {
   abortInstanceTurn,
   getOutputFeedback,
@@ -614,7 +614,7 @@ export function AgentChat({
       summarizeToolCalls={summarize}
       isQuietTool={isCatalogMetaTool}
       isExternalTool={isExternalIntegrationTool}
-      renderToolMarker={(ctx) => <ToolCallProviderMarker call={ctx.call} />}
+      renderToolMarker={renderChatToolMarker}
     />
   );
 }

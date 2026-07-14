@@ -1,8 +1,14 @@
-import type { ToolCall } from "@workbench/chat";
+import type { ReactNode } from "react";
+import type { ToolCall, ToolMarkerRenderContext } from "@workbench/chat";
 import { providerKeyForToolLogo } from "../lib/tool-providers";
 import { ProviderLogo } from "./ProviderLogo";
 
 type ToolCallRef = Pick<ToolCall, "name" | "arguments">;
+
+/** Shared `renderToolMarker` for AgentChat and MyraChatSurface. */
+export function renderChatToolMarker(ctx: ToolMarkerRenderContext): ReactNode {
+  return <ToolCallProviderMarker call={ctx.call} />;
+}
 
 /**
  * Brand mark for an external tool row in chat. Falls back to the generic glyph

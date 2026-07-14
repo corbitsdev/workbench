@@ -47,7 +47,11 @@ describe("integrationToolProviderKey", () => {
   it("returns null for workbench-internal providers and local runners", () => {
     expect(integrationToolProviderKey("artifact__memory_save")).toBeNull();
     expect(integrationToolProviderKey("read_file")).toBeNull();
-    expect(integrationToolProviderKey("exa_search")).toBeNull();
+  });
+
+  it("resolves bare integration op ids when the wire name has no prefix", () => {
+    expect(integrationToolProviderKey("exa_search")).toBe("exa");
+    expect(integrationToolProviderKey("linear_get_issue")).toBe("linear");
   });
 });
 
@@ -228,9 +232,10 @@ describe("friendlyToolSummary", () => {
         "@workbench/tools-artifact/artifact:memory_save",
       ),
     ).toBe(false);
-    // Provider-less bare names are local runners / plumbing.
+    // Local runners stay internal; bare integration ops attribute by prefix.
     expect(isExternalIntegrationTool("read_file")).toBe(false);
     expect(isExternalIntegrationTool("ask_principal")).toBe(false);
+    expect(isExternalIntegrationTool("exa_search")).toBe(true);
     // Identity/roster and compose presets are workbench plumbing too.
     expect(isExternalIntegrationTool("agents__list_agents")).toBe(false);
     expect(isExternalIntegrationTool("compose__ab_preset_compose")).toBe(false);
