@@ -1,7 +1,7 @@
 import { getLogger } from "@intx/log";
-import { fetchLinearGraphQL } from "@workbench/tools-linear";
 import type { HubDb } from "../db";
 import type { MemberToolCredential } from "../lib/member-tool-credential";
+import { fetchLinearInboxItems } from "./inbox-sources/linear";
 
 /** A member the intake tick delivers to: their principal, external-account
  * lookup key (`usr_<refId>` inbox address is derived from `userRefId`), and
@@ -129,71 +129,13 @@ export function defineFetchInboxSource(
   };
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-const LINEAR_INTAKE_QUERY = `query InboxIntakeIssues($first: Int!, $filter: IssueFilter) {
-  issues(first: $first, filter: $filter, orderBy: createdAt) {
-    nodes { id identifier title state { name } assignee { name } team { name } url createdAt }
-  }
-}`;
-
-export const fetchLinearIssues: InboxSourceFetcher = async (
-  cred,
-  cutoff,
-  limit,
-  signal,
-) => {
-  const data = await fetchLinearGraphQL(
-    { apiKey: cred.apiKey, ...(cred.baseURL ? { baseUrl: cred.baseURL } : {}) },
-    LINEAR_INTAKE_QUERY,
-    { first: limit, filter: { createdAt: { gt: cutoff.toISOString() } } },
-    signal,
-  );
-  const issues = data.issues;
-  const nodes =
-    isRecord(issues) && Array.isArray(issues.nodes) ? issues.nodes : [];
-  const items: IntakeItem[] = [];
-  for (const node of nodes) {
-    if (!isRecord(node)) continue;
-    const id = typeof node.id === "string" ? node.id : null;
-    const url = typeof node.url === "string" ? node.url : "";
-    if (id === null) continue;
-    const identifier =
-      typeof node.identifier === "string" ? node.identifier : id;
-    const title = typeof node.title === "string" ? node.title : "(untitled)";
-    const state =
-      isRecord(node.state) && typeof node.state.name === "string"
-        ? node.state.name
-        : "unknown";
-    const assignee =
-      isRecord(node.assignee) && typeof node.assignee.name === "string"
-        ? node.assignee.name
-        : "unassigned";
-    items.push({
-      externalId: id,
-      subject: `[${identifier}] ${title}`,
-      body: [
-        `New Linear issue ${identifier}: ${title}`,
-        "",
-        `State: ${state}`,
-        `Assignee: ${assignee}`,
-        url ? `Link: ${url}` : "",
-      ]
-        .filter((line) => line !== "")
-        .join("\n"),
-      url,
-    });
-  }
-  return items;
-};
-
-/** The Linear inbox source — member-scoped, fetch-shaped. Its behavior is
- * unchanged by CL-3577 (only the framework around it moved). */
+/** The Linear inbox source — member-scoped, fetch-shaped. CL-3580 upgraded it
+ * from a workspace-wide "issues created in last 24h" poll to a per-member
+ * viewer-scoped sync (inbox notifications, assigned issues, updates on
+ * assigned issues); see `inbox-sources/linear.ts`. */
 export const linearInboxSource = defineFetchInboxSource(
   "linear",
-  fetchLinearIssues,
+  fetchLinearInboxItems,
 );
 
 /**
