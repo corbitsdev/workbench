@@ -280,10 +280,7 @@ function buildIssueFilter(
   const cycle = optionalString(args.cycle);
   const label = optionalString(args.label);
   const query = optionalString(args.query);
-  const priority =
-    typeof args.priority === "number" && Number.isInteger(args.priority)
-      ? args.priority
-      : null;
+  const priority = optionalPriority(args.priority);
   const updatedAfter =
     optionalString(args.updatedAfter) ?? optionalString(args.createdAfter);
   const filter: Record<string, unknown> = {};
