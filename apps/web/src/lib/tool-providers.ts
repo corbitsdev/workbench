@@ -15,6 +15,8 @@ export const TOOL_PROVIDER_LABELS: Record<string, string> = {
   attio: "Attio",
   linear: "Linear",
   bluesky: "Bluesky",
+  notion: "Notion",
+  slack: "Slack",
 };
 
 /**
@@ -45,6 +47,8 @@ export const PROVIDER_LOGO_FILES: Record<string, string> = {
   bluesky: "bluesky.svg",
   youtube: "youtube.svg",
   xai: "xai_light.svg",
+  notion: "notion-light.svg",
+  slack: "slack.svg",
 };
 
 /**

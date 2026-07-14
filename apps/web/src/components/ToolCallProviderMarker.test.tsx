@@ -75,6 +75,30 @@ describe("ToolCallProviderMarker", () => {
     const [url] = fetchMock.mock.calls[0] as unknown as [string];
     expect(url).toBe("https://brands.test/svg/exa-dark.svg");
   });
+
+  it("fetches Notion and Slack brand assets for attributable tool calls", async () => {
+    const fetchMock = mock(async () => new Response(SVG, { status: 200 }));
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+    renderWithClient(
+      <ToolCallProviderMarker call={{ name: "notion__search" }} />,
+    );
+    screen.getByTestId("tool-provider-logo");
+    await waitFor(() => expect(fetchMock).toHaveBeenCalled());
+    let [url] = fetchMock.mock.calls[0] as unknown as [string];
+    expect(url).toBe("https://brands.test/svg/notion-light.svg");
+
+    cleanup();
+    fetchMock.mock.calls.length = 0;
+
+    renderWithClient(
+      <ToolCallProviderMarker call={{ name: "slack_post_message" }} />,
+    );
+    screen.getByTestId("tool-provider-logo");
+    await waitFor(() => expect(fetchMock).toHaveBeenCalled());
+    [url] = fetchMock.mock.calls[0] as unknown as [string];
+    expect(url).toBe("https://brands.test/svg/slack.svg");
+  });
 });
 
 describe("renderChatToolMarker", () => {

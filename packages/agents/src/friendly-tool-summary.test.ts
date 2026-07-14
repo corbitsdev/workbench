@@ -53,6 +53,13 @@ describe("integrationToolProviderKey", () => {
     expect(integrationToolProviderKey("exa_search")).toBe("exa");
     expect(integrationToolProviderKey("linear_get_issue")).toBe("linear");
   });
+
+  it("resolves Notion and Slack integration tools", () => {
+    expect(integrationToolProviderKey("notion__search")).toBe("notion");
+    expect(integrationToolProviderKey("slack__post_message")).toBe("slack");
+    expect(integrationToolProviderKey("notion_create_page")).toBe("notion");
+    expect(integrationToolProviderKey("slack_search")).toBe("slack");
+  });
 });
 
 describe("toolOperationKey", () => {
