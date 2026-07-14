@@ -2,7 +2,12 @@ import { Link, useNavigate, useParams } from "react-router";
 import { Archive, ArrowLeft, MessageSquare } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { Button, ConfirmButton } from "@workbench/ui";
-import { ArtifactMeta } from "@workbench/artifact";
+import {
+  ArtifactDetailShell,
+  ArtifactMeta,
+  visualForKind,
+} from "@workbench/artifact";
+import type { ArtifactStatus } from "@workbench/shared";
 import { useArchiveArtifact, useArtifact } from "@workbench/client/react";
 
 import { getMe } from "../lib/hub-api";
@@ -14,6 +19,17 @@ import { useActiveWorkbench } from "../lib/active-workbench-context";
 import { useChatLauncher } from "../lib/chat-launcher-context";
 import { buildArtifactMessage } from "../lib/artifact-chat-message";
 import { usePublishActiveContext } from "../lib/active-context-store";
+
+function artifactStatusLabel(status: ArtifactStatus): string {
+  switch (status) {
+    case "approved":
+      return "Approved";
+    case "rejected":
+      return "Rejected";
+    default:
+      return "Draft";
+  }
+}
 
 function CenteredNotice({ children }: { children: React.ReactNode }) {
   return (
@@ -86,12 +102,6 @@ export function ArtifactDetailPage() {
     );
   }
 
-  // `/insights/trace/:runId` resolves a `workflow_run_record` id (see
-  // WorkflowTracePage). `ArtifactWithSession.sessionId` is emitted as null by
-  // the hub today (session enrichment is not wired up — see artifacts.ts), so
-  // this destination is unverified: re-check it resolves a real run once the
-  // hub starts populating sessionId, rather than assuming the old pre-M6
-  // "session" concept lines up with a workflow_run_record id.
   function handleOpenSession(sessionId: string) {
     navigate(`/insights/trace/${sessionId}`);
   }
@@ -100,8 +110,6 @@ export function ArtifactDetailPage() {
     navigate(`/artifacts/${parentId}`);
   }
 
-  // Owner-or-admin gate; the server re-checks. Archiving redirects back to the
-  // gallery, whose list query the mutation invalidates.
   const canArchive =
     meQuery.data?.isAdmin === true ||
     meQuery.data?.isOwner === true ||
@@ -115,23 +123,37 @@ export function ArtifactDetailPage() {
     );
   }
 
+  const kindLabel = resolveKindLabel(artifact.kind);
+  const accent = visualForKind(artifact.kind).fill;
+
   return (
-    <div className="flex h-full min-h-0 flex-col overflow-hidden">
-      <div className="flex items-center gap-3 border-b border-border px-4 py-3">
-        <button
-          type="button"
-          onClick={() => navigate("/artifacts")}
-          aria-label="Back to artifacts"
-          className="grid h-8 w-8 place-items-center rounded-sm text-text-2 outline-none transition-[color,background-color,transform] hover:bg-page hover:text-text focus-visible:ring-2 focus-visible:ring-orange active:scale-[0.97]"
-        >
-          <ArrowLeft size={18} />
-        </button>
-        <div className="min-w-0 flex-1">
-          <h1 className="truncate text-sm font-semibold text-text">
-            {artifact.title}
-          </h1>
+    <ArtifactDetailShell
+      accentClass={accent}
+      header={
+        <div className="flex items-center gap-3">
+          <button
+            type="button"
+            onClick={() => navigate("/artifacts")}
+            aria-label="Back to artifacts"
+            className="grid h-8 w-8 shrink-0 place-items-center rounded-sm text-text-2 outline-none transition-[color,background-color,transform] hover:bg-page hover:text-text focus-visible:ring-2 focus-visible:ring-orange active:scale-[0.97]"
+          >
+            <ArrowLeft size={18} />
+          </button>
+          <div className="min-w-0 flex-1">
+            <h1 className="truncate text-base font-semibold text-text">
+              {artifact.title}
+            </h1>
+            <p className="mt-0.5 font-mono text-[11px] text-text-3">
+              {kindLabel} · v{artifact.version} ·{" "}
+              {artifactStatusLabel(artifact.status)}
+            </p>
+          </div>
+        </div>
+      }
+      rail={
+        <div className="flex flex-col gap-4">
           <ArtifactMeta
-            kindLabel={resolveKindLabel(artifact.kind)}
+            kindLabel={kindLabel}
             createdAt={artifact.createdAt}
             sessionId={artifact.sessionId}
             sessionName={artifact.sessionName}
@@ -140,42 +162,43 @@ export function ArtifactDetailPage() {
             onOpenSession={handleOpenSession}
             onOpenParent={handleOpenParent}
           />
-        </div>
-        {canArchive && (
-          <div className="flex shrink-0 items-center gap-2">
-            {archiveMutation.isError && (
-              <span className="text-xs text-red">
-                Couldn&apos;t archive — try again
-              </span>
-            )}
-            <ConfirmButton
-              variant="ghost"
+          <div className="flex flex-col gap-2">
+            <Button
+              variant="secondary"
               size="sm"
-              confirmLabel="Confirm archive"
-              disabled={archiveMutation.isPending}
-              onConfirm={handleArchive}
-              className="flex items-center gap-1.5"
+              onClick={handleChatAboutArtifact}
+              className="flex w-full items-center justify-center gap-1.5"
             >
-              <Archive size={14} />
-              {archiveMutation.isPending ? "Archiving…" : "Archive"}
-            </ConfirmButton>
+              <MessageSquare size={14} />
+              Chat about this artifact
+            </Button>
+            {canArchive && (
+              <>
+                {archiveMutation.isError && (
+                  <span className="text-xs text-red">
+                    Couldn&apos;t archive — try again
+                  </span>
+                )}
+                <ConfirmButton
+                  variant="ghost"
+                  size="sm"
+                  confirmLabel="Confirm archive"
+                  disabled={archiveMutation.isPending}
+                  onConfirm={handleArchive}
+                  className="flex w-full items-center justify-center gap-1.5"
+                >
+                  <Archive size={14} />
+                  {archiveMutation.isPending ? "Archiving…" : "Archive"}
+                </ConfirmButton>
+              </>
+            )}
           </div>
-        )}
-        <Button
-          variant="secondary"
-          size="sm"
-          onClick={handleChatAboutArtifact}
-          className="flex shrink-0 items-center gap-1.5"
-        >
-          <MessageSquare size={14} />
-          Chat about this artifact
-        </Button>
-      </div>
-      <div className="min-h-0 flex-1 overflow-auto px-4 py-4">
-        <ErrorBoundary>
-          <ArtifactBody artifact={artifact} />
-        </ErrorBoundary>
-      </div>
-    </div>
+        </div>
+      }
+    >
+      <ErrorBoundary>
+        <ArtifactBody artifact={artifact} layout="detail" />
+      </ErrorBoundary>
+    </ArtifactDetailShell>
   );
 }

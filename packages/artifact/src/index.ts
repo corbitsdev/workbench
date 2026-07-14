@@ -32,6 +32,16 @@ export {
 } from "./artifact-workflow-eligibility";
 export { ArtifactViz } from "./ArtifactViz";
 export { ArtifactCard } from "./ArtifactCard";
+export { ArtifactCardPreview } from "./ArtifactCardPreview";
+export { ArtifactDetailShell } from "./ArtifactDetailShell";
+export {
+  ARTIFACT_PREVIEW_FAMILIES,
+  artifactPreviewFamily,
+  labelForArtifactStatus,
+  previewExcerpt,
+  type ArtifactPreviewFamily,
+} from "./artifact-preview-family";
+export { iconForPreviewFamily } from "./artifact-family-icon";
 export {
   ArtifactGallery,
   type ArtifactGalleryProps,

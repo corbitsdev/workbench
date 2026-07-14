@@ -2,7 +2,12 @@
 // and reports clicks via onOpen. No data fetching, no selection state.
 
 import type { GalleryArtifact } from "./types";
-import { ArtifactViz } from "./ArtifactViz";
+import { ArtifactCardPreview } from "./ArtifactCardPreview";
+import {
+  artifactPreviewFamily,
+  labelForArtifactStatus,
+} from "./artifact-preview-family";
+import { iconForPreviewFamily } from "./artifact-family-icon";
 
 interface ArtifactCardProps {
   artifact: GalleryArtifact;
@@ -11,6 +16,23 @@ interface ArtifactCardProps {
   /** Invoked when the card is activated (click / Enter / Space). */
   onOpen?: ((artifact: GalleryArtifact) => void) | undefined;
   experimental?: boolean | undefined;
+}
+
+function statusChipClass(status: GalleryArtifact["status"]): string {
+  switch (status) {
+    case "approved":
+      return "border border-green/40 bg-green/10 text-green";
+    case "rejected":
+      return "border border-red/40 bg-red/10 text-red";
+    default:
+      return "bg-surface-2 text-text-3";
+  }
+}
+
+function indexBadgeClass(fill: string): string {
+  return /\bcream\b/.test(fill)
+    ? "text-charcoal-deep"
+    : "text-white drop-shadow-sm";
 }
 
 export function ArtifactCard({
@@ -26,12 +48,10 @@ export function ArtifactCard({
   const span = experimental
     ? (artifact.experimentalSpan ?? artifact.span)
     : artifact.span;
-  const cardMotion = experimental
-    ? "shadow-sm transition-[transform,border-color,box-shadow] duration-200 ease-out hover:-translate-y-1 hover:border-border-strong hover:shadow-md"
-    : "transition-transform duration-300 ease-spring hover:-translate-y-1.5 hover:rotate-[-1deg] hover:scale-[1.02] hover:border-border-strong";
-  const vizMotion = experimental
-    ? "transition-transform duration-300 ease-out group-hover:scale-[1.03]"
-    : "transition-transform duration-500 ease-spring group-hover:scale-[1.06]";
+  const family = artifactPreviewFamily(artifact.kind);
+  const FamilyIcon = iconForPreviewFamily(family);
+  const cardMotion =
+    "shadow-sm transition-[transform,border-color,box-shadow] duration-200 ease-out hover:-translate-y-1 hover:border-border-strong hover:shadow-md";
   return (
     <div
       role={open ? "button" : undefined}
@@ -49,26 +69,33 @@ export function ArtifactCard({
           : undefined
       }
       className={`group relative flex cursor-pointer flex-col overflow-hidden rounded-lg border border-border bg-surface focus:outline-none focus-visible:ring-2 focus-visible:ring-orange ${cardMotion} ${span}`}
+      data-preview-family={family}
     >
-      <span
-        className={`absolute left-[10px] top-[10px] z-[2] rounded-full px-2 py-[3px] text-[10px] font-bold uppercase tracking-[0.03em] text-white backdrop-blur-[6px] ${
-          experimental ? "bg-[rgba(18,18,18,0.58)]" : "bg-[rgba(0,0,0,0.32)]"
-        }`}
-      >
-        {artifact.label}
-      </span>
+      <div className="absolute inset-x-[10px] top-[10px] z-[2] flex items-start gap-2">
+        <span className="inline-flex min-w-0 flex-1 items-center gap-1 rounded-full bg-[rgba(18,18,18,0.58)] px-2 py-[3px] text-[10px] font-bold uppercase tracking-[0.03em] text-white backdrop-blur-[6px]">
+          <FamilyIcon className="h-3 w-3 shrink-0 opacity-90" aria-hidden />
+          <span className="truncate">{artifact.label}</span>
+        </span>
+        <span
+          className={`shrink-0 rounded-full px-2 py-[3px] text-[10px] font-semibold tracking-[0.02em] backdrop-blur-[6px] ${statusChipClass(artifact.status)}`}
+        >
+          {labelForArtifactStatus(artifact.status)}
+        </span>
+      </div>
       <div
-        className={`relative grid flex-1 place-items-center overflow-hidden ${fill}`}
+        className={`relative min-h-[120px] flex-1 overflow-hidden bg-surface/40 ${fill} bg-opacity-20`}
       >
-        <div className={`h-full w-full ${vizMotion}`}>
-          <ArtifactViz kind={artifact.viz} />
+        <div className="h-full w-full transition-transform duration-300 ease-out group-hover:scale-[1.02]">
+          <ArtifactCardPreview
+            family={family}
+            fill={fill}
+            {...(artifact.previewExcerpt === undefined
+              ? {}
+              : { excerpt: artifact.previewExcerpt })}
+          />
         </div>
         <span
-          className={`absolute bottom-[10px] right-3 font-mono text-[13px] font-bold ${
-            experimental
-              ? "text-white drop-shadow-sm"
-              : "text-[rgba(255,255,255,0.85)]"
-          }`}
+          className={`absolute bottom-[10px] right-3 font-mono text-[13px] font-bold ${indexBadgeClass(fill)}`}
         >
           {artifact.label[0]}
           {index.toString().padStart(2, "0")}
@@ -81,7 +108,7 @@ export function ArtifactCard({
         <div className="mt-0.5 flex items-center gap-[7px] font-mono text-[11px] text-text-3">
           <span>{artifact.from}</span>·<span>{artifact.time}</span>
         </div>
-        {artifact.provenanceTone !== "unknown" && (
+        {(artifact.provenanceTone ?? "origin") !== "unknown" && (
           <div className="mt-1">
             <span
               className={`inline-flex max-w-full items-center truncate rounded-sm bg-surface-2 px-2 py-0.5 text-[10px] font-semibold tracking-[0.03em] text-text-3 ${

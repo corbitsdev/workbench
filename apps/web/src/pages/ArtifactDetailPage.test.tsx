@@ -134,6 +134,7 @@ describe("ArtifactDetailPage", () => {
     const view = renderAt("art-1");
     expect(view.getByRole("heading", { name: "Acme One-Pager" })).toBeDefined();
     expect(view.getByTestId("body").textContent).toBe("Acme One-Pager");
+    expect(view.getByTestId("artifact-detail-shell")).toBeDefined();
   });
 
   it("shows a not-found state when the artifact fetch fails", () => {

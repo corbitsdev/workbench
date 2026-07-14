@@ -57,6 +57,12 @@ function PreviewFallback({
 
 interface ArtifactBodyProps {
   artifact: ArtifactBodyArtifact;
+  /** `detail` uses full-width stage layouts (artifact detail page / modal). */
+  layout?: "inline" | "detail";
+}
+
+function proseClass(layout: "inline" | "detail"): string {
+  return layout === "detail" ? "max-w-none w-full" : "max-w-[68ch]";
 }
 
 // The structured brief lives at source.brief; source is an opaque jsonb bag, so
@@ -117,8 +123,14 @@ function LinkedInBody({
 // One shared prose surface for every document-kind artifact. GFM tables, lists,
 // headings, code, and citations are all handled by the shared <Markdown> path —
 // the artifact body no longer forks on whether the content "looks like a table".
-function OnePagerBody({ body }: { body: string }) {
-  return <Markdown className="max-w-[68ch]">{body}</Markdown>;
+function OnePagerBody({
+  body,
+  layout = "inline",
+}: {
+  body: string;
+  layout?: "inline" | "detail";
+}) {
+  return <Markdown className={proseClass(layout)}>{body}</Markdown>;
 }
 
 function DownloadCsvLink({ artifactId }: { artifactId: string }) {
@@ -444,7 +456,10 @@ function WebSiteBody({ content }: { content: string }) {
   );
 }
 
-export default function ArtifactBody({ artifact }: ArtifactBodyProps) {
+export default function ArtifactBody({
+  artifact,
+  layout = "inline",
+}: ArtifactBodyProps) {
   const body = artifact.content;
   const type = artifact.kind;
   const brief = extractBrief(artifact.source);
@@ -457,11 +472,11 @@ export default function ArtifactBody({ artifact }: ArtifactBodyProps) {
   switch (type) {
     // uploaded binaries (file/folder import) — served by the download route
     case "image": {
-      if (!artifact.id) return <OnePagerBody body={body} />;
+      if (!artifact.id) return <OnePagerBody body={body} layout={layout} />;
       return <ImageBody artifactId={artifact.id} filename={uploadFilename} />;
     }
     case "file": {
-      if (!artifact.id) return <OnePagerBody body={body} />;
+      if (!artifact.id) return <OnePagerBody body={body} layout={layout} />;
       if (isCsvUpload(artifact.source, uploadFilename)) {
         return (
           <UploadedCsvBody artifactId={artifact.id} filename={uploadFilename} />
@@ -500,13 +515,13 @@ export default function ArtifactBody({ artifact }: ArtifactBodyProps) {
     case "customer-quote-pulls":
     case "pain-points":
     case "call-transcript":
-      return <OnePagerBody body={body} />;
+      return <OnePagerBody body={body} layout={layout} />;
     // battlecard
     case "battlecard":
-      return <OnePagerBody body={body} />;
+      return <OnePagerBody body={body} layout={layout} />;
     // A/B comparison — content is JSON.stringify(ComparisonResult)
     case "ab-comparison":
-      return <CompareBody content={body} />;
+      return <CompareBody content={body} layout={layout} />;
     // presentation
     case "presentation": {
       let isValidUrl = false;
@@ -540,17 +555,17 @@ export default function ArtifactBody({ artifact }: ArtifactBodyProps) {
     case "research": {
       const parsedBrief = parseResearchBrief(brief);
       if (parsedBrief !== null) {
-        return <ResearchBody brief={parsedBrief} body={body} />;
+        return <ResearchBody brief={parsedBrief} body={body} layout={layout} />;
       }
       if (body.trim().length === 0) {
         return (
           <PreviewFallback message="This research artifact has no readable content — the underlying data couldn't be parsed." />
         );
       }
-      return <OnePagerBody body={body} />;
+      return <OnePagerBody body={body} layout={layout} />;
     }
     // fallback
     default:
-      return <OnePagerBody body={body} />;
+      return <OnePagerBody body={body} layout={layout} />;
   }
 }
