@@ -2,12 +2,15 @@ import { describe, expect, test } from "bun:test";
 import { type } from "arktype";
 import {
   CHANGELOG,
+  CHANGELOG_NAV_ROUTES,
   ChangelogReleaseSchema,
   compareVersions,
   hasUnseenChangelog,
   latestChangelogRelease,
   latestChangelogVersion,
 } from "./changelog";
+
+const allowedNav = new Set<string>(CHANGELOG_NAV_ROUTES);
 
 describe("CHANGELOG", () => {
   test("every release validates against the release schema", () => {
@@ -28,6 +31,18 @@ describe("CHANGELOG", () => {
   test("every release has at least one entry", () => {
     for (const release of CHANGELOG) {
       expect(release.entries.length).toBeGreaterThan(0);
+    }
+  });
+
+  test("every entry.to is listed in CHANGELOG_NAV_ROUTES", () => {
+    for (const release of CHANGELOG) {
+      for (const entry of release.entries) {
+        if (entry.to === undefined) continue;
+        expect(
+          allowedNav.has(entry.to),
+          `changelog entry "${entry.title}" uses unknown route ${entry.to}`,
+        ).toBe(true);
+      }
     }
   });
 

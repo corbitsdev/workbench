@@ -3,7 +3,8 @@ import { type } from "arktype";
 /**
  * The "what's new" changelog: a hand-maintained, additive list of releases
  * shown in the bottom pop-up, the walkthrough dialog, and the Settings page.
- * A new release is a single additive entry here — no other file changes.
+ * A new release is a single additive entry here. New `entry.to` paths must also
+ * be added to `CHANGELOG_NAV_ROUTES` and covered by `router.deep-link.test.tsx`.
  */
 
 export const ChangelogEntrySchema = type({
@@ -20,6 +21,18 @@ export const ChangelogReleaseSchema = type({
   entries: ChangelogEntrySchema.array(),
 });
 export type ChangelogRelease = typeof ChangelogReleaseSchema.infer;
+
+/**
+ * Allowed `entry.to` targets for "Take me there" in the what's-new dialog.
+ * Must match a route in `apps/web/src/router.tsx` (see `router.deep-link.test.tsx`).
+ */
+export const CHANGELOG_NAV_ROUTES = [
+  "/inbox",
+  "/chats",
+  "/artifacts",
+  "/settings",
+  "/owner/capabilities",
+] as const;
 
 // Newest first.
 export const CHANGELOG: readonly ChangelogRelease[] = [
@@ -44,7 +57,7 @@ export const CHANGELOG: readonly ChangelogRelease[] = [
         title: "Myra chat upgrades",
         description:
           "Multi-thread chat, generative UI blocks, paste and attachments, and a rebuilt activity transcript.",
-        to: "/myra",
+        to: "/chats",
       },
       {
         title: "Artifacts gallery and detail",

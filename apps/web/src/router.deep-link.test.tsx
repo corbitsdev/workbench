@@ -1,7 +1,12 @@
 /// <reference types="bun" />
+import "./test-setup";
 import { describe, expect, it } from "bun:test";
 import { matchRoutes } from "react-router";
-import { deepLinkKinds, deepLinkPath } from "@workbench/shared";
+import {
+  CHANGELOG_NAV_ROUTES,
+  deepLinkKinds,
+  deepLinkPath,
+} from "@workbench/shared";
 import { router } from "./router";
 
 // Guards the deepLink helper against the web router: every kind the helper can
@@ -22,6 +27,19 @@ describe("deepLink kinds resolve against the web router", () => {
       expect(
         matched,
         `no route matches ${kind} path ${pathname}`,
+      ).not.toBeNull();
+    },
+  );
+});
+
+describe("changelog nav routes resolve against the web router", () => {
+  it.each(CHANGELOG_NAV_ROUTES.map((path) => [path]))(
+    "changelog nav %s matches a registered route",
+    (path) => {
+      const matched = matchRoutes(router.routes, path);
+      expect(
+        matched,
+        `no route matches changelog nav path ${path}`,
       ).not.toBeNull();
     },
   );
