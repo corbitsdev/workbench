@@ -454,6 +454,9 @@ export function loadConfig() {
       // CL-3586: same additive pattern for Attio — verifies `Attio-Signature`
       // and reuses the poller's task upsert. Unset ⇒ route not mounted.
       attioWebhookSecret: optionalEnv("ATTIO_WEBHOOK_SECRET"),
+      // CL-3581: Slack Events API receiver. Verifies the `X-Slack-Signature`
+      // v0 HMAC against this app signing secret. Unset ⇒ route not mounted.
+      slackSigningSecret: optionalEnv("SLACK_SIGNING_SECRET"),
     },
     // Owner-managed feature grants (scheduler/triage/tasks-reconciler) replace
     // the env-only kill switches above as the day-to-day toggle; the env vars

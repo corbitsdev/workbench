@@ -1,5 +1,6 @@
 import { type } from "arktype";
 import { Hono } from "hono";
+import { getLogger } from "@intx/log";
 import { describeRoute, resolver } from "hono-openapi";
 import { type GrantStore } from "@intx/authz";
 import { schema as intxSchema } from "@intx/db";
@@ -37,6 +38,8 @@ import {
 import type { HubDb } from "../db";
 import { workflowRun } from "../db/schema";
 import { createOwnerGrantGuard } from "../lib/admin-grant";
+import { resolveSlackCredential } from "../lib/slack-api-client";
+import { joinAllPublicChannels } from "../lib/slack-channel-autojoin";
 import { encryptSecret } from "../lib/credential-crypto";
 import {
   listOwnerCapabilityStates,
@@ -581,6 +584,24 @@ export function createOwnerRouter(
           effect: parsed.enabled ? "allow" : "none",
         },
       });
+
+      // CL-3581: enabling Slack sweeps the bot into every public channel so
+      // mention events start flowing without per-channel invites. Best-effort —
+      // enablement itself never fails on a Slack API error.
+      if (parsed.enabled && catalogEntry.key === "slack") {
+        const credential = await resolveSlackCredential(db, rootTenantId);
+        if (credential) {
+          joinAllPublicChannels(
+            credential,
+            AbortSignal.timeout(60_000),
+          ).catch((err) => {
+            getLogger(["routes", "owner"]).warn(
+              "slack auto-join sweep failed after enablement; mentions only flow in channels the bot is in",
+              { err },
+            );
+          });
+        }
+      }
 
       return c.json({ key: catalogEntry.key, enabled: parsed.enabled });
     },

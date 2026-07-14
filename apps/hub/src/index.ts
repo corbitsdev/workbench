@@ -173,6 +173,7 @@ import { createMeWebhookTriggersRouter } from "./routes/me-webhook-triggers";
 import { createWebhookTriggerFireRouter } from "./routes/webhook-trigger-fire";
 import { createLinearWebhookRouter } from "./routes/webhooks-linear";
 import { createAttioWebhookRouter } from "./routes/webhooks-attio";
+import { createSlackWebhookRouter } from "./routes/webhooks-slack";
 import { deriveUserMailAddress } from "@workbench/hub-agent";
 import { createMeProfileRouter } from "./routes/me-profile";
 import { readMemberPreferences } from "./lib/member-preferences";
@@ -1460,6 +1461,24 @@ if (config.inboxIntake.attioWebhookSecret) {
       listMembers: () => listInboxMembers(),
       isSourceEnabledForTenant: (tenantId, sourceKey) =>
         isWorkspaceInboxSourceEnabledForTenant(db, tenantId, sourceKey),
+    }),
+  );
+}
+
+// Public Slack Events API receiver (CL-3581): mentions of mapped members land
+// in their inbox. Mounted only when the app signing secret is configured;
+// authenticated by the `X-Slack-Signature` v0 HMAC.
+if (config.inboxIntake.slackSigningSecret) {
+  app.route(
+    "/",
+    createSlackWebhookRouter({
+      db,
+      signingSecret: config.inboxIntake.slackSigningSecret,
+      listMembers: () => listInboxMembers(),
+      isSourceEnabledForTenant: (tenantId, sourceKey) =>
+        isWorkspaceInboxSourceEnabledForTenant(db, tenantId, sourceKey),
+      mailboxEventBus,
+      mailboxTriage,
     }),
   );
 }
