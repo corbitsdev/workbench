@@ -272,7 +272,7 @@ export function ChatThread({
       className={cn(
         // Inter-turn spacing only — visibly larger than any intra-turn gap
         // (AgentTurn owns those), so whitespace signals turn boundaries.
-        "flex min-h-0 flex-1 flex-col overflow-y-auto bg-bg",
+        "flex min-h-0 flex-1 flex-col overflow-y-auto bg-page",
         CHAT_THREAD_TURN_GAP,
         "px-4 py-4 sm:px-7",
         className,

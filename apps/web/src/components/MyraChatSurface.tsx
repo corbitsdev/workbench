@@ -90,7 +90,7 @@ export function ExpandedChatOverlay({
           animate={{ opacity: 1, scale: 1 }}
           exit={{ opacity: 0, scale: 0.98 }}
           transition={{ duration: 0.18, ease: [0.23, 1, 0.32, 1] }}
-          className="fixed inset-4 z-50 flex flex-col overflow-hidden rounded-panel border border-border bg-bg shadow-[0_10px_40px_rgba(0,0,0,0.4)]"
+          className="fixed inset-4 z-50 flex flex-col overflow-hidden rounded-panel border border-border bg-page shadow-[0_10px_40px_rgba(0,0,0,0.4)]"
         >
           <div className="flex shrink-0 items-center justify-end border-b border-border px-4 py-2 sm:px-7">
             <button

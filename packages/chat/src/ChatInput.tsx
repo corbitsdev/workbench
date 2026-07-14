@@ -405,7 +405,7 @@ export function ChatInput({
   return (
     <div
       className={cn(
-        "shrink-0 border-t border-border/60 bg-bg px-4 py-3 sm:px-7",
+        "shrink-0 border-t border-border/60 bg-page px-4 py-3 sm:px-7",
         dragActive && "ring-2 ring-inset ring-orange",
         className,
       )}
