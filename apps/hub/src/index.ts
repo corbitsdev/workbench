@@ -128,7 +128,14 @@ import {
 } from "./services/sync-personal-agent";
 import { createMembersRouter } from "./routes/members";
 import { createMyraThreadsRouter } from "./routes/myra-threads";
-import { recordMyraThreadActivity } from "./services/myra-threads";
+import {
+  recordMyraThreadActivity,
+  resolveMyraDefinition,
+} from "./services/myra-threads";
+import { createGranolaCallFanout } from "./services/granola-call-fanout";
+import { createGranolaCallPipeline } from "./services/granola-call-pipeline";
+import { createGranolaWorkspaceInboxSource } from "./services/inbox-sources/granola-workspace";
+import { INBOX_SOURCE_REGISTRY } from "./services/inbox-source-registry";
 import {
   createMailboxTriage,
   sweepStaleTriageInstances,
@@ -1686,9 +1693,32 @@ const listInboxMembers = async () => {
   }));
 };
 
+const granolaFanout = createGranolaCallFanout({
+  db,
+  grantStore,
+  rootTenantId,
+  rootTenantDomain: config.rootTenant.domain,
+  mailboxEventBus,
+});
+const granolaPipeline = createGranolaCallPipeline({
+  db,
+  rootTenantDomain: config.rootTenant.domain,
+  resolveInferenceSource: async (tenantId) => {
+    const def = await resolveMyraDefinition(db, tenantId);
+    if (!def) return null;
+    const res = await resolveInstanceSourcesFromDefinition(db, tenantId, def, null);
+    return res.ok ? (res.sources[0] ?? null) : null;
+  },
+  fanout: granolaFanout,
+});
+
 const inboxIntake = createInboxIntake({
   db,
   grantStore,
+  registry: [
+    ...INBOX_SOURCE_REGISTRY,
+    createGranolaWorkspaceInboxSource({ pipeline: granolaPipeline }),
+  ],
   listMembers: listInboxMembers,
   mailboxEventBus,
   mailboxTriage,
@@ -1701,6 +1731,8 @@ const inboxIntake = createInboxIntake({
       config.scheduler.enabled,
     ),
   isWorkspaceSourceEnabled: (tenantId, sourceKey) =>
+    isWorkspaceInboxSourceEnabledForTenant(db, tenantId, sourceKey),
+  isMemberSourceEnabled: (tenantId, sourceKey) =>
     isWorkspaceInboxSourceEnabledForTenant(db, tenantId, sourceKey),
 });
 inboxIntake.start();
