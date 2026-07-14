@@ -24,6 +24,43 @@ export type ChangelogRelease = typeof ChangelogReleaseSchema.infer;
 // Newest first.
 export const CHANGELOG: readonly ChangelogRelease[] = [
   {
+    version: "0.6.95",
+    date: "2026-07-14",
+    title: "Inbox-led GTM workspace (owner setup required for automations)",
+    entries: [
+      {
+        title: "Inbox home and Now feed",
+        description:
+          "Workbench opens on your inbox with a prioritized Now feed. Live intake, triage, and scheduled automations only run after your owner enables them — see Settings for what is available to you.",
+        to: "/inbox",
+      },
+      {
+        title: "Native tasks and notifications",
+        description:
+          "Tasks and workflow completion mail live in Workbench when your workspace has them enabled.",
+        to: "/inbox",
+      },
+      {
+        title: "Myra chat upgrades",
+        description:
+          "Multi-thread chat, generative UI blocks, paste and attachments, and a rebuilt activity transcript.",
+        to: "/myra",
+      },
+      {
+        title: "Artifacts gallery and detail",
+        description:
+          "Richer previews and a rebuilt artifact detail experience for workflow outputs.",
+        to: "/artifacts",
+      },
+      {
+        title: "Owner capabilities",
+        description:
+          "Owners configure inbox sources, automation features, and API keys from Capabilities before members see external intake or auto-triage.",
+        to: "/owner/capabilities",
+      },
+    ],
+  },
+  {
     version: "0.6.0",
     date: "2026-07-11",
     title: "Auto-run: your inbox does more of the work",
