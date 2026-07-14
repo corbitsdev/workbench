@@ -18,6 +18,7 @@ import {
   flattenOrgRow,
   flattenPersonRow,
   flattenTeamRow,
+  assertNoUngatedPeopleSelectSpend,
   jsonResult,
   parseArgs,
   parseResponse,
@@ -98,7 +99,7 @@ const SearchPeopleArgs = type({
 });
 
 function peopleSelectAttributes(revealEmail: boolean): string[] {
-  const attrs = ["name", "job_title"];
+  const attrs = ["name", "job_title", "linkedin_url"];
   if (revealEmail) {
     attrs.push("email");
   }
@@ -155,6 +156,10 @@ const OrgSignalsArgs = type({
 });
 
 const JsonBodyArgs = type({ body: "Record<string, unknown>" });
+const PostPeopleArgs = type({
+  body: "Record<string, unknown>",
+  "confirmEmailRevealSpend?": "boolean",
+});
 const StringArrayArgs = type({ terms: "string[]" });
 const TitleLookupArgs = type({ titles: "string[]" });
 const SupportArgs = type({
@@ -621,7 +626,12 @@ export async function postPeople(
   args: Record<string, unknown>,
   signal: AbortSignal,
 ): Promise<string> {
-  const parsed = parseArgs(JsonBodyArgs, args);
+  const parsed = parseArgs(PostPeopleArgs, args);
+  assertNoUngatedPeopleSelectSpend(
+    "sumble_post_people",
+    parsed.body,
+    parsed.confirmEmailRevealSpend,
+  );
   return jsonResult(
     await sumblePostAsync(config, "/people", parsed.body, signal),
   );

@@ -188,9 +188,11 @@ export const SUMBLE_POST_TEAMS_DEFINITION = objectTool(
 
 export const SUMBLE_POST_PEOPLE_DEFINITION = objectTool(
   "sumble_post_people",
-  "Full v9 POST /people request (async polled). Pass the API body verbatim.",
-  { body: { type: "object" } },
-  ["body"],
+  "Full v9 POST /people request (async polled). Pass the API body verbatim. Email/phone in select requires confirmEmailRevealSpend.",
+  {
+    body: { type: "object" },
+    confirmEmailRevealSpend: { type: "boolean" },
+  },
 );
 
 export const SUMBLE_POST_JOBS_DEFINITION = objectTool(

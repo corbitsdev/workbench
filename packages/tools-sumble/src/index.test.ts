@@ -141,8 +141,18 @@ describe("v9 argument-to-body mapping", () => {
     const body = bodyOf(stub);
     expect(body.people).toEqual([{ email: "ceo@acme.com" }]);
     expect(body.select).toEqual({
-      attributes: ["name", "job_title"],
+      attributes: ["name", "job_title", "linkedin_url"],
     });
+  });
+
+  it("post_people blocks email in select without confirmEmailRevealSpend", async () => {
+    const stub = makeFetchStub({ people: [] });
+    const result = await runTool(stub, "sumble_post_people", {
+      body: { select: { attributes: ["email"] } },
+    });
+    expect(result.isError).toBe(true);
+    expect(result.content).toContain("confirmEmailRevealSpend");
+    expect(stub.mock.calls).toHaveLength(0);
   });
 
   it("find_technologies sends query string to POST /technologies/find", async () => {

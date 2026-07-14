@@ -12,6 +12,30 @@ export function jsonResult(value: unknown): string {
   return JSON.stringify(value);
 }
 
+export function assertNoUngatedPeopleSelectSpend(
+  toolLabel: string,
+  body: Record<string, unknown>,
+  confirmEmailRevealSpend: boolean | undefined,
+): void {
+  if (confirmEmailRevealSpend === true) {
+    return;
+  }
+  const select = body.select;
+  if (select === null || typeof select !== "object") {
+    return;
+  }
+  const attrs = (select as { attributes?: unknown }).attributes;
+  if (!Array.isArray(attrs)) {
+    return;
+  }
+  const paid = attrs.filter((a) => a === "email" || a === "phone");
+  if (paid.length > 0) {
+    throw new Error(
+      `${toolLabel}: select.attributes including ${paid.join(", ")} can incur credits; pass confirmEmailRevealSpend: true or use sumble_search_people.`,
+    );
+  }
+}
+
 export function parseArgs<T>(
   schema: (value: unknown) => T | type.errors,
   args: Record<string, unknown>,
