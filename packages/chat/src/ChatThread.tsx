@@ -8,6 +8,7 @@ import type { UIBlock, UIResponse } from "@workbench/blocks";
 import type { FeedbackSubjectKind } from "./feedback-types";
 import { extractImageURLs } from "./url-image";
 import { UrlImageCard } from "./UrlImageCard";
+import { CHAT_THREAD_PADDING, CHAT_THREAD_TURN_GAP } from "./messageRhythm";
 
 function byTimestamp(a: string, b: string): number {
   if (a < b) return -1;
@@ -271,7 +272,9 @@ export function ChatThread({
       className={cn(
         // Inter-turn spacing only — visibly larger than any intra-turn gap
         // (AgentTurn owns those), so whitespace signals turn boundaries.
-        "flex min-h-0 flex-1 flex-col gap-6 overflow-y-auto p-4",
+        "flex min-h-0 flex-1 flex-col overflow-y-auto",
+        CHAT_THREAD_TURN_GAP,
+        CHAT_THREAD_PADDING,
         className,
       )}
     >

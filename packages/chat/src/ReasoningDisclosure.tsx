@@ -2,6 +2,13 @@ import { useEffect, useState, type ReactNode } from "react";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { ChevronRight } from "lucide-react";
 import { cn, Markdown } from "@workbench/ui";
+import {
+  CHAT_MARKER_SLOT,
+  CHAT_TRACE_DETAIL_PANEL,
+  CHAT_TRACE_LABEL,
+  CHAT_TRACE_MUTED_BODY,
+  CHAT_TRACE_ROW,
+} from "./messageRhythm";
 
 // Height/opacity reveal matching ToolNarrative's ExpandReveal: reduced-motion
 // users get an instant toggle with no AnimatePresence. Collapsed-by-default
@@ -78,7 +85,7 @@ export function ReasoningDisclosure({
   const open = sessionOverride ?? persisted;
 
   return (
-    <div className="flex w-full flex-col gap-1" data-testid="reasoning-row">
+    <div className="flex w-full flex-col gap-2" data-testid="reasoning-row">
       <button
         type="button"
         onClick={() => {
@@ -88,7 +95,9 @@ export function ReasoningDisclosure({
         }}
         aria-label={open ? "Collapse reasoning" : "Expand reasoning"}
         className={cn(
-          "relative flex items-start gap-2.5 self-start text-left text-sm text-text-3",
+          "relative flex self-start text-left",
+          CHAT_TRACE_ROW,
+          CHAT_TRACE_LABEL,
           "transition-[transform,color] duration-100 ease-[cubic-bezier(0.23,1,0.32,1)]",
           "hover:text-text-2 active:scale-[0.97] cursor-pointer",
           // Expand the hit area to ~40px without inflating the visual height.
@@ -98,7 +107,12 @@ export function ReasoningDisclosure({
       >
         {/* Marker slot — pulses while streaming, empty when settled, keeping
             the reasoning row aligned with the tool rows below it. */}
-        <span className="mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center">
+        <span
+          className={cn(
+            "mt-0.5 flex items-center justify-center",
+            CHAT_MARKER_SLOT,
+          )}
+        >
           {streaming ? (
             <span
               className="h-1.5 w-1.5 animate-pulse rounded-full bg-orange motion-reduce:animate-none"
@@ -118,10 +132,10 @@ export function ReasoningDisclosure({
         </span>
       </button>
       <ReasoningReveal open={open} reduceMotion={reduceMotion === true}>
-        <div className="ml-[26px] border-l border-border pl-3">
+        <div className={CHAT_TRACE_DETAIL_PANEL}>
           <Markdown
             mode={streaming ? "streaming" : "static"}
-            className="text-xs leading-relaxed text-text-3"
+            className={CHAT_TRACE_MUTED_BODY}
           >
             {reasoning}
           </Markdown>

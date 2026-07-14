@@ -83,7 +83,8 @@ describe("MessageBubble", () => {
     const { container } = render(<MessageBubble message={message} />);
     const body = container.querySelector(".bg-orange") as HTMLElement;
     expect(body).not.toBeNull();
-    expect(body.className).toContain("max-w-[80%]");
+    expect(body.className).toContain("max-w-[85%]");
+    expect(body.className).toContain("px-3.5");
     expect(body.className).toContain("rounded-lg");
   });
 
@@ -116,7 +117,8 @@ describe("MessageBubble", () => {
     const body = container.querySelector(".bg-surface-2") as HTMLElement;
     expect(body).not.toBeNull();
     expect(body.className).toContain("italic");
-    expect(body.className).toContain("max-w-[80%]");
+    expect(body.className).toContain("max-w-[85%]");
+    expect(body.className).toContain("px-3.5");
   });
 
   it("renders agent message with markdown support", () => {

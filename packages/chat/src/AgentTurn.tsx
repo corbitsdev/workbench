@@ -5,6 +5,7 @@ import { MessageBubble } from "./MessageBubble";
 import { ReasoningDisclosure } from "./ReasoningDisclosure";
 import { ToolNarrative, type ToolNarrativeProps } from "./ToolNarrative";
 import { MessageFeedback } from "./MessageFeedback";
+import { CHAT_TRACE_STACK, CHAT_TURN_STACK } from "./messageRhythm";
 import type { FeedbackSubjectKind } from "./feedback-types";
 import type { UIBlock, UIResponse } from "@workbench/blocks";
 
@@ -76,7 +77,7 @@ export function AgentTurn({
 
   return (
     <div
-      className="group flex w-full flex-col gap-2"
+      className={cn("group", CHAT_TURN_STACK)}
       data-role="agent"
       data-testid="agent-turn"
     >
@@ -84,10 +85,7 @@ export function AgentTurn({
         <span className="text-xs text-text-3">From: {senderLabel}</span>
       )}
       {(hasReasoning || hasTools) && (
-        <div
-          className={cn("flex flex-col gap-2 pl-1")}
-          data-testid="agent-trace"
-        >
+        <div className={CHAT_TRACE_STACK} data-testid="agent-trace">
           {hasReasoning && (
             <ReasoningDisclosure
               reasoning={message.reasoning ?? ""}
