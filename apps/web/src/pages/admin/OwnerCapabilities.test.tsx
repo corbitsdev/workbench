@@ -21,8 +21,12 @@ let oauthCapabilitiesOutcome: Outcome = {
   kind: "resolve",
   data: { capabilities: [] },
 };
+let inboxSourcesOutcome: Outcome = { kind: "resolve", data: { sources: [] } };
 const setOwnerFeatureEnabledMock = mock(
   async (name: string, enabled: boolean) => ({ name, enabled }),
+);
+const setOwnerInboxSourceEnabledMock = mock(
+  async (key: string, enabled: boolean) => ({ key, enabled }),
 );
 const setOwnerCapabilityEnabledMock = mock(
   async (provider: string, enabled: boolean) => ({ provider, enabled }),
@@ -45,6 +49,9 @@ mock.module("../../lib/hub-api", () => ({
   getOwnerCapabilities: () => resolveOutcome(oauthCapabilitiesOutcome),
   setOwnerCapabilityEnabled: (provider: string, enabled: boolean) =>
     setOwnerCapabilityEnabledMock(provider, enabled),
+  getOwnerInboxSources: () => resolveOutcome(inboxSourcesOutcome),
+  setOwnerInboxSourceEnabled: (key: string, enabled: boolean) =>
+    setOwnerInboxSourceEnabledMock(key, enabled),
 }));
 
 import { OwnerCapabilities } from "./OwnerCapabilities";
@@ -66,8 +73,10 @@ afterEach(() => {
   credentialsOutcome = { kind: "resolve", data: [] };
   featuresOutcome = { kind: "resolve", data: { features: [] } };
   oauthCapabilitiesOutcome = { kind: "resolve", data: { capabilities: [] } };
+  inboxSourcesOutcome = { kind: "resolve", data: { sources: [] } };
   setOwnerFeatureEnabledMock.mockClear();
   setOwnerCapabilityEnabledMock.mockClear();
+  setOwnerInboxSourceEnabledMock.mockClear();
 });
 
 describe("OwnerCapabilities", () => {
@@ -176,6 +185,32 @@ describe("OwnerCapabilities", () => {
       expect(setOwnerFeatureEnabledMock).toHaveBeenCalledWith(
         "scheduler",
         true,
+      ),
+    );
+  });
+
+  it("lists inbox sources and toggles one, calling the hub API with the flipped state", async () => {
+    inboxSourcesOutcome = {
+      kind: "resolve",
+      data: {
+        sources: [
+          {
+            key: "granola",
+            label: "Granola",
+            description: "Call notes from meetings.",
+            enabled: true,
+          },
+        ],
+      },
+    };
+    renderCapabilities();
+    await waitFor(() => expect(screen.getByText("Granola")));
+    expect(screen.getByText("Inbox sources"));
+    screen.getByRole("button", { name: "Disable" }).click();
+    await waitFor(() =>
+      expect(setOwnerInboxSourceEnabledMock).toHaveBeenCalledWith(
+        "granola",
+        false,
       ),
     );
   });
