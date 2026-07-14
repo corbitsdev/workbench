@@ -13,6 +13,7 @@ import type { TaskRow } from "../../db/schema";
 import { readMemberPreferences } from "../../lib/member-preferences";
 import type {
   InboxSourceRegistryEntry,
+  InboxSourceTickResult,
   MemberInboxSourceContext,
 } from "../inbox-source-registry";
 
@@ -327,7 +328,9 @@ function attioToolsConfig(credential: {
   return config;
 }
 
-async function handle(ctx: MemberInboxSourceContext): Promise<void> {
+async function handle(
+  ctx: MemberInboxSourceContext,
+): Promise<InboxSourceTickResult | undefined> {
   const config = attioToolsConfig(ctx.credential);
   const prefs = await readMemberPreferences(
     ctx.db,
@@ -345,6 +348,7 @@ async function handle(ctx: MemberInboxSourceContext): Promise<void> {
     );
   }
 
+  const since = ctx.lastPollAt ?? ctx.cutoff;
   const attioTasks = await fetchAttioTasks(
     config,
     ctx.perSourceLimit,
@@ -357,7 +361,7 @@ async function handle(ctx: MemberInboxSourceContext): Promise<void> {
         ctx.db,
         ctx.member,
         attioTask,
-        ctx.lastPollAt ?? ctx.cutoff,
+        since,
         selfAttioMemberId,
       );
     } catch (err) {
@@ -372,6 +376,16 @@ async function handle(ctx: MemberInboxSourceContext): Promise<void> {
 
   const seenIds = new Set(attioTasks.map((t) => t.id.task_id));
   await reconcileDeletions(ctx.db, ctx.member, config, seenIds, ctx.signal);
+
+  // A full, limit-capped page may hide tasks still unseen behind the page
+  // boundary (`/v2/tasks` has no updated-since filter, so a full page is not
+  // necessarily "everything new"). Don't advance the cursor in that case —
+  // the next tick re-fetches the same window and the sourceRef dedupe in
+  // `syncOneTask`/`reconcileDeletions` absorbs the overlap.
+  if (attioTasks.length >= ctx.perSourceLimit) {
+    return { nextCursor: since };
+  }
+  return undefined;
 }
 
 /**
@@ -386,6 +400,6 @@ export const attioTaskSyncInboxSource: InboxSourceRegistryEntry = {
   scope: "member",
   handle: async (context) => {
     if (context.scope !== "member") return;
-    await handle(context);
+    return handle(context);
   },
 };

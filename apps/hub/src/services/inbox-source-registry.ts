@@ -107,6 +107,22 @@ export type InboxSourceContext =
   | WorkspaceInboxSourceContext;
 
 /**
+ * A handler's report of where its next poll should resume from. `undefined`
+ * (or a bare `void` return) tells the core to advance the cursor to the
+ * START of the tick that just ran (`tickStart`, not completion time — so
+ * items created while the handler was in flight are never skipped). A
+ * handler that may have truncated its window (a full, limit-capped page)
+ * MUST instead return `{ nextCursor: <unchanged since> }` so the core does
+ * NOT advance the cursor — the next tick re-fetches the same window and
+ * dedupe (externalId / sourceRef) absorbs the overlap. Without this, a
+ * limit-capped page would advance past items still sitting beyond the page
+ * boundary, making them unreachable forever.
+ */
+export interface InboxSourceTickResult {
+  nextCursor?: Date;
+}
+
+/**
  * One registered inbox source. Adding a source is purely additive: export one
  * entry object from a source file and add one line to `INBOX_SOURCE_REGISTRY`
  * — no changes to the intake core. The core resolves the credential, enforces
@@ -119,7 +135,9 @@ export interface InboxSourceRegistryEntry {
    * it is any stable key the owner-enablement gate is keyed on. */
   key: string;
   scope: InboxSourceScope;
-  handle: (ctx: InboxSourceContext) => Promise<void>;
+  handle: (
+    ctx: InboxSourceContext,
+  ) => Promise<InboxSourceTickResult | undefined>;
 }
 
 /**
@@ -127,6 +145,16 @@ export interface InboxSourceRegistryEntry {
  * the effective fetcher (a host override, else the source's own) and delivers
  * every item. This is the shape the Linear source has always used — kept
  * working verbatim on top of the registry.
+ *
+ * Cursor contract: when the fetch returns a full, limit-capped page
+ * (`items.length >= ctx.perSourceLimit`), the page may have truncated the
+ * window — there could be more items still unseen inside it. `IntakeItem` has
+ * no per-item timestamp to resume from, so the handler reports
+ * `{ nextCursor: since }` (the unchanged lower bound) rather than advancing;
+ * the core leaves the cursor alone and the next tick re-fetches the same
+ * window, with dedupe absorbing the overlap. A partial page (fewer than the
+ * limit) is authoritative for the window, so the handler reports `undefined`
+ * and the core advances to the tick's start time.
  */
 export function defineFetchInboxSource(
   key: string,
@@ -135,18 +163,31 @@ export function defineFetchInboxSource(
   return {
     key,
     scope: "member",
-    handle: async (ctx) => {
+    handle: async (ctx): Promise<InboxSourceTickResult | undefined> => {
       if (ctx.scope !== "member") return;
       const effective = ctx.fetcherOverride ?? fetcher;
+      // Same cursor narrowing as the non-fetch-shaped sources (Attio/Granola):
+      // steady-state polls fetch since the last successful tick; `cutoff` is
+      // the floor (and carries the one-time Linear backfill widening, which
+      // only applies when no cursor exists yet). Missed-past-the-limit items
+      // are re-surfaced by the externalId dedupe when they next update.
+      const since =
+        ctx.lastPollAt && ctx.lastPollAt > ctx.cutoff
+          ? ctx.lastPollAt
+          : ctx.cutoff;
       const items = await effective(
         ctx.credential,
-        ctx.cutoff,
+        since,
         ctx.perSourceLimit,
         ctx.signal,
         ctx.member.email,
         ctx.memberPreferences,
       );
       await ctx.deliverItems(items);
+      if (items.length >= ctx.perSourceLimit) {
+        return { nextCursor: since };
+      }
+      return undefined;
     },
   };
 }

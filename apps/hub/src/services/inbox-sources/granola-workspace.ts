@@ -3,6 +3,7 @@ import type { AgentTool } from "@intx/agent";
 import { createGranolaTools } from "@workbench/tools-granola";
 import type {
   InboxSourceRegistryEntry,
+  InboxSourceTickResult,
   WorkspaceInboxSourceContext,
 } from "../inbox-source-registry";
 import {
@@ -29,6 +30,11 @@ const NoteListResponse = type({
     "summary?": "string",
     "participants?": "string[]",
   }).array(),
+  // Optional pagination signal (CL-3577 review fix): when the Granola list
+  // response exposes it, `has_more` is authoritative over the length-vs-limit
+  // heuristic below for deciding whether the page may have truncated the
+  // window.
+  "has_more?": "boolean",
 });
 
 const TranscriptItem = type({ "text?": "string" });
@@ -94,7 +100,7 @@ function toGranolaCall(note: typeof FullNote.infer): GranolaCall {
 async function handleWorkspaceTick(
   ctx: WorkspaceInboxSourceContext,
   pipeline: GranolaCallPipeline,
-): Promise<void> {
+): Promise<InboxSourceTickResult | undefined> {
   const tools = createGranolaTools({
     apiKey: ctx.credential.apiKey,
     ...(ctx.credential.baseURL ? { baseUrl: ctx.credential.baseURL } : {}),
@@ -149,6 +155,19 @@ async function handleWorkspaceTick(
       status: result.status,
     });
   }
+
+  // A full, limit-capped page may hide notes still unseen behind the page
+  // boundary. Prefer the list response's own `has_more` signal when present;
+  // otherwise fall back to the length-vs-limit heuristic. Either way, a
+  // possibly-truncated page pins the cursor at `since` instead of advancing —
+  // the next tick re-fetches the same window and the pipeline's per-note
+  // artifact dedupe absorbs the overlap.
+  const mayBeTruncated =
+    list.has_more ?? list.notes.length >= ctx.perSourceLimit;
+  if (mayBeTruncated) {
+    return { nextCursor: since };
+  }
+  return undefined;
 }
 
 /**
@@ -172,7 +191,7 @@ export function createGranolaWorkspaceInboxSource(deps: {
     scope: "workspace",
     handle: async (ctx) => {
       if (ctx.scope !== "workspace") return;
-      await handleWorkspaceTick(ctx, deps.pipeline);
+      return handleWorkspaceTick(ctx, deps.pipeline);
     },
   };
 }

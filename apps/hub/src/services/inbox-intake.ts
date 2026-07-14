@@ -24,6 +24,7 @@ import {
   type InboxSourceContext,
   type InboxSourceFetcher,
   type InboxSourceRegistryEntry,
+  type InboxSourceTickResult,
   type IntakeItem,
   type MemberInboxSourceContext,
 } from "./inbox-source-registry";
@@ -243,6 +244,8 @@ export function createInboxIntake(deps: InboxIntakeDeps): InboxIntake {
 
     const scopeKey = memberScopeKey(member.memberPrincipalId, entry.key);
     const previousLastPollAt = lastPollAtByScopeKey.get(scopeKey);
+    const tickStart = new Date(now());
+    const handled: { result?: InboxSourceTickResult | undefined } = {};
 
     await withTimeout(async (signal) => {
       const ctx: MemberInboxSourceContext = {
@@ -265,13 +268,16 @@ export function createInboxIntake(deps: InboxIntakeDeps): InboxIntake {
           ? { fetcherOverride: deps.fetchers[entry.key] }
           : {}),
       };
-      await entry.handle(ctx);
+      handled.result = await entry.handle(ctx);
     });
 
     // Reached only if the handler resolved without throwing — a throw
     // propagates out of `withTimeout` and is caught by the tick loop, which
-    // never advances the cursor for a failed poll.
-    lastPollAtByScopeKey.set(scopeKey, new Date(now()));
+    // never advances the cursor for a failed poll. A handler that reported a
+    // `nextCursor` (a possibly-truncated full page) pins the cursor there
+    // instead of advancing to `tickStart`, so the next tick re-fetches the
+    // same window and dedupe absorbs the overlap.
+    lastPollAtByScopeKey.set(scopeKey, handled.result?.nextCursor ?? tickStart);
   }
 
   async function runWorkspaceSource(
@@ -297,6 +303,8 @@ export function createInboxIntake(deps: InboxIntakeDeps): InboxIntake {
 
     const scopeKey = workspaceScopeKey(tenantId, entry.key);
     const previousLastPollAt = lastPollAtByScopeKey.get(scopeKey);
+    const tickStart = new Date(now());
+    const handled: { result?: InboxSourceTickResult | undefined } = {};
 
     await withTimeout(async (signal) => {
       const ctx: InboxSourceContext = {
@@ -315,10 +323,10 @@ export function createInboxIntake(deps: InboxIntakeDeps): InboxIntake {
           ? { fetcherOverride: deps.fetchers[entry.key] }
           : {}),
       };
-      await entry.handle(ctx);
+      handled.result = await entry.handle(ctx);
     });
 
-    lastPollAtByScopeKey.set(scopeKey, new Date(now()));
+    lastPollAtByScopeKey.set(scopeKey, handled.result?.nextCursor ?? tickStart);
   }
 
   async function tick(): Promise<void> {

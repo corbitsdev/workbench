@@ -190,13 +190,18 @@ function renderArtifactContent(
     .join("\n");
 }
 
-async function findExistingArtifactId(
+interface ExistingArtifact {
+  id: string;
+  source: Record<string, unknown> | null;
+}
+
+async function findExistingArtifact(
   db: HubDb,
   tenantId: string,
   noteId: string,
-): Promise<string | null> {
+): Promise<ExistingArtifact | null> {
   const rows = await db
-    .select({ id: artifact.id })
+    .select({ id: artifact.id, source: artifact.source })
     .from(artifact)
     .where(
       and(
@@ -206,7 +211,84 @@ async function findExistingArtifactId(
       ),
     )
     .limit(1);
-  return rows[0]?.id ?? null;
+  return rows[0] ?? null;
+}
+
+/** The full shape persisted into `artifact.source` (CL-3577 review fix M): the
+ * structured `CallAnalysis` is stored alongside the original envelope fields
+ * so a later duplicate hit (either the early `existing !== null` return or
+ * the `onConflictDoNothing` race loser) can re-attempt fan-out without
+ * re-running the LLM turn. Fan-out is idempotent per (call, recipient)
+ * (`fanOutMessageKey` dedupe), so re-attempting on every duplicate is safe. */
+const PersistedCallSourceSchema = type({
+  granolaNoteId: "string",
+  classification: "'internal' | 'external' | 'unknown'",
+  "participants?": "string[]",
+  "callCreatedAt?": "string",
+  summary: "string",
+  painPoints: "string[]",
+  decisions: "string[]",
+  actionItems: CallActionSchema.array(),
+  tasks: CallActionSchema.array(),
+  peopleMentioned: "string[]",
+});
+
+/** Reconstructs the classification + analysis needed for fan-out from a
+ * persisted artifact's `source` jsonb. Returns null when the row predates
+ * this fix (no structured analysis stored) or the jsonb otherwise fails
+ * validation — the duplicate-path fan-out is then skipped rather than
+ * guessed at. */
+function reconstructFanOutContext(
+  source: Record<string, unknown> | null,
+): { classification: CallClassification; analysis: CallAnalysis } | null {
+  if (source === null) return null;
+  const parsed = PersistedCallSourceSchema(source);
+  if (parsed instanceof type.errors) return null;
+  return {
+    classification: parsed.classification,
+    analysis: {
+      summary: parsed.summary,
+      painPoints: parsed.painPoints,
+      decisions: parsed.decisions,
+      actionItems: parsed.actionItems,
+      tasks: parsed.tasks,
+      peopleMentioned: parsed.peopleMentioned,
+    },
+  };
+}
+
+/**
+ * Re-attempts fan-out for a call that already has a persisted artifact — both
+ * the early "already processed" hit and the `onConflictDoNothing` race loser
+ * land here (CL-3577 review fix: previously both returned `skipped-duplicate`
+ * with NO fan-out attempt, so a process that crashed after persisting the
+ * artifact but before fan-out completed would never retry delivery). Fan-out
+ * is idempotent per (call, recipient) via `fanOutMessageKey`'s mailbox
+ * dedupe, so re-attempting on every duplicate hit is safe — it delivers only
+ * whatever mail a prior attempt never wrote. A row that predates this fix (no
+ * structured analysis in `source`) is skipped rather than guessed at.
+ */
+async function attemptDuplicateFanOut(
+  deps: GranolaCallPipelineDeps,
+  tenantId: string,
+  note: GranolaCall,
+  existing: ExistingArtifact,
+): Promise<void> {
+  const reconstructed = reconstructFanOutContext(existing.source);
+  if (reconstructed === null) {
+    log.warn(
+      "granola call: existing artifact has no structured analysis; skipping duplicate re-fanout {noteId}",
+      { noteId: note.id, tenantId, artifactId: existing.id },
+    );
+    return;
+  }
+  await deps.fanout.fanOut({
+    tenantId,
+    note,
+    classification: reconstructed.classification,
+    analysis: reconstructed.analysis,
+    artifactId: existing.id,
+  });
 }
 
 /**
@@ -225,12 +307,13 @@ export function createGranolaCallPipeline(
   ): Promise<ProcessCallResult> {
     const { tenantId, note } = input;
 
-    const existing = await findExistingArtifactId(deps.db, tenantId, note.id);
+    const existing = await findExistingArtifact(deps.db, tenantId, note.id);
     if (existing !== null) {
       log.info("granola call already processed; skipping {noteId}", {
         noteId: note.id,
         tenantId,
       });
+      await attemptDuplicateFanOut(deps, tenantId, note, existing);
       return { status: "skipped-duplicate" };
     }
 
@@ -291,6 +374,12 @@ export function createGranolaCallPipeline(
           classification,
           participants,
           ...(note.createdAt ? { callCreatedAt: note.createdAt } : {}),
+          summary: analysis.summary,
+          painPoints: analysis.painPoints,
+          decisions: analysis.decisions,
+          actionItems: analysis.actionItems,
+          tasks: analysis.tasks,
+          peopleMentioned: analysis.peopleMentioned,
         },
       })
       .onConflictDoNothing({
@@ -311,21 +400,28 @@ export function createGranolaCallPipeline(
       // is not closeable without a lock; only the duplicate row is closed
       // here), but fan-out is skipped so the recipient never gets two mails
       // for one call.
-      const winnerId = await findExistingArtifactId(deps.db, tenantId, note.id);
-      if (winnerId === null) {
+      const winner = await findExistingArtifact(deps.db, tenantId, note.id);
+      if (winner === null) {
         throw new Error(
           `granola call ${note.id}: artifact insert conflicted but no existing row was found`,
         );
       }
-      artifactId = winnerId;
+      artifactId = winner.id;
       alreadyProcessed = true;
+
+      log.info(
+        "granola call lost the create race; re-attempting fan-out via the winner's artifact {noteId}",
+        { noteId: note.id, tenantId },
+      );
+      // The winner's row already carries the structured analysis (this
+      // process just persisted it, or another replica did) — fan out against
+      // it so this attempt's recipients still get mail; per-recipient dedupe
+      // (fanOutMessageKey) makes re-attempting safe even if the winner's
+      // fan-out already ran.
+      await attemptDuplicateFanOut(deps, tenantId, note, winner);
     }
 
     if (alreadyProcessed) {
-      log.info("granola call lost the create race; skipping fan-out {noteId}", {
-        noteId: note.id,
-        tenantId,
-      });
       return { status: "skipped-duplicate" };
     }
 
