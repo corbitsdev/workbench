@@ -66,11 +66,17 @@ function attioTaskRow(args: {
 import { schema } from "../../db";
 import type { HubDb } from "../../db";
 import { task } from "../../db/schema";
+import { mergeMemberPreferences } from "../../lib/member-preferences";
 import type { MemberInboxSourceContext } from "../inbox-source-registry";
 import { attioTaskSyncInboxSource } from "./attio-task-sync";
 
 const TENANT = "ten-attio";
 const MEMBER = "prn-attio-member";
+// The member's own Attio workspace-member id (review fix C): most tests set
+// this via `mergeMemberPreferences` and scope created tasks' assignees to it,
+// since a member with no attioMemberId preference must never have a task
+// created for them (see the dedicated "no attioMemberId" describe block).
+const SELF_ATTIO_MEMBER_ID = "wm-attio-self";
 
 let client: PGlite;
 let db: HubDb;
@@ -92,7 +98,11 @@ afterAll(async () => {
 beforeEach(async () => {
   await client.exec(`DELETE FROM task;`);
   await client.exec(`DELETE FROM task_external_ref;`);
+  await client.exec(`DELETE FROM member_preferences;`);
   calls = [];
+  await mergeMemberPreferences(db, TENANT, MEMBER, {
+    attioMemberId: SELF_ATTIO_MEMBER_ID,
+  });
 });
 
 function baseCtx(
@@ -128,7 +138,9 @@ describe("attioTaskSyncInboxSource", () => {
     responder = (url) => {
       if (url.includes("/v2/tasks") && !url.includes("task_")) {
         return jsonResponse(200, {
-          data: [attioTaskRow({ id: "task_1" })],
+          data: [
+            attioTaskRow({ id: "task_1", assignees: [SELF_ATTIO_MEMBER_ID] }),
+          ],
         });
       }
       throw new Error(`unexpected call: ${url}`);
@@ -147,7 +159,11 @@ describe("attioTaskSyncInboxSource", () => {
 
   test("is idempotent: a second tick over the same task does not duplicate it", async () => {
     responder = () =>
-      jsonResponse(200, { data: [attioTaskRow({ id: "task_1" })] });
+      jsonResponse(200, {
+        data: [
+          attioTaskRow({ id: "task_1", assignees: [SELF_ATTIO_MEMBER_ID] }),
+        ],
+      });
 
     await attioTaskSyncInboxSource.handle(baseCtx());
     await attioTaskSyncInboxSource.handle(baseCtx());
@@ -159,7 +175,13 @@ describe("attioTaskSyncInboxSource", () => {
   test("updates title and due date when the Attio task changes", async () => {
     responder = () =>
       jsonResponse(200, {
-        data: [attioTaskRow({ id: "task_1", content: "Original title" })],
+        data: [
+          attioTaskRow({
+            id: "task_1",
+            content: "Original title",
+            assignees: [SELF_ATTIO_MEMBER_ID],
+          }),
+        ],
       });
     await attioTaskSyncInboxSource.handle(baseCtx());
 
@@ -183,7 +205,11 @@ describe("attioTaskSyncInboxSource", () => {
 
   test("marks the Workbench task done when Attio marks it completed", async () => {
     responder = () =>
-      jsonResponse(200, { data: [attioTaskRow({ id: "task_1" })] });
+      jsonResponse(200, {
+        data: [
+          attioTaskRow({ id: "task_1", assignees: [SELF_ATTIO_MEMBER_ID] }),
+        ],
+      });
     await attioTaskSyncInboxSource.handle(baseCtx());
 
     responder = () =>
@@ -211,7 +237,11 @@ describe("attioTaskSyncInboxSource", () => {
   test("marks a previously-synced task done when Attio confirms it was deleted (404)", async () => {
     responder = (url) => {
       if (url.includes("/v2/tasks") && !url.includes("task_")) {
-        return jsonResponse(200, { data: [attioTaskRow({ id: "task_1" })] });
+        return jsonResponse(200, {
+          data: [
+            attioTaskRow({ id: "task_1", assignees: [SELF_ATTIO_MEMBER_ID] }),
+          ],
+        });
       }
       throw new Error(`unexpected call: ${url}`);
     };
@@ -239,7 +269,11 @@ describe("attioTaskSyncInboxSource", () => {
 
   test("leaves a previously-synced task alone when the missing-from-list check errors ambiguously", async () => {
     responder = () =>
-      jsonResponse(200, { data: [attioTaskRow({ id: "task_1" })] });
+      jsonResponse(200, {
+        data: [
+          attioTaskRow({ id: "task_1", assignees: [SELF_ATTIO_MEMBER_ID] }),
+        ],
+      });
     await attioTaskSyncInboxSource.handle(baseCtx());
 
     responder = (url) => {
@@ -260,7 +294,11 @@ describe("attioTaskSyncInboxSource", () => {
 
   test("never revives a task the member explicitly cancelled", async () => {
     responder = () =>
-      jsonResponse(200, { data: [attioTaskRow({ id: "task_1" })] });
+      jsonResponse(200, {
+        data: [
+          attioTaskRow({ id: "task_1", assignees: [SELF_ATTIO_MEMBER_ID] }),
+        ],
+      });
     await attioTaskSyncInboxSource.handle(baseCtx());
 
     const [existing] = await tasksForMember();
@@ -291,5 +329,51 @@ describe("attioTaskSyncInboxSource", () => {
       scope: "workspace",
     } as never);
     expect(calls).toHaveLength(0);
+  });
+});
+
+// CL-3577 review fix C: a member with no `attioMemberId` preference has no
+// known Attio identity, so creation must be skipped entirely rather than
+// falling through to sync every workspace task into their list.
+describe("attioTaskSyncInboxSource: creation gating on attioMemberId (review fix C)", () => {
+  test("(a) no attioMemberId + an unseen task: no task is created", async () => {
+    await client.query(
+      `DELETE FROM member_preferences WHERE tenant_id = $1 AND member_principal_id = $2`,
+      [TENANT, MEMBER],
+    );
+    responder = () =>
+      jsonResponse(200, {
+        data: [
+          attioTaskRow({ id: "task_1", assignees: [SELF_ATTIO_MEMBER_ID] }),
+        ],
+      });
+
+    await attioTaskSyncInboxSource.handle(baseCtx());
+
+    expect(await tasksForMember()).toHaveLength(0);
+  });
+
+  test("(b) attioMemberId set, assignee matches: task is created", async () => {
+    responder = () =>
+      jsonResponse(200, {
+        data: [
+          attioTaskRow({ id: "task_1", assignees: [SELF_ATTIO_MEMBER_ID] }),
+        ],
+      });
+
+    await attioTaskSyncInboxSource.handle(baseCtx());
+
+    expect(await tasksForMember()).toHaveLength(1);
+  });
+
+  test("(c) attioMemberId set, assignee does not match: task is not created", async () => {
+    responder = () =>
+      jsonResponse(200, {
+        data: [attioTaskRow({ id: "task_1", assignees: ["someone-else"] })],
+      });
+
+    await attioTaskSyncInboxSource.handle(baseCtx());
+
+    expect(await tasksForMember()).toHaveLength(0);
   });
 });

@@ -152,6 +152,26 @@ describe("granola call pipeline", () => {
     expect(fanCalls).toHaveLength(1); // only the first run fanned out
   });
 
+  test("concurrent processCall for the same note creates only one artifact and fans out once", async () => {
+    const fanCalls: FanOutInput[] = [];
+    const pipeline = makePipeline(fanCalls);
+    const note = {
+      id: "note-race",
+      title: "Race",
+      participants: ["a@corbits.io"],
+    };
+
+    const [first, second] = await Promise.all([
+      pipeline.processCall({ tenantId: TENANT, note }),
+      pipeline.processCall({ tenantId: TENANT, note }),
+    ]);
+
+    const statuses = [first.status, second.status].sort();
+    expect(statuses).toEqual(["processed", "skipped-duplicate"]);
+    expect((await artifactRows()).rows).toHaveLength(1);
+    expect(fanCalls).toHaveLength(1); // the loser never fans out
+  });
+
   test("skips legibly when no inference source resolves", async () => {
     const pipeline = createGranolaCallPipeline({
       db,

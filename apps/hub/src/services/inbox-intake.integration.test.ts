@@ -198,6 +198,68 @@ describe("inbox intake tick", () => {
   });
 });
 
+describe("per-source lastPollAt cursor (CL-3577 review fix A)", () => {
+  test("a second tick receives lastPollAt of the first tick's poll time", async () => {
+    const seenLastPollAt: (Date | undefined)[] = [];
+    const intake = createInboxIntake({
+      db,
+      grantStore: {} as never,
+      listMembers: async () => [member],
+      isTenantEnabled: async () => true,
+      fetchers: {
+        linear: async () => [],
+      },
+      registry: [
+        {
+          key: "linear",
+          scope: "member",
+          handle: async (ctx) => {
+            if (ctx.scope !== "member") return;
+            seenLastPollAt.push(ctx.lastPollAt);
+          },
+        },
+      ],
+    });
+
+    await intake.tick();
+    await intake.tick();
+
+    expect(seenLastPollAt).toHaveLength(2);
+    expect(seenLastPollAt[0]).toBeUndefined();
+    expect(seenLastPollAt[1]).toBeInstanceOf(Date);
+  });
+
+  test("a throwing handler does not advance the cursor", async () => {
+    const seenLastPollAt: (Date | undefined)[] = [];
+    let callCount = 0;
+    const intake = createInboxIntake({
+      db,
+      grantStore: {} as never,
+      listMembers: async () => [member],
+      isTenantEnabled: async () => true,
+      registry: [
+        {
+          key: "linear",
+          scope: "member",
+          handle: async (ctx) => {
+            if (ctx.scope !== "member") return;
+            seenLastPollAt.push(ctx.lastPollAt);
+            callCount += 1;
+            if (callCount === 1) throw new Error("simulated poll failure");
+          },
+        },
+      ],
+    });
+
+    await intake.tick(); // handler throws; caught + logged by the tick loop
+    await intake.tick(); // cursor must still be unset — the first poll never succeeded
+
+    expect(seenLastPollAt).toHaveLength(2);
+    expect(seenLastPollAt[0]).toBeUndefined();
+    expect(seenLastPollAt[1]).toBeUndefined();
+  });
+});
+
 describe("Linear one-time backfill on enable (CL-3577)", () => {
   test("widens the first poll's cutoff per inboxSource:linear:backfill, then stamps the applied marker", async () => {
     readMemberPreferences.mockImplementationOnce(async () => ({
