@@ -38,8 +38,12 @@ import {
 import type { HubDb } from "../db";
 import { workflowRun } from "../db/schema";
 import { createOwnerGrantGuard } from "../lib/admin-grant";
-import { resolveSlackCredential } from "../lib/slack-api-client";
+import {
+  fetchSlackTeamId,
+  resolveSlackCredential,
+} from "../lib/slack-api-client";
 import { joinAllPublicChannels } from "../lib/slack-channel-autojoin";
+import { upsertSlackTeamMapping } from "../lib/slack-team-mapping";
 import { encryptSecret } from "../lib/credential-crypto";
 import {
   listOwnerCapabilityStates,
@@ -588,18 +592,43 @@ export function createOwnerRouter(
       // CL-3581: enabling Slack sweeps the bot into every public channel so
       // mention events start flowing without per-channel invites. Best-effort —
       // enablement itself never fails on a Slack API error.
+      //
+      // CL-3629: also resolves the workspace's team id (auth.test) and
+      // persists the team_id → tenant mapping the webhook route uses to
+      // target this tenant only. This assumes a single `SLACK_SIGNING_SECRET`
+      // verifies every mapped team — true for one distributed Slack app
+      // installed across workspaces, but a constraint worth calling out: a
+      // second, differently-signed Slack app would need per-tenant signing
+      // secrets (not built here; tracked as follow-up).
       if (parsed.enabled && catalogEntry.key === "slack") {
         const credential = await resolveSlackCredential(db, rootTenantId);
         if (credential) {
-          joinAllPublicChannels(
-            credential,
-            AbortSignal.timeout(60_000),
-          ).catch((err) => {
+          try {
+            const teamId = await fetchSlackTeamId(
+              credential,
+              AbortSignal.timeout(10_000),
+            );
+            if (teamId) {
+              await upsertSlackTeamMapping(db, rootTenantId, teamId);
+            } else {
+              getLogger(["routes", "owner"]).warn(
+                "slack auth.test returned no team_id; team mapping not recorded",
+              );
+            }
+          } catch (err) {
             getLogger(["routes", "owner"]).warn(
-              "slack auto-join sweep failed after enablement; mentions only flow in channels the bot is in",
+              "slack auth.test failed after enablement; team mapping not recorded, webhook events for this workspace will drop until re-enabled",
               { err },
             );
-          });
+          }
+          joinAllPublicChannels(credential, AbortSignal.timeout(60_000)).catch(
+            (err) => {
+              getLogger(["routes", "owner"]).warn(
+                "slack auto-join sweep failed after enablement; mentions only flow in channels the bot is in",
+                { err },
+              );
+            },
+          );
         }
       }
 
