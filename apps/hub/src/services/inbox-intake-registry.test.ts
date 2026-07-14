@@ -190,6 +190,65 @@ describe("member-scope dispatch", () => {
     expect(cutoffs[1]!.getTime()).toBe(cutoffs[0]!.getTime());
   });
 
+  test("a full page whose items carry occurredAt advances the cursor to the max occurredAt (sustained overflow drains instead of livelocking)", async () => {
+    const cutoffs: Date[] = [];
+    const source = defineFetchInboxSource("granola", async () => []);
+    // Three consecutive full pages (>= perSourceLimit items every tick),
+    // each with distinct occurredAt timestamps just seconds apart — simulates
+    // sustained overflow. Without the max-occurredAt rule, `since` would stay
+    // pinned forever (see the plain-IntakeItem test above) and items 3-6
+    // would never surface. Timestamps are anchored to `now()` (not a fixed
+    // past date) because `since` picks the LATER of `lastPollAt` and the
+    // default 24h-lookback `cutoff` — a fixed date far enough in the past
+    // would fall behind that floor and mask the advance being tested.
+    const base = Date.now();
+    const at = (offsetMs: number) => new Date(base + offsetMs);
+    const pages = [
+      [
+        { externalId: "g1", occurredAt: at(1000) },
+        { externalId: "g2", occurredAt: at(2000) },
+      ],
+      [
+        { externalId: "g3", occurredAt: at(3000) },
+        { externalId: "g4", occurredAt: at(4000) },
+      ],
+      [
+        { externalId: "g5", occurredAt: at(5000) },
+        { externalId: "g6", occurredAt: at(6000) },
+      ],
+    ];
+    let tick = 0;
+    const intake = createInboxIntake({
+      ...baseDeps(),
+      mailboxTriage: { enqueue: () => {} },
+      registry: [source],
+      perSourceLimit: 2,
+      fetchers: {
+        granola: async (_c, cutoff) => {
+          cutoffs.push(cutoff);
+          const page = pages[tick++]!;
+          return page.map((item) => ({
+            ...item,
+            subject: "s",
+            body: "b",
+            url: "u",
+          }));
+        },
+      },
+    });
+
+    await intake.tick();
+    await intake.tick();
+    await intake.tick();
+
+    expect(cutoffs.length).toBe(3);
+    // Strictly advancing — no livelock.
+    expect(cutoffs[1]!.getTime()).toBeGreaterThan(cutoffs[0]!.getTime());
+    expect(cutoffs[2]!.getTime()).toBeGreaterThan(cutoffs[1]!.getTime());
+    expect(cutoffs[1]!.getTime()).toBe(at(2000).getTime());
+    expect(cutoffs[2]!.getTime()).toBe(at(4000).getTime());
+  });
+
   test("a partial page advances the cursor to the tick's start time", async () => {
     const cutoffs: Date[] = [];
     const source = defineFetchInboxSource("granola", async () => []);

@@ -321,11 +321,15 @@ describe("attioTaskSyncInboxSource", () => {
     expect(rows[0]?.title).not.toBe("Changed after cancel");
   });
 
-  test("a full, limit-capped page reports nextCursor pinned at the previous since (cursor does not advance)", async () => {
+  test("a full, limit-capped page advances nextCursor to the max processed created_at (no livelock)", async () => {
     responder = () =>
       jsonResponse(200, {
         data: [
-          attioTaskRow({ id: "task_1", assignees: [SELF_ATTIO_MEMBER_ID] }),
+          attioTaskRow({
+            id: "task_1",
+            assignees: [SELF_ATTIO_MEMBER_ID],
+            createdAt: "2026-07-05T00:00:00.000Z",
+          }),
         ],
       });
     const since = new Date("2026-07-01T00:00:00.000Z");
@@ -334,7 +338,93 @@ describe("attioTaskSyncInboxSource", () => {
       baseCtx({ cutoff: since, perSourceLimit: 1 }),
     );
 
-    expect(result).toEqual({ nextCursor: since });
+    // The processed task's own created_at, not the unchanged `since` floor —
+    // pinning at `since` would re-issue the identical query forever under
+    // sustained overflow (>= perSourceLimit new tasks every tick).
+    expect(result).toEqual({
+      nextCursor: new Date("2026-07-05T00:00:00.000Z"),
+    });
+  });
+
+  test("sustained overflow (three consecutive full pages, distinct created_at) strictly advances the cursor tick over tick — no livelock, no lost tasks", async () => {
+    // Every tick queries with offset=0 (this source has no page token — just
+    // `since`), so vary the response by an explicit tick counter instead.
+    const ticksData = [
+      [
+        attioTaskRow({
+          id: "task_a",
+          assignees: [SELF_ATTIO_MEMBER_ID],
+          createdAt: "2026-07-01T00:00:00.000Z",
+        }),
+        attioTaskRow({
+          id: "task_b",
+          assignees: [SELF_ATTIO_MEMBER_ID],
+          createdAt: "2026-07-01T00:01:00.000Z",
+        }),
+      ],
+      [
+        attioTaskRow({
+          id: "task_c",
+          assignees: [SELF_ATTIO_MEMBER_ID],
+          createdAt: "2026-07-01T00:02:00.000Z",
+        }),
+        attioTaskRow({
+          id: "task_d",
+          assignees: [SELF_ATTIO_MEMBER_ID],
+          createdAt: "2026-07-01T00:03:00.000Z",
+        }),
+      ],
+      [
+        attioTaskRow({
+          id: "task_e",
+          assignees: [SELF_ATTIO_MEMBER_ID],
+          createdAt: "2026-07-01T00:04:00.000Z",
+        }),
+        attioTaskRow({
+          id: "task_f",
+          assignees: [SELF_ATTIO_MEMBER_ID],
+          createdAt: "2026-07-01T00:05:00.000Z",
+        }),
+      ],
+    ];
+    let tickIndex = 0;
+    responder = () => {
+      const data = ticksData[tickIndex]!;
+      return jsonResponse(200, { data });
+    };
+
+    const cutoff = new Date("2026-07-01T00:00:00.000Z");
+    let lastPollAt: Date | undefined;
+    const cursors: Date[] = [];
+    for (let i = 0; i < 3; i++) {
+      const result = await attioTaskSyncInboxSource.handle(
+        baseCtx({
+          cutoff,
+          ...(lastPollAt !== undefined ? { lastPollAt } : {}),
+          perSourceLimit: 2,
+        }),
+      );
+      expect(result?.nextCursor).toBeDefined();
+      const next = result?.nextCursor as Date;
+      cursors.push(next);
+      lastPollAt = next;
+      tickIndex++;
+    }
+
+    expect(cursors[1]!.getTime()).toBeGreaterThan(cursors[0]!.getTime());
+    expect(cursors[2]!.getTime()).toBeGreaterThan(cursors[1]!.getTime());
+
+    const rows = await tasksForMember();
+    expect(rows.map((r) => r.sourceRef).sort()).toEqual(
+      [
+        "attio:task:task_a",
+        "attio:task:task_b",
+        "attio:task:task_c",
+        "attio:task:task_d",
+        "attio:task:task_e",
+        "attio:task:task_f",
+      ].sort(),
+    );
   });
 
   test("a partial page reports no nextCursor (cursor advances)", async () => {
