@@ -57,12 +57,12 @@ function renderTopBar(chrome: React.ReactNode | null) {
 }
 
 describe("AppTopBar", () => {
-  it("renders the notifications bell pinned to the top row when no page chrome is set", () => {
+  it("renders the notifications bell when no page chrome is set", () => {
     renderTopBar(null);
     screen.getByLabelText("Notifications");
   });
 
-  it("renders page-chrome content in its own row, alongside the notifications bell", () => {
+  it("renders page-chrome content alongside the notifications bell in the same bar", () => {
     renderTopBar(
       React.createElement("button", { type: "button" }, "Chat about this"),
     );
@@ -70,26 +70,48 @@ describe("AppTopBar", () => {
     screen.getByLabelText("Notifications");
   });
 
-  it("keeps the notifications bell in the top row rather than the page-chrome row", () => {
-    const { container } = renderTopBar(
-      React.createElement("button", { type: "button" }, "Chat about this"),
-    );
-    const rows = container.querySelectorAll("header > div");
-    expect(rows.length).toBe(2);
-    within(rows[0] as HTMLElement).getByLabelText("Notifications");
-    expect(
-      within(rows[0] as HTMLElement).queryByRole("button", {
-        name: "Chat about this",
+  it("renders a single header bar, not a second row, whether or not page chrome is set", () => {
+    const withChrome = render(
+      React.createElement(RouterProvider, {
+        router: createMemoryRouter(
+          [
+            {
+              path: "/",
+              element: React.createElement(
+                ActiveContextProvider,
+                null,
+                React.createElement(
+                  PageChromeProvider,
+                  null,
+                  React.createElement(PageChromeSetter, {
+                    node: React.createElement(
+                      "button",
+                      { type: "button" },
+                      "Chat about this",
+                    ),
+                  }),
+                  React.createElement(AppTopBar, { onOpenMenu: () => {} }),
+                ),
+              ),
+            },
+          ],
+          { initialEntries: ["/"] },
+        ),
       }),
-    ).toBeNull();
-    within(rows[1] as HTMLElement).getByRole("button", {
-      name: "Chat about this",
-    });
-  });
+    );
+    const header = withChrome.container.querySelector(
+      "header",
+    ) as HTMLElement;
+    expect(withChrome.container.querySelectorAll("header").length).toBe(1);
+    // A second, bordered row (the prior two-row layout) always carried a
+    // border-t divider between it and the top row — its absence means the
+    // chrome and the bell render in the same undivided bar.
+    expect(header.querySelector(".border-t")).toBeNull();
+    within(header).getByRole("button", { name: "Chat about this" });
+    within(header).getByLabelText("Notifications");
+    withChrome.unmount();
 
-  it("does not render a second row when no page chrome is registered", () => {
-    const { container } = renderTopBar(null);
-    const rows = container.querySelectorAll("header > div");
-    expect(rows.length).toBe(1);
+    const withoutChrome = renderTopBar(null);
+    expect(withoutChrome.container.querySelectorAll("header").length).toBe(1);
   });
 });
