@@ -54,7 +54,7 @@ function attioTaskUrl(taskId: string): string {
 // The raw `/v2/tasks` row shape this source reads. `+: "ignore"` keeps every
 // other Attio field the API may add without breaking parsing at this
 // boundary (per AGENTS.md: parse untrusted API responses through arktype).
-const AttioRawTaskSchema = type({
+export const AttioRawTaskSchema = type({
   id: { task_id: "string" },
   "content_plaintext?": "string | null",
   "deadline_at?": "string | null",
@@ -63,7 +63,7 @@ const AttioRawTaskSchema = type({
   "assignees?": type({ "referenced_actor_id?": "string" }).array(),
 });
 
-type AttioRawTask = typeof AttioRawTaskSchema.infer;
+export type AttioRawTask = typeof AttioRawTaskSchema.infer;
 
 function toolHandler(config: AttioToolsConfig, name: string) {
   const tools: AgentTool[] = createAttioTools(config);
@@ -177,7 +177,7 @@ async function findAnyOwnerTaskBySourceRef(
   return rows[0] ?? null;
 }
 
-async function syncOneTask(
+export async function syncOneTask(
   db: HubDb,
   member: MemberInboxSourceContext["member"],
   attioTask: AttioRawTask,

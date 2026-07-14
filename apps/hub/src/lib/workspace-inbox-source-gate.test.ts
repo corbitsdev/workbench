@@ -15,7 +15,7 @@ function allowGrant(sourceKey: string) {
     resource: workspaceInboxSourceResource(sourceKey),
     action: "enable",
     effect: "allow" as const,
-    origin: "system",
+    origin: "system" as const,
     conditions: null,
     expiresAt: null,
     roleId: "rol_member",

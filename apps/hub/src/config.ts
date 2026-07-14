@@ -451,6 +451,9 @@ export function loadConfig() {
       // data-change events on the assignee's inbox — an additive low-latency
       // path alongside the 60s poller. Unset ⇒ the route is not mounted.
       linearWebhookSecret: optionalEnv("LINEAR_WEBHOOK_SECRET"),
+      // CL-3586: same additive pattern for Attio — verifies `Attio-Signature`
+      // and reuses the poller's task upsert. Unset ⇒ route not mounted.
+      attioWebhookSecret: optionalEnv("ATTIO_WEBHOOK_SECRET"),
     },
     // Owner-managed feature grants (scheduler/triage/tasks-reconciler) replace
     // the env-only kill switches above as the day-to-day toggle; the env vars
