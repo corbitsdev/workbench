@@ -2694,6 +2694,88 @@ describe("CL-2537 live awaitSignal watcher", () => {
     await runPromise;
   });
 
+  test("a signal delivered against a run with no committed events yet is refused without crashing the workflow child", async () => {
+    // Regression for CL-3641: a reconciler auto-delivered signal racing a
+    // cold start (before the child has committed RunStarted) must not
+    // poison the run log with a seq-0 SignalReceived, and must not crash
+    // the workflow child or its supervisor -- the hub's durable
+    // pending-signal rail re-delivers later.
+    const baseDir = await makeTempDir("watcher-cold-signal-");
+    const {
+      substrate,
+      principal,
+      workflowRunRepoId,
+      workflowDefinitionRepoId,
+    } = await genesisGateDeployment(baseDir);
+    // No commitParkedRun: "run-cold" has never started, so its
+    // `runs/run-cold/events/` dir does not exist yet.
+
+    const supervisorKeyPair = await generateKeyPair();
+    const childKeyPair = await generateKeyPair();
+    const channelId = generateChannelId();
+    const hmacKey = generateHmacKey();
+    const env = parseSpawnTimeEnv(
+      makeSpawnEnv({
+        channelId,
+        hmacKeyHex: hexEncode(hmacKey),
+        hostPubKeyHex: hexEncode(supervisorKeyPair.publicKey),
+      }),
+    );
+    const bindings = buildGateBindings({
+      substrate,
+      principal,
+      workflowRunRepoId,
+      workflowDefinitionRepoId,
+      childKeyPair,
+    });
+
+    const supervisorToChild = createMemoryNdjsonStream();
+    const childToSupervisor = createMemoryNdjsonStream();
+    const eventStream = createMemoryFrameStream();
+    const supervisorSender = createControlChannelSender({
+      privateKeySeed: supervisorKeyPair.privateKey,
+      channelId,
+      writer: supervisorToChild.writer,
+    });
+
+    const runPromise = runWorkflowChild({
+      env,
+      controlReader: supervisorToChild.reader,
+      controlWriter: childToSupervisor.writer,
+      eventWriter: eventStream.writer,
+      bindings,
+      recoverParkedRun: makeGateRecoverHook(),
+    });
+
+    await waitForTriggeredRun(childToSupervisor, (lines) => lines.length > 0);
+    await deliverGoSignal(supervisorSender, "run-cold", "sig-cold");
+    // Give the fire-and-forget deliver time to reject and log a warning.
+    await new Promise((r) => setTimeout(r, 60));
+
+    // The child is still alive and responsive: it accepts and completes
+    // a clean shutdown handshake rather than having crashed on the
+    // rejected deliver.
+    await supervisorSender.send({
+      type: "shutdown",
+      data: { reason: "test done" },
+    });
+    supervisorToChild.close();
+    await runPromise;
+
+    // No run directory -- let alone a seq-0 poisoned log -- was created
+    // for the cold run.
+    const runDir = path.join(
+      substrate.getRepoDir(workflowRunRepoId),
+      "runs",
+      "run-cold",
+    );
+    const exists = await fs
+      .access(runDir)
+      .then(() => true)
+      .catch(() => false);
+    expect(exists).toBe(false);
+  });
+
   test("an unsignaled parked watcher is torn down on shutdown without leaking its subscribe iterator", async () => {
     const baseDir = await makeTempDir("watcher-teardown-");
     const base = await genesisGateDeployment(baseDir);
