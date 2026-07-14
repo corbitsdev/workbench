@@ -283,6 +283,7 @@ describe("createEventCollectorRegistry (serialized dispatch)", () => {
     expect(typeof turn["turnId"]).toBe("string");
     expect(turn["status"]).toBe("completed");
     expect(turn["text"]).toBe("hello");
+    expect(turn["reasoning"]).toBe("let me think");
     expect(turn["hadReply"]).toBe(true);
     expect(turn["hadError"]).toBe(false);
     expect(Array.isArray(turn["errors"])).toBe(true);
