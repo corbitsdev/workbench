@@ -155,6 +155,21 @@ describe("AgentTurn", () => {
     expect(getRating).toHaveBeenCalledWith("t1", "turn_part");
   });
 
+  it("applies shared trace stack rhythm without extra left padding", () => {
+    const message = agentMessage({
+      reasoning: "Thinking",
+      toolCalls: [
+        { id: "c1", name: "search", result: "ok", isError: false },
+      ],
+    });
+    const { getByTestId } = render(
+      <AgentTurn message={message} formatToolSummary={() => "Searching"} />,
+    );
+    const trace = getByTestId("agent-trace");
+    expect(trace.className).toContain("gap-3.5");
+    expect(trace.className).not.toContain("pl-1");
+  });
+
   it("renders the sender label exactly once", () => {
     render(<AgentTurn message={agentMessage({ senderLabel: "Oat" })} />);
     expect(screen.getAllByText("From: Oat")).toHaveLength(1);

@@ -8,6 +8,14 @@ import {
   type UIBlock,
   type UIResponse,
 } from "@workbench/blocks";
+import {
+  CHAT_MARKER_SLOT,
+  CHAT_TRACE_DETAIL_OFFSET,
+  CHAT_TRACE_DETAIL_TOP,
+  CHAT_TRACE_LABEL,
+  CHAT_TRACE_MUTED_BODY,
+  CHAT_TRACE_ROW,
+} from "./messageRhythm";
 
 function ErrorIcon() {
   return (
@@ -225,15 +233,15 @@ function ChevronIcon({ open }: { open: boolean }) {
 
 function QuietToolLine({ summary }: { summary: string }) {
   return (
-    <div className="flex items-start gap-2.5" data-testid="quiet-tool-row">
+    <div className={CHAT_TRACE_ROW} data-testid="quiet-tool-row">
       {/* Empty marker slot keeps quiet lines column-aligned with tool rows. */}
       <span
-        className="h-4 w-4 shrink-0"
+        className={CHAT_MARKER_SLOT}
         aria-hidden="true"
         data-testid="tool-marker-spacer"
       />
       <p
-        className="mt-0.5 text-xs italic leading-snug text-text-3/80"
+        className={cn("mt-0.5 italic", CHAT_TRACE_MUTED_BODY)}
         data-testid="quiet-tool-line"
       >
         {summary}
@@ -319,7 +327,8 @@ function ToolRow({
             : undefined
         }
         className={cn(
-          "flex items-start gap-2.5 text-left",
+          CHAT_TRACE_ROW,
+          "text-left",
           expandable && cn("cursor-pointer", TOUCH_TARGET),
         )}
       >
@@ -334,8 +343,9 @@ function ToolRow({
         </span>
         <span
           className={cn(
-            "flex min-w-0 items-center gap-1.5 text-sm leading-snug",
-            pending ? "text-text-2" : call.isError ? "text-red" : "text-text-3",
+            "flex min-w-0 items-center gap-1.5",
+            CHAT_TRACE_LABEL,
+            pending ? "text-text-2" : call.isError ? "text-red" : undefined,
           )}
         >
           {!(open && expandable) && (
@@ -358,7 +368,11 @@ function ToolRow({
       </button>
       <ExpandReveal open={open} reduceMotion={reduceMotion === true}>
         <div
-          className="mt-1.5 ml-[26px] space-y-2 text-xs"
+          className={cn(
+            CHAT_TRACE_DETAIL_TOP,
+            CHAT_TRACE_DETAIL_OFFSET,
+            "space-y-2 text-xs",
+          )}
           data-testid="tool-row-detail"
         >
           {humanized ? (
@@ -524,7 +538,8 @@ function CollapsedToolSummary({
           open ? `Collapse ${summary} · ${count} tools` : undefined
         }
         className={cn(
-          "flex items-start gap-2.5 text-left cursor-pointer",
+          CHAT_TRACE_ROW,
+          "cursor-pointer text-left",
           TOUCH_TARGET,
         )}
       >
@@ -533,8 +548,9 @@ function CollapsedToolSummary({
         </span>
         <span
           className={cn(
-            "flex min-w-0 items-center gap-1.5 text-sm leading-snug",
-            hasError ? "text-red" : "text-text-3",
+            "flex min-w-0 items-center gap-1.5",
+            CHAT_TRACE_LABEL,
+            hasError ? "text-red" : undefined,
           )}
         >
           {!open && (

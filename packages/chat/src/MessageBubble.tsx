@@ -16,6 +16,12 @@ import {
   type UIBlock,
   type UIResponse,
 } from "@workbench/blocks";
+import {
+  CHAT_ASSISTANT_BODY,
+  CHAT_SYSTEM_BUBBLE_SURFACE,
+  CHAT_TURN_STACK,
+  CHAT_USER_BUBBLE_SURFACE,
+} from "./messageRhythm";
 
 class UIBlockErrorBoundary extends Component<
   { children: ReactNode },
@@ -307,7 +313,7 @@ export function MessageBubble({
     if (isUser) return <UserMessageBody content={message.content} />;
     if (extracted !== null) {
       return (
-        <div className="flex flex-col gap-2">
+        <div className="flex flex-col gap-3.5">
           {extracted.text !== "" && <Markdown>{extracted.text}</Markdown>}
           <UIBlockErrorBoundary>
             <UIBlockView
@@ -329,10 +335,7 @@ export function MessageBubble({
   return (
     <div
       data-role={message.role}
-      className={cn(
-        "flex w-full flex-col gap-2",
-        isUser ? "items-end" : "items-start",
-      )}
+      className={cn(CHAT_TURN_STACK, isUser ? "items-end" : "items-start")}
     >
       {message.senderLabel !== undefined && message.senderLabel !== "" && (
         <span className="text-xs text-text-3">From: {message.senderLabel}</span>
@@ -340,14 +343,12 @@ export function MessageBubble({
       {(hasBody || (message.status === "sending" && !hasReasoning)) && (
         <div
           className={cn(
-            "text-sm break-words",
-            message.role === "agent"
-              ? "w-full text-text"
-              : "max-w-[80%] rounded-lg px-3 py-2",
+            message.role === "agent" && CHAT_ASSISTANT_BODY,
+            isUser && CHAT_USER_BUBBLE_SURFACE,
             isUser && "bg-orange text-white whitespace-pre-wrap",
             isUser && "transition-opacity duration-200",
             isUser && message.status === "sending" && "opacity-70",
-            isSystem && "bg-surface-2 text-text-3 italic",
+            isSystem && CHAT_SYSTEM_BUBBLE_SURFACE,
           )}
         >
           {renderBody()}
