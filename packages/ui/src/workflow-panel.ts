@@ -44,8 +44,19 @@ export interface WorkflowPanelProps {
   signalPending: boolean;
   onSignal: (signalName: string, payload?: unknown) => void;
   onClose: () => void;
+  /**
+   * When true, the signed-in app shell owns title, deployment meta, and close in
+   * `AppTopBar` page chrome — panels must not render their own header row.
+   */
+  hostProvidesChrome?: boolean;
   /** Inference credentials passed from the host for config-step pickers. */
   credentials?: WorkflowCredential[];
   /** Visible skills from the workspace library for workflow-specific selectors. */
   skills?: WorkflowSkill[];
+}
+
+export function workflowPanelShowsShellHeader(
+  props: Pick<WorkflowPanelProps, "hostProvidesChrome">,
+): boolean {
+  return props.hostProvidesChrome !== true;
 }

@@ -17,6 +17,7 @@ import {
 } from "@workbench/ui";
 import { useActiveWorkbench } from "../../lib/active-workbench-context";
 import { usePublishActiveContext } from "../../lib/active-context-store";
+import { useSetPageChrome } from "../../lib/page-chrome";
 import { WORKFLOW_STEP_OUTPUT_MAX_CHARS } from "@workbench/shared";
 import {
   reconcileRunState,
@@ -33,10 +34,10 @@ import { ToolsFacetView, type ToolRow } from "./principal-facets";
 import { humanizeToken } from "./activity-naming";
 import {
   CompactHeader,
+  InsightsBackLink,
   FacetCard,
   FacetDesc,
   FacetTabs,
-
   NodeGrid,
   StatStrip,
   type FacetDef,
@@ -167,10 +168,6 @@ export function formatStepDuration(
   const rest = Math.round(seconds % 60);
   return `${minutes}m ${rest}s`;
 }
-
-
-
-
 
 /**
  * One run step, presented as a moment card in the artifact's language: a phase
@@ -321,8 +318,6 @@ function TraceStepMoment({
     </motion.li>
   );
 }
-
-
 
 /**
  * A run's tool invocations are its deterministic (tool/API-call) steps — the
@@ -493,11 +488,7 @@ export function WorkflowTracePage() {
       { id: "cost", label: "Cost", hasGap: costGap },
       { id: "connections", label: "Connections", hasGap: false },
     ];
-  }, [
-    tokensQuery.isSuccess,
-    tokensQuery.isError,
-    tokensQuery.data?.available,
-  ]);
+  }, [tokensQuery.isSuccess, tokensQuery.isError, tokensQuery.data?.available]);
 
   const ownerStat: Stat | null =
     record?.ownerDisplayName !== undefined && record.principalId !== undefined
@@ -580,11 +571,28 @@ export function WorkflowTracePage() {
       : undefined,
   );
 
+  const contextReady =
+    record !== undefined && logState !== undefined && safeId !== null;
+  const pageChrome = useMemo(
+    () => (
+      <div className="flex min-w-0 flex-1 items-center gap-3">
+        <InsightsBackLink to="/insights" />
+      </div>
+    ),
+    [],
+  );
+  useSetPageChrome(contextReady ? pageChrome : null);
+
   return (
     <PagePanel scroll flat>
       <div className="w-full px-6 py-5 max-md:px-3">
         <main className="min-w-0 flex-1">
-          <CompactHeader root={root} status={status} backTo="/insights" />
+          <CompactHeader
+            root={root}
+            status={status}
+            backTo="/insights"
+            identityInTopBar={contextReady}
+          />
 
           <div className="mt-3.5">
             <FacetTabs

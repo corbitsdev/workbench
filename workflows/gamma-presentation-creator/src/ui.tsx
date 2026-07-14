@@ -12,6 +12,7 @@ import {
   liveStatusLabel,
   type WorkflowPanelProps,
   type WorkflowStep,
+  workflowPanelShowsShellHeader,
 } from "@workbench/ui";
 import type { RunState, StepState } from "@intx/workflow";
 // From ./display-steps, NOT ./index: importing the server-only workflow
@@ -19,7 +20,11 @@ import type { RunState, StepState } from "@intx/workflow";
 // break panel load. ./display-steps is browser-safe and is the single source
 // of truth shared with the server catalog preview.
 import { DISPLAY_STEPS } from "./display-steps";
-import { AUDIENCE_OPTIONS, TONE_OPTIONS, GOAL_OPTIONS } from "./intake-defaults";
+import {
+  AUDIENCE_OPTIONS,
+  TONE_OPTIONS,
+  GOAL_OPTIONS,
+} from "./intake-defaults";
 
 type StepPhase = StepState["phase"];
 
@@ -162,7 +167,9 @@ function isSafePresentationURL(value: string | undefined): value is string {
   }
 }
 
-function readRenderURL(stepOutputs: Record<string, unknown>): string | undefined {
+function readRenderURL(
+  stepOutputs: Record<string, unknown>,
+): string | undefined {
   const inner = peelEnvelope(stepOutputs["render"]);
   if (inner === undefined) return undefined;
   const parsed = GammaResult(inner);
@@ -888,26 +895,30 @@ export function Panel(props: WorkflowPanelProps) {
     return <LoadingState label="Loading sources…" />;
   }
 
+  const showShellHeader = workflowPanelShowsShellHeader(props);
+
   return (
     <div className="flex h-full flex-col overflow-hidden bg-bg">
-      <header className="flex items-center justify-between gap-3 border-b border-border px-6 py-4">
-        <div>
-          <h2 className="text-base font-medium text-text">
-            Gamma Presentation
-          </h2>
-          <p className="text-xs text-text-3">
-            Turn an artifact, call, or pasted text into a deck
-          </p>
-        </div>
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={onClose}
-          aria-label="Close panel"
-        >
-          Close
-        </Button>
-      </header>
+      {showShellHeader ? (
+        <header className="flex items-center justify-between gap-3 border-b border-border px-6 py-4">
+          <div>
+            <h2 className="text-base font-medium text-text">
+              Gamma Presentation
+            </h2>
+            <p className="text-xs text-text-3">
+              Turn an artifact, call, or pasted text into a deck
+            </p>
+          </div>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={onClose}
+            aria-label="Close panel"
+          >
+            Close
+          </Button>
+        </header>
+      ) : null}
 
       <HorizontalStepper steps={buildStepperSteps(state)} />
       <LiveStatusSlot label={liveLabel} />

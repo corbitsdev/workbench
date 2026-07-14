@@ -96,11 +96,24 @@ export interface StatusPill {
   label: string;
 }
 
+export function InsightsBackLink({ to }: { to: string }) {
+  return (
+    <Link
+      to={to}
+      className="inline-flex w-fit shrink-0 items-center gap-1 rounded-[8px] px-1.5 py-1 text-[12px] font-medium text-text-3 outline-none transition-colors hover:bg-row-hover hover:text-text focus-visible:ring-1 focus-visible:ring-accent"
+    >
+      <ArrowLeft className="h-3.5 w-3.5" />
+      Insights
+    </Link>
+  );
+}
+
 /** Compact identity header: avatar, name, kind + raw id, status pill. */
 export function CompactHeader({
   root,
   status,
   backTo,
+  identityInTopBar = false,
 }: {
   root: TraceRoot;
   /**
@@ -110,29 +123,29 @@ export function CompactHeader({
    */
   status: StatusPill | null;
   backTo: string;
+  /** Name/avatar live in `AppContextStrip`; page shows id row + status only. */
+  identityInTopBar?: boolean;
 }) {
   return (
     <div className="flex flex-col gap-3">
-      <Link
-        to={backTo}
-        className="inline-flex w-fit items-center gap-1 rounded-[8px] px-1.5 py-1 text-[12px] font-medium text-text-3 outline-none transition-colors hover:bg-row-hover hover:text-text focus-visible:ring-1 focus-visible:ring-accent"
-      >
-        <ArrowLeft className="h-3.5 w-3.5" />
-        Insights
-      </Link>
+      {!identityInTopBar && <InsightsBackLink to={backTo} />}
       <div className="flex items-center gap-3">
-        <span
-          className={`grid h-[34px] w-[34px] shrink-0 place-items-center rounded-[9px] text-[13px] font-bold text-white ${avatarToneClass(
-            root.tone,
-          )}`}
-          aria-hidden
-        >
-          {initialsOf(root.name)}
-        </span>
+        {!identityInTopBar && (
+          <span
+            className={`grid h-[34px] w-[34px] shrink-0 place-items-center rounded-[9px] text-[13px] font-bold text-white ${avatarToneClass(
+              root.tone,
+            )}`}
+            aria-hidden
+          >
+            {initialsOf(root.name)}
+          </span>
+        )}
         <div className="min-w-0">
-          <h1 className="text-[17px] font-semibold tracking-[-0.02em] text-balance text-text">
-            {root.name}
-          </h1>
+          {!identityInTopBar && (
+            <h1 className="text-[17px] font-semibold tracking-[-0.02em] text-balance text-text">
+              {root.name}
+            </h1>
+          )}
           <p className="flex flex-wrap items-baseline gap-1.5 text-[11.5px] text-text-3">
             <span>{root.kindChip}</span>
             <span aria-hidden>·</span>

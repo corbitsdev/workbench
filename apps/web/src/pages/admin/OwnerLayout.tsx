@@ -1,6 +1,8 @@
+import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { NavLink, Outlet } from "react-router";
-import { PagePanel, Skeleton } from "@workbench/ui";
+import { AppPageChromeRow, PagePanel, Skeleton } from "@workbench/ui";
+import { useSetPageChrome } from "../../lib/page-chrome";
 import { getMe } from "../../lib/hub-api";
 import { tabButtonClass } from "./admin-ui";
 
@@ -28,6 +30,36 @@ export function OwnerLayout() {
     queryFn: getMe,
     staleTime: 5 * 60_000,
   });
+
+  const isOwner = meQuery.data?.isOwner === true;
+  const pageChrome = useMemo(
+    () =>
+      isOwner ? (
+        <div className="flex min-w-0 flex-1 flex-col gap-2">
+          <AppPageChromeRow
+            title="Owner"
+            titleSize="sm"
+            className="[&_h1]:text-lg"
+          />
+          {SUB_NAV.length > 1 && (
+            <nav className="flex flex-wrap gap-1" aria-label="Owner sections">
+              {SUB_NAV.map(({ to, label, end }) => (
+                <NavLink
+                  key={to}
+                  to={to}
+                  end={end}
+                  className={({ isActive }) => tabButtonClass(isActive)}
+                >
+                  {label}
+                </NavLink>
+              ))}
+            </nav>
+          )}
+        </div>
+      ) : null,
+    [isOwner],
+  );
+  useSetPageChrome(pageChrome);
 
   if (meQuery.isLoading) {
     return (
@@ -66,31 +98,9 @@ export function OwnerLayout() {
 
   return (
     <PagePanel scroll={false}>
-      <div
-        className={`flex flex-col border-b border-border px-6 pt-5${
-          SUB_NAV.length > 1 ? "" : " pb-4"
-        }`}
-      >
-        <h1 className="text-lg font-semibold text-text">Owner</h1>
-        <p className="mt-0.5 text-sm text-text-2">
-          Underlying setup, features, models, and credentials for this
-          workbench.
-        </p>
-        {SUB_NAV.length > 1 && (
-          <nav className="mt-4 flex gap-1" aria-label="Owner sections">
-            {SUB_NAV.map(({ to, label, end }) => (
-              <NavLink
-                key={to}
-                to={to}
-                end={end}
-                className={({ isActive }) => tabButtonClass(isActive)}
-              >
-                {label}
-              </NavLink>
-            ))}
-          </nav>
-        )}
-      </div>
+      <p className="border-b border-border px-6 py-3 text-sm text-text-2">
+        Underlying setup, features, models, and credentials for this workbench.
+      </p>
       <div className="min-h-0 flex-1 overflow-y-auto p-6">
         <Outlet />
       </div>

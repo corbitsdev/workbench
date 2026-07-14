@@ -1,4 +1,6 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { AppPageChromeRow } from "@workbench/ui";
+import { useSetPageChrome } from "../lib/page-chrome";
 import { useLocation } from "react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
@@ -201,15 +203,24 @@ export default function Settings() {
     el?.scrollIntoView({ block: "start" });
   }, [location.pathname]);
 
+  const pageChrome = useMemo(
+    () => (
+      <AppPageChromeRow
+        title="Settings"
+        titleSize="sm"
+        className="[&_h1]:text-xl"
+      />
+    ),
+    [],
+  );
+  useSetPageChrome(pageChrome);
+
   return (
     <div className="h-full overflow-y-auto">
       <div className="mx-auto w-full max-w-5xl px-4 py-6">
-        <div className="mb-6">
-          <h1 className="text-xl font-semibold text-text">Settings</h1>
-          <p className="mt-0.5 text-sm text-text-3">
-            Manage your workbench preferences.
-          </p>
-        </div>
+        <p className="mb-6 text-sm text-text-3">
+          Manage your workbench preferences.
+        </p>
         <div className="flex flex-col gap-10 lg:flex-row lg:gap-8">
           <SettingsSectionNav />
           <div className="flex min-w-0 flex-1 flex-col gap-12">

@@ -1,6 +1,8 @@
 import { useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router";
-import { toHumanLabel } from "@workbench/ui";
+import { AppPageChromeRow, toHumanLabel } from "@workbench/ui";
+import { useSetPageChrome } from "../../lib/page-chrome";
+import { InsightsBackLink } from "./tracer-shell";
 import { useActiveWorkbench } from "../../lib/active-workbench-context";
 import {
   useArchiveWorkflowRun,
@@ -190,28 +192,30 @@ export function WorkflowRunHistory() {
   );
   const showFilters = !isLoading && !isError && allRuns.length > 0;
 
-  return (
-    <div className="h-full overflow-y-auto">
-      <div className="mx-auto flex max-w-[900px] flex-col gap-5 px-6 py-8">
-        <div className="flex items-baseline justify-between gap-3">
-          <div className="flex items-baseline gap-3">
-            <Link
-              to="/insights"
-              className="text-[12px] text-text-3 underline hover:text-text"
-            >
-              Insights
-            </Link>
-            <h1 className="text-[20px] font-semibold tracking-[-0.01em] text-text">
-              Run history
-            </h1>
-          </div>
+  const pageChrome = useMemo(
+    () => (
+      <div className="flex min-w-0 flex-1 flex-wrap items-center gap-3">
+        <InsightsBackLink to="/insights" />
+        <AppPageChromeRow
+          title="Run history"
+          titleSize="sm"
+          className="flex-none [&_h1]:text-[20px] [&_h1]:tracking-[-0.01em]"
+        >
           {showFilters && (
             <span className="text-[12px] tabular-nums text-text-3">
               {visibleRuns.length} shown
             </span>
           )}
-        </div>
+        </AppPageChromeRow>
+      </div>
+    ),
+    [showFilters, visibleRuns.length],
+  );
+  useSetPageChrome(pageChrome);
 
+  return (
+    <div className="h-full overflow-y-auto">
+      <div className="mx-auto flex max-w-[900px] flex-col gap-5 px-6 py-8">
         {showFilters && (
           <div className="flex flex-col gap-3 rounded-[12px] border border-border bg-surface p-4">
             <div className="flex flex-wrap items-center gap-3">

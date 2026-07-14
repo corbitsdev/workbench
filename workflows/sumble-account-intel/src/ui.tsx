@@ -10,6 +10,7 @@ import {
   liveStatusLabel,
   Markdown,
   type WorkflowPanelProps,
+  workflowPanelShowsShellHeader,
   type WorkflowStep,
 } from "@workbench/ui";
 import { DISPLAY_STEPS } from "./display-steps";
@@ -457,34 +458,38 @@ export function Panel(props: WorkflowPanelProps) {
   const liveLabel = failed ? null : liveStatusLabel(state, DISPLAY_STEPS);
   const failError = failedRunErrorMessage(state) ?? undefined;
 
+  const showShellHeader = workflowPanelShowsShellHeader(props);
+
   return (
     <div className="flex h-full flex-col overflow-hidden bg-bg">
-      <header className="flex shrink-0 items-center justify-between gap-3 border-b border-border bg-surface px-5 py-3">
-        <div className="min-w-0">
-          <p className="truncate text-[14px] font-semibold text-text">
-            Sumble Account Intelligence
-          </p>
-          <p className="mt-px text-[11px] text-text-3">
-            {connected ? "Live" : "Reconnecting…"}
-          </p>
-        </div>
-        <button
-          type="button"
-          onClick={onClose}
-          aria-label="Close"
-          className="grid h-7 w-7 shrink-0 place-items-center rounded-[8px] border border-border text-text-2 transition-colors hover:bg-surface-2 hover:text-text"
-        >
-          <svg
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            className="h-4 w-4"
+      {showShellHeader ? (
+        <header className="flex shrink-0 items-center justify-between gap-3 border-b border-border bg-surface px-5 py-3">
+          <div className="min-w-0">
+            <p className="truncate text-[14px] font-semibold text-text">
+              Sumble Account Intelligence
+            </p>
+            <p className="mt-px text-[11px] text-text-3">
+              {connected ? "Live" : "Reconnecting…"}
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Close"
+            className="grid h-7 w-7 shrink-0 place-items-center rounded-[8px] border border-border text-text-2 transition-colors hover:bg-surface-2 hover:text-text"
           >
-            <path d="M18 6L6 18M6 6l12 12" />
-          </svg>
-        </button>
-      </header>
+            <svg
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              className="h-4 w-4"
+            >
+              <path d="M18 6L6 18M6 6l12 12" />
+            </svg>
+          </button>
+        </header>
+      ) : null}
 
       <HorizontalStepper steps={buildStepperSteps(state)} />
       <LiveStatusSlot label={liveLabel} />

@@ -2,7 +2,8 @@ import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { Archive, Inbox as InboxIcon, Settings, Trash2 } from "lucide-react";
-import { Button, cn, Markdown } from "@workbench/ui";
+import { AppPageChromeRow, Button, cn, Markdown } from "@workbench/ui";
+import { useSetPageChrome } from "../lib/page-chrome";
 import type { MailboxInboxView } from "@workbench/shared";
 import {
   buildNowFeed,
@@ -61,12 +62,7 @@ export function InboxPage() {
   const { activeTenantId, activeWorkbench } = useActiveWorkbench();
   const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
   const [inboxActionError, setInboxActionError] = useState<string | null>(null);
-  const {
-    data,
-    isLoading,
-    isError,
-    refetch,
-  } = useMailbox({
+  const { data, isLoading, isError, refetch } = useMailbox({
     view: inboxView,
     refetchInterval: NOW_POLL_MS,
   });
@@ -102,8 +98,7 @@ export function InboxPage() {
       }),
     [runList, nowFeedMessages, taskList],
   );
-  const nowReady =
-    !nowMailboxLoading && !tasks.isLoading && !runs.isLoading;
+  const nowReady = !nowMailboxLoading && !tasks.isLoading && !runs.isLoading;
   const taskInFeed =
     selectedTaskId !== null &&
     nowItems.some(
@@ -178,27 +173,29 @@ export function InboxPage() {
       .catch(reportInboxActionError);
   };
 
+  const pageChrome = useMemo(
+    () => (
+      <AppPageChromeRow title="Inbox" titleSize="sm">
+        {messages.length > 0 && (
+          <span className="text-xs text-text-3">{messages.length}</span>
+        )}
+        <Link
+          to="/settings#morning-brief"
+          title="Inbox settings"
+          aria-label="Inbox settings"
+          className="grid h-7 w-7 place-items-center rounded-[8px] text-text-3 transition-colors hover:bg-page hover:text-text"
+        >
+          <Settings size={15} aria-hidden="true" />
+        </Link>
+      </AppPageChromeRow>
+    ),
+    [messages.length],
+  );
+  useSetPageChrome(pageChrome);
+
   return (
     <div className="relative flex h-full min-h-0 overflow-hidden">
       <aside className="flex w-80 shrink-0 flex-col border-r border-border bg-surface">
-        <header className="flex items-baseline justify-between px-4 py-4">
-          <h1 className="text-[17px] font-semibold tracking-[-0.01em] text-text">
-            Inbox
-          </h1>
-          <div className="flex items-center gap-2">
-            {messages.length > 0 && (
-              <span className="text-xs text-text-3">{messages.length}</span>
-            )}
-            <Link
-              to="/settings#morning-brief"
-              title="Inbox settings"
-              aria-label="Inbox settings"
-              className="grid h-7 w-7 place-items-center rounded-[8px] text-text-3 transition-colors hover:bg-page hover:text-text"
-            >
-              <Settings size={15} aria-hidden="true" />
-            </Link>
-          </div>
-        </header>
         <InboxViewTabs
           view={inboxView}
           onChange={(next) => {
@@ -258,9 +255,7 @@ export function InboxPage() {
               onMarkUnread={() => {
                 if (!messageId) return;
                 setInboxActionError(null);
-                markUnread
-                  .mutateAsync(messageId)
-                  .catch(reportInboxActionError);
+                markUnread.mutateAsync(messageId).catch(reportInboxActionError);
               }}
               onTrash={() => {
                 if (!messageId) return;
@@ -501,47 +496,47 @@ function MessageRow({
         aria-current={selected ? "true" : undefined}
         className="flex min-w-0 flex-1 flex-col gap-0.5 py-1 text-left"
       >
-      <div className="flex items-center gap-2">
-        <span className="relative flex h-2 w-2 shrink-0 items-center justify-center">
-          <AnimatePresence initial={false}>
-            {!message.read && (
-              <motion.span
-                key="unread-dot"
-                initial={reduceMotion ? false : { scale: 0.4, opacity: 0 }}
-                animate={{ scale: 1, opacity: 1 }}
-                exit={{ scale: 0.4, opacity: 0 }}
-                transition={{ duration: 0.2, ease: "easeOut" }}
-                className="h-2 w-2 rounded-full bg-orange"
-                aria-hidden="true"
-              />
+        <div className="flex items-center gap-2">
+          <span className="relative flex h-2 w-2 shrink-0 items-center justify-center">
+            <AnimatePresence initial={false}>
+              {!message.read && (
+                <motion.span
+                  key="unread-dot"
+                  initial={reduceMotion ? false : { scale: 0.4, opacity: 0 }}
+                  animate={{ scale: 1, opacity: 1 }}
+                  exit={{ scale: 0.4, opacity: 0 }}
+                  transition={{ duration: 0.2, ease: "easeOut" }}
+                  className="h-2 w-2 rounded-full bg-orange"
+                  aria-hidden="true"
+                />
+              )}
+            </AnimatePresence>
+          </span>
+          <span
+            className={cn(
+              "min-w-0 flex-1 truncate text-sm transition-colors duration-200",
+              message.read ? "text-text-2" : "font-semibold text-text",
             )}
-          </AnimatePresence>
-        </span>
+          >
+            {mailboxSenderLabel(message)}
+          </span>
+          <time className="shrink-0 text-[11px] text-text-3">
+            {formatRelativeTime(message.date)}
+          </time>
+        </div>
         <span
           className={cn(
-            "min-w-0 flex-1 truncate text-sm transition-colors duration-200",
-            message.read ? "text-text-2" : "font-semibold text-text",
+            "truncate pl-4 text-sm transition-colors duration-200",
+            message.read ? "text-text-3" : "text-text-2",
           )}
         >
-          {mailboxSenderLabel(message)}
+          {message.subject ?? "(no subject)"}
         </span>
-        <time className="shrink-0 text-[11px] text-text-3">
-          {formatRelativeTime(message.date)}
-        </time>
-      </div>
-      <span
-        className={cn(
-          "truncate pl-4 text-sm transition-colors duration-200",
-          message.read ? "text-text-3" : "text-text-2",
+        {message.snippet && (
+          <span className="truncate pl-4 text-xs text-text-3">
+            {message.snippet}
+          </span>
         )}
-      >
-        {message.subject ?? "(no subject)"}
-      </span>
-      {message.snippet && (
-        <span className="truncate pl-4 text-xs text-text-3">
-          {message.snippet}
-        </span>
-      )}
       </button>
     </div>
   );
@@ -720,9 +715,15 @@ function RailEmptyState({ view }: { view: MailboxInboxView }) {
     view === "trash"
       ? { title: "Trash is empty", body: "Deleted messages appear here." }
       : view === "archived"
-        ? { title: "No archived messages", body: "Archive mail you want to keep without cluttering your inbox." }
+        ? {
+            title: "No archived messages",
+            body: "Archive mail you want to keep without cluttering your inbox.",
+          }
         : view === "unread"
-          ? { title: "No unread messages", body: "You're caught up on new mail." }
+          ? {
+              title: "No unread messages",
+              body: "You're caught up on new mail.",
+            }
           : {
               title: "You're all caught up",
               body: "Briefs and handoffs from Myra and your workflows land here.",
@@ -877,19 +878,39 @@ function InboxMessageActions({
   return (
     <div className="mt-4 flex flex-wrap gap-2">
       {view === "trash" || view === "archived" ? (
-        <Button size="sm" variant="secondary" disabled={busy} onClick={onRestore}>
+        <Button
+          size="sm"
+          variant="secondary"
+          disabled={busy}
+          onClick={onRestore}
+        >
           Restore to inbox
         </Button>
       ) : (
         <>
-          <Button size="sm" variant="secondary" disabled={busy} onClick={onMarkUnread}>
+          <Button
+            size="sm"
+            variant="secondary"
+            disabled={busy}
+            onClick={onMarkUnread}
+          >
             Mark unread
           </Button>
-          <Button size="sm" variant="secondary" disabled={busy} onClick={onArchive}>
+          <Button
+            size="sm"
+            variant="secondary"
+            disabled={busy}
+            onClick={onArchive}
+          >
             <Archive size={14} className="mr-1 inline" aria-hidden />
             Archive
           </Button>
-          <Button size="sm" variant="secondary" disabled={busy} onClick={onTrash}>
+          <Button
+            size="sm"
+            variant="secondary"
+            disabled={busy}
+            onClick={onTrash}
+          >
             <Trash2 size={14} className="mr-1 inline" aria-hidden />
             Trash
           </Button>

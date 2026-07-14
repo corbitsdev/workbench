@@ -50,6 +50,10 @@ export {
   type RichEmptyStateAction,
   type RichEmptyStateActionVariant,
 } from "./RichEmptyState";
+export {
+  AppPageChromeRow,
+  type AppPageChromeRowProps,
+} from "./AppPageChromeRow";
 export { LibraryPageHeader, LibrarySearchInput } from "./LibraryPageHeader";
 export {
   CatalogGlyph,
@@ -190,6 +194,7 @@ export {
   type WorkflowPanelProps,
   type WorkflowCredential,
   type WorkflowSkill,
+  workflowPanelShowsShellHeader,
 } from "./workflow-panel";
 export {
   type WorkflowStep,

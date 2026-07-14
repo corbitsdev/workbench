@@ -1,5 +1,5 @@
-import { Button } from "@workbench/ui";
-import { BarChart2, Download } from "lucide-react";
+import { AppPageChromeRow, Button } from "@workbench/ui";
+import { Download } from "lucide-react";
 
 import type { ActivityExportBucket } from "../../lib/hub-api";
 import { TimeRangeControls } from "./TimeRangeControls";
@@ -28,19 +28,13 @@ export function InsightsPageHeader({
   onExportCsv: () => void;
 }) {
   return (
-    <div className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-b border-border bg-surface px-5 py-3 max-md:px-3">
-      <div className="flex min-w-0 flex-col gap-0.5">
-        <div className="flex items-center gap-2">
-          <BarChart2 className="h-4 w-4 shrink-0 text-text-3" />
-          <p className="text-[14px] font-semibold text-text">
-            Data &amp; Insights
-          </p>
-        </div>
-        {tenantName !== undefined && (
-          <p className="truncate pl-6 text-[12px] text-text-3">{tenantName}</p>
-        )}
-      </div>
-      <div className="flex shrink-0 items-center gap-2">
+    <AppPageChromeRow
+      title="Data & Insights"
+      titleSize="sm"
+      subtitle={tenantName}
+      className="flex-wrap"
+    >
+      <div className="flex shrink-0 flex-wrap items-center gap-2">
         <TimeRangeControls
           preset={preset}
           onPresetChange={onPresetChange}
@@ -77,6 +71,6 @@ export function InsightsPageHeader({
           Export CSV
         </Button>
       </div>
-    </div>
+    </AppPageChromeRow>
   );
 }

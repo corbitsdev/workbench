@@ -11,6 +11,7 @@ import {
   Markdown,
   type WorkflowPanelProps,
   type WorkflowStep,
+  workflowPanelShowsShellHeader,
 } from "@workbench/ui";
 import { parseReport, type Report } from "@workbench/last30days-core";
 import { DISPLAY_STEPS, RESEARCH_STEP_IDS } from "./display-steps";
@@ -457,26 +458,30 @@ export function Panel(props: WorkflowPanelProps) {
   const current = activeStep(state);
   const liveLabel = failed ? null : currentActivity(state);
 
+  const showShellHeader = workflowPanelShowsShellHeader(props);
+
   return (
     <div className="flex h-full flex-col bg-surface">
-      <header className="flex items-center justify-between gap-3 border-b border-border px-6 py-4">
-        <div>
-          <h2 className="text-base font-medium text-text">
-            Last 30 days research
-          </h2>
-          <p className="text-xs text-text-3">
-            Market and community signal with citations
-          </p>
-        </div>
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={onClose}
-          aria-label="Close panel"
-        >
-          Close
-        </Button>
-      </header>
+      {showShellHeader ? (
+        <header className="flex items-center justify-between gap-3 border-b border-border px-6 py-4">
+          <div>
+            <h2 className="text-base font-medium text-text">
+              Last 30 days research
+            </h2>
+            <p className="text-xs text-text-3">
+              Market and community signal with citations
+            </p>
+          </div>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={onClose}
+            aria-label="Close panel"
+          >
+            Close
+          </Button>
+        </header>
+      ) : null}
 
       <HorizontalStepper steps={buildStepperSteps(state)} />
       <LiveStatusSlot label={liveLabel} />

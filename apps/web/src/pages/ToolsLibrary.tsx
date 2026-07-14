@@ -4,7 +4,7 @@ import {
   catalogCardClassName,
   DataTable,
   hashString,
-  LibraryPageHeader,
+  AppPageChromeRow,
   LibrarySearchInput,
   PagePanel,
   toHumanLabel,
@@ -14,6 +14,7 @@ import {
 } from "@workbench/ui";
 import { useMemo, useState } from "react";
 import { useNavigate } from "react-router";
+import { useSetPageChrome } from "../lib/page-chrome";
 import { useQuery } from "@tanstack/react-query";
 import { useToolsLibrary, type ToolSummary } from "../hooks/use-tools";
 import { getMe } from "../lib/hub-api";
@@ -186,9 +187,9 @@ export function ToolsLibrary() {
   const isSearching = query.trim().length > 0;
   const isFiltering = provider !== ALL_PROVIDERS;
 
-  return (
-    <PagePanel>
-      <LibraryPageHeader title="Tools" count={filtered.length}>
+  const pageChrome = useMemo(
+    () => (
+      <AppPageChromeRow title="Tools" count={filtered.length}>
         <select
           aria-label="Filter by provider"
           value={provider}
@@ -209,8 +210,14 @@ export function ToolsLibrary() {
           onChange={setQuery}
         />
         <ViewToggle mode={viewMode} onChange={setViewMode} />
-      </LibraryPageHeader>
+      </AppPageChromeRow>
+    ),
+    [filtered.length, provider, providerOptions, query, viewMode, setViewMode],
+  );
+  useSetPageChrome(pageChrome);
 
+  return (
+    <PagePanel>
       <div className="flex-1 px-4 pb-10 pt-1.5 sm:px-7">
         {toolsQuery.isLoading && (
           <div className="py-10 text-[13px] text-text-3">Loading tools…</div>

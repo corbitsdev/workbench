@@ -1,5 +1,7 @@
 import { PagePanel } from "@workbench/ui";
 import { motion, useReducedMotion } from "framer-motion";
+import { useMemo } from "react";
+import { useSetPageChrome } from "../lib/page-chrome";
 
 import { useInsightsOverview } from "../hooks/use-insights-overview";
 import { describeHubApiFailure } from "../lib/hub-api";
@@ -33,8 +35,8 @@ export function InsightsDashboard() {
   const reduceMotion = useReducedMotion();
   const insights = useInsightsOverview();
 
-  return (
-    <PagePanel scroll={false} flat fitContent>
+  const pageChrome = useMemo(
+    () => (
       <InsightsPageHeader
         tenantName={insights.activeWorkbench?.tenantName}
         preset={insights.preset}
@@ -46,7 +48,23 @@ export function InsightsDashboard() {
         canExport={insights.canExport}
         onExportCsv={insights.exportCsv}
       />
+    ),
+    [
+      insights.activeWorkbench?.tenantName,
+      insights.preset,
+      insights.setPreset,
+      insights.customRange,
+      insights.setCustomRange,
+      insights.exportBucket,
+      insights.setExportBucket,
+      insights.canExport,
+      insights.exportCsv,
+    ],
+  );
+  useSetPageChrome(pageChrome);
 
+  return (
+    <PagePanel scroll={false} flat fitContent>
       <div className="min-h-0 flex-1 overflow-y-auto px-5 py-5 max-md:px-3">
         {insights.showSummaryLoading && <InsightsSkeleton />}
 

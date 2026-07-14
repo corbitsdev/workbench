@@ -13,6 +13,7 @@ import {
   Markdown,
   type WorkflowPanelProps,
   type WorkflowStep,
+  workflowPanelShowsShellHeader,
 } from "@workbench/ui";
 
 // Scheduler-fired and gate-free: this panel is a read-only run view. It has no
@@ -144,27 +145,30 @@ export function Panel(props: WorkflowPanelProps) {
   const failed = hasFailed(state);
   const markdown = briefMarkdown(stepOutputs);
   const liveLabel = failed ? null : liveStatusLabel(state, DISPLAY_STEPS);
+  const showShellHeader = workflowPanelShowsShellHeader(props);
 
   return (
     <div className="flex h-full flex-col overflow-hidden bg-bg">
-      <header className="flex shrink-0 items-center justify-between gap-3 border-b border-border bg-surface px-5 py-3">
-        <div className="min-w-0">
-          <p className="truncate text-[14px] font-semibold text-text">
-            Morning brief
-          </p>
-          <p className="mt-px text-[11px] text-text-3">
-            {connected ? "Live" : "Reconnecting…"}
-          </p>
-        </div>
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={onClose}
-          aria-label="Close panel"
-        >
-          Close
-        </Button>
-      </header>
+      {showShellHeader ? (
+        <header className="flex shrink-0 items-center justify-between gap-3 border-b border-border bg-surface px-5 py-3">
+          <div className="min-w-0">
+            <p className="truncate text-[14px] font-semibold text-text">
+              Morning brief
+            </p>
+            <p className="mt-px text-[11px] text-text-3">
+              {connected ? "Live" : "Reconnecting…"}
+            </p>
+          </div>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={onClose}
+            aria-label="Close panel"
+          >
+            Close
+          </Button>
+        </header>
+      ) : null}
 
       <HorizontalStepper steps={buildStepperSteps(state)} />
       <LiveStatusSlot label={liveLabel} />

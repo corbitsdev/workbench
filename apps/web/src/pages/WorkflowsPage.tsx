@@ -1,5 +1,8 @@
+import { useMemo } from "react";
 import { useNavigate, useParams } from "react-router";
+import { AppPageChromeRow } from "@workbench/ui";
 import { ErrorBoundary } from "../components/ErrorBoundary";
+import { useSetPageChrome } from "../lib/page-chrome";
 import { ActiveWorkflowRuns } from "../components/ActiveWorkflowRuns";
 import { WorkflowCatalog } from "../components/WorkflowCatalog";
 import { MySchedules } from "../components/MySchedules";
@@ -33,21 +36,40 @@ export function WorkflowsPage() {
     );
   }
 
+  return <WorkflowsCatalog tenantId={activeTenantId} navigate={navigate} />;
+}
+
+function WorkflowsCatalog({
+  tenantId,
+  navigate,
+}: {
+  tenantId: string | null | undefined;
+  navigate: ReturnType<typeof useNavigate>;
+}) {
+  const pageChrome = useMemo(
+    () => (
+      <AppPageChromeRow
+        title="Workflows"
+        titleSize="sm"
+        className="[&_h1]:text-[20px] [&_h1]:tracking-[-0.01em]"
+      />
+    ),
+    [],
+  );
+  useSetPageChrome(pageChrome);
+
+  const scopedTenantId = tenantId ?? null;
+
   return (
     <div className="@container h-full overflow-y-auto">
       <div className="mx-auto max-w-[1180px] px-6 py-8">
-        <div className="mb-6 flex items-baseline gap-3">
-          <h1 className="text-[20px] font-semibold tracking-[-0.01em] text-text">
-            Workflows
-          </h1>
-        </div>
-        <ActiveWorkflowRuns tenantId={activeTenantId} />
+        <ActiveWorkflowRuns tenantId={scopedTenantId} />
         <WorkflowCatalog
-          tenantId={activeTenantId}
+          tenantId={scopedTenantId}
           onWorkflowStarted={(runId) => navigate(`/workflows/${runId}`)}
         />
         <ErrorBoundary>
-          <MySchedules tenantId={activeTenantId} />
+          <MySchedules tenantId={scopedTenantId} />
         </ErrorBoundary>
       </div>
     </div>

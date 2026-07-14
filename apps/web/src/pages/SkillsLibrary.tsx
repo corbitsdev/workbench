@@ -6,7 +6,7 @@ import {
   catalogCardClassName,
   DataTable,
   hashString,
-  LibraryPageHeader,
+  AppPageChromeRow,
   LibrarySearchInput,
   PagePanel,
   toHumanLabel,
@@ -17,6 +17,7 @@ import {
 import { Plus } from "lucide-react";
 import { useMemo, useState } from "react";
 import { useNavigate } from "react-router";
+import { useSetPageChrome } from "../lib/page-chrome";
 import { useQuery } from "@tanstack/react-query";
 import {
   useApproveSkillDraft,
@@ -189,9 +190,9 @@ export function SkillsLibrary() {
     },
   ];
 
-  return (
-    <PagePanel>
-      <LibraryPageHeader title="Skills" count={filteredLibrary.length}>
+  const pageChrome = useMemo(
+    () => (
+      <AppPageChromeRow title="Skills" count={filteredLibrary.length}>
         <LibrarySearchInput
           label="Search skills"
           placeholder="Search skills"
@@ -208,8 +209,14 @@ export function SkillsLibrary() {
           <Plus size={14} className="text-orange" />
           Add skill
         </Button>
-      </LibraryPageHeader>
+      </AppPageChromeRow>
+    ),
+    [filteredLibrary.length, query, viewMode, setViewMode, navigate],
+  );
+  useSetPageChrome(pageChrome);
 
+  return (
+    <PagePanel>
       <div className="flex-1 px-4 pb-10 pt-1.5 sm:px-7">
         {actionError && (
           <div className="mb-3 rounded-md border border-border bg-surface px-3 py-2 text-[12px] text-text">

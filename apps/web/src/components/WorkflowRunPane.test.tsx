@@ -10,6 +10,9 @@ import {
   waitFor,
 } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import React from "react";
+import { ActiveContextProvider } from "../lib/active-context-store";
+import { PageChromeProvider, usePageChromeSlot } from "../lib/page-chrome";
 import type { WorkflowPanelProps } from "@workbench/ui";
 import * as workflowHooks from "../hooks/use-workflow";
 import type { LogRunState, RunRecord } from "../lib/run-state-adapter";
@@ -122,12 +125,25 @@ mock.module("../hooks/use-skills", () => ({
 
 import { WorkflowRunPane } from "./WorkflowRunPane";
 
+function ChromeSlotProbe() {
+  return (
+    <div data-testid="chrome-slot">{usePageChromeSlot()}</div>
+  );
+}
+
 function wrapper({ children }: { children: React.ReactNode }) {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
   return (
-    <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+    <QueryClientProvider client={queryClient}>
+      <ActiveContextProvider>
+        <PageChromeProvider>
+          <ChromeSlotProbe />
+          {children}
+        </PageChromeProvider>
+      </ActiveContextProvider>
+    </QueryClientProvider>
   );
 }
 
@@ -169,7 +185,7 @@ describe("WorkflowRunPane", () => {
     render(<WorkflowRunPane deploymentId="wfr_1" onClose={() => undefined} />, {
       wrapper,
     });
-    await waitFor(() => screen.getByText("Workflow run"));
+    await waitFor(() => screen.getByText("Waiting for run activity…"));
     expect(screen.queryByText("custom-panel-for-wfr_1")).toBeNull();
   });
 
@@ -238,9 +254,9 @@ describe("WorkflowRunPane", () => {
     render(<WorkflowRunPane deploymentId="wfr_1" onClose={() => undefined} />, {
       wrapper,
     });
-    await waitFor(() => screen.getByText("Workflow run"));
-    // Legible terminal copy, not a permanent loading placeholder.
-    screen.getByText(/this run failed\. start a new run to try again\./i);
+    await waitFor(() =>
+      screen.getByText(/this run failed\. start a new run to try again\./i),
+    );
     expect(screen.queryByText("Loading workflow…")).toBeNull();
   });
 
@@ -1062,8 +1078,9 @@ describe("WorkflowRunPane", () => {
     render(<WorkflowRunPane deploymentId="wfr_1" onClose={() => undefined} />, {
       wrapper,
     });
-    await waitFor(() => screen.getByText("Workflow run"));
-    screen.getByText(/this run failed\. start a new run to try again\./i);
+    await waitFor(() =>
+      screen.getByText(/this run failed\. start a new run to try again\./i),
+    );
     expect(screen.queryByTestId("workflow-starting-indicator")).toBeNull();
   });
 

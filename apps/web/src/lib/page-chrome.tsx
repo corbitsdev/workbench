@@ -8,6 +8,23 @@ import {
   type ReactNode,
 } from "react";
 
+/**
+ * Page chrome contract (CL-3612):
+ *
+ * - **List/catalog routes** publish title, counts, search, and primary actions via
+ *   `useSetPageChrome` (typically `AppPageChromeRow` + controls). The scrollable pane
+ *   must not render a second full-width header (`LibraryPageHeader`, bordered toolbars).
+ *
+ * - **Entity detail routes** publish identity through `usePublishActiveContext`
+ *   (`AppContextStrip`) and trailing actions via `useSetPageChrome`. The pane avoids
+ *   duplicating the title row.
+ *
+ * - Only `AppTopBar` owns the app-level `border-b` header band. Secondary filter rows
+ *   may wrap inside the same chrome node (see artifacts gallery).
+ *
+ * Stabilize chrome nodes with `useMemo` and primitive deps to avoid effect loops.
+ */
+
 type PageChromeStore = {
   chrome: ReactNode | null;
   setChrome: (node: ReactNode | null) => void;
