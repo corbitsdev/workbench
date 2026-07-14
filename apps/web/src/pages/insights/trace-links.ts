@@ -1,5 +1,5 @@
 import type { TimelineEntry } from "@workbench/client";
-import { deepLinkPath } from "@workbench/shared/deep-link";
+import { deepLinkPath } from "@workbench/shared";
 import { humanizeToken, parseToolResource } from "./activity-naming";
 
 /** A cross-link to another entity's own trace/detail surface. */
