@@ -424,3 +424,32 @@ export async function updateOwnerTask(
   }
   return updated;
 }
+
+/** Applies one status to each owned task id; skips ids the caller does not own. */
+export async function bulkUpdateOwnerTaskStatus(
+  db: HubDb,
+  input: {
+    tenantId: string;
+    ownerPrincipalId: string;
+    actorPrincipalId: string;
+    ids: readonly string[];
+    status: TaskStatus;
+    mailboxEventBus?: MailboxEventBus;
+  },
+): Promise<string[]> {
+  const updatedIds: string[] = [];
+  for (const id of input.ids) {
+    const updated = await updateOwnerTask(db, {
+      tenantId: input.tenantId,
+      ownerPrincipalId: input.ownerPrincipalId,
+      actorPrincipalId: input.actorPrincipalId,
+      id,
+      status: input.status,
+      ...(input.mailboxEventBus
+        ? { mailboxEventBus: input.mailboxEventBus }
+        : {}),
+    });
+    if (updated) updatedIds.push(id);
+  }
+  return updatedIds;
+}

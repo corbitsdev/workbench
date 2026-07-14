@@ -1,6 +1,6 @@
 import { type } from "arktype";
 import { TRIAGE_SUBJECT_PREFIX, type MailboxMessage } from "./mailbox";
-import type { Task } from "./tasks";
+import { openTaskStatuses, type Task } from "./tasks";
 
 // The "Now" feed is the inbox-as-dashboard composition: everything that needs
 // the user's attention right now, in one prioritized list. A gate ask blocks a
@@ -16,7 +16,7 @@ export const NowRunSchema = type({
 });
 export type NowRun = typeof NowRunSchema.infer;
 
-export const openTaskStatuses = ["open", "in_progress", "waiting"] as const;
+export { openTaskStatuses };
 
 export type NowGateItem = { type: "gate"; run: NowRun };
 export type NowMailItem = {

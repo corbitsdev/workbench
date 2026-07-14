@@ -31,6 +31,7 @@ import { useActiveWorkbench } from "../lib/active-workbench-context";
 import { formatRelativeTime } from "../lib/relative-time";
 import { ErrorBoundary } from "../components/ErrorBoundary";
 import { NowSection } from "../components/NowSection";
+import { TasksPanel } from "../components/TasksPanel";
 import { RefChip } from "../components/RefChip";
 
 // The Now feed's liveness cadence, shared with the bell's mailbox poll so the
@@ -303,6 +304,11 @@ export function InboxPage() {
                 tenantId={activeTenantId}
                 myPrincipalId={activeWorkbench?.id ?? null}
               />
+              {nowReady ? (
+                <div className="mx-auto w-full max-w-[720px] px-8 pb-4">
+                  <TasksPanel tasks={taskList ?? []} />
+                </div>
+              ) : null}
               <LoadMoreControl
                 hasMore={
                   Boolean(nowMailboxHasNextPage) || Boolean(tasks.hasNextPage)

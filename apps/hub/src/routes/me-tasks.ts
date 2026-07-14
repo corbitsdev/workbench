@@ -7,6 +7,8 @@ import {
   CreateTaskBodySchema,
   PushTaskBodySchema,
   PushTaskResponseSchema,
+  TaskBulkPatchBodySchema,
+  TaskBulkPatchResponseSchema,
   TaskListResponseSchema,
   TaskSchema,
   UpdateTaskBodySchema,
@@ -18,16 +20,18 @@ import {
   createOwnerTask,
   getOwnerTask,
   getVisibleTask,
+  bulkUpdateOwnerTaskStatus,
   listOwnerTasks,
   updateOwnerTask,
 } from "../lib/task-store";
 import { ErrorResponse, requestBodySchema } from "../lib/openapi";
-import { UuidParam } from "../lib/uuid";
+import { isUuid, UuidParam } from "../lib/uuid";
 import { clampLimit, decodeCursor, MAX_PAGE_LIMIT } from "../lib/keyset";
 import type { HubDb } from "../db";
 import type { MailboxEventBus } from "../lib/mailbox-events";
 
 const DEFAULT_TASKS_PAGE_LIMIT = 50;
+const MAX_BULK_TASK_IDS = 50;
 
 const { principal } = intxSchema;
 
@@ -313,6 +317,76 @@ export function createMeTasksRouter(
       });
       if (!updated) return c.json({ error: "task not found" }, 404);
       return c.json(updated);
+    },
+  );
+
+  app.post(
+    "/me/tasks/bulk",
+    describeRoute({
+      tags: ["Me"],
+      summary: "Apply one status transition to multiple owned tasks",
+      description:
+        "Partial success: `ids` lists only rows the caller owns that were updated; unknown ids are skipped.",
+      requestBody: {
+        required: true,
+        content: {
+          "application/json": {
+            schema: requestBodySchema(TaskBulkPatchBodySchema),
+          },
+        },
+      },
+      responses: {
+        200: {
+          description: "Subset of requested ids that were updated",
+          content: {
+            "application/json": {
+              schema: resolver(TaskBulkPatchResponseSchema),
+            },
+          },
+        },
+        400: {
+          description:
+            "Invalid JSON, invalid body, non-UUID id, or too many ids",
+          content: { "application/json": { schema: resolver(ErrorResponse) } },
+        },
+        409: {
+          description: "Caller has no provisioned membership yet",
+          content: { "application/json": { schema: resolver(ErrorResponse) } },
+        },
+      },
+    }),
+    async (c) => {
+      const userId = c.get("userId");
+      const raw = await c.req.json().catch(() => null);
+      if (raw === null) {
+        return c.json({ error: "invalid JSON body" }, 400);
+      }
+      const body = TaskBulkPatchBodySchema(raw);
+      if (body instanceof type.errors) {
+        return c.json({ error: "invalid bulk task request" }, 400);
+      }
+      if (body.ids.length > MAX_BULK_TASK_IDS) {
+        return c.json(
+          { error: `ids must contain at most ${MAX_BULK_TASK_IDS} items` },
+          400,
+        );
+      }
+      if (!body.ids.every((id) => isUuid(id))) {
+        return c.json({ error: "each id must be a UUID" }, 400);
+      }
+      const member = await resolveCallerMember(db, userId);
+      if (!member) {
+        return c.json({ error: "No provisioned membership" }, 409);
+      }
+      const updatedIds = await bulkUpdateOwnerTaskStatus(db, {
+        tenantId: member.tenantId,
+        ownerPrincipalId: member.principalId,
+        actorPrincipalId: member.principalId,
+        ids: body.ids,
+        status: body.status,
+        ...(mailboxEventBus ? { mailboxEventBus } : {}),
+      });
+      return c.json({ updated: updatedIds.length, ids: updatedIds });
     },
   );
 

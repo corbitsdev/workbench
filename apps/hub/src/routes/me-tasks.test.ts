@@ -71,6 +71,15 @@ mock.module("../lib/task-store", () => ({
     storeCalls.push({ fn: "getVisible", args });
     return ownedResult;
   },
+  bulkUpdateOwnerTaskStatus: async (
+    _db: unknown,
+    args: Record<string, unknown>,
+  ) => {
+    storeCalls.push({ fn: "bulk", args });
+    const ids = args["ids"] as string[];
+    if (!updateResult) return [];
+    return ids;
+  },
 }));
 
 // Tenant members the assignee-validation check may see, keyed by principal
@@ -388,6 +397,57 @@ describe("PATCH /me/tasks/:id", () => {
     );
     expect(res.status).toBe(400);
     expect(storeCalls.some((c) => c.fn === "update")).toBe(false);
+  });
+});
+
+describe("POST /me/tasks/bulk", () => {
+  const idA = "123e4567-e89b-42d3-a456-426614174001";
+  const idB = "123e4567-e89b-42d3-a456-426614174002";
+
+  it("applies status to owned task ids", async () => {
+    storeCalls.length = 0;
+    updateResult = apiTask({ status: "done" });
+    const res = await mountApp().fetch(
+      req("/me/tasks/bulk", {
+        method: "POST",
+        user: "user-a",
+        body: JSON.stringify({ ids: [idA, idB], status: "done" }),
+      }),
+    );
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ updated: 2, ids: [idA, idB] });
+    const bulk = storeCalls.find((c) => c.fn === "bulk");
+    expect(bulk?.args).toMatchObject({
+      tenantId: "tenant-root",
+      ownerPrincipalId: "principal-a",
+      status: "done",
+      ids: [idA, idB],
+    });
+  });
+
+  it("400s when ids exceed the bulk cap", async () => {
+    const ids = Array.from({ length: 51 }, (_, i) =>
+      `123e4567-e89b-42d3-a456-${String(i).padStart(12, "0")}`,
+    );
+    const res = await mountApp().fetch(
+      req("/me/tasks/bulk", {
+        method: "POST",
+        user: "user-a",
+        body: JSON.stringify({ ids, status: "done" }),
+      }),
+    );
+    expect(res.status).toBe(400);
+  });
+
+  it("409s when the caller has no membership", async () => {
+    const res = await mountApp().fetch(
+      req("/me/tasks/bulk", {
+        method: "POST",
+        user: "user-none",
+        body: JSON.stringify({ ids: [idA], status: "cancelled" }),
+      }),
+    );
+    expect(res.status).toBe(409);
   });
 });
 
