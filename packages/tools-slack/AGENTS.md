@@ -17,7 +17,7 @@ Slack Web API tool implementation. Registered in the hub's tool registry.
 - Credential (`slack` provider) is resolved by Interchange at tool execution time — not at agent launch. The secret is the bot token (`xoxb-…`); `metadata.baseURL` defaults to `https://slack.com/api`. `slack` is a tool-only provider — it goes in Myra's `credentialProviderNames`, NEVER `credentialRequirements`.
 - The bot must be invited to a channel before `slack_get_channel_history` / `slack_search` can read it — an explicit, visible per-channel opt-in.
 - The tool grants `tool:<name>/invoke` are synthesized at session launch from the agent's capabilities list; do not add them to the DB.
-- A new write tool must be added to `APPROVAL_GATED_TOOL_NAMES` in `@workbench/agents` or the drift guard fails.
+- A new write tool must declare `sideEffect: "write"` on its hub entry (and regen manifests); the drift guard derives gating from that classification.
 
 ## Reliability
 

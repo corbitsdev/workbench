@@ -6,6 +6,7 @@ import {
   isLinkedInPostArtifactKind,
   usesSocialPostPreview,
 } from "./artifact-kinds";
+import { cleanContentForExcerpt } from "./artifact-content-clean";
 
 export const ARTIFACT_PREVIEW_FAMILIES = [
   "document",
@@ -85,9 +86,24 @@ export function labelForArtifactStatus(
 
 const EXCERPT_MAX = 120;
 
-/** Collapse whitespace and cap length — never dump full artifact bodies on cards. */
-export function previewExcerpt(content: string, max = EXCERPT_MAX): string {
-  const collapsed = content.replace(/\s+/g, " ").trim();
+export interface PreviewExcerptOptions {
+  max?: number;
+  /** Used when JSON content has no summary/description/title field to surface. */
+  fallbackTitle?: string;
+}
+
+/**
+ * Reduce artifact content to a clean prose excerpt for a gallery card: strip
+ * markdown/HTML syntax, resolve JSON through its summary field, collapse
+ * whitespace, and cap length. Never dumps raw source syntax on a card.
+ */
+export function previewExcerpt(
+  content: string,
+  options: PreviewExcerptOptions = {},
+): string {
+  const { max = EXCERPT_MAX, fallbackTitle } = options;
+  const cleaned = cleanContentForExcerpt(content, fallbackTitle);
+  const collapsed = cleaned.replace(/\s+/g, " ").trim();
   if (collapsed.length <= max) return collapsed;
   return `${collapsed.slice(0, max - 1).trimEnd()}…`;
 }
