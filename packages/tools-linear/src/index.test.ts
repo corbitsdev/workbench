@@ -380,10 +380,10 @@ describe("linear_list_issues handler", () => {
     const nodes = [{ id: "uuid-1", identifier: "ENG-1" }];
     const fetcher = mock((_input: string, init: RequestInit) => {
       const body = JSON.parse(String(init.body)) as { query: string };
-      if (body.query.includes("GetTeam")) {
+      if (body.query.includes("TeamByName")) {
         return Promise.resolve(
           new Response(
-            JSON.stringify({ data: { team: { id: "team-uuid" } } }),
+            JSON.stringify({ data: { teams: { nodes: [{ id: "team-uuid" }] } } }),
             { status: 200, headers: { "Content-Type": "application/json" } },
           ),
         );
@@ -461,6 +461,58 @@ describe("linear_list_issues handler", () => {
 
     expect(result.isError).toBe(true);
     expect(result.content).toContain("Linear team not found: missing");
+  });
+
+  it("forwards in-range priority on list filter and omits out-of-range", async () => {
+    const fetcher = makeFetchStub({ data: { issues: { nodes: [] } } });
+    const runner = createToolRunner(
+      createLinearTools({ apiKey: "k", fetcher }),
+    );
+
+    await runner.run(
+      {
+        id: "c1",
+        name: "linear_list_issues",
+        arguments: { priority: 2 },
+      },
+      new AbortController().signal,
+    );
+    expect(lastBody(fetcher).variables.filter).toEqual({
+      priority: { eq: 2 },
+    });
+
+    const fetcherOut = makeFetchStub({ data: { issues: { nodes: [] } } });
+    const runnerOut = createToolRunner(
+      createLinearTools({ apiKey: "k", fetcher: fetcherOut }),
+    );
+    await runnerOut.run(
+      {
+        id: "c2",
+        name: "linear_list_issues",
+        arguments: { priority: 9 },
+      },
+      new AbortController().signal,
+    );
+    expect(lastBody(fetcherOut).variables.filter).toBeUndefined();
+    expect(lastBody(fetcherOut).variables).toEqual({ first: 10 });
+  });
+
+  it("omits negative and non-integer priority from list filter", async () => {
+    for (const priority of [-1, 1.5, 5]) {
+      const fetcher = makeFetchStub({ data: { issues: { nodes: [] } } });
+      const runner = createToolRunner(
+        createLinearTools({ apiKey: "k", fetcher }),
+      );
+      await runner.run(
+        {
+          id: "c1",
+          name: "linear_list_issues",
+          arguments: { priority },
+        },
+        new AbortController().signal,
+      );
+      expect(lastBody(fetcher).variables).toEqual({ first: 10 });
+    }
   });
 
   it("falls back to default first when given an invalid value", async () => {
@@ -682,7 +734,7 @@ describe("linear_create_issue handler", () => {
       url: "https://linear.app/x/issue/ENG-9",
     };
     const fetcher = makeRoutingFetchStub([
-      { includes: "GetTeam", data: { team: { id: "team-uuid" } } },
+      { includes: "TeamByName", data: { teams: { nodes: [{ id: "team-uuid" }] } } },
       { includes: "issueCreate", data: { issueCreate: { success: true, issue } } },
     ]);
     const runner = createToolRunner(
@@ -725,7 +777,7 @@ describe("linear_create_issue handler", () => {
   it("omits optional fields when not provided", async () => {
     const issue = { id: "uuid-1", identifier: "ENG-1", title: "T", url: "u" };
     const fetcher = makeRoutingFetchStub([
-      { includes: "GetTeam", data: { team: { id: "team-uuid" } } },
+      { includes: "TeamByName", data: { teams: { nodes: [{ id: "team-uuid" }] } } },
       { includes: "issueCreate", data: { issueCreate: { success: true, issue } } },
     ]);
     const runner = createToolRunner(
@@ -794,7 +846,7 @@ describe("linear_create_issue handler", () => {
 
   it("errors when Linear rejects the create and returns no issue", async () => {
     const fetcher = makeRoutingFetchStub([
-      { includes: "GetTeam", data: { team: { id: "team-uuid" } } },
+      { includes: "TeamByName", data: { teams: { nodes: [{ id: "team-uuid" }] } } },
       {
         includes: "issueCreate",
         data: { issueCreate: { success: false, issue: null } },

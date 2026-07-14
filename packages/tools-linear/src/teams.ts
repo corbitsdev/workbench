@@ -43,24 +43,14 @@ const TEAM_BY_NAME_QUERY = `query TeamByName($name: String!) {
   }
 }`;
 
-export async function resolveTeamId(
+const UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+async function resolveTeamIdByName(
   config: LinearToolsConfig,
   teamOrId: string,
   signal: AbortSignal,
 ): Promise<string> {
-  const direct = await fetchLinearGraphQL(
-    config,
-    GET_TEAM_QUERY,
-    { id: teamOrId },
-    signal,
-  );
-  if (direct.team !== null && direct.team !== undefined) {
-    const row = direct.team as Record<string, unknown>;
-    const id = optionalString(row.id);
-    if (id !== null) {
-      return id;
-    }
-  }
   const byName = await fetchLinearGraphQL(
     config,
     TEAM_BY_NAME_QUERY,
@@ -80,6 +70,30 @@ export async function resolveTeamId(
     throw new Error(`Linear team not found: ${teamOrId}`);
   }
   return id;
+}
+
+export async function resolveTeamId(
+  config: LinearToolsConfig,
+  teamOrId: string,
+  signal: AbortSignal,
+): Promise<string> {
+  if (UUID_RE.test(teamOrId)) {
+    const direct = await fetchLinearGraphQL(
+      config,
+      GET_TEAM_QUERY,
+      { id: teamOrId },
+      signal,
+    );
+    if (direct.team !== null && direct.team !== undefined) {
+      const row = direct.team as Record<string, unknown>;
+      const id = optionalString(row.id);
+      if (id !== null) {
+        return id;
+      }
+    }
+    // UUID-shaped but not a team id — fall back to name search for edge cases.
+  }
+  return resolveTeamIdByName(config, teamOrId, signal);
 }
 
 export async function listTeams(
