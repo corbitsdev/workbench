@@ -113,6 +113,7 @@ import { createAdminRouter } from "./routes/admin";
 import { createOwnerRouter } from "./routes/owner";
 import { isDemosEnabledByGrant, resolveDemoLinks } from "./lib/demos-gate";
 import { isFeatureEnabledForTenantCached } from "./lib/feature-grants";
+import { isWorkspaceInboxSourceEnabledForTenant } from "./lib/workspace-inbox-source-gate";
 import { isAdmin, isOwner } from "./lib/admin-grant";
 import { createAgentProvisioningRouter } from "./routes/agents";
 import {
@@ -1691,6 +1692,7 @@ const inboxIntake = createInboxIntake({
   listMembers: listInboxMembers,
   mailboxEventBus,
   mailboxTriage,
+  tickIntervalMs: config.inboxIntake.tickIntervalMs,
   isTenantEnabled: (tenantId) =>
     isFeatureEnabledForTenantCached(
       db,
@@ -1698,6 +1700,8 @@ const inboxIntake = createInboxIntake({
       "scheduler",
       config.scheduler.enabled,
     ),
+  isWorkspaceSourceEnabled: (tenantId, sourceKey) =>
+    isWorkspaceInboxSourceEnabledForTenant(db, tenantId, sourceKey),
 });
 inboxIntake.start();
 

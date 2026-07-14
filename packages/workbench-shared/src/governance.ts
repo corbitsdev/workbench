@@ -106,6 +106,26 @@ export function capabilityResource(provider: string): string {
   return `capability:${provider}`;
 }
 
+// ─── Workspace-scope inbox source enablement (CL-3577) ─────────────
+//
+// A workspace-scope inbox source (a tenant-wide poller that runs once per tick
+// for the whole tenant — e.g. the upcoming Granola workspace poller) is gated
+// by an OWNER-level enablement, NOT a per-member `inboxSource:*` preference.
+// Modeled like the feature grants above: deny-by-default (absent any grant the
+// source stays OFF), an `allow` on the tenant's system `member` role for
+// `inbox-source:<key>`/`enable` turns it on for the tenant. Member-scope
+// sources are unaffected — they keep gating on the member preference.
+
+/** Action probed by the workspace-scope inbox source gate. */
+export const WORKSPACE_INBOX_SOURCE_ACTION = "enable";
+
+/** The resource string gating one workspace-scope inbox source, keyed by its
+ * `InboxSourceRegistryEntry.key`. Deny-by-default: enabled only by an explicit
+ * `member`-role allow (owner-written). */
+export function workspaceInboxSourceResource(sourceKey: string): string {
+  return `inbox-source:${sourceKey}`;
+}
+
 // ─── Connectable (per-user OAuth) providers (CL-3356 #2) ───────────
 //
 // The provider-agnostic OAuth flow engine is parameterized entirely by this

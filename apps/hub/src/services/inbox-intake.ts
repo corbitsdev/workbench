@@ -1,6 +1,5 @@
 import type { GrantStore } from "@intx/authz";
 import { getLogger } from "@intx/log";
-import { fetchLinearGraphQL } from "@workbench/tools-linear";
 import {
   findOAuthProviderConfig,
   resolveEnabledInboxSources,
@@ -12,124 +11,34 @@ import { isMemberSelfServiceCapabilityActive } from "../lib/capability-grants";
 import { readMemberPreferences } from "../lib/member-preferences";
 import {
   resolveMemberOrTenantToolCredential,
-  type MemberToolCredential,
+  resolveTenantToolCredential,
 } from "../lib/member-tool-credential";
 import type { MailboxTriage } from "./mailbox-triage";
 import type { UserMailboxRowEvent } from "../lib/principal-mailbox";
+import {
+  INBOX_SOURCE_REGISTRY,
+  type InboxIntakeMember,
+  type InboxSourceContext,
+  type InboxSourceFetcher,
+  type InboxSourceRegistryEntry,
+  type IntakeItem,
+  type MemberInboxSourceContext,
+} from "./inbox-source-registry";
+
+export type {
+  InboxIntakeMember,
+  InboxSourceContext,
+  InboxSourceFetcher,
+  InboxSourceRegistryEntry,
+  IntakeItem,
+} from "./inbox-source-registry";
 
 const log = getLogger(["services", "inbox-intake"]);
 
-const DEFAULT_TICK_INTERVAL_MS = 5 * 60_000;
+const DEFAULT_TICK_INTERVAL_MS = 60_000;
 const DEFAULT_LOOKBACK_MS = 24 * 60 * 60 * 1000;
 const DEFAULT_PER_SOURCE_LIMIT = 25;
 const FETCH_TIMEOUT_MS = 20_000;
-
-/** A member the intake tick delivers to: their principal, external-account
- * lookup key (`usr_<refId>` inbox address is derived from `userRefId`), and
- * tenant domain (the intake sender + inbox address share it). */
-export interface InboxIntakeMember {
-  tenantId: string;
-  memberPrincipalId: string;
-  /** The member's inbox address the rows are filed under (their `usr_` addr). */
-  inboxAddress: string;
-  tenantDomain: string;
-}
-
-/** One new external item an intake source surfaces. `externalId` is the
- * source-stable id used to dedupe (`inbox:<source>:<externalId>` messageKey);
- * `url` is the clickable link emitted in the body (structured refs land later
- * via CL-3507). */
-export interface IntakeItem {
-  externalId: string;
-  subject: string;
-  body: string;
-  url: string;
-}
-
-/**
- * Fetches items created/updated since `cutoff` for one source, using the
- * member-or-tenant resolved credential. Throws on a real API failure (the tick
- * logs and moves on); returns [] when there is simply nothing new.
- */
-export type InboxSourceFetcher = (
-  cred: MemberToolCredential,
-  cutoff: Date,
-  limit: number,
-  signal: AbortSignal,
-) => Promise<IntakeItem[]>;
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-const LINEAR_INTAKE_QUERY = `query InboxIntakeIssues($first: Int!, $filter: IssueFilter) {
-  issues(first: $first, filter: $filter, orderBy: createdAt) {
-    nodes { id identifier title state { name } assignee { name } team { name } url createdAt }
-  }
-}`;
-
-const fetchLinearIssues: InboxSourceFetcher = async (
-  cred,
-  cutoff,
-  limit,
-  signal,
-) => {
-  const data = await fetchLinearGraphQL(
-    { apiKey: cred.apiKey, ...(cred.baseURL ? { baseUrl: cred.baseURL } : {}) },
-    LINEAR_INTAKE_QUERY,
-    { first: limit, filter: { createdAt: { gt: cutoff.toISOString() } } },
-    signal,
-  );
-  const issues = data.issues;
-  const nodes =
-    isRecord(issues) && Array.isArray(issues.nodes) ? issues.nodes : [];
-  const items: IntakeItem[] = [];
-  for (const node of nodes) {
-    if (!isRecord(node)) continue;
-    const id = typeof node.id === "string" ? node.id : null;
-    const url = typeof node.url === "string" ? node.url : "";
-    if (id === null) continue;
-    const identifier =
-      typeof node.identifier === "string" ? node.identifier : id;
-    const title = typeof node.title === "string" ? node.title : "(untitled)";
-    const state =
-      isRecord(node.state) && typeof node.state.name === "string"
-        ? node.state.name
-        : "unknown";
-    const assignee =
-      isRecord(node.assignee) && typeof node.assignee.name === "string"
-        ? node.assignee.name
-        : "unassigned";
-    items.push({
-      externalId: id,
-      subject: `[${identifier}] ${title}`,
-      body: [
-        `New Linear issue ${identifier}: ${title}`,
-        "",
-        `State: ${state}`,
-        `Assignee: ${assignee}`,
-        url ? `Link: ${url}` : "",
-      ]
-        .filter((line) => line !== "")
-        .join("\n"),
-      url,
-    });
-  }
-  return items;
-};
-
-/**
- * The wired live-intake sources, keyed by inbox source key. A source present
- * here has a hub-callable fetcher; a source that is toggleable but not yet
- * wired for live intake is simply absent — the tick skips it legibly (logged
- * once) rather than stubbing an empty fetch. Attio + Granola live intake are
- * additive: register their fetcher here when built.
- */
-export const INBOX_SOURCE_FETCHERS: Readonly<
-  Record<string, InboxSourceFetcher>
-> = {
-  linear: fetchLinearIssues,
-};
 
 export interface InboxIntakeDeps {
   db: HubDb;
@@ -144,6 +53,17 @@ export interface InboxIntakeDeps {
   mailboxTriage?: Pick<MailboxTriage, "enqueue">;
   /** Per-tenant enablement (env override OR owner grant), re-read each tick. */
   isTenantEnabled: (tenantId: string) => Promise<boolean>;
+  /** Owner-level enablement for a workspace-scope source, keyed by tenant +
+   * source key. Default OFF when omitted (workspace sources are opt-in). */
+  isWorkspaceSourceEnabled?: (
+    tenantId: string,
+    sourceKey: string,
+  ) => Promise<boolean>;
+  /** The registered sources to poll; defaults to `INBOX_SOURCE_REGISTRY`. */
+  registry?: readonly InboxSourceRegistryEntry[];
+  /** Per-source-key fetcher override (surfaced to a fetch-shaped source's
+   * handler as `ctx.fetcherOverride`) — used by tests and future per-source
+   * fetcher wiring. */
   fetchers?: Readonly<Record<string, InboxSourceFetcher>>;
   now?: () => number;
   tickIntervalMs?: number;
@@ -159,70 +79,48 @@ export interface InboxIntake {
 }
 
 /**
- * Live per-item inbox intake (CL-3511). Each tick, for every member with
- * enabled `inboxSource:*` prefs, fetches new items from each wired source using
- * the CL-3510 credential rail (member connection → tenant key), writes one
- * mailbox row per new item (deduped by `messageKey`), publishes the SSE
- * delivery signal, and hands the row to triage. A source with no usable
- * credential — or an OAuth provider the member has not enabled the capability
- * for — is skipped legibly, never stubbed.
+ * Live per-source inbox intake (CL-3511, per-source framework CL-3577). Each
+ * tick runs on a 60s cadence over a typed source registry with two scopes:
+ *
+ * - `member` sources fetch per enabled member (gated by the member's
+ *   `inboxSource:*` preference + the OAuth capability opt-in + the CL-3510
+ *   member-or-tenant credential rail) and typically deliver mailbox rows via
+ *   the `deliverItems` context primitive (deduped, SSE-published, triaged).
+ * - `workspace` sources run once per tenant per tick, gated by an owner-level
+ *   enablement (default OFF) rather than member prefs, with a tenant-owned
+ *   credential — for tenant-wide handlers that upsert tasks or trigger a
+ *   pipeline instead of writing one member's mailbox.
+ *
+ * A source with no usable credential — or (member scope) an OAuth provider the
+ * member has not enabled the capability for — is skipped legibly, never
+ * stubbed.
  */
 export function createInboxIntake(deps: InboxIntakeDeps): InboxIntake {
   const now = deps.now ?? Date.now;
   const tickIntervalMs = deps.tickIntervalMs ?? DEFAULT_TICK_INTERVAL_MS;
   const lookbackMs = deps.lookbackMs ?? DEFAULT_LOOKBACK_MS;
   const perSourceLimit = deps.perSourceLimit ?? DEFAULT_PER_SOURCE_LIMIT;
-  const fetchers = deps.fetchers ?? INBOX_SOURCE_FETCHERS;
+  const registry = deps.registry ?? INBOX_SOURCE_REGISTRY;
+  const isWorkspaceSourceEnabled =
+    deps.isWorkspaceSourceEnabled ?? (async () => false);
+  const memberSourcesByKey = new Map(
+    registry.filter((e) => e.scope === "member").map((e) => [e.key, e]),
+  );
+  const workspaceSources = registry.filter((e) => e.scope === "workspace");
   let timer: ReturnType<typeof setInterval> | undefined;
   let running = false;
 
-  async function intakeSourceForMember(
+  /** Write + SSE-publish + triage-enqueue each item for a member (deduped by
+   * `inbox:<source>:<externalId>` messageKey). Returns the newly delivered
+   * count. This is the existing per-item intake behavior, exposed to a
+   * member-scope handler as `ctx.deliverItems`. */
+  async function deliverItemsForMember(
     member: InboxIntakeMember,
     sourceKey: string,
-    cutoff: Date,
-  ): Promise<void> {
-    const fetcher = fetchers[sourceKey];
-    if (!fetcher) return; // toggleable but not wired for live intake yet
-
-    // OAuth-connectable providers require the member's own capability opt-in
-    // (the CL-3510 per-principal grant); non-OAuth sources are governed by the
-    // inbox-source toggle alone.
-    if (findOAuthProviderConfig(sourceKey)) {
-      const active = await isMemberSelfServiceCapabilityActive(
-        deps.grantStore,
-        deps.db,
-        member.tenantId,
-        member.memberPrincipalId,
-        sourceKey,
-      );
-      if (!active) return;
-    }
-
-    const cred = await resolveMemberOrTenantToolCredential(
-      deps.db,
-      member.tenantId,
-      member.memberPrincipalId,
-      sourceKey,
-    );
-    if (!cred) {
-      log.info("inbox intake: no usable credential; skipping source", {
-        tenantId: member.tenantId,
-        memberPrincipalId: member.memberPrincipalId,
-        source: sourceKey,
-      });
-      return;
-    }
-
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
-    let items: IntakeItem[];
-    try {
-      items = await fetcher(cred, cutoff, perSourceLimit, controller.signal);
-    } finally {
-      clearTimeout(timeout);
-    }
-
+    items: IntakeItem[],
+  ): Promise<number> {
     const fromAddress = `${sourceKey}@${member.tenantDomain}`;
+    let delivered = 0;
     for (const item of items) {
       const written = await writeMailboxMessage(
         deps.db,
@@ -238,6 +136,7 @@ export function createInboxIntake(deps: InboxIntakeDeps): InboxIntake {
         deps.mailboxEventBus,
       );
       if (!written) continue; // already delivered (dedupe)
+      delivered += 1;
       if (deps.mailboxTriage) {
         const event: UserMailboxRowEvent = {
           rowId: written.id,
@@ -257,6 +156,113 @@ export function createInboxIntake(deps: InboxIntakeDeps): InboxIntake {
         deps.mailboxTriage.enqueue(event);
       }
     }
+    return delivered;
+  }
+
+  async function withTimeout(
+    handle: (signal: AbortSignal) => Promise<void>,
+  ): Promise<void> {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+    try {
+      await handle(controller.signal);
+    } finally {
+      clearTimeout(timeout);
+    }
+  }
+
+  async function runMemberSource(
+    member: InboxIntakeMember,
+    entry: InboxSourceRegistryEntry,
+    cutoff: Date,
+  ): Promise<void> {
+    // OAuth-connectable providers require the member's own capability opt-in
+    // (the CL-3510 per-principal grant); non-OAuth sources are governed by the
+    // inbox-source toggle alone.
+    if (findOAuthProviderConfig(entry.key)) {
+      const active = await isMemberSelfServiceCapabilityActive(
+        deps.grantStore,
+        deps.db,
+        member.tenantId,
+        member.memberPrincipalId,
+        entry.key,
+      );
+      if (!active) return;
+    }
+
+    const cred = await resolveMemberOrTenantToolCredential(
+      deps.db,
+      member.tenantId,
+      member.memberPrincipalId,
+      entry.key,
+    );
+    if (!cred) {
+      log.info("inbox intake: no usable credential; skipping source", {
+        tenantId: member.tenantId,
+        memberPrincipalId: member.memberPrincipalId,
+        source: entry.key,
+      });
+      return;
+    }
+
+    await withTimeout(async (signal) => {
+      const ctx: MemberInboxSourceContext = {
+        scope: "member",
+        db: deps.db,
+        tenantId: member.tenantId,
+        member,
+        credential: cred,
+        cutoff,
+        perSourceLimit,
+        signal,
+        log,
+        deliverItems: (items) =>
+          deliverItemsForMember(member, entry.key, items),
+        ...(deps.fetchers?.[entry.key] !== undefined
+          ? { fetcherOverride: deps.fetchers[entry.key] }
+          : {}),
+      };
+      await entry.handle(ctx);
+    });
+  }
+
+  async function runWorkspaceSource(
+    tenantId: string,
+    entry: InboxSourceRegistryEntry,
+    cutoff: Date,
+  ): Promise<void> {
+    const cred = await resolveTenantToolCredential(
+      deps.db,
+      tenantId,
+      entry.key,
+    );
+    if (!cred) {
+      log.info(
+        "inbox intake: no tenant credential; skipping workspace source",
+        {
+          tenantId,
+          source: entry.key,
+        },
+      );
+      return;
+    }
+
+    await withTimeout(async (signal) => {
+      const ctx: InboxSourceContext = {
+        scope: "workspace",
+        db: deps.db,
+        tenantId,
+        credential: cred,
+        cutoff,
+        perSourceLimit,
+        signal,
+        log,
+        ...(deps.fetchers?.[entry.key] !== undefined
+          ? { fetcherOverride: deps.fetchers[entry.key] }
+          : {}),
+      };
+      await entry.handle(ctx);
+    });
   }
 
   async function tick(): Promise<void> {
@@ -270,6 +276,42 @@ export function createInboxIntake(deps: InboxIntakeDeps): InboxIntake {
       return;
     }
     const cutoff = new Date(now() - lookbackMs);
+
+    // Workspace-scope sources: once per tenant per tick, gated by owner
+    // enablement. The tenant set is derived from the members to poll.
+    if (workspaceSources.length > 0) {
+      const tenantIds = [...new Set(members.map((m) => m.tenantId))];
+      for (const tenantId of tenantIds) {
+        let enabled: boolean;
+        try {
+          enabled = await deps.isTenantEnabled(tenantId);
+        } catch {
+          enabled = false;
+        }
+        if (!enabled) continue;
+        for (const entry of workspaceSources) {
+          let sourceEnabled: boolean;
+          try {
+            sourceEnabled = await isWorkspaceSourceEnabled(tenantId, entry.key);
+          } catch {
+            sourceEnabled = false;
+          }
+          if (!sourceEnabled) continue;
+          try {
+            await runWorkspaceSource(tenantId, entry, cutoff);
+          } catch (err) {
+            log.error("inbox intake: workspace source failed", {
+              tenantId,
+              source: entry.key,
+              error: err instanceof Error ? err : new Error(String(err)),
+            });
+          }
+        }
+      }
+    }
+
+    // Member-scope sources: per enabled member, gated by the member's
+    // `inboxSource:*` preferences.
     for (const member of members) {
       let enabled: boolean;
       try {
@@ -286,8 +328,10 @@ export function createInboxIntake(deps: InboxIntakeDeps): InboxIntake {
       );
       const sources = resolveEnabledInboxSources(prefs);
       for (const sourceKey of sources) {
+        const entry = memberSourcesByKey.get(sourceKey);
+        if (!entry) continue; // toggleable but not wired for live intake yet
         try {
-          await intakeSourceForMember(member, sourceKey, cutoff);
+          await runMemberSource(member, entry, cutoff);
         } catch (err) {
           log.error("inbox intake: source failed", {
             tenantId: member.tenantId,

@@ -436,6 +436,16 @@ export function loadConfig() {
     tasksReconciler: {
       enabled: parseBooleanEnv("TASKS_RECONCILER_ENABLED"),
     },
+    // Live per-source inbox intake (CL-3511/CL-3577). The tick runs on a 60s
+    // cadence by default; override with INBOX_INTAKE_TICK_MS (positive integer
+    // milliseconds) for slower/faster polling.
+    inboxIntake: {
+      tickIntervalMs: parsePositiveIntEnv(
+        "INBOX_INTAKE_TICK_MS",
+        60_000,
+        "milliseconds",
+      ),
+    },
     // Owner-managed feature grants (scheduler/triage/tasks-reconciler) replace
     // the env-only kill switches above as the day-to-day toggle; the env vars
     // stay as an emergency global override (see feature-grants.ts). Each
