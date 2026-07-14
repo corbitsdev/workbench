@@ -61,7 +61,7 @@ export function ThreadSwitcher({
         ref={triggerRef}
         type="button"
         onClick={() => (open ? close() : openMenu())}
-        className="flex items-center gap-1 rounded-[8px] px-2 py-1 text-xs font-medium text-text-2 transition-colors hover:text-text"
+        className="flex items-center gap-1 rounded-[8px] px-2 py-1 text-library-title-sm tracking-[-0.01em] text-text transition-colors hover:bg-page"
         aria-haspopup="listbox"
         aria-expanded={open}
       >

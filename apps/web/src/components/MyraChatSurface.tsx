@@ -82,13 +82,13 @@ export function ExpandedChatOverlay({
           animate={{ opacity: 1, scale: 1 }}
           exit={{ opacity: 0, scale: 0.98 }}
           transition={{ duration: 0.18, ease: [0.23, 1, 0.32, 1] }}
-          className="fixed inset-4 z-50 flex flex-col overflow-hidden rounded-panel border border-border bg-surface shadow-[0_10px_40px_rgba(0,0,0,0.4)]"
+          className="fixed inset-4 z-50 flex flex-col overflow-hidden rounded-panel border border-border bg-bg shadow-[0_10px_40px_rgba(0,0,0,0.4)]"
         >
-          <div className="flex shrink-0 items-center justify-end border-b border-border px-2 py-1.5">
+          <div className="flex shrink-0 items-center justify-end border-b border-border px-4 py-2 sm:px-7">
             <button
               type="button"
               onClick={onExit}
-              className="flex items-center gap-1 rounded-md px-2 py-1 text-xs text-text-2 hover:bg-surface-2 hover:text-text cursor-pointer transition-[transform,background-color,color] duration-150 ease-out active:scale-[0.97]"
+              className="flex items-center gap-1 rounded-[8px] px-2.5 py-1 text-xs font-medium text-text-3 transition-colors hover:bg-page hover:text-text cursor-pointer active:scale-[0.97]"
             >
               <Minimize2 className="h-3.5 w-3.5" />
               Minimize

@@ -20,7 +20,14 @@ import {
   X,
 } from "lucide-react";
 import { useComposerVoiceDictation } from "./composer-voice-dictation";
-import { Menu, MenuContent, MenuItem, MenuTrigger, cn } from "@workbench/ui";
+import {
+  Menu,
+  MenuContent,
+  MenuItem,
+  MenuTrigger,
+  cn,
+  inputFieldClass,
+} from "@workbench/ui";
 import { formatMention } from "@workbench/shared";
 import {
   formatBytes,
@@ -398,7 +405,7 @@ export function ChatInput({
   return (
     <div
       className={cn(
-        "shrink-0 border-t border-border px-4 py-3",
+        "shrink-0 border-t border-border bg-bg px-4 py-3 sm:px-7",
         dragActive && "ring-2 ring-inset ring-orange",
         className,
       )}
@@ -473,7 +480,7 @@ export function ChatInput({
           <ul
             role="listbox"
             aria-label="Mention a member"
-            className="absolute bottom-full left-0 z-10 mb-1 max-h-48 w-64 overflow-y-auto rounded-lg border border-border bg-surface py-1 shadow-lg"
+            className="absolute bottom-full left-0 z-10 mb-1 max-h-48 w-64 overflow-y-auto rounded-card border border-border bg-surface py-1 shadow-lg"
           >
             {mentionMatches.map((candidate, index) => (
               <li key={candidate.id}>
@@ -573,7 +580,10 @@ export function ChatInput({
           onInput={adjustHeight}
           onPaste={handlePaste}
           onKeyDown={handleKeyDown}
-          className="chat-composer-textarea max-h-[30vh] min-h-[2.5rem] flex-1 resize-none overflow-x-hidden overflow-y-auto rounded-lg border border-border bg-surface px-3 py-2 text-sm text-text placeholder:text-text-3 focus:outline-none focus-visible:ring-2 focus-visible:ring-orange disabled:opacity-50"
+          className={cn(
+            inputFieldClass,
+            "chat-composer-textarea max-h-[30vh] min-h-[2.5rem] flex-1 resize-none overflow-x-hidden overflow-y-auto disabled:opacity-50",
+          )}
         />
         {showStop ? (
           <button
