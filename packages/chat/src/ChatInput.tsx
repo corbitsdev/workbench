@@ -1,4 +1,5 @@
 import {
+  type ClipboardEvent,
   type DragEvent,
   type KeyboardEvent,
   useCallback,
@@ -37,6 +38,16 @@ export interface MentionCandidate {
 // while typing a token, not on every `@` anywhere in the draft. No
 // whitespace in the query keeps this from matching across word boundaries.
 const MENTION_TRIGGER = /@([^\s@]*)$/;
+
+function filesFromClipboard(data: DataTransfer | null): File[] {
+  if (data === null) return [];
+  const fromList = Array.from(data.files);
+  if (fromList.length > 0) return fromList;
+  return Array.from(data.items)
+    .filter((item) => item.kind === "file")
+    .map((item) => item.getAsFile())
+    .filter((file): file is File => file !== null);
+}
 
 function findMentionQuery(
   text: string,
@@ -350,6 +361,21 @@ export function ChatInput({
     setDragActive(false);
   };
 
+  const handlePaste = (event: ClipboardEvent<HTMLTextAreaElement>) => {
+    if (!attachmentsEnabled || isBlocked) {
+      requestAnimationFrame(adjustHeight);
+      return;
+    }
+    const files = filesFromClipboard(event.clipboardData);
+    if (files.length === 0) {
+      requestAnimationFrame(adjustHeight);
+      return;
+    }
+    event.preventDefault();
+    addFiles(files);
+    requestAnimationFrame(adjustHeight);
+  };
+
   return (
     <div
       className={cn(
@@ -473,7 +499,7 @@ export function ChatInput({
             syncMentionState(event.target.value, event.target.selectionStart);
           }}
           onInput={adjustHeight}
-          onPaste={() => requestAnimationFrame(adjustHeight)}
+          onPaste={handlePaste}
           onKeyDown={handleKeyDown}
           className="chat-composer-textarea max-h-[30vh] min-h-[2.5rem] flex-1 resize-none overflow-x-hidden overflow-y-auto rounded-lg border border-border bg-surface px-3 py-2 text-sm text-text placeholder:text-text-3 focus:outline-none focus-visible:ring-2 focus-visible:ring-orange disabled:opacity-50"
         />
