@@ -43,7 +43,7 @@ describe("ActivityBlock", () => {
       toolCalls: [tool()],
       messageKey: "m1",
       formatSummary: () => "Searching Attio",
-    } as const;
+    };
     const settled = render(
       <ActivityBlock {...props} streaming={false} />,
     );

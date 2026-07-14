@@ -2,13 +2,12 @@ import type { ReactNode } from "react";
 import { cn } from "@workbench/ui";
 import type { ChatMessage } from "./types";
 import { MessageBubble } from "./MessageBubble";
-import { ReasoningDisclosure } from "./ReasoningDisclosure";
-import { ToolNarrative, type ToolNarrativeProps } from "./ToolNarrative";
+import { ActivityBlock } from "./ActivityBlock";
+import { type ToolNarrativeProps } from "./ToolNarrative";
 import { MessageFeedback } from "./MessageFeedback";
-import { CHAT_TRACE_STACK, CHAT_TURN_STACK } from "./messageRhythm";
+import { CHAT_TURN_STACK } from "./messageRhythm";
 import type { FeedbackSubjectKind } from "./feedback-types";
 import type { UIBlock, UIResponse } from "@workbench/blocks";
-import { isMyraHistoryAged } from "./aged-history";
 
 export interface AgentTurnProps {
   message: ChatMessage;
@@ -18,6 +17,11 @@ export interface AgentTurnProps {
   visibleToolCalls?: ChatMessage["toolCalls"];
   formatToolSummary?: ToolNarrativeProps["formatSummary"];
   formatToolResult?: ToolNarrativeProps["formatResult"];
+  /**
+   * Accepted for host wiring compatibility. The single collapsible activity
+   * block (CL-3637) subsumes the old per-turn compact roll-up, so this flag no
+   * longer changes rendering.
+   */
   compactToolActivity?: ToolNarrativeProps["compact"];
   summarizeToolCalls?: ToolNarrativeProps["summarizeCalls"];
   isQuietTool?: ToolNarrativeProps["isQuietTool"];
@@ -43,11 +47,11 @@ export interface AgentTurnProps {
 }
 
 /**
- * One agent turn, rendered with intentional hierarchy: the process trace
- * (reasoning, then tool activity, chronologically) sits above the answer;
- * rich trailing content follows; the feedback footer closes the turn. This
- * component owns all intra-turn spacing — ChatThread owns only the (larger)
- * inter-turn spacing.
+ * One agent turn, rendered with intentional hierarchy: a single collapsible
+ * activity block (reasoning + tool calls) sits above the answer; rich trailing
+ * content follows; the feedback footer, anchored to the response, closes the
+ * turn. This component owns all intra-turn spacing — ChatThread owns only the
+ * (larger) inter-turn spacing.
  */
 export function AgentTurn({
   message,
@@ -55,7 +59,6 @@ export function AgentTurn({
   visibleToolCalls,
   formatToolSummary,
   formatToolResult,
-  compactToolActivity,
   summarizeToolCalls,
   isQuietTool,
   isExternalTool,
@@ -69,13 +72,9 @@ export function AgentTurn({
   setReasoningExpanded,
 }: AgentTurnProps) {
   const isStreaming = message.status === "sending";
-  const traceAged =
-    !isStreaming && isMyraHistoryAged(message.createdAt);
   const hasReasoning = (message.reasoning ?? "").trim() !== "";
   const toolCalls = visibleToolCalls ?? message.toolCalls;
   const hasTools = toolCalls !== undefined && toolCalls.length > 0;
-  const compactTools =
-    compactToolActivity === true || (traceAged && summarizeToolCalls !== undefined);
   // The turn header owns the sender label; strip it from the nested bubble so
   // it renders exactly once.
   const { senderLabel, ...bubbleMessage } = message;
@@ -90,41 +89,32 @@ export function AgentTurn({
         <span className="text-xs text-text-3">From: {senderLabel}</span>
       )}
       {(hasReasoning || hasTools) && (
-        <div className={CHAT_TRACE_STACK} data-testid="agent-trace">
-          {hasReasoning && (
-            <ReasoningDisclosure
-              reasoning={message.reasoning ?? ""}
-              streaming={isStreaming && message.content === ""}
-              messageKey={message.feedbackId ?? message.id}
-              {...(isReasoningExpanded !== undefined
-                ? { isReasoningExpanded }
-                : {})}
-              {...(setReasoningExpanded !== undefined
-                ? { setReasoningExpanded }
-                : {})}
-            />
-          )}
-          {hasTools && (
-            <ToolNarrative
-              toolCalls={toolCalls}
-              {...(formatToolSummary !== undefined
-                ? { formatSummary: formatToolSummary }
-                : {})}
-              {...(formatToolResult !== undefined
-                ? { formatResult: formatToolResult }
-                : {})}
-              {...(compactTools ? { compact: true } : {})}
-              {...(summarizeToolCalls !== undefined
-                ? { summarizeCalls: summarizeToolCalls }
-                : {})}
-              {...(isQuietTool !== undefined ? { isQuietTool } : {})}
-              {...(isExternalTool !== undefined ? { isExternalTool } : {})}
-              {...(renderToolMarker !== undefined ? { renderToolMarker } : {})}
-              {...(onRespond !== undefined ? { onRespond } : {})}
-              {...(onAction !== undefined ? { onAction } : {})}
-            />
-          )}
-        </div>
+        <ActivityBlock
+          reasoning={message.reasoning ?? ""}
+          toolCalls={toolCalls ?? []}
+          streaming={isStreaming}
+          messageKey={message.feedbackId ?? message.id}
+          {...(isReasoningExpanded !== undefined
+            ? { isExpanded: isReasoningExpanded }
+            : {})}
+          {...(setReasoningExpanded !== undefined
+            ? { setExpanded: setReasoningExpanded }
+            : {})}
+          {...(formatToolSummary !== undefined
+            ? { formatSummary: formatToolSummary }
+            : {})}
+          {...(formatToolResult !== undefined
+            ? { formatResult: formatToolResult }
+            : {})}
+          {...(summarizeToolCalls !== undefined
+            ? { summarizeCalls: summarizeToolCalls }
+            : {})}
+          {...(isQuietTool !== undefined ? { isQuietTool } : {})}
+          {...(isExternalTool !== undefined ? { isExternalTool } : {})}
+          {...(renderToolMarker !== undefined ? { renderToolMarker } : {})}
+          {...(onRespond !== undefined ? { onRespond } : {})}
+          {...(onAction !== undefined ? { onAction } : {})}
+        />
       )}
       <MessageBubble
         message={bubbleMessage}
