@@ -68,7 +68,9 @@ function attioTaskRow(args: {
   };
 }
 
-const { createAttioWebhookRouter } = await import("./webhooks-attio");
+const { createAttioWebhookRouter, createAttioIdempotencyCache } = await import(
+  "./webhooks-attio"
+);
 import { schema } from "../db";
 import type { HubDb } from "../db";
 import { task } from "../db/schema";
@@ -356,6 +358,22 @@ describe("Idempotency-Key dedupe", () => {
     expect(second.status).toBe(200);
     expect(calls.length).toBe(fetchCallsAfterFirst); // no re-fetch on redelivery
     expect((await tasksForMember()).length).toBe(1); // no duplicate row either way
+  });
+});
+
+describe("idempotency cache size bound", () => {
+  test("overflowing the cap evicts the oldest key, letting it reprocess", () => {
+    const cache = createAttioIdempotencyCache(2);
+    const now = Date.now();
+    expect(cache.remember("k1", now)).toBe(true);
+    expect(cache.remember("k2", now)).toBe(true);
+    // At capacity: a 3rd distinct key evicts "k1" (oldest).
+    expect(cache.remember("k3", now)).toBe(true);
+    // "k2" and "k3" are still cached and remain deduped.
+    expect(cache.remember("k2", now)).toBe(false);
+    expect(cache.remember("k3", now)).toBe(false);
+    // "k1" was evicted, so it is treated as unseen again.
+    expect(cache.remember("k1", now)).toBe(true);
   });
 });
 

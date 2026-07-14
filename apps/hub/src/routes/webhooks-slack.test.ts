@@ -214,6 +214,32 @@ describe("mention routing + delivery", () => {
     expect(rows[0]?.message_key.startsWith("inbox:slack:T0TEAM:")).toBe(true);
   });
 
+  // Pins the exact pre-CL-3577-overhaul messageKey format
+  // (`inbox:slack:<teamId>:<channel>:<ts>`) now that delivery is routed
+  // through the shared `deliverInboxItems` helper — a drift here would
+  // re-deliver already-delivered mentions.
+  test("the messageKey is exactly inbox:slack:<teamId>:<channel>:<ts>", async () => {
+    const body = JSON.stringify(
+      messagePayload({
+        eventId: "ev-key-pin",
+        text: `hey <@${SLACK_USER_ID}>`,
+        channel: "C0PINNED",
+        ts: "1700000000.000200",
+      }),
+    );
+    const res = await makeRouter().request("/webhooks/slack", {
+      method: "POST",
+      headers: signedHeaders(body),
+      body,
+    });
+    expect(res.status).toBe(200);
+    const rows = (await mailboxRows()).rows;
+    expect(rows.length).toBe(1);
+    expect(rows[0]?.message_key).toBe(
+      "inbox:slack:T0TEAM:C0PINNED:1700000000.000200",
+    );
+  });
+
   test("a mention of an unmatched slack user is dropped (200, no row)", async () => {
     const body = JSON.stringify(
       messagePayload({ eventId: "ev-2", text: "hey <@USTRANGER> check this" }),

@@ -154,6 +154,15 @@ describe("signature verification", () => {
     expect(res.status).toBe(401);
     expect((await mailboxRows()).rows.length).toBe(0);
   });
+
+  test("a missing webhookTimestamp is rejected with 401 (replay guard)", async () => {
+    const payload = issuePayload("2026-07-13T10:00:00.000Z");
+    const { webhookTimestamp: _omit, ...withoutTimestamp } = payload;
+    const body = JSON.stringify(withoutTimestamp);
+    const res = await signedRequest(makeRouter(), body);
+    expect(res.status).toBe(401);
+    expect((await mailboxRows()).rows.length).toBe(0);
+  });
 });
 
 describe("event routing + gating", () => {
