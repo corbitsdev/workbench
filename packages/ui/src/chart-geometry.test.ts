@@ -3,8 +3,12 @@ import { describe, expect, it } from "bun:test";
 import {
   buildAreaPath,
   buildLinePath,
+  buildStepGraphEdgePath,
+  layoutLinearStepCenters,
   niceMax,
+  sequentialStepEdges,
   seriesToCoords,
+  stepGraphEdgeEndpoints,
 } from "./chart-geometry";
 
 describe("seriesToCoords", () => {
@@ -67,5 +71,60 @@ describe("niceMax", () => {
   it("returns 1 for non-positive input so a scale always exists", () => {
     expect(niceMax(0)).toBe(1);
     expect(niceMax(-5)).toBe(1);
+  });
+});
+
+describe("step graph layout", () => {
+  it("spaces horizontal centers across the span with insets", () => {
+    const centers = layoutLinearStepCenters({
+      count: 3,
+      span: 100,
+      crossCenter: 20,
+      nodeInset: 10,
+      axis: "horizontal",
+    });
+    expect(centers.map((c) => c.x)).toEqual([10, 50, 90]);
+    expect(centers.every((c) => c.y === 20)).toBe(true);
+  });
+
+  it("stacks vertical centers top-to-bottom", () => {
+    const centers = layoutLinearStepCenters({
+      count: 2,
+      span: 80,
+      crossCenter: 15,
+      nodeInset: 8,
+      axis: "vertical",
+    });
+    expect(centers[0]).toEqual({ x: 15, y: 8 });
+    expect(centers[1]).toEqual({ x: 15, y: 72 });
+  });
+
+  it("anchors edge endpoints on node boundaries", () => {
+    const endpoints = stepGraphEdgeEndpoints(
+      { x: 10, y: 20 },
+      { x: 90, y: 20 },
+      12,
+      "horizontal",
+    );
+    expect(endpoints.from).toEqual({ x: 22, y: 20 });
+    expect(endpoints.to).toEqual({ x: 78, y: 20 });
+  });
+
+  it("builds a connector path between two nodes", () => {
+    const path = buildStepGraphEdgePath(
+      { x: 0, y: 10 },
+      { x: 100, y: 10 },
+      5,
+      "horizontal",
+    );
+    expect(path).toBe("M5 10 L95 10");
+  });
+
+  it("derives sequential edges from step ids", () => {
+    expect(sequentialStepEdges(["a", "b", "c"])).toEqual([
+      { from: "a", to: "b" },
+      { from: "b", to: "c" },
+    ]);
+    expect(sequentialStepEdges(["solo"])).toEqual([]);
   });
 });

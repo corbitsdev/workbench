@@ -151,8 +151,25 @@ export {
   buildLinePath,
   buildAreaPath,
   niceMax,
+  layoutLinearStepCenters,
+  stepGraphEdgeEndpoints,
+  buildStepGraphEdgePath,
+  sequentialStepEdges,
   type ChartPoint,
+  type StepGraphLayoutAxis,
+  type StepGraphLayoutOptions,
+  type StepGraphEdgeEndpoints,
 } from "./chart-geometry";
+export {
+  StepGraph,
+  stepGraphKindGlyph,
+  stepGraphKindLabel,
+  type StepGraphProps,
+  type StepGraphStep,
+  type StepGraphEdge,
+  type StepGraphKind,
+  type StepGraphStatus,
+} from "./StepGraph";
 export {
   TimeSeriesChart,
   type TimeSeries,
