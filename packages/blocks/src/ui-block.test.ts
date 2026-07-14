@@ -181,6 +181,27 @@ describe("isUIBlock", () => {
       }),
     ).toBe(false);
   });
+
+  it("accepts card, list, and preview display blocks (CL-3547)", () => {
+    expect(
+      isUIBlock({ kind: "card", title: "Acme", body: "Follow up" }),
+    ).toBe(true);
+    expect(
+      isUIBlock({
+        kind: "list",
+        items: [{ title: "One" }, { title: "Two" }],
+      }),
+    ).toBe(true);
+    expect(
+      isUIBlock({
+        kind: "preview",
+        url: "https://example.com",
+        title: "Report",
+      }),
+    ).toBe(true);
+    expect(isUIBlock({ kind: "card", title: "" })).toBe(false);
+    expect(isUIBlock({ kind: "list", items: [] })).toBe(false);
+  });
 });
 
 describe("isUIBlock progress variant", () => {
