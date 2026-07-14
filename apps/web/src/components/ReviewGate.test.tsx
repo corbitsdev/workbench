@@ -48,6 +48,38 @@ mock.module("../lib/approvals-api", () => ({
   subscribeApprovals: mockSubscribeApprovals,
 }));
 
+import { buildApprovalDisplayLookups } from "../lib/approval-display";
+
+const approvalDisplayLookups = buildApprovalDisplayLookups(
+  [
+    {
+      id: "prn_ada",
+      name: "Ada Lovelace",
+      refId: "usr_ada",
+    },
+  ],
+  [
+    {
+      id: "ins_oat",
+      agentId: "agt_oat",
+      agentName: "Oat",
+      tenantId: "tenant-1",
+      address: "ins_oat@agents.example.com",
+      status: "running",
+      credentialRequirements: [],
+      capabilities: null,
+      createdAt: "2026-01-01T00:00:00.000Z",
+    },
+  ],
+);
+
+mock.module("../hooks/use-approval-display-lookups", () => ({
+  useApprovalDisplayLookups: () => ({
+    lookups: approvalDisplayLookups,
+    isLoading: false,
+  }),
+}));
+
 function makeApproval(overrides: Partial<Approval> = {}): Approval {
   return {
     id: "appr-1",
