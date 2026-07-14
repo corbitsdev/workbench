@@ -1,7 +1,7 @@
 /**
  * The gamma-presentation-creator workflow's own dock blocks.
  *
- * The workflow is single-shot (CL-3614): a text/artifact/note-driven `intake`
+ * The workflow is single-shot: a text/artifact/note-driven `intake`
  * gate collects the deck brief, then the run generates, renders, describes,
  * and persists the deck with no further human decision — the per-round
  * preview/refine gate this file previously rendered (CL-2730) no longer

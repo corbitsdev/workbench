@@ -300,7 +300,7 @@ export type Theme = typeof ThemeSchema.infer;
 // store; `description` is the human-facing label (the workflow owns generation
 // instructions, not the template). `systemPrompt` is optional template-specific
 // authoring guidance the generate step folds in alongside the base prompt
-// (CL-3614) — empty string when the template author left it blank.
+// empty string when the template author left it blank.
 export const GammaTemplateSchema = type({
   id: "string",
   version: "number",

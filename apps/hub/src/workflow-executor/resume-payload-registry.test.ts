@@ -220,7 +220,7 @@ describe("validateResumePayload", () => {
     ).toBe(false);
   });
 
-  test("gamma-presentation-creator has no registered preview/round gate (single-shot, CL-3614)", () => {
+  test("gamma-presentation-creator has no registered preview/round gate (single-shot)", () => {
     // The workflow no longer parks a preview gate, so an unregistered signal
     // name validates as pass-through regardless of payload shape.
     expect(

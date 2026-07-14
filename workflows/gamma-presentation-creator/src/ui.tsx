@@ -240,7 +240,8 @@ function PresetSelect({
 }) {
   const isCustom = value !== "" && !options.includes(value);
   const [customMode, setCustomMode] = useState(isCustom);
-  const selectValue = customMode ? OTHER_OPTION : value;
+  const showCustom = customMode || (value !== "" && !options.includes(value));
+  const selectValue = showCustom ? OTHER_OPTION : value;
 
   return (
     <label className="block space-y-1">
@@ -268,13 +269,14 @@ function PresetSelect({
         ))}
         <option value={OTHER_OPTION}>Other…</option>
       </select>
-      {customMode && (
+      {showCustom && (
         <input
           aria-label={`${ariaLabel} (custom)`}
           value={value}
           onChange={(e) => onChange(e.target.value)}
           placeholder="Type your own"
           className={inputFieldClass}
+          autoFocus
         />
       )}
     </label>

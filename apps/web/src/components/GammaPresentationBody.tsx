@@ -1,3 +1,4 @@
+import { useCallback, useState } from "react";
 import { type } from "arktype";
 import { GammaPresentationContentSchema } from "@workbench/shared";
 import { buildApiUrl } from "../lib/api";
@@ -25,6 +26,13 @@ export default function GammaPresentationBody({
   artifactId,
   hasPdf,
 }: GammaPresentationBodyProps) {
+  const [pdfLoadFailed, setPdfLoadFailed] = useState(false);
+  const pdfIframeRef = useCallback((node: HTMLIFrameElement | null) => {
+    if (node === null) return;
+    node.addEventListener("error", () => setPdfLoadFailed(true), {
+      once: true,
+    });
+  }, []);
   let raw: unknown;
   try {
     raw = JSON.parse(content);
@@ -48,20 +56,33 @@ export default function GammaPresentationBody({
     ? buildApiUrl(`/artifacts/${artifactId}/download`)
     : undefined;
 
+  function renderBody() {
+    if (!showPdf || downloadUrl === undefined) {
+      return <PresentationBody url={deck.url} />;
+    }
+    if (pdfLoadFailed) {
+      return (
+        <p className="text-sm text-text-3 p-4">
+          The PDF could not be loaded here. Use the links below to view it.
+        </p>
+      );
+    }
+    return (
+      <iframe
+        ref={pdfIframeRef}
+        src={downloadUrl}
+        title="Presentation PDF"
+        className="min-h-[24rem] h-[80vh] w-full rounded border border-border bg-surface"
+      />
+    );
+  }
+
   return (
     <div className="w-full space-y-2">
       {deck.description.length > 0 && (
         <p className="text-sm text-text-2">{deck.description}</p>
       )}
-      {showPdf && downloadUrl !== undefined ? (
-        <iframe
-          src={downloadUrl}
-          title="Presentation PDF"
-          className="h-[80vh] w-full rounded border border-border bg-surface"
-        />
-      ) : (
-        <PresentationBody url={deck.url} />
-      )}
+      {renderBody()}
       {showPdf && downloadUrl !== undefined && (
         <div className="flex items-center gap-3">
           <a

@@ -45,7 +45,7 @@ const intake = {
   goal: "Close",
 };
 
-describe("artifact → gamma deck workflow (single-shot, CL-3614)", () => {
+describe("artifact → gamma deck workflow (single-shot)", () => {
   test("intake drives the whole run to persist with no further gate", async () => {
     const { invoker, ran } = makeRecordingInvoker(baseOutputs);
     const run = runLocal(workflow, { invokeStep: invoker });

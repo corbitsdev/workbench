@@ -1,6 +1,6 @@
 /// <reference types="bun" />
 import { afterEach, describe, expect, it } from "bun:test";
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import React from "react";
 import GammaPresentationBody from "./GammaPresentationBody";
 
@@ -80,5 +80,21 @@ describe("GammaPresentationBody", () => {
   it("omits the PDF download when the artifact id is unknown", () => {
     renderContent(JSON.stringify(deck), { hasPdf: true });
     expect(screen.queryByText(/download pdf/i)).toBeNull();
+  });
+
+  it("shows a fallback message and no iframe once the inline PDF fails to load", () => {
+    const { container } = renderContent(JSON.stringify(deck), {
+      artifactId: "art_9",
+      hasPdf: true,
+    });
+    const iframe = container.querySelector("iframe");
+    expect(iframe).not.toBeNull();
+    if (iframe !== null) {
+      fireEvent.error(iframe);
+    }
+    expect(container.querySelector("iframe")).toBeNull();
+    expect(screen.getByText(/could not be loaded here/i)).not.toBeNull();
+    expect(screen.getByText(/download pdf/i)).not.toBeNull();
+    expect(screen.getByText(/open in gamma/i)).not.toBeNull();
   });
 });

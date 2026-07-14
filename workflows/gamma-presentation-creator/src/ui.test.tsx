@@ -17,7 +17,7 @@ describe("ui.tsx browser-safety", () => {
     const src = readFileSync(join(import.meta.dir, "ui.tsx"), "utf8");
     expect(src).not.toMatch(/import\s+\{[^}]*\}\s+from\s+["']\.\/index["']/);
     // The step flow/labels come from the browser-safe display-steps module
-    // instead (single-shot: CL-3614).
+    // instead (single-shot).
     expect(src).toMatch(/from\s+["']\.\/display-steps["']/);
   });
 });
@@ -344,7 +344,7 @@ describe("artifact → gamma deck Panel", () => {
   });
 
   it("shows a building-the-deck loading state once intake is submitted and generate/render are running", () => {
-    // Single-shot (CL-3614): no preview/refine gate between generate and
+    // Single-shot: no preview/refine gate between generate and
     // persist — the panel just shows progress while the deck builds.
     renderPanel(
       <Panel

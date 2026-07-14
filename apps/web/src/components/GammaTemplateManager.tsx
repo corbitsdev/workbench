@@ -122,7 +122,7 @@ function TemplateForm({
           value={systemPrompt}
           onChange={(e) => setSystemPrompt(e.target.value)}
           rows={4}
-          placeholder="Extra authoring guidance applied when generating decks from this template."
+          placeholder="e.g. Lead with ROI, keep it under 10 slides, avoid jargon"
           className={inputFieldClass}
         />
         <p className="text-[11px] text-text-3">

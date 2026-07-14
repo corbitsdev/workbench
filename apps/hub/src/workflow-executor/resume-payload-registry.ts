@@ -20,7 +20,7 @@ import {
   TaskSelectionPayloadSchema,
 } from "@workbench/shared";
 
-// The gamma-presentation-creator workflow is single-shot (CL-3614): one
+// The gamma-presentation-creator workflow is single-shot: one
 // `intake` gate carries the deck brief (CL-2684); there is no preview/round
 // gate anymore.
 const GAMMA_SIGNALS: Record<string, Type> = {
@@ -64,7 +64,7 @@ const RESUME_PAYLOAD_SCHEMAS: Record<string, Record<string, Type>> = {
     "ab-config": AbPresetConfigPayloadSchema,
     "ab-decision": AbDecisionPayloadSchema,
   },
-  // gamma-presentation-creator (single-shot, CL-3614): the `intake` gate
+  // gamma-presentation-creator (single-shot): the `intake` gate
   // REQUIRES a deck title + a Gamma template (CL-2684) — the render step
   // reads both. There is no preview/round gate; the run generates once and
   // persists.

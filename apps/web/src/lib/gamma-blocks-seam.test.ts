@@ -36,7 +36,7 @@ function toSteps(log: LogRunState) {
 }
 
 describe("gamma-presentation-creator blocks — real log→state→blocks seam", () => {
-  // Single-shot run (CL-3614): intake -> generate -> render -> describe ->
+  // Single-shot run: intake -> generate -> render -> describe ->
   // persist, no per-round preview/refine gate. Mid-flight the dock shows only
   // progress — the run has nothing more to decide until it either finishes or
   // fails, so no link/choice block is expected here.
