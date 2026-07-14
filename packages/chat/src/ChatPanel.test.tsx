@@ -284,6 +284,18 @@ describe("ChatPanel single merged header", () => {
     expect(screen.queryByText("Personal agent")).toBeNull();
     expect(screen.queryByRole("banner")).toBeNull();
   });
+
+  it("omits the header when headerLeft is null and no chrome controls are set", () => {
+    render(
+      <ChatPanel
+        agent={agent}
+        messages={messages}
+        onSend={() => {}}
+        headerLeft={null}
+      />,
+    );
+    expect(screen.queryByRole("banner")).toBeNull();
+  });
 });
 
 describe("ChatPanel composer width", () => {

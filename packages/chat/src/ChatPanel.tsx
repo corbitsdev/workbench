@@ -165,8 +165,10 @@ export function ChatPanel({
   // Hosts that own the thread title elsewhere (e.g. full-page chat with
   // an app top-bar context strip) omit headerLeft and chrome controls.
   // Skip the header entirely so we don't leave an empty identity row.
+  // Treat null like "no left slot" so headerLeft={null} cannot force an
+  // empty banner when no chrome controls are present.
   const showHeader =
-    headerLeft !== undefined ||
+    headerLeft != null ||
     onToggleDock !== undefined ||
     onToggleExpand !== undefined ||
     onClose !== undefined;
