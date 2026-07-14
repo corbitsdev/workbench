@@ -23,14 +23,21 @@ mock.module("../lib/member-tool-credential", () => ({
     baseURL: "",
     source: "tenant" as const,
   }),
+  resolveTenantToolCredential: async () => ({
+    apiKey: "tok",
+    baseURL: "",
+    source: "tenant" as const,
+  }),
 }));
 
 mock.module("../lib/capability-grants", () => ({
   isMemberSelfServiceCapabilityActive: async () => true,
 }));
 
+// Inbox sources default OFF (CL-3577); the member has explicitly enabled the
+// linear source so the tick has something to poll.
 mock.module("../lib/member-preferences", () => ({
-  readMemberPreferences: async () => ({}),
+  readMemberPreferences: async () => ({ "inboxSource:linear": true }),
 }));
 
 const { createInboxIntake } = await import("./inbox-intake");
@@ -156,13 +163,13 @@ describe("inbox intake tick", () => {
     expect((await mailboxRows()).rows.length).toBe(0);
   });
 
-  test("a source with no wired fetcher is skipped without error", async () => {
+  test("an enabled source with no wired registry entry is skipped without error", async () => {
     const intake = createInboxIntake({
       db,
       grantStore: {} as never,
       listMembers: async () => [member],
       isTenantEnabled: async () => true,
-      fetchers: {},
+      registry: [],
     });
     await intake.tick();
     expect((await mailboxRows()).rows.length).toBe(0);
