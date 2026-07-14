@@ -124,7 +124,13 @@ async function fetchAttioJSON(
     const bodyText = errorMessageFromBody(
       await response.text().catch(() => ""),
     );
-    const detail = response.statusText || bodyText;
+    // Attio's error body (typically `{ message: "..." }`) carries the specific
+    // reason a request was rejected; the HTTP reason phrase in `statusText`
+    // ("Bad Request") is only a fallback for when the body was empty or
+    // unparseable — a real fetch() implementation always populates
+    // `statusText`, so preferring it here would silently discard the one
+    // piece of information that explains the failure.
+    const detail = bodyText || response.statusText;
     throw new Error(`Attio API error: ${response.status} ${detail ?? ""}`);
   }
 

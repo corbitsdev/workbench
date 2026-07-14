@@ -170,6 +170,54 @@ Backed by the workbench-owned `principal_mailbox` table — every principal
 (human or agent instance) has one. Delivery is authorized to senders in the
 same tenant domain as the recipient.
 
+### Inbox sources — webhooks
+
+See `OWNER_SETUP_INBOX.md` for the full setup sequence and gating order.
+Member-facing:
+
+```
+GET    /me/inbox-sources          # catalog entries the member can see —
+                                  # tenant credential AND owner-enabled;
+                                  # owner-disabled or credential-less sources
+                                  # are absent, never returned "disabled"
+PATCH  /me/preferences            # inboxSource:<key> and, for Linear,
+                                  # inboxSource:linear:scope /
+                                  # inboxSource:linear:backfill
+```
+
+Owner-facing:
+
+```
+GET  /owner/inbox-sources         # catalog + per-source enabled state
+                                  # (member-role allow grant on
+                                  # inbox-source:<key>/enable)
+PUT  /owner/inbox-sources/:key    # { enabled } → write/revoke the grant;
+                                  # audit-logged; disabling never touches
+                                  # member preferences, re-enabling restores
+                                  # each member's prior choice
+```
+
+Public webhook receivers (each mounted only when its secret env var is set —
+absent secret means the route does not exist, not that it 404s):
+
+```
+POST /webhooks/linear   # LINEAR_WEBHOOK_SECRET — HMAC-SHA256 over the raw
+                        # body (`linear-signature`), 60s replay window;
+                        # Issue/Comment create/update events
+POST /webhooks/attio    # ATTIO_WEBHOOK_SECRET — HMAC over the raw body
+                        # (`Attio-Signature` / legacy `X-Attio-Signature`),
+                        # 24h Idempotency-Key dedupe; task.created/updated
+POST /webhooks/slack    # SLACK_SIGNING_SECRET — Slack v0 HMAC
+                        # (`x-slack-signature` + `x-slack-request-timestamp`),
+                        # 5-minute replay window; handles the
+                        # `url_verification` handshake, mention events, and
+                        # channel_created auto-join
+```
+
+Each webhook shares its dedup/idempotency key scheme with the corresponding
+poller (Linear: `externalId`; Attio: `sourceRef`) so a poll and a webhook
+delivery of the same event collapse into one mailbox row rather than two.
+
 ### Schedules and webhook triggers
 
 ```

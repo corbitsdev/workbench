@@ -21,6 +21,7 @@ here rather than duplicated — duplicated detail drifts.
 | Standing up a client deployment                        | [`CLIENT_STANDUP.md`](CLIENT_STANDUP.md) — per-client profile + ordered Railway standup runbook                              |
 | Bumping the Interchange pin / vendored code            | [`VENDORED.md`](VENDORED.md) — every vendored `@intx/*` change (files + `@workbench/workflow-host`) and when it was added    |
 | Designing the Slack integration                        | [`design/SLACK_INTEGRATION.md`](design/SLACK_INTEGRATION.md) — @Myra in Slack + Slack-as-context design and ticket breakdown |
+| Setting up inbox intake (Linear, Attio, Granola, Slack) | [`OWNER_SETUP_INBOX.md`](OWNER_SETUP_INBOX.md) — step-by-step owner walkthrough: credentials, toggles, webhooks, gating order |
 | Setting up / following engineering rules               | [`../AGENTS.md`](../AGENTS.md)                                                                                               |
 | Deploying / running coverage                           | [`../README.md`](../README.md)                                                                                               |
 

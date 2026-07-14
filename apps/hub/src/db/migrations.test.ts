@@ -617,6 +617,43 @@ describe("0049 creates task and task_external_ref", () => {
   });
 });
 
+describe("0055 adds source_ref to artifact (CL-3577 review fix B)", () => {
+  const sql = readFileSync(
+    join(import.meta.dir, "../../migrations/0055_artifact_source_ref.sql"),
+    "utf-8",
+  );
+
+  it("adds a nullable source_ref column", () => {
+    expect(sql).toMatch(/ALTER TABLE "artifact"/i);
+    expect(sql).toMatch(/ADD COLUMN IF NOT EXISTS "source_ref" text/i);
+    expect(sql).not.toMatch(/"source_ref" text NOT NULL/i);
+    expect(sql).not.toMatch(/DEFAULT/i);
+  });
+
+  it("dedupes keyed rows per (tenant, source_ref)", () => {
+    expect(sql).toMatch(
+      /CREATE UNIQUE INDEX IF NOT EXISTS "artifact_tenant_source_ref_uniq"\s+ON "artifact" \("tenant_id", "source_ref"\)\s+WHERE "source_ref" IS NOT NULL/i,
+    );
+  });
+
+  it("touches NO interchange-owned table — artifact is workbench-owned", () => {
+    for (const table of [
+      "agent_session",
+      "session_mail",
+      "inference_turn",
+      "grant",
+      "credential",
+      "principal",
+      "tenant",
+      "agent_instance",
+    ]) {
+      expect(sql).not.toMatch(
+        new RegExp(`(ON|TABLE( IF NOT EXISTS)?) "${table}"`, "i"),
+      );
+    }
+  });
+});
+
 describe("0051 adds assignee_principal_id to task", () => {
   const sql = readFileSync(
     join(import.meta.dir, "../../migrations/0051_task_assignee.sql"),

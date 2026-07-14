@@ -18,6 +18,10 @@ import {
   type OwnerFeaturesResponse as OwnerFeaturesState,
   OwnerFeatureToggleResult,
   type OwnerFeatureToggleResult as OwnerFeatureToggleResultType,
+  OwnerInboxSourcesResponse,
+  type OwnerInboxSourcesResponse as OwnerInboxSourcesState,
+  OwnerInboxSourceToggleResult,
+  type OwnerInboxSourceToggleResult as OwnerInboxSourceToggleResultType,
   type DemoLink,
   DemoLinkSchema,
   WorkflowCatalogSchema,
@@ -233,6 +237,36 @@ export async function setOwnerFeatureEnabled(
   const parsed = OwnerFeatureToggleResult(raw);
   if (parsed instanceof type.errors) {
     throw new Error(`Malformed owner feature response: ${parsed.summary}`);
+  }
+  return parsed;
+}
+
+/** Owner-managed inbox source enablement (the tenant ceiling above each
+ * member's inbox-source preference) and each source's state (owner-guarded). */
+export async function getOwnerInboxSources(): Promise<OwnerInboxSourcesState> {
+  const raw = await hubFetch<unknown>("GET", "v1/owner/inbox-sources");
+  const parsed = OwnerInboxSourcesResponse(raw);
+  if (parsed instanceof type.errors) {
+    throw new Error(
+      `Malformed /owner/inbox-sources response: ${parsed.summary}`,
+    );
+  }
+  return parsed;
+}
+
+/** Enable or disable an inbox source org-wide (owner-guarded). */
+export async function setOwnerInboxSourceEnabled(
+  key: string,
+  enabled: boolean,
+): Promise<OwnerInboxSourceToggleResultType> {
+  const raw = await hubFetch<unknown>(
+    "PUT",
+    `v1/owner/inbox-sources/${encodeURIComponent(key)}`,
+    { enabled },
+  );
+  const parsed = OwnerInboxSourceToggleResult(raw);
+  if (parsed instanceof type.errors) {
+    throw new Error(`Malformed owner inbox source response: ${parsed.summary}`);
   }
   return parsed;
 }

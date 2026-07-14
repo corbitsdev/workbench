@@ -113,6 +113,7 @@ import { createAdminRouter } from "./routes/admin";
 import { createOwnerRouter } from "./routes/owner";
 import { isDemosEnabledByGrant, resolveDemoLinks } from "./lib/demos-gate";
 import { isFeatureEnabledForTenantCached } from "./lib/feature-grants";
+import { isWorkspaceInboxSourceEnabledForTenant } from "./lib/workspace-inbox-source-gate";
 import { isAdmin, isOwner } from "./lib/admin-grant";
 import { createAgentProvisioningRouter } from "./routes/agents";
 import {
@@ -127,7 +128,14 @@ import {
 } from "./services/sync-personal-agent";
 import { createMembersRouter } from "./routes/members";
 import { createMyraThreadsRouter } from "./routes/myra-threads";
-import { recordMyraThreadActivity } from "./services/myra-threads";
+import {
+  recordMyraThreadActivity,
+  resolveMyraDefinition,
+} from "./services/myra-threads";
+import { createGranolaCallFanout } from "./services/granola-call-fanout";
+import { createGranolaCallPipeline } from "./services/granola-call-pipeline";
+import { createGranolaWorkspaceInboxSource } from "./services/inbox-sources/granola-workspace";
+import { INBOX_SOURCE_REGISTRY } from "./services/inbox-source-registry";
 import {
   createMailboxTriage,
   sweepStaleTriageInstances,
@@ -168,6 +176,9 @@ import { createMeBriefRunRouter } from "./routes/me-brief-run";
 import { createMeSchedulesRouter } from "./routes/me-schedules";
 import { createMeWebhookTriggersRouter } from "./routes/me-webhook-triggers";
 import { createWebhookTriggerFireRouter } from "./routes/webhook-trigger-fire";
+import { createLinearWebhookRouter } from "./routes/webhooks-linear";
+import { createAttioWebhookRouter } from "./routes/webhooks-attio";
+import { createSlackWebhookRouter } from "./routes/webhooks-slack";
 import { deriveUserMailAddress } from "@workbench/hub-agent";
 import { createMeProfileRouter } from "./routes/me-profile";
 import { readMemberPreferences } from "./lib/member-preferences";
@@ -1450,6 +1461,58 @@ const runStarter = createWorkflowRunStarter({
 // session-auth wall.
 app.route("/", createWebhookTriggerFireRouter({ db, runStarter }));
 
+// Public Linear webhook receiver (CL-3585): additive low-latency intake
+// alongside the poller. Mounted only when a signing secret is configured; the
+// request is authenticated by the `linear-signature` HMAC, not a session.
+if (config.inboxIntake.linearWebhookSecret) {
+  app.route(
+    "/",
+    createLinearWebhookRouter({
+      db,
+      secret: config.inboxIntake.linearWebhookSecret,
+      listMembers: () => listInboxMembers(),
+      isSourceEnabledForTenant: (tenantId, sourceKey) =>
+        isWorkspaceInboxSourceEnabledForTenant(db, tenantId, sourceKey),
+      mailboxEventBus,
+      mailboxTriage,
+    }),
+  );
+}
+
+// Public Attio webhook receiver (CL-3586): same additive pattern as Linear —
+// mounted only when a signing secret is configured, authenticated by the
+// `Attio-Signature` HMAC. Task events reuse the poller's upsert.
+if (config.inboxIntake.attioWebhookSecret) {
+  app.route(
+    "/",
+    createAttioWebhookRouter({
+      db,
+      secret: config.inboxIntake.attioWebhookSecret,
+      listMembers: () => listInboxMembers(),
+      isSourceEnabledForTenant: (tenantId, sourceKey) =>
+        isWorkspaceInboxSourceEnabledForTenant(db, tenantId, sourceKey),
+    }),
+  );
+}
+
+// Public Slack Events API receiver (CL-3581): mentions of mapped members land
+// in their inbox. Mounted only when the app signing secret is configured;
+// authenticated by the `X-Slack-Signature` v0 HMAC.
+if (config.inboxIntake.slackSigningSecret) {
+  app.route(
+    "/",
+    createSlackWebhookRouter({
+      db,
+      signingSecret: config.inboxIntake.slackSigningSecret,
+      listMembers: () => listInboxMembers(),
+      isSourceEnabledForTenant: (tenantId, sourceKey) =>
+        isWorkspaceInboxSourceEnabledForTenant(db, tenantId, sourceKey),
+      mailboxEventBus,
+      mailboxTriage,
+    }),
+  );
+}
+
 // Public OAuth callback (CL-3356). Outside the v1 session-auth wall — a provider
 // redirect is a top-level browser navigation authenticated by the signed state,
 // not a session cookie. Shares the pending PKCE store with the authorize route.
@@ -1692,11 +1755,16 @@ const listInboxMembers = async () => {
     .select({
       memberPrincipalId: schema.memberAgentInstance.memberPrincipalId,
       refId: intxSchema.principal.refId,
+      email: intxSchema.user.email,
     })
     .from(schema.memberAgentInstance)
     .innerJoin(
       intxSchema.principal,
       eq(intxSchema.principal.id, schema.memberAgentInstance.memberPrincipalId),
+    )
+    .innerJoin(
+      intxSchema.user,
+      eq(intxSchema.user.id, intxSchema.principal.refId),
     )
     .where(
       and(
@@ -1712,15 +1780,45 @@ const listInboxMembers = async () => {
       domain: config.rootTenant.domain,
     }),
     tenantDomain: config.rootTenant.domain,
+    email: row.email ?? null,
   }));
 };
+
+const granolaFanout = createGranolaCallFanout({
+  db,
+  grantStore,
+  rootTenantId,
+  rootTenantDomain: config.rootTenant.domain,
+  mailboxEventBus,
+});
+const granolaPipeline = createGranolaCallPipeline({
+  db,
+  rootTenantDomain: config.rootTenant.domain,
+  resolveInferenceSource: async (tenantId) => {
+    const def = await resolveMyraDefinition(db, tenantId);
+    if (!def) return null;
+    const res = await resolveInstanceSourcesFromDefinition(
+      db,
+      tenantId,
+      def,
+      null,
+    );
+    return res.ok ? (res.sources[0] ?? null) : null;
+  },
+  fanout: granolaFanout,
+});
 
 const inboxIntake = createInboxIntake({
   db,
   grantStore,
+  registry: [
+    ...INBOX_SOURCE_REGISTRY,
+    createGranolaWorkspaceInboxSource({ pipeline: granolaPipeline }),
+  ],
   listMembers: listInboxMembers,
   mailboxEventBus,
   mailboxTriage,
+  tickIntervalMs: config.inboxIntake.tickIntervalMs,
   isTenantEnabled: (tenantId) =>
     isFeatureEnabledForTenantCached(
       db,
@@ -1728,6 +1826,10 @@ const inboxIntake = createInboxIntake({
       "scheduler",
       config.scheduler.enabled,
     ),
+  isWorkspaceSourceEnabled: (tenantId, sourceKey) =>
+    isWorkspaceInboxSourceEnabledForTenant(db, tenantId, sourceKey),
+  isMemberSourceEnabled: (tenantId, sourceKey) =>
+    isWorkspaceInboxSourceEnabledForTenant(db, tenantId, sourceKey),
 });
 inboxIntake.start();
 
