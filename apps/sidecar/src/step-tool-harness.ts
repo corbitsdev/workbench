@@ -472,6 +472,11 @@ export type ArgMapReshapeResult =
  * empty string is a real value and passes through unchanged. Optional
  * `{ from, optional: true }`: an absent key OR an empty-string value returns
  * a skip result instead of throwing. `{ literal }` supplies the constant.
+ * `{ fromJson, field }` reads `fromJson` off the input, JSON-parses it when
+ * it is a string (an already-object value is tolerated), then applies the
+ * same presence/optional rules to `field` on the parsed object — for a
+ * deterministic step consuming another deterministic tool's `stringTool`
+ * output (encoded as `{ content: "<json>" }`).
  */
 function reshapeWithArgMap(
   toolName: string,
@@ -501,6 +506,48 @@ function reshapeWithArgMap(
   for (const [argName, spec] of Object.entries(argMap)) {
     if ("literal" in spec) {
       toolArguments[argName] = spec.literal;
+      continue;
+    }
+    if ("fromJson" in spec) {
+      const envelope =
+        inputRecord !== undefined && spec.fromJson in inputRecord
+          ? inputRecord[spec.fromJson]
+          : undefined;
+      let parsed: unknown = undefined;
+      if (typeof envelope === "string") {
+        try {
+          parsed = JSON.parse(envelope);
+        } catch {
+          parsed = undefined;
+        }
+      } else if (envelope !== null && typeof envelope === "object") {
+        parsed = envelope;
+      }
+      const parsedRecord =
+        parsed !== null && typeof parsed === "object" && !Array.isArray(parsed)
+          ? (parsed as Record<string, unknown>)
+          : undefined;
+      const fieldPresent =
+        parsedRecord !== undefined && spec.field in parsedRecord;
+      const fieldValue = fieldPresent ? parsedRecord[spec.field] : undefined;
+      if (spec.optional === true) {
+        const isEmptyString =
+          typeof fieldValue === "string" && fieldValue === "";
+        if (!fieldPresent || isEmptyString) {
+          return {
+            skip: true,
+            reason: `deterministic step "${toolName}" argMap maps tool arg "${argName}" from optional JSON field "${spec.field}" of "${spec.fromJson}", which is absent or empty on the evaluated step input`,
+          };
+        }
+        toolArguments[argName] = fieldValue;
+        continue;
+      }
+      if (!fieldPresent) {
+        throw new Error(
+          `step-tool-harness: deterministic step "${toolName}" argMap maps tool arg "${argName}" from JSON field "${spec.field}" of input field "${spec.fromJson}", but that field is absent on the evaluated step input`,
+        );
+      }
+      toolArguments[argName] = fieldValue;
       continue;
     }
     const present = inputRecord !== undefined && spec.from in inputRecord;

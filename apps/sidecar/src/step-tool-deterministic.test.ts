@@ -432,4 +432,128 @@ describe("runDeterministicToolStep", () => {
     expect(tr).toHaveProperty("callId");
     expect(tr.isError).not.toBe(true);
   });
+
+  test("a fromJson argMap field reads a field out of a JSON-string envelope field", async () => {
+    stubHubFetch();
+    const { env } = await makeEnv();
+    const result = await runDeterministicToolStep({
+      env: env as never,
+      toolName: "write_file",
+      input: {
+        path: "out.txt",
+        content: JSON.stringify({
+          gammaUrl: "https://x",
+          exportUrl: "",
+        }),
+      },
+      argMapJson: JSON.stringify({
+        content: { fromJson: "content", field: "gammaUrl" },
+        path: { from: "path" },
+      }),
+      signal: new AbortController().signal,
+    });
+    const tr = result.output as Record<string, unknown>;
+    expect(tr).toHaveProperty("callId");
+    expect(tr.isError).not.toBe(true);
+  });
+
+  test("a non-optional fromJson field missing on the parsed envelope throws", async () => {
+    stubHubFetch();
+    const { env } = await makeEnv();
+    await expect(
+      runDeterministicToolStep({
+        env: env as never,
+        toolName: "write_file",
+        input: {
+          path: "out.txt",
+          content: JSON.stringify({ exportUrl: "" }),
+        },
+        argMapJson: JSON.stringify({
+          content: { fromJson: "content", field: "gammaUrl" },
+          path: { from: "path" },
+        }),
+        signal: new AbortController().signal,
+      }),
+    ).rejects.toThrow(/JSON field "gammaUrl" of input field "content"/);
+  });
+
+  test("an optional fromJson field absent from the parsed envelope skips without throwing", async () => {
+    stubHubFetch();
+    const { env } = await makeEnv();
+    const result = await runDeterministicToolStep({
+      env: env as never,
+      toolName: "write_file",
+      input: {
+        path: "out.txt",
+        content: JSON.stringify({ gammaUrl: "https://x" }),
+      },
+      argMapJson: JSON.stringify({
+        content: { fromJson: "content", field: "exportUrl", optional: true },
+        path: { from: "path" },
+      }),
+      signal: new AbortController().signal,
+    });
+    expect(result.output).toEqual({ skipped: true });
+  });
+
+  test("an optional fromJson field that is an empty string in the parsed envelope also skips", async () => {
+    stubHubFetch();
+    const { env } = await makeEnv();
+    const result = await runDeterministicToolStep({
+      env: env as never,
+      toolName: "write_file",
+      input: {
+        path: "out.txt",
+        content: JSON.stringify({ gammaUrl: "https://x", exportUrl: "" }),
+      },
+      argMapJson: JSON.stringify({
+        content: { fromJson: "content", field: "exportUrl", optional: true },
+        path: { from: "path" },
+      }),
+      signal: new AbortController().signal,
+    });
+    expect(result.output).toEqual({ skipped: true });
+  });
+
+  test("a non-optional fromJson field present as an empty string passes through verbatim", async () => {
+    stubHubFetch();
+    const { env } = await makeEnv();
+    const result = await runDeterministicToolStep({
+      env: env as never,
+      toolName: "write_file",
+      input: {
+        path: "out.txt",
+        content: JSON.stringify({ gammaUrl: "https://x", exportUrl: "" }),
+      },
+      argMapJson: JSON.stringify({
+        content: { fromJson: "content", field: "exportUrl" },
+        path: { from: "path" },
+      }),
+      signal: new AbortController().signal,
+    });
+    const tr = result.output as Record<string, unknown>;
+    expect(tr).toHaveProperty("callId");
+    expect(tr.isError).not.toBe(true);
+  });
+
+  test("a fromJson envelope field that is already an object (not a JSON string) still resolves the field", async () => {
+    stubHubFetch();
+    const { env } = await makeEnv();
+    const result = await runDeterministicToolStep({
+      env: env as never,
+      toolName: "write_file",
+      input: {
+        path: "out.txt",
+        content: { gammaUrl: "https://x", exportUrl: "" },
+      },
+      argMapJson: JSON.stringify({
+        content: { fromJson: "content", field: "gammaUrl" },
+        path: { from: "path" },
+      }),
+      signal: new AbortController().signal,
+    });
+    const tr = result.output as Record<string, unknown>;
+    expect(tr).toHaveProperty("callId");
+    expect(tr.isError).not.toBe(true);
+  });
 });
