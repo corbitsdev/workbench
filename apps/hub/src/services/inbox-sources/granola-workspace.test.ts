@@ -2,9 +2,11 @@ import { describe, expect, mock, test } from "bun:test";
 import { getLogger } from "@intx/log";
 
 // createGranolaTools is mocked at the @workbench/tools-granola boundary: this
-// test drives poll → per-note fetch → pipeline hand-off with a fake Granola API
-// and a fake pipeline, so the source's own wiring (list, get, dedupe delegation)
-// is the unit under test.
+// test drives poll → enqueue with a fake Granola list API and a fake job
+// queue, so the source's own wiring (list, dedupe delegation to enqueue) is
+// the unit under test. CL-3627: the source no longer fetches full notes
+// (transcript) or calls the LLM pipeline on the tick — that moved to the
+// off-tick job runner.
 const listResult: {
   notes: { id: string; title: string; created_at: string }[];
   hasMore?: boolean;
@@ -15,19 +17,6 @@ const listResult: {
     { id: "note-2", title: "Follow-up", created_at: "2026-07-02T00:00:00Z" },
   ],
 };
-const fullNotes: Record<string, unknown> = {
-  "note-1": {
-    id: "note-1",
-    title: "Discovery",
-    participants: ["a@corbits.io"],
-    transcript: [{ text: "hello" }, { text: "world" }],
-  },
-  "note-2": {
-    id: "note-2",
-    title: "Follow-up",
-    participants: ["b@corbits.io"],
-  },
-};
 let lastListArgs: Record<string, unknown> | null = null;
 /** When set, overrides `listResult` — a per-cursor page sequence for the
  * multi-page-per-tick tests. Keyed on the incoming `cursor` arg (`undefined`
@@ -36,6 +25,7 @@ let pagedResults: Map<
   string | undefined,
   typeof listResult & Record<string, unknown>
 > | null = null;
+let getToolCalled = false;
 mock.module("@workbench/tools-granola", () => ({
   createGranolaTools: () => [
     {
@@ -57,8 +47,12 @@ mock.module("@workbench/tools-granola", () => ({
     {
       kind: "string",
       definition: { name: "granola_get_note" },
-      handler: async (args: Record<string, unknown>) =>
-        JSON.stringify(fullNotes[args.noteId as string]),
+      handler: async () => {
+        // The tick MUST NOT call the get-note tool — that fetch (and the LLM
+        // turn it feeds) moved off-tick to the job runner (CL-3627).
+        getToolCalled = true;
+        throw new Error("granola_get_note must not be called on the tick");
+      },
     },
   ],
 }));
@@ -66,11 +60,7 @@ mock.module("@workbench/tools-granola", () => ({
 const { createGranolaWorkspaceInboxSource, GRANOLA_WORKSPACE_SOURCE_KEY } =
   await import("./granola-workspace");
 import type { WorkspaceInboxSourceContext } from "../inbox-source-registry";
-import type {
-  GranolaCallPipeline,
-  ProcessCallInput,
-  ProcessCallResult,
-} from "../granola-call-pipeline";
+import type { GranolaCallJobQueue } from "../granola-call-job-queue";
 
 function makeCtx(
   overrides: Partial<WorkspaceInboxSourceContext> = {},
@@ -88,73 +78,73 @@ function makeCtx(
   };
 }
 
-function fakePipeline(
-  results: Record<string, ProcessCallResult["status"]> = {},
-): { pipeline: GranolaCallPipeline; calls: ProcessCallInput[] } {
-  const calls: ProcessCallInput[] = [];
-  const pipeline: GranolaCallPipeline = {
-    processCall: async (input) => {
-      calls.push(input);
-      const status = results[input.note.id] ?? "processed";
-      if (status === "processed")
-        return { status, artifactId: `art-${input.note.id}`, delivered: 1 };
-      if (status === "skipped-duplicate") return { status };
-      return { status: "skipped-no-source" };
+function fakeQueue(): {
+  queue: GranolaCallJobQueue;
+  enqueued: { tenantId: string; noteId: string }[];
+} {
+  const enqueued: { tenantId: string; noteId: string }[] = [];
+  const queue: GranolaCallJobQueue = {
+    enqueue: async (tenantId, noteId) => {
+      enqueued.push({ tenantId, noteId });
     },
+    claimDue: async () => [],
+    complete: async () => {},
+    fail: async () => {},
   };
-  return { pipeline, calls };
+  return { queue, enqueued };
 }
 
 describe("granola workspace inbox source", () => {
   test("has the workspace scope and the granola provider key", () => {
-    const { pipeline } = fakePipeline();
-    const source = createGranolaWorkspaceInboxSource({ pipeline });
+    const { queue } = fakeQueue();
+    const source = createGranolaWorkspaceInboxSource({ queue });
     expect(source.scope).toBe("workspace");
     // Key MUST equal the tenant-credential provider name resolved by the core.
     expect(source.key).toBe(GRANOLA_WORKSPACE_SOURCE_KEY);
     expect(source.key).toBe("granola");
   });
 
-  test("lists notes since cutoff, fetches each full note, hands off to the pipeline", async () => {
-    const { pipeline, calls } = fakePipeline();
-    const source = createGranolaWorkspaceInboxSource({ pipeline });
+  test("lists notes since cutoff and enqueues each — no transcript fetch, no LLM turn", async () => {
+    getToolCalled = false;
+    const { queue, enqueued } = fakeQueue();
+    const source = createGranolaWorkspaceInboxSource({ queue });
 
     await source.handle(makeCtx());
 
     expect(lastListArgs?.createdAfter).toBe("2026-06-30T00:00:00.000Z");
-    expect(calls.map((c) => c.note.id)).toEqual(["note-1", "note-2"]);
-    // Transcript items are flattened to text for the pipeline.
-    expect(calls[0]?.note.transcript).toBe("hello\nworld");
-    expect(calls[0]?.note.participants).toEqual(["a@corbits.io"]);
+    expect(enqueued).toEqual([
+      { tenantId: "ten-1", noteId: "note-1" },
+      { tenantId: "ten-1", noteId: "note-2" },
+    ]);
+    expect(getToolCalled).toBe(false);
   });
 
   test("uses the later of cutoff and lastPollAt as the fetch floor", async () => {
-    const { pipeline } = fakePipeline();
-    const source = createGranolaWorkspaceInboxSource({ pipeline });
+    const { queue } = fakeQueue();
+    const source = createGranolaWorkspaceInboxSource({ queue });
     await source.handle(
       makeCtx({ lastPollAt: new Date("2026-07-05T00:00:00Z") }),
     );
     expect(lastListArgs?.createdAfter).toBe("2026-07-05T00:00:00.000Z");
   });
 
-  test("dedupe is delegated to the idempotent pipeline (already-processed notes short-circuit there)", async () => {
-    const { pipeline, calls } = fakePipeline({ "note-1": "skipped-duplicate" });
-    const source = createGranolaWorkspaceInboxSource({ pipeline });
+  test("enqueues every listed note; the job queue's own (tenant, note) uniqueness is the dedupe backstop", async () => {
+    const { queue, enqueued } = fakeQueue();
+    const source = createGranolaWorkspaceInboxSource({ queue });
     await source.handle(makeCtx());
-    // Both notes are still handed off; the pipeline decides note-1 is a dup.
-    expect(calls.map((c) => c.note.id)).toEqual(["note-1", "note-2"]);
+    expect(enqueued.map((e) => e.noteId)).toEqual(["note-1", "note-2"]);
   });
 
   test("a member-scope context is ignored (workspace source only runs workspace ticks)", async () => {
-    const { pipeline, calls } = fakePipeline();
-    const source = createGranolaWorkspaceInboxSource({ pipeline });
+    const { queue, enqueued } = fakeQueue();
+    const source = createGranolaWorkspaceInboxSource({ queue });
     await source.handle({ scope: "member" } as never);
-    expect(calls).toEqual([]);
+    expect(enqueued).toEqual([]);
   });
 
   test("a full, limit-capped page advances nextCursor to the max processed created_at (no livelock)", async () => {
-    const { pipeline } = fakePipeline();
-    const source = createGranolaWorkspaceInboxSource({ pipeline });
+    const { queue } = fakeQueue();
+    const source = createGranolaWorkspaceInboxSource({ queue });
     const since = new Date("2026-06-30T00:00:00Z");
     const result = await source.handle(
       makeCtx({ cutoff: since, perSourceLimit: 2 }),
@@ -166,8 +156,8 @@ describe("granola workspace inbox source", () => {
   });
 
   test("a partial page reports no nextCursor (core advances the cursor)", async () => {
-    const { pipeline } = fakePipeline();
-    const source = createGranolaWorkspaceInboxSource({ pipeline });
+    const { queue } = fakeQueue();
+    const source = createGranolaWorkspaceInboxSource({ queue });
     const result = await source.handle(
       makeCtx({
         cutoff: new Date("2026-06-30T00:00:00Z"),
@@ -180,8 +170,8 @@ describe("granola workspace inbox source", () => {
   test("prefers the list response's hasMore signal over the length heuristic, still advancing to max created_at", async () => {
     listResult.hasMore = true;
     try {
-      const { pipeline } = fakePipeline();
-      const source = createGranolaWorkspaceInboxSource({ pipeline });
+      const { queue } = fakeQueue();
+      const source = createGranolaWorkspaceInboxSource({ queue });
       const since = new Date("2026-06-30T00:00:00Z");
       // perSourceLimit is well above notes.length, so the length heuristic
       // alone would say "not truncated" — hasMore must override it.
@@ -195,8 +185,6 @@ describe("granola workspace inbox source", () => {
   });
 
   test("walks multiple list pages within one tick via the response cursor, bounded by MAX_PAGES_PER_TICK", async () => {
-    fullNotes["note-3"] = { id: "note-3", title: "Page 2 note" };
-    fullNotes["note-4"] = { id: "note-4", title: "Page 3 note" };
     pagedResults = new Map([
       [
         undefined,
@@ -241,8 +229,8 @@ describe("granola workspace inbox source", () => {
       ],
     ]);
     try {
-      const { pipeline, calls } = fakePipeline();
-      const source = createGranolaWorkspaceInboxSource({ pipeline });
+      const { queue, enqueued } = fakeQueue();
+      const source = createGranolaWorkspaceInboxSource({ queue });
       const result = await source.handle(
         makeCtx({
           cutoff: new Date("2026-06-30T00:00:00Z"),
@@ -250,7 +238,7 @@ describe("granola workspace inbox source", () => {
         }),
       );
       // All three pages are drained within the single tick call.
-      expect(calls.map((c) => c.note.id)).toEqual([
+      expect(enqueued.map((e) => e.noteId)).toEqual([
         "note-1",
         "note-3",
         "note-4",
@@ -264,10 +252,6 @@ describe("granola workspace inbox source", () => {
   });
 
   test("bounds the per-tick page walk at MAX_PAGES_PER_TICK, then advances to the max processed created_at (sustained overflow doesn't livelock)", async () => {
-    fullNotes["note-p1"] = { id: "note-p1", title: "p1" };
-    fullNotes["note-p2"] = { id: "note-p2", title: "p2" };
-    fullNotes["note-p3"] = { id: "note-p3", title: "p3" };
-    fullNotes["note-p4"] = { id: "note-p4", title: "p4" };
     const page = (n: number, cursor?: string) => ({
       notes: [
         {
@@ -286,15 +270,15 @@ describe("granola workspace inbox source", () => {
       ["c4", page(4, "c5")], // a 5th page exists, but MAX_PAGES_PER_TICK caps the walk at 4
     ]);
     try {
-      const { pipeline, calls } = fakePipeline();
-      const source = createGranolaWorkspaceInboxSource({ pipeline });
+      const { queue, enqueued } = fakeQueue();
+      const source = createGranolaWorkspaceInboxSource({ queue });
       const result = await source.handle(
         makeCtx({
           cutoff: new Date("2026-06-30T00:00:00Z"),
           perSourceLimit: 1,
         }),
       );
-      expect(calls.map((c) => c.note.id)).toEqual([
+      expect(enqueued.map((e) => e.noteId)).toEqual([
         "note-p1",
         "note-p2",
         "note-p3",
@@ -309,12 +293,6 @@ describe("granola workspace inbox source", () => {
   });
 
   test("sustained overflow across ticks (no page cursor) strictly advances the cursor tick over tick — no livelock, no lost items", async () => {
-    fullNotes["note-a"] = { id: "note-a", title: "a" };
-    fullNotes["note-b"] = { id: "note-b", title: "b" };
-    fullNotes["note-c"] = { id: "note-c", title: "c" };
-    fullNotes["note-d"] = { id: "note-d", title: "d" };
-    fullNotes["note-e"] = { id: "note-e", title: "e" };
-    fullNotes["note-f"] = { id: "note-f", title: "f" };
     // Three consecutive full pages, each with distinct timestamps, and no
     // page cursor at all — simulates an API that only supports the
     // createdAfter window, under sustained overflow (>= perSourceLimit new
@@ -333,8 +311,8 @@ describe("granola workspace inbox source", () => {
         { id: "note-f", created_at: "2026-07-01T00:05:00Z" },
       ],
     };
-    const { pipeline, calls } = fakePipeline();
-    const source = createGranolaWorkspaceInboxSource({ pipeline });
+    const { queue, enqueued } = fakeQueue();
+    const source = createGranolaWorkspaceInboxSource({ queue });
     let lastPollAt: Date | undefined;
     const cutoff = new Date("2026-07-01T00:00:00Z");
     const cursors: Date[] = [];
@@ -359,9 +337,9 @@ describe("granola workspace inbox source", () => {
     // Strictly advancing across ticks — no livelock.
     expect(cursors[1]?.getTime()).toBeGreaterThan(cursors[0]?.getTime() ?? 0);
     expect(cursors[2]?.getTime()).toBeGreaterThan(cursors[1]?.getTime() ?? 0);
-    // Every item across the three full pages was actually processed — no
+    // Every item across the three full pages was actually enqueued — no
     // lost items given the fetcher honestly returns the window content.
-    expect(calls.map((c) => c.note.id)).toEqual([
+    expect(enqueued.map((e) => e.noteId)).toEqual([
       "note-a",
       "note-b",
       "note-c",
