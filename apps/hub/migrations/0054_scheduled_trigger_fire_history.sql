@@ -1,5 +1,8 @@
 -- CL-3526: link automation schedules to the workflow runs they start.
--- last_run_id is the most recent successful scheduler start; scheduled_trigger_fire
+-- Workbench-owned hub schema only: extends `scheduled_trigger` (0047) and adds
+-- `scheduled_trigger_fire`. References no Interchange-owned table; `run_id` is an
+-- opaque id joined to workbench `workflow_run_record` at read time.
+-- `last_run_id` is the most recent successful scheduler start; `scheduled_trigger_fire`
 -- retains a bounded audit trail for the Settings schedules UI.
 
 ALTER TABLE "scheduled_trigger"

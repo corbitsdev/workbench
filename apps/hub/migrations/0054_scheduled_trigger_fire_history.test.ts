@@ -19,4 +19,10 @@ describe("migration 0054_scheduled_trigger_fire_history", () => {
     expect(sql).toContain('"run_id"');
     expect(sql).toContain("scheduled_trigger_fire_schedule_fired_idx");
   });
+
+  it("documents workbench-only scope and does not touch interchange tables", () => {
+    expect(sql.toLowerCase()).toContain("workbench-owned");
+    expect(sql).not.toMatch(/\binference_/i);
+    expect(sql).not.toMatch(/ALTER TABLE\s+"principal"/i);
+  });
 });
