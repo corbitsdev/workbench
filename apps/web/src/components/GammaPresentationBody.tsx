@@ -105,7 +105,7 @@ export default function GammaPresentationBody({
         // error. No other flag is granted: no scripts, no popups, no forms,
         // no top navigation — a PDF has none of those to begin with.
         sandbox="allow-same-origin"
-        className="min-h-[24rem] h-[80vh] w-full rounded border border-border bg-surface"
+        className="min-h-[28rem] h-[min(75vh,900px)] max-h-[900px] w-full rounded border border-border bg-surface"
       />
     );
   }
