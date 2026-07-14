@@ -125,6 +125,7 @@ function baseCtx(
     signal: new AbortController().signal,
     log: { info() {}, warn() {}, error() {} } as never,
     deliverItems: async () => 0,
+    memberPreferences: {},
     ...overrides,
   };
 }
@@ -318,6 +319,37 @@ describe("attioTaskSyncInboxSource", () => {
     expect(rows).toHaveLength(1);
     expect(rows[0]?.status).toBe("cancelled");
     expect(rows[0]?.title).not.toBe("Changed after cancel");
+  });
+
+  test("a full, limit-capped page reports nextCursor pinned at the previous since (cursor does not advance)", async () => {
+    responder = () =>
+      jsonResponse(200, {
+        data: [
+          attioTaskRow({ id: "task_1", assignees: [SELF_ATTIO_MEMBER_ID] }),
+        ],
+      });
+    const since = new Date("2026-07-01T00:00:00.000Z");
+
+    const result = await attioTaskSyncInboxSource.handle(
+      baseCtx({ cutoff: since, perSourceLimit: 1 }),
+    );
+
+    expect(result).toEqual({ nextCursor: since });
+  });
+
+  test("a partial page reports no nextCursor (cursor advances)", async () => {
+    responder = () =>
+      jsonResponse(200, {
+        data: [
+          attioTaskRow({ id: "task_1", assignees: [SELF_ATTIO_MEMBER_ID] }),
+        ],
+      });
+
+    const result = await attioTaskSyncInboxSource.handle(
+      baseCtx({ perSourceLimit: 25 }),
+    );
+
+    expect(result).toBeUndefined();
   });
 
   test("skips a workspace-scope context (defensive no-op)", async () => {

@@ -135,7 +135,12 @@ describe("granola call pipeline", () => {
     expect(fanCalls[0]?.analysis.painPoints).toEqual(["Onboarding is slow"]);
   });
 
-  test("is idempotent per call: a second run skips (no duplicate artifact, no fan-out)", async () => {
+  test("is idempotent per call: a second run skips creating the artifact but still re-attempts fan-out", async () => {
+    // CL-3577 review fix (HIGH): a process that crashed after persisting the
+    // artifact but before fan-out completed must not lose delivery forever.
+    // Fan-out is idempotent per (call, recipient) via messageKey dedupe (see
+    // granola-call-fanout.test.ts), so re-attempting on every duplicate hit
+    // is safe — it only re-delivers what a prior attempt never wrote.
     const fanCalls: FanOutInput[] = [];
     const pipeline = makePipeline(fanCalls);
     const note = {
@@ -144,15 +149,19 @@ describe("granola call pipeline", () => {
       participants: ["a@corbits.io"],
     };
 
-    await pipeline.processCall({ tenantId: TENANT, note });
+    const first = await pipeline.processCall({ tenantId: TENANT, note });
     const second = await pipeline.processCall({ tenantId: TENANT, note });
 
     expect(second.status).toBe("skipped-duplicate");
     expect((await artifactRows()).rows).toHaveLength(1);
-    expect(fanCalls).toHaveLength(1); // only the first run fanned out
+    expect(fanCalls).toHaveLength(2); // both runs attempt fan-out
+    if (first.status !== "processed") throw new Error("expected processed");
+    expect(fanCalls[1]?.artifactId).toBe(first.artifactId);
+    // The reconstructed analysis on the duplicate path matches the original.
+    expect(fanCalls[1]?.analysis.painPoints).toEqual(["Onboarding is slow"]);
   });
 
-  test("concurrent processCall for the same note creates only one artifact and fans out once", async () => {
+  test("concurrent processCall for the same note creates only one artifact and both attempt fan-out", async () => {
     const fanCalls: FanOutInput[] = [];
     const pipeline = makePipeline(fanCalls);
     const note = {
@@ -169,7 +178,9 @@ describe("granola call pipeline", () => {
     const statuses = [first.status, second.status].sort();
     expect(statuses).toEqual(["processed", "skipped-duplicate"]);
     expect((await artifactRows()).rows).toHaveLength(1);
-    expect(fanCalls).toHaveLength(1); // the loser never fans out
+    // The race loser now also attempts fan-out against the winner's artifact
+    // (CL-3577 review fix) — safe because fan-out dedupes per recipient.
+    expect(fanCalls).toHaveLength(2);
   });
 
   test("skips legibly when no inference source resolves", async () => {
@@ -185,6 +196,57 @@ describe("granola call pipeline", () => {
     });
     expect(result.status).toBe("skipped-no-source");
     expect((await artifactRows()).rows).toHaveLength(0);
+  });
+
+  test("winner-crashed-before-fanout: a duplicate hit delivers the mail the first run never sent, then delivers nothing new", async () => {
+    // A fan-out fake with the SAME per-call idempotency contract real
+    // fan-out has (`fanOutMessageKey`'s per-(call,recipient) dedupe,
+    // exercised directly in granola-call-fanout.test.ts) — modeled here as
+    // one messageKey per call so this test stays scoped to the pipeline's
+    // own duplicate-path behavior without pulling in the mailbox-write /
+    // capability-grant stack.
+    const deliveredKeys = new Set<string>();
+    const fanout = {
+      fanOut: async (fanInput: FanOutInput) => {
+        const key = `granola-call:${fanInput.note.id}`;
+        if (deliveredKeys.has(key)) return { delivered: 0, unmatched: [] };
+        deliveredKeys.add(key);
+        return { delivered: 1, unmatched: [] };
+      },
+    };
+    const pipeline = createGranolaCallPipeline({
+      db,
+      rootTenantDomain: "corbits.io",
+      dataDir: "/tmp/granola-test",
+      resolveInferenceSource: async () => SOURCE,
+      fanout,
+    });
+    const note = {
+      id: "note-crash-recovery",
+      title: "Crash recovery",
+      participants: ["a@corbits.io"],
+    };
+
+    // Simulate the artifact having been persisted by an earlier process that
+    // crashed before its fan-out completed: process once for real (delivers
+    // the mail), then simulate the crash by resetting the delivery record
+    // WITHOUT touching the artifact row.
+    const first = await pipeline.processCall({ tenantId: TENANT, note });
+    expect(first.status).toBe("processed");
+    expect(deliveredKeys.size).toBe(1);
+    deliveredKeys.clear();
+
+    // Re-run: the existing-artifact duplicate path must still deliver the
+    // mail the crashed run never sent.
+    const second = await pipeline.processCall({ tenantId: TENANT, note });
+    expect(second.status).toBe("skipped-duplicate");
+    expect(deliveredKeys.size).toBe(1);
+
+    // A third run delivers nothing new: the retry's delivery is still on
+    // record, deduped by messageKey.
+    const third = await pipeline.processCall({ tenantId: TENANT, note });
+    expect(third.status).toBe("skipped-duplicate");
+    expect(deliveredKeys.size).toBe(1);
   });
 
   test("throws on non-JSON analysis output", async () => {
