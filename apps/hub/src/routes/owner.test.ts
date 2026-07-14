@@ -31,7 +31,63 @@ mock.module("../lib/tenant-provisioning", () => ({
   }),
 }));
 
+// ─── CL-3634: owner role delegation mocks ──────────────────────────
+const assignRole = mock(
+  async (
+    _db: unknown,
+    _tenantId: string,
+    _principalId: string,
+    _roleId: string,
+  ) => {},
+);
+let ownerDemoteResult: "ok" | "last-owner" = "ok";
+class LastOwnerError extends Error {
+  constructor() {
+    super("Cannot demote the last remaining owner");
+    this.name = "LastOwnerError";
+  }
+}
+const demoteFromOwner = mock(async () => {
+  if (ownerDemoteResult === "last-owner") throw new LastOwnerError();
+});
+let ownerRoleId: string | null = "rol_owner";
+const findOwnerRoleId = mock(async () => ownerRoleId);
+let membersPrincipalExists = true;
+const principalExistsInTenant = mock(async () => membersPrincipalExists);
+let tenantMembers: {
+  id: string;
+  refId: string;
+  displayName: string;
+  isOwner: boolean;
+}[] = [];
+const listTenantMembers = mock(async () => tenantMembers);
+mock.module("../services/admin-governance", () => ({
+  assignRole,
+  demoteFromOwner,
+  findOwnerRoleId,
+  LastOwnerError,
+  listTenantMembers,
+  principalExistsInTenant,
+  resolvePrincipalNames: mock(async () => new Map<string, string>()),
+}));
+
 const { createOwnerRouter } = await import("./owner");
+
+// A minimal db that only backs `recordAudit`'s fire-and-forget
+// `db.insert(adminAudit).values(...)` — every other owner-members operation
+// goes through the mocked admin-governance functions above, not the db.
+function membersDb() {
+  const auditWrites: Record<string, unknown>[] = [];
+  const db = {
+    insert: () => ({
+      values: (vals: Record<string, unknown>) => {
+        auditWrites.push(vals);
+        return Promise.resolve();
+      },
+    }),
+  };
+  return { db, auditWrites };
+}
 
 // Real @intx/authz evaluation over a fake grant store: the owner principal holds
 // the `*`/`*` allow grant (what the `owner` system role carries); the admin
@@ -907,5 +963,117 @@ describe("owner capability toggle audit (CL-3356)", () => {
       body: JSON.stringify({ enabled: true }),
     });
     expect(res.status).toBe(404);
+  });
+});
+
+// ─── CL-3634: owner role delegation ─────────────────────────────────
+describe("owner member role delegation", () => {
+  beforeEach(() => {
+    ownerRoleId = "rol_owner";
+    ownerDemoteResult = "ok";
+    membersPrincipalExists = true;
+    tenantMembers = [
+      {
+        id: "prn_owner",
+        refId: "u_owner",
+        displayName: "Owner",
+        isOwner: true,
+      },
+      { id: "prn_x", refId: "u_x", displayName: "Member X", isOwner: false },
+    ];
+    assignRole.mockClear();
+    demoteFromOwner.mockClear();
+  });
+
+  it("denies a non-owner with 403 on list/promote/demote", async () => {
+    callerPrincipalId = "prn_member";
+    const { db } = membersDb();
+    const list = await buildApp(db).request("/owner/members");
+    expect(list.status).toBe(403);
+    const promote = await buildApp(db).request("/owner/members/prn_x/promote", {
+      method: "POST",
+    });
+    expect(promote.status).toBe(403);
+    const demote = await buildApp(db).request("/owner/members/prn_x/demote", {
+      method: "POST",
+    });
+    expect(demote.status).toBe(403);
+    expect(assignRole).not.toHaveBeenCalled();
+    expect(demoteFromOwner).not.toHaveBeenCalled();
+  });
+
+  it("lists members with owner-role status for an owner caller", async () => {
+    callerPrincipalId = "prn_owner";
+    const { db } = membersDb();
+    const res = await buildApp(db).request("/owner/members");
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      members: { id: string; isOwner: boolean }[];
+    };
+    expect(body.members).toHaveLength(2);
+    expect(body.members.find((m) => m.id === "prn_owner")?.isOwner).toBe(true);
+  });
+
+  it("promotes a member to owner and audits role_assigned", async () => {
+    callerPrincipalId = "prn_owner";
+    const { db, auditWrites } = membersDb();
+    const res = await buildApp(db).request("/owner/members/prn_x/promote", {
+      method: "POST",
+    });
+    expect(res.status).toBe(200);
+    expect(assignRole).toHaveBeenCalledTimes(1);
+    expect(assignRole.mock.calls[0]?.[3]).toBe("rol_owner");
+    expect(auditWrites[0]).toMatchObject({
+      action: "role_assigned",
+      resource: "role:owner",
+      targetPrincipalId: "prn_x",
+    });
+  });
+
+  it("demotes an owner and audits role_removed", async () => {
+    callerPrincipalId = "prn_owner";
+    const { db, auditWrites } = membersDb();
+    const res = await buildApp(db).request("/owner/members/prn_x/demote", {
+      method: "POST",
+    });
+    expect(res.status).toBe(200);
+    expect(demoteFromOwner).toHaveBeenCalledTimes(1);
+    expect(auditWrites[0]).toMatchObject({
+      action: "role_removed",
+      resource: "role:owner",
+      targetPrincipalId: "prn_x",
+    });
+  });
+
+  it("refuses self-demotion with 400 and writes no role change", async () => {
+    callerPrincipalId = "prn_owner";
+    const { db } = membersDb();
+    const res = await buildApp(db).request("/owner/members/prn_owner/demote", {
+      method: "POST",
+    });
+    expect(res.status).toBe(400);
+    expect(demoteFromOwner).not.toHaveBeenCalled();
+  });
+
+  it("refuses demoting the last remaining owner with 400", async () => {
+    callerPrincipalId = "prn_owner";
+    ownerDemoteResult = "last-owner";
+    const { db, auditWrites } = membersDb();
+    const res = await buildApp(db).request("/owner/members/prn_x/demote", {
+      method: "POST",
+    });
+    expect(res.status).toBe(400);
+    expect(auditWrites).toHaveLength(0);
+  });
+
+  it("404s promoting an unknown principal and writes no role", async () => {
+    callerPrincipalId = "prn_owner";
+    membersPrincipalExists = false;
+    const { db } = membersDb();
+    const res = await buildApp(db).request("/owner/members/prn_ghost/promote", {
+      method: "POST",
+    });
+    expect(res.status).toBe(404);
+    expect(assignRole).not.toHaveBeenCalled();
   });
 });

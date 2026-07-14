@@ -30,6 +30,8 @@ import {
   OwnerFeaturesResponse,
   OwnerFeatureToggle,
   OwnerFeatureToggleResult,
+  OwnerMemberRoleChangeResult,
+  OwnerMembersResponse,
   OwnerWorkflowsResponse,
   OwnerWorkflowState,
   OwnerWorkflowToggle,
@@ -61,8 +63,18 @@ import {
   workflowRunDenied,
 } from "../lib/workflow-run-gate";
 import { recordAudit } from "../services/admin-audit";
+import {
+  assignRole,
+  demoteFromOwner,
+  findOwnerRoleId,
+  LastOwnerError,
+  listTenantMembers,
+  principalExistsInTenant,
+} from "../services/admin-governance";
 
 const { role, grant, credential, provider } = intxSchema;
+
+const ErrorResponse = type({ error: "string" });
 
 // The org member role is the tenant's baseline run policy (see the CL-2885 run
 // gate): a `deny` grant on it for `workflow:<kind>`/`run` disables that kind.
@@ -139,6 +151,144 @@ export function createOwnerRouter(
         tenantId: rootTenantId,
         ownerPrincipalId: c.get("ownerPrincipalId"),
       }),
+  );
+
+  // ─── Owner role delegation (CL-3634) ───────────────────────────
+  //
+  // Grant/revoke the `owner` system role for other tenant members. Reuses the
+  // exact same native `principal_role` assignment mechanism the admin
+  // elevate/demote routes use (`assignRole`/`removeRole`) — no new grant
+  // concept. There is no cache on the owner grant resolution path
+  // (`isOwner` -> `authorize` -> `collectGrants` reads `principal_role`/
+  // `grant` directly), so a promote/demote takes effect on the very next
+  // request; nothing to invalidate.
+
+  router.get(
+    "/owner/members",
+    describeRoute({
+      tags: ["Owner"],
+      description:
+        "Tenant members (human principals) with their owner-role status.",
+      responses: {
+        200: {
+          description: "Owner members",
+          content: {
+            "application/json": { schema: resolver(OwnerMembersResponse) },
+          },
+        },
+      },
+    }),
+    async (c) => {
+      const members = await listTenantMembers(db, rootTenantId);
+      return c.json({ members });
+    },
+  );
+
+  router.post(
+    "/owner/members/:principalId/promote",
+    describeRoute({
+      tags: ["Owner"],
+      description:
+        "Grant the `owner` system role to a tenant member. Audit-logged.",
+      responses: {
+        200: {
+          description: "Member promoted",
+          content: {
+            "application/json": {
+              schema: resolver(OwnerMemberRoleChangeResult),
+            },
+          },
+        },
+        404: {
+          description: "Unknown principal or no owner role in tenant",
+          content: { "application/json": { schema: resolver(ErrorResponse) } },
+        },
+      },
+    }),
+    async (c) => {
+      const principalId = c.req.param("principalId");
+      if (!(await principalExistsInTenant(db, rootTenantId, principalId))) {
+        return c.json({ error: "Unknown principal" }, 404);
+      }
+      const roleId = await findOwnerRoleId(db, rootTenantId);
+      if (!roleId) {
+        return c.json({ error: "Owner role not found in tenant" }, 404);
+      }
+      const actor = c.get("ownerPrincipalId");
+      await assignRole(db, rootTenantId, principalId, roleId);
+      void recordAudit({
+        db,
+        tenantId: rootTenantId,
+        action: "role_assigned",
+        actorPrincipalId: actor,
+        targetPrincipalId: principalId,
+        resource: "role:owner",
+        detail: { roleId, promote: true },
+      });
+      return c.json({ ok: true });
+    },
+  );
+
+  router.post(
+    "/owner/members/:principalId/demote",
+    describeRoute({
+      tags: ["Owner"],
+      description:
+        "Remove the `owner` system role from a tenant member. Cannot demote yourself or the last remaining owner. Audit-logged.",
+      responses: {
+        200: {
+          description: "Member demoted",
+          content: {
+            "application/json": {
+              schema: resolver(OwnerMemberRoleChangeResult),
+            },
+          },
+        },
+        400: {
+          description: "Self-demotion or last-owner guardrail tripped",
+          content: { "application/json": { schema: resolver(ErrorResponse) } },
+        },
+        404: {
+          description: "Unknown principal or no owner role in tenant",
+          content: { "application/json": { schema: resolver(ErrorResponse) } },
+        },
+      },
+    }),
+    async (c) => {
+      const principalId = c.req.param("principalId");
+      const actor = c.get("ownerPrincipalId");
+      if (principalId === actor) {
+        return c.json(
+          { error: "Cannot demote yourself from owner through this surface" },
+          400,
+        );
+      }
+      if (!(await principalExistsInTenant(db, rootTenantId, principalId))) {
+        return c.json({ error: "Unknown principal" }, 404);
+      }
+      const roleId = await findOwnerRoleId(db, rootTenantId);
+      if (!roleId) {
+        return c.json({ error: "Owner role not found in tenant" }, 404);
+      }
+      try {
+        await demoteFromOwner(db, rootTenantId, roleId, principalId);
+      } catch (err) {
+        if (err instanceof LastOwnerError) {
+          return c.json({ error: err.message }, 400);
+        }
+        throw err;
+      }
+      void recordAudit({
+        db,
+        tenantId: rootTenantId,
+        action: "role_removed",
+        actorPrincipalId: actor,
+        targetPrincipalId: principalId,
+        resource: "role:owner",
+        detail: { roleId, demote: true },
+      });
+      return c.json({ ok: true });
+    },
   );
 
   // Deployed workflow kinds with their run-enablement state. `enabled` is false

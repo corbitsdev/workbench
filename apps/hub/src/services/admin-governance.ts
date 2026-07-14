@@ -3,7 +3,9 @@ import { schema as intxSchema } from "@intx/db";
 import { type GrantStore } from "@intx/authz";
 import {
   ADMIN_ROLE_NAME,
+  OWNER_ROLE_NAME,
   type DefinitionSummary,
+  type OwnerMember,
   type PrincipalGrantsResponse,
   type PrincipalSummary,
   type ResolvedGrant,
@@ -20,7 +22,7 @@ const { principal, user, agent, agentInstance, role, principalRole } =
 // those are the roles whose wildcard grants satisfy the admin gate. Deriving it
 // from role membership (rather than an authorize per principal) keeps the
 // roster query cheap while staying faithful to the native model.
-const ADMIN_ROLE_NAMES = new Set<string>(["owner", ADMIN_ROLE_NAME]);
+const ADMIN_ROLE_NAMES = new Set<string>([OWNER_ROLE_NAME, ADMIN_ROLE_NAME]);
 
 async function rolesByPrincipal(
   db: HubDb,
@@ -148,6 +150,7 @@ async function gatherTenantPrincipals(
       displayName,
       roles,
       isAdmin: roles.some((r) => ADMIN_ROLE_NAMES.has(r.name)),
+      isOwner: roles.some((r) => r.name === OWNER_ROLE_NAME),
     };
   };
 
@@ -448,9 +451,115 @@ export async function findAdminRoleId(
   return row?.id ?? null;
 }
 
+/** The tenant's `owner` system role id, for the owner promote/demote surface
+ * (CL-3634). Mirrors `findAdminRoleId`. */
+export async function findOwnerRoleId(
+  db: HubDb,
+  tenantId: string,
+): Promise<string | null> {
+  const row = await db.query.role.findFirst({
+    where: and(eq(role.tenantId, tenantId), eq(role.name, OWNER_ROLE_NAME)),
+  });
+  return row?.id ?? null;
+}
+
 export class RoleNotFoundError extends Error {
   constructor(roleId: string) {
     super(`Role ${roleId} not found in tenant`);
     this.name = "RoleNotFoundError";
   }
+}
+
+// ─── Owner member roster + delegation (CL-3634) ────────────────────
+
+/** The tenant's human members with their owner-role status — the roster the
+ * Owner → Members surface lists. Unpaginated: bounded like the admin
+ * principals roster (members + agent instances). */
+export async function listTenantMembers(
+  db: HubDb,
+  tenantId: string,
+): Promise<OwnerMember[]> {
+  const roleMap = await rolesByPrincipal(db, tenantId);
+
+  const userRows = await db
+    .select({
+      id: principal.id,
+      refId: principal.refId,
+      name: user.name,
+      email: user.email,
+    })
+    .from(principal)
+    .innerJoin(user, eq(principal.refId, user.id))
+    .where(and(eq(principal.tenantId, tenantId), eq(principal.kind, "user")));
+
+  const members: OwnerMember[] = userRows.map((r) => {
+    const roles = roleMap.get(r.id) ?? [];
+    return {
+      id: r.id,
+      refId: r.refId,
+      displayName: r.name || r.email,
+      isOwner: roles.some((role_) => role_.name === OWNER_ROLE_NAME),
+    };
+  });
+  members.sort((a, b) => a.displayName.localeCompare(b.displayName));
+  return members;
+}
+
+/** How many DISTINCT principals currently hold the owner role in the tenant.
+ * Used by the demote guard to refuse revoking the last remaining owner. */
+export async function countOwners(
+  db: HubDb,
+  ownerRoleId: string,
+): Promise<number> {
+  const rows = await db
+    .select({ principalId: principalRole.principalId })
+    .from(principalRole)
+    .where(eq(principalRole.roleId, ownerRoleId));
+  return new Set(rows.map((r) => r.principalId)).size;
+}
+
+export class LastOwnerError extends Error {
+  constructor() {
+    super("Cannot demote the last remaining owner");
+    this.name = "LastOwnerError";
+  }
+}
+
+/**
+ * Atomically remove the owner role from a principal, refusing when they are
+ * the last remaining owner. Row-locks the owner role via `SELECT ... FOR
+ * UPDATE` (mirrors `memberRoleRowLock` in `feature-grants.ts`) so two
+ * concurrent demotes of the tenant's last two owners cannot both observe
+ * "count > 1" and leave the tenant ownerless.
+ */
+export async function demoteFromOwner(
+  db: HubDb,
+  tenantId: string,
+  ownerRoleId: string,
+  principalId: string,
+): Promise<void> {
+  await db.transaction(async (tx) => {
+    await tx
+      .select({ id: role.id })
+      .from(role)
+      .where(and(eq(role.id, ownerRoleId), eq(role.tenantId, tenantId)))
+      .for("update");
+
+    const rows = await tx
+      .select({ principalId: principalRole.principalId })
+      .from(principalRole)
+      .where(eq(principalRole.roleId, ownerRoleId));
+    const owners = new Set(rows.map((r) => r.principalId));
+    if (!owners.has(principalId)) return;
+    if (owners.size <= 1) throw new LastOwnerError();
+
+    await tx
+      .delete(principalRole)
+      .where(
+        and(
+          eq(principalRole.principalId, principalId),
+          eq(principalRole.roleId, ownerRoleId),
+        ),
+      );
+  });
 }

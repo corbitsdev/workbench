@@ -12,6 +12,7 @@ const SUB_NAV = [
   { to: "/owner/capabilities", label: "Capabilities", end: false },
   { to: "/owner/workflows", label: "Workflows", end: false },
   { to: "/owner/demos", label: "Demos", end: false },
+  { to: "/owner/members", label: "Members", end: false },
 ] as const;
 
 /**

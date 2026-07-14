@@ -28,6 +28,13 @@ export const ADMIN_ACTION = "manage";
  * wildcard match — "admins inherit other grants" with no per-grant copying. */
 export const ADMIN_ROLE_NAME = "admin";
 
+/** The Interchange system role that carries the tenant-wide `*`/`*` wildcard
+ * grant (see `OWNER_ACTION`). Assigning/removing this role IS how owner
+ * authority is granted/revoked (CL-3634) — the same native
+ * `principal_role`/`grant` mechanism `ADMIN_ROLE_NAME` uses, no bespoke
+ * concept. */
+export const OWNER_ROLE_NAME = "owner";
+
 /** The Interchange system role every tenant seeds as its baseline. It carries no
  * grants by default; the owner area expresses per-tenant workflow-run policy as
  * grants on this role (see the workflow run gate, CL-2885). */
@@ -417,6 +424,33 @@ export type RunnableWorkflowKindsResponse =
 /** Interchange's seeded system roles (see `seedSystemRolesAndGrants`). */
 export const SYSTEM_ROLE_NAMES = ["owner", "admin", "member"] as const;
 
+// ─── Owner role delegation (CL-3634) ───────────────────────────────
+//
+// The owner can grant/revoke the `owner` system role for other tenant
+// members through `/owner/members`, `/owner/members/:id/promote`, and
+// `/owner/members/:id/demote`. This reuses the exact same native
+// `principal_role` assignment mechanism the admin elevate/demote routes use
+// (`assignRole`/`removeRole` in `admin-governance.ts`) — no new grant concept.
+
+/** One tenant member (user principal) in the owner's member roster, with its
+ * owner-role status. */
+export const OwnerMemberSchema = type({
+  id: "string",
+  refId: "string",
+  displayName: "string",
+  isOwner: "boolean",
+});
+export type OwnerMember = typeof OwnerMemberSchema.infer;
+
+export const OwnerMembersResponse = type({
+  members: OwnerMemberSchema.array(),
+});
+export type OwnerMembersResponse = typeof OwnerMembersResponse.infer;
+
+export const OwnerMemberRoleChangeResult = type({ ok: "boolean" });
+export type OwnerMemberRoleChangeResult =
+  typeof OwnerMemberRoleChangeResult.infer;
+
 // NOTE (CL-2799): individual capability-SHARING (grant `activity:principal`/
 // `read` etc. to a principal without full admin) was intentionally NOT shipped
 // here. Every `/admin/*` route currently gates on full admin (`admin:*`/
@@ -465,6 +499,7 @@ export const PrincipalSummarySchema = type({
   displayName: "string",
   roles: type({ id: "string", name: "string" }).array(),
   isAdmin: "boolean",
+  isOwner: "boolean",
 });
 export type PrincipalSummary = typeof PrincipalSummarySchema.infer;
 
