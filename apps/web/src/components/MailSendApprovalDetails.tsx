@@ -9,18 +9,25 @@ import {
 type MailSendApprovalDetailsProps = {
   context: MailSendContext;
   lookups: ApprovalDisplayLookups;
+  lookupsLoading?: boolean;
 };
 
-function formatRecipient(to: unknown, lookups: ApprovalDisplayLookups): string {
+function formatRecipient(
+  to: unknown,
+  lookups: ApprovalDisplayLookups,
+  lookupsLoading: boolean,
+): string {
   if (typeof to !== "string" || to.trim() === "") return "Recipient";
+  if (lookupsLoading) return "Recipient";
   return formatMailboxAddress(to, lookups);
 }
 
 export function MailSendApprovalDetails({
   context,
   lookups,
+  lookupsLoading = false,
 }: MailSendApprovalDetailsProps) {
-  const recipient = formatRecipient(context.to, lookups);
+  const recipient = formatRecipient(context.to, lookups, lookupsLoading);
   const subject =
     typeof context.subject === "string" && context.subject.trim() !== ""
       ? context.subject

@@ -55,7 +55,7 @@ const approvalDisplayLookups = buildApprovalDisplayLookups(
     {
       id: "prn_ada",
       name: "Ada Lovelace",
-      refId: "usr_ada",
+      refId: "ada",
     },
   ],
   [
@@ -73,10 +73,14 @@ const approvalDisplayLookups = buildApprovalDisplayLookups(
   ],
 );
 
+let mockApprovalLookupsLoading = false;
+
 mock.module("../hooks/use-approval-display-lookups", () => ({
   useApprovalDisplayLookups: () => ({
-    lookups: approvalDisplayLookups,
-    isLoading: false,
+    lookups: mockApprovalLookupsLoading
+      ? buildApprovalDisplayLookups([], [])
+      : approvalDisplayLookups,
+    isLoading: mockApprovalLookupsLoading,
   }),
 }));
 
@@ -115,6 +119,7 @@ function renderGate(tenantId = "tenant-1", sessionId?: string) {
 
 afterEach(() => {
   cleanup();
+  mockApprovalLookupsLoading = false;
   mockListApprovals.mockClear();
   mockApproveRequest.mockClear();
   mockRejectRequest.mockClear();
@@ -297,6 +302,43 @@ describe("ReviewGate — humanized context", () => {
       "Perform the specific unknown operation",
     );
     expect(container.textContent).not.toContain("Working on");
+  });
+});
+
+describe("ReviewGate — tool:mail_send headline", () => {
+  const mailSend = makeApproval({
+    resource: "tool:mail_send",
+    action: "Send mail",
+    context: {
+      to: "usr_ada@example.com",
+      content: "Hello",
+      subject: "Hi",
+    },
+  });
+
+  beforeEach(() => {
+    mockListApprovals.mockResolvedValue([mailSend]);
+  });
+
+  it("shows a neutral recipient placeholder while display lookups are loading", async () => {
+    mockApprovalLookupsLoading = true;
+    const { container } = renderGate();
+    await waitFor(() => {
+      screen.getByTestId(`approval-${mailSend.id}`);
+    });
+    screen.getByText("Send mail to Recipient");
+    expect(container.textContent).not.toContain("usr_ada");
+    expect(container.textContent).not.toContain("usr_");
+  });
+
+  it("humanizes the recipient in the headline once lookups resolve", async () => {
+    mockApprovalLookupsLoading = false;
+    const { container } = renderGate();
+    await waitFor(() => {
+      screen.getByTestId(`approval-${mailSend.id}`);
+    });
+    screen.getByText("Send mail to Ada Lovelace");
+    expect(container.textContent).not.toContain("usr_ada@example.com");
   });
 });
 

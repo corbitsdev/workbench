@@ -62,12 +62,16 @@ function approvalToToolCall(approval: Approval): ToolCall {
 function headlineFor(
   approval: Approval,
   lookups: Parameters<typeof formatMailboxAddress>[1],
+  lookupsLoading: boolean,
 ): string {
   if (isMailSendApproval(approval.resource)) {
     const ctx = mailSendContext(approval.context);
     const to = ctx?.to;
     if (typeof to === "string" && to.trim() !== "") {
-      return `Send mail to ${formatMailboxAddress(to, lookups)}`;
+      const recipient = lookupsLoading
+        ? "Recipient"
+        : formatMailboxAddress(to, lookups);
+      return `Send mail to ${recipient}`;
     }
     return "Send mail";
   }
@@ -224,7 +228,8 @@ export function ReviewGate({
   sessionScope = "tenant",
 }: ReviewGateProps) {
   const queryClient = useQueryClient();
-  const { lookups } = useApprovalDisplayLookups(tenantId);
+  const { lookups, isLoading: lookupsLoading } =
+    useApprovalDisplayLookups(tenantId);
   const prefersReducedMotion = useReducedMotion();
   const enabled = tenantId !== "";
   const sessionFilterReady =
@@ -340,7 +345,7 @@ export function ReviewGate({
           const isApproving = requestState === "approving";
           const isRejecting = requestState === "rejecting";
           const isInFlight = isApproving || isRejecting;
-          const headline = headlineFor(approval, lookups);
+          const headline = headlineFor(approval, lookups, lookupsLoading);
           const showActionDetail =
             headline !== approval.action &&
             !isMailSendApproval(approval.resource);
@@ -409,6 +414,7 @@ export function ReviewGate({
                   <MailSendApprovalDetails
                     context={mailSend}
                     lookups={lookups}
+                    lookupsLoading={lookupsLoading}
                   />
                 ) : null}
                 {contextEntries.length > 0 && (
