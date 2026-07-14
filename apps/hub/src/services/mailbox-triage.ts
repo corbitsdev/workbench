@@ -3,12 +3,13 @@ import { eq, and, lt } from "drizzle-orm";
 import { schema as intxSchema } from "@intx/db";
 import { generateId } from "@intx/hub-common";
 import { getLogger } from "@intx/log";
+import { extractAttachments } from "@intx/mime";
 import type {
   SessionService,
   EventCollectorRegistry,
 } from "@intx/hub-sessions";
 import type { GrantStore } from "@intx/types/authz";
-import type { CryptoProvider } from "@intx/types/runtime";
+import type { CryptoProvider, MessageAttachment } from "@intx/types/runtime";
 import type { TurnFinalized } from "@workbench/event-collector";
 import { resolveAgentAutonomy, TRIAGE_SUBJECT_PREFIX } from "@workbench/shared";
 import { splitMailAddress } from "@workbench/hub-agent";
@@ -20,6 +21,7 @@ import { isFeatureEnabledForTenantCached } from "../lib/feature-grants";
 import { decodeMailFrame } from "../lib/mailbox-read";
 import { slidingWindowLimiter } from "../lib/sliding-window";
 import { writeMailboxMessage } from "../lib/mailbox-write";
+import { divertInboundAttachments } from "../lib/mailbox-attachment-divert";
 import type { MailboxEventBus } from "../lib/mailbox-events";
 import { readMemberPreferences } from "../lib/member-preferences";
 import type { UserMailboxRowEvent } from "../lib/principal-mailbox";
@@ -133,6 +135,7 @@ function isTriageHandoffSubject(item: UserMailboxRowEvent): boolean {
 function buildTriageMessage(item: UserMailboxRowEvent): {
   content: string;
   inReplyTo: string | undefined;
+  attachments: MessageAttachment[];
 } {
   const decoded = decodeMailFrame(item.raw);
   const subject =
@@ -151,7 +154,11 @@ function buildTriageMessage(item: UserMailboxRowEvent): {
   ];
   if (date !== undefined) lines.push(`Date: ${date}`);
   lines.push("", body);
-  return { content: lines.join("\n"), inReplyTo };
+  return {
+    content: lines.join("\n"),
+    inReplyTo,
+    attachments: extractAttachments(item.raw),
+  };
 }
 
 /**
@@ -322,7 +329,23 @@ export function createMailboxTriage(deps: MailboxTriageDeps): MailboxTriage {
       );
       address = launched.address;
 
-      const { content, inReplyTo } = buildTriageMessage(item);
+      const { content, inReplyTo, attachments } = buildTriageMessage(item);
+      // A text-only (or otherwise attachment-incapable) triage agent must
+      // never receive an inline content block it can't consume — divert
+      // through the File Parser instead (see `mailbox-attachment-divert.ts`).
+      // Vision-capable definitions keep every attachment inline unchanged.
+      const { inlineAttachments, contextBlocks } =
+        await divertInboundAttachments(deps.db, {
+          tenantId: item.tenantId,
+          ownerPrincipalId: item.memberPrincipalId,
+          agentRow: def,
+          attachments,
+        });
+      const turnContent =
+        contextBlocks.length > 0
+          ? `${contextBlocks.join("\n\n")}\n\n${content}`
+          : content;
+
       // Register the waiter BEFORE the send so a fast turn cannot finalize
       // into a gap where nothing is listening.
       const turnPromise = awaitTurn(address);
@@ -331,10 +354,13 @@ export function createMailboxTriage(deps: MailboxTriageDeps): MailboxTriage {
         from: `hub@${tenantDomain}`,
         messageId: randomUUID(),
         date: new Date(),
-        content,
+        content: turnContent,
         sessionId: launched.sessionId,
         tenantId: item.tenantId,
         cryptoProvider: deps.cryptoProvider,
+        ...(inlineAttachments.length > 0
+          ? { attachments: inlineAttachments }
+          : {}),
       });
 
       const turn = await turnPromise;
