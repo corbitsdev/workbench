@@ -70,7 +70,12 @@ describe("ChatPanel", () => {
     );
     const shell = container.firstElementChild as HTMLElement;
     expect(shell.className).toContain("bg-page");
-    expect(shell.className).not.toContain("bg-bg");
+    const thread = container.querySelector('[role="log"]') as HTMLElement;
+    expect(thread.className).toContain("bg-page");
+    const composer = container.querySelector(
+      'textarea[aria-label="Message"]',
+    )?.parentElement?.parentElement as HTMLElement;
+    expect(composer.className).toContain("bg-page");
   });
 
   it("fires onSend with the typed text and clears the input", async () => {
