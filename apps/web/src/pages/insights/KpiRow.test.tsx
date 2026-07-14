@@ -77,7 +77,7 @@ describe("KpiRow", () => {
 
     expect(screen.getByText("This range")).toBeDefined();
 
-    const container = screen.getByText("This range").closest("div")!;
+    const container = screen.getByTestId("dashboard-section");
     const kpi = within(container);
 
     expect(kpi.getByText("Cost")).toBeDefined();
