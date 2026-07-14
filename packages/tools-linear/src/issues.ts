@@ -1,0 +1,566 @@
+import { type } from "arktype";
+import type { ToolDefinition } from "@intx/types/runtime";
+import { fetchLinearGraphQL } from "./client";
+import {
+  connectionResult,
+  paginationVariables,
+  resolveListPagination,
+} from "./pagination";
+import { IssueIdArgsSchema } from "./schemas";
+import {
+  BRIEF_SOURCE_SKIPPED_MARKER,
+  DEFAULT_ISSUE_LIMIT,
+  extractMutationIssue,
+  isBriefSourceFetchEnabled,
+  isRecord,
+  MAX_LIST_LIMIT_ISSUES,
+  optionalBoolean,
+  optionalPositiveInteger,
+  optionalPriority,
+  optionalString,
+  optionalStringArray,
+  parseArgs,
+  requireString,
+  type LinearToolsConfig,
+} from "./shared";
+
+const ISSUE_FIELDS = `
+  id
+  identifier
+  title
+  state { name }
+  assignee { name }
+  team { name }
+  updatedAt
+  url
+`;
+
+const ISSUE_DETAIL_FIELDS = `
+  id
+  identifier
+  title
+  description
+  state { name }
+  assignee { name }
+  team { name }
+  priority
+  url
+  createdAt
+  updatedAt
+`;
+
+const ISSUE_RELATIONS_FIELDS = `
+  relations {
+    nodes {
+      type
+      relatedIssue { id identifier title url }
+    }
+  }
+`;
+
+const LIST_ISSUES_QUERY = `query ListIssues($first: Int!, $after: String, $filter: IssueFilter, $orderBy: PaginationOrderBy) {
+  issues(first: $first, after: $after, filter: $filter, orderBy: $orderBy) {
+    nodes {${ISSUE_FIELDS}}
+    pageInfo { endCursor hasNextPage }
+  }
+}`;
+
+const LIST_TEAM_ISSUES_QUERY = `query ListTeamIssues($teamId: String!, $first: Int!, $after: String, $filter: IssueFilter, $orderBy: PaginationOrderBy) {
+  team(id: $teamId) {
+    issues(first: $first, after: $after, filter: $filter, orderBy: $orderBy) {
+      nodes {${ISSUE_FIELDS}}
+      pageInfo { endCursor hasNextPage }
+    }
+  }
+}`;
+
+const GET_ISSUE_QUERY = `query GetIssue($id: String!) {
+  issue(id: $id) {
+    ${ISSUE_DETAIL_FIELDS}
+  }
+}`;
+
+const GET_ISSUE_WITH_RELATIONS_QUERY = `query GetIssueWithRelations($id: String!) {
+  issue(id: $id) {
+    ${ISSUE_DETAIL_FIELDS}
+    ${ISSUE_RELATIONS_FIELDS}
+  }
+}`;
+
+const CREATE_ISSUE_MUTATION = `mutation CreateIssue($input: IssueCreateInput!) {
+  issueCreate(input: $input) {
+    success
+    issue { id identifier title url }
+  }
+}`;
+
+const UPDATE_ISSUE_MUTATION = `mutation UpdateIssue($id: String!, $input: IssueUpdateInput!) {
+  issueUpdate(id: $id, input: $input) {
+    success
+    issue { id identifier title url }
+  }
+}`;
+
+const ARCHIVE_ISSUE_MUTATION = `mutation ArchiveIssue($id: String!) {
+  issueArchive(id: $id) {
+    success
+  }
+}`;
+
+const DELETE_ISSUE_MUTATION = `mutation DeleteIssue($id: String!) {
+  issueDelete(id: $id) {
+    success
+  }
+}`;
+
+const ISSUE_RELATION_CREATE = `mutation IssueRelationCreate($input: IssueRelationCreateInput!) {
+  issueRelationCreate(input: $input) {
+    success
+    issueRelation { id type }
+  }
+}`;
+
+const ISSUE_RELATION_DELETE = `mutation IssueRelationDelete($id: String!) {
+  issueRelationDelete(id: $id) {
+    success
+  }
+}`;
+
+const ListIssuesArgsSchema = type({
+  "limit?": "number",
+  "first?": "number",
+  "cursor?": "string",
+  "after?": "string",
+  "teamId?": "string",
+  "team?": "string",
+  "state?": "string",
+  "assignee?": "string",
+  "project?": "string",
+  "cycle?": "string",
+  "label?": "string",
+  "priority?": "number",
+  "query?": "string",
+  "orderBy?": "'createdAt' | 'updatedAt'",
+  "updatedAfter?": "string",
+  "createdAfter?": "string",
+  "enabledSources?": "string[]",
+});
+
+const GetIssueArgsSchema = type({
+  id: "string > 0",
+  "includeRelations?": "boolean",
+});
+
+const CreateIssueArgsSchema = type({
+  teamId: "string > 0",
+  title: "string > 0",
+  "description?": "string",
+  "priority?": "number",
+});
+
+const UpdateIssueArgsSchema = type({
+  id: "string > 0",
+  "title?": "string",
+  "description?": "string",
+  "priority?": "number",
+  "state?": "string",
+  "assignee?": "string",
+  "project?": "string",
+  "teamId?": "string",
+});
+
+const LinkIssuesArgsSchema = type({
+  action: "'add' | 'remove'",
+  issueId: "string > 0",
+  relatedIssueId: "string > 0",
+  "type?": "'blocks' | 'blocked' | 'related' | 'duplicate'",
+  "relationId?": "string",
+});
+
+function buildIssueFilter(
+  args: Record<string, unknown>,
+): Record<string, unknown> | null {
+  const state = optionalString(args.state);
+  const assignee = optionalString(args.assignee);
+  const project = optionalString(args.project);
+  const cycle = optionalString(args.cycle);
+  const label = optionalString(args.label);
+  const query = optionalString(args.query);
+  const priority =
+    typeof args.priority === "number" && Number.isInteger(args.priority)
+      ? args.priority
+      : null;
+  const updatedAfter =
+    optionalString(args.updatedAfter) ?? optionalString(args.createdAfter);
+  const filter: Record<string, unknown> = {};
+  if (state !== null) {
+    filter.state = { name: { eqIgnoreCase: state } };
+  }
+  if (assignee !== null) {
+    filter.assignee = { name: { eqIgnoreCase: assignee } };
+  }
+  if (project !== null) {
+    filter.project = { id: { eq: project } };
+  }
+  if (cycle !== null) {
+    filter.cycle = { id: { eq: cycle } };
+  }
+  if (label !== null) {
+    filter.labels = { name: { eqIgnoreCase: label } };
+  }
+  if (query !== null) {
+    filter.title = { containsIgnoreCase: query };
+  }
+  if (priority !== null) {
+    filter.priority = { eq: priority };
+  }
+  if (updatedAfter !== null) {
+    filter.updatedAt = { gt: updatedAfter };
+  }
+  return Object.keys(filter).length > 0 ? filter : null;
+}
+
+function buildOrderBy(
+  args: Record<string, unknown>,
+): Record<string, unknown> | null {
+  const field = optionalString(args.orderBy);
+  if (field !== "createdAt" && field !== "updatedAt") {
+    return null;
+  }
+  return { [field]: "Descending" };
+}
+
+export async function listIssues(
+  config: LinearToolsConfig,
+  rawArgs: Record<string, unknown>,
+  signal: AbortSignal,
+): Promise<unknown> {
+  const args = parseArgs(ListIssuesArgsSchema, rawArgs, "linear_list_issues");
+  const enabledSources = optionalStringArray(args.enabledSources);
+  if (!isBriefSourceFetchEnabled("linear", enabledSources)) {
+    return BRIEF_SOURCE_SKIPPED_MARKER;
+  }
+
+  const pagination = resolveListPagination(
+    args,
+    DEFAULT_ISSUE_LIMIT,
+    MAX_LIST_LIMIT_ISSUES,
+  );
+  const teamId =
+    optionalString(args.teamId) ?? optionalString(args.team);
+  const filter = buildIssueFilter(args);
+  const orderBy = buildOrderBy(args);
+
+  const briefShaped = enabledSources !== undefined;
+  const shapeResult = (connection: unknown): unknown => {
+    const shaped = connectionResult(connection);
+    if (!briefShaped) return shaped;
+    const record = shaped as { nodes: unknown };
+    return { issues: record.nodes };
+  };
+
+  const variables: Record<string, unknown> = {
+    ...paginationVariables(pagination),
+    ...(filter !== null ? { filter } : {}),
+    ...(orderBy !== null ? { orderBy } : {}),
+  };
+
+  if (teamId !== null) {
+    const data = await fetchLinearGraphQL(
+      config,
+      LIST_TEAM_ISSUES_QUERY,
+      { teamId, ...variables },
+      signal,
+    );
+    if (!isRecord(data.team)) {
+      throw new Error(`Linear team not found: ${teamId}`);
+    }
+    return shapeResult(data.team.issues);
+  }
+
+  const data = await fetchLinearGraphQL(
+    config,
+    LIST_ISSUES_QUERY,
+    variables,
+    signal,
+  );
+  return shapeResult(data.issues);
+}
+
+export async function getIssue(
+  config: LinearToolsConfig,
+  rawArgs: Record<string, unknown>,
+  signal: AbortSignal,
+): Promise<unknown> {
+  const args = parseArgs(GetIssueArgsSchema, rawArgs, "linear_get_issue");
+  const includeRelations = args.includeRelations === true;
+  const data = await fetchLinearGraphQL(
+    config,
+    includeRelations ? GET_ISSUE_WITH_RELATIONS_QUERY : GET_ISSUE_QUERY,
+    { id: args.id },
+    signal,
+  );
+  if (data.issue === null || data.issue === undefined) {
+    throw new Error(`Linear issue not found: ${args.id}`);
+  }
+  return data.issue;
+}
+
+export async function createIssue(
+  config: LinearToolsConfig,
+  rawArgs: Record<string, unknown>,
+  signal: AbortSignal,
+): Promise<unknown> {
+  const args = parseArgs(CreateIssueArgsSchema, rawArgs, "linear_create_issue");
+  const input: Record<string, unknown> = {
+    teamId: args.teamId,
+    title: args.title,
+  };
+  if (args.description !== undefined) {
+    input.description = args.description;
+  }
+  const priority = optionalPriority(args.priority);
+  if (priority !== null) {
+    input.priority = priority;
+  }
+  const data = await fetchLinearGraphQL(
+    config,
+    CREATE_ISSUE_MUTATION,
+    { input },
+    signal,
+  );
+  return extractMutationIssue(data, "issueCreate");
+}
+
+export async function updateIssue(
+  config: LinearToolsConfig,
+  rawArgs: Record<string, unknown>,
+  signal: AbortSignal,
+): Promise<unknown> {
+  const args = parseArgs(UpdateIssueArgsSchema, rawArgs, "linear_update_issue");
+  const input: Record<string, unknown> = {};
+  if (args.title !== undefined) input.title = args.title;
+  if (args.description !== undefined) input.description = args.description;
+  const priority = optionalPriority(args.priority);
+  if (priority !== null) input.priority = priority;
+  if (args.state !== undefined) {
+    input.stateId = args.state;
+  }
+  if (args.assignee !== undefined) {
+    input.assigneeId = args.assignee;
+  }
+  if (args.project !== undefined) {
+    input.projectId = args.project;
+  }
+  if (args.teamId !== undefined) {
+    input.teamId = args.teamId;
+  }
+  if (Object.keys(input).length === 0) {
+    throw new Error("At least one field to update is required");
+  }
+  const data = await fetchLinearGraphQL(
+    config,
+    UPDATE_ISSUE_MUTATION,
+    { id: args.id, input },
+    signal,
+  );
+  return extractMutationIssue(data, "issueUpdate");
+}
+
+export async function archiveIssue(
+  config: LinearToolsConfig,
+  rawArgs: Record<string, unknown>,
+  signal: AbortSignal,
+): Promise<unknown> {
+  const args = parseArgs(IssueIdArgsSchema, rawArgs, "linear_archive_issue");
+  const data = await fetchLinearGraphQL(
+    config,
+    ARCHIVE_ISSUE_MUTATION,
+    { id: args.id },
+    signal,
+  );
+  return data.issueArchive ?? { success: false };
+}
+
+export async function deleteIssue(
+  config: LinearToolsConfig,
+  rawArgs: Record<string, unknown>,
+  signal: AbortSignal,
+): Promise<unknown> {
+  const args = parseArgs(IssueIdArgsSchema, rawArgs, "linear_delete_issue");
+  const data = await fetchLinearGraphQL(
+    config,
+    DELETE_ISSUE_MUTATION,
+    { id: args.id },
+    signal,
+  );
+  return data.issueDelete ?? { success: false };
+}
+
+export async function linkIssues(
+  config: LinearToolsConfig,
+  rawArgs: Record<string, unknown>,
+  signal: AbortSignal,
+): Promise<unknown> {
+  const args = parseArgs(LinkIssuesArgsSchema, rawArgs, "linear_link_issues");
+  if (args.action === "remove") {
+    const relationId =
+      optionalString(args.relationId) ?? optionalString(args.relatedIssueId);
+    if (relationId === null) {
+      throw new Error("relationId is required when action is remove");
+    }
+    const data = await fetchLinearGraphQL(
+      config,
+      ISSUE_RELATION_DELETE,
+      { id: relationId },
+      signal,
+    );
+    return data.issueRelationDelete ?? { success: false };
+  }
+  const relationType = args.type ?? "related";
+  const data = await fetchLinearGraphQL(
+    config,
+    ISSUE_RELATION_CREATE,
+    {
+      input: {
+        issueId: args.issueId,
+        relatedIssueId: args.relatedIssueId,
+        type: relationType,
+      },
+    },
+    signal,
+  );
+  return data.issueRelationCreate ?? { success: false };
+}
+
+export const LINEAR_LIST_ISSUES_DEFINITION: ToolDefinition = {
+  name: "linear_list_issues",
+  description:
+    "List Linear issues across the workspace. Read-only. Scope with team, state, assignee, project, cycle, label, priority, or query; supports cursor pagination and orderBy (createdAt|updatedAt). Brief heartbeat calls may pass enabledSources.",
+  inputSchema: {
+    type: "object",
+    properties: {
+      limit: { type: "number", description: "Page size (alias for first)." },
+      first: {
+        type: "number",
+        description: "Maximum issues (default 10, max 250).",
+      },
+      cursor: { type: "string", description: "Pagination cursor (after)." },
+      after: { type: "string", description: "Pagination cursor alias." },
+      teamId: { type: "string", description: "Team id filter." },
+      team: { type: "string", description: "Team name or id filter." },
+      state: { type: "string", description: "Workflow state name." },
+      assignee: { type: "string", description: "Assignee name." },
+      project: { type: "string", description: "Project id." },
+      cycle: { type: "string", description: "Cycle id." },
+      label: { type: "string", description: "Label name." },
+      priority: { type: "number", description: "Priority 0-4." },
+      query: { type: "string", description: "Title search substring." },
+      orderBy: {
+        type: "string",
+        description: "createdAt or updatedAt (descending).",
+      },
+      updatedAfter: { type: "string", description: "ISO updatedAt lower bound." },
+      createdAfter: {
+        type: "string",
+        description: "Brief-internal updatedAt bound when updatedAfter absent.",
+      },
+      enabledSources: {
+        type: "array",
+        items: { type: "string" },
+        description: "Brief-internal source gate.",
+      },
+    },
+    required: [],
+  },
+};
+
+export const LINEAR_GET_ISSUE_DEFINITION: ToolDefinition = {
+  name: "linear_get_issue",
+  description:
+    'Get a Linear issue by UUID or identifier (e.g. "ENG-123"). Optional includeRelations returns blocking/related links.',
+  inputSchema: {
+    type: "object",
+    properties: {
+      id: { type: "string", description: "Issue id or identifier." },
+      includeRelations: {
+        type: "boolean",
+        description: "Include issue relation nodes when true.",
+      },
+    },
+    required: ["id"],
+  },
+};
+
+export const LINEAR_CREATE_ISSUE_DEFINITION: ToolDefinition = {
+  name: "linear_create_issue",
+  description:
+    "Create a Linear issue (write, approval-gated). Requires teamId and title.",
+  inputSchema: {
+    type: "object",
+    properties: {
+      teamId: { type: "string", description: "Team id." },
+      title: { type: "string", description: "Issue title." },
+      description: { type: "string", description: "Markdown body." },
+      priority: { type: "number", description: "0-4 priority." },
+    },
+    required: ["teamId", "title"],
+  },
+};
+
+export const LINEAR_UPDATE_ISSUE_DEFINITION: ToolDefinition = {
+  name: "linear_update_issue",
+  description:
+    "Update an existing Linear issue (write). Pass id plus fields to change.",
+  inputSchema: {
+    type: "object",
+    properties: {
+      id: { type: "string", description: "Issue id or identifier." },
+      title: { type: "string" },
+      description: { type: "string" },
+      priority: { type: "number" },
+      state: { type: "string", description: "State id or name." },
+      assignee: { type: "string", description: "User id." },
+      project: { type: "string", description: "Project id." },
+      teamId: { type: "string" },
+    },
+    required: ["id"],
+  },
+};
+
+export const LINEAR_ARCHIVE_ISSUE_DEFINITION: ToolDefinition = {
+  name: "linear_archive_issue",
+  description: "Archive a Linear issue (write).",
+  inputSchema: {
+    type: "object",
+    properties: { id: { type: "string" } },
+    required: ["id"],
+  },
+};
+
+export const LINEAR_DELETE_ISSUE_DEFINITION: ToolDefinition = {
+  name: "linear_delete_issue",
+  description: "Permanently delete a Linear issue (write).",
+  inputSchema: {
+    type: "object",
+    properties: { id: { type: "string" } },
+    required: ["id"],
+  },
+};
+
+export const LINEAR_LINK_ISSUES_DEFINITION: ToolDefinition = {
+  name: "linear_link_issues",
+  description:
+    "Add or remove relations between issues (blocks, blocked, related, duplicate).",
+  inputSchema: {
+    type: "object",
+    properties: {
+      action: { type: "string", description: "add or remove." },
+      issueId: { type: "string" },
+      relatedIssueId: { type: "string" },
+      type: { type: "string", description: "Relation type for add." },
+      relationId: { type: "string", description: "Relation id for remove." },
+    },
+    required: ["action", "issueId", "relatedIssueId"],
+  },
+};

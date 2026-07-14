@@ -26,17 +26,18 @@ function lastBody(fetcher: FetchStub): {
   return JSON.parse(String(call?.[1].body));
 }
 
+function asConnection(nodes: unknown[]) {
+  return {
+    nodes,
+    pageInfo: { endCursor: null, hasNextPage: false },
+  };
+}
+
 describe("createLinearTools", () => {
-  it("exposes the four read-only tools plus the write tool", () => {
+  it("exposes one tool per LINEAR_HUB_TOOLS entry", () => {
     const tools = createLinearTools({ apiKey: "test-key" });
     const names = tools.map((t) => t.definition.name).sort();
-    expect(names).toEqual([
-      "linear_create_issue",
-      "linear_get_issue",
-      "linear_list_issues",
-      "linear_list_teams",
-      "linear_list_users",
-    ]);
+    expect(names).toEqual(Object.keys(LINEAR_HUB_TOOLS).sort());
   });
 
   it("throws when apiKey is empty", () => {
@@ -116,10 +117,10 @@ describe("linear_list_issues handler", () => {
     );
 
     expect(result.isError).toBeUndefined();
-    expect(JSON.parse(String(result.content))).toEqual({ nodes });
+    expect(JSON.parse(String(result.content))).toEqual(asConnection(nodes));
 
     const body = lastBody(fetcher);
-    expect(body.query).toContain("issues(first: $first, filter: $filter)");
+    expect(body.query).toContain("issues(first:");
     expect(body.query).not.toContain("team(id:");
     expect(body.variables).toEqual({ first: 10 });
   });
@@ -140,7 +141,7 @@ describe("linear_list_issues handler", () => {
     );
 
     const body = lastBody(fetcher);
-    expect(body.query).toContain("issues(first: $first, filter: $filter)");
+    expect(body.query).toContain("issues(first:");
     expect(body.variables).toEqual({
       first: 10,
       filter: {
@@ -293,7 +294,7 @@ describe("linear_list_issues handler", () => {
     expect(JSON.parse(String(result.content))).toEqual({ issues: nodes });
   });
 
-  it("keeps the raw GraphQL shape for non-brief callers", async () => {
+  it("returns a paginated connection for non-brief callers", async () => {
     const nodes = [{ id: "uuid-1", identifier: "ENG-1" }];
     const fetcher = makeFetchStub({ data: { issues: { nodes } } });
     const runner = createToolRunner(
@@ -309,10 +310,10 @@ describe("linear_list_issues handler", () => {
       new AbortController().signal,
     );
 
-    expect(JSON.parse(String(result.content))).toEqual({ nodes });
+    expect(JSON.parse(String(result.content))).toEqual(asConnection(nodes));
   });
 
-  it("scopes to a team and caps first at 100", async () => {
+  it("scopes to a team and caps first at the issue list maximum", async () => {
     const nodes = [{ id: "uuid-1", identifier: "ENG-1" }];
     const fetcher = makeFetchStub({ data: { team: { issues: { nodes } } } });
     const runner = createToolRunner(
@@ -328,10 +329,10 @@ describe("linear_list_issues handler", () => {
       new AbortController().signal,
     );
 
-    expect(JSON.parse(String(result.content))).toEqual({ nodes });
+    expect(JSON.parse(String(result.content))).toEqual(asConnection(nodes));
     const body = lastBody(fetcher);
     expect(body.query).toContain("team(id: $teamId)");
-    expect(body.variables).toEqual({ teamId: "team-uuid", first: 100 });
+    expect(body.variables).toEqual({ teamId: "team-uuid", first: 250 });
   });
 
   it("errors when the scoped team is not found", async () => {
@@ -411,7 +412,8 @@ describe("linear_get_issue handler", () => {
     );
 
     expect(result.isError).toBe(true);
-    expect(result.content).toContain("id is required");
+    expect(result.content).toContain("linear_get_issue");
+    expect(result.content).toContain("id");
     expect(fetcher.mock.calls).toHaveLength(0);
   });
 
@@ -444,9 +446,9 @@ describe("linear_list_teams and linear_list_users", () => {
       new AbortController().signal,
     );
 
-    expect(JSON.parse(String(result.content))).toEqual({ nodes });
+    expect(JSON.parse(String(result.content))).toEqual(asConnection(nodes));
     const body = lastBody(fetcher);
-    expect(body.query).toContain("teams(first: $first)");
+    expect(body.query).toContain("teams(first:");
     expect(body.variables).toEqual({ first: 25 });
   });
 
@@ -462,9 +464,9 @@ describe("linear_list_teams and linear_list_users", () => {
       new AbortController().signal,
     );
 
-    expect(JSON.parse(String(result.content))).toEqual({ nodes });
+    expect(JSON.parse(String(result.content))).toEqual(asConnection(nodes));
     const body = lastBody(fetcher);
-    expect(body.query).toContain("users(first: $first)");
+    expect(body.query).toContain("users(first:");
     expect(body.variables).toEqual({ first: 10 });
   });
 });
@@ -620,7 +622,8 @@ describe("linear_create_issue handler", () => {
     );
 
     expect(result.isError).toBe(true);
-    expect(result.content).toContain("teamId is required");
+    expect(result.content).toContain("linear_create_issue");
+    expect(result.content).toContain("teamId");
     expect(fetcher.mock.calls).toHaveLength(0);
   });
 
@@ -640,7 +643,8 @@ describe("linear_create_issue handler", () => {
     );
 
     expect(result.isError).toBe(true);
-    expect(result.content).toContain("title is required");
+    expect(result.content).toContain("linear_create_issue");
+    expect(result.content).toContain("title");
     expect(fetcher.mock.calls).toHaveLength(0);
   });
 
@@ -662,15 +666,24 @@ describe("linear_create_issue handler", () => {
     );
 
     expect(result.isError).toBe(true);
-    expect(result.content).toContain("Linear did not return the created issue");
+    expect(result.content).toContain("Linear did not return the issue from issueCreate");
     expect(fetcher.mock.calls).toHaveLength(1);
   });
 });
 
 describe("LINEAR_HUB_TOOLS", () => {
-  it("classifies linear_create_issue as a write and the rest as reads", () => {
-    expect(LINEAR_HUB_TOOLS.linear_create_issue.sideEffect).toBe("write");
-    expect(LINEAR_HUB_TOOLS.linear_list_issues.sideEffect).toBe("read");
+  it("classifies linear_create_issue as write and linear_list_issues as read", () => {
+    expect(LINEAR_HUB_TOOLS.linear_create_issue?.sideEffect).toBe("write");
+    expect(LINEAR_HUB_TOOLS.linear_list_issues?.sideEffect).toBe("read");
+  });
+
+  it("classifies every write tool as write", () => {
+    const writeNames = Object.keys(LINEAR_HUB_TOOLS).filter((name) =>
+      /^(linear_(create|update|save|delete|archive|link|prepare))/.test(name),
+    );
+    for (const name of writeNames) {
+      expect(LINEAR_HUB_TOOLS[name]?.sideEffect).toBe("write");
+    }
   });
 
   it("builds each tool from resolved credentials with the linear provider", () => {
@@ -687,7 +700,8 @@ describe("LINEAR_HUB_TOOLS", () => {
   });
 
   it("builds tools when baseURL is empty by falling back to the default endpoint", () => {
-    const tools = LINEAR_HUB_TOOLS.linear_list_issues.createTools({
+    expect(LINEAR_HUB_TOOLS.linear_list_issues).toBeDefined();
+    const tools = LINEAR_HUB_TOOLS.linear_list_issues!.createTools({
       apiKey: "k",
       baseURL: "",
     });
