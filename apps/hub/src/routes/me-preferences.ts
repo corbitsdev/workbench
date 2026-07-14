@@ -22,6 +22,8 @@ import {
   setPrincipalCapabilityGrant,
 } from "../lib/capability-grants";
 import { resolveAvailableProviderNames } from "../lib/tenant-tools";
+import { isInboxSourceEnabledFromGrants } from "../lib/workspace-inbox-source-gate";
+import { loadMemberRoleGrantsForTenantChain } from "../lib/workflow-run-gate";
 import {
   readMemberPreferences,
   mergeMemberPreferences,
@@ -152,12 +154,25 @@ export function createMePreferencesRouter(
       if (!member) return c.json({ sources: [] });
 
       const wanted = new Set(INBOX_SOURCE_CATALOG.map((s) => s.key));
-      const [available, stored] = await Promise.all([
+      const [available, stored, grants] = await Promise.all([
         resolveAvailableProviderNames(db, member.tenantId, wanted),
         readMemberPreferences(db, member.tenantId, member.principalId),
+        loadMemberRoleGrantsForTenantChain(db, [member.tenantId]),
       ]);
 
-      const sources = resolveAvailableInboxSources([...available], stored);
+      // Owner ceiling (CL-3584): only surface sources the owner has enabled for
+      // the tenant, intersected with those that have a configured credential.
+      // An owner-disabled source is hidden entirely (never greyed out), so the
+      // member UI has no confusion. The member's stored preference is untouched
+      // and re-appears when the owner re-enables the source.
+      const ownerEnabled = new Set<string>();
+      for (const key of available) {
+        if (await isInboxSourceEnabledFromGrants(grants, key)) {
+          ownerEnabled.add(key);
+        }
+      }
+
+      const sources = resolveAvailableInboxSources([...ownerEnabled], stored);
       return c.json({ sources });
     },
   );

@@ -59,6 +59,16 @@ export interface InboxIntakeDeps {
     tenantId: string,
     sourceKey: string,
   ) => Promise<boolean>;
+  /** Owner-level enablement for a member-scope source, keyed by tenant + source
+   * key. The tenant ceiling above the member's `inboxSource:*` preference
+   * (CL-3584): an owner-disabled source is skipped for EVERY member regardless
+   * of their preference. Defaults to ALLOW when omitted so tests and legacy
+   * callers gate on the member preference alone; production wires the owner
+   * grant. */
+  isMemberSourceEnabled?: (
+    tenantId: string,
+    sourceKey: string,
+  ) => Promise<boolean>;
   /** The registered sources to poll; defaults to `INBOX_SOURCE_REGISTRY`. */
   registry?: readonly InboxSourceRegistryEntry[];
   /** Per-source-key fetcher override (surfaced to a fetch-shaped source's
@@ -103,6 +113,8 @@ export function createInboxIntake(deps: InboxIntakeDeps): InboxIntake {
   const registry = deps.registry ?? INBOX_SOURCE_REGISTRY;
   const isWorkspaceSourceEnabled =
     deps.isWorkspaceSourceEnabled ?? (async () => false);
+  const isMemberSourceEnabled =
+    deps.isMemberSourceEnabled ?? (async () => true);
   const memberSourcesByKey = new Map(
     registry.filter((e) => e.scope === "member").map((e) => [e.key, e]),
   );
@@ -330,6 +342,19 @@ export function createInboxIntake(deps: InboxIntakeDeps): InboxIntake {
       for (const sourceKey of sources) {
         const entry = memberSourcesByKey.get(sourceKey);
         if (!entry) continue; // toggleable but not wired for live intake yet
+        // Owner ceiling (CL-3584): an owner-disabled source is skipped for
+        // every member even when their preference enables it. A gate failure
+        // is treated as disabled — never fails open.
+        let ownerEnabled: boolean;
+        try {
+          ownerEnabled = await isMemberSourceEnabled(
+            member.tenantId,
+            sourceKey,
+          );
+        } catch {
+          ownerEnabled = false;
+        }
+        if (!ownerEnabled) continue;
         try {
           await runMemberSource(member, entry, cutoff);
         } catch (err) {
