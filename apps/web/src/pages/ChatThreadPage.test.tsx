@@ -73,17 +73,15 @@ mock.module("../hooks/use-myra-session", () => ({
 
 mock.module("../components/MyraChatSurface", () => ({
   MyraChatSurface: (props: {
-    threadLabel?: string;
+    headerLeft?: React.ReactNode;
     onUserSend?: (t: string) => void;
   }) =>
     React.createElement(
       "div",
       { "data-testid": "surface" },
-      React.createElement(
-        "span",
-        { "data-testid": "label" },
-        props.threadLabel ?? "",
-      ),
+      props.headerLeft !== undefined
+        ? React.createElement("div", { "data-testid": "header-left" })
+        : null,
       React.createElement(
         "button",
         { onClick: () => props.onUserSend?.("hello") },
@@ -189,7 +187,7 @@ describe("ChatThreadPage", () => {
 
   it("renders the chat surface and passes the Myra thread id as the dock's conversationId (conversationId == Myra thread id contract)", () => {
     renderAt("/chats/t1");
-    expect(screen.getByTestId("label").textContent).toBe("First");
+    expect(screen.getByTestId("header-left")).toBeDefined();
     // conversationId == Myra thread id; producers (workflow_start tool,
     // chat-initiated starts) stamp the same id as originConversationId — never
     // the instance id.

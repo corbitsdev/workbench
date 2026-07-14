@@ -136,7 +136,10 @@ type MyraChatSurfaceProps = {
    * so a side-effect tool call parked on approval can be resolved from the chat.
    */
   tenantId?: string | null;
-  /** Optional thread label shown as the agent tagline (multi-thread chat). */
+  /**
+   * Thread title when no `headerLeft` is supplied (legacy surfaces). Becomes
+   * `agent.name` with Myra's tagline; prefer `headerLeft` + ThreadSwitcher.
+   */
   threadLabel?: string;
   /**
    * Content for the left of the panel's single header bar (e.g. the thread
@@ -203,9 +206,12 @@ export function MyraChatSurface({
   resumeInFlight,
   mentionCandidates,
 }: MyraChatSurfaceProps) {
-  const agent: ChatAgentIdentity = threadLabel
-    ? { ...MYRA, tagline: threadLabel }
-    : MYRA;
+  const agent: ChatAgentIdentity =
+    threadLabel !== undefined &&
+    threadLabel !== "" &&
+    headerLeft === undefined
+      ? { name: threadLabel, tagline: MYRA.tagline }
+      : MYRA;
   const { compact: compactToolActivity } = useCompactToolActivity();
   const { style: toolSummaryStyle } = useToolSummaryStyle();
   const reasoningExpandedPrefs = useMyraReasoningExpanded(session.messages);

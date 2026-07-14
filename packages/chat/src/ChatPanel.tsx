@@ -180,7 +180,7 @@ export function ChatPanel({
                 {agent.name}
               </span>
               {agent.tagline !== undefined && (
-                <span className="text-xs text-text-3">{agent.tagline}</span>
+                <span className="text-xs text-text-2">{agent.tagline}</span>
               )}
             </div>
           )}
