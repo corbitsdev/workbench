@@ -99,7 +99,7 @@ describe("Myra display blocks (CL-3547)", () => {
     ).toBe(true);
   });
 
-  it("renders a preview as a linked card with optional image", () => {
+  it("renders a preview as a linked card with optional decorative thumbnail", () => {
     const block: UIBlock = {
       kind: "preview",
       url: "https://example.com/report.pdf",
@@ -111,7 +111,10 @@ describe("Myra display blocks (CL-3547)", () => {
     const link = screen.getByRole("link", { name: /Weekly report/i });
     expect(link.getAttribute("href")).toBe("https://example.com/report.pdf");
     expect(screen.getByText("Finance summary for leadership")).not.toBeNull();
-    expect(screen.getByRole("img")).not.toBeNull();
+    const thumb = screen.getByRole("presentation");
+    expect(thumb.tagName).toBe("IMG");
+    expect(thumb.getAttribute("alt")).toBe("");
+    expect(thumb.getAttribute("src")).toBe("https://example.com/thumb.png");
   });
 
   it("renders choice options as cards when descriptions are present", () => {
