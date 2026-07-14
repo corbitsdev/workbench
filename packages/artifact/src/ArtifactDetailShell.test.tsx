@@ -17,7 +17,9 @@ describe("ArtifactDetailShell", () => {
         children: React.createElement("article", null, "Body"),
       }),
     );
-    expect(screen.getByTestId("artifact-detail-shell")).toBeDefined();
+    const shell = screen.getByTestId("artifact-detail-shell");
+    expect(shell).toBeDefined();
+    expect(shell.className).toContain("bg-surface");
     expect(screen.getByTestId("artifact-detail-main").textContent).toContain(
       "Body",
     );

@@ -22,7 +22,7 @@ export function ArtifactDetailShell({
 }: ArtifactDetailShellProps) {
   return (
     <div
-      className="flex h-full min-h-0 w-full flex-col bg-background"
+      className="flex h-full min-h-0 w-full flex-col bg-surface"
       data-testid="artifact-detail-shell"
     >
       <div className={`h-1.5 w-full shrink-0 ${accentClass}`} aria-hidden />
