@@ -160,7 +160,7 @@ export type SessionManagerConfig = {
   // are folded into one summary line, flushed after this much quiet time.
   /** Debounce window before a batch of sleeping-agent syncs is summarized (default 250ms). */
   sleepingSyncFlushDelayMs?: number;
-  // WORKBENCH-LOCAL: harness-build wedge guard. A single `buildHarness.build`
+  // WORKBENCH-LOCAL (CL-3657): harness-build wedge guard. A single `buildHarness.build`
   // that never settles (isogit dir-lock contention, a stalled tool/credential
   // fetch, a wedged context-store load) is abandoned after this long and the
   // attempt fails loudly instead of pinning the agent in `waking` forever.
@@ -181,7 +181,7 @@ const DEFAULT_MAX_PARKED_MAIL = 256;
 // WORKBENCH-LOCAL (CL-3409): sleeping-agent grant/source sync batching default.
 const DEFAULT_SLEEPING_SYNC_FLUSH_DELAY_MS = 250;
 
-// WORKBENCH-LOCAL: harness-build wedge-guard default (3 minutes). Generous over
+// WORKBENCH-LOCAL (CL-3657): harness-build wedge-guard default (3 minutes). Generous over
 // any real cold build (tool-package materialization + credential fetch +
 // context-store load) yet far below the multi-minute silent hang a wedged
 // build produced.
@@ -201,16 +201,22 @@ const defaultSleep = (ms: number): Promise<void> =>
 // Never retried — the agent is gone, not transiently failing.
 class WakeAbortedError extends Error {}
 
-// WORKBENCH-LOCAL: a harness build that neither resolves nor rejects within
-// `buildTimeoutMs` is a wedge — an isogit per-directory lock the build is
-// waiting on, an unresolved credential/tool fetch, or a stalled context-store
-// load for a long-history agent. Left unbounded, the wake sits in `waking`
-// forever: it never completes and never fails, so the hub's session.start ack
-// times out with no diagnostic and the agent is unreachable until the sidecar
-// restarts. This turns the wedge into a loud, bounded failure that the wake
-// retry/terminal path reports like any other build error (it is NOT a
-// WakeAbortedError, so it is retried and, if every attempt wedges, surfaced
-// through `onMailDeliveryFailed`).
+// WORKBENCH-LOCAL (CL-3657): a harness build that neither resolves nor rejects
+// within `buildTimeoutMs` is a wedge — an isogit per-directory lock the build
+// is waiting on, an unresolved credential/tool fetch, or a stalled
+// context-store load for a long-history agent. Left unbounded, the wake sits
+// in `waking` forever: it never completes and never fails, so the hub's
+// session.start ack times out with no diagnostic and the agent is unreachable
+// until the sidecar restarts. This turns the wedge into a loud, bounded,
+// diagnosable failure that the wake retry/terminal path reports like any other
+// build error (it is NOT a WakeAbortedError, so it is retried and, if every
+// attempt wedges, surfaced through `onMailDeliveryFailed`).
+//
+// What this guard does NOT do: unwedge the build. The abandoned build keeps
+// whatever it holds — in particular an in-flight `withRepoDirLock` call keeps
+// the agent-dir lock queued/held, so a retry that needs the same lock wedges
+// again until the sidecar restarts. Releasing that requires a cancellation
+// contract in the HarnessBuilder seam, which does not exist today.
 export class HarnessBuildTimeoutError extends Error {
   constructor(agentAddress: string, timeoutMs: number) {
     super(
@@ -439,7 +445,7 @@ export function createSessionManager(
     now = Date.now,
     // WORKBENCH-LOCAL (CL-3409): sleeping-agent grant/source sync batching.
     sleepingSyncFlushDelayMs = DEFAULT_SLEEPING_SYNC_FLUSH_DELAY_MS,
-    // WORKBENCH-LOCAL: harness-build wedge guard.
+    // WORKBENCH-LOCAL (CL-3657): harness-build wedge guard.
     buildTimeoutMs = DEFAULT_BUILD_TIMEOUT_MS,
   } = config;
   if (!Number.isInteger(buildTimeoutMs) || buildTimeoutMs < 0) {
@@ -777,22 +783,42 @@ export function createSessionManager(
     drainParkedMail(agentAddress);
   }
 
-  // WORKBENCH-LOCAL: run one harness build under the wedge guard. A build that
-  // has not settled within `buildTimeoutMs` is abandoned: the returned promise
-  // rejects with HarnessBuildTimeoutError so the caller's normal build-failure
-  // cleanup runs, while the orphaned build is drained in the background —
-  // observing its eventual settlement so a late rejection is not unhandled, and
-  // disposing a bundle that lands after the timeout so a stranded harness does
-  // not leak. The timer is cleared on the settled path so a fast build costs
-  // nothing. `buildTimeoutMs === 0` runs the build unbounded.
+  // WORKBENCH-LOCAL (CL-3657): run one harness build under the wedge guard. A
+  // build that has not settled within `buildTimeoutMs` is abandoned: the
+  // returned promise rejects with HarnessBuildTimeoutError so the caller's
+  // normal build-failure cleanup runs. The timer is cleared on the settled
+  // path so a fast build costs nothing. `buildTimeoutMs === 0` runs the build
+  // unbounded.
+  //
+  // Scope of the recovery, honestly stated:
+  //   - A build that RESOLVES after the timeout is disposed (below) so the
+  //     never-installed harness does not stay live; its `onEvent` is gated off
+  //     from the timeout instant so events emitted between the late resolve
+  //     and the close cannot interleave with a retry's fresh session. The
+  //     residual window — the stranded reactor running between timeout and its
+  //     eventual resolve — cannot be closed from here: the bundle (and its
+  //     close handle) does not exist until the build returns it. Full
+  //     prevention needs a cancellation contract in the HarnessBuilder seam.
+  //   - A build that NEVER settles is only abandoned, not unwound: nothing it
+  //     holds (e.g. a queued/held isogit dir-lock) is released, so a retry
+  //     that needs the same resource wedges again. The guard's value there is
+  //     converting a silent forever-wedge into a loud, bounded, diagnosable
+  //     failure — not recovery.
   async function buildHarnessBounded(
     agentAddress: string,
     args: Parameters<HarnessBuilder["build"]>[0],
   ): Promise<HarnessBundle> {
-    const build = buildHarness.build(args);
-    if (buildTimeoutMs <= 0) return build;
+    if (buildTimeoutMs <= 0) return buildHarness.build(args);
     let timer: ReturnType<typeof setTimeout> | undefined;
     let timedOut = false;
+    const innerOnEvent = args.onEvent;
+    const build = buildHarness.build({
+      ...args,
+      onEvent(event) {
+        if (timedOut) return;
+        innerOnEvent(event);
+      },
+    });
     const timeout = new Promise<never>((_, reject) => {
       timer = setTimeout(() => {
         timedOut = true;
@@ -803,12 +829,14 @@ export function createSessionManager(
     build.then(
       (bundle) => {
         if (!timedOut) return;
+        // Dispose synchronously with the late resolve (no awaits before the
+        // close starts) so the stranded reactor's live window is as short as
+        // this process can make it.
         void disposeStrandedBundle(agentAddress, bundle);
       },
-      (err: unknown) => {
-        if (timedOut) return;
-        // Non-timeout rejection surfaces through the race below; nothing to do.
-        void err;
+      () => {
+        // A late rejection is already logged by the builder; observing it
+        // here keeps it from surfacing as an unhandled rejection.
       },
     );
     try {
@@ -818,9 +846,9 @@ export function createSessionManager(
     }
   }
 
-  // WORKBENCH-LOCAL: dispose a bundle whose build resolved only after the
-  // wedge-guard already gave up on it, so the never-installed harness does not
-  // leak its reactor, transport wiring, or open handles.
+  // WORKBENCH-LOCAL (CL-3657): dispose a bundle whose build resolved only
+  // after the wedge-guard already gave up on it, so the never-installed
+  // harness does not leak its reactor, transport wiring, or open handles.
   async function disposeStrandedBundle(
     agentAddress: string,
     bundle: HarnessBundle,
@@ -837,6 +865,7 @@ export function createSessionManager(
         logger.error`Disposer for stranded harness ${agentAddress} failed: ${String(err)}`;
       }
     }
+    reclaimHeap(`stranded-build ${agentAddress}`);
   }
 
   async function startSessionCore(agentAddress: string): Promise<void> {

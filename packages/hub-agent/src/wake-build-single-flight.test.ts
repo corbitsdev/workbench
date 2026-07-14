@@ -83,7 +83,10 @@ function makeCrypto(kp: KeyPair): CryptoProvider {
   };
 }
 
-function makeBundle(onClose?: () => void): HarnessBundle {
+function makeBundle(
+  onClose?: () => void,
+  disposers: (() => Promise<void>)[] = [],
+): HarnessBundle {
   const harness = {
     start: () => undefined,
     stop: () => undefined,
@@ -105,7 +108,7 @@ function makeBundle(onClose?: () => void): HarnessBundle {
     updateGrants() {
       /* no-op */
     },
-    disposers: [],
+    disposers,
   };
 }
 
@@ -221,8 +224,41 @@ describe("wake build single-flight", () => {
     expect(elapsed).toBeLessThan(2000);
     expect(buildCount).toBe(1);
     expect(manager.hasSession(address)).toBe(false);
-    // The agent stays wakeable so a later trigger can retry the build.
+    // The agent stays in the wakeable state so a later trigger retries —
+    // though a build wedged on a held resource (e.g. the agent-dir lock) will
+    // wedge again; the guard bounds and reports the failure, it cannot
+    // release what the abandoned build holds.
     expect(manager.isWakeable(address)).toBe(true);
+  });
+
+  test("after a timed-out attempt the wake retries with a fresh build and succeeds", async () => {
+    const dataDir = await tempDir();
+    const address = "a@local";
+    await seedAgentOnDisk(dataDir, address);
+
+    let buildCount = 0;
+    const builder: HarnessBuilder = {
+      canBuildSource() {},
+      build() {
+        buildCount += 1;
+        if (buildCount === 1) {
+          // Attempt 1 wedges; the guard must abandon it and retry.
+          return new Promise<HarnessBundle>(() => {});
+        }
+        return Promise.resolve(makeBundle());
+      },
+    };
+    const { manager } = makeManager(dataDir, builder, {
+      buildTimeoutMs: 25,
+      wakeMaxAttempts: 2,
+      sleep: () => Promise.resolve(),
+    });
+    await manager.restoreSessions();
+
+    await manager.wakeAgent(address);
+
+    expect(buildCount).toBe(2);
+    expect(manager.hasSession(address)).toBe(true);
   });
 
   test("a build that resolves after the timeout is disposed, not installed", async () => {
@@ -235,13 +271,23 @@ describe("wake build single-flight", () => {
       release = resolve;
     });
     let closed = false;
+    let disposed = false;
+    let signalDisposed!: () => void;
+    const disposedSignal = new Promise<void>((resolve) => {
+      signalDisposed = resolve;
+    });
     const builder: HarnessBuilder = {
       canBuildSource() {},
       async build() {
         await gate;
         return makeBundle(() => {
           closed = true;
-        });
+        }, [
+          async () => {
+            disposed = true;
+            signalDisposed();
+          },
+        ]);
       },
     };
     const { manager } = makeManager(dataDir, builder, {
@@ -259,9 +305,9 @@ describe("wake build single-flight", () => {
 
     // The build lands only now — after the guard abandoned it.
     release();
-    // Allow the post-timeout dispose microtasks/awaits to run.
-    for (let i = 0; i < 5; i++) await Promise.resolve();
+    await disposedSignal;
     expect(closed).toBe(true);
+    expect(disposed).toBe(true);
     expect(manager.hasSession(address)).toBe(false);
   });
 });

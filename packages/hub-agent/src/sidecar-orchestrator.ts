@@ -137,7 +137,7 @@ export type SidecarOrchestratorConfig = {
   // SessionManager. `0` disables eviction. The host also drives the periodic
   // sweep timer that calls `sessions.evictIdleSessions()`.
   idleEvictMs?: number;
-  // WORKBENCH-LOCAL: harness-build wedge-guard threshold (ms) forwarded to
+  // WORKBENCH-LOCAL (CL-3657): harness-build wedge-guard threshold (ms) forwarded to
   // SessionManager. `0` disables the bound. Omitted leaves the package default.
   buildTimeoutMs?: number;
 };
@@ -178,7 +178,7 @@ export function createSidecarOrchestrator(
     scheduleReconnect,
     // WORKBENCH-LOCAL (CL-3103)
     idleEvictMs,
-    // WORKBENCH-LOCAL: harness-build wedge guard.
+    // WORKBENCH-LOCAL (CL-3657): harness-build wedge guard.
     buildTimeoutMs,
   } = config;
 
@@ -240,7 +240,7 @@ export function createSidecarOrchestrator(
     },
     // WORKBENCH-LOCAL (CL-3103)
     ...(idleEvictMs !== undefined ? { idleEvictMs } : {}),
-    // WORKBENCH-LOCAL: harness-build wedge guard.
+    // WORKBENCH-LOCAL (CL-3657): harness-build wedge guard.
     ...(buildTimeoutMs !== undefined ? { buildTimeoutMs } : {}),
   });
 
