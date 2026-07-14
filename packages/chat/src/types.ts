@@ -58,6 +58,91 @@ export const ChatAttachmentSchema = type({
  */
 export type ChatAttachment = typeof ChatAttachmentSchema.infer;
 
+/**
+ * Ordered message parts, mirroring Vercel UIMessage part discriminants.
+ *
+ * Deliberately narrower than UIMessage: only fields the Interchange event
+ * stream (`InstanceEvent` turns/mails, `convertInstanceEvents`,
+ * `composeChatMessages`) can actually populate. No `data-*` parts, no
+ * `source-url` / `source-document` parts, no permanently-empty stubs.
+ *
+ * Two-tier fidelity (see the package README, "Parts model" section, for the
+ * full writeup): a LIVE turn can interleave these in true stream order (think →
+ * tool → think → answer). A HYDRATED turn — reloaded from the hub-client
+ * contract, which only exposes cumulative `reasoning` + a `toolCalls` array
+ * per turn/mail — has no interleaving left to recover, so `liftToParts`
+ * synthesizes a deterministic flat layout instead (see its TSDoc). This is
+ * an accepted data-level limitation; the default transcript render (answer +
+ * optional activity footnote) must look identical either way — the
+ * difference is only observable in an expanded trace view.
+ */
+export const TextPartSchema = type({
+  type: "'text'",
+  text: "string",
+});
+/** Plain answer text — the model's final or in-progress reply segment. */
+export type TextPart = typeof TextPartSchema.infer;
+
+export const ReasoningPartSchema = type({
+  type: "'reasoning'",
+  text: "string",
+});
+/**
+ * Chain-of-thought / thinking text. Interchange only ever gives us a single
+ * cumulative reasoning string per turn (no per-segment boundaries), so this
+ * part carries text only — no UIMessage-style `providerMetadata`.
+ */
+export type ReasoningPart = typeof ReasoningPartSchema.infer;
+
+export const ToolPartStateSchema = type("'pending' | 'output-available' | 'output-error'");
+/**
+ * Tool call lifecycle state, restricted to what the event stream emits.
+ * `ToolCall.result` is undefined until the call resolves (→ `pending`); once
+ * it resolves, `ToolCall.isError` selects `output-available` vs
+ * `output-error`. UIMessage's `input-streaming` / `input-available` states
+ * are not represented — Interchange delivers tool arguments atomically, not
+ * as a streamed-then-finalized input.
+ */
+export type ToolPartState = typeof ToolPartStateSchema.infer;
+
+export const ToolPartSchema = type({
+  type: "'tool'",
+  toolCallId: "string",
+  toolName: "string",
+  state: ToolPartStateSchema,
+  "label?": "string",
+  "input?": "Record<string, unknown>",
+  "output?": "string",
+  "errorText?": "string",
+});
+/** A tool invocation, mapped 1:1 from a `ToolCall`. */
+export type ToolPart = typeof ToolPartSchema.infer;
+
+export const FilePartSchema = type({
+  type: "'file'",
+  mediaType: "string",
+  /**
+   * Reference to the bytes, never fetched by this package. For a persisted
+   * `ChatAttachment` this is a `blob:<blobId>` marker the host resolves via
+   * `resolveAttachmentUrl`. For a live `ChatImage` (which only ever carries
+   * inline base64) this is a `data:<mimeType>;base64,<data>` URI — decided
+   * here rather than adding a second "inline" part variant, since a file
+   * part's job (something with bytes and a media type) covers both cases.
+   */
+  url: "string",
+  "filename?": "string",
+  "blobId?": "string",
+  "size?": "number",
+});
+/** A file — lifted from either a `ChatAttachment` or a `ChatImage`. */
+export type FilePart = typeof FilePartSchema.infer;
+
+export const PartSchema = TextPartSchema.or(ReasoningPartSchema)
+  .or(ToolPartSchema)
+  .or(FilePartSchema);
+/** One entry in a message's ordered `parts` array. */
+export type Part = typeof PartSchema.infer;
+
 export const ChatMessageSchema = type({
   id: "string",
   role: ChatRoleSchema,
@@ -71,6 +156,14 @@ export const ChatMessageSchema = type({
   "reasoning?": "string",
   "images?": ChatImageSchema.array(),
   "attachments?": ChatAttachmentSchema.array(),
+  /**
+   * Ordered parts view of the same message. Additive: `content`, `reasoning`,
+   * `toolCalls`, `images`, and `attachments` above remain the source of
+   * truth for existing renderers until the renderer rebuild (a later
+   * ticket) reads `parts` instead. Populated either by a parts-native write
+   * path or by lifting a flat message through `liftToParts`.
+   */
+  "parts?": PartSchema.array(),
 });
 /** A single message in a chat thread. */
 export type ChatMessage = typeof ChatMessageSchema.infer;

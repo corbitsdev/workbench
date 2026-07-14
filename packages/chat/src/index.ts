@@ -20,7 +20,20 @@ export {
   type ChatLauncherPosition,
   type ChatAgentIdentity,
   type ChatActivity,
+  TextPartSchema,
+  ReasoningPartSchema,
+  ToolPartStateSchema,
+  ToolPartSchema,
+  FilePartSchema,
+  PartSchema,
+  type TextPart,
+  type ReasoningPart,
+  type ToolPartState,
+  type ToolPart,
+  type FilePart,
+  type Part,
 } from "./types";
+export { liftToParts } from "./parts";
 export {
   compactMessages,
   type CompactedItem,
@@ -76,10 +89,7 @@ export {
   migrateReasoningExpandedSlotKeys,
   type ReasoningExpandedMap,
 } from "./reasoning-expanded-prefs";
-export {
-  MYRA_AGED_HISTORY_MS,
-  isMyraHistoryAged,
-} from "./aged-history";
+export { MYRA_AGED_HISTORY_MS, isMyraHistoryAged } from "./aged-history";
 export {
   ToolNarrative,
   type ToolNarrativeProps,
