@@ -635,14 +635,15 @@ export const LINEAR_LIST_ISSUES_DEFINITION: ToolDefinition = {
 export const LINEAR_GET_ISSUE_DEFINITION: ToolDefinition = {
   name: "linear_get_issue",
   description:
-    'Get a Linear issue by UUID or identifier (e.g. "ENG-123"). Optional includeRelations returns blocking/related links.',
+    'Get a Linear issue by UUID or identifier (e.g. "ENG-123"). Optional includeRelations returns this issue\'s outbound relation edges only (blocks, related, duplicate); inverse edges such as blocked-by require querying the related issue.',
   inputSchema: {
     type: "object",
     properties: {
       id: { type: "string", description: "Issue id or identifier." },
       includeRelations: {
         type: "boolean",
-        description: "Include issue relation nodes when true.",
+        description:
+          "When true, include this issue's outbound relation edges (blocks, related, duplicate). Does not include inverse edges (e.g. blocked-by from another issue); query the related issue for those.",
       },
       includeCustomerNeeds: {
         type: "boolean",
