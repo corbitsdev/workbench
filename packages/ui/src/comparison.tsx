@@ -1,6 +1,11 @@
 import { type } from "arktype";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { Markdown } from "./Markdown";
+import {
+  crossfadePresence,
+  motionPropsWhen,
+  staggerItemTransition,
+} from "./motion";
 
 // The persisted A/B comparison artifact payload — the single source of truth
 // shared by the compose tool (producer), the artifact renderer, and the
@@ -64,11 +69,6 @@ export function parseComparisonResult(value: unknown): ComparisonResult | null {
   if (parsed instanceof type.errors) return null;
   return parsed;
 }
-
-// The brand `--spring` curve (styles.css: cubic-bezier(0.34, 1.56, 0.64, 1)) as
-// a keyframe ease — the slight overshoot gives entering cells a spring settle,
-// shared by the staggered variant grid.
-const SPRING_EASE = [0.34, 1.56, 0.64, 1] as const;
 
 function rankForLabel(
   ranking: readonly ComparisonRankingEntry[],
@@ -284,14 +284,7 @@ function VariantsSection({
                 <motion.span
                   key="running-spinner"
                   aria-hidden
-                  {...(reduce
-                    ? {}
-                    : {
-                        initial: { opacity: 0 },
-                        animate: { opacity: 1 },
-                        exit: { opacity: 0 },
-                        transition: { duration: 0.2 },
-                      })}
+                  {...crossfadePresence(reduce)}
                   className="h-3 w-3 animate-spin rounded-full border-2 border-border border-t-orange motion-reduce:animate-none"
                 />
               )}
@@ -315,13 +308,11 @@ function VariantsSection({
             <motion.div
               key={variant.label}
               data-animated="true"
-              initial={{ opacity: 0, y: 8 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{
-                duration: 0.35,
-                delay: index * 0.05,
-                ease: SPRING_EASE,
-              }}
+              {...motionPropsWhen(reduce, {
+                initial: { opacity: 0, y: 8 },
+                animate: { opacity: 1, y: 0 },
+                transition: staggerItemTransition(index),
+              })}
             >
               {card}
             </motion.div>

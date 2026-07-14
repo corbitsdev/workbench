@@ -54,6 +54,24 @@ export {
   SidebarMenuItem,
   SidebarMenuButton,
 } from "./sidebar";
+export { AnimatedNumber, type AnimatedNumberProps } from "./AnimatedNumber";
+export {
+  SPRING_EASE,
+  EASE_CURVE,
+  springTransition,
+  easeTransition,
+  staggerItemTransition,
+  staggerContainerVariants,
+  staggerItemVariants,
+  revealUp,
+  crossfadePresence,
+  staggerSlideIn,
+  popupPanelMotion,
+  dockedPanelMotion,
+  motionPropsWhen,
+  springNumberTransition,
+  type MotionPresenceProps,
+} from "./motion";
 export { cn } from "./utils";
 export { toHumanLabel } from "@workbench/shared";
 export { inputFieldClass } from "./input-field";

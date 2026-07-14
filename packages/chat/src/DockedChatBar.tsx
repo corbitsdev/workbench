@@ -1,5 +1,5 @@
-import { motion } from "framer-motion";
-import { cn } from "@workbench/ui";
+import { motion, useReducedMotion } from "framer-motion";
+import { cn, dockedPanelMotion } from "@workbench/ui";
 
 export interface DockedChatBarProps {
   /** The chat surface, typically a <ChatPanel />. */
@@ -34,15 +34,14 @@ export const DOCKED_BAR_TOTAL_HEIGHT = `calc(${DOCKED_BAR_HEIGHT} + ${DOCKED_BAR
  * flex column so content above it is not hidden behind the panel.
  */
 export function DockedChatBar({ children, className }: DockedChatBarProps) {
+  const reduce = useReducedMotion() === true;
+  const panelMotion = dockedPanelMotion(reduce);
+
   return (
     <motion.div
       role="complementary"
       aria-label="Chat"
-      // translateX(-50%) lives in -translate-x-1/2, so Framer's y/scale
-      // animation does not conflict with the centering transform.
-      initial={{ y: 20, opacity: 0, scale: 0.98 }}
-      animate={{ y: 0, opacity: 1, scale: 1 }}
-      transition={{ duration: 0.22, ease: [0.22, 0.61, 0.36, 1] }}
+      {...panelMotion}
       style={{
         width: "min(1164px, calc(100vw - 32px))",
         height: DOCKED_BAR_HEIGHT,

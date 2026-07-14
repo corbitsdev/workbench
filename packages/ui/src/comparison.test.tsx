@@ -46,6 +46,9 @@ mock.module("framer-motion", () => ({
   AnimatePresence: ({ children }: { children?: React.ReactNode }) =>
     React.createElement(React.Fragment, null, children),
   useReducedMotion: () => reducedMotion,
+  useSpring: (value: number) => ({ get: () => value, set: () => {} }),
+  useTransform: (mv: { get: () => number }, fn: (v: number) => string) =>
+    fn(mv.get()),
 }));
 
 afterEach(() => {

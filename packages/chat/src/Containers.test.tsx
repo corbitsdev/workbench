@@ -14,6 +14,7 @@ mock.module("framer-motion", () => ({
           const {
             initial: _i,
             animate: _a,
+            exit: _e,
             transition: _t,
             ...rest
           } = props as Record<string, unknown>;
@@ -21,6 +22,9 @@ mock.module("framer-motion", () => ({
         },
     },
   ),
+  AnimatePresence: ({ children }: { children?: React.ReactNode }) =>
+    React.createElement(React.Fragment, null, children),
+  useReducedMotion: () => false,
 }));
 
 import { DockedChatBar } from "./DockedChatBar";

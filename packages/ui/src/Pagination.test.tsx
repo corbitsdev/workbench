@@ -1,5 +1,23 @@
 import { afterEach, describe, expect, it, mock } from "bun:test";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import React from "react";
+
+mock.module("framer-motion", () => ({
+  motion: {
+    span: ({
+      children,
+      className,
+    }: {
+      children?: React.ReactNode;
+      className?: string;
+    }) => React.createElement("span", { className }, children),
+  },
+  useReducedMotion: () => true,
+  useSpring: (value: number) => ({ get: () => value, set: () => {} }),
+  useTransform: (mv: { get: () => number }, fn: (v: number) => string) =>
+    fn(mv.get()),
+}));
+
 import { Pagination } from "./Pagination";
 
 afterEach(cleanup);
@@ -13,13 +31,11 @@ describe("Pagination", () => {
   });
 
   it("shows the current page, total pages, and total count", () => {
-    render(
+    const { container } = render(
       <Pagination page={2} totalPages={4} total={87} onPageChange={() => {}} />,
     );
-    expect(screen.getByText(/Page 2 of 4/).textContent).toContain(
-      "Page 2 of 4",
-    );
-    expect(screen.getByText(/87 total/).textContent).toContain("87 total");
+    expect(container.textContent).toMatch(/Page 2 of 4/);
+    expect(container.textContent).toMatch(/87 total/);
   });
 
   it("advances/retreats by one page via Next/Previous", () => {
