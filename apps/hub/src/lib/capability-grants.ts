@@ -131,6 +131,106 @@ export async function setCapabilityGrant(
   });
 }
 
+// ─── Per-principal self-service capability grant (CL-3510) ─────────
+//
+// A member enabling a capability (completing the provider OAuth connect with
+// their `inbox.capability.<provider>` opt-in on) writes a per-PRINCIPAL `allow`
+// grant for `capability:<provider>`/`use` — scoped to the member principal
+// (`principalId` set, `roleId: null`), origin `invoker` (the member granted it
+// themselves). Disconnecting or toggling the capability off REVOKES exactly that
+// row. This is the durable, least-privilege record the inbox intake + loadout
+// read to decide whether the member has actually opted into a provider's
+// capability, distinct from the allow-by-default owner ceiling above: the
+// ceiling is "the owner has not hidden this", the per-principal grant is "this
+// member has turned it on for themselves". Deleting the credential cascades no
+// grant, so the two are kept in lockstep explicitly here.
+//
+// Uses the native Interchange `grant` table (no parallel authz store); the row
+// is collected by `collectGrants` like any other principal-owned grant.
+export async function setPrincipalCapabilityGrant(
+  db: HubDb,
+  args: {
+    tenantId: string;
+    principalId: string;
+    provider: string;
+    enabled: boolean;
+  },
+): Promise<void> {
+  const resource = capabilityResource(args.provider);
+  await db.transaction(async (tx) => {
+    await tx
+      .delete(grant)
+      .where(
+        and(
+          eq(grant.tenantId, args.tenantId),
+          eq(grant.principalId, args.principalId),
+          eq(grant.resource, resource),
+          eq(grant.action, CAPABILITY_ACTION),
+        ),
+      );
+    if (!args.enabled) return;
+    const now = new Date();
+    await tx.insert(grant).values({
+      id: generateId("grant"),
+      tenantId: args.tenantId,
+      principalId: args.principalId,
+      resource,
+      action: CAPABILITY_ACTION,
+      effect: "allow",
+      origin: "invoker",
+      createdAt: now,
+      updatedAt: now,
+    });
+  });
+}
+
+// Whether the member holds their own per-principal `allow` capability grant for
+// a provider (the self-service opt-in written by `setPrincipalCapabilityGrant`).
+// This is a narrower question than `isCapabilityAllowedForPrincipal` (which is
+// allow-by-default and answers "is the member not denied"): this answers "has
+// the member explicitly enabled this capability for themselves". The inbox
+// intake gates each source on this so a member's own connection + opt-in is what
+// activates live intake — never the mere absence of an owner deny.
+export async function memberHoldsCapabilityGrant(
+  db: HubDb,
+  tenantId: string,
+  principalId: string,
+  provider: string,
+): Promise<boolean> {
+  const row = await db.query.grant.findFirst({
+    where: and(
+      eq(grant.tenantId, tenantId),
+      eq(grant.principalId, principalId),
+      eq(grant.resource, capabilityResource(provider)),
+      eq(grant.action, CAPABILITY_ACTION),
+      eq(grant.effect, "allow"),
+    ),
+    columns: { id: true },
+  });
+  return row !== undefined;
+}
+
+// Self-service capability is active only when the owner ceiling allows the
+// provider AND the member holds their own per-principal opt-in grant (CL-3510).
+// Intake / preference enablement must use this — `memberHoldsCapabilityGrant`
+// alone ignores an owner member-role deny left on a stale per-principal allow.
+export async function isMemberSelfServiceCapabilityActive(
+  grantStore: GrantStore,
+  db: HubDb,
+  tenantId: string,
+  principalId: string,
+  provider: string,
+): Promise<boolean> {
+  const allowed = await isCapabilityAllowedForPrincipal(
+    grantStore,
+    tenantId,
+    principalId,
+    provider,
+  );
+  if (!allowed) return false;
+  return memberHoldsCapabilityGrant(db, tenantId, principalId, provider);
+}
+
 // The full connectable-provider catalog projected against a tenant's member-role
 // policy: each provider with its effective owner-gate state (`enabled` = not
 // denied). This is what the owner Capabilities surface renders.

@@ -21,7 +21,10 @@ import {
   isCapabilityAllowedForPrincipal,
   isCapabilityDeniedForTenant,
   listOwnerCapabilityStates,
+  isMemberSelfServiceCapabilityActive,
+  memberHoldsCapabilityGrant,
   setCapabilityGrant,
+  setPrincipalCapabilityGrant,
 } from "./capability-grants";
 
 // Real-Postgres (PGlite) exercise of the capability gate over actual `grant`
@@ -218,6 +221,137 @@ describe("per-principal gate over the REAL DB grant store (route path)", () => {
     expect(
       await isCapabilityAllowedForPrincipal(store, TENANT, MEMBER_A, "attio"),
     ).toBe(true);
+  });
+});
+
+describe("setPrincipalCapabilityGrant / memberHoldsCapabilityGrant (CL-3510)", () => {
+  const MEMBER = "prn-self";
+  const OTHER = "prn-other";
+
+  async function principalRows(principalId: string, provider: string) {
+    return client.query<{ effect: string }>(
+      `select effect from "grant" where principal_id = $1 and resource = $2 and action = 'use'`,
+      [principalId, capabilityResource(provider)],
+    );
+  }
+
+  test("enabling writes exactly one per-principal allow the member holds", async () => {
+    await setPrincipalCapabilityGrant(db, {
+      tenantId: TENANT,
+      principalId: MEMBER,
+      provider: "linear",
+      enabled: true,
+    });
+    expect(
+      (await principalRows(MEMBER, "linear")).rows.map((r) => r.effect),
+    ).toEqual(["allow"]);
+    expect(await memberHoldsCapabilityGrant(db, TENANT, MEMBER, "linear")).toBe(
+      true,
+    );
+    // Scoped to this member + provider only.
+    expect(await memberHoldsCapabilityGrant(db, TENANT, OTHER, "linear")).toBe(
+      false,
+    );
+    expect(await memberHoldsCapabilityGrant(db, TENANT, MEMBER, "attio")).toBe(
+      false,
+    );
+  });
+
+  test("disabling revokes the grant (toggle-off / disconnect)", async () => {
+    await setPrincipalCapabilityGrant(db, {
+      tenantId: TENANT,
+      principalId: MEMBER,
+      provider: "linear",
+      enabled: true,
+    });
+    await setPrincipalCapabilityGrant(db, {
+      tenantId: TENANT,
+      principalId: MEMBER,
+      provider: "linear",
+      enabled: false,
+    });
+    expect((await principalRows(MEMBER, "linear")).rows).toEqual([]);
+    expect(await memberHoldsCapabilityGrant(db, TENANT, MEMBER, "linear")).toBe(
+      false,
+    );
+  });
+
+  test("re-enabling never leaves more than one row", async () => {
+    for (const enabled of [true, true, false, true]) {
+      await setPrincipalCapabilityGrant(db, {
+        tenantId: TENANT,
+        principalId: MEMBER,
+        provider: "linear",
+        enabled,
+      });
+    }
+    expect((await principalRows(MEMBER, "linear")).rows.length).toBe(1);
+  });
+});
+
+describe("isMemberSelfServiceCapabilityActive (owner ceiling + opt-in)", () => {
+  const MEMBER = "prn-intake";
+
+  async function assignMemberRole(principalId: string) {
+    await client.query(
+      `insert into principal_role (principal_id, role_id) values ($1, $2)`,
+      [principalId, MEMBER_ROLE],
+    );
+  }
+
+  test("requires both owner allow-by-default and a per-principal allow", async () => {
+    await assignMemberRole(MEMBER);
+    const store = createGrantStore(db);
+    expect(
+      await isMemberSelfServiceCapabilityActive(
+        store,
+        db,
+        TENANT,
+        MEMBER,
+        "linear",
+      ),
+    ).toBe(false);
+    await setPrincipalCapabilityGrant(db, {
+      tenantId: TENANT,
+      principalId: MEMBER,
+      provider: "linear",
+      enabled: true,
+    });
+    expect(
+      await isMemberSelfServiceCapabilityActive(
+        store,
+        db,
+        TENANT,
+        MEMBER,
+        "linear",
+      ),
+    ).toBe(true);
+  });
+
+  test("an owner member-role deny blocks intake even with a stale per-principal allow", async () => {
+    await assignMemberRole(MEMBER);
+    await setPrincipalCapabilityGrant(db, {
+      tenantId: TENANT,
+      principalId: MEMBER,
+      provider: "linear",
+      enabled: true,
+    });
+    await setCapabilityGrant(db, {
+      tenantId: TENANT,
+      roleId: MEMBER_ROLE,
+      provider: "linear",
+      enabled: false,
+    });
+    const store = createGrantStore(db);
+    expect(
+      await isMemberSelfServiceCapabilityActive(
+        store,
+        db,
+        TENANT,
+        MEMBER,
+        "linear",
+      ),
+    ).toBe(false);
   });
 });
 

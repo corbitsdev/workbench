@@ -1,12 +1,15 @@
 import { type } from "arktype";
 import { Hono } from "hono";
 import { describeRoute, resolver } from "hono-openapi";
+import type { GrantStore } from "@intx/authz";
 import {
   AvailableBriefSourcesResponseSchema,
   AvailableInboxSourcesResponseSchema,
   BRIEF_SOURCE_CATALOG,
   INBOX_SOURCE_CATALOG,
+  inboxCapabilityPreferenceKey,
   MemberPreferences,
+  OAUTH_PROVIDER_CATALOG,
   PreferenceSettingsResponseSchema,
   resolveAvailableBriefSources,
   resolveAvailableInboxSources,
@@ -14,6 +17,10 @@ import {
   validatePreferencePatch,
 } from "@workbench/shared";
 import { resolveCallerMember } from "../lib/tenant-provisioning";
+import {
+  isCapabilityAllowedForPrincipal,
+  setPrincipalCapabilityGrant,
+} from "../lib/capability-grants";
 import { resolveAvailableProviderNames } from "../lib/tenant-tools";
 import {
   readMemberPreferences,
@@ -27,6 +34,7 @@ import type { HubDb } from "../db";
 // is the standalone fallback.
 export function createMePreferencesRouter(
   db: HubDb,
+  grantStore: GrantStore,
 ): Hono<{ Variables: { userId: string } }> {
   const app = new Hono<{ Variables: { userId: string } }>();
 
@@ -202,12 +210,42 @@ export function createMePreferencesRouter(
         return c.json({ error: "No provisioned membership" }, 409);
       }
 
+      for (const cfg of OAUTH_PROVIDER_CATALOG) {
+        const key = inboxCapabilityPreferenceKey(cfg.providerName);
+        if (!(key in patch) || patch[key] === false) continue;
+        const allowed = await isCapabilityAllowedForPrincipal(
+          grantStore,
+          member.tenantId,
+          member.principalId,
+          cfg.providerName,
+        );
+        if (!allowed) {
+          return c.json({ error: "Capability not available" }, 403);
+        }
+      }
+
       const merged = await mergeMemberPreferences(
         db,
         member.tenantId,
         member.principalId,
         patch,
       );
+
+      // Self-service enablement (CL-3510): toggling `inbox.capability.<provider>`
+      // writes/revokes the member's per-principal capability grant so the
+      // toggle has real effect (least privilege — exactly that provider,
+      // revoked on toggle-off). Only providers present in this patch are
+      // touched; the rest are left as-is.
+      for (const cfg of OAUTH_PROVIDER_CATALOG) {
+        const key = inboxCapabilityPreferenceKey(cfg.providerName);
+        if (!(key in patch)) continue;
+        await setPrincipalCapabilityGrant(db, {
+          tenantId: member.tenantId,
+          principalId: member.principalId,
+          provider: cfg.providerName,
+          enabled: patch[key] !== false,
+        });
+      }
       return c.json(merged);
     },
   );

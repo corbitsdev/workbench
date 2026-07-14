@@ -174,10 +174,11 @@ const PREFERENCE_REGISTRY_BASE: readonly PreferenceEntry[] = [
  * `governance.ts`). Adding a source is purely additive: tag the provider's
  * catalog entry and, when it is wired into an intake step, check
  * `enabledSources` there. No registry restructuring is needed and no
- * composer code changes. `granola` is the only source with a live intake
- * step today; the rest can be tagged for future wiring without touching this
- * file. Which of these a given tenant actually sees is a further,
- * credential-configured intersection — see `resolveAvailableBriefSources`.
+ * composer code changes. Every source carrying a `briefSource.tool` has a
+ * live heartbeat intake step (CL-3492 wired four — see `WIRED_BRIEF_SOURCES`);
+ * a source tagged without a tool is catalog-only until one is wired. Which of
+ * these a given tenant actually sees is a further, credential-configured
+ * intersection — see `resolveAvailableBriefSources`.
  */
 export const BRIEF_SOURCE_CATALOG: readonly {
   key: string;

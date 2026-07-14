@@ -487,6 +487,34 @@ export async function findMemberConnection(
   };
 }
 
+// Delete a member's principal-owned OAuth credential for a provider (the write
+// side of Settings → Connections → Disconnect, CL-3510). Returns the number of
+// rows removed so the caller can tell a real disconnect from a no-op. Revoking
+// the paired per-principal capability grant is the caller's responsibility
+// (`setPrincipalCapabilityGrant({ enabled: false })`) — kept explicit so the
+// credential and the grant stay in lockstep.
+export async function deleteMemberConnection(
+  db: HubDb,
+  tenantId: string,
+  memberPrincipalId: string,
+  providerName: string,
+): Promise<number> {
+  const providerRow = await resolveProviderByName(db, tenantId, providerName);
+  if (!providerRow) return 0;
+  const deleted = await db
+    .delete(credential)
+    .where(
+      and(
+        eq(credential.tenantId, tenantId),
+        eq(credential.providerId, providerRow.id),
+        eq(credential.principalId, memberPrincipalId),
+        eq(credential.type, "oauth_token"),
+      ),
+    )
+    .returning({ id: credential.id });
+  return deleted.length;
+}
+
 /** A member's usable, DECRYPTED OAuth token for a provider. */
 export interface ResolvedOAuthToken {
   credentialId: string;

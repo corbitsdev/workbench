@@ -11,10 +11,14 @@ import {
 } from "@workbench/shared";
 import { requireOAuthStateSecret } from "../config";
 import type { HubDb } from "../db";
-import { isCapabilityAllowedForPrincipal } from "../lib/capability-grants";
+import {
+  isCapabilityAllowedForPrincipal,
+  setPrincipalCapabilityGrant,
+} from "../lib/capability-grants";
 import { readMemberPreferences } from "../lib/member-preferences";
 import {
   beginConnect,
+  deleteMemberConnection,
   findMemberConnection,
   resolveOwnerOAuthClient,
 } from "../lib/oauth-flow";
@@ -204,6 +208,50 @@ export function createMeConnectionsRouter(
         pendingStore,
       });
       return c.json({ redirectUrl });
+    },
+  );
+
+  app.delete(
+    "/me/connections/:provider",
+    describeRoute({
+      tags: ["Me"],
+      summary: "Disconnect a provider (delete the member's OAuth credential)",
+      description:
+        "Removes the caller's principal-owned OAuth credential for the provider and revokes the paired per-principal capability grant, so the capability is no longer usable (least privilege). Idempotent: disconnecting an already-disconnected provider succeeds. 404 for an unknown provider.",
+      responses: {
+        200: {
+          description: "Disconnected (or already disconnected)",
+        },
+        404: {
+          description: "Unknown / non-connectable provider",
+          content: { "application/json": { schema: resolver(ErrorResponse) } },
+        },
+      },
+    }),
+    async (c) => {
+      const userId = c.get("userId");
+      const providerName = c.req.param("provider");
+      const cfg = findOAuthProviderConfig(providerName);
+      if (!cfg) return c.json({ error: "Unknown provider" }, 404);
+
+      const member = await resolveCallerMember(db, userId);
+      if (!member) return c.json({ error: "No provisioned membership" }, 409);
+
+      await deleteMemberConnection(
+        db,
+        member.tenantId,
+        member.principalId,
+        providerName,
+      );
+      // Revoke the self-service capability grant regardless of whether a
+      // credential row existed — a disconnect must leave no residual grant.
+      await setPrincipalCapabilityGrant(db, {
+        tenantId: member.tenantId,
+        principalId: member.principalId,
+        provider: providerName,
+        enabled: false,
+      });
+      return c.json({ disconnected: true });
     },
   );
 

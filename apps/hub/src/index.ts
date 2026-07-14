@@ -80,6 +80,7 @@ import {
 import { createRunLivenessSweep } from "./services/run-liveness-sweep";
 import { createWorkflowRunStarter } from "./services/workflow-run-starter";
 import { createScheduler } from "./services/scheduler";
+import { createInboxIntake } from "./services/inbox-intake";
 import { createTaskReconcilerService } from "./services/task-reconciler";
 import { createTaskPushService, TASK_ADAPTERS } from "@workbench/tasks";
 import { resolveAdapterCredential } from "./lib/task-credential";
@@ -1260,7 +1261,7 @@ v1.route("/", createFileParseRouter(db));
 v1.route("/", createGammaTemplatesRouter(db));
 v1.route("/", createApprovalsRouter(db, approvalsEventBus));
 v1.route("/", createFeedbackRouter(db));
-v1.route("/", createMePreferencesRouter(db));
+v1.route("/", createMePreferencesRouter(db, grantStore));
 // Per-user OAuth connections (CL-3356). The PKCE verifier store is shared with
 // the public callback router below so an authorize on one request and its
 // callback on another find the same server-side verifier. `state` is signed
@@ -1587,6 +1588,55 @@ const scheduler = createScheduler({
   },
 });
 scheduler.start();
+
+// Live per-item inbox intake (CL-3511): poll each Myra member's enabled inbox
+// sources and land new external items as mailbox rows, flowing through the
+// same triage pipeline as inbound mail. Gated on the `scheduler` feature grant
+// (same env override OR owner grant) — the other durable-poll automation.
+// Single-replica assumption, like the scheduler above.
+const listInboxMembers = async () => {
+  const rows = await db
+    .select({
+      memberPrincipalId: schema.memberAgentInstance.memberPrincipalId,
+      refId: intxSchema.principal.refId,
+    })
+    .from(schema.memberAgentInstance)
+    .innerJoin(
+      intxSchema.principal,
+      eq(intxSchema.principal.id, schema.memberAgentInstance.memberPrincipalId),
+    )
+    .where(
+      and(
+        eq(schema.memberAgentInstance.tenantId, rootTenantId),
+        eq(schema.memberAgentInstance.templateKey, "myra"),
+      ),
+    );
+  return rows.map((row) => ({
+    tenantId: rootTenantId,
+    memberPrincipalId: row.memberPrincipalId,
+    inboxAddress: deriveUserMailAddress({
+      userRefId: row.refId,
+      domain: config.rootTenant.domain,
+    }),
+    tenantDomain: config.rootTenant.domain,
+  }));
+};
+
+const inboxIntake = createInboxIntake({
+  db,
+  grantStore,
+  listMembers: listInboxMembers,
+  mailboxEventBus,
+  mailboxTriage,
+  isTenantEnabled: (tenantId) =>
+    isFeatureEnabledForTenantCached(
+      db,
+      tenantId,
+      "scheduler",
+      config.scheduler.enabled,
+    ),
+});
+inboxIntake.start();
 
 // Native-task pending-ref reconciler. Gated by the `tasks-reconciler` feature
 // grant on the root tenant (env override OR owner grant, default OFF); the
