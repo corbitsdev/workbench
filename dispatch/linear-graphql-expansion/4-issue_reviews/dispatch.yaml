@@ -1,0 +1,26 @@
+# Run at most 2 review agents in parallel to avoid OOM.
+# Each agent: load pull-request-review + code-review; review origin/staging..HEAD for one issue's acceptance criteria only.
+
+agents:
+  - id: review-cl-3592
+    issue: CL-3592
+  - id: review-cl-3593
+    issue: CL-3593
+  - id: review-cl-3594
+    issue: CL-3594
+  - id: review-cl-3595
+    issue: CL-3595
+  - id: review-cl-3596
+    issue: CL-3596
+  - id: review-cl-3597
+    issue: CL-3597
+  - id: review-cl-3598
+    issue: CL-3598
+  - id: review-cl-3599
+    issue: CL-3599
+  - id: review-cl-3608
+    issue: CL-3608
+  - id: review-cl-3609
+    issue: CL-3609
+  - id: review-cl-3610
+    issue: CL-3610

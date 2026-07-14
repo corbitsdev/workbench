@@ -58,6 +58,17 @@ const ISSUE_RELATIONS_FIELDS = `
   }
 `;
 
+const ISSUE_CUSTOMER_NEEDS_FIELDS = `
+  customerNeeds {
+    nodes {
+      id
+      body
+      priority
+      customer { id name }
+    }
+  }
+`;
+
 const LIST_ISSUES_QUERY = `query ListIssues($first: Int!, $after: String, $filter: IssueFilter, $orderBy: PaginationOrderBy) {
   issues(first: $first, after: $after, filter: $filter, orderBy: $orderBy) {
     nodes {${ISSUE_FIELDS}}
@@ -84,6 +95,21 @@ const GET_ISSUE_WITH_RELATIONS_QUERY = `query GetIssueWithRelations($id: String!
   issue(id: $id) {
     ${ISSUE_DETAIL_FIELDS}
     ${ISSUE_RELATIONS_FIELDS}
+  }
+}`;
+
+const GET_ISSUE_WITH_CUSTOMER_NEEDS_QUERY = `query GetIssueWithCustomerNeeds($id: String!) {
+  issue(id: $id) {
+    ${ISSUE_DETAIL_FIELDS}
+    ${ISSUE_CUSTOMER_NEEDS_FIELDS}
+  }
+}`;
+
+const GET_ISSUE_FULL_QUERY = `query GetIssueFull($id: String!) {
+  issue(id: $id) {
+    ${ISSUE_DETAIL_FIELDS}
+    ${ISSUE_RELATIONS_FIELDS}
+    ${ISSUE_CUSTOMER_NEEDS_FIELDS}
   }
 }`;
 
@@ -149,6 +175,7 @@ const ListIssuesArgsSchema = type({
 const GetIssueArgsSchema = type({
   id: "string > 0",
   "includeRelations?": "boolean",
+  "includeCustomerNeeds?": "boolean",
 });
 
 const CreateIssueArgsSchema = type({
@@ -167,6 +194,11 @@ const UpdateIssueArgsSchema = type({
   "assignee?": "string",
   "project?": "string",
   "teamId?": "string",
+  "cycle?": "string",
+  "milestone?": "string",
+  "dueDate?": "string",
+  "estimate?": "number",
+  "labelIds?": "string[]",
 });
 
 const LinkIssuesArgsSchema = type({
@@ -294,12 +326,16 @@ export async function getIssue(
 ): Promise<unknown> {
   const args = parseArgs(GetIssueArgsSchema, rawArgs, "linear_get_issue");
   const includeRelations = args.includeRelations === true;
-  const data = await fetchLinearGraphQL(
-    config,
-    includeRelations ? GET_ISSUE_WITH_RELATIONS_QUERY : GET_ISSUE_QUERY,
-    { id: args.id },
-    signal,
-  );
+  const includeCustomerNeeds = args.includeCustomerNeeds === true;
+  const query =
+    includeRelations && includeCustomerNeeds
+      ? GET_ISSUE_FULL_QUERY
+      : includeRelations
+        ? GET_ISSUE_WITH_RELATIONS_QUERY
+        : includeCustomerNeeds
+          ? GET_ISSUE_WITH_CUSTOMER_NEEDS_QUERY
+          : GET_ISSUE_QUERY;
+  const data = await fetchLinearGraphQL(config, query, { id: args.id }, signal);
   if (data.issue === null || data.issue === undefined) {
     throw new Error(`Linear issue not found: ${args.id}`);
   }
@@ -354,6 +390,21 @@ export async function updateIssue(
   }
   if (args.teamId !== undefined) {
     input.teamId = args.teamId;
+  }
+  if (args.cycle !== undefined) {
+    input.cycleId = args.cycle;
+  }
+  if (args.milestone !== undefined) {
+    input.projectMilestoneId = args.milestone;
+  }
+  if (args.dueDate !== undefined) {
+    input.dueDate = args.dueDate;
+  }
+  if (args.estimate !== undefined) {
+    input.estimate = args.estimate;
+  }
+  if (args.labelIds !== undefined) {
+    input.labelIds = args.labelIds;
   }
   if (Object.keys(input).length === 0) {
     throw new Error("At least one field to update is required");
@@ -487,6 +538,10 @@ export const LINEAR_GET_ISSUE_DEFINITION: ToolDefinition = {
         type: "boolean",
         description: "Include issue relation nodes when true.",
       },
+      includeCustomerNeeds: {
+        type: "boolean",
+        description: "Include linked customer needs when true.",
+      },
     },
     required: ["id"],
   },
@@ -523,6 +578,15 @@ export const LINEAR_UPDATE_ISSUE_DEFINITION: ToolDefinition = {
       assignee: { type: "string", description: "User id." },
       project: { type: "string", description: "Project id." },
       teamId: { type: "string" },
+      cycle: { type: "string", description: "Cycle id." },
+      milestone: { type: "string", description: "Project milestone id." },
+      dueDate: { type: "string", description: "ISO due date." },
+      estimate: { type: "number" },
+      labelIds: {
+        type: "array",
+        items: { type: "string" },
+        description: "Label ids to set on the issue.",
+      },
     },
     required: ["id"],
   },

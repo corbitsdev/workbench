@@ -344,6 +344,7 @@ const PHRASES: Record<string, FriendlyPhrase> = {
   linear_list_views: "Listing Linear views",
   linear_list_dashboards: "Listing Linear dashboards",
   linear_list_webhooks: "Listing Linear webhooks",
+  linear_list_integrations: "Listing Linear integrations",
   linear_save_webhook: (args) => {
     const label = firstStringArg(args, ["label", "url"]);
     return label === null

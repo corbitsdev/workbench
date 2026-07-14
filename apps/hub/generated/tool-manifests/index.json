@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-07-14T07:54:16.919Z",
+  "generatedAt": "2026-07-14T07:54:39.170Z",
   "factories": [
     {
       "factoryId": "@workbench/tools-ab-compare/compose",
@@ -480,6 +480,7 @@
         "linear_list_documents",
         "linear_list_initiative_labels",
         "linear_list_initiatives",
+        "linear_list_integrations",
         "linear_list_issue_labels",
         "linear_list_issue_statuses",
         "linear_list_issues",
@@ -543,7 +544,8 @@
         "linear_list_dashboards": "read",
         "linear_list_webhooks": "read",
         "linear_save_webhook": "write",
-        "linear_delete_webhook": "write"
+        "linear_delete_webhook": "write",
+        "linear_list_integrations": "read"
       },
       "myraCatalog": {
         "catalogPackage": "linear",

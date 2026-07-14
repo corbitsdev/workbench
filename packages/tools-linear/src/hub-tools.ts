@@ -15,6 +15,10 @@ import {
 } from "./comments";
 import { listCycles, LINEAR_LIST_CYCLES_DEFINITION } from "./cycles";
 import {
+  listIntegrations,
+  LINEAR_LIST_INTEGRATIONS_DEFINITION,
+} from "./integrations";
+import {
   getDocument,
   listDocuments,
   LINEAR_GET_DOCUMENT_DEFINITION,
@@ -289,6 +293,11 @@ export const LINEAR_HUB_TOOLS: Record<string, LinearHubToolEntry> = {
     LINEAR_DELETE_WEBHOOK_DEFINITION,
     deleteWebhook,
     "write",
+  ),
+  linear_list_integrations: linearHubEntry(
+    LINEAR_LIST_INTEGRATIONS_DEFINITION,
+    listIntegrations,
+    "read",
   ),
 };
 
