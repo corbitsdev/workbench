@@ -23,7 +23,7 @@ These WRITE to Attio and are approval-gated (`sideEffect: "write"`): a call open
 
 - Credential (`attio` provider) is resolved by Interchange at tool execution time — not at agent launch
 - The tool grants `tool:<name>/invoke` are synthesized at session launch from the agent's capabilities list; do not add them to the DB
-- A new write tool must be added to `APPROVAL_GATED_TOOL_NAMES` in `@workbench/agents` or the drift guard fails
+- A new write tool must declare `sideEffect: "write"` on its hub entry (and regen manifests); the drift guard derives gating from that classification
 - Keep the tool schemas in sync with what agents declare in their system prompts
 
 ## Testing

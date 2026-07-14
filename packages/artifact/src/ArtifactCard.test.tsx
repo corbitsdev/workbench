@@ -24,15 +24,24 @@ const artifact: GalleryArtifact = {
 };
 
 describe("ArtifactCard", () => {
-  it("renders the type label, from, time, and a zero-padded index badge", () => {
-    render(React.createElement(ArtifactCard, { artifact, index: 3 }));
+  it("renders the type label, from, and time", () => {
+    render(React.createElement(ArtifactCard, { artifact }));
     expect(screen.getByText("Email")).toBeDefined();
     expect(screen.getByText("Acme Corp")).toBeDefined();
     expect(screen.getByText("2 hours ago")).toBeDefined();
-    // Badge is the label's first letter plus the padded index: "E03".
-    expect(screen.getByText("E03")).toBeDefined();
     // Provenance badge is always surfaced.
     expect(screen.getByText("Workflow")).toBeDefined();
+  });
+
+  it("renders no decorative position badge markup", () => {
+    const { container } = render(
+      React.createElement(ArtifactCard, { artifact }),
+    );
+    // The removed badge was the label's first letter + a zero-padded index
+    // (e.g. "E03"). No element should carry that pattern as its sole text.
+    for (const el of Array.from(container.querySelectorAll("span"))) {
+      expect(el.textContent ?? "").not.toMatch(/^[A-Z]\d{2}$/);
+    }
   });
 
   it("omits the provenance chip for an unknown/legacy source", () => {
@@ -43,7 +52,6 @@ describe("ArtifactCard", () => {
           provenance: "Unknown source",
           provenanceTone: "unknown",
         },
-        index: 1,
       }),
     );
     expect(screen.queryByText("Unknown source")).toBeNull();
@@ -57,7 +65,6 @@ describe("ArtifactCard", () => {
           provenance: "Last 30 Days",
           provenanceTone: "free",
         },
-        index: 1,
       }),
     );
     const chip = screen.getByText("Last 30 Days");
@@ -65,23 +72,34 @@ describe("ArtifactCard", () => {
     expect(chip.className).toContain("truncate");
   });
 
-  it("renders solid fill hero and footer status on default gallery cards", () => {
+  it("renders solid fill hero on default gallery cards, without a Draft badge", () => {
     const { container } = render(
-      React.createElement(ArtifactCard, { artifact, index: 1 }),
+      React.createElement(ArtifactCard, { artifact }),
     );
     const card = container.firstElementChild as HTMLElement;
     expect(card.getAttribute("data-preview-family")).toBe("email");
-    expect(screen.getByText("Draft")).toBeDefined();
+    // status is "draft" — the default, non-signal state — so no badge.
+    expect(screen.queryByText("Draft")).toBeNull();
     expect(card.querySelector("pre")).toBeNull();
     expect(screen.queryByText("Quick follow-up on our call")).toBeNull();
     expect(card.querySelector(".bg-orange")).not.toBeNull();
+  });
+
+  it("omits the `from · time` line entirely when `from` is absent", () => {
+    const { from: _from, ...withoutFrom } = artifact;
+    render(
+      React.createElement(ArtifactCard, {
+        artifact: withoutFrom as GalleryArtifact,
+      }),
+    );
+    expect(screen.getByText("2 hours ago")).toBeDefined();
+    expect(screen.queryByText("·")).toBeNull();
   });
 
   it("renders excerpt preview when experimental cards are enabled", () => {
     render(
       React.createElement(ArtifactCard, {
         artifact,
-        index: 1,
         experimental: true,
       }),
     );
@@ -90,37 +108,46 @@ describe("ArtifactCard", () => {
 
   it("renders ArtifactViz in the hero on default cards even when an excerpt exists", () => {
     const { container } = render(
-      React.createElement(ArtifactCard, { artifact, index: 1 }),
+      React.createElement(ArtifactCard, { artifact }),
     );
     const preview = container.querySelector('[class*="min-h-[120px]"]');
     expect(screen.queryByText("Quick follow-up on our call")).toBeNull();
     expect(preview?.querySelector("svg")).not.toBeNull();
   });
 
-  it("uses charcoal index badge on cream fills for contrast", () => {
-    const { container } = render(
-      React.createElement(ArtifactCard, {
-        artifact: { ...artifact, fill: "bg-cream", kind: "report" },
-        index: 4,
-      }),
-    );
-    const badge = screen.getByText("E04");
-    expect(badge.className).toContain("text-charcoal-deep");
-    expect(badge.className).not.toContain("text-white");
-    const footer = container.querySelector(".border-t.border-border");
-    expect(footer?.textContent).toContain("Draft");
-  });
-
-  it("styles approved status with workbench green tokens", () => {
+  it("styles approved status with workbench green tokens and shows the badge", () => {
     render(
       React.createElement(ArtifactCard, {
         artifact: { ...artifact, status: "approved" },
-        index: 1,
       }),
     );
     const approved = screen.getByText("Approved");
     expect(approved.className).toContain("bg-green/10");
     expect(approved.className).toContain("text-green");
+  });
+
+  it("shows the Rejected badge for a rejected artifact", () => {
+    render(
+      React.createElement(ArtifactCard, {
+        artifact: { ...artifact, status: "rejected" },
+      }),
+    );
+    const rejected = screen.getByText("Rejected");
+    expect(rejected.className).toContain("text-red");
+  });
+
+  it("shows the status badge in the experimental overlay only for a non-draft status", () => {
+    const { rerender } = render(
+      React.createElement(ArtifactCard, { artifact, experimental: true }),
+    );
+    expect(screen.queryByText("Draft")).toBeNull();
+    rerender(
+      React.createElement(ArtifactCard, {
+        artifact: { ...artifact, status: "approved" },
+        experimental: true,
+      }),
+    );
+    expect(screen.getByText("Approved")).toBeDefined();
   });
 
   it("honors experimental fill and span overrides", () => {
@@ -131,7 +158,6 @@ describe("ArtifactCard", () => {
           experimentalFill: "bg-orange/85",
           experimentalSpan: "row-span-2",
         },
-        index: 1,
         experimental: true,
       }),
     );
@@ -144,13 +170,13 @@ describe("ArtifactCard", () => {
   });
 
   it("exposes no button role when onOpen is omitted", () => {
-    render(React.createElement(ArtifactCard, { artifact, index: 1 }));
+    render(React.createElement(ArtifactCard, { artifact }));
     expect(screen.queryByRole("button")).toBeNull();
   });
 
   it("invokes onOpen with the artifact on click", () => {
     const onOpen = mock((_a: GalleryArtifact) => {});
-    render(React.createElement(ArtifactCard, { artifact, index: 1, onOpen }));
+    render(React.createElement(ArtifactCard, { artifact, onOpen }));
     fireEvent.click(
       screen.getByRole("button", { name: "Open Sales automation ROI" }),
     );
@@ -160,7 +186,7 @@ describe("ArtifactCard", () => {
 
   it("activates on Enter and Space and suppresses default scrolling", () => {
     const onOpen = mock(() => {});
-    render(React.createElement(ArtifactCard, { artifact, index: 1, onOpen }));
+    render(React.createElement(ArtifactCard, { artifact, onOpen }));
     const card = screen.getByRole("button");
 
     const enter = fireEvent.keyDown(card, { key: "Enter" });
@@ -174,7 +200,7 @@ describe("ArtifactCard", () => {
 
   it("ignores other keys", () => {
     const onOpen = mock(() => {});
-    render(React.createElement(ArtifactCard, { artifact, index: 1, onOpen }));
+    render(React.createElement(ArtifactCard, { artifact, onOpen }));
     fireEvent.keyDown(screen.getByRole("button"), { key: "a" });
     expect(onOpen).not.toHaveBeenCalled();
   });
