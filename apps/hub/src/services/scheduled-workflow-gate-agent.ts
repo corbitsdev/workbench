@@ -15,6 +15,7 @@ import { agentInstance, memberAgentInstance } from "../db/schema";
 import { loadWorkflowGateInfos } from "../lib/workflow-catalog";
 import {
   kindAllowsScheduledPostIntakeDrive,
+  SCHEDULED_POST_INTAKE_DRIVE_KIND_ALLOWLIST,
   type WorkflowGateInfo,
 } from "../lib/workflow-gate-info";
 import { isFeatureEnabledForTenantCached } from "../lib/feature-grants";
@@ -84,10 +85,14 @@ export type ScheduledWorkflowGateAgentDeps = {
   /** Test seam: override the in-memory drive queue cap (default 32). */
   maxQueue?: number;
   now?: () => number;
+  /** Test seam: substitute pending-gate resolution (defaults to describePendingGates). */
+  describePendingGatesFn?: typeof describePendingGates;
 };
 
 export type ScheduledWorkflowGateAgent = {
-  maybeEnqueue: (args: AwaitingRunContext & { repoStore: RepoStore }) => void;
+  maybeEnqueue: (
+    args: AwaitingRunContext & { repoStore: RepoStore },
+  ) => Promise<void>;
   handleTurnFinalized: (agentAddress: string, turn: TurnFinalized) => void;
   waitForDrain: () => Promise<void>;
 };
@@ -102,6 +107,8 @@ export function createScheduledWorkflowGateAgent(
   const turnTimeoutMs = deps.turnTimeoutMs ?? DEFAULT_TURN_TIMEOUT_MS;
   const maxTurns = deps.maxTurns ?? DEFAULT_MAX_TURNS;
   const maxQueue = deps.maxQueue ?? MAX_QUEUE;
+  const resolvePendingGates =
+    deps.describePendingGatesFn ?? describePendingGates;
   const queue: QueueItem[] = [];
   const inFlight = new Set<string>();
   const pendingTurns = new Map<
@@ -180,7 +187,7 @@ export function createScheduledWorkflowGateAgent(
   }
 
   async function gateStillOpen(args: ScheduledGateDriveArgs): Promise<boolean> {
-    const gates = await describePendingGates(
+    const gates = await resolvePendingGates(
       {
         repoStore: args.repoStore,
         deploymentDomain: deps.deploymentDomain,
@@ -402,12 +409,12 @@ export function createScheduledWorkflowGateAgent(
 
   return {
     maybeEnqueue(args) {
-      void (async () => {
+      return (async () => {
         if (!(await isTenantEnabled(args.tenantId))) return;
         const record = await loadRunRecord(deps.db, args.runId);
         if (record?.triggerSource !== "scheduler") return;
 
-        const gates = await describePendingGates(
+        const gates = await resolvePendingGates(
           {
             repoStore: args.repoStore,
             deploymentDomain: deps.deploymentDomain,
@@ -424,9 +431,12 @@ export function createScheduledWorkflowGateAgent(
         );
         if (targets.length > 0) {
           const gateInfos = await loadWorkflowGateInfos();
-          const gateInfo: WorkflowGateInfo | undefined = gateInfos.get(
-            args.kind,
-          );
+          const catalogInfo = gateInfos.get(args.kind);
+          const gateInfo: WorkflowGateInfo | undefined =
+            catalogInfo ??
+            (SCHEDULED_POST_INTAKE_DRIVE_KIND_ALLOWLIST.has(args.kind)
+              ? { requiresIntake: true, humanGateCount: 2 }
+              : undefined);
           if (
             gateInfo === undefined ||
             !kindAllowsScheduledPostIntakeDrive(args.kind, gateInfo)
@@ -481,7 +491,7 @@ export function createScheduledWorkflowGateAgent(
           runId: args.runId,
           error: err instanceof Error ? err : new Error(String(err)),
         });
-      });
+      }) as Promise<void>;
     },
 
     handleTurnFinalized(agentAddress, turn) {

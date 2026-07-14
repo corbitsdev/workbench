@@ -1,5 +1,9 @@
 import { beforeEach, describe, expect, it, mock } from "bun:test";
 import type { TurnFinalized } from "@workbench/event-collector";
+
+mock.module("../config", () => ({
+  getConfig: () => ({ featureGrantCacheTtlMs: 30_000 }),
+}));
 import type { HubDb } from "../db";
 import { resetFeatureGrantCache } from "../lib/feature-grants";
 
@@ -39,6 +43,8 @@ mock.module("../workflow-executor/pending-gate-info", () => ({
 mock.module("../workflow-executor/run-store", () => ({
   loadRunRecord: mock(async () => ({ triggerSource: "scheduler" })),
   setRunStatus: mock(async () => undefined),
+  setPendingSignal: mock(async () => undefined),
+  loadDeploymentMeta: mock(async () => null),
 }));
 
 mock.module("../workflow-executor/run-terminal-mail", () => ({

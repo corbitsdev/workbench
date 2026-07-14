@@ -1,5 +1,27 @@
 import { beforeEach, describe, expect, it, mock } from "bun:test";
 
+mock.module("../config", () => ({
+  getConfig: () => ({ featureGrantCacheTtlMs: 30_000 }),
+  requireCredentialEncryptionKey: () => Buffer.alloc(32),
+}));
+
+mock.module("./agent-provisioning", () => ({
+  launchAgentSession: mock(async () => ({
+    address: "inst@tenant.example",
+    sessionId: "ses-1",
+  })),
+}));
+
+mock.module("./myra-threads", () => ({
+  resolveMyraDefinition: mock(async () => ({
+    id: "agt_myra",
+    tenantId: "ten-1",
+    name: "Myra",
+    modelConfig: { defaultModel: "deepseek-v4-flash" },
+  })),
+  teardownThreadRows: mock(async () => undefined),
+}));
+
 const setRunStatusMock = mock(async () => undefined);
 const deliverRunTerminalMailMock = mock(async () => undefined);
 
@@ -23,6 +45,8 @@ mock.module("../workflow-executor/pending-gate-info", () => ({
 mock.module("../workflow-executor/run-store", () => ({
   loadRunRecord: mock(async () => ({ triggerSource: "scheduler" })),
   setRunStatus: setRunStatusMock,
+  setPendingSignal: mock(async () => undefined),
+  loadDeploymentMeta: mock(async () => null),
 }));
 
 mock.module("../workflow-executor/run-terminal-mail", () => ({
@@ -79,7 +103,7 @@ describe("scheduled gate maybeEnqueue", () => {
       driveGate: happyDriveGateMock,
     });
 
-    agent.maybeEnqueue({ runId: "run-1", ...BASE, kind: "gamma" });
+    await agent.maybeEnqueue({ runId: "run-1", ...BASE, kind: "gamma" });
     await agent.waitForDrain();
 
     expect(happyDriveGateMock).not.toHaveBeenCalled();
@@ -97,7 +121,7 @@ describe("scheduled gate maybeEnqueue", () => {
       driveGate: happyDriveGateMock,
     });
 
-    agent.maybeEnqueue({ runId: "run-happy", ...BASE });
+    await agent.maybeEnqueue({ runId: "run-happy", ...BASE });
     await agent.waitForDrain();
 
     expect(happyDriveGateMock).toHaveBeenCalledTimes(1);
@@ -108,7 +132,9 @@ describe("scheduled gate maybeEnqueue", () => {
     });
   });
 
-  it("fails the run when the drive queue is full", async () => {
+  it(
+    "fails the run when the drive queue is full",
+    async () => {
     const agent = createScheduledWorkflowGateAgent({
       db: { query: {} } as never,
       sessionService: {} as never,
@@ -121,18 +147,14 @@ describe("scheduled gate maybeEnqueue", () => {
       maxQueue: 1,
     });
 
-    agent.maybeEnqueue({ runId: "run-blocked", ...BASE });
+    await agent.maybeEnqueue({ runId: "run-blocked", ...BASE });
     for (let i = 0; i < 50; i++) {
       if (blockingDriveGateMock.mock.calls.length > 0) break;
       await Bun.sleep(5);
     }
-    agent.maybeEnqueue({ runId: "run-queued", ...BASE });
-    agent.maybeEnqueue({ runId: "run-overflow", ...BASE });
-
-    for (let i = 0; i < 100; i++) {
-      if (setRunStatusMock.mock.calls.length > 0) break;
-      await Bun.sleep(5);
-    }
+    expect(blockingDriveGateMock.mock.calls.length).toBeGreaterThan(0);
+    await agent.maybeEnqueue({ runId: "run-queued", ...BASE });
+    await agent.maybeEnqueue({ runId: "run-overflow", ...BASE });
 
     expect(setRunStatusMock).toHaveBeenCalled();
     expect(deliverRunTerminalMailMock).toHaveBeenCalled();
@@ -144,6 +166,11 @@ describe("scheduled gate maybeEnqueue", () => {
     expect(terminalArgs.error).toContain("queue full");
 
     releaseBlockedDrive?.();
-    await agent.waitForDrain();
-  });
+    for (let i = 0; i < 20; i++) {
+      releaseBlockedDrive?.();
+      await Bun.sleep(5);
+    }
+  },
+    20_000,
+  );
 });

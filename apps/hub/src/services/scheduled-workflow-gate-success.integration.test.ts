@@ -8,6 +8,7 @@ import {
   extractStoredIntake,
   queueScheduledIntakeSignal,
 } from "../lib/scheduled-intake";
+import { resetFeatureGrantCache } from "../lib/feature-grants";
 import {
   applyRunProjection,
   insertRunRecord,
@@ -16,10 +17,13 @@ import {
 } from "../workflow-executor/run-store";
 import { foldRunEvents } from "../workflow-executor/projection-bridge";
 import { createScheduler } from "./scheduler";
-import type { ScheduledGateDriveArgs } from "./scheduled-workflow-gate-agent";
 
 const KIND = "scheduler-multi-gate-test";
 const AT_9_UTC = Date.UTC(2026, 6, 13, 9, 0, 0);
+
+mock.module("../config", () => ({
+  getConfig: () => ({ featureGrantCacheTtlMs: 30_000 }),
+}));
 
 const DDL = `
   CREATE TABLE workflow_run_record (
@@ -47,23 +51,24 @@ const GATE_INFOS = new Map([
 
 let pendingGates: Array<{ signalName: string }> = [];
 
+const describePendingGatesMock = mock(
+  async (): Promise<Array<{ signalName: string }>> => pendingGates,
+);
+
 mock.module("../workflow-executor/pending-gate-info", () => ({
-  describePendingGates: mock(async () => pendingGates),
+  describePendingGates: describePendingGatesMock,
 }));
 
 mock.module("../lib/workflow-catalog", () => ({
   loadWorkflowGateInfos: mock(async () => GATE_INFOS),
 }));
 
-const { createScheduledWorkflowGateAgent } = await import(
-  "./scheduled-workflow-gate-agent"
-);
-
 let client: PGlite;
 let db: HubDb;
 
 beforeEach(async () => {
   pendingGates = [];
+  resetFeatureGrantCache();
   client = new PGlite();
   await client.exec(DDL);
   db = drizzle(client, { schema }) as unknown as HubDb;
@@ -75,9 +80,16 @@ afterEach(async () => {
 
 describe("scheduler multi-gate success path (CL-3528)", () => {
   test("fires schedule, auto-queues intake, stub drive clears confirm, run completes", async () => {
+    const { createScheduledWorkflowGateAgent } = await import(
+      "./scheduled-workflow-gate-agent"
+    );
     let capturedRunId: string | undefined;
 
-    const driveGate = mock(async (args: ScheduledGateDriveArgs) => {
+    const driveGate = mock(async (args: {
+      runId: string;
+      signalName: string;
+      kind: string;
+    }) => {
       expect(args.signalName).toBe("confirm");
       expect(args.kind).toBe(KIND);
       await setPendingSignal(db, args.runId, {
@@ -105,6 +117,7 @@ describe("scheduler multi-gate success path (CL-3528)", () => {
       deploymentDomain: "tenant.example",
       schedulerFeatureDefaultEnabled: true,
       driveGate,
+      describePendingGatesFn: async () => pendingGates,
     });
 
     const scheduler = createScheduler({
@@ -165,8 +178,10 @@ describe("scheduler multi-gate success path (CL-3528)", () => {
               : undefined,
         });
         pendingGates = [{ signalName: "confirm" }];
+        const beforeDrive = await loadRunRecord(db, runId);
+        expect(beforeDrive?.triggerSource).toBe("scheduler");
 
-        agent.maybeEnqueue({
+        await agent.maybeEnqueue({
           runId,
           kind: fire.kind,
           tenantId: fire.tenantId,
@@ -174,6 +189,7 @@ describe("scheduler multi-gate success path (CL-3528)", () => {
           deploymentId: "dep-multi",
           repoStore: {} as never,
         });
+        await agent.waitForDrain();
 
         return { deploymentId: "dep-multi", accepted: true };
       },
@@ -184,10 +200,10 @@ describe("scheduler multi-gate success path (CL-3528)", () => {
 
     expect(capturedRunId).toBeDefined();
     const final = await loadRunRecord(db, capturedRunId!);
+    expect(driveGate).toHaveBeenCalledTimes(1);
     expect(final?.status).toBe("completed");
     expect(final?.triggerSource).toBe("scheduler");
     expect(final?.pendingSignal ?? null).toBeNull();
-    expect(driveGate).toHaveBeenCalledTimes(1);
 
     const folded = foldRunEvents([
       {
