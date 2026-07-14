@@ -1,18 +1,9 @@
 import {
   Badge,
   Button,
-  Checkbox,
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
+  DataTable,
+  inputFieldClass,
+  type DataTableColumn,
 } from "@workbench/ui";
 import {
   openTaskStatuses,
@@ -20,11 +11,12 @@ import {
   type Task,
   type TaskStatus,
 } from "@workbench/shared";
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import {
   useBulkUpdateTaskStatus,
   useUpdateTaskStatus,
 } from "../hooks/use-task-mutations";
+import { ApiError } from "../lib/api";
 
 const OPEN_STATUS_SET = new Set<string>(openTaskStatuses);
 
@@ -34,12 +26,19 @@ const statusLabel: Record<(typeof openTaskStatuses)[number], string> = {
   waiting: "Waiting",
 };
 
+const TERMINAL_STATUS_LABEL: Record<"done" | "cancelled", string> = {
+  done: "Done",
+  cancelled: "Dismissed",
+};
+
 function sortOpenTasks(tasks: Task[]): Task[] {
   return [...tasks]
     .filter((t) => OPEN_STATUS_SET.has(t.status))
     .sort((a, b) => {
-      const ua = taskStatusUrgency[a.status as keyof typeof taskStatusUrgency] ?? 9;
-      const ub = taskStatusUrgency[b.status as keyof typeof taskStatusUrgency] ?? 9;
+      const ua =
+        taskStatusUrgency[a.status as keyof typeof taskStatusUrgency] ?? 9;
+      const ub =
+        taskStatusUrgency[b.status as keyof typeof taskStatusUrgency] ?? 9;
       if (ua !== ub) return ua - ub;
       return b.updatedAt.localeCompare(a.updatedAt);
     });
@@ -52,8 +51,21 @@ export type TasksPanelProps = {
 export function TasksPanel({ tasks }: TasksPanelProps) {
   const rows = useMemo(() => sortOpenTasks(tasks), [tasks]);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
+  const [taskActionError, setTaskActionError] = useState<string | null>(null);
   const updateStatus = useUpdateTaskStatus();
   const bulkUpdate = useBulkUpdateTaskStatus();
+
+  const reportTaskActionError = useCallback((err: unknown) => {
+    if (err instanceof ApiError) {
+      setTaskActionError(err.message || "Couldn't update your tasks.");
+      return;
+    }
+    if (err instanceof Error) {
+      setTaskActionError(err.message);
+      return;
+    }
+    setTaskActionError("Couldn't update your tasks.");
+  }, []);
 
   const allSelected =
     rows.length > 0 && rows.every((t) => selectedIds.has(t.id));
@@ -61,9 +73,7 @@ export function TasksPanel({ tasks }: TasksPanelProps) {
   const busy = updateStatus.isPending || bulkUpdate.isPending;
 
   function toggleAll(checked: boolean) {
-    setSelectedIds(
-      checked ? new Set(rows.map((t) => t.id)) : new Set(),
-    );
+    setSelectedIds(checked ? new Set(rows.map((t) => t.id)) : new Set());
   }
 
   function toggleOne(id: string, checked: boolean) {
@@ -78,13 +88,91 @@ export function TasksPanel({ tasks }: TasksPanelProps) {
   function runBulk(status: TaskStatus) {
     const ids = [...selectedIds];
     if (ids.length === 0) return;
-    bulkUpdate.mutate(
-      { ids, status },
-      {
-        onSuccess: () => setSelectedIds(new Set()),
-      },
-    );
+    setTaskActionError(null);
+    bulkUpdate
+      .mutateAsync({ ids, status })
+      .then(() => setSelectedIds(new Set()))
+      .catch(reportTaskActionError);
   }
+
+  const columns = useMemo((): DataTableColumn<Task>[] => {
+    return [
+      {
+        key: "select",
+        header: "",
+        className: "w-10",
+        render: (task) => (
+          <input
+            type="checkbox"
+            className="h-4 w-4 rounded border-border"
+            checked={selectedIds.has(task.id)}
+            disabled={busy}
+            onChange={(e) => toggleOne(task.id, e.target.checked)}
+            aria-label={`Select ${task.title}`}
+          />
+        ),
+      },
+      {
+        key: "title",
+        header: "Title",
+        render: (task) => (
+          <div className="flex flex-col gap-1">
+            <span className="font-medium text-foreground">{task.title}</span>
+            {task.body ? (
+              <span className="line-clamp-1 text-xs text-muted-foreground">
+                {task.body}
+              </span>
+            ) : null}
+          </div>
+        ),
+      },
+      {
+        key: "status",
+        header: "Status",
+        className: "w-[160px]",
+        render: (task) => (
+          <select
+            className={`${inputFieldClass} h-8 py-1`}
+            value={task.status}
+            disabled={busy}
+            aria-label="Task status"
+            onChange={(e) => {
+              setTaskActionError(null);
+              updateStatus
+                .mutateAsync({
+                  taskId: task.id,
+                  status: e.target.value as TaskStatus,
+                })
+                .catch(reportTaskActionError);
+            }}
+          >
+            {openTaskStatuses.map((s) => (
+              <option key={s} value={s}>
+                {statusLabel[s]}
+              </option>
+            ))}
+            <option value="done">{TERMINAL_STATUS_LABEL.done}</option>
+            <option value="cancelled">{TERMINAL_STATUS_LABEL.cancelled}</option>
+          </select>
+        ),
+      },
+      {
+        key: "updated",
+        header: "Updated",
+        className: "w-[120px]",
+        render: (task) => (
+          <Badge tone="neutral" className="font-normal">
+            {new Date(task.updatedAt).toLocaleDateString()}
+          </Badge>
+        ),
+      },
+    ];
+  }, [
+    busy,
+    reportTaskActionError,
+    selectedIds,
+    updateStatus,
+  ]);
 
   if (rows.length === 0) {
     return (
@@ -132,7 +220,7 @@ export function TasksPanel({ tasks }: TasksPanelProps) {
             <Button
               type="button"
               size="sm"
-              variant="outline"
+              variant="ghost"
               disabled={busy}
               onClick={() => runBulk("cancelled")}
             >
@@ -141,75 +229,30 @@ export function TasksPanel({ tasks }: TasksPanelProps) {
           </div>
         ) : null}
       </div>
-      <Table>
-        <TableHeader>
-          <TableRow>
-            <TableHead className="w-10">
-              <Checkbox
-                checked={allSelected}
-                onCheckedChange={(v) => toggleAll(v === true)}
-                aria-label="Select all tasks"
-              />
-            </TableHead>
-            <TableHead>Title</TableHead>
-            <TableHead className="w-[140px]">Status</TableHead>
-            <TableHead className="w-[120px]">Updated</TableHead>
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {rows.map((task) => (
-            <TableRow key={task.id}>
-              <TableCell>
-                <Checkbox
-                  checked={selectedIds.has(task.id)}
-                  onCheckedChange={(v) => toggleOne(task.id, v === true)}
-                  aria-label={`Select ${task.title}`}
-                />
-              </TableCell>
-              <TableCell>
-                <div className="flex flex-col gap-1">
-                  <span className="font-medium text-foreground">{task.title}</span>
-                  {task.description ? (
-                    <span className="line-clamp-1 text-xs text-muted-foreground">
-                      {task.description}
-                    </span>
-                  ) : null}
-                </div>
-              </TableCell>
-              <TableCell>
-                <Select
-                  value={task.status}
-                  disabled={busy}
-                  onValueChange={(value) => {
-                    updateStatus.mutate({
-                      taskId: task.id,
-                      status: value as TaskStatus,
-                    });
-                  }}
-                >
-                  <SelectTrigger className="h-8" aria-label="Task status">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {openTaskStatuses.map((s) => (
-                      <SelectItem key={s} value={s}>
-                        {statusLabel[s]}
-                      </SelectItem>
-                    ))}
-                    <SelectItem value="done">Done</SelectItem>
-                    <SelectItem value="cancelled">Dismissed</SelectItem>
-                  </SelectContent>
-                </Select>
-              </TableCell>
-              <TableCell className="text-xs text-muted-foreground">
-                <Badge variant="outline" className="font-normal">
-                  {new Date(task.updatedAt).toLocaleDateString()}
-                </Badge>
-              </TableCell>
-            </TableRow>
-          ))}
-        </TableBody>
-      </Table>
+      {taskActionError ? (
+        <p className="mx-4 mt-3 text-sm text-red-600" role="alert">
+          {taskActionError}
+        </p>
+      ) : null}
+      <div className="flex items-center gap-2 border-b border-border/60 px-4 py-2">
+        <input
+          type="checkbox"
+          className="h-4 w-4 rounded border-border"
+          checked={allSelected}
+          disabled={busy}
+          onChange={(e) => toggleAll(e.target.checked)}
+          aria-label="Select all tasks"
+        />
+        <span className="text-xs text-muted-foreground">Select all</span>
+      </div>
+      <div className="overflow-x-auto px-1 pb-1">
+        <DataTable
+          columns={columns}
+          rows={rows}
+          getRowKey={(task) => task.id}
+          caption="Open tasks"
+        />
+      </div>
     </section>
   );
 }
