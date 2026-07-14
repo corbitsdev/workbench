@@ -2,7 +2,10 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import {
   clearReasoningExpanded,
+  migrateReasoningExpandedSlotKeys,
   readReasoningExpanded,
+  reconcileReasoningExpandedAliases,
+  reasoningExpandedMessageKey,
   writeReasoningExpanded,
 } from "./reasoning-expanded-prefs";
 
@@ -59,5 +62,42 @@ describe("reasoning-expanded-prefs", () => {
     clearReasoningExpanded("m1", storage);
     expect(readReasoningExpanded("m1", storage)).toBe(false);
     expect(readReasoningExpanded("m2", storage)).toBe(true);
+  });
+
+  it("reasoningExpandedMessageKey prefers feedbackId", () => {
+    expect(
+      reasoningExpandedMessageKey({ id: "mail-a", feedbackId: "turn-t" }),
+    ).toBe("turn-t");
+    expect(reasoningExpandedMessageKey({ id: "turn-t" })).toBe("turn-t");
+  });
+
+  it("reconcileReasoningExpandedAliases moves mail id prefs onto feedbackId", () => {
+    writeReasoningExpanded("mail-a", true, storage);
+    const changed = reconcileReasoningExpandedAliases(
+      [
+        {
+          role: "agent",
+          id: "mail-a",
+          feedbackId: "turn-t",
+          reasoning: "Because",
+        },
+      ],
+      storage,
+    );
+    expect(changed).toBe(true);
+    expect(readReasoningExpanded("turn-t", storage)).toBe(true);
+    expect(readReasoningExpanded("mail-a", storage)).toBe(false);
+  });
+
+  it("migrateReasoningExpandedSlotKeys moves prefs when the slot id changes", () => {
+    writeReasoningExpanded("turn-t", true, storage);
+    const changed = migrateReasoningExpandedSlotKeys(
+      [{ id: "turn-t" }],
+      [{ id: "mail-a" }],
+      storage,
+    );
+    expect(changed).toBe(true);
+    expect(readReasoningExpanded("mail-a", storage)).toBe(true);
+    expect(readReasoningExpanded("turn-t", storage)).toBe(false);
   });
 });

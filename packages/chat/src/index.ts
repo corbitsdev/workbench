@@ -62,6 +62,9 @@ export {
   readReasoningExpanded,
   writeReasoningExpanded,
   clearReasoningExpanded,
+  reasoningExpandedMessageKey,
+  reconcileReasoningExpandedAliases,
+  migrateReasoningExpandedSlotKeys,
   type ReasoningExpandedMap,
 } from "./reasoning-expanded-prefs";
 export {
