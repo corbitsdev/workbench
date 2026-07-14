@@ -130,6 +130,8 @@ export function defaultRefLabel(ref: MailboxRef): string {
       return "Open artifact";
     case "workflow_run":
       return "Open run";
+    case "workflow_trace":
+      return "Open trace";
     case "task":
       return "Open task";
     case "mail":
