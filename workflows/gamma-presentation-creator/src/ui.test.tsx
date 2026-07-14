@@ -16,8 +16,9 @@ describe("ui.tsx browser-safety", () => {
   it("does not value-import the server-only ./index module", () => {
     const src = readFileSync(join(import.meta.dir, "ui.tsx"), "utf8");
     expect(src).not.toMatch(/import\s+\{[^}]*\}\s+from\s+["']\.\/index["']/);
-    // MAX_ROUNDS comes from the browser-safe constants module instead.
-    expect(src).toMatch(/from\s+["']\.\/constants["']/);
+    // The step flow/labels come from the browser-safe display-steps module
+    // instead (single-shot: CL-3614).
+    expect(src).toMatch(/from\s+["']\.\/display-steps["']/);
   });
 });
 
@@ -342,281 +343,27 @@ describe("artifact → gamma deck Panel", () => {
     );
   });
 
-  it("shows draft text and an external Gamma link without embedding an iframe", async () => {
-    const onSignal = mock(() => {});
-    const draft = "SLIDE 1: Hook\nThe buyer stalls at security review.";
+  it("shows a building-the-deck loading state once intake is submitted and generate/render are running", () => {
+    // Single-shot (CL-3614): no preview/refine gate between generate and
+    // persist — the panel just shows progress while the deck builds.
     renderPanel(
       <Panel
         logRead={true}
         deploymentId="dep_1"
         state={makeState({
-          "generate-1": "completed",
-          "render-1": "completed",
-          "preview-1": "awaiting-signal",
+          intake: "completed",
+          generate: "completed",
+          render: "in-flight",
         })}
         connected
         signalPending={false}
-        stepOutputs={{
-          "generate-1": { reply: draft },
-          "render-1": toolEnvelope("c4", {
-            gammaUrl: "https://gamma.app/docs/deck-1",
-          }),
-        }}
-        onSignal={onSignal}
-        onClose={noop}
-      />,
-    );
-
-    expect(screen.queryByTitle("Generated Gamma presentation")).toBeNull();
-    screen.getByText(/Hook/u);
-    expect(
-      screen.getByRole("link", { name: "Open in Gamma" }).getAttribute("href"),
-    ).toBe("https://gamma.app/docs/deck-1");
-
-    await userEvent.click(
-      screen.getByRole("button", { name: "Looks good — approve" }),
-    );
-    expect(onSignal).toHaveBeenCalledWith("preview-1", { approved: true });
-  });
-
-  it("keeps the preview gate answerable when draft text is missing", async () => {
-    const onSignal = mock(() => {});
-    renderPanel(
-      <Panel
-        logRead={true}
-        deploymentId="dep_1"
-        state={makeState({
-          "render-1": "completed",
-          "preview-1": "awaiting-signal",
-        })}
-        connected
-        signalPending={false}
-        stepOutputs={{
-          "render-1": toolEnvelope("c4", {
-            gammaUrl: "https://gamma.app/docs/deck-1",
-          }),
-        }}
-        onSignal={onSignal}
-        onClose={noop}
-      />,
-    );
-
-    screen.getByText(/Draft text isn't available here yet/i);
-    expect(
-      screen.getByRole("link", { name: "Open in Gamma" }).getAttribute("href"),
-    ).toBe("https://gamma.app/docs/deck-1");
-    await userEvent.click(
-      screen.getByRole("button", { name: "Looks good — approve" }),
-    );
-    expect(onSignal).toHaveBeenCalledWith("preview-1", { approved: true });
-  });
-
-  it("sends refine feedback from a non-final round", async () => {
-    const onSignal = mock(() => {});
-    renderPanel(
-      <Panel
-        logRead={true}
-        deploymentId="dep_1"
-        state={makeState({
-          "render-1": "completed",
-          "preview-1": "awaiting-signal",
-        })}
-        connected
-        signalPending={false}
-        stepOutputs={{
-          "render-1": toolEnvelope("c4", {
-            gammaUrl: "https://gamma.app/docs/deck-1",
-          }),
-        }}
-        onSignal={onSignal}
-        onClose={noop}
-      />,
-    );
-
-    await userEvent.type(
-      screen.getByLabelText("Refine feedback"),
-      "make it shorter",
-    );
-    await userEvent.click(
-      screen.getByRole("button", { name: "Refine with these notes" }),
-    );
-    expect(onSignal).toHaveBeenCalledWith("preview-1", {
-      approved: false,
-      feedback: "make it shorter",
-    });
-  });
-
-  it("offers no refine on the final round", () => {
-    renderPanel(
-      <Panel
-        logRead={true}
-        deploymentId="dep_1"
-        state={makeState({
-          "render-3": "completed",
-          "preview-3": "awaiting-signal",
-        })}
-        connected
-        signalPending={false}
-        stepOutputs={{
-          "render-3": toolEnvelope("c4", {
-            gammaUrl: "https://gamma.app/docs/deck-3",
-          }),
-        }}
+        stepOutputs={{}}
         onSignal={noop}
         onClose={noop}
       />,
     );
 
-    screen.getByText("This is the final draft — approve to save it.");
-    expect(
-      screen.queryByRole("button", { name: "Refine with these notes" }),
-    ).toBeNull();
-  });
-
-  it("disables approval while a signal is pending", () => {
-    renderPanel(
-      <Panel
-        logRead={true}
-        deploymentId="dep_1"
-        state={makeState({
-          "render-1": "completed",
-          "preview-1": "awaiting-signal",
-        })}
-        connected
-        signalPending={true}
-        stepOutputs={{
-          "render-1": toolEnvelope("c4", {
-            gammaUrl: "https://gamma.app/docs/deck-1",
-          }),
-        }}
-        onSignal={noop}
-        onClose={noop}
-      />,
-    );
-
-    const button = screen.getByRole("button", {
-      name: "Looks good — approve",
-    }) as HTMLButtonElement;
-    expect(button.disabled).toBe(true);
-  });
-
-  it("does not render an unsafe (non-https) deck url but keeps the gate answerable", async () => {
-    const onSignal = mock(() => {});
-    renderPanel(
-      <Panel
-        logRead={true}
-        deploymentId="dep_1"
-        state={makeState({
-          "render-1": "completed",
-          "preview-1": "awaiting-signal",
-        })}
-        connected
-        signalPending={false}
-        stepOutputs={{
-          "render-1": toolEnvelope("c4", { gammaUrl: "http://insecure/deck" }),
-        }}
-        onSignal={onSignal}
-        onClose={noop}
-      />,
-    );
-
-    expect(screen.queryByTitle("Generated Gamma presentation")).toBeNull();
-    expect(screen.queryByRole("link", { name: "Open in Gamma" })).toBeNull();
-    screen.getByText(/Gamma link isn't available/i);
-    // ...but the preview gate is still answerable so the run can't deadlock.
-    await userEvent.click(
-      screen.getByRole("button", { name: "Looks good — approve" }),
-    );
-    expect(onSignal).toHaveBeenCalledWith("preview-1", { approved: true });
-  });
-
-  it("resolves the approved round, not a gate-skipped later round, on the done screen", () => {
-    // Approving round 1 prunes rounds 2-3; the gate commits a real
-    // StepCompleted (phase `completed`) with a `{ skipped: true }` sentinel for
-    // every pruned step, including persist-2/persist-3. The done screen must
-    // resolve to the round that actually persisted (1) and show ITS deck — not
-    // the highest completed persist (a skipped 3 with no rendered deck).
-    renderPanel(
-      <Panel
-        logRead={true}
-        deploymentId="dep_1"
-        state={makeState(
-          {
-            "render-1": "completed",
-            "persist-1": "completed",
-            "render-3": "completed",
-            "persist-2": "completed",
-            "persist-3": "completed",
-          },
-          "completed",
-        )}
-        connected
-        signalPending={false}
-        stepOutputs={{
-          "render-1": toolEnvelope("c4", {
-            gammaUrl: "https://gamma.app/docs/deck-1",
-          }),
-          "persist-1": toolEnvelope("c5", { artifactId: "art_out" }),
-          "persist-2": {
-            skipped: true,
-            gateId: "check-1",
-            branch: "persist-2",
-          },
-          "persist-3": {
-            skipped: true,
-            gateId: "check-1",
-            branch: "persist-3",
-          },
-          "render-3": { skipped: true, gateId: "check-1", branch: "render-3" },
-        }}
-        onSignal={noop}
-        onClose={noop}
-      />,
-    );
-
-    screen.getByText("Saved to workbench");
-    expect(screen.queryByTitle("Generated Gamma presentation")).toBeNull();
-    expect(
-      screen.getByRole("link", { name: "Open in Gamma" }).getAttribute("href"),
-    ).toBe("https://gamma.app/docs/deck-1");
-  });
-
-  it("stays on the preview during a refine even though the pruned persist is completed", () => {
-    // Refusing round 1 routes to generate-2 and prunes the persist-1 branch, so
-    // persist-1 lands in `completed` with a skip sentinel. The panel must NOT
-    // mistake that for a finished run and show the done screen mid-refine.
-    renderPanel(
-      <Panel
-        logRead={true}
-        deploymentId="dep_1"
-        state={makeState({
-          "persist-1": "completed",
-          "render-2": "completed",
-          "preview-2": "awaiting-signal",
-        })}
-        connected
-        signalPending={false}
-        stepOutputs={{
-          "persist-1": {
-            skipped: true,
-            gateId: "check-1",
-            branch: "persist-1",
-          },
-          "render-2": toolEnvelope("c4", {
-            gammaUrl: "https://gamma.app/docs/deck-2",
-          }),
-        }}
-        onSignal={noop}
-        onClose={noop}
-      />,
-    );
-
-    expect(screen.queryByText("Saved to workbench")).toBeNull();
-    screen.getByRole("button", { name: "Looks good — approve" });
-    expect(screen.queryByTitle("Generated Gamma presentation")).toBeNull();
-    expect(
-      screen.getByRole("link", { name: "Open in Gamma" }).getAttribute("href"),
-    ).toBe("https://gamma.app/docs/deck-2");
+    screen.getByText("Building the deck in Gamma…");
   });
 
   it("distinguishes a failed source load from an empty list", async () => {
@@ -846,19 +593,19 @@ describe("artifact → gamma deck Panel", () => {
     expect(screen.queryByLabelText("Search artifacts")).toBeNull();
   });
 
-  it("shows the saved-to-workbench done screen once a round is persisted", () => {
+  it("shows the saved-to-workbench done screen once persist completes", () => {
     renderPanel(
       <Panel
         logRead={true}
         deploymentId="dep_1"
         state={makeState(
-          { "render-1": "completed", "persist-1": "completed" },
+          { render: "completed", persist: "completed" },
           "completed",
         )}
         connected
         signalPending={false}
         stepOutputs={{
-          "render-1": toolEnvelope("c4", {
+          render: toolEnvelope("c4", {
             gammaUrl: "https://gamma.app/docs/deck-1",
           }),
         }}
@@ -868,7 +615,6 @@ describe("artifact → gamma deck Panel", () => {
     );
 
     screen.getByText("Saved to workbench");
-    expect(screen.queryByTitle("Generated Gamma presentation")).toBeNull();
     expect(
       screen.getByRole("link", { name: "Open in Gamma" }).getAttribute("href"),
     ).toBe("https://gamma.app/docs/deck-1");
@@ -972,7 +718,7 @@ describe("artifact → gamma deck Panel", () => {
       <Panel
         logRead={true}
         deploymentId="dep_1"
-        state={makeState({ "generate-1": "failed" }, "failed")}
+        state={makeState({ generate: "failed" }, "failed")}
         connected
         signalPending={false}
         stepOutputs={{}}
@@ -991,9 +737,9 @@ describe("artifact → gamma deck Panel", () => {
       steps: new Map([
         ["intake", { stepId: "intake", phase: "completed", currentAttempt: 1 }],
         [
-          "generate-1",
+          "generate",
           {
-            stepId: "generate-1",
+            stepId: "generate",
             phase: "failed",
             currentAttempt: 1,
             lastError: {
