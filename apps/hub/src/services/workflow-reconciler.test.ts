@@ -26,6 +26,7 @@ const pendingRefreshes: {
   runId: string;
   signalId: string;
   receivedAt: string;
+  redeliveries?: number;
 }[] = [];
 let refreshResultRef = true;
 mock.module("../workflow-executor/run-store", () => ({
@@ -38,12 +39,13 @@ mock.module("../workflow-executor/run-store", () => ({
   refreshPendingSignalIfCurrent: async (
     _db: unknown,
     runId: string,
-    signal: { signalId: string; receivedAt: string },
+    signal: { signalId: string; receivedAt: string; redeliveries?: number },
   ) => {
     pendingRefreshes.push({
       runId,
       signalId: signal.signalId,
       receivedAt: signal.receivedAt,
+      redeliveries: signal.redeliveries,
     });
     return refreshResultRef;
   },
@@ -81,6 +83,7 @@ type RecordRow = {
     signalName: string;
     payload: unknown;
     receivedAt: string;
+    redeliveries?: number;
   } | null;
 };
 
@@ -663,6 +666,7 @@ describe("reconcileAwaiting — hibernation of long-parked runs", () => {
     // Per-record override of the CAS re-read the hibernate branch performs;
     // defaults to a re-read that matches the decision read (CAS passes).
     casOverride?: Map<string, CasRow>;
+    maxSignalRedeliveries?: number;
   }) {
     pendingRefreshes.length = 0;
     refreshResultRef = true;
@@ -710,6 +714,9 @@ describe("reconcileAwaiting — hibernation of long-parked runs", () => {
       },
       hibernationGraceMs: GRACE_MS,
       signalRedeliveryDelayMs: REDELIVERY_DELAY_MS,
+      ...(opts.maxSignalRedeliveries !== undefined
+        ? { maxSignalRedeliveries: opts.maxSignalRedeliveries }
+        : {}),
     });
     return { reconciler, ensured, undeploys, sentSignals };
   }
@@ -1036,6 +1043,76 @@ describe("reconcileAwaiting — hibernation of long-parked runs", () => {
 
     expect(h.undeploys).toEqual([]);
     expect(summary.hibernated).toBe(0);
+  });
+
+  it("dead-letters a run once its pending signal exhausts the redelivery cap (never delivers, never hibernates, marks the run failed)", async () => {
+    const pending = {
+      signalId: "sig-exhausted",
+      signalName: "approval",
+      payload: {},
+      receivedAt: new Date(Date.now() - REDELIVERY_DELAY_MS * 2).toISOString(),
+      redeliveries: 3,
+    };
+    const h = makeHarness({
+      records: [parkedRecord("ses_run_exhausted", GRACE_MS * 10, pending)],
+      routable: [addressOf("ses_run_exhausted")],
+      maxSignalRedeliveries: 3,
+    });
+    failRowsRef = new Map([
+      ["run_ses_run_exhausted", { status: "awaiting" }],
+    ]);
+
+    const summary = await h.reconciler.reconcileAwaiting();
+
+    expect(h.sentSignals).toEqual([]);
+    expect(h.ensured).toEqual([]);
+    expect(h.undeploys).toEqual([]);
+    expect(summary.redelivered).toBe(0);
+    expect(summary.deadLettered).toBe(1);
+    expect(failRowsRef.get("run_ses_run_exhausted")?.status).toBe("failed");
+  });
+
+  it("increments `redeliveries` on the refreshed pending signal below the cap", async () => {
+    const pending = {
+      signalId: "sig-counting",
+      signalName: "approval",
+      payload: {},
+      receivedAt: new Date(Date.now() - REDELIVERY_DELAY_MS * 2).toISOString(),
+      redeliveries: 2,
+    };
+    const h = makeHarness({
+      records: [parkedRecord("ses_run_counting", GRACE_MS * 10, pending)],
+      routable: [addressOf("ses_run_counting")],
+      maxSignalRedeliveries: 10,
+    });
+
+    const summary = await h.reconciler.reconcileAwaiting();
+
+    expect(summary.redelivered).toBe(1);
+    expect(summary.deadLettered).toBe(0);
+    expect(pendingRefreshes).toHaveLength(1);
+    expect(pendingRefreshes[0]?.redeliveries).toBe(3);
+  });
+
+  it("parses a legacy pending signal with no `redeliveries` field and treats it as 0 (delivers, does not dead-letter)", async () => {
+    const legacyPending = {
+      signalId: "sig-legacy",
+      signalName: "approval",
+      payload: {},
+      receivedAt: new Date(Date.now() - REDELIVERY_DELAY_MS * 2).toISOString(),
+    };
+    const h = makeHarness({
+      records: [parkedRecord("ses_run_legacy", GRACE_MS * 10, legacyPending)],
+      routable: [addressOf("ses_run_legacy")],
+      maxSignalRedeliveries: 3,
+    });
+
+    const summary = await h.reconciler.reconcileAwaiting();
+
+    expect(summary.redelivered).toBe(1);
+    expect(summary.deadLettered).toBe(0);
+    expect(h.sentSignals).toHaveLength(1);
+    expect(pendingRefreshes[0]?.redeliveries).toBe(1);
   });
 });
 
