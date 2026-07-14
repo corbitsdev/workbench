@@ -14,6 +14,36 @@ mock.module("../lib/tenant-provisioning", () => ({
   }),
 }));
 
+// CL-3629: the Slack-enable branch resolves a bot credential, calls
+// auth.test for the team id, and (best-effort) sweeps public channels. Mock
+// all three at the module boundary so these tests never hit the network;
+// `upsertSlackTeamMappingCalls` is asserted against directly.
+const FAKE_SLACK_CREDENTIAL = {
+  botToken: "xoxb-fake",
+  baseUrl: "https://slack.example/api",
+};
+let slackCredentialResult: typeof FAKE_SLACK_CREDENTIAL | null =
+  FAKE_SLACK_CREDENTIAL;
+let slackTeamIdResult: string | null = "T0TEAM";
+const upsertSlackTeamMappingCalls: { tenantId: string; slackTeamId: string }[] =
+  [];
+mock.module("../lib/slack-api-client", () => ({
+  resolveSlackCredential: async () => slackCredentialResult,
+  fetchSlackTeamId: async () => slackTeamIdResult,
+}));
+mock.module("../lib/slack-team-mapping", () => ({
+  upsertSlackTeamMapping: async (
+    _db: unknown,
+    tenantId: string,
+    slackTeamId: string,
+  ) => {
+    upsertSlackTeamMappingCalls.push({ tenantId, slackTeamId });
+  },
+}));
+mock.module("../lib/slack-channel-autojoin", () => ({
+  joinAllPublicChannels: async () => {},
+}));
+
 const { createOwnerRouter } = await import("./owner");
 
 function grantStoreFor(): GrantStore {
@@ -122,6 +152,9 @@ function buildApp(db: unknown) {
 
 beforeEach(() => {
   callerPrincipalId = "prn_member";
+  slackCredentialResult = FAKE_SLACK_CREDENTIAL;
+  slackTeamIdResult = "T0TEAM";
+  upsertSlackTeamMappingCalls.length = 0;
 });
 
 describe("owner inbox-sources routes", () => {
@@ -204,5 +237,74 @@ describe("owner inbox-sources routes", () => {
       },
     );
     expect(res.status).toBe(404);
+  });
+
+  describe("Slack team_id → tenant mapping (CL-3629)", () => {
+    it("PUT enable resolves the team id and writes the tenant mapping", async () => {
+      callerPrincipalId = "prn_owner";
+      const { db } = ownerDb();
+      const res = await buildApp(db).request("/owner/inbox-sources/slack", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ enabled: true }),
+      });
+      expect(res.status).toBe(200);
+      expect(upsertSlackTeamMappingCalls).toEqual([
+        { tenantId: "ten_root", slackTeamId: "T0TEAM" },
+      ]);
+    });
+
+    it("PUT disable does not touch the team mapping", async () => {
+      callerPrincipalId = "prn_owner";
+      const { db } = ownerDb({ enabledSources: ["slack"] });
+      const res = await buildApp(db).request("/owner/inbox-sources/slack", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ enabled: false }),
+      });
+      expect(res.status).toBe(200);
+      expect(upsertSlackTeamMappingCalls).toEqual([]);
+    });
+
+    it("enabling a non-Slack source does not touch the team mapping", async () => {
+      callerPrincipalId = "prn_owner";
+      const { db } = ownerDb();
+      const res = await buildApp(db).request(
+        `/owner/inbox-sources/${sampleKey}`,
+        {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ enabled: true }),
+        },
+      );
+      expect(res.status).toBe(200);
+      expect(upsertSlackTeamMappingCalls).toEqual([]);
+    });
+
+    it("auth.test returning no team_id records no mapping (enablement still succeeds)", async () => {
+      callerPrincipalId = "prn_owner";
+      slackTeamIdResult = null;
+      const { db } = ownerDb();
+      const res = await buildApp(db).request("/owner/inbox-sources/slack", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ enabled: true }),
+      });
+      expect(res.status).toBe(200);
+      expect(upsertSlackTeamMappingCalls).toEqual([]);
+    });
+
+    it("no Slack credential means no mapping is written (enablement still succeeds)", async () => {
+      callerPrincipalId = "prn_owner";
+      slackCredentialResult = null;
+      const { db } = ownerDb();
+      const res = await buildApp(db).request("/owner/inbox-sources/slack", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ enabled: true }),
+      });
+      expect(res.status).toBe(200);
+      expect(upsertSlackTeamMappingCalls).toEqual([]);
+    });
   });
 });
