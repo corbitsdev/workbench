@@ -37,6 +37,37 @@ export const CHANGELOG_NAV_ROUTES = [
 // Newest first.
 export const CHANGELOG: readonly ChangelogRelease[] = [
   {
+    version: "0.6.96",
+    date: "2026-07-14",
+    title: "Polish: inbox, settings, and what's new",
+    entries: [
+      {
+        title: "What's new links",
+        description:
+          "Take me there from the release walkthrough now opens real app pages, including Myra at Chats.",
+        to: "/chats",
+      },
+      {
+        title: "Settings navigation",
+        description:
+          "The section menu stays visible on large screens while you scroll through preferences.",
+        to: "/settings",
+      },
+      {
+        title: "Inbox layout",
+        description:
+          "Tighter spacing and consistent control sizes across the inbox rail, Now feed, and tasks.",
+        to: "/inbox",
+      },
+      {
+        title: "Myra voice input",
+        description:
+          "Turn voice dictation on or off in Settings when your deployment supports it.",
+        to: "/settings",
+      },
+    ],
+  },
+  {
     version: "0.6.95",
     date: "2026-07-14",
     title: "Inbox-led GTM workspace (owner setup required for automations)",
