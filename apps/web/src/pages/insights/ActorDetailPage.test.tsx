@@ -329,8 +329,8 @@ describe("ActorDetailPage", () => {
     // The aggregated call count comes from the durable facts, not the window.
     within(facet).getByText("Attio list objects");
     within(facet).getByText("2");
-    // The concrete records touched are an honest gap, never invented.
-    within(facet).getByText("which records?");
+    // Data touched is unknown — show an em dash, never invent records.
+    within(facet).getByText("—");
   });
 
   it("renders real token-class totals on the Cost facet from the analytics endpoint", async () => {

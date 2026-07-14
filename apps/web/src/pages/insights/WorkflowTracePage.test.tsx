@@ -367,8 +367,8 @@ describe("WorkflowTracePage", () => {
     // step is not counted.
     within(facet).getByText("Intake");
     expect(within(facet).queryByText("Curate")).toBeNull();
-    // The concrete records touched are an honest gap, never invented.
-    within(facet).getByText("which records?");
+    // Data touched is unknown — show an em dash, never invent records.
+    within(facet).getByText("—");
   });
 
   it("shows '—' (not a fabricated 0) in the stat strip when the run can't load", async () => {
@@ -419,12 +419,12 @@ describe("WorkflowTracePage", () => {
     expect(before).not.toBe(after);
   });
 
-  it("keeps the same listbox selection when Raw JSON is toggled inside the expanded step", async () => {
+  it("keeps the same listbox selection when Raw is toggled inside the expanded step", async () => {
     renderTrace();
     await waitFor(() => screen.getByRole("listbox"));
     const listbox = screen.getByRole("listbox");
     expect(listbox.getAttribute("aria-activedescendant")).toBe("run-step-0");
-    fireEvent.click(screen.getByRole("button", { name: "Raw JSON" }));
+    fireEvent.click(screen.getByRole("button", { name: "Raw" }));
     expect(listbox.getAttribute("aria-activedescendant")).toBe("run-step-0");
   });
 
