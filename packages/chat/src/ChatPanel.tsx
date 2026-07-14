@@ -103,6 +103,8 @@ export interface ChatPanelProps {
   attachmentPolicy?: AttachmentPolicy;
   /** Workspace members eligible for `@` mention autocomplete in the composer. */
   mentionCandidates?: MentionCandidate[];
+  /** Microphone dictation with auto-send after end-of-speech (Myra). */
+  voiceInput?: boolean;
 }
 
 /**
@@ -146,6 +148,7 @@ export function ChatPanel({
   inputAccessory,
   attachmentPolicy,
   mentionCandidates,
+  voiceInput,
 }: ChatPanelProps) {
   const busy = typing === true || (activity !== undefined && activity !== null);
 
@@ -261,6 +264,7 @@ export function ChatPanel({
         {...(inputDisabled !== undefined ? { disabled: inputDisabled } : {})}
         {...(attachmentPolicy !== undefined ? { attachmentPolicy } : {})}
         {...(mentionCandidates !== undefined ? { mentionCandidates } : {})}
+        {...(voiceInput === true ? { voiceInput: true } : {})}
       />
     </div>
   );

@@ -12,11 +12,13 @@ import {
 import {
   ArrowUp,
   File as FileIcon,
+  Mic,
   Paperclip,
   Plus,
   Square,
   X,
 } from "lucide-react";
+import { useComposerVoiceDictation } from "./composer-voice-dictation";
 import { Menu, MenuContent, MenuItem, MenuTrigger, cn } from "@workbench/ui";
 import { formatMention } from "@workbench/shared";
 import {
@@ -93,6 +95,11 @@ export interface ChatInputProps {
    * empty disables the trigger entirely (no dropdown, `@` types literally).
    */
   mentionCandidates?: MentionCandidate[];
+  /**
+   * Enables microphone dictation with end-of-speech auto-send (Myra composer).
+   * Hidden when the browser lacks speech recognition.
+   */
+  voiceInput?: boolean;
 }
 
 /**
@@ -110,8 +117,11 @@ export function ChatInput({
   attachmentPolicy,
   fullWidth,
   mentionCandidates,
+  voiceInput,
 }: ChatInputProps) {
   const [draft, setDraft] = useState("");
+  const draftRef = useRef("");
+  draftRef.current = draft;
   const [pending, setPending] = useState<PendingAttachment[]>([]);
   const [errors, setErrors] = useState<string[]>([]);
   const [dragActive, setDragActive] = useState(false);
@@ -231,9 +241,9 @@ export function ChatInput({
     setMentionState(null);
   };
 
-  const submit = () => {
-    const text = draft.trim();
-    if (isBlocked) return;
+  const submit = useCallback(() => {
+    const text = draftRef.current.trim();
+    if (disabled === true || busy === true || sending) return;
     if (text.length === 0 && pending.length === 0) return;
     const attachments = pending.length > 0 ? pending : undefined;
     const result = onSend(text, attachments);
@@ -257,7 +267,16 @@ export function ChatInput({
       return;
     }
     clearComposer();
-  };
+  }, [busy, disabled, onSend, pending, sending]);
+
+  const voice = useComposerVoiceDictation({
+    enabled: voiceInput === true,
+    disabled: disabled === true,
+    sendBlocked: isBlocked,
+    getDraft: () => draftRef.current,
+    setDraft,
+    triggerSend: submit,
+  });
 
   const handleAbort = () => {
     if (onAbort === undefined || aborting) return;
@@ -378,13 +397,45 @@ export function ChatInput({
         </div>
       )}
 
-      {errors.length > 0 && (
+      {(errors.length > 0 || voice.error !== null) && (
         <div className={cn("mb-2 space-y-0.5", rowWidth)}>
           {errors.map((message, index) => (
             <p key={index} role="alert" className="text-xs text-red">
               {message}
             </p>
           ))}
+          {voice.error !== null && (
+            <p role="alert" className="text-xs text-red">
+              {voice.error}
+            </p>
+          )}
+        </div>
+      )}
+
+      {voice.supported && voice.phase !== "off" && (
+        <div
+          className={cn(
+            "mb-2 flex items-center justify-between gap-2 text-xs text-text-2",
+            rowWidth,
+          )}
+          data-testid="composer-voice-status"
+        >
+          <span aria-live="polite">
+            {voice.phase === "listening" && "Listening…"}
+            {voice.phase === "countdown" &&
+              voice.countdownSec !== null &&
+              `Sending in ${voice.countdownSec}…`}
+            {voice.phase === "sending" && "Sending…"}
+          </span>
+          {(voice.phase === "countdown" || voice.phase === "sending") && (
+            <button
+              type="button"
+              onClick={voice.cancelVoice}
+              className="shrink-0 rounded-md px-2 py-0.5 text-orange hover:bg-surface-2 cursor-pointer"
+            >
+              Cancel
+            </button>
+          )}
         </div>
       )}
 
@@ -420,6 +471,26 @@ export function ChatInput({
               </li>
             ))}
           </ul>
+        )}
+        {voice.supported && (
+          <button
+            type="button"
+            aria-label={
+              voice.phase === "off" ? "Start voice input" : "Stop voice input"
+            }
+            aria-pressed={voice.phase !== "off"}
+            disabled={disabled === true}
+            onClick={voice.toggleListening}
+            className={cn(
+              CIRCLE_BUTTON,
+              "border border-border text-text-2 transition-colors hover:bg-surface-2 hover:text-text disabled:opacity-50",
+              voice.phase === "listening" &&
+                "border-orange text-orange ring-2 ring-orange/30",
+              voice.phase === "countdown" && "border-orange text-orange",
+            )}
+          >
+            <Mic className="h-4 w-4" aria-hidden="true" />
+          </button>
         )}
         {attachmentsEnabled && (
           <>
@@ -469,6 +540,7 @@ export function ChatInput({
           placeholder={placeholder ?? "Message…"}
           onChange={(event) => {
             setDraft(event.target.value);
+            voice.onManualDraftEdit(event.target.value);
             adjustHeight();
             syncMentionState(event.target.value, event.target.selectionStart);
           }}
