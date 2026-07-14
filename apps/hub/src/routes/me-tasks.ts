@@ -12,6 +12,7 @@ import {
   TaskListResponseSchema,
   TaskSchema,
   UpdateTaskBodySchema,
+  validateTaskLinks,
 } from "@workbench/shared";
 import { TASK_ADAPTERS } from "@workbench/tasks";
 import type { TaskPushService } from "@workbench/tasks";
@@ -212,6 +213,10 @@ export function createMeTasksRouter(
       const member = await resolveCallerMember(db, userId);
       if (!member) {
         return c.json({ error: "No provisioned membership" }, 409);
+      }
+      const linkError = validateTaskLinks(body.links ?? []);
+      if (linkError !== null) {
+        return c.json({ error: linkError }, 400);
       }
       const created = await createOwnerTask(db, {
         tenantId: member.tenantId,

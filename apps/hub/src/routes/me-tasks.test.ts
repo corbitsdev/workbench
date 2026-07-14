@@ -294,6 +294,24 @@ describe("POST /me/tasks", () => {
     expect(storeCalls.some((c) => c.fn === "create")).toBe(false);
   });
 
+  it("rejects javascript: url links without touching the store", async () => {
+    storeCalls.length = 0;
+    const res = await mountApp().fetch(
+      req("/me/tasks", {
+        method: "POST",
+        user: "user-a",
+        body: JSON.stringify({
+          title: "Bad link",
+          links: [{ kind: "url", ref: "javascript:alert(1)" }],
+        }),
+      }),
+    );
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { error: string };
+    expect(body.error).toMatch(/http\(s\)/i);
+    expect(storeCalls.some((c) => c.fn === "create")).toBe(false);
+  });
+
   it("409s when the caller has no membership", async () => {
     const res = await mountApp().fetch(
       req("/me/tasks", {
