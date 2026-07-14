@@ -58,6 +58,33 @@ describe("issue write handlers", () => {
     expect(lastBody(fetcher).query).toContain("issueDelete");
   });
 
+  it("linear_link_issues maps type blocked to blocks with swapped ids", async () => {
+    const fetcher = makeRoutingFetchStub([
+      {
+        includes: "issueRelationCreate",
+        data: { issueRelationCreate: { success: true } },
+      },
+    ]);
+    const runner = createToolRunner(createLinearTools({ apiKey: "k", fetcher }));
+    await runner.run(
+      {
+        id: "1",
+        name: "linear_link_issues",
+        arguments: {
+          action: "add",
+          issueId: "a",
+          relatedIssueId: "b",
+          type: "blocked",
+        },
+      },
+      new AbortController().signal,
+    );
+    const body = lastBody(fetcher);
+    expect(body.variables.input.issueId).toBe("b");
+    expect(body.variables.input.relatedIssueId).toBe("a");
+    expect(body.variables.input.type).toBe("blocks");
+  });
+
   it("linear_link_issues runs issueRelationCreate for add", async () => {
     const fetcher = makeRoutingFetchStub([
       {

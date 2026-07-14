@@ -152,6 +152,20 @@ const ISSUE_RELATION_DELETE = `mutation IssueRelationDelete($id: String!) {
   }
 }`;
 
+const ISSUE_TEAM_QUERY = `query IssueTeam($id: String!) {
+  issue(id: $id) {
+    team { id }
+  }
+}`;
+
+const TEAM_STATE_BY_NAME_QUERY = `query TeamStateByName($teamId: String!, $name: String!) {
+  team(id: $teamId) {
+    states(filter: { name: { eqIgnoreCase: $name } }) {
+      nodes { id }
+    }
+  }
+}`;
+
 const ListIssuesArgsSchema = type({
   "limit?": "number",
   "first?": "number",
@@ -203,11 +217,53 @@ const UpdateIssueArgsSchema = type({
 
 const LinkIssuesArgsSchema = type({
   action: "'add' | 'remove'",
-  issueId: "string > 0",
-  relatedIssueId: "string > 0",
+  "issueId?": "string > 0",
+  "relatedIssueId?": "string > 0",
   "type?": "'blocks' | 'blocked' | 'related' | 'duplicate'",
   "relationId?": "string",
 });
+
+const WORKFLOW_STATE_ID_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+async function resolveWorkflowStateId(
+  config: LinearToolsConfig,
+  issueId: string,
+  state: string,
+  signal: AbortSignal,
+): Promise<string> {
+  if (WORKFLOW_STATE_ID_PATTERN.test(state)) {
+    return state;
+  }
+  const issueData = await fetchLinearGraphQL(
+    config,
+    ISSUE_TEAM_QUERY,
+    { id: issueId },
+    signal,
+  );
+  if (!isRecord(issueData.issue) || !isRecord(issueData.issue.team)) {
+    throw new Error(`Linear issue not found: ${issueId}`);
+  }
+  const teamId = requireString(issueData.issue.team.id, "team.id");
+  const teamData = await fetchLinearGraphQL(
+    config,
+    TEAM_STATE_BY_NAME_QUERY,
+    { teamId, name: state },
+    signal,
+  );
+  if (!isRecord(teamData.team)) {
+    throw new Error(`Linear team not found: ${teamId}`);
+  }
+  const states = teamData.team.states;
+  if (!isRecord(states) || !Array.isArray(states.nodes) || states.nodes.length === 0) {
+    throw new Error(`Workflow state not found: ${state}`);
+  }
+  const first = states.nodes[0];
+  if (!isRecord(first)) {
+    throw new Error(`Workflow state not found: ${state}`);
+  }
+  return requireString(first.id, "state.id");
+}
 
 function buildIssueFilter(
   args: Record<string, unknown>,
@@ -380,7 +436,12 @@ export async function updateIssue(
   const priority = optionalPriority(args.priority);
   if (priority !== null) input.priority = priority;
   if (args.state !== undefined) {
-    input.stateId = args.state;
+    input.stateId = await resolveWorkflowStateId(
+      config,
+      args.id,
+      args.state,
+      signal,
+    );
   }
   if (args.assignee !== undefined) {
     input.assigneeId = args.assignee;
@@ -455,10 +516,11 @@ export async function linkIssues(
 ): Promise<unknown> {
   const args = parseArgs(LinkIssuesArgsSchema, rawArgs, "linear_link_issues");
   if (args.action === "remove") {
-    const relationId =
-      optionalString(args.relationId) ?? optionalString(args.relatedIssueId);
+    const relationId = optionalString(args.relationId);
     if (relationId === null) {
-      throw new Error("relationId is required when action is remove");
+      throw new Error(
+        "relationId is required when action is remove (use the issue relation edge id, not a related issue id)",
+      );
     }
     const data = await fetchLinearGraphQL(
       config,
@@ -468,15 +530,34 @@ export async function linkIssues(
     );
     return data.issueRelationDelete ?? { success: false };
   }
+  const issueId = optionalString(args.issueId);
+  const relatedIssueId = optionalString(args.relatedIssueId);
+  if (issueId === null || relatedIssueId === null) {
+    throw new Error("issueId and relatedIssueId are required when action is add");
+  }
   const relationType = args.type ?? "related";
+  let createIssueId = issueId;
+  let createRelatedId = relatedIssueId;
+  let apiType: "blocks" | "related" | "duplicate" = "related";
+  if (relationType === "blocks") {
+    apiType = "blocks";
+  } else if (relationType === "blocked") {
+    apiType = "blocks";
+    createIssueId = relatedIssueId;
+    createRelatedId = issueId;
+  } else if (relationType === "duplicate") {
+    apiType = "duplicate";
+  } else {
+    apiType = "related";
+  }
   const data = await fetchLinearGraphQL(
     config,
     ISSUE_RELATION_CREATE,
     {
       input: {
-        issueId: args.issueId,
-        relatedIssueId: args.relatedIssueId,
-        type: relationType,
+        issueId: createIssueId,
+        relatedIssueId: createRelatedId,
+        type: apiType,
       },
     },
     signal,
