@@ -156,14 +156,38 @@
       "slack_search"
     ],
     "@workbench/tools-sumble/sumble": [
+      "sumble_add_contact_list_people",
+      "sumble_add_organization_list_organizations",
+      "sumble_create_contact_list",
+      "sumble_create_data_quality_report",
+      "sumble_create_organization_list",
+      "sumble_create_support_request",
+      "sumble_find_technologies",
+      "sumble_get_contact_list",
       "sumble_get_intelligence_brief",
       "sumble_get_org_tech_stack",
+      "sumble_get_organization_list",
+      "sumble_get_organization_signals",
+      "sumble_list_contact_lists",
       "sumble_list_jobs",
+      "sumble_list_organization_lists",
       "sumble_list_teams",
+      "sumble_lookup_job_titles",
+      "sumble_lookup_projects",
+      "sumble_lookup_technologies",
+      "sumble_lookup_technology_categories",
+      "sumble_post_jobs",
+      "sumble_post_organizations",
+      "sumble_post_people",
+      "sumble_post_signals",
+      "sumble_post_teams",
       "sumble_resolve_organization",
       "sumble_search_organizations",
       "sumble_search_people",
-      "sumble_search_signals"
+      "sumble_search_priority_signals",
+      "sumble_search_signals",
+      "sumble_set_organization_list_deleted",
+      "sumble_set_organization_list_signals"
     ],
     "@workbench/tools-vercel/deploy-artifact": [
       "vercel_deploy_artifact"
@@ -418,7 +442,7 @@
     {
       "pin": "@workbench/tools-sumble",
       "package": "sumble",
-      "summary": "Sumble — account intelligence: resolve organizations, tech stack, teams, people, jobs, and intent signals.",
+      "summary": "Sumble v9 — full Public API: organizations, teams, people, jobs, signals, lookups, saved lists, support, and intelligence briefs.",
       "tags": [
         "sumble",
         "account",

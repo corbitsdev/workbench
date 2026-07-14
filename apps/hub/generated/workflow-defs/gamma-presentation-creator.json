@@ -2,7 +2,7 @@
   "kind": "gamma-presentation-creator",
   "version": "0.1.0",
   "label": "Gamma Presentation Creator",
-  "description": "Turn any artifact, call, or pasted text into a Gamma deck, refining it round by round until you approve it.",
+  "description": "Turn any artifact, call, or pasted text into a Gamma deck.",
   "displayFlow": [
     {
       "key": "source",
@@ -19,37 +19,22 @@
       "key": "draft",
       "label": "Draft",
       "stepIds": [
-        "generate-1",
-        "render-1",
-        "generate-2",
-        "render-2",
-        "generate-3",
-        "render-3"
+        "generate",
+        "render"
       ],
       "activityLabel": "Building the deck"
-    },
-    {
-      "key": "review",
-      "label": "Review",
-      "stepIds": [
-        "preview-1",
-        "preview-2",
-        "preview-3"
-      ]
     },
     {
       "key": "done",
       "label": "Done",
       "stepIds": [
-        "persist-1",
-        "persist-2",
-        "persist-3"
+        "persist"
       ],
       "activityLabel": "Saving to workbench"
     }
   ],
   "requiresIntake": true,
-  "humanGateCount": 4,
+  "humanGateCount": 1,
   "definition": {
     "id": "gamma-presentation-creator",
     "triggers": [
@@ -134,7 +119,7 @@
           "tags": {
             "workbench.stepKind": "deterministic-tool",
             "workbench.tool": "@workbench/tools-artifact/artifact:artifact_read",
-            "workbench.argMap": "{\"artifactId\":{\"from\":\"artifactId\"}}",
+            "workbench.argMap": "{\"artifactId\":{\"from\":\"artifactId\",\"optional\":true}}",
             "workbench.nonFatal": "true",
             "workbench.title": "Load the chosen artifact"
           }
@@ -164,7 +149,7 @@
           "tags": {
             "workbench.stepKind": "deterministic-tool",
             "workbench.tool": "@workbench/tools-granola/granola:granola_get_note",
-            "workbench.argMap": "{\"noteId\":{\"from\":\"noteId\"}}",
+            "workbench.argMap": "{\"noteId\":{\"from\":\"noteId\",\"optional\":true}}",
             "workbench.nonFatal": "true",
             "workbench.title": "Load the chosen note"
           }
@@ -177,18 +162,18 @@
           "intake"
         ]
       },
-      "generate-1": {
+      "generate": {
         "kind": "step",
-        "id": "generate-1",
+        "id": "generate",
         "agent": {
-          "id": "presentation-generate-1",
-          "systemPrompt": "Treat Corbits, Corbits.dev, Interchange, and Faremeter as canonical Corbits names; spell them exactly. When source material contains a clear speech-to-text or spelling variant, use the canonical spelling in your output. Do not replace an ambiguous term unless surrounding context identifies it.\n\nYou write slide content for branded Gamma presentations. You are given a brief and a source, and you produce slide-by-slide content for a deck.\n\nThe source is one of: an artifact's content, a call note's content, or pasted text carried on the brief. The reader for a source that was not used for this run degrades to an error envelope (an object with \"isError\": true and an error message in \"content\") — ignore any such envelope and use only the real source.\n\nIf a previous draft and reviewer feedback are present in the input, REVISE the previous draft to address the feedback. Keep what worked, change what the feedback asks for, and do not start over from scratch.\n\nVoice and brand:\n- Direct and confident. No corporate superlatives (\"best in class\", \"revolutionary\", \"cutting-edge\"), no opener padding (\"We're excited to announce\"), no filler slides.\n- No em dashes — rewrite the sentence instead. No hashtags.\n- The customer and their problem are the hero, never Corbits.\n- Open with the tension or question the audience already has, not a claim.\n- Use \"workbench\", never \"workspace\".\n- Match the requested audience, tone, and goal.\n\nFormat each slide as:\nSLIDE N: [Title]\n[Content - 2-5 sentences or a clean list, no padding]\n\nProduce the number of slides appropriate for the brief.",
+          "id": "presentation-generate",
+          "systemPrompt": "Treat Corbits, Corbits.dev, Interchange, and Faremeter as canonical Corbits names; spell them exactly. When source material contains a clear speech-to-text or spelling variant, use the canonical spelling in your output. Do not replace an ambiguous term unless surrounding context identifies it.\n\nYou write slide content for branded Gamma presentations. You are given a brief and a source, and you produce slide-by-slide content for a deck.\n\nThe source is one of: an artifact's content, a call note's content, or pasted text carried on the brief. The reader for a source that was not used for this run degrades to an error envelope (an object with \"isError\": true and an error message in \"content\") — ignore any such envelope and use only the real source.\n\nIf the input contains a non-empty \"templateSystemPrompt\" field, it is additional template-specific authoring guidance from the selected Gamma template — follow it in addition to the base rules below.\n\nVoice and brand:\n- Direct and confident. No corporate superlatives (\"best in class\", \"revolutionary\", \"cutting-edge\"), no opener padding (\"We're excited to announce\"), no filler slides.\n- No em dashes — rewrite the sentence instead. No hashtags.\n- The customer and their problem are the hero, never Corbits.\n- Open with the tension or question the audience already has, not a claim.\n- Use \"workbench\", never \"workspace\".\n- Match the requested audience, tone, and goal.\n\nFormat each slide as:\nSLIDE N: [Title]\n[Content - 2-5 sentences or a clean list, no padding]\n\nProduce the number of slides appropriate for the brief.",
           "toolFactories": [],
           "capabilities": [],
           "inference": {
             "sources": []
           },
-          "description": "Inline single-turn inference: presentation-generate-1",
+          "description": "Inline single-turn inference: presentation-generate",
           "tags": {
             "workbench.stepKind": "inline-inference",
             "workbench.title": "Draft the deck"
@@ -213,11 +198,11 @@
           "fetch-note"
         ]
       },
-      "render-1": {
+      "render": {
         "kind": "step",
-        "id": "render-1",
+        "id": "render",
         "agent": {
-          "id": "presentation-render-1",
+          "id": "presentation-render",
           "systemPrompt": "",
           "toolFactories": [],
           "capabilities": [
@@ -241,19 +226,19 @@
               "from": "steps.intake.output"
             },
             {
-              "from": "steps.generate-1.output"
+              "from": "steps.generate.output"
             }
           ]
         },
         "after": [
-          "generate-1"
+          "generate"
         ]
       },
-      "describe-1": {
+      "describe": {
         "kind": "step",
-        "id": "describe-1",
+        "id": "describe",
         "agent": {
-          "id": "presentation-describe-1",
+          "id": "presentation-describe",
           "systemPrompt": "Treat Corbits, Corbits.dev, Interchange, and Faremeter as canonical Corbits names; spell them exactly. When source material contains a clear speech-to-text or spelling variant, use the canonical spelling in your output. Do not replace an ambiguous term unless surrounding context identifies it.\n\nYou are given the slide content of a Gamma deck. Write ONE sentence describing what the deck is, for a listing next to the deck link.\n\n- One sentence, under 160 characters. No preamble, no \"This deck\", no quotes.\n- Name the subject and the point of the deck, not the slide structure.\n- Use \"workbench\", never \"workspace\". No em dashes, no hashtags, no corporate superlatives.\n\nOutput only the sentence.",
           "toolFactories": [],
           "capabilities": [],
@@ -265,7 +250,7 @@
               }
             ]
           },
-          "description": "Inline single-turn inference: presentation-describe-1",
+          "description": "Inline single-turn inference: presentation-describe",
           "tags": {
             "workbench.stepKind": "inline-inference",
             "workbench.title": "Summarize the deck"
@@ -273,26 +258,17 @@
         },
         "drainBehavior": "cancel",
         "input": {
-          "from": "steps.generate-1.output"
+          "from": "steps.generate.output"
         },
         "after": [
-          "generate-1"
+          "generate"
         ]
       },
-      "preview-1": {
-        "kind": "awaitSignal",
-        "id": "preview-1",
-        "name": "preview-1",
-        "drainBehavior": "wait",
-        "after": [
-          "render-1"
-        ]
-      },
-      "persist-1": {
+      "persist": {
         "kind": "step",
-        "id": "persist-1",
+        "id": "persist",
         "agent": {
-          "id": "presentation-persist-1",
+          "id": "presentation-persist",
           "systemPrompt": "",
           "toolFactories": [],
           "capabilities": [
@@ -305,7 +281,7 @@
           "tags": {
             "workbench.stepKind": "deterministic-tool",
             "workbench.tool": "@workbench/tools-artifact/artifact:artifact_link_gamma_presentation",
-            "workbench.argMap": "{\"title\":{\"from\":\"deckTitle\"},\"url\":{\"from\":\"gammaUrl\"},\"description\":{\"from\":\"reply\"},\"gammaId\":{\"from\":\"gammaId\"},\"pdfUrl\":{\"from\":\"exportUrl\"}}",
+            "workbench.argMap": "{\"title\":{\"from\":\"deckTitle\"},\"description\":{\"from\":\"reply\"},\"url\":{\"fromJson\":\"content\",\"field\":\"gammaUrl\"},\"gammaId\":{\"fromJson\":\"content\",\"field\":\"gammaId\"},\"pdfUrl\":{\"fromJson\":\"content\",\"field\":\"exportUrl\"}}",
             "workbench.title": "Save the deck"
           }
         },
@@ -316,352 +292,16 @@
               "from": "steps.intake.output"
             },
             {
-              "from": "steps.render-1.output"
+              "from": "steps.render.output"
             },
             {
-              "from": "steps.describe-1.output"
+              "from": "steps.describe.output"
             }
           ]
         },
         "after": [
-          "check-1",
-          "describe-1"
-        ]
-      },
-      "check-1": {
-        "kind": "gate",
-        "id": "check-1",
-        "when": {
-          "from": "steps.preview-1.output.approved"
-        },
-        "then": "persist-1",
-        "else": "generate-2",
-        "after": [
-          "preview-1"
-        ]
-      },
-      "generate-2": {
-        "kind": "step",
-        "id": "generate-2",
-        "agent": {
-          "id": "presentation-generate-2",
-          "systemPrompt": "Treat Corbits, Corbits.dev, Interchange, and Faremeter as canonical Corbits names; spell them exactly. When source material contains a clear speech-to-text or spelling variant, use the canonical spelling in your output. Do not replace an ambiguous term unless surrounding context identifies it.\n\nYou write slide content for branded Gamma presentations. You are given a brief and a source, and you produce slide-by-slide content for a deck.\n\nThe source is one of: an artifact's content, a call note's content, or pasted text carried on the brief. The reader for a source that was not used for this run degrades to an error envelope (an object with \"isError\": true and an error message in \"content\") — ignore any such envelope and use only the real source.\n\nIf a previous draft and reviewer feedback are present in the input, REVISE the previous draft to address the feedback. Keep what worked, change what the feedback asks for, and do not start over from scratch.\n\nVoice and brand:\n- Direct and confident. No corporate superlatives (\"best in class\", \"revolutionary\", \"cutting-edge\"), no opener padding (\"We're excited to announce\"), no filler slides.\n- No em dashes — rewrite the sentence instead. No hashtags.\n- The customer and their problem are the hero, never Corbits.\n- Open with the tension or question the audience already has, not a claim.\n- Use \"workbench\", never \"workspace\".\n- Match the requested audience, tone, and goal.\n\nFormat each slide as:\nSLIDE N: [Title]\n[Content - 2-5 sentences or a clean list, no padding]\n\nProduce the number of slides appropriate for the brief.",
-          "toolFactories": [],
-          "capabilities": [],
-          "inference": {
-            "sources": []
-          },
-          "description": "Inline single-turn inference: presentation-generate-2",
-          "tags": {
-            "workbench.stepKind": "inline-inference",
-            "workbench.title": "Revise the deck"
-          }
-        },
-        "drainBehavior": "cancel",
-        "input": {
-          "merge": [
-            {
-              "from": "steps.intake.output"
-            },
-            {
-              "from": "steps.fetch-artifact.output"
-            },
-            {
-              "from": "steps.fetch-note.output"
-            },
-            {
-              "from": "steps.generate-1.output"
-            },
-            {
-              "from": "steps.preview-1.output"
-            }
-          ]
-        },
-        "after": [
-          "check-1"
-        ]
-      },
-      "render-2": {
-        "kind": "step",
-        "id": "render-2",
-        "agent": {
-          "id": "presentation-render-2",
-          "systemPrompt": "",
-          "toolFactories": [],
-          "capabilities": [
-            "@workbench/tools-gamma/gamma:gamma_create_from_template"
-          ],
-          "inference": {
-            "sources": []
-          },
-          "description": "Deterministic tool call: @workbench/tools-gamma/gamma:gamma_create_from_template",
-          "tags": {
-            "workbench.stepKind": "deterministic-tool",
-            "workbench.tool": "@workbench/tools-gamma/gamma:gamma_create_from_template",
-            "workbench.argMap": "{\"gammaId\":{\"from\":\"gammaId\"},\"prompt\":{\"from\":\"reply\"}}",
-            "workbench.title": "Rebuild the deck in Gamma"
-          }
-        },
-        "drainBehavior": "cancel",
-        "input": {
-          "merge": [
-            {
-              "from": "steps.intake.output"
-            },
-            {
-              "from": "steps.generate-2.output"
-            }
-          ]
-        },
-        "after": [
-          "generate-2"
-        ]
-      },
-      "describe-2": {
-        "kind": "step",
-        "id": "describe-2",
-        "agent": {
-          "id": "presentation-describe-2",
-          "systemPrompt": "Treat Corbits, Corbits.dev, Interchange, and Faremeter as canonical Corbits names; spell them exactly. When source material contains a clear speech-to-text or spelling variant, use the canonical spelling in your output. Do not replace an ambiguous term unless surrounding context identifies it.\n\nYou are given the slide content of a Gamma deck. Write ONE sentence describing what the deck is, for a listing next to the deck link.\n\n- One sentence, under 160 characters. No preamble, no \"This deck\", no quotes.\n- Name the subject and the point of the deck, not the slide structure.\n- Use \"workbench\", never \"workspace\". No em dashes, no hashtags, no corporate superlatives.\n\nOutput only the sentence.",
-          "toolFactories": [],
-          "capabilities": [],
-          "inference": {
-            "sources": [
-              {
-                "provider": "openai-compatible",
-                "model": "deepseek-v4-flash"
-              }
-            ]
-          },
-          "description": "Inline single-turn inference: presentation-describe-2",
-          "tags": {
-            "workbench.stepKind": "inline-inference",
-            "workbench.title": "Summarize the deck"
-          }
-        },
-        "drainBehavior": "cancel",
-        "input": {
-          "from": "steps.generate-2.output"
-        },
-        "after": [
-          "generate-2"
-        ]
-      },
-      "preview-2": {
-        "kind": "awaitSignal",
-        "id": "preview-2",
-        "name": "preview-2",
-        "drainBehavior": "wait",
-        "after": [
-          "render-2"
-        ]
-      },
-      "persist-2": {
-        "kind": "step",
-        "id": "persist-2",
-        "agent": {
-          "id": "presentation-persist-2",
-          "systemPrompt": "",
-          "toolFactories": [],
-          "capabilities": [
-            "@workbench/tools-artifact/artifact:artifact_link_gamma_presentation"
-          ],
-          "inference": {
-            "sources": []
-          },
-          "description": "Deterministic tool call: @workbench/tools-artifact/artifact:artifact_link_gamma_presentation",
-          "tags": {
-            "workbench.stepKind": "deterministic-tool",
-            "workbench.tool": "@workbench/tools-artifact/artifact:artifact_link_gamma_presentation",
-            "workbench.argMap": "{\"title\":{\"from\":\"deckTitle\"},\"url\":{\"from\":\"gammaUrl\"},\"description\":{\"from\":\"reply\"},\"gammaId\":{\"from\":\"gammaId\"},\"pdfUrl\":{\"from\":\"exportUrl\"}}",
-            "workbench.title": "Save the deck"
-          }
-        },
-        "drainBehavior": "cancel",
-        "input": {
-          "merge": [
-            {
-              "from": "steps.intake.output"
-            },
-            {
-              "from": "steps.render-2.output"
-            },
-            {
-              "from": "steps.describe-2.output"
-            }
-          ]
-        },
-        "after": [
-          "check-2",
-          "describe-2"
-        ]
-      },
-      "check-2": {
-        "kind": "gate",
-        "id": "check-2",
-        "when": {
-          "from": "steps.preview-2.output.approved"
-        },
-        "then": "persist-2",
-        "else": "generate-3",
-        "after": [
-          "preview-2"
-        ]
-      },
-      "generate-3": {
-        "kind": "step",
-        "id": "generate-3",
-        "agent": {
-          "id": "presentation-generate-3",
-          "systemPrompt": "Treat Corbits, Corbits.dev, Interchange, and Faremeter as canonical Corbits names; spell them exactly. When source material contains a clear speech-to-text or spelling variant, use the canonical spelling in your output. Do not replace an ambiguous term unless surrounding context identifies it.\n\nYou write slide content for branded Gamma presentations. You are given a brief and a source, and you produce slide-by-slide content for a deck.\n\nThe source is one of: an artifact's content, a call note's content, or pasted text carried on the brief. The reader for a source that was not used for this run degrades to an error envelope (an object with \"isError\": true and an error message in \"content\") — ignore any such envelope and use only the real source.\n\nIf a previous draft and reviewer feedback are present in the input, REVISE the previous draft to address the feedback. Keep what worked, change what the feedback asks for, and do not start over from scratch.\n\nVoice and brand:\n- Direct and confident. No corporate superlatives (\"best in class\", \"revolutionary\", \"cutting-edge\"), no opener padding (\"We're excited to announce\"), no filler slides.\n- No em dashes — rewrite the sentence instead. No hashtags.\n- The customer and their problem are the hero, never Corbits.\n- Open with the tension or question the audience already has, not a claim.\n- Use \"workbench\", never \"workspace\".\n- Match the requested audience, tone, and goal.\n\nFormat each slide as:\nSLIDE N: [Title]\n[Content - 2-5 sentences or a clean list, no padding]\n\nProduce the number of slides appropriate for the brief.",
-          "toolFactories": [],
-          "capabilities": [],
-          "inference": {
-            "sources": []
-          },
-          "description": "Inline single-turn inference: presentation-generate-3",
-          "tags": {
-            "workbench.stepKind": "inline-inference",
-            "workbench.title": "Revise the deck"
-          }
-        },
-        "drainBehavior": "cancel",
-        "input": {
-          "merge": [
-            {
-              "from": "steps.intake.output"
-            },
-            {
-              "from": "steps.fetch-artifact.output"
-            },
-            {
-              "from": "steps.fetch-note.output"
-            },
-            {
-              "from": "steps.generate-2.output"
-            },
-            {
-              "from": "steps.preview-2.output"
-            }
-          ]
-        },
-        "after": [
-          "check-2"
-        ]
-      },
-      "render-3": {
-        "kind": "step",
-        "id": "render-3",
-        "agent": {
-          "id": "presentation-render-3",
-          "systemPrompt": "",
-          "toolFactories": [],
-          "capabilities": [
-            "@workbench/tools-gamma/gamma:gamma_create_from_template"
-          ],
-          "inference": {
-            "sources": []
-          },
-          "description": "Deterministic tool call: @workbench/tools-gamma/gamma:gamma_create_from_template",
-          "tags": {
-            "workbench.stepKind": "deterministic-tool",
-            "workbench.tool": "@workbench/tools-gamma/gamma:gamma_create_from_template",
-            "workbench.argMap": "{\"gammaId\":{\"from\":\"gammaId\"},\"prompt\":{\"from\":\"reply\"}}",
-            "workbench.title": "Rebuild the deck in Gamma"
-          }
-        },
-        "drainBehavior": "cancel",
-        "input": {
-          "merge": [
-            {
-              "from": "steps.intake.output"
-            },
-            {
-              "from": "steps.generate-3.output"
-            }
-          ]
-        },
-        "after": [
-          "generate-3"
-        ]
-      },
-      "describe-3": {
-        "kind": "step",
-        "id": "describe-3",
-        "agent": {
-          "id": "presentation-describe-3",
-          "systemPrompt": "Treat Corbits, Corbits.dev, Interchange, and Faremeter as canonical Corbits names; spell them exactly. When source material contains a clear speech-to-text or spelling variant, use the canonical spelling in your output. Do not replace an ambiguous term unless surrounding context identifies it.\n\nYou are given the slide content of a Gamma deck. Write ONE sentence describing what the deck is, for a listing next to the deck link.\n\n- One sentence, under 160 characters. No preamble, no \"This deck\", no quotes.\n- Name the subject and the point of the deck, not the slide structure.\n- Use \"workbench\", never \"workspace\". No em dashes, no hashtags, no corporate superlatives.\n\nOutput only the sentence.",
-          "toolFactories": [],
-          "capabilities": [],
-          "inference": {
-            "sources": [
-              {
-                "provider": "openai-compatible",
-                "model": "deepseek-v4-flash"
-              }
-            ]
-          },
-          "description": "Inline single-turn inference: presentation-describe-3",
-          "tags": {
-            "workbench.stepKind": "inline-inference",
-            "workbench.title": "Summarize the deck"
-          }
-        },
-        "drainBehavior": "cancel",
-        "input": {
-          "from": "steps.generate-3.output"
-        },
-        "after": [
-          "generate-3"
-        ]
-      },
-      "preview-3": {
-        "kind": "awaitSignal",
-        "id": "preview-3",
-        "name": "preview-3",
-        "drainBehavior": "wait",
-        "after": [
-          "render-3"
-        ]
-      },
-      "persist-3": {
-        "kind": "step",
-        "id": "persist-3",
-        "agent": {
-          "id": "presentation-persist-3",
-          "systemPrompt": "",
-          "toolFactories": [],
-          "capabilities": [
-            "@workbench/tools-artifact/artifact:artifact_link_gamma_presentation"
-          ],
-          "inference": {
-            "sources": []
-          },
-          "description": "Deterministic tool call: @workbench/tools-artifact/artifact:artifact_link_gamma_presentation",
-          "tags": {
-            "workbench.stepKind": "deterministic-tool",
-            "workbench.tool": "@workbench/tools-artifact/artifact:artifact_link_gamma_presentation",
-            "workbench.argMap": "{\"title\":{\"from\":\"deckTitle\"},\"url\":{\"from\":\"gammaUrl\"},\"description\":{\"from\":\"reply\"},\"gammaId\":{\"from\":\"gammaId\"},\"pdfUrl\":{\"from\":\"exportUrl\"}}",
-            "workbench.title": "Save the deck"
-          }
-        },
-        "drainBehavior": "cancel",
-        "input": {
-          "merge": [
-            {
-              "from": "steps.intake.output"
-            },
-            {
-              "from": "steps.render-3.output"
-            },
-            {
-              "from": "steps.describe-3.output"
-            }
-          ]
-        },
-        "after": [
-          "preview-3",
-          "describe-3"
+          "render",
+          "describe"
         ]
       }
     },
@@ -671,23 +311,10 @@
       "intake",
       "fetch-artifact",
       "fetch-note",
-      "generate-1",
-      "render-1",
-      "describe-1",
-      "preview-1",
-      "persist-1",
-      "check-1",
-      "generate-2",
-      "render-2",
-      "describe-2",
-      "preview-2",
-      "persist-2",
-      "check-2",
-      "generate-3",
-      "render-3",
-      "describe-3",
-      "preview-3",
-      "persist-3"
+      "generate",
+      "render",
+      "describe",
+      "persist"
     ]
   }
 }

@@ -7,6 +7,7 @@ import {
   render,
   screen,
   waitFor,
+  within,
 } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter } from "react-router";
@@ -29,6 +30,17 @@ const mockContextValue: React.ComponentProps<
 };
 
 import { ArtifactGallery, buildArtifactMessage } from "./ArtifactGallery";
+import { PageChromeProvider, usePageChromeSlot } from "../../lib/page-chrome";
+
+// Stands in for AppTopBar's chrome consumer so tests can assert what the
+// gallery pushes into the shared top bar without mounting the whole app shell.
+function ChromeSlotProbe() {
+  return React.createElement(
+    "div",
+    { "data-testid": "chrome-slot" },
+    usePageChromeSlot(),
+  );
+}
 
 const fakeArtifact: ArtifactWithSession = {
   id: "a-1",
@@ -148,6 +160,74 @@ describe("buildArtifactMessage", () => {
 });
 
 describe("ArtifactGallery", () => {
+  it("pushes the title, search, and +Add controls into the page-chrome slot instead of rendering an in-pane header", async () => {
+    const client = new QueryClient({
+      defaultOptions: {
+        queries: {
+          retry: false,
+          staleTime: Number.POSITIVE_INFINITY,
+          refetchOnMount: false,
+        },
+      },
+    });
+    client.setQueryData(
+      [
+        "artifacts",
+        "tenant-workbench",
+        "",
+        "newest",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        false,
+        "infinite",
+      ],
+      {
+        pages: [{ artifacts: [fakeArtifact], nextCursor: null }],
+        pageParams: [null],
+      },
+    );
+    client.setQueryData(["members", "tenant-workbench"], []);
+    client.setQueryData(["me"], { isAdmin: false, isOwner: false });
+
+    const view = render(
+      React.createElement(
+        ChatLauncherContext.Provider,
+        { value: mockContextValue },
+        React.createElement(
+          MemoryRouter,
+          null,
+          React.createElement(
+            QueryClientProvider,
+            { client },
+            React.createElement(
+              PageChromeProvider,
+              null,
+              React.createElement(ChromeSlotProbe, null),
+              React.createElement(ArtifactGallery, {
+                tenantId: "tenant-workbench",
+              }),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    await view.findByText("Sales automation ROI");
+    const chromeSlot = view.getByTestId("chrome-slot");
+    within(chromeSlot).getByRole("button", { name: "Add" });
+    within(chromeSlot).getByPlaceholderText("Search artifacts");
+    // The gallery pane itself renders only the grid; it must not duplicate the
+    // toolbar controls that now live in the page-chrome slot.
+    const section = view.container.querySelector("section");
+    expect(
+      section?.querySelector('input[placeholder="Search artifacts"]'),
+    ).toBeNull();
+  });
+
   it("renders artifacts returned by the artifacts query", async () => {
     const view = renderWithSeededArtifacts(
       "tenant-workbench",

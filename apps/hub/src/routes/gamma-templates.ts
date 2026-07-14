@@ -48,10 +48,14 @@ const TEMPLATE_MANAGE_ACTION = "manage";
 
 // Parses a create/update body through the shared arktype schema, then trims and
 // rejects blanks. Returns either the cleaned fields or a 400 error message.
-async function parseTemplateBody(
-  c: Context,
-): Promise<
-  { name: string; gammaId: string; description: string } | { error: string }
+async function parseTemplateBody(c: Context): Promise<
+  | {
+      name: string;
+      gammaId: string;
+      description: string;
+      systemPrompt: string;
+    }
+  | { error: string }
 > {
   const raw = await c.req.json().catch(() => null);
   const parsed = GammaTemplateBody(raw);
@@ -64,7 +68,9 @@ async function parseTemplateBody(
   if (!name || !gammaId || !description) {
     return { error: "name, gammaId, and description are required" };
   }
-  return { name, gammaId, description };
+  const systemPrompt =
+    parsed.systemPrompt !== undefined ? parsed.systemPrompt.trim() : "";
+  return { name, gammaId, description, systemPrompt };
 }
 
 function templateResource(templateId: string): string {
@@ -266,9 +272,9 @@ export function createGammaTemplatesRouter(
       if ("error" in parsed) {
         return c.json({ error: parsed.error }, 400);
       }
-      const { name, gammaId, description } = parsed;
+      const { name, gammaId, description, systemPrompt } = parsed;
 
-      const config: GammaTemplateConfig = { gammaId, description };
+      const config: GammaTemplateConfig = { gammaId, description, systemPrompt };
 
       const result = await db.transaction(async (tx) => {
         const [header] = await tx
@@ -425,9 +431,9 @@ export function createGammaTemplatesRouter(
       if ("error" in parsed) {
         return c.json({ error: parsed.error }, 400);
       }
-      const { name, gammaId, description } = parsed;
+      const { name, gammaId, description, systemPrompt } = parsed;
 
-      const config: GammaTemplateConfig = { gammaId, description };
+      const config: GammaTemplateConfig = { gammaId, description, systemPrompt };
 
       // Read-then-insert of the next version must be atomic: two concurrent
       // PUTs both reading MAX(version)=N would otherwise both insert N+1 and

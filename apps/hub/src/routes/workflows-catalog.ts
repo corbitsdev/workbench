@@ -158,7 +158,8 @@ export function createWorkflowsCatalogRouter(deps: {
         );
         const gateInfo = gateInfos.get(entry.kind);
         const attachable =
-          gateInfo !== undefined && isKindStructurallyAttachable(gateInfo);
+          gateInfo !== undefined &&
+          isKindStructurallyAttachable(gateInfo, entry.kind);
         const intakeFields =
           gateInfo?.requiresIntake === true
             ? intakeFieldsByKind.get(entry.kind)

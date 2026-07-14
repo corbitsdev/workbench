@@ -62,13 +62,26 @@ export const STEP_NONFATAL_TAG = "workbench.nonFatal";
 export const STEP_INLINE_RETRY_MAX_TAG = "workbench.inlineRetryMaxAttempts";
 
 /**
- * Per-tool-argument reshape spec. Maps a TOOL argument name to either a
- * top-level field on the evaluated step input (`{ from: 'fieldName' }`) or a
- * JSON-serializable constant (`{ literal: value }`). Must be
- * JSON-serializable: the workflow definition is JSON-deployed, so no
- * functions.
+ * Per-tool-argument reshape spec. Maps a TOOL argument name to one of:
+ * - `{ from: 'fieldName' }` — a top-level field on the evaluated step input.
+ * - `{ literal: value }` — a JSON-serializable constant.
+ * - `{ fromJson: 'envelopeField', field: 'name' }` — reads `envelopeField`
+ *   off the input, JSON-parses it when it is a string (an already-object
+ *   value is tolerated), then pulls top-level `field` from the parsed object.
+ *   Use this when a deterministic step consumes another deterministic tool
+ *   step's output: `stringTool` tools encode their result as
+ *   `{ content: "<json>" }`, so the fields are only reachable after parsing.
+ *
+ * `optional` (on `from` and `fromJson`) treats an absent-or-empty value as a
+ * skip of the whole tool call rather than a throw. Must be JSON-serializable:
+ * the workflow definition is JSON-deployed, so no functions.
  */
-export const ArgMapSpec = type({ from: "string" }).or({ literal: "unknown" });
+export const ArgMapSpec = type({
+  from: "string",
+  "optional?": "boolean",
+})
+  .or({ literal: "unknown" })
+  .or({ fromJson: "string", field: "string", "optional?": "boolean" });
 export type ArgMapSpec = typeof ArgMapSpec.infer;
 
 export const ArgMap = type({ "[string]": ArgMapSpec });
@@ -90,6 +103,12 @@ export interface DeterministicToolStepOpts {
    * Each key is a TOOL argument name; the value pulls a top-level field off
    * the evaluated input (`{ from }`) or supplies a constant (`{ literal }`).
    * When absent, the evaluated input is passed verbatim as the tool args.
+   * A `{ from }` spec may set `optional: true` to mean "this field may
+   * legitimately be absent (or an empty string) on the evaluated input" —
+   * e.g. an intake field that only exists for one run source. The sidecar's
+   * `reshapeWithArgMap` treats an absent/empty OPTIONAL field as a skip
+   * (no tool call, no throw) rather than the loud failure a non-optional
+   * `{ from }` still raises for a missing field.
    */
   argMap?: ArgMap;
   /** Step ids this step depends on. */

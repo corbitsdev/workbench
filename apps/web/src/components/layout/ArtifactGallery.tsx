@@ -3,7 +3,7 @@
 // @workbench/client and passes the array + flags into the package component.
 // Presentation, layout, and tile mapping all live in @workbench/artifact.
 
-import { useRef, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import type { InfiniteData } from "@tanstack/react-query";
@@ -20,6 +20,7 @@ import { getMe } from "../../lib/hub-api";
 import { useActiveWorkbench } from "../../lib/active-workbench-context";
 import {
   ArtifactGallery as ArtifactGalleryView,
+  ArtifactGalleryToolbar,
   ArtifactModal,
 } from "@workbench/artifact";
 import type {
@@ -34,6 +35,7 @@ import { resolveKindLabel } from "../../lib/resolve-kind-label";
 import { canUseArtifactInWorkflow } from "@workbench/artifact";
 import { useChatLauncher } from "../../lib/chat-launcher-context";
 import { buildArtifactMessage } from "../../lib/artifact-chat-message";
+import { useSetPageChrome } from "../../lib/page-chrome";
 
 export { buildArtifactMessage };
 
@@ -163,13 +165,13 @@ export function ArtifactGallery({
       });
   }
 
-  const handleQueryChange = (value: string) => {
+  const handleQueryChange = useCallback((value: string) => {
     setInputQuery(value);
     if (debounceTimer.current !== null) clearTimeout(debounceTimer.current);
     debounceTimer.current = setTimeout(() => {
       setDebouncedQuery(value);
     }, SEARCH_DEBOUNCE_MS);
-  };
+  }, []);
 
   const handleOpen = (gallery: GalleryArtifact) => {
     const full = (artifacts ?? []).find((a) => a.id === gallery.id) ?? null;
@@ -221,6 +223,55 @@ export function ArtifactGallery({
     setAdvancedFilter({});
   }
 
+  const toolbar = useMemo(
+    () => (
+      <ArtifactGalleryToolbar
+        artifacts={artifacts ?? []}
+        query={inputQuery}
+        onQueryChange={handleQueryChange}
+        onNew={() => setAddOpen(true)}
+        onOpenLibrary={onOpenLibrary}
+        sort={sort}
+        onSortChange={setSort}
+        ownerPrincipalId={ownerFilter}
+        onOwnerFilterChange={setOwnerFilter}
+        owners={members}
+        creatorKind={creatorKindFilter}
+        onCreatorKindFilterChange={setCreatorKindFilter}
+        kind={kindFilter}
+        onKindFilterChange={setKindFilter}
+        createdAfter={advancedFilter.createdAfter}
+        createdBefore={advancedFilter.createdBefore}
+        onAdvancedFilterChange={setAdvancedFilter}
+        viewMode={viewMode}
+        onViewModeChange={setViewMode}
+        hasMore={hasNextPage === true}
+      />
+    ),
+    [
+      artifacts,
+      inputQuery,
+      handleQueryChange,
+      setAddOpen,
+      onOpenLibrary,
+      sort,
+      setSort,
+      ownerFilter,
+      setOwnerFilter,
+      members,
+      creatorKindFilter,
+      setCreatorKindFilter,
+      kindFilter,
+      setKindFilter,
+      advancedFilter,
+      setAdvancedFilter,
+      viewMode,
+      setViewMode,
+      hasNextPage,
+    ],
+  );
+  useSetPageChrome(toolbar);
+
   return (
     <>
       {archiveError && (
@@ -246,24 +297,8 @@ export function ArtifactGallery({
         isLoading={isLoading}
         isError={isError}
         query={inputQuery}
-        onQueryChange={handleQueryChange}
         onOpen={handleOpen}
-        onNew={() => setAddOpen(true)}
-        onOpenLibrary={onOpenLibrary}
-        sort={sort}
-        onSortChange={setSort}
-        ownerPrincipalId={ownerFilter}
-        onOwnerFilterChange={setOwnerFilter}
-        owners={members}
-        creatorKind={creatorKindFilter}
-        onCreatorKindFilterChange={setCreatorKindFilter}
-        kind={kindFilter}
-        onKindFilterChange={setKindFilter}
-        createdAfter={advancedFilter.createdAfter}
-        createdBefore={advancedFilter.createdBefore}
-        onAdvancedFilterChange={setAdvancedFilter}
         viewMode={viewMode}
-        onViewModeChange={setViewMode}
         experimentalArtifactCards={experimentalArtifactCards}
         hasMore={hasNextPage === true}
         onLoadMore={() => {

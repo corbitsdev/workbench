@@ -1,16 +1,14 @@
 import { describe, expect, it } from "bun:test";
+import { HUB_ONLY_TOOL_SIDE_EFFECTS } from "@workbench/agents";
 import {
   flatBareToolNames,
   loadCommittedToolManifestFactories,
 } from "@workbench/tool-manifest";
 import { KNOWN_TOOLS } from "./tool-registry";
 
-/** Hub-backed tools with no `@workbench/tools-*` manifest row (tasks rail). */
-const HUB_ONLY_TOOLS_NOT_IN_MANIFEST = [
-  "task_create",
-  "task_list",
-  "task_update",
-] as const;
+const HUB_ONLY_TOOLS_NOT_IN_MANIFEST = Object.keys(
+  HUB_ONLY_TOOL_SIDE_EFFECTS,
+).sort();
 
 describe("KNOWN_TOOLS drift guard (CL-3447)", () => {
   it("includes every bare tool name from committed tool manifests", () => {
@@ -44,6 +42,23 @@ describe("KNOWN_TOOLS drift guard (CL-3447)", () => {
             `${name}: KNOWN_TOOLS=${known.sideEffect} manifest=${manifestEffect}`,
           );
         }
+      }
+    }
+    expect(mismatches).toEqual([]);
+  });
+
+  it("matches KNOWN_TOOLS sideEffect for hub-only tools not in manifests", () => {
+    const mismatches: string[] = [];
+    for (const [name, effect] of Object.entries(HUB_ONLY_TOOL_SIDE_EFFECTS)) {
+      const known = KNOWN_TOOLS[name];
+      if (known == null) {
+        mismatches.push(`${name}: missing from KNOWN_TOOLS`);
+        continue;
+      }
+      if (known.sideEffect !== effect) {
+        mismatches.push(
+          `${name}: KNOWN_TOOLS=${known.sideEffect} hub-only=${effect}`,
+        );
       }
     }
     expect(mismatches).toEqual([]);

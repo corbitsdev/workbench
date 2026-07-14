@@ -1,13 +1,16 @@
 # @workbench/tools-sumble
 
-Sumble v8 API tools (organizations, teams, people, jobs, signals, intelligence
-briefs). Registered in the hub's tool registry as eight `sumble_*` read tools.
+Sumble **v9** API tools (**32** hub tools, **25** HTTP operations) registered via
+`SUMBLE_HUB_TOOLS` (`src/registry.ts`).
 
-- Credential (`sumble` provider) is resolved by Interchange at tool execution
-  time — not at agent launch
-- The tool grants `tool:sumble_*/invoke` are synthesized at session launch from
-  the agent's capabilities list; do not add them to the DB
-- Keep the tool schemas in sync with what agents declare in their system prompts
+- Credential (`sumble` provider) resolves at tool execution — not at agent launch
+- Default API root is `https://api.sumble.com` with `/v9/` paths (`src/http.ts`)
+- Ergonomic tools wrap common shapes; `sumble_post_*` pass verbatim bodies (with
+  spend guards on `sumble_post_people` email/phone select)
+- Credit gates: `confirmSpend` (brief), `confirmEmailRevealSpend` (people email /
+  email identifier lookup)
+- OpenAPI parity: `src/openapi-parity.test.ts`, `src/operation-coverage.ts`
+- After registry changes: `cd apps/hub && bun run build:tool-manifests`
 
 ## Testing
 

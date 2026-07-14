@@ -1,17 +1,29 @@
 import { useMemo } from "react";
 import { Link, useNavigate, useParams } from "react-router";
-import { Archive, ArrowLeft, MessageSquare } from "lucide-react";
+import { Archive, Download, ExternalLink, MessageSquare } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
-import { Button, ConfirmButton } from "@workbench/ui";
+import { type } from "arktype";
+import {
+  Badge,
+  type BadgeTone,
+  buttonVariants,
+  Button,
+  ConfirmButton,
+} from "@workbench/ui";
 import {
   ArtifactDetailShell,
   ArtifactMeta,
+  formatArtifactDate,
   visualForKind,
 } from "@workbench/artifact";
-import type { ArtifactStatus } from "@workbench/shared";
+import {
+  GammaPresentationContentSchema,
+  type ArtifactStatus,
+} from "@workbench/shared";
 import { useArchiveArtifact, useArtifact } from "@workbench/client/react";
 
 import { getMe } from "../lib/hub-api";
+import { buildApiUrl } from "../lib/api";
 import { clientOptions } from "../lib/client-options";
 import ArtifactBody from "../components/ArtifactBody";
 import { ErrorBoundary } from "../components/ErrorBoundary";
@@ -31,6 +43,65 @@ function artifactStatusLabel(status: ArtifactStatus): string {
     default:
       return "Draft";
   }
+}
+
+const STATUS_TONE: Record<ArtifactStatus, BadgeTone> = {
+  draft: "neutral",
+  approved: "positive",
+  rejected: "danger",
+};
+
+// Kinds whose content is a downloadable file served by the download route
+// (uploaded binaries and CSV exports). gamma_presentation is handled
+// separately below since it is only downloadable when a PDF was attached.
+const DOWNLOADABLE_ARTIFACT_KINDS = new Set(["image", "file", "csv-export"]);
+
+function hasUploadSource(source: unknown): boolean {
+  if (typeof source !== "object" || source === null) return false;
+  const upload = (source as Record<string, unknown>).upload;
+  return typeof upload === "object" && upload !== null;
+}
+
+// The Gamma deck URL lives in the artifact's JSON content, not on the row —
+// parse it via the shared schema (same one GammaPresentationBody uses) purely
+// to decide whether an "Open in Gamma" action belongs in the page header.
+// Never build or touch the download/embed URL logic itself.
+function resolveGammaUrl(kind: string, content: string): string | null {
+  if (kind !== "gamma_presentation") return null;
+  let raw: unknown;
+  try {
+    raw = JSON.parse(content);
+  } catch {
+    return null;
+  }
+  const deck = GammaPresentationContentSchema(raw);
+  if (deck instanceof type.errors) return null;
+  try {
+    return new URL(deck.url).protocol === "https:" ? deck.url : null;
+  } catch {
+    return null;
+  }
+}
+
+function ArtifactSummaryHeader({
+  kindLabel,
+  status,
+  version,
+  createdAt,
+}: {
+  kindLabel: string | undefined;
+  status: ArtifactStatus;
+  version: number;
+  createdAt: string;
+}) {
+  return (
+    <div className="flex flex-wrap items-center gap-2 text-sm">
+      {kindLabel && <span className="font-medium text-text">{kindLabel}</span>}
+      <Badge tone={STATUS_TONE[status]}>{artifactStatusLabel(status)}</Badge>
+      <span className="text-text-3">v{version}</span>
+      <span className="text-text-3">{formatArtifactDate(createdAt)}</span>
+    </div>
+  );
 }
 
 function CenteredNotice({ children }: { children: React.ReactNode }) {
@@ -84,21 +155,95 @@ export function ArtifactDetailPage() {
 
   const pageChrome = useMemo(() => {
     if (artifact === undefined) return null;
+    const canArchive =
+      meQuery.data?.isAdmin === true ||
+      meQuery.data?.isOwner === true ||
+      (artifact.ownerPrincipalId !== null &&
+        artifact.ownerPrincipalId === (activeWorkbench?.id ?? null));
+    const canDownload =
+      DOWNLOADABLE_ARTIFACT_KINDS.has(artifact.kind) ||
+      (artifact.kind === "gamma_presentation" &&
+        hasUploadSource(artifact.source));
+    const gammaUrl = resolveGammaUrl(artifact.kind, artifact.content);
     return (
-      <button
-        type="button"
-        onClick={() =>
-          openWithMessage(
-            buildArtifactMessage(artifact, activeTenantId ?? undefined),
-          )
-        }
-        className="inline-flex items-center gap-1.5 rounded-[8px] px-2 py-1 text-xs font-medium text-text-2 transition-colors hover:bg-page hover:text-text"
-      >
-        <MessageSquare size={14} aria-hidden />
-        Chat about this
-      </button>
+      <>
+        {canDownload && (
+          <a
+            href={buildApiUrl(`/artifacts/${artifact.id}/download`)}
+            download
+            className={`${buttonVariants({ variant: "ghost", size: "sm" })} gap-1.5`}
+          >
+            <Download size={14} aria-hidden />
+            Download
+          </a>
+        )}
+        {gammaUrl !== null && (
+          <a
+            href={gammaUrl}
+            target="_blank"
+            rel="noreferrer"
+            className={`${buttonVariants({ variant: "ghost", size: "sm" })} gap-1.5`}
+          >
+            <ExternalLink size={14} aria-hidden />
+            Open in Gamma
+          </a>
+        )}
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={() =>
+            openWithMessage(
+              buildArtifactMessage(artifact, activeTenantId ?? undefined),
+            )
+          }
+          className="gap-1.5"
+        >
+          <MessageSquare size={14} aria-hidden />
+          Chat about this
+        </Button>
+        {canArchive && (
+          <>
+            {archiveMutation.isError && (
+              <span className="text-xs text-red">
+                Couldn&apos;t archive — try again
+              </span>
+            )}
+            <ConfirmButton
+              variant="ghost"
+              size="sm"
+              confirmLabel="Confirm archive"
+              disabled={archiveMutation.isPending}
+              onConfirm={() =>
+                archiveMutation.mutate(
+                  { artifactId: artifact.id, tenantId: activeTenantId },
+                  { onSuccess: () => navigate("/artifacts") },
+                )
+              }
+              className="gap-1.5"
+            >
+              <Archive size={14} />
+              {archiveMutation.isPending ? "Archiving…" : "Archive"}
+            </ConfirmButton>
+          </>
+        )}
+      </>
     );
-  }, [artifact, activeTenantId, openWithMessage]);
+    // Depend on stable/primitive fields only. The full `archiveMutation` and
+    // `meQuery.data` objects get fresh identities each render; using them here
+    // regenerated the chrome node every render, and useSetPageChrome's effect
+    // re-published it in a loop ("Maximum update depth exceeded").
+  }, [
+    artifact,
+    activeTenantId,
+    openWithMessage,
+    meQuery.data?.isAdmin,
+    meQuery.data?.isOwner,
+    activeWorkbench?.id,
+    archiveMutation.mutate,
+    archiveMutation.isPending,
+    archiveMutation.isError,
+    navigate,
+  ]);
 
   useSetPageChrome(pageChrome);
 
@@ -117,8 +262,6 @@ export function ArtifactDetailPage() {
     );
   }
 
-  const loadedArtifact = artifact;
-
   function handleOpenSession(sessionId: string) {
     navigate(`/insights/trace/${sessionId}`);
   }
@@ -127,51 +270,35 @@ export function ArtifactDetailPage() {
     navigate(`/artifacts/${parentId}`);
   }
 
-  const canArchive =
-    meQuery.data?.isAdmin === true ||
-    meQuery.data?.isOwner === true ||
-    (loadedArtifact.ownerPrincipalId !== null &&
-      loadedArtifact.ownerPrincipalId === (activeWorkbench?.id ?? null));
-
-  function handleArchive() {
-    archiveMutation.mutate(
-      { artifactId: loadedArtifact.id, tenantId: activeTenantId },
-      { onSuccess: () => navigate("/artifacts") },
-    );
-  }
-
   const kindLabel = resolveKindLabel(artifact.kind);
   const accent = visualForKind(artifact.kind).fill;
+
+  // The metadata rail only ever holds real provenance (source session,
+  // related conversation/workflow, or a parent artifact); kind/version/status/
+  // date already live in the header above. When an artifact has none of that
+  // provenance, the rail is omitted entirely rather than rendering an empty
+  // column.
+  const hasProvenance =
+    artifact.sessionId !== null ||
+    artifact.sessionName !== null ||
+    artifact.sessionStatus !== null ||
+    artifact.parentId !== null;
 
   return (
     <ArtifactDetailShell
       accentClass={accent}
       header={
-        <div className="flex items-center gap-3">
-          <button
-            type="button"
-            onClick={() => navigate("/artifacts")}
-            aria-label="Back to artifacts"
-            className="grid h-8 w-8 shrink-0 place-items-center rounded-sm text-text-2 outline-none transition-[color,background-color,transform] hover:bg-page hover:text-text focus-visible:ring-2 focus-visible:ring-orange active:scale-[0.97]"
-          >
-            <ArrowLeft size={18} />
-          </button>
-          <div className="min-w-0 flex-1">
-            <h1 className="truncate text-base font-semibold text-text">
-              {artifact.title}
-            </h1>
-            <p className="mt-0.5 font-mono text-[11px] text-text-3">
-              {kindLabel} · v{artifact.version} ·{" "}
-              {artifactStatusLabel(artifact.status)}
-            </p>
-          </div>
-        </div>
+        <ArtifactSummaryHeader
+          kindLabel={kindLabel}
+          status={artifact.status}
+          version={artifact.version}
+          createdAt={artifact.createdAt}
+        />
       }
       rail={
-        <div className="flex flex-col gap-4">
+        hasProvenance ? (
           <ArtifactMeta
-            kindLabel={kindLabel}
-            createdAt={artifact.createdAt}
+            createdAt={null}
             sessionId={artifact.sessionId}
             sessionName={artifact.sessionName}
             sessionStatus={artifact.sessionStatus}
@@ -179,29 +306,7 @@ export function ArtifactDetailPage() {
             onOpenSession={handleOpenSession}
             onOpenParent={handleOpenParent}
           />
-          <div className="flex flex-col gap-2">
-            {canArchive && (
-              <>
-                {archiveMutation.isError && (
-                  <span className="text-xs text-red">
-                    Couldn&apos;t archive — try again
-                  </span>
-                )}
-                <ConfirmButton
-                  variant="ghost"
-                  size="sm"
-                  confirmLabel="Confirm archive"
-                  disabled={archiveMutation.isPending}
-                  onConfirm={handleArchive}
-                  className="flex w-full items-center justify-center gap-1.5"
-                >
-                  <Archive size={14} />
-                  {archiveMutation.isPending ? "Archiving…" : "Archive"}
-                </ConfirmButton>
-              </>
-            )}
-          </div>
-        </div>
+        ) : null
       }
     >
       <ErrorBoundary>
