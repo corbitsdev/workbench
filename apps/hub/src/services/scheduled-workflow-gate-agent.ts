@@ -27,7 +27,11 @@ import {
 import { describePendingGates } from "../workflow-executor/pending-gate-info";
 import type { AwaitingRunContext } from "../workflow-executor/gate-mail";
 import { deliverRunTerminalMail } from "../workflow-executor/run-terminal-mail";
-import { loadRunRecord, setRunStatus } from "../workflow-executor/run-store";
+import {
+  failRunIfStillAwaiting,
+  loadRunRecord,
+  touchRunRecordUpdatedAt,
+} from "../workflow-executor/run-store";
 import { launchAgentSession } from "./agent-provisioning";
 import { resolveMyraDefinition, teardownThreadRows } from "./myra-threads";
 import type { RepoStore } from "@intx/hub-sessions";
@@ -162,7 +166,8 @@ export function createScheduledWorkflowGateAgent(
     args: ScheduledGateDriveArgs,
     message: string,
   ): Promise<void> {
-    await setRunStatus(deps.db, args.runId, "failed");
+    const flipped = await failRunIfStillAwaiting(deps.db, args.runId);
+    if (!flipped) return;
     await deliverRunTerminalMail(
       {
         db: deps.db,
@@ -235,7 +240,6 @@ export function createScheduledWorkflowGateAgent(
       );
       return;
     }
-
     const now = new Date();
     const instanceId = generateId("instance");
     const mappingId = generateId("instance");
@@ -292,22 +296,28 @@ export function createScheduledWorkflowGateAgent(
       instancePrincipalId,
     };
     try {
-      const launched = await launchAgentSession(
-        deps.db,
-        deps.sessionService,
-        deps.grantStore,
-        deps.eventCollectors,
-        {
-          agentId: def.id,
-          instanceId,
-          instancePrincipalId,
-          tenantId: item.tenantId,
-          tenantDomain,
-          systemPrompt: SCHEDULED_GATE_SYSTEM_PROMPT,
-          persona: { toolNames: [...SCHEDULED_GATE_TOOL_NAMES] },
-          now,
-        },
-      );
+      let launched: Awaited<ReturnType<typeof launchAgentSession>>;
+      try {
+        launched = await launchAgentSession(
+          deps.db,
+          deps.sessionService,
+          deps.grantStore,
+          deps.eventCollectors,
+          {
+            agentId: def.id,
+            instanceId,
+            instancePrincipalId,
+            tenantId: item.tenantId,
+            tenantDomain,
+            systemPrompt: SCHEDULED_GATE_SYSTEM_PROMPT,
+            persona: { toolNames: [...SCHEDULED_GATE_TOOL_NAMES] },
+            now,
+          },
+        );
+      } catch (launchErr) {
+        sessionBudget.refund(item.tenantId);
+        throw launchErr;
+      }
       address = launched.address;
       const turnPromise = awaitTurn(address);
       await deps.sessionService.sendUserMessage({
@@ -329,6 +339,7 @@ export function createScheduledWorkflowGateAgent(
       if (failedText || stillOpen) {
         if (item.attempt < maxTurns) {
           queue.push({ ...item, attempt: item.attempt + 1 });
+          void touchRunRecordUpdatedAt(deps.db, item.runId);
           return;
         }
         await failRun(
@@ -346,6 +357,7 @@ export function createScheduledWorkflowGateAgent(
       });
       if (item.attempt < maxTurns) {
         queue.push({ ...item, attempt: item.attempt + 1 });
+        void touchRunRecordUpdatedAt(deps.db, item.runId);
         return;
       }
       await failRun(
@@ -442,8 +454,21 @@ export function createScheduledWorkflowGateAgent(
             !kindAllowsScheduledPostIntakeDrive(args.kind, gateInfo)
           ) {
             log.warn(
-              "scheduled gate agent: skipping drive for kind without post-intake allowance",
+              "scheduled gate agent: post-intake gates open but kind lacks scheduled drive allowance",
               { runId: args.runId, kind: args.kind },
+            );
+            await failRun(
+              {
+                runId: args.runId,
+                kind: args.kind,
+                tenantId: args.tenantId,
+                principalId: args.principalId,
+                deploymentId: args.deploymentId,
+                signalName: targets[0]!,
+                deploymentDomain: deps.deploymentDomain,
+                repoStore: args.repoStore,
+              },
+              `Scheduled gate drive failed: workflow "${args.kind}" is not opted in for unattended post-intake gates`,
             );
             return;
           }
@@ -484,6 +509,7 @@ export function createScheduledWorkflowGateAgent(
             repoStore: args.repoStore,
             attempt: 1,
           });
+          void touchRunRecordUpdatedAt(deps.db, args.runId);
         }
         void processQueue();
       })().catch((err) => {

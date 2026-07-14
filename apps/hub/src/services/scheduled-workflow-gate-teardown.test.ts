@@ -42,7 +42,8 @@ mock.module("../workflow-executor/pending-gate-info", () => ({
 
 mock.module("../workflow-executor/run-store", () => ({
   loadRunRecord: mock(async () => ({ triggerSource: "scheduler" })),
-  setRunStatus: mock(async () => undefined),
+  failRunIfStillAwaiting: mock(async () => true),
+  touchRunRecordUpdatedAt: mock(async () => undefined),
   setPendingSignal: mock(async () => undefined),
   loadDeploymentMeta: mock(async () => null),
 }));

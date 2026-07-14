@@ -204,22 +204,28 @@ same execution model as manual starts, with two hub automations on human gates:
    short-lived **Myra** ephemeral session (`createScheduledWorkflowGateAgent` in
    `apps/hub/src/services/scheduled-workflow-gate-agent.ts`) that calls
    `workflow_list_runs` + `workflow_signal` to resolve each open post-intake
-   gate. Scheduler runs **do not** get owner "workflow needs you" gate mail for
-   those gates (`deliverPendingGateMail` in `gate-mail.ts` returns early).
+   gate. Scheduler runs **do not** get owner "workflow needs you" gate mail
+   while parked (`deliverPendingGateMail` in `gate-mail.ts` returns early for
+   any `triggerSource = 'scheduler'` run).
 
 **Opt-in surface for authors.** A workflow package may export
-`ALLOWS_SCHEDULED_POST_INTAKE_DRIVE = true` (read at deploy time by
-`apps/hub/bin/deploy-workflow.ts` and stored on the embedded catalog as
-`allowsScheduledPostIntakeDrive`). Test kinds can also appear on
-`SCHEDULED_POST_INTAKE_DRIVE_KIND_ALLOWLIST` in
+`ALLOWS_SCHEDULED_POST_INTAKE_DRIVE = true`; `apps/hub/bin/build-workflow-defs.ts`
+serializes it onto the embedded catalog as `allowsScheduledPostIntakeDrive` (then
+`deploy-workflow.ts` / `loadWorkflow` read that catalog). Test kinds can also
+appear on `SCHEDULED_POST_INTAKE_DRIVE_KIND_ALLOWLIST` in
 `apps/hub/src/lib/workflow-gate-info.ts`. Schedule attach APIs reject multi-gate
-kinds that lack that flag or allowlist entry (`kindAllowsScheduledPostIntakeDrive`).
+kinds via `isKindStructurallyAttachable` (which calls
+`kindAllowsScheduledPostIntakeDrive` for post-intake shapes).
 
 **Backstops.** The gate agent keeps an in-memory queue (default cap 32); when a
 new drive cannot be enqueued, the run is **`failed`** with terminal mail
-(`Scheduled gate drive failed: agent queue full`). A periodic reconciler
-(`stalled-scheduled-run-reconciler.ts`) fails scheduler runs left `awaiting` for
-longer than the configured timeout if intake or Myra drive never clears the gate.
+(`Scheduled gate drive failed: agent queue full`). Enqueue and drive retries touch
+`workflow_run_record.updated_at` so the stalled-run reconciler does not
+false-positive while work is queued. A periodic reconciler
+(`stalled-scheduled-run-reconciler.ts`) fails scheduler runs left `awaiting` with
+`updated_at` older than **one hour** (`DEFAULT_STALLED_SCHEDULED_RUN_TIMEOUT_MS`,
+a code constant unless tests pass `timeoutMs`) if intake or Myra drive never
+clears the gate.
 
 ### Workflows surface as UIBlocks in chat
 

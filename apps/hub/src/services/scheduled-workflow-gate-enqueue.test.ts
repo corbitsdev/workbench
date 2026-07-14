@@ -22,7 +22,7 @@ mock.module("./myra-threads", () => ({
   teardownThreadRows: mock(async () => undefined),
 }));
 
-const setRunStatusMock = mock(async () => undefined);
+const failRunIfStillAwaitingMock = mock(async () => true);
 const deliverRunTerminalMailMock = mock(async () => undefined);
 
 let releaseBlockedDrive: (() => void) | undefined;
@@ -44,7 +44,8 @@ mock.module("../workflow-executor/pending-gate-info", () => ({
 
 mock.module("../workflow-executor/run-store", () => ({
   loadRunRecord: mock(async () => ({ triggerSource: "scheduler" })),
-  setRunStatus: setRunStatusMock,
+  failRunIfStillAwaiting: failRunIfStillAwaitingMock,
+  touchRunRecordUpdatedAt: mock(async () => undefined),
   setPendingSignal: mock(async () => undefined),
   loadDeploymentMeta: mock(async () => null),
 }));
@@ -85,13 +86,13 @@ const BASE = {
 beforeEach(() => {
   happyDriveGateMock.mockClear();
   blockingDriveGateMock.mockClear();
-  setRunStatusMock.mockClear();
+  failRunIfStillAwaitingMock.mockClear();
   deliverRunTerminalMailMock.mockClear();
   releaseBlockedDrive = undefined;
 });
 
 describe("scheduled gate maybeEnqueue", () => {
-  it("skips post-intake drive when the kind is not allowlisted or flagged", async () => {
+  it("fails the run when post-intake gates are open but the kind is not opted in", async () => {
     const agent = createScheduledWorkflowGateAgent({
       db: { query: {} } as never,
       sessionService: {} as never,
@@ -104,9 +105,17 @@ describe("scheduled gate maybeEnqueue", () => {
     });
 
     await agent.maybeEnqueue({ runId: "run-1", ...BASE, kind: "gamma" });
-    await agent.waitForDrain();
 
     expect(happyDriveGateMock).not.toHaveBeenCalled();
+    expect(failRunIfStillAwaitingMock).toHaveBeenCalledWith(
+      expect.anything(),
+      "run-1",
+    );
+    expect(deliverRunTerminalMailMock).toHaveBeenCalled();
+    const terminalArgs = deliverRunTerminalMailMock.mock.calls[0]![1] as {
+      error: string;
+    };
+    expect(terminalArgs.error).toContain("not opted in");
   });
 
   it("calls driveGate for post-intake gates on an allowed scheduler run", async () => {
@@ -156,7 +165,7 @@ describe("scheduled gate maybeEnqueue", () => {
     await agent.maybeEnqueue({ runId: "run-queued", ...BASE });
     await agent.maybeEnqueue({ runId: "run-overflow", ...BASE });
 
-    expect(setRunStatusMock).toHaveBeenCalled();
+    expect(failRunIfStillAwaitingMock).toHaveBeenCalled();
     expect(deliverRunTerminalMailMock).toHaveBeenCalled();
     const terminalArgs = deliverRunTerminalMailMock.mock.calls[0]![1] as {
       runId: string;

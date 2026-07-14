@@ -1564,10 +1564,10 @@ const stopAwaitingSupervisorPrewarm = registerAwaitingSupervisorPrewarm({
   reconciler: workflowReconciler,
   intervalMs: config.awaitingSupervisorPrewarmIntervalMs,
 });
-// CL-3509: fail scheduler-fired runs parked at a gate past the timeout. A
-// scheduled run has no human to answer a gate — its `intake` is auto-delivered —
-// so one still `awaiting` long after its last log advance is wedged and is failed
-// legibly instead of lingering in the Now feed. Interactive runs are untouched.
+// CL-3509 / CL-3528: fail scheduler-fired runs parked at a gate past the timeout.
+// Intake is auto-delivered; allowed kinds may sit on post-intake gates while Myra
+// drives them. A run still `awaiting` with stale `updated_at` is wedged and is
+// failed instead of lingering in the Now feed. Interactive runs are untouched.
 const stopStalledScheduledRunReconciler = registerStalledScheduledRunReconciler(
   {
     db,
