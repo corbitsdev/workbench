@@ -21,6 +21,7 @@ import {
   optionalString,
   optionalStringArray,
   parseArgs,
+  requireMutationSuccess,
   requireNonEmptyString,
   requireString,
   type LinearToolsConfig,
@@ -514,7 +515,7 @@ export async function archiveIssue(
     { id: args.id },
     signal,
   );
-  return data.issueArchive ?? { success: false };
+  return requireMutationSuccess(data, "issueArchive");
 }
 
 export async function deleteIssue(
@@ -529,7 +530,7 @@ export async function deleteIssue(
     { id: args.id },
     signal,
   );
-  return data.issueDelete ?? { success: false };
+  return requireMutationSuccess(data, "issueDelete");
 }
 
 export async function linkIssues(
@@ -551,7 +552,7 @@ export async function linkIssues(
       { id: relationId },
       signal,
     );
-    return data.issueRelationDelete ?? { success: false };
+    return requireMutationSuccess(data, "issueRelationDelete");
   }
   const issueId = optionalString(args.issueId);
   const relatedIssueId = optionalString(args.relatedIssueId);
@@ -585,7 +586,7 @@ export async function linkIssues(
     },
     signal,
   );
-  return data.issueRelationCreate ?? { success: false };
+  return requireMutationSuccess(data, "issueRelationCreate");
 }
 
 export const LINEAR_LIST_ISSUES_DEFINITION: ToolDefinition = {
