@@ -6,11 +6,13 @@ import { workflowRunRecord } from "../db/schema";
 const log = getLogger(["services", "stalled-scheduled-run-reconciler"]);
 
 // How long a scheduler-fired run may sit parked at an awaitSignal gate before it
-// is failed. A scheduled run has no human to answer a gate: its one `intake` gate
-// is auto-delivered within seconds (CL-3509), so a run still `awaiting` this long
-// after its last log advance means the auto-delivery never landed (an invalid
-// stored intake, or an unexpected downstream gate). Generous enough to clear a
-// slow re-delivery + park, short enough that a wedged scheduled run does not
+// is failed. Scheduled runs have no human in the loop: the `intake` gate is
+// auto-delivered within seconds (CL-3509), and allowed multi-gate kinds may then
+// sit on post-intake gates while Myra drives them via the scheduled gate agent
+// (CL-3528). A run still `awaiting` past this timeout after its last DB touch
+// means intake never landed, post-intake drive never completed, or the run is
+// stuck on a gate the agent cannot resolve. The window is generous enough for a
+// slow Myra turn + queue, short enough that a wedged scheduled run does not
 // linger in the Now feed indefinitely.
 export const DEFAULT_STALLED_SCHEDULED_RUN_TIMEOUT_MS = 60 * 60 * 1000;
 
@@ -18,9 +20,10 @@ export const DEFAULT_STALLED_SCHEDULED_RUN_SWEEP_INTERVAL_MS = 5 * 60 * 1000;
 
 // Fail scheduler-sourced runs parked at an awaitSignal gate past the timeout.
 // STRICTLY scoped to `triggerSource = 'scheduler'` runs: an interactive run
-// legitimately waits on a human indefinitely and is never touched here. Marks the
-// coarse `failed` status (the log stays the source of truth for detail), so a
-// wedged scheduled run fails legibly instead of lingering `awaiting` forever.
+// legitimately waits on a human indefinitely and is never touched here. This
+// sweep is the backstop when CL-3528 Myra gate-drive or CL-3509 intake delivery
+// does not clear the gate in time — it only flips coarse `failed` on the run row
+// (the workflow log stays the source of truth for detail).
 // Returns the number of runs failed. Best-effort per row — one failure is logged
 // and never aborts the batch.
 export async function failStalledScheduledRuns(

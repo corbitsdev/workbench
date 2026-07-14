@@ -81,6 +81,8 @@ export type ScheduledWorkflowGateAgentDeps = {
   turnTimeoutMs?: number;
   maxTurns?: number;
   driveGate?: ScheduledGateDriverFn;
+  /** Test seam: override the in-memory drive queue cap (default 32). */
+  maxQueue?: number;
   now?: () => number;
 };
 
@@ -99,6 +101,7 @@ export function createScheduledWorkflowGateAgent(
 ): ScheduledWorkflowGateAgent {
   const turnTimeoutMs = deps.turnTimeoutMs ?? DEFAULT_TURN_TIMEOUT_MS;
   const maxTurns = deps.maxTurns ?? DEFAULT_MAX_TURNS;
+  const maxQueue = deps.maxQueue ?? MAX_QUEUE;
   const queue: QueueItem[] = [];
   const inFlight = new Set<string>();
   const pendingTurns = new Map<
@@ -439,11 +442,25 @@ export function createScheduledWorkflowGateAgent(
           const key = queueKey({ runId: args.runId, signalName });
           if (inFlight.has(key)) continue;
           if (queue.some((q) => queueKey(q) === key)) continue;
-          if (queue.length >= MAX_QUEUE) {
-            log.warn("scheduled gate agent: queue overflow, dropping drive", {
+          if (queue.length >= maxQueue) {
+            log.warn("scheduled gate agent: queue full; failing run", {
               runId: args.runId,
               signalName,
+              maxQueue,
             });
+            await failRun(
+              {
+                runId: args.runId,
+                kind: args.kind,
+                tenantId: args.tenantId,
+                principalId: args.principalId,
+                deploymentId: args.deploymentId,
+                signalName,
+                deploymentDomain: deps.deploymentDomain,
+                repoStore: args.repoStore,
+              },
+              "Scheduled gate drive failed: agent queue full",
+            );
             continue;
           }
           queue.push({

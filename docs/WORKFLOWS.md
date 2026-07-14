@@ -189,6 +189,38 @@ A raw-event SSE stream (`GET /api/v1/workflow-runs/:deploymentId/stream`,
 (`POST /api/v1/workflow-runs/:deploymentId/signal`) remain for run observation
 and human-in-the-loop approval.
 
+### Scheduled runs, intake, and post-intake gate drive (CL-3509 / CL-3528)
+
+**Scheduler-sourced** runs (`triggerSource = 'scheduler'`, started by
+`createWorkflowRunStarter` from `apps/hub/src/services/scheduler.ts`) follow the
+same execution model as manual starts, with two hub automations on human gates:
+
+1. **Intake (CL-3509).** When the schedule stores intake fields, the hub
+   auto-delivers the `intake` `awaitSignal` gate so the owner does not have to
+   open the dock. Kinds with only an `intake` gate (or no gates) can complete
+   unattended once intake is valid.
+2. **Post-intake gates (CL-3528).** Kinds with *additional* human gates after
+   `intake` are **opt-in** for unattended schedule attachment. The hub spins a
+   short-lived **Myra** ephemeral session (`createScheduledWorkflowGateAgent` in
+   `apps/hub/src/services/scheduled-workflow-gate-agent.ts`) that calls
+   `workflow_list_runs` + `workflow_signal` to resolve each open post-intake
+   gate. Scheduler runs **do not** get owner "workflow needs you" gate mail for
+   those gates (`deliverPendingGateMail` in `gate-mail.ts` returns early).
+
+**Opt-in surface for authors.** A workflow package may export
+`ALLOWS_SCHEDULED_POST_INTAKE_DRIVE = true` (read at deploy time by
+`apps/hub/bin/deploy-workflow.ts` and stored on the embedded catalog as
+`allowsScheduledPostIntakeDrive`). Test kinds can also appear on
+`SCHEDULED_POST_INTAKE_DRIVE_KIND_ALLOWLIST` in
+`apps/hub/src/lib/workflow-gate-info.ts`. Schedule attach APIs reject multi-gate
+kinds that lack that flag or allowlist entry (`kindAllowsScheduledPostIntakeDrive`).
+
+**Backstops.** The gate agent keeps an in-memory queue (default cap 32); when a
+new drive cannot be enqueued, the run is **`failed`** with terminal mail
+(`Scheduled gate drive failed: agent queue full`). A periodic reconciler
+(`stalled-scheduled-run-reconciler.ts`) fails scheduler runs left `awaiting` for
+longer than the configured timeout if intake or Myra drive never clears the gate.
+
 ### Workflows surface as UIBlocks in chat
 
 Human-in-the-loop gates and results render as **UIBlocks** in the chat dock, not

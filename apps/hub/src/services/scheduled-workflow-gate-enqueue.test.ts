@@ -1,6 +1,17 @@
-import { describe, expect, it, mock } from "bun:test";
+import { beforeEach, describe, expect, it, mock } from "bun:test";
 
-const driveGateMock = mock(async () => ({ ok: true as const }));
+const setRunStatusMock = mock(async () => undefined);
+const deliverRunTerminalMailMock = mock(async () => undefined);
+
+let releaseBlockedDrive: (() => void) | undefined;
+const blockingDriveGateMock = mock(async () => {
+  await new Promise<void>((resolve) => {
+    releaseBlockedDrive = resolve;
+  });
+  return { ok: true as const };
+});
+
+const happyDriveGateMock = mock(async () => ({ ok: true as const }));
 
 mock.module("../workflow-executor/pending-gate-info", () => ({
   describePendingGates: mock(async () => [
@@ -11,19 +22,49 @@ mock.module("../workflow-executor/pending-gate-info", () => ({
 
 mock.module("../workflow-executor/run-store", () => ({
   loadRunRecord: mock(async () => ({ triggerSource: "scheduler" })),
-  setRunStatus: mock(async () => undefined),
+  setRunStatus: setRunStatusMock,
+}));
+
+mock.module("../workflow-executor/run-terminal-mail", () => ({
+  deliverRunTerminalMail: deliverRunTerminalMailMock,
 }));
 
 mock.module("../lib/workflow-catalog", () => ({
   loadWorkflowGateInfos: mock(
     async () =>
-      new Map([["gamma", { requiresIntake: true, humanGateCount: 2 }]]),
+      new Map([
+        ["gamma", { requiresIntake: true, humanGateCount: 2 }],
+        [
+          "allowed-multi",
+          {
+            requiresIntake: true,
+            humanGateCount: 2,
+            allowsScheduledPostIntakeDrive: true,
+          },
+        ],
+      ]),
   ),
 }));
 
 const { createScheduledWorkflowGateAgent } = await import(
   "./scheduled-workflow-gate-agent"
 );
+
+const BASE = {
+  kind: "allowed-multi",
+  tenantId: "ten-1",
+  principalId: "pri-1",
+  deploymentId: "dep-1",
+  repoStore: {} as never,
+};
+
+beforeEach(() => {
+  happyDriveGateMock.mockClear();
+  blockingDriveGateMock.mockClear();
+  setRunStatusMock.mockClear();
+  deliverRunTerminalMailMock.mockClear();
+  releaseBlockedDrive = undefined;
+});
 
 describe("scheduled gate maybeEnqueue", () => {
   it("skips post-intake drive when the kind is not allowlisted or flagged", async () => {
@@ -35,20 +76,74 @@ describe("scheduled gate maybeEnqueue", () => {
       cryptoProvider: {} as never,
       deploymentDomain: "tenant.example",
       schedulerFeatureDefaultEnabled: true,
-      driveGate: driveGateMock,
+      driveGate: happyDriveGateMock,
     });
 
-    driveGateMock.mockClear();
-    agent.maybeEnqueue({
-      runId: "run-1",
-      kind: "gamma",
-      tenantId: "ten-1",
-      principalId: "pri-1",
-      deploymentId: "dep-1",
-      repoStore: {} as never,
-    });
+    agent.maybeEnqueue({ runId: "run-1", ...BASE, kind: "gamma" });
     await agent.waitForDrain();
 
-    expect(driveGateMock).not.toHaveBeenCalled();
+    expect(happyDriveGateMock).not.toHaveBeenCalled();
+  });
+
+  it("calls driveGate for post-intake gates on an allowed scheduler run", async () => {
+    const agent = createScheduledWorkflowGateAgent({
+      db: { query: {} } as never,
+      sessionService: {} as never,
+      grantStore: {} as never,
+      eventCollectors: {} as never,
+      cryptoProvider: {} as never,
+      deploymentDomain: "tenant.example",
+      schedulerFeatureDefaultEnabled: true,
+      driveGate: happyDriveGateMock,
+    });
+
+    agent.maybeEnqueue({ runId: "run-happy", ...BASE });
+    await agent.waitForDrain();
+
+    expect(happyDriveGateMock).toHaveBeenCalledTimes(1);
+    expect(happyDriveGateMock.mock.calls[0]![0]).toMatchObject({
+      runId: "run-happy",
+      kind: "allowed-multi",
+      signalName: "confirm",
+    });
+  });
+
+  it("fails the run when the drive queue is full", async () => {
+    const agent = createScheduledWorkflowGateAgent({
+      db: { query: {} } as never,
+      sessionService: {} as never,
+      grantStore: {} as never,
+      eventCollectors: {} as never,
+      cryptoProvider: {} as never,
+      deploymentDomain: "tenant.example",
+      schedulerFeatureDefaultEnabled: true,
+      driveGate: blockingDriveGateMock,
+      maxQueue: 1,
+    });
+
+    agent.maybeEnqueue({ runId: "run-blocked", ...BASE });
+    for (let i = 0; i < 50; i++) {
+      if (blockingDriveGateMock.mock.calls.length > 0) break;
+      await Bun.sleep(5);
+    }
+    agent.maybeEnqueue({ runId: "run-queued", ...BASE });
+    agent.maybeEnqueue({ runId: "run-overflow", ...BASE });
+
+    for (let i = 0; i < 100; i++) {
+      if (setRunStatusMock.mock.calls.length > 0) break;
+      await Bun.sleep(5);
+    }
+
+    expect(setRunStatusMock).toHaveBeenCalled();
+    expect(deliverRunTerminalMailMock).toHaveBeenCalled();
+    const terminalArgs = deliverRunTerminalMailMock.mock.calls[0]![1] as {
+      runId: string;
+      error: string;
+    };
+    expect(terminalArgs.runId).toBe("run-overflow");
+    expect(terminalArgs.error).toContain("queue full");
+
+    releaseBlockedDrive?.();
+    await agent.waitForDrain();
   });
 });
