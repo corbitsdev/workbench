@@ -4,7 +4,10 @@ import { useState } from "react";
 import { Button } from "@workbench/ui";
 import { adminTableCard } from "./admin-ui";
 import { CredentialRow } from "./CredentialRow";
-import type { OwnerCapabilityState } from "@workbench/shared";
+import type {
+  OwnerCapabilityState,
+  OwnerInboxSourcesResponse,
+} from "@workbench/shared";
 import {
   getOwnerCapabilities,
   getOwnerCredentials,
@@ -66,15 +69,37 @@ export function OwnerCapabilities() {
     queryFn: getOwnerInboxSources,
     staleTime: 5 * 60_000,
   });
-  const toggleInboxSource = useMutation({
-    mutationFn: ({ key, enabled }: { key: string; enabled: boolean }) =>
-      setOwnerInboxSourceEnabled(key, enabled),
-    onSuccess: () =>
-      queryClient.invalidateQueries({ queryKey: ["owner", "inbox-sources"] }),
-    onError: () =>
+  const toggleInboxSource = useMutation<
+    unknown,
+    Error,
+    { key: string; enabled: boolean },
+    { previous: OwnerInboxSourcesResponse | undefined }
+  >({
+    mutationFn: ({ key, enabled }) => setOwnerInboxSourceEnabled(key, enabled),
+    onMutate: async ({ key, enabled }) => {
+      const queryKey = ["owner", "inbox-sources"];
+      await queryClient.cancelQueries({ queryKey });
+      const previous =
+        queryClient.getQueryData<OwnerInboxSourcesResponse>(queryKey);
+      if (previous) {
+        queryClient.setQueryData<OwnerInboxSourcesResponse>(queryKey, {
+          sources: previous.sources.map((s) =>
+            s.key === key ? { ...s, enabled } : s,
+          ),
+        });
+      }
+      return { previous };
+    },
+    onError: (_error, _vars, context) => {
+      if (context?.previous) {
+        queryClient.setQueryData(["owner", "inbox-sources"], context.previous);
+      }
       setInboxSourceError(
         "Could not update the inbox source. Try again in a moment.",
-      ),
+      );
+    },
+    onSettled: () =>
+      queryClient.invalidateQueries({ queryKey: ["owner", "inbox-sources"] }),
   });
 
   const [oauthError, setOauthError] = useState<string | null>(null);

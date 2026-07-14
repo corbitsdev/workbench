@@ -128,7 +128,8 @@ const TOOL_CREDENTIAL_SUPPLEMENTS: Record<
       tool: "granola_list_notes",
     },
     inboxSource: {
-      description: "Granola calls are processed and mailed to participants.",
+      description:
+        "New Granola calls are classified and summarized; participants get the summary and their action items by mail.",
     },
   },
   firecrawl: {
@@ -151,7 +152,8 @@ const TOOL_CREDENTIAL_SUPPLEMENTS: Record<
       tool: "attio_recent_activity",
     },
     inboxSource: {
-      description: "Attio tasks sync into your tasks.",
+      description:
+        "Your Attio tasks sync into Workbench tasks — created, updated, and completed in step.",
     },
   },
   vercel: {

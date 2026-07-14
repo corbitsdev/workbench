@@ -1,4 +1,5 @@
 import { Link } from "react-router";
+import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { Select, Toggle } from "@workbench/settings";
 import {
   LINEAR_BACKFILL_OPTIONS,
@@ -75,7 +76,7 @@ function LinearOptions({
   onBackfillChange,
 }: LinearOptionsProps) {
   return (
-    <div className="mt-1 flex flex-col gap-3 border-t border-border pt-3">
+    <>
       <div>
         <label
           htmlFor="linear-source-scope"
@@ -119,7 +120,48 @@ function LinearOptions({
           Applies once, the first time you turn Linear on.
         </p>
       </div>
-    </div>
+    </>
+  );
+}
+
+interface LinearOptionsDisclosureProps {
+  readonly settingsLoading: boolean;
+  readonly scope: string;
+  readonly backfill: string;
+  readonly onScopeChange: (value: string) => void;
+  readonly onBackfillChange: (value: string) => void;
+  readonly reduceMotion: boolean;
+}
+
+function LinearOptionsDisclosure({
+  settingsLoading,
+  scope,
+  backfill,
+  onScopeChange,
+  onBackfillChange,
+  reduceMotion,
+}: LinearOptionsDisclosureProps) {
+  return (
+    <motion.div
+      initial={{ opacity: 0, height: 0 }}
+      animate={{ opacity: 1, height: "auto" }}
+      exit={{ opacity: 0, height: 0 }}
+      transition={{ duration: reduceMotion ? 0 : 0.2, ease: "easeInOut" }}
+      className="overflow-hidden"
+    >
+      <div className="mt-1 flex flex-col gap-3 border-t border-border pt-3">
+        {settingsLoading ? (
+          <p className="text-xs text-text-3">Loading options…</p>
+        ) : (
+          <LinearOptions
+            scope={scope}
+            backfill={backfill}
+            onScopeChange={onScopeChange}
+            onBackfillChange={onBackfillChange}
+          />
+        )}
+      </div>
+    </motion.div>
   );
 }
 
@@ -138,9 +180,24 @@ export function InboxSourcesToggles() {
   const connections = useMeConnections();
   const settingsQuery = usePreferenceSettings();
   const updatePreference = useUpdatePreference();
+  const reduceMotion = useReducedMotion() ?? false;
 
-  if (query.isPending || query.isError) {
-    return null;
+  if (query.isPending) {
+    return (
+      <div className="mt-4 flex flex-col gap-2 border-t border-border pt-4">
+        <p className="text-sm text-text-2">Loading…</p>
+      </div>
+    );
+  }
+
+  if (query.isError) {
+    return (
+      <div className="mt-4 flex flex-col gap-2 border-t border-border pt-4">
+        <p className="text-sm text-text-2">
+          Could not load inbox sources. Try again in a moment.
+        </p>
+      </div>
+    );
   }
 
   const sources = query.data;
@@ -189,36 +246,43 @@ export function InboxSourcesToggles() {
                     id={controlId}
                     aria-label={source.label}
                     checked={source.enabled}
+                    disabled={status.kind === "needs-connection"}
                     onCheckedChange={(checked) =>
                       update.mutate({ key: source.key, enabled: checked })
                     }
                   />
                 </div>
                 <ConnectionStatusLabel status={status} />
-                {source.key === "linear" && source.enabled && (
-                  <LinearOptions
-                    scope={
-                      typeof linearScope === "string" ? linearScope : "assigned"
-                    }
-                    backfill={
-                      typeof linearBackfill === "string"
-                        ? linearBackfill
-                        : "none"
-                    }
-                    onScopeChange={(value) =>
-                      updatePreference.mutate({
-                        key: LINEAR_SCOPE_PREFERENCE_KEY,
-                        value,
-                      })
-                    }
-                    onBackfillChange={(value) =>
-                      updatePreference.mutate({
-                        key: LINEAR_BACKFILL_PREFERENCE_KEY,
-                        value,
-                      })
-                    }
-                  />
-                )}
+                <AnimatePresence initial={false}>
+                  {source.key === "linear" && source.enabled && (
+                    <LinearOptionsDisclosure
+                      settingsLoading={settingsQuery.isPending}
+                      scope={
+                        typeof linearScope === "string"
+                          ? linearScope
+                          : "assigned"
+                      }
+                      backfill={
+                        typeof linearBackfill === "string"
+                          ? linearBackfill
+                          : "none"
+                      }
+                      onScopeChange={(value) =>
+                        updatePreference.mutate({
+                          key: LINEAR_SCOPE_PREFERENCE_KEY,
+                          value,
+                        })
+                      }
+                      onBackfillChange={(value) =>
+                        updatePreference.mutate({
+                          key: LINEAR_BACKFILL_PREFERENCE_KEY,
+                          value,
+                        })
+                      }
+                      reduceMotion={reduceMotion}
+                    />
+                  )}
+                </AnimatePresence>
               </li>
             );
           })}

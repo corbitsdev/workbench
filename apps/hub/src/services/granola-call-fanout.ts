@@ -178,19 +178,21 @@ function buildBody(
   member: Member,
   artifactLabel: string,
 ): string {
-  const myTasks = actionsForMember(input.analysis.tasks, member);
-  const myActions = actionsForMember(input.analysis.actionItems, member);
+  const title = input.note.title ?? "(untitled)";
+  const myActionItems = [
+    ...actionsForMember(input.analysis.tasks, member),
+    ...actionsForMember(input.analysis.actionItems, member),
+  ];
   return [
+    `You were on a call ("${title}") that Workbench just summarized.`,
+    "",
     input.analysis.summary,
     "",
-    `Call: ${input.note.title ?? "(untitled)"} (${input.classification})`,
+    `Call: ${title} (${input.classification})`,
     `Artifact: ${artifactLabel}`,
     "",
-    "Your tasks:",
-    renderActionLines(myTasks),
-    "",
     "Your action items:",
-    renderActionLines(myActions),
+    renderActionLines(myActionItems),
   ].join("\n");
 }
 
@@ -264,7 +266,7 @@ export function createGranolaCallFanout(
           principalId: member.principalId,
           address: inboxAddress,
           fromAddress,
-          subject: `[Call] ${title}`,
+          subject: `Call summary: ${title}`,
           body: buildBody(input, member, artifactLabel),
           messageKey: fanOutMessageKey(input.note.id, member.principalId),
           refs,
