@@ -158,6 +158,9 @@ describe("friendlyToolSummary", () => {
     expect(friendlyToolSummary(call("attio__list_objects"))).toBe(
       "Browsing Attio objects",
     );
+    expect(friendlyToolSummary(call("attio__recent_activity"))).toBe(
+      "Checking recent Attio activity",
+    );
     expect(friendlyToolSummary(call("exa__search", { query: "hello" }))).toBe(
       "Searching the web for hello",
     );
