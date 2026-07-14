@@ -33,12 +33,12 @@ mock.module("../lib/workflow-run-gate", () => ({
     runnableKinds.some((k) => k.kind === kind),
 }));
 
-// Attach gate (CL-3508/CL-3509): the route reads gate shapes from the embedded
-// catalog. "deck"/"heartbeat" are unattended; "last30days-research" is
-// intake-gated (its ONLY gate is intake); "multi-gate" has a second human gate,
-// so it is not attachable. A kind absent from this map is treated as
-// not-attachable. The real intake payload validation (resume-payload-registry)
-// is NOT mocked — last30days requires a non-empty topic.
+// Attach gate (CL-3508/CL-3509/CL-3528): the route reads gate shapes from the
+// embedded catalog. "deck"/"heartbeat" are unattended; "last30days-research" is
+// intake-only; "multi-gate" has intake plus a post-intake human gate and is
+// attachable only when allowsScheduledPostIntakeDrive is set (CL-3528). A kind absent from
+// this map is treated as not-attachable. The real intake payload validation
+// (resume-payload-registry) is NOT mocked — last30days requires a non-empty topic.
 const gateInfos = new Map<
   string,
   { requiresIntake: boolean; humanGateCount: number }
@@ -46,7 +46,14 @@ const gateInfos = new Map<
   ["heartbeat", { requiresIntake: false, humanGateCount: 0 }],
   ["deck", { requiresIntake: false, humanGateCount: 0 }],
   ["last30days-research", { requiresIntake: true, humanGateCount: 1 }],
-  ["multi-gate", { requiresIntake: true, humanGateCount: 2 }],
+  [
+    "multi-gate",
+    {
+      requiresIntake: true,
+      humanGateCount: 2,
+      allowsScheduledPostIntakeDrive: true,
+    },
+  ],
 ]);
 mock.module("../lib/workflow-catalog", () => ({
   loadWorkflowGateInfos: async () => gateInfos,
@@ -299,8 +306,33 @@ describe("POST /me/schedules attach gate (CL-3508/CL-3509)", () => {
     });
   });
 
-  it("rejects a kind with a human gate beyond intake", async () => {
+  it("rejects a multi-gate kind without post-intake drive allowance (CL-3528)", async () => {
+    gateInfos.set("blocked-multi", {
+      requiresIntake: true,
+      humanGateCount: 2,
+    });
+    runnableKinds = [...runnableKinds, { kind: "blocked-multi" }];
     storeCalls.length = 0;
+    const res = await mountApp().fetch(
+      req("/me/schedules", {
+        method: "POST",
+        user: "user-a",
+        body: JSON.stringify({
+          kind: "blocked-multi",
+          hourUtc: 9,
+          payload: { topic: "x" },
+        }),
+      }),
+    );
+    runnableKinds = runnableKinds.filter((k) => k.kind !== "blocked-multi");
+    gateInfos.delete("blocked-multi");
+    expect(res.status).toBe(400);
+    expect(storeCalls.find((c) => c.fn === "create")).toBeUndefined();
+  });
+
+  it("stores a schedule for an intake-first multi-gate kind when catalog allows drive (CL-3528)", async () => {
+    storeCalls.length = 0;
+    createThrows = null;
     const res = await mountApp().fetch(
       req("/me/schedules", {
         method: "POST",
@@ -312,11 +344,17 @@ describe("POST /me/schedules attach gate (CL-3508/CL-3509)", () => {
         }),
       }),
     );
-    expect(res.status).toBe(400);
-    expect(await res.json()).toMatchObject({
-      error: expect.stringContaining("cannot be scheduled"),
+    expect(res.status).toBe(201);
+    const create = storeCalls.find((c) => c.fn === "create");
+    expect(create?.args).toMatchObject({
+      kind: "multi-gate",
+      hourUtc: 9,
+      payload: {
+        topic: "x",
+        userAddress: "usr_user-a@workbench.example",
+        userRefId: "user-a",
+      },
     });
-    expect(storeCalls.some((c) => c.fn === "create")).toBe(false);
   });
 
   it("rejects a runnable kind that has no embedded gate info", async () => {

@@ -112,6 +112,12 @@ const RESUME_PAYLOAD_SCHEMAS: Record<string, Record<string, Type>> = {
     intake: SumbleIntakePayloadSchema,
     review: SumbleReviewPayloadSchema,
   },
+  // Multi-gate scheduler integration fixture (CL-3528): intake then a post-intake
+  // confirm gate with an empty payload — exercises scheduled Myra gate-drive.
+  "scheduler-multi-gate-test": {
+    intake: type({ note: "string" }),
+    confirm: type({}),
+  },
 };
 
 export type ResumePayloadValidation =

@@ -31,8 +31,15 @@ mock.module("./pending-gate-info", () => ({
   describePendingGates: async () => pendingGates,
 }));
 
+let runTriggerSource: string | null | undefined = null;
+
 mock.module("./run-store", () => ({
   loadDeploymentMeta: async () => deploymentMeta,
+  loadRunRecord: async () =>
+    runTriggerSource === undefined
+      ? null
+      : { triggerSource: runTriggerSource },
+  setPendingSignal: async () => undefined,
 }));
 
 mock.module("../config", () => ({
@@ -84,6 +91,7 @@ afterEach(() => {
   warnLogs.length = 0;
   pendingGates = [];
   deploymentMeta = null;
+  runTriggerSource = null;
 });
 
 describe("deliverPendingGateMail", () => {
@@ -195,6 +203,22 @@ describe("deliverPendingGateMail", () => {
     expect(insertCalls).toHaveLength(0);
     expect(errorLogs).toHaveLength(1);
     expect(errorLogs[0]?.message).toContain("No tenant row");
+  });
+
+  it("skips gate mail for scheduler-sourced runs (CL-3528)", async () => {
+    runTriggerSource = "scheduler";
+    pendingGates = [{ signalName: "confirm" }];
+    const db = makeDb({
+      owner: { id: "prn-alice", kind: "user", refId: "alice" },
+      tenant: { domain: "tenant.example" },
+    });
+
+    await deliverPendingGateMail(deps(db), {
+      ...RUN,
+      principalId: "prn-alice",
+    });
+
+    expect(insertCalls).toHaveLength(0);
   });
 
   it("writes nothing when no open gate is readable from the log", async () => {

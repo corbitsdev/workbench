@@ -133,6 +133,11 @@ import {
   sweepStaleTriageInstances,
   type MailboxTriage,
 } from "./services/mailbox-triage";
+import {
+  createScheduledWorkflowGateAgent,
+  sweepStaleScheduledGateInstances,
+  type ScheduledWorkflowGateAgent,
+} from "./services/scheduled-workflow-gate-agent";
 import { createArtifactsRouter } from "./routes/artifacts";
 import { createFileParseRouter } from "./routes/file-parse";
 import { createSearchRouter } from "./routes/search";
@@ -415,6 +420,14 @@ const repoStore = wrapRepoStoreWithProjection(
           error: err instanceof Error ? err : new Error(String(err)),
         });
       });
+      scheduledGateAgent?.maybeEnqueue({
+        runId: args.runId,
+        kind: args.kind,
+        tenantId: args.tenantId,
+        principalId: args.principalId,
+        deploymentId: args.deploymentId,
+        repoStore: args.repoStore,
+      });
     },
     // Deliver a "your run finished" mailbox item to the run creator when a
     // run reaches a terminal status. Fire-and-forget; the deliverer owns its
@@ -464,6 +477,7 @@ const mailboxEventBus = createMailboxEventBus();
 // brief window where this is undefined can never drop a real event.
 // eslint-disable-next-line prefer-const -- assigned once, after sessionService below; can't be const at declaration
 let mailboxTriage: MailboxTriage | undefined;
+let scheduledGateAgent: ScheduledWorkflowGateAgent | undefined;
 
 const lookups: SidecarLookups = {
   ...baseLookups,
@@ -564,6 +578,7 @@ const eventCollectors = createEventCollectorRegistry({
 
     fatalErrorRecovery(agentAddress, turn);
     mailboxTriage?.handleTurnFinalized(agentAddress, turn);
+    scheduledGateAgent?.handleTurnFinalized(agentAddress, turn);
   },
 });
 
@@ -619,6 +634,16 @@ mailboxTriage = createMailboxTriage({
   mailboxEventBus,
 });
 
+scheduledGateAgent = createScheduledWorkflowGateAgent({
+  db,
+  sessionService,
+  grantStore,
+  eventCollectors,
+  cryptoProvider,
+  deploymentDomain: config.rootTenant.domain,
+  schedulerFeatureDefaultEnabled: config.scheduler.enabled,
+});
+
 // Retires any `myra-triage` instances a prior process left behind because
 // their `endSession` call failed mid-teardown (see `runOne`'s finally block
 // in mailbox-triage.ts). Bounded, logged once, fire-and-forget — a failure
@@ -630,6 +655,11 @@ const TRIAGE_SWEEP_BOOT_DELAY_MS = 5 * 60_000;
 setTimeout(() => {
   void sweepStaleTriageInstances(db, sessionService).catch((err) => {
     log.error("Triage boot sweep failed", {
+      error: err instanceof Error ? err : new Error(String(err)),
+    });
+  });
+  void sweepStaleScheduledGateInstances(db, sessionService).catch((err) => {
+    log.error("Scheduled gate boot sweep failed", {
       error: err instanceof Error ? err : new Error(String(err)),
     });
   });
@@ -1534,10 +1564,10 @@ const stopAwaitingSupervisorPrewarm = registerAwaitingSupervisorPrewarm({
   reconciler: workflowReconciler,
   intervalMs: config.awaitingSupervisorPrewarmIntervalMs,
 });
-// CL-3509: fail scheduler-fired runs parked at a gate past the timeout. A
-// scheduled run has no human to answer a gate — its `intake` is auto-delivered —
-// so one still `awaiting` long after its last log advance is wedged and is failed
-// legibly instead of lingering in the Now feed. Interactive runs are untouched.
+// CL-3509 / CL-3528: fail scheduler-fired runs parked at a gate past the timeout.
+// Intake is auto-delivered; allowed kinds may sit on post-intake gates while Myra
+// drives them. A run still `awaiting` with stale `updated_at` is wedged and is
+// failed instead of lingering in the Now feed. Interactive runs are untouched.
 const stopStalledScheduledRunReconciler = registerStalledScheduledRunReconciler(
   {
     db,

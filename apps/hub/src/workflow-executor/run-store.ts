@@ -56,6 +56,8 @@ export interface RunState {
   pendingSignal?: PendingRunSignal;
   // Last write time of the record row; read by the hibernation CAS.
   updatedAt?: Date;
+  // "scheduler" when fired by an attached schedule (CL-3509); absent otherwise.
+  triggerSource?: string | null;
 }
 
 // The run-level projection the bridge writes on every pack (CL-2669): the coarse
@@ -105,6 +107,7 @@ function rowToState(row: WorkflowRunRecordRow): RunState {
       ? { pendingSignal }
       : {}),
     updatedAt: row.updatedAt,
+    triggerSource: row.triggerSource,
   };
 }
 
@@ -238,6 +241,35 @@ export async function setRunStatus(
     .update(workflowRunRecord)
     .set({ status })
     .where(eq(workflowRunRecord.id, runId));
+}
+
+export async function touchRunRecordUpdatedAt(
+  db: HubDb,
+  runId: string,
+  at: Date = new Date(),
+): Promise<void> {
+  await db
+    .update(workflowRunRecord)
+    .set({ updatedAt: at })
+    .where(eq(workflowRunRecord.id, runId));
+}
+
+export async function failRunIfStillAwaiting(
+  db: HubDb,
+  runId: string,
+): Promise<boolean> {
+  const flipped = await db
+    .update(workflowRunRecord)
+    .set({ status: "failed" })
+    .where(
+      and(
+        eq(workflowRunRecord.id, runId),
+        eq(workflowRunRecord.status, "awaiting"),
+        isNull(workflowRunRecord.deletedAt),
+      ),
+    )
+    .returning({ id: workflowRunRecord.id });
+  return flipped.length > 0;
 }
 
 // Apply the run-level projection folded from the event log (CL-2669). Updates
