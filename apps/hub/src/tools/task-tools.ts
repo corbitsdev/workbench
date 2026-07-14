@@ -75,12 +75,38 @@ export const TASK_CREATE_DEFINITION: ToolDefinition = {
       sourceRef: {
         type: "string",
         description:
-          "Optional reference back to the originating message/object (e.g. the mail message this task came from) — used to avoid creating duplicate tasks for the same source.",
+          "Optional stable origin key (e.g. mailbox row id from triage) — triage sessions dedupe task_create on this value.",
       },
       links: {
         type: "array",
         description:
-          "Optional links back to the originating object (artifact, workflow run, mail, conversation, or url).",
+          "Optional links to Workbench objects or external pages. Each item needs kind and ref.",
+        items: {
+          type: "object",
+          required: ["kind", "ref"],
+          properties: {
+            kind: {
+              type: "string",
+              enum: [
+                "artifact",
+                "workflow_run",
+                "mail",
+                "conversation",
+                "url",
+              ],
+              description: "Link target type.",
+            },
+            ref: {
+              type: "string",
+              description:
+                "artifact/workflow_run/mail/conversation: object id (not a URL). url: absolute http(s) URL only.",
+            },
+            label: {
+              type: "string",
+              description: "Optional display label.",
+            },
+          },
+        },
       },
     },
     required: ["title"],

@@ -165,7 +165,7 @@ export function isTriageSessionPrompt(systemPrompt: string): boolean {
  */
 function tasksSectionFor(tasksEnabled: boolean): string {
   if (!tasksEnabled) return "";
-  return `(4) When the message is actionable — it needs a reply, a follow-up, or a hand-off — call \`task_create\` once with a short title and a \`sourceRef\` pointing back to this message. Skip it for messages that need no action.`;
+  return `(4) When the message is actionable — it needs a reply, a follow-up, or a hand-off — call \`task_create\` once with a short title. Set \`sourceRef\` to the \`Mailbox message id\` from the user message (exact string). Optionally add \`links\`: \`[{ "kind": "mail", "ref": "<same id>" }]\` — never invent \`mail:…\` prefixes or put non-http refs in \`kind: "url"\`. Skip \`task_create\` for messages that need no action.`;
 }
 
 export function buildMailboxTriagePrompt(

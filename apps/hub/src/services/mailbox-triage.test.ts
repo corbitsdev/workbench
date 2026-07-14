@@ -387,6 +387,7 @@ describe("createMailboxTriage", () => {
     >;
     expect(sendArgs.from).toBe("hub@tenant.example");
     expect(sendArgs.content).toContain("Partnership intro");
+    expect(sendArgs.content).toContain("Mailbox message id: row-1");
     expect(sendArgs.content).toContain("keen to explore a partnership");
 
     triage.handleTurnFinalized(

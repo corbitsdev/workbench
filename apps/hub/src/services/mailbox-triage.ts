@@ -147,6 +147,7 @@ function buildTriageMessage(item: UserMailboxRowEvent): {
     `From: ${from}`,
     `To: ${item.recipientAddress}`,
     `Subject: ${subject}`,
+    `Mailbox message id: ${item.rowId}`,
   ];
   if (date !== undefined) lines.push(`Date: ${date}`);
   lines.push("", body);
