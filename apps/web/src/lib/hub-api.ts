@@ -657,9 +657,11 @@ export async function listMyraThreads(
   return parsed;
 }
 
+// `created` is false when the hub handed back an existing never-used thread
+// instead of minting a new one (CL-3749) — the client treats both the same.
 const MyraThreadCreateSchema = type({
   thread: MyraThreadSchema,
-  created: "true",
+  created: "boolean",
 });
 
 export async function createMyraThread(

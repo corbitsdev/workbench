@@ -262,6 +262,7 @@ describe("createMyraThread", () => {
     updated?: Record<string, unknown>[];
     inserted?: Record<string, unknown>[];
     agentDefs?: Record<string, unknown>[];
+    existingThreads?: Record<string, unknown>[];
   }) {
     const agentDefs = opts.agentDefs ?? [
       {
@@ -283,7 +284,9 @@ describe("createMyraThread", () => {
         agent: {
           findMany: mock(() => Promise.resolve(agentDefs)),
         },
-        memberAgentInstance: { findMany: mock(() => Promise.resolve([])) },
+        memberAgentInstance: {
+          findMany: mock(() => Promise.resolve(opts.existingThreads ?? [])),
+        },
       },
       transaction: mock(async (fn: (tx: unknown) => Promise<void>) => {
         opts.transactions();
@@ -336,6 +339,81 @@ describe("createMyraThread", () => {
     expect(launchAgentSessionMock).not.toHaveBeenCalled();
     expect(txCount).toBe(1);
     expect(deleted).toHaveLength(0);
+  });
+
+  // CL-3749: unused threads are hidden from every list, so repeated "+ New
+  // chat" clicks must not strand invisible rows — an existing never-used
+  // thread IS the new chat.
+  it("hands back an existing never-used thread instead of creating another", async () => {
+    let txCount = 0;
+    const db = buildCreateDb({
+      transactions: () => (txCount += 1),
+      existingThreads: [
+        {
+          id: "map-used",
+          instanceId: "inst-used",
+          label: "Pricing",
+          createdAt: new Date("2026-01-01T00:00:00Z"),
+          lastActivityAt: new Date("2026-01-02T00:00:00Z"),
+          firstMessageAt: new Date("2026-01-02T00:00:00Z"),
+        },
+        {
+          id: "map-unused",
+          instanceId: "inst-unused",
+          label: "Chat 2",
+          createdAt: new Date("2026-01-03T00:00:00Z"),
+          lastActivityAt: new Date("2026-01-03T00:00:00Z"),
+          firstMessageAt: null,
+        },
+      ],
+    });
+
+    // biome-ignore lint/suspicious/noExplicitAny: structural db mock
+    const result = await createMyraThread(db as any, {
+      tenantId: "tn-global",
+      tenantDomain: "global.test",
+      memberPrincipalId: "prn-member",
+    });
+
+    expect(result.created).toBe(false);
+    expect(result.thread.id).toBe("map-unused");
+    expect(result.thread.instanceId).toBe("inst-unused");
+    expect(result.thread.firstMessageAt).toBeNull();
+    // No rows written, no session launched — the unused thread is reused as-is.
+    expect(txCount).toBe(0);
+    expect(launchAgentSessionMock).not.toHaveBeenCalled();
+  });
+
+  it("still creates a fresh thread for an explicit label even when an unused thread exists", async () => {
+    let txCount = 0;
+    const inserted: Record<string, unknown>[] = [];
+    const db = buildCreateDb({
+      transactions: () => (txCount += 1),
+      inserted,
+      existingThreads: [
+        {
+          id: "map-unused",
+          instanceId: "inst-unused",
+          label: "Chat",
+          createdAt: new Date("2026-01-03T00:00:00Z"),
+          lastActivityAt: new Date("2026-01-03T00:00:00Z"),
+          firstMessageAt: null,
+        },
+      ],
+    });
+
+    // biome-ignore lint/suspicious/noExplicitAny: structural db mock
+    const result = await createMyraThread(db as any, {
+      tenantId: "tn-global",
+      tenantDomain: "global.test",
+      memberPrincipalId: "prn-member",
+      label: "Quarterly planning",
+    });
+
+    expect(result.created).toBe(true);
+    expect(result.thread.label).toBe("Quarterly planning");
+    expect(result.thread.id).not.toBe("map-unused");
+    expect(txCount).toBe(1);
   });
 
   it("reseeds the tenant's own def (CL-2517 wiring)", async () => {

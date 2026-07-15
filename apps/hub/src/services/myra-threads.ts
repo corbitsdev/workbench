@@ -229,7 +229,7 @@ export async function createMyraThread(
     memberPrincipalId: string;
     label?: string;
   },
-): Promise<{ thread: MyraThreadRow; created: true }> {
+): Promise<{ thread: MyraThreadRow; created: boolean }> {
   const template = AGENT_TEMPLATES.find((t) => t.key === MYRA_TEMPLATE_KEY);
   if (!template) {
     throw new Error("Myra template is not registered");
@@ -290,6 +290,29 @@ export async function createMyraThread(
       eq(memberAgentInstance.templateKey, MYRA_TEMPLATE_KEY),
     ),
   });
+
+  // Unused threads are hidden from every list until their first message
+  // (CL-3749), so a member clicking "+ New chat" repeatedly would otherwise
+  // strand an unbounded trail of invisible, undeletable rows (each with a
+  // deployed instance). A never-used thread IS a new chat — hand it back
+  // instead of creating another. Explicit-label creates still make a fresh
+  // thread: a named thread carries user intent an anonymous blank one doesn't.
+  if (opts.label === undefined) {
+    const unused = existingCount.find((row) => row.firstMessageAt === null);
+    if (unused) {
+      return {
+        created: false,
+        thread: {
+          id: unused.id,
+          instanceId: unused.instanceId,
+          label: unused.label?.trim() || defaultThreadLabel(0),
+          createdAt: unused.createdAt.toISOString(),
+          lastActivityAt: unused.lastActivityAt.toISOString(),
+          firstMessageAt: null,
+        },
+      };
+    }
+  }
 
   const label = opts.label?.trim() || defaultThreadLabel(existingCount.length);
 

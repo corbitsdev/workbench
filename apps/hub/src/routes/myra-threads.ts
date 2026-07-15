@@ -138,7 +138,9 @@ export function createMyraThreadsRouter(
           description: "Thread created",
           content: {
             "application/json": {
-              schema: resolver(type({ thread: MyraThread, created: "true" })),
+              schema: resolver(
+                type({ thread: MyraThread, created: "boolean" }),
+              ),
             },
           },
         },
