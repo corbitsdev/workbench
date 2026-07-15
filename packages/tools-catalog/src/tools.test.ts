@@ -75,6 +75,28 @@ describe("createCatalogTools", () => {
     expect(exposure.exposed.size).toBe(0);
   });
 
+  test("load_tools by package includes a size warning naming the pinned count", async () => {
+    const exposure: ToolExposureState = { exposed: new Set() };
+    const runner = createCatalogTools({ catalog, exposure });
+    const result = await runner.run(
+      call(LOAD_TOOLS_NAME, { package: "attio" }),
+      signal,
+    );
+    const content = result.content as { warning?: string };
+    expect(content.warning).toBeDefined();
+    expect(content.warning).toContain("2");
+  });
+
+  test("load_tools by names has no size warning", async () => {
+    const exposure: ToolExposureState = { exposed: new Set() };
+    const runner = createCatalogTools({ catalog, exposure });
+    const result = await runner.run(
+      call(LOAD_TOOLS_NAME, { names: ["attio__query_records"] }),
+      signal,
+    );
+    expect((result.content as { warning?: string }).warning).toBeUndefined();
+  });
+
   test("load_tools reports unknown names without throwing", async () => {
     const exposure: ToolExposureState = { exposed: new Set() };
     const runner = createCatalogTools({ catalog, exposure });
@@ -85,6 +107,64 @@ describe("createCatalogTools", () => {
     const content = result.content as { unknownNames: string[] };
     expect(content.unknownNames).toEqual(["nope"]);
     expect(exposure.exposed.size).toBe(0);
+  });
+});
+
+describe("search_tools auto-expose and affordance", () => {
+  const wideCatalog: ToolCatalog = [
+    {
+      package: "linear",
+      summary: "Linear issue tracker.",
+      tags: ["issues"],
+      tools: [
+        { name: "linear__create_issue", description: "Create an issue." },
+        { name: "linear__update_issue", description: "Update an issue." },
+        { name: "linear__list_issue", description: "List issue records." },
+        { name: "linear__get_issue", description: "Get an issue." },
+        { name: "linear__assign_issue", description: "Assign an issue." },
+      ],
+    },
+  ];
+
+  test("auto-exposes the tools when three or fewer match", async () => {
+    const exposure: ToolExposureState = { exposed: new Set() };
+    const runner = createCatalogTools({ catalog, exposure });
+    const result = await runner.run(
+      call(SEARCH_TOOLS_NAME, { query: "records" }),
+      signal,
+    );
+    expect(result.isError).toBeUndefined();
+    expect(exposure.exposed.has("attio__query_records")).toBe(true);
+    const content = result.content as { loaded?: string[]; hint: string };
+    expect(content.loaded).toEqual(["attio__query_records"]);
+    expect(content.hint.toLowerCase()).toContain("call them directly");
+  });
+
+  test("auto-expose resets the loop guard (counts as a load)", async () => {
+    const exposure: ToolExposureState = { exposed: new Set() };
+    const runner = createCatalogTools({ catalog, exposure });
+    let last;
+    for (let i = 0; i < 6; i++) {
+      last = await runner.run(
+        call(SEARCH_TOOLS_NAME, { query: "records" }),
+        signal,
+      );
+    }
+    expect(last?.isError).toBeUndefined();
+  });
+
+  test("more than three matches yields an explicit load_tools affordance", async () => {
+    const exposure: ToolExposureState = { exposed: new Set() };
+    const runner = createCatalogTools({ catalog: wideCatalog, exposure });
+    const result = await runner.run(
+      call(SEARCH_TOOLS_NAME, { query: "issue" }),
+      signal,
+    );
+    expect(result.isError).toBeUndefined();
+    expect(exposure.exposed.size).toBe(0);
+    const hint = (result.content as { hint: string }).hint;
+    expect(hint).toContain("call load_tools with names:");
+    expect(hint).toContain("linear__create_issue");
   });
 });
 
