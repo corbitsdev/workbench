@@ -29,9 +29,7 @@ const staticContractWordCount = (format: PromptFormat): number => {
 // Content of a single XML-tagged section, for assertions that must be scoped to
 // one section rather than the whole prompt.
 const sectionContent = (prompt: string, tag: string): string => {
-  const match = prompt.match(
-    new RegExp(`<${tag}>\\n([\\s\\S]*?)\\n</${tag}>`),
-  );
+  const match = prompt.match(new RegExp(`<${tag}>\\n([\\s\\S]*?)\\n</${tag}>`));
   if (match === null) throw new Error(`section <${tag}> not found`);
   return match[1] ?? "";
 };
@@ -59,8 +57,10 @@ describe("buildPersonalAgentSystemPrompt", () => {
       "authority",
       "terminology",
       "knowledge",
+      "directory",
       "memory",
       "honesty",
+      "generative-ui",
       "style",
     ]) {
       expect(prompt).toContain(`<${tag}>`);
@@ -130,7 +130,9 @@ describe("buildPersonalAgentSystemPrompt", () => {
 
   it("coordinates expertise rather than claiming authority", () => {
     const prompt = buildPersonalAgentSystemPrompt("Myra", xmlFormat);
-    expect(prompt).toContain("coordinate the right expertise rather than claim");
+    expect(prompt).toContain(
+      "coordinate the right expertise rather than claim",
+    );
   });
 });
 
@@ -172,8 +174,10 @@ describe("operating loop", () => {
       buildPersonalAgentSystemPrompt("Myra", xmlFormat),
       "operating-loop",
     );
-    expect(loop).toContain("an empty search is not proof of absence");
-    expect(loop).toContain("rephrase once with different words");
+    expect(loop).toContain(
+      "rephrase an empty search once with different words",
+    );
+    expect(loop).toContain("before concluding a capability does not exist");
   });
 
   it("carries a request to a finished result and confirms before irreversible work", () => {
@@ -182,7 +186,7 @@ describe("operating loop", () => {
       "operating-loop",
     );
     expect(loop).toContain("finished, reported result");
-    expect(loop).toContain("not a generic default");
+    expect(loop).toContain("rather than a generic default");
     expect(loop.toLowerCase()).toContain("irreversible");
   });
 
@@ -229,19 +233,39 @@ describe("trust boundary", () => {
   });
 });
 
+describe("directory", () => {
+  it("carries the teammate mail addressing convention", () => {
+    const prompt = buildPersonalAgentSystemPrompt("Myra", xmlFormat);
+    expect(sectionContent(prompt, "directory")).toContain("usr_<id>@");
+    expect(sectionContent(prompt, "directory")).toContain(
+      "never invent or guess an address",
+    );
+  });
+});
+
+describe("generative-ui", () => {
+  it("carries the ui fence contract and block kinds", () => {
+    const prompt = buildPersonalAgentSystemPrompt("Myra", xmlFormat);
+    const section = sectionContent(prompt, "generative-ui");
+    expect(section).toContain("fenced block tagged `ui`");
+    expect(section).toContain("`kind` field");
+    expect(section).toContain("never emit invalid JSON");
+  });
+});
+
 describe("knowledge", () => {
   it("reaches for company knowledge before web search", () => {
     const prompt = buildPersonalAgentSystemPrompt("Myra", xmlFormat);
-    expect(prompt).toContain(
-      "reach for what it already knows before anything else",
-    );
+    expect(prompt).toContain("reach for them before anything else");
     expect(prompt).toContain("Web search is supplemental");
   });
 
   it("grounds a named company, person, or deal in internal context first", () => {
     const prompt = buildPersonalAgentSystemPrompt("Myra", xmlFormat);
     expect(prompt).toContain("When a request names a company, person, or deal");
-    expect(prompt).toContain("lead with that before adding outside context");
+    expect(prompt).toContain(
+      "lead with what you already know about them before adding outside context",
+    );
   });
 
   it("gathers efficiently and pulls fresh for time-bound requests", () => {
@@ -263,10 +287,8 @@ describe("memory", () => {
     const prompt = buildPersonalAgentSystemPrompt("Myra", xmlFormat);
     expect(prompt).toContain("<memory>");
     expect(prompt).toContain("reach it through your memory tools, not a file");
-    expect(prompt).toContain(
-      "saving replaces what is stored, it does not append",
-    );
-    expect(prompt).toContain("never for a greeting or a simple reply");
+    expect(prompt).toContain("saving replaces, never appends");
+    expect(prompt).toContain("never for a greeting");
   });
 });
 
