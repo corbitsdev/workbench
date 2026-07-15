@@ -1,5 +1,5 @@
 import { describe, expect, it, mock } from "bun:test";
-import type { AssetService } from "@intx/hub-sessions";
+import { AssetServiceError, type AssetService } from "@intx/hub-sessions";
 import type { HubDb } from "../db";
 
 const validateTarballPackageJSON = mock(
@@ -21,6 +21,7 @@ const validateTarballPackageJSON = mock(
 );
 
 mock.module("@intx/hub-sessions", () => ({
+  AssetServiceError,
   validateTarballPackageJSON,
 }));
 
@@ -48,7 +49,9 @@ function makeAssetService(handlers: {
     readAssetBlob: async ({ assetId, path }) => {
       const key = `${assetId}:${path}`;
       const blob = handlers.bytes[key];
-      if (!blob) throw new Error(`has no blob at ${path}`);
+      if (!blob) {
+        throw new AssetServiceError("not_found", `has no blob at ${path}`);
+      }
       return blob;
     },
   } as unknown as AssetService;
@@ -83,5 +86,26 @@ describe("assertNoCrossAssetPackageRegistryCollisions", () => {
         tenantId: "t1",
       }),
     ).rejects.toBeInstanceOf(PackageRegistryHierarchyCollisionError);
+  });
+
+  it("allows the same name@version when integrity matches across assets", async () => {
+    const shared = new Uint8Array([9, 9, 9]);
+    await assertNoCrossAssetPackageRegistryCollisions({
+      db: makeDb([
+        { id: "legacy", name: "workbench-builtins" },
+        { id: "canon", name: "workspace-builtins" },
+      ]),
+      assetService: makeAssetService({
+        list: {
+          legacy: ["a.tgz"],
+          canon: ["b.tgz"],
+        },
+        bytes: {
+          "legacy:tarballs/a.tgz": shared,
+          "canon:tarballs/b.tgz": shared,
+        },
+      }),
+      tenantId: "t1",
+    });
   });
 });

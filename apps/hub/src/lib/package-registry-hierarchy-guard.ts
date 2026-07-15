@@ -1,6 +1,7 @@
 import { and, eq } from "drizzle-orm";
 import { schema as intxSchema } from "@intx/db";
 import {
+  AssetServiceError,
   type AssetService,
   validateTarballPackageJSON,
 } from "@intx/hub-sessions";
@@ -13,6 +14,15 @@ export class PackageRegistryHierarchyCollisionError extends Error {
   constructor(message: string) {
     super(message);
     this.name = "PackageRegistryHierarchyCollisionError";
+  }
+}
+
+export class PackageRegistryTarballInvalidError extends Error {
+  readonly reason = "package_registry_tarball_invalid" as const;
+
+  constructor(message: string) {
+    super(message);
+    this.name = "PackageRegistryTarballInvalidError";
   }
 }
 
@@ -36,12 +46,8 @@ async function listPackageRegistryAssetsOnTenant(
     );
 }
 
-function isMissingTarballsDirectoryError(err: unknown): boolean {
-  const message = err instanceof Error ? err.message : String(err);
-  return (
-    message.includes("has no directory at") ||
-    message.includes("has no blob at")
-  );
+function isMissingRegistryPathError(err: unknown): boolean {
+  return err instanceof AssetServiceError && err.reason === "not_found";
 }
 
 /**
@@ -73,7 +79,7 @@ export async function assertNoCrossAssetPackageRegistryCollisions(args: {
         dir: "tarballs",
       });
     } catch (err) {
-      if (isMissingTarballsDirectoryError(err)) continue;
+      if (isMissingRegistryPathError(err)) continue;
       throw err;
     }
 
@@ -92,7 +98,7 @@ export async function assertNoCrossAssetPackageRegistryCollisions(args: {
 
       const outcome = await validateTarballPackageJSON(filename, bytes);
       if (!outcome.ok) {
-        throw new PackageRegistryHierarchyCollisionError(
+        throw new PackageRegistryTarballInvalidError(
           `package-registry asset ${asset.name} (${asset.id}) tarball ${filename} is invalid: ${outcome.reason}`,
         );
       }

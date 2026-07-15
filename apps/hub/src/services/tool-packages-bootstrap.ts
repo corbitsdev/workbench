@@ -21,6 +21,13 @@ import {
 
 const log = getLogger(["services", "tool-packages-bootstrap"]);
 
+export class ToolRegistryAutopublishError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "ToolRegistryAutopublishError";
+  }
+}
+
 export interface ToolPackagesBootstrapDeps {
   db: HubDb;
   repoStore: RepoStore;
@@ -34,16 +41,27 @@ export interface ToolPackagesBootstrapDeps {
 
 async function loadEmbeddedManifest(
   embeddedDir: string,
+  required: boolean,
 ): Promise<EmbeddedToolPackageRow[]> {
   const manifestPath = join(embeddedDir, "manifest.json");
   let raw: string;
   try {
     raw = await readFile(manifestPath, "utf8");
   } catch {
+    if (required) {
+      throw new ToolRegistryAutopublishError(
+        `embedded tool package manifest missing at ${manifestPath}`,
+      );
+    }
     return [];
   }
   const parsed = EmbeddedToolPackageManifestSchema(JSON.parse(raw));
   if (parsed instanceof type.errors) {
+    if (required) {
+      throw new ToolRegistryAutopublishError(
+        `embedded tool package manifest is invalid: ${parsed.summary}`,
+      );
+    }
     log.error(
       "embedded tool package manifest is invalid; skipping autopublish",
       {
@@ -51,6 +69,11 @@ async function loadEmbeddedManifest(
       },
     );
     return [];
+  }
+  if (required && parsed.length === 0) {
+    throw new ToolRegistryAutopublishError(
+      "embedded tool package manifest has no rows",
+    );
   }
   return parsed;
 }
@@ -133,11 +156,7 @@ export async function publishEmbeddedToolPackages(
   }
 
   const embeddedDir = deps.embeddedDir ?? embeddedToolPackagesDir();
-  const rows = await loadEmbeddedManifest(embeddedDir);
-  if (rows.length === 0) {
-    log.info("tool registry autopublish: no embedded manifest rows; skipping");
-    return;
-  }
+  const rows = await loadEmbeddedManifest(embeddedDir, true);
 
   const assetId = await ensurePackageRegistryAsset(deps);
 

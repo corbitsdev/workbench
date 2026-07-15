@@ -13,10 +13,6 @@ mock.module("../lib/package-registry-tarball-upload", () => ({
   putPackageRegistryTarball: putTarballSpy,
 }));
 
-mock.module("../lib/package-registry-hierarchy-guard", () => ({
-  assertNoCrossAssetPackageRegistryCollisions: async () => {},
-}));
-
 const createAssetSpy =
   mock<
     (...args: unknown[]) => Promise<{ id: string; kind: string; name: string }>
@@ -25,15 +21,18 @@ const readBlobSpy = mock<(...args: unknown[]) => Promise<Uint8Array>>();
 
 mock.module("@intx/hub-sessions", () => ({
   AssetServiceError: class AssetServiceError extends Error {
-    constructor(
-      readonly reason: string,
-      message: string,
-    ) {
+    readonly reason: string;
+    constructor(reason: string, message: string) {
       super(message);
       this.name = "AssetServiceError";
+      this.reason = reason;
     }
   },
   WORKSPACE_BUILTINS_REGISTRY: "workspace-builtins",
+  validateTarballPackageJSON: async () => ({
+    ok: true as const,
+    pkg: { name: "@workbench/tools-demo", version: "1.0.0" },
+  }),
 }));
 
 let assetRow: { id: string } | null = null;
@@ -62,9 +61,15 @@ function makeDb() {
   return {
     select: () => ({
       from: () => ({
-        where: () => ({
-          limit: () => Promise.resolve(assetRow ? [assetRow] : []),
-        }),
+        where: () => {
+          const rows = assetRow
+            ? [{ id: assetRow.id, name: "workspace-builtins" }]
+            : [];
+          const chain = Promise.resolve(rows);
+          return Object.assign(chain, {
+            limit: () => Promise.resolve(rows),
+          });
+        },
       }),
     }),
   };
@@ -197,5 +202,28 @@ describe("publishEmbeddedToolPackages", () => {
         embeddedDir: fixtureDir,
       }),
     ).rejects.toThrow("upload failed");
+  });
+
+  it("rejects when manifest is missing and autopublish is enabled", async () => {
+    const emptyDir = await mkdtemp(join(tmpdir(), "tool-bootstrap-empty-"));
+    try {
+      await expect(
+        publishEmbeddedToolPackages({
+          db: makeDb() as never,
+          repoStore: {} as never,
+          assetService: {
+            createAsset: createAssetSpy,
+            readAssetBlob: readBlobSpy,
+          } as never,
+          rootTenantId: "ten_root",
+          enabled: true,
+          registryName: "workspace-builtins",
+          buildSha: null,
+          embeddedDir: emptyDir,
+        }),
+      ).rejects.toThrow(/manifest missing/);
+    } finally {
+      await rm(emptyDir, { recursive: true, force: true });
+    }
   });
 });
