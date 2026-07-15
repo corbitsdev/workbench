@@ -287,6 +287,11 @@ describe("createMyraThread", () => {
         memberAgentInstance: {
           findMany: mock(() => Promise.resolve(opts.existingThreads ?? [])),
         },
+        agentInstance: {
+          findFirst: mock(() =>
+            Promise.resolve({ principalId: "prn-stale-instance" }),
+          ),
+        },
       },
       transaction: mock(async (fn: (tx: unknown) => Promise<void>) => {
         opts.transactions();
@@ -385,10 +390,12 @@ describe("createMyraThread", () => {
     expect(launchAgentSessionMock).not.toHaveBeenCalled();
   });
 
-  it("does not reuse an unused thread deployed against a stale definition (CL-2517 guarantee)", async () => {
+  it("reaps (never reuses) an unused thread deployed against a stale definition", async () => {
     let txCount = 0;
+    const deleted: unknown[] = [];
     const db = buildCreateDb({
       transactions: () => (txCount += 1),
+      deleted,
       existingThreads: [
         {
           id: "map-stale",
@@ -409,8 +416,47 @@ describe("createMyraThread", () => {
       memberPrincipalId: "prn-member",
     });
 
+    // A stale-def unused row would hand out an old toolset if reused — and be
+    // stranded forever if merely skipped (hidden, unreachable, undeletable).
+    // It must be torn down while a fresh thread is created.
     expect(result.created).toBe(true);
     expect(result.thread.id).not.toBe("map-stale");
+    expect(deleted.length).toBeGreaterThan(0);
+    // Two transactions: the reap teardown and the create.
+    expect(txCount).toBe(2);
+  });
+
+  it("neither reuses nor reaps a custom-labelled unused thread", async () => {
+    let txCount = 0;
+    const deleted: unknown[] = [];
+    const db = buildCreateDb({
+      transactions: () => (txCount += 1),
+      deleted,
+      existingThreads: [
+        {
+          id: "map-named",
+          instanceId: "inst-named",
+          agentId: "agt-myra",
+          label: "Quarterly planning",
+          createdAt: new Date("2026-01-03T00:00:00Z"),
+          lastActivityAt: new Date("2026-01-03T00:00:00Z"),
+          firstMessageAt: null,
+        },
+      ],
+    });
+
+    // biome-ignore lint/suspicious/noExplicitAny: structural db mock
+    const result = await createMyraThread(db as any, {
+      tenantId: "tn-global",
+      tenantDomain: "global.test",
+      memberPrincipalId: "prn-member",
+    });
+
+    // A named thread carries user intent: "+ New chat" must not consume its
+    // identity, and it is never garbage-collected.
+    expect(result.created).toBe(true);
+    expect(result.thread.id).not.toBe("map-named");
+    expect(deleted).toHaveLength(0);
     expect(txCount).toBe(1);
   });
 

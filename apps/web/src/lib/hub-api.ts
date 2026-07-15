@@ -691,7 +691,8 @@ export async function listMyraThreads(
 }
 
 // `created` is false when the hub handed back an existing never-used thread
-// instead of minting a new one (CL-3749) — the client treats both the same.
+// instead of minting a new one (CL-3749) — navigation treats both the same,
+// but the thread-list cache must not double-count a reused thread.
 const MyraThreadCreateSchema = type({
   thread: MyraThreadSchema,
   created: "boolean",
@@ -700,7 +701,7 @@ const MyraThreadCreateSchema = type({
 export async function createMyraThread(
   tenantId: string,
   label?: string,
-): Promise<MyraThread> {
+): Promise<{ thread: MyraThread; created: boolean }> {
   const raw = await hubFetch<unknown>(
     "POST",
     myraThreadsBase(tenantId),
@@ -710,7 +711,7 @@ export async function createMyraThread(
   if (parsed instanceof type.errors) {
     throw new Error(`Invalid Myra thread create response: ${parsed.summary}`);
   }
-  return parsed.thread;
+  return parsed;
 }
 
 const MyraThreadMutateSchema = type({ thread: MyraThreadSchema });

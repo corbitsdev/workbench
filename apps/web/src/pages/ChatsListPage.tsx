@@ -134,7 +134,7 @@ export function ChatsListPage() {
   const newChat = useCallback(() => {
     setNewChatError(null);
     createThreadMutate(undefined, {
-      onSuccess: (thread) => {
+      onSuccess: ({ thread }) => {
         writeLastActiveThreadId(thread.id);
         navigate(`/chats/${thread.id}`);
       },
