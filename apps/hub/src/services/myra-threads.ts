@@ -282,6 +282,7 @@ export async function createMyraThread(
   const now = new Date();
   const instanceId = generateId("instance");
   let instancePrincipalId = "";
+  let reapedCount = 0;
 
   const existingCount = await db.query.memberAgentInstance.findMany({
     where: and(
@@ -341,6 +342,7 @@ export async function createMyraThread(
           mappingId: row.id,
           instancePrincipalId: staleInstance.principalId,
         });
+        reapedCount += 1;
       } catch (err) {
         log.error("failed to reap stale unused Myra thread", {
           mappingId: row.id,
@@ -351,7 +353,11 @@ export async function createMyraThread(
     }
   }
 
-  const label = opts.label?.trim() || defaultThreadLabel(existingCount.length);
+  // Rows reaped above no longer exist, so they must not inflate the default
+  // "Chat N" numbering.
+  const label =
+    opts.label?.trim() ||
+    defaultThreadLabel(existingCount.length - reapedCount);
 
   const mappingId = generateId("instance");
 

@@ -134,8 +134,19 @@ export function createMyraThreadsRouter(
         },
       },
       responses: {
+        200: {
+          description:
+            "Existing never-used thread returned instead (created: false)",
+          content: {
+            "application/json": {
+              schema: resolver(
+                type({ thread: MyraThread, created: "boolean" }),
+              ),
+            },
+          },
+        },
         201: {
-          description: "Thread created",
+          description: "Thread created (created: true)",
           content: {
             "application/json": {
               schema: resolver(
@@ -166,7 +177,7 @@ export function createMyraThreadsRouter(
         memberPrincipalId: ctx.memberPrincipalId,
         ...(body.label !== undefined ? { label: body.label } : {}),
       });
-      return c.json(result, 201);
+      return c.json(result, result.created ? 201 : 200);
     },
   );
 
