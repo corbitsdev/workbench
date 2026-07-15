@@ -140,7 +140,7 @@ describe("search_tools auto-expose and affordance", () => {
     expect(exposure.exposed.has("attio__query_records")).toBe(true);
     const content = result.content as { loaded?: string[]; hint: string };
     expect(content.loaded).toEqual(["attio__query_records"]);
-    expect(content.hint.toLowerCase()).toContain("call them directly");
+    expect(content.hint.toLowerCase()).toContain("call it directly");
   });
 
   test("auto-expose resets the loop guard (counts as a load)", async () => {

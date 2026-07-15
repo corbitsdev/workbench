@@ -13,7 +13,7 @@ export const LOAD_TOOLS_NAME = "load_tools";
 export const SEARCH_TOOLS_DEFINITION: ToolDefinition = {
   name: SEARCH_TOOLS_NAME,
   description:
-    'Discover tools that are available but not currently shown in your function list. Most of your capabilities are loadable on demand — search here by what you want to do (e.g. "CRM records", "linear issue", "meeting notes", "deploy"), then call the match. When a search narrows to three or fewer tools they are loaded for you automatically and are immediately callable; a larger result comes with an explicit load_tools affordance listing the top matches. Optionally filter by `package` or `tags`. Returns matches grouped by package with a one-line description per tool. Read-only.',
+    'Discover tools that are available but not currently shown in your function list. Most of your capabilities are loadable on demand — search here by what you want to do (e.g. "CRM records", "linear issue", "meeting notes", "deploy"), then call the match. When a search narrows to three or fewer tools they are loaded for you automatically and are immediately callable; a larger result comes with an explicit load_tools affordance listing the top matches. Optionally filter by `package` or `tags`. Returns matches grouped by package with a one-line description per tool.',
   inputSchema: {
     type: "object",
     properties: {
@@ -207,7 +207,10 @@ function runSearch(
         matchCount: matches.length,
         packages,
         loaded,
-        hint: `Loaded ${loaded.length === 1 ? "this tool" : "these tools"}: ${JSON.stringify(loaded)}. They are now in your function list — call them directly.`,
+        hint:
+          loaded.length === 1
+            ? `Loaded this tool: ${JSON.stringify(loaded)}. It is now in your function list — call it directly.`
+            : `Loaded these tools: ${JSON.stringify(loaded)}. They are now in your function list — call them directly.`,
       },
     };
   }
@@ -281,9 +284,10 @@ function runLoad(
 }
 
 /**
- * Build the in-process catalog tool runner. `search_tools` is read-only over
- * the catalog; `load_tools` mutates the shared `exposure` set, which the
- * dynamic-tools director reads on its next inference call. The runner is
+ * Build the in-process catalog tool runner. Both tools mutate the shared
+ * `exposure` set — `load_tools` always, `search_tools` when a small match set
+ * auto-exposes — and the dynamic-tools director reads it on its next
+ * inference call. The runner is
  * constructed by the harness with direct references to both objects, so the
  * effect crosses to the director in-process without any transport.
  */
