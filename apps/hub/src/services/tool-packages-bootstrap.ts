@@ -10,13 +10,14 @@ import {
   type RepoStore,
 } from "@intx/hub-sessions";
 import type { HubDb } from "../db";
+import { assertNoCrossAssetPackageRegistryCollisions } from "../lib/package-registry-hierarchy-guard";
+import { putPackageRegistryTarball } from "../lib/package-registry-tarball-upload";
 import {
   EmbeddedToolPackageManifestSchema,
   classifyToolPackageDrift,
   embeddedToolPackagesDir,
   type EmbeddedToolPackageRow,
 } from "../lib/tool-packages-embedded";
-import { putPackageRegistryTarball } from "../lib/package-registry-tarball-upload";
 
 const log = getLogger(["services", "tool-packages-bootstrap"]);
 
@@ -120,7 +121,8 @@ async function readRegistryTarballBytes(
 
 /**
  * Sync embedded tool-package tarballs into the root tenant package-registry asset
- * (CL-3093). Idempotent per tarball via integrity comparison; fail-safe per row.
+ * (CL-3093). Idempotent per tarball via integrity comparison. When enabled, any
+ * sync or hierarchy collision failure rejects the boot path (CL-3656).
  */
 export async function publishEmbeddedToolPackages(
   deps: ToolPackagesBootstrapDeps,
@@ -137,79 +139,50 @@ export async function publishEmbeddedToolPackages(
     return;
   }
 
-  let assetId: string;
-  try {
-    assetId = await ensurePackageRegistryAsset(deps);
-  } catch (err) {
-    log.error("tool registry autopublish: failed to ensure registry asset", {
-      registryName: deps.registryName,
-      tenantId: deps.rootTenantId,
-      buildSha: deps.buildSha,
-      error: err instanceof Error ? err.message : String(err),
-    });
-    return;
-  }
+  const assetId = await ensurePackageRegistryAsset(deps);
 
   let uploaded = 0;
   let unchanged = 0;
-  let skippedOnError = 0;
 
   for (const row of rows) {
     const tarballPath = join(embeddedDir, "tarballs", row.tarballFilename);
-    try {
-      let registryBytes: Uint8Array | null = null;
-      try {
-        registryBytes = await readRegistryTarballBytes(
-          deps.assetService,
-          assetId,
-          row.tarballFilename,
-        );
-      } catch (err) {
-        skippedOnError += 1;
-        log.error(
-          "tool registry autopublish: failed to read registry tarball",
-          {
-            name: row.name,
-            filename: row.tarballFilename,
-            error: err instanceof Error ? err.message : String(err),
-          },
-        );
-        continue;
-      }
+    const registryBytes = await readRegistryTarballBytes(
+      deps.assetService,
+      assetId,
+      row.tarballFilename,
+    );
 
-      const drift = classifyToolPackageDrift({
-        embeddedIntegrity: row.integrity,
-        registryBytes,
-      });
-      if (drift.action === "skip") {
-        unchanged += 1;
-        continue;
-      }
-
-      const bytes = await readFile(tarballPath);
-      await putPackageRegistryTarball({
-        repoStore: deps.repoStore,
-        assetId,
-        filename: row.tarballFilename,
-        bytes: new Uint8Array(bytes),
-      });
-      uploaded += 1;
-      log.info("tool registry autopublish: uploaded tarball", {
-        name: row.name,
-        version: row.version,
-        filename: row.tarballFilename,
-        reason: drift.reason,
-        buildSha: deps.buildSha,
-      });
-    } catch (err) {
-      skippedOnError += 1;
-      log.error("tool registry autopublish: failed to sync tarball; skipping", {
-        name: row.name,
-        filename: row.tarballFilename,
-        error: err instanceof Error ? err.message : String(err),
-      });
+    const drift = classifyToolPackageDrift({
+      embeddedIntegrity: row.integrity,
+      registryBytes,
+    });
+    if (drift.action === "skip") {
+      unchanged += 1;
+      continue;
     }
+
+    const bytes = await readFile(tarballPath);
+    await putPackageRegistryTarball({
+      repoStore: deps.repoStore,
+      assetId,
+      filename: row.tarballFilename,
+      bytes: new Uint8Array(bytes),
+    });
+    uploaded += 1;
+    log.info("tool registry autopublish: uploaded tarball", {
+      name: row.name,
+      version: row.version,
+      filename: row.tarballFilename,
+      reason: drift.reason,
+      buildSha: deps.buildSha,
+    });
   }
+
+  await assertNoCrossAssetPackageRegistryCollisions({
+    db: deps.db,
+    assetService: deps.assetService,
+    tenantId: deps.rootTenantId,
+  });
 
   log.info("tool registry autopublish finished", {
     registryName: deps.registryName,
@@ -217,7 +190,6 @@ export async function publishEmbeddedToolPackages(
     buildSha: deps.buildSha,
     uploaded,
     unchanged,
-    skippedOnError,
     total: rows.length,
   });
 }

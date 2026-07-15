@@ -1,4 +1,5 @@
 import { type } from "arktype";
+import { WORKSPACE_BUILTINS_REGISTRY } from "@intx/hub-sessions";
 import { getLogger } from "@intx/log";
 import { HEARTBEAT_WORKFLOW_KIND } from "@workbench/shared";
 
@@ -329,9 +330,9 @@ export function loadConfig() {
     toolRegistryAutopublishOnBoot: parseBooleanEnv(
       "TOOL_REGISTRY_AUTOPUBLISH_ON_BOOT",
     ),
-    // Package-registry asset name for boot-time tool sync. Default workbench-builtins.
+    // Package-registry asset name for boot-time tool sync (must match session closure).
     toolRegistryName:
-      optionalEnv("TOOL_REGISTRY_NAME")?.trim() || "workbench-builtins",
+      optionalEnv("TOOL_REGISTRY_NAME")?.trim() || WORKSPACE_BUILTINS_REGISTRY,
     // Kill switch for ephemeral Myra triage of external inbound user mail
     // (per-item session, prepare-only by default). Default OFF; opt in per
     // environment.

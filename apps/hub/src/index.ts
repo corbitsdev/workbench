@@ -1994,6 +1994,9 @@ void publishEmbeddedToolPackages({
     log.error("tool registry autopublish-on-boot failed", {
       error: err instanceof Error ? err.message : String(err),
     });
+    if (config.toolRegistryAutopublishOnBoot) {
+      void flushSentry().finally(() => process.exit(1));
+    }
   })
   .then(() =>
     // CL-2593: auto-publish build-serialized workflow defs after tool sync.
