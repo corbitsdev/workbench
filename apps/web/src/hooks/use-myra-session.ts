@@ -44,6 +44,7 @@ import {
 } from "../lib/instance-transport";
 import { classifyLaunchState } from "../components/agent-launch-helpers";
 import { useReportConnectionStatus } from "./use-report-connection-status";
+import { useStreamRerender } from "./use-stream-rerender";
 
 const LAUNCH_RETRY_DELAY_MS = 4000;
 
@@ -405,6 +406,7 @@ export function useMyraSession(
     lastMessagesRef.current = [];
   }
   const [, forceUpdate] = useState(0);
+  const scheduleStreamRerender = useStreamRerender();
   const resolvedInstanceIdRef = useRef<string | null>(null);
   const [resolvedInstanceId, setResolvedInstanceId] = useState<string | null>(
     null,
@@ -690,8 +692,10 @@ export function useMyraSession(
           tenantId: targetTenantId,
           instanceId: targetInstanceId,
           transport,
+          // Fires once per streamed token; must not be a synchronous urgent
+          // update or it starves router navigation transitions.
           onChange: () => {
-            if (!cancelled) forceUpdate((n) => n + 1);
+            if (!cancelled) scheduleStreamRerender();
           },
           onError: handleConnectionLoss,
         });
@@ -704,7 +708,7 @@ export function useMyraSession(
           transport,
           { tenantId: targetTenantId, instanceId: targetInstanceId },
           () => {
-            if (!cancelled) forceUpdate((n) => n + 1);
+            if (!cancelled) scheduleStreamRerender();
           },
         );
         toolNamesRef.current = trackers.toolNames;
