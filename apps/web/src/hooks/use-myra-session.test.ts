@@ -13,6 +13,10 @@ import { act, renderHook, waitFor } from "@testing-library/react";
 import React from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter } from "react-router";
+import {
+  isMyraThreadUsed,
+  resetLocallyUsedMyraThreads,
+} from "./myra-threads-cache";
 
 function wrapper({ children }: { children: React.ReactNode }) {
   const client = new QueryClient({
@@ -401,6 +405,47 @@ describe("useMyraSession launch gating (CL-2309 smoothness)", () => {
     rerender({ id: "inst-2" });
 
     expect(result.current.state.phase).toBe("loading");
+  });
+});
+
+describe("useMyraSession — no cross-thread state leak (CL-3749)", () => {
+  // The regression: resolvedInstanceId survived a thread switch, so for the
+  // renders between the switch and the next connect() the hook reported the
+  // PREVIOUS thread's instance — feeding the auto-title guard and the
+  // feedback/attachment queries with the wrong identity.
+  it("resets the exposed instanceId in the same update as an identity change", async () => {
+    const { rerender, result } = renderHook(
+      ({ id }: { id: string }) => useMyraSession(id, "tnt-acme", true),
+      { initialProps: { id: "inst-1" }, wrapper },
+    );
+    await waitFor(() => expect(result.current.instanceId).toBe("inst-1"));
+
+    rerender({ id: "inst-2" });
+
+    // No render may ever expose the previous thread's instance id.
+    expect(result.current.instanceId).toBeNull();
+    await waitFor(() => expect(result.current.instanceId).toBe("inst-2"));
+  });
+
+  it("marks the thread used locally on the first send, so the sidebar can surface it (CL-3749)", async () => {
+    resetLocallyUsedMyraThreads();
+    const { result } = renderHook(
+      () => useMyraSession("inst-used", "tnt-acme", true),
+      { wrapper },
+    );
+    await waitFor(() => expect(result.current.live).toBe(true));
+    expect(
+      isMyraThreadUsed({ instanceId: "inst-used", firstMessageAt: null }),
+    ).toBe(false);
+
+    act(() => {
+      void result.current.send("first message");
+    });
+
+    expect(
+      isMyraThreadUsed({ instanceId: "inst-used", firstMessageAt: null }),
+    ).toBe(true);
+    await waitFor(() => expect(sentMails).toContain("first message"));
   });
 });
 
