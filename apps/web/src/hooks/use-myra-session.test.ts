@@ -37,6 +37,9 @@ let nextSessionEvents: StubEvent[] = [];
 const sentMails: string[] = [];
 // Force the next sendMail(s) to reject, to exercise send-failure paths.
 let sendMailShouldFail: "recoverable" | "permanent" | null = null;
+// When set, sendMail parks on this promise instead of resolving immediately,
+// so a test can observe the optimistic bubble before delivery completes.
+let sendMailGate: Promise<void> | null = null;
 // Live activity the session mock reports; tests mutate it and fire
 // capturedOnChange to simulate a new agent event arriving.
 let sessionActivity: unknown = null;
@@ -76,7 +79,8 @@ mock.module("@intx/hub-client", () => ({
       destroy: () => {
         destroyed[idx] = 1;
       },
-      sendMail: (content: string) => {
+      sendMail: async (content: string) => {
+        if (sendMailGate !== null) await sendMailGate;
         if (sendMailShouldFail === "permanent") {
           return Promise.reject(new FakeApiError(500));
         }
@@ -189,6 +193,7 @@ beforeEach(() => {
   nextSessionEvents = [];
   sentMails.length = 0;
   sendMailShouldFail = null;
+  sendMailGate = null;
   transportFetch = null;
   sessionActivity = null;
   capturedOnChange = null;
@@ -638,6 +643,245 @@ describe("useMyraSession — history + queued send while disconnected (CL-3280)"
     await waitFor(() => expect(result.current.live).toBe(true));
     await new Promise((r) => setTimeout(r, 20));
     expect(sentMails).not.toContain("queued-then-doomed");
+  });
+});
+
+describe("useMyraSession — live-path optimistic echo (CL-3669)", () => {
+  it("echoes a sent message instantly on the live path, before delivery resolves", async () => {
+    let releaseGate: () => void = () => {};
+    sendMailGate = new Promise((res) => {
+      releaseGate = res;
+    });
+
+    const { result } = renderHook(
+      () => useMyraSession("inst-1", "tnt-acme", true),
+      { wrapper },
+    );
+    await waitFor(() => expect(result.current.live).toBe(true));
+
+    act(() => {
+      void result.current.send("hi there");
+    });
+
+    // The bubble renders synchronously with the send() call — before the
+    // gated sendMail has any chance to resolve.
+    expect(
+      result.current.messages.some(
+        (m) => m.content === "hi there" && m.status === "sending",
+      ),
+    ).toBe(true);
+    expect(sentMails).not.toContain("hi there");
+
+    releaseGate();
+    await waitFor(() => expect(sentMails).toContain("hi there"));
+  });
+
+  it("keeps the message on screen through the whole send — no vanish window between POST resolve and the SSE mail event", async () => {
+    const { result } = renderHook(
+      () => useMyraSession("inst-1", "tnt-acme", true),
+      { wrapper },
+    );
+    await waitFor(() => expect(result.current.live).toBe(true));
+
+    act(() => {
+      void result.current.send("hi there");
+    });
+    expect(
+      result.current.messages.some(
+        (m) => m.content === "hi there" && m.status === "sending",
+      ),
+    ).toBe(true);
+
+    await waitFor(() => expect(sentMails).toContain("hi there"));
+    // Delivery resolved but the SSE mail event has NOT arrived: the optimistic
+    // bubble must stay on screen — the message is never absent.
+    expect(
+      result.current.messages.filter((m) => m.content === "hi there"),
+    ).toHaveLength(1);
+    expect(
+      result.current.messages.find((m) => m.content === "hi there")?.status,
+    ).toBe("sending");
+
+    // The server-confirmed mail event now streams back over SSE — the
+    // optimistic bubble hands over to it without duplication.
+    nextSessionEvents.push({ id: "mail-1", role: "user", content: "hi there" });
+    act(() => {
+      capturedOnChange?.();
+    });
+
+    const matches = result.current.messages.filter(
+      (m) => m.content === "hi there",
+    );
+    expect(matches).toHaveLength(1);
+    expect(matches[0]?.id).toBe("mail-1");
+  });
+
+  it("does not duplicate the message when the SSE mail event beats the POST resolution", async () => {
+    let releaseGate: () => void = () => {};
+    sendMailGate = new Promise((res) => {
+      releaseGate = res;
+    });
+    const { result } = renderHook(
+      () => useMyraSession("inst-1", "tnt-acme", true),
+      { wrapper },
+    );
+    await waitFor(() => expect(result.current.live).toBe(true));
+
+    act(() => {
+      void result.current.send("dup msg");
+    });
+    // Fast SSE: the server-confirmed mail streams back while sendMail is
+    // still parked in flight.
+    nextSessionEvents.push({
+      id: "mail-dup",
+      role: "user",
+      content: "dup msg",
+    });
+    act(() => {
+      capturedOnChange?.();
+    });
+
+    let matches = result.current.messages.filter(
+      (m) => m.content === "dup msg",
+    );
+    expect(matches).toHaveLength(1);
+    expect(matches[0]?.id).toBe("mail-dup");
+
+    // The POST then resolves — still exactly one message.
+    releaseGate();
+    await waitFor(() => expect(sentMails).toContain("dup msg"));
+    matches = result.current.messages.filter((m) => m.content === "dup msg");
+    expect(matches).toHaveLength(1);
+    expect(matches[0]?.id).toBe("mail-dup");
+  });
+
+  it("does not double-send when the connection flaps while a live send is in flight", async () => {
+    let releaseGate: () => void = () => {};
+    sendMailGate = new Promise((res) => {
+      releaseGate = res;
+    });
+    const { result } = renderHook(
+      () => useMyraSession("inst-1", "tnt-acme", true),
+      { wrapper },
+    );
+    await waitFor(() => expect(result.current.live).toBe(true));
+
+    act(() => {
+      void result.current.send("race msg");
+    });
+    // Connection flaps while the live send is parked in flight — the new
+    // connect's flush must not deliver the same message again.
+    act(() => {
+      result.current.reconnect();
+    });
+    await waitFor(() => expect(result.current.live).toBe(true));
+    releaseGate();
+    await waitFor(() =>
+      expect(sentMails.filter((c) => c === "race msg").length).toBeGreaterThan(
+        0,
+      ),
+    );
+    // Give a second (flush) delivery time to land if it were going to.
+    await new Promise((r) => setTimeout(r, 50));
+    expect(sentMails.filter((c) => c === "race msg")).toHaveLength(1);
+  });
+
+  it("keeps the optimistic bubble after prior history and does not reorder it ahead of earlier messages", async () => {
+    let releaseGate: () => void = () => {};
+    sendMailGate = new Promise((res) => {
+      releaseGate = res;
+    });
+    nextSessionEvents = [
+      { id: "m0", role: "user", content: "earlier question" },
+      { id: "m1", role: "agent", content: "earlier answer" },
+    ];
+
+    const { result } = renderHook(
+      () => useMyraSession("inst-1", "tnt-acme", true),
+      { wrapper },
+    );
+    await waitFor(() => expect(result.current.live).toBe(true));
+
+    act(() => {
+      void result.current.send("follow-up");
+    });
+
+    const contents = result.current.messages.map((m) => m.content);
+    expect(contents).toEqual([
+      "earlier question",
+      "earlier answer",
+      "follow-up",
+    ]);
+    const followUp = result.current.messages.find(
+      (m) => m.content === "follow-up",
+    );
+    expect(followUp?.status).toBe("sending");
+
+    releaseGate();
+    await waitFor(() => expect(sentMails).toContain("follow-up"));
+  });
+
+  it("leaves a recoverable live-send failure queued for a single retry, without a duplicate bubble", async () => {
+    const { result } = renderHook(
+      () => useMyraSession("inst-1", "tnt-acme", true),
+      { wrapper },
+    );
+    await waitFor(() => expect(result.current.live).toBe(true));
+
+    sendMailShouldFail = "recoverable";
+    act(() => {
+      void result.current.send("retry me");
+    });
+
+    await waitFor(() => expect(result.current.live).toBe(false));
+    expect(
+      result.current.messages.filter((m) => m.content === "retry me"),
+    ).toHaveLength(1);
+
+    sendMailShouldFail = null;
+    act(() => {
+      result.current.reconnect();
+    });
+
+    await waitFor(() => expect(result.current.live).toBe(true));
+    await waitFor(() => expect(sentMails).toContain("retry me"));
+    await waitFor(() =>
+      expect(
+        result.current.messages.some((m) => m.content === "retry me"),
+      ).toBe(false),
+    );
+  });
+
+  it("flips a non-recoverable live send from sending to failed on the same bubble", async () => {
+    const { result } = renderHook(
+      () => useMyraSession("inst-1", "tnt-acme", true),
+      { wrapper },
+    );
+    await waitFor(() => expect(result.current.live).toBe(true));
+
+    sendMailShouldFail = "permanent";
+    act(() => {
+      void result.current.send("doomed live message");
+    });
+
+    expect(
+      result.current.messages.some(
+        (m) => m.content === "doomed live message" && m.status === "sending",
+      ),
+    ).toBe(true);
+
+    await waitFor(() =>
+      expect(
+        result.current.messages.some(
+          (m) => m.content === "doomed live message" && m.status === "failed",
+        ),
+      ).toBe(true),
+    );
+    expect(
+      result.current.messages.filter(
+        (m) => m.content === "doomed live message",
+      ),
+    ).toHaveLength(1);
   });
 });
 

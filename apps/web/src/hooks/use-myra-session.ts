@@ -63,17 +63,65 @@ export type MyraSessionPhase =
   // it does not spin the reconnecting overlay (CL-3292).
   | { phase: "fatal"; message: string };
 
-// A text send made while the sidecar was unreachable, awaiting flush on
-// reconnect. `failed` is set after a delivery attempt failed. `permanent` marks
-// a non-recoverable failure that must never be auto-resent — the flush skips it
-// so an already-persisted message cannot be duplicated (CL-3280).
+// An optimistic text send awaiting its server-confirmed mail event — queued
+// for the reconnect flush while offline, or in flight on the live path.
+// `failed` is set after a delivery attempt failed. `permanent` marks a
+// non-recoverable failure that must never be auto-resent — the flush skips it
+// so an already-persisted message cannot be duplicated (CL-3280). `delivered`
+// marks a live send whose POST resolved: the flush must never resend it, but
+// the bubble stays on screen until the confirmed mail renders from the
+// transcript (CL-3669). `baselineMatches` is how many matching user messages
+// the transcript held at send time, so reconciliation only consumes a mail
+// that arrived after this send — duplicate text sends each claim their own.
 type PendingSend = {
   id: string;
   content: string;
   createdAt: string;
   failed: boolean;
   permanent: boolean;
+  delivered: boolean;
+  baselineMatches: number;
 };
+
+function countMatchingUserMessages(
+  messages: readonly ChatMessage[],
+  content: string,
+): number {
+  let count = 0;
+  for (const m of messages) {
+    if (m.role === "user" && m.content === content) count += 1;
+  }
+  return count;
+}
+
+// Drop each pending bubble exactly when its server-confirmed mail is present
+// in the composed transcript — never earlier (the message would vanish between
+// POST resolve and the SSE mail event) and never leaving a duplicate when the
+// SSE event beats the POST. A pending item is consumed when the transcript
+// holds more matching user messages than it did at send time, minus matches
+// already claimed by earlier pending items with the same content. Failed
+// bubbles are kept — they carry the retry affordance (CL-3669).
+export function reconcilePendingSends(
+  pending: readonly PendingSend[],
+  transcript: readonly ChatMessage[],
+): PendingSend[] {
+  const claimed = new Map<string, number>();
+  const kept: PendingSend[] = [];
+  for (const q of pending) {
+    if (q.failed) {
+      kept.push(q);
+      continue;
+    }
+    const confirmed = countMatchingUserMessages(transcript, q.content);
+    const alreadyClaimed = claimed.get(q.content) ?? 0;
+    if (confirmed - alreadyClaimed > q.baselineMatches) {
+      claimed.set(q.content, alreadyClaimed + 1);
+      continue;
+    }
+    kept.push(q);
+  }
+  return kept;
+}
 
 // A dropped or evicted session heals with one relaunch-and-resend. A hub or
 // sidecar restart leaves the instance not running, so the first send 409s
@@ -450,8 +498,38 @@ export function useMyraSession(
           createdAt: new Date().toISOString(),
           failed: opts?.failed ?? false,
           permanent: opts?.permanent ?? false,
+          delivered: false,
+          // Snapshot of the last rendered transcript, so reconciliation only
+          // consumes a confirmed mail that arrived after this send.
+          baselineMatches: countMatchingUserMessages(
+            lastMessagesRef.current,
+            content,
+          ),
         },
       ];
+      forceUpdate((n) => n + 1);
+      return id;
+    },
+    [],
+  );
+
+  // A live send's POST resolved: the flush must never resend it, but the
+  // bubble stays rendered until the confirmed mail appears in the transcript
+  // (reconcilePendingSends drops it then) — otherwise the message would be on
+  // screen nowhere between POST resolve and the SSE mail event (CL-3669).
+  const markSendDelivered = useCallback((id: string) => {
+    pendingQueueRef.current = pendingQueueRef.current.map((q) =>
+      q.id === id ? { ...q, delivered: true } : q,
+    );
+  }, []);
+
+  // Flip a queued item to a failed state in place, keying on its id so a
+  // direct-send failure marks exactly the bubble it created.
+  const markSendFailed = useCallback(
+    (id: string, opts: { permanent: boolean }) => {
+      pendingQueueRef.current = pendingQueueRef.current.map((q) =>
+        q.id === id ? { ...q, failed: true, permanent: opts.permanent } : q,
+      );
       forceUpdate((n) => n + 1);
     },
     [],
@@ -504,7 +582,10 @@ export function useMyraSession(
       try {
         while (!cancelled) {
           const item = pendingQueueRef.current.find(
-            (q) => !q.permanent && !inFlightSendIdsRef.current.has(q.id),
+            (q) =>
+              !q.permanent &&
+              !q.delivered &&
+              !inFlightSendIdsRef.current.has(q.id),
           );
           const session = sessionRef.current;
           if (session === null || item === undefined) break;
@@ -837,9 +918,19 @@ export function useMyraSession(
     attachmentRefMap,
   );
 
-  // Optimistic bubbles for sends queued while disconnected; removed as each
-  // flushes and the real mail event renders in its place (CL-3280).
-  const pendingMessages: ChatMessage[] = pendingQueueRef.current.map((q) => ({
+  // Optimistic bubbles for sends not yet confirmed by the transcript. Each is
+  // dropped exactly when its server-confirmed mail renders — whether the SSE
+  // event arrives before or after the POST resolves — so the message is never
+  // duplicated and never absent in between (CL-3280, CL-3669). Pruning the ref
+  // during render is safe: it only shrinks toward what this render displays.
+  const reconciledPending = reconcilePendingSends(
+    pendingQueueRef.current,
+    mergedMessages,
+  );
+  if (reconciledPending.length !== pendingQueueRef.current.length) {
+    pendingQueueRef.current = reconciledPending;
+  }
+  const pendingMessages: ChatMessage[] = reconciledPending.map((q) => ({
     id: q.id,
     role: "user",
     content: q.content,
@@ -1007,12 +1098,18 @@ export function useMyraSession(
     }
 
     const session = sessionRef.current;
+    // Echo the send instantly on both paths: offline queues it for the
+    // reconnect flush, live sends it now — either way the bubble renders with
+    // status "sending" before any round-trip completes (CL-3669).
+    const pendingId = enqueueSend(text);
     if (!live || session === null) {
-      // Offline: show an optimistic bubble now; the queue flushes on reconnect.
-      enqueueSend(text);
       scheduleReconnect();
       return;
     }
+    // Register the flight so a connection flap's reconnect flush cannot
+    // deliver the same message a second time while this send is still in the
+    // air (mirrors the flush's own registration).
+    inFlightSendIdsRef.current.add(pendingId);
     void deliverMessage(
       session,
       resolvedInstanceIdRef.current,
@@ -1020,22 +1117,29 @@ export function useMyraSession(
       launchOptionsRef.current,
     )
       .then(() => {
+        // Delivered — but keep the bubble until the confirmed mail renders
+        // from the transcript, so the message never vanishes in the window
+        // between POST resolve and the SSE mail event.
+        markSendDelivered(pendingId);
         // The hub bumped this thread's lastActivityAt; refresh the list so it
         // reorders to the top rather than waiting for the query to go stale.
         invalidateMyraThreads(queryClient, tenantId);
       })
       .catch((err: unknown) => {
         // A recoverable failure (the hub emits its structured code before
-        // persisting the mail, so a resend cannot duplicate) is re-queued and
-        // flushed on reconnect. Any other failure is shown as a permanently
-        // failed bubble and never auto-resent — the mail may already be
-        // persisted upstream, so a blind retry could duplicate it (CL-3280).
+        // persisting the mail, so a resend cannot duplicate) leaves the item
+        // queued — untouched here — for the reconnect flush to retry. Any
+        // other failure flips the existing bubble to permanently failed and
+        // it is never auto-resent — the mail may already be persisted
+        // upstream, so a blind retry could duplicate it (CL-3280).
         if (isRecoverableDeliveryError(err)) {
-          enqueueSend(text);
           markDisconnectedAndReconnect();
         } else {
-          enqueueSend(text, { failed: true, permanent: true });
+          markSendFailed(pendingId, { permanent: true });
         }
+      })
+      .finally(() => {
+        inFlightSendIdsRef.current.delete(pendingId);
       });
     return;
   };
