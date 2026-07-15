@@ -43,6 +43,8 @@ import { useApprovalDisplayLookups } from "../hooks/use-approval-display-lookups
 import { createChatToolSummaryFormatter } from "../lib/chat-tool-summary";
 import { useMyraVoiceInput } from "../hooks/use-myra-voice-input";
 import { useSkillLibrary } from "../hooks/use-skills";
+import { useTenantRoster } from "../hooks/use-tenant-roster";
+import { myraInstanceTraceHref } from "../lib/myra-turn-trace";
 import { ActiveContextPills } from "./ActiveContextPills";
 import { ReviewGate } from "./ReviewGate";
 import { renderChatToolMarker } from "./ToolCallProviderMarker";
@@ -234,6 +236,15 @@ export function MyraChatSurface({
   );
   const summarize = (calls: ToolCall[]) =>
     summarizeToolCalls(calls, toolSummaryStyle);
+
+  const { data: tenantRoster } = useTenantRoster(tenantId ?? "", {
+    enabled: tenantId !== null && tenantId !== undefined && tenantId !== "",
+  });
+  const getTurnTraceHref = useCallback(
+    () =>
+      myraInstanceTraceHref(session.instanceId, tenantRoster?.instances),
+    [session.instanceId, tenantRoster?.instances],
+  );
 
   const activeContext = useActiveContext();
   const [attached, setAttached] = useState<ActiveContext[]>([]);
@@ -579,15 +590,7 @@ export function MyraChatSurface({
       renderToolMarker={renderChatToolMarker}
       isReasoningExpanded={reasoningExpandedPrefs.isReasoningExpanded}
       setReasoningExpanded={reasoningExpandedPrefs.setReasoningExpanded}
-      getTurnTraceHref={getMyraTurnTraceHref}
+      getTurnTraceHref={getTurnTraceHref}
     />
   );
-}
-
-// Chat turns have no per-turn trace correlation yet (a Myra reply is not
-// backed by a workflow_run_record, which is what /insights/trace/:runId
-// requires) — link generically to the Insights landing page as the interim
-// escape hatch until a chat-turn -> trace id mapping exists.
-function getMyraTurnTraceHref(): string {
-  return "/insights";
 }
