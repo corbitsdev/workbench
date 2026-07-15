@@ -3,6 +3,7 @@ import { and, eq, gte, inArray, lte, sql, type AnyColumn } from "drizzle-orm";
 import type { DB } from "@intx/db";
 import { schema as intxSchema } from "@intx/db";
 
+import { sumAnalyticsModelTokens } from "./model-tokens";
 import { analyticsEvent, analyticsRollupDaily } from "./schema";
 
 export type AnalyticsDateRange = {
@@ -82,34 +83,10 @@ export type AnalyticsModelRow = {
   thinkingTokens: number;
 };
 
-type AnalyticsModelTokenFields = Partial<
-  Pick<
-    AnalyticsModelRow,
-    | "inputTokens"
-    | "outputTokens"
-    | "cacheReadTokens"
-    | "cacheWriteTokens"
-    | "thinkingTokens"
-  >
->;
-
-/** Sum of all token classes on a per-model rollup row. */
-export function sumAnalyticsModelTokens(row: AnalyticsModelTokenFields): number {
-  return (
-    (row.inputTokens ?? 0) +
-    (row.outputTokens ?? 0) +
-    (row.cacheReadTokens ?? 0) +
-    (row.cacheWriteTokens ?? 0) +
-    (row.thinkingTokens ?? 0)
-  );
-}
-
-/** Bar / legacy `models.count` value when turns and tokens are mixed in one chart. */
-export function analyticsModelDisplayCount(
-  row: Pick<AnalyticsModelRow, "turnCount"> & AnalyticsModelTokenFields,
-): number {
-  return row.turnCount > 0 ? row.turnCount : sumAnalyticsModelTokens(row);
-}
+export {
+  analyticsModelDisplayCount,
+  sumAnalyticsModelTokens,
+} from "./model-tokens";
 
 function modelRowHasUsage(row: {
   model: string | null;
