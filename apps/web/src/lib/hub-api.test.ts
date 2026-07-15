@@ -7,6 +7,7 @@ import {
   postMe,
   patchMeProfile,
   ensureMeSynced,
+  invalidateMeSyncCache,
   getMyPrincipals,
   getAnalyticsSummary,
   getOutputFeedback,
@@ -161,6 +162,7 @@ describe("hub-api network helpers", () => {
 
   afterEach(() => {
     globalThis.fetch = originalFetch;
+    invalidateMeSyncCache();
   });
 
   it("getMe issues a credentialed GET to /api/v1/me and returns the parsed body", async () => {
@@ -228,6 +230,58 @@ describe("hub-api network helpers", () => {
     expect(calls).toHaveLength(2);
     expect(calls[0]!.init?.method).toBe("GET");
     expect(calls[1]!.init?.method).toBe("POST");
+  });
+
+  it("ensureMeSynced memoizes: a second call reuses the first result without refetching", async () => {
+    const fresh = { userId: "u1", personalAgentSyncAvailable: false };
+    const calls = installFetch(() => ({ body: fresh }));
+
+    await ensureMeSynced();
+    await ensureMeSynced();
+
+    expect(calls).toHaveLength(1);
+  });
+
+  it("ensureMeSynced refetches after invalidateMeSyncCache", async () => {
+    const fresh = { userId: "u1", personalAgentSyncAvailable: false };
+    const calls = installFetch(() => ({ body: fresh }));
+
+    await ensureMeSynced();
+    invalidateMeSyncCache();
+    await ensureMeSynced();
+
+    expect(calls).toHaveLength(2);
+  });
+
+  it("ensureMeSynced does not cache a failed sync — the next call retries", async () => {
+    let call = 0;
+    installFetch(() => {
+      call += 1;
+      if (call === 1) return { ok: false, status: 500, body: {} };
+      return { body: { userId: "u1", personalAgentSyncAvailable: false } };
+    });
+
+    await expect(ensureMeSynced()).rejects.toThrow();
+    await expect(ensureMeSynced()).resolves.toEqual({
+      userId: "u1",
+      personalAgentSyncAvailable: false,
+    });
+  });
+
+  it("a 401 from any hub call invalidates the ensureMeSynced cache", async () => {
+    let call = 0;
+    const calls = installFetch(() => {
+      call += 1;
+      if (call === 1) return { body: { userId: "u1", userName: "Sawyer" } };
+      if (call === 2) return { ok: false, status: 401, body: {} };
+      return { body: { userId: "u1", personalAgentSyncAvailable: false } };
+    });
+
+    await ensureMeSynced();
+    await getMe().catch(() => {});
+    await ensureMeSynced();
+
+    expect(calls).toHaveLength(3);
   });
 
   it("postMe issues a credentialed POST to /api/v1/me with JSON body", async () => {

@@ -107,6 +107,7 @@ async function hubFetch<T>(
   }
   const res = await fetch(url, init);
   if (!res.ok) {
+    if (res.status === 401) invalidateMeSyncCache();
     const errBody = await res.json().catch(() => ({}));
     throw Object.assign(new Error(hubErrorMessage(errBody, res.status)), {
       status: res.status,
@@ -602,13 +603,43 @@ export async function patchMeProfile(
   });
 }
 
-/** Read-only status; runs postMe when the hub signals an update is available. */
-export async function ensureMeSynced(): Promise<MeResponse> {
+// ensureMeSynced blocks connect()/thread-switch on a GET (and often a
+// sequential POST) round trip. Memoized per app session so repeat thread
+// switches reuse the same in-flight/settled result instead of re-paying the
+// trip on every connect (each is ~150-300ms typical hub GET latency, doubled
+// when the sync POST fires). A short TTL bounds staleness against a change
+// made in another tab; a failed sync is never cached so the next call retries.
+const ME_SYNC_TTL_MS = 3 * 60_000;
+let meSyncCache: { promise: Promise<MeResponse>; expiresAt: number } | null =
+  null;
+
+/** Drops the cached ensureMeSynced result — call on sign-out/sign-in or a 401
+ * so a stale identity is never served across an auth change. */
+export function invalidateMeSyncCache(): void {
+  meSyncCache = null;
+}
+
+async function syncMe(): Promise<MeResponse> {
   const me = await getMe();
   if (me.personalAgentSyncAvailable) {
     return postMe();
   }
   return me;
+}
+
+/** Read-only status; runs postMe when the hub signals an update is available.
+ * Memoized for ME_SYNC_TTL_MS — see meSyncCache above. */
+export async function ensureMeSynced(): Promise<MeResponse> {
+  const now = Date.now();
+  if (meSyncCache !== null && meSyncCache.expiresAt > now) {
+    return meSyncCache.promise;
+  }
+  const promise = syncMe().catch((err: unknown) => {
+    invalidateMeSyncCache();
+    throw err;
+  });
+  meSyncCache = { promise, expiresAt: now + ME_SYNC_TTL_MS };
+  return promise;
 }
 
 const MyraThreadSchema = type({

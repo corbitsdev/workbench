@@ -49,7 +49,13 @@ import {
 import { classifyLaunchState } from "../components/agent-launch-helpers";
 import { useReportConnectionStatus } from "./use-report-connection-status";
 
-const LAUNCH_RETRY_DELAY_MS = 4000;
+// Adaptive reconnect backoff: a fast first retry (a flaky sidecar often
+// recovers within a beat) then doubling up to a cap, so a run of failures
+// never stacks with the hub's own launch-attempt loop
+// (agent-provisioning.ts MAX_LAUNCH_ATTEMPTS x LAUNCH_RETRY_DELAY_MS) into
+// several seconds of dead air per cycle.
+const RECONNECT_FIRST_DELAY_MS = 500;
+const RECONNECT_MAX_DELAY_MS = 4000;
 
 // How long the optimistic "awaiting agent" indicator (set the instant a
 // message is sent) is allowed to stand in for a real event before falling
@@ -429,6 +435,10 @@ export function useMyraSession(
   const awaitingAgentTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
     null,
   );
+  // Consecutive reconnect attempts since the last live session, driving the
+  // backoff in scheduleReconnect below. Reset on a fresh identity and once a
+  // session goes live.
+  const reconnectAttemptsRef = useRef(0);
   if (
     prevIdentity.instanceId !== instanceId ||
     prevIdentity.tenantId !== tenantId
@@ -447,6 +457,7 @@ export function useMyraSession(
       awaitingAgentTimerRef.current = null;
     }
     awaitingAgentRef.current = false;
+    reconnectAttemptsRef.current = 0;
   }
   const [, forceUpdate] = useState(0);
   const resolvedInstanceIdRef = useRef<string | null>(null);
@@ -482,10 +493,15 @@ export function useMyraSession(
   }, []);
   const scheduleReconnect = useCallback(() => {
     if (reconnectTimerRef.current !== null) return;
+    const delay = Math.min(
+      RECONNECT_FIRST_DELAY_MS * 2 ** reconnectAttemptsRef.current,
+      RECONNECT_MAX_DELAY_MS,
+    );
+    reconnectAttemptsRef.current += 1;
     reconnectTimerRef.current = setTimeout(() => {
       reconnectTimerRef.current = null;
       setAttempt((n) => n + 1);
-    }, LAUNCH_RETRY_DELAY_MS);
+    }, delay);
   }, []);
 
   // Stops and clears every live-connection resource (SSE subscription,
@@ -733,6 +749,7 @@ export function useMyraSession(
             return;
           }
           clearReconnectTimer();
+          reconnectAttemptsRef.current = 0;
           setLive(true);
           setHasBeenLive(true);
           void flushQueue();

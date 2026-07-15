@@ -41,7 +41,10 @@ const log = getLogger(["api", "agents"]);
 const { agent, agentInstance, agentSession, grant, tenant, sessionAsset } =
   intxSchema;
 
-export const LAUNCH_RETRY_DELAY_MS = 1_000;
+// Kept short and paired with the client's own adaptive reconnect backoff
+// (use-myra-session.ts RECONNECT_FIRST_DELAY_MS): a slow retry loop here would
+// stack with the client's retry rather than resolve within one connect cycle.
+export const LAUNCH_RETRY_DELAY_MS = 500;
 export const MAX_LAUNCH_ATTEMPTS = 3;
 
 /**

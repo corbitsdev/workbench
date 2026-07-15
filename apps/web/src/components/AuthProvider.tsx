@@ -11,7 +11,7 @@ import {
   setPreferencePersister,
 } from "@workbench/ui";
 import { authClient } from "../lib/auth-client";
-import { postMe } from "../lib/hub-api";
+import { invalidateMeSyncCache, postMe } from "../lib/hub-api";
 import { createPreferencesPersister } from "../lib/preferences-persister";
 
 type Session =
@@ -112,6 +112,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const handleSignOut = useCallback(async () => {
     await authClient.signOut();
+    invalidateMeSyncCache();
     queryClient.setQueryData(["auth-session"], null);
   }, [queryClient]);
 

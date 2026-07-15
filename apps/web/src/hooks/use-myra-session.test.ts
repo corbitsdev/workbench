@@ -512,6 +512,30 @@ describe("useMyraSession — history + queued send while disconnected (CL-3280)"
     );
   });
 
+  it("auto-retries a transient launch failure quickly, not after a fixed multi-second delay", async () => {
+    launchInstanceSession.mockResolvedValueOnce({
+      launched: false,
+      launchError: "No sidecar connected for agent",
+    });
+
+    const { result } = renderHook(
+      () => useMyraSession("inst-1", "tnt-acme", true),
+      { wrapper },
+    );
+
+    await waitFor(() => expect(result.current.state.phase).toBe("ready"));
+    await waitFor(() => expect(result.current.live).toBe(false));
+
+    const started = Date.now();
+    // The first automatic retry after a transient failure must fire well
+    // under the old fixed 4000ms delay — a fast-first-retry backoff, not a
+    // flat multi-second wait.
+    await waitFor(() => expect(result.current.live).toBe(true), {
+      timeout: 3000,
+    });
+    expect(Date.now() - started).toBeLessThan(3000);
+  });
+
   it("marks a non-recoverable live send as failed and never auto-resends it on reconnect", async () => {
     const { result } = renderHook(
       () => useMyraSession("inst-1", "tnt-acme", true),
