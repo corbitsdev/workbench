@@ -284,3 +284,18 @@ export function toGalleryArtifact(
     ...(excerpt.length > 0 ? { previewExcerpt: excerpt } : {}),
   });
 }
+
+/**
+ * Containment wrapper for gallery rendering: an artifact that fails the
+ * GalleryArtifact schema is dropped (returns undefined) so one corrupt row
+ * can never blank the whole gallery view.
+ */
+export function tryToGalleryArtifact(
+  artifact: ArtifactWithSession,
+): GalleryArtifact | undefined {
+  try {
+    return toGalleryArtifact(artifact);
+  } catch {
+    return undefined;
+  }
+}
