@@ -215,6 +215,47 @@ describe("search_tools loop guard", () => {
     );
   });
 
+  test("the escalated hint tells the model to rephrase rather than give up", async () => {
+    const exposure: ToolExposureState = { exposed: new Set() };
+    const runner = createCatalogTools({ catalog, exposure });
+    await runner.run(call(SEARCH_TOOLS_NAME, { query: "crm" }), signal);
+    const second = await runner.run(
+      call(SEARCH_TOOLS_NAME, { query: "crm" }),
+      signal,
+    );
+    expect(hintOf(second)).toMatch(/different wording|synonym|broader/i);
+  });
+
+  test("the escalated no-match hint points at rephrasing before concluding unavailable", async () => {
+    const exposure: ToolExposureState = { exposed: new Set() };
+    const runner = createCatalogTools({ catalog, exposure });
+    await runner.run(
+      call(SEARCH_TOOLS_NAME, { query: "nonexistentzzz" }),
+      signal,
+    );
+    const second = await runner.run(
+      call(SEARCH_TOOLS_NAME, { query: "nonexistentzzz" }),
+      signal,
+    );
+    const hint = hintOf(second);
+    expect(hint).toMatch(/different wording|synonym|broader/i);
+  });
+
+  test("the terminal error instructs a reworded retry before declaring unavailable", async () => {
+    const exposure: ToolExposureState = { exposed: new Set() };
+    const runner = createCatalogTools({ catalog, exposure });
+    let last;
+    for (let i = 0; i < 4; i++) {
+      last = await runner.run(
+        call(SEARCH_TOOLS_NAME, { query: "crm" }),
+        signal,
+      );
+    }
+    const error = (last?.content as { error: string }).error;
+    expect(error).toMatch(/different wording|synonym|broader/i);
+    expect(error).not.toMatch(/tell the user this capability is unavailable\b/);
+  });
+
   test("a different query in between resets the run, so it never hard-errors", async () => {
     // Guards the 'no agent-chat regression' requirement: ordinary chat that
     // revisits the same query after other searches must never hit the stop
