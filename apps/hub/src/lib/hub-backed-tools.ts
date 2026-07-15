@@ -4,6 +4,7 @@ import { ARTIFACT_HUB_TOOLS } from "./artifact-tools";
 import { FILEPARSER_HUB_TOOLS } from "./file-parser-tools";
 import { MEMORY_HUB_TOOLS } from "./memory-tools";
 import { LIST_AGENTS_HUB_TOOLS } from "../tools/list-agents";
+import { INVOKE_AGENT_HUB_TOOLS } from "../tools/invoke-agent";
 import { IDENTITY_HUB_TOOLS } from "../tools/identity";
 import { SKILLS_HUB_TOOLS } from "../tools/list-skills";
 import { WRITE_ARTIFACT_HUB_TOOLS } from "../tools/write-artifact";
@@ -29,6 +30,7 @@ export const HUB_BACKED_TOOLS: Record<string, ContextToolEntry> = {
   ...SKILLS_HUB_TOOLS,
   ...AGENTS_HUB_TOOLS,
   ...DISPATCH_HUB_TOOLS,
+  ...INVOKE_AGENT_HUB_TOOLS,
   ...GAMMA_TEMPLATES_HUB_TOOLS,
   ...WORKFLOWS_HUB_TOOLS,
   ...VERCEL_DEPLOY_ARTIFACT_HUB_TOOLS,

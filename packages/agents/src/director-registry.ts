@@ -8,6 +8,7 @@ import {
 import {
   createPersonalAgentDirector,
   createTriageBudgetDirector,
+  createInvokeBudgetDirector,
   createBudgetDirector,
 } from "@workbench/myra";
 import { createGranolaDirector } from "./granola/director";
@@ -69,6 +70,23 @@ export const triageBudgetDirector = defineDirector<typeof EmptyConfig.infer>({
     createTriageBudgetDirector(agent.systemPrompt, [...agent.toolDefinitions]),
 });
 
+export const INVOKE_BUDGET_DIRECTOR_ID = "@workbench/agents/invoke-budget";
+
+/**
+ * Director for a subagent instance launched via `invoke_agent` (CL-3683):
+ * the same construction-time budget-cap wrapper as triage, so unattended
+ * delegated work is bounded by construction rather than by trusting the
+ * model to stop. Selected sidecar-side from the invoke session-prompt
+ * marker (`isInvokeSessionPrompt`), the same mechanism `triageBudgetDirector`
+ * uses.
+ */
+export const invokeBudgetDirector = defineDirector<typeof EmptyConfig.infer>({
+  id: INVOKE_BUDGET_DIRECTOR_ID,
+  configSchema: EmptyConfig,
+  factory: (_config, _env, agent) =>
+    createInvokeBudgetDirector(agent.systemPrompt, [...agent.toolDefinitions]),
+});
+
 export const WORKFLOW_STEP_BUDGET_DIRECTOR_ID =
   "@workbench/agents/workflow-step-budget";
 
@@ -126,6 +144,7 @@ export function createWorkbenchDirectorRegistry(): DirectorRegistry {
       firecrawlDirector.factory,
       dynamicToolsDirector.factory,
       triageBudgetDirector.factory,
+      invokeBudgetDirector.factory,
       workflowStepBudgetDirector.factory,
     ],
     defaultId: defaultDirectorFactory.id,

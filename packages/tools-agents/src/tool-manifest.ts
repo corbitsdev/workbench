@@ -23,6 +23,9 @@ export const toolManifestFile = {
         identity_set: {
           sideEffect: "write",
         },
+        invoke_agent: {
+          sideEffect: "write",
+        },
       },
       myraCatalog: {
         catalogPackage: "identity",

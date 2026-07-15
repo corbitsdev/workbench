@@ -8,6 +8,7 @@ import {
   resolveDynamicToolConfig,
   DYNAMIC_TOOLS_DIRECTOR_ID,
   TRIAGE_BUDGET_DIRECTOR_ID,
+  INVOKE_BUDGET_DIRECTOR_ID,
   APPROVAL_GATED_TOOL_NAMES,
 } from "@workbench/agents";
 import {
@@ -43,7 +44,11 @@ import { createBlobReader } from "@intx/types/runtime";
 import type { InferenceSource, MessageRef } from "@intx/types/runtime";
 import type { HarnessBuilder, HarnessBundle } from "@workbench/hub-agent";
 import { resolveSeedMarker, stripSeedMarker } from "@workbench/myra/seed";
-import { PERSONAL_AGENT_NAME, isTriageSessionPrompt } from "@workbench/myra";
+import {
+  PERSONAL_AGENT_NAME,
+  isTriageSessionPrompt,
+  isInvokeSessionPrompt,
+} from "@workbench/myra";
 import { createAskPrincipalTool } from "@workbench/approvals";
 import { seedWorkspaceFiles } from "./seed-workspace-files";
 import { healTurns } from "@workbench/context-repair";
@@ -60,18 +65,23 @@ const DEFAULT_MAIL_OUTBOUND_PER_TURN = 8;
 const PERSONAL_AGENT_MAIL_OUTBOUND_PER_TURN = 100;
 
 /**
- * Pure director-id selection (CL-3384): a triage session always gets the
- * budget-capped director — regardless of whether it also resolved dynamic
- * tool config, since `triageBudgetDirector`'s factory composes the
- * dynamic-tools director internally when the harness env carries it. A
- * non-triage agent with dynamic tool config gets the dynamic-tools director
+ * Pure director-id selection (CL-3384, extended for CL-3683): a triage
+ * session always gets the triage budget director, and an invoked-subagent
+ * session (from `invoke_agent`) always gets the invoke budget director —
+ * both regardless of whether the session also resolved dynamic tool config,
+ * since each budget director's factory composes the dynamic-tools director
+ * internally when the harness env carries it. Triage takes priority over
+ * invoke in the (impossible in practice) case both markers were present. A
+ * plain agent with dynamic tool config gets the dynamic-tools director
  * unchanged; everything else falls back to the registry default.
  */
 export function selectDirectorId(params: {
   isTriageSession: boolean;
+  isInvokeSession: boolean;
   hasDynamicToolConfig: boolean;
 }): string | undefined {
   if (params.isTriageSession) return TRIAGE_BUDGET_DIRECTOR_ID;
+  if (params.isInvokeSession) return INVOKE_BUDGET_DIRECTOR_ID;
   if (params.hasDynamicToolConfig) return DYNAMIC_TOOLS_DIRECTOR_ID;
   return undefined;
 }
@@ -223,6 +233,7 @@ export function createDefaultHarnessBuilder({
       // known, so packages whose credential is missing are never advertised.
       const dynamicToolConfig = resolveDynamicToolConfig(cleanedPrompt);
       const isTriageSession = isTriageSessionPrompt(cleanedPrompt);
+      const isInvokeSession = isInvokeSessionPrompt(cleanedPrompt);
       const exposureState: ToolExposureState = { exposed: new Set<string>() };
 
       const grantsRef = { current: agentConfig.grants };
@@ -552,6 +563,7 @@ export function createDefaultHarnessBuilder({
 
         const directorId = selectDirectorId({
           isTriageSession,
+          isInvokeSession,
           hasDynamicToolConfig: dynamicToolConfig !== undefined,
         });
 

@@ -509,8 +509,13 @@ export const enabledWorkflow = pgTable(
 // Per-user attribution for agent instances. Interchange's `agent_instance` has
 // no owner-user column, so this workbench-side mapping records which member
 // principal owns a per-user instance of a given org-level template definition
-// (CL-1532). One row per (member principal, template) — the unique key keeps the
-// on-join provisioning idempotent and race-safe.
+// (CL-1532). NOT generally unique per (member, template): the original 0016
+// unique constraint was dropped in migration 0018 so users can add multiple
+// instances of the same shared template from the UI — writers that need
+// one-row semantics must bring their own constraint. The only such constraint
+// today is the 0061 partial unique index scoping (tenant, member, agent) to
+// the invoked-subagent template key, which makes invoke_agent's
+// check-then-insert provisioning race-safe.
 export const memberAgentInstance = pgTable(
   "member_agent_instance",
   {

@@ -16,6 +16,7 @@ export {
 } from "./principals";
 export type { ListPrincipalsContext } from "./principals";
 export { IDENTITY_GET_DEFINITION, IDENTITY_SET_DEFINITION } from "./identity";
+export { INVOKE_AGENT_DEFINITION } from "./invoke";
 
 const AgentInstanceStatusSchema = type(
   "'deployed' | 'running' | 'updating' | 'error' | 'stopped'",

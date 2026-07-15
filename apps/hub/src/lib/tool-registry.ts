@@ -29,6 +29,7 @@ import { DISPATCH_HUB_TOOLS } from "@workbench/tools-dispatch";
 import { WRITE_ARTIFACT_HUB_TOOLS } from "../tools/write-artifact";
 import { LIST_AGENTS_HUB_TOOLS } from "../tools/list-agents";
 import { SEARCH_AGENTS_HUB_TOOLS } from "../tools/search-agents";
+import { INVOKE_AGENT_HUB_TOOLS } from "../tools/invoke-agent";
 import { IDENTITY_HUB_TOOLS } from "../tools/identity";
 import { SKILLS_HUB_TOOLS } from "../tools/list-skills";
 import { GAMMA_TEMPLATES_HUB_TOOLS } from "../tools/gamma-templates";
@@ -90,6 +91,7 @@ export const KNOWN_TOOLS: Record<string, ToolEntry> = {
   ...FILEPARSER_HUB_TOOLS,
   ...MEMORY_HUB_TOOLS,
   ...DISPATCH_HUB_TOOLS,
+  ...INVOKE_AGENT_HUB_TOOLS,
   ...AGENTS_HUB_TOOLS,
   ...LIST_AGENTS_HUB_TOOLS,
   ...SEARCH_AGENTS_HUB_TOOLS,

@@ -62,3 +62,23 @@ export {
   composeTriagePromptMessage,
   type TriagePromptMessageInput,
 } from "./personas/mailbox-triage-policy";
+
+export {
+  createInvokeBudgetDirector,
+  INVOKE_BUDGET_PRESET,
+  INVOKE_MAX_TOOL_CALLS,
+  INVOKE_MAX_INPUT_TOKENS,
+  INVOKE_MAX_OUTPUT_TOKENS,
+  INVOKE_MAX_INFERENCE_TURNS,
+  INVOKE_BUDGET_STOP_MARKER,
+} from "./core/invoke-budget-director";
+
+// Subagent-invocation policy — the member_agent_instance template key an
+// invoked subagent instance is attributed under, and the prompt-marker
+// convention the sidecar harness selects the invoke budget director from.
+export {
+  INVOKE_TEMPLATE_KEY,
+  withInvokeSessionMarker,
+  isInvokeSessionPrompt,
+  isPersonalAgentDefinitionName,
+} from "./personas/invoke-policy";

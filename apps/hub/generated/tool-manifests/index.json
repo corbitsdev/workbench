@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-07-14T19:16:37.406Z",
+  "generatedAt": "2026-07-15T01:19:22.212Z",
   "factories": [
     {
       "factoryId": "@workbench/tools-ab-compare/compose",
@@ -23,14 +23,18 @@
       "bareToolNames": [
         "identity_get",
         "identity_set",
+        "invoke_agent",
         "list_agents",
-        "list_principals"
+        "list_principals",
+        "search_agents"
       ],
       "sideEffects": {
         "list_agents": "read",
+        "search_agents": "read",
         "list_principals": "read",
         "identity_get": "read",
-        "identity_set": "write"
+        "identity_set": "write",
+        "invoke_agent": "write"
       },
       "myraCatalog": {
         "catalogPackage": "identity",

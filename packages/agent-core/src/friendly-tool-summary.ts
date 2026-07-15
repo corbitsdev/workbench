@@ -563,6 +563,7 @@ const PHRASES: Record<string, FriendlyPhrase> = {
   // Agents directory
   list_agents: "Listing available agents",
   search_agents: "Searching for an agent",
+  invoke_agent: "Delegating work to a specialist agent",
   list_principals: "Listing workspace members",
 
   // Per-tool account identity (CL-2420)
