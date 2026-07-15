@@ -11,9 +11,17 @@ import type {
 import type { GrantStore } from "@intx/types/authz";
 import type { CryptoProvider, MessageAttachment } from "@intx/types/runtime";
 import type { TurnFinalized } from "@workbench/event-collector";
-import { resolveAgentAutonomy, TRIAGE_SUBJECT_PREFIX } from "@workbench/shared";
-import { splitMailAddress } from "@workbench/hub-agent";
-import { resolveMailboxLoadout } from "@workbench/myra";
+import { resolveAgentAutonomy } from "@workbench/shared";
+import {
+  resolveMailboxLoadout,
+  TRIAGE_TEMPLATE_KEY,
+  isSystemSenderAddress,
+  isBounceSenderAddress,
+  isTriageHandoffSubject,
+  triageHandoffSubject,
+  triageMessageKey,
+  composeTriagePromptMessage,
+} from "@workbench/myra";
 import type { HubDb } from "../db";
 import { memberAgentInstance } from "../db/schema";
 import { getConfig } from "../config";
@@ -34,36 +42,6 @@ import {
 const log = getLogger(["api", "mailbox-triage"]);
 
 const { principal, agentInstance, tenant } = intxSchema;
-
-// Exported so task-tools.ts can recognize a triage-created task and force it
-// into `waiting` (see resolveTriageTaskDefaultStatus) without a second,
-// driftable copy of this string.
-export const TRIAGE_TEMPLATE_KEY = "myra-triage";
-
-/**
- * Sender local-parts owned by system rails. Mail from these never triages:
- * `hub` frames are hub-authored notifications, and `myra` is the triage
- * handoff sender itself — triaging it would loop.
- */
-const SYSTEM_SENDER_LOCAL_PARTS = new Set(["hub", "myra"]);
-
-/**
- * Sender local-parts used by bounce/mailer-daemon rails. Mail from these
- * never triages — a triage handoff to a bounce address would either loop
- * (auto-reply to an auto-reply) or triage noise no human should see.
- * Matched case-insensitively, and against the base local-part with any
- * `+`-suffix stripped (e.g. `bounces+abc123` matches `bounces`).
- */
-const BOUNCE_SENDER_LOCAL_PARTS = new Set([
-  "mailer-daemon",
-  "postmaster",
-  "no-reply",
-  "noreply",
-  "do-not-reply",
-  "donotreply",
-  "bounce",
-  "bounces",
-]);
 
 const DEFAULT_TURN_TIMEOUT_MS = 180_000;
 
@@ -114,24 +92,21 @@ export type MailboxTriage = {
   waitForDrain: () => Promise<void>;
 };
 
-function localPart(address: string): string {
-  return splitMailAddress(address)?.local ?? address;
-}
-
 function isSystemSender(item: UserMailboxRowEvent): boolean {
-  return SYSTEM_SENDER_LOCAL_PARTS.has(localPart(item.senderAddress));
+  return isSystemSenderAddress(item.senderAddress);
 }
 
 function isBounceSender(item: UserMailboxRowEvent): boolean {
-  const local = localPart(item.senderAddress).toLowerCase();
-  const base = local.split("+")[0] ?? local;
-  return BOUNCE_SENDER_LOCAL_PARTS.has(base);
+  return isBounceSenderAddress(item.senderAddress);
 }
 
-function isTriageHandoffSubject(item: UserMailboxRowEvent): boolean {
-  return (item.subject ?? "").startsWith(TRIAGE_SUBJECT_PREFIX);
+function isTriageHandoffMail(item: UserMailboxRowEvent): boolean {
+  return isTriageHandoffSubject(item.subject);
 }
 
+// Decodes the raw mail frame (mail-format infrastructure) and hands the
+// decoded envelope + body to @workbench/myra's prompt composer (the actual
+// triage business rule for what a session's one turn is fed).
 function buildTriageMessage(item: UserMailboxRowEvent): {
   content: string;
   inReplyTo: string | undefined;
@@ -144,18 +119,16 @@ function buildTriageMessage(item: UserMailboxRowEvent): {
   const date = decoded?.headers.get("date");
   const inReplyTo = decoded?.headers.get("message-id");
   const body = decoded?.body ?? "";
-  const lines = [
-    "Triage this inbound message.",
-    "",
-    `From: ${from}`,
-    `To: ${item.recipientAddress}`,
-    `Subject: ${subject}`,
-    `Mailbox message id: ${item.rowId}`,
-  ];
-  if (date !== undefined) lines.push(`Date: ${date}`);
-  lines.push("", body);
+  const content = composeTriagePromptMessage({
+    subject,
+    from,
+    to: item.recipientAddress,
+    rowId: item.rowId,
+    ...(date !== undefined ? { date } : {}),
+    body,
+  });
   return {
-    content: lines.join("\n"),
+    content,
     inReplyTo,
     attachments: extractAttachments(item.raw),
   };
@@ -198,7 +171,7 @@ export function createMailboxTriage(deps: MailboxTriageDeps): MailboxTriage {
   async function isEligible(item: UserMailboxRowEvent): Promise<boolean> {
     if (isSystemSender(item)) return false;
     if (isBounceSender(item)) return false;
-    if (isTriageHandoffSubject(item)) return false;
+    if (isTriageHandoffMail(item)) return false;
 
     const sender = await deps.db.query.agentInstance.findFirst({
       where: eq(agentInstance.address, item.senderAddress),
@@ -388,9 +361,9 @@ export function createMailboxTriage(deps: MailboxTriageDeps): MailboxTriage {
           principalId: item.memberPrincipalId,
           address: item.recipientAddress,
           fromAddress: `myra@${tenantDomain}`,
-          subject: `${TRIAGE_SUBJECT_PREFIX}${subject}`,
+          subject: triageHandoffSubject(subject),
           body: text,
-          messageKey: `triage:${item.rowId}`,
+          messageKey: triageMessageKey(item.rowId),
           // Links the handoff to the raw mail it triaged, so the Now feed can
           // collapse the pair by ref instead of the old subject-prefix match.
           refs: [{ kind: "mail", ref: item.rowId, label: `Open: ${subject}` }],

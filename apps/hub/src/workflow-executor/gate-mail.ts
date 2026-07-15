@@ -3,7 +3,11 @@ import { principal, tenant } from "@intx/db/schema";
 import { getLogger } from "@intx/log";
 import type { RepoStore } from "@intx/hub-sessions";
 import { deriveUserMailAddress } from "@workbench/hub-agent";
-import { deepLink } from "@workbench/shared";
+import {
+  deepLink,
+  composeGateMailBody,
+  composeGateMailSubject,
+} from "@workbench/shared";
 import type { HubDb } from "../db";
 import { getConfig } from "../config";
 import { gateMailMessageKey } from "../lib/principal-mailbox";
@@ -31,27 +35,6 @@ export type DeliverPendingGateMailDeps = {
   deploymentDomain: string;
   mailboxEventBus?: MailboxEventBus;
 };
-
-function composeGateBody(args: {
-  label: string;
-  runId: string;
-  signalName: string;
-  choices: string | undefined;
-  deepLinkPath: string;
-}): string {
-  const lines = [
-    `The "${args.label}" workflow run is waiting for your input.`,
-    "",
-    `Run: ${args.runId}`,
-    `Workflow: ${args.label}`,
-    `Gate: ${args.signalName}`,
-  ];
-  if (args.choices !== undefined) {
-    lines.push(`Expected response: ${args.choices}`);
-  }
-  lines.push("", `Respond here: ${args.deepLinkPath}`);
-  return lines.join("\r\n");
-}
 
 /**
  * Deliver a "a workflow needs you" mailbox item to the run owner when a run
@@ -128,8 +111,8 @@ export async function deliverPendingGateMail(
         principalId: owner.id,
         address: recipientAddress,
         fromAddress: senderAddress,
-        subject: `A workflow needs you: ${label}`,
-        body: composeGateBody({
+        subject: composeGateMailSubject(label),
+        body: composeGateMailBody({
           label,
           runId: run.runId,
           signalName: gate.signalName,

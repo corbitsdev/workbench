@@ -46,3 +46,16 @@ export {
   isTriageSessionPrompt,
   type MailboxLoadout,
 } from "./personas/mailbox";
+
+// Mailbox triage business rules — eligibility, handoff subject/message-key
+// scheme, and prompt composition for the hub's ephemeral triage session.
+export {
+  TRIAGE_TEMPLATE_KEY,
+  isSystemSenderAddress,
+  isBounceSenderAddress,
+  isTriageHandoffSubject,
+  triageHandoffSubject,
+  triageMessageKey,
+  composeTriagePromptMessage,
+  type TriagePromptMessageInput,
+} from "./personas/mailbox-triage-policy";

@@ -1,6 +1,7 @@
 import { type } from "arktype";
 
 export * from "./palette";
+export * from "./gate-mail-copy";
 export * from "./myra-thread";
 export * from "./active-context";
 export * from "./attio-task-agent";

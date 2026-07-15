@@ -2,6 +2,7 @@ import { eq } from "drizzle-orm";
 import { principal, tenant } from "@intx/db/schema";
 import { getLogger } from "@intx/log";
 import { deriveUserMailAddress } from "@workbench/hub-agent";
+import { deepLinkPath } from "@workbench/shared";
 import type { HubDb } from "../db";
 import { readMemberPreferences } from "../lib/member-preferences";
 import { writeMailboxMessage } from "../lib/mailbox-write";
@@ -49,11 +50,6 @@ function failureDetail(
   }
   return error;
 }
-
-// Mirrors gate-mail.ts's RUN_TRACE_PATH_PREFIX: the web run-detail route the
-// deep link targets (apps/web/src/router.tsx: `/insights/trace/:runId`). A
-// path, not a URL — the inbox renders it relative to the app origin.
-const RUN_TRACE_PATH_PREFIX = "/insights/trace";
 
 export type RunTerminalStatus = "completed" | "failed";
 
@@ -212,7 +208,10 @@ export async function deliverRunTerminalMail(
     domain: tenantRow.domain,
   });
   const senderAddress = `hub@${deps.deploymentDomain}`;
-  const deepLinkPath = `${RUN_TRACE_PATH_PREFIX}/${run.runId}`;
+  // Sourced from the same @workbench/shared `deepLinkPath` map gate-mail and
+  // the web router key off, so a React route rename can't silently break this
+  // mail's link — see the `workflow_trace` case in `deep-link.ts`.
+  const runDeepLinkPath = deepLinkPath("workflow_trace", run.runId);
 
   const subject =
     run.status === "failed"
@@ -225,10 +224,14 @@ export async function deliverRunTerminalMail(
           runId: run.runId,
           error: run.error,
           failedSteps: run.failedSteps,
-          deepLinkPath,
+          deepLinkPath: runDeepLinkPath,
           paused: pausedNotice,
         })
-      : composeCompletionBody({ label, runId: run.runId, deepLinkPath });
+      : composeCompletionBody({
+          label,
+          runId: run.runId,
+          deepLinkPath: runDeepLinkPath,
+        });
 
   await writeMailboxMessage(
     deps.db,
