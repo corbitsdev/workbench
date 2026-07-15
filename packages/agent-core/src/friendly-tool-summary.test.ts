@@ -9,7 +9,7 @@ import {
   summarizeToolCalls,
   toolOperationKey,
 } from "./friendly-tool-summary";
-import { MYRA_TOOL_CATALOG } from "./dynamic-tools/catalog";
+import { MYRA_TOOL_CATALOG } from "./dynamic-tools-catalog";
 import { canonicalizeToolNames, toLlmToolName } from "./tool-names";
 import type { ToolSummaryCall } from "./friendly-tool-summary";
 
@@ -38,9 +38,9 @@ describe("integrationToolProviderKey", () => {
   });
 
   it("uses load_tools package for the provider slug", () => {
-    expect(
-      integrationToolProviderKey("load_tools", { package: "attio" }),
-    ).toBe("attio");
+    expect(integrationToolProviderKey("load_tools", { package: "attio" })).toBe(
+      "attio",
+    );
     expect(integrationToolProviderKey("load_tools", {})).toBeNull();
   });
 

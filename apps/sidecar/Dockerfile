@@ -20,6 +20,7 @@ COPY apps/hub/package.json apps/hub/
 COPY apps/sidecar/package.json apps/sidecar/
 COPY apps/web/package.json apps/web/
 COPY packages/agents/package.json packages/agents/
+COPY packages/agent-core/package.json packages/agent-core/
 COPY packages/approvals/package.json packages/approvals/
 COPY packages/artifact/package.json packages/artifact/
 COPY packages/blocks/package.json packages/blocks/
@@ -95,6 +96,7 @@ RUN bun install --frozen-lockfile
 COPY interchange/ interchange/
 COPY apps/sidecar/ apps/sidecar/
 COPY packages/agents/ packages/agents/
+COPY packages/agent-core/ packages/agent-core/
 COPY packages/myra/ packages/myra/
 COPY packages/tools-catalog/ packages/tools-catalog/
 COPY packages/approvals/ packages/approvals/

@@ -593,6 +593,21 @@
         "typescript": "catalog:",
       },
     },
+    "packages/agent-core": {
+      "name": "@workbench/agent-core",
+      "dependencies": {
+        "@intx/types": "workspace:*",
+        "@workbench/prompts": "workspace:*",
+        "@workbench/shared": "workspace:*",
+        "@workbench/tool-manifest": "workspace:*",
+        "@workbench/tools-catalog": "workspace:*",
+        "arktype": "catalog:",
+      },
+      "devDependencies": {
+        "@types/bun": "latest",
+        "typescript": "^5.9.0",
+      },
+    },
     "packages/agents": {
       "name": "@workbench/agents",
       "dependencies": {
@@ -601,6 +616,7 @@
         "@intx/inference": "workspace:*",
         "@intx/types": "workspace:*",
         "@intx/workflow": "workspace:*",
+        "@workbench/agent-core": "workspace:*",
         "@workbench/catalog": "workspace:*",
         "@workbench/chat": "workspace:*",
         "@workbench/myra": "workspace:*",
@@ -802,7 +818,7 @@
       "dependencies": {
         "@intx/inference": "workspace:*",
         "@intx/types": "workspace:*",
-        "@workbench/agents": "workspace:*",
+        "@workbench/agent-core": "workspace:*",
         "@workbench/prompts": "workspace:*",
         "@workbench/shared": "workspace:*",
         "arktype": "catalog:",
@@ -2558,6 +2574,8 @@
     "@vitejs/plugin-react": ["@vitejs/plugin-react@4.7.0", "", { "dependencies": { "@babel/core": "^7.28.0", "@babel/plugin-transform-react-jsx-self": "^7.27.1", "@babel/plugin-transform-react-jsx-source": "^7.27.1", "@rolldown/pluginutils": "1.0.0-beta.27", "@types/babel__core": "^7.20.5", "react-refresh": "^0.17.0" }, "peerDependencies": { "vite": "^4.2.0 || ^5.0.0 || ^6.0.0 || ^7.0.0" } }, "sha512-gUu9hwfWvvEDBBmgtAowQCojwZmJ5mcLn3aufeCsitijs3+f2NsrPtlAWIR6OPiqljl96GVCUbLe0HyqIpVaoA=="],
 
     "@workbench/ab-compare-presets": ["@workbench/ab-compare-presets@workspace:packages/ab-compare-presets"],
+
+    "@workbench/agent-core": ["@workbench/agent-core@workspace:packages/agent-core"],
 
     "@workbench/agents": ["@workbench/agents@workspace:packages/agents"],
 

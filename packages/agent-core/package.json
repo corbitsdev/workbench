@@ -1,23 +1,11 @@
 {
-  "name": "@workbench/agents",
+  "name": "@workbench/agent-core",
   "private": true,
   "type": "module",
   "exports": {
     ".": {
       "types": "./src/index.ts",
       "default": "./src/index.ts"
-    },
-    "./browser": {
-      "types": "./src/browser.ts",
-      "default": "./src/browser.ts"
-    },
-    "./granola-definition": {
-      "types": "./src/granola/definition.ts",
-      "default": "./src/granola/definition.ts"
-    },
-    "./prompt-builder": {
-      "types": "./src/prompt-builder.ts",
-      "default": "./src/prompt-builder.ts"
     },
     "./corbits-vocabulary": {
       "types": "./src/corbits-vocabulary.ts",
@@ -28,12 +16,16 @@
       "default": "./src/tool-names.ts"
     },
     "./dynamic-tools-catalog": {
-      "types": "./src/dynamic-tools/catalog.ts",
-      "default": "./src/dynamic-tools/catalog.ts"
+      "types": "./src/dynamic-tools-catalog.ts",
+      "default": "./src/dynamic-tools-catalog.ts"
     },
     "./constants": {
       "types": "./src/constants.ts",
       "default": "./src/constants.ts"
+    },
+    "./friendly-tool-summary": {
+      "types": "./src/friendly-tool-summary.ts",
+      "default": "./src/friendly-tool-summary.ts"
     }
   },
   "scripts": {
@@ -43,16 +35,8 @@
   },
   "dependencies": {
     "arktype": "catalog:",
-    "@intx/agent": "workspace:*",
-    "@intx/hub-client": "workspace:*",
-    "@intx/inference": "workspace:*",
     "@intx/types": "workspace:*",
-    "@intx/workflow": "workspace:*",
-    "@workbench/agent-core": "workspace:*",
-    "@workbench/catalog": "workspace:*",
-    "@workbench/chat": "workspace:*",
     "@workbench/shared": "workspace:*",
-    "@workbench/myra": "workspace:*",
     "@workbench/tool-manifest": "workspace:*",
     "@workbench/tools-catalog": "workspace:*",
     "@workbench/prompts": "workspace:*"

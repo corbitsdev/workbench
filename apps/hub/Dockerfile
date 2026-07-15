@@ -15,6 +15,7 @@ COPY apps/hub/package.json apps/hub/
 COPY apps/sidecar/package.json apps/sidecar/
 COPY apps/web/package.json apps/web/
 COPY packages/agents/package.json packages/agents/
+COPY packages/agent-core/package.json packages/agent-core/
 COPY packages/approvals/package.json packages/approvals/
 COPY packages/artifact/package.json packages/artifact/
 COPY packages/blocks/package.json packages/blocks/
@@ -89,6 +90,7 @@ COPY apps/hub/ apps/hub/
 # Railway's pre-deploy command runs `bun run scripts/db-setup.ts` in this image
 COPY scripts/ scripts/
 COPY packages/agents/ packages/agents/
+COPY packages/agent-core/ packages/agent-core/
 COPY packages/myra/ packages/myra/
 COPY packages/analytics/ packages/analytics/
 COPY packages/pricing/ packages/pricing/

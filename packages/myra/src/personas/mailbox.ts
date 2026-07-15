@@ -1,5 +1,5 @@
 import { buildSystemPrompt, type PromptSection } from "@workbench/prompts";
-import { CORBITS_VOCABULARY_SECTION } from "@workbench/agents/corbits-vocabulary";
+import { CORBITS_VOCABULARY_SECTION } from "@workbench/agent-core/corbits-vocabulary";
 import type { AgentAutonomy } from "@workbench/shared";
 import {
   PERSONAL_AGENT_BASE_TOOLS,

@@ -21,7 +21,7 @@
     "arktype": "catalog:",
     "@intx/inference": "workspace:*",
     "@intx/types": "workspace:*",
-    "@workbench/agents": "workspace:*",
+    "@workbench/agent-core": "workspace:*",
     "@workbench/prompts": "workspace:*",
     "@workbench/shared": "workspace:*"
   },

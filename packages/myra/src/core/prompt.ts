@@ -3,7 +3,7 @@ import {
   type PromptFormat,
   type PromptSection,
 } from "@workbench/prompts";
-import { CORBITS_VOCABULARY_SECTION } from "@workbench/agents/corbits-vocabulary";
+import { CORBITS_VOCABULARY_SECTION } from "@workbench/agent-core/corbits-vocabulary";
 
 export interface PersonalAgentPromptOptions {
   /**

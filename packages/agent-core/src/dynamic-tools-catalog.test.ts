@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { MYRA_TOOL_CATALOG } from "./catalog";
+import { MYRA_TOOL_CATALOG } from "./dynamic-tools-catalog";
 
 describe("MYRA_TOOL_CATALOG runtime", () => {
   it("builds catalog entries with humanized tool descriptions at module load", () => {
