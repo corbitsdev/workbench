@@ -61,6 +61,20 @@ describe("ArtifactGallery", () => {
     expect(screen.getByText("Sales automation ROI")).toBeDefined();
   });
 
+  it("still renders the other tiles when one artifact fails gallery mapping", () => {
+    const corrupt = {
+      ...artifact,
+      id: "a-2",
+      title: "Corrupt artifact",
+      status: "bogus",
+    } as unknown as ArtifactWithSession;
+    render(
+      React.createElement(ArtifactGallery, { artifacts: [corrupt, artifact] }),
+    );
+    expect(screen.getByText("Sales automation ROI")).toBeDefined();
+    expect(screen.queryByText("Corrupt artifact")).toBeNull();
+  });
+
   it("shows Load more when hasMore and invokes onLoadMore", () => {
     const onLoadMore = mock(() => {});
     render(

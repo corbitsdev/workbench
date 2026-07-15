@@ -4,6 +4,7 @@ import {
   artifactProvenance,
   artifactProvenanceLabel,
   toGalleryArtifact,
+  tryToGalleryArtifact,
   visualForKind,
 } from "./artifact-visuals";
 
@@ -125,6 +126,17 @@ describe("toGalleryArtifact", () => {
     expect(toGalleryArtifact({ ...base, updatedAt: "not-a-date" }).time).toBe(
       "",
     );
+  });
+  it("maps a valid artifact through tryToGalleryArtifact", () => {
+    expect(tryToGalleryArtifact(base)?.id).toBe("a-1");
+  });
+
+  it("returns undefined from tryToGalleryArtifact for an artifact that fails the gallery schema", () => {
+    const corrupt = {
+      ...base,
+      status: "bogus",
+    } as unknown as ArtifactWithSession;
+    expect(tryToGalleryArtifact(corrupt)).toBeUndefined();
   });
 
   it("surfaces the source origin as the provenance badge", () => {
