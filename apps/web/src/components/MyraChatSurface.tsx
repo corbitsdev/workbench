@@ -579,6 +579,15 @@ export function MyraChatSurface({
       renderToolMarker={renderChatToolMarker}
       isReasoningExpanded={reasoningExpandedPrefs.isReasoningExpanded}
       setReasoningExpanded={reasoningExpandedPrefs.setReasoningExpanded}
+      getTurnTraceHref={getMyraTurnTraceHref}
     />
   );
+}
+
+// Chat turns have no per-turn trace correlation yet (a Myra reply is not
+// backed by a workflow_run_record, which is what /insights/trace/:runId
+// requires) — link generically to the Insights landing page as the interim
+// escape hatch until a chat-turn -> trace id mapping exists.
+function getMyraTurnTraceHref(): string {
+  return "/insights";
 }

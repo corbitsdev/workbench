@@ -54,6 +54,12 @@ export {
 } from "./reasoning-expanded-prefs";
 export { MYRA_AGED_HISTORY_MS, isMyraHistoryAged } from "./aged-history";
 export {
+  groupChatTurns,
+  hasFailedSegment,
+  isTurnLive,
+  projectSettledTurn,
+} from "./settled-turn-projection";
+export {
   ToolNarrative,
   toolTone,
   type ToolNarrativeProps,

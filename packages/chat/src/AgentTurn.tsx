@@ -52,6 +52,12 @@ export interface AgentTurnProps {
   resolveAttachmentUrl?: (blobId: string) => Promise<string>;
   isReasoningExpanded?: (messageKey: string) => boolean;
   setReasoningExpanded?: (messageKey: string, expanded: boolean) => void;
+  /**
+   * Escape hatch: a subtle deep link to this turn's full trace in
+   * Insights, shown only on hover next to the feedback footer. Nothing about
+   * the process itself expands inline in the transcript.
+   */
+  traceHref?: string;
 }
 
 /**
@@ -79,6 +85,7 @@ export function AgentTurn({
   resolveAttachmentUrl,
   isReasoningExpanded,
   setReasoningExpanded,
+  traceHref,
 }: AgentTurnProps) {
   const isStreaming = message.status === "sending";
   // The single lift call site (CL-3679): a parts-native message is walked
@@ -157,18 +164,30 @@ export function AgentTurn({
           : {})}
       />
       {trailing}
-      {!isStreaming && onRate !== undefined && (
-        <MessageFeedback
-          subjectId={message.feedbackId ?? message.id}
-          subjectKind="turn_part"
-          savedRating={
-            getRating !== undefined
-              ? (getRating(message.feedbackId ?? message.id, "turn_part") ??
-                null)
-              : null
-          }
-          onRate={onRate}
-        />
+      {!isStreaming && (onRate !== undefined || traceHref !== undefined) && (
+        <div className="flex items-center gap-3">
+          {onRate !== undefined && (
+            <MessageFeedback
+              subjectId={message.feedbackId ?? message.id}
+              subjectKind="turn_part"
+              savedRating={
+                getRating !== undefined
+                  ? (getRating(message.feedbackId ?? message.id, "turn_part") ??
+                    null)
+                  : null
+              }
+              onRate={onRate}
+            />
+          )}
+          {traceHref !== undefined && (
+            <a
+              href={traceHref}
+              className="text-xs text-text-3 opacity-0 transition-opacity duration-150 hover:text-text-2 hover:underline group-hover:opacity-100 focus-visible:opacity-100"
+            >
+              View trace
+            </a>
+          )}
+        </div>
       )}
     </div>
   );

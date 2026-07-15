@@ -9,6 +9,12 @@ import type { FeedbackSubjectKind } from "./feedback-types";
 import { extractImageURLs } from "./url-image";
 import { UrlImageCard } from "./UrlImageCard";
 import { CHAT_META_TEXT, CHAT_THREAD_TURN_GAP } from "./messageRhythm";
+import {
+  groupChatTurns,
+  hasFailedSegment,
+  isTurnLive,
+  projectSettledTurn,
+} from "./settled-turn-projection";
 
 function byTimestamp(a: string, b: string): number {
   if (a < b) return -1;
@@ -130,6 +136,12 @@ export interface ChatThreadProps {
   resolveAttachmentUrl?: (blobId: string) => Promise<string>;
   isReasoningExpanded?: (messageKey: string) => boolean;
   setReasoningExpanded?: (messageKey: string, expanded: boolean) => void;
+  /**
+   * Escape hatch: resolves a settled turn's subtle "View trace"
+   * link. Passed the turn's final (outputs-only) message; return `undefined`
+   * to omit the affordance for that turn.
+   */
+  getTurnTraceHref?: (message: ChatMessage) => string | undefined;
   className?: string;
 }
 
@@ -158,6 +170,7 @@ export function ChatThread({
   resolveAttachmentUrl,
   isReasoningExpanded,
   setReasoningExpanded,
+  getTurnTraceHref,
   className,
 }: ChatThreadProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -244,16 +257,79 @@ export function ChatThread({
     );
   }
 
+  // Outputs-only projection: a multi-segment turn arrives from
+  // composeChatMessages as several agent messages sharing a stamped `turnId`
+  // group key, one per committed segment (lead-in narration, tool segments,
+  // the closing answer). Render-time only — composeChatMessages itself keeps
+  // emitting one message per segment. Once every segment has settled, the
+  // group collapses to its outputs: the final answer, any UI-block-bearing
+  // segment, and files produced by any segment; reasoning and tool activity
+  // are dropped from chat entirely (they remain in Insights -> Trace). While
+  // any segment is still streaming — or any segment FAILED (the failure state
+  // is member-actionable and must stay visible) — each segment renders
+  // individually exactly as before.
+  function renderSettledAgentTurn(segments: ChatMessage[]): ReactNode {
+    const projected = projectSettledTurn(segments);
+    const lastIndex = projected.length - 1;
+    return projected.map((message, index) => {
+      const { cleanedText, urls } = extractImageURLs(message.content);
+      const displayMessage =
+        urls.length > 0 ? { ...message, content: cleanedText } : message;
+      const traceHref =
+        index === lastIndex ? getTurnTraceHref?.(message) : undefined;
+      return (
+        <AgentTurn
+          key={message.id}
+          message={displayMessage}
+          trailing={urls.map((url) => (
+            <UrlImageCard key={url} url={url} />
+          ))}
+          {...(onRespond !== undefined ? { onRespond } : {})}
+          {...(onAction !== undefined ? { onAction } : {})}
+          {...(onRate !== undefined ? { onRate } : {})}
+          {...(getRating !== undefined ? { getRating } : {})}
+          {...(resolveAttachmentUrl !== undefined
+            ? { resolveAttachmentUrl }
+            : {})}
+          {...(traceHref !== undefined ? { traceHref } : {})}
+        />
+      );
+    });
+  }
+
   // Merge host inserts (e.g. workflow-event bubbles) into the message stream by
   // timestamp. A stable sort keeps same-timestamp order deterministic, so live
   // events land after the messages that preceded them without reordering the
   // conversation.
   const items: { key: string; at: string; node: ReactNode }[] = [
-    ...messages.map((message) => ({
-      key: `m:${message.id}`,
-      at: message.createdAt,
-      node: renderMessage(message),
-    })),
+    ...groupChatTurns(messages).flatMap((group) => {
+      const first = group[0];
+      if (first === undefined || first.role !== "agent") {
+        const message = first!;
+        return [
+          {
+            key: `m:${message.id}`,
+            at: message.createdAt,
+            node: renderMessage(message),
+          },
+        ];
+      }
+      if (isTurnLive(group) || hasFailedSegment(group)) {
+        return group.map((message) => ({
+          key: `m:${message.id}`,
+          at: message.createdAt,
+          node: renderMessage(message),
+        }));
+      }
+      const last = group[group.length - 1]!;
+      return [
+        {
+          key: `t:${group.map((m) => m.id).join(":")}`,
+          at: last.createdAt,
+          node: renderSettledAgentTurn(group),
+        },
+      ];
+    }),
     ...(inserts ?? []).map((insert) => ({
       key: `i:${insert.id}`,
       at: insert.at,

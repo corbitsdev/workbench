@@ -141,17 +141,39 @@ export function composeChatMessages(
 
   const converted = convertInstanceEvents(deduped, toolNames);
 
+  // Turn-group identity for the renderer. Committed segments of one exchange
+  // carry DISTINCT transport turnIds (each segment commits as its own turn
+  // event — pinned by the composition regression spec), so the only real
+  // exchange boundary is an inbound user mail. Stamp every turn-derived
+  // message (and any assistant mail hoisted into a turn's slot) with the
+  // current exchange's group key; standalone assistant mails (gate mail,
+  // triage handoffs, briefs) get NO group key so the renderer can never fold
+  // them into a neighbouring reply. Additive only — ordering, dedup, and
+  // hoisting semantics above are untouched.
+  let exchangeIndex = 0;
+  const groupIds = deduped.map((e): string | undefined => {
+    if (e.kind === "mail" && e.role === "user") {
+      exchangeIndex += 1;
+      return undefined;
+    }
+    if (e.kind === "turn") return `exchange-${exchangeIndex}`;
+    if (hoistedMailIds.has(e.id)) return `exchange-${exchangeIndex}`;
+    return undefined;
+  });
+  const liveGroupId = `exchange-${exchangeIndex}`;
+
   // Deduplicate by message id. The session layer already deduplicates events
   // by id, but guard here too in case two different code paths produce the
   // same id (e.g. a hydration race that drains the SSE buffer after the REST
   // fetch returns the same mail).
   const seen = new Set<string>();
   const messages: ChatMessage[] = [];
-  for (const msg of converted) {
+  for (const [index, msg] of converted.entries()) {
     if (!seen.has(msg.id)) {
       seen.add(msg.id);
       const feedbackTurnId = feedbackTurnIdByMailId.get(msg.id);
       const trace = traceByHoistedMailId.get(msg.id);
+      const groupId = groupIds[index];
       const withFeedback =
         feedbackTurnId !== undefined
           ? { ...msg, feedbackId: feedbackTurnId }
@@ -160,7 +182,9 @@ export function composeChatMessages(
         trace?.reasoning !== undefined && trace.reasoning.trim() !== ""
           ? { ...withFeedback, reasoning: trace.reasoning }
           : withFeedback;
-      messages.push({ ...withTrace, parts: liftToParts(withTrace) });
+      const withGroup: ChatMessage =
+        groupId !== undefined ? { ...withTrace, turnId: groupId } : withTrace;
+      messages.push({ ...withGroup, parts: liftToParts(withGroup) });
     }
   }
 
@@ -204,6 +228,9 @@ export function composeChatMessages(
         content: streaming,
         createdAt: new Date().toISOString(),
         status: "sending",
+        // Same exchange group as the turn's already-committed segments, so
+        // the renderer treats the whole in-flight turn as one live group.
+        turnId: liveGroupId,
         ...(liveReasoning !== "" ? { reasoning } : {}),
         ...(hasLiveImages ? { images: [...liveImages!] } : {}),
         ...(liveParts !== undefined ? { parts: [...liveParts] } : {}),
@@ -216,6 +243,7 @@ export function composeChatMessages(
         content: "",
         createdAt: new Date().toISOString(),
         status: "sending",
+        turnId: liveGroupId,
         ...(liveReasoning !== "" ? { reasoning } : {}),
         ...(hasLiveImages ? { images: [...liveImages!] } : {}),
         ...(liveParts !== undefined ? { parts: [...liveParts] } : {}),

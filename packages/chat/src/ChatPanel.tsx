@@ -90,6 +90,8 @@ export interface ChatPanelProps {
   renderToolMarker?: ChatThreadProps["renderToolMarker"];
   isReasoningExpanded?: ChatThreadProps["isReasoningExpanded"];
   setReasoningExpanded?: ChatThreadProps["setReasoningExpanded"];
+  /** Escape hatch: a settled turn's subtle "View trace" link. */
+  getTurnTraceHref?: ChatThreadProps["getTurnTraceHref"];
   className?: string;
   notice?: React.ReactNode;
   /**
@@ -154,6 +156,7 @@ export function ChatPanel({
   renderToolMarker,
   isReasoningExpanded,
   setReasoningExpanded,
+  getTurnTraceHref,
   className,
   notice,
   headerLeft,
@@ -276,6 +279,7 @@ export function ChatPanel({
         {...(setReasoningExpanded !== undefined
           ? { setReasoningExpanded }
           : {})}
+        {...(getTurnTraceHref !== undefined ? { getTurnTraceHref } : {})}
       />
 
       {quickReplies !== undefined &&

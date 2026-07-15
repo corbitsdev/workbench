@@ -154,6 +154,15 @@ export const ChatMessageSchema = type({
   role: ChatRoleSchema,
   content: "string",
   createdAt: "string",
+  /**
+   * Turn-group key stamped by `composeChatMessages` on every message derived
+   * from the same exchange's committed turn segments (and on the live
+   * streaming bubble). Additive: renderers use it to group one turn's
+   * segments; messages without it (agent-initiated mail, gate mail, briefs)
+   * are never grouped with anything. Not a transport turnId — each committed
+   * segment keeps its own event id in `id`.
+   */
+  "turnId?": "string",
   "feedbackId?": "string",
   "status?": ChatMessageStatusSchema,
   "senderLabel?": "string",

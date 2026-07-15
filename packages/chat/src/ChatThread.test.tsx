@@ -74,13 +74,14 @@ describe("ChatThread", () => {
     expect(screen.queryByTestId("busy-indicator")).toBeNull();
   });
 
-  it("renders a tool narrative for agent messages with tool calls", () => {
+  it("renders a tool narrative for a LIVE (still-streaming) agent turn with tool calls", () => {
     const withTools: ChatMessage[] = [
       {
         id: "t1",
         role: "agent",
         content: "Searching",
         createdAt: "2026-06-04T00:00:00Z",
+        status: "sending",
         toolCalls: [{ id: "c1", name: "exa_search", result: "done" }],
       },
     ];
@@ -91,6 +92,29 @@ describe("ChatThread", () => {
       />,
     );
     expect(screen.getByText("searched the web")).toBeDefined();
+  });
+
+  it("settled turn: drops the tool narrative and reasoning disclosure entirely, keeping only the answer", () => {
+    const withTools: ChatMessage[] = [
+      {
+        id: "t1",
+        role: "agent",
+        content: "Searching",
+        createdAt: "2026-06-04T00:00:00Z",
+        reasoning: "Deciding which tool to call.",
+        toolCalls: [{ id: "c1", name: "exa_search", result: "done" }],
+      },
+    ];
+    render(
+      <ChatThread
+        messages={withTools}
+        formatToolSummary={() => "searched the web"}
+      />,
+    );
+    expect(screen.queryByTestId("activity-block")).toBeNull();
+    expect(screen.queryByText("searched the web")).toBeNull();
+    expect(screen.queryByText("Deciding which tool to call.")).toBeNull();
+    expect(screen.getByText("Searching")).toBeDefined();
   });
 
   it("does not render a tool narrative when toolCalls is empty", () => {
@@ -112,13 +136,14 @@ describe("ChatThread", () => {
     expect(screen.queryByText("should not appear")).toBeNull();
   });
 
-  it("hides tool calls matched by hideToolCall but keeps the rest", () => {
+  it("hides tool calls matched by hideToolCall but keeps the rest, while the turn is live", () => {
     const mixed: ChatMessage[] = [
       {
         id: "t3",
         role: "agent",
         content: "Working",
         createdAt: "2026-06-04T00:00:00Z",
+        status: "sending",
         toolCalls: [
           { id: "c1", name: "read_file", result: "mem" },
           { id: "c2", name: "exa_search", result: "done" },
@@ -255,5 +280,260 @@ describe("ChatThread", () => {
     expect(screen.getByTestId("evt")).toBeDefined();
     expect(order.indexOf("Hello")).toBeLessThan(order.indexOf("between"));
     expect(order.indexOf("between")).toBeLessThan(order.indexOf("Hi back"));
+  });
+
+  describe("outputs-only settled multi-segment turns", () => {
+    const multiSegment: ChatMessage[] = [
+      {
+        id: "seg1",
+        role: "agent",
+        content: "Let me look up what X refers to.",
+        createdAt: "2026-06-04T00:00:10Z",
+        turnId: "g1",
+      },
+      {
+        id: "seg2",
+        role: "agent",
+        content: "Checked the records.",
+        createdAt: "2026-06-04T00:00:20Z",
+        turnId: "g1",
+        toolCalls: [{ id: "c1", name: "crm_lookup", result: "found" }],
+      },
+      {
+        id: "seg3",
+        role: "agent",
+        content: "Let me check memory.",
+        createdAt: "2026-06-04T00:00:30Z",
+        turnId: "g1",
+        reasoning: "Cross-referencing with the call notes.",
+      },
+      {
+        id: "seg4",
+        role: "agent",
+        content: "Here is the summary.",
+        createdAt: "2026-06-04T00:00:40Z",
+        turnId: "g1",
+        feedbackId: "turn-4",
+      },
+    ];
+
+    it("renders only the final answer + feedback for a settled multi-segment turn — no narration, tool chips, or reasoning", () => {
+      render(
+        <ChatThread
+          messages={multiSegment}
+          onRate={() => Promise.resolve()}
+          getRating={() => null}
+        />,
+      );
+      expect(screen.getByText("Here is the summary.")).toBeDefined();
+      expect(screen.queryByText("Let me look up what X refers to.")).toBeNull();
+      expect(screen.queryByText("Checked the records.")).toBeNull();
+      expect(screen.queryByText("Let me check memory.")).toBeNull();
+      expect(
+        screen.queryByText("Cross-referencing with the call notes."),
+      ).toBeNull();
+      expect(screen.queryByTestId("activity-block")).toBeNull();
+      expect(screen.getAllByRole("button", { name: "Thumbs up" })).toHaveLength(
+        1,
+      );
+    });
+
+    it("renders exactly one agent turn for the whole settled group", () => {
+      render(<ChatThread messages={multiSegment} />);
+      expect(screen.getAllByTestId("agent-turn")).toHaveLength(1);
+    });
+
+    it("carries forward files produced by any segment of a settled multi-segment turn", () => {
+      const withFile: ChatMessage[] = [
+        {
+          id: "seg1",
+          role: "agent",
+          content: "Generating the deck.",
+          createdAt: "2026-06-04T00:00:10Z",
+          turnId: "gf",
+          attachments: [
+            {
+              blobId: "b1",
+              name: "deck.pdf",
+              type: "application/pdf",
+              size: 100,
+            },
+          ],
+        },
+        {
+          id: "seg2",
+          role: "agent",
+          content: "Done — here it is.",
+          createdAt: "2026-06-04T00:00:20Z",
+          turnId: "gf",
+        },
+      ];
+      render(
+        <ChatThread
+          messages={withFile}
+          resolveAttachmentUrl={() => Promise.resolve("blob:resolved")}
+        />,
+      );
+      expect(screen.getByText("Done — here it is.")).toBeDefined();
+      expect(screen.getByTitle("Download deck.pdf")).toBeDefined();
+    });
+
+    it("keeps live-turn rendering unchanged: an in-progress multi-segment turn still shows each committed segment plus the rolling activity line", () => {
+      const live: ChatMessage[] = [
+        {
+          id: "seg1",
+          role: "agent",
+          content: "Let me look up what X refers to.",
+          createdAt: "2026-06-04T00:00:10Z",
+          turnId: "gl",
+        },
+        {
+          id: "seg2",
+          role: "agent",
+          content: "",
+          createdAt: "2026-06-04T00:00:20Z",
+          status: "sending",
+          turnId: "gl",
+          toolCalls: [{ id: "c1", name: "crm_lookup" }],
+        },
+      ];
+      render(
+        <ChatThread messages={live} formatToolSummary={() => "Looked up"} />,
+      );
+      expect(
+        screen.getByText("Let me look up what X refers to."),
+      ).toBeDefined();
+      expect(screen.getAllByTestId("agent-turn")).toHaveLength(2);
+    });
+
+    it("reload parity: a settled turn hydrated fresh (lifted parts) renders identically to the same turn projected live-settled", () => {
+      const first = render(<ChatThread messages={multiSegment} />);
+      const html = first.container.innerHTML;
+      cleanup();
+      // Simulate a hard reload: same settled messages, freshly rendered.
+      const second = render(<ChatThread messages={[...multiSegment]} />);
+      expect(second.container.innerHTML).toBe(html);
+    });
+
+    it("renders the escape-hatch trace link when the host supplies getTurnTraceHref, pointing at the resolved href", () => {
+      render(
+        <ChatThread
+          messages={multiSegment}
+          getTurnTraceHref={() => "/insights"}
+        />,
+      );
+      const link = screen.getByRole("link", { name: "View trace" });
+      expect(link.getAttribute("href")).toBe("/insights");
+    });
+
+    it("omits the trace link when the host supplies no getTurnTraceHref", () => {
+      render(<ChatThread messages={multiSegment} />);
+      expect(screen.queryByRole("link", { name: "View trace" })).toBeNull();
+    });
+
+    it("never folds an agent-initiated mail into the prior turn: both the answer and the mail render, each with its own feedback", () => {
+      // user Q -> multi-segment answer A1 -> agent-initiated mail M (gate
+      // mail / brief) with NO user message between. M has no turnId; folding
+      // it into the turn would drop A1's answer and re-anchor feedback.
+      const thread: ChatMessage[] = [
+        {
+          id: "u1",
+          role: "user",
+          content: "question",
+          createdAt: "2026-06-04T00:00:00Z",
+        },
+        {
+          id: "a1",
+          role: "agent",
+          content: "Let me check.",
+          createdAt: "2026-06-04T00:00:10Z",
+          turnId: "g1",
+          toolCalls: [{ id: "c1", name: "crm_lookup", result: "found" }],
+        },
+        {
+          id: "a2",
+          role: "agent",
+          content: "The real answer.",
+          createdAt: "2026-06-04T00:00:20Z",
+          turnId: "g1",
+        },
+        {
+          id: "m1",
+          role: "agent",
+          content: "Gate mail body.",
+          createdAt: "2026-06-04T00:00:30Z",
+        },
+      ];
+      render(
+        <ChatThread
+          messages={thread}
+          onRate={() => Promise.resolve()}
+          getRating={() => null}
+        />,
+      );
+      expect(screen.getByText("The real answer.")).toBeDefined();
+      expect(screen.getByText("Gate mail body.")).toBeDefined();
+      expect(screen.queryByText("Let me check.")).toBeNull();
+      expect(screen.getAllByRole("button", { name: "Thumbs up" })).toHaveLength(
+        2,
+      );
+    });
+
+    it("keeps a failed segment visible: a group containing a failed segment is not projection-stripped", () => {
+      const thread: ChatMessage[] = [
+        {
+          id: "a1",
+          role: "agent",
+          content: "Let me check.",
+          createdAt: "2026-06-04T00:00:10Z",
+          turnId: "g1",
+        },
+        {
+          id: "a2",
+          role: "agent",
+          content: "Something broke.",
+          createdAt: "2026-06-04T00:00:20Z",
+          turnId: "g1",
+          status: "failed",
+        },
+      ];
+      render(<ChatThread messages={thread} />);
+      // The failed segment renders with its member-actionable error state,
+      // and the group is not collapsed to a single projected answer.
+      expect(screen.getByText("Something broke.")).toBeDefined();
+      expect(screen.getByText("Let me check.")).toBeDefined();
+      expect(screen.getByRole("alert").textContent).toContain("Failed to send");
+    });
+
+    it("carries an embedded UI block from a non-final segment through settle", () => {
+      const blockContent = [
+        "Here's the document.",
+        "```ui",
+        '{"kind":"document","title":"ABK Demo","source":"# Call"}',
+        "```",
+      ].join("\n");
+      const thread: ChatMessage[] = [
+        {
+          id: "a1",
+          role: "agent",
+          content: blockContent,
+          createdAt: "2026-06-04T00:00:10Z",
+          turnId: "g1",
+          toolCalls: [{ id: "c1", name: "doc_build", result: "ok" }],
+        },
+        {
+          id: "a2",
+          role: "agent",
+          content: "Anything else?",
+          createdAt: "2026-06-04T00:00:20Z",
+          turnId: "g1",
+        },
+      ];
+      render(<ChatThread messages={thread} />);
+      expect(screen.getByText("Anything else?")).toBeDefined();
+      expect(screen.getByText("Here's the document.")).toBeDefined();
+      // Tool chrome is still gone even though the block segment survives.
+      expect(screen.queryByTestId("activity-block")).toBeNull();
+    });
   });
 });

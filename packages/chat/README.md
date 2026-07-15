@@ -79,10 +79,26 @@ call site in the renderer path.
   body. The label cross-fades and is debounced against a minimum display
   duration so rapid part transitions don't flicker (framer-motion,
   `useStableLabel`/`RollingLabel` in `ActivityBlock.tsx`).
-- **Settled turns** show a roll-up summary (`"Worked · N tools"`-style, via
-  the host's `summarizeCalls`) behind the same collapsible disclosure —
-  the full trace remains reachable on expand for now; Insights → Trace is
-  the canonical place for deep inspection.
+- **Settled turns show outputs only.** `AgentTurn`/`ActivityBlock`
+  still render the roll-up disclosure when handed a message that carries
+  reasoning/tool parts, but `ChatThread` no longer hands them one once a
+  turn has settled: `settled-turn-projection.ts` groups a turn's committed-segment
+  agent messages by the `turnId` group key `composeChatMessages` stamps on one
+  exchange's segments and its live streaming bubble (`packages/agents/src/chat-messages.ts`;
+  agent-initiated mail carries no key and is never merged into a reply) and,
+  once every segment is settled, projects the group to the final answer text,
+  any segment carrying an embedded UI block, plus any files/attachments
+  produced by any segment. A group containing a failed segment is rendered
+  segment-by-segment instead of projected, keeping the failure visible. Reasoning, tool calls, and
+  interstitial narration segments ("Let me look up X…") are dropped from the
+  projected message entirely, so no activity block renders for a settled
+  turn — the tool rows, the reasoning disclosure, and the narration bubbles
+  are gone from chat. Insights → Trace is the only place the full process is
+  visible; a settled turn optionally shows a subtle "View trace" link
+  (`AgentTurn`'s `traceHref` prop, resolved via `ChatThread`'s
+  `getTurnTraceHref`) as the escape hatch. Live turns are unaffected — each
+  committed segment still renders individually with its own activity block
+  while any segment of the turn is still streaming.
 - **Color discipline.** `ToolNarrative.tsx` exports `toolTone(call)` — the
   single place a tool call's rendering tone (`pending | failed | settled`)
   is derived from its result/error state. A failed internal tool call never
