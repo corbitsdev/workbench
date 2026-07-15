@@ -12,6 +12,7 @@ export {
   getCacheBaseline,
   getTokenDataStartDate,
   getPrincipalToolBreakdown,
+  getTenantToolBreakdown,
   getPrincipalCostSummary,
   type PrincipalToolRow,
   type PrincipalCostSummary,

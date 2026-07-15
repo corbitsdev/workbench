@@ -107,10 +107,13 @@ mock.module("../workflow-executor/run-store", () => ({
     _tenantIds: readonly string[],
     principalId: string,
     kind?: string,
-    filters?: { originConversationId?: string },
+    filters?: { originConversationId?: string; scope?: "own" | "tenant" },
   ) =>
     [...runs.values()]
-      .filter((r) => r.principalId === principalId)
+      // CL-3667: scope=tenant lists every run; the default is caller-scoped.
+      .filter(
+        (r) => filters?.scope === "tenant" || r.principalId === principalId,
+      )
       .filter((r) => kind === undefined || r.kind === kind)
       .filter(
         (r) =>
@@ -121,6 +124,7 @@ mock.module("../workflow-executor/run-store", () => ({
         runId: r.runId,
         kind: r.kind,
         status: r.status,
+        principalId: r.principalId,
         createdAt: new Date(),
         originConversationId: r.originConversationId ?? null,
       })),
@@ -948,6 +952,53 @@ describe("workflow runs on the sidecar (records router)", () => {
     expect(filtered.json.map((r: { runId: string }) => r.runId)).toEqual([
       inChat.json.runId,
     ]);
+  });
+
+  test("GET /records enriches each run with its starter identity and isSelf; ?scope=tenant lists every actor's runs (CL-3667)", async () => {
+    resetCaptures();
+    runs.set("wfr_mine", {
+      runId: "wfr_mine",
+      kind: "pain-point-collateral",
+      tenantId: "tn-1",
+      principalId: "prn-1",
+      status: "running",
+      deploymentId: "ses_a",
+    });
+    runs.set("wfr_theirs", {
+      runId: "wfr_theirs",
+      kind: "pain-point-collateral",
+      tenantId: "tn-1",
+      principalId: "prn-2",
+      status: "completed",
+      deploymentId: "ses_b",
+    });
+    const a = app();
+
+    type ListedRun = {
+      runId: string;
+      principalId: string;
+      isSelf: boolean;
+      ownerDisplayName?: string;
+    };
+
+    // Default (own) scope: only the caller's (prn-1) run, marked isSelf.
+    const own = await get(a, "/workflow-exec/records");
+    const ownRows = own.json as ListedRun[];
+    expect(ownRows.map((r) => r.runId)).toEqual(["wfr_mine"]);
+    expect(ownRows[0]?.principalId).toBe("prn-1");
+    expect(ownRows[0]?.isSelf).toBe(true);
+    expect(ownRows[0]?.ownerDisplayName).toBe("Test Owner");
+
+    // Tenant scope: both actors' runs, each carrying its starter identity, with
+    // isSelf true only for the caller's own run.
+    const tenant = await get(a, "/workflow-exec/records?scope=tenant");
+    const byId = new Map(
+      (tenant.json as ListedRun[]).map((r) => [r.runId, r]),
+    );
+    expect(byId.size).toBe(2);
+    expect(byId.get("wfr_mine")?.isSelf).toBe(true);
+    expect(byId.get("wfr_theirs")?.isSelf).toBe(false);
+    expect(byId.get("wfr_theirs")?.principalId).toBe("prn-2");
   });
 
   test("a run in a tenant outside the callers chain reads as 404", async () => {

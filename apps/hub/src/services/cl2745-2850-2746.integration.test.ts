@@ -43,16 +43,6 @@ async function instance(id: string, address: string) {
   );
 }
 
-async function workflowRunRow(dep: string, kind: string) {
-  seq += 1;
-  const id = `00000000-0000-4000-8000-${String(seq).padStart(12, "0")}`;
-  await client.query(
-    `insert into workflow_run (id, deployment_id, tenant_id, principal_id, kind, status)
-     values ($1,$2,$3,'prn-runner',$4,'completed')`,
-    [id, dep, TENANT, kind],
-  );
-}
-
 async function runRecord(
   id: string,
   dep: string,
@@ -91,8 +81,8 @@ describe("CL-2745 deploymentId prefix boundary", () => {
   test("getUsageByWorkflowType does not attribute tokens across prefix-colliding deployment ids", async () => {
     await instance("ins_dep", "ins_dep@wb.local");
     await instance("ins_depmore", "ins_depmore@wb.local");
-    await workflowRunRow("dep", "kind-short");
-    await workflowRunRow("depmore", "kind-long");
+    await runRecord("run-short", "dep", "kind-short", "2026-07-05T12:00:00Z");
+    await runRecord("run-long", "depmore", "kind-long", "2026-07-05T12:00:00Z");
     await rollup("ins_dep", 100, 0);
     await rollup("ins_depmore", 200, 0);
 
@@ -100,6 +90,48 @@ describe("CL-2745 deploymentId prefix boundary", () => {
     const byKind = new Map(rows.map((r) => [r.kind, r.inputTokens]));
     expect(byKind.get("kind-short")).toBe(100);
     expect(byKind.get("kind-long")).toBe(200);
+  });
+});
+
+describe("CL-3667 workflow-kind attribution via the run record", () => {
+  test("attributes usage when the deployment id lives only on workflow_run_record (per-run deploy), not the workflow_run index", async () => {
+    // Per-run-deploy runs (CL-2582) stamp their ephemeral deployment id on the
+    // run RECORD; the workflow_run deployment index carries a NULL deployment id
+    // for them. Seed exactly that shape: a run record with a deployment id, and
+    // a workflow_run index row whose deployment id is null. The kind must still
+    // attribute — the pre-fix query sourced kind from workflow_run and returned
+    // zero.
+    await instance("ins_ephemeral", "ins_ephemeral@wb.local");
+    await runRecord(
+      "run-ephemeral",
+      "ephemeral",
+      "mvt-landing-page",
+      "2026-07-05T12:00:00Z",
+    );
+    await client.query(
+      `insert into workflow_run (id, deployment_id, tenant_id, principal_id, kind, status)
+       values ($1, null, $2, 'prn-runner', 'mvt-landing-page', 'completed')`,
+      ["00000000-0000-4000-8000-0000000000ff", TENANT],
+    );
+    await rollup("ins_ephemeral", 320, 40);
+
+    const rows = await getUsageByWorkflowType({ db, tenantId: TENANT });
+    const row = rows.find((r) => r.kind === "mvt-landing-page");
+    expect(row?.inputTokens).toBe(320);
+    expect(row?.outputTokens).toBe(40);
+    expect(row?.turnCount).toBe(1);
+  });
+
+  test("excludes soft-deleted run records from kind attribution", async () => {
+    await instance("ins_del", "ins_del@wb.local");
+    await runRecord("run-del", "depdel", "gamma", "2026-07-05T12:00:00Z");
+    await client.query(
+      `update workflow_run_record set deleted_at = now() where id = 'run-del'`,
+    );
+    await rollup("ins_del", 77, 0);
+
+    const rows = await getUsageByWorkflowType({ db, tenantId: TENANT });
+    expect(rows.find((r) => r.kind === "gamma")).toBeUndefined();
   });
 });
 

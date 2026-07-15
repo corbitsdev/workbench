@@ -583,6 +583,50 @@ export async function getPrincipalToolBreakdown(args: {
   }));
 }
 
+// Tenant-wide per-tool call breakdown (CL-3667), read from the DURABLE
+// analytics_event fact table. Identical shape and name-recovery machinery to
+// `getPrincipalToolBreakdown` — the LATERAL turn_part join that recovers the
+// tool name from the `kind:'call'` part and never the nameless result row — but
+// scoped to the whole tenant instead of one principal set. This is the
+// tenant-level companion to the per-principal facet: it answers "which tools is
+// the whole workbench calling, and how often do they error," without the caller
+// having to fan the per-principal query across every member.
+export async function getTenantToolBreakdown(args: {
+  db: DB["db"];
+  tenantId: string;
+}): Promise<PrincipalToolRow[]> {
+  const { db, tenantId } = args;
+  const query = sql`
+    select
+      coalesce(tp.name, ae.tool_call_id, 'Unknown tool') as name,
+      count(*)::int as calls,
+      sum(case when ae.status = 'error' then 1 else 0 end)::int as errors
+    from analytics_event ae
+    left join lateral (
+      select p.metadata ->> 'name' as name
+      from turn_part p
+      where p.type = 'tool'
+        and p.session_id = ae.session_id
+        and p.metadata ->> 'callId' = ae.tool_call_id
+        and p.metadata ->> 'name' is not null
+      limit 1
+    ) tp on true
+    where ae.tenant_id = ${tenantId}
+      and ae.event_type = 'tool_call'
+    group by 1
+    order by calls desc, name asc
+  `;
+  const result: unknown = await db.execute(query);
+  const rows = Array.isArray(result)
+    ? (result as Record<string, unknown>[])
+    : (result as { rows: Record<string, unknown>[] }).rows;
+  return rows.map((row) => ({
+    name: String(row["name"] ?? "").trim() || "Unknown tool",
+    calls: Number(row["calls"] ?? 0),
+    errors: Number(row["errors"] ?? 0),
+  }));
+}
+
 // Token/cost totals for a principal set from the DURABLE raw facts.
 // Tokens live only on `inference_done` rows; `tool_call` rows carry zero tokens,
 // so cost is summed over inference_done and the tool count is a separate tally.

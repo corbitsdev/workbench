@@ -1,5 +1,5 @@
 import type { ActivityOverview } from "../../lib/hub-api";
-import { cacheHitRate, computeDelta, ratePct } from "./metrics";
+import { cacheHitRate, ratePct } from "./metrics";
 import { CardLabel, CaveatNote, formatNumber, HudCard, Stat } from "./stats";
 import { MiniBars, TokenMosaic } from "./viz";
 import { SectionLabel } from "./section-label";
@@ -20,6 +20,14 @@ function totalTokens(s: {
   );
 }
 
+/**
+ * Usage & Cost tab detail (CL-3667). The Total-turns / Tool-calls stat tiles
+ * that used to open this section were dropped — they duplicated the Trends
+ * section's turns/day and tool-calls/day trend cards one section up, which
+ * already carry the same totals plus a delta and sparkline. This section keeps
+ * only the figures the trend cards don't show: success rate context, cache
+ * hit rate, thinking-token share, the token mix, and the model distribution.
+ */
 export function InferenceSection({
   data,
   tokenCaveat,
@@ -28,7 +36,6 @@ export function InferenceSection({
   tokenCaveat: string | null;
 }) {
   const summary = data.inference.summary;
-  const prev = data.inference.previousSummary;
   const tokens = totalTokens(summary);
 
   const allZero =
@@ -62,24 +69,17 @@ export function InferenceSection({
       {tokenCaveat !== null && <CaveatNote>{tokenCaveat}</CaveatNote>}
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
         <Stat
-          label="Total turns"
-          value={formatNumber(summary.turnCount)}
-          delta={computeDelta(summary.turnCount, prev?.turnCount ?? null)}
-          sub={`${turnRate.toFixed(1)}% success`}
+          label="Turn success rate"
+          value={`${turnRate.toFixed(1)}%`}
+          sub={`${formatNumber(summary.failedTurnCount)} failed`}
           danger={summary.failedTurnCount > 0}
         />
         <Stat
-          label="Tool calls"
-          value={formatNumber(summary.toolCallCount)}
-          delta={computeDelta(
-            summary.toolCallCount,
-            prev?.toolCallCount ?? null,
-          )}
-          sub={
-            tokenCaveat === null
-              ? `${toolRate.toFixed(1)}% success`
-              : "success rate unavailable"
+          label="Tool success rate"
+          value={
+            tokenCaveat === null ? `${toolRate.toFixed(1)}%` : "unavailable"
           }
+          sub={`${formatNumber(summary.toolErrorCount)} errors`}
           danger={tokenCaveat === null && summary.toolErrorCount > 0}
         />
         <Stat

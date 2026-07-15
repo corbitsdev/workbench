@@ -88,6 +88,17 @@ mock.module("../services/activity-overview", () => ({
   ),
 }));
 
+let toolBreakdownTenant: string | undefined;
+mock.module("@workbench/analytics", () => ({
+  getTenantToolBreakdown: mock(async (args: { tenantId: string }) => {
+    toolBreakdownTenant = args.tenantId;
+    return [
+      { name: "web_search", calls: 9, errors: 1 },
+      { name: "gamma_generate", calls: 4, errors: 0 },
+    ];
+  }),
+}));
+
 const { createActivityRouter } = await import("./activity");
 
 describe("GET /overview", () => {
@@ -129,6 +140,34 @@ describe("GET /overview", () => {
     );
     expect(res.status).toBe(200);
     expect(lastArgs.callerPrincipalId).toBe("pri_caller");
+  });
+});
+
+describe("GET /tool-breakdown", () => {
+  it("returns the tenant-scoped tool breakdown for the path tenant", async () => {
+    const hub = new Hono<ActivityRouteEnv>();
+    hub.use("/api/tenants/:tenantId/activity/*", async (c, next) => {
+      c.set("tenant", { id: "tnt_test" });
+      c.set("principal", { id: "pri_1" });
+      await next();
+    });
+    hub.route(
+      "/api/tenants/:tenantId/activity",
+      createActivityRouter({ db: {} as never }),
+    );
+
+    const res = await hub.request(
+      "http://localhost/api/tenants/tnt_test/activity/tool-breakdown",
+    );
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      tools: { name: string; calls: number; errors: number }[];
+    };
+    expect(toolBreakdownTenant).toBe("tnt_test");
+    expect(body.tools).toEqual([
+      { name: "web_search", calls: 9, errors: 1 },
+      { name: "gamma_generate", calls: 4, errors: 0 },
+    ]);
   });
 });
 

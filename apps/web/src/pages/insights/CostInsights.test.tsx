@@ -138,7 +138,6 @@ describe("CostInsights", () => {
     await waitFor(() => {
       expect(screen.getAllByText("$3.15").length).toBeGreaterThan(0);
     });
-    screen.getByText("Total cost");
   });
 
   it("renders every token class as a separate column in the by-model table", async () => {
@@ -220,113 +219,11 @@ describe("CostInsights", () => {
     await waitFor(() => {
       screen.getByText(/Model pricing unavailable/);
     });
-    expect(screen.queryByText("Total cost")).toBeNull();
     expect(screen.queryByText(/^\$/)).toBeNull();
   });
 
-  it("shows the hub-computed per-actor dollar cost (CL-2723)", async () => {
-    const data = overview({
-      byPerson: [
-        {
-          principalId: "pri_1",
-          name: "Sawyer",
-          isSelf: true,
-          turnCount: 1,
-          toolCallCount: 0,
-          inputTokens: 5,
-          outputTokens: 6,
-          cacheReadTokens: 7,
-          cacheWriteTokens: 8,
-          thinkingTokens: 0,
-          cost: {
-            cost: {
-              input: 1.5,
-              output: 0,
-              cacheRead: 0,
-              cacheWrite: 0,
-              thinking: 0,
-              total: 1.5,
-            },
-            unpricedModels: [],
-            hasUnpriced: false,
-          },
-        },
-      ],
-    });
-    renderCost(data, { catalog: catalog({}), pricingUnavailable: true });
-
-    await waitFor(() => screen.getByText("Sawyer"));
-    const row = screen.getByText("Sawyer").closest("tr")!;
-    expect(row.textContent).toContain("$1.50");
-    expect(row.textContent).toContain("5");
-    expect(row.textContent).toContain("6");
-    expect(row.textContent).toContain("7");
-    expect(row.textContent).toContain("8");
-    screen.getByText(/priced per model, per person/);
-  });
-
-  it("shows an explicit not-priced state for a person with no cost computed", async () => {
-    const data = overview({
-      byPerson: [
-        {
-          principalId: "pri_2",
-          name: "Dana",
-          isSelf: false,
-          turnCount: 1,
-          toolCallCount: 0,
-          inputTokens: 5,
-          outputTokens: 0,
-          cacheReadTokens: 0,
-          cacheWriteTokens: 0,
-          thinkingTokens: 0,
-          cost: null,
-        },
-      ],
-    });
-    renderCost(data, { catalog: catalog({}), pricingUnavailable: true });
-
-    await waitFor(() => screen.getByText("Dana"));
-    const row = screen.getByText("Dana").closest("tr")!;
-    expect(row.textContent).not.toContain("$");
-    screen.getByText("not priced");
-  });
-
-  it("shows not-priced (never $0.00) when all of a person's usage is unpriced (CL-2723)", async () => {
-    const data = overview({
-      byPerson: [
-        {
-          principalId: "pri_3",
-          name: "Robin",
-          isSelf: false,
-          turnCount: 1,
-          toolCallCount: 0,
-          inputTokens: 2_000_000,
-          outputTokens: 0,
-          cacheReadTokens: 0,
-          cacheWriteTokens: 0,
-          thinkingTokens: 0,
-          cost: {
-            cost: {
-              input: 0,
-              output: 0,
-              cacheRead: 0,
-              cacheWrite: 0,
-              thinking: 0,
-              total: 0,
-            },
-            unpricedModels: ["(unknown model)"],
-            hasUnpriced: true,
-          },
-        },
-      ],
-    });
-    renderCost(data, { catalog: catalog({}), pricingUnavailable: true });
-
-    await waitFor(() => screen.getByText("Robin"));
-    const row = screen.getByText("Robin").closest("tr")!;
-    expect(row.textContent).not.toContain("$");
-    expect(row.textContent).toContain("not priced");
-  });
+  // Per-actor cost (CL-2723) moved off this section onto the single People-tab
+  // usage table (CL-3667) — see SortablePersonTable.test.tsx.
 
   it("renders the over-time class series chart when dailySeries has data", async () => {
     const data = overview({

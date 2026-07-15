@@ -107,3 +107,32 @@ describe("run record originConversationId (CL-2677)", () => {
     expect(filtered.map((r) => r.runId)).toEqual(["wfr_a"]);
   });
 });
+
+describe("run record actor scope (CL-3667)", () => {
+  test("default lists only the caller's runs; scope=tenant lists every actor's, each carrying its starter principal", async () => {
+    await insertRunRecord(db, {
+      ...base,
+      runId: "wfr_mine",
+      principalId: "prn-1",
+      originConversationId: null,
+    });
+    await insertRunRecord(db, {
+      ...base,
+      runId: "wfr_theirs",
+      principalId: "prn-2",
+      originConversationId: null,
+    });
+
+    const own = await listRunRecords(db, ["tn-1"], "prn-1");
+    expect(own.map((r) => r.runId)).toEqual(["wfr_mine"]);
+    expect(own[0]?.principalId).toBe("prn-1");
+
+    const tenant = await listRunRecords(db, ["tn-1"], "prn-1", undefined, {
+      scope: "tenant",
+    });
+    const byId = new Map(tenant.map((r) => [r.runId, r.principalId]));
+    expect(byId.size).toBe(2);
+    expect(byId.get("wfr_mine")).toBe("prn-1");
+    expect(byId.get("wfr_theirs")).toBe("prn-2");
+  });
+});

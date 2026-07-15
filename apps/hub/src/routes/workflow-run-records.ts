@@ -439,7 +439,7 @@ export function createWorkflowRunRecordsRouter(deps: {
       tags: ["Workflows"],
       summary: "List thin-executor workflow runs",
       description:
-        "Lists the run records visible to the user along the tenant chain. Optional `?kind=` and `?originConversationId=` filter.",
+        "Lists the run records visible to the user along the tenant chain. Each row carries the starter principal and their display name so the run-history surface can filter by actor (CL-3667). Optional `?kind=` and `?originConversationId=` filter; `?scope=tenant` lists every run in the workbench (default `own` lists only the caller's).",
       parameters: [
         {
           name: "tenantId",
@@ -462,6 +462,14 @@ export function createWorkflowRunRecordsRouter(deps: {
           description:
             "Filter to runs started from this conversation (CL-2677).",
           schema: { type: "string" },
+        },
+        {
+          name: "scope",
+          in: "query",
+          required: false,
+          description:
+            "`own` (default) lists the caller's runs; `tenant` lists every run in the workbench for the actor-filtered run history (CL-3667).",
+          schema: { type: "string", enum: ["own", "tenant"] },
         },
       ],
       responses: {
@@ -486,16 +494,35 @@ export function createWorkflowRunRecordsRouter(deps: {
       if (!context) return c.json({ error: "User context not found" }, 403);
       const chain = await getAncestorChain(deps.db, context.tenantId);
       const originFilter = c.req.query("originConversationId");
+      const listFilters: {
+        originConversationId?: string;
+        scope?: "own" | "tenant";
+      } = {};
+      if (c.req.query("scope") === "tenant") listFilters.scope = "tenant";
+      if (originFilter !== undefined) {
+        listFilters.originConversationId = originFilter;
+      }
       const rows = await listRunRecords(
         deps.db,
         chain,
         context.principalId,
         c.req.query("kind"),
-        originFilter !== undefined
-          ? { originConversationId: originFilter }
-          : undefined,
+        listFilters,
       );
-      return c.json(rows);
+      // CL-3667: resolve the starter's display name once per distinct principal
+      // so the run-history surface can show and filter by who started each run.
+      const names = await resolvePrincipalNames(deps.db, context.tenantId, [
+        ...new Set(rows.map((r) => r.principalId)),
+      ]);
+      const enriched = rows.map((r) => {
+        const ownerDisplayName = names.get(r.principalId);
+        return {
+          ...r,
+          isSelf: r.principalId === context.principalId,
+          ...(ownerDisplayName ? { ownerDisplayName } : {}),
+        };
+      });
+      return c.json(enriched);
     },
   );
 

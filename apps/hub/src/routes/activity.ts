@@ -3,6 +3,8 @@ import { getLogger } from "@intx/log";
 import { type } from "arktype";
 import { Hono, type Env } from "hono";
 
+import { getTenantToolBreakdown } from "@workbench/analytics";
+
 import { loadPriceCatalog } from "../lib/pricing";
 import { getActivityOverview } from "../services/activity-overview";
 import {
@@ -119,6 +121,31 @@ export function createActivityRouter({
           error: {
             code: "internal_error",
             message: "Failed to load activity overview",
+          },
+        },
+        500,
+      );
+    }
+  });
+
+  app.get("/tool-breakdown", async (c) => {
+    const tenant = c.get("tenant");
+    try {
+      const tools = await getTenantToolBreakdown({
+        db: c.get("db"),
+        tenantId: tenant.id,
+      });
+      return c.json({ tools });
+    } catch (error) {
+      log.error("Tool breakdown failed for tenant {tenantId}: {error}", {
+        tenantId: tenant.id,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      return c.json(
+        {
+          error: {
+            code: "internal_error",
+            message: "Failed to load tool breakdown",
           },
         },
         500,
