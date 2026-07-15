@@ -63,10 +63,13 @@ export const GalleryArtifactSchema = ArtifactVisualSchema.and({
 
 export type GalleryArtifact = typeof GalleryArtifactSchema.infer;
 
+/** Thrown when a raw object fails the GalleryArtifact schema. */
+export class GalleryArtifactParseError extends Error {}
+
 export function parseGalleryArtifact(raw: unknown): GalleryArtifact {
   const result = GalleryArtifactSchema(raw);
   if (result instanceof type.errors) {
-    throw new Error(`GalleryArtifact: ${result.summary}`);
+    throw new GalleryArtifactParseError(`GalleryArtifact: ${result.summary}`);
   }
   return result;
 }

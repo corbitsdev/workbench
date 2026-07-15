@@ -5,7 +5,7 @@
 import type { ArtifactWithSession } from "@workbench/shared";
 import { isLinkedInPostArtifactKind } from "./artifact-kinds";
 import { previewExcerpt } from "./artifact-preview-family";
-import { parseGalleryArtifact } from "./types";
+import { GalleryArtifactParseError, parseGalleryArtifact } from "./types";
 import type { ArtifactVisual, GalleryArtifact } from "./types";
 
 // Default visuals per known artifact kind. The DB `kind` column is free-form,
@@ -281,6 +281,22 @@ export function toGalleryArtifact(
     provenance: provenance.label,
     provenanceTone: provenance.tone,
     status: artifact.status,
-    previewExcerpt: excerpt.length > 0 ? excerpt : undefined,
+    ...(excerpt.length > 0 ? { previewExcerpt: excerpt } : {}),
   });
+}
+
+/**
+ * Containment wrapper for gallery rendering: an artifact that fails the
+ * GalleryArtifact schema is dropped (returns undefined) so one corrupt row
+ * can never blank the whole gallery view.
+ */
+export function tryToGalleryArtifact(
+  artifact: ArtifactWithSession,
+): GalleryArtifact | undefined {
+  try {
+    return toGalleryArtifact(artifact);
+  } catch (error) {
+    if (error instanceof GalleryArtifactParseError) return undefined;
+    throw error;
+  }
 }
