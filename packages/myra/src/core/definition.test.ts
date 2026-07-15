@@ -5,6 +5,7 @@ import {
   PERSONAL_AGENT_DEPLOY_PROMPT,
   PERSONAL_AGENT_NAME,
   PERSONAL_AGENT_TRIAGE_NAME,
+  PERSONAL_AGENT_MODEL_CONFIG,
   PERSONAL_AGENT_TRIAGE_MODEL_CONFIG,
 } from "./definition";
 
@@ -134,15 +135,25 @@ describe("PERSONAL_AGENT_TRIAGE_MODEL_CONFIG (CL-3364)", () => {
     expect(PERSONAL_AGENT_TRIAGE_NAME).not.toBe(PERSONAL_AGENT_NAME);
   });
 
-  it("pins the cheap flash model, not Myra's own chat model", () => {
+  it("pins the cheap flash model", () => {
     expect(PERSONAL_AGENT_TRIAGE_MODEL_CONFIG).toEqual({
       defaultModel: "deepseek-v4-flash",
     });
   });
 });
 
+describe("PERSONAL_AGENT_MODEL_CONFIG", () => {
+  // Chat runs on the DeepSeek reasoning model; the thinking-mode API defaults
+  // reasoning_effort to high, so the model id alone carries the intent.
+  it("pins deepseek-v4-flash for Myra chat", () => {
+    expect(PERSONAL_AGENT_MODEL_CONFIG).toEqual({
+      defaultModel: "deepseek-v4-flash",
+    });
+  });
+});
+
 describe("PERSONAL_AGENT_DEPLOY_PROMPT", () => {
-  // Myra runs inference on kimi-k2.6 via the `openai-compatible` provider, so
+  // Myra runs inference on deepseek-v4-flash via the `openai-compatible` provider, so
   // her deployed prompt must render in Markdown (the non-Anthropic format),
   // never XML. A regression here (a hardcoded `{ xml: true }`) ships the wrong
   // section format to the model she actually runs on.
