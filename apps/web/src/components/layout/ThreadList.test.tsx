@@ -119,6 +119,18 @@ describe("ThreadList", () => {
     screen.getByText(/no chats yet/i);
   });
 
+  it("keeps the 'View all' link reachable when the page filters empty but more threads exist", () => {
+    threadsData = Array.from({ length: 10 }, (_, i) => ({
+      ...makeThread(i + 1),
+      firstMessageAt: null,
+    }));
+    totalCount = 15;
+    renderList();
+    screen.getByText(/no chats yet/i);
+    const link = screen.getByText(/view all chats/i);
+    expect(link.getAttribute("href")).toBe("/chats");
+  });
+
   it("renames a thread via the options menu", () => {
     renderList();
     const optionButtons = screen.getAllByRole("button", {

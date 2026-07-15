@@ -166,15 +166,30 @@ export function ThreadList() {
   // A freshly created thread stays out of the sidebar until its first message
   // is sent — "+ New chat" navigates without mutating the list (CL-3749).
   const shown = (data?.threads ?? []).filter(isMyraThreadUsed);
-  if (shown.length === 0) {
-    return <div className="px-2 py-1 text-xs text-text-3">No chats yet</div>;
-  }
 
   // The server reports the member's full thread count; if it exceeds the
   // fetched page, offer the full list rather than silently truncating. Compared
   // against the raw page (not the used-filtered `shown`) so hidden unused
   // threads don't fake a "View all" link.
   const hasMore = (data?.total ?? 0) > (data?.threads.length ?? 0);
+
+  if (shown.length === 0) {
+    // Even with nothing to show on this page, older used chats may exist
+    // beyond it — keep the "View all" escape hatch reachable.
+    return (
+      <div className="flex flex-col gap-0.5">
+        <div className="px-2 py-1 text-xs text-text-3">No chats yet</div>
+        {hasMore && (
+          <Link
+            to="/chats"
+            className="rounded-[8px] px-2 py-1.5 text-left text-xs text-text-3 transition-colors hover:bg-page hover:text-text"
+          >
+            View all chats
+          </Link>
+        )}
+      </div>
+    );
+  }
 
   return (
     <div className="flex flex-col gap-0.5">
