@@ -1036,7 +1036,10 @@ export function useMyraSession(
     activity = rawActivity;
   } else if (eventActivity !== null) {
     activity = eventActivity;
-  } else if (awaitingAgentRef.current) {
+  } else if (awaitingAgentRef.current && live) {
+    // Only while actually connected: a "thinking" indicator during
+    // connect/reconnect would contradict the connection notice — the user
+    // must never see Myra "working" on a message that hasn't left the client.
     activity = { type: "thinking" };
   }
   // A real event superseded the optimistic guess — retire it so the timeout

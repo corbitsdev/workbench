@@ -1383,7 +1383,9 @@ describe("useMyraSession — optimistic awaiting-agent indicator (CL-3702)", () 
     act(() => {
       void result.current.send("queued message");
     });
-    expect(result.current.activity).toEqual({ type: "thinking" });
+    // Not connected yet: the connection notice owns the surface — no
+    // "thinking" indicator may render for a message still on the client.
+    expect(result.current.activity).toBeNull();
 
     act(() => {
       result.current.reconnect();

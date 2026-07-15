@@ -303,10 +303,7 @@ export function ChatThread({
           data-testid="busy-indicator"
         >
           <span
-            className={cn(
-              "inline-flex items-center gap-1.5 rounded-input border border-border bg-bg px-3 py-1.5",
-              CHAT_META_TEXT,
-            )}
+            className={cn("inline-flex items-center gap-1.5", CHAT_META_TEXT)}
           >
             <ActivityPulse />
             {busyLabel}
