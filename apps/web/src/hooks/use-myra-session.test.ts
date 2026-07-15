@@ -741,11 +741,15 @@ describe("useMyraSession — live-path optimistic echo (CL-3669)", () => {
       capturedOnChange?.();
     });
 
-    const matches = result.current.messages.filter(
-      (m) => m.content === "hi there",
-    );
-    expect(matches).toHaveLength(1);
-    expect(matches[0]?.id).toBe("mail-1");
+    // The repaint is frame-coalesced (stream-safe re-render), so the handover
+    // lands on the next frame rather than synchronously.
+    await waitFor(() => {
+      const matches = result.current.messages.filter(
+        (m) => m.content === "hi there",
+      );
+      expect(matches).toHaveLength(1);
+      expect(matches[0]?.id).toBe("mail-1");
+    });
   });
 
   it("does not duplicate the message when the SSE mail event beats the POST resolution", async () => {
@@ -773,18 +777,24 @@ describe("useMyraSession — live-path optimistic echo (CL-3669)", () => {
       capturedOnChange?.();
     });
 
-    let matches = result.current.messages.filter(
-      (m) => m.content === "dup msg",
-    );
-    expect(matches).toHaveLength(1);
-    expect(matches[0]?.id).toBe("mail-dup");
+    await waitFor(() => {
+      const matches = result.current.messages.filter(
+        (m) => m.content === "dup msg",
+      );
+      expect(matches).toHaveLength(1);
+      expect(matches[0]?.id).toBe("mail-dup");
+    });
 
     // The POST then resolves — still exactly one message.
     releaseGate();
     await waitFor(() => expect(sentMails).toContain("dup msg"));
-    matches = result.current.messages.filter((m) => m.content === "dup msg");
-    expect(matches).toHaveLength(1);
-    expect(matches[0]?.id).toBe("mail-dup");
+    await waitFor(() => {
+      const matches = result.current.messages.filter(
+        (m) => m.content === "dup msg",
+      );
+      expect(matches).toHaveLength(1);
+      expect(matches[0]?.id).toBe("mail-dup");
+    });
   });
 
   it("does not double-send when the connection flaps while a live send is in flight", async () => {

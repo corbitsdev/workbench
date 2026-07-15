@@ -48,6 +48,7 @@ import {
 } from "./mail-attachment-refs";
 import { classifyLaunchState } from "../components/agent-launch-helpers";
 import { useReportConnectionStatus } from "./use-report-connection-status";
+import { useStreamRerender } from "./use-stream-rerender";
 
 // Adaptive reconnect backoff: a fast first retry (a flaky sidecar often
 // recovers within a beat) then doubling up to a cap, so a run of failures
@@ -460,6 +461,7 @@ export function useMyraSession(
     reconnectAttemptsRef.current = 0;
   }
   const [, forceUpdate] = useState(0);
+  const scheduleStreamRerender = useStreamRerender();
   const resolvedInstanceIdRef = useRef<string | null>(null);
   const [resolvedInstanceId, setResolvedInstanceId] = useState<string | null>(
     null,
@@ -813,8 +815,10 @@ export function useMyraSession(
           tenantId: targetTenantId,
           instanceId: targetInstanceId,
           transport,
+          // Fires once per streamed token; must not be a synchronous urgent
+          // update or it starves router navigation transitions.
           onChange: () => {
-            if (!cancelled) forceUpdate((n) => n + 1);
+            if (!cancelled) scheduleStreamRerender();
           },
           onError: handleConnectionLoss,
         });
@@ -827,7 +831,7 @@ export function useMyraSession(
           transport,
           { tenantId: targetTenantId, instanceId: targetInstanceId },
           () => {
-            if (!cancelled) forceUpdate((n) => n + 1);
+            if (!cancelled) scheduleStreamRerender();
           },
         );
 
