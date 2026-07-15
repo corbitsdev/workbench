@@ -20,6 +20,24 @@ const catalog: ToolCatalog = [
   },
 ];
 
+// A package with more than the auto-expose limit of tools, so a search that
+// matches it returns matches WITHOUT auto-loading — the only shape in which the
+// consecutive-search loop guard still engages.
+const wideCatalog: ToolCatalog = [
+  {
+    package: "linear",
+    summary: "Linear issue tracker.",
+    tags: ["issues"],
+    tools: [
+      { name: "linear__create_issue", description: "Create an issue." },
+      { name: "linear__update_issue", description: "Update an issue." },
+      { name: "linear__list_issue", description: "List issues." },
+      { name: "linear__get_issue", description: "Get an issue." },
+      { name: "linear__assign_issue", description: "Assign an issue." },
+    ],
+  },
+];
+
 function call(name: string, args: Record<string, unknown>): ToolCall {
   return { id: "c1", name, arguments: args };
 }
@@ -111,21 +129,6 @@ describe("createCatalogTools", () => {
 });
 
 describe("search_tools auto-expose and affordance", () => {
-  const wideCatalog: ToolCatalog = [
-    {
-      package: "linear",
-      summary: "Linear issue tracker.",
-      tags: ["issues"],
-      tools: [
-        { name: "linear__create_issue", description: "Create an issue." },
-        { name: "linear__update_issue", description: "Update an issue." },
-        { name: "linear__list_issue", description: "List issue records." },
-        { name: "linear__get_issue", description: "Get an issue." },
-        { name: "linear__assign_issue", description: "Assign an issue." },
-      ],
-    },
-  ];
-
   test("auto-exposes the tools when three or fewer match", async () => {
     const exposure: ToolExposureState = { exposed: new Set() };
     const runner = createCatalogTools({ catalog, exposure });
@@ -174,9 +177,9 @@ describe("search_tools loop guard", () => {
 
   test("first search of a query returns the normal load_tools hint", async () => {
     const exposure: ToolExposureState = { exposed: new Set() };
-    const runner = createCatalogTools({ catalog, exposure });
+    const runner = createCatalogTools({ catalog: wideCatalog, exposure });
     const r = await runner.run(
-      call(SEARCH_TOOLS_NAME, { query: "crm" }),
+      call(SEARCH_TOOLS_NAME, { query: "issue" }),
       signal,
     );
     expect(r.isError).toBeUndefined();
@@ -185,10 +188,10 @@ describe("search_tools loop guard", () => {
 
   test("repeating the same search escalates the hint but still returns matches", async () => {
     const exposure: ToolExposureState = { exposed: new Set() };
-    const runner = createCatalogTools({ catalog, exposure });
-    await runner.run(call(SEARCH_TOOLS_NAME, { query: "crm" }), signal);
+    const runner = createCatalogTools({ catalog: wideCatalog, exposure });
+    await runner.run(call(SEARCH_TOOLS_NAME, { query: "issue" }), signal);
     const second = await runner.run(
-      call(SEARCH_TOOLS_NAME, { query: "crm" }),
+      call(SEARCH_TOOLS_NAME, { query: "issue" }),
       signal,
     );
     expect(second.isError).toBeUndefined();
@@ -198,11 +201,11 @@ describe("search_tools loop guard", () => {
 
   test("the same search past the terminal threshold returns a stop error", async () => {
     const exposure: ToolExposureState = { exposed: new Set() };
-    const runner = createCatalogTools({ catalog, exposure });
+    const runner = createCatalogTools({ catalog: wideCatalog, exposure });
     let last;
     for (let i = 0; i < 4; i++) {
       last = await runner.run(
-        call(SEARCH_TOOLS_NAME, { query: "crm" }),
+        call(SEARCH_TOOLS_NAME, { query: "issue" }),
         signal,
       );
     }
@@ -217,17 +220,17 @@ describe("search_tools loop guard", () => {
     // revisits the same query after other searches must never hit the stop
     // error, no matter how many total times a query recurs.
     const exposure: ToolExposureState = { exposed: new Set() };
-    const runner = createCatalogTools({ catalog, exposure });
+    const runner = createCatalogTools({ catalog: wideCatalog, exposure });
     const results = [];
     for (let round = 0; round < 3; round++) {
       results.push(
-        await runner.run(call(SEARCH_TOOLS_NAME, { query: "crm" }), signal),
+        await runner.run(call(SEARCH_TOOLS_NAME, { query: "issue" }), signal),
       );
       results.push(
-        await runner.run(call(SEARCH_TOOLS_NAME, { query: "crm" }), signal),
+        await runner.run(call(SEARCH_TOOLS_NAME, { query: "issue" }), signal),
       );
       results.push(
-        await runner.run(call(SEARCH_TOOLS_NAME, { query: "note" }), signal),
+        await runner.run(call(SEARCH_TOOLS_NAME, { query: "linear" }), signal),
       );
     }
     expect(results.some((r) => r.isError)).toBe(false);
@@ -235,13 +238,13 @@ describe("search_tools loop guard", () => {
 
   test("distinct queries are unaffected by the repeat guard", async () => {
     const exposure: ToolExposureState = { exposed: new Set() };
-    const runner = createCatalogTools({ catalog, exposure });
+    const runner = createCatalogTools({ catalog: wideCatalog, exposure });
     const a = await runner.run(
-      call(SEARCH_TOOLS_NAME, { query: "records" }),
+      call(SEARCH_TOOLS_NAME, { query: "issue" }),
       signal,
     );
     const b = await runner.run(
-      call(SEARCH_TOOLS_NAME, { query: "note" }),
+      call(SEARCH_TOOLS_NAME, { query: "linear" }),
       signal,
     );
     expect(a.isError).toBeUndefined();
@@ -255,13 +258,13 @@ describe("search_tools loop guard", () => {
     // 'capability unavailable' stop: search -> load -> search -> load is
     // progress, not a loop, and must never reach the terminal error.
     const exposure: ToolExposureState = { exposed: new Set() };
-    const runner = createCatalogTools({ catalog, exposure });
+    const runner = createCatalogTools({ catalog: wideCatalog, exposure });
     const results = [];
     for (let i = 0; i < 5; i++) {
       results.push(
-        await runner.run(call(SEARCH_TOOLS_NAME, { query: "crm" }), signal),
+        await runner.run(call(SEARCH_TOOLS_NAME, { query: "issue" }), signal),
       );
-      await runner.run(call(LOAD_TOOLS_NAME, { package: "attio" }), signal);
+      await runner.run(call(LOAD_TOOLS_NAME, { package: "linear" }), signal);
     }
     expect(results.some((r) => r.isError)).toBe(false);
     expect(hintOf(results[1]!)).toContain("Call load_tools");
@@ -272,11 +275,11 @@ describe("search_tools loop guard", () => {
     // long-lived session (Myra persists across days) is never pushed into a
     // 'stop searching' state by volume alone.
     const exposure: ToolExposureState = { exposed: new Set() };
-    const runner = createCatalogTools({ catalog, exposure });
+    const runner = createCatalogTools({ catalog: wideCatalog, exposure });
     let last;
     for (let i = 0; i < 40; i++) {
       last = await runner.run(
-        call(SEARCH_TOOLS_NAME, { query: `crm ${i}` }),
+        call(SEARCH_TOOLS_NAME, { query: `issue ${i}` }),
         signal,
       );
     }
