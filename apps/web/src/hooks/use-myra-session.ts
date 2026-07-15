@@ -51,6 +51,13 @@ import { useReportConnectionStatus } from "./use-report-connection-status";
 
 const LAUNCH_RETRY_DELAY_MS = 4000;
 
+// How long the optimistic "awaiting agent" indicator (set the instant a
+// message is sent) is allowed to stand in for a real event before falling
+// back to whatever the session-status channel reports. Generous — this is
+// only a floor against a genuinely unreachable agent, not a normal-latency
+// timer (CL-3702).
+const AWAITING_AGENT_TIMEOUT_MS = 30_000;
+
 export type MyraSessionPhase =
   | { phase: "loading" }
   | { phase: "provisioning" }
@@ -413,6 +420,15 @@ export function useMyraSession(
   // teardown that precedes a reconnect.
   const pendingQueueRef = useRef<PendingSend[]>([]);
   const lastMessagesRef = useRef<ChatMessage[]>([]);
+  // Optimistic "awaiting agent" flag: set the instant a send is enqueued (or
+  // a queued item starts flushing on reconnect) so the working indicator
+  // renders in the same frame as the optimistic bubble, before any SSE event
+  // (CL-3702). It is the lowest-priority signal in the activity precedence —
+  // real event-derived activity and the timeout below both supersede it.
+  const awaitingAgentRef = useRef(false);
+  const awaitingAgentTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
+    null,
+  );
   if (
     prevIdentity.instanceId !== instanceId ||
     prevIdentity.tenantId !== tenantId
@@ -426,6 +442,11 @@ export function useMyraSession(
     // thread never renders the old one's messages (CL-3280).
     pendingQueueRef.current = [];
     lastMessagesRef.current = [];
+    if (awaitingAgentTimerRef.current !== null) {
+      clearTimeout(awaitingAgentTimerRef.current);
+      awaitingAgentTimerRef.current = null;
+    }
+    awaitingAgentRef.current = false;
   }
   const [, forceUpdate] = useState(0);
   const resolvedInstanceIdRef = useRef<string | null>(null);
@@ -486,6 +507,43 @@ export function useMyraSession(
     setLive(false);
     scheduleReconnect();
   }, [scheduleReconnect]);
+
+  // Arms the optimistic "awaiting agent" indicator and its bounded fallback
+  // timer. Re-arming (a fresh send, or a flush redelivering a queued item)
+  // resets the window rather than stacking timers.
+  const startAwaitingAgent = useCallback(() => {
+    awaitingAgentRef.current = true;
+    if (awaitingAgentTimerRef.current !== null) {
+      clearTimeout(awaitingAgentTimerRef.current);
+    }
+    awaitingAgentTimerRef.current = setTimeout(() => {
+      awaitingAgentTimerRef.current = null;
+      awaitingAgentRef.current = false;
+      forceUpdate((n) => n + 1);
+    }, AWAITING_AGENT_TIMEOUT_MS);
+  }, []);
+
+  // Clears the optimistic indicator and its timer — a permanent send failure,
+  // or a real event superseding it (handled at render time below).
+  const stopAwaitingAgent = useCallback(() => {
+    awaitingAgentRef.current = false;
+    if (awaitingAgentTimerRef.current !== null) {
+      clearTimeout(awaitingAgentTimerRef.current);
+      awaitingAgentTimerRef.current = null;
+    }
+  }, []);
+
+  // Unmount-only: the connect effect's cleanup deliberately leaves the
+  // awaiting flag alone (it re-runs on reconnect attempts), so the timer
+  // must be released here.
+  useEffect(() => {
+    return () => {
+      if (awaitingAgentTimerRef.current !== null) {
+        clearTimeout(awaitingAgentTimerRef.current);
+        awaitingAgentTimerRef.current = null;
+      }
+    };
+  }, []);
 
   const enqueueSend = useCallback(
     (content: string, opts?: { failed?: boolean; permanent?: boolean }) => {
@@ -590,6 +648,9 @@ export function useMyraSession(
           const session = sessionRef.current;
           if (session === null || item === undefined) break;
           inFlightSendIdsRef.current.add(item.id);
+          // A queued send is about to actually go out — arm the optimistic
+          // indicator for this delivery attempt (CL-3702).
+          startAwaitingAgent();
           let outcome: "delivered" | "recoverable" | "permanent";
           try {
             await deliverMessage(
@@ -637,6 +698,7 @@ export function useMyraSession(
           pendingQueueRef.current = pendingQueueRef.current.map((q) =>
             q.id === item.id ? { ...q, failed: true, permanent: true } : q,
           );
+          stopAwaitingAgent();
           forceUpdate((n) => n + 1);
         }
       } finally {
@@ -771,6 +833,11 @@ export function useMyraSession(
     return () => {
       cancelled = true;
       clearReconnectTimer();
+      // Deliberately NOT stopAwaitingAgent() here: this cleanup also runs on
+      // every reconnect attempt bump, and a pending send must keep its
+      // awaiting indicator across reconnect cycles. The flag is cleared by
+      // the thread-switch identity block, a real agent event, permanent send
+      // failure, the awaiting timeout, or an explicit abort.
       teardownSubscriptions();
       const urls = attachmentUrlsRef.current;
       attachmentUrlsRef.current = new Map();
@@ -856,7 +923,8 @@ export function useMyraSession(
       throw new Error(message);
     }
     assemblerRef.current?.closeOpenPart();
-  }, [abortMutateAsync]);
+    stopAwaitingAgent();
+  }, [abortMutateAsync, stopAwaitingAgent]);
 
   const reconnect = useCallback(() => setAttempt((n) => n + 1), []);
 
@@ -956,13 +1024,28 @@ export function useMyraSession(
   // on the session's own status channel, never folded into parts, and it
   // wins over the assembler's derived state: retries happen mid-inference,
   // when the assembler still reports "thinking", and the retry countdown
-  // must surface.
+  // must surface. The optimistic "awaiting agent" flag (CL-3702) sits below
+  // both: it fills the dead air between send() and the first real event, in
+  // the exact same "thinking" shape the event-driven path renders, so the
+  // handoff is invisible.
   const rawActivity = activeSession ? activeSession.activity : null;
+  const eventActivity: ChatActivity | null =
+    assemblerRef.current !== null ? assemblerRef.current.activity : null;
   let activity: ChatActivity | null = null;
   if (rawActivity?.type === "rate_limited") {
     activity = rawActivity;
-  } else if (assemblerRef.current !== null) {
-    activity = assemblerRef.current.activity;
+  } else if (eventActivity !== null) {
+    activity = eventActivity;
+  } else if (awaitingAgentRef.current) {
+    activity = { type: "thinking" };
+  }
+  // A real event superseded the optimistic guess — retire it so the timeout
+  // never fires after the turn is already visibly underway.
+  if (
+    (rawActivity?.type === "rate_limited" || eventActivity !== null) &&
+    awaitingAgentRef.current
+  ) {
+    stopAwaitingAgent();
   }
 
   const sendWithAttachments = async (
@@ -1102,6 +1185,9 @@ export function useMyraSession(
     // reconnect flush, live sends it now — either way the bubble renders with
     // status "sending" before any round-trip completes (CL-3669).
     const pendingId = enqueueSend(text);
+    // Enter the working flow the instant the bubble renders — before any
+    // round-trip, live or queued (CL-3702).
+    startAwaitingAgent();
     if (!live || session === null) {
       scheduleReconnect();
       return;
@@ -1135,6 +1221,7 @@ export function useMyraSession(
         if (isRecoverableDeliveryError(err)) {
           markDisconnectedAndReconnect();
         } else {
+          stopAwaitingAgent();
           markSendFailed(pendingId, { permanent: true });
         }
       })

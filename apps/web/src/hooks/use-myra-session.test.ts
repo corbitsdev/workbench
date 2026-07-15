@@ -1,6 +1,14 @@
 /// <reference types="bun" />
 import "../test-setup";
-import { afterEach, beforeEach, describe, expect, it, mock } from "bun:test";
+import {
+  afterEach,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  jest,
+  mock,
+} from "bun:test";
 import { act, renderHook, waitFor } from "@testing-library/react";
 import React from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -1272,5 +1280,171 @@ describe("useMyraSession activity precedence", () => {
     await waitFor(() => {
       expect(result.current.activity).toEqual({ type: "thinking" });
     });
+  });
+});
+
+describe("useMyraSession — optimistic awaiting-agent indicator (CL-3702)", () => {
+  afterEach(() => {
+    jest.useRealTimers();
+  });
+
+  it("shows the thinking activity synchronously on send(), before any SSE event", async () => {
+    let releaseGate: () => void = () => {};
+    sendMailGate = new Promise((res) => {
+      releaseGate = res;
+    });
+    const { result } = renderHook(
+      () => useMyraSession("inst-1", "tnt-acme", true),
+      { wrapper },
+    );
+    await waitFor(() => expect(result.current.live).toBe(true));
+    expect(result.current.activity).toBeNull();
+
+    act(() => {
+      void result.current.send("hi there");
+    });
+
+    // Same render as the optimistic bubble: no assembler event has fired.
+    expect(result.current.activity).toEqual({ type: "thinking" });
+    expect(
+      result.current.messages.some(
+        (m) => m.content === "hi there" && m.status === "sending",
+      ),
+    ).toBe(true);
+
+    releaseGate();
+    await waitFor(() => expect(sentMails).toContain("hi there"));
+  });
+
+  it("hands off to the event-driven activity with no null gap when inference starts", async () => {
+    let releaseGate: () => void = () => {};
+    sendMailGate = new Promise((res) => {
+      releaseGate = res;
+    });
+    const { result } = renderHook(
+      () => useMyraSession("inst-1", "tnt-acme", true),
+      { wrapper },
+    );
+    await waitFor(() => expect(result.current.live).toBe(true));
+
+    act(() => {
+      void result.current.send("hi there");
+    });
+    expect(result.current.activity).toEqual({ type: "thinking" });
+
+    // The real event arrives — the assembler's derived activity takes over.
+    // The presentation stays the exact same shape, so the handoff has no
+    // visible restart.
+    act(() => {
+      assemblerActivity = { type: "thinking" };
+      capturedAssemblerOnUpdate?.();
+    });
+    expect(result.current.activity).toEqual({ type: "thinking" });
+
+    releaseGate();
+    await waitFor(() => expect(sentMails).toContain("hi there"));
+  });
+
+  it("clears the optimistic indicator when a live send fails permanently", async () => {
+    const { result } = renderHook(
+      () => useMyraSession("inst-1", "tnt-acme", true),
+      { wrapper },
+    );
+    await waitFor(() => expect(result.current.live).toBe(true));
+
+    sendMailShouldFail = "permanent";
+    act(() => {
+      void result.current.send("doomed message");
+    });
+    expect(result.current.activity).toEqual({ type: "thinking" });
+
+    await waitFor(() =>
+      expect(
+        result.current.messages.some(
+          (m) => m.content === "doomed message" && m.status === "failed",
+        ),
+      ).toBe(true),
+    );
+    expect(result.current.activity).toBeNull();
+  });
+
+  it("arms the indicator again when a queued send flushes on reconnect", async () => {
+    launchInstanceSession.mockResolvedValueOnce({
+      launched: false,
+      launchError: "No sidecar connected for agent",
+    });
+    const { result } = renderHook(
+      () => useMyraSession("inst-1", "tnt-acme", true),
+      { wrapper },
+    );
+    await waitFor(() => expect(result.current.state.phase).toBe("ready"));
+    await waitFor(() => expect(result.current.live).toBe(false));
+
+    act(() => {
+      void result.current.send("queued message");
+    });
+    expect(result.current.activity).toEqual({ type: "thinking" });
+
+    act(() => {
+      result.current.reconnect();
+    });
+    await waitFor(() => expect(result.current.live).toBe(true));
+    await waitFor(() => expect(sentMails).toContain("queued message"));
+    expect(result.current.activity).toEqual({ type: "thinking" });
+  });
+
+  it("keeps the indicator armed across a reconnect attempt while a send is pending", async () => {
+    const { result } = renderHook(
+      () => useMyraSession("inst-1", "tnt-acme", true),
+      { wrapper },
+    );
+    await waitFor(() => expect(result.current.live).toBe(true));
+    act(() => {
+      void result.current.send("hello");
+    });
+    expect(result.current.activity).toEqual({ type: "thinking" });
+    act(() => {
+      result.current.reconnect();
+    });
+    await waitFor(() => expect(result.current.live).toBe(true));
+    expect(result.current.activity).toEqual({ type: "thinking" });
+  });
+
+  it("clears the optimistic indicator when the turn is aborted before any event", async () => {
+    const { result } = renderHook(
+      () => useMyraSession("inst-1", "tnt-acme", true),
+      { wrapper },
+    );
+    await waitFor(() => expect(result.current.live).toBe(true));
+    act(() => {
+      void result.current.send("hello");
+    });
+    expect(result.current.activity).toEqual({ type: "thinking" });
+    await act(async () => {
+      await result.current.abortTurn();
+    });
+    expect(result.current.activity).toBeNull();
+  });
+
+  it("falls back to null (never an eternal fake spinner) once the bounded timeout expires with no event", async () => {
+    jest.useFakeTimers();
+    const { result } = renderHook(
+      () => useMyraSession("inst-1", "tnt-acme", true),
+      { wrapper },
+    );
+    await act(async () => {
+      await Promise.resolve();
+    });
+    await waitFor(() => expect(result.current.live).toBe(true));
+
+    act(() => {
+      void result.current.send("silent message");
+    });
+    expect(result.current.activity).toEqual({ type: "thinking" });
+
+    act(() => {
+      jest.advanceTimersByTime(30_000);
+    });
+    expect(result.current.activity).toBeNull();
   });
 });
