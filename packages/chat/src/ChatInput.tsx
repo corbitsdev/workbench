@@ -21,6 +21,7 @@ import {
 } from "lucide-react";
 import { useComposerVoiceDictation } from "./composer-voice-dictation";
 import {
+  Badge,
   Menu,
   MenuContent,
   MenuItem,
@@ -35,6 +36,7 @@ import {
   type AttachmentPolicy,
   type PendingAttachment,
 } from "./attachments";
+import { getFileTypeLabel } from "./attachment-media";
 
 /** One workspace member the `@` composer trigger can mention. */
 export interface MentionCandidate {
@@ -676,7 +678,7 @@ export function ChatInput({
       {pending.length > 0 && (
         <div
           className={cn(
-            "mb-2 flex max-h-28 flex-wrap gap-2 overflow-y-auto",
+            "mb-2 flex max-h-32 flex-wrap items-start gap-2 overflow-y-auto",
             rowWidth,
           )}
         >
@@ -982,6 +984,14 @@ function QueuedMessageChip({
   );
 }
 
+/**
+ * Adapted from the vendored AI Elements Attachments component's grid/list
+ * variants (./vendor/ai-elements/attachments.tsx `Attachment` +
+ * `AttachmentPreview` + `AttachmentRemove`) onto our tokens and
+ * `PendingAttachment` shape: an image gets a square thumbnail with a
+ * hover-revealed overlay remove button; a document gets a type badge, name,
+ * and size in a row with a trailing remove button.
+ */
 function AttachmentChip({
   attachment,
   onRemove,
@@ -999,23 +1009,55 @@ function AttachmentChip({
     return () => URL.revokeObjectURL(url);
   }, [attachment.file, isImage]);
 
+  if (isImage) {
+    return (
+      <div
+        title={attachment.name}
+        className="group relative h-16 w-16 shrink-0 overflow-hidden rounded-lg ring-1 ring-inset ring-border"
+      >
+        {/* Visually the thumbnail speaks for itself (AI Elements grid variant); the
+            name stays in the DOM for assistive tech and for tests asserting the
+            file identity, via the image `alt` and this sr-only echo. */}
+        <span className="sr-only">{attachment.name}</span>
+        {previewUrl !== null ? (
+          <img
+            src={previewUrl}
+            alt={attachment.name}
+            className="h-full w-full object-cover"
+          />
+        ) : (
+          <span className="flex h-full w-full items-center justify-center bg-surface-2">
+            <FileIcon className="h-5 w-5 text-text-3" />
+          </span>
+        )}
+        <button
+          type="button"
+          aria-label={`Remove ${attachment.name}`}
+          onClick={onRemove}
+          className="absolute top-1 right-1 flex h-5 w-5 items-center justify-center rounded-full bg-page/80 text-text-2 opacity-0 backdrop-blur-sm transition-opacity hover:bg-page hover:text-text focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange group-hover:opacity-100"
+        >
+          <X className="h-3 w-3" />
+        </button>
+      </div>
+    );
+  }
+
   return (
     <div className="flex items-center gap-2 rounded-lg border border-border bg-surface py-1 pl-1 pr-1.5 text-xs text-text">
-      {isImage && previewUrl !== null ? (
-        <img
-          src={previewUrl}
-          alt={attachment.name}
-          className="h-8 w-8 rounded object-cover ring-1 ring-inset ring-border"
-        />
-      ) : (
-        <span className="flex h-8 w-8 items-center justify-center">
-          <FileIcon className="h-5 w-5 text-text-3" />
-        </span>
-      )}
-      <span className="max-w-[10rem] truncate" title={attachment.name}>
-        {attachment.name}
+      <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded bg-surface-2">
+        <FileIcon className="h-5 w-5 text-text-3" />
       </span>
-      <span className="text-text-3">{formatBytes(attachment.size)}</span>
+      <span className="flex min-w-0 flex-col">
+        <span className="flex items-center gap-1.5">
+          <Badge tone="neutral">
+            {getFileTypeLabel(attachment.name, attachment.mimeType)}
+          </Badge>
+          <span className="max-w-[8rem] truncate" title={attachment.name}>
+            {attachment.name}
+          </span>
+        </span>
+        <span className="text-text-3">{formatBytes(attachment.size)}</span>
+      </span>
       <button
         type="button"
         aria-label={`Remove ${attachment.name}`}

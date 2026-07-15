@@ -317,6 +317,32 @@ describe("ChatInput", () => {
     fireEvent.click(screen.getByLabelText("Remove paste.png"));
     expect(screen.queryByText("paste.png")).toBeNull();
   });
+
+  it("shows a file-type badge on a document attachment chip", async () => {
+    const user = userEvent.setup();
+    const { container } = render(
+      <ChatInput onSend={() => {}} attachmentPolicy={IMG_PDF_POLICY} />,
+    );
+    await user.upload(
+      fileInputOf(container),
+      makeFile("brief.pdf", "application/pdf"),
+    );
+    expect(screen.getByText("PDF")).toBeDefined();
+  });
+
+  it("does not require a name/size row for an image attachment chip (thumbnail only)", async () => {
+    const user = userEvent.setup();
+    const { container } = render(
+      <ChatInput onSend={() => {}} attachmentPolicy={IMG_PDF_POLICY} />,
+    );
+    await user.upload(
+      fileInputOf(container),
+      makeFile("shot.png", "image/png"),
+    );
+    const thumbnail = screen.getByAltText("shot.png");
+    expect(thumbnail.closest('[class*="rounded-lg"]')).not.toBeNull();
+    expect(screen.getByLabelText("Remove shot.png")).toBeDefined();
+  });
 });
 
 describe("ChatInput composer width", () => {
