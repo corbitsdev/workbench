@@ -479,6 +479,47 @@ describe("ChatThread", () => {
         expect(screen.getByText("searched memory")).toBeDefined();
       });
 
+      it("CL-3751: a live multi-segment turn shows zero feedback footers, even with onRate/getRating wired", () => {
+        render(
+          <ChatThread
+            messages={liveThreeSegments}
+            formatToolSummary={() => "searched memory"}
+            onRate={() => Promise.resolve()}
+            getRating={() => null}
+          />,
+        );
+        expect(screen.getAllByTestId("agent-turn")).toHaveLength(3);
+        expect(screen.queryByRole("button", { name: "Thumbs up" })).toBeNull();
+        expect(
+          screen.queryByRole("button", { name: "Thumbs down" }),
+        ).toBeNull();
+      });
+
+      it("CL-3751: once the turn settles, exactly one feedback footer appears on the final output", () => {
+        const settledGroup: ChatMessage[] = liveThreeSegments.map(
+          (message, index) => {
+            if (index !== liveThreeSegments.length - 1) return message;
+            const { status: _status, ...rest } = message;
+            return {
+              ...rest,
+              content: "Here is the final answer.",
+              feedbackId: "turn-final",
+            };
+          },
+        );
+        render(
+          <ChatThread
+            messages={settledGroup}
+            formatToolSummary={() => "searched memory"}
+            onRate={() => Promise.resolve()}
+            getRating={() => null}
+          />,
+        );
+        expect(
+          screen.getAllByRole("button", { name: "Thumbs up" }),
+        ).toHaveLength(1);
+      });
+
       describe("state matrix: exactly one animated indicator per live state, zero when settled", () => {
         function countIndicators() {
           return (

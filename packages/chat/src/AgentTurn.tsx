@@ -58,6 +58,12 @@ export interface AgentTurnProps {
    * the process itself expands inline in the transcript.
    */
   traceHref?: string;
+  /**
+   * When true, never render the feedback footer regardless of `onRate` —
+   * used for segments of a still-LIVE multi-segment turn (CL-3751), where
+   * only the final settled output should ever carry a rating control.
+   */
+  suppressFeedback?: boolean;
 }
 
 /**
@@ -91,6 +97,7 @@ export function AgentTurn({
   isReasoningExpanded,
   setReasoningExpanded,
   traceHref,
+  suppressFeedback,
 }: AgentTurnProps) {
   const isStreaming = message.status === "sending";
   // The single lift call site (CL-3679): a parts-native message is walked
@@ -174,31 +181,35 @@ export function AgentTurn({
           : {})}
       />
       {trailing}
-      {!isStreaming && (onRate !== undefined || traceHref !== undefined) && (
-        <div className="flex items-center gap-3">
-          {onRate !== undefined && (
-            <MessageFeedback
-              subjectId={message.feedbackId ?? message.id}
-              subjectKind="turn_part"
-              savedRating={
-                getRating !== undefined
-                  ? (getRating(message.feedbackId ?? message.id, "turn_part") ??
-                    null)
-                  : null
-              }
-              onRate={onRate}
-            />
-          )}
-          {traceHref !== undefined && (
-            <a
-              href={traceHref}
-              className="text-xs text-text-3 opacity-0 transition-opacity duration-150 hover:text-text-2 hover:underline group-hover:opacity-100 focus-visible:opacity-100"
-            >
-              View trace
-            </a>
-          )}
-        </div>
-      )}
+      {!isStreaming &&
+        suppressFeedback !== true &&
+        (onRate !== undefined || traceHref !== undefined) && (
+          <div className="flex items-center gap-3">
+            {onRate !== undefined && (
+              <MessageFeedback
+                subjectId={message.feedbackId ?? message.id}
+                subjectKind="turn_part"
+                savedRating={
+                  getRating !== undefined
+                    ? (getRating(
+                        message.feedbackId ?? message.id,
+                        "turn_part",
+                      ) ?? null)
+                    : null
+                }
+                onRate={onRate}
+              />
+            )}
+            {traceHref !== undefined && (
+              <a
+                href={traceHref}
+                className="text-xs text-text-3 opacity-0 transition-opacity duration-150 hover:text-text-2 hover:underline group-hover:opacity-100 focus-visible:opacity-100"
+              >
+                View trace
+              </a>
+            )}
+          </div>
+        )}
     </div>
   );
 }
