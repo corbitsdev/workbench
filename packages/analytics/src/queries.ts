@@ -3,6 +3,7 @@ import { and, eq, gte, inArray, lte, sql, type AnyColumn } from "drizzle-orm";
 import type { DB } from "@intx/db";
 import { schema as intxSchema } from "@intx/db";
 
+import { sumAnalyticsModelTokens } from "./model-tokens";
 import { analyticsEvent, analyticsRollupDaily } from "./schema";
 
 export type AnalyticsDateRange = {
@@ -81,8 +82,6 @@ export type AnalyticsModelRow = {
   cacheWriteTokens: number;
   thinkingTokens: number;
 };
-
-import { sumAnalyticsModelTokens } from "./model-tokens";
 
 export {
   analyticsModelDisplayCount,
