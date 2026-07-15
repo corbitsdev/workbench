@@ -107,6 +107,20 @@ describe("toGalleryArtifact", () => {
     ).toBe("Q3 Export");
   });
 
+  it("omits previewExcerpt instead of throwing when content reduces to an empty excerpt", () => {
+    const gallery = toGalleryArtifact({ ...base, content: "" });
+    expect("previewExcerpt" in gallery).toBe(false);
+  });
+
+  it("omits previewExcerpt for JSON content with no summary and a whitespace-only title", () => {
+    const gallery = toGalleryArtifact({
+      ...base,
+      title: "   ",
+      content: '{"id": 1}',
+    });
+    expect("previewExcerpt" in gallery).toBe(false);
+  });
+
   it("returns empty time string for an unparseable timestamp (NaN guard)", () => {
     expect(toGalleryArtifact({ ...base, updatedAt: "not-a-date" }).time).toBe(
       "",
