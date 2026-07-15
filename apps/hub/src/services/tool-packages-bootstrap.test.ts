@@ -13,6 +13,10 @@ mock.module("../lib/package-registry-tarball-upload", () => ({
   putPackageRegistryTarball: putTarballSpy,
 }));
 
+mock.module("../lib/package-registry-hierarchy-guard", () => ({
+  assertNoCrossAssetPackageRegistryCollisions: async () => {},
+}));
+
 const createAssetSpy =
   mock<
     (...args: unknown[]) => Promise<{ id: string; kind: string; name: string }>
@@ -29,7 +33,7 @@ mock.module("@intx/hub-sessions", () => ({
       this.name = "AssetServiceError";
     }
   },
-  WORKSPACE_BUILTINS_REGISTRY: "workbench-builtins",
+  WORKSPACE_BUILTINS_REGISTRY: "workspace-builtins",
 }));
 
 let assetRow: { id: string } | null = null;
@@ -80,7 +84,7 @@ beforeEach(async () => {
   createAssetSpy.mockResolvedValue({
     id: "ast_reg",
     kind: "package-registry",
-    name: "workbench-builtins",
+    name: "workspace-builtins",
   });
   readBlobSpy.mockReset();
   assetRow = { id: "ast_reg" };
@@ -119,7 +123,7 @@ describe("publishEmbeddedToolPackages", () => {
       } as never,
       rootTenantId: "ten_root",
       enabled: false,
-      registryName: "workbench-builtins",
+      registryName: "workspace-builtins",
       buildSha: null,
       embeddedDir: fixtureDir,
     });
@@ -140,7 +144,7 @@ describe("publishEmbeddedToolPackages", () => {
       } as never,
       rootTenantId: "ten_root",
       enabled: true,
-      registryName: "workbench-builtins",
+      registryName: "workspace-builtins",
       buildSha: "abc123",
       embeddedDir: fixtureDir,
     });
@@ -164,11 +168,34 @@ describe("publishEmbeddedToolPackages", () => {
       } as never,
       rootTenantId: "ten_root",
       enabled: true,
-      registryName: "workbench-builtins",
+      registryName: "workspace-builtins",
       buildSha: null,
       embeddedDir: fixtureDir,
     });
 
     expect(putTarballSpy).not.toHaveBeenCalled();
+  });
+
+  it("rejects when upload fails", async () => {
+    readBlobSpy.mockRejectedValue(
+      new Error('package-registry asset has no blob at "tarballs/pkg.tgz"'),
+    );
+    putTarballSpy.mockRejectedValue(new Error("upload failed"));
+
+    await expect(
+      publishEmbeddedToolPackages({
+        db: makeDb() as never,
+        repoStore: {} as never,
+        assetService: {
+          createAsset: createAssetSpy,
+          readAssetBlob: readBlobSpy,
+        } as never,
+        rootTenantId: "ten_root",
+        enabled: true,
+        registryName: "workspace-builtins",
+        buildSha: null,
+        embeddedDir: fixtureDir,
+      }),
+    ).rejects.toThrow("upload failed");
   });
 });
