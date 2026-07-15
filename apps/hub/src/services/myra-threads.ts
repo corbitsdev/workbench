@@ -297,8 +297,14 @@ export async function createMyraThread(
   // deployed instance). A never-used thread IS a new chat — hand it back
   // instead of creating another. Explicit-label creates still make a fresh
   // thread: a named thread carries user intent an anonymous blank one doesn't.
+  // Only a thread on the CURRENT definition is reusable — reusing one deployed
+  // against a since-reseeded def would hand out a stale toolset and quietly
+  // break the CL-2517 guarantee that a new thread launches with the latest
+  // tools.
   if (opts.label === undefined) {
-    const unused = existingCount.find((row) => row.firstMessageAt === null);
+    const unused = existingCount.find(
+      (row) => row.firstMessageAt === null && row.agentId === def.id,
+    );
     if (unused) {
       return {
         created: false,
