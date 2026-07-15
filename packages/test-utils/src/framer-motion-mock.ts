@@ -44,11 +44,26 @@ const motionProxy = new Proxy(
   },
 );
 
+function createMotionValue(initial: unknown) {
+  let current = initial;
+  return {
+    get: () => current,
+    set: (next: unknown) => {
+      current = next;
+    },
+    on: () => () => {},
+    destroy: () => {},
+  };
+}
+
 export function registerFramerMotionMock(): void {
   mock.module("framer-motion", () => ({
     motion: motionProxy,
     AnimatePresence: ({ children }: { children?: React.ReactNode }) =>
       React.createElement(React.Fragment, null, children),
     useReducedMotion: () => false,
+    useMotionValue: (initial: unknown) => createMotionValue(initial),
+    useSpring: (initial: unknown) => createMotionValue(initial),
+    useTransform: () => createMotionValue(0),
   }));
 }

@@ -14,6 +14,7 @@ import {
   ShieldCheck,
   KeyRound,
   ExternalLink,
+  Bot,
   type LucideIcon,
 } from "lucide-react";
 import { NavLink, Link, useNavigate } from "react-router";
@@ -35,6 +36,7 @@ const NAV_ITEMS = [
   { to: "/artifacts", label: "Artifacts", icon: Files, end: false },
   { to: "/workflows", label: "Workflows", icon: Workflow, end: false },
   { to: "/skills", label: "Skills", icon: BookOpen, end: false },
+  { to: "/agents", label: "Agents", icon: Bot, end: false },
   { to: "/insights", label: "Insights", icon: BarChart2, end: false },
 ] as const;
 

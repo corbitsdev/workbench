@@ -30,6 +30,7 @@ import { WorkflowsPage } from "./pages/WorkflowsPage";
 import { InboxPage } from "./pages/InboxPage";
 import Settings from "./pages/Settings";
 import { SkillsLibrary } from "./pages/SkillsLibrary";
+import { AgentsPage } from "./pages/AgentsPage";
 import { SkillsNew } from "./pages/SkillsNew";
 import { SkillDetail } from "./pages/SkillDetail";
 import { ToolsLibrary } from "./pages/ToolsLibrary";
@@ -123,6 +124,13 @@ export const NAV_COMMANDS: PaletteResultItem[] = [
     to: "/owner",
     keywords: ["owner", "workbench"],
     requires: "owner",
+  },
+  {
+    id: "nav:agents",
+    category: "navigation",
+    title: "Agents",
+    to: "/agents",
+    keywords: ["agents", "instances", "myra", "oat"],
   },
   {
     id: "nav:insights",
@@ -255,6 +263,7 @@ export const router = createBrowserRouter([
           { path: "/skills", element: <SkillsLibrary /> },
           { path: "/skills/new", element: <SkillsNew /> },
           { path: "/skills/:id", element: <SkillDetail /> },
+          { path: "/agents", element: <AgentsPage /> },
           // Tools moved under Admin (CL-2719). Old paths redirect.
           { path: "/tools", element: <Navigate to="/admin/tools" replace /> },
           { path: "/tools/:name", element: <RedirectToAdminTool /> },

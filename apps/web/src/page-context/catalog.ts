@@ -89,6 +89,12 @@ export const PAGE_CONTEXT_CATALOG: readonly PageContextEntry[] = [
       "Skill detail: one published or draft skill with its procedure text and metadata. Users review how agents should run this play and may edit if they have access.",
   },
   {
+    id: "agents-list",
+    match: (p) => p === "/agents",
+    context:
+      "Agents: read-only list of the agent instances this member has deployed — name, description, status, and mail address. Creating or editing agents is not yet available from this page.",
+  },
+  {
     id: "admin-tool-detail",
     match: (p) => {
       const parts = segmentPath(p);
@@ -119,9 +125,7 @@ export const PAGE_CONTEXT_CATALOG: readonly PageContextEntry[] = [
     match: (p) => {
       const parts = segmentPath(p);
       return (
-        parts[0] === "admin" &&
-        parts[1] === "definitions" &&
-        parts.length === 3
+        parts[0] === "admin" && parts[1] === "definitions" && parts.length === 3
       );
     },
     context:
