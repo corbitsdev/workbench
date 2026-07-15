@@ -415,6 +415,212 @@ describe("ChatThread", () => {
       expect(second.container.innerHTML).toBe(html);
     });
 
+    describe("CL-3734: live-turn per-segment projection", () => {
+      const liveThreeSegments: ChatMessage[] = [
+        {
+          id: "seg1",
+          role: "agent",
+          content: "Let me look up what X refers to.",
+          createdAt: "2026-06-04T00:00:10Z",
+          turnId: "gl",
+          reasoning: "Deciding how to look this up.",
+        },
+        {
+          id: "seg2",
+          role: "agent",
+          content: "Checked the records.",
+          createdAt: "2026-06-04T00:00:20Z",
+          turnId: "gl",
+          toolCalls: [{ id: "c1", name: "crm_lookup", result: "found" }],
+        },
+        {
+          id: "seg3",
+          role: "agent",
+          content: "",
+          createdAt: "2026-06-04T00:00:30Z",
+          status: "sending",
+          turnId: "gl",
+          toolCalls: [{ id: "c2", name: "memory_search" }],
+        },
+      ];
+
+      it("shows exactly one activity element for a live group with two settled segments and one streaming", () => {
+        render(
+          <ChatThread
+            messages={liveThreeSegments}
+            formatToolSummary={() => "searched memory"}
+          />,
+        );
+        expect(screen.getAllByTestId("activity-block")).toHaveLength(1);
+      });
+
+      it("renders the settled segments' carried text but no reasoning or tool rows", () => {
+        render(
+          <ChatThread
+            messages={liveThreeSegments}
+            formatToolSummary={() => "searched memory"}
+          />,
+        );
+        expect(
+          screen.getByText("Let me look up what X refers to."),
+        ).toBeDefined();
+        expect(screen.getByText("Checked the records.")).toBeDefined();
+        expect(screen.queryByText("Deciding how to look this up.")).toBeNull();
+        expect(screen.queryByText("crm_lookup")).toBeNull();
+      });
+
+      it("renders the streaming segment's activity through the single activity block", () => {
+        render(
+          <ChatThread
+            messages={liveThreeSegments}
+            formatToolSummary={() => "searched memory"}
+          />,
+        );
+        expect(screen.getByText("searched memory")).toBeDefined();
+      });
+
+      describe("state matrix: exactly one animated indicator per live state, zero when settled", () => {
+        function countIndicators() {
+          return (
+            screen.queryAllByTestId("busy-indicator").length +
+            screen.queryAllByTestId("activity-block").length
+          );
+        }
+        const user: ChatMessage = {
+          id: "u1",
+          role: "user",
+          content: "question",
+          createdAt: "2026-06-04T00:00:00Z",
+        };
+
+        it("optimistic pre-event (typing, no live signal yet): the busy pill is the one indicator", () => {
+          render(<ChatThread messages={[user]} typing agentName="Ada" />);
+          expect(screen.getAllByTestId("busy-indicator")).toHaveLength(1);
+          expect(countIndicators()).toBe(1);
+        });
+
+        it("optimistic pre-event with a bare sending shell (no parts, no text): the pill stays up — never zero indicators", () => {
+          const shell: ChatMessage = {
+            id: "a1",
+            role: "agent",
+            content: "",
+            createdAt: "2026-06-04T00:00:10Z",
+            status: "sending",
+            turnId: "gm",
+          };
+          render(<ChatThread messages={[user, shell]} typing />);
+          expect(screen.getAllByTestId("busy-indicator")).toHaveLength(1);
+          expect(countIndicators()).toBe(1);
+        });
+
+        it("reasoning-only streaming: the turn's activity line is the one indicator; the pill is suppressed", () => {
+          const reasoningOnly: ChatMessage = {
+            id: "a1",
+            role: "agent",
+            content: "",
+            createdAt: "2026-06-04T00:00:10Z",
+            status: "sending",
+            turnId: "gm",
+            reasoning: "Working through it",
+          };
+          render(
+            <ChatThread
+              messages={[user, reasoningOnly]}
+              typing
+              activity={{ type: "thinking" }}
+            />,
+          );
+          expect(screen.getAllByTestId("activity-block")).toHaveLength(1);
+          expect(screen.queryByTestId("busy-indicator")).toBeNull();
+          expect(countIndicators()).toBe(1);
+        });
+
+        it("tool-running: the turn's activity line is the one indicator; the pill is suppressed", () => {
+          const toolRunning: ChatMessage = {
+            id: "a1",
+            role: "agent",
+            content: "",
+            createdAt: "2026-06-04T00:00:10Z",
+            status: "sending",
+            turnId: "gm",
+            toolCalls: [{ id: "c1", name: "crm_lookup" }],
+          };
+          render(
+            <ChatThread
+              messages={[user, toolRunning]}
+              typing
+              activity={{ type: "tool_running", name: "crm_lookup" }}
+              formatToolSummary={() => "looking that up"}
+            />,
+          );
+          expect(screen.getAllByTestId("activity-block")).toHaveLength(1);
+          expect(screen.queryByTestId("busy-indicator")).toBeNull();
+          expect(countIndicators()).toBe(1);
+        });
+
+        it("text-streaming after tool activity: still exactly one indicator", () => {
+          const textStreaming: ChatMessage = {
+            id: "a1",
+            role: "agent",
+            content: "Here is a partial ans",
+            createdAt: "2026-06-04T00:00:10Z",
+            status: "sending",
+            turnId: "gm",
+            toolCalls: [{ id: "c1", name: "crm_lookup", result: "found" }],
+          };
+          render(<ChatThread messages={[user, textStreaming]} typing />);
+          expect(screen.getByText("Here is a partial ans")).toBeDefined();
+          expect(countIndicators()).toBe(1);
+        });
+
+        it("settled: zero animated indicators", () => {
+          const settled: ChatMessage = {
+            id: "a1",
+            role: "agent",
+            content: "Here is the answer.",
+            createdAt: "2026-06-04T00:00:10Z",
+            turnId: "gm",
+            reasoning: "Worked through it",
+            toolCalls: [{ id: "c1", name: "crm_lookup", result: "found" }],
+          };
+          render(<ChatThread messages={[user, settled]} />);
+          expect(screen.getByText("Here is the answer.")).toBeDefined();
+          expect(countIndicators()).toBe(0);
+        });
+      });
+
+      it("suppresses the thread-level busy indicator while a trailing segment is already streaming its own activity block", () => {
+        render(
+          <ChatThread
+            messages={liveThreeSegments}
+            activity={{ type: "thinking" }}
+            formatToolSummary={() => "searched memory"}
+          />,
+        );
+        expect(screen.queryByTestId("busy-indicator")).toBeNull();
+      });
+
+      it("re-projects identically to a reload once the last segment settles (parity)", () => {
+        const settled: ChatMessage[] = [
+          liveThreeSegments[0]!,
+          liveThreeSegments[1]!,
+          {
+            id: "seg3",
+            role: "agent",
+            content: "Here is the summary.",
+            createdAt: "2026-06-04T00:00:30Z",
+            turnId: "gl",
+            toolCalls: [{ id: "c2", name: "memory_search", result: "ok" }],
+          },
+        ];
+        const fromSettle = render(<ChatThread messages={settled} />);
+        const settleHtml = fromSettle.container.innerHTML;
+        cleanup();
+        const fromReload = render(<ChatThread messages={[...settled]} />);
+        expect(fromReload.container.innerHTML).toBe(settleHtml);
+      });
+    });
+
     it("renders the escape-hatch trace link when the host supplies getTurnTraceHref, pointing at the resolved href", () => {
       render(
         <ChatThread

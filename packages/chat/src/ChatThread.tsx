@@ -2,17 +2,23 @@ import { useEffect, useRef, type ReactNode } from "react";
 import { cn, toHumanLabel } from "@workbench/ui";
 import { type ChatMessage, type ChatActivity, type ToolCall } from "./types";
 import { MessageBubble } from "./MessageBubble";
+import { liftToParts } from "./parts";
 import { ActivityPulse, type ToolNarrativeProps } from "./ToolNarrative";
 import { AgentTurn } from "./AgentTurn";
 import type { UIBlock, UIResponse } from "@workbench/blocks";
 import type { FeedbackSubjectKind } from "./feedback-types";
 import { extractImageURLs } from "./url-image";
 import { UrlImageCard } from "./UrlImageCard";
-import { CHAT_META_TEXT, CHAT_THREAD_TURN_GAP } from "./messageRhythm";
+import {
+  CHAT_META_TEXT,
+  CHAT_THREAD_TURN_GAP,
+  CHAT_TURN_STACK,
+} from "./messageRhythm";
 import {
   groupChatTurns,
   hasFailedSegment,
   isTurnLive,
+  projectLiveTurn,
   projectSettledTurn,
 } from "./settled-turn-projection";
 
@@ -184,10 +190,33 @@ export function ChatThread({
   });
 
   const hasActivity = activity !== undefined && activity !== null;
+  // A streaming agent turn renders its own single rolling activity line
+  // inside AgentTurn/ActivityBlock once it carries any live signal
+  // (reasoning, a tool part, or streaming answer text) — the thread-level
+  // busy indicator would be a second, redundant pulse from that moment on
+  // (CL-3734). Suppress it exactly then, and only then: a bare optimistic
+  // "sending" shell with no parts and no text yet renders nothing of its
+  // own, so the pill stays up until the turn takes over — never zero
+  // animated indicators while the agent is working, never two.
+  const trailingGroup = groupChatTurns(messages).at(-1);
+  const streamingSegment =
+    trailingGroup?.[0]?.role === "agent"
+      ? trailingGroup.find((m) => m.status === "sending")
+      : undefined;
+  const streamingParts =
+    streamingSegment !== undefined
+      ? (streamingSegment.parts ?? liftToParts(streamingSegment))
+      : [];
+  const liveTurnShowsOwnIndicator =
+    streamingSegment !== undefined &&
+    (streamingSegment.content.trim() !== "" ||
+      streamingParts.some(
+        (part) => part.type === "reasoning" || part.type === "tool",
+      ));
   // One indicator covers the whole in-flight turn: a discrete activity labels
   // it precisely; plain typing falls back to a generic "thinking" line so a
   // running turn is never silent between activity events.
-  const busy = hasActivity || typing === true;
+  const busy = (hasActivity || typing === true) && !liveTurnShowsOwnIndicator;
   const busyLabel = hasActivity
     ? formatActivityLabel(
         activity,
@@ -264,14 +293,24 @@ export function ChatThread({
   // emitting one message per segment. Once every segment has settled, the
   // group collapses to its outputs: the final answer, any UI-block-bearing
   // segment, and files produced by any segment; reasoning and tool activity
-  // are dropped from chat entirely (they remain in Insights -> Trace). While
-  // any segment is still streaming — or any segment FAILED (the failure state
-  // is member-actionable and must stay visible) — each segment renders
-  // individually exactly as before.
+  // are dropped from chat entirely (they remain in Insights -> Trace). A
+  // group containing a FAILED segment is never collapsed (the failure state
+  // is member-actionable and must stay visible). A still-LIVE group applies
+  // the same outputs-only rule per segment as each one settles (CL-3734,
+  // `projectLiveTurn`) — only the one segment still streaming keeps its
+  // parts, so at most one activity block/pulse exists in the transcript at a
+  // time. When the last segment settles, this function's merge/drop rules
+  // take over and the group re-projects to exactly what a reload would show.
   function renderSettledAgentTurn(segments: ChatMessage[]): ReactNode {
     const projected = projectSettledTurn(segments);
     const lastIndex = projected.length - 1;
-    return projected.map((message, index) => {
+    // With process rows gone (CL-3734), a projected group's entries — a rare
+    // block-bearing segment plus the final answer — are answer-only content;
+    // they stack at normal intra-turn rhythm (CHAT_TURN_STACK) rather than
+    // sitting flush against each other with no gap at all. Single-entry
+    // groups (the common case) are unaffected — one child never renders a
+    // gap.
+    const nodes = projected.map((message, index) => {
       const { cleanedText, urls } = extractImageURLs(message.content);
       const displayMessage =
         urls.length > 0 ? { ...message, content: cleanedText } : message;
@@ -295,6 +334,7 @@ export function ChatThread({
         />
       );
     });
+    return <div className={CHAT_TURN_STACK}>{nodes}</div>;
   }
 
   // Merge host inserts (e.g. workflow-event bubbles) into the message stream by
@@ -314,8 +354,20 @@ export function ChatThread({
           },
         ];
       }
-      if (isTurnLive(group) || hasFailedSegment(group)) {
+      if (hasFailedSegment(group)) {
         return group.map((message) => ({
+          key: `m:${message.id}`,
+          at: message.createdAt,
+          node: renderMessage(message),
+        }));
+      }
+      // Live group (CL-3734): already-settled segments project to outputs
+      // only as soon as they commit — process rows disappear mid-turn rather
+      // than waiting for the whole group to settle. Only the still-streaming
+      // segment keeps its parts, so it alone renders the single rolling
+      // activity line.
+      if (isTurnLive(group)) {
+        return projectLiveTurn(group).map((message) => ({
           key: `m:${message.id}`,
           at: message.createdAt,
           node: renderMessage(message),

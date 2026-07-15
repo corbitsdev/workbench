@@ -106,6 +106,25 @@ function projectOutputs(
 }
 
 /**
+ * Live-phase projection (CL-3734): apply the same outputs-only rule to every
+ * segment that has ALREADY settled within a still-live group, so process rows
+ * disappear the moment a segment commits rather than waiting for the whole
+ * turn to end. The one segment still `status: "sending"` is left untouched —
+ * it keeps its parts intact so `AgentTurn` renders the single rolling
+ * activity line for it. This does not merge/drop segments the way
+ * `projectSettledTurn` does (the final segment isn't known yet); each settled
+ * segment gets ONLY its own outputs. When the last segment settles, the
+ * caller switches to `projectSettledTurn`, which re-derives the merged final
+ * answer — so the transcript re-projects to the same result a reload would
+ * produce.
+ */
+export function projectLiveTurn(segments: ChatMessage[]): ChatMessage[] {
+  return segments.map((segment) =>
+    segment.status === "sending" ? segment : projectOutputs(segment, []),
+  );
+}
+
+/**
  * Collapse a settled multi-segment agent turn into its outputs-only
  * messages, in original segment order:
  *

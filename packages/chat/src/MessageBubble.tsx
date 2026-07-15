@@ -310,9 +310,10 @@ export function MessageBubble({
 
   // Nothing to show: no body, no images, no renderable attachments — and
   // either settled, or streaming with reasoning carrying the live state (the
-  // AgentTurn trace renders reasoning; an empty wrapper here would only add
-  // dead space under it). A reasoning-less stream keeps the bubble as the
-  // typing placeholder.
+  // AgentTurn activity line owns the animated indicator for that state —
+  // reasoning itself never renders as a row, CL-3734; an empty wrapper here
+  // would only add dead space under it). A reasoning-less stream keeps the
+  // bubble as the typing placeholder.
   if (
     !hasBody &&
     !hasImages &&

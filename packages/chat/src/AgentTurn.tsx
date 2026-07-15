@@ -62,10 +62,15 @@ export interface AgentTurnProps {
 
 /**
  * One agent turn, rendered with intentional hierarchy: a single collapsible
- * activity block (reasoning + tool calls) sits above the answer; rich trailing
- * content follows; the feedback footer, anchored to the response, closes the
- * turn. This component owns all intra-turn spacing — ChatThread owns only the
- * (larger) inter-turn spacing.
+ * activity block sits above the answer — while streaming it is the turn's
+ * single rolling activity line (any live signal: reasoning or a pending
+ * tool); once settled it remains only when there are tool calls to disclose.
+ * Rich trailing content follows; the feedback footer, anchored to the
+ * response, closes the turn. Reasoning never renders a persistent row of its
+ * own (CL-3734) — a settled reasoning-only turn shows no activity block,
+ * keeping the reasoning trace exclusively in Insights -> Trace. This
+ * component owns all intra-turn spacing — ChatThread owns only the (larger)
+ * inter-turn spacing.
  */
 export function AgentTurn({
   message,
@@ -111,10 +116,15 @@ export function AgentTurn({
     }
     return true;
   });
-  const hasReasoning = activityParts.some(
-    (part) => part.type === "reasoning" && part.text.trim() !== "",
-  );
+  // Reasoning is never a persistent chat row (live or settled, CL-3734) — it
+  // stays fully available in Insights -> Trace. A SETTLED turn shows the
+  // activity block only when there is a tool call to disclose. A LIVE turn
+  // shows it whenever any activity signal exists (reasoning streaming or a
+  // tool pending) — that block IS the turn's single rolling activity line, so
+  // a reasoning-only stream still animates (no dead air) and the line simply
+  // disappears when the segment settles.
   const hasTools = activityParts.some((part) => part.type === "tool");
+  const showActivity = hasTools || (isStreaming && activityParts.length > 0);
   // The turn header owns the sender label; strip it from the nested bubble so
   // it renders exactly once.
   const { senderLabel, ...bubbleMessage } = message;
@@ -128,7 +138,7 @@ export function AgentTurn({
       {senderLabel !== undefined && senderLabel !== "" && (
         <span className={CHAT_META_TEXT}>From: {senderLabel}</span>
       )}
-      {(hasReasoning || hasTools) && (
+      {showActivity && (
         <ActivityBlock
           parts={activityParts}
           streaming={isStreaming}

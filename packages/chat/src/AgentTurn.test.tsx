@@ -57,13 +57,47 @@ describe("AgentTurn", () => {
     expect(answerAt).toBeGreaterThan(text.indexOf("I weighed the options"));
   });
 
-  it("keeps the activity block collapsed by default while streaming", () => {
+  it("reasoning-only LIVE stream: renders the single rolling activity line (no dead air), but no persistent reasoning row", () => {
     render(
       <AgentTurn
         message={agentMessage({
           content: "",
           reasoning: "Working through it",
           status: "sending",
+        })}
+      />,
+    );
+    // The activity line is the turn's live indicator — it must render even
+    // with no tool calls yet, labeled from the reasoning stream.
+    expect(screen.getAllByTestId("activity-block")).toHaveLength(1);
+    expect(screen.getByTestId("activity-summary").textContent).toBe(
+      "Working through it",
+    );
+    // Reasoning itself is not a persistent row: the detail stays collapsed.
+    expect(screen.queryByTestId("activity-reasoning")).toBeNull();
+  });
+
+  it("reasoning-only SETTLED turn: renders no activity block at all", () => {
+    render(
+      <AgentTurn
+        message={agentMessage({
+          content: "Done.",
+          reasoning: "Working through it",
+        })}
+      />,
+    );
+    expect(screen.queryByTestId("activity-block")).toBeNull();
+    expect(screen.queryByText("Working through it")).toBeNull();
+  });
+
+  it("keeps the activity block collapsed by default while streaming with a tool call", () => {
+    render(
+      <AgentTurn
+        message={agentMessage({
+          content: "",
+          reasoning: "Working through it",
+          status: "sending",
+          toolCalls: [{ id: "c1", name: "read_file" }],
         })}
       />,
     );
@@ -81,6 +115,7 @@ describe("AgentTurn", () => {
       content: "",
       reasoning: "Working through it",
       status: "sending",
+      toolCalls: [{ id: "c1", name: "read_file", result: "ok" }],
     });
     render(
       <AgentTurn

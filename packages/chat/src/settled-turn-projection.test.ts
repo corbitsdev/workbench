@@ -3,6 +3,7 @@ import {
   groupChatTurns,
   hasFailedSegment,
   isTurnLive,
+  projectLiveTurn,
   projectSettledTurn,
 } from "./settled-turn-projection";
 import type { ChatMessage } from "./types";
@@ -213,5 +214,121 @@ describe("projectSettledTurn", () => {
     ];
     const projected = projectSettledTurn(segments);
     expect(projected[0]?.feedbackId).toBe("t1");
+  });
+
+  it("re-projects a fully-settled group identically to the same messages hydrated fresh (reload parity)", () => {
+    const settled: ChatMessage[] = [
+      agent({ id: "a1", content: "Let me look into that.", turnId: "g1" }),
+      agent({
+        id: "a2",
+        content: "Checked the records.",
+        turnId: "g1",
+        toolCalls: [{ id: "c1", name: "crm_lookup", result: "found" }],
+      }),
+      agent({ id: "a3", content: "Here is the summary.", turnId: "g1" }),
+    ];
+    const fromLiveSettle = projectSettledTurn(settled);
+    const fromReload = projectSettledTurn([...settled]);
+    expect(fromLiveSettle).toEqual(fromReload);
+  });
+});
+
+describe("projectLiveTurn", () => {
+  it("leaves the streaming segment untouched but strips settled siblings to outputs only", () => {
+    const segments: ChatMessage[] = [
+      agent({
+        id: "a1",
+        content: "Let me look into that.",
+        turnId: "g1",
+        reasoning: "Deciding how to look this up.",
+        toolCalls: [{ id: "c1", name: "crm_lookup", result: "found" }],
+      }),
+      agent({
+        id: "a2",
+        content: "",
+        status: "sending",
+        turnId: "g1",
+        reasoning: "Cross-referencing with the notes.",
+        toolCalls: [{ id: "c2", name: "memory_search" }],
+      }),
+    ];
+    const projected = projectLiveTurn(segments);
+    expect(projected).toHaveLength(2);
+    // Settled sibling: outputs only, no reasoning/toolCalls left to render.
+    expect(projected[0]?.id).toBe("a1");
+    expect(projected[0]?.reasoning).toBeUndefined();
+    expect(projected[0]?.toolCalls).toBeUndefined();
+    expect(projected[0]?.content).toBe("Let me look into that.");
+    // Streaming segment: untouched, so AgentTurn still renders its activity.
+    expect(projected[1]).toBe(segments[1]);
+    expect(projected[1]?.reasoning).toBe("Cross-referencing with the notes.");
+    expect(projected[1]?.toolCalls).toEqual([
+      { id: "c2", name: "memory_search" },
+    ]);
+  });
+
+  it("strips every already-settled segment even with several ahead of the streaming one", () => {
+    const segments: ChatMessage[] = [
+      agent({
+        id: "a1",
+        content: "Narration one.",
+        turnId: "g1",
+        reasoning: "First thought.",
+      }),
+      agent({
+        id: "a2",
+        content: "Narration two.",
+        turnId: "g1",
+        toolCalls: [{ id: "c1", name: "crm_lookup", result: "found" }],
+      }),
+      agent({
+        id: "a3",
+        content: "",
+        status: "sending",
+        turnId: "g1",
+        toolCalls: [{ id: "c2", name: "doc_build" }],
+      }),
+    ];
+    const projected = projectLiveTurn(segments);
+    expect(projected[0]?.reasoning).toBeUndefined();
+    expect(projected[0]?.parts).toEqual([
+      { type: "text", text: "Narration one." },
+    ]);
+    expect(projected[1]?.toolCalls).toBeUndefined();
+    expect(projected[1]?.parts).toEqual([
+      { type: "text", text: "Narration two." },
+    ]);
+    expect(projected[2]).toBe(segments[2]);
+  });
+
+  it("when the streaming segment settles, projectSettledTurn re-derives the same final shape as a reload", () => {
+    const liveSegments: ChatMessage[] = [
+      agent({ id: "a1", content: "Let me look into that.", turnId: "g1" }),
+      agent({
+        id: "a2",
+        content: "",
+        status: "sending",
+        turnId: "g1",
+        toolCalls: [{ id: "c1", name: "crm_lookup" }],
+      }),
+    ];
+    // Mid-stream: the streaming segment still carries its process fields.
+    const midStream = projectLiveTurn(liveSegments);
+    expect(midStream[1]?.toolCalls).toEqual([{ id: "c1", name: "crm_lookup" }]);
+    // The segment settles with a final answer — no more "sending" status.
+    const settledSegments: ChatMessage[] = [
+      liveSegments[0]!,
+      agent({
+        id: "a2",
+        content: "Here is the summary.",
+        turnId: "g1",
+        toolCalls: [{ id: "c1", name: "crm_lookup", result: "found" }],
+      }),
+    ];
+    const finalFromSettle = projectSettledTurn(settledSegments);
+    const finalFromReload = projectSettledTurn([...settledSegments]);
+    expect(finalFromSettle).toEqual(finalFromReload);
+    expect(finalFromSettle[0]?.content).toBe("Here is the summary.");
+    expect(finalFromSettle[0]?.toolCalls).toBeUndefined();
   });
 });
