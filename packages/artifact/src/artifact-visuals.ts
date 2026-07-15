@@ -281,6 +281,6 @@ export function toGalleryArtifact(
     provenance: provenance.label,
     provenanceTone: provenance.tone,
     status: artifact.status,
-    previewExcerpt: excerpt.length > 0 ? excerpt : undefined,
+    ...(excerpt.length > 0 ? { previewExcerpt: excerpt } : {}),
   });
 }
