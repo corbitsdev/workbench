@@ -147,6 +147,7 @@
         "@workbench/ab-compare-presets": "workspace:*",
         "@workbench/agents": "workspace:*",
         "@workbench/artifact": "workspace:*",
+        "@workbench/blocks": "workspace:*",
         "@workbench/chat": "workspace:*",
         "@workbench/client": "workspace:*",
         "@workbench/last30days-core": "workspace:*",

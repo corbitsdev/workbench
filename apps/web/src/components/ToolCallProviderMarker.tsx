@@ -5,7 +5,7 @@ import { ProviderLogo } from "./ProviderLogo";
 
 type ToolCallRef = Pick<ToolCall, "name" | "arguments">;
 
-/** Shared `renderToolMarker` for AgentChat and MyraChatSurface. */
+/** Shared `renderToolMarker` for MyraChatSurface. */
 export function renderChatToolMarker(ctx: ToolMarkerRenderContext): ReactNode {
   return <ToolCallProviderMarker call={ctx.call} />;
 }

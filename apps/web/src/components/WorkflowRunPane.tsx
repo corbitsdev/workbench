@@ -10,7 +10,7 @@ import { createPortal } from "react-dom";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { useQuery } from "@tanstack/react-query";
 import { Info } from "lucide-react";
-import type { UIResponse } from "@workbench/chat";
+import type { UIResponse } from "@workbench/blocks";
 import { Button, runStartLabel, toHumanLabel } from "@workbench/ui";
 import { useSetPageChrome } from "../lib/page-chrome";
 import { WorkflowRunBlocks } from "./WorkflowRunBlocks";

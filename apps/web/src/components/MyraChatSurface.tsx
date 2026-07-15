@@ -13,12 +13,11 @@ import {
   type ChatAgentIdentity,
   type ChatDockState,
   type ThreadInsert,
-  type UIResponse,
   type PendingAttachment,
-  type SignalRouting,
   type MentionCandidate,
   type SlashCommand,
 } from "@workbench/chat";
+import type { UIResponse, SignalRouting } from "@workbench/blocks";
 import {
   friendlyToolSummary,
   friendlyToolResult,

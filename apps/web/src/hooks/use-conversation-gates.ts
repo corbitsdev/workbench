@@ -5,7 +5,7 @@ import {
   routeConversationSignal,
   type PendingGate,
   type SignalRouting,
-} from "@workbench/chat";
+} from "@workbench/blocks";
 import {
   fetchWorkflowRunState,
   useConversationWorkflowRuns,

@@ -34,41 +34,6 @@ export {
   type Part,
 } from "./types";
 export { liftToParts, toolPartToCall } from "./parts";
-export {
-  compactMessages,
-  type CompactedItem,
-  type MessageItem,
-  type CollapsedGroupItem,
-} from "./compactMessages";
-export { CollapsedGroup, type CollapsedGroupProps } from "./CollapsedGroup";
-
-export {
-  DocumentActionsSchema,
-  UIResponseSchema,
-  type UIBlock,
-  type UIResponse,
-  type DocumentActions,
-  type ExtractedUIBlock,
-  parseToolResult,
-  extractUIBlockFromText,
-  isUIBlock,
-  UIBlockView,
-  type UIBlockViewProps,
-  DockRunInputSchema,
-  DockRunPhaseSchema,
-  DockStepPhaseSchema,
-  dockRunBlocks,
-  progressStateForStepPhase,
-  type DockRunInput,
-  type DockRunPhase,
-  type DockRunStep,
-  type DockStepPhase,
-  pendingGateForRun,
-  routeConversationSignal,
-  type GateStepInput,
-  type PendingGate,
-  type SignalRouting,
-} from "@workbench/blocks";
 export { MessageBubble, type MessageBubbleProps } from "./MessageBubble";
 export { AgentTurn, type AgentTurnProps } from "./AgentTurn";
 export { ActivityBlock, type ActivityBlockProps } from "./ActivityBlock";

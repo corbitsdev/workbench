@@ -74,3 +74,10 @@ call site in the renderer path.
 - `reasoning-summary.ts` (whole-string regex reasoning summarizer) is
   deleted; `activity-label.ts` derives the rolling label from the trailing
   part instead, which is possible now that parts carry real order.
+
+## Package boundary
+
+`@workbench/chat` is a generic view layer over `ChatMessage`/`Part` and does not re-export the
+`@workbench/blocks` API (interactive workflow blocks, dock/gate helpers). Consumers that need
+block types or helpers (`UIBlock`, `UIResponse`, `dockRunBlocks`, `pendingGateForRun`, etc.)
+import `@workbench/blocks` directly.

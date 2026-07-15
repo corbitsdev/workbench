@@ -108,8 +108,8 @@ function liftImagePart(image: ChatImage): FilePart {
  *
  * This mirrors how the flat message already renders today (reasoning
  * disclosure above the bubble, tool narrative above the answer, answer
- * text last) — see `ReasoningDisclosure`, `ToolNarrative`, `MessageBubble` —
- * so a settled live turn and a hydrated turn produce the same default
+ * text last) — see `ToolNarrative`, `MessageBubble` — so a settled live
+ * turn and a hydrated turn produce the same default
  * transcript rendering (polish parity); the two-tier fidelity difference is
  * only visible in an expanded trace view that reads live event order
  * directly, never in this lifted array.
