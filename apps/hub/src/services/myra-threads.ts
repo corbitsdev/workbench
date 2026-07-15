@@ -1,4 +1,4 @@
-import { and, desc, eq, inArray } from "drizzle-orm";
+import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import {
   type DB,
   schema as intxSchema,
@@ -50,6 +50,11 @@ export type MyraThreadRow = {
    * at the top.
    */
   lastActivityAt: string;
+  /**
+   * When the first user message landed, or null for a never-used thread.
+   * Clients keep unused threads out of the sidebar and /chats (CL-3749).
+   */
+  firstMessageAt: string | null;
 };
 
 export type MyraThreadListRow = MyraThreadRow;
@@ -143,6 +148,7 @@ export async function listMyraThreads(
     label: row.label?.trim() || defaultThreadLabel(index),
     createdAt: row.createdAt.toISOString(),
     lastActivityAt: row.lastActivityAt.toISOString(),
+    firstMessageAt: row.firstMessageAt?.toISOString() ?? null,
   }));
 
   // An unlimited fetch already returned every row; only a limited page needs a
@@ -169,7 +175,12 @@ export async function recordMyraThreadActivity(
   const hubDb = db as unknown as HubDb;
   await hubDb
     .update(memberAgentInstance)
-    .set({ lastActivityAt: new Date() })
+    .set({
+      lastActivityAt: new Date(),
+      // Stamp the first-use marker exactly once (CL-3749); later bumps keep
+      // the original first-message time.
+      firstMessageAt: sql`COALESCE(${memberAgentInstance.firstMessageAt}, NOW())`,
+    })
     .where(eq(memberAgentInstance.instanceId, instanceId));
 }
 
@@ -353,6 +364,7 @@ export async function createMyraThread(
       label,
       createdAt: now.toISOString(),
       lastActivityAt: now.toISOString(),
+      firstMessageAt: null,
     },
   };
 }
@@ -391,6 +403,7 @@ export async function renameMyraThread(
     label: row.label?.trim() || label,
     createdAt: row.createdAt.toISOString(),
     lastActivityAt: row.lastActivityAt.toISOString(),
+    firstMessageAt: row.firstMessageAt?.toISOString() ?? null,
   };
 }
 

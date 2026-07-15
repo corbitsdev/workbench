@@ -548,6 +548,7 @@ describe("generateMyraThreadTitle", () => {
       label: string;
       createdAt: Date;
       lastActivityAt: Date;
+      firstMessageAt?: Date | null;
     };
   }) {
     const updateReturning = mock(() =>
@@ -602,6 +603,7 @@ describe("generateMyraThreadTitle", () => {
         label: "Pricing Deep Dive",
         createdAt: new Date("2026-01-01T00:00:00Z"),
         lastActivityAt: new Date("2026-01-04T00:00:00Z"),
+        firstMessageAt: new Date("2026-01-04T00:00:00Z"),
       },
     });
 
@@ -619,6 +621,7 @@ describe("generateMyraThreadTitle", () => {
       label: "Pricing Deep Dive",
       createdAt: "2026-01-01T00:00:00.000Z",
       lastActivityAt: "2026-01-04T00:00:00.000Z",
+      firstMessageAt: "2026-01-04T00:00:00.000Z",
     });
     // The turn was recorded under the thread's instance + tenant.
     expect(lastCreateEventCollectorConfig?.instanceId).toBe("inst-1");
