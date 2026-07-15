@@ -19,6 +19,7 @@ export {
 export {
   visualForKind,
   toGalleryArtifact,
+  tryToGalleryArtifact,
   artifactProvenance,
   artifactProvenanceLabel,
 } from "./artifact-visuals";

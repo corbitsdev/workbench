@@ -27,7 +27,7 @@ import type { ArtifactWithSession } from "@workbench/shared";
 import type { GalleryArtifact } from "./types";
 import {
   labelForStatus,
-  toGalleryArtifact,
+  tryToGalleryArtifact,
   visualForKind,
 } from "./artifact-visuals";
 import { ArtifactCard } from "./ArtifactCard";
@@ -420,7 +420,9 @@ export function ArtifactGallery({
   isLoadingMore = false,
   loadMoreError = null,
 }: ArtifactGalleryProps) {
-  const tiles = artifacts.map(toGalleryArtifact);
+  const tiles = artifacts
+    .map(tryToGalleryArtifact)
+    .filter((tile): tile is GalleryArtifact => tile !== undefined);
   const isSearching = query.trim().length > 0;
 
   return (
@@ -451,8 +453,8 @@ export function ArtifactGallery({
             title="No matching artifacts"
             description={
               <>
-                No results for &ldquo;{query.trim()}&rdquo;. Try a different search
-                or clear filters.
+                No results for &ldquo;{query.trim()}&rdquo;. Try a different
+                search or clear filters.
               </>
             }
           />
@@ -463,7 +465,12 @@ export function ArtifactGallery({
             rows={artifacts}
             getRowKey={(a) => a.id}
             {...(onOpen
-              ? { onRowClick: (a) => onOpen(toGalleryArtifact(a)) }
+              ? {
+                  onRowClick: (a) => {
+                    const tile = tryToGalleryArtifact(a);
+                    if (tile !== undefined) onOpen(tile);
+                  },
+                }
               : {})}
             columns={artifactRowColumns}
           />
