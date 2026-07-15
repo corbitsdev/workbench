@@ -7,6 +7,7 @@ import {
   useRenameMyraThread,
   writeLastActiveThreadId,
 } from "../../hooks/use-myra-threads";
+import { isMyraThreadUsed } from "../../hooks/myra-threads-cache";
 import type { MyraThread } from "../../lib/hub-api";
 
 // The sidebar shows only the most-recently-active chats; the rest live on the
@@ -162,14 +163,18 @@ export function ThreadList() {
     );
   }
 
-  const shown = data?.threads ?? [];
+  // A freshly created thread stays out of the sidebar until its first message
+  // is sent — "+ New chat" navigates without mutating the list (CL-3749).
+  const shown = (data?.threads ?? []).filter(isMyraThreadUsed);
   if (shown.length === 0) {
     return <div className="px-2 py-1 text-xs text-text-3">No chats yet</div>;
   }
 
-  // The server reports the member's full thread count; if it exceeds what the
-  // sidebar shows, offer the full list rather than silently truncating.
-  const hasMore = (data?.total ?? 0) > shown.length;
+  // The server reports the member's full thread count; if it exceeds the
+  // fetched page, offer the full list rather than silently truncating. Compared
+  // against the raw page (not the used-filtered `shown`) so hidden unused
+  // threads don't fake a "View all" link.
+  const hasMore = (data?.total ?? 0) > (data?.threads.length ?? 0);
 
   return (
     <div className="flex flex-col gap-0.5">

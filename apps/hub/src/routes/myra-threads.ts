@@ -20,6 +20,7 @@ const MyraThread = type({
   instanceId: "string",
   label: "string",
   createdAt: "string",
+  firstMessageAt: "string | null",
 });
 
 const MyraThreadListItem = type({
@@ -28,6 +29,7 @@ const MyraThreadListItem = type({
   label: "string",
   createdAt: "string",
   lastActivityAt: "string",
+  firstMessageAt: "string | null",
 });
 
 const MyraThreadList = type({

@@ -642,12 +642,16 @@ export async function ensureMeSynced(): Promise<MeResponse> {
   return promise;
 }
 
+// `firstMessageAt` is optional at the parse boundary so a hub that predates
+// the column (deploy skew) still parses; a missing value counts as "used"
+// (see isMyraThreadUsed) so nothing is ever hidden by skew.
 const MyraThreadSchema = type({
   id: "string",
   instanceId: "string",
   label: "string",
   createdAt: "string",
   lastActivityAt: "string",
+  "firstMessageAt?": "string | null",
 });
 export type MyraThread = typeof MyraThreadSchema.infer;
 
@@ -657,6 +661,7 @@ export const MyraThreadListItemSchema = type({
   label: "string",
   createdAt: "string",
   lastActivityAt: "string",
+  "firstMessageAt?": "string | null",
 });
 export type MyraThreadListItem = typeof MyraThreadListItemSchema.infer;
 export const MyraThreadPageSchema = type({

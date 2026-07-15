@@ -8,7 +8,14 @@ import { MemoryRouter } from "react-router";
 const renameMutate = mock((_args: { id: string; label: string }) => {});
 const deleteMutate = mock((_id: string) => {});
 
-function makeThread(n: number) {
+function makeThread(n: number): {
+  id: string;
+  instanceId: string;
+  label: string;
+  createdAt: string;
+  lastActivityAt: string;
+  firstMessageAt: string | null;
+} {
   return {
     id: `t${n}`,
     instanceId: `i${n}`,

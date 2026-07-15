@@ -539,6 +539,10 @@ export const memberAgentInstance = pgTable(
     // seeded to created_at on insert (a fresh thread's only activity is its
     // creation).
     lastActivityAt: timestamp("last_activity_at").notNull().defaultNow(),
+    // When the first user message landed; NULL until the thread is actually
+    // used. Thread lists hide never-used threads so "+ New chat" does not
+    // mutate the sidebar until first use (CL-3749).
+    firstMessageAt: timestamp("first_message_at"),
   },
   () => ({}),
 );

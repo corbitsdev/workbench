@@ -16,6 +16,7 @@ import {
   useMyraThreads,
   writeLastActiveThreadId,
 } from "../hooks/use-myra-threads";
+import { isMyraThreadUsed } from "../hooks/myra-threads-cache";
 import type { MyraThreadListItem } from "../lib/hub-api";
 
 const DAY_MS = 86_400_000;
@@ -116,7 +117,9 @@ function CenteredState({
  */
 export function ChatsListPage() {
   const { data, isLoading, isError, refetch } = useMyraThreads();
-  const threads = data?.threads;
+  // Never-used threads (no first message yet) stay out of the browse list —
+  // "+ New chat" navigates without mutating any thread list (CL-3749).
+  const threads = data?.threads.filter(isMyraThreadUsed);
   const { mutate: createThreadMutate, isPending: createThreadPending } =
     useCreateMyraThread();
   const navigate = useNavigate();

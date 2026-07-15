@@ -30,3 +30,34 @@ export function invalidateMyraThreads(
     queryKey: myraThreadsPrefix(tenantId),
   });
 }
+
+// Instances whose first message was sent from THIS client this session. The
+// hub stamps `firstMessageAt` asynchronously (fire-and-forget after the mail
+// POST), so a list refetch can race the stamp and still report the thread as
+// unused — this local mark keeps it visible through that window (CL-3749).
+const locallyUsedInstanceIds = new Set<string>();
+
+/** Record that this client sent the thread's first message. */
+export function markMyraThreadUsedLocally(instanceId: string): void {
+  locallyUsedInstanceIds.add(instanceId);
+}
+
+/** Test-only: clear the local first-use marks between tests. */
+export function resetLocallyUsedMyraThreads(): void {
+  locallyUsedInstanceIds.clear();
+}
+
+/**
+ * Whether a thread has ever received a user message. Unused threads stay out
+ * of the sidebar and /chats so "+ New chat" never mutates the lists until the
+ * chat is actually used (CL-3749). A missing `firstMessageAt` (older hub
+ * without the field) counts as used — hiding is opt-in on positive evidence.
+ */
+export function isMyraThreadUsed(item: {
+  instanceId: string;
+  firstMessageAt?: string | null;
+}): boolean {
+  return (
+    item.firstMessageAt !== null || locallyUsedInstanceIds.has(item.instanceId)
+  );
+}
