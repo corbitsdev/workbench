@@ -22,20 +22,25 @@ function isInsightsTabId(value: string): value is InsightsTabId {
  * persist across tabs while each tab body swaps underneath. Falls back to
  * "overview" for a missing or unrecognized value rather than crashing.
  */
-export function useInsightsTab(): [InsightsTabId, (tab: InsightsTabId) => void] {
+export function useInsightsTab(): [
+  InsightsTabId,
+  (tab: InsightsTabId) => void,
+] {
   const [searchParams, setSearchParams] = useSearchParams();
   const raw = searchParams.get("tab");
   const active = raw !== null && isInsightsTabId(raw) ? raw : DEFAULT_TAB;
 
   function setTab(tab: InsightsTabId) {
-    setSearchParams(
-      (prev) => {
-        const next = new URLSearchParams(prev);
-        next.set("tab", tab);
-        return next;
-      },
-      { replace: true },
-    );
+    // Push (not replace) so each tab click is its own history entry — the
+    // browser Back/Forward buttons must step through the tabs the member
+    // actually visited. `replace: true` collapsed every switch
+    // into the entry that was live when the page loaded, which is why Back
+    // from the Insights page skipped over the tabs entirely.
+    setSearchParams((prev) => {
+      const next = new URLSearchParams(prev);
+      next.set("tab", tab);
+      return next;
+    });
   }
 
   return [active, setTab];

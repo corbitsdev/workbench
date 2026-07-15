@@ -11,8 +11,10 @@ import {
 } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {
+  createMemoryRouter,
   MemoryRouter,
   Route,
+  RouterProvider,
   Routes,
   useLocation,
   useParams,
@@ -328,6 +330,22 @@ function goToTab(name: string) {
   fireEvent.click(screen.getByTestId(`insights-tab-${name}`));
 }
 
+function renderRoutedPage(initialPath = "/insights") {
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
+  const router = createMemoryRouter(
+    [{ path: "/insights", element: <InsightsDashboard /> }],
+    { initialEntries: [initialPath] },
+  );
+  const view = render(
+    <QueryClientProvider client={client}>
+      <RouterProvider router={router} />
+    </QueryClientProvider>,
+  );
+  return { router, ...view };
+}
+
 beforeEach(() => {
   window.happyDOM.setURL("http://localhost/insights");
   lastTenantId = null;
@@ -354,9 +372,9 @@ describe("InsightsDashboard tab shell", () => {
   it("defaults to the overview tab and shows the KPI row", async () => {
     renderPage();
     await screen.findByText("This range");
-    expect(screen.getByTestId("insights-tab-overview").getAttribute(
-      "aria-selected",
-    )).toBe("true");
+    expect(
+      screen.getByTestId("insights-tab-overview").getAttribute("aria-selected"),
+    ).toBe("true");
   });
 
   it("persists the shared range header while switching tabs", async () => {
@@ -372,9 +390,9 @@ describe("InsightsDashboard tab shell", () => {
     renderPage("/insights?tab=workflows");
     await waitFor(() => {
       expect(
-        screen.getByTestId("insights-tab-workflows").getAttribute(
-          "aria-selected",
-        ),
+        screen
+          .getByTestId("insights-tab-workflows")
+          .getAttribute("aria-selected"),
       ).toBe("true");
     });
     screen.getByText("Workflow runs by kind");
@@ -384,11 +402,52 @@ describe("InsightsDashboard tab shell", () => {
     renderPage("/insights?tab=bogus");
     await waitFor(() => {
       expect(
-        screen.getByTestId("insights-tab-overview").getAttribute(
-          "aria-selected",
-        ),
+        screen
+          .getByTestId("insights-tab-overview")
+          .getAttribute("aria-selected"),
       ).toBe("true");
     });
+  });
+
+  it("switches sub-page content and the URL on tab click, and Back returns to the previous tab", async () => {
+    const { router } = renderRoutedPage();
+    await screen.findByText("This range");
+
+    // Overview content is present, People content is not.
+    screen.getByText("Total activity");
+    expect(screen.queryByTestId("sortable-table")).toBeNull();
+
+    goToTab("people");
+    await waitFor(() => {
+      expect(
+        screen.getByTestId("insights-tab-people").getAttribute("aria-selected"),
+      ).toBe("true");
+    });
+    // The People sub-page actually replaced the Overview content.
+    expect(screen.queryByText("Total activity")).toBeNull();
+    await screen.findByText(/Excludes shared agents/);
+    expect(router.state.location.search).toBe("?tab=people");
+
+    goToTab("workflows");
+    await waitFor(() => {
+      expect(router.state.location.search).toBe("?tab=workflows");
+    });
+    expect(screen.queryByText(/Excludes shared agents/)).toBeNull();
+    await screen.findByText("Open run history →");
+
+    // Each tab click pushed its own history entry, so Back steps through
+    // the tabs the member actually visited instead of skipping over them.
+    await router.navigate(-1);
+    await waitFor(() => {
+      expect(router.state.location.search).toBe("?tab=people");
+    });
+    await screen.findByText(/Excludes shared agents/);
+
+    await router.navigate(-1);
+    await waitFor(() => {
+      expect(router.state.location.search).toBe("");
+    });
+    await screen.findByText("Total activity");
   });
 
   it("navigates to the usage-cost tab when a KPI tile is clicked", async () => {
@@ -397,9 +456,9 @@ describe("InsightsDashboard tab shell", () => {
     fireEvent.click(screen.getByLabelText("View cost on the usage-cost tab"));
     await waitFor(() => {
       expect(
-        screen.getByTestId("insights-tab-usage-cost").getAttribute(
-          "aria-selected",
-        ),
+        screen
+          .getByTestId("insights-tab-usage-cost")
+          .getAttribute("aria-selected"),
       ).toBe("true");
     });
   });
@@ -666,12 +725,8 @@ describe("InsightsDashboard workflows tab", () => {
     renderPage("/insights?tab=workflows");
     const wfTable = await screen.findByTestId("sortable-table");
     // "call-to-collateral" has runs (byKind) but no byWorkflowType usage row.
-    const row = within(wfTable)
-      .getByText("Call To Collateral")
-      .closest("tr")!;
-    expect(within(row).getAllByText("no usage data").length).toBeGreaterThan(
-      0,
-    );
+    const row = within(wfTable).getByText("Call To Collateral").closest("tr")!;
+    expect(within(row).getAllByText("no usage data").length).toBeGreaterThan(0);
   });
 
   it("re-sorts the workflow-by-kind table when a column header is clicked", async () => {
@@ -723,7 +778,13 @@ describe("InsightsDashboard people tab", () => {
     const headers = within(personTable)
       .getAllByRole("columnheader")
       .map((th) => th.textContent?.replace(/[▲▼]/g, "").trim());
-    expect(headers).toEqual(["Person", "Turns", "Tool calls", "Tokens", "Cost"]);
+    expect(headers).toEqual([
+      "Person",
+      "Turns",
+      "Tool calls",
+      "Tokens",
+      "Cost",
+    ]);
     screen.getByText("Excludes shared agents");
   });
 
