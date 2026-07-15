@@ -141,13 +141,20 @@ describe("PERSONAL_AGENT_TRIAGE_MODEL_CONFIG (CL-3364)", () => {
   });
 });
 
-describe("PERSONAL_AGENT_DEPLOY_PROMPT (CL-2306)", () => {
-  it("guides shared-document behavior without hardcoding tool names", () => {
+describe("PERSONAL_AGENT_DEPLOY_PROMPT", () => {
+  // Myra runs inference on kimi-k2.6 via the `openai-compatible` provider, so
+  // her deployed prompt must render in Markdown (the non-Anthropic format),
+  // never XML. A regression here (a hardcoded `{ xml: true }`) ships the wrong
+  // section format to the model she actually runs on.
+  it("renders in Markdown for the non-Anthropic provider she runs on", () => {
+    expect(PERSONAL_AGENT_DEPLOY_PROMPT).toContain("## Role");
+    expect(PERSONAL_AGENT_DEPLOY_PROMPT).toContain("## Operating-loop");
+    expect(PERSONAL_AGENT_DEPLOY_PROMPT).not.toContain("<role>");
+  });
+
+  it("carries the Chief of Staff identity without hardcoding tool names", () => {
     expect(PERSONAL_AGENT_DEPLOY_PROMPT).toContain(
-      "Shared documents are versioned",
-    );
-    expect(PERSONAL_AGENT_DEPLOY_PROMPT).toContain(
-      "load its content before responding",
+      "You are Myra, Chief of Staff",
     );
     expect(PERSONAL_AGENT_DEPLOY_PROMPT).not.toContain("artifact_create");
     expect(PERSONAL_AGENT_DEPLOY_PROMPT).not.toContain("artifact_read");
