@@ -12,7 +12,7 @@ import type { ToolDefinition } from "@intx/types/runtime";
 export const LIST_SKILLS_DEFINITION: ToolDefinition = {
   name: "list_skills",
   description:
-    "List every skill visible to you (the tenant-shared library plus your own private skills). Returns a cheap index — only {id, name, displayName} per skill, never the skill body. Use this to discover what skills exist, then load_skill to read one. Read-only.",
+    "List every skill visible to you (the tenant-shared library plus your own private skills). Returns a cheap index — only {id, name, displayName, description} per skill, never the skill body. Use this to discover what skills exist, then load_skill to read one. Read-only.",
   inputSchema: {
     type: "object",
     properties: {},
@@ -23,7 +23,7 @@ export const LIST_SKILLS_DEFINITION: ToolDefinition = {
 export const SEARCH_SKILLS_DEFINITION: ToolDefinition = {
   name: "search_skills",
   description:
-    "Search the skills visible to you by a free-text query, matched as a case-insensitive substring against each skill's name, display name, and description. Returns the same cheap index shape as list_skills ({id, name, displayName}) — never the skill body. If a search comes up empty, retry with different wording (synonyms or broader terms) before concluding no skill fits. Use load_skill to read a match. Read-only.",
+    "Search the skills visible to you by a free-text query, matched as a case-insensitive substring against each skill's name, display name, and description. Returns the same cheap index shape as list_skills ({id, name, displayName, description}) — never the skill body. If a search comes up empty, retry with different wording (synonyms or broader terms) before concluding no skill fits. Use load_skill to read a match. Read-only.",
   inputSchema: {
     type: "object",
     properties: {
