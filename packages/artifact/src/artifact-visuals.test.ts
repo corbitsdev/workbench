@@ -1,5 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import type { ArtifactWithSession } from "@workbench/shared";
+import { GalleryArtifactParseError, parseGalleryArtifact } from "./types";
 import {
   artifactProvenance,
   artifactProvenanceLabel,
@@ -129,6 +130,10 @@ describe("toGalleryArtifact", () => {
   });
   it("maps a valid artifact through tryToGalleryArtifact", () => {
     expect(tryToGalleryArtifact(base)?.id).toBe("a-1");
+  });
+
+  it("throws the typed GalleryArtifactParseError on schema failure", () => {
+    expect(() => parseGalleryArtifact({})).toThrow(GalleryArtifactParseError);
   });
 
   it("returns undefined from tryToGalleryArtifact for an artifact that fails the gallery schema", () => {
