@@ -146,6 +146,7 @@
         "@tanstack/react-query": "5.100.14",
         "@workbench/ab-compare-presets": "workspace:*",
         "@workbench/agents": "workspace:*",
+        "@workbench/analytics": "workspace:*",
         "@workbench/artifact": "workspace:*",
         "@workbench/blocks": "workspace:*",
         "@workbench/chat": "workspace:*",

@@ -23,6 +23,8 @@ export {
   type AnalyticsModelRow,
   type AnalyticsDateRange,
   type AnalyticsSummary,
+  sumAnalyticsModelTokens,
+  analyticsModelDisplayCount,
 } from "./queries";
 export {
   getConversationActivity,

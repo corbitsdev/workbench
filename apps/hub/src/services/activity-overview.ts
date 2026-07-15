@@ -10,6 +10,7 @@ import {
   getAnalyticsSummaryByInstance,
   getConversationActivity,
   getTokenDataStartDate,
+  analyticsModelDisplayCount,
   type AnalyticsDailyPoint,
   type AnalyticsDateRange,
   type AnalyticsModelRow,
@@ -1197,7 +1198,7 @@ export async function getActivityOverview(args: {
     metricsSeries,
     models: modelRows.map((row) => ({
       key: row.model,
-      count: row.turnCount,
+      count: analyticsModelDisplayCount(row),
     })),
     byModel: modelRows,
     pricedByModel:

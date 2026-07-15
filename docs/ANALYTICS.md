@@ -14,6 +14,8 @@ GTM Workbench records agent and workflow usage in PostgreSQL and exposes tenant-
 
 Inference events flow: **sidecar harness / workflow child → hub `sidecarRouter.events` → `createAnalyticsSubscriber` → `analytics_event` + `analytics_rollup_daily`.**
 
+Per-model rollups split **turns** (`message.run.ended`, `model` null) from **tokens** (`inference.done`, real model id). Insights `byModel` includes any named model with turns or tokens in range (null-model turn-only buckets are excluded).
+
 ## Event coverage matrix
 
 | Source                                   | Event types ingested                                                                     | Rollup contribution                                                                                    |
@@ -31,7 +33,7 @@ Inference events flow: **sidecar harness / workflow child → hub `sidecarRouter
 - `GET /api/tenants/:tenantId/principals/:principalId/analytics` — a single principal's tool-call breakdown and token/cost totals, for the Insights principal trace's **Tools** and **Cost** facets. Returns `{ tools: [{ name, calls, errors }], cost: { inputTokens, outputTokens, cacheReadTokens, cacheWriteTokens, thinkingTokens, inferenceCalls, toolCalls } }`. See **Per-principal Tools & Cost facets** below.
 - `GET /api/tenants/:tenantId/activity/overview` — tenant operational ledger (`startDate`, `endDate`): artifact and workflow-run counts from hub tables, agent-instance lifecycle counts, plus:
   - `dailySeries` — per-`bucket_date` inference rollup (turns, tool calls, token categories), ordered ascending, for trend sparklines and the activity heatmap
-  - `models` — `{ key, count }` turn counts grouped by `model`
+  - `models` — `{ key, count }` legacy mini-chart values per `model` (turn count when `turnCount > 0`, else total tokens across classes); prefer `byModel` for cost and token classes
   - `conversations` / `messages` — `agent_session` and `inference_turn` counts (`total` + `createdInRange`)
   - `agentActivity` — `{ active, idle }` from `inference.byInstance` (CL-2891): for **date-bounded** presets, `active` = instances with turns in range, `idle` = instances in the same scoped set with zero turns (not “all instances minus active”). For **All time** (no date bounds), `idle` = all-time instance total minus `active`.
   - `pricedByModel` — tenant-wide `priceUsageRows(byModel)` when the hub had a warm models.dev catalog at overview time; `null` when not (the web may fall back to `GET /pricing` + the same math). Added CL-2891.

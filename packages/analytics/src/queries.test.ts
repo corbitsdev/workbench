@@ -3,10 +3,12 @@ import { PgDialect } from "drizzle-orm/pg-core";
 import type { SQL } from "drizzle-orm";
 
 import {
+  analyticsModelDisplayCount,
   getAnalyticsModelDistribution,
   getCacheBaseline,
   getTenantToolBreakdown,
   getTokenDataStartDate,
+  sumAnalyticsModelTokens,
 } from "./queries";
 
 function makeDb(rows: { date: string | null }[]) {
@@ -206,16 +208,26 @@ describe("getCacheBaseline", () => {
 });
 
 describe("getAnalyticsModelDistribution", () => {
-  it("omits grouped model totals with zero turns after aggregation", async () => {
+  it("includes models with token usage when turn count is zero", async () => {
     const { db } = makeModelDb([
       { model: "deepseek", turnCount: 3, inputTokens: 125, outputTokens: 50 },
-      { model: "zero-turn", turnCount: 0, inputTokens: 40, outputTokens: 20 },
+      { model: "kimi-k2.6", turnCount: 0, inputTokens: 40, outputTokens: 20 },
       { model: null, turnCount: 5, inputTokens: 500, outputTokens: 250 },
     ]);
 
     const rows = await getAnalyticsModelDistribution({ db, tenantId: "tnt_1" });
 
-    expect(rows.map((r) => r.model)).toEqual(["deepseek"]);
+    expect(rows.map((r) => r.model)).toEqual(["deepseek", "kimi-k2.6"]);
+  });
+
+  it("omits null-model rows that only carry unattributed turns", async () => {
+    const { db } = makeModelDb([
+      { model: null, turnCount: 5, inputTokens: 0, outputTokens: 0 },
+    ]);
+
+    const rows = await getAnalyticsModelDistribution({ db, tenantId: "tnt_1" });
+
+    expect(rows).toEqual([]);
   });
 
   it("carries every token class separately for per-model cost (CL-2714)", async () => {
@@ -242,6 +254,77 @@ describe("getAnalyticsModelDistribution", () => {
       cacheWriteTokens: 30,
       thinkingTokens: 12,
     });
+  });
+
+  it("sorts by total tokens descending, then turn count", async () => {
+    const { db } = makeModelDb([
+      { model: "low-tokens", turnCount: 99, inputTokens: 10, outputTokens: 5 },
+      {
+        model: "high-tokens",
+        turnCount: 0,
+        inputTokens: 100,
+        outputTokens: 50,
+      },
+      {
+        model: "tie-tokens-a",
+        turnCount: 2,
+        inputTokens: 20,
+        outputTokens: 10,
+      },
+      {
+        model: "tie-tokens-b",
+        turnCount: 5,
+        inputTokens: 20,
+        outputTokens: 10,
+      },
+    ]);
+
+    const rows = await getAnalyticsModelDistribution({ db, tenantId: "tnt_1" });
+
+    expect(rows.map((r) => r.model)).toEqual([
+      "high-tokens",
+      "tie-tokens-b",
+      "tie-tokens-a",
+      "low-tokens",
+    ]);
+  });
+
+  it("drops empty-string model buckets", async () => {
+    const { db } = makeModelDb([
+      { model: "", turnCount: 0, inputTokens: 100, outputTokens: 0 },
+      { model: "named", turnCount: 1, inputTokens: 1, outputTokens: 0 },
+    ]);
+
+    const rows = await getAnalyticsModelDistribution({ db, tenantId: "tnt_1" });
+
+    expect(rows.map((r) => r.model)).toEqual(["named"]);
+  });
+});
+
+describe("sumAnalyticsModelTokens", () => {
+  it("sums only provided token classes and treats missing as zero", () => {
+    expect(sumAnalyticsModelTokens({ inputTokens: 10, outputTokens: 5 })).toBe(
+      15,
+    );
+  });
+});
+
+describe("analyticsModelDisplayCount", () => {
+  it("uses turn count when turns exist, else total tokens", () => {
+    expect(
+      analyticsModelDisplayCount({
+        turnCount: 4,
+        inputTokens: 1_000_000,
+        outputTokens: 0,
+      }),
+    ).toBe(4);
+    expect(
+      analyticsModelDisplayCount({
+        turnCount: 0,
+        inputTokens: 40,
+        outputTokens: 20,
+      }),
+    ).toBe(60);
   });
 });
 

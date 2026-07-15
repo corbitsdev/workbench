@@ -82,6 +82,48 @@ export type AnalyticsModelRow = {
   thinkingTokens: number;
 };
 
+type AnalyticsModelTokenFields = Partial<
+  Pick<
+    AnalyticsModelRow,
+    | "inputTokens"
+    | "outputTokens"
+    | "cacheReadTokens"
+    | "cacheWriteTokens"
+    | "thinkingTokens"
+  >
+>;
+
+/** Sum of all token classes on a per-model rollup row. */
+export function sumAnalyticsModelTokens(row: AnalyticsModelTokenFields): number {
+  return (
+    (row.inputTokens ?? 0) +
+    (row.outputTokens ?? 0) +
+    (row.cacheReadTokens ?? 0) +
+    (row.cacheWriteTokens ?? 0) +
+    (row.thinkingTokens ?? 0)
+  );
+}
+
+/** Bar / legacy `models.count` value when turns and tokens are mixed in one chart. */
+export function analyticsModelDisplayCount(
+  row: Pick<AnalyticsModelRow, "turnCount"> & AnalyticsModelTokenFields,
+): number {
+  return row.turnCount > 0 ? row.turnCount : sumAnalyticsModelTokens(row);
+}
+
+function modelRowHasUsage(row: {
+  model: string | null;
+  turnCount: number;
+  inputTokens: number;
+  outputTokens: number;
+  cacheReadTokens: number;
+  cacheWriteTokens: number;
+  thinkingTokens: number;
+}): row is typeof row & { model: string } {
+  if (row.model === null || row.model === "") return false;
+  return row.turnCount > 0 || sumAnalyticsModelTokens(row) > 0;
+}
+
 export async function getAnalyticsSummary(
   args: { db: DB["db"] } & AnalyticsSummaryFilter,
 ): Promise<AnalyticsSummary> {
@@ -383,10 +425,7 @@ export async function getAnalyticsModelDistribution(
     .groupBy(analyticsRollupDaily.model);
 
   return rows
-    .filter(
-      (row): row is typeof row & { model: string } =>
-        row.model !== null && row.turnCount > 0,
-    )
+    .filter(modelRowHasUsage)
     .map((row) => ({
       model: row.model,
       turnCount: row.turnCount,
@@ -396,7 +435,12 @@ export async function getAnalyticsModelDistribution(
       cacheWriteTokens: row.cacheWriteTokens,
       thinkingTokens: row.thinkingTokens,
     }))
-    .sort((a, b) => b.turnCount - a.turnCount)
+    .sort((a, b) => {
+      const tokenDelta =
+        sumAnalyticsModelTokens(b) - sumAnalyticsModelTokens(a);
+      if (tokenDelta !== 0) return tokenDelta;
+      return b.turnCount - a.turnCount;
+    })
     .slice(0, 50);
 }
 

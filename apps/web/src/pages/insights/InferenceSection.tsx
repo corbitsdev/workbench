@@ -1,3 +1,4 @@
+import { analyticsModelDisplayCount } from "@workbench/analytics";
 import type { ActivityOverview } from "../../lib/hub-api";
 import { cacheHitRate, ratePct } from "./metrics";
 import { CardLabel, CaveatNote, formatNumber, HudCard, Stat } from "./stats";
@@ -61,7 +62,12 @@ export function InferenceSection({
   const toolRate = ratePct(successfulTools, summary.toolCallCount);
   const hitRate = cacheHitRate(summary.inputTokens, summary.cacheReadTokens);
   const thinkPct = ratePct(summary.thinkingTokens, tokens);
-  const modelRows = data.models.filter((model) => model.count > 0);
+  const modelRows = data.byModel
+    .map((row) => ({
+      key: row.model,
+      count: analyticsModelDisplayCount(row),
+    }))
+    .filter((row) => row.count > 0);
 
   return (
     <div className="flex flex-col gap-4">
@@ -125,7 +131,7 @@ export function InferenceSection({
 
       {modelRows.length > 0 && (
         <HudCard
-          label="Models · by turns"
+          label="Models · by turns or tokens"
           tag={
             modelRows.length > 8 ? (
               <CardLabel>{`+${modelRows.length - 8} more`}</CardLabel>

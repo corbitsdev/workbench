@@ -684,6 +684,32 @@ describe("InsightsDashboard usage-cost tab", () => {
     expect(bars[0].getAttribute("data-value")).toBe("9");
   });
 
+  it("uses token totals for mini-bar height when a model has zero turns", async () => {
+    const originalByModel = mockOverview.byModel;
+    mockOverview.byModel = [
+      {
+        model: "kimi-k2.6",
+        turnCount: 0,
+        inputTokens: 40_000,
+        outputTokens: 20_000,
+        cacheReadTokens: 0,
+        cacheWriteTokens: 0,
+        thinkingTokens: 0,
+      },
+    ];
+    try {
+      renderPage("/insights?tab=usage-cost");
+      await waitFor(() => {
+        expect(screen.getAllByTestId("mini-bar").length).toBe(1);
+      });
+      expect(
+        screen.getAllByTestId("mini-bar")[0].getAttribute("data-value"),
+      ).toBe("60000");
+    } finally {
+      mockOverview.byModel = originalByModel;
+    }
+  });
+
   it("lists every model with recorded usage in the cost table, marking unpriced ones", async () => {
     renderPage("/insights?tab=usage-cost");
     await screen.findByTestId("cost-insights");
