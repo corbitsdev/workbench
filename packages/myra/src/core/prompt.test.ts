@@ -27,13 +27,11 @@ describe("buildPersonalAgentSystemPrompt", () => {
     expect(prompt).toContain("<style>");
   });
 
-  it("documents generative UI block kinds for fenced ```ui replies (CL-3547)", () => {
+  it("does not instruct Myra to emit fenced ```ui generative-UI JSON blocks", () => {
     const prompt = buildPersonalAgentSystemPrompt("Myra", xmlFormat);
-    expect(prompt).toContain("<generative-ui>");
-    expect(prompt).toContain("```ui");
-    expect(prompt).toContain("`card`");
-    expect(prompt).toContain("`list`");
-    expect(prompt).toContain("`preview`");
+    expect(prompt).not.toContain("<generative-ui>");
+    expect(prompt).not.toContain("```ui");
+    expect(prompt).not.toContain("UIBlockView");
   });
 
   it("uses canonical Corbits terminology when interpreting source material", () => {
