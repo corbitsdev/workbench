@@ -26,6 +26,10 @@
     "./friendly-tool-summary": {
       "types": "./src/friendly-tool-summary.ts",
       "default": "./src/friendly-tool-summary.ts"
+    },
+    "./parts": {
+      "types": "./src/parts.ts",
+      "default": "./src/parts.ts"
     }
   },
   "scripts": {

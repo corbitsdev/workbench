@@ -1,5 +1,9 @@
 import type { Transport } from "@intx/hub-client";
-import type { ChatActivity, ChatImage, Part } from "@workbench/chat/types";
+import type {
+  ChatActivity,
+  ChatImage,
+  Part,
+} from "@workbench/agent-core/parts";
 
 /**
  * The single live-turn event consumer that replaces the four separate

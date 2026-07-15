@@ -50,7 +50,6 @@
     "@intx/workflow": "workspace:*",
     "@workbench/agent-core": "workspace:*",
     "@workbench/catalog": "workspace:*",
-    "@workbench/chat": "workspace:*",
     "@workbench/shared": "workspace:*",
     "@workbench/myra": "workspace:*",
     "@workbench/tool-manifest": "workspace:*",

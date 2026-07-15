@@ -96,7 +96,6 @@ RUN bun install --frozen-lockfile
 COPY interchange/ interchange/
 COPY apps/sidecar/ apps/sidecar/
 COPY packages/agents/ packages/agents/
-COPY packages/chat/ packages/chat/
 COPY packages/agent-core/ packages/agent-core/
 COPY packages/myra/ packages/myra/
 COPY packages/tools-catalog/ packages/tools-catalog/

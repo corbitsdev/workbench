@@ -4,14 +4,30 @@ Chat UI: message thread, input, docked/floating panels, and typing indicator. Pr
 
 ## Parts model
 
+The message/part data model — `ChatMessage`, `Part` and its variant schemas,
+`ToolCall`, `ChatImage`, `ChatAttachment`, `ChatActivity`, and the
+`liftToParts` / `toolPartToCall` adapters — lives in
+`@workbench/agent-core` (`packages/agent-core/src/parts.ts`), not in this
+package. It moved there because `@workbench/agents` (which sits in the
+sidecar's runtime closure) builds and consumes these shapes via
+`convertInstanceEvents` / `composeChatMessages` / `createPartAssembler`, and
+`@workbench/chat` is frontend-only — a sidecar-closure package must never
+depend on it. `src/types.ts` and `src/parts.ts` here re-export the
+agent-core module verbatim, so `@workbench/chat/types` and
+`@workbench/chat/parts` keep resolving unchanged for the renderer and any
+other web imports; only chat's UI-only types (`QuickReply`, `ChatDockState`,
+`ChatOpenState`, `ChatLauncherPosition`, `ChatAgentIdentity`) are still
+defined in this package.
+
 `ChatMessage` carries an additive, optional `parts: Part[]` field alongside
 the existing flat fields (`content`, `reasoning`, `toolCalls`, `images`,
 `attachments`). `Part` is a discriminated union — `text | reasoning | tool |
 file` — deliberately mirroring Vercel UIMessage's part discriminants (so a
 future library switch is a trivial mapping), restricted to fields the
-Interchange event stream can actually populate. See `src/types.ts` for the
-exported arktype schemas (`TextPartSchema`, `ReasoningPartSchema`,
-`ToolPartSchema`, `FilePartSchema`, `PartSchema`).
+Interchange event stream can actually populate. See
+`@workbench/agent-core`'s `src/parts.ts` for the exported arktype schemas
+(`TextPartSchema`, `ReasoningPartSchema`, `ToolPartSchema`, `FilePartSchema`,
+`PartSchema`), re-exported from this package's `src/types.ts`.
 
 **Event → part mapping** (from `@workbench/agents`'s `convertInstanceEvents` /
 `composeChatMessages`, which build `ChatMessage` from `InstanceEvent`s):
@@ -34,7 +50,8 @@ they stay on the separate `ChatActivity` / status channel.
 - **Hydrated** turns — reloaded from the hub-client contract, which only
   ever exposes a turn's cumulative `reasoning` string and finished
   `toolCalls` array, never an ordered event log — have no interleaving left
-  to recover. `liftToParts` (`src/parts.ts`) synthesizes a deterministic
+  to recover. `liftToParts` (`@workbench/agent-core`'s `src/parts.ts`,
+  re-exported from this package's `src/parts.ts`) synthesizes a deterministic
   flat layout instead: **reasoning, then tool parts in array order, then
   file parts (attachments before images), then the text part.** This
   mirrors today's flat rendering order (reasoning disclosure above the

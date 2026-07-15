@@ -6,9 +6,10 @@ import {
   ReasoningPartSchema,
   TextPartSchema,
   ToolPartSchema,
-} from "./types";
-import type { ChatMessage, ToolPart } from "./types";
-import { liftToParts, toolPartToCall } from "./parts";
+  liftToParts,
+  toolPartToCall,
+} from "./parts";
+import type { ChatMessage, ToolPart } from "./parts";
 
 function baseMessage(overrides: Partial<ChatMessage> = {}): ChatMessage {
   return {

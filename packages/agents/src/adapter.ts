@@ -3,7 +3,7 @@ import type {
   ChatAttachment,
   ChatMessage,
   ToolCall,
-} from "@workbench/chat/types";
+} from "@workbench/agent-core/parts";
 
 function stripContextBlock(content: string): string {
   return content.replace(/^<context>[\s\S]*?<\/context>\n*/u, "");

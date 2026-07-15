@@ -620,7 +620,6 @@
         "@intx/workflow": "workspace:*",
         "@workbench/agent-core": "workspace:*",
         "@workbench/catalog": "workspace:*",
-        "@workbench/chat": "workspace:*",
         "@workbench/myra": "workspace:*",
         "@workbench/prompts": "workspace:*",
         "@workbench/shared": "workspace:*",
@@ -716,6 +715,7 @@
     "packages/chat": {
       "name": "@workbench/chat",
       "dependencies": {
+        "@workbench/agent-core": "workspace:*",
         "@workbench/blocks": "workspace:*",
         "@workbench/shared": "workspace:*",
         "@workbench/ui": "workspace:*",

@@ -1,6 +1,6 @@
 import type { InstanceEvent } from "@intx/hub-client";
-import type { ChatMessage, ChatImage, Part } from "@workbench/chat/types";
-import { liftToParts } from "@workbench/chat/parts";
+import type { ChatMessage, ChatImage, Part } from "@workbench/agent-core/parts";
+import { liftToParts } from "@workbench/agent-core/parts";
 import { convertInstanceEvents } from "./adapter";
 
 export const STREAMING_BUBBLE_ID = "streaming-synthetic";
