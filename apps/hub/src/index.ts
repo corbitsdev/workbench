@@ -48,6 +48,7 @@ import {
 } from "./routes/workflow-deploy";
 import {
   createWorkflowRunsRouter,
+  deriveWorkflowRunRepoId,
   type EnsureDeploymentRoutableFn,
   type ProvisionRunDeploymentFn,
 } from "./routes/workflow-runs";
@@ -1584,6 +1585,30 @@ v1.route(
     // invariant: this deployment runs exactly one sidecar, so any connected
     // sidecar IS the sidecar — a non-empty getConnectedSidecars() means ready.
     isSidecarConnected: () => sidecarRouter.getConnectedSidecars().length > 0,
+    onUserStoppedRunFacts: (args) => {
+      if (args.deploymentId === null) return;
+      void projectWorkflowRunFacts(
+        { db, repoStore },
+        {
+          repoId: {
+            kind: "workflow-run",
+            id: deriveWorkflowRunRepoId({
+              deploymentId: args.deploymentId,
+              deploymentDomain: config.rootTenant.domain,
+            }),
+          },
+          runId: args.runId,
+          kind: args.kind,
+          tenantId: args.tenantId,
+          indexStatus: "stopped",
+        },
+      ).catch((err: unknown) => {
+        log.error("workflow analytics fact projection failed (user stop)", {
+          runId: args.runId,
+          error: err instanceof Error ? err : new Error(String(err)),
+        });
+      });
+    },
   }),
 );
 

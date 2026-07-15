@@ -200,6 +200,9 @@ export const workflowRunStateStatus = [
   "awaiting",
   "completed",
   "failed",
+  // CL-3688: user-initiated stop; terminal like completed/failed but distinct from
+  // operator abort / runtime failure (which stay `failed`).
+  "stopped",
 ] as const;
 
 export const workflowRunRecord = pgTable("workflow_run_record", {

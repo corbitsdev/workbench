@@ -102,6 +102,9 @@ mock.module("../workflow-executor/run-store", () => ({
   markRunStopped: async (_db: unknown, state: RunState) => {
     runs.set(state.runId, structuredClone({ ...state, status: "failed" }));
   },
+  markRunUserStopped: async (_db: unknown, state: RunState) => {
+    runs.set(state.runId, structuredClone({ ...state, status: "stopped" }));
+  },
   listRunRecords: async (
     _db: unknown,
     _tenantIds: readonly string[],
@@ -145,6 +148,7 @@ mock.module("../workflow-executor/run-store", () => ({
         awaiting: 0,
         completed: 2,
         failed: 0,
+        stopped: 0,
         total: 3,
       },
       steps: { total: 4, byPhase: { completed: 4 }, avgDurationMs: 1500 },
@@ -1061,7 +1065,7 @@ describe("resume gate-guard: stale/mismatched resume is a 409 (CL-2681)", () => 
     expect(runs.get(runId)?.status).toBe("running"); // not resurrected
   });
 
-  test.each(["completed", "failed", "running"] as const)(
+  test.each(["completed", "failed", "running", "stopped"] as const)(
     "resume against a %s run (log unreadable, coarse status not awaiting) is 409 and fires no signal",
     async (status) => {
       resetCaptures();
@@ -1245,6 +1249,138 @@ async function archive(
   if (json.error !== undefined) out.error = json.error;
   return out;
 }
+
+// biome-ignore lint/suspicious/noExplicitAny: test response shape
+async function stopRun(
+  a: AppHono,
+  runId: string,
+): Promise<{ status: number; error?: string; stopped?: boolean }> {
+  const res = await a.request(`/workflow-exec/records/${runId}/stop`, {
+    method: "POST",
+  });
+  if (res.status === 200) {
+    const json = (await res.json()) as { stopped?: boolean };
+    return { status: 200, stopped: json.stopped };
+  }
+  const json = (await res.json()) as { error?: string };
+  const out: { status: number; error?: string } = { status: res.status };
+  if (json.error !== undefined) out.error = json.error;
+  return out;
+}
+
+describe("stop workflow run (CL-3688)", () => {
+  test("stopping a PROVISIONING run marks stopped and reclaims deployment", async () => {
+    resetCaptures();
+    const a = app();
+    const start = await post(a, "/workflow-exec/pain-point-collateral/start", {
+      input: {},
+    });
+    const runId = start.json.runId;
+    expect(runs.get(runId)?.status).toBe("provisioning");
+
+    const r = await stopRun(a, runId);
+    expect(r.status).toBe(200);
+    expect(reclaimCalls).toEqual([
+      { deploymentId: "ses_run_1", tenantId: "tn-1" },
+    ]);
+    expect(runs.get(runId)?.status).toBe("stopped");
+  });
+
+  test("stopping an ACTIVE run marks stopped, tears down deployment, and keeps the record", async () => {
+    resetCaptures();
+    const a = app();
+    const start = await post(a, "/workflow-exec/pain-point-collateral/start", {
+      input: {},
+    });
+    const runId = start.json.runId;
+    await settleStart(runId);
+
+    const r = await stopRun(a, runId);
+    expect(r.status).toBe(200);
+    expect(r.stopped).toBe(true);
+    expect(reclaimCalls).toEqual([
+      { deploymentId: "ses_run_1", tenantId: "tn-1" },
+    ]);
+    expect(runs.get(runId)?.status).toBe("stopped");
+    const list = await get(a, "/workflow-exec/records");
+    expect(list.json.map((x: { runId: string }) => x.runId)).toContain(runId);
+  });
+
+  test("stopping an AWAITING run marks stopped and reclaims deployment", async () => {
+    resetCaptures();
+    const a = app();
+    const runId = await seedParkedRun(a);
+
+    const r = await stopRun(a, runId);
+    expect(r.status).toBe(200);
+    expect(reclaimCalls).toEqual([
+      { deploymentId: "ses_run_1", tenantId: "tn-1" },
+    ]);
+    expect(runs.get(runId)?.status).toBe("stopped");
+  });
+
+  test("stopping a TERMINAL run is idempotent — no teardown", async () => {
+    resetCaptures();
+    const a = app();
+    const start = await post(a, "/workflow-exec/pain-point-collateral/start", {
+      input: {},
+    });
+    const runId = start.json.runId;
+    const done = runs.get(runId);
+    if (done) runs.set(runId, { ...done, status: "completed" });
+
+    const r = await stopRun(a, runId);
+    expect(r.status).toBe(200);
+    expect(reclaimCalls).toHaveLength(0);
+    expect(runs.get(runId)?.status).toBe("completed");
+  });
+
+  test("stopping an already stopped run is idempotent", async () => {
+    resetCaptures();
+    const a = app();
+    const runId = "wfr_stopped_idem";
+    runs.set(runId, {
+      runId,
+      kind: "pain-point-collateral",
+      tenantId: "tn-1",
+      principalId: "prn-1",
+      status: "stopped",
+      deploymentId: "ses_run_1",
+      originConversationId: "conv-1",
+    });
+    const r = await stopRun(a, runId);
+    expect(r.status).toBe(200);
+    expect(reclaimCalls).toHaveLength(0);
+    expect(runs.get(runId)?.status).toBe("stopped");
+  });
+
+  test("stopping a run you do not own is forbidden 403", async () => {
+    resetCaptures();
+    const owner = app();
+    const start = await post(
+      owner,
+      "/workflow-exec/pain-point-collateral/start",
+      { input: {} },
+    );
+    const runId = start.json.runId;
+    await settleStart(runId);
+    const intruder = appAs({ tenantId: "tn-1", principalId: "prn-other" });
+
+    const r = await stopRun(intruder, runId);
+    expect(r.status).toBe(403);
+    expect(reclaimCalls).toHaveLength(0);
+    const list = await get(owner, "/workflow-exec/records");
+    expect(list.json.map((x: { runId: string }) => x.runId)).toContain(runId);
+  });
+
+  test("stopping an unknown run is 404", async () => {
+    resetCaptures();
+    const a = app();
+    const r = await stopRun(a, "wfr_missing");
+    expect(r.status).toBe(404);
+    expect(reclaimCalls).toHaveLength(0);
+  });
+});
 
 describe("archive workflow run (CL-2629)", () => {
   test("archiving an ACTIVE run tears its per-run deployment down and drops it from the list", async () => {

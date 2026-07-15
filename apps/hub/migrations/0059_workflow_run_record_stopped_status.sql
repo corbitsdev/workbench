@@ -1,0 +1,2 @@
+-- CL-3688: workflow_run_record.status may be `stopped` (user-initiated terminal).
+-- The column is unconstrained text; no schema change required.

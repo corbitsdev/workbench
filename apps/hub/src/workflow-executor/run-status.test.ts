@@ -24,11 +24,12 @@ describe("run-status terminal partition (CL-2575 invariant)", () => {
     }
   });
 
-  test("awaiting is NOT terminal; completed/failed are", () => {
+  test("awaiting is NOT terminal; completed/failed/stopped are", () => {
     expect(isTerminalRunStatus("awaiting")).toBe(false);
     expect(isTerminalRunStatus("running")).toBe(false);
     expect(isTerminalRunStatus("completed")).toBe(true);
     expect(isTerminalRunStatus("failed")).toBe(true);
+    expect(isTerminalRunStatus("stopped")).toBe(true);
   });
 
   test("becameTerminal fires only on a non-terminal → terminal transition", () => {
@@ -37,6 +38,7 @@ describe("run-status terminal partition (CL-2575 invariant)", () => {
     expect(becameTerminal("running", "failed")).toBe(true);
     expect(becameTerminal("awaiting", "completed")).toBe(true);
     expect(becameTerminal("awaiting", "failed")).toBe(true);
+    expect(becameTerminal("running", "stopped")).toBe(true);
 
     // The CL-2575 traps — parking at a gate must NEVER trip teardown.
     expect(becameTerminal("running", "awaiting")).toBe(false);

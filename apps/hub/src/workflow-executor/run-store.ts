@@ -44,7 +44,13 @@ export interface RunState {
   kind: string;
   tenantId: string;
   principalId: string;
-  status: "provisioning" | "running" | "awaiting" | "completed" | "failed";
+  status:
+    | "provisioning"
+    | "running"
+    | "awaiting"
+    | "completed"
+    | "failed"
+    | "stopped";
   // The deployment this run belongs to. Read by the records router to address
   // the sidecar supervisor for trigger/signal delivery.
   deploymentId?: string;
@@ -377,6 +383,7 @@ export interface RunKindStats {
     awaiting: number;
     completed: number;
     failed: number;
+    stopped: number;
     total: number;
   };
   steps: {
@@ -446,6 +453,7 @@ export async function getRunKindStats(
           awaiting: 0,
           completed: 0,
           failed: 0,
+          stopped: 0,
           total: 0,
         },
         steps: { total: 0, byPhase: {}, avgDurationMs: null },
@@ -499,6 +507,18 @@ export async function markRunStopped(
   state: RunState,
 ): Promise<void> {
   await setRunStatus(db, state.runId, "failed");
+}
+
+// CL-3688: owner stop — terminal `stopped` with wall-clock end time (distinct from
+// `markRunStopped` → `failed` for operator abort and archive).
+export async function markRunUserStopped(
+  db: HubDb,
+  state: RunState,
+): Promise<void> {
+  await db
+    .update(workflowRunRecord)
+    .set({ status: "stopped", endedAt: new Date(), pendingSignal: null })
+    .where(eq(workflowRunRecord.id, state.runId));
 }
 
 // Compare-and-set orphan-fail (CL-2727). Marks a run `failed` ONLY if it is

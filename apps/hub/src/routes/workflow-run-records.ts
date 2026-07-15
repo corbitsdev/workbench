@@ -20,7 +20,9 @@ import {
   loadDeploymentMeta,
   loadRunRecord,
   markRunStopped,
+  markRunUserStopped,
   softDeleteRunRecord,
+  type RunState,
 } from "../workflow-executor/run-store";
 import {
   assertRunOwnership,
@@ -95,13 +97,16 @@ const StartBody = type({
 });
 const ResumeBody = type({ signalName: "string", "payload?": "unknown" });
 
+const RUN_INDEX_STATUS =
+  "'provisioning'|'running'|'awaiting'|'completed'|'failed'|'stopped'" as const;
+
 // The thin run-INDEX response (CL-2669): run-level identity + coarse status.
 // Per-step state (phase / outputs / errors) is read separately from the log via
 // GET /workflow-exec/runs/:runId/state.
 const RunStateResponse = type({
   runId: "string",
   kind: "string",
-  status: "'provisioning'|'running'|'awaiting'|'completed'|'failed'",
+  status: RUN_INDEX_STATUS,
   "deploymentId?": "string",
   "originConversationId?": "string",
   // The run's deploy-time version provenance, joined from the deployment index
@@ -115,6 +120,7 @@ const RunStateResponse = type({
 
 const ErrorResponse = type({ error: "string" });
 const ArchiveResponse = type({ archived: "true" });
+const StopResponse = type({ stopped: "true" });
 
 // CL-2809: per-run token totals, read-side attribution over the existing
 // analytics rollup — see `getWorkflowRunTokenTotals`. `available: false` covers
@@ -152,6 +158,7 @@ export const RunKindStatsSchema = type({
     awaiting: "number",
     completed: "number",
     failed: "number",
+    stopped: "number",
     total: "number",
   },
   steps: {
@@ -166,7 +173,7 @@ export type RunKindStatsList = typeof RunKindStatsListSchema.infer;
 export const SoloRunStatsSchema = type({
   runId: "string",
   kind: "string",
-  status: "'provisioning'|'running'|'awaiting'|'completed'|'failed'",
+  status: RUN_INDEX_STATUS,
   "startedAt?": "string | null",
   "endedAt?": "string | null",
   steps: type({
@@ -197,7 +204,13 @@ function stateResponse(
   state: {
     runId: string;
     kind: string;
-    status: "provisioning" | "running" | "awaiting" | "completed" | "failed";
+    status:
+      | "provisioning"
+      | "running"
+      | "awaiting"
+      | "completed"
+      | "failed"
+      | "stopped";
     deploymentId?: string;
     originConversationId?: string;
   },
@@ -230,7 +243,13 @@ async function stateResponseWithOwnership(
   state: {
     runId: string;
     kind: string;
-    status: "provisioning" | "running" | "awaiting" | "completed" | "failed";
+    status:
+      | "provisioning"
+      | "running"
+      | "awaiting"
+      | "completed"
+      | "failed"
+      | "stopped";
     deploymentId?: string;
     originConversationId?: string;
     principalId: string;
@@ -264,6 +283,31 @@ async function resolveStateMeta(
 // can auto-retry and show an honest "redeploying" state — never a raw 500 with
 // "workflow resume signal failed". All other failures keep the flat
 // { error: string } shape the existing surface returns.
+async function tearDownActiveRun(
+  deps: { db: HubDb; reclaimDeployment: ReclaimDeploymentFn },
+  runId: string,
+  state: RunState,
+  markTerminal: () => Promise<void>,
+  reclaimReason: string,
+): Promise<void> {
+  if (isTerminalRunStatus(state.status)) return;
+  await markTerminal();
+  if (state.deploymentId === undefined) return;
+  await deps
+    .reclaimDeployment({
+      deploymentId: state.deploymentId,
+      tenantId: state.tenantId,
+      reason: reclaimReason,
+    })
+    .catch((err) => {
+      log.warn("workflow run: per-run deployment teardown failed", {
+        runId,
+        deploymentId: state.deploymentId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    });
+}
+
 function runExecErrorResponse(c: Context, result: RunExecFailure): Response {
   if (result.status === 503) {
     // A 503 only ever originates from the deploy-window failure, which always
@@ -300,6 +344,13 @@ export function createWorkflowRunRecordsRouter(deps: {
   sidecarPollIntervalMs?: number;
   // Injectable for tests only.
   resolveContext?: typeof getRequestedUserContext;
+  // CL-3688: fire analytics facts when a user stop marks the run terminal.
+  onUserStoppedRunFacts?: (args: {
+    runId: string;
+    kind: string;
+    tenantId: string;
+    deploymentId: string | null;
+  }) => void;
 }): Hono<{ Variables: { userId: string } }> {
   const router = new Hono<{ Variables: { userId: string } }>();
   const resolveContext = deps.resolveContext ?? getRequestedUserContext;
@@ -1231,31 +1282,97 @@ export function createWorkflowRunRecordsRouter(deps: {
       const gate = assertRunOwnership(chain, context, state);
       if (gate) return c.json({ error: gate.error }, gate.status);
 
-      const active = !isTerminalRunStatus(state.status);
-      if (active) {
-        // Mark terminal first so the record is consistent (and the janitor would
-        // reclaim it) even if the immediate teardown below fails. Shared with the
-        // operator abort path so terminal-marking never drifts between them.
-        await markRunStopped(deps.db, state);
-        if (state.deploymentId !== undefined) {
-          await deps
-            .reclaimDeployment({
-              deploymentId: state.deploymentId,
-              tenantId: state.tenantId,
-              reason: `run ${runId} archived by user`,
-            })
-            .catch((err) => {
-              log.warn("archive run: per-run deployment teardown failed", {
-                runId,
-                deploymentId: state.deploymentId,
-                error: err instanceof Error ? err.message : String(err),
-              });
-            });
-        }
-      }
+      await tearDownActiveRun(
+        deps,
+        runId,
+        state,
+        () => markRunStopped(deps.db, state),
+        `run ${runId} archived by user`,
+      );
 
       await softDeleteRunRecord(deps.db, runId);
       return c.json({ archived: true });
+    },
+  );
+
+  // CL-3688: stop an in-flight run without soft-deleting — record stays in history
+  // as `stopped`. Same ownership gate and active-run teardown as archive.
+  router.post(
+    "/workflow-exec/records/:runId/stop",
+    describeRoute({
+      tags: ["Workflows"],
+      summary: "Stop a workflow run",
+      description:
+        "Owner-scoped. Marks an active run `stopped` and tears down its per-run deployment. Terminal runs are left unchanged (idempotent). Optional `?tenantId=` selects a workbench the user belongs to.",
+      parameters: [
+        {
+          name: "runId",
+          in: "path",
+          required: true,
+          description: "Run id.",
+          schema: { type: "string" },
+        },
+        {
+          name: "tenantId",
+          in: "query",
+          required: false,
+          description: "Target workbench tenant id.",
+          schema: { type: "string" },
+        },
+      ],
+      responses: {
+        200: {
+          description: "Run stopped (or already terminal)",
+          content: {
+            "application/json": { schema: resolver(StopResponse) },
+          },
+        },
+        403: {
+          description: "Forbidden",
+          content: { "application/json": { schema: resolver(ErrorResponse) } },
+        },
+        404: {
+          description: "Run not found",
+          content: { "application/json": { schema: resolver(ErrorResponse) } },
+        },
+      },
+    }),
+    async (c) => {
+      const userId = c.get("userId");
+      const { context, forbidden } = await resolveContext(
+        deps.db,
+        userId,
+        c.req.query("tenantId"),
+      );
+      if (forbidden) return c.json({ error: "Forbidden" }, 403);
+      if (!context) return c.json({ error: "User context not found" }, 403);
+
+      const runId = c.req.param("runId");
+      const state = await loadRunRecord(deps.db, runId);
+      if (!state) return c.json({ error: "run not found" }, 404);
+
+      const chain = await getAncestorChain(deps.db, context.tenantId);
+      const gate = assertRunOwnership(chain, context, state);
+      if (gate) return c.json({ error: gate.error }, gate.status);
+
+      const wasActive = !isTerminalRunStatus(state.status);
+      await tearDownActiveRun(
+        deps,
+        runId,
+        state,
+        () => markRunUserStopped(deps.db, state),
+        `run ${runId} stopped by user`,
+      );
+      if (wasActive && deps.onUserStoppedRunFacts !== undefined) {
+        deps.onUserStoppedRunFacts({
+          runId,
+          kind: state.kind,
+          tenantId: state.tenantId,
+          deploymentId: state.deploymentId ?? null,
+        });
+      }
+
+      return c.json({ stopped: true as const });
     },
   );
 

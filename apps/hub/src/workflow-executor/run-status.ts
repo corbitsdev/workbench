@@ -13,8 +13,12 @@ import { workflowRunStateStatus } from "../db/schema";
 export type RunStatus = (typeof workflowRunStateStatus)[number];
 
 // `RunCancelled` folds into `failed` in the projection (there is no `cancelled`
-// status row), so the terminal set is exactly these two.
-export const TERMINAL_RUN_STATUSES = ["completed", "failed"] as const;
+// status row). User stop (CL-3688) persists as `stopped`.
+export const TERMINAL_RUN_STATUSES = [
+  "completed",
+  "failed",
+  "stopped",
+] as const;
 // `provisioning` (CL-2755) is non-terminal: a run whose per-run deployment is
 // still being minted off the /start critical path has not settled — it advances
 // to `running` (projection) or `failed` (start tail) — and is never a candidate
