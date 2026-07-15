@@ -23,14 +23,14 @@ export const LIST_SKILLS_DEFINITION: ToolDefinition = {
 export const SEARCH_SKILLS_DEFINITION: ToolDefinition = {
   name: "search_skills",
   description:
-    "Search the skills visible to you by a free-text query, matched as a case-insensitive substring against each skill name and display name. Returns the same cheap index shape as list_skills ({id, name, displayName}) — never the skill body. Use load_skill to read a match. Read-only.",
+    "Search the skills visible to you by a free-text query, matched as a case-insensitive substring against each skill's name, display name, and description. Returns the same cheap index shape as list_skills ({id, name, displayName}) — never the skill body. If a search comes up empty, retry with different wording (synonyms or broader terms) before concluding no skill fits. Use load_skill to read a match. Read-only.",
   inputSchema: {
     type: "object",
     properties: {
       query: {
         type: "string",
         description:
-          "Search text matched as a case-insensitive substring against skill name and display name.",
+          "Search text matched as a case-insensitive substring against skill name, display name, and description.",
       },
     },
     required: ["query"],
@@ -192,12 +192,14 @@ export type SkillIndexEntry = {
   id: string;
   name: string;
   displayName: string | null;
+  description?: string | null;
 };
 
 /**
- * Pure case-insensitive substring match over an index entry's name and display
- * name. Shared by the hub handler and tested directly so the filter contract is
- * independent of any db.
+ * Pure case-insensitive substring match over an index entry's name, display
+ * name, and description. Matching the description widens recall so a skill can
+ * be found by what it does, not only by its title. Shared by the hub handler
+ * and tested directly so the filter contract is independent of any db.
  */
 export function skillMatchesQuery(
   entry: SkillIndexEntry,
@@ -205,6 +207,7 @@ export function skillMatchesQuery(
 ): boolean {
   const needle = query.trim().toLowerCase();
   if (needle.length === 0) return true;
-  const haystack = `${entry.name}\n${entry.displayName ?? ""}`.toLowerCase();
+  const haystack =
+    `${entry.name}\n${entry.displayName ?? ""}\n${entry.description ?? ""}`.toLowerCase();
   return haystack.includes(needle);
 }

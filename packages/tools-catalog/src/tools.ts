@@ -116,12 +116,12 @@ function searchGuardKey(query: {
 function searchHint(matchCount: number, repeatCount: number): string {
   if (repeatCount >= SAME_QUERY_WARN_THRESHOLD) {
     if (matchCount === 0) {
-      return "You already ran this exact search and it has no matches. Do not repeat it — tell the user this capability is not available.";
+      return "You already ran this exact search and it returned nothing. Do not repeat it verbatim — retry with different wording: synonyms, broader terms, a related concept, or browse by `package`/`tags`. Only conclude the capability is unavailable after several genuinely different phrasings also come up empty.";
     }
-    return "You already ran this exact search. These are the only matches — call load_tools to enable one, or if none fit, tell the user this is not available instead of searching again.";
+    return "You already ran this exact search. These are the only matches — call load_tools to enable one. If none fit, retry with different wording (synonyms, broader terms, or a `package`/`tags` filter) before concluding it is unavailable.";
   }
   if (matchCount === 0) {
-    return "No matching tools. The tools already in your function list are all that match.";
+    return "No matching tools. Retry with different wording — synonyms or broader terms — or browse by `package`/`tags`; the tools already in your function list may already cover this.";
   }
   return "Call load_tools with the names or package you want, then call the tool.";
 }
@@ -176,7 +176,7 @@ function runSearch(
   if (repeatCount >= SAME_QUERY_TERMINAL_THRESHOLD) {
     return errorResult(
       callId,
-      `search_tools: you have run this identical search ${repeatCount} times in a row with the same result. Stop searching — enable a listed tool with load_tools, or tell the user this capability is unavailable / ask them for what is needed.`,
+      `search_tools: you have run this identical search ${repeatCount} times in a row with the same result. Stop searching with the same words — either enable a listed tool with load_tools, or retry with genuinely different wording: synonyms, broader terms, or a package/tags filter. Only after several reworded searches also come up empty should you tell the user the capability is not available or ask them for what is needed.`,
     );
   }
 

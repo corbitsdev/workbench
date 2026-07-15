@@ -93,6 +93,7 @@ function toIndexEntry(skill: SkillItem): SkillIndexEntry {
     id: skill.id,
     name: skill.name,
     displayName: skill.displayName,
+    description: skill.description,
   };
 }
 

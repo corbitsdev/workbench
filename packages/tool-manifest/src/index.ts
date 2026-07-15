@@ -4,12 +4,14 @@ export {
 } from "./committed-index";
 export {
   bareToolNamesFromEntries,
+  descriptionsFromEntries,
   manifestFromBareToolNames,
   manifestFromHubToolEntries,
   sideEffectsFromEntries,
   type HubToolEntries,
 } from "./builders";
 export {
+  deriveBareToolDescriptions,
   deriveMyraCatalogPackages,
   derivePackageProviders,
   derivePackageTools,

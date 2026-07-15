@@ -10,6 +10,10 @@ import { type } from "arktype";
 export const ToolCatalogToolSchema = type({
   name: "string > 0",
   description: "string",
+  // Extra search-only corpus (the tool's real manifest description). Widens
+  // `search_tools` recall while `description` stays the friendly display phrase
+  // — keywords are never surfaced in results.
+  "keywords?": "string",
 });
 export type ToolCatalogTool = typeof ToolCatalogToolSchema.infer;
 

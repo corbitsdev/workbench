@@ -71,11 +71,13 @@ function scoreTool(tool: ToolCatalogTool, terms: string[]): number {
   if (terms.length === 0) return 1;
   const name = tool.name.toLowerCase();
   const description = tool.description.toLowerCase();
+  const keywords = (tool.keywords ?? "").toLowerCase();
   let score = 0;
   for (const term of terms) {
     if (name.includes(term)) score += 3 * countOccurrences(name, term);
     if (description.includes(term))
       score += countOccurrences(description, term);
+    if (keywords.includes(term)) score += countOccurrences(keywords, term);
   }
   return score;
 }
@@ -139,7 +141,13 @@ export function searchCatalog(
       tags: entry.tags,
       score,
       tools:
-        terms.length > 0 ? tools : entry.tools.map((t) => ({ ...t, score: 0 })),
+        terms.length > 0
+          ? tools
+          : entry.tools.map((t) => ({
+              name: t.name,
+              description: t.description,
+              score: 0,
+            })),
     });
   }
   return matches.sort((a, b) => b.score - a.score);
