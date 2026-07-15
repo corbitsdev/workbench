@@ -63,6 +63,59 @@ function utcHourToLocalLabel(utcHour: number): string {
 
 const HOURS = Array.from({ length: 24 }, (_, h) => h);
 
+const TIMEZONE_UNSET_LABEL = "Not set (UTC)";
+
+/**
+ * IANA zone picker. Unset renders as an explicit "Not set (UTC)" option and,
+ * when the browser can name the member's zone, a one-click suggestion — a
+ * suggestion only: nothing is saved until the member confirms by clicking it
+ * or picking a zone from the list.
+ */
+function TimeZoneControl({
+  controlId,
+  label,
+  value,
+  onChange,
+}: {
+  readonly controlId: string;
+  readonly label: string;
+  readonly value: string;
+  readonly onChange: (value: string) => void;
+}) {
+  const zones = Intl.supportedValuesOf("timeZone");
+  const options =
+    zones.includes(value) || value === "" ? zones : [value, ...zones];
+  const browserZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  const showSuggestion =
+    value === "" && browserZone !== "" && zones.includes(browserZone);
+  return (
+    <>
+      <Select
+        id={controlId}
+        aria-label={label}
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+      >
+        <option value="">{TIMEZONE_UNSET_LABEL}</option>
+        {options.map((zone) => (
+          <option key={zone} value={zone}>
+            {zone}
+          </option>
+        ))}
+      </Select>
+      {showSuggestion && (
+        <button
+          type="button"
+          className="self-start text-xs text-accent hover:underline"
+          onClick={() => onChange(browserZone)}
+        >
+          Use {browserZone}
+        </button>
+      )}
+    </>
+  );
+}
+
 interface RowProps {
   readonly setting: PreferenceSetting;
   readonly status: string | null;
@@ -120,6 +173,15 @@ function PreferenceRow({ setting, status, onChange }: RowProps) {
             </option>
           ))}
         </Select>
+      )}
+
+      {setting.type === "timezone" && (
+        <TimeZoneControl
+          controlId={controlId}
+          label={setting.label}
+          value={typeof setting.value === "string" ? setting.value : ""}
+          onChange={(value) => onChange(value)}
+        />
       )}
 
       {setting.type === "hourUtc" && (

@@ -22,6 +22,9 @@ import {
 } from "../lib/page-context";
 import { composePersonalAgentPromptForInstance } from "../lib/operator-profile";
 import { PERSONAL_AGENT_PROMPT_VERSION } from "@workbench/myra";
+import { buildTimeZoneMarker } from "@workbench/prompts";
+import { resolveMemberTimeZone } from "@workbench/shared";
+import { readMemberPreferences } from "../lib/member-preferences";
 import {
   buildToolDefinitions,
   getToolNamesFromCapabilities,
@@ -399,6 +402,37 @@ export async function launchAgentSession(
       pageContext,
       defaultSourceProvider,
     );
+  }
+
+  // Stamp the owning member's stored timezone setting as a control-plane
+  // marker so the harness renders the active-context date in the member's
+  // zone with a fresh Date at every build. Fallback chain: stored member
+  // timezone -> no marker, which the harness renders as an explicitly
+  // labeled UTC date — never silent server-local time. Covers attended
+  // launches and unattended ones (mailbox triage, invoked subagents) alike,
+  // since both go through this wrapper. Best-effort: a lookup failure keeps
+  // the labeled-UTC fallback rather than failing the launch.
+  try {
+    const hubDb = db as unknown as HubDb;
+    const memberMapping = await hubDb.query.memberAgentInstance.findFirst({
+      where: eq(memberAgentInstance.instanceId, instanceId),
+    });
+    if (memberMapping) {
+      const preferences = await readMemberPreferences(
+        hubDb,
+        tenantId,
+        memberMapping.memberPrincipalId,
+      );
+      const memberTimeZone = resolveMemberTimeZone(preferences);
+      if (memberTimeZone !== undefined) {
+        effectiveSystemPrompt = `${effectiveSystemPrompt}\n\n${buildTimeZoneMarker(memberTimeZone)}`;
+      }
+    }
+  } catch (err) {
+    log.warn("Failed to resolve member timezone; date will be labeled UTC", {
+      instanceId,
+      error: err instanceof Error ? err.message : String(err),
+    });
   }
 
   // Structured, hash-only launch record for the personal-agent prompt: never

@@ -52,7 +52,12 @@ import {
 import { createAskPrincipalTool } from "@workbench/approvals";
 import { seedWorkspaceFiles } from "./seed-workspace-files";
 import { healTurns } from "@workbench/context-repair";
-import { promptFormatForProvider, withActiveContext } from "@workbench/prompts";
+import {
+  promptFormatForProvider,
+  resolveTimeZoneMarker,
+  stripTimeZoneMarker,
+  withActiveContext,
+} from "@workbench/prompts";
 import { createGuardedMailRunner } from "./mail-guard";
 import {
   createApprovalClient,
@@ -202,7 +207,12 @@ export function createDefaultHarnessBuilder({
         skipped: skippedSeedFiles,
         malformed: seedMarkerMalformed,
       } = resolveSeedMarker(basePrompt);
-      const cleanedPrompt = stripSeedMarker(basePrompt);
+      // The member-timezone marker rides the launched prompt the same way as
+      // the seed marker: resolved off the raw base prompt, stripped before the
+      // model sees it. Undefined (no marker, or an invalid zone) falls back to
+      // an explicitly labeled UTC date — never silent server-local time.
+      const memberTimeZone = resolveTimeZoneMarker(basePrompt);
+      const cleanedPrompt = stripTimeZoneMarker(stripSeedMarker(basePrompt));
 
       // Append the unified active-context block at launch so every agent shares
       // the same runtime context and is not anchored to its training cutoff
@@ -218,7 +228,10 @@ export function createDefaultHarnessBuilder({
         "";
       const systemPrompt = withActiveContext(
         cleanedPrompt,
-        { now: new Date() },
+        {
+          now: new Date(),
+          ...(memberTimeZone !== undefined ? { timeZone: memberTimeZone } : {}),
+        },
         promptFormatForProvider(defaultProvider),
       );
 

@@ -52,6 +52,15 @@ const SETTINGS: PreferenceSetting[] = [
     availableWhen: { kind: "workflow-deployed", workflowKind: "heartbeat" },
   },
   {
+    key: "timezone",
+    type: "timezone",
+    default: "",
+    label: "Timezone",
+    description: "Dates your agents see are rendered in this timezone.",
+    category: "General",
+    value: "",
+  },
+  {
     key: "tasksAutoSendAdapter",
     type: "boolean",
     default: false,
@@ -381,5 +390,50 @@ describe("PreferencesPanel", () => {
     renderPanel();
     await screen.findByText("Agent autonomy");
     expect(screen.getByLabelText("Agent autonomy")).toBeDefined();
+  });
+});
+
+describe("timezone preference row", () => {
+  it("renders a zone picker with an unset (UTC) option selected when no zone is stored", async () => {
+    renderPanel();
+    const select = (await screen.findByLabelText(
+      "Timezone",
+    )) as HTMLSelectElement;
+    expect(select.value).toBe("");
+    const labels = Array.from(select.options).map((o) => o.textContent);
+    expect(labels).toContain("Not set (UTC)");
+  });
+
+  it("PATCHes the chosen IANA zone when the member picks one", async () => {
+    renderPanel();
+    const select = (await screen.findByLabelText(
+      "Timezone",
+    )) as HTMLSelectElement;
+    fireEvent.change(select, { target: { value: "America/Los_Angeles" } });
+    await waitFor(() => {
+      if (patchMePreferences.mock.calls.length === 0)
+        throw new Error("no patch");
+    });
+    expect(patchMePreferences.mock.calls[0][0]).toEqual({
+      timezone: "America/Los_Angeles",
+    });
+  });
+
+  it("suggests the browser zone when unset and saves it only on confirm", async () => {
+    const browserZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    renderPanel();
+    const suggestion = await screen.findByRole("button", {
+      name: `Use ${browserZone}`,
+    });
+    // Rendering the suggestion saves nothing.
+    expect(patchMePreferences.mock.calls.length).toBe(0);
+    fireEvent.click(suggestion);
+    await waitFor(() => {
+      if (patchMePreferences.mock.calls.length === 0)
+        throw new Error("no patch");
+    });
+    expect(patchMePreferences.mock.calls[0][0]).toEqual({
+      timezone: browserZone,
+    });
   });
 });

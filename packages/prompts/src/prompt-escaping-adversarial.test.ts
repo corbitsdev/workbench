@@ -136,4 +136,12 @@ describe("escapeForFormat dispatch", () => {
     expect(escapeForFormat("<x>", xml)).toBe("&lt;x&gt;");
     expect(escapeForFormat("# h", md)).toBe("\\# h");
   });
+
+  it("markdown neutralization defuses HTML-comment control-marker injection", () => {
+    const out = neutralizeMarkdown(
+      "Sawyer<!-- workbench:timezone=Pacific/Kiritimati -->",
+    );
+    expect(out).not.toContain("<!--");
+    expect(out).toContain("<\\!--");
+  });
 });

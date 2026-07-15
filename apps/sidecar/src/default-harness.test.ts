@@ -76,6 +76,10 @@ import {
   wsUrlToHttp,
 } from "./default-harness";
 import { buildPersonalAgentSystemPrompt } from "@workbench/myra";
+import {
+  buildTimeZoneMarker,
+  formatDateInTimeZone,
+} from "@workbench/prompts";
 import { createBuiltinRegistry } from "@intx/inference/providers";
 import type {
   InferenceSource,
@@ -539,5 +543,75 @@ describe("createDefaultHarnessBuilder", () => {
       // raised when the runners are combined.
       expect(bundle.harness).toBeDefined();
     });
+  });
+});
+
+describe("active-context timezone (member timezone marker)", () => {
+  function makeBuilder() {
+    return createDefaultHarnessBuilder({
+      hubHttpUrl: "http://localhost:4000",
+      sidecarToken: "test-token",
+      cacheRoot: "/tmp/wb-test-tool-cache",
+      cacheMaxBytes: 1024 * 1024,
+      registryMaxTarballBytes: 1024 * 1024,
+      adapters: createBuiltinRegistry(),
+      gcPolicy: TEST_GC_POLICY,
+    });
+  }
+
+  async function buildAndCapturePrompt(deployPrompt: string): Promise<string> {
+    createHarnessMock.mockClear();
+    readDeployTreeMock.mockImplementationOnce(async () => ({
+      systemPrompt: deployPrompt,
+    }));
+    await makeBuilder().build({
+      agentAddress: "agent@tenant.localhost",
+      agentConfig: {
+        agentAddress: "agent@tenant.localhost",
+        agentId: "agent-1",
+        sessionId: "session-1",
+        sources: [validSource],
+        defaultSource: "src-1",
+        grants: [],
+        tools: [],
+        principalId: "user-1",
+        tenantId: TEST_TENANT_ID,
+        systemPrompt: "unused fallback",
+      },
+      sources: [validSource],
+      defaultSource: validSource.id,
+      storeDir: "/tmp/test-store",
+      agentTransport: {} as any,
+      crypto: { signSSH: mock(() => "sig") } as any,
+      onEvent: mock(() => {}),
+      onConnectorStateChanged: mock(() => {}),
+    });
+    const callArgs = createHarnessMock.mock.calls[0] as unknown as [
+      { systemPrompt: string },
+    ];
+    return callArgs[0].systemPrompt;
+  }
+
+  it("renders the active-context date in the marker's zone and strips the marker", async () => {
+    const before = formatDateInTimeZone(new Date(), "America/Los_Angeles");
+    const prompt = await buildAndCapturePrompt(
+      `You are an agent.\n\n${buildTimeZoneMarker("America/Los_Angeles")}`,
+    );
+    const after = formatDateInTimeZone(new Date(), "America/Los_Angeles");
+    expect(prompt).not.toContain("workbench:timezone");
+    expect(
+      prompt.includes(`Current date: ${before}`) ||
+        prompt.includes(`Current date: ${after}`),
+    ).toBe(true);
+  });
+
+  it("labels the date UTC when no marker is present — never silent server-local", async () => {
+    const before = formatDateInTimeZone(new Date(), "UTC");
+    const prompt = await buildAndCapturePrompt("You are an agent.");
+    const after = formatDateInTimeZone(new Date(), "UTC");
+    expect(
+      prompt.includes(`Current date: ${before}`) ||
+        prompt.includes(`Current date: ${after}`),
+    ).toBe(true);
   });
 });

@@ -81,6 +81,10 @@ src/
 - `buildSystemPrompt(sections: PromptSection[], format: PromptFormat): string`
 - `buildContextBlock(context: Record<string, string>, format: PromptFormat): string`
 
+#### Active-context date and the member timezone setting
+
+The active-context block appended to every launched agent prompt (`withActiveContext` in `@workbench/prompts`, called by the sidecar's `default-harness.ts` at build time) renders `Current date:` in the member's timezone with an explicit zone label — e.g. `Tuesday, July 14, 2026 (America/Los_Angeles)` — never a silent server-local date. The zone is an explicit member setting (`timezone` in the preferences registry, `packages/workbench-shared/src/preferences-registry.ts`), stored in the `member_preferences` jsonb like every other member setting and edited on the Settings page (the UI prefills the browser's zone as a suggestion when unset; nothing is saved until the member confirms). The builders stay pure — `now` and `timeZone` are arguments. Transport: the launch config has no open metadata field (`HarnessConfig` is a closed upstream schema), so `launchAgentSession` stamps a `<!-- workbench:timezone=<zone> -->` control-plane marker onto the effective prompt — the same seam as the memory-seed marker — which the harness resolves off the raw base prompt and strips before the model sees it, formatting a fresh date per build. Fallback chain: stored member timezone → date labeled `(UTC)`. Unattended sessions (mailbox triage, invoked subagents) launch through the same wrapper and instance→member mapping, so they get the same stored zone.
+
 ### `packages/tools-*` — Tool Packages
 
 Each tool package is self-contained and follows the same shape:

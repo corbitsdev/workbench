@@ -141,6 +141,9 @@ function makeMockDb(overrides: Record<string, unknown> = {}) {
       memberAgentInstance: {
         findFirst: mock(() => Promise.resolve(undefined)),
       },
+      memberPreferences: {
+        findFirst: mock(() => Promise.resolve(undefined)),
+      },
     },
     select: mock(() => makeSelectChain([])),
     insert: mock(() => ({ values: mock(() => Promise.resolve()) })),
@@ -660,5 +663,105 @@ describe("launchAgentSession retry behavior", () => {
       ),
     ).rejects.toThrow(/model_unavailable/);
     expect(launchSession).not.toHaveBeenCalled();
+  });
+});
+
+describe("launchAgentSession timezone marker stamping", () => {
+  const BASE_OPTS = {
+    agentId: "agt-1",
+    instanceId: "ins-1",
+    instancePrincipalId: "prn-agent-1",
+    tenantId: "tenant-1",
+    tenantDomain: "tenant-1.localhost",
+    systemPrompt: "You are an agent.",
+    now: new Date("2026-07-15T02:00:00Z"),
+  };
+
+  function launchDb() {
+    const db = makeMockDb();
+    db.query.agent.findFirst = mock(() =>
+      Promise.resolve({
+        id: "agt-1",
+        contextConfig: null,
+        initialState: null,
+        modelConfig: null,
+        capabilities: { tools: ["exa_search"] },
+        credentialRequirements: null,
+        modelRequirements: null,
+        grantRequirements: [],
+        toolPackages: [],
+      }),
+    );
+    db.query.agentInstance.findFirst = mock(() =>
+      Promise.resolve({ id: "ins-1", sessionId: null }),
+    );
+    return db;
+  }
+
+  // biome-ignore lint/suspicious/noExplicitAny: capturing launch config
+  async function captureLaunchPrompt(db: any): Promise<string> {
+    // biome-ignore lint/suspicious/noExplicitAny: capturing launch config
+    let capturedConfig: any;
+    const launchSession = mock((config: unknown) => {
+      capturedConfig = config;
+      return Promise.resolve();
+    });
+    const sessionService = { ...mockSessionService, launchSession };
+    await launchAgentSession(
+      db as never,
+      sessionService as never,
+      mockGrantStore as never,
+      mockEventCollectors as never,
+      BASE_OPTS,
+    );
+    return capturedConfig.config.systemPrompt as string;
+  }
+
+  it("stamps the owning member's stored timezone as a prompt marker", async () => {
+    sourcesImpl = () =>
+      Promise.resolve([{ id: "src-1", apiKey: TEST_API_KEY }]);
+    const db = launchDb();
+    db.query.memberAgentInstance.findFirst = mock(() =>
+      Promise.resolve({
+        id: "mai-1",
+        tenantId: "tenant-1",
+        memberPrincipalId: "prn-member-1",
+        instanceId: "ins-1",
+      }),
+    );
+    db.query.memberPreferences.findFirst = mock(() =>
+      Promise.resolve({
+        preferences: { timezone: "America/Los_Angeles" },
+      }),
+    );
+
+    const prompt = await captureLaunchPrompt(db);
+    expect(prompt).toContain(
+      "<!-- workbench:timezone=America/Los_Angeles -->",
+    );
+  });
+
+  it("stamps no marker when the member has no stored timezone (harness labels UTC)", async () => {
+    sourcesImpl = () =>
+      Promise.resolve([{ id: "src-1", apiKey: TEST_API_KEY }]);
+    const db = launchDb();
+    db.query.memberAgentInstance.findFirst = mock(() =>
+      Promise.resolve({
+        id: "mai-1",
+        tenantId: "tenant-1",
+        memberPrincipalId: "prn-member-1",
+        instanceId: "ins-1",
+      }),
+    );
+
+    const prompt = await captureLaunchPrompt(db);
+    expect(prompt).not.toContain("workbench:timezone");
+  });
+
+  it("stamps no marker for an instance with no owning member mapping", async () => {
+    sourcesImpl = () =>
+      Promise.resolve([{ id: "src-1", apiKey: TEST_API_KEY }]);
+    const prompt = await captureLaunchPrompt(launchDb());
+    expect(prompt).not.toContain("workbench:timezone");
   });
 });

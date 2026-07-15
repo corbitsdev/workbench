@@ -91,7 +91,8 @@ export function neutralizeMarkdown(value: string): string {
   return neutralized
     .join("\n")
     .replace(/```/g, "\\`\\`\\`")
-    .replace(/~~~/g, "\\~\\~\\~");
+    .replace(/~~~/g, "\\~\\~\\~")
+    .replace(/<!--/g, "<\\!--");
 }
 
 // Escape a data value for embedding inside a prompt section rendered in the
@@ -149,6 +150,13 @@ export function buildSystemPromptWithContract(
 // cannot be represented as an arktype schema. Left as a plain type.
 export type ActiveContext = {
   now: Date;
+  /**
+   * IANA timezone the date is rendered in — the member's stored timezone
+   * setting, threaded from the launch path. Absent means UTC, and the
+   * rendering always labels its zone, so the model never sees an ambiguous
+   * (server-local) calendar date.
+   */
+  timeZone?: string;
   userName?: string;
   // Additional labelled facts (e.g. workbench, timezone). Rendered verbatim in
   // insertion order beneath the standard fields. Keys must be non-numeric
@@ -156,14 +164,70 @@ export type ActiveContext = {
   extra?: Record<string, string>;
 };
 
-// Format a date as DD/MM/YYYY in UTC for a deterministic, server-side calendar
-// date. Pass the current Date at call time — never bind a module-level
-// constant, or the date freezes at process start.
-export function formatDate(now: Date): string {
-  const day = String(now.getUTCDate()).padStart(2, "0");
-  const month = String(now.getUTCMonth() + 1).padStart(2, "0");
-  const year = now.getUTCFullYear();
-  return `${day}/${month}/${year}`;
+// Whether a string names a timezone Intl can resolve. Used by callers to
+// validate stored/marker-carried zones before they reach the formatter.
+export function isValidTimeZone(timeZone: string): boolean {
+  if (timeZone.length === 0) return false;
+  try {
+    new Intl.DateTimeFormat("en-US", { timeZone });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+// Format a date as the full calendar day in the given IANA timezone, with an
+// explicit zone label so the model knows the frame — e.g.
+// "Tuesday, July 14, 2026 (America/Los_Angeles)". Throws on an invalid zone
+// (Intl's own error); callers validate via isValidTimeZone at the boundary.
+// Pass the current Date at call time — never bind a module-level constant, or
+// the date freezes at process start.
+export function formatDateInTimeZone(now: Date, timeZone: string): string {
+  const formatted = new Intl.DateTimeFormat("en-US", {
+    weekday: "long",
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+    timeZone,
+  }).format(now);
+  return `${formatted} (${timeZone})`;
+}
+
+// Control-plane sentinel carrying the owning member's stored timezone from the
+// hub launch path into the harness (the same prompt-marker seam as the
+// memory-seed marker): the launch config has no open metadata field, and the
+// harness must format a FRESH date at every build, so the zone — not a baked
+// date — rides the persisted prompt. The harness resolves it off the raw base
+// prompt and strips it before the prompt reaches the model.
+const TIMEZONE_MARKER_PATTERN_GLOBAL =
+  /<!--\s*workbench:timezone=([^>]*?)\s*-->/g;
+
+export function buildTimeZoneMarker(timeZone: string): string {
+  if (!isValidTimeZone(timeZone)) {
+    throw new Error(`Invalid IANA timezone: ${timeZone}`);
+  }
+  return `<!-- workbench:timezone=${timeZone} -->`;
+}
+
+// Resolve the member timezone off a launched prompt. Missing or invalid (a
+// legacy/garbage marker) resolves to undefined — the caller falls back to
+// labeled UTC rather than failing the session build.
+export function resolveTimeZoneMarker(
+  systemPrompt: string,
+): string | undefined {
+  const matches = [...systemPrompt.matchAll(TIMEZONE_MARKER_PATTERN_GLOBAL)];
+  const timeZone = matches.at(-1)?.[1];
+  if (timeZone === undefined || !isValidTimeZone(timeZone)) return undefined;
+  return timeZone;
+}
+
+// Remove the timezone marker so the model never sees the control-plane
+// sentinel; collapses the blank lines the removed line leaves behind.
+export function stripTimeZoneMarker(systemPrompt: string): string {
+  return systemPrompt
+    .replace(TIMEZONE_MARKER_PATTERN_GLOBAL, "")
+    .replace(/\n{3,}/g, "\n\n")
+    .trimEnd();
 }
 
 // Build the unified active-context block. `userName` and `extra` values are
@@ -183,7 +247,9 @@ export function buildActiveContext(
   const lines: string[] = [];
   if (context.userName)
     lines.push(`User: ${escapeForFormat(context.userName, format)}`);
-  lines.push(`Current date: ${formatDate(context.now)}`);
+  lines.push(
+    `Current date: ${formatDateInTimeZone(context.now, context.timeZone ?? "UTC")}`,
+  );
   if (context.extra) {
     for (const [label, value] of Object.entries(context.extra)) {
       lines.push(`${label}: ${escapeForFormat(value, format)}`);

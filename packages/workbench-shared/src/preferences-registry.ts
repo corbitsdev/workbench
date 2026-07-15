@@ -53,13 +53,14 @@ export const AvailabilitySignalSchema = type({
 export type AvailabilitySignal = typeof AvailabilitySignalSchema.infer;
 
 /**
- * `boolean` renders a toggle, `select` a dropdown over `options`, and `hourUtc`
+ * `boolean` renders a toggle, `select` a dropdown over `options`, `hourUtc`
  * an hour picker whose value is the UTC hour (0..23) stored server-side while
- * the UI displays the caller's local time.
+ * the UI displays the caller's local time, and `timezone` an IANA-zone picker
+ * whose value is the zone name ("" = unset).
  */
 export const PreferenceEntrySchema = type({
   key: "string",
-  type: "'boolean' | 'select' | 'hourUtc'",
+  type: "'boolean' | 'select' | 'hourUtc' | 'timezone'",
   default: "boolean | string | number",
   label: "string",
   description: "string",
@@ -68,6 +69,9 @@ export const PreferenceEntrySchema = type({
   "availableWhen?": AvailabilitySignalSchema,
 });
 export type PreferenceEntry = typeof PreferenceEntrySchema.infer;
+
+/** Registry key the member's timezone setting is stored under. */
+export const TIMEZONE_PREFERENCE_KEY = "timezone";
 
 const PREFERENCE_REGISTRY_BASE: readonly PreferenceEntry[] = [
   {
@@ -99,6 +103,15 @@ const PREFERENCE_REGISTRY_BASE: readonly PreferenceEntry[] = [
     description: "Notify me when a new message lands in my inbox.",
     category: "Notifications",
     availableWhen: { kind: "workflow-deployed", workflowKind: "heartbeat" },
+  },
+  {
+    key: TIMEZONE_PREFERENCE_KEY,
+    type: "timezone",
+    default: "",
+    label: "Timezone",
+    description:
+      "Dates your agents see are rendered in this timezone. When unset, dates are shown in UTC and labeled as such.",
+    category: "General",
   },
   {
     key: "onboardingTourDone",
@@ -464,10 +477,30 @@ export const PREFERENCE_DEFAULTS: Readonly<
 const hourUtcSchema = type("0 <= number.integer <= 23");
 const booleanSchema = type("boolean");
 
+// Local Intl-backed check rather than importing a prompts-package helper:
+// @workbench/shared stays dependency-free on purpose (see AGENTS.md), so the
+// write-boundary validation duplicates this three-line probe.
+function isResolvableTimeZone(timeZone: string): boolean {
+  try {
+    new Intl.DateTimeFormat("en-US", { timeZone });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+const timeZoneSchema = type("string").narrow(
+  (tz, ctx) =>
+    tz === "" ||
+    isResolvableTimeZone(tz) ||
+    ctx.mustBe("a valid IANA timezone"),
+);
+
 /** The arktype validator for a single entry's value, derived from its type. */
 export function preferenceValueSchema(entry: PreferenceEntry) {
   if (entry.type === "boolean") return booleanSchema;
   if (entry.type === "hourUtc") return hourUtcSchema;
+  if (entry.type === "timezone") return timeZoneSchema;
   return type.enumerated(...(entry.options ?? []).map((o) => o.value));
 }
 
@@ -542,7 +575,7 @@ export function validatePreferencePatch(
 
 export const PreferenceSettingSchema = type({
   key: "string",
-  type: "'boolean' | 'select' | 'hourUtc'",
+  type: "'boolean' | 'select' | 'hourUtc' | 'timezone'",
   default: "boolean | string | number",
   label: "string",
   description: "string",
@@ -568,7 +601,24 @@ function resolveValue(
   if (entry.type === "boolean" && typeof parsed === "boolean") return parsed;
   if (entry.type === "hourUtc" && typeof parsed === "number") return parsed;
   if (entry.type === "select" && typeof parsed === "string") return parsed;
+  if (entry.type === "timezone" && typeof parsed === "string") return parsed;
   return entry.default;
+}
+
+/**
+ * The member's stored timezone, or undefined when unset/invalid. Consumers
+ * (the launch path stamping the prompt timezone marker) MUST resolve through
+ * this rather than reading the raw key, so the unset-means-labeled-UTC
+ * fallback chain (stored member timezone -> labeled UTC, never server-local)
+ * stays in one place.
+ */
+export function resolveMemberTimeZone(
+  stored: Record<string, unknown>,
+): string | undefined {
+  const value = stored[TIMEZONE_PREFERENCE_KEY];
+  if (typeof value !== "string" || value === "") return undefined;
+  if (!isResolvableTimeZone(value)) return undefined;
+  return value;
 }
 
 /**
