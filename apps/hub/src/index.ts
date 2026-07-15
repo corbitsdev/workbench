@@ -894,23 +894,29 @@ app.use(
   createAttachmentCapabilityGuard(db),
 );
 
-// CL-2790: an inbound user message is fresh activity — bump the idle-reaper
-// clock for the target instance so a user mid-conversation is never slept.
-// Also bump the thread's lastActivityAt so the chat list orders active chats
-// first. Best-effort and non-blocking: both side effects are fire-and-forget
-// and we always fall through to the mail route.
+// CL-2790: activity on the mail route bumps the idle-reaper clock for the
+// target instance so a user mid-conversation (or reading it — hydration GETs
+// count) is never slept. Thread activity (lastActivityAt ordering + the
+// first_message_at first-use stamp, CL-3749) is recorded ONLY for message
+// sends: the session-hydration GET hits this same path, and stamping there
+// would mark a just-opened empty chat as used before any message exists —
+// exactly what the deferred sidebar insert must not do. Best-effort and
+// non-blocking: both side effects are fire-and-forget and we always fall
+// through to the mail route.
 app.use(
   "/api/tenants/:tenantId/agents/instances/:instanceId/mail",
   async (c, next) => {
     const instanceId = c.req.param("instanceId");
     if (instanceId) {
       void idleSessionReaper.recordActivityForInstance(instanceId);
-      void recordMyraThreadActivity(db, instanceId).catch((err) => {
-        log.error("failed to record Myra thread activity", {
-          instanceId,
-          error: err instanceof Error ? err : new Error(String(err)),
+      if (c.req.method === "POST") {
+        void recordMyraThreadActivity(db, instanceId).catch((err) => {
+          log.error("failed to record Myra thread activity", {
+            instanceId,
+            error: err instanceof Error ? err : new Error(String(err)),
+          });
         });
-      });
+      }
     }
     await next();
   },

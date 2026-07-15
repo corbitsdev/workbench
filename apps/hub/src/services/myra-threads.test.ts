@@ -262,6 +262,7 @@ describe("createMyraThread", () => {
     updated?: Record<string, unknown>[];
     inserted?: Record<string, unknown>[];
     agentDefs?: Record<string, unknown>[];
+    existingThreads?: Record<string, unknown>[];
   }) {
     const agentDefs = opts.agentDefs ?? [
       {
@@ -283,7 +284,14 @@ describe("createMyraThread", () => {
         agent: {
           findMany: mock(() => Promise.resolve(agentDefs)),
         },
-        memberAgentInstance: { findMany: mock(() => Promise.resolve([])) },
+        memberAgentInstance: {
+          findMany: mock(() => Promise.resolve(opts.existingThreads ?? [])),
+        },
+        agentInstance: {
+          findFirst: mock(() =>
+            Promise.resolve({ principalId: "prn-stale-instance" }),
+          ),
+        },
       },
       transaction: mock(async (fn: (tx: unknown) => Promise<void>) => {
         opts.transactions();
@@ -324,6 +332,9 @@ describe("createMyraThread", () => {
     // First thread gets the default "Chat" label; a real, non-empty instance id.
     expect(result.thread.label).toBe("Chat");
     expect(result.thread.instanceId.length).toBeGreaterThan(0);
+    // A fresh thread has never been used — clients keep it out of the sidebar
+    // until its first message lands (CL-3749).
+    expect(result.thread.firstMessageAt).toBeNull();
     // The instance row is persisted as `deployed` (no session yet); the chat
     // surface cold-launches it on first open.
     const instanceInsert = inserted.find((v) => "address" in v);
@@ -333,6 +344,152 @@ describe("createMyraThread", () => {
     expect(launchAgentSessionMock).not.toHaveBeenCalled();
     expect(txCount).toBe(1);
     expect(deleted).toHaveLength(0);
+  });
+
+  // CL-3749: unused threads are hidden from every list, so repeated "+ New
+  // chat" clicks must not strand invisible rows — an existing never-used
+  // thread IS the new chat.
+  it("hands back an existing never-used thread instead of creating another", async () => {
+    let txCount = 0;
+    const db = buildCreateDb({
+      transactions: () => (txCount += 1),
+      existingThreads: [
+        {
+          id: "map-used",
+          instanceId: "inst-used",
+          label: "Pricing",
+          createdAt: new Date("2026-01-01T00:00:00Z"),
+          lastActivityAt: new Date("2026-01-02T00:00:00Z"),
+          firstMessageAt: new Date("2026-01-02T00:00:00Z"),
+        },
+        {
+          id: "map-unused",
+          instanceId: "inst-unused",
+          agentId: "agt-myra",
+          label: "Chat 2",
+          createdAt: new Date("2026-01-03T00:00:00Z"),
+          lastActivityAt: new Date("2026-01-03T00:00:00Z"),
+          firstMessageAt: null,
+        },
+      ],
+    });
+
+    // biome-ignore lint/suspicious/noExplicitAny: structural db mock
+    const result = await createMyraThread(db as any, {
+      tenantId: "tn-global",
+      tenantDomain: "global.test",
+      memberPrincipalId: "prn-member",
+    });
+
+    expect(result.created).toBe(false);
+    expect(result.thread.id).toBe("map-unused");
+    expect(result.thread.instanceId).toBe("inst-unused");
+    expect(result.thread.firstMessageAt).toBeNull();
+    // No rows written, no session launched — the unused thread is reused as-is.
+    expect(txCount).toBe(0);
+    expect(launchAgentSessionMock).not.toHaveBeenCalled();
+  });
+
+  it("reaps (never reuses) an unused thread deployed against a stale definition", async () => {
+    let txCount = 0;
+    const deleted: unknown[] = [];
+    const db = buildCreateDb({
+      transactions: () => (txCount += 1),
+      deleted,
+      existingThreads: [
+        {
+          id: "map-stale",
+          instanceId: "inst-stale",
+          agentId: "agt-myra-old",
+          label: "Chat",
+          createdAt: new Date("2026-01-03T00:00:00Z"),
+          lastActivityAt: new Date("2026-01-03T00:00:00Z"),
+          firstMessageAt: null,
+        },
+      ],
+    });
+
+    // biome-ignore lint/suspicious/noExplicitAny: structural db mock
+    const result = await createMyraThread(db as any, {
+      tenantId: "tn-global",
+      tenantDomain: "global.test",
+      memberPrincipalId: "prn-member",
+    });
+
+    // A stale-def unused row would hand out an old toolset if reused — and be
+    // stranded forever if merely skipped (hidden, unreachable, undeletable).
+    // It must be torn down while a fresh thread is created.
+    expect(result.created).toBe(true);
+    expect(result.thread.id).not.toBe("map-stale");
+    expect(deleted.length).toBeGreaterThan(0);
+    // Two transactions: the reap teardown and the create.
+    expect(txCount).toBe(2);
+  });
+
+  it("neither reuses nor reaps a custom-labelled unused thread", async () => {
+    let txCount = 0;
+    const deleted: unknown[] = [];
+    const db = buildCreateDb({
+      transactions: () => (txCount += 1),
+      deleted,
+      existingThreads: [
+        {
+          id: "map-named",
+          instanceId: "inst-named",
+          agentId: "agt-myra",
+          label: "Quarterly planning",
+          createdAt: new Date("2026-01-03T00:00:00Z"),
+          lastActivityAt: new Date("2026-01-03T00:00:00Z"),
+          firstMessageAt: null,
+        },
+      ],
+    });
+
+    // biome-ignore lint/suspicious/noExplicitAny: structural db mock
+    const result = await createMyraThread(db as any, {
+      tenantId: "tn-global",
+      tenantDomain: "global.test",
+      memberPrincipalId: "prn-member",
+    });
+
+    // A named thread carries user intent: "+ New chat" must not consume its
+    // identity, and it is never garbage-collected.
+    expect(result.created).toBe(true);
+    expect(result.thread.id).not.toBe("map-named");
+    expect(deleted).toHaveLength(0);
+    expect(txCount).toBe(1);
+  });
+
+  it("still creates a fresh thread for an explicit label even when an unused thread exists", async () => {
+    let txCount = 0;
+    const inserted: Record<string, unknown>[] = [];
+    const db = buildCreateDb({
+      transactions: () => (txCount += 1),
+      inserted,
+      existingThreads: [
+        {
+          id: "map-unused",
+          instanceId: "inst-unused",
+          label: "Chat",
+          createdAt: new Date("2026-01-03T00:00:00Z"),
+          lastActivityAt: new Date("2026-01-03T00:00:00Z"),
+          firstMessageAt: null,
+        },
+      ],
+    });
+
+    // biome-ignore lint/suspicious/noExplicitAny: structural db mock
+    const result = await createMyraThread(db as any, {
+      tenantId: "tn-global",
+      tenantDomain: "global.test",
+      memberPrincipalId: "prn-member",
+      label: "Quarterly planning",
+    });
+
+    expect(result.created).toBe(true);
+    expect(result.thread.label).toBe("Quarterly planning");
+    expect(result.thread.id).not.toBe("map-unused");
+    expect(txCount).toBe(1);
   });
 
   it("reseeds the tenant's own def (CL-2517 wiring)", async () => {
@@ -545,6 +702,7 @@ describe("generateMyraThreadTitle", () => {
       label: string;
       createdAt: Date;
       lastActivityAt: Date;
+      firstMessageAt?: Date | null;
     };
   }) {
     const updateReturning = mock(() =>
@@ -599,6 +757,7 @@ describe("generateMyraThreadTitle", () => {
         label: "Pricing Deep Dive",
         createdAt: new Date("2026-01-01T00:00:00Z"),
         lastActivityAt: new Date("2026-01-04T00:00:00Z"),
+        firstMessageAt: new Date("2026-01-04T00:00:00Z"),
       },
     });
 
@@ -616,6 +775,7 @@ describe("generateMyraThreadTitle", () => {
       label: "Pricing Deep Dive",
       createdAt: "2026-01-01T00:00:00.000Z",
       lastActivityAt: "2026-01-04T00:00:00.000Z",
+      firstMessageAt: "2026-01-04T00:00:00.000Z",
     });
     // The turn was recorded under the thread's instance + tenant.
     expect(lastCreateEventCollectorConfig?.instanceId).toBe("inst-1");
@@ -1056,7 +1216,7 @@ describe("generateMyraThreadTitle", () => {
 });
 
 describe("listMyraThreads", () => {
-  it("maps rows (including lastActivityAt) and falls back to default labels by position", async () => {
+  it("maps rows (including lastActivityAt and firstMessageAt) and falls back to default labels by position", async () => {
     const rows = [
       {
         id: "map-1",
@@ -1064,6 +1224,7 @@ describe("listMyraThreads", () => {
         label: null,
         createdAt: new Date("2026-01-01T00:00:00Z"),
         lastActivityAt: new Date("2026-01-05T00:00:00Z"),
+        firstMessageAt: new Date("2026-01-04T00:00:00Z"),
       },
       {
         id: "map-2",
@@ -1071,6 +1232,7 @@ describe("listMyraThreads", () => {
         label: "  ",
         createdAt: new Date("2026-01-02T00:00:00Z"),
         lastActivityAt: new Date("2026-01-02T00:00:00Z"),
+        firstMessageAt: null,
       },
       {
         id: "map-3",
@@ -1078,6 +1240,7 @@ describe("listMyraThreads", () => {
         label: "Pricing deep dive",
         createdAt: new Date("2026-01-03T00:00:00Z"),
         lastActivityAt: new Date("2026-01-03T00:00:00Z"),
+        firstMessageAt: null,
       },
     ];
     // biome-ignore lint/suspicious/noExplicitAny: structural db mock
@@ -1099,6 +1262,7 @@ describe("listMyraThreads", () => {
         label: "Chat",
         createdAt: "2026-01-01T00:00:00.000Z",
         lastActivityAt: "2026-01-05T00:00:00.000Z",
+        firstMessageAt: "2026-01-04T00:00:00.000Z",
       },
       {
         id: "map-2",
@@ -1106,6 +1270,7 @@ describe("listMyraThreads", () => {
         label: "Chat 2",
         createdAt: "2026-01-02T00:00:00.000Z",
         lastActivityAt: "2026-01-02T00:00:00.000Z",
+        firstMessageAt: null,
       },
       {
         id: "map-3",
@@ -1113,6 +1278,7 @@ describe("listMyraThreads", () => {
         label: "Pricing deep dive",
         createdAt: "2026-01-03T00:00:00.000Z",
         lastActivityAt: "2026-01-03T00:00:00.000Z",
+        firstMessageAt: null,
       },
     ]);
     // Unlimited fetch returned every row, so total is the row count with no
@@ -1201,6 +1367,10 @@ describe("recordMyraThreadActivity", () => {
     // timestamp — i.e. the WHERE targets this instance, not a blanket update.
     expect(updatedTable).toBe(memberAgentInstance);
     expect(setValues?.lastActivityAt).toBeInstanceOf(Date);
+    // CL-3749: the same bump stamps first_message_at (only when still unset —
+    // the value is a COALESCE SQL expression, not a plain Date) so thread
+    // lists can distinguish used threads from never-used ones.
+    expect(setValues?.firstMessageAt).toBeDefined();
     expect(whereArg).toEqual(eq(memberAgentInstance.instanceId, "inst-1"));
   });
 });
@@ -1215,6 +1385,7 @@ describe("renameMyraThread", () => {
           label: "New label",
           createdAt: new Date("2026-01-01T00:00:00Z"),
           lastActivityAt: new Date("2026-01-06T00:00:00Z"),
+          firstMessageAt: new Date("2026-01-05T00:00:00Z"),
         },
       ]),
     );
@@ -1236,6 +1407,7 @@ describe("renameMyraThread", () => {
       label: "New label",
       createdAt: "2026-01-01T00:00:00.000Z",
       lastActivityAt: "2026-01-06T00:00:00.000Z",
+      firstMessageAt: "2026-01-05T00:00:00.000Z",
     });
     expect(returning).toHaveBeenCalled();
   });

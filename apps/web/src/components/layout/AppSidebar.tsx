@@ -110,7 +110,7 @@ export function AppSidebar({
 
   const newChat = () => {
     createThread.mutate(undefined, {
-      onSuccess: (thread) => {
+      onSuccess: ({ thread }) => {
         writeLastActiveThreadId(thread.id);
         navigate(`/chats/${thread.id}`);
         onNavigate?.();

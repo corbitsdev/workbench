@@ -131,7 +131,7 @@ export function PersonalAgentChat() {
 
   const newThread = () => {
     createThread.mutate(undefined, {
-      onSuccess: (thread) => selectThread(thread.id),
+      onSuccess: ({ thread }) => selectThread(thread.id),
     });
   };
 
