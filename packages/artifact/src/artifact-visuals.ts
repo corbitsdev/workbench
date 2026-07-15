@@ -5,7 +5,7 @@
 import type { ArtifactWithSession } from "@workbench/shared";
 import { isLinkedInPostArtifactKind } from "./artifact-kinds";
 import { previewExcerpt } from "./artifact-preview-family";
-import { parseGalleryArtifact } from "./types";
+import { GalleryArtifactParseError, parseGalleryArtifact } from "./types";
 import type { ArtifactVisual, GalleryArtifact } from "./types";
 
 // Default visuals per known artifact kind. The DB `kind` column is free-form,
@@ -295,7 +295,8 @@ export function tryToGalleryArtifact(
 ): GalleryArtifact | undefined {
   try {
     return toGalleryArtifact(artifact);
-  } catch {
-    return undefined;
+  } catch (error) {
+    if (error instanceof GalleryArtifactParseError) return undefined;
+    throw error;
   }
 }

@@ -75,6 +75,38 @@ describe("ArtifactGallery", () => {
     expect(screen.queryByText("Corrupt artifact")).toBeNull();
   });
 
+  it("skips a corrupt artifact in rows view too", () => {
+    const corrupt = {
+      ...artifact,
+      id: "a-2",
+      title: "Corrupt artifact",
+      status: "bogus",
+    } as unknown as ArtifactWithSession;
+    render(
+      React.createElement(ArtifactGallery, {
+        artifacts: [corrupt, artifact],
+        viewMode: "rows",
+      }),
+    );
+    expect(screen.getByText("Sales automation ROI")).toBeDefined();
+    expect(screen.queryByText("Corrupt artifact")).toBeNull();
+  });
+
+  it("shows the empty state, not a table, when every artifact fails mapping", () => {
+    const corrupt = {
+      ...artifact,
+      status: "bogus",
+    } as unknown as ArtifactWithSession;
+    render(
+      React.createElement(ArtifactGallery, {
+        artifacts: [corrupt],
+        viewMode: "rows",
+      }),
+    );
+    expect(screen.getByText(/No artifacts yet/)).toBeDefined();
+    expect(screen.queryByRole("cell")).toBeNull();
+  });
+
   it("shows Load more when hasMore and invokes onLoadMore", () => {
     const onLoadMore = mock(() => {});
     render(
