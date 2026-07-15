@@ -4,7 +4,10 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { type } from "arktype";
 import { escapeXmlContent } from "@workbench/prompts";
 import { pageContextForPathname } from "../page-context";
-import { invalidateMyraThreads } from "./myra-threads-cache";
+import {
+  invalidateMyraThreads,
+  markMyraThreadUsedLocally,
+} from "./myra-threads-cache";
 import {
   ApiError,
   createInstanceSession,
@@ -440,6 +443,10 @@ export function useMyraSession(
   // backoff in scheduleReconnect below. Reset on a fresh identity and once a
   // session goes live.
   const reconnectAttemptsRef = useRef(0);
+  const resolvedInstanceIdRef = useRef<string | null>(null);
+  const [resolvedInstanceId, setResolvedInstanceId] = useState<string | null>(
+    null,
+  );
   if (
     prevIdentity.instanceId !== instanceId ||
     prevIdentity.tenantId !== tenantId
@@ -459,13 +466,15 @@ export function useMyraSession(
     }
     awaitingAgentRef.current = false;
     reconnectAttemptsRef.current = 0;
+    // The previous thread's resolved instance must never leak into the new
+    // identity's renders — it feeds `session.instanceId`, the feedback and
+    // mail-attachment queries, and the auto-title guard (CL-3749). connect()
+    // re-resolves it for the new thread.
+    resolvedInstanceIdRef.current = null;
+    setResolvedInstanceId(null);
   }
   const [, forceUpdate] = useState(0);
   const scheduleStreamRerender = useStreamRerender();
-  const resolvedInstanceIdRef = useRef<string | null>(null);
-  const [resolvedInstanceId, setResolvedInstanceId] = useState<string | null>(
-    null,
-  );
   const [attempt, setAttempt] = useState(0);
 
   const sessionRef = useRef<InstanceSession | null>(null);
@@ -1187,6 +1196,12 @@ export function useMyraSession(
     text: string,
     attachments?: PendingAttachment[],
   ): void | Promise<void> => {
+    // The user is using this thread — surface it in the thread lists, which
+    // hide never-used threads until their first message (CL-3749). Marked on
+    // every send (cheap set-add); only the first one changes anything.
+    if (instanceId !== null) {
+      markMyraThreadUsedLocally(instanceId);
+    }
     const hasAttachments = attachments !== undefined && attachments.length > 0;
     if (hasAttachments) {
       // Attachments are not queued in v1 — they need the parse/mail transport,

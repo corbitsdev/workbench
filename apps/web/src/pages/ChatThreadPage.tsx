@@ -178,7 +178,7 @@ export function ChatThreadPage() {
             disabled={createThread.isPending}
             onClick={() =>
               createThread.mutate(undefined, {
-                onSuccess: (thread) => {
+                onSuccess: ({ thread }) => {
                   writeLastActiveThreadId(thread.id);
                   navigate(`/chats/${thread.id}`, { replace: true });
                 },

@@ -642,12 +642,16 @@ export async function ensureMeSynced(): Promise<MeResponse> {
   return promise;
 }
 
+// `firstMessageAt` is optional at the parse boundary so a hub that predates
+// the column (deploy skew) still parses; a missing value counts as "used"
+// (see isMyraThreadUsed) so nothing is ever hidden by skew.
 const MyraThreadSchema = type({
   id: "string",
   instanceId: "string",
   label: "string",
   createdAt: "string",
   lastActivityAt: "string",
+  "firstMessageAt?": "string | null",
 });
 export type MyraThread = typeof MyraThreadSchema.infer;
 
@@ -657,6 +661,7 @@ export const MyraThreadListItemSchema = type({
   label: "string",
   createdAt: "string",
   lastActivityAt: "string",
+  "firstMessageAt?": "string | null",
 });
 export type MyraThreadListItem = typeof MyraThreadListItemSchema.infer;
 export const MyraThreadPageSchema = type({
@@ -685,15 +690,18 @@ export async function listMyraThreads(
   return parsed;
 }
 
+// `created` is false when the hub handed back an existing never-used thread
+// instead of minting a new one (CL-3749) — navigation treats both the same,
+// but the thread-list cache must not double-count a reused thread.
 const MyraThreadCreateSchema = type({
   thread: MyraThreadSchema,
-  created: "true",
+  created: "boolean",
 });
 
 export async function createMyraThread(
   tenantId: string,
   label?: string,
-): Promise<MyraThread> {
+): Promise<{ thread: MyraThread; created: boolean }> {
   const raw = await hubFetch<unknown>(
     "POST",
     myraThreadsBase(tenantId),
@@ -703,7 +711,7 @@ export async function createMyraThread(
   if (parsed instanceof type.errors) {
     throw new Error(`Invalid Myra thread create response: ${parsed.summary}`);
   }
-  return parsed.thread;
+  return parsed;
 }
 
 const MyraThreadMutateSchema = type({ thread: MyraThreadSchema });
