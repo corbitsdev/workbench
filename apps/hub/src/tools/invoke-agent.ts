@@ -22,6 +22,10 @@ import { launchAgentSession } from "../services/agent-provisioning";
 import { getToolNamesFromCapabilities } from "../lib/tool-registry";
 import { resolveOwningMemberPrincipalId } from "./list-agents";
 import type { ContextToolEntry } from "../lib/tool-registry";
+import {
+  recordInvokedSubagentForConversation,
+  resolveMemberOwnedConversation,
+} from "../services/invoked-subagents";
 
 export { INVOKE_AGENT_DEFINITION };
 
@@ -419,6 +423,31 @@ export function createInvokeAgentTool(
           reused,
           briefLength: brief.length,
         });
+
+        const callerConversation = await resolveMemberOwnedConversation(db, {
+          tenantId,
+          principalId: context.principalId,
+        });
+        if (callerConversation) {
+          const subagentMapping = await db.query.memberAgentInstance.findFirst({
+            where: (m, { and: a, eq: e }) =>
+              a(
+                e(m.tenantId, tenantId),
+                e(m.memberPrincipalId, ownerPrincipalId),
+                e(m.instanceId, instanceId),
+                e(m.templateKey, INVOKE_TEMPLATE_KEY),
+              ),
+          });
+          if (subagentMapping) {
+            await recordInvokedSubagentForConversation({
+              db,
+              tenantId,
+              memberPrincipalId: ownerPrincipalId,
+              originConversationId: callerConversation.conversationId,
+              subagentMappingId: subagentMapping.id,
+            });
+          }
+        }
 
         const result: InvokeResult = {
           instanceId,

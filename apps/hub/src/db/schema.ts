@@ -543,6 +543,21 @@ export const memberAgentInstance = pgTable(
   () => ({}),
 );
 
+/** CL-3686: links a Myra thread (origin conversation) to an invoked subagent mapping. */
+export const memberInvokedSubagent = pgTable(
+  "member_invoked_subagent",
+  {
+    id: text("id").primaryKey(),
+    tenantId: text("tenant_id").notNull(),
+    memberPrincipalId: text("member_principal_id").notNull(),
+    originConversationId: text("origin_conversation_id").notNull(),
+    subagentMappingId: text("subagent_mapping_id").notNull(),
+    firstInvokedAt: timestamp("first_invoked_at").notNull().defaultNow(),
+    lastInvokedAt: timestamp("last_invoked_at").notNull().defaultNow(),
+  },
+  () => ({}),
+);
+
 // ─── Generic versioned templates ───────────────────────────────────
 //
 // `kind` identifies the template type (e.g. 'gamma'). `config` is a jsonb

@@ -130,6 +130,7 @@ import {
 } from "./services/sync-personal-agent";
 import { createMembersRouter } from "./routes/members";
 import { createMyraThreadsRouter } from "./routes/myra-threads";
+import { createInvokedSubagentsRouter } from "./routes/invoked-subagents";
 import {
   recordMyraThreadActivity,
   resolveMyraDefinition,
@@ -1328,6 +1329,7 @@ v1.route(
 );
 v1.route("/", createMembersRouter(db));
 v1.route("/", createMyraThreadsRouter(db, sessionService, analyticsSubscriber));
+v1.route("/", createInvokedSubagentsRouter(db));
 v1.route("/", createArtifactsRouter(db, grantStore));
 v1.route("/", createFileParseRouter(db));
 v1.route("/", createMailAttachmentsRouter(db));

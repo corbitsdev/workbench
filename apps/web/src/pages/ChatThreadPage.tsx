@@ -3,6 +3,7 @@ import { Link, Navigate, useNavigate, useParams } from "react-router";
 import type { ThreadInsert } from "@workbench/chat";
 import { ErrorBoundary } from "../components/ErrorBoundary";
 import { MyraChatSurface } from "../components/MyraChatSurface";
+import { SubagentDock } from "../components/SubagentDock";
 import { WorkflowDock } from "../components/WorkflowDock";
 import { WorkflowEventBubble } from "../components/WorkflowEventBubble";
 import { useMyraSession } from "../hooks/use-myra-session";
@@ -234,12 +235,18 @@ export function ChatThreadPage() {
             chat-initiated starts) stamp the same id as originConversationId. */}
         <div
           ref={dockRef}
-          className="flex h-full motion-safe:transition-shadow data-[dock-focused=1]:shadow-[inset_2px_0_0_0_var(--color-accent)]"
+          className="flex h-full min-h-0 flex-col motion-safe:transition-shadow data-[dock-focused=1]:shadow-[inset_2px_0_0_0_var(--color-accent)]"
         >
-          <WorkflowDock
+          <SubagentDock
             conversationId={active?.id ?? null}
             tenantId={activeTenantId}
           />
+          <div className="min-h-0 flex-1">
+            <WorkflowDock
+              conversationId={active?.id ?? null}
+              tenantId={activeTenantId}
+            />
+          </div>
         </div>
       </div>
     </ErrorBoundary>

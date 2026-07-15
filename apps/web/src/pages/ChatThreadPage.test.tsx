@@ -90,6 +90,14 @@ mock.module("../components/MyraChatSurface", () => ({
     ),
 }));
 
+mock.module("../components/SubagentDock", () => ({
+  SubagentDock: (props: { conversationId: string | null }) =>
+    React.createElement("div", {
+      "data-testid": "subagent-dock",
+      "data-conversation-id": props.conversationId ?? "",
+    }),
+}));
+
 // The dock owns its data fetching and has dedicated tests (WorkflowDock.test.tsx);
 // stub it here so the page test needs no QueryClientProvider or api mock.
 mock.module("../components/WorkflowDock", () => ({
