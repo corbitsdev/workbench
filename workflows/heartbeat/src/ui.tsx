@@ -1,11 +1,10 @@
 import { type } from "arktype";
 import type { RunState, StepState } from "@intx/workflow";
-import { heartbeatIntakeStepKey, WIRED_BRIEF_SOURCES } from "@workbench/shared";
+
 import {
   activeDisplayStep,
   buildRunStepperSteps,
   Button,
-  type DisplayStep,
   FailedRunNotice,
   HorizontalStepper,
   liveStatusLabel,
@@ -15,38 +14,14 @@ import {
   type WorkflowStep,
   workflowPanelShowsShellHeader,
 } from "@workbench/ui";
+import {
+  DISPLAY_STEPS,
+  HEARTBEAT_FAILURE_WATCH_STEP_IDS,
+} from "./display-steps";
 
 // Scheduler-fired and gate-free: this panel is a read-only run view. It has no
 // launch inputs and fires no signals — it reports the steps' progress and
-// renders the delivered brief once it is written. Intake step ids are derived
-// from the wired brief-source catalog, matching how the workflow generates them.
-const INTAKE_STEP_IDS = WIRED_BRIEF_SOURCES.map((source) =>
-  heartbeatIntakeStepKey(source.key),
-);
-
-const DISPLAY_STEPS: DisplayStep[] = [
-  { key: "intake", label: "Sources", stepIds: [...INTAKE_STEP_IDS] },
-  {
-    key: "brief",
-    label: "Brief",
-    stepIds: ["brief"],
-    activityLabel: "Writing your brief",
-  },
-  {
-    key: "save",
-    label: "Save",
-    stepIds: ["persist"],
-    activityLabel: "Saving to your workbench",
-  },
-  {
-    key: "notify",
-    label: "Deliver",
-    stepIds: ["notify"],
-    activityLabel: "Sending to your inbox",
-  },
-];
-
-const ALL_STEP_IDS = [...INTAKE_STEP_IDS, "brief", "persist", "notify"];
+// renders the delivered brief once it is written.
 
 const BriefOutput = type({ reply: "string" });
 
@@ -59,7 +34,7 @@ function phaseFor(state: RunState | null, id: string): StepPhase | undefined {
 function hasFailed(state: RunState | null): boolean {
   if (!state) return false;
   if (state.phase === "failed") return true;
-  for (const id of ALL_STEP_IDS) {
+  for (const id of HEARTBEAT_FAILURE_WATCH_STEP_IDS) {
     if (phaseFor(state, id) === "failed") return true;
   }
   return false;

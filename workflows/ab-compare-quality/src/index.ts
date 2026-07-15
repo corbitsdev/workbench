@@ -1,4 +1,5 @@
 import {
+  abPresetDisplaySteps,
   buildAbPresetWorkflow,
   QUALITY_PRESET,
 } from "@workbench/ab-compare-presets";
@@ -10,3 +11,6 @@ export const label = built.label;
 export const description = built.description;
 export const kind = built.kind;
 export const ARTIFACT_KIND = built.ARTIFACT_KIND;
+export const DISPLAY_STEPS = abPresetDisplaySteps(
+  QUALITY_PRESET.variants.length,
+);

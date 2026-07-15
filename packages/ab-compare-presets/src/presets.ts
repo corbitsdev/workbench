@@ -70,10 +70,10 @@ export const SPEED_PRESET: AbPresetConfig = {
   description:
     "Run one shared prompt blind across four low-latency models (DeepSeek V4 Flash, Gemini 3.5 Flash, Claude Haiku, GPT-5.4 Nano), then pick the winner.",
   variants: blindVariants([
-    "deepseek-v4-flash",
+    { model: "deepseek-v4-flash", provider: LLM_PROVIDER },
     { model: "gemini-3.5-flash", provider: LLM_PROVIDER },
-    "claude-haiku-4-5",
-    "gpt-5.4-nano",
+    { model: "claude-haiku-4-5", provider: LLM_PROVIDER },
+    { model: "gpt-5.4-nano", provider: LLM_PROVIDER },
   ]),
 };
 

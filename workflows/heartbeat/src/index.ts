@@ -15,6 +15,8 @@ export const description =
   "On a schedule, pull recent brief-source data (Granola calls today), synthesize a morning brief, mail it to the user, and save it as an artifact.";
 export const kind = "heartbeat";
 
+export { DISPLAY_STEPS } from "./display-steps";
+
 const MORNING_BRIEF_ARTIFACT_KIND = morningBriefArtifactKind();
 
 // -------------------------------------------------------------------------
@@ -153,10 +155,7 @@ export const workflow = defineWorkflow({
       title: "Link saved brief in mail",
       tool: "heartbeat_format_brief_mail_refs",
       input: {
-        merge: [
-          { from: "trigger.payload" },
-          { from: "steps.persist.output" },
-        ],
+        merge: [{ from: "trigger.payload" }, { from: "steps.persist.output" }],
       },
       argMap: {
         artifactId: { from: "artifactId" },

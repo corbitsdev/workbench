@@ -3,6 +3,42 @@
   "version": "0.1.0",
   "label": "Company Heartbeat",
   "description": "On a schedule, pull recent brief-source data (Granola calls today), synthesize a morning brief, mail it to the user, and save it as an artifact.",
+  "displayFlow": [
+    {
+      "key": "intake",
+      "label": "Sources",
+      "stepIds": [
+        "intake-attio",
+        "intake-granola",
+        "intake-linear",
+        "intake-vercel"
+      ]
+    },
+    {
+      "key": "brief",
+      "label": "Brief",
+      "stepIds": [
+        "brief"
+      ],
+      "activityLabel": "Writing your brief"
+    },
+    {
+      "key": "save",
+      "label": "Save",
+      "stepIds": [
+        "persist"
+      ],
+      "activityLabel": "Saving to your workbench"
+    },
+    {
+      "key": "notify",
+      "label": "Deliver",
+      "stepIds": [
+        "notify"
+      ],
+      "activityLabel": "Sending to your inbox"
+    }
+  ],
   "requiresIntake": false,
   "humanGateCount": 0,
   "definition": {
