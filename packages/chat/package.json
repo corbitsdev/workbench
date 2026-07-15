@@ -11,6 +11,10 @@
       "types": "./src/types.ts",
       "default": "./src/types.ts"
     },
+    "./parts": {
+      "types": "./src/parts.ts",
+      "default": "./src/parts.ts"
+    },
     "./styles.css": "./src/styles.css"
   },
   "scripts": {

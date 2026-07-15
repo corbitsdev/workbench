@@ -1,5 +1,6 @@
 import type { InstanceEvent } from "@intx/hub-client";
-import type { ChatMessage, ChatImage } from "@workbench/chat/types";
+import type { ChatMessage, ChatImage, Part } from "@workbench/chat/types";
+import { liftToParts } from "@workbench/chat/parts";
 import { convertInstanceEvents } from "./adapter";
 
 export const STREAMING_BUBBLE_ID = "streaming-synthetic";
@@ -14,6 +15,12 @@ export interface ComposeChatInput {
   reasoning?: string;
   /** Inline images captured from the current turn's live stream. */
   liveImages?: readonly ChatImage[];
+  /**
+   * Ordered parts for the turn currently streaming, from the part-assembler.
+   * Attached to the synthesized/overwritten trailing live bubble only —
+   * committed messages get their `parts` from `liftToParts` instead.
+   */
+  liveParts?: readonly Part[];
 }
 
 export interface ComposeChatResult {
@@ -51,7 +58,14 @@ function normalizeAssistantText(content: string): string {
 export function composeChatMessages(
   input: ComposeChatInput,
 ): ComposeChatResult {
-  const { events, streaming, toolNames, reasoning = "", liveImages } = input;
+  const {
+    events,
+    streaming,
+    toolNames,
+    reasoning = "",
+    liveImages,
+    liveParts,
+  } = input;
 
   // Content of assistant mail (server-timestamped) and of turns that carry tool
   // calls (the only thing mail cannot represent).
@@ -142,11 +156,11 @@ export function composeChatMessages(
         feedbackTurnId !== undefined
           ? { ...msg, feedbackId: feedbackTurnId }
           : msg;
-      messages.push(
+      const withTrace: ChatMessage =
         trace?.reasoning !== undefined && trace.reasoning.trim() !== ""
           ? { ...withFeedback, reasoning: trace.reasoning }
-          : withFeedback,
-      );
+          : withFeedback;
+      messages.push({ ...withTrace, parts: liftToParts(withTrace) });
     }
   }
 
@@ -163,7 +177,7 @@ export function composeChatMessages(
   // live text would paint over it until it commits (CL-1643).
   //
   // `streaming` here is the current turn's live text only — the caller sources
-  // it from createLiveTextTracker, which reads each delta's per-turn cumulative
+  // it from createPartAssembler, which reads each delta's per-turn cumulative
   // `partial.text` and resets on turn.committed. It must NOT be the interchange
   // session's `streaming` buffer, which accumulates across turns when a turn
   // commits empty and would merge separate replies into one bubble (CL-1643).
@@ -181,6 +195,7 @@ export function composeChatMessages(
       if (liveText !== "") last.content = streaming;
       if (liveReasoning !== "") last.reasoning = reasoning;
       if (hasLiveImages) last.images = [...liveImages!];
+      if (liveParts !== undefined) last.parts = [...liveParts];
       last.status = "sending";
     } else if (liveText !== "") {
       messages.push({
@@ -191,6 +206,7 @@ export function composeChatMessages(
         status: "sending",
         ...(liveReasoning !== "" ? { reasoning } : {}),
         ...(hasLiveImages ? { images: [...liveImages!] } : {}),
+        ...(liveParts !== undefined ? { parts: [...liveParts] } : {}),
       });
     } else if (liveReasoning !== "" || hasLiveImages) {
       // Reasoning only or images only — agent is thinking/producing output with no text yet.
@@ -202,6 +218,7 @@ export function composeChatMessages(
         status: "sending",
         ...(liveReasoning !== "" ? { reasoning } : {}),
         ...(hasLiveImages ? { images: [...liveImages!] } : {}),
+        ...(liveParts !== undefined ? { parts: [...liveParts] } : {}),
       });
     }
   }

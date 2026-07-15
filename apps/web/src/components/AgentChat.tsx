@@ -8,14 +8,8 @@ import {
   summarizeToolCalls,
   isCatalogMetaTool,
   isExternalIntegrationTool,
-  createToolNameTracker,
-  createLiveTextTracker,
-  createReasoningTracker,
-  createImageTracker,
-  type ToolNameTracker,
-  type LiveTextTracker,
-  type ReasoningTracker,
-  type ImageTracker,
+  createPartAssembler,
+  type PartAssembler,
 } from "@workbench/agents/browser";
 import {
   ChatPanel,
@@ -28,7 +22,6 @@ import {
 } from "@workbench/chat";
 import { useCompactToolActivity, useToolSummaryStyle } from "@workbench/ui";
 import { createArtifact } from "@workbench/client";
-import { type AgentActivity } from "@intx/hub-client";
 import { clientOptions } from "../lib/client-options";
 import { createChatToolSummaryFormatter } from "../lib/chat-tool-summary";
 import { useApprovalDisplayLookups } from "../hooks/use-approval-display-lookups";
@@ -121,10 +114,7 @@ export function AgentChat({
 
   const sessionRef = useRef<InstanceSession | null>(null);
   const stopRef = useRef<(() => void) | null>(null);
-  const toolNamesRef = useRef<ToolNameTracker | null>(null);
-  const liveTextRef = useRef<LiveTextTracker | null>(null);
-  const reasoningRef = useRef<ReasoningTracker | null>(null);
-  const imageTrackerRef = useRef<ImageTracker | null>(null);
+  const assemblerRef = useRef<PartAssembler | null>(null);
   const attachmentUrlsRef = useRef<Map<string, Promise<string>>>(new Map());
   const queryClient = useQueryClient();
 
@@ -164,16 +154,13 @@ export function AgentChat({
     },
   });
 
-  // Same suppression rationale as use-myra-session: an aborted turn settles
-  // by putting the agent to sleep, which emits no further agent events, so
-  // the stale "thinking" activity is cleared locally. Cleared on the next
-  // send AND on the first genuinely-new activity event, so a new turn is
-  // never hidden and the stop button stays reachable.
-  const [activitySuppressed, setActivitySuppressed] = useState(false);
-  const suppressedActivityRef = useRef<AgentActivity | null>(null);
   const { mutateAsync: abortMutateAsync } = useMutation({
     mutationFn: () => abortInstanceTurn(instanceId),
   });
+  // The sidecar settles an aborted turn by putting the agent to sleep, which
+  // emits no further agent events. Rather than a second suppression signal,
+  // the assembler closes its own open part locally so the derived activity
+  // settles to null immediately.
   const abortTurn = useCallback(async (): Promise<void> => {
     try {
       await abortMutateAsync();
@@ -184,8 +171,7 @@ export function AgentChat({
           : `Couldn't stop ${agentName}. Try again.`;
       throw new Error(message);
     }
-    suppressedActivityRef.current = sessionRef.current?.activity ?? null;
-    setActivitySuppressed(true);
+    assemblerRef.current?.closeOpenPart();
   }, [abortMutateAsync, agentName]);
 
   // Feedback line for document block actions (copy / save-artifact).
@@ -315,14 +301,8 @@ export function AgentChat({
         setSessionState({ phase: "error", message: err.message });
         stopRef.current?.();
         stopRef.current = null;
-        toolNamesRef.current?.stop();
-        toolNamesRef.current = null;
-        liveTextRef.current?.stop();
-        liveTextRef.current = null;
-        reasoningRef.current?.stop();
-        reasoningRef.current = null;
-        imageTrackerRef.current?.stop();
-        imageTrackerRef.current = null;
+        assemblerRef.current?.stop();
+        assemblerRef.current = null;
         sessionRef.current?.destroy();
         sessionRef.current = null;
       },
@@ -344,15 +324,13 @@ export function AgentChat({
     const stop = session.start();
     stopRef.current = stop;
 
-    // Capture tool names from the live stream so committed turns whose tool
-    // "call" part failed to persist still render the real tool instead of a
-    // generic "Tool call" (see CL-1398).
-    // toolNameTracker retains its onUpdate because tool names are resolved once
-    // per tool call (not per streaming token), so the extra render is rare and
-    // does not cause per-token stutter. Unlike liveTextTracker, the cost of
-    // missing a render here (tool name stays as "Tool call" after commit) is
-    // visible to the user.
-    toolNamesRef.current = createToolNameTracker(
+    // Single subscription that builds the ordered live parts (and, from them,
+    // tool names / live text / reasoning / images / activity) for the turn
+    // currently streaming — replaces the four separate trackers. Tool names
+    // resolve once per call (not per token), so onUpdate here is cheap; a
+    // committed turn whose tool "call" part failed to persist (CL-1398)
+    // still renders the real name instead of a generic "Tool call".
+    assemblerRef.current = createPartAssembler(
       transport,
       { tenantId, instanceId },
       () => {
@@ -360,47 +338,14 @@ export function AgentChat({
       },
     );
 
-    // Track the current turn's live text from the raw stream. The session's own
-    // `streaming` buffer accumulates across turns when a turn commits empty
-    // (CL-1398) and would merge separate replies into one bubble (CL-1643).
-    // No onUpdate — the session's onChange is the sole render trigger. The
-    // tracker updates its internal text silently; reading it at render time
-    // avoids a double-render race where the session and tracker connections
-    // deliver the same delta at slightly different times (three independent
-    // SSE connections to the same endpoint).
-    liveTextRef.current = createLiveTextTracker(transport, {
-      tenantId,
-      instanceId,
-    });
-
-    // Live reasoning for the current turn, sourced like the text tracker. No
-    // onUpdate — the session's onChange drives renders; we read it at render.
-    reasoningRef.current = createReasoningTracker(transport, {
-      tenantId,
-      instanceId,
-    });
-
-    // Live images for the current turn. No onUpdate — the session's onChange
-    // drives renders; we read the captured images at render time.
-    imageTrackerRef.current = createImageTracker(transport, {
-      tenantId,
-      instanceId,
-    });
-
     if (!cancelled) setSessionState({ phase: "ready", session });
 
     return () => {
       cancelled = true;
       stopRef.current?.();
       stopRef.current = null;
-      toolNamesRef.current?.stop();
-      toolNamesRef.current = null;
-      liveTextRef.current?.stop();
-      liveTextRef.current = null;
-      reasoningRef.current?.stop();
-      reasoningRef.current = null;
-      imageTrackerRef.current?.stop();
-      imageTrackerRef.current = null;
+      assemblerRef.current?.stop();
+      assemblerRef.current = null;
       sessionRef.current?.destroy();
       sessionRef.current = null;
       const urls = attachmentUrlsRef.current;
@@ -427,17 +372,16 @@ export function AgentChat({
   );
 
   function buildMessages(session: InstanceSession): ChatMessage[] {
+    const assembler = assemblerRef.current;
     const { messages } = composeChatMessages({
       events: session.events,
-      streaming: liveTextRef.current !== null ? liveTextRef.current.text : "",
-      reasoning: reasoningRef.current !== null ? reasoningRef.current.text : "",
-      ...(toolNamesRef.current !== null
-        ? { toolNames: toolNamesRef.current.names }
+      streaming: assembler !== null ? assembler.text : "",
+      reasoning: assembler !== null ? assembler.reasoning : "",
+      ...(assembler !== null ? { toolNames: assembler.toolNames } : {}),
+      ...(assembler !== null && assembler.liveImages.length > 0
+        ? { liveImages: assembler.liveImages }
         : {}),
-      ...(imageTrackerRef.current !== null &&
-      imageTrackerRef.current.images.length > 0
-        ? { liveImages: imageTrackerRef.current.images }
-        : {}),
+      ...(assembler !== null ? { liveParts: assembler.parts } : {}),
     });
     return messages;
   }
@@ -528,29 +472,21 @@ export function AgentChat({
 
   const { session } = sessionState;
   const messages = buildMessages(session);
-  function toChatActivity(a: AgentActivity | null): ChatActivity | null {
-    if (a === null) return null;
-    if (a.type === "inferring") return { type: "thinking" };
-    return a as ChatActivity;
-  }
 
-  // Render-phase adjustment: the first activity value that differs from the
-  // one captured at abort time is a new turn — stop hiding it.
-  if (
-    activitySuppressed &&
-    session.activity !== suppressedActivityRef.current
-  ) {
-    setActivitySuppressed(false);
+  // Live activity is derived from the assembler's trailing open part — the
+  // single owner of "what is the agent doing right now." rate_limited stays
+  // on the session's own status channel, never folded into parts, and it
+  // wins over the assembler's derived state: retries happen mid-inference,
+  // when the assembler still reports "thinking", and the retry countdown
+  // must surface.
+  let activity: ChatActivity | null = null;
+  if (session.activity?.type === "rate_limited") {
+    activity = session.activity;
+  } else if (assemblerRef.current !== null) {
+    activity = assemblerRef.current.activity;
   }
-  const suppressed =
-    activitySuppressed && session.activity === suppressedActivityRef.current;
-  const activity: ChatActivity | null = suppressed
-    ? null
-    : toChatActivity(session.activity);
 
   const sendText = (text: string) => {
-    // A new turn is starting — let its real events drive the busy indicator.
-    setActivitySuppressed(false);
     void session.sendMail(text).catch((err: unknown) => {
       const message = err instanceof Error ? err.message : String(err);
       setSessionState({ phase: "error", message });

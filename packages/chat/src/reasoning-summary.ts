@@ -2,7 +2,7 @@
  * Reasoning summarization for the turn activity block.
  *
  * The agent's reasoning arrives as one cumulative markdown string (see
- * createReasoningTracker). For the collapsed activity block we surface a single
+ * createPartAssembler). For the collapsed activity block we surface a single
  * rolling label — the latest *meaningful* step — while the full raw trace stays
  * available on expand. Low-signal tool-discovery narration ("Looking for tools
  * about X", "Bringing 4 tools online") is filtered from the label so it never

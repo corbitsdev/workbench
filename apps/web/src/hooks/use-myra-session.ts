@@ -10,17 +10,10 @@ import {
   type InstanceSession,
   type Transport,
 } from "@intx/hub-client";
-import { type AgentActivity } from "@intx/hub-client";
 import {
   composeChatMessages,
-  createToolNameTracker,
-  createLiveTextTracker,
-  createReasoningTracker,
-  createImageTracker,
-  type ToolNameTracker,
-  type LiveTextTracker,
-  type ReasoningTracker,
-  type ImageTracker,
+  createPartAssembler,
+  type PartAssembler,
 } from "@workbench/agents/browser";
 import type {
   ChatActivity,
@@ -271,29 +264,6 @@ export function composeWithDocumentContext(
   return `<context>\n${blocks}\n</context>${trimmed !== "" ? `\n\n${trimmed}` : ""}`;
 }
 
-// The per-session stream trackers, built together and torn down together.
-// Tool names feed committed turns whose tool "call" part failed to persist
-// (CL-1398); live text/reasoning/images track the current turn from the raw
-// stream (CL-1643). Only the tool-name tracker takes a change callback.
-function createSessionTrackers(
-  transport: Transport,
-  target: { tenantId: string; instanceId: string },
-  onChange: () => void,
-) {
-  return {
-    toolNames: createToolNameTracker(transport, target, onChange),
-    liveText: createLiveTextTracker(transport, target),
-    reasoning: createReasoningTracker(transport, target),
-    image: createImageTracker(transport, target),
-  };
-}
-
-function toChatActivity(a: AgentActivity | null): ChatActivity | null {
-  if (a === null) return null;
-  if (a.type === "inferring") return { type: "thinking" };
-  return a as ChatActivity;
-}
-
 export type MyraSession = {
   state: MyraSessionPhase;
   messages: ChatMessage[];
@@ -384,16 +354,6 @@ export function useMyraSession(
   const [hasBeenLive, setHasBeenLive] = useState(false);
   // Interchange session id from launch — scopes ReviewGate to this chat (CL-3286).
   const [sessionId, setSessionId] = useState<string | null>(null);
-  // The sidecar settles an aborted turn by putting the agent to sleep, which
-  // emits no further agent events — the live activity signal would otherwise
-  // linger as "thinking" forever. Suppress it locally after a successful
-  // abort. The suppression clears on the next send AND on the first
-  // genuinely-new activity event (compared by identity against the value
-  // captured at abort time), so a new turn started elsewhere — e.g. a
-  // parked-mail replay wake — is never hidden and the stop button stays
-  // reachable.
-  const [activitySuppressed, setActivitySuppressed] = useState(false);
-  const suppressedActivityRef = useRef<AgentActivity | null>(null);
   // Text sends made while not `live`, replayed in order once the session
   // reconnects; and the last history snapshot, kept on screen across the brief
   // teardown that precedes a reconnect.
@@ -408,7 +368,6 @@ export function useMyraSession(
     setLive(false);
     setHasBeenLive(false);
     setSessionId(null);
-    setActivitySuppressed(false);
     // Drop the previous thread's queued sends and history snapshot so a new
     // thread never renders the old one's messages (CL-3280).
     pendingQueueRef.current = [];
@@ -423,10 +382,7 @@ export function useMyraSession(
 
   const sessionRef = useRef<InstanceSession | null>(null);
   const stopRef = useRef<(() => void) | null>(null);
-  const toolNamesRef = useRef<ToolNameTracker | null>(null);
-  const liveTextRef = useRef<LiveTextTracker | null>(null);
-  const reasoningRef = useRef<ReasoningTracker | null>(null);
-  const imageTrackerRef = useRef<ImageTracker | null>(null);
+  const assemblerRef = useRef<PartAssembler | null>(null);
   const transportRef = useRef<Transport | null>(null);
   // blobId → in-flight/settled object-URL promise, so a re-render never
   // re-fetches the same blob. Cleared and revoked on session teardown.
@@ -462,14 +418,8 @@ export function useMyraSession(
   const teardownSubscriptions = useCallback(() => {
     stopRef.current?.();
     stopRef.current = null;
-    toolNamesRef.current?.stop();
-    toolNamesRef.current = null;
-    liveTextRef.current?.stop();
-    liveTextRef.current = null;
-    reasoningRef.current?.stop();
-    reasoningRef.current = null;
-    imageTrackerRef.current?.stop();
-    imageTrackerRef.current = null;
+    assemblerRef.current?.stop();
+    assemblerRef.current = null;
     transportRef.current = null;
     sessionRef.current?.destroy();
     sessionRef.current = null;
@@ -707,17 +657,13 @@ export function useMyraSession(
         const stop = session.start();
         stopRef.current = stop;
 
-        const trackers = createSessionTrackers(
+        assemblerRef.current = createPartAssembler(
           transport,
           { tenantId: targetTenantId, instanceId: targetInstanceId },
           () => {
             if (!cancelled) forceUpdate((n) => n + 1);
           },
         );
-        toolNamesRef.current = trackers.toolNames;
-        liveTextRef.current = trackers.liveText;
-        reasoningRef.current = trackers.reasoning;
-        imageTrackerRef.current = trackers.image;
 
         if (!cancelled) setState({ phase: "ready", session });
 
@@ -822,8 +768,7 @@ export function useMyraSession(
           : "Couldn't stop Myra. Try again.";
       throw new Error(message);
     }
-    suppressedActivityRef.current = sessionRef.current?.activity ?? null;
-    setActivitySuppressed(true);
+    assemblerRef.current?.closeOpenPart();
   }, [abortMutateAsync]);
 
   const reconnect = useCallback(() => setAttempt((n) => n + 1), []);
@@ -849,15 +794,19 @@ export function useMyraSession(
   const composed: ChatMessage[] = activeSession
     ? composeChatMessages({
         events: activeSession.events,
-        streaming: liveTextRef.current !== null ? liveTextRef.current.text : "",
+        streaming:
+          assemblerRef.current !== null ? assemblerRef.current.text : "",
         reasoning:
-          reasoningRef.current !== null ? reasoningRef.current.text : "",
-        ...(toolNamesRef.current !== null
-          ? { toolNames: toolNamesRef.current.names }
+          assemblerRef.current !== null ? assemblerRef.current.reasoning : "",
+        ...(assemblerRef.current !== null
+          ? { toolNames: assemblerRef.current.toolNames }
           : {}),
-        ...(imageTrackerRef.current !== null &&
-        imageTrackerRef.current.images.length > 0
-          ? { liveImages: imageTrackerRef.current.images }
+        ...(assemblerRef.current !== null &&
+        assemblerRef.current.liveImages.length > 0
+          ? { liveImages: assemblerRef.current.liveImages }
+          : {}),
+        ...(assemblerRef.current !== null
+          ? { liveParts: assemblerRef.current.parts }
           : {}),
       }).messages
     : [];
@@ -905,17 +854,19 @@ export function useMyraSession(
     connectionNotice = hasBeenLive ? "reconnecting" : "connecting";
   }
 
-  // Render-phase adjustment (same pattern as prevIdentity above): the first
-  // activity value that differs from the one captured at abort time is a new
-  // turn — stop hiding it.
+  // Live activity is derived from the assembler's trailing open part — the
+  // single owner of "what is the agent doing right now." rate_limited stays
+  // on the session's own status channel, never folded into parts, and it
+  // wins over the assembler's derived state: retries happen mid-inference,
+  // when the assembler still reports "thinking", and the retry countdown
+  // must surface.
   const rawActivity = activeSession ? activeSession.activity : null;
-  if (activitySuppressed && rawActivity !== suppressedActivityRef.current) {
-    setActivitySuppressed(false);
+  let activity: ChatActivity | null = null;
+  if (rawActivity?.type === "rate_limited") {
+    activity = rawActivity;
+  } else if (assemblerRef.current !== null) {
+    activity = assemblerRef.current.activity;
   }
-  const suppressed =
-    activitySuppressed && rawActivity === suppressedActivityRef.current;
-  const activity =
-    activeSession && !suppressed ? toChatActivity(rawActivity) : null;
 
   const sendWithAttachments = async (
     text: string,
@@ -1032,9 +983,6 @@ export function useMyraSession(
     text: string,
     attachments?: PendingAttachment[],
   ): void | Promise<void> => {
-    // A new turn is starting — let its real activity events drive the busy
-    // indicator again after an earlier abort suppressed a stale one.
-    setActivitySuppressed(false);
     const hasAttachments = attachments !== undefined && attachments.length > 0;
     if (hasAttachments) {
       // Attachments are not queued in v1 — they need the parse/mail transport,

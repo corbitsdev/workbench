@@ -5,11 +5,11 @@ import { act, cleanup, render, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { LaunchInstanceSessionResponse } from "../lib/hub-api";
 
-// A terminal stream error (CL-3148's give-up path) must tear down every
-// sibling tracker subscription the same way unmount does, not just the main
-// session subscription — otherwise the trackers keep retrying to their own
+// A terminal stream error (CL-3148's give-up path) must tear down the
+// part-assembler subscription the same way unmount does, not just the main
+// session subscription — otherwise the assembler keeps retrying to its own
 // give-up cap after the UI has already shown phase=error (CL-3211). This
-// module-mocks instance-transport and the tracker factories directly so the
+// module-mocks instance-transport and the assembler factory directly so the
 // terminal failure can be triggered synchronously instead of waiting out a
 // real give-up timer.
 let capturedOnStreamError: ((err: Error) => void) | null = null;
@@ -24,10 +24,7 @@ mock.module("../lib/instance-transport", () => ({
   fetchBlobObjectUrl: mock(() => Promise.resolve("blob:stub")),
 }));
 
-const mockToolNamesStop = mock();
-const mockLiveTextStop = mock();
-const mockReasoningStop = mock();
-const mockImageStop = mock();
+const mockAssemblerStop = mock();
 
 mock.module("@workbench/agents/browser", () => ({
   composeChatMessages: mock(() => ({ messages: [] })),
@@ -36,13 +33,16 @@ mock.module("@workbench/agents/browser", () => ({
   isCatalogMetaTool: mock(() => false),
   isExternalIntegrationTool: mock(() => false),
   summarizeToolCalls: mock(() => []),
-  createToolNameTracker: mock(() => ({
-    names: {},
-    stop: mockToolNamesStop,
+  createPartAssembler: mock(() => ({
+    parts: [],
+    text: "",
+    reasoning: "",
+    toolNames: new Map(),
+    liveImages: [],
+    activity: null,
+    closeOpenPart: () => {},
+    stop: mockAssemblerStop,
   })),
-  createLiveTextTracker: mock(() => ({ text: "", stop: mockLiveTextStop })),
-  createReasoningTracker: mock(() => ({ text: "", stop: mockReasoningStop })),
-  createImageTracker: mock(() => ({ images: [], stop: mockImageStop })),
 }));
 
 const mockStop = mock();
@@ -120,10 +120,7 @@ afterEach(() => {
   mockStart.mockClear();
   mockStop.mockClear();
   mockDestroy.mockClear();
-  mockToolNamesStop.mockClear();
-  mockLiveTextStop.mockClear();
-  mockReasoningStop.mockClear();
-  mockImageStop.mockClear();
+  mockAssemblerStop.mockClear();
 });
 
 function renderAgentChat() {
@@ -138,7 +135,7 @@ function renderAgentChat() {
 }
 
 describe("AgentChat — terminal stream error teardown", () => {
-  it("stops every sibling tracker subscription, not just the session, on a terminal stream error", async () => {
+  it("stops the part-assembler subscription, not just the session, on a terminal stream error", async () => {
     renderAgentChat();
 
     await waitFor(() => {
@@ -153,10 +150,7 @@ describe("AgentChat — terminal stream error teardown", () => {
     });
 
     expect(mockStop).toHaveBeenCalled();
-    expect(mockToolNamesStop).toHaveBeenCalled();
-    expect(mockLiveTextStop).toHaveBeenCalled();
-    expect(mockReasoningStop).toHaveBeenCalled();
-    expect(mockImageStop).toHaveBeenCalled();
+    expect(mockAssemblerStop).toHaveBeenCalled();
     expect(mockDestroy).toHaveBeenCalled();
   });
 });

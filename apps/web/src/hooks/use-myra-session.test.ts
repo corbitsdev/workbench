@@ -125,12 +125,12 @@ mock.module("../lib/instance-transport", () => ({
     Promise.resolve("blob:artifact-test"),
 }));
 
-const trackerStops = {
-  toolNames: mock(),
-  liveText: mock(),
-  reasoning: mock(),
-  image: mock(),
-};
+const assemblerStop = mock();
+// Drives result.current.activity in tests that exercise activity derivation
+// (now sourced purely from the part-assembler's trailing-part state, not the
+// session's own `activity` field). Reset in beforeEach.
+let assemblerActivity: { type: string; name?: string } | null = null;
+let capturedAssemblerOnUpdate: (() => void) | null = null;
 
 mock.module("@workbench/agents/browser", () => ({
   composeChatMessages: (input: { events?: StubEvent[] }) => ({
@@ -141,10 +141,28 @@ mock.module("@workbench/agents/browser", () => ({
       createdAt: "",
     })),
   }),
-  createToolNameTracker: () => ({ stop: trackerStops.toolNames, names: {} }),
-  createLiveTextTracker: () => ({ stop: trackerStops.liveText, text: "" }),
-  createReasoningTracker: () => ({ stop: trackerStops.reasoning, text: "" }),
-  createImageTracker: () => ({ stop: trackerStops.image, images: [] }),
+  createPartAssembler: (
+    _transport: unknown,
+    _params: unknown,
+    onUpdate?: () => void,
+  ) => {
+    capturedAssemblerOnUpdate = onUpdate ?? null;
+    return {
+      stop: assemblerStop,
+      parts: [],
+      text: "",
+      reasoning: "",
+      toolNames: new Map(),
+      liveImages: [],
+      get activity() {
+        return assemblerActivity;
+      },
+      closeOpenPart: () => {
+        assemblerActivity = null;
+        onUpdate?.();
+      },
+    };
+  },
 }));
 
 const {
@@ -175,10 +193,9 @@ beforeEach(() => {
   sessionActivity = null;
   capturedOnChange = null;
   capturedOnStreamError = null;
-  trackerStops.toolNames.mockClear();
-  trackerStops.liveText.mockClear();
-  trackerStops.reasoning.mockClear();
-  trackerStops.image.mockClear();
+  assemblerStop.mockClear();
+  assemblerActivity = null;
+  capturedAssemblerOnUpdate = null;
 });
 
 afterEach(() => {
@@ -375,7 +392,7 @@ describe("useMyraSession launch gating (CL-2309 smoothness)", () => {
 });
 
 describe("useMyraSession — terminal stream error teardown (CL-3211)", () => {
-  it("stops every sibling tracker subscription, not just the session, on a terminal stream error", async () => {
+  it("stops the part-assembler subscription, not just the session, on a terminal stream error", async () => {
     renderHook(() => useMyraSession("inst-1", "tnt-acme", true), { wrapper });
     await waitFor(() => expect(sessionStops).toHaveLength(1));
     await waitFor(() => expect(capturedOnStreamError).not.toBeNull());
@@ -386,10 +403,7 @@ describe("useMyraSession — terminal stream error teardown (CL-3211)", () => {
     });
 
     expect(sessionStops[0]).toHaveBeenCalled();
-    expect(trackerStops.toolNames).toHaveBeenCalled();
-    expect(trackerStops.liveText).toHaveBeenCalled();
-    expect(trackerStops.reasoning).toHaveBeenCalled();
-    expect(trackerStops.image).toHaveBeenCalled();
+    expect(assemblerStop).toHaveBeenCalled();
     expect(destroyed[0]).toBe(1);
   });
 
@@ -938,9 +952,9 @@ describe("useMyraSession send() image diversion (image-upload 400 fix)", () => {
   });
 });
 
-describe("useMyraSession abortTurn activity suppression (stop-turn UX)", () => {
-  it("suppresses stale activity after an abort and clears it on the first new activity event", async () => {
-    sessionActivity = { type: "inferring" };
+describe("useMyraSession abortTurn closes the assembler's open part (stop-turn UX)", () => {
+  it("closes the open part locally on abort, settling the indicator without waiting for a reset event", async () => {
+    assemblerActivity = { type: "thinking" };
     const { result } = renderHook(
       () => useMyraSession("inst-1", "tnt-acme", true),
       { wrapper },
@@ -953,14 +967,45 @@ describe("useMyraSession abortTurn activity suppression (stop-turn UX)", () => {
     });
 
     // Stop the turn: the sidecar sleeps the agent and emits nothing more, so
-    // the stale activity must be hidden locally.
+    // closeOpenPart must settle the indicator locally, with no suppression flag.
     await act(async () => {
       await result.current.abortTurn();
     });
     expect(result.current.activity).toBeNull();
 
-    // A genuinely-new activity event (e.g. a parked-mail replay wake starting
-    // a new turn) must surface — the stop button has to stay reachable.
+    // A genuinely-new turn (e.g. a parked-mail replay wake) must surface —
+    // the stop button has to stay reachable.
+    act(() => {
+      assemblerActivity = { type: "thinking" };
+      capturedAssemblerOnUpdate?.();
+    });
+    await waitFor(() => {
+      expect(result.current.activity).toEqual({ type: "thinking" });
+    });
+  });
+});
+
+describe("useMyraSession activity precedence", () => {
+  it("surfaces the session's rate_limited over the assembler's derived thinking so the retry countdown renders", async () => {
+    // Rate-limit retries happen mid-inference, while the assembler's trailing
+    // part is still open and derives "thinking" — rate_limited must win.
+    assemblerActivity = { type: "thinking" };
+    sessionActivity = { type: "rate_limited", retryAfterMs: 5000 };
+    const { result } = renderHook(
+      () => useMyraSession("inst-1", "tnt-acme", true),
+      { wrapper },
+    );
+    await waitFor(() => {
+      expect(result.current.state.phase).toBe("ready");
+    });
+    await waitFor(() => {
+      expect(result.current.activity).toEqual({
+        type: "rate_limited",
+        retryAfterMs: 5000,
+      });
+    });
+
+    // Once the retry clears, the assembler's derived state surfaces again.
     act(() => {
       sessionActivity = { type: "inferring" };
       capturedOnChange?.();

@@ -48,10 +48,16 @@ mock.module("../lib/instance-transport", () => ({
 
 mock.module("@workbench/agents/browser", () => ({
   composeChatMessages: () => ({ messages: [] }),
-  createToolNameTracker: () => ({ stop: () => {}, names: {} }),
-  createLiveTextTracker: () => ({ stop: () => {}, text: "" }),
-  createReasoningTracker: () => ({ stop: () => {}, text: "" }),
-  createImageTracker: () => ({ stop: () => {}, images: [] }),
+  createPartAssembler: () => ({
+    stop: () => {},
+    parts: [],
+    text: "",
+    reasoning: "",
+    toolNames: new Map(),
+    liveImages: [],
+    activity: null,
+    closeOpenPart: () => {},
+  }),
 }));
 
 const { useMyraSession } = await import("./use-myra-session");
