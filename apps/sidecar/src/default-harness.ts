@@ -47,7 +47,7 @@ import { PERSONAL_AGENT_NAME, isTriageSessionPrompt } from "@workbench/myra";
 import { createAskPrincipalTool } from "@workbench/approvals";
 import { seedWorkspaceFiles } from "./seed-workspace-files";
 import { healTurns } from "@workbench/context-repair";
-import { withActiveContext } from "@workbench/prompts";
+import { promptFormatForProvider, withActiveContext } from "@workbench/prompts";
 import { createGuardedMailRunner } from "./mail-guard";
 import {
   createApprovalClient,
@@ -199,10 +199,18 @@ export function createDefaultHarnessBuilder({
       // (CL-1938). The human user's name is not resolvable at this seam — the
       // agentConfig principal is the synthetic per-instance principal — so only
       // the live date is populated until user identity is threaded through the
-      // launch config.
-      const systemPrompt = withActiveContext(cleanedPrompt, {
-        now: new Date(),
-      });
+      // launch config. Rendered in the provider-appropriate format, keyed off
+      // the default inference source's provider — the same rule the hub uses
+      // for the launch prompt's own sections.
+      const defaultProvider =
+        sources.find((s) => s.id === defaultSource)?.provider ??
+        sources[0]?.provider ??
+        "";
+      const systemPrompt = withActiveContext(
+        cleanedPrompt,
+        { now: new Date() },
+        promptFormatForProvider(defaultProvider),
+      );
 
       // Dynamic tool exposure (CL-2808): opt-in agents advertise only a base
       // set plus the catalog tools on turn one; the rest are discoverable via

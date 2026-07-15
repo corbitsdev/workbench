@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { eq, and, inArray, like } from "drizzle-orm";
 import { schema as intxSchema, resolveModelSources } from "@intx/db";
 import type { DB } from "@intx/db";
@@ -20,6 +21,7 @@ import {
   normalizePageContextInput,
 } from "../lib/page-context";
 import { composePersonalAgentPromptForInstance } from "../lib/operator-profile";
+import { PERSONAL_AGENT_PROMPT_VERSION } from "@workbench/myra";
 import {
   buildToolDefinitions,
   getToolNamesFromCapabilities,
@@ -364,6 +366,7 @@ export async function launchAgentSession(
     sources.find((s) => s.id === defaultSource)?.provider ??
     sources[0]!.provider;
   let effectiveSystemPrompt = systemPrompt;
+  let personalAgentPromptComposed = false;
   if (!opts.persona) {
     try {
       const personalized = await composePersonalAgentPromptForInstance(db, {
@@ -373,6 +376,7 @@ export async function launchAgentSession(
       });
       if (personalized !== null) {
         effectiveSystemPrompt = personalized;
+        personalAgentPromptComposed = true;
       }
     } catch (err) {
       log.warn(
@@ -392,6 +396,24 @@ export async function launchAgentSession(
       pageContext,
       defaultSourceProvider,
     );
+  }
+
+  // Structured, hash-only launch record for the personal-agent prompt: never
+  // log the prompt text itself (it carries customer-specific operator/context
+  // data), but the version + content hash let an eval run or an incident
+  // review confirm exactly which prompt build shipped without exposing its
+  // contents. Gated on the personalized path — PERSONAL_AGENT_PROMPT_VERSION
+  // describes Myra's builder, so stamping it on a non-personal launch (e.g.
+  // Oat, whose composed prompt was null) would be a lie in the logs.
+  if (personalAgentPromptComposed) {
+    log.info("Personal-agent launch prompt composed", {
+      instanceId,
+      agentId,
+      promptVersion: PERSONAL_AGENT_PROMPT_VERSION,
+      promptContentHash: createHash("sha256")
+        .update(effectiveSystemPrompt)
+        .digest("hex"),
+    });
   }
 
   // Persist the agent's tool grants on the instance principal before collecting.

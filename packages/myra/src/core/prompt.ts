@@ -1,17 +1,36 @@
+import { type } from "arktype";
 import {
-  buildSystemPrompt,
+  buildSystemPromptWithContract,
+  formatDataSection,
   type PromptFormat,
   type PromptSection,
 } from "@workbench/prompts";
 import { CORBITS_VOCABULARY_SECTION } from "@workbench/agent-core/corbits-vocabulary";
 
+// Typed operator identity: replaces free-form operator-profile prose. Only
+// `name` and `email` are known facts about the operator (source: the DB user
+// row) — both are user-controllable display fields, so they are rendered as
+// escaped DATA via formatDataSection, never interpolated into prose.
+export const OperatorProfileSchema = type({
+  name: "string",
+  email: "string",
+});
+export type OperatorProfile = typeof OperatorProfileSchema.infer;
+
+// Bump whenever the prompt's section set, ordering, or data-boundary contract
+// changes in a way that would make an eval run comparing two versions
+// meaningful to distinguish. Not tied to package semver.
+export const PERSONAL_AGENT_PROMPT_VERSION = "2";
+
 export interface PersonalAgentPromptOptions {
   /**
-   * Per-operator context appended verbatim as an `<operator>` section at deploy
-   * time. The base prompt stays versioned and identical for every instance;
-   * this is the only personalization seam, so the template is never mutated.
+   * Per-operator identity rendered as an escaped `<operator>` data section at
+   * deploy time. The base prompt stays versioned and identical for every
+   * instance; this is the only personalization seam, so the template is
+   * never mutated. Typed (not free-form prose) so the only content that can
+   * reach the section is the two known operator fields.
    */
-  operatorProfile?: string;
+  operator?: OperatorProfile;
 }
 
 export function buildPersonalAgentSystemPrompt(
@@ -95,12 +114,24 @@ Use \`markdown\` or \`text\` only when structure adds no value. Never emit inval
     },
   ];
 
-  if (
-    options.operatorProfile !== undefined &&
-    options.operatorProfile.trim() !== ""
-  ) {
-    sections.push({ tag: "operator", content: options.operatorProfile.trim() });
+  const basePrompt = buildSystemPromptWithContract(sections, format);
+
+  if (options.operator === undefined) {
+    return basePrompt;
   }
 
-  return buildSystemPrompt(sections, format);
+  const operatorName = options.operator.name.trim();
+  const operatorEmail = options.operator.email.trim();
+  const operatorLines: string[] = [];
+  if (operatorName !== "") operatorLines.push(`Name: ${operatorName}`);
+  if (operatorEmail !== "") operatorLines.push(`Email: ${operatorEmail}`);
+  if (operatorLines.length === 0) {
+    return basePrompt;
+  }
+
+  const operatorSection = formatDataSection(
+    { tag: "operator", content: operatorLines.join("\n") },
+    format,
+  );
+  return `${basePrompt}\n\n${operatorSection}`;
 }

@@ -2,6 +2,9 @@
 export {
   buildPersonalAgentSystemPrompt,
   type PersonalAgentPromptOptions,
+  OperatorProfileSchema,
+  type OperatorProfile,
+  PERSONAL_AGENT_PROMPT_VERSION,
 } from "./core/prompt";
 export {
   buildPersonalAgentGrantRequirements,

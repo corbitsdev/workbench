@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useLocation } from "react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { type } from "arktype";
+import { escapeXmlContent } from "@workbench/prompts";
 import { pageContextForPathname } from "../page-context";
 import { invalidateMyraThreads } from "./myra-threads-cache";
 import {
@@ -251,14 +252,19 @@ export async function parseDocumentAttachment(
 // Fold the parsed document text into a leading <context> block. The adapter's
 // stripContextBlock removes a leading <context>…</context> from the user's
 // rendered bubble, so Myra receives the full text while the transcript stays
-// clean and shows the document as a chip instead of a wall of text.
+// clean and shows the document as a chip instead of a wall of text. Document
+// content is retrieved data, not instructions — escaped before interpolation
+// so it cannot alter the block's structure.
 export function composeWithDocumentContext(
   text: string,
   docs: readonly ParsedDocument[],
 ): string {
   if (docs.length === 0) return text;
   const blocks = docs
-    .map((d) => `[Attached document: ${d.filename}]\n${d.parsedText}`)
+    .map(
+      (d) =>
+        `[Attached document: ${escapeXmlContent(d.filename)}]\n${escapeXmlContent(d.parsedText)}`,
+    )
     .join("\n\n");
   const trimmed = text.trim();
   return `<context>\n${blocks}\n</context>${trimmed !== "" ? `\n\n${trimmed}` : ""}`;

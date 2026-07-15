@@ -1,12 +1,17 @@
 import { and, eq } from "drizzle-orm";
 import { schema as intxSchema } from "@intx/db";
 import type { DB } from "@intx/db";
-import { AGENT_TEMPLATES, type PromptFormat } from "@workbench/agents";
+import { AGENT_TEMPLATES } from "@workbench/agents";
+import { promptFormatForProvider } from "@workbench/prompts";
 import {
   buildPersonalAgentSystemPrompt,
+  OperatorProfileSchema,
   PERSONAL_AGENT_NAME,
+  type OperatorProfile,
 } from "@workbench/myra";
 import { memberAgentInstance } from "../db/schema";
+
+export { promptFormatForProvider };
 
 /**
  * Template keys that are personal agents (kind 'personal') — the structural
@@ -18,45 +23,40 @@ const PERSONAL_TEMPLATE_KEYS = new Set(
 );
 
 /**
- * Section format follows the inference provider: Anthropic models are tuned for
- * XML-tagged sections; every other provider (OpenAI / openai-compatible such as
- * DeepSeek) does better with Markdown headings.
+ * Validate a DB-sourced { name, email } pair into a typed OperatorProfile.
+ * `user.name` is free-text set by the member themselves — parsing through the
+ * schema at this boundary is what keeps it from ever becoming free-form prose
+ * again; renderers downstream (buildPersonalAgentSystemPrompt) only ever see
+ * these two known fields, never an arbitrary interpolated string.
  */
-export function promptFormatForProvider(provider: string): PromptFormat {
-  return { xml: provider === "anthropic" };
-}
-
-/** Terse standing brief naming the operator and pointing Myra at her memory. */
 export function buildOperatorProfile(user: {
   name: string;
   email: string;
-}): string {
-  return `You work for ${user.name} (${user.email}). Keep your standing brief on them — preferences, priorities, open todos — in your memory, and update it as you learn.`;
+}): OperatorProfile {
+  return OperatorProfileSchema.assert({ name: user.name, email: user.email });
 }
 
 /**
  * Compose the personal-agent system prompt for a specific launch: provider
  * decides the format, and the operator profile (when known) is appended as an
- * <operator> section. The shared template is never mutated — this rebuilds it
- * per instance from the versioned builder.
+ * escaped <operator> data section. The shared template is never mutated —
+ * this rebuilds it per instance from the versioned builder.
  */
 export function personalAgentPromptForLaunch(opts: {
   provider: string;
-  operatorProfile?: string;
+  operator?: OperatorProfile;
 }): string {
   const format = promptFormatForProvider(opts.provider);
   const options =
-    opts.operatorProfile !== undefined
-      ? { operatorProfile: opts.operatorProfile }
-      : {};
+    opts.operator !== undefined ? { operator: opts.operator } : {};
   return buildPersonalAgentSystemPrompt(PERSONAL_AGENT_NAME, format, options);
 }
 
-/** Render the operator profile for a member principal (principal → user). */
+/** Resolve the operator profile for a member principal (principal → user). */
 async function resolveOperatorForMember(
   db: DB["db"],
   memberPrincipalId: string,
-): Promise<string | null> {
+): Promise<OperatorProfile | null> {
   const [principal] = await db
     .select({
       kind: intxSchema.principal.kind,
@@ -79,10 +79,11 @@ async function resolveOperatorForMember(
 
 /**
  * If `instanceId` is a personal-agent instance, compose its launch prompt
- * (provider-appropriate format + the owning operator's <operator> section) and
- * return it. Returns null for any non-personal instance, so the caller keeps
- * the agent's own seeded prompt. The single `member_agent_instance` lookup
- * yields both the personal-template check and the owning member.
+ * (provider-appropriate format + the owning operator's <operator> data
+ * section) and return it. Returns null for any non-personal instance, so the
+ * caller keeps the agent's own seeded prompt. The single
+ * `member_agent_instance` lookup yields both the personal-template check and
+ * the owning member.
  */
 export async function composePersonalAgentPromptForInstance(
   db: DB["db"],
@@ -103,12 +104,12 @@ export async function composePersonalAgentPromptForInstance(
     .limit(1);
   if (!mapping || !PERSONAL_TEMPLATE_KEYS.has(mapping.templateKey)) return null;
 
-  const operatorProfile = await resolveOperatorForMember(
+  const operator = await resolveOperatorForMember(
     db,
     mapping.memberPrincipalId,
   );
   return personalAgentPromptForLaunch({
     provider: opts.provider,
-    ...(operatorProfile !== null ? { operatorProfile } : {}),
+    ...(operator !== null ? { operator } : {}),
   });
 }
