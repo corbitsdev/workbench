@@ -360,6 +360,7 @@ describe("createMyraThread", () => {
         {
           id: "map-unused",
           instanceId: "inst-unused",
+          agentId: "agt-myra",
           label: "Chat 2",
           createdAt: new Date("2026-01-03T00:00:00Z"),
           lastActivityAt: new Date("2026-01-03T00:00:00Z"),
@@ -382,6 +383,35 @@ describe("createMyraThread", () => {
     // No rows written, no session launched — the unused thread is reused as-is.
     expect(txCount).toBe(0);
     expect(launchAgentSessionMock).not.toHaveBeenCalled();
+  });
+
+  it("does not reuse an unused thread deployed against a stale definition (CL-2517 guarantee)", async () => {
+    let txCount = 0;
+    const db = buildCreateDb({
+      transactions: () => (txCount += 1),
+      existingThreads: [
+        {
+          id: "map-stale",
+          instanceId: "inst-stale",
+          agentId: "agt-myra-old",
+          label: "Chat",
+          createdAt: new Date("2026-01-03T00:00:00Z"),
+          lastActivityAt: new Date("2026-01-03T00:00:00Z"),
+          firstMessageAt: null,
+        },
+      ],
+    });
+
+    // biome-ignore lint/suspicious/noExplicitAny: structural db mock
+    const result = await createMyraThread(db as any, {
+      tenantId: "tn-global",
+      tenantDomain: "global.test",
+      memberPrincipalId: "prn-member",
+    });
+
+    expect(result.created).toBe(true);
+    expect(result.thread.id).not.toBe("map-stale");
+    expect(txCount).toBe(1);
   });
 
   it("still creates a fresh thread for an explicit label even when an unused thread exists", async () => {

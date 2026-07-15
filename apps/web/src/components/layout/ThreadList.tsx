@@ -168,9 +168,12 @@ export function ThreadList() {
   const shown = (data?.threads ?? []).filter(isMyraThreadUsed);
 
   // The server reports the member's full thread count; if it exceeds the
-  // fetched page, offer the full list rather than silently truncating. Compared
-  // against the raw page (not the used-filtered `shown`) so hidden unused
-  // threads don't fake a "View all" link.
+  // fetched page, offer the full list rather than silently truncating.
+  // Compared against the raw page (not the used-filtered `shown`) so unused
+  // threads inside the page don't inflate the gap. `total` still counts unused
+  // threads beyond the page, so the link can occasionally lead to a list with
+  // nothing extra — an acceptable cosmetic edge; the server does not expose a
+  // used-only count.
   const hasMore = (data?.total ?? 0) > (data?.threads.length ?? 0);
 
   if (shown.length === 0) {
