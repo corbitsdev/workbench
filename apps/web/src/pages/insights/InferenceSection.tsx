@@ -1,6 +1,11 @@
-import { sumAnalyticsModelTokens } from "@workbench/analytics";
+import { sumAnalyticsModelTokens } from "@workbench/analytics/model-tokens";
 import type { ActivityOverview } from "../../lib/hub-api";
-import { cacheHitRate, formatCompact, ratePct, sumInferenceTokenClasses } from "./metrics";
+import {
+  cacheHitRate,
+  formatCompact,
+  ratePct,
+  sumInferenceTokenClasses,
+} from "./metrics";
 import { CardLabel, CaveatNote, formatNumber, HudCard, Stat } from "./stats";
 import { MiniBars, TokenMosaic } from "./viz";
 import { SectionLabel } from "./section-label";
@@ -47,9 +52,7 @@ export function InferenceSection({
   const hitRate = cacheHitRate(summary.inputTokens, summary.cacheReadTokens);
   const thinkPct = ratePct(summary.thinkingTokens, tokens);
   const modelRows = data.byModel
-    .filter(
-      (row) => row.turnCount > 0 || sumAnalyticsModelTokens(row) > 0,
-    )
+    .filter((row) => row.turnCount > 0 || sumAnalyticsModelTokens(row) > 0)
     .map((row) => {
       const tokenTotal = sumAnalyticsModelTokens(row);
       return {
