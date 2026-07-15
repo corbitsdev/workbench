@@ -4,6 +4,7 @@ import type { AgentAutonomy } from "@workbench/shared";
 import {
   PERSONAL_AGENT_BASE_TOOLS,
   PERSONAL_AGENT_NAME,
+  PERSONAL_AGENT_PROMPT_FORMAT,
 } from "../core/definition";
 
 /**
@@ -211,7 +212,7 @@ ${tasksSectionFor(tasksEnabled)}`,
     },
   ];
 
-  return buildSystemPrompt(sections, { xml: true });
+  return buildSystemPrompt(sections, PERSONAL_AGENT_PROMPT_FORMAT);
 }
 
 export type MailboxLoadout = {

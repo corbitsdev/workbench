@@ -4,6 +4,7 @@ import {
   MYRA_CATALOG_BARE_TOOL_NAMES,
   MYRA_PLATFORM_BARE_TOOL_NAMES,
 } from "@workbench/agent-core/dynamic-tools-catalog";
+import { promptFormatForProvider } from "@workbench/prompts";
 import { buildPersonalAgentSystemPrompt } from "./prompt";
 import { LLM_CREDENTIAL_NAME } from "@workbench/agent-core/constants";
 
@@ -55,10 +56,23 @@ export const PERSONAL_AGENT_TRIAGE_MODEL_CONFIG = {
   defaultModel: "deepseek-v4-flash",
 } as const;
 
+/**
+ * Section format follows the provider Myra actually runs inference on. Her
+ * model (kimi-k2.6) is served through the `openai-compatible` credential
+ * requirement above, so `promptFormatForProvider` selects Markdown — the format
+ * non-Anthropic models are tuned for — rather than the XML that only Anthropic
+ * models prefer. The provider is knowable here from the declared credential
+ * requirement, so there is no need to default.
+ */
+export const PERSONAL_AGENT_PROMPT_FORMAT = promptFormatForProvider(
+  PERSONAL_AGENT_CREDENTIAL_REQUIREMENTS[0].providerName,
+);
+
 export const PERSONAL_AGENT_DEPLOY_PROMPT: string =
-  buildPersonalAgentSystemPrompt(PERSONAL_AGENT_NAME, {
-    xml: true,
-  });
+  buildPersonalAgentSystemPrompt(
+    PERSONAL_AGENT_NAME,
+    PERSONAL_AGENT_PROMPT_FORMAT,
+  );
 
 /**
  * The platform tools Myra advertises on every turn — the small, always-visible
