@@ -45,7 +45,9 @@ The Insights UI presets are `24 hours`, `7 days`, `30 days`, `90 days`, and `All
 
 ## Cost & token classes (CL-2714)
 
-- **Token classes are always kept separate** — fresh input, cache read, cache write, and output are billed at different rates and are never summed into an ambiguous "prompt tokens" figure. `activity/overview` carries every class separately on `dailySeries`, `inference.*`, `byPerson`, and `byModel` (per-model usage with all classes, added in CL-2714 alongside the legacy `models` turn-count distribution).
+- **Token classes are always kept separate** — fresh input, cache read, cache write, and output are billed at different rates and are never summed into an ambiguous "prompt tokens" figure. `activity/overview` carries every class separately on `dailySeries`, `inference.*`, `byPerson`, and `byModel` (per-model usage with all classes, CL-2714).
+- **Legacy `activity/overview.models[].count`** — `analyticsModelDisplayCount`: turn count when `turnCount > 0`, else total tokens across classes (mixed units; consumers outside Insights Usage & Cost may still use this).
+- **Insights Usage & Cost “Model distribution” mini-bars (CL-3740)** — bar length is always total tokens across classes (`sumAnalyticsModelTokens`); the value column shows `N turns` when `turnCount > 0`, else a compact token total, so bars are comparable across models.
 - **Dollar cost** is computed from [models.dev](https://models.dev) open pricing. The hub fetches `MODELS_DEV_API_URL` (default `https://models.dev/api.json`), ArkType-parses it at the boundary (`@workbench/pricing` → `ModelsDevPayloadSchema`), and flattens it into a `modelId → per-class rate` catalog cached **in-process** with a TTL (`MODELS_DEV_TTL_MS`, default 6h — the hub has no redis). Rates are dollars per million tokens.
   - `GET /api/tenants/:tenantId/pricing` returns the cached `PriceCatalog`; the browser consumes it via TanStack Query (long `staleTime`) and never hits models.dev directly (CSP).
   - `GET /api/tenants/:tenantId/pricing/logos/:provider` proxies the provider SVG logo same-origin.
@@ -108,6 +110,37 @@ The Insights principal trace (`/insights/users/:id`) has **Tools** and **Cost** 
 - Unknown `agent_address` (no active `agent_instance`) is dropped with a warning — fix deploy persistence before expecting workflow analytics.
 - Workflow supervisors persist harness `sessionId` on `agent_instance` (and `agent_session`) at deploy/re-establish so inference events resolve for analytics.
 - **Backfill** supervisors deployed before that fix: `bun run apps/hub/bin/backfill-analytics-sessions.ts --tenant <slug> --dry-run` then without `--dry-run`.
+
+## Troubleshooting
+
+### Read-only model rollup audit (CL-3740)
+
+When Insights **by model** looks wrong (missing models, token-only rows, or stale rollups), run the read-only audit script against staging or production Postgres. It prefers `DATABASE_PUBLIC_URL` (Railway’s public proxy) and refuses `*.railway.internal` URLs so local `psql` can connect.
+
+From the repo root, attach to the **Postgres** service so Railway injects the DB URL, and merge tenant/hub env from the matching file:
+
+```bash
+railway run -e corbits-workbench-staging -s Postgres -- \
+  bun --env-file=.env.staging scripts/analytics-models-readonly.ts staging
+```
+
+Production:
+
+```bash
+railway run -e corbits-workbench-production -s Postgres -- \
+  bun --env-file=.env.production scripts/analytics-models-readonly.ts production
+```
+
+The script runs `psql` with `default_transaction_read_only = on` and prints:
+
+- **tenants** — sample tenant rows (pick `tenant_id` for ad-hoc SQL below)
+- **per_model_rollups_30d** — `analytics_rollup_daily` grouped by `model` (turns + total tokens)
+- **token_only_named_models_30d** — named models with tokens but zero turns (inference-only rollup shape)
+- **inference_done_by_model_30d** — raw `inference_done` event counts by `metadata.model`
+
+Rollup and event sections are **not tenant-scoped** — they aggregate across all tenants in the database. Use only on trusted operator machines; filter by `tenant_id` in ad-hoc SQL when you need one tenant.
+
+Requires `psql` on your PATH. If you see “No reachable DATABASE URL”, you are not running under `railway run -s Postgres` or the service is missing `DATABASE_PUBLIC_URL`.
 
 ### Staging SQL (read-only checks)
 

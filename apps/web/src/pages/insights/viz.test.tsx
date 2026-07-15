@@ -113,4 +113,15 @@ describe("MiniBars", () => {
     expect((fills[0] as HTMLElement).style.width).toBe("100%");
     expect((fills[1] as HTMLElement).style.width).toBe("50%");
   });
+
+  it("renders an optional displayValue suffix instead of compact value", () => {
+    render(
+      <MiniBars
+        label="models"
+        rows={[{ label: "kimi", value: 60_000, displayValue: "9 turns" }]}
+      />,
+    );
+    expect(screen.getByTestId("mini-bar").textContent).toContain("9 turns");
+    expect(screen.getByTestId("mini-bar").textContent).not.toContain("60k");
+  });
 });

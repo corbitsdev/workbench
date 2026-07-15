@@ -120,7 +120,7 @@ function modelRowHasUsage(row: {
   cacheWriteTokens: number;
   thinkingTokens: number;
 }): row is typeof row & { model: string } {
-  if (row.model === null || row.model === "") return false;
+  if (row.model === null || row.model.trim() === "") return false;
   return row.turnCount > 0 || sumAnalyticsModelTokens(row) > 0;
 }
 
