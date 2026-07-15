@@ -301,6 +301,57 @@ describe("projectLiveTurn", () => {
     expect(projected[2]).toBe(segments[2]);
   });
 
+  it("drops a settled reasoning-only segment that projects to no output (CL-3752)", () => {
+    const segments: ChatMessage[] = [
+      agent({
+        id: "a1",
+        content: "",
+        turnId: "g1",
+        reasoning: "Thinking about how to answer before saying anything.",
+      }),
+      agent({
+        id: "a2",
+        content: "Here is the answer.",
+        status: "sending",
+        turnId: "g1",
+        parts: [{ type: "text", text: "Here is the answer." }],
+      }),
+    ];
+    const projected = projectLiveTurn(segments);
+    // The output-less reasoning-only step leaves no orphan turn behind; only
+    // the streaming answer remains, so no empty turn reserves whitespace.
+    expect(projected).toHaveLength(1);
+    expect(projected[0]?.id).toBe("a2");
+  });
+
+  it("keeps a settled segment that produced only a file, even with empty text (CL-3752)", () => {
+    const segments: ChatMessage[] = [
+      agent({
+        id: "a1",
+        content: "",
+        turnId: "g1",
+        reasoning: "Generating the deck.",
+        parts: [
+          { type: "reasoning", text: "Generating the deck." },
+          { type: "file", mediaType: "application/pdf", url: "blob:deck" },
+        ],
+      }),
+      agent({
+        id: "a2",
+        content: "Done — deck attached above.",
+        status: "sending",
+        turnId: "g1",
+        parts: [{ type: "text", text: "Done — deck attached above." }],
+      }),
+    ];
+    const projected = projectLiveTurn(segments);
+    expect(projected).toHaveLength(2);
+    expect(projected[0]?.id).toBe("a1");
+    expect(projected[0]?.parts).toEqual([
+      { type: "file", mediaType: "application/pdf", url: "blob:deck" },
+    ]);
+  });
+
   it("when the streaming segment settles, projectSettledTurn re-derives the same final shape as a reload", () => {
     const liveSegments: ChatMessage[] = [
       agent({ id: "a1", content: "Let me look into that.", turnId: "g1" }),

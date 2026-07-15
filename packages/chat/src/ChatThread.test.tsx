@@ -74,6 +74,52 @@ describe("ChatThread", () => {
     expect(screen.queryByTestId("busy-indicator")).toBeNull();
   });
 
+  it("leaves no orphan turn for a committed reasoning-only step in a live multi-step turn (CL-3752)", () => {
+    const liveMultiStep: ChatMessage[] = [
+      {
+        id: "u1",
+        role: "user",
+        content: "What changed this week?",
+        createdAt: "2026-06-04T00:00:00Z",
+        status: "sent",
+      },
+      {
+        id: "a1",
+        role: "agent",
+        turnId: "g1",
+        content: "",
+        createdAt: "2026-06-04T00:00:01Z",
+        status: "sent",
+        reasoning: "Deciding what to check before answering.",
+        parts: [
+          {
+            type: "reasoning",
+            text: "Deciding what to check before answering.",
+          },
+        ],
+      },
+      {
+        id: "a2",
+        role: "agent",
+        turnId: "g1",
+        content: "Acme moved to contract.",
+        createdAt: "2026-06-04T00:00:04Z",
+        status: "sending",
+        parts: [{ type: "text", text: "Acme moved to contract." }],
+      },
+    ];
+    const { container } = render(
+      <ChatThread messages={liveMultiStep} onRate={async () => {}} />,
+    );
+    // The committed reasoning-only segment projects to nothing; it must not
+    // render its own (bubble-less, feedback-footer-only) agent turn, which
+    // would reserve a large whitespace gap above the streaming answer.
+    expect(
+      container.querySelectorAll('[data-testid="agent-turn"]'),
+    ).toHaveLength(1);
+    expect(screen.getByText("Acme moved to contract.")).toBeDefined();
+  });
+
   it("renders a tool narrative for a LIVE (still-streaming) agent turn with tool calls", () => {
     const withTools: ChatMessage[] = [
       {
