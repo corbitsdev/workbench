@@ -28,9 +28,9 @@ they stay on the separate `ChatActivity` / status channel.
 
 ### Two-tier fidelity
 
-- **Live** turns can, in principle, interleave these parts in true stream
-  order (think → tool → think → answer) as the assembler (a later ticket)
-  emits them.
+- **Live** turns interleave these parts in true stream order (think → tool →
+  think → answer), emitted by the single part-assembler (`@workbench/agents`'
+  `createPartAssembler`, which populates `message.parts` directly).
 - **Hydrated** turns — reloaded from the hub-client contract, which only
   ever exposes a turn's cumulative `reasoning` string and finished
   `toolCalls` array, never an ordered event log — have no interleaving left
@@ -48,3 +48,29 @@ empty/absent fields are simply omitted rather than lifted as blank parts.
 It is the single legacy lift adapter — no renderer should reimplement this
 translation — and is expected to be deleted once the write path is fully
 parts-native.
+
+### Renderer (`AgentTurn` / `ActivityBlock`)
+
+`AgentTurn` computes `message.parts ?? liftToParts(message)` once and hands
+the result to `ActivityBlock`, which walks the ordered parts directly rather
+than reading side `reasoning` / `toolCalls` fields. This is the only lift
+call site in the renderer path.
+
+- **Ephemeral rolling activity.** While a turn is streaming, `ActivityBlock`
+  shows exactly one subtle activity line derived from the trailing part
+  (`activity-label.ts`'s `deriveActivityLabel`) — never the full reasoning
+  body. The label cross-fades and is debounced against a minimum display
+  duration so rapid part transitions don't flicker (framer-motion,
+  `useStableLabel`/`RollingLabel` in `ActivityBlock.tsx`).
+- **Settled turns** show a roll-up summary (`"Worked · N tools"`-style, via
+  the host's `summarizeCalls`) behind the same collapsible disclosure —
+  the full trace remains reachable on expand for now; Insights → Trace is
+  the canonical place for deep inspection.
+- **Color discipline.** `ToolNarrative.tsx` exports `toolTone(call)` — the
+  single place a tool call's rendering tone (`pending | failed | settled`)
+  is derived from its result/error state. A failed internal tool call never
+  renders red in the transcript; red is reserved for member-actionable
+  failures (see `MessageBubble`'s "Failed to send").
+- `reasoning-summary.ts` (whole-string regex reasoning summarizer) is
+  deleted; `activity-label.ts` derives the rolling label from the trailing
+  part instead, which is possible now that parts carry real order.

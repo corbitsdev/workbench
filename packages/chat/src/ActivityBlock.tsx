@@ -1,10 +1,11 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { ChevronRight } from "lucide-react";
 import { cn, Markdown } from "@workbench/ui";
-import type { ToolCall } from "./types";
+import type { Part, ToolCall } from "./types";
+import { toolPartToCall } from "./parts";
 import { ToolNarrative, type ToolNarrativeProps } from "./ToolNarrative";
-import { rollingReasoningLabel } from "./reasoning-summary";
+import { deriveActivityLabel } from "./activity-label";
 import {
   CHAT_ACTIVITY_STACK,
   CHAT_MARKER_SLOT,
@@ -20,11 +21,13 @@ import {
 // Brand ease-out (repo-root DESIGN.md), shared with the tool/reasoning reveals.
 const EASE_OUT = [0.23, 1, 0.32, 1] as const;
 
+// Minimum time the rolling label stays on screen before it is allowed to
+// change again (CL-3673) — prevents rapid part transitions from flickering.
+const MIN_LABEL_DISPLAY_MS = 500;
+
 export interface ActivityBlockProps {
-  /** Raw cumulative reasoning text for the turn (may be empty). */
-  reasoning: string;
-  /** Tool calls for the turn, already filtered by the host's hide predicate. */
-  toolCalls: ToolCall[];
+  /** The turn's ordered parts (already `message.parts ?? liftToParts(message)` — see AgentTurn). */
+  parts: Part[];
   /** True while the turn is still in flight. */
   streaming: boolean;
   /** Stable key for per-turn expand prefs (`feedbackId ?? message.id`). */
@@ -70,20 +73,83 @@ function Reveal({
 }
 
 /**
+ * Debounces the rolling activity label while streaming: a new label is only
+ * committed once the previous one has been on screen for at least
+ * `MIN_LABEL_DISPLAY_MS`, so a burst of rapid part transitions settles into
+ * one visible change rather than flickering (CL-3673). Settled turns (not
+ * streaming) always show the latest label immediately.
+ */
+function useStableLabel(label: string, streaming: boolean): string {
+  const [display, setDisplay] = useState(label);
+  // Mirrors `display` so the effect can compare without depending on it
+  // (depending on `display` would re-arm the timer on every commit).
+  const displayRef = useRef(label);
+  const lastCommitRef = useRef(Date.now());
+
+  useEffect(() => {
+    if (!streaming) {
+      displayRef.current = label;
+      lastCommitRef.current = Date.now();
+      setDisplay(label);
+      return;
+    }
+    if (displayRef.current === label) return;
+    const elapsed = Date.now() - lastCommitRef.current;
+    const wait = Math.max(0, MIN_LABEL_DISPLAY_MS - elapsed);
+    const timer = setTimeout(() => {
+      displayRef.current = label;
+      lastCommitRef.current = Date.now();
+      setDisplay(label);
+    }, wait);
+    return () => clearTimeout(timer);
+  }, [label, streaming]);
+
+  return display;
+}
+
+function RollingLabel({ label }: { label: string }) {
+  const reduceMotion = useReducedMotion();
+  if (reduceMotion === true) {
+    return (
+      <span className="min-w-0 truncate" data-testid="activity-summary">
+        {label}
+      </span>
+    );
+  }
+  return (
+    <span className="relative min-w-0 truncate" data-testid="activity-summary">
+      <AnimatePresence mode="wait" initial={false}>
+        <motion.span
+          key={label}
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          transition={{ duration: 0.15, ease: EASE_OUT }}
+          className="block truncate"
+        >
+          {label}
+        </motion.span>
+      </AnimatePresence>
+    </span>
+  );
+}
+
+/**
  * A single collapsible block gathering ALL of one turn's process activity —
- * reasoning trace and tool calls — above the answer (CL-3637). Collapsed by
- * default with a one-line summary; the same structure renders whether the turn
- * is streaming live or loaded from a finished thread, so there is no divergent
- * "live" vs "historical" path.
+ * reasoning trace and tool calls — above the answer (CL-3637), rebuilt to
+ * walk the turn's ordered `parts` (CL-3679) rather than side reasoning/tool
+ * fields. The same structure renders whether the turn is streaming live or
+ * loaded from a finished thread, so there is no divergent "live" vs
+ * "historical" path.
  *
- * The collapsed summary rolls in place while streaming (latest meaningful
- * reasoning step, low-signal narration filtered — CL-3638); settled turns show
- * a roll-up of what happened. Tool rows render through the single ToolNarrative
- * treatment (CL-3639).
+ * While streaming, exactly one rolling label is visible (the trailing part's
+ * activity, cross-faded and debounced — CL-3673). Settled turns show a
+ * roll-up of what happened. Tool rows render through the single
+ * ToolNarrative treatment (CL-3639); color discipline for tool errors is
+ * centralized inside ToolNarrative (CL-3679) — no red here.
  */
 export function ActivityBlock({
-  reasoning,
-  toolCalls,
+  parts,
   streaming,
   messageKey,
   isExpanded,
@@ -105,21 +171,30 @@ export function ActivityBlock({
   }, [messageKey]);
   const open = sessionOverride ?? persisted;
 
-  const hasReasoning = reasoning.trim() !== "";
+  const reasoningText = parts
+    .filter((part) => part.type === "reasoning")
+    .map((part) => part.text)
+    .join("\n");
+  const toolCalls: ToolCall[] = parts
+    .filter((part) => part.type === "tool")
+    .map(toolPartToCall);
+  const hasReasoning = reasoningText.trim() !== "";
   const realCalls =
     isQuietTool === undefined
       ? toolCalls
       : toolCalls.filter((c) => !isQuietTool(c.name));
-  const hasError = realCalls.some((c) => c.isError === true);
   const realCount = realCalls.length;
 
-  const summary = deriveSummary({
-    reasoning,
+  const rawSummary = deriveSummary({
+    parts,
     streaming,
     realCalls,
     summarizeCalls,
     formatSummary,
   });
+  // Only debounce while streaming — a settled turn's summary is final and
+  // must render immediately (no lag on hydration or turn-settle).
+  const summary = useStableLabel(rawSummary, streaming);
 
   return (
     <div className={CHAT_ACTIVITY_STACK} data-testid="activity-block">
@@ -161,12 +236,7 @@ export function ActivityBlock({
             CHAT_TRACE_INLINE_GAP,
           )}
         >
-          <span
-            className={cn("min-w-0 truncate", hasError && "text-red")}
-            data-testid="activity-summary"
-          >
-            {summary}
-          </span>
+          <RollingLabel label={summary} />
           {realCount > 0 && (
             <span
               className="shrink-0 text-text-3/70"
@@ -195,7 +265,7 @@ export function ActivityBlock({
                 mode={streaming ? "streaming" : "static"}
                 className={CHAT_TRACE_MUTED_BODY}
               >
-                {reasoning}
+                {reasoningText}
               </Markdown>
             </div>
           )}
@@ -219,28 +289,20 @@ export function ActivityBlock({
 }
 
 function deriveSummary({
-  reasoning,
+  parts,
   streaming,
   realCalls,
   summarizeCalls,
   formatSummary,
 }: {
-  reasoning: string;
+  parts: Part[];
   streaming: boolean;
   realCalls: ToolCall[];
   summarizeCalls?: ToolNarrativeProps["summarizeCalls"];
   formatSummary?: ToolNarrativeProps["formatSummary"];
 }): string {
   if (streaming) {
-    const label = rollingReasoningLabel(reasoning);
-    if (label !== null) return label;
-    const pending = [...realCalls]
-      .reverse()
-      .find((c) => c.result === undefined && c.isError !== true);
-    if (pending !== undefined && formatSummary !== undefined) {
-      return formatSummary(pending);
-    }
-    return "Working";
+    return deriveActivityLabel(parts, formatSummary);
   }
   if (realCalls.length > 0 && summarizeCalls !== undefined) {
     return summarizeCalls(realCalls);

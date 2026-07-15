@@ -1,8 +1,9 @@
 import type { ReactNode } from "react";
 import { cn } from "@workbench/ui";
-import type { ChatMessage } from "./types";
+import type { ChatMessage, ToolCall } from "./types";
 import { MessageBubble } from "./MessageBubble";
 import { ActivityBlock } from "./ActivityBlock";
+import { liftToParts, toolPartToCall } from "./parts";
 import { type ToolNarrativeProps } from "./ToolNarrative";
 import { MessageFeedback } from "./MessageFeedback";
 import { CHAT_META_TEXT, CHAT_TURN_STACK } from "./messageRhythm";
@@ -15,6 +16,13 @@ export interface AgentTurnProps {
   trailing?: ReactNode;
   /** Tool calls to render, already filtered by the host's hide predicate. */
   visibleToolCalls?: ChatMessage["toolCalls"];
+  /**
+   * Predicate to hide individual tool calls from the rendered turn. Applied
+   * to tool PARTS as well as flat tool calls — a parts-native streaming
+   * message carries no `toolCalls` array, so `visibleToolCalls` alone cannot
+   * cover it (a hidden tool would otherwise leak mid-stream).
+   */
+  hideToolCall?: (call: ToolCall) => boolean;
   formatToolSummary?: ToolNarrativeProps["formatSummary"];
   formatToolResult?: ToolNarrativeProps["formatResult"];
   /**
@@ -57,6 +65,7 @@ export function AgentTurn({
   message,
   trailing,
   visibleToolCalls,
+  hideToolCall,
   formatToolSummary,
   formatToolResult,
   summarizeToolCalls,
@@ -72,9 +81,33 @@ export function AgentTurn({
   setReasoningExpanded,
 }: AgentTurnProps) {
   const isStreaming = message.status === "sending";
-  const hasReasoning = (message.reasoning ?? "").trim() !== "";
-  const toolCalls = visibleToolCalls ?? message.toolCalls;
-  const hasTools = toolCalls !== undefined && toolCalls.length > 0;
+  // The single lift call site (CL-3679): a parts-native message is walked
+  // directly, a flat/hydrated message is lifted at read time.
+  const parts = message.parts ?? liftToParts(message);
+  // `visibleToolCalls` is the host's hide-predicate-filtered flat tool list;
+  // `hideToolCall` is the predicate itself, applied to tool PARTS directly —
+  // required for parts-native streaming messages, which carry no `toolCalls`
+  // array for the flat filter to act on.
+  const visibleToolCallIds =
+    visibleToolCalls !== undefined
+      ? new Set(visibleToolCalls.map((call) => call.id))
+      : null;
+  const activityParts = parts.filter((part) => {
+    if (part.type === "text" || part.type === "file") return false;
+    if (part.type === "tool") {
+      if (hideToolCall !== undefined && hideToolCall(toolPartToCall(part))) {
+        return false;
+      }
+      if (visibleToolCallIds !== null) {
+        return visibleToolCallIds.has(part.toolCallId);
+      }
+    }
+    return true;
+  });
+  const hasReasoning = activityParts.some(
+    (part) => part.type === "reasoning" && part.text.trim() !== "",
+  );
+  const hasTools = activityParts.some((part) => part.type === "tool");
   // The turn header owns the sender label; strip it from the nested bubble so
   // it renders exactly once.
   const { senderLabel, ...bubbleMessage } = message;
@@ -90,8 +123,7 @@ export function AgentTurn({
       )}
       {(hasReasoning || hasTools) && (
         <ActivityBlock
-          reasoning={message.reasoning ?? ""}
-          toolCalls={toolCalls ?? []}
+          parts={activityParts}
           streaming={isStreaming}
           messageKey={message.feedbackId ?? message.id}
           {...(isReasoningExpanded !== undefined

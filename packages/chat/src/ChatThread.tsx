@@ -218,6 +218,7 @@ export function ChatThread({
         key={message.id}
         message={displayMessage}
         {...(visibleToolCalls !== undefined ? { visibleToolCalls } : {})}
+        {...(hideToolCall !== undefined ? { hideToolCall } : {})}
         trailing={urls.map((url) => (
           <UrlImageCard key={url} url={url} />
         ))}

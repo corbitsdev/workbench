@@ -7,8 +7,8 @@ import {
   TextPartSchema,
   ToolPartSchema,
 } from "./types";
-import type { ChatMessage } from "./types";
-import { liftToParts } from "./parts";
+import type { ChatMessage, ToolPart } from "./types";
+import { liftToParts, toolPartToCall } from "./parts";
 
 function baseMessage(overrides: Partial<ChatMessage> = {}): ChatMessage {
   return {
@@ -299,5 +299,47 @@ describe("liftToParts determinism and totality", () => {
       { type: "reasoning", text: "think" },
       { type: "text", text: "hi" },
     ]);
+  });
+});
+
+describe("toolPartToCall (reverse of liftToParts' tool lift)", () => {
+  test("round-trips a pending tool call through lift and back", () => {
+    const message = baseMessage({
+      toolCalls: [
+        { id: "c1", name: "search", arguments: { q: "x" }, label: "Searching" },
+      ],
+    });
+    const [part] = liftToParts(message) as [ToolPart];
+    expect(toolPartToCall(part)).toEqual({
+      id: "c1",
+      name: "search",
+      arguments: { q: "x" },
+      label: "Searching",
+    });
+  });
+
+  test("round-trips a succeeded tool call", () => {
+    const message = baseMessage({
+      toolCalls: [{ id: "c2", name: "fetch", result: "ok", isError: false }],
+    });
+    const [part] = liftToParts(message) as [ToolPart];
+    expect(toolPartToCall(part)).toEqual({
+      id: "c2",
+      name: "fetch",
+      result: "ok",
+    });
+  });
+
+  test("round-trips a failed tool call", () => {
+    const message = baseMessage({
+      toolCalls: [{ id: "c3", name: "write", result: "failed", isError: true }],
+    });
+    const [part] = liftToParts(message) as [ToolPart];
+    expect(toolPartToCall(part)).toEqual({
+      id: "c3",
+      name: "write",
+      result: "failed",
+      isError: true,
+    });
   });
 });

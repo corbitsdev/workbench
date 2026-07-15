@@ -5,7 +5,28 @@ import type {
   FilePart,
   Part,
   ToolCall,
+  ToolPart,
 } from "./types";
+
+/**
+ * Reverse of `liftToolPart`: recover a `ToolCall` from a `ToolPart` so
+ * renderers that still speak `ToolCall` (`ToolNarrative` and its formatter
+ * callbacks, which are host-supplied and typed against the flat shape) can
+ * consume parts without a second, divergent tool-rendering path.
+ */
+export function toolPartToCall(part: ToolPart): ToolCall {
+  const { toolCallId, toolName, label, input, state, output, errorText } = part;
+  return {
+    id: toolCallId,
+    name: toolName,
+    ...(label !== undefined ? { label } : {}),
+    ...(input !== undefined ? { arguments: input } : {}),
+    ...(state === "output-available" ? { result: output ?? "" } : {}),
+    ...(state === "output-error"
+      ? { result: errorText ?? "", isError: true }
+      : {}),
+  };
+}
 
 function liftToolPart(toolCall: ToolCall): Part {
   const { id, name, label, arguments: input, result, isError } = toolCall;

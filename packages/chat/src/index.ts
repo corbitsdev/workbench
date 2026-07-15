@@ -33,7 +33,7 @@ export {
   type FilePart,
   type Part,
 } from "./types";
-export { liftToParts } from "./parts";
+export { liftToParts, toolPartToCall } from "./parts";
 export {
   compactMessages,
   type CompactedItem,
@@ -73,12 +73,10 @@ export { MessageBubble, type MessageBubbleProps } from "./MessageBubble";
 export { AgentTurn, type AgentTurnProps } from "./AgentTurn";
 export { ActivityBlock, type ActivityBlockProps } from "./ActivityBlock";
 export {
-  splitReasoningSteps,
   toSingleLine,
   isLowSignalReasoning,
-  dedupeReasoningSteps,
-  rollingReasoningLabel,
-} from "./reasoning-summary";
+  deriveActivityLabel,
+} from "./activity-label";
 export {
   readReasoningExpanded,
   readReasoningExpandedForDisplay,
@@ -92,8 +90,10 @@ export {
 export { MYRA_AGED_HISTORY_MS, isMyraHistoryAged } from "./aged-history";
 export {
   ToolNarrative,
+  toolTone,
   type ToolNarrativeProps,
   type ToolMarkerRenderContext,
+  type ToolTone,
 } from "./ToolNarrative";
 export { QuickReplyChips, type QuickReplyChipsProps } from "./QuickReplyChips";
 export {

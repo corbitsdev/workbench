@@ -54,9 +54,7 @@ describe("AgentTurn", () => {
     expect(text.indexOf("I weighed the options")).toBeGreaterThanOrEqual(0);
     expect(blockAt).toBeGreaterThanOrEqual(0);
     // The answer follows the activity block.
-    expect(answerAt).toBeGreaterThan(
-      text.indexOf("I weighed the options"),
-    );
+    expect(answerAt).toBeGreaterThan(text.indexOf("I weighed the options"));
   });
 
   it("keeps the activity block collapsed by default while streaming", () => {
@@ -198,5 +196,55 @@ describe("AgentTurn", () => {
       />,
     );
     expect(screen.queryByRole("button", { name: "Thumbs up" })).toBeNull();
+  });
+
+  it("polish parity: a hydrated turn (lifted from flat fields) renders identically to the same turn carrying assembler-native INTERLEAVED parts", () => {
+    // The hydrated message carries only flat fields (no parts) — AgentTurn
+    // lifts it into the deterministic flat layout (reasoning, tools, text).
+    const flat = agentMessage({
+      reasoning: "Step one: check the account\nStep two: draft the reply",
+      toolCalls: [
+        {
+          id: "c1",
+          name: "attio__query_records",
+          result: "[]",
+          isError: false,
+        },
+      ],
+    });
+    // The live message carries assembler-native parts in true stream order —
+    // reasoning split around the tool call, answer text last. Same settled
+    // content, different part order. ActivityBlock re-flattens (reasoning
+    // joined in part order, tools in part order), so the full rendered turn —
+    // not just the collapsed view — must be identical.
+    const { reasoning, toolCalls, ...withoutFlatFields } = flat;
+    const partsNative = {
+      ...withoutFlatFields,
+      parts: [
+        { type: "reasoning" as const, text: "Step one: check the account" },
+        {
+          type: "tool" as const,
+          toolCallId: "c1",
+          toolName: "attio__query_records",
+          state: "output-available" as const,
+          output: "[]",
+        },
+        { type: "reasoning" as const, text: "Step two: draft the reply" },
+        { type: "text" as const, text: flat.content },
+      ],
+    };
+    const hydrated = render(
+      <AgentTurn message={flat} formatToolSummary={() => "Searching Attio"} />,
+    );
+    const hydratedHtml = hydrated.getByTestId("agent-turn").outerHTML;
+    cleanup();
+    const live = render(
+      <AgentTurn
+        message={partsNative}
+        formatToolSummary={() => "Searching Attio"}
+      />,
+    );
+    const liveHtml = live.getByTestId("agent-turn").outerHTML;
+    expect(hydratedHtml).toBe(liveHtml);
   });
 });

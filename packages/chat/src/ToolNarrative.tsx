@@ -2,7 +2,7 @@ import { useState, type ReactNode } from "react";
 import { cn, toHumanLabel } from "@workbench/ui";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import type { ToolCall } from "./types";
-import { toSingleLine } from "./reasoning-summary";
+import { toSingleLine } from "./activity-label";
 import {
   parseToolResult,
   UIBlockView,
@@ -21,14 +21,32 @@ import {
   CHAT_TRACE_ROW,
 } from "./messageRhythm";
 
+/**
+ * A tool's rendering tone, derived from the tool part's state — the ONE place
+ * this decision is made (CL-3679). Internal tool failures are never red: red
+ * is reserved for member-actionable failures (message send failed, agent
+ * unavailable — see MessageBubble). A failed tool call gets a muted "failed"
+ * treatment, distinguishable but not alarming.
+ */
+export type ToolTone = "pending" | "failed" | "settled";
+
+export function toolTone(call: ToolCall): ToolTone {
+  if (call.result === undefined && call.isError !== true) return "pending";
+  if (call.isError === true) return "failed";
+  return "settled";
+}
+
+// Muted, not red — an internal tool failure is not a member-actionable
+// failure (CL-3668 color discipline). The full error text is still available
+// on expand; this is a shape difference (X vs bullet/blank), not a color one.
 function ErrorIcon() {
   return (
     <span
       data-testid="tool-marker-error"
-      className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-red"
+      className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-text-3/20"
     >
       <svg
-        className="h-2.5 w-2.5 text-white"
+        className="h-2.5 w-2.5 text-text-3"
         viewBox="0 0 24 24"
         fill="none"
         stroke="currentColor"
@@ -54,16 +72,17 @@ function BulletIcon() {
   );
 }
 
-// Settled marker: errors keep a loud badge; external tools get a quiet bullet;
-// internal tools get an empty slot (plain text, but rows stay column-aligned).
+// Settled marker: failures keep a distinct (muted) badge; external tools get
+// a quiet bullet; internal tools get an empty slot (plain text, but rows stay
+// column-aligned).
 function SettledMarker({
-  isError,
+  failed,
   external,
 }: {
-  isError: boolean;
+  failed: boolean;
   external: boolean;
 }) {
-  if (isError) return <ErrorIcon />;
+  if (failed) return <ErrorIcon />;
   if (external) return <BulletIcon />;
   return <span className="h-4 w-4 shrink-0" aria-hidden="true" />;
 }
@@ -71,7 +90,7 @@ function SettledMarker({
 export interface ToolMarkerRenderContext {
   call: ToolCall;
   pending: boolean;
-  isError: boolean;
+  failed: boolean;
   external: boolean;
 }
 
@@ -79,19 +98,19 @@ function ToolMarker({
   renderToolMarker,
   call,
   pending,
-  isError,
+  failed,
   external,
 }: ToolMarkerRenderContext & {
   renderToolMarker?: (ctx: ToolMarkerRenderContext) => ReactNode | null;
 }) {
-  if (isError) return <ErrorIcon />;
-  const ctx: ToolMarkerRenderContext = { call, pending, isError, external };
+  if (failed) return <ErrorIcon />;
+  const ctx: ToolMarkerRenderContext = { call, pending, failed, external };
   if (renderToolMarker !== undefined && external) {
     const branded = renderToolMarker(ctx);
     if (branded !== null && branded !== undefined) return branded;
   }
   if (pending) return <ActivityPulse />;
-  return <SettledMarker isError={false} external={external} />;
+  return <SettledMarker failed={false} external={external} />;
 }
 
 export function ActivityPulse() {
@@ -283,7 +302,9 @@ function ToolRow({
 }) {
   const [open, setOpen] = useState(false);
   const reduceMotion = useReducedMotion();
-  const pending = call.result === undefined && !call.isError;
+  const tone = toolTone(call);
+  const pending = tone === "pending";
+  const failed = tone === "failed";
   const argsSummary = suppressArgsSummary
     ? null
     : summarizeArgs(call.arguments);
@@ -294,7 +315,7 @@ function ToolRow({
     !pending && formatResult !== undefined ? formatResult(call) : null;
   const hasFriendly = friendlyOutcome !== null && friendlyOutcome.trim() !== "";
   const resultBlock =
-    call.result !== undefined && call.result !== "" && !call.isError
+    call.result !== undefined && call.result !== "" && !failed
       ? parseToolResult(call.result)
       : null;
   // Structured interactive blocks (form/document/…) stay available even when
@@ -308,9 +329,7 @@ function ToolRow({
     ? !pending &&
       (hasFriendly ||
         structuredBlock !== null ||
-        (call.isError === true &&
-          call.result !== undefined &&
-          call.result !== ""))
+        (failed && call.result !== undefined && call.result !== ""))
     : !pending && (call.result !== undefined || hasArgs);
 
   // Internal meta-tools: quiet reasoning-style text, no tool chrome.
@@ -340,7 +359,7 @@ function ToolRow({
           <ToolMarker
             call={call}
             pending={pending}
-            isError={call.isError === true}
+            failed={failed}
             external={external}
             {...(renderToolMarker !== undefined ? { renderToolMarker } : {})}
           />
@@ -350,7 +369,9 @@ function ToolRow({
             "flex min-w-0 items-center",
             CHAT_TRACE_INLINE_GAP,
             CHAT_TRACE_LABEL,
-            pending ? "text-text-2" : call.isError ? "text-red" : undefined,
+            // Internal tool failures are muted, never red (CL-3668) — red is
+            // reserved for member-actionable failures (MessageBubble).
+            pending ? "text-text-2" : failed ? "text-text-3" : undefined,
           )}
         >
           {!(open && expandable) && (
@@ -377,16 +398,17 @@ function ToolRow({
         </span>
       </button>
       {/* Failures surface the provider's own message inline, grouped with the
-          row — never a bare, detached red line. The full text is available on
-          expand; this preview is truncated with a native tooltip. */}
-      {call.isError === true &&
+          row — never a bare, detached red line. Muted, not red (CL-3668):
+          internal tool failures are not member-actionable. The full text is
+          available on expand; this preview is truncated with a native tooltip. */}
+      {failed &&
         call.result !== undefined &&
         call.result.trim() !== "" &&
         !(open && expandable) && (
           <p
             className={cn(
               CHAT_TRACE_DETAIL_OFFSET,
-              "mt-1 truncate text-xs text-red",
+              "mt-1 truncate text-xs text-text-3",
             )}
             title={call.result}
             data-testid="tool-row-error"
@@ -418,7 +440,7 @@ function ToolRow({
                 <p
                   className={cn(
                     CHAT_TRACE_OUTCOME_BODY,
-                    call.isError === true && "text-red",
+                    failed && "text-text-3",
                   )}
                 >
                   {friendlyOutcome}
@@ -426,10 +448,10 @@ function ToolRow({
               )}
               {structuredBlock === null &&
                 !hasFriendly &&
-                call.isError === true &&
+                failed &&
                 call.result !== undefined &&
                 call.result !== "" && (
-                  <pre className="max-h-60 overflow-auto whitespace-pre-wrap break-words rounded bg-red/10 px-2 py-1.5 font-mono text-red">
+                  <pre className="max-h-60 overflow-auto whitespace-pre-wrap break-words rounded bg-surface-2 px-2 py-1.5 font-mono text-text-3">
                     {call.result}
                   </pre>
                 )}
@@ -441,13 +463,11 @@ function ToolRow({
                   {JSON.stringify(call.arguments, null, 2)}
                 </pre>
               )}
-              {call.isError === true &&
-                call.result !== undefined &&
-                call.result !== "" && (
-                  <pre className="max-h-60 overflow-auto whitespace-pre-wrap break-words rounded bg-red/10 px-2 py-1.5 font-mono text-red">
-                    {call.result}
-                  </pre>
-                )}
+              {failed && call.result !== undefined && call.result !== "" && (
+                <pre className="max-h-60 overflow-auto whitespace-pre-wrap break-words rounded bg-surface-2 px-2 py-1.5 font-mono text-text-3">
+                  {call.result}
+                </pre>
+              )}
               {resultBlock !== null && resultBlock.kind === "text" && (
                 <pre className="max-h-60 overflow-auto whitespace-pre-wrap break-words rounded bg-surface-2 px-2 py-1.5 font-mono text-text-2">
                   {resultBlock.text}
@@ -544,13 +564,13 @@ function ToolRows({
 function CollapsedToolSummary({
   summary,
   count,
-  hasError,
+  hasFailure,
   external,
   children,
 }: {
   summary: string;
   count: number;
-  hasError: boolean;
+  hasFailure: boolean;
   external: boolean;
   children: ReactNode;
 }) {
@@ -566,14 +586,16 @@ function CollapsedToolSummary({
         className={cn(CHAT_TRACE_ROW, "cursor-pointer text-left", TOUCH_TARGET)}
       >
         <span className={CHAT_TRACE_MARKER_ALIGN}>
-          <SettledMarker isError={hasError} external={external} />
+          <SettledMarker failed={hasFailure} external={external} />
         </span>
         <span
           className={cn(
             "flex min-w-0 items-center",
             CHAT_TRACE_INLINE_GAP,
             CHAT_TRACE_LABEL,
-            hasError ? "text-red" : undefined,
+            // Muted, not red — a rolled-up group summary follows the same
+            // color discipline as a single row (CL-3668).
+            hasFailure ? "text-text-3" : undefined,
           )}
         >
           {!open && (
@@ -621,9 +643,7 @@ export function ToolNarrative({
       ? toolCalls
       : toolCalls.filter((c) => !isQuietTool(c.name));
 
-  const anyPending = toolCalls.some(
-    (c) => c.result === undefined && c.isError !== true,
-  );
+  const anyPending = toolCalls.some((c) => toolTone(c) === "pending");
   // Collapse only considers real (non-quiet) tools — meta-tools never pad the count.
   const shouldCollapse =
     compact === true &&
@@ -652,7 +672,7 @@ export function ToolNarrative({
         <CollapsedToolSummary
           summary={summarizeCalls(realCalls)}
           count={realCalls.length}
-          hasError={realCalls.some((c) => c.isError === true)}
+          hasFailure={realCalls.some((c) => toolTone(c) === "failed")}
           external={realCalls.some(
             (c) => isExternalTool === undefined || isExternalTool(c.name),
           )}
