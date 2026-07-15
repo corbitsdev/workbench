@@ -294,16 +294,20 @@ export async function createMyraThread(
   // Unused threads are hidden from every list until their first message
   // (CL-3749), so a member clicking "+ New chat" repeatedly would otherwise
   // strand an unbounded trail of invisible, undeletable rows (each with a
-  // deployed instance). A never-used thread IS a new chat — hand it back
-  // instead of creating another. Explicit-label creates still make a fresh
-  // thread: a named thread carries user intent an anonymous blank one doesn't.
-  // Only a thread on the CURRENT definition is reusable — reusing one deployed
-  // against a since-reseeded def would hand out a stale toolset and quietly
-  // break the CL-2517 guarantee that a new thread launches with the latest
-  // tools.
+  // deployed instance). A never-used, default-labelled thread IS a new chat —
+  // hand it back instead of creating another. Explicit-label creates (and
+  // labelled unused rows) are excluded on both sides: a named thread carries
+  // user intent an anonymous blank one doesn't, so it is neither consumed as
+  // someone's "+ New chat" nor duplicated by one. Only a thread on the CURRENT
+  // definition is reusable — reusing one deployed against a since-reseeded def
+  // would hand out a stale toolset and quietly break the CL-2517 guarantee
+  // that a new thread launches with the latest tools.
   if (opts.label === undefined) {
+    const isAnonymousUnused = (row: (typeof existingCount)[number]) =>
+      row.firstMessageAt === null &&
+      (row.label === null || isDefaultMyraThreadLabel(row.label));
     const unused = existingCount.find(
-      (row) => row.firstMessageAt === null && row.agentId === def.id,
+      (row) => isAnonymousUnused(row) && row.agentId === def.id,
     );
     if (unused) {
       return {
@@ -317,6 +321,33 @@ export async function createMyraThread(
           firstMessageAt: null,
         },
       };
+    }
+    // Anonymous unused rows on a STALE definition can never be reused, are
+    // hidden from every list, and have no UI path to delete — reap them here,
+    // best-effort, so a def reseed doesn't strand deployed instances forever.
+    // A failure must not block the create; the row just waits for a later
+    // attempt.
+    const stale = existingCount.filter(
+      (row) => isAnonymousUnused(row) && row.agentId !== def.id,
+    );
+    for (const row of stale) {
+      try {
+        const staleInstance = await db.query.agentInstance.findFirst({
+          where: eq(agentInstance.id, row.instanceId),
+        });
+        if (!staleInstance) continue;
+        await teardownThreadRows(db, {
+          instanceId: row.instanceId,
+          mappingId: row.id,
+          instancePrincipalId: staleInstance.principalId,
+        });
+      } catch (err) {
+        log.error("failed to reap stale unused Myra thread", {
+          mappingId: row.id,
+          instanceId: row.instanceId,
+          error: err instanceof Error ? err : new Error(String(err)),
+        });
+      }
     }
   }
 
