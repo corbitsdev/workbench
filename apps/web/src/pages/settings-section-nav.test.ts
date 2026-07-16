@@ -11,6 +11,10 @@ describe("resolveActiveSectionId", () => {
     expect(resolveActiveSectionId("#your-agent")).toBe("your-agent");
   });
 
+  it("resolves the Myra defaults section hash", () => {
+    expect(resolveActiveSectionId("#myra-defaults")).toBe("myra-defaults");
+  });
+
   it("resolves the hash without a leading #", () => {
     expect(resolveActiveSectionId("account")).toBe("account");
   });
