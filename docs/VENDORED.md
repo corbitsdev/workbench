@@ -301,6 +301,30 @@ pack-recv-gc-*.pack`, plus bare `TypeError`s from torn `.idx` loads).
   Guarded by the `"a persistently corrupt (repoId, ref) quarantines..."`
   test in `src/ws/hub-link.test.ts`.
 
+- **WORKBENCH-LOCAL (CL-3779) — inline heartbeat handling** (`src/ws/hub-link.ts`):
+  every inbound WS frame — including the heartbeat `pong` — was chained onto a
+  single serial `messageQueue` promise, on which heavy sibling arms are
+  `await`ed (notably `repo.pack.done` → `await handlePackDone(...)`, an
+  isomorphic-git pack-apply disk write). A pack-apply that held the queue
+  longer than the pong window (`pingIntervalMs * 2`) starved the queued `pong`,
+  `lastPongAt` went stale, and the ping timer (CL-2405) closed the sidecar's own
+  healthy socket ("Hub pong timeout, closing connection") — the same
+  self-disconnect class as the CL-2405 heartbeat work. The `ws.message`
+  listener now guardedly parses the frame and, if its type is `"pong"`, sets
+  `lastPongAt` synchronously and returns BEFORE enqueuing, so the heartbeat can
+  never be blocked by awaited sibling I/O. A length gate (`data.length < 64`)
+  keeps the inline `JSON.parse` off the hot/large frames (e.g. `repo.pack.push`
+  chunks), so only tiny heartbeat-sized frames are re-parsed. All other frames
+  enqueue exactly as before. The `case "pong"` arm in `handleMessage` is
+  retained — a real `pong` is valid JSON and always takes the inline path, so
+  that arm is unreachable for inline-handled pongs; it is kept for parity with
+  upstream `@intx/hub-agent` (minimizing fork drift), not as a live path. No
+  inbound `ping` arm exists in `handleMessage`, so none was added — the sidecar
+  pings the hub, not vice versa. The deeper head-of-line blocking (a heavy
+  awaited `handlePackDone` pack-apply stalls ALL inbound frames on the serial
+  queue, not just pong) is tracked in CL-3781 and deferred. Guarded by
+  `src/ws/hub-link-heartbeat.test.ts`.
+
 ---
 
 ## Vendored sidecar files
