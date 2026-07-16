@@ -128,6 +128,150 @@ describe("createCatalogTools", () => {
   });
 });
 
+describe("createCatalogTools: catalogued-but-unavailable tools (CL-3795)", () => {
+  // "linear" is catalogued (its factory is committed and search_tools must
+  // advertise it) but its package never constructed a runner — the harness
+  // passes `availableToolNames` excluding it, modeling a missing credential.
+  const linearCatalog: ToolCatalog = [
+    {
+      package: "linear",
+      summary: "Linear issue tracker.",
+      tags: ["issues"],
+      tools: [
+        { name: "linear__create_issue", description: "Create an issue." },
+      ],
+    },
+  ];
+
+  test("search_tools still returns the catalogued-but-unavailable tool", async () => {
+    const exposure: ToolExposureState = { exposed: new Set() };
+    const runner = createCatalogTools({
+      catalog: linearCatalog,
+      exposure,
+      availableToolNames: new Set(),
+    });
+    const result = await runner.run(
+      call(SEARCH_TOOLS_NAME, { query: "linear issue" }),
+      signal,
+    );
+    expect(result.isError).toBeUndefined();
+    const content = result.content as {
+      packages: { package: string; tools: { name: string }[] }[];
+    };
+    expect(
+      content.packages.some((p) =>
+        p.tools.some((t) => t.name === "linear__create_issue"),
+      ),
+    ).toBe(true);
+  });
+
+  test("search_tools does not silently auto-expose an unavailable tool into the function list", async () => {
+    const exposure: ToolExposureState = { exposed: new Set() };
+    const runner = createCatalogTools({
+      catalog: linearCatalog,
+      exposure,
+      availableToolNames: new Set(),
+    });
+    await runner.run(
+      call(SEARCH_TOOLS_NAME, { query: "linear issue" }),
+      signal,
+    );
+    expect(exposure.exposed.has("linear__create_issue")).toBe(false);
+  });
+
+  test("search_tools auto-expose hint tells the model the tool needs a credential", async () => {
+    const exposure: ToolExposureState = { exposed: new Set() };
+    const runner = createCatalogTools({
+      catalog: linearCatalog,
+      exposure,
+      availableToolNames: new Set(),
+    });
+    const result = await runner.run(
+      call(SEARCH_TOOLS_NAME, { query: "linear issue" }),
+      signal,
+    );
+    const content = result.content as {
+      hint: string;
+      needsCredential?: string[];
+    };
+    expect(content.needsCredential).toEqual(["linear__create_issue"]);
+    expect(content.hint).toMatch(/credential/i);
+    expect(content.hint).toMatch(/Capabilities/);
+  });
+
+  test("load_tools by name returns an actionable credential-missing message instead of loading it", async () => {
+    const exposure: ToolExposureState = { exposed: new Set() };
+    const runner = createCatalogTools({
+      catalog: linearCatalog,
+      exposure,
+      availableToolNames: new Set(),
+    });
+    const result = await runner.run(
+      call(LOAD_TOOLS_NAME, { names: ["linear__create_issue"] }),
+      signal,
+    );
+    expect(result.isError).toBeUndefined();
+    expect(exposure.exposed.size).toBe(0);
+    const content = result.content as {
+      loaded: string[];
+      needsCredential?: string[];
+      unknownNames: string[];
+      note: string;
+    };
+    // Must not be reported as unknown — the tool IS catalogued, it just isn't
+    // callable yet, which is a different, more useful message to the model.
+    expect(content.unknownNames).toEqual([]);
+    expect(content.loaded).toEqual([]);
+    expect(content.needsCredential).toEqual(["linear__create_issue"]);
+    expect(content.note).toMatch(/credential/i);
+    expect(content.note).toMatch(/Capabilities/);
+  });
+
+  test("load_tools by package: available tools load and unavailable ones are reported separately", async () => {
+    const mixedCatalog: ToolCatalog = [
+      {
+        package: "linear",
+        summary: "Linear issue tracker.",
+        tags: ["issues"],
+        tools: [
+          { name: "linear__create_issue", description: "Create an issue." },
+          { name: "linear__list_issues", description: "List issues." },
+        ],
+      },
+    ];
+    const exposure: ToolExposureState = { exposed: new Set() };
+    const runner = createCatalogTools({
+      catalog: mixedCatalog,
+      exposure,
+      availableToolNames: new Set(["linear__list_issues"]),
+    });
+    const result = await runner.run(
+      call(LOAD_TOOLS_NAME, { package: "linear" }),
+      signal,
+    );
+    expect(exposure.exposed).toEqual(new Set(["linear__list_issues"]));
+    const content = result.content as {
+      loaded: string[];
+      needsCredential?: string[];
+    };
+    expect(content.loaded).toEqual(["linear__list_issues"]);
+    expect(content.needsCredential).toEqual(["linear__create_issue"]);
+  });
+
+  test("without availableToolNames, every catalogued tool is treated as available (backward compatible)", async () => {
+    const exposure: ToolExposureState = { exposed: new Set() };
+    const runner = createCatalogTools({ catalog: linearCatalog, exposure });
+    const result = await runner.run(
+      call(LOAD_TOOLS_NAME, { names: ["linear__create_issue"] }),
+      signal,
+    );
+    expect(exposure.exposed.has("linear__create_issue")).toBe(true);
+    expect(
+      (result.content as { needsCredential?: string[] }).needsCredential,
+    ).toBeUndefined();
+  });
+});
+
 describe("search_tools auto-expose and affordance", () => {
   test("auto-exposes the tools when three or fewer match", async () => {
     const exposure: ToolExposureState = { exposed: new Set() };
