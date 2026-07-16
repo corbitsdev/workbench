@@ -6,11 +6,15 @@ import {
   MomentDetailSchema,
   type MomentDetail,
   type MomentTurnPart,
+  type MomentTurnInputMessage,
 } from "@workbench/timeline";
 import { type } from "arktype";
+import { sql } from "drizzle-orm";
+import type { AgentRepoStore } from "@intx/hub-sessions";
 
 import type { HubDb } from "../db";
 import { resolveTimelinePrincipalIds } from "./principal-activity";
+import { readTurnInputSnapshot } from "./turn-input-snapshot";
 
 // postgres-js returns an array-like RowList; PGlite (integration tests) returns
 // `{ rows }`. Normalize both, as the timeline union service does.
@@ -63,8 +67,24 @@ async function toolCallDetail(
   };
 }
 
+// Resolve the on-disk agent-state repo address for an inference turn's
+// instance. The address is the repo key the hub stores pushed state packs
+// under; null when the instance row is gone.
+async function resolveInstanceAddress(
+  db: HubDb,
+  instanceId: string,
+): Promise<string | null> {
+  const rows = rowsOf(
+    await db.execute(
+      sql`select address from agent_instance where id = ${instanceId} limit 1`,
+    ),
+  );
+  return toStringOrNull(rows[0]?.["address"]);
+}
+
 async function turnDetail(
   db: HubDb,
+  repoStore: AgentRepoStore,
   base: { kind: string; id: string },
   scope: { id: string; tenantId: string; principalIds: string[] },
 ): Promise<MomentDetail | null> {
@@ -85,14 +105,105 @@ async function turnDetail(
       ...(toolName !== null ? { toolName } : {}),
     };
   });
+
+  const input = await resolveTurnInput(db, repoStore, {
+    id: scope.id,
+    instanceId: toStringOrNull(row["instance_id"]),
+    status: toStringOrNull(row["status"]),
+    startedAt: row["started_at"],
+    endedAt: row["ended_at"],
+  });
+
   return {
     ...base,
     turn: {
       model: toStringOrNull(row["model"]),
       durationMs: toNumberOrNull(row["duration_ms"]),
       parts,
+      ...input,
     },
   };
+}
+
+// Count the instance's COMPLETED inference turns that started after this one —
+// the turn's ordinal from the newest end among the `inference-done` checkpoints
+// (which are 1:1 with completed turns). Only completed turns are counted, so an
+// error/aborted turn — which commits an `inference-error` checkpoint but is not
+// in this set — can never shift the alignment.
+async function countLaterCompletedTurns(
+  db: HubDb,
+  instanceId: string,
+  turnId: string,
+  startedAt: unknown,
+): Promise<number> {
+  const rows = rowsOf(
+    await db.execute(
+      sql`select count(*)::int as later
+          from inference_turn
+          where instance_id = ${instanceId}
+            and status = 'completed'
+            and (started_at > ${startedAt}
+                 or (started_at = ${startedAt} and id > ${turnId}))`,
+    ),
+  );
+  return Number(rows[0]?.["later"] ?? 0);
+}
+
+function toMsOrNull(value: unknown): number | null {
+  if (value === null || value === undefined) return null;
+  const ms = new Date(value as string | number | Date).getTime();
+  return Number.isFinite(ms) ? ms : null;
+}
+
+// Read the turn's input conversation from the hub-durable agent-state repo,
+// shaped as the `{ input }` / `{ inputGap }` fields the turn detail carries.
+async function resolveTurnInput(
+  db: HubDb,
+  repoStore: AgentRepoStore,
+  turn: {
+    id: string;
+    instanceId: string | null;
+    status: string | null;
+    startedAt: unknown;
+    endedAt: unknown;
+  },
+): Promise<{ input: MomentTurnInputMessage[] } | { inputGap: string }> {
+  if (turn.instanceId === null) {
+    return { inputGap: "The agent for this turn is no longer available." };
+  }
+  // Only a completed turn has a durable `inference-done` checkpoint carrying its
+  // prompt; a running or failed turn is an honest gap rather than a risk of
+  // surfacing another turn's prompt.
+  if (turn.status !== "completed") {
+    return {
+      inputGap:
+        "The recorded input is available only after a turn completes; this turn did not complete.",
+    };
+  }
+  const startedAtMs = toMsOrNull(turn.startedAt);
+  const endedAtMs = toMsOrNull(turn.endedAt);
+  if (startedAtMs === null || endedAtMs === null) {
+    return { inputGap: "This turn has no recorded time span to align on." };
+  }
+  const address = await resolveInstanceAddress(db, turn.instanceId);
+  if (address === null) {
+    return { inputGap: "The agent for this turn is no longer available." };
+  }
+  const laterTurnCount = await countLaterCompletedTurns(
+    db,
+    turn.instanceId,
+    turn.id,
+    turn.startedAt,
+  );
+  const snapshot = await readTurnInputSnapshot(repoStore, {
+    address,
+    startedAtMs,
+    endedAtMs,
+    laterTurnCount,
+  });
+  return "gap" in snapshot
+    ? { inputGap: snapshot.gap }
+    : { input: snapshot.messages };
 }
 
 async function runDetail(
@@ -121,6 +232,7 @@ async function runDetail(
  */
 export async function getMomentDetail(args: {
   db: HubDb;
+  repoStore: AgentRepoStore;
   tenantId: string;
   principalId: string;
   kind: string;
@@ -134,7 +246,7 @@ export async function getMomentDetail(args: {
   if (args.kind === "tool_call") {
     detail = await toolCallDetail(args.db, base, scope);
   } else if (args.kind === "inference_turn") {
-    detail = await turnDetail(args.db, base, scope);
+    detail = await turnDetail(args.db, args.repoStore, base, scope);
   } else if (args.kind === "workflow_run") {
     detail = await runDetail(args.db, base, scope);
   } else {

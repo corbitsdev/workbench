@@ -858,7 +858,7 @@ hubApp.route("/api/tenants/:tenantId/pricing", createPricingRouter({ db }));
 void prewarmPriceCatalog();
 hubApp.route(
   "/api/tenants/:tenantId/principals/:principalId/activity",
-  createPrincipalActivityRouter({ db }),
+  createPrincipalActivityRouter({ db, repoStore }),
 );
 hubApp.route(
   "/api/tenants/:tenantId/principals/:principalId/roster",

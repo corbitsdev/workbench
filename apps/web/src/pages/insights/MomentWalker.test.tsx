@@ -271,6 +271,74 @@ describe("MomentWalker", () => {
     within(panel).getByTestId("moment-turn-model");
   });
 
+  it("renders the real input conversation and output content of an inference_turn", async () => {
+    activityEntries = [
+      {
+        id: "turn_1",
+        kind: "inference_turn",
+        sourceTable: "inference_turn",
+        timestamp: "2026-07-01T12:00:00.000Z",
+        summary: "opus",
+      },
+    ];
+    detailResult = {
+      kind: "inference_turn",
+      id: "turn_1",
+      turn: {
+        model: "opus",
+        durationMs: 4200,
+        parts: [
+          { type: "reasoning", content: "thinking about acme" },
+          { type: "text", content: "Here is the answer" },
+        ],
+        input: [
+          { role: "system", kind: "message", text: "You are Myra." },
+          { role: "user", kind: "message", text: "who is acme corp" },
+        ],
+      },
+    };
+    renderWalker();
+
+    await waitFor(() => screen.getByRole("listbox"));
+    const panel = screen.getByTestId("moment-decomposition");
+    await waitFor(() => within(panel).getByTestId("moment-turn-input"));
+    within(panel).getByText("You are Myra.");
+    within(panel).getByText("who is acme corp");
+    within(panel).getByTestId("moment-turn-output");
+    within(panel).getByText("thinking about acme");
+    within(panel).getByText("Here is the answer");
+  });
+
+  it("shows an honest input gap when the conversation store is unavailable", async () => {
+    activityEntries = [
+      {
+        id: "turn_1",
+        kind: "inference_turn",
+        sourceTable: "inference_turn",
+        timestamp: "2026-07-01T12:00:00.000Z",
+        summary: "opus",
+      },
+    ];
+    detailResult = {
+      kind: "inference_turn",
+      id: "turn_1",
+      turn: {
+        model: "opus",
+        durationMs: null,
+        parts: [],
+        inputGap: "The conversation store for this agent is not available.",
+      },
+    };
+    renderWalker();
+
+    await waitFor(() => screen.getByRole("listbox"));
+    const panel = screen.getByTestId("moment-decomposition");
+    await waitFor(() => within(panel).getByTestId("moment-turn-input-gap"));
+    within(panel).getByText(
+      "The conversation store for this agent is not available.",
+    );
+  });
+
   it("shows the grant effect on a grant moment (no loud usage-gap chip)", async () => {
     activityEntries = ENTRIES;
     renderWalker();
