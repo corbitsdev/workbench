@@ -17,6 +17,10 @@ describe("resolveActiveSectionId", () => {
     expect(resolveActiveSectionId("#myra-defaults")).toBe("myra-defaults");
   });
 
+  it("resolves the personalization & style section hash", () => {
+    expect(resolveActiveSectionId("#myra-style")).toBe("myra-style");
+  });
+
   it("resolves the hash without a leading #", () => {
     expect(resolveActiveSectionId("account")).toBe("account");
   });

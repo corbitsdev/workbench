@@ -292,6 +292,20 @@ export function isMyraVariantId(
   return kind === undefined || variant.kind === kind;
 }
 
+/**
+ * The Myra surface (`chat` or `triage`) that a seeded template key belongs
+ * to, or `null` when the key names no Myra variant — e.g. a non-Myra agent
+ * template. Used to gate per-surface personalization (the style overlay) to
+ * only Myra instances, independent of the "personal" template-kind marker
+ * that gates operator-identity personalization.
+ */
+export function myraSurfaceForTemplateKey(
+  templateKey: string,
+): MyraVariantKind | null {
+  const variant = MYRA_VARIANTS.find((v) => v.templateKey === templateKey);
+  return variant?.kind ?? null;
+}
+
 export function defaultMyraVariant(kind: MyraVariantKind): MyraVariant {
   const variant = MYRA_VARIANTS.find((v) => v.kind === kind && v.isDefault);
   if (!variant) {

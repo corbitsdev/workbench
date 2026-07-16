@@ -25,18 +25,67 @@ export type MyraVariantsResponse = typeof MyraVariantsResponseSchema.infer;
 /**
  * A member's chosen variant per surface. `null` means "follow the canonical
  * default" — the variant whose `isDefault` is true — rather than a pinned id.
+ * The personalization style axes ride on the same record: `personality` /
+ * `emojiUse` / `uiType` are global; the three usage dials are per-surface.
+ * `null` on any axis means "use that axis's default option".
  */
 export const MyraPreferencesSchema = type({
   chat: "string | null",
   triage: "string | null",
+  personality: "string | null",
+  emojiUse: "string | null",
+  uiType: "string | null",
+  artifactUsageChat: "string | null",
+  artifactUsageTriage: "string | null",
+  toolUsageChat: "string | null",
+  toolUsageTriage: "string | null",
+  skillUsageChat: "string | null",
+  skillUsageTriage: "string | null",
 });
 export type MyraPreferences = typeof MyraPreferencesSchema.infer;
 
 export const MyraPreferencesUpdateSchema = type({
   "chat?": "string | null",
   "triage?": "string | null",
+  "personality?": "string | null",
+  "emojiUse?": "string | null",
+  "uiType?": "string | null",
+  "artifactUsageChat?": "string | null",
+  "artifactUsageTriage?": "string | null",
+  "toolUsageChat?": "string | null",
+  "toolUsageTriage?": "string | null",
+  "skillUsageChat?": "string | null",
+  "skillUsageTriage?": "string | null",
 });
 export type MyraPreferencesUpdate = typeof MyraPreferencesUpdateSchema.infer;
+
+/**
+ * The style-axes catalog (id/label/description per option; no prompt
+ * snippet text is shipped to the client). `personality` / `emojiUse` /
+ * `uiType` axes apply globally; `artifactUsage` / `toolUsage` / `skillUsage`
+ * each back two preference fields (…Chat / …Triage) for the per-surface
+ * split.
+ */
+export const StyleAxisOptionSchema = type({
+  id: "string",
+  label: "string",
+  description: "string",
+});
+export type StyleAxisOption = typeof StyleAxisOptionSchema.infer;
+
+export const StyleAxisSchema = type({
+  id: "'personality' | 'emojiUse' | 'uiType' | 'artifactUsage' | 'toolUsage' | 'skillUsage'",
+  label: "string",
+  description: "string",
+  defaultOptionId: "string",
+  options: StyleAxisOptionSchema.array(),
+});
+export type StyleAxis = typeof StyleAxisSchema.infer;
+export type StyleAxisId = StyleAxis["id"];
+
+export const StyleAxesResponseSchema = type({
+  axes: StyleAxisSchema.array(),
+});
 
 function myraBase(tenantId: string): string {
   return `tenants/${encodeURIComponent(tenantId)}`;
@@ -54,6 +103,20 @@ export async function getMyraVariants(
     throw new Error(`Invalid Myra variants response: ${parsed.summary}`);
   }
   return parsed.variants;
+}
+
+export async function getMyraStyleAxes(
+  tenantId: string,
+): Promise<StyleAxis[]> {
+  const raw = await hubFetch<unknown>(
+    "GET",
+    `${myraBase(tenantId)}/myra/style-axes`,
+  );
+  const parsed = StyleAxesResponseSchema(raw);
+  if (parsed instanceof type.errors) {
+    throw new Error(`Invalid Myra style-axes response: ${parsed.summary}`);
+  }
+  return parsed.axes;
 }
 
 export async function getMyraPreferences(
@@ -90,6 +153,10 @@ export function myraVariantsKey(tenantId: string | null) {
   return ["myra-variants", tenantId] as const;
 }
 
+export function myraStyleAxesKey(tenantId: string | null) {
+  return ["myra-style-axes", tenantId] as const;
+}
+
 export function myraPreferencesKey(tenantId: string | null) {
   return ["myra-preferences", tenantId] as const;
 }
@@ -100,6 +167,18 @@ export function useMyraVariants(tenantId: string | null) {
     queryFn: () => {
       if (tenantId === null) throw new Error("tenantId is required");
       return getMyraVariants(tenantId);
+    },
+    enabled: tenantId !== null,
+    staleTime: 5 * 60_000,
+  });
+}
+
+export function useMyraStyleAxes(tenantId: string | null) {
+  return useQuery<StyleAxis[]>({
+    queryKey: myraStyleAxesKey(tenantId),
+    queryFn: () => {
+      if (tenantId === null) throw new Error("tenantId is required");
+      return getMyraStyleAxes(tenantId);
     },
     enabled: tenantId !== null,
     staleTime: 5 * 60_000,

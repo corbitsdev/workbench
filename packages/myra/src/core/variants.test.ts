@@ -6,6 +6,7 @@ import {
   getMyraVariant,
   isMyraVariantId,
   listMyraVariants,
+  myraSurfaceForTemplateKey,
   resolveMyraVariant,
 } from "./variants";
 import {
@@ -186,5 +187,13 @@ describe("variant lookup helpers", () => {
     expect(resolveMyraVariant("chat", "myra-triage-opus-4-8").id).toBe(
       defaultMyraVariant("chat").id,
     );
+  });
+
+  test("myraSurfaceForTemplateKey resolves chat and triage template keys", () => {
+    expect(myraSurfaceForTemplateKey("myra")).toBe("chat");
+    expect(myraSurfaceForTemplateKey("myra-chat-opus-4-8")).toBe("chat");
+    expect(myraSurfaceForTemplateKey("myra-triage")).toBe("triage");
+    expect(myraSurfaceForTemplateKey("myra-triage-kimi-k2-6")).toBe("triage");
+    expect(myraSurfaceForTemplateKey("oat")).toBeNull();
   });
 });
