@@ -91,7 +91,7 @@ export function describeHubApiFailure(error: unknown): string {
   return "Failed to load analytics data. Check your connection and try again.";
 }
 
-async function hubFetch<T>(
+export async function hubFetch<T>(
   method: string,
   path: string,
   body?: unknown,

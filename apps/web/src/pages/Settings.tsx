@@ -35,12 +35,15 @@ import { useTourLauncher } from "../components/tour/OnboardingTour";
 import { useActiveWorkbench } from "../lib/active-workbench-context";
 import { WhatsNewSection } from "../components/whats-new/WhatsNewSection";
 import { MemberConnectionsPanel } from "../components/MemberConnectionsPanel";
+import { MyraDefaultsPanel } from "../components/MyraDefaultsPanel";
 import { MySchedules } from "../components/MySchedules";
 import { SettingsSectionNav } from "./SettingsSectionNav";
 import { MORNING_BRIEF_ANCHOR_ID } from "./settings-section-nav";
 import { useMyraVoiceInput } from "../hooks/use-myra-voice-input";
 
-function buildSections(myraVoiceBuildEnabled: boolean): SettingsSectionDescriptor[] {
+function buildSections(
+  myraVoiceBuildEnabled: boolean,
+): SettingsSectionDescriptor[] {
   return [
     {
       id: "profile",
@@ -256,6 +259,14 @@ export default function Settings() {
               description="How Myra acts on your behalf."
             >
               <PreferencesPanel categories={["Agent"]} />
+            </SettingsGroup>
+
+            <SettingsGroup
+              id="myra-defaults"
+              title="Myra defaults"
+              description="Pick which Myra definition powers your chat and inbox automation."
+            >
+              <MyraDefaultsPanel tenantId={activeTenantId} />
             </SettingsGroup>
 
             <SettingsGroup
