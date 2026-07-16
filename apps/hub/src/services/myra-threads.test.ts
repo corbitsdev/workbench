@@ -297,9 +297,7 @@ describe("createMyraThread", () => {
           ),
         },
         myraVariantPreference: {
-          findFirst: mock(() =>
-            Promise.resolve(opts.variantPref ?? undefined),
-          ),
+          findFirst: mock(() => Promise.resolve(opts.variantPref ?? undefined)),
         },
       },
       transaction: mock(async (fn: (tx: unknown) => Promise<void>) => {
@@ -487,6 +485,58 @@ describe("createMyraThread", () => {
     expect(deleted.length).toBeGreaterThan(0);
     // Two transactions: the reap teardown and the create.
     expect(txCount).toBe(2);
+  });
+
+  it("CL-3793: reaps a deepseek-bound blank thread and binds + New Chat to the newly selected Opus variant", async () => {
+    // Repro for CL-3793: a member's only existing thread is an anonymous,
+    // never-messaged "Chat" bound to the canonical deepseek definition
+    // (agt-myra). The member then selects the Opus chat variant and clicks
+    // "+ New Chat" (label: undefined). The blank deepseek thread must NOT be
+    // handed back — it must be reaped, and the new thread's instance must be
+    // bound to the Opus-seeded definition, not the stale deepseek one.
+    let txCount = 0;
+    const deleted: unknown[] = [];
+    const inserted: Record<string, unknown>[] = [];
+    const db = buildCreateDb({
+      transactions: () => (txCount += 1),
+      deleted,
+      inserted,
+      variantPref: { chatVariantId: "myra-opus-4-8", triageVariantId: null },
+      agentDefs: [
+        {
+          id: "agt-myra-opus",
+          tenantId: "tn-global",
+          systemPrompt: "You are Myra (Opus).",
+        },
+      ],
+      existingThreads: [
+        {
+          id: "map-deepseek-blank",
+          instanceId: "inst-deepseek-blank",
+          agentId: "agt-myra",
+          label: "Chat",
+          createdAt: new Date("2026-01-03T00:00:00Z"),
+          lastActivityAt: new Date("2026-01-03T00:00:00Z"),
+          firstMessageAt: null,
+        },
+      ],
+    });
+
+    // biome-ignore lint/suspicious/noExplicitAny: structural db mock
+    const result = await createMyraThread(db as any, {
+      tenantId: "tn-global",
+      tenantDomain: "global.test",
+      memberPrincipalId: "prn-member",
+    });
+
+    expect(result.created).toBe(true);
+    expect(result.thread.id).not.toBe("map-deepseek-blank");
+    // The stale deepseek-bound blank thread is torn down, not reused.
+    expect(deleted.length).toBeGreaterThan(0);
+    const instanceInsert = inserted.find((v) => "address" in v);
+    expect(instanceInsert?.agentId).toBe("agt-myra-opus");
+    const mappingInsert = inserted.find((v) => "templateKey" in v);
+    expect(mappingInsert?.agentId).toBe("agt-myra-opus");
   });
 
   it("neither reuses nor reaps a custom-labelled unused thread", async () => {
