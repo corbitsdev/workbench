@@ -46,8 +46,11 @@ import type { HarnessBuilder, HarnessBundle } from "@workbench/hub-agent";
 import { resolveSeedMarker, stripSeedMarker } from "@workbench/myra/seed";
 import {
   PERSONAL_AGENT_NAME,
+  INFERENCE_PARAMS_ENV_KEY,
   isTriageSessionPrompt,
   isInvokeSessionPrompt,
+  resolveInferenceParamsMarker,
+  stripInferenceParamsMarker,
 } from "@workbench/myra";
 import { createAskPrincipalTool } from "@workbench/approvals";
 import { seedWorkspaceFiles } from "./seed-workspace-files";
@@ -213,7 +216,10 @@ export function createDefaultHarnessBuilder({
       // model sees it. Undefined (no marker, or an invalid zone) falls back to
       // an explicitly labeled UTC date — never silent server-local time.
       const memberTimeZone = resolveTimeZoneMarker(basePrompt);
-      const cleanedPrompt = stripTimeZoneMarker(stripSeedMarker(basePrompt));
+      const inferenceDials = resolveInferenceParamsMarker(basePrompt);
+      const cleanedPrompt = stripInferenceParamsMarker(
+        stripTimeZoneMarker(stripSeedMarker(basePrompt)),
+      );
 
       // Append the unified active-context block at launch so every agent shares
       // the same runtime context and is not anchored to its training cutoff
@@ -600,16 +606,20 @@ export function createDefaultHarnessBuilder({
             : {}),
         };
 
-        const harnessEnv =
-          availableCatalog !== undefined
+        const harnessEnv = {
+          ...env,
+          ...(inferenceDials !== undefined
+            ? { [INFERENCE_PARAMS_ENV_KEY]: inferenceDials }
+            : {}),
+          ...(availableCatalog !== undefined
             ? {
-                ...env,
                 [DYNAMIC_TOOLS_ENV_KEY]: {
                   catalog: availableCatalog,
                   exposure: exposureState,
                 },
               }
-            : env;
+            : {}),
+        };
 
         const harnessReadyStart = performance.now();
         const harness = await createHarness(def, harnessEnv);

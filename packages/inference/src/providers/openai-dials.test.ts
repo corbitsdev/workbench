@@ -44,6 +44,18 @@ describe("openai adapter CL-3766 dials", () => {
     expect(assistant?.["reasoning_content"]).toBe("");
   });
 
+  test("kimi thinking enabled omits temperature on the wire", () => {
+    const adapter = createOpenAIAdapter(TEST_SOURCE);
+    const req = adapter.buildRequest([], "kimi-k2.6", {
+      maxTokens: 100,
+      temperature: 0.9,
+      providerOptions: { thinking: { type: "enabled" } },
+    });
+    const body = parseBody(req.body);
+    expect(body["temperature"]).toBeUndefined();
+    expect(body["thinking"]).toEqual({ type: "enabled" });
+  });
+
   test("kimi thinking disabled keeps temperature", () => {
     const adapter = createOpenAIAdapter(TEST_SOURCE);
     const req = adapter.buildRequest([], "kimi-k2.6", {

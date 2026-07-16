@@ -114,6 +114,29 @@ export function resolveInferenceOptionsFromDials(
   return applyForCapabilities(dials.model, caps, creative, thinking);
 }
 
+function patchOmitsTemperatureForExclusiveThinking(
+  patch: Partial<InferenceOptions>,
+): boolean {
+  if (patch.thinking?.enabled === true) return true;
+  const po = patch.providerOptions;
+  if (
+    po !== undefined &&
+    typeof po === "object" &&
+    po !== null &&
+    "thinking" in po
+  ) {
+    const thinking = (po as Record<string, unknown>)["thinking"];
+    if (
+      typeof thinking === "object" &&
+      thinking !== null &&
+      (thinking as Record<string, unknown>)["type"] === "enabled"
+    ) {
+      return true;
+    }
+  }
+  return false;
+}
+
 function applyForCapabilities(
   model: string,
   caps: ModelInferenceCapabilities,
@@ -168,7 +191,11 @@ export function mergeInferenceOptions(
 ): InferenceOptions {
   const merged: InferenceOptions = { ...(base ?? {}) };
   if (patch.maxTokens !== undefined) merged.maxTokens = patch.maxTokens;
-  if (patch.temperature !== undefined) merged.temperature = patch.temperature;
+  if (patch.temperature !== undefined) {
+    merged.temperature = patch.temperature;
+  } else if (patchOmitsTemperatureForExclusiveThinking(patch)) {
+    delete merged.temperature;
+  }
   if (patch.thinking !== undefined) merged.thinking = patch.thinking;
   if (patch.systemPrompt !== undefined)
     merged.systemPrompt = patch.systemPrompt;

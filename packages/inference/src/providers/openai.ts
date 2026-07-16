@@ -96,6 +96,7 @@ function buildRequest(
     (isRecord(options.providerOptions) &&
       isKimiThinkingEnabled(options.providerOptions));
   if (kimiThinkingEnabled) {
+    delete body["temperature"];
     for (const msg of convertedMessages) {
       if (isRecord(msg) && msg["role"] === "assistant") {
         if (!("reasoning_content" in msg)) {
