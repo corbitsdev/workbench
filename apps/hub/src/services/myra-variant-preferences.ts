@@ -42,6 +42,10 @@ export const MyraVariantPreferenceSchema = type({
   pinnedSkillIds: "string[]",
   disabledCatalogPackages: "string[]",
   disabledToolNames: "string[]",
+  creativeChat: "number | null",
+  thinkingChat: "number | null",
+  creativeTriage: "number | null",
+  thinkingTriage: "number | null",
 });
 export type MyraVariantPreference = typeof MyraVariantPreferenceSchema.infer;
 
@@ -61,6 +65,8 @@ export type MyraMemberPreferencesResponse =
 const InstructionsFieldSchema = type(
   `string <= ${MYRA_INSTRUCTIONS_MAX_LENGTH} | null`,
 );
+
+const InferenceDialFieldSchema = type("0 <= number <= 100 | null");
 
 /**
  * The PUT patch: every field may be omitted (left untouched), set to a value,
@@ -86,6 +92,10 @@ export const MyraVariantPreferencePatchSchema = type({
   "pinnedSkillIds?": "string[]",
   "disabledCatalogPackages?": "string[]",
   "disabledToolNames?": "string[]",
+  "creativeChat?": InferenceDialFieldSchema,
+  "thinkingChat?": InferenceDialFieldSchema,
+  "creativeTriage?": InferenceDialFieldSchema,
+  "thinkingTriage?": InferenceDialFieldSchema,
 });
 export type MyraVariantPreferencePatch =
   typeof MyraVariantPreferencePatchSchema.infer;
@@ -108,6 +118,10 @@ const EMPTY_PREFERENCE: MyraVariantPreference = {
   pinnedSkillIds: [],
   disabledCatalogPackages: [],
   disabledToolNames: [],
+  creativeChat: null,
+  thinkingChat: null,
+  creativeTriage: null,
+  thinkingTriage: null,
 };
 
 export async function readMyraVariantPreference(
@@ -140,6 +154,10 @@ export async function readMyraVariantPreference(
     pinnedSkillIds: normalizePinnedSkillIds(row.pinnedSkillIds ?? []),
     disabledCatalogPackages: row.disabledCatalogPackages ?? [],
     disabledToolNames: row.disabledToolNames ?? [],
+    creativeChat: row.creativeChat ?? null,
+    thinkingChat: row.thinkingChat ?? null,
+    creativeTriage: row.creativeTriage ?? null,
+    thinkingTriage: row.thinkingTriage ?? null,
   };
 }
 
@@ -356,6 +374,22 @@ export async function setMyraVariantPreference(
       patch.disabledToolNames !== undefined
         ? patch.disabledToolNames
         : current.disabledToolNames,
+    creativeChat:
+      patch.creativeChat !== undefined
+        ? patch.creativeChat
+        : current.creativeChat,
+    thinkingChat:
+      patch.thinkingChat !== undefined
+        ? patch.thinkingChat
+        : current.thinkingChat,
+    creativeTriage:
+      patch.creativeTriage !== undefined
+        ? patch.creativeTriage
+        : current.creativeTriage,
+    thinkingTriage:
+      patch.thinkingTriage !== undefined
+        ? patch.thinkingTriage
+        : current.thinkingTriage,
   };
 
   const needsToolSanitize =
@@ -402,6 +436,10 @@ export async function setMyraVariantPreference(
       pinnedSkillIds: next.pinnedSkillIds,
       disabledCatalogPackages: next.disabledCatalogPackages,
       disabledToolNames: next.disabledToolNames,
+      creativeChat: next.creativeChat,
+      thinkingChat: next.thinkingChat,
+      creativeTriage: next.creativeTriage,
+      thinkingTriage: next.thinkingTriage,
     })
     .onConflictDoUpdate({
       target: [
@@ -426,6 +464,10 @@ export async function setMyraVariantPreference(
         pinnedSkillIds: next.pinnedSkillIds,
         disabledCatalogPackages: next.disabledCatalogPackages,
         disabledToolNames: next.disabledToolNames,
+        creativeChat: next.creativeChat,
+        thinkingChat: next.thinkingChat,
+        creativeTriage: next.creativeTriage,
+        thinkingTriage: next.thinkingTriage,
         updatedAt: new Date(),
       },
     });

@@ -5,7 +5,7 @@ code into our tree so we can change behavior the upstream packages don't expose 
 seam for — without editing the `interchange/` submodule. Every divergence from the
 upstream original is tagged with a `// WORKBENCH-LOCAL (CL-XXXX)` comment.
 
-**Audit handle:** `git grep "WORKBENCH-LOCAL (CL-" -- apps/sidecar packages/workflow-host packages/storage-isogit`
+**Audit handle:** `git grep "WORKBENCH-LOCAL (CL-" -- apps/sidecar packages/workflow-host packages/inference packages/storage-isogit`
 lists every divergence in one pass. Run it before and after an interchange pin
 bump and confirm no block disappeared. The re-sync process (diff each vendored
 file against the new upstream, re-apply upstream changes _while preserving every
@@ -107,6 +107,21 @@ There are two kinds of vendoring:
   IPC-compatible with the vendored child. A silent divergence there corrupts hub
   run reads with a green build — re-check these two adapters byte-for-byte on
   every bump.
+
+### `packages/inference` → `@workbench/inference`
+
+- **Added:** 2026-07-15 (CL-3766)
+- **Vendors:** `@intx/inference` (copy of `interchange/packages/inference`).
+- **Imported by:** `packages/agents` (director inference path) and any workspace
+  member that resolves `@intx/inference` via the root `package.json` override.
+- **Why vendored:** Myra Creative / Thinking dials need provider-specific request
+  bodies (`reasoning_effort`, Kimi `thinking` + `reasoning_content`, Opus 4.8
+  thinking `effort`, temperature omission rules) before upstream exposes them.
+- **WORKBENCH-LOCAL change (CL-3766):** `src/providers/openai.ts` merges
+  `providerOptions` into chat-completions bodies and applies Kimi thinking rules;
+  `src/providers/anthropic.ts` applies Opus 4.8 thinking `effort` and omits
+  temperature when thinking is on for that model.
+- **Audit:** `rg 'WORKBENCH-LOCAL' packages/inference/`
 
 ### `packages/storage-isogit` → `@workbench/storage-isogit`
 

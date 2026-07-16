@@ -43,6 +43,7 @@ import {
 import { runDedupedRelaunch } from "./relaunch-breaker";
 import { getCachedCatalogSources } from "./workflow-model-source-cache";
 import { memberAgentInstance } from "../db/schema";
+import { appendInferenceParamsMarkerForMyraLaunch } from "../lib/inference-params-launch";
 import type { HubDb } from "../db";
 
 const log = getLogger(["api", "agents"]);
@@ -481,6 +482,22 @@ export async function launchAgentSession(
       instanceId,
       error: err instanceof Error ? err.message : String(err),
     });
+  }
+
+  try {
+    const hubDb = db as unknown as HubDb;
+    effectiveSystemPrompt = await appendInferenceParamsMarkerForMyraLaunch(
+      hubDb,
+      { tenantId, instanceId, systemPrompt: effectiveSystemPrompt },
+    );
+  } catch (err) {
+    log.warn(
+      "Failed to append Myra inference-params marker; launch proceeds without dials",
+      {
+        instanceId,
+        error: err instanceof Error ? err.message : String(err),
+      },
+    );
   }
 
   // Structured, hash-only launch record for the personal-agent prompt: never

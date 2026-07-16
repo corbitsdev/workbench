@@ -62,6 +62,36 @@ export {
   type MyraPromptSurface,
   type PinnedSkillIndexEntry,
 } from "./core/pinned-skills";
+export {
+  getModelInferenceCapabilities,
+  listKnownModelInferenceCapabilities,
+  normalizeModelSlugForCapabilities,
+  InferenceCapabilitiesResponseSchema,
+  ModelInferenceCapabilitiesSchema,
+  InferenceDialKindSchema,
+  type InferenceDialKind,
+  type ModelInferenceCapabilities,
+} from "./core/inference-capabilities";
+export {
+  INFERENCE_PARAMS_ENV_KEY,
+  readInferenceParamsFromEnv,
+  readInferenceParamsForDirector,
+  resolveInferenceOptionsFromDials,
+  mergeInferenceOptions,
+  type InferenceDialValue,
+  type ResolvedInferenceDials,
+} from "./core/inference-params";
+export {
+  wrapDirectorWithInferenceParams,
+  wrapCapabilitiesWithInferenceParams,
+} from "./core/inference-params-director";
+export {
+  buildInferenceParamsMarker,
+  resolveInferenceParamsMarker,
+  stripInferenceParamsMarker,
+  InferenceParamsMarkerPayloadSchema,
+  type InferenceParamsMarkerPayload,
+} from "./core/inference-params-marker";
 export { createPersonalAgentDirector } from "./core/director";
 export {
   createBudgetDirector,

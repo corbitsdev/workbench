@@ -45,7 +45,7 @@
     "arktype": "catalog:",
     "@intx/agent": "workspace:*",
     "@intx/hub-client": "workspace:*",
-    "@intx/inference": "workspace:*",
+    "@workbench/inference": "workspace:*",
     "@intx/types": "workspace:*",
     "@intx/workflow": "workspace:*",
     "@workbench/agent-core": "workspace:*",

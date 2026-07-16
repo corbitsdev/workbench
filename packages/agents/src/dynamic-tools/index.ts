@@ -5,7 +5,11 @@ import {
   type DynamicToolsEnv,
   type ToolCatalog,
 } from "@workbench/tools-catalog";
-import { PERSONAL_AGENT_NAME } from "@workbench/myra";
+import {
+  PERSONAL_AGENT_NAME,
+  readInferenceParamsForDirector,
+  wrapDirectorWithInferenceParams,
+} from "@workbench/myra";
 import { MYRA_TOOL_CATALOG } from "./catalog";
 import { createDynamicToolsDirector } from "./director";
 
@@ -71,10 +75,15 @@ const EmptyConfig = type({});
 export const dynamicToolsDirector = defineDirector<typeof EmptyConfig.infer>({
   id: DYNAMIC_TOOLS_DIRECTOR_ID,
   configSchema: EmptyConfig,
-  factory: (_config, env, agent) =>
-    createDynamicToolsDirector(
+  factory: (_config, env, agent) => {
+    const inner = createDynamicToolsDirector(
       agent.systemPrompt,
       agent.toolDefinitions,
       readDynamicEnv(env),
-    ),
+    );
+    return wrapDirectorWithInferenceParams(
+      inner,
+      readInferenceParamsForDirector(env, agent.systemPrompt),
+    );
+  },
 });

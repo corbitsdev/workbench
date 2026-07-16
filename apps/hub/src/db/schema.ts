@@ -119,6 +119,10 @@ export const myraVariantPreference = pgTable(
       .$type<string[]>()
       .notNull()
       .default([]),
+    creativeChat: integer("creative_chat"),
+    thinkingChat: integer("thinking_chat"),
+    creativeTriage: integer("creative_triage"),
+    thinkingTriage: integer("thinking_triage"),
     createdAt: timestamp("created_at").notNull().defaultNow(),
     updatedAt: timestamp("updated_at")
       .notNull()
