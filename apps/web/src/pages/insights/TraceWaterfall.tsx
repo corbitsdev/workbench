@@ -11,8 +11,8 @@ const PHASE_BAR_CLASS: Record<LogStepState["phase"], string> = {
   failed: "bg-red/70 border-red/50",
   "in-flight": "bg-blue/60 border-blue/40",
   "awaiting-signal": "bg-accent/50 border-accent/40",
-  "awaiting-timer": "bg-surface-3 border-border",
-  cancelled: "bg-surface-3 border-border",
+  "awaiting-timer": "bg-surface-2 border-border",
+  cancelled: "bg-surface-2 border-border",
 };
 
 function WaterfallRowBar({
