@@ -193,11 +193,23 @@ export function createDefaultHarnessBuilder({
       const signer = (payload: string) => crypto.signSSH(payload);
       const buildStart = performance.now();
 
-      const storage = await createIsogitStore(storeDir, signer, gcPolicy);
-      await healContextStore(storage, agentAddress);
-      const mailStore = await createMailAuditStore(storeDir, signer);
-
-      const deployTree = await readDeployTree(storeDir);
+      // `mailStore` and `deployTree` provisioning depend on neither the
+      // context store nor each other — only downstream code (basePrompt,
+      // env.audit) needs their results. Running all three concurrently
+      // (CL-3799) collapses what was a serial chain of independent I/O onto
+      // the session-connect critical path into the slowest single leg,
+      // instead of their sum.
+      const storagePromise = createIsogitStore(storeDir, signer, gcPolicy).then(
+        async (store) => {
+          await healContextStore(store, agentAddress);
+          return store;
+        },
+      );
+      const [storage, mailStore, deployTree] = await Promise.all([
+        storagePromise,
+        createMailAuditStore(storeDir, signer),
+        readDeployTree(storeDir),
+      ]);
       const provisionMs = performance.now() - buildStart;
       const basePrompt = deployTree.systemPrompt ?? agentConfig.systemPrompt;
 
