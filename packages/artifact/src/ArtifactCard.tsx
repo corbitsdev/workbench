@@ -83,13 +83,19 @@ export function ArtifactCard({
         className={`relative min-h-[120px] flex-1 overflow-hidden ${experimental ? `bg-surface/40 ${fill} bg-opacity-20` : fill}`}
       >
         <div className="flex h-full w-full items-center justify-center transition-transform duration-300 ease-out group-hover:scale-[1.02]">
-          {experimental ? (
+          {artifact.thumbnailUrl !== undefined || experimental ? (
             <ArtifactCardPreview
               family={family}
               fill={fill}
               {...(artifact.previewExcerpt === undefined
                 ? {}
                 : { excerpt: artifact.previewExcerpt })}
+              {...(artifact.thumbnailUrl === undefined
+                ? {}
+                : { thumbnailUrl: artifact.thumbnailUrl })}
+              {...(artifact.thumbnailAlt === undefined
+                ? {}
+                : { thumbnailAlt: artifact.thumbnailAlt })}
             />
           ) : (
             <ArtifactViz kind={artifact.viz} />

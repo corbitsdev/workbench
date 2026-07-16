@@ -36,6 +36,10 @@ describe("visualForKind", () => {
     expect(v.label).toBe("Report");
     expect(v.viz).toBe("deck");
   });
+
+  it("labels image artifacts as images", () => {
+    expect(visualForKind("image").label).toBe("Image");
+  });
 });
 
 describe("toGalleryArtifact", () => {
@@ -60,6 +64,16 @@ describe("toGalleryArtifact", () => {
 
   it("uses session name as the from label", () => {
     expect(toGalleryArtifact(base).from).toBe("Acme Corp");
+  });
+
+  it("preserves app-provided thumbnail metadata", () => {
+    const gallery = toGalleryArtifact(base, {
+      thumbnailUrl: "https://example.test/image.png",
+      thumbnailAlt: "Uploaded image",
+    });
+
+    expect(gallery.thumbnailUrl).toBe("https://example.test/image.png");
+    expect(gallery.thumbnailAlt).toBe("Uploaded image");
   });
 
   it("omits `from` rather than inventing filler text when session name is null", () => {
