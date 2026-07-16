@@ -1978,41 +1978,34 @@ const workflowDeployCoreDeps: WorkflowDeployCoreDeps = {
   rootTenantId,
 };
 
-// CL-3093: sync embedded tool tarballs into the root package-registry before
-// workflow autopublish so sidecars resolve fresh pins on reconnect. Detached;
-// fail-safe per tarball; does not block HTTP listen.
-void publishEmbeddedToolPackages({
-  db,
-  repoStore: repoStore.repoStore,
-  assetService,
-  rootTenantId,
-  enabled: config.toolRegistryAutopublishOnBoot,
-  registryName: config.toolRegistryName,
-  buildSha: config.buildSha,
-})
-  .catch((err) => {
-    log.error("tool registry autopublish-on-boot failed", {
-      error: err instanceof Error ? err.message : String(err),
-    });
-  })
-  .then(() =>
-    // CL-2593: auto-publish build-serialized workflow defs after tool sync.
-    publishEmbeddedWorkflowDefs({
+// CL-3093 / CL-3656: sync embedded tool tarballs before workflow autopublish.
+// When TOOL_REGISTRY_AUTOPUBLISH_ON_BOOT is on, await before listen and exit(1)
+// on tool sync or hierarchy-guard failure.
+async function runBootPackageAndWorkflowAutopublish(): Promise<void> {
+  await publishEmbeddedToolPackages({
+    db,
+    repoStore: repoStore.repoStore,
+    assetService,
+    rootTenantId,
+    enabled: config.toolRegistryAutopublishOnBoot,
+    registryName: config.toolRegistryName,
+    buildSha: config.buildSha,
+  });
+  try {
+    await publishEmbeddedWorkflowDefs({
       coreDeps: workflowDeployCoreDeps,
       repoStore,
       enabled: config.workflowAutopublishOnBoot,
       buildSha: config.buildSha,
       autopublishMap: config.workflowAutopublishMap,
-    })
-      // Reconcile the whole existing catalog to deny-by-default once the boot
-      // publish has settled.
-      .then(() => backfillDenyForExistingWorkflowKinds(db))
-      .catch((err) => {
-        log.error("workflow autopublish-on-boot failed", {
-          error: err instanceof Error ? err.message : String(err),
-        });
-      }),
-  );
+    });
+    await backfillDenyForExistingWorkflowKinds(db);
+  } catch (err) {
+    log.error("workflow autopublish-on-boot failed", {
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
+}
 
 v1.post(
   "/workflows/deploy",
@@ -2212,9 +2205,29 @@ app.onError((err, c) => {
 
 export { app };
 
-server = Bun.serve({
-  port,
-  fetch: app.fetch,
-  websocket,
-  idleTimeout: 0,
-});
+void (async () => {
+  if (config.toolRegistryAutopublishOnBoot) {
+    try {
+      await runBootPackageAndWorkflowAutopublish();
+    } catch (err) {
+      log.error("tool registry autopublish-on-boot failed", {
+        error: err instanceof Error ? err.message : String(err),
+      });
+      await flushSentry();
+      process.exit(1);
+    }
+  } else {
+    void runBootPackageAndWorkflowAutopublish().catch((err) => {
+      log.error("boot package/workflow autopublish failed", {
+        error: err instanceof Error ? err.message : String(err),
+      });
+    });
+  }
+
+  server = Bun.serve({
+    port,
+    fetch: app.fetch,
+    websocket,
+    idleTimeout: 0,
+  });
+})();

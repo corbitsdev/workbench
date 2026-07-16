@@ -108,11 +108,11 @@ describe("loadConfig", () => {
     expect(loadConfig().workflowAutopublishOnBoot).toBe(false);
   });
 
-  it("defaults tool registry autopublish off and registry name to workbench-builtins", () => {
+  it("defaults tool registry autopublish off and registry name to workspace-builtins", () => {
     setRequiredEnv();
     const config = loadConfig();
     expect(config.toolRegistryAutopublishOnBoot).toBe(false);
-    expect(config.toolRegistryName).toBe("workbench-builtins");
+    expect(config.toolRegistryName).toBe("workspace-builtins");
 
     process.env["TOOL_REGISTRY_AUTOPUBLISH_ON_BOOT"] = "true";
     expect(loadConfig().toolRegistryAutopublishOnBoot).toBe(true);

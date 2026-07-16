@@ -11,14 +11,25 @@ import {
 } from "@intx/hub-sessions";
 import type { HubDb } from "../db";
 import {
+  assertNoCrossAssetPackageRegistryCollisions,
+  isMissingRegistryPathError,
+} from "../lib/package-registry-hierarchy-guard";
+import { putPackageRegistryTarball } from "../lib/package-registry-tarball-upload";
+import {
   EmbeddedToolPackageManifestSchema,
   classifyToolPackageDrift,
   embeddedToolPackagesDir,
   type EmbeddedToolPackageRow,
 } from "../lib/tool-packages-embedded";
-import { putPackageRegistryTarball } from "../lib/package-registry-tarball-upload";
 
 const log = getLogger(["services", "tool-packages-bootstrap"]);
+
+export class ToolRegistryAutopublishError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "ToolRegistryAutopublishError";
+  }
+}
 
 export interface ToolPackagesBootstrapDeps {
   db: HubDb;
@@ -33,16 +44,39 @@ export interface ToolPackagesBootstrapDeps {
 
 async function loadEmbeddedManifest(
   embeddedDir: string,
+  required: boolean,
 ): Promise<EmbeddedToolPackageRow[]> {
   const manifestPath = join(embeddedDir, "manifest.json");
   let raw: string;
   try {
     raw = await readFile(manifestPath, "utf8");
   } catch {
+    if (required) {
+      throw new ToolRegistryAutopublishError(
+        `embedded tool package manifest missing at ${manifestPath}`,
+      );
+    }
     return [];
   }
-  const parsed = EmbeddedToolPackageManifestSchema(JSON.parse(raw));
+  let json: unknown;
+  try {
+    json = JSON.parse(raw);
+  } catch {
+    if (required) {
+      throw new ToolRegistryAutopublishError(
+        `embedded tool package manifest is not valid JSON at ${manifestPath}`,
+      );
+    }
+    log.error("embedded tool package manifest is not valid JSON; skipping autopublish");
+    return [];
+  }
+  const parsed = EmbeddedToolPackageManifestSchema(json);
   if (parsed instanceof type.errors) {
+    if (required) {
+      throw new ToolRegistryAutopublishError(
+        `embedded tool package manifest is invalid: ${parsed.summary}`,
+      );
+    }
     log.error(
       "embedded tool package manifest is invalid; skipping autopublish",
       {
@@ -50,6 +84,11 @@ async function loadEmbeddedManifest(
       },
     );
     return [];
+  }
+  if (required && parsed.length === 0) {
+    throw new ToolRegistryAutopublishError(
+      "embedded tool package manifest has no rows",
+    );
   }
   return parsed;
 }
@@ -112,15 +151,15 @@ async function readRegistryTarballBytes(
   try {
     return await assetService.readAssetBlob({ assetId, path });
   } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    if (message.includes("has no blob at")) return null;
+    if (isMissingRegistryPathError(err)) return null;
     throw err;
   }
 }
 
 /**
  * Sync embedded tool-package tarballs into the root tenant package-registry asset
- * (CL-3093). Idempotent per tarball via integrity comparison; fail-safe per row.
+ * (CL-3093). Idempotent per tarball via integrity comparison. When enabled, any
+ * sync or hierarchy collision failure rejects the boot path (CL-3656).
  */
 export async function publishEmbeddedToolPackages(
   deps: ToolPackagesBootstrapDeps,
@@ -131,85 +170,52 @@ export async function publishEmbeddedToolPackages(
   }
 
   const embeddedDir = deps.embeddedDir ?? embeddedToolPackagesDir();
-  const rows = await loadEmbeddedManifest(embeddedDir);
-  if (rows.length === 0) {
-    log.info("tool registry autopublish: no embedded manifest rows; skipping");
-    return;
-  }
+  const rows = await loadEmbeddedManifest(embeddedDir, true);
 
-  let assetId: string;
-  try {
-    assetId = await ensurePackageRegistryAsset(deps);
-  } catch (err) {
-    log.error("tool registry autopublish: failed to ensure registry asset", {
-      registryName: deps.registryName,
-      tenantId: deps.rootTenantId,
-      buildSha: deps.buildSha,
-      error: err instanceof Error ? err.message : String(err),
-    });
-    return;
-  }
+  const assetId = await ensurePackageRegistryAsset(deps);
 
   let uploaded = 0;
   let unchanged = 0;
-  let skippedOnError = 0;
 
   for (const row of rows) {
     const tarballPath = join(embeddedDir, "tarballs", row.tarballFilename);
-    try {
-      let registryBytes: Uint8Array | null = null;
-      try {
-        registryBytes = await readRegistryTarballBytes(
-          deps.assetService,
-          assetId,
-          row.tarballFilename,
-        );
-      } catch (err) {
-        skippedOnError += 1;
-        log.error(
-          "tool registry autopublish: failed to read registry tarball",
-          {
-            name: row.name,
-            filename: row.tarballFilename,
-            error: err instanceof Error ? err.message : String(err),
-          },
-        );
-        continue;
-      }
+    const registryBytes = await readRegistryTarballBytes(
+      deps.assetService,
+      assetId,
+      row.tarballFilename,
+    );
 
-      const drift = classifyToolPackageDrift({
-        embeddedIntegrity: row.integrity,
-        registryBytes,
-      });
-      if (drift.action === "skip") {
-        unchanged += 1;
-        continue;
-      }
-
-      const bytes = await readFile(tarballPath);
-      await putPackageRegistryTarball({
-        repoStore: deps.repoStore,
-        assetId,
-        filename: row.tarballFilename,
-        bytes: new Uint8Array(bytes),
-      });
-      uploaded += 1;
-      log.info("tool registry autopublish: uploaded tarball", {
-        name: row.name,
-        version: row.version,
-        filename: row.tarballFilename,
-        reason: drift.reason,
-        buildSha: deps.buildSha,
-      });
-    } catch (err) {
-      skippedOnError += 1;
-      log.error("tool registry autopublish: failed to sync tarball; skipping", {
-        name: row.name,
-        filename: row.tarballFilename,
-        error: err instanceof Error ? err.message : String(err),
-      });
+    const drift = classifyToolPackageDrift({
+      embeddedIntegrity: row.integrity,
+      registryBytes,
+    });
+    if (drift.action === "skip") {
+      unchanged += 1;
+      continue;
     }
+
+    const bytes = await readFile(tarballPath);
+    await putPackageRegistryTarball({
+      repoStore: deps.repoStore,
+      assetId,
+      filename: row.tarballFilename,
+      bytes: new Uint8Array(bytes),
+    });
+    uploaded += 1;
+    log.info("tool registry autopublish: uploaded tarball", {
+      name: row.name,
+      version: row.version,
+      filename: row.tarballFilename,
+      reason: drift.reason,
+      buildSha: deps.buildSha,
+    });
   }
+
+  await assertNoCrossAssetPackageRegistryCollisions({
+    db: deps.db,
+    assetService: deps.assetService,
+    tenantId: deps.rootTenantId,
+  });
 
   log.info("tool registry autopublish finished", {
     registryName: deps.registryName,
@@ -217,7 +223,6 @@ export async function publishEmbeddedToolPackages(
     buildSha: deps.buildSha,
     uploaded,
     unchanged,
-    skippedOnError,
     total: rows.length,
   });
 }

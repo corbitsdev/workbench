@@ -154,10 +154,15 @@ Sidecars load workflow step tools from the tenant **package-registry** asset, no
 from hub source. The hub image embeds built tarballs under
 `apps/hub/generated/tool-packages/` (via `build:tool-packages --embed` in the hub
 `build` script). When `TOOL_REGISTRY_AUTOPUBLISH_ON_BOOT=true`, startup syncs
-those tarballs into the root tenant registry named `workbench-builtins` (override
-with `TOOL_REGISTRY_NAME`) **before** workflow autopublish runs. Drift detection
-uses tarball integrity (ssri sha512); steady-state boots perform no PUTs. Manual
-`tools publish` / `publish-tool-packages.ts` remains valid.
+those tarballs into the root tenant registry named `workspace-builtins` (the same
+name agents resolve via `WORKSPACE_BUILTINS_REGISTRY`; override with
+`TOOL_REGISTRY_NAME` only for emergencies) **before** workflow autopublish runs.
+Drift detection uses tarball integrity (ssri sha512); steady-state boots perform
+no PUTs. When autopublish is on, the hub **awaits** this sync (and a cross-asset
+hierarchy check) **before** `Bun.serve` listens; sync or collision errors **exit
+the process** so the sidecar never starts with stale or ambiguous tarballs.
+Manual `publish-tool-packages.ts` is break-glass only — do not maintain a second
+package-registry asset name on the same tenant (CL-3656).
 
 **CI/CD (hub Docker image):** `apps/hub/Dockerfile` copies `packages/tools-*` (and
 `packages/tool-manifest/`) and runs `bun run build:tool-manifests` then

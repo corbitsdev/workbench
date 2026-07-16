@@ -21,15 +21,18 @@ const readBlobSpy = mock<(...args: unknown[]) => Promise<Uint8Array>>();
 
 mock.module("@intx/hub-sessions", () => ({
   AssetServiceError: class AssetServiceError extends Error {
-    constructor(
-      readonly reason: string,
-      message: string,
-    ) {
+    readonly reason: string;
+    constructor(reason: string, message: string) {
       super(message);
       this.name = "AssetServiceError";
+      this.reason = reason;
     }
   },
-  WORKSPACE_BUILTINS_REGISTRY: "workbench-builtins",
+  WORKSPACE_BUILTINS_REGISTRY: "workspace-builtins",
+  validateTarballPackageJSON: async () => ({
+    ok: true as const,
+    pkg: { name: "@workbench/tools-demo", version: "1.0.0" },
+  }),
 }));
 
 let assetRow: { id: string } | null = null;
@@ -58,9 +61,15 @@ function makeDb() {
   return {
     select: () => ({
       from: () => ({
-        where: () => ({
-          limit: () => Promise.resolve(assetRow ? [assetRow] : []),
-        }),
+        where: () => {
+          const rows = assetRow
+            ? [{ id: assetRow.id, name: "workspace-builtins" }]
+            : [];
+          const chain = Promise.resolve(rows);
+          return Object.assign(chain, {
+            limit: () => Promise.resolve(rows),
+          });
+        },
       }),
     }),
   };
@@ -80,7 +89,7 @@ beforeEach(async () => {
   createAssetSpy.mockResolvedValue({
     id: "ast_reg",
     kind: "package-registry",
-    name: "workbench-builtins",
+    name: "workspace-builtins",
   });
   readBlobSpy.mockReset();
   assetRow = { id: "ast_reg" };
@@ -119,7 +128,7 @@ describe("publishEmbeddedToolPackages", () => {
       } as never,
       rootTenantId: "ten_root",
       enabled: false,
-      registryName: "workbench-builtins",
+      registryName: "workspace-builtins",
       buildSha: null,
       embeddedDir: fixtureDir,
     });
@@ -140,7 +149,7 @@ describe("publishEmbeddedToolPackages", () => {
       } as never,
       rootTenantId: "ten_root",
       enabled: true,
-      registryName: "workbench-builtins",
+      registryName: "workspace-builtins",
       buildSha: "abc123",
       embeddedDir: fixtureDir,
     });
@@ -164,11 +173,57 @@ describe("publishEmbeddedToolPackages", () => {
       } as never,
       rootTenantId: "ten_root",
       enabled: true,
-      registryName: "workbench-builtins",
+      registryName: "workspace-builtins",
       buildSha: null,
       embeddedDir: fixtureDir,
     });
 
     expect(putTarballSpy).not.toHaveBeenCalled();
+  });
+
+  it("rejects when upload fails", async () => {
+    readBlobSpy.mockRejectedValue(
+      new Error('package-registry asset has no blob at "tarballs/pkg.tgz"'),
+    );
+    putTarballSpy.mockRejectedValue(new Error("upload failed"));
+
+    await expect(
+      publishEmbeddedToolPackages({
+        db: makeDb() as never,
+        repoStore: {} as never,
+        assetService: {
+          createAsset: createAssetSpy,
+          readAssetBlob: readBlobSpy,
+        } as never,
+        rootTenantId: "ten_root",
+        enabled: true,
+        registryName: "workspace-builtins",
+        buildSha: null,
+        embeddedDir: fixtureDir,
+      }),
+    ).rejects.toThrow("upload failed");
+  });
+
+  it("rejects when manifest is missing and autopublish is enabled", async () => {
+    const emptyDir = await mkdtemp(join(tmpdir(), "tool-bootstrap-empty-"));
+    try {
+      await expect(
+        publishEmbeddedToolPackages({
+          db: makeDb() as never,
+          repoStore: {} as never,
+          assetService: {
+            createAsset: createAssetSpy,
+            readAssetBlob: readBlobSpy,
+          } as never,
+          rootTenantId: "ten_root",
+          enabled: true,
+          registryName: "workspace-builtins",
+          buildSha: null,
+          embeddedDir: emptyDir,
+        }),
+      ).rejects.toThrow(/manifest missing/);
+    } finally {
+      await rm(emptyDir, { recursive: true, force: true });
+    }
   });
 });
