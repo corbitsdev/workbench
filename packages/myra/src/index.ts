@@ -42,11 +42,16 @@ export {
   getStyleAxis,
   isStyleAxisOptionId,
   composeStyleOverlay,
+  listStyleAxes,
   StyleAxisIdSchema,
+  StyleAxisSummarySchema,
+  StyleAxisOptionSummarySchema,
   type StyleAxisId,
   type StyleAxisOption,
   type StyleAxis,
   type StyleAxisSelections,
+  type StyleAxisSummary,
+  type StyleAxisOptionSummary,
 } from "./core/style-axes";
 export { createPersonalAgentDirector } from "./core/director";
 export {

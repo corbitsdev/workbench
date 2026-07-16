@@ -4,6 +4,7 @@ import {
   composeStyleOverlay,
   getStyleAxis,
   isStyleAxisOptionId,
+  listStyleAxes,
   type StyleAxisSelections,
 } from "./style-axes";
 
@@ -48,6 +49,25 @@ describe("style-axes catalog", () => {
     expect(getStyleAxis("personality")?.id).toBe("personality");
     expect(isStyleAxisOptionId("emojiUse", "heavy")).toBe(true);
     expect(isStyleAxisOptionId("emojiUse", "not-a-real-option")).toBe(false);
+  });
+});
+
+describe("listStyleAxes", () => {
+  test("never leaks snippet text to the client-facing summary", () => {
+    const summaries = listStyleAxes();
+    expect(summaries).toHaveLength(STYLE_AXES.length);
+    for (const summary of summaries) {
+      for (const option of summary.options) {
+        expect(option).not.toHaveProperty("snippet");
+      }
+    }
+  });
+
+  test("preserves each axis's default option id and option ids", () => {
+    const summaries = listStyleAxes();
+    const personality = summaries.find((s) => s.id === "personality");
+    expect(personality?.defaultOptionId).toBe("teammate");
+    expect(personality?.options.map((o) => o.id)).toContain("candid");
   });
 });
 

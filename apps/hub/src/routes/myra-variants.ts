@@ -2,7 +2,12 @@ import { type } from "arktype";
 import { Hono, type Env } from "hono";
 import { describeRoute, resolver } from "hono-openapi";
 import { getLogger } from "@intx/log";
-import { listMyraVariants, MyraVariantSummarySchema } from "@workbench/myra";
+import {
+  listMyraVariants,
+  listStyleAxes,
+  MyraVariantSummarySchema,
+  StyleAxisSummarySchema,
+} from "@workbench/myra";
 import {
   MyraVariantPreferencePatchSchema,
   MyraVariantPreferenceSchema,
@@ -26,6 +31,9 @@ type MyraVariantsEnv = Env & {
 
 const VariantsResponseSchema = type({
   variants: MyraVariantSummarySchema.array(),
+});
+const StyleAxesResponseSchema = type({
+  axes: StyleAxisSummarySchema.array(),
 });
 const ErrorResponse = type({ error: "string" });
 
@@ -58,6 +66,26 @@ export function createMyraVariantsRouter(db: HubDb): Hono<MyraVariantsEnv> {
       },
     }),
     (c) => c.json({ variants: listMyraVariants() }),
+  );
+
+  app.get(
+    "/myra/style-axes",
+    describeRoute({
+      tags: ["Myra"],
+      summary: "List the personalization style axes",
+      description:
+        "The immutable style-axes catalog from @workbench/myra — personality, emoji use, UI type, and the artifact/tool/skill usage dials a member can select, each with its options (id/label/description; curated prompt snippets are never shipped to the client).",
+      parameters: [tenantIdParam],
+      responses: {
+        200: {
+          description: "The style-axes catalog",
+          content: {
+            "application/json": { schema: resolver(StyleAxesResponseSchema) },
+          },
+        },
+      },
+    }),
+    (c) => c.json({ axes: listStyleAxes() }),
   );
 
   app.get(

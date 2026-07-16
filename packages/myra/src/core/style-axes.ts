@@ -291,6 +291,39 @@ export type StyleAxisSelections = Partial<
  * ever called). Every-default (or empty) selections compose to `""` —
  * appending nothing keeps the prompt byte-identical to today.
  */
+export const StyleAxisOptionSummarySchema = type({
+  id: "string",
+  label: "string",
+  description: "string",
+});
+export type StyleAxisOptionSummary = typeof StyleAxisOptionSummarySchema.infer;
+
+export const StyleAxisSummarySchema = type({
+  id: StyleAxisIdSchema,
+  label: "string",
+  defaultOptionId: "string",
+  options: StyleAxisOptionSummarySchema.array(),
+});
+export type StyleAxisSummary = typeof StyleAxisSummarySchema.infer;
+
+/**
+ * The API-facing style-axes catalog: every axis's id, label, default option
+ * id, and options (id/label/description only — the curated snippet text is
+ * server-side prompt copy, never shipped to the client).
+ */
+export function listStyleAxes(): StyleAxisSummary[] {
+  return STYLE_AXES.map((axis) => ({
+    id: axis.id,
+    label: axis.label,
+    defaultOptionId: axis.defaultOptionId,
+    options: axis.options.map((o) => ({
+      id: o.id,
+      label: o.label,
+      description: o.description,
+    })),
+  }));
+}
+
 export function composeStyleOverlay(selections: StyleAxisSelections): string {
   const snippets: string[] = [];
   for (const axis of STYLE_AXES) {

@@ -80,6 +80,27 @@ describe("Myra variants router", () => {
     expect(deepseek?.isDefault).toBe(true);
   });
 
+  it("lists the real style-axes catalog without leaking snippet text", async () => {
+    const app = wrapWithTenant(makeDb({}));
+    const res = await app.request("/myra/style-axes");
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      axes: {
+        id: string;
+        defaultOptionId: string;
+        options: Record<string, unknown>[];
+      }[];
+    };
+    const personality = body.axes.find((a) => a.id === "personality");
+    expect(personality?.defaultOptionId).toBe("teammate");
+    expect(personality?.options.some((o) => o["id"] === "candid")).toBe(true);
+    for (const axis of body.axes) {
+      for (const option of axis.options) {
+        expect(option).not.toHaveProperty("snippet");
+      }
+    }
+  });
+
   it("returns the caller's selection scoped to the resolved member", async () => {
     const findFirst = mock(async () => ({
       chatVariantId: "myra-opus-4-8",
