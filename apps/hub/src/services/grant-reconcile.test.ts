@@ -11,6 +11,16 @@ mock.module("../config", () => ({
       domain: "global.example.com",
     },
   }),
+  requireCredentialEncryptionKey: () => Buffer.alloc(32),
+}));
+
+mock.module("../lib/myra-member-tool-narrowing", () => ({
+  narrowToolNamesForMemberMyraLaunch: async (
+    _db: unknown,
+    _tenantId: string,
+    _instanceId: string,
+    granted: readonly string[],
+  ) => [...granted],
 }));
 
 const toolGrantCalls: { principalId: string; toolNames: string[] }[] = [];
@@ -32,6 +42,11 @@ mock.module("./agent-provisioning", () => ({
       reqGrantCalls.push({ principalId: opts.principalId });
     },
   ),
+  resolveInstanceSourcesFromDefinition: mock(async () => ({
+    ok: true as const,
+    sources: [],
+  })),
+  launchAgentSession: mock(async () => ({})),
 }));
 
 const {
@@ -337,6 +352,7 @@ describe("refreshInstanceGrantsFromDefinition", () => {
             grantRequirements: [],
           }),
         },
+        agentInstance: { findFirst: async () => undefined },
       },
       update: () => ({ set: () => ({ where: update }) }),
     } as unknown as Parameters<typeof refreshInstanceGrantsFromDefinition>[0];
@@ -374,6 +390,7 @@ describe("refreshInstanceGrantsFromDefinition", () => {
             grantRequirements: [],
           }),
         },
+        agentInstance: { findFirst: async () => undefined },
       },
     } as unknown as Parameters<typeof refreshInstanceGrantsFromDefinition>[0];
 
