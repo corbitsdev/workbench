@@ -139,4 +139,24 @@ describe("isReapableChatAgent", () => {
     expect(isReapableChatAgent("Some Unknown Agent")).toBe(false);
     expect(isReapableChatAgent("")).toBe(false);
   });
+
+  it("reaps a non-canonical Myra chat variant exactly like the canonical agent", () => {
+    const variantChat = AGENT_TEMPLATES.find(
+      (t) => t.key === "myra-chat-kimi-k2-6",
+    );
+    const myra = AGENT_TEMPLATES.find((t) => t.key === "myra");
+    expect(variantChat).toBeDefined();
+    expect(variantChat?.kind).toBe("personal");
+    expect(variantChat?.kind).toBe(myra?.kind);
+    expect(isReapableChatAgent(variantChat!.name)).toBe(true);
+  });
+
+  it("does not reap a Myra triage variant — ephemeral, never a chat surface", () => {
+    const variantTriage = AGENT_TEMPLATES.find(
+      (t) => t.key === "myra-triage-kimi-k2-6",
+    );
+    expect(variantTriage).toBeDefined();
+    expect(variantTriage?.kind).toBeUndefined();
+    expect(isReapableChatAgent(variantTriage!.name)).toBe(false);
+  });
 });
