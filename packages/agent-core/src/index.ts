@@ -47,3 +47,10 @@ export {
   MYRA_TOOL_PACKAGES,
   MYRA_CATALOG_BARE_TOOL_NAMES,
 } from "./dynamic-tools-catalog";
+export {
+  catalogToolNamesForPackages,
+  narrowMyraToolNamesByMemberPreference,
+  isMyraCatalogPackageKey,
+  isMyraCatalogManagedToolName,
+  MYRA_CATALOG_PACKAGE_KEYS,
+} from "./myra-tool-narrowing";

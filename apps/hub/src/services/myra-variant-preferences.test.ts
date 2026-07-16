@@ -63,6 +63,8 @@ const EMPTY = {
   skillUsageChat: null,
   skillUsageTriage: null,
   pinnedSkillIds: [],
+  disabledCatalogPackages: [],
+  disabledToolNames: [],
 };
 
 describe("readMyraVariantPreference", () => {

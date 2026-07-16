@@ -23,7 +23,11 @@ import {
 import { composePersonalAgentPromptForInstance } from "../lib/operator-profile";
 import { composeMyraStyleOverlaySectionForInstance } from "../lib/myra-style-overlay";
 import { composeMyraPinnedSkillsSectionForInstance } from "../lib/myra-pinned-skills";
-import { PERSONAL_AGENT_PROMPT_VERSION } from "@workbench/myra";
+import {
+  PERSONAL_AGENT_PROMPT_VERSION,
+  isPersonalAgentDefinitionName,
+} from "@workbench/myra";
+import { narrowToolNamesForMemberMyraLaunch } from "../lib/myra-member-tool-narrowing";
 import { buildTimeZoneMarker } from "@workbench/prompts";
 import { resolveMemberTimeZone } from "@workbench/shared";
 import { readMemberPreferences } from "../lib/member-preferences";
@@ -361,6 +365,14 @@ export async function launchAgentSession(
   if (opts.persona) {
     const allowed = new Set(opts.persona.toolNames);
     toolNames = definitionToolNames.filter((name) => allowed.has(name));
+  }
+  if (isPersonalAgentDefinitionName(agentRow.name)) {
+    toolNames = await narrowToolNamesForMemberMyraLaunch(
+      db as HubDb,
+      tenantId,
+      instanceId,
+      toolNames,
+    );
   }
   const tools = buildToolDefinitions(toolNames);
 

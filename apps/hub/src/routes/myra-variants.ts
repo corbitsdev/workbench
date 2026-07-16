@@ -10,9 +10,11 @@ import {
 } from "@workbench/myra";
 import {
   MyraVariantPreferencePatchSchema,
+  MyraMemberPreferencesResponseSchema,
   MyraVariantPreferenceSchema,
   pinnedSkillIdsChanged,
   prunePinnedSkillIdsToVisibleLibrary,
+  readMyraMemberPreferencesWithCatalog,
   readMyraVariantPreference,
   setMyraVariantPreference,
   validateMyraVariantPatch,
@@ -106,7 +108,7 @@ export function createMyraVariantsRouter(db: HubDb): Hono<MyraVariantsEnv> {
           description: "The caller's variant selection",
           content: {
             "application/json": {
-              schema: resolver(MyraVariantPreferenceSchema),
+              schema: resolver(MyraMemberPreferencesResponseSchema),
             },
           },
         },
@@ -115,7 +117,11 @@ export function createMyraVariantsRouter(db: HubDb): Hono<MyraVariantsEnv> {
     async (c) => {
       const tenant = c.get("tenant");
       const principal = c.get("principal");
-      let prefs = await readMyraVariantPreference(db, tenant.id, principal.id);
+      let prefs = await readMyraMemberPreferencesWithCatalog(
+        db,
+        tenant.id,
+        principal.id,
+      );
       const viewer = await skillViewerForMemberPrincipal(
         db,
         tenant.id,
@@ -129,12 +135,13 @@ export function createMyraVariantsRouter(db: HubDb): Hono<MyraVariantsEnv> {
           allowed,
         );
         if (pinnedSkillIdsChanged(prefs.pinnedSkillIds, pruned)) {
-          prefs = await setMyraVariantPreference(
+          const updated = await setMyraVariantPreference(
             db,
             tenant.id,
             principal.id,
             { pinnedSkillIds: pruned },
           );
+          prefs = { ...prefs, ...updated };
         }
       }
       return c.json(prefs);
@@ -161,7 +168,7 @@ export function createMyraVariantsRouter(db: HubDb): Hono<MyraVariantsEnv> {
           description: "The merged selection",
           content: {
             "application/json": {
-              schema: resolver(MyraVariantPreferenceSchema),
+              schema: resolver(MyraMemberPreferencesResponseSchema),
             },
           },
         },
@@ -206,11 +213,11 @@ export function createMyraVariantsRouter(db: HubDb): Hono<MyraVariantsEnv> {
       }
 
       try {
-        const merged = await setMyraVariantPreference(
+        await setMyraVariantPreference(db, tenant.id, principal.id, patch);
+        const merged = await readMyraMemberPreferencesWithCatalog(
           db,
           tenant.id,
           principal.id,
-          patch,
         );
         return c.json(merged);
       } catch (err) {
