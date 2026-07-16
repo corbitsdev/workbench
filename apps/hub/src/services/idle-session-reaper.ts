@@ -4,14 +4,16 @@ import type { DB } from "@intx/db";
 import type { SessionService, SidecarRouter } from "@intx/hub-sessions";
 import { isWorkflowDerivedAddress } from "@intx/workflow-deploy";
 import { getLogger } from "@intx/log";
-import { isReapableChatAgent } from "@workbench/agents";
+import { isReapableAgentInstance } from "@workbench/agents";
 import type { EventCollectorRegistry } from "@workbench/event-collector";
 
 const log = getLogger(["services", "idle-session-reaper"]);
 
 const { agent, agentInstance, agentSession } = intxSchema;
 
-// CL-2790: idle chat-session sleep / reaper.
+// CL-2790: idle agent-session sleep / reaper, now universal over
+// agent kind: EVERY chat/sub-agent instance is reapable now, not just the
+// personal agent (Myra).
 //
 // A user-facing chat agent (Myra, Oat, …) is launched on a shared sidecar and
 // stays resident for the life of its session. A workbench with many users
@@ -20,16 +22,17 @@ const { agent, agentInstance, agentSession } = intxSchema;
 // session that has seen no activity for `reapAfterMs` by undeploying it and
 // marking its `agent_session` ended, leaving the `agent_instance` relaunchable
 // so the next interaction brings the agent back cold. The WAKE is launch-on-
-// demand at the chat surface: every Myra surface (`useMyraSession` — the
+// demand, never automatic: every Myra chat surface (`useMyraSession` — the
 // full-page thread and the bottom-right popup) unconditionally calls
-// `POST /v1/instances/:id/sessions` before opening its stream, which
-// cold-relaunches a slept instance (it is undeployed → not routable → falls
-// through to `launchAgentSession`). CL-2793 removed the former eager relaunch on
-// `POST /v1/me`; the reaper no longer depends on it as its wake path.
+// `POST /v1/instances/:id/sessions` before opening its stream, and the
+// send-mail route relaunches a non-routable instance ahead of dispatch — both
+// paths cold-relaunch a slept instance (undeployed → not routable → falls
+// through to `launchAgentSession` / `relaunchInstanceIfNeeded`). No agent is
+// ever woken except by an inbound mail/message.
 //
 // SAFETY — this EVICTS LIVE sessions, so over-eviction is the hazard. Every gate
-// below is a positive check that the address is a genuinely-idle user chat
-// agent; anything unrecognized is left alone:
+// below is a positive check that the address is a genuinely-idle agent
+// instance; anything unrecognized is left alone:
 //
 //   1. Candidates are `agent_instance` rows with an `active` session and a
 //      relaunchable instance status. Workflow supervisors and per-step children
@@ -39,9 +42,11 @@ const { agent, agentInstance, agentSession } = intxSchema;
 //   2. The address must be ROUTABLE now — we only sleep something that is
 //      actually live. A non-routable candidate is a wedge for the wedge sweep to
 //      relaunch, not ours to touch.
-//   3. The agent must be a reapable CHAT template (`isReapableChatAgent`). The
-//      non-chat system agents (Loop, file-parser) are `deployable: false` and
-//      must stay up; an unrecognized agent name is never slept.
+//   3. The agent must be a reapable, recognized template
+//      (`isReapableAgentInstance`) — an explicit allowlist excludes ephemeral,
+//      single-purpose invocations (inbox triage, the internal file-parser
+//      call) that end when their one job is done rather than sleeping; an
+//      unrecognized agent name is never slept.
 //   4. Activity recency subsumes "no pending inbound work": a chat agent that
 //      just received mail is mid-turn and streaming `agent.event`s, so its
 //      `lastActive` is fresh and it is spared. A live/connected address has no
@@ -175,7 +180,7 @@ export function createIdleSessionReaper(deps: {
       const nowMs = now();
       let evicted = 0;
       let seeded = 0;
-      let skippedNonChat = 0;
+      let skippedEphemeral = 0;
       let skippedUnroutable = 0;
       let skippedRecent = 0;
       let skippedBusy = 0;
@@ -187,8 +192,8 @@ export function createIdleSessionReaper(deps: {
           continue;
         }
         if (isWorkflowDerivedAddress(cand.address)) continue;
-        if (!isReapableChatAgent(cand.agentName)) {
-          skippedNonChat += 1;
+        if (!isReapableAgentInstance(cand.agentName)) {
+          skippedEphemeral += 1;
           continue;
         }
         if (cand.sessionId === null) continue;
@@ -224,7 +229,7 @@ export function createIdleSessionReaper(deps: {
           await markSessionEnded(cand.sessionId, new Date(nowMs));
           lastActive.delete(cand.address);
           evicted += 1;
-          log.info("idle reaper: slept idle chat session", {
+          log.info("idle reaper: slept idle agent session", {
             address: cand.address,
             tenantId: cand.tenantId,
             agentName: cand.agentName,
@@ -251,7 +256,7 @@ export function createIdleSessionReaper(deps: {
         scanned: candidates.length,
         evicted,
         seeded,
-        skippedNonChat,
+        skippedEphemeral,
         skippedUnroutable,
         skippedRecent,
         skippedBusy,

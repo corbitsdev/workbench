@@ -103,6 +103,10 @@ import {
 } from "./lib/scheduled-intake";
 import { loadWorkflowGateInfos } from "./lib/workflow-catalog";
 import { createIdleSessionReaper } from "./services/idle-session-reaper";
+import {
+  createMailWakeMiddleware,
+  registerUndeliveredMailWake,
+} from "./services/mail-wake";
 import { publishEmbeddedWorkflowDefs } from "./services/workflow-defs-bootstrap";
 import { publishEmbeddedToolPackages } from "./services/tool-packages-bootstrap";
 import { backfillDenyForExistingWorkflowKinds } from "./lib/workflow-run-gate";
@@ -121,8 +125,8 @@ import {
   registerDisconnectReconciler,
   registerWedgeSweepReconciler,
   resolveInstanceSourcesFromDefinition,
+  relaunchInstanceIfNeeded,
 } from "./services/agent-provisioning";
-import { registerPersonalAgentPrewarm } from "./services/personal-agent-prewarm";
 import { assessPersonalAgentSync } from "./services/grant-reconcile";
 import {
   myraInstanceIdForMember,
@@ -675,35 +679,6 @@ const stopWedgeSweepReconciler = registerWedgeSweepReconciler({
   graceMs: config.wedgeUnroutableGraceMs,
 });
 
-// Post-reconnect personal-agent prewarm. The wedge sweep above only relaunches
-// instances still holding an active session; a full sidecar restart ends those
-// sessions (disconnect reconciler), leaving each member's personal agent COLD.
-// The first message then pays the ~20s wake on the member's critical path. This
-// sweep pays it in the background: it cold-relaunches the personal instances of
-// recently-active members, bounded so the just-reconnected sidecar is not
-// stampeded. It composes with the wedge sweep and the on-demand /me relaunch —
-// every launch funnels through the same per-instance coalescer, so none can
-// double-launch. Default ON; PREWARM_ENABLED=false disables it.
-//
-// CONFLICT NOTE: the idle-session reaper above is currently disabled. If it is
-// re-enabled at its 5-minute default, this prewarm will relaunch every personal
-// agent the reaper sleeps (any member active in the last 24h), churning
-// sleep/wake forever — re-enable the reaper only with the prewarm window/reaper
-// threshold reconciled (or the prewarm gated off).
-const stopPersonalAgentPrewarm = config.personalAgentPrewarm.enabled
-  ? registerPersonalAgentPrewarm({
-      db,
-      router: sidecarRouter,
-      sessionService,
-      grantStore,
-      eventCollectors,
-      activeWindowMs: config.personalAgentPrewarm.activeWindowMs,
-      concurrency: config.personalAgentPrewarm.concurrency,
-      intervalMs: config.personalAgentPrewarm.intervalMs,
-      initialDelayMs: config.personalAgentPrewarm.initialDelayMs,
-    })
-  : () => {};
-
 // CL-2790: idle chat-session reaper. Sleeps a user-facing chat session (Myra,
 // Oat, …) that has seen no activity for `reapAfterMs` by undeploying it and
 // marking its session ended, leaving the instance relaunchable so the next
@@ -712,7 +687,11 @@ const stopPersonalAgentPrewarm = config.personalAgentPrewarm.enabled
 // an in-flight-turn guard (the injected eventCollectors registry) spares any
 // agent mid-work, so the kill switch is gone. Fed by the agent-event stream and
 // the send-mail route (recordActivityForInstance, mounted below) so a
-// mid-conversation agent is never slept.
+// mid-conversation agent is never slept. The former post-reconnect
+// personal-agent prewarm sweep that used to relaunch every recently-active
+// personal instance in the background: no agent auto-wakes anymore except on
+// inbound mail/message (see the mail-route wake middleware below), so nothing
+// should relaunch an idle instance the reaper is entitled to sleep.
 const idleSessionReaper = createIdleSessionReaper({
   db,
   endSession: sessionService.endSession,
@@ -726,6 +705,35 @@ const idleSessionReaper = createIdleSessionReaper({
 // idleSessionReaper.start();
 sidecarRouter.events.on("agent.event", ({ agentAddress }) => {
   idleSessionReaper.recordActivity(agentAddress);
+});
+
+// The single wake primitive for both inbound-mail ingresses (the HTTP
+// mail route and agent-to-agent WS mail). A no-op for an already-routable
+// instance; the same cold-start relaunch used by the wedge sweep and the
+// chat-surface sessions route.
+function wakeInstance(instanceId: string): Promise<void> {
+  return relaunchInstanceIfNeeded(
+    db,
+    sessionService,
+    grantStore,
+    eventCollectors,
+    instanceId,
+    sidecarRouter,
+  );
+}
+
+// Agent-to-agent mail to a reaped instance: a sidecar-originated mail.outbound
+// frame is routed wire-side inside interchange; a slept recipient is absent
+// from the address index, so the router emits `mail.outbound.undelivered` and
+// the orchestrator's default listener drops it with a warn. Subscribe the hub
+// to the same event (listeners are additive), wake the recipient instance, and
+// re-deliver via the router's public routeMail.
+registerUndeliveredMailWake({
+  db,
+  wake: wakeInstance,
+  onUndelivered: (handler) =>
+    sidecarRouter.events.on("mail.outbound.undelivered", handler),
+  routeMail: sidecarRouter.routeMail,
 });
 
 // Per-run deployment teardown (CL-2582), shared by the projection bridge
@@ -919,6 +927,22 @@ app.get(
     },
     exclude: ["/openapi.json", /^\/api\/auth\//],
   }),
+);
+
+// Mail-only wake. The idle-session reaper (CL-2790) now sleeps EVERY
+// agent kind, not just Myra — so a shared/sub-agent's next inbound message can
+// land on an instance whose session the reaper already ended (address no
+// longer routable). Interchange's own `/:instanceId/mail` route (mounted
+// below, out of scope to modify) only checks `status === "running"` and a
+// non-null `sessionId` — both still true after a reaper sleep — and never
+// relaunches, so without this the request would 502 with no self-heal. Wake
+// on-demand, ahead of that route, with the same cold-start relaunch used by
+// the wedge sweep and the chat-surface sessions route
+// (`relaunchInstanceIfNeeded` — a no-op when the instance is already
+// routable or has no active-session gap to fill).
+app.use(
+  "/api/tenants/:tenantId/agents/instances/:instanceId/mail",
+  createMailWakeMiddleware(wakeInstance),
 );
 
 // Server-side backstop for the per-agent attachment gate: reject a document
@@ -2137,7 +2161,6 @@ for (const signal of ["SIGTERM", "SIGINT"]) {
       scheduler.stop();
       taskReconciler.stop();
       stopWedgeSweepReconciler();
-      stopPersonalAgentPrewarm();
       stopAwaitingSupervisorPrewarm();
       stopStalledScheduledRunReconciler();
       log.info("Closing sidecar connections", {

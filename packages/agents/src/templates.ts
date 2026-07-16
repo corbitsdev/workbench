@@ -114,6 +114,21 @@ export interface AgentTemplate {
   deployable?: boolean;
   kind?: "personal";
   /**
+   * Marks a template as an ephemeral, single-purpose invocation that never
+   * behaves like a chat session a member returns to — it ends when its one
+   * job is done rather than sleeping and waking. The idle-session reaper
+   * (`isReapableAgentInstance`) treats every OTHER template as reapable
+   * regardless of `kind`; this is the explicit exclusion allowlist.
+   */
+  ephemeral?: boolean;
+  /**
+   * Marks a template whose work is driven by its own internal schedule
+   * (interval ticks), not by inbound mail. Wake is mail-only, so sleeping a
+   * self-driven agent would kill its schedule with nothing to ever wake it —
+   * the idle-session reaper excludes these alongside `ephemeral` templates.
+   */
+  selfDriven?: boolean;
+  /**
    * Native tool packages this agent pins. Persisted to the agent DB row at
    * seed time and read back via `parseAgentRow(row).toolPackages` at launch.
    */
@@ -168,13 +183,14 @@ const MYRA_VARIANT_TEMPLATES: AgentTemplate[] = MYRA_VARIANTS.filter(
   // Chat variants are alternate per-member Myra definitions launched on the
   // exact same wake path as the canonical `myra` template (every Myra surface
   // calls `POST /v1/instances/:id/sessions`, which is generic over instance
-  // id — see isReapableChatAgent). Carrying the same `kind: "personal"`
-  // marker as canonical Myra makes the idle-session reaper treat them
-  // identically (reapable, same threshold, same conversation-retention
-  // semantics). Triage variants stay unmarked: they are ephemeral
-  // inbox-triage sessions launched by mailbox-triage.ts, never a chat surface,
-  // and must never become a reaper state machine.
+  // id). Carrying the same `kind: "personal"` marker as canonical Myra keeps
+  // catalog/operator-profile personalization identical; reapability is
+  // governed separately by `ephemeral` below, not by `kind`.
   kind: variant.kind === "chat" ? "personal" : undefined,
+  // Triage variants are ephemeral single-turn inbox-triage sessions (see the
+  // canonical `myra-triage` entry below); chat variants are real chat
+  // surfaces a member returns to, exactly like canonical Myra.
+  ephemeral: variant.kind !== "chat",
   toolPackages: MYRA_TOOL_PACKAGES.map((name) => ({ name, version: "*" })),
 }));
 
@@ -219,6 +235,7 @@ export const AGENT_TEMPLATES: AgentTemplate[] = [
     capabilities: { tools: [...PERSONAL_AGENT_BASE_TOOLS] },
     modelConfig: PERSONAL_AGENT_TRIAGE_MODEL_CONFIG,
     deployable: false,
+    ephemeral: true,
     toolPackages: MYRA_TOOL_PACKAGES.map((name) => ({ name, version: "*" })),
   },
   {
@@ -243,6 +260,10 @@ export const AGENT_TEMPLATES: AgentTemplate[] = [
     capabilities: { tools: [...LOOP_DEPLOY_DESCRIPTOR.defaultTools] },
     modelConfig: LOOP_MODEL_CONFIG,
     deployable: false,
+    // Loop runs scheduled background tasks on its own interval — no inbound
+    // mail ever arrives to wake it, so reaping it would kill the schedule
+    // forever.
+    selfDriven: true,
   },
   {
     key: "freddie",
@@ -279,6 +300,7 @@ export const AGENT_TEMPLATES: AgentTemplate[] = [
     capabilities: { tools: [] },
     modelConfig: FILE_PARSER_MODEL_CONFIG,
     deployable: false,
+    ephemeral: true,
   },
   {
     key: "freddy",
@@ -334,32 +356,28 @@ export const AGENT_TEMPLATES: AgentTemplate[] = [
 ];
 
 /**
- * Whether a live agent instance with this display name is a user-facing chat
- * agent that may be slept when idle and cleanly relaunched on the next
- * interaction (CL-2790, the idle-session reaper).
+ * Whether a live agent instance with this display name may be slept when
+ * idle and cleanly relaunched on the next interaction (CL-2790, the
+ * idle-session reaper — now universal over `kind`).
  *
- * A name is reapable only when it matches a known template whose `kind` is
- * `"personal"` — i.e. the per-member personal agent (Myra) and its
- * non-canonical chat-variant siblings (`myra-chat-*`, seeded from
- * `MYRA_VARIANTS` in `templates.ts`). CL-2790: the personal agent is the
- * archetype with a proven on-demand wake — every Myra chat surface
- * (`useMyraSession`) unconditionally calls
- * `POST /v1/instances/:id/sessions` before opening its stream, and that route
- * is generic over instance id (it does not branch on the agent's `kind` or
- * name), so a variant chat instance wakes exactly like the canonical one.
- * Triage variants (`myra-triage-*`) carry NO `kind` marker and stay
- * unreapable — they are ephemeral single-turn sessions launched by
- * mailbox-triage.ts, not a chat surface a member returns to. Shared
- * / sub-agents (Oat, Walter, …) have no wake trigger on their next message: the
- * mail route only checks instance `status === "running"` and a non-null
- * `sessionId` (both still true after sleep) and never re-launches, so a slept
- * shared agent 502s on its next (often agent-to-agent) message with no
- * self-heal. So they are NOT reapable until a shared-agent wake path exists.
- * `deployable` means "catalog-visible", NOT "safe to sleep" — do not use it as
- * the discriminator. An unrecognized name (no template) is NOT reapable: the
- * reaper only ever sleeps an agent it positively identifies as wakeable.
+ * Every recognized template is reapable EXCEPT the explicit exclusion
+ * allowlist: `ephemeral` templates — inbox-triage sessions (`myra-triage`,
+ * `myra-triage-*`) and the internal file-parser invocation, which end when
+ * their one job is done and are never a surface a member returns to — and
+ * `selfDriven` templates (Loop), whose interval schedule no inbound mail
+ * would ever wake. `kind` (`"personal"` on Myra and
+ * her chat variants) is unrelated to reapability now — it only marks the
+ * per-member personal-agent family for catalog/operator-profile purposes.
+ * Every chat surface and mail-delivery route wakes a slept instance
+ * on-demand (`POST /v1/instances/:id/sessions` before opening a stream, and
+ * mail delivery relaunches a non-routable instance before dispatch), so
+ * shared agents (Oat, Walter, …) are reapable exactly like Myra.
+ * `deployable` means "catalog-visible", NOT "safe to sleep" — do not use it
+ * as the discriminator. An unrecognized name (no template) is NOT reapable:
+ * the reaper only ever sleeps an agent it positively identifies.
  */
-export function isReapableChatAgent(agentName: string): boolean {
+export function isReapableAgentInstance(agentName: string): boolean {
   const template = AGENT_TEMPLATES.find((t) => t.name === agentName);
-  return template !== undefined && template.kind === "personal";
+  if (template === undefined) return false;
+  return template.ephemeral !== true && template.selfDriven !== true;
 }

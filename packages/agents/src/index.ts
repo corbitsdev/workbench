@@ -126,7 +126,7 @@ export {
 export {
   AGENT_TEMPLATES,
   type AgentTemplate,
-  isReapableChatAgent,
+  isReapableAgentInstance,
 } from "./templates";
 
 // Model catalog derived from the agent templates (single source of truth)
