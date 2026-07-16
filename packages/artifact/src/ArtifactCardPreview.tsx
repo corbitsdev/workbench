@@ -1,3 +1,4 @@
+import { useState } from "react";
 import type { ArtifactPreviewFamily } from "./artifact-preview-family";
 
 export type ArtifactCardPreviewProps = {
@@ -168,13 +169,18 @@ export function ArtifactCardPreview({
   thumbnailUrl,
   thumbnailAlt,
 }: ArtifactCardPreviewProps) {
-  if (thumbnailUrl !== undefined) {
+  const [thumbnailFailed, setThumbnailFailed] = useState(false);
+  if (thumbnailUrl !== undefined && !thumbnailFailed) {
     return (
       <img
         src={thumbnailUrl}
         alt={thumbnailAlt ?? "Artifact thumbnail"}
-        className="h-full w-full object-cover"
+        // A hairline outline delineates the raster photo from the card; on a
+        // load failure fall through to the shaped placeholder below rather than
+        // leaving the browser's broken-image glyph in an otherwise polished card.
+        className="h-full w-full object-cover outline outline-1 -outline-offset-1 outline-text/10"
         loading="lazy"
+        onError={() => setThumbnailFailed(true)}
       />
     );
   }

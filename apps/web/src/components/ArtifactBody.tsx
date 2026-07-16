@@ -14,7 +14,7 @@ import { EmptyContentNotice, PreviewFallback } from "./ArtifactContentNotice";
 import GammaPresentationBody from "./GammaPresentationBody";
 import PresentationBody from "./PresentationBody";
 import ResearchBody, { parseResearchBrief } from "./ResearchBody";
-import { buildApiUrl } from "../lib/api";
+import { buildApiUrl, buildSameOriginApiUrl } from "../lib/api";
 import { useArtifactCsvPreview } from "../hooks/use-artifact-csv-preview";
 
 interface ArtifactBodyArtifact {
@@ -243,7 +243,10 @@ function ImageBody({
   artifactId: string;
   filename: string | null;
 }) {
-  const src = buildApiUrl(`/artifacts/${artifactId}/download`);
+  // Same-origin proxied path: the browser drops the auth cookie on a
+  // cross-origin <img> subresource, so the inline preview must not use apiBase.
+  // The download <a> below is a top-level navigation and works either way.
+  const src = buildSameOriginApiUrl(`/artifacts/${artifactId}/download`);
   return (
     <div className="space-y-3">
       <img
