@@ -31,18 +31,19 @@ function textTurn(
   return { role, content: [{ type: "text", text }], timestamp: 0 };
 }
 
-// Commit `turns.jsonl` as an `inference-done` checkpoint at a controlled author
-// time. Each such checkpoint is one inference turn's boundary.
+// Commit a turn's assembled prompt to `prompt.jsonl` as an `inference-done`
+// checkpoint at a controlled author time. Each such checkpoint is one inference
+// turn's boundary; `prompt.jsonl` holds exactly the input that turn received.
 async function commitTurnCheckpoint(
   dir: string,
-  turns: ConversationTurn[],
+  promptTurns: ConversationTurn[],
   tsSeconds: number,
 ): Promise<void> {
   await fs.promises.writeFile(
-    path.join(dir, "turns.jsonl"),
-    turns.map((t) => JSON.stringify(t)).join("\n") + "\n",
+    path.join(dir, "prompt.jsonl"),
+    promptTurns.map((t) => JSON.stringify(t)).join("\n") + "\n",
   );
-  await git.add({ fs, dir, filepath: "turns.jsonl" });
+  await git.add({ fs, dir, filepath: "prompt.jsonl" });
   await git.commit({
     fs,
     dir,
@@ -62,20 +63,18 @@ function repoStoreForDir(dir: string): AgentRepoStore {
   } as unknown as AgentRepoStore;
 }
 
-// A two-turn conversation: turn 1 (q1 → a1) then turn 2 (q2 → a2). Each turn's
-// triggering message and assistant answer land in the SAME inference-done
-// checkpoint, mirroring the reactor's commit granularity.
+// A two-turn conversation: turn 1 (q1 → a1) then turn 2 (q2 → a2). Each
+// checkpoint records the prompt that turn received — the assistant answer is
+// never part of a turn's own input prompt.
 async function seedTwoTurnRepo(dir: string): Promise<void> {
   await createIsogitStore(dir);
+  // Turn 1 input: system + first question.
   await commitTurnCheckpoint(
     dir,
-    [
-      textTurn("system", "You are Myra."),
-      textTurn("user", "q1"),
-      textTurn("assistant", "a1"),
-    ],
+    [textTurn("system", "You are Myra."), textTurn("user", "q1")],
     1000,
   );
+  // Turn 2 input: the conversation so far (incl. turn 1's answer) + q2.
   await commitTurnCheckpoint(
     dir,
     [
@@ -83,7 +82,6 @@ async function seedTwoTurnRepo(dir: string): Promise<void> {
       textTurn("user", "q1"),
       textTurn("assistant", "a1"),
       textTurn("user", "q2"),
-      textTurn("assistant", "a2"),
     ],
     2000,
   );

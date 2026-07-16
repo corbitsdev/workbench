@@ -309,9 +309,9 @@ describe("inference_turn detail — parts and derived duration", () => {
     await seedInstance("myra_at_tenant");
     const dir = path.join(repoRoot, "myra_at_tenant");
     await createIsogitStore(dir);
-    // This turn's own inference-done checkpoint: the triggering message and the
-    // assistant answer are committed together, authored at endedAt.
-    const turns: ConversationTurn[] = [
+    // This turn's inference-done checkpoint records the prompt the model
+    // received in prompt.jsonl, authored at endedAt.
+    const promptTurns: ConversationTurn[] = [
       {
         role: "system",
         content: [{ type: "text", text: "You are Myra." }],
@@ -322,17 +322,12 @@ describe("inference_turn detail — parts and derived duration", () => {
         content: [{ type: "text", text: "who is acme" }],
         timestamp: 0,
       },
-      {
-        role: "assistant",
-        content: [{ type: "text", text: "Acme is a company." }],
-        timestamp: 0,
-      },
     ];
     await fs.promises.writeFile(
-      path.join(dir, "turns.jsonl"),
-      turns.map((t) => JSON.stringify(t)).join("\n") + "\n",
+      path.join(dir, "prompt.jsonl"),
+      promptTurns.map((t) => JSON.stringify(t)).join("\n") + "\n",
     );
-    await git.add({ fs, dir, filepath: "turns.jsonl" });
+    await git.add({ fs, dir, filepath: "prompt.jsonl" });
     await git.commit({
       fs,
       dir,
@@ -352,7 +347,7 @@ describe("inference_turn detail — parts and derived duration", () => {
     });
 
     const result = await detail("inference_turn", "turn-in");
-    // The assistant answer is stripped — input is system + triggering message.
+    // The input is read straight from prompt.jsonl — the model's assembled prompt.
     expect(result?.turn?.input?.map((m) => m.text)).toEqual([
       "You are Myra.",
       "who is acme",

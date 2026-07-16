@@ -1,4 +1,5 @@
-import { existsSync } from "node:fs";
+import fs, { existsSync } from "node:fs";
+import git from "isomorphic-git";
 import type { ConversationTurn, ContentBlock } from "@intx/types/runtime";
 import { IsogitStore } from "@workbench/storage-isogit";
 import type { AgentRepoStore, RepoId } from "@intx/hub-sessions";
@@ -7,6 +8,12 @@ import type { MomentTurnInputMessage } from "@workbench/timeline";
 // Cap the commit walk. A turn older than the newest MAX_LOG_DEPTH commits
 // cannot be aligned and returns an honest gap rather than a wrong snapshot.
 const MAX_LOG_DEPTH = 10_000;
+
+// The reactor writes the fully-assembled prompt it sent the model (after any
+// pre-inference context transforms) to this file every cycle; it is committed
+// with the turn's checkpoint. It is the exact input the model received — no
+// reconstruction from the durable conversation is needed.
+const PROMPT_FILE = "prompt.jsonl";
 
 // The reactor commits one checkpoint per inference call, whose message is
 // `checkpoint: inference-done` (or `inference-error` on a failed call). These
@@ -102,29 +109,41 @@ function projectTurn(turn: ConversationTurn): MomentTurnInputMessage {
   };
 }
 
-// The turn's own assistant output is the trailing assistant turn(s) in its
-// terminal checkpoint. Everything up to (and including) the triggering
-// user/tool-result message is the input the model received.
-function dropTrailingAssistantOutput(
-  turns: ConversationTurn[],
-): ConversationTurn[] {
-  let end = turns.length;
-  while (end > 0 && turns[end - 1]?.role === "assistant") {
-    end -= 1;
+// `prompt.jsonl` is JSONL — one `ConversationTurn` per line. Keep only the
+// lines that parse into a turn shape; a malformed line is skipped rather than
+// failing the whole read.
+function parsePromptTurns(text: string): ConversationTurn[] {
+  const turns: ConversationTurn[] = [];
+  for (const line of text.split("\n")) {
+    if (line.trim() === "") continue;
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(line);
+    } catch {
+      continue;
+    }
+    if (
+      typeof parsed === "object" &&
+      parsed !== null &&
+      "role" in parsed &&
+      Array.isArray((parsed as { content?: unknown }).content)
+    ) {
+      turns.push(parsed as ConversationTurn);
+    }
   }
-  return turns.slice(0, end);
+  return turns;
 }
 
 /**
- * Read the conversation the model received as INPUT for an inference turn from
- * the hub-durable agent-state repo. The sidecar commits one `inference-done`
- * checkpoint per turn (the triggering message and the assistant output land in
- * the SAME commit — there is no separate message checkpoint), so the input is
- * that checkpoint's `turns.jsonl` with this turn's trailing assistant output
- * removed. The turn is located by ordinal from the newest end of the log
- * (`laterTurnCount` = how many of the instance's turns started after this one),
- * which is robust to the second-granular git author timestamps that make a
- * pure time comparison unsafe for sub-second turns.
+ * Read the exact prompt the model received for an inference turn from the
+ * hub-durable agent-state repo. The reactor persists that assembled prompt to
+ * `prompt.jsonl` every cycle and commits it with the turn's `inference-done`
+ * checkpoint, so the input is read directly from that file at that commit — no
+ * reconstruction from the durable conversation. The turn is located by ordinal
+ * from the newest end of the log (`laterTurnCount` = how many of the instance's
+ * turns started after this one), which is robust to the second-granular git
+ * author timestamps that make a pure time comparison unsafe for sub-second
+ * turns.
  *
  * All failure modes — the state repo was never pushed (or was reaped
  * sidecar-side), the turn falls outside the retained log window, or the
@@ -183,16 +202,18 @@ export async function readTurnInputSnapshot(
     };
   }
 
-  let turns: ConversationTurn[];
+  let blob: Uint8Array;
   try {
-    turns = await store.readAt(terminal.hash);
+    ({ blob } = await git.readBlob({
+      fs,
+      dir,
+      oid: terminal.hash,
+      filepath: PROMPT_FILE,
+    }));
   } catch {
-    return {
-      gap: "The conversation snapshot for this turn could not be read.",
-    };
+    return { gap: "The recorded input for this turn is not available." };
   }
 
-  return {
-    messages: dropTrailingAssistantOutput(turns).map(projectTurn),
-  };
+  const turns = parsePromptTurns(new TextDecoder().decode(blob));
+  return { messages: turns.map(projectTurn) };
 }
