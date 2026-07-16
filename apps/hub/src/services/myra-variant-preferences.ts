@@ -5,28 +5,53 @@ import { myraVariantPreference } from "../db/schema";
 import type { HubDb } from "../db";
 
 /**
- * A member's stored default-variant selection. `null` on either axis means "use
- * the canonical default" — the byte-identical current behavior. This is the
- * read shape returned by GET and PUT.
+ * Max length of a single standing-instructions field (global or per-surface
+ * override), enforced at the API boundary via the arktype patch schema.
+ */
+export const MYRA_INSTRUCTIONS_MAX_LENGTH = 4000;
+
+/**
+ * A member's stored default-variant selection plus their standing guidance
+ * for Myra. `null` on the variant axes means "use the canonical default";
+ * `null`/absent on the instructions axes means "nothing set" — the prompt
+ * builder renders nothing for either. This is the read shape returned by GET
+ * and PUT.
  */
 export const MyraVariantPreferenceSchema = type({
   chat: "string | null",
   triage: "string | null",
+  instructionsGlobal: "string | null",
+  instructionsChat: "string | null",
+  instructionsTriage: "string | null",
 });
 export type MyraVariantPreference = typeof MyraVariantPreferenceSchema.infer;
 
+const InstructionsFieldSchema = type(
+  `string <= ${MYRA_INSTRUCTIONS_MAX_LENGTH} | null`,
+);
+
 /**
- * The PUT patch: either axis may be omitted (left untouched), set to a variant
- * id, or set to `null` (cleared back to the canonical default).
+ * The PUT patch: every field may be omitted (left untouched), set to a value,
+ * or set to `null` (cleared). Instructions fields are length-capped at
+ * {@link MYRA_INSTRUCTIONS_MAX_LENGTH} characters.
  */
 export const MyraVariantPreferencePatchSchema = type({
   "chat?": "string | null",
   "triage?": "string | null",
+  "instructionsGlobal?": InstructionsFieldSchema,
+  "instructionsChat?": InstructionsFieldSchema,
+  "instructionsTriage?": InstructionsFieldSchema,
 });
 export type MyraVariantPreferencePatch =
   typeof MyraVariantPreferencePatchSchema.infer;
 
-const EMPTY_PREFERENCE: MyraVariantPreference = { chat: null, triage: null };
+const EMPTY_PREFERENCE: MyraVariantPreference = {
+  chat: null,
+  triage: null,
+  instructionsGlobal: null,
+  instructionsChat: null,
+  instructionsTriage: null,
+};
 
 export async function readMyraVariantPreference(
   db: HubDb,
@@ -40,7 +65,13 @@ export async function readMyraVariantPreference(
     ),
   });
   if (!row) return { ...EMPTY_PREFERENCE };
-  return { chat: row.chatVariantId, triage: row.triageVariantId };
+  return {
+    chat: row.chatVariantId,
+    triage: row.triageVariantId,
+    instructionsGlobal: row.instructionsGlobal,
+    instructionsChat: row.instructionsChat,
+    instructionsTriage: row.instructionsTriage,
+  };
 }
 
 /**
@@ -88,6 +119,18 @@ export async function setMyraVariantPreference(
   const next: MyraVariantPreference = {
     chat: patch.chat !== undefined ? patch.chat : current.chat,
     triage: patch.triage !== undefined ? patch.triage : current.triage,
+    instructionsGlobal:
+      patch.instructionsGlobal !== undefined
+        ? patch.instructionsGlobal
+        : current.instructionsGlobal,
+    instructionsChat:
+      patch.instructionsChat !== undefined
+        ? patch.instructionsChat
+        : current.instructionsChat,
+    instructionsTriage:
+      patch.instructionsTriage !== undefined
+        ? patch.instructionsTriage
+        : current.instructionsTriage,
   };
 
   await db
@@ -97,6 +140,9 @@ export async function setMyraVariantPreference(
       memberPrincipalId,
       chatVariantId: next.chat,
       triageVariantId: next.triage,
+      instructionsGlobal: next.instructionsGlobal,
+      instructionsChat: next.instructionsChat,
+      instructionsTriage: next.instructionsTriage,
     })
     .onConflictDoUpdate({
       target: [
@@ -106,6 +152,9 @@ export async function setMyraVariantPreference(
       set: {
         chatVariantId: next.chat,
         triageVariantId: next.triage,
+        instructionsGlobal: next.instructionsGlobal,
+        instructionsChat: next.instructionsChat,
+        instructionsTriage: next.instructionsTriage,
         updatedAt: new Date(),
       },
     });

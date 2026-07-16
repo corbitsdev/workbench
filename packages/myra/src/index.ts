@@ -5,6 +5,9 @@ export {
   OperatorProfileSchema,
   type OperatorProfile,
   PERSONAL_AGENT_PROMPT_VERSION,
+  renderMemberInstructionsSection,
+  MemberInstructionsSchema,
+  type MemberInstructions,
 } from "./core/prompt";
 export {
   buildPersonalAgentGrantRequirements,

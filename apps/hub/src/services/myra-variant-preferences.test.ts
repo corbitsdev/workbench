@@ -1,13 +1,22 @@
 import { describe, expect, it, mock } from "bun:test";
+import { type } from "arktype";
 import type { HubDb } from "../db";
 import {
+  MYRA_INSTRUCTIONS_MAX_LENGTH,
+  MyraVariantPreferencePatchSchema,
   readMyraVariantPreference,
   setMyraVariantPreference,
   validateMyraVariantPatch,
 } from "./myra-variant-preferences";
 
 function makeDb(opts: {
-  stored?: { chatVariantId: string | null; triageVariantId: string | null };
+  stored?: {
+    chatVariantId: string | null;
+    triageVariantId: string | null;
+    instructionsGlobal?: string | null;
+    instructionsChat?: string | null;
+    instructionsTriage?: string | null;
+  };
   onConflictDoUpdate?: ReturnType<typeof mock>;
   values?: ReturnType<typeof mock>;
 }): HubDb {
@@ -30,6 +39,9 @@ describe("readMyraVariantPreference", () => {
     expect(await readMyraVariantPreference(db, "tn", "prn")).toEqual({
       chat: null,
       triage: null,
+      instructionsGlobal: null,
+      instructionsChat: null,
+      instructionsTriage: null,
     });
   });
 
@@ -38,11 +50,17 @@ describe("readMyraVariantPreference", () => {
       stored: {
         chatVariantId: "myra-opus-4-8",
         triageVariantId: null,
+        instructionsGlobal: "Be terse.",
+        instructionsChat: null,
+        instructionsTriage: null,
       },
     });
     expect(await readMyraVariantPreference(db, "tn", "prn")).toEqual({
       chat: "myra-opus-4-8",
       triage: null,
+      instructionsGlobal: "Be terse.",
+      instructionsChat: null,
+      instructionsTriage: null,
     });
   });
 });
@@ -81,7 +99,13 @@ describe("setMyraVariantPreference", () => {
       onConflictDoUpdate: mock(() => Promise.resolve()),
     }));
     const db = makeDb({
-      stored: { chatVariantId: "myra-kimi-k2-6", triageVariantId: null },
+      stored: {
+        chatVariantId: "myra-kimi-k2-6",
+        triageVariantId: null,
+        instructionsGlobal: null,
+        instructionsChat: null,
+        instructionsTriage: null,
+      },
       values,
     });
 
@@ -92,6 +116,9 @@ describe("setMyraVariantPreference", () => {
     expect(merged).toEqual({
       chat: "myra-kimi-k2-6",
       triage: "myra-triage-opus-4-8",
+      instructionsGlobal: null,
+      instructionsChat: null,
+      instructionsTriage: null,
     });
     expect(values).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -105,11 +132,80 @@ describe("setMyraVariantPreference", () => {
 
   it("clears an axis when the patch sets it to null", async () => {
     const db = makeDb({
-      stored: { chatVariantId: "myra-opus-4-8", triageVariantId: null },
+      stored: {
+        chatVariantId: "myra-opus-4-8",
+        triageVariantId: null,
+        instructionsGlobal: null,
+        instructionsChat: null,
+        instructionsTriage: null,
+      },
     });
     const merged = await setMyraVariantPreference(db, "tn", "prn", {
       chat: null,
     });
     expect(merged.chat).toBeNull();
+  });
+
+  it("merges only the provided instructions field, keeping others untouched", async () => {
+    const values = mock(() => ({
+      onConflictDoUpdate: mock(() => Promise.resolve()),
+    }));
+    const db = makeDb({
+      stored: {
+        chatVariantId: null,
+        triageVariantId: null,
+        instructionsGlobal: "Be terse.",
+        instructionsChat: "Use bullets.",
+        instructionsTriage: null,
+      },
+      values,
+    });
+
+    const merged = await setMyraVariantPreference(db, "tn", "prn", {
+      instructionsTriage: "Flag investor mail.",
+    });
+
+    expect(merged).toEqual({
+      chat: null,
+      triage: null,
+      instructionsGlobal: "Be terse.",
+      instructionsChat: "Use bullets.",
+      instructionsTriage: "Flag investor mail.",
+    });
+  });
+
+  it("clears an instructions field when the patch sets it to null", async () => {
+    const db = makeDb({
+      stored: {
+        chatVariantId: null,
+        triageVariantId: null,
+        instructionsGlobal: "Be terse.",
+        instructionsChat: null,
+        instructionsTriage: null,
+      },
+    });
+    const merged = await setMyraVariantPreference(db, "tn", "prn", {
+      instructionsGlobal: null,
+    });
+    expect(merged.instructionsGlobal).toBeNull();
+  });
+});
+
+describe("MyraVariantPreferencePatchSchema length validation", () => {
+  it("rejects an instructions field over the max length", () => {
+    const tooLong = "a".repeat(MYRA_INSTRUCTIONS_MAX_LENGTH + 1);
+    const result = MyraVariantPreferencePatchSchema({
+      instructionsGlobal: tooLong,
+    });
+    expect(result instanceof type.errors).toBe(true);
+  });
+
+  it("accepts an instructions field at the max length, and null", () => {
+    const atMax = "a".repeat(MYRA_INSTRUCTIONS_MAX_LENGTH);
+    const result = MyraVariantPreferencePatchSchema({
+      instructionsGlobal: atMax,
+      instructionsChat: null,
+    });
+    expect(result instanceof type.errors).toBe(false);
   });
 });

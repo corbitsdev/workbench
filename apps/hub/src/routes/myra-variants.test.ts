@@ -6,7 +6,13 @@ import { createMyraVariantsRouter } from "./myra-variants";
 // The router runs the REAL preference service (validation against the real
 // catalog is the behavior under test); only the DB is a structural fake.
 function makeDb(opts: {
-  stored?: { chatVariantId: string | null; triageVariantId: string | null };
+  stored?: {
+    chatVariantId: string | null;
+    triageVariantId: string | null;
+    instructionsGlobal?: string | null;
+    instructionsChat?: string | null;
+    instructionsTriage?: string | null;
+  };
   values?: ReturnType<typeof mock>;
 }): HubDb {
   const values =
@@ -60,6 +66,9 @@ describe("Myra variants router", () => {
     const findFirst = mock(async () => ({
       chatVariantId: "myra-opus-4-8",
       triageVariantId: null,
+      instructionsGlobal: null,
+      instructionsChat: null,
+      instructionsTriage: null,
     }));
     const db = {
       query: { myraVariantPreference: { findFirst } },
@@ -67,7 +76,13 @@ describe("Myra variants router", () => {
     const app = wrapWithTenant(db);
     const res = await app.request("/members/me/myra-preferences");
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ chat: "myra-opus-4-8", triage: null });
+    expect(await res.json()).toEqual({
+      chat: "myra-opus-4-8",
+      triage: null,
+      instructionsGlobal: null,
+      instructionsChat: null,
+      instructionsTriage: null,
+    });
   });
 
   it("persists a valid selection, merging with the stored one", async () => {
@@ -75,7 +90,13 @@ describe("Myra variants router", () => {
       onConflictDoUpdate: mock(() => Promise.resolve()),
     }));
     const db = makeDb({
-      stored: { chatVariantId: "myra-kimi-k2-6", triageVariantId: null },
+      stored: {
+        chatVariantId: "myra-kimi-k2-6",
+        triageVariantId: null,
+        instructionsGlobal: null,
+        instructionsChat: null,
+        instructionsTriage: null,
+      },
       values,
     });
     const app = wrapWithTenant(db);
@@ -88,6 +109,9 @@ describe("Myra variants router", () => {
     expect(await res.json()).toEqual({
       chat: "myra-kimi-k2-6",
       triage: "myra-triage-opus-4-8",
+      instructionsGlobal: null,
+      instructionsChat: null,
+      instructionsTriage: null,
     });
     expect(values).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -97,6 +121,51 @@ describe("Myra variants router", () => {
         triageVariantId: "myra-triage-opus-4-8",
       }),
     );
+  });
+
+  it("persists standing instructions fields, merging with the stored ones", async () => {
+    const values = mock(() => ({
+      onConflictDoUpdate: mock(() => Promise.resolve()),
+    }));
+    const db = makeDb({
+      stored: {
+        chatVariantId: null,
+        triageVariantId: null,
+        instructionsGlobal: "Be terse.",
+        instructionsChat: null,
+        instructionsTriage: null,
+      },
+      values,
+    });
+    const app = wrapWithTenant(db);
+    const res = await app.request("/members/me/myra-preferences", {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ instructionsTriage: "Flag investor mail." }),
+    });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({
+      chat: null,
+      triage: null,
+      instructionsGlobal: "Be terse.",
+      instructionsChat: null,
+      instructionsTriage: "Flag investor mail.",
+    });
+  });
+
+  it("400s an instructions field over the max length without touching the DB", async () => {
+    const values = mock(() => ({
+      onConflictDoUpdate: mock(() => Promise.resolve()),
+    }));
+    const db = makeDb({ values });
+    const app = wrapWithTenant(db);
+    const res = await app.request("/members/me/myra-preferences", {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ instructionsGlobal: "a".repeat(4001) }),
+    });
+    expect(res.status).toBe(400);
+    expect(values).not.toHaveBeenCalled();
   });
 
   it("400s an unknown variant id without touching the DB", async () => {

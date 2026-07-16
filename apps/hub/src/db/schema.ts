@@ -80,6 +80,15 @@ export const myraVariantPreference = pgTable(
     memberPrincipalId: text("member_principal_id").notNull(),
     chatVariantId: text("chat_variant_id"),
     triageVariantId: text("triage_variant_id"),
+    // Per-member standing guidance (CL-3661) rendered as a DATA section after
+    // the operator/active-context section at prompt-build time — see
+    // renderMemberInstructionsSection in @workbench/myra. `instructionsGlobal`
+    // applies to every surface; `instructionsChat`/`instructionsTriage` are
+    // per-surface overrides composed after it. Length-validated (4000 chars)
+    // at the API boundary, not here.
+    instructionsGlobal: text("instructions_global"),
+    instructionsChat: text("instructions_chat"),
+    instructionsTriage: text("instructions_triage"),
     createdAt: timestamp("created_at").notNull().defaultNow(),
     updatedAt: timestamp("updated_at")
       .notNull()

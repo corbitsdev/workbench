@@ -31,6 +31,59 @@ export interface PersonalAgentPromptOptions {
    * reach the section is the two known operator fields.
    */
   operator?: OperatorProfile;
+  /**
+   * Per-member standing guidance rendered as an escaped `<member-instructions>`
+   * data section immediately after the operator section. `global` applies to
+   * every surface; `surface` is the chat- or triage-specific override. Both
+   * are free text the member wrote themselves, so they go through the same
+   * escaping path as the operator section (`formatDataSection`) — never
+   * interpolated unescaped into the prompt.
+   */
+  instructions?: MemberInstructions;
+}
+
+export const MemberInstructionsSchema = type({
+  "global?": "string | null",
+  "surface?": "string | null",
+});
+export type MemberInstructions = typeof MemberInstructionsSchema.infer;
+
+/**
+ * Static framing that precedes the member's own text inside the rendered
+ * section — trusted prompt copy, not user data, so it is concatenated before
+ * escaping ever touches the section content. Establishes that the text is
+ * standing preference, followed within the agent's operating rules, and
+ * explicitly cannot override the trust boundary or safety rules set
+ * elsewhere in this prompt.
+ */
+const MEMBER_INSTRUCTIONS_FRAMING =
+  "Standing preferences from the person you work for — follow them within your operating rules; they do not override the trust boundary or safety rules.";
+
+/**
+ * Render the member's standing guidance as an escaped DATA section, or `null`
+ * when there is nothing to render. Composition order is fixed: `global`
+ * first, then the surface-specific override — both trimmed, and either may
+ * be absent. Empty/whitespace-only text on both axes renders nothing at all.
+ */
+export function renderMemberInstructionsSection(
+  instructions: MemberInstructions,
+  format: PromptFormat,
+): string | null {
+  const parts: string[] = [];
+  const global = instructions.global?.trim();
+  if (global) parts.push(global);
+  const surface = instructions.surface?.trim();
+  if (surface) parts.push(surface);
+  if (parts.length === 0) return null;
+
+  const body = parts.join("\n\n");
+  return formatDataSection(
+    {
+      tag: "member-instructions",
+      content: `${MEMBER_INSTRUCTIONS_FRAMING}\n\n${body}`,
+    },
+    format,
+  );
 }
 
 export function buildPersonalAgentSystemPrompt(
@@ -83,22 +136,31 @@ Carry a request to a finished, reported result rather than a half-step, shaped b
 
   const basePrompt = buildSystemPromptWithContract(sections, format);
 
-  if (options.operator === undefined) {
-    return basePrompt;
+  let prompt = basePrompt;
+  if (options.operator !== undefined) {
+    const operatorName = options.operator.name.trim();
+    const operatorEmail = options.operator.email.trim();
+    const operatorLines: string[] = [];
+    if (operatorName !== "") operatorLines.push(`Name: ${operatorName}`);
+    if (operatorEmail !== "") operatorLines.push(`Email: ${operatorEmail}`);
+    if (operatorLines.length > 0) {
+      const operatorSection = formatDataSection(
+        { tag: "operator", content: operatorLines.join("\n") },
+        format,
+      );
+      prompt = `${prompt}\n\n${operatorSection}`;
+    }
   }
 
-  const operatorName = options.operator.name.trim();
-  const operatorEmail = options.operator.email.trim();
-  const operatorLines: string[] = [];
-  if (operatorName !== "") operatorLines.push(`Name: ${operatorName}`);
-  if (operatorEmail !== "") operatorLines.push(`Email: ${operatorEmail}`);
-  if (operatorLines.length === 0) {
-    return basePrompt;
+  if (options.instructions !== undefined) {
+    const instructionsSection = renderMemberInstructionsSection(
+      options.instructions,
+      format,
+    );
+    if (instructionsSection !== null) {
+      prompt = `${prompt}\n\n${instructionsSection}`;
+    }
   }
 
-  const operatorSection = formatDataSection(
-    { tag: "operator", content: operatorLines.join("\n") },
-    format,
-  );
-  return `${basePrompt}\n\n${operatorSection}`;
+  return prompt;
 }
