@@ -1,6 +1,6 @@
 import { useMemo, useRef, useState } from "react";
 import { Link } from "react-router";
-import { AlertCircle, ArrowRight, ChevronRight, Info } from "lucide-react";
+import { AlertCircle, ArrowRight, ChevronRight } from "lucide-react";
 import { Badge, Skeleton } from "@workbench/ui";
 import type { MomentDetail, TimelineEntry } from "@workbench/client";
 import { KIND_META, relativeTime, timelineEntryTone } from "./timeline-kinds";
@@ -13,6 +13,7 @@ import {
 } from "./trace-links";
 import { usePrincipalActivity, useMomentDetail } from "./ActorTimeline";
 import { isPermissionDeniedError } from "./activity-error";
+import { PermissionCaveatBanner } from "./PermissionCaveatBanner";
 import { TraceOutputView } from "./trace-output-view";
 import {
   clampListIndex,
@@ -359,9 +360,6 @@ export function MomentWalker({
   );
 
   const now = new Date();
-  const hasPermissionEntry = entries.some(
-    (e) => e.kind === "grant" || e.kind === "credential",
-  );
 
   const clampedSelected = clampListIndex(selected, entries.length);
 
@@ -440,19 +438,7 @@ export function MomentWalker({
         · each opens to what we recorded — and flags what isn&rsquo;t.
       </p>
 
-      {hasPermissionEntry && (
-        <p
-          data-testid="permission-caveat"
-          className="flex items-start gap-1.5 rounded-[10px] border border-border bg-surface px-3 py-2 text-[11px] leading-snug text-text-3"
-        >
-          <Info className="mt-px h-3 w-3 shrink-0" />
-          <span>
-            Grant and credential moments reflect current state only — past
-            changes, revocations, and whether a permission was exercised are not
-            recorded, so this is not a permission audit history.
-          </span>
-        </p>
-      )}
+      <PermissionCaveatBanner entries={entries} />
 
       <ul
         ref={listRef}
