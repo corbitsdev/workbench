@@ -39,6 +39,7 @@ import { MyraDefaultsPanel } from "../components/MyraDefaultsPanel";
 import { MyraStylePanel } from "../components/MyraStylePanel";
 import { MyraPinnedSkillsPanel } from "../components/MyraPinnedSkillsPanel";
 import { MyraToolsPanel } from "../components/MyraToolsPanel";
+import { MyraInferenceDialsPanel } from "../components/MyraInferenceDialsPanel";
 import { MySchedules } from "../components/MySchedules";
 import { MORNING_BRIEF_ANCHOR_ID } from "./settings-section-nav";
 import { useMyraVoiceInput } from "../hooks/use-myra-voice-input";
@@ -298,6 +299,14 @@ export default function Settings() {
           description="Turn off catalog tool packages or individual tools for your Myra. You can only narrow what your workspace already allows."
         >
           <MyraToolsPanel tenantId={activeTenantId} />
+        </SettingsGroup>
+
+        <SettingsGroup
+          id="myra-inference"
+          title="Inference dials"
+          description="Tune Creative and Thinking per surface. Controls shown depend on the model behind your selected Myra variant."
+        >
+          <MyraInferenceDialsPanel tenantId={activeTenantId} />
         </SettingsGroup>
 
         <SettingsGroup

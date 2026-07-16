@@ -10,6 +10,8 @@ import {
   createTriageBudgetDirector,
   createInvokeBudgetDirector,
   createBudgetDirector,
+  readInferenceParamsForDirector,
+  wrapDirectorWithInferenceParams,
 } from "@workbench/myra";
 import { createGranolaDirector } from "./granola/director";
 import { createFirecrawlDirector } from "./firecrawl/director";
@@ -22,11 +24,14 @@ export const personalAgentDirector = defineDirector<
 >({
   id: "@workbench/agents/personal-agent",
   configSchema: SenderFilterConfig,
-  factory: (config, _env, agent) =>
-    createPersonalAgentDirector(
-      agent.systemPrompt,
-      [...agent.toolDefinitions],
-      config.allowedSenders,
+  factory: (config, env, agent) =>
+    wrapDirectorWithInferenceParams(
+      createPersonalAgentDirector(
+        agent.systemPrompt,
+        [...agent.toolDefinitions],
+        config.allowedSenders,
+      ),
+      readInferenceParamsForDirector(env, agent.systemPrompt),
     ),
 });
 
@@ -66,8 +71,13 @@ export const TRIAGE_BUDGET_DIRECTOR_ID = "@workbench/agents/triage-budget";
 export const triageBudgetDirector = defineDirector<typeof EmptyConfig.infer>({
   id: TRIAGE_BUDGET_DIRECTOR_ID,
   configSchema: EmptyConfig,
-  factory: (_config, _env, agent) =>
-    createTriageBudgetDirector(agent.systemPrompt, [...agent.toolDefinitions]),
+  factory: (_config, env, agent) =>
+    wrapDirectorWithInferenceParams(
+      createTriageBudgetDirector(agent.systemPrompt, [
+        ...agent.toolDefinitions,
+      ]),
+      readInferenceParamsForDirector(env, agent.systemPrompt),
+    ),
 });
 
 export const INVOKE_BUDGET_DIRECTOR_ID = "@workbench/agents/invoke-budget";
@@ -83,8 +93,13 @@ export const INVOKE_BUDGET_DIRECTOR_ID = "@workbench/agents/invoke-budget";
 export const invokeBudgetDirector = defineDirector<typeof EmptyConfig.infer>({
   id: INVOKE_BUDGET_DIRECTOR_ID,
   configSchema: EmptyConfig,
-  factory: (_config, _env, agent) =>
-    createInvokeBudgetDirector(agent.systemPrompt, [...agent.toolDefinitions]),
+  factory: (_config, env, agent) =>
+    wrapDirectorWithInferenceParams(
+      createInvokeBudgetDirector(agent.systemPrompt, [
+        ...agent.toolDefinitions,
+      ]),
+      readInferenceParamsForDirector(env, agent.systemPrompt),
+    ),
 });
 
 export const WORKFLOW_STEP_BUDGET_DIRECTOR_ID =
@@ -117,14 +132,17 @@ export const workflowStepBudgetDirector = defineDirector<
 >({
   id: WORKFLOW_STEP_BUDGET_DIRECTOR_ID,
   configSchema: EmptyConfig,
-  factory: (_config, _env, agent) =>
-    createBudgetDirector(agent.systemPrompt, [...agent.toolDefinitions], {
-      maxToolCalls: WORKFLOW_STEP_MAX_TOOL_CALLS,
-      maxInputTokens: WORKFLOW_STEP_MAX_INPUT_TOKENS,
-      maxOutputTokens: WORKFLOW_STEP_MAX_OUTPUT_TOKENS,
-      maxInferenceTurns: WORKFLOW_STEP_MAX_INFERENCE_TURNS,
-      stopMarker: WORKFLOW_STEP_BUDGET_STOP_MARKER,
-    }),
+  factory: (_config, env, agent) =>
+    wrapDirectorWithInferenceParams(
+      createBudgetDirector(agent.systemPrompt, [...agent.toolDefinitions], {
+        maxToolCalls: WORKFLOW_STEP_MAX_TOOL_CALLS,
+        maxInputTokens: WORKFLOW_STEP_MAX_INPUT_TOKENS,
+        maxOutputTokens: WORKFLOW_STEP_MAX_OUTPUT_TOKENS,
+        maxInferenceTurns: WORKFLOW_STEP_MAX_INFERENCE_TURNS,
+        stopMarker: WORKFLOW_STEP_BUDGET_STOP_MARKER,
+      }),
+      readInferenceParamsForDirector(env, agent.systemPrompt),
+    ),
 });
 
 /**

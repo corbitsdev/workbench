@@ -1,4 +1,4 @@
-import { createDefaultDirector } from "@intx/inference";
+import { createDefaultDirector } from "@workbench/inference";
 import type {
   ReactorDirector,
   ReactorInboundEvent,
@@ -7,6 +7,8 @@ import type {
   ReactorAction,
   ToolDefinition,
 } from "@intx/types/runtime";
+import { wrapCapabilitiesWithInferenceParams } from "./inference-params-director";
+import type { ResolvedInferenceDials } from "./inference-params";
 
 const GENERIC_BUDGET_STOP_MARKER =
   "Note: this session stopped at its safety budget (tool calls, tokens, or inference turns) before finishing normally. A human should review this message and take over from here.";
@@ -37,6 +39,8 @@ export type BudgetDirectorOptions = {
    * and engagement coincide.
    */
   resetPerMessage?: boolean;
+  /** When set, merges member creative/thinking dials into each infer call. */
+  inferenceDials?: ResolvedInferenceDials;
 };
 
 function countToolCalls(action: ReactorAction): number {
@@ -154,6 +158,10 @@ export function createBudgetDirector(
       state: ReactorState,
       capabilities: ReactorCapabilities,
     ): Promise<ReactorAction | ReactorAction[]> {
+      const effectiveCapabilities = wrapCapabilitiesWithInferenceParams(
+        capabilities,
+        opts.inferenceDials,
+      );
       if (opts.resetPerMessage === true && event.type === "message.received") {
         toolCallTotal = 0;
         inferenceTurnTotal = 0;
@@ -169,7 +177,9 @@ export function createBudgetDirector(
         baseline,
       );
 
-      const actions = toArray(await base.decide(event, state, capabilities));
+      const actions = toArray(
+        await base.decide(event, state, effectiveCapabilities),
+      );
 
       for (const action of actions) {
         toolCallTotal += countToolCalls(action);

@@ -27,6 +27,10 @@ type StoredRow = {
   toolUsageTriage?: string | null;
   skillUsageChat?: string | null;
   skillUsageTriage?: string | null;
+  creativeChat?: number | null;
+  thinkingChat?: number | null;
+  creativeTriage?: number | null;
+  thinkingTriage?: number | null;
 };
 
 function makeDb(opts: {
@@ -65,6 +69,10 @@ const EMPTY = {
   pinnedSkillIds: [],
   disabledCatalogPackages: [],
   disabledToolNames: [],
+  creativeChat: null,
+  thinkingChat: null,
+  creativeTriage: null,
+  thinkingTriage: null,
 };
 
 describe("readMyraVariantPreference", () => {

@@ -5,8 +5,10 @@ import { getLogger } from "@intx/log";
 import {
   listMyraVariants,
   listStyleAxes,
+  listKnownModelInferenceCapabilities,
   MyraVariantSummarySchema,
   StyleAxisSummarySchema,
+  InferenceCapabilitiesResponseSchema,
 } from "@workbench/myra";
 import {
   MyraVariantPreferencePatchSchema,
@@ -93,6 +95,28 @@ export function createMyraVariantsRouter(db: HubDb): Hono<MyraVariantsEnv> {
       },
     }),
     (c) => c.json({ axes: listStyleAxes() }),
+  );
+
+  app.get(
+    "/myra/inference-capabilities",
+    describeRoute({
+      tags: ["Myra"],
+      summary: "Per-model inference dial capabilities",
+      description:
+        "Honest Creative / Thinking control matrix for settings UI (CL-3766).",
+      parameters: [tenantIdParam],
+      responses: {
+        200: {
+          description: "Known model capability rows",
+          content: {
+            "application/json": {
+              schema: resolver(InferenceCapabilitiesResponseSchema),
+            },
+          },
+        },
+      },
+    }),
+    (c) => c.json({ models: listKnownModelInferenceCapabilities() }),
   );
 
   app.get(

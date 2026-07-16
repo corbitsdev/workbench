@@ -49,6 +49,10 @@ export const MyraPreferencesSchema = type({
     description: "string",
     tools: type({ name: "string", description: "string" }).array(),
   }).array(),
+  creativeChat: "number | null",
+  thinkingChat: "number | null",
+  creativeTriage: "number | null",
+  thinkingTriage: "number | null",
 });
 export type MyraPreferences = typeof MyraPreferencesSchema.infer;
 
@@ -67,6 +71,10 @@ export const MyraPreferencesUpdateSchema = type({
   "pinnedSkillIds?": "string[]",
   "disabledCatalogPackages?": "string[]",
   "disabledToolNames?": "string[]",
+  "creativeChat?": "0 <= number <= 100 | null",
+  "thinkingChat?": "0 <= number <= 100 | null",
+  "creativeTriage?": "0 <= number <= 100 | null",
+  "thinkingTriage?": "0 <= number <= 100 | null",
 });
 export type MyraPreferencesUpdate = typeof MyraPreferencesUpdateSchema.infer;
 
@@ -98,6 +106,23 @@ export const StyleAxesResponseSchema = type({
   axes: StyleAxisSchema.array(),
 });
 
+export const InferenceDialKindSchema = type(
+  "'hidden' | 'reasoning_effort' | 'temperature' | 'thinking_toggle' | 'thinking_effort'",
+);
+
+export const ModelInferenceCapabilitiesSchema = type({
+  modelSlug: "string",
+  creative: InferenceDialKindSchema,
+  thinking: InferenceDialKindSchema,
+  temperatureThinkingExclusive: "boolean",
+});
+export type ModelInferenceCapabilities =
+  typeof ModelInferenceCapabilitiesSchema.infer;
+
+export const InferenceCapabilitiesResponseSchema = type({
+  models: ModelInferenceCapabilitiesSchema.array(),
+});
+
 function myraBase(tenantId: string): string {
   return `tenants/${encodeURIComponent(tenantId)}`;
 }
@@ -116,6 +141,45 @@ export async function getMyraVariants(
   return parsed.variants;
 }
 
+/** Match hub catalog model strings to capability rows (CL-3766). */
+export function inferenceCapabilitiesForModel(
+  model: string,
+  catalog: readonly ModelInferenceCapabilities[],
+): ModelInferenceCapabilities | undefined {
+  const lower = model.toLowerCase();
+  if (lower.includes("deepseek") && lower.includes("flash")) {
+    return catalog.find((c) => c.modelSlug === "deepseek-v4-flash");
+  }
+  if (
+    lower.includes("kimi") &&
+    (lower.includes("k2") || lower.includes("k2.6"))
+  ) {
+    return catalog.find((c) => c.modelSlug === "kimi-k2.6");
+  }
+  if (
+    lower.includes("opus") &&
+    (lower.includes("4-8") || lower.includes("4.8"))
+  ) {
+    return catalog.find((c) => c.modelSlug === "claude-opus-4-8");
+  }
+  return undefined;
+}
+
+export async function getMyraInferenceCapabilities(
+  tenantId: string,
+): Promise<ModelInferenceCapabilities[]> {
+  const raw = await hubFetch<unknown>(
+    "GET",
+    `${myraBase(tenantId)}/myra/inference-capabilities`,
+  );
+  const parsed = InferenceCapabilitiesResponseSchema(raw);
+  if (parsed instanceof type.errors) {
+    throw new Error(
+      `Invalid Myra inference-capabilities response: ${parsed.summary}`,
+    );
+  }
+  return parsed.models;
+}
 export async function getMyraStyleAxes(tenantId: string): Promise<StyleAxis[]> {
   const raw = await hubFetch<unknown>(
     "GET",
@@ -166,6 +230,10 @@ export function myraStyleAxesKey(tenantId: string | null) {
   return ["myra-style-axes", tenantId] as const;
 }
 
+export function myraInferenceCapabilitiesKey(tenantId: string | null) {
+  return ["myra-inference-capabilities", tenantId] as const;
+}
+
 export function myraPreferencesKey(tenantId: string | null) {
   return ["myra-preferences", tenantId] as const;
 }
@@ -176,6 +244,18 @@ export function useMyraVariants(tenantId: string | null) {
     queryFn: () => {
       if (tenantId === null) throw new Error("tenantId is required");
       return getMyraVariants(tenantId);
+    },
+    enabled: tenantId !== null,
+    staleTime: 5 * 60_000,
+  });
+}
+
+export function useMyraInferenceCapabilities(tenantId: string | null) {
+  return useQuery<ModelInferenceCapabilities[]>({
+    queryKey: myraInferenceCapabilitiesKey(tenantId),
+    queryFn: () => {
+      if (tenantId === null) throw new Error("tenantId is required");
+      return getMyraInferenceCapabilities(tenantId);
     },
     enabled: tenantId !== null,
     staleTime: 5 * 60_000,

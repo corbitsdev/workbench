@@ -19,7 +19,7 @@
   },
   "dependencies": {
     "arktype": "catalog:",
-    "@intx/inference": "workspace:*",
+    "@workbench/inference": "workspace:*",
     "@intx/types": "workspace:*",
     "@workbench/agent-core": "workspace:*",
     "@workbench/hub-agent": "workspace:*",

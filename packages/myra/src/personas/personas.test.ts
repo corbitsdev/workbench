@@ -109,6 +109,7 @@ describe("MAILBOX_PERSONA_TOOLS", () => {
         "granola_get_note",
         "linear_list_issues",
         "linear_get_issue",
+        "task_create",
       ].sort(),
     );
   });
