@@ -6,11 +6,15 @@ import {
   MomentDetailSchema,
   type MomentDetail,
   type MomentTurnPart,
+  type MomentTurnInputMessage,
 } from "@workbench/timeline";
 import { type } from "arktype";
+import { sql } from "drizzle-orm";
+import type { AgentRepoStore } from "@intx/hub-sessions";
 
 import type { HubDb } from "../db";
 import { resolveTimelinePrincipalIds } from "./principal-activity";
+import { readTurnInputSnapshot } from "./turn-input-snapshot";
 
 // postgres-js returns an array-like RowList; PGlite (integration tests) returns
 // `{ rows }`. Normalize both, as the timeline union service does.
@@ -63,8 +67,24 @@ async function toolCallDetail(
   };
 }
 
+// Resolve the on-disk agent-state repo address for an inference turn's
+// instance. The address is the repo key the hub stores pushed state packs
+// under; null when the instance row is gone.
+async function resolveInstanceAddress(
+  db: HubDb,
+  instanceId: string,
+): Promise<string | null> {
+  const rows = rowsOf(
+    await db.execute(
+      sql`select address from agent_instance where id = ${instanceId} limit 1`,
+    ),
+  );
+  return toStringOrNull(rows[0]?.["address"]);
+}
+
 async function turnDetail(
   db: HubDb,
+  repoStore: AgentRepoStore,
   base: { kind: string; id: string },
   scope: { id: string; tenantId: string; principalIds: string[] },
 ): Promise<MomentDetail | null> {
@@ -85,14 +105,50 @@ async function turnDetail(
       ...(toolName !== null ? { toolName } : {}),
     };
   });
+
+  const input = await resolveTurnInput(db, repoStore, {
+    instanceId: toStringOrNull(row["instance_id"]),
+    startedAt: row["started_at"],
+  });
+
   return {
     ...base,
     turn: {
       model: toStringOrNull(row["model"]),
       durationMs: toNumberOrNull(row["duration_ms"]),
       parts,
+      ...input,
     },
   };
+}
+
+// Read the turn's input conversation from the hub-durable agent-state repo,
+// shaped as the `{ input }` / `{ inputGap }` fields the turn detail carries.
+async function resolveTurnInput(
+  db: HubDb,
+  repoStore: AgentRepoStore,
+  turn: { instanceId: string | null; startedAt: unknown },
+): Promise<{ input: MomentTurnInputMessage[] } | { inputGap: string }> {
+  if (turn.instanceId === null) {
+    return { inputGap: "The agent for this turn is no longer available." };
+  }
+  const startedAtMs = new Date(
+    turn.startedAt as string | number | Date,
+  ).getTime();
+  if (!Number.isFinite(startedAtMs)) {
+    return { inputGap: "This turn has no recorded start time to align on." };
+  }
+  const address = await resolveInstanceAddress(db, turn.instanceId);
+  if (address === null) {
+    return { inputGap: "The agent for this turn is no longer available." };
+  }
+  const snapshot = await readTurnInputSnapshot(repoStore, {
+    address,
+    startedAtMs,
+  });
+  return "gap" in snapshot
+    ? { inputGap: snapshot.gap }
+    : { input: snapshot.messages };
 }
 
 async function runDetail(
@@ -121,6 +177,7 @@ async function runDetail(
  */
 export async function getMomentDetail(args: {
   db: HubDb;
+  repoStore: AgentRepoStore;
   tenantId: string;
   principalId: string;
   kind: string;
@@ -134,7 +191,7 @@ export async function getMomentDetail(args: {
   if (args.kind === "tool_call") {
     detail = await toolCallDetail(args.db, base, scope);
   } else if (args.kind === "inference_turn") {
-    detail = await turnDetail(args.db, base, scope);
+    detail = await turnDetail(args.db, args.repoStore, base, scope);
   } else if (args.kind === "workflow_run") {
     detail = await runDetail(args.db, base, scope);
   } else {

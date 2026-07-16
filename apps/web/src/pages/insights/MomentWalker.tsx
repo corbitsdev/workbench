@@ -259,6 +259,63 @@ export function MomentDecomposition({
                 </span>
               </DecompRow>
             )}
+          {moment?.turn !== undefined && (
+            <DecompRow label="Input">
+              {moment.turn.input !== undefined ? (
+                <div
+                  className="flex flex-col gap-2"
+                  data-testid="moment-turn-input"
+                >
+                  {moment.turn.input.map((message, i) => (
+                    <div key={i} className="flex flex-col gap-0.5">
+                      <span className="font-mono text-[9px] uppercase tracking-[0.08em] text-text-3">
+                        {message.kind === "tool_result"
+                          ? "tool result"
+                          : message.role}
+                      </span>
+                      <TraceOutputView
+                        value={message.text}
+                        testId={`moment-turn-input-${i}`}
+                      />
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <Absent data-testid="moment-turn-input-gap">
+                  {moment.turn.inputGap ?? "Input is not available."}
+                </Absent>
+              )}
+            </DecompRow>
+          )}
+          {moment?.turn !== undefined &&
+            moment.turn.parts.some(
+              (p) => p.content !== null && p.content !== "",
+            ) && (
+              <DecompRow label="Output">
+                <div
+                  className="flex flex-col gap-2"
+                  data-testid="moment-turn-output"
+                >
+                  {moment.turn.parts
+                    .map((p, i) => ({ part: p, i }))
+                    .filter(
+                      ({ part }) =>
+                        part.content !== null && part.content !== "",
+                    )
+                    .map(({ part, i }) => (
+                      <div key={i} className="flex flex-col gap-0.5">
+                        <span className="font-mono text-[9px] uppercase tracking-[0.08em] text-text-3">
+                          {part.type}
+                        </span>
+                        <TraceOutputView
+                          value={part.content}
+                          testId={`moment-turn-output-${i}`}
+                        />
+                      </div>
+                    ))}
+                </div>
+              </DecompRow>
+            )}
         </>
       )}
 

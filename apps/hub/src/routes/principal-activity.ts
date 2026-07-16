@@ -11,6 +11,7 @@ import { type } from "arktype";
 import { Hono, type Env } from "hono";
 import { describeRoute, resolver } from "hono-openapi";
 
+import type { AgentRepoStore } from "@intx/hub-sessions";
 import type { HubDb } from "../db";
 import { getMomentDetail } from "../services/moment-detail";
 import { getPrincipalActivityPage } from "../services/principal-activity";
@@ -38,6 +39,7 @@ const ErrorResponse = type({
 
 export type CreatePrincipalActivityRouterDeps = {
   db: HubDb;
+  repoStore: AgentRepoStore;
 };
 
 function parseLimit(raw: string | undefined): number | null {
@@ -49,6 +51,7 @@ function parseLimit(raw: string | undefined): number | null {
 
 export function createPrincipalActivityRouter({
   db,
+  repoStore,
 }: CreatePrincipalActivityRouterDeps): Hono<PrincipalActivityRouteEnv> {
   const app = new Hono<PrincipalActivityRouteEnv>();
 
@@ -269,6 +272,7 @@ export function createPrincipalActivityRouter({
       try {
         const detail = await getMomentDetail({
           db,
+          repoStore,
           tenantId: tenant.id,
           principalId: targetPrincipalId,
           kind,
