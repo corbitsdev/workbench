@@ -765,3 +765,155 @@ describe("launchAgentSession timezone marker stamping", () => {
     expect(prompt).not.toContain("workbench:timezone");
   });
 });
+
+describe("launchAgentSession Myra personalization style overlay", () => {
+  const BASE_OPTS = {
+    agentId: "agt-1",
+    instanceId: "ins-1",
+    instancePrincipalId: "prn-agent-1",
+    tenantId: "tenant-1",
+    tenantDomain: "tenant-1.localhost",
+    systemPrompt: "You are Myra.",
+    now: new Date("2026-07-15T02:00:00Z"),
+  };
+
+  function launchDb() {
+    const db = makeMockDb();
+    db.query.agent.findFirst = mock(() =>
+      Promise.resolve({
+        id: "agt-1",
+        contextConfig: null,
+        initialState: null,
+        modelConfig: null,
+        capabilities: { tools: ["exa_search"] },
+        credentialRequirements: null,
+        modelRequirements: null,
+        grantRequirements: [],
+        toolPackages: [],
+      }),
+    );
+    db.query.agentInstance.findFirst = mock(() =>
+      Promise.resolve({ id: "ins-1", sessionId: null }),
+    );
+    return db;
+  }
+
+  // biome-ignore lint/suspicious/noExplicitAny: capturing launch config
+  async function captureLaunchPrompt(db: any): Promise<string> {
+    // biome-ignore lint/suspicious/noExplicitAny: capturing launch config
+    let capturedConfig: any;
+    const launchSession = mock((config: unknown) => {
+      capturedConfig = config;
+      return Promise.resolve();
+    });
+    const sessionService = { ...mockSessionService, launchSession };
+    await launchAgentSession(
+      db as never,
+      sessionService as never,
+      mockGrantStore as never,
+      mockEventCollectors as never,
+      BASE_OPTS,
+    );
+    return capturedConfig.config.systemPrompt as string;
+  }
+
+  it("leaves the prompt byte-identical when the member has no stored style selection", async () => {
+    sourcesImpl = () =>
+      Promise.resolve([{ id: "src-1", apiKey: TEST_API_KEY }]);
+    const db = launchDb();
+    db.query.memberAgentInstance.findFirst = mock(() =>
+      Promise.resolve({
+        id: "mai-1",
+        tenantId: "tenant-1",
+        memberPrincipalId: "prn-member-1",
+        instanceId: "ins-1",
+        templateKey: "myra",
+      }),
+    );
+    db.query.myraVariantPreference = {
+      findFirst: mock(() => Promise.resolve(undefined)),
+    };
+
+    const prompt = await captureLaunchPrompt(db);
+    expect(prompt).toBe("You are Myra.");
+  });
+
+  it("leaves the prompt byte-identical for a non-Myra instance regardless of stored selections", async () => {
+    sourcesImpl = () =>
+      Promise.resolve([{ id: "src-1", apiKey: TEST_API_KEY }]);
+    const db = launchDb();
+    db.query.memberAgentInstance.findFirst = mock(() =>
+      Promise.resolve({
+        id: "mai-1",
+        tenantId: "tenant-1",
+        memberPrincipalId: "prn-member-1",
+        instanceId: "ins-1",
+        templateKey: "oat",
+      }),
+    );
+    db.query.myraVariantPreference = {
+      findFirst: mock(() => Promise.resolve({ personality: "candid" })),
+    };
+
+    const prompt = await captureLaunchPrompt(db);
+    expect(prompt).toBe("You are Myra.");
+  });
+
+  it("appends the style overlay section after the base prompt for a Myra chat instance", async () => {
+    sourcesImpl = () =>
+      Promise.resolve([{ id: "src-1", apiKey: TEST_API_KEY }]);
+    const db = launchDb();
+    db.query.memberAgentInstance.findFirst = mock(() =>
+      Promise.resolve({
+        id: "mai-1",
+        tenantId: "tenant-1",
+        memberPrincipalId: "prn-member-1",
+        instanceId: "ins-1",
+        templateKey: "myra",
+      }),
+    );
+    db.query.myraVariantPreference = {
+      findFirst: mock(() =>
+        Promise.resolve({ personality: "candid", artifactUsageChat: "none" }),
+      ),
+    };
+
+    const prompt = await captureLaunchPrompt(db);
+    expect(prompt.startsWith("You are Myra.\n\n")).toBe(true);
+    expect(prompt).toContain(
+      "Be blunt and direct — say the hard thing plainly, skip diplomatic softening.",
+    );
+    expect(prompt).toContain(
+      "Do not create artifacts; deliver results in the reply.",
+    );
+  });
+
+  it("appends the triage usage axis (not the chat axis) for a Myra triage instance", async () => {
+    sourcesImpl = () =>
+      Promise.resolve([{ id: "src-1", apiKey: TEST_API_KEY }]);
+    const db = launchDb();
+    db.query.memberAgentInstance.findFirst = mock(() =>
+      Promise.resolve({
+        id: "mai-1",
+        tenantId: "tenant-1",
+        memberPrincipalId: "prn-member-1",
+        instanceId: "ins-1",
+        templateKey: "myra-triage",
+      }),
+    );
+    db.query.myraVariantPreference = {
+      findFirst: mock(() =>
+        Promise.resolve({
+          artifactUsageChat: "none",
+          artifactUsageTriage: "heavy",
+        }),
+      ),
+    };
+
+    const prompt = await captureLaunchPrompt(db);
+    expect(prompt).toContain("Create an artifact for any substantial output");
+    expect(prompt).not.toContain(
+      "Do not create artifacts; deliver results in the reply.",
+    );
+  });
+});

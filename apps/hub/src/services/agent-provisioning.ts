@@ -21,6 +21,7 @@ import {
   normalizePageContextInput,
 } from "../lib/page-context";
 import { composePersonalAgentPromptForInstance } from "../lib/operator-profile";
+import { composeMyraStyleOverlaySectionForInstance } from "../lib/myra-style-overlay";
 import { PERSONAL_AGENT_PROMPT_VERSION } from "@workbench/myra";
 import { buildTimeZoneMarker } from "@workbench/prompts";
 import { resolveMemberTimeZone } from "@workbench/shared";
@@ -393,6 +394,31 @@ export async function launchAgentSession(
         },
       );
     }
+  }
+
+  // Personalization-style overlay (CL-3760): applies to BOTH Myra surfaces
+  // (chat and, unlike operator-identity above, triage — gated on the Myra
+  // template set rather than `!opts.persona`, since triage launches always
+  // pass the mailbox persona). Best-effort; a missing member mapping, a
+  // non-Myra instance, or an all-default selection composes `null` and
+  // leaves the prompt untouched — the byte-identical guarantee.
+  try {
+    const styleSection = await composeMyraStyleOverlaySectionForInstance(db, {
+      tenantId,
+      instanceId,
+      provider: defaultSourceProvider,
+    });
+    if (styleSection !== null) {
+      effectiveSystemPrompt = `${effectiveSystemPrompt}\n\n${styleSection}`;
+    }
+  } catch (err) {
+    log.warn(
+      "Failed to compose Myra personalization style overlay; using prompt without it",
+      {
+        instanceId,
+        error: err instanceof Error ? err.message : String(err),
+      },
+    );
   }
 
   const pageContext = normalizePageContextInput(opts.pageContext);
