@@ -681,9 +681,7 @@ describe("InboxPage layout controls", () => {
 
   it("offers restore instead of archive/trash on rows in the trash folder", () => {
     mailbox = {
-      data: [
-        makeMessage({ id: "msg-1", from: "Myra", subject: "Old note" }),
-      ],
+      data: [makeMessage({ id: "msg-1", from: "Myra", subject: "Old note" })],
       isLoading: false,
       isError: false,
     };

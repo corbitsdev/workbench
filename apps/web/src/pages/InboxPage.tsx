@@ -1,10 +1,11 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import {
   Archive,
   ArrowLeft,
   Inbox as InboxIcon,
+  RotateCcw,
   Settings,
   Trash2,
 } from "lucide-react";
@@ -177,6 +178,19 @@ export function InboxPage() {
     setInboxActionError("Couldn't update your inbox.");
   };
 
+  const runRowAction = (
+    id: string,
+    action: "archive" | "trash" | "restore",
+  ) => {
+    setInboxActionError(null);
+    itemAction
+      .mutateAsync({ id, action })
+      .then(() => {
+        if (messageId === id) navigate(inboxPath(inboxView));
+      })
+      .catch(reportInboxActionError);
+  };
+
   const runBulk = (action: MailboxBulkAction) => {
     const ids = [...selectedIds];
     if (ids.length === 0) return;
@@ -222,12 +236,13 @@ export function InboxPage() {
   // Single-column mobile: the list is the landing view; the main pane shows
   // either the reading pane (a message is open) or the activity feed (the
   // "Activity" toggle). Exactly one of the two panes is visible below `md`.
-  const listHiddenOnMobile = Boolean(messageId) || mobileTab === "activity";
-  const mainHiddenOnMobile = !messageId && mobileTab === "messages";
+  const hasOpenMessage = Boolean(messageId);
+  const listHiddenOnMobile = hasOpenMessage || mobileTab === "activity";
+  const mainHiddenOnMobile = !hasOpenMessage && mobileTab === "messages";
 
   return (
     <div className="relative flex h-full min-h-0 flex-col overflow-hidden md:flex-row">
-      {!messageId && (
+      {!hasOpenMessage && (
         <MobileInboxTabs tab={mobileTab} onChange={setMobileTab} />
       )}
       <aside
@@ -260,6 +275,7 @@ export function InboxPage() {
             view={inboxView}
             onRetry={() => refetch()}
             onOpen={(id) => navigate(inboxMessagePath(inboxView, id))}
+            onRowAction={runRowAction}
             onToggleSelect={(id) => {
               setSelectedIds((prev) => {
                 const next = new Set(prev);
@@ -289,7 +305,13 @@ export function InboxPage() {
               reduceMotion={reduceMotion ?? false}
               view={inboxView}
               busy={itemAction.isPending || markUnread.isPending}
-              onClose={() => navigate(inboxPath(inboxView))}
+              onClose={() => {
+                // "Back to inbox" must always land on the message list on
+                // mobile, even when the message was opened from the Activity
+                // pane — a stale "activity" tab would otherwise hide the list.
+                setMobileTab("messages");
+                navigate(inboxPath(inboxView));
+              }}
               onMarkUnread={() => {
                 if (!messageId) return;
                 setInboxActionError(null);
@@ -417,6 +439,7 @@ interface MessageListProps {
   view: MailboxInboxView;
   onRetry: () => void;
   onOpen: (id: string) => void;
+  onRowAction: (id: string, action: "archive" | "trash" | "restore") => void;
   onToggleSelect: (id: string) => void;
 }
 
@@ -430,6 +453,7 @@ function MessageList({
   view,
   onRetry,
   onOpen,
+  onRowAction,
   onToggleSelect,
 }: MessageListProps) {
   if (isLoading) {
@@ -480,7 +504,9 @@ function MessageList({
             checked={selectedIds.has(message.id)}
             selectionActive={selectedIds.size > 0}
             reduceMotion={reduceMotion}
+            view={view}
             onOpen={() => onOpen(message.id)}
+            onRowAction={(action) => onRowAction(message.id, action)}
             onToggleSelect={() => onToggleSelect(message.id)}
           />
         </motion.li>
@@ -495,9 +521,16 @@ interface MessageRowProps {
   checked: boolean;
   selectionActive: boolean;
   reduceMotion: boolean;
+  view: MailboxInboxView;
   onOpen: () => void;
+  onRowAction: (action: "archive" | "trash" | "restore") => void;
   onToggleSelect: () => void;
 }
+
+// Hover-revealed controls also show on focus and on no-hover (touch) devices —
+// a `:hover`-only reveal would make them unreachable there.
+const rowRevealClass =
+  "opacity-0 group-hover/row:opacity-100 focus-within:opacity-100 [@media(hover:none)]:opacity-100";
 
 function MessageRow({
   message,
@@ -505,10 +538,13 @@ function MessageRow({
   checked,
   selectionActive,
   reduceMotion,
+  view,
   onOpen,
+  onRowAction,
   onToggleSelect,
 }: MessageRowProps) {
   const selectionShown = selectionActive || checked;
+  const sender = mailboxSenderLabel(message);
   return (
     <div
       className={cn(
@@ -516,18 +552,17 @@ function MessageRow({
         selected ? "bg-row-hover/80" : "hover:bg-page/80",
       )}
     >
+      {/* The visual box is 16px, but the label pads the tap target to 40px. */}
       <label
         className={cn(
-          "absolute left-1.5 top-2 z-10 flex h-4 w-4 cursor-pointer items-center justify-center rounded-[5px] transition-opacity",
-          selectionShown
-            ? "opacity-100"
-            : "opacity-0 group-hover/row:opacity-100",
+          "absolute left-0 top-0 z-10 flex h-10 w-10 cursor-pointer items-start justify-start pl-1.5 pt-2 transition-opacity",
+          selectionShown ? "opacity-100" : rowRevealClass,
         )}
       >
         <input
           type="checkbox"
           checked={checked}
-          aria-label={`Select message from ${mailboxSenderLabel(message)}`}
+          aria-label={`Select message from ${sender}`}
           className="h-3.5 w-3.5 rounded border-border accent-orange"
           onChange={(event) => {
             event.stopPropagation();
@@ -546,7 +581,9 @@ function MessageRow({
           <span
             className={cn(
               "relative flex h-2 w-2 shrink-0 items-center justify-center transition-opacity",
-              selectionShown ? "opacity-0" : "group-hover/row:opacity-0",
+              selectionShown
+                ? "opacity-0"
+                : "group-hover/row:opacity-0 [@media(hover:none)]:opacity-0",
             )}
           >
             <AnimatePresence initial={false}>
@@ -589,7 +626,59 @@ function MessageRow({
           </span>
         )}
       </button>
+      <div
+        className={cn(
+          "absolute right-1 top-1 z-10 flex items-center gap-0.5 rounded-lg bg-surface/90 backdrop-blur-sm transition-opacity",
+          rowRevealClass,
+        )}
+      >
+        {view === "trash" || view === "archived" ? (
+          <RowActionButton
+            label={`Restore message from ${sender}`}
+            onClick={() => onRowAction("restore")}
+          >
+            <RotateCcw size={14} aria-hidden="true" />
+          </RowActionButton>
+        ) : (
+          <>
+            <RowActionButton
+              label={`Archive message from ${sender}`}
+              onClick={() => onRowAction("archive")}
+            >
+              <Archive size={14} aria-hidden="true" />
+            </RowActionButton>
+            <RowActionButton
+              label={`Trash message from ${sender}`}
+              onClick={() => onRowAction("trash")}
+            >
+              <Trash2 size={14} aria-hidden="true" />
+            </RowActionButton>
+          </>
+        )}
+      </div>
     </div>
+  );
+}
+
+function RowActionButton({
+  label,
+  onClick,
+  children,
+}: {
+  label: string;
+  onClick: () => void;
+  children: ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      aria-label={label}
+      title={label}
+      onClick={onClick}
+      className="grid h-8 w-8 place-items-center rounded-lg text-text-3 transition hover:bg-page hover:text-text focus:outline-none focus-visible:ring-2 focus-visible:ring-orange active:scale-[0.97]"
+    >
+      {children}
+    </button>
   );
 }
 
@@ -677,7 +766,7 @@ function ReadingPane({
         <button
           type="button"
           onClick={onClose}
-          className="mb-4 inline-flex items-center gap-1.5 text-xs font-medium text-text-3 transition-colors hover:text-text focus:outline-none focus-visible:ring-2 focus-visible:ring-orange"
+          className="mb-4 inline-flex items-center gap-1.5 text-xs font-medium text-text-3 transition hover:text-text focus:outline-none focus-visible:ring-2 focus-visible:ring-orange active:scale-[0.97]"
         >
           <ArrowLeft size={14} aria-hidden="true" />
           Back to inbox
@@ -822,36 +911,48 @@ function InboxRailHeader({
   onClearSelection: () => void;
   onBulk: (action: MailboxBulkAction) => void;
 }) {
+  const reduceMotion = useReducedMotion();
   return (
     <div className="flex min-h-[45px] flex-wrap items-center gap-x-2 gap-y-1 border-b border-border px-2 py-1.5">
-      {selectedCount > 0 ? (
-        <InboxBulkActions
-          count={selectedCount}
-          view={view}
-          busy={bulkBusy}
-          onClear={onClearSelection}
-          onBulk={onBulk}
-        />
-      ) : (
-        <nav aria-label="Inbox views" className="flex gap-1">
-          {INBOX_VIEWS.map((tab) => (
-            <button
-              key={tab.id}
-              type="button"
-              onClick={() => onChangeView(tab.id)}
-              aria-current={view === tab.id ? "page" : undefined}
-              className={cn(
-                inboxCompactControlClass,
-                view === tab.id
-                  ? "bg-page text-text"
-                  : "text-text-3 hover:bg-page hover:text-text-2",
-              )}
-            >
-              {tab.label}
-            </button>
-          ))}
-        </nav>
-      )}
+      <AnimatePresence mode="wait" initial={false}>
+        <motion.div
+          key={selectedCount > 0 ? "bulk" : "tabs"}
+          initial={reduceMotion ? false : { opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={reduceMotion ? undefined : { opacity: 0 }}
+          transition={{ duration: 0.12, ease: "easeOut" }}
+          className="flex flex-wrap items-center gap-x-2 gap-y-1"
+        >
+          {selectedCount > 0 ? (
+            <InboxBulkActions
+              count={selectedCount}
+              view={view}
+              busy={bulkBusy}
+              onClear={onClearSelection}
+              onBulk={onBulk}
+            />
+          ) : (
+            <nav aria-label="Inbox views" className="flex gap-1">
+              {INBOX_VIEWS.map((tab) => (
+                <button
+                  key={tab.id}
+                  type="button"
+                  onClick={() => onChangeView(tab.id)}
+                  aria-current={view === tab.id ? "page" : undefined}
+                  className={cn(
+                    inboxCompactControlClass,
+                    view === tab.id
+                      ? "bg-page text-text"
+                      : "text-text-3 hover:bg-page hover:text-text-2",
+                  )}
+                >
+                  {tab.label}
+                </button>
+              ))}
+            </nav>
+          )}
+        </motion.div>
+      </AnimatePresence>
     </div>
   );
 }
