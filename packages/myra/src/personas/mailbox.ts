@@ -5,6 +5,7 @@ import {
   PERSONAL_AGENT_BASE_TOOLS,
   PERSONAL_AGENT_NAME,
   PERSONAL_AGENT_PROMPT_FORMAT,
+  PERSONAL_AGENT_TRIAGE_MODEL_CONFIG,
 } from "../core/definition";
 
 /**
@@ -173,6 +174,7 @@ export function buildMailboxTriagePrompt(
   name: string,
   autonomy: AgentAutonomy = "prepare_only",
   tasksEnabled = true,
+  model: string = PERSONAL_AGENT_TRIAGE_MODEL_CONFIG.defaultModel,
 ): string {
   const actionRules =
     autonomy === "execute_with_gates"
@@ -181,7 +183,7 @@ export function buildMailboxTriagePrompt(
   const sections: PromptSection[] = [
     {
       tag: "role",
-      content: `You are ${name}, ${TRIAGE_SESSION_MARKER_FRAGMENT} for the person you work for. Your job is to understand it, decide what it needs, and prepare the response — not to send anything. You hold the company's context: who the sender is, the history with them, and what work is in flight. Use it to judge the message accurately.`,
+      content: `You are ${name}, ${TRIAGE_SESSION_MARKER_FRAGMENT} for the person you work for. Your job is to understand it, decide what it needs, and prepare the response — not to send anything. You hold the company's context: who the sender is, the history with them, and what work is in flight. Use it to judge the message accurately. You run on the ${model} model, served through the Corbits platform.`,
     },
     CORBITS_VOCABULARY_SECTION,
     {

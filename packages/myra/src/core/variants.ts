@@ -97,10 +97,14 @@ function versionId(id: string): string {
 const OPUS_MODEL_CONFIG = { defaultModel: "claude-opus-4-8" } as const;
 const KIMI_MODEL_CONFIG = { defaultModel: "kimi-k2.6" } as const;
 
-function chatDeployPrompt(provider: MyraVariantProvider): string {
+function chatDeployPrompt(
+  provider: MyraVariantProvider,
+  model: string,
+): string {
   return buildPersonalAgentSystemPrompt(
     PERSONAL_AGENT_NAME,
     promptFormatForProvider(provider),
+    { model },
   );
 }
 
@@ -148,7 +152,10 @@ export const MYRA_VARIANTS: readonly MyraVariant[] = [
     costTier: "standard",
     credentialRequirements: PERSONAL_AGENT_CREDENTIAL_REQUIREMENTS,
     promptFormat: promptFormatForProvider("openai-compatible"),
-    deployPrompt: chatDeployPrompt("openai-compatible"),
+    deployPrompt: chatDeployPrompt(
+      "openai-compatible",
+      KIMI_MODEL_CONFIG.defaultModel,
+    ),
     toolPolicy: PERSONAL_AGENT_BASE_TOOLS,
     seedName: "Myra (Kimi K2)",
     templateKey: "myra-chat-kimi-k2-6",
@@ -167,7 +174,10 @@ export const MYRA_VARIANTS: readonly MyraVariant[] = [
     costTier: "premium",
     credentialRequirements: ANTHROPIC_CREDENTIAL_REQUIREMENTS,
     promptFormat: promptFormatForProvider("anthropic"),
-    deployPrompt: chatDeployPrompt("anthropic"),
+    deployPrompt: chatDeployPrompt(
+      "anthropic",
+      OPUS_MODEL_CONFIG.defaultModel,
+    ),
     toolPolicy: PERSONAL_AGENT_BASE_TOOLS,
     seedName: "Myra (Opus)",
     templateKey: "myra-chat-opus-4-8",
@@ -205,7 +215,10 @@ export const MYRA_VARIANTS: readonly MyraVariant[] = [
     costTier: "standard",
     credentialRequirements: PERSONAL_AGENT_CREDENTIAL_REQUIREMENTS,
     promptFormat: promptFormatForProvider("openai-compatible"),
-    deployPrompt: PERSONAL_AGENT_DEPLOY_PROMPT,
+    deployPrompt: chatDeployPrompt(
+      "openai-compatible",
+      KIMI_MODEL_CONFIG.defaultModel,
+    ),
     toolPolicy: MAILBOX_PERSONA_TOOLS,
     seedName: "Myra Triage (Kimi K2)",
     templateKey: "myra-triage-kimi-k2-6",
@@ -224,7 +237,7 @@ export const MYRA_VARIANTS: readonly MyraVariant[] = [
     costTier: "premium",
     credentialRequirements: ANTHROPIC_CREDENTIAL_REQUIREMENTS,
     promptFormat: promptFormatForProvider("anthropic"),
-    deployPrompt: PERSONAL_AGENT_DEPLOY_PROMPT,
+    deployPrompt: chatDeployPrompt("anthropic", OPUS_MODEL_CONFIG.defaultModel),
     toolPolicy: MAILBOX_PERSONA_TOOLS,
     seedName: "Myra Triage (Opus)",
     templateKey: "myra-triage-opus-4-8",

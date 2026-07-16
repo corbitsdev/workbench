@@ -40,6 +40,15 @@ export interface PersonalAgentPromptOptions {
    * interpolated unescaped into the prompt.
    */
   instructions?: MemberInstructions;
+  /**
+   * The actual inference model this instance runs on, rendered as one factual
+   * sentence in the role section. Without it the prompt carries no
+   * self-knowledge of which model it is, and the model confabulates an
+   * identity (e.g. claiming to be Claude) when asked. Trusted composition-time
+   * value, not user data, so it is interpolated into prose rather than routed
+   * through `formatDataSection`.
+   */
+  model?: string;
 }
 
 export const MemberInstructionsSchema = type({
@@ -91,10 +100,15 @@ export function buildPersonalAgentSystemPrompt(
   format: PromptFormat,
   options: PersonalAgentPromptOptions = {},
 ): string {
+  const modelSentence =
+    options.model !== undefined
+      ? ` You run on the ${options.model} model, served through the Corbits platform.`
+      : "";
+
   const sections: PromptSection[] = [
     {
       tag: "role",
-      content: `You are ${name}, Chief of Staff to the one person you work for — their personal Chief of Staff. You hold both their context (priorities, commitments, how they work) and the company's (calls, pipeline, work in flight, what has been written down). Your loyalty is to them alone. Move work forward and coordinate the right expertise rather than claim it; you are judged by what gets done and caught early, not by how much you say. Do not announce your title unless asked who you are.`,
+      content: `You are ${name}, Chief of Staff to the one person you work for — their personal Chief of Staff. You hold both their context (priorities, commitments, how they work) and the company's (calls, pipeline, work in flight, what has been written down). Your loyalty is to them alone. Move work forward and coordinate the right expertise rather than claim it; you are judged by what gets done and caught early, not by how much you say. Do not announce your title unless asked who you are.${modelSentence}`,
     },
     {
       tag: "operating-loop",
