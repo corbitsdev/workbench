@@ -510,11 +510,19 @@ export function createDefaultHarnessBuilder({
         // tools are absent from `loadedToolNames` and must not be advertised —
         // otherwise search_tools points the model at a package it can never
         // call, which is the source of the tool-search loop (CL-3133).
+        const grantedCatalogToolNames = new Set(
+          agentConfig.tools.map((t) => t.name),
+        );
+        const catalogEligibleNames = new Set(
+          [...loadedToolNames].filter((name) =>
+            grantedCatalogToolNames.has(name),
+          ),
+        );
         const availableCatalog =
           dynamicToolConfig !== undefined
             ? filterCatalogByAvailableTools(
                 dynamicToolConfig.catalog,
-                loadedToolNames,
+                catalogEligibleNames,
               )
             : undefined;
         const catalogRunner =

@@ -38,6 +38,7 @@ import { MemberConnectionsPanel } from "../components/MemberConnectionsPanel";
 import { MyraDefaultsPanel } from "../components/MyraDefaultsPanel";
 import { MyraStylePanel } from "../components/MyraStylePanel";
 import { MyraPinnedSkillsPanel } from "../components/MyraPinnedSkillsPanel";
+import { MyraToolsPanel } from "../components/MyraToolsPanel";
 import { MySchedules } from "../components/MySchedules";
 import { MORNING_BRIEF_ANCHOR_ID } from "./settings-section-nav";
 import { useMyraVoiceInput } from "../hooks/use-myra-voice-input";
@@ -289,6 +290,14 @@ export default function Settings() {
           description="Pin procedures from your skill library so Myra sees an index of them when starting new chats or inbox runs."
         >
           <MyraPinnedSkillsPanel tenantId={activeTenantId} />
+        </SettingsGroup>
+
+        <SettingsGroup
+          id="myra-tools"
+          title="Tools & integrations"
+          description="Turn off catalog tool packages or individual tools for your Myra. You can only narrow what your workspace already allows."
+        >
+          <MyraToolsPanel tenantId={activeTenantId} />
         </SettingsGroup>
 
         <SettingsGroup

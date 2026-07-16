@@ -40,8 +40,23 @@ export const MyraVariantPreferenceSchema = type({
   skillUsageChat: "string | null",
   skillUsageTriage: "string | null",
   pinnedSkillIds: "string[]",
+  disabledCatalogPackages: "string[]",
+  disabledToolNames: "string[]",
 });
 export type MyraVariantPreference = typeof MyraVariantPreferenceSchema.infer;
+
+export const MyraToolCatalogEntrySchema = type({
+  package: "string",
+  description: "string",
+  tools: type({ name: "string", description: "string" }).array(),
+});
+
+export const MyraMemberPreferencesResponseSchema =
+  MyraVariantPreferenceSchema.and({
+    toolCatalog: MyraToolCatalogEntrySchema.array(),
+  });
+export type MyraMemberPreferencesResponse =
+  typeof MyraMemberPreferencesResponseSchema.infer;
 
 const InstructionsFieldSchema = type(
   `string <= ${MYRA_INSTRUCTIONS_MAX_LENGTH} | null`,
@@ -69,6 +84,8 @@ export const MyraVariantPreferencePatchSchema = type({
   "skillUsageChat?": "string | null",
   "skillUsageTriage?": "string | null",
   "pinnedSkillIds?": "string[]",
+  "disabledCatalogPackages?": "string[]",
+  "disabledToolNames?": "string[]",
 });
 export type MyraVariantPreferencePatch =
   typeof MyraVariantPreferencePatchSchema.infer;
@@ -89,6 +106,8 @@ const EMPTY_PREFERENCE: MyraVariantPreference = {
   skillUsageChat: null,
   skillUsageTriage: null,
   pinnedSkillIds: [],
+  disabledCatalogPackages: [],
+  disabledToolNames: [],
 };
 
 export async function readMyraVariantPreference(
@@ -119,6 +138,8 @@ export async function readMyraVariantPreference(
     skillUsageChat: row.skillUsageChat ?? null,
     skillUsageTriage: row.skillUsageTriage ?? null,
     pinnedSkillIds: normalizePinnedSkillIds(row.pinnedSkillIds ?? []),
+    disabledCatalogPackages: row.disabledCatalogPackages ?? [],
+    disabledToolNames: row.disabledToolNames ?? [],
   };
 }
 
@@ -184,6 +205,35 @@ export async function validatePinnedSkillIdsPatch(
   return null;
 }
 
+export async function readMyraMemberPreferencesWithCatalog(
+  db: HubDb,
+  tenantId: string,
+  memberPrincipalId: string,
+): Promise<MyraMemberPreferencesResponse> {
+  const { listMemberMyraToolCatalog } = await import(
+    "../lib/myra-member-tool-settings"
+  );
+  const prefs = await readMyraVariantPreference(
+    db,
+    tenantId,
+    memberPrincipalId,
+  );
+  const rawCatalog = await listMemberMyraToolCatalog(
+    db,
+    tenantId,
+    memberPrincipalId,
+  );
+  const toolCatalog = rawCatalog.map((entry) => ({
+    package: entry.package,
+    description: entry.summary,
+    tools: entry.tools.map((tool) => ({
+      name: tool.name,
+      description: tool.description,
+    })),
+  }));
+  return { ...prefs, toolCatalog };
+}
+
 const STYLE_AXIS_PATCH_KEYS = [
   ["personality", "personality"],
   ["emojiUse", "emojiUse"],
@@ -222,7 +272,11 @@ export function validateMyraVariantPatch(
 
   for (const [patchKey, axisId] of STYLE_AXIS_PATCH_KEYS) {
     const value = patch[patchKey];
-    if (value !== undefined && value !== null && !isStyleAxisOptionId(axisId, value)) {
+    if (
+      value !== undefined &&
+      value !== null &&
+      !isStyleAxisOptionId(axisId, value)
+    ) {
       return `Unknown ${axisId} option id: ${value}`;
     }
   }
@@ -294,7 +348,37 @@ export async function setMyraVariantPreference(
       patch.pinnedSkillIds !== undefined
         ? normalizePinnedSkillIds(patch.pinnedSkillIds)
         : current.pinnedSkillIds,
+    disabledCatalogPackages:
+      patch.disabledCatalogPackages !== undefined
+        ? patch.disabledCatalogPackages
+        : current.disabledCatalogPackages,
+    disabledToolNames:
+      patch.disabledToolNames !== undefined
+        ? patch.disabledToolNames
+        : current.disabledToolNames,
   };
+
+  const needsToolSanitize =
+    patch.disabledCatalogPackages !== undefined ||
+    patch.disabledToolNames !== undefined ||
+    next.disabledCatalogPackages.length > 0 ||
+    next.disabledToolNames.length > 0;
+  if (needsToolSanitize) {
+    const { listMemberMyraToolCatalog, sanitizeMemberMyraToolDisables } =
+      await import("../lib/myra-member-tool-settings");
+    const catalog = await listMemberMyraToolCatalog(
+      db,
+      tenantId,
+      memberPrincipalId,
+    );
+    const sanitized = sanitizeMemberMyraToolDisables(
+      catalog,
+      next.disabledCatalogPackages,
+      next.disabledToolNames,
+    );
+    next.disabledCatalogPackages = sanitized.disabledCatalogPackages;
+    next.disabledToolNames = sanitized.disabledToolNames;
+  }
 
   await db
     .insert(myraVariantPreference)
@@ -316,6 +400,8 @@ export async function setMyraVariantPreference(
       skillUsageChat: next.skillUsageChat,
       skillUsageTriage: next.skillUsageTriage,
       pinnedSkillIds: next.pinnedSkillIds,
+      disabledCatalogPackages: next.disabledCatalogPackages,
+      disabledToolNames: next.disabledToolNames,
     })
     .onConflictDoUpdate({
       target: [
@@ -338,6 +424,8 @@ export async function setMyraVariantPreference(
         skillUsageChat: next.skillUsageChat,
         skillUsageTriage: next.skillUsageTriage,
         pinnedSkillIds: next.pinnedSkillIds,
+        disabledCatalogPackages: next.disabledCatalogPackages,
+        disabledToolNames: next.disabledToolNames,
         updatedAt: new Date(),
       },
     });

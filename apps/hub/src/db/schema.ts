@@ -110,6 +110,15 @@ export const myraVariantPreference = pgTable(
       .$type<string[]>()
       .notNull()
       .default([]),
+    // CL-3762: member narrowing of Myra catalog packages / tool names (never widens grants).
+    disabledCatalogPackages: jsonb("disabled_catalog_packages")
+      .$type<string[]>()
+      .notNull()
+      .default([]),
+    disabledToolNames: jsonb("disabled_tool_names")
+      .$type<string[]>()
+      .notNull()
+      .default([]),
     createdAt: timestamp("created_at").notNull().defaultNow(),
     updatedAt: timestamp("updated_at")
       .notNull()

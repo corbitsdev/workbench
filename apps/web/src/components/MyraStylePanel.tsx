@@ -20,7 +20,12 @@ import {
  */
 type FieldKey = keyof Omit<
   MyraPreferences,
-  "chat" | "triage" | "pinnedSkillIds"
+  | "chat"
+  | "triage"
+  | "pinnedSkillIds"
+  | "toolCatalog"
+  | "disabledCatalogPackages"
+  | "disabledToolNames"
 >;
 
 function fieldsForAxis(

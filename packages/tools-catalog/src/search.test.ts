@@ -150,6 +150,12 @@ describe("resolveLoadRequest", () => {
 });
 
 describe("filterCatalogByAvailableTools", () => {
+  test("omits a package when no granted tools from that package remain", () => {
+    const granted = new Set(["linear__list_issues"]);
+    const filtered = filterCatalogByAvailableTools(catalog, granted);
+    expect(filtered.map((e) => e.package)).toEqual(["linear"]);
+    expect(searchCatalog(filtered, { query: "attio" })).toEqual([]);
+  });
   test("drops a package whose tools did not load (missing credential)", () => {
     const available = new Set(["attio__query_records", "attio__create_note"]);
     const filtered = filterCatalogByAvailableTools(catalog, available);

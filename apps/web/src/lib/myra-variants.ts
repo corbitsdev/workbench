@@ -42,6 +42,13 @@ export const MyraPreferencesSchema = type({
   skillUsageChat: "string | null",
   skillUsageTriage: "string | null",
   pinnedSkillIds: "string[]",
+  disabledCatalogPackages: "string[]",
+  disabledToolNames: "string[]",
+  toolCatalog: type({
+    package: "string",
+    description: "string",
+    tools: type({ name: "string", description: "string" }).array(),
+  }).array(),
 });
 export type MyraPreferences = typeof MyraPreferencesSchema.infer;
 
@@ -58,6 +65,8 @@ export const MyraPreferencesUpdateSchema = type({
   "skillUsageChat?": "string | null",
   "skillUsageTriage?": "string | null",
   "pinnedSkillIds?": "string[]",
+  "disabledCatalogPackages?": "string[]",
+  "disabledToolNames?": "string[]",
 });
 export type MyraPreferencesUpdate = typeof MyraPreferencesUpdateSchema.infer;
 
@@ -107,9 +116,7 @@ export async function getMyraVariants(
   return parsed.variants;
 }
 
-export async function getMyraStyleAxes(
-  tenantId: string,
-): Promise<StyleAxis[]> {
+export async function getMyraStyleAxes(tenantId: string): Promise<StyleAxis[]> {
   const raw = await hubFetch<unknown>(
     "GET",
     `${myraBase(tenantId)}/myra/style-axes`,

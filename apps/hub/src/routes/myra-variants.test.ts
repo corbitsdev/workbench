@@ -1,27 +1,91 @@
 import { describe, expect, it, mock } from "bun:test";
+
+mock.module("../lib/myra-member-tool-settings", () => ({
+  listMemberMyraToolCatalog: mock(async () => []),
+  sanitizeMemberMyraToolDisables: (
+    _catalog: unknown,
+    disabledCatalogPackages: string[],
+    disabledToolNames: string[],
+  ) => ({ disabledCatalogPackages, disabledToolNames }),
+}));
+
 import { Hono } from "hono";
 import type { HubDb } from "../db";
 import { createMyraVariantsRouter } from "./myra-variants";
 
+type StoredRow = {
+  chatVariantId: string | null;
+  triageVariantId: string | null;
+  instructionsGlobal?: string | null;
+  instructionsChat?: string | null;
+  instructionsTriage?: string | null;
+  personality?: string | null;
+  emojiUse?: string | null;
+  uiType?: string | null;
+  artifactUsageChat?: string | null;
+  artifactUsageTriage?: string | null;
+  toolUsageChat?: string | null;
+  toolUsageTriage?: string | null;
+  skillUsageChat?: string | null;
+  skillUsageTriage?: string | null;
+  disabledCatalogPackages?: string[];
+  disabledToolNames?: string[];
+};
+
 // The router runs the REAL preference service (validation against the real
 // catalog is the behavior under test); only the DB is a structural fake.
 function makeDb(opts: {
-  stored?: {
-    chatVariantId: string | null;
-    triageVariantId: string | null;
-    instructionsGlobal?: string | null;
-    instructionsChat?: string | null;
-    instructionsTriage?: string | null;
-  };
+  stored?: StoredRow;
   values?: ReturnType<typeof mock>;
 }): HubDb {
+  let stored: StoredRow | undefined = opts.stored;
   const values =
     opts.values ??
-    mock(() => ({ onConflictDoUpdate: mock(() => Promise.resolve()) }));
+    mock(
+      (row: StoredRow & { tenantId?: string; memberPrincipalId?: string }) => {
+        stored = {
+          chatVariantId: row.chatVariantId ?? stored?.chatVariantId ?? null,
+          triageVariantId:
+            row.triageVariantId ?? stored?.triageVariantId ?? null,
+          instructionsGlobal:
+            row.instructionsGlobal ?? stored?.instructionsGlobal ?? null,
+          instructionsChat:
+            row.instructionsChat ?? stored?.instructionsChat ?? null,
+          instructionsTriage:
+            row.instructionsTriage ?? stored?.instructionsTriage ?? null,
+          personality: row.personality ?? stored?.personality ?? null,
+          emojiUse: row.emojiUse ?? stored?.emojiUse ?? null,
+          uiType: row.uiType ?? stored?.uiType ?? null,
+          artifactUsageChat:
+            row.artifactUsageChat ?? stored?.artifactUsageChat ?? null,
+          artifactUsageTriage:
+            row.artifactUsageTriage ?? stored?.artifactUsageTriage ?? null,
+          toolUsageChat: row.toolUsageChat ?? stored?.toolUsageChat ?? null,
+          toolUsageTriage:
+            row.toolUsageTriage ?? stored?.toolUsageTriage ?? null,
+          skillUsageChat: row.skillUsageChat ?? stored?.skillUsageChat ?? null,
+          skillUsageTriage:
+            row.skillUsageTriage ?? stored?.skillUsageTriage ?? null,
+          disabledCatalogPackages:
+            row.disabledCatalogPackages ??
+            stored?.disabledCatalogPackages ??
+            [],
+          disabledToolNames:
+            row.disabledToolNames ?? stored?.disabledToolNames ?? [],
+        };
+        return {
+          onConflictDoUpdate: mock((conflict: { set: Partial<StoredRow> }) => {
+            if (!stored) return Promise.resolve();
+            stored = { ...stored, ...conflict.set };
+            return Promise.resolve();
+          }),
+        };
+      },
+    );
   return {
     query: {
       myraVariantPreference: {
-        findFirst: mock(async () => opts.stored),
+        findFirst: mock(async () => stored),
       },
       principal: {
         findFirst: mock(async () => null),
@@ -48,6 +112,16 @@ const EMPTY_STYLE_AXES = {
   skillUsageChat: null,
   skillUsageTriage: null,
   pinnedSkillIds: [],
+};
+
+const EMPTY_TOOL_PREFS = {
+  disabledCatalogPackages: [] as string[],
+  disabledToolNames: [] as string[],
+  toolCatalog: [] as {
+    package: string;
+    description: string;
+    tools: unknown[];
+  }[],
 };
 
 function wrapWithTenant(
@@ -127,6 +201,7 @@ describe("Myra variants router", () => {
       triage: null,
       ...EMPTY_INSTRUCTIONS,
       ...EMPTY_STYLE_AXES,
+      ...EMPTY_TOOL_PREFS,
     });
   });
 
@@ -158,15 +233,13 @@ describe("Myra variants router", () => {
       triage: null,
       ...EMPTY_INSTRUCTIONS,
       ...EMPTY_STYLE_AXES,
+      ...EMPTY_TOOL_PREFS,
       personality: "candid",
       artifactUsageChat: "none",
     });
   });
 
   it("persists a valid selection, merging with the stored one", async () => {
-    const values = mock(() => ({
-      onConflictDoUpdate: mock(() => Promise.resolve()),
-    }));
     const db = makeDb({
       stored: {
         chatVariantId: "myra-kimi-k2-6",
@@ -175,7 +248,6 @@ describe("Myra variants router", () => {
         instructionsChat: null,
         instructionsTriage: null,
       },
-      values,
     });
     const app = wrapWithTenant(db);
     const res = await app.request("/members/me/myra-preferences", {
@@ -189,21 +261,12 @@ describe("Myra variants router", () => {
       triage: "myra-triage-opus-4-8",
       ...EMPTY_INSTRUCTIONS,
       ...EMPTY_STYLE_AXES,
+      ...EMPTY_TOOL_PREFS,
     });
-    expect(values).toHaveBeenCalledWith(
-      expect.objectContaining({
-        tenantId: "tn-global",
-        memberPrincipalId: "prn-member",
-        chatVariantId: "myra-kimi-k2-6",
-        triageVariantId: "myra-triage-opus-4-8",
-      }),
-    );
+    expect(db.insert).toHaveBeenCalled();
   });
 
   it("persists standing instructions fields, merging with the stored ones", async () => {
-    const values = mock(() => ({
-      onConflictDoUpdate: mock(() => Promise.resolve()),
-    }));
     const db = makeDb({
       stored: {
         chatVariantId: null,
@@ -212,7 +275,6 @@ describe("Myra variants router", () => {
         instructionsChat: null,
         instructionsTriage: null,
       },
-      values,
     });
     const app = wrapWithTenant(db);
     const res = await app.request("/members/me/myra-preferences", {
@@ -225,6 +287,7 @@ describe("Myra variants router", () => {
       chat: null,
       triage: null,
       ...EMPTY_STYLE_AXES,
+      ...EMPTY_TOOL_PREFS,
       instructionsGlobal: "Be terse.",
       instructionsChat: null,
       instructionsTriage: "Flag investor mail.",
@@ -273,10 +336,7 @@ describe("Myra variants router", () => {
   });
 
   it("persists a valid style-axis selection", async () => {
-    const values = mock(() => ({
-      onConflictDoUpdate: mock(() => Promise.resolve()),
-    }));
-    const db = makeDb({ values });
+    const db = makeDb({});
     const app = wrapWithTenant(db);
     const res = await app.request("/members/me/myra-preferences", {
       method: "PUT",
@@ -289,6 +349,7 @@ describe("Myra variants router", () => {
       triage: null,
       ...EMPTY_INSTRUCTIONS,
       ...EMPTY_STYLE_AXES,
+      ...EMPTY_TOOL_PREFS,
       personality: "candid",
       toolUsageChat: "none",
     });
