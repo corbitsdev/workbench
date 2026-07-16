@@ -73,8 +73,17 @@ let triageDef: typeof MYRA_TRIAGE_DEF = MYRA_TRIAGE_DEF;
 const resolveDefMock = mock(async () => triageDef);
 const teardownMock = mock(async () => undefined);
 mock.module("./myra-threads", () => ({
-  resolveMyraTriageDefinition: resolveDefMock,
+  resolveMyraVariantDefinition: resolveDefMock,
   teardownThreadRows: teardownMock,
+}));
+
+let variantPref: { chat: string | null; triage: string | null } = {
+  chat: null,
+  triage: null,
+};
+const readVariantPrefMock = mock(async () => variantPref);
+mock.module("./myra-variant-preferences", () => ({
+  readMyraVariantPreference: readVariantPrefMock,
 }));
 
 let prefs: MemberPreferences = {};

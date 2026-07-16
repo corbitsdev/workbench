@@ -263,6 +263,10 @@ describe("createMyraThread", () => {
     inserted?: Record<string, unknown>[];
     agentDefs?: Record<string, unknown>[];
     existingThreads?: Record<string, unknown>[];
+    variantPref?: {
+      chatVariantId: string | null;
+      triageVariantId: string | null;
+    } | null;
   }) {
     const agentDefs = opts.agentDefs ?? [
       {
@@ -292,6 +296,11 @@ describe("createMyraThread", () => {
             Promise.resolve({ principalId: "prn-stale-instance" }),
           ),
         },
+        myraVariantPreference: {
+          findFirst: mock(() =>
+            Promise.resolve(opts.variantPref ?? undefined),
+          ),
+        },
       },
       transaction: mock(async (fn: (tx: unknown) => Promise<void>) => {
         opts.transactions();
@@ -310,6 +319,60 @@ describe("createMyraThread", () => {
       }),
     };
   }
+
+  it("binds a member's selected chat variant definition, skipping the canonical reseed", async () => {
+    const inserted: Record<string, unknown>[] = [];
+    const db = buildCreateDb({
+      transactions: () => {},
+      inserted,
+      variantPref: { chatVariantId: "myra-opus-4-8", triageVariantId: null },
+      agentDefs: [
+        {
+          id: "agt-myra-opus",
+          tenantId: "tn-global",
+          systemPrompt: "You are Myra (Opus).",
+        },
+      ],
+    });
+
+    // biome-ignore lint/suspicious/noExplicitAny: structural db mock
+    const result = await createMyraThread(db as any, {
+      tenantId: "tn-global",
+      tenantDomain: "global.test",
+      memberPrincipalId: "prn-member",
+    });
+
+    expect(result.created).toBe(true);
+    // The variant path resolves its own seeded definition and does NOT run the
+    // canonical `myra`-template reseed.
+    expect(reseedSpy).not.toHaveBeenCalled();
+    const instanceInsert = inserted.find((v) => "address" in v);
+    expect(instanceInsert?.agentId).toBe("agt-myra-opus");
+    // The thread stays a `myra`-templateKey thread so it lists as normal chat.
+    const mappingInsert = inserted.find((v) => "templateKey" in v);
+    expect(mappingInsert?.templateKey).toBe("myra");
+  });
+
+  it("uses the canonical definition (and reseed path) when no preference is set", async () => {
+    const inserted: Record<string, unknown>[] = [];
+    const db = buildCreateDb({
+      transactions: () => {},
+      inserted,
+      variantPref: null,
+    });
+
+    // biome-ignore lint/suspicious/noExplicitAny: structural db mock
+    await createMyraThread(db as any, {
+      tenantId: "tn-global",
+      tenantDomain: "global.test",
+      memberPrincipalId: "prn-member",
+    });
+
+    // Canonical fallback runs the CL-2517 staleness reseed for the tenant's own def.
+    expect(reseedSpy).toHaveBeenCalled();
+    const instanceInsert = inserted.find((v) => "address" in v);
+    expect(instanceInsert?.agentId).toBe("agt-myra");
+  });
 
   it("creates the rows and returns created:true WITHOUT launching a session (CL-2803)", async () => {
     let txCount = 0;
@@ -539,6 +602,9 @@ describe("createMyraThread (active-workbench attribution)", () => {
       query: {
         agent: { findMany: mock(() => Promise.resolve(agentDefs)) },
         memberAgentInstance: { findMany: mock(() => Promise.resolve([])) },
+        myraVariantPreference: {
+          findFirst: mock(() => Promise.resolve(undefined)),
+        },
       },
       transaction: mock(async (fn: (tx: unknown) => Promise<void>) => {
         await fn({
