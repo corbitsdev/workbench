@@ -30,11 +30,24 @@ export {
   isMyraVariantId,
   defaultMyraVariant,
   resolveMyraVariant,
+  myraSurfaceForTemplateKey,
   type MyraVariant,
   type MyraVariantProvider,
   type MyraVariantCostTier,
   type MyraVariantSummary,
 } from "./core/variants";
+export {
+  STYLE_AXES,
+  STYLE_AXIS_IDS,
+  getStyleAxis,
+  isStyleAxisOptionId,
+  composeStyleOverlay,
+  StyleAxisIdSchema,
+  type StyleAxisId,
+  type StyleAxisOption,
+  type StyleAxis,
+  type StyleAxisSelections,
+} from "./core/style-axes";
 export { createPersonalAgentDirector } from "./core/director";
 export {
   createBudgetDirector,
