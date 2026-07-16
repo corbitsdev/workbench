@@ -50,7 +50,7 @@ function renderAt(entry: string) {
       <MemoryRouter initialEntries={[entry]}>
         <Routes>
           <Route
-            path="/admin/principals"
+            path="/settings/admin/principals"
             element={
               <>
                 <AdminPrincipals />
@@ -58,7 +58,10 @@ function renderAt(entry: string) {
               </>
             }
           />
-          <Route path="/admin/principals/:id" element={<LocationProbe />} />
+          <Route
+            path="/settings/admin/principals/:id"
+            element={<LocationProbe />}
+          />
         </Routes>
       </MemoryRouter>
     </QueryClientProvider>,
@@ -78,20 +81,20 @@ afterEach(() => {
 
 describe("AdminPrincipals list", () => {
   it("renders a row for each returned principal", () => {
-    renderAt("/admin/principals");
+    renderAt("/settings/admin/principals");
     expect(screen.getByText("Ada Lovelace").textContent).toBe("Ada Lovelace");
     expect(screen.getByText("Grace Hopper").textContent).toContain("Grace");
   });
 
   it("derives page + filters from the URL query string", () => {
-    renderAt("/admin/principals?page=2&search=grace&type=agent");
+    renderAt("/settings/admin/principals?page=2&search=grace&type=agent");
     expect(lastFilters().page).toBe(2);
     expect(lastFilters().search).toBe("grace");
     expect(lastFilters().type).toBe("agent");
   });
 
   it("writes a typed search into the URL and resets to page 1", () => {
-    renderAt("/admin/principals?page=3");
+    renderAt("/settings/admin/principals?page=3");
     fireEvent.change(screen.getByPlaceholderText("Search name or id…"), {
       target: { value: "grace" },
     });
@@ -101,9 +104,9 @@ describe("AdminPrincipals list", () => {
   });
 
   it("navigates to detail carrying origin filters as ?back= so return restores them", () => {
-    renderAt("/admin/principals?page=2&search=grace");
+    renderAt("/settings/admin/principals?page=2&search=grace");
     fireEvent.click(screen.getByText("Ada Lovelace"));
-    expect(lastLocation.pathname).toBe("/admin/principals/prn_1");
+    expect(lastLocation.pathname).toBe("/settings/admin/principals/prn_1");
     const back = new URLSearchParams(lastLocation.search).get("back");
     const restored = new URLSearchParams(decodeURIComponent(back ?? ""));
     expect(restored.get("page")).toBe("2");

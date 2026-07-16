@@ -113,7 +113,7 @@ describe("SettingsToolDetail", () => {
     const link = Array.from(document.querySelectorAll("a")).find((a) =>
       a.textContent?.includes("Owner area"),
     );
-    expect(link?.getAttribute("href")).toBe("/owner");
+    expect(link?.getAttribute("href")).toBe("/settings/owner");
   });
 
   it("shows the graceful no-settings state for a non-gamma tool", async () => {

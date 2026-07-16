@@ -59,7 +59,7 @@ export function AdminPrincipals() {
   const openDetail = (p: PrincipalSummary) => {
     const back = encodeBackParam(searchParams);
     const backSuffix = back ? `?back=${back}` : "";
-    navigate(`/admin/principals/${p.id}${backSuffix}`);
+    navigate(`/settings/admin/principals/${p.id}${backSuffix}`);
   };
 
   return (

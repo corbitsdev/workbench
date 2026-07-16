@@ -49,7 +49,7 @@ function renderAt(entry: string) {
       <MemoryRouter initialEntries={[entry]}>
         <Routes>
           <Route
-            path="/admin/definitions"
+            path="/settings/admin/definitions"
             element={
               <>
                 <AdminDefinitions />
@@ -57,7 +57,10 @@ function renderAt(entry: string) {
               </>
             }
           />
-          <Route path="/admin/definitions/:key" element={<LocationProbe />} />
+          <Route
+            path="/settings/admin/definitions/:key"
+            element={<LocationProbe />}
+          />
         </Routes>
       </MemoryRouter>
     </QueryClientProvider>,
@@ -72,7 +75,7 @@ afterEach(() => {
 
 describe("AdminDefinitions filters", () => {
   it("status filter is a select enumerating every known definition status", () => {
-    renderAt("/admin/definitions");
+    renderAt("/settings/admin/definitions");
     const select = screen.getByLabelText(
       "Filter by status",
     ) as HTMLSelectElement;
@@ -84,7 +87,7 @@ describe("AdminDefinitions filters", () => {
   });
 
   it("selecting a status writes it to the URL and resets to page 1", () => {
-    renderAt("/admin/definitions?page=2");
+    renderAt("/settings/admin/definitions?page=2");
     fireEvent.change(screen.getByLabelText("Filter by status"), {
       target: { value: "superseded" },
     });
@@ -94,9 +97,11 @@ describe("AdminDefinitions filters", () => {
   });
 
   it("navigates to detail carrying kind + origin filters as ?back=", () => {
-    renderAt("/admin/definitions?page=2&status=running");
+    renderAt("/settings/admin/definitions?page=2&status=running");
     fireEvent.click(screen.getByText("Brief Builder"));
-    expect(lastLocation.pathname).toBe("/admin/definitions/brief-builder");
+    expect(lastLocation.pathname).toBe(
+      "/settings/admin/definitions/brief-builder",
+    );
     const detailParams = new URLSearchParams(lastLocation.search);
     expect(detailParams.get("kind")).toBe("workflow");
     const restored = new URLSearchParams(

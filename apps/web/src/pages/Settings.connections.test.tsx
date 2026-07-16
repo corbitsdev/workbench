@@ -55,6 +55,11 @@ const getMeConnections = mock(async () => ({
 }));
 
 mock.module("../lib/hub-api", () => ({
+  // myra-variants (via MyraDefaultsPanel in the Settings import graph) binds
+  // hubFetch at module load; the panel itself is not exercised here.
+  hubFetch: async () => {
+    throw new Error("not used in this test");
+  },
   getMe: async () => ({ userId: "u1", userName: "Alice" }),
   patchMeProfile: async (name: string) => ({ userName: name }),
   getMePreferences: async () => ({ preferences: {} }),

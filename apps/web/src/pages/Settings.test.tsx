@@ -74,6 +74,7 @@ mock.module("../components/AuthProvider", () => ({
 }));
 
 import { default as Settings } from "./Settings";
+import { default as SettingsLayout } from "./SettingsLayout";
 
 const realFetch = globalThis.fetch;
 
@@ -150,7 +151,16 @@ describe("Settings preferences", () => {
 describe("Settings section nav layout", () => {
   it("wraps the section nav in a sticky column on large breakpoints", () => {
     neverResolvingVersion();
-    renderSettings();
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    render(
+      <QueryClientProvider client={client}>
+        <MemoryRouter initialEntries={["/settings"]}>
+          <SettingsLayout />
+        </MemoryRouter>
+      </QueryClientProvider>,
+    );
     const nav = screen.getByRole("navigation", { name: "Settings sections" });
     const wrapper = nav.parentElement;
     expect(wrapper).not.toBeNull();

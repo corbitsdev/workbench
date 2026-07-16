@@ -303,6 +303,18 @@ which only the `owner` (`*:*`) and `admin` (`*`/`manage`) system roles satisfy.
 The web nav gate (`/me` now returns `isAdmin`) is cosmetic; the hub is
 authoritative. All governance is scoped to the root (global org) tenant.
 
+**Frontend IA (CL-3763):** the web app's standalone `/admin` and `/owner`
+routes were unified into role-gated management groups inside `/settings`
+(`/settings/admin/*`, `/settings/owner/*`) — the `Settings` side-nav
+(`apps/web/src/pages/settings-section-nav.ts`) shows "Users & agents" only
+to `isAdmin` viewers and "Workbench management" only to `isOwner` viewers,
+reusing the same `AdminLayout`/`OwnerLayout` gates unchanged; both areas
+render inside the Settings layout (`SettingsLayout` hosts the section rail
+and an `Outlet`). The old `/admin/*` and `/owner/*` paths are wildcard `<Navigate>`
+redirects (`apps/web/src/router.tsx`) so every existing deep link still
+resolves. This is a navigation move only — the `/api/v1/admin/*` and
+`/owner/*` hub routes described above did not change.
+
 Read-only browsers:
 
 ```

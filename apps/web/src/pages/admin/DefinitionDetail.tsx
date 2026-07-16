@@ -61,7 +61,7 @@ export function DefinitionDetail() {
 
   const crumbLabel = query.data?.definition.name ?? key ?? "Definition";
   const definitionsTo = backToListPath(
-    "/admin/definitions",
+    "/settings/admin/definitions",
     searchParams.get("back"),
   );
 
@@ -70,7 +70,7 @@ export function DefinitionDetail() {
       <Breadcrumbs
         renderLink={renderLink}
         items={[
-          { label: "Admin", to: "/admin" },
+          { label: "Users & agents", to: "/settings/admin" },
           { label: "Definitions", to: definitionsTo },
           { label: crumbLabel },
         ]}

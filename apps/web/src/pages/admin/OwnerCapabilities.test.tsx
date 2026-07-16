@@ -86,7 +86,9 @@ describe("OwnerCapabilities", () => {
     const link = Array.from(document.querySelectorAll("a")).find((a) =>
       a.textContent?.includes("Gamma"),
     );
-    expect(link?.getAttribute("href")).toBe("/owner/capabilities/gamma");
+    expect(link?.getAttribute("href")).toBe(
+      "/settings/owner/capabilities/gamma",
+    );
   });
 
   it("lists only tool-kind credentials, never a secret value", async () => {

@@ -50,7 +50,7 @@ function renderAt(entry: string) {
       <MemoryRouter initialEntries={[entry]}>
         <Routes>
           <Route
-            path="/admin/definitions/:key"
+            path="/settings/admin/definitions/:key"
             element={<DefinitionDetail />}
           />
         </Routes>
@@ -66,7 +66,7 @@ afterEach(() => {
 
 describe("DefinitionDetail", () => {
   it("loads the definition addressed by the route key + kind query", () => {
-    renderAt("/admin/definitions/brief-builder?kind=workflow");
+    renderAt("/settings/admin/definitions/brief-builder?kind=workflow");
     expect(useDefinitionDetail).toHaveBeenLastCalledWith(
       "workflow",
       "brief-builder",
@@ -74,20 +74,24 @@ describe("DefinitionDetail", () => {
   });
 
   it("breadcrumb links back to the bare Definitions tab when no ?back= is present", () => {
-    renderAt("/admin/definitions/brief-builder?kind=workflow");
+    renderAt("/settings/admin/definitions/brief-builder?kind=workflow");
     const crumb = screen.getByText("Definitions");
-    expect(crumb.closest("a")?.getAttribute("href")).toBe("/admin/definitions");
+    expect(crumb.closest("a")?.getAttribute("href")).toBe(
+      "/settings/admin/definitions",
+    );
   });
 
   it("breadcrumb back link restores the origin page + filters from ?back=", () => {
     const back = encodeURIComponent("page=2&kind=agent&search=my");
-    renderAt(`/admin/definitions/brief-builder?kind=workflow&back=${back}`);
+    renderAt(
+      `/settings/admin/definitions/brief-builder?kind=workflow&back=${back}`,
+    );
     const href = screen
       .getByText("Definitions")
       .closest("a")
       ?.getAttribute("href");
     const [path, query] = (href ?? "").split("?");
-    expect(path).toBe("/admin/definitions");
+    expect(path).toBe("/settings/admin/definitions");
     const restored = new URLSearchParams(query);
     expect(restored.get("page")).toBe("2");
     expect(restored.get("kind")).toBe("agent");
@@ -95,7 +99,7 @@ describe("DefinitionDetail", () => {
   });
 
   it("shows the workflow deployment history rows", () => {
-    renderAt("/admin/definitions/brief-builder?kind=workflow");
+    renderAt("/settings/admin/definitions/brief-builder?kind=workflow");
     expect(screen.getByText("ses_new").textContent).toBe("ses_new");
     expect(screen.getByText("ses_old").textContent).toBe("ses_old");
   });

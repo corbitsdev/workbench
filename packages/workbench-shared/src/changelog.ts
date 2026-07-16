@@ -31,7 +31,7 @@ export const CHANGELOG_NAV_ROUTES = [
   "/chats",
   "/artifacts",
   "/settings",
-  "/owner/capabilities",
+  "/settings/owner/capabilities",
 ] as const;
 
 // Newest first.
@@ -100,7 +100,7 @@ export const CHANGELOG: readonly ChangelogRelease[] = [
         title: "Owner capabilities",
         description:
           "Owners configure inbox sources, automation features, and API keys from Capabilities before members see external intake or auto-triage.",
-        to: "/owner/capabilities",
+        to: "/settings/owner/capabilities",
       },
     ],
   },

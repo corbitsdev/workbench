@@ -10,11 +10,11 @@ import { tabButtonClass } from "./admin-ui";
 // providers, their models, and credentials. Capabilities holds tool/integration
 // providers. Workflows enables/disables per workbench.
 const SUB_NAV = [
-  { to: "/owner/catalog", label: "Catalog", end: false },
-  { to: "/owner/capabilities", label: "Capabilities", end: false },
-  { to: "/owner/workflows", label: "Workflows", end: false },
-  { to: "/owner/demos", label: "Demos", end: false },
-  { to: "/owner/members", label: "Members", end: false },
+  { to: "/settings/owner/catalog", label: "Catalog", end: false },
+  { to: "/settings/owner/capabilities", label: "Capabilities", end: false },
+  { to: "/settings/owner/workflows", label: "Workflows", end: false },
+  { to: "/settings/owner/demos", label: "Demos", end: false },
+  { to: "/settings/owner/members", label: "Members", end: false },
 ] as const;
 
 /**
@@ -37,7 +37,7 @@ export function OwnerLayout() {
       isOwner ? (
         <div className="flex min-w-0 flex-1 flex-col gap-2">
           <AppPageChromeRow
-            title="Owner"
+            title="Workbench management"
             titleSize="sm"
             className="[&_h1]:text-lg"
           />
