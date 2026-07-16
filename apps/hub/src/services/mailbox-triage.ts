@@ -21,7 +21,9 @@ import {
   triageHandoffSubject,
   triageMessageKey,
   composeTriagePromptMessage,
+  resolveMyraVariant,
 } from "@workbench/myra";
+import { readMyraVariantPreference } from "./myra-variant-preferences";
 import type { HubDb } from "../db";
 import { memberAgentInstance } from "../db/schema";
 import { getConfig } from "../config";
@@ -35,7 +37,7 @@ import { readMemberPreferences } from "../lib/member-preferences";
 import type { UserMailboxRowEvent } from "../lib/principal-mailbox";
 import { launchAgentSession } from "./agent-provisioning";
 import {
-  resolveMyraTriageDefinition,
+  resolveMyraVariantDefinition,
   teardownThreadRows,
 } from "./myra-threads";
 
@@ -210,11 +212,26 @@ export function createMailboxTriage(deps: MailboxTriageDeps): MailboxTriage {
     const eligible = await isEligible(item);
     if (!eligible) return;
 
-    const def = await resolveMyraTriageDefinition(deps.db, item.tenantId);
+    // Lazy variant binding: the member's default triage-variant selection
+    // picks which triage definition (and therefore which model) this ephemeral
+    // session launches on, falling back to the canonical default. The tool
+    // loadout is unchanged — every triage variant mounts the mailbox persona's
+    // read-only loadout below regardless of model.
+    const variantPref = await readMyraVariantPreference(
+      deps.db,
+      item.tenantId,
+      item.memberPrincipalId,
+    );
+    const variant = resolveMyraVariant("triage", variantPref.triage);
+    const def = await resolveMyraVariantDefinition(
+      deps.db,
+      item.tenantId,
+      variant,
+    );
     if (!def) {
       log.error(
-        "Mailbox triage skipped: no Myra Triage definition for {tenantId}",
-        { tenantId: item.tenantId },
+        "Mailbox triage skipped: no Myra Triage definition ({variantId}) for {tenantId}",
+        { tenantId: item.tenantId, variantId: variant.id },
       );
       return;
     }

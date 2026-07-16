@@ -15,7 +15,9 @@ import { AGENT_TEMPLATES } from "@workbench/agents";
 import {
   PERSONAL_AGENT_NAME,
   PERSONAL_AGENT_TRIAGE_NAME,
+  resolveMyraVariant,
 } from "@workbench/myra";
+import { readMyraVariantPreference } from "./myra-variant-preferences";
 import {
   isDefaultMyraThreadLabel,
   myraThreadTitleFromFirstMessage,
@@ -113,6 +115,21 @@ export async function resolveMyraTriageDefinition(
   tenantId: string,
 ): Promise<typeof agent.$inferSelect | null> {
   return resolveAgentDefinitionByName(db, tenantId, PERSONAL_AGENT_TRIAGE_NAME);
+}
+
+/**
+ * Resolve the seeded definition backing a specific Myra variant (chat or
+ * triage) in the tenant hierarchy, keyed by the variant's `seedName`. The
+ * canonical variants resolve the same rows as `resolveMyraDefinition` /
+ * `resolveMyraTriageDefinition`; non-canonical variants resolve their own
+ * per-model definition. Returns null when that definition is not seeded.
+ */
+export async function resolveMyraVariantDefinition(
+  db: HubDb,
+  tenantId: string,
+  variant: { seedName: string },
+): Promise<typeof agent.$inferSelect | null> {
+  return resolveAgentDefinitionByName(db, tenantId, variant.seedName);
 }
 
 export type MyraThreadPage = {
@@ -235,6 +252,35 @@ export async function createMyraThread(
     throw new Error("Myra template is not registered");
   }
 
+  // Lazy variant binding: read the member's default chat-variant selection and
+  // derive the definition to deploy from it (falling back to the canonical
+  // default when absent). Existing threads are untouched — this only affects
+  // the definition a NEW thread's instance is born with.
+  const variantPref = await readMyraVariantPreference(
+    db,
+    opts.tenantId,
+    opts.memberPrincipalId,
+  );
+  const variant = resolveMyraVariant("chat", variantPref.chat);
+
+  // A non-canonical variant deploys its own seeded definition verbatim (no
+  // reseed — the reseed staleness path is specific to the canonical `myra`
+  // template). A missing variant definition is a seed gap, not a fallback case:
+  // fail loudly rather than silently launching the wrong model.
+  if (!variant.isDefault) {
+    const variantDef = await resolveAgentDefinitionByName(
+      db,
+      opts.tenantId,
+      variant.seedName,
+    );
+    if (!variantDef) {
+      throw new Error(
+        `Myra variant definition "${variant.seedName}" is not seeded in this tenant hierarchy`,
+      );
+    }
+    return createMyraThreadForDefinition(db, opts, variantDef);
+  }
+
   let def = await resolveMyraDefinition(db, opts.tenantId);
   if (!def) {
     throw new Error(
@@ -279,6 +325,28 @@ export async function createMyraThread(
     }
   }
 
+  return createMyraThreadForDefinition(db, opts, def);
+}
+
+type CreateMyraThreadOpts = {
+  tenantId: string;
+  tenantDomain: string;
+  memberPrincipalId: string;
+  label?: string;
+};
+
+/**
+ * Create the rows for a new Myra thread bound to a specific definition `def`
+ * (the canonical Myra def, or a member-selected variant def). The thread stays
+ * a `myra`-templateKey thread regardless of which variant definition backs it,
+ * so it lists and behaves as a normal Myra chat; only the deployed instance's
+ * `agentId` (and thus its model) differs.
+ */
+async function createMyraThreadForDefinition(
+  db: HubDb,
+  opts: CreateMyraThreadOpts,
+  def: typeof agent.$inferSelect,
+): Promise<{ thread: MyraThreadRow; created: boolean }> {
   const now = new Date();
   const instanceId = generateId("instance");
   let instancePrincipalId = "";

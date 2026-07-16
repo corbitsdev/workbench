@@ -17,6 +17,20 @@ export {
   PERSONAL_AGENT_TRIAGE_NAME,
   PERSONAL_AGENT_TRIAGE_MODEL_CONFIG,
 } from "./core/definition";
+export {
+  MYRA_VARIANTS,
+  MyraVariantKind,
+  MyraVariantSummarySchema,
+  listMyraVariants,
+  getMyraVariant,
+  isMyraVariantId,
+  defaultMyraVariant,
+  resolveMyraVariant,
+  type MyraVariant,
+  type MyraVariantProvider,
+  type MyraVariantCostTier,
+  type MyraVariantSummary,
+} from "./core/variants";
 export { createPersonalAgentDirector } from "./core/director";
 export {
   createBudgetDirector,

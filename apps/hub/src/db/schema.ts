@@ -65,6 +65,34 @@ export const memberPreferences = pgTable(
   }),
 );
 
+// Per-member default Myra variant selection. One row per (tenant, member
+// principal); each column names a variant id in the `@workbench/myra` catalog
+// (validated against it at the API boundary) or NULL, which means "use the
+// canonical default". A stored preference is a selection only — instances are
+// minted lazily from the selected variant and keep it for life, so changing
+// this never re-deploys an existing instance. Workbench-owned; no interchange
+// table is touched.
+export const myraVariantPreference = pgTable(
+  "myra_variant_preference",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: text("tenant_id").notNull(),
+    memberPrincipalId: text("member_principal_id").notNull(),
+    chatVariantId: text("chat_variant_id"),
+    triageVariantId: text("triage_variant_id"),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at")
+      .notNull()
+      .defaultNow()
+      .$onUpdate(() => new Date()),
+  },
+  (t) => ({
+    myraVariantPreferenceMemberUniq: unique(
+      "myra_variant_preference_tenant_principal_uniq",
+    ).on(t.tenantId, t.memberPrincipalId),
+  }),
+);
+
 // Per-member, per-tool account identity (CL-2420). One row per account, so a
 // member can hold several accounts of the same provider (e.g. two Linear
 // workspaces) — each with a human `label`, a `isPrimary` default flag, and an
