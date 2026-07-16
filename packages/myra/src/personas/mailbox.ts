@@ -236,6 +236,7 @@ export type MailboxLoadout = {
 export function resolveMailboxLoadout(
   autonomy: AgentAutonomy,
   tasksEnabled = true,
+  model: string = PERSONAL_AGENT_TRIAGE_MODEL_CONFIG.defaultModel,
 ): MailboxLoadout {
   if (autonomy === "execute_with_gates") {
     const toolNames = tasksEnabled
@@ -248,6 +249,7 @@ export function resolveMailboxLoadout(
         PERSONAL_AGENT_NAME,
         autonomy,
         tasksEnabled,
+        model,
       ),
       toolNames,
     };
@@ -260,6 +262,7 @@ export function resolveMailboxLoadout(
       PERSONAL_AGENT_NAME,
       "prepare_only",
       tasksEnabled,
+      model,
     ),
     toolNames,
   };

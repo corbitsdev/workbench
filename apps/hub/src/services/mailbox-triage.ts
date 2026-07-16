@@ -259,7 +259,11 @@ export function createMailboxTriage(deps: MailboxTriageDeps): MailboxTriage {
     // has never touched the setting keeps getting the tasks triage already
     // prepares today.
     const tasksEnabled = prefs.tasksTriageCreate !== false;
-    const loadout = resolveMailboxLoadout(autonomy, tasksEnabled);
+    const loadout = resolveMailboxLoadout(
+      autonomy,
+      tasksEnabled,
+      variant.model,
+    );
 
     // Member standing guidance (CL-3661): global instructions plus the
     // triage-specific override, appended after the mailbox persona prompt —
