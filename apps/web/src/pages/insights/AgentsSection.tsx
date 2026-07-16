@@ -14,13 +14,21 @@ import { instanceStatusTone, statusToneClass } from "./status-tone";
 const ROSTER_PAGE_SIZE = 12;
 
 // member_agent_instance.template_key values that identify the two Myra
-// surfaces this roster distinguishes (CL-3770). Mirrors the hub's
-// MYRA_TEMPLATE_KEY (apps/hub/src/services/myra-threads.ts) and
-// TRIAGE_TEMPLATE_KEY (packages/myra/src/personas/mailbox-triage-policy.ts) —
-// kept as literals here rather than a new cross-package import, since the web
-// app has no other dependency on either package.
-const MYRA_CHAT_TEMPLATE_KEY = "myra";
-const MYRA_TRIAGE_TEMPLATE_KEY = "myra-triage";
+// surfaces this roster distinguishes. Runtime writes use the canonical keys
+// ("myra" / "myra-triage"), but variant definitions use prefixed keys
+// ("myra-chat-<model>" / "myra-triage-<model>") that tenant provisioning can
+// also mint — so classify by prefix, triage first (its keys also start with
+// "myra"). Mirrors myraSurfaceForTemplateKey in packages/myra; kept local
+// rather than adding a web dependency on that package.
+function myraSurface(templateKey: string): "chat" | "triage" | null {
+  if (templateKey === "myra-triage" || templateKey.startsWith("myra-triage-")) {
+    return "triage";
+  }
+  if (templateKey === "myra" || templateKey.startsWith("myra-chat-")) {
+    return "chat";
+  }
+  return null;
+}
 
 const TRIAGE_LABEL_PREFIX = /^Triage:\s*/;
 
@@ -48,11 +56,12 @@ function fallbackTitle(instance: RosterInstance): string {
  * keeps its existing definition name with no badge.
  */
 export function displayForInstance(instance: RosterInstance): InstanceDisplay {
-  if (instance.templateKey === MYRA_CHAT_TEMPLATE_KEY) {
+  const surface = myraSurface(instance.templateKey);
+  if (surface === "chat") {
     const title = instance.label?.trim() || fallbackTitle(instance);
     return { name: `Myra — ${title}`, badgeLabel: "Chat" };
   }
-  if (instance.templateKey === MYRA_TRIAGE_TEMPLATE_KEY) {
+  if (surface === "triage") {
     const subject = instance.label?.replace(TRIAGE_LABEL_PREFIX, "").trim();
     const title = subject || fallbackTitle(instance);
     return { name: `Myra — ${title}`, badgeLabel: "Inbox automation" };
@@ -203,7 +212,7 @@ export function AgentsSection({
             <button
               type="button"
               disabled={currentPage === 0}
-              onClick={() => setPage((p) => Math.max(0, p - 1))}
+              onClick={() => setPage(Math.max(0, currentPage - 1))}
               className="rounded-[8px] border border-border px-2.5 py-1.5 text-[12px] font-medium text-text-2 outline-none transition-colors hover:bg-row-hover disabled:cursor-not-allowed disabled:opacity-40 focus-visible:ring-1 focus-visible:ring-accent"
             >
               Previous
@@ -211,7 +220,7 @@ export function AgentsSection({
             <button
               type="button"
               disabled={currentPage >= pageCount - 1}
-              onClick={() => setPage((p) => Math.min(pageCount - 1, p + 1))}
+              onClick={() => setPage(Math.min(pageCount - 1, currentPage + 1))}
               className="rounded-[8px] border border-border px-2.5 py-1.5 text-[12px] font-medium text-text-2 outline-none transition-colors hover:bg-row-hover disabled:cursor-not-allowed disabled:opacity-40 focus-visible:ring-1 focus-visible:ring-accent"
             >
               Next

@@ -144,6 +144,25 @@ describe("displayForInstance", () => {
     );
     expect(result).toEqual({ name: "Oat", badgeLabel: null });
   });
+
+  it("classifies variant template keys by prefix, triage before chat", () => {
+    expect(
+      displayForInstance(
+        instance({ templateKey: "myra-chat-kimi-k2-6", label: "Deep dive" }),
+      ),
+    ).toEqual({ name: "Myra — Deep dive", badgeLabel: "Chat" });
+    expect(
+      displayForInstance(
+        instance({
+          templateKey: "myra-triage-opus-4-8",
+          label: "Triage: Invoice question",
+        }),
+      ),
+    ).toEqual({
+      name: "Myra — Invoice question",
+      badgeLabel: "Inbox automation",
+    });
+  });
 });
 
 describe("AgentsSection", () => {
