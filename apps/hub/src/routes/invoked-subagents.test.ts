@@ -104,6 +104,26 @@ describe("invoked-subagents router", () => {
     });
   });
 
+  it("returns a structured 500 instead of throwing when listInvokedSubagents fails", async () => {
+    listInvokedSubagents.mockRejectedValueOnce(new Error("query boom"));
+
+    const res = await wrapWithAuth(buildRouter()).request("/invoked-subagents");
+
+    expect(res.status).toBe(500);
+    const body = await res.json();
+    expect(typeof body.error).toBe("string");
+  });
+
+  it("returns a structured 500 when context resolution fails", async () => {
+    getRequestedUserContext.mockRejectedValueOnce(new Error("context boom"));
+
+    const res = await wrapWithAuth(buildRouter()).request("/invoked-subagents");
+
+    expect(res.status).toBe(500);
+    const body = await res.json();
+    expect(typeof body.error).toBe("string");
+  });
+
   it("returns 400 for invalid query", async () => {
     const res = await wrapWithAuth(buildRouter()).request(
       `/invoked-subagents?originConversationId=${"x".repeat(257)}`,
