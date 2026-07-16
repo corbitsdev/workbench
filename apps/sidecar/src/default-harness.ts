@@ -64,6 +64,7 @@ import {
   createApprovalGatedRunner,
 } from "./approval-gate";
 import type { ContextStore } from "@intx/types/runtime";
+import { buildDispatchAllowedToolNames } from "./tool-dispatch-allowed-names";
 
 const logger = getLogger(["sidecar", "harness-builder"]);
 const DEFAULT_MAIL_OUTBOUND_PER_TURN = 8;
@@ -562,17 +563,13 @@ export function createDefaultHarnessBuilder({
             }),
           },
         );
-        const allowedNames = new Set([
-          ...agentConfig.tools.map((t) => t.name),
-          ...(catalogRunner !== undefined
+        const allowedNames = buildDispatchAllowedToolNames(
+          agentConfig.tools.map((t) => t.name),
+          loadedToolNames,
+          catalogRunner !== undefined
             ? catalogRunner.definitions.map((d) => d.name)
-            : []),
-        ]);
-        for (const name of loadedToolNames) {
-          if (grantedCatalogToolNames.has(name)) {
-            allowedNames.add(name);
-          }
-        }
+            : [],
+        );
         const tools = filterToolRunner(
           gatedRunner as DefinedRunner,
           allowedNames,

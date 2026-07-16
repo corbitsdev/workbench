@@ -124,6 +124,26 @@ approval gate (`awaitSignal`) is resolved. The hub forwards it to the sidecar vi
 
 ---
 
+## Myra member preferences
+
+Per-member Myra personalization (variants, instructions, style axes, pinned skills,
+tool narrowing, inference dials) is stored on `myra_variant_preference` and applied
+on the next Myra launch (new thread, triage wake, reconnect/relaunch).
+
+```
+GET  /v1/members/me/myra-preferences
+PUT  /v1/members/me/myra-preferences
+GET  /v1/members/me/myra-preferences/tool-catalog
+```
+
+**Tool narrowing (CL-3762):** `disabledCatalogPackages` and `disabledToolNames` are
+json string arrays. Only packages/tools visible in `toolCatalog` may be persisted;
+disabling a package removes all tools in that package at launch. Hub launch and
+grant reconcile intersect workspace grants with these disables — members cannot
+widen org tool grants.
+
+---
+
 ## Myra Threads API
 
 Multi-thread chat over per-member Myra instances (CL-2309). Each thread is a

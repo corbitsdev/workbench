@@ -591,6 +591,7 @@ export function createAgentProvisioningRouter(
             tenantId: instance.tenantId,
             principalId: instance.principalId,
             address: instance.address,
+            instanceId,
           },
           { sidecarRouter, grantStore },
         );

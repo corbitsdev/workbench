@@ -127,6 +127,7 @@ export async function syncPersonalAgentForUser(
               tenantId: paForGrants.tenantId,
               principalId: paForGrants.principalId,
               address: paForGrants.address,
+              instanceId: paInstanceId,
             },
             routable ? { sidecarRouter, grantStore } : undefined,
           );
