@@ -31,11 +31,11 @@ function textTurn(
   return { role, content: [{ type: "text", text }], timestamp: 0 };
 }
 
-// Commit a turn's assembled prompt to `prompt.jsonl` as an `inference-done`
-// checkpoint at a controlled author time. Each such checkpoint is one inference
-// turn's boundary; `prompt.jsonl` holds exactly the input that turn received.
-async function commitTurnCheckpoint(
+// Commit `prompt.jsonl` under a given checkpoint message at a controlled author
+// time.
+async function commitCheckpoint(
   dir: string,
+  message: string,
   promptTurns: ConversationTurn[],
   tsSeconds: number,
 ): Promise<void> {
@@ -47,7 +47,7 @@ async function commitTurnCheckpoint(
   await git.commit({
     fs,
     dir,
-    message: "checkpoint: inference-done",
+    message,
     author: {
       name: "sidecar",
       email: "sidecar@interchange.local",
@@ -55,6 +55,21 @@ async function commitTurnCheckpoint(
       timezoneOffset: 0,
     },
   });
+}
+
+// A completed turn's `inference-done` checkpoint; `prompt.jsonl` holds exactly
+// the input that turn received.
+async function commitTurnCheckpoint(
+  dir: string,
+  promptTurns: ConversationTurn[],
+  tsSeconds: number,
+): Promise<void> {
+  await commitCheckpoint(
+    dir,
+    "checkpoint: inference-done",
+    promptTurns,
+    tsSeconds,
+  );
 }
 
 function repoStoreForDir(dir: string): AgentRepoStore {
@@ -97,6 +112,7 @@ describe("readTurnInputSnapshot", () => {
     const result = await readTurnInputSnapshot(repoStoreForDir(dir), {
       address: "myra@t",
       startedAtMs: 1999 * 1000 + 500,
+      endedAtMs: 2000 * 1000,
       laterTurnCount: 0,
     });
 
@@ -112,6 +128,69 @@ describe("readTurnInputSnapshot", () => {
     expect(result.messages.some((m) => m.text === "a2")).toBe(false);
   });
 
+  test("skips an interleaved inference-error checkpoint (no ordinal shift)", async () => {
+    const dir = await tempDir();
+    await createIsogitStore(dir);
+    // turn 1 completes, then a failed inference commits an error checkpoint,
+    // then turn 2 completes. Only inference-done checkpoints align, so the
+    // error checkpoint must not shift turn 2's ordinal.
+    await commitTurnCheckpoint(
+      dir,
+      [textTurn("system", "You are Myra."), textTurn("user", "q1")],
+      1000,
+    );
+    await commitCheckpoint(
+      dir,
+      "checkpoint: inference-error",
+      [textTurn("system", "You are Myra."), textTurn("user", "q1")],
+      1500,
+    );
+    await commitTurnCheckpoint(
+      dir,
+      [
+        textTurn("system", "You are Myra."),
+        textTurn("user", "q1"),
+        textTurn("assistant", "a1"),
+        textTurn("user", "q2"),
+      ],
+      2000,
+    );
+
+    const result = await readTurnInputSnapshot(repoStoreForDir(dir), {
+      address: "myra@t",
+      startedAtMs: 1999 * 1000 + 500,
+      endedAtMs: 2000 * 1000,
+      laterTurnCount: 0,
+    });
+
+    expect("messages" in result).toBe(true);
+    if (!("messages" in result)) return;
+    expect(result.messages.map((m) => m.text)).toEqual([
+      "You are Myra.",
+      "q1",
+      "a1",
+      "q2",
+    ]);
+  });
+
+  test("gaps when the aligned checkpoint falls outside the turn's time span", async () => {
+    const dir = await tempDir();
+    await seedTwoTurnRepo(dir);
+
+    // Claim a turn whose span ended long before the aligned checkpoint was
+    // authored — the window guard must reject it rather than serve a wrong turn.
+    const result = await readTurnInputSnapshot(repoStoreForDir(dir), {
+      address: "myra@t",
+      startedAtMs: 100 * 1000,
+      endedAtMs: 200 * 1000,
+      laterTurnCount: 0,
+    });
+
+    expect("gap" in result).toBe(true);
+    if (!("gap" in result)) return;
+    expect(result.gap).toContain("could not be reliably aligned");
+  });
+
   test("does not leak the turn's own output when the turn is sub-second (Finding 1)", async () => {
     const dir = await tempDir();
     await seedTwoTurnRepo(dir);
@@ -121,6 +200,7 @@ describe("readTurnInputSnapshot", () => {
     const result = await readTurnInputSnapshot(repoStoreForDir(dir), {
       address: "myra@t",
       startedAtMs: 2000 * 1000 + 400,
+      endedAtMs: 2000 * 1000 + 800,
       laterTurnCount: 0,
     });
 
@@ -138,6 +218,7 @@ describe("readTurnInputSnapshot", () => {
     const result = await readTurnInputSnapshot(repoStoreForDir(dir), {
       address: "myra@t",
       startedAtMs: 999 * 1000,
+      endedAtMs: 1000 * 1000,
       laterTurnCount: 1,
     });
 
@@ -153,6 +234,7 @@ describe("readTurnInputSnapshot", () => {
     const result = await readTurnInputSnapshot(repoStoreForDir(dir), {
       address: "myra@t",
       startedAtMs: 2000 * 1000,
+      endedAtMs: 2000 * 1000,
       laterTurnCount: 5,
     });
 
@@ -166,6 +248,7 @@ describe("readTurnInputSnapshot", () => {
     const result = await readTurnInputSnapshot(repoStoreForDir(missing), {
       address: "myra@t",
       startedAtMs: 2000 * 1000,
+      endedAtMs: 2000 * 1000,
       laterTurnCount: 0,
     });
 

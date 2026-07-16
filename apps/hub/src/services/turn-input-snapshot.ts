@@ -1,26 +1,45 @@
 import fs, { existsSync } from "node:fs";
 import git from "isomorphic-git";
+import { getLogger } from "@intx/log";
 import type { ConversationTurn, ContentBlock } from "@intx/types/runtime";
 import { IsogitStore } from "@workbench/storage-isogit";
 import type { AgentRepoStore, RepoId } from "@intx/hub-sessions";
 import type { MomentTurnInputMessage } from "@workbench/timeline";
 
+const log = getLogger(["hub", "turn-input-snapshot"]);
+
 // Cap the commit walk. A turn older than the newest MAX_LOG_DEPTH commits
 // cannot be aligned and returns an honest gap rather than a wrong snapshot.
 const MAX_LOG_DEPTH = 10_000;
 
-// The reactor writes the fully-assembled prompt it sent the model (after any
-// pre-inference context transforms) to this file every cycle; it is committed
-// with the turn's checkpoint. It is the exact input the model received — no
-// reconstruction from the durable conversation is needed.
+// INTERCHANGE SEAM (pin-bump audit): this read depends on two upstream reactor
+// behaviours that will not surface at compile time —
+//   (1) the reactor writes the fully-assembled prompt (after any pre-inference
+//       context transforms) to `prompt.jsonl` and commits it in the SAME
+//       `inference-done` checkpoint as the turn it belongs to, and
+//   (2) exactly one `inference-done` checkpoint is committed per completed
+//       `inference_turn` row.
+// If either changes upstream, this can serve a stale/wrong prompt with a green
+// build — re-verify on every interchange pin bump.
 const PROMPT_FILE = "prompt.jsonl";
 
-// The reactor commits one checkpoint per inference call, whose message is
-// `checkpoint: inference-done` (or `inference-error` on a failed call). These
-// are 1:1 with `inference_turn` rows and carry the turn's assistant output.
-// Tool-execution / tool-done / gate-cleared checkpoints are NOT turn
-// boundaries. (Reason vocabulary mirrors interchange's timeline reconstruction.)
-const TERMINAL_INFERENCE_CHECKPOINT = /^checkpoint: inference-(done|error)\b/;
+// The reactor commits one `checkpoint: inference-done` per COMPLETED inference
+// call; these are 1:1 with completed `inference_turn` rows and carry that
+// turn's assembled prompt. `inference-error` (failed/aborted) and
+// tool-execution / tool-done / gate-cleared checkpoints are deliberately NOT
+// matched — an error checkpoint has no completed row and would otherwise shift
+// the ordinal alignment.
+const TERMINAL_INFERENCE_CHECKPOINT = /^checkpoint: inference-done\b/;
+
+// A pathological turn (a huge tool output echoed into the prompt) must not
+// balloon the detail response. Cap each projected message's text.
+const MAX_MESSAGE_CHARS = 20_000;
+
+// The turn's `inference-done` checkpoint is authored when the turn's inference
+// completes (~`ended_at`), plus commit latency. Bound the accepted checkpoint to
+// `ended_at` + this slack so an ordinal that lands on a different turn's
+// checkpoint fails to an honest gap instead of a wrong prompt.
+const COMMIT_LATENCY_SLACK_MS = 60_000;
 
 export type TurnInputSnapshot =
   | { messages: MomentTurnInputMessage[] }
@@ -78,7 +97,10 @@ function projectBlocks(blocks: ContentBlock[]): string {
         break;
     }
   }
-  return parts.join("\n").trim();
+  const text = parts.join("\n").trim();
+  return text.length > MAX_MESSAGE_CHARS
+    ? `${text.slice(0, MAX_MESSAGE_CHARS)}…[truncated]`
+    : text;
 }
 
 function collectTerminalPositions(
@@ -152,7 +174,12 @@ function parsePromptTurns(text: string): ConversationTurn[] {
  */
 export async function readTurnInputSnapshot(
   repoStore: AgentRepoStore,
-  args: { address: string; startedAtMs: number; laterTurnCount: number },
+  args: {
+    address: string;
+    startedAtMs: number;
+    endedAtMs: number;
+    laterTurnCount: number;
+  },
 ): Promise<TurnInputSnapshot> {
   const repoId: RepoId = { kind: "agent-state", id: args.address };
   const dir = repoStore.repoStore.getRepoDir(repoId);
@@ -178,6 +205,10 @@ export async function readTurnInputSnapshot(
       commits.length >= estimate &&
       estimate < MAX_LOG_DEPTH
     ) {
+      log.info(
+        "turn input: estimate {estimate} too shallow for {address}; walking full history",
+        { estimate, address: args.address },
+      );
       commits = await store.log(MAX_LOG_DEPTH);
       terminals = collectTerminalPositions(commits);
     }
@@ -188,14 +219,20 @@ export async function readTurnInputSnapshot(
   const terminalPos = terminals[args.laterTurnCount];
   if (terminalPos === undefined) {
     return {
-      gap: "The input for this turn is outside the retained conversation history (it may have been compacted or exceeds the history window).",
+      gap: "The input for this turn is outside the retained conversation history window.",
     };
   }
 
+  // The turn's own checkpoint is authored within its [started_at, ended_at]
+  // span (plus commit latency). A checkpoint outside that window means the
+  // ordinal landed on a different turn — surface an honest gap, never a wrong
+  // prompt.
   const terminal = commits[terminalPos];
   if (
     terminal === undefined ||
-    terminal.timestamp < floorToSecondMs(args.startedAtMs)
+    terminal.timestamp < floorToSecondMs(args.startedAtMs) ||
+    terminal.timestamp >
+      floorToSecondMs(args.endedAtMs) + COMMIT_LATENCY_SLACK_MS
   ) {
     return {
       gap: "The input for this turn could not be reliably aligned to the recorded history.",
@@ -215,5 +252,8 @@ export async function readTurnInputSnapshot(
   }
 
   const turns = parsePromptTurns(new TextDecoder().decode(blob));
+  if (turns.length === 0) {
+    return { gap: "The recorded input for this turn is not available." };
+  }
   return { messages: turns.map(projectTurn) };
 }

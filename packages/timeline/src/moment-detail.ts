@@ -171,7 +171,9 @@ export function buildTurnDetailQuery(scope: MomentDetailScope): SQL {
     select
       it.model as model,
       it.instance_id as instance_id,
+      it.status as status,
       it.started_at as started_at,
+      it.ended_at as ended_at,
       case
         when it.ended_at is not null
         then extract(epoch from (it.ended_at - it.started_at)) * 1000

@@ -109,7 +109,9 @@ async function turnDetail(
   const input = await resolveTurnInput(db, repoStore, {
     id: scope.id,
     instanceId: toStringOrNull(row["instance_id"]),
+    status: toStringOrNull(row["status"]),
     startedAt: row["started_at"],
+    endedAt: row["ended_at"],
   });
 
   return {
@@ -123,10 +125,12 @@ async function turnDetail(
   };
 }
 
-// Count the instance's inference turns that started AFTER this one — the turn's
-// ordinal from the newest end of the state-repo log, used to locate its
-// checkpoint without relying on second-granular commit timestamps.
-async function countLaterTurns(
+// Count the instance's COMPLETED inference turns that started after this one —
+// the turn's ordinal from the newest end among the `inference-done` checkpoints
+// (which are 1:1 with completed turns). Only completed turns are counted, so an
+// error/aborted turn — which commits an `inference-error` checkpoint but is not
+// in this set — can never shift the alignment.
+async function countLaterCompletedTurns(
   db: HubDb,
   instanceId: string,
   turnId: string,
@@ -137,6 +141,7 @@ async function countLaterTurns(
       sql`select count(*)::int as later
           from inference_turn
           where instance_id = ${instanceId}
+            and status = 'completed'
             and (started_at > ${startedAt}
                  or (started_at = ${startedAt} and id > ${turnId}))`,
     ),
@@ -144,27 +149,47 @@ async function countLaterTurns(
   return Number(rows[0]?.["later"] ?? 0);
 }
 
+function toMsOrNull(value: unknown): number | null {
+  if (value === null || value === undefined) return null;
+  const ms = new Date(value as string | number | Date).getTime();
+  return Number.isFinite(ms) ? ms : null;
+}
+
 // Read the turn's input conversation from the hub-durable agent-state repo,
 // shaped as the `{ input }` / `{ inputGap }` fields the turn detail carries.
 async function resolveTurnInput(
   db: HubDb,
   repoStore: AgentRepoStore,
-  turn: { id: string; instanceId: string | null; startedAt: unknown },
+  turn: {
+    id: string;
+    instanceId: string | null;
+    status: string | null;
+    startedAt: unknown;
+    endedAt: unknown;
+  },
 ): Promise<{ input: MomentTurnInputMessage[] } | { inputGap: string }> {
   if (turn.instanceId === null) {
     return { inputGap: "The agent for this turn is no longer available." };
   }
-  const startedAtMs = new Date(
-    turn.startedAt as string | number | Date,
-  ).getTime();
-  if (!Number.isFinite(startedAtMs)) {
-    return { inputGap: "This turn has no recorded start time to align on." };
+  // Only a completed turn has a durable `inference-done` checkpoint carrying its
+  // prompt; a running or failed turn is an honest gap rather than a risk of
+  // surfacing another turn's prompt.
+  if (turn.status !== "completed") {
+    return {
+      inputGap:
+        "The recorded input is available only after a turn completes; this turn did not complete.",
+    };
+  }
+  const startedAtMs = toMsOrNull(turn.startedAt);
+  const endedAtMs = toMsOrNull(turn.endedAt);
+  if (startedAtMs === null || endedAtMs === null) {
+    return { inputGap: "This turn has no recorded time span to align on." };
   }
   const address = await resolveInstanceAddress(db, turn.instanceId);
   if (address === null) {
     return { inputGap: "The agent for this turn is no longer available." };
   }
-  const laterTurnCount = await countLaterTurns(
+  const laterTurnCount = await countLaterCompletedTurns(
     db,
     turn.instanceId,
     turn.id,
@@ -173,6 +198,7 @@ async function resolveTurnInput(
   const snapshot = await readTurnInputSnapshot(repoStore, {
     address,
     startedAtMs,
+    endedAtMs,
     laterTurnCount,
   });
   return "gap" in snapshot
