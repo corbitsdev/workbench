@@ -4,23 +4,28 @@ import { Hono } from "hono";
 const listInvokedSubagents = mock<(...args: unknown[]) => Promise<unknown>>(
   () => Promise.resolve([]),
 );
-const resolveMyraThreadContext = mock(() =>
-  Promise.resolve<{
-    tenantId: string;
-    tenantDomain: string;
-    memberPrincipalId: string;
-  } | null>({
-    tenantId: "tn-global",
-    tenantDomain: "myra.test",
-    memberPrincipalId: "prn-member",
+type ContextResult = {
+  context: { tenantId: string; principalId: string } | null;
+  forbidden: boolean;
+};
+const getRequestedUserContext = mock<
+  (
+    db: unknown,
+    userId: string,
+    tenantId?: string | null,
+  ) => Promise<ContextResult>
+>(() =>
+  Promise.resolve({
+    context: { tenantId: "tn-global", principalId: "prn-member" },
+    forbidden: false,
   }),
 );
 
 mock.module("../services/invoked-subagents", () => ({
   listInvokedSubagents,
 }));
-mock.module("../services/myra-threads", () => ({
-  resolveMyraThreadContext,
+mock.module("../lib/user-context", () => ({
+  getRequestedUserContext,
 }));
 
 const { createInvokedSubagentsRouter } = await import("./invoked-subagents");
@@ -42,13 +47,23 @@ function buildRouter(): Hono {
 describe("invoked-subagents router", () => {
   beforeEach(() => {
     listInvokedSubagents.mockClear();
-    resolveMyraThreadContext.mockClear();
-    resolveMyraThreadContext.mockResolvedValue({
-      tenantId: "tn-global",
-      tenantDomain: "myra.test",
-      memberPrincipalId: "prn-member",
+    getRequestedUserContext.mockClear();
+    getRequestedUserContext.mockResolvedValue({
+      context: { tenantId: "tn-global", principalId: "prn-member" },
+      forbidden: false,
     });
     listInvokedSubagents.mockResolvedValue([]);
+  });
+
+  it("forwards the request tenantId to context resolution (regression: null tenant crash)", async () => {
+    await wrapWithAuth(buildRouter()).request(
+      "/invoked-subagents?tenantId=tnt_abc",
+    );
+    expect(getRequestedUserContext).toHaveBeenCalledWith(
+      expect.anything(),
+      "usr-1",
+      "tnt_abc",
+    );
   });
 
   it("lists invoked subagents for the resolved member", async () => {
@@ -105,8 +120,22 @@ describe("invoked-subagents router", () => {
   });
 
   it("returns 403 when member context cannot be resolved", async () => {
-    resolveMyraThreadContext.mockResolvedValueOnce(null);
+    getRequestedUserContext.mockResolvedValueOnce({
+      context: null,
+      forbidden: false,
+    });
     const res = await wrapWithAuth(buildRouter()).request("/invoked-subagents");
+    expect(res.status).toBe(403);
+  });
+
+  it("returns 403 when the requested tenant is forbidden", async () => {
+    getRequestedUserContext.mockResolvedValueOnce({
+      context: null,
+      forbidden: true,
+    });
+    const res = await wrapWithAuth(buildRouter()).request(
+      "/invoked-subagents?tenantId=tnt_other",
+    );
     expect(res.status).toBe(403);
   });
 });
