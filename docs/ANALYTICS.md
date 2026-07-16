@@ -68,6 +68,25 @@ The Recent Activity feed re-frames raw timeline rows into legible, action-first 
 
 Requires an active principal on the tenant (Interchange `resolveTenant` on `/api/tenants/:tenantId/*`). Org members do not carry role grants; analytics is membership-gated like other product reads.
 
+## Activity timeline limits — grants & credentials (CL-2489)
+
+Principal and tenant-wide **activity timelines** (`GET …/activity/timeline`, `@workbench/timeline`) UNION **13** registered sources (`packages/timeline/src/registry.ts`). They surface operational **activity** — what was recorded and what still exists — not a tamper-evident audit trail.
+
+| Limit | Detail |
+| ----- | ------ |
+| **Grant rows** | Read live `grant` rows; timestamp is `created_at` (first insert). Revoked or deleted grants vanish from the feed; there is no history of who granted, changed, or removed access. |
+| **Credential rows** | Same for `credential` (member OAuth and owner-managed keys). Rotation or disconnect removes or leaves a stale `created_at`; secrets and prior values are never replayed on the timeline. |
+| **Not audit-grade** | No append-only mutation log, no actor on change, no hash chain. Operators must not treat Insights **Activity** as permissions or secrets compliance evidence. |
+
+The web shows an inline caveat when grant or credential entries appear (`ActorTimeline`, `MomentWalker`, `TenantActivityFeed`). Registry notes on those descriptors document the current-state semantics for engineers.
+
+**Hub-side mutation paths (v1).** Timeline SQL does not subscribe to writes; grants and credentials change only through ordinary **`apps/hub`** persistence (not `@intx/*` packages). Inventory for documentation and a future audit hook:
+
+- **Grants:** `routes/owner.ts`, `routes/agents.ts`, `routes/gamma-templates.ts`, `services/agent-provisioning.ts`, `services/myra-threads.ts`, `lib/capability-grants.ts`, `lib/feature-grants.ts`, `lib/workflow-run-gate.ts`, `lib/tenant-provisioning.ts`, `lib/workspace-inbox-source-gate.ts`
+- **Credentials:** `routes/owner.ts`, `routes/me-connections.ts` (disconnect), `lib/oauth-flow.ts` (connect store / disconnect delete)
+
+**Deferred v1:** an append-only hub table written at those mutation sites would give a real audit stream without overloading the in-place `grant` / `credential` tables.
+
 ## Tenant-wide activity + intra-tenant authz (CL-2743 / CL-2744)
 
 - **Default surface is the whole tenant.** `GET /api/tenants/:tenantId/activity/timeline` returns the same `@workbench/timeline` union scoped to the tenant across ALL principals (every user, agent instance, and workflow run), keyset-paginated. It uses the `TENANT_WIDE_SCOPE` (`"all"`) sentinel on `TimelineScope.principalIds`, which drops the per-branch principal predicate; each source still carries its mandatory tenant predicate, so cross-tenant rows never resolve. `getTenantActivityPage` is the service; `getTenantActivity` the client fn; `useTenantActivity` the infinite hook. The web `TenantActivityFeed` is the MIDDLE band of Insights (below the charts), with every entity row deep-linking into its own trace.

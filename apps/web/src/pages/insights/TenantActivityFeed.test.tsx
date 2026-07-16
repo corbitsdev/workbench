@@ -155,4 +155,42 @@ describe("TenantActivityFeed", () => {
     await waitFor(() => screen.getByTestId("tenant-activity-error"));
     screen.getByText("Retry");
   });
+
+  it("shows the grant/credential activity caveat only when such entries are present", async () => {
+    pagesByCursor[""] = {
+      entries: [
+        {
+          kind: "grant",
+          id: "g1",
+          sourceTable: "grant",
+          timestamp: "2026-07-01T10:00:00.000Z",
+          summary: "tool:x invoke allow",
+        },
+      ],
+      nextCursor: null,
+    };
+    renderFeed();
+    await waitFor(() => screen.getByTestId("permission-caveat"));
+    expect(screen.getByTestId("permission-caveat").textContent).toMatch(
+      /not an audit history/i,
+    );
+  });
+
+  it("hides the grant/credential caveat when no such entries are loaded", async () => {
+    pagesByCursor[""] = {
+      entries: [
+        {
+          kind: "workflow_run",
+          id: "run-1",
+          sourceTable: "workflow_run_record",
+          timestamp: "2026-07-01T10:00:00.000Z",
+          summary: "done",
+        },
+      ],
+      nextCursor: null,
+    };
+    renderFeed();
+    await waitFor(() => screen.getAllByTestId("tenant-activity-entry").length);
+    expect(screen.queryByTestId("permission-caveat")).toBeNull();
+  });
 });
