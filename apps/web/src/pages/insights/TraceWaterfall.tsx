@@ -1,19 +1,28 @@
 import { toHumanLabel } from "@workbench/ui";
 import type { LogStepState } from "../../lib/run-state-adapter";
+import { PhaseIndicator } from "./phase-indicator";
 import {
   buildTraceWaterfallLayout,
   waterfallBarStyle,
   type TraceWaterfallRow,
 } from "./trace-waterfall";
 
+// Bar fill/border by phase. Passive states (awaiting-timer, cancelled) get a
+// muted neutral fill that still stands clear of the empty track; the phase is
+// never carried by bar color alone — every row also renders a PhaseIndicator
+// glyph beside its label.
 const PHASE_BAR_CLASS: Record<LogStepState["phase"], string> = {
   completed: "bg-green/70 border-green/50",
   failed: "bg-red/70 border-red/50",
   "in-flight": "bg-blue/60 border-blue/40",
   "awaiting-signal": "bg-accent/50 border-accent/40",
-  "awaiting-timer": "bg-surface-2 border-border",
-  cancelled: "bg-surface-2 border-border",
+  "awaiting-timer": "bg-text-3/15 border-text-3/40",
+  cancelled: "bg-text-3/15 border-text-3/40",
 };
+
+const SELECTION_RING = "ring-2 ring-accent ring-offset-1 ring-offset-surface-2";
+const SPAN_INTERACTION =
+  "cursor-pointer outline-none focus-visible:ring-2 focus-visible:ring-accent";
 
 function missingTimeLabel(row: TraceWaterfallRow): string {
   if (row.missingStart) return "No start time";
@@ -42,8 +51,11 @@ function WaterfallRowBar({
       data-testid="trace-waterfall-row"
       data-phase={phase}
     >
-      <span className="truncate text-[12px] font-medium text-text">
-        {row.index + 1}. {toHumanLabel(row.step.stepId)}
+      <span className="flex min-w-0 items-center gap-2">
+        <PhaseIndicator phase={phase} />
+        <span className="truncate text-[12px] font-medium text-text">
+          {row.index + 1}. {toHumanLabel(row.step.stepId)}
+        </span>
       </span>
       <div className="relative h-7 rounded-sm border border-border/60 bg-surface-2">
         {bar !== null ? (
@@ -53,9 +65,7 @@ function WaterfallRowBar({
             aria-label={`${toHumanLabel(row.step.stepId)}${row.durationLabel !== null ? `, ${row.durationLabel}` : ""}`}
             aria-pressed={isSelected}
             onClick={onSelect}
-            className={`absolute top-1 bottom-1 rounded-sm border ${barClass} ${
-              isSelected ? "ring-2 ring-accent ring-offset-1 ring-offset-surface-2" : ""
-            } cursor-pointer outline-none transition-opacity hover:opacity-90 focus-visible:ring-2 focus-visible:ring-accent`}
+            className={`absolute top-1 bottom-1 rounded-sm border transition-opacity hover:opacity-90 ${barClass} ${SPAN_INTERACTION} ${isSelected ? SELECTION_RING : ""}`}
             style={{
               left: `${bar.leftPercent}%`,
               width: `${bar.widthPercent}%`,
@@ -71,15 +81,11 @@ function WaterfallRowBar({
             aria-label={`${toHumanLabel(row.step.stepId)}, ${missingTimeLabel(row).toLowerCase()}`}
             aria-pressed={isSelected}
             onClick={onSelect}
-            className={`flex h-full w-full items-center rounded-sm px-2 text-left outline-none transition-colors hover:bg-row-hover focus-visible:ring-2 focus-visible:ring-accent ${
-              isSelected
-                ? "ring-2 ring-accent ring-offset-1 ring-offset-surface-2"
-                : ""
-            }`}
+            className={`absolute inset-1 flex items-center rounded-sm border border-dashed border-border px-2 text-left transition-colors hover:bg-row-hover ${SPAN_INTERACTION} ${isSelected ? SELECTION_RING : ""}`}
           >
             <span
               data-testid="trace-waterfall-missing-time"
-              className="text-[11px] text-text-3"
+              className="text-[11px] text-text-2"
             >
               {missingTimeLabel(row)}
             </span>
@@ -114,8 +120,8 @@ export function TraceWaterfall({
       aria-label="Step timing overview"
     >
       <p className="mb-2 text-[11px] text-text-3">
-        Spans use step start and end timestamps only. Click a bar to focus that
-        step in the list.
+        Spans use step start and end timestamps only. Click any row to focus
+        that step in the list.
       </p>
       <div className="flex flex-col gap-0.5">
         {layout.rows.map((row) => (

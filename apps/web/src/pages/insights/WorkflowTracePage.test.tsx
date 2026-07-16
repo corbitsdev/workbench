@@ -502,6 +502,60 @@ describe("WorkflowTracePage", () => {
     ).toBe("run-step-0");
   });
 
+  it("labels and keeps selectable a step missing its start timestamp", async () => {
+    logStateResponse = {
+      runId: "run-1",
+      phase: "running",
+      lastSeq: 2,
+      steps: [
+        {
+          stepId: "no-start",
+          phase: "completed",
+          stepType: "agent",
+          currentAttempt: 1,
+          endedAt: "2026-07-01T10:00:02.000Z",
+        },
+      ],
+    };
+    renderTrace();
+    await waitFor(() => screen.getByRole("button", { name: "Overview" }));
+    fireEvent.click(screen.getByRole("button", { name: "Overview" }));
+    await waitFor(() => screen.getByTestId("trace-waterfall-missing-time"));
+    expect(screen.getByTestId("trace-waterfall-missing-time").textContent).toBe(
+      "No start time",
+    );
+    fireEvent.click(screen.getByTestId("trace-waterfall-span"));
+    await waitFor(() => screen.getByRole("listbox"));
+    expect(
+      screen.getByRole("listbox").getAttribute("aria-activedescendant"),
+    ).toBe("run-step-0");
+  });
+
+  it("labels a step whose end precedes its start as timing unavailable", async () => {
+    logStateResponse = {
+      runId: "run-1",
+      phase: "running",
+      lastSeq: 2,
+      steps: [
+        {
+          stepId: "reversed",
+          phase: "completed",
+          stepType: "agent",
+          currentAttempt: 1,
+          startedAt: "2026-07-01T10:00:05.000Z",
+          endedAt: "2026-07-01T10:00:00.000Z",
+        },
+      ],
+    };
+    renderTrace();
+    await waitFor(() => screen.getByRole("button", { name: "Overview" }));
+    fireEvent.click(screen.getByRole("button", { name: "Overview" }));
+    await waitFor(() => screen.getByTestId("trace-waterfall-missing-time"));
+    expect(screen.getByTestId("trace-waterfall-missing-time").textContent).toBe(
+      "Timing unavailable",
+    );
+  });
+
   it("keeps the same listbox selection when Raw is toggled inside the expanded step", async () => {
     renderTrace();
     await waitFor(() => screen.getByRole("listbox"));

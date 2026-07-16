@@ -91,11 +91,13 @@ export function waterfallBarStyle(
   row: TraceWaterfallRow,
 ): { leftPercent: number; widthPercent: number } | null {
   if (row.spanMs === null || row.startMs === null) return null;
-  const leftPercent =
-    ((row.startMs - layout.originMs) / layout.totalSpanMs) * 100;
+  const leftPercent = Math.min(
+    Math.max(((row.startMs - layout.originMs) / layout.totalSpanMs) * 100, 0),
+    100,
+  );
   const widthPercent = (row.spanMs / layout.totalSpanMs) * 100;
   return {
-    leftPercent: Math.min(Math.max(leftPercent, 0), 100),
+    leftPercent,
     widthPercent: Math.min(Math.max(widthPercent, 0.5), 100 - leftPercent),
   };
 }
