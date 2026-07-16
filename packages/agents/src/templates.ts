@@ -165,6 +165,16 @@ const MYRA_VARIANT_TEMPLATES: AgentTemplate[] = MYRA_VARIANTS.filter(
   capabilities: { tools: [...PERSONAL_AGENT_BASE_TOOLS] },
   modelConfig: variant.modelConfig,
   deployable: false,
+  // Chat variants are alternate per-member Myra definitions launched on the
+  // exact same wake path as the canonical `myra` template (every Myra surface
+  // calls `POST /v1/instances/:id/sessions`, which is generic over instance
+  // id — see isReapableChatAgent). Carrying the same `kind: "personal"`
+  // marker as canonical Myra makes the idle-session reaper treat them
+  // identically (reapable, same threshold, same conversation-retention
+  // semantics). Triage variants stay unmarked: they are ephemeral
+  // inbox-triage sessions launched by mailbox-triage.ts, never a chat surface,
+  // and must never become a reaper state machine.
+  kind: variant.kind === "chat" ? "personal" : undefined,
   toolPackages: MYRA_TOOL_PACKAGES.map((name) => ({ name, version: "*" })),
 }));
 
@@ -329,10 +339,17 @@ export const AGENT_TEMPLATES: AgentTemplate[] = [
  * interaction (CL-2790, the idle-session reaper).
  *
  * A name is reapable only when it matches a known template whose `kind` is
- * `"personal"` — i.e. the per-member personal agent (Myra). CL-2790: the
- * personal agent is the ONLY agent with a proven on-demand wake — a member's
- * next visit hits `POST /v1/me`, which relaunches exactly the personal-agent
- * instance (`relaunchInstanceIfNeeded` on the resolved `paInstanceId`). Shared
+ * `"personal"` — i.e. the per-member personal agent (Myra) and its
+ * non-canonical chat-variant siblings (`myra-chat-*`, seeded from
+ * `MYRA_VARIANTS` in `templates.ts`). CL-2790: the personal agent is the
+ * archetype with a proven on-demand wake — every Myra chat surface
+ * (`useMyraSession`) unconditionally calls
+ * `POST /v1/instances/:id/sessions` before opening its stream, and that route
+ * is generic over instance id (it does not branch on the agent's `kind` or
+ * name), so a variant chat instance wakes exactly like the canonical one.
+ * Triage variants (`myra-triage-*`) carry NO `kind` marker and stay
+ * unreapable — they are ephemeral single-turn sessions launched by
+ * mailbox-triage.ts, not a chat surface a member returns to. Shared
  * / sub-agents (Oat, Walter, …) have no wake trigger on their next message: the
  * mail route only checks instance `status === "running"` and a non-null
  * `sessionId` (both still true after sleep) and never re-launches, so a slept
