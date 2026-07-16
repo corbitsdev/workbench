@@ -35,11 +35,30 @@ import { resolveKindLabel } from "../../lib/resolve-kind-label";
 import { canUseArtifactInWorkflow } from "@workbench/artifact";
 import { useChatLauncher } from "../../lib/chat-launcher-context";
 import { buildArtifactMessage } from "../../lib/artifact-chat-message";
+import { buildApiUrl } from "../../lib/api";
 import { useSetPageChrome } from "../../lib/page-chrome";
 
 export { buildArtifactMessage };
 
 const SEARCH_DEBOUNCE_MS = 300;
+
+function isUploadReference(value: unknown): value is { id: string } {
+  if (typeof value !== "object" || value === null) return false;
+  if (!("id" in value)) return false;
+  return typeof value.id === "string" && value.id.length > 0;
+}
+
+function uploadIdFromSource(
+  source: ArtifactWithSession["source"],
+): string | null {
+  const upload = source.upload;
+  return isUploadReference(upload) ? upload.id : null;
+}
+function imageThumbnailUrl(artifact: ArtifactWithSession): string | undefined {
+  if (artifact.kind !== "image") return undefined;
+  if (uploadIdFromSource(artifact.source) === null) return undefined;
+  return buildApiUrl(`/artifacts/${artifact.id}/download`);
+}
 
 interface ArtifactGalleryProps {
   /** Active workbench tenant. Null means workbench context is still loading. */
@@ -310,6 +329,7 @@ export function ArtifactGallery({
             ? (artifactsQueryError?.message ?? "Could not load more artifacts.")
             : null
         }
+        thumbnailUrlForArtifact={imageThumbnailUrl}
       />
       <ArtifactModal
         open={selected !== null}

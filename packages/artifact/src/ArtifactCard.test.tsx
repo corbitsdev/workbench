@@ -115,6 +115,25 @@ describe("ArtifactCard", () => {
     expect(preview?.querySelector("svg")).not.toBeNull();
   });
 
+  it("renders image thumbnails on default gallery cards", () => {
+    render(
+      React.createElement(ArtifactCard, {
+        artifact: {
+          ...artifact,
+          kind: "image",
+          label: "Image",
+          thumbnailUrl: "https://example.test/image.png",
+          thumbnailAlt: "Uploaded image",
+        },
+      }),
+    );
+
+    const thumbnail = screen.getByRole("img", { name: "Uploaded image" });
+    expect(thumbnail.getAttribute("src")).toBe(
+      "https://example.test/image.png",
+    );
+  });
+
   it("styles approved status with workbench green tokens and shows the badge", () => {
     render(
       React.createElement(ArtifactCard, {

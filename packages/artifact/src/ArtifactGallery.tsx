@@ -100,6 +100,10 @@ export interface ArtifactGalleryProps {
   isLoadingMore?: boolean;
   /** Shown under the load-more control when the next page request failed. */
   loadMoreError?: string | null;
+  /** Optional app-provided image URL for card thumbnails. */
+  thumbnailUrlForArtifact?: (
+    artifact: ArtifactWithSession,
+  ) => string | undefined;
 }
 
 /** Date-range + provenance facet selection driven by the gallery filter bar. */
@@ -419,12 +423,17 @@ export function ArtifactGallery({
   onLoadMore,
   isLoadingMore = false,
   loadMoreError = null,
+  thumbnailUrlForArtifact,
 }: ArtifactGalleryProps) {
   // Containment: artifacts that fail gallery mapping are dropped from BOTH
   // views (and from the empty-state count) so one corrupt artifact can
   // neither blank the page nor render inconsistently between grid and rows.
   const renderable = artifacts.flatMap((artifact) => {
-    const tile = tryToGalleryArtifact(artifact);
+    const thumbnailUrl = thumbnailUrlForArtifact?.(artifact);
+    const tile = tryToGalleryArtifact(artifact, {
+      ...(thumbnailUrl === undefined ? {} : { thumbnailUrl }),
+      thumbnailAlt: artifact.title,
+    });
     return tile === undefined ? [] : [{ artifact, tile }];
   });
   const tiles = renderable.map((entry) => entry.tile);
