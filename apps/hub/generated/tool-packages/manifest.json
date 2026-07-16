@@ -8,7 +8,7 @@
   {
     "name": "@workbench/tools-agents",
     "version": "0.1.0",
-    "integrity": "sha512-KUWUDqNe/dj29gum0XNWydGyANhOYX3OyznNgH8wsNysZK01Hp29KxJ3rVOZapf3CdcLBpndK0udycvsQMy4SQ==",
+    "integrity": "sha512-dzUGrf2EjyaQRI/lETPfVaRC/21nr15D0EqoYFgTGcOJ5CaN5Pp8LGyUdVDNxJXrQoB4vLph3IMqFQXt3VfwfA==",
     "tarballFilename": "@workbench-tools-agents-0.1.0.tgz"
   },
   {
@@ -80,7 +80,7 @@
   {
     "name": "@workbench/tools-last30days",
     "version": "0.1.0",
-    "integrity": "sha512-ey2YCSk3IWjywrTfCRHgNJU6Qcbf+yIEh94HyPn1U2GTuDDiy0N8e/xPJVZC/A2AagZMoThd5nVkvtuMkjjkNA==",
+    "integrity": "sha512-MIrsODH42p6Vq1kzzPyvEvYT07R0DMJkBjiiJ+qlVvgd81fYp4RbxrsAPFZP3jdwyYTB/QAK29QmJ65x0C6dZA==",
     "tarballFilename": "@workbench-tools-last30days-0.1.0.tgz"
   },
   {
@@ -116,7 +116,7 @@
   {
     "name": "@workbench/tools-skills",
     "version": "0.1.0",
-    "integrity": "sha512-kcH+jgfdTQ5vCoJQeWIpd9Ty4o/it/EPR/cj7BGfnxjODvdMAkrZYWWjbk0nlhYafFSgGi/U3A5CvEw3L4kUOA==",
+    "integrity": "sha512-5TubfvgDlfcIdJiDWnjGk7vcGEtPDl+p2cvWAurbeARlvD0Gca4oHoeftEiMhCBVRIWph3gw2zsAVC6SYOK4ZA==",
     "tarballFilename": "@workbench-tools-skills-0.1.0.tgz"
   },
   {

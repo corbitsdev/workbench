@@ -9,6 +9,7 @@ import {
   validateMyraVariantPatch,
   validatePinnedSkillIdsPatch,
   normalizePinnedSkillIds,
+  prunePinnedSkillIdsToVisibleLibrary,
 } from "./myra-variant-preferences";
 
 type StoredRow = {
@@ -361,6 +362,15 @@ describe("setMyraVariantPreference pinnedSkillIds", () => {
       pinnedSkillIds: ["s1", "s1", "s2"],
     });
     expect(merged.pinnedSkillIds).toEqual(["s1", "s2"]);
+  });
+});
+
+describe("prunePinnedSkillIdsToVisibleLibrary", () => {
+  it("drops ids not in the visible library", () => {
+    const visible = new Set(["s1", "s3"]);
+    expect(
+      prunePinnedSkillIdsToVisibleLibrary(["s1", "gone", "s3"], visible),
+    ).toEqual(["s1", "s3"]);
   });
 });
 

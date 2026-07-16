@@ -122,6 +122,31 @@ export async function readMyraVariantPreference(
   };
 }
 
+/** True when two pinned-id lists differ in length or order. */
+export function pinnedSkillIdsChanged(
+  stored: readonly string[],
+  next: readonly string[],
+): boolean {
+  if (stored.length !== next.length) return true;
+  for (let i = 0; i < stored.length; i++) {
+    if (stored[i] !== next[i]) return true;
+  }
+  return false;
+}
+
+/**
+ * Drop pins the member can no longer see (deleted or access revoked). Order of
+ * surviving ids is preserved.
+ */
+export function prunePinnedSkillIdsToVisibleLibrary(
+  ids: readonly string[],
+  visibleSkillIds: ReadonlySet<string>,
+): string[] {
+  return normalizePinnedSkillIds(
+    ids.filter((id) => visibleSkillIds.has(id)),
+  );
+}
+
 /** Dedupe while preserving order and cap at {@link MAX_PINNED_MYRA_SKILLS}. */
 export function normalizePinnedSkillIds(ids: readonly string[]): string[] {
   const seen = new Set<string>();

@@ -57,7 +57,7 @@ const EMPTY_PREFERENCES = {
   pinnedSkillIds: [],
 };
 
-let preferences: Record<string, string | null>;
+let preferences: Record<string, string | null | string[]>;
 let putCalls: PutCall[];
 let putBehavior: "ok" | "reject";
 

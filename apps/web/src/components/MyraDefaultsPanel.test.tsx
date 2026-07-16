@@ -62,7 +62,7 @@ const EMPTY_STYLE_AXES = {
 
 let preferences: { chat: string | null; triage: string | null } & Record<
   string,
-  string | null
+  string | null | string[]
 >;
 let putCalls: PutCall[];
 let putBehavior: "ok" | "reject";

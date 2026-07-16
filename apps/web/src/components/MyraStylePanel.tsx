@@ -18,7 +18,10 @@ import {
  * three usage dials. This maps each catalog axis id to the preference
  * field(s) it reads and writes.
  */
-type FieldKey = keyof Omit<MyraPreferences, "chat" | "triage">;
+type FieldKey = keyof Omit<
+  MyraPreferences,
+  "chat" | "triage" | "pinnedSkillIds"
+>;
 
 function fieldsForAxis(
   axisId: StyleAxis["id"],

@@ -11,11 +11,14 @@ import {
 import {
   MyraVariantPreferencePatchSchema,
   MyraVariantPreferenceSchema,
+  pinnedSkillIdsChanged,
+  prunePinnedSkillIdsToVisibleLibrary,
   readMyraVariantPreference,
   setMyraVariantPreference,
   validateMyraVariantPatch,
   validatePinnedSkillIdsPatch,
 } from "../services/myra-variant-preferences";
+import { listSkills } from "../services/skill-library";
 import { skillViewerForMemberPrincipal } from "../lib/myra-pinned-skills";
 import type { HubDb } from "../db";
 
@@ -112,7 +115,28 @@ export function createMyraVariantsRouter(db: HubDb): Hono<MyraVariantsEnv> {
     async (c) => {
       const tenant = c.get("tenant");
       const principal = c.get("principal");
-      const prefs = await readMyraVariantPreference(db, tenant.id, principal.id);
+      let prefs = await readMyraVariantPreference(db, tenant.id, principal.id);
+      const viewer = await skillViewerForMemberPrincipal(
+        db,
+        tenant.id,
+        principal.id,
+      );
+      if (viewer) {
+        const visible = await listSkills(db, viewer);
+        const allowed = new Set(visible.map((s) => s.id));
+        const pruned = prunePinnedSkillIdsToVisibleLibrary(
+          prefs.pinnedSkillIds,
+          allowed,
+        );
+        if (pinnedSkillIdsChanged(prefs.pinnedSkillIds, pruned)) {
+          prefs = await setMyraVariantPreference(
+            db,
+            tenant.id,
+            principal.id,
+            { pinnedSkillIds: pruned },
+          );
+        }
+      }
       return c.json(prefs);
     },
   );
