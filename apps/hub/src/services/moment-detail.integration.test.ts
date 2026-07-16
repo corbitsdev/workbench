@@ -309,6 +309,8 @@ describe("inference_turn detail — parts and derived duration", () => {
     await seedInstance("myra_at_tenant");
     const dir = path.join(repoRoot, "myra_at_tenant");
     await createIsogitStore(dir);
+    // This turn's own inference-done checkpoint: the triggering message and the
+    // assistant answer are committed together, authored at endedAt.
     const turns: ConversationTurn[] = [
       {
         role: "system",
@@ -318,6 +320,11 @@ describe("inference_turn detail — parts and derived duration", () => {
       {
         role: "user",
         content: [{ type: "text", text: "who is acme" }],
+        timestamp: 0,
+      },
+      {
+        role: "assistant",
+        content: [{ type: "text", text: "Acme is a company." }],
         timestamp: 0,
       },
     ];
@@ -333,7 +340,7 @@ describe("inference_turn detail — parts and derived duration", () => {
       author: {
         name: "sidecar",
         email: "sidecar@interchange.local",
-        timestamp: Math.floor(Date.parse("2026-07-01T09:59:00Z") / 1000),
+        timestamp: Math.floor(Date.parse("2026-07-01T10:00:02Z") / 1000),
         timezoneOffset: 0,
       },
     });
@@ -345,11 +352,12 @@ describe("inference_turn detail — parts and derived duration", () => {
     });
 
     const result = await detail("inference_turn", "turn-in");
+    // The assistant answer is stripped — input is system + triggering message.
     expect(result?.turn?.input?.map((m) => m.text)).toEqual([
       "You are Myra.",
       "who is acme",
     ]);
-    expect(result?.turn?.input?.[0].role).toBe("system");
+    expect(result?.turn?.input?.[0]?.role).toBe("system");
     expect(result?.turn?.inputGap).toBeUndefined();
   });
 

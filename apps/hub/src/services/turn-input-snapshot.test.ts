@@ -31,23 +31,9 @@ function textTurn(
   return { role, content: [{ type: "text", text }], timestamp: 0 };
 }
 
-function toolResultTurn(text: string): ConversationTurn {
-  return {
-    role: "user",
-    content: [
-      {
-        type: "tool_result",
-        callId: "c1",
-        content: [{ type: "text", text }],
-      },
-    ],
-    timestamp: 0,
-  };
-}
-
-// Commit `turns.jsonl` at a controlled author time so the reader's
-// "newest commit at or before the turn start" selection is deterministic.
-async function commitAt(
+// Commit `turns.jsonl` as an `inference-done` checkpoint at a controlled author
+// time. Each such checkpoint is one inference turn's boundary.
+async function commitTurnCheckpoint(
   dir: string,
   turns: ConversationTurn[],
   tsSeconds: number,
@@ -76,79 +62,113 @@ function repoStoreForDir(dir: string): AgentRepoStore {
   } as unknown as AgentRepoStore;
 }
 
-describe("readTurnInputSnapshot", () => {
-  test("returns the conversation committed at or before the turn start", async () => {
-    const dir = await tempDir();
-    await createIsogitStore(dir);
-    // C1 @1000s: system + first user message (input to turn 1).
-    await commitAt(
-      dir,
-      [textTurn("system", "You are Myra."), textTurn("user", "hi")],
-      1000,
-    );
-    // C2 @2000s: turn 1's assistant output + a tool result landed
-    // (this is the input to turn 2).
-    await commitAt(
-      dir,
-      [
-        textTurn("system", "You are Myra."),
-        textTurn("user", "hi"),
-        textTurn("assistant", "hello"),
-        toolResultTurn('{"ok":true}'),
-      ],
-      2000,
-    );
-    // C3 @3000s: turn 2's assistant output.
-    await commitAt(
-      dir,
-      [
-        textTurn("system", "You are Myra."),
-        textTurn("user", "hi"),
-        textTurn("assistant", "hello"),
-        toolResultTurn('{"ok":true}'),
-        textTurn("assistant", "second"),
-      ],
-      3000,
-    );
+// A two-turn conversation: turn 1 (q1 → a1) then turn 2 (q2 → a2). Each turn's
+// triggering message and assistant answer land in the SAME inference-done
+// checkpoint, mirroring the reactor's commit granularity.
+async function seedTwoTurnRepo(dir: string): Promise<void> {
+  await createIsogitStore(dir);
+  await commitTurnCheckpoint(
+    dir,
+    [
+      textTurn("system", "You are Myra."),
+      textTurn("user", "q1"),
+      textTurn("assistant", "a1"),
+    ],
+    1000,
+  );
+  await commitTurnCheckpoint(
+    dir,
+    [
+      textTurn("system", "You are Myra."),
+      textTurn("user", "q1"),
+      textTurn("assistant", "a1"),
+      textTurn("user", "q2"),
+      textTurn("assistant", "a2"),
+    ],
+    2000,
+  );
+}
 
-    // Turn 2 started at 2500s — its input is the C2 snapshot, not C3.
+describe("readTurnInputSnapshot", () => {
+  test("returns the input up to the triggering message, stripping the turn's own output", async () => {
+    const dir = await tempDir();
+    await seedTwoTurnRepo(dir);
+
+    // Turn 2 is the newest (0 turns after it), started shortly before its
+    // output committed.
     const result = await readTurnInputSnapshot(repoStoreForDir(dir), {
       address: "myra@t",
-      startedAtMs: 2500 * 1000,
+      startedAtMs: 1999 * 1000 + 500,
+      laterTurnCount: 0,
     });
 
     expect("messages" in result).toBe(true);
     if (!("messages" in result)) return;
     expect(result.messages.map((m) => m.text)).toEqual([
       "You are Myra.",
-      "hi",
-      "hello",
-      '{"ok":true}',
+      "q1",
+      "a1",
+      "q2",
     ]);
-    expect(result.messages[0]?.role).toBe("system");
-    expect(result.messages[3]?.kind).toBe("tool_result");
+    // The turn's own answer is never shown as its input.
+    expect(result.messages.some((m) => m.text === "a2")).toBe(false);
   });
 
-  test("gaps honestly when no snapshot precedes the turn", async () => {
+  test("does not leak the turn's own output when the turn is sub-second (Finding 1)", async () => {
     const dir = await tempDir();
-    await createIsogitStore(dir);
-    await commitAt(dir, [textTurn("user", "hi")], 5000);
+    await seedTwoTurnRepo(dir);
+
+    // The turn started later in the SAME wall-clock second its output commit is
+    // authored — the exact case second-granular timestamps get wrong.
+    const result = await readTurnInputSnapshot(repoStoreForDir(dir), {
+      address: "myra@t",
+      startedAtMs: 2000 * 1000 + 400,
+      laterTurnCount: 0,
+    });
+
+    expect("messages" in result).toBe(true);
+    if (!("messages" in result)) return;
+    expect(result.messages.some((m) => m.text === "a2")).toBe(false);
+    expect(result.messages.some((m) => m.text === "q2")).toBe(true);
+  });
+
+  test("locates an earlier turn by its ordinal from the newest end", async () => {
+    const dir = await tempDir();
+    await seedTwoTurnRepo(dir);
+
+    // Turn 1 has one turn after it.
+    const result = await readTurnInputSnapshot(repoStoreForDir(dir), {
+      address: "myra@t",
+      startedAtMs: 999 * 1000,
+      laterTurnCount: 1,
+    });
+
+    expect("messages" in result).toBe(true);
+    if (!("messages" in result)) return;
+    expect(result.messages.map((m) => m.text)).toEqual(["You are Myra.", "q1"]);
+  });
+
+  test("gaps honestly when the turn is beyond the retained checkpoints", async () => {
+    const dir = await tempDir();
+    await seedTwoTurnRepo(dir);
 
     const result = await readTurnInputSnapshot(repoStoreForDir(dir), {
       address: "myra@t",
-      startedAtMs: 1000 * 1000,
+      startedAtMs: 2000 * 1000,
+      laterTurnCount: 5,
     });
 
     expect("gap" in result).toBe(true);
     if (!("gap" in result)) return;
-    expect(result.gap).toContain("No conversation snapshot");
+    expect(result.gap).toContain("outside the retained");
   });
 
   test("gaps honestly when the agent-state repo does not exist", async () => {
     const missing = path.join(await tempDir(), "nope");
     const result = await readTurnInputSnapshot(repoStoreForDir(missing), {
       address: "myra@t",
-      startedAtMs: 2500 * 1000,
+      startedAtMs: 2000 * 1000,
+      laterTurnCount: 0,
     });
 
     expect("gap" in result).toBe(true);

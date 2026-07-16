@@ -107,6 +107,7 @@ async function turnDetail(
   });
 
   const input = await resolveTurnInput(db, repoStore, {
+    id: scope.id,
     instanceId: toStringOrNull(row["instance_id"]),
     startedAt: row["started_at"],
   });
@@ -122,12 +123,33 @@ async function turnDetail(
   };
 }
 
+// Count the instance's inference turns that started AFTER this one — the turn's
+// ordinal from the newest end of the state-repo log, used to locate its
+// checkpoint without relying on second-granular commit timestamps.
+async function countLaterTurns(
+  db: HubDb,
+  instanceId: string,
+  turnId: string,
+  startedAt: unknown,
+): Promise<number> {
+  const rows = rowsOf(
+    await db.execute(
+      sql`select count(*)::int as later
+          from inference_turn
+          where instance_id = ${instanceId}
+            and (started_at > ${startedAt}
+                 or (started_at = ${startedAt} and id > ${turnId}))`,
+    ),
+  );
+  return Number(rows[0]?.["later"] ?? 0);
+}
+
 // Read the turn's input conversation from the hub-durable agent-state repo,
 // shaped as the `{ input }` / `{ inputGap }` fields the turn detail carries.
 async function resolveTurnInput(
   db: HubDb,
   repoStore: AgentRepoStore,
-  turn: { instanceId: string | null; startedAt: unknown },
+  turn: { id: string; instanceId: string | null; startedAt: unknown },
 ): Promise<{ input: MomentTurnInputMessage[] } | { inputGap: string }> {
   if (turn.instanceId === null) {
     return { inputGap: "The agent for this turn is no longer available." };
@@ -142,9 +164,16 @@ async function resolveTurnInput(
   if (address === null) {
     return { inputGap: "The agent for this turn is no longer available." };
   }
+  const laterTurnCount = await countLaterTurns(
+    db,
+    turn.instanceId,
+    turn.id,
+    turn.startedAt,
+  );
   const snapshot = await readTurnInputSnapshot(repoStore, {
     address,
     startedAtMs,
+    laterTurnCount,
   });
   return "gap" in snapshot
     ? { inputGap: snapshot.gap }
