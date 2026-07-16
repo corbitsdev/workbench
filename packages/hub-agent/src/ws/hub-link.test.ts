@@ -1997,6 +1997,179 @@ describe("sidecar↔hub integration", () => {
       await wfrServer.stop(true);
     }
   });
+
+  // CL-3796: a WS disconnect that lands WHILE a workflow-run pack push is
+  // in flight never reaches `receiveWorkflowRunPack` — the hub never gets a
+  // chance to accept or reject it. `packSender.cancelAll("Connection lost")`
+  // fires on the client's NEXT reconnect (`open` handler), rejecting the
+  // pending push with a plain "Connection lost" message that carries no
+  // `reason=` marker. Before this fix, `runWithBootstrap` treated ANY
+  // rejection here as the initRepo CAS race: `catch (first)` fired an
+  // immediate second `sendOnce()` regardless of why the first one failed.
+  // Since `send()` only queues frames while disconnected (it never throws),
+  // that immediate retry's frames sit in the outbound queue and get flushed
+  // as a SECOND, wholly redundant `repo.pack.push`/`repo.pack.done` pair the
+  // moment the link reconnects — doubling outbound load at exactly the
+  // moment a reconnect storm is already underway, without any chance of
+  // succeeding sooner (the link is still the thing that's down).
+  //
+  // The disconnect is forced by stopping the whole server (the same
+  // technique the existing "close cancels a pending reconnect" test above
+  // uses for a clean, real WS close) rather than closing one connection
+  // in-band from inside `onMessage` -- the latter left the client's own
+  // reconnect attempt in a bad state in earlier iterations of this test. A
+  // second server is brought back up on the same port before the 20ms
+  // reconnect delay elapses, so the client's real auto-reconnect completes
+  // normally and `cancelAll` fires exactly once.
+  test("a connection-level failure mid-push does not trigger a redundant second send", async () => {
+    const transport = createInMemoryTransport();
+    const sessions = createMockSessionManager();
+
+    const packDoneTransferIds: string[] = [];
+    const wfrRouter = createSidecarRouter({
+      requestTimeoutMs: 5000,
+      hubPublicKey: "a".repeat(64),
+      lookups: {
+        async receiveWorkflowRunPack(_repoId, _pack, _ref, _commitSha) {
+          return { accepted: true };
+        },
+      },
+    });
+
+    function buildWfrApp(): Hono {
+      const app = new Hono();
+      app.get(
+        "/ws",
+        upgradeWebSocket((_c) => {
+          let handle: WsHandle;
+          return {
+            onOpen(_evt, ws) {
+              handle = {
+                send(data: string) {
+                  ws.send(data);
+                },
+                close() {
+                  ws.close();
+                },
+              };
+              wfrRouter.handleOpen(handle);
+            },
+            onMessage(evt, _ws) {
+              if (typeof evt.data !== "string") return;
+              let isPackDone = false;
+              try {
+                const parsed: unknown = JSON.parse(evt.data);
+                if (
+                  typeof parsed === "object" &&
+                  parsed !== null &&
+                  "type" in parsed &&
+                  parsed.type === "repo.pack.done" &&
+                  "transferId" in parsed &&
+                  typeof parsed.transferId === "string"
+                ) {
+                  isPackDone = true;
+                  packDoneTransferIds.push(parsed.transferId);
+                }
+              } catch {
+                /* not a JSON frame — ignore */
+              }
+              if (isPackDone) {
+                // Record the transfer but never forward it to the router —
+                // the hub must never get a chance to ack or reject this
+                // transfer over THIS connection. The test drives the
+                // disconnect from outside this handler (via
+                // `wfrServer.stop`), avoiding the flakiness of closing a
+                // connection reentrantly from inside its own onMessage.
+                return;
+              }
+              wfrRouter.handleMessage(handle, evt.data);
+            },
+            onClose(_evt, _ws) {
+              wfrRouter.handleClose(handle);
+            },
+          };
+        }),
+      );
+      return app;
+    }
+
+    let wfrServer = Bun.serve({
+      fetch: buildWfrApp().fetch,
+      websocket,
+      port: 0,
+    });
+    const port: number = wfrServer.port ?? 0;
+    if (port === 0) {
+      throw new Error("test setup: Bun.serve did not assign a port");
+    }
+
+    const client = createHubLink({
+      hubURL: `ws://localhost:${port}/ws`,
+      sidecarId: "sc-wfr-connloss",
+      token: "test-token",
+      transport,
+      sessions,
+      reconnectDelayMs: 200,
+      ...withTestDeployBindings(sessions),
+    });
+
+    client.connect();
+    try {
+      await waitFor(() =>
+        wfrRouter.getConnectedSidecars().includes("sc-wfr-connloss"),
+      );
+
+      const agentAddress = "connloss-agent@test.interchange";
+      await wfrRouter.sendAgentDeploy(agentAddress, TEST_CONFIG);
+      await waitFor(() =>
+        wfrRouter.getRoutableAddresses().includes(agentAddress),
+      );
+
+      const repoId = {
+        kind: "workflow-run",
+        id: "dep-connloss",
+      } as const;
+      const ref = "refs/heads/events";
+      const commitSha = "c".repeat(40);
+      const pack = new Uint8Array([1, 2, 3]);
+
+      const pending = client.pushWorkflowRunPack({
+        agentAddress,
+        repoId,
+        pack,
+        ref,
+        commitSha,
+      });
+
+      // Wait for the push's repo.pack.done to land, then force a real
+      // disconnect before the hub ever acks or rejects it.
+      await waitFor(() => packDoneTransferIds.length === 1);
+      await wfrServer.stop(true);
+
+      // Bring the hub back up on the same port before the client's
+      // reconnect delay (200ms) elapses, so its real auto-reconnect
+      // completes normally.
+      wfrServer = Bun.serve({
+        fetch: buildWfrApp().fetch,
+        websocket,
+        port,
+      });
+
+      await expect(pending).rejects.toThrow(/Connection lost/);
+
+      // Give any spuriously-queued immediate retry ample time to flush
+      // once the reconnect completes.
+      await waitFor(() =>
+        wfrRouter.getConnectedSidecars().includes("sc-wfr-connloss"),
+      );
+      await new Promise((resolve) => setTimeout(resolve, 300));
+
+      expect(packDoneTransferIds).toHaveLength(1);
+    } finally {
+      client.close();
+      await wfrServer.stop(true);
+    }
+  });
 });
 
 describe("routability decoupled from restore", () => {
