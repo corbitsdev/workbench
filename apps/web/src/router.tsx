@@ -29,6 +29,7 @@ import { ArtifactDetailPage } from "./pages/ArtifactDetailPage";
 import { WorkflowsPage } from "./pages/WorkflowsPage";
 import { InboxPage } from "./pages/InboxPage";
 import Settings from "./pages/Settings";
+import SettingsLayout from "./pages/SettingsLayout";
 import { SkillsLibrary } from "./pages/SkillsLibrary";
 import { AgentsPage } from "./pages/AgentsPage";
 import { SkillsNew } from "./pages/SkillsNew";
@@ -76,7 +77,11 @@ function RedirectAdminToSettings() {
   const { "*": rest } = useParams();
   return (
     <Navigate
-      to={{ pathname: mapLegacyAdminPath(rest), search: location.search }}
+      to={{
+        pathname: mapLegacyAdminPath(rest),
+        search: location.search,
+        hash: location.hash,
+      }}
       replace
     />
   );
@@ -87,7 +92,11 @@ function RedirectOwnerToSettings() {
   const { "*": rest } = useParams();
   return (
     <Navigate
-      to={{ pathname: mapLegacyOwnerPath(rest), search: location.search }}
+      to={{
+        pathname: mapLegacyOwnerPath(rest),
+        search: location.search,
+        hash: location.hash,
+      }}
       replace
     />
   );
@@ -143,7 +152,7 @@ export const NAV_COMMANDS: PaletteResultItem[] = [
   {
     id: "nav:admin",
     category: "navigation",
-    title: "Workspace users & agents",
+    title: "Users & agents",
     to: "/settings/admin",
     keywords: [
       "governance",
@@ -159,7 +168,7 @@ export const NAV_COMMANDS: PaletteResultItem[] = [
   {
     id: "nav:owner",
     category: "navigation",
-    title: "Workspace management",
+    title: "Workbench management",
     to: "/settings/owner",
     keywords: ["owner", "workbench", "settings"],
     requires: "owner",
@@ -295,8 +304,85 @@ export const router = createBrowserRouter([
           },
           { path: "/workflows", element: <WorkflowsPage /> },
           { path: "/workflows/:workflowId", element: <WorkflowsPage /> },
-          { path: "/settings", element: <Settings /> },
-          { path: "/settings/connections", element: <Settings /> },
+          {
+            path: "/settings",
+            element: <SettingsLayout />,
+            children: [
+              { index: true, element: <Settings /> },
+              { path: "connections", element: <Settings /> },
+              {
+                path: "admin/tools",
+                element: (
+                  <RequireAdmin>
+                    <ToolsLibrary />
+                  </RequireAdmin>
+                ),
+              },
+              {
+                path: "admin/tools/:name",
+                element: (
+                  <RequireAdmin>
+                    <ToolDetail />
+                  </RequireAdmin>
+                ),
+              },
+              {
+                path: "admin",
+                element: <AdminLayout />,
+                children: [
+                  {
+                    index: true,
+                    element: (
+                      <Navigate to="/settings/admin/principals" replace />
+                    ),
+                  },
+                  { path: "principals", element: <AdminPrincipals /> },
+                  { path: "principals/:id", element: <PrincipalDetail /> },
+                  { path: "definitions", element: <AdminDefinitions /> },
+                  { path: "definitions/:key", element: <DefinitionDetail /> },
+                  { path: "audit", element: <AdminAudit /> },
+                ],
+              },
+              {
+                path: "owner",
+                element: <OwnerLayout />,
+                children: [
+                  {
+                    index: true,
+                    element: <Navigate to="/settings/owner/catalog" replace />,
+                  },
+                  { path: "catalog", element: <OwnerCatalog /> },
+                  { path: "capabilities", element: <OwnerCapabilities /> },
+                  {
+                    path: "capabilities/gamma",
+                    element: <OwnerGammaTemplates />,
+                  },
+                  { path: "workflows", element: <OwnerWorkflows /> },
+                  { path: "demos", element: <OwnerDemos /> },
+                  { path: "members", element: <OwnerMembers /> },
+                  // Legacy owner sub-routes → their new homes, still under
+                  // Settings.
+                  {
+                    path: "templates",
+                    element: (
+                      <Navigate
+                        to="/settings/owner/capabilities/gamma"
+                        replace
+                      />
+                    ),
+                  },
+                  {
+                    path: "models",
+                    element: <Navigate to="/settings/owner/catalog" replace />,
+                  },
+                  {
+                    path: "setup",
+                    element: <Navigate to="/settings/owner/catalog" replace />,
+                  },
+                ],
+              },
+            ],
+          },
           { path: "/connections", element: <RedirectLegacyConnections /> },
           { path: "/settings/tools/:id", element: <SettingsToolDetail /> },
           { path: "/skills", element: <SkillsLibrary /> },
@@ -317,68 +403,6 @@ export const router = createBrowserRouter([
           { path: "/admin/*", element: <RedirectAdminToSettings /> },
           { path: "/owner", element: <RedirectOwnerToSettings /> },
           { path: "/owner/*", element: <RedirectOwnerToSettings /> },
-          {
-            path: "/settings/admin/tools",
-            element: (
-              <RequireAdmin>
-                <ToolsLibrary />
-              </RequireAdmin>
-            ),
-          },
-          {
-            path: "/settings/admin/tools/:name",
-            element: (
-              <RequireAdmin>
-                <ToolDetail />
-              </RequireAdmin>
-            ),
-          },
-          {
-            path: "/settings/admin",
-            element: <AdminLayout />,
-            children: [
-              {
-                index: true,
-                element: <Navigate to="/settings/admin/principals" replace />,
-              },
-              { path: "principals", element: <AdminPrincipals /> },
-              { path: "principals/:id", element: <PrincipalDetail /> },
-              { path: "definitions", element: <AdminDefinitions /> },
-              { path: "definitions/:key", element: <DefinitionDetail /> },
-              { path: "audit", element: <AdminAudit /> },
-            ],
-          },
-          {
-            path: "/settings/owner",
-            element: <OwnerLayout />,
-            children: [
-              {
-                index: true,
-                element: <Navigate to="/settings/owner/catalog" replace />,
-              },
-              { path: "catalog", element: <OwnerCatalog /> },
-              { path: "capabilities", element: <OwnerCapabilities /> },
-              { path: "capabilities/gamma", element: <OwnerGammaTemplates /> },
-              { path: "workflows", element: <OwnerWorkflows /> },
-              { path: "demos", element: <OwnerDemos /> },
-              { path: "members", element: <OwnerMembers /> },
-              // Legacy owner sub-routes → their new homes, still under Settings.
-              {
-                path: "templates",
-                element: (
-                  <Navigate to="/settings/owner/capabilities/gamma" replace />
-                ),
-              },
-              {
-                path: "models",
-                element: <Navigate to="/settings/owner/catalog" replace />,
-              },
-              {
-                path: "setup",
-                element: <Navigate to="/settings/owner/catalog" replace />,
-              },
-            ],
-          },
           { path: "/insights", element: <InsightsDashboard /> },
           { path: "/insights/runs", element: <WorkflowRunHistory /> },
           { path: "/insights/users/:id", element: <ActorDetailPage /> },

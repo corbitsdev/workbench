@@ -38,13 +38,13 @@ export interface SettingsManagementGroup {
 export const SETTINGS_MANAGEMENT_GROUPS: readonly SettingsManagementGroup[] = [
   {
     id: "settings-admin",
-    label: "Workspace users & agents",
+    label: "Users & agents",
     to: "/settings/admin",
     role: "admin",
   },
   {
     id: "settings-owner",
-    label: "Workspace management",
+    label: "Workbench management",
     to: "/settings/owner",
     role: "owner",
   },

@@ -33,7 +33,7 @@ export function AdminLayout() {
       isAdmin ? (
         <div className="flex min-w-0 flex-1 flex-col gap-2">
           <AppPageChromeRow
-            title="Admin"
+            title="Users & agents"
             titleSize="sm"
             className="[&_h1]:text-lg"
           />

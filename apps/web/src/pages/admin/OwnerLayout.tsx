@@ -37,7 +37,7 @@ export function OwnerLayout() {
       isOwner ? (
         <div className="flex min-w-0 flex-1 flex-col gap-2">
           <AppPageChromeRow
-            title="Owner"
+            title="Workbench management"
             titleSize="sm"
             className="[&_h1]:text-lg"
           />

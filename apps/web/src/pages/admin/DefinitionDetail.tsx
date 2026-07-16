@@ -70,7 +70,7 @@ export function DefinitionDetail() {
       <Breadcrumbs
         renderLink={renderLink}
         items={[
-          { label: "Admin", to: "/settings/admin" },
+          { label: "Users & agents", to: "/settings/admin" },
           { label: "Definitions", to: definitionsTo },
           { label: crumbLabel },
         ]}
