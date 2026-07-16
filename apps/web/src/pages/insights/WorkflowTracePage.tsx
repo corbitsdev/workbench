@@ -1,14 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useParams } from "react-router";
 import { motion, useReducedMotion, type Variants } from "framer-motion";
-import {
-  AlertTriangle,
-  Bell,
-  Check,
-  ChevronRight,
-  Clock,
-  Loader2,
-} from "lucide-react";
+import { AlertTriangle, ChevronRight } from "lucide-react";
 import {
   PagePanel,
   classifyRunError,
@@ -30,6 +23,7 @@ import {
   stepOutputsFromLog,
   type LogStepState,
 } from "../../lib/run-state-adapter";
+import { PhaseIndicator } from "./phase-indicator";
 import { ToolsFacetView, type ToolRow } from "./principal-facets";
 import { humanizeToken } from "./activity-naming";
 import {
@@ -55,6 +49,10 @@ import {
   useScrollListboxOption,
 } from "./moment-listbox";
 import { TraceOutputView } from "./trace-output-view";
+import { TraceWaterfall } from "./TraceWaterfall";
+import { formatStepDuration } from "./trace-waterfall";
+
+export { formatStepDuration };
 
 // Light staggered fade for the timeline steps as they mount, matching the
 // dashboard's section entrance. Reduced-motion collapses it to an instant show
@@ -77,72 +75,6 @@ const PHASE_LABEL: Record<LogStepState["phase"], string> = {
   cancelled: "Cancelled",
 };
 
-// Per-phase status indicator: never color-only. Each phase pairs a semantic
-// token WITH a distinguishing glyph. Awaiting-signal is a genuine action gate —
-// the one place the accent token is warranted; passive states stay neutral.
-function PhaseIndicator({ phase }: { phase: LogStepState["phase"] }) {
-  const base =
-    "flex h-5 w-5 shrink-0 items-center justify-center rounded-full border";
-  if (phase === "in-flight") {
-    return (
-      <span
-        className={`${base} border-blue/40 bg-blue/10 text-blue`}
-        aria-label="In flight"
-      >
-        <Loader2 className="h-3 w-3 animate-spin" />
-      </span>
-    );
-  }
-  if (phase === "awaiting-signal") {
-    return (
-      <span
-        className={`${base} border-accent/40 bg-accent/10 text-accent`}
-        aria-label="Awaiting approval"
-      >
-        <Bell className="h-3 w-3" />
-      </span>
-    );
-  }
-  if (phase === "awaiting-timer") {
-    return (
-      <span
-        className={`${base} border-border bg-surface-2 text-text-3`}
-        aria-label="Waiting"
-      >
-        <Clock className="h-3 w-3" />
-      </span>
-    );
-  }
-  if (phase === "completed") {
-    return (
-      <span
-        className={`${base} border-green/40 bg-green/10 text-green`}
-        aria-label="Completed"
-      >
-        <Check className="h-3 w-3" />
-      </span>
-    );
-  }
-  if (phase === "failed") {
-    return (
-      <span
-        className={`${base} border-red/40 bg-red/10 text-red`}
-        aria-label="Failed"
-      >
-        <AlertTriangle className="h-3 w-3" />
-      </span>
-    );
-  }
-  return (
-    <span
-      className={`${base} border-border bg-surface-2 text-text-3`}
-      aria-label="Cancelled"
-    >
-      <span className="text-[11px] leading-none">×</span>
-    </span>
-  );
-}
-
 const STEP_TYPE_LABEL: Record<LogStepState["stepType"], string> = {
   human: "Human gate",
   agent: "Agent",
@@ -151,23 +83,6 @@ const STEP_TYPE_LABEL: Record<LogStepState["stepType"], string> = {
   other: "Step",
   unknown: "Step",
 };
-
-// Honest span: null unless BOTH boundaries are present and the span is
-// non-negative (the record model never guarantees an end timestamp).
-export function formatStepDuration(
-  startedAt: string | undefined,
-  endedAt: string | undefined,
-): string | null {
-  if (startedAt === undefined || endedAt === undefined) return null;
-  const ms = new Date(endedAt).getTime() - new Date(startedAt).getTime();
-  if (!Number.isFinite(ms) || ms < 0) return null;
-  if (ms < 1000) return `${ms}ms`;
-  const seconds = ms / 1000;
-  if (seconds < 60) return `${seconds.toFixed(seconds < 10 ? 1 : 0)}s`;
-  const minutes = Math.floor(seconds / 60);
-  const rest = Math.round(seconds % 60);
-  return `${minutes}m ${rest}s`;
-}
 
 /**
  * One run step, presented as a moment card in the artifact's language: a phase
@@ -436,12 +351,16 @@ export function WorkflowTracePage() {
   const steps = logState?.steps ?? [];
   const timelineListRef = useRef<HTMLUListElement>(null);
   const [selectedStep, setSelectedStep] = useState(0);
+  const [timelineView, setTimelineView] = useState<"steps" | "waterfall">(
+    "steps",
+  );
   const clampedStepIndex = clampListIndex(selectedStep, steps.length);
   useScrollListboxOption(timelineListRef, "run-step-", clampedStepIndex);
 
   useEffect(() => {
     setFacetIndex(0);
     setSelectedStep(0);
+    setTimelineView("steps");
   }, [safeId]);
 
   const stepTokenMap = useMemo(() => {
@@ -659,51 +578,103 @@ export function WorkflowTracePage() {
 
                 {steps.length > 0 && (
                   <>
-                    <p className="flex items-center gap-2 text-[11.5px] text-text-3">
-                      <ChevronRight className="h-3 w-3" />
-                      Step through moments with ↑ ↓ — the selected step expands
-                      inline.
-                    </p>
-                    <motion.ul
-                      ref={timelineListRef}
-                      role="listbox"
-                      aria-label="Run steps"
-                      aria-activedescendant={`run-step-${clampedStepIndex}`}
-                      tabIndex={0}
-                      onKeyDown={(event) => {
-                        if (!listboxShouldHandleKeyDown(event)) return;
-                        const next = stepListIndexOnKeyDown(
-                          event,
-                          clampedStepIndex,
-                          steps.length,
-                        );
-                        if (next !== null) setSelectedStep(next);
-                      }}
-                      className="flex flex-col gap-2.5 outline-none focus-visible:ring-1 focus-visible:ring-accent"
-                      variants={STEP_CONTAINER}
-                      initial={reduceMotion ? false : "hidden"}
-                      animate="show"
+                    <div
+                      className="flex flex-wrap items-center justify-between gap-2"
+                      data-testid="trace-timeline-view-toggle"
                     >
-                      {steps.map((step, index) => (
-                        <TraceStepMoment
-                          key={step.stepId}
-                          step={step}
-                          index={index}
-                          output={
-                            step.stepId in stepOutputs
-                              ? { value: stepOutputs[step.stepId] }
-                              : null
-                          }
-                          stepTokens={stepTokenMap.get(step.stepId) ?? null}
-                          isSelected={index === clampedStepIndex}
-                          onSelect={() => {
-                            setSelectedStep(index);
-                            timelineListRef.current?.focus();
-                          }}
-                          optionId={`run-step-${index}`}
-                        />
-                      ))}
-                    </motion.ul>
+                      <p className="flex items-center gap-2 text-[11.5px] text-text-3">
+                        <ChevronRight className="h-3 w-3" />
+                        {timelineView === "steps"
+                          ? "Step through moments with ↑ ↓ — the selected step expands inline."
+                          : "Overview of step timing on a shared axis."}
+                      </p>
+                      <div
+                        className="inline-flex rounded-sm border border-border bg-surface-2 p-0.5"
+                        role="group"
+                        aria-label="Timeline view"
+                      >
+                        <button
+                          type="button"
+                          aria-pressed={timelineView === "steps"}
+                          className={`rounded-sm px-2.5 py-1 text-[11px] font-medium ${
+                            timelineView === "steps"
+                              ? "bg-surface text-text shadow-sm"
+                              : "text-text-3 hover:text-text-2"
+                          }`}
+                          onClick={() => setTimelineView("steps")}
+                        >
+                          Steps
+                        </button>
+                        <button
+                          type="button"
+                          aria-pressed={timelineView === "waterfall"}
+                          className={`rounded-sm px-2.5 py-1 text-[11px] font-medium ${
+                            timelineView === "waterfall"
+                              ? "bg-surface text-text shadow-sm"
+                              : "text-text-3 hover:text-text-2"
+                          }`}
+                          onClick={() => setTimelineView("waterfall")}
+                        >
+                          Overview
+                        </button>
+                      </div>
+                    </div>
+
+                    {timelineView === "waterfall" ? (
+                      <TraceWaterfall
+                        steps={steps}
+                        selectedIndex={clampedStepIndex}
+                        onSelectStep={(index) => {
+                          setSelectedStep(index);
+                          setTimelineView("steps");
+                          // The step listbox mounts only once the view switch
+                          // above commits, so its ref is null synchronously —
+                          // focus after React has rendered the "steps" view.
+                          queueMicrotask(() => timelineListRef.current?.focus());
+                        }}
+                      />
+                    ) : (
+                      <motion.ul
+                        ref={timelineListRef}
+                        role="listbox"
+                        aria-label="Run steps"
+                        aria-activedescendant={`run-step-${clampedStepIndex}`}
+                        tabIndex={0}
+                        onKeyDown={(event) => {
+                          if (!listboxShouldHandleKeyDown(event)) return;
+                          const next = stepListIndexOnKeyDown(
+                            event,
+                            clampedStepIndex,
+                            steps.length,
+                          );
+                          if (next !== null) setSelectedStep(next);
+                        }}
+                        className="flex flex-col gap-2.5 outline-none focus-visible:ring-1 focus-visible:ring-accent"
+                        variants={STEP_CONTAINER}
+                        initial={reduceMotion ? false : "hidden"}
+                        animate="show"
+                      >
+                        {steps.map((step, index) => (
+                          <TraceStepMoment
+                            key={step.stepId}
+                            step={step}
+                            index={index}
+                            output={
+                              step.stepId in stepOutputs
+                                ? { value: stepOutputs[step.stepId] }
+                                : null
+                            }
+                            stepTokens={stepTokenMap.get(step.stepId) ?? null}
+                            isSelected={index === clampedStepIndex}
+                            onSelect={() => {
+                              setSelectedStep(index);
+                              timelineListRef.current?.focus();
+                            }}
+                            optionId={`run-step-${index}`}
+                          />
+                        ))}
+                      </motion.ul>
+                    )}
                   </>
                 )}
               </div>
