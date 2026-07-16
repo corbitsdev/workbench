@@ -36,4 +36,31 @@ describe("router", () => {
     expect(paths).toContain("/chats");
     expect(paths).toContain("/chats/:threadId");
   });
+
+  it("mounts the former standalone Admin and Owner areas under /settings (CL-3763)", () => {
+    const paths: string[] = [];
+    const walk = (routes: RouteObject[]) => {
+      for (const route of routes) {
+        if (route.path) paths.push(route.path);
+        if (route.children) walk(route.children);
+      }
+    };
+    walk(router.routes as RouteObject[]);
+    expect(paths).toContain("/settings/admin");
+    expect(paths).toContain("principals");
+    expect(paths).toContain("definitions");
+    expect(paths).toContain("audit");
+    expect(paths).toContain("/settings/admin/tools");
+    expect(paths).toContain("/settings/owner");
+    expect(paths).toContain("catalog");
+    expect(paths).toContain("capabilities");
+    expect(paths).toContain("workflows");
+    expect(paths).toContain("demos");
+    expect(paths).toContain("members");
+    // The old standalone paths are redirect-only entries, not full mounts.
+    expect(paths).toContain("/admin");
+    expect(paths).toContain("/admin/*");
+    expect(paths).toContain("/owner");
+    expect(paths).toContain("/owner/*");
+  });
 });

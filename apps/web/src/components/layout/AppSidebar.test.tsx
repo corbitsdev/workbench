@@ -229,7 +229,7 @@ describe("AppSidebar", () => {
     const mainNav = screen.getByRole("navigation", {
       name: /main navigation/i,
     });
-    expect(mainNav.querySelector('a[href="/admin"]')).toBeNull();
+    expect(mainNav.querySelector('a[href="/settings/admin"]')).toBeNull();
   });
 
   it("shows Admin as a footer icon immediately left of Settings for admins only", async () => {
@@ -249,7 +249,7 @@ describe("AppSidebar", () => {
       const admin = screen.getByRole("link", {
         name: /^admin$/i,
       }) as HTMLAnchorElement;
-      expect(admin.getAttribute("href")).toBe("/admin");
+      expect(admin.getAttribute("href")).toBe("/settings/admin");
       const settings = screen.getByRole("link", {
         name: /settings/i,
       }) as HTMLAnchorElement;

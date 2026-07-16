@@ -71,7 +71,9 @@ describe("PrincipalDetail", () => {
   it("renders a breadcrumb that links back to the Principals tab", () => {
     renderPage();
     const crumb = screen.getByText("Principals");
-    expect(crumb.closest("a")?.getAttribute("href")).toBe("/admin/principals");
+    expect(crumb.closest("a")?.getAttribute("href")).toBe(
+      "/settings/admin/principals",
+    );
   });
 
   it("breadcrumb back link restores the origin page + filters from ?back=", () => {
@@ -82,7 +84,7 @@ describe("PrincipalDetail", () => {
       .closest("a")
       ?.getAttribute("href");
     const [path, query] = (href ?? "").split("?");
-    expect(path).toBe("/admin/principals");
+    expect(path).toBe("/settings/admin/principals");
     const restored = new URLSearchParams(query);
     expect(restored.get("page")).toBe("4");
     expect(restored.get("type")).toBe("agent");
