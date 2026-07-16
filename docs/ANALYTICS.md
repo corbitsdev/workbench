@@ -78,14 +78,15 @@ Principal and tenant-wide **activity timelines** (`GET …/activity/timeline`, `
 | **Credential rows** | Same for `credential` (member OAuth and owner-managed keys). Rotation or disconnect removes or leaves a stale `created_at`; secrets and prior values are never replayed on the timeline. |
 | **Not audit-grade** | No append-only mutation log, no actor on change, no hash chain. Operators must not treat Insights **Activity** as permissions or secrets compliance evidence. |
 
-The web shows an inline caveat when grant or credential entries appear (`ActorTimeline`, `MomentWalker`, `TenantActivityFeed`). Registry notes on those descriptors document the current-state semantics for engineers.
+The web shows an inline caveat when grant or credential entries appear (`ActorTimeline`, `MomentWalker`, `TenantActivityFeed`). The grant descriptor note in `packages/timeline/src/registry.ts` documents current-state semantics; the credential descriptor note covers tenant-owned exclusion, not mutation history.
 
-**Hub-side mutation paths (v1).** Timeline SQL does not subscribe to writes; grants and credentials change only through ordinary **`apps/hub`** persistence (not `@intx/*` packages). Inventory for documentation and a future audit hook:
+**Mutation paths (v1).** Timeline SQL does not subscribe to writes. Grants and credentials mutate through the **hub process** — both workbench-specific code under `apps/hub/src` and the mounted `@intx/hub-api` routes (`/api/tenants/:tenantId/grants`, `/api/tenants/:tenantId/credentials`, plus instance launch grant materialization). Inventory for documentation and a future audit hook:
 
-- **Grants:** `routes/owner.ts`, `routes/agents.ts`, `routes/gamma-templates.ts`, `services/agent-provisioning.ts`, `services/myra-threads.ts`, `lib/capability-grants.ts`, `lib/feature-grants.ts`, `lib/workflow-run-gate.ts`, `lib/tenant-provisioning.ts`, `lib/workspace-inbox-source-gate.ts`
-- **Credentials:** `routes/owner.ts`, `routes/me-connections.ts` (disconnect), `lib/oauth-flow.ts` (connect store / disconnect delete)
+- **Workbench grants (`apps/hub/src`):** `routes/owner.ts`, `routes/agents.ts`, `routes/gamma-templates.ts`, `services/agent-provisioning.ts`, `services/myra-threads.ts`, `lib/capability-grants.ts`, `lib/feature-grants.ts`, `lib/workflow-run-gate.ts`, `lib/tenant-provisioning.ts`, `lib/workspace-inbox-source-gate.ts`
+- **Interchange API (mounted by hub):** `interchange/packages/hub-api/src/routes/grants.ts`, `routes/credentials.ts`, `routes/instances.ts` (launch-time grant rows)
+- **Workbench credentials (`apps/hub/src`):** `routes/owner.ts`, `routes/me-connections.ts` (disconnect), `lib/oauth-flow.ts` (connect store / disconnect delete)
 
-**Deferred v1:** an append-only hub table written at those mutation sites would give a real audit stream without overloading the in-place `grant` / `credential` tables.
+**Deferred v1:** an append-only hub table written at mutation sites would give a real audit stream without overloading the in-place `grant` / `credential` tables.
 
 ## Tenant-wide activity + intra-tenant authz (CL-2743 / CL-2744)
 

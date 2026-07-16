@@ -176,6 +176,60 @@ describe("TenantActivityFeed", () => {
     );
   });
 
+  it("shows the caveat for credential entries as well as grants", async () => {
+    pagesByCursor[""] = {
+      entries: [
+        {
+          kind: "credential",
+          id: "c1",
+          sourceTable: "credential",
+          timestamp: "2026-07-01T10:00:00.000Z",
+          summary: "slack-oauth",
+        },
+      ],
+      nextCursor: null,
+    };
+    renderFeed();
+    await waitFor(() => screen.getByTestId("permission-caveat"));
+  });
+
+  it("surfaces the caveat once a grant/credential row arrives on a later page", async () => {
+    pagesByCursor[""] = {
+      entries: [
+        {
+          kind: "workflow_run",
+          id: "run-1",
+          sourceTable: "workflow_run_record",
+          timestamp: "2026-07-01T10:00:00.000Z",
+          summary: "first",
+        },
+      ],
+      nextCursor: "cursor-2",
+    };
+    pagesByCursor["cursor-2"] = {
+      entries: [
+        {
+          kind: "grant",
+          id: "g1",
+          sourceTable: "grant",
+          timestamp: "2026-07-01T09:00:00.000Z",
+          summary: "tool:x invoke allow",
+        },
+      ],
+      nextCursor: null,
+    };
+    renderFeed();
+
+    // The first page carries no grant/credential row, so the caveat stays hidden.
+    await waitFor(() => screen.getByText("first"));
+    expect(screen.queryByTestId("permission-caveat")).toBeNull();
+
+    // The grant on the second page must flip the aggregate caveat on — the
+    // disclosure reads across every loaded page, not just the first.
+    fireEvent.click(screen.getByTestId("tenant-activity-load-more"));
+    await waitFor(() => screen.getByTestId("permission-caveat"));
+  });
+
   it("hides the grant/credential caveat when no such entries are loaded", async () => {
     pagesByCursor[""] = {
       entries: [

@@ -149,8 +149,7 @@ export function TenantActivityFeed({ tenantId }: { tenantId: string }) {
           Activity across your workbench
         </h2>
         <p className="text-[12px] text-text-3">
-          Everyone&rsquo;s agents, workflows, and runs — newest first. Grant and
-          credential rows are current-state activity, not an audit log. Click any
+          Everyone&rsquo;s agents, workflows, and runs — newest first. Click any
           row to trace it.
         </p>
       </div>
