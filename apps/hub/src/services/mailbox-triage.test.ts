@@ -598,7 +598,17 @@ describe("createMailboxTriage", () => {
     expect(launchOpts.persona).toEqual({
       toolNames: prepareOnlyLoadout.toolNames,
     });
-    expect(launchOpts.systemPrompt).toBe(prepareOnlyLoadout.systemPrompt);
+    // The composed triage prompt names the SELECTED variant's model, not the
+    // canonical triage default.
+    const systemPrompt = launchOpts.systemPrompt as string;
+    expect(systemPrompt).toContain(
+      "You run on the claude-opus-4-8 model, served through the Corbits platform.",
+    );
+    expect(systemPrompt).not.toContain("deepseek-v4-flash");
+    expect(systemPrompt).toBe(
+      resolveMailboxLoadout("prepare_only", true, "claude-opus-4-8")
+        .systemPrompt,
+    );
   });
 
   it("diverts an inbound image attachment through the File Parser for a text-only triage agent, instead of riding it inline", async () => {

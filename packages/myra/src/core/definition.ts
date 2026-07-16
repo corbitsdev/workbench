@@ -80,6 +80,7 @@ export const PERSONAL_AGENT_DEPLOY_PROMPT: string =
   buildPersonalAgentSystemPrompt(
     PERSONAL_AGENT_NAME,
     PERSONAL_AGENT_PROMPT_FORMAT,
+    { model: PERSONAL_AGENT_MODEL_CONFIG.defaultModel },
   );
 
 /**

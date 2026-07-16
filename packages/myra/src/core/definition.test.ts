@@ -163,6 +163,12 @@ describe("PERSONAL_AGENT_DEPLOY_PROMPT", () => {
     expect(PERSONAL_AGENT_DEPLOY_PROMPT).not.toContain("<role>");
   });
 
+  it("names the actual deepseek-v4-flash model, not a confabulated identity", () => {
+    expect(PERSONAL_AGENT_DEPLOY_PROMPT).toContain(
+      "You run on the deepseek-v4-flash model, served through the Corbits platform.",
+    );
+  });
+
   it("carries the Chief of Staff identity without hardcoding tool names", () => {
     expect(PERSONAL_AGENT_DEPLOY_PROMPT).toContain(
       "You are Myra, Chief of Staff",

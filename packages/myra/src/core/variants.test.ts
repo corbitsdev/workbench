@@ -33,6 +33,19 @@ describe("Myra variant catalog", () => {
     }
   });
 
+  test("every variant's composed prompt names its own model, not another variant's", () => {
+    const allModels = new Set(MYRA_VARIANTS.map((v) => v.model));
+    for (const variant of MYRA_VARIANTS) {
+      expect(variant.deployPrompt).toContain(
+        `You run on the ${variant.model} model, served through the Corbits platform.`,
+      );
+      for (const other of allModels) {
+        if (other === variant.model) continue;
+        expect(variant.deployPrompt).not.toContain(other);
+      }
+    }
+  });
+
   test("triage variants carry exactly the mailbox persona loadout", () => {
     const triage = MYRA_VARIANTS.filter((v) => v.kind === "triage");
     expect(triage.length).toBeGreaterThan(0);

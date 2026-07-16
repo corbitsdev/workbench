@@ -70,4 +70,23 @@ describe("buildMailboxTriagePrompt", () => {
     const prompt = buildMailboxTriagePrompt("Myra", "prepare_only", false);
     expect(prompt).not.toContain("task_create");
   });
+
+  test("defaults to naming the triage flash model", () => {
+    const prompt = buildMailboxTriagePrompt("Myra", "prepare_only", true);
+    expect(prompt).toContain(
+      "You run on the deepseek-v4-flash model, served through the Corbits platform.",
+    );
+  });
+
+  test("names an explicitly supplied model", () => {
+    const prompt = buildMailboxTriagePrompt(
+      "Myra",
+      "prepare_only",
+      true,
+      "kimi-k2.6",
+    );
+    expect(prompt).toContain(
+      "You run on the kimi-k2.6 model, served through the Corbits platform.",
+    );
+  });
 });
