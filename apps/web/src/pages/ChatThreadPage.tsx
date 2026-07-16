@@ -1,6 +1,8 @@
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, Navigate, useNavigate, useParams } from "react-router";
+import { CircleHelp } from "lucide-react";
 import type { ThreadInsert } from "@workbench/chat";
+import { ChatThreadInfoDialog } from "../components/ChatThreadInfoDialog";
 import { ErrorBoundary } from "../components/ErrorBoundary";
 import { MyraChatSurface } from "../components/MyraChatSurface";
 import { SubagentDock } from "../components/SubagentDock";
@@ -8,12 +10,15 @@ import { WorkflowDock } from "../components/WorkflowDock";
 import { WorkflowEventBubble } from "../components/WorkflowEventBubble";
 import { useMyraSession } from "../hooks/use-myra-session";
 import { useMembers } from "../hooks/use-members";
+import { useAgentInstances } from "../hooks/use-agents";
+import { useTenantRoster } from "../hooks/use-tenant-roster";
 import { useConversationGates } from "../hooks/use-conversation-gates";
 import { useResumeConversationGate } from "../hooks/use-workflow";
 import { useWorkflowRunEvents } from "../hooks/use-workflow-run-events";
 import { useDockFocus } from "../lib/dock-focus";
 import { useActiveWorkbench } from "../lib/active-workbench-context";
 import { usePublishActiveContext } from "../lib/active-context-store";
+import { myraInstanceTraceHref } from "../lib/myra-turn-trace";
 import {
   resolveActiveThread,
   useAutoTitleFirstMessage,
@@ -145,6 +150,33 @@ export function ChatThreadPage() {
     return () => window.clearTimeout(timer);
   }, [focus]);
 
+  // Thread info dialog (CL-3769): reuses the roster query the trace link
+  // already relies on, plus the Agents-page instance list for the mail
+  // address and status — both already-cached queries, no new hub route.
+  const [infoOpen, setInfoOpen] = useState(false);
+  const { data: tenantRoster } = useTenantRoster(activeTenantId ?? "", {
+    enabled: activeTenantId !== null && activeTenantId !== undefined,
+  });
+  const { data: agentInstances } = useAgentInstances(activeTenantId);
+  const activeInstance = agentInstances?.find(
+    (instance) => instance.id === active?.instanceId,
+  );
+  const traceHref = myraInstanceTraceHref(
+    active?.instanceId,
+    tenantRoster?.instances,
+  );
+  const infoButton =
+    active !== null ? (
+      <button
+        type="button"
+        onClick={() => setInfoOpen(true)}
+        aria-label="Chat details"
+        className="grid h-7 w-7 flex-none place-items-center rounded-[8px] text-text-3 transition-colors hover:bg-page hover:text-text active:scale-[0.97]"
+      >
+        <CircleHelp className="h-3.5 w-3.5" />
+      </button>
+    ) : null;
+
   if (isLoading) {
     return <CenteredNotice>Loading your chats…</CenteredNotice>;
   }
@@ -229,7 +261,27 @@ export function ChatThreadPage() {
             }
             inserts={inserts}
             mentionCandidates={mentionCandidates}
+            {...(infoButton !== null ? { headerRight: infoButton } : {})}
           />
+          {active !== null && (
+            <ChatThreadInfoDialog
+              open={infoOpen}
+              onClose={() => setInfoOpen(false)}
+              title={active.label ?? "Chat"}
+              instanceId={active.instanceId}
+              createdAt={active.createdAt}
+              {...(activeInstance?.name !== undefined
+                ? { agentName: activeInstance.name }
+                : {})}
+              {...(activeInstance?.address !== undefined
+                ? { mailAddress: activeInstance.address }
+                : {})}
+              {...(activeInstance?.status !== undefined
+                ? { status: activeInstance.status }
+                : {})}
+              {...(traceHref !== undefined ? { traceHref } : {})}
+            />
+          )}
         </div>
         {/* conversationId == Myra thread id; producers (workflow_start tool,
             chat-initiated starts) stamp the same id as originConversationId. */}
