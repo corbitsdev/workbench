@@ -77,9 +77,18 @@ mock.module("./myra-threads", () => ({
   teardownThreadRows: teardownMock,
 }));
 
-let variantPref: { chat: string | null; triage: string | null } = {
+let variantPref: {
+  chat: string | null;
+  triage: string | null;
+  instructionsGlobal: string | null;
+  instructionsChat: string | null;
+  instructionsTriage: string | null;
+} = {
   chat: null,
   triage: null,
+  instructionsGlobal: null,
+  instructionsChat: null,
+  instructionsTriage: null,
 };
 const readVariantPrefMock = mock(async () => variantPref);
 mock.module("./myra-variant-preferences", () => ({
@@ -296,7 +305,13 @@ beforeEach(() => {
   configState.triageEnabled = true;
   resetFeatureGrantCache();
   prefs = {};
-  variantPref = { chat: null, triage: null };
+  variantPref = {
+    chat: null,
+    triage: null,
+    instructionsGlobal: null,
+    instructionsChat: null,
+    instructionsTriage: null,
+  };
   triageDef = MYRA_TRIAGE_DEF;
   readVariantPrefMock.mockClear();
   launchMock.mockClear();
@@ -514,8 +529,54 @@ describe("createMailboxTriage", () => {
     expect(teardownMock).toHaveBeenCalledTimes(1);
   });
 
+  it("appends the member's global + triage standing instructions after the persona prompt", async () => {
+    variantPref = {
+      chat: null,
+      triage: null,
+      instructionsGlobal: "Be terse.",
+      instructionsChat: "Chat: use bullet lists.",
+      instructionsTriage: "Triage: flag anything from investors.",
+    };
+    const { db } = makeDb({
+      sender: { id: "ins_dep-ext", principalId: "pri-someone-else" },
+    });
+    const session = makeSessionService();
+    const triage = makeTriage(db, session);
+
+    triage.enqueue(ITEM);
+    await untilCalled(session.sendUserMessage);
+
+    const launchOpts = launchMock.mock.calls[0]![4] as Record<string, unknown>;
+    const systemPrompt = launchOpts.systemPrompt as string;
+    expect(systemPrompt).toContain("Be terse.");
+    expect(systemPrompt).toContain("Triage: flag anything from investors.");
+    // The chat-only override never reaches the triage session prompt.
+    expect(systemPrompt).not.toContain("Chat: use bullet lists.");
+    expect(systemPrompt.indexOf(prepareOnlyLoadout.systemPrompt)).toBe(0);
+  });
+
+  it("keeps the persona prompt verbatim when the member has set no standing instructions", async () => {
+    const { db } = makeDb({
+      sender: { id: "ins_dep-ext", principalId: "pri-someone-else" },
+    });
+    const session = makeSessionService();
+    const triage = makeTriage(db, session);
+
+    triage.enqueue(ITEM);
+    await untilCalled(session.sendUserMessage);
+
+    const launchOpts = launchMock.mock.calls[0]![4] as Record<string, unknown>;
+    expect(launchOpts.systemPrompt).toBe(prepareOnlyLoadout.systemPrompt);
+  });
+
   it("binds a member's non-default triage variant while keeping the mailbox loadout", async () => {
-    variantPref = { chat: null, triage: "myra-triage-opus-4-8" };
+    variantPref = {
+      chat: null,
+      triage: "myra-triage-opus-4-8",
+      instructionsGlobal: null,
+      instructionsChat: null,
+      instructionsTriage: null,
+    };
     const { db } = makeDb({
       sender: { id: "ins_dep-ext", principalId: "pri-someone-else" },
     });

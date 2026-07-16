@@ -22,6 +22,8 @@ import {
   triageMessageKey,
   composeTriagePromptMessage,
   resolveMyraVariant,
+  renderMemberInstructionsSection,
+  PERSONAL_AGENT_PROMPT_FORMAT,
 } from "@workbench/myra";
 import { readMyraVariantPreference } from "./myra-variant-preferences";
 import type { HubDb } from "../db";
@@ -259,6 +261,24 @@ export function createMailboxTriage(deps: MailboxTriageDeps): MailboxTriage {
     const tasksEnabled = prefs.tasksTriageCreate !== false;
     const loadout = resolveMailboxLoadout(autonomy, tasksEnabled);
 
+    // Member standing guidance (CL-3661): global instructions plus the
+    // triage-specific override, appended after the mailbox persona prompt —
+    // the triage prompt carries no operator/active-context section to append
+    // after, so the end of the persona prompt is the closest analog. Read
+    // from the same `variantPref` already fetched above for the variant
+    // selection; no extra query.
+    const instructionsSection = renderMemberInstructionsSection(
+      {
+        global: variantPref.instructionsGlobal,
+        surface: variantPref.instructionsTriage,
+      },
+      PERSONAL_AGENT_PROMPT_FORMAT,
+    );
+    const systemPrompt =
+      instructionsSection === null
+        ? loadout.systemPrompt
+        : `${loadout.systemPrompt}\n\n${instructionsSection}`;
+
     const now = new Date();
     const instanceId = generateId("instance");
     const mappingId = generateId("instance");
@@ -312,7 +332,7 @@ export function createMailboxTriage(deps: MailboxTriageDeps): MailboxTriage {
           instancePrincipalId,
           tenantId: item.tenantId,
           tenantDomain,
-          systemPrompt: loadout.systemPrompt,
+          systemPrompt,
           persona: { toolNames: loadout.toolNames },
           now,
         },

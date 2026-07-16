@@ -5,6 +5,9 @@ export {
   OperatorProfileSchema,
   type OperatorProfile,
   PERSONAL_AGENT_PROMPT_VERSION,
+  renderMemberInstructionsSection,
+  MemberInstructionsSchema,
+  type MemberInstructions,
 } from "./core/prompt";
 export {
   buildPersonalAgentGrantRequirements,
@@ -16,6 +19,7 @@ export {
   PERSONAL_AGENT_MODEL_CONFIG,
   PERSONAL_AGENT_TRIAGE_NAME,
   PERSONAL_AGENT_TRIAGE_MODEL_CONFIG,
+  PERSONAL_AGENT_PROMPT_FORMAT,
 } from "./core/definition";
 export {
   MYRA_VARIANTS,

@@ -7,9 +7,12 @@ import {
   buildPersonalAgentSystemPrompt,
   OperatorProfileSchema,
   PERSONAL_AGENT_NAME,
+  type MemberInstructions,
   type OperatorProfile,
 } from "@workbench/myra";
 import { memberAgentInstance } from "../db/schema";
+import { readMyraVariantPreference } from "../services/myra-variant-preferences";
+import type { HubDb } from "../db";
 
 export { promptFormatForProvider };
 
@@ -45,11 +48,45 @@ export function buildOperatorProfile(user: {
 export function personalAgentPromptForLaunch(opts: {
   provider: string;
   operator?: OperatorProfile;
+  instructions?: MemberInstructions;
 }): string {
   const format = promptFormatForProvider(opts.provider);
-  const options =
-    opts.operator !== undefined ? { operator: opts.operator } : {};
+  const options = {
+    ...(opts.operator !== undefined ? { operator: opts.operator } : {}),
+    ...(opts.instructions !== undefined
+      ? { instructions: opts.instructions }
+      : {}),
+  };
   return buildPersonalAgentSystemPrompt(PERSONAL_AGENT_NAME, format, options);
+}
+
+/**
+ * Resolve the member's standing Myra instructions (global + chat surface)
+ * for the personalized chat launch prompt. Returns `undefined` when both are
+ * unset, distinct from `{}`, so a caller can spread it into
+ * `personalAgentPromptForLaunch` without an always-present empty object.
+ */
+async function resolveChatInstructionsForMember(
+  db: DB["db"],
+  tenantId: string,
+  memberPrincipalId: string,
+): Promise<MemberInstructions | undefined> {
+  // The workbench preference table lives on the hub schema; this router is
+  // handed interchange's DB handle over the same connection. Same seam as
+  // myra-threads.ts.
+  const hubDb = db as unknown as HubDb;
+  const prefs = await readMyraVariantPreference(
+    hubDb,
+    tenantId,
+    memberPrincipalId,
+  );
+  if (prefs.instructionsGlobal === null && prefs.instructionsChat === null) {
+    return undefined;
+  }
+  return {
+    global: prefs.instructionsGlobal,
+    surface: prefs.instructionsChat,
+  };
 }
 
 /** Resolve the operator profile for a member principal (principal → user). */
@@ -108,8 +145,14 @@ export async function composePersonalAgentPromptForInstance(
     db,
     mapping.memberPrincipalId,
   );
+  const instructions = await resolveChatInstructionsForMember(
+    db,
+    opts.tenantId,
+    mapping.memberPrincipalId,
+  );
   return personalAgentPromptForLaunch({
     provider: opts.provider,
     ...(operator !== null ? { operator } : {}),
+    ...(instructions !== undefined ? { instructions } : {}),
   });
 }
