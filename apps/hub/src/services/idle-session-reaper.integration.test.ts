@@ -295,7 +295,7 @@ describe("createIdleSessionReaper", () => {
     expect(evictions).toBe(0);
   });
 
-  test("CL-3767: sleeps a deployable non-personal system agent (Loop) — kind does not gate reapability", async () => {
+  test("never sleeps a self-driven agent (Loop) — its interval schedule has no mail to wake it", async () => {
     const address = `ins_loop1@${DOMAIN}`;
     const { sessionId } = await seedChatAgent({
       instanceId: "ins_loop1",
@@ -320,12 +320,12 @@ describe("createIdleSessionReaper", () => {
     clock += REAP_AFTER * 10;
     const result = await reaper.sweepOnce();
 
-    expect(result.evicted).toBe(1);
-    expect(ended).toEqual([address]);
-    expect(await sessionStatusOf(sessionId)).toBe("ended");
+    expect(result.evicted).toBe(0);
+    expect(ended).toHaveLength(0);
+    expect(await sessionStatusOf(sessionId)).toBe("active");
   });
 
-  test("CL-3767: sleeps a SHARED deployable chat agent (Oat) — it now wakes on the next inbound mail", async () => {
+  test("sleeps a SHARED deployable chat agent (Oat) — it now wakes on the next inbound mail", async () => {
     // The mail-route wake middleware (relaunchInstanceIfNeeded, apps/hub
     // index.ts) relaunches a non-routable instance ahead of interchange's
     // mail-send route, so Oat is safe to sleep like every other agent kind.

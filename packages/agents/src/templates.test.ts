@@ -112,8 +112,8 @@ describe("AGENT_TEMPLATES", () => {
 });
 
 describe("isReapableAgentInstance", () => {
-  it("reaps the personal agent AND a shared agent (CL-3767: universal over kind)", () => {
-    // CL-3767 flipped the reaper universal: template `kind` (or lack of it)
+  it("reaps the personal agent AND a shared agent — reaping is universal over kind", () => {
+    // The reaper is universal now: template `kind` (or lack of it)
     // no longer gates reapability. Myra wakes via the chat-surface sessions
     // route; Oat now wakes via the mail-route relaunch (relaunchInstanceIfNeeded)
     // ahead of interchange's mail-send route.
@@ -126,10 +126,17 @@ describe("isReapableAgentInstance", () => {
     expect(isReapableAgentInstance(oat!.name)).toBe(true);
   });
 
-  it("reaps deployable non-personal system agents (Loop) — kind does not matter", () => {
+  it("never reaps a self-driven agent (Loop) — its interval schedule has no mail to wake it", () => {
     const loop = AGENT_TEMPLATES.find((t) => t.key === "loop");
-    expect(loop?.deployable).toBe(false);
-    expect(isReapableAgentInstance(loop!.name)).toBe(true);
+    expect(loop?.selfDriven).toBe(true);
+    expect(isReapableAgentInstance(loop!.name)).toBe(false);
+  });
+
+  it("reaps other non-personal shared agents (Walter) — kind does not matter", () => {
+    const walter = AGENT_TEMPLATES.find((t) => t.key === "walter");
+    expect(walter).toBeDefined();
+    expect(walter?.kind).toBeUndefined();
+    expect(isReapableAgentInstance(walter!.name)).toBe(true);
   });
 
   it("never reaps the ephemeral single-purpose file-parser invocation", () => {

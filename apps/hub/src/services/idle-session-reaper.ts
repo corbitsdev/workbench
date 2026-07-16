@@ -11,7 +11,7 @@ const log = getLogger(["services", "idle-session-reaper"]);
 
 const { agent, agentInstance, agentSession } = intxSchema;
 
-// CL-2790: idle agent-session sleep / reaper. CL-3767 made it universal over
+// CL-2790: idle agent-session sleep / reaper, now universal over
 // agent kind: EVERY chat/sub-agent instance is reapable now, not just the
 // personal agent (Myra).
 //
@@ -180,7 +180,7 @@ export function createIdleSessionReaper(deps: {
       const nowMs = now();
       let evicted = 0;
       let seeded = 0;
-      let skippedNonChat = 0;
+      let skippedEphemeral = 0;
       let skippedUnroutable = 0;
       let skippedRecent = 0;
       let skippedBusy = 0;
@@ -193,7 +193,7 @@ export function createIdleSessionReaper(deps: {
         }
         if (isWorkflowDerivedAddress(cand.address)) continue;
         if (!isReapableAgentInstance(cand.agentName)) {
-          skippedNonChat += 1;
+          skippedEphemeral += 1;
           continue;
         }
         if (cand.sessionId === null) continue;
@@ -229,7 +229,7 @@ export function createIdleSessionReaper(deps: {
           await markSessionEnded(cand.sessionId, new Date(nowMs));
           lastActive.delete(cand.address);
           evicted += 1;
-          log.info("idle reaper: slept idle chat session", {
+          log.info("idle reaper: slept idle agent session", {
             address: cand.address,
             tenantId: cand.tenantId,
             agentName: cand.agentName,
@@ -256,7 +256,7 @@ export function createIdleSessionReaper(deps: {
         scanned: candidates.length,
         evicted,
         seeded,
-        skippedNonChat,
+        skippedEphemeral,
         skippedUnroutable,
         skippedRecent,
         skippedBusy,

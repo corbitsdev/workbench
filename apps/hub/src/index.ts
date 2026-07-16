@@ -103,6 +103,10 @@ import {
 } from "./lib/scheduled-intake";
 import { loadWorkflowGateInfos } from "./lib/workflow-catalog";
 import { createIdleSessionReaper } from "./services/idle-session-reaper";
+import {
+  createMailWakeMiddleware,
+  registerUndeliveredMailWake,
+} from "./services/mail-wake";
 import { publishEmbeddedWorkflowDefs } from "./services/workflow-defs-bootstrap";
 import { publishEmbeddedToolPackages } from "./services/tool-packages-bootstrap";
 import { backfillDenyForExistingWorkflowKinds } from "./lib/workflow-run-gate";
@@ -683,7 +687,7 @@ const stopWedgeSweepReconciler = registerWedgeSweepReconciler({
 // an in-flight-turn guard (the injected eventCollectors registry) spares any
 // agent mid-work, so the kill switch is gone. Fed by the agent-event stream and
 // the send-mail route (recordActivityForInstance, mounted below) so a
-// mid-conversation agent is never slept. CL-3767 removed the post-reconnect
+// mid-conversation agent is never slept. The former post-reconnect
 // personal-agent prewarm sweep that used to relaunch every recently-active
 // personal instance in the background: no agent auto-wakes anymore except on
 // inbound mail/message (see the mail-route wake middleware below), so nothing
@@ -701,6 +705,35 @@ const idleSessionReaper = createIdleSessionReaper({
 // idleSessionReaper.start();
 sidecarRouter.events.on("agent.event", ({ agentAddress }) => {
   idleSessionReaper.recordActivity(agentAddress);
+});
+
+// The single wake primitive for both inbound-mail ingresses (the HTTP
+// mail route and agent-to-agent WS mail). A no-op for an already-routable
+// instance; the same cold-start relaunch used by the wedge sweep and the
+// chat-surface sessions route.
+function wakeInstance(instanceId: string): Promise<void> {
+  return relaunchInstanceIfNeeded(
+    db,
+    sessionService,
+    grantStore,
+    eventCollectors,
+    instanceId,
+    sidecarRouter,
+  );
+}
+
+// Agent-to-agent mail to a reaped instance: a sidecar-originated mail.outbound
+// frame is routed wire-side inside interchange; a slept recipient is absent
+// from the address index, so the router emits `mail.outbound.undelivered` and
+// the orchestrator's default listener drops it with a warn. Subscribe the hub
+// to the same event (listeners are additive), wake the recipient instance, and
+// re-deliver via the router's public routeMail.
+registerUndeliveredMailWake({
+  db,
+  wake: wakeInstance,
+  onUndelivered: (handler) =>
+    sidecarRouter.events.on("mail.outbound.undelivered", handler),
+  routeMail: sidecarRouter.routeMail,
 });
 
 // Per-run deployment teardown (CL-2582), shared by the projection bridge
@@ -896,7 +929,7 @@ app.get(
   }),
 );
 
-// CL-3767: mail-only wake. The idle-session reaper (CL-2790) now sleeps EVERY
+// Mail-only wake. The idle-session reaper (CL-2790) now sleeps EVERY
 // agent kind, not just Myra — so a shared/sub-agent's next inbound message can
 // land on an instance whose session the reaper already ended (address no
 // longer routable). Interchange's own `/:instanceId/mail` route (mounted
@@ -906,31 +939,10 @@ app.get(
 // on-demand, ahead of that route, with the same cold-start relaunch used by
 // the wedge sweep and the chat-surface sessions route
 // (`relaunchInstanceIfNeeded` — a no-op when the instance is already
-// routable or has no active-session gap to fill). Awaited so the mail route
-// sees the relaunched, routable address; best-effort otherwise — a relaunch
-// failure here is logged and falls through to the mail route's own error
-// handling rather than blocking the request.
+// routable or has no active-session gap to fill).
 app.use(
   "/api/tenants/:tenantId/agents/instances/:instanceId/mail",
-  async (c, next) => {
-    const instanceId = c.req.param("instanceId");
-    if (instanceId && c.req.method === "POST") {
-      await relaunchInstanceIfNeeded(
-        db,
-        sessionService,
-        grantStore,
-        eventCollectors,
-        instanceId,
-        sidecarRouter,
-      ).catch((err) => {
-        log.warn("mail-route wake relaunch failed", {
-          instanceId,
-          error: err instanceof Error ? err : new Error(String(err)),
-        });
-      });
-    }
-    await next();
-  },
+  createMailWakeMiddleware(wakeInstance),
 );
 
 // Server-side backstop for the per-agent attachment gate: reject a document

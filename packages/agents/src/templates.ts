@@ -122,6 +122,13 @@ export interface AgentTemplate {
    */
   ephemeral?: boolean;
   /**
+   * Marks a template whose work is driven by its own internal schedule
+   * (interval ticks), not by inbound mail. Wake is mail-only, so sleeping a
+   * self-driven agent would kill its schedule with nothing to ever wake it —
+   * the idle-session reaper excludes these alongside `ephemeral` templates.
+   */
+  selfDriven?: boolean;
+  /**
    * Native tool packages this agent pins. Persisted to the agent DB row at
    * seed time and read back via `parseAgentRow(row).toolPackages` at launch.
    */
@@ -253,6 +260,10 @@ export const AGENT_TEMPLATES: AgentTemplate[] = [
     capabilities: { tools: [...LOOP_DEPLOY_DESCRIPTOR.defaultTools] },
     modelConfig: LOOP_MODEL_CONFIG,
     deployable: false,
+    // Loop runs scheduled background tasks on its own interval — no inbound
+    // mail ever arrives to wake it, so reaping it would kill the schedule
+    // forever.
+    selfDriven: true,
   },
   {
     key: "freddie",
@@ -347,12 +358,14 @@ export const AGENT_TEMPLATES: AgentTemplate[] = [
 /**
  * Whether a live agent instance with this display name may be slept when
  * idle and cleanly relaunched on the next interaction (CL-2790, the
- * idle-session reaper; CL-3767 made this universal over `kind`).
+ * idle-session reaper — now universal over `kind`).
  *
- * Every recognized template is reapable EXCEPT the explicit `ephemeral`
- * allowlist — inbox-triage sessions (`myra-triage`, `myra-triage-*`) and the
- * internal file-parser invocation, which end when their one job is done and
- * are never a surface a member returns to. `kind` (`"personal"` on Myra and
+ * Every recognized template is reapable EXCEPT the explicit exclusion
+ * allowlist: `ephemeral` templates — inbox-triage sessions (`myra-triage`,
+ * `myra-triage-*`) and the internal file-parser invocation, which end when
+ * their one job is done and are never a surface a member returns to — and
+ * `selfDriven` templates (Loop), whose interval schedule no inbound mail
+ * would ever wake. `kind` (`"personal"` on Myra and
  * her chat variants) is unrelated to reapability now — it only marks the
  * per-member personal-agent family for catalog/operator-profile purposes.
  * Every chat surface and mail-delivery route wakes a slept instance
@@ -365,5 +378,6 @@ export const AGENT_TEMPLATES: AgentTemplate[] = [
  */
 export function isReapableAgentInstance(agentName: string): boolean {
   const template = AGENT_TEMPLATES.find((t) => t.name === agentName);
-  return template !== undefined && template.ephemeral !== true;
+  if (template === undefined) return false;
+  return template.ephemeral !== true && template.selfDriven !== true;
 }
