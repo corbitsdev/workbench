@@ -9,14 +9,25 @@ import {
   validateMyraVariantPatch,
 } from "./myra-variant-preferences";
 
+type StoredRow = {
+  chatVariantId: string | null;
+  triageVariantId: string | null;
+  instructionsGlobal?: string | null;
+  instructionsChat?: string | null;
+  instructionsTriage?: string | null;
+  personality?: string | null;
+  emojiUse?: string | null;
+  uiType?: string | null;
+  artifactUsageChat?: string | null;
+  artifactUsageTriage?: string | null;
+  toolUsageChat?: string | null;
+  toolUsageTriage?: string | null;
+  skillUsageChat?: string | null;
+  skillUsageTriage?: string | null;
+};
+
 function makeDb(opts: {
-  stored?: {
-    chatVariantId: string | null;
-    triageVariantId: string | null;
-    instructionsGlobal?: string | null;
-    instructionsChat?: string | null;
-    instructionsTriage?: string | null;
-  };
+  stored?: StoredRow;
   onConflictDoUpdate?: ReturnType<typeof mock>;
   values?: ReturnType<typeof mock>;
 }): HubDb {
@@ -33,19 +44,30 @@ function makeDb(opts: {
   } as unknown as HubDb;
 }
 
+const EMPTY = {
+  chat: null,
+  triage: null,
+  instructionsGlobal: null,
+  instructionsChat: null,
+  instructionsTriage: null,
+  personality: null,
+  emojiUse: null,
+  uiType: null,
+  artifactUsageChat: null,
+  artifactUsageTriage: null,
+  toolUsageChat: null,
+  toolUsageTriage: null,
+  skillUsageChat: null,
+  skillUsageTriage: null,
+};
+
 describe("readMyraVariantPreference", () => {
   it("returns nulls when no row exists", async () => {
     const db = makeDb({ stored: undefined });
-    expect(await readMyraVariantPreference(db, "tn", "prn")).toEqual({
-      chat: null,
-      triage: null,
-      instructionsGlobal: null,
-      instructionsChat: null,
-      instructionsTriage: null,
-    });
+    expect(await readMyraVariantPreference(db, "tn", "prn")).toEqual(EMPTY);
   });
 
-  it("returns the stored selection", async () => {
+  it("returns the stored variant selection and instructions with default nulls on style axes", async () => {
     const db = makeDb({
       stored: {
         chatVariantId: "myra-opus-4-8",
@@ -56,11 +78,39 @@ describe("readMyraVariantPreference", () => {
       },
     });
     expect(await readMyraVariantPreference(db, "tn", "prn")).toEqual({
+      ...EMPTY,
       chat: "myra-opus-4-8",
-      triage: null,
       instructionsGlobal: "Be terse.",
-      instructionsChat: null,
-      instructionsTriage: null,
+    });
+  });
+
+  it("returns stored style-axis selections", async () => {
+    const db = makeDb({
+      stored: {
+        chatVariantId: null,
+        triageVariantId: null,
+        personality: "candid",
+        emojiUse: "heavy",
+        uiType: "paragraphs",
+        artifactUsageChat: "heavy",
+        artifactUsageTriage: "none",
+        toolUsageChat: "light",
+        toolUsageTriage: "none",
+        skillUsageChat: "heavy",
+        skillUsageTriage: "default",
+      },
+    });
+    expect(await readMyraVariantPreference(db, "tn", "prn")).toEqual({
+      ...EMPTY,
+      personality: "candid",
+      emojiUse: "heavy",
+      uiType: "paragraphs",
+      artifactUsageChat: "heavy",
+      artifactUsageTriage: "none",
+      toolUsageChat: "light",
+      toolUsageTriage: "none",
+      skillUsageChat: "heavy",
+      skillUsageTriage: "default",
     });
   });
 });
@@ -91,6 +141,35 @@ describe("validateMyraVariantPatch", () => {
       "myra-opus-4-8",
     );
   });
+
+  it("accepts known style-axis option ids and null", () => {
+    expect(
+      validateMyraVariantPatch({
+        personality: "candid",
+        emojiUse: null,
+        uiType: "paragraphs",
+        artifactUsageChat: "heavy",
+        artifactUsageTriage: "none",
+        toolUsageChat: "light",
+        toolUsageTriage: null,
+        skillUsageChat: "default",
+        skillUsageTriage: "heavy",
+      }),
+    ).toBeNull();
+  });
+
+  it("rejects an unknown style-axis option id", () => {
+    expect(
+      validateMyraVariantPatch({ personality: "not-a-real-option" }),
+    ).toContain("not-a-real-option");
+  });
+
+  it("rejects a usage-axis option id given to the wrong axis", () => {
+    // "teammate" is a personality option, not a usage-dial option.
+    expect(
+      validateMyraVariantPatch({ artifactUsageChat: "teammate" }),
+    ).toContain("teammate");
+  });
 });
 
 describe("setMyraVariantPreference", () => {
@@ -114,11 +193,9 @@ describe("setMyraVariantPreference", () => {
     });
 
     expect(merged).toEqual({
+      ...EMPTY,
       chat: "myra-kimi-k2-6",
       triage: "myra-triage-opus-4-8",
-      instructionsGlobal: null,
-      instructionsChat: null,
-      instructionsTriage: null,
     });
     expect(values).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -147,9 +224,6 @@ describe("setMyraVariantPreference", () => {
   });
 
   it("merges only the provided instructions field, keeping others untouched", async () => {
-    const values = mock(() => ({
-      onConflictDoUpdate: mock(() => Promise.resolve()),
-    }));
     const db = makeDb({
       stored: {
         chatVariantId: null,
@@ -158,7 +232,6 @@ describe("setMyraVariantPreference", () => {
         instructionsChat: "Use bullets.",
         instructionsTriage: null,
       },
-      values,
     });
 
     const merged = await setMyraVariantPreference(db, "tn", "prn", {
@@ -166,8 +239,7 @@ describe("setMyraVariantPreference", () => {
     });
 
     expect(merged).toEqual({
-      chat: null,
-      triage: null,
+      ...EMPTY,
       instructionsGlobal: "Be terse.",
       instructionsChat: "Use bullets.",
       instructionsTriage: "Flag investor mail.",
@@ -188,6 +260,91 @@ describe("setMyraVariantPreference", () => {
       instructionsGlobal: null,
     });
     expect(merged.instructionsGlobal).toBeNull();
+  });
+
+  it("merges a style-axis patch while leaving other axes and variant selection untouched", async () => {
+    const values = mock(() => ({
+      onConflictDoUpdate: mock(() => Promise.resolve()),
+    }));
+    const db = makeDb({
+      stored: {
+        chatVariantId: "myra-opus-4-8",
+        triageVariantId: null,
+        personality: "friendly",
+        artifactUsageChat: "heavy",
+      },
+      values,
+    });
+
+    const merged = await setMyraVariantPreference(db, "tn", "prn", {
+      artifactUsageChat: "none",
+      toolUsageTriage: "light",
+    });
+
+    expect(merged).toEqual({
+      ...EMPTY,
+      chat: "myra-opus-4-8",
+      personality: "friendly",
+      artifactUsageChat: "none",
+      toolUsageTriage: "light",
+    });
+    expect(values).toHaveBeenCalledWith(
+      expect.objectContaining({
+        personality: "friendly",
+        artifactUsageChat: "none",
+        toolUsageTriage: "light",
+      }),
+    );
+  });
+
+  it("round-trips instruction fields and style-axis fields through one call", async () => {
+    // Rebase-merge guard: both features share this record and upsert — a
+    // conflict resolution that drops either side's columns from .values() or
+    // .onConflictDoUpdate().set() must fail here.
+    const capturedValues: Record<string, unknown>[] = [];
+    const capturedSets: Record<string, unknown>[] = [];
+    const onConflictDoUpdate = mock((arg: { set: Record<string, unknown> }) => {
+      capturedSets.push(arg.set);
+      return Promise.resolve();
+    });
+    const values = mock((arg: Record<string, unknown>) => {
+      capturedValues.push(arg);
+      return { onConflictDoUpdate };
+    });
+    const db = makeDb({
+      stored: {
+        chatVariantId: null,
+        triageVariantId: null,
+        instructionsGlobal: "Be terse.",
+        skillUsageTriage: "light",
+      },
+      values,
+    });
+
+    const merged = await setMyraVariantPreference(db, "tn", "prn", {
+      instructionsChat: "Use bullets.",
+      personality: "candid",
+      toolUsageChat: "none",
+    });
+
+    expect(merged).toEqual({
+      ...EMPTY,
+      instructionsGlobal: "Be terse.",
+      instructionsChat: "Use bullets.",
+      personality: "candid",
+      toolUsageChat: "none",
+      skillUsageTriage: "light",
+    });
+    for (const persisted of [capturedValues[0], capturedSets[0]]) {
+      expect(persisted).toMatchObject({
+        instructionsGlobal: "Be terse.",
+        instructionsChat: "Use bullets.",
+        instructionsTriage: null,
+        personality: "candid",
+        toolUsageChat: "none",
+        skillUsageTriage: "light",
+      });
+    }
   });
 });
 

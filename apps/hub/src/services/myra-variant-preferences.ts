@@ -1,6 +1,6 @@
 import { and, eq } from "drizzle-orm";
 import { type } from "arktype";
-import { isMyraVariantId } from "@workbench/myra";
+import { isMyraVariantId, isStyleAxisOptionId } from "@workbench/myra";
 import { myraVariantPreference } from "../db/schema";
 import type { HubDb } from "../db";
 
@@ -11,11 +11,13 @@ import type { HubDb } from "../db";
 export const MYRA_INSTRUCTIONS_MAX_LENGTH = 4000;
 
 /**
- * A member's stored default-variant selection plus their standing guidance
- * for Myra. `null` on the variant axes means "use the canonical default";
- * `null`/absent on the instructions axes means "nothing set" — the prompt
- * builder renders nothing for either. This is the read shape returned by GET
- * and PUT.
+ * A member's stored default-variant selection, standing guidance, and
+ * personalization-style selection. `null` on the variant axes means "use the
+ * canonical default"; `null`/absent on the instructions axes means "nothing
+ * set"; `null` on a style axis means "use the axis's default option" — the
+ * byte-identical current behavior. This is the read shape returned by GET
+ * and PUT. Style axes: `personality` / `emojiUse` / `uiType` are global
+ * (shared by chat and triage); the three usage dials are per-surface.
  */
 export const MyraVariantPreferenceSchema = type({
   chat: "string | null",
@@ -23,6 +25,15 @@ export const MyraVariantPreferenceSchema = type({
   instructionsGlobal: "string | null",
   instructionsChat: "string | null",
   instructionsTriage: "string | null",
+  personality: "string | null",
+  emojiUse: "string | null",
+  uiType: "string | null",
+  artifactUsageChat: "string | null",
+  artifactUsageTriage: "string | null",
+  toolUsageChat: "string | null",
+  toolUsageTriage: "string | null",
+  skillUsageChat: "string | null",
+  skillUsageTriage: "string | null",
 });
 export type MyraVariantPreference = typeof MyraVariantPreferenceSchema.infer;
 
@@ -33,7 +44,8 @@ const InstructionsFieldSchema = type(
 /**
  * The PUT patch: every field may be omitted (left untouched), set to a value,
  * or set to `null` (cleared). Instructions fields are length-capped at
- * {@link MYRA_INSTRUCTIONS_MAX_LENGTH} characters.
+ * {@link MYRA_INSTRUCTIONS_MAX_LENGTH} characters; style-axis fields clear
+ * back to that axis's default option.
  */
 export const MyraVariantPreferencePatchSchema = type({
   "chat?": "string | null",
@@ -41,6 +53,15 @@ export const MyraVariantPreferencePatchSchema = type({
   "instructionsGlobal?": InstructionsFieldSchema,
   "instructionsChat?": InstructionsFieldSchema,
   "instructionsTriage?": InstructionsFieldSchema,
+  "personality?": "string | null",
+  "emojiUse?": "string | null",
+  "uiType?": "string | null",
+  "artifactUsageChat?": "string | null",
+  "artifactUsageTriage?": "string | null",
+  "toolUsageChat?": "string | null",
+  "toolUsageTriage?": "string | null",
+  "skillUsageChat?": "string | null",
+  "skillUsageTriage?": "string | null",
 });
 export type MyraVariantPreferencePatch =
   typeof MyraVariantPreferencePatchSchema.infer;
@@ -51,6 +72,15 @@ const EMPTY_PREFERENCE: MyraVariantPreference = {
   instructionsGlobal: null,
   instructionsChat: null,
   instructionsTriage: null,
+  personality: null,
+  emojiUse: null,
+  uiType: null,
+  artifactUsageChat: null,
+  artifactUsageTriage: null,
+  toolUsageChat: null,
+  toolUsageTriage: null,
+  skillUsageChat: null,
+  skillUsageTriage: null,
 };
 
 export async function readMyraVariantPreference(
@@ -68,16 +98,38 @@ export async function readMyraVariantPreference(
   return {
     chat: row.chatVariantId,
     triage: row.triageVariantId,
-    instructionsGlobal: row.instructionsGlobal,
-    instructionsChat: row.instructionsChat,
-    instructionsTriage: row.instructionsTriage,
+    instructionsGlobal: row.instructionsGlobal ?? null,
+    instructionsChat: row.instructionsChat ?? null,
+    instructionsTriage: row.instructionsTriage ?? null,
+    personality: row.personality ?? null,
+    emojiUse: row.emojiUse ?? null,
+    uiType: row.uiType ?? null,
+    artifactUsageChat: row.artifactUsageChat ?? null,
+    artifactUsageTriage: row.artifactUsageTriage ?? null,
+    toolUsageChat: row.toolUsageChat ?? null,
+    toolUsageTriage: row.toolUsageTriage ?? null,
+    skillUsageChat: row.skillUsageChat ?? null,
+    skillUsageTriage: row.skillUsageTriage ?? null,
   };
 }
 
+const STYLE_AXIS_PATCH_KEYS = [
+  ["personality", "personality"],
+  ["emojiUse", "emojiUse"],
+  ["uiType", "uiType"],
+  ["artifactUsageChat", "artifactUsage"],
+  ["artifactUsageTriage", "artifactUsage"],
+  ["toolUsageChat", "toolUsage"],
+  ["toolUsageTriage", "toolUsage"],
+  ["skillUsageChat", "skillUsage"],
+  ["skillUsageTriage", "skillUsage"],
+] as const;
+
 /**
- * Validate a patch against the variant catalog. Returns the offending message
- * when the patch names an unknown variant for its axis, else `null`. A `null`
- * value on either axis is always valid (clears the selection).
+ * Validate a patch against the variant catalog and the style-axes catalog.
+ * Returns the offending message when the patch names an unknown variant or
+ * option id for its axis, else `null`. A `null` value on any axis is always
+ * valid (clears the selection back to its default).
  */
 export function validateMyraVariantPatch(
   patch: MyraVariantPreferencePatch,
@@ -96,6 +148,14 @@ export function validateMyraVariantPatch(
   ) {
     return `Unknown triage variant id: ${patch.triage}`;
   }
+
+  for (const [patchKey, axisId] of STYLE_AXIS_PATCH_KEYS) {
+    const value = patch[patchKey];
+    if (value !== undefined && value !== null && !isStyleAxisOptionId(axisId, value)) {
+      return `Unknown ${axisId} option id: ${value}`;
+    }
+  }
+
   return null;
 }
 
@@ -131,6 +191,34 @@ export async function setMyraVariantPreference(
       patch.instructionsTriage !== undefined
         ? patch.instructionsTriage
         : current.instructionsTriage,
+    personality:
+      patch.personality !== undefined ? patch.personality : current.personality,
+    emojiUse: patch.emojiUse !== undefined ? patch.emojiUse : current.emojiUse,
+    uiType: patch.uiType !== undefined ? patch.uiType : current.uiType,
+    artifactUsageChat:
+      patch.artifactUsageChat !== undefined
+        ? patch.artifactUsageChat
+        : current.artifactUsageChat,
+    artifactUsageTriage:
+      patch.artifactUsageTriage !== undefined
+        ? patch.artifactUsageTriage
+        : current.artifactUsageTriage,
+    toolUsageChat:
+      patch.toolUsageChat !== undefined
+        ? patch.toolUsageChat
+        : current.toolUsageChat,
+    toolUsageTriage:
+      patch.toolUsageTriage !== undefined
+        ? patch.toolUsageTriage
+        : current.toolUsageTriage,
+    skillUsageChat:
+      patch.skillUsageChat !== undefined
+        ? patch.skillUsageChat
+        : current.skillUsageChat,
+    skillUsageTriage:
+      patch.skillUsageTriage !== undefined
+        ? patch.skillUsageTriage
+        : current.skillUsageTriage,
   };
 
   await db
@@ -143,6 +231,15 @@ export async function setMyraVariantPreference(
       instructionsGlobal: next.instructionsGlobal,
       instructionsChat: next.instructionsChat,
       instructionsTriage: next.instructionsTriage,
+      personality: next.personality,
+      emojiUse: next.emojiUse,
+      uiType: next.uiType,
+      artifactUsageChat: next.artifactUsageChat,
+      artifactUsageTriage: next.artifactUsageTriage,
+      toolUsageChat: next.toolUsageChat,
+      toolUsageTriage: next.toolUsageTriage,
+      skillUsageChat: next.skillUsageChat,
+      skillUsageTriage: next.skillUsageTriage,
     })
     .onConflictDoUpdate({
       target: [
@@ -155,6 +252,15 @@ export async function setMyraVariantPreference(
         instructionsGlobal: next.instructionsGlobal,
         instructionsChat: next.instructionsChat,
         instructionsTriage: next.instructionsTriage,
+        personality: next.personality,
+        emojiUse: next.emojiUse,
+        uiType: next.uiType,
+        artifactUsageChat: next.artifactUsageChat,
+        artifactUsageTriage: next.artifactUsageTriage,
+        toolUsageChat: next.toolUsageChat,
+        toolUsageTriage: next.toolUsageTriage,
+        skillUsageChat: next.skillUsageChat,
+        skillUsageTriage: next.skillUsageTriage,
         updatedAt: new Date(),
       },
     });

@@ -28,6 +28,24 @@ function makeDb(opts: {
   } as unknown as HubDb;
 }
 
+const EMPTY_INSTRUCTIONS = {
+  instructionsGlobal: null,
+  instructionsChat: null,
+  instructionsTriage: null,
+};
+
+const EMPTY_STYLE_AXES = {
+  personality: null,
+  emojiUse: null,
+  uiType: null,
+  artifactUsageChat: null,
+  artifactUsageTriage: null,
+  toolUsageChat: null,
+  toolUsageTriage: null,
+  skillUsageChat: null,
+  skillUsageTriage: null,
+};
+
 function wrapWithTenant(
   db: HubDb,
   ctx = { tenantId: "tn-global", principalId: "prn-member" },
@@ -79,9 +97,38 @@ describe("Myra variants router", () => {
     expect(await res.json()).toEqual({
       chat: "myra-opus-4-8",
       triage: null,
-      instructionsGlobal: null,
-      instructionsChat: null,
-      instructionsTriage: null,
+      ...EMPTY_INSTRUCTIONS,
+      ...EMPTY_STYLE_AXES,
+    });
+  });
+
+  it("returns stored style-axis selections alongside the variant selection", async () => {
+    const findFirst = mock(async () => ({
+      chatVariantId: null,
+      triageVariantId: null,
+      personality: "candid",
+      emojiUse: null,
+      uiType: null,
+      artifactUsageChat: "none",
+      artifactUsageTriage: null,
+      toolUsageChat: null,
+      toolUsageTriage: null,
+      skillUsageChat: null,
+      skillUsageTriage: null,
+    }));
+    const db = {
+      query: { myraVariantPreference: { findFirst } },
+    } as unknown as HubDb;
+    const app = wrapWithTenant(db);
+    const res = await app.request("/members/me/myra-preferences");
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({
+      chat: null,
+      triage: null,
+      ...EMPTY_INSTRUCTIONS,
+      ...EMPTY_STYLE_AXES,
+      personality: "candid",
+      artifactUsageChat: "none",
     });
   });
 
@@ -109,9 +156,8 @@ describe("Myra variants router", () => {
     expect(await res.json()).toEqual({
       chat: "myra-kimi-k2-6",
       triage: "myra-triage-opus-4-8",
-      instructionsGlobal: null,
-      instructionsChat: null,
-      instructionsTriage: null,
+      ...EMPTY_INSTRUCTIONS,
+      ...EMPTY_STYLE_AXES,
     });
     expect(values).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -147,6 +193,7 @@ describe("Myra variants router", () => {
     expect(await res.json()).toEqual({
       chat: null,
       triage: null,
+      ...EMPTY_STYLE_AXES,
       instructionsGlobal: "Be terse.",
       instructionsChat: null,
       instructionsTriage: "Flag investor mail.",
@@ -192,5 +239,42 @@ describe("Myra variants router", () => {
       body: JSON.stringify({ chat: "myra-triage-opus-4-8" }),
     });
     expect(res.status).toBe(400);
+  });
+
+  it("persists a valid style-axis selection", async () => {
+    const values = mock(() => ({
+      onConflictDoUpdate: mock(() => Promise.resolve()),
+    }));
+    const db = makeDb({ values });
+    const app = wrapWithTenant(db);
+    const res = await app.request("/members/me/myra-preferences", {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ personality: "candid", toolUsageChat: "none" }),
+    });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({
+      chat: null,
+      triage: null,
+      ...EMPTY_INSTRUCTIONS,
+      ...EMPTY_STYLE_AXES,
+      personality: "candid",
+      toolUsageChat: "none",
+    });
+  });
+
+  it("400s an unknown style-axis option id without touching the DB", async () => {
+    const values = mock(() => ({
+      onConflictDoUpdate: mock(() => Promise.resolve()),
+    }));
+    const db = makeDb({ values });
+    const app = wrapWithTenant(db);
+    const res = await app.request("/members/me/myra-preferences", {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ personality: "not-a-real-option" }),
+    });
+    expect(res.status).toBe(400);
+    expect(values).not.toHaveBeenCalled();
   });
 });

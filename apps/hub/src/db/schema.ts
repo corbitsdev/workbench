@@ -72,6 +72,13 @@ export const memberPreferences = pgTable(
 // minted lazily from the selected variant and keep it for life, so changing
 // this never re-deploys an existing instance. Workbench-owned; no interchange
 // table is touched.
+// Personalization style-axis columns (CL-3760) added on the same row:
+// `personality` / `emojiUse` / `uiType` are global (one value for both
+// surfaces); the three usage dials are per-surface because a member may want
+// e.g. heavy artifact usage in chat but none in unattended inbox automation.
+// Each column holds an option id from the `@workbench/myra` style-axes
+// catalog (validated against it at the API boundary) or NULL, meaning "use
+// the axis's default option" — composes to no prompt overlay text.
 export const myraVariantPreference = pgTable(
   "myra_variant_preference",
   {
@@ -89,6 +96,15 @@ export const myraVariantPreference = pgTable(
     instructionsGlobal: text("instructions_global"),
     instructionsChat: text("instructions_chat"),
     instructionsTriage: text("instructions_triage"),
+    personality: text("personality"),
+    emojiUse: text("emoji_use"),
+    uiType: text("ui_type"),
+    artifactUsageChat: text("artifact_usage_chat"),
+    artifactUsageTriage: text("artifact_usage_triage"),
+    toolUsageChat: text("tool_usage_chat"),
+    toolUsageTriage: text("tool_usage_triage"),
+    skillUsageChat: text("skill_usage_chat"),
+    skillUsageTriage: text("skill_usage_triage"),
     createdAt: timestamp("created_at").notNull().defaultNow(),
     updatedAt: timestamp("updated_at")
       .notNull()
