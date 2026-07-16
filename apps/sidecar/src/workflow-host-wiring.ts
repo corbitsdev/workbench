@@ -1060,6 +1060,20 @@ export function createSidecarDeployRouter(deps: {
   // deploys and the undeploy hook's lookup is a no-op for them.
   const activeSupervisors = new Map<string, ActiveMultiStepSupervisor>();
 
+  // WORKBENCH-LOCAL (CL-3780): per-trivial-deployment disposer for the
+  // `onAgentEvent` run-chain listener attached in `trivialLaunch`. The
+  // listener lives on `SessionManager`'s `agentEventListeners` set, which
+  // `destroySession` does NOT prune -- so an undeployed or torn-deploy
+  // trivial agent leaves the listener behind. If the same address later
+  // emits an inference event (a re-woken harness, or a torn deploy whose
+  // `provisionAgent` already came live), the orphaned listener fires
+  // `recordRunEvent` against a deploymentId the registry no longer maps,
+  // and every workflow-run pack push throws "no agent address registered
+  // for deployment"; the run events (including a tool call's result) are
+  // dropped forever. Holding the disposer here lets the torn-deploy unwind
+  // and `teardownDeployment` dispose it symmetrically with registration.
+  const trivialRunEventDisposers = new Map<string, () => void>();
+
   // Slug-collision tracking. `deriveTrivialDeploymentId` substitutes
   // disallowed characters with `-`, which is deterministic but lossy:
   // two distinct agent addresses can collapse to the same slug, and
@@ -1622,21 +1636,30 @@ export function createSidecarDeployRouter(deps: {
             // Subscribe to per-agent InferenceEvents and project the
             // reactor's run-bracket vocabulary onto the workflow-run
             // event chain. The seam is a no-op until the harness
-            // dispatches the first `message.run.started`; the
-            // disposer is not held here because the trivial branch
-            // shares the agent's lifetime with the deployment and
-            // SessionManager prunes the listener set on
-            // destroySession through the closure's natural unbind.
-            // The reactor brackets one workflow-run per inbound
-            // mail; each `message.run.started` mints a fresh runId
-            // and brackets the chain.
+            // dispatches the first `message.run.started`. The reactor
+            // brackets one workflow-run per inbound mail; each
+            // `message.run.started` mints a fresh runId and brackets the
+            // chain.
+            //
+            // WORKBENCH-LOCAL (CL-3780): hold the disposer. `destroySession`
+            // does NOT prune `agentEventListeners`, so this listener outlives
+            // the deployment unless explicitly disposed — a stale listener
+            // firing after the deployment's registry mapping is gone throws
+            // "no agent address registered for deployment" on every push. The
+            // torn-deploy unwind and `teardownDeployment` dispose it via
+            // `trivialRunEventDisposers`.
             const cell: TrivialRunCell = {
               runId: null,
               stepStarted: false,
             };
-            deps.onAgentEvent(bindings.agentAddress, (event) => {
-              driveTrivialRunChain(event, bindings.recordRunEvent, cell).catch(
-                (err: unknown) => {
+            const disposeRunEventListener = deps.onAgentEvent(
+              bindings.agentAddress,
+              (event) => {
+                driveTrivialRunChain(
+                  event,
+                  bindings.recordRunEvent,
+                  cell,
+                ).catch((err: unknown) => {
                   // Capture rejections inside the listener so a substrate
                   // failure (e.g. the hub rejecting the workflow-run pack
                   // push) does not surface as an unhandled rejection on
@@ -1646,9 +1669,31 @@ export function createSidecarDeployRouter(deps: {
                   // here without killing the agent's reactor.
                   const msg = err instanceof Error ? err.message : String(err);
                   logger.warn`trivial run-event recording failed for ${bindings.agentAddress}: ${msg}`;
-                },
-              );
-            });
+                });
+              },
+            );
+            // WORKBENCH-LOCAL (CL-3780): a same-address trivial redeploy with
+            // no intervening `teardownDeployment` (a hibernate/undeploy whose
+            // ack path failed leaves the deployment resident, and the hub
+            // re-sends `agent.deploy` at the same address — `claimSlug` does
+            // not block same-address redeploy) would otherwise overwrite the
+            // prior disposer, leaking the old listener AND leaving two
+            // listeners driving doubled run-bracket events on one repo. Dispose
+            // the prior one first. The stale *session* needs no teardown here:
+            // `provisionAgent` above replaces the harness, and the trivial
+            // branch owns no child process / IPC fds (unlike the multi-step
+            // resident-teardown guard, which reclaims those OS resources).
+            const priorDisposer = trivialRunEventDisposers.get(
+              bindings.agentAddress,
+            );
+            if (priorDisposer !== undefined) {
+              trivialRunEventDisposers.delete(bindings.agentAddress);
+              priorDisposer();
+            }
+            trivialRunEventDisposers.set(
+              bindings.agentAddress,
+              disposeRunEventListener,
+            );
           },
           ...(deps.consumedRetentionMs !== undefined
             ? { consumedRetentionMs: deps.consumedRetentionMs }
@@ -1683,6 +1728,29 @@ export function createSidecarDeployRouter(deps: {
         return { publicKey };
       } finally {
         if (!trivialClaimedSlugSucceeded) {
+          // WORKBENCH-LOCAL (CL-3780): a deploy that failed AFTER
+          // `trivialLaunch` provisioned a live harness and attached the
+          // run-chain listener leaves both behind. Dispose the listener
+          // (else it fires against the just-unregistered deployment and
+          // throws "no agent address registered" forever) and tear the
+          // provisioned/live session down so the failed deploy leaves no
+          // residency. Guarded on the disposer's presence: it exists only
+          // once `provisionAgent` succeeded, so `destroySession` always has
+          // a provisioned/live entry to drop.
+          const disposeRunEventListener = trivialRunEventDisposers.get(
+            frame.agentAddress,
+          );
+          if (disposeRunEventListener !== undefined) {
+            trivialRunEventDisposers.delete(frame.agentAddress);
+            disposeRunEventListener();
+            try {
+              await deps.sessions.destroySession(frame.agentAddress);
+            } catch (cause) {
+              const reason =
+                cause instanceof Error ? cause.message : String(cause);
+              logger.warn`trivial deploy unwind: destroySession failed for ${frame.agentAddress}: ${reason}`;
+            }
+          }
           if (trivialDeploymentRegistered) {
             deps.unregisterDeployment({
               deploymentId,
@@ -1738,6 +1806,17 @@ export function createSidecarDeployRouter(deps: {
     deps.multistepMailRouter?.unregister(agentAddress);
     deps.multistepSignalRouter?.unregister(agentAddress);
     deps.multistepDrainRouter?.unregister(agentAddress);
+    // WORKBENCH-LOCAL (CL-3780): dispose the trivial run-chain listener so it
+    // does not outlive the deployment on `agentEventListeners` (which
+    // `destroySession` does not prune). A leftover listener fires against a
+    // deploymentId the registry no longer maps, throwing "no agent address
+    // registered for deployment" on every subsequent push. A no-op for the
+    // multi-step branch, which never registers a disposer here.
+    const disposeRunEventListener = trivialRunEventDisposers.get(agentAddress);
+    if (disposeRunEventListener !== undefined) {
+      trivialRunEventDisposers.delete(agentAddress);
+      disposeRunEventListener();
+    }
     // Shut the per-deployment supervisor down so the workflow-process
     // child, its IPC pipes, and its event-channel fd are released.
     // The supervisor's `shutdown()` is idempotent (returns early when
