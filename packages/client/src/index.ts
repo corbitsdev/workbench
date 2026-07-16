@@ -823,6 +823,10 @@ export const RosterInstanceSchema = type({
   name: "string",
   status: "string",
   sessionCount: "number",
+  templateKey: "string",
+  label: "string | null",
+  lastActivityAt: "string",
+  address: "string",
 });
 export type RosterInstance = typeof RosterInstanceSchema.infer;
 

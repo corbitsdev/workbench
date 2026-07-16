@@ -51,6 +51,9 @@ async function seedOwnedInstance(args: {
   memberPrincipalId?: string;
   tenantId?: string;
   status?: string;
+  templateKey?: string;
+  label?: string | null;
+  lastActivityAt?: string;
 }): Promise<void> {
   await client.query(
     `insert into agent_instance (id, agent_id, tenant_id, principal_id, address, status)
@@ -64,13 +67,16 @@ async function seedOwnedInstance(args: {
     ],
   );
   await client.query(
-    `insert into member_agent_instance (id, tenant_id, member_principal_id, template_key, agent_id, instance_id)
-     values ('link-' || $1, $2, $3, 'myra', $4, $1)`,
+    `insert into member_agent_instance (id, tenant_id, member_principal_id, template_key, agent_id, instance_id, label, last_activity_at)
+     values ('link-' || $1, $2, $3, $4, $5, $1, $6, coalesce($7::timestamptz, now()))`,
     [
       args.instanceId,
       args.tenantId ?? TENANT,
       args.memberPrincipalId ?? MEMBER,
+      args.templateKey ?? "myra",
       args.agentId,
+      args.label ?? null,
+      args.lastActivityAt ?? null,
     ],
   );
 }
@@ -223,6 +229,38 @@ describe("getPrincipalRoster", () => {
 });
 
 describe("getTenantRoster", () => {
+  test("carries the instance's templateKey, label, lastActivityAt and address (CL-3770)", async () => {
+    await seedAgent("agt-1", "Myra");
+    await seedOwnedInstance({
+      instanceId: "ins-chat",
+      agentId: "agt-1",
+      syntheticPrincipalId: "prn-syn-chat",
+      templateKey: "myra",
+      label: "Renewal terms for Acme",
+      lastActivityAt: "2026-02-01T00:00:00Z",
+    });
+    await seedOwnedInstance({
+      instanceId: "ins-triage",
+      agentId: "agt-1",
+      syntheticPrincipalId: "prn-syn-triage",
+      templateKey: "myra-triage",
+      label: "Triage: Q3 renewal follow-up",
+      lastActivityAt: "2026-03-01T00:00:00Z",
+    });
+
+    const roster = await getTenantRoster({ db, tenantId: TENANT });
+
+    const chat = roster.instances.find((i) => i.instanceId === "ins-chat")!;
+    expect(chat.templateKey).toBe("myra");
+    expect(chat.label).toBe("Renewal terms for Acme");
+    expect(chat.lastActivityAt).toBe("2026-02-01T00:00:00.000Z");
+    expect(chat.address).toBe("ins-chat@wb.local");
+
+    const triage = roster.instances.find((i) => i.instanceId === "ins-triage")!;
+    expect(triage.templateKey).toBe("myra-triage");
+    expect(triage.label).toBe("Triage: Q3 renewal follow-up");
+  });
+
   test("lists every owned instance across members and recent runs across principals", async () => {
     await seedAgent("agt-1", "Myra");
     await seedAgent("agt-2", "Oat");

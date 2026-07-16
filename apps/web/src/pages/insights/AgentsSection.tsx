@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Link } from "react-router";
-import { ChevronDown, ChevronRight } from "lucide-react";
 import type { RosterInstance } from "@workbench/client";
+import { Badge } from "@workbench/ui";
 
 import type { ActivityOverview } from "../../lib/hub-api";
 import { useTenantRoster } from "../../hooks/use-tenant-roster";
@@ -11,7 +11,26 @@ import { formatNumber } from "./stats";
 import { SectionLabel } from "./section-label";
 import { instanceStatusTone, statusToneClass } from "./status-tone";
 
-const AGENT_GROUP_PAGE_SIZE = 10;
+const ROSTER_PAGE_SIZE = 12;
+
+// member_agent_instance.template_key values that identify the two Myra
+// surfaces this roster distinguishes. Runtime writes use the canonical keys
+// ("myra" / "myra-triage"), but variant definitions use prefixed keys
+// ("myra-chat-<model>" / "myra-triage-<model>") that tenant provisioning can
+// also mint — so classify by prefix, triage first (its keys also start with
+// "myra"). Mirrors myraSurfaceForTemplateKey in packages/myra; kept local
+// rather than adding a web dependency on that package.
+function myraSurface(templateKey: string): "chat" | "triage" | null {
+  if (templateKey === "myra-triage" || templateKey.startsWith("myra-triage-")) {
+    return "triage";
+  }
+  if (templateKey === "myra" || templateKey.startsWith("myra-chat-")) {
+    return "chat";
+  }
+  return null;
+}
+
+const TRIAGE_LABEL_PREFIX = /^Triage:\s*/;
 
 type InstanceMetrics = {
   turnCount: number;
@@ -19,48 +38,58 @@ type InstanceMetrics = {
   tokens: number;
 };
 
-type AgentGroup = {
-  agentId: string;
-  agentName: string;
-  instances: RosterInstance[];
+type InstanceDisplay = {
+  name: string;
+  badgeLabel: "Chat" | "Inbox automation" | null;
 };
 
+/** Shown when an instance has no usable title/subject yet. */
+function fallbackTitle(instance: RosterInstance): string {
+  return instance.address || instance.instanceId.slice(0, 8);
+}
+
 /**
- * Groups every agent instance in the tenant by its agent definition (CL-3667):
- * one row per agent, instances expandable beneath it. Replaces the two prior
- * flat agent surfaces (TenantRoster's "Agents" panel and the by-instance usage
- * table), which duplicated the same data and rendered raw prn_/ins_ ids.
+ * Names one Myra instance for the roster row (CL-3770): a chat thread reads
+ * "Myra — <thread title>", a triage/automation instance reads
+ * "Myra — <mail subject>" (the hub stores that as "Triage: <subject>" in the
+ * same label column — CL-2737's mailbox-triage.ts), and any other agent kind
+ * keeps its existing definition name with no badge.
  */
-function groupByAgent(instances: RosterInstance[]): AgentGroup[] {
-  const groups = new Map<string, AgentGroup>();
-  for (const instance of instances) {
-    const existing = groups.get(instance.agentId);
-    if (existing) {
-      existing.instances.push(instance);
-    } else {
-      groups.set(instance.agentId, {
-        agentId: instance.agentId,
-        agentName: instance.name,
-        instances: [instance],
-      });
-    }
+export function displayForInstance(instance: RosterInstance): InstanceDisplay {
+  const surface = myraSurface(instance.templateKey);
+  if (surface === "chat") {
+    const title = instance.label?.trim() || fallbackTitle(instance);
+    return { name: `Myra — ${title}`, badgeLabel: "Chat" };
   }
-  return [...groups.values()].sort(
-    (a, b) => b.instances.length - a.instances.length,
+  if (surface === "triage") {
+    const subject = instance.label?.replace(TRIAGE_LABEL_PREFIX, "").trim();
+    const title = subject || fallbackTitle(instance);
+    return { name: `Myra — ${title}`, badgeLabel: "Inbox automation" };
+  }
+  return { name: instance.name, badgeLabel: null };
+}
+
+/** Most-recent-activity-first, so the roster surfaces what's live now. */
+function sortByRecentActivity(instances: RosterInstance[]): RosterInstance[] {
+  return [...instances].sort(
+    (a, b) =>
+      new Date(b.lastActivityAt).getTime() -
+      new Date(a.lastActivityAt).getTime(),
   );
 }
 
-function AgentInstanceRow({
+function InstanceRow({
   instance,
   metrics,
 }: {
   instance: RosterInstance;
   metrics: InstanceMetrics | undefined;
 }) {
+  const { name, badgeLabel } = displayForInstance(instance);
   return (
     <Link
       to={actorHref(instance.principalId)}
-      className="flex items-center gap-3 rounded-[8px] px-3 py-2 outline-none transition-[background-color] hover:bg-row-hover focus-visible:ring-1 focus-visible:ring-accent"
+      className="flex items-center gap-3 rounded-[12px] border border-border bg-surface px-4 py-3 outline-none transition-[background-color] hover:bg-row-hover focus-visible:ring-1 focus-visible:ring-accent"
       data-testid="agent-instance-row"
     >
       <span
@@ -68,7 +97,11 @@ function AgentInstanceRow({
       >
         {instance.status}
       </span>
-      <span className="min-w-0 flex-1 truncate text-[12px] text-text-2">
+      <span className="min-w-0 flex-1 truncate text-[13px] font-semibold text-text">
+        {name}
+      </span>
+      {badgeLabel && <Badge tone="neutral">{badgeLabel}</Badge>}
+      <span className="shrink-0 text-[11px] text-text-3">
         {instance.sessionCount === 1
           ? "1 session"
           : `${instance.sessionCount} sessions`}
@@ -86,62 +119,6 @@ function AgentInstanceRow({
   );
 }
 
-function AgentGroupCard({
-  group,
-  metricsByInstance,
-}: {
-  group: AgentGroup;
-  metricsByInstance: Map<string, InstanceMetrics>;
-}) {
-  const [expanded, setExpanded] = useState(false);
-  const groupTurns = group.instances.reduce(
-    (sum, i) => sum + (metricsByInstance.get(i.instanceId)?.turnCount ?? 0),
-    0,
-  );
-
-  return (
-    <div className="rounded-[12px] border border-border bg-surface">
-      <button
-        type="button"
-        onClick={() => setExpanded((e) => !e)}
-        aria-expanded={expanded}
-        data-testid="agent-group-toggle"
-        className="flex w-full items-center gap-3 px-4 py-3 text-left outline-none focus-visible:ring-1 focus-visible:ring-accent"
-      >
-        {expanded ? (
-          <ChevronDown className="h-4 w-4 shrink-0 text-text-3" />
-        ) : (
-          <ChevronRight className="h-4 w-4 shrink-0 text-text-3" />
-        )}
-        <span className="min-w-0 flex-1">
-          <span className="block truncate text-[13px] font-semibold text-text">
-            {group.agentName}
-          </span>
-          <span className="block text-[11px] text-text-3">
-            {group.instances.length === 1
-              ? "1 instance"
-              : `${group.instances.length} instances`}
-          </span>
-        </span>
-        <span className="font-mono tabular-nums text-[11px] text-text-3">
-          {formatNumber(groupTurns)} turns
-        </span>
-      </button>
-      {expanded && (
-        <div className="flex flex-col gap-0.5 border-t border-border px-2 pb-2 pt-1">
-          {group.instances.map((instance) => (
-            <AgentInstanceRow
-              key={instance.instanceId}
-              instance={instance}
-              metrics={metricsByInstance.get(instance.instanceId)}
-            />
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
 export function AgentsSection({
   tenantId,
   data,
@@ -149,7 +126,7 @@ export function AgentsSection({
   tenantId: string;
   data: ActivityOverview;
 }) {
-  const [visibleCount, setVisibleCount] = useState(AGENT_GROUP_PAGE_SIZE);
+  const [page, setPage] = useState(0);
   const query = useTenantRoster(tenantId, { enabled: tenantId !== "" });
   const roster = query.data;
 
@@ -164,15 +141,19 @@ export function AgentsSection({
     ]),
   );
 
-  const groups = groupByAgent(roster?.instances ?? []);
-  const visible = groups.slice(0, visibleCount);
-  const remaining = groups.length - visible.length;
+  const instances = sortByRecentActivity(roster?.instances ?? []);
+  const pageCount = Math.max(1, Math.ceil(instances.length / ROSTER_PAGE_SIZE));
+  const currentPage = Math.min(page, pageCount - 1);
+  const visible = instances.slice(
+    currentPage * ROSTER_PAGE_SIZE,
+    currentPage * ROSTER_PAGE_SIZE + ROSTER_PAGE_SIZE,
+  );
 
   return (
     <div className="flex flex-col gap-4">
       <SectionLabel>Agents</SectionLabel>
       <p className="-mt-2 text-[11px] text-text-3">
-        Grouped by agent definition. Open an agent to see its instances.
+        One row per agent instance, most recently active first.
       </p>
 
       {query.isError && (
@@ -203,39 +184,48 @@ export function AgentsSection({
         </div>
       )}
 
-      {!query.isError && !query.isLoading && groups.length === 0 && (
+      {!query.isError && !query.isLoading && instances.length === 0 && (
         <p className="rounded-[12px] border border-border bg-surface p-4 text-center text-[12.5px] text-text-2">
           No agent instances in this workbench yet.
         </p>
       )}
 
-      {!query.isError && !query.isLoading && groups.length > 0 && (
+      {!query.isError && !query.isLoading && instances.length > 0 && (
         <div className="flex flex-col gap-2">
-          {visible.map((group) => (
-            <AgentGroupCard
-              key={group.agentId}
-              group={group}
-              metricsByInstance={metricsByInstance}
+          {visible.map((instance) => (
+            <InstanceRow
+              key={instance.instanceId}
+              instance={instance}
+              metrics={metricsByInstance.get(instance.instanceId)}
             />
           ))}
         </div>
       )}
 
-      {remaining > 0 && (
+      {!query.isError && !query.isLoading && pageCount > 1 && (
         <div className="flex items-center justify-between">
           <span className="text-[11px] text-text-3">
-            Showing {formatNumber(visible.length)} of{" "}
-            {formatNumber(groups.length)} agents
+            Page {currentPage + 1} of {pageCount} &middot;{" "}
+            {formatNumber(instances.length)} instances
           </span>
-          <button
-            type="button"
-            onClick={() =>
-              setVisibleCount((count) => count + AGENT_GROUP_PAGE_SIZE)
-            }
-            className="flex min-h-[40px] items-center rounded-[8px] border border-border px-3 py-1.5 text-[12px] font-medium text-text-2 transition-[color,background-color] duration-150 hover:bg-row-hover hover:text-text focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent active:scale-[0.97]"
-          >
-            Show {Math.min(remaining, AGENT_GROUP_PAGE_SIZE)} more
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              disabled={currentPage === 0}
+              onClick={() => setPage(Math.max(0, currentPage - 1))}
+              className="rounded-[8px] border border-border px-2.5 py-1.5 text-[12px] font-medium text-text-2 outline-none transition-colors hover:bg-row-hover disabled:cursor-not-allowed disabled:opacity-40 focus-visible:ring-1 focus-visible:ring-accent"
+            >
+              Previous
+            </button>
+            <button
+              type="button"
+              disabled={currentPage >= pageCount - 1}
+              onClick={() => setPage(Math.min(pageCount - 1, currentPage + 1))}
+              className="rounded-[8px] border border-border px-2.5 py-1.5 text-[12px] font-medium text-text-2 outline-none transition-colors hover:bg-row-hover disabled:cursor-not-allowed disabled:opacity-40 focus-visible:ring-1 focus-visible:ring-accent"
+            >
+              Next
+            </button>
+          </div>
         </div>
       )}
     </div>

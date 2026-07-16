@@ -13,6 +13,10 @@ describe("myraInstanceTraceHref", () => {
           name: "Myra",
           status: "running",
           sessionCount: 1,
+          templateKey: "myra",
+          label: null,
+          lastActivityAt: "2026-01-01T00:00:00.000Z",
+          address: "ins_myra@wb.local",
         },
       ]),
     ).toBe("/insights/users/prn_agent_myra");
@@ -28,6 +32,10 @@ describe("myraInstanceTraceHref", () => {
           name: "Myra",
           status: "running",
           sessionCount: 1,
+          templateKey: "myra",
+          label: null,
+          lastActivityAt: "2026-01-01T00:00:00.000Z",
+          address: "ins_myra@wb.local",
         },
       ]),
     ).toBeUndefined();
