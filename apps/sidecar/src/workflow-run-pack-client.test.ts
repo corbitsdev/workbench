@@ -7,6 +7,7 @@ import git from "isomorphic-git";
 
 import type { RepoId, RepoStore } from "@intx/hub-sessions";
 import { receivePackObjects } from "@workbench/storage-isogit";
+import { WorkflowRunPackQuarantinedError } from "@workbench/hub-agent";
 
 import {
   createDeploymentAddressRegistry,
@@ -372,6 +373,89 @@ describe("createWorkflowRunPackClient", () => {
     } finally {
       await rm(src.dir, { recursive: true, force: true });
       await rm(coldHub, { recursive: true, force: true });
+    }
+  });
+
+  test("a quarantined push does NOT reset the cursor, keeping later walks bounded to a delta", async () => {
+    // CL-3796: hub-link's CL-3415 quarantine fast-fail (WorkflowRunPackQuarantinedError)
+    // means the hub has already rejected this (repoId, ref) repeatedly and
+    // will keep doing so without a network attempt. Resetting the cursor on
+    // this error buys nothing -- the push is still doomed -- and only forces
+    // the NEXT buildDeltaPack to walk an ever-growing history (the event-
+    // loop-blocking git walk the retry storm was traced to). Proven the same
+    // way as the "delta, not full chain" test above: a pack built after the
+    // cursor was supposedly preserved must fail to apply onto an EMPTY repo
+    // (it lacks earlier ancestors) -- a full-chain resend would succeed there.
+    const src = await makeWorkflowRunRepo();
+    const emptyDir = await mkdtemp(join(tmpdir(), "wf-empty-quarantine-"));
+    try {
+      const { store } = createRecordingUnderlyingRepoStore(src.dir);
+      let mode: "ack" | "quarantined" = "ack";
+      let lastPack: Uint8Array | null = null;
+      let lastCommitSha = "";
+      const client = createWorkflowRunPackClient({
+        substrate: store,
+        hubLink: {
+          async pushWorkflowRunPack(opts) {
+            lastPack = opts.pack;
+            lastCommitSha = opts.commitSha;
+            if (mode === "quarantined") {
+              throw new WorkflowRunPackQuarantinedError(
+                "workflow-run pack push for agent-example-com/refs/heads/main is " +
+                  "quarantined after 3 consecutive bootstrap-retry failures " +
+                  "(reason=corrupt); dropping without a network attempt",
+              );
+            }
+          },
+        },
+      });
+      const repoId: RepoId = { kind: "workflow-run", id: "agent-example-com" };
+      const ref = "refs/heads/main";
+
+      // First push acks and advances the cursor to c1.
+      await src.commit(0);
+      await src.commit(1);
+      await client.push({ agentAddress: "a@example.com", repoId, ref });
+
+      // Second push (c2) is quarantined. If the cursor were reset to null
+      // here, the THIRD push below would carry the full c0-c2 chain.
+      mode = "quarantined";
+      await src.commit(2);
+      await expect(
+        client.push({ agentAddress: "a@example.com", repoId, ref }),
+      ).rejects.toBeInstanceOf(WorkflowRunPackQuarantinedError);
+
+      // Third push (c3), still quarantined. Its delta must be bounded to
+      // "since c1" (i.e. c2, c3) -- NOT the full chain from root.
+      const c3 = await src.commit(3);
+      await expect(
+        client.push({ agentAddress: "a@example.com", repoId, ref }),
+      ).rejects.toBeInstanceOf(WorkflowRunPackQuarantinedError);
+      expect(lastCommitSha).toBe(c3);
+
+      await git.init({ fs, dir: emptyDir, defaultBranch: "main" });
+      expect(lastPack).not.toBeNull();
+      // A bounded delta (c2, c3 only) is missing c1's tree/blob objects as an
+      // ancestor and cannot resolve the full log against an empty repo --
+      // a reset-to-null full-chain resend would instead succeed here.
+      await receivePackObjects(
+        emptyDir,
+        lastPack!,
+        ref,
+        c3,
+        "t-quarantine",
+        null,
+      );
+      let fullWalkLength = -1;
+      try {
+        fullWalkLength = (await git.log({ fs, dir: emptyDir, ref })).length;
+      } catch {
+        fullWalkLength = -1;
+      }
+      expect(fullWalkLength).toBeLessThan(4);
+    } finally {
+      await rm(src.dir, { recursive: true, force: true });
+      await rm(emptyDir, { recursive: true, force: true });
     }
   });
 

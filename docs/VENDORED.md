@@ -301,6 +301,40 @@ pack-recv-gc-*.pack`, plus bare `TypeError`s from torn `.idx` loads).
   Guarded by the `"a persistently corrupt (repoId, ref) quarantines..."`
   test in `src/ws/hub-link.test.ts`.
 
+- **WORKBENCH-LOCAL (CL-3796) — retry-storm containment on top of CL-3415**
+  (`src/ws/hub-link.ts`, `apps/sidecar/src/workflow-run-pack-client.ts`): the
+  CL-3415 quarantine bounds the blast radius per `(repoId, ref)`, but two
+  gaps in the surrounding retry/cursor logic still amplified load during a
+  fleet-wide WS reconnect storm (corrupt-pack retries starving the hub event
+  loop; the deep event-loop-off-thread fix is CL-3781, out of scope here).
+  Two new discriminators close them:
+  - `isHubSignaledRejection` (`hub-link.ts`) gates `runWithBootstrap`'s
+    immediate second `sendOnce()` retry AND the `workflowRunPackFailureCount`
+    increment on the first attempt's error carrying a `reason=` marker — i.e.
+    the hub actually responded with a `repo.pack.reject`. A connection-level
+    failure (`packSender.cancelAll("Connection lost")` on the client's own
+    reconnect, or a closed-transport throw) never reached the hub and carries
+    no divergence signal; retrying it immediately used to double outbound
+    load at exactly the moment a reconnect storm was already underway, and
+    falsely consumed a quarantine strike for a perfectly healthy `(repoId,
+ref)`. New `WorkflowRunPackQuarantinedError` class marks the quarantine
+    fast-fail distinctly from an ordinary per-attempt rejection.
+  - `workflow-run-pack-client.ts`'s `push()` no longer resets the `lastAckedTip`
+    cursor (CL-2340) when the failure is a `WorkflowRunPackQuarantinedError`.
+    A quarantined key is already known-rejected by the hub without a network
+    attempt; resetting the cursor to full-chain only makes the NEXT
+    `buildDeltaPack` walk more history — an ever-growing, event-loop-blocking
+    git walk for a push guaranteed to be dropped. Genuine hub-signaled
+    divergence still resets the cursor for self-heal, unchanged.
+    Guarded by `"a quarantined push does NOT reset the cursor..."` in
+    `apps/sidecar/src/workflow-run-pack-client.test.ts` and `"a
+connection-level failure mid-push does not trigger a redundant second
+send"` in `src/ws/hub-link.test.ts`. **Pin-bump re-verify**: the
+    `isHubSignaledRejection` substring check assumes `reason=` appears ONLY in
+    `@intx/pack-transport`'s `handleReject` message shape — see the comment at
+    its call site in `hub-link.ts` for the failure mode if that assumption
+    breaks upstream.
+
 - **WORKBENCH-LOCAL (CL-3779) — inline heartbeat handling** (`src/ws/hub-link.ts`):
   every inbound WS frame — including the heartbeat `pong` — was chained onto a
   single serial `messageQueue` promise, on which heavy sibling arms are

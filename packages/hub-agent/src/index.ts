@@ -33,6 +33,7 @@ export {
 } from "./session-manager";
 export {
   createHubLink,
+  WorkflowRunPackQuarantinedError,
   type DeployRouter,
   type DeployRouterResult,
   type HubLink,

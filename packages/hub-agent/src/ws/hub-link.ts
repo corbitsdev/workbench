@@ -56,6 +56,40 @@ type TurnAbortFrame = typeof TurnAbortFrame.infer;
 
 const logger = getLogger(["interchange", "hub-agent", "ws"]);
 
+// WORKBENCH-LOCAL (CL-3796): thrown by the workflow-run-pack quarantine
+// fast-fail path so `workflow-run-pack-client.ts` can tell "the hub already
+// told us this key is persistently corrupt" apart from a genuine per-attempt
+// rejection via `instanceof`, rather than sniffing the error message across
+// the package boundary.
+export class WorkflowRunPackQuarantinedError extends Error {}
+
+// WORKBENCH-LOCAL (CL-3796): `sendOnce` rejects with the pack-sender's own
+// `pack rejected by receiver (... reason=<x>)` message only when the hub
+// actually responded with a `repo.pack.reject` frame. Every other failure (a
+// WS disconnect firing `cancelAll`, a synchronous `sendFrame` throw against a
+// closed transport) never reached the hub at all, so it carries no
+// information about repo divergence -- it is connection noise. The
+// retry-once bootstrap arm exists ONLY to absorb the hub-side `initRepo` CAS
+// race (a genuine hub reject); retrying immediately after a connection-level
+// failure just re-attempts a send that is doomed for the same reason (the
+// link is down) and doubles outbound load at exactly the moment a reconnect
+// storm is already underway (the CL-3796 incident). Gating the retry -- and
+// the quarantine failure count it feeds -- on an actual hub response keeps
+// the arm scoped to the race it was built for.
+//
+// ASSUMPTION (pin-bump re-verify): this substring check relies on `reason=`
+// appearing ONLY in `@intx/pack-transport`'s `handleReject` message shape
+// (`pack rejected by receiver (transferId=... reason=...)`), and never in a
+// connection-level error message. If a future interchange pin changes
+// `sendFrame`/transport error shapes to include the literal text `reason=`
+// (e.g. a WS library that stringifies a close reason as `reason=...`), a
+// plain connection blip would be misclassified as hub-signaled here --
+// re-run the bootstrap-retry and quarantine tests in `hub-link.test.ts`
+// after every pin bump to catch this.
+function isHubSignaledRejection(err: unknown): boolean {
+  return err instanceof Error && err.message.includes("reason=");
+}
+
 const DEFAULT_PING_INTERVAL_MS = 30_000;
 // WORKBENCH-LOCAL (CL-2405): exponential reconnect backoff with jitter,
 // sustained-failure WARN escalation, and a configurable outbound queue —
@@ -1118,7 +1152,7 @@ export function createHubLink(config: HubLinkConfig): HubLink {
       // the bootstrap-retry arm `WORKFLOW_RUN_PACK_MAX_BOOTSTRAP_FAILURES`
       // times; fail fast without shipping another pack to the receiver.
       if (workflowRunPackQuarantined.has(key)) {
-        throw new Error(
+        throw new WorkflowRunPackQuarantinedError(
           `workflow-run pack push for ${opts.repoId.id}/${opts.ref} is quarantined ` +
             `after ${String(WORKFLOW_RUN_PACK_MAX_BOOTSTRAP_FAILURES)} consecutive ` +
             `bootstrap-retry failures (reason=corrupt); dropping without a network attempt`,
@@ -1127,6 +1161,16 @@ export function createHubLink(config: HubLinkConfig): HubLink {
       try {
         await sendOnce();
       } catch (first) {
+        // WORKBENCH-LOCAL (CL-3796): a connection-level failure (WS dropped,
+        // transport closed) never reached the hub, so it carries none of the
+        // CAS-race signal the retry below exists for. Retrying it here would
+        // just re-attempt a send that is doomed for the same reason -- the
+        // link is down -- doubling outbound load during exactly the
+        // reconnect storm this fix targets. Propagate it directly without
+        // consuming a bootstrap-retry attempt or a quarantine strike.
+        if (!isHubSignaledRejection(first)) {
+          throw first;
+        }
         // First push to a never-bootstrapped (repoId, ref) lost the
         // race with the hub substrate's `receivePack` initRepo step
         // (see the comment on `workflowRunPackBootstrapped` above).
@@ -1138,6 +1182,14 @@ export function createHubLink(config: HubLinkConfig): HubLink {
         try {
           await sendOnce();
         } catch (second) {
+          // WORKBENCH-LOCAL (CL-3796): same reasoning as the first attempt —
+          // a connection-level failure on the RETRY carries no divergence
+          // signal either (the link dropped between attempts). Do not count
+          // it as a bootstrap-retry failure toward quarantine; propagate it
+          // as-is so the next event retries cleanly once the link recovers.
+          if (!isHubSignaledRejection(second)) {
+            throw second;
+          }
           // WORKBENCH-LOCAL (CL-3415): the retry ALSO rejected — this is not
           // the transient initRepo race the retry arm exists for, it is a
           // genuine (and, absent a repo reset, persistent) divergence
