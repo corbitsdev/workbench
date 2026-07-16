@@ -32,6 +32,7 @@ COPY packages/analytics/package.json packages/analytics/
 COPY packages/pricing/package.json packages/pricing/
 COPY packages/event-collector/package.json packages/event-collector/
 COPY packages/hub-agent/package.json packages/hub-agent/
+COPY packages/inference/package.json packages/inference/
 COPY packages/storage-isogit/package.json packages/storage-isogit/
 COPY packages/last30days-core/package.json packages/last30days-core/
 COPY packages/myra/package.json packages/myra/
@@ -98,6 +99,7 @@ COPY apps/sidecar/ apps/sidecar/
 COPY packages/agents/ packages/agents/
 COPY packages/agent-core/ packages/agent-core/
 COPY packages/myra/ packages/myra/
+COPY packages/inference/ packages/inference/
 COPY packages/tools-catalog/ packages/tools-catalog/
 COPY packages/approvals/ packages/approvals/
 COPY packages/catalog/ packages/catalog/
