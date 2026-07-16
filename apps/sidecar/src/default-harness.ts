@@ -512,24 +512,24 @@ export function createDefaultHarnessBuilder({
           });
         }
 
-        // Gate the dynamic catalog to tools that actually loaded. A package
-        // whose credential is missing was dropped fail-soft above, so its
-        // tools are absent from `loadedToolNames` and must not be advertised —
-        // otherwise search_tools points the model at a package it can never
-        // call, which is the source of the tool-search loop (CL-3133).
+        // Gate the dynamic catalog to tools this agent is GRANTED, not to
+        // tools that happened to load. A package whose credential is missing
+        // was dropped fail-soft above (absent from `loadedToolNames`), but it
+        // is still catalogued from committed manifest metadata — advertising
+        // it lets the model discover it via search_tools; `createCatalogTools`
+        // below (via `availableToolNames: loadedToolNames`) is what stops
+        // `load_tools` from exposing a name with no live runner, so the model
+        // never gets a dead tool call — it gets an actionable "needs a
+        // credential" message instead (CL-3795, replacing the CL-3133 gate
+        // that hid the tool from search entirely).
         const grantedCatalogToolNames = new Set(
           agentConfig.tools.map((t) => t.name),
-        );
-        const catalogEligibleNames = new Set(
-          [...loadedToolNames].filter((name) =>
-            grantedCatalogToolNames.has(name),
-          ),
         );
         const availableCatalog =
           dynamicToolConfig !== undefined
             ? filterCatalogByAvailableTools(
                 dynamicToolConfig.catalog,
-                catalogEligibleNames,
+                grantedCatalogToolNames,
               )
             : undefined;
         const catalogRunner =
@@ -537,6 +537,7 @@ export function createDefaultHarnessBuilder({
             ? (createCatalogTools({
                 catalog: availableCatalog,
                 exposure: exposureState,
+                availableToolNames: loadedToolNames,
               }) as DefinedRunner)
             : undefined;
 

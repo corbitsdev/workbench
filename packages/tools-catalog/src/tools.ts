@@ -152,11 +152,37 @@ function affordanceLine(flat: { name: string }[]): string {
   return `To enable, call load_tools with names: ${JSON.stringify(names)}`;
 }
 
+/** The catalog entry's package key for a tool name, or undefined if unmanaged. */
+function packageForTool(
+  catalog: ToolCatalog,
+  name: string,
+): string | undefined {
+  for (const entry of catalog) {
+    if (entry.tools.some((t) => t.name === name)) return entry.package;
+  }
+  return undefined;
+}
+
+/**
+ * A tool's package is catalogued but the harness never constructed a live
+ * runner for it — the usual cause is a missing tool credential (CL-3133's
+ * package didn't load, so there is nothing to call). Rather than exposing a
+ * name the agent runtime will reject, tell the model why and how to fix it.
+ */
+function credentialMissingNote(catalog: ToolCatalog, names: string[]): string {
+  const packages = [
+    ...new Set(names.map((n) => packageForTool(catalog, n) ?? n)),
+  ];
+  const list = packages.join(", ");
+  return `${list} ${packages.length === 1 ? "needs a credential that is" : "need credentials that are"} not configured yet — ask your workspace Owner to add it in Capabilities (Settings), then call load_tools again.`;
+}
+
 function runSearch(
   callId: string,
   catalog: ToolCatalog,
   guard: SearchGuardState,
   exposure: ToolExposureState,
+  isAvailable: (name: string) => boolean,
   args: unknown,
 ): ToolResult {
   const parsed = SearchToolsArgs(args);
@@ -198,19 +224,33 @@ function runSearch(
   const flat = flattenToolMatches(matches);
 
   if (flat.length > 0 && flat.length <= AUTO_EXPOSE_TOOL_LIMIT) {
-    const loaded = flat.map((t) => t.name);
+    const loaded = flat.filter((t) => isAvailable(t.name)).map((t) => t.name);
+    const unavailable = flat
+      .filter((t) => !isAvailable(t.name))
+      .map((t) => t.name);
     for (const name of loaded) exposure.exposed.add(name);
     resetSearchRun(guard);
+
+    let hint: string;
+    if (unavailable.length === 0) {
+      hint =
+        loaded.length === 1
+          ? `Loaded this tool: ${JSON.stringify(loaded)}. It is now in your function list — call it directly.`
+          : `Loaded these tools: ${JSON.stringify(loaded)}. They are now in your function list — call them directly.`;
+    } else if (loaded.length === 0) {
+      hint = credentialMissingNote(catalog, unavailable);
+    } else {
+      hint = `Loaded these tools: ${JSON.stringify(loaded)}. They are now in your function list — call them directly. ${credentialMissingNote(catalog, unavailable)}`;
+    }
+
     return {
       callId,
       content: {
         matchCount: matches.length,
         packages,
         loaded,
-        hint:
-          loaded.length === 1
-            ? `Loaded this tool: ${JSON.stringify(loaded)}. It is now in your function list — call it directly.`
-            : `Loaded these tools: ${JSON.stringify(loaded)}. They are now in your function list — call them directly.`,
+        ...(unavailable.length > 0 ? { needsCredential: unavailable } : {}),
+        hint,
       },
     };
   }
@@ -243,6 +283,7 @@ function runLoad(
   callId: string,
   catalog: ToolCatalog,
   exposure: ToolExposureState,
+  isAvailable: (name: string) => boolean,
   args: unknown,
 ): ToolResult {
   const parsed = LoadToolsArgs(args);
@@ -259,7 +300,9 @@ function runLoad(
     ...(parsed.names !== undefined ? { names: parsed.names } : {}),
     ...(parsed.package !== undefined ? { package: parsed.package } : {}),
   });
-  for (const name of result.resolved) exposure.exposed.add(name);
+  const loaded = result.resolved.filter(isAvailable);
+  const needsCredential = result.resolved.filter((n) => !isAvailable(n));
+  for (const name of loaded) exposure.exposed.add(name);
 
   let warning: string | undefined;
   if (parsed.package !== undefined && result.unknownPackage === null) {
@@ -268,17 +311,25 @@ function runLoad(
     warning = `Loaded the whole "${parsed.package}" package: ${count} tool schemas are now pinned to every later turn this session and cannot be unloaded. Next time load_tools with specific names to keep your tool list small.`;
   }
 
+  let note: string;
+  if (loaded.length > 0) {
+    note = "These tools are now in your function list — call them directly.";
+  } else if (needsCredential.length > 0) {
+    note = credentialMissingNote(catalog, needsCredential);
+  } else {
+    note =
+      "Nothing was loaded. Use search_tools to find the correct names or package.";
+  }
+
   return {
     callId,
     content: {
-      loaded: result.resolved,
+      loaded,
       unknownNames: result.unknownNames,
       unknownPackage: result.unknownPackage,
+      ...(needsCredential.length > 0 ? { needsCredential } : {}),
       ...(warning !== undefined ? { warning } : {}),
-      note:
-        result.resolved.length > 0
-          ? "These tools are now in your function list — call them directly."
-          : "Nothing was loaded. Use search_tools to find the correct names or package.",
+      note,
     },
   };
 }
@@ -294,9 +345,20 @@ function runLoad(
 export function createCatalogTools(opts: {
   catalog: ToolCatalog;
   exposure: ToolExposureState;
+  /**
+   * LLM-facing names the harness actually materialized a live runner for.
+   * Omitted (e.g. in tests that don't care about the distinction) means every
+   * catalogued tool is treated as callable. Names in the catalog but absent
+   * here are catalogued-but-uncallable — typically a tool package whose
+   * credential is not configured (CL-3795) — and `load_tools`/auto-expose
+   * surface an actionable message instead of exposing a dead name.
+   */
+  availableToolNames?: ReadonlySet<string>;
 }): CatalogRunner {
-  const { catalog, exposure } = opts;
+  const { catalog, exposure, availableToolNames } = opts;
   const searchGuard: SearchGuardState = { lastKey: null, consecutive: 0 };
+  const isAvailable = (name: string): boolean =>
+    availableToolNames === undefined || availableToolNames.has(name);
   return {
     definitions: [...CATALOG_TOOL_DEFINITIONS],
     async run(call: ToolCall): Promise<ToolResult> {
@@ -306,12 +368,13 @@ export function createCatalogTools(opts: {
           catalog,
           searchGuard,
           exposure,
+          isAvailable,
           call.arguments,
         );
       }
       if (call.name === LOAD_TOOLS_NAME) {
         resetSearchRun(searchGuard);
-        return runLoad(call.id, catalog, exposure, call.arguments);
+        return runLoad(call.id, catalog, exposure, isAvailable, call.arguments);
       }
       return errorResult(call.id, `Unknown catalog tool "${call.name}"`);
     },
