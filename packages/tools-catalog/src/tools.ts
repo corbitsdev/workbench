@@ -1,7 +1,11 @@
 import { type } from "arktype";
 import type { ToolCall, ToolDefinition, ToolResult } from "@intx/types/runtime";
 import type { ToolCatalog, ToolExposureState } from "./schema";
-import { resolveLoadRequest, searchCatalog } from "./search";
+import {
+  resolveLoadRequest,
+  searchCatalog,
+  type SearchPackageMatch,
+} from "./search";
 
 export const SEARCH_TOOLS_NAME = "search_tools";
 export const LOAD_TOOLS_NAME = "load_tools";
@@ -9,7 +13,7 @@ export const LOAD_TOOLS_NAME = "load_tools";
 export const SEARCH_TOOLS_DEFINITION: ToolDefinition = {
   name: SEARCH_TOOLS_NAME,
   description:
-    'Discover tools that are available but not currently shown in your function list. Most of your capabilities are loadable on demand — search here by what you want to do (e.g. "CRM records", "linear issue", "meeting notes", "deploy"), then call load_tools to enable a match before using it. Optionally filter by `package` or `tags`. Returns matches grouped by package with a one-line description per tool. Read-only.',
+    'Discover tools that are available but not currently shown in your function list. Most of your capabilities are loadable on demand — search here by what you want to do (e.g. "CRM records", "linear issue", "meeting notes", "deploy"), then call the match. When a search narrows to three or fewer tools they are loaded for you automatically and are immediately callable; a larger result comes with an explicit load_tools affordance listing the top matches. Optionally filter by `package` or `tags`. Returns matches grouped by package with a one-line description per tool.',
   inputSchema: {
     type: "object",
     properties: {
@@ -36,7 +40,7 @@ export const SEARCH_TOOLS_DEFINITION: ToolDefinition = {
 export const LOAD_TOOLS_DEFINITION: ToolDefinition = {
   name: LOAD_TOOLS_NAME,
   description:
-    'Enable tools discovered via search_tools so they appear in your function list and can be called. Pass `names` for specific tools and/or `package` to load a whole package at once (e.g. package "attio" loads every attio_* tool). Loaded tools stay available for the rest of this session. After loading, call the tool directly.',
+    'Enable tools discovered via search_tools so they appear in your function list and can be called. Prefer `names` — pass the exact tool names you need. `package` loads every tool in a package at once (e.g. "attio" loads all attio_* tools) and pins all their schemas to every later turn this session, so use it only when you genuinely need the whole package. Loaded tools stay available for the rest of this session. After loading, call the tool directly.',
   inputSchema: {
     type: "object",
     properties: {
@@ -122,10 +126,37 @@ function searchHint(matchCount: number, repeatCount: number): string {
   return "Call load_tools with the names or package you want, then call the tool.";
 }
 
+// At or below this many total tool matches, search_tools loads them itself
+// (name-scoped) in the same call — collapsing the search → load → call
+// indirection the chat model tends to stall on. Above it, loading the whole set
+// would be as expensive as a package-wholesale load, so the model is instead
+// handed an explicit load_tools affordance and picks.
+const AUTO_EXPOSE_TOOL_LIMIT = 3;
+const AFFORDANCE_TOP_N = 6;
+
+function flattenToolMatches(
+  matches: SearchPackageMatch[],
+): { name: string; description: string; score: number }[] {
+  const all = matches.flatMap((m) =>
+    m.tools.map((t) => ({
+      name: t.name,
+      description: t.description,
+      score: t.score,
+    })),
+  );
+  return all.sort((a, b) => b.score - a.score);
+}
+
+function affordanceLine(flat: { name: string }[]): string {
+  const names = flat.slice(0, AFFORDANCE_TOP_N).map((t) => t.name);
+  return `To enable, call load_tools with names: ${JSON.stringify(names)}`;
+}
+
 function runSearch(
   callId: string,
   catalog: ToolCatalog,
   guard: SearchGuardState,
+  exposure: ToolExposureState,
   args: unknown,
 ): ToolResult {
   const parsed = SearchToolsArgs(args);
@@ -154,20 +185,46 @@ function runSearch(
     ...(parsed.package !== undefined ? { package: parsed.package } : {}),
     ...(parsed.tags !== undefined ? { tags: parsed.tags } : {}),
   });
+  const packages = matches.map((m) => ({
+    package: m.package,
+    summary: m.summary,
+    tags: m.tags,
+    tools: m.tools.map((t) => ({
+      name: t.name,
+      description: t.description,
+    })),
+  }));
+
+  const flat = flattenToolMatches(matches);
+
+  if (flat.length > 0 && flat.length <= AUTO_EXPOSE_TOOL_LIMIT) {
+    const loaded = flat.map((t) => t.name);
+    for (const name of loaded) exposure.exposed.add(name);
+    resetSearchRun(guard);
+    return {
+      callId,
+      content: {
+        matchCount: matches.length,
+        packages,
+        loaded,
+        hint:
+          loaded.length === 1
+            ? `Loaded this tool: ${JSON.stringify(loaded)}. It is now in your function list — call it directly.`
+            : `Loaded these tools: ${JSON.stringify(loaded)}. They are now in your function list — call them directly.`,
+      },
+    };
+  }
+
+  let hint = searchHint(matches.length, repeatCount);
+  if (flat.length > AUTO_EXPOSE_TOOL_LIMIT) {
+    hint = `${hint} ${affordanceLine(flat)}`;
+  }
   return {
     callId,
     content: {
       matchCount: matches.length,
-      packages: matches.map((m) => ({
-        package: m.package,
-        summary: m.summary,
-        tags: m.tags,
-        tools: m.tools.map((t) => ({
-          name: t.name,
-          description: t.description,
-        })),
-      })),
-      hint: searchHint(matches.length, repeatCount),
+      packages,
+      hint,
     },
   };
 }
@@ -203,12 +260,21 @@ function runLoad(
     ...(parsed.package !== undefined ? { package: parsed.package } : {}),
   });
   for (const name of result.resolved) exposure.exposed.add(name);
+
+  let warning: string | undefined;
+  if (parsed.package !== undefined && result.unknownPackage === null) {
+    const entry = catalog.find((e) => e.package === parsed.package);
+    const count = entry?.tools.length ?? 0;
+    warning = `Loaded the whole "${parsed.package}" package: ${count} tool schemas are now pinned to every later turn this session and cannot be unloaded. Next time load_tools with specific names to keep your tool list small.`;
+  }
+
   return {
     callId,
     content: {
       loaded: result.resolved,
       unknownNames: result.unknownNames,
       unknownPackage: result.unknownPackage,
+      ...(warning !== undefined ? { warning } : {}),
       note:
         result.resolved.length > 0
           ? "These tools are now in your function list — call them directly."
@@ -218,9 +284,10 @@ function runLoad(
 }
 
 /**
- * Build the in-process catalog tool runner. `search_tools` is read-only over
- * the catalog; `load_tools` mutates the shared `exposure` set, which the
- * dynamic-tools director reads on its next inference call. The runner is
+ * Build the in-process catalog tool runner. Both tools mutate the shared
+ * `exposure` set — `load_tools` always, `search_tools` when a small match set
+ * auto-exposes — and the dynamic-tools director reads it on its next
+ * inference call. The runner is
  * constructed by the harness with direct references to both objects, so the
  * effect crosses to the director in-process without any transport.
  */
@@ -234,7 +301,13 @@ export function createCatalogTools(opts: {
     definitions: [...CATALOG_TOOL_DEFINITIONS],
     async run(call: ToolCall): Promise<ToolResult> {
       if (call.name === SEARCH_TOOLS_NAME) {
-        return runSearch(call.id, catalog, searchGuard, call.arguments);
+        return runSearch(
+          call.id,
+          catalog,
+          searchGuard,
+          exposure,
+          call.arguments,
+        );
       }
       if (call.name === LOAD_TOOLS_NAME) {
         resetSearchRun(searchGuard);
