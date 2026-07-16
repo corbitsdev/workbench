@@ -1,7 +1,13 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
-import { Archive, Inbox as InboxIcon, Settings, Trash2 } from "lucide-react";
+import {
+  Archive,
+  ArrowLeft,
+  Inbox as InboxIcon,
+  Settings,
+  Trash2,
+} from "lucide-react";
 import { AppPageChromeRow, Button, cn, Markdown } from "@workbench/ui";
 import { useSetPageChrome } from "../lib/page-chrome";
 import type { MailboxInboxView } from "@workbench/shared";
@@ -68,6 +74,13 @@ export function InboxPage() {
   const { activeTenantId, activeWorkbench } = useActiveWorkbench();
   const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
   const [inboxActionError, setInboxActionError] = useState<string | null>(null);
+  // On mobile the two panes collapse to one column: the message list is the
+  // landing view, and this toggle swaps in the live activity/tasks feed. On
+  // desktop both panes are always visible, so the toggle is hidden and this
+  // state is inert.
+  const [mobileTab, setMobileTab] = useState<"messages" | "activity">(
+    "messages",
+  );
   const { data, isLoading, isError, refetch } = useMailbox({
     view: inboxView,
     refetchInterval: NOW_POLL_MS,
@@ -199,30 +212,43 @@ export function InboxPage() {
   );
   useSetPageChrome(pageChrome);
 
+  const changeView = (next: MailboxInboxView) => {
+    const params = new URLSearchParams(searchParams);
+    if (next === "all") params.delete("view");
+    else params.set("view", next);
+    setSearchParams(params, { replace: true });
+  };
+
+  // Single-column mobile: the list is the landing view; the main pane shows
+  // either the reading pane (a message is open) or the activity feed (the
+  // "Activity" toggle). Exactly one of the two panes is visible below `md`.
+  const listHiddenOnMobile = Boolean(messageId) || mobileTab === "activity";
+  const mainHiddenOnMobile = !messageId && mobileTab === "messages";
+
   return (
-    <div className="relative flex h-full min-h-0 overflow-hidden">
-      <aside className="flex w-80 shrink-0 flex-col border-r border-border bg-surface">
-        <InboxViewTabs
+    <div className="relative flex h-full min-h-0 flex-col overflow-hidden md:flex-row">
+      {!messageId && (
+        <MobileInboxTabs tab={mobileTab} onChange={setMobileTab} />
+      )}
+      <aside
+        className={cn(
+          "flex min-h-0 flex-1 flex-col border-b border-border bg-surface md:w-80 md:flex-none md:shrink-0 md:border-b-0 md:border-r",
+          listHiddenOnMobile && "max-md:hidden",
+        )}
+      >
+        <InboxRailHeader
           view={inboxView}
-          onChange={(next) => {
-            const params = new URLSearchParams(searchParams);
-            if (next === "all") params.delete("view");
-            else params.set("view", next);
-            setSearchParams(params, { replace: true });
-          }}
+          selectedCount={selectedIds.size}
+          bulkBusy={bulkAction.isPending}
+          onChangeView={changeView}
+          onClearSelection={() => setSelectedIds(new Set())}
+          onBulk={runBulk}
         />
         {inboxActionError && (
           <p className="mx-3 mb-2 text-sm text-red-600" role="alert">
             {inboxActionError}
           </p>
         )}
-        <InboxBulkBar
-          count={selectedIds.size}
-          view={inboxView}
-          busy={bulkAction.isPending}
-          onClear={() => setSelectedIds(new Set())}
-          onBulk={runBulk}
-        />
         <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-3">
           <MessageList
             messages={messages}
@@ -246,7 +272,12 @@ export function InboxPage() {
         </div>
       </aside>
 
-      <section className="min-w-0 flex-1 overflow-y-auto bg-page">
+      <section
+        className={cn(
+          "min-w-0 flex-1 overflow-y-auto bg-page",
+          mainHiddenOnMobile && "max-md:hidden",
+        )}
+      >
         <ErrorBoundary>
           {messageId ? (
             <ReadingPane
@@ -258,6 +289,7 @@ export function InboxPage() {
               reduceMotion={reduceMotion ?? false}
               view={inboxView}
               busy={itemAction.isPending || markUnread.isPending}
+              onClose={() => navigate(inboxPath(inboxView))}
               onMarkUnread={() => {
                 if (!messageId) return;
                 setInboxActionError(null);
@@ -476,17 +508,18 @@ function MessageRow({
   onOpen,
   onToggleSelect,
 }: MessageRowProps) {
+  const selectionShown = selectionActive || checked;
   return (
     <div
       className={cn(
-        "group/row flex w-full items-start gap-1.5 border-b border-border/50 px-1 py-1 transition-colors duration-150 last:border-b-0",
+        "group/row relative border-b border-border/50 transition-colors duration-150 last:border-b-0",
         selected ? "bg-row-hover/80" : "hover:bg-page/80",
       )}
     >
       <label
         className={cn(
-          "mt-2.5 flex h-6 w-6 shrink-0 cursor-pointer items-center justify-center rounded-[6px] transition-opacity",
-          selectionActive || checked
+          "absolute left-1.5 top-2 z-10 flex h-4 w-4 cursor-pointer items-center justify-center rounded-[5px] transition-opacity",
+          selectionShown
             ? "opacity-100"
             : "opacity-0 group-hover/row:opacity-100",
         )}
@@ -507,10 +540,15 @@ function MessageRow({
         type="button"
         onClick={onOpen}
         aria-current={selected ? "true" : undefined}
-        className="flex min-w-0 flex-1 flex-col gap-0.5 py-1 text-left"
+        className="flex w-full min-w-0 flex-col gap-0.5 px-2 py-1.5 text-left"
       >
         <div className="flex items-center gap-2">
-          <span className="relative flex h-2 w-2 shrink-0 items-center justify-center">
+          <span
+            className={cn(
+              "relative flex h-2 w-2 shrink-0 items-center justify-center transition-opacity",
+              selectionShown ? "opacity-0" : "group-hover/row:opacity-0",
+            )}
+          >
             <AnimatePresence initial={false}>
               {!message.read && (
                 <motion.span
@@ -564,6 +602,7 @@ interface ReadingPaneProps {
   reduceMotion: boolean;
   view: MailboxInboxView;
   busy: boolean;
+  onClose: () => void;
   onMarkUnread: () => void;
   onTrash: () => void;
   onArchive: () => void;
@@ -619,6 +658,7 @@ function ReadingPane({
   reduceMotion,
   view,
   busy,
+  onClose,
   onMarkUnread,
   onTrash,
   onArchive,
@@ -634,6 +674,14 @@ function ReadingPane({
         transition={{ duration: 0.2, ease: "easeOut" }}
         className={inboxMainPaneClass}
       >
+        <button
+          type="button"
+          onClick={onClose}
+          className="mb-4 inline-flex items-center gap-1.5 text-xs font-medium text-text-3 transition-colors hover:text-text focus:outline-none focus-visible:ring-2 focus-visible:ring-orange"
+        >
+          <ArrowLeft size={14} aria-hidden="true" />
+          Back to inbox
+        </button>
         {headerSource && (
           <>
             <h2 className="text-[22px] font-semibold tracking-[-0.01em] text-text">
@@ -756,39 +804,98 @@ function RailEmptyState({ view }: { view: MailboxInboxView }) {
   );
 }
 
-function InboxViewTabs({
+// The rail's top bar. With nothing selected it is the folder tabs
+// (All/Unread/Archived/Trash); the moment messages are checked, the bulk
+// actions take over the same row rather than pushing in a second bar.
+function InboxRailHeader({
   view,
-  onChange,
+  selectedCount,
+  bulkBusy,
+  onChangeView,
+  onClearSelection,
+  onBulk,
 }: {
   view: MailboxInboxView;
-  onChange: (view: MailboxInboxView) => void;
+  selectedCount: number;
+  bulkBusy: boolean;
+  onChangeView: (view: MailboxInboxView) => void;
+  onClearSelection: () => void;
+  onBulk: (action: MailboxBulkAction) => void;
 }) {
   return (
+    <div className="flex min-h-[45px] flex-wrap items-center gap-x-2 gap-y-1 border-b border-border px-2 py-1.5">
+      {selectedCount > 0 ? (
+        <InboxBulkActions
+          count={selectedCount}
+          view={view}
+          busy={bulkBusy}
+          onClear={onClearSelection}
+          onBulk={onBulk}
+        />
+      ) : (
+        <nav aria-label="Inbox views" className="flex gap-1">
+          {INBOX_VIEWS.map((tab) => (
+            <button
+              key={tab.id}
+              type="button"
+              onClick={() => onChangeView(tab.id)}
+              aria-current={view === tab.id ? "page" : undefined}
+              className={cn(
+                inboxCompactControlClass,
+                view === tab.id
+                  ? "bg-page text-text"
+                  : "text-text-3 hover:bg-page hover:text-text-2",
+              )}
+            >
+              {tab.label}
+            </button>
+          ))}
+        </nav>
+      )}
+    </div>
+  );
+}
+
+// The mobile-only Messages/Activity switch. On desktop both panes are always
+// visible so this is hidden; below `md` it flips which single pane shows.
+function MobileInboxTabs({
+  tab,
+  onChange,
+}: {
+  tab: "messages" | "activity";
+  onChange: (tab: "messages" | "activity") => void;
+}) {
+  const tabs: { id: "messages" | "activity"; label: string }[] = [
+    { id: "messages", label: "Messages" },
+    { id: "activity", label: "Activity" },
+  ];
+  return (
     <nav
-      aria-label="Inbox views"
-      className="flex gap-1 border-b border-border px-2 pb-2"
+      aria-label="Inbox section"
+      className="flex gap-1 border-b border-border bg-surface px-2 py-1.5 md:hidden"
     >
-      {INBOX_VIEWS.map((tab) => (
+      {tabs.map((t) => (
         <button
-          key={tab.id}
+          key={t.id}
           type="button"
-          onClick={() => onChange(tab.id)}
-          aria-current={view === tab.id ? "page" : undefined}
+          onClick={() => onChange(t.id)}
+          aria-current={tab === t.id ? "page" : undefined}
           className={cn(
             inboxCompactControlClass,
-            view === tab.id
+            "flex-1",
+            tab === t.id
               ? "bg-page text-text"
               : "text-text-3 hover:bg-page hover:text-text-2",
           )}
         >
-          {tab.label}
+          {t.label}
         </button>
       ))}
     </nav>
   );
 }
 
-function InboxBulkBar({
+function InboxBulkActions({
   count,
   view,
   busy,
@@ -801,15 +908,8 @@ function InboxBulkBar({
   onClear: () => void;
   onBulk: (action: MailboxBulkAction) => void;
 }) {
-  const active = count > 0;
   return (
-    <div
-      className={cn(
-        "flex min-h-8 flex-wrap items-center gap-x-2 gap-y-1 border-b border-border px-3 py-1.5 text-xs transition-opacity",
-        active ? "opacity-100" : "pointer-events-none opacity-0",
-      )}
-      aria-hidden={!active}
-    >
+    <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs">
       <span className="font-medium text-text">{count} selected</span>
       {view === "trash" || view === "archived" ? (
         <Button
