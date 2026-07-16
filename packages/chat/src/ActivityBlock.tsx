@@ -169,7 +169,10 @@ export function ActivityBlock({
   useEffect(() => {
     setSessionOverride(null);
   }, [messageKey]);
-  const open = sessionOverride ?? persisted;
+  // While streaming the activity block IS the single rolling summary line
+  // (CL-3758) — the reveal panel must stay closed regardless of any expand
+  // pref, or a full multi-paragraph reasoning trace opens mid-stream.
+  const open = streaming ? false : (sessionOverride ?? persisted);
 
   const reasoningText = parts
     .filter((part) => part.type === "reasoning")
@@ -200,7 +203,9 @@ export function ActivityBlock({
     <div className={CHAT_ACTIVITY_STACK} data-testid="activity-block">
       <button
         type="button"
+        disabled={streaming}
         onClick={() => {
+          if (streaming) return;
           const next = !open;
           setSessionOverride(next);
           setExpanded?.(messageKey, next);
@@ -212,7 +217,9 @@ export function ActivityBlock({
           CHAT_TRACE_ROW,
           CHAT_TRACE_LABEL,
           "transition-[transform,color] duration-100 ease-[cubic-bezier(0.23,1,0.32,1)]",
-          "hover:text-text-2 active:scale-[0.97] cursor-pointer",
+          streaming
+            ? "cursor-default"
+            : "hover:text-text-2 active:scale-[0.97] cursor-pointer",
           "after:absolute after:inset-0 after:-m-2 after:content-['']",
         )}
       >

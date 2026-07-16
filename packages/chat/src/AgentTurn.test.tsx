@@ -109,7 +109,29 @@ describe("AgentTurn", () => {
     ).toBe("false");
   });
 
-  it("remembers expand via setReasoningExpanded", () => {
+  it("remembers expand via setReasoningExpanded once the turn settles", () => {
+    const prefs = new Map<string, boolean>();
+    const message = agentMessage({
+      content: "done",
+      reasoning: "Working through it",
+      status: "sent",
+      toolCalls: [{ id: "c1", name: "read_file", result: "ok" }],
+    });
+    render(
+      <AgentTurn
+        message={message}
+        isReasoningExpanded={(key) => prefs.get(key) === true}
+        setReasoningExpanded={(key, expanded) => {
+          if (expanded) prefs.set(key, true);
+          else prefs.delete(key);
+        }}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Show activity" }));
+    expect(prefs.get("m1")).toBe(true);
+  });
+
+  it("does not open the reveal panel from a click while the turn is still streaming (CL-3758)", () => {
     const prefs = new Map<string, boolean>();
     const message = agentMessage({
       content: "",
@@ -128,10 +150,8 @@ describe("AgentTurn", () => {
       />,
     );
     fireEvent.click(screen.getByRole("button", { name: "Show activity" }));
-    expect(prefs.get("m1")).toBe(true);
-    expect(screen.getByTestId("activity-reasoning").textContent).toContain(
-      "Working through it",
-    );
+    expect(prefs.get("m1")).toBeUndefined();
+    expect(screen.queryByTestId("activity-reasoning")).toBeNull();
   });
 
   it("renders feedback once, after the activity block, keyed on feedbackId", async () => {

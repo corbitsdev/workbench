@@ -203,4 +203,41 @@ describe("ActivityBlock", () => {
     expect(collapsedA).toBe(collapsedB);
     expect(expandedA).toBe(expandedB);
   });
+
+  describe("CL-3758: streaming must not force the reveal panel open", () => {
+    it("keeps the reveal panel closed while streaming even when the expand pref is on", () => {
+      render(
+        <ActivityBlock
+          parts={[
+            reasoningPart(
+              "First paragraph of reasoning.\n\nSecond paragraph of reasoning, quite a bit longer than the first.",
+            ),
+          ]}
+          streaming
+          messageKey="m1"
+          isExpanded={() => true}
+        />,
+      );
+      expect(screen.queryByTestId("activity-detail")).toBeNull();
+      expect(screen.queryByTestId("activity-reasoning")).toBeNull();
+      expect(screen.getByTestId("activity-summary")).toBeDefined();
+    });
+
+    it("still opens the reveal panel for a settled turn when the expand pref is on", () => {
+      render(
+        <ActivityBlock
+          parts={[
+            reasoningPart(
+              "First paragraph of reasoning.\n\nSecond paragraph of reasoning, quite a bit longer than the first.",
+            ),
+          ]}
+          streaming={false}
+          messageKey="m1"
+          isExpanded={() => true}
+        />,
+      );
+      const detail = screen.getByTestId("activity-detail");
+      expect(detail.textContent).toContain("First paragraph of reasoning.");
+    });
+  });
 });
