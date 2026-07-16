@@ -54,6 +54,10 @@ describe("skill tool definitions", () => {
       "Skills → Pending drafts",
     );
   });
+
+  it("search_skills description says it matches the description too", () => {
+    expect(SEARCH_SKILLS_DEFINITION.description).toContain("description");
+  });
 });
 
 describe("parseSearchQuery", () => {
@@ -133,6 +137,28 @@ describe("skillMatchesQuery", () => {
     };
     expect(skillMatchesQuery(sparse, "lonely")).toBe(true);
     expect(skillMatchesQuery(sparse, "nope")).toBe(false);
+  });
+
+  it("matches a substring of the description when name and display name do not", () => {
+    const withDesc: SkillIndexEntry = {
+      id: "a3",
+      name: "deck-builder",
+      displayName: "Deck Builder",
+      description: "Assembles investor pitch presentations from call notes.",
+    };
+    expect(skillMatchesQuery(withDesc, "investor pitch")).toBe(true);
+    expect(skillMatchesQuery(withDesc, "spreadsheet")).toBe(false);
+  });
+
+  it("tolerates a null or absent description", () => {
+    const nullDesc: SkillIndexEntry = {
+      id: "a4",
+      name: "solo",
+      displayName: null,
+      description: null,
+    };
+    expect(skillMatchesQuery(nullDesc, "solo")).toBe(true);
+    expect(skillMatchesQuery(nullDesc, "missing")).toBe(false);
   });
 });
 

@@ -72,6 +72,47 @@ describe("searchCatalog", () => {
     });
     expect(results.map((r) => r.package)).toEqual(["linear"]);
   });
+
+  test("matches a tool on its keywords corpus when name and description do not", () => {
+    const withKeywords: ToolCatalog = [
+      {
+        package: "attio",
+        summary: "Attio CRM records and tasks.",
+        tags: ["crm"],
+        tools: [
+          {
+            name: "attio__query_records",
+            description: "Query CRM records.",
+            keywords:
+              "Filter companies and people by revenue or headcount ranges.",
+          },
+        ],
+      },
+    ];
+    const results = searchCatalog(withKeywords, { query: "headcount" });
+    expect(results.map((r) => r.package)).toContain("attio");
+  });
+
+  test("keeps the friendly description as display text and never surfaces keywords", () => {
+    const withKeywords: ToolCatalog = [
+      {
+        package: "attio",
+        summary: "Attio CRM records and tasks.",
+        tags: ["crm"],
+        tools: [
+          {
+            name: "attio__query_records",
+            description: "Query CRM records.",
+            keywords: "headcount revenue firmographics",
+          },
+        ],
+      },
+    ];
+    const match = searchCatalog(withKeywords, { query: "firmographics" })[0]
+      ?.tools[0];
+    expect(match?.description).toBe("Query CRM records.");
+    expect((match as Record<string, unknown>).keywords).toBeUndefined();
+  });
 });
 
 describe("resolveLoadRequest", () => {

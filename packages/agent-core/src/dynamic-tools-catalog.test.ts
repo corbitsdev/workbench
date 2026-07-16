@@ -8,4 +8,16 @@ describe("MYRA_TOOL_CATALOG runtime", () => {
     expect(firstTool?.description).toBeTruthy();
     expect(firstTool?.description).not.toMatch(/^[a-z]+_[a-z]/);
   });
+
+  it("widens the search corpus with real manifest descriptions in keywords", () => {
+    const toolsWithKeywords = MYRA_TOOL_CATALOG.flatMap((e) => e.tools).filter(
+      (t) => typeof t.keywords === "string" && t.keywords.length > 0,
+    );
+    expect(toolsWithKeywords.length).toBeGreaterThan(0);
+    // keywords carry the real manifest description, not the friendly phrase.
+    const differing = toolsWithKeywords.find(
+      (t) => t.keywords !== t.description,
+    );
+    expect(differing).toBeDefined();
+  });
 });

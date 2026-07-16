@@ -5,7 +5,10 @@ import type {
   ToolManifestMyraCatalog,
 } from "./schema";
 
-export type HubToolEntries = Record<string, { sideEffect: ToolSideEffect }>;
+export type HubToolEntries = Record<
+  string,
+  { sideEffect: ToolSideEffect; definition?: { description?: string } }
+>;
 
 export function bareToolNamesFromEntries(entries: HubToolEntries): string[] {
   return Object.keys(entries).sort();
@@ -19,6 +22,25 @@ export function sideEffectsFromEntries(
   );
 }
 
+/**
+ * The real per-tool manifest description (from each entry's `ToolDefinition`)
+ * keyed by bare tool name. Widens the `search_tools` corpus so recall does not
+ * hinge on the hand-authored friendly phrase; entries with no description are
+ * omitted so a package that carries none contributes an empty map.
+ */
+export function descriptionsFromEntries(
+  entries: HubToolEntries,
+): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const [name, entry] of Object.entries(entries)) {
+    const description = entry.definition?.description;
+    if (typeof description === "string" && description.trim() !== "") {
+      out[name] = description;
+    }
+  }
+  return out;
+}
+
 export function manifestFromHubToolEntries(opts: {
   factoryId: string;
   packageName: string;
@@ -28,12 +50,14 @@ export function manifestFromHubToolEntries(opts: {
   credentialCatalog?: ToolManifestCredentialCatalog | null;
 }): ToolFactoryManifest {
   const bareToolNames = bareToolNamesFromEntries(opts.entries);
+  const descriptions = descriptionsFromEntries(opts.entries);
   return {
     factoryId: opts.factoryId,
     packageName: opts.packageName,
     providerName: opts.providerName ?? null,
     bareToolNames,
     sideEffects: sideEffectsFromEntries(opts.entries),
+    ...(Object.keys(descriptions).length > 0 ? { descriptions } : {}),
     myraCatalog: opts.myraCatalog ?? null,
     credentialCatalog: opts.credentialCatalog ?? null,
   };
@@ -45,6 +69,7 @@ export function manifestFromBareToolNames(opts: {
   providerName?: string | null;
   bareToolNames: readonly string[];
   sideEffects?: Record<string, ToolSideEffect>;
+  descriptions?: Record<string, string>;
   myraCatalog?: ToolManifestMyraCatalog | null;
   credentialCatalog?: ToolManifestCredentialCatalog | null;
 }): ToolFactoryManifest {
@@ -53,12 +78,20 @@ export function manifestFromBareToolNames(opts: {
   for (const name of bareToolNames) {
     sideEffects[name] = opts.sideEffects?.[name] ?? "read";
   }
+  const descriptions: Record<string, string> = {};
+  for (const name of bareToolNames) {
+    const description = opts.descriptions?.[name];
+    if (typeof description === "string" && description.trim() !== "") {
+      descriptions[name] = description;
+    }
+  }
   return {
     factoryId: opts.factoryId,
     packageName: opts.packageName,
     providerName: opts.providerName ?? null,
     bareToolNames,
     sideEffects,
+    ...(Object.keys(descriptions).length > 0 ? { descriptions } : {}),
     myraCatalog: opts.myraCatalog ?? null,
     credentialCatalog: opts.credentialCatalog ?? null,
   };
