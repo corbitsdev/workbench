@@ -16,6 +16,9 @@ const validateTarballPackageJSON = mock(
         pkg: { name: "@workbench/tools-a", version: "0.1.0" },
       };
     }
+    if (filename === "corrupt.tgz") {
+      return { ok: false as const, reason: "not-a-gzip" };
+    }
     return { ok: false as const, reason: "unexpected" };
   },
 );
@@ -26,7 +29,7 @@ mock.module("@intx/hub-sessions", () => ({
 }));
 
 const {
-  PackageRegistryHierarchyCollisionError,
+  PackageRegistryTarballInvalidError,
   assertNoCrossAssetPackageRegistryCollisions,
 } = await import("./package-registry-hierarchy-guard");
 
@@ -66,7 +69,34 @@ describe("assertNoCrossAssetPackageRegistryCollisions", () => {
     });
   });
 
-  it("throws when two assets publish the same name@version with different bytes", async () => {
+  it("returns (does not throw) a warning collision when two assets publish the same name@version with different bytes", async () => {
+    const collisions = await assertNoCrossAssetPackageRegistryCollisions({
+      db: makeDb([
+        { id: "legacy", name: "workbench-builtins" },
+        { id: "canon", name: "workspace-builtins" },
+      ]),
+      assetService: makeAssetService({
+        list: {
+          legacy: ["a.tgz"],
+          canon: ["b.tgz"],
+        },
+        bytes: {
+          "legacy:tarballs/a.tgz": new Uint8Array([1]),
+          "canon:tarballs/b.tgz": new Uint8Array([2]),
+        },
+      }),
+      tenantId: "t1",
+    });
+
+    expect(collisions).toHaveLength(1);
+    expect(collisions[0]).toMatchObject({
+      nameVersion: "@workbench/tools-a@0.1.0",
+      assetA: "workbench-builtins",
+      assetB: "workspace-builtins",
+    });
+  });
+
+  it("still throws PackageRegistryTarballInvalidError on a corrupt tarball", async () => {
     await expect(
       assertNoCrossAssetPackageRegistryCollisions({
         db: makeDb([
@@ -75,17 +105,17 @@ describe("assertNoCrossAssetPackageRegistryCollisions", () => {
         ]),
         assetService: makeAssetService({
           list: {
-            legacy: ["a.tgz"],
+            legacy: ["corrupt.tgz"],
             canon: ["b.tgz"],
           },
           bytes: {
-            "legacy:tarballs/a.tgz": new Uint8Array([1]),
+            "legacy:tarballs/corrupt.tgz": new Uint8Array([1]),
             "canon:tarballs/b.tgz": new Uint8Array([2]),
           },
         }),
         tenantId: "t1",
       }),
-    ).rejects.toBeInstanceOf(PackageRegistryHierarchyCollisionError);
+    ).rejects.toBeInstanceOf(PackageRegistryTarballInvalidError);
   });
 
   it("skips a listed tarball when read returns not_found", async () => {

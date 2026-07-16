@@ -204,6 +204,66 @@ describe("publishEmbeddedToolPackages", () => {
     ).rejects.toThrow("upload failed");
   });
 
+  it("reconciles a divergent stray asset's tarball to the embedded bytes without throwing", async () => {
+    const assets = [
+      { id: "ast_canon", name: "workspace-builtins" },
+      { id: "ast_stray", name: "workbench-builtins" },
+    ];
+    const db = {
+      select: () => ({
+        from: () => ({
+          where: () => {
+            const rows = assets;
+            const chain = Promise.resolve(rows);
+            return Object.assign(chain, {
+              limit: () => Promise.resolve(rows),
+            });
+          },
+        }),
+      }),
+    };
+    const readAssetBlob = mock(
+      async ({ assetId }: { assetId: string; path: string }) => {
+        if (assetId === "ast_canon") return tarballBytes;
+        if (assetId === "ast_stray") return new Uint8Array([9, 9, 9]);
+        throw new Error('has no blob at "tarballs/pkg.tgz"');
+      },
+    );
+    const assetService = {
+      createAsset: createAssetSpy,
+      readAssetBlob,
+      listAssetBlobs: async () => ["pkg.tgz"],
+    };
+
+    await publishEmbeddedToolPackages({
+      db: db as never,
+      repoStore: {} as never,
+      assetService: assetService as never,
+      rootTenantId: "ten_root",
+      enabled: true,
+      registryName: "workspace-builtins",
+      buildSha: null,
+      embeddedDir: fixtureDir,
+    });
+
+    const strayCall = putTarballSpy.mock.calls.find(
+      (c) => (c[0] as { assetId: string }).assetId === "ast_stray",
+    );
+    expect(strayCall).toBeDefined();
+    expect(strayCall?.[0]).toMatchObject({
+      assetId: "ast_stray",
+      filename: "pkg.tgz",
+    });
+    expect(
+      Array.from((strayCall?.[0] as { bytes: Uint8Array }).bytes),
+    ).toEqual([1, 2, 3, 4]);
+
+    const canonCall = putTarballSpy.mock.calls.find(
+      (c) => (c[0] as { assetId: string }).assetId === "ast_canon",
+    );
+    expect(canonCall).toBeUndefined();
+  });
+
   it("rejects when manifest is missing and autopublish is enabled", async () => {
     const emptyDir = await mkdtemp(join(tmpdir(), "tool-bootstrap-empty-"));
     try {
