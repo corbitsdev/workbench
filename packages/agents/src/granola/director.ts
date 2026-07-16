@@ -1,4 +1,4 @@
-import { createDefaultDirector } from "@intx/inference";
+import { createDefaultDirector } from "@workbench/inference";
 import type {
   ReactorDirector,
   ReactorInboundEvent,
