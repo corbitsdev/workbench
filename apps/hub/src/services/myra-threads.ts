@@ -12,11 +12,7 @@ import type { AnalyticsSubscriber } from "@workbench/analytics";
 import { randomUUID } from "node:crypto";
 import { join } from "node:path";
 import { AGENT_TEMPLATES } from "@workbench/agents";
-import {
-  PERSONAL_AGENT_NAME,
-  PERSONAL_AGENT_TRIAGE_NAME,
-  resolveMyraVariant,
-} from "@workbench/myra";
+import { PERSONAL_AGENT_NAME, resolveMyraVariant } from "@workbench/myra";
 import { readMyraVariantPreference } from "./myra-variant-preferences";
 import {
   isDefaultMyraThreadLabel,
@@ -105,24 +101,12 @@ export async function resolveMyraDefinition(
 }
 
 /**
- * Resolve the ephemeral inbox-triage variant of Myra (CL-3364) — a distinct
- * agent definition ("Myra Triage") bound to the cheap flash model, since
- * model binds at the definition level and there is no per-launch override in
- * `launchAgentSession`. Same ancestor-chain resolution as `resolveMyraDefinition`.
- */
-export async function resolveMyraTriageDefinition(
-  db: HubDb,
-  tenantId: string,
-): Promise<typeof agent.$inferSelect | null> {
-  return resolveAgentDefinitionByName(db, tenantId, PERSONAL_AGENT_TRIAGE_NAME);
-}
-
-/**
  * Resolve the seeded definition backing a specific Myra variant (chat or
  * triage) in the tenant hierarchy, keyed by the variant's `seedName`. The
- * canonical variants resolve the same rows as `resolveMyraDefinition` /
- * `resolveMyraTriageDefinition`; non-canonical variants resolve their own
- * per-model definition. Returns null when that definition is not seeded.
+ * canonical chat variant resolves the same row as `resolveMyraDefinition`;
+ * the canonical triage variant resolves "Myra Triage" (`PERSONAL_AGENT_TRIAGE_NAME`);
+ * non-canonical variants resolve their own per-model definition. Returns null
+ * when that definition is not seeded.
  */
 export async function resolveMyraVariantDefinition(
   db: HubDb,

@@ -5,8 +5,11 @@ const teardownMock = mock(
   async (_db: unknown, _opts: Record<string, unknown>) => undefined,
 );
 mock.module("./myra-threads", () => ({
-  resolveMyraTriageDefinition: mock(async () => null),
+  resolveMyraVariantDefinition: mock(async () => null),
   teardownThreadRows: teardownMock,
+}));
+mock.module("./myra-variant-preferences", () => ({
+  readMyraVariantPreference: mock(async () => ({ chat: null, triage: null })),
 }));
 
 const { sweepStaleTriageInstances } = await import("./mailbox-triage");
