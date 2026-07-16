@@ -71,9 +71,27 @@ mock.module("../hooks/use-myra-session", () => ({
   useMyraSession: () => sessionResult,
 }));
 
+type RosterResult = { data?: { instances: unknown[] } };
+let rosterResult: RosterResult = { data: { instances: [] } };
+mock.module("../hooks/use-tenant-roster", () => ({
+  useTenantRoster: () => rosterResult,
+}));
+
+type AgentInstanceRow = {
+  id: string;
+  name: string;
+  address: string;
+  status: string;
+};
+let agentInstancesResult: { data?: AgentInstanceRow[] } = { data: [] };
+mock.module("../hooks/use-agents", () => ({
+  useAgentInstances: () => agentInstancesResult,
+}));
+
 mock.module("../components/MyraChatSurface", () => ({
   MyraChatSurface: (props: {
     headerLeft?: React.ReactNode;
+    headerRight?: React.ReactNode;
     onUserSend?: (t: string) => void;
   }) =>
     React.createElement(
@@ -81,6 +99,13 @@ mock.module("../components/MyraChatSurface", () => ({
       { "data-testid": "surface" },
       props.headerLeft !== undefined
         ? React.createElement("div", { "data-testid": "header-left" })
+        : null,
+      props.headerRight !== undefined
+        ? React.createElement(
+            "div",
+            { "data-testid": "header-right" },
+            props.headerRight,
+          )
         : null,
       React.createElement(
         "button",
@@ -160,6 +185,8 @@ beforeEach(() => {
   autoTitle.mockClear();
   autoTitleArgs = [];
   sessionResult = { state: { phase: "loading" }, messages: [], activity: null };
+  rosterResult = { data: { instances: [] } };
+  agentInstancesResult = { data: [] };
   threadsResult = {
     data: {
       threads: [
@@ -243,5 +270,61 @@ describe("ChatThreadPage", () => {
     expect(autoTitleArgs[0]).toMatchObject({ id: "t1" });
     fireEvent.click(screen.getByRole("button", { name: "send" }));
     expect(autoTitle).toHaveBeenCalledWith("hello");
+  });
+
+  it("opens the thread info dialog from the header button and shows the resolved fields", () => {
+    agentInstancesResult = {
+      data: [
+        {
+          id: "i1",
+          name: "Myra",
+          address: "myra-i1@workbench.local",
+          status: "running",
+        },
+      ],
+    };
+    rosterResult = {
+      data: {
+        instances: [
+          {
+            instanceId: "i1",
+            principalId: "p1",
+            agentId: "a1",
+            name: "Myra",
+            status: "active",
+            sessionCount: 1,
+          },
+        ],
+      },
+    };
+    renderAt("/chats/t1");
+    expect(screen.queryByRole("dialog")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Chat details" }));
+    const dialog = screen.getByRole("dialog");
+    expect(dialog.textContent).toContain("First");
+    expect(dialog.textContent).toContain("i1");
+    expect(dialog.textContent).toContain("Myra");
+    expect(dialog.textContent).toContain("myra-i1@workbench.local");
+    // Wire status "running" surfaces as the humanized "Active" label.
+    expect(dialog.textContent).toContain("Active");
+    expect(
+      screen
+        .getByRole("link", { name: "Open Agents page" })
+        .getAttribute("href"),
+    ).toBe("/agents");
+    expect(
+      screen.getByRole("link", { name: "Open trace" }).getAttribute("href"),
+    ).toBe("/insights/users/p1");
+  });
+
+  it("omits agent name, mail address, and status from the dialog when the instance isn't in the loaded roster", () => {
+    renderAt("/chats/t1");
+    fireEvent.click(screen.getByRole("button", { name: "Chat details" }));
+    const dialog = screen.getByRole("dialog");
+    expect(dialog.textContent).toContain("i1");
+    expect(screen.queryByText("Agent")).toBeNull();
+    expect(screen.queryByText("Mail address")).toBeNull();
+    expect(screen.queryByText("Status")).toBeNull();
+    expect(screen.queryByRole("link", { name: "Open trace" })).toBeNull();
   });
 });

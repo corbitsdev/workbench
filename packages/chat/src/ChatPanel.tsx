@@ -101,6 +101,12 @@ export interface ChatPanelProps {
    */
   headerLeft?: React.ReactNode;
   /**
+   * Content for the right of the header, alongside the expand/dock/close
+   * controls (e.g. a thread-info button). Rendered ahead of those controls so
+   * it reads as "next to" them rather than replacing them.
+   */
+  headerRight?: React.ReactNode;
+  /**
    * Run the composer edge-to-edge (left-aligned to the message column) instead
    * of the default centered, capped width. Set in the docked context so the
    * input's left edge aligns with the messages; left off for the wide full-page
@@ -160,6 +166,7 @@ export function ChatPanel({
   className,
   notice,
   headerLeft,
+  headerRight,
   composerFullWidth,
   inputAccessory,
   attachmentPolicy,
@@ -179,6 +186,7 @@ export function ChatPanel({
   // empty banner when no chrome controls are present.
   const showHeader =
     headerLeft != null ||
+    headerRight != null ||
     onToggleDock !== undefined ||
     onToggleExpand !== undefined ||
     onClose !== undefined;
@@ -208,6 +216,7 @@ export function ChatPanel({
             )}
           </div>
           <div className="flex shrink-0 items-center gap-1">
+            {headerRight}
             {onToggleExpand !== undefined && dockState !== "docked" && (
               <button
                 type="button"

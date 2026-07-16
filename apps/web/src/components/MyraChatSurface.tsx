@@ -153,6 +153,11 @@ type MyraChatSurfaceProps = {
    * ChatPanel header.
    */
   headerLeft?: ReactNode;
+  /**
+   * Content for the right of the header, alongside the expand/dock/close
+   * controls (e.g. the thread-info button on the full-page chat surface).
+   */
+  headerRight?: ReactNode;
   /** Notified with the text whenever the user sends a message (for auto-title). */
   onUserSend?: (text: string) => void;
   /** Run-addressed workflow-event bubbles interleaved into the thread (CL-2682). */
@@ -200,6 +205,7 @@ export function MyraChatSurface({
   tenantId,
   threadLabel,
   headerLeft,
+  headerRight,
   onUserSend,
   inserts,
   dockState,
@@ -281,6 +287,7 @@ export function MyraChatSurface({
     // is then Expanded goes near-fullscreen, so it wants the centered prompt too.
     composerFullWidth: dockState === "docked" && expanded !== true,
     ...(headerLeft !== undefined ? { headerLeft } : {}),
+    ...(headerRight !== undefined ? { headerRight } : {}),
     ...(mentionCandidates !== undefined && mentionCandidates.length > 0
       ? { mentionCandidates }
       : {}),
