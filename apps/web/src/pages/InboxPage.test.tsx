@@ -71,6 +71,7 @@ let refetchCalls = 0;
 let fetchNextMailboxCalls = 0;
 let fetchNextTasksCalls = 0;
 const markReadIds: string[] = [];
+const itemActionCalls: { id: string; action: string }[] = [];
 const detailQueryIds: (string | null)[] = [];
 const taskLookupIds: (string | null)[] = [];
 
@@ -111,7 +112,12 @@ mock.module("../hooks/use-mailbox", () => ({
   MAILBOX_POLL_MS: 30_000,
   parseMailboxView: (raw: string | null) => {
     if (raw === null || raw === "") return "all";
-    if (raw === "unread" || raw === "archived" || raw === "trash" || raw === "all") {
+    if (
+      raw === "unread" ||
+      raw === "archived" ||
+      raw === "trash" ||
+      raw === "all"
+    ) {
       return raw;
     }
     return null;
@@ -121,7 +127,10 @@ mock.module("../hooks/use-mailbox", () => ({
     isPending: false,
   }),
   useMailboxItemAction: () => ({
-    mutateAsync: async () => undefined,
+    mutateAsync: async (input: { id: string; action: string }) => {
+      itemActionCalls.push(input);
+      return undefined;
+    },
     isPending: false,
   }),
   useMarkMailboxUnread: () => ({
@@ -250,6 +259,7 @@ afterEach(() => {
   fetchNextMailboxCalls = 0;
   fetchNextTasksCalls = 0;
   markReadIds.length = 0;
+  itemActionCalls.length = 0;
   detailQueryIds.length = 0;
   taskLookupIds.length = 0;
 });
@@ -529,6 +539,180 @@ describe("InboxPage", () => {
   });
 });
 
+describe("InboxPage layout controls", () => {
+  it("returns to the inbox list when the reading pane's back control is used", () => {
+    mailbox = {
+      data: [makeMessage({ id: "msg-1", subject: "Morning brief" })],
+      isLoading: false,
+      isError: false,
+    };
+    detail = {
+      data: { ...makeMessage({ id: "msg-1" }), body: "Full brief." },
+      isLoading: false,
+      isError: false,
+    };
+    const router = renderInbox("/inbox/msg-1");
+    screen.getByRole("heading", { name: "Morning brief" });
+    fireEvent.click(screen.getByRole("button", { name: /back to inbox/i }));
+    expect(router.state.location.pathname).toBe("/inbox");
+  });
+
+  it("preserves the active folder when returning from a message", () => {
+    mailbox = {
+      data: [makeMessage({ id: "msg-1", subject: "Archived note" })],
+      isLoading: false,
+      isError: false,
+    };
+    detail = {
+      data: { ...makeMessage({ id: "msg-1" }), body: "Body." },
+      isLoading: false,
+      isError: false,
+    };
+    const router = renderInbox("/inbox/msg-1?view=archived");
+    fireEvent.click(screen.getByRole("button", { name: /back to inbox/i }));
+    expect(router.state.location.pathname).toBe("/inbox");
+    expect(router.state.location.search).toBe("?view=archived");
+  });
+
+  it("replaces the folder tabs with bulk actions once a message is selected", () => {
+    mailbox = {
+      data: [
+        makeMessage({ id: "msg-1", subject: "One" }),
+        makeMessage({ id: "msg-2", subject: "Two" }),
+      ],
+      isLoading: false,
+      isError: false,
+    };
+    renderInbox();
+    const tabs = screen.getByRole("navigation", { name: "Inbox views" });
+    within(tabs).getByRole("button", { name: "All" });
+
+    const checkbox = screen.getAllByRole("checkbox", {
+      name: /select message from/i,
+    })[0]!;
+    fireEvent.click(checkbox);
+
+    // The tab row is gone; the bulk actions have taken its place.
+    expect(
+      screen.queryByRole("navigation", { name: "Inbox views" }),
+    ).toBeNull();
+    screen.getByText("1 selected");
+    screen.getByRole("button", { name: /^archive$/i });
+
+    // Clearing the selection restores the folder tabs.
+    fireEvent.click(screen.getByRole("button", { name: /^clear$/i }));
+    const restored = screen.getByRole("navigation", { name: "Inbox views" });
+    within(restored).getByRole("button", { name: "All" });
+  });
+
+  it("offers a mobile Messages/Activity switch that toggles the active section", () => {
+    mailbox = {
+      data: [makeMessage({ id: "msg-1", subject: "One" })],
+      isLoading: false,
+      isError: false,
+    };
+    renderInbox();
+    const section = screen.getByRole("navigation", { name: "Inbox section" });
+    const messagesTab = within(section).getByRole("button", {
+      name: "Messages",
+    });
+    const activityTab = within(section).getByRole("button", {
+      name: "Activity",
+    });
+    expect(messagesTab.getAttribute("aria-current")).toBe("page");
+    expect(activityTab.getAttribute("aria-current")).toBeNull();
+
+    fireEvent.click(activityTab);
+    expect(activityTab.getAttribute("aria-current")).toBe("page");
+    expect(messagesTab.getAttribute("aria-current")).toBeNull();
+  });
+
+  it("returns to the message list, not the Activity pane, when backing out of a message opened from Activity", () => {
+    mailbox = {
+      data: [makeMessage({ id: "msg-1", subject: "Morning brief" })],
+      isLoading: false,
+      isError: false,
+    };
+    detail = {
+      data: { ...makeMessage({ id: "msg-1" }), body: "Full brief." },
+      isLoading: false,
+      isError: false,
+    };
+    renderInbox();
+    const section = screen.getByRole("navigation", { name: "Inbox section" });
+    fireEvent.click(within(section).getByRole("button", { name: "Activity" }));
+    const feed = screen.getByRole("list", { name: "Now" });
+    fireEvent.click(within(feed).getByText("Morning brief"));
+    fireEvent.click(screen.getByRole("button", { name: /back to inbox/i }));
+    const rail = screen.getByRole("list", { name: "Messages" });
+    expect(rail.closest("aside")?.className).not.toContain("max-md:hidden");
+  });
+
+  it("archives a message from its row action without opening it", () => {
+    mailbox = {
+      data: [
+        makeMessage({ id: "msg-1", from: "Myra", subject: "Morning brief" }),
+      ],
+      isLoading: false,
+      isError: false,
+    };
+    const router = renderInbox();
+    fireEvent.click(
+      screen.getByRole("button", { name: /archive message from myra/i }),
+    );
+    expect(itemActionCalls).toEqual([{ id: "msg-1", action: "archive" }]);
+    expect(router.state.location.pathname).toBe("/inbox");
+  });
+
+  it("trashes a message from its row action", () => {
+    mailbox = {
+      data: [
+        makeMessage({ id: "msg-1", from: "Myra", subject: "Morning brief" }),
+      ],
+      isLoading: false,
+      isError: false,
+    };
+    renderInbox();
+    fireEvent.click(
+      screen.getByRole("button", { name: /trash message from myra/i }),
+    );
+    expect(itemActionCalls).toEqual([{ id: "msg-1", action: "trash" }]);
+  });
+
+  it("offers restore instead of archive/trash on rows in the trash folder", () => {
+    mailbox = {
+      data: [makeMessage({ id: "msg-1", from: "Myra", subject: "Old note" })],
+      isLoading: false,
+      isError: false,
+    };
+    renderInbox("/inbox?view=trash");
+    expect(
+      screen.queryByRole("button", { name: /archive message from myra/i }),
+    ).toBeNull();
+    fireEvent.click(
+      screen.getByRole("button", { name: /restore message from myra/i }),
+    );
+    expect(itemActionCalls).toEqual([{ id: "msg-1", action: "restore" }]);
+  });
+
+  it("hides the mobile section switch while a message is open", () => {
+    mailbox = {
+      data: [makeMessage({ id: "msg-1", subject: "One" })],
+      isLoading: false,
+      isError: false,
+    };
+    detail = {
+      data: { ...makeMessage({ id: "msg-1" }), body: "Body." },
+      isLoading: false,
+      isError: false,
+    };
+    renderInbox("/inbox/msg-1");
+    expect(
+      screen.queryByRole("navigation", { name: "Inbox section" }),
+    ).toBeNull();
+  });
+});
+
 describe("InboxPage Now feed", () => {
   it("uses the active inbox for Now even when the rail is on another folder", () => {
     runsState = { data: [], isLoading: false, isError: false };
@@ -542,7 +726,9 @@ describe("InboxPage Now feed", () => {
     renderInbox("/inbox?view=trash");
     const feed = screen.getByRole("list", { name: "Now" });
     within(feed).getByText("Still in Now");
-    expect(screen.queryByText("Still in Now", { selector: "aside *" })).toBeNull();
+    expect(
+      screen.queryByText("Still in Now", { selector: "aside *" }),
+    ).toBeNull();
   });
 
   it("orders awaiting gates before unread mail before open tasks", () => {
