@@ -1,9 +1,12 @@
 import { type } from "arktype";
 import { Hono } from "hono";
 import { describeRoute, resolver } from "hono-openapi";
+import { getLogger } from "@intx/log";
 import type { HubDb } from "../db";
 import { getRequestedUserContext } from "../lib/user-context";
 import { listInvokedSubagents } from "../services/invoked-subagents";
+
+const log = getLogger(["api", "invoked-subagents"]);
 
 const InvokedSubagentItem = type({
   mappingId: "string",
@@ -49,33 +52,42 @@ export function createInvokedSubagentsRouter(hubDb: HubDb): Hono {
         400: { description: "Invalid query" },
         401: { description: "Not authenticated" },
         403: { description: "Not a member" },
+        500: { description: "Failed to load invoked subagents" },
       },
     }),
     async (c) => {
       const userId = c.get("userId" as never) as string | undefined;
       if (!userId) return c.json({ error: "Unauthorized" }, 401);
 
-      const { context, forbidden } = await getRequestedUserContext(
-        hubDb,
-        userId,
-        c.req.query("tenantId"),
-      );
-      if (forbidden || !context) return c.json({ error: "Forbidden" }, 403);
+      try {
+        const { context, forbidden } = await getRequestedUserContext(
+          hubDb,
+          userId,
+          c.req.query("tenantId"),
+        );
+        if (forbidden || !context) return c.json({ error: "Forbidden" }, 403);
 
-      const parsed = InvokedSubagentsQuery(c.req.query());
-      if (parsed instanceof type.errors) {
-        return c.json({ error: parsed.summary }, 400);
+        const parsed = InvokedSubagentsQuery(c.req.query());
+        if (parsed instanceof type.errors) {
+          return c.json({ error: parsed.summary }, 400);
+        }
+
+        const subagents = await listInvokedSubagents(hubDb, {
+          tenantId: context.tenantId,
+          memberPrincipalId: context.principalId,
+          ...(parsed.originConversationId !== undefined
+            ? { originConversationId: parsed.originConversationId }
+            : {}),
+        });
+
+        return c.json({ subagents });
+      } catch (err) {
+        log.error("Failed to load invoked subagents", {
+          userId,
+          error: err instanceof Error ? err : new Error(String(err)),
+        });
+        return c.json({ error: "Failed to load invoked subagents" }, 500);
       }
-
-      const subagents = await listInvokedSubagents(hubDb, {
-        tenantId: context.tenantId,
-        memberPrincipalId: context.principalId,
-        ...(parsed.originConversationId !== undefined
-          ? { originConversationId: parsed.originConversationId }
-          : {}),
-      });
-
-      return c.json({ subagents });
     },
   );
 
