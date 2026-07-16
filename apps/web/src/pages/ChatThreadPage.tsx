@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, Navigate, useNavigate, useParams } from "react-router";
-import { CircleHelp } from "lucide-react";
+import { Info } from "lucide-react";
 import type { ThreadInsert } from "@workbench/chat";
 import { ChatThreadInfoDialog } from "../components/ChatThreadInfoDialog";
 import { ErrorBoundary } from "../components/ErrorBoundary";
@@ -18,6 +18,7 @@ import { useWorkflowRunEvents } from "../hooks/use-workflow-run-events";
 import { useDockFocus } from "../lib/dock-focus";
 import { useActiveWorkbench } from "../lib/active-workbench-context";
 import { usePublishActiveContext } from "../lib/active-context-store";
+import { humanizeInstanceStatus } from "../lib/instance-status";
 import { myraInstanceTraceHref } from "../lib/myra-turn-trace";
 import {
   resolveActiveThread,
@@ -150,17 +151,25 @@ export function ChatThreadPage() {
     return () => window.clearTimeout(timer);
   }, [focus]);
 
-  // Thread info dialog (CL-3769): reuses the roster query the trace link
-  // already relies on, plus the Agents-page instance list for the mail
-  // address and status — both already-cached queries, no new hub route.
+  // Thread info dialog: reuses the roster query the turn trace link already
+  // relies on, plus the Agents-page instance list for the mail address and
+  // status — both existing queries, no new hub route. Gated on the dialog
+  // being open since they exist only for it.
   const [infoOpen, setInfoOpen] = useState(false);
   const { data: tenantRoster } = useTenantRoster(activeTenantId ?? "", {
-    enabled: activeTenantId !== null && activeTenantId !== undefined,
+    enabled:
+      infoOpen && activeTenantId !== null && activeTenantId !== undefined,
   });
-  const { data: agentInstances } = useAgentInstances(activeTenantId);
+  const { data: agentInstances } = useAgentInstances(
+    infoOpen ? activeTenantId : null,
+  );
   const activeInstance = agentInstances?.find(
     (instance) => instance.id === active?.instanceId,
   );
+  const instanceStatus =
+    activeInstance !== undefined
+      ? humanizeInstanceStatus(activeInstance.status)
+      : undefined;
   const traceHref = myraInstanceTraceHref(
     active?.instanceId,
     tenantRoster?.instances,
@@ -173,7 +182,7 @@ export function ChatThreadPage() {
         aria-label="Chat details"
         className="grid h-7 w-7 flex-none place-items-center rounded-[8px] text-text-3 transition-colors hover:bg-page hover:text-text active:scale-[0.97]"
       >
-        <CircleHelp className="h-3.5 w-3.5" />
+        <Info className="h-3.5 w-3.5" />
       </button>
     ) : null;
 
@@ -267,7 +276,7 @@ export function ChatThreadPage() {
             <ChatThreadInfoDialog
               open={infoOpen}
               onClose={() => setInfoOpen(false)}
-              title={active.label ?? "Chat"}
+              title={active.label}
               instanceId={active.instanceId}
               createdAt={active.createdAt}
               {...(activeInstance?.name !== undefined
@@ -276,8 +285,8 @@ export function ChatThreadPage() {
               {...(activeInstance?.address !== undefined
                 ? { mailAddress: activeInstance.address }
                 : {})}
-              {...(activeInstance?.status !== undefined
-                ? { status: activeInstance.status }
+              {...(instanceStatus !== undefined
+                ? { status: instanceStatus }
                 : {})}
               {...(traceHref !== undefined ? { traceHref } : {})}
             />

@@ -1,5 +1,6 @@
-import { useEffect, useRef, type KeyboardEvent } from "react";
+import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 import { Link } from "react-router";
+import { Check, Copy } from "lucide-react";
 
 export interface ChatThreadInfoDialogFields {
   /** Thread title (the sidebar/thread label). */
@@ -11,6 +12,7 @@ export interface ChatThreadInfoDialogFields {
   readonly instanceId: string;
   readonly mailAddress?: string;
   readonly createdAt?: string;
+  /** Already-humanized status label; callers omit error-ish/unknown wire statuses. */
   readonly status?: string;
   /** Deep link to this instance's principal trace, when resolvable. */
   readonly traceHref?: string;
@@ -30,8 +32,44 @@ function formatCreatedAt(iso: string): string {
   });
 }
 
+/** Copy-to-clipboard icon button with a brief "Copied" confirmation state. */
+function CopyButton({ value, label }: { value: string; label: string }) {
+  const [copied, setCopied] = useState(false);
+  useEffect(() => {
+    if (!copied) return;
+    const timer = window.setTimeout(() => setCopied(false), 1500);
+    return () => window.clearTimeout(timer);
+  }, [copied]);
+  return (
+    <button
+      type="button"
+      aria-label={label}
+      onClick={() => {
+        navigator.clipboard
+          .writeText(value)
+          .then(() => setCopied(true))
+          .catch(() => {
+            // Clipboard unavailable (permissions); the value stays selectable.
+          });
+      }}
+      className="grid h-6 w-6 flex-none place-items-center rounded-[8px] text-text-3 transition-colors hover:bg-page hover:text-text active:scale-[0.97]"
+    >
+      {copied ? (
+        <>
+          <Check className="h-3 w-3" />
+          <span className="sr-only" role="status">
+            Copied
+          </span>
+        </>
+      ) : (
+        <Copy className="h-3 w-3" />
+      )}
+    </button>
+  );
+}
+
 /**
- * Thread info dialog for the chat thread header (CL-3769). Follows the app's
+ * Thread info dialog for the chat thread header. Follows the app's
  * hand-rolled dialog convention (role="dialog", backdrop click and Escape
  * close) established by `WhatsNewDialog`/`AddArtifactModal`. Renders only the
  * fields the caller actually supplied — no placeholders for absent data.
@@ -91,10 +129,24 @@ export function ChatThreadInfoDialog({
   if (model !== undefined) rows.push({ label: "Model", value: model });
   rows.push({
     label: "Instance ID",
-    value: <span className="font-mono text-xs">{instanceId}</span>,
+    value: (
+      <span className="flex min-w-0 items-center justify-end gap-1">
+        <span className="min-w-0 break-all font-mono text-xs">
+          {instanceId}
+        </span>
+        <CopyButton value={instanceId} label="Copy instance ID" />
+      </span>
+    ),
   });
   if (mailAddress !== undefined) {
-    rows.push({ label: "Mail address", value: mailAddress });
+    rows.push({
+      label: "Mail address",
+      value: (
+        <span className="min-w-0 break-all font-mono text-xs">
+          {mailAddress}
+        </span>
+      ),
+    });
   }
   if (createdAt !== undefined) {
     rows.push({ label: "Created", value: formatCreatedAt(createdAt) });
@@ -121,7 +173,7 @@ export function ChatThreadInfoDialog({
         ref={dialogRef}
         tabIndex={-1}
         onClick={(event) => event.stopPropagation()}
-        className="flex w-full max-w-[420px] flex-col gap-4 rounded-xl border border-border bg-surface p-5 shadow-xl focus:outline-none"
+        className="flex w-full max-w-[420px] flex-col gap-4 rounded-panel border border-border bg-surface p-5 shadow-xl focus:outline-none"
       >
         <div className="flex items-start justify-between gap-4">
           <h2 className="min-w-0 truncate text-library-title-sm tracking-[-0.01em] text-text">
@@ -131,7 +183,7 @@ export function ChatThreadInfoDialog({
             type="button"
             onClick={onClose}
             aria-label="Close"
-            className="grid h-8 w-8 flex-none place-items-center rounded-[10px] border border-border text-text-2 transition-colors hover:bg-page hover:text-text active:scale-[0.97]"
+            className="grid h-8 w-8 flex-none place-items-center rounded-[9px] border border-border text-text-2 transition-colors hover:bg-page hover:text-text active:scale-[0.97]"
           >
             <svg
               viewBox="0 0 24 24"
@@ -152,7 +204,7 @@ export function ChatThreadInfoDialog({
               className="flex items-baseline justify-between gap-3"
             >
               <dt className="shrink-0 text-xs text-text-3">{row.label}</dt>
-              <dd className="min-w-0 truncate text-right text-sm text-text">
+              <dd className="min-w-0 text-right text-sm text-text">
                 {row.value}
               </dd>
             </div>
@@ -174,7 +226,7 @@ export function ChatThreadInfoDialog({
             onClick={onClose}
             className="text-xs font-medium text-orange transition-colors hover:text-orange-deep"
           >
-            View in Agents
+            Open Agents page
           </Link>
         </div>
       </div>

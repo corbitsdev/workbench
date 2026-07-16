@@ -309,7 +309,6 @@ describe("ChatPanel single merged header", () => {
     );
     const infoButton = screen.getByRole("button", { name: "Chat details" });
     const closeButton = screen.getByRole("button", { name: "Close chat" });
-    expect(infoButton).toBeDefined();
     expect(
       infoButton.compareDocumentPosition(closeButton) &
         Node.DOCUMENT_POSITION_FOLLOWING,
@@ -325,7 +324,7 @@ describe("ChatPanel single merged header", () => {
         headerRight={<button aria-label="Chat details">?</button>}
       />,
     );
-    expect(screen.getByRole("button", { name: "Chat details" })).toBeDefined();
+    screen.getByRole("button", { name: "Chat details" });
   });
 });
 

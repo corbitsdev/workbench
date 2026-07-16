@@ -279,7 +279,7 @@ describe("ChatThreadPage", () => {
           id: "i1",
           name: "Myra",
           address: "myra-i1@workbench.local",
-          status: "active",
+          status: "running",
         },
       ],
     };
@@ -305,9 +305,12 @@ describe("ChatThreadPage", () => {
     expect(dialog.textContent).toContain("i1");
     expect(dialog.textContent).toContain("Myra");
     expect(dialog.textContent).toContain("myra-i1@workbench.local");
-    expect(dialog.textContent).toContain("active");
+    // Wire status "running" surfaces as the humanized "Active" label.
+    expect(dialog.textContent).toContain("Active");
     expect(
-      screen.getByRole("link", { name: "View in Agents" }).getAttribute("href"),
+      screen
+        .getByRole("link", { name: "Open Agents page" })
+        .getAttribute("href"),
     ).toBe("/agents");
     expect(
       screen.getByRole("link", { name: "Open trace" }).getAttribute("href"),
