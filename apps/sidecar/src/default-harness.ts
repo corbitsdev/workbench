@@ -564,11 +564,15 @@ export function createDefaultHarnessBuilder({
         );
         const allowedNames = new Set([
           ...agentConfig.tools.map((t) => t.name),
-          ...loadedToolNames,
           ...(catalogRunner !== undefined
             ? catalogRunner.definitions.map((d) => d.name)
             : []),
         ]);
+        for (const name of loadedToolNames) {
+          if (grantedCatalogToolNames.has(name)) {
+            allowedNames.add(name);
+          }
+        }
         const tools = filterToolRunner(
           gatedRunner as DefinedRunner,
           allowedNames,
