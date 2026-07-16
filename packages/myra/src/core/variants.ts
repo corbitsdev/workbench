@@ -95,7 +95,6 @@ function versionId(id: string): string {
 }
 
 const OPUS_MODEL_CONFIG = { defaultModel: "claude-opus-4-8" } as const;
-const DEEPSEEK_MODEL_CONFIG = { defaultModel: "deepseek-v4-flash" } as const;
 const KIMI_MODEL_CONFIG = { defaultModel: "kimi-k2.6" } as const;
 
 function chatDeployPrompt(provider: MyraVariantProvider): string {
@@ -111,20 +110,19 @@ function chatDeployPrompt(provider: MyraVariantProvider): string {
  * definition (byte-identical fallback for members with no preference); the rest
  * are additional, non-default definitions selectable per member.
  *
- * NOTE: the canonical chat variant runs on `kimi-k2.6` and the canonical triage
- * variant on `deepseek-v4-flash` — matching today's shipped `myra` /
- * `myra-triage` definitions (see `PERSONAL_AGENT_MODEL_CONFIG` /
- * `PERSONAL_AGENT_TRIAGE_MODEL_CONFIG`), so an absent preference reproduces
- * current behavior exactly.
+ * NOTE: the canonical chat AND triage variants both run on `deepseek-v4-flash`
+ * — matching today's shipped `myra` / `myra-triage` definitions (see
+ * `PERSONAL_AGENT_MODEL_CONFIG` / `PERSONAL_AGENT_TRIAGE_MODEL_CONFIG`), so an
+ * absent preference reproduces current behavior exactly.
  */
 export const MYRA_VARIANTS: readonly MyraVariant[] = [
   {
-    id: "myra-kimi-k2-6",
-    versionId: versionId("myra-kimi-k2-6"),
+    id: "myra-deepseek-v4-flash",
+    versionId: versionId("myra-deepseek-v4-flash"),
     kind: "chat",
-    displayName: "Myra (Kimi K2)",
+    displayName: "Myra (DeepSeek Flash)",
     description:
-      "The default Myra — Moonshot Kimi K2 over the opencode-zen gateway. Balanced quality and cost.",
+      "The default Myra — DeepSeek V4 Flash over the opencode-zen gateway. Fast, low-cost, balanced.",
     model: PERSONAL_AGENT_MODEL_CONFIG.defaultModel,
     modelConfig: PERSONAL_AGENT_MODEL_CONFIG,
     provider: "openai-compatible",
@@ -138,22 +136,22 @@ export const MYRA_VARIANTS: readonly MyraVariant[] = [
     isDefault: true,
   },
   {
-    id: "myra-deepseek-v4-flash",
-    versionId: versionId("myra-deepseek-v4-flash"),
+    id: "myra-kimi-k2-6",
+    versionId: versionId("myra-kimi-k2-6"),
     kind: "chat",
-    displayName: "Myra (DeepSeek Flash)",
+    displayName: "Myra (Kimi K2)",
     description:
-      "Fast, low-cost Myra on DeepSeek V4 Flash — good for high-volume, latency-sensitive chat.",
-    model: DEEPSEEK_MODEL_CONFIG.defaultModel,
-    modelConfig: DEEPSEEK_MODEL_CONFIG,
+      "Myra on Moonshot Kimi K2 — stronger long-form reasoning at higher per-turn cost.",
+    model: KIMI_MODEL_CONFIG.defaultModel,
+    modelConfig: KIMI_MODEL_CONFIG,
     provider: "openai-compatible",
     costTier: "standard",
     credentialRequirements: PERSONAL_AGENT_CREDENTIAL_REQUIREMENTS,
     promptFormat: promptFormatForProvider("openai-compatible"),
     deployPrompt: chatDeployPrompt("openai-compatible"),
     toolPolicy: PERSONAL_AGENT_BASE_TOOLS,
-    seedName: "Myra (DeepSeek Flash)",
-    templateKey: "myra-chat-deepseek-v4-flash",
+    seedName: "Myra (Kimi K2)",
+    templateKey: "myra-chat-kimi-k2-6",
     isDefault: false,
   },
   {

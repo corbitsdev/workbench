@@ -49,6 +49,8 @@ describe("Myra variant catalog", () => {
 
   test("the default chat variant is byte-identical to today's Myra definition", () => {
     const variant = defaultMyraVariant("chat");
+    expect(variant.id).toBe("myra-deepseek-v4-flash");
+    expect(variant.model).toBe("deepseek-v4-flash");
     expect(variant.seedName).toBe(PERSONAL_AGENT_NAME);
     expect(variant.templateKey).toBe("myra");
     expect(variant.modelConfig).toEqual(PERSONAL_AGENT_MODEL_CONFIG);

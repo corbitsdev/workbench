@@ -49,7 +49,11 @@ describe("Myra variants router", () => {
     );
     const kimi = body.variants.find((v) => v.id === "myra-kimi-k2-6");
     expect(kimi?.costTier).toBe("standard");
-    expect(kimi?.isDefault).toBe(true);
+    expect(kimi?.isDefault).toBe(false);
+    const deepseek = body.variants.find(
+      (v) => v.id === "myra-deepseek-v4-flash",
+    );
+    expect(deepseek?.isDefault).toBe(true);
   });
 
   it("returns the caller's selection scoped to the resolved member", async () => {

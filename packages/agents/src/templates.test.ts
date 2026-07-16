@@ -23,7 +23,7 @@ describe("AGENT_TEMPLATES", () => {
       "lincoln",
       "loop",
       "myra",
-      "myra-chat-deepseek-v4-flash",
+      "myra-chat-kimi-k2-6",
       "myra-chat-opus-4-8",
       "myra-triage",
       "myra-triage-kimi-k2-6",
