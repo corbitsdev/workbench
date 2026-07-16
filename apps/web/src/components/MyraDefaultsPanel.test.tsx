@@ -47,7 +47,22 @@ const variants = [
 
 type PutCall = { method: string; body: unknown };
 
-let preferences: { chat: string | null; triage: string | null };
+const EMPTY_STYLE_AXES = {
+  personality: null,
+  emojiUse: null,
+  uiType: null,
+  artifactUsageChat: null,
+  artifactUsageTriage: null,
+  toolUsageChat: null,
+  toolUsageTriage: null,
+  skillUsageChat: null,
+  skillUsageTriage: null,
+};
+
+let preferences: { chat: string | null; triage: string | null } & Record<
+  string,
+  string | null
+>;
 let putCalls: PutCall[];
 let putBehavior: "ok" | "reject";
 
@@ -63,7 +78,7 @@ function jsonResponse(body: unknown): Response {
 }
 
 beforeEach(() => {
-  preferences = { chat: null, triage: null };
+  preferences = { chat: null, triage: null, ...EMPTY_STYLE_AXES };
   putCalls = [];
   putBehavior = "ok";
   globalThis.fetch = mock((url: string, init?: RequestInit) => {
@@ -172,7 +187,7 @@ describe("MyraDefaultsPanel", () => {
   });
 
   it("PUTs null when the default variant is re-selected", async () => {
-    preferences = { chat: "chat-opus", triage: null };
+    preferences = { chat: "chat-opus", triage: null, ...EMPTY_STYLE_AXES };
     renderPanel();
     await waitFor(() =>
       expect(rowFor("Myra Deep").getAttribute("aria-checked")).toBe("true"),

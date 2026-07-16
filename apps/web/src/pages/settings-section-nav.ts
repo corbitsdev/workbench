@@ -12,6 +12,7 @@ export interface SettingsSectionLink {
 export const SETTINGS_SECTIONS: readonly SettingsSectionLink[] = [
   { id: "your-agent", label: "Your agent" },
   { id: "myra-defaults", label: "Myra defaults" },
+  { id: "myra-style", label: "Personality & style" },
   { id: "inbox-capabilities", label: "Your inbox & brief" },
   { id: "connections", label: "Connections" },
   { id: "schedules", label: "Schedules" },
