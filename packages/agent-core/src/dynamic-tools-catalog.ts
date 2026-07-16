@@ -67,9 +67,8 @@ type CatalogPackage = {
 
 const COMMITTED_TOOL_FACTORIES = loadCommittedToolManifestFactories();
 
-export const MYRA_CATALOG_PACKAGES: CatalogPackage[] = deriveMyraCatalogPackages(
-  COMMITTED_TOOL_FACTORIES,
-);
+export const MYRA_CATALOG_PACKAGES: CatalogPackage[] =
+  deriveMyraCatalogPackages(COMMITTED_TOOL_FACTORIES);
 
 // Real manifest descriptions per pin/bare-name — the widened `search_tools`
 // corpus. Kept separate from the friendly display phrase so results never

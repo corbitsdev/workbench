@@ -18,9 +18,12 @@ describe("agent system prompts", () => {
     expect(prompt).toContain("No emojis unless explicitly requested");
   });
 
-  it("personal agent points skill drafts at Skills → Pending drafts", () => {
+  it("personal agent front-loads the capability sweep in its operating loop", () => {
     const prompt = buildPersonalAgentSystemPrompt("Myra", format);
-    expect(prompt).toContain("Skills → Pending drafts");
+    expect(prompt).toContain("<operating-loop>");
+    expect(prompt).toContain("search_skills");
+    expect(prompt).toContain("workflow_list_kinds");
+    expect(prompt).toContain("search_tools");
   });
 
   it("loop agent includes the humanizer section", () => {
