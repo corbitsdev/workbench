@@ -1272,6 +1272,12 @@ export function createHubLink(config: HubLinkConfig): HubLink {
       case "challenge":
         await handleChallenge(frame);
         break;
+      // WORKBENCH-LOCAL (CL-3779): `pong` is handled inline in the `ws.message`
+      // listener before enqueuing, so the heartbeat cannot be starved by awaited
+      // pack-apply I/O ahead of it on this serial queue. A real `pong` is valid
+      // JSON and always takes that inline path, so this arm is unreachable for
+      // inline-handled pongs; it is kept for parity with upstream
+      // `@intx/hub-agent` (minimizing fork drift), not as a live code path.
       case "pong":
         lastPongAt = Date.now();
         break;
@@ -1447,6 +1453,40 @@ export function createHubLink(config: HubLinkConfig): HubLink {
         // this catch is the belt-and-braces guarantee that no future
         // unguarded arm can wedge the link.
         const data = event.data;
+        // WORKBENCH-LOCAL (CL-3779): the heartbeat `pong` must not be starved
+        // by awaited pack-apply I/O ahead of it on the shared `messageQueue`.
+        // A `repo.pack.done` arm calls `await handlePackDone(...)` (isomorphic-git
+        // disk writes) inline on this serial chain; a pack that holds the queue
+        // longer than the pong window (`pingIntervalMs * 2`) delays the queued
+        // `pong`, `lastPongAt` goes stale, and the ping timer closes this
+        // otherwise-healthy socket ("Hub pong timeout, closing connection").
+        // Handle `pong` inline here, ahead of the queue, so the heartbeat is
+        // never blocked by sibling frame processing. All other frames enqueue
+        // exactly as before. Parsing is guarded: on any failure we fall through
+        // to the existing queued path, which does its own strict validation.
+        //
+        // Length gate: a `pong` frame is ~16 bytes, so only attempt the inline
+        // parse on tiny frames. This avoids a second synchronous `JSON.parse`
+        // on the hottest/largest frames (e.g. `repo.pack.push` chunks), which
+        // would double-parse them on the event loop; large frames skip the
+        // inline path and go straight to `messageQueue` as before.
+        if (data.length < 64) {
+          let inboundType: unknown;
+          try {
+            inboundType = (JSON.parse(data) as { type?: unknown }).type;
+          } catch {
+            inboundType = undefined;
+          }
+          if (inboundType === "pong") {
+            lastPongAt = Date.now();
+            return;
+          }
+        }
+        // WORKBENCH-LOCAL (CL-3779): only `pong` is lifted off the queue here.
+        // The deeper issue — a heavy awaited `handlePackDone(...)` pack-apply
+        // head-of-line-blocks ALL other inbound frames on this serial chain,
+        // not just the heartbeat — is tracked in CL-3781 and deliberately
+        // deferred; this change only unblocks the self-disconnect.
         messageQueue = messageQueue.then(() =>
           handleMessage(data).catch((err: unknown) => {
             const msg = err instanceof Error ? err.message : String(err);
