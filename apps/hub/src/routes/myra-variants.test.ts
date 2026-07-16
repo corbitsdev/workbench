@@ -124,6 +124,13 @@ const EMPTY_TOOL_PREFS = {
   }[],
 };
 
+const EMPTY_INFERENCE_DIALS = {
+  creativeChat: null,
+  thinkingChat: null,
+  creativeTriage: null,
+  thinkingTriage: null,
+};
+
 function wrapWithTenant(
   db: HubDb,
   ctx = { tenantId: "tn-global", principalId: "prn-member" },
@@ -202,6 +209,7 @@ describe("Myra variants router", () => {
       ...EMPTY_INSTRUCTIONS,
       ...EMPTY_STYLE_AXES,
       ...EMPTY_TOOL_PREFS,
+      ...EMPTY_INFERENCE_DIALS,
     });
   });
 
@@ -236,6 +244,7 @@ describe("Myra variants router", () => {
       ...EMPTY_TOOL_PREFS,
       personality: "candid",
       artifactUsageChat: "none",
+      ...EMPTY_INFERENCE_DIALS,
     });
   });
 
@@ -262,6 +271,7 @@ describe("Myra variants router", () => {
       ...EMPTY_INSTRUCTIONS,
       ...EMPTY_STYLE_AXES,
       ...EMPTY_TOOL_PREFS,
+      ...EMPTY_INFERENCE_DIALS,
     });
     expect(db.insert).toHaveBeenCalled();
   });
@@ -291,6 +301,7 @@ describe("Myra variants router", () => {
       instructionsGlobal: "Be terse.",
       instructionsChat: null,
       instructionsTriage: "Flag investor mail.",
+      ...EMPTY_INFERENCE_DIALS,
     });
   });
 
@@ -352,6 +363,7 @@ describe("Myra variants router", () => {
       ...EMPTY_TOOL_PREFS,
       personality: "candid",
       toolUsageChat: "none",
+      ...EMPTY_INFERENCE_DIALS,
     });
   });
 
