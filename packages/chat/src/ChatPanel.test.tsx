@@ -296,6 +296,37 @@ describe("ChatPanel single merged header", () => {
     );
     expect(screen.queryByRole("banner")).toBeNull();
   });
+
+  it("renders headerRight alongside the chrome controls, ahead of them", () => {
+    render(
+      <ChatPanel
+        agent={agent}
+        messages={messages}
+        onSend={() => {}}
+        onClose={() => {}}
+        headerRight={<button aria-label="Chat details">?</button>}
+      />,
+    );
+    const infoButton = screen.getByRole("button", { name: "Chat details" });
+    const closeButton = screen.getByRole("button", { name: "Close chat" });
+    expect(infoButton).toBeDefined();
+    expect(
+      infoButton.compareDocumentPosition(closeButton) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+  });
+
+  it("shows the header for headerRight alone, with no headerLeft or chrome controls", () => {
+    render(
+      <ChatPanel
+        agent={agent}
+        messages={messages}
+        onSend={() => {}}
+        headerRight={<button aria-label="Chat details">?</button>}
+      />,
+    );
+    expect(screen.getByRole("button", { name: "Chat details" })).toBeDefined();
+  });
 });
 
 describe("ChatPanel composer width", () => {
