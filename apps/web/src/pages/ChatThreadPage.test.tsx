@@ -4,6 +4,10 @@ import { afterEach, beforeEach, describe, expect, it, mock } from "bun:test";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import React from "react";
 import { MemoryRouter, Route, Routes } from "react-router";
+import {
+  ActiveContextProvider,
+  useActiveContext,
+} from "../lib/active-context-store";
 
 type ThreadItem = {
   id: string;
@@ -159,11 +163,23 @@ mock.module("../hooks/use-workflow", () => ({
 
 const { ChatThreadPage } = require("./ChatThreadPage");
 
-function renderAt(path: string) {
-  render(
+function PublishedLabelProbe() {
+  const ctx = useActiveContext();
+  return React.createElement(
+    "div",
+    { "data-testid": "published-label" },
+    ctx?.label ?? "",
+  );
+}
+
+function threadPageTree(path: string) {
+  return React.createElement(
+    MemoryRouter,
+    { initialEntries: [path] },
     React.createElement(
-      MemoryRouter,
-      { initialEntries: [path] },
+      ActiveContextProvider,
+      null,
+      React.createElement(PublishedLabelProbe),
       React.createElement(
         Routes,
         null,
@@ -178,6 +194,10 @@ function renderAt(path: string) {
       ),
     ),
   );
+}
+
+function renderAt(path: string) {
+  return render(threadPageTree(path));
 }
 
 beforeEach(() => {
@@ -326,5 +346,78 @@ describe("ChatThreadPage", () => {
     expect(screen.queryByText("Mail address")).toBeNull();
     expect(screen.queryByText("Status")).toBeNull();
     expect(screen.queryByRole("link", { name: "Open trace" })).toBeNull();
+  });
+
+  it("publishes 'New chat' instead of the raw default label ('Chat N') for a brand-new thread", () => {
+    threadsResult = {
+      data: {
+        threads: [
+          {
+            id: "t1",
+            instanceId: "i1",
+            label: "Chat 2",
+            createdAt: "2026-01-01T00:00:00Z",
+            lastActivityAt: "2026-01-01T00:00:00Z",
+          },
+        ],
+        total: 1,
+      },
+      isLoading: false,
+      isError: false,
+      refetch: () => {},
+    };
+    renderAt("/chats/t1");
+    expect(screen.getByTestId("published-label").textContent).toBe(
+      "New chat",
+    );
+  });
+
+  it("re-syncs the published title when the thread's label changes (no stale title across renders)", () => {
+    threadsResult = {
+      data: {
+        threads: [
+          {
+            id: "t1",
+            instanceId: "i1",
+            label: "Chat 2",
+            createdAt: "2026-01-01T00:00:00Z",
+            lastActivityAt: "2026-01-01T00:00:00Z",
+          },
+        ],
+        total: 1,
+      },
+      isLoading: false,
+      isError: false,
+      refetch: () => {},
+    };
+    const { rerender } = renderAt("/chats/t1");
+    expect(screen.getByTestId("published-label").textContent).toBe(
+      "New chat",
+    );
+
+    threadsResult = {
+      data: {
+        threads: [
+          {
+            id: "t1",
+            instanceId: "i1",
+            label: "Renewal timeline for Acme",
+            createdAt: "2026-01-01T00:00:00Z",
+            lastActivityAt: "2026-01-01T00:00:00Z",
+          },
+        ],
+        total: 1,
+      },
+      isLoading: false,
+      isError: false,
+      refetch: () => {},
+    };
+    // Same tree, same route, unchanged turn count — reconciles in place rather
+    // than unmounting, so this exercises the freshnessToken re-publish path
+    // rather than a fresh mount's initial publish.
+    rerender(threadPageTree("/chats/t1"));
+    expect(screen.getByTestId("published-label").textContent).toBe(
+      "Renewal timeline for Acme",
+    );
   });
 });
