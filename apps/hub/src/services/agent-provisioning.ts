@@ -388,23 +388,70 @@ export async function launchAgentSession(
     sources[0]!.provider;
   let effectiveSystemPrompt = systemPrompt;
   let personalAgentPromptComposed = false;
-  if (!opts.persona) {
-    try {
-      const personalized = await composePersonalAgentPromptForInstance(db, {
-        tenantId,
-        instanceId,
-        provider: defaultSourceProvider,
+
+  // These four prompt-composition lookups (personalization, style overlay,
+  // pinned skills, member timezone) each hit the DB independently and none
+  // reads another's result — only the order they're STITCHED into
+  // `effectiveSystemPrompt` afterward matters. Firing them with
+  // `Promise.allSettled` collapses what was a serial chain of round trips
+  // into one, cutting session-launch latency (CL-3799) without changing the
+  // assembled prompt: each section is still applied in the same fixed order,
+  // and a failure in one lookup no longer blocks the others from being
+  // attempted (a strict improvement on the previous style/pinned pairing,
+  // where a style-compose throw skipped pinned-skills entirely).
+  const hubDb = db as unknown as HubDb;
+  const [
+    personalizedResult,
+    styleSectionResult,
+    pinnedSectionResult,
+    memberTimeZoneResult,
+  ] = await Promise.allSettled([
+    opts.persona
+      ? Promise.resolve(null)
+      : composePersonalAgentPromptForInstance(db, {
+          tenantId,
+          instanceId,
+          provider: defaultSourceProvider,
+        }),
+    composeMyraStyleOverlaySectionForInstance(db, {
+      tenantId,
+      instanceId,
+      provider: defaultSourceProvider,
+    }),
+    composeMyraPinnedSkillsSectionForInstance(db, {
+      tenantId,
+      instanceId,
+      provider: defaultSourceProvider,
+    }),
+    (async () => {
+      const memberMapping = await hubDb.query.memberAgentInstance.findFirst({
+        where: eq(memberAgentInstance.instanceId, instanceId),
       });
-      if (personalized !== null) {
-        effectiveSystemPrompt = personalized;
+      if (!memberMapping) return undefined;
+      const preferences = await readMemberPreferences(
+        hubDb,
+        tenantId,
+        memberMapping.memberPrincipalId,
+      );
+      return resolveMemberTimeZone(preferences);
+    })(),
+  ]);
+
+  if (!opts.persona) {
+    if (personalizedResult.status === "fulfilled") {
+      if (personalizedResult.value !== null) {
+        effectiveSystemPrompt = personalizedResult.value;
         personalAgentPromptComposed = true;
       }
-    } catch (err) {
+    } else {
       log.warn(
         "Failed to personalize personal-agent prompt; using seeded prompt",
         {
           instanceId,
-          error: err instanceof Error ? err.message : String(err),
+          error:
+            personalizedResult.reason instanceof Error
+              ? personalizedResult.reason.message
+              : String(personalizedResult.reason),
         },
       );
     }
@@ -416,30 +463,33 @@ export async function launchAgentSession(
   // pass the mailbox persona). Best-effort; a missing member mapping, a
   // non-Myra instance, or an all-default selection composes `null` and
   // leaves the prompt untouched — the byte-identical guarantee.
-  try {
-    const styleSection = await composeMyraStyleOverlaySectionForInstance(db, {
-      tenantId,
-      instanceId,
-      provider: defaultSourceProvider,
-    });
-    if (styleSection !== null) {
-      effectiveSystemPrompt = `${effectiveSystemPrompt}\n\n${styleSection}`;
+  if (styleSectionResult.status === "fulfilled") {
+    if (styleSectionResult.value !== null) {
+      effectiveSystemPrompt = `${effectiveSystemPrompt}\n\n${styleSectionResult.value}`;
     }
+  } else {
+    log.warn("Failed to compose Myra style overlay; using prompt without it", {
+      instanceId,
+      error:
+        styleSectionResult.reason instanceof Error
+          ? styleSectionResult.reason.message
+          : String(styleSectionResult.reason),
+    });
+  }
 
-    const pinnedSection = await composeMyraPinnedSkillsSectionForInstance(db, {
-      tenantId,
-      instanceId,
-      provider: defaultSourceProvider,
-    });
-    if (pinnedSection !== null) {
-      effectiveSystemPrompt = `${effectiveSystemPrompt}\n\n${pinnedSection}`;
+  if (pinnedSectionResult.status === "fulfilled") {
+    if (pinnedSectionResult.value !== null) {
+      effectiveSystemPrompt = `${effectiveSystemPrompt}\n\n${pinnedSectionResult.value}`;
     }
-  } catch (err) {
+  } else {
     log.warn(
-      "Failed to compose Myra personalization overlay; using prompt without it",
+      "Failed to compose Myra pinned-skills overlay; using prompt without it",
       {
         instanceId,
-        error: err instanceof Error ? err.message : String(err),
+        error:
+          pinnedSectionResult.reason instanceof Error
+            ? pinnedSectionResult.reason.message
+            : String(pinnedSectionResult.reason),
       },
     );
   }
@@ -461,31 +511,21 @@ export async function launchAgentSession(
   // launches and unattended ones (mailbox triage, invoked subagents) alike,
   // since both go through this wrapper. Best-effort: a lookup failure keeps
   // the labeled-UTC fallback rather than failing the launch.
-  try {
-    const hubDb = db as unknown as HubDb;
-    const memberMapping = await hubDb.query.memberAgentInstance.findFirst({
-      where: eq(memberAgentInstance.instanceId, instanceId),
-    });
-    if (memberMapping) {
-      const preferences = await readMemberPreferences(
-        hubDb,
-        tenantId,
-        memberMapping.memberPrincipalId,
-      );
-      const memberTimeZone = resolveMemberTimeZone(preferences);
-      if (memberTimeZone !== undefined) {
-        effectiveSystemPrompt = `${effectiveSystemPrompt}\n\n${buildTimeZoneMarker(memberTimeZone)}`;
-      }
+  if (memberTimeZoneResult.status === "fulfilled") {
+    if (memberTimeZoneResult.value !== undefined) {
+      effectiveSystemPrompt = `${effectiveSystemPrompt}\n\n${buildTimeZoneMarker(memberTimeZoneResult.value)}`;
     }
-  } catch (err) {
+  } else {
     log.warn("Failed to resolve member timezone; date will be labeled UTC", {
       instanceId,
-      error: err instanceof Error ? err.message : String(err),
+      error:
+        memberTimeZoneResult.reason instanceof Error
+          ? memberTimeZoneResult.reason.message
+          : String(memberTimeZoneResult.reason),
     });
   }
 
   try {
-    const hubDb = db as unknown as HubDb;
     effectiveSystemPrompt = await appendInferenceParamsMarkerForMyraLaunch(
       hubDb,
       { tenantId, instanceId, systemPrompt: effectiveSystemPrompt },
@@ -690,7 +730,6 @@ export async function launchAgentSession(
   // requirement grants persisted moments earlier is an asymmetric partial
   // rollback, not a clean one — it is what let a torn-down instance re-sync
   // with a handful of grants instead of its full template.)
-  const hubDb = db as unknown as HubDb;
   const binding = await hubDb.query.memberAgentInstance.findFirst({
     where: eq(memberAgentInstance.instanceId, instanceId),
   });

@@ -859,6 +859,41 @@ describe("launchAgentSession Myra personalization style overlay", () => {
     expect(prompt).toBe("You are Myra.");
   });
 
+  it("runs the personalization, style, pinned-skills, and timezone lookups concurrently (CL-3799)", async () => {
+    sourcesImpl = () =>
+      Promise.resolve([{ id: "src-1", apiKey: TEST_API_KEY }]);
+    const db = launchDb();
+    const DELAY_MS = 60;
+    const delay = () => new Promise((resolve) => setTimeout(resolve, DELAY_MS));
+
+    // `memberAgentInstance.findFirst` is independently awaited by the style
+    // overlay, the pinned-skills overlay, and the member-timezone lookup in
+    // `launchAgentSession` — three separate call sites, none of which reads
+    // another's result. Serial execution (the pre-fix code) pays this delay
+    // three times; concurrent execution (Promise.allSettled) pays it once.
+    db.query.memberAgentInstance.findFirst = mock(async () => {
+      await delay();
+      return {
+        id: "mai-1",
+        tenantId: "tenant-1",
+        memberPrincipalId: "prn-member-1",
+        instanceId: "ins-1",
+        templateKey: "myra",
+      };
+    });
+    db.query.myraVariantPreference = {
+      findFirst: mock(() => Promise.resolve(undefined)),
+    };
+
+    const start = performance.now();
+    await captureLaunchPrompt(db);
+    const elapsed = performance.now() - start;
+
+    // Three serial 60ms round trips would take ~180ms; concurrent, ~60ms.
+    // A generous threshold below the serial sum proves they overlap.
+    expect(elapsed).toBeLessThan(DELAY_MS * 2.5);
+  });
+
   it("appends the style overlay section after the base prompt for a Myra chat instance", async () => {
     sourcesImpl = () =>
       Promise.resolve([{ id: "src-1", apiKey: TEST_API_KEY }]);
