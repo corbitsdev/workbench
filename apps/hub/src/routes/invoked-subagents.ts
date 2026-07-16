@@ -2,8 +2,8 @@ import { type } from "arktype";
 import { Hono } from "hono";
 import { describeRoute, resolver } from "hono-openapi";
 import type { HubDb } from "../db";
+import { getRequestedUserContext } from "../lib/user-context";
 import { listInvokedSubagents } from "../services/invoked-subagents";
-import { resolveMyraThreadContext } from "../services/myra-threads";
 
 const InvokedSubagentItem = type({
   mappingId: "string",
@@ -55,8 +55,12 @@ export function createInvokedSubagentsRouter(hubDb: HubDb): Hono {
       const userId = c.get("userId" as never) as string | undefined;
       if (!userId) return c.json({ error: "Unauthorized" }, 401);
 
-      const ctx = await resolveMyraThreadContext(hubDb, userId);
-      if (!ctx) return c.json({ error: "Forbidden" }, 403);
+      const { context, forbidden } = await getRequestedUserContext(
+        hubDb,
+        userId,
+        c.req.query("tenantId"),
+      );
+      if (forbidden || !context) return c.json({ error: "Forbidden" }, 403);
 
       const parsed = InvokedSubagentsQuery(c.req.query());
       if (parsed instanceof type.errors) {
@@ -64,8 +68,8 @@ export function createInvokedSubagentsRouter(hubDb: HubDb): Hono {
       }
 
       const subagents = await listInvokedSubagents(hubDb, {
-        tenantId: ctx.tenantId,
-        memberPrincipalId: ctx.memberPrincipalId,
+        tenantId: context.tenantId,
+        memberPrincipalId: context.principalId,
         ...(parsed.originConversationId !== undefined
           ? { originConversationId: parsed.originConversationId }
           : {}),
