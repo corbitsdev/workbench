@@ -472,6 +472,36 @@ describe("WorkflowTracePage", () => {
     );
   });
 
+  it("keeps an in-flight step with no end time selectable from the waterfall", async () => {
+    logStateResponse = {
+      runId: "run-1",
+      phase: "running",
+      lastSeq: 2,
+      steps: [
+        {
+          stepId: "live",
+          phase: "in-flight",
+          stepType: "agent",
+          currentAttempt: 1,
+          startedAt: "2026-07-01T10:00:00.000Z",
+        },
+      ],
+    };
+    renderTrace();
+    await waitFor(() => screen.getByRole("button", { name: "Overview" }));
+    fireEvent.click(screen.getByRole("button", { name: "Overview" }));
+    await waitFor(() => screen.getByTestId("trace-waterfall-missing-time"));
+
+    // The row with no end time must still be the selectable control — an
+    // operator has to be able to open the active step's detail from the
+    // overview, which is exactly the step that has no end timestamp yet.
+    fireEvent.click(screen.getByTestId("trace-waterfall-span"));
+    await waitFor(() => screen.getByRole("listbox"));
+    expect(
+      screen.getByRole("listbox").getAttribute("aria-activedescendant"),
+    ).toBe("run-step-0");
+  });
+
   it("keeps the same listbox selection when Raw is toggled inside the expanded step", async () => {
     renderTrace();
     await waitFor(() => screen.getByRole("listbox"));

@@ -15,6 +15,12 @@ const PHASE_BAR_CLASS: Record<LogStepState["phase"], string> = {
   cancelled: "bg-surface-2 border-border",
 };
 
+function missingTimeLabel(row: TraceWaterfallRow): string {
+  if (row.missingStart) return "No start time";
+  if (row.missingEnd) return "No end time";
+  return "Timing unavailable";
+}
+
 function WaterfallRowBar({
   row,
   layout,
@@ -59,18 +65,25 @@ function WaterfallRowBar({
             }
           />
         ) : (
-          <div className="flex h-full items-center px-2">
+          <button
+            type="button"
+            data-testid="trace-waterfall-span"
+            aria-label={`${toHumanLabel(row.step.stepId)}, ${missingTimeLabel(row).toLowerCase()}`}
+            aria-pressed={isSelected}
+            onClick={onSelect}
+            className={`flex h-full w-full items-center rounded-sm px-2 text-left outline-none transition-colors hover:bg-row-hover focus-visible:ring-2 focus-visible:ring-accent ${
+              isSelected
+                ? "ring-2 ring-accent ring-offset-1 ring-offset-surface-2"
+                : ""
+            }`}
+          >
             <span
               data-testid="trace-waterfall-missing-time"
               className="text-[11px] text-text-3"
             >
-              {row.missingStart
-                ? "No start time"
-                : row.missingEnd
-                  ? "No end time"
-                  : "Timing unavailable"}
+              {missingTimeLabel(row)}
             </span>
-          </div>
+          </button>
         )}
         {bar !== null && row.durationLabel !== null && (
           <span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 font-mono text-[10px] tabular-nums text-text-3">
