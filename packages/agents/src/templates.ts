@@ -9,6 +9,7 @@ import {
   PERSONAL_AGENT_TRIAGE_NAME,
   PERSONAL_AGENT_TRIAGE_MODEL_CONFIG,
   buildPersonalAgentGrantRequirements,
+  MYRA_VARIANTS,
 } from "@workbench/myra";
 import { MYRA_TOOL_PACKAGES } from "./dynamic-tools/catalog";
 import {
@@ -142,7 +143,33 @@ const FABLE_TOOL_PACKAGES: ToolPackagePin[] = [
   { name: "@workbench/tools-artifact", version: "^0.1.0" },
 ];
 
+// The canonical variants ARE the hand-written `myra` / `myra-triage` entries
+// below; the rest of the catalog is seeded as additional, non-deployable
+// definitions a member can select as their default. Model binds at the
+// definition level, so each alternate model needs its own definition row (there
+// is no per-launch model override) — this generates one per non-canonical
+// variant from the single `@workbench/myra` catalog, so a new variant needs no
+// hand-written template. Grants stay the full Myra base toolset (triage narrows
+// only its advertised loadout at launch via the mailbox persona).
+const CANONICAL_VARIANT_TEMPLATE_KEYS = new Set(["myra", "myra-triage"]);
+
+const MYRA_VARIANT_TEMPLATES: AgentTemplate[] = MYRA_VARIANTS.filter(
+  (variant) => !CANONICAL_VARIANT_TEMPLATE_KEYS.has(variant.templateKey),
+).map((variant) => ({
+  key: variant.templateKey,
+  name: variant.seedName,
+  description: variant.description,
+  systemPrompt: variant.deployPrompt,
+  credentialRequirements: variant.credentialRequirements,
+  grantRequirements: MYRA_STATIC_GRANT_REQUIREMENTS,
+  capabilities: { tools: [...PERSONAL_AGENT_BASE_TOOLS] },
+  modelConfig: variant.modelConfig,
+  deployable: false,
+  toolPackages: MYRA_TOOL_PACKAGES.map((name) => ({ name, version: "*" })),
+}));
+
 export const AGENT_TEMPLATES: AgentTemplate[] = [
+  ...MYRA_VARIANT_TEMPLATES,
   {
     key: "myra",
     name: PERSONAL_AGENT_NAME,

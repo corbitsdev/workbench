@@ -23,7 +23,11 @@ describe("AGENT_TEMPLATES", () => {
       "lincoln",
       "loop",
       "myra",
+      "myra-chat-kimi-k2-6",
+      "myra-chat-opus-4-8",
       "myra-triage",
+      "myra-triage-kimi-k2-6",
+      "myra-triage-opus-4-8",
       "oat",
       "walter",
     ]);
@@ -84,8 +88,11 @@ describe("AGENT_TEMPLATES", () => {
   // tool on Myra herself, stays out.
   it("no template has any mail tool except Myra's mail_send", () => {
     for (const template of AGENT_TEMPLATES) {
+      // Every Myra variant (canonical `myra`/`myra-triage` and the generated
+      // per-model chat/triage definitions) seeds the full Myra base toolset,
+      // which includes mail_send; no other agent does.
       const expectsMailSend =
-        template.key === "myra" || template.key === "myra-triage";
+        template.key === "myra" || template.key.startsWith("myra-");
       expect(template.capabilities.tools.includes("mail_send")).toBe(
         expectsMailSend,
       );

@@ -160,6 +160,7 @@ import { createPrincipalActivityRouter } from "./routes/principal-activity";
 import { createPrincipalRosterRouter } from "./routes/principal-roster";
 import { createPrincipalAnalyticsRouter } from "./routes/principal-analytics";
 import { createTenantRosterRouter } from "./routes/tenant-roster";
+import { createMyraVariantsRouter } from "./routes/myra-variants";
 import { createGammaTemplatesRouter } from "./routes/gamma-templates";
 import {
   createApprovalsRouter,
@@ -859,6 +860,7 @@ hubApp.route(
   "/api/tenants/:tenantId/principals/:principalId/analytics",
   createPrincipalAnalyticsRouter({ db }),
 );
+hubApp.route("/api/tenants/:tenantId", createMyraVariantsRouter(db));
 hubApp.route("/api/tenants/:tenantId/roster", createTenantRosterRouter({ db }));
 hubApp.route("/api/tenants/:tenantId/search", createSearchRouter({ db }));
 hubApp.route(

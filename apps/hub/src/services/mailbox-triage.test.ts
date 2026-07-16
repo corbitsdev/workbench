@@ -73,8 +73,17 @@ let triageDef: typeof MYRA_TRIAGE_DEF = MYRA_TRIAGE_DEF;
 const resolveDefMock = mock(async () => triageDef);
 const teardownMock = mock(async () => undefined);
 mock.module("./myra-threads", () => ({
-  resolveMyraTriageDefinition: resolveDefMock,
+  resolveMyraVariantDefinition: resolveDefMock,
   teardownThreadRows: teardownMock,
+}));
+
+let variantPref: { chat: string | null; triage: string | null } = {
+  chat: null,
+  triage: null,
+};
+const readVariantPrefMock = mock(async () => variantPref);
+mock.module("./myra-variant-preferences", () => ({
+  readMyraVariantPreference: readVariantPrefMock,
 }));
 
 let prefs: MemberPreferences = {};
@@ -287,7 +296,9 @@ beforeEach(() => {
   configState.triageEnabled = true;
   resetFeatureGrantCache();
   prefs = {};
+  variantPref = { chat: null, triage: null };
   triageDef = MYRA_TRIAGE_DEF;
+  readVariantPrefMock.mockClear();
   launchMock.mockClear();
   teardownMock.mockClear();
   writeMock.mockClear();
@@ -501,6 +512,32 @@ describe("createMailboxTriage", () => {
 
     expect(session.endSession).toHaveBeenCalled();
     expect(teardownMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("binds a member's non-default triage variant while keeping the mailbox loadout", async () => {
+    variantPref = { chat: null, triage: "myra-triage-opus-4-8" };
+    const { db } = makeDb({
+      sender: { id: "ins_dep-ext", principalId: "pri-someone-else" },
+    });
+    const session = makeSessionService();
+    const triage = makeTriage(db, session);
+
+    triage.enqueue(ITEM);
+    await untilCalled(session.sendUserMessage);
+
+    // The selected variant's own definition is resolved by seedName…
+    const resolvedVariant = resolveDefMock.mock.calls[0]![2] as {
+      id: string;
+      seedName: string;
+    };
+    expect(resolvedVariant.id).toBe("myra-triage-opus-4-8");
+    expect(resolvedVariant.seedName).toBe("Myra Triage (Opus)");
+    // …but the launched loadout stays the mailbox persona's, regardless of model.
+    const launchOpts = launchMock.mock.calls[0]![4] as Record<string, unknown>;
+    expect(launchOpts.persona).toEqual({
+      toolNames: prepareOnlyLoadout.toolNames,
+    });
+    expect(launchOpts.systemPrompt).toBe(prepareOnlyLoadout.systemPrompt);
   });
 
   it("diverts an inbound image attachment through the File Parser for a text-only triage agent, instead of riding it inline", async () => {
