@@ -88,6 +88,23 @@ describe("assertNoCrossAssetPackageRegistryCollisions", () => {
     ).rejects.toBeInstanceOf(PackageRegistryHierarchyCollisionError);
   });
 
+  it("skips a listed tarball when read returns not_found", async () => {
+    await assertNoCrossAssetPackageRegistryCollisions({
+      db: makeDb([
+        { id: "legacy", name: "workbench-builtins" },
+        { id: "canon", name: "workspace-builtins" },
+      ]),
+      assetService: {
+        listAssetBlobs: async ({ assetId }) =>
+          assetId === "legacy" ? ["stale.tgz"] : [],
+        readAssetBlob: async () => {
+          throw new AssetServiceError("not_found", "missing blob");
+        },
+      } as unknown as AssetService,
+      tenantId: "t1",
+    });
+  });
+
   it("allows the same name@version when integrity matches across assets", async () => {
     const shared = new Uint8Array([9, 9, 9]);
     await assertNoCrossAssetPackageRegistryCollisions({

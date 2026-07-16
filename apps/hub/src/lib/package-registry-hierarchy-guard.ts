@@ -92,7 +92,7 @@ export async function assertNoCrossAssetPackageRegistryCollisions(args: {
           path,
         });
       } catch (err) {
-        if (isMissingTarballsDirectoryError(err)) continue;
+        if (isMissingRegistryPathError(err)) continue;
         throw err;
       }
 
