@@ -13,6 +13,7 @@ import type { HubDb } from "../db";
 import {
   assertNoCrossAssetPackageRegistryCollisions,
   isMissingRegistryPathError,
+  listPackageRegistryAssetsOnTenant,
 } from "../lib/package-registry-hierarchy-guard";
 import { putPackageRegistryTarball } from "../lib/package-registry-tarball-upload";
 import {
@@ -156,24 +157,24 @@ async function readRegistryTarballBytes(
   }
 }
 
+interface ReconcileCounts {
+  uploaded: number;
+  unchanged: number;
+}
+
 /**
- * Sync embedded tool-package tarballs into the root tenant package-registry asset
- * (CL-3093). Idempotent per tarball via integrity comparison. When enabled, any
- * sync or hierarchy collision failure rejects the boot path (CL-3656).
+ * Publish the embedded (canonical) tarball bytes into a single package-registry
+ * asset, drift-classified: byte-identical tarballs are skipped, missing/divergent
+ * ones are overwritten with the embedded bytes. Publishing the SAME source bytes
+ * into every asset makes them byte-identical (same sha512) — that is what prevents
+ * the cross-asset collision that used to crash boot (CL-3783).
  */
-export async function publishEmbeddedToolPackages(
+async function reconcileAssetTarballs(
+  assetId: string,
+  rows: EmbeddedToolPackageRow[],
+  embeddedDir: string,
   deps: ToolPackagesBootstrapDeps,
-): Promise<void> {
-  if (!deps.enabled) {
-    log.info("tool registry autopublish-on-boot disabled; skipping");
-    return;
-  }
-
-  const embeddedDir = deps.embeddedDir ?? embeddedToolPackagesDir();
-  const rows = await loadEmbeddedManifest(embeddedDir, true);
-
-  const assetId = await ensurePackageRegistryAsset(deps);
-
+): Promise<ReconcileCounts> {
   let uploaded = 0;
   let unchanged = 0;
 
@@ -203,6 +204,7 @@ export async function publishEmbeddedToolPackages(
     });
     uploaded += 1;
     log.info("tool registry autopublish: uploaded tarball", {
+      assetId,
       name: row.name,
       version: row.version,
       filename: row.tarballFilename,
@@ -211,16 +213,78 @@ export async function publishEmbeddedToolPackages(
     });
   }
 
-  await assertNoCrossAssetPackageRegistryCollisions({
+  return { uploaded, unchanged };
+}
+
+/**
+ * Sync embedded tool-package tarballs into EVERY package-registry asset on the
+ * root tenant (CL-3093, CL-3783). Idempotent per tarball via integrity
+ * comparison. Reconciling all assets to the same embedded bytes makes stray
+ * assets byte-identical to the canonical one, so the cross-asset collision guard
+ * passes; any residual divergence is logged (not thrown) so boot never
+ * crash-loops (CL-3656 fail-fast is deliberately softened — see CL-3783).
+ */
+export async function publishEmbeddedToolPackages(
+  deps: ToolPackagesBootstrapDeps,
+): Promise<void> {
+  if (!deps.enabled) {
+    log.info("tool registry autopublish-on-boot disabled; skipping");
+    return;
+  }
+
+  const embeddedDir = deps.embeddedDir ?? embeddedToolPackagesDir();
+  const rows = await loadEmbeddedManifest(embeddedDir, true);
+
+  await ensurePackageRegistryAsset(deps);
+
+  const assets = await listPackageRegistryAssetsOnTenant(
+    deps.db,
+    deps.rootTenantId,
+  );
+
+  let uploaded = 0;
+  let unchanged = 0;
+  for (const asset of assets) {
+    const counts = await reconcileAssetTarballs(
+      asset.id,
+      rows,
+      embeddedDir,
+      deps,
+    );
+    uploaded += counts.uploaded;
+    unchanged += counts.unchanged;
+  }
+
+  if (assets.length > 1) {
+    log.error(
+      "tool registry autopublish: tenant has multiple package-registry assets; consolidate to one (tracked in CL-3783)",
+      {
+        tenantId: deps.rootTenantId,
+        assets: assets.map((a) => ({ id: a.id, name: a.name })),
+      },
+    );
+  }
+
+  const collisions = await assertNoCrossAssetPackageRegistryCollisions({
     db: deps.db,
     assetService: deps.assetService,
     tenantId: deps.rootTenantId,
   });
+  if (collisions.length > 0) {
+    log.error(
+      "tool registry autopublish: residual cross-asset collisions after reconcile (boot continues; see CL-3783)",
+      {
+        tenantId: deps.rootTenantId,
+        collisions,
+      },
+    );
+  }
 
   log.info("tool registry autopublish finished", {
     registryName: deps.registryName,
     tenantId: deps.rootTenantId,
     buildSha: deps.buildSha,
+    assets: assets.length,
     uploaded,
     unchanged,
     total: rows.length,

@@ -1,5 +1,6 @@
 import { and, eq } from "drizzle-orm";
 import { schema as intxSchema } from "@intx/db";
+import { getLogger } from "@intx/log";
 import {
   AssetServiceError,
   type AssetService,
@@ -8,6 +9,11 @@ import {
 import type { HubDb } from "../db";
 import { integrityFromTarballBytes } from "./tool-packages-embedded";
 
+const log = getLogger(["lib", "package-registry-hierarchy-guard"]);
+
+// Retained deliberately: CL-3783 softened the boot path to log (not throw) on a
+// cross-asset byte divergence. The proper fix (single asset per tenant /
+// normalized-content compare) re-introduces this throw, so keep it exported.
 export class PackageRegistryHierarchyCollisionError extends Error {
   readonly reason = "package_registry_hierarchy_collision" as const;
 
@@ -26,9 +32,15 @@ export class PackageRegistryTarballInvalidError extends Error {
   }
 }
 
-type RegistryAssetRow = { id: string; name: string };
+export type RegistryAssetRow = { id: string; name: string };
 
-async function listPackageRegistryAssetsOnTenant(
+export interface PackageRegistryCrossAssetCollision {
+  nameVersion: string;
+  assetA: string;
+  assetB: string;
+}
+
+export async function listPackageRegistryAssetsOnTenant(
   db: HubDb,
   tenantId: string,
 ): Promise<RegistryAssetRow[]> {
@@ -55,25 +67,33 @@ export function isMissingRegistryPathError(err: unknown): boolean {
 }
 
 /**
- * Fail loud when multiple package-registry assets on one tenant publish the same
- * `name@version` with different tarball bytes (CL-3656). Per-asset pushes are
- * already guarded in Interchange; this covers cross-asset collisions at boot.
+ * Detect (and, historically, fail loud on) multiple package-registry assets on
+ * one tenant publishing the same `name@version` with different tarball bytes
+ * (CL-3656). This deliberately, temporarily softens that fail-fast: a cross-asset
+ * byte divergence is now returned to the caller and logged at error level rather
+ * than thrown, so a stray asset holding a stale tarball can never crash-loop the
+ * hub on boot. The boot path reconciles every asset to the embedded bytes first,
+ * so residual collisions here are orphans (a `name@version` present only in a
+ * stray asset). The proper fix (single asset per tenant / normalized-content
+ * compare) is tracked in CL-3783. Genuine tarball corruption still throws
+ * (PackageRegistryTarballInvalidError).
  */
 export async function assertNoCrossAssetPackageRegistryCollisions(args: {
   db: HubDb;
   assetService: AssetService;
   tenantId: string;
-}): Promise<void> {
+}): Promise<PackageRegistryCrossAssetCollision[]> {
   const assets = await listPackageRegistryAssetsOnTenant(
     args.db,
     args.tenantId,
   );
-  if (assets.length <= 1) return;
+  if (assets.length <= 1) return [];
 
   const byNameVersion = new Map<
     string,
     { integrity: string; assetName: string; filename: string }
   >();
+  const collisions: PackageRegistryCrossAssetCollision[] = [];
 
   for (const asset of assets) {
     let filenames: string[];
@@ -111,10 +131,22 @@ export async function assertNoCrossAssetPackageRegistryCollisions(args: {
       const integrity = integrityFromTarballBytes(bytes);
       const prev = byNameVersion.get(key);
       if (prev !== undefined && prev.integrity !== integrity) {
-        throw new PackageRegistryHierarchyCollisionError(
-          `package-registry hierarchy contains duplicate ${key} with different content across assets ` +
-            `${JSON.stringify(prev.assetName)} (${prev.filename}) and ${JSON.stringify(asset.name)} (${filename})`,
+        collisions.push({
+          nameVersion: key,
+          assetA: prev.assetName,
+          assetB: asset.name,
+        });
+        log.error(
+          "package-registry cross-asset byte divergence (boot continues; see CL-3783)",
+          {
+            nameVersion: key,
+            assetA: prev.assetName,
+            assetAFilename: prev.filename,
+            assetB: asset.name,
+            assetBFilename: filename,
+          },
         );
+        continue;
       }
       if (prev === undefined) {
         byNameVersion.set(key, {
@@ -125,4 +157,6 @@ export async function assertNoCrossAssetPackageRegistryCollisions(args: {
       }
     }
   }
+
+  return collisions;
 }
