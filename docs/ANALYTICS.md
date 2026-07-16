@@ -113,6 +113,17 @@ The Insights principal trace (`/insights/users/:id`) has **Tools** and **Cost** 
 - **Cost** — `getPrincipalCostSummary` sums the token classes over `inference_done` rows (tokens live only there) and tallies `tool_call` rows separately. The facet renders per-class token counts; **dollar pricing is a separate layer** (see Cost & token classes) and is not applied per-principal here.
 - **Attribution note:** keying on the principal set is correct for persistent chat agents, which resume in place under one stable instance principal. An agent whose history spans multiple instances (re-provisioning) or whose analytics was recorded under a since-reaped ephemeral instance is out of scope for these facets — that cross-instance aggregation keys on the durable `analytics_event.agent_id` and is tracked separately.
 
+## Moment detail expansion (Insights → Trace)
+
+Opening one moment in the trace calls `GET /…/principals/:principalId/:kind/:id/detail` → `getMomentDetail` (`apps/hub/src/services/moment-detail.ts`), which runs a per-kind join and validates the result through the shared `MomentDetailSchema` (`@workbench/timeline`). `apps/web/src/pages/insights/MomentWalker.tsx` renders the returned block as the moment's Input / Output / When / Reference decomposition. A `tool_call` moment carries its recorded arguments and result from `turn_part`; a `workflow_run` moment carries its fact-table duration and outcome.
+
+An **`inference_turn`** moment carries the full picture of the model call, not just metadata:
+
+- **Output** — the assistant's `text`/`reasoning` content from `turn_part.content` (already read for the turn; the view now renders it, not just the part-type labels), plus model, wall-clock duration, and tool-call names.
+- **Input** — the conversation the model actually received (system prompt + prior messages + tool results), reconstructed **hub-side** from the durable agent-state git repo. `apps/hub/src/services/turn-input-snapshot.ts` resolves the instance's address (`inference_turn.instance_id` → `agent_instance.address`), opens the repo via `repoStore.repoStore.getRepoDir({ kind: "agent-state", id: address })` → `IsogitStore`, and returns the `ConversationTurn[]` from the newest commit whose author time is **at or before the turn's `started_at`** — the snapshot committed before the turn's own output landed. Each turn is projected to a render-ready `{ role, kind, text }` (a `tool_result` continuation is tagged `kind: "tool_result"`).
+
+Nothing is read from the sidecar: the sidecar is throwaway and pushes signed `state/` packs to the hub (`receiveAgentStatePack`), which stores the agent-state repo durably and never deletes it — the hub is the source of truth for what the model saw. Because the correlation is **timestamp-based** (git author time and the Postgres `started_at` both originate in the same sidecar process, so they align closely), it is best-effort: a turn whose input snapshot cannot be aligned or read yields an honest `inputGap` rather than a wrong or fabricated conversation. `inputGap` is also returned when the agent-state repo is unavailable (e.g. a hard-deleted ephemeral `ins_ses_*` instance), when compaction pruned the pre-turn history, or when no snapshot precedes the turn.
+
 ## Staging verification (CL-2301)
 
 1. Deploy staging hub + sidecar with analytics migrations applied.
