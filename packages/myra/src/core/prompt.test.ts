@@ -386,6 +386,34 @@ describe("per-operator appendix", () => {
   });
 });
 
+describe("model self-knowledge", () => {
+  it("renders no model line when the option is absent", () => {
+    const prompt = buildPersonalAgentSystemPrompt("Myra", xmlFormat);
+    expect(prompt).not.toContain("You run on the");
+    expect(prompt).not.toContain("served through the Corbits platform");
+  });
+
+  it("names the actual model when supplied", () => {
+    const prompt = buildPersonalAgentSystemPrompt("Myra", xmlFormat, {
+      model: "deepseek-v4-flash",
+    });
+    expect(sectionContent(prompt, "role")).toContain(
+      "You run on the deepseek-v4-flash model, served through the Corbits platform.",
+    );
+  });
+
+  it("keeps the word-count bound with the model line included", () => {
+    const prompt = buildPersonalAgentSystemPrompt("Myra", xmlFormat, {
+      model: "deepseek-v4-flash",
+    });
+    const stripped = prompt.replace(
+      formatSection(DATA_NOT_INSTRUCTIONS_SECTION, xmlFormat),
+      "",
+    );
+    expect(words(stripped)).toBeLessThanOrEqual(900);
+  });
+});
+
 describe("member-instructions appendix", () => {
   it("appends nothing when instructions is omitted or both fields are blank/absent", () => {
     const base = buildPersonalAgentSystemPrompt("Myra", xmlFormat);
