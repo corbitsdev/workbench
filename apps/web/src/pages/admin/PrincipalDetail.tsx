@@ -59,7 +59,7 @@ export function PrincipalDetail() {
   const principal = principalQuery.data ?? null;
   const roleChangePending = elevate.isPending || demote.isPending;
   const principalsTo = backToListPath(
-    "/admin/principals",
+    "/settings/admin/principals",
     searchParams.get("back"),
   );
 
@@ -68,7 +68,7 @@ export function PrincipalDetail() {
       <Breadcrumbs
         renderLink={renderLink}
         items={[
-          { label: "Admin", to: "/admin" },
+          { label: "Admin", to: "/settings/admin" },
           { label: "Principals", to: principalsTo },
           { label: principal?.displayName ?? principalId ?? "Principal" },
         ]}

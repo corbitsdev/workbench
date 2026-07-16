@@ -7,10 +7,10 @@ import { getMe } from "../../lib/hub-api";
 import { tabButtonClass } from "./admin-ui";
 
 const SUB_NAV = [
-  { to: "/admin/principals", label: "Principals & Grants" },
-  { to: "/admin/definitions", label: "Definitions" },
-  { to: "/admin/audit", label: "Audit" },
-  { to: "/admin/tools", label: "Tools" },
+  { to: "/settings/admin/principals", label: "Principals & Grants" },
+  { to: "/settings/admin/definitions", label: "Definitions" },
+  { to: "/settings/admin/audit", label: "Audit" },
+  { to: "/settings/admin/tools", label: "Tools" },
 ] as const;
 
 /**

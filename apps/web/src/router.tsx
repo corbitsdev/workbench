@@ -54,12 +54,43 @@ import { OwnerCapabilities } from "./pages/admin/OwnerCapabilities";
 import { OwnerWorkflows } from "./pages/admin/OwnerWorkflows";
 import { OwnerMembers } from "./pages/admin/OwnerMembers";
 import { OwnerDemos } from "./pages/admin/OwnerDemos";
+import {
+  mapLegacyAdminPath,
+  mapLegacyOwnerPath,
+} from "./lib/legacy-admin-owner-redirects";
 
 // Preserves the tool name when redirecting the legacy /tools/:name path to its
-// new home under /admin.
+// new home under /settings/admin.
 function RedirectToAdminTool() {
   const { name } = useParams();
-  return <Navigate to={`/admin/tools/${name ?? ""}`} replace />;
+  return <Navigate to={`/settings/admin/tools/${name ?? ""}`} replace />;
+}
+
+// The standalone /admin and /owner surfaces (CL-3763) moved under /settings as
+// role-gated management groups. These deep-link redirects preserve every old
+// bookmark and sub-route by forwarding the matched wildcard tail verbatim —
+// including further-nested legacy redirects (e.g. /owner/templates), which
+// resolve once more against the routes registered under /settings/owner.
+function RedirectAdminToSettings() {
+  const location = useLocation();
+  const { "*": rest } = useParams();
+  return (
+    <Navigate
+      to={{ pathname: mapLegacyAdminPath(rest), search: location.search }}
+      replace
+    />
+  );
+}
+
+function RedirectOwnerToSettings() {
+  const location = useLocation();
+  const { "*": rest } = useParams();
+  return (
+    <Navigate
+      to={{ pathname: mapLegacyOwnerPath(rest), search: location.search }}
+      replace
+    />
+  );
 }
 
 // Static navigation commands for the command palette, kept beside the route
@@ -105,24 +136,32 @@ export const NAV_COMMANDS: PaletteResultItem[] = [
     id: "nav:tools",
     category: "navigation",
     title: "Tools",
-    to: "/admin/tools",
-    keywords: ["integrations", "providers", "library", "admin"],
+    to: "/settings/admin/tools",
+    keywords: ["integrations", "providers", "library", "admin", "settings"],
     requires: "admin",
   },
   {
     id: "nav:admin",
     category: "navigation",
-    title: "Admin",
-    to: "/admin",
-    keywords: ["governance", "grants", "roles", "principals", "audit"],
+    title: "Workspace users & agents",
+    to: "/settings/admin",
+    keywords: [
+      "governance",
+      "grants",
+      "roles",
+      "principals",
+      "audit",
+      "admin",
+      "settings",
+    ],
     requires: "admin",
   },
   {
     id: "nav:owner",
     category: "navigation",
-    title: "Owner",
-    to: "/owner",
-    keywords: ["owner", "workbench"],
+    title: "Workspace management",
+    to: "/settings/owner",
+    keywords: ["owner", "workbench", "settings"],
     requires: "owner",
   },
   {
@@ -264,11 +303,22 @@ export const router = createBrowserRouter([
           { path: "/skills/new", element: <SkillsNew /> },
           { path: "/skills/:id", element: <SkillDetail /> },
           { path: "/agents", element: <AgentsPage /> },
-          // Tools moved under Admin (CL-2719). Old paths redirect.
-          { path: "/tools", element: <Navigate to="/admin/tools" replace /> },
-          { path: "/tools/:name", element: <RedirectToAdminTool /> },
+          // Tools moved under Admin (CL-2719), then under Settings (CL-3763).
+          // Old paths redirect.
           {
-            path: "/admin/tools",
+            path: "/tools",
+            element: <Navigate to="/settings/admin/tools" replace />,
+          },
+          { path: "/tools/:name", element: <RedirectToAdminTool /> },
+          // The standalone /admin and /owner areas (CL-2719/CL-2735) unified
+          // into role-gated Settings management groups (CL-3763). Every
+          // sub-route redirects to its new home under /settings.
+          { path: "/admin", element: <RedirectAdminToSettings /> },
+          { path: "/admin/*", element: <RedirectAdminToSettings /> },
+          { path: "/owner", element: <RedirectOwnerToSettings /> },
+          { path: "/owner/*", element: <RedirectOwnerToSettings /> },
+          {
+            path: "/settings/admin/tools",
             element: (
               <RequireAdmin>
                 <ToolsLibrary />
@@ -276,7 +326,7 @@ export const router = createBrowserRouter([
             ),
           },
           {
-            path: "/admin/tools/:name",
+            path: "/settings/admin/tools/:name",
             element: (
               <RequireAdmin>
                 <ToolDetail />
@@ -284,12 +334,12 @@ export const router = createBrowserRouter([
             ),
           },
           {
-            path: "/admin",
+            path: "/settings/admin",
             element: <AdminLayout />,
             children: [
               {
                 index: true,
-                element: <Navigate to="/admin/principals" replace />,
+                element: <Navigate to="/settings/admin/principals" replace />,
               },
               { path: "principals", element: <AdminPrincipals /> },
               { path: "principals/:id", element: <PrincipalDetail /> },
@@ -299,12 +349,12 @@ export const router = createBrowserRouter([
             ],
           },
           {
-            path: "/owner",
+            path: "/settings/owner",
             element: <OwnerLayout />,
             children: [
               {
                 index: true,
-                element: <Navigate to="/owner/catalog" replace />,
+                element: <Navigate to="/settings/owner/catalog" replace />,
               },
               { path: "catalog", element: <OwnerCatalog /> },
               { path: "capabilities", element: <OwnerCapabilities /> },
@@ -312,18 +362,20 @@ export const router = createBrowserRouter([
               { path: "workflows", element: <OwnerWorkflows /> },
               { path: "demos", element: <OwnerDemos /> },
               { path: "members", element: <OwnerMembers /> },
-              // Legacy owner routes → their new homes.
+              // Legacy owner sub-routes → their new homes, still under Settings.
               {
                 path: "templates",
-                element: <Navigate to="/owner/capabilities/gamma" replace />,
+                element: (
+                  <Navigate to="/settings/owner/capabilities/gamma" replace />
+                ),
               },
               {
                 path: "models",
-                element: <Navigate to="/owner/catalog" replace />,
+                element: <Navigate to="/settings/owner/catalog" replace />,
               },
               {
                 path: "setup",
-                element: <Navigate to="/owner/catalog" replace />,
+                element: <Navigate to="/settings/owner/catalog" replace />,
               },
             ],
           },

@@ -43,7 +43,7 @@ const NAV_ITEMS = [
 // Footer icon only, shown to admins (Tools moved under Admin — CL-2719). The
 // hub re-checks the admin grant on every admin route, so this is visibility only.
 const ADMIN_NAV_ITEM = {
-  to: "/admin",
+  to: "/settings/admin",
   label: "Admin",
   icon: ShieldCheck,
   end: false,
@@ -53,7 +53,7 @@ const ADMIN_NAV_ITEM = {
 // re-checks the owner grant on every /owner route; this is nav visibility only.
 // Owner ⊃ admin, so an owner sees both this and the Admin item.
 const OWNER_NAV_ITEM = {
-  to: "/owner",
+  to: "/settings/owner",
   label: "Owner",
   icon: KeyRound,
   end: false,

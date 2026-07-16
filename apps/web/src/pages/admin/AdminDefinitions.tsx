@@ -88,7 +88,7 @@ export function AdminDefinitions() {
     const back = encodeBackParam(searchParams);
     const backSuffix = back ? `&back=${back}` : "";
     navigate(
-      `/admin/definitions/${encodeURIComponent(d.key)}?kind=${d.kind}${backSuffix}`,
+      `/settings/admin/definitions/${encodeURIComponent(d.key)}?kind=${d.kind}${backSuffix}`,
     );
   };
 

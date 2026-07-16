@@ -73,7 +73,7 @@ export function SettingsToolDetail() {
                     <p className="text-[13px] text-text-3">
                       Gamma presentation templates are managed in the{" "}
                       <Link
-                        to="/owner"
+                        to="/settings/owner"
                         className="text-text underline underline-offset-2"
                       >
                         Owner area

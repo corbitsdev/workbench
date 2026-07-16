@@ -28,7 +28,7 @@ const CAPABILITIES = [
     id: "gamma",
     name: "Gamma",
     description: "Presentation templates for agent-generated decks.",
-    to: "/owner/capabilities/gamma",
+    to: "/settings/owner/capabilities/gamma",
   },
 ] as const;
 
