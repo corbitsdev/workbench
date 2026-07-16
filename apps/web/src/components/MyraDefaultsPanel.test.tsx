@@ -57,11 +57,12 @@ const EMPTY_STYLE_AXES = {
   toolUsageTriage: null,
   skillUsageChat: null,
   skillUsageTriage: null,
+  pinnedSkillIds: [],
 };
 
 let preferences: { chat: string | null; triage: string | null } & Record<
   string,
-  string | null
+  string | null | string[]
 >;
 let putCalls: PutCall[];
 let putBehavior: "ok" | "reject";

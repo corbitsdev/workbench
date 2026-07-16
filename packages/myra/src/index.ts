@@ -53,6 +53,15 @@ export {
   type StyleAxisSummary,
   type StyleAxisOptionSummary,
 } from "./core/style-axes";
+export {
+  MAX_PINNED_MYRA_SKILLS,
+  filterPinnedEntriesForSurface,
+  isPinnedSkillTriageRelevant,
+  oneLineSkillDescription,
+  renderPinnedSkillsSection,
+  type MyraPromptSurface,
+  type PinnedSkillIndexEntry,
+} from "./core/pinned-skills";
 export { createPersonalAgentDirector } from "./core/director";
 export {
   createBudgetDirector,

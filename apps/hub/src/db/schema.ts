@@ -105,6 +105,11 @@ export const myraVariantPreference = pgTable(
     toolUsageTriage: text("tool_usage_triage"),
     skillUsageChat: text("skill_usage_chat"),
     skillUsageTriage: text("skill_usage_triage"),
+    // Ordered skill asset ids pinned for Myra prompt indexing (CL-3765).
+    pinnedSkillIds: jsonb("pinned_skill_ids")
+      .$type<string[]>()
+      .notNull()
+      .default([]),
     createdAt: timestamp("created_at").notNull().defaultNow(),
     updatedAt: timestamp("updated_at")
       .notNull()

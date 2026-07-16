@@ -7,6 +7,9 @@ import {
   readMyraVariantPreference,
   setMyraVariantPreference,
   validateMyraVariantPatch,
+  validatePinnedSkillIdsPatch,
+  normalizePinnedSkillIds,
+  prunePinnedSkillIdsToVisibleLibrary,
 } from "./myra-variant-preferences";
 
 type StoredRow = {
@@ -59,6 +62,7 @@ const EMPTY = {
   toolUsageTriage: null,
   skillUsageChat: null,
   skillUsageTriage: null,
+  pinnedSkillIds: [],
 };
 
 describe("readMyraVariantPreference", () => {
@@ -345,6 +349,44 @@ describe("setMyraVariantPreference", () => {
         skillUsageTriage: "light",
       });
     }
+  });
+});
+
+describe("setMyraVariantPreference pinnedSkillIds", () => {
+  it("persists normalized pinned skill ids", async () => {
+    const values = mock(() => ({
+      onConflictDoUpdate: mock(() => Promise.resolve()),
+    }));
+    const db = makeDb({ onConflictDoUpdate: values });
+    const merged = await setMyraVariantPreference(db, "tn", "prn", {
+      pinnedSkillIds: ["s1", "s1", "s2"],
+    });
+    expect(merged.pinnedSkillIds).toEqual(["s1", "s2"]);
+  });
+});
+
+describe("prunePinnedSkillIdsToVisibleLibrary", () => {
+  it("drops ids not in the visible library", () => {
+    const visible = new Set(["s1", "s3"]);
+    expect(
+      prunePinnedSkillIdsToVisibleLibrary(["s1", "gone", "s3"], visible),
+    ).toEqual(["s1", "s3"]);
+  });
+});
+
+describe("normalizePinnedSkillIds", () => {
+  it("dedupes while preserving order and caps at ten", () => {
+    expect(normalizePinnedSkillIds(["a", "a", "b"])).toEqual(["a", "b"]);
+    const many = Array.from({ length: 15 }, (_, i) => `skill-${i}`);
+    expect(normalizePinnedSkillIds(many)).toHaveLength(10);
+  });
+});
+
+describe("validatePinnedSkillIdsPatch", () => {
+  it("returns null when pinnedSkillIds is omitted", async () => {
+    await expect(
+      validatePinnedSkillIdsPatch({} as HubDb, { tenantId: "tn", userId: "u" }, {}),
+    ).resolves.toBeNull();
   });
 });
 

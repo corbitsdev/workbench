@@ -23,6 +23,9 @@ function makeDb(opts: {
       myraVariantPreference: {
         findFirst: mock(async () => opts.stored),
       },
+      principal: {
+        findFirst: mock(async () => null),
+      },
     },
     insert: mock(() => ({ values })),
   } as unknown as HubDb;
@@ -44,6 +47,7 @@ const EMPTY_STYLE_AXES = {
   toolUsageTriage: null,
   skillUsageChat: null,
   skillUsageTriage: null,
+  pinnedSkillIds: [],
 };
 
 function wrapWithTenant(
@@ -110,7 +114,10 @@ describe("Myra variants router", () => {
       instructionsTriage: null,
     }));
     const db = {
-      query: { myraVariantPreference: { findFirst } },
+      query: {
+        myraVariantPreference: { findFirst },
+        principal: { findFirst: mock(async () => null) },
+      },
     } as unknown as HubDb;
     const app = wrapWithTenant(db);
     const res = await app.request("/members/me/myra-preferences");
@@ -138,7 +145,10 @@ describe("Myra variants router", () => {
       skillUsageTriage: null,
     }));
     const db = {
-      query: { myraVariantPreference: { findFirst } },
+      query: {
+        myraVariantPreference: { findFirst },
+        principal: { findFirst: mock(async () => null) },
+      },
     } as unknown as HubDb;
     const app = wrapWithTenant(db);
     const res = await app.request("/members/me/myra-preferences");

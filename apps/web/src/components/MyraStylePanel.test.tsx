@@ -54,9 +54,10 @@ const EMPTY_PREFERENCES = {
   toolUsageTriage: null,
   skillUsageChat: null,
   skillUsageTriage: null,
+  pinnedSkillIds: [],
 };
 
-let preferences: Record<string, string | null>;
+let preferences: Record<string, string | null | string[]>;
 let putCalls: PutCall[];
 let putBehavior: "ok" | "reject";
 

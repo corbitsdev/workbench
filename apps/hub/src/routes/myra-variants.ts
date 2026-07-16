@@ -11,10 +11,15 @@ import {
 import {
   MyraVariantPreferencePatchSchema,
   MyraVariantPreferenceSchema,
+  pinnedSkillIdsChanged,
+  prunePinnedSkillIdsToVisibleLibrary,
   readMyraVariantPreference,
   setMyraVariantPreference,
   validateMyraVariantPatch,
+  validatePinnedSkillIdsPatch,
 } from "../services/myra-variant-preferences";
+import { listSkills } from "../services/skill-library";
+import { skillViewerForMemberPrincipal } from "../lib/myra-pinned-skills";
 import type { HubDb } from "../db";
 
 const log = getLogger(["api", "myra-variants"]);
@@ -110,7 +115,28 @@ export function createMyraVariantsRouter(db: HubDb): Hono<MyraVariantsEnv> {
     async (c) => {
       const tenant = c.get("tenant");
       const principal = c.get("principal");
-      const prefs = await readMyraVariantPreference(db, tenant.id, principal.id);
+      let prefs = await readMyraVariantPreference(db, tenant.id, principal.id);
+      const viewer = await skillViewerForMemberPrincipal(
+        db,
+        tenant.id,
+        principal.id,
+      );
+      if (viewer) {
+        const visible = await listSkills(db, viewer);
+        const allowed = new Set(visible.map((s) => s.id));
+        const pruned = prunePinnedSkillIdsToVisibleLibrary(
+          prefs.pinnedSkillIds,
+          allowed,
+        );
+        if (pinnedSkillIdsChanged(prefs.pinnedSkillIds, pruned)) {
+          prefs = await setMyraVariantPreference(
+            db,
+            tenant.id,
+            principal.id,
+            { pinnedSkillIds: pruned },
+          );
+        }
+      }
       return c.json(prefs);
     },
   );
@@ -158,6 +184,25 @@ export function createMyraVariantsRouter(db: HubDb): Hono<MyraVariantsEnv> {
       const invalid = validateMyraVariantPatch(patch);
       if (invalid) {
         return c.json({ error: invalid }, 400);
+      }
+
+      if (patch.pinnedSkillIds !== undefined) {
+        const viewer = await skillViewerForMemberPrincipal(
+          db,
+          tenant.id,
+          principal.id,
+        );
+        if (!viewer) {
+          return c.json({ error: "Member context unavailable" }, 400);
+        }
+        const pinnedInvalid = await validatePinnedSkillIdsPatch(
+          db,
+          viewer,
+          patch,
+        );
+        if (pinnedInvalid) {
+          return c.json({ error: pinnedInvalid }, 400);
+        }
       }
 
       try {

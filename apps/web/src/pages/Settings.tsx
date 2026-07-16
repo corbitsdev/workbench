@@ -37,6 +37,7 @@ import { WhatsNewSection } from "../components/whats-new/WhatsNewSection";
 import { MemberConnectionsPanel } from "../components/MemberConnectionsPanel";
 import { MyraDefaultsPanel } from "../components/MyraDefaultsPanel";
 import { MyraStylePanel } from "../components/MyraStylePanel";
+import { MyraPinnedSkillsPanel } from "../components/MyraPinnedSkillsPanel";
 import { MySchedules } from "../components/MySchedules";
 import { MORNING_BRIEF_ANCHOR_ID } from "./settings-section-nav";
 import { useMyraVoiceInput } from "../hooks/use-myra-voice-input";
@@ -280,6 +281,14 @@ export default function Settings() {
           description="Shape how Myra talks and works. Personality, emoji use, and UI type apply everywhere; artifact, tool, and skill usage can differ between chat and inbox automation."
         >
           <MyraStylePanel tenantId={activeTenantId} />
+        </SettingsGroup>
+
+        <SettingsGroup
+          id="myra-pinned-skills"
+          title="Pinned skills"
+          description="Pin procedures from your skill library so Myra sees an index of them when starting new chats or inbox runs."
+        >
+          <MyraPinnedSkillsPanel tenantId={activeTenantId} />
         </SettingsGroup>
 
         <SettingsGroup
