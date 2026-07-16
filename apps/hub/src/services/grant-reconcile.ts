@@ -74,13 +74,13 @@ export async function refreshInstanceGrantsFromDefinition(
   );
   const hubDb = db as unknown as HubDb;
   const instanceId =
-    target.instanceId ??
+    instance.instanceId ??
     (
       await db.query.agentInstance.findFirst({
         where: and(
-          eq(agentInstance.tenantId, target.tenantId),
-          eq(agentInstance.principalId, target.principalId),
-          eq(agentInstance.address, target.address),
+          eq(agentInstance.tenantId, instance.tenantId),
+          eq(agentInstance.principalId, instance.principalId),
+          eq(agentInstance.address, instance.address),
         ),
       })
     )?.id;
@@ -88,7 +88,7 @@ export async function refreshInstanceGrantsFromDefinition(
     instanceId !== undefined
       ? await narrowToolNamesForMemberMyraLaunch(
           hubDb,
-          target.tenantId,
+          instance.tenantId,
           instanceId,
           definitionToolNames,
         )
