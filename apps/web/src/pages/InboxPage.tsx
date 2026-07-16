@@ -552,7 +552,7 @@ function MessageRow({
         selected ? "bg-row-hover/80" : "hover:bg-page/80",
       )}
     >
-      {/* The visual box is 16px, but the label pads the tap target to 40px. */}
+      {/* The visual box is 14px, but the label pads the tap target to 40px. */}
       <label
         className={cn(
           "absolute left-0 top-0 z-10 flex h-10 w-10 cursor-pointer items-start justify-start pl-1.5 pt-2 transition-opacity",
@@ -675,7 +675,7 @@ function RowActionButton({
       aria-label={label}
       title={label}
       onClick={onClick}
-      className="grid h-8 w-8 place-items-center rounded-lg text-text-3 transition hover:bg-page hover:text-text focus:outline-none focus-visible:ring-2 focus-visible:ring-orange active:scale-[0.97]"
+      className="relative grid h-8 w-8 place-items-center rounded-lg text-text-3 transition after:absolute after:-inset-1 after:content-[''] hover:bg-page hover:text-text focus:outline-none focus-visible:ring-2 focus-visible:ring-orange active:scale-[0.97]"
     >
       {children}
     </button>
@@ -920,7 +920,7 @@ function InboxRailHeader({
           initial={reduceMotion ? false : { opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={reduceMotion ? undefined : { opacity: 0 }}
-          transition={{ duration: 0.12, ease: "easeOut" }}
+          transition={{ duration: 0.15, ease: "easeOut" }}
           className="flex flex-wrap items-center gap-x-2 gap-y-1"
         >
           {selectedCount > 0 ? (
