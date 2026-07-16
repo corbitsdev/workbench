@@ -15,10 +15,12 @@ export {
   ArtifactVisualSchema,
   GalleryArtifactSchema,
   parseGalleryArtifact,
+  GalleryArtifactParseError,
 } from "./types";
 export {
   visualForKind,
   toGalleryArtifact,
+  tryToGalleryArtifact,
   artifactProvenance,
   artifactProvenanceLabel,
 } from "./artifact-visuals";

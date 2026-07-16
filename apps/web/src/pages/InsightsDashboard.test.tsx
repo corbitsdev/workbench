@@ -681,7 +681,10 @@ describe("InsightsDashboard usage-cost tab", () => {
     });
     const bars = screen.getAllByTestId("mini-bar");
     expect(bars[0].getAttribute("data-label")).toBe("deepseek-v4-flash");
-    expect(bars[0].getAttribute("data-value")).toBe("9");
+    expect(bars[0].getAttribute("data-value")).toBe("850");
+    expect(bars[0].textContent).toContain("9 turns");
+    expect(bars[1].getAttribute("data-value")).toBe("350");
+    expect(bars[1].textContent).toContain("3 turns");
   });
 
   it("uses token totals for mini-bar height when a model has zero turns", async () => {
@@ -702,9 +705,33 @@ describe("InsightsDashboard usage-cost tab", () => {
       await waitFor(() => {
         expect(screen.getAllByTestId("mini-bar").length).toBe(1);
       });
-      expect(
-        screen.getAllByTestId("mini-bar")[0].getAttribute("data-value"),
-      ).toBe("60000");
+      const bar = screen.getAllByTestId("mini-bar")[0];
+      expect(bar.getAttribute("data-value")).toBe("60000");
+      expect(bar.textContent).toContain("60k");
+    } finally {
+      mockOverview.byModel = originalByModel;
+    }
+  });
+
+  it("lists a zero-turn model in the cost table with token figures", async () => {
+    const originalByModel = mockOverview.byModel;
+    mockOverview.byModel = [
+      {
+        model: "kimi-k2.6",
+        turnCount: 0,
+        inputTokens: 40_000,
+        outputTokens: 20_000,
+        cacheReadTokens: 0,
+        cacheWriteTokens: 0,
+        thinkingTokens: 0,
+      },
+    ];
+    try {
+      renderPage("/insights?tab=usage-cost");
+      const costSection = await screen.findByTestId("cost-insights");
+      expect(within(costSection).getByText("kimi-k2.6")).toBeDefined();
+      expect(within(costSection).getByText("40,000")).toBeDefined();
+      expect(within(costSection).getByText("20,000")).toBeDefined();
     } finally {
       mockOverview.byModel = originalByModel;
     }

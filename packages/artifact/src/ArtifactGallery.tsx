@@ -27,7 +27,7 @@ import type { ArtifactWithSession } from "@workbench/shared";
 import type { GalleryArtifact } from "./types";
 import {
   labelForStatus,
-  toGalleryArtifact,
+  tryToGalleryArtifact,
   visualForKind,
 } from "./artifact-visuals";
 import { ArtifactCard } from "./ArtifactCard";
@@ -420,7 +420,17 @@ export function ArtifactGallery({
   isLoadingMore = false,
   loadMoreError = null,
 }: ArtifactGalleryProps) {
-  const tiles = artifacts.map(toGalleryArtifact);
+  // Containment: artifacts that fail gallery mapping are dropped from BOTH
+  // views (and from the empty-state count) so one corrupt artifact can
+  // neither blank the page nor render inconsistently between grid and rows.
+  const renderable = artifacts.flatMap((artifact) => {
+    const tile = tryToGalleryArtifact(artifact);
+    return tile === undefined ? [] : [{ artifact, tile }];
+  });
+  const tiles = renderable.map((entry) => entry.tile);
+  const tileByArtifactId = new Map(
+    renderable.map((entry) => [entry.artifact.id, entry.tile]),
+  );
   const isSearching = query.trim().length > 0;
 
   return (
@@ -451,8 +461,8 @@ export function ArtifactGallery({
             title="No matching artifacts"
             description={
               <>
-                No results for &ldquo;{query.trim()}&rdquo;. Try a different search
-                or clear filters.
+                No results for &ldquo;{query.trim()}&rdquo;. Try a different
+                search or clear filters.
               </>
             }
           />
@@ -460,10 +470,15 @@ export function ArtifactGallery({
         {viewMode === "rows" ? (
           <DataTable<ArtifactWithSession>
             caption="Artifacts"
-            rows={artifacts}
+            rows={renderable.map((entry) => entry.artifact)}
             getRowKey={(a) => a.id}
             {...(onOpen
-              ? { onRowClick: (a) => onOpen(toGalleryArtifact(a)) }
+              ? {
+                  onRowClick: (a) => {
+                    const tile = tileByArtifactId.get(a.id);
+                    if (tile !== undefined) onOpen(tile);
+                  },
+                }
               : {})}
             columns={artifactRowColumns}
           />

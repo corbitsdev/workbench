@@ -20,6 +20,7 @@ const MyraThread = type({
   instanceId: "string",
   label: "string",
   createdAt: "string",
+  firstMessageAt: "string | null",
 });
 
 const MyraThreadListItem = type({
@@ -28,6 +29,7 @@ const MyraThreadListItem = type({
   label: "string",
   createdAt: "string",
   lastActivityAt: "string",
+  firstMessageAt: "string | null",
 });
 
 const MyraThreadList = type({
@@ -132,11 +134,24 @@ export function createMyraThreadsRouter(
         },
       },
       responses: {
-        201: {
-          description: "Thread created",
+        200: {
+          description:
+            "Existing never-used thread returned instead (created: false)",
           content: {
             "application/json": {
-              schema: resolver(type({ thread: MyraThread, created: "true" })),
+              schema: resolver(
+                type({ thread: MyraThread, created: "boolean" }),
+              ),
+            },
+          },
+        },
+        201: {
+          description: "Thread created (created: true)",
+          content: {
+            "application/json": {
+              schema: resolver(
+                type({ thread: MyraThread, created: "boolean" }),
+              ),
             },
           },
         },
@@ -162,7 +177,7 @@ export function createMyraThreadsRouter(
         memberPrincipalId: ctx.memberPrincipalId,
         ...(body.label !== undefined ? { label: body.label } : {}),
       });
-      return c.json(result, 201);
+      return c.json(result, result.created ? 201 : 200);
     },
   );
 

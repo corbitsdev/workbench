@@ -233,6 +233,18 @@ describe("AgentTurn", () => {
     expect(screen.queryByRole("button", { name: "Thumbs up" })).toBeNull();
   });
 
+  it("CL-3751: suppressFeedback hides the footer on a settled segment even when onRate is provided", () => {
+    render(
+      <AgentTurn
+        message={agentMessage()}
+        onRate={() => Promise.resolve()}
+        suppressFeedback
+      />,
+    );
+    expect(screen.queryByRole("button", { name: "Thumbs up" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Thumbs down" })).toBeNull();
+  });
+
   it("polish parity: a hydrated turn (lifted from flat fields) renders identically to the same turn carrying assembler-native INTERLEAVED parts", () => {
     // The hydrated message carries only flat fields (no parts) — AgentTurn
     // lifts it into the deterministic flat layout (reasoning, tools, text).

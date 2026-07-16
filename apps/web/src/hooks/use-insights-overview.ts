@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 
 import { useActiveWorkbench } from "../lib/active-workbench-context";
@@ -90,10 +90,19 @@ export function useInsightsOverview() {
 
   const canExport = (overview?.metricsSeries.length ?? 0) > 0;
 
-  const exportCsv = () => {
+  // Feeds a useMemo dep array in the page chrome; identity churn here defeats
+  // that memo and re-publishes the app-header chrome on every render. The
+  // range is resolved inside the callback (not taken as a per-render
+  // resolveRange product) so relative presets stay current; the remaining
+  // deps are state or primitives with stable identities.
+  const exportCsv = useCallback(() => {
     if (!activeTenantId || !canExport) return;
-    triggerActivityCsvDownload(activeTenantId, dates, exportBucket);
-  };
+    triggerActivityCsvDownload(
+      activeTenantId,
+      resolveRange(preset, customRange),
+      exportBucket,
+    );
+  }, [activeTenantId, canExport, preset, customRange, exportBucket]);
 
   return {
     preset,

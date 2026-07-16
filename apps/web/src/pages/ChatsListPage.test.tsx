@@ -18,6 +18,7 @@ type ThreadItem = {
   label: string;
   createdAt: string;
   lastActivityAt: string;
+  firstMessageAt?: string | null;
 };
 let threadsResult: {
   data?: { threads: ThreadItem[]; total: number };
@@ -78,6 +79,7 @@ beforeEach(() => {
           label: "Pricing strategy",
           createdAt: "2026-01-01T00:00:00Z",
           lastActivityAt: "2026-01-01T00:00:00Z",
+          firstMessageAt: "2026-01-01T00:00:00Z",
         },
         {
           id: "t2",
@@ -85,6 +87,7 @@ beforeEach(() => {
           label: "Onboarding flow",
           createdAt: "2026-01-02T00:00:00Z",
           lastActivityAt: "2026-01-02T00:00:00Z",
+          firstMessageAt: "2026-01-02T00:00:00Z",
         },
       ],
       total: 2,
@@ -114,6 +117,24 @@ describe("ChatsListPage", () => {
     ).not.toBeNull();
     expect(
       screen.getByRole("button", { name: /onboarding flow/i }),
+    ).not.toBeNull();
+  });
+
+  // CL-3749: an unused thread (no first message yet) stays out of the browse
+  // list — "+ New chat" must not mutate any thread list until first use.
+  it("hides a thread that has no first message yet", () => {
+    threadsResult.data!.threads.push({
+      id: "t3",
+      instanceId: "i3",
+      label: "Fresh unused chat",
+      createdAt: "2026-01-03T00:00:00Z",
+      lastActivityAt: "2026-01-03T00:00:00Z",
+      firstMessageAt: null,
+    });
+    renderPage();
+    expect(screen.queryByText(/fresh unused chat/i)).toBeNull();
+    expect(
+      screen.getByRole("button", { name: /pricing strategy/i }),
     ).not.toBeNull();
   });
 

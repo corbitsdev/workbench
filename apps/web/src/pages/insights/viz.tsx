@@ -201,7 +201,7 @@ export function MiniBars({
   rows,
   label,
 }: {
-  rows: { label: string; value: number }[];
+  rows: { label: string; value: number; displayValue?: string }[];
   label: string;
 }) {
   const max = rows.reduce((m, r) => Math.max(m, r.value), 0);
@@ -233,8 +233,8 @@ export function MiniBars({
                 data-testid="mini-bar-fill"
               />
             </span>
-            <span className="w-12 shrink-0 text-right font-mono text-[11px] tabular-nums text-text">
-              {formatCompact(row.value)}
+            <span className="min-w-[4.5rem] shrink-0 text-right font-mono text-[11px] tabular-nums text-text">
+              {row.displayValue ?? formatCompact(row.value)}
             </span>
           </div>
         );

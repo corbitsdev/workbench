@@ -1,5 +1,6 @@
 import type { ToolCatalog, ToolCatalogEntry } from "@workbench/tools-catalog";
 import {
+  deriveBareToolDescriptions,
   deriveMyraCatalogPackages,
   loadCommittedToolManifestFactories,
 } from "@workbench/tool-manifest";
@@ -64,8 +65,17 @@ type CatalogPackage = {
   tags: string[];
 };
 
+const COMMITTED_TOOL_FACTORIES = loadCommittedToolManifestFactories();
+
 export const MYRA_CATALOG_PACKAGES: CatalogPackage[] =
-  deriveMyraCatalogPackages(loadCommittedToolManifestFactories());
+  deriveMyraCatalogPackages(COMMITTED_TOOL_FACTORIES);
+
+// Real manifest descriptions per pin/bare-name — the widened `search_tools`
+// corpus. Kept separate from the friendly display phrase so results never
+// advertise snake_case labels.
+const CATALOG_TOOL_DESCRIPTIONS = deriveBareToolDescriptions(
+  COMMITTED_TOOL_FACTORIES,
+);
 
 const PLATFORM = new Set(MYRA_PLATFORM_BARE_TOOL_NAMES);
 
@@ -82,11 +92,16 @@ function entry(pkg: CatalogPackage): ToolCatalogEntry {
     tools: catalogBareToolsFor(pkg).map((bare) => {
       // LLM name stays wire-form so load_tools / call can match exactly; the
       // description is the human phrase so search_tools never advertises
-      // snake_case labels (CL-3268).
+      // snake_case labels (CL-3268). The tool's real manifest description rides
+      // along as search-only `keywords` so recall isn't limited to that phrase.
       const name = toLlmToolName(canonicalizeToolNames([bare])[0] ?? bare);
+      const keywords = CATALOG_TOOL_DESCRIPTIONS[pkg.pin]?.[bare];
       return {
         name,
         description: friendlyToolSummary({ id: "", name }),
+        ...(keywords !== undefined && keywords.trim() !== ""
+          ? { keywords }
+          : {}),
       };
     }),
   };

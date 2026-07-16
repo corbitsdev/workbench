@@ -74,6 +74,52 @@ describe("ChatThread", () => {
     expect(screen.queryByTestId("busy-indicator")).toBeNull();
   });
 
+  it("leaves no orphan turn for a committed reasoning-only step in a live multi-step turn (CL-3752)", () => {
+    const liveMultiStep: ChatMessage[] = [
+      {
+        id: "u1",
+        role: "user",
+        content: "What changed this week?",
+        createdAt: "2026-06-04T00:00:00Z",
+        status: "sent",
+      },
+      {
+        id: "a1",
+        role: "agent",
+        turnId: "g1",
+        content: "",
+        createdAt: "2026-06-04T00:00:01Z",
+        status: "sent",
+        reasoning: "Deciding what to check before answering.",
+        parts: [
+          {
+            type: "reasoning",
+            text: "Deciding what to check before answering.",
+          },
+        ],
+      },
+      {
+        id: "a2",
+        role: "agent",
+        turnId: "g1",
+        content: "Acme moved to contract.",
+        createdAt: "2026-06-04T00:00:04Z",
+        status: "sending",
+        parts: [{ type: "text", text: "Acme moved to contract." }],
+      },
+    ];
+    const { container } = render(
+      <ChatThread messages={liveMultiStep} onRate={async () => {}} />,
+    );
+    // The committed reasoning-only segment projects to nothing; it must not
+    // render its own (bubble-less, feedback-footer-only) agent turn, which
+    // would reserve a large whitespace gap above the streaming answer.
+    expect(
+      container.querySelectorAll('[data-testid="agent-turn"]'),
+    ).toHaveLength(1);
+    expect(screen.getByText("Acme moved to contract.")).toBeDefined();
+  });
+
   it("renders a tool narrative for a LIVE (still-streaming) agent turn with tool calls", () => {
     const withTools: ChatMessage[] = [
       {
@@ -477,6 +523,47 @@ describe("ChatThread", () => {
           />,
         );
         expect(screen.getByText("searched memory")).toBeDefined();
+      });
+
+      it("CL-3751: a live multi-segment turn shows zero feedback footers, even with onRate/getRating wired", () => {
+        render(
+          <ChatThread
+            messages={liveThreeSegments}
+            formatToolSummary={() => "searched memory"}
+            onRate={() => Promise.resolve()}
+            getRating={() => null}
+          />,
+        );
+        expect(screen.getAllByTestId("agent-turn")).toHaveLength(3);
+        expect(screen.queryByRole("button", { name: "Thumbs up" })).toBeNull();
+        expect(
+          screen.queryByRole("button", { name: "Thumbs down" }),
+        ).toBeNull();
+      });
+
+      it("CL-3751: once the turn settles, exactly one feedback footer appears on the final output", () => {
+        const settledGroup: ChatMessage[] = liveThreeSegments.map(
+          (message, index) => {
+            if (index !== liveThreeSegments.length - 1) return message;
+            const { status: _status, ...rest } = message;
+            return {
+              ...rest,
+              content: "Here is the final answer.",
+              feedbackId: "turn-final",
+            };
+          },
+        );
+        render(
+          <ChatThread
+            messages={settledGroup}
+            formatToolSummary={() => "searched memory"}
+            onRate={() => Promise.resolve()}
+            getRating={() => null}
+          />,
+        );
+        expect(
+          screen.getAllByRole("button", { name: "Thumbs up" }),
+        ).toHaveLength(1);
       });
 
       describe("state matrix: exactly one animated indicator per live state, zero when settled", () => {

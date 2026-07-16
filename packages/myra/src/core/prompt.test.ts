@@ -59,7 +59,6 @@ describe("buildPersonalAgentSystemPrompt", () => {
       "directory",
       "memory",
       "honesty",
-      "generative-ui",
       "style",
     ]) {
       expect(prompt).toContain(`<${tag}>`);
@@ -243,12 +242,13 @@ describe("directory", () => {
 });
 
 describe("generative-ui", () => {
-  it("carries the ui fence contract and block kinds", () => {
+  // Staging deliberately stopped Myra emitting fenced ```ui blocks; the
+  // contract must not reintroduce the instruction.
+  it("does not instruct Myra to emit fenced ui generative-UI JSON blocks", () => {
     const prompt = buildPersonalAgentSystemPrompt("Myra", xmlFormat);
-    const section = sectionContent(prompt, "generative-ui");
-    expect(section).toContain("fenced block tagged `ui`");
-    expect(section).toContain("`kind` field");
-    expect(section).toContain("never emit invalid JSON");
+    expect(prompt).not.toContain("<generative-ui>");
+    expect(prompt).not.toContain("```ui");
+    expect(prompt).not.toContain("UIBlockView");
   });
 });
 

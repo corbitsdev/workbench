@@ -144,6 +144,25 @@ export function deriveToolPackageSpecs(
   }));
 }
 
+/**
+ * Real per-tool manifest descriptions grouped by package name, merged across a
+ * package's factories. Feeds the catalog's `search_tools` keyword corpus so
+ * recall matches on the tool's true description, not only the friendly phrase.
+ */
+export function deriveBareToolDescriptions(
+  factories: readonly ToolFactoryManifest[],
+): Record<string, Record<string, string>> {
+  const out: Record<string, Record<string, string>> = {};
+  for (const manifest of factories) {
+    if (manifest.descriptions === undefined) continue;
+    const bucket = (out[manifest.packageName] ??= {});
+    for (const [name, description] of Object.entries(manifest.descriptions)) {
+      bucket[name] = description;
+    }
+  }
+  return out;
+}
+
 export function flatBareToolNames(
   factories: readonly ToolFactoryManifest[],
 ): string[] {

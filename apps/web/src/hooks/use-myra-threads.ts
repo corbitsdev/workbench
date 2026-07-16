@@ -30,7 +30,10 @@ export function isDefaultThreadLabel(label: string): boolean {
 // keep working; the canonical definition lives in ./myra-threads-cache.
 export { invalidateMyraThreads };
 const LAST_ACTIVE_THREAD_KEY = "myra-last-active-thread";
-const inFlightCreates = new Map<string, Promise<MyraThread>>();
+const inFlightCreates = new Map<
+  string,
+  Promise<{ thread: MyraThread; created: boolean }>
+>();
 
 // Titling is fire-and-forget on the hub: POST /title returns immediately and
 // the real title lands seconds later (the LLM turn). A single onSettled refetch
@@ -184,9 +187,11 @@ export function useCreateMyraThread() {
       return create;
     },
     onMutate: () => ({ tenantId: requireActiveTenant(activeTenantId) }),
-    onSuccess: (thread, _label, context) => {
+    onSuccess: ({ thread, created }, _label, context) => {
       // A just-created thread is the most recent activity — insert it at the top
-      // of every cached page for the tenant (sidebar + full list) and bump total.
+      // of every cached page for the tenant (sidebar + full list). Bump total
+      // only for a genuinely new thread: a reused never-used thread
+      // (created: false, CL-3749) is already in the server's count.
       queryClient.setQueriesData<MyraThreadPage>(
         { queryKey: myraThreadsPrefix(context.tenantId) },
         (existing) => {
@@ -196,7 +201,7 @@ export function useCreateMyraThread() {
           }
           return {
             threads: [thread, ...existing.threads],
-            total: existing.total + 1,
+            total: existing.total + (created ? 1 : 0),
           };
         },
       );

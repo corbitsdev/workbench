@@ -1,25 +1,14 @@
-import { analyticsModelDisplayCount } from "@workbench/analytics";
+import { sumAnalyticsModelTokens } from "@workbench/analytics/model-tokens";
 import type { ActivityOverview } from "../../lib/hub-api";
-import { cacheHitRate, ratePct } from "./metrics";
+import {
+  cacheHitRate,
+  formatCompact,
+  ratePct,
+  sumInferenceTokenClasses,
+} from "./metrics";
 import { CardLabel, CaveatNote, formatNumber, HudCard, Stat } from "./stats";
 import { MiniBars, TokenMosaic } from "./viz";
 import { SectionLabel } from "./section-label";
-
-function totalTokens(s: {
-  inputTokens: number;
-  outputTokens: number;
-  cacheReadTokens: number;
-  cacheWriteTokens: number;
-  thinkingTokens: number;
-}): number {
-  return (
-    s.inputTokens +
-    s.outputTokens +
-    s.cacheReadTokens +
-    s.cacheWriteTokens +
-    s.thinkingTokens
-  );
-}
 
 /**
  * Usage & Cost tab detail (CL-3667). The Total-turns / Tool-calls stat tiles
@@ -37,7 +26,7 @@ export function InferenceSection({
   tokenCaveat: string | null;
 }) {
   const summary = data.inference.summary;
-  const tokens = totalTokens(summary);
+  const tokens = sumInferenceTokenClasses(summary);
 
   const allZero =
     summary.turnCount === 0 && summary.toolCallCount === 0 && tokens === 0;
@@ -63,11 +52,18 @@ export function InferenceSection({
   const hitRate = cacheHitRate(summary.inputTokens, summary.cacheReadTokens);
   const thinkPct = ratePct(summary.thinkingTokens, tokens);
   const modelRows = data.byModel
-    .map((row) => ({
-      key: row.model,
-      count: analyticsModelDisplayCount(row),
-    }))
-    .filter((row) => row.count > 0);
+    .filter((row) => row.turnCount > 0 || sumAnalyticsModelTokens(row) > 0)
+    .map((row) => {
+      const tokenTotal = sumAnalyticsModelTokens(row);
+      return {
+        key: row.model,
+        value: tokenTotal,
+        displayValue:
+          row.turnCount > 0
+            ? `${formatNumber(row.turnCount)} turns`
+            : formatCompact(tokenTotal),
+      };
+    });
 
   return (
     <div className="flex flex-col gap-4">
@@ -140,9 +136,11 @@ export function InferenceSection({
         >
           <MiniBars
             label="Model distribution"
-            rows={modelRows
-              .slice(0, 8)
-              .map((m) => ({ label: m.key, value: m.count }))}
+            rows={modelRows.slice(0, 8).map((m) => ({
+              label: m.key,
+              value: m.value,
+              displayValue: m.displayValue,
+            }))}
           />
         </HudCard>
       )}

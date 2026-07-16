@@ -6,6 +6,10 @@
     ".": {
       "types": "./src/index.ts",
       "default": "./src/index.ts"
+    },
+    "./model-tokens": {
+      "types": "./src/model-tokens.ts",
+      "default": "./src/model-tokens.ts"
     }
   },
   "scripts": {

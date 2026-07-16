@@ -299,6 +299,27 @@ describe("getAnalyticsModelDistribution", () => {
 
     expect(rows.map((r) => r.model)).toEqual(["named"]);
   });
+
+  it("drops whitespace-only model buckets", async () => {
+    const { db } = makeModelDb([
+      { model: "   ", turnCount: 0, inputTokens: 100, outputTokens: 0 },
+      { model: "named", turnCount: 1, inputTokens: 1, outputTokens: 0 },
+    ]);
+
+    const rows = await getAnalyticsModelDistribution({ db, tenantId: "tnt_1" });
+
+    expect(rows.map((r) => r.model)).toEqual(["named"]);
+  });
+
+  it("filters on the tenant in the rollup query", async () => {
+    const { db, captured } = makeModelDb([
+      { model: "m", turnCount: 1, inputTokens: 1, outputTokens: 0 },
+    ]);
+    await getAnalyticsModelDistribution({ db, tenantId: "tnt_1" });
+
+    const sql = renderWhere(captured.where);
+    expect(sql).toContain('"tenant_id"');
+  });
 });
 
 describe("sumAnalyticsModelTokens", () => {

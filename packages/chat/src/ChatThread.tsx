@@ -227,7 +227,10 @@ export function ChatThread({
     : (typingLabel ??
       (agentName !== undefined ? `${agentName} is thinking` : "Thinking"));
 
-  function renderMessage(message: ChatMessage): ReactNode {
+  function renderMessage(
+    message: ChatMessage,
+    suppressFeedback?: boolean,
+  ): ReactNode {
     const isSettledAgent =
       message.role === "agent" && message.status !== "sending";
     const { cleanedText, urls } = isSettledAgent
@@ -282,6 +285,7 @@ export function ChatThread({
         {...(setReasoningExpanded !== undefined
           ? { setReasoningExpanded }
           : {})}
+        {...(suppressFeedback === true ? { suppressFeedback } : {})}
       />
     );
   }
@@ -370,7 +374,7 @@ export function ChatThread({
         return projectLiveTurn(group).map((message) => ({
           key: `m:${message.id}`,
           at: message.createdAt,
-          node: renderMessage(message),
+          node: renderMessage(message, true),
         }));
       }
       const last = group[group.length - 1]!;
