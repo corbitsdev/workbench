@@ -78,7 +78,7 @@ Principal and tenant-wide **activity timelines** (`GET …/activity/timeline`, `
 | **Credential rows** | Same for `credential` (member OAuth and owner-managed keys). Rotation or disconnect removes or leaves a stale `created_at`; secrets and prior values are never replayed on the timeline. |
 | **Not audit-grade** | No append-only mutation log, no actor on change, no hash chain. Operators must not treat Insights **Activity** as permissions or secrets compliance evidence. |
 
-The web shows an inline caveat when grant or credential entries appear (`ActorTimeline`, `MomentWalker`, `TenantActivityFeed`). The grant descriptor note in `packages/timeline/src/registry.ts` documents current-state semantics; the credential descriptor note covers tenant-owned exclusion, not mutation history.
+The web shows an inline caveat when grant or credential entries appear, via one shared `PermissionCaveatBanner` (`apps/web/src/pages/insights/PermissionCaveatBanner.tsx`) rendered by every timeline surface (`ActorTimeline`, `MomentWalker`, `TenantActivityFeed`) so the disclosure wording is identical everywhere. The grant descriptor note in `packages/timeline/src/registry.ts` documents current-state semantics; the credential descriptor note covers tenant-owned exclusion, not mutation history.
 
 **Mutation paths (v1).** Timeline SQL does not subscribe to writes. Grants and credentials mutate through the **hub process** — both workbench-specific code under `apps/hub/src` and the mounted `@intx/hub-api` routes (`/api/tenants/:tenantId/grants`, `/api/tenants/:tenantId/credentials`, plus instance launch grant materialization). Inventory for documentation and a future audit hook:
 

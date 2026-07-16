@@ -1,5 +1,5 @@
 import { Link } from "react-router";
-import { AlertTriangle, ChevronRight } from "lucide-react";
+import { ChevronRight } from "lucide-react";
 import type { TimelineEntry } from "@workbench/client";
 import { useTenantActivity } from "../../hooks/use-tenant-activity";
 import { KIND_META, relativeTime } from "./timeline-kinds";
@@ -9,16 +9,13 @@ import {
   type ActivityTurn,
 } from "./activity-naming";
 import { entityLinkForEntry } from "./trace-links";
+import { PermissionCaveatBanner } from "./PermissionCaveatBanner";
 
 // The tenant-wide activity feed (CL-2743): the MIDDLE band of Insights, below
 // the charts. Every principal's activity in the tenant, grouped into
 // time-adjacent turns. Each entity-shaped row deep-links into that entity's own
 // trace ("click anything → trace it"); rows with no dedicated destination yet
 // render as plain, honest references rather than dead links.
-
-function hasPermissionEntry(entries: TimelineEntry[]): boolean {
-  return entries.some((e) => e.kind === "grant" || e.kind === "credential");
-}
 
 function EntryBody({ entry, now }: { entry: TimelineEntry; now: Date }) {
   const meta = KIND_META[entry.kind];
@@ -139,7 +136,6 @@ export function TenantActivityFeed({ tenantId }: { tenantId: string }) {
   const query = useTenantActivity(tenantId);
   const entries = (query.data?.pages ?? []).flatMap((p) => p.entries);
   const turns = groupActivityIntoTurns(entries);
-  const showCaveat = hasPermissionEntry(entries);
   const now = new Date();
 
   return (
@@ -154,19 +150,7 @@ export function TenantActivityFeed({ tenantId }: { tenantId: string }) {
         </p>
       </div>
 
-      {showCaveat && (
-        <p
-          className="flex items-start gap-1.5 rounded-[10px] border border-border bg-surface px-3 py-2 text-[11px] leading-snug text-text-3"
-          data-testid="permission-caveat"
-        >
-          <AlertTriangle className="mt-px h-3 w-3 shrink-0" />
-          <span>
-            Grant and credential entries reflect their current state only — past
-            changes, revocations, and who made them are not recorded, so this
-            activity feed is not an audit history for permissions or credentials.
-          </span>
-        </p>
-      )}
+      <PermissionCaveatBanner entries={entries} />
 
       {query.isLoading && (
         <div
