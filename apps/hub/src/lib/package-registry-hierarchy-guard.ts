@@ -46,8 +46,12 @@ async function listPackageRegistryAssetsOnTenant(
     );
 }
 
-function isMissingRegistryPathError(err: unknown): boolean {
-  return err instanceof AssetServiceError && err.reason === "not_found";
+export function isMissingRegistryPathError(err: unknown): boolean {
+  if (err instanceof AssetServiceError && err.reason === "not_found") {
+    return true;
+  }
+  const message = err instanceof Error ? err.message : String(err);
+  return message.includes("has no blob at");
 }
 
 /**

@@ -10,7 +10,10 @@ import {
   type RepoStore,
 } from "@intx/hub-sessions";
 import type { HubDb } from "../db";
-import { assertNoCrossAssetPackageRegistryCollisions } from "../lib/package-registry-hierarchy-guard";
+import {
+  assertNoCrossAssetPackageRegistryCollisions,
+  isMissingRegistryPathError,
+} from "../lib/package-registry-hierarchy-guard";
 import { putPackageRegistryTarball } from "../lib/package-registry-tarball-upload";
 import {
   EmbeddedToolPackageManifestSchema,
@@ -55,7 +58,19 @@ async function loadEmbeddedManifest(
     }
     return [];
   }
-  const parsed = EmbeddedToolPackageManifestSchema(JSON.parse(raw));
+  let json: unknown;
+  try {
+    json = JSON.parse(raw);
+  } catch {
+    if (required) {
+      throw new ToolRegistryAutopublishError(
+        `embedded tool package manifest is not valid JSON at ${manifestPath}`,
+      );
+    }
+    log.error("embedded tool package manifest is not valid JSON; skipping autopublish");
+    return [];
+  }
+  const parsed = EmbeddedToolPackageManifestSchema(json);
   if (parsed instanceof type.errors) {
     if (required) {
       throw new ToolRegistryAutopublishError(
@@ -136,8 +151,7 @@ async function readRegistryTarballBytes(
   try {
     return await assetService.readAssetBlob({ assetId, path });
   } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    if (message.includes("has no blob at")) return null;
+    if (isMissingRegistryPathError(err)) return null;
     throw err;
   }
 }
