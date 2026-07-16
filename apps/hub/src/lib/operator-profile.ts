@@ -71,8 +71,12 @@ async function resolveChatInstructionsForMember(
   tenantId: string,
   memberPrincipalId: string,
 ): Promise<MemberInstructions | undefined> {
+  // The workbench preference table lives on the hub schema; this router is
+  // handed interchange's DB handle over the same connection. Same seam as
+  // myra-threads.ts.
+  const hubDb = db as unknown as HubDb;
   const prefs = await readMyraVariantPreference(
-    db as unknown as HubDb,
+    hubDb,
     tenantId,
     memberPrincipalId,
   );
