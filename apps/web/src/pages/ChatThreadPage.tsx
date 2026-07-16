@@ -21,6 +21,7 @@ import { usePublishActiveContext } from "../lib/active-context-store";
 import { humanizeInstanceStatus } from "../lib/instance-status";
 import { myraInstanceTraceHref } from "../lib/myra-turn-trace";
 import {
+  isDefaultThreadLabel,
   resolveActiveThread,
   useAutoTitleFirstMessage,
   useCreateMyraThread,
@@ -102,16 +103,24 @@ export function ChatThreadPage() {
     [session.messages],
   );
 
+  // A brand-new thread carries the hub's auto-assigned default label
+  // ("Chat", "Chat 2", …) until the async title lands — show "New chat"
+  // instead of that placeholder in the breadcrumb.
+  const activeThreadLabel =
+    active !== null && isDefaultThreadLabel(active.label)
+      ? "New chat"
+      : (active?.label ?? null);
+
   usePublishActiveContext(
-    active
+    active && activeThreadLabel !== null
       ? {
           kind: "thread",
           id: active.id,
-          label: active.label ?? "Chat",
+          label: activeThreadLabel,
           turns: threadTurns,
         }
       : null,
-    active ? String(threadTurns.length) : undefined,
+    active ? `${threadTurns.length}:${activeThreadLabel}` : undefined,
   );
 
   // Run-addressed workflow events (CL-2682): derived from the same conversation

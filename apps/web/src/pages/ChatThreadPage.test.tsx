@@ -69,6 +69,7 @@ mock.module("../hooks/use-myra-threads", () => ({
     }
     return threads[0];
   },
+  isDefaultThreadLabel: (label: string) => /^Chat( \d+)?$/.test(label.trim()),
 }));
 
 mock.module("../hooks/use-myra-session", () => ({
@@ -367,9 +368,7 @@ describe("ChatThreadPage", () => {
       refetch: () => {},
     };
     renderAt("/chats/t1");
-    expect(screen.getByTestId("published-label").textContent).toBe(
-      "New chat",
-    );
+    expect(screen.getByTestId("published-label").textContent).toBe("New chat");
   });
 
   it("re-syncs the published title when the thread's label changes (no stale title across renders)", () => {
@@ -391,9 +390,7 @@ describe("ChatThreadPage", () => {
       refetch: () => {},
     };
     const { rerender } = renderAt("/chats/t1");
-    expect(screen.getByTestId("published-label").textContent).toBe(
-      "New chat",
-    );
+    expect(screen.getByTestId("published-label").textContent).toBe("New chat");
 
     threadsResult = {
       data: {
