@@ -31,12 +31,12 @@ const GROUPS: readonly GroupConfig[] = [
     key: "triage",
     kind: "triage",
     title: "Inbox automation",
-    description: "Which Myra runs your unattended inbox-triage automations.",
+    description: "Which Myra runs your inbox automation.",
   },
 ];
 
 const APPLIES_NOTE =
-  "Your choice applies to new threads and future automation runs. Existing threads keep the Myra they were created with.";
+  "Your choice applies to new threads and future inbox automation runs. Existing threads and runs keep the Myra they were created with.";
 
 function costNote(variant: MyraVariant): string | null {
   if (variant.costTier === "premium") {
@@ -53,29 +53,23 @@ interface MutationVars {
 interface VariantRowProps {
   readonly variant: MyraVariant;
   readonly selected: boolean;
-  readonly disabled: boolean;
   readonly onSelect: () => void;
 }
 
-function VariantRow({
-  variant,
-  selected,
-  disabled,
-  onSelect,
-}: VariantRowProps) {
+function VariantRow({ variant, selected, onSelect }: VariantRowProps) {
   const note = costNote(variant);
   return (
     <button
       type="button"
-      aria-pressed={selected}
-      disabled={disabled}
+      role="radio"
+      aria-checked={selected}
+      tabIndex={selected ? 0 : -1}
       onClick={onSelect}
       className={cn(
-        "flex w-full flex-col gap-1 rounded-xl border p-4 text-left transition-colors",
+        "flex w-full flex-col gap-1 rounded-[10px] border p-3 text-left transition-colors active:scale-[0.97]",
         selected
           ? "border-orange bg-orange/5"
           : "border-border bg-page hover:bg-surface",
-        disabled && "cursor-not-allowed opacity-60",
       )}
     >
       <div className="flex flex-wrap items-center gap-2">
@@ -87,7 +81,7 @@ function VariantRow({
         {selected && <Badge tone="positive">Selected</Badge>}
       </div>
       <p className="text-xs text-text-3">{variant.description}</p>
-      {note !== null && <p className="text-xs text-orange-deep">{note}</p>}
+      {note !== null && <p className="text-xs text-text-2">{note}</p>}
     </button>
   );
 }
@@ -170,7 +164,7 @@ export function MyraDefaultsPanel({ tenantId }: MyraDefaultsPanelProps) {
     return (
       <div className="rounded-xl border border-border bg-surface p-5">
         <p className="text-sm text-text-2">
-          We couldn't load your Myra settings. Please refresh to try again.
+          Couldn't load your Myra defaults. Refresh to try again.
         </p>
       </div>
     );
@@ -198,8 +192,6 @@ export function MyraDefaultsPanel({ tenantId }: MyraDefaultsPanelProps) {
           groupVariants,
           preferences[group.key],
         );
-        const pending =
-          mutation.isPending && mutation.variables?.key === group.key;
         const errored =
           mutation.isError && mutation.variables?.key === group.key;
         return (
@@ -222,13 +214,38 @@ export function MyraDefaultsPanel({ tenantId }: MyraDefaultsPanelProps) {
                 No Myra options are available here yet.
               </p>
             ) : (
-              <div className="flex flex-col gap-2">
+              <div
+                role="radiogroup"
+                aria-labelledby={`myra-group-${group.key}`}
+                className="flex flex-col gap-2"
+                onKeyDown={(event) => {
+                  let delta = 0;
+                  if (event.key === "ArrowDown" || event.key === "ArrowRight") {
+                    delta = 1;
+                  } else if (
+                    event.key === "ArrowUp" ||
+                    event.key === "ArrowLeft"
+                  ) {
+                    delta = -1;
+                  }
+                  if (delta === 0) return;
+                  event.preventDefault();
+                  const index = groupVariants.findIndex(
+                    (v) => v.id === selectedId,
+                  );
+                  const next =
+                    groupVariants[
+                      (index + delta + groupVariants.length) %
+                        groupVariants.length
+                    ];
+                  if (next !== undefined) handleSelect(group.key, next);
+                }}
+              >
                 {groupVariants.map((variant) => (
                   <VariantRow
                     key={variant.id}
                     variant={variant}
                     selected={variant.id === selectedId}
-                    disabled={pending}
                     onSelect={() => handleSelect(group.key, variant)}
                   />
                 ))}
@@ -236,8 +253,7 @@ export function MyraDefaultsPanel({ tenantId }: MyraDefaultsPanelProps) {
             )}
             {errored && (
               <p className="mt-3 text-sm text-red">
-                Couldn't save your choice. We kept your previous selection —
-                please try again.
+                Couldn't save. Your previous selection is kept — try again.
               </p>
             )}
           </section>

@@ -154,9 +154,9 @@ describe("MyraDefaultsPanel", () => {
   it("marks the canonical default as selected when the preference is null", async () => {
     renderPanel();
     await waitFor(() => rowFor("Myra Standard"));
-    expect(rowFor("Myra Standard").getAttribute("aria-pressed")).toBe("true");
-    expect(rowFor("Myra Deep").getAttribute("aria-pressed")).toBe("false");
-    expect(rowFor("Triage Fast").getAttribute("aria-pressed")).toBe("true");
+    expect(rowFor("Myra Standard").getAttribute("aria-checked")).toBe("true");
+    expect(rowFor("Myra Deep").getAttribute("aria-checked")).toBe("false");
+    expect(rowFor("Triage Fast").getAttribute("aria-checked")).toBe("true");
   });
 
   it("PUTs the pinned id when a non-default variant is chosen", async () => {
@@ -167,7 +167,7 @@ describe("MyraDefaultsPanel", () => {
     await waitFor(() => expect(putCalls.length).toBe(1));
     expect(putCalls[0]?.body).toEqual({ chat: "chat-opus" });
     await waitFor(() =>
-      expect(rowFor("Myra Deep").getAttribute("aria-pressed")).toBe("true"),
+      expect(rowFor("Myra Deep").getAttribute("aria-checked")).toBe("true"),
     );
   });
 
@@ -175,7 +175,7 @@ describe("MyraDefaultsPanel", () => {
     preferences = { chat: "chat-opus", triage: null };
     renderPanel();
     await waitFor(() =>
-      expect(rowFor("Myra Deep").getAttribute("aria-pressed")).toBe("true"),
+      expect(rowFor("Myra Deep").getAttribute("aria-checked")).toBe("true"),
     );
     fireEvent.click(rowFor("Myra Standard"));
     await waitFor(() => expect(putCalls.length).toBe(1));
@@ -189,10 +189,10 @@ describe("MyraDefaultsPanel", () => {
     fireEvent.click(rowFor("Myra Deep"));
 
     await waitFor(() =>
-      expect(document.body.textContent).toContain("Couldn't save your choice"),
+      expect(document.body.textContent).toContain("Couldn't save"),
     );
     // Reverted: the default is selected again, the failed pick is not.
-    expect(rowFor("Myra Standard").getAttribute("aria-pressed")).toBe("true");
-    expect(rowFor("Myra Deep").getAttribute("aria-pressed")).toBe("false");
+    expect(rowFor("Myra Standard").getAttribute("aria-checked")).toBe("true");
+    expect(rowFor("Myra Deep").getAttribute("aria-checked")).toBe("false");
   });
 });
