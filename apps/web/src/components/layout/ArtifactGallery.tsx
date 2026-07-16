@@ -35,7 +35,7 @@ import { resolveKindLabel } from "../../lib/resolve-kind-label";
 import { canUseArtifactInWorkflow } from "@workbench/artifact";
 import { useChatLauncher } from "../../lib/chat-launcher-context";
 import { buildArtifactMessage } from "../../lib/artifact-chat-message";
-import { buildApiUrl } from "../../lib/api";
+import { buildSameOriginApiUrl } from "../../lib/api";
 import { useSetPageChrome } from "../../lib/page-chrome";
 
 export { buildArtifactMessage };
@@ -57,7 +57,7 @@ function uploadIdFromSource(
 function imageThumbnailUrl(artifact: ArtifactWithSession): string | undefined {
   if (artifact.kind !== "image") return undefined;
   if (uploadIdFromSource(artifact.source) === null) return undefined;
-  return buildApiUrl(`/artifacts/${artifact.id}/download`);
+  return buildSameOriginApiUrl(`/artifacts/${artifact.id}/download`);
 }
 
 interface ArtifactGalleryProps {

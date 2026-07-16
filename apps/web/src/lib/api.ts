@@ -38,6 +38,19 @@ export function buildEventSourceUrl(path: string): string {
   ).toString();
 }
 
+// Same-origin /api/v1 URL for a CREDENTIALED SUBRESOURCE (e.g. an <img>
+// thumbnail). Like buildEventSourceUrl, it never uses apiBase: a browser does
+// not attach the same-origin auth cookie to a cross-origin subresource, so an
+// image request must ride the proxied same-origin /api/v1 path (the Vite dev
+// proxy locally, the Vercel `/api/(.*)` rewrite in prod) where the cookie is
+// sent. buildApiUrl is for fetch(), which sends credentials explicitly.
+export function buildSameOriginApiUrl(path: string): string {
+  return new URL(
+    `/api/v1/${path.replace(/^\//, "")}`,
+    window.location.origin,
+  ).toString();
+}
+
 const VersionResponse = type({
   buildSha: "string | null",
 });

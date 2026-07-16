@@ -84,6 +84,9 @@ const MAX_UPLOAD_TOTAL_BYTES = 100 * 1024 * 1024;
 // document/image/text set. Validate at the boundary so a disallowed payload is
 // rejected with a clear message rather than persisted opaquely. Accept either
 // the declared MIME or a known extension (browsers omit MIME for some types).
+// SVG is deliberately excluded: it can carry inline <script> and would be a
+// stored-XSS vector once served back on the app origin. Raster image types
+// cover the gallery-thumbnail feature without that risk.
 const ACCEPTED_UPLOAD_MIMES: ReadonlySet<string> = new Set([
   "text/plain",
   "text/markdown",
@@ -101,7 +104,6 @@ const ACCEPTED_UPLOAD_MIMES: ReadonlySet<string> = new Set([
   "image/jpeg",
   "image/gif",
   "image/webp",
-  "image/svg+xml",
 ]);
 
 // Extension → canonical MIME. Drives both the accept check and the effective
@@ -134,7 +136,6 @@ const EXTENSION_MIME: ReadonlyMap<string, string> = new Map([
   [".jpeg", "image/jpeg"],
   [".gif", "image/gif"],
   [".webp", "image/webp"],
-  [".svg", "image/svg+xml"],
 ]);
 
 function extensionMime(filename: string): string | undefined {
