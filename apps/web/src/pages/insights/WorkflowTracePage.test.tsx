@@ -419,6 +419,59 @@ describe("WorkflowTracePage", () => {
     expect(before).not.toBe(after);
   });
 
+  it("toggles to waterfall overview and back", async () => {
+    renderTrace();
+    await waitFor(() => screen.getByRole("listbox"));
+    fireEvent.click(screen.getByRole("button", { name: "Overview" }));
+    await waitFor(() => screen.getByTestId("trace-waterfall"));
+    expect(screen.queryByRole("listbox")).toBeNull();
+    const rows = screen.getAllByTestId("trace-waterfall-row");
+    expect(rows.map((r) => r.getAttribute("data-phase"))).toEqual([
+      "completed",
+      "failed",
+    ]);
+    fireEvent.click(screen.getByRole("button", { name: "Steps" }));
+    await waitFor(() => screen.getByRole("listbox"));
+    expect(screen.queryByTestId("trace-waterfall")).toBeNull();
+  });
+
+  it("clicking a waterfall span focuses that step in the step list", async () => {
+    renderTrace();
+    await waitFor(() => screen.getByRole("listbox"));
+    fireEvent.click(screen.getByRole("button", { name: "Overview" }));
+    await waitFor(() => screen.getByTestId("trace-waterfall"));
+    const spans = screen.getAllByTestId("trace-waterfall-span");
+    fireEvent.click(spans[1]!);
+    await waitFor(() => screen.getByRole("listbox"));
+    const listbox = screen.getByRole("listbox");
+    expect(listbox.getAttribute("aria-activedescendant")).toBe("run-step-1");
+    expect(screen.getAllByTestId("trace-step-decomposition").length).toBe(1);
+  });
+
+  it("shows no end time for an in-flight step in waterfall view", async () => {
+    logStateResponse = {
+      runId: "run-1",
+      phase: "running",
+      lastSeq: 2,
+      steps: [
+        {
+          stepId: "live",
+          phase: "in-flight",
+          stepType: "agent",
+          currentAttempt: 1,
+          startedAt: "2026-07-01T10:00:00.000Z",
+        },
+      ],
+    };
+    renderTrace();
+    await waitFor(() => screen.getByRole("button", { name: "Overview" }));
+    fireEvent.click(screen.getByRole("button", { name: "Overview" }));
+    await waitFor(() => screen.getByTestId("trace-waterfall-missing-time"));
+    expect(screen.getByTestId("trace-waterfall-missing-time").textContent).toBe(
+      "No end time",
+    );
+  });
+
   it("keeps the same listbox selection when Raw is toggled inside the expanded step", async () => {
     renderTrace();
     await waitFor(() => screen.getByRole("listbox"));
