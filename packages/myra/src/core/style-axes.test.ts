@@ -45,6 +45,21 @@ describe("style-axes catalog", () => {
     }
   });
 
+  test("no option label carries a default suffix — the UI owns the default marker", () => {
+    for (const axis of STYLE_AXES) {
+      for (const option of axis.options) {
+        expect(option.label.toLowerCase()).not.toContain("(default)");
+      }
+    }
+  });
+
+  test("every axis carries a plain-sentence description", () => {
+    for (const axis of STYLE_AXES) {
+      expect(axis.description.length).toBeGreaterThan(0);
+      expect(axis.description.endsWith(".")).toBe(true);
+    }
+  });
+
   test("getStyleAxis and isStyleAxisOptionId resolve real ids", () => {
     expect(getStyleAxis("personality")?.id).toBe("personality");
     expect(isStyleAxisOptionId("emojiUse", "heavy")).toBe(true);

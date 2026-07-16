@@ -29,6 +29,8 @@ export interface StyleAxisOption {
 export interface StyleAxis {
   readonly id: StyleAxisId;
   readonly label: string;
+  /** One plain sentence describing what the axis controls. */
+  readonly description: string;
   readonly defaultOptionId: string;
   readonly options: readonly StyleAxisOption[];
 }
@@ -37,11 +39,12 @@ export const STYLE_AXES: readonly StyleAxis[] = [
   {
     id: "personality",
     label: "Personality",
+    description: "How Myra talks to you.",
     defaultOptionId: "teammate",
     options: [
       {
         id: "teammate",
-        label: "Teammate (default)",
+        label: "Teammate",
         description: "A sharp colleague — plain, direct, no filler.",
         snippet: "",
       },
@@ -106,12 +109,13 @@ export const STYLE_AXES: readonly StyleAxis[] = [
   {
     id: "emojiUse",
     label: "Emoji use",
+    description: "Whether Myra uses emoji in replies.",
     defaultOptionId: "none",
     options: [
       {
         id: "none",
-        label: "None (default)",
-        description: "No emojis unless explicitly requested.",
+        label: "None",
+        description: "No emoji unless explicitly requested.",
         snippet: "",
       },
       {
@@ -133,11 +137,12 @@ export const STYLE_AXES: readonly StyleAxis[] = [
   {
     id: "uiType",
     label: "UI type",
+    description: "How Myra structures its replies.",
     defaultOptionId: "sections",
     options: [
       {
         id: "sections",
-        label: "Sections (default)",
+        label: "Sections",
         description: "Structured headers and lists.",
         snippet: "",
       },
@@ -153,6 +158,7 @@ export const STYLE_AXES: readonly StyleAxis[] = [
   {
     id: "artifactUsage",
     label: "Artifact usage",
+    description: "How readily Myra creates artifacts.",
     defaultOptionId: "default",
     options: [
       {
@@ -165,7 +171,7 @@ export const STYLE_AXES: readonly StyleAxis[] = [
       {
         id: "default",
         label: "Default",
-        description: "Today's judgment call on when to create an artifact.",
+        description: "Myra's standard judgment.",
         snippet: "",
       },
       {
@@ -186,6 +192,7 @@ export const STYLE_AXES: readonly StyleAxis[] = [
   {
     id: "toolUsage",
     label: "Tool usage",
+    description: "How readily Myra reaches for tools.",
     defaultOptionId: "default",
     options: [
       {
@@ -198,7 +205,7 @@ export const STYLE_AXES: readonly StyleAxis[] = [
       {
         id: "default",
         label: "Default",
-        description: "Today's judgment call on when to use a tool.",
+        description: "Myra's standard judgment.",
         snippet: "",
       },
       {
@@ -211,7 +218,7 @@ export const STYLE_AXES: readonly StyleAxis[] = [
       {
         id: "none",
         label: "None",
-        description: "Answer from memory only.",
+        description: "Answer from the conversation and stored context only.",
         snippet:
           "Answer from the conversation and your memory only; say when a tool would be needed rather than using one.",
       },
@@ -220,6 +227,7 @@ export const STYLE_AXES: readonly StyleAxis[] = [
   {
     id: "skillUsage",
     label: "Skill usage",
+    description: "How readily Myra checks for written procedures.",
     defaultOptionId: "default",
     options: [
       {
@@ -232,7 +240,7 @@ export const STYLE_AXES: readonly StyleAxis[] = [
       {
         id: "default",
         label: "Default",
-        description: "Today's judgment call on when to check skills.",
+        description: "Myra's standard judgment.",
         snippet: "",
       },
       {
@@ -301,6 +309,7 @@ export type StyleAxisOptionSummary = typeof StyleAxisOptionSummarySchema.infer;
 export const StyleAxisSummarySchema = type({
   id: StyleAxisIdSchema,
   label: "string",
+  description: "string",
   defaultOptionId: "string",
   options: StyleAxisOptionSummarySchema.array(),
 });
@@ -315,6 +324,7 @@ export function listStyleAxes(): StyleAxisSummary[] {
   return STYLE_AXES.map((axis) => ({
     id: axis.id,
     label: axis.label,
+    description: axis.description,
     defaultOptionId: axis.defaultOptionId,
     options: axis.options.map((o) => ({
       id: o.id,

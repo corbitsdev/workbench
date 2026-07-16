@@ -1,5 +1,6 @@
+import { useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { cn } from "@workbench/ui";
+import { Badge, cn } from "@workbench/ui";
 import {
   myraPreferencesKey,
   putMyraPreferences,
@@ -39,7 +40,7 @@ function fieldsForAxis(
 }
 
 const APPLIES_NOTE =
-  "Your choices shape how Myra writes and acts going forward — they apply immediately, everywhere Myra runs for you.";
+  "Style choices apply the next time a Myra starts — new threads, future inbox automation runs, and existing threads after they next wake.";
 
 interface MutationVars {
   readonly field: FieldKey;
@@ -68,10 +69,11 @@ function OptionRow({ option, isDefault, selected, onSelect }: OptionRowProps) {
           : "border-border bg-page hover:bg-surface",
       )}
     >
-      <span className="text-sm font-medium text-text">
-        {option.label}
-        {isDefault ? " (default)" : ""}
-      </span>
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="text-sm font-medium text-text">{option.label}</span>
+        {isDefault && <Badge tone="neutral">Default</Badge>}
+        {selected && <Badge tone="positive">Selected</Badge>}
+      </div>
       <p className="text-xs text-text-3">{option.description}</p>
     </button>
   );
@@ -133,6 +135,11 @@ export function MyraStylePanel({ tenantId }: MyraStylePanelProps) {
   const queryClient = useQueryClient();
   const axesQuery = useMyraStyleAxes(tenantId);
   const preferencesQuery = useMyraPreferences(tenantId);
+  // The field whose last save failed. mutation.variables only reflects the
+  // LATEST mutation, so a banner keyed off it mis-attributes an earlier
+  // failure once another axis saves; this pins the error to the sub-group
+  // that actually failed and clears when that field next saves.
+  const [failedField, setFailedField] = useState<FieldKey | null>(null);
 
   const mutation = useMutation<
     MyraPreferences,
@@ -160,13 +167,17 @@ export function MyraStylePanel({ tenantId }: MyraStylePanelProps) {
       }
       return { previous };
     },
-    onError: (_error, _vars, context) => {
+    onError: (_error, vars, context) => {
+      setFailedField(vars.field);
       if (context?.previous !== undefined) {
         queryClient.setQueryData<MyraPreferences>(
           myraPreferencesKey(tenantId),
           context.previous,
         );
       }
+    },
+    onSuccess: (_data, vars) => {
+      setFailedField((current) => (current === vars.field ? null : current));
     },
     onSettled: () => {
       void queryClient.invalidateQueries({
@@ -224,12 +235,8 @@ export function MyraStylePanel({ tenantId }: MyraStylePanelProps) {
       {axes.map((axis) => {
         const fields = fieldsForAxis(axis.id);
         const labelId = `myra-style-axis-${axis.id}`;
-        const errored =
-          mutation.isError &&
-          ("global" in fields
-            ? mutation.variables?.field === fields.global
-            : mutation.variables?.field === fields.chat ||
-              mutation.variables?.field === fields.triage);
+        const globalErrored =
+          "global" in fields && failedField === fields.global;
 
         return (
           <section
@@ -241,16 +248,26 @@ export function MyraStylePanel({ tenantId }: MyraStylePanelProps) {
               <h3 id={labelId} className="text-base font-semibold text-text">
                 {axis.label}
               </h3>
+              <p className="mt-0.5 text-sm text-text-3">{axis.description}</p>
             </div>
             {"global" in fields ? (
-              <AxisRadioGroup
-                axis={axis}
-                labelId={labelId}
-                selectedId={preferences[fields.global] ?? axis.defaultOptionId}
-                onSelect={(optionId) =>
-                  handleSelect(axis, fields.global, optionId)
-                }
-              />
+              <>
+                <AxisRadioGroup
+                  axis={axis}
+                  labelId={labelId}
+                  selectedId={
+                    preferences[fields.global] ?? axis.defaultOptionId
+                  }
+                  onSelect={(optionId) =>
+                    handleSelect(axis, fields.global, optionId)
+                  }
+                />
+                {globalErrored && (
+                  <p className="mt-3 text-sm text-red">
+                    Couldn't save. Your previous selection is kept — try again.
+                  </p>
+                )}
+              </>
             ) : (
               <div className="flex flex-col gap-5">
                 {(
@@ -260,6 +277,7 @@ export function MyraStylePanel({ tenantId }: MyraStylePanelProps) {
                   ] as const
                 ).map(([surface, surfaceLabel, field]) => {
                   const surfaceLabelId = `${labelId}-${surface}`;
+                  const surfaceErrored = failedField === field;
                   return (
                     <div key={surface} className="flex flex-col gap-2">
                       <p
@@ -276,15 +294,16 @@ export function MyraStylePanel({ tenantId }: MyraStylePanelProps) {
                           handleSelect(axis, field, optionId)
                         }
                       />
+                      {surfaceErrored && (
+                        <p className="text-sm text-red">
+                          Couldn't save. Your previous selection is kept — try
+                          again.
+                        </p>
+                      )}
                     </div>
                   );
                 })}
               </div>
-            )}
-            {errored && (
-              <p className="mt-3 text-sm text-red">
-                Couldn't save. Your previous selection is kept — try again.
-              </p>
             )}
           </section>
         );

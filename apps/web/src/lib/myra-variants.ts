@@ -76,6 +76,7 @@ export type StyleAxisOption = typeof StyleAxisOptionSchema.infer;
 export const StyleAxisSchema = type({
   id: "'personality' | 'emojiUse' | 'uiType' | 'artifactUsage' | 'toolUsage' | 'skillUsage'",
   label: "string",
+  description: "string",
   defaultOptionId: "string",
   options: StyleAxisOptionSchema.array(),
 });

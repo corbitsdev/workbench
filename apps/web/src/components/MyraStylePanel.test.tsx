@@ -6,22 +6,35 @@ import React from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MyraStylePanel } from "./MyraStylePanel";
 
+// Fixture labels/descriptions mirror the real catalog shape (bare labels, no
+// "(default)" suffix — the UI owns the default marker) plus the per-axis
+// description subtitle.
 const axes = [
   {
     id: "personality",
     label: "Personality",
+    description: "How Myra talks to you.",
     defaultOptionId: "teammate",
     options: [
-      { id: "teammate", label: "Teammate", description: "Default tone." },
+      {
+        id: "teammate",
+        label: "Teammate",
+        description: "A sharp colleague — plain, direct, no filler.",
+      },
       { id: "candid", label: "Candid", description: "Blunt and direct." },
     ],
   },
   {
     id: "artifactUsage",
     label: "Artifact usage",
+    description: "How readily Myra creates artifacts.",
     defaultOptionId: "default",
     options: [
-      { id: "default", label: "Default", description: "Today's default." },
+      {
+        id: "default",
+        label: "Default",
+        description: "Myra's standard judgment.",
+      },
       { id: "none", label: "None", description: "Never create artifacts." },
     ],
   },
@@ -174,6 +187,67 @@ describe("MyraStylePanel", () => {
     );
     expect(rowFor("Teammate").getAttribute("aria-checked")).toBe("true");
     expect(rowFor("Candid").getAttribute("aria-checked")).toBe("false");
+  });
+
+  it("renders each axis's description as its subtitle", async () => {
+    renderPanel();
+    await waitFor(() =>
+      expect(document.body.textContent).toContain("How Myra talks to you."),
+    );
+    expect(document.body.textContent).toContain(
+      "How readily Myra creates artifacts.",
+    );
+  });
+
+  it("marks the default option with exactly one Default badge and no label suffix", async () => {
+    renderPanel();
+    await waitFor(() => rowFor("Teammate"));
+    const teammate = rowFor("Teammate");
+    const markers = (teammate.textContent?.match(/Default/g) ?? []).length;
+    expect(markers).toBe(1);
+    expect(teammate.textContent).not.toContain("(default)");
+    expect(rowFor("Candid").textContent).not.toContain("Default");
+  });
+
+  it("attributes a failed usage-dial save to the surface sub-group that failed", async () => {
+    putBehavior = "reject";
+    renderPanel();
+    await waitFor(() => rowFor("None"));
+    const noneButtons = Array.from(document.querySelectorAll("button")).filter(
+      (b) => b.textContent?.includes("None"),
+    );
+    // Click the chat-surface None (first radiogroup pair renders Chat first).
+    fireEvent.click(noneButtons[0] as HTMLElement);
+
+    await waitFor(() =>
+      expect(document.body.textContent).toContain("Couldn't save"),
+    );
+    const errors = Array.from(document.querySelectorAll("p")).filter((p) =>
+      p.textContent?.includes("Couldn't save"),
+    );
+    expect(errors.length).toBe(1);
+    const subGroup = errors[0]?.parentElement;
+    expect(subGroup?.textContent).toContain("Chat");
+    expect(subGroup?.textContent).not.toContain("Inbox automation");
+  });
+
+  it("clears a surface's error after that field next saves successfully", async () => {
+    putBehavior = "reject";
+    renderPanel();
+    await waitFor(() => rowFor("None"));
+    const noneButtons = Array.from(document.querySelectorAll("button")).filter(
+      (b) => b.textContent?.includes("None"),
+    );
+    fireEvent.click(noneButtons[0] as HTMLElement);
+    await waitFor(() =>
+      expect(document.body.textContent).toContain("Couldn't save"),
+    );
+
+    putBehavior = "ok";
+    fireEvent.click(noneButtons[0] as HTMLElement);
+    await waitFor(() =>
+      expect(document.body.textContent).not.toContain("Couldn't save"),
+    );
   });
 
   it("renders a workbench prompt instead of a skeleton when no workbench is active", () => {
