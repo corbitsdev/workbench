@@ -22,6 +22,7 @@ import {
 } from "../lib/page-context";
 import { composePersonalAgentPromptForInstance } from "../lib/operator-profile";
 import { composeMyraStyleOverlaySectionForInstance } from "../lib/myra-style-overlay";
+import { composeMyraPinnedSkillsSectionForInstance } from "../lib/myra-pinned-skills";
 import { PERSONAL_AGENT_PROMPT_VERSION } from "@workbench/myra";
 import { buildTimeZoneMarker } from "@workbench/prompts";
 import { resolveMemberTimeZone } from "@workbench/shared";
@@ -411,9 +412,18 @@ export async function launchAgentSession(
     if (styleSection !== null) {
       effectiveSystemPrompt = `${effectiveSystemPrompt}\n\n${styleSection}`;
     }
+
+    const pinnedSection = await composeMyraPinnedSkillsSectionForInstance(db, {
+      tenantId,
+      instanceId,
+      provider: defaultSourceProvider,
+    });
+    if (pinnedSection !== null) {
+      effectiveSystemPrompt = `${effectiveSystemPrompt}\n\n${pinnedSection}`;
+    }
   } catch (err) {
     log.warn(
-      "Failed to compose Myra personalization style overlay; using prompt without it",
+      "Failed to compose Myra personalization overlay; using prompt without it",
       {
         instanceId,
         error: err instanceof Error ? err.message : String(err),

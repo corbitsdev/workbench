@@ -1,6 +1,11 @@
 import { and, eq } from "drizzle-orm";
 import { type } from "arktype";
-import { isMyraVariantId, isStyleAxisOptionId } from "@workbench/myra";
+import {
+  isMyraVariantId,
+  isStyleAxisOptionId,
+  MAX_PINNED_MYRA_SKILLS,
+} from "@workbench/myra";
+import { listSkills, type SkillViewer } from "./skill-library";
 import { myraVariantPreference } from "../db/schema";
 import type { HubDb } from "../db";
 
@@ -34,6 +39,7 @@ export const MyraVariantPreferenceSchema = type({
   toolUsageTriage: "string | null",
   skillUsageChat: "string | null",
   skillUsageTriage: "string | null",
+  pinnedSkillIds: "string[]",
 });
 export type MyraVariantPreference = typeof MyraVariantPreferenceSchema.infer;
 
@@ -62,6 +68,7 @@ export const MyraVariantPreferencePatchSchema = type({
   "toolUsageTriage?": "string | null",
   "skillUsageChat?": "string | null",
   "skillUsageTriage?": "string | null",
+  "pinnedSkillIds?": "string[]",
 });
 export type MyraVariantPreferencePatch =
   typeof MyraVariantPreferencePatchSchema.infer;
@@ -81,6 +88,7 @@ const EMPTY_PREFERENCE: MyraVariantPreference = {
   toolUsageTriage: null,
   skillUsageChat: null,
   skillUsageTriage: null,
+  pinnedSkillIds: [],
 };
 
 export async function readMyraVariantPreference(
@@ -110,7 +118,45 @@ export async function readMyraVariantPreference(
     toolUsageTriage: row.toolUsageTriage ?? null,
     skillUsageChat: row.skillUsageChat ?? null,
     skillUsageTriage: row.skillUsageTriage ?? null,
+    pinnedSkillIds: normalizePinnedSkillIds(row.pinnedSkillIds ?? []),
   };
+}
+
+/** Dedupe while preserving order and cap at {@link MAX_PINNED_MYRA_SKILLS}. */
+export function normalizePinnedSkillIds(ids: readonly string[]): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const id of ids) {
+    if (seen.has(id)) continue;
+    seen.add(id);
+    out.push(id);
+    if (out.length >= MAX_PINNED_MYRA_SKILLS) break;
+  }
+  return out;
+}
+
+/**
+ * Validate pinned skill ids against the member's visible skill library. Returns
+ * an error message or `null` when the patch omits `pinnedSkillIds`.
+ */
+export async function validatePinnedSkillIdsPatch(
+  db: HubDb,
+  viewer: SkillViewer,
+  patch: MyraVariantPreferencePatch,
+): Promise<string | null> {
+  if (patch.pinnedSkillIds === undefined) return null;
+  const ids = patch.pinnedSkillIds;
+  if (ids.length > MAX_PINNED_MYRA_SKILLS) {
+    return `At most ${MAX_PINNED_MYRA_SKILLS} pinned skills`;
+  }
+  const visible = await listSkills(db, viewer);
+  const allowed = new Set(visible.map((s) => s.id));
+  for (const id of ids) {
+    if (!allowed.has(id)) {
+      return `Unknown or inaccessible skill id: ${id}`;
+    }
+  }
+  return null;
 }
 
 const STYLE_AXIS_PATCH_KEYS = [
@@ -219,6 +265,10 @@ export async function setMyraVariantPreference(
       patch.skillUsageTriage !== undefined
         ? patch.skillUsageTriage
         : current.skillUsageTriage,
+    pinnedSkillIds:
+      patch.pinnedSkillIds !== undefined
+        ? normalizePinnedSkillIds(patch.pinnedSkillIds)
+        : current.pinnedSkillIds,
   };
 
   await db
@@ -240,6 +290,7 @@ export async function setMyraVariantPreference(
       toolUsageTriage: next.toolUsageTriage,
       skillUsageChat: next.skillUsageChat,
       skillUsageTriage: next.skillUsageTriage,
+      pinnedSkillIds: next.pinnedSkillIds,
     })
     .onConflictDoUpdate({
       target: [
@@ -261,6 +312,7 @@ export async function setMyraVariantPreference(
         toolUsageTriage: next.toolUsageTriage,
         skillUsageChat: next.skillUsageChat,
         skillUsageTriage: next.skillUsageTriage,
+        pinnedSkillIds: next.pinnedSkillIds,
         updatedAt: new Date(),
       },
     });

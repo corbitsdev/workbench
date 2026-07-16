@@ -41,6 +41,7 @@ export const MyraPreferencesSchema = type({
   toolUsageTriage: "string | null",
   skillUsageChat: "string | null",
   skillUsageTriage: "string | null",
+  pinnedSkillIds: "string[]",
 });
 export type MyraPreferences = typeof MyraPreferencesSchema.infer;
 
@@ -56,6 +57,7 @@ export const MyraPreferencesUpdateSchema = type({
   "toolUsageTriage?": "string | null",
   "skillUsageChat?": "string | null",
   "skillUsageTriage?": "string | null",
+  "pinnedSkillIds?": "string[]",
 });
 export type MyraPreferencesUpdate = typeof MyraPreferencesUpdateSchema.infer;
 

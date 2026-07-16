@@ -44,6 +44,7 @@ const EMPTY_STYLE_AXES = {
   toolUsageTriage: null,
   skillUsageChat: null,
   skillUsageTriage: null,
+  pinnedSkillIds: [],
 };
 
 function wrapWithTenant(

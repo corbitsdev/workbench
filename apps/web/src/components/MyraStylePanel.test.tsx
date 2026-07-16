@@ -54,6 +54,7 @@ const EMPTY_PREFERENCES = {
   toolUsageTriage: null,
   skillUsageChat: null,
   skillUsageTriage: null,
+  pinnedSkillIds: [],
 };
 
 let preferences: Record<string, string | null>;
