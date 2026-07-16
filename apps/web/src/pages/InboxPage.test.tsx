@@ -71,6 +71,7 @@ let refetchCalls = 0;
 let fetchNextMailboxCalls = 0;
 let fetchNextTasksCalls = 0;
 const markReadIds: string[] = [];
+const itemActionCalls: { id: string; action: string }[] = [];
 const detailQueryIds: (string | null)[] = [];
 const taskLookupIds: (string | null)[] = [];
 
@@ -126,7 +127,10 @@ mock.module("../hooks/use-mailbox", () => ({
     isPending: false,
   }),
   useMailboxItemAction: () => ({
-    mutateAsync: async () => undefined,
+    mutateAsync: async (input: { id: string; action: string }) => {
+      itemActionCalls.push(input);
+      return undefined;
+    },
     isPending: false,
   }),
   useMarkMailboxUnread: () => ({
@@ -255,6 +259,7 @@ afterEach(() => {
   fetchNextMailboxCalls = 0;
   fetchNextTasksCalls = 0;
   markReadIds.length = 0;
+  itemActionCalls.length = 0;
   detailQueryIds.length = 0;
   taskLookupIds.length = 0;
 });
@@ -620,6 +625,76 @@ describe("InboxPage layout controls", () => {
     fireEvent.click(activityTab);
     expect(activityTab.getAttribute("aria-current")).toBe("page");
     expect(messagesTab.getAttribute("aria-current")).toBeNull();
+  });
+
+  it("returns to the message list, not the Activity pane, when backing out of a message opened from Activity", () => {
+    mailbox = {
+      data: [makeMessage({ id: "msg-1", subject: "Morning brief" })],
+      isLoading: false,
+      isError: false,
+    };
+    detail = {
+      data: { ...makeMessage({ id: "msg-1" }), body: "Full brief." },
+      isLoading: false,
+      isError: false,
+    };
+    renderInbox();
+    const section = screen.getByRole("navigation", { name: "Inbox section" });
+    fireEvent.click(within(section).getByRole("button", { name: "Activity" }));
+    const feed = screen.getByRole("list", { name: "Now" });
+    fireEvent.click(within(feed).getByText("Morning brief"));
+    fireEvent.click(screen.getByRole("button", { name: /back to inbox/i }));
+    const rail = screen.getByRole("list", { name: "Messages" });
+    expect(rail.closest("aside")?.className).not.toContain("max-md:hidden");
+  });
+
+  it("archives a message from its row action without opening it", () => {
+    mailbox = {
+      data: [
+        makeMessage({ id: "msg-1", from: "Myra", subject: "Morning brief" }),
+      ],
+      isLoading: false,
+      isError: false,
+    };
+    const router = renderInbox();
+    fireEvent.click(
+      screen.getByRole("button", { name: /archive message from myra/i }),
+    );
+    expect(itemActionCalls).toEqual([{ id: "msg-1", action: "archive" }]);
+    expect(router.state.location.pathname).toBe("/inbox");
+  });
+
+  it("trashes a message from its row action", () => {
+    mailbox = {
+      data: [
+        makeMessage({ id: "msg-1", from: "Myra", subject: "Morning brief" }),
+      ],
+      isLoading: false,
+      isError: false,
+    };
+    renderInbox();
+    fireEvent.click(
+      screen.getByRole("button", { name: /trash message from myra/i }),
+    );
+    expect(itemActionCalls).toEqual([{ id: "msg-1", action: "trash" }]);
+  });
+
+  it("offers restore instead of archive/trash on rows in the trash folder", () => {
+    mailbox = {
+      data: [
+        makeMessage({ id: "msg-1", from: "Myra", subject: "Old note" }),
+      ],
+      isLoading: false,
+      isError: false,
+    };
+    renderInbox("/inbox?view=trash");
+    expect(
+      screen.queryByRole("button", { name: /archive message from myra/i }),
+    ).toBeNull();
+    fireEvent.click(
+      screen.getByRole("button", { name: /restore message from myra/i }),
+    );
+    expect(itemActionCalls).toEqual([{ id: "msg-1", action: "restore" }]);
   });
 
   it("hides the mobile section switch while a message is open", () => {
