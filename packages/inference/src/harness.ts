@@ -37,6 +37,7 @@ import { getLogger } from "@intx/log";
 
 import type { AdapterRegistry } from "./adapter";
 import { parseSSE } from "./sse";
+import { parseCompletedToolArgs } from "./tool-args";
 import { injectCredentials } from "./auth";
 import {
   classifyHTTPError,
@@ -960,15 +961,9 @@ async function* runSingleAttempt(
     // Finalize any open tool calls that never received an explicit end event.
     const completedToolCalls: ContentBlock[] = [];
     for (const tc of openToolCalls.values()) {
-      let parsedArgs: Record<string, unknown>;
-      try {
-        const raw = tc.argsBuffer.trim() === "" ? "{}" : tc.argsBuffer;
-        const parsed = JSON.parse(raw);
-        const validated = ParsedToolArgs(parsed);
-        parsedArgs = validated instanceof type.errors ? {} : validated;
-      } catch {
-        parsedArgs = { _raw: tc.argsBuffer };
-      }
+      // Recover mis-assembled or _raw-wrapped argument buffers instead of
+      // shipping a `{_raw}` envelope to the tool.
+      const parsedArgs = parseCompletedToolArgs(tc.argsBuffer);
 
       completedToolCalls.push({
         type: "tool_call",
@@ -1546,8 +1541,6 @@ function resolveURL(path: string, baseURL: string): string {
   const base = baseURL.endsWith("/") ? baseURL.slice(0, -1) : baseURL;
   return base + path;
 }
-
-const ParsedToolArgs = type("Record<string, unknown>");
 
 const ErrorBody = type({ error: { message: "string" } });
 const DirectMessageBody = type({ message: "string" });
