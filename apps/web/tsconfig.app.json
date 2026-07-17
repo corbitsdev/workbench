@@ -20,7 +20,8 @@
       "@": ["./src"],
       "@workbench/shared": ["../../packages/workbench-shared/src/index.ts"]
     },
-    "baseUrl": "."
+    "baseUrl": ".",
+    "customConditions": ["intx-src"]
   },
   "include": ["src"],
   "exclude": ["src/components/ui"]
