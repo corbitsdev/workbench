@@ -61,7 +61,11 @@ mock.module("@intx/tools-posix", () => ({
 }));
 
 mock.module("@intx/authz", () => ({
-  evaluateGrants: mock(async () => {}),
+  evaluateGrants: mock(async () => ({
+    effect: null,
+    matchingGrants: [],
+    resolvedBy: null,
+  })),
 }));
 
 mock.module("@intx/types/runtime", () => ({
