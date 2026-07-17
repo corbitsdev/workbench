@@ -37,6 +37,7 @@ import { getLogger } from "@intx/log";
 
 import type { AdapterRegistry } from "./adapter";
 import { parseSSE } from "./sse";
+// WORKBENCH-LOCAL: tool-call argument recovery.
 import { parseCompletedToolArgs } from "./tool-args";
 import { injectCredentials } from "./auth";
 import {
@@ -961,8 +962,8 @@ async function* runSingleAttempt(
     // Finalize any open tool calls that never received an explicit end event.
     const completedToolCalls: ContentBlock[] = [];
     for (const tc of openToolCalls.values()) {
-      // Recover mis-assembled or _raw-wrapped argument buffers instead of
-      // shipping a `{_raw}` envelope to the tool.
+      // WORKBENCH-LOCAL: recover mis-assembled or _raw-wrapped argument
+      // buffers instead of shipping a `{_raw}` envelope to the tool.
       const parsedArgs = parseCompletedToolArgs(tc.argsBuffer);
 
       completedToolCalls.push({
