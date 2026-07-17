@@ -170,11 +170,19 @@ offerings and every agent resolves against `opencode-zen` exactly as before.
 ### Owner-set inference providers (OpenRouter)
 
 Some inference providers carry **no `.env` credential and no `seed-credentials`
-entry** — the Owner sets their key from the **Capabilities page**, keyed by the
-`providerName` in `CREDENTIAL_PROVIDER_CATALOG`
+entry** — the Owner sets their key from the **Owner → Catalog page** (inference
+credentials), keyed by the `providerName` in `CREDENTIAL_PROVIDER_CATALOG`
 (`packages/workbench-shared/src/governance.ts`). Setting the key creates the
-`model_provider` row (plugin + default baseURL from the catalog entry) and its
-credential in one step; it does **not** create offerings.
+generic `provider` row (plugin + default baseURL from the catalog entry) and its
+credential in one step **and now auto-seeds that provider's catalog slice**: it
+upserts the `model_provider` row (bound to the freshly-written credential) plus
+the `model` and `model_offering` rows from `@workbench/catalog` (`FULL_CATALOG`),
+and pushes the resolved sources to any live sidecars. The manual
+**Seed model catalog** step is **no longer required** after an Owner sets an
+inference key — the provider's models resolve immediately. (Auto-seed is
+inference-only, idempotent, and a no-op for a provider `FULL_CATALOG` does not
+describe or one without a base URL; a reconcile failure is logged and never
+fails the key write.)
 
 `openrouter` is such a provider — an `openai-compatible` inference provider whose
 baseURL defaults to `https://openrouter.ai/api/v1`. It serves the `kimi-k3`
@@ -186,12 +194,17 @@ To add another OpenRouter-served model:
 1. Add a `CATALOG_MODELS` entry (`packages/catalog/src/models.ts`) with its
    `contextWindow`, and an `offering(<model>, "openrouter")` in
    `CATALOG_OFFERINGS` (`packages/catalog/src/offerings.ts`).
-2. Have the Owner set the **OpenRouter** key on the Capabilities page (once per
-   tenant) so the `openrouter` provider row exists.
-3. Re-run **Seed model catalog** — the offering is created only after the
-   provider row exists, so seed after the key is set (re-seed is idempotent). A
-   variant whose model has no resolvable offering shows as unavailable rather
-   than failing to launch.
+2. Ship the code change (the new model/offering must exist in `FULL_CATALOG`).
+3. Have the Owner **re-save** the OpenRouter key on the Owner → Catalog page, or
+   run **Seed model catalog** — either materializes the new offering (both are
+   idempotent). Re-seed remains the way to add a brand-new model row purely from
+   code without touching the key; the Owner-key path auto-seeds whatever
+   `FULL_CATALOG` describes for that provider at save time. A variant whose model
+   has no resolvable offering shows as unavailable rather than failing to launch.
+
+Owners can enable, disable, or remove the offerings their workbench **owns**
+directly from the Owner → Catalog page (the Offerings section). Inherited
+offerings are managed at the tenant that owns them and do not appear there.
 
 No `pin`/failover tail is configured for OpenRouter-only models — the
 `openrouter` offering is their sole source.
