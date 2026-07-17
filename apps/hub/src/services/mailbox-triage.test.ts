@@ -70,7 +70,10 @@ const VISION_TRIAGE_DEF = {
   ],
 };
 let triageDef: typeof MYRA_TRIAGE_DEF = MYRA_TRIAGE_DEF;
-const resolveDefMock = mock(async () => triageDef);
+const resolveDefMock = mock(
+  async (_db: unknown, _tenantId: string, _variant: { seedName: string }) =>
+    triageDef,
+);
 const teardownMock = mock(async () => undefined);
 mock.module("./myra-threads", () => ({
   resolveMyraVariantDefinition: resolveDefMock,
