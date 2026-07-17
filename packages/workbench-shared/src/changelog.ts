@@ -37,6 +37,49 @@ export const CHANGELOG_NAV_ROUTES = [
 // Newest first.
 export const CHANGELOG: readonly ChangelogRelease[] = [
   {
+    version: "0.7.6",
+    date: "2026-07-16",
+    title: "Make Myra your own",
+    entries: [
+      {
+        title: "Custom instructions",
+        description:
+          "Tell Myra how you want her to work, and she carries your guidance into every chat.",
+        to: "/settings",
+      },
+      {
+        title: "Myra variants",
+        description:
+          "Pick the Myra that fits the job — each variant brings its own prompt and model.",
+        to: "/settings",
+      },
+      {
+        title: "Personalization controls",
+        description:
+          "Choose which tools and skills Myra reaches for, and set your own response style.",
+        to: "/settings",
+      },
+      {
+        title: "One settings home",
+        description:
+          "Preferences, workbench, and owner controls now live on a single page that shows you only what your role can change.",
+        to: "/settings",
+      },
+      {
+        title: "Faster, cleaner chat",
+        description:
+          "New chats open instantly and empty, with real titles and no waiting banner.",
+        to: "/chats",
+      },
+      {
+        title: "Image artifacts",
+        description:
+          "Images from your workflows preview as images in the gallery and on the artifact page.",
+        to: "/artifacts",
+      },
+    ],
+  },
+  {
     version: "0.6.96",
     date: "2026-07-14",
     title: "Polish: inbox, settings, and what's new",
