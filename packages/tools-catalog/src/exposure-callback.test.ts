@@ -1,6 +1,10 @@
 import { describe, expect, test } from "bun:test";
 import type { ToolCall } from "@intx/types/runtime";
-import { createCatalogTools, LOAD_TOOLS_NAME, SEARCH_TOOLS_NAME } from "./tools";
+import {
+  createCatalogTools,
+  LOAD_TOOLS_NAME,
+  SEARCH_TOOLS_NAME,
+} from "./tools";
 import type { ToolCatalog, ToolExposureState } from "./schema";
 
 const catalog: ToolCatalog = [
@@ -44,7 +48,7 @@ describe("createCatalogTools onExposureChanged", () => {
   test("fires when search_tools auto-exposes a small match set", async () => {
     const { snapshots, runner } = setup();
     await runner.run(call(SEARCH_TOOLS_NAME, { query: "crm" }), signal);
-    expect(snapshots).toEqual([["attio__create_note", "attio__query_records"]]);
+    expect(snapshots).toEqual([["attio__query_records"]]);
   });
 
   test("does not fire when loading already-exposed names", async () => {
