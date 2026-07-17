@@ -23,7 +23,7 @@ import type {
   RepoStore,
   WorkflowRunSupervisorPrincipal,
 } from "@intx/hub-sessions";
-import type { HubLink } from "@intx/hub-agent";
+import type { HubLink } from "@workbench/hub-agent";
 
 const logger = getLogger([
   "interchange",

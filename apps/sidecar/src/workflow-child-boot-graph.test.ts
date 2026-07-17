@@ -6,11 +6,11 @@ import { dirname, join } from "node:path";
 //
 // The workflow-child evaluates its whole module graph on every cold start. It
 // must never pull the control-plane database layer (`@intx/db` / `drizzle`) or
-// the sidecar orchestrator (`@intx/hub-agent`) into that graph: the child
+// the sidecar orchestrator (`@workbench/hub-agent`) into that graph: the child
 // never executes either, the database dependency is a layering violation, and
 // importing the orchestrator that spawns the child is a backwards dependency.
 // The db-free substrate is reachable via `@intx/hub-sessions/substrate` and
-// the path helpers via `@intx/hub-agent/paths`; the package barrels are not.
+// the path helpers via `@workbench/hub-agent/paths`; the package barrels are not.
 //
 // This walks the child's VALUE-import graph and fails if any forbidden module
 // is reachable. `Bun.build` erases `import type` and type-only specifiers
@@ -64,7 +64,7 @@ function binaryEntrypoints(): string[] {
 /**
  * Returns the package reason if a value-import specifier is forbidden in the
  * child boot graph, or null otherwise. `@intx/db` / `drizzle-orm` are banned
- * entirely; the `@intx/hub-sessions` and `@intx/hub-agent` *barrels* are banned
+ * entirely; the `@intx/hub-sessions` and `@workbench/hub-agent` *barrels* are banned
  * (their `/substrate` and `/paths` subpaths are the supported db-free doors).
  */
 function forbiddenReason(spec: string): string | null {
@@ -77,8 +77,8 @@ function forbiddenReason(spec: string): string | null {
   if (spec === "@intx/hub-sessions") {
     return "control-plane barrel; import @intx/hub-sessions/substrate instead";
   }
-  if (spec === "@intx/hub-agent") {
-    return "sidecar orchestrator barrel; import @intx/hub-agent/paths instead";
+  if (spec === "@workbench/hub-agent") {
+    return "sidecar orchestrator barrel; import @workbench/hub-agent/paths instead";
   }
   return null;
 }
@@ -172,7 +172,7 @@ describe("workflow-child boot graph", () => {
         `The workflow-child boot graph reached forbidden modules:\n${detail}\n\n` +
           "The spawned child must not evaluate the control-plane database or the " +
           "sidecar orchestrator at boot. Use @intx/hub-sessions/substrate for the " +
-          "db-free repo/substrate symbols and @intx/hub-agent/paths for the deploy-tree " +
+          "db-free repo/substrate symbols and @workbench/hub-agent/paths for the deploy-tree " +
           "and address helpers.",
       );
     }

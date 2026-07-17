@@ -26,7 +26,7 @@ import type {
   DeployRouter,
   DeployRouterResult,
   SessionManager,
-} from "@intx/hub-agent";
+} from "@workbench/hub-agent";
 import {
   createWorkflowSupervisor,
   STEP_GRANTS_PATH,
