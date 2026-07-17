@@ -33,6 +33,8 @@ const SINGLE_STEP: WorkflowDeploymentRecord = {
   version: 1,
   agentAddress: "ins_abc123@tenant.example",
   definitionId: "wf_abc123",
+  tenantId: "ten_abc",
+  rawDeploymentId: "ses_abc123",
   sources: {
     "step-1": [
       {
@@ -54,6 +56,8 @@ const MULTI_STEP: WorkflowDeploymentRecord = {
   version: 1,
   agentAddress: "ins_dep_xyz@tenant.example",
   definitionId: "wf_xyz",
+  tenantId: "ten_xyz",
+  rawDeploymentId: "ses_dep_xyz",
   sources: {
     plan: [
       {
@@ -112,6 +116,16 @@ describe("workflow deployment record store", () => {
     expect("sessionId" in parsed).toBe(false);
 
     await fs.rm(dataDir, { recursive: true, force: true });
+  });
+
+  test("rejects a record missing the CL-2199 tenant/raw-deployment fields", async () => {
+    // A record written before the substrate-env threading (or a tampered
+    // one) lacks tenantId/rawDeploymentId. It must fail validation so the
+    // restore path skips it rather than rebuilding an incomplete substrate
+    // env that crashes the workflow-child at boot.
+    const { tenantId: _t, rawDeploymentId: _r, ...withoutIds } = SINGLE_STEP;
+    const parsed = WorkflowDeploymentRecord(withoutIds);
+    expect(parsed instanceof type.errors).toBe(true);
   });
 
   test("overwriting a record leaves the new one and no temp orphan", async () => {

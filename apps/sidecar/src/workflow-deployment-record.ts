@@ -54,6 +54,12 @@ export const WorkflowDeploymentRecord = type({
   sources: {
     "[string]": InferenceSource.array().atLeastLength(1),
   },
+  // WORKBENCH-LOCAL (CL-2199): the tenant scope + raw hub deploymentId the
+  // workflow-child's substrate env requires. Frame-only at deploy time, so
+  // they are persisted here for the frame-less boot restore to rebuild a
+  // complete substrate env (TENANT_ID / WORKFLOW_RAW_DEPLOYMENT_ID).
+  tenantId: "string > 0",
+  rawDeploymentId: "string > 0",
   "sessionId?": "string > 0",
   "hubPublicKey?": "string > 0",
 });

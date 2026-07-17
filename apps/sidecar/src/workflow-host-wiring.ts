@@ -72,8 +72,57 @@ import {
   writeWorkflowDeploymentRecord,
   type WorkflowDeploymentRecord,
 } from "./workflow-deployment-record";
+import { SIDECAR_SUBSTRATE_CONFIG_KEYS } from "./workflow-substrate-factory";
 
 const logger = getLogger(["interchange", "sidecar", "workflow-host-wiring"]);
+
+// WORKBENCH-LOCAL (CL-2199): the raw hub deploymentId (`ses_<id>`) env key.
+// The step tool-context resolver derives the step agent row id
+// (`ins_<raw>-<step>`) and agent-state repo id (`<raw>-<step>`) from this, NOT
+// from the slugified workflow-run repo id. `SubstrateConfig` in
+// workflow-substrate-factory.ts REQUIRES this key and the workflow-child's
+// `filterSubstrateConfig` throws without it, so an upstream re-sync that drops
+// it breaks every workflow-child spawn at runtime with a green build.
+export const RAW_DEPLOYMENT_ID_ENV_KEY = "WORKFLOW_RAW_DEPLOYMENT_ID";
+
+// WORKBENCH-LOCAL (CL-2199): recover the raw deploymentId (`ses_<id>`) from the
+// deploy frame's `agentId`, which the orchestrator mints as `ins_<deploymentId>`
+// (deriveDeploymentAgentId). Fails loudly on an unexpected shape.
+export function deriveRawDeploymentId(agentId: string): string {
+  const prefix = "ins_";
+  if (!agentId.startsWith(prefix) || agentId.length === prefix.length) {
+    throw new Error(
+      `sidecar deploy router: cannot recover raw deploymentId from agentId ${JSON.stringify(agentId)}; expected the orchestrator's deriveDeploymentAgentId shape "ins_<deploymentId>"`,
+    );
+  }
+  return agentId.slice(prefix.length);
+}
+
+/**
+ * WORKBENCH-LOCAL (CL-2363): not in upstream interchange — preserve on pin-bump
+ * re-sync of this vendored file.
+ *
+ * Deploy-time completeness assertion for the multi-step workflow-child's
+ * substrate-config env. The hand-off between this wiring and the workflow-child
+ * is duck-typed (no compile-time contract), so a dropped substrate-config key
+ * does NOT fail the build — it surfaces only when the child boots and its
+ * `filterSubstrateConfig` validator throws, i.e. a runtime child-spawn crash in
+ * production. Asserting presence + non-emptiness of every
+ * `SIDECAR_SUBSTRATE_CONFIG_KEYS` member here converts that silent runtime
+ * crash into a loud deploy-time failure naming the missing key. The env passed
+ * in must be the UNION of the static `substrateEnv` and the dynamic spawn-env
+ * fragment (`STEP_INFERENCE_SOURCES`), since the child receives both merged.
+ */
+function assertSubstrateEnvComplete(env: Record<string, string>): void {
+  for (const key of SIDECAR_SUBSTRATE_CONFIG_KEYS) {
+    const value = env[key];
+    if (typeof value !== "string" || value.length === 0) {
+      throw new Error(
+        `sidecar deploy router: assembled workflow-child substrate env is missing required key ${JSON.stringify(key)} (present in SIDECAR_SUBSTRATE_CONFIG_KEYS but absent or empty in the spawn-time env); a dropped substrate-config key would crash the workflow-child at boot`,
+      );
+    }
+  }
+}
 
 /**
  * Project an agent address into the substrate-safe id of its
@@ -1147,6 +1196,20 @@ export function createSidecarDeployRouter(deps: {
     agentAddress: string;
     definition: NonNullable<AgentDeployFrame["workflow"]>["definition"];
     sources: NonNullable<AgentDeployFrame["workflow"]>["sources"];
+    /**
+     * WORKBENCH-LOCAL (CL-2199): per-deploy tenant scope the step harness
+     * needs to resolve tenant-owned tool credentials + tool-package tarballs
+     * and to key the durable-conversation substrate. Threaded into the child's
+     * substrate env; persisted in the record so the frame-less restore path
+     * rebuilds a complete env.
+     */
+    tenantId: string;
+    /**
+     * WORKBENCH-LOCAL (CL-2199): raw hub deploymentId (`ses_<id>`) the step
+     * tool-context resolver derives step agent/repo ids from. Persisted in the
+     * record so restore rebuilds the substrate env without the deploy frame.
+     */
+    rawDeploymentId: string;
     /** Correlates the child's inference events to the deploy's session. */
     sessionId: string | undefined;
     /**
@@ -1175,6 +1238,10 @@ export function createSidecarDeployRouter(deps: {
       agentAddress: spec.agentAddress,
       definitionId: spec.definition.id,
       sources,
+      // WORKBENCH-LOCAL (CL-2199): persist the tenant + raw deployment id so a
+      // frame-less boot restore rebuilds a complete substrate env.
+      tenantId: spec.tenantId,
+      rawDeploymentId: spec.rawDeploymentId,
       ...(spec.sessionId !== undefined ? { sessionId: spec.sessionId } : {}),
       ...(spec.hubPublicKey !== undefined
         ? { hubPublicKey: spec.hubPublicKey }
@@ -1252,7 +1319,28 @@ export function createSidecarDeployRouter(deps: {
         WORKFLOW_DEFINITION_REF: "refs/heads/main",
         WORKFLOW_RUN_REPO_ID: deploymentId,
         WORKFLOW_RUN_REF: "refs/heads/main",
+        // WORKBENCH-LOCAL (CL-2199): per-deploy tenant scope + raw hub
+        // deploymentId the workflow-child's `filterSubstrateConfig` REQUIRES
+        // (both are members of SIDECAR_SUBSTRATE_CONFIG_KEYS). Not present in
+        // the boot-edge `multistepSubstrateEnv` (sidecar-process constants
+        // only); threaded per-deploy through the spec so the live-deploy and
+        // frame-less restore paths assemble the same env. Dropping either
+        // breaks every workflow-child spawn at runtime with a green build.
+        TENANT_ID: spec.tenantId,
+        [RAW_DEPLOYMENT_ID_ENV_KEY]: spec.rawDeploymentId,
       };
+
+      // WORKBENCH-LOCAL (CL-2363): fail the deploy loudly if any
+      // substrate-config key the workflow-child requires is missing, rather
+      // than spawning a child that crashes at boot. The child receives the
+      // static `substrateEnv` merged with the dynamic spawn-env fragment
+      // (`STEP_INFERENCE_SOURCES`, recomputed per spawn/recycle), so the
+      // completeness check runs over the UNION -- otherwise it would wrongly
+      // flag STEP_INFERENCE_SOURCES, which is not in the static env.
+      assertSubstrateEnvComplete({
+        ...substrateEnv,
+        [STEP_INFERENCE_SOURCES_ENV_KEY]: JSON.stringify(spec.sources),
+      });
       // Live-rotatable per-step inference sources. Seeded from the deploy
       // spec, then revised in place by the single-step sources-rotation
       // handler below. `STEP_INFERENCE_SOURCES` is NOT in the frozen
@@ -1692,6 +1780,10 @@ export function createSidecarDeployRouter(deps: {
       agentAddress: frame.agentAddress,
       definition: projection.definition,
       sources: projection.sources,
+      // WORKBENCH-LOCAL (CL-2199): tenant scope from the validated HarnessConfig
+      // and raw hub deploymentId recovered from the frame's agentId.
+      tenantId: frame.config.tenantId,
+      rawDeploymentId: deriveRawDeploymentId(frame.agentId),
       sessionId: frame.config.sessionId,
       hubPublicKey:
         projection.definition.stepOrder.length === 1
@@ -1913,6 +2005,10 @@ export function createSidecarDeployRouter(deps: {
             agentAddress: record.agentAddress,
             definition: projection.definition,
             sources: projection.sources,
+            // WORKBENCH-LOCAL (CL-2199): rebuild the substrate env from the
+            // persisted tenant + raw deployment id -- restore has no frame.
+            tenantId: record.tenantId,
+            rawDeploymentId: record.rawDeploymentId,
             sessionId: record.sessionId,
             hubPublicKey: record.hubPublicKey,
           };
