@@ -13,6 +13,7 @@ import {
   createHubSessionOrchestrator,
   createSessionService,
   createSidecarRouter,
+  createSidecarTokenAuthenticator,
   WORKSPACE_BUILTINS_REGISTRY,
   type SidecarLookups,
   type WsHandle,
@@ -550,6 +551,12 @@ const lookups: SidecarLookups = {
 const sidecarRouter = createSidecarRouter({
   hubPublicKey: hexEncode(registry.active.publicKey),
   lookups,
+  // Upstream now authenticates the sidecar WS handshake against the per-sidecar
+  // token hash on the `sidecar` table (migration 0036). The token is hashed
+  // SHA-256 and looked up by digest; an unknown token fails the handshake
+  // closed. Sidecar rows carry `token_hash_sha256`; a sidecar presents its
+  // plaintext token (SIDECAR_TOKEN) on connect.
+  authenticateSidecar: createSidecarTokenAuthenticator({ db }),
 });
 
 const analyticsSubscriber = createAnalyticsSubscriber({ db });
@@ -597,7 +604,6 @@ createHubSessionOrchestrator({
   router: sidecarRouter,
   db,
   eventCollectors,
-  grantStore,
   agentRepoStore: repoStore,
 });
 
@@ -1474,7 +1480,6 @@ const workflowDeployService = createWorkflowDeployService({
   db,
   repoStore,
   sidecarRouter,
-  sessionService,
   directorRegistry: createWorkbenchDirectorRegistry(),
   reclaimDeployment,
 });

@@ -183,7 +183,6 @@ function mailHeaders(overrides?: Partial<MessageHeaders>): MessageHeaders {
     interchangeSchemaVersion: undefined,
     traceparent: undefined,
     tracestate: undefined,
-    extensionHeaders: undefined,
     ...overrides,
   };
 }
