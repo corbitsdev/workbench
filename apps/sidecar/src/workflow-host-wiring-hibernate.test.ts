@@ -269,9 +269,6 @@ describe("createSidecarDeployRouter hibernate", () => {
       } as unknown as Parameters<
         typeof createSidecarDeployRouter
       >[0]["keyStore"],
-      onAgentEvent: () => () => {
-        /* unused */
-      },
       transport,
       repoStore,
       signingKeySeed: keyPair.privateKey,

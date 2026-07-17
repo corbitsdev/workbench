@@ -255,9 +255,6 @@ async function standUpDeployment(
       },
       loadOrGenerateKey: async () => ({ keyPair, isNew: false }),
     } as unknown as Parameters<typeof createSidecarDeployRouter>[0]["keyStore"],
-    onAgentEvent: () => () => {
-      /* unused */
-    },
     transport,
     repoStore,
     signingKeySeed: keyPair.privateKey,
