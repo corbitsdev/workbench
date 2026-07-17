@@ -154,6 +154,15 @@ export const SIDECAR_SUBSTRATE_CONFIG_KEYS = [
   "SIDECAR_CACHE_MAX_BYTES",
   "SIDECAR_REGISTRY_MAX_TARBALL_BYTES",
   "SIDECAR_ADAPTER_MANIFEST",
+  // WORKBENCH-LOCAL (CL-2199): the reference sidecar's substrate config carries
+  // no TENANT_ID. GTM Workbench threads it so the per-step child can scope hub
+  // manifest/credential lookups to the owning tenant. A dropped key makes every
+  // workflow-child throw at boot in `SubstrateConfig` validation (green build).
+  "TENANT_ID",
+  // WORKBENCH-LOCAL (CL-2199): the raw hub deploymentId (`ses_<id>`). The step
+  // child needs the un-slugified deployment id (not the workflow-run repo id) to
+  // key hub RPC. Dropping it fails every workflow-child at boot (green build).
+  "WORKFLOW_RAW_DEPLOYMENT_ID",
 ] as const;
 
 const SubstrateConfig = type({
@@ -183,6 +192,12 @@ const SubstrateConfig = type({
   // its JSON shape is re-validated against `AdapterManifest` in
   // `parseAdapterManifest` before any module is imported.
   SIDECAR_ADAPTER_MANIFEST: "string > 0",
+  // WORKBENCH-LOCAL (CL-2199): not in upstream's SubstrateConfig — the child
+  // requires TENANT_ID to scope hub manifest/credential lookups per step.
+  TENANT_ID: "string > 0",
+  // WORKBENCH-LOCAL (CL-2199): not in upstream's SubstrateConfig — the child
+  // requires the raw hub deploymentId (`ses_<id>`) to key hub RPC per step.
+  WORKFLOW_RAW_DEPLOYMENT_ID: "string > 0",
 }).onUndeclaredKey("ignore");
 
 /**
