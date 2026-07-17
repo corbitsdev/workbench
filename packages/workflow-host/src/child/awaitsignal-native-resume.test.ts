@@ -19,7 +19,12 @@ import path from "node:path";
 import { generateKeyPair } from "@intx/crypto";
 import { hexEncode } from "@intx/types";
 import type { KeyPair } from "@intx/types/runtime";
-import type { AuthorizeFn, Principal, RepoId, RepoStore } from "@intx/hub-sessions";
+import type {
+  AuthorizeFn,
+  Principal,
+  RepoId,
+  RepoStore,
+} from "@intx/hub-sessions";
 import {
   createRepoStore,
   workflowRunKindHandler,
@@ -203,10 +208,15 @@ async function genesisGateDeployment(baseDir: string): Promise<{
     deploymentId: GATE_DEPLOYMENT_ID,
   };
   const principal: Principal = principalShape;
-  await substrate.writeTree({ kind: "hub" }, workflowRunRepoId, "refs/heads/main", {
-    files: { [WORKFLOW_RUN_GITIGNORE_PATH]: "" },
-    message: "genesis",
-  });
+  await substrate.writeTree(
+    { kind: "hub" },
+    workflowRunRepoId,
+    "refs/heads/main",
+    {
+      files: { [WORKFLOW_RUN_GITIGNORE_PATH]: "" },
+      message: "genesis",
+    },
+  );
   await substrate.writeTree(
     { kind: "hub" },
     workflowDefinitionRepoId,
@@ -353,9 +363,18 @@ describe("native awaitSignal resume", () => {
     const channelId = generateChannelId();
     const hmacKey = generateHmacKey();
 
-    const { substrate, principal, workflowRunRepoId, workflowDefinitionRepoId } =
-      await genesisGateDeployment(baseDir);
-    await commitParkedRun(substrate, principal, workflowRunRepoId, "run-parked");
+    const {
+      substrate,
+      principal,
+      workflowRunRepoId,
+      workflowDefinitionRepoId,
+    } = await genesisGateDeployment(baseDir);
+    await commitParkedRun(
+      substrate,
+      principal,
+      workflowRunRepoId,
+      "run-parked",
+    );
 
     const supervisorToChild = createMemoryNdjsonStream();
     const childToSupervisor = createMemoryNdjsonStream();
@@ -423,21 +442,31 @@ describe("native awaitSignal resume", () => {
     const channelId = generateChannelId();
     const hmacKey = generateHmacKey();
 
-    const { substrate, principal, workflowRunRepoId, workflowDefinitionRepoId } =
-      await genesisGateDeployment(baseDir);
+    const {
+      substrate,
+      principal,
+      workflowRunRepoId,
+      workflowDefinitionRepoId,
+    } = await genesisGateDeployment(baseDir);
     // The signal was already durably received before the crash; the gate is
     // in-flight awaiting only its StepCompleted. No live deliver follows.
-    await commitParkedRun(substrate, principal, workflowRunRepoId, "run-received", [
-      {
-        kind: "SignalReceived",
-        seq: 4,
-        at: PARKED_AT,
-        stepId: "gate",
-        signalName: "go",
-        signalId: "sig-pre",
-        payload: { approved: true },
-      } as unknown as WorkflowEvent,
-    ]);
+    await commitParkedRun(
+      substrate,
+      principal,
+      workflowRunRepoId,
+      "run-received",
+      [
+        {
+          kind: "SignalReceived",
+          seq: 4,
+          at: PARKED_AT,
+          stepId: "gate",
+          signalName: "go",
+          signalId: "sig-pre",
+          payload: { approved: true },
+        } as unknown as WorkflowEvent,
+      ],
+    );
 
     const supervisorToChild = createMemoryNdjsonStream();
     const childToSupervisor = createMemoryNdjsonStream();
