@@ -9,7 +9,6 @@ import type { WorkflowDefinition } from "@intx/workflow";
 import type { HarnessConfig, InferenceSource } from "@intx/types/runtime";
 import type {
   AgentRepoStore,
-  SessionService,
   SidecarRouter,
 } from "@intx/hub-sessions";
 import type { HubDb } from "../db";
@@ -135,9 +134,6 @@ describe("provisionRunDeployment (per-run deployment, CL-2582)", () => {
       },
     } as unknown as AgentRepoStore;
 
-    const sessionService = {
-      launchSession: async () => undefined,
-    } as unknown as SessionService;
 
     const deployedAddresses: string[] = [];
     const sidecarRouter = {
@@ -152,7 +148,6 @@ describe("provisionRunDeployment (per-run deployment, CL-2582)", () => {
       db,
       repoStore,
       sidecarRouter,
-      sessionService,
       directorRegistry: createWorkbenchDirectorRegistry(),
     });
 
@@ -224,9 +219,6 @@ describe("provisionRunDeployment (per-run deployment, CL-2582)", () => {
         writeTree: async () => ({ commitSha: "sha" }),
       },
     } as unknown as AgentRepoStore;
-    const sessionService = {
-      launchSession: async () => undefined,
-    } as unknown as SessionService;
     // Force the deploy to fail at the supervisor frame.
     const sidecarRouter = {
       getRoutableAddresses: () => [],
@@ -240,7 +232,6 @@ describe("provisionRunDeployment (per-run deployment, CL-2582)", () => {
       db,
       repoStore,
       sidecarRouter,
-      sessionService,
       directorRegistry: createWorkbenchDirectorRegistry(),
       reclaimDeployment: async (args) => {
         reclaimed.push({

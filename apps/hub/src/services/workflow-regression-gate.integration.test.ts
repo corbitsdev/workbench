@@ -15,7 +15,6 @@ import {
   type AuthorizeFn,
   type KindHandler,
   type RepoStore,
-  type SessionService,
   type SidecarRouter,
   type ValidatePushResult,
 } from "@intx/hub-sessions";
@@ -245,10 +244,6 @@ async function deployEmbedded(
   const embedded = loadEmbedded(kind);
   const deploymentId = "ses_gate_deploy";
 
-  const launchSession = mock(() => Promise.resolve());
-  const sessionService = {
-    launchSession,
-  } as unknown as SessionService;
   const sendAgentDeploy = mock(() =>
     Promise.resolve({ publicKey: "deadbeef" }),
   );
@@ -269,7 +264,6 @@ async function deployEmbedded(
     db,
     repoStore: toAgentRepoStore(repoStore),
     sidecarRouter,
-    sessionService,
     directorRegistry: createWorkbenchDirectorRegistry(),
   });
 
