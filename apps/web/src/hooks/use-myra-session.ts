@@ -349,11 +349,11 @@ export type MyraSession = {
   queuedFailed: boolean;
   /**
    * Why the live connection is not up while the transcript is shown, so the UI
-   * can explain the deferred-send state with the right copy: `"connecting"` on a
-   * never-yet-live first connect, `"reconnecting"` after a live session drops,
-   * `null` once live.
+   * can explain the deferred-send state with the right copy: `"reconnecting"`
+   * after a live session drops, `null` on a never-yet-live first connect (no
+   * prior session to have dropped from) and once live.
    */
-  connectionNotice: "connecting" | "reconnecting" | null;
+  connectionNotice: "reconnecting" | null;
   /**
    * Interchange agent session id from the latest successful launch. Used to
    * scope Action Requests (ReviewGate) to this chat rather than the whole
@@ -1041,12 +1041,13 @@ export function useMyraSession(
   const queuedFailed = pendingQueueRef.current.some(
     (q) => q.failed && !q.permanent,
   );
-  // While the transcript is shown but the live connection is not up, explain the
-  // deferred-send state: a drop after a live session is "reconnecting"; a
-  // never-yet-live first connect is "connecting" (CL-3280, CL-3292).
-  let connectionNotice: "connecting" | "reconnecting" | null = null;
-  if (!live) {
-    connectionNotice = hasBeenLive ? "reconnecting" : "connecting";
+  // While the transcript is shown but the live connection is not up, explain
+  // the deferred-send state only once there was a prior live session to have
+  // dropped from — a never-yet-live first connect renders no notice (CL-3280,
+  // CL-3829).
+  let connectionNotice: "reconnecting" | null = null;
+  if (!live && hasBeenLive) {
+    connectionNotice = "reconnecting";
   }
 
   // Live activity is derived from the assembler's trailing open part — the
