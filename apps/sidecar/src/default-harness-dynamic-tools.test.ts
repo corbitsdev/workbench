@@ -289,6 +289,13 @@ describe("dynamic tool catalog: full-catalog advertisement (CL-3795)", () => {
 describe("dispatch allow-list: granted loaded package tools survive the filter", () => {
   const signal = new AbortController().signal;
 
+  function toolsFrom(def: BuiltHarness["def"]): BuiltTools {
+    const factory = def.toolFactories[0];
+    if (factory === undefined)
+      throw new Error("harness def has no tool factory");
+    return factory({});
+  }
+
   function loadedFactory(
     id: string,
     toolNames: string[],
@@ -305,7 +312,10 @@ describe("dispatch allow-list: granted loaded package tools survive the filter",
 
   it("keeps a granted loaded catalog tool advertised and dispatchable after load_tools", async () => {
     const packageRun = mock(
-      async (call: { id: string; name: string }): Promise<{
+      async (call: {
+        id: string;
+        name: string;
+      }): Promise<{
         callId: string;
         content: unknown;
       }> => ({ callId: call.id, content: { parsed: true } }),
@@ -325,7 +335,7 @@ describe("dispatch allow-list: granted loaded package tools survive the filter",
     const { def, env } = await buildAgent(["fileparser__parse_file"], {
       dynamicCatalog: true,
     });
-    const tools = def.toolFactories[0]({});
+    const tools = toolsFrom(def);
 
     const names = tools.definitions.map((d) => d.name);
     expect(names).toContain("fileparser__parse_file");
@@ -373,7 +383,7 @@ describe("dispatch allow-list: granted loaded package tools survive the filter",
     const { def } = await buildAgent(["fileparser__parse_file"], {
       dynamicCatalog: true,
     });
-    const tools = def.toolFactories[0]({});
+    const tools = toolsFrom(def);
 
     const names = tools.definitions.map((d) => d.name);
     expect(names).toContain("fileparser__parse_file");
@@ -388,7 +398,10 @@ describe("dispatch allow-list: granted loaded package tools survive the filter",
 
   it("admits every loaded tool for an agent without a dynamic catalog", async () => {
     const packageRun = mock(
-      async (call: { id: string; name: string }): Promise<{
+      async (call: {
+        id: string;
+        name: string;
+      }): Promise<{
         callId: string;
         content: unknown;
       }> => ({ callId: call.id, content: { ok: true } }),
@@ -406,7 +419,7 @@ describe("dispatch allow-list: granted loaded package tools survive the filter",
     ]);
 
     const { def } = await buildAgent([], { dynamicCatalog: false });
-    const tools = def.toolFactories[0]({});
+    const tools = toolsFrom(def);
 
     expect(tools.definitions.map((d) => d.name)).toContain(
       "granola__list_calls",
