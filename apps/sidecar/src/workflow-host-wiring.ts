@@ -70,9 +70,11 @@ import type {
   MultistepSourcesRouter,
 } from "./workflow-run-pack-client";
 import {
+  clearDeploymentDormantMarker,
   deleteWorkflowDeploymentRecord,
   reclaimWorkflowDeploymentDir,
   scanWorkflowDeploymentRecords,
+  writeDeploymentDormantMarker,
   writeDeploymentTombstone,
   writeWorkflowDeploymentRecord,
   type WorkflowDeploymentRecord,
@@ -1877,6 +1879,14 @@ export function createSidecarDeployRouter(deps: {
     // yield control before this point.
     reservingDeployAddresses.add(frame.agentAddress);
     try {
+      // WORKBENCH-LOCAL (CL-3368): this deploy IS the wake path for a hibernated
+      // (dormant) deployment — the hub re-sends agent.deploy on a gate signal —
+      // and also runs after the resident-supervisor self-heal above, which
+      // hibernated a still-resident child. Either way, clear any dormant marker
+      // BEFORE re-persisting the record so the now-live deployment restores
+      // normally on a later restart instead of staying dormant. Idempotent when
+      // no marker is present (the common fresh-deploy case).
+      await clearDeploymentDormantMarker(dataDir, deploymentId);
       // Persist the deployment record BEFORE the spawn so a crash mid-spawn
       // leaves a record the boot scan re-drives (an idempotent re-spawn; the
       // child's in-flight-run discovery resumes any run). A soft-failed deploy
@@ -1959,6 +1969,18 @@ export function createSidecarDeployRouter(deps: {
     // tombstone: its durable state must survive for the parked run to resume.
     if (opts.reclaimDirs && stepStateDataDir !== undefined) {
       await writeDeploymentTombstone(stepStateDataDir, deploymentId);
+    }
+    // WORKBENCH-LOCAL (CL-3368): hibernate (reclaimDirs: false) is the state-
+    // preserving teardown of a gate-parked run. Mark the surviving record
+    // dormant BEFORE the residency teardown so a boot restore never eagerly
+    // re-spawns it — the hub re-drives a fresh deploy on the next gate signal.
+    // Written at the top (like the tombstone) so a crash mid-teardown still
+    // leaves the marker: on a sidecar-only restart no child is resident, so
+    // "skip eager restore" is the correct outcome regardless. The wake path
+    // (deployMultiStep) clears it. This is what keeps hibernation from
+    // reproducing the eager-restore OOM shape on a sidecar restart.
+    if (!opts.reclaimDirs && stepStateDataDir !== undefined) {
+      await writeDeploymentDormantMarker(stepStateDataDir, deploymentId);
     }
     deps.multistepMailRouter?.unregister(agentAddress);
     deps.multistepSignalRouter?.unregister(agentAddress);

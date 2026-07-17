@@ -101,6 +101,61 @@ export async function writeDeploymentTombstone(
   );
 }
 
+// WORKBENCH-LOCAL (CL-3368): hibernation dormant-marker. A gate-parked run is
+// hibernated by a state-preserving teardown (reclaimDirs: false) that kills the
+// child and releases routing but keeps every durable artifact — including the
+// deployment record — so the parked run can resume. Boot-time restore, however,
+// eagerly re-spawns EVERY on-disk record; without a marker it would re-spawn
+// every hibernated run on a sidecar restart, defeating the hibernation RAM
+// optimization and reproducing the eager-restore OOM shape. The hub does NOT
+// depend on the sidecar re-spawning a hibernated run: a gate signal re-drives a
+// full `agent.deploy` frame (ensureDeploymentRoutable → reestablishSupervisor),
+// which re-persists the record and spawns fresh. So a hibernated deployment
+// should stay DORMANT on disk and wake only on that hub-driven signal path.
+// This marker (distinct from the tombstone, which means terminated-forget)
+// tells restore to skip eager-spawn while LEAVING the dir + its state on disk;
+// the wake path clears it. Unlike a tombstone, a dormant dir is never reclaimed
+// by the scan — its state is the parked run's resume source.
+const DORMANT_FILENAME = "dormant";
+
+function dormantPath(dataDir: string, deploymentId: string): string {
+  return pathJoin(
+    workflowDeploymentDir(dataDir, deploymentId),
+    DORMANT_FILENAME,
+  );
+}
+
+/**
+ * WORKBENCH-LOCAL (CL-3368): mark a deployment dormant so a later boot restore
+ * skips re-spawning it, leaving its durable state on disk for a signal-driven
+ * wake. Written by the hibernate teardown. Idempotent.
+ */
+export async function writeDeploymentDormantMarker(
+  dataDir: string,
+  deploymentId: string,
+): Promise<void> {
+  const path = dormantPath(dataDir, deploymentId);
+  await mkdir(dirname(path), { recursive: true });
+  await writeFileAtomicDurable(
+    path,
+    JSON.stringify({ version: 1, hibernatedAt: new Date().toISOString() }),
+    { mode: 0o600 },
+  );
+}
+
+/**
+ * WORKBENCH-LOCAL (CL-3368): clear a deployment's dormant marker. Called on the
+ * wake path (a fresh hub-driven `agent.deploy`) before the record is
+ * re-persisted, so the woken deployment restores normally on any later restart.
+ * A missing marker is not an error (`force`).
+ */
+export async function clearDeploymentDormantMarker(
+  dataDir: string,
+  deploymentId: string,
+): Promise<void> {
+  await rm(dormantPath(dataDir, deploymentId), { force: true });
+}
+
 /** True for a `node:fs` rejection whose `code` is `ENOENT`. */
 function isENOENT(cause: unknown): boolean {
   return (
@@ -228,6 +283,23 @@ export async function scanWorkflowDeploymentRecords(
     if (tombstoned) {
       logger.warn`reclaiming tombstoned workflow-runs/${deploymentId}: an interrupted undeploy left it behind; not restoring`;
       await reclaimWorkflowDeploymentDir(dataDir, deploymentId);
+      continue;
+    }
+
+    // WORKBENCH-LOCAL (CL-3368): a dormant dir is a hibernated (gate-parked)
+    // deployment. Skip eager-spawn but LEAVE it (and its durable run state) on
+    // disk untouched: the hub re-drives a fresh deploy on the next gate signal.
+    // Distinct from the tombstone branch above, which reclaims — a dormant
+    // deployment's state is its parked run's resume source, so it must survive.
+    let dormant = false;
+    try {
+      await readFile(dormantPath(dataDir, deploymentId), "utf8");
+      dormant = true;
+    } catch (cause) {
+      if (!isENOENT(cause)) throw cause;
+    }
+    if (dormant) {
+      logger.info`skipping eager restore of hibernated workflow-runs/${deploymentId}: it wakes on the next gate signal via a hub-driven re-deploy`;
       continue;
     }
 

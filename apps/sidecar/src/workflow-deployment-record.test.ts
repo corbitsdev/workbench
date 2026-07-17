@@ -9,6 +9,8 @@ import {
   WorkflowDeploymentRecord,
   writeWorkflowDeploymentRecord,
   writeDeploymentTombstone,
+  writeDeploymentDormantMarker,
+  clearDeploymentDormantMarker,
   deleteWorkflowDeploymentRecord,
   reclaimWorkflowDeploymentDir,
   workflowDeploymentDir,
@@ -229,6 +231,45 @@ describe("scanWorkflowDeploymentRecords", () => {
     expect(
       await fileExists(path.join(dataDir, "workflow-runs", "dep-tombstoned")),
     ).toBe(false);
+
+    await fs.rm(dataDir, { recursive: true, force: true });
+  });
+
+  test("CL-3368: skips eager restore of a dormant (hibernated) deployment but LEAVES it on disk, while a normal record still restores", async () => {
+    const dataDir = await makeDataDir();
+    // A hibernated deployment: its record survives (state-preserving teardown)
+    // but a dormant marker tells restore not to eager-spawn it — the hub
+    // re-drives a fresh deploy on the next gate signal. Unlike a tombstone,
+    // its dir MUST survive: the durable run state is the parked run's resume
+    // source.
+    await writeWorkflowDeploymentRecord(dataDir, "dep-hibernated", SINGLE_STEP);
+    await writeDeploymentDormantMarker(dataDir, "dep-hibernated");
+    // A normal warm-serving deployment alongside it must still restore.
+    await writeWorkflowDeploymentRecord(dataDir, "dep-live", MULTI_STEP);
+
+    const scanned = await scanWorkflowDeploymentRecords(dataDir);
+    expect(scanned.map((s) => s.deploymentId)).toEqual(["dep-live"]);
+
+    // The dormant deployment's dir and record are untouched (NOT reclaimed),
+    // so a signal-driven wake still has the parked run's state to resume from.
+    expect(
+      await fileExists(
+        path.join(
+          dataDir,
+          "workflow-runs",
+          "dep-hibernated",
+          "deployment.json",
+        ),
+      ),
+    ).toBe(true);
+
+    // Clearing the marker (the wake path) restores normal eager behavior.
+    await clearDeploymentDormantMarker(dataDir, "dep-hibernated");
+    const rescanned = await scanWorkflowDeploymentRecords(dataDir);
+    expect(rescanned.map((s) => s.deploymentId).sort()).toEqual([
+      "dep-hibernated",
+      "dep-live",
+    ]);
 
     await fs.rm(dataDir, { recursive: true, force: true });
   });
