@@ -397,15 +397,17 @@ function makeMultistepFrame(args: MultistepDeployArgs): AgentDeployFrame {
   return {
     type: "agent.deploy",
     agentAddress: args.agentAddress ?? "multi@example.com",
-    agentId: "multi-agent",
+    // Orchestrator mints agentId as `ins_<deploymentId>`; the router's
+    // CL-2199 deriveRawDeploymentId requires that shape.
+    agentId: "ins_multi-agent",
     hubPublicKey: "hub-pk",
-    // The wire-side HarnessConfig has many required fields. On the
-    // workflow deploy path the router reads only `config.sessionId`
-    // and `config.grants`, both of which tolerate the empty
-    // placeholder (they resolve to `undefined`), so an opaque `{}`
-    // satisfies the surface contract for these tests.
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-type-assertion -- the workflow path reads only config.sessionId/config.grants, which tolerate undefined
-    config: {} as AgentDeployFrame["config"],
+    // The wire-side HarnessConfig has many required fields. On the workflow
+    // deploy path the router reads `config.sessionId`, `config.grants`, and
+    // (CL-2199) `config.tenantId`; the first two tolerate the empty
+    // placeholder, and tenantId is supplied so the substrate-env completeness
+    // assertion passes.
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-type-assertion -- the workflow path reads only config.sessionId/config.grants/config.tenantId
+    config: { tenantId: "ten_test" } as AgentDeployFrame["config"],
     workflow: {
       definition: args.definition,
       sources: args.sources,
@@ -572,8 +574,20 @@ describe("createSidecarDeployRouter multi-step branch", () => {
     // touch a real /tmp path; callers can override
     // `SIDECAR_DATA_DIR` (and any other key) by passing
     // `multistepSubstrateEnv`.
+    // Mirror the real boot-edge substrate env (see index.ts) so the router's
+    // CL-2363 completeness assertion over SIDECAR_SUBSTRATE_CONFIG_KEYS passes.
+    // The per-deploy keys (WORKFLOW_*_REPO_ID/REF, STEP_INFERENCE_SOURCES,
+    // TENANT_ID, WORKFLOW_RAW_DEPLOYMENT_ID) are added by the router itself.
     const defaultSubstrateEnv: Record<string, string> = {
       SIDECAR_DATA_DIR: await createTempBaseDir("sidecar-multistep-data-"),
+      SIDECAR_SIGNING_PUBLIC_KEY: "deadbeef",
+      SIDECAR_SIGNING_PRIVATE_KEY: "cafef00d",
+      HUB_WS_URL: "ws://hub.test/ws",
+      SIDECAR_ID: "sc_test",
+      SIDECAR_TOKEN: "tok_test",
+      SIDECAR_CACHE_MAX_BYTES: "1000000",
+      SIDECAR_REGISTRY_MAX_TARBALL_BYTES: "1000000",
+      SIDECAR_ADAPTER_MANIFEST: "[]",
     };
     const mergedSubstrateEnv: Record<string, string> = {
       ...defaultSubstrateEnv,
@@ -1765,6 +1779,8 @@ describe("createSidecarDeployRouter multi-step branch", () => {
       version: 1,
       agentAddress: head,
       definitionId: "wf-missing-step",
+      tenantId: "ten_test",
+      rawDeploymentId: "ses_missing_step",
       sources: { "step-1": [makeInferenceSource("step-1")] },
       hubPublicKey: "hub-pk",
     };
@@ -1827,7 +1843,7 @@ describe("createSidecarDeployRouter multi-step branch", () => {
     expect(isRegistered(transport, head)).toBe(true);
   });
 
-  test("a second deploy for a live address is rejected without orphaning its restore record", async () => {
+  test("a second deploy for a live address self-heals the resident supervisor without orphaning its restore record (CL-3104)", async () => {
     const dataDir = await createTempBaseDir("sidecar-restore-dup-data-");
     const head = "ins_dup@example.com";
     const deploymentId = deriveDeploymentId(head);
@@ -1843,15 +1859,17 @@ describe("createSidecarDeployRouter multi-step branch", () => {
     await deployPromise;
     expect(await recordExists(dataDir, deploymentId)).toBe(true);
 
-    // A second deploy for the already-live address must be rejected WITHOUT
-    // touching the running deployment's durable state. The reject fires
-    // before any overwrite; without it, deployMultiStep's catch would delete
-    // the live deployment's record and release its slug, silently breaking
-    // the next restart for a still-running agent.
-    await expect(
-      router.deploy(singleStepFrame(head, "wf-dup")),
-    ).rejects.toThrow(/already deployed/);
-    expect(spawner.spawnCount()).toBe(1);
+    // WORKBENCH-LOCAL (CL-3104): a second deploy for the already-live address
+    // does NOT reject (upstream's behavior) -- a wake re-deploy that races a
+    // failed hibernate ack finds the child still resident and must recover,
+    // not wedge. The deploy branch tears the resident supervisor down
+    // state-preservingly (reclaimDirs: false, so the durable record survives)
+    // and stands a fresh child up. The running deployment's record is never
+    // orphaned: the self-heal keeps it and the fresh deploy re-persists it.
+    const secondDeploy = router.deploy(singleStepFrame(head, "wf-dup"));
+    await spawner.driveReadyFor(1);
+    await secondDeploy;
+    expect(spawner.spawnCount()).toBe(2);
     expect(await recordExists(dataDir, deploymentId)).toBe(true);
     expect(isRegistered(transport, head)).toBe(true);
   });
@@ -1867,6 +1885,8 @@ describe("createSidecarDeployRouter multi-step branch", () => {
       version: 1,
       agentAddress: head,
       definitionId: "wf-mismatch",
+      tenantId: "ten_test",
+      rawDeploymentId: "ses_mismatch",
       sources: { "step-1": [makeInferenceSource("step-1")] },
       hubPublicKey: "hub-pk",
     };

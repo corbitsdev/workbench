@@ -190,6 +190,14 @@ describe("deploy-failure registry leak", () => {
       multistepDrainRouter: drainRouter,
       multistepSubstrateEnv: {
         SIDECAR_DATA_DIR: tmpDir,
+        SIDECAR_SIGNING_PUBLIC_KEY: "deadbeef",
+        SIDECAR_SIGNING_PRIVATE_KEY: "cafef00d",
+        HUB_WS_URL: "ws://hub.test/ws",
+        SIDECAR_ID: "sc_test",
+        SIDECAR_TOKEN: "tok_test",
+        SIDECAR_CACHE_MAX_BYTES: "1000000",
+        SIDECAR_REGISTRY_MAX_TARBALL_BYTES: "1000000",
+        SIDECAR_ADAPTER_MANIFEST: "[]",
         SIDECAR_SIGNING_PUBLIC_KEY: "00".repeat(32),
         SIDECAR_SIGNING_PRIVATE_KEY: "00".repeat(32),
         HUB_WS_URL: "ws://test",
@@ -206,12 +214,13 @@ describe("deploy-failure registry leak", () => {
       // address into the legacy agent-state repo id, so it must carry the
       // canonical `ins_<id>@<domain>` shape.
       agentAddress: "ins_mstep@x.example",
-      agentId: "mstep",
+      agentId: "ins_mstep",
       hubPublicKey: "00".repeat(32),
       // eslint-disable-next-line @typescript-eslint/no-unsafe-type-assertion -- multi-step branch does not consult config before failing
       config: {
         agentAddress: "ins_mstep@x.example",
         agentId: "mstep",
+        tenantId: "ten_test",
         sessionId: "s",
         sources: [],
         defaultSource: "primary",
@@ -336,6 +345,14 @@ describe("deploy-failure registry leak", () => {
       multistepDrainRouter: drainRouter,
       multistepSubstrateEnv: {
         SIDECAR_DATA_DIR: tmpDir,
+        SIDECAR_SIGNING_PUBLIC_KEY: "deadbeef",
+        SIDECAR_SIGNING_PRIVATE_KEY: "cafef00d",
+        HUB_WS_URL: "ws://hub.test/ws",
+        SIDECAR_ID: "sc_test",
+        SIDECAR_TOKEN: "tok_test",
+        SIDECAR_CACHE_MAX_BYTES: "1000000",
+        SIDECAR_REGISTRY_MAX_TARBALL_BYTES: "1000000",
+        SIDECAR_ADAPTER_MANIFEST: "[]",
         SIDECAR_SIGNING_PUBLIC_KEY: "00".repeat(32),
         SIDECAR_SIGNING_PRIVATE_KEY: "00".repeat(32),
         HUB_WS_URL: "ws://test",
@@ -349,12 +366,13 @@ describe("deploy-failure registry leak", () => {
     const frame: AgentDeployFrame = {
       type: "agent.deploy",
       agentAddress: "ins_single@x.example",
-      agentId: "single",
+      agentId: "ins_single",
       hubPublicKey: "00".repeat(32),
       // eslint-disable-next-line @typescript-eslint/no-unsafe-type-assertion -- single-step branch does not consult config before failing at spawn
       config: {
         agentAddress: "ins_single@x.example",
         agentId: "single",
+        tenantId: "ten_test",
         sessionId: "s",
         sources: [],
         defaultSource: "primary",
