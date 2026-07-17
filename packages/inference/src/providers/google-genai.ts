@@ -15,6 +15,7 @@ import type {
 import type { ProviderAdapter, BuiltRequest } from "../adapter";
 import { CREDENTIAL_SENTINEL } from "../auth";
 import { ProtocolMismatchError } from "../errors";
+import { sanitizeToolArgsForHistory } from "../tool-args";
 import {
   decodeToolName,
   encodeToolName,
@@ -311,7 +312,9 @@ function toGeminiPart(
       return {
         functionCall: {
           name: encodeToolName(block.name, GOOGLE_TOOL_NAME_LIMIT),
-          args: block.arguments,
+          // Never round-trip a `{_raw}` envelope to the model — it imitates
+          // the shape on subsequent tool calls and loops on approval.
+          args: sanitizeToolArgsForHistory(block.arguments),
         },
       };
 

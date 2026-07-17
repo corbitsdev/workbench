@@ -126,14 +126,15 @@ There are two kinds of vendoring:
   completed argument buffers through `parseCompletedToolArgs` (unwraps
   model-emitted `{_raw: "<stringified args>"}` envelopes, double-encoded
   strings, and duplicated concatenated delta objects) instead of falling back
-  to `{_raw: buffer}`; `src/providers/openai.ts` serializes stored tool-call
-  arguments through `sanitizeToolArgsForHistory` so a `{_raw}` envelope never
+  to `{_raw: buffer}`; `src/providers/openai.ts`, `src/providers/anthropic.ts`,
+  and `src/providers/google-genai.ts` serialize stored tool-call arguments
+  through `sanitizeToolArgsForHistory` so a `{_raw}` envelope never
   round-trips to the model (the model imitates the shape and loops the same
   approval forever — kimi-k2.6 via OpenRouter). Guarded by
-  `src/tool-args.test.ts` and the "_raw recovery" describe in
-  `src/harness.test.ts`. On re-sync, preserve the `tool-args` import in both
-  files; a literal upstream copy re-introduces the approval loop with a green
-  build.
+  `src/tool-args.test.ts`, the "\_raw recovery" and "history serialization"
+  describes in `src/harness.test.ts`. On re-sync, preserve the `tool-args`
+  import in all four files; a literal upstream copy re-introduces the
+  approval loop with a green build.
 - **Audit:** `rg 'WORKBENCH-LOCAL' packages/inference/` (the CL-3853
   divergence carries no tag — grep `tool-args` instead)
 
