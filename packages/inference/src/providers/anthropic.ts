@@ -14,6 +14,7 @@ import { CitationBlock as CitationBlockType } from "@intx/types/runtime";
 import type { ProviderAdapter, BuiltRequest } from "../adapter";
 import { CREDENTIAL_SENTINEL } from "../auth";
 import { ProtocolMismatchError } from "../errors";
+import { sanitizeToolArgsForHistory } from "../tool-args";
 import {
   decodeToolName,
   encodeToolName,
@@ -372,7 +373,9 @@ function toAnthropicBlock(block: ContentBlock): Record<string, unknown> {
         type: "tool_use",
         id: block.id,
         name: encodeToolName(block.name, ANTHROPIC_TOOL_NAME_LIMIT),
-        input: block.arguments,
+        // Never round-trip a `{_raw}` envelope to the model — it imitates
+        // the shape on subsequent tool calls and loops on approval.
+        input: sanitizeToolArgsForHistory(block.arguments),
       };
 
     case "tool_result":
