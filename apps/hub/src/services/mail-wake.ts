@@ -46,10 +46,18 @@ export function createMailWakeMiddleware(
     const instanceId = c.req.param("instanceId");
     if (instanceId && c.req.method === "POST") {
       await wake(instanceId).catch((err: unknown) => {
-        log.warn("mail-route wake relaunch failed", {
-          instanceId,
-          error: err instanceof Error ? err : new Error(String(err)),
-        });
+        // ERROR, not WARN: a failed cold-wake means the request falls through
+        // to the mail route with the instance still unroutable, so the inbound
+        // mail is dropped with no redelivery for this HTTP mail-send surface.
+        // WARN never reaches Sentry (the sink forwards only error/fatal), which
+        // hid this user-visible drop; surface it loudly instead.
+        log.error(
+          "mail-route wake relaunch failed; inbound mail may be dropped",
+          {
+            instanceId,
+            error: err instanceof Error ? err : new Error(String(err)),
+          },
+        );
       });
     }
     await next();

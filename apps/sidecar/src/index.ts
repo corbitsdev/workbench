@@ -18,6 +18,7 @@ import {
   readAdapterManifest,
   resolveSidecarHeartbeat,
   resolveSidecarHubLinkQueue,
+  resolveSidecarSpawnReadyTimeoutMs,
   resolveToolPackageCache,
   resolveWorkflowRunPackLimits,
 } from "./config";
@@ -359,6 +360,11 @@ const orchestrator = createSidecarOrchestrator({
           );
         }
       },
+      // Spawn-readiness deadline held STRICTLY below the hub's 30s deploy wait
+      // so a too-slow cold spawn fails on the sidecar (structured error ack)
+      // inside the hub's window instead of racing it to an ambiguous hub-side
+      // timeout that drops the waking mail. See config.ts for the margin.
+      readyTimeoutMs: resolveSidecarSpawnReadyTimeoutMs(process.env),
       registerDeployment: ({ deploymentId, agentAddress }) => {
         deploymentAddressRegistry.record(deploymentId, agentAddress);
       },
