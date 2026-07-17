@@ -231,20 +231,18 @@ describe("MyraChatSurface", () => {
     expect(screen.queryByTestId("disabled")).toBeNull();
   });
 
-  it("shows a connecting notice on a first connect before the session is live", () => {
+  it("shows no connection notice on a first connect before the session is live", () => {
     render(
       React.createElement(MyraChatSurface, {
         session: makeSession({
           // biome-ignore lint/suspicious/noExplicitAny: minimal ready session
           state: { phase: "ready", session: {} as any },
           live: false,
-          connectionNotice: "connecting",
+          connectionNotice: null,
         }),
       }),
     );
-    expect(screen.getByTestId("accessory").textContent).toMatch(
-      /Connecting to Myra/,
-    );
+    expect(screen.queryByTestId("accessory")).toBeNull();
     expect(screen.queryByTestId("disabled")).toBeNull();
   });
 

@@ -510,10 +510,10 @@ describe("useMyraSession — history + queued send while disconnected (CL-3280)"
 
     await waitFor(() => expect(result.current.state.phase).toBe("ready"));
     expect(result.current.live).toBe(false);
-    // Never been live and the sidecar is down: a first-connect window shows the
-    // "connecting" notice (not "reconnecting"), so the stuck-send state is
-    // explained rather than silent (CL-3292).
-    expect(result.current.connectionNotice).toBe("connecting");
+    // Never been live and the sidecar is down: a first-connect window shows no
+    // connection notice at all, since there is no prior live session to have
+    // dropped from (CL-3829).
+    expect(result.current.connectionNotice).toBe(null);
     expect(result.current.messages.map((m) => m.content)).toContain(
       "hello from history",
     );
@@ -647,9 +647,8 @@ describe("useMyraSession — history + queued send while disconnected (CL-3280)"
     });
 
     expect(result.current.live).toBe(false);
-    // Never reached a live session, so the notice is "connecting", not
-    // "reconnecting".
-    expect(result.current.connectionNotice).toBe("connecting");
+    // Never reached a live session, so there is no connection notice at all.
+    expect(result.current.connectionNotice).toBe(null);
     expect(result.current.sessionId).toBe("ses-mid-launch");
   });
 
