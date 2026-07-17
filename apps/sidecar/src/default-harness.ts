@@ -4,6 +4,8 @@ import { evaluateGrants } from "@intx/authz";
 import { createToolRunner, defineTool } from "@intx/agent";
 import {
   createWorkbenchDirectorRegistry,
+  createSummarizeCompactor,
+  SUMMARIZE_COMPACTOR_NAME,
   toLlmToolName,
   resolveDynamicToolConfig,
   DYNAMIC_TOOLS_DIRECTOR_ID,
@@ -422,6 +424,15 @@ export function createDefaultHarnessBuilder({
           sessionId: agentConfig.sessionId,
         };
 
+        const compactorInferenceDeps = createDependencies(adapters);
+        const compactorSource: InferenceSource | undefined =
+          sources.find((s) => s.id === defaultSource) ?? sources[0];
+        if (compactorSource === undefined) {
+          throw new Error(
+            `No inference source available to build the summarize compactor for ${agentAddress}`,
+          );
+        }
+
         const env = {
           sources,
           defaultSource,
@@ -433,7 +444,16 @@ export function createDefaultHarnessBuilder({
           // Resolve inference adapters through the boot-edge registry so the
           // agent uses the same (gemini-patched) provider set `canBuildSource`
           // admitted, not `createAgent`'s built-ins-only default.
-          deps: createDependencies(adapters),
+          deps: compactorInferenceDeps,
+          // Named "summarize" compaction strategy (CL-3803): runs one bounded
+          // inference against the summary agent's model to replace the
+          // conversation with a dense recap plus the most recent exchanges.
+          compactors: {
+            [SUMMARIZE_COMPACTOR_NAME]: createSummarizeCompactor({
+              source: compactorSource,
+              deps: compactorInferenceDeps,
+            }),
+          },
           transport: agentTransport,
           address: agentAddress,
           onConnectorStateChanged,

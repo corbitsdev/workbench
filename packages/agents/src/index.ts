@@ -123,6 +123,15 @@ export {
   SUMMARY_AGENT_DEPLOY_DESCRIPTOR,
 } from "./summary-agent/definition";
 
+// Summarize compactor — context compaction strategy
+export {
+  createSummarizeCompactor,
+  SUMMARIZE_COMPACTOR_NAME,
+  SUMMARIZE_COMPACTOR_VERSION,
+  RETAIN_RECENT_EXCHANGES,
+  type CreateSummarizeCompactorOpts,
+} from "./summarize-compactor";
+
 // Hammy — the humanizer
 export { buildHammySystemPrompt } from "./hammy-the-humanizer/prompt";
 export {
