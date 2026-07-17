@@ -284,23 +284,51 @@ export async function writeStepGrants(args: {
   // end-to-end (~254ms/step measured), which dominates cold workflow-spawn
   // latency. Parallelize with a bounded worker pool: enough concurrency to
   // overlap the fsync waits, but capped so a large workflow does not open
-  // hundreds of file descriptors / commit workers at once. `Promise.all`
-  // over the workers rejects on the FIRST write failure, preserving the
-  // serial loop's fail-at-deploy contract (the caller's `finally` unwinds
-  // the partial deploy) -- do not swallow per-step rejections here.
+  // hundreds of file descriptors / commit workers at once.
+  //
+  // Fail-at-deploy AND straggler drain: the FIRST write failure fails the
+  // deploy (this function rejects, the caller's `finally` unwinds the partial
+  // deploy) -- do not swallow per-step rejections. But a bare `Promise.all`
+  // rejects the instant one worker throws while sibling workers are still
+  // mid-commit into their step repos; the caller's teardown (releaseSlug ->
+  // a retried deploy at the same address) could then race a straggler's commit
+  // into the same `<deploymentId>-<stepId>` repo. So each worker records the
+  // first error and stops taking NEW work, but any in-flight `writeOne` is
+  // awaited to completion; we then await EVERY worker (drain) before
+  // re-throwing the first error. No writer is still mid-commit when the
+  // rejection reaches teardown.
   const stepOrder = args.stepOrder;
   const poolSize = Math.min(STEP_GRANTS_WRITE_CONCURRENCY, stepOrder.length);
   let cursor = 0;
+  let failed = false;
+  let firstError: unknown;
   async function worker(): Promise<void> {
     for (;;) {
+      // Stop claiming new steps once any worker has failed: the deploy is
+      // already doomed, so draining fast lets teardown proceed. An in-flight
+      // write below still runs to completion, so this early-return never
+      // leaves a writer mid-commit.
+      if (failed) return;
       const index = cursor;
       cursor += 1;
       const stepId = stepOrder[index];
       if (stepId === undefined) return;
-      await writeOne(stepId);
+      try {
+        await writeOne(stepId);
+      } catch (cause) {
+        if (!failed) {
+          failed = true;
+          firstError = cause;
+        }
+        return;
+      }
     }
   }
+  // Workers never reject (they capture into `firstError`), so this resolves
+  // only once every worker -- including any that was mid-commit when the
+  // failure was recorded -- has finished. That is the drain barrier.
   await Promise.all(Array.from({ length: poolSize }, () => worker()));
+  if (failed) throw firstError;
   // WORKBENCH-LOCAL (CL-2783) end.
 }
 
