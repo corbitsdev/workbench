@@ -12,6 +12,7 @@ const OFFERING_PRIORITY: Record<string, number> = {
   "corbits-default-bifrost-genai": 1,
   "opencode-zen": 2,
   "near-ai": 2,
+  openrouter: 2,
   "anthropic-api": 3,
   OpenAI: 3,
   "google-ai": 3,
@@ -77,6 +78,9 @@ export const CATALOG_OFFERINGS: CatalogOfferingSpec[] = [
   offering("deepseek-v4-pro", "opencode-zen"),
   offering("kimi-k2.6", "corbits-default-bifrost"),
   offering("kimi-k2.6", "opencode-zen"),
+  // kimi-k3 is served only through OpenRouter (openai-compatible direct); Bifrost
+  // is not configured to proxy it, so openrouter is its sole source.
+  offering("kimi-k3", "openrouter"),
   offering("glm-5.2", "corbits-default-bifrost"),
   offering("glm-5.2", "opencode-zen"),
   offering("grok-4.5", "corbits-default-bifrost"),
