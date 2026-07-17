@@ -435,12 +435,12 @@ export async function launchAgentSession(
           instanceId,
           provider: defaultSourceProvider,
         }),
-    composeMyraStyleOverlaySectionForInstance(db, {
+    composeMyraStyleOverlaySectionForInstance(hubDb, {
       tenantId,
       instanceId,
       provider: defaultSourceProvider,
     }),
-    composeMyraPinnedSkillsSectionForInstance(db, {
+    composeMyraPinnedSkillsSectionForInstance(hubDb, {
       tenantId,
       instanceId,
       provider: defaultSourceProvider,
