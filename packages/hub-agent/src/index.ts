@@ -1,39 +1,23 @@
 export {
   createAgentRepoStore,
   type AgentRepoStore,
-  type AgentConfigEntry,
   type ApplyDeployPackArgs,
 } from "./agent-repo-store";
 export {
   createAgentKeyStore,
   type AgentKeyStore,
   type AgentKeyStoreDeps,
-  type AgentKeyEntry,
 } from "./agent-key-store";
-export type {
-  HarnessBuilder,
-  HarnessBundle,
-  BuildHarnessArgs,
-  DeployApplyErrorEmitter,
-} from "./harness-builder";
+export type { HarnessBuilder } from "./harness-builder";
 export {
   createSessionManager,
-  NoActiveTurnError,
-  NO_ACTIVE_TURN,
-  USER_STOP_TURN_REASON,
   type SessionManager,
   type SessionManagerConfig,
-  type SessionEventSink,
-  type ConnectorStateSink,
-  type AgentSession,
-  type AgentEventListener,
-  type ProvisionResult,
-  type RestoreResult,
-  type RestoredAgent,
 } from "./session-manager";
 export {
   createHubLink,
-  WorkflowRunPackQuarantinedError,
+  answerMalformedRequestFrame,
+  WORKFLOW_HIBERNATE_UNDEPLOY_REASON,
   type DeployRouter,
   type DeployRouterResult,
   type HubLink,
@@ -41,6 +25,8 @@ export {
   type MailInboundRouter,
   type SignalInboundRouter,
   type DrainInboundRouter,
+  type SourcesInboundRouter,
+  type SessionEventSink,
   type ReconnectScheduler,
 } from "./ws/hub-link";
 export {
