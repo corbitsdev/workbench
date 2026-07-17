@@ -435,6 +435,41 @@ describe("createSidecarDeployRouter multi-step undeploy reclaims on-disk footpri
     }
   });
 
+  test("no-active undeploy reclaims the whole deployment dir, not just deployment.json (CL-3368)", async () => {
+    // A deployment this router never deployed (no in-memory supervisor) -- e.g.
+    // a record + run state left on disk by a prior sidecar process. Undeploy
+    // must reach the no-active teardown branch and reclaim the ENTIRE
+    // workflow-runs/<deploymentId> directory. Before the fix,
+    // `deleteWorkflowDeploymentRecord` removed only `deployment.json`, leaking
+    // the tombstone + run state until the next boot scan.
+    const harness = await standUpDeployment(
+      "reclaim-c@example.com",
+      "ses_reclaimC",
+      ["step-1", "step-2"],
+    );
+
+    const orphanAddress = "orphan-d@example.com";
+    const orphanId = slugDeploymentId(orphanAddress);
+    const orphanDir = path.join(harness.dataDir, "workflow-runs", orphanId);
+    await fs.mkdir(orphanDir, { recursive: true });
+    await fs.writeFile(path.join(orphanDir, "deployment.json"), "{}", "utf8");
+    // A non-record file co-located in the deployment dir (stands in for the
+    // workflow-run substrate). The pre-fix path would leave this behind.
+    await fs.writeFile(path.join(orphanDir, "run-state"), "x", "utf8");
+    expect(await exists(orphanDir)).toBe(true);
+
+    const undeploy = harness.router.undeploy;
+    if (undeploy === undefined) throw new Error("router.undeploy is undefined");
+    await undeploy({
+      type: "agent.undeploy",
+      agentAddress: orphanAddress,
+      reason: "no-active teardown",
+    });
+
+    expect(await exists(orphanDir)).toBe(false);
+    expect(await exists(path.join(orphanDir, "run-state"))).toBe(false);
+  });
+
   test("is idempotent: undeploy does not throw when the owned dirs are already absent", async () => {
     const harness = await standUpDeployment(
       "reclaim-b@example.com",

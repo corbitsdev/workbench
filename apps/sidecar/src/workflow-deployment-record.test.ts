@@ -10,6 +10,8 @@ import {
   writeWorkflowDeploymentRecord,
   writeDeploymentTombstone,
   deleteWorkflowDeploymentRecord,
+  reclaimWorkflowDeploymentDir,
+  workflowDeploymentDir,
   scanWorkflowDeploymentRecords,
 } from "./workflow-deployment-record";
 
@@ -160,6 +162,29 @@ describe("workflow deployment record store", () => {
 
     await deleteWorkflowDeploymentRecord(dataDir, deploymentId);
     expect(await fileExists(recordPath(dataDir, deploymentId))).toBe(false);
+
+    await fs.rm(dataDir, { recursive: true, force: true });
+  });
+
+  test("reclaimWorkflowDeploymentDir removes the record, tombstone, and co-located run state (CL-3368)", async () => {
+    const dataDir = await makeDataDir();
+    const deploymentId = "reclaim-whole-1";
+
+    await writeWorkflowDeploymentRecord(dataDir, deploymentId, SINGLE_STEP);
+    await writeDeploymentTombstone(dataDir, deploymentId);
+    const dir = workflowDeploymentDir(dataDir, deploymentId);
+    await fs.writeFile(path.join(dir, "run-state"), "x", "utf8");
+
+    expect(await fileExists(dir)).toBe(true);
+
+    await reclaimWorkflowDeploymentDir(dataDir, deploymentId);
+
+    // The whole directory is gone -- not just deployment.json, which is all
+    // deleteWorkflowDeploymentRecord would have removed.
+    expect(await fileExists(dir)).toBe(false);
+
+    // Idempotent: a second reclaim of an absent dir does not throw.
+    await reclaimWorkflowDeploymentDir(dataDir, deploymentId);
 
     await fs.rm(dataDir, { recursive: true, force: true });
   });

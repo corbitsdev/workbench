@@ -33,6 +33,37 @@ const logger = getLogger([
 
 const RECORD_FILENAME = "deployment.json";
 
+/**
+ * The deployment's own on-disk directory under `workflow-runs/`. Both the
+ * record (`deployment.json`) and the tombstone live here, co-located with the
+ * deployment's workflow-run substrate. Exported so a teardown that has no
+ * in-memory supervisor (and therefore no `ownedDirs` to sweep) can reclaim the
+ * whole directory directly — otherwise a tombstone-only dir leaks until the
+ * next boot scan.
+ */
+export function workflowDeploymentDir(
+  dataDir: string,
+  deploymentId: string,
+): string {
+  return pathJoin(dataDir, "workflow-runs", deploymentId);
+}
+
+/**
+ * Reclaim a deployment's entire on-disk directory (record + tombstone +
+ * workflow-run substrate). Idempotent (`force`): a missing directory is not an
+ * error. Callers MUST have written the tombstone first when this runs as part
+ * of an undeploy, so a crash mid-reclaim cannot leave a restorable record.
+ */
+export async function reclaimWorkflowDeploymentDir(
+  dataDir: string,
+  deploymentId: string,
+): Promise<void> {
+  await rm(workflowDeploymentDir(dataDir, deploymentId), {
+    recursive: true,
+    force: true,
+  });
+}
+
 // WORKBENCH-LOCAL (CL-3368): resurrection-guard tombstone. Upstream's boot
 // restore re-spawns every on-disk deployment record; the hub's teardown is
 // fire-and-forget with only a boot-time 24h janitor, so a missed teardown plus
@@ -46,7 +77,10 @@ const RECORD_FILENAME = "deployment.json";
 const TOMBSTONE_FILENAME = "tombstone";
 
 function tombstonePath(dataDir: string, deploymentId: string): string {
-  return pathJoin(dataDir, "workflow-runs", deploymentId, TOMBSTONE_FILENAME);
+  return pathJoin(
+    workflowDeploymentDir(dataDir, deploymentId),
+    TOMBSTONE_FILENAME,
+  );
 }
 
 /**
@@ -100,7 +134,10 @@ export const WorkflowDeploymentRecord = type({
 export type WorkflowDeploymentRecord = typeof WorkflowDeploymentRecord.infer;
 
 function recordPath(dataDir: string, deploymentId: string): string {
-  return pathJoin(dataDir, "workflow-runs", deploymentId, RECORD_FILENAME);
+  return pathJoin(
+    workflowDeploymentDir(dataDir, deploymentId),
+    RECORD_FILENAME,
+  );
 }
 
 /**
@@ -190,10 +227,7 @@ export async function scanWorkflowDeploymentRecords(
     }
     if (tombstoned) {
       logger.warn`reclaiming tombstoned workflow-runs/${deploymentId}: an interrupted undeploy left it behind; not restoring`;
-      await rm(pathJoin(dataDir, "workflow-runs", deploymentId), {
-        recursive: true,
-        force: true,
-      });
+      await reclaimWorkflowDeploymentDir(dataDir, deploymentId);
       continue;
     }
 

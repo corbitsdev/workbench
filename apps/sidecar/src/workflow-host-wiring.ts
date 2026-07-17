@@ -71,6 +71,7 @@ import type {
 } from "./workflow-run-pack-client";
 import {
   deleteWorkflowDeploymentRecord,
+  reclaimWorkflowDeploymentDir,
   scanWorkflowDeploymentRecords,
   writeDeploymentTombstone,
   writeWorkflowDeploymentRecord,
@@ -1989,8 +1990,7 @@ export function createSidecarDeployRouter(deps: {
         try {
           await deps.drainWorkflowRunPushes(deploymentId);
         } catch (cause) {
-          const reason =
-            cause instanceof Error ? cause.message : String(cause);
+          const reason = cause instanceof Error ? cause.message : String(cause);
           logger.warn`teardown: workflow-run push drain failed for ${agentAddress}: ${reason}`;
         }
       }
@@ -2042,7 +2042,21 @@ export function createSidecarDeployRouter(deps: {
     // deployment. Runs even when no supervisor was active so a record left
     // behind by a crash-interrupted deploy is reclaimed too.
     if (opts.reclaimDirs && stepStateDataDir !== undefined) {
-      await deleteWorkflowDeploymentRecord(stepStateDataDir, deploymentId);
+      // WORKBENCH-LOCAL (CL-3368): when there is NO in-memory `active`
+      // supervisor, the CL-2231 owned-dir reclaim above never ran, and
+      // `deleteWorkflowDeploymentRecord` removes only `deployment.json` — the
+      // tombstone written at the top of teardown, plus the rest of the
+      // deployment's `workflow-runs/<deploymentId>` directory (workflow-run
+      // substrate included), would then leak until the next boot scan. Reclaim
+      // the whole directory directly. The tombstone is already durable (written
+      // before this rm), so a crash mid-reclaim still leaves nothing a boot
+      // restore would re-spawn. With an `active` supervisor the directory is
+      // covered by its `ownedDirs` sweep, so only the no-active path needs this.
+      if (active === undefined) {
+        await reclaimWorkflowDeploymentDir(stepStateDataDir, deploymentId);
+      } else {
+        await deleteWorkflowDeploymentRecord(stepStateDataDir, deploymentId);
+      }
     }
     releaseSlug(deploymentId, agentAddress);
     deps.unregisterDeployment({ deploymentId, agentAddress });
