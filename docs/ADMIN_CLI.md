@@ -166,3 +166,32 @@ After a re-seed, relaunch agents — the source list is baked at launch. The cha
 is inert until a Bifrost credential is seeded: with `BIFROST_API_KEY` (or a
 surface's base URL) unset, `seed-catalog` skips that Bifrost provider and its
 offerings and every agent resolves against `opencode-zen` exactly as before.
+
+### Owner-set inference providers (OpenRouter)
+
+Some inference providers carry **no `.env` credential and no `seed-credentials`
+entry** — the Owner sets their key from the **Capabilities page**, keyed by the
+`providerName` in `CREDENTIAL_PROVIDER_CATALOG`
+(`packages/workbench-shared/src/governance.ts`). Setting the key creates the
+`model_provider` row (plugin + default baseURL from the catalog entry) and its
+credential in one step; it does **not** create offerings.
+
+`openrouter` is such a provider — an `openai-compatible` inference provider whose
+baseURL defaults to `https://openrouter.ai/api/v1`. It serves the `kimi-k3`
+(`moonshotai/kimi-k3`) model, exposed as the premium **Myra (Kimi K3)** chat
+variant.
+
+To add another OpenRouter-served model:
+
+1. Add a `CATALOG_MODELS` entry (`packages/catalog/src/models.ts`) with its
+   `contextWindow`, and an `offering(<model>, "openrouter")` in
+   `CATALOG_OFFERINGS` (`packages/catalog/src/offerings.ts`).
+2. Have the Owner set the **OpenRouter** key on the Capabilities page (once per
+   tenant) so the `openrouter` provider row exists.
+3. Re-run **Seed model catalog** — the offering is created only after the
+   provider row exists, so seed after the key is set (re-seed is idempotent). A
+   variant whose model has no resolvable offering shows as unavailable rather
+   than failing to launch.
+
+No `pin`/failover tail is configured for OpenRouter-only models — the
+`openrouter` offering is their sole source.
