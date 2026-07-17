@@ -95,6 +95,13 @@ export {
   WORKFLOW_STEP_BUDGET_DIRECTOR_ID,
 } from "./director-registry";
 
+// Compaction trigger director
+export {
+  wrapDirectorWithCompaction,
+  COMPACTION_TRIGGER_THRESHOLD,
+  type CompactionDirectorOptions,
+} from "./compaction-director";
+
 // Walter agent
 export { buildWalterSystemPrompt } from "./walter/prompt";
 export {

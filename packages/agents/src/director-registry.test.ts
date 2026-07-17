@@ -22,6 +22,7 @@ import {
   WORKFLOW_STEP_BUDGET_DIRECTOR_ID,
   WORKFLOW_STEP_MAX_TOOL_CALLS,
 } from "./director-registry";
+import { SUMMARIZE_COMPACTOR_NAME } from "./summarize-compactor";
 
 describe("createWorkbenchDirectorRegistry", () => {
   it("resolves every Workbench director id", () => {
@@ -285,5 +286,115 @@ describe("workflowStepBudgetDirector.factory composition", () => {
     if (exec?.type === "execute_tools") {
       expect(exec.calls).toHaveLength(WORKFLOW_STEP_MAX_TOOL_CALLS);
     }
+  });
+});
+
+describe("withCompaction wrap applied by the registry", () => {
+  const readToolDef: ToolDefinition = {
+    name: "attio__query_records",
+    description: "query attio",
+    inputSchema: { type: "object", properties: {}, required: [] },
+  };
+
+  function makeCapabilities(): ReactorCapabilities {
+    const noop: ReactorAction = { type: "wait" };
+    return {
+      infer: (options) => ({
+        type: "infer",
+        ...(options !== undefined ? { options } : {}),
+      }),
+      executeTools: () => noop,
+      suspend: () => noop,
+      fork: () => noop,
+      emit: () => noop,
+      reply: (content: string) => ({ type: "reply", content }),
+      checkpoint: () => noop,
+      compact: (compactor: string, reason: string) => ({
+        type: "compact",
+        compactor,
+        reason,
+      }),
+      wait: () => noop,
+      done: () => noop,
+    };
+  }
+
+  // Any input/window ratio at or above COMPACTION_TRIGGER_THRESHOLD (0.8)
+  // fires the trigger. The model id is unknown to the catalog, so
+  // `contextWindowForModel` falls back to `DEFAULT_CONTEXT_WINDOW`
+  // (128_000); 120_000/128_000 ≈ 0.94 clears the threshold with margin.
+  const overThresholdState = {
+    turns: [],
+    activeForks: [],
+    pendingOperations: [],
+    activeGates: [],
+    tokenUsage: {
+      input: 0,
+      output: 0,
+      cacheRead: 0,
+      cacheWrite: 0,
+      thinking: 0,
+    },
+    lastCycleUsage: {
+      input: 120_000,
+      output: 0,
+      cacheRead: 0,
+      cacheWrite: 0,
+      thinking: 0,
+    },
+    lastCycleSource: {
+      sourceId: "test-source",
+      provider: "test",
+      model: "claude-opus-4-1",
+    },
+    sessionId: "s1",
+  };
+
+  const messageEvent = { type: "message.received" } as never;
+
+  it("emits caps.compact for an agent with the summarize compactor registered", async () => {
+    const registry = createWorkbenchDirectorRegistry();
+    const factory = registry.resolve({
+      id: defaultDirectorFactory.id,
+      config: {},
+    });
+    const director = factory({}, stubEnv, {
+      systemPrompt: "You are a workbench agent.",
+      toolDefinitions: [readToolDef],
+      compactorNames: [SUMMARIZE_COMPACTOR_NAME],
+    });
+    const cap = makeCapabilities();
+
+    const actions = await director.decide(
+      messageEvent,
+      overThresholdState,
+      cap,
+    );
+    const arr = Array.isArray(actions) ? actions : [actions];
+
+    expect(arr.some((a) => a.type === "compact")).toBe(true);
+  });
+
+  it("is a no-op for an agent without the summarize compactor registered", async () => {
+    const registry = createWorkbenchDirectorRegistry();
+    const factory = registry.resolve({
+      id: WORKFLOW_STEP_BUDGET_DIRECTOR_ID,
+      config: {},
+    });
+    const director = factory({}, stubEnv, {
+      systemPrompt: "Analyze the CRM record.",
+      toolDefinitions: [readToolDef],
+      compactorNames: [],
+    });
+    const cap = makeCapabilities();
+
+    const actions = await director.decide(
+      messageEvent,
+      overThresholdState,
+      cap,
+    );
+    const arr = Array.isArray(actions) ? actions : [actions];
+
+    expect(arr.some((a) => a.type === "compact")).toBe(false);
   });
 });
