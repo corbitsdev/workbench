@@ -186,7 +186,7 @@ describe("owner grant gate", () => {
 // top of the ordinary owner-guard checks.
 describe("owner credentials routes", () => {
   function credentialsDb(opts: {
-    providers?: { id: string; name: string }[];
+    providers?: { id: string; name: string; metadata?: unknown }[];
     credentials?: { id: string; providerId: string; updatedAt: Date }[];
   }) {
     const providers = opts.providers ?? [];
@@ -304,6 +304,57 @@ describe("owner credentials routes", () => {
     expect(missing?.configured).toBe(false);
     expect(missing?.kind).toBe("tool");
     expect(JSON.stringify(body)).not.toContain("secret");
+  });
+
+  it("surfaces a well-formed baseURL from provider metadata", async () => {
+    callerPrincipalId = "prn_owner";
+    const { db } = credentialsDb({
+      providers: [
+        {
+          id: "provider_1",
+          name: "anthropic",
+          metadata: { baseURL: "https://bifrost.example.com" },
+        },
+      ],
+    });
+    const res = await buildApp(db).request("/owner/credentials");
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      credentials: { providerName: string; baseURL?: string }[];
+    };
+    const anthropic = body.credentials.find(
+      (c) => c.providerName === "anthropic",
+    );
+    expect(anthropic?.baseURL).toBe("https://bifrost.example.com");
+  });
+
+  // A hand-rolled `(metadata as Record<string, unknown>).baseURL as string`
+  // would pass a wrongly-typed value straight through to the response.
+  // Parsing through `ProviderMetadataSchema` rejects it instead — the field
+  // is omitted, not corrupted.
+  it("rejects malformed provider metadata rather than casting it through", async () => {
+    callerPrincipalId = "prn_owner";
+    const { db } = credentialsDb({
+      providers: [
+        {
+          id: "provider_1",
+          name: "anthropic",
+          // baseURL is a number, not a string — ProviderMetadataSchema
+          // must reject this shape.
+          metadata: { baseURL: 12345 },
+        },
+      ],
+    });
+    const res = await buildApp(db).request("/owner/credentials");
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      credentials: { providerName: string; baseURL?: string }[];
+    };
+    const anthropic = body.credentials.find(
+      (c) => c.providerName === "anthropic",
+    );
+    expect(anthropic?.baseURL).toBeUndefined();
+    expect(JSON.stringify(body)).not.toContain("12345");
   });
 
   it("PUT sets a credential and never echoes the secret back", async () => {
@@ -424,6 +475,40 @@ describe("owner credentials routes", () => {
     const stored = (updatedCredentials[0] as { secret: string }).secret;
     expect(isEncryptedEnvelope(stored)).toBe(true);
     expect(decryptSecret(stored)).toBe("grn-rotated-token");
+  });
+
+  // An existing provider row can carry metadata that predates the schema
+  // (or was corrupted). The PUT response cast used to pass a wrongly-typed
+  // `baseURL` straight through; parsing through `ProviderMetadataSchema` now
+  // rejects it and the merge falls back to an empty base rather than
+  // throwing.
+  it("PUT tolerates malformed existing provider metadata without crashing", async () => {
+    callerPrincipalId = "prn_owner";
+    const { db, updatedCredentials } = credentialsDb({
+      providers: [
+        {
+          id: "provider_1",
+          name: "granola",
+          metadata: { baseURL: 999 },
+        },
+      ],
+      credentials: [
+        { id: "credential_1", providerId: "provider_1", updatedAt: new Date() },
+      ],
+    });
+    const res = await buildApp(db).request("/owner/credentials/granola", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        secret: "grn-rotated-token",
+        baseURL: "https://granola.example.com",
+      }),
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { baseURL?: string };
+    expect(body.baseURL).toBe("https://granola.example.com");
+    const stored = (updatedCredentials[0] as { secret: string }).secret;
+    expect(isEncryptedEnvelope(stored)).toBe(true);
   });
 });
 

@@ -42,6 +42,7 @@ import { workflowRun } from "../db/schema";
 import { createOwnerGrantGuard } from "../lib/admin-grant";
 import {
   fetchSlackTeamId,
+  ProviderMetadataSchema,
   resolveSlackCredential,
 } from "../lib/slack-api-client";
 import { joinAllPublicChannels } from "../lib/slack-channel-autojoin";
@@ -108,6 +109,18 @@ export interface CreateOwnerRouterDeps {
   // TRIAGE_ENABLED, TASKS_RECONCILER_ENABLED), keyed by `FeatureName`. Reported
   // per feature as `forcedByEnv`, same purpose as `showDemos`.
   featureEnvOverrides: Record<FeatureName, boolean>;
+}
+
+// Parses a provider row's persisted `metadata` through `ProviderMetadataSchema`
+// and returns the `baseURL`, if present and well-formed. Malformed metadata
+// (e.g. a non-string `baseURL`) is rejected rather than cast through — the
+// caller sees `undefined`, not a corrupted value.
+function extractBaseURL(metadata: unknown): string | undefined {
+  const parsed = ProviderMetadataSchema(metadata ?? {});
+  if (parsed instanceof type.errors) {
+    return undefined;
+  }
+  return parsed.baseURL;
 }
 
 /**
@@ -929,12 +942,7 @@ export function createOwnerRouter(
         const updatedAt = providerId
           ? (credentialByProviderId.get(providerId) ?? null)
           : null;
-        const baseURL =
-          prov && typeof prov.metadata === "object" && prov.metadata !== null
-            ? ((prov.metadata as Record<string, unknown>).baseURL as
-                | string
-                | undefined)
-            : undefined;
+        const baseURL = prov ? extractBaseURL(prov.metadata) : undefined;
         return {
           providerName: entry.providerName,
           label: entry.label,
@@ -1024,10 +1032,11 @@ export function createOwnerRouter(
 
       // If owner supplied a baseURL (e.g. for bifrost), merge it into provider metadata.
       if (parsed.baseURL) {
-        const currentMeta = (providerRow.metadata ?? {}) as Record<
-          string,
-          unknown
-        >;
+        const currentMetaParsed = ProviderMetadataSchema(
+          providerRow.metadata ?? {},
+        );
+        const currentMeta =
+          currentMetaParsed instanceof type.errors ? {} : currentMetaParsed;
         const nextMeta = { ...currentMeta, baseURL: parsed.baseURL };
         await db
           .update(provider)
@@ -1095,14 +1104,9 @@ export function createOwnerRouter(
         });
       }
 
-      const responseBaseURL =
-        providerRow &&
-        typeof providerRow.metadata === "object" &&
-        providerRow.metadata !== null
-          ? ((providerRow.metadata as Record<string, unknown>).baseURL as
-              | string
-              | undefined)
-          : undefined;
+      const responseBaseURL = providerRow
+        ? extractBaseURL(providerRow.metadata)
+        : undefined;
 
       return c.json({
         providerName: entry.providerName,
@@ -1171,14 +1175,9 @@ export function createOwnerRouter(
         }
       }
 
-      const responseBaseURL =
-        providerRow &&
-        typeof providerRow.metadata === "object" &&
-        providerRow.metadata !== null
-          ? ((providerRow.metadata as Record<string, unknown>).baseURL as
-              | string
-              | undefined)
-          : undefined;
+      const responseBaseURL = providerRow
+        ? extractBaseURL(providerRow.metadata)
+        : undefined;
 
       return c.json({
         providerName: entry.providerName,

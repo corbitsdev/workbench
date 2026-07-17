@@ -16,10 +16,11 @@ export interface SlackCredential {
 
 // The subset of a provider's metadata this resolver reads. `+: "ignore"` keeps
 // any other keys, so an unrelated metadata shape still parses.
-const ProviderMetadataSchema = type({
+export const ProviderMetadataSchema = type({
   "baseURL?": "string",
   "+": "ignore",
 });
+export type ProviderMetadata = typeof ProviderMetadataSchema.infer;
 
 /**
  * Resolve the tenant-owned Slack bot token (CREDENTIAL_PROVIDER_CATALOG
