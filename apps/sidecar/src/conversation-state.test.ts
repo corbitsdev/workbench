@@ -84,6 +84,12 @@ mock.module("@workbench/storage-isogit", () => ({
         tokenUsage: s.tokenUsage,
         connectorState: s.connectorState,
       }),
+      peekTurns: () => s.turns,
+      loadMetadata: async () => ({
+        pendingOperations: s.pendingOperations,
+        tokenUsage: s.tokenUsage,
+        connectorState: s.connectorState,
+      }),
       writeTurns: async (turns: ConversationTurn[]) => {
         s.turns = turns;
       },
