@@ -1,4 +1,10 @@
 import { describe, test, expect } from "bun:test";
+import fs from "node:fs";
+import fsp from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
+
+import git from "isomorphic-git";
 
 import type { InferenceSource } from "@intx/types/runtime";
 import type { RepoId, RepoStore } from "@intx/hub-sessions";
@@ -11,6 +17,7 @@ import {
   createMultistepSourcesRouter,
   createWorkflowRunPackClient,
   createWorkflowRunPackPushingRepoStore,
+  WorkflowRunPackTooLargeError,
 } from "./workflow-run-pack-client";
 
 function createRecordingUnderlyingRepoStore(): {
@@ -124,6 +131,51 @@ describe("createWorkflowRunPackClient", () => {
     expect(packedTipCommits[0]?.repoId.id).toBe("agent-example-com");
     expect(packedTipCommits[0]?.ref).toBe("refs/heads/main");
     expect(packedTipCommits[0]?.commitSha).toBe("stub-pack-sha");
+  });
+
+  test("CL-2340: a delta exceeding the ceiling fails the run BEFORE createPack builds the pack", async () => {
+    // Real git repo with a multi-commit linear history on refs/heads/main.
+    const dir = await fsp.mkdtemp(path.join(os.tmpdir(), "wrpc-ceiling-"));
+    await git.init({ fs, dir, defaultBranch: "main" });
+    const author = { name: "t", email: "t@e" };
+    for (let i = 0; i < 3; i += 1) {
+      await fsp.writeFile(path.join(dir, `f${String(i)}`), String(i));
+      await git.add({ fs, dir, filepath: `f${String(i)}` });
+      await git.commit({ fs, dir, author, message: `c${String(i)}` });
+    }
+
+    let createPackCalled = false;
+    const stub: Partial<RepoStore> = {
+      getRepoDir: () => dir,
+      resolveRef: async () => (await git.resolveRef({ fs, dir, ref: "main" })),
+      createPack: async (_p, _r, ref) => {
+        createPackCalled = true;
+        return { pack: new Uint8Array([0]), commitSha: "x", ref };
+      },
+      commitPackedTip: () => {},
+    };
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-type-assertion -- in-test stub
+    const store = stub as RepoStore;
+
+    const client = createWorkflowRunPackClient({
+      substrate: store,
+      hubLink: { pushWorkflowRunPack: async () => {} },
+      // A ceiling below the repo's real commit count trips the guard.
+      limits: { maxCommits: 1, maxObjects: 1 },
+    });
+
+    await expect(
+      client.push({
+        agentAddress: "agent@example.com",
+        repoId: { kind: "workflow-run", id: "agent-example-com" },
+        ref: "refs/heads/main",
+      }),
+    ).rejects.toBeInstanceOf(WorkflowRunPackTooLargeError);
+    // The guard fired before the substrate ever built the (potentially huge)
+    // packfile — the exact OOM prevention CL-2340 provides.
+    expect(createPackCalled).toBe(false);
+
+    await fsp.rm(dir, { recursive: true, force: true });
   });
 
   test("push does not commit the packed tip when the hub link rejects the transfer", async () => {

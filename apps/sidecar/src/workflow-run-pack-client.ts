@@ -13,10 +13,14 @@
 // shape the supervisor uses for `writeTreePreservingPrefix`; the
 // transferId is minted inside `HubLink.pushWorkflowRunPack`.
 
+import fs from "node:fs";
+
 import { type } from "arktype";
+import git from "isomorphic-git";
 
 import { getLogger } from "@intx/log";
 import { SourcesUpdatedData } from "@workbench/workflow-host";
+import { collectReachableObjects } from "@workbench/storage-isogit";
 import type { InferenceSource } from "@intx/types/runtime";
 import type {
   RepoId,
@@ -25,11 +29,111 @@ import type {
 } from "@intx/hub-sessions";
 import type { HubLink } from "@workbench/hub-agent";
 
+import {
+  DEFAULT_WORKFLOW_RUN_PACK_MAX_COMMITS,
+  DEFAULT_WORKFLOW_RUN_PACK_MAX_OBJECTS,
+  type WorkflowRunPackLimits,
+} from "./config";
+
 const logger = getLogger([
   "interchange",
   "sidecar",
   "workflow-run-pack-client",
 ]);
+
+// WORKBENCH-LOCAL (CL-2340): not in upstream interchange — preserve on every
+// pin-bump re-sync. The base ack-gated cursor (createPack builds the delta from
+// the last-ACKED tip; commitPackedTip advances only on ack) has CONVERGED
+// upstream, so only the size-ceiling remains a workbench divergence: a single
+// wedged workflow run can accumulate an un-acked delta whose packfile, built in
+// one shot, OOMs the SHARED sidecar and takes every other deployment down with
+// it. A pre-flight walk (below) trips a safety ceiling and fails just that run
+// BEFORE the giant packfile is ever built, rather than the process.
+export class WorkflowRunPackTooLargeError extends Error {
+  readonly repoId: string;
+  readonly ref: string;
+  readonly commitCount: number;
+  readonly objectCount: number;
+  readonly limits: WorkflowRunPackLimits;
+  constructor(args: {
+    repoId: string;
+    ref: string;
+    commitCount: number;
+    objectCount: number;
+    limits: WorkflowRunPackLimits;
+  }) {
+    super(
+      `workflow-run pack for ${args.repoId}/${args.ref} exceeded the safety ceiling ` +
+        `(${String(args.commitCount)} commits / ${String(args.objectCount)} objects > ` +
+        `limit ${String(args.limits.maxCommits)} commits / ${String(args.limits.maxObjects)} objects); failing run`,
+    );
+    this.name = "WorkflowRunPackTooLargeError";
+    this.repoId = args.repoId;
+    this.ref = args.ref;
+    this.commitCount = args.commitCount;
+    this.objectCount = args.objectCount;
+    this.limits = args.limits;
+  }
+}
+
+// WORKBENCH-LOCAL (CL-2340): pre-flight the delta the substrate's `createPack`
+// is about to build. Walk the first-parent chain from the ref tip back to
+// `sinceTip` (the last-ACKED commit, exclusive — the same base createPack packs
+// from, since this client is the sole advancer of that cursor), counting
+// commits + reachable objects. Throw before `createPack` runs if the delta
+// exceeds the ceiling, so the one-shot in-memory packfile that OOMs the shared
+// sidecar is never built. Healthy runs stop at `sinceTip` after a one-commit
+// delta, so this adds only a bounded walk on the hot path; a wedged run trips
+// the ceiling and fails just that run. The ceiling is a safety trip, not an
+// exact byte budget: `seen` can overshoot by one commit's reachable set (we add
+// then test), which is harmless because the throw still precedes the pack build.
+async function assertDeltaWithinCeiling(
+  dir: string,
+  ref: string,
+  sinceTip: string | null,
+  limits: WorkflowRunPackLimits,
+  repoIdLabel: string,
+): Promise<void> {
+  let commitSha: string;
+  try {
+    commitSha = await git.resolveRef({ fs, dir, ref });
+  } catch (cause) {
+    // No resolvable tip (missing ref / not-yet-materialized repo) means there
+    // is no history to walk and so no oversized pack to build -- the ceiling is
+    // moot. Let the real `createPack` handle whatever state the repo is in.
+    if (
+      cause instanceof Error &&
+      (cause.name === "NotFoundError" ||
+        cause.message.includes("Could not find"))
+    ) {
+      return;
+    }
+    throw cause;
+  }
+  if (commitSha === sinceTip) return;
+  const seen = new Set<string>();
+  let current: string | null = commitSha;
+  let commitCount = 0;
+  while (current !== null && current !== sinceTip) {
+    for (const oid of await collectReachableObjects(dir, current)) {
+      seen.add(oid);
+    }
+    commitCount += 1;
+    if (commitCount > limits.maxCommits || seen.size > limits.maxObjects) {
+      logger.warn`workflow-run pack push ceiling exceeded for ${repoIdLabel}/${ref} (${commitSha}): ${String(commitCount)} commits / ${String(seen.size)} objects over limit ${String(limits.maxCommits)}/${String(limits.maxObjects)}; failing run`;
+      throw new WorkflowRunPackTooLargeError({
+        repoId: repoIdLabel,
+        ref,
+        commitCount,
+        objectCount: seen.size,
+        limits,
+      });
+    }
+    const { commit } = await git.readCommit({ fs, dir, oid: current });
+    const parent = commit.parent[0];
+    current = parent ?? null;
+  }
+}
 
 export type WorkflowRunPackClient = {
   /**
@@ -50,12 +154,23 @@ export type WorkflowRunPackClient = {
 export type CreateWorkflowRunPackClientOpts = {
   substrate: RepoStore;
   hubLink: Pick<HubLink, "pushWorkflowRunPack">;
+  /**
+   * WORKBENCH-LOCAL (CL-2340): safety ceiling on a single pack's reachable
+   * objects/commits. Defaults to the generous module constants when omitted;
+   * the sidecar boot path threads in the env-resolved values.
+   */
+  limits?: WorkflowRunPackLimits;
 };
 
 export function createWorkflowRunPackClient(
   opts: CreateWorkflowRunPackClientOpts,
 ): WorkflowRunPackClient {
   const { substrate, hubLink } = opts;
+  // WORKBENCH-LOCAL (CL-2340): pack size ceiling for the pre-flight below.
+  const limits: WorkflowRunPackLimits = opts.limits ?? {
+    maxCommits: DEFAULT_WORKFLOW_RUN_PACK_MAX_COMMITS,
+    maxObjects: DEFAULT_WORKFLOW_RUN_PACK_MAX_OBJECTS,
+  };
 
   // Shadow of the substrate's shipped-tip cursor, keyed by `(repoId.id, ref)`.
   // This client is the SOLE caller of `commitPackedTip` for the workflow-run
@@ -93,6 +208,18 @@ export function createWorkflowRunPackClient(
       if (tip !== null && tip === lastAckedSha.get(ackKey(repoId, ref))) {
         return;
       }
+      // WORKBENCH-LOCAL (CL-2340): pre-flight the delta size BEFORE
+      // `createPack` builds the one-shot packfile, so a wedged run's un-acked
+      // delta trips the safety ceiling and fails just that run instead of
+      // OOM-ing the shared sidecar. Walks from `tip` back to this client's
+      // last-acked cursor — the same base `createPack` packs from.
+      await assertDeltaWithinCeiling(
+        substrate.getRepoDir(repoId),
+        ref,
+        lastAckedSha.get(ackKey(repoId, ref)) ?? null,
+        limits,
+        repoId.id,
+      );
       const { pack, commitSha } = await substrate.createPack(
         principal,
         repoId,
