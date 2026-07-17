@@ -73,6 +73,7 @@ describe("AGENT_CATALOG coverage", () => {
       new Set([
         "deepseek-v4-flash",
         "kimi-k2.6",
+        "kimi-k3",
         "claude-opus-4-8",
         "claude-sonnet-4-6",
         "claude-sonnet-5",
