@@ -1,6 +1,22 @@
 import { describe, test, expect } from "bun:test";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
+
+// WORKBENCH-LOCAL (CL-3368): upstream computes `repoRoot` as `process.cwd()`
+// on the assumption tests run from the monorepo root. Our `bun run --filter
+// '@workbench/*' test` invokes each package's `test` script with that
+// package's directory as cwd (apps/sidecar here), which doubled the
+// repo-root-relative CHILD_BINARY path. Walk up from cwd to the nearest
+// ancestor with a root `bun.lock` instead of trusting cwd directly.
+function findRepoRoot(startDir: string): string {
+  let dir = startDir;
+  for (;;) {
+    if (existsSync(join(dir, "bun.lock"))) return dir;
+    const parent = dirname(dir);
+    if (parent === dir) return startDir;
+    dir = parent;
+  }
+}
 
 // Boot-graph guard for the spawned workflow-child.
 //
@@ -22,7 +38,7 @@ import { dirname, join } from "node:path";
 // traversed; workspace (`@intx/*`) packages are resolved to their real source
 // (honoring `exports` subpaths) and walked through.
 
-const repoRoot = process.cwd();
+const repoRoot = findRepoRoot(process.cwd());
 
 // The binary the sidecar spawns as the workflow-child. The graph walk derives
 // its entrypoints from this file's actual imports, so anything the binary
@@ -32,8 +48,16 @@ const CHILD_BINARY = "apps/sidecar/bin/workflow-child";
 // The roots the binary is expected to import. The drift guard asserts the
 // binary imports exactly these; a new root trips it so a human confirms the
 // addition (and the walk covers the new root regardless).
+//
+// WORKBENCH-LOCAL (CL-3368): "@intx/log" and "@workbench/sentry" are here
+// because of the CL-2503 Sentry observability addition in bin/workflow-child
+// (upstream's entrypoint inits no observability, so step failures never
+// reached Sentry without it) -- not part of the two-root upstream shape this
+// test otherwise guards.
 const EXPECTED_CHILD_ROOTS = [
   "../src/workflow-substrate-factory",
+  "@intx/log",
+  "@workbench/sentry",
   "@workbench/workflow-host",
 ];
 
