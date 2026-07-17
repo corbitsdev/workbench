@@ -162,12 +162,28 @@ function toolGrants(llmNames: string[]): unknown[] {
   }));
 }
 
-async function buildMyra(
-  grantedLlmToolNames: string[] = [],
-): Promise<Record<string, unknown>> {
+type BuiltTools = {
+  definitions: { name: string }[];
+  run: (
+    call: { id: string; name: string; arguments: unknown },
+    signal?: AbortSignal,
+  ) => Promise<{ callId: string; content: unknown; isError?: boolean }>;
+};
+
+type BuiltHarness = {
+  def: { toolFactories: readonly ((env: unknown) => BuiltTools)[] };
+  env: Record<string, unknown>;
+};
+
+async function buildAgent(
+  grantedLlmToolNames: string[],
+  options: { dynamicCatalog: boolean },
+): Promise<BuiltHarness> {
   createHarnessMock.mockClear();
   readDeployTreeMock.mockImplementationOnce(async () => ({
-    systemPrompt: buildPersonalAgentSystemPrompt("Myra", { xml: true }),
+    systemPrompt: options.dynamicCatalog
+      ? buildPersonalAgentSystemPrompt("Myra", { xml: true })
+      : "You are a workflow step agent.",
   }));
   const builder = createDefaultHarnessBuilder({
     hubHttpUrl: "http://localhost:4000",
@@ -205,10 +221,19 @@ async function buildMyra(
     onConnectorStateChanged: mock(() => {}),
   });
   const callArgs = createHarnessMock.mock.calls[0] as unknown as [
-    unknown,
+    BuiltHarness["def"],
     Record<string, unknown>,
   ];
-  return callArgs[1];
+  return { def: callArgs[0], env: callArgs[1] };
+}
+
+async function buildMyra(
+  grantedLlmToolNames: string[] = [],
+): Promise<Record<string, unknown>> {
+  const built = await buildAgent(grantedLlmToolNames, {
+    dynamicCatalog: true,
+  });
+  return built.env;
 }
 
 describe("dynamic tool catalog: full-catalog advertisement (CL-3795)", () => {
@@ -258,5 +283,139 @@ describe("dynamic tool catalog: full-catalog advertisement (CL-3795)", () => {
       catalog: { package: string }[];
     };
     expect(dynamic.catalog).toEqual([]);
+  });
+});
+
+describe("dispatch allow-list: granted loaded package tools survive the filter", () => {
+  const signal = new AbortController().signal;
+
+  function loadedFactory(
+    id: string,
+    toolNames: string[],
+    run: (call: { id: string; name: string }) => Promise<{
+      callId: string;
+      content: unknown;
+    }>,
+  ) {
+    return Object.assign(
+      () => ({ definitions: toolNames.map((name) => ({ name })), run }),
+      { id, requires: [] as string[] },
+    );
+  }
+
+  it("keeps a granted loaded catalog tool advertised and dispatchable after load_tools", async () => {
+    const packageRun = mock(
+      async (call: { id: string; name: string }): Promise<{
+        callId: string;
+        content: unknown;
+      }> => ({ callId: call.id, content: { parsed: true } }),
+    );
+    loadToolPackagesMock.mockImplementationOnce(async () => [
+      {
+        factories: [
+          loadedFactory(
+            "@workbench/tools-fileparser/fileparser",
+            ["fileparser__parse_file"],
+            packageRun,
+          ),
+        ],
+      },
+    ]);
+
+    const { def, env } = await buildAgent(["fileparser__parse_file"], {
+      dynamicCatalog: true,
+    });
+    const tools = def.toolFactories[0]({});
+
+    const names = tools.definitions.map((d) => d.name);
+    expect(names).toContain("fileparser__parse_file");
+
+    const loadResult = await tools.run(
+      {
+        id: "call-load",
+        name: "load_tools",
+        arguments: { names: ["fileparser__parse_file"] },
+      },
+      signal,
+    );
+    expect(loadResult.isError).not.toBe(true);
+    const dynamic = env[DYNAMIC_TOOLS_ENV_KEY] as {
+      exposure: { exposed: Set<string> };
+    };
+    expect(dynamic.exposure.exposed.has("fileparser__parse_file")).toBe(true);
+
+    const callResult = await tools.run(
+      { id: "call-1", name: "fileparser__parse_file", arguments: {} },
+      signal,
+    );
+    expect(callResult.isError).not.toBe(true);
+    expect(packageRun).toHaveBeenCalledTimes(1);
+  });
+
+  it("still rejects a loaded catalog tool the member is not granted", async () => {
+    loadToolPackagesMock.mockImplementationOnce(async () => [
+      {
+        factories: [
+          loadedFactory(
+            "@workbench/tools-fileparser/fileparser",
+            ["fileparser__parse_file"],
+            async (call) => ({ callId: call.id, content: {} }),
+          ),
+          loadedFactory(
+            "@workbench/tools-linear/linear",
+            ["linear__search"],
+            async (call) => ({ callId: call.id, content: {} }),
+          ),
+        ],
+      },
+    ]);
+
+    const { def } = await buildAgent(["fileparser__parse_file"], {
+      dynamicCatalog: true,
+    });
+    const tools = def.toolFactories[0]({});
+
+    const names = tools.definitions.map((d) => d.name);
+    expect(names).toContain("fileparser__parse_file");
+    expect(names).not.toContain("linear__search");
+
+    const rejected = await tools.run(
+      { id: "call-2", name: "linear__search", arguments: {} },
+      signal,
+    );
+    expect(rejected.isError).toBe(true);
+  });
+
+  it("admits every loaded tool for an agent without a dynamic catalog", async () => {
+    const packageRun = mock(
+      async (call: { id: string; name: string }): Promise<{
+        callId: string;
+        content: unknown;
+      }> => ({ callId: call.id, content: { ok: true } }),
+    );
+    loadToolPackagesMock.mockImplementationOnce(async () => [
+      {
+        factories: [
+          loadedFactory(
+            "@workbench/tools-granola/granola",
+            ["granola__list_calls"],
+            packageRun,
+          ),
+        ],
+      },
+    ]);
+
+    const { def } = await buildAgent([], { dynamicCatalog: false });
+    const tools = def.toolFactories[0]({});
+
+    expect(tools.definitions.map((d) => d.name)).toContain(
+      "granola__list_calls",
+    );
+    const callResult = await tools.run(
+      { id: "call-3", name: "granola__list_calls", arguments: {} },
+      signal,
+    );
+    expect(callResult.isError).not.toBe(true);
+    expect(packageRun).toHaveBeenCalledTimes(1);
   });
 });
