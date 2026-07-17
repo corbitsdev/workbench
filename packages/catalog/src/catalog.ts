@@ -7,6 +7,7 @@ import {
   attachmentCapability,
   type AttachmentCapability,
 } from "./attachment-capabilities";
+import { contextWindowForModel } from "./context-windows";
 
 const MODEL_PLUGINS = [
   "anthropic",
@@ -24,7 +25,11 @@ export type CatalogProviderSpec = {
   modelsDevProviderId?: string;
 };
 
-export type CatalogModelSpec = { canonicalName: string };
+export type CatalogModelSpec = {
+  canonicalName: string;
+  /** models.dev `limit.context` for this model, in tokens. */
+  contextWindow: number;
+};
 
 export type CatalogOfferingSpec = {
   model: string;
@@ -123,7 +128,10 @@ export function buildAgentCatalog(
       plugin: cred.plugin,
       credentialName: cred.credentialName,
     });
-    models.set(model, { canonicalName: model });
+    models.set(model, {
+      canonicalName: model,
+      contextWindow: contextWindowForModel(model),
+    });
     offerings.set(`${model}${OFFERING_KEY_SEPARATOR}${providerName}`, {
       model,
       provider: providerName,
