@@ -312,8 +312,9 @@ function toGeminiPart(
       return {
         functionCall: {
           name: encodeToolName(block.name, GOOGLE_TOOL_NAME_LIMIT),
-          // Never round-trip a `{_raw}` envelope to the model — it imitates
-          // the shape on subsequent tool calls and loops on approval.
+          // WORKBENCH-LOCAL: never round-trip a `{_raw}` envelope to the model
+          // — it imitates the shape on subsequent tool calls and loops on
+          // approval.
           args: sanitizeToolArgsForHistory(block.arguments),
         },
       };
