@@ -44,8 +44,12 @@ describe("PREFERENCE_REGISTRY", () => {
     expect(new Set(keys).size).toBe(keys.length);
   });
 
-  test("briefHourUtc and the heartbeat-fed notify* fields gate on heartbeat deployment", () => {
-    for (const key of ["briefHourUtc", "notifyInboxMail", "notifyGateAsks"]) {
+  test("briefHourUtc gates on the scheduler feature; notify* fields gate on heartbeat deployment", () => {
+    expect(getPreferenceEntry("briefHourUtc")?.availableWhen).toEqual({
+      kind: "feature-enabled",
+      feature: "scheduler",
+    });
+    for (const key of ["notifyInboxMail", "notifyGateAsks"]) {
       const entry = getPreferenceEntry(key);
       expect(entry?.availableWhen).toEqual({
         kind: "workflow-deployed",
@@ -54,11 +58,19 @@ describe("PREFERENCE_REGISTRY", () => {
     }
   });
 
-  test("tasksAutoSendAdapter gates on the attio connection", () => {
+  test("tasksAutoSendAdapter gates on the tasks-reconciler feature", () => {
     const entry = getPreferenceEntry("tasksAutoSendAdapter");
     expect(entry?.availableWhen).toEqual({
-      kind: "credential-connected",
-      provider: "attio",
+      kind: "feature-enabled",
+      feature: "tasks-reconciler",
+    });
+  });
+
+  test("tasksTriageCreate gates on the triage feature", () => {
+    const entry = getPreferenceEntry("tasksTriageCreate");
+    expect(entry?.availableWhen).toEqual({
+      kind: "feature-enabled",
+      feature: "triage",
     });
   });
 
@@ -67,7 +79,7 @@ describe("PREFERENCE_REGISTRY", () => {
     expect(entry?.availableWhen).toBeUndefined();
   });
 
-  test("AvailabilitySignalSchema accepts all three signal kinds and rejects an unknown kind", () => {
+  test("AvailabilitySignalSchema accepts all four signal kinds and rejects an unknown kind", () => {
     expect(
       AvailabilitySignalSchema({
         kind: "workflow-deployed",
@@ -84,6 +96,12 @@ describe("PREFERENCE_REGISTRY", () => {
       AvailabilitySignalSchema({
         kind: "credential-connected",
         provider: "attio",
+      }) instanceof type.errors,
+    ).toBe(false);
+    expect(
+      AvailabilitySignalSchema({
+        kind: "feature-enabled",
+        feature: "scheduler",
       }) instanceof type.errors,
     ).toBe(false);
     expect(

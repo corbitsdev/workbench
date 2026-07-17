@@ -21,6 +21,8 @@ import {
   type OwnerFeaturesResponse as OwnerFeaturesState,
   OwnerFeatureToggleResult,
   type OwnerFeatureToggleResult as OwnerFeatureToggleResultType,
+  MemberFeaturesResponse,
+  type MemberFeaturesResponse as MemberFeaturesState,
   OwnerInboxSourcesResponse,
   type OwnerInboxSourcesResponse as OwnerInboxSourcesState,
   OwnerInboxSourceToggleResult,
@@ -531,6 +533,17 @@ export async function getMePreferenceSettings(): Promise<PreferenceSetting[]> {
     );
   }
   return parsed.settings;
+}
+
+/** Feature enablement for the caller's primary tenant (CL-3823). Same truth as
+ * the runtime kill switches — used to hide member controls the owner turned off. */
+export async function getMeFeatures(): Promise<MemberFeaturesState> {
+  const raw = await hubFetch<unknown>("GET", "v1/me/features");
+  const parsed = MemberFeaturesResponse(raw);
+  if (parsed instanceof type.errors) {
+    throw new Error(`Unexpected features response: ${parsed.summary}`);
+  }
+  return parsed;
 }
 
 /** The morning-brief sources the caller can toggle: every catalog source with

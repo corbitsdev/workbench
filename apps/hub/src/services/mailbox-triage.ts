@@ -21,11 +21,11 @@ import {
   triageHandoffSubject,
   triageMessageKey,
   composeTriagePromptMessage,
-  resolveMyraVariant,
   renderMemberInstructionsSection,
   PERSONAL_AGENT_PROMPT_FORMAT,
 } from "@workbench/myra";
 import { readMyraVariantPreference } from "./myra-variant-preferences";
+import { resolveLaunchableMyraVariant } from "./myra-variant-availability";
 import type { HubDb } from "../db";
 import { memberAgentInstance } from "../db/schema";
 import { getConfig } from "../config";
@@ -216,15 +216,21 @@ export function createMailboxTriage(deps: MailboxTriageDeps): MailboxTriage {
 
     // Lazy variant binding: the member's default triage-variant selection
     // picks which triage definition (and therefore which model) this ephemeral
-    // session launches on, falling back to the canonical default. The tool
-    // loadout is unchanged — every triage variant mounts the mailbox persona's
-    // read-only loadout below regardless of model.
+    // session launches on. Availability-gated so a stored pick whose model
+    // lost credentials falls through to a launchable default (CL-3824). The
+    // tool loadout is unchanged — every triage variant mounts the mailbox
+    // persona's read-only loadout below regardless of model.
     const variantPref = await readMyraVariantPreference(
       deps.db,
       item.tenantId,
       item.memberPrincipalId,
     );
-    const variant = resolveMyraVariant("triage", variantPref.triage);
+    const variant = await resolveLaunchableMyraVariant(
+      deps.db,
+      item.tenantId,
+      "triage",
+      variantPref.triage,
+    );
     const def = await resolveMyraVariantDefinition(
       deps.db,
       item.tenantId,

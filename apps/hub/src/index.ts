@@ -175,6 +175,7 @@ import { createFeedbackRouter } from "./routes/feedback";
 import type { MemberPreferences } from "@workbench/shared";
 import { resolveEnabledBriefSources } from "@workbench/shared";
 import { createMePreferencesRouter } from "./routes/me-preferences";
+import { createMeFeaturesRouter } from "./routes/me-features";
 import { createMeConnectionsRouter } from "./routes/me-connections";
 import { createOAuthCallbackRouter } from "./routes/oauth-callback";
 import { createInMemoryPendingStore } from "./lib/oauth-flow";
@@ -1369,6 +1370,7 @@ v1.route("/", createGammaTemplatesRouter(db));
 v1.route("/", createApprovalsRouter(db, approvalsEventBus));
 v1.route("/", createFeedbackRouter(db));
 v1.route("/", createMePreferencesRouter(db, grantStore));
+v1.route("/", createMeFeaturesRouter(db));
 // Per-user OAuth connections (CL-3356). The PKCE verifier store is shared with
 // the public callback router below so an authorize on one request and its
 // callback on another find the same server-side verifier. `state` is signed

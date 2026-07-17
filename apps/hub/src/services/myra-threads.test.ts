@@ -235,6 +235,32 @@ mock.module("../lib/tenant-provisioning", () => ({
   reseedAgentTemplateIfStale: reseedSpy,
 }));
 
+// CL-3824: launch soft-nulls via resolveLaunchableMyraVariant. Unit tests treat
+// every catalog model as launchable so binding still follows stored prefs.
+mock.module("./myra-variant-availability", () => {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports -- bun mock.module
+  const myra = require("@workbench/myra") as typeof import("@workbench/myra");
+  return {
+    resolveLaunchableMyraVariant: mock(
+      async (
+        _db: unknown,
+        _tenantId: string,
+        kind: "chat" | "triage",
+        selectedId: string | null | undefined,
+      ) => myra.resolveMyraVariant(kind, selectedId),
+    ),
+    listAvailableMyraVariants: mock(async () => myra.listMyraVariants()),
+    isMyraVariantAvailableForTenant: mock(async () => true),
+    softNullUnavailableVariantSelections: mock(
+      async (
+        _db: unknown,
+        _tenantId: string,
+        prefs: { chat: string | null; triage: string | null },
+      ) => prefs,
+    ),
+  };
+});
+
 import type { InferenceEvent } from "@intx/types/runtime";
 import { createAnalyticsSubscriber } from "@workbench/analytics";
 import { desc, eq } from "drizzle-orm";

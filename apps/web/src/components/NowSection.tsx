@@ -16,6 +16,10 @@ import { formatRelativeTime } from "../lib/relative-time";
 import { createLogger } from "../lib/logger";
 import { TaskAssigneePicker } from "./TaskAssigneePicker";
 import { TaskSendToAdapter } from "./TaskSendToAdapter";
+import {
+  isFeatureEnabled,
+  useMeFeatures,
+} from "../hooks/use-me-features";
 
 const nowSectionLog = createLogger("NowSection");
 
@@ -39,6 +43,9 @@ export function NowSection({
   tenantId = null,
   myPrincipalId = null,
 }: NowSectionProps) {
+  const features = useMeFeatures();
+  const schedulerEnabled = isFeatureEnabled(features.data, "scheduler");
+
   if (!ready) {
     return (
       <div className="mx-auto max-w-[720px] px-6 py-5" role="status">
@@ -67,16 +74,19 @@ export function NowSection({
               You're all caught up
             </p>
             <p className="mt-1 max-w-[420px] text-xs text-text-3">
-              Your morning brief, workflow approvals, task updates, and mail
-              from your agents will land here as they arrive.
+              {schedulerEnabled
+                ? "Your morning brief, workflow approvals, task updates, and mail from your agents will land here as they arrive."
+                : "Workflow approvals, task updates, and mail from your agents will land here as they arrive."}
             </p>
-            <Link
-              to="/settings#morning-brief"
-              className="mt-3 inline-flex items-center gap-1 text-xs font-medium text-orange hover:underline"
-            >
-              Set up your morning brief
-              <ArrowRight size={12} aria-hidden="true" />
-            </Link>
+            {schedulerEnabled && (
+              <Link
+                to="/settings#morning-brief"
+                className="mt-3 inline-flex items-center gap-1 text-xs font-medium text-orange hover:underline"
+              >
+                Set up your morning brief
+                <ArrowRight size={12} aria-hidden="true" />
+              </Link>
+            )}
           </div>
         </div>
       </div>

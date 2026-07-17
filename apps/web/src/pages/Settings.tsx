@@ -43,6 +43,10 @@ import { MyraInferenceDialsPanel } from "../components/MyraInferenceDialsPanel";
 import { MySchedules } from "../components/MySchedules";
 import { MORNING_BRIEF_ANCHOR_ID } from "./settings-section-nav";
 import { useMyraVoiceInput } from "../hooks/use-myra-voice-input";
+import {
+  isFeatureEnabled,
+  useMeFeatures,
+} from "../hooks/use-me-features";
 
 function buildSections(
   myraVoiceBuildEnabled: boolean,
@@ -157,6 +161,8 @@ export default function Settings() {
     enabled: myraVoiceInput,
     setEnabled: setMyraVoiceInput,
   } = useMyraVoiceInput();
+  const features = useMeFeatures();
+  const schedulerEnabled = isFeatureEnabled(features.data, "scheduler");
   const sections = useMemo(
     () => buildSections(myraVoiceBuildEnabled),
     [myraVoiceBuildEnabled],
@@ -312,7 +318,11 @@ export default function Settings() {
         <SettingsGroup
           id="inbox-capabilities"
           title="Your inbox & brief"
-          description="What lands in your inbox, and when your morning brief arrives."
+          description={
+            schedulerEnabled
+              ? "What lands in your inbox, and when your morning brief arrives."
+              : "What lands in your inbox."
+          }
         >
           <div id={MORNING_BRIEF_ANCHOR_ID} className="scroll-mt-4">
             <PreferencesPanel categories={["Automations"]} />
@@ -329,13 +339,15 @@ export default function Settings() {
           <MemberConnectionsPanel />
         </SettingsGroup>
 
-        <SettingsGroup
-          id="schedules"
-          title="Schedules"
-          description="Workflows you've put on a daily cadence — pause, retime, or remove them here."
-        >
-          <MySchedules tenantId={activeTenantId} embedded />
-        </SettingsGroup>
+        {schedulerEnabled && (
+          <SettingsGroup
+            id="schedules"
+            title="Schedules"
+            description="Workflows you've put on a daily cadence — pause, retime, or remove them here."
+          >
+            <MySchedules tenantId={activeTenantId} embedded />
+          </SettingsGroup>
+        )}
 
         <SettingsGroup id="account" title="Account">
           <PreferencesPanel categories={["General"]} />

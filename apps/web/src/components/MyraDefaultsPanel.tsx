@@ -10,6 +10,10 @@ import {
   type MyraPreferencesUpdate,
   type MyraVariant,
 } from "../lib/myra-variants";
+import {
+  isFeatureEnabled,
+  useMeFeatures,
+} from "../hooks/use-me-features";
 
 type Surface = "chat" | "triage";
 
@@ -94,6 +98,11 @@ export function MyraDefaultsPanel({ tenantId }: MyraDefaultsPanelProps) {
   const queryClient = useQueryClient();
   const variantsQuery = useMyraVariants(tenantId);
   const preferencesQuery = useMyraPreferences(tenantId);
+  const features = useMeFeatures();
+  const triageEnabled = isFeatureEnabled(features.data, "triage");
+  const visibleGroups = GROUPS.filter(
+    (group) => group.key !== "triage" || triageEnabled,
+  );
 
   const mutation = useMutation<
     MyraPreferences,
@@ -186,7 +195,7 @@ export function MyraDefaultsPanel({ tenantId }: MyraDefaultsPanelProps) {
   return (
     <div className="flex flex-col gap-6">
       <p className="text-sm text-text-3">{APPLIES_NOTE}</p>
-      {GROUPS.map((group) => {
+      {visibleGroups.map((group) => {
         const groupVariants = variants.filter((v) => v.kind === group.kind);
         const selectedId = selectedVariantId(
           groupVariants,

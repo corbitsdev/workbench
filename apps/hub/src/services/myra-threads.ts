@@ -12,8 +12,9 @@ import type { AnalyticsSubscriber } from "@workbench/analytics";
 import { randomUUID } from "node:crypto";
 import { join } from "node:path";
 import { AGENT_TEMPLATES } from "@workbench/agents";
-import { PERSONAL_AGENT_NAME, resolveMyraVariant } from "@workbench/myra";
+import { PERSONAL_AGENT_NAME } from "@workbench/myra";
 import { readMyraVariantPreference } from "./myra-variant-preferences";
+import { resolveLaunchableMyraVariant } from "./myra-variant-availability";
 import {
   isDefaultMyraThreadLabel,
   myraThreadTitleFromFirstMessage,
@@ -237,15 +238,21 @@ export async function createMyraThread(
   }
 
   // Lazy variant binding: read the member's default chat-variant selection and
-  // derive the definition to deploy from it (falling back to the canonical
-  // default when absent). Existing threads are untouched — this only affects
-  // the definition a NEW thread's instance is born with.
+  // derive the definition to deploy from it. Availability-gated so a stored
+  // pick whose model lost credentials falls through to a launchable default
+  // (CL-3824). Existing threads are untouched — this only affects the
+  // definition a NEW thread's instance is born with.
   const variantPref = await readMyraVariantPreference(
     db,
     opts.tenantId,
     opts.memberPrincipalId,
   );
-  const variant = resolveMyraVariant("chat", variantPref.chat);
+  const variant = await resolveLaunchableMyraVariant(
+    db,
+    opts.tenantId,
+    "chat",
+    variantPref.chat,
+  );
 
   // A non-canonical variant deploys its own seeded definition verbatim (no
   // reseed — the reseed staleness path is specific to the canonical `myra`

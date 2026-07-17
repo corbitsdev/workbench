@@ -847,3 +847,17 @@ export const OwnerFeatureToggleResult = type({
   enabled: "boolean",
 });
 export type OwnerFeatureToggleResult = typeof OwnerFeatureToggleResult.infer;
+
+/** Member-readable feature enablement (CL-3823): same truth as runtime
+ * `isFeatureEnabledForTenant` (grant OR env override). No toggle here —
+ * owner writes stay on the owner capabilities route. */
+export const MemberFeatureStateSchema = type({
+  name: FeatureNameSchema,
+  enabled: "boolean",
+});
+export type MemberFeatureState = typeof MemberFeatureStateSchema.infer;
+
+export const MemberFeaturesResponse = type({
+  features: MemberFeatureStateSchema.array(),
+});
+export type MemberFeaturesResponse = typeof MemberFeaturesResponse.infer;

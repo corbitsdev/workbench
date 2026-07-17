@@ -1,4 +1,4 @@
-import { describe, expect, it, mock } from "bun:test";
+import { beforeEach, describe, expect, it, mock } from "bun:test";
 
 mock.module("../lib/myra-member-tool-settings", () => ({
   listMemberMyraToolCatalog: mock(async () => []),
@@ -7,6 +7,30 @@ mock.module("../lib/myra-member-tool-settings", () => ({
     disabledCatalogPackages: string[],
     disabledToolNames: string[],
   ) => ({ disabledCatalogPackages, disabledToolNames }),
+}));
+
+// CL-3824: default every model to launchable so existing catalog assertions
+// still see the full variant list. Individual tests override for filter cases.
+type ResolveModelSourcesResult =
+  | { ok: true; sources: { model: string }[] }
+  | { ok: false; reason: "no_offerings" | "no_credentials" | "no_provider" };
+
+const resolveModelSources = mock(
+  async (
+    _db: unknown,
+    _tenantId: string,
+    requirements: { model: string }[],
+  ): Promise<ResolveModelSourcesResult> => ({
+    ok: true as const,
+    sources: requirements.map((r) => ({ model: r.model })),
+  }),
+);
+
+// eslint-disable-next-line @typescript-eslint/no-require-imports -- bun mock.module
+const intxDb = require("@intx/db") as typeof import("@intx/db");
+mock.module("@intx/db", () => ({
+  ...intxDb,
+  resolveModelSources,
 }));
 
 import { Hono } from "hono";
@@ -146,7 +170,30 @@ function wrapWithTenant(
 }
 
 describe("Myra variants router", () => {
+  beforeEach(() => {
+    resolveModelSources.mockImplementation(
+      async (
+        _db: unknown,
+        _tenantId: string,
+        requirements: { model: string }[],
+      ) => ({
+        ok: true as const,
+        sources: requirements.map((r) => ({ model: r.model })),
+      }),
+    );
+  });
+
   it("lists the real variant catalog with cost tiers", async () => {
+    resolveModelSources.mockImplementation(
+      async (
+        _db: unknown,
+        _tenantId: string,
+        requirements: { model: string }[],
+      ) => ({
+        ok: true as const,
+        sources: requirements.map((r) => ({ model: r.model })),
+      }),
+    );
     const app = wrapWithTenant(makeDb({}));
     const res = await app.request("/myra/variants");
     expect(res.status).toBe(200);
@@ -163,6 +210,35 @@ describe("Myra variants router", () => {
       (v) => v.id === "myra-deepseek-v4-flash",
     );
     expect(deepseek?.isDefault).toBe(true);
+  });
+
+  it("omits variants whose model has no launchable offering (CL-3824)", async () => {
+    resolveModelSources.mockImplementation(
+      async (
+        _db: unknown,
+        _tenantId: string,
+        requirements: { model: string }[],
+      ) => {
+        const model = requirements[0]?.model ?? "";
+        // Only deepseek is launchable.
+        if (model.includes("deepseek")) {
+          return {
+            ok: true as const,
+            sources: [{ model }],
+          };
+        }
+        return { ok: false as const, reason: "no_offerings" as const };
+      },
+    );
+    const app = wrapWithTenant(makeDb({}));
+    const res = await app.request("/myra/variants");
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      variants: { id: string; model: string }[];
+    };
+    expect(body.variants.length).toBeGreaterThan(0);
+    expect(body.variants.every((v) => v.model.includes("deepseek"))).toBe(true);
+    expect(body.variants.some((v) => v.id === "myra-opus-4-8")).toBe(false);
   });
 
   it("lists the real style-axes catalog without leaking snippet text", async () => {
@@ -187,6 +263,16 @@ describe("Myra variants router", () => {
   });
 
   it("returns the caller's selection scoped to the resolved member", async () => {
+    resolveModelSources.mockImplementation(
+      async (
+        _db: unknown,
+        _tenantId: string,
+        requirements: { model: string }[],
+      ) => ({
+        ok: true as const,
+        sources: requirements.map((r) => ({ model: r.model })),
+      }),
+    );
     const findFirst = mock(async () => ({
       chatVariantId: "myra-opus-4-8",
       triageVariantId: null,
@@ -211,6 +297,71 @@ describe("Myra variants router", () => {
       ...EMPTY_TOOL_PREFS,
       ...EMPTY_INFERENCE_DIALS,
     });
+  });
+
+  it("soft-nulls a stored chat selection whose model is no longer launchable (CL-3824)", async () => {
+    resolveModelSources.mockImplementation(
+      async (
+        _db: unknown,
+        _tenantId: string,
+        requirements: { model: string }[],
+      ) => {
+        const model = requirements[0]?.model ?? "";
+        if (model.includes("opus") || model.includes("claude")) {
+          return { ok: false as const, reason: "no_offerings" as const };
+        }
+        return {
+          ok: true as const,
+          sources: [{ model }],
+        };
+      },
+    );
+    const findFirst = mock(async () => ({
+      chatVariantId: "myra-opus-4-8",
+      triageVariantId: null,
+      instructionsGlobal: null,
+      instructionsChat: null,
+      instructionsTriage: null,
+    }));
+    const db = {
+      query: {
+        myraVariantPreference: { findFirst },
+        principal: { findFirst: mock(async () => null) },
+      },
+    } as unknown as HubDb;
+    const app = wrapWithTenant(db);
+    const res = await app.request("/members/me/myra-preferences");
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { chat: string | null };
+    expect(body.chat).toBeNull();
+  });
+
+  it("rejects PUT of a variant whose model is not launchable (CL-3824)", async () => {
+    resolveModelSources.mockImplementation(
+      async (
+        _db: unknown,
+        _tenantId: string,
+        requirements: { model: string }[],
+      ) => {
+        const model = requirements[0]?.model ?? "";
+        if (model.includes("opus") || model.includes("claude")) {
+          return { ok: false as const, reason: "no_offerings" as const };
+        }
+        return {
+          ok: true as const,
+          sources: [{ model }],
+        };
+      },
+    );
+    const app = wrapWithTenant(makeDb({}));
+    const res = await app.request("/members/me/myra-preferences", {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ chat: "myra-opus-4-8" }),
+    });
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { error: string };
+    expect(body.error).toContain("not available");
   });
 
   it("returns stored style-axis selections alongside the variant selection", async () => {

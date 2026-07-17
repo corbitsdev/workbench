@@ -3,7 +3,6 @@ import { Hono, type Env } from "hono";
 import { describeRoute, resolver } from "hono-openapi";
 import { getLogger } from "@intx/log";
 import {
-  listMyraVariants,
   listStyleAxes,
   listKnownModelInferenceCapabilities,
   MyraVariantSummarySchema,
@@ -13,15 +12,18 @@ import {
 import {
   MyraVariantPreferencePatchSchema,
   MyraMemberPreferencesResponseSchema,
-  MyraVariantPreferenceSchema,
   pinnedSkillIdsChanged,
   prunePinnedSkillIdsToVisibleLibrary,
   readMyraMemberPreferencesWithCatalog,
-  readMyraVariantPreference,
   setMyraVariantPreference,
   validateMyraVariantPatch,
   validatePinnedSkillIdsPatch,
 } from "../services/myra-variant-preferences";
+import {
+  isMyraVariantAvailableForTenant,
+  listAvailableMyraVariants,
+  softNullUnavailableVariantSelections,
+} from "../services/myra-variant-availability";
 import { listSkills } from "../services/skill-library";
 import { skillViewerForMemberPrincipal } from "../lib/myra-pinned-skills";
 import type { HubDb } from "../db";
@@ -63,18 +65,22 @@ export function createMyraVariantsRouter(db: HubDb): Hono<MyraVariantsEnv> {
       tags: ["Myra"],
       summary: "List the selectable Myra variants",
       description:
-        "The immutable variant catalog from @workbench/myra — chat and triage definitions a member can select as their default, each with its model and cost tier.",
+        "Variants whose model has at least one launchable catalog offering for this tenant (CL-3824). Chat and triage definitions a member can select as their default, each with its model and cost tier.",
       parameters: [tenantIdParam],
       responses: {
         200: {
-          description: "The variant catalog",
+          description: "The available variant catalog",
           content: {
             "application/json": { schema: resolver(VariantsResponseSchema) },
           },
         },
       },
     }),
-    (c) => c.json({ variants: listMyraVariants() }),
+    async (c) => {
+      const tenant = c.get("tenant");
+      const variants = await listAvailableMyraVariants(db, tenant.id);
+      return c.json({ variants });
+    },
   );
 
   app.get(
@@ -125,7 +131,7 @@ export function createMyraVariantsRouter(db: HubDb): Hono<MyraVariantsEnv> {
       tags: ["Myra"],
       summary: "Get the caller's default Myra variant selection",
       description:
-        "The caller's chat and triage variant ids, or null on either axis when no selection has been made (canonical default is used).",
+        "The caller's chat and triage variant ids, or null on either axis when no selection has been made (canonical default is used). Selections whose model is no longer launchable for the tenant are soft-nulled (CL-3824).",
       parameters: [tenantIdParam],
       responses: {
         200: {
@@ -146,6 +152,11 @@ export function createMyraVariantsRouter(db: HubDb): Hono<MyraVariantsEnv> {
         tenant.id,
         principal.id,
       );
+      const soft = await softNullUnavailableVariantSelections(db, tenant.id, {
+        chat: prefs.chat,
+        triage: prefs.triage,
+      });
+      prefs = { ...prefs, chat: soft.chat, triage: soft.triage };
       const viewer = await skillViewerForMemberPrincipal(
         db,
         tenant.id,
@@ -165,7 +176,12 @@ export function createMyraVariantsRouter(db: HubDb): Hono<MyraVariantsEnv> {
             principal.id,
             { pinnedSkillIds: pruned },
           );
-          prefs = { ...prefs, ...updated };
+          prefs = {
+            ...prefs,
+            ...updated,
+            chat: soft.chat,
+            triage: soft.triage,
+          };
         }
       }
       return c.json(prefs);
@@ -178,7 +194,7 @@ export function createMyraVariantsRouter(db: HubDb): Hono<MyraVariantsEnv> {
       tags: ["Myra"],
       summary: "Set the caller's default Myra variant selection",
       description:
-        "Each provided axis (chat, triage) is set to the given variant id or cleared with null; an omitted axis is left untouched. 400 when a provided id is not a variant of that kind.",
+        "Each provided axis (chat, triage) is set to the given variant id or cleared with null; an omitted axis is left untouched. 400 when a provided id is not a variant of that kind, or its model is not launchable for this tenant (CL-3824).",
       parameters: [tenantIdParam],
       requestBody: {
         content: {
@@ -197,7 +213,7 @@ export function createMyraVariantsRouter(db: HubDb): Hono<MyraVariantsEnv> {
           },
         },
         400: {
-          description: "Invalid body or unknown variant id",
+          description: "Invalid body or unknown / unavailable variant id",
           content: { "application/json": { schema: resolver(ErrorResponse) } },
         },
       },
@@ -215,6 +231,24 @@ export function createMyraVariantsRouter(db: HubDb): Hono<MyraVariantsEnv> {
       const invalid = validateMyraVariantPatch(patch);
       if (invalid) {
         return c.json({ error: invalid }, 400);
+      }
+
+      for (const axis of ["chat", "triage"] as const) {
+        const id = patch[axis];
+        if (id === undefined || id === null) continue;
+        const available = await isMyraVariantAvailableForTenant(
+          db,
+          tenant.id,
+          id,
+        );
+        if (!available) {
+          return c.json(
+            {
+              error: `Variant "${id}" is not available: no launchable offering for its model on this tenant`,
+            },
+            400,
+          );
+        }
       }
 
       if (patch.pinnedSkillIds !== undefined) {
@@ -243,7 +277,11 @@ export function createMyraVariantsRouter(db: HubDb): Hono<MyraVariantsEnv> {
           tenant.id,
           principal.id,
         );
-        return c.json(merged);
+        const soft = await softNullUnavailableVariantSelections(db, tenant.id, {
+          chat: merged.chat,
+          triage: merged.triage,
+        });
+        return c.json({ ...merged, chat: soft.chat, triage: soft.triage });
       } catch (err) {
         log.error("Failed to persist Myra variant preference", {
           tenantId: tenant.id,

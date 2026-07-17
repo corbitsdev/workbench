@@ -49,7 +49,7 @@ const SETTINGS: PreferenceSetting[] = [
     description: "When your morning brief arrives.",
     category: "Agent",
     value: 13,
-    availableWhen: { kind: "workflow-deployed", workflowKind: "heartbeat" },
+    availableWhen: { kind: "feature-enabled", feature: "scheduler" },
   },
   {
     key: "timezone",
@@ -68,7 +68,7 @@ const SETTINGS: PreferenceSetting[] = [
     description: "Push new tasks to your connected CRM automatically.",
     category: "Automations",
     value: false,
-    availableWhen: { kind: "credential-connected", provider: "attio" },
+    availableWhen: { kind: "feature-enabled", feature: "tasks-reconciler" },
   },
 ];
 
@@ -136,6 +136,13 @@ const INBOX_SOURCES: AvailableInboxSource[] = [
 
 let workflowCatalogResult: WorkflowCatalog = HEARTBEAT_DEPLOYED_CATALOG;
 let connectionsResult: MemberConnectionState[] = ATTIO_CONNECTED;
+let featuresResult = {
+  features: [
+    { name: "scheduler" as const, enabled: true },
+    { name: "triage" as const, enabled: true },
+    { name: "tasks-reconciler" as const, enabled: true },
+  ],
+};
 
 const getMePreferenceSettings = mock(async () => SETTINGS);
 const patchMePreferences = mock(
@@ -145,6 +152,7 @@ const getMeBriefSources = mock(async () => BRIEF_SOURCES);
 const getMeInboxSources = mock(async () => INBOX_SOURCES);
 const getWorkflowsCatalog = mock(async () => workflowCatalogResult);
 const getMeConnections = mock(async () => ({ connections: connectionsResult }));
+const getMeFeatures = mock(async () => featuresResult);
 
 mock.module("../lib/hub-api", () => ({
   getMePreferenceSettings,
@@ -153,6 +161,7 @@ mock.module("../lib/hub-api", () => ({
   getMeInboxSources,
   getWorkflowsCatalog,
   getMeConnections,
+  getMeFeatures,
 }));
 
 import { PreferencesPanel } from "./PreferencesPanel";
@@ -172,6 +181,13 @@ beforeEach(() => {
   window.happyDOM.setURL("http://localhost/settings");
   workflowCatalogResult = HEARTBEAT_DEPLOYED_CATALOG;
   connectionsResult = ATTIO_CONNECTED;
+  featuresResult = {
+    features: [
+      { name: "scheduler", enabled: true },
+      { name: "triage", enabled: true },
+      { name: "tasks-reconciler", enabled: true },
+    ],
+  };
 });
 
 afterEach(() => {
@@ -181,6 +197,7 @@ afterEach(() => {
   getMeInboxSources.mockClear();
   getWorkflowsCatalog.mockClear();
   getMeConnections.mockClear();
+  getMeFeatures.mockClear();
   cleanup();
 });
 
@@ -353,17 +370,48 @@ describe("PreferencesPanel", () => {
       }
     });
     expect(screen.queryByText("New inbox mail")).toBeNull();
-    expect(screen.queryByLabelText("Morning brief time")).toBeNull();
   });
 
   it("shows workflow-deployed-gated settings when heartbeat is deployed", async () => {
     workflowCatalogResult = HEARTBEAT_DEPLOYED_CATALOG;
     renderPanel();
     await screen.findByText("New inbox mail");
-    expect(screen.getByLabelText("Morning brief time")).toBeDefined();
   });
 
-  it("hides credential-connected-gated settings when the provider is not connected", async () => {
+  it("hides feature-enabled-gated settings when the feature is off", async () => {
+    featuresResult = {
+      features: [
+        { name: "scheduler", enabled: false },
+        { name: "triage", enabled: true },
+        { name: "tasks-reconciler", enabled: false },
+      ],
+    };
+    renderPanel();
+    await screen.findByText("Agent autonomy");
+    await waitFor(() => {
+      if (getMeFeatures.mock.calls.length === 0) {
+        throw new Error("features not fetched yet");
+      }
+    });
+    expect(screen.queryByLabelText("Morning brief time")).toBeNull();
+    expect(screen.queryByText("Auto-send tasks to CRM")).toBeNull();
+  });
+
+  it("shows feature-enabled-gated settings when the feature is on", async () => {
+    featuresResult = {
+      features: [
+        { name: "scheduler", enabled: true },
+        { name: "triage", enabled: true },
+        { name: "tasks-reconciler", enabled: true },
+      ],
+    };
+    connectionsResult = ATTIO_CONNECTED;
+    renderPanel();
+    await screen.findByLabelText("Morning brief time");
+    await screen.findByText("Auto-send tasks to CRM");
+  });
+
+  it("hides tasksAutoSendAdapter when tasks-reconciler is on but Attio is not connected", async () => {
     connectionsResult = NO_CONNECTIONS;
     renderPanel();
     await screen.findByText("Agent autonomy");
@@ -375,7 +423,7 @@ describe("PreferencesPanel", () => {
     expect(screen.queryByText("Auto-send tasks to CRM")).toBeNull();
   });
 
-  it("shows credential-connected-gated settings when the provider is connected", async () => {
+  it("shows tasksAutoSendAdapter when tasks-reconciler is on and Attio is connected", async () => {
     connectionsResult = ATTIO_CONNECTED;
     renderPanel();
     await screen.findByText("Auto-send tasks to CRM");
@@ -384,9 +432,16 @@ describe("PreferencesPanel", () => {
     ).toBeDefined();
   });
 
-  it("always renders ungated settings regardless of workflow/connection state", async () => {
+  it("always renders ungated settings regardless of workflow/connection/feature state", async () => {
     workflowCatalogResult = EMPTY_WORKFLOW_CATALOG;
     connectionsResult = NO_CONNECTIONS;
+    featuresResult = {
+      features: [
+        { name: "scheduler", enabled: false },
+        { name: "triage", enabled: false },
+        { name: "tasks-reconciler", enabled: false },
+      ],
+    };
     renderPanel();
     await screen.findByText("Agent autonomy");
     expect(screen.getByLabelText("Agent autonomy")).toBeDefined();

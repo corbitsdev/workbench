@@ -58,6 +58,13 @@ const EMPTY_STYLE_AXES = {
   skillUsageChat: null,
   skillUsageTriage: null,
   pinnedSkillIds: [],
+  disabledCatalogPackages: [],
+  disabledToolNames: [],
+  toolCatalog: [],
+  creativeChat: null,
+  thinkingChat: null,
+  creativeTriage: null,
+  thinkingTriage: null,
 };
 
 let preferences: { chat: string | null; triage: string | null } & Record<
@@ -86,6 +93,17 @@ beforeEach(() => {
     const u = String(url);
     if (u.includes("/myra/variants")) {
       return Promise.resolve(jsonResponse({ variants }));
+    }
+    if (u.includes("/me/features")) {
+      return Promise.resolve(
+        jsonResponse({
+          features: [
+            { name: "scheduler", enabled: true },
+            { name: "triage", enabled: true },
+            { name: "tasks-reconciler", enabled: true },
+          ],
+        }),
+      );
     }
     if (u.includes("/myra-preferences")) {
       if (init?.method === "PUT") {
@@ -196,6 +214,38 @@ describe("MyraDefaultsPanel", () => {
     fireEvent.click(rowFor("Myra Standard"));
     await waitFor(() => expect(putCalls.length).toBe(1));
     expect(putCalls[0]?.body).toEqual({ chat: null });
+  });
+
+  it("hides the inbox-automation group when the triage feature is off", async () => {
+    globalThis.fetch = mock((url: string, _init?: RequestInit) => {
+      const u = String(url);
+      if (u.includes("/myra/variants")) {
+        return Promise.resolve(jsonResponse({ variants }));
+      }
+      if (u.includes("/me/features")) {
+        return Promise.resolve(
+          jsonResponse({
+            features: [
+              { name: "scheduler", enabled: true },
+              { name: "triage", enabled: false },
+              { name: "tasks-reconciler", enabled: true },
+            ],
+          }),
+        );
+      }
+      if (u.includes("/myra-preferences")) {
+        return Promise.resolve(jsonResponse(preferences));
+      }
+      return Promise.resolve(jsonResponse({}));
+    }) as unknown as typeof fetch;
+
+    renderPanel();
+    await waitFor(() =>
+      expect(document.body.textContent).toContain("Myra chat"),
+    );
+    expect(document.body.textContent).not.toContain("Inbox automation");
+    expect(document.body.textContent).not.toContain("Triage Fast");
+    expect(document.body.textContent).toContain("Myra Standard");
   });
 
   it("shows an inline error and reverts the selection when the save fails", async () => {

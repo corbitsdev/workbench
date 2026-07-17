@@ -288,7 +288,9 @@ export function useMyraPreferences(tenantId: string | null) {
 
 /**
  * The variant a surface currently resolves to: the member's pinned id when set
- * and still present in the catalog, otherwise the canonical default variant.
+ * and still present in the catalog, otherwise the canonical default variant,
+ * otherwise the first remaining variant (when the default's model was filtered
+ * out of the availability-gated catalog).
  */
 export function selectedVariantId(
   variants: readonly MyraVariant[],
@@ -298,5 +300,5 @@ export function selectedVariantId(
     return preference;
   }
   const fallback = variants.find((v) => v.isDefault);
-  return fallback?.id ?? null;
+  return fallback?.id ?? variants[0]?.id ?? null;
 }

@@ -124,6 +124,22 @@ approval gate (`awaitSignal`) is resolved. The hub forwards it to the sidecar vi
 
 ---
 
+## Member feature flags
+
+Members can read (not write) which owner-controlled features are enabled for
+their tenant — the same truth the runtime kill switches use (grant OR env
+override). Owner writes stay on the owner capabilities route.
+
+```
+GET  /v1/me/features
+→ { features: [{ name: "scheduler" | "triage" | "tasks-reconciler", enabled: boolean }] }
+```
+
+The web settings surface hides morning-brief / schedules / triage / task-sync
+controls when the matching feature is off (CL-3823).
+
+---
+
 ## Myra member preferences
 
 Per-member Myra personalization (variants, instructions, style axes, pinned skills,
@@ -131,10 +147,20 @@ tool narrowing, inference dials) is stored on `myra_variant_preference` and appl
 on the next Myra launch (new thread, triage wake, reconnect/relaunch).
 
 ```
+GET  /v1/myra/variants
 GET  /v1/members/me/myra-preferences
 PUT  /v1/members/me/myra-preferences
 GET  /v1/members/me/myra-preferences/tool-catalog
 ```
+
+**Variant availability (CL-3824):** `GET /v1/myra/variants` returns only variants
+whose model has at least one launchable offering for the tenant
+(`resolveModelSources` ok). `GET` preferences soft-nulls a stored chat/triage id
+that is no longer in that set; `PUT` of an unavailable variant id returns 400.
+New chat threads and triage wakes use the same availability gate
+(`resolveLaunchableMyraVariant`): an unavailable stored pick falls through to the
+canonical default among launchable variants of that kind (then the first
+launchable), so Settings honesty and launch binding agree.
 
 **Tool narrowing (CL-3762):** `disabledCatalogPackages` and `disabledToolNames` are
 json string arrays. Only packages/tools visible in `toolCatalog` may be persisted;

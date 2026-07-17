@@ -95,6 +95,33 @@ mock.module("./myra-variant-preferences", () => ({
   readMyraVariantPreference: readVariantPrefMock,
 }));
 
+// CL-3824: launch soft-nulls via resolveLaunchableMyraVariant. In these unit
+// tests every catalog model is treated as launchable so binding still follows
+// the stored preference (or the catalog default).
+mock.module("./myra-variant-availability", () => {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports -- bun mock.module
+  const myra = require("@workbench/myra") as typeof import("@workbench/myra");
+  return {
+    resolveLaunchableMyraVariant: mock(
+      async (
+        _db: unknown,
+        _tenantId: string,
+        kind: "chat" | "triage",
+        selectedId: string | null | undefined,
+      ) => myra.resolveMyraVariant(kind, selectedId),
+    ),
+    listAvailableMyraVariants: mock(async () => myra.listMyraVariants()),
+    isMyraVariantAvailableForTenant: mock(async () => true),
+    softNullUnavailableVariantSelections: mock(
+      async (
+        _db: unknown,
+        _tenantId: string,
+        prefs: { chat: string | null; triage: string | null },
+      ) => prefs,
+    ),
+  };
+});
+
 let prefs: MemberPreferences = {};
 const readPrefsMock = mock(async () => prefs);
 mock.module("../lib/member-preferences", () => ({
