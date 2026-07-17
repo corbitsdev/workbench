@@ -250,7 +250,7 @@ export function createMePreferencesRouter(
           description: "Invalid request body",
           content: { "application/json": { schema: resolver(ErrorResponse) } },
         },
-        409: {
+        403: {
           description: "Caller has no provisioned membership yet",
           content: { "application/json": { schema: resolver(ErrorResponse) } },
         },
@@ -272,7 +272,7 @@ export function createMePreferencesRouter(
 
       const member = await resolveCallerMember(db, userId);
       if (!member) {
-        return c.json({ error: "No provisioned membership" }, 409);
+        return c.json({ error: "No provisioned membership" }, 403);
       }
 
       for (const cfg of OAUTH_PROVIDER_CATALOG) {

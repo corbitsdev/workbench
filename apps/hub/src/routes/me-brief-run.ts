@@ -64,7 +64,7 @@ export function createMeBriefRunRouter(deps: {
             "application/json": { schema: resolver(BriefRunResponse) },
           },
         },
-        404: {
+        403: {
           description: "Caller has no provisioned membership",
           content: { "application/json": { schema: resolver(ErrorResponse) } },
         },
@@ -83,7 +83,7 @@ export function createMeBriefRunRouter(deps: {
       const userId = c.get("userId");
       const member = await resolveCallerMember(deps.db, userId);
       if (!member) {
-        return c.json({ error: "No provisioned membership" }, 404);
+        return c.json({ error: "No provisioned membership" }, 403);
       }
 
       if (!briefRunLimiter.tryAcquire(member.principalId)) {

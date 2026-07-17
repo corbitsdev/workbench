@@ -239,7 +239,7 @@ describe("POST /me/webhook-triggers", () => {
     expect(res.status).toBe(400);
   });
 
-  it("409s when the caller has no membership", async () => {
+  it("403s when the caller has no membership", async () => {
     ownerTriggerCount = 0;
     const res = await mountApp().fetch(
       req("/me/webhook-triggers", {
@@ -248,7 +248,7 @@ describe("POST /me/webhook-triggers", () => {
         body: JSON.stringify({ kind: "deck" }),
       }),
     );
-    expect(res.status).toBe(409);
+    expect(res.status).toBe(403);
   });
 
   it("409s at the per-owner trigger cap without creating a row", async () => {

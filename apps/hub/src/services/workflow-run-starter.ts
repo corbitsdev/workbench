@@ -51,6 +51,10 @@ export type StartRunInput = {
   // so budgeting it would silently drop the 61st member's brief for the day.
   // Scheduler-sourced starts bypass the budget.
   source?: "scheduler" | "webhook" | "manual";
+  // Pre-computed tenant ancestor chain (most-specific-first). The HTTP run
+  // route already walks the chain for its deny-gate check; passing it avoids a
+  // redundant getAncestorChain round-trip. When omitted, the starter walks it.
+  chain?: string[];
 };
 
 export type StartRunResult =
@@ -86,6 +90,7 @@ export function createWorkflowRunStarter(deps: {
     input,
     creatorPrincipalId,
     source,
+    chain: precomputedChain,
   }: StartRunInput): Promise<StartRunResult> {
     if (source !== "scheduler" && !startBudget.tryAcquire(tenantId)) {
       log.error("workflow run-start budget exceeded", {
@@ -100,7 +105,8 @@ export function createWorkflowRunStarter(deps: {
       };
     }
 
-    const chain = await getAncestorChain(deps.db, tenantId);
+    const chain =
+      precomputedChain ?? (await getAncestorChain(deps.db, tenantId));
 
     const candidates = await deps.db.query.workflowRun.findMany({
       where: and(
