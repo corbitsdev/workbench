@@ -125,6 +125,12 @@ export {
 
 export {
   EVENT_CHANNEL_FD,
+  // WORKBENCH-LOCAL (CL-2585): dedicated control-channel fds + the default
+  // reader/writer that bind to them (consumed by the FD-isolation test).
+  CONTROL_DOWN_FD,
+  CONTROL_UP_FD,
+  defaultControlReader,
+  defaultControlWriter,
   createChildOutboundMailBridge,
   createChildSubstrateWriteBridge,
   createCredentialsBackedAuthorize,

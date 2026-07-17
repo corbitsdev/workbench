@@ -1,8 +1,8 @@
 // Process-shaped convenience wrapper around `runWorkflowChild`.
 //
-// The wrapper crosses the only boundary that touches `process.env`,
-// `process.stdin`/`process.stdout`, and the inherited event-channel
-// file descriptor. Each host ships a ~5-line entry script
+// The wrapper crosses the only boundary that touches `process.env`
+// and the inherited IPC file descriptors (event channel on fd 3,
+// control channel on fd 4/5 -- see CL-2585). Each host ships a ~5-line entry script
 // (`#!/usr/bin/env bun` + an `import` + an `await` of this function)
 // against a substrate-factory of its own; the factory consumes a
 // narrow typed env struct rather than `NodeJS.ProcessEnv`, and the
@@ -50,6 +50,25 @@ import {
  * The wrapper opens fd 3 as the child's `FrameWriter`.
  */
 export const EVENT_CHANNEL_FD = 3;
+
+// WORKBENCH-LOCAL (CL-2585): the control channel used to ride the child's
+// stdin/stdout (fd 0/1). But stdout is also where `@intx/log`/LogTape routes
+// INFO/DEBUG records (console.info/console.debug). A single log line then
+// interleaved into the NDJSON control stream, the supervisor's control reader
+// threw `control channel received non-JSON line` on the ANSI `\x1B` byte, fired
+// `onChildCrash`, and shut the supervisor down -> the run died with
+// reason=corrupt. Moving the control channel onto dedicated inherited fds frees
+// stdin/stdout/stderr for the child's normal logs (which then reach the
+// sidecar's container logs at correct severity).
+//
+// The control channel is bidirectional, so it needs TWO pipes (a single Bun
+// `"pipe"` stdio slot is unidirectional): the supervisor writes downstream
+// frames the child reads on `CONTROL_DOWN_FD`, and the child writes upstream
+// frames the supervisor reads from `CONTROL_UP_FD`. The supervisor's
+// `Bun.spawn` `stdio` indices must stay in lockstep with these constants
+// (see `apps/sidecar/src/workflow-host-wiring.ts`).
+export const CONTROL_DOWN_FD = 4;
+export const CONTROL_UP_FD = 5;
 
 /**
  * Substrate-config env keys the host promises to its factory. The
@@ -129,9 +148,9 @@ export type SubstrateFactory = (
 export interface RunWorkflowChildFromProcessEnvOpts {
   /** Override the raw env record (defaults to `process.env`). */
   rawEnv?: Readonly<Record<string, string | undefined>>;
-  /** Override the control-channel reader (defaults to `process.stdin`). */
+  /** Override the control-channel reader (defaults to a wrap of fd 4). */
   controlReader?: NdjsonReader;
-  /** Override the control-channel writer (defaults to `process.stdout`). */
+  /** Override the control-channel writer (defaults to a wrap of fd 5). */
   controlWriter?: NdjsonWriter;
   /** Override the event-channel writer (defaults to a wrap of fd 3). */
   eventWriter?: FrameWriter;
@@ -249,19 +268,28 @@ function filterSubstrateConfig(
   return out;
 }
 
-function defaultControlReader(): NdjsonReader {
+// WORKBENCH-LOCAL (CL-2585): control channel reads downstream frames on
+// CONTROL_DOWN_FD (was `process.stdin`) so stdin is free to inherit. Exported
+// so the FD-isolation regression test can drive the real reader.
+export function defaultControlReader(): NdjsonReader {
+  const stream = fs.createReadStream("", { fd: CONTROL_DOWN_FD });
   return {
     read(): AsyncIterableIterator<string> {
-      return readNdjsonLines(process.stdin);
+      return readNdjsonLines(stream);
     },
   };
 }
 
-function defaultControlWriter(): NdjsonWriter {
+// WORKBENCH-LOCAL (CL-2585): control channel writes upstream frames to
+// CONTROL_UP_FD (was `process.stdout`) so stdout is free for the child's
+// INFO/DEBUG logs. Exported so the FD-isolation regression test can drive the
+// real writer.
+export function defaultControlWriter(): NdjsonWriter {
+  const stream = fs.createWriteStream("", { fd: CONTROL_UP_FD });
   return {
     write(line: string): Promise<void> {
       return new Promise((resolve, reject) => {
-        process.stdout.write(line, (err) => {
+        stream.write(line, (err) => {
           if (err) reject(err);
           else resolve();
         });
