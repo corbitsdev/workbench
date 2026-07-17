@@ -247,8 +247,7 @@ export function MyraChatSurface({
     enabled: tenantId !== null && tenantId !== undefined && tenantId !== "",
   });
   const getTurnTraceHref = useCallback(
-    () =>
-      myraInstanceTraceHref(session.instanceId, tenantRoster?.instances),
+    () => myraInstanceTraceHref(session.instanceId, tenantRoster?.instances),
     [session.instanceId, tenantRoster?.instances],
   );
 
@@ -496,16 +495,13 @@ export function MyraChatSurface({
 
   // History renders while the sidecar is unreachable; the composer stays usable
   // and sends are queued. Tell the user their messages are deferred, without
-  // surfacing a raw error (CL-3280). A never-yet-live first connect says
-  // "Connecting"; a drop after a live session says "Reconnecting" (CL-3292). The
-  // Retry button sits OUTSIDE the role="status" live region so assistive tech
-  // announces the status text alone and exposes the control through the normal
-  // focus order.
+  // surfacing a raw error, once there was a prior live session to have dropped
+  // from (CL-3280). A never-yet-live first connect renders nothing — sends
+  // still queue silently (CL-3829). The Retry button sits OUTSIDE the
+  // role="status" live region so assistive tech announces the status text
+  // alone and exposes the control through the normal focus order.
   let connectionCopy: string | null = null;
-  if (session.connectionNotice === "connecting") {
-    connectionCopy =
-      "Connecting to Myra — your messages will send once connected.";
-  } else if (session.connectionNotice === "reconnecting") {
+  if (session.connectionNotice === "reconnecting") {
     if (session.queuedFailed) {
       connectionCopy =
         "Trouble reaching Myra — still trying. Your messages will send once it's back.";

@@ -485,8 +485,8 @@ describe("useMyraSession — terminal stream error teardown (CL-3211)", () => {
 
     expect(result.current.state.phase).toBe("ready");
     expect(result.current.live).toBe(false);
-    // A drop after a live session is "reconnecting"; the first-connect window is
-    // "connecting" (guards the misleading-notice regression).
+    // A drop after a live session is "reconnecting" (guards the
+    // misleading-notice regression).
     expect(result.current.connectionNotice).toBe("reconnecting");
   });
 });
