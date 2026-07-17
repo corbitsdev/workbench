@@ -4,6 +4,7 @@ import { getLogger } from "@intx/log";
 import { describeRoute, resolver } from "hono-openapi";
 import { type GrantStore } from "@intx/authz";
 import { schema as intxSchema } from "@intx/db";
+import { type SidecarRouter } from "@intx/hub-sessions";
 import { generateId } from "@intx/hub-common";
 import { and, eq, isNotNull, isNull } from "drizzle-orm";
 import {
@@ -64,6 +65,7 @@ import {
   workflowRunDenied,
 } from "../lib/workflow-run-gate";
 import { recordAudit } from "../services/admin-audit";
+import { reconcileProviderCatalog } from "../services/catalog-provider-seed";
 import {
   assignRole,
   demoteFromOwner,
@@ -101,6 +103,7 @@ type OwnerRouteEnv = {
 export interface CreateOwnerRouterDeps {
   db: HubDb;
   grantStore: GrantStore;
+  sidecarRouter: SidecarRouter;
   rootTenantId: string;
   // Whether the `SHOW_DEMOS` env override is on. Reported as `forcedByEnv` so the
   // owner sees the demos toggle is inert while the deployment forces demos on.
@@ -134,7 +137,14 @@ function extractBaseURL(metadata: unknown): string | undefined {
 export function createOwnerRouter(
   deps: CreateOwnerRouterDeps,
 ): Hono<OwnerRouteEnv> {
-  const { db, grantStore, rootTenantId, showDemos, featureEnvOverrides } = deps;
+  const {
+    db,
+    grantStore,
+    sidecarRouter,
+    rootTenantId,
+    showDemos,
+    featureEnvOverrides,
+  } = deps;
   const router = new Hono<OwnerRouteEnv>();
 
   router.use(
@@ -1063,7 +1073,9 @@ export function createOwnerRouter(
 
       const actor = c.get("ownerPrincipalId");
       let updatedAt: Date;
+      let credentialId: string;
       if (existingCredential) {
+        credentialId = existingCredential.id;
         const [updated] = await db
           .update(credential)
           .set({ secret: storedSecret, updatedAt: now })
@@ -1079,10 +1091,11 @@ export function createOwnerRouter(
           detail: { providerName: entry.providerName, op: "rotate" },
         });
       } else {
+        credentialId = generateId("credential");
         const [created] = await db
           .insert(credential)
           .values({
-            id: generateId("credential"),
+            id: credentialId,
             tenantId: rootTenantId,
             providerId: providerRow.id,
             name: entry.label,
@@ -1107,6 +1120,32 @@ export function createOwnerRouter(
       const responseBaseURL = providerRow
         ? extractBaseURL(providerRow.metadata)
         : undefined;
+
+      // Materialize this provider's catalog slice (model_provider + models +
+      // offerings) from @workbench/catalog so its models resolve immediately —
+      // no manual admin `Seed model catalog` step after the Owner sets the key.
+      // Inference-only; a no-op for a provider the code catalog doesn't
+      // describe or one lacking a base URL. The credential is already
+      // persisted, so a reconcile failure is logged, not surfaced as a set
+      // failure — the reconcile is idempotent on the next set.
+      if (entry.kind === "inference" && responseBaseURL) {
+        try {
+          await reconcileProviderCatalog({
+            db,
+            sidecarRouter,
+            tenantId: rootTenantId,
+            providerName: entry.providerName,
+            credentialId,
+            baseURL: responseBaseURL,
+          });
+        } catch (err) {
+          getLogger(["routes", "owner"]).error(
+            `catalog reconcile failed for ${entry.providerName}: ${
+              err instanceof Error ? err.message : String(err)
+            }`,
+          );
+        }
+      }
 
       return c.json({
         providerName: entry.providerName,
