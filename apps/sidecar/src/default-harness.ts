@@ -15,6 +15,7 @@ import {
   APPROVAL_GATED_TOOL_NAMES,
 } from "@workbench/agents";
 import {
+  catalogManagedNames,
   createCatalogTools,
   filterCatalogByAvailableTools,
   DYNAMIC_TOOLS_ENV_KEY,
@@ -570,9 +571,21 @@ export function createDefaultHarnessBuilder({
         // never gets a dead tool call — it gets an actionable "needs a
         // credential" message instead (CL-3795, replacing the CL-3133 gate
         // that hid the tool from search entirely).
-        const grantedCatalogToolNames = new Set(
-          agentConfig.tools.map((t) => t.name),
-        );
+        //
+        // "Granted" means the `tool:<llm-name>/invoke` grant rows the hub
+        // persists for the instance principal — the one launch input keyed on
+        // the catalog's own LLM-safe names and already narrowed per member.
+        // `agentConfig.tools` is the wrong gate: its hub-proxy definitions
+        // carry bare names and omit package tools (those arrive via
+        // toolPackagePins), so the intersection with the catalog is empty and
+        // search_tools goes dark (CL-3825).
+        const grantedCatalogToolNames = new Set<string>();
+        if (dynamicToolConfig !== undefined) {
+          for (const name of catalogManagedNames(dynamicToolConfig.catalog)) {
+            const decision = await authorize(`tool:${name}`, "invoke");
+            if (decision.effect === "allow") grantedCatalogToolNames.add(name);
+          }
+        }
         const availableCatalog =
           dynamicToolConfig !== undefined
             ? filterCatalogByAvailableTools(
