@@ -373,8 +373,9 @@ function toAnthropicBlock(block: ContentBlock): Record<string, unknown> {
         type: "tool_use",
         id: block.id,
         name: encodeToolName(block.name, ANTHROPIC_TOOL_NAME_LIMIT),
-        // Never round-trip a `{_raw}` envelope to the model — it imitates
-        // the shape on subsequent tool calls and loops on approval.
+        // WORKBENCH-LOCAL: never round-trip a `{_raw}` envelope to the model
+        // — it imitates the shape on subsequent tool calls and loops on
+        // approval.
         input: sanitizeToolArgsForHistory(block.arguments),
       };
 

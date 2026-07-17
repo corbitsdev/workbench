@@ -1,4 +1,4 @@
-// Tool-call argument recovery.
+// WORKBENCH-LOCAL: tool-call argument recovery.
 //
 // Some OpenAI-compatible providers (kimi-k2.6 via OpenRouter) mis-assemble
 // streamed tool-call arguments: duplicated deltas concatenate into invalid
