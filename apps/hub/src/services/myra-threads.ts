@@ -34,7 +34,8 @@ import { decryptToolCredentialSecret } from "../lib/credential-crypto";
 
 const log = getLogger(["api", "myra-threads"]);
 
-const { agent, agentInstance, agentSession, principal, grant } = intxSchema;
+const { agent, agentInstance, agentSession, principal, grant, inferenceTurn } =
+  intxSchema;
 
 export const MYRA_TEMPLATE_KEY = "myra";
 
@@ -57,6 +58,25 @@ export type MyraThreadRow = {
 };
 
 export type MyraThreadListRow = MyraThreadRow;
+
+/**
+ * True when an instance has at least one recorded inference turn. `firstMessageAt`
+ * is stamped only by the HTTP mail middleware on a user POST — agent-initiated
+ * mail delivered over the sidecar/WS plane never stamps it, so a thread with a
+ * real transcript can still look "anonymous unused" by the firstMessageAt-null
+ * heuristic. inferenceTurn rows are written for every turn regardless of which
+ * plane delivered the message, so they are the reliable transcript check.
+ */
+async function instanceHasTranscript(
+  db: HubDb,
+  instanceId: string,
+): Promise<boolean> {
+  const turn = await db.query.inferenceTurn.findFirst({
+    where: eq(inferenceTurn.instanceId, instanceId),
+    columns: { id: true },
+  });
+  return turn !== undefined;
+}
 
 function defaultThreadLabel(index: number): string {
   if (index === 0) return "Chat";
@@ -369,7 +389,15 @@ async function createMyraThreadForDefinition(
     const unused = existingCount.find(
       (row) => isAnonymousUnused(row) && row.agentId === def.id,
     );
-    if (unused) {
+    // A thread this heuristic calls "anonymous unused" can still carry a real
+    // transcript delivered over the sidecar/WS plane, which never stamps
+    // firstMessageAt. Reusing it would land "+ New chat" on a non-empty
+    // conversation, so it must be skipped (not reaped — it has user-visible
+    // content) and a fresh thread created instead.
+    const unusedHasTranscript =
+      unused !== undefined &&
+      (await instanceHasTranscript(db, unused.instanceId));
+    if (unused && !unusedHasTranscript) {
       return {
         created: false,
         thread: {
@@ -386,12 +414,17 @@ async function createMyraThreadForDefinition(
     // hidden from every list, and have no UI path to delete — reap them here,
     // best-effort, so a def reseed doesn't strand deployed instances forever.
     // A failure must not block the create; the row just waits for a later
-    // attempt.
+    // attempt. A row carrying a transcript (same WS-plane gap as the reuse
+    // check above) must be skipped, not reaped: teardownThreadRows deletes the
+    // agentInstance, cascading its inferenceTurn rows, which would permanently
+    // destroy the transcript. A stranded hidden row is recoverable later; a
+    // destroyed transcript is not.
     const stale = existingCount.filter(
       (row) => isAnonymousUnused(row) && row.agentId !== def.id,
     );
     for (const row of stale) {
       try {
+        if (await instanceHasTranscript(db, row.instanceId)) continue;
         const staleInstance = await db.query.agentInstance.findFirst({
           where: eq(agentInstance.id, row.instanceId),
         });

@@ -57,10 +57,14 @@ describe("resolveActiveThread", () => {
     expect(resolveActiveThread(threads, "b")?.id).toBe("b");
   });
 
-  it("falls back to the stored last-active id when explicit id is absent or unknown", () => {
+  it("falls back to the stored last-active id when explicit id is absent", () => {
     writeLastActiveThreadId("c");
-    expect(resolveActiveThread(threads, "does-not-exist")?.id).toBe("c");
     expect(resolveActiveThread(threads)?.id).toBe("c");
+  });
+
+  it("never falls back to last-active or first thread when an explicit id is given but unknown", () => {
+    writeLastActiveThreadId("c");
+    expect(resolveActiveThread(threads, "does-not-exist")).toBeNull();
   });
 
   it("falls back to the first thread when nothing else matches", () => {
