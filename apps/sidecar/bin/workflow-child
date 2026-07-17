@@ -1,89 +1,14 @@
-#!/usr/bin/env bun
-import { setupObservability, flushSentry } from "@workbench/sentry";
-import { getLogger } from "@intx/log";
+#!/usr/bin/env -S bun --conditions=intx-src
+// The intx-src condition resolves @intx/* to TypeScript source. The
+// sidecar spawns this child by path (`Bun.spawn([binaryPath])`) and
+// `--conditions` is not inherited, so it is set on the shebang. The dev
+// loop builds no dist; a bundled deployment does not run this file.
 import { runWorkflowChildFromProcessEnv } from "@workbench/workflow-host";
 import {
   SIDECAR_SUBSTRATE_CONFIG_KEYS,
   createSubstrate,
 } from "../src/workflow-substrate-factory";
-import { recoverParkedRunFromLog } from "../src/workflow-resume";
-
-// WORKBENCH-LOCAL (CL-2503): the workflow-child is the process where every
-// workflow STEP actually runs and throws, but upstream's entrypoint inits no
-// observability — so step failures never reached Sentry (a hard blindspot for
-// the "one or more steps failed" / stale-tarball class of bug). Mirror the
-// sidecar's own `setupObservability` so error-level step logs are captured with
-// their full stack via the Sentry sink. The SENTRY_* env is threaded in from
-// the sidecar via `multistepSubstrateEnv` (the child gets a fresh env); an
-// absent DSN leaves the child console-only. The warn-category prefixes match
-// the sidecar process so warning-level workflow-host failures are captured too.
-// WORKBENCH-LOCAL (CL-2503 + CL-2585): historically the child's stdout (fd 1)
-// WAS the supervisor control channel, so any stray byte on stdout (an @intx/log
-// console sink line, a library banner) corrupted the NDJSON stream and crashed
-// the run ("received non-JSON line" / "envelope failed validation"). CL-2585
-// moved the control channel onto dedicated inherited fds (4 down / 5 up — see
-// workflow-host-wiring.ts), so stdin/stdout/stderr are now free for ordinary
-// logs. This console->stderr redirect is therefore no longer REQUIRED for
-// correctness, but is kept as defense-in-depth: it guarantees no stray console.*
-// or banner can reach a control fd even if the fd convention were to regress.
-// Railway captures stderr, so logs are preserved; `dev: false` keeps the output
-// JSON since NODE_ENV is absent from the child's filtered substrate env.
-const logToStderr = (...args: unknown[]): void => {
-  process.stderr.write(
-    args.map((a) => (typeof a === "string" ? a : String(a))).join(" ") + "\n",
-  );
-};
-console.log = logToStderr;
-console.info = logToStderr;
-console.debug = logToStderr;
-console.warn = logToStderr;
-console.error = logToStderr;
-await setupObservability(
-  { dev: false },
-  {
-    warnCategoryPrefixes: [
-      ["workflow-host"],
-      ["interchange", "sidecar", "workflow-run-pack-client"],
-      ["sidecar", "step-tool-harness"],
-    ],
-  },
-);
-
-// WORKBENCH-LOCAL (CL-2503): @sentry/bun buffers captured events and only
-// flushes on a clean exit (beforeExit). A fatal step rejects the top-level
-// await below (unhandledRejection) and the supervisor's OS-driven recycle
-// SIGTERMs the child on redeploy/cancel — both skip that flush, so a step
-// failure captured moments earlier is lost. Drain on each teardown path. The
-// runtime installs no signal handlers of its own (its graceful path is the
-// `drain` control mail, not a signal), so this preempts nothing. Mirrors the
-// hub process.
-async function flushAndExit(code: number): Promise<void> {
-  await flushSentry();
-  process.exit(code);
-}
-process.on("uncaughtException", (err) => {
-  getLogger(["sidecar", "workflow-child"]).error("uncaught exception", {
-    error: err,
-  });
-  void flushAndExit(1);
-});
-process.on("unhandledRejection", (reason) => {
-  getLogger(["sidecar", "workflow-child"]).error("unhandled rejection", {
-    error: reason instanceof Error ? reason : new Error(String(reason)),
-  });
-  void flushAndExit(1);
-});
-for (const signal of ["SIGTERM", "SIGINT"] as const) {
-  process.on(signal, () => {
-    void flushAndExit(0);
-  });
-}
 
 await runWorkflowChildFromProcessEnv(createSubstrate, {
   substrateConfigKeys: SIDECAR_SUBSTRATE_CONFIG_KEYS,
-  // WORKBENCH-LOCAL (CL-2535): recover a run discovered parked at an
-  // awaitSignal gate whose signal was already delivered (committed to the log)
-  // before the crash — finish the gate and resume instead of failing it.
-  recoverParkedRun: (run, ctx) =>
-    recoverParkedRunFromLog({ log: run.seedEvents, blobs: ctx.blobs }),
 });

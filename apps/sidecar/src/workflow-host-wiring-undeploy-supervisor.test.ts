@@ -16,6 +16,7 @@ import os from "node:os";
 import path from "node:path";
 
 import { createEd25519Crypto, generateKeyPair } from "@intx/crypto";
+import { hexEncode } from "@intx/types";
 import { createInMemoryTransport } from "@intx/mail-memory";
 import type { RepoId, RepoStore } from "@intx/hub-sessions";
 import {
@@ -27,11 +28,10 @@ import {
   type SubprocessSpawner,
 } from "@workbench/workflow-host";
 import type { AgentDeployFrame } from "@intx/types/sidecar";
-import { DETERMINISTIC_TOOL_KIND, STEP_KIND_TAG } from "@workbench/agents";
 
 import {
   createSidecarDeployRouter,
-  deriveTrivialDeploymentId,
+  deriveDeploymentId,
 } from "./workflow-host-wiring";
 import {
   createMultistepDrainRouter,
@@ -150,7 +150,7 @@ function createSpawnTestRepoStore(tempBase: string): RepoStore {
       return { commitSha: "stub-sha", newlyTerminalRuns: [] };
     },
   };
-
+  // eslint-disable-next-line @typescript-eslint/no-unsafe-type-assertion -- test stub
   return new Proxy(stub as RepoStore, {
     get(target, prop, receiver) {
       const value = Reflect.get(target, prop, receiver);
@@ -188,6 +188,7 @@ describe("createSidecarDeployRouter multi-step undeploy shuts the supervisor dow
         resolveExit = resolve;
       });
       const entry: Spawn = {
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-type-assertion -- assigned below
         handle: undefined as unknown as SubprocessHandle,
         supervisorToChild,
         childToSupervisor,
@@ -233,23 +234,23 @@ describe("createSidecarDeployRouter multi-step undeploy shuts the supervisor dow
     const drainRouter = createMultistepDrainRouter();
 
     const router = createSidecarDeployRouter({
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-type-assertion -- the single-step branch invokes only initRepo (head deploy-tree repo); provisionAgent/persistHubPublicKey stay unused (the supervised child mints its own key and persists no hub-agent config)
       sessions: {
         provisionAgent: async () => {
-          throw new Error("multi-step branch must not invoke provisionAgent");
+          throw new Error("single-step branch must not invoke provisionAgent");
         },
         persistHubPublicKey: async () => {
           throw new Error(
-            "multi-step branch must not invoke persistHubPublicKey",
+            "single-step branch must not invoke persistHubPublicKey",
           );
         },
+        initRepo: async () => undefined,
       } as unknown as Parameters<
         typeof createSidecarDeployRouter
       >[0]["sessions"],
-
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-type-assertion -- the single-step branch registers the agent's signing key (loadOrGenerateKey) and records the hub key (recordHubKey) at the head before spawn
       keyStore: {
-        recordHubKey: () => {
-          throw new Error("multi-step branch must not invoke recordHubKey");
-        },
+        recordHubKey: () => undefined,
         loadOrGenerateKey: async () => ({
           keyPair: await generateKeyPair(),
           isNew: false,
@@ -257,13 +258,11 @@ describe("createSidecarDeployRouter multi-step undeploy shuts the supervisor dow
       } as unknown as Parameters<
         typeof createSidecarDeployRouter
       >[0]["keyStore"],
-      onAgentEvent: () => () => {
-        /* unused */
-      },
       transport,
       repoStore,
       signingKeySeed: keyPair.privateKey,
       createAgentCrypto: createEd25519Crypto,
+      assertSourceBuildable: () => undefined,
       registerDeployment: () => {
         /* no-op */
       },
@@ -271,19 +270,8 @@ describe("createSidecarDeployRouter multi-step undeploy shuts the supervisor dow
         /* no-op */
       },
       multistepSubprocessSpawner: spawner,
-      // Mirror the real boot-edge substrate env (see index.ts) so the deploy
-      // router's CL-2363 completeness assertion passes; SIDECAR_DATA_DIR is
-      // the live per-test temp dir, the rest are boot-edge constants.
       multistepSubstrateEnv: {
         SIDECAR_DATA_DIR: dataDir,
-        SIDECAR_SIGNING_PUBLIC_KEY: "deadbeef",
-        SIDECAR_SIGNING_PRIVATE_KEY: "cafef00d",
-        HUB_WS_URL: "ws://hub.test/ws",
-        SIDECAR_ID: "sc_test",
-        SIDECAR_TOKEN: "tok_test",
-        SIDECAR_CACHE_MAX_BYTES: "1000000",
-        SIDECAR_REGISTRY_MAX_TARBALL_BYTES: "1000000",
-        SIDECAR_ADAPTER_MANIFEST: "[]",
       },
       multistepMailRouter: mailRouter,
       multistepSignalRouter: signalRouter,
@@ -296,33 +284,27 @@ describe("createSidecarDeployRouter multi-step undeploy shuts the supervisor dow
       // step's agent-state repo from `parseAgentId(agentAddress)`, which
       // requires the canonical `ins_<id>@<domain>` instance shape.
       agentAddress: "ins_undeploy-supervisor@example.com",
-      // `ins_<deploymentId>` shape `deriveRawDeploymentId` requires.
-      agentId: "ins_undeploy-supervisor-agent",
+      agentId: "undeploy-supervisor-agent",
       hubPublicKey: "hub-pk",
-
-      config: { tenantId: "ten_test" } as AgentDeployFrame["config"],
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-type-assertion -- the multi-step branch does not read config
+      config: {} as AgentDeployFrame["config"],
       workflow: {
         definition: {
           id: "wf-undeploy-supervisor",
           triggers: [{ type: "manual" }],
           stepOrder: ["step-1"],
-          steps: {
-            "step-1": {
-              kind: "step",
-              agent: {
-                tags: { [STEP_KIND_TAG]: DETERMINISTIC_TOOL_KIND },
-              },
-            },
-          },
+          steps: { "step-1": { kind: "step" } },
         },
         sources: {
-          "step-1": {
-            id: "step-1",
-            provider: "anthropic",
-            baseURL: "https://api.anthropic.com",
-            apiKey: "sk-step-1",
-            model: "claude-3-5",
-          },
+          "step-1": [
+            {
+              id: "step-1",
+              provider: "anthropic",
+              baseURL: "https://api.anthropic.com",
+              apiKey: "sk-step-1",
+              model: "claude-3-5",
+            },
+          ],
         },
       },
     };
@@ -334,7 +316,6 @@ describe("createSidecarDeployRouter multi-step undeploy shuts the supervisor dow
     }
     const spawn = spawns[0];
     if (spawn === undefined) throw new Error("unreachable");
-    expect(spawn.env.WARM_KEEP).toBe("false");
 
     const channelId = spawn.env.IPC_CHANNEL_ID;
     if (channelId === undefined) {
@@ -355,7 +336,7 @@ describe("createSidecarDeployRouter multi-step undeploy shuts the supervisor dow
       type: "ready",
       data: {
         childPid: spawn.handle.pid,
-        childPublicKey: Buffer.from(childIpcKeyPair.publicKey).toString("hex"),
+        childPublicKey: hexEncode(childIpcKeyPair.publicKey),
       },
     });
 
@@ -376,7 +357,7 @@ describe("createSidecarDeployRouter multi-step undeploy shuts the supervisor dow
     // one-per-message); a stale cold `runs/<runId>/` subtree models a
     // multi-step leftover the per-run cleanup did not drop. An unrelated
     // deployment's step-state subtree must survive the undeploy sweep.
-    const deploymentId = deriveTrivialDeploymentId(frame.agentAddress);
+    const deploymentId = deriveDeploymentId(frame.agentAddress);
     const stepStateRoot = path.join(dataDir, "workflow-step-state");
     const warmWorkspaceFile = path.join(
       stepStateRoot,
