@@ -303,15 +303,23 @@ const orchestrator = createSidecarOrchestrator({
   mailInboundRouter: multistepMailRouter,
   signalInboundRouter: multistepSignalRouter,
   drainInboundRouter: multistepDrainRouter,
-  createDeployRouter: ({ sessions, keyStore, onAgentEvent }) =>
+  createDeployRouter: ({ sessions, keyStore }) =>
     createSidecarDeployRouter({
       sessions,
       keyStore,
-      onAgentEvent,
       transport,
       repoStore: wrappedRepoStore,
       signingKeySeed: sidecarSigningKey.privateKey,
       createAgentCrypto: createEd25519Crypto,
+      // Source-admission gate: reject a deploy pinning a provider this sidecar
+      // cannot build. Mirrors the default harness builder's canBuildSource.
+      assertSourceBuildable: (source) => {
+        if (!adapters.has(source.provider)) {
+          throw new Error(
+            `Source provider "${source.provider}" is not registered`,
+          );
+        }
+      },
       registerDeployment: ({ deploymentId, agentAddress }) => {
         deploymentAddressRegistry.record(deploymentId, agentAddress);
       },
@@ -321,8 +329,10 @@ const orchestrator = createSidecarOrchestrator({
           "refs/heads/main",
         ),
       unregisterDeployment: ({ deploymentId }) => {
+        // The pack client's per-deployment cursor lifecycle converged upstream
+        // (commitPackedTip advances only on ack, resets only on a fresh
+        // createPack), so there is no forgetDeployment to call here.
         deploymentAddressRegistry.unregister(deploymentId);
-        workflowRunPackClient.forgetDeployment(deploymentId);
       },
       multistepMailRouter,
       multistepSignalRouter,
