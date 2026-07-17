@@ -676,12 +676,20 @@ export function createDefaultHarnessBuilder({
             }),
           },
         );
+        // Loaded package tools are gated on `grantedCatalogToolNames`, never
+        // on `agentConfig.tools`: those hub-proxy definitions omit package
+        // tools entirely (they arrive via toolPackagePins), so intersecting
+        // against them stripped every loaded catalog tool from dispatch
+        // (CL-3848 — the same fact CL-3825 documented for the search gate).
+        // Agents without a dynamic catalog pass `undefined` and keep every
+        // loaded tool.
         const allowedNames = buildDispatchAllowedToolNames(
           agentConfig.tools.map((t) => t.name),
           loadedToolNames,
           catalogRunner !== undefined
             ? catalogRunner.definitions.map((d) => d.name)
             : [],
+          dynamicToolConfig !== undefined ? grantedCatalogToolNames : undefined,
         );
         const tools = filterToolRunner(
           gatedRunner as DefinedRunner,
