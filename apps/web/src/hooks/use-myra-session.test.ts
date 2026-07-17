@@ -109,7 +109,6 @@ mock.module("@intx/hub-client", () => ({
 mock.module("../lib/hub-api", () => ({
   launchInstanceSession,
   ensureMeSynced,
-  abortInstanceTurn: () => Promise.resolve(),
   getOutputFeedback: () => Promise.resolve([]),
   saveOutputFeedback: () => Promise.resolve(),
   upsertRating: (prev: unknown) => prev ?? [],
@@ -1297,39 +1296,6 @@ describe("useMyraSession send() image diversion (image-upload 400 fix)", () => {
   });
 });
 
-describe("useMyraSession abortTurn closes the assembler's open part (stop-turn UX)", () => {
-  it("closes the open part locally on abort, settling the indicator without waiting for a reset event", async () => {
-    assemblerActivity = { type: "thinking" };
-    const { result } = renderHook(
-      () => useMyraSession("inst-1", "tnt-acme", true),
-      { wrapper },
-    );
-    await waitFor(() => {
-      expect(result.current.state.phase).toBe("ready");
-    });
-    await waitFor(() => {
-      expect(result.current.activity).toEqual({ type: "thinking" });
-    });
-
-    // Stop the turn: the sidecar sleeps the agent and emits nothing more, so
-    // closeOpenPart must settle the indicator locally, with no suppression flag.
-    await act(async () => {
-      await result.current.abortTurn();
-    });
-    expect(result.current.activity).toBeNull();
-
-    // A genuinely-new turn (e.g. a parked-mail replay wake) must surface —
-    // the stop button has to stay reachable.
-    act(() => {
-      assemblerActivity = { type: "thinking" };
-      capturedAssemblerOnUpdate?.();
-    });
-    await waitFor(() => {
-      expect(result.current.activity).toEqual({ type: "thinking" });
-    });
-  });
-});
-
 describe("useMyraSession activity precedence", () => {
   it("surfaces the session's rate_limited over the assembler's derived thinking so the retry countdown renders", async () => {
     // Rate-limit retries happen mid-inference, while the assembler's trailing
@@ -1488,22 +1454,6 @@ describe("useMyraSession — optimistic awaiting-agent indicator (CL-3702)", () 
     });
     await waitFor(() => expect(result.current.live).toBe(true));
     expect(result.current.activity).toEqual({ type: "thinking" });
-  });
-
-  it("clears the optimistic indicator when the turn is aborted before any event", async () => {
-    const { result } = renderHook(
-      () => useMyraSession("inst-1", "tnt-acme", true),
-      { wrapper },
-    );
-    await waitFor(() => expect(result.current.live).toBe(true));
-    act(() => {
-      void result.current.send("hello");
-    });
-    expect(result.current.activity).toEqual({ type: "thinking" });
-    await act(async () => {
-      await result.current.abortTurn();
-    });
-    expect(result.current.activity).toBeNull();
   });
 
   it("falls back to null (never an eternal fake spinner) once the bounded timeout expires with no event", async () => {

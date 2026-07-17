@@ -570,7 +570,6 @@ export function MyraChatSurface({
       messages={session.messages}
       {...(inserts !== undefined ? { inserts } : {})}
       onSend={handleSend}
-      onAbort={session.abortTurn}
       onRespond={handleRespond}
       inputAccessory={inputAccessory}
       {...(MYRA_ATTACHMENT_POLICY !== undefined

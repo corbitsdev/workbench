@@ -32,7 +32,6 @@ mock.module("../lib/hub-api", () => ({
       credentialResolved: true,
       paInstanceId: "inst-1",
     }),
-  abortInstanceTurn: () => Promise.resolve(),
   getOutputFeedback: () => Promise.resolve([]),
   saveOutputFeedback: () => Promise.resolve(),
   upsertRating: (prev: unknown) => prev ?? [],
