@@ -171,6 +171,7 @@ mock.module("@intx/db", () => ({
     agentSession: {},
     principal: {},
     grant: {},
+    inferenceTurn: { instanceId: "inferenceTurn.instanceId" },
   },
   resolveCredentialRequirement: resolveCredentialRequirementMock,
   getAncestorChain: getAncestorChainMock,
@@ -293,6 +294,8 @@ describe("createMyraThread", () => {
       chatVariantId: string | null;
       triageVariantId: string | null;
     } | null;
+    /** Whether the anonymous-unused candidate's instance has transcript rows. */
+    transcriptExists?: boolean;
   }) {
     const agentDefs = opts.agentDefs ?? [
       {
@@ -324,6 +327,13 @@ describe("createMyraThread", () => {
         },
         myraVariantPreference: {
           findFirst: mock(() => Promise.resolve(opts.variantPref ?? undefined)),
+        },
+        inferenceTurn: {
+          findFirst: mock(() =>
+            Promise.resolve(
+              opts.transcriptExists ? { id: "turn-1" } : undefined,
+            ),
+          ),
         },
       },
       transaction: mock(async (fn: (tx: unknown) => Promise<void>) => {
@@ -475,6 +485,44 @@ describe("createMyraThread", () => {
     // No rows written, no session launched — the unused thread is reused as-is.
     expect(txCount).toBe(0);
     expect(launchAgentSessionMock).not.toHaveBeenCalled();
+  });
+
+  // Agent-initiated mail (sidecar/WS plane) never stamps firstMessageAt, so a
+  // thread with a real transcript can still look "anonymous unused" by the
+  // firstMessageAt-null + default-label heuristic. Reusing it would land
+  // "+ New chat" on a non-empty conversation.
+  it("does not reuse an anonymous-looking unused thread whose instance already has a transcript", async () => {
+    let txCount = 0;
+    const inserted: Record<string, unknown>[] = [];
+    const db = buildCreateDb({
+      transactions: () => (txCount += 1),
+      inserted,
+      transcriptExists: true,
+      existingThreads: [
+        {
+          id: "map-ghost-transcript",
+          instanceId: "inst-ghost-transcript",
+          agentId: "agt-myra",
+          label: "Chat",
+          createdAt: new Date("2026-01-03T00:00:00Z"),
+          lastActivityAt: new Date("2026-01-03T00:00:00Z"),
+          firstMessageAt: null,
+        },
+      ],
+    });
+
+    // biome-ignore lint/suspicious/noExplicitAny: structural db mock
+    const result = await createMyraThread(db as any, {
+      tenantId: "tn-global",
+      tenantDomain: "global.test",
+      memberPrincipalId: "prn-member",
+    });
+
+    expect(result.created).toBe(true);
+    expect(result.thread.id).not.toBe("map-ghost-transcript");
+    const instanceInsert = inserted.find((v) => "address" in v);
+    expect(instanceInsert).toBeDefined();
+    expect(txCount).toBe(1);
   });
 
   it("reaps (never reuses) an unused thread deployed against a stale definition", async () => {
