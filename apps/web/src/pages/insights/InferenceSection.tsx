@@ -60,7 +60,7 @@ export function InferenceSection({
         value: tokenTotal,
         displayValue:
           row.turnCount > 0
-            ? `${formatNumber(row.turnCount)} turns`
+            ? `${formatNumber(row.turnCount)} chats`
             : formatCompact(tokenTotal),
       };
     });
@@ -71,7 +71,7 @@ export function InferenceSection({
       {tokenCaveat !== null && <CaveatNote>{tokenCaveat}</CaveatNote>}
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
         <Stat
-          label="Turn success rate"
+          label="Chat success rate"
           value={`${turnRate.toFixed(1)}%`}
           sub={`${formatNumber(summary.failedTurnCount)} failed`}
           danger={summary.failedTurnCount > 0}
@@ -127,7 +127,7 @@ export function InferenceSection({
 
       {modelRows.length > 0 && (
         <HudCard
-          label="Models · by turns or tokens"
+          label="Models · by chats or tokens"
           tag={
             modelRows.length > 8 ? (
               <CardLabel>{`+${modelRows.length - 8} more`}</CardLabel>

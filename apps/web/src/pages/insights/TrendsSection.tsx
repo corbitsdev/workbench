@@ -45,7 +45,7 @@ export function TrendsSection({
       <SectionLabel>Activity trends</SectionLabel>
       <div className="grid gap-4 lg:grid-cols-3">
         <TrendCard
-          label="Turns / day"
+          label="Chats / day"
           total={formatNumber(summary.turnCount)}
           values={turnValues}
           delta={computeDelta(summary.turnCount, prev?.turnCount ?? null)}
@@ -73,8 +73,8 @@ export function TrendsSection({
           }
         />
       </div>
-      <HudCard label="Turns per day">
-        <Heatmap days={heatDays} label="Turns per day heatmap" />
+      <HudCard label="Chats per day">
+        <Heatmap days={heatDays} label="Chats per day heatmap" />
       </HudCard>
     </div>
   );

@@ -630,7 +630,9 @@ export function WorkflowTracePage() {
                           // The step listbox mounts only once the view switch
                           // above commits, so its ref is null synchronously —
                           // focus after React has rendered the "steps" view.
-                          queueMicrotask(() => timelineListRef.current?.focus());
+                          queueMicrotask(() =>
+                            timelineListRef.current?.focus(),
+                          );
                         }}
                       />
                     ) : (
@@ -726,7 +728,7 @@ export function WorkflowTracePage() {
                               "Thinking",
                               tokensQuery.data.totals.thinkingTokens,
                             ],
-                            ["Turns", tokensQuery.data.totals.turnCount],
+                            ["Chats", tokensQuery.data.totals.turnCount],
                           ] as const
                         ).map(([label, value]) => (
                           <div key={label}>

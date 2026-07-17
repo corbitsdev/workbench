@@ -107,7 +107,7 @@ function InstanceRow({
           : `${instance.sessionCount} sessions`}
       </span>
       <span className="font-mono tabular-nums text-[11px] text-text-3">
-        {metrics ? `${formatNumber(metrics.turnCount)} turns` : "no usage"}
+        {metrics ? `${formatNumber(metrics.turnCount)} chats` : "no usage"}
       </span>
       <span className="font-mono tabular-nums text-[11px] text-text-3">
         {metrics ? `${formatNumber(metrics.toolCallCount)} tools` : ""}

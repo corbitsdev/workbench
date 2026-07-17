@@ -1,6 +1,12 @@
 import "../../test-setup";
 import { afterEach, describe, expect, it } from "bun:test";
-import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  within,
+} from "@testing-library/react";
 import { KpiRow } from "./KpiRow";
 import type { ActivityOverview } from "../../lib/hub-api";
 import type { InsightsTabId } from "./InsightsTabs";
@@ -86,7 +92,7 @@ describe("KpiRow", () => {
 
     expect(kpi.getByText("Total activity")).toBeDefined();
     expect(kpi.getByText("13")).toBeDefined(); // 10 + 3
-    expect(kpi.getByText("turns + tool calls")).toBeDefined();
+    expect(kpi.getByText("chats + tool calls")).toBeDefined();
 
     expect(kpi.getByText("Active actors")).toBeDefined();
     expect(kpi.getByText("4")).toBeDefined();

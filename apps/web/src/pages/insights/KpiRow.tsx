@@ -81,7 +81,7 @@ export function KpiRow({
           <StatGridItem
             label="Total activity"
             value={formatNumber(activity)}
-            sub="turns + tool calls"
+            sub="chats + tool calls"
             delta={<DeltaBadge delta={computeDelta(activity, prevActivity)} />}
             sparklineValues={
               dailyActivity.length >= 3 ? dailyActivity : undefined

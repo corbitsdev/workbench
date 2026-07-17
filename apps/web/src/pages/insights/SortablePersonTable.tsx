@@ -48,7 +48,7 @@ export function SortablePersonTable({
     },
     {
       key: "turnCount",
-      header: "Turns",
+      header: "Chats",
       align: "right",
       sortValue: (r) => r.turnCount,
       render: (r) => (

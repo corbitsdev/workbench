@@ -33,7 +33,7 @@ export function ChartsSection({
   const activitySeries: TimeSeries[] = [
     {
       key: "turns",
-      name: "Turns",
+      name: "Chats",
       points: filled.map((d) => ({ label: d.date, value: d.turnCount })),
     },
     {
@@ -49,7 +49,7 @@ export function ChartsSection({
       <HudCard label="Activity over time">
         <TimeSeriesChart
           series={activitySeries}
-          label="Turns and tool calls per day"
+          label="Chats and tool calls per day"
           variant="area"
         />
       </HudCard>

@@ -668,7 +668,7 @@ describe("InsightsDashboard usage-cost tab", () => {
   it("shows success-rate stats without repeating the trend cards' turn/tool totals", async () => {
     renderPage("/insights?tab=usage-cost");
     await waitFor(() => {
-      screen.getByText("Turn success rate");
+      screen.getByText("Chat success rate");
     });
     // The old duplicate "Total turns"/"Tool calls" stat tiles are gone.
     expect(screen.queryByText("Total turns")).toBeNull();
@@ -682,9 +682,9 @@ describe("InsightsDashboard usage-cost tab", () => {
     const bars = screen.getAllByTestId("mini-bar");
     expect(bars[0].getAttribute("data-label")).toBe("deepseek-v4-flash");
     expect(bars[0].getAttribute("data-value")).toBe("850");
-    expect(bars[0].textContent).toContain("9 turns");
+    expect(bars[0].textContent).toContain("9 chats");
     expect(bars[1].getAttribute("data-value")).toBe("350");
-    expect(bars[1].textContent).toContain("3 turns");
+    expect(bars[1].textContent).toContain("3 chats");
   });
 
   it("uses token totals for mini-bar height when a model has zero turns", async () => {
@@ -754,7 +754,7 @@ describe("InsightsDashboard usage-cost tab", () => {
     try {
       renderPage("/insights?tab=usage-cost");
       await waitFor(() => {
-        screen.getByText("Turn success rate");
+        screen.getByText("Chat success rate");
       });
       expect(screen.queryByText("Activity trends")).toBeNull();
     } finally {
@@ -833,7 +833,7 @@ describe("InsightsDashboard people tab", () => {
       .map((th) => th.textContent?.replace(/[▲▼]/g, "").trim());
     expect(headers).toEqual([
       "Person",
-      "Turns",
+      "Chats",
       "Tool calls",
       "Tokens",
       "Cost",

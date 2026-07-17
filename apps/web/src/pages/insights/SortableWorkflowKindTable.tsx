@@ -18,9 +18,7 @@ function UsageCell({ row, value }: { row: WorkflowKindRow; value: number }) {
       </span>
     );
   }
-  return (
-    <span className="font-mono tabular-nums">{formatNumber(value)}</span>
-  );
+  return <span className="font-mono tabular-nums">{formatNumber(value)}</span>;
 }
 
 export function SortableWorkflowKindTable({
@@ -46,7 +44,7 @@ export function SortableWorkflowKindTable({
     },
     {
       key: "turnCount",
-      header: "Turns",
+      header: "Chats",
       align: "right",
       sortValue: (r) => r.turnCount,
       render: (r) => <UsageCell row={r} value={r.turnCount} />,
@@ -63,9 +61,7 @@ export function SortableWorkflowKindTable({
       header: "Tokens",
       align: "right",
       sortValue: (r) => sumInferenceTokenClasses(r),
-      render: (r) => (
-        <UsageCell row={r} value={sumInferenceTokenClasses(r)} />
-      ),
+      render: (r) => <UsageCell row={r} value={sumInferenceTokenClasses(r)} />,
     },
   ];
   return (

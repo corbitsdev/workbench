@@ -20,12 +20,12 @@ export function EngagementSection({ data }: { data: ActivityOverview }) {
         <Stat
           label="Active agents"
           value={formatNumber(data.agentActivity.active)}
-          sub="with turns in range"
+          sub="with chats in range"
         />
         <Stat
           label="Idle agents"
           value={formatNumber(data.agentActivity.idle)}
-          sub="in range, no turns"
+          sub="in range, no chats"
         />
       </div>
     </div>
