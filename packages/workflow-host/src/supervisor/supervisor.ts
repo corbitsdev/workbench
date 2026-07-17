@@ -595,7 +595,10 @@ export function createWorkflowSupervisor(
   let recycleInProgress = false;
 
   function onChildCrash(reason: string): void {
-    logger.error`workflow-process control channel crash: {reason}`;
+    // WORKBENCH-LOCAL (CL-2651): upstream writes a literal `{reason}` (missing
+    // the `$`), so the crash cause never reaches the log and a wedged child is
+    // undiagnosable. Interpolate it so the reason is visible.
+    logger.error`workflow-process control channel crash: ${reason}`;
     void shutdownInternal({ reason });
   }
 
@@ -1290,7 +1293,9 @@ export function createWorkflowSupervisor(
       channelId: args.channelId,
       reader: args.handle.eventReader,
       onCrash: (reason) => {
-        logger.error`workflow-process event channel crash: {reason}`;
+        // WORKBENCH-LOCAL (CL-2651): same literal `{reason}` typo as the
+        // control-channel crash log -- interpolate so the cause prints.
+        logger.error`workflow-process event channel crash: ${reason}`;
         void shutdownInternal({ reason });
       },
     });

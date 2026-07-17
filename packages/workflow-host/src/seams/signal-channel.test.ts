@@ -76,6 +76,34 @@ function makeIdGen(prefix: string): () => string {
   };
 }
 
+// WORKBENCH-LOCAL (CL-3641): seeds a seq-1 RunStarted blob so `deliver()` has a
+// non-empty log to append to -- the fork refuses a deliver against an empty log
+// (a seq-0 SignalReceived would be rejected by the state machine's seq >= 1
+// rule and poison the run), so every deliver test must start the run first.
+async function seedRunStarted(
+  store: ReturnType<typeof createRepoStore>,
+  repoId: RepoId,
+  runId: string,
+): Promise<void> {
+  const prefix = `runs/${runId}/events/`;
+  await store.writeTreePreservingPrefix(principal, repoId, REF, {
+    preservePrefix: prefix,
+    merge: async (existing) => {
+      const out: Record<string, string> = {};
+      for (const [filepath, contents] of existing) {
+        out[filepath] = new TextDecoder().decode(contents);
+      }
+      out[`${prefix}1.json`] = JSON.stringify({
+        type: "RunStarted",
+        seq: 1,
+        at: new Date().toISOString(),
+      });
+      return out;
+    },
+    message: `RunStarted seed for run ${runId}`,
+  });
+}
+
 describe("workflow-host signal channel", () => {
   test(
     "a live SignalReceived commit resolves a waiting awaitNext",
@@ -90,6 +118,7 @@ describe("workflow-host signal channel", () => {
       const repoId: RepoId = { kind: "agent-state", id: "deployment-live" };
       const runId = "r-live";
       const box = makeStateBox(runId);
+      await seedRunStarted(store, repoId, runId);
 
       const channel = createWorkflowHostSignalChannel({
         repoStore: store,
@@ -177,6 +206,7 @@ describe("workflow-host signal channel", () => {
       const repoId: RepoId = { kind: "agent-state", id: "deployment-abort" };
       const runId = "r-abort";
       const box = makeStateBox(runId);
+      await seedRunStarted(store, repoId, runId);
 
       const channel = createWorkflowHostSignalChannel({
         repoStore: store,
@@ -232,6 +262,7 @@ describe("workflow-host signal channel", () => {
       };
       const runId = "r-isolated";
       const box = makeStateBox(runId);
+      await seedRunStarted(store, repoId, runId);
 
       const channel = createWorkflowHostSignalChannel({
         repoStore: store,
@@ -278,6 +309,7 @@ describe("workflow-host signal channel", () => {
       const repoId: RepoId = { kind: "agent-state", id: "deployment-relive" };
       const runId = "r-relive";
       const box = makeStateBox(runId);
+      await seedRunStarted(store, repoId, runId);
 
       const channel = createWorkflowHostSignalChannel({
         repoStore: store,
@@ -353,6 +385,7 @@ describe("workflow-host signal channel", () => {
       const repoId: RepoId = { kind: "agent-state", id: "deployment-fifo" };
       const runId = "r-fifo";
       const box = makeStateBox(runId);
+      await seedRunStarted(store, repoId, runId);
 
       const channel = createWorkflowHostSignalChannel({
         repoStore: store,
@@ -418,6 +451,7 @@ describe("workflow-host signal channel", () => {
       const repoId: RepoId = { kind: "agent-state", id: "deployment-dedup" };
       const runId = "r-dedup";
       const box = makeStateBox(runId);
+      await seedRunStarted(store, repoId, runId);
 
       const channel = createWorkflowHostSignalChannel({
         repoStore: store,
@@ -440,7 +474,67 @@ describe("workflow-host signal channel", () => {
         );
         const entries = await fs.promises.readdir(eventsDir);
         const matching = entries.filter((n) => /^\d+\.json$/.test(n));
-        expect(matching).toHaveLength(1);
+        // WORKBENCH-LOCAL (CL-3641): the seeded RunStarted at seq 1 plus a single
+        // delivered blob -- the re-issued signalId must not add a second one.
+        expect(matching).toHaveLength(2);
+      } finally {
+        await channel.stop();
+      }
+    },
+    { timeout: 5000 },
+  );
+
+  // WORKBENCH-LOCAL (CL-3641): a signal delivered before the child commits
+  // RunStarted (seq 1) must be refused, not written at seq 0 -- the state
+  // machine rejects seq < 1, so a seq-0 SignalReceived would poison the run
+  // log permanently. This guards the cold-start race a reconciler's
+  // auto-delivered signal can hit.
+  test(
+    "deliver refuses to write when the run's events log is empty, and writes nothing",
+    async () => {
+      const dataDir = await makeTempDir("sigchan-cold-");
+      const store = createRepoStore({
+        dataDir,
+        signingKey,
+        handlers: { "agent-state": permissiveHandler("workflow-runs-cold") },
+        authorize: allowAll,
+      });
+      const repoId: RepoId = { kind: "agent-state", id: "deployment-cold" };
+      const runId = "r-cold";
+      const box = makeStateBox(runId);
+      // No seedRunStarted -- this run has never committed RunStarted, the
+      // exact race a reconciler's auto-delivered "intake" signal can hit
+      // against a cold-starting workflow child.
+
+      const channel = createWorkflowHostSignalChannel({
+        repoStore: store,
+        principal,
+        repoId,
+        ref: REF,
+        runId,
+        readState: () => box.state,
+        newId: makeIdGen("sig"),
+        clock: () => new Date(),
+      });
+      try {
+        await expect(
+          channel.deliver("intake", { ok: true }, "sig-cold"),
+        ).rejects.toThrow(/run log has no events yet/);
+
+        const eventsDir = path.join(
+          store.getRepoDir(repoId),
+          "runs",
+          runId,
+          "events",
+        );
+        const exists = await fs.promises
+          .access(eventsDir)
+          .then(() => true)
+          .catch(() => false);
+        if (exists) {
+          const entries = await fs.promises.readdir(eventsDir);
+          expect(entries.filter((n) => /^\d+\.json$/.test(n))).toHaveLength(0);
+        }
       } finally {
         await channel.stop();
       }
