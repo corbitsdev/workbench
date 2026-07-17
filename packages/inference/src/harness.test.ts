@@ -670,3 +670,116 @@ describe("runInference — source-identity stamping", () => {
     });
   });
 });
+
+// WORKBENCH-LOCAL (CL-3853): a kimi-k2.6/OpenRouter session poisoned its own
+// history with `{_raw: "<stringified args>"}` tool arguments and looped on the
+// same approval forever. The harness must unwrap a recoverable _raw envelope
+// at finalize time so the real arguments reach the tool.
+describe("runInference — tool-call _raw recovery (CL-3853)", () => {
+  const OPENAI_SOURCE: InferenceSource = {
+    id: "openrouter:kimi-k2.6",
+    provider: "openai",
+    baseURL: "https://openrouter.test/api/v1",
+    apiKey: "test",
+    model: "kimi-k2.6",
+  };
+
+  const DEPLOY_ARGS = {
+    projectName: "corbits-vpc",
+    filePath: "index.html",
+    html: "<!DOCTYPE html><html><body>vpc</body></html>",
+  };
+
+  function sseResponse(argumentsPayload: string): Response {
+    const startChunk = JSON.stringify({
+      choices: [
+        {
+          index: 0,
+          delta: {
+            role: "assistant",
+            tool_calls: [
+              {
+                index: 0,
+                id: "call_1",
+                function: {
+                  name: "vercel__deploy_static_file",
+                  arguments: "",
+                },
+              },
+            ],
+          },
+          finish_reason: null,
+        },
+      ],
+    });
+    const argChunk = JSON.stringify({
+      choices: [
+        {
+          index: 0,
+          delta: {
+            tool_calls: [
+              {
+                index: 0,
+                id: "call_1",
+                function: { name: null, arguments: argumentsPayload },
+              },
+            ],
+          },
+          finish_reason: null,
+        },
+      ],
+    });
+    const body = [
+      `data: ${startChunk}`,
+      "",
+      `data: ${argChunk}`,
+      "",
+      "data: [DONE]",
+      "",
+    ].join("\n");
+    return new Response(body, {
+      status: 200,
+      headers: { "content-type": "text/event-stream" },
+    });
+  }
+
+  async function runToToolCallEnd(
+    argumentsPayload: string,
+  ): Promise<Record<string, unknown>> {
+    const deps: Dependencies = {
+      fetch: () => Promise.resolve(sseResponse(argumentsPayload)),
+      scheduler: createDefaultScheduler(),
+      adapters: createBuiltinRegistry(),
+    };
+    let seq = 0;
+    const events = await collect(
+      runInference({
+        turns: [userTurn("deploy it")],
+        source: OPENAI_SOURCE,
+        nextSeq: () => ++seq,
+        deps,
+      }),
+    );
+    const end = events.find((e) => e.type === "inference.tool_call.end");
+    if (end === undefined) throw new Error("missing inference.tool_call.end");
+    return end.data.arguments;
+  }
+
+  test("well-formed arguments pass through unchanged", async () => {
+    const args = await runToToolCallEnd(JSON.stringify(DEPLOY_ARGS));
+    expect(args).toEqual(DEPLOY_ARGS);
+  });
+
+  test("model-emitted {_raw: <stringified JSON>} is unwrapped to real arguments", async () => {
+    const args = await runToToolCallEnd(
+      JSON.stringify({ _raw: JSON.stringify(DEPLOY_ARGS) }),
+    );
+    expect(args).toEqual(DEPLOY_ARGS);
+  });
+
+  test("duplicated concatenated argument objects are salvaged", async () => {
+    const one = JSON.stringify(DEPLOY_ARGS);
+    const args = await runToToolCallEnd(one + one);
+    expect(args).toEqual(DEPLOY_ARGS);
+  });
+});
