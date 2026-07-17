@@ -39,7 +39,23 @@ import {
   INVOKE_BUDGET_DIRECTOR_ID,
   resolveDynamicToolConfig,
 } from "@workbench/agents";
-import { isTriageSessionPrompt, isInvokeSessionPrompt } from "@workbench/myra";
+import {
+  isTriageSessionPrompt,
+  isInvokeSessionPrompt,
+  resolveSeedMarker,
+  stripSeedMarker,
+  resolveInferenceParamsMarker,
+  stripInferenceParamsMarker,
+  INFERENCE_PARAMS_ENV_KEY,
+  type ResolvedInferenceDials,
+  type SeedWorkspaceFile,
+} from "@workbench/myra";
+import {
+  resolveTimeZoneMarker,
+  stripTimeZoneMarker,
+  withActiveContext,
+} from "@workbench/prompts";
+import { seedWorkspaceFiles } from "./seed-workspace-files";
 import {
   catalogManagedNames,
   createCatalogTools,
@@ -488,6 +504,61 @@ async function buildStepTools(args: {
     packageToolNames,
     localToolNames,
     disposers,
+  };
+}
+
+export interface PreparedWarmAgentPrompt {
+  /** Prompt with every control-plane marker stripped and the active-context
+   * block appended — what the model actually sees. */
+  systemPrompt: string;
+  /** Memory-seed files the agent documents but does not create itself. */
+  seedFiles: readonly SeedWorkspaceFile[];
+  /** True when a seed marker was present but resolved to zero files (a
+   * malformed marker / prompt-builder contract break). */
+  seedMalformed: boolean;
+  /** Member inference dials to thread via env; see the note below on WHY env. */
+  inferenceDials: ResolvedInferenceDials | undefined;
+}
+
+/**
+ * Re-home the retired `default-harness`'s prompt-marker handling onto the WARM
+ * single-step agent path. The hub stamps control-plane markers onto the launch
+ * prompt for the harness to act on: `workbench:memory-seed` (files to seed),
+ * the member-timezone marker (active-context date zone), and
+ * `workbench:inference-params` (member dials). With the in-process harness
+ * retired, NOTHING resolved them on the warm path — so all three markers leaked
+ * into the model prompt as raw text, the seed files were never seeded, and the
+ * live active-context (date) block was never applied, re-anchoring the agent to
+ * its training cutoff (the CL-1938 regression). The inference dials survived
+ * only incidentally, because the director still read the un-stripped marker off
+ * `agent.systemPrompt`.
+ *
+ * This resolves all three markers, strips them, and appends a fresh
+ * active-context block. Crucially it returns the dials to thread via ENV rather
+ * than leaving them on the prompt: `readInferenceParamsForDirector` reads env
+ * BEFORE the prompt marker, so once the marker is stripped the director must
+ * get the dials from env or the member's dials are silently lost. Pure so the
+ * marker/strip/active-context contract is unit-testable without a harness.
+ */
+export function prepareWarmAgentPrompt(
+  rawSystemPrompt: string,
+  now: Date,
+): PreparedWarmAgentPrompt {
+  const seed = resolveSeedMarker(rawSystemPrompt);
+  const timeZone = resolveTimeZoneMarker(rawSystemPrompt);
+  const inferenceDials = resolveInferenceParamsMarker(rawSystemPrompt);
+  const cleaned = stripInferenceParamsMarker(
+    stripTimeZoneMarker(stripSeedMarker(rawSystemPrompt)),
+  );
+  const systemPrompt = withActiveContext(cleaned, {
+    now,
+    ...(timeZone !== undefined ? { timeZone } : {}),
+  });
+  return {
+    systemPrompt,
+    seedFiles: seed.files,
+    seedMalformed: seed.malformed,
+    inferenceDials,
   };
 }
 
@@ -1029,6 +1100,11 @@ export function createStepAgentFactory(opts: StepAgentFactoryOpts = {}) {
       config: {},
     };
     let dynamicEnv: Record<string, unknown> = {};
+    // A multi-step step's prompt carries no control-plane markers, so it ships
+    // to the model verbatim. A warm single-step agent's prompt does — re-home
+    // the retired default-harness's marker handling below and use the cleaned,
+    // active-context-appended result instead.
+    let systemPrompt = def.systemPrompt;
     if (opts.warmKeep === true) {
       const resolved = await resolveWarmAgentHarness({
         def,
@@ -1042,6 +1118,51 @@ export function createStepAgentFactory(opts: StepAgentFactoryOpts = {}) {
       runner = resolved.runner;
       director = resolved.director;
       dynamicEnv = resolved.dynamicEnv;
+
+      const prepared = prepareWarmAgentPrompt(def.systemPrompt, new Date());
+      systemPrompt = prepared.systemPrompt;
+      if (prepared.inferenceDials !== undefined) {
+        // Thread the dials via env: the marker is now stripped from the prompt,
+        // and the director reads env BEFORE the (gone) prompt marker, so this
+        // is how the member's dials still reach it.
+        dynamicEnv = {
+          ...dynamicEnv,
+          [INFERENCE_PARAMS_ENV_KEY]: prepared.inferenceDials,
+        };
+      }
+      if (prepared.seedMalformed) {
+        logger.warn(
+          "Seed marker for {address} resolved zero files (malformed)",
+          { address: ctx.stepAddress },
+        );
+      }
+      if (prepared.seedFiles.length > 0) {
+        // Seed the agent's documented-but-not-self-created memory files into
+        // its workspace. Idempotent (skips existing) and best-effort: a seed
+        // failure degrades the agent's starting context but must not fail the
+        // whole harness build.
+        try {
+          const seedResult = await seedWorkspaceFiles(env.workdir, [
+            ...prepared.seedFiles,
+          ]);
+          logger.info(
+            "Seeded {created} workspace file(s) for {address}, skipped {skipped} existing",
+            {
+              created: seedResult.created,
+              skipped: seedResult.skipped,
+              address: ctx.stepAddress,
+            },
+          );
+        } catch (err) {
+          logger.error(
+            "Failed to seed workspace files for {address}: {error}",
+            {
+              address: ctx.stepAddress,
+              error: err instanceof Error ? err.message : String(err),
+            },
+          );
+        }
+      }
     }
 
     const toolsFactory = defineTool({
@@ -1054,7 +1175,7 @@ export function createStepAgentFactory(opts: StepAgentFactoryOpts = {}) {
 
     const stepDef = {
       id: def.id,
-      systemPrompt: def.systemPrompt,
+      systemPrompt,
       toolFactories: [toolsFactory] as const,
       capabilities: [],
       inference: { sources: [] as const },
