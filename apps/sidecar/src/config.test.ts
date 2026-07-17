@@ -93,6 +93,7 @@ describe("resolveSidecarHeartbeat", () => {
     expect(hb.pingIntervalMs).toBe(5_000);
     expect(hb.reconnectDelayMs).toBe(1_000);
     expect(hb.maxReconnectDelayMs).toBe(3_000);
+    expect(hb.connectTimeoutMs).toBe(5_000);
   });
 
   it("overrides from env when provided", () => {
@@ -100,10 +101,20 @@ describe("resolveSidecarHeartbeat", () => {
       SIDECAR_PING_INTERVAL_MS: "2000",
       SIDECAR_RECONNECT_DELAY_MS: "500",
       SIDECAR_MAX_RECONNECT_DELAY_MS: "8000",
+      SIDECAR_CONNECT_TIMEOUT_MS: "1500",
     });
     expect(hb.pingIntervalMs).toBe(2_000);
     expect(hb.reconnectDelayMs).toBe(500);
     expect(hb.maxReconnectDelayMs).toBe(8_000);
+    expect(hb.connectTimeoutMs).toBe(1_500);
+  });
+
+  it("rejects a non-positive connect timeout override", () => {
+    expect(() =>
+      resolveSidecarHeartbeat({ SIDECAR_CONNECT_TIMEOUT_MS: "0" }),
+    ).toThrow(
+      'SIDECAR_CONNECT_TIMEOUT_MS must be a positive integer (got "0")',
+    );
   });
 
   it("rejects a non-integer override", () => {

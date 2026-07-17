@@ -109,6 +109,12 @@ const DEFAULT_MAX_RECONNECT_DELAY_MS = 3_000;
 // an incident.
 const SUSTAINED_FAILURE_WARN_MS = 30_000;
 const DEFAULT_MAX_OUTBOUND_QUEUE = 4096;
+// WORKBENCH-LOCAL (CL-3826): per-attempt connect timeout. Railway's redeploy
+// overlap window can route internal DNS to a draining replica whose TCP
+// connect blackholes rather than refusing; without a bound the reconnect
+// loop stalls for the entire overlap window instead of retrying on the fast
+// backoff above. Kept close to the reconnect defaults it works alongside.
+const DEFAULT_CONNECT_TIMEOUT_MS = 5_000;
 
 /**
  * Schedules a deferred callback and returns a cancel function. Injection
@@ -328,6 +334,16 @@ export type HubLinkConfig = {
   /** Max outbound frames queued while disconnected (default 4096). */
   maxOutboundQueue?: number;
   scheduleReconnect?: ReconnectScheduler;
+  // WORKBENCH-LOCAL (CL-3826): per-attempt connect timeout tuning.
+  /**
+   * Per-attempt cap on how long a connect attempt may wait for the `open`
+   * event before it is abandoned (default 5000ms). Guards against a TCP
+   * connect that blackholes (e.g. Railway routing to a draining replica
+   * during a redeploy overlap window) rather than refusing outright.
+   */
+  connectTimeoutMs?: number;
+  /** Injection point for tests; same shape as `scheduleReconnect`. */
+  scheduleConnectTimeout?: ReconnectScheduler;
 };
 
 export type HubLink = {
@@ -382,12 +398,24 @@ export function createHubLink(config: HubLinkConfig): HubLink {
     maxReconnectDelayMs = DEFAULT_MAX_RECONNECT_DELAY_MS,
     maxOutboundQueue = DEFAULT_MAX_OUTBOUND_QUEUE,
     scheduleReconnect = defaultScheduleReconnect,
+    connectTimeoutMs = DEFAULT_CONNECT_TIMEOUT_MS,
+    scheduleConnectTimeout = defaultScheduleReconnect,
   } = config;
 
   let ws: WebSocket | null = null;
   let closed = false;
   let pingTimer: ReturnType<typeof setInterval> | null = null;
   let cancelReconnect: (() => void) | null = null;
+  // WORKBENCH-LOCAL (CL-3826): pending connect-attempt timer. Link-scoped so
+  // close() and a superseding connect() can both cancel a stale attempt's
+  // timer, matching how pingTimer/cancelReconnect are owned.
+  let cancelConnectTimeout: (() => void) | null = null;
+  function clearConnectTimeout(): void {
+    if (cancelConnectTimeout !== null) {
+      cancelConnectTimeout();
+      cancelConnectTimeout = null;
+    }
+  }
   let lastPongAt = 0;
   // WORKBENCH-LOCAL (CL-2405): backoff state + scheduleReconnectOnce.
   // Backoff state, persisted across reconnect attempts and reset on a
@@ -1379,7 +1407,12 @@ export function createHubLink(config: HubLinkConfig): HubLink {
       throw new Error("HubLink.connect called after close");
     }
 
-    ws = new WebSocket(hubURL);
+    // WORKBENCH-LOCAL (CL-3826): a superseding connect() disarms any stale
+    // attempt's timer so it can never touch this attempt's socket.
+    clearConnectTimeout();
+
+    const socket = new WebSocket(hubURL);
+    ws = socket;
 
     // WORKBENCH-LOCAL (CL-2405): open/close/error handlers reset backoff and
     // demote redeploy-window noise to debug.
@@ -1389,7 +1422,19 @@ export function createHubLink(config: HubLinkConfig): HubLink {
     // window, kept at debug).
     let everOpened = false;
 
+    // WORKBENCH-LOCAL (CL-3826): bound this attempt's wait for `open`. The
+    // closure captures this attempt's socket (not the shared `ws`) and closes
+    // it only while still CONNECTING, so a timer racing an already-delivered
+    // `open` — or outliving its own attempt — can never kill a live socket.
+    cancelConnectTimeout = scheduleConnectTimeout(() => {
+      cancelConnectTimeout = null;
+      if (socket.readyState !== WebSocket.CONNECTING) return;
+      logger.warn`Hub connect attempt timed out after ${String(connectTimeoutMs)}ms, closing`;
+      socket.close();
+    }, connectTimeoutMs);
+
     ws.addEventListener("open", () => {
+      clearConnectTimeout();
       everOpened = true;
       // A healthy connection resets the backoff so the next disconnect
       // starts fast again, and clears the sustained-failure escalation.
@@ -1549,6 +1594,7 @@ export function createHubLink(config: HubLinkConfig): HubLink {
     });
 
     ws.addEventListener("close", (event) => {
+      clearConnectTimeout();
       const closeEvent = event as CloseEvent;
       const code = closeEvent.code ?? "unknown";
       const reason = closeEvent.reason ? `, reason: ${closeEvent.reason}` : "";
@@ -1569,6 +1615,7 @@ export function createHubLink(config: HubLinkConfig): HubLink {
     });
 
     ws.addEventListener("error", (event) => {
+      clearConnectTimeout();
       const errorEvent = event as ErrorEvent;
       const detail =
         errorEvent.message ??
@@ -1587,6 +1634,7 @@ export function createHubLink(config: HubLinkConfig): HubLink {
 
   function close(): void {
     closed = true;
+    clearConnectTimeout();
     if (cancelReconnect !== null) {
       cancelReconnect();
       cancelReconnect = null;

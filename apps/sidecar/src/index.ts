@@ -279,6 +279,8 @@ const orchestrator = createSidecarOrchestrator({
   pingIntervalMs: heartbeat.pingIntervalMs,
   reconnectDelayMs: heartbeat.reconnectDelayMs,
   maxReconnectDelayMs: heartbeat.maxReconnectDelayMs,
+  // WORKBENCH-LOCAL (CL-3826)
+  connectTimeoutMs: heartbeat.connectTimeoutMs,
   maxOutboundQueue: hubLinkQueue.maxOutboundQueue,
   idleEvictMs: idleEviction.idleEvictMs,
   buildTimeoutMs: harnessBuildTimeoutMs,

@@ -183,6 +183,19 @@ pack-recv-gc-*.pack`, plus bare `TypeError`s from torn `.idx` loads).
 - **Re-sync rule:** do NOT literally re-copy from upstream — that would drop the
   reconnect machinery. Diff deliberately, adopt upstream fixes piecewise, and tag
   any newly-audited divergence with a WORKBENCH-LOCAL token as it is touched.
+- **WORKBENCH-LOCAL change (CL-3826):** per-attempt connect timeout in
+  `ws/hub-link.ts`. `connect()` arms a link-scoped timer (injectable
+  `scheduleConnectTimeout`, default 5s via `connectTimeoutMs` /
+  `DEFAULT_CONNECT_TIMEOUT_MS`) when the socket is created; if `open` has not
+  fired at expiry it closes that attempt's socket (readyState-guarded so a
+  live or superseded socket is never touched) and the normal close handler
+  schedules the backoff reconnect. Motivation: during a Railway hub redeploy,
+  stale internal DNS can blackhole a TCP connect for the whole 120s overlap
+  window — one unbounded attempt stalled reconnection ~123s. Plumbed as
+  `SIDECAR_CONNECT_TIMEOUT_MS` through `sidecar-orchestrator.ts` and
+  `apps/sidecar/src/config.ts`. Verified against real Bun: `ws.close()` on a
+  CONNECTING socket aborts the pending connect immediately (close 1006).
+  Blocks tagged `// WORKBENCH-LOCAL (CL-3826)`.
 - **WORKBENCH-LOCAL change (CL-3102):** lazy agent restore. `restoreSessions`
   in `session-manager.ts` no longer builds a harness per on-disk agent — it
   recovers only routing metadata (key cache + a `wakeable` config map) so the
