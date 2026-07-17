@@ -1,4 +1,4 @@
-import { buildSystemPrompt, type PromptFormat } from "@workbench/prompts";
+import { formatDataSection, type PromptFormat } from "@workbench/prompts";
 import { promptFormatForProvider } from "./operator-profile";
 
 /** Upper bound for client-supplied page context (chars). */
@@ -16,19 +16,20 @@ export function normalizePageContextInput(
   return trimmed;
 }
 
+/**
+ * Client-supplied "what page is the user on" text — retrieved data, not
+ * static prompt copy — so it is rendered via formatDataSection: escaped for
+ * the target provider format, and thus unable to close its own section or
+ * inject a heading/fence into the surrounding prompt.
+ */
 export function appendPageContextToPrompt(
   basePrompt: string,
   pageContext: string,
   provider: string,
 ): string {
   const format: PromptFormat = promptFormatForProvider(provider);
-  const block = buildSystemPrompt(
-    [
-      {
-        tag: "page_context",
-        content: pageContext,
-      },
-    ],
+  const block = formatDataSection(
+    { tag: "page_context", content: pageContext },
     format,
   );
   return `${basePrompt}\n\n${block}`;

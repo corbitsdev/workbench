@@ -18,6 +18,7 @@ import type {
 } from "../routes/workflow-runs";
 import type { ReclaimDeploymentFn } from "../services/workflow-deploy";
 import { getAwaitingSignalNames } from "./run-awaiting-signals";
+import { isTerminalRunStatus } from "./run-status";
 import { validateResumePayload } from "./resume-payload-registry";
 import { mintWorkflowRunId } from "./mint-workflow-run-id";
 import {
@@ -532,6 +533,9 @@ async function assertResumableGate(
   deploymentId: string,
   signalName: string,
 ): Promise<RunExecFailure | null> {
+  if (isTerminalRunStatus(state.status)) {
+    return staleResumeConflict(new Set());
+  }
   let openSignals: Set<string>;
   try {
     openSignals = await getAwaitingSignalNames(

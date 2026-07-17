@@ -39,14 +39,6 @@ export function OperationalLedger({ data }: { data: ActivityOverview }) {
           rows={data.artifacts.byStatus}
         />
         <CountTable title="Artifacts by kind" rows={data.artifacts.byKind} />
-        <CountTable
-          title="Workflow runs by status"
-          rows={data.workflowRuns.byStatus}
-        />
-        <CountTable
-          title="Workflow runs by kind"
-          rows={data.workflowRuns.byKind}
-        />
       </div>
     </div>
   );

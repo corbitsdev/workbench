@@ -22,9 +22,27 @@ export const RosterInstanceSchema = type({
   instanceId: "string",
   // The instance's synthetic principal — the id its own trace is keyed by.
   principalId: "string",
+  // The agent definition this instance runs.
+  agentId: "string",
   name: "string",
   status: "string",
   sessionCount: "number",
+  // member_agent_instance.template_key — distinguishes a Myra chat thread
+  // ("myra"), a triage/automation instance ("myra-triage"), and every other
+  // agent kind, so the Insights roster (CL-3770) can render one row per
+  // instance with a surface-specific title and badge instead of grouping by
+  // agent definition.
+  templateKey: "string",
+  // member_agent_instance.label: a Myra thread's title, or
+  // "Triage: <subject>" for a triage/automation instance. Null until the
+  // thread has been named (chat) or was seeded before labeling existed.
+  label: "string | null",
+  // member_agent_instance.last_activity_at, ISO — the most recent activity on
+  // this instance, so the roster can sort most-recent first (CL-3770).
+  lastActivityAt: "string",
+  // agent_instance.address — the fallback identity shown when no title/label
+  // exists.
+  address: "string",
 });
 export type RosterInstance = typeof RosterInstanceSchema.infer;
 
@@ -59,8 +77,13 @@ export async function getPrincipalRoster(args: {
     .select({
       instanceId: memberAgentInstance.instanceId,
       principalId: agentInstance.principalId,
+      agentId: agentInstance.agentId,
       name: agent.name,
       status: agentInstance.status,
+      templateKey: memberAgentInstance.templateKey,
+      label: memberAgentInstance.label,
+      lastActivityAt: memberAgentInstance.lastActivityAt,
+      address: agentInstance.address,
     })
     .from(memberAgentInstance)
     .innerJoin(
@@ -103,9 +126,14 @@ export async function getPrincipalRoster(args: {
     .map((r) => ({
       instanceId: r.instanceId,
       principalId: r.principalId,
+      agentId: r.agentId,
       name: r.name,
       status: r.status,
       sessionCount: sessionCounts.get(r.principalId) ?? 0,
+      templateKey: r.templateKey,
+      label: r.label,
+      lastActivityAt: r.lastActivityAt.toISOString(),
+      address: r.address,
     }))
     .sort((a, b) => a.name.localeCompare(b.name));
 
@@ -154,8 +182,13 @@ export async function getTenantRoster(args: {
     .selectDistinctOn([memberAgentInstance.instanceId], {
       instanceId: memberAgentInstance.instanceId,
       principalId: agentInstance.principalId,
+      agentId: agentInstance.agentId,
       name: agent.name,
       status: agentInstance.status,
+      templateKey: memberAgentInstance.templateKey,
+      label: memberAgentInstance.label,
+      lastActivityAt: memberAgentInstance.lastActivityAt,
+      address: agentInstance.address,
     })
     .from(memberAgentInstance)
     .innerJoin(
@@ -193,9 +226,14 @@ export async function getTenantRoster(args: {
     .map((r) => ({
       instanceId: r.instanceId,
       principalId: r.principalId,
+      agentId: r.agentId,
       name: r.name,
       status: r.status,
       sessionCount: sessionCounts.get(r.principalId) ?? 0,
+      templateKey: r.templateKey,
+      label: r.label,
+      lastActivityAt: r.lastActivityAt.toISOString(),
+      address: r.address,
     }))
     .sort((a, b) => a.name.localeCompare(b.name));
 

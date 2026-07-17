@@ -4,26 +4,58 @@ import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import React from "react";
 
 import { ActivityBlock } from "./ActivityBlock";
-import type { ToolCall } from "./types";
+import type { Part } from "./types";
 
 afterEach(() => {
   cleanup();
 });
 
-const tool = (extra?: Partial<ToolCall>): ToolCall => ({
-  id: "c1",
-  name: "attio__query_records",
-  result: "[]",
-  isError: false,
-  ...extra,
-});
+function toolPart(extra?: Partial<Extract<Part, { type: "tool" }>>): Part {
+  const base: Extract<Part, { type: "tool" }> = {
+    type: "tool",
+    toolCallId: "c1",
+    toolName: "attio__query_records",
+    state: "output-available",
+    output: "[]",
+  };
+  return { ...base, ...extra };
+}
+
+function pendingToolPart(
+  extra?: Partial<Extract<Part, { type: "tool" }>>,
+): Part {
+  return {
+    type: "tool",
+    toolCallId: "c1",
+    toolName: "attio__query_records",
+    state: "pending",
+    ...extra,
+  };
+}
+
+function failedToolPart(
+  errorText: string,
+  extra?: Partial<Extract<Part, { type: "tool" }>>,
+): Part {
+  return {
+    type: "tool",
+    toolCallId: "c1",
+    toolName: "attio__query_records",
+    state: "output-error",
+    errorText,
+    ...extra,
+  };
+}
+
+function reasoningPart(text: string): Part {
+  return { type: "reasoning", text };
+}
 
 describe("ActivityBlock", () => {
   it("is collapsed by default and hides the trace until expanded", () => {
     render(
       <ActivityBlock
-        reasoning="Weighing the options"
-        toolCalls={[tool()]}
+        parts={[reasoningPart("Weighing the options"), toolPart()]}
         streaming={false}
         messageKey="m1"
         formatSummary={() => "Searching Attio"}
@@ -39,14 +71,11 @@ describe("ActivityBlock", () => {
 
   it("renders identically (same collapsed structure) whether streaming or settled", () => {
     const props = {
-      reasoning: "Weighing the options",
-      toolCalls: [tool()],
+      parts: [reasoningPart("Weighing the options"), toolPart()],
       messageKey: "m1",
       formatSummary: () => "Searching Attio",
     };
-    const settled = render(
-      <ActivityBlock {...props} streaming={false} />,
-    );
+    const settled = render(<ActivityBlock {...props} streaming={false} />);
     const settledBlock = settled.getByTestId("activity-block").outerHTML;
     cleanup();
     const streaming = render(<ActivityBlock {...props} streaming={true} />);
@@ -58,11 +87,13 @@ describe("ActivityBlock", () => {
     ).toBeDefined();
   });
 
-  it("shows a rolling reasoning label while streaming", () => {
+  it("shows a rolling label from the trailing reasoning part while streaming", () => {
     render(
       <ActivityBlock
-        reasoning={"First I check the CRM\nNow drafting the reply"}
-        toolCalls={[]}
+        parts={[
+          reasoningPart("First I check the CRM"),
+          reasoningPart("Now drafting the reply"),
+        ]}
         streaming
         messageKey="m1"
       />,
@@ -72,11 +103,24 @@ describe("ActivityBlock", () => {
     );
   });
 
+  it("shows a rolling label from a trailing pending tool part while streaming", () => {
+    render(
+      <ActivityBlock
+        parts={[pendingToolPart()]}
+        streaming
+        messageKey="m1"
+        formatSummary={() => "Searching Attio"}
+      />,
+    );
+    expect(screen.getByTestId("activity-summary").textContent).toBe(
+      "Searching Attio",
+    );
+  });
+
   it("rolls settled tools into the summary with a tool count", () => {
     render(
       <ActivityBlock
-        reasoning=""
-        toolCalls={[tool({ id: "c1" }), tool({ id: "c2" })]}
+        parts={[toolPart({ toolCallId: "c1" }), toolPart({ toolCallId: "c2" })]}
         streaming={false}
         messageKey="m1"
         summarizeCalls={() => "Checked Attio twice"}
@@ -90,17 +134,16 @@ describe("ActivityBlock", () => {
     );
   });
 
-  it("marks the summary as an error when a tool failed", () => {
+  it("never paints the settled summary red when a tool failed (CL-3668 color discipline)", () => {
     render(
       <ActivityBlock
-        reasoning=""
-        toolCalls={[tool({ isError: true, result: "boom" })]}
+        parts={[failedToolPart("boom")]}
         streaming={false}
         messageKey="m1"
         summarizeCalls={() => "Attio call failed"}
       />,
     );
-    expect(screen.getByTestId("activity-summary").className).toContain(
+    expect(screen.getByTestId("activity-summary").className).not.toContain(
       "text-red",
     );
   });
@@ -109,8 +152,7 @@ describe("ActivityBlock", () => {
     const prefs = new Map<string, boolean>();
     render(
       <ActivityBlock
-        reasoning="Thinking"
-        toolCalls={[]}
+        parts={[reasoningPart("Thinking")]}
         streaming={false}
         messageKey="k1"
         isExpanded={(k) => prefs.get(k) === true}
@@ -122,5 +164,80 @@ describe("ActivityBlock", () => {
     );
     fireEvent.click(screen.getByRole("button", { name: "Show activity" }));
     expect(prefs.get("k1")).toBe(true);
+  });
+
+  it("renders an interleaved assembler part order identically to the lifted flat layout of the same turn", () => {
+    // Hydrated layout (liftToParts): one cumulative reasoning part first,
+    // then tools, then text. Live assembler layout: true stream order with
+    // reasoning split around the tool call. Same settled content, different
+    // part order — the default render must be indistinguishable (CL-3679
+    // polish parity). ActivityBlock re-flattens deterministically (all
+    // reasoning text joined in part order, tools in part order), so full DOM
+    // equality is expected — including the expanded trace.
+    const hydratedParts: Part[] = [
+      reasoningPart("Step one: check the account\nStep two: draft the reply"),
+      toolPart({ toolCallId: "c1", toolName: "attio__query_records" }),
+    ];
+    const assemblerParts: Part[] = [
+      reasoningPart("Step one: check the account"),
+      toolPart({ toolCallId: "c1", toolName: "attio__query_records" }),
+      reasoningPart("Step two: draft the reply"),
+    ];
+    const renderProps = (parts: Part[]) => (
+      <ActivityBlock
+        parts={parts}
+        streaming={false}
+        messageKey="m1"
+        formatSummary={() => "Searching Attio"}
+      />
+    );
+    const a = render(renderProps(hydratedParts));
+    const collapsedA = a.getByTestId("activity-block").outerHTML;
+    fireEvent.click(a.getByRole("button", { name: "Show activity" }));
+    const expandedA = a.getByTestId("activity-block").outerHTML;
+    cleanup();
+    const b = render(renderProps(assemblerParts));
+    const collapsedB = b.getByTestId("activity-block").outerHTML;
+    fireEvent.click(b.getByRole("button", { name: "Show activity" }));
+    const expandedB = b.getByTestId("activity-block").outerHTML;
+    expect(collapsedA).toBe(collapsedB);
+    expect(expandedA).toBe(expandedB);
+  });
+
+  describe("CL-3758: streaming must not force the reveal panel open", () => {
+    it("keeps the reveal panel closed while streaming even when the expand pref is on", () => {
+      render(
+        <ActivityBlock
+          parts={[
+            reasoningPart(
+              "First paragraph of reasoning.\n\nSecond paragraph of reasoning, quite a bit longer than the first.",
+            ),
+          ]}
+          streaming
+          messageKey="m1"
+          isExpanded={() => true}
+        />,
+      );
+      expect(screen.queryByTestId("activity-detail")).toBeNull();
+      expect(screen.queryByTestId("activity-reasoning")).toBeNull();
+      expect(screen.getByTestId("activity-summary")).toBeDefined();
+    });
+
+    it("still opens the reveal panel for a settled turn when the expand pref is on", () => {
+      render(
+        <ActivityBlock
+          parts={[
+            reasoningPart(
+              "First paragraph of reasoning.\n\nSecond paragraph of reasoning, quite a bit longer than the first.",
+            ),
+          ]}
+          streaming={false}
+          messageKey="m1"
+          isExpanded={() => true}
+        />,
+      );
+      const detail = screen.getByTestId("activity-detail");
+      expect(detail.textContent).toContain("First paragraph of reasoning.");
+    });
   });
 });

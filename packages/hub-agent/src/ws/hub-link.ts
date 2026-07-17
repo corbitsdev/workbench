@@ -56,6 +56,40 @@ type TurnAbortFrame = typeof TurnAbortFrame.infer;
 
 const logger = getLogger(["interchange", "hub-agent", "ws"]);
 
+// WORKBENCH-LOCAL (CL-3796): thrown by the workflow-run-pack quarantine
+// fast-fail path so `workflow-run-pack-client.ts` can tell "the hub already
+// told us this key is persistently corrupt" apart from a genuine per-attempt
+// rejection via `instanceof`, rather than sniffing the error message across
+// the package boundary.
+export class WorkflowRunPackQuarantinedError extends Error {}
+
+// WORKBENCH-LOCAL (CL-3796): `sendOnce` rejects with the pack-sender's own
+// `pack rejected by receiver (... reason=<x>)` message only when the hub
+// actually responded with a `repo.pack.reject` frame. Every other failure (a
+// WS disconnect firing `cancelAll`, a synchronous `sendFrame` throw against a
+// closed transport) never reached the hub at all, so it carries no
+// information about repo divergence -- it is connection noise. The
+// retry-once bootstrap arm exists ONLY to absorb the hub-side `initRepo` CAS
+// race (a genuine hub reject); retrying immediately after a connection-level
+// failure just re-attempts a send that is doomed for the same reason (the
+// link is down) and doubles outbound load at exactly the moment a reconnect
+// storm is already underway (the CL-3796 incident). Gating the retry -- and
+// the quarantine failure count it feeds -- on an actual hub response keeps
+// the arm scoped to the race it was built for.
+//
+// ASSUMPTION (pin-bump re-verify): this substring check relies on `reason=`
+// appearing ONLY in `@intx/pack-transport`'s `handleReject` message shape
+// (`pack rejected by receiver (transferId=... reason=...)`), and never in a
+// connection-level error message. If a future interchange pin changes
+// `sendFrame`/transport error shapes to include the literal text `reason=`
+// (e.g. a WS library that stringifies a close reason as `reason=...`), a
+// plain connection blip would be misclassified as hub-signaled here --
+// re-run the bootstrap-retry and quarantine tests in `hub-link.test.ts`
+// after every pin bump to catch this.
+function isHubSignaledRejection(err: unknown): boolean {
+  return err instanceof Error && err.message.includes("reason=");
+}
+
 const DEFAULT_PING_INTERVAL_MS = 30_000;
 // WORKBENCH-LOCAL (CL-2405): exponential reconnect backoff with jitter,
 // sustained-failure WARN escalation, and a configurable outbound queue —
@@ -75,6 +109,12 @@ const DEFAULT_MAX_RECONNECT_DELAY_MS = 3_000;
 // an incident.
 const SUSTAINED_FAILURE_WARN_MS = 30_000;
 const DEFAULT_MAX_OUTBOUND_QUEUE = 4096;
+// WORKBENCH-LOCAL (CL-3826): per-attempt connect timeout. Railway's redeploy
+// overlap window can route internal DNS to a draining replica whose TCP
+// connect blackholes rather than refusing; without a bound the reconnect
+// loop stalls for the entire overlap window instead of retrying on the fast
+// backoff above. Kept close to the reconnect defaults it works alongside.
+const DEFAULT_CONNECT_TIMEOUT_MS = 5_000;
 
 /**
  * Schedules a deferred callback and returns a cancel function. Injection
@@ -294,6 +334,16 @@ export type HubLinkConfig = {
   /** Max outbound frames queued while disconnected (default 4096). */
   maxOutboundQueue?: number;
   scheduleReconnect?: ReconnectScheduler;
+  // WORKBENCH-LOCAL (CL-3826): per-attempt connect timeout tuning.
+  /**
+   * Per-attempt cap on how long a connect attempt may wait for the `open`
+   * event before it is abandoned (default 5000ms). Guards against a TCP
+   * connect that blackholes (e.g. Railway routing to a draining replica
+   * during a redeploy overlap window) rather than refusing outright.
+   */
+  connectTimeoutMs?: number;
+  /** Injection point for tests; same shape as `scheduleReconnect`. */
+  scheduleConnectTimeout?: ReconnectScheduler;
 };
 
 export type HubLink = {
@@ -348,12 +398,24 @@ export function createHubLink(config: HubLinkConfig): HubLink {
     maxReconnectDelayMs = DEFAULT_MAX_RECONNECT_DELAY_MS,
     maxOutboundQueue = DEFAULT_MAX_OUTBOUND_QUEUE,
     scheduleReconnect = defaultScheduleReconnect,
+    connectTimeoutMs = DEFAULT_CONNECT_TIMEOUT_MS,
+    scheduleConnectTimeout = defaultScheduleReconnect,
   } = config;
 
   let ws: WebSocket | null = null;
   let closed = false;
   let pingTimer: ReturnType<typeof setInterval> | null = null;
   let cancelReconnect: (() => void) | null = null;
+  // WORKBENCH-LOCAL (CL-3826): pending connect-attempt timer. Link-scoped so
+  // close() and a superseding connect() can both cancel a stale attempt's
+  // timer, matching how pingTimer/cancelReconnect are owned.
+  let cancelConnectTimeout: (() => void) | null = null;
+  function clearConnectTimeout(): void {
+    if (cancelConnectTimeout !== null) {
+      cancelConnectTimeout();
+      cancelConnectTimeout = null;
+    }
+  }
   let lastPongAt = 0;
   // WORKBENCH-LOCAL (CL-2405): backoff state + scheduleReconnectOnce.
   // Backoff state, persisted across reconnect attempts and reset on a
@@ -1118,7 +1180,7 @@ export function createHubLink(config: HubLinkConfig): HubLink {
       // the bootstrap-retry arm `WORKFLOW_RUN_PACK_MAX_BOOTSTRAP_FAILURES`
       // times; fail fast without shipping another pack to the receiver.
       if (workflowRunPackQuarantined.has(key)) {
-        throw new Error(
+        throw new WorkflowRunPackQuarantinedError(
           `workflow-run pack push for ${opts.repoId.id}/${opts.ref} is quarantined ` +
             `after ${String(WORKFLOW_RUN_PACK_MAX_BOOTSTRAP_FAILURES)} consecutive ` +
             `bootstrap-retry failures (reason=corrupt); dropping without a network attempt`,
@@ -1127,6 +1189,16 @@ export function createHubLink(config: HubLinkConfig): HubLink {
       try {
         await sendOnce();
       } catch (first) {
+        // WORKBENCH-LOCAL (CL-3796): a connection-level failure (WS dropped,
+        // transport closed) never reached the hub, so it carries none of the
+        // CAS-race signal the retry below exists for. Retrying it here would
+        // just re-attempt a send that is doomed for the same reason -- the
+        // link is down -- doubling outbound load during exactly the
+        // reconnect storm this fix targets. Propagate it directly without
+        // consuming a bootstrap-retry attempt or a quarantine strike.
+        if (!isHubSignaledRejection(first)) {
+          throw first;
+        }
         // First push to a never-bootstrapped (repoId, ref) lost the
         // race with the hub substrate's `receivePack` initRepo step
         // (see the comment on `workflowRunPackBootstrapped` above).
@@ -1138,6 +1210,14 @@ export function createHubLink(config: HubLinkConfig): HubLink {
         try {
           await sendOnce();
         } catch (second) {
+          // WORKBENCH-LOCAL (CL-3796): same reasoning as the first attempt —
+          // a connection-level failure on the RETRY carries no divergence
+          // signal either (the link dropped between attempts). Do not count
+          // it as a bootstrap-retry failure toward quarantine; propagate it
+          // as-is so the next event retries cleanly once the link recovers.
+          if (!isHubSignaledRejection(second)) {
+            throw second;
+          }
           // WORKBENCH-LOCAL (CL-3415): the retry ALSO rejected — this is not
           // the transient initRepo race the retry arm exists for, it is a
           // genuine (and, absent a repo reset, persistent) divergence
@@ -1272,6 +1352,12 @@ export function createHubLink(config: HubLinkConfig): HubLink {
       case "challenge":
         await handleChallenge(frame);
         break;
+      // WORKBENCH-LOCAL (CL-3779): `pong` is handled inline in the `ws.message`
+      // listener before enqueuing, so the heartbeat cannot be starved by awaited
+      // pack-apply I/O ahead of it on this serial queue. A real `pong` is valid
+      // JSON and always takes that inline path, so this arm is unreachable for
+      // inline-handled pongs; it is kept for parity with upstream
+      // `@intx/hub-agent` (minimizing fork drift), not as a live code path.
       case "pong":
         lastPongAt = Date.now();
         break;
@@ -1321,7 +1407,12 @@ export function createHubLink(config: HubLinkConfig): HubLink {
       throw new Error("HubLink.connect called after close");
     }
 
-    ws = new WebSocket(hubURL);
+    // WORKBENCH-LOCAL (CL-3826): a superseding connect() disarms any stale
+    // attempt's timer so it can never touch this attempt's socket.
+    clearConnectTimeout();
+
+    const socket = new WebSocket(hubURL);
+    ws = socket;
 
     // WORKBENCH-LOCAL (CL-2405): open/close/error handlers reset backoff and
     // demote redeploy-window noise to debug.
@@ -1331,7 +1422,19 @@ export function createHubLink(config: HubLinkConfig): HubLink {
     // window, kept at debug).
     let everOpened = false;
 
+    // WORKBENCH-LOCAL (CL-3826): bound this attempt's wait for `open`. The
+    // closure captures this attempt's socket (not the shared `ws`) and closes
+    // it only while still CONNECTING, so a timer racing an already-delivered
+    // `open` — or outliving its own attempt — can never kill a live socket.
+    cancelConnectTimeout = scheduleConnectTimeout(() => {
+      cancelConnectTimeout = null;
+      if (socket.readyState !== WebSocket.CONNECTING) return;
+      logger.warn`Hub connect attempt timed out after ${String(connectTimeoutMs)}ms, closing`;
+      socket.close();
+    }, connectTimeoutMs);
+
     ws.addEventListener("open", () => {
+      clearConnectTimeout();
       everOpened = true;
       // A healthy connection resets the backoff so the next disconnect
       // starts fast again, and clears the sustained-failure escalation.
@@ -1447,6 +1550,40 @@ export function createHubLink(config: HubLinkConfig): HubLink {
         // this catch is the belt-and-braces guarantee that no future
         // unguarded arm can wedge the link.
         const data = event.data;
+        // WORKBENCH-LOCAL (CL-3779): the heartbeat `pong` must not be starved
+        // by awaited pack-apply I/O ahead of it on the shared `messageQueue`.
+        // A `repo.pack.done` arm calls `await handlePackDone(...)` (isomorphic-git
+        // disk writes) inline on this serial chain; a pack that holds the queue
+        // longer than the pong window (`pingIntervalMs * 2`) delays the queued
+        // `pong`, `lastPongAt` goes stale, and the ping timer closes this
+        // otherwise-healthy socket ("Hub pong timeout, closing connection").
+        // Handle `pong` inline here, ahead of the queue, so the heartbeat is
+        // never blocked by sibling frame processing. All other frames enqueue
+        // exactly as before. Parsing is guarded: on any failure we fall through
+        // to the existing queued path, which does its own strict validation.
+        //
+        // Length gate: a `pong` frame is ~16 bytes, so only attempt the inline
+        // parse on tiny frames. This avoids a second synchronous `JSON.parse`
+        // on the hottest/largest frames (e.g. `repo.pack.push` chunks), which
+        // would double-parse them on the event loop; large frames skip the
+        // inline path and go straight to `messageQueue` as before.
+        if (data.length < 64) {
+          let inboundType: unknown;
+          try {
+            inboundType = (JSON.parse(data) as { type?: unknown }).type;
+          } catch {
+            inboundType = undefined;
+          }
+          if (inboundType === "pong") {
+            lastPongAt = Date.now();
+            return;
+          }
+        }
+        // WORKBENCH-LOCAL (CL-3779): only `pong` is lifted off the queue here.
+        // The deeper issue — a heavy awaited `handlePackDone(...)` pack-apply
+        // head-of-line-blocks ALL other inbound frames on this serial chain,
+        // not just the heartbeat — is tracked in CL-3781 and deliberately
+        // deferred; this change only unblocks the self-disconnect.
         messageQueue = messageQueue.then(() =>
           handleMessage(data).catch((err: unknown) => {
             const msg = err instanceof Error ? err.message : String(err);
@@ -1457,6 +1594,7 @@ export function createHubLink(config: HubLinkConfig): HubLink {
     });
 
     ws.addEventListener("close", (event) => {
+      clearConnectTimeout();
       const closeEvent = event as CloseEvent;
       const code = closeEvent.code ?? "unknown";
       const reason = closeEvent.reason ? `, reason: ${closeEvent.reason}` : "";
@@ -1477,6 +1615,7 @@ export function createHubLink(config: HubLinkConfig): HubLink {
     });
 
     ws.addEventListener("error", (event) => {
+      clearConnectTimeout();
       const errorEvent = event as ErrorEvent;
       const detail =
         errorEvent.message ??
@@ -1495,6 +1634,7 @@ export function createHubLink(config: HubLinkConfig): HubLink {
 
   function close(): void {
     closed = true;
+    clearConnectTimeout();
     if (cancelReconnect !== null) {
       cancelReconnect();
       cancelReconnect = null;

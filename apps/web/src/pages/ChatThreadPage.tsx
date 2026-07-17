@@ -1,19 +1,27 @@
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, Navigate, useNavigate, useParams } from "react-router";
+import { Info } from "lucide-react";
 import type { ThreadInsert } from "@workbench/chat";
+import { ChatThreadInfoDialog } from "../components/ChatThreadInfoDialog";
 import { ErrorBoundary } from "../components/ErrorBoundary";
 import { MyraChatSurface } from "../components/MyraChatSurface";
+import { SubagentDock } from "../components/SubagentDock";
 import { WorkflowDock } from "../components/WorkflowDock";
 import { WorkflowEventBubble } from "../components/WorkflowEventBubble";
 import { useMyraSession } from "../hooks/use-myra-session";
 import { useMembers } from "../hooks/use-members";
+import { useAgentInstances } from "../hooks/use-agents";
+import { useTenantRoster } from "../hooks/use-tenant-roster";
 import { useConversationGates } from "../hooks/use-conversation-gates";
 import { useResumeConversationGate } from "../hooks/use-workflow";
 import { useWorkflowRunEvents } from "../hooks/use-workflow-run-events";
 import { useDockFocus } from "../lib/dock-focus";
 import { useActiveWorkbench } from "../lib/active-workbench-context";
 import { usePublishActiveContext } from "../lib/active-context-store";
+import { humanizeInstanceStatus } from "../lib/instance-status";
+import { myraInstanceTraceHref } from "../lib/myra-turn-trace";
 import {
+  isDefaultThreadLabel,
   resolveActiveThread,
   useAutoTitleFirstMessage,
   useCreateMyraThread,
@@ -43,14 +51,12 @@ export function ChatThreadPage() {
   }));
 
   const threadList = threads ?? [];
+  const active = resolveActiveThread(threadList, threadId);
   const unknownExplicitThreadId =
     threadId !== undefined &&
     threadId.length > 0 &&
     threadList.length > 0 &&
-    !threadList.some((t) => t.id === threadId);
-  const active = unknownExplicitThreadId
-    ? null
-    : resolveActiveThread(threadList, threadId);
+    active === null;
 
   // Remember the resolved thread for the FAB and root redirect. Writes an
   // external store only (no re-render), so an effect is the right tool here.
@@ -95,16 +101,24 @@ export function ChatThreadPage() {
     [session.messages],
   );
 
+  // A brand-new thread carries the hub's auto-assigned default label
+  // ("Chat", "Chat 2", …) until the async title lands — show "New chat"
+  // instead of that placeholder in the breadcrumb.
+  const activeThreadLabel =
+    active !== null && isDefaultThreadLabel(active.label)
+      ? "New chat"
+      : (active?.label ?? null);
+
   usePublishActiveContext(
-    active
+    active && activeThreadLabel !== null
       ? {
           kind: "thread",
           id: active.id,
-          label: active.label ?? "Chat",
+          label: activeThreadLabel,
           turns: threadTurns,
         }
       : null,
-    active ? String(threadTurns.length) : undefined,
+    active ? `${threadTurns.length}:${activeThreadLabel}` : undefined,
   );
 
   // Run-addressed workflow events (CL-2682): derived from the same conversation
@@ -143,6 +157,41 @@ export function ChatThreadPage() {
     );
     return () => window.clearTimeout(timer);
   }, [focus]);
+
+  // Thread info dialog: reuses the roster query the turn trace link already
+  // relies on, plus the Agents-page instance list for the mail address and
+  // status — both existing queries, no new hub route. Gated on the dialog
+  // being open since they exist only for it.
+  const [infoOpen, setInfoOpen] = useState(false);
+  const { data: tenantRoster } = useTenantRoster(activeTenantId ?? "", {
+    enabled:
+      infoOpen && activeTenantId !== null && activeTenantId !== undefined,
+  });
+  const { data: agentInstances } = useAgentInstances(
+    infoOpen ? activeTenantId : null,
+  );
+  const activeInstance = agentInstances?.find(
+    (instance) => instance.id === active?.instanceId,
+  );
+  const instanceStatus =
+    activeInstance !== undefined
+      ? humanizeInstanceStatus(activeInstance.status)
+      : undefined;
+  const traceHref = myraInstanceTraceHref(
+    active?.instanceId,
+    tenantRoster?.instances,
+  );
+  const infoButton =
+    active !== null ? (
+      <button
+        type="button"
+        onClick={() => setInfoOpen(true)}
+        aria-label="Chat details"
+        className="grid h-7 w-7 flex-none place-items-center rounded-[8px] text-text-3 transition-colors hover:bg-page hover:text-text active:scale-[0.97]"
+      >
+        <Info className="h-3.5 w-3.5" />
+      </button>
+    ) : null;
 
   if (isLoading) {
     return <CenteredNotice>Loading your chats…</CenteredNotice>;
@@ -228,18 +277,44 @@ export function ChatThreadPage() {
             }
             inserts={inserts}
             mentionCandidates={mentionCandidates}
+            {...(infoButton !== null ? { headerRight: infoButton } : {})}
           />
+          {active !== null && (
+            <ChatThreadInfoDialog
+              open={infoOpen}
+              onClose={() => setInfoOpen(false)}
+              title={active.label}
+              instanceId={active.instanceId}
+              createdAt={active.createdAt}
+              {...(activeInstance?.name !== undefined
+                ? { agentName: activeInstance.name }
+                : {})}
+              {...(activeInstance?.address !== undefined
+                ? { mailAddress: activeInstance.address }
+                : {})}
+              {...(instanceStatus !== undefined
+                ? { status: instanceStatus }
+                : {})}
+              {...(traceHref !== undefined ? { traceHref } : {})}
+            />
+          )}
         </div>
         {/* conversationId == Myra thread id; producers (workflow_start tool,
             chat-initiated starts) stamp the same id as originConversationId. */}
         <div
           ref={dockRef}
-          className="flex h-full motion-safe:transition-shadow data-[dock-focused=1]:shadow-[inset_2px_0_0_0_var(--color-accent)]"
+          className="flex h-full min-h-0 flex-col motion-safe:transition-shadow data-[dock-focused=1]:shadow-[inset_2px_0_0_0_var(--color-accent)]"
         >
-          <WorkflowDock
+          <SubagentDock
             conversationId={active?.id ?? null}
             tenantId={activeTenantId}
           />
+          <div className="min-h-0 flex-1">
+            <WorkflowDock
+              conversationId={active?.id ?? null}
+              tenantId={activeTenantId}
+            />
+          </div>
         </div>
       </div>
     </ErrorBoundary>

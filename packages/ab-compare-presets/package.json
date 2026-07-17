@@ -11,6 +11,10 @@
     "./blocks": {
       "types": "./src/blocks.ts",
       "default": "./src/blocks.ts"
+    },
+    "./display-steps": {
+      "types": "./src/display-steps.ts",
+      "default": "./src/display-steps.ts"
     }
   },
   "scripts": {

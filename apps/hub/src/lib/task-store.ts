@@ -1,29 +1,21 @@
 import { and, desc, eq, inArray, or } from "drizzle-orm";
 import { schema as intxSchema } from "@intx/db";
-import type {
-  Task,
-  TaskExternalRef,
-  TaskLink,
-  TaskStatus,
-} from "@workbench/shared";
+import type { Task, TaskLink, TaskStatus } from "@workbench/shared";
 import { validateTaskLinks } from "@workbench/shared";
+import { TRIAGE_TEMPLATE_KEY } from "@workbench/myra";
+import { toApiTask } from "@workbench/tasks";
 import {
   task,
   taskExternalRef,
   memberAgentInstance,
   type TaskExternalRefRow,
-  type TaskRow,
 } from "../db/schema";
 import type { HubDb } from "../db";
 import { deliverTaskMail } from "./deliver-task-mail";
 import type { MailboxEventBus } from "./mailbox-events";
 import { keysetBefore, takePage, type KeysetCursor } from "./keyset";
 
-// Mirrors `TRIAGE_TEMPLATE_KEY` in ../services/mailbox-triage.ts. Duplicated
-// rather than imported so this lib module (below services in the dependency
-// direction) never depends on a service; a `memberAgentInstance.templateKey`
-// audit would catch drift either way.
-const TRIAGE_TEMPLATE_KEY = "myra-triage";
+export { toApiTask };
 
 export type TaskPage = {
   items: Task[];
@@ -76,47 +68,6 @@ export type UpdateTaskInput = {
   assigneePrincipalId?: string | null;
   mailboxEventBus?: MailboxEventBus;
 };
-
-function toExternalRef(row: TaskExternalRefRow): TaskExternalRef {
-  const ref: TaskExternalRef = {
-    adapterId: row.adapterId,
-    externalId: row.externalId ?? "",
-    syncState: row.syncState,
-  };
-  if (row.externalUrl !== null) ref.externalUrl = row.externalUrl;
-  if (row.lastSyncedAt !== null) {
-    ref.lastSyncedAt = row.lastSyncedAt.toISOString();
-  }
-  return ref;
-}
-
-export function toApiTask(row: TaskRow, refs: TaskExternalRefRow[]): Task {
-  const result: Task = {
-    id: row.id,
-    tenantId: row.tenantId,
-    ownerPrincipalId: row.ownerPrincipalId,
-    createdByPrincipalId: row.createdByPrincipalId,
-    title: row.title,
-    status: row.status,
-    source: row.source,
-    links: row.links,
-    // Only refs with an established external object are user-visible; a pending
-    // ref that has never linked stays server-side (the "sending…" affordance is
-    // driven separately), never surfaced as an error.
-    externalRefs: refs
-      .filter((ref) => ref.externalId !== null)
-      .map(toExternalRef),
-    createdAt: row.createdAt.toISOString(),
-    updatedAt: row.updatedAt.toISOString(),
-  };
-  if (row.body !== null) result.body = row.body;
-  if (row.sourceRef !== null) result.sourceRef = row.sourceRef;
-  if (row.due !== null) result.due = row.due.toISOString();
-  if (row.assigneePrincipalId !== null) {
-    result.assigneePrincipalId = row.assigneePrincipalId;
-  }
-  return result;
-}
 
 async function loadRefsByTaskIds(
   db: HubDb,

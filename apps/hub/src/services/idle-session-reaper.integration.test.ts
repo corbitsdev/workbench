@@ -295,7 +295,7 @@ describe("createIdleSessionReaper", () => {
     expect(evictions).toBe(0);
   });
 
-  test("never sleeps a non-chat system agent (Loop)", async () => {
+  test("never sleeps a self-driven agent (Loop) — its interval schedule has no mail to wake it", async () => {
     const address = `ins_loop1@${DOMAIN}`;
     const { sessionId } = await seedChatAgent({
       instanceId: "ins_loop1",
@@ -325,15 +325,44 @@ describe("createIdleSessionReaper", () => {
     expect(await sessionStatusOf(sessionId)).toBe("active");
   });
 
-  test("never sleeps a SHARED deployable chat agent (Oat) — it has no on-demand wake", async () => {
-    // CL-2790 blocker guard: Oat is a deployable chat agent but only the
-    // personal agent (Myra) has a wake path. Sleeping Oat would leave its next
-    // message 502-ing with no self-heal, so it must be spared until the
-    // universal delivery-seam wake lands.
+  test("sleeps a SHARED deployable chat agent (Oat) — it now wakes on the next inbound mail", async () => {
+    // The mail-route wake middleware (relaunchInstanceIfNeeded, apps/hub
+    // index.ts) relaunches a non-routable instance ahead of interchange's
+    // mail-send route, so Oat is safe to sleep like every other agent kind.
     const address = `ins_oat1@${DOMAIN}`;
     const { sessionId } = await seedChatAgent({
       instanceId: "ins_oat1",
       agentName: "Oat",
+      address,
+    });
+
+    const ended: string[] = [];
+    let clock = 1_000_000;
+    const reaper = createIdleSessionReaper({
+      db,
+      endSession: async (a) => {
+        ended.push(a);
+      },
+      getRoutableAddresses: () => [address],
+      eventCollectors: idleCollectors(),
+      reapAfterMs: REAP_AFTER,
+      now: () => clock,
+    });
+
+    await reaper.sweepOnce();
+    clock += REAP_AFTER * 10;
+    const result = await reaper.sweepOnce();
+
+    expect(result.evicted).toBe(1);
+    expect(ended).toEqual([address]);
+    expect(await sessionStatusOf(sessionId)).toBe("ended");
+  });
+
+  test("never sleeps the ephemeral file-parser invocation", async () => {
+    const address = `ins_fp1@${DOMAIN}`;
+    const { sessionId } = await seedChatAgent({
+      instanceId: "ins_fp1",
+      agentName: "File Parser",
       address,
     });
 

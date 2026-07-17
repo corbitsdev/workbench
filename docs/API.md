@@ -124,6 +124,52 @@ approval gate (`awaitSignal`) is resolved. The hub forwards it to the sidecar vi
 
 ---
 
+## Member feature flags
+
+Members can read (not write) which owner-controlled features are enabled for
+their tenant — the same truth the runtime kill switches use (grant OR env
+override). Owner writes stay on the owner capabilities route.
+
+```
+GET  /v1/me/features
+→ { features: [{ name: "scheduler" | "triage" | "tasks-reconciler", enabled: boolean }] }
+```
+
+The web settings surface hides morning-brief / schedules / triage / task-sync
+controls when the matching feature is off (CL-3823).
+
+---
+
+## Myra member preferences
+
+Per-member Myra personalization (variants, instructions, style axes, pinned skills,
+tool narrowing, inference dials) is stored on `myra_variant_preference` and applied
+on the next Myra launch (new thread, triage wake, reconnect/relaunch).
+
+```
+GET  /v1/myra/variants
+GET  /v1/members/me/myra-preferences
+PUT  /v1/members/me/myra-preferences
+GET  /v1/members/me/myra-preferences/tool-catalog
+```
+
+**Variant availability (CL-3824):** `GET /v1/myra/variants` returns only variants
+whose model has at least one launchable offering for the tenant
+(`resolveModelSources` ok). `GET` preferences soft-nulls a stored chat/triage id
+that is no longer in that set; `PUT` of an unavailable variant id returns 400.
+New chat threads and triage wakes use the same availability gate
+(`resolveLaunchableMyraVariant`): an unavailable stored pick falls through to the
+canonical default among launchable variants of that kind (then the first
+launchable), so Settings honesty and launch binding agree.
+
+**Tool narrowing (CL-3762):** `disabledCatalogPackages` and `disabledToolNames` are
+json string arrays. Only packages/tools visible in `toolCatalog` may be persisted;
+disabling a package removes all tools in that package at launch. Hub launch and
+grant reconcile intersect workspace grants with these disables — members cannot
+widen org tool grants.
+
+---
+
 ## Myra Threads API
 
 Multi-thread chat over per-member Myra instances (CL-2309). Each thread is a
@@ -302,6 +348,18 @@ authorized via `authorize(grantStore, principalId, tenantId, "admin:*", "manage"
 which only the `owner` (`*:*`) and `admin` (`*`/`manage`) system roles satisfy.
 The web nav gate (`/me` now returns `isAdmin`) is cosmetic; the hub is
 authoritative. All governance is scoped to the root (global org) tenant.
+
+**Frontend IA (CL-3763):** the web app's standalone `/admin` and `/owner`
+routes were unified into role-gated management groups inside `/settings`
+(`/settings/admin/*`, `/settings/owner/*`) — the `Settings` side-nav
+(`apps/web/src/pages/settings-section-nav.ts`) shows "Users & agents" only
+to `isAdmin` viewers and "Workbench management" only to `isOwner` viewers,
+reusing the same `AdminLayout`/`OwnerLayout` gates unchanged; both areas
+render inside the Settings layout (`SettingsLayout` hosts the section rail
+and an `Outlet`). The old `/admin/*` and `/owner/*` paths are wildcard `<Navigate>`
+redirects (`apps/web/src/router.tsx`) so every existing deep link still
+resolves. This is a navigation move only — the `/api/v1/admin/*` and
+`/owner/*` hub routes described above did not change.
 
 Read-only browsers:
 

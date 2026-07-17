@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { eq, and, inArray, like } from "drizzle-orm";
 import { schema as intxSchema, resolveModelSources } from "@intx/db";
 import type { DB } from "@intx/db";
@@ -20,6 +21,16 @@ import {
   normalizePageContextInput,
 } from "../lib/page-context";
 import { composePersonalAgentPromptForInstance } from "../lib/operator-profile";
+import { composeMyraStyleOverlaySectionForInstance } from "../lib/myra-style-overlay";
+import { composeMyraPinnedSkillsSectionForInstance } from "../lib/myra-pinned-skills";
+import {
+  PERSONAL_AGENT_PROMPT_VERSION,
+  isPersonalAgentDefinitionName,
+} from "@workbench/myra";
+import { narrowToolNamesForMemberMyraLaunch } from "../lib/myra-member-tool-narrowing";
+import { buildTimeZoneMarker } from "@workbench/prompts";
+import { resolveMemberTimeZone } from "@workbench/shared";
+import { readMemberPreferences } from "../lib/member-preferences";
 import {
   buildToolDefinitions,
   getToolNamesFromCapabilities,
@@ -32,6 +43,7 @@ import {
 import { runDedupedRelaunch } from "./relaunch-breaker";
 import { getCachedCatalogSources } from "./workflow-model-source-cache";
 import { memberAgentInstance } from "../db/schema";
+import { appendInferenceParamsMarkerForMyraLaunch } from "../lib/inference-params-launch";
 import type { HubDb } from "../db";
 
 const log = getLogger(["api", "agents"]);
@@ -39,7 +51,10 @@ const log = getLogger(["api", "agents"]);
 const { agent, agentInstance, agentSession, grant, tenant, sessionAsset } =
   intxSchema;
 
-export const LAUNCH_RETRY_DELAY_MS = 1_000;
+// Kept short and paired with the client's own adaptive reconnect backoff
+// (use-myra-session.ts RECONNECT_FIRST_DELAY_MS): a slow retry loop here would
+// stack with the client's retry rather than resolve within one connect cycle.
+export const LAUNCH_RETRY_DELAY_MS = 500;
 export const MAX_LAUNCH_ATTEMPTS = 3;
 
 /**
@@ -352,6 +367,14 @@ export async function launchAgentSession(
     const allowed = new Set(opts.persona.toolNames);
     toolNames = definitionToolNames.filter((name) => allowed.has(name));
   }
+  if (isPersonalAgentDefinitionName(agentRow.name)) {
+    toolNames = await narrowToolNamesForMemberMyraLaunch(
+      db as HubDb,
+      tenantId,
+      instanceId,
+      toolNames,
+    );
+  }
   const tools = buildToolDefinitions(toolNames);
 
   // Personalize the personal agent per instance: rebuild its prompt in the
@@ -364,25 +387,111 @@ export async function launchAgentSession(
     sources.find((s) => s.id === defaultSource)?.provider ??
     sources[0]!.provider;
   let effectiveSystemPrompt = systemPrompt;
-  if (!opts.persona) {
-    try {
-      const personalized = await composePersonalAgentPromptForInstance(db, {
-        tenantId,
-        instanceId,
-        provider: defaultSourceProvider,
+  let personalAgentPromptComposed = false;
+
+  // These four prompt-composition lookups (personalization, style overlay,
+  // pinned skills, member timezone) each hit the DB independently and none
+  // reads another's result — only the order they're STITCHED into
+  // `effectiveSystemPrompt` afterward matters. Firing them with
+  // `Promise.allSettled` collapses what was a serial chain of round trips
+  // into one, cutting session-launch latency (CL-3799) without changing the
+  // assembled prompt: each section is still applied in the same fixed order,
+  // and a failure in one lookup no longer blocks the others from being
+  // attempted (a strict improvement on the previous style/pinned pairing,
+  // where a style-compose throw skipped pinned-skills entirely).
+  const hubDb = db as unknown as HubDb;
+  const [
+    personalizedResult,
+    styleSectionResult,
+    pinnedSectionResult,
+    memberTimeZoneResult,
+  ] = await Promise.allSettled([
+    opts.persona
+      ? Promise.resolve(null)
+      : composePersonalAgentPromptForInstance(db, {
+          tenantId,
+          instanceId,
+          provider: defaultSourceProvider,
+        }),
+    composeMyraStyleOverlaySectionForInstance(db, {
+      tenantId,
+      instanceId,
+      provider: defaultSourceProvider,
+    }),
+    composeMyraPinnedSkillsSectionForInstance(db, {
+      tenantId,
+      instanceId,
+      provider: defaultSourceProvider,
+    }),
+    (async () => {
+      const memberMapping = await hubDb.query.memberAgentInstance.findFirst({
+        where: eq(memberAgentInstance.instanceId, instanceId),
       });
-      if (personalized !== null) {
-        effectiveSystemPrompt = personalized;
+      if (!memberMapping) return undefined;
+      const preferences = await readMemberPreferences(
+        hubDb,
+        tenantId,
+        memberMapping.memberPrincipalId,
+      );
+      return resolveMemberTimeZone(preferences);
+    })(),
+  ]);
+
+  if (!opts.persona) {
+    if (personalizedResult.status === "fulfilled") {
+      if (personalizedResult.value !== null) {
+        effectiveSystemPrompt = personalizedResult.value;
+        personalAgentPromptComposed = true;
       }
-    } catch (err) {
+    } else {
       log.warn(
         "Failed to personalize personal-agent prompt; using seeded prompt",
         {
           instanceId,
-          error: err instanceof Error ? err.message : String(err),
+          error:
+            personalizedResult.reason instanceof Error
+              ? personalizedResult.reason.message
+              : String(personalizedResult.reason),
         },
       );
     }
+  }
+
+  // Personalization-style overlay (CL-3760): applies to BOTH Myra surfaces
+  // (chat and, unlike operator-identity above, triage — gated on the Myra
+  // template set rather than `!opts.persona`, since triage launches always
+  // pass the mailbox persona). Best-effort; a missing member mapping, a
+  // non-Myra instance, or an all-default selection composes `null` and
+  // leaves the prompt untouched — the byte-identical guarantee.
+  if (styleSectionResult.status === "fulfilled") {
+    if (styleSectionResult.value !== null) {
+      effectiveSystemPrompt = `${effectiveSystemPrompt}\n\n${styleSectionResult.value}`;
+    }
+  } else {
+    log.warn("Failed to compose Myra style overlay; using prompt without it", {
+      instanceId,
+      error:
+        styleSectionResult.reason instanceof Error
+          ? styleSectionResult.reason.message
+          : String(styleSectionResult.reason),
+    });
+  }
+
+  if (pinnedSectionResult.status === "fulfilled") {
+    if (pinnedSectionResult.value !== null) {
+      effectiveSystemPrompt = `${effectiveSystemPrompt}\n\n${pinnedSectionResult.value}`;
+    }
+  } else {
+    log.warn(
+      "Failed to compose Myra pinned-skills overlay; using prompt without it",
+      {
+        instanceId,
+        error:
+          pinnedSectionResult.reason instanceof Error
+            ? pinnedSectionResult.reason.message
+            : String(pinnedSectionResult.reason),
+      },
+    );
   }
 
   const pageContext = normalizePageContextInput(opts.pageContext);
@@ -392,6 +501,61 @@ export async function launchAgentSession(
       pageContext,
       defaultSourceProvider,
     );
+  }
+
+  // Stamp the owning member's stored timezone setting as a control-plane
+  // marker so the harness renders the active-context date in the member's
+  // zone with a fresh Date at every build. Fallback chain: stored member
+  // timezone -> no marker, which the harness renders as an explicitly
+  // labeled UTC date — never silent server-local time. Covers attended
+  // launches and unattended ones (mailbox triage, invoked subagents) alike,
+  // since both go through this wrapper. Best-effort: a lookup failure keeps
+  // the labeled-UTC fallback rather than failing the launch.
+  if (memberTimeZoneResult.status === "fulfilled") {
+    if (memberTimeZoneResult.value !== undefined) {
+      effectiveSystemPrompt = `${effectiveSystemPrompt}\n\n${buildTimeZoneMarker(memberTimeZoneResult.value)}`;
+    }
+  } else {
+    log.warn("Failed to resolve member timezone; date will be labeled UTC", {
+      instanceId,
+      error:
+        memberTimeZoneResult.reason instanceof Error
+          ? memberTimeZoneResult.reason.message
+          : String(memberTimeZoneResult.reason),
+    });
+  }
+
+  try {
+    effectiveSystemPrompt = await appendInferenceParamsMarkerForMyraLaunch(
+      hubDb,
+      { tenantId, instanceId, systemPrompt: effectiveSystemPrompt },
+    );
+  } catch (err) {
+    log.warn(
+      "Failed to append Myra inference-params marker; launch proceeds without dials",
+      {
+        instanceId,
+        error: err instanceof Error ? err.message : String(err),
+      },
+    );
+  }
+
+  // Structured, hash-only launch record for the personal-agent prompt: never
+  // log the prompt text itself (it carries customer-specific operator/context
+  // data), but the version + content hash let an eval run or an incident
+  // review confirm exactly which prompt build shipped without exposing its
+  // contents. Gated on the personalized path — PERSONAL_AGENT_PROMPT_VERSION
+  // describes Myra's builder, so stamping it on a non-personal launch (e.g.
+  // Oat, whose composed prompt was null) would be a lie in the logs.
+  if (personalAgentPromptComposed) {
+    log.info("Personal-agent launch prompt composed", {
+      instanceId,
+      agentId,
+      promptVersion: PERSONAL_AGENT_PROMPT_VERSION,
+      promptContentHash: createHash("sha256")
+        .update(effectiveSystemPrompt)
+        .digest("hex"),
+    });
   }
 
   // Persist the agent's tool grants on the instance principal before collecting.
@@ -566,7 +730,6 @@ export async function launchAgentSession(
   // requirement grants persisted moments earlier is an asymmetric partial
   // rollback, not a clean one — it is what let a torn-down instance re-sync
   // with a handful of grants instead of its full template.)
-  const hubDb = db as unknown as HubDb;
   const binding = await hubDb.query.memberAgentInstance.findFirst({
     where: eq(memberAgentInstance.instanceId, instanceId),
   });

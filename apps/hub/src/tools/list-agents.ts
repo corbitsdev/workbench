@@ -36,25 +36,17 @@ export type ListAgentsContext = {
  *   handler fails closed: in the shared org tenant a tenant-wide listing would
  *   expose every other operator's agents.
  */
-export async function resolveOwnedInstanceIds(
+/**
+ * Resolve the member principal id that owns the calling agent instance (the
+ * user this agent acts for), via the caller's own `agentInstance` row and its
+ * `member_agent_instance` mapping. Returns `null` when the caller is not a
+ * member-owned instance (e.g. a dispatched or admin-launched agent) —
+ * callers must fail closed on `null`, never fall back to a tenant-wide scope.
+ */
+export async function resolveOwningMemberPrincipalId(
   db: DB["db"],
   context: { tenantId: string; principalId: string },
-  memberPrincipals: string[] | undefined,
-): Promise<string[] | null> {
-  if (memberPrincipals !== undefined) {
-    const ownedRows = await db
-      .select({ instanceId: memberAgentInstance.instanceId })
-      .from(memberAgentInstance)
-      .where(
-        and(
-          eq(memberAgentInstance.tenantId, context.tenantId),
-          inArray(memberAgentInstance.memberPrincipalId, memberPrincipals),
-        ),
-      );
-    return ownedRows.map((row) => row.instanceId);
-  }
-
-  // Resolve caller's agent instance → owning member principal → user refId.
+): Promise<string | null> {
   const callerRows = await db
     .select({ id: intxSchema.agentInstance.id })
     .from(intxSchema.agentInstance)
@@ -80,8 +72,29 @@ export async function resolveOwnedInstanceIds(
     )
     .limit(1);
 
-  const ownerPrincipalId = ownerRows[0]?.memberPrincipalId;
-  if (ownerPrincipalId === undefined) return null;
+  return ownerRows[0]?.memberPrincipalId ?? null;
+}
+
+export async function resolveOwnedInstanceIds(
+  db: DB["db"],
+  context: { tenantId: string; principalId: string },
+  memberPrincipals: string[] | undefined,
+): Promise<string[] | null> {
+  if (memberPrincipals !== undefined) {
+    const ownedRows = await db
+      .select({ instanceId: memberAgentInstance.instanceId })
+      .from(memberAgentInstance)
+      .where(
+        and(
+          eq(memberAgentInstance.tenantId, context.tenantId),
+          inArray(memberAgentInstance.memberPrincipalId, memberPrincipals),
+        ),
+      );
+    return ownedRows.map((row) => row.instanceId);
+  }
+
+  const ownerPrincipalId = await resolveOwningMemberPrincipalId(db, context);
+  if (ownerPrincipalId === null) return null;
 
   // Resolve the user's refId from their member principal so we can find all
   // their principals across every tenant (global org + workbenches).

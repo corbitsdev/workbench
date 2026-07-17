@@ -15,6 +15,7 @@ COPY apps/hub/package.json apps/hub/
 COPY apps/sidecar/package.json apps/sidecar/
 COPY apps/web/package.json apps/web/
 COPY packages/agents/package.json packages/agents/
+COPY packages/agent-core/package.json packages/agent-core/
 COPY packages/approvals/package.json packages/approvals/
 COPY packages/artifact/package.json packages/artifact/
 COPY packages/blocks/package.json packages/blocks/
@@ -26,6 +27,7 @@ COPY packages/analytics/package.json packages/analytics/
 COPY packages/pricing/package.json packages/pricing/
 COPY packages/event-collector/package.json packages/event-collector/
 COPY packages/hub-agent/package.json packages/hub-agent/
+COPY packages/inference/package.json packages/inference/
 COPY packages/storage-isogit/package.json packages/storage-isogit/
 COPY packages/last30days-core/package.json packages/last30days-core/
 COPY packages/myra/package.json packages/myra/
@@ -89,7 +91,9 @@ COPY apps/hub/ apps/hub/
 # Railway's pre-deploy command runs `bun run scripts/db-setup.ts` in this image
 COPY scripts/ scripts/
 COPY packages/agents/ packages/agents/
+COPY packages/agent-core/ packages/agent-core/
 COPY packages/myra/ packages/myra/
+COPY packages/inference/ packages/inference/
 COPY packages/analytics/ packages/analytics/
 COPY packages/pricing/ packages/pricing/
 COPY packages/catalog/ packages/catalog/

@@ -432,6 +432,31 @@ describe("MessageBubble", () => {
     expect(screen.getByText("broken.png")).not.toBeNull();
   });
 
+  it("shows a file-type badge next to a document attachment name in the transcript", () => {
+    const resolveAttachmentUrl = mock(async () => "blob:doc");
+    const message: ChatMessage = {
+      id: "att-badge",
+      role: "user",
+      content: "See attached",
+      createdAt: "2026-06-04T00:07:00Z",
+      attachments: [
+        {
+          blobId: "b5",
+          name: "report.pdf",
+          type: "application/pdf",
+          size: 2048,
+        },
+      ],
+    };
+    render(
+      <MessageBubble
+        message={message}
+        resolveAttachmentUrl={resolveAttachmentUrl}
+      />,
+    );
+    expect(screen.getByText("PDF")).not.toBeNull();
+  });
+
   it("does not render attachments when no resolver is supplied", () => {
     const message: ChatMessage = {
       id: "att-noresolve",

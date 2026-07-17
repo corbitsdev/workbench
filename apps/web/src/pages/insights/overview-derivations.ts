@@ -16,6 +16,16 @@ export type WorkflowKindRow = {
   cacheReadTokens: number;
   cacheWriteTokens: number;
   thinkingTokens: number;
+  /**
+   * Whether the hub attributed any inference usage to this kind
+   * (`byWorkflowType` had a matching row). The usage join only matches runs
+   * with a recorded `deploymentId`; a kind whose runs predate that join (or
+   * were started outside the deployment model) legitimately has zero
+   * attributed usage even though `runs > 0`. False here means "no usage data
+   * attributed", not "zero usage" — the UI must show that distinction rather
+   * than a bare misleading 0 (CL-3667).
+   */
+  hasUsageData: boolean;
 };
 
 /**
@@ -44,6 +54,7 @@ export function mergeWorkflowKindRows(
       cacheReadTokens: u?.cacheReadTokens ?? 0,
       cacheWriteTokens: u?.cacheWriteTokens ?? 0,
       thinkingTokens: u?.thinkingTokens ?? 0,
+      hasUsageData: u !== undefined,
     };
   });
 }

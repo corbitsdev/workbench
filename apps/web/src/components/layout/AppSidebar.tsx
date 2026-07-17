@@ -11,9 +11,8 @@ import {
   FileText,
   FlaskConical,
   ChevronDown,
-  ShieldCheck,
-  KeyRound,
   ExternalLink,
+  Bot,
   type LucideIcon,
 } from "lucide-react";
 import { NavLink, Link, useNavigate } from "react-router";
@@ -35,27 +34,9 @@ const NAV_ITEMS = [
   { to: "/artifacts", label: "Artifacts", icon: Files, end: false },
   { to: "/workflows", label: "Workflows", icon: Workflow, end: false },
   { to: "/skills", label: "Skills", icon: BookOpen, end: false },
+  { to: "/agents", label: "Agents", icon: Bot, end: false },
   { to: "/insights", label: "Insights", icon: BarChart2, end: false },
 ] as const;
-
-// Footer icon only, shown to admins (Tools moved under Admin — CL-2719). The
-// hub re-checks the admin grant on every admin route, so this is visibility only.
-const ADMIN_NAV_ITEM = {
-  to: "/admin",
-  label: "Admin",
-  icon: ShieldCheck,
-  end: false,
-} as const;
-
-// Shown only to owners (ABK Labs staff — the `owner` role's `*`/`*`). The hub
-// re-checks the owner grant on every /owner route; this is nav visibility only.
-// Owner ⊃ admin, so an owner sees both this and the Admin item.
-const OWNER_NAV_ITEM = {
-  to: "/owner",
-  label: "Owner",
-  icon: KeyRound,
-  end: false,
-} as const;
 
 // The demo links themselves come from /me (server-gated, hidden by default).
 // The payload carries a stable string `icon` key; map it to a lucide component
@@ -91,7 +72,6 @@ export function AppSidebar({
     queryFn: getMe,
     staleTime: 5 * 60_000,
   });
-  const isAdmin = meQuery.data?.isAdmin === true;
   const name = session.status === "authenticated" ? session.user.name : "";
   const initials =
     name
@@ -184,17 +164,6 @@ export function AppSidebar({
             {label}
           </NavLink>
         ))}
-        {meQuery.data?.isOwner && (
-          <NavLink
-            to={OWNER_NAV_ITEM.to}
-            end={OWNER_NAV_ITEM.end}
-            onClick={onNavigate}
-            className={({ isActive }) => navItemClass(isActive)}
-          >
-            <OWNER_NAV_ITEM.icon size={17} />
-            {OWNER_NAV_ITEM.label}
-          </NavLink>
-        )}
       </nav>
 
       {(meQuery.data?.demoLinks?.length ?? 0) > 0 && (
@@ -251,17 +220,6 @@ export function AppSidebar({
           </span>
         </div>
         <div className="flex items-center gap-1">
-          {isAdmin ? (
-            <Link
-              to={ADMIN_NAV_ITEM.to}
-              title={ADMIN_NAV_ITEM.label}
-              aria-label={ADMIN_NAV_ITEM.label}
-              onClick={onNavigate}
-              className="grid h-[34px] w-[34px] place-items-center rounded-[10px] text-text-2 transition-colors hover:text-text"
-            >
-              <ADMIN_NAV_ITEM.icon size={17} />
-            </Link>
-          ) : null}
           <Link
             to="/settings"
             title="Settings"

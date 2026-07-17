@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useLocation } from "react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { type } from "arktype";
+import { escapeXmlContent } from "@workbench/prompts";
 import { pageContextForPathname } from "../page-context";
 import {
   invalidateMyraThreads,
@@ -13,17 +14,10 @@ import {
   type InstanceSession,
   type Transport,
 } from "@intx/hub-client";
-import { type AgentActivity } from "@intx/hub-client";
 import {
   composeChatMessages,
-  createToolNameTracker,
-  createLiveTextTracker,
-  createReasoningTracker,
-  createImageTracker,
-  type ToolNameTracker,
-  type LiveTextTracker,
-  type ReasoningTracker,
-  type ImageTracker,
+  createPartAssembler,
+  type PartAssembler,
 } from "@workbench/agents/browser";
 import type {
   ChatActivity,
@@ -34,8 +28,10 @@ import type {
 import {
   abortInstanceTurn,
   ensureMeSynced,
+  getMailAttachmentRefs,
   getOutputFeedback,
   launchInstanceSession,
+  saveMailAttachmentRefs,
   type LaunchInstanceSessionOptions,
   saveOutputFeedback,
   upsertRating,
@@ -43,13 +39,34 @@ import {
 import type { FeedbackSubjectKind, SavedRating } from "../lib/hub-api";
 import {
   createHubTransport,
+  fetchArtifactObjectUrl,
   fetchBlobObjectUrl,
 } from "../lib/instance-transport";
+import {
+  buildAttachmentRefMap,
+  isMailBlobId,
+  mergeAttachmentRefs,
+  upsertMailAttachmentRefs,
+  type MailAttachmentRef,
+} from "./mail-attachment-refs";
 import { classifyLaunchState } from "../components/agent-launch-helpers";
 import { useReportConnectionStatus } from "./use-report-connection-status";
 import { useStreamRerender } from "./use-stream-rerender";
 
-const LAUNCH_RETRY_DELAY_MS = 4000;
+// Adaptive reconnect backoff: a fast first retry (a flaky sidecar often
+// recovers within a beat) then doubling up to a cap, so a run of failures
+// never stacks with the hub's own launch-attempt loop
+// (agent-provisioning.ts MAX_LAUNCH_ATTEMPTS x LAUNCH_RETRY_DELAY_MS) into
+// several seconds of dead air per cycle.
+const RECONNECT_FIRST_DELAY_MS = 500;
+const RECONNECT_MAX_DELAY_MS = 4000;
+
+// How long the optimistic "awaiting agent" indicator (set the instant a
+// message is sent) is allowed to stand in for a real event before falling
+// back to whatever the session-status channel reports. Generous — this is
+// only a floor against a genuinely unreachable agent, not a normal-latency
+// timer (CL-3702).
+const AWAITING_AGENT_TIMEOUT_MS = 30_000;
 
 export type MyraSessionPhase =
   | { phase: "loading" }
@@ -63,17 +80,65 @@ export type MyraSessionPhase =
   // it does not spin the reconnecting overlay (CL-3292).
   | { phase: "fatal"; message: string };
 
-// A text send made while the sidecar was unreachable, awaiting flush on
-// reconnect. `failed` is set after a delivery attempt failed. `permanent` marks
-// a non-recoverable failure that must never be auto-resent — the flush skips it
-// so an already-persisted message cannot be duplicated (CL-3280).
+// An optimistic text send awaiting its server-confirmed mail event — queued
+// for the reconnect flush while offline, or in flight on the live path.
+// `failed` is set after a delivery attempt failed. `permanent` marks a
+// non-recoverable failure that must never be auto-resent — the flush skips it
+// so an already-persisted message cannot be duplicated (CL-3280). `delivered`
+// marks a live send whose POST resolved: the flush must never resend it, but
+// the bubble stays on screen until the confirmed mail renders from the
+// transcript (CL-3669). `baselineMatches` is how many matching user messages
+// the transcript held at send time, so reconciliation only consumes a mail
+// that arrived after this send — duplicate text sends each claim their own.
 type PendingSend = {
   id: string;
   content: string;
   createdAt: string;
   failed: boolean;
   permanent: boolean;
+  delivered: boolean;
+  baselineMatches: number;
 };
+
+function countMatchingUserMessages(
+  messages: readonly ChatMessage[],
+  content: string,
+): number {
+  let count = 0;
+  for (const m of messages) {
+    if (m.role === "user" && m.content === content) count += 1;
+  }
+  return count;
+}
+
+// Drop each pending bubble exactly when its server-confirmed mail is present
+// in the composed transcript — never earlier (the message would vanish between
+// POST resolve and the SSE mail event) and never leaving a duplicate when the
+// SSE event beats the POST. A pending item is consumed when the transcript
+// holds more matching user messages than it did at send time, minus matches
+// already claimed by earlier pending items with the same content. Failed
+// bubbles are kept — they carry the retry affordance (CL-3669).
+export function reconcilePendingSends(
+  pending: readonly PendingSend[],
+  transcript: readonly ChatMessage[],
+): PendingSend[] {
+  const claimed = new Map<string, number>();
+  const kept: PendingSend[] = [];
+  for (const q of pending) {
+    if (q.failed) {
+      kept.push(q);
+      continue;
+    }
+    const confirmed = countMatchingUserMessages(transcript, q.content);
+    const alreadyClaimed = claimed.get(q.content) ?? 0;
+    if (confirmed - alreadyClaimed > q.baselineMatches) {
+      claimed.set(q.content, alreadyClaimed + 1);
+      continue;
+    }
+    kept.push(q);
+  }
+  return kept;
+}
 
 // A dropped or evicted session heals with one relaunch-and-resend. A hub or
 // sidecar restart leaves the instance not running, so the first send 409s
@@ -252,40 +317,22 @@ export async function parseDocumentAttachment(
 // Fold the parsed document text into a leading <context> block. The adapter's
 // stripContextBlock removes a leading <context>…</context> from the user's
 // rendered bubble, so Myra receives the full text while the transcript stays
-// clean and shows the document as a chip instead of a wall of text.
+// clean and shows the document as a chip instead of a wall of text. Document
+// content is retrieved data, not instructions — escaped before interpolation
+// so it cannot alter the block's structure.
 export function composeWithDocumentContext(
   text: string,
   docs: readonly ParsedDocument[],
 ): string {
   if (docs.length === 0) return text;
   const blocks = docs
-    .map((d) => `[Attached document: ${d.filename}]\n${d.parsedText}`)
+    .map(
+      (d) =>
+        `[Attached document: ${escapeXmlContent(d.filename)}]\n${escapeXmlContent(d.parsedText)}`,
+    )
     .join("\n\n");
   const trimmed = text.trim();
   return `<context>\n${blocks}\n</context>${trimmed !== "" ? `\n\n${trimmed}` : ""}`;
-}
-
-// The per-session stream trackers, built together and torn down together.
-// Tool names feed committed turns whose tool "call" part failed to persist
-// (CL-1398); live text/reasoning/images track the current turn from the raw
-// stream (CL-1643). Only the tool-name tracker takes a change callback.
-function createSessionTrackers(
-  transport: Transport,
-  target: { tenantId: string; instanceId: string },
-  onChange: () => void,
-) {
-  return {
-    toolNames: createToolNameTracker(transport, target, onChange),
-    liveText: createLiveTextTracker(transport, target),
-    reasoning: createReasoningTracker(transport, target),
-    image: createImageTracker(transport, target),
-  };
-}
-
-function toChatActivity(a: AgentActivity | null): ChatActivity | null {
-  if (a === null) return null;
-  if (a.type === "inferring") return { type: "thinking" };
-  return a as ChatActivity;
 }
 
 export type MyraSession = {
@@ -302,11 +349,11 @@ export type MyraSession = {
   queuedFailed: boolean;
   /**
    * Why the live connection is not up while the transcript is shown, so the UI
-   * can explain the deferred-send state with the right copy: `"connecting"` on a
-   * never-yet-live first connect, `"reconnecting"` after a live session drops,
-   * `null` once live.
+   * can explain the deferred-send state with the right copy: `"reconnecting"`
+   * after a live session drops, `null` on a never-yet-live first connect (no
+   * prior session to have dropped from) and once live.
    */
-  connectionNotice: "connecting" | "reconnecting" | null;
+  connectionNotice: "reconnecting" | null;
   /**
    * Interchange agent session id from the latest successful launch. Used to
    * scope Action Requests (ReviewGate) to this chat rather than the whole
@@ -378,21 +425,24 @@ export function useMyraSession(
   const [hasBeenLive, setHasBeenLive] = useState(false);
   // Interchange session id from launch — scopes ReviewGate to this chat (CL-3286).
   const [sessionId, setSessionId] = useState<string | null>(null);
-  // The sidecar settles an aborted turn by putting the agent to sleep, which
-  // emits no further agent events — the live activity signal would otherwise
-  // linger as "thinking" forever. Suppress it locally after a successful
-  // abort. The suppression clears on the next send AND on the first
-  // genuinely-new activity event (compared by identity against the value
-  // captured at abort time), so a new turn started elsewhere — e.g. a
-  // parked-mail replay wake — is never hidden and the stop button stays
-  // reachable.
-  const [activitySuppressed, setActivitySuppressed] = useState(false);
-  const suppressedActivityRef = useRef<AgentActivity | null>(null);
   // Text sends made while not `live`, replayed in order once the session
   // reconnects; and the last history snapshot, kept on screen across the brief
   // teardown that precedes a reconnect.
   const pendingQueueRef = useRef<PendingSend[]>([]);
   const lastMessagesRef = useRef<ChatMessage[]>([]);
+  // Optimistic "awaiting agent" flag: set the instant a send is enqueued (or
+  // a queued item starts flushing on reconnect) so the working indicator
+  // renders in the same frame as the optimistic bubble, before any SSE event
+  // (CL-3702). It is the lowest-priority signal in the activity precedence —
+  // real event-derived activity and the timeout below both supersede it.
+  const awaitingAgentRef = useRef(false);
+  const awaitingAgentTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
+    null,
+  );
+  // Consecutive reconnect attempts since the last live session, driving the
+  // backoff in scheduleReconnect below. Reset on a fresh identity and once a
+  // session goes live.
+  const reconnectAttemptsRef = useRef(0);
   const resolvedInstanceIdRef = useRef<string | null>(null);
   const [resolvedInstanceId, setResolvedInstanceId] = useState<string | null>(
     null,
@@ -406,11 +456,16 @@ export function useMyraSession(
     setLive(false);
     setHasBeenLive(false);
     setSessionId(null);
-    setActivitySuppressed(false);
     // Drop the previous thread's queued sends and history snapshot so a new
     // thread never renders the old one's messages (CL-3280).
     pendingQueueRef.current = [];
     lastMessagesRef.current = [];
+    if (awaitingAgentTimerRef.current !== null) {
+      clearTimeout(awaitingAgentTimerRef.current);
+      awaitingAgentTimerRef.current = null;
+    }
+    awaitingAgentRef.current = false;
+    reconnectAttemptsRef.current = 0;
     // The previous thread's resolved instance must never leak into the new
     // identity's renders — it feeds `session.instanceId`, the feedback and
     // mail-attachment queries, and the auto-title guard (CL-3749). connect()
@@ -424,10 +479,7 @@ export function useMyraSession(
 
   const sessionRef = useRef<InstanceSession | null>(null);
   const stopRef = useRef<(() => void) | null>(null);
-  const toolNamesRef = useRef<ToolNameTracker | null>(null);
-  const liveTextRef = useRef<LiveTextTracker | null>(null);
-  const reasoningRef = useRef<ReasoningTracker | null>(null);
-  const imageTrackerRef = useRef<ImageTracker | null>(null);
+  const assemblerRef = useRef<PartAssembler | null>(null);
   const transportRef = useRef<Transport | null>(null);
   // blobId → in-flight/settled object-URL promise, so a re-render never
   // re-fetches the same blob. Cleared and revoked on session teardown.
@@ -452,10 +504,15 @@ export function useMyraSession(
   }, []);
   const scheduleReconnect = useCallback(() => {
     if (reconnectTimerRef.current !== null) return;
+    const delay = Math.min(
+      RECONNECT_FIRST_DELAY_MS * 2 ** reconnectAttemptsRef.current,
+      RECONNECT_MAX_DELAY_MS,
+    );
+    reconnectAttemptsRef.current += 1;
     reconnectTimerRef.current = setTimeout(() => {
       reconnectTimerRef.current = null;
       setAttempt((n) => n + 1);
-    }, LAUNCH_RETRY_DELAY_MS);
+    }, delay);
   }, []);
 
   // Stops and clears every live-connection resource (SSE subscription,
@@ -463,14 +520,8 @@ export function useMyraSession(
   const teardownSubscriptions = useCallback(() => {
     stopRef.current?.();
     stopRef.current = null;
-    toolNamesRef.current?.stop();
-    toolNamesRef.current = null;
-    liveTextRef.current?.stop();
-    liveTextRef.current = null;
-    reasoningRef.current?.stop();
-    reasoningRef.current = null;
-    imageTrackerRef.current?.stop();
-    imageTrackerRef.current = null;
+    assemblerRef.current?.stop();
+    assemblerRef.current = null;
     transportRef.current = null;
     sessionRef.current?.destroy();
     sessionRef.current = null;
@@ -484,6 +535,43 @@ export function useMyraSession(
     scheduleReconnect();
   }, [scheduleReconnect]);
 
+  // Arms the optimistic "awaiting agent" indicator and its bounded fallback
+  // timer. Re-arming (a fresh send, or a flush redelivering a queued item)
+  // resets the window rather than stacking timers.
+  const startAwaitingAgent = useCallback(() => {
+    awaitingAgentRef.current = true;
+    if (awaitingAgentTimerRef.current !== null) {
+      clearTimeout(awaitingAgentTimerRef.current);
+    }
+    awaitingAgentTimerRef.current = setTimeout(() => {
+      awaitingAgentTimerRef.current = null;
+      awaitingAgentRef.current = false;
+      forceUpdate((n) => n + 1);
+    }, AWAITING_AGENT_TIMEOUT_MS);
+  }, []);
+
+  // Clears the optimistic indicator and its timer — a permanent send failure,
+  // or a real event superseding it (handled at render time below).
+  const stopAwaitingAgent = useCallback(() => {
+    awaitingAgentRef.current = false;
+    if (awaitingAgentTimerRef.current !== null) {
+      clearTimeout(awaitingAgentTimerRef.current);
+      awaitingAgentTimerRef.current = null;
+    }
+  }, []);
+
+  // Unmount-only: the connect effect's cleanup deliberately leaves the
+  // awaiting flag alone (it re-runs on reconnect attempts), so the timer
+  // must be released here.
+  useEffect(() => {
+    return () => {
+      if (awaitingAgentTimerRef.current !== null) {
+        clearTimeout(awaitingAgentTimerRef.current);
+        awaitingAgentTimerRef.current = null;
+      }
+    };
+  }, []);
+
   const enqueueSend = useCallback(
     (content: string, opts?: { failed?: boolean; permanent?: boolean }) => {
       const id = `pending-${pendingSeqRef.current++}`;
@@ -495,22 +583,49 @@ export function useMyraSession(
           createdAt: new Date().toISOString(),
           failed: opts?.failed ?? false,
           permanent: opts?.permanent ?? false,
+          delivered: false,
+          // Snapshot of the last rendered transcript, so reconciliation only
+          // consumes a confirmed mail that arrived after this send.
+          baselineMatches: countMatchingUserMessages(
+            lastMessagesRef.current,
+            content,
+          ),
         },
       ];
+      forceUpdate((n) => n + 1);
+      return id;
+    },
+    [],
+  );
+
+  // A live send's POST resolved: the flush must never resend it, but the
+  // bubble stays rendered until the confirmed mail appears in the transcript
+  // (reconcilePendingSends drops it then) — otherwise the message would be on
+  // screen nowhere between POST resolve and the SSE mail event (CL-3669).
+  const markSendDelivered = useCallback((id: string) => {
+    pendingQueueRef.current = pendingQueueRef.current.map((q) =>
+      q.id === id ? { ...q, delivered: true } : q,
+    );
+  }, []);
+
+  // Flip a queued item to a failed state in place, keying on its id so a
+  // direct-send failure marks exactly the bubble it created.
+  const markSendFailed = useCallback(
+    (id: string, opts: { permanent: boolean }) => {
+      pendingQueueRef.current = pendingQueueRef.current.map((q) =>
+        q.id === id ? { ...q, failed: true, permanent: opts.permanent } : q,
+      );
       forceUpdate((n) => n + 1);
     },
     [],
   );
 
-  // Optimistic document chips keyed by the mail id they were sent with. The
-  // document itself is diverted through the parse route (never sent inline), so
-  // the transcript bubble carries no attachment — we merge the chip onto the
-  // bubble that renders from this mail. `docChipUrlsRef` holds an object URL
-  // built from the original File so the chip's download works with no server
-  // round-trip. Both are cleared and revoked on session teardown.
-  const [docChips, setDocChips] = useState<
-    ReadonlyMap<string, ChatAttachment[]>
-  >(new Map());
+  // Attachment chips render from persisted mail-attachment references (the
+  // query below), for live sends and reloads alike — a just-sent chip is
+  // upserted into the query cache so both paths render identically.
+  // `docChipUrlsRef` holds an object URL built from the original File at send
+  // time so a fresh chip's download needs no server round-trip; it is cleared
+  // and revoked on session teardown (reloads resolve via the artifact route).
   const docChipUrlsRef = useRef<Map<string, string>>(new Map());
 
   useEffect(() => {
@@ -552,11 +667,17 @@ export function useMyraSession(
       try {
         while (!cancelled) {
           const item = pendingQueueRef.current.find(
-            (q) => !q.permanent && !inFlightSendIdsRef.current.has(q.id),
+            (q) =>
+              !q.permanent &&
+              !q.delivered &&
+              !inFlightSendIdsRef.current.has(q.id),
           );
           const session = sessionRef.current;
           if (session === null || item === undefined) break;
           inFlightSendIdsRef.current.add(item.id);
+          // A queued send is about to actually go out — arm the optimistic
+          // indicator for this delivery attempt (CL-3702).
+          startAwaitingAgent();
           let outcome: "delivered" | "recoverable" | "permanent";
           try {
             await deliverMessage(
@@ -604,6 +725,7 @@ export function useMyraSession(
           pendingQueueRef.current = pendingQueueRef.current.map((q) =>
             q.id === item.id ? { ...q, failed: true, permanent: true } : q,
           );
+          stopAwaitingAgent();
           forceUpdate((n) => n + 1);
         }
       } finally {
@@ -638,6 +760,7 @@ export function useMyraSession(
             return;
           }
           clearReconnectTimer();
+          reconnectAttemptsRef.current = 0;
           setLive(true);
           setHasBeenLive(true);
           void flushQueue();
@@ -713,17 +836,13 @@ export function useMyraSession(
         const stop = session.start();
         stopRef.current = stop;
 
-        const trackers = createSessionTrackers(
+        assemblerRef.current = createPartAssembler(
           transport,
           { tenantId: targetTenantId, instanceId: targetInstanceId },
           () => {
             if (!cancelled) scheduleStreamRerender();
           },
         );
-        toolNamesRef.current = trackers.toolNames;
-        liveTextRef.current = trackers.liveText;
-        reasoningRef.current = trackers.reasoning;
-        imageTrackerRef.current = trackers.image;
 
         if (!cancelled) setState({ phase: "ready", session });
 
@@ -744,6 +863,11 @@ export function useMyraSession(
     return () => {
       cancelled = true;
       clearReconnectTimer();
+      // Deliberately NOT stopAwaitingAgent() here: this cleanup also runs on
+      // every reconnect attempt bump, and a pending send must keep its
+      // awaiting indicator across reconnect cycles. The flag is cleared by
+      // the thread-switch identity block, a real agent event, permanent send
+      // failure, the awaiting timeout, or an explicit abort.
       teardownSubscriptions();
       const urls = attachmentUrlsRef.current;
       attachmentUrlsRef.current = new Map();
@@ -755,7 +879,6 @@ export function useMyraSession(
       for (const url of chipUrls.values()) {
         URL.revokeObjectURL(url);
       }
-      setDocChips(new Map());
     };
   }, [attempt, instanceId, tenantId, enabled]);
 
@@ -777,6 +900,20 @@ export function useMyraSession(
         ]),
       ),
     [ratingsData],
+  );
+
+  // Persisted attachment references for this instance's mails. A just-sent
+  // chip is upserted into this cache by sendWithAttachments, so live and
+  // reloaded transcripts render from the same source.
+  const { data: attachmentRefs } = useQuery({
+    queryKey: ["mail-attachments", resolvedInstanceId],
+    queryFn: () => getMailAttachmentRefs(resolvedInstanceId as string),
+    enabled: resolvedInstanceId !== null,
+    staleTime: 5 * 60_000,
+  });
+  const attachmentRefMap = useMemo(
+    () => buildAttachmentRefMap(attachmentRefs ?? []),
+    [attachmentRefs],
   );
 
   const { mutateAsync: rateMutateAsync } = useMutation({
@@ -815,9 +952,9 @@ export function useMyraSession(
           : "Couldn't stop Myra. Try again.";
       throw new Error(message);
     }
-    suppressedActivityRef.current = sessionRef.current?.activity ?? null;
-    setActivitySuppressed(true);
-  }, [abortMutateAsync]);
+    assemblerRef.current?.closeOpenPart();
+    stopAwaitingAgent();
+  }, [abortMutateAsync, stopAwaitingAgent]);
 
   const reconnect = useCallback(() => setAttempt((n) => n + 1), []);
 
@@ -842,15 +979,19 @@ export function useMyraSession(
   const composed: ChatMessage[] = activeSession
     ? composeChatMessages({
         events: activeSession.events,
-        streaming: liveTextRef.current !== null ? liveTextRef.current.text : "",
+        streaming:
+          assemblerRef.current !== null ? assemblerRef.current.text : "",
         reasoning:
-          reasoningRef.current !== null ? reasoningRef.current.text : "",
-        ...(toolNamesRef.current !== null
-          ? { toolNames: toolNamesRef.current.names }
+          assemblerRef.current !== null ? assemblerRef.current.reasoning : "",
+        ...(assemblerRef.current !== null
+          ? { toolNames: assemblerRef.current.toolNames }
           : {}),
-        ...(imageTrackerRef.current !== null &&
-        imageTrackerRef.current.images.length > 0
-          ? { liveImages: imageTrackerRef.current.images }
+        ...(assemblerRef.current !== null &&
+        assemblerRef.current.liveImages.length > 0
+          ? { liveImages: assemblerRef.current.liveImages }
+          : {}),
+        ...(assemblerRef.current !== null
+          ? { liveParts: assemblerRef.current.parts }
           : {}),
       }).messages
     : [];
@@ -866,24 +1007,28 @@ export function useMyraSession(
       ? lastMessagesRef.current
       : composed;
 
-  // Merge optimistic document chips onto the bubble that renders from the mail
-  // they were sent with, so the user sees the document they attached even though
-  // it was diverted through the parse route rather than sent as a mail blob.
-  const mergedMessages: ChatMessage[] =
-    docChips.size === 0
-      ? baseMessages
-      : baseMessages.map((m) => {
-          const chips = docChips.get(m.id);
-          if (chips === undefined) return m;
-          return {
-            ...m,
-            attachments: [...(m.attachments ?? []), ...chips],
-          };
-        });
+  // Merge persisted attachment references onto the bubble that renders from
+  // the mail they were sent with, so the user sees the document they attached
+  // even though it was diverted through the parse route rather than sent as a
+  // mail blob — and still sees it after a reload (CL-3671).
+  const mergedMessages: ChatMessage[] = mergeAttachmentRefs(
+    baseMessages,
+    attachmentRefMap,
+  );
 
-  // Optimistic bubbles for sends queued while disconnected; removed as each
-  // flushes and the real mail event renders in its place (CL-3280).
-  const pendingMessages: ChatMessage[] = pendingQueueRef.current.map((q) => ({
+  // Optimistic bubbles for sends not yet confirmed by the transcript. Each is
+  // dropped exactly when its server-confirmed mail renders — whether the SSE
+  // event arrives before or after the POST resolves — so the message is never
+  // duplicated and never absent in between (CL-3280, CL-3669). Pruning the ref
+  // during render is safe: it only shrinks toward what this render displays.
+  const reconciledPending = reconcilePendingSends(
+    pendingQueueRef.current,
+    mergedMessages,
+  );
+  if (reconciledPending.length !== pendingQueueRef.current.length) {
+    pendingQueueRef.current = reconciledPending;
+  }
+  const pendingMessages: ChatMessage[] = reconciledPending.map((q) => ({
     id: q.id,
     role: "user",
     content: q.content,
@@ -896,25 +1041,46 @@ export function useMyraSession(
   const queuedFailed = pendingQueueRef.current.some(
     (q) => q.failed && !q.permanent,
   );
-  // While the transcript is shown but the live connection is not up, explain the
-  // deferred-send state: a drop after a live session is "reconnecting"; a
-  // never-yet-live first connect is "connecting" (CL-3280, CL-3292).
-  let connectionNotice: "connecting" | "reconnecting" | null = null;
-  if (!live) {
-    connectionNotice = hasBeenLive ? "reconnecting" : "connecting";
+  // While the transcript is shown but the live connection is not up, explain
+  // the deferred-send state only once there was a prior live session to have
+  // dropped from — a never-yet-live first connect renders no notice (CL-3280,
+  // CL-3829).
+  let connectionNotice: "reconnecting" | null = null;
+  if (!live && hasBeenLive) {
+    connectionNotice = "reconnecting";
   }
 
-  // Render-phase adjustment (same pattern as prevIdentity above): the first
-  // activity value that differs from the one captured at abort time is a new
-  // turn — stop hiding it.
+  // Live activity is derived from the assembler's trailing open part — the
+  // single owner of "what is the agent doing right now." rate_limited stays
+  // on the session's own status channel, never folded into parts, and it
+  // wins over the assembler's derived state: retries happen mid-inference,
+  // when the assembler still reports "thinking", and the retry countdown
+  // must surface. The optimistic "awaiting agent" flag (CL-3702) sits below
+  // both: it fills the dead air between send() and the first real event, in
+  // the exact same "thinking" shape the event-driven path renders, so the
+  // handoff is invisible.
   const rawActivity = activeSession ? activeSession.activity : null;
-  if (activitySuppressed && rawActivity !== suppressedActivityRef.current) {
-    setActivitySuppressed(false);
+  const eventActivity: ChatActivity | null =
+    assemblerRef.current !== null ? assemblerRef.current.activity : null;
+  let activity: ChatActivity | null = null;
+  if (rawActivity?.type === "rate_limited") {
+    activity = rawActivity;
+  } else if (eventActivity !== null) {
+    activity = eventActivity;
+  } else if (awaitingAgentRef.current && live) {
+    // Only while actually connected: a "thinking" indicator during
+    // connect/reconnect would contradict the connection notice — the user
+    // must never see Myra "working" on a message that hasn't left the client.
+    activity = { type: "thinking" };
   }
-  const suppressed =
-    activitySuppressed && rawActivity === suppressedActivityRef.current;
-  const activity =
-    activeSession && !suppressed ? toChatActivity(rawActivity) : null;
+  // A real event superseded the optimistic guess — retire it so the timeout
+  // never fires after the turn is already visibly underway.
+  if (
+    (rawActivity?.type === "rate_limited" || eventActivity !== null) &&
+    awaitingAgentRef.current
+  ) {
+    stopAwaitingAgent();
+  }
 
   const sendWithAttachments = async (
     text: string,
@@ -985,7 +1151,36 @@ export function useMyraSession(
         launchOptionsRef.current,
       );
       if (chips.length > 0 && mailId !== null) {
-        setDocChips((prev) => new Map(prev).set(mailId, chips));
+        const refs: MailAttachmentRef[] = chips.map((c) => ({
+          mailId,
+          artifactId: c.blobId,
+          name: c.name,
+          type: c.type,
+          size: c.size,
+        }));
+        // Seed the cache first so the chip renders immediately, then persist.
+        // The message itself was already delivered, so a failed persist must
+        // not fail the send — the chip stays for this session and is simply
+        // absent after reload.
+        queryClient.setQueryData<MailAttachmentRef[]>(
+          ["mail-attachments", iid],
+          (prev) => upsertMailAttachmentRefs(prev, refs),
+        );
+        try {
+          await saveMailAttachmentRefs(
+            iid,
+            mailId,
+            chips.map((c) => ({
+              artifactId: c.blobId,
+              name: c.name,
+              type: c.type,
+              size: c.size,
+            })),
+          );
+        } catch {
+          // Persistence failure only: the optimistic cache entry above keeps
+          // the chip visible for this session.
+        }
       } else {
         releaseChipUrls();
       }
@@ -1002,9 +1197,6 @@ export function useMyraSession(
     text: string,
     attachments?: PendingAttachment[],
   ): void | Promise<void> => {
-    // A new turn is starting — let its real activity events drive the busy
-    // indicator again after an earlier abort suppressed a stale one.
-    setActivitySuppressed(false);
     // The user is using this thread — surface it in the thread lists, which
     // hide never-used threads until their first message (CL-3749). Marked on
     // every send (cheap set-add); only the first one changes anything.
@@ -1029,12 +1221,21 @@ export function useMyraSession(
     }
 
     const session = sessionRef.current;
+    // Echo the send instantly on both paths: offline queues it for the
+    // reconnect flush, live sends it now — either way the bubble renders with
+    // status "sending" before any round-trip completes (CL-3669).
+    const pendingId = enqueueSend(text);
+    // Enter the working flow the instant the bubble renders — before any
+    // round-trip, live or queued (CL-3702).
+    startAwaitingAgent();
     if (!live || session === null) {
-      // Offline: show an optimistic bubble now; the queue flushes on reconnect.
-      enqueueSend(text);
       scheduleReconnect();
       return;
     }
+    // Register the flight so a connection flap's reconnect flush cannot
+    // deliver the same message a second time while this send is still in the
+    // air (mirrors the flush's own registration).
+    inFlightSendIdsRef.current.add(pendingId);
     void deliverMessage(
       session,
       resolvedInstanceIdRef.current,
@@ -1042,22 +1243,30 @@ export function useMyraSession(
       launchOptionsRef.current,
     )
       .then(() => {
+        // Delivered — but keep the bubble until the confirmed mail renders
+        // from the transcript, so the message never vanishes in the window
+        // between POST resolve and the SSE mail event.
+        markSendDelivered(pendingId);
         // The hub bumped this thread's lastActivityAt; refresh the list so it
         // reorders to the top rather than waiting for the query to go stale.
         invalidateMyraThreads(queryClient, tenantId);
       })
       .catch((err: unknown) => {
         // A recoverable failure (the hub emits its structured code before
-        // persisting the mail, so a resend cannot duplicate) is re-queued and
-        // flushed on reconnect. Any other failure is shown as a permanently
-        // failed bubble and never auto-resent — the mail may already be
-        // persisted upstream, so a blind retry could duplicate it (CL-3280).
+        // persisting the mail, so a resend cannot duplicate) leaves the item
+        // queued — untouched here — for the reconnect flush to retry. Any
+        // other failure flips the existing bubble to permanently failed and
+        // it is never auto-resent — the mail may already be persisted
+        // upstream, so a blind retry could duplicate it (CL-3280).
         if (isRecoverableDeliveryError(err)) {
-          enqueueSend(text);
           markDisconnectedAndReconnect();
         } else {
-          enqueueSend(text, { failed: true, permanent: true });
+          stopAwaitingAgent();
+          markSendFailed(pendingId, { permanent: true });
         }
+      })
+      .finally(() => {
+        inFlightSendIdsRef.current.delete(pendingId);
       });
     return;
   };
@@ -1091,7 +1300,13 @@ export function useMyraSession(
       const cache = attachmentUrlsRef.current;
       const existing = cache.get(blobId);
       if (existing !== undefined) return existing;
-      const pending = fetchBlobObjectUrl(tenantId, blobId).catch((err) => {
+      // Interchange MIME-part blob ids resolve via the mail-blob route;
+      // anything else is a parse-file artifact id and resolves via the
+      // workbench artifact download route (persisted chips after reload).
+      const fetchUrl = isMailBlobId(blobId)
+        ? fetchBlobObjectUrl(tenantId, blobId)
+        : fetchArtifactObjectUrl(blobId);
+      const pending = fetchUrl.catch((err) => {
         // A failed fetch must not poison the cache — drop it so a retry can
         // refetch, and rethrow so the tile falls back.
         cache.delete(blobId);

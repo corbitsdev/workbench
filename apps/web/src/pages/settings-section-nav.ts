@@ -11,6 +11,8 @@ export interface SettingsSectionLink {
  */
 export const SETTINGS_SECTIONS: readonly SettingsSectionLink[] = [
   { id: "your-agent", label: "Your agent" },
+  { id: "myra-defaults", label: "Myra defaults" },
+  { id: "myra-style", label: "Personality & style" },
   { id: "inbox-capabilities", label: "Your inbox & brief" },
   { id: "connections", label: "Connections" },
   { id: "schedules", label: "Schedules" },
@@ -19,6 +21,49 @@ export const SETTINGS_SECTIONS: readonly SettingsSectionLink[] = [
 ];
 
 export const MORNING_BRIEF_ANCHOR_ID = "morning-brief";
+
+/**
+ * A management group in the settings side-nav: a role-gated link to a routed
+ * sub-area (the former standalone /admin or /owner surfaces), not an in-page
+ * anchor. `role` matches the boolean flag on `/me` (`isAdmin`/`isOwner`) that
+ * gates visibility — the same flags `RequireAdmin`/`AdminLayout`/`OwnerLayout`
+ * already check, so this list adds no new permission logic.
+ */
+export interface SettingsManagementGroup {
+  readonly id: string;
+  readonly label: string;
+  readonly to: string;
+  readonly role: "admin" | "owner";
+}
+
+export const SETTINGS_MANAGEMENT_GROUPS: readonly SettingsManagementGroup[] = [
+  {
+    id: "settings-admin",
+    label: "Users & agents",
+    to: "/settings/admin",
+    role: "admin",
+  },
+  {
+    id: "settings-owner",
+    label: "Workbench management",
+    to: "/settings/owner",
+    role: "owner",
+  },
+];
+
+/**
+ * Filters the management groups down to the ones a viewer's role permits.
+ * Hidden entirely for a role the viewer lacks — never rendered disabled.
+ */
+export function visibleManagementGroups(role: {
+  isAdmin: boolean;
+  isOwner: boolean;
+}): readonly SettingsManagementGroup[] {
+  return SETTINGS_MANAGEMENT_GROUPS.filter((group) => {
+    if (group.role === "admin") return role.isAdmin;
+    return role.isOwner;
+  });
+}
 
 /**
  * Maps every deep-linkable anchor id (including nested anchors that are not

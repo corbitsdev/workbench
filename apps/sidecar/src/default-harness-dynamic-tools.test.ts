@@ -52,10 +52,6 @@ mock.module("@intx/tools-posix", () => ({
   })),
 }));
 
-mock.module("@intx/authz", () => ({
-  evaluateGrants: mock(async () => {}),
-}));
-
 mock.module("@intx/types/runtime", () => ({
   createBlobReader: mock(() => ({})),
 }));
@@ -152,7 +148,23 @@ function fakeFactory(
   return Object.assign(behavior, { id, requires: [] as string[] });
 }
 
-async function buildMyra(): Promise<Record<string, unknown>> {
+// Grant rows in the exact shape the hub persists (`buildToolGrantRows`):
+// resource `tool:<llm-safe name>`, action `invoke`. The catalog gate must
+// authorize against THESE — not `agentConfig.tools`, whose hub-proxy
+// definitions carry bare names and omit package tools entirely (CL-3825).
+function toolGrants(llmNames: string[]): unknown[] {
+  return llmNames.map((name) => ({
+    id: `grant-${name}`,
+    resource: `tool:${name}`,
+    action: "invoke",
+    effect: "allow",
+    conditions: null,
+  }));
+}
+
+async function buildMyra(
+  grantedLlmToolNames: string[] = [],
+): Promise<Record<string, unknown>> {
   createHarnessMock.mockClear();
   readDeployTreeMock.mockImplementationOnce(async () => ({
     systemPrompt: buildPersonalAgentSystemPrompt("Myra", { xml: true }),
@@ -174,8 +186,12 @@ async function buildMyra(): Promise<Record<string, unknown>> {
       sessionId: "session-1",
       sources: [validSource],
       defaultSource: "src-1",
-      grants: [],
-      tools: [],
+      grants: toolGrants(grantedLlmToolNames) as never,
+      // Hub-real shape: `config.tools` holds only hub-proxy/local definitions
+      // under their BARE names; package tools never appear here (they arrive
+      // via toolPackagePins). The pre-CL-3825 gate read these names and so
+      // never intersected the safe-form catalog — the corpus collapsed empty.
+      tools: [{ name: "mail_send", description: "", inputSchema: {} }],
       principalId: "user-1",
       tenantId: "tenant-1",
       systemPrompt: "unused fallback",
@@ -195,37 +211,49 @@ async function buildMyra(): Promise<Record<string, unknown>> {
   return callArgs[1];
 }
 
-describe("dynamic tool catalog credential-gate", () => {
-  it("advertises a catalog package whose tools loaded and hides one whose factory failed", async () => {
-    // fileparser (keyless) constructs; granola (credential missing) throws and
-    // is dropped fail-soft. Only fileparser should reach the catalog.
+describe("dynamic tool catalog: full-catalog advertisement (CL-3795)", () => {
+  it("advertises a granted catalog package even when its factory failed to construct", async () => {
+    // fileparser (keyless) constructs; linear (credential missing) throws and
+    // is dropped fail-soft. Both are still granted and catalogued, so
+    // search_tools must advertise BOTH — the model should be able to discover
+    // linear even though the package didn't load, rather than the CL-3133 gate
+    // hiding it entirely.
     loadToolPackagesMock.mockImplementationOnce(async () => [
       {
         factories: [
           fakeFactory("@workbench/tools-fileparser/fileparser", () => ({
-            definitions: [
-              { name: "@workbench/tools-fileparser/fileparser:parse_file" },
-            ],
+            definitions: [{ name: "fileparser__parse_file" }],
           })),
-          fakeFactory("@workbench/tools-granola/granola", () => {
-            throw new Error("Granola apiKey is required");
+          fakeFactory("@workbench/tools-linear/linear", () => {
+            throw Object.assign(new Error("Linear apiKey is required"), {
+              name: "ToolCredentialMissingError",
+              providerName: "linear",
+            });
           }),
         ],
       },
     ]);
 
-    const env = await buildMyra();
+    const env = await buildMyra(["fileparser__parse_file", "linear__search"]);
     const dynamic = env[DYNAMIC_TOOLS_ENV_KEY] as {
       catalog: { package: string }[];
     };
     const packages = dynamic.catalog.map((e) => e.package);
     expect(packages).toContain("fileparser");
-    expect(packages).not.toContain("granola");
+    expect(packages).toContain("linear");
   });
 
-  it("advertises no catalog packages when none of them loaded", async () => {
-    loadToolPackagesMock.mockImplementationOnce(async () => []);
-    const env = await buildMyra();
+  it("advertises no catalog packages when none of them are granted, regardless of load", async () => {
+    loadToolPackagesMock.mockImplementationOnce(async () => [
+      {
+        factories: [
+          fakeFactory("@workbench/tools-fileparser/fileparser", () => ({
+            definitions: [{ name: "fileparser__parse_file" }],
+          })),
+        ],
+      },
+    ]);
+    const env = await buildMyra([]);
     const dynamic = env[DYNAMIC_TOOLS_ENV_KEY] as {
       catalog: { package: string }[];
     };

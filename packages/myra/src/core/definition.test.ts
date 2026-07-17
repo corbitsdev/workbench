@@ -5,6 +5,7 @@ import {
   PERSONAL_AGENT_DEPLOY_PROMPT,
   PERSONAL_AGENT_NAME,
   PERSONAL_AGENT_TRIAGE_NAME,
+  PERSONAL_AGENT_MODEL_CONFIG,
   PERSONAL_AGENT_TRIAGE_MODEL_CONFIG,
 } from "./definition";
 
@@ -134,20 +135,41 @@ describe("PERSONAL_AGENT_TRIAGE_MODEL_CONFIG (CL-3364)", () => {
     expect(PERSONAL_AGENT_TRIAGE_NAME).not.toBe(PERSONAL_AGENT_NAME);
   });
 
-  it("pins the cheap flash model, not Myra's own chat model", () => {
+  it("pins the cheap flash model", () => {
     expect(PERSONAL_AGENT_TRIAGE_MODEL_CONFIG).toEqual({
       defaultModel: "deepseek-v4-flash",
     });
   });
 });
 
-describe("PERSONAL_AGENT_DEPLOY_PROMPT (CL-2306)", () => {
-  it("guides shared-document behavior without hardcoding tool names", () => {
+describe("PERSONAL_AGENT_MODEL_CONFIG", () => {
+  it("pins kimi-k2.6 for Myra chat", () => {
+    expect(PERSONAL_AGENT_MODEL_CONFIG).toEqual({
+      defaultModel: "kimi-k2.6",
+    });
+  });
+});
+
+describe("PERSONAL_AGENT_DEPLOY_PROMPT", () => {
+  // Myra runs inference on kimi-k2.6 via the `openai-compatible` provider, so
+  // her deployed prompt must render in Markdown (the non-Anthropic format),
+  // never XML. A regression here (a hardcoded `{ xml: true }`) ships the wrong
+  // section format to the model she actually runs on.
+  it("renders in Markdown for the non-Anthropic provider she runs on", () => {
+    expect(PERSONAL_AGENT_DEPLOY_PROMPT).toContain("## Role");
+    expect(PERSONAL_AGENT_DEPLOY_PROMPT).toContain("## Operating-loop");
+    expect(PERSONAL_AGENT_DEPLOY_PROMPT).not.toContain("<role>");
+  });
+
+  it("names the actual kimi-k2.6 model, not a confabulated identity", () => {
     expect(PERSONAL_AGENT_DEPLOY_PROMPT).toContain(
-      "Shared documents are versioned",
+      "You run on the kimi-k2.6 model, served through the Corbits platform.",
     );
+  });
+
+  it("carries the Chief of Staff identity without hardcoding tool names", () => {
     expect(PERSONAL_AGENT_DEPLOY_PROMPT).toContain(
-      "load its content before responding",
+      "You are Myra, Chief of Staff",
     );
     expect(PERSONAL_AGENT_DEPLOY_PROMPT).not.toContain("artifact_create");
     expect(PERSONAL_AGENT_DEPLOY_PROMPT).not.toContain("artifact_read");

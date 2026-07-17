@@ -42,7 +42,7 @@ export function readReasoningExpanded(
  * Display-time expand state: persisted prefs apply only while the turn is still
  * fresh. Aged turns (see {@link isMyraHistoryAged}) auto-collapse on reload even
  * when localStorage still records an expand choice; the user can expand again in
- * session via ReasoningDisclosure's override.
+ * session via the reasoning disclosure's expand toggle.
  */
 export function readReasoningExpandedForDisplay(
   messageKey: string,

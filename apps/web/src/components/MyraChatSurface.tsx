@@ -13,11 +13,11 @@ import {
   type ChatAgentIdentity,
   type ChatDockState,
   type ThreadInsert,
-  type UIResponse,
   type PendingAttachment,
-  type SignalRouting,
   type MentionCandidate,
+  type SlashCommand,
 } from "@workbench/chat";
+import type { UIResponse, SignalRouting } from "@workbench/blocks";
 import {
   friendlyToolSummary,
   friendlyToolResult,
@@ -42,6 +42,9 @@ import { useMyraReasoningExpanded } from "../hooks/use-myra-reasoning-expanded";
 import { useApprovalDisplayLookups } from "../hooks/use-approval-display-lookups";
 import { createChatToolSummaryFormatter } from "../lib/chat-tool-summary";
 import { useMyraVoiceInput } from "../hooks/use-myra-voice-input";
+import { useSkillLibrary } from "../hooks/use-skills";
+import { useTenantRoster } from "../hooks/use-tenant-roster";
+import { myraInstanceTraceHref } from "../lib/myra-turn-trace";
 import { ActiveContextPills } from "./ActiveContextPills";
 import { ReviewGate } from "./ReviewGate";
 import { renderChatToolMarker } from "./ToolCallProviderMarker";
@@ -150,6 +153,11 @@ type MyraChatSurfaceProps = {
    * ChatPanel header.
    */
   headerLeft?: ReactNode;
+  /**
+   * Content for the right of the header, alongside the expand/dock/close
+   * controls (e.g. the thread-info button on the full-page chat surface).
+   */
+  headerRight?: ReactNode;
   /** Notified with the text whenever the user sends a message (for auto-title). */
   onUserSend?: (text: string) => void;
   /** Run-addressed workflow-event bubbles interleaved into the thread (CL-2682). */
@@ -197,6 +205,7 @@ export function MyraChatSurface({
   tenantId,
   threadLabel,
   headerLeft,
+  headerRight,
   onUserSend,
   inserts,
   dockState,
@@ -210,9 +219,7 @@ export function MyraChatSurface({
   mentionCandidates,
 }: MyraChatSurfaceProps) {
   const agent: ChatAgentIdentity =
-    threadLabel !== undefined &&
-    threadLabel !== "" &&
-    headerLeft === undefined
+    threadLabel !== undefined && threadLabel !== "" && headerLeft === undefined
       ? { name: threadLabel, tagline: MYRA.tagline }
       : MYRA;
   const { compact: compactToolActivity } = useCompactToolActivity();
@@ -221,12 +228,28 @@ export function MyraChatSurface({
   const reasoningExpandedPrefs = useMyraReasoningExpanded(session.messages);
   const { lookups, isLoading: approvalLookupsLoading } =
     useApprovalDisplayLookups(tenantId ?? "");
+  const { data: skillLibrary } = useSkillLibrary(tenantId);
+  const slashCommands: SlashCommand[] | undefined = useMemo(() => {
+    if (skillLibrary === undefined) return undefined;
+    return skillLibrary.map((skill) => ({
+      name: skill.name,
+      description: skill.description ?? skill.displayName ?? skill.name,
+    }));
+  }, [skillLibrary]);
   const formatToolSummary = useMemo(
     () => createChatToolSummaryFormatter(lookups, approvalLookupsLoading),
     [lookups, approvalLookupsLoading],
   );
   const summarize = (calls: ToolCall[]) =>
     summarizeToolCalls(calls, toolSummaryStyle);
+
+  const { data: tenantRoster } = useTenantRoster(tenantId ?? "", {
+    enabled: tenantId !== null && tenantId !== undefined && tenantId !== "",
+  });
+  const getTurnTraceHref = useCallback(
+    () => myraInstanceTraceHref(session.instanceId, tenantRoster?.instances),
+    [session.instanceId, tenantRoster?.instances],
+  );
 
   const activeContext = useActiveContext();
   const [attached, setAttached] = useState<ActiveContext[]>([]);
@@ -263,8 +286,12 @@ export function MyraChatSurface({
     // is then Expanded goes near-fullscreen, so it wants the centered prompt too.
     composerFullWidth: dockState === "docked" && expanded !== true,
     ...(headerLeft !== undefined ? { headerLeft } : {}),
+    ...(headerRight !== undefined ? { headerRight } : {}),
     ...(mentionCandidates !== undefined && mentionCandidates.length > 0
       ? { mentionCandidates }
+      : {}),
+    ...(slashCommands !== undefined && slashCommands.length > 0
+      ? { slashCommands }
       : {}),
     voiceInput: myraVoiceInput,
   };
@@ -468,16 +495,13 @@ export function MyraChatSurface({
 
   // History renders while the sidecar is unreachable; the composer stays usable
   // and sends are queued. Tell the user their messages are deferred, without
-  // surfacing a raw error (CL-3280). A never-yet-live first connect says
-  // "Connecting"; a drop after a live session says "Reconnecting" (CL-3292). The
-  // Retry button sits OUTSIDE the role="status" live region so assistive tech
-  // announces the status text alone and exposes the control through the normal
-  // focus order.
+  // surfacing a raw error, once there was a prior live session to have dropped
+  // from (CL-3280). A never-yet-live first connect renders nothing — sends
+  // still queue silently (CL-3829). The Retry button sits OUTSIDE the
+  // role="status" live region so assistive tech announces the status text
+  // alone and exposes the control through the normal focus order.
   let connectionCopy: string | null = null;
-  if (session.connectionNotice === "connecting") {
-    connectionCopy =
-      "Connecting to Myra — your messages will send once connected.";
-  } else if (session.connectionNotice === "reconnecting") {
+  if (session.connectionNotice === "reconnecting") {
     if (session.queuedFailed) {
       connectionCopy =
         "Trouble reaching Myra — still trying. Your messages will send once it's back.";
@@ -569,6 +593,7 @@ export function MyraChatSurface({
       renderToolMarker={renderChatToolMarker}
       isReasoningExpanded={reasoningExpandedPrefs.isReasoningExpanded}
       setReasoningExpanded={reasoningExpandedPrefs.setReasoningExpanded}
+      getTurnTraceHref={getTurnTraceHref}
     />
   );
 }

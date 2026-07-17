@@ -3,16 +3,61 @@ import {
   createDirectorRegistry,
   defaultDirectorFactory,
   defineDirector,
+  type AnnotatedDirectorFactory,
+  type DirectorAgentContext,
+  type DirectorFactory,
   type DirectorRegistry,
 } from "@intx/agent";
 import {
   createPersonalAgentDirector,
   createTriageBudgetDirector,
+  createInvokeBudgetDirector,
   createBudgetDirector,
+  readInferenceParamsForDirector,
+  wrapDirectorWithInferenceParams,
 } from "@workbench/myra";
 import { createGranolaDirector } from "./granola/director";
 import { createFirecrawlDirector } from "./firecrawl/director";
 import { dynamicToolsDirector } from "./dynamic-tools";
+import { wrapDirectorWithCompaction } from "./compaction-director";
+import { SUMMARIZE_COMPACTOR_NAME } from "./summarize-compactor";
+
+/**
+ * Whether the deployer wired the summarize compactor onto `env.compactors`
+ * for this agent, as recorded at construction on `agent.compactorNames`
+ * (the registry's own record of what got registered). Chat-facing agents
+ * pick it up via the default harness; workflow-step agents do not — their
+ * sidecar env never registers a compactor — so `withCompaction` uses this
+ * to skip the wrap rather than fail construction for those agents.
+ */
+function hasSummarizeCompactor(agent: DirectorAgentContext): boolean {
+  return agent.compactorNames.includes(SUMMARIZE_COMPACTOR_NAME);
+}
+
+/**
+ * Wraps a director factory so its produced director carries the
+ * 80%-of-context-window compaction trigger, applied uniformly
+ * across every director the registry resolves — default, personal-agent,
+ * granola, firecrawl, dynamic-tools, and the three budget directors. The
+ * wrap only activates when `hasSummarizeCompactor` confirms the agent's
+ * env actually registered the compactor; agents that never register one
+ * (workflow steps) get the plain, unwrapped director back.
+ */
+function withCompaction<Config>(
+  factory: AnnotatedDirectorFactory<Config>,
+): AnnotatedDirectorFactory<Config> {
+  const wrapped: DirectorFactory<Config> = (config, env, agent) => {
+    const director = factory(config, env, agent);
+    return hasSummarizeCompactor(agent)
+      ? wrapDirectorWithCompaction(director)
+      : director;
+  };
+  return Object.assign(wrapped, {
+    id: factory.id,
+    requires: factory.requires,
+    configSchema: factory.configSchema,
+  });
+}
 
 const SenderFilterConfig = type({ allowedSenders: "string[]" });
 
@@ -21,11 +66,14 @@ export const personalAgentDirector = defineDirector<
 >({
   id: "@workbench/agents/personal-agent",
   configSchema: SenderFilterConfig,
-  factory: (config, _env, agent) =>
-    createPersonalAgentDirector(
-      agent.systemPrompt,
-      [...agent.toolDefinitions],
-      config.allowedSenders,
+  factory: (config, env, agent) =>
+    wrapDirectorWithInferenceParams(
+      createPersonalAgentDirector(
+        agent.systemPrompt,
+        [...agent.toolDefinitions],
+        config.allowedSenders,
+      ),
+      readInferenceParamsForDirector(env, agent.systemPrompt),
     ),
 });
 
@@ -65,8 +113,35 @@ export const TRIAGE_BUDGET_DIRECTOR_ID = "@workbench/agents/triage-budget";
 export const triageBudgetDirector = defineDirector<typeof EmptyConfig.infer>({
   id: TRIAGE_BUDGET_DIRECTOR_ID,
   configSchema: EmptyConfig,
-  factory: (_config, _env, agent) =>
-    createTriageBudgetDirector(agent.systemPrompt, [...agent.toolDefinitions]),
+  factory: (_config, env, agent) =>
+    wrapDirectorWithInferenceParams(
+      createTriageBudgetDirector(agent.systemPrompt, [
+        ...agent.toolDefinitions,
+      ]),
+      readInferenceParamsForDirector(env, agent.systemPrompt),
+    ),
+});
+
+export const INVOKE_BUDGET_DIRECTOR_ID = "@workbench/agents/invoke-budget";
+
+/**
+ * Director for a subagent instance launched via `invoke_agent` (CL-3683):
+ * the same construction-time budget-cap wrapper as triage, so unattended
+ * delegated work is bounded by construction rather than by trusting the
+ * model to stop. Selected sidecar-side from the invoke session-prompt
+ * marker (`isInvokeSessionPrompt`), the same mechanism `triageBudgetDirector`
+ * uses.
+ */
+export const invokeBudgetDirector = defineDirector<typeof EmptyConfig.infer>({
+  id: INVOKE_BUDGET_DIRECTOR_ID,
+  configSchema: EmptyConfig,
+  factory: (_config, env, agent) =>
+    wrapDirectorWithInferenceParams(
+      createInvokeBudgetDirector(agent.systemPrompt, [
+        ...agent.toolDefinitions,
+      ]),
+      readInferenceParamsForDirector(env, agent.systemPrompt),
+    ),
 });
 
 export const WORKFLOW_STEP_BUDGET_DIRECTOR_ID =
@@ -99,34 +174,46 @@ export const workflowStepBudgetDirector = defineDirector<
 >({
   id: WORKFLOW_STEP_BUDGET_DIRECTOR_ID,
   configSchema: EmptyConfig,
-  factory: (_config, _env, agent) =>
-    createBudgetDirector(agent.systemPrompt, [...agent.toolDefinitions], {
-      maxToolCalls: WORKFLOW_STEP_MAX_TOOL_CALLS,
-      maxInputTokens: WORKFLOW_STEP_MAX_INPUT_TOKENS,
-      maxOutputTokens: WORKFLOW_STEP_MAX_OUTPUT_TOKENS,
-      maxInferenceTurns: WORKFLOW_STEP_MAX_INFERENCE_TURNS,
-      stopMarker: WORKFLOW_STEP_BUDGET_STOP_MARKER,
-    }),
+  factory: (_config, env, agent) =>
+    wrapDirectorWithInferenceParams(
+      createBudgetDirector(agent.systemPrompt, [...agent.toolDefinitions], {
+        maxToolCalls: WORKFLOW_STEP_MAX_TOOL_CALLS,
+        maxInputTokens: WORKFLOW_STEP_MAX_INPUT_TOKENS,
+        maxOutputTokens: WORKFLOW_STEP_MAX_OUTPUT_TOKENS,
+        maxInferenceTurns: WORKFLOW_STEP_MAX_INFERENCE_TURNS,
+        stopMarker: WORKFLOW_STEP_BUDGET_STOP_MARKER,
+      }),
+      readInferenceParamsForDirector(env, agent.systemPrompt),
+    ),
 });
 
 /**
  * Registry of every director a Workbench bundle ships, with the
- * interchange default as the fallback. The workflow-deploy capability
- * walk resolves each step agent's `director` ref against this registry
- * to emit the `director:<id>` grant; the sidecar harness uses it so an
- * agent definition that pins a Workbench director resolves at launch.
- * Agents that omit `director` fall back to the interchange default.
+ * interchange default as the fallback. Every factory — default,
+ * personal-agent, granola, firecrawl, dynamic-tools, and the three budget
+ * directors — is wrapped uniformly with `withCompaction` so the
+ * 80%-of-context-window compaction trigger applies across the
+ * board; it activates only when the agent's env actually registered the
+ * summarize compactor (`hasSummarizeCompactor`), so directors resolved for
+ * agents that never register one (workflow steps) fall through unwrapped
+ * instead of failing construction. The workflow-deploy capability walk
+ * resolves each step agent's `director` ref against this registry to emit
+ * the `director:<id>` grant; the sidecar harness uses it so an agent
+ * definition that pins a Workbench director resolves at launch. Agents
+ * that omit `director` fall back to the interchange default, still
+ * registered under its own id (`@intx/agent/default`).
  */
 export function createWorkbenchDirectorRegistry(): DirectorRegistry {
   return createDirectorRegistry({
     factories: [
-      defaultDirectorFactory,
-      personalAgentDirector.factory,
-      granolaDirector.factory,
-      firecrawlDirector.factory,
-      dynamicToolsDirector.factory,
-      triageBudgetDirector.factory,
-      workflowStepBudgetDirector.factory,
+      withCompaction(defaultDirectorFactory),
+      withCompaction(personalAgentDirector.factory),
+      withCompaction(granolaDirector.factory),
+      withCompaction(firecrawlDirector.factory),
+      withCompaction(dynamicToolsDirector.factory),
+      withCompaction(triageBudgetDirector.factory),
+      withCompaction(invokeBudgetDirector.factory),
+      withCompaction(workflowStepBudgetDirector.factory),
     ],
     defaultId: defaultDirectorFactory.id,
   });

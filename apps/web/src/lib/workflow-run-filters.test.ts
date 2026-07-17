@@ -3,6 +3,7 @@ import type { WorkflowRun } from "../hooks/use-workflow";
 import {
   DEFAULT_RUN_FILTERS,
   applyRunFilters,
+  distinctRunActors,
   distinctRunKinds,
 } from "./workflow-run-filters";
 
@@ -42,6 +43,33 @@ describe("distinctRunKinds", () => {
   });
 });
 
+describe("distinctRunActors", () => {
+  it("returns each starter once, labeled by display name, sorted by label", () => {
+    const withActors: WorkflowRun[] = [
+      run({ runId: "a", principalId: "prn-2", ownerDisplayName: "Zoe" }),
+      run({ runId: "b", principalId: "prn-1", ownerDisplayName: "Ann" }),
+      run({ runId: "c", principalId: "prn-1", ownerDisplayName: "Ann" }),
+    ];
+    expect(distinctRunActors(withActors)).toEqual([
+      { principalId: "prn-1", label: "Ann" },
+      { principalId: "prn-2", label: "Zoe" },
+    ]);
+  });
+
+  it("falls back to the principal id when no display name resolved", () => {
+    const withActors: WorkflowRun[] = [
+      run({ runId: "a", principalId: "prn-9" }),
+    ];
+    expect(distinctRunActors(withActors)).toEqual([
+      { principalId: "prn-9", label: "prn-9" },
+    ]);
+  });
+
+  it("skips runs with no starter identity", () => {
+    expect(distinctRunActors([run({ runId: "a" })])).toEqual([]);
+  });
+});
+
 describe("applyRunFilters", () => {
   it("defaults to newest-first with no narrowing", () => {
     const out = applyRunFilters(runs, DEFAULT_RUN_FILTERS);
@@ -70,6 +98,19 @@ describe("applyRunFilters", () => {
       kind: "deck-build",
     });
     expect(out.map((r) => r.runId)).toEqual(["c", "a"]);
+  });
+
+  it("narrows by actor (starter principal)", () => {
+    const withActors: WorkflowRun[] = [
+      run({ runId: "a", principalId: "prn-1" }),
+      run({ runId: "b", principalId: "prn-2" }),
+      run({ runId: "c", principalId: "prn-1" }),
+    ];
+    const out = applyRunFilters(withActors, {
+      ...DEFAULT_RUN_FILTERS,
+      actor: "prn-1",
+    });
+    expect(out.map((r) => r.runId).sort()).toEqual(["a", "c"]);
   });
 
   it("combines status and kind filters", () => {

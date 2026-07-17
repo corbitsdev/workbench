@@ -3,13 +3,43 @@ import { computeDelta } from "./metrics";
 import { formatDollars, formatNumber } from "./stats";
 import type { ActivityOverview } from "../../lib/hub-api";
 import { DeltaBadge } from "./viz";
+import type { InsightsTabId } from "./InsightsTabs";
 
+function KpiTile({
+  tab,
+  label,
+  onNavigate,
+  children,
+}: {
+  tab: InsightsTabId;
+  label: string;
+  onNavigate: (tab: InsightsTabId) => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={() => onNavigate(tab)}
+      className="rounded-[10px] text-left outline-none transition-[transform] focus-visible:ring-1 focus-visible:ring-accent active:scale-[0.98]"
+      aria-label={`View ${label} on the ${tab} tab`}
+    >
+      {children}
+    </button>
+  );
+}
+
+/**
+ * This-range summary tiles (CL-3667): each tile deep-links into the tab that
+ * owns the full breakdown instead of repeating it inline — Overview shows the
+ * headline number once, the detail lives on exactly one tab.
+ */
 export function KpiRow({
   data,
   activePeople,
   costTotal,
   costTokens,
   costUnavailable,
+  onNavigateTab,
 }: {
   data: ActivityOverview;
   activePeople: number;
@@ -18,6 +48,7 @@ export function KpiRow({
   costTokens: number;
   /** True once pricing has been checked and no rate could be resolved for any usage. */
   costUnavailable: boolean;
+  onNavigateTab: (tab: InsightsTabId) => void;
 }) {
   const summary = data.inference.summary;
   const prev = data.inference.previousSummary;
@@ -30,37 +61,55 @@ export function KpiRow({
   return (
     <DashboardSection title="This range" variant="highlighted">
       <StatGrid columns={5}>
-        <StatGridItem
-          label="Cost"
-          value={costTotal !== null ? formatDollars(costTotal) : "—"}
-          sub={
-            costUnavailable
-              ? "pricing unavailable"
-              : `${formatNumber(costTokens)} tokens`
-          }
-          emphasis
-        />
-        <StatGridItem
-          label="Total activity"
-          value={formatNumber(activity)}
-          sub="turns + tool calls"
-          delta={<DeltaBadge delta={computeDelta(activity, prevActivity)} />}
-          sparklineValues={dailyActivity.length >= 3 ? dailyActivity : undefined}
-          sparklineLabel="Activity trend"
-          emphasis
-        />
-        <StatGridItem
-          label="Active actors"
-          value={formatNumber(activePeople)}
-          sub="people with usage"
-          emphasis
-        />
-        <StatGridItem
-          label="Workflow runs"
-          value={formatNumber(data.workflowRuns.executionsStartedInRange)}
-          sub={`${formatNumber(data.workflowRuns.activeExecutions)} active`}
-          emphasis
-        />
+        <KpiTile tab="usage-cost" label="cost" onNavigate={onNavigateTab}>
+          <StatGridItem
+            label="Cost"
+            value={costTotal !== null ? formatDollars(costTotal) : "—"}
+            sub={
+              costUnavailable
+                ? "pricing unavailable"
+                : `${formatNumber(costTokens)} tokens`
+            }
+            emphasis
+          />
+        </KpiTile>
+        <KpiTile
+          tab="usage-cost"
+          label="total activity"
+          onNavigate={onNavigateTab}
+        >
+          <StatGridItem
+            label="Total activity"
+            value={formatNumber(activity)}
+            sub="chats + tool calls"
+            delta={<DeltaBadge delta={computeDelta(activity, prevActivity)} />}
+            sparklineValues={
+              dailyActivity.length >= 3 ? dailyActivity : undefined
+            }
+            sparklineLabel="Activity trend"
+            emphasis
+          />
+        </KpiTile>
+        <KpiTile tab="people" label="active actors" onNavigate={onNavigateTab}>
+          <StatGridItem
+            label="Active actors"
+            value={formatNumber(activePeople)}
+            sub="people with usage"
+            emphasis
+          />
+        </KpiTile>
+        <KpiTile
+          tab="workflows"
+          label="workflow runs"
+          onNavigate={onNavigateTab}
+        >
+          <StatGridItem
+            label="Workflow runs"
+            value={formatNumber(data.workflowRuns.executionsStartedInRange)}
+            sub={`${formatNumber(data.workflowRuns.activeExecutions)} active`}
+            emphasis
+          />
+        </KpiTile>
         <StatGridItem
           label="Artifacts"
           value={formatNumber(data.artifacts.createdInRange)}

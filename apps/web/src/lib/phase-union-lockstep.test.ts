@@ -1,6 +1,6 @@
 /// <reference types="bun" />
 import { describe, expect, it } from "bun:test";
-import { DockRunPhaseSchema, DockStepPhaseSchema } from "@workbench/chat";
+import { DockRunPhaseSchema, DockStepPhaseSchema } from "@workbench/blocks";
 import { logRunStateSchema, logStepStateSchema } from "./run-state-adapter";
 
 // The dock's phase unions (packages/blocks/src/run-dock-blocks.ts) and the

@@ -1,4 +1,4 @@
-import { createDefaultDirector } from "@intx/inference";
+import { createDefaultDirector } from "@workbench/inference";
 import type {
   ReactorDirector,
   ReactorInboundEvent,
@@ -7,6 +7,8 @@ import type {
   ReactorAction,
   ToolDefinition,
 } from "@intx/types/runtime";
+import { wrapCapabilitiesWithInferenceParams } from "./inference-params-director";
+import type { ResolvedInferenceDials } from "./inference-params";
 
 const GENERIC_BUDGET_STOP_MARKER =
   "Note: this session stopped at its safety budget (tool calls, tokens, or inference turns) before finishing normally. A human should review this message and take over from here.";
@@ -27,6 +29,18 @@ export type BudgetDirectorOptions = {
   maxInferenceTurns: number;
   stopMarker?: string;
   inner?: ReactorDirector;
+  /**
+   * Rebase the budget on every `message.received`: tool-call and turn
+   * counters reset to zero and the token caps become deltas from the usage
+   * at that point. For a long-lived session that serves one budgeted
+   * engagement per inbound mail (an invoked subagent receiving briefs),
+   * this stops cumulative work across briefs from permanently capping the
+   * session. Leave unset for one-shot sessions (triage), where lifetime
+   * and engagement coincide.
+   */
+  resetPerMessage?: boolean;
+  /** When set, merges member creative/thinking dials into each infer call. */
+  inferenceDials?: ResolvedInferenceDials;
 };
 
 function countToolCalls(action: ReactorAction): number {
@@ -41,16 +55,19 @@ function toArray(actions: ReactorAction | ReactorAction[]): ReactorAction[] {
   return Array.isArray(actions) ? actions : [actions];
 }
 
+type TokenBaseline = { input: number; output: number };
+
 function isOverBudget(
   opts: BudgetDirectorOptions,
   state: ReactorState,
   toolCallTotal: number,
   inferenceTurnTotal: number,
+  baseline: TokenBaseline,
 ): boolean {
   return (
     toolCallTotal >= opts.maxToolCalls ||
-    state.tokenUsage.input >= opts.maxInputTokens ||
-    state.tokenUsage.output >= opts.maxOutputTokens ||
+    state.tokenUsage.input - baseline.input >= opts.maxInputTokens ||
+    state.tokenUsage.output - baseline.output >= opts.maxOutputTokens ||
     inferenceTurnTotal >= opts.maxInferenceTurns
   );
 }
@@ -133,6 +150,7 @@ export function createBudgetDirector(
   const hardTurnCeiling = opts.maxInferenceTurns + BUDGET_INFERENCE_TURN_GRACE;
   let toolCallTotal = 0;
   let inferenceTurnTotal = 0;
+  const baseline: TokenBaseline = { input: 0, output: 0 };
 
   return {
     async decide(
@@ -140,14 +158,28 @@ export function createBudgetDirector(
       state: ReactorState,
       capabilities: ReactorCapabilities,
     ): Promise<ReactorAction | ReactorAction[]> {
+      const effectiveCapabilities = wrapCapabilitiesWithInferenceParams(
+        capabilities,
+        opts.inferenceDials,
+      );
+      if (opts.resetPerMessage === true && event.type === "message.received") {
+        toolCallTotal = 0;
+        inferenceTurnTotal = 0;
+        baseline.input = state.tokenUsage.input;
+        baseline.output = state.tokenUsage.output;
+      }
+
       const wasOverBudget = isOverBudget(
         opts,
         state,
         toolCallTotal,
         inferenceTurnTotal,
+        baseline,
       );
 
-      const actions = toArray(await base.decide(event, state, capabilities));
+      const actions = toArray(
+        await base.decide(event, state, effectiveCapabilities),
+      );
 
       for (const action of actions) {
         toolCallTotal += countToolCalls(action);

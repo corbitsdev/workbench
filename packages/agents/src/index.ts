@@ -89,9 +89,18 @@ export {
   firecrawlDirector,
   triageBudgetDirector,
   TRIAGE_BUDGET_DIRECTOR_ID,
+  invokeBudgetDirector,
+  INVOKE_BUDGET_DIRECTOR_ID,
   workflowStepBudgetDirector,
   WORKFLOW_STEP_BUDGET_DIRECTOR_ID,
 } from "./director-registry";
+
+// Compaction trigger director
+export {
+  wrapDirectorWithCompaction,
+  COMPACTION_TRIGGER_THRESHOLD,
+  type CompactionDirectorOptions,
+} from "./compaction-director";
 
 // Walter agent
 export { buildWalterSystemPrompt } from "./walter/prompt";
@@ -111,6 +120,26 @@ export {
   LINCOLN_DEPLOY_DESCRIPTOR,
 } from "./lincoln/definition";
 
+// Summary agent — context compactor
+export { buildSummaryAgentSystemPrompt } from "./summary-agent/prompt";
+export {
+  SUMMARY_AGENT_GRANT_REQUIREMENTS,
+  SUMMARY_AGENT_CREDENTIAL_REQUIREMENTS,
+  SUMMARY_AGENT_DEPLOY_PROMPT,
+  SUMMARY_AGENT_MODEL_CONFIG,
+  SUMMARY_AGENT_DEPLOY_DESCRIPTOR,
+} from "./summary-agent/definition";
+
+// Summarize compactor — context compaction strategy
+export {
+  createSummarizeCompactor,
+  SUMMARIZE_COMPACTOR_NAME,
+  SUMMARIZE_COMPACTOR_VERSION,
+  SUMMARY_MODEL_ID,
+  RETAIN_RECENT_EXCHANGES,
+  type CreateSummarizeCompactorOpts,
+} from "./summarize-compactor";
+
 // Hammy — the humanizer
 export { buildHammySystemPrompt } from "./hammy-the-humanizer/prompt";
 export {
@@ -124,7 +153,7 @@ export {
 export {
   AGENT_TEMPLATES,
   type AgentTemplate,
-  isReapableChatAgent,
+  isReapableAgentInstance,
 } from "./templates";
 
 // Model catalog derived from the agent templates (single source of truth)
@@ -142,23 +171,7 @@ export {
 
 // Shared adapter
 export { convertInstanceEvents } from "./adapter";
-export {
-  createToolNameTracker,
-  type ToolNameTracker,
-} from "./tool-name-tracker";
-export {
-  createLiveTextTracker,
-  type LiveTextTracker,
-} from "./live-text-tracker";
-export {
-  createReasoningTracker,
-  type ReasoningTracker,
-} from "./reasoning-tracker";
-export {
-  createImageTracker,
-  type ImageTracker,
-  type CapturedImage,
-} from "./image-tracker";
+export { createPartAssembler, type PartAssembler } from "./part-assembler";
 export { deriveAgentPhase, type AgentPhase } from "./agent-phase";
 export {
   composeChatMessages,

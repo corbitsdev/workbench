@@ -16,6 +16,10 @@ import {
   type ProgressStep,
   type UIBlock,
 } from "@workbench/blocks";
+import {
+  AB_PRESET_EXEC_STEP_ID,
+  abPresetHumanizeStepLabel,
+} from "./display-steps";
 
 /** The config gate's `awaitSignal` name (matches the builder). */
 export const CONFIG_SIGNAL = "ab-config";
@@ -107,27 +111,10 @@ function runPageLink(
   return { kind: "link", url: `/workflows/${runId}`, title, description };
 }
 
-const EXEC_ID = /^exec\d+$/u;
 const TERMINAL_PHASES = new Set(["completed", "failed", "cancelled"]);
 
-const STEP_LABELS: Record<string, string> = {
-  config: "Prompt",
-  quorum: "Check models",
-  decision: "Decision",
-  compose: "Compile",
-  persist: "Save",
-};
-
-// Human-facing progress label. `exec<i>` maps to the blind "Variant N" the rest
-// of the surface uses; the other internal step ids get plain-English names.
-function humanizeStepLabel(stepId: string): string {
-  const match = EXEC_ID.exec(stepId);
-  if (match !== null) return `Variant ${Number(stepId.slice(4)) + 1}`;
-  return STEP_LABELS[stepId] ?? stepId.replace(/[-_]+/gu, " ").trim();
-}
-
 function execSteps(input: AbPresetBlockInput) {
-  return input.steps.filter((step) => EXEC_ID.test(step.stepId));
+  return input.steps.filter((step) => AB_PRESET_EXEC_STEP_ID.test(step.stepId));
 }
 
 // Every variant lane has reached a terminal phase — the point at which it is
@@ -148,12 +135,12 @@ export function buildAbPresetBlocks(input: AbPresetBlockInput): UIBlock[] {
       // the progress rail instead of a misleading green check.
       const output = input.stepOutputs[step.stepId];
       const variantFailed =
-        EXEC_ID.test(step.stepId) &&
+        AB_PRESET_EXEC_STEP_ID.test(step.stepId) &&
         isRecord(output) &&
         output.isError === true;
       return {
         state: variantFailed ? "failed" : progressStateForStepPhase(step.phase),
-        label: humanizeStepLabel(step.stepId),
+        label: abPresetHumanizeStepLabel(step.stepId),
       };
     });
     blocks.push({ kind: "progress", steps });

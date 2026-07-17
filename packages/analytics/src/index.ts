@@ -12,6 +12,7 @@ export {
   getCacheBaseline,
   getTokenDataStartDate,
   getPrincipalToolBreakdown,
+  getTenantToolBreakdown,
   getPrincipalCostSummary,
   type PrincipalToolRow,
   type PrincipalCostSummary,
@@ -22,6 +23,8 @@ export {
   type AnalyticsModelRow,
   type AnalyticsDateRange,
   type AnalyticsSummary,
+  sumAnalyticsModelTokens,
+  analyticsModelDisplayCount,
 } from "./queries";
 export {
   getConversationActivity,

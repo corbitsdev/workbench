@@ -14,6 +14,8 @@ GTM Workbench records agent and workflow usage in PostgreSQL and exposes tenant-
 
 Inference events flow: **sidecar harness / workflow child → hub `sidecarRouter.events` → `createAnalyticsSubscriber` → `analytics_event` + `analytics_rollup_daily`.**
 
+Per-model rollups split **turns** (`message.run.ended`, `model` null) from **tokens** (`inference.done`, real model id). Insights `byModel` includes any named model with turns or tokens in range (null-model turn-only buckets are excluded).
+
 ## Event coverage matrix
 
 | Source                                   | Event types ingested                                                                     | Rollup contribution                                                                                    |
@@ -31,7 +33,7 @@ Inference events flow: **sidecar harness / workflow child → hub `sidecarRouter
 - `GET /api/tenants/:tenantId/principals/:principalId/analytics` — a single principal's tool-call breakdown and token/cost totals, for the Insights principal trace's **Tools** and **Cost** facets. Returns `{ tools: [{ name, calls, errors }], cost: { inputTokens, outputTokens, cacheReadTokens, cacheWriteTokens, thinkingTokens, inferenceCalls, toolCalls } }`. See **Per-principal Tools & Cost facets** below.
 - `GET /api/tenants/:tenantId/activity/overview` — tenant operational ledger (`startDate`, `endDate`): artifact and workflow-run counts from hub tables, agent-instance lifecycle counts, plus:
   - `dailySeries` — per-`bucket_date` inference rollup (turns, tool calls, token categories), ordered ascending, for trend sparklines and the activity heatmap
-  - `models` — `{ key, count }` turn counts grouped by `model`
+  - `models` — `{ key, count }` legacy mini-chart values per `model` (turn count when `turnCount > 0`, else total tokens across classes); prefer `byModel` for cost and token classes
   - `conversations` / `messages` — `agent_session` and `inference_turn` counts (`total` + `createdInRange`)
   - `agentActivity` — `{ active, idle }` from `inference.byInstance` (CL-2891): for **date-bounded** presets, `active` = instances with turns in range, `idle` = instances in the same scoped set with zero turns (not “all instances minus active”). For **All time** (no date bounds), `idle` = all-time instance total minus `active`.
   - `pricedByModel` — tenant-wide `priceUsageRows(byModel)` when the hub had a warm models.dev catalog at overview time; `null` when not (the web may fall back to `GET /pricing` + the same math). Added CL-2891.
@@ -43,7 +45,9 @@ The Insights UI presets are `24 hours`, `7 days`, `30 days`, `90 days`, and `All
 
 ## Cost & token classes (CL-2714)
 
-- **Token classes are always kept separate** — fresh input, cache read, cache write, and output are billed at different rates and are never summed into an ambiguous "prompt tokens" figure. `activity/overview` carries every class separately on `dailySeries`, `inference.*`, `byPerson`, and `byModel` (per-model usage with all classes, added in CL-2714 alongside the legacy `models` turn-count distribution).
+- **Token classes are always kept separate** — fresh input, cache read, cache write, and output are billed at different rates and are never summed into an ambiguous "prompt tokens" figure. `activity/overview` carries every class separately on `dailySeries`, `inference.*`, `byPerson`, and `byModel` (per-model usage with all classes, CL-2714).
+- **Legacy `activity/overview.models[].count`** — `analyticsModelDisplayCount`: turn count when `turnCount > 0`, else total tokens across classes (mixed units; consumers outside Insights Usage & Cost may still use this).
+- **Insights Usage & Cost “Model distribution” mini-bars (CL-3740)** — bar length is always total tokens across classes (`sumAnalyticsModelTokens`); the value column shows `N turns` when `turnCount > 0`, else a compact token total, so bars are comparable across models.
 - **Dollar cost** is computed from [models.dev](https://models.dev) open pricing. The hub fetches `MODELS_DEV_API_URL` (default `https://models.dev/api.json`), ArkType-parses it at the boundary (`@workbench/pricing` → `ModelsDevPayloadSchema`), and flattens it into a `modelId → per-class rate` catalog cached **in-process** with a TTL (`MODELS_DEV_TTL_MS`, default 6h — the hub has no redis). Rates are dollars per million tokens.
   - `GET /api/tenants/:tenantId/pricing` returns the cached `PriceCatalog`; the browser consumes it via TanStack Query (long `staleTime`) and never hits models.dev directly (CSP).
   - `GET /api/tenants/:tenantId/pricing/logos/:provider` proxies the provider SVG logo same-origin.
@@ -63,6 +67,26 @@ The Insights UI presets are `24 hours`, `7 days`, `30 days`, `90 days`, and `All
 The Recent Activity feed re-frames raw timeline rows into legible, action-first headlines and groups a time-adjacent burst into one **turn** (a connected flow: the session, the grants it exercised, the tools it ran, the result). A `grant` row (`<resource> <action> <effect>`, e.g. `tool:workflows__workflow_start invoke allow`) is named by the ACTION it allowed ("Allowed: Workflow start") rather than a bare "GRANT". Naming + grouping are pure functions in `apps/web/src/pages/insights/activity-naming.ts` (no session id exists on timeline rows, so time-adjacency is the grouping signal).
 
 Requires an active principal on the tenant (Interchange `resolveTenant` on `/api/tenants/:tenantId/*`). Org members do not carry role grants; analytics is membership-gated like other product reads.
+
+## Activity timeline limits — grants & credentials (CL-2489)
+
+Principal and tenant-wide **activity timelines** (`GET …/activity/timeline`, `@workbench/timeline`) UNION **13** registered sources (`packages/timeline/src/registry.ts`). They surface operational **activity** — what was recorded and what still exists — not a tamper-evident audit trail.
+
+| Limit               | Detail                                                                                                                                                                                   |
+| ------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Grant rows**      | Read live `grant` rows; timestamp is `created_at` (first insert). Revoked or deleted grants vanish from the feed; there is no history of who granted, changed, or removed access.        |
+| **Credential rows** | Same for `credential` (member OAuth and owner-managed keys). Rotation or disconnect removes or leaves a stale `created_at`; secrets and prior values are never replayed on the timeline. |
+| **Not audit-grade** | No append-only mutation log, no actor on change, no hash chain. Operators must not treat Insights **Activity** as permissions or secrets compliance evidence.                            |
+
+The web shows an inline caveat when grant or credential entries appear, via one shared `PermissionCaveatBanner` (`apps/web/src/pages/insights/PermissionCaveatBanner.tsx`) rendered by every timeline surface (`ActorTimeline`, `MomentWalker`, `TenantActivityFeed`) so the disclosure wording is identical everywhere. The grant descriptor note in `packages/timeline/src/registry.ts` documents current-state semantics; the credential descriptor note covers tenant-owned exclusion, not mutation history.
+
+**Mutation paths (v1).** Timeline SQL does not subscribe to writes. Grants and credentials mutate through the **hub process** — both workbench-specific code under `apps/hub/src` and the mounted `@intx/hub-api` routes (`/api/tenants/:tenantId/grants`, `/api/tenants/:tenantId/credentials`, plus instance launch grant materialization). Inventory for documentation and a future audit hook:
+
+- **Workbench grants (`apps/hub/src`):** `routes/owner.ts`, `routes/agents.ts`, `routes/gamma-templates.ts`, `services/agent-provisioning.ts`, `services/myra-threads.ts`, `lib/capability-grants.ts`, `lib/feature-grants.ts`, `lib/workflow-run-gate.ts`, `lib/tenant-provisioning.ts`, `lib/workspace-inbox-source-gate.ts`
+- **Interchange API (mounted by hub):** `interchange/packages/hub-api/src/routes/grants.ts`, `routes/credentials.ts`, `routes/instances.ts` (launch-time grant rows)
+- **Workbench credentials (`apps/hub/src`):** `routes/owner.ts`, `routes/me-connections.ts` (disconnect), `lib/oauth-flow.ts` (connect store / disconnect delete)
+
+**Deferred v1:** an append-only hub table written at mutation sites would give a real audit stream without overloading the in-place `grant` / `credential` tables.
 
 ## Tenant-wide activity + intra-tenant authz (CL-2743 / CL-2744)
 
@@ -89,6 +113,17 @@ The Insights principal trace (`/insights/users/:id`) has **Tools** and **Cost** 
 - **Cost** — `getPrincipalCostSummary` sums the token classes over `inference_done` rows (tokens live only there) and tallies `tool_call` rows separately. The facet renders per-class token counts; **dollar pricing is a separate layer** (see Cost & token classes) and is not applied per-principal here.
 - **Attribution note:** keying on the principal set is correct for persistent chat agents, which resume in place under one stable instance principal. An agent whose history spans multiple instances (re-provisioning) or whose analytics was recorded under a since-reaped ephemeral instance is out of scope for these facets — that cross-instance aggregation keys on the durable `analytics_event.agent_id` and is tracked separately.
 
+## Moment detail expansion (Insights → Trace)
+
+Opening one moment in the trace calls `GET /…/principals/:principalId/:kind/:id/detail` → `getMomentDetail` (`apps/hub/src/services/moment-detail.ts`), which runs a per-kind join and validates the result through the shared `MomentDetailSchema` (`@workbench/timeline`). `apps/web/src/pages/insights/MomentWalker.tsx` renders the returned block as the moment's Input / Output / When / Reference decomposition. A `tool_call` moment carries its recorded arguments and result from `turn_part`; a `workflow_run` moment carries its fact-table duration and outcome.
+
+An **`inference_turn`** moment carries the full picture of the model call, not just metadata:
+
+- **Output** — the assistant's `text`/`reasoning` content from `turn_part.content` (already read for the turn; the view now renders it, not just the part-type labels), plus model, wall-clock duration, and tool-call names.
+- **Input** — the exact prompt the model received (system prompt + prior messages + tool results, after any pre-inference context transforms), read **hub-side** from the durable agent-state git repo. The reactor writes each cycle's assembled prompt to `prompt.jsonl` and commits it with that turn's `inference-done` checkpoint, so nothing has to be reconstructed. `apps/hub/src/services/turn-input-snapshot.ts` resolves the instance's address (`inference_turn.instance_id` → `agent_instance.address`, unique per instance so the repo holds only that instance's turns), opens the repo via `repoStore.repoStore.getRepoDir({ kind: "agent-state", id: address })`, locates the turn's own `inference-done` checkpoint by ordinal from the newest end of the log — counting only the instance's **completed** turns, which are 1:1 with `inference-done` checkpoints so an `inference-error` checkpoint can never shift the alignment — verifies the checkpoint's author time falls within the turn's `[started_at, ended_at]` span (plus commit-latency slack), and reads `prompt.jsonl` at that commit with raw `git.readBlob`. Each turn is projected to a render-ready `{ role, kind, text }` (a `tool_result` continuation is tagged `kind: "tool_result"`).
+
+Nothing is read from the sidecar: the sidecar is throwaway and pushes signed `state/` packs to the hub (`receiveAgentStatePack`), which stores the agent-state repo durably with `retention: "keep-history"` and never deletes it — the hub is the source of truth for what the model saw. An `inputGap` is returned (never a wrong or fabricated conversation) when the record is not reachable: the turn did not complete (running/failed turns have no committed prompt checkpoint), the agent-state repo was never pushed (e.g. a hard-deleted ephemeral `ins_ses_*` instance), the turn is older than the read window, or the checkpoint cannot be aligned within the turn's time span. Workflow-run inference turns are not covered — their state lives under a `workflow-run` repo keyed by the run's slug, not the `agent-state` address — so they gap rather than resolve.
+
 ## Staging verification (CL-2301)
 
 1. Deploy staging hub + sidecar with analytics migrations applied.
@@ -106,6 +141,37 @@ The Insights principal trace (`/insights/users/:id`) has **Tools** and **Cost** 
 - Unknown `agent_address` (no active `agent_instance`) is dropped with a warning — fix deploy persistence before expecting workflow analytics.
 - Workflow supervisors persist harness `sessionId` on `agent_instance` (and `agent_session`) at deploy/re-establish so inference events resolve for analytics.
 - **Backfill** supervisors deployed before that fix: `bun run apps/hub/bin/backfill-analytics-sessions.ts --tenant <slug> --dry-run` then without `--dry-run`.
+
+## Troubleshooting
+
+### Read-only model rollup audit (CL-3740)
+
+When Insights **by model** looks wrong (missing models, token-only rows, or stale rollups), run the read-only audit script against staging or production Postgres. It prefers `DATABASE_PUBLIC_URL` (Railway’s public proxy) and refuses `*.railway.internal` URLs so local `psql` can connect.
+
+From the repo root, attach to the **Postgres** service so Railway injects the DB URL, and merge tenant/hub env from the matching file:
+
+```bash
+railway run -e corbits-workbench-staging -s Postgres -- \
+  bun --env-file=.env.staging scripts/analytics-models-readonly.ts staging
+```
+
+Production:
+
+```bash
+railway run -e corbits-workbench-production -s Postgres -- \
+  bun --env-file=.env.production scripts/analytics-models-readonly.ts production
+```
+
+The script runs `psql` with `default_transaction_read_only = on` and prints:
+
+- **tenants** — sample tenant rows (pick `tenant_id` for ad-hoc SQL below)
+- **per_model_rollups_30d** — `analytics_rollup_daily` grouped by `model` (turns + total tokens)
+- **token_only_named_models_30d** — named models with tokens but zero turns (inference-only rollup shape)
+- **inference_done_by_model_30d** — raw `inference_done` event counts by `metadata.model`
+
+Rollup and event sections are **not tenant-scoped** — they aggregate across all tenants in the database. Use only on trusted operator machines; filter by `tenant_id` in ad-hoc SQL when you need one tenant.
+
+Requires `psql` on your PATH. If you see “No reachable DATABASE URL”, you are not running under `railway run -s Postgres` or the service is missing `DATABASE_PUBLIC_URL`.
 
 ### Staging SQL (read-only checks)
 

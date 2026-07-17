@@ -16,11 +16,13 @@ const createIsogitStoreMock = mock(async (..._args: unknown[]) => ({
   commit: mock(async () => ({})),
 }));
 
+const createMailAuditStoreMock = mock(async () => ({
+  type: "mail-audit",
+}));
+
 mock.module("@workbench/storage-isogit", () => ({
   createIsogitStore: createIsogitStoreMock,
-  createMailAuditStore: mock(async () => ({
-    type: "mail-audit",
-  })),
+  createMailAuditStore: createMailAuditStoreMock,
 }));
 
 // The new runtime exposes events only through `harness.stream()`. The
@@ -59,7 +61,11 @@ mock.module("@intx/tools-posix", () => ({
 }));
 
 mock.module("@intx/authz", () => ({
-  evaluateGrants: mock(async () => {}),
+  evaluateGrants: mock(async () => ({
+    effect: null,
+    matchingGrants: [],
+    resolvedBy: null,
+  })),
 }));
 
 mock.module("@intx/types/runtime", () => ({
@@ -76,6 +82,7 @@ import {
   wsUrlToHttp,
 } from "./default-harness";
 import { buildPersonalAgentSystemPrompt } from "@workbench/myra";
+import { buildTimeZoneMarker, formatDateInTimeZone } from "@workbench/prompts";
 import { createBuiltinRegistry } from "@intx/inference/providers";
 import type {
   InferenceSource,
@@ -213,6 +220,80 @@ describe("createDefaultHarnessBuilder", () => {
           createIsogitStoreMock.mock.calls.length - 1
         ];
       expect(lastCall?.[2]).toEqual(TEST_GC_POLICY);
+    });
+
+    it("runs storage/heal, mail-audit-store, and deploy-tree provisioning concurrently (CL-3799)", async () => {
+      createIsogitStoreMock.mockClear();
+      createMailAuditStoreMock.mockClear();
+      readDeployTreeMock.mockClear();
+
+      const DELAY_MS = 60;
+      const delay = () =>
+        new Promise((resolve) => setTimeout(resolve, DELAY_MS));
+
+      createIsogitStoreMock.mockImplementationOnce(async () => {
+        await delay();
+        return {
+          type: "isogit",
+          load: mock(async () => ({
+            turns: [],
+            pendingOperations: [],
+            tokenUsage: {},
+            connectorState: null,
+          })),
+          writeTurns: mock(async () => {}),
+          commit: mock(async () => ({})),
+        };
+      });
+      createMailAuditStoreMock.mockImplementationOnce(async () => {
+        await delay();
+        return { type: "mail-audit" };
+      });
+      readDeployTreeMock.mockImplementationOnce(async () => {
+        await delay();
+        return { systemPrompt: undefined };
+      });
+
+      const builder = createDefaultHarnessBuilder({
+        hubHttpUrl: "http://localhost:4000",
+        sidecarToken: "test-token",
+        cacheRoot: "/tmp/wb-test-tool-cache",
+        cacheMaxBytes: 1024 * 1024,
+        registryMaxTarballBytes: 1024 * 1024,
+        adapters: createBuiltinRegistry(),
+        gcPolicy: TEST_GC_POLICY,
+      });
+
+      const start = performance.now();
+      await builder.build({
+        agentAddress: "agent@tenant.localhost",
+        agentConfig: {
+          agentAddress: "agent@tenant.localhost",
+          agentId: "agent-1",
+          sessionId: "session-1",
+          sources: [validSource],
+          defaultSource: "src-1",
+          grants: [],
+          tools: [],
+          principalId: "user-1",
+          tenantId: "tenant-1",
+          systemPrompt: "You are a helpful assistant.",
+        },
+        sources: [validSource],
+        defaultSource: validSource.id,
+        storeDir: "/tmp/test-store",
+        agentTransport: {} as any,
+        crypto: { signSSH: mock(() => "sig") } as any,
+        onEvent: mock(() => {}),
+        onConnectorStateChanged: mock(() => {}),
+      });
+      const elapsed = performance.now() - start;
+
+      // Three independent 60ms provisioning steps run serially would take
+      // ~180ms; run concurrently they take ~60ms (plus the heal step, which
+      // is chained after storage since it depends on it). A generous
+      // threshold below the serial sum proves they overlap rather than queue.
+      expect(elapsed).toBeLessThan(DELAY_MS * 2.5);
     });
 
     it("passes the source apiKey through to createHarness unchanged (plaintext)", async () => {
@@ -539,5 +620,75 @@ describe("createDefaultHarnessBuilder", () => {
       // raised when the runners are combined.
       expect(bundle.harness).toBeDefined();
     });
+  });
+});
+
+describe("active-context timezone (member timezone marker)", () => {
+  function makeBuilder() {
+    return createDefaultHarnessBuilder({
+      hubHttpUrl: "http://localhost:4000",
+      sidecarToken: "test-token",
+      cacheRoot: "/tmp/wb-test-tool-cache",
+      cacheMaxBytes: 1024 * 1024,
+      registryMaxTarballBytes: 1024 * 1024,
+      adapters: createBuiltinRegistry(),
+      gcPolicy: TEST_GC_POLICY,
+    });
+  }
+
+  async function buildAndCapturePrompt(deployPrompt: string): Promise<string> {
+    createHarnessMock.mockClear();
+    readDeployTreeMock.mockImplementationOnce(async () => ({
+      systemPrompt: deployPrompt,
+    }));
+    await makeBuilder().build({
+      agentAddress: "agent@tenant.localhost",
+      agentConfig: {
+        agentAddress: "agent@tenant.localhost",
+        agentId: "agent-1",
+        sessionId: "session-1",
+        sources: [validSource],
+        defaultSource: "src-1",
+        grants: [],
+        tools: [],
+        principalId: "user-1",
+        tenantId: TEST_TENANT_ID,
+        systemPrompt: "unused fallback",
+      },
+      sources: [validSource],
+      defaultSource: validSource.id,
+      storeDir: "/tmp/test-store",
+      agentTransport: {} as any,
+      crypto: { signSSH: mock(() => "sig") } as any,
+      onEvent: mock(() => {}),
+      onConnectorStateChanged: mock(() => {}),
+    });
+    const callArgs = createHarnessMock.mock.calls[0] as unknown as [
+      { systemPrompt: string },
+    ];
+    return callArgs[0].systemPrompt;
+  }
+
+  it("renders the active-context date in the marker's zone and strips the marker", async () => {
+    const before = formatDateInTimeZone(new Date(), "America/Los_Angeles");
+    const prompt = await buildAndCapturePrompt(
+      `You are an agent.\n\n${buildTimeZoneMarker("America/Los_Angeles")}`,
+    );
+    const after = formatDateInTimeZone(new Date(), "America/Los_Angeles");
+    expect(prompt).not.toContain("workbench:timezone");
+    expect(
+      prompt.includes(`Current date: ${before}`) ||
+        prompt.includes(`Current date: ${after}`),
+    ).toBe(true);
+  });
+
+  it("labels the date UTC when no marker is present — never silent server-local", async () => {
+    const before = formatDateInTimeZone(new Date(), "UTC");
+    const prompt = await buildAndCapturePrompt("You are an agent.");
+    const after = formatDateInTimeZone(new Date(), "UTC");
+    expect(
+      prompt.includes(`Current date: ${before}`) ||
+        prompt.includes(`Current date: ${after}`),
+    ).toBe(true);
   });
 });

@@ -1,29 +1,24 @@
-import {
-  CategoryBarChart,
-  TimeSeriesChart,
-  type CategoryDatum,
-  type TimeSeries,
-} from "@workbench/ui";
+import { TimeSeriesChart, type TimeSeries } from "@workbench/ui";
 
-import type { ActivityOverview, UsageByPersonRow } from "../../lib/hub-api";
-import { fillDailySeries, humanizeKey } from "./metrics";
-import { filterPeople, type WorkflowKindRow } from "./overview-derivations";
+import type { ActivityOverview } from "../../lib/hub-api";
+import { fillDailySeries } from "./metrics";
 import { SectionLabel } from "./section-label";
-import { CardLabel, formatNumber, HudCard } from "./stats";
+import { HudCard } from "./stats";
 import type { DateRange } from "./time-range";
 
+/**
+ * Overview-tab activity chart (CL-3667). The workflow-runs-by-kind bar chart
+ * and the top-actors-by-turns bar chart used to live here too, duplicating the
+ * Workflows tab's kind table and the People tab's usage table respectively —
+ * both were removed; Overview now only shows the headline trend and links into
+ * the owning tab for the breakdown.
+ */
 export function ChartsSection({
   data,
   range,
-  kindRows,
-  people,
-  tokenCaveat,
 }: {
   data: ActivityOverview;
   range: DateRange;
-  kindRows: WorkflowKindRow[];
-  people: UsageByPersonRow[];
-  tokenCaveat: string | null;
 }) {
   const rawSeries = data.dailySeries;
   const filled =
@@ -38,7 +33,7 @@ export function ChartsSection({
   const activitySeries: TimeSeries[] = [
     {
       key: "turns",
-      name: "Turns",
+      name: "Chats",
       points: filled.map((d) => ({ label: d.date, value: d.turnCount })),
     },
     {
@@ -48,54 +43,16 @@ export function ChartsSection({
     },
   ];
 
-  const kindBars: CategoryDatum[] = kindRows
-    .filter((row) => row.runs > 0)
-    .sort((a, b) => b.runs - a.runs)
-    .map((row) => ({ label: humanizeKey(row.kind), value: row.runs }));
-
-  const actorBars: CategoryDatum[] = filterPeople(people, "all")
-    .map((p) => ({
-      label: p.name ?? "Unknown member",
-      value: p.turnCount,
-    }))
-    .filter((row) => row.value > 0)
-    .sort((a, b) => b.value - a.value);
-
   return (
     <div className="flex flex-col gap-4">
-      <SectionLabel>Charts</SectionLabel>
+      <SectionLabel>Activity over time</SectionLabel>
       <HudCard label="Activity over time">
         <TimeSeriesChart
           series={activitySeries}
-          label="Turns and tool calls per day"
+          label="Chats and tool calls per day"
           variant="area"
         />
       </HudCard>
-      <div className="grid items-start gap-4 lg:grid-cols-2">
-        <HudCard label="Workflow runs by kind">
-          <CategoryBarChart
-            data={kindBars}
-            label="Workflow runs by kind"
-            colorByCategory
-            formatValue={formatNumber}
-          />
-        </HudCard>
-        <HudCard
-          label="Top actors · by turns"
-          tag={
-            tokenCaveat !== null ? (
-              <CardLabel>tokens partial</CardLabel>
-            ) : undefined
-          }
-        >
-          <CategoryBarChart
-            data={actorBars}
-            label="Top actors by turns"
-            maxBars={8}
-            formatValue={formatNumber}
-          />
-        </HudCard>
-      </div>
     </div>
   );
 }

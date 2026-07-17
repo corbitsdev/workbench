@@ -26,6 +26,8 @@ import {
   AvailabilitySignalSchema,
   LINEAR_SCOPE_PREFERENCE_KEY,
   LINEAR_BACKFILL_PREFERENCE_KEY,
+  TIMEZONE_PREFERENCE_KEY,
+  resolveMemberTimeZone,
 } from "./preferences-registry";
 import { CREDENTIAL_PROVIDER_CATALOG } from "./governance";
 
@@ -42,8 +44,12 @@ describe("PREFERENCE_REGISTRY", () => {
     expect(new Set(keys).size).toBe(keys.length);
   });
 
-  test("briefHourUtc and the heartbeat-fed notify* fields gate on heartbeat deployment", () => {
-    for (const key of ["briefHourUtc", "notifyInboxMail", "notifyGateAsks"]) {
+  test("briefHourUtc gates on the scheduler feature; notify* fields gate on heartbeat deployment", () => {
+    expect(getPreferenceEntry("briefHourUtc")?.availableWhen).toEqual({
+      kind: "feature-enabled",
+      feature: "scheduler",
+    });
+    for (const key of ["notifyInboxMail", "notifyGateAsks"]) {
       const entry = getPreferenceEntry(key);
       expect(entry?.availableWhen).toEqual({
         kind: "workflow-deployed",
@@ -52,11 +58,19 @@ describe("PREFERENCE_REGISTRY", () => {
     }
   });
 
-  test("tasksAutoSendAdapter gates on the attio connection", () => {
+  test("tasksAutoSendAdapter gates on the tasks-reconciler feature", () => {
     const entry = getPreferenceEntry("tasksAutoSendAdapter");
     expect(entry?.availableWhen).toEqual({
-      kind: "credential-connected",
-      provider: "attio",
+      kind: "feature-enabled",
+      feature: "tasks-reconciler",
+    });
+  });
+
+  test("tasksTriageCreate gates on the triage feature", () => {
+    const entry = getPreferenceEntry("tasksTriageCreate");
+    expect(entry?.availableWhen).toEqual({
+      kind: "feature-enabled",
+      feature: "triage",
     });
   });
 
@@ -65,7 +79,7 @@ describe("PREFERENCE_REGISTRY", () => {
     expect(entry?.availableWhen).toBeUndefined();
   });
 
-  test("AvailabilitySignalSchema accepts all three signal kinds and rejects an unknown kind", () => {
+  test("AvailabilitySignalSchema accepts all four signal kinds and rejects an unknown kind", () => {
     expect(
       AvailabilitySignalSchema({
         kind: "workflow-deployed",
@@ -82,6 +96,12 @@ describe("PREFERENCE_REGISTRY", () => {
       AvailabilitySignalSchema({
         kind: "credential-connected",
         provider: "attio",
+      }) instanceof type.errors,
+    ).toBe(false);
+    expect(
+      AvailabilitySignalSchema({
+        kind: "feature-enabled",
+        feature: "scheduler",
       }) instanceof type.errors,
     ).toBe(false);
     expect(
@@ -576,5 +596,67 @@ describe("WIRED_BRIEF_SOURCES", () => {
   test("includes granola with its granola_list_notes tool today", () => {
     const granola = WIRED_BRIEF_SOURCES.find((s) => s.key === "granola");
     expect(granola?.tool).toBe("granola_list_notes");
+  });
+});
+
+describe("timezone preference", () => {
+  test("the registry carries the timezone entry, unset by default", () => {
+    const entry = getPreferenceEntry(TIMEZONE_PREFERENCE_KEY);
+    expect(entry?.type).toBe("timezone");
+    expect(entry?.default).toBe("");
+    expect(entry?.category).toBe("General");
+  });
+
+  test("a patch with a valid IANA zone is accepted", () => {
+    expect(
+      validatePreferencePatch({
+        [TIMEZONE_PREFERENCE_KEY]: "America/Los_Angeles",
+      }),
+    ).toBeNull();
+  });
+
+  test("clearing the timezone (empty string) is accepted", () => {
+    expect(validatePreferencePatch({ [TIMEZONE_PREFERENCE_KEY]: "" })).toBeNull();
+  });
+
+  test("a garbage zone is rejected", () => {
+    expect(
+      validatePreferencePatch({ [TIMEZONE_PREFERENCE_KEY]: "Mars/Olympus" }),
+    ).not.toBeNull();
+  });
+
+  test("a non-string value is rejected", () => {
+    expect(
+      validatePreferencePatch({ [TIMEZONE_PREFERENCE_KEY]: 7 }),
+    ).not.toBeNull();
+  });
+
+  test("resolveMemberTimeZone returns the stored zone", () => {
+    expect(
+      resolveMemberTimeZone({
+        [TIMEZONE_PREFERENCE_KEY]: "America/Los_Angeles",
+      }),
+    ).toBe("America/Los_Angeles");
+  });
+
+  test("resolveMemberTimeZone is undefined when unset, empty, or invalid", () => {
+    expect(resolveMemberTimeZone({})).toBeUndefined();
+    expect(
+      resolveMemberTimeZone({ [TIMEZONE_PREFERENCE_KEY]: "" }),
+    ).toBeUndefined();
+    expect(
+      resolveMemberTimeZone({ [TIMEZONE_PREFERENCE_KEY]: "Mars/Olympus" }),
+    ).toBeUndefined();
+  });
+
+  test("resolvePreferenceSettings surfaces the stored zone and falls back to unset", () => {
+    const withZone = resolvePreferenceSettings({
+      [TIMEZONE_PREFERENCE_KEY]: "Europe/Berlin",
+    });
+    expect(
+      withZone.find((s) => s.key === TIMEZONE_PREFERENCE_KEY)?.value,
+    ).toBe("Europe/Berlin");
+    const unset = resolvePreferenceSettings({});
+    expect(unset.find((s) => s.key === TIMEZONE_PREFERENCE_KEY)?.value).toBe("");
   });
 });

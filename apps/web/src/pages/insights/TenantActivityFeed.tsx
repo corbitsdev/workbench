@@ -9,6 +9,7 @@ import {
   type ActivityTurn,
 } from "./activity-naming";
 import { entityLinkForEntry } from "./trace-links";
+import { PermissionCaveatBanner } from "./PermissionCaveatBanner";
 
 // The tenant-wide activity feed (CL-2743): the MIDDLE band of Insights, below
 // the charts. Every principal's activity in the tenant, grouped into
@@ -148,6 +149,8 @@ export function TenantActivityFeed({ tenantId }: { tenantId: string }) {
           row to trace it.
         </p>
       </div>
+
+      <PermissionCaveatBanner entries={entries} />
 
       {query.isLoading && (
         <div

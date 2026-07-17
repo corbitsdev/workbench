@@ -21,6 +21,8 @@ import {
   type OwnerFeaturesResponse as OwnerFeaturesState,
   OwnerFeatureToggleResult,
   type OwnerFeatureToggleResult as OwnerFeatureToggleResultType,
+  MemberFeaturesResponse,
+  type MemberFeaturesResponse as MemberFeaturesState,
   OwnerInboxSourcesResponse,
   type OwnerInboxSourcesResponse as OwnerInboxSourcesState,
   OwnerInboxSourceToggleResult,
@@ -48,13 +50,16 @@ import {
   type MemberConnections,
   ConnectionAuthorizeResponse,
   type ConnectionAuthorize,
+  MailAttachmentRefsResponse,
+  type MailAttachmentRef,
 } from "@workbench/shared";
+import { buildJsonRequestInit, configuredApiBase } from "./http";
 
 // Fetch helper for hub-api routes mounted at /api/ (not /api/v1/).
 // These are interchange endpoints — principals, agent instances, sessions.
 // Credential and tenant management moved to Interchange admin-ui.
 
-const apiBase: string = import.meta.env.VITE_API_BASE_URL ?? "";
+const apiBase = configuredApiBase;
 
 function hubErrorMessage(body: { error?: unknown }, status: number): string {
   const e = body.error;
@@ -89,7 +94,7 @@ export function describeHubApiFailure(error: unknown): string {
   return "Failed to load analytics data. Check your connection and try again.";
 }
 
-async function hubFetch<T>(
+export async function hubFetch<T>(
   method: string,
   path: string,
   body?: unknown,
@@ -98,13 +103,10 @@ async function hubFetch<T>(
     `/api/${path.replace(/^\//, "")}`,
     apiBase || window.location.origin,
   ).toString();
-  const init: RequestInit = { method, credentials: "include" };
-  if (body !== undefined) {
-    init.headers = { "Content-Type": "application/json" };
-    init.body = JSON.stringify(body);
-  }
+  const init = buildJsonRequestInit(method, body);
   const res = await fetch(url, init);
   if (!res.ok) {
+    if (res.status === 401) invalidateMeSyncCache();
     const errBody = await res.json().catch(() => ({}));
     throw Object.assign(new Error(hubErrorMessage(errBody, res.status)), {
       status: res.status,
@@ -530,6 +532,17 @@ export async function getMePreferenceSettings(): Promise<PreferenceSetting[]> {
   return parsed.settings;
 }
 
+/** Feature enablement for the caller's primary tenant (CL-3823). Same truth as
+ * the runtime kill switches — used to hide member controls the owner turned off. */
+export async function getMeFeatures(): Promise<MemberFeaturesState> {
+  const raw = await hubFetch<unknown>("GET", "v1/me/features");
+  const parsed = MemberFeaturesResponse(raw);
+  if (parsed instanceof type.errors) {
+    throw new Error(`Unexpected features response: ${parsed.summary}`);
+  }
+  return parsed;
+}
+
 /** The morning-brief sources the caller can toggle: every catalog source with
  * a credential configured for their tenant, resolved against their stored
  * enablement. A source without a configured credential is simply absent. */
@@ -542,7 +555,7 @@ export async function getMeBriefSources(): Promise<AvailableBriefSource[]> {
   return parsed.sources;
 }
 
-const BriefRunResponseSchema = type({
+export const BriefRunResponseSchema = type({
   status: "'started'",
   deploymentId: "string",
 });
@@ -600,8 +613,23 @@ export async function patchMeProfile(
   });
 }
 
-/** Read-only status; runs postMe when the hub signals an update is available. */
-export async function ensureMeSynced(): Promise<MeResponse> {
+// ensureMeSynced blocks connect()/thread-switch on a GET (and often a
+// sequential POST) round trip. Memoized per app session so repeat thread
+// switches reuse the same in-flight/settled result instead of re-paying the
+// trip on every connect (each is ~150-300ms typical hub GET latency, doubled
+// when the sync POST fires). A short TTL bounds staleness against a change
+// made in another tab; a failed sync is never cached so the next call retries.
+const ME_SYNC_TTL_MS = 3 * 60_000;
+let meSyncCache: { promise: Promise<MeResponse>; expiresAt: number } | null =
+  null;
+
+/** Drops the cached ensureMeSynced result — call on sign-out/sign-in or a 401
+ * so a stale identity is never served across an auth change. */
+export function invalidateMeSyncCache(): void {
+  meSyncCache = null;
+}
+
+async function syncMe(): Promise<MeResponse> {
   const me = await getMe();
   if (me.personalAgentSyncAvailable) {
     return postMe();
@@ -609,10 +637,25 @@ export async function ensureMeSynced(): Promise<MeResponse> {
   return me;
 }
 
+/** Read-only status; runs postMe when the hub signals an update is available.
+ * Memoized for ME_SYNC_TTL_MS — see meSyncCache above. */
+export async function ensureMeSynced(): Promise<MeResponse> {
+  const now = Date.now();
+  if (meSyncCache !== null && meSyncCache.expiresAt > now) {
+    return meSyncCache.promise;
+  }
+  const promise = syncMe().catch((err: unknown) => {
+    invalidateMeSyncCache();
+    throw err;
+  });
+  meSyncCache = { promise, expiresAt: now + ME_SYNC_TTL_MS };
+  return promise;
+}
+
 // `firstMessageAt` is optional at the parse boundary so a hub that predates
 // the column (deploy skew) still parses; a missing value counts as "used"
 // (see isMyraThreadUsed) so nothing is ever hidden by skew.
-const MyraThreadSchema = type({
+export const MyraThreadSchema = type({
   id: "string",
   instanceId: "string",
   label: "string",
@@ -660,7 +703,7 @@ export async function listMyraThreads(
 // `created` is false when the hub handed back an existing never-used thread
 // instead of minting a new one (CL-3749) — navigation treats both the same,
 // but the thread-list cache must not double-count a reused thread.
-const MyraThreadCreateSchema = type({
+export const MyraThreadCreateSchema = type({
   thread: MyraThreadSchema,
   created: "boolean",
 });
@@ -681,7 +724,7 @@ export async function createMyraThread(
   return parsed;
 }
 
-const MyraThreadMutateSchema = type({ thread: MyraThreadSchema });
+export const MyraThreadMutateSchema = type({ thread: MyraThreadSchema });
 
 export async function renameMyraThread(
   tenantId: string,
@@ -804,12 +847,12 @@ export async function deleteAgentInstance(
   );
 }
 
-const LaunchInstanceSessionSuccessSchema = type({
+export const LaunchInstanceSessionSuccessSchema = type({
   launched: "true",
   sessionId: "string | null",
 });
 
-const LaunchInstanceSessionFailureSchema = type({
+export const LaunchInstanceSessionFailureSchema = type({
   launched: "false",
   "launchError?": "string",
 });
@@ -930,6 +973,36 @@ export async function getOutputFeedback(
   return parsed.ratings;
 }
 
+export async function getMailAttachmentRefs(
+  instanceId: string,
+): Promise<MailAttachmentRef[]> {
+  const res = await hubFetch<unknown>(
+    "GET",
+    `v1/instances/${instanceId}/mail-attachments`,
+  );
+  const parsed = MailAttachmentRefsResponse(res);
+  if (parsed instanceof type.errors) {
+    throw new Error(`Malformed mail attachments response: ${parsed.summary}`);
+  }
+  return parsed.refs;
+}
+
+export async function saveMailAttachmentRefs(
+  instanceId: string,
+  mailId: string,
+  attachments: readonly {
+    artifactId: string;
+    name: string;
+    type: string;
+    size: number;
+  }[],
+): Promise<void> {
+  await hubFetch<void>("POST", `v1/instances/${instanceId}/mail-attachments`, {
+    mailId,
+    attachments,
+  });
+}
+
 export async function saveOutputFeedback(
   instanceId: string,
   subjectId: string,
@@ -956,7 +1029,7 @@ export async function deployAgentFromTemplate(
   );
 }
 
-const AnalyticsSummarySchema = type({
+export const AnalyticsSummarySchema = type({
   tenantId: "string",
   turnCount: "number",
   failedTurnCount: "number",
@@ -988,7 +1061,7 @@ export async function getAnalyticsSummary(
   return result;
 }
 
-const AnalyticsAgentRowSchema = type({
+export const AnalyticsAgentRowSchema = type({
   agentId: "string",
   agentName: "string | null",
   turnCount: "number",
@@ -1002,7 +1075,7 @@ const AnalyticsAgentRowSchema = type({
   thinkingTokens: "number",
 });
 
-const AnalyticsByAgentResponseSchema = type({
+export const AnalyticsByAgentResponseSchema = type({
   tenantId: "string",
   agents: AnalyticsAgentRowSchema.array(),
 });
@@ -1026,7 +1099,7 @@ export async function getAnalyticsSummaryByAgent(
   return result.agents;
 }
 
-const ActivityCountRowSchema = type({
+export const ActivityCountRowSchema = type({
   key: "string",
   count: "number",
 });
@@ -1118,7 +1191,7 @@ export type UsageByWorkflowTypeRow = Omit<
   thinkingTokens: number;
 };
 
-const ActivityOverviewSchema = type({
+export const ActivityOverviewSchema = type({
   tenantId: "string",
   range: {
     "startDate?": "string",
@@ -1283,7 +1356,7 @@ export const TenantProviderSchema = type({
 });
 export type TenantProvider = typeof TenantProviderSchema.infer;
 
-const TenantProvidersResponse = type({
+export const TenantProvidersResponse = type({
   data: TenantProviderSchema.array(),
   "+": "ignore",
 });

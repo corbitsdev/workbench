@@ -65,6 +65,77 @@ export const memberPreferences = pgTable(
   }),
 );
 
+// Per-member default Myra variant selection. One row per (tenant, member
+// principal); each column names a variant id in the `@workbench/myra` catalog
+// (validated against it at the API boundary) or NULL, which means "use the
+// canonical default". A stored preference is a selection only — instances are
+// minted lazily from the selected variant and keep it for life, so changing
+// this never re-deploys an existing instance. Workbench-owned; no interchange
+// table is touched.
+// Personalization style-axis columns (CL-3760) added on the same row:
+// `personality` / `emojiUse` / `uiType` are global (one value for both
+// surfaces); the three usage dials are per-surface because a member may want
+// e.g. heavy artifact usage in chat but none in unattended inbox automation.
+// Each column holds an option id from the `@workbench/myra` style-axes
+// catalog (validated against it at the API boundary) or NULL, meaning "use
+// the axis's default option" — composes to no prompt overlay text.
+export const myraVariantPreference = pgTable(
+  "myra_variant_preference",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: text("tenant_id").notNull(),
+    memberPrincipalId: text("member_principal_id").notNull(),
+    chatVariantId: text("chat_variant_id"),
+    triageVariantId: text("triage_variant_id"),
+    // Per-member standing guidance (CL-3661) rendered as a DATA section after
+    // the operator/active-context section at prompt-build time — see
+    // renderMemberInstructionsSection in @workbench/myra. `instructionsGlobal`
+    // applies to every surface; `instructionsChat`/`instructionsTriage` are
+    // per-surface overrides composed after it. Length-validated (4000 chars)
+    // at the API boundary, not here.
+    instructionsGlobal: text("instructions_global"),
+    instructionsChat: text("instructions_chat"),
+    instructionsTriage: text("instructions_triage"),
+    personality: text("personality"),
+    emojiUse: text("emoji_use"),
+    uiType: text("ui_type"),
+    artifactUsageChat: text("artifact_usage_chat"),
+    artifactUsageTriage: text("artifact_usage_triage"),
+    toolUsageChat: text("tool_usage_chat"),
+    toolUsageTriage: text("tool_usage_triage"),
+    skillUsageChat: text("skill_usage_chat"),
+    skillUsageTriage: text("skill_usage_triage"),
+    // Ordered skill asset ids pinned for Myra prompt indexing (CL-3765).
+    pinnedSkillIds: jsonb("pinned_skill_ids")
+      .$type<string[]>()
+      .notNull()
+      .default([]),
+    // CL-3762: member narrowing of Myra catalog packages / tool names (never widens grants).
+    disabledCatalogPackages: jsonb("disabled_catalog_packages")
+      .$type<string[]>()
+      .notNull()
+      .default([]),
+    disabledToolNames: jsonb("disabled_tool_names")
+      .$type<string[]>()
+      .notNull()
+      .default([]),
+    creativeChat: integer("creative_chat"),
+    thinkingChat: integer("thinking_chat"),
+    creativeTriage: integer("creative_triage"),
+    thinkingTriage: integer("thinking_triage"),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at")
+      .notNull()
+      .defaultNow()
+      .$onUpdate(() => new Date()),
+  },
+  (t) => ({
+    myraVariantPreferenceMemberUniq: unique(
+      "myra_variant_preference_tenant_principal_uniq",
+    ).on(t.tenantId, t.memberPrincipalId),
+  }),
+);
+
 // Per-member, per-tool account identity (CL-2420). One row per account, so a
 // member can hold several accounts of the same provider (e.g. two Linear
 // workspaces) — each with a human `label`, a `isPrimary` default flag, and an
@@ -200,6 +271,9 @@ export const workflowRunStateStatus = [
   "awaiting",
   "completed",
   "failed",
+  // CL-3688: user-initiated stop; terminal like completed/failed but distinct from
+  // operator abort / runtime failure (which stay `failed`).
+  "stopped",
 ] as const;
 
 export const workflowRunRecord = pgTable("workflow_run_record", {
@@ -509,8 +583,13 @@ export const enabledWorkflow = pgTable(
 // Per-user attribution for agent instances. Interchange's `agent_instance` has
 // no owner-user column, so this workbench-side mapping records which member
 // principal owns a per-user instance of a given org-level template definition
-// (CL-1532). One row per (member principal, template) — the unique key keeps the
-// on-join provisioning idempotent and race-safe.
+// (CL-1532). NOT generally unique per (member, template): the original 0016
+// unique constraint was dropped in migration 0018 so users can add multiple
+// instances of the same shared template from the UI — writers that need
+// one-row semantics must bring their own constraint. The only such constraint
+// today is the 0061 partial unique index scoping (tenant, member, agent) to
+// the invoked-subagent template key, which makes invoke_agent's
+// check-then-insert provisioning race-safe.
 export const memberAgentInstance = pgTable(
   "member_agent_instance",
   {
@@ -535,6 +614,21 @@ export const memberAgentInstance = pgTable(
     // used. Thread lists hide never-used threads so "+ New chat" does not
     // mutate the sidebar until first use (CL-3749).
     firstMessageAt: timestamp("first_message_at"),
+  },
+  () => ({}),
+);
+
+/** CL-3686: links a Myra thread (origin conversation) to an invoked subagent mapping. */
+export const memberInvokedSubagent = pgTable(
+  "member_invoked_subagent",
+  {
+    id: text("id").primaryKey(),
+    tenantId: text("tenant_id").notNull(),
+    memberPrincipalId: text("member_principal_id").notNull(),
+    originConversationId: text("origin_conversation_id").notNull(),
+    subagentMappingId: text("subagent_mapping_id").notNull(),
+    firstInvokedAt: timestamp("first_invoked_at").notNull().defaultNow(),
+    lastInvokedAt: timestamp("last_invoked_at").notNull().defaultNow(),
   },
   () => ({}),
 );
@@ -595,6 +689,9 @@ export const skillAccess = pgTable("skill_access", {
   scope: text("scope", { enum: skillAccessScope }).notNull(),
   ownerUserId: text("owner_user_id").notNull(),
   ownerPrincipalId: text("owner_principal_id").notNull(),
+  // One-line summary surfaced in listSkills (e.g. slash-command autocomplete);
+  // also baked into the skill's SKILL.md frontmatter at write time.
+  description: text("description"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 
@@ -653,6 +750,36 @@ export const outputFeedback = pgTable(
 );
 
 export type OutputFeedbackRow = typeof outputFeedback.$inferSelect;
+
+// Chat uploads are diverted through the parse-file route (file artifact +
+// parsed text folded into the message), so the mail record carries no
+// attachment. These references key the artifact back to its mail id BY VALUE
+// so the transcript chip survives reload (CL-3671). No FK into interchange.
+export const mailAttachmentRef = pgTable(
+  "mail_attachment_ref",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: text("tenant_id").notNull(),
+    principalId: text("principal_id").notNull(),
+    instanceId: text("instance_id").notNull(),
+    mailId: text("mail_id").notNull(),
+    artifactId: text("artifact_id").notNull(),
+    name: text("name").notNull(),
+    mimeType: text("mime_type").notNull(),
+    size: integer("size").notNull(),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (t) => ({
+    mailAttachmentRefMailArtifactUniq: unique(
+      "mail_attachment_ref_mail_artifact_uniq",
+    ).on(t.mailId, t.artifactId),
+    mailAttachmentRefInstanceIdx: index("mail_attachment_ref_instance_idx").on(
+      t.instanceId,
+    ),
+  }),
+);
+
+export type MailAttachmentRefRow = typeof mailAttachmentRef.$inferSelect;
 
 // ─── Admin audit (CL-2735) ─────────────────────────────────────────
 //

@@ -20,52 +20,28 @@ export {
   type ChatLauncherPosition,
   type ChatAgentIdentity,
   type ChatActivity,
+  TextPartSchema,
+  ReasoningPartSchema,
+  ToolPartStateSchema,
+  ToolPartSchema,
+  FilePartSchema,
+  PartSchema,
+  type TextPart,
+  type ReasoningPart,
+  type ToolPartState,
+  type ToolPart,
+  type FilePart,
+  type Part,
 } from "./types";
-export {
-  compactMessages,
-  type CompactedItem,
-  type MessageItem,
-  type CollapsedGroupItem,
-} from "./compactMessages";
-export { CollapsedGroup, type CollapsedGroupProps } from "./CollapsedGroup";
-
-export {
-  DocumentActionsSchema,
-  UIResponseSchema,
-  type UIBlock,
-  type UIResponse,
-  type DocumentActions,
-  type ExtractedUIBlock,
-  parseToolResult,
-  extractUIBlockFromText,
-  isUIBlock,
-  UIBlockView,
-  type UIBlockViewProps,
-  DockRunInputSchema,
-  DockRunPhaseSchema,
-  DockStepPhaseSchema,
-  dockRunBlocks,
-  progressStateForStepPhase,
-  type DockRunInput,
-  type DockRunPhase,
-  type DockRunStep,
-  type DockStepPhase,
-  pendingGateForRun,
-  routeConversationSignal,
-  type GateStepInput,
-  type PendingGate,
-  type SignalRouting,
-} from "@workbench/blocks";
+export { liftToParts, toolPartToCall } from "./parts";
 export { MessageBubble, type MessageBubbleProps } from "./MessageBubble";
 export { AgentTurn, type AgentTurnProps } from "./AgentTurn";
 export { ActivityBlock, type ActivityBlockProps } from "./ActivityBlock";
 export {
-  splitReasoningSteps,
   toSingleLine,
   isLowSignalReasoning,
-  dedupeReasoningSteps,
-  rollingReasoningLabel,
-} from "./reasoning-summary";
+  deriveActivityLabel,
+} from "./activity-label";
 export {
   readReasoningExpanded,
   readReasoningExpandedForDisplay,
@@ -76,20 +52,26 @@ export {
   migrateReasoningExpandedSlotKeys,
   type ReasoningExpandedMap,
 } from "./reasoning-expanded-prefs";
+export { MYRA_AGED_HISTORY_MS, isMyraHistoryAged } from "./aged-history";
 export {
-  MYRA_AGED_HISTORY_MS,
-  isMyraHistoryAged,
-} from "./aged-history";
+  groupChatTurns,
+  hasFailedSegment,
+  isTurnLive,
+  projectSettledTurn,
+} from "./settled-turn-projection";
 export {
   ToolNarrative,
+  toolTone,
   type ToolNarrativeProps,
   type ToolMarkerRenderContext,
+  type ToolTone,
 } from "./ToolNarrative";
 export { QuickReplyChips, type QuickReplyChipsProps } from "./QuickReplyChips";
 export {
   ChatInput,
   type ChatInputProps,
   type MentionCandidate,
+  type SlashCommand,
 } from "./ChatInput";
 export {
   validateFiles,

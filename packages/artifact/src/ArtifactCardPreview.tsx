@@ -1,9 +1,12 @@
+import { useState } from "react";
 import type { ArtifactPreviewFamily } from "./artifact-preview-family";
 
 export type ArtifactCardPreviewProps = {
   family: ArtifactPreviewFamily;
   fill: string;
   excerpt?: string | undefined;
+  thumbnailUrl?: string | undefined;
+  thumbnailAlt?: string | undefined;
 };
 
 function previewFillProps(
@@ -85,9 +88,7 @@ function ResearchPreview({
         <div className="h-1.5 w-full rounded-sm bg-text/8" />
         <div className="h-1.5 w-[90%] rounded-sm bg-text/8" />
         {excerpt ? (
-          <p className="mt-1 line-clamp-2 text-[10px] text-text-3">
-            {excerpt}
-          </p>
+          <p className="mt-1 line-clamp-2 text-[10px] text-text-3">{excerpt}</p>
         ) : null}
       </div>
     </div>
@@ -154,9 +155,7 @@ function WebPreview({ fill, excerpt }: { fill: string; excerpt?: string }) {
         <div className={`h-2 w-2/3 rounded-sm ${fill} opacity-35`} />
         <div className="h-1.5 w-full rounded-sm bg-text/10" />
         {excerpt ? (
-          <p className="line-clamp-2 text-[9px] text-text-3">
-            {excerpt}
-          </p>
+          <p className="line-clamp-2 text-[9px] text-text-3">{excerpt}</p>
         ) : null}
       </div>
     </div>
@@ -167,7 +166,25 @@ export function ArtifactCardPreview({
   family,
   fill,
   excerpt,
+  thumbnailUrl,
+  thumbnailAlt,
 }: ArtifactCardPreviewProps) {
+  const [thumbnailFailed, setThumbnailFailed] = useState(false);
+  if (thumbnailUrl !== undefined && !thumbnailFailed) {
+    return (
+      <img
+        src={thumbnailUrl}
+        alt={thumbnailAlt ?? "Artifact thumbnail"}
+        // A hairline outline delineates the raster photo from the card; on a
+        // load failure fall through to the shaped placeholder below rather than
+        // leaving the browser's broken-image glyph in an otherwise polished card.
+        className="h-full w-full object-cover outline outline-1 -outline-offset-1 outline-text/10"
+        loading="lazy"
+        onError={() => setThumbnailFailed(true)}
+      />
+    );
+  }
+
   const fillProps = previewFillProps(fill, excerpt);
   switch (family) {
     case "social":

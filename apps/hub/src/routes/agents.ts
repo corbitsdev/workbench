@@ -52,6 +52,7 @@ const AgentInstance = type({
   id: "string",
   agentId: "string",
   agentName: "string",
+  agentDescription: "string | null",
   tenantId: "string",
   address: "string",
   status: "string",
@@ -209,6 +210,7 @@ export function createAgentProvisioningRouter(
           id: inst.id,
           agentId: inst.agentId,
           agentName: agentRow?.name ?? "Unknown",
+          agentDescription: agentRow?.description ?? null,
           tenantId: inst.tenantId,
           address: inst.address,
           status: inst.status,
@@ -532,6 +534,7 @@ export function createAgentProvisioningRouter(
       },
     }),
     async (c) => {
+      const routeStart = performance.now();
       const userId = c.get("userId");
       const instanceId = c.req.param("instanceId");
 
@@ -580,6 +583,7 @@ export function createAgentProvisioningRouter(
       // changed (e.g. short→canonical on M4). Idempotent: delete+reinsert is safe
       // on every call and sendGrantsUpdate does not restart the agent.
       if (sidecarRouter.getRoutableAddresses().includes(instance.address)) {
+        const grantsStart = performance.now();
         await refreshInstanceGrantsFromDefinition(
           db,
           {
@@ -587,9 +591,15 @@ export function createAgentProvisioningRouter(
             tenantId: instance.tenantId,
             principalId: instance.principalId,
             address: instance.address,
+            instanceId,
           },
           { sidecarRouter, grantStore },
         );
+        log.info("Warm-path session launch", {
+          instanceId,
+          grantsRefreshMs: performance.now() - grantsStart,
+          totalMs: performance.now() - routeStart,
+        });
         // Steady-state path for a live Myra instance (reload / reopen / proactive
         // launch). Still return sessionId so ReviewGate can stay chat-scoped
         // rather than falling open to the whole tenant (CL-3286).
@@ -641,6 +651,7 @@ export function createAgentProvisioningRouter(
       let sessionId: string | null = null;
       let launchFailure: LaunchErrorDescription | undefined;
 
+      const launchStart = performance.now();
       try {
         // Coalesce concurrent POSTs for the same instance onto one launch: the
         // frontend fires this route proactively and sometimes twice, and two
@@ -660,6 +671,11 @@ export function createAgentProvisioningRouter(
         );
         sessionId = result.sessionId;
         launched = true;
+        log.info("Cold-path session launch", {
+          instanceId,
+          launchMs: performance.now() - launchStart,
+          totalMs: performance.now() - routeStart,
+        });
       } catch (err) {
         // If the sidecar already has the agent provisioned (e.g. a race between
         // the orchestrator's reconnect path and this explicit launch), treat it

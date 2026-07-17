@@ -1,11 +1,12 @@
 import { GrantRequirement, CredentialRequirement } from "@intx/types";
-import { canonicalizeToolNames } from "@workbench/agents/tool-names";
+import { canonicalizeToolNames } from "@workbench/agent-core/tool-names";
 import {
   MYRA_CATALOG_BARE_TOOL_NAMES,
   MYRA_PLATFORM_BARE_TOOL_NAMES,
-} from "@workbench/agents/dynamic-tools-catalog";
+} from "@workbench/agent-core/dynamic-tools-catalog";
+import { promptFormatForProvider } from "@workbench/prompts";
 import { buildPersonalAgentSystemPrompt } from "./prompt";
-import { LLM_CREDENTIAL_NAME } from "@workbench/agents/constants";
+import { LLM_CREDENTIAL_NAME } from "@workbench/agent-core/constants";
 
 type GrantRequirementType = typeof GrantRequirement.infer;
 type CredentialRequirementType = typeof CredentialRequirement.infer;
@@ -25,6 +26,11 @@ export const PERSONAL_AGENT_CREDENTIAL_REQUIREMENTS: CredentialRequirementType[]
     },
   ];
 
+/**
+ * kimi-k2.6 is the default Myra chat model: stronger long-form reasoning over
+ * the opencode-zen (openai-compatible) gateway. deepseek-v4-flash remains a
+ * selectable non-default variant for cost/latency-sensitive work.
+ */
 export const PERSONAL_AGENT_MODEL_CONFIG = {
   defaultModel: "kimi-k2.6",
 } as const;
@@ -55,10 +61,32 @@ export const PERSONAL_AGENT_TRIAGE_MODEL_CONFIG = {
   defaultModel: "deepseek-v4-flash",
 } as const;
 
+/**
+ * Section format follows the provider Myra actually runs inference on. Her
+ * model (kimi-k2.6) is served through the `openai-compatible` credential
+ * requirement above, so `promptFormatForProvider` selects Markdown — the format
+ * non-Anthropic models are tuned for — rather than the XML that only Anthropic
+ * models prefer. The provider is knowable here from the declared credential
+ * requirement, so there is no need to default.
+ */
+export const PERSONAL_AGENT_PROMPT_FORMAT = promptFormatForProvider(
+  PERSONAL_AGENT_CREDENTIAL_REQUIREMENTS[0].providerName,
+);
+
 export const PERSONAL_AGENT_DEPLOY_PROMPT: string =
-  buildPersonalAgentSystemPrompt(PERSONAL_AGENT_NAME, {
-    xml: true,
-  });
+  buildPersonalAgentSystemPrompt(
+    PERSONAL_AGENT_NAME,
+    PERSONAL_AGENT_PROMPT_FORMAT,
+    { model: PERSONAL_AGENT_MODEL_CONFIG.defaultModel },
+  );
+
+/** Deploy prompt for the canonical triage definition (names the triage model). */
+export const PERSONAL_AGENT_TRIAGE_DEPLOY_PROMPT: string =
+  buildPersonalAgentSystemPrompt(
+    PERSONAL_AGENT_NAME,
+    PERSONAL_AGENT_PROMPT_FORMAT,
+    { model: PERSONAL_AGENT_TRIAGE_MODEL_CONFIG.defaultModel },
+  );
 
 /**
  * The platform tools Myra advertises on every turn — the small, always-visible

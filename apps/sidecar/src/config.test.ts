@@ -3,6 +3,7 @@ import path from "node:path";
 import {
   readAdapterManifest,
   resolveAgentGCPolicy,
+  resolveSidecarBuildTimeoutMs,
   resolveSidecarHeartbeat,
   resolveSidecarIdleEviction,
   resolveToolPackageCache,
@@ -54,12 +55,45 @@ describe("resolveSidecarIdleEviction", () => {
   });
 });
 
+describe("resolveSidecarBuildTimeoutMs", () => {
+  it("defaults to a 3-minute wedge-guard bound", () => {
+    expect(resolveSidecarBuildTimeoutMs({})).toBe(180_000);
+  });
+
+  it("honors an override", () => {
+    expect(
+      resolveSidecarBuildTimeoutMs({
+        SIDECAR_HARNESS_BUILD_TIMEOUT_MS: "30000",
+      }),
+    ).toBe(30_000);
+  });
+
+  it("treats 0 as disabling the bound", () => {
+    expect(
+      resolveSidecarBuildTimeoutMs({ SIDECAR_HARNESS_BUILD_TIMEOUT_MS: "0" }),
+    ).toBe(0);
+  });
+
+  it("rejects a negative value", () => {
+    expect(() =>
+      resolveSidecarBuildTimeoutMs({ SIDECAR_HARNESS_BUILD_TIMEOUT_MS: "-1" }),
+    ).toThrow(/non-negative integer/);
+  });
+
+  it("rejects a non-integer value", () => {
+    expect(() =>
+      resolveSidecarBuildTimeoutMs({ SIDECAR_HARNESS_BUILD_TIMEOUT_MS: "abc" }),
+    ).toThrow(/non-negative integer/);
+  });
+});
+
 describe("resolveSidecarHeartbeat", () => {
   it("uses fast defaults when env is unset", () => {
     const hb = resolveSidecarHeartbeat({});
     expect(hb.pingIntervalMs).toBe(5_000);
     expect(hb.reconnectDelayMs).toBe(1_000);
     expect(hb.maxReconnectDelayMs).toBe(3_000);
+    expect(hb.connectTimeoutMs).toBe(5_000);
   });
 
   it("overrides from env when provided", () => {
@@ -67,10 +101,20 @@ describe("resolveSidecarHeartbeat", () => {
       SIDECAR_PING_INTERVAL_MS: "2000",
       SIDECAR_RECONNECT_DELAY_MS: "500",
       SIDECAR_MAX_RECONNECT_DELAY_MS: "8000",
+      SIDECAR_CONNECT_TIMEOUT_MS: "1500",
     });
     expect(hb.pingIntervalMs).toBe(2_000);
     expect(hb.reconnectDelayMs).toBe(500);
     expect(hb.maxReconnectDelayMs).toBe(8_000);
+    expect(hb.connectTimeoutMs).toBe(1_500);
+  });
+
+  it("rejects a non-positive connect timeout override", () => {
+    expect(() =>
+      resolveSidecarHeartbeat({ SIDECAR_CONNECT_TIMEOUT_MS: "0" }),
+    ).toThrow(
+      'SIDECAR_CONNECT_TIMEOUT_MS must be a positive integer (got "0")',
+    );
   });
 
   it("rejects a non-integer override", () => {

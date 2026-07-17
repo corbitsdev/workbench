@@ -89,17 +89,28 @@ export const PAGE_CONTEXT_CATALOG: readonly PageContextEntry[] = [
       "Skill detail: one published or draft skill with its procedure text and metadata. Users review how agents should run this play and may edit if they have access.",
   },
   {
+    id: "agents-list",
+    match: (p) => p === "/agents",
+    context:
+      "Agents: read-only list of the agent instances this member has deployed — name, description, status, and mail address. Creating or editing agents is not yet available from this page.",
+  },
+  {
     id: "admin-tool-detail",
     match: (p) => {
       const parts = segmentPath(p);
-      return parts[0] === "admin" && parts[1] === "tools" && parts.length === 3;
+      return (
+        parts[0] === "settings" &&
+        parts[1] === "admin" &&
+        parts[2] === "tools" &&
+        parts.length === 4
+      );
     },
     context:
       "Admin tool detail: one loadable tool package — manifest, grants, credential requirements, and how agents invoke it. Tenant admins tune or inspect this integration, not member Settings tool setup.",
   },
   {
     id: "admin-tools",
-    match: (p) => p === "/admin/tools",
+    match: (p) => p === "/settings/admin/tools",
     context:
       "Admin tools catalog (tenant admin): loadable tool packages and capabilities exposed to agents in this workbench. Admins browse definitions and open a tool for manifest and grant details — not end-user chat.",
   },
@@ -108,7 +119,10 @@ export const PAGE_CONTEXT_CATALOG: readonly PageContextEntry[] = [
     match: (p) => {
       const parts = segmentPath(p);
       return (
-        parts[0] === "admin" && parts[1] === "principals" && parts.length === 3
+        parts[0] === "settings" &&
+        parts[1] === "admin" &&
+        parts[2] === "principals" &&
+        parts.length === 4
       );
     },
     context:
@@ -119,9 +133,10 @@ export const PAGE_CONTEXT_CATALOG: readonly PageContextEntry[] = [
     match: (p) => {
       const parts = segmentPath(p);
       return (
-        parts[0] === "admin" &&
-        parts[1] === "definitions" &&
-        parts.length === 3
+        parts[0] === "settings" &&
+        parts[1] === "admin" &&
+        parts[2] === "definitions" &&
+        parts.length === 4
       );
     },
     context:
@@ -129,61 +144,61 @@ export const PAGE_CONTEXT_CATALOG: readonly PageContextEntry[] = [
   },
   {
     id: "admin-principals",
-    match: (p) => p === "/admin/principals",
+    match: (p) => p === "/settings/admin/principals",
     context:
       "Admin principals: members, agents, and service principals in the tenant. Admins browse identities and open one for grants and membership — access debugging, not day-to-day operator work.",
   },
   {
     id: "admin-definitions",
-    match: (p) => p === "/admin/definitions",
+    match: (p) => p === "/settings/admin/definitions",
     context:
       "Admin agent definitions: seeded and custom agent templates for the tenant. Admins browse templates and open one for metadata, tools, and prompts.",
   },
   {
     id: "admin-hub",
-    match: (p) => p === "/admin" || p === "/admin/",
+    match: (p) => p === "/settings/admin" || p === "/settings/admin/",
     context:
       "Admin home: tenant governance entry point redirecting into principals, definitions, tools, and audit. The user is in tenant-admin mode, not the member operator shell.",
   },
   {
     id: "admin-audit",
-    match: (p) => p === "/admin/audit",
+    match: (p) => p === "/settings/admin/audit",
     context:
       "Admin audit log: security- and ops-relevant events for the tenant. Admins filter and inspect who did what — not a product analytics dashboard.",
   },
   {
     id: "owner-hub",
-    match: (p) => p === "/owner" || p === "/owner/",
+    match: (p) => p === "/settings/owner" || p === "/settings/owner/",
     context:
       "Owner home: platform-operator entry for catalog, capabilities, workflows, and demos. Distinct from tenant member routes and tenant admin.",
   },
   {
     id: "owner-catalog",
-    match: (p) => p === "/owner/catalog",
+    match: (p) => p === "/settings/owner/catalog",
     context:
       "Owner catalog: platform-level models, templates, and shared assets operators curate across workbenches. Owner-role surface for global configuration, not tenant member settings.",
   },
   {
     id: "owner-capabilities-gamma",
-    match: (p) => p === "/owner/capabilities/gamma",
+    match: (p) => p === "/settings/owner/capabilities/gamma",
     context:
       "Owner gamma templates: experimental capability templates before wider rollout. Owners edit and publish gamma definitions used when provisioning advanced agent features.",
   },
   {
     id: "owner-capabilities",
-    match: (p) => matchPrefix(p, "/owner/capabilities"),
+    match: (p) => matchPrefix(p, "/settings/owner/capabilities"),
     context:
       "Owner capabilities: platform capability packs and how they map to agent features. Owners enable or tune cross-tenant building blocks.",
   },
   {
     id: "owner-workflows",
-    match: (p) => p === "/owner/workflows",
+    match: (p) => p === "/settings/owner/workflows",
     context:
       "Owner workflows: platform workflow definitions and deployment patterns operators maintain. Distinct from the member-facing /workflows run surface.",
   },
   {
     id: "owner-demos",
-    match: (p) => p === "/owner/demos",
+    match: (p) => p === "/settings/owner/demos",
     context:
       "Owner demos: curated demonstration flows for sales or onboarding. Owners configure scripted experiences, not production tenant data.",
   },

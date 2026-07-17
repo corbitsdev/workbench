@@ -32,6 +32,7 @@ describe("getPrincipalRoster", () => {
       {
         instanceId: "ins_1",
         principalId: "prn_syn_1",
+        agentId: "agt_1",
         name: "Myra",
         status: "running",
         sessionCount: 4,
@@ -93,6 +94,7 @@ describe("getTenantRoster", () => {
       {
         instanceId: "ins_1",
         principalId: "prn_syn_1",
+        agentId: "agt_1",
         name: "Myra",
         status: "running",
         sessionCount: 4,

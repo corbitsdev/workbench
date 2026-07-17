@@ -4,9 +4,18 @@
  * Vertical rhythm (repo-root DESIGN.md, --gap 14px), largest to smallest:
  *   - CHAT_THREAD_TURN_GAP (20px)  — between turns (ChatThread owns this only).
  *   - CHAT_TURN_STACK      (14px)  — between a turn's own sections: sender
- *     label, activity block, response bubble, trailing content, feedback.
+ *     label, activity block (tool calls only, never reasoning-only — CL-3734),
+ *     response bubble, trailing content, feedback. Also reused by
+ *     `renderSettledAgentTurn` to space the (rare) multiple entries a
+ *     projected group can carry — a block-bearing segment plus the final
+ *     answer — at normal intra-turn rhythm; the common single-entry group
+ *     never renders a gap (one child).
  *   - CHAT_RESPONSE_STACK  (14px)  — between paragraphs/blocks within one
- *     response (extracted prose + a UI block, activity reasoning + tools).
+ *     response (extracted prose + a UI block, activity tool rows). Reasoning
+ *     no longer contributes a persistent row here (CL-3734) — process rows
+ *     collapse to outputs-only as soon as a segment settles, live or not, so
+ *     there is no leftover activity-block gap once a turn projects down to
+ *     just its answer.
  *   - CHAT_TRACE_ROW gutter (14px) — marker-to-label gap on one trace row.
  *   - CHAT_ACTIVITY_STACK  (8px)   — activity block's own header-to-detail gap
  *     (tighter than CHAT_TURN_STACK: it is one disclosure, not two turn parts).

@@ -295,7 +295,12 @@ describe("GET /agents", () => {
       createdAt: new Date(),
       updatedAt: new Date(),
     };
-    const agentRow = { id: "agt-1", name: "Loop", tenantId: "tenant-1" };
+    const agentRow = {
+      id: "agt-1",
+      name: "Loop",
+      description: "Loops until done",
+      tenantId: "tenant-1",
+    };
 
     // biome-ignore lint/suspicious/noExplicitAny: test mock
     let base: any;
@@ -334,6 +339,42 @@ describe("GET /agents", () => {
     const json = (await res.json()) as ResBody;
     expect(json.data).toHaveLength(1);
     expect(json.data[0]?.agentName).toBe("Loop");
+    expect(json.data[0]?.agentDescription).toBe("Loops until done");
+  });
+
+  it("returns a null agentDescription when the definition has none", async () => {
+    const instance = {
+      id: "ins-1",
+      agentId: "agt-1",
+      tenantId: "tenant-1",
+      address: "ins-1@tenant-1.localhost",
+      status: "deployed",
+      principalId: "prn-agent-1",
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    };
+    const agentRow = { id: "agt-1", name: "Loop", tenantId: "tenant-1" };
+
+    const db = makeMockDb({
+      query: {
+        principal: { findFirst: mock(() => Promise.resolve(PRINCIPAL)) },
+        agent: { findMany: mock(() => Promise.resolve([agentRow])) },
+        agentInstance: { findMany: mock(() => Promise.resolve([instance])) },
+        memberAgentInstance: {
+          findMany: mock(() => Promise.resolve([{ instanceId: "ins-1" }])),
+        },
+        // biome-ignore lint/suspicious/noExplicitAny: test mock
+      },
+      // biome-ignore lint/suspicious/noExplicitAny: test mock
+    } as any);
+
+    const app = buildApp(db);
+    const res = await app.fetch(
+      makeRequest("http://localhost/agents?tenantId=tenant-1"),
+    );
+    expect(res.status).toBe(200);
+    const json = (await res.json()) as ResBody;
+    expect(json.data[0]?.agentDescription).toBeNull();
   });
 
   it("excludes removed instances (endedAt set) from the list query", async () => {

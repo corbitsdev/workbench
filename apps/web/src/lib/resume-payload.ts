@@ -1,4 +1,4 @@
-import type { UIResponse } from "@workbench/chat";
+import type { UIResponse } from "@workbench/blocks";
 
 /**
  * Resolve an interactive block's response into the resume payload delivered to
@@ -6,8 +6,7 @@ import type { UIResponse } from "@workbench/chat";
  * block-driven gate resume goes through, shared by every payload-aware host —
  * WorkflowDock, run-page block hosts (`WorkflowRunPane` / `WorkflowRunBlocks`),
  * and Myra chat (`MyraChatSurface`) — so a form/choice block resumes
- * identically wherever it renders. Workspace `AgentChat` is not payload-aware;
- * see `docs/WORKFLOWS.md`.
+ * identically wherever it renders. See `docs/WORKFLOWS.md`.
  *
  * A response that carries a structured `payload` (a form's field map, a choice's
  * typed decision, a multiSelect's array) is delivered VERBATIM — this is the

@@ -1,25 +1,23 @@
+import { sumAnalyticsModelTokens } from "@workbench/analytics/model-tokens";
 import type { ActivityOverview } from "../../lib/hub-api";
-import { cacheHitRate, computeDelta, ratePct } from "./metrics";
+import {
+  cacheHitRate,
+  formatCompact,
+  ratePct,
+  sumInferenceTokenClasses,
+} from "./metrics";
 import { CardLabel, CaveatNote, formatNumber, HudCard, Stat } from "./stats";
 import { MiniBars, TokenMosaic } from "./viz";
 import { SectionLabel } from "./section-label";
 
-function totalTokens(s: {
-  inputTokens: number;
-  outputTokens: number;
-  cacheReadTokens: number;
-  cacheWriteTokens: number;
-  thinkingTokens: number;
-}): number {
-  return (
-    s.inputTokens +
-    s.outputTokens +
-    s.cacheReadTokens +
-    s.cacheWriteTokens +
-    s.thinkingTokens
-  );
-}
-
+/**
+ * Usage & Cost tab detail (CL-3667). The Total-turns / Tool-calls stat tiles
+ * that used to open this section were dropped — they duplicated the Trends
+ * section's turns/day and tool-calls/day trend cards one section up, which
+ * already carry the same totals plus a delta and sparkline. This section keeps
+ * only the figures the trend cards don't show: success rate context, cache
+ * hit rate, thinking-token share, the token mix, and the model distribution.
+ */
 export function InferenceSection({
   data,
   tokenCaveat,
@@ -28,8 +26,7 @@ export function InferenceSection({
   tokenCaveat: string | null;
 }) {
   const summary = data.inference.summary;
-  const prev = data.inference.previousSummary;
-  const tokens = totalTokens(summary);
+  const tokens = sumInferenceTokenClasses(summary);
 
   const allZero =
     summary.turnCount === 0 && summary.toolCallCount === 0 && tokens === 0;
@@ -54,7 +51,19 @@ export function InferenceSection({
   const toolRate = ratePct(successfulTools, summary.toolCallCount);
   const hitRate = cacheHitRate(summary.inputTokens, summary.cacheReadTokens);
   const thinkPct = ratePct(summary.thinkingTokens, tokens);
-  const modelRows = data.models.filter((model) => model.count > 0);
+  const modelRows = data.byModel
+    .filter((row) => row.turnCount > 0 || sumAnalyticsModelTokens(row) > 0)
+    .map((row) => {
+      const tokenTotal = sumAnalyticsModelTokens(row);
+      return {
+        key: row.model,
+        value: tokenTotal,
+        displayValue:
+          row.turnCount > 0
+            ? `${formatNumber(row.turnCount)} chats`
+            : formatCompact(tokenTotal),
+      };
+    });
 
   return (
     <div className="flex flex-col gap-4">
@@ -62,24 +71,17 @@ export function InferenceSection({
       {tokenCaveat !== null && <CaveatNote>{tokenCaveat}</CaveatNote>}
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
         <Stat
-          label="Total turns"
-          value={formatNumber(summary.turnCount)}
-          delta={computeDelta(summary.turnCount, prev?.turnCount ?? null)}
-          sub={`${turnRate.toFixed(1)}% success`}
+          label="Chat success rate"
+          value={`${turnRate.toFixed(1)}%`}
+          sub={`${formatNumber(summary.failedTurnCount)} failed`}
           danger={summary.failedTurnCount > 0}
         />
         <Stat
-          label="Tool calls"
-          value={formatNumber(summary.toolCallCount)}
-          delta={computeDelta(
-            summary.toolCallCount,
-            prev?.toolCallCount ?? null,
-          )}
-          sub={
-            tokenCaveat === null
-              ? `${toolRate.toFixed(1)}% success`
-              : "success rate unavailable"
+          label="Tool success rate"
+          value={
+            tokenCaveat === null ? `${toolRate.toFixed(1)}%` : "unavailable"
           }
+          sub={`${formatNumber(summary.toolErrorCount)} errors`}
           danger={tokenCaveat === null && summary.toolErrorCount > 0}
         />
         <Stat
@@ -125,7 +127,7 @@ export function InferenceSection({
 
       {modelRows.length > 0 && (
         <HudCard
-          label="Models · by turns"
+          label="Models · by chats or tokens"
           tag={
             modelRows.length > 8 ? (
               <CardLabel>{`+${modelRows.length - 8} more`}</CardLabel>
@@ -134,9 +136,11 @@ export function InferenceSection({
         >
           <MiniBars
             label="Model distribution"
-            rows={modelRows
-              .slice(0, 8)
-              .map((m) => ({ label: m.key, value: m.count }))}
+            rows={modelRows.slice(0, 8).map((m) => ({
+              label: m.key,
+              value: m.value,
+              displayValue: m.displayValue,
+            }))}
           />
         </HudCard>
       )}

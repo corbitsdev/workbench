@@ -110,7 +110,8 @@ type RunRecordStatus =
   | "running"
   | "awaiting"
   | "completed"
-  | "failed";
+  | "failed"
+  | "stopped";
 
 export function isNewWorkflowRunFailure(
   previousStatus: RunRecordStatus,
@@ -490,6 +491,12 @@ export async function projectWorkflowRunRepo(
           foldedStatus: projected.status,
         },
       );
+      continue;
+    }
+
+    // CL-3688: user stop is authoritative on the index; late sidecar packs must not
+    // rewrite `stopped` back to a log-derived non-terminal/terminal status.
+    if (existing.status === "stopped") {
       continue;
     }
 

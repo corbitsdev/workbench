@@ -115,6 +115,43 @@ describe("ArtifactCard", () => {
     expect(preview?.querySelector("svg")).not.toBeNull();
   });
 
+  it("renders image thumbnails on default gallery cards", () => {
+    render(
+      React.createElement(ArtifactCard, {
+        artifact: {
+          ...artifact,
+          kind: "image",
+          label: "Image",
+          thumbnailUrl: "https://example.test/image.png",
+          thumbnailAlt: "Uploaded image",
+        },
+      }),
+    );
+
+    const thumbnail = screen.getByRole("img", { name: "Uploaded image" });
+    expect(thumbnail.getAttribute("src")).toBe(
+      "https://example.test/image.png",
+    );
+  });
+
+  it("falls back to the shaped placeholder when the thumbnail fails to load", () => {
+    render(
+      React.createElement(ArtifactCard, {
+        artifact: {
+          ...artifact,
+          kind: "image",
+          label: "Image",
+          thumbnailUrl: "https://example.test/broken.png",
+          thumbnailAlt: "Uploaded image",
+        },
+      }),
+    );
+    fireEvent.error(screen.getByRole("img", { name: "Uploaded image" }));
+    // The broken image is replaced by the deterministic placeholder — neither
+    // the <img> nor the browser's broken-image glyph is left in the card.
+    expect(screen.queryByRole("img")).toBeNull();
+  });
+
   it("styles approved status with workbench green tokens and shows the badge", () => {
     render(
       React.createElement(ArtifactCard, {

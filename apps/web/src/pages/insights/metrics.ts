@@ -1,4 +1,5 @@
 import type { ActivityOverview } from "../../lib/hub-api";
+import { formatShortDateUtc } from "@workbench/ui";
 import {
   priceUsageRows,
   sumTokenUsageClasses,
@@ -135,19 +136,9 @@ export function tokenDataCaveat(
     return "Token and tool-error data are not recorded for this range";
   }
   if (range.startDate === undefined || range.startDate < tokensRecordedFrom) {
-    return `Token and tool-error data are not recorded before ${formatBoundaryDate(tokensRecordedFrom)}`;
+    return `Token and tool-error data are not recorded before ${formatShortDateUtc(tokensRecordedFrom, { includeYear: true })}`;
   }
   return null;
-}
-
-function formatBoundaryDate(iso: string): string {
-  const [year, month, day] = iso.split("-").map(Number);
-  return new Date(Date.UTC(year, month - 1, day)).toLocaleDateString("en-US", {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-    timeZone: "UTC",
-  });
 }
 
 /**

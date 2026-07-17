@@ -7,13 +7,14 @@ import {
   type PreferenceCategory,
   type PreferenceSetting,
 } from "@workbench/shared";
-import { cn } from "@workbench/ui";
+import { cn, formatTimeOnly } from "@workbench/ui";
 import {
   usePreferenceSettings,
   useUpdatePreference,
 } from "../hooks/use-preference-settings";
 import { useWorkflowsCatalog } from "../hooks/use-workflows-catalog";
 import { useMeConnections } from "../hooks/use-me-connections";
+import { isFeatureEnabled, useMeFeatures } from "../hooks/use-me-features";
 import { BriefSourcesToggles } from "./BriefSourcesToggles";
 import { InboxSourcesToggles } from "./InboxSourcesToggles";
 import { BriefWorkflowAttachments } from "./BriefWorkflowAttachments";
@@ -25,12 +26,16 @@ const INBOX_SOURCE_KEY_PREFIX = inboxSourcePreferenceKey("");
 
 /**
  * Whether a setting's backing signal is met, given the loaded deployed-
- * workflow-kinds and connected-provider sets. A setting with no
- * `availableWhen` is always available (backward compatible). While the
+ * workflow-kinds, connected-provider, and feature-enablement sets. A setting
+ * with no `availableWhen` is always available (backward compatible). While the
  * relevant signal source is still loading, the setting is treated as
  * unavailable — hidden rather than flashing on then off once the real
  * answer arrives. `capability` has no wired projection endpoint yet (see
  * CL-3452 PR notes), so it never hides a control.
+ *
+ * `tasksAutoSendAdapter` is additionally gated on an Attio connection (the
+ * CRM use case named in its copy) because `availableWhen` is a single signal
+ * and the owner feature grant is the primary kill switch (CL-3823).
  */
 function isSettingAvailable(
   setting: PreferenceSetting,
@@ -38,6 +43,8 @@ function isSettingAvailable(
   workflowsPending: boolean,
   connectedProviders: ReadonlySet<string>,
   connectionsPending: boolean,
+  enabledFeatures: ReadonlySet<string>,
+  featuresPending: boolean,
 ): boolean {
   const signal = setting.availableWhen;
   if (!signal) return true;
@@ -49,6 +56,16 @@ function isSettingAvailable(
     if (connectionsPending) return false;
     return connectedProviders.has(signal.provider);
   }
+  if (signal.kind === "feature-enabled") {
+    if (featuresPending) return false;
+    if (!enabledFeatures.has(signal.feature)) return false;
+    // Secondary Attio gate for the CRM auto-send toggle (see registry comment).
+    if (setting.key === "tasksAutoSendAdapter") {
+      if (connectionsPending) return false;
+      return connectedProviders.has("attio");
+    }
+    return true;
+  }
   return true;
 }
 
@@ -58,10 +75,63 @@ type PreferenceValue = boolean | string | number;
 function utcHourToLocalLabel(utcHour: number): string {
   const date = new Date();
   date.setUTCHours(utcHour, 0, 0, 0);
-  return date.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+  return formatTimeOnly(date);
 }
 
 const HOURS = Array.from({ length: 24 }, (_, h) => h);
+
+const TIMEZONE_UNSET_LABEL = "Not set (UTC)";
+
+/**
+ * IANA zone picker. Unset renders as an explicit "Not set (UTC)" option and,
+ * when the browser can name the member's zone, a one-click suggestion — a
+ * suggestion only: nothing is saved until the member confirms by clicking it
+ * or picking a zone from the list.
+ */
+function TimeZoneControl({
+  controlId,
+  label,
+  value,
+  onChange,
+}: {
+  readonly controlId: string;
+  readonly label: string;
+  readonly value: string;
+  readonly onChange: (value: string) => void;
+}) {
+  const zones = Intl.supportedValuesOf("timeZone");
+  const options =
+    zones.includes(value) || value === "" ? zones : [value, ...zones];
+  const browserZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  const showSuggestion =
+    value === "" && browserZone !== "" && zones.includes(browserZone);
+  return (
+    <>
+      <Select
+        id={controlId}
+        aria-label={label}
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+      >
+        <option value="">{TIMEZONE_UNSET_LABEL}</option>
+        {options.map((zone) => (
+          <option key={zone} value={zone}>
+            {zone}
+          </option>
+        ))}
+      </Select>
+      {showSuggestion && (
+        <button
+          type="button"
+          className="self-start text-xs text-accent hover:underline"
+          onClick={() => onChange(browserZone)}
+        >
+          Use {browserZone}
+        </button>
+      )}
+    </>
+  );
+}
 
 interface RowProps {
   readonly setting: PreferenceSetting;
@@ -122,6 +192,15 @@ function PreferenceRow({ setting, status, onChange }: RowProps) {
         </Select>
       )}
 
+      {setting.type === "timezone" && (
+        <TimeZoneControl
+          controlId={controlId}
+          label={setting.label}
+          value={typeof setting.value === "string" ? setting.value : ""}
+          onChange={(value) => onChange(value)}
+        />
+      )}
+
       {setting.type === "hourUtc" && (
         <>
           <Select
@@ -156,6 +235,8 @@ interface SectionProps {
   ) => void;
   readonly reduceMotion: boolean;
   readonly index: number;
+  /** When false, morning-brief extras under Automations are omitted (CL-3823). */
+  readonly schedulerEnabled: boolean;
 }
 
 function PreferenceSection({
@@ -165,6 +246,7 @@ function PreferenceSection({
   onChange,
   reduceMotion,
   index,
+  schedulerEnabled,
 }: SectionProps) {
   const { activeTenantId } = useActiveWorkbench();
   return (
@@ -194,7 +276,7 @@ function PreferenceSection({
           />
         ))}
       </div>
-      {category === "Automations" && (
+      {category === "Automations" && schedulerEnabled && (
         <>
           <BriefSourcesToggles />
           <BriefWorkflowAttachments tenantId={activeTenantId} />
@@ -218,6 +300,7 @@ export function PreferencesPanel({ categories }: PreferencesPanelProps = {}) {
   const { activeTenantId } = useActiveWorkbench();
   const workflowsCatalog = useWorkflowsCatalog(activeTenantId);
   const connections = useMeConnections();
+  const features = useMeFeatures();
 
   const deployedWorkflowKinds = new Set(
     (workflowsCatalog.data?.entries ?? []).map((entry) => entry.kind),
@@ -227,6 +310,10 @@ export function PreferencesPanel({ categories }: PreferencesPanelProps = {}) {
       .filter((connection) => connection.connected)
       .map((connection) => connection.provider),
   );
+  const enabledFeatures = new Set(
+    (features.data?.features ?? []).filter((f) => f.enabled).map((f) => f.name),
+  );
+  const schedulerEnabled = isFeatureEnabled(features.data, "scheduler");
 
   const statusFor = (key: string): string | null => {
     if (update.variables?.key !== key) return null;
@@ -292,15 +379,18 @@ export function PreferencesPanel({ categories }: PreferencesPanelProps = {}) {
             workflowsCatalog.isPending,
             connectedProviders,
             connections.isPending,
+            enabledFeatures,
+            features.isPending,
           ),
       ),
     }))
-    .filter(
-      (group) =>
-        group.items.length > 0 ||
-        group.category === "Automations" ||
-        group.category === "Inbox",
-    );
+    .filter((group) => {
+      if (group.items.length > 0) return true;
+      if (group.category === "Inbox") return true;
+      // Keep Automations only when morning-brief extras will render.
+      if (group.category === "Automations" && schedulerEnabled) return true;
+      return false;
+    });
 
   return (
     <div className="flex flex-col gap-6">
@@ -313,6 +403,7 @@ export function PreferencesPanel({ categories }: PreferencesPanelProps = {}) {
           onChange={handleChange}
           reduceMotion={reduceMotion}
           index={index}
+          schedulerEnabled={schedulerEnabled}
         />
       ))}
     </div>

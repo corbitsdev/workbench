@@ -73,9 +73,54 @@ let triageDef: typeof MYRA_TRIAGE_DEF = MYRA_TRIAGE_DEF;
 const resolveDefMock = mock(async () => triageDef);
 const teardownMock = mock(async () => undefined);
 mock.module("./myra-threads", () => ({
-  resolveMyraTriageDefinition: resolveDefMock,
+  resolveMyraVariantDefinition: resolveDefMock,
   teardownThreadRows: teardownMock,
 }));
+
+let variantPref: {
+  chat: string | null;
+  triage: string | null;
+  instructionsGlobal: string | null;
+  instructionsChat: string | null;
+  instructionsTriage: string | null;
+} = {
+  chat: null,
+  triage: null,
+  instructionsGlobal: null,
+  instructionsChat: null,
+  instructionsTriage: null,
+};
+const readVariantPrefMock = mock(async () => variantPref);
+mock.module("./myra-variant-preferences", () => ({
+  readMyraVariantPreference: readVariantPrefMock,
+}));
+
+// CL-3824: launch soft-nulls via resolveLaunchableMyraVariant. In these unit
+// tests every catalog model is treated as launchable so binding still follows
+// the stored preference (or the catalog default).
+mock.module("./myra-variant-availability", () => {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports -- bun mock.module
+  const myra = require("@workbench/myra") as typeof import("@workbench/myra");
+  return {
+    resolveLaunchableMyraVariant: mock(
+      async (
+        _db: unknown,
+        _tenantId: string,
+        kind: "chat" | "triage",
+        selectedId: string | null | undefined,
+      ) => myra.resolveMyraVariant(kind, selectedId),
+    ),
+    listAvailableMyraVariants: mock(async () => myra.listMyraVariants()),
+    isMyraVariantAvailableForTenant: mock(async () => true),
+    softNullUnavailableVariantSelections: mock(
+      async (
+        _db: unknown,
+        _tenantId: string,
+        prefs: { chat: string | null; triage: string | null },
+      ) => prefs,
+    ),
+  };
+});
 
 let prefs: MemberPreferences = {};
 const readPrefsMock = mock(async () => prefs);
@@ -287,7 +332,15 @@ beforeEach(() => {
   configState.triageEnabled = true;
   resetFeatureGrantCache();
   prefs = {};
+  variantPref = {
+    chat: null,
+    triage: null,
+    instructionsGlobal: null,
+    instructionsChat: null,
+    instructionsTriage: null,
+  };
   triageDef = MYRA_TRIAGE_DEF;
+  readVariantPrefMock.mockClear();
   launchMock.mockClear();
   teardownMock.mockClear();
   writeMock.mockClear();
@@ -501,6 +554,88 @@ describe("createMailboxTriage", () => {
 
     expect(session.endSession).toHaveBeenCalled();
     expect(teardownMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("appends the member's global + triage standing instructions after the persona prompt", async () => {
+    variantPref = {
+      chat: null,
+      triage: null,
+      instructionsGlobal: "Be terse.",
+      instructionsChat: "Chat: use bullet lists.",
+      instructionsTriage: "Triage: flag anything from investors.",
+    };
+    const { db } = makeDb({
+      sender: { id: "ins_dep-ext", principalId: "pri-someone-else" },
+    });
+    const session = makeSessionService();
+    const triage = makeTriage(db, session);
+
+    triage.enqueue(ITEM);
+    await untilCalled(session.sendUserMessage);
+
+    const launchOpts = launchMock.mock.calls[0]![4] as Record<string, unknown>;
+    const systemPrompt = launchOpts.systemPrompt as string;
+    expect(systemPrompt).toContain("Be terse.");
+    expect(systemPrompt).toContain("Triage: flag anything from investors.");
+    // The chat-only override never reaches the triage session prompt.
+    expect(systemPrompt).not.toContain("Chat: use bullet lists.");
+    expect(systemPrompt.indexOf(prepareOnlyLoadout.systemPrompt)).toBe(0);
+  });
+
+  it("keeps the persona prompt verbatim when the member has set no standing instructions", async () => {
+    const { db } = makeDb({
+      sender: { id: "ins_dep-ext", principalId: "pri-someone-else" },
+    });
+    const session = makeSessionService();
+    const triage = makeTriage(db, session);
+
+    triage.enqueue(ITEM);
+    await untilCalled(session.sendUserMessage);
+
+    const launchOpts = launchMock.mock.calls[0]![4] as Record<string, unknown>;
+    expect(launchOpts.systemPrompt).toBe(prepareOnlyLoadout.systemPrompt);
+  });
+
+  it("binds a member's non-default triage variant while keeping the mailbox loadout", async () => {
+    variantPref = {
+      chat: null,
+      triage: "myra-triage-opus-4-8",
+      instructionsGlobal: null,
+      instructionsChat: null,
+      instructionsTriage: null,
+    };
+    const { db } = makeDb({
+      sender: { id: "ins_dep-ext", principalId: "pri-someone-else" },
+    });
+    const session = makeSessionService();
+    const triage = makeTriage(db, session);
+
+    triage.enqueue(ITEM);
+    await untilCalled(session.sendUserMessage);
+
+    // The selected variant's own definition is resolved by seedName…
+    const resolvedVariant = resolveDefMock.mock.calls[0]![2] as {
+      id: string;
+      seedName: string;
+    };
+    expect(resolvedVariant.id).toBe("myra-triage-opus-4-8");
+    expect(resolvedVariant.seedName).toBe("Myra Triage (Opus)");
+    // …but the launched loadout stays the mailbox persona's, regardless of model.
+    const launchOpts = launchMock.mock.calls[0]![4] as Record<string, unknown>;
+    expect(launchOpts.persona).toEqual({
+      toolNames: prepareOnlyLoadout.toolNames,
+    });
+    // The composed triage prompt names the SELECTED variant's model, not the
+    // canonical triage default.
+    const systemPrompt = launchOpts.systemPrompt as string;
+    expect(systemPrompt).toContain(
+      "You run on the claude-opus-4-8 model, served through the Corbits platform.",
+    );
+    expect(systemPrompt).not.toContain("deepseek-v4-flash");
+    expect(systemPrompt).toBe(
+      resolveMailboxLoadout("prepare_only", true, "claude-opus-4-8")
+        .systemPrompt,
+    );
   });
 
   it("diverts an inbound image attachment through the File Parser for a text-only triage agent, instead of riding it inline", async () => {

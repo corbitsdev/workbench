@@ -15,6 +15,7 @@ import {
   type GrantRequirementRow,
 } from "./agent-provisioning";
 import { isInRelaunchCooldown } from "./relaunch-breaker";
+import { narrowToolNamesForMemberMyraLaunch } from "../lib/myra-member-tool-narrowing";
 
 const { agent, agentInstance, grant } = intxSchema;
 const log = getLogger("grant-reconcile");
@@ -46,6 +47,8 @@ export interface InstanceGrantRefreshTarget {
   tenantId: string;
   principalId: string;
   address: string;
+  /** When set, per-member Myra tool narrowing is applied before persisting grants. */
+  instanceId?: string;
 }
 
 /**
@@ -66,7 +69,30 @@ export async function refreshInstanceGrantsFromDefinition(
     return { refreshed: false, pushed: false };
   }
 
-  const toolNames = getToolNamesFromCapabilities(agentRow.capabilities ?? null);
+  const definitionToolNames = getToolNamesFromCapabilities(
+    agentRow.capabilities ?? null,
+  );
+  const hubDb = db as unknown as HubDb;
+  const instanceId =
+    instance.instanceId ??
+    (
+      await db.query.agentInstance.findFirst({
+        where: and(
+          eq(agentInstance.tenantId, instance.tenantId),
+          eq(agentInstance.principalId, instance.principalId),
+          eq(agentInstance.address, instance.address),
+        ),
+      })
+    )?.id;
+  const toolNames =
+    instanceId !== undefined
+      ? await narrowToolNamesForMemberMyraLaunch(
+          hubDb,
+          instance.tenantId,
+          instanceId,
+          definitionToolNames,
+        )
+      : definitionToolNames;
   const now = new Date();
   await persistInstanceToolGrants(db, {
     tenantId: instance.tenantId,
@@ -169,6 +195,7 @@ export async function reconcileMemberInstanceGrants(
           tenantId,
           principalId: instance.principalId,
           address: instance.address,
+          instanceId: mapping.instanceId,
         },
         live,
       );
@@ -277,11 +304,17 @@ export async function assessPersonalAgentSync(
   // Stored tool grants are keyed on the LLM-safe name (buildToolGrantRows), so
   // map the definition's canonical capabilities through the same transform before
   // comparing — otherwise every assessment reports false drift (CL-2306).
-  const expected = sortedToolNames(
-    getToolNamesFromCapabilities(agentRow.capabilities ?? null).map(
-      toLlmToolName,
-    ),
+  const hubDb = db as unknown as HubDb;
+  const definitionToolNames = getToolNamesFromCapabilities(
+    agentRow.capabilities ?? null,
   );
+  const narrowed = await narrowToolNamesForMemberMyraLaunch(
+    hubDb,
+    instance.tenantId,
+    instance.id,
+    definitionToolNames,
+  );
+  const expected = sortedToolNames(narrowed.map(toLlmToolName));
   const actual = await toolGrantNamesForPrincipal(
     db,
     instance.tenantId,

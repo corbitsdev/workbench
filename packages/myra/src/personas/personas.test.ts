@@ -109,6 +109,7 @@ describe("MAILBOX_PERSONA_TOOLS", () => {
         "granola_get_note",
         "linear_list_issues",
         "linear_get_issue",
+        "task_create",
       ].sort(),
     );
   });
@@ -131,6 +132,7 @@ describe("MAILBOX_PERSONA_TOOLS", () => {
       "workflow_list_runs",
       "list_skills",
       "list_agents",
+      "search_agents",
       "list_principals",
       "identity_get",
       "attio_list_tasks",

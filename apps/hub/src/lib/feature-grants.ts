@@ -6,8 +6,10 @@ import { getLogger } from "@intx/log";
 import { and, eq } from "drizzle-orm";
 import {
   FEATURE_GRANT_ACTION,
+  FEATURE_GRANT_CATALOG,
   featureGrantResource,
   type FeatureName,
+  type MemberFeatureState,
 } from "@workbench/shared";
 import type { HubDb } from "../db";
 import { getConfig } from "../config";
@@ -98,6 +100,35 @@ export async function isFeatureEnabledForTenantCached(
     now: opts?.now,
     resolve: () => isFeatureEnabledForTenant(db, tenantId, name, envOverride),
   });
+}
+
+/** Env kill-switch map matching runtime decision points (CL-3823). */
+export function featureEnvOverridesFromConfig(): Record<FeatureName, boolean> {
+  const config = getConfig();
+  return {
+    scheduler: config.scheduler.enabled,
+    triage: config.triageEnabled,
+    "tasks-reconciler": config.tasksReconciler.enabled,
+  };
+}
+
+/** Member-readable feature states — same truth as runtime enablement. */
+export async function listMemberFeatureStates(
+  db: HubDb,
+  tenantId: string,
+  envOverrides: Record<FeatureName, boolean> = featureEnvOverridesFromConfig(),
+): Promise<MemberFeatureState[]> {
+  return Promise.all(
+    FEATURE_GRANT_CATALOG.map(async (entry) => ({
+      name: entry.name,
+      enabled: await isFeatureEnabledForTenant(
+        db,
+        tenantId,
+        entry.name,
+        envOverrides[entry.name] ?? false,
+      ),
+    })),
+  );
 }
 
 async function memberRoleRowLock(

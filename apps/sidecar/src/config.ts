@@ -21,6 +21,12 @@ const DEFAULT_RECONNECT_DELAY_MS = 1_000;
 // stays down is retried without a tight hammer loop, while a brief
 // redeploy blip still reconnects within the floor.
 const DEFAULT_MAX_RECONNECT_DELAY_MS = 3_000;
+// WORKBENCH-LOCAL (CL-3826): per-attempt connect timeout. Bounds how long a
+// single connect attempt waits for `open` before the hub-link abandons it and
+// retries on the backoff above, so a TCP connect that blackholes (Railway
+// routing to a draining replica during a redeploy overlap window) does not
+// stall reconnection for the whole overlap window.
+const DEFAULT_CONNECT_TIMEOUT_MS = 5_000;
 
 // Content-addressable tarball cache for materialized tool packages.
 // 512 MiB holds many deduped tool-package extractions; 64 MiB caps any
@@ -32,6 +38,8 @@ export type SidecarHeartbeat = {
   pingIntervalMs: number;
   reconnectDelayMs: number;
   maxReconnectDelayMs: number;
+  // WORKBENCH-LOCAL (CL-3826)
+  connectTimeoutMs: number;
 };
 
 export type SidecarHubLinkQueue = {
@@ -105,6 +113,25 @@ export function resolveSidecarIdleEviction(
   return { idleEvictMs, sweepIntervalMs };
 }
 
+// Harness-build wedge guard. A single agent's harness build that never settles
+// (an isogit per-directory lock the build waits on, a stalled tool/credential
+// fetch, a wedged context-store load for a long-history agent) otherwise pins
+// the wake in flight forever: the hub's session.start ack times out with no
+// diagnostic and the agent is unreachable until the sidecar restarts. This
+// bound abandons the wedged build and fails the attempt loudly. Default 3
+// minutes — generous over any real cold build; `0` disables the bound.
+export const DEFAULT_SIDECAR_HARNESS_BUILD_TIMEOUT_MS = 180_000;
+
+export function resolveSidecarBuildTimeoutMs(
+  env: Record<string, string | undefined>,
+): number {
+  return parseNonNegativeInt(
+    "SIDECAR_HARNESS_BUILD_TIMEOUT_MS",
+    env.SIDECAR_HARNESS_BUILD_TIMEOUT_MS,
+    DEFAULT_SIDECAR_HARNESS_BUILD_TIMEOUT_MS,
+  );
+}
+
 export type ToolPackageCache = {
   cacheRoot: string;
   cacheMaxBytes: number;
@@ -150,6 +177,12 @@ export function resolveSidecarHeartbeat(
       "SIDECAR_MAX_RECONNECT_DELAY_MS",
       env.SIDECAR_MAX_RECONNECT_DELAY_MS,
       DEFAULT_MAX_RECONNECT_DELAY_MS,
+    ),
+    // WORKBENCH-LOCAL (CL-3826)
+    connectTimeoutMs: parsePositiveInt(
+      "SIDECAR_CONNECT_TIMEOUT_MS",
+      env.SIDECAR_CONNECT_TIMEOUT_MS,
+      DEFAULT_CONNECT_TIMEOUT_MS,
     ),
   };
 }

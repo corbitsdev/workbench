@@ -10,6 +10,7 @@ import {
   getAnalyticsSummaryByInstance,
   getConversationActivity,
   getTokenDataStartDate,
+  analyticsModelDisplayCount,
   type AnalyticsDailyPoint,
   type AnalyticsDateRange,
   type AnalyticsModelRow,
@@ -625,28 +626,39 @@ export async function getUsageByWorkflowType(args: {
   // for step agents). The rollup only stores the resolved `instanceId`, so we
   // rejoin `agentInstance` to recover the address, then match its `ins_<id>`
   // prefix to a deployment's `kind` (the same LIKE convention the deploy route
-  // uses). `deployment_id` has no DB-level uniqueness — the pre-CL-2582 model
-  // ran many serial runs per deployment, so historical rows can share one — and
-  // a naive join to `workflow_run` would fan out, multiplying each instance's
-  // tokens by the run count. Collapse to one (deploymentId, kind) per deployment
-  // first so the join is 1:1 per instance. Exclude soft-deleted runs to match
-  // the ledger's other `workflow_run` reads, and add `kind` as a `DISTINCT ON`
+  // uses).
+  //
+  // CL-3667: the deployment id is resolved from `workflow_run_record`, NOT the
+  // `workflow_run` deployment index. Under the per-run-deploy model (CL-2582)
+  // each run mints its own ephemeral deployment whose id is stamped on the run
+  // RECORD (`workflow_run_record.deploymentId` — the same column the working
+  // per-person and per-run attribution joins read), while the `workflow_run`
+  // deployment-index table's `deployment_id` stays null for those runs. Sourcing
+  // kind from `workflow_run` therefore matched nothing and every kind showed
+  // zero usage; the run record carries both the deployment id and the kind, so
+  // the join attributes correctly.
+  //
+  // `deployment_id` has no DB-level uniqueness — the pre-CL-2582 model ran many
+  // serial runs per deployment, so historical rows can share one — and a naive
+  // join would fan out, multiplying each instance's tokens by the run count.
+  // Collapse to one (deploymentId, kind) per deployment first so the join is 1:1
+  // per instance. Exclude soft-deleted runs, and add `kind` as a `DISTINCT ON`
   // tiebreaker so the picked row is deterministic (kind is constant per
   // deployment today, so the tiebreaker only guards against future drift).
   const runByDeployment = db
-    .selectDistinctOn([workflowRun.deploymentId], {
-      deploymentId: workflowRun.deploymentId,
-      kind: workflowRun.kind,
+    .selectDistinctOn([workflowRunRecord.deploymentId], {
+      deploymentId: workflowRunRecord.deploymentId,
+      kind: workflowRunRecord.kind,
     })
-    .from(workflowRun)
+    .from(workflowRunRecord)
     .where(
       and(
-        eq(workflowRun.tenantId, tenantId),
-        isNull(workflowRun.deletedAt),
-        isNotNull(workflowRun.deploymentId),
+        eq(workflowRunRecord.tenantId, tenantId),
+        isNull(workflowRunRecord.deletedAt),
+        isNotNull(workflowRunRecord.deploymentId),
       ),
     )
-    .orderBy(workflowRun.deploymentId, workflowRun.kind)
+    .orderBy(workflowRunRecord.deploymentId, workflowRunRecord.kind)
     .as("run_by_deployment");
 
   const rows = await db
@@ -1186,7 +1198,7 @@ export async function getActivityOverview(args: {
     metricsSeries,
     models: modelRows.map((row) => ({
       key: row.model,
-      count: row.turnCount,
+      count: analyticsModelDisplayCount(row),
     })),
     byModel: modelRows,
     pricedByModel:

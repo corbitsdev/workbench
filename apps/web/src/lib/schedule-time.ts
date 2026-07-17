@@ -1,4 +1,5 @@
 import { utcDayToDate } from "@workbench/shared";
+import { formatTimeOnly } from "@workbench/ui";
 
 // The scheduler stores an integer UTC hour (0-23). Users think in their own
 // local time, so the picker offers every UTC hour labelled with the local time
@@ -11,10 +12,7 @@ export type HourOption = { hourUtc: number; label: string };
 export function formatUtcHourLocal(hourUtc: number): string {
   const d = new Date();
   d.setUTCHours(hourUtc, 0, 0, 0);
-  return d.toLocaleTimeString(undefined, {
-    hour: "numeric",
-    minute: "2-digit",
-  });
+  return formatTimeOnly(d);
 }
 
 /** Minutes past local midnight a given UTC hour lands at — used only to order

@@ -6,7 +6,7 @@ import {
   type DockRunPhase,
   type UIBlock,
   type UIResponse,
-} from "@workbench/chat";
+} from "@workbench/blocks";
 import { Button, failedRunError, toHumanLabel } from "@workbench/ui";
 import { buildDockBlocks } from "../lib/dock-block-builders";
 import type { RunPhase, RunState, StepState } from "@intx/workflow";

@@ -171,6 +171,7 @@ mock.module("@intx/db", () => ({
     agentSession: {},
     principal: {},
     grant: {},
+    inferenceTurn: { instanceId: "inferenceTurn.instanceId" },
   },
   resolveCredentialRequirement: resolveCredentialRequirementMock,
   getAncestorChain: getAncestorChainMock,
@@ -235,6 +236,32 @@ mock.module("../lib/tenant-provisioning", () => ({
   reseedAgentTemplateIfStale: reseedSpy,
 }));
 
+// CL-3824: launch soft-nulls via resolveLaunchableMyraVariant. Unit tests treat
+// every catalog model as launchable so binding still follows stored prefs.
+mock.module("./myra-variant-availability", () => {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports -- bun mock.module
+  const myra = require("@workbench/myra") as typeof import("@workbench/myra");
+  return {
+    resolveLaunchableMyraVariant: mock(
+      async (
+        _db: unknown,
+        _tenantId: string,
+        kind: "chat" | "triage",
+        selectedId: string | null | undefined,
+      ) => myra.resolveMyraVariant(kind, selectedId),
+    ),
+    listAvailableMyraVariants: mock(async () => myra.listMyraVariants()),
+    isMyraVariantAvailableForTenant: mock(async () => true),
+    softNullUnavailableVariantSelections: mock(
+      async (
+        _db: unknown,
+        _tenantId: string,
+        prefs: { chat: string | null; triage: string | null },
+      ) => prefs,
+    ),
+  };
+});
+
 import type { InferenceEvent } from "@intx/types/runtime";
 import { createAnalyticsSubscriber } from "@workbench/analytics";
 import { desc, eq } from "drizzle-orm";
@@ -263,7 +290,20 @@ describe("createMyraThread", () => {
     inserted?: Record<string, unknown>[];
     agentDefs?: Record<string, unknown>[];
     existingThreads?: Record<string, unknown>[];
+    variantPref?: {
+      chatVariantId: string | null;
+      triageVariantId: string | null;
+    } | null;
+    /** Whether the anonymous-unused candidate's instance has transcript rows. */
+    transcriptExists?: boolean;
+    /**
+     * FIFO answers for successive instanceHasTranscript calls, in call order:
+     * first the reuse-candidate check (if any), then the stale-reap loop in
+     * existingThreads order. Takes precedence over `transcriptExists`.
+     */
+    transcriptQueue?: boolean[];
   }) {
+    const transcriptQueue = [...(opts.transcriptQueue ?? [])];
     const agentDefs = opts.agentDefs ?? [
       {
         id: "agt-myra",
@@ -292,6 +332,22 @@ describe("createMyraThread", () => {
             Promise.resolve({ principalId: "prn-stale-instance" }),
           ),
         },
+        myraVariantPreference: {
+          findFirst: mock(() => Promise.resolve(opts.variantPref ?? undefined)),
+        },
+        inferenceTurn: {
+          findFirst: mock(() => {
+            if (opts.transcriptQueue !== undefined) {
+              const hasTranscript = transcriptQueue.shift() ?? false;
+              return Promise.resolve(
+                hasTranscript ? { id: "turn-1" } : undefined,
+              );
+            }
+            return Promise.resolve(
+              opts.transcriptExists ? { id: "turn-1" } : undefined,
+            );
+          }),
+        },
       },
       transaction: mock(async (fn: (tx: unknown) => Promise<void>) => {
         opts.transactions();
@@ -310,6 +366,60 @@ describe("createMyraThread", () => {
       }),
     };
   }
+
+  it("binds a member's selected chat variant definition, skipping the canonical reseed", async () => {
+    const inserted: Record<string, unknown>[] = [];
+    const db = buildCreateDb({
+      transactions: () => {},
+      inserted,
+      variantPref: { chatVariantId: "myra-opus-4-8", triageVariantId: null },
+      agentDefs: [
+        {
+          id: "agt-myra-opus",
+          tenantId: "tn-global",
+          systemPrompt: "You are Myra (Opus).",
+        },
+      ],
+    });
+
+    // biome-ignore lint/suspicious/noExplicitAny: structural db mock
+    const result = await createMyraThread(db as any, {
+      tenantId: "tn-global",
+      tenantDomain: "global.test",
+      memberPrincipalId: "prn-member",
+    });
+
+    expect(result.created).toBe(true);
+    // The variant path resolves its own seeded definition and does NOT run the
+    // canonical `myra`-template reseed.
+    expect(reseedSpy).not.toHaveBeenCalled();
+    const instanceInsert = inserted.find((v) => "address" in v);
+    expect(instanceInsert?.agentId).toBe("agt-myra-opus");
+    // The thread stays a `myra`-templateKey thread so it lists as normal chat.
+    const mappingInsert = inserted.find((v) => "templateKey" in v);
+    expect(mappingInsert?.templateKey).toBe("myra");
+  });
+
+  it("uses the canonical definition (and reseed path) when no preference is set", async () => {
+    const inserted: Record<string, unknown>[] = [];
+    const db = buildCreateDb({
+      transactions: () => {},
+      inserted,
+      variantPref: null,
+    });
+
+    // biome-ignore lint/suspicious/noExplicitAny: structural db mock
+    await createMyraThread(db as any, {
+      tenantId: "tn-global",
+      tenantDomain: "global.test",
+      memberPrincipalId: "prn-member",
+    });
+
+    // Canonical fallback runs the CL-2517 staleness reseed for the tenant's own def.
+    expect(reseedSpy).toHaveBeenCalled();
+    const instanceInsert = inserted.find((v) => "address" in v);
+    expect(instanceInsert?.agentId).toBe("agt-myra");
+  });
 
   it("creates the rows and returns created:true WITHOUT launching a session (CL-2803)", async () => {
     let txCount = 0;
@@ -390,6 +500,44 @@ describe("createMyraThread", () => {
     expect(launchAgentSessionMock).not.toHaveBeenCalled();
   });
 
+  // Agent-initiated mail (sidecar/WS plane) never stamps firstMessageAt, so a
+  // thread with a real transcript can still look "anonymous unused" by the
+  // firstMessageAt-null + default-label heuristic. Reusing it would land
+  // "+ New chat" on a non-empty conversation.
+  it("does not reuse an anonymous-looking unused thread whose instance already has a transcript", async () => {
+    let txCount = 0;
+    const inserted: Record<string, unknown>[] = [];
+    const db = buildCreateDb({
+      transactions: () => (txCount += 1),
+      inserted,
+      transcriptExists: true,
+      existingThreads: [
+        {
+          id: "map-ghost-transcript",
+          instanceId: "inst-ghost-transcript",
+          agentId: "agt-myra",
+          label: "Chat",
+          createdAt: new Date("2026-01-03T00:00:00Z"),
+          lastActivityAt: new Date("2026-01-03T00:00:00Z"),
+          firstMessageAt: null,
+        },
+      ],
+    });
+
+    // biome-ignore lint/suspicious/noExplicitAny: structural db mock
+    const result = await createMyraThread(db as any, {
+      tenantId: "tn-global",
+      tenantDomain: "global.test",
+      memberPrincipalId: "prn-member",
+    });
+
+    expect(result.created).toBe(true);
+    expect(result.thread.id).not.toBe("map-ghost-transcript");
+    const instanceInsert = inserted.find((v) => "address" in v);
+    expect(instanceInsert).toBeDefined();
+    expect(txCount).toBe(1);
+  });
+
   it("reaps (never reuses) an unused thread deployed against a stale definition", async () => {
     let txCount = 0;
     const deleted: unknown[] = [];
@@ -424,6 +572,112 @@ describe("createMyraThread", () => {
     expect(deleted.length).toBeGreaterThan(0);
     // Two transactions: the reap teardown and the create.
     expect(txCount).toBe(2);
+  });
+
+  // The stale-def reap loop used the same firstMessageAt-null heuristic as the
+  // reuse check, with no transcript guard. teardownThreadRows deletes the
+  // agentInstance, cascading the inferenceTurn rows — so a thread carrying a
+  // WS-plane-only transcript on a since-reseeded def would have its
+  // transcript permanently destroyed on the next "+ New chat".
+  it("spares a stale-def unused thread that already has a transcript from the reap, while still reaping a genuinely empty one", async () => {
+    let txCount = 0;
+    const deleted: unknown[] = [];
+    const db = buildCreateDb({
+      transactions: () => (txCount += 1),
+      deleted,
+      // Call order: stale-reap loop only (no reuse candidate matches this
+      // tenant's current def), in existingThreads order — transcript-bearing
+      // row first, then the genuinely empty row.
+      transcriptQueue: [true, false],
+      existingThreads: [
+        {
+          id: "map-stale-transcript",
+          instanceId: "inst-stale-transcript",
+          agentId: "agt-myra-old",
+          label: "Chat",
+          createdAt: new Date("2026-01-03T00:00:00Z"),
+          lastActivityAt: new Date("2026-01-03T00:00:00Z"),
+          firstMessageAt: null,
+        },
+        {
+          id: "map-stale-empty",
+          instanceId: "inst-stale-empty",
+          agentId: "agt-myra-old",
+          label: "Chat 2",
+          createdAt: new Date("2026-01-03T00:00:00Z"),
+          lastActivityAt: new Date("2026-01-03T00:00:00Z"),
+          firstMessageAt: null,
+        },
+      ],
+    });
+
+    // biome-ignore lint/suspicious/noExplicitAny: structural db mock
+    const result = await createMyraThread(db as any, {
+      tenantId: "tn-global",
+      tenantDomain: "global.test",
+      memberPrincipalId: "prn-member",
+    });
+
+    expect(result.created).toBe(true);
+    // teardownThreadRows deletes 5 rows per torn-down thread (grant,
+    // memberAgentInstance, agentInstance, agentSession, principal). Exactly 5
+    // deletes means only the genuinely empty row was reaped — the
+    // transcript-bearing row's 5 rows (and its inferenceTurn cascade) survive.
+    expect(deleted).toHaveLength(5);
+    // Two transactions: one reap teardown (the empty row only) and the create.
+    expect(txCount).toBe(2);
+  });
+
+  it("CL-3793: reaps a deepseek-bound blank thread and binds + New Chat to the newly selected Opus variant", async () => {
+    // Repro for CL-3793: a member's only existing thread is an anonymous,
+    // never-messaged "Chat" bound to the canonical deepseek definition
+    // (agt-myra). The member then selects the Opus chat variant and clicks
+    // "+ New Chat" (label: undefined). The blank deepseek thread must NOT be
+    // handed back — it must be reaped, and the new thread's instance must be
+    // bound to the Opus-seeded definition, not the stale deepseek one.
+    let txCount = 0;
+    const deleted: unknown[] = [];
+    const inserted: Record<string, unknown>[] = [];
+    const db = buildCreateDb({
+      transactions: () => (txCount += 1),
+      deleted,
+      inserted,
+      variantPref: { chatVariantId: "myra-opus-4-8", triageVariantId: null },
+      agentDefs: [
+        {
+          id: "agt-myra-opus",
+          tenantId: "tn-global",
+          systemPrompt: "You are Myra (Opus).",
+        },
+      ],
+      existingThreads: [
+        {
+          id: "map-deepseek-blank",
+          instanceId: "inst-deepseek-blank",
+          agentId: "agt-myra",
+          label: "Chat",
+          createdAt: new Date("2026-01-03T00:00:00Z"),
+          lastActivityAt: new Date("2026-01-03T00:00:00Z"),
+          firstMessageAt: null,
+        },
+      ],
+    });
+
+    // biome-ignore lint/suspicious/noExplicitAny: structural db mock
+    const result = await createMyraThread(db as any, {
+      tenantId: "tn-global",
+      tenantDomain: "global.test",
+      memberPrincipalId: "prn-member",
+    });
+
+    expect(result.created).toBe(true);
+    expect(result.thread.id).not.toBe("map-deepseek-blank");
+    // The stale deepseek-bound blank thread is torn down, not reused.
+    expect(deleted.length).toBeGreaterThan(0);
+    const instanceInsert = inserted.find((v) => "address" in v);
+    expect(instanceInsert?.agentId).toBe("agt-myra-opus");
+    const mappingInsert = inserted.find((v) => "templateKey" in v);
+    expect(mappingInsert?.agentId).toBe("agt-myra-opus");
   });
 
   it("neither reuses nor reaps a custom-labelled unused thread", async () => {
@@ -539,6 +793,9 @@ describe("createMyraThread (active-workbench attribution)", () => {
       query: {
         agent: { findMany: mock(() => Promise.resolve(agentDefs)) },
         memberAgentInstance: { findMany: mock(() => Promise.resolve([])) },
+        myraVariantPreference: {
+          findFirst: mock(() => Promise.resolve(undefined)),
+        },
       },
       transaction: mock(async (fn: (tx: unknown) => Promise<void>) => {
         await fn({

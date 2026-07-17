@@ -3,6 +3,7 @@ import { and, eq, gte, inArray, lte, sql, type AnyColumn } from "drizzle-orm";
 import type { DB } from "@intx/db";
 import { schema as intxSchema } from "@intx/db";
 
+import { sumAnalyticsModelTokens } from "./model-tokens";
 import { analyticsEvent, analyticsRollupDaily } from "./schema";
 
 export type AnalyticsDateRange = {
@@ -81,6 +82,24 @@ export type AnalyticsModelRow = {
   cacheWriteTokens: number;
   thinkingTokens: number;
 };
+
+export {
+  analyticsModelDisplayCount,
+  sumAnalyticsModelTokens,
+} from "./model-tokens";
+
+function modelRowHasUsage(row: {
+  model: string | null;
+  turnCount: number;
+  inputTokens: number;
+  outputTokens: number;
+  cacheReadTokens: number;
+  cacheWriteTokens: number;
+  thinkingTokens: number;
+}): row is typeof row & { model: string } {
+  if (row.model === null || row.model.trim() === "") return false;
+  return row.turnCount > 0 || sumAnalyticsModelTokens(row) > 0;
+}
 
 export async function getAnalyticsSummary(
   args: { db: DB["db"] } & AnalyticsSummaryFilter,
@@ -383,10 +402,7 @@ export async function getAnalyticsModelDistribution(
     .groupBy(analyticsRollupDaily.model);
 
   return rows
-    .filter(
-      (row): row is typeof row & { model: string } =>
-        row.model !== null && row.turnCount > 0,
-    )
+    .filter(modelRowHasUsage)
     .map((row) => ({
       model: row.model,
       turnCount: row.turnCount,
@@ -396,7 +412,12 @@ export async function getAnalyticsModelDistribution(
       cacheWriteTokens: row.cacheWriteTokens,
       thinkingTokens: row.thinkingTokens,
     }))
-    .sort((a, b) => b.turnCount - a.turnCount)
+    .sort((a, b) => {
+      const tokenDelta =
+        sumAnalyticsModelTokens(b) - sumAnalyticsModelTokens(a);
+      if (tokenDelta !== 0) return tokenDelta;
+      return b.turnCount - a.turnCount;
+    })
     .slice(0, 50);
 }
 
@@ -569,6 +590,50 @@ export async function getPrincipalToolBreakdown(args: {
     where ae.tenant_id = ${tenantId}
       and ae.event_type = 'tool_call'
       and ae.principal_id in (${ids})
+    group by 1
+    order by calls desc, name asc
+  `;
+  const result: unknown = await db.execute(query);
+  const rows = Array.isArray(result)
+    ? (result as Record<string, unknown>[])
+    : (result as { rows: Record<string, unknown>[] }).rows;
+  return rows.map((row) => ({
+    name: String(row["name"] ?? "").trim() || "Unknown tool",
+    calls: Number(row["calls"] ?? 0),
+    errors: Number(row["errors"] ?? 0),
+  }));
+}
+
+// Tenant-wide per-tool call breakdown (CL-3667), read from the DURABLE
+// analytics_event fact table. Identical shape and name-recovery machinery to
+// `getPrincipalToolBreakdown` — the LATERAL turn_part join that recovers the
+// tool name from the `kind:'call'` part and never the nameless result row — but
+// scoped to the whole tenant instead of one principal set. This is the
+// tenant-level companion to the per-principal facet: it answers "which tools is
+// the whole workbench calling, and how often do they error," without the caller
+// having to fan the per-principal query across every member.
+export async function getTenantToolBreakdown(args: {
+  db: DB["db"];
+  tenantId: string;
+}): Promise<PrincipalToolRow[]> {
+  const { db, tenantId } = args;
+  const query = sql`
+    select
+      coalesce(tp.name, ae.tool_call_id, 'Unknown tool') as name,
+      count(*)::int as calls,
+      sum(case when ae.status = 'error' then 1 else 0 end)::int as errors
+    from analytics_event ae
+    left join lateral (
+      select p.metadata ->> 'name' as name
+      from turn_part p
+      where p.type = 'tool'
+        and p.session_id = ae.session_id
+        and p.metadata ->> 'callId' = ae.tool_call_id
+        and p.metadata ->> 'name' is not null
+      limit 1
+    ) tp on true
+    where ae.tenant_id = ${tenantId}
+      and ae.event_type = 'tool_call'
     group by 1
     order by calls desc, name asc
   `;

@@ -120,9 +120,12 @@ export function writeLastActiveThreadId(threadId: string): void {
 }
 
 /**
- * Resolve the thread to land on: the explicit id if it still exists, else the
- * last-active stored id if valid, else the first thread. Returns null only when
- * the member has no threads yet.
+ * Resolve the thread to land on. An explicit id is resolved strictly — if it
+ * doesn't match a loaded thread, this returns null rather than falling back to
+ * last-active/first (a cache race right after "+ New chat" must never land the
+ * user on a stale existing chat). The last-active/first fallback only applies
+ * with no explicit id (bare `/chats`). Returns null only when the member has
+ * no threads yet, or an explicit id is given but not found.
  */
 export function resolveActiveThread(
   threads: MyraThread[],
@@ -130,8 +133,7 @@ export function resolveActiveThread(
 ): MyraThread | null {
   if (threads.length === 0) return null;
   if (explicitId) {
-    const match = threads.find((t) => t.id === explicitId);
-    if (match) return match;
+    return threads.find((t) => t.id === explicitId) ?? null;
   }
   const stored = readLastActiveThreadId();
   if (stored) {

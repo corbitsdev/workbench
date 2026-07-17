@@ -6,10 +6,11 @@ import {
   type ReactNode,
 } from "react";
 import { File as FileIcon } from "lucide-react";
-import { cn, Markdown } from "@workbench/ui";
+import { Badge, cn, Markdown } from "@workbench/ui";
 import { splitMentionSegments } from "@workbench/shared";
 import { type ChatMessage, type ChatImage, type ChatAttachment } from "./types";
 import { formatBytes } from "./attachments";
+import { getFileTypeLabel } from "./attachment-media";
 import {
   extractUIBlockFromText,
   UIBlockView,
@@ -129,6 +130,12 @@ function InlineImage({ image }: { image: ChatImage }) {
   );
 }
 
+/**
+ * Adapted from the vendored AI Elements Attachments component's list variant
+ * (./vendor/ai-elements/attachments.tsx `Attachment` + `AttachmentPreview` +
+ * `AttachmentInfo`) onto our tokens and `ChatAttachment` shape: a type badge,
+ * icon, name, and size, click-through preserved via `resolveAttachmentUrl`.
+ */
 function FileChip({
   attachment,
   resolveAttachmentUrl,
@@ -164,11 +171,18 @@ function FileChip({
         title={`Download ${attachment.name}`}
         className="flex items-center gap-2 rounded-lg border border-border bg-surface py-1 pl-1 pr-1.5 text-xs text-text transition-transform hover:bg-row-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange active:scale-[0.97] disabled:opacity-60"
       >
-        <span className="flex h-8 w-8 items-center justify-center">
+        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded bg-surface-2">
           <FileIcon className="h-5 w-5 text-text-3" />
         </span>
-        <span className="max-w-[10rem] truncate">{attachment.name}</span>
-        <span className="text-text-3">{formatBytes(attachment.size)}</span>
+        <span className="flex min-w-0 flex-col items-start">
+          <span className="flex items-center gap-1.5">
+            <Badge tone="neutral">
+              {getFileTypeLabel(attachment.name, attachment.type)}
+            </Badge>
+            <span className="max-w-[8rem] truncate">{attachment.name}</span>
+          </span>
+          <span className="text-text-3">{formatBytes(attachment.size)}</span>
+        </span>
       </button>
       {failed && (
         <span role="alert" className={CHAT_META_ERROR_TEXT}>
@@ -296,9 +310,10 @@ export function MessageBubble({
 
   // Nothing to show: no body, no images, no renderable attachments — and
   // either settled, or streaming with reasoning carrying the live state (the
-  // AgentTurn trace renders reasoning; an empty wrapper here would only add
-  // dead space under it). A reasoning-less stream keeps the bubble as the
-  // typing placeholder.
+  // AgentTurn activity line owns the animated indicator for that state —
+  // reasoning itself never renders as a row, CL-3734; an empty wrapper here
+  // would only add dead space under it). A reasoning-less stream keeps the
+  // bubble as the typing placeholder.
   if (
     !hasBody &&
     !hasImages &&

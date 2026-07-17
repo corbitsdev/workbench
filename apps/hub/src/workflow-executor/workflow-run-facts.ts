@@ -20,7 +20,11 @@ import {
   type StepKind,
 } from "./run-state-from-log";
 import { deriveWorkflowRunRepoId } from "../routes/workflow-runs";
-import { isTerminalRunStatus, type RunStatus } from "./run-status";
+import {
+  TERMINAL_RUN_STATUSES,
+  isTerminalRunStatus,
+  type RunStatus,
+} from "./run-status";
 
 // CL-2670 workflow analytics FACT projector. Given a TERMINAL run's log-derived
 // RunState, derive the flat run + step facts (duration / step-type / outcome /
@@ -119,7 +123,13 @@ export function deriveRunFacts(
 // run's facts), so re-projecting a run never dupes.
 export async function projectWorkflowRunFacts(
   deps: { db: HubDb; repoStore: AgentRepoStore },
-  args: { repoId: RepoId; runId: string; kind: string; tenantId: string },
+  args: {
+    repoId: RepoId;
+    runId: string;
+    kind: string;
+    tenantId: string;
+    indexStatus?: RunStatus;
+  },
 ): Promise<void> {
   const state = await getWorkflowRunStateForRepo(
     { repoStore: deps.repoStore },
@@ -129,6 +139,9 @@ export async function projectWorkflowRunFacts(
     tenantId: args.tenantId,
     kind: args.kind,
   });
+  if (args.indexStatus === "stopped") {
+    facts.run.outcome = "cancelled";
+  }
   await upsertWorkflowRunFacts(deps.db, facts);
 }
 
@@ -168,6 +181,7 @@ async function projectRunRows(
         runId: row.runId,
         kind: row.kind,
         tenantId: row.tenantId,
+        indexStatus: row.status,
       });
       projected += 1;
     } catch (err) {
@@ -207,9 +221,9 @@ export async function reprojectWorkflowFacts(
       args.tenantId !== undefined
         ? and(
             eq(workflowRunRecord.tenantId, args.tenantId),
-            inArray(workflowRunRecord.status, ["completed", "failed"]),
+            inArray(workflowRunRecord.status, [...TERMINAL_RUN_STATUSES]),
           )
-        : inArray(workflowRunRecord.status, ["completed", "failed"]),
+        : inArray(workflowRunRecord.status, [...TERMINAL_RUN_STATUSES]),
     );
 
   return projectRunRows(deps, rows, "reproject");
@@ -233,7 +247,7 @@ export async function backfillMissingWorkflowFacts(
   const haveFactRunIds = existing.map((r) => r.runId);
 
   const conditions = [
-    inArray(workflowRunRecord.status, ["completed", "failed"]),
+    inArray(workflowRunRecord.status, [...TERMINAL_RUN_STATUSES]),
     ...(args.tenantId !== undefined
       ? [eq(workflowRunRecord.tenantId, args.tenantId)]
       : []),

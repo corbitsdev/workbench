@@ -133,6 +133,14 @@ const KIND_VISUALS: Record<string, ArtifactVisual> = {
     experimentalFill: "bg-blue/85",
     experimentalSpan: "row-span-4",
   },
+  image: {
+    label: "Image",
+    viz: "deck",
+    fill: "bg-blue",
+    span: "row-span-3",
+    experimentalFill: "bg-blue/85",
+    experimentalSpan: "row-span-3",
+  },
   // The workflow's persisted `research` kind, the generic `report` kind, and
   // the heartbeat's stable `morning-brief` kind (CL-3503) share one tile
   // treatment.
@@ -262,8 +270,14 @@ export function artifactProvenanceLabel(
   return artifactProvenance(source).label;
 }
 
+export type ToGalleryArtifactOptions = {
+  thumbnailUrl?: string | undefined;
+  thumbnailAlt?: string | undefined;
+};
+
 export function toGalleryArtifact(
   artifact: ArtifactWithSession,
+  options: ToGalleryArtifactOptions = {},
 ): GalleryArtifact {
   const visual = visualForKind(artifact.kind);
   const provenance = artifactProvenance(artifact.source);
@@ -282,6 +296,12 @@ export function toGalleryArtifact(
     provenanceTone: provenance.tone,
     status: artifact.status,
     ...(excerpt.length > 0 ? { previewExcerpt: excerpt } : {}),
+    ...(options.thumbnailUrl !== undefined
+      ? { thumbnailUrl: options.thumbnailUrl }
+      : {}),
+    ...(options.thumbnailAlt !== undefined
+      ? { thumbnailAlt: options.thumbnailAlt }
+      : {}),
   });
 }
 
@@ -292,9 +312,10 @@ export function toGalleryArtifact(
  */
 export function tryToGalleryArtifact(
   artifact: ArtifactWithSession,
+  options: ToGalleryArtifactOptions = {},
 ): GalleryArtifact | undefined {
   try {
-    return toGalleryArtifact(artifact);
+    return toGalleryArtifact(artifact, options);
   } catch (error) {
     if (error instanceof GalleryArtifactParseError) return undefined;
     throw error;

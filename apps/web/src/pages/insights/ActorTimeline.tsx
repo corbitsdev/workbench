@@ -1,5 +1,4 @@
 import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
-import { AlertTriangle } from "lucide-react";
 import { Badge, Skeleton } from "@workbench/ui";
 import {
   getMomentDetail,
@@ -8,6 +7,7 @@ import {
 } from "@workbench/client";
 import { KIND_META, relativeTime, timelineEntryTone } from "./timeline-kinds";
 import { isPermissionDeniedError } from "./activity-error";
+import { PermissionCaveatBanner } from "./PermissionCaveatBanner";
 
 const TIMELINE_PAGE_SIZE = 50;
 
@@ -39,10 +39,6 @@ export function groupEntriesByDay(
     }
   }
   return groups;
-}
-
-function hasPermissionEntry(entries: TimelineEntry[]): boolean {
-  return entries.some((e) => e.kind === "grant" || e.kind === "credential");
 }
 
 function TimelineRow({ entry, now }: { entry: TimelineEntry; now: Date }) {
@@ -175,7 +171,6 @@ export function ActorTimeline({
   const entries = activityQuery.data?.pages.flatMap((p) => p.entries) ?? [];
   const groups = groupEntriesByDay(entries);
   const now = new Date();
-  const showCaveat = hasPermissionEntry(entries);
 
   return (
     <div className="flex flex-col gap-3">
@@ -190,19 +185,7 @@ export function ActorTimeline({
           : ""}
       </p>
 
-      {showCaveat && (
-        <p
-          className="flex items-start gap-1.5 rounded-[10px] border border-border bg-surface px-3 py-2 text-[11px] leading-snug text-text-3"
-          data-testid="permission-caveat"
-        >
-          <AlertTriangle className="mt-px h-3 w-3 shrink-0" />
-          <span>
-            Grant and credential entries reflect their current state only — past
-            changes, revocations, and who made them are not recorded, so this
-            timeline is not an audit history for permissions or credentials.
-          </span>
-        </p>
-      )}
+      <PermissionCaveatBanner entries={entries} />
 
       {activityQuery.isLoading && <TimelineSkeleton />}
 

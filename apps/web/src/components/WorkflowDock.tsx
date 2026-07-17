@@ -11,7 +11,7 @@ import {
   DockRunPhaseSchema,
   type DockRunPhase,
   type UIResponse,
-} from "@workbench/chat";
+} from "@workbench/blocks";
 import { buildDockBlocks } from "../lib/dock-block-builders";
 import { resolveResumePayload } from "../lib/resume-payload";
 import { stepOutputsFromLog } from "../lib/run-state-adapter";

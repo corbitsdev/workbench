@@ -120,6 +120,10 @@ export interface AwaitingPrewarmSummary {
   // Durable pending signals re-delivered this pass (the 202-accepted signal's
   // first fire-and-forget delivery was lost or is not yet proven by the log).
   redelivered: number;
+  // Pending signals whose redelivery count reached `maxSignalRedeliveries`
+  // this pass — their run was marked failed instead of redelivered again (the
+  // signal can never fold, e.g. the run's event log was lost).
+  deadLettered: number;
 }
 
 // Well-known `agent.undeploy` reason that selects the sidecar's
@@ -151,6 +155,13 @@ export const DEFAULT_WORKFLOW_HIBERNATION_GRACE_MS = 120_000;
 // complete; short enough that a lost signal wakes its run within a minute.
 export const DEFAULT_SIGNAL_REDELIVERY_DELAY_MS = 30_000;
 
+// A pending gate signal whose event log can never fold it (e.g. the run's
+// event log was lost after a hub restart) would otherwise be redelivered
+// every window forever. This caps redeliveries so such a run is dead-lettered
+// (marked failed) instead of becoming a permanent zombie — the staging
+// incident that motivated this cap redelivered the same signal for hours.
+const DEFAULT_MAX_SIGNAL_REDELIVERIES = 10;
+
 // How far back the orphan janitor looks for terminated-but-not-torn-down runs.
 // A hub crash between the terminal save and the teardown is recovered on the
 // next boot; 24h covers any realistic restart gap while keeping the scan small.
@@ -180,11 +191,16 @@ export function createWorkflowReconciler(deps: {
   // the in-flight first delivery time to land and its SignalReceived to fold
   // (which clears the record). Optional with the exported default.
   signalRedeliveryDelayMs?: number;
+  // Maximum reconciler redeliveries a pending gate signal may accrue before
+  // its run is dead-lettered. Optional with the exported default.
+  maxSignalRedeliveries?: number;
 }): WorkflowReconciler {
   const hibernationGraceMs =
     deps.hibernationGraceMs ?? DEFAULT_WORKFLOW_HIBERNATION_GRACE_MS;
   const signalRedeliveryDelayMs =
     deps.signalRedeliveryDelayMs ?? DEFAULT_SIGNAL_REDELIVERY_DELAY_MS;
+  const maxSignalRedeliveries =
+    deps.maxSignalRedeliveries ?? DEFAULT_MAX_SIGNAL_REDELIVERIES;
   // Single-flight guard. A sidecar restart fires one agent.reconnected per
   // restored address, and the hub-startup pass can overlap any of them. The
   // guard lives in reconcileAll itself (not just the reconnect wrapper) so the
@@ -428,6 +444,7 @@ export function createWorkflowReconciler(deps: {
       hibernated: 0,
       dormant: 0,
       redelivered: 0,
+      deadLettered: 0,
     };
 
     // PENDING-SIGNAL PASS (runs before the awaiting sweep): a 202-accepted
@@ -534,6 +551,33 @@ export function createWorkflowReconciler(deps: {
         );
         continue;
       }
+      const attempts = pending.redeliveries ?? 0;
+      if (attempts >= maxSignalRedeliveries) {
+        // The signal can never fold (e.g. the run's event log was lost after
+        // a hub restart) — redelivering it again would just repeat forever.
+        // Dead-letter the run so it stops being selected by this query and
+        // stops burning a redelivery every window.
+        summary.deadLettered += 1;
+        log.error(
+          "pending gate signal exhausted redeliveries; dead-lettering run",
+          {
+            runId: rec.id,
+            deploymentId: rec.deploymentId,
+            signalName: pending.signalName,
+            attempts,
+          },
+        );
+        try {
+          await setRunStatus(deps.db, rec.id, "failed");
+        } catch (err) {
+          log.error("dead-letter: failed to mark run failed", {
+            runId: rec.id,
+            deploymentId: rec.deploymentId,
+            error: err instanceof Error ? err.message : String(err),
+          });
+        }
+        continue;
+      }
       try {
         await deps.ensureDeploymentRoutable({
           deploymentId: rec.deploymentId,
@@ -555,6 +599,7 @@ export function createWorkflowReconciler(deps: {
           {
             ...pending,
             receivedAt: new Date().toISOString(),
+            redeliveries: attempts + 1,
           },
         );
         if (!stillPending) continue;
@@ -716,7 +761,8 @@ export function createWorkflowReconciler(deps: {
       summary.failed > 0 ||
       summary.hibernated > 0 ||
       summary.redelivered > 0 ||
-      summary.skippedNoPrincipal > 0
+      summary.skippedNoPrincipal > 0 ||
+      summary.deadLettered > 0
     ) {
       log.info("awaiting pre-warm pass complete", {
         candidates: summary.candidates,
@@ -727,6 +773,7 @@ export function createWorkflowReconciler(deps: {
         hibernated: summary.hibernated,
         dormant: summary.dormant,
         redelivered: summary.redelivered,
+        deadLettered: summary.deadLettered,
       });
     }
     return summary;

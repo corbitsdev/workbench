@@ -904,6 +904,7 @@ export async function provisionMemberInstances(
           tenantId: existingInstance.tenantId,
           principalId: existingInstance.principalId,
           address: existingInstance.address,
+          instanceId: existingMapping.instanceId,
         });
         results.push({
           templateKey: template.key,
@@ -995,6 +996,7 @@ export async function provisionMemberInstances(
         tenantId,
         principalId: created.instancePrincipalId,
         address: `${created.instanceId}@${domain}`,
+        instanceId: created.instanceId,
       });
       results.push({
         templateKey: created.templateKey,
@@ -1020,6 +1022,7 @@ export async function provisionMemberInstances(
             tenantId: racedInstance.tenantId,
             principalId: racedInstance.principalId,
             address: racedInstance.address,
+            instanceId: racedMapping.instanceId,
           });
         }
         results.push({

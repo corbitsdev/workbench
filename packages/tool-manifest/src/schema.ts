@@ -31,6 +31,7 @@ export const ToolFactoryManifestSchema = type({
   "providerName?": "string | null",
   bareToolNames: "string[]",
   sideEffects: { "[string]": ToolSideEffectSchema },
+  "descriptions?": { "[string]": "string" },
   "myraCatalog?": ToolManifestMyraCatalogSchema.or("null"),
   "credentialCatalog?": ToolManifestCredentialCatalogSchema.or("null"),
 });

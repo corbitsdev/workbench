@@ -48,6 +48,7 @@ import {
 } from "./routes/workflow-deploy";
 import {
   createWorkflowRunsRouter,
+  deriveWorkflowRunRepoId,
   type EnsureDeploymentRoutableFn,
   type ProvisionRunDeploymentFn,
 } from "./routes/workflow-runs";
@@ -102,6 +103,10 @@ import {
 } from "./lib/scheduled-intake";
 import { loadWorkflowGateInfos } from "./lib/workflow-catalog";
 import { createIdleSessionReaper } from "./services/idle-session-reaper";
+import {
+  createMailWakeMiddleware,
+  registerUndeliveredMailWake,
+} from "./services/mail-wake";
 import { publishEmbeddedWorkflowDefs } from "./services/workflow-defs-bootstrap";
 import { publishEmbeddedToolPackages } from "./services/tool-packages-bootstrap";
 import { backfillDenyForExistingWorkflowKinds } from "./lib/workflow-run-gate";
@@ -120,6 +125,7 @@ import {
   registerDisconnectReconciler,
   registerWedgeSweepReconciler,
   resolveInstanceSourcesFromDefinition,
+  relaunchInstanceIfNeeded,
 } from "./services/agent-provisioning";
 import { assessPersonalAgentSync } from "./services/grant-reconcile";
 import {
@@ -128,6 +134,7 @@ import {
 } from "./services/sync-personal-agent";
 import { createMembersRouter } from "./routes/members";
 import { createMyraThreadsRouter } from "./routes/myra-threads";
+import { createInvokedSubagentsRouter } from "./routes/invoked-subagents";
 import {
   recordMyraThreadActivity,
   resolveMyraDefinition,
@@ -145,6 +152,7 @@ import {
 } from "./services/mailbox-triage";
 import { createArtifactsRouter } from "./routes/artifacts";
 import { createFileParseRouter } from "./routes/file-parse";
+import { createMailAttachmentsRouter } from "./routes/mail-attachments";
 import { createSearchRouter } from "./routes/search";
 import { createActorSearchRouter } from "./routes/actor-search";
 import { createActorDetailRouter } from "./routes/actor-detail";
@@ -156,6 +164,7 @@ import { createPrincipalActivityRouter } from "./routes/principal-activity";
 import { createPrincipalRosterRouter } from "./routes/principal-roster";
 import { createPrincipalAnalyticsRouter } from "./routes/principal-analytics";
 import { createTenantRosterRouter } from "./routes/tenant-roster";
+import { createMyraVariantsRouter } from "./routes/myra-variants";
 import { createGammaTemplatesRouter } from "./routes/gamma-templates";
 import {
   createApprovalsRouter,
@@ -166,6 +175,7 @@ import { createFeedbackRouter } from "./routes/feedback";
 import type { MemberPreferences } from "@workbench/shared";
 import { resolveEnabledBriefSources } from "@workbench/shared";
 import { createMePreferencesRouter } from "./routes/me-preferences";
+import { createMeFeaturesRouter } from "./routes/me-features";
 import { createMeConnectionsRouter } from "./routes/me-connections";
 import { createOAuthCallbackRouter } from "./routes/oauth-callback";
 import { createInMemoryPendingStore } from "./lib/oauth-flow";
@@ -209,6 +219,8 @@ import { createFatalErrorRecovery } from "./lib/fatal-error-recovery";
 import { resolveCorsAllowOrigin } from "./lib/cors-origin";
 import { createRateLimiter } from "./lib/rate-limit";
 import { createSystemRouter } from "./routes/system";
+import { createSidecarWsDrainGuard } from "./lib/drain-guard";
+import { beginDrain } from "./lib/drain-state";
 
 await setupObservability({ dev: process.env.NODE_ENV !== "production" });
 const log = getLogger(["api"]);
@@ -678,7 +690,11 @@ const stopWedgeSweepReconciler = registerWedgeSweepReconciler({
 // an in-flight-turn guard (the injected eventCollectors registry) spares any
 // agent mid-work, so the kill switch is gone. Fed by the agent-event stream and
 // the send-mail route (recordActivityForInstance, mounted below) so a
-// mid-conversation agent is never slept.
+// mid-conversation agent is never slept. The former post-reconnect
+// personal-agent prewarm sweep that used to relaunch every recently-active
+// personal instance in the background: no agent auto-wakes anymore except on
+// inbound mail/message (see the mail-route wake middleware below), so nothing
+// should relaunch an idle instance the reaper is entitled to sleep.
 const idleSessionReaper = createIdleSessionReaper({
   db,
   endSession: sessionService.endSession,
@@ -692,6 +708,35 @@ const idleSessionReaper = createIdleSessionReaper({
 // idleSessionReaper.start();
 sidecarRouter.events.on("agent.event", ({ agentAddress }) => {
   idleSessionReaper.recordActivity(agentAddress);
+});
+
+// The single wake primitive for both inbound-mail ingresses (the HTTP
+// mail route and agent-to-agent WS mail). A no-op for an already-routable
+// instance; the same cold-start relaunch used by the wedge sweep and the
+// chat-surface sessions route.
+function wakeInstance(instanceId: string): Promise<void> {
+  return relaunchInstanceIfNeeded(
+    db,
+    sessionService,
+    grantStore,
+    eventCollectors,
+    instanceId,
+    sidecarRouter,
+  );
+}
+
+// Agent-to-agent mail to a reaped instance: a sidecar-originated mail.outbound
+// frame is routed wire-side inside interchange; a slept recipient is absent
+// from the address index, so the router emits `mail.outbound.undelivered` and
+// the orchestrator's default listener drops it with a warn. Subscribe the hub
+// to the same event (listeners are additive), wake the recipient instance, and
+// re-deliver via the router's public routeMail.
+registerUndeliveredMailWake({
+  db,
+  wake: wakeInstance,
+  onUndelivered: (handler) =>
+    sidecarRouter.events.on("mail.outbound.undelivered", handler),
+  routeMail: sidecarRouter.routeMail,
 });
 
 // Per-run deployment teardown (CL-2582), shared by the projection bridge
@@ -816,7 +861,7 @@ hubApp.route("/api/tenants/:tenantId/pricing", createPricingRouter({ db }));
 void prewarmPriceCatalog();
 hubApp.route(
   "/api/tenants/:tenantId/principals/:principalId/activity",
-  createPrincipalActivityRouter({ db }),
+  createPrincipalActivityRouter({ db, repoStore }),
 );
 hubApp.route(
   "/api/tenants/:tenantId/principals/:principalId/roster",
@@ -826,6 +871,7 @@ hubApp.route(
   "/api/tenants/:tenantId/principals/:principalId/analytics",
   createPrincipalAnalyticsRouter({ db }),
 );
+hubApp.route("/api/tenants/:tenantId", createMyraVariantsRouter(db));
 hubApp.route("/api/tenants/:tenantId/roster", createTenantRosterRouter({ db }));
 hubApp.route("/api/tenants/:tenantId/search", createSearchRouter({ db }));
 hubApp.route(
@@ -884,6 +930,22 @@ app.get(
     },
     exclude: ["/openapi.json", /^\/api\/auth\//],
   }),
+);
+
+// Mail-only wake. The idle-session reaper (CL-2790) now sleeps EVERY
+// agent kind, not just Myra — so a shared/sub-agent's next inbound message can
+// land on an instance whose session the reaper already ended (address no
+// longer routable). Interchange's own `/:instanceId/mail` route (mounted
+// below, out of scope to modify) only checks `status === "running"` and a
+// non-null `sessionId` — both still true after a reaper sleep — and never
+// relaunches, so without this the request would 502 with no self-heal. Wake
+// on-demand, ahead of that route, with the same cold-start relaunch used by
+// the wedge sweep and the chat-surface sessions route
+// (`relaunchInstanceIfNeeded` — a no-op when the instance is already
+// routable or has no active-session gap to fill).
+app.use(
+  "/api/tenants/:tenantId/agents/instances/:instanceId/mail",
+  createMailWakeMiddleware(wakeInstance),
 );
 
 // Server-side backstop for the per-agent attachment gate: reject a document
@@ -975,6 +1037,13 @@ app.use(
     await next();
   },
 );
+
+// Refuse new sidecar WS upgrades once beginDrain() has fired (SIGTERM
+// handler below). Interchange's createSidecarRoutes owns /api/sidecars/ws
+// and cannot be changed here, so this outer guard runs ahead of the hub app
+// mount and short-circuits the upgrade with 503 instead of letting the
+// draining process accept (or hang on) a new connection.
+app.use("/api/sidecars/ws", createSidecarWsDrainGuard());
 
 // Mount hub app
 app.route("/", hubApp);
@@ -1302,12 +1371,15 @@ v1.route(
 );
 v1.route("/", createMembersRouter(db));
 v1.route("/", createMyraThreadsRouter(db, sessionService, analyticsSubscriber));
+v1.route("/", createInvokedSubagentsRouter(db));
 v1.route("/", createArtifactsRouter(db, grantStore));
 v1.route("/", createFileParseRouter(db));
+v1.route("/", createMailAttachmentsRouter(db));
 v1.route("/", createGammaTemplatesRouter(db));
 v1.route("/", createApprovalsRouter(db, approvalsEventBus));
 v1.route("/", createFeedbackRouter(db));
 v1.route("/", createMePreferencesRouter(db, grantStore));
+v1.route("/", createMeFeaturesRouter(db));
 // Per-user OAuth connections (CL-3356). The PKCE verifier store is shared with
 // the public callback router below so an authorize on one request and its
 // callback on another find the same server-side verifier. `state` is signed
@@ -1558,6 +1630,30 @@ v1.route(
     // invariant: this deployment runs exactly one sidecar, so any connected
     // sidecar IS the sidecar — a non-empty getConnectedSidecars() means ready.
     isSidecarConnected: () => sidecarRouter.getConnectedSidecars().length > 0,
+    onUserStoppedRunFacts: (args) => {
+      if (args.deploymentId === null) return;
+      void projectWorkflowRunFacts(
+        { db, repoStore },
+        {
+          repoId: {
+            kind: "workflow-run",
+            id: deriveWorkflowRunRepoId({
+              deploymentId: args.deploymentId,
+              deploymentDomain: config.rootTenant.domain,
+            }),
+          },
+          runId: args.runId,
+          kind: args.kind,
+          tenantId: args.tenantId,
+          indexStatus: "stopped",
+        },
+      ).catch((err: unknown) => {
+        log.error("workflow analytics fact projection failed (user stop)", {
+          runId: args.runId,
+          error: err instanceof Error ? err : new Error(String(err)),
+        });
+      });
+    },
   }),
 );
 
@@ -1893,41 +1989,34 @@ const workflowDeployCoreDeps: WorkflowDeployCoreDeps = {
   rootTenantId,
 };
 
-// CL-3093: sync embedded tool tarballs into the root package-registry before
-// workflow autopublish so sidecars resolve fresh pins on reconnect. Detached;
-// fail-safe per tarball; does not block HTTP listen.
-void publishEmbeddedToolPackages({
-  db,
-  repoStore: repoStore.repoStore,
-  assetService,
-  rootTenantId,
-  enabled: config.toolRegistryAutopublishOnBoot,
-  registryName: config.toolRegistryName,
-  buildSha: config.buildSha,
-})
-  .catch((err) => {
-    log.error("tool registry autopublish-on-boot failed", {
-      error: err instanceof Error ? err.message : String(err),
-    });
-  })
-  .then(() =>
-    // CL-2593: auto-publish build-serialized workflow defs after tool sync.
-    publishEmbeddedWorkflowDefs({
+// CL-3093 / CL-3656: sync embedded tool tarballs before workflow autopublish.
+// When TOOL_REGISTRY_AUTOPUBLISH_ON_BOOT is on, await before listen and exit(1)
+// on tool sync or hierarchy-guard failure.
+async function runBootPackageAndWorkflowAutopublish(): Promise<void> {
+  await publishEmbeddedToolPackages({
+    db,
+    repoStore: repoStore.repoStore,
+    assetService,
+    rootTenantId,
+    enabled: config.toolRegistryAutopublishOnBoot,
+    registryName: config.toolRegistryName,
+    buildSha: config.buildSha,
+  });
+  try {
+    await publishEmbeddedWorkflowDefs({
       coreDeps: workflowDeployCoreDeps,
       repoStore,
       enabled: config.workflowAutopublishOnBoot,
       buildSha: config.buildSha,
       autopublishMap: config.workflowAutopublishMap,
-    })
-      // Reconcile the whole existing catalog to deny-by-default once the boot
-      // publish has settled.
-      .then(() => backfillDenyForExistingWorkflowKinds(db))
-      .catch((err) => {
-        log.error("workflow autopublish-on-boot failed", {
-          error: err instanceof Error ? err.message : String(err),
-        });
-      }),
-  );
+    });
+    await backfillDenyForExistingWorkflowKinds(db);
+  } catch (err) {
+    log.error("workflow autopublish-on-boot failed", {
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
+}
 
 v1.post(
   "/workflows/deploy",
@@ -2073,6 +2162,7 @@ for (const signal of ["SIGTERM", "SIGINT"]) {
   process.on(signal, async () => {
     try {
       log.info("Received {signal}, draining", { signal });
+      beginDrain();
       scheduler.stop();
       taskReconciler.stop();
       stopWedgeSweepReconciler();
@@ -2127,9 +2217,29 @@ app.onError((err, c) => {
 
 export { app };
 
-server = Bun.serve({
-  port,
-  fetch: app.fetch,
-  websocket,
-  idleTimeout: 0,
-});
+void (async () => {
+  if (config.toolRegistryAutopublishOnBoot) {
+    try {
+      await runBootPackageAndWorkflowAutopublish();
+    } catch (err) {
+      log.error("tool registry autopublish-on-boot failed", {
+        error: err instanceof Error ? err.message : String(err),
+      });
+      await flushSentry();
+      process.exit(1);
+    }
+  } else {
+    void runBootPackageAndWorkflowAutopublish().catch((err) => {
+      log.error("boot package/workflow autopublish failed", {
+        error: err instanceof Error ? err.message : String(err),
+      });
+    });
+  }
+
+  server = Bun.serve({
+    port,
+    fetch: app.fetch,
+    websocket,
+    idleTimeout: 0,
+  });
+})();

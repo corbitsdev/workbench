@@ -64,6 +64,12 @@ describe("buildTurnDetailQuery / buildTurnPartsQuery", () => {
     expect(sql).toContain("order by tp.ordinal asc");
     expect(params).toEqual(["turn-1"]);
   });
+
+  test("selects the instance and start columns used to correlate the input snapshot", () => {
+    const { sql } = render(buildTurnDetailQuery(scope));
+    expect(sql).toContain("it.instance_id as instance_id");
+    expect(sql).toContain("it.started_at as started_at");
+  });
 });
 
 describe("buildRunDetailQuery", () => {
@@ -102,5 +108,51 @@ describe("MomentDetailSchema", () => {
   test("accepts a bare base for a non-enriched kind", () => {
     const ok = MomentDetailSchema({ kind: "session", id: "ses_1" });
     expect(ok instanceof type.errors).toBe(false);
+  });
+
+  test("accepts a turn carrying reconstructed input messages", () => {
+    const ok = MomentDetailSchema({
+      kind: "inference_turn",
+      id: "it_1",
+      turn: {
+        model: "opus",
+        durationMs: 12,
+        parts: [{ type: "text", content: "hello" }],
+        input: [
+          { role: "system", kind: "message", text: "You are Myra." },
+          { role: "user", kind: "message", text: "hi" },
+          { role: "user", kind: "tool_result", text: "{}" },
+        ],
+      },
+    });
+    expect(ok instanceof type.errors).toBe(false);
+  });
+
+  test("accepts a turn carrying an honest input gap instead of messages", () => {
+    const ok = MomentDetailSchema({
+      kind: "inference_turn",
+      id: "it_1",
+      turn: {
+        model: "opus",
+        durationMs: null,
+        parts: [],
+        inputGap: "The conversation store for this agent is not available.",
+      },
+    });
+    expect(ok instanceof type.errors).toBe(false);
+  });
+
+  test("rejects an input message with an unknown role", () => {
+    const bad = MomentDetailSchema({
+      kind: "inference_turn",
+      id: "it_1",
+      turn: {
+        model: null,
+        durationMs: null,
+        parts: [],
+        input: [{ role: "tool", kind: "message", text: "x" }],
+      },
+    });
+    expect(bad instanceof type.errors).toBe(true);
   });
 });

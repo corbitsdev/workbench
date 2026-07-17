@@ -16,7 +16,7 @@ import {
   type RunRecord,
 } from "../lib/run-state-adapter";
 import { WorkflowRunBlocks, blockKey } from "./WorkflowRunBlocks";
-import type { UIBlock } from "@workbench/chat";
+import type { UIBlock } from "@workbench/blocks";
 
 function makeState(log: LogRunState, status: RunRecord["status"]) {
   const record: RunRecord = { runId: log.runId, kind: "note-picker", status };

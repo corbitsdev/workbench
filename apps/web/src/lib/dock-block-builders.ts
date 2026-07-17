@@ -2,7 +2,7 @@ import {
   dockRunBlocks,
   type DockRunInput,
   type UIBlock,
-} from "@workbench/chat";
+} from "@workbench/blocks";
 import { buildAbPresetBlocks } from "@workbench/ab-compare-presets/blocks";
 import { buildAttioTaskAgentBlocks } from "@workbench/workflow-attio-task-agent/blocks";
 import { buildGammaBlocks } from "@workbench/workflow-gamma-presentation-creator/blocks";

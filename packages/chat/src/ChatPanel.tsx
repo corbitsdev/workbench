@@ -13,7 +13,11 @@ import {
   type ThreadInsert,
 } from "./ChatThread";
 import { QuickReplyChips } from "./QuickReplyChips";
-import { ChatInput, type MentionCandidate } from "./ChatInput";
+import {
+  ChatInput,
+  type MentionCandidate,
+  type SlashCommand,
+} from "./ChatInput";
 import type { AttachmentPolicy, PendingAttachment } from "./attachments";
 import type { UIBlock, UIResponse } from "@workbench/blocks";
 import type { FeedbackSubjectKind } from "./feedback-types";
@@ -86,6 +90,8 @@ export interface ChatPanelProps {
   renderToolMarker?: ChatThreadProps["renderToolMarker"];
   isReasoningExpanded?: ChatThreadProps["isReasoningExpanded"];
   setReasoningExpanded?: ChatThreadProps["setReasoningExpanded"];
+  /** Escape hatch: a settled turn's subtle "View trace" link. */
+  getTurnTraceHref?: ChatThreadProps["getTurnTraceHref"];
   className?: string;
   notice?: React.ReactNode;
   /**
@@ -94,6 +100,12 @@ export interface ChatPanelProps {
    * collapse a separate switcher bar into this one header.
    */
   headerLeft?: React.ReactNode;
+  /**
+   * Content for the right of the header, alongside the expand/dock/close
+   * controls (e.g. a thread-info button). Rendered ahead of those controls so
+   * it reads as "next to" them rather than replacing them.
+   */
+  headerRight?: React.ReactNode;
   /**
    * Run the composer edge-to-edge (left-aligned to the message column) instead
    * of the default centered, capped width. Set in the docked context so the
@@ -107,6 +119,8 @@ export interface ChatPanelProps {
   attachmentPolicy?: AttachmentPolicy;
   /** Workspace members eligible for `@` mention autocomplete in the composer. */
   mentionCandidates?: MentionCandidate[];
+  /** Skills eligible for `/` slash-command autocomplete in the composer. */
+  slashCommands?: SlashCommand[];
   /** Microphone dictation with auto-send after end-of-speech (Myra). */
   voiceInput?: boolean;
 }
@@ -148,13 +162,16 @@ export function ChatPanel({
   renderToolMarker,
   isReasoningExpanded,
   setReasoningExpanded,
+  getTurnTraceHref,
   className,
   notice,
   headerLeft,
+  headerRight,
   composerFullWidth,
   inputAccessory,
   attachmentPolicy,
   mentionCandidates,
+  slashCommands,
   voiceInput,
 }: ChatPanelProps) {
   const busy = typing === true || (activity !== undefined && activity !== null);
@@ -169,6 +186,7 @@ export function ChatPanel({
   // empty banner when no chrome controls are present.
   const showHeader =
     headerLeft != null ||
+    headerRight != null ||
     onToggleDock !== undefined ||
     onToggleExpand !== undefined ||
     onClose !== undefined;
@@ -198,6 +216,7 @@ export function ChatPanel({
             )}
           </div>
           <div className="flex shrink-0 items-center gap-1">
+            {headerRight}
             {onToggleExpand !== undefined && dockState !== "docked" && (
               <button
                 type="button"
@@ -269,6 +288,7 @@ export function ChatPanel({
         {...(setReasoningExpanded !== undefined
           ? { setReasoningExpanded }
           : {})}
+        {...(getTurnTraceHref !== undefined ? { getTurnTraceHref } : {})}
       />
 
       {quickReplies !== undefined &&
@@ -292,6 +312,7 @@ export function ChatPanel({
         {...(inputDisabled !== undefined ? { disabled: inputDisabled } : {})}
         {...(attachmentPolicy !== undefined ? { attachmentPolicy } : {})}
         {...(mentionCandidates !== undefined ? { mentionCandidates } : {})}
+        {...(slashCommands !== undefined ? { slashCommands } : {})}
         {...(voiceInput === true ? { voiceInput: true } : {})}
       />
     </div>

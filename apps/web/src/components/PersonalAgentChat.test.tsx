@@ -103,6 +103,15 @@ mock.module("./ThreadSwitcher", () => ({
   ThreadSwitcher: () =>
     React.createElement("div", { "data-testid": "thread-switcher" }),
 }));
+mock.module("./SubagentDock", () => ({
+  SubagentDock: (props: { conversationId: string | null; variant?: string }) =>
+    React.createElement("div", {
+      "data-testid": "popup-subagent-dock",
+      "data-conversation-id": props.conversationId ?? "",
+      "data-variant": props.variant ?? "",
+    }),
+}));
+
 // The popup workflow strip owns its data fetching and has dedicated tests
 // (WorkflowDock.popup.test.tsx); stub it here so this test needs no
 // QueryClientProvider or api mock, and assert the wiring it receives.

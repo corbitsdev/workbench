@@ -4,13 +4,18 @@ import { evaluateGrants } from "@intx/authz";
 import { createToolRunner, defineTool } from "@intx/agent";
 import {
   createWorkbenchDirectorRegistry,
+  createSummarizeCompactor,
+  SUMMARIZE_COMPACTOR_NAME,
+  SUMMARY_MODEL_ID,
   toLlmToolName,
   resolveDynamicToolConfig,
   DYNAMIC_TOOLS_DIRECTOR_ID,
   TRIAGE_BUDGET_DIRECTOR_ID,
+  INVOKE_BUDGET_DIRECTOR_ID,
   APPROVAL_GATED_TOOL_NAMES,
 } from "@workbench/agents";
 import {
+  catalogManagedNames,
   createCatalogTools,
   filterCatalogByAvailableTools,
   DYNAMIC_TOOLS_ENV_KEY,
@@ -43,35 +48,53 @@ import { createBlobReader } from "@intx/types/runtime";
 import type { InferenceSource, MessageRef } from "@intx/types/runtime";
 import type { HarnessBuilder, HarnessBundle } from "@workbench/hub-agent";
 import { resolveSeedMarker, stripSeedMarker } from "@workbench/myra/seed";
-import { PERSONAL_AGENT_NAME, isTriageSessionPrompt } from "@workbench/myra";
+import {
+  PERSONAL_AGENT_NAME,
+  INFERENCE_PARAMS_ENV_KEY,
+  isTriageSessionPrompt,
+  isInvokeSessionPrompt,
+  resolveInferenceParamsMarker,
+  stripInferenceParamsMarker,
+} from "@workbench/myra";
 import { createAskPrincipalTool } from "@workbench/approvals";
 import { seedWorkspaceFiles } from "./seed-workspace-files";
 import { healTurns } from "@workbench/context-repair";
-import { withActiveContext } from "@workbench/prompts";
+import {
+  promptFormatForProvider,
+  resolveTimeZoneMarker,
+  stripTimeZoneMarker,
+  withActiveContext,
+} from "@workbench/prompts";
 import { createGuardedMailRunner } from "./mail-guard";
 import {
   createApprovalClient,
   createApprovalGatedRunner,
 } from "./approval-gate";
 import type { ContextStore } from "@intx/types/runtime";
+import { buildDispatchAllowedToolNames } from "./tool-dispatch-allowed-names";
 
 const logger = getLogger(["sidecar", "harness-builder"]);
 const DEFAULT_MAIL_OUTBOUND_PER_TURN = 8;
 const PERSONAL_AGENT_MAIL_OUTBOUND_PER_TURN = 100;
 
 /**
- * Pure director-id selection (CL-3384): a triage session always gets the
- * budget-capped director — regardless of whether it also resolved dynamic
- * tool config, since `triageBudgetDirector`'s factory composes the
- * dynamic-tools director internally when the harness env carries it. A
- * non-triage agent with dynamic tool config gets the dynamic-tools director
+ * Pure director-id selection (CL-3384, extended for CL-3683): a triage
+ * session always gets the triage budget director, and an invoked-subagent
+ * session (from `invoke_agent`) always gets the invoke budget director —
+ * both regardless of whether the session also resolved dynamic tool config,
+ * since each budget director's factory composes the dynamic-tools director
+ * internally when the harness env carries it. Triage takes priority over
+ * invoke in the (impossible in practice) case both markers were present. A
+ * plain agent with dynamic tool config gets the dynamic-tools director
  * unchanged; everything else falls back to the registry default.
  */
 export function selectDirectorId(params: {
   isTriageSession: boolean;
+  isInvokeSession: boolean;
   hasDynamicToolConfig: boolean;
 }): string | undefined {
   if (params.isTriageSession) return TRIAGE_BUDGET_DIRECTOR_ID;
+  if (params.isInvokeSession) return INVOKE_BUDGET_DIRECTOR_ID;
   if (params.hasDynamicToolConfig) return DYNAMIC_TOOLS_DIRECTOR_ID;
   return undefined;
 }
@@ -174,11 +197,23 @@ export function createDefaultHarnessBuilder({
       const signer = (payload: string) => crypto.signSSH(payload);
       const buildStart = performance.now();
 
-      const storage = await createIsogitStore(storeDir, signer, gcPolicy);
-      await healContextStore(storage, agentAddress);
-      const mailStore = await createMailAuditStore(storeDir, signer);
-
-      const deployTree = await readDeployTree(storeDir);
+      // `mailStore` and `deployTree` provisioning depend on neither the
+      // context store nor each other — only downstream code (basePrompt,
+      // env.audit) needs their results. Running all three concurrently
+      // (CL-3799) collapses what was a serial chain of independent I/O onto
+      // the session-connect critical path into the slowest single leg,
+      // instead of their sum.
+      const storagePromise = createIsogitStore(storeDir, signer, gcPolicy).then(
+        async (store) => {
+          await healContextStore(store, agentAddress);
+          return store;
+        },
+      );
+      const [storage, mailStore, deployTree] = await Promise.all([
+        storagePromise,
+        createMailAuditStore(storeDir, signer),
+        readDeployTree(storeDir),
+      ]);
       const provisionMs = performance.now() - buildStart;
       const basePrompt = deployTree.systemPrompt ?? agentConfig.systemPrompt;
 
@@ -192,17 +227,36 @@ export function createDefaultHarnessBuilder({
         skipped: skippedSeedFiles,
         malformed: seedMarkerMalformed,
       } = resolveSeedMarker(basePrompt);
-      const cleanedPrompt = stripSeedMarker(basePrompt);
+      // The member-timezone marker rides the launched prompt the same way as
+      // the seed marker: resolved off the raw base prompt, stripped before the
+      // model sees it. Undefined (no marker, or an invalid zone) falls back to
+      // an explicitly labeled UTC date — never silent server-local time.
+      const memberTimeZone = resolveTimeZoneMarker(basePrompt);
+      const inferenceDials = resolveInferenceParamsMarker(basePrompt);
+      const cleanedPrompt = stripInferenceParamsMarker(
+        stripTimeZoneMarker(stripSeedMarker(basePrompt)),
+      );
 
       // Append the unified active-context block at launch so every agent shares
       // the same runtime context and is not anchored to its training cutoff
       // (CL-1938). The human user's name is not resolvable at this seam — the
       // agentConfig principal is the synthetic per-instance principal — so only
       // the live date is populated until user identity is threaded through the
-      // launch config.
-      const systemPrompt = withActiveContext(cleanedPrompt, {
-        now: new Date(),
-      });
+      // launch config. Rendered in the provider-appropriate format, keyed off
+      // the default inference source's provider — the same rule the hub uses
+      // for the launch prompt's own sections.
+      const defaultProvider =
+        sources.find((s) => s.id === defaultSource)?.provider ??
+        sources[0]?.provider ??
+        "";
+      const systemPrompt = withActiveContext(
+        cleanedPrompt,
+        {
+          now: new Date(),
+          ...(memberTimeZone !== undefined ? { timeZone: memberTimeZone } : {}),
+        },
+        promptFormatForProvider(defaultProvider),
+      );
 
       // Dynamic tool exposure (CL-2808): opt-in agents advertise only a base
       // set plus the catalog tools on turn one; the rest are discoverable via
@@ -215,6 +269,7 @@ export function createDefaultHarnessBuilder({
       // known, so packages whose credential is missing are never advertised.
       const dynamicToolConfig = resolveDynamicToolConfig(cleanedPrompt);
       const isTriageSession = isTriageSessionPrompt(cleanedPrompt);
+      const isInvokeSession = isInvokeSessionPrompt(cleanedPrompt);
       const exposureState: ToolExposureState = { exposed: new Set<string>() };
 
       const grantsRef = { current: agentConfig.grants };
@@ -371,6 +426,30 @@ export function createDefaultHarnessBuilder({
           sessionId: agentConfig.sessionId,
         };
 
+        const compactorInferenceDeps = createDependencies(adapters);
+        const agentDefaultSource: InferenceSource | undefined =
+          sources.find((s) => s.id === defaultSource) ?? sources[0];
+        if (agentDefaultSource === undefined) {
+          throw new Error(
+            `No inference source available to build the summarize compactor for ${agentAddress}`,
+          );
+        }
+        // The compactor runs the model it's given verbatim, so the source
+        // it gets must actually serve the summary model. Only the
+        // openai-compatible provider (opencode-zen) serves it — an
+        // Anthropic-only agent (e.g. fannie/freddie/file-parser) has no
+        // source that can. Prefer an openai-compatible source pointed at
+        // the summary model; fall back to the agent's own default source
+        // unchanged so those agents still compact, just on their own
+        // (larger-window) model instead of failing outright.
+        const openaiCompatibleSource = sources.find(
+          (s) => s.provider === "openai-compatible",
+        );
+        const compactorSource: InferenceSource =
+          openaiCompatibleSource !== undefined
+            ? { ...openaiCompatibleSource, model: SUMMARY_MODEL_ID }
+            : agentDefaultSource;
+
         const env = {
           sources,
           defaultSource,
@@ -382,7 +461,16 @@ export function createDefaultHarnessBuilder({
           // Resolve inference adapters through the boot-edge registry so the
           // agent uses the same (gemini-patched) provider set `canBuildSource`
           // admitted, not `createAgent`'s built-ins-only default.
-          deps: createDependencies(adapters),
+          deps: compactorInferenceDeps,
+          // Named "summarize" compaction strategy (CL-3803): runs one bounded
+          // inference against the summary agent's model to replace the
+          // conversation with a dense recap plus the most recent exchanges.
+          compactors: {
+            [SUMMARIZE_COMPACTOR_NAME]: createSummarizeCompactor({
+              source: compactorSource,
+              deps: compactorInferenceDeps,
+            }),
+          },
           transport: agentTransport,
           address: agentAddress,
           onConnectorStateChanged,
@@ -473,16 +561,36 @@ export function createDefaultHarnessBuilder({
           });
         }
 
-        // Gate the dynamic catalog to tools that actually loaded. A package
-        // whose credential is missing was dropped fail-soft above, so its
-        // tools are absent from `loadedToolNames` and must not be advertised —
-        // otherwise search_tools points the model at a package it can never
-        // call, which is the source of the tool-search loop (CL-3133).
+        // Gate the dynamic catalog to tools this agent is GRANTED, not to
+        // tools that happened to load. A package whose credential is missing
+        // was dropped fail-soft above (absent from `loadedToolNames`), but it
+        // is still catalogued from committed manifest metadata — advertising
+        // it lets the model discover it via search_tools; `createCatalogTools`
+        // below (via `availableToolNames: loadedToolNames`) is what stops
+        // `load_tools` from exposing a name with no live runner, so the model
+        // never gets a dead tool call — it gets an actionable "needs a
+        // credential" message instead (CL-3795, replacing the CL-3133 gate
+        // that hid the tool from search entirely).
+        //
+        // "Granted" means the `tool:<llm-name>/invoke` grant rows the hub
+        // persists for the instance principal — the one launch input keyed on
+        // the catalog's own LLM-safe names and already narrowed per member.
+        // `agentConfig.tools` is the wrong gate: its hub-proxy definitions
+        // carry bare names and omit package tools (those arrive via
+        // toolPackagePins), so the intersection with the catalog is empty and
+        // search_tools goes dark (CL-3825).
+        const grantedCatalogToolNames = new Set<string>();
+        if (dynamicToolConfig !== undefined) {
+          for (const name of catalogManagedNames(dynamicToolConfig.catalog)) {
+            const decision = await authorize(`tool:${name}`, "invoke");
+            if (decision.effect === "allow") grantedCatalogToolNames.add(name);
+          }
+        }
         const availableCatalog =
           dynamicToolConfig !== undefined
             ? filterCatalogByAvailableTools(
                 dynamicToolConfig.catalog,
-                loadedToolNames,
+                grantedCatalogToolNames,
               )
             : undefined;
         const catalogRunner =
@@ -490,6 +598,7 @@ export function createDefaultHarnessBuilder({
             ? (createCatalogTools({
                 catalog: availableCatalog,
                 exposure: exposureState,
+                availableToolNames: loadedToolNames,
               }) as DefinedRunner)
             : undefined;
 
@@ -522,13 +631,13 @@ export function createDefaultHarnessBuilder({
             }),
           },
         );
-        const allowedNames = new Set([
-          ...agentConfig.tools.map((t) => t.name),
-          ...loadedToolNames,
-          ...(catalogRunner !== undefined
+        const allowedNames = buildDispatchAllowedToolNames(
+          agentConfig.tools.map((t) => t.name),
+          loadedToolNames,
+          catalogRunner !== undefined
             ? catalogRunner.definitions.map((d) => d.name)
-            : []),
-        ]);
+            : [],
+        );
         const tools = filterToolRunner(
           gatedRunner as DefinedRunner,
           allowedNames,
@@ -544,6 +653,7 @@ export function createDefaultHarnessBuilder({
 
         const directorId = selectDirectorId({
           isTriageSession,
+          isInvokeSession,
           hasDynamicToolConfig: dynamicToolConfig !== undefined,
         });
 
@@ -558,16 +668,20 @@ export function createDefaultHarnessBuilder({
             : {}),
         };
 
-        const harnessEnv =
-          availableCatalog !== undefined
+        const harnessEnv = {
+          ...env,
+          ...(inferenceDials !== undefined
+            ? { [INFERENCE_PARAMS_ENV_KEY]: inferenceDials }
+            : {}),
+          ...(availableCatalog !== undefined
             ? {
-                ...env,
                 [DYNAMIC_TOOLS_ENV_KEY]: {
                   catalog: availableCatalog,
                   exposure: exposureState,
                 },
               }
-            : env;
+            : {}),
+        };
 
         const harnessReadyStart = performance.now();
         const harness = await createHarness(def, harnessEnv);

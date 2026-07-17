@@ -29,7 +29,7 @@ const KIND_META: Record<
   principal: {
     label: "Person",
     Icon: User,
-    href: (ctx) => `/admin/principals/${encodeURIComponent(ctx.id)}`,
+    href: (ctx) => `/settings/admin/principals/${encodeURIComponent(ctx.id)}`,
   },
 };
 

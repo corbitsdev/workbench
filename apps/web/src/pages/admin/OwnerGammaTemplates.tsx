@@ -13,7 +13,7 @@ export function OwnerGammaTemplates() {
   return (
     <div className="space-y-4">
       <Link
-        to="/owner/capabilities"
+        to="/settings/owner/capabilities"
         className="inline-flex items-center gap-1.5 text-[12.5px] text-text-3 transition-[color] hover:text-text"
       >
         <ArrowLeft size={14} />

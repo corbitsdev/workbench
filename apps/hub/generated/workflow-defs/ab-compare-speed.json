@@ -3,6 +3,71 @@
   "version": "0.1.0",
   "label": "A/B Compare - Speed",
   "description": "Run one shared prompt blind across four low-latency models (DeepSeek V4 Flash, Gemini 3.5 Flash, Claude Haiku, GPT-5.4 Nano), then pick the winner.",
+  "displayFlow": [
+    {
+      "key": "config",
+      "label": "Prompt",
+      "stepIds": [
+        "config"
+      ]
+    },
+    {
+      "key": "exec0",
+      "label": "Variant 1",
+      "stepIds": [
+        "exec0"
+      ]
+    },
+    {
+      "key": "exec1",
+      "label": "Variant 2",
+      "stepIds": [
+        "exec1"
+      ]
+    },
+    {
+      "key": "exec2",
+      "label": "Variant 3",
+      "stepIds": [
+        "exec2"
+      ]
+    },
+    {
+      "key": "exec3",
+      "label": "Variant 4",
+      "stepIds": [
+        "exec3"
+      ]
+    },
+    {
+      "key": "quorum",
+      "label": "Check models",
+      "stepIds": [
+        "quorum"
+      ]
+    },
+    {
+      "key": "decision",
+      "label": "Decision",
+      "stepIds": [
+        "decision"
+      ]
+    },
+    {
+      "key": "compose",
+      "label": "Compile",
+      "stepIds": [
+        "compose"
+      ]
+    },
+    {
+      "key": "persist",
+      "label": "Save",
+      "stepIds": [
+        "persist"
+      ]
+    }
+  ],
   "requiresIntake": false,
   "humanGateCount": 2,
   "definition": {

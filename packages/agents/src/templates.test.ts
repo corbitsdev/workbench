@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { AGENT_TEMPLATES, isReapableChatAgent } from "./templates";
+import { AGENT_TEMPLATES, isReapableAgentInstance } from "./templates";
 
 describe("AGENT_TEMPLATES", () => {
   const inferenceProviderNames = new Set(["anthropic", "openai-compatible"]);
@@ -23,10 +23,19 @@ describe("AGENT_TEMPLATES", () => {
       "lincoln",
       "loop",
       "myra",
+      "myra-chat-deepseek-v4-flash",
+      "myra-chat-opus-4-8",
       "myra-triage",
+      "myra-triage-kimi-k2-6",
+      "myra-triage-opus-4-8",
       "oat",
       "walter",
     ]);
+  });
+
+  it("registers the canonical Myra chat template on kimi-k2.6", () => {
+    const myra = AGENT_TEMPLATES.find((t) => t.key === "myra");
+    expect(myra?.modelConfig).toEqual({ defaultModel: "kimi-k2.6" });
   });
 
   it("registers the Myra Triage variant on the flash model, not deployed to the catalog", () => {
@@ -84,8 +93,11 @@ describe("AGENT_TEMPLATES", () => {
   // tool on Myra herself, stays out.
   it("no template has any mail tool except Myra's mail_send", () => {
     for (const template of AGENT_TEMPLATES) {
+      // Every Myra variant (canonical `myra`/`myra-triage` and the generated
+      // per-model chat/triage definitions) seeds the full Myra base toolset,
+      // which includes mail_send; no other agent does.
       const expectsMailSend =
-        template.key === "myra" || template.key === "myra-triage";
+        template.key === "myra" || template.key.startsWith("myra-");
       expect(template.capabilities.tools.includes("mail_send")).toBe(
         expectsMailSend,
       );
@@ -104,32 +116,69 @@ describe("AGENT_TEMPLATES", () => {
   });
 });
 
-describe("isReapableChatAgent", () => {
-  it("reaps ONLY the personal agent (the only one with an on-demand wake); never a shared agent", () => {
-    // CL-2790: Myra (kind:"personal") wakes via POST /v1/me. Oat is a shared,
-    // deployable chat agent but has NO wake trigger on its next message — a
-    // slept Oat would 502 with no self-heal — so it must NOT be reaped until the
-    // universal delivery-seam wake lands.
+describe("isReapableAgentInstance", () => {
+  it("reaps the personal agent AND a shared agent — reaping is universal over kind", () => {
+    // The reaper is universal now: template `kind` (or lack of it)
+    // no longer gates reapability. Myra wakes via the chat-surface sessions
+    // route; Oat now wakes via the mail-route relaunch (relaunchInstanceIfNeeded)
+    // ahead of interchange's mail-send route.
     const myra = AGENT_TEMPLATES.find((t) => t.key === "myra");
     const oat = AGENT_TEMPLATES.find((t) => t.key === "oat");
     expect(myra?.kind).toBe("personal");
     expect(oat).toBeDefined();
     expect(oat?.deployable).not.toBe(false);
-    expect(isReapableChatAgent(myra!.name)).toBe(true);
-    expect(isReapableChatAgent(oat!.name)).toBe(false);
+    expect(isReapableAgentInstance(myra!.name)).toBe(true);
+    expect(isReapableAgentInstance(oat!.name)).toBe(true);
   });
 
-  it("never reaps the non-chat system agents (Loop, file-parser)", () => {
+  it("never reaps a self-driven agent (Loop) — its interval schedule has no mail to wake it", () => {
     const loop = AGENT_TEMPLATES.find((t) => t.key === "loop");
+    expect(loop?.selfDriven).toBe(true);
+    expect(isReapableAgentInstance(loop!.name)).toBe(false);
+  });
+
+  it("reaps other non-personal shared agents (Walter) — kind does not matter", () => {
+    const walter = AGENT_TEMPLATES.find((t) => t.key === "walter");
+    expect(walter).toBeDefined();
+    expect(walter?.kind).toBeUndefined();
+    expect(isReapableAgentInstance(walter!.name)).toBe(true);
+  });
+
+  it("never reaps the ephemeral single-purpose file-parser invocation", () => {
     const fileParser = AGENT_TEMPLATES.find((t) => t.key === "file-parser");
-    expect(loop?.deployable).toBe(false);
-    expect(fileParser?.deployable).toBe(false);
-    expect(isReapableChatAgent(loop!.name)).toBe(false);
-    expect(isReapableChatAgent(fileParser!.name)).toBe(false);
+    expect(fileParser?.ephemeral).toBe(true);
+    expect(isReapableAgentInstance(fileParser!.name)).toBe(false);
   });
 
   it("never reaps an unrecognized agent name", () => {
-    expect(isReapableChatAgent("Some Unknown Agent")).toBe(false);
-    expect(isReapableChatAgent("")).toBe(false);
+    expect(isReapableAgentInstance("Some Unknown Agent")).toBe(false);
+    expect(isReapableAgentInstance("")).toBe(false);
+  });
+
+  it("reaps a non-canonical Myra chat variant exactly like the canonical agent", () => {
+    const variantChat = AGENT_TEMPLATES.find(
+      (t) => t.key === "myra-chat-deepseek-v4-flash",
+    );
+    const myra = AGENT_TEMPLATES.find((t) => t.key === "myra");
+    expect(variantChat).toBeDefined();
+    expect(variantChat?.kind).toBe("personal");
+    expect(variantChat?.kind).toBe(myra?.kind);
+    expect(isReapableAgentInstance(variantChat!.name)).toBe(true);
+  });
+
+  it("does not reap a Myra triage variant — ephemeral, never a chat surface", () => {
+    const variantTriage = AGENT_TEMPLATES.find(
+      (t) => t.key === "myra-triage-kimi-k2-6",
+    );
+    expect(variantTriage).toBeDefined();
+    expect(variantTriage?.kind).toBeUndefined();
+    expect(variantTriage?.ephemeral).toBe(true);
+    expect(isReapableAgentInstance(variantTriage!.name)).toBe(false);
+  });
+
+  it("does not reap the canonical Myra Triage template — ephemeral", () => {
+    const triage = AGENT_TEMPLATES.find((t) => t.key === "myra-triage");
+    expect(triage?.ephemeral).toBe(true);
+    expect(isReapableAgentInstance(triage!.name)).toBe(false);
   });
 });

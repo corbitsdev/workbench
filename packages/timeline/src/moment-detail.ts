@@ -28,12 +28,36 @@ export const MomentTurnPartSchema = type({
 });
 export type MomentTurnPart = typeof MomentTurnPartSchema.infer;
 
+/**
+ * One message from the conversation the model received as input for a turn,
+ * projected from the hub-durable agent-state repo's `ConversationTurn[]` to a
+ * render-ready `{ role, kind, text }`. `kind: "tool_result"` marks a `user`
+ * turn whose content is a tool result (a continuation, not a fresh prompt).
+ */
+export const MomentTurnInputMessageSchema = type({
+  role: "'system' | 'user' | 'assistant'",
+  kind: "'message' | 'tool_result'",
+  text: "string",
+});
+export type MomentTurnInputMessage = typeof MomentTurnInputMessageSchema.infer;
+
 /** An inference turn's model, wall-clock duration, and ordered parts. */
 export const MomentTurnDetailSchema = type({
   model: "string | null",
   /** endedAt - startedAt in ms; null while the turn is still running. */
   durationMs: "number | null",
   parts: MomentTurnPartSchema.array(),
+  /**
+   * The conversation the model received for this turn (system prompt + prior
+   * messages + tool results), read from the hub-durable agent-state repo.
+   * Absent when `inputGap` explains why it could not be reconstructed.
+   */
+  "input?": MomentTurnInputMessageSchema.array(),
+  /**
+   * An honest reason the input could not be shown (no state repo, history
+   * pruned by compaction, or no snapshot precedes the turn). Never fabricated.
+   */
+  "inputGap?": "string",
 });
 export type MomentTurnDetail = typeof MomentTurnDetailSchema.infer;
 
@@ -146,6 +170,10 @@ export function buildTurnDetailQuery(scope: MomentDetailScope): SQL {
   return sql`
     select
       it.model as model,
+      it.instance_id as instance_id,
+      it.status as status,
+      it.started_at as started_at,
+      it.ended_at as ended_at,
       case
         when it.ended_at is not null
         then extract(epoch from (it.ended_at - it.started_at)) * 1000

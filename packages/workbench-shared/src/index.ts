@@ -1,6 +1,7 @@
 import { type } from "arktype";
 
 export * from "./palette";
+export * from "./gate-mail-copy";
 export * from "./myra-thread";
 export * from "./active-context";
 export * from "./attio-task-agent";
@@ -276,6 +277,40 @@ export type SavedRating = typeof SavedRating.infer;
 
 export const FeedbackListResponse = type({ ratings: SavedRating.array() });
 export type FeedbackListResponse = typeof FeedbackListResponse.infer;
+
+// A persisted reference from a chat mail message to the file artifact its
+// upload was diverted into. Attachments never ride inline on mail (the model
+// would receive them — images inline, documents fail the turn), so the
+// transcript chip is rehydrated from these workbench-owned references instead.
+// `type` matches the ChatAttachment field name so refs render without mapping.
+export const MailAttachmentRefSchema = type({
+  mailId: "string > 0",
+  artifactId: "string > 0",
+  name: "string > 0",
+  type: "string > 0",
+  size: "number >= 0",
+});
+export type MailAttachmentRef = typeof MailAttachmentRefSchema.infer;
+
+export const SaveMailAttachmentRefsRequest = type({
+  mailId: "string > 0",
+  attachments: type({
+    artifactId: "string > 0",
+    name: "string > 0",
+    type: "string > 0",
+    size: "number >= 0",
+  })
+    .array()
+    .atLeastLength(1),
+});
+export type SaveMailAttachmentRefsRequest =
+  typeof SaveMailAttachmentRefsRequest.infer;
+
+export const MailAttachmentRefsResponse = type({
+  refs: MailAttachmentRefSchema.array(),
+});
+export type MailAttachmentRefsResponse =
+  typeof MailAttachmentRefsResponse.infer;
 
 // Per-member UI preferences, persisted server-side and shared by the hub route,
 // the web boundary parser, and the Settings UI. Known keys are validated; the

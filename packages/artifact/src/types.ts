@@ -59,6 +59,8 @@ export const GalleryArtifactSchema = ArtifactVisualSchema.and({
   "provenanceTone?": "'free'|'origin'|'unknown'",
   status: "'draft'|'approved'|'rejected'",
   "previewExcerpt?": "string",
+  "thumbnailUrl?": "string",
+  "thumbnailAlt?": "string",
 });
 
 export type GalleryArtifact = typeof GalleryArtifactSchema.infer;

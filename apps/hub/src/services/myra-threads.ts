@@ -12,10 +12,9 @@ import type { AnalyticsSubscriber } from "@workbench/analytics";
 import { randomUUID } from "node:crypto";
 import { join } from "node:path";
 import { AGENT_TEMPLATES } from "@workbench/agents";
-import {
-  PERSONAL_AGENT_NAME,
-  PERSONAL_AGENT_TRIAGE_NAME,
-} from "@workbench/myra";
+import { PERSONAL_AGENT_NAME } from "@workbench/myra";
+import { readMyraVariantPreference } from "./myra-variant-preferences";
+import { resolveLaunchableMyraVariant } from "./myra-variant-availability";
 import {
   isDefaultMyraThreadLabel,
   myraThreadTitleFromFirstMessage,
@@ -35,7 +34,8 @@ import { decryptToolCredentialSecret } from "../lib/credential-crypto";
 
 const log = getLogger(["api", "myra-threads"]);
 
-const { agent, agentInstance, agentSession, principal, grant } = intxSchema;
+const { agent, agentInstance, agentSession, principal, grant, inferenceTurn } =
+  intxSchema;
 
 export const MYRA_TEMPLATE_KEY = "myra";
 
@@ -58,6 +58,25 @@ export type MyraThreadRow = {
 };
 
 export type MyraThreadListRow = MyraThreadRow;
+
+/**
+ * True when an instance has at least one recorded inference turn. `firstMessageAt`
+ * is stamped only by the HTTP mail middleware on a user POST — agent-initiated
+ * mail delivered over the sidecar/WS plane never stamps it, so a thread with a
+ * real transcript can still look "anonymous unused" by the firstMessageAt-null
+ * heuristic. inferenceTurn rows are written for every turn regardless of which
+ * plane delivered the message, so they are the reliable transcript check.
+ */
+async function instanceHasTranscript(
+  db: HubDb,
+  instanceId: string,
+): Promise<boolean> {
+  const turn = await db.query.inferenceTurn.findFirst({
+    where: eq(inferenceTurn.instanceId, instanceId),
+    columns: { id: true },
+  });
+  return turn !== undefined;
+}
 
 function defaultThreadLabel(index: number): string {
   if (index === 0) return "Chat";
@@ -103,16 +122,19 @@ export async function resolveMyraDefinition(
 }
 
 /**
- * Resolve the ephemeral inbox-triage variant of Myra (CL-3364) — a distinct
- * agent definition ("Myra Triage") bound to the cheap flash model, since
- * model binds at the definition level and there is no per-launch override in
- * `launchAgentSession`. Same ancestor-chain resolution as `resolveMyraDefinition`.
+ * Resolve the seeded definition backing a specific Myra variant (chat or
+ * triage) in the tenant hierarchy, keyed by the variant's `seedName`. The
+ * canonical chat variant resolves the same row as `resolveMyraDefinition`;
+ * the canonical triage variant resolves "Myra Triage" (`PERSONAL_AGENT_TRIAGE_NAME`);
+ * non-canonical variants resolve their own per-model definition. Returns null
+ * when that definition is not seeded.
  */
-export async function resolveMyraTriageDefinition(
+export async function resolveMyraVariantDefinition(
   db: HubDb,
   tenantId: string,
+  variant: { seedName: string },
 ): Promise<typeof agent.$inferSelect | null> {
-  return resolveAgentDefinitionByName(db, tenantId, PERSONAL_AGENT_TRIAGE_NAME);
+  return resolveAgentDefinitionByName(db, tenantId, variant.seedName);
 }
 
 export type MyraThreadPage = {
@@ -235,6 +257,41 @@ export async function createMyraThread(
     throw new Error("Myra template is not registered");
   }
 
+  // Lazy variant binding: read the member's default chat-variant selection and
+  // derive the definition to deploy from it. Availability-gated so a stored
+  // pick whose model lost credentials falls through to a launchable default
+  // (CL-3824). Existing threads are untouched — this only affects the
+  // definition a NEW thread's instance is born with.
+  const variantPref = await readMyraVariantPreference(
+    db,
+    opts.tenantId,
+    opts.memberPrincipalId,
+  );
+  const variant = await resolveLaunchableMyraVariant(
+    db,
+    opts.tenantId,
+    "chat",
+    variantPref.chat,
+  );
+
+  // A non-canonical variant deploys its own seeded definition verbatim (no
+  // reseed — the reseed staleness path is specific to the canonical `myra`
+  // template). A missing variant definition is a seed gap, not a fallback case:
+  // fail loudly rather than silently launching the wrong model.
+  if (!variant.isDefault) {
+    const variantDef = await resolveAgentDefinitionByName(
+      db,
+      opts.tenantId,
+      variant.seedName,
+    );
+    if (!variantDef) {
+      throw new Error(
+        `Myra variant definition "${variant.seedName}" is not seeded in this tenant hierarchy`,
+      );
+    }
+    return createMyraThreadForDefinition(db, opts, variantDef);
+  }
+
   let def = await resolveMyraDefinition(db, opts.tenantId);
   if (!def) {
     throw new Error(
@@ -279,6 +336,28 @@ export async function createMyraThread(
     }
   }
 
+  return createMyraThreadForDefinition(db, opts, def);
+}
+
+type CreateMyraThreadOpts = {
+  tenantId: string;
+  tenantDomain: string;
+  memberPrincipalId: string;
+  label?: string;
+};
+
+/**
+ * Create the rows for a new Myra thread bound to a specific definition `def`
+ * (the canonical Myra def, or a member-selected variant def). The thread stays
+ * a `myra`-templateKey thread regardless of which variant definition backs it,
+ * so it lists and behaves as a normal Myra chat; only the deployed instance's
+ * `agentId` (and thus its model) differs.
+ */
+async function createMyraThreadForDefinition(
+  db: HubDb,
+  opts: CreateMyraThreadOpts,
+  def: typeof agent.$inferSelect,
+): Promise<{ thread: MyraThreadRow; created: boolean }> {
   const now = new Date();
   const instanceId = generateId("instance");
   let instancePrincipalId = "";
@@ -310,7 +389,15 @@ export async function createMyraThread(
     const unused = existingCount.find(
       (row) => isAnonymousUnused(row) && row.agentId === def.id,
     );
-    if (unused) {
+    // A thread this heuristic calls "anonymous unused" can still carry a real
+    // transcript delivered over the sidecar/WS plane, which never stamps
+    // firstMessageAt. Reusing it would land "+ New chat" on a non-empty
+    // conversation, so it must be skipped (not reaped — it has user-visible
+    // content) and a fresh thread created instead.
+    const unusedHasTranscript =
+      unused !== undefined &&
+      (await instanceHasTranscript(db, unused.instanceId));
+    if (unused && !unusedHasTranscript) {
       return {
         created: false,
         thread: {
@@ -327,12 +414,17 @@ export async function createMyraThread(
     // hidden from every list, and have no UI path to delete — reap them here,
     // best-effort, so a def reseed doesn't strand deployed instances forever.
     // A failure must not block the create; the row just waits for a later
-    // attempt.
+    // attempt. A row carrying a transcript (same WS-plane gap as the reuse
+    // check above) must be skipped, not reaped: teardownThreadRows deletes the
+    // agentInstance, cascading its inferenceTurn rows, which would permanently
+    // destroy the transcript. A stranded hidden row is recoverable later; a
+    // destroyed transcript is not.
     const stale = existingCount.filter(
       (row) => isAnonymousUnused(row) && row.agentId !== def.id,
     );
     for (const row of stale) {
       try {
+        if (await instanceHasTranscript(db, row.instanceId)) continue;
         const staleInstance = await db.query.agentInstance.findFirst({
           where: eq(agentInstance.id, row.instanceId),
         });

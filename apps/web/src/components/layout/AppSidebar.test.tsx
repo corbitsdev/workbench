@@ -1,7 +1,7 @@
 /// <reference types="bun" />
 import "../../test-setup";
 import { afterEach, describe, expect, it, mock } from "bun:test";
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, render, screen } from "@testing-library/react";
 import React from "react";
 import { MemoryRouter } from "react-router";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -184,15 +184,19 @@ describe("AppSidebar", () => {
   });
 
   it("hides the Demos section entirely when the payload carries no demo links", async () => {
-    sidebarIsAdmin = true;
+    sidebarDemoLinks = DEMO_FIXTURE;
+    renderSidebar();
+    // Wait for the async /me payload to land (a demo link appears), then
+    // re-render with an empty payload and confirm the section is gone.
+    await screen.findByRole("link", { name: /deal scout/i });
+    cleanup();
     sidebarDemoLinks = [];
     renderSidebar();
-    // The Admin link only renders once the async /me query resolves, so waiting
-    // for it proves the payload was applied — and demos are still absent.
-    await screen.findByRole("link", { name: /admin/i });
+    // Let the mocked /me promise settle so absence is post-payload, not
+    // just pre-fetch.
+    await new Promise((resolve) => setTimeout(resolve, 10));
     expect(screen.queryByText("Demos")).toBeNull();
     expect(screen.queryByRole("link", { name: /deal scout/i })).toBeNull();
-    sidebarIsAdmin = false;
   });
 
   it("calls onNavigate when a demo link is selected so the drawer can close", async () => {
@@ -220,42 +224,23 @@ describe("AppSidebar", () => {
     expect(screen.queryByRole("link", { name: /^tools$/i })).toBeNull();
   });
 
-  it("does not put Admin in the main nav list", async () => {
+  it("shows no Admin or Owner entry anywhere in the sidebar, even for admins (management lives under Settings)", async () => {
     sidebarIsAdmin = true;
+    sidebarDemoLinks = DEMO_FIXTURE;
     renderSidebar();
-    await waitFor(() => {
-      expect(screen.getByRole("link", { name: /^admin$/i })).toBeTruthy();
-    });
-    const mainNav = screen.getByRole("navigation", {
-      name: /main navigation/i,
-    });
-    expect(mainNav.querySelector('a[href="/admin"]')).toBeNull();
-  });
-
-  it("shows Admin as a footer icon immediately left of Settings for admins only", async () => {
-    sidebarIsAdmin = false;
-    renderSidebar();
+    // Wait for the async /me payload to land (a demo link appears) so the
+    // absence assertions run post-payload, when an Admin entry would render
+    // if one still existed.
+    await screen.findByRole("link", { name: /deal scout/i });
     expect(screen.queryByRole("link", { name: /^admin$/i })).toBeNull();
+    expect(screen.queryByRole("link", { name: /^owner$/i })).toBeNull();
+    expect(document.querySelector('a[href="/settings/admin"]')).toBeNull();
+    expect(document.querySelector('a[href="/settings/owner"]')).toBeNull();
     expect(
       (
         screen.getByRole("link", { name: /settings/i }) as HTMLAnchorElement
       ).getAttribute("href"),
     ).toBe("/settings");
-
-    cleanup();
-    sidebarIsAdmin = true;
-    renderSidebar();
-    await waitFor(() => {
-      const admin = screen.getByRole("link", {
-        name: /^admin$/i,
-      }) as HTMLAnchorElement;
-      expect(admin.getAttribute("href")).toBe("/admin");
-      const settings = screen.getByRole("link", {
-        name: /settings/i,
-      }) as HTMLAnchorElement;
-      // Footer cluster: Admin is the immediate previous sibling of Settings.
-      expect(admin.nextElementSibling).toBe(settings);
-    });
   });
 
   it("does not show Sign out in the sidebar footer", () => {

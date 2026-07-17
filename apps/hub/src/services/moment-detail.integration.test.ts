@@ -7,13 +7,32 @@ import {
   test,
 } from "bun:test";
 
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+
 import { PGlite } from "@electric-sql/pglite";
 import { drizzle } from "drizzle-orm/pglite";
 import { pushSchema } from "drizzle-kit/api";
+import { createIsogitStore } from "@workbench/storage-isogit";
+import type { AgentRepoStore } from "@intx/hub-sessions";
+import type { ConversationTurn } from "@intx/types/runtime";
+import git from "isomorphic-git";
 
 import { schema } from "../db";
 import type { HubDb } from "../db";
 import { getMomentDetail } from "./moment-detail";
+
+// A repo store rooted at a temp dir: `getAgentDir(address)` resolves to
+// `<root>/<address>`, so a test can seed a real agent-state git repo at the
+// path a given instance address maps to (or leave it absent for the gap path).
+let repoRoot: string;
+const repoStore = {
+  repoStore: {
+    getRepoDir: (repoId: { kind: string; id: string }) =>
+      path.join(repoRoot, repoId.id),
+  },
+} as unknown as AgentRepoStore;
 
 // Real-Postgres proof of the detail-expansion joins (CL-2738). The shallow
 // timeline projection drops tool inputs/outputs, turn parts, and durations;
@@ -132,7 +151,14 @@ async function seedRun(args: {
 }
 
 function detail(kind: string, id: string, principalId = PRINCIPAL) {
-  return getMomentDetail({ db, tenantId: TENANT, principalId, kind, id });
+  return getMomentDetail({
+    db,
+    repoStore,
+    tenantId: TENANT,
+    principalId,
+    kind,
+    id,
+  });
 }
 
 beforeAll(async () => {
@@ -142,10 +168,14 @@ beforeAll(async () => {
   await apply();
   await client.exec(`SET session_replication_role = 'replica';`);
   db = bootstrap as unknown as HubDb;
+  repoRoot = await fs.promises.mkdtemp(path.join(os.tmpdir(), "cl3786-int-"));
 });
 
 afterAll(async () => {
   await client?.close();
+  if (repoRoot !== undefined) {
+    await fs.promises.rm(repoRoot, { recursive: true, force: true });
+  }
 });
 
 beforeEach(async () => {
@@ -264,6 +294,81 @@ describe("inference_turn detail — parts and derived duration", () => {
     expect(result?.turn?.parts.map((p) => p.type)).toEqual(["text", "tool"]);
     const toolPart = result?.turn?.parts.find((p) => p.type === "tool");
     expect(toolPart?.toolName).toBe("lookup");
+  });
+
+  async function seedInstance(address: string): Promise<void> {
+    await client.query(
+      `insert into agent_instance (id, agent_id, tenant_id, principal_id, address, status, created_at, updated_at)
+       values ('ins-x', 'agt-x', $1, $2, $3, 'running', now(), now())`,
+      [TENANT, PRINCIPAL, address],
+    );
+  }
+
+  test("attaches the input conversation reconstructed from the agent-state repo", async () => {
+    await seedSession("ses-in");
+    await seedInstance("myra_at_tenant");
+    const dir = path.join(repoRoot, "myra_at_tenant");
+    await createIsogitStore(dir);
+    // This turn's inference-done checkpoint records the prompt the model
+    // received in prompt.jsonl, authored at endedAt.
+    const promptTurns: ConversationTurn[] = [
+      {
+        role: "system",
+        content: [{ type: "text", text: "You are Myra." }],
+        timestamp: 0,
+      },
+      {
+        role: "user",
+        content: [{ type: "text", text: "who is acme" }],
+        timestamp: 0,
+      },
+    ];
+    await fs.promises.writeFile(
+      path.join(dir, "prompt.jsonl"),
+      promptTurns.map((t) => JSON.stringify(t)).join("\n") + "\n",
+    );
+    await git.add({ fs, dir, filepath: "prompt.jsonl" });
+    await git.commit({
+      fs,
+      dir,
+      message: "checkpoint: inference-done",
+      author: {
+        name: "sidecar",
+        email: "sidecar@interchange.local",
+        timestamp: Math.floor(Date.parse("2026-07-01T10:00:02Z") / 1000),
+        timezoneOffset: 0,
+      },
+    });
+    await seedTurn({
+      id: "turn-in",
+      sessionId: "ses-in",
+      startedAt: "2026-07-01T10:00:00Z",
+      endedAt: "2026-07-01T10:00:02Z",
+    });
+
+    const result = await detail("inference_turn", "turn-in");
+    // The input is read straight from prompt.jsonl — the model's assembled prompt.
+    expect(result?.turn?.input?.map((m) => m.text)).toEqual([
+      "You are Myra.",
+      "who is acme",
+    ]);
+    expect(result?.turn?.input?.[0]?.role).toBe("system");
+    expect(result?.turn?.inputGap).toBeUndefined();
+  });
+
+  test("reports an honest input gap when the agent-state repo is absent", async () => {
+    await seedSession("ses-nog");
+    await seedInstance("myra_gone");
+    await seedTurn({
+      id: "turn-nog",
+      sessionId: "ses-nog",
+      startedAt: "2026-07-01T10:00:00Z",
+      endedAt: "2026-07-01T10:00:02Z",
+    });
+
+    const result = await detail("inference_turn", "turn-nog");
+    expect(result?.turn?.input).toBeUndefined();
+    expect(result?.turn?.inputGap).toContain("not available");
   });
 
   test("leaves duration null while the turn is still running", async () => {

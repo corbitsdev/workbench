@@ -35,12 +35,22 @@ import { useTourLauncher } from "../components/tour/OnboardingTour";
 import { useActiveWorkbench } from "../lib/active-workbench-context";
 import { WhatsNewSection } from "../components/whats-new/WhatsNewSection";
 import { MemberConnectionsPanel } from "../components/MemberConnectionsPanel";
+import { MyraDefaultsPanel } from "../components/MyraDefaultsPanel";
+import { MyraStylePanel } from "../components/MyraStylePanel";
+import { MyraPinnedSkillsPanel } from "../components/MyraPinnedSkillsPanel";
+import { MyraToolsPanel } from "../components/MyraToolsPanel";
+import { MyraInferenceDialsPanel } from "../components/MyraInferenceDialsPanel";
 import { MySchedules } from "../components/MySchedules";
-import { SettingsSectionNav } from "./SettingsSectionNav";
 import { MORNING_BRIEF_ANCHOR_ID } from "./settings-section-nav";
 import { useMyraVoiceInput } from "../hooks/use-myra-voice-input";
+import {
+  isFeatureEnabled,
+  useMeFeatures,
+} from "../hooks/use-me-features";
 
-function buildSections(myraVoiceBuildEnabled: boolean): SettingsSectionDescriptor[] {
+function buildSections(
+  myraVoiceBuildEnabled: boolean,
+): SettingsSectionDescriptor[] {
   return [
     {
       id: "profile",
@@ -151,6 +161,8 @@ export default function Settings() {
     enabled: myraVoiceInput,
     setEnabled: setMyraVoiceInput,
   } = useMyraVoiceInput();
+  const features = useMeFeatures();
+  const schedulerEnabled = isFeatureEnabled(features.data, "scheduler");
   const sections = useMemo(
     () => buildSections(myraVoiceBuildEnabled),
     [myraVoiceBuildEnabled],
@@ -227,6 +239,16 @@ export default function Settings() {
     el?.scrollIntoView({ block: "start" });
   }, [location.pathname]);
 
+  // Rail links from a management page arrive as /settings#<anchor> via router
+  // navigation, which (unlike a native same-page anchor click) does not scroll
+  // on its own — bring the targeted section into view.
+  useEffect(() => {
+    const anchorId = location.hash.replace(/^#/, "");
+    if (!anchorId) return;
+    const el = document.getElementById(anchorId);
+    el?.scrollIntoView({ block: "start" });
+  }, [location.hash]);
+
   const pageChrome = useMemo(
     () => (
       <AppPageChromeRow
@@ -240,152 +262,191 @@ export default function Settings() {
   useSetPageChrome(pageChrome);
 
   return (
-    <div className="h-full overflow-y-auto">
-      <div className="mx-auto w-full max-w-5xl px-4 py-6">
-        <p className="mb-6 text-sm text-text-3">
-          Manage your workbench preferences.
-        </p>
-        <div className="flex flex-col gap-10 lg:flex-row lg:gap-8">
-          <div className="lg:sticky lg:top-4 lg:self-start">
-            <SettingsSectionNav />
+    <div>
+      <p className="mb-6 text-sm text-text-3">
+        Manage your workbench preferences.
+      </p>
+      <div className="flex min-w-0 flex-1 flex-col gap-12">
+        <SettingsGroup
+          id="your-agent"
+          title="Your agent"
+          description="How Myra acts on your behalf."
+        >
+          <PreferencesPanel categories={["Agent"]} />
+        </SettingsGroup>
+
+        <SettingsGroup
+          id="myra-defaults"
+          title="Myra defaults"
+          description="Pick which Myra definition powers your chat and inbox automation."
+        >
+          <MyraDefaultsPanel tenantId={activeTenantId} />
+        </SettingsGroup>
+
+        <SettingsGroup
+          id="myra-style"
+          title="Personality & style"
+          description="Shape how Myra talks and works. Personality, emoji use, and UI type apply everywhere; artifact, tool, and skill usage can differ between chat and inbox automation."
+        >
+          <MyraStylePanel tenantId={activeTenantId} />
+        </SettingsGroup>
+
+        <SettingsGroup
+          id="myra-pinned-skills"
+          title="Pinned skills"
+          description="Pin procedures from your skill library so Myra sees an index of them when starting new chats or inbox runs."
+        >
+          <MyraPinnedSkillsPanel tenantId={activeTenantId} />
+        </SettingsGroup>
+
+        <SettingsGroup
+          id="myra-tools"
+          title="Tools & integrations"
+          description="Turn off catalog tool packages or individual tools for your Myra. You can only narrow what your workspace already allows."
+        >
+          <MyraToolsPanel tenantId={activeTenantId} />
+        </SettingsGroup>
+
+        <SettingsGroup
+          id="myra-inference"
+          title="Inference dials"
+          description="Tune Creative and Thinking per surface. Controls shown depend on the model behind your selected Myra variant."
+        >
+          <MyraInferenceDialsPanel tenantId={activeTenantId} />
+        </SettingsGroup>
+
+        <SettingsGroup
+          id="inbox-capabilities"
+          title="Your inbox & brief"
+          description={
+            schedulerEnabled
+              ? "What lands in your inbox, and when your morning brief arrives."
+              : "What lands in your inbox."
+          }
+        >
+          <div id={MORNING_BRIEF_ANCHOR_ID} className="scroll-mt-4">
+            <PreferencesPanel categories={["Automations"]} />
           </div>
-          <div className="flex min-w-0 flex-1 flex-col gap-12">
-            <SettingsGroup
-              id="your-agent"
-              title="Your agent"
-              description="How Myra acts on your behalf."
-            >
-              <PreferencesPanel categories={["Agent"]} />
-            </SettingsGroup>
+          <PreferencesPanel categories={["Inbox", "Notifications"]} />
+          <ConnectedToInboxPanel />
+        </SettingsGroup>
 
-            <SettingsGroup
-              id="inbox-capabilities"
-              title="Your inbox & brief"
-              description="What lands in your inbox, and when your morning brief arrives."
-            >
-              <div id={MORNING_BRIEF_ANCHOR_ID} className="scroll-mt-4">
-                <PreferencesPanel categories={["Automations"]} />
-              </div>
-              <PreferencesPanel categories={["Inbox", "Notifications"]} />
-              <ConnectedToInboxPanel />
-            </SettingsGroup>
+        <SettingsGroup
+          id="connections"
+          title="Connections"
+          description="Connect your accounts to bring outside data into the workbench."
+        >
+          <MemberConnectionsPanel />
+        </SettingsGroup>
 
-            <SettingsGroup
-              id="connections"
-              title="Connections"
-              description="Connect your accounts to bring outside data into the workbench."
-            >
-              <MemberConnectionsPanel />
-            </SettingsGroup>
+        {schedulerEnabled && (
+          <SettingsGroup
+            id="schedules"
+            title="Schedules"
+            description="Workflows you've put on a daily cadence — pause, retime, or remove them here."
+          >
+            <MySchedules tenantId={activeTenantId} embedded />
+          </SettingsGroup>
+        )}
 
-            <SettingsGroup
-              id="schedules"
-              title="Schedules"
-              description="Workflows you've put on a daily cadence — pause, retime, or remove them here."
-            >
-              <MySchedules tenantId={activeTenantId} embedded />
-            </SettingsGroup>
-
-            <SettingsGroup id="account" title="Account">
-              <PreferencesPanel categories={["General"]} />
-              <div className="rounded-xl border border-border bg-surface p-5">
-                <SettingsPage
-                  title="Profile & appearance"
-                  className="w-full max-w-none px-0 py-0"
-                  sections={sections}
-                  values={{
-                    ...values,
-                    displayName,
-                    theme,
-                    compactToolActivity,
-                    toolSummaryStyle,
-                    experimentalArtifactCards,
-                    myraVoiceInput,
-                  }}
-                  onChange={handleChange}
-                />
-                {displayNameDirty && (
-                  <div className="mt-4 flex items-center gap-3">
-                    <button
-                      type="button"
-                      onClick={handleSaveDisplayName}
-                      disabled={saveMutation.isPending}
-                      className="rounded-lg bg-orange px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-orange-deep disabled:opacity-50"
-                    >
-                      {saveMutation.isPending ? "Saving…" : "Save display name"}
-                    </button>
-                    {saveMutation.isError && (
-                      <span className="text-sm text-red">
-                        Couldn't save. Try again.
-                      </span>
-                    )}
-                  </div>
-                )}
-                {saveMutation.isSuccess && (
-                  <p className="mt-4 text-sm text-green">Display name saved.</p>
-                )}
-                <div
-                  className={`mt-4 border-t border-border pt-4${compactToolActivity ? "" : " opacity-50"}`}
-                >
-                  <p className="mb-1 text-xs font-medium uppercase tracking-wide text-text-3">
-                    Example
-                    {!compactToolActivity &&
-                      " (turn on compact tool activity to use)"}
-                  </p>
-                  <p className="text-sm text-text-2">
-                    {summarizeToolCalls(
-                      TOOL_SUMMARY_PREVIEW_CALLS,
-                      toolSummaryStyle,
-                    )}
-                  </p>
-                </div>
-              </div>
-
-              <div className="rounded-xl border border-border bg-surface p-5">
+        <SettingsGroup id="account" title="Account">
+          <PreferencesPanel categories={["General"]} />
+          <div className="rounded-xl border border-border bg-surface p-5">
+            <SettingsPage
+              title="Profile & appearance"
+              className="w-full max-w-none px-0 py-0"
+              sections={sections}
+              values={{
+                ...values,
+                displayName,
+                theme,
+                compactToolActivity,
+                toolSummaryStyle,
+                experimentalArtifactCards,
+                myraVoiceInput,
+              }}
+              onChange={handleChange}
+            />
+            {displayNameDirty && (
+              <div className="mt-4 flex items-center gap-3">
                 <button
                   type="button"
-                  onClick={startTour}
-                  className="rounded-[10px] border border-border bg-page px-3 py-2 text-sm text-text transition-colors hover:bg-surface"
+                  onClick={handleSaveDisplayName}
+                  disabled={saveMutation.isPending}
+                  className="rounded-lg bg-orange px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-orange-deep disabled:opacity-50"
                 >
-                  Take the tour
+                  {saveMutation.isPending ? "Saving…" : "Save display name"}
                 </button>
-                <p className="mt-1 text-xs text-text-3">
-                  Replay the five-step introduction.
-                </p>
-              </div>
-
-              <div className="rounded-xl border border-border bg-surface p-5">
-                {buildShaQuery.isPending ? (
-                  // Reserve the line's height while loading so settling the
-                  // query causes no layout shift.
-                  <p className="h-4 animate-pulse font-mono text-xs text-text-3">
-                    build …
-                  </p>
-                ) : (
-                  // An unavailable SHA (null in local dev, an error, or an
-                  // unexpected shape) degrades to "build unknown" on purpose:
-                  // this is an operator diagnostic, not a user-facing
-                  // failure, so it must never surface a scary error.
-                  <p className="font-mono text-xs text-text-3">
-                    build {buildLabel}
-                  </p>
+                {saveMutation.isError && (
+                  <span className="text-sm text-red">
+                    Couldn't save. Try again.
+                  </span>
                 )}
-                <button
-                  type="button"
-                  onClick={() => void signOut()}
-                  className="mt-4 inline-flex items-center gap-2 rounded-lg border border-border bg-page px-3 py-2 text-sm text-text transition-colors hover:bg-surface"
-                >
-                  <LogOut size={14} />
-                  Sign out
-                </button>
               </div>
-            </SettingsGroup>
-
-            <SettingsGroup id="whats-new" title="What's new">
-              <WhatsNewSection />
-            </SettingsGroup>
+            )}
+            {saveMutation.isSuccess && (
+              <p className="mt-4 text-sm text-green">Display name saved.</p>
+            )}
+            <div
+              className={`mt-4 border-t border-border pt-4${compactToolActivity ? "" : " opacity-50"}`}
+            >
+              <p className="mb-1 text-xs font-medium uppercase tracking-wide text-text-3">
+                Example
+                {!compactToolActivity &&
+                  " (turn on compact tool activity to use)"}
+              </p>
+              <p className="text-sm text-text-2">
+                {summarizeToolCalls(
+                  TOOL_SUMMARY_PREVIEW_CALLS,
+                  toolSummaryStyle,
+                )}
+              </p>
+            </div>
           </div>
-        </div>
+
+          <div className="rounded-xl border border-border bg-surface p-5">
+            <button
+              type="button"
+              onClick={startTour}
+              className="rounded-[10px] border border-border bg-page px-3 py-2 text-sm text-text transition-colors hover:bg-surface"
+            >
+              Take the tour
+            </button>
+            <p className="mt-1 text-xs text-text-3">
+              Replay the five-step introduction.
+            </p>
+          </div>
+
+          <div className="rounded-xl border border-border bg-surface p-5">
+            {buildShaQuery.isPending ? (
+              // Reserve the line's height while loading so settling the
+              // query causes no layout shift.
+              <p className="h-4 animate-pulse font-mono text-xs text-text-3">
+                build …
+              </p>
+            ) : (
+              // An unavailable SHA (null in local dev, an error, or an
+              // unexpected shape) degrades to "build unknown" on purpose:
+              // this is an operator diagnostic, not a user-facing
+              // failure, so it must never surface a scary error.
+              <p className="font-mono text-xs text-text-3">
+                build {buildLabel}
+              </p>
+            )}
+            <button
+              type="button"
+              onClick={() => void signOut()}
+              className="mt-4 inline-flex items-center gap-2 rounded-lg border border-border bg-page px-3 py-2 text-sm text-text transition-colors hover:bg-surface"
+            >
+              <LogOut size={14} />
+              Sign out
+            </button>
+          </div>
+        </SettingsGroup>
+
+        <SettingsGroup id="whats-new" title="What's new">
+          <WhatsNewSection />
+        </SettingsGroup>
       </div>
     </div>
   );

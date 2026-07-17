@@ -72,6 +72,47 @@ describe("searchCatalog", () => {
     });
     expect(results.map((r) => r.package)).toEqual(["linear"]);
   });
+
+  test("matches a tool on its keywords corpus when name and description do not", () => {
+    const withKeywords: ToolCatalog = [
+      {
+        package: "attio",
+        summary: "Attio CRM records and tasks.",
+        tags: ["crm"],
+        tools: [
+          {
+            name: "attio__query_records",
+            description: "Query CRM records.",
+            keywords:
+              "Filter companies and people by revenue or headcount ranges.",
+          },
+        ],
+      },
+    ];
+    const results = searchCatalog(withKeywords, { query: "headcount" });
+    expect(results.map((r) => r.package)).toContain("attio");
+  });
+
+  test("keeps the friendly description as display text and never surfaces keywords", () => {
+    const withKeywords: ToolCatalog = [
+      {
+        package: "attio",
+        summary: "Attio CRM records and tasks.",
+        tags: ["crm"],
+        tools: [
+          {
+            name: "attio__query_records",
+            description: "Query CRM records.",
+            keywords: "headcount revenue firmographics",
+          },
+        ],
+      },
+    ];
+    const match = searchCatalog(withKeywords, { query: "firmographics" })[0]
+      ?.tools[0];
+    expect(match?.description).toBe("Query CRM records.");
+    expect((match as Record<string, unknown>).keywords).toBeUndefined();
+  });
 });
 
 describe("resolveLoadRequest", () => {
@@ -109,6 +150,12 @@ describe("resolveLoadRequest", () => {
 });
 
 describe("filterCatalogByAvailableTools", () => {
+  test("omits a package when no granted tools from that package remain", () => {
+    const granted = new Set(["linear__list_issues"]);
+    const filtered = filterCatalogByAvailableTools(catalog, granted);
+    expect(filtered.map((e) => e.package)).toEqual(["linear"]);
+    expect(searchCatalog(filtered, { query: "attio" })).toEqual([]);
+  });
   test("drops a package whose tools did not load (missing credential)", () => {
     const available = new Set(["attio__query_records", "attio__create_note"]);
     const filtered = filterCatalogByAvailableTools(catalog, available);

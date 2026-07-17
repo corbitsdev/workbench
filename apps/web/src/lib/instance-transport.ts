@@ -1,5 +1,10 @@
 import { ApiError, type Transport } from "@intx/hub-client";
 import { subscribeSharedEventStream } from "./shared-event-stream";
+import {
+  buildJsonRequestInit,
+  configuredApiBase,
+  readJsonOrNull,
+} from "./http";
 
 // Browser Transport for InstanceSession that targets the hub origin and sends
 // auth cookies. Interchange's stock createBrowserTransport issues relative,
@@ -8,7 +13,7 @@ import { subscribeSharedEventStream } from "./shared-event-stream";
 // separate origins (VITE_API_BASE_URL), so instance mail/turn/event calls must
 // be pointed at the hub and carry the session cookie, mirroring hub-api.ts.
 
-const apiBase: string = import.meta.env.VITE_API_BASE_URL ?? "";
+const apiBase = configuredApiBase;
 
 function toUrl(path: string): string {
   return new URL(path, apiBase || window.location.origin).toString();
@@ -49,19 +54,37 @@ export async function fetchBlobObjectUrl(
   return URL.createObjectURL(blob);
 }
 
+// Authenticated binary GET for a file artifact's bytes (a chat upload diverted
+// through the parse-file route). Mirrors fetchBlobObjectUrl; the caller owns
+// (and must revoke) the returned object URL.
+export async function fetchArtifactObjectUrl(
+  artifactId: string,
+): Promise<string> {
+  const path = `/api/v1/artifacts/${artifactId}/download`;
+  const res = await fetch(toUrl(path), {
+    method: "GET",
+    credentials: "include",
+  });
+  if (!res.ok) {
+    throw new ApiError(
+      res.status,
+      "artifact_fetch_failed",
+      `HTTP ${res.status}`,
+    );
+  }
+  const blob = await res.blob();
+  return URL.createObjectURL(blob);
+}
+
 export function createHubTransport(transportOpts?: {
   onStreamError?: (error: Error) => void;
 }): Transport {
   return {
     async fetch<T>(method: string, path: string, body?: unknown): Promise<T> {
-      const init: RequestInit = { method, credentials: "include" };
-      if (body !== undefined) {
-        init.headers = { "Content-Type": "application/json" };
-        init.body = JSON.stringify(body);
-      }
+      const init = buildJsonRequestInit(method, body);
       const res = await fetch(toUrl(path), init);
       if (!res.ok) {
-        const raw = (await res.json().catch(() => null)) as {
+        const raw = (await readJsonOrNull(res)) as {
           error?: { code?: string; message?: string };
         } | null;
         throw new ApiError(

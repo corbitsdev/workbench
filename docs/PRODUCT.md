@@ -72,7 +72,11 @@ Two ways work can start without a user opening the app:
   instance so Myra can check in on a cadence even if the user never sets up a
   schedule themselves. The **owner turns automations on or off** from the
   Capabilities page — scheduling, triage, and task sync are each a toggle,
-  disabled by default, with no deploy needed to flip them.
+  disabled by default, with no deploy needed to flip them. When the owner has
+  a capability off, the matching member controls **disappear from settings**
+  (morning brief time and schedules for scheduling; triage create for triage;
+  auto-send tasks for task sync) rather than showing as disabled grey knobs.
+  Re-enabling a capability restores each member's prior preference values.
 - **Webhook triggers** — a user can mint a webhook that starts a workflow run
   when an external system posts to it. The public endpoint is secret-authenticated
   and rate-limited per source IP to prevent abuse; a failed or unauthorized
@@ -116,6 +120,9 @@ retried in the background.
 ### Myra — Personal AI Agent
 
 Every user gets a personal AI agent named **Myra**. Myra acts as a Chief of Staff / Executive Assistant. Each user receives their own Myra instance (provisioned automatically on join) within the shared global org tenant. Myra can coordinate across workbenches and serves as the user's persistent, intelligent assistant throughout the platform.
+
+**Model defaults.** Members pick which Myra model to use for chat and for inbox triage from Settings. The picker only lists models the workspace can actually launch — a model appears when **any** of its catalog offerings has a credential (Bifrost, OpenCode Zen, native provider, etc.). A previously saved choice whose model is no longer launchable falls back to the catalog default among the remaining options (or the first still-launchable option) rather than surfacing a dead selection — both in Settings and when a new chat thread or triage wake binds a model.
+
 
 **Multi-thread chat.** The app's home surface is the Inbox (see below), but Myra chat remains the default way to work with the assistant directly. A user can run **multiple parallel Myra chats** ("threads") — each thread is a separate, full Myra (its own tools, skills, and history), not a saved transcript. Myra's durable **memory is shared across all of a user's threads**, not per-thread: what she learns in one chat (the standing brief on the person, durable facts, contacts) is available in the others. The widened left sidebar lists every thread with **+ New Chat**, and threads can be renamed or deleted. The app remembers the last-active thread, so reopening the app (or the docked quick-chat available on non-chat pages) lands the user back where they were. Workflow run history lives on its own **Workflows** page.
 

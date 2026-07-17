@@ -654,6 +654,60 @@ describe("0055 adds source_ref to artifact (CL-3577 review fix B)", () => {
   });
 });
 
+describe("0059 creates mail_attachment_ref", () => {
+  const sql = readFileSync(
+    join(import.meta.dir, "../../migrations/0059_mail_attachment_ref.sql"),
+    "utf-8",
+  );
+
+  it("creates the table with the expected columns", () => {
+    expect(sql).toMatch(/CREATE TABLE IF NOT EXISTS "mail_attachment_ref"/i);
+    for (const col of [
+      "id",
+      "tenant_id",
+      "principal_id",
+      "instance_id",
+      "mail_id",
+      "artifact_id",
+      "name",
+      "mime_type",
+      "size",
+      "created_at",
+    ]) {
+      expect(sql).toMatch(new RegExp(`"${col}"`));
+    }
+  });
+
+  it("dedupes per (mail_id, artifact_id) so a resend cannot double a chip", () => {
+    expect(sql).toMatch(
+      /CONSTRAINT "mail_attachment_ref_mail_artifact_uniq" UNIQUE \("mail_id", "artifact_id"\)/i,
+    );
+  });
+
+  it("indexes the per-instance read path", () => {
+    expect(sql).toMatch(
+      /CREATE INDEX IF NOT EXISTS "mail_attachment_ref_instance_idx"\s+ON "mail_attachment_ref" \("instance_id"\)/i,
+    );
+  });
+
+  it("touches NO interchange-owned table — refs key session_mail ids by value only", () => {
+    for (const table of [
+      "agent_session",
+      "session_mail",
+      "inference_turn",
+      "grant",
+      "credential",
+      "principal",
+      "tenant",
+      "agent_instance",
+    ]) {
+      expect(sql).not.toMatch(
+        new RegExp(`(ON|TABLE( IF NOT EXISTS)?) "${table}"`, "i"),
+      );
+    }
+  });
+});
+
 describe("0051 adds assignee_principal_id to task", () => {
   const sql = readFileSync(
     join(import.meta.dir, "../../migrations/0051_task_assignee.sql"),

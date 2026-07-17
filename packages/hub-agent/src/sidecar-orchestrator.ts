@@ -133,10 +133,17 @@ export type SidecarOrchestratorConfig = {
   maxReconnectDelayMs?: number;
   maxOutboundQueue?: number;
   scheduleReconnect?: ReconnectScheduler;
+  // WORKBENCH-LOCAL (CL-3826): per-attempt connect timeout forwarded to
+  // createHubLink so an attempt that blackholes (e.g. a redeploy overlap
+  // window) is abandoned and retried rather than stalling indefinitely.
+  connectTimeoutMs?: number;
   // WORKBENCH-LOCAL (CL-3103): idle-eviction threshold (ms) forwarded to
   // SessionManager. `0` disables eviction. The host also drives the periodic
   // sweep timer that calls `sessions.evictIdleSessions()`.
   idleEvictMs?: number;
+  // WORKBENCH-LOCAL (CL-3657): harness-build wedge-guard threshold (ms) forwarded to
+  // SessionManager. `0` disables the bound. Omitted leaves the package default.
+  buildTimeoutMs?: number;
 };
 
 export type SidecarOrchestrator = {
@@ -173,8 +180,12 @@ export function createSidecarOrchestrator(
     maxReconnectDelayMs,
     maxOutboundQueue,
     scheduleReconnect,
+    // WORKBENCH-LOCAL (CL-3826)
+    connectTimeoutMs,
     // WORKBENCH-LOCAL (CL-3103)
     idleEvictMs,
+    // WORKBENCH-LOCAL (CL-3657): harness-build wedge guard.
+    buildTimeoutMs,
   } = config;
 
   const repoStore = createAgentRepoStore({ dataDir });
@@ -235,6 +246,8 @@ export function createSidecarOrchestrator(
     },
     // WORKBENCH-LOCAL (CL-3103)
     ...(idleEvictMs !== undefined ? { idleEvictMs } : {}),
+    // WORKBENCH-LOCAL (CL-3657): harness-build wedge guard.
+    ...(buildTimeoutMs !== undefined ? { buildTimeoutMs } : {}),
   });
 
   const deployRouter = createDeployRouter({
@@ -278,6 +291,8 @@ export function createSidecarOrchestrator(
     ...(maxReconnectDelayMs !== undefined ? { maxReconnectDelayMs } : {}),
     ...(maxOutboundQueue !== undefined ? { maxOutboundQueue } : {}),
     ...(scheduleReconnect !== undefined ? { scheduleReconnect } : {}),
+    // WORKBENCH-LOCAL (CL-3826)
+    ...(connectTimeoutMs !== undefined ? { connectTimeoutMs } : {}),
   });
 
   dispatchEvent = hubLink.sendEvent;

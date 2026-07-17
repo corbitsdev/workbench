@@ -1,7 +1,12 @@
 import { useMemo, useRef, useState } from "react";
 import { Link } from "react-router";
-import { AlertCircle, ArrowRight, ChevronRight, Info } from "lucide-react";
-import { Badge, Skeleton } from "@workbench/ui";
+import { AlertCircle, ArrowRight, ChevronRight } from "lucide-react";
+import {
+  Badge,
+  formatDuration,
+  formatFullTimestamp,
+  Skeleton,
+} from "@workbench/ui";
 import type { MomentDetail, TimelineEntry } from "@workbench/client";
 import { KIND_META, relativeTime, timelineEntryTone } from "./timeline-kinds";
 import { describeActivityEntry } from "./activity-naming";
@@ -13,6 +18,7 @@ import {
 } from "./trace-links";
 import { usePrincipalActivity, useMomentDetail } from "./ActorTimeline";
 import { isPermissionDeniedError } from "./activity-error";
+import { PermissionCaveatBanner } from "./PermissionCaveatBanner";
 import { TraceOutputView } from "./trace-output-view";
 import {
   clampListIndex,
@@ -30,15 +36,6 @@ const DETAIL_ENRICHED_KINDS = new Set([
   "workflow_run",
 ]);
 
-function formatDuration(ms: number): string {
-  if (ms < 1000) return `${Math.round(ms)}ms`;
-  const seconds = ms / 1000;
-  if (seconds < 60) return `${seconds.toFixed(seconds < 10 ? 1 : 0)}s`;
-  const minutes = Math.floor(seconds / 60);
-  const rest = Math.round(seconds % 60);
-  return `${minutes}m ${rest}s`;
-}
-
 /** A quiet, single-line honest absence — no loud gold chip. */
 function Absent({
   children,
@@ -52,17 +49,6 @@ function Absent({
       {children}
     </span>
   );
-}
-
-function fullTimestamp(iso: string): string {
-  return new Date(iso).toLocaleString(undefined, {
-    year: "numeric",
-    month: "short",
-    day: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-  });
 }
 
 /** The colored moment dot, by entry kind — mirrors the legend hues. */
@@ -258,6 +244,63 @@ export function MomentDecomposition({
                 </span>
               </DecompRow>
             )}
+          {moment?.turn !== undefined && (
+            <DecompRow label="Input">
+              {moment.turn.input !== undefined ? (
+                <div
+                  className="flex flex-col gap-2"
+                  data-testid="moment-turn-input"
+                >
+                  {moment.turn.input.map((message, i) => (
+                    <div key={i} className="flex flex-col gap-0.5">
+                      <span className="font-mono text-[9px] uppercase tracking-[0.08em] text-text-3">
+                        {message.kind === "tool_result"
+                          ? "tool result"
+                          : message.role}
+                      </span>
+                      <TraceOutputView
+                        value={message.text}
+                        testId={`moment-turn-input-${i}`}
+                      />
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <Absent data-testid="moment-turn-input-gap">
+                  {moment.turn.inputGap ?? "Input is not available."}
+                </Absent>
+              )}
+            </DecompRow>
+          )}
+          {moment?.turn !== undefined &&
+            moment.turn.parts.some(
+              (p) => p.content !== null && p.content !== "",
+            ) && (
+              <DecompRow label="Output">
+                <div
+                  className="flex flex-col gap-2"
+                  data-testid="moment-turn-output"
+                >
+                  {moment.turn.parts
+                    .map((p, i) => ({ part: p, i }))
+                    .filter(
+                      ({ part }) =>
+                        part.content !== null && part.content !== "",
+                    )
+                    .map(({ part, i }) => (
+                      <div key={i} className="flex flex-col gap-0.5">
+                        <span className="font-mono text-[9px] uppercase tracking-[0.08em] text-text-3">
+                          {part.type}
+                        </span>
+                        <TraceOutputView
+                          value={part.content}
+                          testId={`moment-turn-output-${i}`}
+                        />
+                      </div>
+                    ))}
+                </div>
+              </DecompRow>
+            )}
         </>
       )}
 
@@ -293,7 +336,7 @@ export function MomentDecomposition({
 
       <DecompRow label="When">
         <span className="font-mono text-[11.5px] text-text-2">
-          {fullTimestamp(entry.timestamp)}
+          {formatFullTimestamp(entry.timestamp)}
         </span>
         <span className="ml-2 text-[11px] text-text-3">
           {elapsed !== null ? `· ${elapsed} after previous` : "· first loaded"}
@@ -359,9 +402,6 @@ export function MomentWalker({
   );
 
   const now = new Date();
-  const hasPermissionEntry = entries.some(
-    (e) => e.kind === "grant" || e.kind === "credential",
-  );
 
   const clampedSelected = clampListIndex(selected, entries.length);
 
@@ -440,19 +480,7 @@ export function MomentWalker({
         · each opens to what we recorded — and flags what isn&rsquo;t.
       </p>
 
-      {hasPermissionEntry && (
-        <p
-          data-testid="permission-caveat"
-          className="flex items-start gap-1.5 rounded-[10px] border border-border bg-surface px-3 py-2 text-[11px] leading-snug text-text-3"
-        >
-          <Info className="mt-px h-3 w-3 shrink-0" />
-          <span>
-            Grant and credential moments reflect current state only — past
-            changes, revocations, and whether a permission was exercised are not
-            recorded, so this is not a permission audit history.
-          </span>
-        </p>
-      )}
+      <PermissionCaveatBanner entries={entries} />
 
       <ul
         ref={listRef}
@@ -506,7 +534,7 @@ export function MomentWalker({
                 </span>
                 <time
                   dateTime={entry.timestamp}
-                  title={new Date(entry.timestamp).toLocaleString()}
+                  title={formatFullTimestamp(entry.timestamp)}
                   className="shrink-0 font-mono text-[10px] tabular-nums text-text-3"
                 >
                   {relativeTime(entry.timestamp, now)}

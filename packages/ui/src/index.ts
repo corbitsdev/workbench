@@ -22,10 +22,7 @@ export {
   type ComparisonResult,
   type ComparisonVariant,
 } from "./comparison-schema";
-export {
-  ComparisonView,
-  type ComparisonViewProps,
-} from "./comparison";
+export { ComparisonView, type ComparisonViewProps } from "./comparison";
 export { PagePanel } from "./PagePanel";
 export {
   DashboardSection,
@@ -103,6 +100,16 @@ export {
 } from "./motion";
 export { cn } from "./utils";
 export { toHumanLabel } from "@workbench/shared";
+export {
+  formatShortDateUtc,
+  formatShortDateRangeUtc,
+  formatDateTimeMedium,
+  formatFullTimestamp,
+  formatTimeOnly,
+  formatAbsoluteUtc,
+  formatRelativeTime,
+  formatDuration,
+} from "./format-date";
 export { inputFieldClass } from "./input-field";
 export {
   useTheme,

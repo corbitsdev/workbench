@@ -4,6 +4,10 @@ import { afterEach, beforeEach, describe, expect, it, mock } from "bun:test";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import React from "react";
 import { MemoryRouter, Route, Routes } from "react-router";
+import {
+  ActiveContextProvider,
+  useActiveContext,
+} from "../lib/active-context-store";
 
 type ThreadItem = {
   id: string;
@@ -60,20 +64,38 @@ mock.module("../hooks/use-myra-threads", () => ({
   resolveActiveThread: (threads: ThreadItem[], explicit?: string | null) => {
     if (!threads || threads.length === 0) return null;
     if (explicit) {
-      const m = threads.find((t) => t.id === explicit);
-      if (m) return m;
+      return threads.find((t) => t.id === explicit) ?? null;
     }
     return threads[0];
   },
+  isDefaultThreadLabel: (label: string) => /^Chat( \d+)?$/.test(label.trim()),
 }));
 
 mock.module("../hooks/use-myra-session", () => ({
   useMyraSession: () => sessionResult,
 }));
 
+type RosterResult = { data?: { instances: unknown[] } };
+let rosterResult: RosterResult = { data: { instances: [] } };
+mock.module("../hooks/use-tenant-roster", () => ({
+  useTenantRoster: () => rosterResult,
+}));
+
+type AgentInstanceRow = {
+  id: string;
+  name: string;
+  address: string;
+  status: string;
+};
+let agentInstancesResult: { data?: AgentInstanceRow[] } = { data: [] };
+mock.module("../hooks/use-agents", () => ({
+  useAgentInstances: () => agentInstancesResult,
+}));
+
 mock.module("../components/MyraChatSurface", () => ({
   MyraChatSurface: (props: {
     headerLeft?: React.ReactNode;
+    headerRight?: React.ReactNode;
     onUserSend?: (t: string) => void;
   }) =>
     React.createElement(
@@ -82,12 +104,27 @@ mock.module("../components/MyraChatSurface", () => ({
       props.headerLeft !== undefined
         ? React.createElement("div", { "data-testid": "header-left" })
         : null,
+      props.headerRight !== undefined
+        ? React.createElement(
+            "div",
+            { "data-testid": "header-right" },
+            props.headerRight,
+          )
+        : null,
       React.createElement(
         "button",
         { onClick: () => props.onUserSend?.("hello") },
         "send",
       ),
     ),
+}));
+
+mock.module("../components/SubagentDock", () => ({
+  SubagentDock: (props: { conversationId: string | null }) =>
+    React.createElement("div", {
+      "data-testid": "subagent-dock",
+      "data-conversation-id": props.conversationId ?? "",
+    }),
 }));
 
 // The dock owns its data fetching and has dedicated tests (WorkflowDock.test.tsx);
@@ -126,11 +163,23 @@ mock.module("../hooks/use-workflow", () => ({
 
 const { ChatThreadPage } = require("./ChatThreadPage");
 
-function renderAt(path: string) {
-  render(
+function PublishedLabelProbe() {
+  const ctx = useActiveContext();
+  return React.createElement(
+    "div",
+    { "data-testid": "published-label" },
+    ctx?.label ?? "",
+  );
+}
+
+function threadPageTree(path: string) {
+  return React.createElement(
+    MemoryRouter,
+    { initialEntries: [path] },
     React.createElement(
-      MemoryRouter,
-      { initialEntries: [path] },
+      ActiveContextProvider,
+      null,
+      React.createElement(PublishedLabelProbe),
       React.createElement(
         Routes,
         null,
@@ -147,11 +196,17 @@ function renderAt(path: string) {
   );
 }
 
+function renderAt(path: string) {
+  return render(threadPageTree(path));
+}
+
 beforeEach(() => {
   createMutate.mockClear();
   autoTitle.mockClear();
   autoTitleArgs = [];
   sessionResult = { state: { phase: "loading" }, messages: [], activity: null };
+  rosterResult = { data: { instances: [] } };
+  agentInstancesResult = { data: [] };
   threadsResult = {
     data: {
       threads: [
@@ -235,5 +290,130 @@ describe("ChatThreadPage", () => {
     expect(autoTitleArgs[0]).toMatchObject({ id: "t1" });
     fireEvent.click(screen.getByRole("button", { name: "send" }));
     expect(autoTitle).toHaveBeenCalledWith("hello");
+  });
+
+  it("opens the thread info dialog from the header button and shows the resolved fields", () => {
+    agentInstancesResult = {
+      data: [
+        {
+          id: "i1",
+          name: "Myra",
+          address: "myra-i1@workbench.local",
+          status: "running",
+        },
+      ],
+    };
+    rosterResult = {
+      data: {
+        instances: [
+          {
+            instanceId: "i1",
+            principalId: "p1",
+            agentId: "a1",
+            name: "Myra",
+            status: "active",
+            sessionCount: 1,
+          },
+        ],
+      },
+    };
+    renderAt("/chats/t1");
+    expect(screen.queryByRole("dialog")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Chat details" }));
+    const dialog = screen.getByRole("dialog");
+    expect(dialog.textContent).toContain("First");
+    expect(dialog.textContent).toContain("i1");
+    expect(dialog.textContent).toContain("Myra");
+    expect(dialog.textContent).toContain("myra-i1@workbench.local");
+    // Wire status "running" surfaces as the humanized "Active" label.
+    expect(dialog.textContent).toContain("Active");
+    expect(
+      screen
+        .getByRole("link", { name: "Open Agents page" })
+        .getAttribute("href"),
+    ).toBe("/agents");
+    expect(
+      screen.getByRole("link", { name: "Open trace" }).getAttribute("href"),
+    ).toBe("/insights/users/p1");
+  });
+
+  it("omits agent name, mail address, and status from the dialog when the instance isn't in the loaded roster", () => {
+    renderAt("/chats/t1");
+    fireEvent.click(screen.getByRole("button", { name: "Chat details" }));
+    const dialog = screen.getByRole("dialog");
+    expect(dialog.textContent).toContain("i1");
+    expect(screen.queryByText("Agent")).toBeNull();
+    expect(screen.queryByText("Mail address")).toBeNull();
+    expect(screen.queryByText("Status")).toBeNull();
+    expect(screen.queryByRole("link", { name: "Open trace" })).toBeNull();
+  });
+
+  it("publishes 'New chat' instead of the raw default label ('Chat N') for a brand-new thread", () => {
+    threadsResult = {
+      data: {
+        threads: [
+          {
+            id: "t1",
+            instanceId: "i1",
+            label: "Chat 2",
+            createdAt: "2026-01-01T00:00:00Z",
+            lastActivityAt: "2026-01-01T00:00:00Z",
+          },
+        ],
+        total: 1,
+      },
+      isLoading: false,
+      isError: false,
+      refetch: () => {},
+    };
+    renderAt("/chats/t1");
+    expect(screen.getByTestId("published-label").textContent).toBe("New chat");
+  });
+
+  it("re-syncs the published title when the thread's label changes (no stale title across renders)", () => {
+    threadsResult = {
+      data: {
+        threads: [
+          {
+            id: "t1",
+            instanceId: "i1",
+            label: "Chat 2",
+            createdAt: "2026-01-01T00:00:00Z",
+            lastActivityAt: "2026-01-01T00:00:00Z",
+          },
+        ],
+        total: 1,
+      },
+      isLoading: false,
+      isError: false,
+      refetch: () => {},
+    };
+    const { rerender } = renderAt("/chats/t1");
+    expect(screen.getByTestId("published-label").textContent).toBe("New chat");
+
+    threadsResult = {
+      data: {
+        threads: [
+          {
+            id: "t1",
+            instanceId: "i1",
+            label: "Renewal timeline for Acme",
+            createdAt: "2026-01-01T00:00:00Z",
+            lastActivityAt: "2026-01-01T00:00:00Z",
+          },
+        ],
+        total: 1,
+      },
+      isLoading: false,
+      isError: false,
+      refetch: () => {},
+    };
+    // Same tree, same route, unchanged turn count — reconciles in place rather
+    // than unmounting, so this exercises the freshnessToken re-publish path
+    // rather than a fresh mount's initial publish.
+    rerender(threadPageTree("/chats/t1"));
+    expect(screen.getByTestId("published-label").textContent).toBe(
+      "Renewal timeline for Acme",
+    );
   });
 });

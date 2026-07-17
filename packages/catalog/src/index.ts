@@ -25,3 +25,7 @@ export { CATALOG_PROVIDERS } from "./providers";
 export { CATALOG_MODELS } from "./models";
 export { CATALOG_OFFERINGS } from "./offerings";
 export { modelsDevProviderIdsForCatalogProvider } from "./models-dev";
+export {
+  contextWindowForModel,
+  DEFAULT_CONTEXT_WINDOW,
+} from "./context-windows";

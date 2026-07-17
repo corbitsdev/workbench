@@ -126,6 +126,7 @@ describe("getRunKindStats — by-kind aggregate from the projection", () => {
       awaiting: 0,
       completed: 1,
       failed: 1,
+      stopped: 0,
       total: 2,
     });
     expect(brief?.steps.total).toBe(3);

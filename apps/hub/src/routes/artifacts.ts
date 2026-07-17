@@ -85,7 +85,8 @@ const MAX_UPLOAD_TOTAL_BYTES = 100 * 1024 * 1024;
 // rejected with a clear message rather than persisted opaquely. Accept either
 // the declared MIME or a known extension (browsers omit MIME for some types).
 // SVG is deliberately excluded: it can carry inline <script> and would be a
-// stored-XSS vector once served back on the app origin.
+// stored-XSS vector once served back on the app origin. Raster image types
+// cover the gallery-thumbnail feature without that risk.
 const ACCEPTED_UPLOAD_MIMES: ReadonlySet<string> = new Set([
   "text/plain",
   "text/markdown",
@@ -161,6 +162,9 @@ function uploadArtifactKind(mimeType: string): string {
   if (mimeType.startsWith("image/")) return "image";
   return "file";
 }
+
+export const effectiveUploadMimeForTest = effectiveUploadMime;
+export const uploadArtifactKindForTest = uploadArtifactKind;
 
 function uploadDownloadFilename(filename: string): string {
   const cleaned = filename.replace(/[\r\n"\\]/g, "").trim();
@@ -1092,6 +1096,30 @@ export function createArtifactsRouter(
       );
       const bytes = Uint8Array.from(uploadRow.content);
       return c.body(bytes.buffer as ArrayBuffer);
+    }
+
+    // File artifacts created by the parse-file route (chat uploads) carry
+    // their bytes as a data: URL in `content` with no upload-table row. Serve
+    // them under the same disposition rules as upload-backed files so a
+    // persisted attachment chip stays downloadable after reload (CL-3671).
+    if (art.kind === "file") {
+      const dataUrl = /^data:([^;,]+);base64,(.*)$/s.exec(art.content);
+      if (dataUrl) {
+        const mimeType = dataUrl[1]!;
+        const bytes = new Uint8Array(Buffer.from(dataUrl[2]!, "base64"));
+        c.header("Content-Type", mimeType);
+        c.header("X-Content-Type-Options", "nosniff");
+        const wantsInline = c.req.query("inline") === "1";
+        const disposition =
+          wantsInline && mimeType === "application/pdf"
+            ? "inline"
+            : "attachment";
+        c.header(
+          "Content-Disposition",
+          `${disposition}; filename="${uploadDownloadFilename(art.title)}"`,
+        );
+        return c.body(bytes.buffer as ArrayBuffer);
+      }
     }
 
     if (!DOWNLOADABLE_ARTIFACT_KINDS.has(art.kind)) {

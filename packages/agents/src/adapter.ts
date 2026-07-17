@@ -3,7 +3,7 @@ import type {
   ChatAttachment,
   ChatMessage,
   ToolCall,
-} from "@workbench/chat/types";
+} from "@workbench/agent-core/parts";
 
 function stripContextBlock(content: string): string {
   return content.replace(/^<context>[\s\S]*?<\/context>\n*/u, "");
@@ -29,7 +29,7 @@ function toChatAttachment(a: MailAttachment): ChatAttachment {
 // Anthropic raw call IDs (e.g. "call_00_AbCdEf123456") are not human-readable.
 // When the agent runtime fails to persist the tool "call" part that carries the
 // real name, the raw call ID flows through as the tool name. The web app
-// captures the real names from the live stream (see tool-name-tracker) and
+// captures the real names from the live stream (see part-assembler) and
 // passes them here so the UI can render the actual tool instead of "Tool call".
 const RAW_CALL_ID = /^call_[0-9A-Za-z_]{10,}$/u;
 

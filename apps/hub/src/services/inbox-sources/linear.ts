@@ -43,21 +43,21 @@ const log = getLogger(["services", "inbox-sources", "linear"]);
  * messageKey.
  */
 
-const IssueRefSchema = type({
+export const IssueRefSchema = type({
   id: "string",
   identifier: "string",
   title: "string",
   url: "string",
 });
 
-const NotificationNodeSchema = type({
+export const NotificationNodeSchema = type({
   id: "string",
   createdAt: "string",
   "type?": "string | null",
   "issue?": IssueRefSchema.or("null"),
 });
 
-const ViewerNotificationsResponseSchema = type({
+export const ViewerNotificationsResponseSchema = type({
   viewer: {
     notifications: {
       nodes: NotificationNodeSchema.array(),
@@ -65,7 +65,7 @@ const ViewerNotificationsResponseSchema = type({
   },
 });
 
-const AssignedIssueNodeSchema = type({
+export const AssignedIssueNodeSchema = type({
   id: "string",
   identifier: "string",
   title: "string",
@@ -75,7 +75,7 @@ const AssignedIssueNodeSchema = type({
   "state?": type({ name: "string" }).or("null"),
 });
 
-const ViewerAssignedIssuesResponseSchema = type({
+export const ViewerAssignedIssuesResponseSchema = type({
   viewer: {
     assignedIssues: {
       nodes: AssignedIssueNodeSchema.array(),
@@ -83,14 +83,14 @@ const ViewerAssignedIssuesResponseSchema = type({
   },
 });
 
-const CommentNodeSchema = type({
+export const CommentNodeSchema = type({
   id: "string",
   createdAt: "string",
   body: "string",
   "issue?": IssueRefSchema.or("null"),
 });
 
-const ViewerAssignedCommentsResponseSchema = type({
+export const ViewerAssignedCommentsResponseSchema = type({
   viewer: {
     assignedIssuesComments: {
       nodes: CommentNodeSchema.array(),
@@ -99,13 +99,13 @@ const ViewerAssignedCommentsResponseSchema = type({
 });
 
 // Tenant-key (no viewer) top-level equivalents, scoped by assignee email.
-const AssignedIssuesByEmailResponseSchema = type({
+export const AssignedIssuesByEmailResponseSchema = type({
   issues: {
     nodes: AssignedIssueNodeSchema.array(),
   },
 });
 
-const AssignedCommentsByEmailResponseSchema = type({
+export const AssignedCommentsByEmailResponseSchema = type({
   comments: {
     nodes: CommentNodeSchema.array(),
   },

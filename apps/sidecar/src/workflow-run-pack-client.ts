@@ -18,7 +18,10 @@ import git from "isomorphic-git";
 import { getLogger } from "@intx/log";
 import type { RepoId, RepoStore } from "@intx/hub-sessions";
 import { collectReachableObjects } from "@workbench/storage-isogit";
-import type { HubLink } from "@workbench/hub-agent";
+import {
+  WorkflowRunPackQuarantinedError,
+  type HubLink,
+} from "@workbench/hub-agent";
 import {
   DEFAULT_WORKFLOW_RUN_PACK_MAX_COMMITS,
   DEFAULT_WORKFLOW_RUN_PACK_MAX_OBJECTS,
@@ -251,6 +254,21 @@ export function createWorkflowRunPackClient(
           commitSha: built.commitSha,
         });
       } catch (err) {
+        // WORKBENCH-LOCAL (CL-3796): a quarantined key has already been
+        // rejected by the hub `WORKFLOW_RUN_PACK_MAX_BOOTSTRAP_FAILURES`
+        // times and fails fast on the hub-link side without a network
+        // attempt (hub-link.ts). Resetting the cursor here buys nothing --
+        // the hub is already known to reject this ref -- and only makes the
+        // NEXT `buildDeltaPack` walk more history (an ever-growing,
+        // event-loop-blocking git walk) for a push that is guaranteed to be
+        // dropped before it reaches the wire. Leaving the cursor in place
+        // keeps every subsequent quarantined attempt's walk bounded to the
+        // same small delta instead of regrowing toward a full-chain rebuild
+        // every event -- this is the retry-storm amplifier the CL-3796
+        // incident traced to this path.
+        if (err instanceof WorkflowRunPackQuarantinedError) {
+          throw err;
+        }
         // The push did not ack. The hub may never have received this base, or
         // may have lost it (a cold-restarted hub whose durable repo was
         // wiped). Drop the cursor so the NEXT push re-bootstraps a full,
