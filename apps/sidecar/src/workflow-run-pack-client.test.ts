@@ -147,7 +147,7 @@ describe("createWorkflowRunPackClient", () => {
     let createPackCalled = false;
     const stub: Partial<RepoStore> = {
       getRepoDir: () => dir,
-      resolveRef: async () => (await git.resolveRef({ fs, dir, ref: "main" })),
+      resolveRef: async () => await git.resolveRef({ fs, dir, ref: "main" }),
       createPack: async (_p, _r, ref) => {
         createPackCalled = true;
         return { pack: new Uint8Array([0]), commitSha: "x", ref };
@@ -418,6 +418,92 @@ describe("createWorkflowRunPackPushingRepoStore", () => {
         },
       ),
     ).rejects.toThrow(/non_fast_forward/);
+  });
+
+  test("CL-2340: a size-ceiling breach STICKILY fails the run — every later write and flush re-throws it, not just the next one", async () => {
+    // A retryable push failure latches once and clears on the next read, so the
+    // run keeps going. A size-ceiling breach is unrecoverable (the un-acked
+    // delta only grows), so it must latch STICKILY: every subsequent write for
+    // the run re-throws it, bounding the un-shippable delta and failing the run
+    // loudly instead of silently oscillating (write fails -> retry succeeds and
+    // grows the delta -> next push re-throws forever with a Sentry-invisible
+    // WARN).
+    const { store, preserveCalls } = createRecordingUnderlyingRepoStore();
+    const registry = createDeploymentAddressRegistry();
+    registry.record("dep-huge", "agent-huge@example.com");
+    let pushCount = 0;
+    const facade = createWorkflowRunPackPushingRepoStore({
+      underlying: store,
+      packClient: {
+        async push() {
+          pushCount += 1;
+          throw new WorkflowRunPackTooLargeError({
+            repoId: "dep-huge",
+            ref: "refs/heads/main",
+            commitCount: 9999,
+            objectCount: 9999,
+            limits: { maxCommits: 10, maxObjects: 10 },
+          });
+        },
+      },
+      registry,
+    });
+    const repoId: RepoId = { kind: "workflow-run", id: "dep-huge" };
+
+    // First write fires the push, which trips the ceiling and latches terminal.
+    await facade.writeTreePreservingPrefix(
+      { kind: "supervisor" },
+      repoId,
+      "refs/heads/main",
+      {
+        preservePrefix: "runs/r/events/",
+        merge: async () => ({ "runs/r/events/0.json": "{}" }),
+        message: "first",
+      },
+    );
+    await new Promise((resolve) => setTimeout(resolve, 10));
+
+    // The next write re-throws the terminal error WITHOUT reaching the
+    // underlying store — the delta cannot grow.
+    const preserveCallsBefore = preserveCalls.length;
+    await expect(
+      facade.writeTreePreservingPrefix(
+        { kind: "supervisor" },
+        repoId,
+        "refs/heads/main",
+        {
+          preservePrefix: "runs/r/events/",
+          merge: async () => ({ "runs/r/events/1.json": "{}" }),
+          message: "second",
+        },
+      ),
+    ).rejects.toBeInstanceOf(WorkflowRunPackTooLargeError);
+
+    // STICKY: a THIRD write re-throws the SAME terminal error (a retryable latch
+    // would have cleared after the second read and let this write through).
+    await expect(
+      facade.writeTreeDelta({ kind: "supervisor" }, repoId, "refs/heads/main", {
+        changedPathPrefixes: new Set(["runs/r/events/"]),
+        computeDelta: async () => ({
+          puts: { "runs/r/events/2.json": "{}" },
+          deletes: [],
+        }),
+        message: "third",
+      }),
+    ).rejects.toBeInstanceOf(WorkflowRunPackTooLargeError);
+
+    // No further pushes were attempted (the loop stopped on the terminal
+    // breach) and no post-breach write reached the underlying store.
+    expect(pushCount).toBe(1);
+    expect(preserveCalls.length).toBe(preserveCallsBefore);
+
+    // Flush surfaces the sticky terminal error too, without clearing it.
+    await expect(
+      facade.flushWorkflowRunPushes(repoId, "refs/heads/main"),
+    ).rejects.toBeInstanceOf(WorkflowRunPackTooLargeError);
+    await expect(
+      facade.flushWorkflowRunPushes(repoId, "refs/heads/main"),
+    ).rejects.toBeInstanceOf(WorkflowRunPackTooLargeError);
   });
 
   test("flushWorkflowRunPushes resolves immediately when no pushes are pending", async () => {

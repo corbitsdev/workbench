@@ -646,6 +646,16 @@ export function createWorkflowRunPackPushingRepoStore(
     inFlight: Promise<void> | null;
     dirty: boolean;
     lastError: Error | null;
+    // WORKBENCH-LOCAL (CL-2340): sticky TERMINAL error, distinct from the
+    // retryable `lastError`. Set when a push trips the size ceiling
+    // (WorkflowRunPackTooLargeError) — an unrecoverable state: the un-acked
+    // delta only grows, so retrying re-walks the same growing range and
+    // re-throws forever. Unlike `lastError`, this is never cleared by a read:
+    // once set, every subsequent workflow-run write for this slot re-throws it,
+    // so the wedged run stops appending events (bounding the delta) and fails
+    // loudly rather than silently oscillating (write fails → retry succeeds and
+    // grows the delta → next push re-throws) with only a Sentry-invisible WARN.
+    terminalError: Error | null;
     settled: (() => void)[];
   };
   const slots = new Map<string, Slot>();
@@ -694,6 +704,19 @@ export function createWorkflowRunPackPushingRepoStore(
           });
           slot.lastError = null;
         } catch (cause) {
+          // WORKBENCH-LOCAL (CL-2340): the size-ceiling breach is TERMINAL, not
+          // retryable. Log at ERROR (the sink forwards only error/fatal to
+          // Sentry — a WARN here would black the run out invisibly) and latch it
+          // as the sticky terminal error so every subsequent write for this run
+          // re-throws it: the run stops growing its un-shippable delta and fails
+          // loudly instead of silently churning. Stop the loop (leave `dirty`
+          // false) — re-running the push would only re-walk the same oversized
+          // range and re-throw.
+          if (cause instanceof WorkflowRunPackTooLargeError) {
+            logger.error`workflow-run pack push exceeded the size ceiling for deployment ${repoId.id} (${slot.agentAddress}); failing the run: ${cause.message}`;
+            slot.terminalError = cause;
+            break;
+          }
           const msg = cause instanceof Error ? cause.message : String(cause);
           logger.warn`workflow-run pack push failed for deployment ${repoId.id} (${slot.agentAddress}): ${msg}`;
           slot.lastError =
@@ -720,6 +743,7 @@ export function createWorkflowRunPackPushingRepoStore(
         inFlight: null,
         dirty: false,
         lastError: null,
+        terminalError: null,
         settled: [],
       };
       slots.set(key, slot);
@@ -741,6 +765,14 @@ export function createWorkflowRunPackPushingRepoStore(
     const err = slot.lastError;
     if (err !== null) slot.lastError = null;
     return err;
+  }
+
+  // WORKBENCH-LOCAL (CL-2340): read the sticky terminal error WITHOUT clearing
+  // it. A run whose delta tripped the size ceiling is unrecoverable, so every
+  // subsequent write must keep failing (bounding the un-shippable delta) rather
+  // than clearing the error and letting the run grow again.
+  function peekTerminalError(repoId: RepoId, ref: string): Error | null {
+    return slots.get(slotKey(repoId, ref))?.terminalError ?? null;
   }
 
   function markAddressUnroutable(agentAddress: string): void {
@@ -771,6 +803,10 @@ export function createWorkflowRunPackPushingRepoStore(
       // restarting is safe against double-ship: `startLoop` no-ops when a
       // push is already in flight, and the per-(repoId, ref) serialization in
       // the hub-link's `pushWorkflowRunPack` prevents overlapping transfers.
+      // WORKBENCH-LOCAL (CL-2340): never re-drive a terminally-failed run (size
+      // ceiling). Retrying only re-walks the same oversized delta and re-throws;
+      // the run is already failed loudly.
+      if (slot.terminalError !== null) continue;
       if (!slot.dirty && slot.lastError === null) continue;
       slot.dirty = true;
       startLoop(slot, slot.repoId, slot.ref);
@@ -783,6 +819,13 @@ export function createWorkflowRunPackPushingRepoStore(
   ): Promise<void> {
     const slot = slots.get(slotKey(repoId, ref));
     if (slot === undefined) return;
+    // WORKBENCH-LOCAL (CL-2340): a terminally-failed run (size ceiling) surfaces
+    // its sticky error to any flush too, WITHOUT clearing it — the run stays
+    // failed. Checked before the drain wait: a terminal slot's loop has already
+    // stopped, so there is nothing to await.
+    if (slot.terminalError !== null) {
+      throw slot.terminalError;
+    }
     if (slot.inFlight === null && !slot.dirty) {
       if (slot.lastError !== null) {
         const err = slot.lastError;
@@ -794,6 +837,9 @@ export function createWorkflowRunPackPushingRepoStore(
     await new Promise<void>((resolve) => {
       slot.settled.push(resolve);
     });
+    if (slot.terminalError !== null) {
+      throw slot.terminalError;
+    }
     if (slot.lastError !== null) {
       const err = slot.lastError;
       slot.lastError = null;
@@ -820,6 +866,10 @@ export function createWorkflowRunPackPushingRepoStore(
     markAddressUnroutable,
     async writeTreePreservingPrefix(principal, repoId, ref, args) {
       if (repoId.kind === "workflow-run") {
+        const terminal = peekTerminalError(repoId, ref);
+        if (terminal !== null) {
+          throw terminal;
+        }
         const latched = takeLatchedError(repoId, ref);
         if (latched !== null) {
           throw latched;
@@ -845,6 +895,10 @@ export function createWorkflowRunPackPushingRepoStore(
     },
     async writeTreeDelta(principal, repoId, ref, args) {
       if (repoId.kind === "workflow-run") {
+        const terminal = peekTerminalError(repoId, ref);
+        if (terminal !== null) {
+          throw terminal;
+        }
         const latched = takeLatchedError(repoId, ref);
         if (latched !== null) {
           throw latched;
