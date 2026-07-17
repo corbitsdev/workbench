@@ -11,7 +11,12 @@ import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { useQuery } from "@tanstack/react-query";
 import { Info } from "lucide-react";
 import type { UIResponse } from "@workbench/blocks";
-import { Button, runStartLabel, toHumanLabel } from "@workbench/ui";
+import {
+  Button,
+  formatAbsoluteUtc,
+  runStartLabel,
+  toHumanLabel,
+} from "@workbench/ui";
 import { useSetPageChrome } from "../lib/page-chrome";
 import { WorkflowRunBlocks } from "./WorkflowRunBlocks";
 import { WorkflowStartingIndicator } from "./WorkflowStartingIndicator";
@@ -513,17 +518,6 @@ function WorkingIndicator() {
   );
 }
 
-// Locale/timezone-independent absolute timestamp: an unambiguous UTC string the
-// deploy clock (deployedAt is an ISO string) maps onto identically for everyone.
-function formatDeployedAt(deployedAt: string): string {
-  const date = new Date(deployedAt);
-  if (Number.isNaN(date.getTime())) return deployedAt;
-  const iso = date.toISOString();
-  const day = iso.slice(0, 10);
-  const time = iso.slice(11, 16);
-  return `${day} ${time} UTC`;
-}
-
 type Anchor = { bottom: number; right: number };
 
 function WorkflowMetaBadge({
@@ -621,7 +615,7 @@ function WorkflowMetaBadge({
                 </div>
                 <div className="flex items-baseline justify-between gap-2">
                   <dt className="text-text-3">Deployed</dt>
-                  <dd className="text-text">{formatDeployedAt(deployedAt)}</dd>
+                  <dd className="text-text">{formatAbsoluteUtc(deployedAt)}</dd>
                 </div>
               </dl>
             </div>

@@ -1,4 +1,5 @@
 import type { PreferenceSetting } from "@workbench/shared";
+import { formatTimeOnly } from "@workbench/ui";
 import {
   useBriefSources,
   useInboxSources,
@@ -15,7 +16,7 @@ function findValue(
 function utcHourToLocalLabel(utcHour: number): string {
   const date = new Date();
   date.setUTCHours(utcHour, 0, 0, 0);
-  return date.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+  return formatTimeOnly(date);
 }
 
 interface FeedRowProps {

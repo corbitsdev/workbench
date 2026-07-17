@@ -1,6 +1,6 @@
 import { useId, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { Button, inputFieldClass } from "@workbench/ui";
+import { Button, formatDateTimeMedium, inputFieldClass } from "@workbench/ui";
 import { clearOwnerCredential, setOwnerCredential } from "../../lib/hub-api";
 import type { OwnerCredentialState } from "@workbench/shared";
 import {
@@ -16,13 +16,6 @@ import { OAuthAppSetupPanel } from "./OAuthAppSetupPanel";
  * save and never held in the row's own state afterward — nothing here
  * re-renders a stored secret.
  */
-function formatUpdatedAt(isoString: string): string {
-  return new Date(isoString).toLocaleString(undefined, {
-    dateStyle: "medium",
-    timeStyle: "short",
-  });
-}
-
 export function CredentialRow({
   credential,
 }: {
@@ -82,7 +75,7 @@ export function CredentialRow({
           )}
           {credential.configured && credential.updatedAt && (
             <p className="mt-0.5 text-xs text-text-3">
-              Updated {formatUpdatedAt(credential.updatedAt)}
+              Updated {formatDateTimeMedium(credential.updatedAt)}
             </p>
           )}
         </div>

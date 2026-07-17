@@ -1,7 +1,12 @@
 import { useMemo, useRef, useState } from "react";
 import { Link } from "react-router";
 import { AlertCircle, ArrowRight, ChevronRight } from "lucide-react";
-import { Badge, Skeleton } from "@workbench/ui";
+import {
+  Badge,
+  formatDuration,
+  formatFullTimestamp,
+  Skeleton,
+} from "@workbench/ui";
 import type { MomentDetail, TimelineEntry } from "@workbench/client";
 import { KIND_META, relativeTime, timelineEntryTone } from "./timeline-kinds";
 import { describeActivityEntry } from "./activity-naming";
@@ -31,15 +36,6 @@ const DETAIL_ENRICHED_KINDS = new Set([
   "workflow_run",
 ]);
 
-function formatDuration(ms: number): string {
-  if (ms < 1000) return `${Math.round(ms)}ms`;
-  const seconds = ms / 1000;
-  if (seconds < 60) return `${seconds.toFixed(seconds < 10 ? 1 : 0)}s`;
-  const minutes = Math.floor(seconds / 60);
-  const rest = Math.round(seconds % 60);
-  return `${minutes}m ${rest}s`;
-}
-
 /** A quiet, single-line honest absence — no loud gold chip. */
 function Absent({
   children,
@@ -53,17 +49,6 @@ function Absent({
       {children}
     </span>
   );
-}
-
-function fullTimestamp(iso: string): string {
-  return new Date(iso).toLocaleString(undefined, {
-    year: "numeric",
-    month: "short",
-    day: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-  });
 }
 
 /** The colored moment dot, by entry kind — mirrors the legend hues. */
@@ -351,7 +336,7 @@ export function MomentDecomposition({
 
       <DecompRow label="When">
         <span className="font-mono text-[11.5px] text-text-2">
-          {fullTimestamp(entry.timestamp)}
+          {formatFullTimestamp(entry.timestamp)}
         </span>
         <span className="ml-2 text-[11px] text-text-3">
           {elapsed !== null ? `· ${elapsed} after previous` : "· first loaded"}
@@ -549,7 +534,7 @@ export function MomentWalker({
                 </span>
                 <time
                   dateTime={entry.timestamp}
-                  title={new Date(entry.timestamp).toLocaleString()}
+                  title={formatFullTimestamp(entry.timestamp)}
                   className="shrink-0 font-mono text-[10px] tabular-nums text-text-3"
                 >
                   {relativeTime(entry.timestamp, now)}

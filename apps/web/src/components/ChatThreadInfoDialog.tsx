@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 import { Link } from "react-router";
 import { Check, Copy } from "lucide-react";
+import { formatDateTimeMedium } from "@workbench/ui";
 
 export interface ChatThreadInfoDialogFields {
   /** Thread title (the sidebar/thread label). */
@@ -21,15 +22,6 @@ export interface ChatThreadInfoDialogFields {
 interface ChatThreadInfoDialogProps extends ChatThreadInfoDialogFields {
   readonly open: boolean;
   readonly onClose: () => void;
-}
-
-function formatCreatedAt(iso: string): string {
-  const parsed = new Date(iso);
-  if (Number.isNaN(parsed.getTime())) return iso;
-  return parsed.toLocaleString(undefined, {
-    dateStyle: "medium",
-    timeStyle: "short",
-  });
 }
 
 /** Copy-to-clipboard icon button with a brief "Copied" confirmation state. */
@@ -149,7 +141,7 @@ export function ChatThreadInfoDialog({
     });
   }
   if (createdAt !== undefined) {
-    rows.push({ label: "Created", value: formatCreatedAt(createdAt) });
+    rows.push({ label: "Created", value: formatDateTimeMedium(createdAt) });
   }
   if (status !== undefined) rows.push({ label: "Status", value: status });
 

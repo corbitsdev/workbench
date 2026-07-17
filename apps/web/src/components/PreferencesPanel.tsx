@@ -7,17 +7,14 @@ import {
   type PreferenceCategory,
   type PreferenceSetting,
 } from "@workbench/shared";
-import { cn } from "@workbench/ui";
+import { cn, formatTimeOnly } from "@workbench/ui";
 import {
   usePreferenceSettings,
   useUpdatePreference,
 } from "../hooks/use-preference-settings";
 import { useWorkflowsCatalog } from "../hooks/use-workflows-catalog";
 import { useMeConnections } from "../hooks/use-me-connections";
-import {
-  isFeatureEnabled,
-  useMeFeatures,
-} from "../hooks/use-me-features";
+import { isFeatureEnabled, useMeFeatures } from "../hooks/use-me-features";
 import { BriefSourcesToggles } from "./BriefSourcesToggles";
 import { InboxSourcesToggles } from "./InboxSourcesToggles";
 import { BriefWorkflowAttachments } from "./BriefWorkflowAttachments";
@@ -78,7 +75,7 @@ type PreferenceValue = boolean | string | number;
 function utcHourToLocalLabel(utcHour: number): string {
   const date = new Date();
   date.setUTCHours(utcHour, 0, 0, 0);
-  return date.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+  return formatTimeOnly(date);
 }
 
 const HOURS = Array.from({ length: 24 }, (_, h) => h);
@@ -314,9 +311,7 @@ export function PreferencesPanel({ categories }: PreferencesPanelProps = {}) {
       .map((connection) => connection.provider),
   );
   const enabledFeatures = new Set(
-    (features.data?.features ?? [])
-      .filter((f) => f.enabled)
-      .map((f) => f.name),
+    (features.data?.features ?? []).filter((f) => f.enabled).map((f) => f.name),
   );
   const schedulerEnabled = isFeatureEnabled(features.data, "scheduler");
 

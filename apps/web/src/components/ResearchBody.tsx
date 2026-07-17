@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { type Report, parseReport } from "@workbench/last30days-core";
-import { Markdown } from "@workbench/ui";
+import { formatShortDateRangeUtc, Markdown } from "@workbench/ui";
 
 // The brief contract is owned by @workbench/last30days-core; the web validates
 // the persisted artifact payload at the boundary via the package's parse helper
@@ -9,27 +9,6 @@ export type ResearchBrief = Report;
 
 export function parseResearchBrief(value: unknown): ResearchBrief | null {
   return parseReport(value);
-}
-
-const MONTH_DAY = new Intl.DateTimeFormat("en-US", {
-  month: "short",
-  day: "numeric",
-  timeZone: "UTC",
-});
-const MONTH_DAY_YEAR = new Intl.DateTimeFormat("en-US", {
-  month: "short",
-  day: "numeric",
-  year: "numeric",
-  timeZone: "UTC",
-});
-
-function formatDateRange(from: string, to: string): string {
-  const fromDate = new Date(from);
-  const toDate = new Date(to);
-  if (Number.isNaN(fromDate.getTime()) || Number.isNaN(toDate.getTime())) {
-    return `${from}–${to}`;
-  }
-  return `${MONTH_DAY.format(fromDate)} – ${MONTH_DAY_YEAR.format(toDate)}`;
 }
 
 function formatCount(value: number): string {
@@ -42,7 +21,7 @@ function StatsLine({ stats }: { stats: ResearchBrief["stats"] }) {
       {formatCount(stats.sourceCount)} sources · {formatCount(stats.itemCount)}{" "}
       items
       {stats.dateRange
-        ? ` · ${formatDateRange(stats.dateRange.from, stats.dateRange.to)}`
+        ? ` · ${formatShortDateRangeUtc(stats.dateRange.from, stats.dateRange.to)}`
         : ""}
     </p>
   );
