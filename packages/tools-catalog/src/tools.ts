@@ -354,27 +354,47 @@ export function createCatalogTools(opts: {
    * surface an actionable message instead of exposing a dead name.
    */
   availableToolNames?: ReadonlySet<string>;
+  /**
+   * Invoked after a call that added at least one NEW name to the exposure
+   * set (load_tools, or a search_tools auto-expose). The harness uses it to
+   * persist the set so loaded tools survive an evict-and-rebuild.
+   */
+  onExposureChanged?: (exposed: ReadonlySet<string>) => void;
 }): CatalogRunner {
-  const { catalog, exposure, availableToolNames } = opts;
+  const { catalog, exposure, availableToolNames, onExposureChanged } = opts;
   const searchGuard: SearchGuardState = { lastKey: null, consecutive: 0 };
   const isAvailable = (name: string): boolean =>
     availableToolNames === undefined || availableToolNames.has(name);
   return {
     definitions: [...CATALOG_TOOL_DEFINITIONS],
     async run(call: ToolCall): Promise<ToolResult> {
+      const sizeBefore = exposure.exposed.size;
+      const notifyIfGrew = (result: ToolResult): ToolResult => {
+        if (
+          onExposureChanged !== undefined &&
+          exposure.exposed.size > sizeBefore
+        ) {
+          onExposureChanged(exposure.exposed);
+        }
+        return result;
+      };
       if (call.name === SEARCH_TOOLS_NAME) {
-        return runSearch(
-          call.id,
-          catalog,
-          searchGuard,
-          exposure,
-          isAvailable,
-          call.arguments,
+        return notifyIfGrew(
+          runSearch(
+            call.id,
+            catalog,
+            searchGuard,
+            exposure,
+            isAvailable,
+            call.arguments,
+          ),
         );
       }
       if (call.name === LOAD_TOOLS_NAME) {
         resetSearchRun(searchGuard);
-        return runLoad(call.id, catalog, exposure, isAvailable, call.arguments);
+        return notifyIfGrew(
+          runLoad(call.id, catalog, exposure, isAvailable, call.arguments),
+        );
       }
       return errorResult(call.id, `Unknown catalog tool "${call.name}"`);
     },
