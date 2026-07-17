@@ -317,15 +317,16 @@ describe("composition regression spec: cross-turn streaming-buffer bleed", () =>
   });
 
   it("does not carry live reasoning from a prior turn onto the new turn's streaming bubble", () => {
-    // Reasoning is turn-scoped exactly like the text buffer. A prior turn's
-    // reasoning must never appear attached to the CURRENT turn's synthetic
-    // bubble — only the reasoning value the caller passes in for the turn
-    // presently streaming.
+    // Reasoning is turn-scoped exactly like the text buffer. Committed turns
+    // no longer carry a `reasoning` trace at all (upstream dropped the field
+    // from the hub-client `InstanceEvent` turn variant) — only the live
+    // streaming buffer supplies reasoning, and only for the turn presently
+    // streaming. This spec guards that a prior committed turn contributes no
+    // reasoning to the new streaming bubble.
     const firstReply = textTurn(
       "t1",
       "First segment done.",
       "2024-01-01T00:00:30.000Z",
-      { reasoning: "Reasoning for the first segment." },
     );
     const { messages } = composeChatMessages({
       events: [userMail("u1", "go", "2024-01-01T00:00:00.000Z"), firstReply],
@@ -370,7 +371,6 @@ describe("composition regression spec: multi-segment part ordering (text -> tool
       "t3",
       "Cross-referencing with the notes.",
       "2024-01-01T00:00:30.000Z",
-      { reasoning: "The record conflicts with the call notes; reconciling." },
     );
     const closing = textTurn(
       "t4",
@@ -467,7 +467,6 @@ describe("composition regression spec: multi-segment part ordering (text -> tool
       "t3",
       "Cross-referencing with the notes.",
       "2024-01-01T00:00:30.000Z",
-      { reasoning: "The record conflicts with the call notes; reconciling." },
     );
 
     const { messages } = composeChatMessages({
