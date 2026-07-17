@@ -17,21 +17,13 @@ import type {
   Principal,
   RepoId,
   RepoStore as SubstrateRepoStore,
+  ReplayProcessingToInboxOpts,
   ReplayProcessingToInboxResult,
 } from "@intx/hub-sessions/substrate";
-import type {
-  InferenceSource,
-  OutboundMessage,
-  SendReceipt,
-} from "@intx/types/runtime";
+import type { OutboundMessage, SendReceipt } from "@intx/types/runtime";
 import type { RunCancelled, RunCompleted, RunFailed } from "@intx/workflow";
-import type { WorkflowDefinition } from "@intx/workflow/definition";
 
 import type { FrameReader, NdjsonReader, NdjsonWriter } from "../ipc/index";
-import type {
-  CommitRunEventResult,
-  SupervisorRunEvent,
-} from "./run-event-signing";
 
 /**
  * Terminal workflow-run event the supervisor's drain accumulators
@@ -187,113 +179,11 @@ export interface SubprocessHandle {
  * private key), and the prepared event-channel socketpair handle.
  */
 export type SubprocessSpawner = (args: {
-  /** Absolute path to the package-owned `bin/workflow-child` script. */
+  /** Absolute path to the host-owned `bin/workflow-child` script. */
   binaryPath: string;
   /** Fresh env object containing IPC trust anchors + substrate-config keys. */
   env: Record<string, string>;
 }) => SubprocessHandle;
-
-/**
- * Frame the supervisor receives at its deploy ingress. The shape is
- * a structural projection of the sidecar's `agent.deploy` frame --
- * the supervisor does not depend on `@intx/types` for the wire
- * type. `config` is opaque to the supervisor; the host owns its
- * interpretation and passes it through to the trivial-launch
- * callback (multi-step routing carries it into spawn-time env in
- * later commits).
- *
- * `workflow` is the multi-step projection. Absent on every trivial-
- * launch frame; presence is the discriminator the deploy router uses
- * to branch into `supervisor.spawn()` instead of `trivialLaunch`. The
- * field carries the workflow definition (so the supervisor can
- * construct the per-step substrate env without round-tripping the
- * hub) and the per-step inference source pins keyed by
- * `definition.stepOrder` step ids.
- */
-export interface SupervisorDeployFrame {
-  agentAddress: string;
-  agentId: string;
-  config: unknown;
-  hubPublicKey: string;
-  workflow?: {
-    definition: WorkflowDefinition;
-    sources: Record<string, InferenceSource>;
-  };
-}
-
-/**
- * Callback the supervisor hands to the host so the host's per-message
- * reactor / harness lifecycle can drive the canonical run-event chain
- * (`RunStarted` -> `StepStarted` -> `StepCompleted` -> `RunCompleted`)
- * for the trivial deploy. The supervisor's closure resolves the
- * workflow-run repo identity, mints the `signAsPrincipal` signature
- * for each event, and commits the on-disk blob; the host calls this
- * with the event payload at the appropriate reactor moment.
- *
- * The on-disk envelope is identical to the one the multi-step branch
- * commits via its workflow-process child, which makes a trivial
- * deployment's audit trail indistinguishable from a multi-step one
- * from a downstream consumer's perspective. The split between the
- * two branches is process topology (in-process commit vs IPC-forwarded
- * commit), not observability.
- */
-export type RecordRunEvent = (
-  event: SupervisorRunEvent,
-) => Promise<CommitRunEventResult>;
-
-/**
- * Arguments handed to `trivialLaunch`. Mirrors the deploy frame
- * unchanged today (the trivial branch is a true passthrough); kept
- * as its own type so future trivial-only context (e.g. a
- * supervisor-derived deployment id) can attach without widening
- * the deploy frame itself.
- *
- * `recordRunEvent` is the seam the host wires into its existing
- * per-message reactor moments (`message.run.started` /
- * `message.run.ended`) to drive the canonical workflow-run event
- * chain inline from the supervisor's address space. Hosts that have
- * not yet wired the reactor seam supply a `trivialLaunch` body that
- * does not invoke the callback; the supervisor commits no events in
- * that case but the capability is available without further wiring
- * surgery.
- */
-export interface TrivialLaunchBindings {
-  agentAddress: string;
-  agentId: string;
-  config: unknown;
-  hubPublicKey: string;
-  recordRunEvent: RecordRunEvent;
-}
-
-/**
- * Host-injected callback the supervisor invokes on the trivial
- * branch. The supervisor's deploy() routes here for every single-
- * step deployment; the callback owns the entire trivial deploy.
- *
- * Invariants preserved by the trivial branch:
- *
- *   - The supervisor does not open an IPC channel.
- *   - The supervisor does not spawn a workflow-process child.
- *   - `credentialsSnapshot` is multi-step-only; the trivial branch
- *     leaves `getCredentialsSnapshot()` returning `null`.
- *
- * The supervisor DOES emit the canonical workflow-run event chain
- * (`RunStarted` / `StepStarted` / `StepCompleted` / `RunCompleted`)
- * for the trivial deploy inline from the supervisor process via
- * `signAsPrincipal` against the workflow-run repo. The chain fires
- * per inbound mail trigger (one run per fire) and is driven by the
- * host calling `bindings.recordRunEvent(...)` from its reactor /
- * harness lifecycle moments. The trivial-branch observability is
- * therefore identical to the multi-step branch's; the two branches
- * differ in process topology, not event surface.
- *
- * The host wires `trivialLaunch` against the legacy single-agent
- * provisioning surface so the on-wire bytes and on-disk surfaces
- * stay bit-identical to the pre-supervisor path; the `recordRunEvent`
- * hook is additive (the host's reactor calls it from existing
- * lifecycle brackets without changing the deploy-tree contents).
- */
-export type TrivialLaunch = (bindings: TrivialLaunchBindings) => Promise<void>;
 
 /**
  * Logical pointer to the raw mail bytes the inbox claim-check
@@ -358,6 +248,7 @@ export interface InboxPrimitives {
     principal: Principal,
     repoId: RepoId,
     address: string,
+    opts?: ReplayProcessingToInboxOpts,
   ): Promise<ReplayProcessingToInboxResult>;
 }
 
@@ -379,7 +270,7 @@ export interface WorkflowSupervisorBindings {
   /** Subprocess spawner the supervisor invokes per spawn. */
   subprocessSpawner: SubprocessSpawner;
   /**
-   * Absolute path to the package-owned `bin/workflow-child` script
+   * Absolute path to the host-owned `bin/workflow-child` script
    * the spawner invokes. Pre-resolved by the host so the supervisor
    * does not have to consult `require.resolve` / `import.meta.resolve`
    * itself (tests inject a sentinel path the spawner mock asserts on).
@@ -393,6 +284,17 @@ export interface WorkflowSupervisorBindings {
    */
   substrateEnv: Record<string, string>;
   /**
+   * Per-spawn dynamic substrate-env entries the host recomputes for every
+   * spawn AND every recycle respawn. Distinct from `substrateEnv`, which is
+   * frozen for the deployment's lifetime: this callback lets a value the
+   * host revised between spawns (a live inference-source rotation) reach the
+   * respawned child. Invoked by the spawn-env builder on each spawn/respawn;
+   * its keys layer over `substrateEnv` and under the IPC anchors. Like
+   * `substrateEnv`, the supervisor does not inspect the returned keys -- the
+   * host owns their shape. A host with no dynamic entries returns `{}`.
+   */
+  dynamicSpawnEnv: () => Record<string, string>;
+  /**
    * Workflow-run repo identity for the deployment. The supervisor
    * commits its own CancelRequested / drain events here.
    */
@@ -401,6 +303,16 @@ export interface WorkflowSupervisorBindings {
   workflowRunRef: string;
   /** Deployment id baked into the supervisor's principal claims. */
   deploymentId: string;
+  /**
+   * Number of steps in the deployed `WorkflowDefinition`
+   * (`stepOrder.length`). The supervisor threads this into the child's
+   * spawn-time env (`STEP_COUNT`) so the child's deploy-tree read
+   * (`resolveStepAddress` in the sidecar step tools) collapses onto the
+   * head for a single-step deployment exactly as the host's producer
+   * push does -- one source of truth for the head/step collapse across
+   * the two processes. Fixed for the deployment's lifetime.
+   */
+  stepCount: number;
   /**
    * Mail address the deployment registers on the bus. The
    * supervisor registers this on spawn and unregisters on teardown;
@@ -439,13 +351,6 @@ export interface WorkflowSupervisorBindings {
     publicKey: Uint8Array;
   }>;
   /**
-   * Host-injected callback the supervisor invokes on the trivial
-   * branch of `deploy(frame)`. Required for hosts that route deploy
-   * frames through `supervisor.deploy`; the multi-step branch does
-   * not consult it. See `TrivialLaunch` for the invariants.
-   */
-  trivialLaunch: TrivialLaunch;
-  /**
    * Operator-overridable per-deployment `drainTimeout` in
    * milliseconds. The supervisor's `drain()` path threads this value
    * into every drainTimeout accumulator it arms. Absent value defers
@@ -468,10 +373,11 @@ export interface WorkflowSupervisorBindings {
    */
   now?: () => number;
   /**
-   * Scheduling primitive the supervisor threads into the drainTimeout
-   * accumulator. Production wires `(cb, ms) => setTimeout(cb, ms)`;
-   * tests inject a deterministic timer host. Defaults to
-   * `setTimeout` when omitted.
+   * General scheduling primitive the supervisor threads into its timed
+   * waits: the drainTimeout accumulator, the spawn ready-handshake
+   * timeout, and that timeout's SIGTERM->SIGKILL kill escalation.
+   * Production wires `(cb, ms) => setTimeout(cb, ms)`; tests inject a
+   * deterministic timer host. Defaults to `setTimeout` when omitted.
    */
   setTimer?: (cb: () => void, ms: number) => unknown;
   /**
@@ -561,6 +467,17 @@ export interface WorkflowSupervisorBindings {
    * refused stale enqueue, not silent double-processing).
    */
   consumedRetentionMs?: number;
+  /**
+   * Bound on the child's spawn-time `ready` handshake, in milliseconds.
+   * A spawned child that neither emits `ready` nor exits would block
+   * `spawn` forever; on expiry the supervisor kills the child (SIGTERM,
+   * then SIGKILL) and rejects the spawn. The boot edge resolves the
+   * operator's config and supplies it; absent, `DEFAULT_READY_TIMEOUT_MS`
+   * (30s) applies. Callers surface the rejection through their existing
+   * spawn-failure path, so a wedged child fails the deploy (or, on the
+   * sidecar, is skipped by boot-time restore) instead of hanging it.
+   */
+  readyTimeoutMs?: number;
   /**
    * Watchdog timeout (ms) for the supervisor's substrate-write
    * handler's wait on the dispatch loop's `markConsumed` when a

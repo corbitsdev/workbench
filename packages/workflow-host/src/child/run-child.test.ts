@@ -27,9 +27,7 @@ import {
   createWorkflowStepInvoker,
   type StepEnvBase,
 } from "../adapters/step-invoker";
-import { createWorkflowRunRepoStore } from "../adapters/repo-store";
 import { createDefaultDirectorRegistry } from "@intx/agent";
-import type { WorkflowEvent } from "@intx/workflow";
 import { noopAuditStore } from "@intx/agent/testing";
 import type { Agent, SendResult } from "@intx/agent";
 import type {
@@ -44,14 +42,17 @@ import {
   runWorkflowChild,
   type ChildStepInvoker,
   type RunWorkflowChildBindings,
-  type RunWorkflowChildOpts,
 } from "./index";
+import { emitTerminalEvent } from "./run-child";
+import type { RunResult } from "@intx/workflow";
 import {
   createControlChannelSender,
   generateChannelId,
   generateHmacKey,
   receiveControlChannel,
   receiveEventChannel,
+  type ControlChannelSender,
+  type ControlPayload,
   type FrameReader,
   type FrameWriter,
   type NdjsonReader,
@@ -162,12 +163,58 @@ function createMemoryFrameStream() {
   };
 }
 
+// Read every file directly under the `runs/<id>/events/` prefix into the
+// full-path-keyed map the merge callback expects (`appendBatchEvents`
+// slices the prefix off each key to recover the seq).
+async function readPrefixEntries(
+  repoDir: string,
+  prefix: string,
+): Promise<Map<string, Uint8Array>> {
+  const entries = new Map<string, Uint8Array>();
+  const prefixDir = path.join(repoDir, prefix);
+  let names: string[];
+  try {
+    names = await fs.readdir(prefixDir);
+  } catch (cause) {
+    // No prior entries under the prefix yet: the first append starts the
+    // subtree.
+    if (cause instanceof Error && "code" in cause && cause.code === "ENOENT") {
+      return entries;
+    }
+    throw cause;
+  }
+  for (const name of names) {
+    const full = path.join(prefixDir, name);
+    if (!(await fs.stat(full)).isFile()) continue;
+    entries.set(`${prefix}${name}`, await fs.readFile(full));
+  }
+  return entries;
+}
+
 function createStubRepoStore(baseDir: string): RepoStore {
   const stub: Partial<RepoStore> = {
     getRepoDir(repoId: RepoId): string {
       return path.join(baseDir, repoId.kind, repoId.id);
     },
-    async writeTreePreservingPrefix(_principal, _repoId, _ref, _args) {
+    async writeTreePreservingPrefix(_principal, repoId, _ref, args) {
+      // Persist the run event log the way the real substrate does so the
+      // `createWorkflowRunRepoStore` adapter's disk read round-trips: run
+      // the merge callback against the prior entries under the preserved
+      // prefix, then replace that subtree with the merged result (files
+      // outside the prefix are untouched). Discarding the write here would
+      // make a completed run's `result.events` read back empty.
+      const repoDir = path.join(baseDir, repoId.kind, repoId.id);
+      const existing = await readPrefixEntries(repoDir, args.preservePrefix);
+      const merged = await args.merge(existing);
+      await fs.rm(path.join(repoDir, args.preservePrefix), {
+        recursive: true,
+        force: true,
+      });
+      for (const [relPath, content] of Object.entries(merged)) {
+        const full = path.join(repoDir, relPath);
+        await fs.mkdir(path.dirname(full), { recursive: true });
+        await fs.writeFile(full, content);
+      }
       return { commitSha: "deadbeefcafef00d", newlyTerminalRuns: [] };
     },
   };
@@ -188,6 +235,10 @@ function createStubRepoStore(baseDir: string): RepoStore {
 async function seedWorkflowDefinition(
   baseDir: string,
   repoId: RepoId,
+  workflow: { steps: Record<string, unknown>; stepOrder: string[] } = {
+    steps: {},
+    stepOrder: [],
+  },
 ): Promise<void> {
   const dir = path.join(baseDir, repoId.kind, repoId.id);
   await fs.mkdir(dir, { recursive: true });
@@ -196,42 +247,8 @@ async function seedWorkflowDefinition(
     JSON.stringify({
       id: "test-workflow",
       triggers: [],
-      steps: {},
-      stepOrder: [],
-    }),
-  );
-}
-
-async function seedTriggerPayloadWorkflow(
-  baseDir: string,
-  stepId: string,
-): Promise<void> {
-  const repoId: RepoId = { kind: "workflow", id: "workflow-asset" };
-  const dir = path.join(baseDir, repoId.kind, repoId.id);
-  await fs.mkdir(dir, { recursive: true });
-  await fs.writeFile(
-    path.join(dir, "workflow.json"),
-    JSON.stringify({
-      id: "trigger-payload-workflow",
-      triggers: [{ type: "manual" }],
-      steps: {
-        [stepId]: {
-          kind: "step",
-          id: stepId,
-          agent: {
-            id: "trigger-agent",
-            systemPrompt: "stub",
-            toolFactories: [],
-            capabilities: [],
-            inference: {
-              sources: [{ provider: "anthropic", model: "stub-model" }],
-            },
-          },
-          input: { from: "trigger.payload" },
-          drainBehavior: "cancel",
-        },
-      },
-      stepOrder: [stepId],
+      steps: workflow.steps,
+      stepOrder: workflow.stepOrder,
     }),
   );
 }
@@ -276,7 +293,6 @@ async function seedProcessingEntry(
     messageId: string;
     receivedAt: number;
     text: string;
-    from?: string;
   },
 ): Promise<void> {
   const dir = path.join(
@@ -288,9 +304,7 @@ async function seedProcessingEntry(
     "processing",
   );
   await fs.mkdir(dir, { recursive: true });
-  const rawMessage = assembleConversationMessage(opts.address, opts.text, {
-    from: opts.from,
-  });
+  const rawMessage = assembleConversationMessage(opts.address, opts.text);
   const envelope = {
     messageId: opts.messageId,
     receivedAt: opts.receivedAt,
@@ -310,13 +324,9 @@ async function seedProcessingEntry(
  * bytes are a placeholder: the child's input extraction reads the
  * conversation text at part `1.1` and never verifies the signature.
  */
-function assembleConversationMessage(
-  to: string,
-  text: string,
-  opts?: { from?: string | undefined },
-): Uint8Array {
+function assembleConversationMessage(to: string, text: string): Uint8Array {
   const headers: MessageHeaders = {
-    from: opts?.from ?? "user@example.com",
+    from: "user@example.com",
     to: [to],
     cc: undefined,
     date: new Date(0),
@@ -391,6 +401,7 @@ function makeSpawnEnv(opts: {
     DEPLOYMENT_ID: "deployment-x",
     DEFINITION_HASH: "definition-hash-abc",
     MAILBOX_ADDRESS: "deployment-x@example.com",
+    STEP_COUNT: "1",
   };
 }
 
@@ -758,14 +769,19 @@ describe("runWorkflowChild", () => {
       data: { runId: "run-1", messageId: "msg-1", receivedAt: 1 },
     });
 
-    let sawTerminal = false;
+    let terminalSeq: number | null = null;
     for await (const payload of recvIter) {
       if (payload.type === "terminal.event" && payload.data.runId === "run-1") {
-        sawTerminal = true;
+        terminalSeq = payload.data.seq;
         break;
       }
     }
-    expect(sawTerminal).toBe(true);
+    // The frame's seq is sourced from the run's committed terminal event, so
+    // a real (non-zero) seq proves the child test substrate faithfully
+    // persisted and read back the run's event log rather than round-tripping
+    // an empty one.
+    expect(terminalSeq).not.toBeNull();
+    expect(terminalSeq).toBeGreaterThan(0);
     // The run reached terminal AND the completion continuation ran (it
     // emitted the terminal.event we just observed). On the cold path the
     // same continuation would have called cleanupRunStorage by now; the
@@ -874,73 +890,92 @@ describe("runWorkflowChild", () => {
     expect(result.resumedRunIds).not.toContain("run-done");
   });
 
-  // WORKBENCH-LOCAL (CL-2535): the recoverParkedRun seam end-to-end. A run
-  // discovered parked at an awaitSignal gate is offered to the hook, which
-  // host-satisfies it; the loop resumes the satisfied seed (instead of failing
-  // an unresumable tail). Proves detection (hasUnresumableTail), invocation with
-  // the run's blob substrate, and that the returned seed drives the resume.
-  test("recoverParkedRun resumes a run parked at an awaitSignal gate", async () => {
-    const baseDir = await makeTempDir("child-recover-");
+  test("a re-fired trigger for a self-discovered run does not spawn a second driver", async () => {
+    // Commit 1 leaves a crashed agent step as a discoverable non-terminal
+    // log; the supervisor both resumes it (self-discovery) AND re-fires
+    // the same runId via `trigger.fire` (runId = messageId). Without a
+    // one-driver-per-run claim the re-fire spawns a SECOND `runtimeRun`
+    // for the same runId in the same process; the two concurrent drivers
+    // race to settle the residual and the loser throws an uncaught
+    // TransitionError, or both emit a terminal. The claim makes the
+    // re-fire decline: exactly one driver, exactly one terminal.
+    const baseDir = await makeTempDir("child-single-driver-");
     const supervisorKeyPair = await generateKeyPair();
     const childKeyPair = await generateKeyPair();
     const channelId = generateChannelId();
     const hmacKey = generateHmacKey();
-
-    const assetDir = path.join(baseDir, "workflow", "workflow-asset");
-    await fs.mkdir(assetDir, { recursive: true });
-    await fs.writeFile(
-      path.join(assetDir, "workflow.json"),
-      JSON.stringify({
-        id: "gate-workflow",
-        triggers: [{ type: "manual" }],
+    const runId = "run-crashed";
+    // A one-step workflow whose sole step is an agent `step`, so the
+    // seeded crashed StepStarted settles as a `StepFailed`
+    // (crash-mid-invocation) rather than resolving to a coordination
+    // primitive the resume could re-arm.
+    await seedWorkflowDefinition(
+      baseDir,
+      { kind: "workflow", id: "workflow-asset" },
+      {
         steps: {
-          gate: {
-            kind: "awaitSignal",
-            id: "gate",
-            name: "go",
-            drainBehavior: "wait",
+          "step-1": {
+            kind: "step",
+            id: "step-1",
+            agent: {
+              id: "crashed-agent",
+              systemPrompt: "crashed agent",
+              toolFactories: [],
+              capabilities: [],
+              inference: {
+                sources: [{ provider: "anthropic", model: "stub-model" }],
+              },
+            },
+            input: { from: "trigger.payload" },
+            drainBehavior: "cancel",
           },
         },
-        stepOrder: ["gate"],
-      }),
+        stepOrder: ["step-1"],
+      },
     );
-
-    // A run parked at the gate (awaiting-signal tail) — the durable shape a
-    // sidecar restart leaves behind.
+    // Surviving non-terminal log: RunStarted + the agent step's
+    // StepStarted with no StepCompleted -- a crash mid-invocation.
     await seedRun(
       baseDir,
       { kind: "workflow-run", id: "deployment-x" },
-      "run-parked",
+      runId,
       [
         {
           seq: 1,
           type: "RunStarted",
           at: "2026-01-01T00:00:00.000Z",
-          runId: "run-parked",
-          definitionHash: "h",
+          runId,
+          definitionHash: "definition-hash-abc",
           trigger: { type: "manual", payload: null },
         },
         {
           seq: 2,
           type: "StepStarted",
-          at: "2026-01-01T00:00:00.100Z",
-          stepId: "gate",
-          attempt: 1,
-          input: { ref: "inline:null" },
-        },
-        {
-          seq: 3,
-          type: "SignalAwaited",
-          at: "2026-01-01T00:00:00.200Z",
-          stepId: "gate",
-          signalName: "go",
+          at: "2026-01-01T00:00:00.500Z",
+          stepId: "step-1",
+          attempt: 0,
+          input: { ref: "blob:seed-input" },
         },
       ],
+    );
+    // A processing entry for messageId = runId, so the re-fired
+    // `trigger.fire` COULD resolve its trigger payload and drive a second
+    // run if the guard were absent.
+    await seedProcessingEntry(
+      baseDir,
+      { kind: "workflow-run", id: "deployment-x" },
+      {
+        address: "deployment-x@example.com",
+        messageId: runId,
+        receivedAt: 1,
+        text: "re-fired inbound",
+      },
     );
 
     const supervisorToChild = createMemoryNdjsonStream();
     const childToSupervisor = createMemoryNdjsonStream();
     const eventStream = createMemoryFrameStream();
+
     const env = parseSpawnTimeEnv(
       makeSpawnEnv({
         channelId,
@@ -948,161 +983,126 @@ describe("runWorkflowChild", () => {
         hostPubKeyHex: hexEncode(supervisorKeyPair.publicKey),
       }),
     );
-    const bindings = buildBindings({ baseDir, childKeyPair });
+
+    // Spy invokeStep: the resumed crashed step must settle WITHOUT
+    // re-invoking the agent (commit 2a's at-most-once refusal), so this
+    // counter must stay at zero for the resumed run.
+    let invokeCalls = 0;
+    const bindings: RunWorkflowChildBindings = {
+      ...buildBindings({ baseDir, childKeyPair }),
+      invokeStep: async () => {
+        invokeCalls += 1;
+        return { output: null };
+      },
+    };
+
     const supervisorSender = createControlChannelSender({
       privateKeySeed: supervisorKeyPair.privateKey,
       channelId,
       writer: supervisorToChild.writer,
     });
 
-    const recoverCalls: { runId: string; hasBlobs: boolean }[] = [];
-    const runPromise = runWorkflowChild({
-      env,
-      controlReader: supervisorToChild.reader,
-      controlWriter: childToSupervisor.writer,
-      eventWriter: eventStream.writer,
-      bindings,
-      recoverParkedRun: async (run, ctx) => {
-        recoverCalls.push({
-          runId: run.runId,
-          hasBlobs: ctx.blobs !== undefined,
-        });
-        const maxSeq = run.seedEvents.reduce((m, e) => Math.max(m, e.seq), 0);
-        const at = "2026-01-01T00:00:01.000Z";
-        const { ref } = await ctx.blobs.recordOutput("gate", 1, {
-          approved: true,
-        });
-        const satisfied: WorkflowEvent[] = [
-          ...run.seedEvents,
-          {
-            kind: "SignalReceived",
-            seq: maxSeq + 1,
-            at,
-            signalName: "go",
-            signalId: "sig-1",
-            payload: { approved: true },
-          },
-          {
-            kind: "StepCompleted",
-            seq: maxSeq + 2,
-            at,
-            stepId: "gate",
-            attempt: 1,
-            output: { ref },
-          },
-        ];
-        return satisfied;
-      },
-    });
+    // Capture the child's error diagnostics. A second concurrent driver
+    // loses the race to settle the crashed residual and its uncaught
+    // TransitionError (terminal-phase / step-phase) is logged through the
+    // child's `logger.error` into `console.error`. No such string may
+    // escape when exactly one driver runs.
+    const capturedErrors: string[] = [];
+    // eslint-disable-next-line no-console -- test spy restored in finally
+    const originalConsoleError = console.error;
+    // eslint-disable-next-line no-console -- test spy restored in finally
+    console.error = (...args: unknown[]) => {
+      capturedErrors.push(args.map((a) => String(a)).join(" "));
+    };
 
-    await supervisorSender.send({
-      type: "shutdown",
-      data: { reason: "test done" },
-    });
-    supervisorToChild.close();
-    const result = await runPromise;
+    let result: Awaited<ReturnType<typeof runWorkflowChild>>;
+    const terminals: number[] = [];
+    try {
+      const runPromise = runWorkflowChild({
+        env,
+        controlReader: supervisorToChild.reader,
+        controlWriter: childToSupervisor.writer,
+        eventWriter: eventStream.writer,
+        bindings,
+      });
 
-    expect(recoverCalls).toEqual([{ runId: "run-parked", hasBlobs: true }]);
-    expect(result.resumedRunIds).toContain("run-parked");
-  });
-
-  // WORKBENCH-LOCAL (CL-2535): a recoverParkedRun hook that THROWS must NOT
-  // crash the child. This runs during self-discovery before `ready`; an
-  // uncaught throw would reject runWorkflowChild, trip the binary's
-  // unhandledRejection -> exit(1), and wedge the whole deployment. The guard
-  // makes one bad run fall through to the default path instead.
-  test("a throwing recoverParkedRun hook does not crash the child (falls through)", async () => {
-    const baseDir = await makeTempDir("child-recover-throw-");
-    const supervisorKeyPair = await generateKeyPair();
-    const childKeyPair = await generateKeyPair();
-    const channelId = generateChannelId();
-    const hmacKey = generateHmacKey();
-
-    const assetDir = path.join(baseDir, "workflow", "workflow-asset");
-    await fs.mkdir(assetDir, { recursive: true });
-    await fs.writeFile(
-      path.join(assetDir, "workflow.json"),
-      JSON.stringify({
-        id: "gate-workflow",
-        triggers: [{ type: "manual" }],
-        steps: {
-          gate: {
-            kind: "awaitSignal",
-            id: "gate",
-            name: "go",
-            drainBehavior: "wait",
-          },
-        },
-        stepOrder: ["gate"],
-      }),
-    );
-    await seedRun(
-      baseDir,
-      { kind: "workflow-run", id: "deployment-x" },
-      "run-parked",
-      [
-        {
-          seq: 1,
-          type: "RunStarted",
-          at: "2026-01-01T00:00:00.000Z",
-          runId: "run-parked",
-          definitionHash: "h",
-          trigger: { type: "manual", payload: null },
-        },
-        {
-          seq: 2,
-          type: "StepStarted",
-          at: "2026-01-01T00:00:00.100Z",
-          stepId: "gate",
-          attempt: 1,
-          input: { ref: "inline:null" },
-        },
-        {
-          seq: 3,
-          type: "SignalAwaited",
-          at: "2026-01-01T00:00:00.200Z",
-          stepId: "gate",
-          signalName: "go",
-        },
-      ],
-    );
-
-    const supervisorToChild = createMemoryNdjsonStream();
-    const childToSupervisor = createMemoryNdjsonStream();
-    const eventStream = createMemoryFrameStream();
-    const env = parseSpawnTimeEnv(
-      makeSpawnEnv({
+      // Decode the child's upstream frames live so the test observes the
+      // run reach terminal (self-discovery completes before `ready`, so the
+      // crashed runId is in the one-driver map before the trigger). The
+      // receiver bootstraps the child's verifying key from `ready`.
+      const recvIter = receiveControlChannel({
+        publicKey: { bootstrapFromReady: true },
         channelId,
-        hmacKeyHex: hexEncode(hmacKey),
-        hostPubKeyHex: hexEncode(supervisorKeyPair.publicKey),
-      }),
-    );
-    const bindings = buildBindings({ baseDir, childKeyPair });
-    const supervisorSender = createControlChannelSender({
-      privateKeySeed: supervisorKeyPair.privateKey,
-      channelId,
-      writer: supervisorToChild.writer,
-    });
+        reader: childToSupervisor.reader,
+        onCrash: (reason) => {
+          throw new Error(`unexpected control channel crash: ${reason}`);
+        },
+      });
 
-    const runPromise = runWorkflowChild({
-      env,
-      controlReader: supervisorToChild.reader,
-      controlWriter: childToSupervisor.writer,
-      eventWriter: eventStream.writer,
-      bindings,
-      recoverParkedRun: async () => {
-        throw new Error("boom recovery");
-      },
-    });
+      // The supervisor re-fires the same runId: runId = messageId, no
+      // resumeFromEvents. The guard must decline this second drive.
+      await supervisorSender.send({
+        type: "trigger.fire",
+        data: { runId, messageId: runId, receivedAt: 1 },
+      });
 
-    await supervisorSender.send({
-      type: "shutdown",
-      data: { reason: "test done" },
-    });
-    supervisorToChild.close();
-    // Must RESOLVE (reach `ready`) despite the hook throwing — not reject.
-    const result = await runPromise;
-    expect(result.resumedRunIds).toContain("run-parked");
+      // Wait for the run's terminal, counting every terminal.event for the
+      // runId. Break on the first terminal, then drain any residual frames
+      // below to prove no second one lands.
+      for await (const payload of recvIter) {
+        if (payload.type === "terminal.event" && payload.data.runId === runId) {
+          terminals.push(payload.data.seq);
+          break;
+        }
+      }
+
+      await supervisorSender.send({
+        type: "shutdown",
+        data: { reason: "test done" },
+      });
+      supervisorToChild.close();
+
+      result = await runPromise;
+      childToSupervisor.close();
+
+      // Drain the rest of the upstream stream; no SECOND terminal for the
+      // runId may appear -- exactly one driver emitted exactly one terminal.
+      for await (const payload of recvIter) {
+        if (payload.type === "terminal.event" && payload.data.runId === runId) {
+          terminals.push(payload.data.seq);
+        }
+      }
+    } finally {
+      // eslint-disable-next-line no-console -- restore the spied method
+      console.error = originalConsoleError;
+    }
+
+    // Load-bearing for this seeded interleaving: the losing second driver
+    // throws while settling the crashed residual (a StepFailed-onto-already-
+    // terminal TransitionError) and that throw lands in its fire-and-forget
+    // continuation, logged through the child's `logger.error`. No such
+    // string may escape when exactly one driver runs. This is the check
+    // that fails when the guard is removed -- the loser throws BEFORE it
+    // reaches a terminal emission, so `terminals` still has length 1.
+    expect(
+      capturedErrors.some((line) => line.includes("TransitionError")),
+    ).toBe(false);
+    // At least one terminal.event for the runId. The one-driver guard
+    // prevents two CONCURRENT drivers (the TransitionError check above); it
+    // does not force a strict single terminal. A re-fire that arrives after
+    // the resumed driver already settled misses the guard, spawns a second
+    // driver that terminal-short-circuits (no re-invocation) and benignly
+    // re-emits the terminal; the supervisor tolerates a duplicate terminal
+    // idempotently. The guarantee the code makes is at-least-one, not
+    // exactly-one.
+    expect(terminals.length).toBeGreaterThanOrEqual(1);
+    // The crashed step settled without re-invoking the agent (commit 2a's
+    // at-most-once refusal); the load-bearing zero-invocation assertion.
+    expect(invokeCalls).toBe(0);
+    // The self-discovery driver resumed the run; the re-fire was accepted
+    // (recorded once) but drove nothing.
+    expect(result.resumedRunIds).toContain(runId);
+    expect(result.triggeredRunIds).toEqual([runId]);
   });
 
   test("grants-updated frame replaces the active credentialsSnapshot", async () => {
@@ -1180,6 +1180,128 @@ describe("runWorkflowChild", () => {
     ]);
   });
 
+  test("sources-updated on a multi-step deployment is rejected", async () => {
+    const baseDir = await makeTempDir("child-sources-multistep-");
+    const supervisorKeyPair = await generateKeyPair();
+    const childKeyPair = await generateKeyPair();
+    const channelId = generateChannelId();
+    const hmacKey = generateHmacKey();
+    await seedWorkflowDefinition(
+      baseDir,
+      { kind: "workflow", id: "workflow-asset" },
+      {
+        steps: { "step-1": { kind: "step" }, "step-2": { kind: "step" } },
+        stepOrder: ["step-1", "step-2"],
+      },
+    );
+
+    const supervisorToChild = createMemoryNdjsonStream();
+    const childToSupervisor = createMemoryNdjsonStream();
+    const eventStream = createMemoryFrameStream();
+
+    const env = parseSpawnTimeEnv(
+      makeSpawnEnv({
+        channelId,
+        hmacKeyHex: hexEncode(hmacKey),
+        hostPubKeyHex: hexEncode(supervisorKeyPair.publicKey),
+      }),
+    );
+    const bindings = buildBindings({ baseDir, childKeyPair });
+    const supervisorSender = createControlChannelSender({
+      privateKeySeed: supervisorKeyPair.privateKey,
+      channelId,
+      writer: supervisorToChild.writer,
+    });
+
+    const runPromise = runWorkflowChild({
+      env,
+      controlReader: supervisorToChild.reader,
+      controlWriter: childToSupervisor.writer,
+      eventWriter: eventStream.writer,
+      bindings,
+    });
+
+    await supervisorSender.send({
+      type: "sources-updated",
+      data: {
+        sources: [
+          {
+            id: "primary",
+            provider: "anthropic",
+            baseURL: "https://api.anthropic.com",
+            apiKey: "sk-x",
+            model: "claude-test",
+          },
+        ],
+        defaultSource: "primary",
+      },
+    });
+
+    await expect(runPromise).rejects.toThrow(/single-step deployment/);
+    supervisorToChild.close();
+  });
+
+  test("sources-updated with no warm cache is rejected as a routing bug", async () => {
+    // A single-step definition with WARM_KEEP off leaves the child with no
+    // warm cache. A sources-updated must never silently no-op there; it is
+    // a routing bug, so the handler throws.
+    const baseDir = await makeTempDir("child-sources-nowarm-");
+    const supervisorKeyPair = await generateKeyPair();
+    const childKeyPair = await generateKeyPair();
+    const channelId = generateChannelId();
+    const hmacKey = generateHmacKey();
+    await seedWorkflowDefinition(
+      baseDir,
+      { kind: "workflow", id: "workflow-asset" },
+      { steps: { "step-1": { kind: "step" } }, stepOrder: ["step-1"] },
+    );
+
+    const supervisorToChild = createMemoryNdjsonStream();
+    const childToSupervisor = createMemoryNdjsonStream();
+    const eventStream = createMemoryFrameStream();
+
+    const env = parseSpawnTimeEnv(
+      makeSpawnEnv({
+        channelId,
+        hmacKeyHex: hexEncode(hmacKey),
+        hostPubKeyHex: hexEncode(supervisorKeyPair.publicKey),
+      }),
+    );
+    const bindings = buildBindings({ baseDir, childKeyPair });
+    const supervisorSender = createControlChannelSender({
+      privateKeySeed: supervisorKeyPair.privateKey,
+      channelId,
+      writer: supervisorToChild.writer,
+    });
+
+    const runPromise = runWorkflowChild({
+      env,
+      controlReader: supervisorToChild.reader,
+      controlWriter: childToSupervisor.writer,
+      eventWriter: eventStream.writer,
+      bindings,
+    });
+
+    await supervisorSender.send({
+      type: "sources-updated",
+      data: {
+        sources: [
+          {
+            id: "primary",
+            provider: "anthropic",
+            baseURL: "https://api.anthropic.com",
+            apiKey: "sk-x",
+            model: "claude-test",
+          },
+        ],
+        defaultSource: "primary",
+      },
+    });
+
+    await expect(runPromise).rejects.toThrow(/no warm cache/);
+    supervisorToChild.close();
+  });
+
   test("child ready frame is signed by the child's own keypair and bootstraps the supervisor's verification key", async () => {
     const baseDir = await makeTempDir("child-ready-");
     const supervisorKeyPair = await generateKeyPair();
@@ -1254,383 +1376,6 @@ describe("runWorkflowChild", () => {
     supervisorToChild.close();
     childToSupervisor.close();
     await runPromise;
-  });
-
-  test("hub-originated JSON trigger body becomes trigger.payload object for step input", async () => {
-    const baseDir = await makeTempDir("child-hub-structured-trigger-");
-    const supervisorKeyPair = await generateKeyPair();
-    const childKeyPair = await generateKeyPair();
-    const channelId = generateChannelId();
-    const hmacKey = generateHmacKey();
-    await seedTriggerPayloadWorkflow(baseDir, "step-1");
-    const structured = {
-      contentName: "post",
-      channel: "x",
-      topic: "neobank launches",
-    };
-    await seedProcessingEntry(
-      baseDir,
-      { kind: "workflow-run", id: "deployment-x" },
-      {
-        address: "deployment-x@example.com",
-        messageId: "msg-hub",
-        receivedAt: 1,
-        from: "hub@example.com",
-        text: JSON.stringify(structured),
-      },
-    );
-
-    const supervisorToChild = createMemoryNdjsonStream();
-    const childToSupervisor = createMemoryNdjsonStream();
-    const eventStream = createMemoryFrameStream();
-    const env = parseSpawnTimeEnv(
-      makeSpawnEnv({
-        channelId,
-        hmacKeyHex: hexEncode(hmacKey),
-        hostPubKeyHex: hexEncode(supervisorKeyPair.publicKey),
-      }),
-    );
-    const stepInputs: unknown[] = [];
-    const bindings: RunWorkflowChildBindings = {
-      ...buildBindings({ baseDir, childKeyPair }),
-      invokeStep: async (req) => {
-        stepInputs.push(req.input);
-        return { output: null };
-      },
-    };
-    const supervisorSender = createControlChannelSender({
-      privateKeySeed: supervisorKeyPair.privateKey,
-      channelId,
-      writer: supervisorToChild.writer,
-    });
-    const runPromise = runWorkflowChild({
-      env,
-      controlReader: supervisorToChild.reader,
-      controlWriter: childToSupervisor.writer,
-      eventWriter: eventStream.writer,
-      bindings,
-    });
-    await waitForTriggeredRun(childToSupervisor, (lines) => lines.length > 0);
-    await supervisorSender.send({
-      type: "trigger.fire",
-      data: { runId: "run-hub", messageId: "msg-hub", receivedAt: 1 },
-    });
-    for (let i = 0; i < 400 && stepInputs.length < 1; i += 1) {
-      await new Promise((r) => setTimeout(r, 5));
-    }
-    await supervisorSender.send({
-      type: "shutdown",
-      data: { reason: "test done" },
-    });
-    supervisorToChild.close();
-    const result = await runPromise;
-    expect(result.triggeredRunIds).toEqual(["run-hub"]);
-    expect(stepInputs[0]).toEqual(structured);
-  });
-
-  test("user-originated mail that looks like JSON stays plain text trigger payload", async () => {
-    const baseDir = await makeTempDir("child-user-json-text-trigger-");
-    const supervisorKeyPair = await generateKeyPair();
-    const childKeyPair = await generateKeyPair();
-    const channelId = generateChannelId();
-    const hmacKey = generateHmacKey();
-    await seedTriggerPayloadWorkflow(baseDir, "step-1");
-    const jsonText = '{"looks":"like json"}';
-    await seedProcessingEntry(
-      baseDir,
-      { kind: "workflow-run", id: "deployment-x" },
-      {
-        address: "deployment-x@example.com",
-        messageId: "msg-user",
-        receivedAt: 1,
-        text: jsonText,
-      },
-    );
-
-    const supervisorToChild = createMemoryNdjsonStream();
-    const childToSupervisor = createMemoryNdjsonStream();
-    const eventStream = createMemoryFrameStream();
-    const env = parseSpawnTimeEnv(
-      makeSpawnEnv({
-        channelId,
-        hmacKeyHex: hexEncode(hmacKey),
-        hostPubKeyHex: hexEncode(supervisorKeyPair.publicKey),
-      }),
-    );
-    const stepInputs: unknown[] = [];
-    const bindings: RunWorkflowChildBindings = {
-      ...buildBindings({ baseDir, childKeyPair }),
-      invokeStep: async (req) => {
-        stepInputs.push(req.input);
-        return { output: null };
-      },
-    };
-    const supervisorSender = createControlChannelSender({
-      privateKeySeed: supervisorKeyPair.privateKey,
-      channelId,
-      writer: supervisorToChild.writer,
-    });
-    const runPromise = runWorkflowChild({
-      env,
-      controlReader: supervisorToChild.reader,
-      controlWriter: childToSupervisor.writer,
-      eventWriter: eventStream.writer,
-      bindings,
-    });
-    await waitForTriggeredRun(childToSupervisor, (lines) => lines.length > 0);
-    await supervisorSender.send({
-      type: "trigger.fire",
-      data: { runId: "run-user", messageId: "msg-user", receivedAt: 1 },
-    });
-    for (let i = 0; i < 400 && stepInputs.length < 1; i += 1) {
-      await new Promise((r) => setTimeout(r, 5));
-    }
-    await supervisorSender.send({
-      type: "shutdown",
-      data: { reason: "test done" },
-    });
-    supervisorToChild.close();
-    const result = await runPromise;
-    expect(result.triggeredRunIds).toEqual(["run-user"]);
-    expect(stepInputs[0]).toBe(jsonText);
-  });
-
-  test("hub-originated non-JSON trigger body fails closed", async () => {
-    const baseDir = await makeTempDir("child-hub-bad-json-trigger-");
-    const supervisorKeyPair = await generateKeyPair();
-    const childKeyPair = await generateKeyPair();
-    const channelId = generateChannelId();
-    const hmacKey = generateHmacKey();
-    await seedTriggerPayloadWorkflow(baseDir, "step-1");
-    await seedProcessingEntry(
-      baseDir,
-      { kind: "workflow-run", id: "deployment-x" },
-      {
-        address: "deployment-x@example.com",
-        messageId: "msg-bad",
-        receivedAt: 1,
-        from: "hub@example.com",
-        text: "not-json",
-      },
-    );
-
-    const supervisorToChild = createMemoryNdjsonStream();
-    const childToSupervisor = createMemoryNdjsonStream();
-    const eventStream = createMemoryFrameStream();
-    const env = parseSpawnTimeEnv(
-      makeSpawnEnv({
-        channelId,
-        hmacKeyHex: hexEncode(hmacKey),
-        hostPubKeyHex: hexEncode(supervisorKeyPair.publicKey),
-      }),
-    );
-    const bindings = buildBindings({ baseDir, childKeyPair });
-    const supervisorSender = createControlChannelSender({
-      privateKeySeed: supervisorKeyPair.privateKey,
-      channelId,
-      writer: supervisorToChild.writer,
-    });
-    const runPromise = runWorkflowChild({
-      env,
-      controlReader: supervisorToChild.reader,
-      controlWriter: childToSupervisor.writer,
-      eventWriter: eventStream.writer,
-      bindings,
-    });
-    await waitForTriggeredRun(childToSupervisor, (lines) => lines.length > 0);
-    await supervisorSender.send({
-      type: "trigger.fire",
-      data: { runId: "run-bad", messageId: "msg-bad", receivedAt: 1 },
-    });
-    supervisorToChild.close();
-    await expect(runPromise).rejects.toThrow(/not valid JSON/);
-  });
-
-  test("hub sender with a display-name from-header decodes to a trigger.payload object", async () => {
-    const baseDir = await makeTempDir("child-hub-displayname-trigger-");
-    const supervisorKeyPair = await generateKeyPair();
-    const childKeyPair = await generateKeyPair();
-    const channelId = generateChannelId();
-    const hmacKey = generateHmacKey();
-    await seedTriggerPayloadWorkflow(baseDir, "step-1");
-    const structured = { contentName: "post", channel: "x" };
-    await seedProcessingEntry(
-      baseDir,
-      { kind: "workflow-run", id: "deployment-x" },
-      {
-        address: "deployment-x@example.com",
-        messageId: "msg-hub-dn",
-        receivedAt: 1,
-        from: "Workbench Hub <hub@example.com>",
-        text: JSON.stringify(structured),
-      },
-    );
-
-    const supervisorToChild = createMemoryNdjsonStream();
-    const childToSupervisor = createMemoryNdjsonStream();
-    const eventStream = createMemoryFrameStream();
-    const env = parseSpawnTimeEnv(
-      makeSpawnEnv({
-        channelId,
-        hmacKeyHex: hexEncode(hmacKey),
-        hostPubKeyHex: hexEncode(supervisorKeyPair.publicKey),
-      }),
-    );
-    const stepInputs: unknown[] = [];
-    const bindings: RunWorkflowChildBindings = {
-      ...buildBindings({ baseDir, childKeyPair }),
-      invokeStep: async (req) => {
-        stepInputs.push(req.input);
-        return { output: null };
-      },
-    };
-    const supervisorSender = createControlChannelSender({
-      privateKeySeed: supervisorKeyPair.privateKey,
-      channelId,
-      writer: supervisorToChild.writer,
-    });
-    const runPromise = runWorkflowChild({
-      env,
-      controlReader: supervisorToChild.reader,
-      controlWriter: childToSupervisor.writer,
-      eventWriter: eventStream.writer,
-      bindings,
-    });
-    await waitForTriggeredRun(childToSupervisor, (lines) => lines.length > 0);
-    await supervisorSender.send({
-      type: "trigger.fire",
-      data: { runId: "run-hub-dn", messageId: "msg-hub-dn", receivedAt: 1 },
-    });
-    for (let i = 0; i < 400 && stepInputs.length < 1; i += 1) {
-      await new Promise((r) => setTimeout(r, 5));
-    }
-    await supervisorSender.send({
-      type: "shutdown",
-      data: { reason: "test done" },
-    });
-    supervisorToChild.close();
-    const result = await runPromise;
-    expect(result.triggeredRunIds).toEqual(["run-hub-dn"]);
-    expect(stepInputs[0]).toEqual(structured);
-  });
-
-  test("hub local-part from a foreign domain stays plain text trigger payload", async () => {
-    const baseDir = await makeTempDir("child-hub-foreign-domain-trigger-");
-    const supervisorKeyPair = await generateKeyPair();
-    const childKeyPair = await generateKeyPair();
-    const channelId = generateChannelId();
-    const hmacKey = generateHmacKey();
-    await seedTriggerPayloadWorkflow(baseDir, "step-1");
-    const jsonText = '{"spoofed":"payload"}';
-    await seedProcessingEntry(
-      baseDir,
-      { kind: "workflow-run", id: "deployment-x" },
-      {
-        address: "deployment-x@example.com",
-        messageId: "msg-foreign",
-        receivedAt: 1,
-        from: "hub@attacker.example",
-        text: jsonText,
-      },
-    );
-
-    const supervisorToChild = createMemoryNdjsonStream();
-    const childToSupervisor = createMemoryNdjsonStream();
-    const eventStream = createMemoryFrameStream();
-    const env = parseSpawnTimeEnv(
-      makeSpawnEnv({
-        channelId,
-        hmacKeyHex: hexEncode(hmacKey),
-        hostPubKeyHex: hexEncode(supervisorKeyPair.publicKey),
-      }),
-    );
-    const stepInputs: unknown[] = [];
-    const bindings: RunWorkflowChildBindings = {
-      ...buildBindings({ baseDir, childKeyPair }),
-      invokeStep: async (req) => {
-        stepInputs.push(req.input);
-        return { output: null };
-      },
-    };
-    const supervisorSender = createControlChannelSender({
-      privateKeySeed: supervisorKeyPair.privateKey,
-      channelId,
-      writer: supervisorToChild.writer,
-    });
-    const runPromise = runWorkflowChild({
-      env,
-      controlReader: supervisorToChild.reader,
-      controlWriter: childToSupervisor.writer,
-      eventWriter: eventStream.writer,
-      bindings,
-    });
-    await waitForTriggeredRun(childToSupervisor, (lines) => lines.length > 0);
-    await supervisorSender.send({
-      type: "trigger.fire",
-      data: { runId: "run-foreign", messageId: "msg-foreign", receivedAt: 1 },
-    });
-    for (let i = 0; i < 400 && stepInputs.length < 1; i += 1) {
-      await new Promise((r) => setTimeout(r, 5));
-    }
-    await supervisorSender.send({
-      type: "shutdown",
-      data: { reason: "test done" },
-    });
-    supervisorToChild.close();
-    const result = await runPromise;
-    expect(result.triggeredRunIds).toEqual(["run-foreign"]);
-    expect(stepInputs[0]).toBe(jsonText);
-  });
-
-  test("hub-originated JSON array body fails closed", async () => {
-    const baseDir = await makeTempDir("child-hub-array-trigger-");
-    const supervisorKeyPair = await generateKeyPair();
-    const childKeyPair = await generateKeyPair();
-    const channelId = generateChannelId();
-    const hmacKey = generateHmacKey();
-    await seedTriggerPayloadWorkflow(baseDir, "step-1");
-    await seedProcessingEntry(
-      baseDir,
-      { kind: "workflow-run", id: "deployment-x" },
-      {
-        address: "deployment-x@example.com",
-        messageId: "msg-array",
-        receivedAt: 1,
-        from: "hub@example.com",
-        text: JSON.stringify([1, 2, 3]),
-      },
-    );
-
-    const supervisorToChild = createMemoryNdjsonStream();
-    const childToSupervisor = createMemoryNdjsonStream();
-    const eventStream = createMemoryFrameStream();
-    const env = parseSpawnTimeEnv(
-      makeSpawnEnv({
-        channelId,
-        hmacKeyHex: hexEncode(hmacKey),
-        hostPubKeyHex: hexEncode(supervisorKeyPair.publicKey),
-      }),
-    );
-    const bindings = buildBindings({ baseDir, childKeyPair });
-    const supervisorSender = createControlChannelSender({
-      privateKeySeed: supervisorKeyPair.privateKey,
-      channelId,
-      writer: supervisorToChild.writer,
-    });
-    const runPromise = runWorkflowChild({
-      env,
-      controlReader: supervisorToChild.reader,
-      controlWriter: childToSupervisor.writer,
-      eventWriter: eventStream.writer,
-      bindings,
-    });
-    await waitForTriggeredRun(childToSupervisor, (lines) => lines.length > 0);
-    await supervisorSender.send({
-      type: "trigger.fire",
-      data: { runId: "run-array", messageId: "msg-array", receivedAt: 1 },
-    });
-    supervisorToChild.close();
-    await expect(runPromise).rejects.toThrow(/must be a JSON object/);
   });
 
   test("rejects a control frame whose signature does not verify", async () => {
@@ -1759,6 +1504,10 @@ interface WarmAgentSpy {
   closeCount: number;
   readonly conversation: string[];
   readonly replies: string[];
+  readonly sourceRotations: {
+    sources: InferenceSource[];
+    defaultSource: string;
+  }[];
 }
 
 /**
@@ -1776,6 +1525,7 @@ function buildWarmAgentSpy(): { agent: Agent; spy: WarmAgentSpy } {
     closeCount: 0,
     conversation: [],
     replies: [],
+    sourceRotations: [],
   };
   let endStream: () => void = () => undefined;
   const streamEnded = new Promise<void>((resolve) => {
@@ -1818,8 +1568,11 @@ function buildWarmAgentSpy(): { agent: Agent; spy: WarmAgentSpy } {
     setSource(_source: InferenceSource) {
       throw new Error("stub setSource() not used");
     },
-    setSources(_sources: InferenceSource[], _defaultSource: string) {
-      throw new Error("stub setSources() not used");
+    setSources(sources: InferenceSource[], defaultSource: string) {
+      // Live source rotation lands here on the warm agent. Record it so the
+      // sources-updated round-trip can assert the swap reached the agent
+      // in place rather than rebuilding it.
+      spy.sourceRotations.push({ sources, defaultSource });
     },
     async history() {
       return [];
@@ -2157,6 +1910,176 @@ describe("warm-agent round-trip (Phase 4.4)", () => {
     expect(spy.closeCount).toBe(1);
     expect(spy.lspAlive).toBe(false);
   });
+
+  test("a sources-updated frame swaps the built warm agent's sources in place", async () => {
+    const baseDir = await makeTempDir("warm-sources-");
+    const supervisorKeyPair = await generateKeyPair();
+    const childKeyPair = await generateKeyPair();
+    const channelId = generateChannelId();
+    const hmacKey = generateHmacKey();
+    const stepId = "step-1";
+    const deploymentId = "deployment-x";
+    const workflowRunRepoId: RepoId = {
+      kind: "workflow-run",
+      id: deploymentId,
+    };
+    const workflowDefinitionRepoId: RepoId = {
+      kind: "workflow-run",
+      id: "workflow-asset",
+    };
+
+    const signingKey: KeyPair = await generateKeyPair();
+    const allowAll: AuthorizeFn = () => ({ allowed: true });
+    const substrate = createRepoStore({
+      dataDir: baseDir,
+      signingKey,
+      handlers: { "workflow-run": workflowRunKindHandler },
+      authorize: allowAll,
+    });
+    const principalShape = { kind: "workflow-process", deploymentId };
+    const principal: Principal = principalShape;
+
+    await substrate.writeTree(
+      { kind: "hub" },
+      workflowRunRepoId,
+      "refs/heads/main",
+      { files: { [WORKFLOW_RUN_GITIGNORE_PATH]: "" }, message: "genesis" },
+    );
+    const runRepoDir = substrate.getRepoDir(workflowRunRepoId);
+    await seedProcessingEntryInDir(runRepoDir, {
+      address: "deployment-x@example.com",
+      messageId: "msg-1",
+      receivedAt: 1,
+      text: "alpha body",
+    });
+    await substrate.writeTree(
+      { kind: "hub" },
+      workflowDefinitionRepoId,
+      "refs/heads/main",
+      { files: { [WORKFLOW_RUN_GITIGNORE_PATH]: "" }, message: "genesis" },
+    );
+    await seedOneStepWorkflowDir(
+      substrate.getRepoDir(workflowDefinitionRepoId),
+      stepId,
+    );
+
+    const { agent, spy } = buildWarmAgentSpy();
+    let factoryCalls = 0;
+    const invokeStep: ChildStepInvoker = async (
+      req,
+      onEvent,
+      authorize,
+      warmCache,
+    ) =>
+      createWorkflowStepInvoker({
+        workflowAuthorize: authorize,
+        buildEnv: async () => stubStepEnv(),
+        agentFactory: async () => {
+          factoryCalls += 1;
+          return agent;
+        },
+        onEvent: (event) => onEvent(event),
+        ...(warmCache !== undefined ? { warmCache } : {}),
+      })(req);
+
+    const bindings: RunWorkflowChildBindings = {
+      substrate,
+      workflowRunRepoId,
+      workflowRunRef: "refs/heads/main",
+      principal,
+      workflowDefinitionRepoId,
+      workflowDefinitionRef: "refs/heads/main",
+      invokeStep,
+      spawnChild: async () => ({ terminalStatus: "completed" }),
+      scheduler: { scheduleIn: () => () => undefined },
+      evaluateGrants: async () => ({
+        effect: "allow" as const,
+        matchingGrants: [],
+        resolvedBy: null,
+      }),
+      ipcChildKeyPairFactory: () => Promise.resolve(childKeyPair),
+      initialCredentialsSnapshot: {
+        steps: [
+          {
+            stepId,
+            address: "deployment-x@example.com",
+            grants: [],
+            contentHash: "deadbeef",
+          },
+        ],
+      },
+    };
+
+    const supervisorToChild = createMemoryNdjsonStream();
+    const childToSupervisor = createMemoryNdjsonStream();
+    const eventStream = createMemoryFrameStream();
+
+    const env = parseSpawnTimeEnv({
+      ...makeSpawnEnv({
+        channelId,
+        hmacKeyHex: hexEncode(hmacKey),
+        hostPubKeyHex: hexEncode(supervisorKeyPair.publicKey),
+      }),
+      WARM_KEEP: "true",
+    });
+
+    const supervisorSender = createControlChannelSender({
+      privateKeySeed: supervisorKeyPair.privateKey,
+      channelId,
+      writer: supervisorToChild.writer,
+    });
+
+    const runPromise = runWorkflowChild({
+      env,
+      controlReader: supervisorToChild.reader,
+      controlWriter: childToSupervisor.writer,
+      eventWriter: eventStream.writer,
+      bindings,
+    });
+
+    await waitForTriggeredRun(childToSupervisor, (lines) => lines.length > 0);
+
+    // Build the warm agent with one message so the cache holds an entry.
+    await supervisorSender.send({
+      type: "trigger.fire",
+      data: { runId: "run-1", messageId: "msg-1", receivedAt: 1 },
+    });
+    await waitForTriggeredRun(childToSupervisor, () => spy.replies.length >= 1);
+    expect(factoryCalls).toBe(1);
+
+    // Rotate the sources on the live warm agent.
+    const rotated: InferenceSource[] = [
+      {
+        id: "rotated",
+        provider: "openai",
+        baseURL: "https://api.openai.com",
+        apiKey: "sk-rotated",
+        model: "gpt-rotated",
+      },
+    ];
+    await supervisorSender.send({
+      type: "sources-updated",
+      data: { sources: rotated, defaultSource: "rotated" },
+    });
+    for (let i = 0; i < 400; i += 1) {
+      if (spy.sourceRotations.length >= 1) break;
+      await new Promise((r) => setTimeout(r, 5));
+    }
+
+    // The swap reached the built agent in place, carrying the frame's list
+    // and default, and did NOT rebuild the agent.
+    expect(spy.sourceRotations).toHaveLength(1);
+    expect(spy.sourceRotations[0]?.sources).toEqual(rotated);
+    expect(spy.sourceRotations[0]?.defaultSource).toBe("rotated");
+    expect(factoryCalls).toBe(1);
+
+    await supervisorSender.send({
+      type: "shutdown",
+      data: { reason: "undeploy" },
+    });
+    supervisorToChild.close();
+    await runPromise;
+  });
 });
 
 describe("event channel writer wiring", () => {
@@ -2201,780 +2124,111 @@ describe("event channel writer wiring", () => {
   });
 });
 
-// WORKBENCH-LOCAL (CL-2537): the live awaitSignal watcher. A run discovered
-// parked at an `awaitSignal` gate STILL waiting for a human no longer dies on a
-// sidecar restart: instead of `runtimeRun` rejecting the unresumable tail, the
-// child installs a live watcher that keeps the run parked, subscribes to the
-// gate's signal source, and on signal arrival host-satisfies + resumes — which
-// both saves the run AND lets it reach terminal so the supervisor's dispatch
-// loop unwedges. These tests use the REAL workflow-run substrate (persisting
-// writes + a live `subscribeKind` tail) so the watcher's subscribe → recheck →
-// recover → resume seam is exercised end-to-end, not against a stub.
-describe("CL-2537 live awaitSignal watcher", () => {
-  const GATE_DEPLOYMENT_ID = "deployment-gate";
-  const PARKED_AT = "2026-01-01T00:00:00.000Z";
-
-  async function seedGateWorkflowDir(repoDir: string): Promise<void> {
-    await fs.mkdir(repoDir, { recursive: true });
-    await fs.writeFile(
-      path.join(repoDir, "workflow.json"),
-      JSON.stringify({
-        id: "gate-workflow",
-        triggers: [{ type: "manual" }],
-        steps: {
-          gate: {
-            kind: "awaitSignal",
-            id: "gate",
-            name: "go",
-            drainBehavior: "wait",
-          },
-        },
-        stepOrder: ["gate"],
-      }),
-    );
-  }
-
-  async function genesisGateDeployment(baseDir: string): Promise<{
-    substrate: RepoStore;
-    principal: Principal;
-    workflowRunRepoId: RepoId;
-    workflowDefinitionRepoId: RepoId;
-  }> {
-    const signingKey: KeyPair = await generateKeyPair();
-    const allowAll: AuthorizeFn = () => ({ allowed: true });
-    const substrate = createRepoStore({
-      dataDir: baseDir,
-      signingKey,
-      handlers: { "workflow-run": workflowRunKindHandler },
-      authorize: allowAll,
-    });
-    const workflowRunRepoId: RepoId = {
-      kind: "workflow-run",
-      id: GATE_DEPLOYMENT_ID,
-    };
-    const workflowDefinitionRepoId: RepoId = {
-      kind: "workflow-run",
-      id: "gate-asset",
-    };
-    // Build the shape first, then widen to `Principal`: a direct annotated
-    // literal trips excess-property checking on the union (mirrors the
-    // warm-agent round-trip harness above).
-    const principalShape = {
-      kind: "workflow-process",
-      deploymentId: GATE_DEPLOYMENT_ID,
-    };
-    const principal: Principal = principalShape;
-    await substrate.writeTree(
-      { kind: "hub" },
-      workflowRunRepoId,
-      "refs/heads/main",
-      { files: { [WORKFLOW_RUN_GITIGNORE_PATH]: "" }, message: "genesis" },
-    );
-    await substrate.writeTree(
-      { kind: "hub" },
-      workflowDefinitionRepoId,
-      "refs/heads/main",
-      { files: { [WORKFLOW_RUN_GITIGNORE_PATH]: "" }, message: "genesis" },
-    );
-    await seedGateWorkflowDir(substrate.getRepoDir(workflowDefinitionRepoId));
-    return {
-      substrate,
-      principal,
-      workflowRunRepoId,
-      workflowDefinitionRepoId,
-    };
-  }
-
-  function buildGateBindings(opts: {
-    substrate: RepoStore;
-    principal: Principal;
-    workflowRunRepoId: RepoId;
-    workflowDefinitionRepoId: RepoId;
-    childKeyPair: KeyPair;
-  }): RunWorkflowChildBindings {
-    return {
-      substrate: opts.substrate,
-      workflowRunRepoId: opts.workflowRunRepoId,
-      workflowRunRef: "refs/heads/main",
-      principal: opts.principal,
-      workflowDefinitionRepoId: opts.workflowDefinitionRepoId,
-      workflowDefinitionRef: "refs/heads/main",
-      // awaitSignal gates never invoke an agent, so the step invoker is never
-      // called for a gate-only workflow.
-      invokeStep: async () => ({ output: null }),
-      spawnChild: async () => ({ terminalStatus: "completed" }),
-      scheduler: { scheduleIn: () => () => undefined },
-      evaluateGrants: async () => ({
-        effect: "allow" as const,
-        matchingGrants: [],
-        resolvedBy: null,
-      }),
-      ipcChildKeyPairFactory: () => Promise.resolve(opts.childKeyPair),
-      initialCredentialsSnapshot: {
-        steps: [
-          {
-            stepId: "gate",
-            address: "deployment-gate@example.com",
-            grants: [],
-            contentHash: "deadbeef",
-          },
-        ],
-      },
-    };
-  }
-
-  // Commit a run parked at the gate (RunStarted, StepStarted, SignalAwaited)
-  // through the SAME adapter the runtime body writes with, so both the
-  // working-tree `read` path and the committed `subscribeKind` tail see it —
-  // exactly the durable shape a sidecar restart leaves behind.
-  async function commitParkedRun(
-    substrate: RepoStore,
-    principal: Principal,
-    workflowRunRepoId: RepoId,
-    runId: string,
-  ): Promise<void> {
-    const runRepoStore = createWorkflowRunRepoStore({
-      substrate,
-      repoId: workflowRunRepoId,
-      principal,
-      ref: "refs/heads/main",
-    });
-    await runRepoStore.appendBatch(runId, [
-      {
-        kind: "RunStarted",
-        seq: 1,
-        at: PARKED_AT,
-        runId,
-        definitionHash: "h",
-        trigger: { type: "manual", payload: null },
-      },
-      {
-        kind: "StepStarted",
-        seq: 2,
-        at: PARKED_AT,
-        stepId: "gate",
-        attempt: 1,
-        input: { ref: "inline:null" },
-      },
-      {
-        kind: "SignalAwaited",
-        seq: 3,
-        at: PARKED_AT,
-        stepId: "gate",
-        signalName: "go",
-      },
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-type-assertion -- the state-machine WorkflowEvent union is narrowed downstream by the runtime; these literals match the runtime's own append shape
-    ] as unknown as WorkflowEvent[]);
-  }
-
-  // Faithful in-test stand-in for apps/sidecar's `recoverParkedRunFromLog` (the
-  // production hook wired into the child). packages/workflow-host cannot import
-  // from apps/sidecar (backwards dependency), so the gate-completion logic is
-  // replicated here: given a log carrying a delivered `SignalReceived` for an
-  // awaited gate that has no `StepCompleted`, append the missing `StepCompleted`
-  // (output re-materialized through the run's blob substrate) and return the
-  // satisfied seed; otherwise `null`. `recoverParkedRunFromLog`'s own
-  // correctness is covered by apps/sidecar/src/workflow-resume.test.ts.
-  function makeGateRecoverHook(): NonNullable<
-    RunWorkflowChildOpts["recoverParkedRun"]
-  > {
-    return async (run, ctx) => {
-      const awaitedBySignal = new Map<string, string>();
-      const attemptByStep = new Map<string, number>();
-      const completed = new Set<string>();
-      const received: { signalName: string; payload: unknown }[] = [];
-      for (const event of run.seedEvents) {
-        if (event.kind === "SignalAwaited") {
-          awaitedBySignal.set(event.signalName, event.stepId);
-        } else if (event.kind === "StepStarted") {
-          attemptByStep.set(event.stepId, event.attempt);
-        } else if (event.kind === "StepCompleted") {
-          completed.add(event.stepId);
-        } else if (event.kind === "SignalReceived") {
-          received.push({
-            signalName: event.signalName,
-            payload: event.payload,
-          });
-        }
-      }
-      let seq = run.seedEvents.reduce((max, e) => Math.max(max, e.seq), 0);
-      const appended: WorkflowEvent[] = [];
-      const handled = new Set<string>();
-      for (const signal of received) {
-        const stepId = awaitedBySignal.get(signal.signalName);
-        if (stepId === undefined) continue;
-        if (completed.has(stepId) || handled.has(stepId)) continue;
-        handled.add(stepId);
-        const attempt = attemptByStep.get(stepId) ?? 1;
-        const { ref } = await ctx.blobs.recordOutput(
-          stepId,
-          attempt,
-          signal.payload,
-        );
-        seq += 1;
-        appended.push({
-          kind: "StepCompleted",
-          seq,
-          at: new Date().toISOString(),
-          stepId,
-          attempt,
-          output: { ref },
-        });
-      }
-      if (appended.length === 0) return null;
-      return [...run.seedEvents, ...appended];
-    };
-  }
-
-  function readRunLog(
-    substrate: RepoStore,
-    principal: Principal,
-    workflowRunRepoId: RepoId,
-    runId: string,
-  ): Promise<readonly WorkflowEvent[]> {
-    return createWorkflowRunRepoStore({
-      substrate,
-      repoId: workflowRunRepoId,
-      principal,
-      ref: "refs/heads/main",
-    }).read(runId);
-  }
-
-  async function pollRunLog(
-    substrate: RepoStore,
-    principal: Principal,
-    workflowRunRepoId: RepoId,
-    runId: string,
-    predicate: (log: readonly WorkflowEvent[]) => boolean,
-    label: string,
-  ): Promise<readonly WorkflowEvent[]> {
-    for (let i = 0; i < 600; i += 1) {
-      // The raw working-tree read can momentarily ENOENT while the substrate
-      // checks out a concurrent commit; the poller just retries on the next
-      // tick (the same benign race the watcher's read tolerates in production).
-      let log: readonly WorkflowEvent[] | null = null;
-      try {
-        log = await readRunLog(substrate, principal, workflowRunRepoId, runId);
-      } catch (cause) {
-        if (
-          cause === null ||
-          typeof cause !== "object" ||
-          (cause as { code?: unknown }).code !== "ENOENT"
-        ) {
-          throw cause;
-        }
-      }
-      if (log !== null && predicate(log)) return log;
-      await new Promise((r) => setTimeout(r, 5));
-    }
-    throw new Error(`pollRunLog timed out: ${label}`);
-  }
-
-  function countKind(log: readonly WorkflowEvent[], kind: string): number {
-    return log.filter((e) => e.kind === kind).length;
-  }
-
-  function deliverGoSignal(
-    sender: ReturnType<typeof createControlChannelSender>,
-    runId: string,
-    signalId: string,
-  ): Promise<void> {
-    return sender.send({
-      type: "signal.deliver",
-      data: {
-        runId,
-        signalName: "go",
-        signalId,
-        payload: { approved: true },
-      },
-    });
-  }
-
-  // Wrap a substrate so live `subscribe` iterators are counted: +1 when the
-  // generator starts, -1 when it settles (return/throw/abort). A leaked
-  // subscribeKind tail would never settle, so a non-zero count after teardown is
-  // a real leak the test catches.
-  function trackSubscriptions(substrate: RepoStore): {
-    substrate: RepoStore;
-    live: () => number;
+describe("emitTerminalEvent", () => {
+  function capturingSender(): {
+    sender: ControlChannelSender;
+    sent: ControlPayload[];
   } {
-    let live = 0;
-    const origSubscribe = substrate.subscribe.bind(substrate);
-    const wrapped = new Proxy(substrate, {
-      get(target, prop, receiver) {
-        if (prop === "subscribe") {
-          return ((...args: Parameters<RepoStore["subscribe"]>) => {
-            const inner = origSubscribe(...args);
-            live += 1;
-            return (async function* () {
-              try {
-                for await (const entry of inner) yield entry;
-              } finally {
-                live -= 1;
-              }
-            })();
-          }) as RepoStore["subscribe"];
-        }
-        return Reflect.get(target, prop, receiver);
+    const sent: ControlPayload[] = [];
+    const sender: ControlChannelSender = {
+      seq: 0,
+      send: (payload) => {
+        sent.push(payload);
+        return Promise.resolve();
       },
-    });
-    return { substrate: wrapped, live: () => live };
+    };
+    return { sender, sent };
   }
 
-  test("watcher resumes a parked run to RunCompleted when the human signal lands after restart", async () => {
-    const baseDir = await makeTempDir("watcher-resume-");
-    const {
-      substrate,
-      principal,
-      workflowRunRepoId,
-      workflowDefinitionRepoId,
-    } = await genesisGateDeployment(baseDir);
-    await commitParkedRun(
-      substrate,
-      principal,
-      workflowRunRepoId,
-      "run-parked",
-    );
-
-    const supervisorKeyPair = await generateKeyPair();
-    const childKeyPair = await generateKeyPair();
-    const channelId = generateChannelId();
-    const hmacKey = generateHmacKey();
-    const env = parseSpawnTimeEnv(
-      makeSpawnEnv({
-        channelId,
-        hmacKeyHex: hexEncode(hmacKey),
-        hostPubKeyHex: hexEncode(supervisorKeyPair.publicKey),
-      }),
-    );
-    const bindings = buildGateBindings({
-      substrate,
-      principal,
-      workflowRunRepoId,
-      workflowDefinitionRepoId,
-      childKeyPair,
-    });
-
-    const supervisorToChild = createMemoryNdjsonStream();
-    const childToSupervisor = createMemoryNdjsonStream();
-    const eventStream = createMemoryFrameStream();
-    const supervisorSender = createControlChannelSender({
-      privateKeySeed: supervisorKeyPair.privateKey,
-      channelId,
-      writer: supervisorToChild.writer,
-    });
-
-    const runPromise = runWorkflowChild({
-      env,
-      controlReader: supervisorToChild.reader,
-      controlWriter: childToSupervisor.writer,
-      eventWriter: eventStream.writer,
-      bindings,
-      recoverParkedRun: makeGateRecoverHook(),
-    });
-
-    // The parked run is watched, not resumed at startup: it must NOT appear on
-    // the startup resume list and must still be parked (no RunCompleted yet).
-    await waitForTriggeredRun(childToSupervisor, (lines) => lines.length > 0);
-    const beforeSignal = await readRunLog(
-      substrate,
-      principal,
-      workflowRunRepoId,
-      "run-parked",
-    );
-    expect(countKind(beforeSignal, "RunCompleted")).toBe(0);
-
-    // The human approves: the supervisor delivers the gate signal. The watcher's
-    // live tail observes the commit and resumes the run to completion.
-    await deliverGoSignal(supervisorSender, "run-parked", "sig-1");
-    const afterSignal = await pollRunLog(
-      substrate,
-      principal,
-      workflowRunRepoId,
-      "run-parked",
-      (log) => log.some((e) => e.kind === "RunCompleted"),
-      "watcher resume -> RunCompleted",
-    );
-    expect(countKind(afterSignal, "RunCompleted")).toBe(1);
-
-    await supervisorSender.send({
-      type: "shutdown",
-      data: { reason: "test done" },
-    });
-    supervisorToChild.close();
-    const result = await runPromise;
-    // The watcher path never pushes to the startup resume list.
-    expect(result.resumedRunIds).not.toContain("run-parked");
+  test("mirrors a RunCompleted terminal event, sourcing seq and at from it", async () => {
+    const { sender, sent } = capturingSender();
+    const result: RunResult = {
+      runId: "run-ok",
+      terminalStatus: "completed",
+      outputs: {},
+      events: [{ kind: "RunCompleted", seq: 5, at: "2026-01-01T00:00:05Z" }],
+    };
+    await emitTerminalEvent(sender, result);
+    expect(sent).toEqual([
+      {
+        type: "terminal.event",
+        data: {
+          runId: "run-ok",
+          seq: 5,
+          kind: "RunCompleted",
+          at: "2026-01-01T00:00:05Z",
+        },
+      },
+    ]);
   });
 
-  test("a duplicate signal delivery after the watcher resumes does not double-drive the run", async () => {
-    const baseDir = await makeTempDir("watcher-dedup-");
-    const {
-      substrate,
-      principal,
-      workflowRunRepoId,
-      workflowDefinitionRepoId,
-    } = await genesisGateDeployment(baseDir);
-    await commitParkedRun(
-      substrate,
-      principal,
-      workflowRunRepoId,
-      "run-parked",
-    );
-
-    const supervisorKeyPair = await generateKeyPair();
-    const childKeyPair = await generateKeyPair();
-    const channelId = generateChannelId();
-    const hmacKey = generateHmacKey();
-    const env = parseSpawnTimeEnv(
-      makeSpawnEnv({
-        channelId,
-        hmacKeyHex: hexEncode(hmacKey),
-        hostPubKeyHex: hexEncode(supervisorKeyPair.publicKey),
-      }),
-    );
-    const bindings = buildGateBindings({
-      substrate,
-      principal,
-      workflowRunRepoId,
-      workflowDefinitionRepoId,
-      childKeyPair,
-    });
-
-    const supervisorToChild = createMemoryNdjsonStream();
-    const childToSupervisor = createMemoryNdjsonStream();
-    const eventStream = createMemoryFrameStream();
-    const supervisorSender = createControlChannelSender({
-      privateKeySeed: supervisorKeyPair.privateKey,
-      channelId,
-      writer: supervisorToChild.writer,
-    });
-
-    const runPromise = runWorkflowChild({
-      env,
-      controlReader: supervisorToChild.reader,
-      controlWriter: childToSupervisor.writer,
-      eventWriter: eventStream.writer,
-      bindings,
-      recoverParkedRun: makeGateRecoverHook(),
-    });
-
-    await waitForTriggeredRun(childToSupervisor, (lines) => lines.length > 0);
-    await deliverGoSignal(supervisorSender, "run-parked", "sig-1");
-    await pollRunLog(
-      substrate,
-      principal,
-      workflowRunRepoId,
-      "run-parked",
-      (log) => log.some((e) => e.kind === "RunCompleted"),
-      "first resume -> RunCompleted",
-    );
-
-    // A retried/racing duplicate of the SAME approval lands after the watcher
-    // already resumed and removed itself. It must not re-drive the run: the
-    // signal channel dedups the commit by signalId, and no watcher remains to
-    // react. The committed log stays at exactly one terminal event.
-    await deliverGoSignal(supervisorSender, "run-parked", "sig-1");
-    await new Promise((r) => setTimeout(r, 60));
-    const finalLog = await readRunLog(
-      substrate,
-      principal,
-      workflowRunRepoId,
-      "run-parked",
-    );
-    expect(countKind(finalLog, "RunCompleted")).toBe(1);
-    expect(countKind(finalLog, "StepCompleted")).toBe(1);
-    expect(countKind(finalLog, "SignalReceived")).toBe(1);
-
-    await supervisorSender.send({
-      type: "shutdown",
-      data: { reason: "test done" },
-    });
-    supervisorToChild.close();
-    await runPromise;
+  test("mirrors a RunFailed terminal event, sourcing the error message from it", async () => {
+    const { sender, sent } = capturingSender();
+    const result: RunResult = {
+      runId: "run-boom",
+      terminalStatus: "failed",
+      outputs: {},
+      events: [
+        {
+          kind: "RunFailed",
+          seq: 7,
+          at: "2026-01-01T00:00:07Z",
+          error: { message: "step blew up" },
+        },
+      ],
+    };
+    await emitTerminalEvent(sender, result);
+    expect(sent).toEqual([
+      {
+        type: "terminal.event",
+        data: {
+          runId: "run-boom",
+          seq: 7,
+          kind: "RunFailed",
+          at: "2026-01-01T00:00:07Z",
+          error: { message: "step blew up" },
+        },
+      },
+    ]);
   });
 
-  test("a signal delivered against a run with no committed events yet is refused without crashing the workflow child", async () => {
-    // Regression for CL-3641: a reconciler auto-delivered signal racing a
-    // cold start (before the child has committed RunStarted) must not
-    // poison the run log with a seq-0 SignalReceived, and must not crash
-    // the workflow child or its supervisor -- the hub's durable
-    // pending-signal rail re-delivers later.
-    const baseDir = await makeTempDir("watcher-cold-signal-");
-    const {
-      substrate,
-      principal,
-      workflowRunRepoId,
-      workflowDefinitionRepoId,
-    } = await genesisGateDeployment(baseDir);
-    // No commitParkedRun: "run-cold" has never started, so its
-    // `runs/run-cold/events/` dir does not exist yet.
-
-    const supervisorKeyPair = await generateKeyPair();
-    const childKeyPair = await generateKeyPair();
-    const channelId = generateChannelId();
-    const hmacKey = generateHmacKey();
-    const env = parseSpawnTimeEnv(
-      makeSpawnEnv({
-        channelId,
-        hmacKeyHex: hexEncode(hmacKey),
-        hostPubKeyHex: hexEncode(supervisorKeyPair.publicKey),
-      }),
+  test("throws when the committed log carries no terminal event", () => {
+    const { sender, sent } = capturingSender();
+    const result: RunResult = {
+      runId: "run-nolog",
+      terminalStatus: "completed",
+      outputs: {},
+      events: [],
+    };
+    // The runtime commits the terminal event last, so its absence is a
+    // producer bug. Throw rather than emit a seq-0 frame that would desync
+    // the supervisor from the durable log.
+    expect(() => emitTerminalEvent(sender, result)).toThrow(
+      /carries no terminal event/,
     );
-    const bindings = buildGateBindings({
-      substrate,
-      principal,
-      workflowRunRepoId,
-      workflowDefinitionRepoId,
-      childKeyPair,
-    });
-
-    const supervisorToChild = createMemoryNdjsonStream();
-    const childToSupervisor = createMemoryNdjsonStream();
-    const eventStream = createMemoryFrameStream();
-    const supervisorSender = createControlChannelSender({
-      privateKeySeed: supervisorKeyPair.privateKey,
-      channelId,
-      writer: supervisorToChild.writer,
-    });
-
-    const runPromise = runWorkflowChild({
-      env,
-      controlReader: supervisorToChild.reader,
-      controlWriter: childToSupervisor.writer,
-      eventWriter: eventStream.writer,
-      bindings,
-      recoverParkedRun: makeGateRecoverHook(),
-    });
-
-    await waitForTriggeredRun(childToSupervisor, (lines) => lines.length > 0);
-    await deliverGoSignal(supervisorSender, "run-cold", "sig-cold");
-    // Give the fire-and-forget deliver time to reject and log a warning.
-    await new Promise((r) => setTimeout(r, 60));
-
-    // The child is still alive and responsive: it accepts and completes
-    // a clean shutdown handshake rather than having crashed on the
-    // rejected deliver.
-    await supervisorSender.send({
-      type: "shutdown",
-      data: { reason: "test done" },
-    });
-    supervisorToChild.close();
-    await runPromise;
-
-    // No run directory -- let alone a seq-0 poisoned log -- was created
-    // for the cold run.
-    const runDir = path.join(
-      substrate.getRepoDir(workflowRunRepoId),
-      "runs",
-      "run-cold",
-    );
-    const exists = await fs
-      .access(runDir)
-      .then(() => true)
-      .catch(() => false);
-    expect(exists).toBe(false);
+    expect(sent).toEqual([]);
   });
 
-  test("an unsignaled parked watcher is torn down on shutdown without leaking its subscribe iterator", async () => {
-    const baseDir = await makeTempDir("watcher-teardown-");
-    const base = await genesisGateDeployment(baseDir);
-    const { substrate: tracked, live } = trackSubscriptions(base.substrate);
-    await commitParkedRun(
-      base.substrate,
-      base.principal,
-      base.workflowRunRepoId,
-      "run-parked",
+  test("throws when the terminal event kind disagrees with the terminal status", () => {
+    const { sender, sent } = capturingSender();
+    const result: RunResult = {
+      runId: "run-mismatch",
+      terminalStatus: "completed",
+      outputs: {},
+      events: [
+        {
+          kind: "RunFailed",
+          seq: 9,
+          at: "2026-01-01T00:00:09Z",
+          error: { message: "actually failed" },
+        },
+      ],
+    };
+    // Emitting a RunCompleted frame carrying the RunFailed's seq would claim
+    // completion while pointing at a failure's audit entry.
+    expect(() => emitTerminalEvent(sender, result)).toThrow(
+      /committed terminal event is RunFailed/,
     );
-
-    const supervisorKeyPair = await generateKeyPair();
-    const childKeyPair = await generateKeyPair();
-    const channelId = generateChannelId();
-    const hmacKey = generateHmacKey();
-    const env = parseSpawnTimeEnv(
-      makeSpawnEnv({
-        channelId,
-        hmacKeyHex: hexEncode(hmacKey),
-        hostPubKeyHex: hexEncode(supervisorKeyPair.publicKey),
-      }),
-    );
-    const bindings = buildGateBindings({
-      substrate: tracked,
-      principal: base.principal,
-      workflowRunRepoId: base.workflowRunRepoId,
-      workflowDefinitionRepoId: base.workflowDefinitionRepoId,
-      childKeyPair,
-    });
-
-    const supervisorToChild = createMemoryNdjsonStream();
-    const childToSupervisor = createMemoryNdjsonStream();
-    const eventStream = createMemoryFrameStream();
-    const supervisorSender = createControlChannelSender({
-      privateKeySeed: supervisorKeyPair.privateKey,
-      channelId,
-      writer: supervisorToChild.writer,
-    });
-
-    const runPromise = runWorkflowChild({
-      env,
-      controlReader: supervisorToChild.reader,
-      controlWriter: childToSupervisor.writer,
-      eventWriter: eventStream.writer,
-      bindings,
-      recoverParkedRun: makeGateRecoverHook(),
-    });
-
-    await waitForTriggeredRun(childToSupervisor, (lines) => lines.length > 0);
-    // The watcher subscribed to the gate's signal source; its live tail is open.
-    await pollRunLog(
-      base.substrate,
-      base.principal,
-      base.workflowRunRepoId,
-      "run-parked",
-      () => live() >= 1,
-      "watcher subscribe iterator open",
-    ).catch(() => undefined);
-    expect(live()).toBeGreaterThanOrEqual(1);
-
-    // No signal ever arrives. Shutdown must abort the watcher and tear its
-    // subscribe iterator down — otherwise `runWorkflowChild`'s finally would
-    // hang on the watcher's `done` (the test would time out).
-    await supervisorSender.send({
-      type: "shutdown",
-      data: { reason: "test done" },
-    });
-    supervisorToChild.close();
-    const result = await runPromise;
-
-    expect(live()).toBe(0);
-    expect(result.resumedRunIds).not.toContain("run-parked");
-    // The run was never driven — it stayed parked.
-    const finalLog = await readRunLog(
-      base.substrate,
-      base.principal,
-      base.workflowRunRepoId,
-      "run-parked",
-    );
-    expect(countKind(finalLog, "RunCompleted")).toBe(0);
-  });
-
-  // Regression guard for the (A) "workflows break on restart" failure: a run
-  // parked at an awaitSignal gate used to wedge the strictly-serial dispatch
-  // loop so NEW runs never dispatched. With the watcher, the parked run is kept
-  // parked (not a failed runtimeRun) and a freshly triggered run dispatches and
-  // runs alongside it; both reach terminal.
-  test("a parked watcher does not block a freshly triggered run from dispatching and completing", async () => {
-    const baseDir = await makeTempDir("watcher-coexist-");
-    const {
-      substrate,
-      principal,
-      workflowRunRepoId,
-      workflowDefinitionRepoId,
-    } = await genesisGateDeployment(baseDir);
-    await commitParkedRun(
-      substrate,
-      principal,
-      workflowRunRepoId,
-      "run-parked",
-    );
-    // The fresh run's trigger reads its inbound mail from a claim-check entry.
-    await seedProcessingEntryInDir(substrate.getRepoDir(workflowRunRepoId), {
-      address: "deployment-gate@example.com",
-      messageId: "msg-fresh",
-      receivedAt: 1,
-      text: "kick off",
-    });
-
-    const supervisorKeyPair = await generateKeyPair();
-    const childKeyPair = await generateKeyPair();
-    const channelId = generateChannelId();
-    const hmacKey = generateHmacKey();
-    const env = parseSpawnTimeEnv({
-      ...makeSpawnEnv({
-        channelId,
-        hmacKeyHex: hexEncode(hmacKey),
-        hostPubKeyHex: hexEncode(supervisorKeyPair.publicKey),
-      }),
-      MAILBOX_ADDRESS: "deployment-gate@example.com",
-    });
-    const bindings = buildGateBindings({
-      substrate,
-      principal,
-      workflowRunRepoId,
-      workflowDefinitionRepoId,
-      childKeyPair,
-    });
-
-    const supervisorToChild = createMemoryNdjsonStream();
-    const childToSupervisor = createMemoryNdjsonStream();
-    const eventStream = createMemoryFrameStream();
-    const supervisorSender = createControlChannelSender({
-      privateKeySeed: supervisorKeyPair.privateKey,
-      channelId,
-      writer: supervisorToChild.writer,
-    });
-
-    const runPromise = runWorkflowChild({
-      env,
-      controlReader: supervisorToChild.reader,
-      controlWriter: childToSupervisor.writer,
-      eventWriter: eventStream.writer,
-      bindings,
-      recoverParkedRun: makeGateRecoverHook(),
-    });
-
-    await waitForTriggeredRun(childToSupervisor, (lines) => lines.length > 0);
-
-    // Dispatch a fresh run while the parked watcher is live. The control loop
-    // must process the trigger (it is NOT wedged by the parked run).
-    await supervisorSender.send({
-      type: "trigger.fire",
-      data: { runId: "run-fresh", messageId: "msg-fresh", receivedAt: 1 },
-    });
-    await pollRunLog(
-      substrate,
-      principal,
-      workflowRunRepoId,
-      "run-fresh",
-      (log) => log.some((e) => e.kind === "RunStarted"),
-      "fresh run dispatched (RunStarted)",
-    );
-
-    // The fresh run parks at its own gate on the LIVE in-process signal channel;
-    // approving it drives it to completion (the normal awaitSignal happy path).
-    await deliverGoSignal(supervisorSender, "run-fresh", "sig-fresh");
-    const freshLog = await pollRunLog(
-      substrate,
-      principal,
-      workflowRunRepoId,
-      "run-fresh",
-      (log) => log.some((e) => e.kind === "RunCompleted"),
-      "fresh run -> RunCompleted",
-    );
-    expect(countKind(freshLog, "RunCompleted")).toBe(1);
-
-    // And the parked run still resumes via its watcher when its own signal
-    // lands — proving the two coexist and the parked run reaches terminal
-    // (the dispatch entry that would otherwise wedge the loop settles).
-    await deliverGoSignal(supervisorSender, "run-parked", "sig-parked");
-    const parkedLog = await pollRunLog(
-      substrate,
-      principal,
-      workflowRunRepoId,
-      "run-parked",
-      (log) => log.some((e) => e.kind === "RunCompleted"),
-      "parked run -> RunCompleted",
-    );
-    expect(countKind(parkedLog, "RunCompleted")).toBe(1);
-
-    await supervisorSender.send({
-      type: "shutdown",
-      data: { reason: "test done" },
-    });
-    supervisorToChild.close();
-    const result = await runPromise;
-
-    expect(result.triggeredRunIds).toContain("run-fresh");
-    expect(result.resumedRunIds).not.toContain("run-parked");
+    expect(sent).toEqual([]);
   });
 });
