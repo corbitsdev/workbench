@@ -1041,6 +1041,17 @@ export function createSidecarDeployRouter(deps: {
    * it.
    */
   writeWorkflowDeploymentRecord?: typeof writeWorkflowDeploymentRecord;
+  /**
+   * WORKBENCH-LOCAL (CL-2340): not in upstream — preserve on pin-bump re-sync.
+   * Drain the boot-edge workflow-run pack-push pipeline for a deployment to a
+   * hub-acked resting state. The undeploy hook awaits this after the
+   * supervisor's `shutdown()` (so the child can append no more events) and
+   * BEFORE the reclaim rm + the cursor-clearing `unregisterDeployment`, so an
+   * in-flight push cannot ack after teardown and resurrect a stale delta
+   * cursor (dangling-delta on the next redeploy). Optional; a router wired
+   * without the pack-push facade (a test) omits it.
+   */
+  drainWorkflowRunPushes?: (deploymentId: string) => Promise<void>;
 }): SidecarDeployRouter {
   // Validate the signing seed at construction so a malformed key fails
   // sidecar boot rather than the first multi-step deploy, where the
@@ -1955,6 +1966,24 @@ export function createSidecarDeployRouter(deps: {
       if (active !== undefined) {
         activeSupervisors.delete(frame.agentAddress);
         await active.wired.supervisor.shutdown();
+        // WORKBENCH-LOCAL (CL-2340): not in upstream — preserve on pin-bump
+        // re-sync. Barrier: drain the workflow-run pack-push pipeline to a
+        // hub-acked resting state now that `shutdown()` guarantees the child
+        // can append no more events. This MUST precede the reclaim rm below (a
+        // push must not race the repo-dir deletion mid pack walk) AND the
+        // cursor clear in `unregisterDeployment` (a push that acks after the
+        // cursor is forgotten would resurrect a stale delta cursor →
+        // dangling-delta on redeploy). Best-effort: a failed final push has
+        // already reset its own cursor, so swallow.
+        if (deps.drainWorkflowRunPushes !== undefined) {
+          try {
+            await deps.drainWorkflowRunPushes(deploymentId);
+          } catch (cause) {
+            const reason =
+              cause instanceof Error ? cause.message : String(cause);
+            logger.warn`undeploy: workflow-run push drain failed for ${frame.agentAddress}: ${reason}`;
+          }
+        }
         // Drop the deployment address's transport registration installed at
         // spawn (OUTBOUND half of mailbox ownership, §3a). Both single- and
         // multi-step register the deployment address for outbound signing, so
