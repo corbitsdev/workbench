@@ -2,7 +2,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { type } from "arktype";
 import { api, uploadForm } from "../lib/api";
 
-const skillSchema = type({
+export const skillSchema = type({
   id: "string",
   name: "string",
   displayName: "string|null",
@@ -15,17 +15,19 @@ const skillSchema = type({
   ownerName: "string|null",
 });
 
-const skillsResponseSchema = type({ skills: skillSchema.array() });
-const skillResponseSchema = type({ skill: skillSchema });
+export const skillsResponseSchema = type({ skills: skillSchema.array() });
+export const skillResponseSchema = type({ skill: skillSchema });
 
 export type SkillLibraryItem = typeof skillSchema.infer;
 export type SkillAccessScope = SkillLibraryItem["scope"];
 
-const shareTargetSchema = type({ tenantId: "string", name: "string" });
-const shareTargetsResponseSchema = type({ targets: shareTargetSchema.array() });
+export const shareTargetSchema = type({ tenantId: "string", name: "string" });
+export const shareTargetsResponseSchema = type({
+  targets: shareTargetSchema.array(),
+});
 export type SkillShareTarget = typeof shareTargetSchema.infer;
 
-const skillVersionSchema = type({
+export const skillVersionSchema = type({
   sha: "string",
   shortSha: "string",
   version: "number",
@@ -33,7 +35,7 @@ const skillVersionSchema = type({
   authorName: "string",
   createdAt: "string",
 });
-const skillVersionsResponseSchema = type({
+export const skillVersionsResponseSchema = type({
   versions: skillVersionSchema.array(),
   total: "number",
 });
@@ -42,12 +44,12 @@ export type SkillVersionPage = typeof skillVersionsResponseSchema.infer;
 
 export const SKILL_VERSION_PAGE_SIZE = 20;
 
-const skillDetailFileSchema = type({
+export const skillDetailFileSchema = type({
   path: "string",
   "content?": "string",
 });
 
-const skillDetailResponseSchema = type({
+export const skillDetailResponseSchema = type({
   skill: skillSchema,
   files: skillDetailFileSchema.array(),
 });
@@ -250,7 +252,7 @@ export function useRestoreSkillVersion() {
   });
 }
 
-const skillDraftSchema = type({
+export const skillDraftSchema = type({
   id: "string",
   title: "string",
   content: "string",
@@ -263,9 +265,11 @@ const skillDraftSchema = type({
 });
 export type SkillDraftItem = typeof skillDraftSchema.infer;
 
-const skillDraftsResponseSchema = type({ drafts: skillDraftSchema.array() });
-const skillDraftResponseSchema = type({ draft: skillDraftSchema });
-const approveDraftResponseSchema = type({
+export const skillDraftsResponseSchema = type({
+  drafts: skillDraftSchema.array(),
+});
+export const skillDraftResponseSchema = type({ draft: skillDraftSchema });
+export const approveDraftResponseSchema = type({
   skill: skillSchema,
   draftId: "string",
 });

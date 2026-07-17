@@ -27,7 +27,7 @@ function withTenant(path: string, tenantId?: string | null): string {
 
 // Mirror of apps/hub/src/lib/workflow-meta.ts (separate build graphs make a
 // literal import non-trivial). `deployedAt` is an ISO string at the source.
-const workflowMetaSchema = type({
+export const workflowMetaSchema = type({
   version: "string",
   sha: "string",
   deployedAt: "string.date.iso",
@@ -40,7 +40,7 @@ export type WorkflowMeta = typeof workflowMetaSchema.infer;
 
 // Thin-executor run record (CL-2240). State lives in a single row read from the
 // hub; there is no SSE event log to reduce. Parse every response at the boundary.
-const runRecordSchema = type({
+export const runRecordSchema = type({
   runId: "string",
   kind: "string",
   status: "'provisioning'|'running'|'awaiting'|'completed'|'failed'",
@@ -63,7 +63,7 @@ function parseRunRecord(raw: unknown): RunRecord {
   return parsed;
 }
 
-const workflowRunSchema = type({
+export const workflowRunSchema = type({
   runId: "string",
   kind: "string",
   status: "string",
@@ -79,7 +79,7 @@ const workflowRunSchema = type({
 export type WorkflowRun = typeof workflowRunSchema.infer;
 const workflowRunListSchema = workflowRunSchema.array();
 
-const workflowDeploymentSchema = type({
+export const workflowDeploymentSchema = type({
   deploymentId: "string",
   kind: "string",
   status: "string",
@@ -136,7 +136,7 @@ export function useWorkflowRuns(
 // A run row as returned by the conversation-scoped list (CL-2680). The list
 // projection keeps `originConversationId` raw (string | null), unlike the
 // single-record response which omits it when null.
-const conversationRunSchema = type({
+export const conversationRunSchema = type({
   runId: "string",
   kind: "string",
   status: "'provisioning'|'running'|'awaiting'|'completed'|'failed'",
@@ -236,7 +236,7 @@ const workflowRunTokenCountsSchema = {
   thinkingTokens: "number",
 } as const;
 
-const workflowRunTokensSchema = type({
+export const workflowRunTokensSchema = type({
   runId: "string",
   available: "boolean",
   "totals?": workflowRunTokenCountsSchema,
@@ -651,7 +651,7 @@ export function useArchiveWorkflowRun(tenantId?: string | null) {
   });
 }
 
-const workflowCredentialSchema = type({
+export const workflowCredentialSchema = type({
   id: "string",
   name: "string",
   providerName: "string",

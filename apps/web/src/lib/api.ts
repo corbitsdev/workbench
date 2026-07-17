@@ -1,25 +1,18 @@
 import { type } from "arktype";
 import { utf8ByteLength } from "@workbench/artifact";
 import { logger } from "./logger";
-
-// Empty string means same-origin (frontend served from the API).
-const apiBase: string = import.meta.env.VITE_API_BASE_URL ?? "";
-
-// Single source of truth for the hub origin: explicit base, else same-origin.
-function resolveBase(): string {
-  return apiBase || window.location.origin;
-}
+import { buildJsonRequestInit, readJsonOrNull, resolveApiBase } from "./http";
 
 export function buildApiUrl(path: string): string {
   return new URL(
     `/api/v1/${path.replace(/^\//, "")}`,
-    resolveBase(),
+    resolveApiBase(),
   ).toString();
 }
 
 // Root-level (non-/api/v1) hub paths, e.g. /version. Same base-URL rules.
 export function buildRootUrl(path: string): string {
-  return new URL(`/${path.replace(/^\//, "")}`, resolveBase()).toString();
+  return new URL(`/${path.replace(/^\//, "")}`, resolveApiBase()).toString();
 }
 
 // EventSource URL for an /api/v1 SSE route. ALWAYS same-origin — never apiBase —
@@ -169,17 +162,13 @@ export async function api<T>(
   body?: unknown,
 ): Promise<T> {
   const url = buildApiUrl(path);
-  const init: RequestInit = { method, credentials: "include" };
-  if (body) {
-    init.headers = { "Content-Type": "application/json" };
-    init.body = JSON.stringify(body);
-  }
+  const init = buildJsonRequestInit(method, body);
 
   logger.info("API request", { method, url });
 
   const res = await fetch(url, init);
   if (!res.ok) {
-    const body: unknown = await res.json().catch(() => null);
+    const body = await readJsonOrNull(res);
     const apiError = toApiError(res, body);
     logger.error("API request failed", {
       method,
@@ -221,7 +210,7 @@ export async function fetchCsvPreview(
 
   const res = await fetch(url, { method: "GET", credentials: "include" });
   if (!res.ok) {
-    const body: unknown = await res.json().catch(() => null);
+    const body = await readJsonOrNull(res);
     const apiError = toApiError(res, body);
     logger.error("API request failed", {
       method: "GET",
@@ -254,7 +243,7 @@ export async function uploadFile<T>(
   file: File,
   options?: { tenantId?: string | null },
 ): Promise<T> {
-  const url = new URL(`/api/v1/${path.replace(/^\//, "")}`, resolveBase());
+  const url = new URL(`/api/v1/${path.replace(/^\//, "")}`, resolveApiBase());
   if (options?.tenantId) {
     url.searchParams.set("tenantId", options.tenantId);
   }
@@ -274,7 +263,7 @@ export async function uploadFile<T>(
     body: form,
   });
   if (!res.ok) {
-    const body: unknown = await res.json().catch(() => null);
+    const body = await readJsonOrNull(res);
     const apiError = toApiError(res, body);
     logger.error("API upload failed", {
       url: urlString,
@@ -292,7 +281,7 @@ export async function uploadForm<T>(
   form: FormData,
   options?: { tenantId?: string | null },
 ): Promise<T> {
-  const url = new URL(`/api/v1/${path.replace(/^\//, "")}`, resolveBase());
+  const url = new URL(`/api/v1/${path.replace(/^\//, "")}`, resolveApiBase());
   if (options?.tenantId) {
     url.searchParams.set("tenantId", options.tenantId);
   }
@@ -305,7 +294,7 @@ export async function uploadForm<T>(
     body: form,
   });
   if (!res.ok) {
-    const body: unknown = await res.json().catch(() => null);
+    const body = await readJsonOrNull(res);
     const apiError = toApiError(res, body);
     logger.error("API form upload failed", {
       url: urlString,

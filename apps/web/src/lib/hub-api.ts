@@ -53,12 +53,13 @@ import {
   MailAttachmentRefsResponse,
   type MailAttachmentRef,
 } from "@workbench/shared";
+import { buildJsonRequestInit, configuredApiBase } from "./http";
 
 // Fetch helper for hub-api routes mounted at /api/ (not /api/v1/).
 // These are interchange endpoints — principals, agent instances, sessions.
 // Credential and tenant management moved to Interchange admin-ui.
 
-const apiBase: string = import.meta.env.VITE_API_BASE_URL ?? "";
+const apiBase = configuredApiBase;
 
 function hubErrorMessage(body: { error?: unknown }, status: number): string {
   const e = body.error;
@@ -102,11 +103,7 @@ export async function hubFetch<T>(
     `/api/${path.replace(/^\//, "")}`,
     apiBase || window.location.origin,
   ).toString();
-  const init: RequestInit = { method, credentials: "include" };
-  if (body !== undefined) {
-    init.headers = { "Content-Type": "application/json" };
-    init.body = JSON.stringify(body);
-  }
+  const init = buildJsonRequestInit(method, body);
   const res = await fetch(url, init);
   if (!res.ok) {
     if (res.status === 401) invalidateMeSyncCache();
@@ -558,7 +555,7 @@ export async function getMeBriefSources(): Promise<AvailableBriefSource[]> {
   return parsed.sources;
 }
 
-const BriefRunResponseSchema = type({
+export const BriefRunResponseSchema = type({
   status: "'started'",
   deploymentId: "string",
 });
@@ -658,7 +655,7 @@ export async function ensureMeSynced(): Promise<MeResponse> {
 // `firstMessageAt` is optional at the parse boundary so a hub that predates
 // the column (deploy skew) still parses; a missing value counts as "used"
 // (see isMyraThreadUsed) so nothing is ever hidden by skew.
-const MyraThreadSchema = type({
+export const MyraThreadSchema = type({
   id: "string",
   instanceId: "string",
   label: "string",
@@ -706,7 +703,7 @@ export async function listMyraThreads(
 // `created` is false when the hub handed back an existing never-used thread
 // instead of minting a new one (CL-3749) — navigation treats both the same,
 // but the thread-list cache must not double-count a reused thread.
-const MyraThreadCreateSchema = type({
+export const MyraThreadCreateSchema = type({
   thread: MyraThreadSchema,
   created: "boolean",
 });
@@ -727,7 +724,7 @@ export async function createMyraThread(
   return parsed;
 }
 
-const MyraThreadMutateSchema = type({ thread: MyraThreadSchema });
+export const MyraThreadMutateSchema = type({ thread: MyraThreadSchema });
 
 export async function renameMyraThread(
   tenantId: string,
@@ -850,12 +847,12 @@ export async function deleteAgentInstance(
   );
 }
 
-const LaunchInstanceSessionSuccessSchema = type({
+export const LaunchInstanceSessionSuccessSchema = type({
   launched: "true",
   sessionId: "string | null",
 });
 
-const LaunchInstanceSessionFailureSchema = type({
+export const LaunchInstanceSessionFailureSchema = type({
   launched: "false",
   "launchError?": "string",
 });
@@ -1032,7 +1029,7 @@ export async function deployAgentFromTemplate(
   );
 }
 
-const AnalyticsSummarySchema = type({
+export const AnalyticsSummarySchema = type({
   tenantId: "string",
   turnCount: "number",
   failedTurnCount: "number",
@@ -1064,7 +1061,7 @@ export async function getAnalyticsSummary(
   return result;
 }
 
-const AnalyticsAgentRowSchema = type({
+export const AnalyticsAgentRowSchema = type({
   agentId: "string",
   agentName: "string | null",
   turnCount: "number",
@@ -1078,7 +1075,7 @@ const AnalyticsAgentRowSchema = type({
   thinkingTokens: "number",
 });
 
-const AnalyticsByAgentResponseSchema = type({
+export const AnalyticsByAgentResponseSchema = type({
   tenantId: "string",
   agents: AnalyticsAgentRowSchema.array(),
 });
@@ -1102,7 +1099,7 @@ export async function getAnalyticsSummaryByAgent(
   return result.agents;
 }
 
-const ActivityCountRowSchema = type({
+export const ActivityCountRowSchema = type({
   key: "string",
   count: "number",
 });
@@ -1194,7 +1191,7 @@ export type UsageByWorkflowTypeRow = Omit<
   thinkingTokens: number;
 };
 
-const ActivityOverviewSchema = type({
+export const ActivityOverviewSchema = type({
   tenantId: "string",
   range: {
     "startDate?": "string",
@@ -1359,7 +1356,7 @@ export const TenantProviderSchema = type({
 });
 export type TenantProvider = typeof TenantProviderSchema.infer;
 
-const TenantProvidersResponse = type({
+export const TenantProvidersResponse = type({
   data: TenantProviderSchema.array(),
   "+": "ignore",
 });

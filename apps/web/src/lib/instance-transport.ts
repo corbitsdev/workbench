@@ -1,5 +1,10 @@
 import { ApiError, type Transport } from "@intx/hub-client";
 import { subscribeSharedEventStream } from "./shared-event-stream";
+import {
+  buildJsonRequestInit,
+  configuredApiBase,
+  readJsonOrNull,
+} from "./http";
 
 // Browser Transport for InstanceSession that targets the hub origin and sends
 // auth cookies. Interchange's stock createBrowserTransport issues relative,
@@ -8,7 +13,7 @@ import { subscribeSharedEventStream } from "./shared-event-stream";
 // separate origins (VITE_API_BASE_URL), so instance mail/turn/event calls must
 // be pointed at the hub and carry the session cookie, mirroring hub-api.ts.
 
-const apiBase: string = import.meta.env.VITE_API_BASE_URL ?? "";
+const apiBase = configuredApiBase;
 
 function toUrl(path: string): string {
   return new URL(path, apiBase || window.location.origin).toString();
@@ -76,14 +81,10 @@ export function createHubTransport(transportOpts?: {
 }): Transport {
   return {
     async fetch<T>(method: string, path: string, body?: unknown): Promise<T> {
-      const init: RequestInit = { method, credentials: "include" };
-      if (body !== undefined) {
-        init.headers = { "Content-Type": "application/json" };
-        init.body = JSON.stringify(body);
-      }
+      const init = buildJsonRequestInit(method, body);
       const res = await fetch(toUrl(path), init);
       if (!res.ok) {
-        const raw = (await res.json().catch(() => null)) as {
+        const raw = (await readJsonOrNull(res)) as {
           error?: { code?: string; message?: string };
         } | null;
         throw new ApiError(
