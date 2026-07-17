@@ -1775,23 +1775,33 @@ export function createSidecarDeployRouter(deps: {
       }
     }
 
-    // Reject a re-deploy of an address already live OR mid-deploy in this
-    // process BEFORE touching any durable state. The durable writes below (the
-    // restore record, workflow.json, step grants) are destructive overwrites of
-    // state owned by whatever deployment currently holds the address;
-    // overwriting is only legal when this deploy owns the address.
-    // `activeSupervisors` catches an address whose deploy has completed;
-    // `reservingDeployAddresses` catches one whose deploy is still in flight.
-    // The map is populated only after `spawn` succeeds, so the has-check alone
-    // leaves a window in which two frames both pass and the loser's catch below
-    // deletes the winner's live record; the reservation set closes it. A
-    // re-deploy after `undeploy` passes: `undeploy` drops the
-    // `activeSupervisors` entry, and a failed or completed deploy has already
-    // cleared its reservation.
-    if (
-      activeSupervisors.has(frame.agentAddress) ||
-      reservingDeployAddresses.has(frame.agentAddress)
-    ) {
+    // WORKBENCH-LOCAL (CL-3104): resident-supervisor self-heal. A hibernate
+    // whose ack path failed leaves the hub believing the deployment is down
+    // (interchange's undeploy timeout unroutes before rejecting) while the
+    // child is still resident here; the wake then re-sends agent.deploy at the
+    // live supervisor. Without this the fresh deploy would hit the
+    // already-deployed throw (or, absent it, overwrite the activeSupervisors
+    // entry and leak the resident child so two children drive one workflow-run
+    // repo). Tear the resident supervisor down state-preservingly (hibernate
+    // semantics — no rm) before standing the fresh one up. A concurrent
+    // in-flight deploy (`reservingDeployAddresses`) is a genuine race, not a
+    // resident child, so it still throws below.
+    if (activeSupervisors.has(frame.agentAddress)) {
+      logger.warn`deploy for ${frame.agentAddress} found a resident supervisor; shutting it down state-preservingly before re-deploying`;
+      await teardownDeployment(frame.agentAddress, { reclaimDirs: false });
+    }
+
+    // Reject a re-deploy of an address mid-deploy in this process BEFORE
+    // touching any durable state. The durable writes below (the restore
+    // record, workflow.json, step grants) are destructive overwrites of state
+    // owned by whatever deployment currently holds the address; overwriting is
+    // only legal when this deploy owns the address.
+    // `reservingDeployAddresses` catches an address whose deploy is still in
+    // flight -- the map is populated only after `spawn` succeeds, so the
+    // has-check alone leaves a window in which two frames both pass and the
+    // loser's catch below deletes the winner's live record; the reservation
+    // set closes it.
+    if (reservingDeployAddresses.has(frame.agentAddress)) {
       throw new Error(
         `sidecar deploy router: ${frame.agentAddress} is already deployed; undeploy it before redeploying`,
       );
@@ -1919,6 +1929,115 @@ export function createSidecarDeployRouter(deps: {
     }
   }
 
+  // WORKBENCH-LOCAL (CL-3104): shared teardown body for `undeploy`
+  // (reclaimDirs: true — forget the deployment entirely) and `hibernate`
+  // (reclaimDirs: false — preserve every durable artifact so a parked
+  // awaitSignal run resumes on wake). On a pin-bump re-sync, re-apply upstream
+  // undeploy changes INSIDE this function, keeping the `reclaimDirs` gates
+  // around the two rm sweeps and the record delete.
+  async function teardownDeployment(
+    agentAddress: string,
+    opts: { reclaimDirs: boolean },
+  ): Promise<void> {
+    // Symmetric teardown for `deploy`: release the per-deployment routing
+    // state so a stale `signal.deliver` / `drain.deliver` / `mail.inbound`
+    // aimed at the dead deployment address is rejected by the router rather
+    // than dispatched into an orphan supervisor handler. The unregister calls
+    // are idempotent -- they are no-ops when no handler is registered.
+    //
+    // Routers come down BEFORE the supervisor's `shutdown()` so any hub-side
+    // frame racing the teardown is dropped at the router boundary rather than
+    // dispatched into a supervisor mid child-teardown.
+    const deploymentId = deriveDeploymentId(agentAddress);
+    deps.multistepMailRouter?.unregister(agentAddress);
+    deps.multistepSignalRouter?.unregister(agentAddress);
+    deps.multistepDrainRouter?.unregister(agentAddress);
+    // Unregister unconditionally (a no-op for a multi-step address that
+    // registered no sources handler), matching the sibling routers.
+    deps.multistepSourcesRouter?.unregister(agentAddress);
+    // Shut the per-deployment supervisor down so the workflow-process child,
+    // its IPC pipes, and its event-channel fd are released. The supervisor's
+    // `shutdown()` is idempotent and handles the kill + `exited` await
+    // internally. The map entry is removed before the await so a subsequent
+    // re-deploy on the same address cannot observe a stale handle even if
+    // `shutdown()` rejects.
+    const active = activeSupervisors.get(agentAddress);
+    if (active !== undefined) {
+      activeSupervisors.delete(agentAddress);
+      await active.wired.supervisor.shutdown();
+      // WORKBENCH-LOCAL (CL-2340): not in upstream — preserve on pin-bump
+      // re-sync. Barrier: drain the workflow-run pack-push pipeline to a
+      // hub-acked resting state now that `shutdown()` guarantees the child
+      // can append no more events. This MUST precede the reclaim rm below (a
+      // push must not race the repo-dir deletion mid pack walk) AND the cursor
+      // clear in `unregisterDeployment` (a push that acks after the cursor is
+      // forgotten would resurrect a stale delta cursor → dangling-delta on
+      // redeploy). Best-effort: a failed final push has already reset its own
+      // cursor, so swallow. Runs for hibernate too — a drained resting state
+      // is correct whether or not the durable dirs survive.
+      if (deps.drainWorkflowRunPushes !== undefined) {
+        try {
+          await deps.drainWorkflowRunPushes(deploymentId);
+        } catch (cause) {
+          const reason =
+            cause instanceof Error ? cause.message : String(cause);
+          logger.warn`teardown: workflow-run push drain failed for ${agentAddress}: ${reason}`;
+        }
+      }
+      // Drop the deployment address's transport registration installed at
+      // spawn (OUTBOUND half of mailbox ownership, §3a). `unregister` is a
+      // no-op only if the spawn failed before registering, so it is safe to
+      // call unconditionally for any spawned deployment.
+      deps.transport.unregister(agentAddress);
+      // Reclaim the deployment's per-step local-disk scratch now that its
+      // supervisor + workflow-process child are torn down. Awaiting
+      // `shutdown()` above guarantees no child still holds the scratch. The
+      // durable conversation under `agent-conversation-state/` is a DIFFERENT
+      // root and is deliberately NOT touched here.
+      // WORKBENCH-LOCAL (CL-3104): gated off for hibernate — a parked run's
+      // per-step scratch (and warm workspace) must survive so the woken child
+      // resumes against it.
+      if (opts.reclaimDirs && stepStateDataDir !== undefined) {
+        await rm(
+          pathJoin(stepStateDataDir, "workflow-step-state", deploymentId),
+          { recursive: true, force: true },
+        );
+      }
+
+      // WORKBENCH-LOCAL (CL-2231): not in upstream — preserve on pin-bump
+      // re-sync. Reclaim the deployment's on-disk footprint (workflow-run repo
+      // dir + per-step agent-state/agent dirs). Deployment churn otherwise
+      // leaks these and exhausts the sidecar volume's inodes. Each deletion is
+      // best-effort and idempotent (`force: true` swallows ENOENT) and never
+      // throws out of teardown.
+      // WORKBENCH-LOCAL (CL-3104): gated off for hibernate — the workflow-run
+      // repo IS the parked run's durable event log and the step agent-state
+      // repos hold its grants; deleting either would turn the wake re-deploy
+      // into a fresh run instead of a resume.
+      if (opts.reclaimDirs) {
+        for (const dir of active.ownedDirs) {
+          try {
+            await rm(dir, { recursive: true, force: true });
+          } catch (cause) {
+            const reason =
+              cause instanceof Error ? cause.message : String(cause);
+            logger.warn`teardown: failed to reclaim deployment dir ${dir} for ${agentAddress}: ${reason}`;
+          }
+        }
+      }
+    }
+    // WORKBENCH-LOCAL (CL-3104): the deployment record is durable state a
+    // parked run resumes from, so hibernate KEEPS it (reclaimDirs: false);
+    // undeploy drops it so a boot-time restore does not re-spawn a torn-down
+    // deployment. Runs even when no supervisor was active so a record left
+    // behind by a crash-interrupted deploy is reclaimed too.
+    if (opts.reclaimDirs && stepStateDataDir !== undefined) {
+      await deleteWorkflowDeploymentRecord(stepStateDataDir, deploymentId);
+    }
+    releaseSlug(deploymentId, agentAddress);
+    deps.unregisterDeployment({ deploymentId, agentAddress });
+  }
+
   return {
     async deploy(frame): Promise<DeployRouterResult> {
       if (frame.provisionStep === true) {
@@ -1936,114 +2055,19 @@ export function createSidecarDeployRouter(deps: {
       );
     },
     async undeploy(frame): Promise<void> {
-      // Symmetric teardown for `deploy`: release the per-deployment
-      // routing state both branches install so a stale `signal.deliver`
-      // / `drain.deliver` / `mail.inbound` aimed at the dead deployment
-      // address is rejected by the router rather than dispatched into
-      // an orphan supervisor handler. The unregister calls are
-      // idempotent -- they are no-ops when no handler is registered.
-      //
-      // Routers come down BEFORE the supervisor's `shutdown()` so any
-      // hub-side frame racing the undeploy is dropped at the router
-      // boundary rather than dispatched into a supervisor that is in
-      // the middle of tearing its child down. The pattern is: drop
-      // racing frames first, then unwind the underlying resource.
-      const deploymentId = deriveDeploymentId(frame.agentAddress);
-      deps.multistepMailRouter?.unregister(frame.agentAddress);
-      deps.multistepSignalRouter?.unregister(frame.agentAddress);
-      deps.multistepDrainRouter?.unregister(frame.agentAddress);
-      // Unregister unconditionally (a no-op for a multi-step address that
-      // registered no sources handler), matching the sibling routers.
-      deps.multistepSourcesRouter?.unregister(frame.agentAddress);
-      // Shut the per-deployment supervisor down so the workflow-process
-      // child, its IPC pipes, and its event-channel fd are released.
-      // The supervisor's `shutdown()` is idempotent (returns early when
-      // the supervisor is already in `idle`/`stopped`) and handles the
-      // kill + `exited` await internally. The map entry is removed
-      // before the await so a subsequent re-deploy on the same address
-      // cannot observe a stale handle even if `shutdown()` rejects.
-      const active = activeSupervisors.get(frame.agentAddress);
-      if (active !== undefined) {
-        activeSupervisors.delete(frame.agentAddress);
-        await active.wired.supervisor.shutdown();
-        // WORKBENCH-LOCAL (CL-2340): not in upstream — preserve on pin-bump
-        // re-sync. Barrier: drain the workflow-run pack-push pipeline to a
-        // hub-acked resting state now that `shutdown()` guarantees the child
-        // can append no more events. This MUST precede the reclaim rm below (a
-        // push must not race the repo-dir deletion mid pack walk) AND the
-        // cursor clear in `unregisterDeployment` (a push that acks after the
-        // cursor is forgotten would resurrect a stale delta cursor →
-        // dangling-delta on redeploy). Best-effort: a failed final push has
-        // already reset its own cursor, so swallow.
-        if (deps.drainWorkflowRunPushes !== undefined) {
-          try {
-            await deps.drainWorkflowRunPushes(deploymentId);
-          } catch (cause) {
-            const reason =
-              cause instanceof Error ? cause.message : String(cause);
-            logger.warn`undeploy: workflow-run push drain failed for ${frame.agentAddress}: ${reason}`;
-          }
-        }
-        // Drop the deployment address's transport registration installed at
-        // spawn (OUTBOUND half of mailbox ownership, §3a). Both single- and
-        // multi-step register the deployment address for outbound signing, so
-        // this tears down a real registration for either; `unregister` is a
-        // no-op only if the spawn failed before registering, so it is safe to
-        // call unconditionally for any spawned deployment.
-        deps.transport.unregister(frame.agentAddress);
-        // Reclaim the deployment's per-step local-disk scratch now that
-        // its supervisor + workflow-process child are torn down. The
-        // whole `workflow-step-state/<deploymentId>/` subtree goes: the
-        // warm single-step agent's stable workspace under `warm/` (the
-        // dir bounded keying parks per agent) AND any cold `runs/<runId>/`
-        // subtrees a multi-step deploy's per-run cleanup did not already
-        // drop. Awaiting `shutdown()` above guarantees no child still
-        // holds the scratch, so this is a safe `rm -rf`. The durable
-        // conversation under `agent-conversation-state/` is a DIFFERENT
-        // root and is deliberately NOT touched here -- a re-deploy on the
-        // same address must restore the prior conversation from it.
-        if (stepStateDataDir !== undefined) {
-          await rm(
-            pathJoin(stepStateDataDir, "workflow-step-state", deploymentId),
-            { recursive: true, force: true },
-          );
-        }
-
-        // WORKBENCH-LOCAL (CL-2231): not in upstream — preserve on pin-bump
-        // re-sync. Reclaim the deployment's on-disk footprint. Deployment
-        // churn (supersede/redeploy + DELETE) otherwise leaks two things the
-        // rest of teardown never touches and exhausts the sidecar volume's
-        // inodes: the per-deployment workflow-run repo (a `workflow-run` repo,
-        // not an agent dir, so no undeploy path reclaims it) and every step's
-        // on-disk dirs (interchange's undeploy only deletes a step agent's dir
-        // while it is CONNECTED, orphaning idle-evicted steps forever). This
-        // hook runs on the sidecar, so it deletes the local dirs directly
-        // regardless of connection state. Complements the scratch reclaim
-        // above (a DIFFERENT root). Each deletion is best-effort and idempotent
-        // (`force: true` swallows ENOENT) and never throws out of the hook:
-        // teardown must converge even if a single dir cannot be removed.
-        for (const dir of active.ownedDirs) {
-          try {
-            await rm(dir, { recursive: true, force: true });
-          } catch (cause) {
-            const reason =
-              cause instanceof Error ? cause.message : String(cause);
-            logger.warn`undeploy: failed to reclaim deployment dir ${dir} for ${frame.agentAddress}: ${reason}`;
-          }
-        }
-      }
-      // Drop the deployment record so a boot-time restore does not re-spawn a
-      // torn-down deployment. Runs on every undeploy -- not only when a
-      // supervisor was active -- so a record left behind by a
-      // crash-interrupted deploy is reclaimed too.
-      if (stepStateDataDir !== undefined) {
-        await deleteWorkflowDeploymentRecord(stepStateDataDir, deploymentId);
-      }
-      releaseSlug(deploymentId, frame.agentAddress);
-      deps.unregisterDeployment({
-        deploymentId,
-        agentAddress: frame.agentAddress,
-      });
+      await teardownDeployment(frame.agentAddress, { reclaimDirs: true });
+    },
+    // WORKBENCH-LOCAL (CL-3104): hibernate — the state-PRESERVING teardown
+    // for a deployment whose only run is parked at an awaitSignal gate.
+    // Identical residency teardown (routers, supervisor/child kill, drain
+    // barrier, slug release, deployment mapping) but every durable on-disk
+    // artifact survives: the workflow-run repo holding the parked run's event
+    // log, each step's agent-state repo, the per-step scratch, the durable
+    // conversation, AND the deployment record. A later re-deploy at the same
+    // address (the hub's signal-path re-establishment) or a sidecar restart's
+    // restore spawns a fresh child that resumes the parked run from that state.
+    async hibernate(frame): Promise<void> {
+      await teardownDeployment(frame.agentAddress, { reclaimDirs: false });
     },
     async restoreWorkflowDeployments(): Promise<void> {
       const dataDir = stepStateDataDir;
