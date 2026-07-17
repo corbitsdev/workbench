@@ -80,6 +80,7 @@ const reconcileCalls: {
   credentialId: string;
   baseURL: string;
 }[] = [];
+const clearCatalogCalls: string[][] = [];
 let reconcileShouldThrow = false;
 mock.module("../services/catalog-provider-seed", () => ({
   reconcileProviderCatalog: async (params: {
@@ -102,6 +103,17 @@ mock.module("../services/catalog-provider-seed", () => ({
       offeringsCreated: ["kimi-k3"],
       offeringsReprioritized: [],
     };
+  },
+  // Records the credential ids the DELETE handler asks to unbind; returns 0 so
+  // the route skips the source re-push (keeps @intx/hub-sessions out of the
+  // unit test — the real cascade is covered by the integration test).
+  clearCatalogProvidersForCredentials: async (
+    _tx: unknown,
+    _tenantId: string,
+    credentialIds: string[],
+  ) => {
+    clearCatalogCalls.push(credentialIds);
+    return 0;
   },
 }));
 
@@ -288,6 +300,18 @@ describe("owner credentials routes", () => {
           },
         }),
       }),
+      // The DELETE handler now clears catalog provider rows and deletes the
+      // credential atomically. clearCatalogProvidersForCredentials is mocked
+      // (module mock above), so the tx only needs a recording `delete`.
+      transaction: async (fn: (tx: unknown) => Promise<unknown>) =>
+        fn({
+          delete: () => ({
+            where: () => {
+              deletedCredentialIds.push(...credentials.map((c) => c.id));
+              return { returning: async () => [] };
+            },
+          }),
+        }),
     };
     return {
       db,
@@ -434,8 +458,9 @@ describe("owner credentials routes", () => {
     expect(res.status).toBe(400);
   });
 
-  it("DELETE clears a credential and reports not-configured", async () => {
+  it("DELETE unbinds catalog providers then clears the credential", async () => {
     callerPrincipalId = "prn_owner";
+    clearCatalogCalls.length = 0;
     const { db, deletedCredentialIds } = credentialsDb({
       providers: [{ id: "provider_1", name: "anthropic" }],
       credentials: [
@@ -456,6 +481,9 @@ describe("owner credentials routes", () => {
     };
     expect(body.configured).toBe(false);
     expect(body.updatedAt).toBeNull();
+    // The FK-safe order: catalog provider rows bound to the credential are
+    // unbound (cascading their offerings) before the credential is deleted.
+    expect(clearCatalogCalls).toContainEqual(["credential_1"]);
     expect(deletedCredentialIds).toContain("credential_1");
     expect(JSON.stringify(body)).not.toContain("secret");
   });

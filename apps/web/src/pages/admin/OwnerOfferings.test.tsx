@@ -85,8 +85,9 @@ describe("OwnerOfferings", () => {
     };
     renderOfferings();
     // Resolves ids to names via the passed lookups.
-    await waitFor(() => expect(screen.getByText("kimi-k3")));
-    expect(screen.getByText("openrouter"));
+    await waitFor(() => screen.getByText("kimi-k3"));
+    // getByText throws if absent — the call itself is the assertion.
+    screen.getByText("openrouter");
 
     fireEvent.click(screen.getByRole("button", { name: /disable/i }));
     await waitFor(() => expect(setDisabled).toHaveBeenCalledTimes(1));
@@ -152,8 +153,8 @@ describe("OwnerOfferings", () => {
       ],
     };
     renderOfferings();
-    await waitFor(() => expect(screen.getByText("mdl_unknown")));
-    expect(screen.getByText("mpv_unknown"));
+    await waitFor(() => screen.getByText("mdl_unknown"));
+    screen.getByText("mpv_unknown");
   });
 
   it("shows an empty state when the tenant owns no offerings", async () => {

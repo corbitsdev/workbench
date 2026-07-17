@@ -1447,6 +1447,9 @@ const TenantOfferingsResponse = type({
 export async function getTenantOfferings(
   tenantId: string,
 ): Promise<TenantOffering[]> {
+  // A single un-cursored page: a tenant realistically owns single digits of
+  // offerings (one per Owner-set inference model), so 200 is a generous cap
+  // rather than a paginated list. Revisit with a cursor if that ever changes.
   const raw = await hubFetch<unknown>(
     "GET",
     `tenants/${encodeURIComponent(tenantId)}/catalog/offerings?limit=200`,

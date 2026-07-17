@@ -4,9 +4,12 @@ import { getLogger } from "@intx/log";
 import { describeRoute, resolver } from "hono-openapi";
 import { type GrantStore } from "@intx/authz";
 import { schema as intxSchema } from "@intx/db";
-import { type SidecarRouter } from "@intx/hub-sessions";
+import {
+  pushSourceUpdatesSubtree,
+  type SidecarRouter,
+} from "@intx/hub-sessions";
 import { generateId } from "@intx/hub-common";
-import { and, eq, isNotNull, isNull } from "drizzle-orm";
+import { and, eq, inArray, isNotNull, isNull } from "drizzle-orm";
 import {
   CREDENTIAL_PROVIDER_CATALOG,
   DEMOS_RESOURCE,
@@ -65,7 +68,10 @@ import {
   workflowRunDenied,
 } from "../lib/workflow-run-gate";
 import { recordAudit } from "../services/admin-audit";
-import { reconcileProviderCatalog } from "../services/catalog-provider-seed";
+import {
+  clearCatalogProvidersForCredentials,
+  reconcileProviderCatalog,
+} from "../services/catalog-provider-seed";
 import {
   assignRole,
   demoteFromOwner,
@@ -75,7 +81,7 @@ import {
   principalExistsInTenant,
 } from "../services/admin-governance";
 
-const { role, grant, credential, provider } = intxSchema;
+const { role, grant, credential, provider, modelProvider } = intxSchema;
 
 const ErrorResponse = type({ error: "string" });
 
@@ -1124,26 +1130,42 @@ export function createOwnerRouter(
       // Materialize this provider's catalog slice (model_provider + models +
       // offerings) from @workbench/catalog so its models resolve immediately —
       // no manual admin `Seed model catalog` step after the Owner sets the key.
-      // Inference-only; a no-op for a provider the code catalog doesn't
-      // describe or one lacking a base URL. The credential is already
-      // persisted, so a reconcile failure is logged, not surfaced as a set
-      // failure — the reconcile is idempotent on the next set.
-      if (entry.kind === "inference" && responseBaseURL) {
-        try {
-          await reconcileProviderCatalog({
-            db,
-            sidecarRouter,
-            tenantId: rootTenantId,
-            providerName: entry.providerName,
-            credentialId,
-            baseURL: responseBaseURL,
-          });
-        } catch (err) {
-          getLogger(["routes", "owner"]).error(
-            `catalog reconcile failed for ${entry.providerName}: ${
-              err instanceof Error ? err.message : String(err)
-            }`,
+      // Inference-only; a no-op for a provider the code catalog doesn't map to
+      // by name or one lacking a base URL. The credential is already persisted,
+      // so a reconcile failure is logged, not surfaced as a set failure — the
+      // reconcile is idempotent on the next set. Every skip/no-op is logged so
+      // "I set the key but see no models" is diagnosable without reading source.
+      if (entry.kind === "inference") {
+        const credentialLog = getLogger(["routes", "owner"]);
+        if (!responseBaseURL) {
+          credentialLog.info(
+            "skipped catalog reconcile: provider has no base URL",
+            {
+              providerName: entry.providerName,
+            },
           );
+        } else {
+          try {
+            const reconciled = await reconcileProviderCatalog({
+              db,
+              sidecarRouter,
+              tenantId: rootTenantId,
+              providerName: entry.providerName,
+              credentialId,
+              baseURL: responseBaseURL,
+            });
+            if (reconciled === null) {
+              credentialLog.info(
+                "no catalog offerings to seed: provider not described by FULL_CATALOG",
+                { providerName: entry.providerName },
+              );
+            }
+          } catch (err) {
+            credentialLog.error("catalog reconcile failed", {
+              providerName: entry.providerName,
+              err,
+            });
+          }
         }
       }
 
@@ -1193,16 +1215,38 @@ export function createOwnerRouter(
       });
 
       if (providerRow) {
-        const deleted = await db
-          .delete(credential)
-          .where(
-            and(
-              eq(credential.tenantId, rootTenantId),
-              eq(credential.providerId, providerRow.id),
-            ),
-          )
-          .returning({ id: credential.id });
-        if (deleted.length > 0) {
+        const creds = await db.query.credential.findMany({
+          where: and(
+            eq(credential.tenantId, rootTenantId),
+            eq(credential.providerId, providerRow.id),
+          ),
+          columns: { id: true },
+        });
+        const credentialIds = creds.map((cr) => cr.id);
+        if (credentialIds.length > 0) {
+          // model_provider.credentialId is an onDelete:"restrict" FK, so the
+          // catalog provider rows auto-seed bound to these credentials (and,
+          // by cascade, their offerings) must be removed before the credential
+          // itself can be deleted. Atomic so a failure never orphans either.
+          let removedProviders = 0;
+          await db.transaction(async (tx) => {
+            removedProviders = await clearCatalogProvidersForCredentials(
+              tx,
+              rootTenantId,
+              credentialIds,
+            );
+            await tx
+              .delete(credential)
+              .where(
+                and(
+                  eq(credential.tenantId, rootTenantId),
+                  eq(credential.providerId, providerRow.id),
+                ),
+              );
+          });
+          if (removedProviders > 0) {
+            await pushSourceUpdatesSubtree(db, sidecarRouter, rootTenantId);
+          }
           void recordAudit({
             db,
             tenantId: rootTenantId,

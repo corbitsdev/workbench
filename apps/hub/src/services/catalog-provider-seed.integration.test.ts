@@ -31,7 +31,10 @@ mock.module("@intx/hub-sessions", () => ({
 
 import { schema } from "../db";
 import type { HubDb } from "../db";
-import { reconcileProviderCatalog } from "./catalog-provider-seed";
+import {
+  clearCatalogProvidersForCredentials,
+  reconcileProviderCatalog,
+} from "./catalog-provider-seed";
 
 // Real-Postgres (PGlite) exercise of reconcileProviderCatalog across its true
 // seams: it writes real model/model_provider/model_offering rows and the
@@ -43,7 +46,8 @@ const TENANT = "ten-root";
 const CRED_ID = "cred-openrouter";
 const BASE_URL = "https://openrouter.ai/api/v1";
 
-const { model, modelProvider, modelOffering, tenant, credential } = intxSchema;
+const { model, modelProvider, modelOffering, tenant, credential, provider } =
+  intxSchema;
 
 let client: PGlite;
 let db: HubDb;
@@ -141,6 +145,8 @@ describe("reconcileProviderCatalog over real Postgres", () => {
       ),
     });
     expect(offeringRow?.modelId).toBe(modelRow!.id);
+    // 2 is kimi-k3's openrouter priority in CATALOG_OFFERINGS (openrouter is a
+    // priority-2 direct source; see packages/catalog/src/offerings.ts).
     expect(offeringRow?.priority).toBe(2);
 
     const resolution = await resolveModelSources(db, TENANT, [
@@ -254,5 +260,125 @@ describe("reconcileProviderCatalog over real Postgres", () => {
     expect(providers).toHaveLength(0);
     expect(models).toHaveLength(0);
     expect(pushCalls).toEqual([]);
+  });
+
+  test("rebinds a wallet-authenticated provider row to the credential (nulls walletId)", async () => {
+    const now = new Date();
+    await db.insert(modelProvider).values({
+      id: "mpv-wallet",
+      tenantId: TENANT,
+      name: "openrouter",
+      plugin: "openai-compatible",
+      baseURL: BASE_URL,
+      walletId: "wlt-fake",
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    const result = await reconcileProviderCatalog({
+      db,
+      sidecarRouter,
+      tenantId: TENANT,
+      providerName: "openrouter",
+      credentialId: CRED_ID,
+      baseURL: BASE_URL,
+    });
+
+    expect(result?.credentialBound).toBe(true);
+    const row = await db.query.modelProvider.findFirst({
+      where: eq(modelProvider.id, "mpv-wallet"),
+    });
+    // The model_provider credential/wallet XOR would be violated if walletId
+    // were left set alongside the new credentialId.
+    expect(row?.credentialId).toBe(CRED_ID);
+    expect(row?.walletId).toBeNull();
+  });
+});
+
+// A second Postgres WITHOUT the replica-role bypass, so FK restrict/cascade are
+// live — this is the seam the DELETE-credential fix depends on: the auto-seeded
+// model_provider.credentialId is an onDelete:"restrict" FK, so the catalog rows
+// must be cleared before the credential can be deleted.
+describe("clearCatalogProvidersForCredentials under real FK enforcement", () => {
+  let fkClient: PGlite;
+  let fkDb: HubDb;
+  const T = "ten-fk";
+  const PROV = "prv-fk";
+  const CRED = "cred-fk";
+
+  beforeAll(async () => {
+    fkClient = new PGlite();
+    const bootstrap = drizzle(fkClient, { schema });
+    const { apply } = await pushSchema(schema, bootstrap as never);
+    await apply();
+    fkDb = bootstrap as unknown as HubDb;
+
+    const now = new Date();
+    await fkDb.insert(tenant).values({
+      id: T,
+      name: "fk",
+      slug: "fk",
+      domain: "fk.localhost",
+      createdAt: now,
+      updatedAt: now,
+    });
+    await fkDb.insert(provider).values({
+      id: PROV,
+      tenantId: T,
+      name: "openrouter",
+      plugin: "openai-compatible",
+      createdAt: now,
+      updatedAt: now,
+    });
+    await fkDb.insert(credential).values({
+      id: CRED,
+      tenantId: T,
+      providerId: PROV,
+      name: "OpenRouter",
+      type: "api_key",
+      secret: "sk-openrouter",
+      createdAt: now,
+      updatedAt: now,
+    });
+    await reconcileProviderCatalog({
+      db: fkDb,
+      sidecarRouter,
+      tenantId: T,
+      providerName: "openrouter",
+      credentialId: CRED,
+      baseURL: BASE_URL,
+    });
+  });
+
+  afterAll(async () => {
+    await fkClient?.close();
+  });
+
+  test("a naive credential delete is FK-blocked by the auto-seeded model_provider", async () => {
+    await expect(
+      (async () => {
+        await fkDb.delete(credential).where(eq(credential.id, CRED));
+      })(),
+    ).rejects.toThrow();
+  });
+
+  test("clearing the catalog providers first lets the delete succeed and cascades offerings", async () => {
+    const removed = await clearCatalogProvidersForCredentials(fkDb, T, [CRED]);
+    expect(removed).toBe(1);
+
+    const provs = await fkDb.query.modelProvider.findMany({
+      where: eq(modelProvider.tenantId, T),
+    });
+    const offs = await fkDb.query.modelOffering.findMany({
+      where: eq(modelOffering.tenantId, T),
+    });
+    expect(provs).toHaveLength(0);
+    expect(offs).toHaveLength(0);
+
+    await fkDb.delete(credential).where(eq(credential.id, CRED));
+    const creds = await fkDb.query.credential.findMany({
+      where: eq(credential.tenantId, T),
+    });
+    expect(creds).toHaveLength(0);
   });
 });

@@ -65,6 +65,99 @@ export function OwnerOfferings({
       setError("Could not remove the offering. Try again in a moment."),
   });
 
+  function renderBody() {
+    if (offerings.isLoading) {
+      return <p className="p-3 text-sm text-text-2">Loading…</p>;
+    }
+    if (offerings.isError || !offerings.data) {
+      return (
+        <p className="p-3 text-sm text-text-2">
+          Could not load offerings. Try again in a moment.
+        </p>
+      );
+    }
+    if (offerings.data.length === 0) {
+      return (
+        <p className="p-3 text-sm text-text-2">
+          This workbench owns no offerings yet.
+        </p>
+      );
+    }
+    return (
+      <div className={adminTableCard}>
+        <ul className="divide-y divide-border">
+          {offerings.data.map((o) => {
+            const modelName = modelNameById.get(o.modelId) ?? o.modelId;
+            const providerName =
+              providerNameById.get(o.providerId) ?? o.providerId;
+            // Only the row whose write is in flight is disabled, not the whole
+            // table — mutation.variables identifies which offering that is.
+            const busy =
+              (toggle.isPending && toggle.variables?.offeringId === o.id) ||
+              (remove.isPending && remove.variables === o.id);
+            return (
+              <li
+                key={o.id}
+                className="flex items-center justify-between gap-4 p-3"
+              >
+                <div className="min-w-0">
+                  <p className="text-sm text-text">{modelName}</p>
+                  <p className="mt-0.5 font-mono text-xs text-text-3">
+                    {providerName}
+                  </p>
+                </div>
+                <div className="flex shrink-0 items-center gap-2">
+                  <span
+                    className={`rounded-md border px-2 py-0.5 text-xs ${
+                      o.disabled
+                        ? "border-border text-text-3"
+                        : "border-border text-text-2"
+                    }`}
+                  >
+                    {o.disabled ? "Disabled" : "Enabled"}
+                  </span>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    disabled={busy}
+                    onClick={() => {
+                      setError(null);
+                      toggle
+                        .mutateAsync({
+                          offeringId: o.id,
+                          disabled: !o.disabled,
+                        })
+                        .catch(() => {
+                          /* onError surfaces this to the user */
+                        });
+                    }}
+                  >
+                    {o.disabled ? "Enable" : "Disable"}
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    disabled={busy}
+                    onClick={() => {
+                      setError(null);
+                      remove.mutateAsync(o.id).catch(() => {
+                        /* onError surfaces this to the user */
+                      });
+                    }}
+                  >
+                    Remove
+                  </Button>
+                </div>
+              </li>
+            );
+          })}
+        </ul>
+      </div>
+    );
+  }
+
   return (
     <div>
       <h2 className="mb-2 text-sm font-semibold text-text">Offerings</h2>
@@ -74,85 +167,7 @@ export function OwnerOfferings({
         here.
       </p>
 
-      {offerings.isLoading ? (
-        <p className="p-3 text-sm text-text-2">Loading…</p>
-      ) : offerings.isError || !offerings.data ? (
-        <p className="p-3 text-sm text-text-2">
-          Could not load offerings. Try again in a moment.
-        </p>
-      ) : offerings.data.length === 0 ? (
-        <p className="p-3 text-sm text-text-2">
-          This workbench owns no offerings yet.
-        </p>
-      ) : (
-        <div className={adminTableCard}>
-          <ul className="divide-y divide-border">
-            {offerings.data.map((o) => {
-              const modelName = modelNameById.get(o.modelId) ?? o.modelId;
-              const providerName =
-                providerNameById.get(o.providerId) ?? o.providerId;
-              const busy = toggle.isPending || remove.isPending;
-              return (
-                <li
-                  key={o.id}
-                  className="flex items-center justify-between gap-4 p-3"
-                >
-                  <div className="min-w-0">
-                    <p className="text-sm text-text">{modelName}</p>
-                    <p className="mt-0.5 font-mono text-xs text-text-3">
-                      {providerName}
-                    </p>
-                  </div>
-                  <div className="flex shrink-0 items-center gap-2">
-                    <span
-                      className={`rounded-md border px-2 py-0.5 text-xs ${
-                        o.disabled
-                          ? "border-border text-text-3"
-                          : "border-border text-text-2"
-                      }`}
-                    >
-                      {o.disabled ? "Disabled" : "Enabled"}
-                    </span>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      disabled={busy}
-                      onClick={() => {
-                        setError(null);
-                        toggle
-                          .mutateAsync({
-                            offeringId: o.id,
-                            disabled: !o.disabled,
-                          })
-                          .catch(() => {
-                            /* onError surfaces this to the user */
-                          });
-                      }}
-                    >
-                      {o.disabled ? "Enable" : "Disable"}
-                    </Button>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      disabled={busy}
-                      onClick={() => {
-                        setError(null);
-                        remove.mutateAsync(o.id).catch(() => {
-                          /* onError surfaces this to the user */
-                        });
-                      }}
-                    >
-                      Remove
-                    </Button>
-                  </div>
-                </li>
-              );
-            })}
-          </ul>
-        </div>
-      )}
+      {renderBody()}
 
       {error && (
         <p className="mt-2 text-xs text-text-3" role="status">
