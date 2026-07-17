@@ -27,6 +27,9 @@ import type {
   DeployRouterResult,
   SessionManager,
 } from "@workbench/hub-agent";
+// WORKBENCH-LOCAL (CL-2231): the on-disk step-agent dir layout for the
+// undeploy reclaim sweep (T1 seam — must match what the substrate writes).
+import { sanitizeAddress } from "@workbench/hub-agent";
 import {
   createWorkflowSupervisor,
   STEP_GRANTS_PATH,
@@ -607,6 +610,27 @@ export type SidecarWorkflowSupervisor = {
   getCredentialsSnapshot(): CredentialsSnapshot | null;
 };
 
+// An entry in the deploy router's `activeSupervisors` map: the live supervisor
+// plus the on-disk footprint the deployment owns.
+type ActiveMultiStepSupervisor = {
+  wired: SidecarWorkflowSupervisor;
+  /**
+   * WORKBENCH-LOCAL (CL-2231): not in upstream interchange — preserve across
+   * the pin-bump re-sync of this vendored file (see AGENTS.md § Dockerfile
+   * Maintenance → vendored workflow-host wiring).
+   *
+   * Absolute on-disk dirs this deployment owns, captured at deploy time so
+   * the undeploy hook can reclaim the deployment's footprint regardless of
+   * whether the step agents are still connected. Holds the per-deployment
+   * workflow-run repo dir plus every per-step on-disk dir (each step's
+   * agent-state repo dir and its agent dir). Nothing else deletes these:
+   * the workflow-run repo is not an agent dir, so no undeploy path touches
+   * it, and interchange's undeploy only deletes a step agent's dir while it
+   * is still connected, orphaning idle-evicted steps.
+   */
+  ownedDirs: readonly string[];
+};
+
 /**
  * Env key the multi-step branch uses to carry each step's ordered
  * inference-source failover chain from `frame.workflow.sources` down to
@@ -1060,7 +1084,7 @@ export function createSidecarDeployRouter(deps: {
   // pipes, and its event-channel fd. The undeploy hook consults this
   // map to call `supervisor.shutdown()` so the child's lifetime ends
   // with the deployment.
-  const activeSupervisors = new Map<string, SidecarWorkflowSupervisor>();
+  const activeSupervisors = new Map<string, ActiveMultiStepSupervisor>();
 
   // Synchronous single-flight guard for the deploy path. The real supervisor
   // does not exist until inside `spawnWorkflowDeployment`, so `deployMultiStep`
@@ -1491,7 +1515,36 @@ export function createSidecarDeployRouter(deps: {
       // so a spawn-time rejection leaves the registry untouched.
       await wired.supervisor.spawn(spawnOpts);
       wiredForUnwind = wired;
-      activeSupervisors.set(spec.agentAddress, wired);
+      // WORKBENCH-LOCAL (CL-2231): not in upstream — preserve on pin-bump
+      // re-sync. Capture the deployment's on-disk footprint so the undeploy
+      // hook can reclaim it regardless of whether the step agents are still
+      // connected. The workflow-run repo dir comes straight from the
+      // substrate's pure `getRepoDir` path computation; the per-step dirs are
+      // derived from `stepOrder` via the SAME `stepStrategy.deriveStepRepoId` /
+      // `deriveStepAddress` the supervisor used, keyed by the SAME slug
+      // `deploymentId` -- so the dirs reclaimed here are exactly the ones the
+      // supervisor created on disk. Both the deploy and boot-restore paths
+      // route through here, so restore inherits the reclaim for free.
+      const ownedDirs: string[] = [
+        deps.repoStore.getRepoDir({ kind: "workflow-run", id: deploymentId }),
+      ];
+      for (const stepId of spec.definition.stepOrder) {
+        ownedDirs.push(
+          deps.repoStore.getRepoDir(
+            stepStrategy.deriveStepRepoId({ deploymentId, stepId }),
+          ),
+        );
+        if (stepStateDataDir !== undefined) {
+          const stepAddress = stepStrategy.deriveStepAddress({
+            deploymentId,
+            stepId,
+          });
+          ownedDirs.push(
+            pathJoin(stepStateDataDir, sanitizeAddress(stepAddress)),
+          );
+        }
+      }
+      activeSupervisors.set(spec.agentAddress, { wired, ownedDirs });
       supervisorRegistered = true;
 
       // Bind the deployment's mail address to this supervisor's
@@ -1898,10 +1951,10 @@ export function createSidecarDeployRouter(deps: {
       // kill + `exited` await internally. The map entry is removed
       // before the await so a subsequent re-deploy on the same address
       // cannot observe a stale handle even if `shutdown()` rejects.
-      const wired = activeSupervisors.get(frame.agentAddress);
-      if (wired !== undefined) {
+      const active = activeSupervisors.get(frame.agentAddress);
+      if (active !== undefined) {
         activeSupervisors.delete(frame.agentAddress);
-        await wired.supervisor.shutdown();
+        await active.wired.supervisor.shutdown();
         // Drop the deployment address's transport registration installed at
         // spawn (OUTBOUND half of mailbox ownership, §3a). Both single- and
         // multi-step register the deployment address for outbound signing, so
@@ -1925,6 +1978,29 @@ export function createSidecarDeployRouter(deps: {
             pathJoin(stepStateDataDir, "workflow-step-state", deploymentId),
             { recursive: true, force: true },
           );
+        }
+
+        // WORKBENCH-LOCAL (CL-2231): not in upstream — preserve on pin-bump
+        // re-sync. Reclaim the deployment's on-disk footprint. Deployment
+        // churn (supersede/redeploy + DELETE) otherwise leaks two things the
+        // rest of teardown never touches and exhausts the sidecar volume's
+        // inodes: the per-deployment workflow-run repo (a `workflow-run` repo,
+        // not an agent dir, so no undeploy path reclaims it) and every step's
+        // on-disk dirs (interchange's undeploy only deletes a step agent's dir
+        // while it is CONNECTED, orphaning idle-evicted steps forever). This
+        // hook runs on the sidecar, so it deletes the local dirs directly
+        // regardless of connection state. Complements the scratch reclaim
+        // above (a DIFFERENT root). Each deletion is best-effort and idempotent
+        // (`force: true` swallows ENOENT) and never throws out of the hook:
+        // teardown must converge even if a single dir cannot be removed.
+        for (const dir of active.ownedDirs) {
+          try {
+            await rm(dir, { recursive: true, force: true });
+          } catch (cause) {
+            const reason =
+              cause instanceof Error ? cause.message : String(cause);
+            logger.warn`undeploy: failed to reclaim deployment dir ${dir} for ${frame.agentAddress}: ${reason}`;
+          }
         }
       }
       // Drop the deployment record so a boot-time restore does not re-spawn a

@@ -262,6 +262,9 @@ async function standUpDeployment(
     repoStore,
     signingKeySeed: keyPair.privateKey,
     createAgentCrypto: createEd25519Crypto,
+    assertSourceBuildable: () => {
+      /* every source buildable in this test */
+    },
     registerDeployment: () => {
       /* no-op */
     },
@@ -291,13 +294,17 @@ async function standUpDeployment(
   const sources: Record<string, unknown> = {};
   for (const stepId of stepIds) {
     steps[stepId] = { kind: "step" };
-    sources[stepId] = {
-      id: stepId,
-      provider: "anthropic",
-      baseURL: "https://api.anthropic.com",
-      apiKey: `sk-${stepId}`,
-      model: "claude-3-5",
-    };
+    // Upstream sources are per-step ordered failover chains (arrays), not a
+    // single source object.
+    sources[stepId] = [
+      {
+        id: stepId,
+        provider: "anthropic",
+        baseURL: "https://api.anthropic.com",
+        apiKey: `sk-${stepId}`,
+        model: "claude-3-5",
+      },
+    ];
   }
 
   const frame: AgentDeployFrame = {
@@ -437,8 +444,13 @@ describe("createSidecarDeployRouter multi-step undeploy reclaims on-disk footpri
       "ses_reclaimB",
       ["step-1", "step-2"],
     );
-    // Deliberately do NOT materialize the owned dirs.
-    for (const dir of harness.ownedDirs) {
+    // Deliberately do NOT materialize the per-step git repos. The
+    // workflow-run dir (ownedDirs[0]) is never absent post-deploy -- the
+    // deployment record (`deployment.json`) lives inside it -- so only the
+    // per-step dirs are asserted absent here; the point of the test is that
+    // undeploy's reclaim converges (and does not throw) even when the git
+    // repos were never written.
+    for (const dir of harness.ownedDirs.slice(1)) {
       expect(await exists(dir)).toBe(false);
     }
 
