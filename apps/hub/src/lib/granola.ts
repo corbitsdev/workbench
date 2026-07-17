@@ -1,27 +1,34 @@
+import { type } from "arktype";
 import { loadConfig } from "../config";
 
 /** Granola's public API caps page size at 30 and defaults to 10. */
 const MAX_PAGE_SIZE = 30;
 
-interface GranolaTranscriptItem {
-  speaker: { source: "microphone" | "speaker"; diarization_label?: string };
-  text: string;
-}
+export const GranolaTranscriptItemSchema = type({
+  speaker: {
+    source: "'microphone' | 'speaker'",
+    "diarization_label?": "string",
+  },
+  text: "string",
+});
+export type GranolaTranscriptItem = typeof GranolaTranscriptItemSchema.infer;
 
-export interface GranolaNote {
-  id: string;
-  title: string | null;
-  created_at: string;
-  participants?: string[];
-  summary?: string;
-  transcript?: GranolaTranscriptItem[];
-}
+export const GranolaNoteSchema = type({
+  id: "string",
+  title: "string | null",
+  created_at: "string",
+  "participants?": "string[]",
+  "summary?": "string",
+  "transcript?": GranolaTranscriptItemSchema.array(),
+});
+export type GranolaNote = typeof GranolaNoteSchema.infer;
 
-interface GranolaListResponse {
-  notes: GranolaNote[];
-  hasMore: boolean;
-  cursor?: string;
-}
+export const GranolaListResponseSchema = type({
+  notes: GranolaNoteSchema.array(),
+  hasMore: "boolean",
+  "cursor?": "string",
+});
+export type GranolaListResponse = typeof GranolaListResponseSchema.infer;
 
 function granolaHeaders(apiKey: string) {
   return {
@@ -47,8 +54,14 @@ async function fetchNotes(apiKey: string, url: URL): Promise<GranolaNote[]> {
     );
   }
 
-  const data = (await response.json()) as GranolaListResponse;
-  return data.notes || [];
+  const raw = await response.json();
+  const data = GranolaListResponseSchema(raw);
+  if (data instanceof type.errors) {
+    throw new Error(
+      `Granola API returned an unexpected shape: ${data.summary}`,
+    );
+  }
+  return data.notes;
 }
 
 export async function getRecentNotes(

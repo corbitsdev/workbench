@@ -151,4 +151,38 @@ describe("granola", () => {
 
     expect(async () => getRecentNotes(TEST_API_KEY, 3)).toThrow();
   });
+
+  it("getRecentNotes throws when the response shape doesn't match GranolaListResponseSchema", async () => {
+    (global as any).fetch = mock(() =>
+      Promise.resolve(
+        new Response(
+          JSON.stringify({
+            items: [{ id: "n1", title: "Sales Call" }],
+            hasMore: false,
+          }),
+          { status: 200 },
+        ),
+      ),
+    );
+
+    await expect(getRecentNotes(TEST_API_KEY, 3)).rejects.toThrow();
+  });
+
+  it("getRecentNotes throws when a note is missing a required field", async () => {
+    (global as any).fetch = mock(() =>
+      Promise.resolve(
+        new Response(
+          JSON.stringify({
+            notes: [
+              { title: "Sales Call", created_at: "2026-05-28T10:00:00Z" },
+            ],
+            hasMore: false,
+          }),
+          { status: 200 },
+        ),
+      ),
+    );
+
+    await expect(getRecentNotes(TEST_API_KEY, 3)).rejects.toThrow();
+  });
 });
