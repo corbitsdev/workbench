@@ -397,9 +397,10 @@ describe("composition regression spec: multi-segment part ordering (text -> tool
       "Here is the summary.",
     ]);
     expect(agentMessages[1]?.toolCalls?.[0]?.name).toBe("crm_lookup");
-    expect(agentMessages[2]?.reasoning).toBe(
-      "The record conflicts with the call notes; reconciling.",
-    );
+    // Reloaded turns no longer carry a reasoning trace (upstream dropped it
+    // from the hub-client `InstanceEvent` turn variant); segment ORDER is still
+    // preserved, which is what this regression spec guards.
+    expect(agentMessages[2]?.reasoning).toBeUndefined();
     expect(agentMessages[0]?.toolCalls).toBeUndefined();
     expect(agentMessages[3]?.toolCalls).toBeUndefined();
   });

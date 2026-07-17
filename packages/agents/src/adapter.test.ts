@@ -131,14 +131,16 @@ describe("convertInstanceEvents", () => {
     expect(msg.createdAt).toBe("2024-01-01T00:02:00.000Z");
   });
 
-  it("maps persisted reasoning and tool calls on turn events", () => {
+  it("maps tool calls on turn events", () => {
+    // Upstream `InstanceEvent` (hub-client) dropped `reasoning` from the turn
+    // variant with the session-runtime retirement, so a reloaded turn no longer
+    // carries a persisted reasoning trace — only live streaming does.
     const events: InstanceEvent[] = [
       {
         kind: "turn",
         turnId: "turn-reload",
         content: "Here is the answer.",
         timestamp: "2024-01-01T00:02:00.000Z",
-        reasoning: "Checked the CRM first.",
         toolCalls: [
           {
             name: "grep",
@@ -151,7 +153,7 @@ describe("convertInstanceEvents", () => {
     ];
 
     const msg = convertInstanceEvents(events)[0];
-    expect(msg?.reasoning).toBe("Checked the CRM first.");
+    expect(msg?.reasoning).toBeUndefined();
     expect(msg?.toolCalls?.[0]?.name).toBe("grep");
   });
 
