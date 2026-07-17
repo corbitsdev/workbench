@@ -624,6 +624,10 @@ The pinned `INTERCHANGE_COMMIT` and `INTERCHANGE_SHA256` args must be updated to
 
 `apps/sidecar/Dockerfile` builds nothing and runs directly from TypeScript source via `bun run`. `apps/web/Dockerfile` runs `vite build` in the builder stage and serves the static output via Caddy with an SPA fallback to `index.html`; it runs no Node/Bun process at runtime.
 
+### Redeploy drain
+
+During a hub redeploy, Railway keeps the old replica alive for the deployment-overlap window (~120s) and internal DNS can still route to it. Once the hub receives SIGTERM, `beginDrain()` (`apps/hub/src/lib/drain-state.ts`, called first in the shutdown handler in `apps/hub/src/index.ts`) flips a one-way process-wide drain flag, and an outer middleware (`createSidecarWsDrainGuard`, `apps/hub/src/lib/drain-guard.ts`, registered on `/api/sidecars/ws` before the interchange routes mount) refuses new sidecar WebSocket upgrades with 503 for the rest of the process lifetime. A sidecar whose reconnect lands on the draining replica therefore fails fast and retries — combined with the sidecar's per-attempt connect timeout (`SIDECAR_CONNECT_TIMEOUT_MS`, see VENDORED.md hub-agent entry), reconnect settles on the new replica within seconds instead of hanging for the overlap window. Existing connections and the drain barriers are untouched; the guard only gates new upgrade admission.
+
 ### Volumes
 
 Both services require a **persistent volume** mounted in the Railway dashboard.
