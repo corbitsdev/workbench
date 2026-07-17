@@ -205,11 +205,11 @@ describe("Myra variants router", () => {
     );
     const kimi = body.variants.find((v) => v.id === "myra-kimi-k2-6");
     expect(kimi?.costTier).toBe("standard");
-    expect(kimi?.isDefault).toBe(false);
+    expect(kimi?.isDefault).toBe(true);
     const deepseek = body.variants.find(
       (v) => v.id === "myra-deepseek-v4-flash",
     );
-    expect(deepseek?.isDefault).toBe(true);
+    expect(deepseek?.isDefault).toBe(false);
   });
 
   it("omits variants whose model has no launchable offering (CL-3824)", async () => {

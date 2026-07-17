@@ -1,14 +1,15 @@
 import { type } from "arktype";
 import { CredentialRequirement } from "@intx/types";
+import { promptFormatForProvider, type PromptFormat } from "@workbench/prompts";
 import {
-  promptFormatForProvider,
-  type PromptFormat,
-} from "@workbench/prompts";
-import { buildPersonalAgentSystemPrompt, PERSONAL_AGENT_PROMPT_VERSION } from "./prompt";
+  buildPersonalAgentSystemPrompt,
+  PERSONAL_AGENT_PROMPT_VERSION,
+} from "./prompt";
 import {
   PERSONAL_AGENT_BASE_TOOLS,
   PERSONAL_AGENT_CREDENTIAL_REQUIREMENTS,
   PERSONAL_AGENT_DEPLOY_PROMPT,
+  PERSONAL_AGENT_TRIAGE_DEPLOY_PROMPT,
   PERSONAL_AGENT_MODEL_CONFIG,
   PERSONAL_AGENT_NAME,
   PERSONAL_AGENT_TRIAGE_MODEL_CONFIG,
@@ -95,7 +96,7 @@ function versionId(id: string): string {
 }
 
 const OPUS_MODEL_CONFIG = { defaultModel: "claude-opus-4-8" } as const;
-const KIMI_MODEL_CONFIG = { defaultModel: "kimi-k2.6" } as const;
+const DEEPSEEK_MODEL_CONFIG = { defaultModel: "deepseek-v4-flash" } as const;
 
 function chatDeployPrompt(
   provider: MyraVariantProvider,
@@ -114,19 +115,19 @@ function chatDeployPrompt(
  * definition (byte-identical fallback for members with no preference); the rest
  * are additional, non-default definitions selectable per member.
  *
- * NOTE: the canonical chat AND triage variants both run on `deepseek-v4-flash`
- * — matching today's shipped `myra` / `myra-triage` definitions (see
- * `PERSONAL_AGENT_MODEL_CONFIG` / `PERSONAL_AGENT_TRIAGE_MODEL_CONFIG`), so an
- * absent preference reproduces current behavior exactly.
+ * NOTE: the canonical chat variant runs on `kimi-k2.6` (see
+ * `PERSONAL_AGENT_MODEL_CONFIG`); canonical triage stays on `deepseek-v4-flash`
+ * (`PERSONAL_AGENT_TRIAGE_MODEL_CONFIG`) for cost at inbox volume. An absent
+ * preference reproduces those seeded definitions exactly.
  */
 export const MYRA_VARIANTS: readonly MyraVariant[] = [
   {
-    id: "myra-deepseek-v4-flash",
-    versionId: versionId("myra-deepseek-v4-flash"),
+    id: "myra-kimi-k2-6",
+    versionId: versionId("myra-kimi-k2-6"),
     kind: "chat",
-    displayName: "Myra (DeepSeek Flash)",
+    displayName: "Myra (Kimi K2)",
     description:
-      "The default Myra — DeepSeek V4 Flash over the opencode-zen gateway. Fast, low-cost, balanced.",
+      "The default Myra — Moonshot Kimi K2 over the opencode-zen gateway. Strong long-form reasoning.",
     model: PERSONAL_AGENT_MODEL_CONFIG.defaultModel,
     modelConfig: PERSONAL_AGENT_MODEL_CONFIG,
     provider: "openai-compatible",
@@ -140,25 +141,25 @@ export const MYRA_VARIANTS: readonly MyraVariant[] = [
     isDefault: true,
   },
   {
-    id: "myra-kimi-k2-6",
-    versionId: versionId("myra-kimi-k2-6"),
+    id: "myra-deepseek-v4-flash",
+    versionId: versionId("myra-deepseek-v4-flash"),
     kind: "chat",
-    displayName: "Myra (Kimi K2)",
+    displayName: "Myra (DeepSeek Flash)",
     description:
-      "Myra on Moonshot Kimi K2 — stronger long-form reasoning at higher per-turn cost.",
-    model: KIMI_MODEL_CONFIG.defaultModel,
-    modelConfig: KIMI_MODEL_CONFIG,
+      "Myra on DeepSeek V4 Flash — faster and lower-cost for everyday work.",
+    model: DEEPSEEK_MODEL_CONFIG.defaultModel,
+    modelConfig: DEEPSEEK_MODEL_CONFIG,
     provider: "openai-compatible",
     costTier: "standard",
     credentialRequirements: PERSONAL_AGENT_CREDENTIAL_REQUIREMENTS,
     promptFormat: promptFormatForProvider("openai-compatible"),
     deployPrompt: chatDeployPrompt(
       "openai-compatible",
-      KIMI_MODEL_CONFIG.defaultModel,
+      DEEPSEEK_MODEL_CONFIG.defaultModel,
     ),
     toolPolicy: PERSONAL_AGENT_BASE_TOOLS,
-    seedName: "Myra (Kimi K2)",
-    templateKey: "myra-chat-kimi-k2-6",
+    seedName: "Myra (DeepSeek Flash)",
+    templateKey: "myra-chat-deepseek-v4-flash",
     isDefault: false,
   },
   {
@@ -174,10 +175,7 @@ export const MYRA_VARIANTS: readonly MyraVariant[] = [
     costTier: "premium",
     credentialRequirements: ANTHROPIC_CREDENTIAL_REQUIREMENTS,
     promptFormat: promptFormatForProvider("anthropic"),
-    deployPrompt: chatDeployPrompt(
-      "anthropic",
-      OPUS_MODEL_CONFIG.defaultModel,
-    ),
+    deployPrompt: chatDeployPrompt("anthropic", OPUS_MODEL_CONFIG.defaultModel),
     toolPolicy: PERSONAL_AGENT_BASE_TOOLS,
     seedName: "Myra (Opus)",
     templateKey: "myra-chat-opus-4-8",
@@ -196,7 +194,7 @@ export const MYRA_VARIANTS: readonly MyraVariant[] = [
     costTier: "standard",
     credentialRequirements: PERSONAL_AGENT_CREDENTIAL_REQUIREMENTS,
     promptFormat: promptFormatForProvider("openai-compatible"),
-    deployPrompt: PERSONAL_AGENT_DEPLOY_PROMPT,
+    deployPrompt: PERSONAL_AGENT_TRIAGE_DEPLOY_PROMPT,
     toolPolicy: MAILBOX_PERSONA_TOOLS,
     seedName: PERSONAL_AGENT_TRIAGE_NAME,
     templateKey: "myra-triage",
@@ -209,15 +207,15 @@ export const MYRA_VARIANTS: readonly MyraVariant[] = [
     displayName: "Myra Triage (Kimi K2)",
     description:
       "Inbox-triage Myra on Moonshot Kimi K2 — stronger classification at higher per-item cost.",
-    model: KIMI_MODEL_CONFIG.defaultModel,
-    modelConfig: KIMI_MODEL_CONFIG,
+    model: PERSONAL_AGENT_MODEL_CONFIG.defaultModel,
+    modelConfig: PERSONAL_AGENT_MODEL_CONFIG,
     provider: "openai-compatible",
     costTier: "standard",
     credentialRequirements: PERSONAL_AGENT_CREDENTIAL_REQUIREMENTS,
     promptFormat: promptFormatForProvider("openai-compatible"),
     deployPrompt: chatDeployPrompt(
       "openai-compatible",
-      KIMI_MODEL_CONFIG.defaultModel,
+      PERSONAL_AGENT_MODEL_CONFIG.defaultModel,
     ),
     toolPolicy: MAILBOX_PERSONA_TOOLS,
     seedName: "Myra Triage (Kimi K2)",
@@ -283,10 +281,7 @@ export function getMyraVariant(id: string): MyraVariant | undefined {
  * True when `id` names a variant of the given kind. With no kind, matches a
  * variant of any kind.
  */
-export function isMyraVariantId(
-  id: string,
-  kind?: MyraVariantKind,
-): boolean {
+export function isMyraVariantId(id: string, kind?: MyraVariantKind): boolean {
   const variant = getMyraVariant(id);
   if (!variant) return false;
   return kind === undefined || variant.kind === kind;

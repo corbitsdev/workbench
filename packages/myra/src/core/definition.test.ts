@@ -143,17 +143,15 @@ describe("PERSONAL_AGENT_TRIAGE_MODEL_CONFIG (CL-3364)", () => {
 });
 
 describe("PERSONAL_AGENT_MODEL_CONFIG", () => {
-  // Chat runs on the DeepSeek reasoning model; the thinking-mode API defaults
-  // reasoning_effort to high, so the model id alone carries the intent.
-  it("pins deepseek-v4-flash for Myra chat", () => {
+  it("pins kimi-k2.6 for Myra chat", () => {
     expect(PERSONAL_AGENT_MODEL_CONFIG).toEqual({
-      defaultModel: "deepseek-v4-flash",
+      defaultModel: "kimi-k2.6",
     });
   });
 });
 
 describe("PERSONAL_AGENT_DEPLOY_PROMPT", () => {
-  // Myra runs inference on deepseek-v4-flash via the `openai-compatible` provider, so
+  // Myra runs inference on kimi-k2.6 via the `openai-compatible` provider, so
   // her deployed prompt must render in Markdown (the non-Anthropic format),
   // never XML. A regression here (a hardcoded `{ xml: true }`) ships the wrong
   // section format to the model she actually runs on.
@@ -163,9 +161,9 @@ describe("PERSONAL_AGENT_DEPLOY_PROMPT", () => {
     expect(PERSONAL_AGENT_DEPLOY_PROMPT).not.toContain("<role>");
   });
 
-  it("names the actual deepseek-v4-flash model, not a confabulated identity", () => {
+  it("names the actual kimi-k2.6 model, not a confabulated identity", () => {
     expect(PERSONAL_AGENT_DEPLOY_PROMPT).toContain(
-      "You run on the deepseek-v4-flash model, served through the Corbits platform.",
+      "You run on the kimi-k2.6 model, served through the Corbits platform.",
     );
   });
 

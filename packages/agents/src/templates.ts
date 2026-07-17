@@ -2,6 +2,7 @@ import type { CredentialRequirement, GrantRequirement } from "@intx/types";
 import type { ToolPackagePin } from "@intx/types/tool-packages";
 import {
   PERSONAL_AGENT_DEPLOY_PROMPT,
+  PERSONAL_AGENT_TRIAGE_DEPLOY_PROMPT,
   PERSONAL_AGENT_CREDENTIAL_REQUIREMENTS,
   PERSONAL_AGENT_BASE_TOOLS,
   PERSONAL_AGENT_NAME,
@@ -229,7 +230,7 @@ export const AGENT_TEMPLATES: AgentTemplate[] = [
     name: PERSONAL_AGENT_TRIAGE_NAME,
     description:
       "Ephemeral inbox-triage session — classifies one inbound message and prepares a response. Not a chat agent.",
-    systemPrompt: PERSONAL_AGENT_DEPLOY_PROMPT,
+    systemPrompt: PERSONAL_AGENT_TRIAGE_DEPLOY_PROMPT,
     credentialRequirements: PERSONAL_AGENT_CREDENTIAL_REQUIREMENTS,
     grantRequirements: MYRA_STATIC_GRANT_REQUIREMENTS,
     capabilities: { tools: [...PERSONAL_AGENT_BASE_TOOLS] },

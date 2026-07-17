@@ -148,7 +148,10 @@ describe("displayForInstance", () => {
   it("classifies variant template keys by prefix, triage before chat", () => {
     expect(
       displayForInstance(
-        instance({ templateKey: "myra-chat-kimi-k2-6", label: "Deep dive" }),
+        instance({
+          templateKey: "myra-chat-deepseek-v4-flash",
+          label: "Deep dive",
+        }),
       ),
     ).toEqual({ name: "Myra — Deep dive", badgeLabel: "Chat" });
     expect(

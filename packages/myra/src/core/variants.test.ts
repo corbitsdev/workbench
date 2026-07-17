@@ -63,8 +63,8 @@ describe("Myra variant catalog", () => {
 
   test("the default chat variant is byte-identical to today's Myra definition", () => {
     const variant = defaultMyraVariant("chat");
-    expect(variant.id).toBe("myra-deepseek-v4-flash");
-    expect(variant.model).toBe("deepseek-v4-flash");
+    expect(variant.id).toBe("myra-kimi-k2-6");
+    expect(variant.model).toBe("kimi-k2.6");
     expect(variant.seedName).toBe(PERSONAL_AGENT_NAME);
     expect(variant.templateKey).toBe("myra");
     expect(variant.modelConfig).toEqual(PERSONAL_AGENT_MODEL_CONFIG);
@@ -96,7 +96,8 @@ describe("Myra variant catalog", () => {
 
   test("Opus variants report premium cost tier; the rest standard", () => {
     for (const variant of MYRA_VARIANTS) {
-      const expected = variant.model === "claude-opus-4-8" ? "premium" : "standard";
+      const expected =
+        variant.model === "claude-opus-4-8" ? "premium" : "standard";
       expect(variant.costTier).toBe(expected);
     }
   });
@@ -124,7 +125,9 @@ describe("Myra variant catalog", () => {
   });
 
   test("exactly one default per kind", () => {
-    expect(MYRA_VARIANTS.filter((v) => v.kind === "chat" && v.isDefault)).toHaveLength(1);
+    expect(
+      MYRA_VARIANTS.filter((v) => v.kind === "chat" && v.isDefault),
+    ).toHaveLength(1);
     expect(
       MYRA_VARIANTS.filter((v) => v.kind === "triage" && v.isDefault),
     ).toHaveLength(1);
@@ -169,14 +172,18 @@ describe("variant lookup helpers", () => {
   });
 
   test("resolveMyraVariant honors a valid selection", () => {
-    expect(resolveMyraVariant("chat", "myra-opus-4-8").id).toBe("myra-opus-4-8");
+    expect(resolveMyraVariant("chat", "myra-opus-4-8").id).toBe(
+      "myra-opus-4-8",
+    );
     expect(resolveMyraVariant("triage", "myra-triage-kimi-k2-6").id).toBe(
       "myra-triage-kimi-k2-6",
     );
   });
 
   test("resolveMyraVariant falls back to the default on null/unknown/wrong-kind", () => {
-    expect(resolveMyraVariant("chat", null).id).toBe(defaultMyraVariant("chat").id);
+    expect(resolveMyraVariant("chat", null).id).toBe(
+      defaultMyraVariant("chat").id,
+    );
     expect(resolveMyraVariant("chat", undefined).id).toBe(
       defaultMyraVariant("chat").id,
     );

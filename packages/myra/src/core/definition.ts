@@ -27,15 +27,12 @@ export const PERSONAL_AGENT_CREDENTIAL_REQUIREMENTS: CredentialRequirementType[]
   ];
 
 /**
- * deepseek-v4-flash runs Myra chat in reasoning mode: the DeepSeek thinking-mode
- * API defaults `reasoning_effort` to "high" for regular requests (and maps
- * low/medium up to high), so high reasoning needs no parameter plumbing —
- * `@intx/types` `modelConfig` has no effort field to set anyway. Chosen over
- * kimi-k2.6 for cost and latency, and it also accepts the OpenAI file part
- * that kimi rejects.
+ * kimi-k2.6 is the default Myra chat model: stronger long-form reasoning over
+ * the opencode-zen (openai-compatible) gateway. deepseek-v4-flash remains a
+ * selectable non-default variant for cost/latency-sensitive work.
  */
 export const PERSONAL_AGENT_MODEL_CONFIG = {
-  defaultModel: "deepseek-v4-flash",
+  defaultModel: "kimi-k2.6",
 } as const;
 
 /** Display name of the personal agent; also the per-tenant seed idempotency key. */
@@ -66,7 +63,7 @@ export const PERSONAL_AGENT_TRIAGE_MODEL_CONFIG = {
 
 /**
  * Section format follows the provider Myra actually runs inference on. Her
- * model (deepseek-v4-flash) is served through the `openai-compatible` credential
+ * model (kimi-k2.6) is served through the `openai-compatible` credential
  * requirement above, so `promptFormatForProvider` selects Markdown — the format
  * non-Anthropic models are tuned for — rather than the XML that only Anthropic
  * models prefer. The provider is knowable here from the declared credential
@@ -81,6 +78,14 @@ export const PERSONAL_AGENT_DEPLOY_PROMPT: string =
     PERSONAL_AGENT_NAME,
     PERSONAL_AGENT_PROMPT_FORMAT,
     { model: PERSONAL_AGENT_MODEL_CONFIG.defaultModel },
+  );
+
+/** Deploy prompt for the canonical triage definition (names the triage model). */
+export const PERSONAL_AGENT_TRIAGE_DEPLOY_PROMPT: string =
+  buildPersonalAgentSystemPrompt(
+    PERSONAL_AGENT_NAME,
+    PERSONAL_AGENT_PROMPT_FORMAT,
+    { model: PERSONAL_AGENT_TRIAGE_MODEL_CONFIG.defaultModel },
   );
 
 /**

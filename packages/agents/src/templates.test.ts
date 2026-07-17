@@ -23,7 +23,7 @@ describe("AGENT_TEMPLATES", () => {
       "lincoln",
       "loop",
       "myra",
-      "myra-chat-kimi-k2-6",
+      "myra-chat-deepseek-v4-flash",
       "myra-chat-opus-4-8",
       "myra-triage",
       "myra-triage-kimi-k2-6",
@@ -31,6 +31,11 @@ describe("AGENT_TEMPLATES", () => {
       "oat",
       "walter",
     ]);
+  });
+
+  it("registers the canonical Myra chat template on kimi-k2.6", () => {
+    const myra = AGENT_TEMPLATES.find((t) => t.key === "myra");
+    expect(myra?.modelConfig).toEqual({ defaultModel: "kimi-k2.6" });
   });
 
   it("registers the Myra Triage variant on the flash model, not deployed to the catalog", () => {
@@ -152,7 +157,7 @@ describe("isReapableAgentInstance", () => {
 
   it("reaps a non-canonical Myra chat variant exactly like the canonical agent", () => {
     const variantChat = AGENT_TEMPLATES.find(
-      (t) => t.key === "myra-chat-kimi-k2-6",
+      (t) => t.key === "myra-chat-deepseek-v4-flash",
     );
     const myra = AGENT_TEMPLATES.find((t) => t.key === "myra");
     expect(variantChat).toBeDefined();
