@@ -373,9 +373,9 @@ export function createAgentProvisioningRouter(
     "/instances/:instanceId/abort-turn",
     describeRoute({
       tags: ["Agents"],
-      summary: "Abort the running chat turn",
+      summary: "Abort the running chat turn (unsupported)",
       description:
-        "Stops the instance's in-flight turn (inference or tool execution) without ending the conversation. Requires a manage grant on the instance. The session stays usable; the next message resumes it.",
+        "Always returns 409 — the workflow runtime retirement removed the per-turn abort transport, so stopping an in-flight turn is not available. Auth/ownership checks still run so the route's grant contract stays meaningful for when the transport returns.",
       parameters: [
         {
           name: "instanceId",
@@ -385,7 +385,6 @@ export function createAgentProvisioningRouter(
         },
       ],
       responses: {
-        204: { description: "Turn aborted" },
         403: {
           description: "Caller lacks a manage grant on the instance",
           content: { "application/json": { schema: resolver(ErrorResponse) } },
@@ -396,11 +395,8 @@ export function createAgentProvisioningRouter(
           content: { "application/json": { schema: resolver(ErrorResponse) } },
         },
         409: {
-          description: "No turn is currently running",
-          content: { "application/json": { schema: resolver(ErrorResponse) } },
-        },
-        502: {
-          description: "Sidecar unavailable",
+          description:
+            "Always returned for an authorized caller — stopping a running turn is not available in this runtime",
           content: { "application/json": { schema: resolver(ErrorResponse) } },
         },
       },
