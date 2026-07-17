@@ -160,7 +160,6 @@ describe("runInference — Dependencies parameter", () => {
   // call site) and must not yield any event, including `inference.start`.
 
   test("throws plainly when deps.fetch is undefined", async () => {
-     
     const deps = { fetch: undefined } as unknown as Dependencies;
     const iter = runInference({
       turns: [userTurn("hello")],
@@ -186,7 +185,6 @@ describe("runInference — Dependencies parameter", () => {
   });
 
   test("throws plainly when deps.fetch is a non-function value", async () => {
-     
     const deps = { fetch: "not a function" } as unknown as Dependencies;
     const iter = runInference({
       turns: [userTurn("hello")],
@@ -217,7 +215,7 @@ describe("runInference — Dependencies parameter", () => {
       source: SOURCE,
       nextSeq: () => 1,
     };
-     
+
     const opts = baseOpts as unknown as InferenceHarnessOptions;
     const iter = runInference(opts);
 
@@ -668,5 +666,218 @@ describe("runInference — source-identity stamping", () => {
       provider: "anthropic",
       model: "claude-pre",
     });
+  });
+});
+
+// A kimi-k2.6/OpenRouter session poisoned its own history with
+// `{_raw: "<stringified args>"}` tool arguments and looped on the same
+// approval forever. The harness must unwrap a recoverable _raw envelope
+// at finalize time so the real arguments reach the tool.
+describe("runInference — tool-call _raw recovery", () => {
+  const OPENAI_SOURCE: InferenceSource = {
+    id: "openrouter:kimi-k2.6",
+    provider: "openai",
+    baseURL: "https://openrouter.test/api/v1",
+    apiKey: "test",
+    model: "kimi-k2.6",
+  };
+
+  const DEPLOY_ARGS = {
+    projectName: "corbits-vpc",
+    filePath: "index.html",
+    html: "<!DOCTYPE html><html><body>vpc</body></html>",
+  };
+
+  function sseResponse(argumentsPayload: string): Response {
+    const startChunk = JSON.stringify({
+      choices: [
+        {
+          index: 0,
+          delta: {
+            role: "assistant",
+            tool_calls: [
+              {
+                index: 0,
+                id: "call_1",
+                function: {
+                  name: "vercel__deploy_static_file",
+                  arguments: "",
+                },
+              },
+            ],
+          },
+          finish_reason: null,
+        },
+      ],
+    });
+    const argChunk = JSON.stringify({
+      choices: [
+        {
+          index: 0,
+          delta: {
+            tool_calls: [
+              {
+                index: 0,
+                id: "call_1",
+                function: { name: null, arguments: argumentsPayload },
+              },
+            ],
+          },
+          finish_reason: null,
+        },
+      ],
+    });
+    const body = [
+      `data: ${startChunk}`,
+      "",
+      `data: ${argChunk}`,
+      "",
+      "data: [DONE]",
+      "",
+    ].join("\n");
+    return new Response(body, {
+      status: 200,
+      headers: { "content-type": "text/event-stream" },
+    });
+  }
+
+  async function runToToolCallEnd(
+    argumentsPayload: string,
+  ): Promise<Record<string, unknown>> {
+    const deps: Dependencies = {
+      fetch: () => Promise.resolve(sseResponse(argumentsPayload)),
+      scheduler: createDefaultScheduler(),
+      adapters: createBuiltinRegistry(),
+    };
+    let seq = 0;
+    const events = await collect(
+      runInference({
+        turns: [userTurn("deploy it")],
+        source: OPENAI_SOURCE,
+        nextSeq: () => ++seq,
+        deps,
+      }),
+    );
+    const end = events.find((e) => e.type === "inference.tool_call.end");
+    if (end === undefined) throw new Error("missing inference.tool_call.end");
+    return end.data.arguments;
+  }
+
+  test("well-formed arguments pass through unchanged", async () => {
+    const args = await runToToolCallEnd(JSON.stringify(DEPLOY_ARGS));
+    expect(args).toEqual(DEPLOY_ARGS);
+  });
+
+  test("model-emitted {_raw: <stringified JSON>} is unwrapped to real arguments", async () => {
+    const args = await runToToolCallEnd(
+      JSON.stringify({ _raw: JSON.stringify(DEPLOY_ARGS) }),
+    );
+    expect(args).toEqual(DEPLOY_ARGS);
+  });
+
+  test("duplicated concatenated argument objects are salvaged", async () => {
+    const one = JSON.stringify(DEPLOY_ARGS);
+    const args = await runToToolCallEnd(one + one);
+    expect(args).toEqual(DEPLOY_ARGS);
+  });
+});
+
+// A stored `{_raw: "<stringified args>"}` tool-call turn must never
+// round-trip to the model — the model imitates the shape and loops the
+// same approval forever. Pins the sanitize call inside each adapter's
+// message serialization; a vendored re-sync that drops it regresses
+// silently while the tool-args unit tests stay green.
+describe("history serialization — stored _raw arguments never reach the model", () => {
+  const DEPLOY_ARGS = {
+    projectName: "corbits-vpc",
+    filePath: "index.html",
+    html: "<!DOCTYPE html><html><body>vpc</body></html>",
+  };
+
+  function rawWrappedHistory(): ConversationTurn[] {
+    return [
+      userTurn("deploy it"),
+      {
+        role: "assistant",
+        content: [
+          {
+            type: "tool_call",
+            id: "call_1",
+            name: "vercel__deploy_static_file",
+            arguments: { _raw: JSON.stringify(DEPLOY_ARGS) },
+          },
+        ],
+        timestamp: 1,
+      },
+      {
+        role: "user",
+        content: [
+          {
+            type: "tool_result",
+            callId: "call_1",
+            content: [{ type: "text", text: "error: filePath missing" }],
+            isError: true,
+          },
+        ],
+        timestamp: 2,
+      },
+    ];
+  }
+
+  async function captureRequestBody(
+    source: InferenceSource,
+  ): Promise<Record<string, unknown>> {
+    let captured: Record<string, unknown> | undefined;
+    const deps: Dependencies = {
+      fetch: (_input, init) => {
+        const body = typeof init?.body === "string" ? init.body : "{}";
+        captured = JSON.parse(body) as Record<string, unknown>;
+        return Promise.resolve(
+          new Response("", {
+            status: 200,
+            headers: { "content-type": "text/event-stream" },
+          }),
+        );
+      },
+      scheduler: createDefaultScheduler(),
+      adapters: createBuiltinRegistry(),
+    };
+    let seq = 0;
+    await collect(
+      runInference({
+        turns: rawWrappedHistory(),
+        source,
+        nextSeq: () => ++seq,
+        deps,
+      }),
+    );
+    if (captured === undefined) throw new Error("no request body captured");
+    return captured;
+  }
+
+  test("openai adapter serializes unwrapped arguments", async () => {
+    const body = await captureRequestBody({
+      id: "openrouter:kimi-k2.6",
+      provider: "openai",
+      baseURL: "https://openrouter.test/api/v1",
+      apiKey: "test",
+      model: "kimi-k2.6",
+    });
+    const serialized = JSON.stringify(body);
+    expect(serialized).not.toContain("_raw");
+    expect(serialized).toContain("corbits-vpc");
+  });
+
+  test("anthropic adapter serializes unwrapped arguments", async () => {
+    const body = await captureRequestBody({
+      id: "anthropic:claude-3-5-sonnet-20240620",
+      provider: "anthropic",
+      baseURL: "https://api.anthropic.test",
+      apiKey: "test",
+      model: "claude-3-5-sonnet-20240620",
+    });
+    const serialized = JSON.stringify(body);
+    expect(serialized).not.toContain("_raw");
+    expect(serialized).toContain("corbits-vpc");
   });
 });

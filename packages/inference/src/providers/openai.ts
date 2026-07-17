@@ -12,6 +12,7 @@ import type {
 import type { ProviderAdapter, BuiltRequest } from "../adapter";
 import { BEARER_CREDENTIAL_SENTINEL } from "../auth";
 import { ProtocolMismatchError } from "../errors";
+import { sanitizeToolArgsForHistory } from "../tool-args";
 import {
   decodeToolName,
   encodeToolName,
@@ -243,7 +244,9 @@ function toOpenAIMessage(msg: ConversationTurn): unknown[] {
         type: "function",
         function: {
           name: encodeToolName(tc.name, OPENAI_TOOL_NAME_LIMIT),
-          arguments: JSON.stringify(tc.arguments),
+          // Never round-trip a `{_raw}` envelope to the model — it imitates
+          // the shape on subsequent tool calls and loops on approval.
+          arguments: JSON.stringify(sanitizeToolArgsForHistory(tc.arguments)),
         },
       }));
     }
