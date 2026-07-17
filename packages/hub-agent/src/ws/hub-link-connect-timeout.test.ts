@@ -242,10 +242,12 @@ describe("hub-link connect timeout", () => {
   test("closes the socket and schedules a reconnect when a connect attempt never opens", () => {
     FakeWebSocket.instances = [];
     let timeoutCallback: (() => void) | null = null;
-    let capturedDelay: number | null = null;
+    // Object capture: a plain `let` would be control-flow-narrowed to null
+    // at the assertion site (the assignment happens inside the callback).
+    const captured: { delayMs?: number } = {};
     const fakeScheduleConnectTimeout: ReconnectScheduler = (cb, delayMs) => {
       timeoutCallback = cb;
-      capturedDelay = delayMs;
+      captured.delayMs = delayMs;
       return () => {
         timeoutCallback = null;
       };
@@ -278,7 +280,7 @@ describe("hub-link connect timeout", () => {
 
       expect(FakeWebSocket.instances).toHaveLength(1);
       const socket = FakeWebSocket.instances[0]!;
-      expect(capturedDelay).toBe(1234);
+      expect(captured.delayMs).toBe(1234);
       expect(socket.readyState).not.toBe(FakeWebSocket.CLOSED);
 
       // The `open` event never fires -- simulate the timer expiring.
@@ -328,6 +330,91 @@ describe("hub-link connect timeout", () => {
       // null when that happens.
       expect(timeoutCallback).toBeNull();
       expect(socket.readyState).toBe(FakeWebSocket.OPEN);
+    } finally {
+      client.close();
+    }
+  });
+
+  test("close() during a pending connect attempt cancels the connect timeout", () => {
+    FakeWebSocket.instances = [];
+    let timeoutCallback: (() => void) | null = null;
+    const fakeScheduleConnectTimeout: ReconnectScheduler = (cb) => {
+      timeoutCallback = cb;
+      return () => {
+        timeoutCallback = null;
+      };
+    };
+
+    const transport = createInMemoryTransport();
+    const sessions = createMockSessionManager();
+    const client = createHubLink({
+      hubURL: "ws://hub.invalid/ws",
+      sidecarId: "sc-connect-timeout-close",
+      token: "test-token",
+      transport,
+      sessions,
+      ...withTestDeployBindings(sessions),
+      connectTimeoutMs: 1234,
+      scheduleConnectTimeout: fakeScheduleConnectTimeout,
+    });
+
+    client.connect();
+    expect(timeoutCallback).not.toBeNull();
+
+    client.close();
+
+    // close() must disarm the pending attempt's timer itself, not leave it
+    // to fire later and rely on the no-op guard.
+    expect(timeoutCallback).toBeNull();
+  });
+
+  test("a stale timer from a superseded attempt never closes the current socket", () => {
+    FakeWebSocket.instances = [];
+    const timeoutCallbacks: (() => void)[] = [];
+    const fakeScheduleConnectTimeout: ReconnectScheduler = (cb) => {
+      timeoutCallbacks.push(cb);
+      return () => {};
+    };
+    let pendingReconnect: (() => void) | null = null;
+    const fakeScheduleReconnect: ReconnectScheduler = (cb) => {
+      pendingReconnect = cb;
+      return () => {
+        pendingReconnect = null;
+      };
+    };
+
+    const transport = createInMemoryTransport();
+    const sessions = createMockSessionManager();
+    const client = createHubLink({
+      hubURL: "ws://hub.invalid/ws",
+      sidecarId: "sc-connect-timeout-stale",
+      token: "test-token",
+      transport,
+      sessions,
+      ...withTestDeployBindings(sessions),
+      connectTimeoutMs: 1234,
+      scheduleConnectTimeout: fakeScheduleConnectTimeout,
+      scheduleReconnect: fakeScheduleReconnect,
+    });
+
+    try {
+      client.connect();
+      const first = FakeWebSocket.instances[0]!;
+
+      // First attempt times out; its close handler schedules a reconnect,
+      // which starts the second attempt.
+      timeoutCallbacks[0]!();
+      expect(first.readyState).toBe(FakeWebSocket.CLOSED);
+      expect(pendingReconnect).not.toBeNull();
+      pendingReconnect!();
+
+      const second = FakeWebSocket.instances[1]!;
+      second.open();
+
+      // Firing the first attempt's timer again must not touch the second,
+      // now-open socket: the closure is bound to its own (closed) socket.
+      timeoutCallbacks[0]!();
+      expect(second.readyState).toBe(FakeWebSocket.OPEN);
     } finally {
       client.close();
     }

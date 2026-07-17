@@ -21,6 +21,12 @@ const DEFAULT_RECONNECT_DELAY_MS = 1_000;
 // stays down is retried without a tight hammer loop, while a brief
 // redeploy blip still reconnects within the floor.
 const DEFAULT_MAX_RECONNECT_DELAY_MS = 3_000;
+// WORKBENCH-LOCAL (CL-3826): per-attempt connect timeout. Bounds how long a
+// single connect attempt waits for `open` before the hub-link abandons it and
+// retries on the backoff above, so a TCP connect that blackholes (Railway
+// routing to a draining replica during a redeploy overlap window) does not
+// stall reconnection for the whole overlap window.
+const DEFAULT_CONNECT_TIMEOUT_MS = 5_000;
 
 // Content-addressable tarball cache for materialized tool packages.
 // 512 MiB holds many deduped tool-package extractions; 64 MiB caps any
@@ -32,6 +38,8 @@ export type SidecarHeartbeat = {
   pingIntervalMs: number;
   reconnectDelayMs: number;
   maxReconnectDelayMs: number;
+  // WORKBENCH-LOCAL (CL-3826)
+  connectTimeoutMs: number;
 };
 
 export type SidecarHubLinkQueue = {
@@ -169,6 +177,12 @@ export function resolveSidecarHeartbeat(
       "SIDECAR_MAX_RECONNECT_DELAY_MS",
       env.SIDECAR_MAX_RECONNECT_DELAY_MS,
       DEFAULT_MAX_RECONNECT_DELAY_MS,
+    ),
+    // WORKBENCH-LOCAL (CL-3826)
+    connectTimeoutMs: parsePositiveInt(
+      "SIDECAR_CONNECT_TIMEOUT_MS",
+      env.SIDECAR_CONNECT_TIMEOUT_MS,
+      DEFAULT_CONNECT_TIMEOUT_MS,
     ),
   };
 }
