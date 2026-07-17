@@ -6,6 +6,7 @@ import {
   createWorkbenchDirectorRegistry,
   createSummarizeCompactor,
   SUMMARIZE_COMPACTOR_NAME,
+  SUMMARY_MODEL_ID,
   toLlmToolName,
   resolveDynamicToolConfig,
   DYNAMIC_TOOLS_DIRECTOR_ID,
@@ -425,13 +426,28 @@ export function createDefaultHarnessBuilder({
         };
 
         const compactorInferenceDeps = createDependencies(adapters);
-        const compactorSource: InferenceSource | undefined =
+        const agentDefaultSource: InferenceSource | undefined =
           sources.find((s) => s.id === defaultSource) ?? sources[0];
-        if (compactorSource === undefined) {
+        if (agentDefaultSource === undefined) {
           throw new Error(
             `No inference source available to build the summarize compactor for ${agentAddress}`,
           );
         }
+        // The compactor runs the model it's given verbatim, so the source
+        // it gets must actually serve the summary model. Only the
+        // openai-compatible provider (opencode-zen) serves it — an
+        // Anthropic-only agent (e.g. fannie/freddie/file-parser) has no
+        // source that can. Prefer an openai-compatible source pointed at
+        // the summary model; fall back to the agent's own default source
+        // unchanged so those agents still compact, just on their own
+        // (larger-window) model instead of failing outright.
+        const openaiCompatibleSource = sources.find(
+          (s) => s.provider === "openai-compatible",
+        );
+        const compactorSource: InferenceSource =
+          openaiCompatibleSource !== undefined
+            ? { ...openaiCompatibleSource, model: SUMMARY_MODEL_ID }
+            : agentDefaultSource;
 
         const env = {
           sources,

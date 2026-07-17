@@ -39,11 +39,15 @@ function toArray(actions: ReactorAction | ReactorAction[]): ReactorAction[] {
  * cycles, so the usage that triggered it is still the "last" reading until
  * the next inference call actually runs against the shrunk history). Firing
  * again on that stale reading would compact every single cycle once the
- * ratio ever crosses the threshold. A closure latch suppresses re-firing
- * until a later `lastCycleUsage.input` reading actually drops back below
- * the threshold — proof a compaction (or new inference) has produced a
- * fresh, smaller reading — at which point the latch resets and a future
- * breach can compact again.
+ * ratio ever crosses the threshold. A closure latch suppresses re-firing on
+ * that one stale reading.
+ *
+ * The latch must not wedge compaction forever if a compaction fails or
+ * doesn't shrink the working set enough to drop the ratio below threshold:
+ * once latched, the *next* breach consumes the latch (clears it and skips
+ * firing, to absorb the one stale reading) rather than staying latched
+ * indefinitely — so a persistent breach retries on the cycle after that
+ * instead of never firing again.
  */
 export function wrapDirectorWithCompaction(
   inner: ReactorDirector,
@@ -73,12 +77,18 @@ export function wrapDirectorWithCompaction(
         return actions;
       }
 
-      if (latched) {
+      const inferIndex = actions.findIndex((action) => action.type === "infer");
+      if (inferIndex === -1) {
         return actions;
       }
 
-      const inferIndex = actions.findIndex((action) => action.type === "infer");
-      if (inferIndex === -1) {
+      if (latched) {
+        // A prior compaction fired but the usage reading is still stale
+        // (see the class doc) or the compaction did not shrink the working
+        // set enough. Consume this cycle as the one-cycle grace period
+        // rather than staying latched forever — a persistent breach will
+        // fire again on the cycle after this one.
+        latched = false;
         return actions;
       }
 

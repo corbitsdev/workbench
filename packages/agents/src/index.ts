@@ -135,6 +135,7 @@ export {
   createSummarizeCompactor,
   SUMMARIZE_COMPACTOR_NAME,
   SUMMARIZE_COMPACTOR_VERSION,
+  SUMMARY_MODEL_ID,
   RETAIN_RECENT_EXCHANGES,
   type CreateSummarizeCompactorOpts,
 } from "./summarize-compactor";

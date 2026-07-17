@@ -36,7 +36,7 @@ function hasSummarizeCompactor(agent: DirectorAgentContext): boolean {
 
 /**
  * Wraps a director factory so its produced director carries the
- * 80%-of-context-window compaction trigger (CL-3804), applied uniformly
+ * 80%-of-context-window compaction trigger, applied uniformly
  * across every director the registry resolves — default, personal-agent,
  * granola, firecrawl, dynamic-tools, and the three budget directors. The
  * wrap only activates when `hasSummarizeCompactor` confirms the agent's
@@ -192,7 +192,7 @@ export const workflowStepBudgetDirector = defineDirector<
  * interchange default as the fallback. Every factory — default,
  * personal-agent, granola, firecrawl, dynamic-tools, and the three budget
  * directors — is wrapped uniformly with `withCompaction` so the
- * 80%-of-context-window compaction trigger (CL-3804) applies across the
+ * 80%-of-context-window compaction trigger applies across the
  * board; it activates only when the agent's env actually registered the
  * summarize compactor (`hasSummarizeCompactor`), so directors resolved for
  * agents that never register one (workflow steps) fall through unwrapped

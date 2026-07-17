@@ -68,9 +68,6 @@ mock.module("@workbench/inference", () => ({
 const { createSummarizeCompactor, RETAIN_RECENT_EXCHANGES } = await import(
   "./summarize-compactor"
 );
-const { SUMMARY_AGENT_DEPLOY_DESCRIPTOR } = await import(
-  "./summary-agent/definition"
-);
 
 function userTurn(text: string): ConversationTurn {
   return {
@@ -128,9 +125,10 @@ describe("createSummarizeCompactor", () => {
 
     const summaryTurns = result.output.filter(
       (t) =>
+        t.role === "user" &&
         t.content.length === 1 &&
         t.content[0]?.type === "text" &&
-        t.content[0].text === "FAKE SUMMARY TEXT",
+        t.content[0].text.includes("FAKE SUMMARY TEXT"),
     );
     expect(summaryTurns).toHaveLength(1);
     expect(
@@ -149,10 +147,26 @@ describe("createSummarizeCompactor", () => {
     expect(tail[tail.length - 1]).toEqual(turns[turns.length - 1]);
 
     expect(result.record.strategy).toBe("summarize");
-    expect(result.record.decisions.kept).toBe(1 + expectedTailLength);
+    expect(result.record.decisions.kept).toBe(expectedTailLength);
+    expect(result.record.decisions.dropped).toBe(
+      turns.length - expectedTailLength,
+    );
   });
 
-  test("uses the summary agent's model for the compaction inference call, not the caller's source model", async () => {
+  test("emits the summary as a user turn, not assistant, so the compacted output stays valid on providers requiring a user-first message", async () => {
+    runInferenceCalls = [];
+    runInferenceBehavior = "succeed";
+    const compactor = createSummarizeCompactor({ source: SOURCE, deps: DEPS });
+
+    const result = await compactor.apply(buildLongConversation(), {
+      state: {} as never,
+      trigger: "test-trigger",
+    });
+
+    expect(result.output[0]?.role).toBe("user");
+  });
+
+  test("runs the compaction inference on the caller's source verbatim, without mutating its model", async () => {
     runInferenceCalls = [];
     runInferenceBehavior = "succeed";
     const compactor = createSummarizeCompactor({ source: SOURCE, deps: DEPS });
@@ -162,10 +176,8 @@ describe("createSummarizeCompactor", () => {
     });
 
     expect(runInferenceCalls).toHaveLength(1);
-    expect(runInferenceCalls[0]?.source.model).toBe(
-      SUMMARY_AGENT_DEPLOY_DESCRIPTOR.modelConfig?.defaultModel,
-    );
-    expect(runInferenceCalls[0]?.source.model).not.toBe(SOURCE.model);
+    expect(runInferenceCalls[0]?.source).toEqual(SOURCE);
+    expect(runInferenceCalls[0]?.source.model).toBe(SOURCE.model);
   });
 
   test("never produces a tail that opens with an orphan tool_result", async () => {
@@ -219,6 +231,90 @@ describe("createSummarizeCompactor", () => {
       type: "text",
       text: "next question",
     });
+  });
+
+  test("never produces a tail that ends with an orphan tool_call", async () => {
+    runInferenceCalls = [];
+    runInferenceBehavior = "succeed";
+    const compactor = createSummarizeCompactor({ source: SOURCE, deps: DEPS });
+
+    const turns: ConversationTurn[] = [
+      userTurn("earlier question"),
+      assistantTurn("earlier answer"),
+      userTurn("do something"),
+      {
+        role: "assistant",
+        content: [
+          { type: "tool_call", id: "call-1", name: "some_tool", arguments: {} },
+        ],
+        model: "m",
+        timestamp: Date.now(),
+      },
+    ];
+    // Exchanges: [earlier question, earlier answer], [do something, tool_call].
+    // RETAIN_RECENT_EXCHANGES=2 pulls both into the tail, which ends with a
+    // trailing tool_call whose result never arrived — dropTrailingOrphanToolCall
+    // must strip it so the compacted output isn't left with a dangling call.
+
+    const result = await compactor.apply(turns, {
+      state: {} as never,
+      trigger: "test-trigger",
+    });
+
+    const tail = result.output.slice(1);
+    expect(
+      tail.some((t) => t.content.some((block) => block.type === "tool_call")),
+    ).toBe(false);
+  });
+
+  test("renders tool_result content and non-text blocks into the summarizer input instead of dropping them", async () => {
+    runInferenceCalls = [];
+    runInferenceBehavior = "succeed";
+    const compactor = createSummarizeCompactor({ source: SOURCE, deps: DEPS });
+
+    const turns: ConversationTurn[] = [
+      userTurn("look this up"),
+      {
+        role: "assistant",
+        content: [
+          {
+            type: "tool_call",
+            id: "call-1",
+            name: "lookup",
+            arguments: {},
+          },
+        ],
+        model: "m",
+        timestamp: Date.now(),
+      },
+      {
+        role: "user",
+        content: [
+          {
+            type: "tool_result",
+            callId: "call-1",
+            content: [
+              { type: "text", text: "the critical fact the model must keep" },
+            ],
+          },
+        ],
+        timestamp: Date.now(),
+      },
+      ...buildLongConversation(),
+    ];
+
+    await compactor.apply(turns, {
+      state: {} as never,
+      trigger: "test-trigger",
+    });
+
+    expect(runInferenceCalls).toHaveLength(1);
+    const conversationTurn = runInferenceCalls[0]?.turns[1];
+    const renderedText =
+      conversationTurn?.content[0]?.type === "text"
+        ? conversationTurn.content[0].text
+        : undefined;
+    expect(renderedText).toContain("the critical fact the model must keep");
   });
 
   test("fails safe and returns the input turns unchanged when the summarize inference throws", async () => {

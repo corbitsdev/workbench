@@ -303,6 +303,45 @@ describe("wrapDirectorWithCompaction", () => {
     expect(second.some((a) => a.type === "compact")).toBe(true);
   });
 
+  it("a compaction that fails to shrink the working set re-fires on a later cycle instead of wedging forever", async () => {
+    const director = wrapDirectorWithCompaction(
+      createDefaultDirector(systemPrompt, tools),
+      { windowFor },
+    );
+    const cap = makeCapabilities();
+    const overThreshold = TEST_WINDOW * (COMPACTION_TRIGGER_THRESHOLD + 0.05);
+
+    const first = await runDecide(
+      director,
+      toolDoneEvent("call-0"),
+      stateWithUsage(overThreshold),
+      cap,
+    );
+    expect(first.some((a) => a.type === "compact")).toBe(true);
+
+    // The compaction did not shrink the working set — usage stays over
+    // threshold. This cycle absorbs the one stale reading (the grace
+    // cycle) and must not compact.
+    const second = await runDecide(
+      director,
+      toolDoneEvent("call-1"),
+      stateWithUsage(overThreshold),
+      cap,
+    );
+    expect(second.some((a) => a.type === "compact")).toBe(false);
+
+    // Usage is still over threshold on a third cycle — since the grace
+    // cycle cleared the latch, compaction must retry rather than staying
+    // permanently disabled.
+    const third = await runDecide(
+      director,
+      toolDoneEvent("call-2"),
+      stateWithUsage(overThreshold),
+      cap,
+    );
+    expect(third.some((a) => a.type === "compact")).toBe(true);
+  });
+
   it("a cycle with no infer (reply/done) emits no compact even above threshold", async () => {
     const director = wrapDirectorWithCompaction(
       createDefaultDirector(systemPrompt, tools),

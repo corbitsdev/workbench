@@ -30,18 +30,34 @@ if (summaryDefaultModel === undefined) {
   );
 }
 
-const SUMMARY_MODEL_ID: string = summaryDefaultModel;
+// The summary agent's configured model. The compactor itself never picks a
+// model — the caller (the sidecar harness) is responsible for handing in a
+// source that actually serves it, or falling back to a source that can serve
+// something else.
+export const SUMMARY_MODEL_ID: string = summaryDefaultModel;
 
 export type CreateSummarizeCompactorOpts = {
-  // The agent's own inference source. Its model is overridden with the
-  // summary agent's model (`deepseek-v4-flash`) so the compaction call
-  // reuses the agent's already-resolved openai-compatible provider,
-  // credential, and endpoint (the workbench opencode-zen deployment
-  // serves that model on the same source) rather than requiring a
-  // second, separately-provisioned inference source just for compaction.
+  // The inference source the compaction call runs on. Used verbatim — the
+  // compactor does not rewrite its model. The caller must hand in a source
+  // whose provider actually serves whatever model is set on it (e.g. the
+  // sidecar harness selects an openai-compatible source and points it at
+  // `SUMMARY_MODEL_ID`, or falls back to the agent's own default source when
+  // no such source is available).
   source: InferenceSource;
   deps: Dependencies;
 };
+
+// Bounds how much text a single rendered content block (or the tool-result
+// text nested inside it) contributes to the summarizer's input, so one
+// oversized tool payload cannot itself blow the compaction call's own
+// context budget.
+const MAX_RENDERED_BLOCK_CHARS = 4_000;
+
+function truncate(text: string): string {
+  return text.length > MAX_RENDERED_BLOCK_CHARS
+    ? `${text.slice(0, MAX_RENDERED_BLOCK_CHARS)}…[truncated]`
+    : text;
+}
 
 function isExchangeStart(turn: ConversationTurn): boolean {
   return turn.role === "user";
@@ -88,26 +104,83 @@ function dropLeadingOrphanToolResult(
   return [{ ...first, content: filteredContent }, ...rest];
 }
 
+// Drops a trailing orphan `tool_call` block (a call whose `tool_result` was
+// left behind, either summarized away or simply not yet produced) so the
+// retained tail never closes with a dangling call the model would otherwise
+// be prompted to resolve against a result it can't see. Symmetric to
+// `dropLeadingOrphanToolResult`. If dropping the block empties the turn's
+// content entirely, the turn itself is dropped.
+function dropTrailingOrphanToolCall(
+  turns: ConversationTurn[],
+): ConversationTurn[] {
+  if (turns.length === 0) return turns;
+  const last = turns[turns.length - 1];
+  if (last === undefined) return turns;
+  const rest = turns.slice(0, -1);
+
+  const resultedIds = new Set<string>();
+  for (const block of last.content) {
+    if (block.type === "tool_result") resultedIds.add(block.callId);
+  }
+
+  const filteredContent: ContentBlock[] = last.content.filter((block) => {
+    if (block.type !== "tool_call") return true;
+    return resultedIds.has(block.id);
+  });
+
+  if (filteredContent.length === 0) return rest;
+  return [...rest, { ...last, content: filteredContent }];
+}
+
 function retainedTail(turns: ConversationTurn[]): ConversationTurn[] {
   const exchanges = splitIntoExchanges(turns);
   const tailExchanges = exchanges.slice(-RETAIN_RECENT_EXCHANGES);
   const tail = tailExchanges.flat();
-  return dropLeadingOrphanToolResult(tail);
+  return dropTrailingOrphanToolCall(dropLeadingOrphanToolResult(tail));
+}
+
+// Flattens one content block to render-ready text so the summarizer sees the
+// facts it must preserve rather than a placeholder. Mirrors the block
+// flattening in `apps/hub/src/services/turn-input-snapshot.ts`
+// `projectBlocks` — media collapses to a placeholder, tool results render
+// their nested content, everything is length-bounded.
+function renderBlockText(block: ContentBlock): string | undefined {
+  switch (block.type) {
+    case "text":
+      return truncate(block.text);
+    case "thinking":
+      return truncate(block.thinking);
+    case "refusal":
+      return truncate(block.reason);
+    case "tool_call":
+      return truncate(
+        `[called tool ${block.name} with ${JSON.stringify(block.arguments)}]`,
+      );
+    case "tool_result": {
+      const nested = block.content
+        .map((inner) => renderBlockText(inner))
+        .filter((text): text is string => text !== undefined)
+        .join("\n");
+      return truncate(`[tool result for ${block.callId}] ${nested}`);
+    }
+    case "citation":
+      return truncate(`[citation] ${block.citedText}`);
+    case "image":
+    case "audio":
+    case "video":
+    case "document":
+      return `[${block.type}]`;
+    default:
+      return undefined;
+  }
 }
 
 function renderTurnsAsText(turns: ConversationTurn[]): string {
   const lines: string[] = [];
   for (const turn of turns) {
     for (const block of turn.content) {
-      if (block.type === "text") {
-        lines.push(`${turn.role}: ${block.text}`);
-      } else if (block.type === "tool_call") {
-        lines.push(
-          `${turn.role}: [called tool ${block.name} with ${JSON.stringify(block.arguments)}]`,
-        );
-      } else if (block.type === "tool_result") {
-        lines.push(`${turn.role}: [tool result for ${block.callId}]`);
-      }
+      const text = renderBlockText(block);
+      if (text !== undefined) lines.push(`${turn.role}: ${text}`);
     }
   }
   return lines.join("\n");
@@ -132,11 +205,6 @@ function unchangedResult(
 export function createSummarizeCompactor(
   opts: CreateSummarizeCompactorOpts,
 ): Compactor {
-  const summarySource: InferenceSource = {
-    ...opts.source,
-    model: SUMMARY_MODEL_ID,
-  };
-
   return {
     name: SUMMARIZE_COMPACTOR_NAME,
     version: SUMMARIZE_COMPACTOR_VERSION,
@@ -166,7 +234,7 @@ export function createSummarizeCompactor(
       try {
         for await (const event of runInference({
           turns: [systemTurn, conversationTurn],
-          source: summarySource,
+          source: opts.source,
           inferenceOptions: { maxTokens: SUMMARY_MAX_OUTPUT_TOKENS },
           nextSeq: () => seq++,
           deps: opts.deps,
@@ -188,10 +256,18 @@ export function createSummarizeCompactor(
         return unchangedResult(turns, "summarize-inference-empty");
       }
 
+      // A `user` turn, not `assistant`: the compacted working set must start
+      // with a user-role message to stay valid on providers (Anthropic,
+      // Gemini) that require the first non-system message to be from the
+      // user.
       const summaryTurn: ConversationTurn = {
-        role: "assistant",
-        content: [{ type: "text", text: summaryText }],
-        model: summarySource.model,
+        role: "user",
+        content: [
+          {
+            type: "text",
+            text: `Summary of prior conversation:\n${summaryText}`,
+          },
+        ],
         timestamp: Date.now(),
       };
 
@@ -205,12 +281,13 @@ export function createSummarizeCompactor(
           version: SUMMARIZE_COMPACTOR_VERSION,
           parameters: {
             retainRecentExchanges: RETAIN_RECENT_EXCHANGES,
-            model: summarySource.model,
+            model: opts.source.model,
           },
           reason: ctx.trigger,
           decisions: {
-            kept: tail.length + 1,
+            kept: tail.length,
             dropped: turns.length - tail.length,
+            summarized: 1,
           },
         },
       };

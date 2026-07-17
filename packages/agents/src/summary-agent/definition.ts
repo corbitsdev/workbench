@@ -24,6 +24,13 @@ export const SUMMARY_AGENT_MODEL_CONFIG = {
   defaultModel: "deepseek-v4-flash",
 } as const;
 
+// The summarize compactor (`../summarize-compactor.ts`) consumes only
+// `modelConfig.defaultModel` and the built system prompt from this
+// descriptor — it is never deployed as its own agent instance. The
+// remaining `AgentDeployDescriptor` fields (credentialRequirements,
+// grantRequirements, defaultTools, requiredTools, label, name) are kept
+// only because the type requires a full descriptor shape; they describe no
+// real deployment.
 export const SUMMARY_AGENT_DEPLOY_DESCRIPTOR: AgentDeployDescriptor = {
   label: "Summary Agent — Context Compactor",
   name: "Summary Agent",
