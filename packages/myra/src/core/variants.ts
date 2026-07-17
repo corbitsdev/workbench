@@ -97,6 +97,7 @@ function versionId(id: string): string {
 
 const OPUS_MODEL_CONFIG = { defaultModel: "claude-opus-4-8" } as const;
 const DEEPSEEK_MODEL_CONFIG = { defaultModel: "deepseek-v4-flash" } as const;
+const KIMI_K3_MODEL_CONFIG = { defaultModel: "kimi-k3" } as const;
 
 function chatDeployPrompt(
   provider: MyraVariantProvider,
@@ -179,6 +180,28 @@ export const MYRA_VARIANTS: readonly MyraVariant[] = [
     toolPolicy: PERSONAL_AGENT_BASE_TOOLS,
     seedName: "Myra (Opus)",
     templateKey: "myra-chat-opus-4-8",
+    isDefault: false,
+  },
+  {
+    id: "myra-kimi-k3",
+    versionId: versionId("myra-kimi-k3"),
+    kind: "chat",
+    displayName: "Myra (Kimi K3)",
+    description:
+      "Myra on Moonshot Kimi K3 over OpenRouter — stronger agentic reasoning than Kimi K2 at a higher per-token cost, below Opus.",
+    model: KIMI_K3_MODEL_CONFIG.defaultModel,
+    modelConfig: KIMI_K3_MODEL_CONFIG,
+    provider: "openai-compatible",
+    costTier: "premium",
+    credentialRequirements: PERSONAL_AGENT_CREDENTIAL_REQUIREMENTS,
+    promptFormat: promptFormatForProvider("openai-compatible"),
+    deployPrompt: chatDeployPrompt(
+      "openai-compatible",
+      KIMI_K3_MODEL_CONFIG.defaultModel,
+    ),
+    toolPolicy: PERSONAL_AGENT_BASE_TOOLS,
+    seedName: "Myra (Kimi K3)",
+    templateKey: "myra-chat-kimi-k3",
     isDefault: false,
   },
   {

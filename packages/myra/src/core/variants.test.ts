@@ -94,12 +94,24 @@ describe("Myra variant catalog", () => {
     }
   });
 
-  test("Opus variants report premium cost tier; the rest standard", () => {
+  test("premium variants are Opus and Kimi K3; the rest standard", () => {
+    const PREMIUM_MODELS = new Set(["claude-opus-4-8", "kimi-k3"]);
     for (const variant of MYRA_VARIANTS) {
-      const expected =
-        variant.model === "claude-opus-4-8" ? "premium" : "standard";
+      const expected = PREMIUM_MODELS.has(variant.model)
+        ? "premium"
+        : "standard";
       expect(variant.costTier).toBe(expected);
     }
+  });
+
+  test("a Kimi K3 chat variant is offered as a premium openai-compatible option", () => {
+    const k3 = MYRA_VARIANTS.find((v) => v.model === "kimi-k3");
+    expect(k3).toBeDefined();
+    expect(k3?.kind).toBe("chat");
+    expect(k3?.costTier).toBe("premium");
+    expect(k3?.provider).toBe("openai-compatible");
+    expect(k3?.isDefault).toBe(false);
+    expect(k3?.templateKey).toBe("myra-chat-kimi-k3");
   });
 
   test("non-anthropic variants keep the opencode-zen credential", () => {
@@ -133,20 +145,19 @@ describe("Myra variant catalog", () => {
     ).toHaveLength(1);
   });
 
-  test("all three requested models exist per kind", () => {
+  test("chat offers Kimi K3 alongside the base three; triage keeps the base three", () => {
     const chatModels = new Set(
       MYRA_VARIANTS.filter((v) => v.kind === "chat").map((v) => v.model),
     );
     const triageModels = new Set(
       MYRA_VARIANTS.filter((v) => v.kind === "triage").map((v) => v.model),
     );
-    const expected = new Set([
-      "deepseek-v4-flash",
-      "kimi-k2.6",
-      "claude-opus-4-8",
-    ]);
-    expect(chatModels).toEqual(expected);
-    expect(triageModels).toEqual(expected);
+    expect(chatModels).toEqual(
+      new Set(["deepseek-v4-flash", "kimi-k2.6", "claude-opus-4-8", "kimi-k3"]),
+    );
+    expect(triageModels).toEqual(
+      new Set(["deepseek-v4-flash", "kimi-k2.6", "claude-opus-4-8"]),
+    );
   });
 });
 

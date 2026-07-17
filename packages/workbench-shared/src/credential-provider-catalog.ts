@@ -79,6 +79,13 @@ const INFERENCE_CREDENTIAL_PROVIDER_ENTRIES: CredentialProviderCatalogEntry[] =
       defaultMetadata: { baseURL: "https://api.anthropic.com" },
     },
     {
+      providerName: "openrouter",
+      providerPlugin: "openai-compatible",
+      label: "OpenRouter",
+      kind: "inference",
+      defaultMetadata: { baseURL: "https://openrouter.ai/api/v1" },
+    },
+    {
       providerName: "xai",
       providerPlugin: "xai",
       label: "xAI",

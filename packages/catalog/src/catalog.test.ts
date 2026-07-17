@@ -112,6 +112,26 @@ describe("Bifrost is the primary inference source", () => {
   });
 });
 
+describe("Kimi K3 via OpenRouter", () => {
+  it("registers kimi-k3 with the OpenRouter-served context window", () => {
+    const model = FULL_CATALOG.models.find(
+      (m) => m.canonicalName === "kimi-k3",
+    );
+    expect(model?.contextWindow).toBe(1_048_576);
+  });
+
+  it("offers kimi-k3 through the openai-compatible openrouter provider", () => {
+    const offering = FULL_CATALOG.offerings.find(
+      (o) => o.model === "kimi-k3" && o.provider === "openrouter",
+    );
+    expect(offering).toBeDefined();
+    const provider = FULL_CATALOG.providers.find(
+      (p) => p.name === "openrouter",
+    );
+    expect(provider?.plugin).toBe("openai-compatible");
+  });
+});
+
 describe("buildAgentCatalog", () => {
   it("returns empty providers/models/offerings for empty templates", () => {
     const result = buildAgentCatalog([]);

@@ -36,9 +36,13 @@ export const CATALOG_PROVIDERS: CatalogProviderSpec[] = [
     credentialName: "Corbits Default Bifrost GenAI",
   },
   {
+    // credentialName must match the OpenRouter credential the Owner creates from
+    // the Capabilities page, which is named after the governance entry's label
+    // ("OpenRouter"). OpenRouter has no env seed, so this Owner-set credential is
+    // the only one seed-catalog can bind the provider to.
     name: "openrouter",
     plugin: "openai-compatible",
-    credentialName: "openrouter",
+    credentialName: "OpenRouter",
     modelsDevProviderId: "openrouter",
   },
 ];
