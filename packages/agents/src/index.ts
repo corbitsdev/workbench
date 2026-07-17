@@ -113,6 +113,16 @@ export {
   LINCOLN_DEPLOY_DESCRIPTOR,
 } from "./lincoln/definition";
 
+// Summary agent — context compactor
+export { buildSummaryAgentSystemPrompt } from "./summary-agent/prompt";
+export {
+  SUMMARY_AGENT_GRANT_REQUIREMENTS,
+  SUMMARY_AGENT_CREDENTIAL_REQUIREMENTS,
+  SUMMARY_AGENT_DEPLOY_PROMPT,
+  SUMMARY_AGENT_MODEL_CONFIG,
+  SUMMARY_AGENT_DEPLOY_DESCRIPTOR,
+} from "./summary-agent/definition";
+
 // Hammy — the humanizer
 export { buildHammySystemPrompt } from "./hammy-the-humanizer/prompt";
 export {
