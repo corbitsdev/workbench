@@ -29,7 +29,15 @@ import {
 } from "./myra-variant-availability";
 import type { HubDb } from "../db";
 
-const db = {} as HubDb;
+// Availability resolution collects the tenant system principal's grants
+// (credential-use authorization) before calling resolveModelSources; the probe
+// tolerates a tenant with no system principal (returns no grants). The mocked
+// resolveModelSources ignores the grant set, so an absent principal is enough.
+const db = {
+  query: {
+    principal: { findFirst: async () => undefined },
+  },
+} as unknown as HubDb;
 
 describe("listAvailableMyraVariants", () => {
   it("returns only variants whose model resolveModelSources accepts", async () => {

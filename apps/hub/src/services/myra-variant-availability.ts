@@ -8,6 +8,7 @@ import {
   type MyraVariantSummary,
 } from "@workbench/myra";
 import type { HubDb } from "../db";
+import { collectSystemPrincipalGrants } from "../lib/tenant-provisioning";
 
 /**
  * CL-3824: a Myra variant is available for a tenant when at least one catalog
@@ -21,10 +22,19 @@ export async function listAvailableMyraVariants(
   const all = listMyraVariants();
   const models = [...new Set(all.map((v) => v.model))];
   const availableModels = new Set<string>();
+  // Authorize the availability probe with the system principal's grants — the
+  // same credential-use authority Myra actually launches under — so a variant
+  // shows available iff it would truly resolve at launch (fail-closed gate).
+  const creatorGrants = await collectSystemPrincipalGrants(db, tenantId);
 
   await Promise.all(
     models.map(async (model) => {
-      const result = await resolveModelSources(db, tenantId, [{ model }]);
+      const result = await resolveModelSources(
+        db,
+        tenantId,
+        [{ model }],
+        creatorGrants,
+      );
       if (result.ok) availableModels.add(model);
     }),
   );
@@ -39,9 +49,13 @@ export async function isMyraVariantAvailableForTenant(
 ): Promise<boolean> {
   const variant = getMyraVariant(variantId);
   if (!variant) return false;
-  const result = await resolveModelSources(db, tenantId, [
-    { model: variant.model },
-  ]);
+  const creatorGrants = await collectSystemPrincipalGrants(db, tenantId);
+  const result = await resolveModelSources(
+    db,
+    tenantId,
+    [{ model: variant.model }],
+    creatorGrants,
+  );
   return result.ok;
 }
 

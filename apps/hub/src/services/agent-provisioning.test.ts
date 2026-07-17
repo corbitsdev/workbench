@@ -36,6 +36,7 @@ mock.module("@intx/db", () => ({
     _db: unknown,
     _tenantId: unknown,
     _requirements: unknown,
+    _creatorGrants: unknown,
     opts?: { invokerPreferences?: Record<string, unknown> },
   ) => {
     // Stand in for the catalog resolver: a non-empty invoker preference here
@@ -79,13 +80,14 @@ beforeEach(() => {
 });
 
 const mockSessionService: SessionService = {
-  launchSession: mock(() => Promise.resolve()),
+  deployInstanceAtHead: mock(() => Promise.resolve({ publicKey: "pk" })),
   sendUserMessage: mock(() => Promise.reject(new Error("not implemented"))),
   endSession: mock(() => Promise.reject(new Error("not implemented"))),
 } as unknown as SessionService;
 
 const mockGrantStore: GrantStore = {
   collectGrants: mock(() => Promise.resolve([])),
+  collectGrantsInChain: mock(() => Promise.resolve([])),
 };
 
 const mockEventCollectors = {
@@ -144,6 +146,10 @@ function makeMockDb(overrides: Record<string, unknown> = {}) {
       memberPreferences: {
         findFirst: mock(() => Promise.resolve(undefined)),
       },
+      // The launch source-resolution path collects the definition creator's
+      // grants (credential-use authorization); the grant store reads these.
+      principalRole: { findMany: mock(() => Promise.resolve([])) },
+      grant: { findMany: mock(() => Promise.resolve([])) },
     },
     select: mock(() => makeSelectChain([])),
     insert: mock(() => ({ values: mock(() => Promise.resolve()) })),
@@ -200,8 +206,8 @@ describe("relaunchInstanceIfNeeded", () => {
     // short-circuit before launching.
     sourcesImpl = () => Promise.resolve([]);
 
-    const launchSession = mock(() => Promise.resolve());
-    const sessionService = { ...mockSessionService, launchSession };
+    const deployInstanceAtHead = mock(() => Promise.resolve({ publicKey: "pk" }));
+    const sessionService = { ...mockSessionService, deployInstanceAtHead };
 
     await relaunchInstanceIfNeeded(
       db as never,
@@ -212,7 +218,7 @@ describe("relaunchInstanceIfNeeded", () => {
       makeSidecarRouter() as never,
     );
 
-    expect(launchSession).not.toHaveBeenCalled();
+    expect(deployInstanceAtHead).not.toHaveBeenCalled();
   });
 
   it("launches when the catalog resolves the agent model", async () => {
@@ -228,8 +234,8 @@ describe("relaunchInstanceIfNeeded", () => {
     sourcesImpl = () =>
       Promise.resolve([{ id: "src-1", apiKey: TEST_API_KEY }]);
 
-    const launchSession = mock(() => Promise.resolve());
-    const sessionService = { ...mockSessionService, launchSession };
+    const deployInstanceAtHead = mock(() => Promise.resolve({ publicKey: "pk" }));
+    const sessionService = { ...mockSessionService, deployInstanceAtHead };
 
     await relaunchInstanceIfNeeded(
       db as never,
@@ -240,7 +246,7 @@ describe("relaunchInstanceIfNeeded", () => {
       makeSidecarRouter() as never,
     );
 
-    expect(launchSession).toHaveBeenCalledTimes(1);
+    expect(deployInstanceAtHead).toHaveBeenCalledTimes(1);
   });
 
   it("does not relaunch when the address is already routable on the sidecar", async () => {
@@ -249,8 +255,8 @@ describe("relaunchInstanceIfNeeded", () => {
       Promise.resolve(coldInstance()),
     );
 
-    const launchSession = mock(() => Promise.resolve());
-    const sessionService = { ...mockSessionService, launchSession };
+    const deployInstanceAtHead = mock(() => Promise.resolve({ publicKey: "pk" }));
+    const sessionService = { ...mockSessionService, deployInstanceAtHead };
 
     await relaunchInstanceIfNeeded(
       db as never,
@@ -261,7 +267,7 @@ describe("relaunchInstanceIfNeeded", () => {
       makeSidecarRouter(["ins-1@tenant-1.localhost"]) as never,
     );
 
-    expect(launchSession).not.toHaveBeenCalled();
+    expect(deployInstanceAtHead).not.toHaveBeenCalled();
   });
 
   it("bounds launch attempts across repeated polls while launch keeps failing", async () => {
@@ -280,10 +286,10 @@ describe("relaunchInstanceIfNeeded", () => {
     sourcesImpl = () =>
       Promise.resolve([{ id: "src-1", apiKey: TEST_API_KEY }]);
 
-    // Non-retryable so each launchAgentSession maps to exactly one launchSession
+    // Non-retryable so each launchAgentSession maps to exactly one deployInstanceAtHead
     // call (no internal retry/backoff sleeps) — keeps the assertion at the
     // relaunch granularity the breaker bounds.
-    const launchSession = mock(() =>
+    const deployInstanceAtHead = mock(() =>
       Promise.reject(
         new SessionLaunchError(
           "provision",
@@ -292,7 +298,7 @@ describe("relaunchInstanceIfNeeded", () => {
         ),
       ),
     );
-    const sessionService = { ...mockSessionService, launchSession };
+    const sessionService = { ...mockSessionService, deployInstanceAtHead };
 
     // 100 client polls, 1s apart. Without the breaker this launches 100 times;
     // with it, the failure cooldown bounds attempts to the backoff tiers.
@@ -308,8 +314,8 @@ describe("relaunchInstanceIfNeeded", () => {
       ).catch(() => {});
     }
 
-    expect(launchSession.mock.calls.length).toBeGreaterThanOrEqual(1);
-    expect(launchSession.mock.calls.length).toBeLessThanOrEqual(5);
+    expect(deployInstanceAtHead.mock.calls.length).toBeGreaterThanOrEqual(1);
+    expect(deployInstanceAtHead.mock.calls.length).toBeLessThanOrEqual(5);
     resetRelaunchBreaker();
   });
 
@@ -328,13 +334,13 @@ describe("relaunchInstanceIfNeeded", () => {
       Promise.resolve([{ id: "src-1", apiKey: TEST_API_KEY }]);
 
     let resolveLaunch: () => void = () => {};
-    const launchSession = mock(
+    const deployInstanceAtHead = mock(
       () =>
-        new Promise<void>((resolve) => {
-          resolveLaunch = resolve;
+        new Promise<{ publicKey: string }>((resolve) => {
+          resolveLaunch = () => resolve({ publicKey: "pk" });
         }),
     );
-    const sessionService = { ...mockSessionService, launchSession };
+    const sessionService = { ...mockSessionService, deployInstanceAtHead };
 
     const a = relaunchInstanceIfNeeded(
       db as never,
@@ -356,7 +362,7 @@ describe("relaunchInstanceIfNeeded", () => {
     // Let both calls' async guard chains resolve and reach the coalescing
     // point (a macrotask flush drains the immediately-resolved db-mock awaits).
     await new Promise((r) => setTimeout(r, 0));
-    expect(launchSession).toHaveBeenCalledTimes(1);
+    expect(deployInstanceAtHead).toHaveBeenCalledTimes(1);
 
     resolveLaunch();
     await Promise.all([a, b]);
@@ -396,18 +402,18 @@ describe("launchAgentSession retry behavior", () => {
     return db;
   }
 
-  it("forwards tool package pins from the agent DB row to launchSession", async () => {
+  it("forwards tool package pins from the agent DB row to deployInstanceAtHead", async () => {
     sourcesImpl = () =>
       Promise.resolve([{ id: "src-1", apiKey: TEST_API_KEY }]);
     const toolPackages = [{ name: "@workbench/tools-exa", version: "^0.1.0" }];
 
     // biome-ignore lint/suspicious/noExplicitAny: capturing launch config
     let capturedConfig: any;
-    const launchSession = mock((config: unknown) => {
+    const deployInstanceAtHead = mock((config: unknown) => {
       capturedConfig = config;
-      return Promise.resolve();
+      return Promise.resolve({ publicKey: "pk" });
     });
-    const sessionService = { ...mockSessionService, launchSession };
+    const sessionService = { ...mockSessionService, deployInstanceAtHead };
 
     await launchAgentSession(
       launchDb(toolPackages) as never,
@@ -424,13 +430,13 @@ describe("launchAgentSession retry behavior", () => {
     sourcesImpl = () =>
       Promise.resolve([{ id: "src-1", apiKey: TEST_API_KEY }]);
     let calls = 0;
-    const launchSession = mock(() => {
+    const deployInstanceAtHead = mock(() => {
       calls += 1;
       if (calls === 1)
         return Promise.reject(new Error("transient network blip"));
-      return Promise.resolve();
+      return Promise.resolve({ publicKey: "pk" });
     });
-    const sessionService = { ...mockSessionService, launchSession };
+    const sessionService = { ...mockSessionService, deployInstanceAtHead };
 
     const result = await launchAgentSession(
       launchDb() as never,
@@ -441,7 +447,7 @@ describe("launchAgentSession retry behavior", () => {
     );
 
     expect(result.sessionId).toBeTruthy();
-    expect(launchSession).toHaveBeenCalledTimes(2);
+    expect(deployInstanceAtHead).toHaveBeenCalledTimes(2);
   }, 10000);
 
   it("passes empty toolPackagePins when agent row has null toolPackages", async () => {
@@ -450,11 +456,11 @@ describe("launchAgentSession retry behavior", () => {
 
     // biome-ignore lint/suspicious/noExplicitAny: capturing launch config
     let capturedConfig: any;
-    const launchSession = mock((config: unknown) => {
+    const deployInstanceAtHead = mock((config: unknown) => {
       capturedConfig = config;
-      return Promise.resolve();
+      return Promise.resolve({ publicKey: "pk" });
     });
-    const sessionService = { ...mockSessionService, launchSession };
+    const sessionService = { ...mockSessionService, deployInstanceAtHead };
 
     await launchAgentSession(
       launchDb(null) as never,
@@ -475,8 +481,8 @@ describe("launchAgentSession retry behavior", () => {
       new Error("rejected"),
       false,
     );
-    const launchSession = mock(() => Promise.reject(provisionError));
-    const sessionService = { ...mockSessionService, launchSession };
+    const deployInstanceAtHead = mock(() => Promise.reject(provisionError));
+    const sessionService = { ...mockSessionService, deployInstanceAtHead };
 
     await expect(
       launchAgentSession(
@@ -487,7 +493,7 @@ describe("launchAgentSession retry behavior", () => {
         BASE_OPTS,
       ),
     ).rejects.toBe(provisionError);
-    expect(launchSession).toHaveBeenCalledTimes(1);
+    expect(deployInstanceAtHead).toHaveBeenCalledTimes(1);
   });
 
   it("launches an instance whose definition lives in an ancestor tenant", async () => {
@@ -520,8 +526,8 @@ describe("launchAgentSession retry behavior", () => {
       Promise.resolve({ id: "ins-child", sessionId: null }),
     );
 
-    const launchSession = mock(() => Promise.resolve());
-    const sessionService = { ...mockSessionService, launchSession };
+    const deployInstanceAtHead = mock(() => Promise.resolve({ publicKey: "pk" }));
+    const sessionService = { ...mockSessionService, deployInstanceAtHead };
 
     try {
       const result = await launchAgentSession(
@@ -539,7 +545,7 @@ describe("launchAgentSession retry behavior", () => {
       );
 
       expect(result.sessionId).toBeTruthy();
-      expect(launchSession).toHaveBeenCalledTimes(1);
+      expect(deployInstanceAtHead).toHaveBeenCalledTimes(1);
     } finally {
       instanceSourcesImpl = null;
     }
@@ -560,11 +566,11 @@ describe("launchAgentSession retry behavior", () => {
       return { where: mock(() => Promise.resolve()) };
     });
 
-    const launchSession = mock(() => {
+    const deployInstanceAtHead = mock(() => {
       order.push("launch");
-      return Promise.resolve();
+      return Promise.resolve({ publicKey: "pk" });
     });
-    const sessionService = { ...mockSessionService, launchSession };
+    const sessionService = { ...mockSessionService, deployInstanceAtHead };
 
     const result = await launchAgentSession(
       db as never,
@@ -577,7 +583,7 @@ describe("launchAgentSession retry behavior", () => {
     expect(deletedTables).toContain(sessionAsset);
     expect(order.indexOf("delete-asset")).toBeGreaterThanOrEqual(0);
     expect(order.indexOf("delete-asset")).toBeLessThan(order.indexOf("launch"));
-    expect(launchSession).toHaveBeenCalledTimes(1);
+    expect(deployInstanceAtHead).toHaveBeenCalledTimes(1);
     expect(result.sessionId).toBeTruthy();
   });
 
@@ -595,13 +601,13 @@ describe("launchAgentSession retry behavior", () => {
     });
 
     let calls = 0;
-    const launchSession = mock(() => {
+    const deployInstanceAtHead = mock(() => {
       calls += 1;
       if (calls === 1)
         return Promise.reject(new Error("transient network blip"));
-      return Promise.resolve();
+      return Promise.resolve({ publicKey: "pk" });
     });
-    const sessionService = { ...mockSessionService, launchSession };
+    const sessionService = { ...mockSessionService, deployInstanceAtHead };
 
     await launchAgentSession(
       db as never,
@@ -611,7 +617,7 @@ describe("launchAgentSession retry behavior", () => {
       BASE_OPTS,
     );
 
-    expect(launchSession).toHaveBeenCalledTimes(2);
+    expect(deployInstanceAtHead).toHaveBeenCalledTimes(2);
     expect(assetDeletes).toBe(1);
   }, 10000);
 
@@ -650,8 +656,8 @@ describe("launchAgentSession retry behavior", () => {
       }),
     );
 
-    const launchSession = mock(() => Promise.resolve());
-    const sessionService = { ...mockSessionService, launchSession };
+    const deployInstanceAtHead = mock(() => Promise.resolve({ publicKey: "pk" }));
+    const sessionService = { ...mockSessionService, deployInstanceAtHead };
 
     await expect(
       launchAgentSession(
@@ -662,7 +668,7 @@ describe("launchAgentSession retry behavior", () => {
         BASE_OPTS,
       ),
     ).rejects.toThrow(/model_unavailable/);
-    expect(launchSession).not.toHaveBeenCalled();
+    expect(deployInstanceAtHead).not.toHaveBeenCalled();
   });
 });
 
@@ -702,11 +708,11 @@ describe("launchAgentSession timezone marker stamping", () => {
   async function captureLaunchPrompt(db: any): Promise<string> {
     // biome-ignore lint/suspicious/noExplicitAny: capturing launch config
     let capturedConfig: any;
-    const launchSession = mock((config: unknown) => {
+    const deployInstanceAtHead = mock((config: unknown) => {
       capturedConfig = config;
-      return Promise.resolve();
+      return Promise.resolve({ publicKey: "pk" });
     });
-    const sessionService = { ...mockSessionService, launchSession };
+    const sessionService = { ...mockSessionService, deployInstanceAtHead };
     await launchAgentSession(
       db as never,
       sessionService as never,
@@ -802,11 +808,11 @@ describe("launchAgentSession Myra personalization style overlay", () => {
   async function captureLaunchPrompt(db: any): Promise<string> {
     // biome-ignore lint/suspicious/noExplicitAny: capturing launch config
     let capturedConfig: any;
-    const launchSession = mock((config: unknown) => {
+    const deployInstanceAtHead = mock((config: unknown) => {
       capturedConfig = config;
-      return Promise.resolve();
+      return Promise.resolve({ publicKey: "pk" });
     });
-    const sessionService = { ...mockSessionService, launchSession };
+    const sessionService = { ...mockSessionService, deployInstanceAtHead };
     await launchAgentSession(
       db as never,
       sessionService as never,
