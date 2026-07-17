@@ -18,6 +18,9 @@ import {
   catalogManagedNames,
   createCatalogTools,
   filterCatalogByAvailableTools,
+  filterExposureToCatalog,
+  persistExposure,
+  readPersistedExposure,
   DYNAMIC_TOOLS_ENV_KEY,
   type ToolExposureState,
 } from "@workbench/tools-catalog";
@@ -593,12 +596,54 @@ export function createDefaultHarnessBuilder({
                 grantedCatalogToolNames,
               )
             : undefined;
+        // Rehydrate the exposure set persisted by earlier turns: an idle
+        // eviction (CL-3103) rebuilds this harness with a fresh exposure set,
+        // which would silently drop every tool the model already loaded
+        // (CL-3843). Only names still catalogued AND backed by a live runner
+        // are restored, so retired or credential-less tools never come back
+        // dead.
+        if (availableCatalog !== undefined) {
+          const persisted = await readPersistedExposure(storeDir);
+          // A corrupt exposure file degrades to an empty set rather than
+          // failing the build: exposure is advisory advertisement state —
+          // losing it costs the model one load_tools call, whereas throwing
+          // here would permanently fail every subsequent harness build for
+          // the agent (unlike conversation-state, where corrupt-loss is a
+          // correctness failure).
+          if (persisted.corrupt !== undefined) {
+            logger.error(
+              "Corrupt tool-exposure state for {address}; proceeding with empty set: {reason}",
+              { address: agentAddress, reason: persisted.corrupt },
+            );
+          }
+          const rehydrated = filterExposureToCatalog(
+            persisted.exposed,
+            availableCatalog,
+          ).filter((name) => loadedToolNames.has(name));
+          for (const name of rehydrated) exposureState.exposed.add(name);
+          if (rehydrated.length > 0) {
+            logger.info(
+              "Rehydrated {count} exposed dynamic tool(s) for {address}",
+              { count: rehydrated.length, address: agentAddress },
+            );
+          }
+        }
         const catalogRunner =
           availableCatalog !== undefined
             ? (createCatalogTools({
                 catalog: availableCatalog,
                 exposure: exposureState,
                 availableToolNames: loadedToolNames,
+                onExposureChanged: (exposed) => {
+                  void persistExposure(storeDir, exposed).catch(
+                    (err: unknown) => {
+                      logger.error(
+                        "Failed to persist tool exposure for {address}: {error}",
+                        { address: agentAddress, error: String(err) },
+                      );
+                    },
+                  );
+                },
               }) as DefinedRunner)
             : undefined;
 

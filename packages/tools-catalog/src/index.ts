@@ -21,6 +21,14 @@ export {
   type ResolveLoadResult,
 } from "./search";
 export {
+  EXPOSURE_STATE_FILE,
+  PersistedExposureSchema,
+  readPersistedExposure,
+  persistExposure,
+  filterExposureToCatalog,
+  type PersistedExposure,
+} from "./exposure-persistence";
+export {
   SEARCH_TOOLS_NAME,
   LOAD_TOOLS_NAME,
   SEARCH_TOOLS_DEFINITION,
