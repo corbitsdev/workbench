@@ -59,17 +59,33 @@ async function fetchContextWindows(): Promise<Map<string, number>> {
     throw new Error(`models.dev payload failed validation: ${parsed.summary}`);
   }
 
-  const byModelId = new Map<string, number>();
-  for (const provider of Object.values(parsed)) {
+  // The context window is provider-specific on models.dev. Workbench serves
+  // its openai-compatible roster through the `opencode` (OpenCode Zen)
+  // provider, so that provider's value is authoritative; only when OpenCode
+  // Zen does not serve a model do we fall back to the largest window any other
+  // provider reports for it (direct-provider models still need manual
+  // confirmation against their real provider).
+  const PREFERRED_PROVIDER = "opencode";
+  const preferred = new Map<string, number>();
+  const fallback = new Map<string, number>();
+  for (const [providerId, provider] of Object.entries(parsed)) {
     for (const [modelKey, model] of Object.entries(provider.models)) {
       const modelId = model.id ?? modelKey;
       const context = model.limit?.context;
       if (context === undefined) continue;
-      const existing = byModelId.get(modelId);
-      if (existing === undefined || context > existing) {
-        byModelId.set(modelId, context);
+      if (providerId === PREFERRED_PROVIDER) {
+        preferred.set(modelId, context);
+      } else {
+        const existing = fallback.get(modelId);
+        if (existing === undefined || context > existing) {
+          fallback.set(modelId, context);
+        }
       }
     }
+  }
+  const byModelId = new Map<string, number>(fallback);
+  for (const [modelId, context] of preferred) {
+    byModelId.set(modelId, context);
   }
   return byModelId;
 }

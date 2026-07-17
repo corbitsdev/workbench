@@ -7,9 +7,9 @@ import { CATALOG_MODELS } from "./models";
 
 describe("contextWindowForModel", () => {
   test("resolves known model ids to their catalog context window", () => {
-    expect(contextWindowForModel("claude-sonnet-5")).toBe(200_000);
+    expect(contextWindowForModel("claude-sonnet-5")).toBe(1_000_000);
     expect(contextWindowForModel("gpt-4.1")).toBe(1_047_576);
-    expect(contextWindowForModel("gemini-3.1-pro")).toBe(2_097_152);
+    expect(contextWindowForModel("deepseek-v4-flash")).toBe(1_000_000);
   });
 
   test("returns the conservative default for an unknown model id", () => {
