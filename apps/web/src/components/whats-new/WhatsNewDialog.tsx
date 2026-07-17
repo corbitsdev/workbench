@@ -1,5 +1,5 @@
 import { useEffect, useRef, type KeyboardEvent } from "react";
-import { Link } from "react-router";
+import { useNavigate } from "react-router";
 import type { ChangelogRelease } from "@workbench/shared";
 
 interface WhatsNewDialogProps {
@@ -20,6 +20,7 @@ export function WhatsNewDialog({
   onClose,
   onDone,
 }: WhatsNewDialogProps) {
+  const navigate = useNavigate();
   const dialogRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -43,7 +44,7 @@ export function WhatsNewDialog({
     const container = dialogRef.current;
     if (!container) return;
     const focusable = container.querySelectorAll<HTMLElement>(
-      "a[href], button:not([disabled])",
+      "button:not([disabled])",
     );
     if (focusable.length === 0) return;
     const first = focusable[0];
@@ -121,13 +122,16 @@ export function WhatsNewDialog({
               <p className="text-sm font-medium text-text">{entry.title}</p>
               <p className="mt-1 text-xs text-text-2">{entry.description}</p>
               {entry.to && (
-                <Link
-                  to={entry.to}
-                  onClick={onClose}
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (entry.to) navigate(entry.to);
+                    onClose();
+                  }}
                   className="mt-2 inline-block text-xs font-medium text-orange transition-colors hover:text-orange-deep"
                 >
                   Take me there
-                </Link>
+                </button>
               )}
             </li>
           ))}

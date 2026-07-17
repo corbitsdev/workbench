@@ -110,6 +110,12 @@ describe("WhatsNewDialog", () => {
     expect(document.body.style.overflow).toBe("auto");
   });
 
+  it("clicking 'Take me there' calls onClose", () => {
+    const { onClose } = renderDialog();
+    fireEvent.click(screen.getByText("Take me there"));
+    expect(onClose.mock.calls.length).toBe(1);
+  });
+
   it("restores focus to the trigger element on unmount", () => {
     const trigger = document.createElement("button");
     trigger.textContent = "Open";
