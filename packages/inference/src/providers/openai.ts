@@ -244,8 +244,9 @@ function toOpenAIMessage(msg: ConversationTurn): unknown[] {
         type: "function",
         function: {
           name: encodeToolName(tc.name, OPENAI_TOOL_NAME_LIMIT),
-          // Never round-trip a `{_raw}` envelope to the model — it imitates
-          // the shape on subsequent tool calls and loops on approval.
+          // WORKBENCH-LOCAL: never round-trip a `{_raw}` envelope to the model
+          // — it imitates the shape on subsequent tool calls and loops on
+          // approval.
           arguments: JSON.stringify(sanitizeToolArgsForHistory(tc.arguments)),
         },
       }));

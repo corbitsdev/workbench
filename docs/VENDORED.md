@@ -121,7 +121,7 @@ There are two kinds of vendoring:
   `providerOptions` into chat-completions bodies and applies Kimi thinking rules;
   `src/providers/anthropic.ts` applies Opus 4.8 thinking `effort` and omits
   temperature when thinking is on for that model.
-- **Divergence (CL-3853, untagged by request):** tool-call argument recovery.
+- **WORKBENCH-LOCAL change (CL-3853):** tool-call argument recovery.
   New module `src/tool-args.ts`; `src/harness.ts` finalize block parses
   completed argument buffers through `parseCompletedToolArgs` (unwraps
   model-emitted `{_raw: "<stringified args>"}` envelopes, double-encoded
@@ -135,8 +135,9 @@ There are two kinds of vendoring:
   describes in `src/harness.test.ts`. On re-sync, preserve the `tool-args`
   import in all four files; a literal upstream copy re-introduces the
   approval loop with a green build.
-- **Audit:** `rg 'WORKBENCH-LOCAL' packages/inference/` (the CL-3853
-  divergence carries no tag — grep `tool-args` instead)
+- **Audit:** `rg 'WORKBENCH-LOCAL' packages/inference/` (the CL-3853 blocks
+  are tagged `WORKBENCH-LOCAL` without an issue number, per repo owner
+  preference — the plain-token grep still finds them)
 
 ### `packages/storage-isogit` → `@workbench/storage-isogit`
 
