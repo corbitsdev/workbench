@@ -414,12 +414,17 @@ async function createMyraThreadForDefinition(
     // hidden from every list, and have no UI path to delete — reap them here,
     // best-effort, so a def reseed doesn't strand deployed instances forever.
     // A failure must not block the create; the row just waits for a later
-    // attempt.
+    // attempt. A row carrying a transcript (same WS-plane gap as the reuse
+    // check above) must be skipped, not reaped: teardownThreadRows deletes the
+    // agentInstance, cascading its inferenceTurn rows, which would permanently
+    // destroy the transcript. A stranded hidden row is recoverable later; a
+    // destroyed transcript is not.
     const stale = existingCount.filter(
       (row) => isAnonymousUnused(row) && row.agentId !== def.id,
     );
     for (const row of stale) {
       try {
+        if (await instanceHasTranscript(db, row.instanceId)) continue;
         const staleInstance = await db.query.agentInstance.findFirst({
           where: eq(agentInstance.id, row.instanceId),
         });
