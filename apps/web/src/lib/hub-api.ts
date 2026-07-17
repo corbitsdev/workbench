@@ -1421,6 +1421,80 @@ export async function getTenantModels(
   return parsed;
 }
 
+/** A model offering owned directly by the tenant (native owned-offerings
+ * route). Unlike the discovery `/models` view, this includes disabled
+ * offerings and carries the `disabled` flag, so the Owner Catalog page can
+ * enable/disable/remove them. */
+export const TenantOfferingSchema = type({
+  id: "string",
+  tenantId: "string",
+  modelId: "string",
+  providerId: "string",
+  priority: "number",
+  disabled: "boolean",
+  "+": "ignore",
+});
+export type TenantOffering = typeof TenantOfferingSchema.infer;
+
+const TenantOfferingsResponse = type({
+  data: TenantOfferingSchema.array(),
+  "+": "ignore",
+});
+
+/** Lists the offerings created directly on this tenant (owner holds
+ * `model-offering:*`/`read` via `*`/`*`). Inherited offerings are excluded —
+ * they are managed at the tenant that owns them. Parsed at the boundary. */
+export async function getTenantOfferings(
+  tenantId: string,
+): Promise<TenantOffering[]> {
+  // A single un-cursored page: a tenant realistically owns single digits of
+  // offerings (one per Owner-set inference model), so 200 is a generous cap
+  // rather than a paginated list. Revisit with a cursor if that ever changes.
+  const raw = await hubFetch<unknown>(
+    "GET",
+    `tenants/${encodeURIComponent(tenantId)}/catalog/offerings?limit=200`,
+  );
+  const parsed = TenantOfferingsResponse(raw);
+  if (parsed instanceof type.errors) {
+    throw new Error(`Malformed tenant offerings response: ${parsed.summary}`);
+  }
+  return parsed.data;
+}
+
+/** Enables or disables an owned offering (PATCH `{disabled}`). Returns the
+ * updated offering, parsed at the boundary. */
+export async function setTenantOfferingDisabled(
+  tenantId: string,
+  offeringId: string,
+  disabled: boolean,
+): Promise<TenantOffering> {
+  const raw = await hubFetch<unknown>(
+    "PATCH",
+    `tenants/${encodeURIComponent(tenantId)}/catalog/offerings/${encodeURIComponent(
+      offeringId,
+    )}`,
+    { disabled },
+  );
+  const parsed = TenantOfferingSchema(raw);
+  if (parsed instanceof type.errors) {
+    throw new Error(`Malformed tenant offering response: ${parsed.summary}`);
+  }
+  return parsed;
+}
+
+/** Removes an owned offering (DELETE). */
+export async function deleteTenantOffering(
+  tenantId: string,
+  offeringId: string,
+): Promise<void> {
+  await hubFetch<void>(
+    "DELETE",
+    `tenants/${encodeURIComponent(tenantId)}/catalog/offerings/${encodeURIComponent(
+      offeringId,
+    )}`,
+  );
+}
+
 export type ActivityExportBucket = "day" | "week" | "month";
 
 export async function getActivityOverview(

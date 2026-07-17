@@ -7,6 +7,7 @@ import {
 } from "../../lib/hub-api";
 import { adminTableCard } from "./admin-ui";
 import { CredentialRow } from "./CredentialRow";
+import { OwnerOfferings } from "./OwnerOfferings";
 
 /**
  * Owner → Catalog. Read-only view of the workbench's model + provider catalog
@@ -55,6 +56,18 @@ export function OwnerCatalog() {
         Could not load the model catalog. Try again in a moment.
       </p>
     );
+  }
+
+  // Join offering ids to human names via the discovery view: a model's id maps
+  // to its canonicalName, and each offering carries its provider's id + name.
+  const modelNameById = new Map(
+    models.data.map((m) => [m.id, m.canonicalName]),
+  );
+  const providerNameById = new Map<string, string>();
+  for (const m of models.data) {
+    for (const o of m.offerings) {
+      providerNameById.set(o.providerId, o.providerName);
+    }
   }
 
   return (
@@ -151,6 +164,14 @@ export function OwnerCatalog() {
           </div>
         )}
       </div>
+
+      {activeTenantId && (
+        <OwnerOfferings
+          tenantId={activeTenantId}
+          modelNameById={modelNameById}
+          providerNameById={providerNameById}
+        />
+      )}
     </div>
   );
 }

@@ -4,10 +4,16 @@
  * offerings) for a tenant by driving the native hub-api catalog routes.
  *
  * The catalog is derived from the agent definitions themselves (FULL_CATALOG
- * in @workbench/agents): every model an agent declares, the provider that
+ * in @workbench/catalog): every model an agent declares, the provider that
  * authenticates its inference credential, and the offering linking them. Run on
  * the GLOBAL tenant so descendant workbenches inherit the offerings via the
  * catalog ancestor walk.
+ *
+ * NOTE: the Owner → Catalog key-set path also auto-seeds a single provider's
+ * slice at credential-set time (`reconcileProviderCatalog`), and — unlike this
+ * script's create-or-skip provider step — it *does* rebind an existing
+ * `model_provider`'s credential. Keep the two reconcile semantics deliberately
+ * distinct; do not "fix" this script to rebind and reintroduce a second path.
  *
  * Each provider's baseURL is read from its already-seeded credential's
  * metadata, so run AFTER seed-credentials. Providers/models are create-or-skip;
