@@ -7,7 +7,7 @@ WORKDIR /app
 RUN apt-get update && apt-get install -y git && rm -rf /var/lib/apt/lists/* && \
     git clone --filter=blob:none --no-checkout \
       https://github.com/faremeter/interchange.git interchange && \
-    git -C interchange checkout 2792f05edf862325abbf8fc449f504db96d94b3b
+    git -C interchange checkout 6927e7e4b0117f29ce4800ad75a313ed9ad31b10
 
 # Manifests for EVERY workspace member. bun.lock is workspace-global, so
 # `bun install --frozen-lockfile` compares the on-disk member set against the
@@ -114,4 +114,5 @@ COPY packages/tool-manifest/ packages/tool-manifest/
 COPY apps/hub/generated/tool-manifests/ apps/hub/generated/tool-manifests/
 COPY packages/workbench-shared/ packages/workbench-shared/
 
+ENV BUN_OPTIONS="--conditions=intx-src"
 CMD ["bun", "run", "apps/sidecar/src/index.ts"]

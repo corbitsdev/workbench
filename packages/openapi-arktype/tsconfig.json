@@ -6,8 +6,18 @@
     "strict": true,
     "skipLibCheck": true,
     "noEmit": true,
-    "lib": ["ESNext"],
-    "types": ["bun"]
+    "lib": [
+      "ESNext"
+    ],
+    "types": [
+      "bun"
+    ],
+    "customConditions": [
+      "intx-src"
+    ]
   },
-  "include": ["src/**/*", "test/**/*"]
+  "include": [
+    "src/**/*",
+    "test/**/*"
+  ]
 }

@@ -6,8 +6,8 @@
   "types": "src/index.ts",
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "test": "bun test src",
-    "test:coverage": "bun test --coverage --coverage-reporter=lcov --coverage-reporter=text src"
+    "test": "BUN_OPTIONS=--conditions=intx-src bun test src",
+    "test:coverage": "BUN_OPTIONS=--conditions=intx-src bun test --coverage --coverage-reporter=lcov --coverage-reporter=text src"
   },
   "dependencies": {
     "@workbench/tool-manifest": "workspace:*",
@@ -17,5 +17,5 @@
     "@types/bun": "latest",
     "typescript": "^5.9.0"
   },
-  "//": "Domain types plus the palette fuzzy-match contract (palette.ts) — the only runnable logic; covered by palette.test.ts."
+  "//": "Domain types plus the palette fuzzy-match contract (palette.ts) \u2014 the only runnable logic; covered by palette.test.ts."
 }
