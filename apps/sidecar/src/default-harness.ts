@@ -604,8 +604,20 @@ export function createDefaultHarnessBuilder({
         // dead.
         if (availableCatalog !== undefined) {
           const persisted = await readPersistedExposure(storeDir);
+          // A corrupt exposure file degrades to an empty set rather than
+          // failing the build: exposure is advisory advertisement state —
+          // losing it costs the model one load_tools call, whereas throwing
+          // here would permanently fail every subsequent harness build for
+          // the agent (unlike conversation-state, where corrupt-loss is a
+          // correctness failure).
+          if (persisted.corrupt !== undefined) {
+            logger.error(
+              "Corrupt tool-exposure state for {address}; proceeding with empty set: {reason}",
+              { address: agentAddress, reason: persisted.corrupt },
+            );
+          }
           const rehydrated = filterExposureToCatalog(
-            persisted,
+            persisted.exposed,
             availableCatalog,
           ).filter((name) => loadedToolNames.has(name));
           for (const name of rehydrated) exposureState.exposed.add(name);

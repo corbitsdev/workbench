@@ -227,11 +227,12 @@ async function makeStoreDir(): Promise<string> {
 
 async function waitForPersisted(dir: string): Promise<string[]> {
   for (let i = 0; i < 50; i += 1) {
-    const names = await readPersistedExposure(dir);
-    if (names.length > 0) return names;
+    const { exposed } = await readPersistedExposure(dir);
+    if (exposed.length > 0) return exposed;
     await new Promise((resolve) => setTimeout(resolve, 20));
   }
-  return readPersistedExposure(dir);
+  const { exposed } = await readPersistedExposure(dir);
+  return exposed;
 }
 
 describe("dynamic tool exposure persistence across harness rebuilds", () => {
@@ -254,6 +255,23 @@ describe("dynamic tool exposure persistence across harness rebuilds", () => {
       expect(dynamic.exposure.exposed).toEqual(
         new Set(["fileparser__parse_file"]),
       );
+    } finally {
+      await fs.promises.rm(storeDir, { recursive: true, force: true });
+    }
+  });
+
+  it("a corrupt exposure file does not fail the build and rehydrates empty", async () => {
+    const storeDir = await makeStoreDir();
+    try {
+      await fs.promises.writeFile(
+        path.join(storeDir, "tool-exposure.json"),
+        "not json{{",
+      );
+      const { env } = await buildMyra(storeDir, ["fileparser__parse_file"]);
+      const dynamic = env[DYNAMIC_TOOLS_ENV_KEY] as {
+        exposure: { exposed: Set<string> };
+      };
+      expect(dynamic.exposure.exposed).toEqual(new Set());
     } finally {
       await fs.promises.rm(storeDir, { recursive: true, force: true });
     }
