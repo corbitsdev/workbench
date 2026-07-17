@@ -70,7 +70,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     if (isLoading || !data?.user) return;
-    void postMe()
+    void postMe({ syncPersonalAgent: false })
       .then((me) => {
         if (me.preferences) hydrateServerPreferences(me.preferences);
       })

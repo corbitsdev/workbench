@@ -1223,17 +1223,19 @@ v1.post("/me", async (c) => {
   if (parsed instanceof type.errors) {
     return c.json({ error: parsed.summary }, 400);
   }
-  const syncPersonalAgent = parsed.syncPersonalAgent ?? true;
-
-  meLog.info("POST /v1/me personal agent sync started", {
-    userId,
-    syncPersonalAgent,
-  });
+  const reconcileGrants = parsed.syncPersonalAgent ?? true;
 
   const syncOutcome = await syncPersonalAgentForUser(
     { db, rootTenantId, grantStore, sidecarRouter },
     userId,
+    { reconcileGrants },
   );
+
+  meLog.info("POST /v1/me personal agent sync started", {
+    userId,
+    reconcileGrants,
+    grantsRefreshed: syncOutcome.grantsRefreshed,
+  });
   const { workingTenantId, memberPrincipalId, paInstanceId } = syncOutcome;
 
   // Called on every /me bootstrap, not gated on `provisionedMyra`:

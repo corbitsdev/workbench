@@ -46,19 +46,28 @@ export async function myraInstanceIdForMember(
   return mapping?.instanceId ?? null;
 }
 
+export type SyncPersonalAgentOptions = {
+  // Grant reconcile writes to the DB and pushes live to a routable sidecar, so
+  // callers that run on every page load opt out: the drift-gated sync path and
+  // the reconcile at session open already cover any instance a user opens.
+  reconcileGrants: boolean;
+};
+
 // Ensure the caller's global member, principal, Myra instance ROW, and tool
 // grants exist and are reconciled. This does NOT launch a Myra session — the
 // primary chat thread and the bottom-right popup both launch-on-demand: every
 // Myra surface (`useMyraSession`) calls `POST /v1/instances/:id/sessions` before
 // opening its stream, which cold-(re)launches a never-launched OR reaper-slept
-// instance (CL-2793). Grants are still persisted here and pushed live only when
-// the instance already happens to be routable; a cold instance picks them up at
-// its lazy launch.
+// instance (CL-2793). When reconcile is on, grants are persisted here and pushed
+// live only when the instance already happens to be routable; a cold instance
+// picks them up at its lazy launch.
 export async function syncPersonalAgentForUser(
   deps: SyncPersonalAgentDeps,
   userId: string,
+  options?: SyncPersonalAgentOptions,
 ): Promise<SyncPersonalAgentOutcome> {
   const { db, rootTenantId, grantStore, sidecarRouter } = deps;
+  const reconcileGrants = options?.reconcileGrants ?? true;
 
   const membership = await lookupMember(db, {
     tenantId: rootTenantId,
@@ -111,7 +120,7 @@ export async function syncPersonalAgentForUser(
       }
     }
 
-    if (paInstanceId) {
+    if (paInstanceId && reconcileGrants) {
       try {
         const paForGrants = await db.query.agentInstance.findFirst({
           where: eq(intxSchema.agentInstance.id, paInstanceId),

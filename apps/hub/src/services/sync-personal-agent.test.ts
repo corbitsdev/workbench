@@ -192,4 +192,61 @@ describe("syncPersonalAgentForUser", () => {
     expect(provisionCalls).toBe(0);
     expect(refreshCalls).toHaveLength(0);
   });
+
+  it("skips grant reconcile when reconcileGrants is false but still repairs membership/instance state", async () => {
+    const db = makeDb({
+      existingMyraInstanceId: "inst_myra_existing",
+      instanceRow: { ...INSTANCE_ROW, id: "inst_myra_existing" },
+    });
+    const sidecarRouter = makeSidecarRouter([INSTANCE_ROW.address]);
+
+    const outcome = await syncPersonalAgentForUser(
+      { db, rootTenantId: ROOT, grantStore, sidecarRouter },
+      "user_1",
+      { reconcileGrants: false },
+    );
+
+    expect(refreshCalls).toHaveLength(0);
+    expect(outcome.grantsRefreshed).toBe(false);
+    expect(outcome.grantsPushedLive).toBe(false);
+    expect(outcome.workingTenantId).toBe(ROOT);
+    expect(outcome.memberPrincipalId).toBe("prin_member");
+    expect(outcome.paInstanceId).toBe("inst_myra_existing");
+  });
+
+  it("still provisions a missing Myra instance row when reconcileGrants is false", async () => {
+    const db = makeDb({
+      existingMyraInstanceId: null,
+      instanceRow: INSTANCE_ROW,
+    });
+    const sidecarRouter = makeSidecarRouter([]);
+
+    const outcome = await syncPersonalAgentForUser(
+      { db, rootTenantId: ROOT, grantStore, sidecarRouter },
+      "user_1",
+      { reconcileGrants: false },
+    );
+
+    expect(provisionCalls).toBe(1);
+    expect(outcome.paInstanceId).toBe("inst_myra_new");
+    expect(outcome.provisionedMyra).toBe(true);
+    expect(refreshCalls).toHaveLength(0);
+    expect(outcome.grantsRefreshed).toBe(false);
+  });
+
+  it("reconciles grants by default when no options are passed", async () => {
+    const db = makeDb({
+      existingMyraInstanceId: "inst_myra_existing",
+      instanceRow: { ...INSTANCE_ROW, id: "inst_myra_existing" },
+    });
+    const sidecarRouter = makeSidecarRouter([]);
+
+    const outcome = await syncPersonalAgentForUser(
+      { db, rootTenantId: ROOT, grantStore, sidecarRouter },
+      "user_1",
+    );
+
+    expect(refreshCalls).toHaveLength(1);
+    expect(outcome.grantsRefreshed).toBe(true);
+  });
 });
