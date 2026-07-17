@@ -252,11 +252,40 @@ function parseTurns(text: string): ConversationTurn[] {
  * `dir`. The caller is responsible for calling `initAgentRepo(dir)` before
  * constructing.
  */
-export class IsogitStore implements ContextStore, AuditStore {
+/**
+ * Extra reads the durable WAL mirror needs beyond `ContextStore`, kept
+ * off the shared interface because they are isogit-specific.
+ */
+export interface DurableMirrorReads {
+  /**
+   * The turns most recently handed to `writeTurns`, by reference -- the
+   * reactor's live array, not a copy. Lets the WAL mirror slice the new
+   * turns from memory instead of re-reading and re-parsing `turns.jsonl`
+   * every boundary. Safe because the local store is single-writer and
+   * in-process: nothing else writes `turns.jsonl`, so the last-written
+   * array equals the on-disk state at the mirror boundary.
+   */
+  peekTurns(): ConversationTurn[];
+  /**
+   * Read only `metadata.json` (pending operations, token usage, connector
+   * state), skipping the O(N) turns parse `load` pays. The mirror gets
+   * its turns from `peekTurns`.
+   */
+  loadMetadata(): Promise<{
+    pendingOperations: PendingOperation[];
+    tokenUsage: TokenUsage;
+    connectorState: ConnectorThreadState | null;
+  }>;
+}
+
+export class IsogitStore
+  implements ContextStore, AuditStore, DurableMirrorReads
+{
   private readonly dir: string;
   private readonly signer: CommitSigner | undefined;
   private readonly gcPolicy: GCPolicy | undefined;
   private pendingConnectorState: ConnectorThreadState | null = null;
+  private lastTurns: ConversationTurn[] = [];
 
   constructor(dir: string, signer?: CommitSigner, gcPolicy?: GCPolicy) {
     this.dir = dir;
@@ -286,7 +315,6 @@ export class IsogitStore implements ContextStore, AuditStore {
     connectorState: ConnectorThreadState | null;
   }> {
     const turnsPath = path.join(this.dir, TURNS_FILE);
-    const metadataPath = path.join(this.dir, METADATA_FILE);
 
     let turns: ConversationTurn[] = [];
     if (await pathExists(turnsPath)) {
@@ -294,20 +322,31 @@ export class IsogitStore implements ContextStore, AuditStore {
       turns = parseTurns(text);
     }
 
-    let pendingOperations: PendingOperation[] = [];
-    let tokenUsage: TokenUsage = { ...EMPTY_USAGE };
-    let connectorState: ConnectorThreadState | null = null;
+    const metadata = await this.loadMetadata();
+    return { turns, ...metadata };
+  }
 
-    if (await pathExists(metadataPath)) {
-      const text = await fs.promises.readFile(metadataPath, "utf-8");
-      const parsed: unknown = JSON.parse(text);
-      const data = parseMetadata(parsed);
-      pendingOperations = data.pendingOperations;
-      tokenUsage = data.tokenUsage;
-      connectorState = data.connectorState;
+  async loadMetadata(): Promise<{
+    pendingOperations: PendingOperation[];
+    tokenUsage: TokenUsage;
+    connectorState: ConnectorThreadState | null;
+  }> {
+    const metadataPath = path.join(this.dir, METADATA_FILE);
+    if (!(await pathExists(metadataPath))) {
+      return {
+        pendingOperations: [],
+        tokenUsage: { ...EMPTY_USAGE },
+        connectorState: null,
+      };
     }
-
-    return { turns, pendingOperations, tokenUsage, connectorState };
+    const text = await fs.promises.readFile(metadataPath, "utf-8");
+    const parsed: unknown = JSON.parse(text);
+    const data = parseMetadata(parsed);
+    return {
+      pendingOperations: data.pendingOperations,
+      tokenUsage: data.tokenUsage,
+      connectorState: data.connectorState,
+    };
   }
 
   async commit(
@@ -379,36 +418,18 @@ export class IsogitStore implements ContextStore, AuditStore {
     await git.branch({ fs, dir: this.dir, ref: name });
   }
 
-  // WORKBENCH-LOCAL (CL-2663) — serialize git-object reads against write-path
-  // GC. `log`, `readAt`, and `readManifestHistory` walk git objects; run
-  // unlocked they race maybeGCUnderLock's pack republish/removal, and a read
-  // landing in the removal window fails on a still-reachable object
-  // (iso-git InternalError "Could not read packfile ...", plus bare
-  // TypeErrors from torn .idx loads). A bounded retry on the pack-miss error
-  // was tried first but is insufficient: the torn-.idx failures surface as
-  // unmatchable bare TypeErrors deep in iso-git, so retrying only the narrow
-  // pack-miss still loses. Tradeoff of the lock: these reads now queue
-  // behind writers and GC on the same repo dir — acceptable, since reclaim
-  // is bounded and reads were already best-effort under churn. Working-tree
-  // reads (`load`, `readBlob`) touch no git objects and stay unlocked.
-  // `withRepoDirLock` is not re-entrant, but it is package-internal (absent
-  // from the barrel) and no locked path in this package calls these methods.
   async log(limit?: number, _signal?: AbortSignal): Promise<ContextCommit[]> {
-    return withRepoDirLock(this.dir, () =>
-      readCommitLog(this.dir, limit ?? 10),
-    );
+    return readCommitLog(this.dir, limit ?? 10);
   }
 
   async readAt(
     hash: string,
     _signal?: AbortSignal,
   ): Promise<ConversationTurn[]> {
-    return withRepoDirLock(this.dir, async () => {
-      const blob = await readBlobAtCommit(this.dir, hash, TURNS_FILE);
-      if (blob === null) return [];
-      const text = new TextDecoder().decode(blob);
-      return parseTurns(text);
-    });
+    const blob = await readBlobAtCommit(this.dir, hash, TURNS_FILE);
+    if (blob === null) return [];
+    const text = new TextDecoder().decode(blob);
+    return parseTurns(text);
   }
 
   async writeBlob(
@@ -489,6 +510,14 @@ export class IsogitStore implements ContextStore, AuditStore {
       path.join(this.dir, TURNS_FILE),
       encodeJsonlLines(turns),
     );
+    // Advance the in-memory marker only after the durable write succeeds.
+    // peekTurns must never surface an array that failed to persist -- a
+    // write failure leaves it pointing at the last array that did.
+    this.lastTurns = turns;
+  }
+
+  peekTurns(): ConversationTurn[] {
+    return this.lastTurns;
   }
 
   /**
@@ -520,14 +549,6 @@ export class IsogitStore implements ContextStore, AuditStore {
     _signal?: AbortSignal,
   ): Promise<TransformRecordType[]> {
     if (limit <= 0) return [];
-    // WORKBENCH-LOCAL (CL-2663): locked for the same read-vs-GC race as
-    // `log`/`readAt` above.
-    return withRepoDirLock(this.dir, () => this.collectManifestHistory(limit));
-  }
-
-  private async collectManifestHistory(
-    limit: number,
-  ): Promise<TransformRecordType[]> {
     const entries = await tolerantLog(this.dir, limit);
     const collected: TransformRecordType[] = [];
     for (const entry of entries) {
