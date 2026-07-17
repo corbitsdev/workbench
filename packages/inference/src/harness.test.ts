@@ -160,7 +160,6 @@ describe("runInference — Dependencies parameter", () => {
   // call site) and must not yield any event, including `inference.start`.
 
   test("throws plainly when deps.fetch is undefined", async () => {
-     
     const deps = { fetch: undefined } as unknown as Dependencies;
     const iter = runInference({
       turns: [userTurn("hello")],
@@ -186,7 +185,6 @@ describe("runInference — Dependencies parameter", () => {
   });
 
   test("throws plainly when deps.fetch is a non-function value", async () => {
-     
     const deps = { fetch: "not a function" } as unknown as Dependencies;
     const iter = runInference({
       turns: [userTurn("hello")],
@@ -217,7 +215,7 @@ describe("runInference — Dependencies parameter", () => {
       source: SOURCE,
       nextSeq: () => 1,
     };
-     
+
     const opts = baseOpts as unknown as InferenceHarnessOptions;
     const iter = runInference(opts);
 
@@ -671,11 +669,11 @@ describe("runInference — source-identity stamping", () => {
   });
 });
 
-// WORKBENCH-LOCAL (CL-3853): a kimi-k2.6/OpenRouter session poisoned its own
-// history with `{_raw: "<stringified args>"}` tool arguments and looped on the
-// same approval forever. The harness must unwrap a recoverable _raw envelope
+// A kimi-k2.6/OpenRouter session poisoned its own history with
+// `{_raw: "<stringified args>"}` tool arguments and looped on the same
+// approval forever. The harness must unwrap a recoverable _raw envelope
 // at finalize time so the real arguments reach the tool.
-describe("runInference — tool-call _raw recovery (CL-3853)", () => {
+describe("runInference — tool-call _raw recovery", () => {
   const OPENAI_SOURCE: InferenceSource = {
     id: "openrouter:kimi-k2.6",
     provider: "openai",

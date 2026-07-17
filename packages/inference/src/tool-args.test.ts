@@ -12,7 +12,7 @@ const DEPLOY_ARGS = {
   html: "<!DOCTYPE html><html lang='en'><head><title>Corbits VPC</title></head><body>hi</body></html>",
 };
 
-describe("parseCompletedToolArgs — CL-3853 approval-loop regression", () => {
+describe("parseCompletedToolArgs — approval-loop regression", () => {
   test("parses a well-formed buffer", () => {
     expect(parseCompletedToolArgs(JSON.stringify(DEPLOY_ARGS))).toEqual(
       DEPLOY_ARGS,
@@ -69,9 +69,9 @@ describe("parseCompletedToolArgs — CL-3853 approval-loop regression", () => {
 
 describe("unwrapRawToolArgs — history re-serialization guard", () => {
   test("unwraps stored {_raw} arguments so the model never sees the shape", () => {
-    expect(
-      unwrapRawToolArgs({ _raw: JSON.stringify(DEPLOY_ARGS) }),
-    ).toEqual(DEPLOY_ARGS);
+    expect(unwrapRawToolArgs({ _raw: JSON.stringify(DEPLOY_ARGS) })).toEqual(
+      DEPLOY_ARGS,
+    );
   });
 
   test("passes through normal arguments untouched", () => {
