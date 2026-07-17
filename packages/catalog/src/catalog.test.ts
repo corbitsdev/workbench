@@ -142,7 +142,9 @@ describe("buildAgentCatalog", () => {
         credentialName: "opencode-zen",
       },
     ]);
-    expect(result.models).toEqual([{ canonicalName: "deepseek-v4-flash" }]);
+    expect(result.models).toEqual([
+      { canonicalName: "deepseek-v4-flash", contextWindow: 1_000_000 },
+    ]);
     expect(result.offerings).toEqual([
       { model: "deepseek-v4-flash", provider: "opencode-zen" },
     ]);
