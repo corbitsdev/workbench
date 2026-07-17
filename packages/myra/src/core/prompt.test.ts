@@ -87,6 +87,13 @@ describe("buildPersonalAgentSystemPrompt", () => {
     expect(md).not.toContain("<role>");
   });
 
+  it("does not instruct Myra to emit fenced ```ui generative-UI JSON blocks", () => {
+    const prompt = buildPersonalAgentSystemPrompt("Myra", xmlFormat);
+    expect(prompt).not.toContain("<generative-ui>");
+    expect(prompt).not.toContain("```ui");
+    expect(prompt).not.toContain("UIBlockView");
+  });
+
   it("uses canonical Corbits terminology when interpreting source material", () => {
     const prompt = buildPersonalAgentSystemPrompt("Myra", xmlFormat);
     expect(prompt).toContain("<terminology>");
