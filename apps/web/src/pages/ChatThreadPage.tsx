@@ -51,14 +51,12 @@ export function ChatThreadPage() {
   }));
 
   const threadList = threads ?? [];
+  const active = resolveActiveThread(threadList, threadId);
   const unknownExplicitThreadId =
     threadId !== undefined &&
     threadId.length > 0 &&
     threadList.length > 0 &&
-    !threadList.some((t) => t.id === threadId);
-  const active = unknownExplicitThreadId
-    ? null
-    : resolveActiveThread(threadList, threadId);
+    active === null;
 
   // Remember the resolved thread for the FAB and root redirect. Writes an
   // external store only (no re-render), so an effect is the right tool here.
