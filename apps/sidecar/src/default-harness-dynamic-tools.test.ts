@@ -52,10 +52,6 @@ mock.module("@intx/tools-posix", () => ({
   })),
 }));
 
-mock.module("@intx/authz", () => ({
-  evaluateGrants: mock(async () => {}),
-}));
-
 mock.module("@intx/types/runtime", () => ({
   createBlobReader: mock(() => ({})),
 }));
@@ -152,8 +148,22 @@ function fakeFactory(
   return Object.assign(behavior, { id, requires: [] as string[] });
 }
 
+// Grant rows in the exact shape the hub persists (`buildToolGrantRows`):
+// resource `tool:<llm-safe name>`, action `invoke`. The catalog gate must
+// authorize against THESE — not `agentConfig.tools`, whose hub-proxy
+// definitions carry bare names and omit package tools entirely (CL-3825).
+function toolGrants(llmNames: string[]): unknown[] {
+  return llmNames.map((name) => ({
+    id: `grant-${name}`,
+    resource: `tool:${name}`,
+    action: "invoke",
+    effect: "allow",
+    conditions: null,
+  }));
+}
+
 async function buildMyra(
-  grantedToolNames: string[] = [],
+  grantedLlmToolNames: string[] = [],
 ): Promise<Record<string, unknown>> {
   createHarnessMock.mockClear();
   readDeployTreeMock.mockImplementationOnce(async () => ({
@@ -176,12 +186,12 @@ async function buildMyra(
       sessionId: "session-1",
       sources: [validSource],
       defaultSource: "src-1",
-      grants: [],
-      tools: grantedToolNames.map((name) => ({
-        name,
-        description: "",
-        inputSchema: {},
-      })),
+      grants: toolGrants(grantedLlmToolNames) as never,
+      // Hub-real shape: `config.tools` holds only hub-proxy/local definitions
+      // under their BARE names; package tools never appear here (they arrive
+      // via toolPackagePins). The pre-CL-3825 gate read these names and so
+      // never intersected the safe-form catalog — the corpus collapsed empty.
+      tools: [{ name: "mail_send", description: "", inputSchema: {} }],
       principalId: "user-1",
       tenantId: "tenant-1",
       systemPrompt: "unused fallback",
