@@ -34,8 +34,8 @@ const ALL_MODELS: CatalogModelSpec[] = [
   { canonicalName: "deepseek-v4-pro", contextWindow: 1_000_000 },
   // opencode-zen / Moonshot models
   { canonicalName: "kimi-k2.6", contextWindow: 262_144 },
-  // openrouter / Moonshot models — kimi-k3 is served through OpenRouter, whose
-  // models.dev `limit.context` for this model is 1,048,576.
+  // kimi-k3 is served through OpenRouter; window hand-set from OpenRouter's
+  // published 1,048,576-token context (verify against models.dev once listed).
   { canonicalName: "kimi-k3", contextWindow: 1_048_576 },
   // opencode-zen / Zhipu models
   { canonicalName: "glm-5.2", contextWindow: 1_000_000 },
