@@ -1,4 +1,6 @@
 import { afterEach, describe, expect, it } from "bun:test";
+import { FULL_CATALOG } from "@workbench/catalog";
+import { CREDENTIAL_PROVIDER_CATALOG } from "@workbench/shared";
 import {
   listData,
   mergeCookies,
@@ -234,5 +236,33 @@ describe("seedCatalog offering priority", () => {
     });
     // A brand-new offering (e.g. opencode-zen for kimi) is still POSTed.
     expect(postedOfferings).toBeGreaterThan(0);
+  });
+});
+
+describe("OpenRouter Owner-set credential feeds the catalog", () => {
+  it("resolves the openrouter catalog provider against the Owner-set credential name", () => {
+    const provider = FULL_CATALOG.providers.find(
+      (p) => p.name === "openrouter",
+    );
+    const govEntry = CREDENTIAL_PROVIDER_CATALOG.find(
+      (e) => e.providerName === "openrouter",
+    );
+    if (!provider) throw new Error("openrouter catalog provider missing");
+    if (!govEntry) throw new Error("openrouter governance entry missing");
+
+    // The Owner-set credential is named after the governance label
+    // (owner.ts: `name: entry.label`) and carries the entry's defaultMetadata.
+    // seed-catalog looks the credential up by `provider.credentialName`, so the
+    // two must agree or the provider (and kimi-k3's offering) is skipped.
+    const ownerSetCredential: CredentialRow = {
+      id: "cred_openrouter",
+      name: govEntry.label,
+      metadata: govEntry.defaultMetadata ?? null,
+    };
+    const binding = resolveCredentialBinding(
+      [ownerSetCredential],
+      provider.credentialName,
+    );
+    expect(binding.baseURL).toBe("https://openrouter.ai/api/v1");
   });
 });
