@@ -219,6 +219,8 @@ import { createFatalErrorRecovery } from "./lib/fatal-error-recovery";
 import { resolveCorsAllowOrigin } from "./lib/cors-origin";
 import { createRateLimiter } from "./lib/rate-limit";
 import { createSystemRouter } from "./routes/system";
+import { createSidecarWsDrainGuard } from "./lib/drain-guard";
+import { beginDrain } from "./lib/drain-state";
 
 await setupObservability({ dev: process.env.NODE_ENV !== "production" });
 const log = getLogger(["api"]);
@@ -1035,6 +1037,13 @@ app.use(
     await next();
   },
 );
+
+// Refuse new sidecar WS upgrades once beginDrain() has fired (SIGTERM
+// handler below). Interchange's createSidecarRoutes owns /api/sidecars/ws
+// and cannot be changed here, so this outer guard runs ahead of the hub app
+// mount and short-circuits the upgrade with 503 instead of letting the
+// draining process accept (or hang on) a new connection.
+app.use("/api/sidecars/ws", createSidecarWsDrainGuard());
 
 // Mount hub app
 app.route("/", hubApp);
@@ -2153,6 +2162,7 @@ for (const signal of ["SIGTERM", "SIGINT"]) {
   process.on(signal, async () => {
     try {
       log.info("Received {signal}, draining", { signal });
+      beginDrain();
       scheduler.stop();
       taskReconciler.stop();
       stopWedgeSweepReconciler();
