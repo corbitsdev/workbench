@@ -8,6 +8,7 @@ import { type } from "arktype";
 import {
   WorkflowDeploymentRecord,
   writeWorkflowDeploymentRecord,
+  writeDeploymentTombstone,
   deleteWorkflowDeploymentRecord,
   scanWorkflowDeploymentRecords,
 } from "./workflow-deployment-record";
@@ -183,6 +184,26 @@ describe("scanWorkflowDeploymentRecords", () => {
     expect(byId.size).toBe(2);
     expect(byId.get("dep-a")).toEqual(SINGLE_STEP);
     expect(byId.get("dep-b")).toEqual(MULTI_STEP);
+
+    await fs.rm(dataDir, { recursive: true, force: true });
+  });
+
+  test("CL-3368: skips and reclaims a tombstoned deployment even when its record is still present", async () => {
+    const dataDir = await makeDataDir();
+    // Simulate an interrupted undeploy: the tombstone was written but the
+    // record delete / dir reclaim did not complete (crash between write
+    // orders). A boot restore must NOT re-spawn it, and must reclaim the dir.
+    await writeWorkflowDeploymentRecord(dataDir, "dep-tombstoned", SINGLE_STEP);
+    await writeDeploymentTombstone(dataDir, "dep-tombstoned");
+    // A healthy deployment alongside it must still restore.
+    await writeWorkflowDeploymentRecord(dataDir, "dep-live", MULTI_STEP);
+
+    const scanned = await scanWorkflowDeploymentRecords(dataDir);
+    expect(scanned.map((s) => s.deploymentId)).toEqual(["dep-live"]);
+    // The tombstoned deployment's whole dir is reclaimed.
+    expect(
+      await fileExists(path.join(dataDir, "workflow-runs", "dep-tombstoned")),
+    ).toBe(false);
 
     await fs.rm(dataDir, { recursive: true, force: true });
   });

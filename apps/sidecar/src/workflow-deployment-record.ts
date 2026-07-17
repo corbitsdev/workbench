@@ -33,6 +33,40 @@ const logger = getLogger([
 
 const RECORD_FILENAME = "deployment.json";
 
+// WORKBENCH-LOCAL (CL-3368): resurrection-guard tombstone. Upstream's boot
+// restore re-spawns every on-disk deployment record; the hub's teardown is
+// fire-and-forget with only a boot-time 24h janitor, so a missed teardown plus
+// a sidecar-only restart would resurrect a terminated deployment forever. An
+// undeploy writes this durable tombstone (atomic) into the deployment's dir
+// BEFORE it deletes the record and reclaims the dir, so a crash between those
+// write orders cannot leave a record the restore path would re-spawn: restore
+// skips (and cleans) any dir carrying a tombstone. On a fully-successful
+// undeploy the dir — tombstone included — is reclaimed, so tombstones never
+// accumulate.
+const TOMBSTONE_FILENAME = "tombstone";
+
+function tombstonePath(dataDir: string, deploymentId: string): string {
+  return pathJoin(dataDir, "workflow-runs", deploymentId, TOMBSTONE_FILENAME);
+}
+
+/**
+ * WORKBENCH-LOCAL (CL-3368): mark a deployment as terminated so a later boot
+ * restore never re-spawns it. Written first in the undeploy teardown, before
+ * the record delete and dir reclaim. Idempotent.
+ */
+export async function writeDeploymentTombstone(
+  dataDir: string,
+  deploymentId: string,
+): Promise<void> {
+  const path = tombstonePath(dataDir, deploymentId);
+  await mkdir(dirname(path), { recursive: true });
+  await writeFileAtomicDurable(
+    path,
+    JSON.stringify({ version: 1, terminatedAt: new Date().toISOString() }),
+    { mode: 0o600 },
+  );
+}
+
 /** True for a `node:fs` rejection whose `code` is `ENOENT`. */
 function isENOENT(cause: unknown): boolean {
   return (
@@ -141,6 +175,28 @@ export async function scanWorkflowDeploymentRecords(
   for (const entry of entries) {
     if (!entry.isDirectory()) continue;
     const deploymentId = entry.name;
+
+    // WORKBENCH-LOCAL (CL-3368): a tombstoned dir is a deployment an undeploy
+    // began tearing down but whose record delete / dir reclaim was interrupted
+    // (crash between write orders). It must NOT be restored; reclaim the whole
+    // dir now so the terminated deployment is gone for good. Checked before the
+    // record read so a tombstone wins even if the record is still present.
+    let tombstoned = false;
+    try {
+      await readFile(tombstonePath(dataDir, deploymentId), "utf8");
+      tombstoned = true;
+    } catch (cause) {
+      if (!isENOENT(cause)) throw cause;
+    }
+    if (tombstoned) {
+      logger.warn`reclaiming tombstoned workflow-runs/${deploymentId}: an interrupted undeploy left it behind; not restoring`;
+      await rm(pathJoin(dataDir, "workflow-runs", deploymentId), {
+        recursive: true,
+        force: true,
+      });
+      continue;
+    }
+
     const path = recordPath(dataDir, deploymentId);
 
     let raw: string;

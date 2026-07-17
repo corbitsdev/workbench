@@ -72,6 +72,7 @@ import type {
 import {
   deleteWorkflowDeploymentRecord,
   scanWorkflowDeploymentRecords,
+  writeDeploymentTombstone,
   writeWorkflowDeploymentRecord,
   type WorkflowDeploymentRecord,
 } from "./workflow-deployment-record";
@@ -1949,6 +1950,15 @@ export function createSidecarDeployRouter(deps: {
     // frame racing the teardown is dropped at the router boundary rather than
     // dispatched into a supervisor mid child-teardown.
     const deploymentId = deriveDeploymentId(agentAddress);
+    // WORKBENCH-LOCAL (CL-3368): resurrection guard. On undeploy (reclaimDirs)
+    // write a durable tombstone BEFORE deleting the record or reclaiming the
+    // dir, so a crash between those write orders cannot leave a record the boot
+    // restore would re-spawn — the restore scan skips (and reclaims) any
+    // tombstoned dir. Hibernate (reclaimDirs: false) deliberately does NOT
+    // tombstone: its durable state must survive for the parked run to resume.
+    if (opts.reclaimDirs && stepStateDataDir !== undefined) {
+      await writeDeploymentTombstone(stepStateDataDir, deploymentId);
+    }
     deps.multistepMailRouter?.unregister(agentAddress);
     deps.multistepSignalRouter?.unregister(agentAddress);
     deps.multistepDrainRouter?.unregister(agentAddress);
