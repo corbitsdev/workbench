@@ -222,10 +222,10 @@ pack-recv-gc-*.pack`, plus bare `TypeError`s from torn `.idx` loads).
   now deploy as single-step `deployWorkflowDefinition` workflow deployments
   (see `apps/hub/src/services/agent-provisioning.ts`); wake-on-mail and
   idle-evict semantics re-home onto that deployment's own lifecycle (a warm
-  single-step deployment plus the CL-3104 hibernate teardown below and the
-  deployment-record restore in `workflow-deployment-record.ts`), not onto
+  single-step deployment plus the CL-3104 hibernate teardown below), not onto
   `session-manager.ts`. `session-manager.ts` itself is reduced to upstream's
-  thin serialization layer.
+  thin serialization layer. **Deployment-record restore was itself retired at
+  CL-3884** (2026-07-18) — see the note below the vendored-files table.
 - **RETIRED at the 6927e7e4 pin bump (2026-07-16, CL-3368): CL-3415
   (bootstrap-retry quarantine) and CL-3796 (retry-storm containment) are
   gone, not re-applied.** Both were mitigations against a corrupt-pack retry
@@ -350,7 +350,7 @@ Each row is a WORKBENCH-LOCAL divergence kept on top of the upstream copy.
 | 2026-07-08 | CL-3104 | `workflow-host-wiring.ts`                                | Hibernate flavor of the deploy-router teardown: the undeploy hook body moved into a shared `teardownDeployment(agentAddress, { reclaimDirs })`, and a new `hibernate` router method calls it with `reclaimDirs: false` — same residency teardown (routers, supervisor/child kill, CL-2340 drain barrier, slug, deployment mapping) but the CL-2231 owned-dirs rm and the `workflow-step-state/<deploymentId>` scratch rm are gated OFF, so a gate-parked run's durable state survives for the signal-driven resume. On a pin-bump re-sync, re-apply upstream undeploy changes INSIDE `teardownDeployment`, preserving both `reclaimDirs` gates. Guarded by `workflow-host-wiring-hibernate.test.ts`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
 | 2026-07-11 | CL-3379 | `workflow-substrate-factory.ts`                          | The `INLINE_INFERENCE_KIND` dispatch branch in `createSidecarStepInvoker` now threads this invocation's `onEvent` sink into `runInlineInferenceStep` (previously omitted, so inline single-turn steps — the heartbeat brief's per-member inference — silently discarded their whole event stream and never reached `analytics_event`). The sink is the same per-step `onEvent` the inference branch (`createWorkflowStepInvoker`) receives, which chains up through `buildStepInvoker` → the child `invokeStep` binding → `workflow-host-wiring.ts`'s `onInferenceEvent`/`publishInferenceEvent`, carrying the deployment's `agentAddress`/`sessionId` attribution — no new identity was fabricated. The actual forwarding loop lives in `apps/sidecar/src/inline-inference-step.ts` (WORKBENCH-OWNED, no upstream counterpart, so it carries no vendored-file audit burden): its stream-drain loop now forwards every non-`message.received` event to the sink instead of discarding it, swallowing a throwing sink so a downstream consumer's failure can never fail the step. Guarded by `apps/sidecar/src/inline-inference-step.test.ts`.                                                                                                                                                                                                                                                                                                                                    |
 | 2026-07-13 | CL-3468 | `child/run-child.ts`                                     | `resolveTriggerPayload` decodes hub run-start mail (`from: hub@…`, body `JSON.stringify(input)`) into a JSON object for `trigger.payload`; all other senders keep plain conversation text. Guarded by `packages/workflow-host/src/child/run-child.test.ts`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
-| 2026-07-16 | CL-3368 | `workflow-deployment-record.ts`, `atomic-write.ts`       | NEW verbatim vendors (no upstream counterpart) added at the 6927e7e4 pin bump. See "New vendors — 6927e7e4 pin bump" below.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| 2026-07-16 | CL-3368 | `workflow-deployment-record.ts`, `atomic-write.ts`       | NEW verbatim vendors (no upstream counterpart) added at the 6927e7e4 pin bump. **`workflow-deployment-record.ts` deleted at CL-3884 (2026-07-18)** — see "Deleted vendor — CL-3884 (2026-07-18)" below.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
 
 **Retired at the 6927e7e4 pin bump (2026-07-16, CL-3368), not carried forward:**
 CL-2400 (register-deployment-before-spawn ordering — upstream's own reconnect
@@ -364,39 +364,70 @@ branch `onAgentEvent` listener disposer — the trivial-launch branch it guarded
 does not exist on the new single-step-workflow launch path; the listener leak
 it fixed cannot recur because there is no more `trivialLaunch`).
 
-## New vendors — 6927e7e4 pin bump (2026-07-16)
+## Deleted vendor — CL-3884 (2026-07-18)
 
-### `apps/sidecar/src/workflow-deployment-record.ts` + `atomic-write.ts`
+### `apps/sidecar/src/workflow-deployment-record.ts` — DELETED
 
-Both are new verbatim-vendor files with no upstream counterpart (workbench-only
-sidecar-local persistence), added alongside the pin bump rather than carried
-forward from an older file — so each is a fresh vendor entry, not a re-sync.
+Added at the 6927e7e4 pin bump (see history below), deleted at CL-3884 along
+with every boot-time restore path in `workflow-host-wiring.ts`
+(`restoreWorkflowDeployments`, the deployment-record write/scan/delete calls,
+dormant markers) and the `index.ts` boot call that invoked restore. The
+sidecar no longer persists anything durable beyond the workflow-run substrate
+itself; a freshly-booted sidecar hosts nothing until the hub deploys to it.
 
-- `atomic-write.ts` is the shared `writeFileAtomicDurable` primitive (temp-file
-  write + fsync + rename) both `workflow-deployment-record.ts` and the CL-3368
-  tombstone below build on; no divergence to tag.
-- `workflow-deployment-record.ts` persists the per-deployment record needed to
-  re-establish a workflow deployment across a sidecar **process restart**
-  (co-located with the deployment's workflow-run substrate at
-  `${dataDir}/workflow-runs/<deploymentId>/deployment.json`). It carries:
-  - **WORKBENCH-LOCAL (CL-2199):** the tenant scope + raw hub deploymentId
-    (`ses_<id>`) the substrate env threading needs to rebuild
-    `SubstrateConfig` on restore — the same two keys `workflow-host-wiring.ts`
-    requires at deploy time (see the `WorkflowDeploySpec` note below), now
-    also durable across a process restart rather than frame/in-memory only.
-  - **WORKBENCH-LOCAL (CL-3368) — resurrection-guard tombstone.** Upstream's
-    boot restore re-spawns every on-disk deployment record unconditionally.
-    The hub's undeploy/teardown call is fire-and-forget with only a boot-time
-    24h janitor behind it, so a missed teardown ack plus a sidecar-only
-    process restart (not a full redeploy) would otherwise resurrect a
-    terminated deployment forever — its record still on disk, no live
-    tombstone to say it's done. An undeploy now writes a durable tombstone
-    (atomic, via `writeFileAtomicDurable`) into the deployment's directory
-    before the directory itself is reclaimed; boot-time restore checks for
-    the tombstone and skips re-spawning a tombstoned deployment, then reclaims
-    the now-stale directory. This closes WP-F2's "resurrection gap" as a
-    restore-time filter (not a periodic reclaim) — see
-    `a1db8aca6` and the WP-G integration test for the regression guard.
+Rationale: the hub is already the control plane for re-establishing every
+resident deployment — mail-wake re-deploys an idle single-step agent, gate
+signals plus the awaiting-prewarm re-establish a parked multi-step run, and
+the run-liveness sweep fails a running run whose child died with the sidecar
+process. The record-and-restore path duplicated that control-plane role
+sidecar-side for no case the hub didn't already cover, at the cost of the
+CL-2199 substrate-env persistence and the CL-3368 resurrection-guard tombstone
+below, both of which are retired with it (there is nothing left to guard
+against resurrecting once nothing is ever restored). A sources rotation
+(`sources.update`) is now a process-local respawn hint only: it survives a
+recycle respawn (the supervisor still holds `currentSources` in memory) but
+not a full sidecar restart — the hub-driven re-deploy re-resolves sources
+fresh, which is the native source of truth.
+
+`apps/sidecar/src/workflow-deployment-dirs.ts` is the small piece of that file
+kept as an owned (non-vendored) helper: `workflowDeploymentDir` (the pure path
+computation) and `reclaimWorkflowDeploymentDir` (the on-disk rm used when an
+undeploy has no in-memory supervisor to sweep via `ownedDirs`). Neither reads
+or writes a record — they operate on the directory itself.
+
+`apps/sidecar/src/atomic-write.ts` (the shared `writeFileAtomicDurable`
+primitive `workflow-deployment-record.ts` and its tombstone built on) has no
+other caller left in the sidecar; it is currently unused production code, kept
+as-is pending a follow-up cleanup decision.
+
+### `apps/sidecar/src/workflow-deployment-record.ts` + `atomic-write.ts` — history (6927e7e4 pin bump, 2026-07-16)
+
+Both were added as new verbatim-vendor files with no upstream counterpart
+(workbench-only sidecar-local persistence), added alongside the 6927e7e4 pin
+bump rather than carried forward from an older file. `workflow-deployment-record.ts`
+persisted the per-deployment record needed to re-establish a workflow
+deployment across a sidecar **process restart** (co-located with the
+deployment's workflow-run substrate at
+`${dataDir}/workflow-runs/<deploymentId>/deployment.json`). It carried:
+
+- **CL-2199:** the tenant scope + raw hub deploymentId (`ses_<id>`) the
+  substrate env threading needed to rebuild `SubstrateConfig` on restore — the
+  same two keys `workflow-host-wiring.ts` requires at deploy time (see the
+  `WorkflowDeploySpec` note below), also durable across a process restart
+  rather than frame/in-memory only.
+- **CL-3368 — resurrection-guard tombstone.** Upstream's boot restore
+  re-spawned every on-disk deployment record unconditionally. The hub's
+  undeploy/teardown call is fire-and-forget with only a boot-time 24h janitor
+  behind it, so a missed teardown ack plus a sidecar-only process restart (not
+  a full redeploy) could otherwise resurrect a terminated deployment forever —
+  its record still on disk, no live tombstone to say it's done. An undeploy
+  wrote a durable tombstone (atomic, via `writeFileAtomicDurable`) into the
+  deployment's directory before the directory itself was reclaimed; boot-time
+  restore checked for the tombstone and skipped re-spawning a tombstoned
+  deployment, then reclaimed the now-stale directory.
+
+Both mechanisms are retired at CL-3884 above — there is no boot-time restore
+left for a durable record or a tombstone to guard.
 
 ### `apps/sidecar/src/workflow-substrate-factory.ts` — acknowledged FORK
 
@@ -516,8 +547,9 @@ line:
   CL-3826**: all still address a live upstream gap at `6927e7e4` (verified
   per-block during the re-sync, not assumed) and were re-applied on top of
   the re-synced files.
-- **New:** CL-3368 (deployment-record resurrection-guard tombstone) closes a
-  gap this bump's own architecture change opened (see "New vendors" above);
+- **New:** CL-3368 (deployment-record resurrection-guard tombstone) closed a
+  gap this bump's own architecture change opened (see "Deleted vendor —
+  CL-3884" above — both the record and the tombstone it needed are retired);
   `workflow-substrate-factory.ts`'s FORK reclassification is a process change,
   not a new behavioral block.
 
