@@ -353,6 +353,38 @@ describe("WorkflowTracePage", () => {
     expect(screen.queryByTestId("trace-step-live-issue")).toBeNull();
   });
 
+  it("shows a live elapsed indicator for an in-flight step with startedAt", async () => {
+    logStateResponse = {
+      runId: "run-1",
+      phase: "running",
+      lastSeq: 1,
+      steps: [
+        {
+          stepId: "draft",
+          phase: "in-flight",
+          stepType: "agent",
+          currentAttempt: 1,
+          startedAt: new Date(Date.now() - 42_000).toISOString(),
+        },
+      ],
+    };
+    renderTrace();
+    await waitFor(() => {
+      screen.getByTestId("trace-step-elapsed");
+    });
+    expect(screen.getByTestId("trace-step-elapsed").textContent).toMatch(
+      /^Running · \d+s$/,
+    );
+  });
+
+  it("does not show an elapsed indicator for a completed step", async () => {
+    renderTrace();
+    await waitFor(() => {
+      expect(screen.getAllByTestId("trace-step").length).toBe(2);
+    });
+    expect(screen.queryByTestId("trace-step-elapsed")).toBeNull();
+  });
+
   it("steps the run timeline with keyboard and expands only the selected step", async () => {
     renderTrace();
     await waitFor(() => screen.getByRole("listbox"));

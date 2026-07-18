@@ -1,4 +1,8 @@
-import type { ChatAttachment, ChatMessage } from "@workbench/chat";
+import {
+  liftToParts,
+  type ChatAttachment,
+  type ChatMessage,
+} from "@workbench/chat";
 import type { MailAttachmentRef } from "@workbench/shared";
 
 export type { MailAttachmentRef };
@@ -35,6 +39,11 @@ export function buildAttachmentRefMap(
  * Attach persisted refs onto the transcript bubble that renders from their
  * mail id, skipping any the message already carries (by blobId) so the live
  * and reloaded renders are identical.
+ *
+ * Also re-lifts `parts` so the parts model carries matching `file` parts.
+ * composeChatMessages stamps parts from liftToParts *before* refs merge, and
+ * diverted mails go on the wire with empty attachments — without this re-lift,
+ * reloaded bubbles have chips (flat attachments) but no file parts.
  */
 export function mergeAttachmentRefs(
   messages: ChatMessage[],
@@ -47,7 +56,9 @@ export function mergeAttachmentRefs(
     const existingIds = new Set((m.attachments ?? []).map((a) => a.blobId));
     const additions = refs.filter((r) => !existingIds.has(r.blobId));
     if (additions.length === 0) return m;
-    return { ...m, attachments: [...(m.attachments ?? []), ...additions] };
+    const attachments = [...(m.attachments ?? []), ...additions];
+    const withAttachments = { ...m, attachments };
+    return { ...withAttachments, parts: liftToParts(withAttachments) };
   });
 }
 

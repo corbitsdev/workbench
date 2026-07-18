@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import type { ChatMessage } from "@workbench/chat";
+import type { ChatMessage, Part } from "@workbench/chat";
 import {
   buildAttachmentRefMap,
   isMailBlobId,
@@ -53,12 +53,16 @@ describe("mergeAttachmentRefs", () => {
       role: "user",
       content: "here is a doc",
       createdAt: "2026-07-14T00:00:00.000Z",
+      // composeChatMessages stamps parts from liftToParts before refs merge —
+      // diverted mails have text-only parts at this point.
+      parts: [{ type: "text", text: "here is a doc" }],
     },
     {
       id: "turn-1",
       role: "agent",
       content: "thanks",
       createdAt: "2026-07-14T00:00:01.000Z",
+      parts: [{ type: "text", text: "thanks" }],
     },
   ];
 
@@ -69,6 +73,38 @@ describe("mergeAttachmentRefs", () => {
       { blobId: "art-2", name: "pic.png", type: "image/png", size: 50 },
     ]);
     expect(merged[1]!.attachments).toBeUndefined();
+  });
+
+  it("rehydrates merged refs as file parts on the message", () => {
+    const merged = mergeAttachmentRefs(messages, buildAttachmentRefMap(refs));
+    const fileParts = (merged[0]!.parts ?? []).filter(
+      (p): p is Extract<Part, { type: "file" }> => p.type === "file",
+    );
+    expect(fileParts).toEqual([
+      {
+        type: "file",
+        mediaType: "application/pdf",
+        url: "blob:art-1",
+        filename: "report.pdf",
+        blobId: "art-1",
+        size: 100,
+      },
+      {
+        type: "file",
+        mediaType: "image/png",
+        url: "blob:art-2",
+        filename: "pic.png",
+        blobId: "art-2",
+        size: 50,
+      },
+    ]);
+    // Text part is preserved after the file parts (hydrated-tier layout).
+    expect(merged[0]!.parts?.at(-1)).toEqual({
+      type: "text",
+      text: "here is a doc",
+    });
+    // Agent message is untouched.
+    expect(merged[1]!.parts).toEqual([{ type: "text", text: "thanks" }]);
   });
 
   it("does not duplicate an attachment the message already carries", () => {
@@ -83,6 +119,17 @@ describe("mergeAttachmentRefs", () => {
             size: 100,
           },
         ],
+        parts: [
+          {
+            type: "file",
+            mediaType: "application/pdf",
+            url: "blob:art-1",
+            filename: "report.pdf",
+            blobId: "art-1",
+            size: 100,
+          },
+          { type: "text", text: "here is a doc" },
+        ],
       },
     ];
     const merged = mergeAttachmentRefs(
@@ -93,11 +140,57 @@ describe("mergeAttachmentRefs", () => {
       "art-1",
       "art-2",
     ]);
+    const fileBlobIds = (merged[0]!.parts ?? [])
+      .filter((p) => p.type === "file")
+      .map((p) => (p.type === "file" ? p.blobId : undefined));
+    expect(fileBlobIds).toEqual(["art-1", "art-2"]);
   });
 
   it("returns the input array untouched when the map is empty", () => {
     const merged = mergeAttachmentRefs(messages, new Map());
     expect(merged).toBe(messages);
+  });
+
+  it("returns the message identity when every ref is already present", () => {
+    const fullyHydrated: ChatMessage = {
+      ...messages[0]!,
+      attachments: [
+        {
+          blobId: "art-1",
+          name: "report.pdf",
+          type: "application/pdf",
+          size: 100,
+        },
+        {
+          blobId: "art-2",
+          name: "pic.png",
+          type: "image/png",
+          size: 50,
+        },
+      ],
+      parts: [
+        {
+          type: "file",
+          mediaType: "application/pdf",
+          url: "blob:art-1",
+          filename: "report.pdf",
+          blobId: "art-1",
+          size: 100,
+        },
+        {
+          type: "file",
+          mediaType: "image/png",
+          url: "blob:art-2",
+          filename: "pic.png",
+          blobId: "art-2",
+          size: 50,
+        },
+        { type: "text", text: "here is a doc" },
+      ],
+    };
+    const input = [fullyHydrated];
+    const merged = mergeAttachmentRefs(input, buildAttachmentRefMap(refs));
+    expect(merged[0]).toBe(fullyHydrated);
   });
 });
 

@@ -29,6 +29,7 @@ import {
   DEFAULT_WORKFLOW_CHILD_MAX_RSS_BYTES,
   deriveDeploymentId,
   RAW_DEPLOYMENT_ID_ENV_KEY,
+  recyclePolicyWantsRssTracking,
   resolveDefaultRecyclePolicy,
   STEP_INFERENCE_SOURCES_ENV_KEY,
   validateWorkflowProjection,
@@ -235,6 +236,127 @@ describe("createPidTrackingRssReader", () => {
     expect(readRssBytes()).toBe(2_000);
 
     expect(seenPids).toEqual([111, 222]);
+  });
+});
+
+describe("recyclePolicyWantsRssTracking", () => {
+  test("is true only when maxRssBytes is set", () => {
+    expect(recyclePolicyWantsRssTracking({ maxRssBytes: 1 })).toBe(true);
+    expect(recyclePolicyWantsRssTracking({})).toBe(false);
+    expect(
+      recyclePolicyWantsRssTracking({ maxUptimeMs: 1000, maxGrantsAgeMs: 2 }),
+    ).toBe(false);
+  });
+});
+
+describe("createSidecarWorkflowSupervisor RSS-tracking spawner gate", () => {
+  function pidReadingSpawner(): {
+    spawner: SubprocessSpawner;
+    pidWasRead: () => boolean;
+  } {
+    let pidWasRead = false;
+    const spawner: SubprocessSpawner = () => {
+      const controlChild = createMemoryNdjsonStream();
+      const eventChild = createMemoryFrameStream();
+      const handle: Partial<SubprocessHandle> = {
+        controlWriter: controlChild.writer,
+        controlReader: controlChild.reader,
+        eventReader: eventChild.reader,
+        kill: () => undefined,
+        exited: new Promise<number>(() => undefined),
+      };
+      Object.defineProperty(handle, "pid", {
+        get() {
+          pidWasRead = true;
+          return 4242;
+        },
+      });
+      return handle as SubprocessHandle;
+    };
+    return { spawner, pidWasRead: () => pidWasRead };
+  }
+
+  async function spawnAndSettle(
+    wired: ReturnType<typeof createSidecarWorkflowSupervisor>,
+  ): Promise<void> {
+    // The ready handshake never completes against this bare spawner, so the
+    // supervisor's spawn() call never resolves; only its synchronous
+    // pre-handshake work (calling subprocessSpawner and reading handle.pid
+    // off the result) is under test. Fire-and-forget with a swallowed
+    // rejection, then yield a few ticks for that synchronous work to run.
+    wired.supervisor
+      .spawn({ stepOrder: ["step-1"], definitionHash: "hash-1" })
+      .catch(() => undefined);
+    for (let i = 0; i < 5; i++) await Promise.resolve();
+  }
+
+  test("reads the child pid (tracking installed) when maxRssBytes is set", async () => {
+    const { spawner, pidWasRead } = pidReadingSpawner();
+    const wired = createSidecarWorkflowSupervisor({
+      transport: createInMemoryTransport(),
+      repoStore: createMinimalStubRepoStore(),
+      signingKeySeed: new Uint8Array(32),
+      workflowRunRepoId: { kind: "workflow-run", id: "rss-on" },
+      workflowRunRef: "refs/heads/main",
+      deploymentId: "rss-on",
+      stepCount: 1,
+      deploymentMailAddress: "rss-on@example.com",
+      deriveStepAddress: ({ deploymentId, stepId }) =>
+        `${deploymentId}-${stepId}@example.com`,
+      substrateEnv: {},
+      dynamicSpawnEnv: () => ({}),
+      subprocessSpawner: spawner,
+      recyclePolicy: { maxRssBytes: 1024 },
+    });
+
+    await spawnAndSettle(wired);
+    expect(pidWasRead()).toBe(true);
+  });
+
+  test("never reads the child pid (tracking skipped) when the recycle policy has no maxRssBytes", async () => {
+    const { spawner, pidWasRead } = pidReadingSpawner();
+    const wired = createSidecarWorkflowSupervisor({
+      transport: createInMemoryTransport(),
+      repoStore: createMinimalStubRepoStore(),
+      signingKeySeed: new Uint8Array(32),
+      workflowRunRepoId: { kind: "workflow-run", id: "rss-off" },
+      workflowRunRef: "refs/heads/main",
+      deploymentId: "rss-off",
+      stepCount: 1,
+      deploymentMailAddress: "rss-off@example.com",
+      deriveStepAddress: ({ deploymentId, stepId }) =>
+        `${deploymentId}-${stepId}@example.com`,
+      substrateEnv: {},
+      dynamicSpawnEnv: () => ({}),
+      subprocessSpawner: spawner,
+      recyclePolicy: {},
+    });
+
+    await spawnAndSettle(wired);
+    expect(pidWasRead()).toBe(false);
+  });
+
+  test("still forwards a non-empty recycle policy without maxRssBytes, just without pid tracking", async () => {
+    const { spawner, pidWasRead } = pidReadingSpawner();
+    const wired = createSidecarWorkflowSupervisor({
+      transport: createInMemoryTransport(),
+      repoStore: createMinimalStubRepoStore(),
+      signingKeySeed: new Uint8Array(32),
+      workflowRunRepoId: { kind: "workflow-run", id: "rss-uptime-only" },
+      workflowRunRef: "refs/heads/main",
+      deploymentId: "rss-uptime-only",
+      stepCount: 1,
+      deploymentMailAddress: "rss-uptime-only@example.com",
+      deriveStepAddress: ({ deploymentId, stepId }) =>
+        `${deploymentId}-${stepId}@example.com`,
+      substrateEnv: {},
+      dynamicSpawnEnv: () => ({}),
+      subprocessSpawner: spawner,
+      recyclePolicy: { maxUptimeMs: 60_000 },
+    });
+
+    await spawnAndSettle(wired);
+    expect(pidWasRead()).toBe(false);
   });
 });
 

@@ -226,6 +226,8 @@ Two paths reach it:
 - **User uploads a document to Myra** — the client diverts the document away from the inline-mail path to an upload endpoint, which stores it as a file **artifact**, runs the File Parser, and returns the extracted text. The client folds that text into the message (invisible to the rendered bubble) so Myra reasons over it, and shows the document as a chip. The document is never sent inline.
 - **An agent reads an existing file artifact** — a `parse_file` tool (hub-backed) runs the same parse turn on demand over an artifact the agent references.
 
+**Persist-but-don't-forward.** The hub mail route _does_ forward MIME attachments to the model: Interchange stores mail as raw MIME and `createInboundTurn` turns every attachment into an inline content block with no store-but-don't-forward flag. For a text-only model the workbench therefore keeps the chip and the model path separate — parsed text rides in a leading `<context>` block on the mail body, real attachments stay off the wire (`attachments: []`), and reference-only rows in `mail_attachment_ref` rehydrate chips and `file` parts after reload. See IMPLEMENTATION.md § File Parsing.
+
 The composer's attachment gate is **additive**: a parser-equipped agent accepts documents so a user can attach one, while the agent's _native_ capability — and the inline-mail guard that enforces it — stays unchanged (images-only for Myra). Documents therefore only ever flow through the parser, never inline to a doc-incapable model.
 
 ## Skill Library

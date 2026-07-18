@@ -126,6 +126,13 @@ export const LOCAL_ACTIONS: LocalAction[] = [
     script: "delete-tenant.ts",
     tenantAware: true,
   },
+  {
+    label: "Run Myra v1 prompt eval baseline (scripted / CI-safe)",
+    group: SETUP_GROUP,
+    // Lives under packages/myra — run via absolute path from REPO_ROOT.
+    script: "run-myra-eval-baseline.ts",
+    baseArgs: ["--runs", "3"],
+  },
 ];
 
 export interface LocalGroup {

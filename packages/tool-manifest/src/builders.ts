@@ -63,6 +63,26 @@ export function manifestFromHubToolEntries(opts: {
   };
 }
 
+/**
+ * Build `HubToolEntries` from a package's own runtime array of tool
+ * definitions (the same array its `interchange-tools.ts` factory dispatches).
+ * Each definition carries its own `sideEffect` inline — the classification is
+ * authored once, next to the tool it describes, so it can never drift from
+ * the runtime array the way a parallel hand-authored map could.
+ */
+export function hubToolEntriesFromDefinitions<
+  D extends { name: string; description?: string; sideEffect: ToolSideEffect },
+>(definitions: readonly D[]): HubToolEntries {
+  const entries: HubToolEntries = {};
+  for (const definition of definitions) {
+    entries[definition.name] = {
+      sideEffect: definition.sideEffect,
+      definition,
+    };
+  }
+  return entries;
+}
+
 export function manifestFromBareToolNames(opts: {
   factoryId: string;
   packageName: string;

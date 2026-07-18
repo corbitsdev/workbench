@@ -14,6 +14,7 @@ import {
 import { PendingRunSignalSchema } from "../workflow-executor/pending-signal";
 import type { EnsureDeploymentRoutableFn } from "../routes/workflow-runs";
 import type { ReclaimDeploymentFn } from "./workflow-deploy";
+import { escapeLikePattern } from "../lib/like-pattern";
 
 const log = getLogger(["services", "workflow-reconciler"]);
 
@@ -814,7 +815,10 @@ export function createWorkflowReconciler(deps: {
         .from(intxSchema.agentInstance)
         .where(
           and(
-            like(intxSchema.agentInstance.address, `ins_${rec.deploymentId}%`),
+            like(
+              intxSchema.agentInstance.address,
+              `ins_${escapeLikePattern(rec.deploymentId)}%`,
+            ),
             isNull(intxSchema.agentInstance.endedAt),
           ),
         )

@@ -1,5 +1,6 @@
 import { type } from "arktype";
 import type { ToolDefinition } from "@intx/types/runtime";
+import type { ToolSideEffect } from "@workbench/tool-manifest";
 
 /**
  * Read-only access to the tenant-visible skill library with progressive
@@ -9,8 +10,11 @@ import type { ToolDefinition } from "@intx/types/runtime";
  * attachment — they reach the whole library on demand rather than replacing it.
  */
 
-export const LIST_SKILLS_DEFINITION: ToolDefinition = {
+type SkillToolDefinition = ToolDefinition & { sideEffect: ToolSideEffect };
+
+export const LIST_SKILLS_DEFINITION: SkillToolDefinition = {
   name: "list_skills",
+  sideEffect: "read",
   description:
     "List every skill visible to you (the tenant-shared library plus your own private skills). Returns a cheap index — only {id, name, displayName, description} per skill, never the skill body. Use this to discover what skills exist, then load_skill to read one. Read-only.",
   inputSchema: {
@@ -20,8 +24,9 @@ export const LIST_SKILLS_DEFINITION: ToolDefinition = {
   },
 };
 
-export const SEARCH_SKILLS_DEFINITION: ToolDefinition = {
+export const SEARCH_SKILLS_DEFINITION: SkillToolDefinition = {
   name: "search_skills",
+  sideEffect: "read",
   description:
     "Search the skills visible to you by a free-text query, matched as a case-insensitive substring against each skill's name, display name, and description. Returns the same cheap index shape as list_skills ({id, name, displayName, description}) — never the skill body. If a search comes up empty, retry with different wording (synonyms or broader terms) before concluding no skill fits. Use load_skill to read a match. Read-only.",
   inputSchema: {
@@ -37,8 +42,9 @@ export const SEARCH_SKILLS_DEFINITION: ToolDefinition = {
   },
 };
 
-export const LOAD_SKILL_DEFINITION: ToolDefinition = {
+export const LOAD_SKILL_DEFINITION: SkillToolDefinition = {
   name: "load_skill",
+  sideEffect: "read",
   description:
     "Load the full content of one skill by its id (from list_skills or search_skills). Returns the SKILL.md body with its frontmatter stripped, plus the contents of any sibling files. Large content is truncated and binary files are omitted (each flagged), with a top-level notice when anything was dropped. Only skills visible to you can be loaded; an id you cannot see is reported as not found. Read-only.",
   inputSchema: {
@@ -54,8 +60,9 @@ export const LOAD_SKILL_DEFINITION: ToolDefinition = {
   },
 };
 
-export const LIST_SKILL_DRAFTS_DEFINITION: ToolDefinition = {
+export const LIST_SKILL_DRAFTS_DEFINITION: SkillToolDefinition = {
   name: "list_skill_drafts",
+  sideEffect: "read",
   description:
     "List your pending skill drafts — the ones awaiting your review under Skills → Pending drafts, not yet published. Returns a cheap index — only {id, name, description} per draft, never the SKILL.md body. Use this to find a draft to iterate on, then load_skill_draft to read it and skill_draft to save an improved version. Read-only.",
   inputSchema: {
@@ -65,8 +72,9 @@ export const LIST_SKILL_DRAFTS_DEFINITION: ToolDefinition = {
   },
 };
 
-export const LOAD_SKILL_DRAFT_DEFINITION: ToolDefinition = {
+export const LOAD_SKILL_DRAFT_DEFINITION: SkillToolDefinition = {
   name: "load_skill_draft",
+  sideEffect: "read",
   description:
     "Load the full content of one of your pending skill drafts by its id (from list_skill_drafts). Returns the SKILL.md body, the contents of any support files, and existingSkillId (the id of the published skill this draft revises, or null for a new skill). Large content is truncated (flagged), with a top-level notice when anything was dropped. Only your own pending drafts can be loaded; an id you do not own, or one that is no longer pending, is reported as not found. To save changes, call skill_draft with the same name. Read-only.",
   inputSchema: {
@@ -81,8 +89,9 @@ export const LOAD_SKILL_DRAFT_DEFINITION: ToolDefinition = {
   },
 };
 
-export const DRAFT_SKILL_DEFINITION: ToolDefinition = {
+export const DRAFT_SKILL_DEFINITION: SkillToolDefinition = {
   name: "skill_draft",
+  sideEffect: "write",
   description:
     "Create or update a pending skill draft (as a skill-draft artifact). Takes a stable name, optional description, the full SKILL.md body, and optional support files. Returns {draftId, version}. Drafts are NOT published — the human owner reviews and approves them under Skills → Pending drafts in the workbench UI. Tell the user that is where to open the draft. Drafts are deduplicated by principal+name.",
   inputSchema: {
@@ -125,7 +134,7 @@ export const DRAFT_SKILL_DEFINITION: ToolDefinition = {
   },
 };
 
-export const SKILL_TOOL_DEFINITIONS: readonly ToolDefinition[] = [
+export const SKILL_TOOL_DEFINITIONS: readonly SkillToolDefinition[] = [
   LIST_SKILLS_DEFINITION,
   SEARCH_SKILLS_DEFINITION,
   LOAD_SKILL_DEFINITION,
