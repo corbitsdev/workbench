@@ -68,4 +68,26 @@ describe("enrichTriggerPayloadForStart", () => {
     );
     expect(result.enabledSources).not.toEqual(["some-stale-caller-value"]);
   });
+
+  // resolveUserIdentity (apps/hub/src/index.ts) throws when the principal row
+  // is missing — a fail-loud invariant, not a fallback. A registered enricher
+  // must let that throw propagate rather than catching it and proceeding with
+  // an unenriched (and therefore argMap-breaking) payload: a run that can't
+  // resolve who it's firing for must fail the start, not silently deliver a
+  // trigger payload missing enabledSources/userAddress/userDisplayName.
+  test("propagates a resolveUserIdentity failure instead of falling back to an unenriched payload", async () => {
+    const identityError = new Error("principal not found: prn-ghost");
+    await expect(
+      enrichTriggerPayloadForStart(
+        {
+          db: makeDb(undefined) as HubDb,
+          resolveUserIdentity: async () => {
+            throw identityError;
+          },
+        },
+        { kind: "heartbeat", tenantId: "tn-1", principalId: "prn-ghost" },
+        { reason: "manual-brief" },
+      ),
+    ).rejects.toThrow("principal not found: prn-ghost");
+  });
 });

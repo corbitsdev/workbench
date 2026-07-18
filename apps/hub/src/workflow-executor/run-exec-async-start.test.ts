@@ -423,4 +423,31 @@ describe("startWorkflowRun trigger-payload enrichment for a registered kind", ()
     expect(stored).toEqual({ topic: "Acme", runId: result.state.runId });
     expect("enabledSources" in stored).toBe(false);
   });
+
+  // resolveUserIdentity (apps/hub/src/index.ts) throws when the principal row
+  // is missing. That throw must propagate all the way out of startWorkflowRun
+  // — fail loud, no fallback — rather than being swallowed so the run starts
+  // anyway with a payload missing the fields its steps depend on.
+  test("a heartbeat start whose identity cannot be resolved fails the start instead of proceeding unenriched", async () => {
+    reset();
+    const attempt = startWorkflowRun(
+      {
+        ...baseDeps(provisionOk),
+        db: makeHeartbeatDb(),
+        resolveUserIdentity: async () => {
+          throw new Error("principal not found: prn-ghost");
+        },
+      },
+      {
+        kind: "heartbeat",
+        chain: ["tn-1"],
+        principalId: "prn-ghost",
+        input: {},
+        originConversationId: null,
+      },
+    );
+    await expect(attempt).rejects.toThrow("principal not found: prn-ghost");
+    // No run row was seeded behind the failed identity resolution.
+    expect(rows.size).toBe(0);
+  });
 });
