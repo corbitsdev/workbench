@@ -1482,6 +1482,7 @@ v1.route(
       scheduler: config.scheduler.enabled,
       triage: config.triageEnabled,
       "tasks-reconciler": config.tasksReconciler.enabled,
+      "voice-input": false,
     },
   }),
 );

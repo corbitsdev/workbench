@@ -145,6 +145,7 @@ function buildApp(db: unknown) {
         scheduler: false,
         triage: false,
         "tasks-reconciler": false,
+        "voice-input": false,
       },
     }),
   );

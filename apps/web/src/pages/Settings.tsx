@@ -43,13 +43,10 @@ import { MyraInferenceDialsPanel } from "../components/MyraInferenceDialsPanel";
 import { MySchedules } from "../components/MySchedules";
 import { MORNING_BRIEF_ANCHOR_ID } from "./settings-section-nav";
 import { useMyraVoiceInput } from "../hooks/use-myra-voice-input";
-import {
-  isFeatureEnabled,
-  useMeFeatures,
-} from "../hooks/use-me-features";
+import { isFeatureEnabled, useMeFeatures } from "../hooks/use-me-features";
 
 function buildSections(
-  myraVoiceBuildEnabled: boolean,
+  voiceInputCapabilityEnabled: boolean,
 ): SettingsSectionDescriptor[] {
   return [
     {
@@ -100,15 +97,17 @@ function buildSections(
           description:
             "Preview calmer, higher-contrast artifact cards before they become the default.",
         },
-        {
-          key: "myraVoiceInput",
-          label: "Voice input in Myra",
-          kind: "toggle",
-          disabled: !myraVoiceBuildEnabled,
-          description: myraVoiceBuildEnabled
-            ? "Show the microphone control in the Myra composer to dictate messages."
-            : "Not available in this build. Deploy with VITE_MYRA_VOICE_INPUT enabled to use voice dictation.",
-        },
+        ...(voiceInputCapabilityEnabled
+          ? [
+              {
+                key: "myraVoiceInput",
+                label: "Voice input in Myra",
+                kind: "toggle" as const,
+                description:
+                  "Show the microphone control in the Myra composer to dictate messages.",
+              },
+            ]
+          : []),
       ],
     },
   ];
@@ -157,15 +156,15 @@ export default function Settings() {
   const { style: toolSummaryStyle, setStyle: setToolSummaryStyle } =
     useToolSummaryStyle();
   const {
-    buildEnabled: myraVoiceBuildEnabled,
+    capabilityEnabled: myraVoiceCapabilityEnabled,
     enabled: myraVoiceInput,
     setEnabled: setMyraVoiceInput,
   } = useMyraVoiceInput();
   const features = useMeFeatures();
   const schedulerEnabled = isFeatureEnabled(features.data, "scheduler");
   const sections = useMemo(
-    () => buildSections(myraVoiceBuildEnabled),
-    [myraVoiceBuildEnabled],
+    () => buildSections(myraVoiceCapabilityEnabled),
+    [myraVoiceCapabilityEnabled],
   );
   const queryClient = useQueryClient();
   const [values, setValues] = useState<SettingsValues>({ ...INITIAL_VALUES });
