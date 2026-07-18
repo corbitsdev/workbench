@@ -259,22 +259,21 @@ export function createWorkflowDeployService(deps: {
       (stepId) =>
         !inlineStepIds.has(stepId) && !deterministicStepIds.has(stepId),
     );
-    // Steps that keep an `agent` row: fully-deployed steps plus deterministic
-    // tool steps (CL-2252 — the tool endpoints 404 without it).
-    const agentRowStepIds = allStepIds.filter(
-      (stepId) => !inlineStepIds.has(stepId),
-    );
     // The orchestrator's per-step hook stages each step's tool tree on disk in
     // a production provision so the sidecar materializes the step's tools from
     // the deploy tree; the deploy also rebuilds each step from the other
     // hub-written artifacts (workflow.json, `state/grants.json`, the `agent`
     // row + the credential/grants hub rails) at execution time.
 
-    // Persist an `agent` row per step that needs one (deployed + deterministic
-    // tool). Interchange's launchSession never writes one, and the hub's
-    // tool-credential + manifest gate authorizes a step by that row's pins —
-    // every such step carries the same union pins the orchestrator hands it.
-    // Inline steps are skipped: no harness, no row.
+    // Persist `agent` rows UNIFORMLY for every step. Interchange's per-step
+    // staging fires for every stepOrder entry and its pack phase records a
+    // `session_asset` row (the tool-registry mount) whose FK chain requires
+    // an active `agent_instance` row — which itself FKs the `agent` row. The
+    // old inline/deterministic partitions repeatedly broke against those
+    // upstream invariants (ack resolution, session_asset FK), so every
+    // staged step now gets the full row pair; the rows are inert for steps
+    // that never use them. The hub's tool-credential + manifest gate also
+    // authorizes deterministic/deployed steps by this row's pins.
     const stepCapabilityNames = capabilityNames(walk);
     // TEMP-INSTRUMENTATION CL-2780
     const dbfanoutStart = performance.now();
@@ -283,7 +282,7 @@ export function createWorkflowDeployService(deps: {
       deploymentId: params.deploymentId,
       tenantId: params.tenantId,
       creatorPrincipalId: params.creatorPrincipalId,
-      stepIds: agentRowStepIds,
+      stepIds: allStepIds,
       toolPackagePins,
       capabilityNames: stepCapabilityNames,
     });
@@ -303,28 +302,21 @@ export function createWorkflowDeployService(deps: {
       capabilityNames: stepCapabilityNames,
     });
 
-    // Persist a per-step `agent_instance` row for each deployed step. Its
-    // original justification — that the orchestrator's per-step launch fires
-    // an `agent.deploy` whose ack `requireInstance`-resolves this row — is
-    // STALE as of CL-2782: the deployed-step `launchSession` is now no-op'd,
-    // so no per-step `agent.deploy.ack` fires and nothing reads this row's
-    // public key. The row is KEPT (safe inert: null sessionId, no reader)
-    // because CL-2705 per-step usage attribution joins it — activity-overview's
-    // `workflowOwnerByInstance` maps a step's synthetic principal back to the
-    // run owner via `member_agent_instance`, and deployed reasoning steps emit
-    // inference usage, so dropping the row would silently regress per-step
-    // attribution. Do NOT "clean up the dead row": it is load-bearing for
-    // attribution, not for the (now absent) launch. Inline and deterministic-
-    // tool steps declare no reasoning usage under a per-step instance, so they
-    // get no instance row.
+    // Persist `agent_instance` rows UNIFORMLY for every step (matching the
+    // agent-row write above). Interchange's pack phase inserts a
+    // `session_asset` row per staged attachment with a hard FK to
+    // `agent_instance` — a staged step without a row fails the whole
+    // provision at phase "pack". Deploy acks no longer read these rows
+    // (dep_-prefixed workflow addresses resolve against the
+    // `workflow_deployment` projection), and CL-2705 per-step usage
+    // attribution still joins them for reasoning steps; rows for inline /
+    // deterministic steps are inert beyond the FK.
     //
     // Both `agent_instance` writers (step + supervisor) are gated on the
     // supervisor frame: a catalog publish spawns no supervisor and runs no
     // steps, so writing active (`endedAt` NULL) instance rows for it would
-    // accumulate permanently-"live" phantom rows nothing ever ends — no
-    // deploy-ack resolves them, no run attributes usage under them, and only
-    // best-effort supersede teardown would ever touch them. Per-run deploys
-    // still write both.
+    // accumulate permanently-"live" phantom rows nothing ever ends. Per-run
+    // deploys still write both.
     if (sendSupervisorFrame) {
       await writeStepInstanceRows({
         db,
@@ -332,7 +324,7 @@ export function createWorkflowDeployService(deps: {
         deploymentDomain: params.deploymentDomain,
         tenantId: params.tenantId,
         creatorPrincipalId: params.creatorPrincipalId,
-        stepIds: deployedStepIds,
+        stepIds: allStepIds,
       });
     }
 
