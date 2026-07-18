@@ -396,9 +396,8 @@ undeploy has no in-memory supervisor to sweep via `ownedDirs`). Neither reads
 or writes a record — they operate on the directory itself.
 
 `apps/sidecar/src/atomic-write.ts` (the shared `writeFileAtomicDurable`
-primitive `workflow-deployment-record.ts` and its tombstone built on) has no
-other caller left in the sidecar; it is currently unused production code, kept
-as-is pending a follow-up cleanup decision.
+primitive `workflow-deployment-record.ts` and its tombstone built on) had no
+caller left, so it is DELETED with the record layer (same cleanup).
 
 ### `apps/sidecar/src/workflow-deployment-record.ts` + `atomic-write.ts` — history (6927e7e4 pin bump, 2026-07-16)
 
