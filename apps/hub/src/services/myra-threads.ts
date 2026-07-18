@@ -582,6 +582,16 @@ const TITLE_MODEL = "claude-haiku-4-5";
 const TITLE_SYSTEM_PROMPT =
   "Generate a concise 3-6 word title for a chat that begins with the user's message. Reply with ONLY the title — no quotes, no punctuation at the end.";
 
+/**
+ * Below this length a first message carries essentially no semantic content
+ * ("hi", "yo", "ok") — there is nothing for the title model to summarize, and
+ * this is exactly the degenerate case observed to produce a hallucinated,
+ * unrelated title (CL-3870). Skip the LLM turn entirely and keep the
+ * deterministic first-message fallback, which for a message this short is
+ * just the message itself (see myraThreadTitleFromFirstMessage).
+ */
+const MIN_TITLE_TURN_MESSAGE_LENGTH = 4;
+
 function isDefaultLabel(label: string | null | undefined): boolean {
   const trimmed = label?.trim() ?? "";
   if (trimmed === "") return true;
@@ -868,6 +878,10 @@ export async function generateMyraThreadTitle(
 
   const persisted = await persistFallback();
   if (!persisted) return null;
+
+  if (firstMessage.length < MIN_TITLE_TURN_MESSAGE_LENGTH) {
+    return persisted;
+  }
 
   try {
     const source = await resolveTitleSource(db, opts.tenantId);
