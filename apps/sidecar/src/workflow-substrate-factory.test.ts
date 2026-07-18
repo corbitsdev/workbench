@@ -29,6 +29,7 @@ import {
   createStepInferenceSourceResolver,
   createStepToolContextResolver,
   parseAdapterManifest,
+  parseStepInferenceSources,
 } from "./workflow-substrate-factory";
 import type { Principal, RepoId, RepoStore } from "@intx/hub-sessions";
 import {
@@ -46,38 +47,94 @@ const tmpDirs: string[] = [];
 const realFetch = globalThis.fetch;
 
 describe("createStepInferenceSourceResolver", () => {
-  const src = { provider: "openai-compatible", model: "m" } as InferenceSource;
-  const other = {
-    provider: "openai-compatible",
-    model: "n",
-  } as InferenceSource;
+  // Each step's pinned value is an ordered failover CHAIN (non-empty array),
+  // matching the `AgentDeployFrame` wire contract and the router's
+  // `JSON.stringify(spec.sources)`.
+  const chain = [
+    { provider: "openai-compatible", model: "m" },
+  ] as InferenceSource[];
+  const other = [
+    { provider: "openai-compatible", model: "n" },
+  ] as InferenceSource[];
+  const failoverChain = [
+    { provider: "openai-compatible", model: "primary" },
+    { provider: "openai-compatible", model: "backup" },
+  ] as InferenceSource[];
 
-  test("resolves a directly-pinned stepId", () => {
-    const resolve = createStepInferenceSourceResolver({ analyze: src });
-    expect(resolve("analyze")).toEqual(src);
+  test("resolves a directly-pinned stepId to its full chain", () => {
+    const resolve = createStepInferenceSourceResolver({ analyze: chain });
+    expect(resolve("analyze")).toEqual(chain);
   });
 
-  test("falls back a map-expanded stepId to its base step source", () => {
+  test("returns the whole failover chain, not just the head", () => {
+    const resolve = createStepInferenceSourceResolver({
+      analyze: failoverChain,
+    });
+    expect(resolve("analyze")).toEqual(failoverChain);
+    expect(resolve("analyze")).toHaveLength(2);
+  });
+
+  test("falls back a map-expanded stepId to its base step chain", () => {
     // `map` fans out `generate` into `generate[0]`, `generate[1]`, … at run
     // time; those dynamic ids are not in the statically-pinned table, so they
-    // must resolve to the base step's pinned source.
-    const resolve = createStepInferenceSourceResolver({ generate: src });
-    expect(resolve("generate[0]")).toEqual(src);
-    expect(resolve("generate[12]")).toEqual(src);
+    // must resolve to the base step's pinned chain.
+    const resolve = createStepInferenceSourceResolver({ generate: chain });
+    expect(resolve("generate[0]")).toEqual(chain);
+    expect(resolve("generate[12]")).toEqual(chain);
   });
 
   test("prefers a direct pin over the base fallback", () => {
     const resolve = createStepInferenceSourceResolver({
       generate: other,
-      "generate[0]": src,
+      "generate[0]": chain,
     });
-    expect(resolve("generate[0]")).toEqual(src);
+    expect(resolve("generate[0]")).toEqual(chain);
   });
 
   test("throws when neither the stepId nor its base is pinned", () => {
-    const resolve = createStepInferenceSourceResolver({ analyze: src });
+    const resolve = createStepInferenceSourceResolver({ analyze: chain });
     expect(() => resolve("generate[0]")).toThrow(/no InferenceSource pinned/);
     expect(() => resolve("missing")).toThrow(/no InferenceSource pinned/);
+  });
+});
+
+describe("parseStepInferenceSources", () => {
+  // The wire/router shape is `Record<stepId, InferenceSource[]>`: the deploy
+  // router serializes `spec.sources` (arrays) into STEP_INFERENCE_SOURCES.
+  // This is the exact payload the workflow-child crashed on when the parser
+  // was mistyped to a single `InferenceSource`.
+  const wireSource = {
+    id: "src-emit",
+    provider: "openai-compatible",
+    baseURL: "https://example.invalid",
+    apiKey: "sk-test",
+    model: "test-model",
+  };
+
+  test("accepts the router's array-shaped payload (regression)", () => {
+    const payload = JSON.stringify({
+      emit: [wireSource],
+      scrape: [wireSource],
+    });
+    const parsed = parseStepInferenceSources(payload);
+    expect(parsed.emit).toEqual([wireSource]);
+    expect(parsed.scrape).toEqual([wireSource]);
+  });
+
+  test("rejects a single-object (non-array) source shape", () => {
+    // A bare object per step is the mis-shape that silently broke every
+    // multi-step child spawn: the parser must demand the array contract.
+    const payload = JSON.stringify({ emit: wireSource });
+    expect(() => parseStepInferenceSources(payload)).toThrow(
+      /STEP_INFERENCE_SOURCES failed validation/,
+    );
+  });
+
+  test("rejects an empty chain for a step", () => {
+    const payload = JSON.stringify({ emit: [] });
+    expect(() => parseStepInferenceSources(payload)).toThrow(
+      /STEP_INFERENCE_SOURCES failed validation/,
+    );
   });
 });
 
@@ -174,7 +231,7 @@ describe("createSidecarStepInvoker", () => {
     } as unknown as Agent;
 
     const invoke = createSidecarStepInvoker({
-      table: { [STEP_ID]: SOURCE },
+      table: { [STEP_ID]: [SOURCE] },
       dataDir,
       signer: async () => "test-signature",
       directors: createDefaultDirectorRegistry(),
@@ -219,7 +276,7 @@ describe("createSidecarStepInvoker", () => {
 
     const directors = createDefaultDirectorRegistry();
     const invoke = createSidecarStepInvoker({
-      table: { [STEP_ID]: SOURCE },
+      table: { [STEP_ID]: [SOURCE] },
       dataDir,
       signer: async () => "sig",
       directors,
@@ -251,7 +308,7 @@ describe("createSidecarStepInvoker", () => {
     const dataDir = await makeDataDir();
     let factoryCalled = false;
     const invoke = createSidecarStepInvoker({
-      table: { [STEP_ID]: SOURCE },
+      table: { [STEP_ID]: [SOURCE] },
       dataDir,
       signer: async () => "sig",
       directors: createDefaultDirectorRegistry(),
@@ -278,7 +335,7 @@ describe("createSidecarStepInvoker", () => {
     const dataDir = await makeDataDir();
     let factoryCalled = false;
     const invoke = createSidecarStepInvoker({
-      table: { [STEP_ID]: SOURCE },
+      table: { [STEP_ID]: [SOURCE] },
       dataDir,
       signer: async () => "sig",
       directors: createDefaultDirectorRegistry(),
@@ -333,7 +390,7 @@ describe("createSidecarStepInvoker", () => {
       setSources: () => {},
     } as unknown as Agent;
     const invoke = createSidecarStepInvoker({
-      table: { [STEP_ID]: SOURCE },
+      table: { [STEP_ID]: [SOURCE] },
       dataDir,
       signer: async () => "sig",
       directors: createDefaultDirectorRegistry(),
@@ -380,7 +437,7 @@ describe("createSidecarStepInvoker", () => {
       };
     };
     const invoke = createSidecarStepInvoker({
-      table: { [STEP_ID]: SOURCE },
+      table: { [STEP_ID]: [SOURCE] },
       dataDir,
       signer: async () => "sig",
       directors: createDefaultDirectorRegistry(),
@@ -470,7 +527,7 @@ describe("createSidecarStepInvoker", () => {
 
     // No resolveStepToolContext wired — exactly the production inline path.
     const invoke = createSidecarStepInvoker({
-      table: { [STEP_ID]: SOURCE },
+      table: { [STEP_ID]: [SOURCE] },
       dataDir,
       signer: async () => "sig",
       directors: createDefaultDirectorRegistry(),
@@ -545,7 +602,7 @@ describe("createSidecarStepInvoker", () => {
     } as unknown as Agent;
 
     const invoke = createSidecarStepInvoker({
-      table: { [STEP_ID]: SOURCE },
+      table: { [STEP_ID]: [SOURCE] },
       dataDir,
       signer: async () => "sig",
       directors: createDefaultDirectorRegistry(),
@@ -610,7 +667,7 @@ describe("createSidecarStepInvoker", () => {
     } as unknown as Agent;
 
     const invoke = createSidecarStepInvoker({
-      table: { [STEP_ID]: SOURCE },
+      table: { [STEP_ID]: [SOURCE] },
       dataDir,
       signer: async () => "sig",
       directors: createDefaultDirectorRegistry(),
@@ -671,7 +728,7 @@ describe("createSidecarStepInvoker", () => {
     } as unknown as Agent;
 
     const invoke = createSidecarStepInvoker({
-      table: { [STEP_ID]: SOURCE },
+      table: { [STEP_ID]: [SOURCE] },
       dataDir,
       signer: async () => "sig",
       directors: createDefaultDirectorRegistry(),
@@ -776,7 +833,7 @@ describe("createSidecarStepInvoker", () => {
     };
 
     const invoke = createSidecarStepInvoker({
-      table: { [STEP_ID]: SOURCE },
+      table: { [STEP_ID]: [SOURCE] },
       dataDir,
       signer: async () => "sig",
       directors: createDefaultDirectorRegistry(),
@@ -950,7 +1007,7 @@ describe("warm-keep single-step durability", () => {
     const mirroredKeys: string[] = [];
 
     const invoke = createSidecarStepInvoker({
-      table: { [STEP_ID]: SOURCE },
+      table: { [STEP_ID]: [SOURCE] },
       dataDir,
       signer: async () => "sig",
       directors: createDefaultDirectorRegistry(),
@@ -993,7 +1050,7 @@ describe("warm-keep single-step durability", () => {
     let buildCount = 0;
     let closeCount = 0;
     const invoke = createSidecarStepInvoker({
-      table: { [STEP_ID]: SOURCE },
+      table: { [STEP_ID]: [SOURCE] },
       dataDir,
       signer: async () => "sig",
       directors: createDefaultDirectorRegistry(),
@@ -1058,7 +1115,7 @@ describe("supervisor-backed outbound transport wiring", () => {
     } as unknown as Agent;
 
     const invoke = createSidecarStepInvoker({
-      table: { [STEP_ID]: SOURCE },
+      table: { [STEP_ID]: [SOURCE] },
       dataDir,
       signer: async () => "sig",
       directors: createDefaultDirectorRegistry(),
@@ -1120,7 +1177,7 @@ describe("supervisor-backed outbound transport wiring", () => {
     } as unknown as Agent;
 
     const invoke = createSidecarStepInvoker({
-      table: { [STEP_ID]: SOURCE },
+      table: { [STEP_ID]: [SOURCE] },
       dataDir,
       signer: async () => "sig",
       directors: createDefaultDirectorRegistry(),
@@ -1285,7 +1342,7 @@ describe("live durable-conversation seam on a single-step (warmKeep) deploy", ()
     };
 
     const invoke = createSidecarStepInvoker({
-      table: { [STEP_ID]: SOURCE },
+      table: { [STEP_ID]: [SOURCE] },
       dataDir,
       workflowRunRepoId: repoId,
       signer: async () => "sig",

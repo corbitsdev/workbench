@@ -26,6 +26,7 @@ import {
   createSidecarDeployRouter,
   createSidecarWorkflowSupervisor,
   deriveDeploymentId,
+  RAW_DEPLOYMENT_ID_ENV_KEY,
   STEP_INFERENCE_SOURCES_ENV_KEY,
   validateWorkflowProjection,
 } from "./workflow-host-wiring";
@@ -384,6 +385,13 @@ type MultistepDeployArgs = {
    * tests (whose derived per-step repos do not parse the frame address).
    */
   agentAddress?: string;
+  /**
+   * Override the deploy frame's `agentId`. A production single-AGENT launch
+   * carries the REAL agent def id (`agt_<defId>`), which the router must NOT
+   * try to strip a deploymentId from; it recovers the raw id off the address
+   * instead. The default keeps the multi-step `ins_<deploymentId>` shape.
+   */
+  agentId?: string;
 };
 
 function makeInferenceSource(id: string): InferenceSourceFixture {
@@ -399,10 +407,15 @@ function makeInferenceSource(id: string): InferenceSourceFixture {
 function makeMultistepFrame(args: MultistepDeployArgs): AgentDeployFrame {
   return {
     type: "agent.deploy",
-    agentAddress: args.agentAddress ?? "multi@example.com",
-    // Orchestrator mints agentId as `ins_<deploymentId>`; the router's
-    // CL-2199 deriveRawDeploymentId requires that shape.
-    agentId: "ins_multi-agent",
+    // Production multi-step deployments carry the deployment-level address
+    // `ins_<deploymentId>@<domain>`, whose instance id equals the frame's
+    // `agentId`; the router's CL-2199 raw-deploymentId recovery reads the
+    // instance id off THIS address (`parseAgentId`), so the fixture must be
+    // the canonical `ins_<id>@<domain>` shape.
+    agentAddress: args.agentAddress ?? "ins_multi-agent@example.com",
+    // Orchestrator mints agentId as `ins_<deploymentId>`, matching the
+    // instance id of the address above.
+    agentId: args.agentId ?? "ins_multi-agent",
     hubPublicKey: "hub-pk",
     // The wire-side HarnessConfig has many required fields. On the workflow
     // deploy path the router reads `config.sessionId`, `config.grants`, and
@@ -741,9 +754,14 @@ describe("createSidecarDeployRouter multi-step branch", () => {
     expect(observedBinary).toBe("/fake/bin/multistep-workflow-child");
     expect(env).toMatchObject({
       SIDECAR_DATA_DIR: multiDataDir,
-      DEPLOYMENT_ID: "multi-example-com",
-      MAILBOX_ADDRESS: "multi@example.com",
+      DEPLOYMENT_ID: "ins_multi-agent-example-com",
+      MAILBOX_ADDRESS: "ins_multi-agent@example.com",
     });
+    // CL-2199 raw-deploymentId recovery: for a multi-step deploy the address's
+    // instance id (`ins_multi-agent`) equals the frame's `agentId`, so the
+    // recovered raw id is byte-identical to the prior
+    // `deriveRawDeploymentId(frame.agentId)` value.
+    expect(env[RAW_DEPLOYMENT_ID_ENV_KEY]).toBe("multi-agent");
     expect(env.DEFINITION_HASH).toBe(
       await computeWireDefinitionHash(definition),
     );
@@ -1139,6 +1157,48 @@ describe("createSidecarDeployRouter multi-step branch", () => {
     await expect(router.deploy(frame)).rejects.toThrow(
       /ENOENT: binary missing/,
     );
+  });
+
+  test("recovers the raw deploymentId off the address for a single-AGENT frame (agentId = agt_<x>) instead of throwing", async () => {
+    // Regression: production single-agent launches (Myra/Oat/triage) deploy
+    // through this router as a single-step workflow whose frame carries the
+    // REAL agent def id (`agt_<defId>`), NOT an `ins_<deploymentId>` shape.
+    // The prior recovery stripped `ins_` off `frame.agentId` and threw
+    // "cannot recover raw deploymentId" for every such launch (a provision-
+    // phase 503). Recovering off the address's instance id fixes it.
+    let observedEnv: Record<string, string> | undefined;
+    const capturingSpawner: SubprocessSpawner = ({ env }) => {
+      observedEnv = env;
+      // Fail the spawn with a benign error AFTER capturing the env: reaching
+      // the spawner at all proves the router got past the raw-id recovery.
+      throw new Error("ENOENT: benign spawn stop");
+    };
+
+    const { router } = await buildMultistepFixture({
+      spawner: capturingSpawner,
+    });
+
+    const frame = makeMultistepFrame({
+      agentId: "agt_myra_def",
+      agentAddress: "ins_realinst123@example.com",
+      definition: {
+        id: "wf_agt_myra_def",
+        triggers: [{ type: "manual" }],
+        stepOrder: ["default"],
+        steps: { default: { kind: "step" } },
+      },
+      sources: {
+        default: [makeInferenceSource("default")],
+      },
+    });
+
+    // Old code rejects with /cannot recover raw deploymentId/ BEFORE spawn;
+    // new code reaches the spawner and rejects with the benign spawn error.
+    await expect(router.deploy(frame)).rejects.toThrow(/benign spawn stop/);
+    expect(observedEnv).toBeDefined();
+    // Raw id is recovered off the address's instance id (`ins_realinst123`),
+    // not the un-strippable `agt_myra_def` agentId.
+    expect(observedEnv?.[RAW_DEPLOYMENT_ID_ENV_KEY]).toBe("realinst123");
   });
 
   test("rejects a malformed workflow projection at the router boundary before spawn fires", async () => {

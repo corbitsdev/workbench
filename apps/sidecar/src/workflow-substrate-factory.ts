@@ -224,13 +224,18 @@ export function parseByteCap(raw: string, name: string): number {
 /**
  * Per-step `InferenceSource` table parsed from the spawn-time
  * `STEP_INFERENCE_SOURCES` env entry. The deploy router serializes
- * `frame.workflow.sources` (a `Record<stepId, InferenceSource>`) as
- * JSON and threads it through the supervisor's `substrateEnv`; the
- * factory parses and validates the table once at construction time
- * and pins it for `buildEnv` lookups.
+ * `frame.workflow.sources` (a `Record<stepId, InferenceSource[]>` — an
+ * ordered, non-empty failover chain per step, matching the
+ * `AgentDeployFrame` wire contract `InferenceSource.array().atLeastLength(1)`)
+ * as JSON and threads it through the supervisor's `substrateEnv`; the
+ * factory parses and validates the table once at construction time and
+ * pins it for `buildEnv` lookups. The array shape must match upstream's
+ * reference sidecar and the router's `JSON.stringify(spec.sources)`; a
+ * single-source shape here rejects every real spawn's arrays at the child
+ * boundary.
  */
 const StepInferenceSourceTable = type({
-  "[string]": InferenceSource,
+  "[string]": InferenceSource.array().atLeastLength(1),
 });
 type StepInferenceSourceTable = typeof StepInferenceSourceTable.infer;
 
@@ -238,11 +243,13 @@ type StepInferenceSourceTable = typeof StepInferenceSourceTable.infer;
  * Parse and validate the JSON-encoded `STEP_INFERENCE_SOURCES` entry
  * the supervisor threaded through `substrateEnv`. A malformed JSON
  * payload, a non-object root, or a value that does not match
- * `Record<string, InferenceSource>` is rejected at the boundary with
- * a structured error rather than being deferred to a deep-stack
- * `buildEnv` failure.
+ * `Record<string, InferenceSource[]>` (a non-empty failover chain per
+ * step) is rejected at the boundary with a structured error rather than
+ * being deferred to a deep-stack `buildEnv` failure.
  */
-function parseStepInferenceSources(raw: string): StepInferenceSourceTable {
+export function parseStepInferenceSources(
+  raw: string,
+): StepInferenceSourceTable {
   let parsed: unknown;
   try {
     parsed = JSON.parse(raw);
@@ -303,17 +310,18 @@ export function parseAdapterManifest(raw: string): AdapterManifest {
 }
 
 /**
- * Resolve the per-step `InferenceSource` pinned at factory
- * construction. The supervisor's multi-step branch only invokes a
- * step whose `stepId` appears in `frame.workflow.sources`; a lookup
+ * Resolve the per-step `InferenceSource` failover chain pinned at
+ * factory construction. The supervisor's multi-step branch only invokes
+ * a step whose `stepId` appears in `frame.workflow.sources`; a lookup
  * miss here is a programmer error in the supervisor, not a wire-side
  * failure, and the resolver surfaces it with the missing `stepId`
- * named.
+ * named. Returns the ordered, non-empty chain (element 0 is the active
+ * source; the rest are failover targets the reactor advances through).
  */
 export function createStepInferenceSourceResolver(
   table: StepInferenceSourceTable,
-): (stepId: string) => InferenceSource {
-  return (stepId: string): InferenceSource => {
+): (stepId: string) => InferenceSource[] {
+  return (stepId: string): InferenceSource[] => {
     const direct = table[stepId];
     if (direct !== undefined) return direct;
     // `map` fan-out expands a single `stepOrder` entry `<base>` into per-item
@@ -326,8 +334,8 @@ export function createStepInferenceSourceResolver(
     const mapBase = /^(.+)\[\d+\]$/.exec(stepId);
     const base = mapBase?.[1];
     if (base !== undefined) {
-      const baseSource = table[base];
-      if (baseSource !== undefined) return baseSource;
+      const baseChain = table[base];
+      if (baseChain !== undefined) return baseChain;
     }
     throw new Error(
       `sidecar workflow-child step invoker buildEnv: no InferenceSource pinned for stepId ${JSON.stringify(stepId)}; the supervisor must populate frame.workflow.sources for every stepOrder entry`,
@@ -583,7 +591,17 @@ function createSidecarStepBuildEnv(
         "sidecar workflow-child step invoker buildEnv: AuthorizeContext.stepId is required for per-step InferenceSource resolution; the workflow runtime must populate stepId on every step-originated invocation",
       );
     }
-    const source = resolveStepInferenceSource(stepId);
+    const sources = resolveStepInferenceSource(stepId);
+    // The table's arktype (`InferenceSource.array().atLeastLength(1)`)
+    // guarantees a non-empty chain; assert it here so the reactor's
+    // initial-source pin (element 0) is a checked fact rather than an
+    // unchecked index.
+    const activeSource = sources[0];
+    if (activeSource === undefined) {
+      throw new Error(
+        `sidecar workflow-child step invoker buildEnv: empty InferenceSource chain pinned for stepId ${JSON.stringify(stepId)}`,
+      );
+    }
 
     // Per-run/per-step storage root under SIDECAR_DATA_DIR, keyed by
     // repoId + runId + stepId + attempt so concurrent steps never share
@@ -647,8 +665,8 @@ function createSidecarStepBuildEnv(
     await fs.promises.mkdir(workdir, { recursive: true });
 
     const env: StepEnvBase & Record<string, unknown> = {
-      sources: [source],
-      defaultSource: source.id,
+      sources,
+      defaultSource: activeSource.id,
       storage,
       workdir,
       audit,
