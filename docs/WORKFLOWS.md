@@ -94,36 +94,40 @@ every step**: `orchestrator.ts:489-500` loops over the prepared steps and
 before the single `sendMultiStepDeploy`. In that model a step **is** a launched
 agent.
 
-The workbench deliberately moved off this. A per-step launch is a full
+The workbench deliberately moved off this. A per-step SESSION is a full
 deploy → pack → build → start-WebSocket cycle (~1-2s each), and holding a live
 session per step was the measured **~3 GB RAM** driver on the shared sidecar (see
-[the session-per-step RAM finding](#why-the-divergence)). The workbench keeps the
-orchestrator API but **no-ops the launches** it does not need (below).
+[the session-per-step RAM finding](#why-the-divergence)). No step class holds a
+live per-step session; since the on-disk tool-tree cutover the orchestrator's
+per-step hook is interchange's **`stageWorkflowStep`** for every `stepOrder`
+entry — it stages the step's pinned tool closure on disk (no child, no session,
+no supervisor per step) and every step gets uniform `agent` + `agent_instance`
+rows (interchange's pack phase records a `session_asset` row per staged step
+with a hard FK to `agent_instance`; the former inline/deterministic row
+partitions are retired). Deploy acks for the `dep_`-prefixed per-run addresses
+resolve against the native `workflow_deployment` projection row, not the
+instance rows.
 
-### Step classes and the launch no-op knob
+### Step classes
 
 A step declares its class with a tag, `workbench.stepKind`
 (`packages/agents/src/deterministic-step.ts:13`):
 
-| Class                               | Author helper                                        | Tag value                    | Launches a session?    |
-| ----------------------------------- | ---------------------------------------------------- | ---------------------------- | ---------------------- |
-| **inline-inference**                | `inlineInferenceStep` (`deterministic-step.ts:183`)  | `inline-inference` (`:26`)   | No — no-op'd (CL-2251) |
-| **deterministic-tool**              | `deterministicToolStep` (`deterministic-step.ts:96`) | `deterministic-tool` (`:15`) | No — no-op'd (CL-2252) |
-| **deployed** (reasoning-with-tools) | plain `step({ agent })` with `defineAgent`           | _(no tag)_                   | No — no-op'd (CL-2782) |
+| Class                               | Author helper                                        | Tag value                    | Per-step session? |
+| ----------------------------------- | ---------------------------------------------------- | ---------------------------- | ----------------- |
+| **inline-inference**                | `inlineInferenceStep` (`deterministic-step.ts`)      | `inline-inference`           | No                |
+| **deterministic-tool**              | `deterministicToolStep` (`deterministic-step.ts`)    | `deterministic-tool`         | No                |
+| **deployed** (reasoning-with-tools) | plain `step({ agent })` with `defineAgent`           | _(no tag)_                   | No                |
 
-**No step class launches a per-step session (CL-2782, shipped).** The hub builds a
-`noLaunchAgentIds` set over **`allStepIds`** — every step's derived agent id, not
-just inline + deterministic (`workflow-deploy.ts:239-243`; step classes computed
-via `collectInlineStepIds` at `:1112` and `collectDeterministicToolStepIds` at
-`:1131`). `toLaunchSession` (`workflow-deploy.ts:1158`) short-circuits to a
-resolved no-op for any agent id in that set, so the `SessionService` is never
-touched for any step — the session-per-step RAM win (CL-2251/CL-2252),
-now extended to deployed reasoning steps (CL-2782). This is safe because step
-execution rebuilds everything from hub-written artifacts (the agent def from
-`workflow.json`, grants from `state/grants.json`, and tools via the hub-RPC rail
-gated on the persisted `agent` row) — nothing the running step reads came from a
-launch. The launched session was ~17s of serialized deploy → pack → session-start
-round-trips per deployed step; removing it took workflow start ~17s → ~2s.
+**No step class holds a per-step session.** Every step is STAGED (tool tree on
+disk + uniform DB rows) but never launched as a session; only the deployed
+reasoning class carries a grants file (`state/grants.json` — inline steps
+declare no tools, deterministic steps run against a hardcoded deny-all
+authorize). Step execution rebuilds everything from hub-written artifacts (the
+agent def from `workflow.json`, grants from `state/grants.json`, tools from the
+staged tool tree / hub rails gated on the persisted `agent` row). The historic
+launched-session model cost ~17s of serialized deploy → pack → session-start
+round-trips per deployed step; staging-only provisioning runs in ~1s/step.
 
 Each step executes the same way inside the child (step 5 above): the child's
 `createSidecarStepInvoker`
