@@ -303,6 +303,79 @@ describe("createSidecarStepInvoker", () => {
     expect(env.workdir).toContain(STEP_ID);
     // storage + audit are the same per-step isogit store (mirrors default-harness).
     expect(env.audit).toBe(env.storage as unknown as typeof env.audit);
+    // Cold multi-step path: no summarize compactor registered (CL-3806).
+    expect(
+      (env as BaseEnv & { compactors?: Record<string, unknown> }).compactors,
+    ).toBeUndefined();
+  });
+
+  test("warm durable-conversation path registers the summarize compactor (CL-3806)", async () => {
+    const dataDir = await makeDataDir();
+    const repoDir = await makeDataDir();
+    const repoId: RepoId = { kind: "workflow-run", id: "wfr_compactor_test" };
+    const principal: Principal = {
+      kind: "workflow-process",
+      deploymentId: "ses_compactor_test",
+    } as unknown as Principal;
+    const substrate = createOnDiskSubstrate(repoDir);
+
+    const durableStore = await createDurableConversationStore({
+      localStoreDir: path.join(dataDir, "compactor-store"),
+      signer: async () => "sig",
+      substrate,
+      workflowRunRepoId: repoId,
+      workflowRunRef: "refs/heads/main",
+      principal,
+      agentKey: STEP_ID,
+    });
+    const durableConversation: DurableConversationRegistry = {
+      get: () => durableStore,
+      acquire: async () => durableStore,
+    };
+
+    let capturedEnv: BaseEnv | undefined;
+    const stubAgent: Agent = {
+      send: async () => ({
+        reply: "ok",
+        turn: { role: "assistant", content: "ok" } as unknown as SendTurn,
+      }),
+      stream: () => ({
+        [Symbol.asyncIterator]: () => ({
+          next: () => Promise.resolve({ value: undefined, done: true }),
+        }),
+      }),
+      deliver: () => {},
+      close: async () => {},
+      setSource: () => {},
+      setSources: () => {},
+    } as unknown as Agent;
+
+    const invoke = createSidecarStepInvoker({
+      table: { [STEP_ID]: SOURCE },
+      dataDir,
+      workflowRunRepoId: repoId,
+      signer: async () => "sig",
+      directors: createDefaultDirectorRegistry(),
+      adapters: createBuiltinRegistry(),
+      evaluateGrants: allowAll,
+      durableConversation,
+      agentFactory: async (_def, env) => {
+        capturedEnv = env;
+        return stubAgent;
+      },
+    });
+
+    await invoke(makeRequest());
+
+    expect(capturedEnv).toBeDefined();
+    const compactors = (
+      capturedEnv as BaseEnv & {
+        compactors?: Record<string, { name?: string }>;
+      }
+    ).compactors;
+    expect(compactors).toBeDefined();
+    expect(compactors?.summarize).toBeDefined();
+    expect(compactors?.summarize?.name).toBe("summarize");
   });
 
   test("rejects a step request missing runId before building an agent", async () => {

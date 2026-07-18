@@ -25,10 +25,11 @@ import { SUMMARIZE_COMPACTOR_NAME } from "./summarize-compactor";
 /**
  * Whether the deployer wired the summarize compactor onto `env.compactors`
  * for this agent, as recorded at construction on `agent.compactorNames`
- * (the registry's own record of what got registered). Chat-facing agents
- * pick it up via the default harness; workflow-step agents do not — their
- * sidecar env never registers a compactor — so `withCompaction` uses this
- * to skip the wrap rather than fail construction for those agents.
+ * (the registry's own record of what got registered). Warm single-step
+ * agents pick it up via the sidecar `buildEnv` path (CL-3806); multi-step
+ * workflow steps register it the same way when sources are available.
+ * `withCompaction` uses this to skip the wrap rather than fail construction
+ * when the env never registered a compactor.
  */
 function hasSummarizeCompactor(agent: DirectorAgentContext): boolean {
   return agent.compactorNames.includes(SUMMARIZE_COMPACTOR_NAME);
@@ -41,7 +42,12 @@ function hasSummarizeCompactor(agent: DirectorAgentContext): boolean {
  * granola, firecrawl, dynamic-tools, and the three budget directors. The
  * wrap only activates when `hasSummarizeCompactor` confirms the agent's
  * env actually registered the compactor; agents that never register one
- * (workflow steps) get the plain, unwrapped director back.
+ * get the plain, unwrapped director back.
+ *
+ * Latch telemetry (CL-3806) is available via `CompactionDirectorOptions.onEvent`
+ * — under a sustained over-threshold breach the latch alternates fire /
+ * grace-skip. Unit tests assert on that stream; the sidecar logs cheap-model
+ * fallback at wire time without changing the self-healing policy.
  */
 function withCompaction<Config>(
   factory: AnnotatedDirectorFactory<Config>,
