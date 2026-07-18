@@ -38,6 +38,14 @@ const KIMI_K2_6: ModelInferenceCapabilities = {
   temperatureThinkingExclusive: true,
 };
 
+/** Same thinking-toggle shape as kimi-k2.6 (CL-3872) — default (null) dial keeps thinking off. */
+const KIMI_K3: ModelInferenceCapabilities = {
+  modelSlug: "kimi-k3",
+  creative: "temperature",
+  thinking: "thinking_toggle",
+  temperatureThinkingExclusive: true,
+};
+
 const CLAUDE_OPUS_4_8: ModelInferenceCapabilities = {
   modelSlug: "claude-opus-4-8",
   creative: "temperature",
@@ -48,6 +56,7 @@ const CLAUDE_OPUS_4_8: ModelInferenceCapabilities = {
 const MATRIX: Record<string, ModelInferenceCapabilities> = {
   "deepseek-v4-flash": DEEPSEEK_V4_FLASH,
   "kimi-k2.6": KIMI_K2_6,
+  "kimi-k3": KIMI_K3,
   "claude-opus-4-8": CLAUDE_OPUS_4_8,
 };
 
@@ -56,6 +65,7 @@ export function normalizeModelSlugForCapabilities(model: string): string {
   const lower = model.toLowerCase();
   if (lower.includes("deepseek") && lower.includes("flash"))
     return "deepseek-v4-flash";
+  if (lower.includes("kimi") && lower.includes("k3")) return "kimi-k3";
   if (
     lower.includes("kimi") &&
     (lower.includes("k2") || lower.includes("k2.6"))

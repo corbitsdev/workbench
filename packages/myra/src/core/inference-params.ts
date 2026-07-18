@@ -78,9 +78,10 @@ function mapThinkingToAnthropicEffort(
   return "high";
 }
 
+/** Any thinking-toggle model (kimi-k2.6, kimi-k3, ...) shares this apply path. */
 function isKimiModel(model: string): boolean {
   const caps = getModelInferenceCapabilities(model);
-  return caps?.modelSlug === "kimi-k2.6";
+  return caps?.thinking === "thinking_toggle";
 }
 
 function isOpusModel(model: string): boolean {
