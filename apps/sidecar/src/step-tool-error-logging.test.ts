@@ -55,15 +55,6 @@ afterEach(async () => {
 function stubHubFetch(): void {
   globalThis.fetch = (async (input: string | URL | Request) => {
     const url = String(input);
-    if (url.includes("/api/internal/tools/manifest")) {
-      return new Response(
-        JSON.stringify({
-          manifest: { schemaVersion: "1", topLevel: [], entries: [] },
-          tarballs: [],
-        }),
-        { headers: { "content-type": "application/json" } },
-      );
-    }
     if (url.includes("/api/internal/tools/credentials")) {
       return new Response(JSON.stringify({ credentials: {} }), {
         headers: { "content-type": "application/json" },
@@ -96,6 +87,9 @@ async function makeEnv(): Promise<Record<string, unknown>> {
       stepAddress: "ins_dep-render",
       principalId: "ins_dep-render",
       grants: [],
+      // No deploy/ subtree under storeDir → empty on-disk manifest → local
+      // tools only, enough to drive the deterministic failure-logging paths.
+      deployTreeDir: storeDir,
       cacheRoot: path.join(storeDir, "cache"),
       cacheMaxBytes: 1024 * 1024,
       registryMaxTarballBytes: 1024 * 1024,

@@ -11,6 +11,7 @@ import {
   createAssetService,
   createHubSessionLookups,
   createHubSessionOrchestrator,
+  bridgeOrchestratorDeployContent,
   createSessionService,
   createSidecarRouter,
   createSidecarTokenAuthenticator,
@@ -198,7 +199,6 @@ import { createInboxRouter } from "./routes/inbox";
 import { createMeTasksRouter } from "./routes/me-tasks";
 import { createHubToolsRouter } from "./routes/hub-tools";
 import { createToolCredentialsRouter } from "./routes/tool-credentials";
-import { createToolManifestRouter } from "./routes/tool-manifest";
 import { createInternalDeploymentsRouter } from "./routes/internal-deployments";
 import { buildToolDefinitions } from "./lib/tool-registry";
 import { schema } from "./db";
@@ -1498,6 +1498,17 @@ const workflowDeployService = createWorkflowDeployService({
   sidecarRouter,
   directorRegistry: createWorkbenchDirectorRegistry(),
   reclaimDeployment,
+  // Stage each multi-step step's pinned tool closure on disk (on-disk tool
+  // materialization) so the sidecar reads the step's tools from its deploy
+  // tree instead of the retired hub-RPC manifest rail.
+  stageWorkflowStep: (params) =>
+    sessionService.stageWorkflowStep({
+      ...params,
+      // The orchestrator's structural `DeployContent` (opaque
+      // `toolPackageManifest`) must be narrowed to the hub-sessions shape,
+      // exactly as interchange's own `launchSessionCallback` does.
+      deployContent: bridgeOrchestratorDeployContent(params.deployContent),
+    }),
 });
 
 const hubPublicKeyHex = hexEncode(registry.active.publicKey);
@@ -2134,10 +2145,6 @@ app.route(
 app.route(
   "/api/internal",
   createToolCredentialsRouter(db, config.sidecarToken),
-);
-app.route(
-  "/api/internal",
-  createToolManifestRouter(db, config.sidecarToken, assetService),
 );
 app.route(
   "/api/internal",

@@ -46,47 +46,12 @@ export const ToolCredentialsResponse = type({
 });
 export type ToolCredentialsResponse = typeof ToolCredentialsResponse.infer;
 
-// ─── Tool-package manifest rail (workflow steps) ───────────────────────
-//
-// A live agent receives its tool-package tarballs via the per-agent deploy
-// pack fan-out at `SessionService.launchSession`. A workflow STEP agent
-// runs in the shared `bin/workflow-child` and bypasses launchSession, so
-// it has no deploy pack on disk. This rail lets the step's in-process
-// harness fetch the same tenant-scoped, resolved manifest plus the raw
-// tarball bytes the live path materializes — over the hub's authenticated
-// channel, gated identically (by the step's persisted `agent` row pins).
-
-/** Request body for the hub's tool-package manifest+tarball resolution. */
-export const ToolManifestRequest = type({
-  tenantId: "string",
-  agentId: "string",
-});
-export type ToolManifestRequest = typeof ToolManifestRequest.infer;
-
-/** One materialized tarball: the asset mount + asset-relative path + bytes. */
-export const ToolManifestTarball = type({
-  assetId: "string",
-  /** assetRoot-relative mount dir, e.g. `package-registries/<name>/`. */
-  mount: "string",
-  /** mount-relative tarball path, e.g. `tarballs/<file>.tgz`. */
-  path: "string",
-  /** Base64-encoded tarball bytes. */
-  bytesBase64: "string",
-});
-export type ToolManifestTarball = typeof ToolManifestTarball.infer;
-
-/**
- * Response body: the resolved `ToolPackageManifest` (as opaque JSON the
- * sidecar re-validates against `@intx/types/tool-packages`) plus every
- * asset-sourced tarball the manifest references, with the mount each
- * `assetId` should be written under so the sidecar loader's `assetMounts`
- * map can be reconstructed.
- */
-export const ToolManifestResponse = type({
-  manifest: "unknown",
-  tarballs: ToolManifestTarball.array(),
-});
-export type ToolManifestResponse = typeof ToolManifestResponse.infer;
+// The tool-package manifest rail (`/api/internal/tools/manifest`, the
+// `ToolManifest*` request/response types) was retired in the on-disk
+// tool-materialization cutover: every deployed agent/step now reads its
+// pinned tool closure from the deploy tree the hub stages on disk
+// (`deployInstanceAtHead` / `stageWorkflowStep`), so there is no wire manifest
+// to fetch. The tool-CREDENTIAL rail below is unaffected and stays.
 
 /**
  * Thrown by `getToolCredential` when the env key is entirely absent — the

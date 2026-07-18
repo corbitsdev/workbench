@@ -99,36 +99,47 @@ async function packRealGammaToolPackage(): Promise<void> {
   tarballIntegrity = `sha512-${crypto.createHash("sha512").update(bytes).digest("base64")}`;
 }
 
+// Stage the resolved tool-package manifest + the real tarball on disk exactly
+// as the hub's deploy-time staging (`deployInstanceAtHead` / `stageWorkflowStep`)
+// would: `deploy/tool-packages-manifest.json`, `deploy/asset-mounts.json`, and
+// the tarball under `workspace/<mount>/<path>`. The sidecar then materializes
+// the pinned closure straight off disk — the on-disk model.
+async function stageDeployTree(deployTreeDir: string): Promise<void> {
+  const deployDir = path.join(deployTreeDir, "deploy");
+  await fs.promises.mkdir(deployDir, { recursive: true });
+  await fs.promises.writeFile(
+    path.join(deployDir, "tool-packages-manifest.json"),
+    JSON.stringify({
+      schemaVersion: "1",
+      topLevel: [{ name: PACKAGE_NAME, version: PACKAGE_VERSION }],
+      entries: [
+        {
+          name: PACKAGE_NAME,
+          version: PACKAGE_VERSION,
+          integrity: tarballIntegrity,
+          source: { kind: "asset", assetId: ASSET_ID, path: TARBALL_REL },
+        },
+      ],
+    }),
+  );
+  await fs.promises.writeFile(
+    path.join(deployDir, "asset-mounts.json"),
+    JSON.stringify({ assetMounts: { [ASSET_ID]: MOUNT } }),
+  );
+  const tarballDest = path.join(deployTreeDir, "workspace", MOUNT, TARBALL_REL);
+  await fs.promises.mkdir(path.dirname(tarballDest), { recursive: true });
+  await fs.promises.writeFile(
+    tarballDest,
+    Buffer.from(tarballBase64, "base64"),
+  );
+}
+
 function stubHubFetch(seenHubToolCalls: unknown[]): void {
   globalThis.fetch = (async (
     input: string | URL | Request,
     init?: RequestInit,
   ) => {
     const url = String(input);
-    if (url.includes("/api/internal/tools/manifest")) {
-      return Response.json({
-        manifest: {
-          schemaVersion: "1",
-          topLevel: [{ name: PACKAGE_NAME, version: PACKAGE_VERSION }],
-          entries: [
-            {
-              name: PACKAGE_NAME,
-              version: PACKAGE_VERSION,
-              integrity: tarballIntegrity,
-              source: { kind: "asset", assetId: ASSET_ID, path: TARBALL_REL },
-            },
-          ],
-        },
-        tarballs: [
-          {
-            assetId: ASSET_ID,
-            mount: MOUNT,
-            path: TARBALL_REL,
-            bytesBase64: tarballBase64,
-          },
-        ],
-      });
-    }
     if (url.includes("/api/internal/tools/credentials")) {
       // No gamma credential: the credentialed gamma factory fails to
       // construct and is skipped, proving the hub-backed gamma-templates
@@ -151,6 +162,10 @@ async function makeEnv(): Promise<Record<string, unknown>> {
   const storeDir = await fs.promises.mkdtemp(path.join(scratch, "step-store-"));
   const workdir = path.join(storeDir, "workspace");
   await fs.promises.mkdir(workdir, { recursive: true });
+  const deployTreeDir = await fs.promises.mkdtemp(
+    path.join(scratch, "deploy-tree-"),
+  );
+  await stageDeployTree(deployTreeDir);
   const storage = await createIsogitStore(storeDir, async (p: string) => p);
   const ctx: StepToolContext = {
     hubHttpUrl: "https://hub.test",
@@ -160,6 +175,7 @@ async function makeEnv(): Promise<Record<string, unknown>> {
     stepAddress: "ins_dep-list-templates",
     principalId: "ins_dep-list-templates",
     grants: [],
+    deployTreeDir,
     cacheRoot: path.join(storeDir, "cache"),
     cacheMaxBytes: 64 * 1024 * 1024,
     registryMaxTarballBytes: 64 * 1024 * 1024,

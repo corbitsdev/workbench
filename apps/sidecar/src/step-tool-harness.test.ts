@@ -45,22 +45,14 @@ afterEach(() => {
   globalThis.fetch = realFetch;
 });
 
-// The hub's manifest + credential endpoints. The manifest is empty (no
-// pinned packages) so the loader materializes zero tarballs — the test
-// targets the grants-backed `authorize` the step factory installs, which is
-// what gates whether a step's tool calls are permitted.
+// The hub's credential endpoint. The step's deploy tree is staged empty (no
+// pinned packages, see makeCtx), so the on-disk loader materializes zero tools
+// — the test targets the grants-backed `authorize` the step factory installs,
+// which is what gates whether a step's tool calls are permitted. Only the
+// credential rail is still a hub fetch.
 function stubHubFetch(): void {
   globalThis.fetch = (async (input: string | URL | Request) => {
     const url = String(input);
-    if (url.includes("/api/internal/tools/manifest")) {
-      return new Response(
-        JSON.stringify({
-          manifest: { schemaVersion: "1", topLevel: [], entries: [] },
-          tarballs: [],
-        }),
-        { headers: { "content-type": "application/json" } },
-      );
-    }
     if (url.includes("/api/internal/tools/credentials")) {
       return new Response(JSON.stringify({ credentials: {} }), {
         headers: { "content-type": "application/json" },
@@ -106,6 +98,9 @@ function makeCtx(
     stepAddress: "ins_dep-1-analyze",
     principalId: "ins_dep-1-analyze",
     grants,
+    // No deploy/ subtree under storeDir → the on-disk reader finds no manifest
+    // → zero pinned packages (the empty-manifest case).
+    deployTreeDir: storeDir,
     cacheRoot: path.join(storeDir, "cache"),
     cacheMaxBytes: 1024 * 1024,
     registryMaxTarballBytes: 1024 * 1024,

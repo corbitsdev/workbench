@@ -168,6 +168,13 @@ export function createWorkflowDeployService(deps: {
   // Optional: roll back a partial per-run deploy on failure. Absent in unit
   // tests that never exercise the failure path.
   reclaimDeployment?: ReclaimDeploymentFn;
+  // Per-step deploy-tree stager (interchange `SessionService.stageWorkflowStep`):
+  // for each multi-step step, resolves the step's pinned tool closure into a
+  // `deploy/tool-packages-manifest.json` + asset tarballs and stages them on
+  // disk at the step's address, so the sidecar materializes the step's tools
+  // from disk (the on-disk model) rather than the retired hub-RPC manifest
+  // fetch. Absent in unit tests / catalog-publish, where staging is a no-op.
+  stageWorkflowStep?: LaunchSessionFn;
 }): WorkflowDeployService {
   const { db, directorRegistry } = deps;
 
@@ -367,7 +374,15 @@ export function createWorkflowDeployService(deps: {
     const orchestrator = createWorkflowDeployOrchestrator({
       directorRegistry,
       workflowRepo: createWorkflowRepoWriter(deps.repoStore),
-      launchSession: noLaunchStepSession,
+      // On-disk cutover: stage each multi-step step's pinned tool closure to
+      // disk so the sidecar materializes it from the deploy tree. Only when
+      // actually provisioning a supervisor (sendSupervisorFrame) — catalog
+      // publish must not touch the sidecar — and only when a stager is
+      // injected (production); unit tests fall back to the no-op.
+      launchSession:
+        sendSupervisorFrame && deps.stageWorkflowStep !== undefined
+          ? deps.stageWorkflowStep
+          : noLaunchStepSession,
       // Catalog publish (sendSupervisorFrame=false) hands the orchestrator a
       // no-op that resolves without touching the sidecar, so the workflow repo
       // + capability walk run but no `agent.deploy` frame is sent and no
