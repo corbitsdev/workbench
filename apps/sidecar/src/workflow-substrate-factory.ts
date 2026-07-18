@@ -1532,14 +1532,16 @@ export function createSidecarSubstrateFactory(
       hubHttpUrl: wsUrlToHttp(validated.HUB_WS_URL),
       sidecarToken: validated.SIDECAR_TOKEN,
       // On-disk deploy-tree lookup: the hub stages each step's pinned tool
-      // closure at `<dataDir>/<sanitizeAddress(stepAddress)>`. `warmKeep`
-      // (single-step / single-agent) reads the tree at the head; a genuine
-      // multi-step deploy reads each step at its derived address. Only the
-      // `stepCount === 1` branch of `resolveStepAddress` is significant, so a
-      // multi-step deploy passes any count `> 1`.
+      // closure at `<dataDir>/<sanitizeAddress(stepAddress)>`. A single-step
+      // deploy reads the tree at the head; a genuine multi-step deploy reads
+      // each step at its derived address. `stepCount` is the real parsed
+      // `STEP_COUNT` (`env.spawn.stepCount`) and must drive step-address
+      // derivation directly — reconstructing it from `warmKeep` would
+      // mislocate a multi-step deploy tree if a future pin ever set
+      // `warmKeep` on a non-single-step deploy.
       dataDir: validated.SIDECAR_DATA_DIR,
       mailboxAddress: env.spawn.mailboxAddress,
-      stepCount: env.spawn.warmKeep ? 1 : 2,
+      stepCount: env.spawn.stepCount,
       cacheRoot: path.join(
         validated.SIDECAR_DATA_DIR,
         "cache",
