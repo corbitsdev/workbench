@@ -22,8 +22,22 @@ const doneEvent: InferenceEvent = {
   },
 };
 
+// SDK-synthesized "apology" reply the director sends via capabilities.reply()
+// when a turn's own inference cycle ends in an unrecoverable error (CL-3870)
+// — send() resolves with this text as if it were a real completion.
+const errorEvent: InferenceEvent = {
+  type: "inference.error",
+  seq: 3,
+  data: {
+    error: { category: "fatal", message: "credential error" },
+    partial: { text: "" },
+  },
+};
+
 let collectorEvents: string[] = [];
 let finalizeText = "Final Title";
+let streamEvent: InferenceEvent = doneEvent;
+let sendReply = "Reply Text";
 
 mock.module("@intx/agent", () => ({
   defineAgent: mock((def: unknown) => def),
@@ -31,10 +45,10 @@ mock.module("@intx/agent", () => ({
   createAgent: mock(() =>
     Promise.resolve({
       async *stream() {
-        yield doneEvent;
+        yield streamEvent;
         yield { type: "message.received", data: {} };
       },
-      send: mock(() => Promise.resolve({ reply: "Reply Text" })),
+      send: mock(() => Promise.resolve({ reply: sendReply })),
       close: mock(() => Promise.resolve()),
     }),
   ),
@@ -115,6 +129,8 @@ beforeEach(() => {
   finalizeText = "Final Title";
   lastCollectorConfig = null;
   collectorOnEvent.mockClear();
+  streamEvent = doneEvent;
+  sendReply = "Reply Text";
 });
 
 describe("runTrackedOneShot", () => {
@@ -201,5 +217,18 @@ describe("runTrackedOneShot", () => {
     const text = await runTrackedOneShot(baseOpts);
     expect(text).toBe("Reply Text");
     expect(collectorEvents).toEqual([]);
+  });
+
+  it("throws instead of returning the SDK's synthesized error reply when the turn's own inference cycle fails (CL-3870)", async () => {
+    // send() resolves normally with the director's apology text even though
+    // the turn's inference cycle ended in an unrecoverable error — the exact
+    // shape that let a failed title turn persist as if it were real output.
+    streamEvent = errorEvent;
+    sendReply =
+      "This agent could not complete your request due to a credential error [HTTP 402]: insufficient balance";
+
+    await expect(runTrackedOneShot(baseOpts)).rejects.toThrow(
+      /Inference turn failed \(fatal\): credential error/,
+    );
   });
 });

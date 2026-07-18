@@ -13,6 +13,11 @@ let agentShouldThrow = false;
 // When true, the agent's send() never resolves on its own; it settles only when
 // close() is invoked — models a turn wedged in the reactor/send path (CL-2866).
 let agentSendHangs = false;
+// When true, the turn's inference cycle ends in an unrecoverable
+// inference.error, but send() still resolves with the director's
+// SDK-synthesized apology reply (agentReply) as if it were real output
+// (CL-3870) — models a title-turn-local inference failure (e.g. 402).
+let agentInferenceErrors = false;
 // When true, close() never resolves — models the reported wedge, a hang in
 // post-inference teardown (close / audit-commit) that abort cannot unblock.
 let agentCloseHangs = false;
@@ -28,6 +33,7 @@ function resetTitleMocks() {
   agentReply = "Pricing Deep Dive";
   agentShouldThrow = false;
   agentSendHangs = false;
+  agentInferenceErrors = false;
   agentCloseHangs = false;
   agentCloseCalls = 0;
   titleTurnTimeoutMs = 45_000;
@@ -102,33 +108,44 @@ mock.module("@intx/agent", () => ({
     return Promise.resolve({
       async *stream() {
         yield { type: "inference.start", data: { model: "m" } };
-        // Schema-valid inference.done (seq + usage + source) so the real
-        // parseInferenceEvent in runTrackedOneShot accepts it and the title
-        // path's analytics forwarding actually fires (CL-2887 seam coverage).
-        yield {
-          type: "inference.done",
-          seq: 2,
-          data: {
-            turn: {
-              role: "assistant",
-              content: [],
-              model: "gpt-4o",
-              timestamp: 0,
+        if (agentInferenceErrors) {
+          yield {
+            type: "inference.error",
+            seq: 2,
+            data: {
+              error: { category: "fatal", message: "insufficient balance" },
+              partial: { text: "" },
             },
-            usage: {
-              input: 10,
-              output: 5,
-              cacheRead: 0,
-              cacheWrite: 0,
-              thinking: 0,
+          };
+        } else {
+          // Schema-valid inference.done (seq + usage + source) so the real
+          // parseInferenceEvent in runTrackedOneShot accepts it and the title
+          // path's analytics forwarding actually fires (CL-2887 seam coverage).
+          yield {
+            type: "inference.done",
+            seq: 2,
+            data: {
+              turn: {
+                role: "assistant",
+                content: [],
+                model: "gpt-4o",
+                timestamp: 0,
+              },
+              usage: {
+                input: 10,
+                output: 5,
+                cacheRead: 0,
+                cacheWrite: 0,
+                thinking: 0,
+              },
+              source: {
+                sourceId: "off_1",
+                provider: "openai-compatible",
+                model: "gpt-4o",
+              },
             },
-            source: {
-              sourceId: "off_1",
-              provider: "openai-compatible",
-              model: "gpt-4o",
-            },
-          },
-        };
+          };
+        }
         yield { type: "message.received", data: {} };
       },
       send: mock(() => {
@@ -1469,6 +1486,54 @@ describe("generateMyraThreadTitle", () => {
 
     expect(result).toBeNull();
     expect(findFirst).not.toHaveBeenCalled();
+  });
+
+  it("skips the LLM turn for a very short, content-free first message and keeps the fallback (CL-3870)", async () => {
+    resetTitleMocks();
+    const db = buildTitleDb({
+      mappingRow: { id: "map-1", instanceId: "inst-1", label: "Chat" },
+    });
+    const { labelRef } = captureRenameLabel(db);
+
+    // biome-ignore lint/suspicious/noExplicitAny: structural db mock
+    const result = await generateMyraThreadTitle(db as any, titleDeps, {
+      tenantId: "tn-global",
+      memberPrincipalId: "prn-member",
+      threadId: "map-1",
+      firstMessage: "hi",
+    });
+
+    // No inference turn ran — a message this short is degenerate input for a
+    // title model and is exactly the case observed to hallucinate an
+    // unrelated title.
+    expect(lastCreateEventCollectorConfig).toBeNull();
+    expect(labelRef.value).toBe("hi");
+    expect(result?.label).toBe("hi");
+  });
+
+  it("falls back to the first-message title when the title turn's own inference cycle fails, never persisting the SDK's synthesized error text (CL-3870)", async () => {
+    resetTitleMocks();
+    agentInferenceErrors = true;
+    // If this ever leaked through as the title, the assertions below would
+    // catch it.
+    agentReply =
+      "This agent could not complete your request due to a credential error [HTTP 402]: insufficient balance";
+    const db = buildTitleDb({
+      mappingRow: { id: "map-1", instanceId: "inst-1", label: "Chat" },
+    });
+    const { labelRef } = captureRenameLabel(db);
+
+    // biome-ignore lint/suspicious/noExplicitAny: structural db mock
+    const result = await generateMyraThreadTitle(db as any, titleDeps, {
+      tenantId: "tn-global",
+      memberPrincipalId: "prn-member",
+      threadId: "map-1",
+      firstMessage: "How should we price the enterprise tier?",
+    });
+
+    expect(labelRef.value).toBe("How should we price the enterprise tier");
+    expect(result?.label).toBe("How should we price the enterprise tier");
+    expect(labelRef.value).not.toContain("credential error");
   });
 });
 
