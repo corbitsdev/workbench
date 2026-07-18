@@ -1562,19 +1562,30 @@ describe("sidecar↔hub integration", () => {
         wfrRouter.getRoutableAddresses().includes(agentAddress),
       );
 
-      await expect(
-        client.pushWorkflowRunPack({
-          agentAddress,
-          repoId: { kind: "workflow-run", id: "dep-path-violation" } as const,
-          pack: new Uint8Array([1, 2, 3]),
-          ref: "refs/heads/events",
-          commitSha: "b".repeat(40),
-        }),
-      ).rejects.toThrow(/path_violation/);
+      const pushArgs = {
+        agentAddress,
+        repoId: { kind: "workflow-run", id: "dep-path-violation" } as const,
+        pack: new Uint8Array([1, 2, 3]),
+        ref: "refs/heads/events",
+        commitSha: "b".repeat(40),
+      };
+      await expect(client.pushWorkflowRunPack(pushArgs)).rejects.toThrow(
+        /path_violation/,
+      );
 
       // Exactly ONE receiver invocation: the deterministic rejection must
       // not trigger the bootstrap re-send.
       expect(receiveCount).toBe(1);
+
+      // A SECOND push to the same (repoId, ref) — the staging incident was
+      // recurrence ACROSS pushes (reconnect re-drives), each burning a
+      // retry. The key stays un-bootstrapped after a permanent rejection,
+      // so the second push must also send exactly once, not re-enter the
+      // bootstrap retry arm.
+      await expect(client.pushWorkflowRunPack(pushArgs)).rejects.toThrow(
+        /path_violation/,
+      );
+      expect(receiveCount).toBe(2);
     } finally {
       client.close();
       await waitFor(
