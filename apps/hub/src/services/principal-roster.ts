@@ -1,9 +1,9 @@
 import { schema as intxSchema } from "@intx/db";
 import { type } from "arktype";
-import { and, eq, inArray, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull, sql } from "drizzle-orm";
 
 import type { HubDb } from "../db";
-import { memberAgentInstance } from "../db/schema";
+import { memberAgentInstance, workflowRunRecord } from "../db/schema";
 import {
   listRunRecords,
   listTenantRunRecords,
@@ -59,16 +59,173 @@ export const PrincipalRosterSchema = type({
 });
 export type PrincipalRoster = typeof PrincipalRosterSchema.infer;
 
-// Lists the agent instances a principal owns and the workflow runs it started,
-// tenant-scoped. Instances come through the SAME workbench-owned
-// member_agent_instance -> agent_instance join `resolveTimelinePrincipalIds`
-// uses (tenant-pinned on both sides so an instance id reused in another tenant
-// cannot bleed across the boundary), extended to recover the instance's agent
-// name/status and a cheap per-instance session count. Runs reuse the run-index
-// `listRunRecords` (workflow_run_record.principalId is the owning member's
-// principal, not the instance's synthetic one), so the roster is the union of
-// "instances this user owns" and "runs this user started".
-export async function getPrincipalRoster(args: {
+async function sessionCountsForPrincipals(
+  db: HubDb,
+  tenantId: string,
+  syntheticIds: string[],
+): Promise<Map<string, number>> {
+  const sessionCounts = new Map<string, number>();
+  if (syntheticIds.length === 0) return sessionCounts;
+  const counts = await db
+    .select({
+      principalId: agentSession.principalId,
+      count: sql<number>`count(*)::int`,
+    })
+    .from(agentSession)
+    .where(
+      and(
+        eq(agentSession.tenantId, tenantId),
+        inArray(agentSession.principalId, syntheticIds),
+      ),
+    )
+    .groupBy(agentSession.principalId);
+  for (const c of counts) {
+    sessionCounts.set(c.principalId, Number(c.count));
+  }
+  return sessionCounts;
+}
+
+// Agent-principal path: the viewed id is an agent_instance.principal_id, so
+// ownership queries (member_agent_instance.member_principal_id / runs by
+// principal_id) are structurally empty. Surface the instance itself and runs
+// started from its conversation (origin_conversation_id = mapping id).
+async function getAgentPrincipalRoster(args: {
+  db: HubDb;
+  tenantId: string;
+  principalId: string;
+}): Promise<PrincipalRoster | null> {
+  const instanceRows = await args.db
+    .select({
+      instanceId: agentInstance.id,
+      principalId: agentInstance.principalId,
+      agentId: agentInstance.agentId,
+      name: agent.name,
+      status: agentInstance.status,
+      address: agentInstance.address,
+      updatedAt: agentInstance.updatedAt,
+    })
+    .from(agentInstance)
+    .innerJoin(agent, eq(agent.id, agentInstance.agentId))
+    .where(
+      and(
+        eq(agentInstance.tenantId, args.tenantId),
+        eq(agentInstance.principalId, args.principalId),
+      ),
+    );
+
+  if (instanceRows.length === 0) return null;
+
+  const instanceIds = instanceRows.map((r) => r.instanceId);
+  // Most-recent mapping first so display fields are deterministic when an
+  // instance has more than one member_agent_instance row.
+  const mappingRows = await args.db
+    .select({
+      id: memberAgentInstance.id,
+      instanceId: memberAgentInstance.instanceId,
+      templateKey: memberAgentInstance.templateKey,
+      label: memberAgentInstance.label,
+      lastActivityAt: memberAgentInstance.lastActivityAt,
+    })
+    .from(memberAgentInstance)
+    .where(
+      and(
+        eq(memberAgentInstance.tenantId, args.tenantId),
+        inArray(memberAgentInstance.instanceId, instanceIds),
+      ),
+    )
+    .orderBy(desc(memberAgentInstance.lastActivityAt));
+
+  // Prefer the most-recent mapping per instance for display fields; collect
+  // every mapping id so runs started from any of this instance's conversations
+  // land.
+  const mappingByInstance = new Map<string, (typeof mappingRows)[number]>();
+  const mappingIds: string[] = [];
+  for (const m of mappingRows) {
+    mappingIds.push(m.id);
+    if (!mappingByInstance.has(m.instanceId)) {
+      mappingByInstance.set(m.instanceId, m);
+    }
+  }
+
+  // STOPGAP — the real bug is on the write side, tracked in Linear: per-step
+  // and supervisor instance rows should carry a durable discriminator when
+  // written, so read paths never have to infer which rows are real. Until
+  // then, every consumer joining on principalId inherits this filter.
+  // `writeStepInstanceRows`/`writeDeploymentInstanceRow` (workflow-deploy.ts)
+  // both stamp every step's and the deployment-level (supervisor) instance row
+  // with `principalId: creatorPrincipalId` — the SAME value — so a single
+  // deployment now surfaces more than one `agent_instance` row under this
+  // principal: the real, member-mapped instance (the one users actually talk
+  // to) plus one inert, unmapped per-step row per step. Prefer the mapped
+  // row(s) when any exist so those phantom internal rows never surface as
+  // extra "instances" in the roster; fall back to the unmapped set only when
+  // NO row under this principal has a mapping at all (an admin/dispatched
+  // instance that is intentionally never given one).
+  const mappedInstanceRows = instanceRows.filter((r) =>
+    mappingByInstance.has(r.instanceId),
+  );
+  const effectiveInstanceRows =
+    mappedInstanceRows.length > 0 ? mappedInstanceRows : instanceRows;
+
+  const sessionCounts = await sessionCountsForPrincipals(
+    args.db,
+    args.tenantId,
+    effectiveInstanceRows.map((r) => r.principalId),
+  );
+
+  const instances = effectiveInstanceRows
+    .map((r) => {
+      const mapping = mappingByInstance.get(r.instanceId);
+      return {
+        instanceId: r.instanceId,
+        principalId: r.principalId,
+        agentId: r.agentId,
+        name: r.name,
+        status: r.status,
+        sessionCount: sessionCounts.get(r.principalId) ?? 0,
+        templateKey: mapping?.templateKey ?? "unknown",
+        label: mapping?.label ?? null,
+        lastActivityAt: (mapping?.lastActivityAt ?? r.updatedAt).toISOString(),
+        address: r.address,
+      };
+    })
+    .sort((a, b) => a.name.localeCompare(b.name));
+
+  let runs: RosterRun[] = [];
+  if (mappingIds.length > 0) {
+    const runRows = await args.db
+      .select({
+        runId: workflowRunRecord.id,
+        kind: workflowRunRecord.kind,
+        status: workflowRunRecord.status,
+      })
+      .from(workflowRunRecord)
+      .where(
+        and(
+          eq(workflowRunRecord.tenantId, args.tenantId),
+          isNull(workflowRunRecord.deletedAt),
+          inArray(workflowRunRecord.originConversationId, mappingIds),
+        ),
+      )
+      .orderBy(desc(workflowRunRecord.createdAt));
+    runs = runRows.map((r) => ({
+      runId: r.runId,
+      kind: r.kind,
+      status: r.status,
+    }));
+  }
+
+  const parsed = PrincipalRosterSchema({ instances, runs });
+  if (parsed instanceof type.errors) {
+    throw new Error(`Principal roster failed validation: ${parsed.summary}`);
+  }
+  return parsed;
+}
+
+// Member-ownership path: instances via member_agent_instance and runs via
+// workflow_run_record.principalId. Shared by getPrincipalRoster so the agent
+// path is only probed when this returns empty (common case is a user).
+async function getUserPrincipalRoster(args: {
   db: HubDb;
   tenantId: string;
   principalId: string;
@@ -101,26 +258,11 @@ export async function getPrincipalRoster(args: {
       ),
     );
 
-  const syntheticIds = instanceRows.map((r) => r.principalId);
-  const sessionCounts = new Map<string, number>();
-  if (syntheticIds.length > 0) {
-    const counts = await args.db
-      .select({
-        principalId: agentSession.principalId,
-        count: sql<number>`count(*)::int`,
-      })
-      .from(agentSession)
-      .where(
-        and(
-          eq(agentSession.tenantId, args.tenantId),
-          inArray(agentSession.principalId, syntheticIds),
-        ),
-      )
-      .groupBy(agentSession.principalId);
-    for (const c of counts) {
-      sessionCounts.set(c.principalId, Number(c.count));
-    }
-  }
+  const sessionCounts = await sessionCountsForPrincipals(
+    args.db,
+    args.tenantId,
+    instanceRows.map((r) => r.principalId),
+  );
 
   const instances = instanceRows
     .map((r) => ({
@@ -153,6 +295,30 @@ export async function getPrincipalRoster(args: {
     throw new Error(`Principal roster failed validation: ${parsed.summary}`);
   }
   return parsed;
+}
+
+// Lists the agent instances a principal owns and the workflow runs it started,
+// tenant-scoped. For a USER principal: instances via member_agent_instance and
+// runs via workflow_run_record.principalId. For an AGENT principal (an
+// agent_instance.principal_id): the instance itself and runs started from its
+// conversation (origin_conversation_id = member_agent_instance.id).
+//
+// User ownership is tried first so the common member path does not pay an
+// agent_instance probe; the agent path runs only when ownership is empty.
+export async function getPrincipalRoster(args: {
+  db: HubDb;
+  tenantId: string;
+  principalId: string;
+}): Promise<PrincipalRoster> {
+  const userRoster = await getUserPrincipalRoster(args);
+  if (userRoster.instances.length > 0 || userRoster.runs.length > 0) {
+    return userRoster;
+  }
+
+  const agentRoster = await getAgentPrincipalRoster(args);
+  if (agentRoster !== null) return agentRoster;
+
+  return userRoster;
 }
 
 // The tenant-wide roster reuses the same per-item shapes as the principal
@@ -201,26 +367,11 @@ export async function getTenantRoster(args: {
     .innerJoin(agent, eq(agent.id, agentInstance.agentId))
     .where(eq(memberAgentInstance.tenantId, args.tenantId));
 
-  const syntheticIds = instanceRows.map((r) => r.principalId);
-  const sessionCounts = new Map<string, number>();
-  if (syntheticIds.length > 0) {
-    const counts = await args.db
-      .select({
-        principalId: agentSession.principalId,
-        count: sql<number>`count(*)::int`,
-      })
-      .from(agentSession)
-      .where(
-        and(
-          eq(agentSession.tenantId, args.tenantId),
-          inArray(agentSession.principalId, syntheticIds),
-        ),
-      )
-      .groupBy(agentSession.principalId);
-    for (const c of counts) {
-      sessionCounts.set(c.principalId, Number(c.count));
-    }
-  }
+  const sessionCounts = await sessionCountsForPrincipals(
+    args.db,
+    args.tenantId,
+    instanceRows.map((r) => r.principalId),
+  );
 
   const instances = instanceRows
     .map((r) => ({
