@@ -1,6 +1,9 @@
 import type { AgentTool } from "@intx/agent";
 import type { ToolDefinition } from "@intx/types/runtime";
+import type { ToolSideEffect } from "@workbench/tool-manifest";
 import { type } from "arktype";
+
+type AbCompareToolDefinition = ToolDefinition & { sideEffect: ToolSideEffect };
 
 // ---------------------------------------------------------------------------
 // A/B-preset workflow helpers (deterministic — no inference, no credentials).
@@ -160,8 +163,9 @@ export function readPresetVariants(args: Record<string, unknown>): {
   return { variants, survived, total: metas.length };
 }
 
-export const AB_PRESET_QUORUM_DEFINITION: ToolDefinition = {
+export const AB_PRESET_QUORUM_DEFINITION: AbCompareToolDefinition = {
   name: "ab_preset_quorum",
+  sideEffect: "read",
   description:
     "Internal A/B-preset workflow helper. Fail the run before the human decision when fewer than the required number of variants produced an answer, so a doomed comparison never reaches the winner-pick gate.",
   inputSchema: { type: "object", additionalProperties: true },
@@ -182,8 +186,9 @@ export function enforcePresetQuorum(args: Record<string, unknown>): {
   return { survived, total };
 }
 
-export const AB_PRESET_COMPOSE_DEFINITION: ToolDefinition = {
+export const AB_PRESET_COMPOSE_DEFINITION: AbCompareToolDefinition = {
   name: "ab_preset_compose",
+  sideEffect: "read",
   description:
     "Internal A/B-preset workflow helper. Fold the fixed variant metadata, each variant's inline-step output, and the human ranking into one structured comparison artifact payload.",
   inputSchema: { type: "object", additionalProperties: true },
@@ -258,7 +263,7 @@ export function createAbCompareTools(): AgentTool[] {
   return [createPresetQuorumTool(), createPresetComposeTool()];
 }
 
-export const AB_COMPARE_TOOL_DEFINITIONS: ToolDefinition[] = [
+export const AB_COMPARE_TOOL_DEFINITIONS: AbCompareToolDefinition[] = [
   AB_PRESET_QUORUM_DEFINITION,
   AB_PRESET_COMPOSE_DEFINITION,
 ];
