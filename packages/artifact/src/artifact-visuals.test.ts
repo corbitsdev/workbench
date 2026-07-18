@@ -40,6 +40,28 @@ describe("visualForKind", () => {
   it("labels image artifacts as images", () => {
     expect(visualForKind("image").label).toBe("Image");
   });
+
+  it("labels an A/B comparison artifact 'Comparison', not the generic 'Document' fallback", () => {
+    expect(visualForKind("ab-comparison").label).toBe("Comparison");
+  });
+
+  it("labels presentation kinds 'Presentation', not 'Document'", () => {
+    expect(visualForKind("presentation").label).toBe("Presentation");
+    expect(visualForKind("gamma_presentation").label).toBe("Presentation");
+  });
+
+  it("labels a CSV export 'CSV', not 'Document'", () => {
+    expect(visualForKind("csv-export").label).toBe("CSV");
+  });
+
+  it("labels a generic file artifact 'File', not 'Document'", () => {
+    expect(visualForKind("file").label).toBe("File");
+  });
+
+  it("labels web/web_site kinds 'Web page'", () => {
+    expect(visualForKind("web").label).toBe("Web page");
+    expect(visualForKind("web_site").label).toBe("Web page");
+  });
 });
 
 describe("toGalleryArtifact", () => {
@@ -135,6 +157,37 @@ describe("toGalleryArtifact", () => {
       content: '{"id": 1}',
     });
     expect("previewExcerpt" in gallery).toBe(false);
+  });
+
+  it("summarizes a comparison artifact as 'Winner: <label> · N variants' instead of a prose excerpt", () => {
+    const comparison = {
+      ...base,
+      kind: "ab-comparison",
+      content: JSON.stringify({
+        ranking: [
+          { rank: 1, label: "Claude Opus" },
+          { rank: 2, label: "GPT-5" },
+        ],
+        variants: [
+          { label: "Claude Opus", content: "..." },
+          { label: "GPT-5", content: "..." },
+        ],
+      }),
+    } as ArtifactWithSession;
+    expect(toGalleryArtifact(comparison).previewExcerpt).toBe(
+      "Winner: Claude Opus · 2 variants",
+    );
+  });
+
+  it("falls back to the prose excerpt when comparison content fails to parse", () => {
+    const corruptComparison = {
+      ...base,
+      kind: "ab-comparison",
+      content: "not valid json",
+    } as ArtifactWithSession;
+    expect(toGalleryArtifact(corruptComparison).previewExcerpt).toBe(
+      "not valid json",
+    );
   });
 
   it("returns empty time string for an unparseable timestamp (NaN guard)", () => {

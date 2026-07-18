@@ -87,7 +87,7 @@ describe("artifact-visuals", () => {
 
   it("uses the web visual for single-file HTML artifacts", () => {
     expect(visualForKind("web")).toMatchObject({
-      label: "Web",
+      label: "Web page",
       viz: "deck",
       fill: "bg-blue",
     });
