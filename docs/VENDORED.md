@@ -258,14 +258,34 @@ pack-recv-gc-*.pack`, plus bare `TypeError`s from torn `.idx` loads).
   `src/assistant-loop-guard.test.ts` and
   `src/session-manager-assistant-loop.test.ts`.
   **Status after the 6927e7e4 pin bump (2026-07-16):** `assistant-loop-guard.ts`
-  itself is preserved verbatim, but its wiring point — the `session-manager.ts`
-  per-session `onEvent` wrapper — is gone with the in-process harness runtime
-  it wrapped. The guard is currently **unwired** (present in the tree, not
-  called from anywhere): it needs a new home on the sidecar's
-  inference-event path (`workflow-host-wiring.ts`'s `onInferenceEvent`, the T3
-  seam below), where a single-step deployment's turns now actually flow.
-  Re-wiring the guard onto that seam is a follow-up (Linear, not this pin
-  bump) — until then a loop-prone session is not auto-interrupted.
+  itself was preserved verbatim, but its wiring point — the `session-manager.ts`
+  per-session `onEvent` wrapper — was gone with the in-process harness runtime
+  it wrapped, leaving the guard unwired.
+
+  **Re-homed onto the sidecar's inference-event path (2026-07-17):** the
+  guard's pure logic (`assistant-loop-guard.ts`, its exports, its unit tests)
+  is untouched and re-exported from `packages/hub-agent`'s index. The new
+  consumer is `apps/sidecar/src/assistant-loop-guard-wiring.ts`
+  (`observeInferenceEventForAssistantLoopGuard`), wired into
+  `workflow-host-wiring.ts`'s `onInferenceEvent` (the T3 seam below) — scoped
+  to `warmKeep` single-step deployments, keyed per call by the deployment's
+  agent address so concurrent agents never share run state. The stop lever
+  changed with the runtime: instead of session eviction, a trip publishes a
+  synthetic `inference.error{category: "aborted", message:
+assistantLoopInterruptMessage(...)}` through the same
+  `publishWorkflowInferenceEvent` path real inference errors use (which
+  `@workbench/event-collector`'s existing `inference.error` handling already
+  turns into a visible, eagerly-persisted turn part — no new user-facing
+  surface needed) and calls `supervisor.drain({ deadlineMs: 0 })`, which
+  escalates the drainTimeout accumulator to a signed
+  `CancelRequested{origin: "supervisor-drain"}` immediately, tearing the
+  looping run down through the runtime's existing cancellation cascade. The
+  guard resets on every inbound mail message (the mail-router registration in
+  `workflow-host-wiring.ts`, also `// WORKBENCH-LOCAL (CL-3340)`) and on
+  undeploy. Guarded by `assistant-loop-guard-wiring.test.ts` (pure wiring
+  unit tests) and new cases in `workflow-host-wiring.test.ts`'s "assistant
+  loop guard wiring" describe block (end-to-end through the real HMAC event
+  channel and control channel).
 
 - **WORKBENCH-LOCAL (CL-3779) — inline heartbeat handling** (`src/ws/hub-link.ts`):
   every inbound WS frame — including the heartbeat `pong` — was chained onto a
@@ -440,8 +460,10 @@ line:
 - **CL-3102 / CL-3103 (lazy restore / idle eviction) and CL-3340 (loop guard)**:
   their host object, `session-manager.ts`'s in-process harness runtime, is
   gone. CL-3102/CL-3103 are retired outright (the deployment lifecycle now
-  owns wake/evict semantics). CL-3340 (`assistant-loop-guard.ts`) is preserved
-  as a file but unwired — see the `packages/hub-agent` section above.
+  owns wake/evict semantics). CL-3340 (`assistant-loop-guard.ts`) was
+  preserved as a file, unwired at bump time, and has since been re-homed onto
+  the sidecar's inference-event path — see the `packages/hub-agent` section
+  above.
 - **CL-2400 (register-before-spawn ordering) and CL-3415/CL-3796 (pack-push
   quarantine/retry-storm containment)**: both were structural workarounds for
   reconnect races on the old session-per-instance path; upstream's rewritten

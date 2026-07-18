@@ -4,11 +4,12 @@ import os from "node:os";
 import path from "node:path";
 
 import { createEd25519Crypto, generateKeyPair } from "@intx/crypto";
-import { hexEncode } from "@intx/types";
+import { hexDecode, hexEncode } from "@intx/types";
 import { createInMemoryTransport } from "@intx/mail-memory";
 import type { RepoId, RepoStore } from "@intx/hub-sessions";
 import {
   createControlChannelSender,
+  createEventChannelSender,
   type EventPayload,
   type FrameReader,
   type NdjsonReader,
@@ -17,6 +18,8 @@ import {
   type SubprocessSpawner,
 } from "@workbench/workflow-host";
 import type { AgentDeployFrame } from "@intx/types/sidecar";
+import type { InferenceEvent as WireInferenceEvent } from "@intx/types/runtime";
+import { assistantLoopInterruptMessage } from "@workbench/hub-agent";
 
 import {
   computeWireDefinitionHash,
@@ -1546,7 +1549,12 @@ describe("createSidecarDeployRouter multi-step branch", () => {
       env: Record<string, string>;
       childToSupervisor: ReturnType<typeof createMemoryNdjsonStream>;
       eventChildToSupervisor: ReturnType<typeof createMemoryFrameStream>;
+      // Captured so a test can inspect the raw control frames the
+      // supervisor sends DOWN to the child (e.g. a `drain` frame) --
+      // `supervisorToChild.writer` is the handle's `controlWriter`.
+      supervisorToChild: ReturnType<typeof createMemoryNdjsonStream>;
       childSender?: ReturnType<typeof createControlChannelSender>;
+      eventSender?: ReturnType<typeof createEventChannelSender>;
     };
     const spawns: Spawn[] = [];
     const spawner: SubprocessSpawner = ({ env }) => {
@@ -1557,7 +1565,12 @@ describe("createSidecarDeployRouter multi-step branch", () => {
       const exited = new Promise<number>((resolve) => {
         resolveExit = resolve;
       });
-      spawns.push({ env, childToSupervisor, eventChildToSupervisor });
+      spawns.push({
+        env,
+        childToSupervisor,
+        eventChildToSupervisor,
+        supervisorToChild,
+      });
       const handle: SubprocessHandle = {
         pid: pidBase + spawns.length,
         controlWriter: supervisorToChild.writer,
@@ -1636,6 +1649,48 @@ describe("createSidecarDeployRouter multi-step branch", () => {
           type: "recycle.request",
           data: { reason: "sources-rotation-recycle" },
         });
+      },
+      /**
+       * Emit one InferenceEvent from the child's event channel, HMAC-signed
+       * with the spawn's real `IPC_HMAC_KEY`/`IPC_CHANNEL_ID` -- the same
+       * wire the production child uses -- so a test drives the router's
+       * `onInferenceEvent` handler (and everything wired onto it) exactly
+       * as the real event-channel receiver would.
+       */
+      async injectEvent(index: number, payload: EventPayload): Promise<void> {
+        const spawn = spawns[index];
+        if (spawn === undefined) {
+          throw new Error(`spawn ${String(index)} missing`);
+        }
+        const hmacKeyHex = spawn.env.IPC_HMAC_KEY;
+        const channelId = spawn.env.IPC_CHANNEL_ID;
+        if (hmacKeyHex === undefined || channelId === undefined) {
+          throw new Error("IPC_HMAC_KEY / IPC_CHANNEL_ID missing in spawn env");
+        }
+        const sender =
+          spawn.eventSender ??
+          createEventChannelSender({
+            hmacKey: hexDecode(hmacKeyHex),
+            channelId,
+            writer: {
+              write(bytes: Uint8Array) {
+                spawn.eventChildToSupervisor.inject(bytes);
+                return Promise.resolve();
+              },
+            },
+          });
+        spawn.eventSender = sender;
+        await sender.send(payload);
+      },
+      /**
+       * Raw NDJSON lines the supervisor wrote to the child's control
+       * channel for this spawn (each an Ed25519-signed envelope whose
+       * `envelope.payload.type` names the control frame, e.g. `"drain"`).
+       * Used to assert the loop guard's `deadlineMs: 0` drain call actually
+       * reached the child.
+       */
+      controlFramesTo(index: number): readonly string[] {
+        return spawns[index]?.supervisorToChild.flushed() ?? [];
       },
     };
   }
@@ -2542,5 +2597,184 @@ describe("createSidecarDeployRouter multi-step branch", () => {
       router.deploy(singleStepFrame("ins_col-a@example.com", "wf-collide")),
     ).rejects.toThrow(/deriveDeploymentId collision/);
     expect(spawner.spawnCount()).toBe(1);
+  });
+
+  describe("assistant loop guard wiring (CL-3340 re-home)", () => {
+    function inferenceDone(seq: number, text: string): EventPayload {
+      return {
+        type: "inference.done",
+        seq,
+        data: {
+          turn: {
+            role: "assistant",
+            content: [{ type: "text", text }],
+            model: "test-model",
+            timestamp: seq,
+          },
+          usage: {
+            input: 1,
+            output: 1,
+            cacheRead: 0,
+            cacheWrite: 0,
+            thinking: 0,
+          },
+          source: { sourceId: "step-1", provider: "anthropic", model: "m" },
+        },
+      };
+    }
+
+    async function waitUntil(check: () => boolean): Promise<void> {
+      const deadline = Date.now() + 2000;
+      while (!check()) {
+        if (Date.now() > deadline) {
+          throw new Error("waitUntil timed out");
+        }
+        await new Promise((r) => setTimeout(r, 1));
+      }
+    }
+
+    function abortedInterruptMessage(event: EventPayload): string | undefined {
+      if (event.type !== "inference.error") return undefined;
+      // `EventPayload` widens `custom.*` events' `type` to plain `string`
+      // (arktype's regex-typed variant), which defeats TS discriminated-
+      // union narrowing for the whole union; the runtime check above
+      // already confirmed the discriminant, so re-assert against the
+      // hand-written (properly literal-discriminated) `InferenceEvent`
+      // union this same payload is validated against on the wire.
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-type-assertion -- see comment above
+      const narrowed = event as Extract<
+        WireInferenceEvent,
+        { type: "inference.error" }
+      >;
+      return narrowed.data.error.category === "aborted"
+        ? narrowed.data.error.message
+        : undefined;
+    }
+
+    function isAbortedInterrupt(event: EventPayload): boolean {
+      return abortedInterruptMessage(event) !== undefined;
+    }
+
+    test("trips after the third identical inference.done cycle: publishes the interrupt notice and drains the deployment", async () => {
+      const published: { address: string; event: EventPayload }[] = [];
+      const spawner = makeReadyDrivingSpawner(11000);
+      const { router } = await buildMultistepFixture({
+        spawner: spawner.spawner,
+        publishWorkflowInferenceEvent: (address, event) => {
+          published.push({ address, event });
+        },
+        multistepSubstrateEnv: {
+          SIDECAR_DATA_DIR: await createTempBaseDir("sidecar-loopguard-trip-"),
+        },
+      });
+
+      const addr = "ins_loopguard1@example.com";
+      const deployPromise = router.deploy(singleStepFrame(addr, "wf-loop1"));
+      await spawner.driveReadyFor(0);
+      await deployPromise;
+
+      await spawner.injectEvent(0, inferenceDone(1, "stuck in a loop"));
+      await spawner.injectEvent(0, inferenceDone(2, "stuck in a loop"));
+      await spawner.injectEvent(0, inferenceDone(3, "stuck in a loop"));
+
+      await waitUntil(() => published.some((p) => isAbortedInterrupt(p.event)));
+      const interrupt = published.find((p) => isAbortedInterrupt(p.event));
+      if (interrupt === undefined) {
+        throw new Error("expected an aborted inference.error event");
+      }
+      expect(abortedInterruptMessage(interrupt.event)).toBe(
+        assistantLoopInterruptMessage(3),
+      );
+
+      await waitUntil(() =>
+        spawner
+          .controlFramesTo(0)
+          .some((line) => JSON.parse(line).envelope.payload.type === "drain"),
+      );
+      const drainFrame = spawner
+        .controlFramesTo(0)
+        .map((line) => JSON.parse(line))
+        .find((frame) => frame.envelope.payload.type === "drain");
+      expect(drainFrame.envelope.payload.data.deadlineMs).toBe(0);
+    });
+
+    test("does not trip on three non-identical inference.done cycles", async () => {
+      const published: { address: string; event: EventPayload }[] = [];
+      const spawner = makeReadyDrivingSpawner(11100);
+      const { router } = await buildMultistepFixture({
+        spawner: spawner.spawner,
+        publishWorkflowInferenceEvent: (address, event) => {
+          published.push({ address, event });
+        },
+        multistepSubstrateEnv: {
+          SIDECAR_DATA_DIR: await createTempBaseDir(
+            "sidecar-loopguard-notrip-",
+          ),
+        },
+      });
+
+      const addr = "ins_loopguard2@example.com";
+      const deployPromise = router.deploy(singleStepFrame(addr, "wf-loop2"));
+      await spawner.driveReadyFor(0);
+      await deployPromise;
+
+      await spawner.injectEvent(0, inferenceDone(1, "step one"));
+      await spawner.injectEvent(0, inferenceDone(2, "step two"));
+      await spawner.injectEvent(0, inferenceDone(3, "step three"));
+
+      // Give any (incorrect) async trip a chance to land before asserting
+      // its absence.
+      await new Promise((r) => setTimeout(r, 50));
+
+      expect(published.some((p) => isAbortedInterrupt(p.event))).toBe(false);
+      expect(
+        spawner
+          .controlFramesTo(0)
+          .some((line) => JSON.parse(line).envelope.payload.type === "drain"),
+      ).toBe(false);
+    });
+
+    test("an inbound mail message resets the run so two identical cycles before and after it never trip", async () => {
+      const published: { address: string; event: EventPayload }[] = [];
+      const mailRouter = createMultistepMailRouter();
+      const spawner = makeReadyDrivingSpawner(11200);
+      const { router } = await buildMultistepFixture({
+        spawner: spawner.spawner,
+        multistepMailRouter: mailRouter,
+        publishWorkflowInferenceEvent: (address, event) => {
+          published.push({ address, event });
+        },
+        multistepSubstrateEnv: {
+          SIDECAR_DATA_DIR: await createTempBaseDir("sidecar-loopguard-reset-"),
+        },
+      });
+
+      const addr = "ins_loopguard3@example.com";
+      const deployPromise = router.deploy(singleStepFrame(addr, "wf-loop3"));
+      await spawner.driveReadyFor(0);
+      await deployPromise;
+
+      await spawner.injectEvent(0, inferenceDone(1, "same reply"));
+      await spawner.injectEvent(0, inferenceDone(2, "same reply"));
+      // Let the event-channel pump actually deliver both cycles to the
+      // guard (an `await sender.send(...)` only confirms the bytes were
+      // written to the mock pipe, not that the async receive/HMAC-verify/
+      // dispatch chain on the other end has run) before the reset below,
+      // or the reset could race ahead of -- and so not actually cover --
+      // cycle 2.
+      await new Promise((r) => setTimeout(r, 50));
+
+      // A fresh inbound message starts a new turn for the guard's
+      // single-turn contract; it resets the repeat count before the two
+      // more identical cycles below, so the total never reaches 3-in-a-row.
+      mailRouter.tryRoute(addr, new TextEncoder().encode("noop"));
+
+      await spawner.injectEvent(0, inferenceDone(3, "same reply"));
+      await spawner.injectEvent(0, inferenceDone(4, "same reply"));
+
+      await new Promise((r) => setTimeout(r, 50));
+
+      expect(published.some((p) => isAbortedInterrupt(p.event))).toBe(false);
+    });
   });
 });
