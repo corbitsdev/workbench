@@ -721,7 +721,7 @@ function createSidecarStepBuildEnv(
     };
 
     if (deps.durableConversation !== undefined) {
-      const resolved = resolveCompactorSource([source]);
+      const resolved = resolveCompactorSource(sources);
       if (!resolved.usesCheapSummaryModel) {
         getLogger(["sidecar", "compactor"]).info(
           "summarize compactor falling back to agent default source (provider={provider} model={model}) — no openai-compatible source serving the cheap summary model",

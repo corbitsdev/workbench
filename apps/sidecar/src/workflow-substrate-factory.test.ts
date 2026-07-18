@@ -351,7 +351,7 @@ describe("createSidecarStepInvoker", () => {
     } as unknown as Agent;
 
     const invoke = createSidecarStepInvoker({
-      table: { [STEP_ID]: SOURCE },
+      table: { [STEP_ID]: [SOURCE] },
       dataDir,
       workflowRunRepoId: repoId,
       signer: async () => "sig",
