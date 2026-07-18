@@ -1600,8 +1600,9 @@ export function createSidecarDeployRouter(deps: {
       // derived from `stepOrder` via the SAME `stepStrategy.deriveStepRepoId` /
       // `deriveStepAddress` the supervisor used, keyed by the SAME slug
       // `deploymentId` -- so the dirs reclaimed here are exactly the ones the
-      // supervisor created on disk. Both the deploy and boot-restore paths
-      // route through here, so restore inherits the reclaim for free.
+      // supervisor created on disk. Every spawn routes through here (the
+      // deploy path; there is no boot-time restore), so the reclaim set is
+      // always complete.
       const ownedDirs: string[] = [
         deps.repoStore.getRepoDir({ kind: "workflow-run", id: deploymentId }),
       ];

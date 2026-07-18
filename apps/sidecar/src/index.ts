@@ -275,25 +275,22 @@ if (hostTmpdir !== undefined) {
   multistepSubstrateEnv["TMPDIR"] = hostTmpdir;
 }
 
-// WORKBENCH-LOCAL (CL-3368): the deploy router computes a deployment's on-disk
-// reclaim path (workflow-runs/<id>, and the resurrection-guard tombstone that
-// lives beside it) from `multistepSubstrateEnv.SIDECAR_DATA_DIR`
+// The deploy router computes a deployment's on-disk reclaim path
+// (workflow-runs/<id>) from `multistepSubstrateEnv.SIDECAR_DATA_DIR`
 // (`stepStateDataDir`), while the substrate roots its workflow-run repos under
-// the AgentRepoStore's own `dataDir`. Tombstone-reclaim correctness — and the
-// leak it closes — depends on both being the SAME root: a tombstone written
-// under one root is never seen by a restore scan reading the other. Both derive
-// from the single `dataDir` env today, but nothing structurally forces it. Tie
-// the two independent sources together at boot (the substrate's actual
-// getRepoDir path vs. the env the router reads) and fail loud if a future
-// config split diverges them, rather than silently reopening the
-// tombstone-never-reclaimed leak with a green build.
+// the AgentRepoStore's own `dataDir`. Teardown/boot-reconciler reclaim
+// correctness depends on both being the SAME root: a directory reclaimed under
+// one root while the substrate writes under another leaks terminated
+// deployments' state. Both derive from the single `dataDir` env today, but
+// nothing structurally forces it — tie the two together at boot and fail loud
+// if a future config split diverges them.
 const substrateWorkflowRunRoot = agentRepoStore.repoStore.getRepoDir({
   kind: "workflow-run",
   id: "__data_dir_invariant_probe__",
 });
 if (!substrateWorkflowRunRoot.startsWith(dataDir)) {
   throw new Error(
-    `sidecar boot: workflow-run substrate root (${substrateWorkflowRunRoot}) is not under the deploy router's reclaim root SIDECAR_DATA_DIR (${dataDir}); the CL-3368 tombstone reclaim would target the wrong directory and leak terminated deployments`,
+    `sidecar boot: workflow-run substrate root (${substrateWorkflowRunRoot}) is not under the deploy router's reclaim root SIDECAR_DATA_DIR (${dataDir}); deployment-dir reclaim would target the wrong directory and leak terminated deployments' state`,
   );
 }
 

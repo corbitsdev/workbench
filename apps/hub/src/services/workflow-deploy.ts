@@ -199,12 +199,6 @@ export function createWorkflowDeployService(deps: {
     Promise<EnsureDeploymentRoutableResult>
   >();
 
-  // TEMP-INSTRUMENTATION CL-2780: deployWorkflow writes its measured DB+grant
-  // fan-out duration here so provisionRunDeployment can fold it into the
-  // one-line provision summary. Read synchronously right after the awaited
-  // deployWorkflow call resolves, so no interleave can clobber it.
-  let lastDbFanoutMs = 0;
-
   // Shared deploy body. `sendSupervisorFrame` gates the ONE sidecar hand-off:
   // true (per-run provisioning / re-establish) sends the supervisor
   // `agent.deploy` frame so the sidecar spawns the workflow-child; false
@@ -275,8 +269,6 @@ export function createWorkflowDeployService(deps: {
     // that never use them. The hub's tool-credential + manifest gate also
     // authorizes deterministic/deployed steps by this row's pins.
     const stepCapabilityNames = capabilityNames(walk);
-    // TEMP-INSTRUMENTATION CL-2780
-    const dbfanoutStart = performance.now();
     await writeStepAgentRows({
       db,
       deploymentId: params.deploymentId,
@@ -385,9 +377,6 @@ export function createWorkflowDeployService(deps: {
         creatorPrincipalId: params.creatorPrincipalId,
       });
     }
-    // TEMP-INSTRUMENTATION CL-2780
-    const dbfanoutMs = performance.now() - dbfanoutStart;
-    lastDbFanoutMs = dbfanoutMs;
 
     // The orchestrator walks every step (it pins each step's InferenceSource
     // into the supervisor frame's `sources` map, which the sidecar's
@@ -501,17 +490,10 @@ export function createWorkflowDeployService(deps: {
     },
 
     provisionRunDeployment: async (args) => {
-      // TEMP-INSTRUMENTATION CL-2780
-      const provisionStart = performance.now();
-      const defStart = performance.now();
       const definition = await readWorkflowDefinition(
         deps.repoStore,
         args.kind,
       );
-      // TEMP-INSTRUMENTATION CL-2780
-      const defMs = performance.now() - defStart;
-      // TEMP-INSTRUMENTATION CL-2780
-      const configStart = performance.now();
       const { deploymentId, config, deployContent } =
         await resolveWorkflowDeployConfig({
           db,
@@ -520,10 +502,6 @@ export function createWorkflowDeployService(deps: {
           deploymentDomain: args.deploymentDomain,
           definition,
         });
-      // TEMP-INSTRUMENTATION CL-2780
-      const configMs = performance.now() - configStart;
-      // TEMP-INSTRUMENTATION CL-2780
-      const deployStart = performance.now();
       try {
         await service.deployWorkflow({
           workflow: definition,
@@ -558,21 +536,6 @@ export function createWorkflowDeployService(deps: {
         }
         throw err;
       }
-      // TEMP-INSTRUMENTATION CL-2780
-      const deployMs = performance.now() - deployStart;
-      // TEMP-INSTRUMENTATION CL-2780
-      log.info(
-        "provision timing kind={kind} steps={steps}: def={def}ms config={config}ms dbfanout={dbfanout}ms deployWorkflow={deployWorkflow}ms total={total}ms",
-        {
-          kind: args.kind,
-          steps: definition.stepOrder.length,
-          def: Math.round(defMs),
-          config: Math.round(configMs),
-          dbfanout: Math.round(lastDbFanoutMs),
-          deployWorkflow: Math.round(deployMs),
-          total: Math.round(performance.now() - provisionStart),
-        },
-      );
       log.info("provisioned per-run workflow deployment", {
         deploymentId,
         kind: args.kind,
@@ -1228,8 +1191,6 @@ export async function writeStepGrantFiles(args: {
   if (args.stepIds.length === 0) return;
   const grants = buildStepGrantRules(args.capabilityNames);
   const contents = JSON.stringify({ grants });
-  // TEMP-INSTRUMENTATION CL-2780
-  const grantLoopStart = performance.now();
   for (const stepId of args.stepIds) {
     const repoId = `${args.deploymentId}-${stepId}`;
     await args.repoStore.repoStore.writeTree(
@@ -1242,15 +1203,6 @@ export async function writeStepGrantFiles(args: {
       },
     );
   }
-  // TEMP-INSTRUMENTATION CL-2780
-  log.info(
-    "writeStepGrantFiles timing deploymentId={deploymentId}: steps={steps} writeTreeLoop={writeTreeLoop}ms",
-    {
-      deploymentId: args.deploymentId,
-      steps: args.stepIds.length,
-      writeTreeLoop: Math.round(performance.now() - grantLoopStart),
-    },
-  );
 }
 
 export function createWorkflowRepoWriter(
