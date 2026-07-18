@@ -114,6 +114,8 @@ import type { SpawnTimeEnv } from "./env-bootstrap";
 import { discoverInFlightRuns } from "./self-discovery";
 import type { ChildOutboundMailBridge } from "./outbound-mail-bridge";
 import { createWarmAgentCache, type WarmAgentCache } from "./warm-agent-cache";
+// WORKBENCH-LOCAL (CL-3880)
+import { sanitizeSerializedToolFactories } from "./serialized-tool-factories";
 
 const logger = getLogger(["workflow-host", "child"]);
 
@@ -1433,7 +1435,9 @@ function extractConversationText(raw: Uint8Array, messageId: string): string {
  * `workflow.json` under the substrate's repo dir, so a flat
  * `fs.readFile` returns the bytes without round-tripping through git.
  */
-async function loadWorkflowDefinition(
+// WORKBENCH-LOCAL (CL-3880): exported for the serialized-toolFactories
+// seam test; production callers stay within this module.
+export async function loadWorkflowDefinition(
   bindings: RunWorkflowChildBindings,
 ): Promise<WorkflowDefinition> {
   const fs = await import("node:fs/promises");
@@ -1464,6 +1468,11 @@ async function loadWorkflowDefinition(
       `workflow-child: ${WORKFLOW_JSON_PATH} for ${bindings.workflowDefinitionRepoId.kind}/${bindings.workflowDefinitionRepoId.id} on ${bindings.workflowDefinitionRef} failed envelope validation: ${validated.summary}`,
     );
   }
+  // WORKBENCH-LOCAL (CL-3880): the hub serializes the definition raw, so
+  // function-valued `toolFactories` arrive as `null` entries; replace
+  // them with inert `{ id, requires }` stubs before `hashDefinition`
+  // projects them at RunStarted. See serialized-tool-factories.ts.
+  sanitizeSerializedToolFactories(validated.steps);
   // The envelope schema enforces the structural shape; the
   // discriminated narrow over every primitive variant lives downstream
   // in the runtime body. The sibling `spawn-child` adapter follows the
