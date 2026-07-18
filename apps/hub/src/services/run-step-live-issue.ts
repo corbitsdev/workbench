@@ -3,6 +3,7 @@ import { agentInstance } from "@intx/db/schema";
 import { analyticsEvent } from "@workbench/analytics";
 import { and, desc, eq, gte, like } from "drizzle-orm";
 import { type } from "arktype";
+import { escapeLikePattern } from "../lib/like-pattern";
 
 // A running step gives no signal while it waits on its provider — a raced
 // provider hung on the 120s inactivity timeout reads identically to a dead
@@ -128,7 +129,7 @@ async function queryRunStepLiveIssues(args: {
         eq(analyticsEvent.tenantId, args.tenantId),
         eq(analyticsEvent.eventType, "inference_error"),
         gte(analyticsEvent.occurredAt, earliestSince),
-        like(agentInstance.address, `${addressPrefix}%`),
+        like(agentInstance.address, `${escapeLikePattern(addressPrefix)}%`),
       ),
     )
     .orderBy(desc(analyticsEvent.occurredAt));
