@@ -23,10 +23,13 @@ import { assistantLoopInterruptMessage } from "@workbench/hub-agent";
 
 import {
   computeWireDefinitionHash,
+  createPidTrackingRssReader,
   createSidecarDeployRouter,
   createSidecarWorkflowSupervisor,
+  DEFAULT_WORKFLOW_CHILD_MAX_RSS_BYTES,
   deriveDeploymentId,
   RAW_DEPLOYMENT_ID_ENV_KEY,
+  resolveDefaultRecyclePolicy,
   STEP_INFERENCE_SOURCES_ENV_KEY,
   validateWorkflowProjection,
 } from "./workflow-host-wiring";
@@ -133,6 +136,105 @@ describe("createSidecarWorkflowSupervisor", () => {
     expect(() =>
       wired.routeInbound(new TextEncoder().encode("hello")),
     ).not.toThrow();
+  });
+});
+
+describe("resolveDefaultRecyclePolicy (WORKFLOW_CHILD_MAX_RSS_BYTES)", () => {
+  const ENV_KEY = "WORKFLOW_CHILD_MAX_RSS_BYTES";
+  const original = process.env[ENV_KEY];
+
+  function restoreEnv(): void {
+    if (original === undefined) {
+      delete process.env[ENV_KEY];
+    } else {
+      process.env[ENV_KEY] = original;
+    }
+  }
+
+  test("defaults to the 3 GiB bound when the env var is unset", () => {
+    delete process.env[ENV_KEY];
+    expect(resolveDefaultRecyclePolicy()).toEqual({
+      maxRssBytes: DEFAULT_WORKFLOW_CHILD_MAX_RSS_BYTES,
+    });
+    expect(DEFAULT_WORKFLOW_CHILD_MAX_RSS_BYTES).toBe(3 * 1024 * 1024 * 1024);
+    restoreEnv();
+  });
+
+  test("honors a valid positive override", () => {
+    process.env[ENV_KEY] = "104857600";
+    expect(resolveDefaultRecyclePolicy()).toEqual({ maxRssBytes: 104_857_600 });
+    restoreEnv();
+  });
+
+  test('disables the bound when the env var is empty or "0"', () => {
+    process.env[ENV_KEY] = "0";
+    expect(resolveDefaultRecyclePolicy()).toEqual({});
+
+    process.env[ENV_KEY] = "   ";
+    expect(resolveDefaultRecyclePolicy()).toEqual({});
+    restoreEnv();
+  });
+
+  test("falls back to the default for a non-numeric or non-positive override", () => {
+    process.env[ENV_KEY] = "not-a-number";
+    expect(resolveDefaultRecyclePolicy()).toEqual({
+      maxRssBytes: DEFAULT_WORKFLOW_CHILD_MAX_RSS_BYTES,
+    });
+
+    process.env[ENV_KEY] = "-5";
+    expect(resolveDefaultRecyclePolicy()).toEqual({
+      maxRssBytes: DEFAULT_WORKFLOW_CHILD_MAX_RSS_BYTES,
+    });
+    restoreEnv();
+  });
+});
+
+describe("createPidTrackingRssReader", () => {
+  function fakeHandle(pid: number): SubprocessHandle {
+    return {
+      pid,
+      controlWriter: { write: () => undefined, close: () => undefined },
+      controlReader: (async function* () {})(),
+      eventReader: (async function* () {})(),
+      kill: () => undefined,
+      exited: new Promise<number>(() => undefined),
+    } as unknown as SubprocessHandle;
+  }
+
+  test("readRssBytes reports undefined before the base spawner has run", () => {
+    const { readRssBytes } = createPidTrackingRssReader(
+      () => fakeHandle(111),
+      () => 999,
+    );
+    expect(readRssBytes()).toBeUndefined();
+  });
+
+  test("readRssBytes tracks the pid across spawn calls, including a recycle respawn", () => {
+    let nextPid = 111;
+    const rssByPid = new Map<number, number>([
+      [111, 1_000],
+      [222, 2_000],
+    ]);
+    const seenPids: number[] = [];
+    const { spawner, readRssBytes } = createPidTrackingRssReader(
+      () => fakeHandle(nextPid),
+      (pid) => {
+        seenPids.push(pid);
+        return rssByPid.get(pid);
+      },
+    );
+
+    spawner({ binaryPath: "/bin/workflow-child", env: {} });
+    expect(readRssBytes()).toBe(1_000);
+
+    // A recycle respawn calls the same subprocessSpawner with a fresh
+    // pid; readRssBytes must follow it rather than staying pinned to
+    // the first child it ever saw.
+    nextPid = 222;
+    spawner({ binaryPath: "/bin/workflow-child", env: {} });
+    expect(readRssBytes()).toBe(2_000);
+
+    expect(seenPids).toEqual([111, 222]);
   });
 });
 

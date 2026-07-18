@@ -80,6 +80,7 @@ import {
   reclaimWorkflowDeploymentDir,
   workflowDeploymentDir,
 } from "./workflow-deployment-dirs";
+import { readChildRssBytes } from "./workflow-child-rss";
 import { SIDECAR_SUBSTRATE_CONFIG_KEYS } from "./workflow-substrate-factory";
 
 const logger = getLogger(["interchange", "sidecar", "workflow-host-wiring"]);
@@ -645,6 +646,17 @@ export type CreateSidecarWorkflowSupervisorOpts = {
    * `DEFAULT_READY_TIMEOUT_MS` (30s).
    */
   readyTimeoutMs?: number;
+  /**
+   * Recycle-policy bounds forwarded to the supervisor. Production
+   * defaults apply a max-RSS bound so a runaway workflow child is
+   * recycled instead of growing the host to multi-GB. Tests may
+   * override or clear via `recyclePolicy: {}`.
+   */
+  recyclePolicy?: {
+    maxUptimeMs?: number;
+    maxRssBytes?: number;
+    maxGrantsAgeMs?: number;
+  };
 };
 
 export type SidecarWorkflowSupervisor = {
@@ -2128,6 +2140,69 @@ export function deriveSidecarMailAuditRef(deploymentId: string): (
 }
 
 /**
+ * Default max RSS for a workflow-process child before the supervisor
+ * recycles it. 3 GiB sits above the legitimate warm-agent baseline for
+ * a multi-step deployment holding several warm agents across a long
+ * uptime -- a lower bound risks recycle thrashing against normal
+ * steady-state memory rather than only catching a genuine runaway
+ * child.
+ *
+ * Override with `WORKFLOW_CHILD_MAX_RSS_BYTES` (decimal bytes) or set
+ * the env to `0` / empty to disable the bound.
+ */
+export const DEFAULT_WORKFLOW_CHILD_MAX_RSS_BYTES = 3 * 1024 * 1024 * 1024;
+
+export function resolveDefaultRecyclePolicy(): {
+  maxRssBytes?: number;
+} {
+  const raw = process.env["WORKFLOW_CHILD_MAX_RSS_BYTES"];
+  if (raw === undefined) {
+    return { maxRssBytes: DEFAULT_WORKFLOW_CHILD_MAX_RSS_BYTES };
+  }
+  const trimmed = raw.trim();
+  if (trimmed === "" || trimmed === "0") {
+    return {};
+  }
+  const n = Number(trimmed);
+  if (!Number.isFinite(n) || n <= 0) {
+    logger.warn`WORKFLOW_CHILD_MAX_RSS_BYTES=${raw} is not a positive number; using default ${String(DEFAULT_WORKFLOW_CHILD_MAX_RSS_BYTES)}`;
+    return { maxRssBytes: DEFAULT_WORKFLOW_CHILD_MAX_RSS_BYTES };
+  }
+  return { maxRssBytes: Math.floor(n) };
+}
+
+/**
+ * Wraps a `SubprocessSpawner` so the supervisor's zero-arg
+ * `readRssBytes` policy callback (`WorkflowSupervisorBindings.
+ * readRssBytes` has no pid parameter) can still report the *current*
+ * child's RSS. `subprocessSpawner` is invoked by the supervisor on
+ * every spawn AND every recycle respawn, so tracking the pid at the
+ * spawn call site keeps it current across the deployment's whole
+ * lifetime without a separate hook into the recycle path.
+ */
+export function createPidTrackingRssReader(
+  baseSpawner: SubprocessSpawner,
+  readPidRssBytes: (pid: number) => number | undefined = readChildRssBytes,
+): {
+  spawner: SubprocessSpawner;
+  readRssBytes: () => number | undefined;
+} {
+  let currentChildPid: number | undefined;
+  const spawner: SubprocessSpawner = (spawnArgs) => {
+    const handle = baseSpawner(spawnArgs);
+    currentChildPid = handle.pid;
+    return handle;
+  };
+  return {
+    spawner,
+    readRssBytes: () =>
+      currentChildPid === undefined
+        ? undefined
+        : readPidRssBytes(currentChildPid),
+  };
+}
+
+/**
  * Construct a per-deployment supervisor with the sidecar's bindings
  * pre-wired. The router calls this once per multi-step `agent.deploy`
  * frame to stand up the workflow-process child that hosts the
@@ -2143,6 +2218,10 @@ export function createSidecarWorkflowSupervisor(
     kind: "supervisor",
     deploymentId: opts.deploymentId,
   };
+  const recyclePolicy = opts.recyclePolicy ?? resolveDefaultRecyclePolicy();
+  const { spawner: trackingSpawner, readRssBytes } = createPidTrackingRssReader(
+    opts.subprocessSpawner ?? defaultSubprocessSpawner,
+  );
   const supervisor = createWorkflowSupervisor({
     repoStore: opts.repoStore,
     signAsPrincipal: async (kind, payload) => {
@@ -2150,7 +2229,7 @@ export function createSidecarWorkflowSupervisor(
       return { sig, principalKind: kind };
     },
     mailBus,
-    subprocessSpawner: opts.subprocessSpawner ?? defaultSubprocessSpawner,
+    subprocessSpawner: trackingSpawner,
     binaryPath: opts.binaryPath ?? SIDECAR_WORKFLOW_CHILD_BINARY,
     substrateEnv: opts.substrateEnv,
     dynamicSpawnEnv: opts.dynamicSpawnEnv,
@@ -2176,6 +2255,9 @@ export function createSidecarWorkflowSupervisor(
       : {}),
     ...(opts.readyTimeoutMs !== undefined
       ? { readyTimeoutMs: opts.readyTimeoutMs }
+      : {}),
+    ...(Object.keys(recyclePolicy).length > 0
+      ? { recyclePolicy, readRssBytes }
       : {}),
   });
   return {

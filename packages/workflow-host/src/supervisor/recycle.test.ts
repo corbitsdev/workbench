@@ -1219,6 +1219,36 @@ describe("supervisor recycle: policy-initiated (max-uptime trip)", () => {
     expect(tracker.totalSpawns).toBe(0);
     expect(ipcKeypair.publicKey.length).toBe(32);
   });
+
+  test("the policy's max-rss threshold trips when the RSS reader reports over the bound", async () => {
+    let rss = 100;
+    const observedReasons: string[] = [];
+    const policy = createRecyclePolicy({
+      bounds: { maxRssBytes: 1_000 },
+      intervalMs: 1_000,
+      now: () => 0,
+      spawnedAt: 0,
+      readRssBytes: () => rss,
+      setTimer: () => undefined,
+      clearTimer: () => undefined,
+      trigger: async (reason) => {
+        observedReasons.push(reason);
+      },
+    });
+
+    await policy.tick();
+    expect(observedReasons).toEqual([]);
+
+    rss = 1_500;
+    await policy.tick();
+    expect(observedReasons.length).toBe(1);
+    const reason = observedReasons[0];
+    if (reason === undefined) {
+      throw new Error("max-rss policy trigger did not fire");
+    }
+    expect(reason).toContain("max-rss");
+    policy.stop();
+  });
 });
 
 describe("supervisor recycle: child self-initiated via recycle.request", () => {
