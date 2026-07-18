@@ -267,6 +267,58 @@ describe("useWorkflowRunState", () => {
     });
     await waitFor(() => expect(result.current.isError).toBe(true));
   });
+
+  it("does not fetch /state while a co-located record is provisioning with no deploymentId yet", async () => {
+    let calls = 0;
+    globalThis.fetch = ((..._args: Parameters<typeof fetch>) => {
+      calls += 1;
+      return Promise.resolve(jsonResponse(200, logRunState));
+    }) as typeof fetch;
+
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    client.setQueryData(["workflow-record", "wfr_1", "tn-x"], {
+      runId: "wfr_1",
+      kind: "pain-point-collateral",
+      status: "provisioning",
+    });
+
+    const { result } = renderHook(() => useWorkflowRunState("wfr_1", "tn-x"), {
+      wrapper: recordWrapper(client),
+    });
+
+    // Give any (wrongly) fired queryFn a tick to resolve before asserting.
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    expect(result.current.fetchStatus).toBe("idle");
+    expect(result.current.isError).toBe(false);
+    expect(calls).toBe(0);
+  });
+
+  it("fetches /state once the co-located record's deploymentId appears", async () => {
+    let calls = 0;
+    globalThis.fetch = ((..._args: Parameters<typeof fetch>) => {
+      calls += 1;
+      return Promise.resolve(jsonResponse(200, logRunState));
+    }) as typeof fetch;
+
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    client.setQueryData(["workflow-record", "wfr_1", "tn-x"], {
+      runId: "wfr_1",
+      kind: "pain-point-collateral",
+      status: "running",
+      deploymentId: "dep_abc",
+    });
+
+    const { result } = renderHook(() => useWorkflowRunState("wfr_1", "tn-x"), {
+      wrapper: recordWrapper(client),
+    });
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(calls).toBe(1);
+  });
 });
 
 describe("useWorkflowStepOutputs", () => {

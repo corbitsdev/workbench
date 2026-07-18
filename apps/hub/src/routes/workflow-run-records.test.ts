@@ -212,6 +212,26 @@ mock.module("../workflow-executor/run-state-from-log", () => ({
   },
 }));
 
+// The live-issue lookup (CL-3887) hits analytics_event via a real db query in
+// production; here it is a canned map keyed by stepId so route tests can
+// assert the batched attach step without a database.
+let cannedLiveIssues = new Map<
+  string,
+  { category: string; occurredAt: string }
+>();
+let liveIssueBatchCalls: { stepId: string }[][] = [];
+mock.module("../services/run-step-live-issue", () => ({
+  getRunStepLiveIssues: async (args: { steps: { stepId: string }[] }) => {
+    liveIssueBatchCalls.push(args.steps.map((s) => ({ stepId: s.stepId })));
+    const result = new Map<string, { category: string; occurredAt: string }>();
+    for (const step of args.steps) {
+      const issue = cannedLiveIssues.get(step.stepId);
+      if (issue !== undefined) result.set(step.stepId, issue);
+    }
+    return result;
+  },
+}));
+
 // The live-gate the resume guard reads (CL-2681). `null` simulates an unreadable
 // log (the guard falls back to the coarse index status); an array is the set of
 // open awaitSignal names the run is currently parked on.
@@ -292,6 +312,8 @@ function resetCaptures(): void {
   cannedAwaitingSignals = null;
   sidecarProbeCalls = 0;
   sidecarConnectsAtProbe = 1;
+  cannedLiveIssues = new Map();
+  liveIssueBatchCalls = [];
 }
 
 const reclaimDeployment = async (args: {
@@ -996,9 +1018,7 @@ describe("workflow runs on the sidecar (records router)", () => {
     // Tenant scope: both actors' runs, each carrying its starter identity, with
     // isSelf true only for the caller's own run.
     const tenant = await get(a, "/workflow-exec/records?scope=tenant");
-    const byId = new Map(
-      (tenant.json as ListedRun[]).map((r) => [r.runId, r]),
-    );
+    const byId = new Map((tenant.json as ListedRun[]).map((r) => [r.runId, r]));
     expect(byId.size).toBe(2);
     expect(byId.get("wfr_mine")?.isSelf).toBe(true);
     expect(byId.get("wfr_theirs")?.isSelf).toBe(false);
@@ -1216,6 +1236,73 @@ describe("GET /workflow-exec/runs/:runId/state — log-derived RunState (CL-2669
     const read = await get(a, "/workflow-exec/runs/wfr_missing/state");
     expect(read.status).toBe(404);
     expect(runStateCalls).toHaveLength(0);
+  });
+
+  test("attaches a live inference issue to an in-flight agent step (CL-3887)", async () => {
+    resetCaptures();
+    cannedLogState = {
+      runId: "R",
+      phase: "running",
+      lastSeq: 3,
+      steps: [
+        {
+          stepId: "draft",
+          phase: "in-flight",
+          stepType: "agent",
+          currentAttempt: 2,
+          startedAt: "2026-07-18T00:00:00.000Z",
+        },
+        {
+          stepId: "review",
+          phase: "in-flight",
+          stepType: "inline",
+          currentAttempt: 1,
+          startedAt: "2026-07-18T00:00:00.000Z",
+        },
+        {
+          stepId: "gate",
+          phase: "completed",
+          stepType: "human",
+          currentAttempt: 1,
+        },
+      ],
+    };
+    cannedLiveIssues.set("draft", {
+      category: "timeout",
+      occurredAt: "2026-07-18T00:01:00.000Z",
+    });
+    const a = app();
+    const start = await post(a, "/workflow-exec/pain-point-collateral/start", {
+      input: {},
+    });
+    await settleStart(start.json.runId);
+
+    const read = await get(a, `/workflow-exec/runs/${start.json.runId}/state`);
+    expect(read.status).toBe(200);
+    const draftStep = read.json.steps.find(
+      (s: { stepId: string }) => s.stepId === "draft",
+    );
+    expect(draftStep.liveIssue).toEqual({
+      category: "timeout",
+      occurredAt: "2026-07-18T00:01:00.000Z",
+    });
+    const reviewStep = read.json.steps.find(
+      (s: { stepId: string }) => s.stepId === "review",
+    );
+    expect(reviewStep.liveIssue).toBeUndefined();
+    const gateStep = read.json.steps.find(
+      (s: { stepId: string }) => s.stepId === "gate",
+    );
+    expect(gateStep.liveIssue).toBeUndefined();
+
+    // Both in-flight candidates are resolved through a SINGLE batched call —
+    // not one query per step (CL-3887 review) — and the completed gate step
+    // is never a candidate.
+    expect(liveIssueBatchCalls).toHaveLength(1);
+    expect(liveIssueBatchCalls[0]?.map((s) => s.stepId).sort()).toEqual([
+      "draft",
+      "review",
+    ]);
   });
 
   test("a run with no deployment is 400 and never reads the log", async () => {

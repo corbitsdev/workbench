@@ -130,3 +130,34 @@ export function failedRunError(
   }
   return null;
 }
+
+/**
+ * Plain-language line for a step's live inference issue (CL-3887) — the run
+ * page's signal that a still-running step is stalled on its provider rather
+ * than dead. Unlike `classifyRunError`, the input is the runtime's own fixed
+ * `InferenceError.category` enum (interchange/packages/types/src/runtime.ts),
+ * not raw provider-error text, so this is a direct lookup rather than pattern
+ * matching. The step keeps running — every category here retries or is being
+ * retried, so the message never implies the step has failed.
+ */
+export function describeLiveInferenceIssue(category: string): string {
+  switch (category) {
+    case "timeout":
+      return "Model provider timed out — retrying";
+    case "retryable":
+      return "Model provider had a transient error — retrying";
+    case "quota_exhausted":
+      return "Model provider is rate-limiting requests — retrying";
+    case "credential_failure":
+      return "Model provider rejected the credential — retrying";
+    case "context_overflow":
+      return "Input is too large for the model — retrying";
+    case "protocol_mismatch":
+      return "Model provider returned an unexpected response — retrying";
+    case "aborted":
+      return "The step was interrupted — retrying";
+    case "fatal":
+    default:
+      return "Model provider had a problem — retrying";
+  }
+}

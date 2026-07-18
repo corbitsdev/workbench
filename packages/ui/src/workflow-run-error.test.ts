@@ -1,6 +1,10 @@
 import { describe, expect, test } from "bun:test";
 import type { RunState } from "@intx/workflow";
-import { classifyRunError, failedRunError } from "./workflow-run-error";
+import {
+  classifyRunError,
+  describeLiveInferenceIssue,
+  failedRunError,
+} from "./workflow-run-error";
 
 describe("classifyRunError", () => {
   test("classifies a provider auth failure and names the provider without echoing the raw body", () => {
@@ -107,5 +111,38 @@ describe("failedRunError", () => {
       steps: new Map([["brief", { phase: "failed" }]]),
     } as unknown as RunState;
     expect(failedRunError(noMessage)).toBeNull();
+  });
+});
+
+describe("describeLiveInferenceIssue", () => {
+  test("names a timeout distinctly from a generic transient error", () => {
+    const timeout = describeLiveInferenceIssue("timeout");
+    const retryable = describeLiveInferenceIssue("retryable");
+    expect(timeout).toBe("Model provider timed out — retrying");
+    expect(retryable).not.toBe(timeout);
+  });
+
+  test("every known InferenceError category resolves to a distinct, retry-framed message", () => {
+    const categories = [
+      "retryable",
+      "context_overflow",
+      "credential_failure",
+      "quota_exhausted",
+      "fatal",
+      "aborted",
+      "timeout",
+      "protocol_mismatch",
+    ];
+    const messages = categories.map(describeLiveInferenceIssue);
+    for (const message of messages) {
+      expect(message.toLowerCase()).toContain("retrying");
+    }
+    expect(new Set(messages).size).toBe(categories.length);
+  });
+
+  test("falls back to a generic retrying message for an unrecognized category", () => {
+    expect(describeLiveInferenceIssue("some-future-category")).toBe(
+      "Model provider had a problem — retrying",
+    );
   });
 });

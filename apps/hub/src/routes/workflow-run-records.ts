@@ -41,6 +41,7 @@ import {
   LogRunStateSchema,
   type LogRunState,
 } from "../workflow-executor/run-state-from-log";
+import { getRunStepLiveIssues } from "../services/run-step-live-issue";
 import type { CryptoProvider } from "@intx/types/runtime";
 import {
   deriveWorkflowRunRepoId,
@@ -306,6 +307,53 @@ async function tearDownActiveRun(
         error: err instanceof Error ? err.message : String(err),
       });
     });
+}
+
+// Attach the latest live inference error/timeout (CL-3887) to each step still
+// `in-flight` whose execution actually calls a provider (`agent` / `inline`) —
+// a deterministic tool step or a human gate has no inference to stall on. This
+// is the run page's ONLY signal that a silent, still-running step is stuck on
+// a raced provider rather than just working: no failure COUNT is surfaced,
+// only the single most recent issue for the step's own instance, and only
+// while the step remains in-flight (it disappears the moment the step
+// completes, fails, or the run otherwise advances).
+async function attachLiveIssues(
+  db: HubDb,
+  tenantId: string,
+  deploymentId: string,
+  runState: LogRunState,
+): Promise<LogRunState> {
+  const candidates = runState.steps.filter(
+    (s) =>
+      s.phase === "in-flight" &&
+      (s.stepType === "agent" || s.stepType === "inline"),
+  );
+  if (candidates.length === 0) return runState;
+
+  // One batched, TTL-memoized query for every in-flight step of this run
+  // (CL-3887 review) — `analytics_event` has no secondary index (see the
+  // schema comment in packages/analytics/src/schema.ts), and this read fires
+  // on every SSE emitState delta, so a per-step query here would multiply an
+  // unindexed scan by the in-flight step count on every tick.
+  const issues = await getRunStepLiveIssues({
+    db,
+    tenantId,
+    deploymentId,
+    runId: runState.runId,
+    steps: candidates.map((step) => ({
+      stepId: step.stepId,
+      attempt: step.currentAttempt,
+      since:
+        step.startedAt !== undefined ? new Date(step.startedAt) : new Date(0),
+    })),
+  });
+  if (issues.size === 0) return runState;
+
+  const steps = runState.steps.map((step) => {
+    const issue = issues.get(step.stepId);
+    return issue === undefined ? step : { ...step, liveIssue: issue };
+  });
+  return { ...runState, steps };
 }
 
 function runExecErrorResponse(c: Context, result: RunExecFailure): Response {
@@ -949,7 +997,13 @@ export function createWorkflowRunRecordsRouter(deps: {
         });
         return c.json({ error: "failed to read run state" }, 500);
       }
-      return c.json(parsed);
+      const withLiveIssues = await attachLiveIssues(
+        deps.db,
+        record.tenantId,
+        record.deploymentId,
+        parsed,
+      );
+      return c.json(withLiveIssues);
     },
   );
 
@@ -1055,7 +1109,13 @@ export function createWorkflowRunRecordsRouter(deps: {
           });
           runState = { runId, phase: "pending", lastSeq: 0, steps: [] };
         }
-        await stream.writeSSE({ data: JSON.stringify(runState) });
+        const withLiveIssues = await attachLiveIssues(
+          deps.db,
+          record.tenantId,
+          deploymentId,
+          runState,
+        );
+        await stream.writeSSE({ data: JSON.stringify(withLiveIssues) });
       };
 
       return streamSSE(c, async (stream) => {
