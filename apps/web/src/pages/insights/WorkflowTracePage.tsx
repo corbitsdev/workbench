@@ -52,6 +52,7 @@ import {
 import { TraceOutputView } from "./trace-output-view";
 import { TraceWaterfall } from "./TraceWaterfall";
 import { formatStepDuration } from "./trace-waterfall";
+import { useElapsedTime } from "../../hooks/use-elapsed-time";
 
 export { formatStepDuration };
 
@@ -114,7 +115,9 @@ function TraceStepMoment({
   useEffect(() => {
     if (!isSelected) setOperatorOpen(false);
   }, [isSelected]);
+  const reduceMotion = useReducedMotion();
   const duration = formatStepDuration(step.startedAt, step.endedAt);
+  const elapsed = useElapsedTime(step.startedAt, step.phase === "in-flight");
   const classified =
     step.lastError !== undefined
       ? classifyRunError(step.lastError.message)
@@ -161,18 +164,29 @@ function TraceStepMoment({
               {duration}
             </span>
           )}
+          {elapsed !== null && (
+            <span
+              data-testid="trace-step-elapsed"
+              className="font-mono text-[11px] tabular-nums text-text-3"
+            >
+              Running · {elapsed}
+            </span>
+          )}
           {step.currentAttempt > 1 && (
             <span className="text-[10px] uppercase tracking-[0.08em] text-text-3">
               Attempt {step.currentAttempt}
             </span>
           )}
           {step.phase === "in-flight" && step.liveIssue !== undefined && (
-            <span
+            <motion.span
               data-testid="trace-step-live-issue"
-              className="text-[11px] font-medium text-gold"
+              className="text-[11px] font-medium text-text-2"
+              variants={STEP_ITEM}
+              initial={reduceMotion ? false : "hidden"}
+              animate="show"
             >
               {describeLiveInferenceIssue(step.liveIssue.category)}
-            </span>
+            </motion.span>
           )}
           {stepTokens !== undefined && stepTokens !== null && (
             <span
