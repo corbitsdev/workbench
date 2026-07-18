@@ -274,10 +274,18 @@ function insertWithHarnessSession(
 
 function deployWorkflowInsertMock(
   insertedRows: {
-    table: "agent" | "agentInstance";
+    table: "agent" | "agentInstance" | "asset" | "workflowDeployment" | "grant";
     rows: { id: string }[];
   }[],
 ): ReturnType<typeof mock> {
+  const record = (
+    table: "agent" | "agentInstance" | "asset" | "workflowDeployment" | "grant",
+    rows: unknown,
+  ) => {
+    const arr = Array.isArray(rows) ? rows : [rows];
+    insertedRows.push({ table, rows: arr as { id: string }[] });
+    return arr as { id: string }[];
+  };
   return mock((table: unknown) => {
     if (table === intxSchema.agentSession) {
       return {
@@ -286,11 +294,30 @@ function deployWorkflowInsertMock(
         }),
       };
     }
+    // Native identity rows chain .onConflictDoNothing().returning(); echo the
+    // inserted ids back (fresh-insert path) so callers proceed without a
+    // select round-trip.
+    if (table === intxSchema.asset || table === intxSchema.workflowDeployment) {
+      const kind = table === intxSchema.asset ? "asset" : "workflowDeployment";
+      return {
+        values: (rows: unknown) => ({
+          onConflictDoNothing: () => ({
+            returning: async () =>
+              record(kind, rows).map((row) => ({ id: row.id })),
+          }),
+        }),
+      };
+    }
+    if (table === intxSchema.grant) {
+      return {
+        values: async (rows: unknown) => {
+          record("grant", rows);
+        },
+      };
+    }
     return {
       values: async (rows: unknown) => {
-        const table2 = table === intxSchema.agent ? "agent" : "agentInstance";
-        const arr = Array.isArray(rows) ? rows : [rows];
-        insertedRows.push({ table: table2, rows: arr as { id: string }[] });
+        record(table === intxSchema.agent ? "agent" : "agentInstance", rows);
       },
     };
   });
@@ -981,7 +1008,7 @@ describe("deployWorkflow inline-step partition (CL-2251)", () => {
     const repoStore = { repoStore: { writeTree } } as unknown as AgentRepoStore;
 
     const insertedRows: {
-      table: "agent" | "agentInstance";
+      table: "agent" | "agentInstance" | "asset" | "workflowDeployment" | "grant";
       rows: { id: string }[];
     }[] = [];
     const db = {
@@ -1089,7 +1116,7 @@ describe("deployWorkflow deterministic-tool partition (CL-2252)", () => {
     } as unknown as HarnessConfig;
   }
 
-  test("keeps the agent row but skips instance row, grants repo, and launchSession for the deterministic tool step", async () => {
+  test("keeps the agent row but skips instance row and grants repo for the deterministic tool step", async () => {
     const deploymentId = "ses_det";
     const deploymentDomain = "deploy.example.com";
 
@@ -1133,7 +1160,7 @@ describe("deployWorkflow deterministic-tool partition (CL-2252)", () => {
     const repoStore = { repoStore: { writeTree } } as unknown as AgentRepoStore;
 
     const insertedRows: {
-      table: "agent" | "agentInstance";
+      table: "agent" | "agentInstance" | "asset" | "workflowDeployment" | "grant";
       rows: { id: string }[];
     }[] = [];
     const db = {
@@ -1188,7 +1215,10 @@ describe("deployWorkflow deterministic-tool partition (CL-2252)", () => {
     expect(agentStateIds).not.toContain("ses_det-analyze");
 
     // The `agent` row IS written for the deterministic tool step (load-bearing:
-    // the tool manifest/credentials endpoints gate on it) — but NO instance row.
+    // the tool manifest/credentials endpoints gate on it) — but NO instance
+    // row: with native `dep_` deployment ids every per-step deploy ack routes
+    // through the `workflow_deployment` row (isWorkflowDerivedAddress), so
+    // instance rows stay attribution-only and scoped to deployed steps.
     const agentRowIds = insertedRows
       .filter((b) => b.table === "agent")
       .flatMap((b) => b.rows.map((r) => r.id));
@@ -1272,6 +1302,21 @@ describe("deployWorkflow approves the catalog inference chain", () => {
           return {
             values: () => ({
               onConflictDoNothing: mock(async () => undefined),
+            }),
+          };
+        }
+        if (
+          table === intxSchema.asset ||
+          table === intxSchema.workflowDeployment
+        ) {
+          return {
+            values: (rows: unknown) => ({
+              onConflictDoNothing: () => ({
+                returning: async () =>
+                  (Array.isArray(rows) ? rows : [rows]).map(
+                    (row: { id: string }) => ({ id: row.id }),
+                  ),
+              }),
             }),
           };
         }
@@ -1455,6 +1500,21 @@ describe("deployWorkflow single-step (one-step workflow) tool staging", () => {
             }),
           };
         }
+        if (
+          table === intxSchema.asset ||
+          table === intxSchema.workflowDeployment
+        ) {
+          return {
+            values: (rows: unknown) => ({
+              onConflictDoNothing: () => ({
+                returning: async () =>
+                  (Array.isArray(rows) ? rows : [rows]).map(
+                    (row: { id: string }) => ({ id: row.id }),
+                  ),
+              }),
+            }),
+          };
+        }
         return { values: async () => undefined };
       }),
     } as unknown as HubDb;
@@ -1624,7 +1684,7 @@ describe("persistCatalog (hub-only publish)", () => {
     const repoStore = { repoStore: { writeTree } } as unknown as AgentRepoStore;
 
     const insertedRows: {
-      table: "agent" | "agentInstance";
+      table: "agent" | "agentInstance" | "asset" | "workflowDeployment" | "grant";
       rows: { id: string }[];
     }[] = [];
     const db = {
