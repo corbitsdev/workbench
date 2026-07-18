@@ -400,7 +400,7 @@ async function exists(p: string): Promise<boolean> {
 describe("createSidecarDeployRouter multi-step undeploy reclaims on-disk footprint (CL-2231)", () => {
   test("removes the workflow-run repo + every per-step dir, leaving an unrelated deployment untouched", async () => {
     const harness = await standUpDeployment(
-      "reclaim-a@example.com",
+      "ins_reclaim-a@example.com",
       "ses_reclaimA",
       ["step-1", "step-2"],
     );
@@ -438,15 +438,14 @@ describe("createSidecarDeployRouter multi-step undeploy reclaims on-disk footpri
     }
   });
 
-  test("no-active undeploy reclaims the whole deployment dir, not just deployment.json (CL-3368)", async () => {
-    // A deployment this router never deployed (no in-memory supervisor) -- e.g.
-    // a record + run state left on disk by a prior sidecar process. Undeploy
-    // must reach the no-active teardown branch and reclaim the ENTIRE
-    // workflow-runs/<deploymentId> directory. Before the fix,
-    // `deleteWorkflowDeploymentRecord` removed only `deployment.json`, leaking
-    // the tombstone + run state until the next boot scan.
+  test("no-active undeploy reclaims the whole deployment dir, not just one file inside it", async () => {
+    // A deployment this router never deployed in this process (no in-memory
+    // supervisor) -- e.g. run state left on disk by a prior sidecar process
+    // or crash. Undeploy must reach the no-active teardown branch and reclaim
+    // the ENTIRE workflow-runs/<deploymentId> directory, not just a single
+    // file inside it.
     const harness = await standUpDeployment(
-      "reclaim-c@example.com",
+      "ins_reclaim-c@example.com",
       "ses_reclaimC",
       ["step-1", "step-2"],
     );
@@ -455,10 +454,10 @@ describe("createSidecarDeployRouter multi-step undeploy reclaims on-disk footpri
     const orphanId = slugDeploymentId(orphanAddress);
     const orphanDir = path.join(harness.dataDir, "workflow-runs", orphanId);
     await fs.mkdir(orphanDir, { recursive: true });
-    await fs.writeFile(path.join(orphanDir, "deployment.json"), "{}", "utf8");
-    // A non-record file co-located in the deployment dir (stands in for the
-    // workflow-run substrate). The pre-fix path would leave this behind.
+    // Stand-ins for whatever the workflow-run substrate leaves on disk; the
+    // reclaim sweep must remove the whole directory, not just one file.
     await fs.writeFile(path.join(orphanDir, "run-state"), "x", "utf8");
+    await fs.writeFile(path.join(orphanDir, "other-file"), "x", "utf8");
     expect(await exists(orphanDir)).toBe(true);
 
     const undeploy = harness.router.undeploy;
@@ -471,17 +470,16 @@ describe("createSidecarDeployRouter multi-step undeploy reclaims on-disk footpri
 
     expect(await exists(orphanDir)).toBe(false);
     expect(await exists(path.join(orphanDir, "run-state"))).toBe(false);
+    expect(await exists(path.join(orphanDir, "other-file"))).toBe(false);
   });
 
   test("is idempotent: undeploy does not throw when the owned dirs are already absent", async () => {
     const harness = await standUpDeployment(
-      "reclaim-b@example.com",
+      "ins_reclaim-b@example.com",
       "ses_reclaimB",
       ["step-1", "step-2"],
     );
-    // Deliberately do NOT materialize the per-step git repos. The
-    // workflow-run dir (ownedDirs[0]) is never absent post-deploy -- the
-    // deployment record (`deployment.json`) lives inside it -- so only the
+    // Deliberately do NOT materialize the per-step git repos. Only the
     // per-step dirs are asserted absent here; the point of the test is that
     // undeploy's reclaim converges (and does not throw) even when the git
     // repos were never written.
