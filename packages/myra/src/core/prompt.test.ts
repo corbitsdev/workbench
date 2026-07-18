@@ -6,6 +6,7 @@ import {
 } from "@workbench/prompts";
 import { buildPersonalAgentSystemPrompt } from "./prompt";
 import { PERSONAL_AGENT_BASE_TOOLS } from "./definition";
+import { stripPersonalAgentIdentityMarker } from "./personal-agent-identity";
 
 const xmlFormat = { xml: true };
 const markdownFormat = { xml: false };
@@ -14,11 +15,14 @@ const words = (text: string): number =>
   text.trim().split(/\s+/).filter(Boolean).length;
 
 // The word-count contract is measured on the static operating contract only:
-// the injected per-operator identity is optional and out of scope, and the
-// fixed data-boundary section is appended by the shared builder, not authored
-// here — so it is stripped before counting.
+// the injected per-operator identity is optional and out of scope, the fixed
+// data-boundary section is appended by the shared builder (not authored here),
+// and the personal-agent identity control marker is stripped before inference
+// so it is not model-facing — strip both before counting.
 const staticContractWordCount = (format: PromptFormat): number => {
-  const prompt = buildPersonalAgentSystemPrompt("Myra", format);
+  const prompt = stripPersonalAgentIdentityMarker(
+    buildPersonalAgentSystemPrompt("Myra", format),
+  );
   const stripped = prompt.replace(
     formatSection(DATA_NOT_INSTRUCTIONS_SECTION, format),
     "",

@@ -6,6 +6,7 @@ import {
   type PromptSection,
 } from "@workbench/prompts";
 import { CORBITS_VOCABULARY_SECTION } from "@workbench/agent-core/corbits-vocabulary";
+import { withPersonalAgentIdentityMarker } from "./personal-agent-identity";
 
 // Typed operator identity: replaces free-form operator-profile prose. Only
 // `name` and `email` are known facts about the operator (source: the DB user
@@ -176,5 +177,5 @@ Carry a request to a finished, reported result rather than a half-step, shaped b
     }
   }
 
-  return prompt;
+  return withPersonalAgentIdentityMarker(prompt);
 }
