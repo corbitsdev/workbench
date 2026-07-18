@@ -157,9 +157,12 @@ export function createMeSchedulesRouter(
           description: "Invalid body or unknown workflow kind",
           content: { "application/json": { schema: resolver(ErrorResponse) } },
         },
+        403: {
+          description: "Caller has no provisioned membership yet",
+          content: { "application/json": { schema: resolver(ErrorResponse) } },
+        },
         409: {
-          description:
-            "Caller has no provisioned membership yet, or already has a schedule for this workflow kind",
+          description: "Caller already has a schedule for this workflow kind",
           content: { "application/json": { schema: resolver(ErrorResponse) } },
         },
       },
@@ -174,7 +177,7 @@ export function createMeSchedulesRouter(
 
       const member = await resolveCallerMember(db, userId);
       if (!member) {
-        return c.json({ error: "No provisioned membership" }, 409);
+        return c.json({ error: "No provisioned membership" }, 403);
       }
 
       if (!(await isRunnableKind(db, member.tenantId, body.kind))) {
@@ -283,7 +286,7 @@ export function createMeSchedulesRouter(
           description: "No such schedule owned by the caller",
           content: { "application/json": { schema: resolver(ErrorResponse) } },
         },
-        409: {
+        403: {
           description: "Caller has no provisioned membership yet",
           content: { "application/json": { schema: resolver(ErrorResponse) } },
         },
@@ -306,7 +309,7 @@ export function createMeSchedulesRouter(
 
       const member = await resolveCallerMember(db, userId);
       if (!member) {
-        return c.json({ error: "No provisioned membership" }, 409);
+        return c.json({ error: "No provisioned membership" }, 403);
       }
 
       const updated = await updateOwnerSchedule(db, {
@@ -336,7 +339,7 @@ export function createMeSchedulesRouter(
           description: "No such schedule owned by the caller",
           content: { "application/json": { schema: resolver(ErrorResponse) } },
         },
-        409: {
+        403: {
           description: "Caller has no provisioned membership yet",
           content: { "application/json": { schema: resolver(ErrorResponse) } },
         },
@@ -350,7 +353,7 @@ export function createMeSchedulesRouter(
       }
       const member = await resolveCallerMember(db, userId);
       if (!member) {
-        return c.json({ error: "No provisioned membership" }, 409);
+        return c.json({ error: "No provisioned membership" }, 403);
       }
       const deleted = await deleteOwnerSchedule(db, {
         tenantId: member.tenantId,

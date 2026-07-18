@@ -51,12 +51,13 @@ describe("GET /me/features", () => {
     );
   });
 
-  it("404s when the caller has no tenant membership", async () => {
+  it("returns an empty features array when the caller has no tenant membership", async () => {
     resolveCallerMember.mockImplementationOnce(
       async () => null as unknown as { tenantId: string; principalId: string },
     );
     const app = wrap();
     const res = await app.request("/me/features");
-    expect(res.status).toBe(404);
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ features: [] });
   });
 });

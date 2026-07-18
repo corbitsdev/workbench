@@ -176,12 +176,13 @@ describe("GET /me/inbox", () => {
     expect(scopes).toEqual(["pri-a", "pri-b"]);
   });
 
-  it("409s when the caller has no provisioned membership", async () => {
+  it("returns an empty list when the caller has no provisioned membership", async () => {
     member = null;
     const res = await mountApp().request(
       new Request("http://localhost/api/v1/me/inbox"),
     );
-    expect(res.status).toBe(409);
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ messages: [] });
     expect(listUserMailbox.mock.calls).toHaveLength(0);
   });
 
@@ -330,12 +331,12 @@ describe("GET /me/inbox/:id", () => {
     expect(getMailboxMessage.mock.calls).toHaveLength(0);
   });
 
-  it("409s when the caller has no provisioned membership", async () => {
+  it("403s when the caller has no provisioned membership", async () => {
     member = null;
     const res = await mountApp().request(
       new Request(`http://localhost/api/v1/me/inbox/${id}`),
     );
-    expect(res.status).toBe(409);
+    expect(res.status).toBe(403);
     expect(getMailboxMessage.mock.calls).toHaveLength(0);
   });
 });
@@ -378,14 +379,14 @@ describe("POST /me/inbox/:id/read", () => {
     expect(markMailboxMessageRead.mock.calls).toHaveLength(0);
   });
 
-  it("409s when the caller has no provisioned membership", async () => {
+  it("403s when the caller has no provisioned membership", async () => {
     member = null;
     const res = await mountApp().request(
       new Request(`http://localhost/api/v1/me/inbox/${id}/read`, {
         method: "POST",
       }),
     );
-    expect(res.status).toBe(409);
+    expect(res.status).toBe(403);
   });
 });
 
@@ -415,12 +416,12 @@ describe("GET /me/inbox/unread-count", () => {
 });
 
 describe("GET /me/inbox/events", () => {
-  it("409s when the caller has no provisioned membership", async () => {
+  it("403s when the caller has no provisioned membership", async () => {
     member = null;
     const res = await mountApp().request(
       new Request("http://localhost/api/v1/me/inbox/events"),
     );
-    expect(res.status).toBe(409);
+    expect(res.status).toBe(403);
   });
 
   it("streams a mailbox signal published for the caller's own principal", async () => {
@@ -561,8 +562,9 @@ describe("POST /me/inbox/bulk", () => {
   });
 
   it("400s when ids exceed the bulk cap", async () => {
-    const ids = Array.from({ length: 51 }, (_, i) =>
-      `5e0f8c9a-0000-4000-8000-${String(i).padStart(12, "0")}`,
+    const ids = Array.from(
+      { length: 51 },
+      (_, i) => `5e0f8c9a-0000-4000-8000-${String(i).padStart(12, "0")}`,
     );
     const res = await mountApp().request(
       new Request("http://localhost/api/v1/me/inbox/bulk", {
@@ -575,7 +577,7 @@ describe("POST /me/inbox/bulk", () => {
     expect(applyMailboxBulkAction.mock.calls).toHaveLength(0);
   });
 
-  it("409s when the caller has no provisioned membership", async () => {
+  it("403s when the caller has no provisioned membership", async () => {
     member = null;
     const res = await mountApp().request(
       new Request("http://localhost/api/v1/me/inbox/bulk", {
@@ -584,7 +586,7 @@ describe("POST /me/inbox/bulk", () => {
         body: JSON.stringify({ action: "archive", ids: [id] }),
       }),
     );
-    expect(res.status).toBe(409);
+    expect(res.status).toBe(403);
     expect(applyMailboxBulkAction.mock.calls).toHaveLength(0);
   });
 

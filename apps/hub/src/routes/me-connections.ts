@@ -156,7 +156,7 @@ export function createMeConnectionsRouter(
       if (!cfg) return c.json({ error: "Unknown provider" }, 404);
 
       const member = await resolveCallerMember(db, userId);
-      if (!member) return c.json({ error: "No provisioned membership" }, 409);
+      if (!member) return c.json({ error: "No provisioned membership" }, 403);
 
       // Per-principal capability gate, fail-closed: the caller may only begin a
       // connect for a provider they are actually granted.
@@ -235,7 +235,7 @@ export function createMeConnectionsRouter(
       if (!cfg) return c.json({ error: "Unknown provider" }, 404);
 
       const member = await resolveCallerMember(db, userId);
-      if (!member) return c.json({ error: "No provisioned membership" }, 409);
+      if (!member) return c.json({ error: "No provisioned membership" }, 403);
 
       await deleteMemberConnection(
         db,

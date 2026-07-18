@@ -200,10 +200,10 @@ describe("POST /me/brief-run", () => {
     expect(call?.input.userAddress).toBe("usr_principal-a@tenant.example");
   });
 
-  it("404s when the caller has no membership", async () => {
+  it("403s when the caller has no membership", async () => {
     const app = mountApp();
     const res = await app.fetch(req("/me/brief-run", "user-none"));
-    expect(res.status).toBe(404);
+    expect(res.status).toBe(403);
   });
 
   it("rejects a second manual run from the same member within the window", async () => {
