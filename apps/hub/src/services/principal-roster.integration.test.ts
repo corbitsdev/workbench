@@ -100,10 +100,11 @@ async function seedRun(args: {
   kind?: string;
   status?: string;
   createdAt?: string;
+  originConversationId?: string | null;
 }): Promise<void> {
   await client.query(
-    `insert into workflow_run_record (id, kind, tenant_id, principal_id, status, created_at, updated_at)
-     values ($1, $2, $3, $4, $5, $6, now())`,
+    `insert into workflow_run_record (id, kind, tenant_id, principal_id, status, created_at, updated_at, origin_conversation_id)
+     values ($1, $2, $3, $4, $5, $6, now(), $7)`,
     [
       args.id,
       args.kind ?? "last30days",
@@ -111,9 +112,11 @@ async function seedRun(args: {
       args.principalId ?? MEMBER,
       args.status ?? "completed",
       args.createdAt ?? new Date().toISOString(),
+      args.originConversationId ?? null,
     ],
   );
 }
+
 
 beforeAll(async () => {
   client = new PGlite();
@@ -225,6 +228,87 @@ describe("getPrincipalRoster", () => {
     });
 
     expect(roster.runs.map((r) => r.runId)).toEqual(["run-live"]);
+  });
+
+  // Agent principals are agent_instance.principal_id values — they own no
+  // member_agent_instance rows and start no runs as themselves. The roster
+  // must surface the instance itself and runs started FROM its conversation
+  // (origin_conversation_id = member_agent_instance.id).
+  test("agent principal returns its own instance and runs started from its conversation", async () => {
+    await seedAgent("agt-1", "Myra");
+    await seedOwnedInstance({
+      instanceId: "ins-1",
+      agentId: "agt-1",
+      syntheticPrincipalId: "prn-syn-1",
+      templateKey: "myra",
+      label: "Acme renewal",
+      lastActivityAt: "2026-04-01T00:00:00Z",
+    });
+    await seedSession({ id: "ses-1", principalId: "prn-syn-1" });
+    await seedSession({ id: "ses-2", principalId: "prn-syn-1" });
+    // Owned by the human member, but started from this agent's thread.
+    await seedRun({
+      id: "run-from-thread",
+      principalId: MEMBER,
+      kind: "brief",
+      originConversationId: "link-ins-1",
+    });
+    // Started by the same member but not from this agent's conversation.
+    await seedRun({
+      id: "run-other-origin",
+      principalId: MEMBER,
+      kind: "last30days",
+      originConversationId: "link-other",
+    });
+
+    const roster = await getPrincipalRoster({
+      db,
+      tenantId: TENANT,
+      principalId: "prn-syn-1",
+    });
+
+    expect(roster.instances).toHaveLength(1);
+    const inst = roster.instances[0]!;
+    expect(inst.instanceId).toBe("ins-1");
+    expect(inst.principalId).toBe("prn-syn-1");
+    expect(inst.name).toBe("Myra");
+    expect(inst.sessionCount).toBe(2);
+    expect(inst.templateKey).toBe("myra");
+    expect(inst.label).toBe("Acme renewal");
+    expect(inst.lastActivityAt).toBe("2026-04-01T00:00:00.000Z");
+    expect(inst.address).toBe("ins-1@wb.local");
+
+    expect(roster.runs.map((r) => r.runId)).toEqual(["run-from-thread"]);
+    expect(roster.runs[0]!.kind).toBe("brief");
+  });
+
+  test("agent principal does not leak another agent's instance or conversation runs", async () => {
+    await seedAgent("agt-1", "Myra");
+    await seedOwnedInstance({
+      instanceId: "ins-mine",
+      agentId: "agt-1",
+      syntheticPrincipalId: "prn-syn-mine",
+    });
+    await seedOwnedInstance({
+      instanceId: "ins-theirs",
+      agentId: "agt-1",
+      syntheticPrincipalId: "prn-syn-theirs",
+      memberPrincipalId: OTHER_MEMBER,
+    });
+    await seedRun({
+      id: "run-theirs",
+      principalId: OTHER_MEMBER,
+      originConversationId: "link-ins-theirs",
+    });
+
+    const roster = await getPrincipalRoster({
+      db,
+      tenantId: TENANT,
+      principalId: "prn-syn-mine",
+    });
+
+    expect(roster.instances.map((i) => i.instanceId)).toEqual(["ins-mine"]);
+    expect(roster.runs).toHaveLength(0);
   });
 });
 
