@@ -52,6 +52,7 @@ import {
 import { TraceOutputView } from "./trace-output-view";
 import { TraceWaterfall } from "./TraceWaterfall";
 import { formatStepDuration } from "./trace-waterfall";
+import { useElapsedTime } from "../../hooks/use-elapsed-time";
 
 export { formatStepDuration };
 
@@ -115,6 +116,7 @@ function TraceStepMoment({
     if (!isSelected) setOperatorOpen(false);
   }, [isSelected]);
   const duration = formatStepDuration(step.startedAt, step.endedAt);
+  const elapsed = useElapsedTime(step.startedAt, step.phase === "in-flight");
   const classified =
     step.lastError !== undefined
       ? classifyRunError(step.lastError.message)
@@ -159,6 +161,14 @@ function TraceStepMoment({
               className="font-mono text-[11px] tabular-nums text-text-3"
             >
               {duration}
+            </span>
+          )}
+          {elapsed !== null && (
+            <span
+              data-testid="trace-step-elapsed"
+              className="font-mono text-[11px] tabular-nums text-text-3"
+            >
+              Running · {elapsed}
             </span>
           )}
           {step.currentAttempt > 1 && (
