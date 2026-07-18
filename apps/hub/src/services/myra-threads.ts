@@ -710,9 +710,10 @@ function runSerializedPerPrincipal<T>(
 
 /**
  * Run ONE title-generation turn via the shared tracked-one-shot primitive: an
- * ephemeral scratch repo (no durable per-principal state), the turn recorded to
- * the thread's instance + tenant, and token usage forwarded to analytics so it
- * rolls up per member in /insights.
+ * ephemeral scratch repo (no durable per-principal state), the turn recorded
+ * to a dedicated per-tenant bookkeeping instance (never the thread's own
+ * instance — see the CL-3894 note below), and token usage forwarded to
+ * analytics so it rolls up per member in /insights.
  */
 async function runTitleTurn(
   db: HubDb,
@@ -750,6 +751,41 @@ async function runTitleTurn(
     })
     .onConflictDoNothing({ target: agentSession.id });
 
+  // The title turn must NEVER be recorded under the thread's own instanceId.
+  // `/turns` — the same route the live chat transcript hydrates from — has no
+  // concept of "internal bookkeeping turn"; it returns every inference_turn
+  // row for a given instanceId. Recording the title turn there renders it
+  // inline as a stray, out-of-context assistant bubble in the user's own
+  // conversation the moment it completes (CL-3894). Route it to a durable,
+  // tenant-shared bookkeeping instance instead — created idempotently here,
+  // never granted to any member, and therefore never returned by any
+  // member-facing instance listing (those are all
+  // grant/memberAgentInstance-scoped) — so the turn stays inspectable for ops
+  // but invisible to chat.
+  const titleInstanceId = `ins_myra-title-${opts.tenantId}`;
+  const titlePrincipalId = `prn_myra-title-${opts.tenantId}`;
+  await db
+    .insert(principal)
+    .values({
+      id: titlePrincipalId,
+      tenantId: opts.tenantId,
+      kind: "agent",
+      refId: titleInstanceId,
+      status: "active",
+    })
+    .onConflictDoNothing({ target: principal.id });
+  await db
+    .insert(agentInstance)
+    .values({
+      id: titleInstanceId,
+      agentId: instanceRow.agentId,
+      tenantId: opts.tenantId,
+      principalId: titlePrincipalId,
+      address: `${titleInstanceId}@myra-title.internal`,
+      status: "deployed",
+    })
+    .onConflictDoNothing({ target: agentInstance.id });
+
   // Scratch repo for the turn, keyed per generation on the hub's persistent
   // volume (the same dataDir every other agent repo lives on) — mirrors the file
   // parser. A fresh per-generation id means each repo holds a single tiny commit
@@ -780,7 +816,7 @@ async function runTitleTurn(
     },
     turnRecording: {
       sessionId: titleSessionId,
-      instanceId: opts.instanceId,
+      instanceId: titleInstanceId,
     },
     signal: opts.signal,
   });
