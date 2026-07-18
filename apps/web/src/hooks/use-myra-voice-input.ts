@@ -4,29 +4,28 @@ import {
   setPreference,
   usePreferenceRaw,
 } from "@workbench/ui";
-import {
-  isMyraVoiceInputBuildEnabled,
-  isMyraVoiceInputEnabled,
-} from "../lib/myra-voice-input";
+import { isFeatureEnabled, useMeFeatures } from "./use-me-features";
 
 const STORAGE_KEY = PREFERENCE_KEYS.myraVoiceInput;
 
 /**
- * Per-user Myra composer voice dictation preference, gated by the build flag.
- * Defaults on when the build supports voice; persists opt-out locally only.
+ * Per-user Myra composer voice dictation preference, gated by the owner's
+ * "voice-input" capability (CL-3909, replacing the former Vite build flag).
+ * Defaults on when the capability is enabled; persists opt-out locally only.
  */
 export function useMyraVoiceInput(): {
-  buildEnabled: boolean;
+  capabilityEnabled: boolean;
   enabled: boolean;
   setEnabled: (value: boolean) => void;
 } {
   const raw = usePreferenceRaw(STORAGE_KEY);
-  const buildEnabled = isMyraVoiceInputBuildEnabled();
-  const enabled = isMyraVoiceInputEnabled(raw);
+  const features = useMeFeatures();
+  const capabilityEnabled = isFeatureEnabled(features.data, "voice-input");
+  const enabled = capabilityEnabled && raw !== "false";
 
   const setEnabled = useCallback((next: boolean) => {
     setPreference(STORAGE_KEY, String(next));
   }, []);
 
-  return { buildEnabled, enabled, setEnabled };
+  return { capabilityEnabled, enabled, setEnabled };
 }

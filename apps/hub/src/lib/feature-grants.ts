@@ -102,13 +102,15 @@ export async function isFeatureEnabledForTenantCached(
   });
 }
 
-/** Env kill-switch map matching runtime decision points (CL-3823). */
+/** Env kill-switch map matching runtime decision points (CL-3823). Not every
+ * feature has an emergency env override; `voice-input` is owner-grant-only. */
 export function featureEnvOverridesFromConfig(): Record<FeatureName, boolean> {
   const config = getConfig();
   return {
     scheduler: config.scheduler.enabled,
     triage: config.triageEnabled,
     "tasks-reconciler": config.tasksReconciler.enabled,
+    "voice-input": false,
   };
 }
 

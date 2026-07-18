@@ -778,6 +778,7 @@ export const FEATURE_NAMES = [
   "scheduler",
   "triage",
   "tasks-reconciler",
+  "voice-input",
 ] as const;
 export type FeatureName = (typeof FEATURE_NAMES)[number];
 
@@ -808,6 +809,12 @@ export const FEATURE_GRANT_CATALOG: readonly FeatureCatalogEntry[] = [
     label: "Task sync reconciler",
     description:
       "Retries task pushes left pending by a downstream outage, with a bounded per-task retry budget.",
+  },
+  {
+    name: "voice-input",
+    label: "Myra voice input",
+    description:
+      "Shows the microphone control in the Myra composer so members can dictate messages.",
   },
 ];
 
