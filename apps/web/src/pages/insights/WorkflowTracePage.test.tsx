@@ -317,7 +317,6 @@ describe("WorkflowTracePage", () => {
           startedAt: "2026-07-01T10:00:00.000Z",
           liveIssue: {
             category: "timeout",
-            message: "inference call exceeded inactivity timeout",
             occurredAt: "2026-07-01T10:01:00.000Z",
           },
         },

@@ -63,7 +63,10 @@ export const LogStepStateSchema = type({
   // still in-flight (CL-3887), read from the existing analytics event stream —
   // no new event plumbing. Set by the route layer (which holds the db handle),
   // never by the fold itself; absent once the step advances past `in-flight`.
-  "liveIssue?": { category: "string", message: "string", occurredAt: "string" },
+  // The raw sidecar error text never ships on this wire — only the category
+  // mapping the UI renders — so `message` is intentionally not part of this
+  // shape.
+  "liveIssue?": { category: "string", occurredAt: "string" },
 });
 export type LogStepState = typeof LogStepStateSchema.infer;
 
