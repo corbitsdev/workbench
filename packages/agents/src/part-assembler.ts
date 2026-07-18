@@ -145,7 +145,6 @@ export function createPartAssembler(
   let reasoningConsumed = 0;
   let liveImages: ChatImage[] = [];
   let openKind: OpenKind = null;
-  let active = false;
 
   const path = `/api/tenants/${params.tenantId}/agents/instances/${params.instanceId}/events`;
 
@@ -157,7 +156,6 @@ export function createPartAssembler(
     reasoningConsumed = 0;
     liveImages = [];
     openKind = null;
-    active = false;
   }
 
   // A tool or image boundary: whatever text/reasoning is already emitted
@@ -168,6 +166,13 @@ export function createPartAssembler(
     reasoningConsumed = reasoning.length;
   }
 
+  // An `inference.start` with no open reasoning/tool/text part is not
+  // distinguishable, from local state alone, between "the model is about to
+  // reason" and a content-less follow-up inference (a reactor decision pass
+  // that ends without ever emitting a TURN_END_EVENT). Reporting "thinking"
+  // for that bare state is what let the pill linger under a settled answer
+  // (CL-3871) — so it reports nothing here; the pre-first-token gap is
+  // covered by the caller's own optimistic "awaiting agent" placeholder.
   function currentActivity(): ChatActivity | null {
     const trailing = parts[parts.length - 1];
     if (openKind === "reasoning" && trailing?.type === "reasoning") {
@@ -180,8 +185,7 @@ export function createPartAssembler(
     ) {
       return { type: "tool_running", name: trailing.toolName };
     }
-    if (openKind === "text") return null;
-    return active ? { type: "thinking" } : null;
+    return null;
   }
 
   function handleToolCallStart(callId: string, name: string) {
@@ -192,7 +196,6 @@ export function createPartAssembler(
       { type: "tool", toolCallId: callId, toolName: name, state: "pending" },
     ];
     openKind = "tool";
-    active = true;
   }
 
   function handleToolCallEnd(callId: string, name: string) {
@@ -224,7 +227,6 @@ export function createPartAssembler(
     }
     parts = [...parts, { type: "text", text: segment }];
     openKind = "text";
-    active = true;
   }
 
   function handleThinkingDelta(nextTotal: string) {
@@ -239,7 +241,6 @@ export function createPartAssembler(
       parts = [...parts, { type: "reasoning", text: segment }];
       openKind = "reasoning";
     }
-    active = true;
   }
 
   function handleImageOutput(image: ChatImage) {
@@ -257,7 +258,6 @@ export function createPartAssembler(
     // image instead of finding a trailing file part and dropping the update.
     snapshotBlobCursors();
     openKind = null;
-    active = true;
   }
 
   const stop = transport.subscribe(
@@ -271,10 +271,9 @@ export function createPartAssembler(
         return;
       }
 
-      if (type === "inference.start") {
-        active = true;
-        return;
-      }
+      // inference.start carries no content of its own (see currentActivity's
+      // comment above) — nothing to track until a part actually opens.
+      if (type === "inference.start") return;
 
       // Tool-call events are the only ones that fire onUpdate: names resolve
       // once per call (not per token) and the session's onChange may land
@@ -342,7 +341,6 @@ export function createPartAssembler(
     closeOpenPart: () => {
       if (openKind === null) return;
       openKind = null;
-      active = false;
       onUpdate?.();
     },
     stop,
