@@ -1509,6 +1509,17 @@ const workflowDeployService = createWorkflowDeployService({
       // exactly as interchange's own `launchSessionCallback` does.
       deployContent: bridgeOrchestratorDeployContent(params.deployContent),
     }),
+  // Single-step (one-step workflow) hand-off: stage the head's deploy tree
+  // AND fire the deployment `agent.deploy` frame in one call. Without this a
+  // single-step workflow (e.g. an emit-only step) deploys with zero staged
+  // tools; interchange's `deploySingleStepAtHead` is the same
+  // `executeLaunchPhases` machinery `stageWorkflowStep` + the multi-step
+  // supervisor frame use, collapsed onto the head.
+  deploySingleStepAtHead: (params) =>
+    sessionService.deploySingleStepAtHead({
+      ...params,
+      deployContent: bridgeOrchestratorDeployContent(params.deployContent),
+    }),
 });
 
 const hubPublicKeyHex = hexEncode(registry.active.publicKey);
