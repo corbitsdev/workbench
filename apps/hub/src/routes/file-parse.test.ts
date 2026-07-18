@@ -8,11 +8,22 @@ let instanceRow: Row | undefined;
 let ownershipRow: Row | undefined;
 let parseImpl: (input: unknown) => Promise<string>;
 const insertedArtifacts: Row[] = [];
+// Captures every parseDocument invocation so attribution args can be asserted
+// without re-running the real one-shot turn.
+const parseCalls: { input: unknown; analytics: unknown }[] = [];
+
+const FAKE_ANALYTICS = {
+  onAgentEvent: () => Promise.resolve(),
+  onLocalInferenceEvent: () => Promise.resolve(),
+};
 
 class FakeFileParseError extends Error {}
 
 mock.module("../services/file-parser", () => ({
-  parseDocument: (_db: unknown, input: unknown) => parseImpl(input),
+  parseDocument: (_db: unknown, input: unknown, analytics?: unknown) => {
+    parseCalls.push({ input, analytics });
+    return parseImpl(input);
+  },
   FileParseError: FakeFileParseError,
 }));
 
@@ -53,7 +64,10 @@ function app() {
     c.set("userId", "usr_1");
     await next();
   });
-  a.route("/", createFileParseRouter(makeDb() as never));
+  a.route(
+    "/",
+    createFileParseRouter(makeDb() as never, FAKE_ANALYTICS as never),
+  );
   return a;
 }
 
@@ -74,10 +88,15 @@ const OK_BODY = {
 
 describe("POST /instances/:instanceId/parse-file (CL-2628)", () => {
   beforeEach(() => {
-    instanceRow = { id: "inst_1", tenantId: "tnt_1" };
+    instanceRow = {
+      id: "inst_1",
+      tenantId: "tnt_1",
+      principalId: "prn_instance_1",
+    };
     ownershipRow = { id: "mai_1" };
     parseImpl = () => Promise.resolve("PARSED TEXT");
     insertedArtifacts.length = 0;
+    parseCalls.length = 0;
   });
 
   it("parses then stores, returning the artifact id and text", async () => {
@@ -94,6 +113,19 @@ describe("POST /instances/:instanceId/parse-file (CL-2628)", () => {
     expect(insertedArtifacts[0]!.content).toBe(
       "data:application/pdf;base64,SGVsbG8=",
     );
+  });
+
+  it("attributes the parse turn to the target instance principal (CL-2928)", async () => {
+    const res = await post(OK_BODY);
+    expect(res.status).toBe(201);
+    expect(parseCalls).toHaveLength(1);
+    // Hub-local inference only resolves an active agent instance by principal —
+    // attribute to the instance being uploaded to so the usage event lands with
+    // a member_agent_instance mapping, not as an unattributed drop.
+    expect(parseCalls[0]!.analytics).toEqual({
+      analytics: FAKE_ANALYTICS,
+      attributionPrincipalId: "prn_instance_1",
+    });
   });
 
   it("normalizes a parameterized MIME type before storing (F3 regression)", async () => {
@@ -137,6 +169,25 @@ describe("POST /instances/:instanceId/parse-file (CL-2628)", () => {
     parseImpl = () => Promise.reject(new FakeFileParseError("bad pdf"));
     const res = await post(OK_BODY);
     expect(res.status).toBe(502);
+    expect(insertedArtifacts).toHaveLength(0);
+  });
+
+  it("returns 502 (not an uncaught 500) when the underlying one-shot's inference turn fails (CL-2928 / tracked-one-shot InferenceTurnFailedError)", async () => {
+    // `parseDocument` propagates `runTrackedOneShot`'s InferenceTurnFailedError
+    // uncaught (it is neither FileParseError nor ParseTimeoutError); the route's
+    // generic catch-all must still turn it into a clean 502 rather than letting
+    // it surface as an unhandled exception.
+    class FakeInferenceTurnFailedError extends Error {}
+    parseImpl = () =>
+      Promise.reject(
+        new FakeInferenceTurnFailedError(
+          "Inference turn failed (aborted): provider 503",
+        ),
+      );
+    const res = await post(OK_BODY);
+    expect(res.status).toBe(502);
+    const json = (await res.json()) as { error: string };
+    expect(json.error).toBe("The document could not be parsed.");
     expect(insertedArtifacts).toHaveLength(0);
   });
 });
