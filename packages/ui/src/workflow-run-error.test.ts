@@ -122,7 +122,7 @@ describe("describeLiveInferenceIssue", () => {
     expect(retryable).not.toBe(timeout);
   });
 
-  test("every known InferenceError category resolves to a distinct, retry-framed message", () => {
+  test("every known InferenceError category resolves to a distinct message", () => {
     const categories = [
       "retryable",
       "context_overflow",
@@ -134,10 +134,30 @@ describe("describeLiveInferenceIssue", () => {
       "protocol_mismatch",
     ];
     const messages = categories.map(describeLiveInferenceIssue);
-    for (const message of messages) {
-      expect(message.toLowerCase()).toContain("retrying");
-    }
     expect(new Set(messages).size).toBe(categories.length);
+  });
+
+  test("every category except context_overflow keeps the retry framing", () => {
+    const retryingCategories = [
+      "retryable",
+      "credential_failure",
+      "quota_exhausted",
+      "fatal",
+      "aborted",
+      "timeout",
+      "protocol_mismatch",
+    ];
+    for (const category of retryingCategories) {
+      expect(describeLiveInferenceIssue(category).toLowerCase()).toContain(
+        "retrying",
+      );
+    }
+  });
+
+  test("context_overflow does not claim the step is retrying", () => {
+    const message = describeLiveInferenceIssue("context_overflow");
+    expect(message.toLowerCase()).not.toContain("retrying");
+    expect(message).toBe("Input is too large for the model");
   });
 
   test("falls back to a generic retrying message for an unrecognized category", () => {
