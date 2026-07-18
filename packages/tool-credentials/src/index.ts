@@ -46,12 +46,9 @@ export const ToolCredentialsResponse = type({
 });
 export type ToolCredentialsResponse = typeof ToolCredentialsResponse.infer;
 
-// The tool-package manifest rail (`/api/internal/tools/manifest`, the
-// `ToolManifest*` request/response types) was retired in the on-disk
-// tool-materialization cutover: every deployed agent/step now reads its
-// pinned tool closure from the deploy tree the hub stages on disk
-// (`deployInstanceAtHead` / `stageWorkflowStep`), so there is no wire manifest
-// to fetch. The tool-CREDENTIAL rail below is unaffected and stays.
+// Tool RESOLUTION is on-disk (a deployed agent/step reads its pinned tool
+// closure from the deploy tree the hub stages on disk); the tool-CREDENTIAL
+// rail below is separate and stays.
 
 /**
  * Thrown by `getToolCredential` when the env key is entirely absent — the

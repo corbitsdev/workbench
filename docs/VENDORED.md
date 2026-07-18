@@ -404,9 +404,11 @@ What was ADDED / restored:
   wires the orchestrator's `launchSession` to interchange's
   `SessionService.stageWorkflowStep` (was a no-op, `noLaunchStepSession`), so
   each step's tool closure is resolved to a `deploy/tool-packages-manifest.json`
-  + asset tarballs and staged on disk. Single agents already staged their head
-  tree via `deployInstanceAtHead`; single-step-workflow deploys via
-  `deploySingleStepAtHead`.
+  - asset tarballs and staged on disk. Single-agent instances stage their head
+    tree through interchange's `deployInstanceAtHead`, which wraps the harness as
+    a single-step workflow and routes THROUGH `deploySingleStepAtHead` (one path,
+    not two parallel ones) — the same single-step-at-head hand-off a one-step
+    workflow definition uses.
 - Sidecar `stepDeployTreeDir` (in `workflow-substrate-factory.ts`, mirroring
   interchange `apps/sidecar/src/step-agent-tools.ts`) locates the on-disk tree
   from the deployment mailbox address; `StepToolContext.deployTreeDir` carries

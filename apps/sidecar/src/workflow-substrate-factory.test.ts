@@ -88,20 +88,12 @@ afterAll(async () => {
   );
 });
 
-// Empty hub manifest + no credentials: the step loads only its local posix
-// tools, enough to dispatch `write_file` through the deterministic branch.
+// No credentials: the step loads only its local posix tools, enough to
+// dispatch `write_file` through the deterministic branch. Tool resolution is
+// on-disk now, so the sidecar makes no manifest fetch.
 function stubHubFetch(): void {
   globalThis.fetch = (async (input: string | URL | Request) => {
     const url = String(input);
-    if (url.includes("/api/internal/tools/manifest")) {
-      return new Response(
-        JSON.stringify({
-          manifest: { schemaVersion: "1", topLevel: [], entries: [] },
-          tarballs: [],
-        }),
-        { headers: { "content-type": "application/json" } },
-      );
-    }
     if (url.includes("/api/internal/tools/credentials")) {
       return new Response(JSON.stringify({ credentials: {} }), {
         headers: { "content-type": "application/json" },
