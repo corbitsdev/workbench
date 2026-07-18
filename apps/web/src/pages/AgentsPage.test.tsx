@@ -234,9 +234,7 @@ describe("AgentsPage", () => {
     expect(document.body.textContent).toContain(
       "Agents available to you will appear here",
     );
-    expect(document.body.textContent).toContain(
-      "Creating and configuring agents is coming soon",
-    );
+    expect(document.body.textContent).not.toContain("coming soon");
   });
 
   it("shows the error state when the identity request fails", async () => {

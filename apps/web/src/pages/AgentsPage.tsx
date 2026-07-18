@@ -244,7 +244,7 @@ export function AgentsPage() {
             <RichEmptyState
               icon={<Bot className="h-6 w-6" strokeWidth={1.75} />}
               title="No agents yet"
-              description="Agents available to you will appear here. Creating and configuring agents is coming soon."
+              description="Agents available to you will appear here."
             />
           ))}
         {!isLoading &&
