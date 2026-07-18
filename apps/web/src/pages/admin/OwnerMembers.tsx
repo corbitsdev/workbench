@@ -27,6 +27,7 @@ export function OwnerMembers() {
   const members = useQuery({
     queryKey: ["owner", "members"],
     queryFn: getOwnerMembers,
+    staleTime: 5 * 60_000,
   });
 
   const invalidate = () =>

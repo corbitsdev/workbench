@@ -59,31 +59,36 @@ export function OwnerWorkflows() {
       )}
       <div className={adminTableCard}>
         <ul className="divide-y divide-border">
-          {workflows.data.workflows.map((w) => (
-            <li
-              key={w.kind}
-              className="flex items-center justify-between gap-4 p-3"
-            >
-              <div className="min-w-0">
-                <p className="font-mono text-sm text-text">{w.kind}</p>
-                <p className="text-xs text-text-3">
-                  {w.enabled ? "Enabled" : "Disabled"}
-                </p>
-              </div>
-              <Button
-                type="button"
-                variant={w.enabled ? "ghost" : "primary"}
-                size="sm"
-                disabled={toggle.isPending}
-                onClick={() => {
-                  setError(null);
-                  toggle.mutate({ kind: w.kind, enabled: !w.enabled });
-                }}
+          {workflows.data.workflows.map((w) => {
+            // Only the row whose write is in flight is disabled, not the
+            // whole table — mutation.variables identifies which workflow.
+            const busy = toggle.isPending && toggle.variables?.kind === w.kind;
+            return (
+              <li
+                key={w.kind}
+                className="flex items-center justify-between gap-4 p-3"
               >
-                {w.enabled ? "Disable" : "Enable"}
-              </Button>
-            </li>
-          ))}
+                <div className="min-w-0">
+                  <p className="font-mono text-sm text-text">{w.kind}</p>
+                  <p className="text-xs text-text-3">
+                    {w.enabled ? "Enabled" : "Disabled"}
+                  </p>
+                </div>
+                <Button
+                  type="button"
+                  variant={w.enabled ? "ghost" : "primary"}
+                  size="sm"
+                  disabled={busy}
+                  onClick={() => {
+                    setError(null);
+                    toggle.mutate({ kind: w.kind, enabled: !w.enabled });
+                  }}
+                >
+                  {w.enabled ? "Disable" : "Enable"}
+                </Button>
+              </li>
+            );
+          })}
         </ul>
       </div>
     </div>
