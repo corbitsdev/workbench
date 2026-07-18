@@ -129,6 +129,10 @@ function baseDeps(provision: typeof provisionOk) {
     }) => {
       reclaimCalls.push(args);
     },
+    resolveUserIdentity: async (principalId: string) => ({
+      userAddress: `usr_${principalId}@wf.localhost`,
+      userRefId: principalId,
+    }),
   };
 }
 
@@ -336,5 +340,87 @@ describe("startWorkflowRun async-start contract (CL-2755)", () => {
     expect(result.status).toBe(403);
     expect(rows.size).toBe(0); // gated before provisioning — no run started
     expect(sent).toHaveLength(0);
+  });
+});
+
+// The generic start path (this same `startWorkflowRun`, shared by the
+// HTTP /workflow-exec/:kind/start route and the workflow_start hub tool) has no
+// heartbeat-specific knowledge of its own — a bare `{ ...input, runId }` sent
+// straight to the deployment left every brief-source intake step's argMap
+// dispatch failing on an absent `enabledSources`/`userDisplayName`, because
+// only the scheduler and the heartbeat-specific manual-run route called
+// `enrichHeartbeatTriggerPayload` themselves. These prove the registered
+// "heartbeat" trigger-payload enricher (./trigger-payload-enrichment-registry)
+// now applies uniformly through this one shared implementation.
+describe("startWorkflowRun trigger-payload enrichment for a registered kind", () => {
+  const HEARTBEAT_DEFINITION = {
+    kind: "heartbeat",
+    tenantId: "tn-1",
+    deploymentId: "ses_dep_hb",
+    principalId: "prn-deployer",
+    createdAt: new Date(),
+  };
+
+  function makeHeartbeatDb(): HubDb {
+    // biome-ignore lint/suspicious/noExplicitAny: structural test mock
+    const db: any = {
+      query: {
+        workflowRun: { findMany: async () => [HEARTBEAT_DEFINITION] },
+        role: { findMany: async () => [] },
+        // No stored preferences yet — resolveEnabledBriefSources falls back to
+        // each source's catalog default (currently all default-off).
+        memberPreferences: { findFirst: async () => undefined },
+      },
+    };
+    return db as HubDb;
+  }
+
+  test("a heartbeat run started with a bare body still gets enabledSources and userDisplayName", async () => {
+    reset();
+    const result = await startWorkflowRun(
+      {
+        ...baseDeps(provisionOk),
+        db: makeHeartbeatDb(),
+        resolveUserIdentity: async (principalId: string) => ({
+          userAddress: `usr_${principalId}@wf.localhost`,
+          userRefId: principalId,
+          userDisplayName: "Jordan Lee",
+        }),
+      },
+      {
+        kind: "heartbeat",
+        chain: ["tn-1"],
+        principalId: "prn-1",
+        input: {},
+        originConversationId: null,
+      },
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error("unreachable");
+    await result.backgroundTask;
+
+    const stored = insertedInputs.get(result.state.runId) as Record<
+      string,
+      unknown
+    >;
+    expect(stored.enabledSources).toEqual([]);
+    expect(stored.userDisplayName).toBe("Jordan Lee");
+    expect(stored.userAddress).toBe("usr_prn-1@wf.localhost");
+    expect(typeof stored.createdAfter).toBe("string");
+  });
+
+  test("a kind with no registered enricher passes its input through unchanged", async () => {
+    reset();
+    const result = await startWorkflowRun(baseDeps(provisionOk), startOpts);
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error("unreachable");
+    await result.backgroundTask;
+
+    const stored = insertedInputs.get(result.state.runId) as Record<
+      string,
+      unknown
+    >;
+    expect(stored).toEqual({ topic: "Acme", runId: result.state.runId });
+    expect("enabledSources" in stored).toBe(false);
   });
 });
