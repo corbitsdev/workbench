@@ -312,7 +312,7 @@ describe("POST /me/tasks", () => {
     expect(storeCalls.some((c) => c.fn === "create")).toBe(false);
   });
 
-  it("409s when the caller has no membership", async () => {
+  it("403s when the caller has no membership", async () => {
     const res = await mountApp().fetch(
       req("/me/tasks", {
         method: "POST",
@@ -320,7 +320,7 @@ describe("POST /me/tasks", () => {
         body: JSON.stringify({ title: "x" }),
       }),
     );
-    expect(res.status).toBe(409);
+    expect(res.status).toBe(403);
   });
 });
 
@@ -444,8 +444,9 @@ describe("POST /me/tasks/bulk", () => {
   });
 
   it("400s when ids exceed the bulk cap", async () => {
-    const ids = Array.from({ length: 51 }, (_, i) =>
-      `123e4567-e89b-42d3-a456-${String(i).padStart(12, "0")}`,
+    const ids = Array.from(
+      { length: 51 },
+      (_, i) => `123e4567-e89b-42d3-a456-${String(i).padStart(12, "0")}`,
     );
     const res = await mountApp().fetch(
       req("/me/tasks/bulk", {
@@ -457,7 +458,7 @@ describe("POST /me/tasks/bulk", () => {
     expect(res.status).toBe(400);
   });
 
-  it("409s when the caller has no membership", async () => {
+  it("403s when the caller has no membership", async () => {
     const res = await mountApp().fetch(
       req("/me/tasks/bulk", {
         method: "POST",
@@ -465,7 +466,7 @@ describe("POST /me/tasks/bulk", () => {
         body: JSON.stringify({ ids: [idA], status: "cancelled" }),
       }),
     );
-    expect(res.status).toBe(409);
+    expect(res.status).toBe(403);
   });
 });
 

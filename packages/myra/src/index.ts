@@ -108,6 +108,13 @@ export {
   TRIAGE_BUDGET_STOP_MARKER,
 } from "./core/triage-budget-director";
 export {
+  PERSONAL_AGENT_IDENTITY_MARKER,
+  hasPersonalAgentIdentityMarker,
+  isPersonalAgentIdentityPrompt,
+  withPersonalAgentIdentityMarker,
+  stripPersonalAgentIdentityMarker,
+} from "./core/personal-agent-identity";
+export {
   PERSONAL_AGENT_SEED_FILES,
   parseSeedMarker,
   resolveSeedMarker,

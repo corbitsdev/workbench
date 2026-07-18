@@ -25,6 +25,24 @@ const ALLOW_ALL_AUTHORIZE: AuthorizeFn = async () => ({
   resolvedBy: null,
 });
 
+/**
+ * Thrown when a tracked one-shot turn's inference cycle ended in an
+ * unrecoverable `inference.error` (the last inference-related event in the
+ * stream, since a cycle's `for(;;)` loop returns immediately on either
+ * success or exhausted retries — see reactor.ts). On this path the default
+ * director still replies with SDK-synthesized apology text via
+ * `capabilities.reply()` (e.g. "...due to a credential error [HTTP 402]:
+ * ..."), so `send()`/the collector resolve normally with THAT text looking
+ * like a real completion. Every one-shot caller (title generation, file
+ * parsing, Granola analysis) must treat this as a failure, not usable output.
+ */
+export class InferenceTurnFailedError extends Error {
+  constructor(detail: { category: string; message: string }) {
+    super(`Inference turn failed (${detail.category}): ${detail.message}`);
+    this.name = "InferenceTurnFailedError";
+  }
+}
+
 // Best-effort teardown: cleanup must not throw over the real result/error, but
 // the failure is logged rather than silently dropped.
 const logTeardownError = (op: string) => (err: unknown) =>
@@ -137,8 +155,24 @@ export async function runTrackedOneShot(
 
   const analytics = opts.analytics;
 
+  // Last-write-wins across the stream: each inference cycle's `for(;;)` loop
+  // (reactor.ts) returns immediately after emitting its terminal
+  // inference.done or inference.error, so whichever of the two was observed
+  // LAST reflects that cycle's real outcome — a transient inference.error
+  // from a retried/failed-over attempt is always superseded by the eventual
+  // inference.done when the turn recovers.
+  let lastInferenceOutcome: "done" | "error" | null = null;
+  let lastInferenceErrorDetail: { category: string; message: string } | null =
+    null;
+
   async function pumpStream(): Promise<void> {
     for await (const event of agentInst.stream()) {
+      if (event.type === "inference.done") {
+        lastInferenceOutcome = "done";
+      } else if (event.type === "inference.error") {
+        lastInferenceOutcome = "error";
+        lastInferenceErrorDetail = event.data.error;
+      }
       // The two sinks are independent best-effort tracking. Isolate each so a
       // failure in one (an analytics outage, a collector write error) cannot
       // starve the other of the rest of the stream — including the finalization
@@ -169,12 +203,13 @@ export async function runTrackedOneShot(
   }
 
   const pumpDone = pumpStream();
+  let text: string;
   try {
     const result = await agentInst.send(opts.message);
     await agentInst.close();
     await pumpDone.catch(logTeardownError("pump stream"));
     if (collector) await collector.abandon();
-    return finalizedText ?? collector?.getAccumulatedText() ?? result.reply;
+    text = finalizedText ?? collector?.getAccumulatedText() ?? result.reply;
   } catch (err) {
     await agentInst.close().catch(logTeardownError("close agent"));
     await pumpDone.catch(logTeardownError("pump stream"));
@@ -185,4 +220,13 @@ export async function runTrackedOneShot(
   } finally {
     if (signal) signal.removeEventListener("abort", onAbort);
   }
+  // The turn's own inference cycle ended in an unrecoverable error: `text` is
+  // the director's SDK-synthesized apology text (capabilities.reply), not a
+  // real completion. Callers must see this as a failure, never as usable
+  // output (CL-3870) — surfacing it as text let a failed title turn persist
+  // the error message as if it were a generated title.
+  if (lastInferenceOutcome === "error" && lastInferenceErrorDetail) {
+    throw new InferenceTurnFailedError(lastInferenceErrorDetail);
+  }
+  return text;
 }

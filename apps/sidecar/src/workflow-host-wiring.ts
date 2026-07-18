@@ -2173,6 +2173,20 @@ export function resolveDefaultRecyclePolicy(): {
 }
 
 /**
+ * Whether a resolved recycle policy actually bounds RSS. A policy carrying
+ * only `maxUptimeMs`/`maxGrantsAgeMs` never reads `readRssBytes`, so the
+ * pid-tracking spawner wrapper (`createPidTrackingRssReader`) should only be
+ * installed when this is true -- installing it for any non-empty policy
+ * wraps the spawner on every spawn/recycle respawn for a reader nothing
+ * consults.
+ */
+export function recyclePolicyWantsRssTracking(recyclePolicy: {
+  maxRssBytes?: number;
+}): boolean {
+  return recyclePolicy.maxRssBytes !== undefined;
+}
+
+/**
  * Wraps a `SubprocessSpawner` so the supervisor's zero-arg
  * `readRssBytes` policy callback (`WorkflowSupervisorBindings.
  * readRssBytes` has no pid parameter) can still report the *current*
@@ -2220,9 +2234,11 @@ export function createSidecarWorkflowSupervisor(
     deploymentId: opts.deploymentId,
   };
   const recyclePolicy = opts.recyclePolicy ?? resolveDefaultRecyclePolicy();
-  const { spawner: trackingSpawner, readRssBytes } = createPidTrackingRssReader(
-    opts.subprocessSpawner ?? defaultSubprocessSpawner,
-  );
+  const baseSpawner = opts.subprocessSpawner ?? defaultSubprocessSpawner;
+  const wantsRssTracking = recyclePolicyWantsRssTracking(recyclePolicy);
+  const { spawner: trackingSpawner, readRssBytes } = wantsRssTracking
+    ? createPidTrackingRssReader(baseSpawner)
+    : { spawner: baseSpawner, readRssBytes: undefined };
   const supervisor = createWorkflowSupervisor({
     repoStore: opts.repoStore,
     signAsPrincipal: async (kind, payload) => {
@@ -2258,7 +2274,7 @@ export function createSidecarWorkflowSupervisor(
       ? { readyTimeoutMs: opts.readyTimeoutMs }
       : {}),
     ...(Object.keys(recyclePolicy).length > 0
-      ? { recyclePolicy, readRssBytes }
+      ? { recyclePolicy, ...(wantsRssTracking ? { readRssBytes } : {}) }
       : {}),
   });
   return {

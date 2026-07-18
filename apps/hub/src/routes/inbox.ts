@@ -103,10 +103,6 @@ export function createInboxRouter(
             "Invalid limit, malformed cursor, invalid inbox view, or cursor issued for a different view",
           content: { "application/json": { schema: resolver(ErrorResponse) } },
         },
-        409: {
-          description: "Caller has no provisioned membership yet",
-          content: { "application/json": { schema: resolver(ErrorResponse) } },
-        },
       },
     }),
     async (c) => {
@@ -137,7 +133,7 @@ export function createInboxRouter(
       }
       const member = await resolveCallerMember(db, userId);
       if (!member) {
-        return c.json({ error: "No provisioned membership" }, 409);
+        return c.json({ messages: [] });
       }
       const page = await listUserMailbox(db, {
         tenantId: member.tenantId,
@@ -167,7 +163,7 @@ export function createInboxRouter(
           description: "Server-Sent Events stream of mailbox delivery signals",
           content: { "text/event-stream": {} },
         },
-        409: {
+        403: {
           description: "Caller has no provisioned membership yet",
           content: { "application/json": { schema: resolver(ErrorResponse) } },
         },
@@ -177,7 +173,7 @@ export function createInboxRouter(
       const userId = c.get("userId");
       const member = await resolveCallerMember(db, userId);
       if (!member) {
-        return c.json({ error: "No provisioned membership" }, 409);
+        return c.json({ error: "No provisioned membership" }, 403);
       }
       const { principalId } = member;
 
@@ -223,17 +219,13 @@ export function createInboxRouter(
             },
           },
         },
-        409: {
-          description: "Caller has no provisioned membership yet",
-          content: { "application/json": { schema: resolver(ErrorResponse) } },
-        },
       },
     }),
     async (c) => {
       const userId = c.get("userId");
       const member = await resolveCallerMember(db, userId);
       if (!member) {
-        return c.json({ error: "No provisioned membership" }, 409);
+        return c.json({ unread: 0 });
       }
       const unread = await countUnreadActiveMailbox(db, {
         tenantId: member.tenantId,
@@ -267,12 +259,12 @@ export function createInboxRouter(
           description: "Invalid message id",
           content: { "application/json": { schema: resolver(ErrorResponse) } },
         },
-        404: {
-          description: "No such message in the caller's mailbox",
+        403: {
+          description: "Caller has no provisioned membership yet",
           content: { "application/json": { schema: resolver(ErrorResponse) } },
         },
-        409: {
-          description: "Caller has no provisioned membership yet",
+        404: {
+          description: "No such message in the caller's mailbox",
           content: { "application/json": { schema: resolver(ErrorResponse) } },
         },
       },
@@ -285,7 +277,7 @@ export function createInboxRouter(
       }
       const member = await resolveCallerMember(db, userId);
       if (!member) {
-        return c.json({ error: "No provisioned membership" }, 409);
+        return c.json({ error: "No provisioned membership" }, 403);
       }
       const message = await getMailboxMessage(db, {
         tenantId: member.tenantId,
@@ -323,12 +315,12 @@ export function createInboxRouter(
           description: "Invalid message id",
           content: { "application/json": { schema: resolver(ErrorResponse) } },
         },
-        404: {
-          description: "No such message in the caller's mailbox",
+        403: {
+          description: "Caller has no provisioned membership yet",
           content: { "application/json": { schema: resolver(ErrorResponse) } },
         },
-        409: {
-          description: "Caller has no provisioned membership yet",
+        404: {
+          description: "No such message in the caller's mailbox",
           content: { "application/json": { schema: resolver(ErrorResponse) } },
         },
       },
@@ -341,7 +333,7 @@ export function createInboxRouter(
       }
       const member = await resolveCallerMember(db, userId);
       if (!member) {
-        return c.json({ error: "No provisioned membership" }, 409);
+        return c.json({ error: "No provisioned membership" }, 403);
       }
       const marked = await markMailboxMessageRead(db, {
         tenantId: member.tenantId,
@@ -382,7 +374,7 @@ export function createInboxRouter(
             "Invalid JSON, invalid bulk request shape, non-UUID id, or too many ids",
           content: { "application/json": { schema: resolver(ErrorResponse) } },
         },
-        409: {
+        403: {
           description: "Caller has no provisioned membership yet",
           content: { "application/json": { schema: resolver(ErrorResponse) } },
         },
@@ -409,7 +401,7 @@ export function createInboxRouter(
       }
       const member = await resolveCallerMember(db, userId);
       if (!member) {
-        return c.json({ error: "No provisioned membership" }, 409);
+        return c.json({ error: "No provisioned membership" }, 403);
       }
       const updatedIds = await applyMailboxBulkAction(
         db,
@@ -440,7 +432,7 @@ export function createInboxRouter(
     }
     const member = await resolveCallerMember(db, userId);
     if (!member) {
-      return c.json({ error: "No provisioned membership" }, 409);
+      return c.json({ error: "No provisioned membership" }, 403);
     }
     const ok = await run({
       tenantId: member.tenantId,
@@ -480,7 +472,7 @@ export function createInboxRouter(
           description: "No such message in the caller's mailbox",
           content: { "application/json": { schema: resolver(ErrorResponse) } },
         },
-        409: {
+        403: {
           description: "Caller has no provisioned membership yet",
           content: { "application/json": { schema: resolver(ErrorResponse) } },
         },
@@ -522,7 +514,7 @@ export function createInboxRouter(
           description: "No such message in the caller's mailbox",
           content: { "application/json": { schema: resolver(ErrorResponse) } },
         },
-        409: {
+        403: {
           description: "Caller has no provisioned membership yet",
           content: { "application/json": { schema: resolver(ErrorResponse) } },
         },
@@ -564,7 +556,7 @@ export function createInboxRouter(
           description: "No such message in the caller's mailbox",
           content: { "application/json": { schema: resolver(ErrorResponse) } },
         },
-        409: {
+        403: {
           description: "Caller has no provisioned membership yet",
           content: { "application/json": { schema: resolver(ErrorResponse) } },
         },
@@ -582,7 +574,8 @@ export function createInboxRouter(
     "/me/inbox/:id/restore",
     describeRoute({
       tags: ["Me"],
-      summary: "Restore one archived or trashed mailbox message to the active inbox",
+      summary:
+        "Restore one archived or trashed mailbox message to the active inbox",
       parameters: [
         {
           name: "id",
@@ -606,7 +599,7 @@ export function createInboxRouter(
           description: "No such message in the caller's mailbox",
           content: { "application/json": { schema: resolver(ErrorResponse) } },
         },
-        409: {
+        403: {
           description: "Caller has no provisioned membership yet",
           content: { "application/json": { schema: resolver(ErrorResponse) } },
         },

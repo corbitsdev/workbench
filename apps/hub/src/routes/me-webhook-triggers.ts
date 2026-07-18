@@ -131,9 +131,12 @@ export function createMeWebhookTriggersRouter(
           description: "Invalid body or unknown workflow kind",
           content: { "application/json": { schema: resolver(ErrorResponse) } },
         },
+        403: {
+          description: "Caller has no provisioned membership yet",
+          content: { "application/json": { schema: resolver(ErrorResponse) } },
+        },
         409: {
-          description:
-            "Caller has no provisioned membership yet, or has reached the webhook trigger limit",
+          description: "Caller has reached the webhook trigger limit",
           content: { "application/json": { schema: resolver(ErrorResponse) } },
         },
       },
@@ -148,7 +151,7 @@ export function createMeWebhookTriggersRouter(
 
       const member = await resolveCallerMember(db, userId);
       if (!member) {
-        return c.json({ error: "No provisioned membership" }, 409);
+        return c.json({ error: "No provisioned membership" }, 403);
       }
 
       if (!(await isRunnableKind(db, member.tenantId, body.kind))) {
@@ -193,7 +196,7 @@ export function createMeWebhookTriggersRouter(
           description: "No such trigger owned by the caller",
           content: { "application/json": { schema: resolver(ErrorResponse) } },
         },
-        409: {
+        403: {
           description: "Caller has no provisioned membership yet",
           content: { "application/json": { schema: resolver(ErrorResponse) } },
         },
@@ -208,7 +211,7 @@ export function createMeWebhookTriggersRouter(
 
       const member = await resolveCallerMember(db, userId);
       if (!member) {
-        return c.json({ error: "No provisioned membership" }, 409);
+        return c.json({ error: "No provisioned membership" }, 403);
       }
 
       const deleted = await deleteOwnerWebhookTrigger(db, {

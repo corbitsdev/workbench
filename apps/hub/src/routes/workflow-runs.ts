@@ -908,6 +908,7 @@ export function createWorkflowRunsRouter(deps: {
         kind,
         tenantId: context.tenantId,
         input,
+        chain,
       });
       if (!result.ok && result.reason === "not_found") {
         return c.json({ error: result.message }, 404);

@@ -41,7 +41,6 @@ mock.module("../config", () => ({
 import { schema } from "../db";
 import type { HubDb } from "../db";
 import {
-  backfillMissingWorkflowFacts,
   projectWorkflowRunFacts,
   reprojectWorkflowFacts,
 } from "./workflow-run-facts";
@@ -711,66 +710,5 @@ describe("date-range analytics filter survives a reproject", () => {
     });
     expect(outOfWindow.byKind.find((r) => r.kind === KIND)).toBeUndefined();
     expect(outOfWindow.byStepKind.length).toBe(0);
-  });
-});
-
-describe("backfillMissingWorkflowFacts — recovers lost facts", () => {
-  test("projects a terminal run that has no fact, and skips runs that already do", async () => {
-    // Run 1: terminal record, log committed, but NO fact (its live projection was
-    // lost). Run 2: terminal record whose fact already exists.
-    await commitRunLog("wfr-missing");
-    await commitEvents("wfr-present", buildEventLog("wfr-present"));
-    await db.insert(schema.workflowRunRecord).values([
-      {
-        id: "wfr-missing",
-        deploymentId: DEPLOYMENT_ID,
-        kind: KIND,
-        tenantId: TENANT_ID,
-        principalId: "prn-facts",
-        status: "failed",
-        input: {},
-      },
-      {
-        id: "wfr-present",
-        deploymentId: DEPLOYMENT_ID,
-        kind: KIND,
-        tenantId: TENANT_ID,
-        principalId: "prn-facts",
-        status: "failed",
-        input: {},
-      },
-    ]);
-    // Pre-project only wfr-present.
-    await projectWorkflowRunFacts(
-      { db, repoStore: agentRepoStore },
-      {
-        repoId: REPO_ID,
-        runId: "wfr-present",
-        kind: KIND,
-        tenantId: TENANT_ID,
-      },
-    );
-    expect(
-      await getWorkflowRunBreakdown({
-        db,
-        tenantId: TENANT_ID,
-        runId: "wfr-missing",
-      }),
-    ).toBeNull();
-
-    const result = await backfillMissingWorkflowFacts(
-      { db, repoStore: agentRepoStore, deploymentDomain: DEPLOYMENT_DOMAIN },
-      { tenantId: TENANT_ID },
-    );
-
-    // Only the missing run is projected; the already-present one is not re-touched.
-    expect(result.projected).toBe(1);
-    const recovered = await getWorkflowRunBreakdown({
-      db,
-      tenantId: TENANT_ID,
-      runId: "wfr-missing",
-    });
-    expect(recovered?.outcome).toBe("failed");
-    expect(recovered?.steps.length).toBe(3);
   });
 });

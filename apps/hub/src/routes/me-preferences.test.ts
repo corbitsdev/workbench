@@ -169,10 +169,10 @@ describe("PATCH /api/v1/me/preferences", () => {
     });
   });
 
-  it("returns 409 when the caller has no provisioned membership", async () => {
+  it("returns 403 when the caller has no provisioned membership", async () => {
     member = null;
     const res = await mountApp().request(patch({ theme: "tkww" }));
-    expect(res.status).toBe(409);
+    expect(res.status).toBe(403);
   });
 
   it("persists a valid registry setting", async () => {

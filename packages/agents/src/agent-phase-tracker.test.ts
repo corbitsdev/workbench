@@ -113,6 +113,28 @@ describe("createAgentPhaseTracker", () => {
     expect(tracker.phase).toBe("thinking");
   });
 
+  it("recovers to idle after a content-less inference.done with no matching turn.committed (CL-3871)", () => {
+    const { transport, emit } = fakeTransport();
+    const tracker = createAgentPhaseTracker(transport, params);
+    emit({ type: "inference.start" });
+    expect(tracker.phase).toBe("thinking");
+    // A reactor decision cycle ("wait") ends with an empty turn and no
+    // turn.committed/reactor.done/reactor.error ever follows it.
+    emit({ type: "inference.done", data: { turn: { content: [] } } });
+    expect(tracker.phase).toBe("idle");
+  });
+
+  it("stays thinking on inference.done when the turn actually produced content", () => {
+    const { transport, emit } = fakeTransport();
+    const tracker = createAgentPhaseTracker(transport, params);
+    emit({ type: "inference.start" });
+    emit({
+      type: "inference.done",
+      data: { turn: { content: [{ type: "tool_call" }] } },
+    });
+    expect(tracker.phase).toBe("thinking");
+  });
+
   it("stops the underlying subscription", () => {
     const { transport, stopped } = fakeTransport();
     const tracker = createAgentPhaseTracker(transport, params);
