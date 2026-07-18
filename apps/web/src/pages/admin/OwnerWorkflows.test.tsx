@@ -73,4 +73,34 @@ describe("OwnerWorkflows", () => {
     renderPage();
     await waitFor(() => expect(screen.getByText(/no workflows are deployed/i)));
   });
+
+  it("only disables the row whose toggle is in flight, not every row", async () => {
+    workflows = [
+      { kind: "brief-builder", enabled: true },
+      { kind: "seo-audit", enabled: true },
+    ];
+    let resolveToggle: (() => void) | undefined;
+    setEnabled.mockImplementationOnce(
+      (kind: string, enabled: boolean) =>
+        new Promise((resolve) => {
+          resolveToggle = () => resolve({ kind, enabled });
+        }),
+    );
+    const user = userEvent.setup();
+    renderPage();
+    await waitFor(() => expect(screen.getByText("brief-builder")));
+
+    const buttons = () =>
+      Array.from(document.querySelectorAll("button")).filter(
+        (b) => b.textContent === "Disable",
+      ) as HTMLButtonElement[];
+    const [briefBuilderBtn, seoAuditBtn] = buttons();
+    await user.click(briefBuilderBtn);
+
+    await waitFor(() => expect(briefBuilderBtn.disabled).toBe(true));
+    expect(seoAuditBtn.disabled).toBe(false);
+
+    resolveToggle?.();
+    await waitFor(() => expect(briefBuilderBtn.disabled).toBe(false));
+  });
 });

@@ -253,6 +253,128 @@ describe("OwnerCapabilities", () => {
     ).toBeDefined();
   });
 
+  it("only disables the feature row whose toggle is in flight, not every row", async () => {
+    featuresOutcome = {
+      kind: "resolve",
+      data: {
+        features: [
+          {
+            name: "scheduler",
+            label: "Automation scheduler",
+            description: "Fires durable scheduled triggers.",
+            enabled: false,
+            forcedByEnv: false,
+            principalId: null,
+          },
+          {
+            name: "triage",
+            label: "Mailbox triage",
+            description: "Ephemeral Myra triage.",
+            enabled: false,
+            forcedByEnv: false,
+            principalId: null,
+          },
+        ],
+      },
+    };
+    let resolveToggle: (() => void) | undefined;
+    setOwnerFeatureEnabledMock.mockImplementationOnce(
+      (name: string, enabled: boolean) =>
+        new Promise((resolve) => {
+          resolveToggle = () => resolve({ name, enabled });
+        }),
+    );
+    renderCapabilities();
+    await waitFor(() => expect(screen.getByText("Automation scheduler")));
+
+    const enableButtons = () =>
+      screen.getAllByRole("button", { name: "Enable" }) as HTMLButtonElement[];
+    const [schedulerBtn, triageBtn] = enableButtons();
+    schedulerBtn.click();
+
+    await waitFor(() => expect(schedulerBtn.disabled).toBe(true));
+    expect(triageBtn.disabled).toBe(false);
+
+    resolveToggle?.();
+    await waitFor(() => expect(schedulerBtn.disabled).toBe(false));
+  });
+
+  it("only disables the inbox source row whose toggle is in flight, not every row", async () => {
+    inboxSourcesOutcome = {
+      kind: "resolve",
+      data: {
+        sources: [
+          {
+            key: "granola",
+            label: "Granola",
+            description: "Call notes from meetings.",
+            enabled: true,
+          },
+          {
+            key: "gmail",
+            label: "Gmail",
+            description: "Email intake.",
+            enabled: true,
+          },
+        ],
+      },
+    };
+    let resolveToggle: (() => void) | undefined;
+    setOwnerInboxSourceEnabledMock.mockImplementationOnce(
+      (key: string, enabled: boolean) =>
+        new Promise((resolve) => {
+          resolveToggle = () => resolve({ key, enabled });
+        }),
+    );
+    renderCapabilities();
+    await waitFor(() => expect(screen.getByText("Granola")));
+
+    const disableButtons = () =>
+      screen.getAllByRole("button", {
+        name: "Disable",
+      }) as HTMLButtonElement[];
+    const [granolaBtn, gmailBtn] = disableButtons();
+    granolaBtn.click();
+
+    await waitFor(() => expect(granolaBtn.disabled).toBe(true));
+    expect(gmailBtn.disabled).toBe(false);
+
+    resolveToggle?.();
+    await waitFor(() => expect(granolaBtn.disabled).toBe(false));
+  });
+
+  it("only disables the OAuth capability row whose toggle is in flight, not every row", async () => {
+    oauthCapabilitiesOutcome = {
+      kind: "resolve",
+      data: {
+        capabilities: [
+          { provider: "linear", label: "Linear", enabled: true },
+          { provider: "github", label: "GitHub", enabled: true },
+        ],
+      },
+    };
+    let resolveToggle: (() => void) | undefined;
+    setOwnerCapabilityEnabledMock.mockImplementationOnce(
+      (provider: string, enabled: boolean) =>
+        new Promise((resolve) => {
+          resolveToggle = () => resolve({ provider, enabled });
+        }),
+    );
+    renderCapabilities();
+    await waitFor(() => expect(screen.getByText("Linear")));
+
+    const hideButtons = () =>
+      screen.getAllByRole("button", { name: "Hide" }) as HTMLButtonElement[];
+    const [linearBtn, githubBtn] = hideButtons();
+    linearBtn.click();
+
+    await waitFor(() => expect(linearBtn.disabled).toBe(true));
+    expect(githubBtn.disabled).toBe(false);
+
+    resolveToggle?.();
+    await waitFor(() => expect(linearBtn.disabled).toBe(false));
+  });
+
   it("toggles an OAuth capability on click, calling the hub API with the flipped state", async () => {
     oauthCapabilitiesOutcome = {
       kind: "resolve",

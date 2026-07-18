@@ -44,6 +44,7 @@ export function OwnerCapabilities() {
   const credentials = useQuery({
     queryKey: ["owner", "credentials"],
     queryFn: getOwnerCredentials,
+    staleTime: 5 * 60_000,
   });
   const toolCredentials = credentials.data?.filter((c) => c.kind === "tool");
 
@@ -145,6 +146,11 @@ export function OwnerCapabilities() {
             <ul className="divide-y divide-border">
               {features.data.features.map((f) => {
                 const statusId = `feature-status-${f.name}`;
+                // Only the row whose write is in flight is disabled, not the
+                // whole table — mutation.variables identifies which feature.
+                const busy =
+                  toggleFeature.isPending &&
+                  toggleFeature.variables?.name === f.name;
                 return (
                   <li
                     key={f.name}
@@ -167,7 +173,7 @@ export function OwnerCapabilities() {
                       type="button"
                       variant={f.enabled ? "ghost" : "primary"}
                       size="sm"
-                      disabled={toggleFeature.isPending || f.forcedByEnv}
+                      disabled={busy || f.forcedByEnv}
                       title={
                         f.forcedByEnv
                           ? "Forced on by the deployment"
@@ -217,37 +223,46 @@ export function OwnerCapabilities() {
         ) : (
           <div className={adminTableCard}>
             <ul className="divide-y divide-border">
-              {inboxSources.data.sources.map((s) => (
-                <li
-                  key={s.key}
-                  className="flex items-center justify-between gap-4 p-3"
-                >
-                  <div className="min-w-0">
-                    <p className="text-sm font-medium text-text">{s.label}</p>
-                    <p className="mt-0.5 text-xs text-text-2">
-                      {s.description}
-                    </p>
-                    <p className="mt-0.5 text-xs text-text-3">
-                      {s.enabled ? "Enabled" : "Disabled"}
-                    </p>
-                  </div>
-                  <Button
-                    type="button"
-                    variant={s.enabled ? "ghost" : "primary"}
-                    size="sm"
-                    disabled={toggleInboxSource.isPending}
-                    onClick={() => {
-                      setInboxSourceError(null);
-                      toggleInboxSource.mutate({
-                        key: s.key,
-                        enabled: !s.enabled,
-                      });
-                    }}
+              {inboxSources.data.sources.map((s) => {
+                // Only the row whose write is in flight is disabled, not the
+                // whole table — mutation.variables identifies which source.
+                const busy =
+                  toggleInboxSource.isPending &&
+                  toggleInboxSource.variables?.key === s.key;
+                return (
+                  <li
+                    key={s.key}
+                    className="flex items-center justify-between gap-4 p-3"
                   >
-                    {s.enabled ? "Disable" : "Enable"}
-                  </Button>
-                </li>
-              ))}
+                    <div className="min-w-0">
+                      <p className="text-sm font-medium text-text">
+                        {s.label}
+                      </p>
+                      <p className="mt-0.5 text-xs text-text-2">
+                        {s.description}
+                      </p>
+                      <p className="mt-0.5 text-xs text-text-3">
+                        {s.enabled ? "Enabled" : "Disabled"}
+                      </p>
+                    </div>
+                    <Button
+                      type="button"
+                      variant={s.enabled ? "ghost" : "primary"}
+                      size="sm"
+                      disabled={busy}
+                      onClick={() => {
+                        setInboxSourceError(null);
+                        toggleInboxSource.mutate({
+                          key: s.key,
+                          enabled: !s.enabled,
+                        });
+                      }}
+                    >
+                      {s.enabled ? "Disable" : "Enable"}
+                    </Button>
+                  </li>
+                );
+              })}
             </ul>
           </div>
         )}
@@ -277,36 +292,45 @@ export function OwnerCapabilities() {
           <div className={adminTableCard}>
             <ul className="divide-y divide-border">
               {oauthCapabilities.data.capabilities.map(
-                (cap: OwnerCapabilityState) => (
-                  <li
-                    key={cap.provider}
-                    className="flex items-center justify-between gap-4 p-3"
-                  >
-                    <div className="min-w-0">
-                      <p className="text-sm font-medium text-text">
-                        {cap.label}
-                      </p>
-                      <p className="mt-0.5 text-xs text-text-3">
-                        {cap.enabled ? "Enabled" : "Hidden from members"}
-                      </p>
-                    </div>
-                    <Button
-                      type="button"
-                      variant={cap.enabled ? "ghost" : "primary"}
-                      size="sm"
-                      disabled={toggleOauthCapability.isPending}
-                      onClick={() => {
-                        setOauthError(null);
-                        toggleOauthCapability.mutate({
-                          provider: cap.provider,
-                          enabled: !cap.enabled,
-                        });
-                      }}
+                (cap: OwnerCapabilityState) => {
+                  // Only the row whose write is in flight is disabled, not
+                  // the whole table — mutation.variables identifies which
+                  // provider that is.
+                  const busy =
+                    toggleOauthCapability.isPending &&
+                    toggleOauthCapability.variables?.provider ===
+                      cap.provider;
+                  return (
+                    <li
+                      key={cap.provider}
+                      className="flex items-center justify-between gap-4 p-3"
                     >
-                      {cap.enabled ? "Hide" : "Enable"}
-                    </Button>
-                  </li>
-                ),
+                      <div className="min-w-0">
+                        <p className="text-sm font-medium text-text">
+                          {cap.label}
+                        </p>
+                        <p className="mt-0.5 text-xs text-text-3">
+                          {cap.enabled ? "Enabled" : "Hidden from members"}
+                        </p>
+                      </div>
+                      <Button
+                        type="button"
+                        variant={cap.enabled ? "ghost" : "primary"}
+                        size="sm"
+                        disabled={busy}
+                        onClick={() => {
+                          setOauthError(null);
+                          toggleOauthCapability.mutate({
+                            provider: cap.provider,
+                            enabled: !cap.enabled,
+                          });
+                        }}
+                      >
+                        {cap.enabled ? "Hide" : "Enable"}
+                      </Button>
+                    </li>
+                  );
+                },
               )}
             </ul>
           </div>
