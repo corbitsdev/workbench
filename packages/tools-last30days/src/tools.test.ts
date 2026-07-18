@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { type Report, parseReport } from "@workbench/last30days-core";
 import { createLast30daysTools } from "./tools";
+import { toolManifestFile } from "./tool-manifest";
 
 type StringHandler = (
   args: Record<string, unknown>,
@@ -616,5 +617,24 @@ describe("heartbeat_format_brief_title (CL-3502)", () => {
     }
     const content = result.content as { title: string };
     expect(content.title).toMatch(/^Your Morning Brief - \d{2}\/\d{2}\/\d{2}$/);
+  });
+});
+
+describe("tool-manifest completeness", () => {
+  test("every registered tool name is declared in the hand-authored manifest", () => {
+    const runtimeNames = createLast30daysTools()
+      .map((tool) => tool.definition.name)
+      .sort();
+    const factory = toolManifestFile.factories[0];
+    if (!factory) {
+      throw new Error("expected the last30days manifest to declare a factory");
+    }
+    const manifestNames = [...factory.bareToolNames].sort();
+    // A tool present in tools.ts but missing from tool-manifest.ts never gets
+    // namespaced by canonicalizeToolNames (packages/agent-core/src/tool-names.ts
+    // derives its table from this manifest), so a workflow step declaring the
+    // tool stays bare while the sidecar loader registers the namespaced name —
+    // the exact "tool ... is not registered/available" dispatch failure.
+    expect(manifestNames).toEqual(runtimeNames);
   });
 });
