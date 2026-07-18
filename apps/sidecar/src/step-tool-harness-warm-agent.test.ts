@@ -222,6 +222,9 @@ async function buildWarmAgent(args: {
     stepAddress: "myra@tenant.localhost",
     principalId: "ins_ses_1-step",
     grants: toolGrants(args.grantedLlmNames) as never,
+    // loadToolPackages is module-mocked here; the on-disk read just needs a
+    // valid dir (no deploy/ → undefined manifest, ignored by the mock).
+    deployTreeDir: args.storeDir,
     cacheRoot: path.join(args.storeDir, "cache"),
     cacheMaxBytes: 1024 * 1024,
     registryMaxTarballBytes: 1024 * 1024,

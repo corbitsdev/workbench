@@ -168,6 +168,13 @@ export function createWorkflowDeployService(deps: {
   // Optional: roll back a partial per-run deploy on failure. Absent in unit
   // tests that never exercise the failure path.
   reclaimDeployment?: ReclaimDeploymentFn;
+  // Per-step deploy-tree stager (interchange `SessionService.stageWorkflowStep`):
+  // for each multi-step step, resolves the step's pinned tool closure into a
+  // `deploy/tool-packages-manifest.json` + asset tarballs and stages them on
+  // disk at the step's address, so the sidecar materializes the step's tools
+  // from disk (the on-disk model) rather than the retired hub-RPC manifest
+  // fetch. Absent in unit tests / catalog-publish, where staging is a no-op.
+  stageWorkflowStep?: LaunchSessionFn;
 }): WorkflowDeployService {
   const { db, directorRegistry } = deps;
 
@@ -219,21 +226,19 @@ export function createWorkflowDeployService(deps: {
     //     NO grants file (the deny-all path never reads `grants.json`), and NO
     //     launchSession.
     //   deployed (reasoning with tools) — an `agent` row, an
-    //     `agent_instance` row, and a `state/grants.json`. As of CL-2782 its
-    //     per-step `launchSession` is ALSO no-op'd: the launched session was
-    //     pure up-front overhead (~17s of serialized deploy→pack→session-start
-    //     round-trips per step) that nothing the running step reads is
-    //     produced by. Execution rebuilds everything from these hub-written
-    //     artifacts — the agent def from workflow.json, the grants from
-    //     `state/grants.json`, and the tool manifest/credentials via hub RPC
-    //     gated on the `agent` row — none of it from the launch. The
-    //     `reestablishSupervisor` path already runs deployed steps with no
-    //     launched session (its production precedent).
+    //     `agent_instance` row, and a `state/grants.json`. Execution reads its
+    //     inputs from these hub-written artifacts: the agent def from
+    //     workflow.json, the grants from `state/grants.json`, the tools from
+    //     the on-disk deploy tree the per-step stager writes, and the
+    //     credentials via the hub credential rail gated on the `agent` row.
     //
-    // `launchSession` is no-op'd below for EVERY step class — inline,
-    // deterministic, and deployed — so no step launches a per-step session.
-    // That, plus skipping the inline/deterministic agent-state repos, is the
-    // session-per-step RAM win (now extended to deployed steps by CL-2782).
+    // The orchestrator calls its per-step `launchSession` hook once per step.
+    // In a production provision that hook is the on-disk tool stager
+    // (`stageWorkflowStep`), which stages each step's pinned tool closure into
+    // the deploy tree the sidecar materializes from disk; the catalog-publish
+    // path passes a no-op instead (it touches no sidecar). Skipping the
+    // inline/deterministic agent-state repos is the session-per-step RAM
+    // saving carried over from the retired in-process runtime.
     const inlineStepIds = collectInlineStepIds(params.workflow);
     const deterministicStepIds = collectDeterministicToolStepIds(
       params.workflow,
@@ -248,13 +253,11 @@ export function createWorkflowDeployService(deps: {
     const agentRowStepIds = allStepIds.filter(
       (stepId) => !inlineStepIds.has(stepId),
     );
-    // No step launches a per-step session (CL-2782): the orchestrator's
-    // per-step launch hook is a no-op for every step class, so the deploy
-    // rebuilds each step from the hub-written artifacts (workflow.json,
-    // `state/grants.json`, the `agent` row + hub RPC) at execution time. With
-    // the in-process session runtime retired upstream there is no launchSession
-    // to call at all; the hook exists only to satisfy the orchestrator's
-    // required dependency.
+    // The orchestrator's per-step hook stages each step's tool tree on disk in
+    // a production provision so the sidecar materializes the step's tools from
+    // the deploy tree; the deploy also rebuilds each step from the other
+    // hub-written artifacts (workflow.json, `state/grants.json`, the `agent`
+    // row + the credential/grants hub rails) at execution time.
 
     // Persist an `agent` row per step that needs one (deployed + deterministic
     // tool). Interchange's launchSession never writes one, and the hub's
@@ -355,19 +358,34 @@ export function createWorkflowDeployService(deps: {
     const dbfanoutMs = performance.now() - dbfanoutStart;
     lastDbFanoutMs = dbfanoutMs;
 
-    // The orchestrator still walks every step (it pins each step's
-    // InferenceSource into the supervisor frame's `sources` map, which the
-    // sidecar's STEP_INFERENCE_SOURCES table reads — inline steps need that
-    // entry too) and calls its `launchSession` hook once per step. With the
-    // in-process session runtime retired upstream, that hook is a no-op for
-    // every step class: nothing the running step reads is produced by a
-    // per-step launch (execution rebuilds def/grants/tools from hub-written
-    // artifacts), so no agent-state repo is provisioned and the sidecar is
-    // untouched until the single supervisor `agent.deploy` frame.
+    // The orchestrator walks every step (it pins each step's InferenceSource
+    // into the supervisor frame's `sources` map, which the sidecar's
+    // STEP_INFERENCE_SOURCES table reads — inline steps need that entry too)
+    // and calls its `launchSession` hook once per step.
+    // On-disk cutover: stage each multi-step step's pinned tool closure to
+    // disk so the sidecar materializes it from the deploy tree. Catalog
+    // publish (sendSupervisorFrame=false) must not touch the sidecar, so it
+    // gets the no-op. A production provision (sendSupervisorFrame=true)
+    // REQUIRES an injected stager: degrading it to the no-op when the stager
+    // is absent would deploy every step with no staged tool tree and load
+    // ZERO tools with no error — a silent-zero-tools regression. Fail loud on
+    // that misconfiguration instead (the repo's no-silent-fallback rule).
+    let stepStager: LaunchSessionFn;
+    if (sendSupervisorFrame) {
+      if (deps.stageWorkflowStep === undefined) {
+        throw new Error(
+          "workflow provision requires an injected stageWorkflowStep stager; without it every step would stage no tool tree and load zero tools",
+        );
+      }
+      stepStager = deps.stageWorkflowStep;
+    } else {
+      stepStager = noLaunchStepSession;
+    }
+
     const orchestrator = createWorkflowDeployOrchestrator({
       directorRegistry,
       workflowRepo: createWorkflowRepoWriter(deps.repoStore),
-      launchSession: noLaunchStepSession,
+      launchSession: stepStager,
       // Catalog publish (sendSupervisorFrame=false) hands the orchestrator a
       // no-op that resolves without touching the sidecar, so the workflow repo
       // + capability walk run but no `agent.deploy` frame is sent and no
@@ -1206,22 +1224,40 @@ export function toSendMultiStepDeploy(
 
 // Single-step (one-step workflow) hand-off. Upstream's orchestrator routes a
 // definition whose `stepOrder` has length 1 through `deploySingleStepAtHead`
-// instead of the multi-step branch. In the workbench's hub-RPC model the head
-// deploy tree, step grants, and workflow repo are already written by `runDeploy`
-// before the orchestrator runs, so — exactly like the multi-step supervisor
-// hand-off — this only needs to fire the deployment `agent.deploy` frame that
-// spawns the supervised workflow-process child; the child runs the sole step.
-// The extra `deployContent`/`toolPackagePins`/`hubPublicKey` fields the
-// single-step signature carries (for upstream's substrate tree staging) are not
-// needed here and are intentionally ignored.
+// instead of the multi-step branch. This hand-off fires the deployment
+// `agent.deploy` frame that spawns the supervised workflow-process child (the
+// child runs the sole step); it does NOT stage an on-disk tool tree for the
+// head. On-disk tool-tree staging for a single-step workflow is a deliberately
+// deferred follow-up, so a single-step definition that actually carries tool
+// pins (or deploy content implying a tool manifest) would deploy with no staged
+// tree and load ZERO tools with no error — a silent-zero-tools trap. Guard it:
+// no current workflow is single-step, so this throws for nobody today; it is a
+// tripwire for the day one is authored with tools before the staging follow-up
+// lands.
 export function toDeploySingleStepAtHead(
   sidecarRouter: SidecarRouter,
 ): DeploySingleStepFn {
-  return ({ agentAddress, config, definition, sources }) =>
-    sidecarRouter.sendAgentDeploy(agentAddress, config, {
+  return ({
+    agentAddress,
+    config,
+    definition,
+    sources,
+    deployContent,
+    toolPackagePins,
+  }) => {
+    const hasToolPins =
+      toolPackagePins !== undefined && toolPackagePins.length > 0;
+    const impliesToolStaging = deployContent.toolPackageManifest !== undefined;
+    if (hasToolPins || impliesToolStaging) {
+      throw new Error(
+        "single-step workflow tool-tree staging is not implemented on the on-disk path; deploying with tool pins would silently load zero tools",
+      );
+    }
+    return sidecarRouter.sendAgentDeploy(agentAddress, config, {
       definition: definition as AgentDeployWorkflow["definition"],
       sources,
     });
+  };
 }
 
 // The hub is the operator: a workflow it chose to deploy is approved for the

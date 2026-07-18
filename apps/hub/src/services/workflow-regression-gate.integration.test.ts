@@ -265,6 +265,10 @@ async function deployEmbedded(
     repoStore: toAgentRepoStore(repoStore),
     sidecarRouter,
     directorRegistry: createWorkbenchDirectorRegistry(),
+    // Provisioning REQUIRES a stager (FIX 2b); this test stages no real tool
+    // tree, so inject an explicit no-op rather than relying on a silent
+    // fallback.
+    stageWorkflowStep: () => Promise.resolve(),
   });
 
   await service.deployWorkflow({

@@ -56,20 +56,12 @@ afterEach(() => {
   globalThis.fetch = realFetch;
 });
 
-// Empty manifest + credentials so the loader materializes zero tarballs; the
-// test targets the grants-backed `authorize` the factory installs.
+// Empty deploy tree (see makeCtx) so the on-disk loader materializes zero
+// tools; the test targets the grants-backed `authorize` the factory installs.
+// Only the credential rail is still a hub fetch.
 function stubHubFetch(): void {
   globalThis.fetch = (async (input: string | URL | Request) => {
     const url = String(input);
-    if (url.includes("/api/internal/tools/manifest")) {
-      return new Response(
-        JSON.stringify({
-          manifest: { schemaVersion: "1", topLevel: [], entries: [] },
-          tarballs: [],
-        }),
-        { headers: { "content-type": "application/json" } },
-      );
-    }
     if (url.includes("/api/internal/tools/credentials")) {
       return new Response(JSON.stringify({ credentials: {} }), {
         headers: { "content-type": "application/json" },
@@ -111,6 +103,8 @@ function makeCtx(
     stepAddress: "ins_dep-1-analyze",
     principalId: "ins_dep-1-analyze",
     grants,
+    // No deploy/ subtree under storeDir → empty on-disk manifest → zero tools.
+    deployTreeDir: storeDir,
     cacheRoot: path.join(storeDir, "cache"),
     cacheMaxBytes: 1024 * 1024,
     registryMaxTarballBytes: 1024 * 1024,

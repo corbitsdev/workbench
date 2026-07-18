@@ -88,20 +88,12 @@ afterAll(async () => {
   );
 });
 
-// Empty hub manifest + no credentials: the step loads only its local posix
-// tools, enough to dispatch `write_file` through the deterministic branch.
+// No credentials: the step loads only its local posix tools, enough to
+// dispatch `write_file` through the deterministic branch. Tool resolution is
+// on-disk now, so the sidecar makes no manifest fetch.
 function stubHubFetch(): void {
   globalThis.fetch = (async (input: string | URL | Request) => {
     const url = String(input);
-    if (url.includes("/api/internal/tools/manifest")) {
-      return new Response(
-        JSON.stringify({
-          manifest: { schemaVersion: "1", topLevel: [], entries: [] },
-          tarballs: [],
-        }),
-        { headers: { "content-type": "application/json" } },
-      );
-    }
     if (url.includes("/api/internal/tools/credentials")) {
       return new Response(JSON.stringify({ credentials: {} }), {
         headers: { "content-type": "application/json" },
@@ -379,6 +371,9 @@ describe("createSidecarStepInvoker", () => {
         stepAddress: `ins_dep-${stepId}`,
         principalId: `ins_dep-${stepId}`,
         grants: [],
+        // No deploy/ subtree under dataDir → empty on-disk manifest → local
+        // (posix) tools only, which is what the deterministic dispatch needs.
+        deployTreeDir: dataDir,
         cacheRoot: path.join(dataDir, "cache"),
         cacheMaxBytes: 1024 * 1024,
         registryMaxTarballBytes: 1024 * 1024,
@@ -836,6 +831,9 @@ describe("createStepToolContextResolver", () => {
     const dataDir = await makeDataDir();
     const resolve = createStepToolContextResolver({
       bareStore: makeStubBareStore(dataDir),
+      dataDir,
+      mailboxAddress: "ins_dep@tenant.example",
+      stepCount: 2,
       // RAW hub deploymentId (`ses_<id>`), the value the deploy router
       // threads via WORKFLOW_RAW_DEPLOYMENT_ID.
       deploymentId: "ses_218f6ab782774a3e70b5d86f01e602d8",
@@ -865,6 +863,9 @@ describe("createStepToolContextResolver", () => {
     const dataDir = await makeDataDir();
     const resolve = createStepToolContextResolver({
       bareStore: makeStubBareStore(dataDir),
+      dataDir,
+      mailboxAddress: "ins_dep@tenant.example",
+      stepCount: 2,
       deploymentId: "ses_218f6ab782774a3e70b5d86f01e602d8",
       tenantId: "ten_1",
       hubHttpUrl: "http://hub.invalid",
@@ -889,6 +890,9 @@ describe("createStepToolContextResolver", () => {
     // the double-prefixed, dot-slugged id the hub never registered.
     const resolve = createStepToolContextResolver({
       bareStore: makeStubBareStore(dataDir),
+      dataDir,
+      mailboxAddress: "ins_dep@tenant.example",
+      stepCount: 2,
       deploymentId: "ins_ses_abc-abklabs-com",
       tenantId: "ten_1",
       hubHttpUrl: "http://hub.invalid",
@@ -1272,6 +1276,8 @@ describe("live durable-conversation seam on a single-step (warmKeep) deploy", ()
         stepAddress: `ins_dep-${stepId}`,
         principalId: `ins_dep-${stepId}`,
         grants: [],
+        // No deploy/ subtree under dataDir → empty on-disk manifest.
+        deployTreeDir: dataDir,
         cacheRoot: path.join(dataDir, "cache"),
         cacheMaxBytes: 1024 * 1024,
         registryMaxTarballBytes: 1024 * 1024,

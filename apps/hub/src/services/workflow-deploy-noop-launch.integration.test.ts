@@ -210,6 +210,10 @@ async function deployDeployedWorkflow(): Promise<DeployProbes> {
     repoStore: toAgentRepoStore(repoStore),
     sidecarRouter,
     directorRegistry: createWorkbenchDirectorRegistry(),
+    // Provisioning REQUIRES a stager (FIX 2b). This test proves deploy-artifact
+    // persistence, not on-disk staging, so inject an explicit no-op stager
+    // (the single supervisor frame is still the only sidecar hand-off).
+    stageWorkflowStep: () => Promise.resolve(),
   });
 
   await service.deployWorkflow({

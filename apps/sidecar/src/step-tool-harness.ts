@@ -1,17 +1,20 @@
-// Tool-capable harness for workflow STEP agents.
+// Tool-capable harness for workflow STEP agents (and single agents, which
+// run as single-step workflow deployments).
 //
-// A live agent's harness (`default-harness.ts`) loads its pinned tool
-// packages from an on-disk deploy pack (`readDeployTree`), resolves the
-// provider credentials those packages declare over the hub, and exposes
-// hub-backed tool packages via a hub-RPC context. A workflow step runs in
-// the shared `bin/workflow-child` and has none of that: no deploy pack, no
-// agent transport, no per-instance launch. This module gives a step agent
-// the same tool surface by fetching the resolved manifest + tarballs from
-// the hub's `/api/internal/tools/manifest` rail, materializing the tarballs
-// on disk, and loading them through the same `@intx/tool-packaging` loader
-// the live path uses. Tool credentials and the hub-RPC context are resolved
-// the same way too — so a step's Granola/Gamma/Reddit/image tools work
-// end-to-end and are gated identically (by the step's persisted `agent` row).
+// Every deployed agent/step reads its pinned tool closure from the on-disk
+// deploy tree the hub stages at deploy time: `deploy/tool-packages-manifest.json`
+// + `deploy/asset-mounts.json` plus the asset tarballs under `workspace/`, at
+// `<dataDir>/<sanitizeAddress(stepAddress)>/` (single agents at the head via
+// `deployInstanceAtHead`; multi-step steps via `stageWorkflowStep`). This
+// module loads that closure through the `@intx/tool-packaging` loader, then
+// layers the workbench-specific injection AROUND the native loader: it
+// resolves the tenant tool credentials the packages declare
+// (`/api/internal/tools/credentials`) and builds the hub-RPC context for
+// hub-backed `RuntimeCapabilities` packages (`/api/internal/hub-tools/run`),
+// so a step's Granola/Gamma/Reddit/image tools authenticate and reach the hub
+// exactly as before — gated by the step's persisted `agent` row and grants.
+// The tool RESOLUTION is upstream's on-disk model; the credential + hub-backed
+// rails are the thin layer the workbench keeps around it.
 
 import fs from "node:fs";
 import path from "node:path";
@@ -26,9 +29,9 @@ import { createBlobReader } from "@intx/types/runtime";
 import type { ContextStore, MessageTransport } from "@intx/types/runtime";
 import { createMailTools } from "@intx/tools-mail";
 import { createPosixTools } from "@intx/tools-posix";
+import { readDeployTree } from "@workbench/hub-agent";
 import {
   HUB_RPC_ENV_KEY,
-  ToolManifestResponse,
   providerFromEnvKey,
 } from "@workbench/tool-credentials";
 import {
@@ -161,6 +164,17 @@ export interface StepToolContext {
   workflowRunId?: string;
   /** The step's grants, read from its agent-state repo. */
   grants: GrantRule[];
+  /**
+   * On-disk deploy-tree directory for this step
+   * (`<dataDir>/<sanitizeAddress(stepAddress)>`). The hub stages
+   * `deploy/tool-packages-manifest.json` + `deploy/asset-mounts.json` here at
+   * deploy time (single agents at the head via `deployInstanceAtHead`,
+   * multi-step steps via `stageWorkflowStep`), and the asset tarballs under
+   * `<deployTreeDir>/workspace/`. The step harness reads its pinned tool
+   * closure straight off this tree — the on-disk model, replacing the retired
+   * hub-RPC `/api/internal/tools/manifest` fetch.
+   */
+  deployTreeDir: string;
   cacheRoot: string;
   cacheMaxBytes: number;
   registryMaxTarballBytes: number;
@@ -169,104 +183,29 @@ export interface StepToolContext {
 export const STEP_TOOL_CONTEXT_KEY = "workbench.stepToolContext";
 
 /**
- * Fetch the step agent's resolved tool-package manifest plus the raw bytes
- * of every asset-sourced tarball it references, then materialize those
- * tarballs under `<storeDir>/workspace/<mount>/<path>` so the loader's
- * `assetMounts` map resolves exactly as the live path's deploy-pack write
- * would. Returns the raw manifest bytes and the reconstructed assetMounts.
+ * Read the step's pinned tool-package manifest + asset-mounts from the
+ * on-disk deploy tree the hub staged at deploy time. The tarballs are
+ * already staged under `<deployTreeDir>/workspace/<mount>/<path>` (the hub's
+ * asset-pack push), so the loader's `assetMounts` map resolves against that
+ * workspace directly — no re-materialization from the wire.
  *
- * Fail-soft on transport/validation errors: returns no manifest, so the
- * step runs with local tools only rather than failing the whole step.
+ * A deploy with no tool-package manifest yields `rawManifestBytes:
+ * undefined` (the legitimate no-native-tools case); the step then runs with
+ * local tools only. A present-but-corrupt manifest surfaces loudly through
+ * `loadToolPackages` (the JSON/schema throw path), never a silent empty-tools
+ * fallback that would mask a broken deploy.
  */
-export async function fetchStepToolManifest(args: {
+export async function readStepDeployTree(args: {
   ctx: StepToolContext;
-  storeDir: string;
 }): Promise<{
   rawManifestBytes: string | undefined;
-  assetMounts: Map<string, string>;
+  assetMounts: ReadonlyMap<string, string>;
 }> {
-  const empty = {
-    rawManifestBytes: undefined,
-    assetMounts: new Map<string, string>(),
+  const tree = await readDeployTree(args.ctx.deployTreeDir);
+  return {
+    rawManifestBytes: tree.toolPackageManifestRaw,
+    assetMounts: tree.assetMounts,
   };
-  let response: Response;
-  try {
-    response = await fetch(
-      `${args.ctx.hubHttpUrl}/api/internal/tools/manifest`,
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${args.ctx.sidecarToken}`,
-        },
-        body: JSON.stringify({
-          tenantId: args.ctx.tenantId,
-          agentId: args.ctx.stepAgentId,
-        }),
-      },
-    );
-  } catch (err) {
-    logger.warn("Step tool-manifest fetch failed for {address}: {msg}", {
-      address: args.ctx.stepAddress,
-      msg: err instanceof Error ? err.message : String(err),
-    });
-    return empty;
-  }
-  if (!response.ok) {
-    logger.warn("Step tool-manifest fetch for {address} returned {status}", {
-      address: args.ctx.stepAddress,
-      status: response.status,
-    });
-    return empty;
-  }
-  const parsed = ToolManifestResponse(await response.json());
-  if (parsed instanceof type.errors) {
-    logger.warn(
-      "Step tool-manifest response for {address} failed validation: {summary}",
-      {
-        address: args.ctx.stepAddress,
-        summary: parsed.summary,
-      },
-    );
-    return empty;
-  }
-
-  const workspaceRoot = path.join(args.storeDir, "workspace");
-  const assetMounts = new Map<string, string>();
-  for (const tarball of parsed.tarballs) {
-    if (path.isAbsolute(tarball.mount) || tarball.mount.includes("..")) {
-      logger.warn(
-        "Step tool-manifest tarball mount rejected for {address}: {mount}",
-        {
-          address: args.ctx.stepAddress,
-          mount: tarball.mount,
-        },
-      );
-      return empty;
-    }
-    const destDir = path.join(workspaceRoot, tarball.mount);
-    const destPath = path.join(destDir, tarball.path);
-    const containment = workspaceRoot.endsWith(path.sep)
-      ? workspaceRoot
-      : workspaceRoot + path.sep;
-    if (!destPath.startsWith(containment)) {
-      logger.warn(
-        "Step tool-manifest tarball path escaped workspace for {address}",
-        {
-          address: args.ctx.stepAddress,
-        },
-      );
-      return empty;
-    }
-    await fs.promises.mkdir(path.dirname(destPath), { recursive: true });
-    await fs.promises.writeFile(
-      destPath,
-      Buffer.from(tarball.bytesBase64, "base64"),
-    );
-    assetMounts.set(tarball.assetId, tarball.mount);
-  }
-
-  return { rawManifestBytes: JSON.stringify(parsed.manifest), assetMounts };
 }
 
 /**
@@ -321,10 +260,7 @@ async function buildStepTools(args: {
   const storeDir = path.dirname(args.workdir);
 
   const manifestStart = performance.now();
-  const { rawManifestBytes, assetMounts } = await fetchStepToolManifest({
-    ctx,
-    storeDir,
-  });
+  const { rawManifestBytes, assetMounts } = await readStepDeployTree({ ctx });
   const manifestMs = performance.now() - manifestStart;
 
   const loadStart = performance.now();
@@ -333,6 +269,11 @@ async function buildStepTools(args: {
     assetMounts,
     storeDir,
     agentAddress: ctx.stepAddress,
+    // The hub staged the asset tarballs under the deploy tree's own
+    // workspace; point the loader there while keeping the apply-state +
+    // tarball cache rooted per step under `storeDir` (upstream's
+    // `materializeToolPackages` layout).
+    assetRoot: path.join(ctx.deployTreeDir, "workspace"),
     cacheRoot: ctx.cacheRoot,
     cacheMaxBytes: ctx.cacheMaxBytes,
     registryMaxTarballBytes: ctx.registryMaxTarballBytes,

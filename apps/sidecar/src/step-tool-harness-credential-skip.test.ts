@@ -74,18 +74,11 @@ afterEach(async () => {
   tmpDirs.length = 0;
 });
 
+// Tool resolution is on-disk (loadToolPackages is module-mocked below), so the
+// harness makes no hub fetch on this path; any fetch is unexpected.
 function stubHubFetch(): void {
   globalThis.fetch = (async (input: string | URL | Request) => {
     const url = String(input);
-    if (url.includes("/api/internal/tools/manifest")) {
-      return new Response(
-        JSON.stringify({
-          manifest: { schemaVersion: "1", topLevel: [], entries: [] },
-          tarballs: [],
-        }),
-        { headers: { "content-type": "application/json" } },
-      );
-    }
     throw new Error(`unexpected fetch to ${url}`);
   }) as unknown as typeof fetch;
 }
@@ -113,6 +106,9 @@ async function buildStepEnv(): Promise<Record<string, unknown>> {
       stepAddress: "ins_dep-render",
       principalId: "ins_dep-render",
       grants: [],
+      // loadToolPackages is module-mocked here; the on-disk read just needs a
+      // valid dir (no deploy/ → undefined manifest, ignored by the mock).
+      deployTreeDir: storeDir,
       cacheRoot: path.join(storeDir, "cache"),
       cacheMaxBytes: 1024 * 1024,
       registryMaxTarballBytes: 1024 * 1024,

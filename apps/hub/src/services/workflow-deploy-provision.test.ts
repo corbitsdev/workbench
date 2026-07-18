@@ -7,10 +7,7 @@ import { deriveDeploymentAddress } from "@intx/workflow-deploy";
 import { defineWorkflow } from "@intx/workflow";
 import type { WorkflowDefinition } from "@intx/workflow";
 import type { HarnessConfig, InferenceSource } from "@intx/types/runtime";
-import type {
-  AgentRepoStore,
-  SidecarRouter,
-} from "@intx/hub-sessions";
+import type { AgentRepoStore, SidecarRouter } from "@intx/hub-sessions";
 import type { HubDb } from "../db";
 import {
   createWorkbenchDirectorRegistry,
@@ -134,7 +131,6 @@ describe("provisionRunDeployment (per-run deployment, CL-2582)", () => {
       },
     } as unknown as AgentRepoStore;
 
-
     const deployedAddresses: string[] = [];
     const sidecarRouter = {
       getRoutableAddresses: () => [],
@@ -149,6 +145,10 @@ describe("provisionRunDeployment (per-run deployment, CL-2582)", () => {
       repoStore,
       sidecarRouter,
       directorRegistry: createWorkbenchDirectorRegistry(),
+      // Provisioning REQUIRES a stager (FIX 2b); this test stages no real tool
+      // tree, so inject an explicit no-op rather than relying on a silent
+      // fallback.
+      stageWorkflowStep: () => Promise.resolve(),
     });
 
     try {
@@ -233,6 +233,9 @@ describe("provisionRunDeployment (per-run deployment, CL-2582)", () => {
       repoStore,
       sidecarRouter,
       directorRegistry: createWorkbenchDirectorRegistry(),
+      // Provisioning REQUIRES a stager (FIX 2b); inject an explicit no-op so
+      // the rollback path is reached via the sidecar error, not the guard.
+      stageWorkflowStep: () => Promise.resolve(),
       reclaimDeployment: async (args) => {
         reclaimed.push({
           deploymentId: args.deploymentId,

@@ -380,34 +380,57 @@ forward from an older file — so each is a fresh vendor entry, not a re-sync.
     restore-time filter (not a periodic reclaim) — see
     `a1db8aca6` and the WP-G integration test for the regression guard.
 
-### `apps/sidecar/src/workflow-substrate-factory.ts` — RECLASSIFIED from
+### `apps/sidecar/src/workflow-substrate-factory.ts` — acknowledged FORK
 
-verbatim-vendor-with-blocks to **acknowledged FORK** (like `packages/hub-agent`)
+(like `packages/hub-agent`), now converging toward the upstream on-disk model
 
-Upstream 6927e7e4 replaced hub-RPC step-tool resolution with on-disk
-deploy-tree materialization (`step-agent-tools.ts` + `tool-materialization.ts`
-in the reference sidecar). The workbench does **not** adopt that: it keeps its
-existing hub-RPC step-tool model — per-tenant registry tarballs, hub-backed
-`RuntimeCapabilities` tools, the `/api/internal/tools/manifest` rail — because
-that is the substrate the rest of the product (agent definitions, credential
-resolution, the Owner Capabilities catalog) is built against; swapping to
-on-disk materialization mid-bump would have meant re-deriving tool
-availability from a second source of truth during the riskiest possible
-change window. `step-tool-harness.ts` and the hub manifest rail are kept as
-they were; `step-agent-tools.ts` / `tool-materialization.ts` are **not**
-vendored. Practically this means `workflow-substrate-factory.ts` is no longer
-a file that re-syncs cleanly against upstream structure with a fixed set of
-WORKBENCH-LOCAL blocks layered on top — upstream's own restructuring of the
-file (new `SubstrateFactoryEnv` / `SpawnTimeEnv` shape, the `substrateConfig`
-narrowing described in the file's header comment) has to be merged **onto**
-the fork's tool-resolution branch, the same discipline `packages/hub-agent`
-already uses. Existing `WORKBENCH-LOCAL` tags in the file (CL-2199, CL-2401,
-CL-2650, CL-3379) are unchanged and still individually taggable; the
-reclassification is about the re-sync process, not a new set of blocks.
-**Follow-up (Linear, not this pin bump):** evaluate adopting upstream's
-on-disk materialization as its own project, now that hub-RPC resolution is a
-deliberate, documented divergence rather than an artifact of not having
-looked at the alternative.
+**Update — hard cutover to on-disk tool materialization (2026-07-17).** The
+hub-RPC step-tool RESOLUTION fork is retired. Every deployed agent/step now
+reads its pinned tool closure from the deploy tree the hub stages on disk —
+upstream's model (`readDeployTree` → `@intx/tool-packaging` loader). What was
+deleted:
+
+- `apps/hub/src/routes/tool-manifest.ts` — the `/api/internal/tools/manifest`
+  rail (route + test) — and its wiring in `apps/hub/src/index.ts`.
+- `apps/sidecar/src/step-tool-harness.ts` `fetchStepToolManifest` — the hub-RPC
+  manifest fetch — replaced by `readStepDeployTree` reading the on-disk tree at
+  `<dataDir>/<sanitizeAddress(stepAddress)>/deploy/`.
+- The `ToolManifest{Request,Tarball,Response}` types in
+  `@workbench/tool-credentials`.
+
+What was ADDED / restored:
+
+- Multi-step per-step staging: `apps/hub/src/services/workflow-deploy.ts` now
+  wires the orchestrator's `launchSession` to interchange's
+  `SessionService.stageWorkflowStep` (was a no-op, `noLaunchStepSession`), so
+  each step's tool closure is resolved to a `deploy/tool-packages-manifest.json`
+  - asset tarballs and staged on disk. Single-agent instances stage their head
+    tree through interchange's `deployInstanceAtHead`, which wraps the harness as
+    a single-step workflow and routes THROUGH `deploySingleStepAtHead` (one path,
+    not two parallel ones) — the same single-step-at-head hand-off a one-step
+    workflow definition uses.
+- Sidecar `stepDeployTreeDir` (in `workflow-substrate-factory.ts`, mirroring
+  interchange `apps/sidecar/src/step-agent-tools.ts`) locates the on-disk tree
+  from the deployment mailbox address; `StepToolContext.deployTreeDir` carries
+  it to the harness.
+
+What was KEPT — the thin layer AROUND the native loader, NOT the resolution
+fork: the tenant tool-CREDENTIAL rail (`/api/internal/tools/credentials`,
+`fetchToolCredentials`), the hub-backed `RuntimeCapabilities` rail
+(`/api/internal/hub-tools/run`, the `HUB_RPC` context), the per-step grants
+read, `writeStepAgentRows` (feeds the credential/grants gate by `stepAgentId`),
+and the `WORKFLOW_RAW_DEPLOYMENT_ID` / `deriveRawDeploymentId` threading (keys
+those kept rails). The workbench keeps its own factory-invocation loop that
+injects credential env + `HUB_RPC` into each loaded factory — upstream's loader
+returns factories it does not invoke; the injection is the workbench's, the
+resolution is now upstream's.
+
+`workflow-substrate-factory.ts` remains an acknowledged FORK (upstream's own
+restructuring — `SubstrateFactoryEnv`/`SpawnTimeEnv`, the `substrateConfig`
+narrowing — must be merged **onto** the fork branch on each pin bump). Its
+`WORKBENCH-LOCAL` tags (CL-2199, CL-2401, CL-2650, CL-3379) are unchanged. The
+prior "follow-up: evaluate adopting on-disk materialization" is now DONE (this
+change).
 
 The non-vendored helper that used to back the CL-2535 hook,
 `apps/sidecar/src/workflow-resume.ts` (`hostSatisfyAwaitSignal`,

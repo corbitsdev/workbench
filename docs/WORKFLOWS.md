@@ -135,21 +135,28 @@ real tool-capable agent harness.
 
 ### The hub-RPC tool rail
 
-A workflow step "never launches a session, so it has no deploy pack on disk." It
-resolves its tools at run time over a hub RPC instead:
+Every deployed agent/step reads its pinned tool closure from the deploy tree the
+hub stages **on disk**, then layers the workbench's credential + hub-backed
+injection around the native loader:
 
-- The sidecar's **own** step-tool implementation
-  (`apps/sidecar/src/step-tool-harness.ts`) fetches the resolved tool manifest
-  and tarballs from the hub (`fetchStepToolManifest`, `step-tool-harness.ts:113`;
-  the fetch to `/api/internal/tools/manifest` at `:126`), materializes the
-  tarballs on disk, and resolves tool credentials via `/api/internal/tools/credentials`
-  (`fetchToolCredentials`, `:271`). Steps are not session-bound, so the rail
-  accepts an empty session (`:299`).
-- Both hub endpoints are gated on the **persisted `agent` DB row**, not a live
-  session: `/tools/manifest` (`apps/hub/src/routes/tool-manifest.ts:68`) looks
-  the agent up by id (`:80-84`) and reads its `toolPackages` pins (`:87`);
-  `/tools/credentials` (`apps/hub/src/routes/tool-credentials.ts:63`) applies the
-  same agent-row gate. Both require the sidecar bearer token.
+- At deploy time the hub resolves each agent/step's `toolPackages` pins into a
+  `deploy/tool-packages-manifest.json` + asset tarballs and stages them on disk
+  at the step's address: single agents at the head via `deployInstanceAtHead`,
+  multi-step steps via interchange's `SessionService.stageWorkflowStep` (wired as
+  the orchestrator's `launchSession` in `apps/hub/src/services/workflow-deploy.ts`).
+- At run time the sidecar's step-tool harness
+  (`apps/sidecar/src/step-tool-harness.ts`) reads that tree
+  (`readStepDeployTree` → `readDeployTree`, dir located by `stepDeployTreeDir` in
+  `workflow-substrate-factory.ts`), materializes the pinned closure through the
+  `@intx/tool-packaging` loader, and resolves tool credentials via
+  `/api/internal/tools/credentials` (`fetchToolCredentials`). Hub-backed
+  `RuntimeCapabilities` tools reach the hub via the `HUB_RPC` context
+  (`/api/internal/hub-tools/run`). The retired hub-RPC manifest rail
+  (`/api/internal/tools/manifest`) is deleted.
+- The credential endpoint is gated on the **persisted `agent` DB row**, not a
+  live session: `/tools/credentials` (`apps/hub/src/routes/tool-credentials.ts:63`)
+  looks the agent up by id and applies the agent-row gate. It requires the
+  sidecar bearer token.
 - Grants are read from a single canonical document, `state/grants.json`
   (`STEP_GRANTS_PATH`, `packages/workflow-host/src/supervisor/credentials.ts:45`),
   written into each deployed step's agent-state repo at deploy time by

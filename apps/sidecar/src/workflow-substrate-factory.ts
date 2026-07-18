@@ -29,6 +29,9 @@ import { type } from "arktype";
 
 import { InferenceSource } from "@intx/types/runtime";
 import type { InferenceEvent } from "@intx/types/runtime";
+import { parseAgentAddress } from "@intx/types";
+import { resolveStepAddress } from "@intx/workflow-deploy";
+import { sanitizeAddress } from "@workbench/hub-agent";
 import { evaluateGrants } from "@intx/authz";
 import type { GrantRule } from "@intx/authz";
 import { getLogger } from "@intx/log";
@@ -101,6 +104,7 @@ import {
 } from "./conversation-state";
 import type { MessageTransport } from "@intx/types/runtime";
 import {
+  baseStepId,
   createNoopDrainController,
   emptyState,
   runtimeRun,
@@ -765,12 +769,68 @@ async function readStepGrants(args: {
   return validated.grants as GrantRule[];
 }
 
+const INSTANCE_PREFIX = "ins_";
+
+/**
+ * Resolve the on-disk directory holding a step's deploy tree
+ * (`<dataDir>/<sanitizeAddress(stepAddress)>`), mirroring interchange's
+ * `apps/sidecar/src/step-agent-tools.ts` `stepDeployTreeDir`. The hub stages
+ * `deploy/tool-packages-manifest.json` + `deploy/asset-mounts.json` and the
+ * asset tarballs (`workspace/`) here at deploy time: single agents at the head
+ * via `deployInstanceAtHead`, multi-step steps at their derived address via
+ * `stageWorkflowStep`.
+ *
+ * The step address is recovered from the deployment mailbox address the
+ * supervisor threaded into the child (`ins_<deploymentId>@<domain>`): the
+ * instance-id local part minus the `ins_` prefix is the deploymentId, the
+ * address domain is the deploymentDomain, and `resolveStepAddress` owns the
+ * head/step collapse (for `stepCount === 1` the lone step IS the head, read at
+ * the deployment mailbox itself; otherwise `deriveStepAddress`). A `map`
+ * iteration's scoped id `<base>[<index>]` collapses to its `baseStepId` — every
+ * iteration reads the base step's one staged tree.
+ */
+export function stepDeployTreeDir(args: {
+  dataDir: string;
+  mailboxAddress: string;
+  stepId: string;
+  stepCount: number;
+}): string {
+  const parsed = parseAgentAddress(args.mailboxAddress);
+  if (parsed === null || !parsed.instanceId.startsWith(INSTANCE_PREFIX)) {
+    throw new Error(
+      `sidecar step tool-context: deployment mailbox address ${JSON.stringify(args.mailboxAddress)} is not a parseable ins_<deploymentId>@<domain> agent address; cannot locate the step's on-disk deploy tree`,
+    );
+  }
+  const deploymentId = parsed.instanceId.slice(INSTANCE_PREFIX.length);
+  const stepAddress = resolveStepAddress({
+    deploymentId,
+    stepId: baseStepId(args.stepId),
+    deploymentDomain: parsed.domain,
+    stepCount: args.stepCount,
+  });
+  return path.join(args.dataDir, sanitizeAddress(stepAddress));
+}
+
 /**
  * Inputs the production step tool-context resolver closes over. The
  * hub-connection anchors come from the validated substrate config.
  */
 export interface StepToolContextResolverArgs {
   bareStore: RepoStore;
+  /** Sidecar data dir; roots the on-disk deploy-tree lookup. */
+  dataDir: string;
+  /**
+   * Deployment mailbox address (`ins_<deploymentId>@<domain>`) the supervisor
+   * threaded into the child. Locates each step's on-disk deploy tree.
+   */
+  mailboxAddress: string;
+  /**
+   * Step count for the head/step address collapse. `1` for a single-step
+   * (single-agent / warm) deployment — the tree is read at the head; any value
+   * `> 1` reads each step at its derived address. Only the `=== 1` branch is
+   * significant to `resolveStepAddress`.
+   */
+  stepCount: number;
   /**
    * RAW hub deploymentId (`ses_<id>`), threaded via
    * `WORKFLOW_RAW_DEPLOYMENT_ID`. NOT the slugified workflow-run repo id
@@ -830,6 +890,12 @@ export function createStepToolContextResolver(
       grants = [];
     }
     const runId = req.authzContext.runId;
+    const deployTreeDir = stepDeployTreeDir({
+      dataDir: args.dataDir,
+      mailboxAddress: args.mailboxAddress,
+      stepId,
+      stepCount: args.stepCount,
+    });
     return {
       hubHttpUrl: args.hubHttpUrl,
       sidecarToken: args.sidecarToken,
@@ -839,6 +905,7 @@ export function createStepToolContextResolver(
       principalId: stepAgentId,
       ...(runId !== undefined ? { workflowRunId: runId } : {}),
       grants,
+      deployTreeDir,
       cacheRoot: args.cacheRoot,
       cacheMaxBytes: args.cacheMaxBytes,
       registryMaxTarballBytes: args.registryMaxTarballBytes,
@@ -1455,13 +1522,26 @@ export function createSidecarSubstrateFactory(
       bareStore,
       // RAW hub deploymentId (`ses_<id>`), NOT `env.spawn.deploymentId`
       // (the slugified workflow-run repo id). The step agent row id and
-      // agent-state repo id the hub persisted are keyed on the raw id;
-      // the slug would make the step's tool-manifest fetch 404 and its
-      // grants read miss (deny-all). See `RAW_DEPLOYMENT_ID_ENV_KEY`.
+      // agent-state repo id the hub persisted are keyed on the raw id; the
+      // slug would make the step's credential lookup 404 and its grants read
+      // miss (deny-all). See `RAW_DEPLOYMENT_ID_ENV_KEY`. This id keys the
+      // KEPT credential + hub-backed rails; it does NOT locate the on-disk
+      // deploy tree (that is `mailboxAddress`-derived, below).
       deploymentId: validated.WORKFLOW_RAW_DEPLOYMENT_ID,
       tenantId: validated.TENANT_ID,
       hubHttpUrl: wsUrlToHttp(validated.HUB_WS_URL),
       sidecarToken: validated.SIDECAR_TOKEN,
+      // On-disk deploy-tree lookup: the hub stages each step's pinned tool
+      // closure at `<dataDir>/<sanitizeAddress(stepAddress)>`. A single-step
+      // deploy reads the tree at the head; a genuine multi-step deploy reads
+      // each step at its derived address. `stepCount` is the real parsed
+      // `STEP_COUNT` (`env.spawn.stepCount`) and must drive step-address
+      // derivation directly — reconstructing it from `warmKeep` would
+      // mislocate a multi-step deploy tree if a future pin ever set
+      // `warmKeep` on a non-single-step deploy.
+      dataDir: validated.SIDECAR_DATA_DIR,
+      mailboxAddress: env.spawn.mailboxAddress,
+      stepCount: env.spawn.stepCount,
       cacheRoot: path.join(
         validated.SIDECAR_DATA_DIR,
         "cache",
