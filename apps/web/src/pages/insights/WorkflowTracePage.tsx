@@ -115,6 +115,7 @@ function TraceStepMoment({
   useEffect(() => {
     if (!isSelected) setOperatorOpen(false);
   }, [isSelected]);
+  const reduceMotion = useReducedMotion();
   const duration = formatStepDuration(step.startedAt, step.endedAt);
   const elapsed = useElapsedTime(step.startedAt, step.phase === "in-flight");
   const classified =
@@ -177,12 +178,15 @@ function TraceStepMoment({
             </span>
           )}
           {step.phase === "in-flight" && step.liveIssue !== undefined && (
-            <span
+            <motion.span
               data-testid="trace-step-live-issue"
-              className="text-[11px] font-medium text-gold"
+              className="text-[11px] font-medium text-text-2"
+              variants={STEP_ITEM}
+              initial={reduceMotion ? false : "hidden"}
+              animate="show"
             >
               {describeLiveInferenceIssue(step.liveIssue.category)}
-            </span>
+            </motion.span>
           )}
           {stepTokens !== undefined && stepTokens !== null && (
             <span
