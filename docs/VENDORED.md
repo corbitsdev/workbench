@@ -5,8 +5,10 @@ code into our tree so we can change behavior the upstream packages don't expose 
 seam for — without editing the `interchange/` submodule. Every divergence from the
 upstream original is tagged with a `// WORKBENCH-LOCAL (CL-XXXX)` comment.
 
-**Audit handle:** `git grep "WORKBENCH-LOCAL (CL-" -- apps/sidecar packages/workflow-host packages/inference packages/storage-isogit`
-lists every divergence in one pass. Run it before and after an interchange pin
+**Audit handle:** `git grep "WORKBENCH-LOCAL (CL-" -- apps/sidecar packages/workflow-host packages/inference packages/storage-isogit packages/hub-agent`
+lists every divergence in one pass (`packages/hub-agent` now carries several tagged
+blocks — CL-2405, CL-3104, CL-3340, CL-3779, CL-3826 — so it belongs in the handle
+too; a prior version of this line omitted it). Run it before and after an interchange pin
 bump and confirm no block disappeared. The re-sync process (diff each vendored
 file against the new upstream, re-apply upstream changes _while preserving every
 `WORKBENCH-LOCAL` block_) is documented in `AGENTS.md` → "Dockerfile Maintenance"
@@ -191,8 +193,15 @@ pack-recv-gc-*.pack`, plus bare `TypeError`s from torn `.idx` loads).
 - **Status:** genuine long-lived fork of `@intx/hub-agent`, predating the vendor
   discipline. It carries real workbench features upstream lacks (reconnect
   backoff/jitter and the outbound queue from the CL-2405 sidecar-disconnect work,
-  `sanitizeAddress`/agent-paths exports) but its divergences are **untagged** —
-  the WORKBENCH-LOCAL audit and the drift script are blind to it.
+  `sanitizeAddress`/agent-paths exports). **Correction (2026-07-18):** most of its
+  current divergences ARE now tagged (CL-2405, CL-3104, CL-3340, CL-3779,
+  CL-3826 all carry `// WORKBENCH-LOCAL` comments, confirmed by
+  `git grep "WORKBENCH-LOCAL (CL-" packages/hub-agent`) — the "untagged, audit-blind"
+  characterization below predates that tagging pass and is now stale for those
+  blocks. What remains genuinely untagged is the older, pre-discipline surface:
+  the `sanitizeAddress`/agent-paths export shape itself and the outbound-queue
+  mechanics underlying the CL-2405 reconnect work (the queue exists because of
+  CL-2405, but its internals were never individually tagged line-by-line).
 - **Known upstream fixes not yet adopted** (found in the 13fb9ac bump review,
   tracked in CL-2662): upstream's `repoOpQueues`/`drainRepoOps` model (serializes
   all per-agent repo ops and drains before `deleteAgentDir`; ours serializes only
@@ -551,6 +560,64 @@ line:
   CL-3884" above — both the record and the tombstone it needed are retired);
   `workflow-substrate-factory.ts`'s FORK reclassification is a process change,
   not a new behavioral block.
+
+## Divergence audit (2026-07-18)
+
+Every remaining divergence, enumerated via `git grep "WORKBENCH-LOCAL (CL-" --
+apps/sidecar packages` plus the package-level vendors this doc already
+catalogues above, classified against interchange at the current pin
+(`6927e7e4`). **delete-now** = upstream already covers it or the code is dead,
+cited to the exact upstream file+symbol. **delete-after-upstream** = a named
+upstream change is still needed first. **keep-with-reason** = interchange
+genuinely lacks it. This is a classification pass only — no code is deleted
+here; deletions go through the separate 2-agent consensus process.
+
+Verified this pass by reading the interchange submodule directly (not just
+trusting prior notes): CL-2651, CL-2663, CL-2405, CL-3779, CL-3826, CL-2585,
+CL-3641, CL-2401, CL-3766 were re-checked against `interchange/packages/*` at
+`6927e7e4` and confirmed the upstream gap still exists (evidence cited per
+row). The rest inherit their classification from the "Supersession audit —
+pin `6927e7e4`" section above, which already adjudicated every block against
+this same pin at the 2026-07-16 bump; nothing in that section's scope has
+changed since.
+
+| Divergence (token)                                        | Where                                                              | Classification         | Evidence / removal condition                                                                                                                                                                                                          |
+| ---------------------------------------------------------- | ------------------------------------------------------------------- | ---------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| CL-2199                                                     | `workflow-host-wiring.ts`, `workflow-substrate-factory.ts`           | keep-with-reason        | Multi-step `substrateEnv` needs `TENANT_ID`/`WORKFLOW_RAW_DEPLOYMENT_ID`; the workflow-child's `filterSubstrateConfig` still throws without both (unchanged upstream shape at this pin).                                              |
+| CL-2231                                                     | `workflow-host-wiring.ts`                                            | keep-with-reason        | Complementary to upstream's agent-repo GC, not overlapping (upstream reclaims objects INSIDE live agent repos; this reclaims ORPHANED per-deployment workflow-run directories). No sub-piece superseded — see prior supersession audit. |
+| CL-2340                                                     | `workflow-run-pack-client.ts`, `workflow-host-wiring.ts`             | keep-with-reason        | Upstream's substrate still exposes plain `createPack`/`lastPackedTip` with no delta-cursor ack gating or size ceiling; `WorkflowRunPackTooLargeError` has no upstream counterpart.                                                     |
+| CL-2363                                                     | `workflow-host-wiring.ts`                                            | keep-with-reason        | `assertSubstrateEnvComplete` is a fail-loud guard around the CL-2199 keys; upstream has no equivalent pre-flight, it lets the child throw deep in a spawn instead.                                                                    |
+| CL-2401                                                     | `workflow-host-wiring.ts`, `workflow-substrate-factory.ts`           | keep-with-reason        | Verified: `grep -rn 'nonFatal\|non-fatal\|degrade' interchange/packages/workflow/src` — no match. Upstream has no non-fatal deterministic-step concept; a failed source step still fails the run.                                    |
+| CL-2503                                                     | `bin/workflow-child`                                                 | keep-with-reason        | Upstream's reference entrypoint inits no observability; without this, workflow-step failures never reach Sentry.                                                                                                                      |
+| CL-2585                                                     | `workflow-host-wiring.ts`, `packages/workflow-host/src/child/from-process-env.ts` | keep-with-reason | Verified: upstream `from-process-env.ts:252-264` still defaults the control channel to `process.stdin`/`process.stdout` (`defaultControlReader`/`defaultControlWriter`). Reverting re-introduces the `control channel received non-JSON line` crash. |
+| CL-2650                                                     | `workflow-substrate-factory.ts`                                      | keep-with-reason        | `buildWorkbenchAdapterRegistry` is the workbench tool-registry construction path; upstream's loader has no adapter-registry concept to converge onto beyond what CL-2199/CL-3379 already track.                                        |
+| CL-2651                                                     | `packages/workflow-host/src/supervisor/supervisor.ts`                | keep-with-reason        | Verified: `interchange/packages/workflow-host/src/supervisor/supervisor.ts:598` still logs the literal string `` {reason} `` (missing `$`) — confirmed unfixed at `6927e7e4`. Drop when upstream interpolates the reason itself.       |
+| CL-2662                                                     | `packages/hub-agent/src/agent-paths.ts`, `sidecar-orchestrator.test.ts` | keep-with-reason     | Documentation-only note (deliberately NOT mirroring upstream's dependency-light `paths.ts` barrel since nothing here imports that subpath) — no runtime divergence to remove.                                                          |
+| CL-2663                                                     | `packages/storage-isogit/src/store.ts`                               | keep-with-reason        | Verified: upstream `store.ts` wraps write-path methods in `withRepoDirLock` (lines 356, 586, 645) but `readAt` (425) and `readManifestHistory` (547) remain unwrapped — the read-vs-GC race this block closes still exists upstream.   |
+| CL-2783                                                     | `workflow-host-wiring.ts`                                            | keep-with-reason        | Perf fix (bounded-parallel `writeStepGrants`); upstream's reference wiring is not packaged in any `@intx/*` to diff against — no upstream equivalent exists to converge onto.                                                          |
+| CL-2405 (`hub-agent`)                                       | `packages/hub-agent/src/ws/hub-link.ts`                              | keep-with-reason        | Verified: upstream `hub-link.ts:188-214` uses a fixed `DEFAULT_RECONNECT_DELAY_MS = 3_000` with no exponential backoff or jitter. Our backoff/jitter is still the only implementation of either.                                      |
+| CL-3104                                                     | `workflow-host-wiring.ts`, `packages/hub-agent/src/ws/hub-link.ts`   | keep-with-reason        | Upstream's `agent.undeploy` protocol has no hibernate reason/flavor; the state-preserving teardown this implements has no upstream counterpart at this pin.                                                                            |
+| CL-3340                                                     | `packages/hub-agent/src/assistant-loop-guard.ts`, `assistant-loop-guard-wiring.ts` | keep-with-reason | No upstream loop-detection mechanism exists for repeated assistant cycles; re-homed onto the sidecar inference-event path per the section above, still workbench-only.                                                                |
+| CL-3368                                                     | `apps/sidecar/src/index.ts`, `workflow-child-boot-graph.test.ts`     | keep-with-reason        | Both remaining CL-3368 sites are workbench-only tooling (a boot-time data-dir invariant guard for the CL-2231 reclaim path, and a repo-root-walk fix for `bun run --filter` cwd semantics) with no upstream equivalent to converge onto. |
+| CL-3379                                                     | `workflow-substrate-factory.ts`, `inline-inference-step.ts`          | keep-with-reason        | Fixes a workbench-only bug (inline single-turn steps discarding their event stream before reaching `analytics_event`); the forwarding sink is entirely workbench plumbing.                                                             |
+| CL-3468                                                     | `packages/workflow-host/src/child/run-child.ts`                      | keep-with-reason        | `resolveTriggerPayload`'s hub-mail-header decode is a workbench hub↔sidecar mail contract; upstream has no `trigger.payload` JSON-decode concept for a `from: hub@…` sender.                                                            |
+| CL-3641                                                     | `packages/workflow-host/src/seams/signal-channel.ts`                | keep-with-reason        | Verified: upstream `signal-channel.ts:270-306` computes `nextSeq = maxSeq + 1` unconditionally with no guard for `maxSeq === -1`, still permitting a seq-0 write that would poison the run log.                                        |
+| CL-3766                                                     | `packages/inference/src/providers/{anthropic,openai}.ts`             | keep-with-reason        | Verified: `grep -n '"effort"\|reasoning_effort' interchange/packages/inference/src/providers/{anthropic,openai}.ts` — no match. Upstream's anthropic provider only supports `budget_tokens`, not Opus 4.8's `effort` dial.             |
+| CL-3779                                                     | `packages/hub-agent/src/ws/hub-link.ts`                              | keep-with-reason        | Verified: upstream `hub-link.ts` still enqueues every frame — including `pong` — onto the serial `messageQueue` (line ~1266) with no inline fast-path before enqueue; the heartbeat-starvation bug this fixes is still live upstream.  |
+| CL-3826                                                     | `packages/hub-agent/src/ws/hub-link.ts`, `sidecar-orchestrator.ts`, `apps/sidecar/src/config.ts` | keep-with-reason | Verified: `grep -n -i 'connectTimeout' interchange/packages/hub-agent/src/ws/hub-link.ts` — no match. Upstream's `connect()` has no per-attempt timeout; an unbounded connect can still blackhole for the whole Railway overlap window. |
+| CL-3880                                                     | `packages/workflow-host/src/child/serialized-tool-factories.ts`, `run-child.ts` | delete-after-upstream | Needs upstream to serialize `toolFactories` as a proper `{id, requires}` wire projection at both write points (`sendMultiStepDeployFrame`, `writeWorkflowRepoTree`) or make `hashDefinition`/`projectAgent` null-tolerant — the CL-3881 upstream ask. Drop this block once either lands; guarded meanwhile by `serialized-tool-factories.test.ts`. |
+| `packages/workflow-host` (full vendor)                      | `packages/workflow-host/**`                                          | keep-with-reason        | The injection point (`child/run-child.ts`'s `establishChild`) is ~1,250 LOC of internal plumbing; a thin re-export can't inject into it and partial re-vendoring would pull most of the package anyway. Re-sync mechanically each bump. |
+| `packages/storage-isogit` (verbatim + CL-2663)               | `packages/storage-isogit/**`                                         | keep-with-reason        | 100% verbatim except the CL-2663 block above (itself keep-with-reason); re-copy cleanly on every bump, re-apply CL-2663 on top.                                                                                                        |
+| `packages/inference` (fork, CL-3766 + CL-3853)                | `packages/inference/**`                                              | keep-with-reason        | CL-3766 verified above (still needed). CL-3853 (tool-call argument recovery / `{_raw}` envelope unwrapping) not independently re-verified this pass beyond the existing `tool-args.test.ts` regression guard; no upstream change at this pin is known to touch it. |
+| `packages/hub-agent` (fork)                                  | `packages/hub-agent/**`                                              | keep-with-reason        | Long-lived fork predating vendor discipline; carries real features upstream lacks (reconnect backoff/jitter, hibernate teardown, loop guard — all separately itemized above). `repoOpQueues`/`drainRepoOps` and the empty-address `register`-on-open frame (CL-2662) are upstream fixes NOT YET ADOPTED here — tracked separately, not a deletion candidate (adopting them is additive, not a removal of local code). |
+| `apps/sidecar/workflow-substrate-factory.ts` (acknowledged fork) | `workflow-substrate-factory.ts`                                 | keep-with-reason        | The tool-RESOLUTION rail converged onto upstream's on-disk deploy-tree materialization on 2026-07-17 (hub-RPC manifest fetch deleted). What remains is a thin layer upstream's loader doesn't provide: the tenant tool-credential rail, the hub-backed `RuntimeCapabilities` rail, and the factory-invocation loop that injects credential env + `HUB_RPC` (upstream's loader returns factories it never invokes). Its CL-2199/CL-2401/CL-2650/CL-3379 tags are unchanged and separately itemized above. |
+| `apps/sidecar/workflow-deployment-dirs.ts`                   | `workflow-deployment-dirs.ts`                                        | keep-with-reason        | Pure path helpers (`workflowDeploymentDir`, `reclaimWorkflowDeploymentDir`) backing the CL-2231 reclaim sweep; the record/tombstone layer they used to sit beside was already deleted at CL-3884, these two helpers are the residue that's still called. |
+
+**Explicit non-findings:** no divergence in this pass qualified as **delete-now**
+— every currently-tagged block either still guards a live upstream gap
+(verified above) or documents a deliberate non-mirror choice (CL-2662). The
+only **delete-after-upstream** item is CL-3880, matching the standing CL-3881
+upstream ask already tracked before this audit.
 
 ## On every interchange pin bump
 
