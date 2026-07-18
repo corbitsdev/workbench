@@ -147,13 +147,29 @@ async function getAgentPrincipalRoster(args: {
     }
   }
 
+  // `writeStepInstanceRows`/`writeDeploymentInstanceRow` (workflow-deploy.ts)
+  // both stamp every step's and the deployment-level (supervisor) instance row
+  // with `principalId: creatorPrincipalId` — the SAME value — so a single
+  // deployment now surfaces more than one `agent_instance` row under this
+  // principal: the real, member-mapped instance (the one users actually talk
+  // to) plus one inert, unmapped per-step row per step. Prefer the mapped
+  // row(s) when any exist so those phantom internal rows never surface as
+  // extra "instances" in the roster; fall back to the unmapped set only when
+  // NO row under this principal has a mapping at all (an admin/dispatched
+  // instance that is intentionally never given one).
+  const mappedInstanceRows = instanceRows.filter((r) =>
+    mappingByInstance.has(r.instanceId),
+  );
+  const effectiveInstanceRows =
+    mappedInstanceRows.length > 0 ? mappedInstanceRows : instanceRows;
+
   const sessionCounts = await sessionCountsForPrincipals(
     args.db,
     args.tenantId,
-    instanceRows.map((r) => r.principalId),
+    effectiveInstanceRows.map((r) => r.principalId),
   );
 
-  const instances = instanceRows
+  const instances = effectiveInstanceRows
     .map((r) => {
       const mapping = mappingByInstance.get(r.instanceId);
       return {

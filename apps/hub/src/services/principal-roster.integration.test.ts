@@ -343,6 +343,38 @@ describe("getPrincipalRoster", () => {
     expect(roster.runs).toHaveLength(0);
   });
 
+  test("excludes an unmapped per-step workflow instance sharing the deployment's principal (CL-3158)", async () => {
+    // Mirrors workflow-deploy.ts: writeStepInstanceRows and
+    // writeDeploymentInstanceRow both stamp `principalId: creatorPrincipalId`
+    // — the SAME value the mapped, user-facing supervisor instance carries —
+    // onto an internal per-step `agent_instance` row that never gets a
+    // member_agent_instance mapping. Viewing that shared principal's roster
+    // must surface only the real (mapped) instance, never the phantom step
+    // row alongside it.
+    await seedAgent("agt-1", "Myra");
+    await seedOwnedInstance({
+      instanceId: "ins-supervisor",
+      agentId: "agt-1",
+      syntheticPrincipalId: "prn-syn-shared",
+      templateKey: "myra",
+    });
+    await seedUnmappedInstance({
+      instanceId: "ins_dep-abc123-draft",
+      agentId: "agt-1",
+      syntheticPrincipalId: "prn-syn-shared",
+    });
+
+    const roster = await getPrincipalRoster({
+      db,
+      tenantId: TENANT,
+      principalId: "prn-syn-shared",
+    });
+
+    expect(roster.instances.map((i) => i.instanceId)).toEqual([
+      "ins-supervisor",
+    ]);
+  });
+
   test("agent principal without a member mapping still surfaces the instance", async () => {
     await seedAgent("agt-admin", "Admin agent");
     await seedUnmappedInstance({
