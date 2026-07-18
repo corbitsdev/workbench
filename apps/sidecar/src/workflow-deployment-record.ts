@@ -183,6 +183,15 @@ export const WorkflowDeploymentRecord = type({
   // complete substrate env (TENANT_ID / WORKFLOW_RAW_DEPLOYMENT_ID).
   tenantId: "string > 0",
   rawDeploymentId: "string > 0",
+  // WORKBENCH-LOCAL (CL-2199): single-agent tool identity (real agent-def id +
+  // instance principal). Frame-only at deploy time, persisted here so the
+  // frame-less boot restore rebuilds a complete substrate env
+  // (WORKFLOW_SINGLE_AGENT_ID / WORKFLOW_SINGLE_AGENT_PRINCIPAL_ID). Required:
+  // both deploy families always populate them, so a record missing either is a
+  // pre-this-change record — `scanWorkflowDeploymentRecords` soft-fails and
+  // skips it (the hub re-drives the deploy), never a resurrection.
+  singleAgentId: "string > 0",
+  singleAgentPrincipalId: "string > 0",
   "sessionId?": "string > 0",
   "hubPublicKey?": "string > 0",
 });

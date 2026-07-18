@@ -1311,6 +1311,19 @@ export function createSidecarDeployRouter(deps: {
      * record so restore rebuilds the substrate env without the deploy frame.
      */
     rawDeploymentId: string;
+    /**
+     * WORKBENCH-LOCAL (CL-2199): single-agent tool identity threaded to the
+     * child's substrate env. `agentId` is the deploy frame's `agentId` — for a
+     * single launched agent this is the REAL agent-definition id (`agt_<defId>`)
+     * the credential + hub-backed rails authorize against; for a multi-step
+     * deploy it is the deployment agent id (unused by the resolver's single-agent
+     * branch). `instancePrincipalId` is `frame.config.principalId` — the instance
+     * principal (`prn_...`) the hub-backed identity triple resolves the owning
+     * instance by. Persisted in the record so the frame-less restore path
+     * rebuilds the same substrate env.
+     */
+    agentId: string;
+    instancePrincipalId: string;
     /** Correlates the child's inference events to the deploy's session. */
     sessionId: string | undefined;
     /**
@@ -1343,6 +1356,10 @@ export function createSidecarDeployRouter(deps: {
       // frame-less boot restore rebuilds a complete substrate env.
       tenantId: spec.tenantId,
       rawDeploymentId: spec.rawDeploymentId,
+      // WORKBENCH-LOCAL (CL-2199): persist the single-agent tool identity so a
+      // frame-less boot restore rebuilds the same substrate env.
+      singleAgentId: spec.agentId,
+      singleAgentPrincipalId: spec.instancePrincipalId,
       ...(spec.sessionId !== undefined ? { sessionId: spec.sessionId } : {}),
       ...(spec.hubPublicKey !== undefined
         ? { hubPublicKey: spec.hubPublicKey }
@@ -1429,6 +1446,15 @@ export function createSidecarDeployRouter(deps: {
         // breaks every workflow-child spawn at runtime with a green build.
         TENANT_ID: spec.tenantId,
         [RAW_DEPLOYMENT_ID_ENV_KEY]: spec.rawDeploymentId,
+        // WORKBENCH-LOCAL (CL-2199): single-agent tool identity the resolver's
+        // stepCount === 1 branch keys the credential + hub-backed rails on.
+        // Always populated (multi-step sets its deployment agent id + supervisor
+        // principal, which the multi-step branch ignores); both are members of
+        // SIDECAR_SUBSTRATE_CONFIG_KEYS so `assertSubstrateEnvComplete` requires
+        // them non-empty and the child's `filterSubstrateConfig` lets them
+        // through to the substrate factory.
+        WORKFLOW_SINGLE_AGENT_ID: spec.agentId,
+        WORKFLOW_SINGLE_AGENT_PRINCIPAL_ID: spec.instancePrincipalId,
       };
 
       // WORKBENCH-LOCAL (CL-2363): fail the deploy loudly if any
@@ -1955,6 +1981,12 @@ export function createSidecarDeployRouter(deps: {
       // (`parseAgentId(ins_<deploymentId>@domain) === frame.agentId`).
       tenantId: frame.config.tenantId,
       rawDeploymentId: deriveRawDeploymentId(parseAgentId(frame.agentAddress)),
+      // WORKBENCH-LOCAL (CL-2199): single-agent tool identity. For a single
+      // launched agent `frame.agentId` is the real `agt_<defId>` and
+      // `frame.config.principalId` is its instance principal; the resolver's
+      // single-agent branch keys the credential + hub-backed rails on them.
+      agentId: frame.agentId,
+      instancePrincipalId: frame.config.principalId,
       sessionId: frame.config.sessionId,
       hubPublicKey:
         projection.definition.stepOrder.length === 1
@@ -2283,6 +2315,10 @@ export function createSidecarDeployRouter(deps: {
             // persisted tenant + raw deployment id -- restore has no frame.
             tenantId: record.tenantId,
             rawDeploymentId: record.rawDeploymentId,
+            // WORKBENCH-LOCAL (CL-2199): rebuild the single-agent tool identity
+            // from the persisted record -- restore has no frame.
+            agentId: record.singleAgentId,
+            instancePrincipalId: record.singleAgentPrincipalId,
             sessionId: record.sessionId,
             hubPublicKey: record.hubPublicKey,
           };

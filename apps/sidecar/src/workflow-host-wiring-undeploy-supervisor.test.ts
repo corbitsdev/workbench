@@ -295,7 +295,10 @@ describe("createSidecarDeployRouter multi-step undeploy shuts the supervisor dow
       agentId: "ins_undeploy-supervisor-agent",
       hubPublicKey: "hub-pk",
       // eslint-disable-next-line @typescript-eslint/no-unsafe-type-assertion -- the multi-step branch does not read config
-      config: { tenantId: "ten_test" } as AgentDeployFrame["config"],
+      config: {
+        tenantId: "ten_test",
+        principalId: "prn_test",
+      } as AgentDeployFrame["config"],
       workflow: {
         definition: {
           id: "wf-undeploy-supervisor",

@@ -310,7 +310,10 @@ async function standUpDeployment(
     agentId: `ins_${rawDeploymentId}`,
     hubPublicKey: "hub-pk",
 
-    config: { tenantId: "ten_test" } as AgentDeployFrame["config"],
+    config: {
+      tenantId: "ten_test",
+      principalId: "prn_test",
+    } as AgentDeployFrame["config"],
     workflow: {
       definition: {
         id: `wf-${rawDeploymentId}`,

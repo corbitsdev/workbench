@@ -418,12 +418,16 @@ function makeMultistepFrame(args: MultistepDeployArgs): AgentDeployFrame {
     agentId: args.agentId ?? "ins_multi-agent",
     hubPublicKey: "hub-pk",
     // The wire-side HarnessConfig has many required fields. On the workflow
-    // deploy path the router reads `config.sessionId`, `config.grants`, and
-    // (CL-2199) `config.tenantId`; the first two tolerate the empty
-    // placeholder, and tenantId is supplied so the substrate-env completeness
-    // assertion passes.
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-type-assertion -- the workflow path reads only config.sessionId/config.grants/config.tenantId
-    config: { tenantId: "ten_test" } as AgentDeployFrame["config"],
+    // deploy path the router reads `config.sessionId`, `config.grants`,
+    // (CL-2199) `config.tenantId`, and `config.principalId` (the single-agent
+    // instance principal threaded to the child); the first two tolerate the
+    // empty placeholder, and tenantId + principalId are supplied so the
+    // substrate-env completeness assertion passes.
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-type-assertion -- the workflow path reads only config.sessionId/config.grants/config.tenantId/config.principalId
+    config: {
+      tenantId: "ten_test",
+      principalId: "prn_test",
+    } as AgentDeployFrame["config"],
     workflow: {
       definition: args.definition,
       sources: args.sources,
@@ -1199,6 +1203,14 @@ describe("createSidecarDeployRouter multi-step branch", () => {
     // Raw id is recovered off the address's instance id (`ins_realinst123`),
     // not the un-strippable `agt_myra_def` agentId.
     expect(observedEnv?.[RAW_DEPLOYMENT_ID_ENV_KEY]).toBe("realinst123");
+    // CL-2199: the single-agent tool identity (the REAL agent def id + the
+    // instance principal from the frame) is threaded to the child so the
+    // resolver's single-agent branch keys the credential + hub-backed rails on
+    // the identity the hub actually has, not the synthetic `ins_<raw>-default`.
+    expect(observedEnv?.["WORKFLOW_SINGLE_AGENT_ID"]).toBe("agt_myra_def");
+    expect(observedEnv?.["WORKFLOW_SINGLE_AGENT_PRINCIPAL_ID"]).toBe(
+      "prn_test",
+    );
   });
 
   test("rejects a malformed workflow projection at the router boundary before spawn fires", async () => {
@@ -1896,6 +1908,8 @@ describe("createSidecarDeployRouter multi-step branch", () => {
       definitionId: "wf-missing-step",
       tenantId: "ten_test",
       rawDeploymentId: "ses_missing_step",
+      singleAgentId: "agt_test",
+      singleAgentPrincipalId: "prn_test",
       sources: { "step-1": [makeInferenceSource("step-1")] },
       hubPublicKey: "hub-pk",
     };
@@ -2002,6 +2016,8 @@ describe("createSidecarDeployRouter multi-step branch", () => {
       definitionId: "wf-mismatch",
       tenantId: "ten_test",
       rawDeploymentId: "ses_mismatch",
+      singleAgentId: "agt_test",
+      singleAgentPrincipalId: "prn_test",
       sources: { "step-1": [makeInferenceSource("step-1")] },
       hubPublicKey: "hub-pk",
     };

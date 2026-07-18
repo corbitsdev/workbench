@@ -16,6 +16,7 @@ import type { Agent, AgentDefinition, BaseEnv } from "@intx/agent";
 // name — @intx/agent does not re-export ConversationTurn from its barrel.
 type SendTurn = Awaited<ReturnType<Agent["send"]>>["turn"];
 import { createDefaultDirectorRegistry } from "@intx/agent";
+import { evaluateGrants } from "@intx/authz";
 import { createBuiltinRegistry } from "@intx/inference/providers";
 import type { InferenceSource } from "@intx/types/runtime";
 import type { GrantEvaluator } from "@workbench/workflow-host";
@@ -897,6 +898,10 @@ describe("createStepToolContextResolver", () => {
       tenantId: "ten_1",
       hubHttpUrl: "http://hub.invalid",
       sidecarToken: "tok",
+      // Single-agent identity is ignored on the multi-step (stepCount > 1)
+      // branch these tests exercise; supplied to satisfy the required args.
+      singleAgentId: "agt_ignored",
+      singleAgentPrincipalId: "prn_ignored",
       cacheRoot: path.join(dataDir, "cache"),
       cacheMaxBytes: 1024 * 1024,
       registryMaxTarballBytes: 1024 * 1024,
@@ -927,6 +932,10 @@ describe("createStepToolContextResolver", () => {
       tenantId: "ten_1",
       hubHttpUrl: "http://hub.invalid",
       sidecarToken: "tok",
+      // Single-agent identity is ignored on the multi-step (stepCount > 1)
+      // branch these tests exercise; supplied to satisfy the required args.
+      singleAgentId: "agt_ignored",
+      singleAgentPrincipalId: "prn_ignored",
       cacheRoot: path.join(dataDir, "cache"),
       cacheMaxBytes: 1024 * 1024,
       registryMaxTarballBytes: 1024 * 1024,
@@ -954,6 +963,10 @@ describe("createStepToolContextResolver", () => {
       tenantId: "ten_1",
       hubHttpUrl: "http://hub.invalid",
       sidecarToken: "tok",
+      // Single-agent identity is ignored on the multi-step (stepCount > 1)
+      // branch these tests exercise; supplied to satisfy the required args.
+      singleAgentId: "agt_ignored",
+      singleAgentPrincipalId: "prn_ignored",
       cacheRoot: path.join(dataDir, "cache"),
       cacheMaxBytes: 1024 * 1024,
       registryMaxTarballBytes: 1024 * 1024,
@@ -963,6 +976,96 @@ describe("createStepToolContextResolver", () => {
 
     expect(ctx.stepAgentId).toBe("ins_ins_ses_abc-abklabs-com-intake");
     expect(ctx.stepAgentId).not.toBe("ins_ses_abc-intake");
+  });
+
+  // A recording bare store: captures every `getRepoDir(repoId)` and points the
+  // grants read at a single on-disk dir where the test stages `state/grants.json`.
+  function makeRecordingBareStore(dir: string): {
+    store: RepoStore;
+    calls: RepoId[];
+  } {
+    const calls: RepoId[] = [];
+    const store = {
+      getRepoDir: (repoId: RepoId) => {
+        calls.push(repoId);
+        return dir;
+      },
+    } as unknown as RepoStore;
+    return { store, calls };
+  }
+
+  test("single-agent (stepCount === 1) keys the credential + hub-backed rails on the REAL agent id + instance principal and reads the LEGACY grants repo, not ins_<raw>-default", async () => {
+    // A single launched agent (Myra/Oat) is deployed via `deployInstanceAtHead`:
+    // NO `ins_<raw>-<step>` hub row, and its grants live in the legacy
+    // agent-state repo keyed by the instance id (`parseAgentId(address)`). The
+    // pre-fix resolver derived `ins_<raw>-default` for both the credential
+    // agentId and the grants repo, matching NOTHING the hub wrote — tool
+    // credentials 404, hub-backed tools 403, grants deny-all.
+    const grantsDir = await makeDataDir();
+    // Stage a real granted native tool in the LEGACY repo working tree.
+    await fs.mkdir(path.join(grantsDir, "state"), { recursive: true });
+    const grantRule = {
+      id: "gr_1",
+      resource: "tool:granola_list_documents",
+      action: "invoke",
+      effect: "allow" as const,
+      origin: "system" as const,
+      conditions: null,
+      expiresAt: null,
+    };
+    await fs.writeFile(
+      path.join(grantsDir, "state", "grants.json"),
+      JSON.stringify({ grants: [grantRule] }),
+    );
+
+    const { store, calls } = makeRecordingBareStore(grantsDir);
+    const dataDir = await makeDataDir();
+    const resolve = createStepToolContextResolver({
+      bareStore: store,
+      dataDir,
+      // The deployment's REAL (legacy) mail address; its instance id is the
+      // legacy agent-state repo key.
+      mailboxAddress: "ins_hex7f@abklabs.com",
+      stepCount: 1,
+      // RAW hub deploymentId (`deriveRawDeploymentId(ins_hex7f)` === `hex7f`).
+      // The pre-fix resolver would have keyed everything off this.
+      deploymentId: "hex7f",
+      tenantId: "ten_1",
+      hubHttpUrl: "http://hub.invalid",
+      sidecarToken: "tok",
+      // The identity the hub actually has for the single agent.
+      singleAgentId: "agt_myra",
+      singleAgentPrincipalId: "prn_instance_1",
+      cacheRoot: path.join(dataDir, "cache"),
+      cacheMaxBytes: 1024 * 1024,
+      registryMaxTarballBytes: 1024 * 1024,
+    });
+
+    const ctx = await resolve(makeReq("default"));
+
+    // Credential rail (`agentId`) + hub-backed rail (`agentId` + `principalId`)
+    // use the identity the hub wrote, NOT the synthetic step id.
+    expect(ctx.stepAgentId).toBe("agt_myra");
+    expect(ctx.principalId).toBe("prn_instance_1");
+    expect(ctx.stepAgentId).not.toBe("ins_hex7f-default");
+    expect(ctx.principalId).not.toBe("ins_hex7f-default");
+
+    // Grants were read from the LEGACY agent-state repo keyed by the instance
+    // id — the same repo `writeStepGrants` + the single-agent `deriveStepRepoId`
+    // wrote them to — NOT `hex7f-default`.
+    expect(calls).toContainEqual({ kind: "agent-state", id: "ins_hex7f" });
+    for (const call of calls) {
+      expect(call.id).not.toBe("hex7f-default");
+    }
+
+    // The granted native tool resolves as ALLOW (authorized, not deny-all).
+    expect(ctx.grants).toHaveLength(1);
+    const decision = await evaluateGrants(
+      ctx.grants,
+      "tool:granola_list_documents",
+      "invoke",
+    );
+    expect(decision.effect).toBe("allow");
   });
 });
 

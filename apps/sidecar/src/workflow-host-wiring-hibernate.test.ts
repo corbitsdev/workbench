@@ -249,7 +249,9 @@ describe("createSidecarDeployRouter hibernate", () => {
           throw new Error("workflow deploy must not invoke provisionAgent");
         },
         persistHubPublicKey: async () => {
-          throw new Error("workflow deploy must not invoke persistHubPublicKey");
+          throw new Error(
+            "workflow deploy must not invoke persistHubPublicKey",
+          );
         },
       } as unknown as Parameters<
         typeof createSidecarDeployRouter
@@ -308,7 +310,10 @@ describe("createSidecarDeployRouter hibernate", () => {
       agentAddress: "ins_hibernate-parked@example.com",
       agentId: "ins_hibernate-parked-agent",
       hubPublicKey: "hub-pk",
-      config: { tenantId: "ten_test" } as AgentDeployFrame["config"],
+      config: {
+        tenantId: "ten_test",
+        principalId: "prn_test",
+      } as AgentDeployFrame["config"],
       workflow: {
         definition: {
           id: "wf-hibernate",

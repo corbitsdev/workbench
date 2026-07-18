@@ -168,6 +168,23 @@ export const SIDECAR_SUBSTRATE_CONFIG_KEYS = [
   // frame's `agentId` and threads it here. Pin-bump re-diffs: this key is
   // ours; keep it.
   "WORKFLOW_RAW_DEPLOYMENT_ID",
+  // WORKBENCH-LOCAL (CL-2199): single-agent (stepCount === 1) tool identity.
+  // A single launched agent (Myra/Oat/triage/gate) deploys via interchange's
+  // `deployInstanceAtHead`, which writes NO `ins_<raw>-<step>` step agent row
+  // and stores its grants in the LEGACY agent-state repo keyed by the
+  // instance id (`parseAgentId(address)`), not the synthetic `<raw>-<step>`
+  // repo the multi-step deploy writes. So the synthetic `ins_<raw>-default`
+  // identity the resolver derives for a multi-step step matches no hub row for
+  // a single agent (tool credentials + hub-backed tools 403, grants deny-all).
+  // The deploy router threads the REAL agent-definition id (`agt_<defId>`,
+  // `frame.agentId`) and the instance principal (`prn_...`,
+  // `frame.config.principalId`) here so the resolver's single-agent branch
+  // uses the identity the hub actually has. Both keys are always populated (a
+  // multi-step deploy sets them to its deployment agent id + supervisor
+  // principal, which the resolver's multi-step branch ignores). Pin-bump
+  // re-diffs: these keys are ours; keep them.
+  "WORKFLOW_SINGLE_AGENT_ID",
+  "WORKFLOW_SINGLE_AGENT_PRINCIPAL_ID",
 ] as const;
 
 const SubstrateConfig = type({
@@ -200,6 +217,12 @@ const SubstrateConfig = type({
   // WORKBENCH-LOCAL (CL-2199): not in upstream's SubstrateConfig — the child
   // requires the raw hub deploymentId to derive step agent/state-repo ids.
   WORKFLOW_RAW_DEPLOYMENT_ID: "string > 0",
+  // WORKBENCH-LOCAL (CL-2199): single-agent tool identity (see
+  // SIDECAR_SUBSTRATE_CONFIG_KEYS). The real agent-definition id and instance
+  // principal the resolver's single-agent branch keys the credential +
+  // hub-backed rails on.
+  WORKFLOW_SINGLE_AGENT_ID: "string > 0",
+  WORKFLOW_SINGLE_AGENT_PRINCIPAL_ID: "string > 0",
 }).onUndeclaredKey("ignore");
 
 /**
@@ -742,13 +765,9 @@ const StepGrantsFile = type({ grants: "unknown[]" });
  */
 async function readStepGrants(args: {
   bareStore: RepoStore;
-  deploymentId: string;
-  stepId: string;
+  repoId: RepoId;
 }): Promise<GrantRule[]> {
-  const repoId: RepoId = {
-    kind: "agent-state",
-    id: `${args.deploymentId}-${args.stepId}`,
-  };
+  const repoId = args.repoId;
   const dir = args.bareStore.getRepoDir(repoId);
   const filePath = path.join(dir, STEP_GRANTS_PATH);
   let raw: string;
@@ -859,6 +878,19 @@ export interface StepToolContextResolverArgs {
   tenantId: string;
   hubHttpUrl: string;
   sidecarToken: string;
+  /**
+   * WORKBENCH-LOCAL (CL-2199): single-agent tool identity, used ONLY when
+   * `stepCount === 1`. A single launched agent (Myra/Oat/triage/gate) has no
+   * `ins_<raw>-<step>` hub row and stores its grants in the LEGACY agent-state
+   * repo keyed by the instance id — so the synthetic step identity resolves
+   * against nothing. `singleAgentId` is the REAL agent-definition id
+   * (`agt_<defId>`) the credential + hub-backed rails authorize against;
+   * `singleAgentPrincipalId` is the instance principal (`prn_...`) the
+   * hub-backed identity triple resolves the owning instance by. Multi-step
+   * (`stepCount > 1`) ignores both and keeps the `ins_<raw>-<step>` identity.
+   */
+  singleAgentId: string;
+  singleAgentPrincipalId: string;
   cacheRoot: string;
   cacheMaxBytes: number;
   registryMaxTarballBytes: number;
@@ -887,20 +919,68 @@ export function createStepToolContextResolver(
     // mapped step must resolve its tool-context against `<base>` — otherwise its
     // declared tools are never loaded ("not in the step's loaded runner").
     const baseStepId = /^(.+)\[\d+\]$/.exec(stepId)?.[1] ?? stepId;
-    // Must stay identical to `@intx/workflow-deploy`'s exported
-    // `deriveStepAgentId` (`ins_<deploymentId>-<stepId>`), which the hub's
-    // `writeStepAgentRows` uses to persist the row this id resolves.
-    // `args.deploymentId` is the RAW hub deploymentId (`ses_<id>`), so this
-    // yields `ins_ses_<id>-<step>` — the row the hub registered. The
-    // template is hand-rolled here (not imported) because `@intx/workflow-deploy`
-    // is not a sidecar dependency; on any change to that helper, update this.
-    const stepAgentId = `ins_${args.deploymentId}-${baseStepId}`;
+
+    // WORKBENCH-LOCAL (CL-2199): single-agent vs multi-step tool identity.
+    //
+    // A single launched agent (Myra/Oat/triage/gate, `stepCount === 1`) is
+    // deployed by interchange's `deployInstanceAtHead`, which writes NO
+    // `ins_<raw>-<step>` hub row and stores the agent's grants in the LEGACY
+    // agent-state repo keyed by the instance id (`parseAgentId(address)`) — see
+    // `createStepStrategy` / `writeStepGrants` in `workflow-host-wiring.ts`. So
+    // the synthetic `ins_<raw>-default` identity the multi-step branch derives
+    // matches NOTHING for a single agent: tool credentials 404, hub-backed
+    // tools 403, grants read miss (deny-all). Use the identity the hub actually
+    // has instead — the REAL agent-definition id (`agt_<defId>`, for the
+    // credential/hub-backed agent lookup + toolPackages gate), the instance
+    // principal (`prn_...`, so the hub-backed identity triple resolves the
+    // owning instance), and the legacy grants repo.
+    //
+    // A genuine multi-step step (`stepCount > 1`) keeps the `ins_<raw>-<step>`
+    // identity: the hub's `writeStepAgentRows` / `writeStepGrantFiles` persist
+    // the matching `agent` row and `<raw>-<step>` grants repo for it.
+    let stepAgentId: string;
+    let principalId: string;
+    let stepAddress: string;
+    let grantsRepoId: RepoId;
+    let includeRunId: boolean;
+    if (args.stepCount === 1) {
+      stepAgentId = args.singleAgentId;
+      principalId = args.singleAgentPrincipalId;
+      stepAddress = args.mailboxAddress;
+      const parsed = parseAgentAddress(args.mailboxAddress);
+      if (parsed === null) {
+        throw new Error(
+          `sidecar step tool-context: deployment mailbox address ${JSON.stringify(args.mailboxAddress)} is not a parseable agent address; cannot locate the single agent's legacy grants repo`,
+        );
+      }
+      grantsRepoId = { kind: "agent-state", id: parsed.instanceId };
+      // A warm single-step agent's per-message runId is NOT a workflow-run
+      // record id; forwarding it would trigger a spurious run lookup on the
+      // hub. The single agent resolves tenant tool credentials, so omit it.
+      includeRunId = false;
+    } else {
+      // Must stay identical to `@intx/workflow-deploy`'s exported
+      // `deriveStepAgentId` (`ins_<deploymentId>-<stepId>`), which the hub's
+      // `writeStepAgentRows` uses to persist the row this id resolves.
+      // `args.deploymentId` is the RAW hub deploymentId (`ses_<id>`), so this
+      // yields `ins_ses_<id>-<step>` — the row the hub registered. The template
+      // is hand-rolled here (not imported) because `@intx/workflow-deploy` is
+      // not a sidecar dependency; on any change to that helper, update this.
+      stepAgentId = `ins_${args.deploymentId}-${baseStepId}`;
+      principalId = stepAgentId;
+      stepAddress = stepAgentId;
+      grantsRepoId = {
+        kind: "agent-state",
+        id: `${args.deploymentId}-${baseStepId}`,
+      };
+      includeRunId = true;
+    }
+
     let grants: GrantRule[];
     try {
       grants = await readStepGrants({
         bareStore: args.bareStore,
-        deploymentId: args.deploymentId,
-        stepId: baseStepId,
+        repoId: grantsRepoId,
       });
     } catch (cause) {
       const reason = cause instanceof Error ? cause.message : String(cause);
@@ -919,9 +999,9 @@ export function createStepToolContextResolver(
       sidecarToken: args.sidecarToken,
       tenantId: args.tenantId,
       stepAgentId,
-      stepAddress: stepAgentId,
-      principalId: stepAgentId,
-      ...(runId !== undefined ? { workflowRunId: runId } : {}),
+      stepAddress,
+      principalId,
+      ...(includeRunId && runId !== undefined ? { workflowRunId: runId } : {}),
       grants,
       deployTreeDir,
       cacheRoot: args.cacheRoot,
@@ -1549,6 +1629,11 @@ export function createSidecarSubstrateFactory(
       tenantId: validated.TENANT_ID,
       hubHttpUrl: wsUrlToHttp(validated.HUB_WS_URL),
       sidecarToken: validated.SIDECAR_TOKEN,
+      // WORKBENCH-LOCAL (CL-2199): single-agent (stepCount === 1) tool identity
+      // — the real agent-definition id + instance principal the deploy router
+      // threaded from the frame. Ignored by the multi-step branch.
+      singleAgentId: validated.WORKFLOW_SINGLE_AGENT_ID,
+      singleAgentPrincipalId: validated.WORKFLOW_SINGLE_AGENT_PRINCIPAL_ID,
       // On-disk deploy-tree lookup: the hub stages each step's pinned tool
       // closure at `<dataDir>/<sanitizeAddress(stepAddress)>`. A single-step
       // deploy reads the tree at the head; a genuine multi-step deploy reads
