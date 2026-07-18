@@ -36,6 +36,7 @@ import { resolveOwnerMemberPrincipalId } from "../lib/artifact-tools";
 import { canActOnSkillDraft } from "../services/skill-library";
 import { attachArtifactSessionEnrichment } from "../lib/artifact-session-enrichment";
 import { artifactOrigins, type ArtifactSource } from "@workbench/shared";
+import { uploadArtifactKind } from "../lib/upload-artifact-kind";
 
 const artifactOriginSet: ReadonlySet<string> = new Set(artifactOrigins);
 
@@ -156,11 +157,6 @@ function effectiveUploadMime(file: File): string {
 
 function isAcceptedArtifactUpload(file: File): boolean {
   return effectiveUploadMime(file).length > 0;
-}
-
-function uploadArtifactKind(mimeType: string): string {
-  if (mimeType.startsWith("image/")) return "image";
-  return "file";
 }
 
 export const effectiveUploadMimeForTest = effectiveUploadMime;
@@ -1098,11 +1094,13 @@ export function createArtifactsRouter(
       return c.body(bytes.buffer as ArrayBuffer);
     }
 
-    // File artifacts created by the parse-file route (chat uploads) carry
+    // File/image artifacts created by the parse-file route (chat uploads) carry
     // their bytes as a data: URL in `content` with no upload-table row. Serve
     // them under the same disposition rules as upload-backed files so a
-    // persisted attachment chip stays downloadable after reload (CL-3671).
-    if (art.kind === "file") {
+    // persisted attachment chip stays downloadable after reload (CL-3671),
+    // and so an imported image's inline preview (which fetches this same
+    // route) has bytes to render (CL-3906).
+    if (art.kind === "file" || art.kind === "image") {
       const dataUrl = /^data:([^;,]+);base64,(.*)$/s.exec(art.content);
       if (dataUrl) {
         const mimeType = dataUrl[1]!;

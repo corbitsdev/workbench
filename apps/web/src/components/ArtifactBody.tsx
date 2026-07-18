@@ -250,6 +250,22 @@ function isCsvUpload(source: unknown, filename: string | null): boolean {
   return filename !== null && filename.toLowerCase().endsWith(".csv");
 }
 
+// Legacy fallback: artifacts imported before CL-3906 (chat uploads via
+// parse-file) were stamped kind "file" even for images, since the hub route
+// hardcoded the kind. Detect an image/* upload mime here so those rows still
+// render inline — mirrors isCsvUpload's mime-then-extension check, without a
+// migration.
+export function isImageUpload(source: unknown): boolean {
+  if (typeof source === "object" && source !== null) {
+    const upload = (source as Record<string, unknown>).upload;
+    if (typeof upload === "object" && upload !== null) {
+      const mimeType = (upload as Record<string, unknown>).mimeType;
+      if (typeof mimeType === "string") return mimeType.startsWith("image/");
+    }
+  }
+  return false;
+}
+
 function extractUploadFilename(source: unknown): string | null {
   const filename = parseUploadSource(source)?.upload?.filename;
   return typeof filename === "string" && filename.length > 0 ? filename : null;
@@ -515,6 +531,11 @@ export default function ArtifactBody({
             sessionStatus={artifact.sessionStatus}
           />
         );
+      if (isImageUpload(artifact.source)) {
+        return (
+          <ImageBody artifactId={artifact.id} filename={uploadFilename} />
+        );
+      }
       if (isCsvUpload(artifact.source, uploadFilename)) {
         return (
           <UploadedCsvBody artifactId={artifact.id} filename={uploadFilename} />

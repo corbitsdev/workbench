@@ -128,6 +128,25 @@ describe("POST /instances/:instanceId/parse-file (CL-2628)", () => {
     });
   });
 
+  it("assigns kind 'image' for an imported image/png upload (CL-3906)", async () => {
+    // 1x1 PNG signature bytes, base64-encoded — content doesn't matter here,
+    // only that it decodes and the mime routes to the image kind.
+    const res = await post({
+      filename: "screenshot.png",
+      mimeType: "image/png",
+      data: "iVBORw0KGgo=",
+    });
+    expect(res.status).toBe(201);
+    expect(insertedArtifacts).toHaveLength(1);
+    expect(insertedArtifacts[0]!.kind).toBe("image");
+  });
+
+  it("still assigns kind 'file' for a non-image import (CL-3906)", async () => {
+    const res = await post(OK_BODY);
+    expect(res.status).toBe(201);
+    expect(insertedArtifacts[0]!.kind).toBe("file");
+  });
+
   it("normalizes a parameterized MIME type before storing (F3 regression)", async () => {
     const res = await post({
       ...OK_BODY,

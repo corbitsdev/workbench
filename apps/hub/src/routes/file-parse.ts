@@ -13,6 +13,7 @@ import { artifact, artifactVersion, memberAgentInstance } from "../db/schema";
 import { parseDocument, FileParseError } from "../services/file-parser";
 import { getRequestedUserContext } from "../lib/user-context";
 import { requestBodySchema } from "../lib/openapi";
+import { uploadArtifactKind } from "../lib/upload-artifact-kind";
 
 const log = getLogger(["api", "file-parse"]);
 
@@ -282,7 +283,7 @@ export function createFileParseRouter(
           tenantId: userContext.tenantId,
           principalId: userContext.principalId,
           ownerPrincipalId: userContext.principalId,
-          kind: "file",
+          kind: uploadArtifactKind(mimeType),
           title: parsed.filename,
           content,
           source,

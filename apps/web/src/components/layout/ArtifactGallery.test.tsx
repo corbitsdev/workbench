@@ -241,6 +241,49 @@ describe("ArtifactGallery", () => {
     view.getByText("Acme Corp");
   });
 
+  it("renders a thumbnail img for an image-kind artifact (CL-3906)", async () => {
+    const imageArtifact: ArtifactWithSession = {
+      ...fakeArtifact,
+      id: "a-img",
+      kind: "image",
+      title: "Screenshot",
+      source: { origin: "imported", upload: { filename: "shot.png" } },
+    };
+    const view = renderWithSeededArtifacts(
+      "tenant-workbench",
+      [imageArtifact],
+      React.createElement(ArtifactGallery, { tenantId: "tenant-workbench" }),
+    );
+
+    const thumb = await view.findByRole("img", { name: "Screenshot" });
+    expect(thumb.getAttribute("src")).toBe(
+      "http://localhost/api/v1/artifacts/a-img/download",
+    );
+  });
+
+  it("renders a thumbnail img for a legacy kind-'file' image upload (CL-3906)", async () => {
+    const legacyImageArtifact: ArtifactWithSession = {
+      ...fakeArtifact,
+      id: "a-legacy-img",
+      kind: "file",
+      title: "Old screenshot",
+      source: {
+        origin: "imported",
+        upload: { filename: "old.png", mimeType: "image/png" },
+      },
+    };
+    const view = renderWithSeededArtifacts(
+      "tenant-workbench",
+      [legacyImageArtifact],
+      React.createElement(ArtifactGallery, { tenantId: "tenant-workbench" }),
+    );
+
+    const thumb = await view.findByRole("img", { name: "Old screenshot" });
+    expect(thumb.getAttribute("src")).toBe(
+      "http://localhost/api/v1/artifacts/a-legacy-img/download",
+    );
+  });
+
   it("uses the default card treatment until the experiment is opted in", async () => {
     const view = renderWithSeededArtifacts(
       "tenant-workbench",
