@@ -1,4 +1,8 @@
-import { manifestFromHubToolEntries } from "@workbench/tool-manifest";
+import {
+  hubToolEntriesFromDefinitions,
+  manifestFromHubToolEntries,
+} from "@workbench/tool-manifest";
+import { FILEPARSER_TOOL_DEFINITIONS } from "./definitions";
 
 export const toolManifestFile = {
   factories: [
@@ -6,11 +10,7 @@ export const toolManifestFile = {
       factoryId: "@workbench/tools-fileparser/fileparser",
       packageName: "@workbench/tools-fileparser",
       providerName: null,
-      entries: {
-        parse_file: {
-          sideEffect: "read",
-        },
-      },
+      entries: hubToolEntriesFromDefinitions(FILEPARSER_TOOL_DEFINITIONS),
       myraCatalog: {
         catalogPackage: "fileparser",
         summary: "Document parsing — read PDFs, documents, and images as text.",

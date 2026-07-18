@@ -5,6 +5,7 @@ export {
 export {
   bareToolNamesFromEntries,
   descriptionsFromEntries,
+  hubToolEntriesFromDefinitions,
   manifestFromBareToolNames,
   manifestFromHubToolEntries,
   sideEffectsFromEntries,

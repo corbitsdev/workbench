@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-07-18T21:55:30.734Z",
+  "generatedAt": "2026-07-18T22:30:21.952Z",
   "factories": [
     {
       "factoryId": "@workbench/tools-ab-compare/compose",
@@ -12,6 +12,10 @@
       "sideEffects": {
         "ab_preset_quorum": "read",
         "ab_preset_compose": "read"
+      },
+      "descriptions": {
+        "ab_preset_quorum": "Internal A/B-preset workflow helper. Fail the run before the human decision when fewer than the required number of variants produced an answer, so a doomed comparison never reaches the winner-pick gate.",
+        "ab_preset_compose": "Internal A/B-preset workflow helper. Fold the fixed variant metadata, each variant's inline-step output, and the human ranking into one structured comparison artifact payload."
       },
       "myraCatalog": null,
       "credentialCatalog": null
@@ -69,18 +73,32 @@
         "write_artifact"
       ],
       "sideEffects": {
+        "artifact_link_file": "write",
         "artifact_create": "write",
         "artifact_read": "read",
         "artifact_read_chunk": "read",
         "artifact_write": "write",
-        "artifact_list": "read",
-        "artifact_find_by_title": "read",
-        "artifact_link_file": "write",
         "artifact_link_presentation": "write",
         "artifact_link_gamma_presentation": "write",
+        "artifact_find_by_title": "read",
+        "artifact_list": "read",
         "write_artifact": "write",
         "memory_load": "read",
         "memory_save": "write"
+      },
+      "descriptions": {
+        "artifact_link_file": "Create a Workbench artifact row linked to a file in the agent workspace. Call this after writing the file with write_file.",
+        "artifact_create": "Create a new Workbench artifact with inline content. Use this to save a document, note, draft, or other written output directly. Returns the artifact id and version. Revise it later with artifact_write.",
+        "artifact_read": "Read a Workbench artifact by id. Returns its title, kind, status, current version, and content. Pass version to read a specific past version. When the content is too large to return at once, the result includes a 'continuation' field with instructions to read the rest with artifact_read_chunk.",
+        "artifact_read_chunk": "Read one bounded chunk of a Workbench artifact's content by character range. Use this to read a large artifact whose content did not fit in a single artifact_read: pass the offset named in the prior result's 'continuation' field, and keep calling with each new offset until the result has no 'continuation' field, which means you have reached the end. Not supported for kind=web_site — use artifact_read (summary or path) instead.",
+        "artifact_write": "Revise an existing Workbench artifact, saving the change as a new version. Provide content and/or title; omitted fields keep their current value. Returns the new version number.",
+        "artifact_link_presentation": "Save a Gamma presentation as a Workbench artifact. Pass the Gamma URL as 'url', a 'title', and optionally an existing 'artifactId' to create a new version instead of a new artifact. Returns { artifactId, version, url }.",
+        "artifact_link_gamma_presentation": "Save a Gamma deck as a Workbench artifact of kind gamma_presentation. Pass the Gamma URL as 'url', a 'title', a short 'description' of the deck, and the 'gammaId'. Optionally pass an existing 'artifactId' to create a new version. Returns { artifactId, version, url }.",
+        "artifact_find_by_title": "Find a Workbench artifact by exact title and optional kind. Returns { artifactId, version } if found, null if not found.",
+        "artifact_list": "List Workbench artifacts in this workbench, most recently updated first. Returns id, title, kind, status, version, and updatedAt for each. Optionally filter by kind or status.",
+        "write_artifact": "Create or update a Workbench artifact with body text and optional citations. Returns artifactId, version, and title.",
+        "memory_load": "Load your durable memory — the standing brief on the person you work for, durable facts and decisions, and contacts. Returns the full memory text (empty when nothing is stored yet). Call this when a task needs the context it holds, not on every turn.",
+        "memory_save": "Save your durable memory, replacing the stored text with what you pass. Load it first, edit the whole text, then save the full result — saving overwrites, it does not append. Keep it organized under headings. Update only when you learn something durable, never for a greeting or simple reply."
       },
       "myraCatalog": {
         "catalogPackage": "artifacts",
@@ -242,6 +260,9 @@
       ],
       "sideEffects": {
         "parse_file": "read"
+      },
+      "descriptions": {
+        "parse_file": "Extract the text from a PDF or image artifact you cannot read directly. Returns the extracted text; optionally pass instructions to pull only what you need (e.g. 'list every action item'). Use it for binary files only, whether uploaded by the user or fetched from another source. Do not use it on content that is already text — notes, transcripts, tool outputs, or artifacts written by an agent; read those directly with artifact_read."
       },
       "myraCatalog": {
         "catalogPackage": "fileparser",
@@ -858,6 +879,14 @@
         "load_skill_draft": "read",
         "skill_draft": "write"
       },
+      "descriptions": {
+        "list_skills": "List every skill visible to you (the tenant-shared library plus your own private skills). Returns a cheap index — only {id, name, displayName, description} per skill, never the skill body. Use this to discover what skills exist, then load_skill to read one. Read-only.",
+        "search_skills": "Search the skills visible to you by a free-text query, matched as a case-insensitive substring against each skill's name, display name, and description. Returns the same cheap index shape as list_skills ({id, name, displayName, description}) — never the skill body. If a search comes up empty, retry with different wording (synonyms or broader terms) before concluding no skill fits. Use load_skill to read a match. Read-only.",
+        "load_skill": "Load the full content of one skill by its id (from list_skills or search_skills). Returns the SKILL.md body with its frontmatter stripped, plus the contents of any sibling files. Large content is truncated and binary files are omitted (each flagged), with a top-level notice when anything was dropped. Only skills visible to you can be loaded; an id you cannot see is reported as not found. Read-only.",
+        "list_skill_drafts": "List your pending skill drafts — the ones awaiting your review under Skills → Pending drafts, not yet published. Returns a cheap index — only {id, name, description} per draft, never the SKILL.md body. Use this to find a draft to iterate on, then load_skill_draft to read it and skill_draft to save an improved version. Read-only.",
+        "load_skill_draft": "Load the full content of one of your pending skill drafts by its id (from list_skill_drafts). Returns the SKILL.md body, the contents of any support files, and existingSkillId (the id of the published skill this draft revises, or null for a new skill). Large content is truncated (flagged), with a top-level notice when anything was dropped. Only your own pending drafts can be loaded; an id you do not own, or one that is no longer pending, is reported as not found. To save changes, call skill_draft with the same name. Read-only.",
+        "skill_draft": "Create or update a pending skill draft (as a skill-draft artifact). Takes a stable name, optional description, the full SKILL.md body, and optional support files. Returns {draftId, version}. Drafts are NOT published — the human owner reviews and approves them under Skills → Pending drafts in the workbench UI. Tell the user that is where to open the draft. Drafts are deduplicated by principal+name."
+      },
       "myraCatalog": {
         "catalogPackage": "skills",
         "summary": "Skills library — list every skill, read and improve your pending drafts, and draft new ones.",
@@ -1099,6 +1128,12 @@
         "workflow_start": "write",
         "workflow_list_runs": "read",
         "workflow_signal": "write"
+      },
+      "descriptions": {
+        "workflow_list_kinds": "List workflow kinds the caller may start. Returns only kinds deployed on the tenant chain and allowed by the org run policy — the same runnable catalog as the Workflows page.",
+        "workflow_start": "Start a workflow run by kind on behalf of the user. Call workflow_list_kinds first and use a returned kind. The run is recorded against this conversation, so it appears in the chat's workflow dock. Returns { runId, kind, status }. Use workflow_list_runs to check progress and workflow_signal to resolve a pending gate.",
+        "workflow_list_runs": "List the user's workflow runs. By default only runs started from the current conversation are returned; pass allConversations=true to list the user's runs from every conversation. Returns runId, kind, status, createdAt, originConversationId, and for runs with status 'awaiting' a pendingGates array (signalName plus optional payloadSchema describing the gate's expected fields).",
+        "workflow_signal": "Deliver a signal to a workflow run that is waiting on a gate (status 'awaiting'), resuming it. Read the run's pendingGates from workflow_list_runs first and pass that exact signalName — never invent one. Pass the runId, signalName, and an optional payload object matching the gate's fields. On a wrong signalName returns { ok: false, error, pendingGates } instead of succeeding. Returns the run's state after a successful signal."
       },
       "myraCatalog": {
         "catalogPackage": "workflows",
