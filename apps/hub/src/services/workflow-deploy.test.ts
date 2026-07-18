@@ -1064,10 +1064,12 @@ describe("deployWorkflow inline-step partition (CL-2251)", () => {
     expect(agentStateIds).toContain("ses_inline-draft");
     expect(agentStateIds).not.toContain("ses_inline-analyze");
 
-    // No per-step agent/instance row was written for the inline step.
+    // Every step gets its agent/instance rows uniformly (interchange's pack
+    // phase FKs session_asset -> agent_instance for every staged step); the
+    // inline partition now only scopes the grants repo.
     const allRowIds = insertedRows.flatMap((b) => b.rows.map((r) => r.id));
     expect(allRowIds).toContain("ins_ses_inline-draft");
-    expect(allRowIds).not.toContain("ins_ses_inline-analyze");
+    expect(allRowIds).toContain("ins_ses_inline-analyze");
     // The supervisor rows are still written (deployment-level, not step-level).
     expect(allRowIds).toContain("ins_ses_inline");
 
@@ -1116,7 +1118,7 @@ describe("deployWorkflow deterministic-tool partition (CL-2252)", () => {
     } as unknown as HarnessConfig;
   }
 
-  test("keeps the agent row but skips instance row and grants repo for the deterministic tool step", async () => {
+  test("keeps agent + instance rows for every step but scopes the grants repo to deployed steps", async () => {
     const deploymentId = "ses_det";
     const deploymentDomain = "deploy.example.com";
 
@@ -1214,11 +1216,10 @@ describe("deployWorkflow deterministic-tool partition (CL-2252)", () => {
     expect(agentStateIds).not.toContain("ses_det-fetch");
     expect(agentStateIds).not.toContain("ses_det-analyze");
 
-    // The `agent` row IS written for the deterministic tool step (load-bearing:
-    // the tool manifest/credentials endpoints gate on it) — but NO instance
-    // row: with native `dep_` deployment ids every per-step deploy ack routes
-    // through the `workflow_deployment` row (isWorkflowDerivedAddress), so
-    // instance rows stay attribution-only and scoped to deployed steps.
+    // Every step keeps BOTH rows uniformly: interchange's pack phase records
+    // a session_asset row per staged attachment with a hard FK to
+    // agent_instance, and every stepOrder entry is staged — so a row-less
+    // step fails the provision at phase "pack".
     const agentRowIds = insertedRows
       .filter((b) => b.table === "agent")
       .flatMap((b) => b.rows.map((r) => r.id));
@@ -1226,13 +1227,13 @@ describe("deployWorkflow deterministic-tool partition (CL-2252)", () => {
       .filter((b) => b.table === "agentInstance")
       .flatMap((b) => b.rows.map((r) => r.id));
     expect(agentRowIds).toContain("ins_ses_det-fetch");
-    expect(instanceRowIds).not.toContain("ins_ses_det-fetch");
+    expect(instanceRowIds).toContain("ins_ses_det-fetch");
 
-    // Deployed reasoning step keeps both rows; inline step gets neither.
+    // Deployed reasoning step and inline step keep both rows too.
     expect(agentRowIds).toContain("ins_ses_det-draft");
     expect(instanceRowIds).toContain("ins_ses_det-draft");
-    expect(agentRowIds).not.toContain("ins_ses_det-analyze");
-    expect(instanceRowIds).not.toContain("ins_ses_det-analyze");
+    expect(agentRowIds).toContain("ins_ses_det-analyze");
+    expect(instanceRowIds).toContain("ins_ses_det-analyze");
 
     // Supervisor rows are still written (deployment-level).
     expect(agentRowIds).toContain("ins_ses_det");
