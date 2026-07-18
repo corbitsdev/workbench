@@ -7,6 +7,7 @@ import { subscribeWorkflowRunStateStream } from "../lib/workflow-run-state-strea
 import {
   isLogStateTerminal,
   isRecordTerminal,
+  isStatusTerminal,
   logRunStateSchema,
   reconcileRunState,
   runStateFromLog,
@@ -93,9 +94,12 @@ const workflowDeploymentListSchema = workflowDeploymentSchema.array();
 // The run list is static once every run is terminal (or there are none) — a new
 // run only appears via a mutation that invalidates the query. Poll only while
 // something is still advancing so the app frame stops hitting the endpoint every
-// 5s forever when nothing is running.
+// 5s forever when nothing is running. The run list here (and `WorkflowRun`)
+// carries a plain `string` status rather than `RunRecord["status"]`, so this
+// uses the widened `isStatusTerminal` sibling instead of casting into
+// `isRecordTerminal`.
 export function runListIsActive(runs: readonly { status: string }[]): boolean {
-  return runs.some((r) => !isRecordTerminal(r.status as RunRecord["status"]));
+  return runs.some((r) => !isStatusTerminal(r.status));
 }
 
 export function useWorkflowRuns(

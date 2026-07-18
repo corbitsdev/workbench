@@ -545,6 +545,7 @@ export const NON_REGISTRY_PREFERENCE_KEYS = [
   "artifactsViewMode",
   "toolsViewMode",
   "skillsViewMode",
+  "agentsViewMode",
   "changelogSeenVersion",
   "onboarding.welcomeSentAt",
   "inboxSource:linear:backfillAppliedAt",
