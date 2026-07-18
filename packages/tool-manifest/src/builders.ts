@@ -65,36 +65,20 @@ export function manifestFromHubToolEntries(opts: {
 
 /**
  * Build `HubToolEntries` from a package's own runtime array of tool
- * definitions (the same array its `interchange-tools.ts` factory dispatches),
- * plus a hand-authored side-effect table. A tool added to the runtime array
- * without a matching `sideEffects` entry throws immediately at import time
- * instead of silently missing its manifest entry — the entry name itself can
- * never drift from the runtime, since it is read off `definition.name`.
+ * definitions (the same array its `interchange-tools.ts` factory dispatches).
+ * Each definition carries its own `sideEffect` inline — the classification is
+ * authored once, next to the tool it describes, so it can never drift from
+ * the runtime array the way a parallel hand-authored map could.
  */
-export function hubToolEntriesFromDefinitions(
-  definitions: readonly { name: string; description?: string }[],
-  sideEffects: Record<string, ToolSideEffect>,
-): HubToolEntries {
+export function hubToolEntriesFromDefinitions<
+  D extends { name: string; description?: string; sideEffect: ToolSideEffect },
+>(definitions: readonly D[]): HubToolEntries {
   const entries: HubToolEntries = {};
   for (const definition of definitions) {
-    const sideEffect = sideEffects[definition.name];
-    if (sideEffect === undefined) {
-      throw new Error(
-        `hubToolEntriesFromDefinitions: no side effect declared for tool "${definition.name}"`,
-      );
-    }
-    entries[definition.name] = { sideEffect, definition };
-  }
-  // Exact set equality, both directions: a stale key left behind by a
-  // renamed/removed tool is dead weight that erodes the map's authority —
-  // fail loud so the map always mirrors the runtime array exactly.
-  const definitionNames = new Set(definitions.map((d) => d.name));
-  for (const key of Object.keys(sideEffects)) {
-    if (!definitionNames.has(key)) {
-      throw new Error(
-        `hubToolEntriesFromDefinitions: side-effect map declares "${key}" but no runtime tool definition has that name (stale or misspelled key)`,
-      );
-    }
+    entries[definition.name] = {
+      sideEffect: definition.sideEffect,
+      definition,
+    };
   }
   return entries;
 }
