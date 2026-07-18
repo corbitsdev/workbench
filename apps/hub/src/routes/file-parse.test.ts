@@ -171,4 +171,23 @@ describe("POST /instances/:instanceId/parse-file (CL-2628)", () => {
     expect(res.status).toBe(502);
     expect(insertedArtifacts).toHaveLength(0);
   });
+
+  it("returns 502 (not an uncaught 500) when the underlying one-shot's inference turn fails (CL-2928 / tracked-one-shot InferenceTurnFailedError)", async () => {
+    // `parseDocument` propagates `runTrackedOneShot`'s InferenceTurnFailedError
+    // uncaught (it is neither FileParseError nor ParseTimeoutError); the route's
+    // generic catch-all must still turn it into a clean 502 rather than letting
+    // it surface as an unhandled exception.
+    class FakeInferenceTurnFailedError extends Error {}
+    parseImpl = () =>
+      Promise.reject(
+        new FakeInferenceTurnFailedError(
+          "Inference turn failed (aborted): provider 503",
+        ),
+      );
+    const res = await post(OK_BODY);
+    expect(res.status).toBe(502);
+    const json = (await res.json()) as { error: string };
+    expect(json.error).toBe("The document could not be parsed.");
+    expect(insertedArtifacts).toHaveLength(0);
+  });
 });
