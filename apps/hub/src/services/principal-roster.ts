@@ -1,9 +1,9 @@
 import { schema as intxSchema } from "@intx/db";
 import { type } from "arktype";
-import { and, eq, inArray, sql } from "drizzle-orm";
+import { and, eq, inArray, isNull, sql } from "drizzle-orm";
 
 import type { HubDb } from "../db";
-import { memberAgentInstance } from "../db/schema";
+import { memberAgentInstance, workflowRunRecord } from "../db/schema";
 import {
   listRunRecords,
   listTenantRunRecords,
@@ -59,20 +59,157 @@ export const PrincipalRosterSchema = type({
 });
 export type PrincipalRoster = typeof PrincipalRosterSchema.infer;
 
+async function sessionCountsForPrincipals(
+  db: HubDb,
+  tenantId: string,
+  syntheticIds: string[],
+): Promise<Map<string, number>> {
+  const sessionCounts = new Map<string, number>();
+  if (syntheticIds.length === 0) return sessionCounts;
+  const counts = await db
+    .select({
+      principalId: agentSession.principalId,
+      count: sql<number>`count(*)::int`,
+    })
+    .from(agentSession)
+    .where(
+      and(
+        eq(agentSession.tenantId, tenantId),
+        inArray(agentSession.principalId, syntheticIds),
+      ),
+    )
+    .groupBy(agentSession.principalId);
+  for (const c of counts) {
+    sessionCounts.set(c.principalId, Number(c.count));
+  }
+  return sessionCounts;
+}
+
+// Agent-principal path: the viewed id is an agent_instance.principal_id, so
+// ownership queries (member_agent_instance.member_principal_id / runs by
+// principal_id) are structurally empty. Surface the instance itself and runs
+// started from its conversation (origin_conversation_id = mapping id).
+async function getAgentPrincipalRoster(args: {
+  db: HubDb;
+  tenantId: string;
+  principalId: string;
+}): Promise<PrincipalRoster | null> {
+  const instanceRows = await args.db
+    .select({
+      instanceId: agentInstance.id,
+      principalId: agentInstance.principalId,
+      agentId: agentInstance.agentId,
+      name: agent.name,
+      status: agentInstance.status,
+      address: agentInstance.address,
+      updatedAt: agentInstance.updatedAt,
+    })
+    .from(agentInstance)
+    .innerJoin(agent, eq(agent.id, agentInstance.agentId))
+    .where(
+      and(
+        eq(agentInstance.tenantId, args.tenantId),
+        eq(agentInstance.principalId, args.principalId),
+      ),
+    );
+
+  if (instanceRows.length === 0) return null;
+
+  const instanceIds = instanceRows.map((r) => r.instanceId);
+  const mappingRows = await args.db
+    .select({
+      id: memberAgentInstance.id,
+      instanceId: memberAgentInstance.instanceId,
+      templateKey: memberAgentInstance.templateKey,
+      label: memberAgentInstance.label,
+      lastActivityAt: memberAgentInstance.lastActivityAt,
+    })
+    .from(memberAgentInstance)
+    .where(
+      and(
+        eq(memberAgentInstance.tenantId, args.tenantId),
+        inArray(memberAgentInstance.instanceId, instanceIds),
+      ),
+    );
+
+  // Prefer the first mapping per instance for display fields; collect every
+  // mapping id so runs started from any of this instance's conversations land.
+  const mappingByInstance = new Map<string, (typeof mappingRows)[number]>();
+  const mappingIds: string[] = [];
+  for (const m of mappingRows) {
+    mappingIds.push(m.id);
+    if (!mappingByInstance.has(m.instanceId)) {
+      mappingByInstance.set(m.instanceId, m);
+    }
+  }
+
+  const sessionCounts = await sessionCountsForPrincipals(
+    args.db,
+    args.tenantId,
+    instanceRows.map((r) => r.principalId),
+  );
+
+  const instances = instanceRows
+    .map((r) => {
+      const mapping = mappingByInstance.get(r.instanceId);
+      return {
+        instanceId: r.instanceId,
+        principalId: r.principalId,
+        agentId: r.agentId,
+        name: r.name,
+        status: r.status,
+        sessionCount: sessionCounts.get(r.principalId) ?? 0,
+        templateKey: mapping?.templateKey ?? "unknown",
+        label: mapping?.label ?? null,
+        lastActivityAt: (mapping?.lastActivityAt ?? r.updatedAt).toISOString(),
+        address: r.address,
+      };
+    })
+    .sort((a, b) => a.name.localeCompare(b.name));
+
+  let runs: RosterRun[] = [];
+  if (mappingIds.length > 0) {
+    const runRows = await args.db
+      .select({
+        runId: workflowRunRecord.id,
+        kind: workflowRunRecord.kind,
+        status: workflowRunRecord.status,
+      })
+      .from(workflowRunRecord)
+      .where(
+        and(
+          eq(workflowRunRecord.tenantId, args.tenantId),
+          isNull(workflowRunRecord.deletedAt),
+          inArray(workflowRunRecord.originConversationId, mappingIds),
+        ),
+      );
+    runs = runRows.map((r) => ({
+      runId: r.runId,
+      kind: r.kind,
+      status: r.status,
+    }));
+  }
+
+  const parsed = PrincipalRosterSchema({ instances, runs });
+  if (parsed instanceof type.errors) {
+    throw new Error(`Principal roster failed validation: ${parsed.summary}`);
+  }
+  return parsed;
+}
+
 // Lists the agent instances a principal owns and the workflow runs it started,
-// tenant-scoped. Instances come through the SAME workbench-owned
-// member_agent_instance -> agent_instance join `resolveTimelinePrincipalIds`
-// uses (tenant-pinned on both sides so an instance id reused in another tenant
-// cannot bleed across the boundary), extended to recover the instance's agent
-// name/status and a cheap per-instance session count. Runs reuse the run-index
-// `listRunRecords` (workflow_run_record.principalId is the owning member's
-// principal, not the instance's synthetic one), so the roster is the union of
-// "instances this user owns" and "runs this user started".
+// tenant-scoped. For a USER principal: instances via member_agent_instance and
+// runs via workflow_run_record.principalId. For an AGENT principal (an
+// agent_instance.principal_id): the instance itself and runs started from its
+// conversation (origin_conversation_id = member_agent_instance.id).
 export async function getPrincipalRoster(args: {
   db: HubDb;
   tenantId: string;
   principalId: string;
 }): Promise<PrincipalRoster> {
+  const agentRoster = await getAgentPrincipalRoster(args);
+  if (agentRoster !== null) return agentRoster;
+
   const instanceRows = await args.db
     .select({
       instanceId: memberAgentInstance.instanceId,
@@ -101,26 +238,11 @@ export async function getPrincipalRoster(args: {
       ),
     );
 
-  const syntheticIds = instanceRows.map((r) => r.principalId);
-  const sessionCounts = new Map<string, number>();
-  if (syntheticIds.length > 0) {
-    const counts = await args.db
-      .select({
-        principalId: agentSession.principalId,
-        count: sql<number>`count(*)::int`,
-      })
-      .from(agentSession)
-      .where(
-        and(
-          eq(agentSession.tenantId, args.tenantId),
-          inArray(agentSession.principalId, syntheticIds),
-        ),
-      )
-      .groupBy(agentSession.principalId);
-    for (const c of counts) {
-      sessionCounts.set(c.principalId, Number(c.count));
-    }
-  }
+  const sessionCounts = await sessionCountsForPrincipals(
+    args.db,
+    args.tenantId,
+    instanceRows.map((r) => r.principalId),
+  );
 
   const instances = instanceRows
     .map((r) => ({
@@ -201,26 +323,11 @@ export async function getTenantRoster(args: {
     .innerJoin(agent, eq(agent.id, agentInstance.agentId))
     .where(eq(memberAgentInstance.tenantId, args.tenantId));
 
-  const syntheticIds = instanceRows.map((r) => r.principalId);
-  const sessionCounts = new Map<string, number>();
-  if (syntheticIds.length > 0) {
-    const counts = await args.db
-      .select({
-        principalId: agentSession.principalId,
-        count: sql<number>`count(*)::int`,
-      })
-      .from(agentSession)
-      .where(
-        and(
-          eq(agentSession.tenantId, args.tenantId),
-          inArray(agentSession.principalId, syntheticIds),
-        ),
-      )
-      .groupBy(agentSession.principalId);
-    for (const c of counts) {
-      sessionCounts.set(c.principalId, Number(c.count));
-    }
-  }
+  const sessionCounts = await sessionCountsForPrincipals(
+    args.db,
+    args.tenantId,
+    instanceRows.map((r) => r.principalId),
+  );
 
   const instances = instanceRows
     .map((r) => ({
