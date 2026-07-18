@@ -213,7 +213,7 @@ describe("createSidecarStepInvoker workspace placement (cold path)", () => {
     async function run(runId: string): Promise<string> {
       let workdir = "";
       const stubInvoke = createSidecarStepInvoker({
-        table: { [STEP_ID]: SOURCE },
+        table: { [STEP_ID]: [SOURCE] },
         dataDir,
         workflowRunRepoId: REPO_ID,
         signer: async () => "sig",
