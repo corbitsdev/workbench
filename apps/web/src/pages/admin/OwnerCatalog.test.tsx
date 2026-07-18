@@ -25,12 +25,19 @@ function resolveOutcome(outcome: Outcome): Promise<unknown> {
   return new Promise(() => {});
 }
 
+let offeringsOutcome: Outcome = { kind: "resolve", data: [] };
+
 mock.module("../../lib/hub-api", () => ({
   getTenantProviders: () => resolveOutcome(providersOutcome),
   getTenantModels: () => resolveOutcome(modelsOutcome),
   getOwnerCredentials: () => resolveOutcome(credentialsOutcome),
   setOwnerCredential: () => Promise.reject(new Error("not used in this test")),
   clearOwnerCredential: () =>
+    Promise.reject(new Error("not used in this test")),
+  getTenantOfferings: () => resolveOutcome(offeringsOutcome),
+  setTenantOfferingDisabled: () =>
+    Promise.reject(new Error("not used in this test")),
+  deleteTenantOffering: () =>
     Promise.reject(new Error("not used in this test")),
 }));
 

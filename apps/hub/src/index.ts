@@ -1479,6 +1479,7 @@ v1.route(
   createOwnerRouter({
     db,
     grantStore,
+    sidecarRouter,
     rootTenantId,
     showDemos: config.showDemos,
     featureEnvOverrides: {

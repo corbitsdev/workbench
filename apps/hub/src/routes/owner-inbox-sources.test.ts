@@ -138,6 +138,7 @@ function buildApp(db: unknown) {
     createOwnerRouter({
       db: db as never,
       grantStore: grantStoreFor(),
+      sidecarRouter: {} as never,
       rootTenantId: "ten_root",
       showDemos: false,
       featureEnvOverrides: {

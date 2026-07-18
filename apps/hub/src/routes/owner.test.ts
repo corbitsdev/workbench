@@ -71,6 +71,52 @@ mock.module("../services/admin-governance", () => ({
   resolvePrincipalNames: mock(async () => new Map<string, string>()),
 }));
 
+// CL-3869: setting an Owner inference credential auto-seeds that provider's
+// catalog slice. Record the reconcile calls so the wiring (right provider,
+// credentialId, baseURL) is asserted without a live sidecar/catalog.
+const reconcileCalls: {
+  tenantId: string;
+  providerName: string;
+  credentialId: string;
+  baseURL: string;
+}[] = [];
+const clearCatalogCalls: string[][] = [];
+let reconcileShouldThrow = false;
+mock.module("../services/catalog-provider-seed", () => ({
+  reconcileProviderCatalog: async (params: {
+    tenantId: string;
+    providerName: string;
+    credentialId: string;
+    baseURL: string;
+  }) => {
+    reconcileCalls.push({
+      tenantId: params.tenantId,
+      providerName: params.providerName,
+      credentialId: params.credentialId,
+      baseURL: params.baseURL,
+    });
+    if (reconcileShouldThrow) throw new Error("reconcile boom");
+    return {
+      providerSeeded: true,
+      credentialBound: false,
+      modelsCreated: ["kimi-k3"],
+      offeringsCreated: ["kimi-k3"],
+      offeringsReprioritized: [],
+    };
+  },
+  // Records the credential ids the DELETE handler asks to unbind; returns 0 so
+  // the route skips the source re-push (keeps @intx/hub-sessions out of the
+  // unit test — the real cascade is covered by the integration test).
+  clearCatalogProvidersForCredentials: async (
+    _tx: unknown,
+    _tenantId: string,
+    credentialIds: string[],
+  ) => {
+    clearCatalogCalls.push(credentialIds);
+    return 0;
+  },
+}));
+
 const { createOwnerRouter } = await import("./owner");
 
 // A minimal db that only backs `recordAudit`'s fire-and-forget
@@ -135,6 +181,7 @@ function buildApp(db: unknown = {}) {
     createOwnerRouter({
       db: db as never,
       grantStore: grantStoreFor(),
+      sidecarRouter: {} as never,
       rootTenantId: "ten_root",
       showDemos: ownerRouterShowDemos,
       featureEnvOverrides: ownerRouterFeatureEnvOverrides,
@@ -253,6 +300,18 @@ describe("owner credentials routes", () => {
           },
         }),
       }),
+      // The DELETE handler now clears catalog provider rows and deletes the
+      // credential atomically. clearCatalogProvidersForCredentials is mocked
+      // (module mock above), so the tx only needs a recording `delete`.
+      transaction: async (fn: (tx: unknown) => Promise<unknown>) =>
+        fn({
+          delete: () => ({
+            where: () => {
+              deletedCredentialIds.push(...credentials.map((c) => c.id));
+              return { returning: async () => [] };
+            },
+          }),
+        }),
     };
     return {
       db,
@@ -399,8 +458,9 @@ describe("owner credentials routes", () => {
     expect(res.status).toBe(400);
   });
 
-  it("DELETE clears a credential and reports not-configured", async () => {
+  it("DELETE unbinds catalog providers then clears the credential", async () => {
     callerPrincipalId = "prn_owner";
+    clearCatalogCalls.length = 0;
     const { db, deletedCredentialIds } = credentialsDb({
       providers: [{ id: "provider_1", name: "anthropic" }],
       credentials: [
@@ -421,6 +481,9 @@ describe("owner credentials routes", () => {
     };
     expect(body.configured).toBe(false);
     expect(body.updatedAt).toBeNull();
+    // The FK-safe order: catalog provider rows bound to the credential are
+    // unbound (cascading their offerings) before the credential is deleted.
+    expect(clearCatalogCalls).toContainEqual(["credential_1"]);
     expect(deletedCredentialIds).toContain("credential_1");
     expect(JSON.stringify(body)).not.toContain("secret");
   });
@@ -509,6 +572,138 @@ describe("owner credentials routes", () => {
     expect(body.baseURL).toBe("https://granola.example.com");
     const stored = (updatedCredentials[0] as { secret: string }).secret;
     expect(isEncryptedEnvelope(stored)).toBe(true);
+  });
+});
+
+// CL-3869: after the Owner sets an inference credential, the PUT handler
+// materializes that provider's catalog slice via reconcileProviderCatalog. The
+// mocked reconcile (above) records its args so these tests pin the wiring: the
+// provider name, the freshly-written credentialId, and the resolved baseURL —
+// and that a reconcile failure never fails the credential write.
+describe("owner credentials auto-seed catalog (CL-3869)", () => {
+  function seedDb(opts: {
+    providers?: { id: string; name: string; metadata?: unknown }[];
+    credentials?: { id: string; providerId: string; updatedAt: Date }[];
+  }) {
+    const providers = opts.providers ?? [];
+    const credentials = opts.credentials ?? [];
+    const db = {
+      query: {
+        provider: {
+          findMany: async () => providers,
+          findFirst: async () => providers[0] ?? undefined,
+        },
+        credential: {
+          findMany: async () => credentials,
+          findFirst: async () => credentials[0] ?? undefined,
+        },
+      },
+      insert: () => ({
+        values: (vals: Record<string, unknown>) => {
+          if ("plugin" in vals) {
+            return {
+              returning: async () => [
+                {
+                  id: (vals["id"] as string) ?? "provider_new",
+                  metadata: vals["metadata"] ?? null,
+                },
+              ],
+            };
+          }
+          if ("secret" in vals) {
+            return {
+              returning: async () => [
+                { updatedAt: (vals["updatedAt"] as Date) ?? new Date() },
+              ],
+            };
+          }
+          return Promise.resolve();
+        },
+      }),
+      update: () => ({
+        set: () => ({
+          where: () => ({
+            returning: async () => [{ updatedAt: new Date() }],
+          }),
+        }),
+      }),
+    };
+    return db;
+  }
+
+  beforeEach(() => {
+    reconcileCalls.length = 0;
+    reconcileShouldThrow = false;
+    callerPrincipalId = "prn_owner";
+  });
+
+  it("invokes reconcile for openrouter with the new credentialId and resolved baseURL", async () => {
+    const db = seedDb({});
+    const res = await buildApp(db).request("/owner/credentials/openrouter", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ secret: "sk-or-secret" }),
+    });
+    expect(res.status).toBe(200);
+    expect(reconcileCalls).toHaveLength(1);
+    const call = reconcileCalls[0];
+    expect(call?.providerName).toBe("openrouter");
+    expect(call?.tenantId).toBe("ten_root");
+    expect(call?.baseURL).toBe("https://openrouter.ai/api/v1");
+    expect(typeof call?.credentialId).toBe("string");
+    expect(call?.credentialId.length).toBeGreaterThan(0);
+  });
+
+  it("passes the existing credentialId on the rotate (update) path", async () => {
+    const db = seedDb({
+      providers: [
+        {
+          id: "provider_1",
+          name: "openrouter",
+          metadata: { baseURL: "https://openrouter.ai/api/v1" },
+        },
+      ],
+      credentials: [
+        {
+          id: "credential_existing",
+          providerId: "provider_1",
+          updatedAt: new Date(),
+        },
+      ],
+    });
+    const res = await buildApp(db).request("/owner/credentials/openrouter", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ secret: "sk-or-rotated" }),
+    });
+    expect(res.status).toBe(200);
+    expect(reconcileCalls).toHaveLength(1);
+    expect(reconcileCalls[0]?.credentialId).toBe("credential_existing");
+  });
+
+  it("does not invoke reconcile for a tool-kind provider", async () => {
+    const db = seedDb({});
+    const res = await buildApp(db).request("/owner/credentials/granola", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ secret: "grn-token" }),
+    });
+    expect(res.status).toBe(200);
+    expect(reconcileCalls).toHaveLength(0);
+  });
+
+  it("still returns 200 when reconcile throws (credential write is not failed)", async () => {
+    reconcileShouldThrow = true;
+    const db = seedDb({});
+    const res = await buildApp(db).request("/owner/credentials/openrouter", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ secret: "sk-or-secret" }),
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { configured: boolean };
+    expect(body.configured).toBe(true);
+    expect(reconcileCalls).toHaveLength(1);
   });
 });
 
