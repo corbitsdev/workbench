@@ -440,12 +440,12 @@ describe("createWorkflowRunStarter", () => {
     expect(okB.ok).toBe(true);
   });
 
-  // This starter is the THIRD workflow-start door (webhook triggers via
-  // ../routes/webhook-trigger-fire.ts, and the heartbeat manual-run route's own
-  // richer call which already enriches before calling in) — it must apply the
-  // same kind-registered trigger-payload enrichment as the other two doors
-  // (run-exec.ts's startWorkflowRun), not skip it because it delivers via a
-  // different code path.
+  // This starter backs every non-generic start door — webhook triggers
+  // (../routes/webhook-trigger-fire.ts), the scheduler (apps/hub/src/index.ts),
+  // and the heartbeat manual-run route (../routes/me-brief-run.ts) — none of
+  // which build their own trigger-payload enrichment anymore. It must apply
+  // the same kind-registered enrichment run-exec.ts's startWorkflowRun does,
+  // not skip it because it delivers via a different code path.
   it("a webhook-fired heartbeat run gets enabledSources, identity, and createdAfter — not just whatever the webhook payload carried", async () => {
     chainRef = ["t-root"];
     const sent: Record<string, unknown>[] = [];
@@ -532,6 +532,66 @@ describe("createWorkflowRunStarter", () => {
       payload: { a: 1 },
       runId: result.runId,
     });
+  });
+
+  // BLOCKING (review): the scheduler closure (apps/hub/src/index.ts) used to
+  // pre-enrich with its real fire-time window BEFORE calling startRun; once
+  // startRun started applying its own (hardcoded manual-refresh) enrichment
+  // unconditionally, that pre-enrichment got silently overwritten — every
+  // scheduled daily fire's createdAfter collapsed to the flat 7-day lookback,
+  // defeating computeHeartbeatCreatedAfter's "day 2+ never re-briefs since
+  // yesterday" contract and duplicating call coverage forever. `startRun`'s
+  // `heartbeatFire` field is how the scheduler forwards its real
+  // lastFiredDayUtc/hourUtc through to the registry; this drives that path
+  // through the REAL starter (not a re-implementation) and asserts the
+  // delivered createdAfter is the incremental since-yesterday window, not the
+  // 7-day fallback.
+  it("a scheduler-sourced heartbeat run gets the incremental since-last-fire createdAfter, not the 7-day manual-refresh fallback", async () => {
+    chainRef = ["t-root"];
+    const sent: Record<string, unknown>[] = [];
+    const sessionService = {
+      sendUserMessage: async (a: Record<string, unknown>) => {
+        sent.push(a);
+      },
+    } as unknown as SessionService;
+    const nowMs = Date.UTC(2026, 0, 9, 13, 0, 0);
+    const today = Math.floor(nowMs / 86_400_000);
+    const yesterday = today - 1;
+
+    const starter = createWorkflowRunStarter({
+      db: makeDb([candidate({ deploymentId: "dep-1", kind: "heartbeat" })]),
+      sessionService,
+      ensureDeploymentRoutable: async () => ({ reestablished: false }),
+      deploymentDomain: DOMAIN,
+      cryptoProvider: {} as never,
+      resolveUserIdentity: async (principalId: string) => ({
+        userAddress: `usr_${principalId}@${DOMAIN}`,
+        userRefId: principalId,
+      }),
+      now: () => nowMs,
+    });
+
+    const result = await starter.startRun({
+      kind: "heartbeat",
+      tenantId: "t-root",
+      input: { reason: "scheduled-heartbeat" },
+      creatorPrincipalId: "prn-owner",
+      source: "scheduler",
+      heartbeatFire: { lastFiredDayUtc: yesterday, hourUtc: 9 },
+    });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error("unreachable");
+    const delivered = JSON.parse(sent[0]?.content as string) as Record<
+      string,
+      unknown
+    >;
+    const sevenDayFallback = new Date(nowMs - 7 * 86_400_000).toISOString();
+    const incrementalWindow = new Date(
+      yesterday * 86_400_000 + 9 * 3_600_000,
+    ).toISOString();
+    expect(delivered.createdAfter).toBe(incrementalWindow);
+    expect(delivered.createdAfter).not.toBe(sevenDayFallback);
   });
 
   // Same fail-loud invariant as the other two start doors: resolveUserIdentity
