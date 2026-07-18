@@ -29,7 +29,7 @@ export * from "./mailbox-refs-header";
 export * from "./changelog";
 export * from "./deep-link";
 export * from "./welcome-mail";
-export { toHumanLabel, skillTitle } from "./tool-labels";
+export { toHumanLabel, skillTitle, toAssetName } from "./tool-labels";
 export { unwrapArgsEnvelope } from "./tool-args";
 export {
   createToolLoopGuard,

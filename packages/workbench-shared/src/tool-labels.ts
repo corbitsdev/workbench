@@ -44,20 +44,36 @@ export function toHumanLabel(name: string): string {
     .join(" ");
 }
 
-// Mirrors apps/hub/src/services/skill-library.ts's toAssetName kebab-casing —
-// a skill's displayName is stored verbatim at creation time, so a
-// user-supplied slug like "landing-page" persists as displayName rather than
-// null. Detect that case (the string already equals its own slugification)
-// and humanize it instead of trusting it as a real title.
-function isSlugShaped(value: string): boolean {
-  const slug = value
+// Uncapped kebab-casing transform shared by toAssetName (asset naming, which
+// caps at 64 chars) and isSlugShaped (shape detection, which must not cap —
+// capping here would let a >64-char slug-shaped displayName evade detection
+// since it would no longer equal its own capped slugification).
+function slugify(value: string): string {
+  return value
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "")
-    .slice(0, 64);
-  return value === slug;
+    .replace(/^-+|-+$/g, "");
 }
 
+/**
+ * Converts a display name to a lowercase-kebab asset name that satisfies
+ * the Interchange skill asset name pattern /^[a-z0-9]+(-[a-z0-9]+)*$/.
+ */
+export function toAssetName(displayName: string): string {
+  return slugify(displayName).slice(0, 64) || "skill";
+}
+
+// A skill's displayName is stored verbatim at creation time, so a
+// user-supplied slug like "landing-page" persists as displayName rather than
+// null. Detect that case (the string already equals its own uncapped
+// slugification) and humanize it instead of trusting it as a real title.
+function isSlugShaped(value: string): boolean {
+  return value !== "" && value === slugify(value);
+}
+
+// Accepted false positive: a deliberate single-word lowercase title like
+// "brief" is indistinguishable from a leaked slug and gets humanized to
+// "Brief" too — harmless, since that's the same casing a real title would want.
 export function skillTitle(skill: {
   name: string;
   displayName: string | null;

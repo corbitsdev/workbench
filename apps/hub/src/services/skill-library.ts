@@ -13,6 +13,9 @@ import type { AssetService, RepoStore } from "@intx/hub-sessions";
 import { AssetServiceError } from "@intx/hub-sessions";
 import { resolveOwnerMemberPrincipalId } from "../lib/artifact-tools";
 import type { UserContext } from "../lib/user-context";
+import { toAssetName } from "@workbench/shared";
+
+export { toAssetName } from "@workbench/shared";
 
 const log = getLogger(["skill-library"]);
 
@@ -318,20 +321,6 @@ export async function filesFromZip(
     });
   }
   return files;
-}
-
-/**
- * Converts a display name to a lowercase-kebab asset name that satisfies
- * the Interchange skill asset name pattern /^[a-z0-9]+(-[a-z0-9]+)*$/.
- */
-export function toAssetName(displayName: string): string {
-  return (
-    displayName
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, "-")
-      .replace(/^-+|-+$/g, "")
-      .slice(0, 64) || "skill"
-  );
 }
 
 function bundlePrefixFromEntrypoint(entrypointPath: string): string {
@@ -935,13 +924,18 @@ export async function createSkill(
     fileContents,
   );
 
+  // A slug-shaped name (e.g. "landing-page") adds no information over the
+  // asset name itself — store no displayName so the render side's null path
+  // humanizes it, instead of persisting a redundant raw slug as the title.
+  const displayName = toAssetName(name) === name ? undefined : name;
+
   let asset;
   try {
     asset = await assetService.createAsset({
       tenantId: userContext.tenantId,
       kind: "skill",
       name: assetName,
-      displayName: name,
+      displayName,
       creatorPrincipalId: userContext.principalId,
     });
   } catch (err) {
