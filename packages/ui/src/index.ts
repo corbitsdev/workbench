@@ -233,4 +233,5 @@ export {
   type ClassifiedRunError,
   classifyRunError,
   failedRunError,
+  describeLiveInferenceIssue,
 } from "./workflow-run-error";

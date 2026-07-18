@@ -55,6 +55,11 @@ export const logStepStateSchema = type({
   "awaitingSignalName?": "string",
   "startedAt?": "string",
   "endedAt?": "string",
+  // The most recent inference error/timeout observed while this step is
+  // in-flight (CL-3887) — the run page's only signal that a silently-running
+  // step is stalled on a raced provider rather than genuinely dead. Absent
+  // once the step advances past `in-flight`.
+  "liveIssue?": { category: "string", message: "string", occurredAt: "string" },
 });
 export type LogStepState = typeof logStepStateSchema.infer;
 

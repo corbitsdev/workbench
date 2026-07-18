@@ -5,6 +5,7 @@ import { AlertTriangle, ChevronRight } from "lucide-react";
 import {
   PagePanel,
   classifyRunError,
+  describeLiveInferenceIssue,
   failedRunError,
   toHumanLabel,
 } from "@workbench/ui";
@@ -163,6 +164,14 @@ function TraceStepMoment({
           {step.currentAttempt > 1 && (
             <span className="text-[10px] uppercase tracking-[0.08em] text-text-3">
               Attempt {step.currentAttempt}
+            </span>
+          )}
+          {step.phase === "in-flight" && step.liveIssue !== undefined && (
+            <span
+              data-testid="trace-step-live-issue"
+              className="text-[11px] font-medium text-gold"
+            >
+              {describeLiveInferenceIssue(step.liveIssue.category)}
             </span>
           )}
           {stepTokens !== undefined && stepTokens !== null && (
