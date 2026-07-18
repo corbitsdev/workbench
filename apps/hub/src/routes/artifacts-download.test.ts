@@ -200,5 +200,26 @@ describe("GET /artifacts/:id/download", () => {
       const res = await app.request("/artifacts/art-1/download");
       expect(res.status).toBe(400);
     });
+
+    // CL-3906: an imported image carries kind "image" (not "file") so it
+    // renders inline; the download route must still decode its data: URL
+    // rather than falling through to the CSV-only DOWNLOADABLE_ARTIFACT_KINDS
+    // check and 400ing, since ImageBody's <img> fetches this same route.
+    it("serves an imported image (kind 'image') data URL, not a 400 (CL-3906)", async () => {
+      const app = appWith(
+        makeDb({
+          artifact: {
+            ...DATA_URL_ROW,
+            kind: "image",
+            title: "screenshot.png",
+            content: `data:image/png;base64,${PAYLOAD.toString("base64")}`,
+          },
+        }),
+      );
+      const res = await app.request("/artifacts/art-1/download");
+      expect(res.status).toBe(200);
+      expect(res.headers.get("Content-Type")).toBe("image/png");
+      expect(Buffer.from(await res.arrayBuffer())).toEqual(PAYLOAD);
+    });
   });
 });
