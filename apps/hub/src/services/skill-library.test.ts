@@ -458,4 +458,25 @@ describe("createSkill displayName policy", () => {
     expect(created[0]?.displayName).toBe("Company Research");
     expect(result.displayName).toBe("Company Research");
   });
+
+  it("stores no displayName for a slug-shaped name longer than the 64-char asset-name cap", async () => {
+    const now = new Date();
+    const { assetService, created } = makeFakeAssetService(now);
+    const longSlug = `${"a".repeat(40)}-${"b".repeat(40)}`;
+    expect(longSlug.length).toBeGreaterThan(64);
+    const result = await createSkill(
+      assetService as never,
+      makeInsertDb() as never,
+      VIEWER,
+      {
+        name: longSlug,
+        files: [file("long/SKILL.md", "# Long")],
+        scope: "private",
+        ownerUserId: "usr_1",
+        ownerName: "Owner",
+      },
+    );
+    expect(created[0]?.displayName).toBeUndefined();
+    expect(result.displayName).toBeNull();
+  });
 });

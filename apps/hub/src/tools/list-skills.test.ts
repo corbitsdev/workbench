@@ -314,13 +314,28 @@ describe("list_skills", () => {
     expect(JSON.parse(result)).toEqual({
       skills: [
         { id: "a1", name: "deck", displayName: "Deck" },
-        { id: "a2", name: "humanize", displayName: null },
+        { id: "a2", name: "humanize", displayName: "Humanize" },
       ],
     });
     // Resolved the STABLE user id (refId), not the synthetic principal id.
     expect(listSkills).toHaveBeenCalledWith(expect.anything(), {
       tenantId: "ten_1",
       userId: "usr_1",
+    });
+  });
+
+  test("humanizes a slug-shaped displayName instead of leaking the raw slug into the tool JSON", async () => {
+    visibleByUser.set("usr_1", [
+      { id: "a3", name: "landing-page", displayName: "landing-page" },
+    ]);
+    const result = await tool("list_skills").handler(
+      {},
+      new AbortController().signal,
+    );
+    expect(JSON.parse(result)).toEqual({
+      skills: [
+        { id: "a3", name: "landing-page", displayName: "Landing page" },
+      ],
     });
   });
 
