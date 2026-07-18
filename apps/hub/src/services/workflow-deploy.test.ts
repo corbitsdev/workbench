@@ -43,6 +43,7 @@ import {
   createWorkflowRepoWriter,
   readWorkflowDefinition,
   resetWorkflowDefinitionCache,
+  toDeploySingleStepAtHead,
   toSendMultiStepDeploy,
   ensureDeploymentInstanceActive,
   writeDeploymentAgentRow,
@@ -1005,6 +1006,10 @@ describe("deployWorkflow inline-step partition (CL-2251)", () => {
       repoStore,
       sidecarRouter,
       directorRegistry: createWorkbenchDirectorRegistry(),
+      // Provisioning REQUIRES a stager (FIX 2b); this unit test stages no real
+      // tool tree, so inject an explicit no-op rather than relying on a
+      // silent fallback.
+      stageWorkflowStep: () => Promise.resolve(),
     });
 
     const result = await service.deployWorkflow({
@@ -1017,7 +1022,6 @@ describe("deployWorkflow inline-step partition (CL-2251)", () => {
       deployContent: { systemPrompt: "" },
       hubPublicKey: "hubkey",
     });
-
 
     // CONDITION 2 — NO step launches a per-step session (CL-2782 no-op'd the
     // deployed-step launch too); the inline step never did. The supervisor uses
@@ -1154,6 +1158,10 @@ describe("deployWorkflow deterministic-tool partition (CL-2252)", () => {
       repoStore,
       sidecarRouter,
       directorRegistry: createWorkbenchDirectorRegistry(),
+      // Provisioning REQUIRES a stager (FIX 2b); this unit test stages no real
+      // tool tree, so inject an explicit no-op rather than relying on a
+      // silent fallback.
+      stageWorkflowStep: () => Promise.resolve(),
     });
 
     const result = await service.deployWorkflow({
@@ -1166,7 +1174,6 @@ describe("deployWorkflow deterministic-tool partition (CL-2252)", () => {
       deployContent: { systemPrompt: "" },
       hubPublicKey: "hubkey",
     });
-
 
     // No per-step launch happens at all now: the deploy service wires a no-op
     // launch hook (the in-process session runtime is retired), so no step —
@@ -1254,7 +1261,10 @@ describe("deployWorkflow approves the catalog inference chain", () => {
     } as unknown as HarnessConfig;
   }
 
-  function makeService(sendAgentDeploy: SidecarRouter["sendAgentDeploy"]) {
+  function makeService(
+    sendAgentDeploy: SidecarRouter["sendAgentDeploy"],
+    opts: { withStager?: boolean } = {},
+  ) {
     const writeTree = mock(async () => ({ commitSha: "sha" }));
     const repoStore = { repoStore: { writeTree } } as unknown as AgentRepoStore;
     const db = {
@@ -1278,6 +1288,13 @@ describe("deployWorkflow approves the catalog inference chain", () => {
       repoStore,
       sidecarRouter,
       directorRegistry: createWorkbenchDirectorRegistry(),
+      // Provisioning REQUIRES a stager (FIX 2b); this unit test stages no real
+      // tool tree, so inject an explicit no-op rather than relying on a silent
+      // fallback. The `withStager: false` case deliberately omits it to prove
+      // the misconfiguration guard fires.
+      ...(opts.withStager === false
+        ? {}
+        : { stageWorkflowStep: () => Promise.resolve() }),
     });
   }
 
@@ -1321,7 +1338,6 @@ describe("deployWorkflow approves the catalog inference chain", () => {
       hubPublicKey: "hubkey",
     });
 
-
     // The supervisor frame pinned the catalog chain head to every inline step —
     // proving the orchestrator's pickStepInferenceSource accepted the
     // defaultSource as approved (it would have thrown otherwise).
@@ -1330,6 +1346,113 @@ describe("deployWorkflow approves the catalog inference chain", () => {
     const frameWorkflow = deployCall[2];
     expect(frameWorkflow.sources.analyze).toEqual([HEAD]);
     expect(frameWorkflow.sources.summarize).toEqual([HEAD]);
+  });
+
+  // FIX 2b: a production provision (sendSupervisorFrame=true) with no injected
+  // stager must FAIL LOUD, not silently degrade to no-op tool staging (which
+  // would deploy every step with zero tools). The catalog-publish path keeps
+  // the no-op — that is asserted by the persistCatalog suite, which provisions
+  // no stager and does not throw.
+  test("provisioning without an injected stageWorkflowStep throws instead of silently staging zero tools", async () => {
+    const deploymentId = "ses_nostager";
+    const deploymentDomain = "deploy.example.com";
+    const workflow = defineWorkflow({
+      id: "no-stager",
+      trigger: { type: "manual" },
+      steps: {
+        analyze: inlineInferenceStep({
+          id: "analyze",
+          systemPrompt: "extract pain points",
+        }),
+      },
+    });
+    const sendAgentDeploy = mock(async () => ({ publicKey: "pk" }));
+    const service = makeService(
+      sendAgentDeploy as unknown as SidecarRouter["sendAgentDeploy"],
+      { withStager: false },
+    );
+
+    await expect(
+      service.deployWorkflow({
+        workflow,
+        deploymentId,
+        deploymentDomain,
+        tenantId: "t1",
+        creatorPrincipalId: "p1",
+        config: makeConfig(deploymentId, deploymentDomain),
+        deployContent: { systemPrompt: "" },
+        hubPublicKey: "hubkey",
+      }),
+    ).rejects.toThrow(/stageWorkflowStep/);
+
+    // The guard fires before any sidecar hand-off is made.
+    expect(sendAgentDeploy).not.toHaveBeenCalled();
+  });
+});
+
+// FIX 2a: the single-step (one-step workflow) hand-off does NOT stage an
+// on-disk tool tree. A single-step definition that carries tool pins (or deploy
+// content implying a tool manifest) would deploy with no staged tree and load
+// ZERO tools with no error. The hand-off must throw on that, not silently drop
+// the pins. No current workflow is single-step, so this is a tripwire.
+describe("toDeploySingleStepAtHead (single-step tool-staging guard)", () => {
+  type SingleStepArgs = Parameters<
+    ReturnType<typeof toDeploySingleStepAtHead>
+  >[0];
+  function makeArgs(overrides: {
+    toolPackagePins?: NonNullable<SingleStepArgs["toolPackagePins"]>;
+    toolPackageManifest?: unknown;
+  }): SingleStepArgs {
+    const deployContent =
+      overrides.toolPackageManifest !== undefined
+        ? {
+            systemPrompt: "",
+            toolPackageManifest: overrides.toolPackageManifest,
+          }
+        : { systemPrompt: "" };
+    return {
+      agentAddress: "ses_x@deploy.example.com",
+      agentId: "ses_x",
+      instanceId: "ins_x",
+      config: {} as unknown as HarnessConfig,
+      definition: { stepOrder: ["s1"] } as unknown as WorkflowDefinition,
+      sources: {} as Record<string, InferenceSource[]>,
+      hubPublicKey: "hubkey",
+      deployContent,
+      ...(overrides.toolPackagePins !== undefined
+        ? { toolPackagePins: overrides.toolPackagePins }
+        : {}),
+    };
+  }
+
+  test("throws when handed non-empty toolPackagePins", () => {
+    const sendAgentDeploy = mock(async () => ({ publicKey: "pk" }));
+    const router = { sendAgentDeploy } as unknown as SidecarRouter;
+    const deploy = toDeploySingleStepAtHead(router);
+    expect(() =>
+      deploy(
+        makeArgs({ toolPackagePins: [{ name: "pkg", version: "1.0.0" }] }),
+      ),
+    ).toThrow(/single-step workflow tool-tree staging is not implemented/);
+    expect(sendAgentDeploy).not.toHaveBeenCalled();
+  });
+
+  test("throws when deployContent implies a tool manifest", () => {
+    const sendAgentDeploy = mock(async () => ({ publicKey: "pk" }));
+    const router = { sendAgentDeploy } as unknown as SidecarRouter;
+    const deploy = toDeploySingleStepAtHead(router);
+    expect(() =>
+      deploy(makeArgs({ toolPackageManifest: { packages: [] } })),
+    ).toThrow(/silently load zero tools/);
+    expect(sendAgentDeploy).not.toHaveBeenCalled();
+  });
+
+  test("fires the agent.deploy frame when no tool staging is implied", async () => {
+    const sendAgentDeploy = mock(async () => ({ publicKey: "pk" }));
+    const router = { sendAgentDeploy } as unknown as SidecarRouter;
+    const deploy = toDeploySingleStepAtHead(router);
+    await deploy(makeArgs({}));
+    expect(sendAgentDeploy).toHaveBeenCalledTimes(1);
   });
 });
 
@@ -1410,7 +1533,6 @@ describe("persistCatalog (hub-only publish)", () => {
       insert: deployWorkflowInsertMock(insertedRows),
     } as unknown as HubDb;
 
-
     // The sidecar is disconnected: any frame send throws. persistCatalog must
     // never reach it.
     const sendAgentDeploy = mock(async () => {
@@ -1438,7 +1560,6 @@ describe("persistCatalog (hub-only publish)", () => {
       deployContent: { systemPrompt: "" },
       hubPublicKey: "hubkey",
     });
-
 
     // No supervisor frame — the disconnected sidecar was never touched.
     expect(sendAgentDeploy).not.toHaveBeenCalled();
