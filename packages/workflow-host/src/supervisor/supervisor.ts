@@ -100,6 +100,7 @@ import {
   type RecycleOrigin,
   type RecyclePolicy,
 } from "./recycle";
+
 import type {
   DeriveMailAuditRef,
   DispatchStructuralCounters,
@@ -593,6 +594,52 @@ export function createWorkflowSupervisor(
   let spawnContext: SpawnContext | null = null;
   let recyclePolicy: RecyclePolicy | null = null;
   let recycleInProgress = false;
+
+  // WORKBENCH-LOCAL (CL-3885): upstream arms the recycle policy once,
+  // inline, at spawn-time only (see the arm site inside `wireChild`
+  // below); `spawnContext.spawnedAt` is refreshed on every recycle but
+  // the running policy's `createRecyclePolicy` closure still holds the
+  // *old* `spawnedAt` primitive, so the max-uptime bound never actually
+  // resets across a recycle upstream. `armRecyclePolicy` stops and
+  // recreates the policy against the fresh `spawnContext` on every
+  // spawn AND every successful recycle, so max-uptime and max-rss both
+  // evaluate against the current child. `bindings.readRssBytes` is the
+  // host-supplied reader seam (the sidecar wires its own `/proc` reader
+  // through it); this package no longer ships a built-in fallback
+  // reader -- an absent `readRssBytes` simply leaves the max-rss bound
+  // disabled for a host that does not supply one.
+  function armRecyclePolicy(): void {
+    if (bindings.recyclePolicy === undefined || spawnContext === null) {
+      return;
+    }
+    if (recyclePolicy !== null) {
+      try {
+        recyclePolicy.stop();
+      } catch {
+        /* previous policy may already be stopped */
+      }
+      recyclePolicy = null;
+    }
+    const setTimer = bindings.recyclePolicySetTimer ?? defaultSetTimer;
+    const clearTimer = bindings.recyclePolicyClearTimer ?? defaultClearTimer;
+    const now = bindings.recyclePolicyNow ?? defaultNow;
+    recyclePolicy = createRecyclePolicy({
+      bounds: bindings.recyclePolicy,
+      now,
+      spawnedAt: spawnContext.spawnedAt,
+      ...(bindings.readRssBytes !== undefined
+        ? { readRssBytes: bindings.readRssBytes }
+        : {}),
+      ...(bindings.readGrantsAgeMs !== undefined
+        ? { readGrantsAgeMs: bindings.readGrantsAgeMs }
+        : {}),
+      setTimer,
+      clearTimer,
+      trigger: async (reason) => {
+        await recycle({ reason, origin: "policy" });
+      },
+    });
+  }
 
   function onChildCrash(reason: string): void {
     // WORKBENCH-LOCAL (CL-2651): upstream writes a literal `{reason}` (missing
@@ -1621,27 +1668,10 @@ export function createWorkflowSupervisor(
 
       // Arm the recycle policy. The policy is a no-op when all bounds
       // are `undefined`; bounds resolution lives inside `createRecyclePolicy`.
-      if (bindings.recyclePolicy !== undefined) {
-        const setTimer = bindings.recyclePolicySetTimer ?? defaultSetTimer;
-        const clearTimer =
-          bindings.recyclePolicyClearTimer ?? defaultClearTimer;
-        recyclePolicy = createRecyclePolicy({
-          bounds: bindings.recyclePolicy,
-          now,
-          spawnedAt: spawnContext.spawnedAt,
-          ...(bindings.readRssBytes !== undefined
-            ? { readRssBytes: bindings.readRssBytes }
-            : {}),
-          ...(bindings.readGrantsAgeMs !== undefined
-            ? { readGrantsAgeMs: bindings.readGrantsAgeMs }
-            : {}),
-          setTimer,
-          clearTimer,
-          trigger: async (reason) => {
-            await recycle({ reason, origin: "policy" });
-          },
-        });
-      }
+      // WORKBENCH-LOCAL (CL-3885): `armRecyclePolicy` (see its definition
+      // above) replaces the upstream inline `createRecyclePolicy` call so
+      // the same construction path re-arms on recycle too.
+      armRecyclePolicy();
 
       return {
         pid: readyInfo.childPid,
@@ -2245,6 +2275,19 @@ export function createWorkflowSupervisor(
     const origin: RecycleOrigin = opts.origin ?? "operator";
     const prior = state;
     const priorContext = spawnContext;
+    // WORKBENCH-LOCAL (CL-3885): stop the policy timer before the recycle
+    // sequence so a concurrent tick cannot re-enter recycle while we are
+    // already recycling. armRecyclePolicy() restarts it against the new
+    // child after success.
+    if (recyclePolicy !== null) {
+      try {
+        recyclePolicy.stop();
+      } catch (cause) {
+        const message = cause instanceof Error ? cause.message : String(cause);
+        logger.warn`recycle policy stop threw at recycle start: ${message}`;
+      }
+      recyclePolicy = null;
+    }
     // The cohort abort no longer fires up-front. triggerRecycle drives
     // the drain and replay steps against a LIVE cohort first, then
     // invokes `abortPriorCohort` (the callback below) between replay
@@ -2458,6 +2501,10 @@ export function createWorkflowSupervisor(
              loop's own logger. */
         });
       }
+      // WORKBENCH-LOCAL (CL-3885): installNewChild already refreshed
+      // spawnContext.spawnedAt; re-arm so max-uptime / max-rss evaluate
+      // against the new child.
+      armRecyclePolicy();
     } catch (cause) {
       // `triggerRecycle` failed after we transitioned to `recycling`.
       // Leaving the supervisor in `recycling` indefinitely would wedge
