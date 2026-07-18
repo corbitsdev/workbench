@@ -43,7 +43,6 @@ import {
   createWorkflowRepoWriter,
   readWorkflowDefinition,
   resetWorkflowDefinitionCache,
-  toDeploySingleStepAtHead,
   toSendMultiStepDeploy,
   ensureDeploymentInstanceActive,
   writeDeploymentAgentRow,
@@ -1390,69 +1389,168 @@ describe("deployWorkflow approves the catalog inference chain", () => {
   });
 });
 
-// FIX 2a: the single-step (one-step workflow) hand-off does NOT stage an
-// on-disk tool tree. A single-step definition that carries tool pins (or deploy
-// content implying a tool manifest) would deploy with no staged tree and load
-// ZERO tools with no error. The hand-off must throw on that, not silently drop
-// the pins. No current workflow is single-step, so this is a tripwire.
-describe("toDeploySingleStepAtHead (single-step tool-staging guard)", () => {
-  type SingleStepArgs = Parameters<
-    ReturnType<typeof toDeploySingleStepAtHead>
-  >[0];
-  function makeArgs(overrides: {
-    toolPackagePins?: NonNullable<SingleStepArgs["toolPackagePins"]>;
-    toolPackageManifest?: unknown;
-  }): SingleStepArgs {
-    const deployContent =
-      overrides.toolPackageManifest !== undefined
-        ? {
-            systemPrompt: "",
-            toolPackageManifest: overrides.toolPackageManifest,
-          }
-        : { systemPrompt: "" };
+// A single-step (one-step workflow) definition -- `stepOrder.length === 1` --
+// routes through the orchestrator's single-step branch, which collapses
+// on-disk tool-tree staging and the `agent.deploy` frame onto ONE hand-off
+// (`deps.deploySingleStepAtHead`, interchange's
+// `SessionService.deploySingleStepAtHead`). Before this fix the hub only ever
+// wired the multi-step `agent.deploy` frame for single-step workflows and
+// threw if the step declared tool pins -- these tests prove staging now
+// actually happens and the missing-dep case fails loud instead of silently
+// degrading, mirroring the multi-step `stageWorkflowStep` guard above.
+describe("deployWorkflow single-step (one-step workflow) tool staging", () => {
+  const SOURCE: InferenceSource = {
+    id: "openai-compatible:m",
+    provider: "openai-compatible",
+    baseURL: "https://llm.example.com",
+    apiKey: "secret",
+    model: "m",
+  };
+
+  function makeConfig(
+    deploymentId: string,
+    deploymentDomain: string,
+  ): HarnessConfig {
     return {
-      agentAddress: "ses_x@deploy.example.com",
-      agentId: "ses_x",
-      instanceId: "ins_x",
-      config: {} as unknown as HarnessConfig,
-      definition: { stepOrder: ["s1"] } as unknown as WorkflowDefinition,
-      sources: {} as Record<string, InferenceSource[]>,
-      hubPublicKey: "hubkey",
-      deployContent,
-      ...(overrides.toolPackagePins !== undefined
-        ? { toolPackagePins: overrides.toolPackagePins }
-        : {}),
-    };
+      sessionId: "sess_1",
+      agentId: deploymentId,
+      tenantId: "t1",
+      principalId: "p1",
+      agentAddress: `${deploymentId}@${deploymentDomain}`,
+      systemPrompt: "",
+      tools: [],
+      grants: [],
+      sources: [SOURCE],
+      defaultSource: SOURCE.id,
+    } as unknown as HarnessConfig;
   }
 
-  test("throws when handed non-empty toolPackagePins", () => {
+  function makeSingleStepWorkflow() {
+    const draftAgent = defineAgent({
+      id: "draft",
+      description: "single-step deployed reasoning step",
+      systemPrompt: "draft something",
+      tools: [],
+      capabilities: [],
+      inference: { sources: [{ provider: "openai-compatible", model: "m" }] },
+    });
+    return defineWorkflow({
+      id: "single-step-wf",
+      trigger: { type: "manual" },
+      steps: {
+        draft: step({ agent: draftAgent }),
+      },
+    });
+  }
+
+  function makeServiceDeps() {
+    const writeTree = mock(async () => ({ commitSha: "sha" }));
+    const repoStore = { repoStore: { writeTree } } as unknown as AgentRepoStore;
+    const db = {
+      insert: mock((table: unknown) => {
+        if (table === intxSchema.agentSession) {
+          return {
+            values: () => ({
+              onConflictDoNothing: mock(async () => undefined),
+            }),
+          };
+        }
+        return { values: async () => undefined };
+      }),
+    } as unknown as HubDb;
     const sendAgentDeploy = mock(async () => ({ publicKey: "pk" }));
-    const router = { sendAgentDeploy } as unknown as SidecarRouter;
-    const deploy = toDeploySingleStepAtHead(router);
-    expect(() =>
-      deploy(
-        makeArgs({ toolPackagePins: [{ name: "pkg", version: "1.0.0" }] }),
-      ),
-    ).toThrow(/single-step workflow tool-tree staging is not implemented/);
+    const sidecarRouter = {
+      getRoutableAddresses: () => [],
+      sendAgentDeploy,
+    } as unknown as SidecarRouter;
+    return { db, repoStore, sidecarRouter, sendAgentDeploy };
+  }
+
+  // RED-BEFORE-FIX: without a real staging hand-off wired, a single-step
+  // deploy either dropped tool pins on the floor (old `sendAgentDeploy`-only
+  // path) or threw the old "not implemented" tripwire whenever the step
+  // carried tool pins. This is the current-state guard: with NO
+  // `deploySingleStepAtHead` dep injected at all, the orchestrator's own
+  // `SingleStepDeployHandoffMissingError` fires -- fail loud, not a silent
+  // zero-tools deploy.
+  test("provisioning a single-step workflow without an injected deploySingleStepAtHead throws", async () => {
+    const deploymentId = "ses_single";
+    const deploymentDomain = "deploy.example.com";
+    const { db, repoStore, sidecarRouter, sendAgentDeploy } = makeServiceDeps();
+
+    const service = createWorkflowDeployService({
+      db,
+      repoStore,
+      sidecarRouter,
+      directorRegistry: createWorkbenchDirectorRegistry(),
+      stageWorkflowStep: () => Promise.resolve(),
+      // deploySingleStepAtHead deliberately omitted.
+    });
+
+    await expect(
+      service.deployWorkflow({
+        workflow: makeSingleStepWorkflow(),
+        deploymentId,
+        deploymentDomain,
+        tenantId: "t1",
+        creatorPrincipalId: "p1",
+        config: makeConfig(deploymentId, deploymentDomain),
+        deployContent: { systemPrompt: "" },
+        hubPublicKey: "hubkey",
+      }),
+    ).rejects.toThrow(/deploySingleStepAtHead/);
     expect(sendAgentDeploy).not.toHaveBeenCalled();
   });
 
-  test("throws when deployContent implies a tool manifest", () => {
-    const sendAgentDeploy = mock(async () => ({ publicKey: "pk" }));
-    const router = { sendAgentDeploy } as unknown as SidecarRouter;
-    const deploy = toDeploySingleStepAtHead(router);
-    expect(() =>
-      deploy(makeArgs({ toolPackageManifest: { packages: [] } })),
-    ).toThrow(/silently load zero tools/);
-    expect(sendAgentDeploy).not.toHaveBeenCalled();
-  });
+  // GREEN: with the real staging hand-off injected, the single-step deploy
+  // routes through it (not the bare `sendAgentDeploy` frame), and the pinned
+  // tool packages the capability walk resolved are forwarded to the stager --
+  // proving the head's deploy tree is staged rather than silently dropped.
+  test("routes a single-step workflow's tool pins through the injected deploySingleStepAtHead stager", async () => {
+    const deploymentId = "ses_single";
+    const deploymentDomain = "deploy.example.com";
+    const { db, repoStore, sidecarRouter, sendAgentDeploy } = makeServiceDeps();
 
-  test("fires the agent.deploy frame when no tool staging is implied", async () => {
-    const sendAgentDeploy = mock(async () => ({ publicKey: "pk" }));
-    const router = { sendAgentDeploy } as unknown as SidecarRouter;
-    const deploy = toDeploySingleStepAtHead(router);
-    await deploy(makeArgs({}));
-    expect(sendAgentDeploy).toHaveBeenCalledTimes(1);
+    const deploySingleStepAtHead = mock(
+      async (_params: {
+        toolPackagePins?: readonly { name: string; version: string }[];
+      }) => ({ publicKey: "pk" }),
+    );
+
+    const service = createWorkflowDeployService({
+      db,
+      repoStore,
+      sidecarRouter,
+      directorRegistry: createWorkbenchDirectorRegistry(),
+      stageWorkflowStep: () => Promise.resolve(),
+      deploySingleStepAtHead,
+    });
+
+    const toolPackagePins = [
+      { name: "@workbench/tools-granola", version: "1.0.0" },
+    ];
+
+    await service.deployWorkflow({
+      workflow: makeSingleStepWorkflow(),
+      deploymentId,
+      deploymentDomain,
+      tenantId: "t1",
+      creatorPrincipalId: "p1",
+      config: makeConfig(deploymentId, deploymentDomain),
+      deployContent: { systemPrompt: "" },
+      hubPublicKey: "hubkey",
+      toolPackagePins,
+    });
+
+    expect(deploySingleStepAtHead).toHaveBeenCalledTimes(1);
+    const call = deploySingleStepAtHead.mock.calls.at(0)?.[0] as {
+      toolPackagePins?: readonly { name: string; version: string }[];
+    };
+    expect(call.toolPackagePins).toEqual(toolPackagePins);
+    // The bare multi-step `agent.deploy` frame is never sent directly for a
+    // single-step deploy -- the staging hand-off owns both the tree write and
+    // the frame.
+    expect(sendAgentDeploy).not.toHaveBeenCalled();
   });
 });
 

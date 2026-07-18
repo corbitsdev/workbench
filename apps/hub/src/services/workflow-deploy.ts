@@ -175,6 +175,17 @@ export function createWorkflowDeployService(deps: {
   // from disk (the on-disk model) rather than the retired hub-RPC manifest
   // fetch. Absent in unit tests / catalog-publish, where staging is a no-op.
   stageWorkflowStep?: LaunchSessionFn;
+  // Single-step (one-step workflow) hand-off (interchange
+  // `SessionService.deploySingleStepAtHead`): stages the head's deploy tree
+  // (deploy-tree write, pack, asset fan-out) AND fires the deployment
+  // `agent.deploy` frame in one call, mirroring `stageWorkflowStep` +
+  // `sendMultiStepDeploy` collapsed onto a single head deploy. Absent in unit
+  // tests / catalog-publish, where the single-step branch gets the no-op; a
+  // production single-step provision that reaches the orchestrator's
+  // single-step branch without this wired fails loud with
+  // `SingleStepDeployHandoffMissingError` (thrown by the orchestrator itself,
+  // mirroring `MultiStepDeployHandoffMissingError`).
+  deploySingleStepAtHead?: DeploySingleStepFn;
 }): WorkflowDeployService {
   const { db, directorRegistry } = deps;
 
@@ -382,6 +393,24 @@ export function createWorkflowDeployService(deps: {
       stepStager = noLaunchStepSession;
     }
 
+    // A one-step workflow definition routes through the orchestrator's
+    // single-step branch, which requires its own hand-off: stage the head's
+    // deploy tree AND fire the supervisor `agent.deploy` frame in one call
+    // (`deps.deploySingleStepAtHead`, interchange's
+    // `SessionService.deploySingleStepAtHead`). Catalog publish gets the
+    // no-op, mirroring `sendMultiStepDeploy`. When a production provision
+    // (sendSupervisorFrame=true) has no dep wired, the key is left out of the
+    // orchestrator deps entirely (exactOptionalPropertyTypes forbids an
+    // explicit `undefined`) — the orchestrator itself then fails loud with
+    // `SingleStepDeployHandoffMissingError` if a single-step definition
+    // actually reaches that branch, mirroring `MultiStepDeployHandoffMissingError`.
+    let deploySingleStepAtHeadDep: DeploySingleStepFn | undefined;
+    if (sendSupervisorFrame) {
+      deploySingleStepAtHeadDep = deps.deploySingleStepAtHead;
+    } else {
+      deploySingleStepAtHeadDep = noopDeploySingleStepAtHead;
+    }
+
     const orchestrator = createWorkflowDeployOrchestrator({
       directorRegistry,
       workflowRepo: createWorkflowRepoWriter(deps.repoStore),
@@ -393,13 +422,9 @@ export function createWorkflowDeployService(deps: {
       sendMultiStepDeploy: sendSupervisorFrame
         ? toSendMultiStepDeploy(deps.sidecarRouter)
         : noopSendMultiStepDeploy,
-      // A one-step workflow definition routes through the orchestrator's
-      // single-step branch, which requires its own hand-off. It fires the same
-      // supervisor `agent.deploy` frame as the multi-step path (see
-      // `toDeploySingleStepAtHead`); catalog publish gets the no-op.
-      deploySingleStepAtHead: sendSupervisorFrame
-        ? toDeploySingleStepAtHead(deps.sidecarRouter)
-        : noopDeploySingleStepAtHead,
+      ...(deploySingleStepAtHeadDep !== undefined
+        ? { deploySingleStepAtHead: deploySingleStepAtHeadDep }
+        : {}),
     });
 
     // Approve the workflow's own declared grants AND every inference source
@@ -1220,44 +1245,6 @@ export function toSendMultiStepDeploy(
       definition: definition as AgentDeployWorkflow["definition"],
       sources,
     });
-}
-
-// Single-step (one-step workflow) hand-off. Upstream's orchestrator routes a
-// definition whose `stepOrder` has length 1 through `deploySingleStepAtHead`
-// instead of the multi-step branch. This hand-off fires the deployment
-// `agent.deploy` frame that spawns the supervised workflow-process child (the
-// child runs the sole step); it does NOT stage an on-disk tool tree for the
-// head. On-disk tool-tree staging for a single-step workflow is a deliberately
-// deferred follow-up, so a single-step definition that actually carries tool
-// pins (or deploy content implying a tool manifest) would deploy with no staged
-// tree and load ZERO tools with no error — a silent-zero-tools trap. Guard it:
-// no current workflow is single-step, so this throws for nobody today; it is a
-// tripwire for the day one is authored with tools before the staging follow-up
-// lands.
-export function toDeploySingleStepAtHead(
-  sidecarRouter: SidecarRouter,
-): DeploySingleStepFn {
-  return ({
-    agentAddress,
-    config,
-    definition,
-    sources,
-    deployContent,
-    toolPackagePins,
-  }) => {
-    const hasToolPins =
-      toolPackagePins !== undefined && toolPackagePins.length > 0;
-    const impliesToolStaging = deployContent.toolPackageManifest !== undefined;
-    if (hasToolPins || impliesToolStaging) {
-      throw new Error(
-        "single-step workflow tool-tree staging is not implemented on the on-disk path; deploying with tool pins would silently load zero tools",
-      );
-    }
-    return sidecarRouter.sendAgentDeploy(agentAddress, config, {
-      definition: definition as AgentDeployWorkflow["definition"],
-      sources,
-    });
-  };
 }
 
 // The hub is the operator: a workflow it chose to deploy is approved for the
