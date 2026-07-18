@@ -147,6 +147,10 @@ async function getAgentPrincipalRoster(args: {
     }
   }
 
+  // STOPGAP — the real bug is on the write side, tracked in Linear: per-step
+  // and supervisor instance rows should carry a durable discriminator when
+  // written, so read paths never have to infer which rows are real. Until
+  // then, every consumer joining on principalId inherits this filter.
   // `writeStepInstanceRows`/`writeDeploymentInstanceRow` (workflow-deploy.ts)
   // both stamp every step's and the deployment-level (supervisor) instance row
   // with `principalId: creatorPrincipalId` — the SAME value — so a single
