@@ -99,17 +99,29 @@ const logger = getLogger(["interchange", "sidecar", "workflow-host-wiring"]);
 // it breaks every workflow-child spawn at runtime with a green build.
 export const RAW_DEPLOYMENT_ID_ENV_KEY = "WORKFLOW_RAW_DEPLOYMENT_ID";
 
-// WORKBENCH-LOCAL (CL-2199): recover the raw deploymentId (`ses_<id>`) from the
-// deploy frame's `agentId`, which the orchestrator mints as `ins_<deploymentId>`
-// (deriveDeploymentAgentId). Fails loudly on an unexpected shape.
-export function deriveRawDeploymentId(agentId: string): string {
+// WORKBENCH-LOCAL (CL-2199): recover the raw deploymentId by stripping the
+// `ins_` instance prefix off the deployment's INSTANCE ID
+// (`parseAgentId(frame.agentAddress)`), which is shape-agnostic across both
+// deploy families:
+//   - multi-step: the deployment address is `ins_<deploymentId>@<domain>`, so
+//     its instance id is `ins_<deploymentId>` — identical to the frame's
+//     `agentId` (`deriveDeploymentAgentId`), yielding `<deploymentId>` exactly
+//     as before.
+//   - single-agent: the frame's `agentId` is the REAL agent def id
+//     (`agt_<defId>`, which the child resolves skills/tools/pins by), so it
+//     cannot be stripped; the instance id `ins_<hex>` off the address yields
+//     `<hex>`.
+// Recovering off the address (not the agentId) is what lets a single-agent
+// deploy pass this point instead of throwing. Fails loudly on an instance id
+// that does not carry the `ins_` prefix.
+export function deriveRawDeploymentId(instanceId: string): string {
   const prefix = "ins_";
-  if (!agentId.startsWith(prefix) || agentId.length === prefix.length) {
+  if (!instanceId.startsWith(prefix) || instanceId.length === prefix.length) {
     throw new Error(
-      `sidecar deploy router: cannot recover raw deploymentId from agentId ${JSON.stringify(agentId)}; expected the orchestrator's deriveDeploymentAgentId shape "ins_<deploymentId>"`,
+      `sidecar deploy router: cannot recover raw deploymentId from instance id ${JSON.stringify(instanceId)}; expected an "ins_<id>" instance id (from parseAgentId(agentAddress))`,
     );
   }
-  return agentId.slice(prefix.length);
+  return instanceId.slice(prefix.length);
 }
 
 /**
@@ -1934,9 +1946,15 @@ export function createSidecarDeployRouter(deps: {
       definition: projection.definition,
       sources: projection.sources,
       // WORKBENCH-LOCAL (CL-2199): tenant scope from the validated HarnessConfig
-      // and raw hub deploymentId recovered from the frame's agentId.
+      // and raw hub deploymentId recovered from the deployment's INSTANCE ID
+      // (`parseAgentId(frame.agentAddress)`), NOT the frame's `agentId` — a
+      // single-agent frame carries the real `agt_<defId>` agentId, which has no
+      // recoverable deploymentId. The address's instance id is `ins_<id>` for
+      // both deploy families, so this stays identical to the prior
+      // `deriveRawDeploymentId(frame.agentId)` for multi-step
+      // (`parseAgentId(ins_<deploymentId>@domain) === frame.agentId`).
       tenantId: frame.config.tenantId,
-      rawDeploymentId: deriveRawDeploymentId(frame.agentId),
+      rawDeploymentId: deriveRawDeploymentId(parseAgentId(frame.agentAddress)),
       sessionId: frame.config.sessionId,
       hubPublicKey:
         projection.definition.stepOrder.length === 1
