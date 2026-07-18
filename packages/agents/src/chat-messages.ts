@@ -102,7 +102,6 @@ export function composeChatMessages(
   // being orphaned when the bubble id flips to the mailId.
   const feedbackTurnIdByMailId = new Map<string, string>();
   /** Reasoning (and trace) from a dropped turn, keyed by hoisted mail id. */
-  const traceByHoistedMailId = new Map<string, { reasoning?: string }>();
   const deduped: InstanceEvent[] = [];
   for (const e of events) {
     // A text-only turn echoed by an assistant mail is redundant: emit that
@@ -121,10 +120,10 @@ export function composeChatMessages(
       if (mail !== undefined && mail.kind === "mail") {
         hoistedMailIds.add(mail.id);
         feedbackTurnIdByMailId.set(mail.id, e.turnId);
-        const turnReasoning = e.reasoning?.trim();
-        if (turnReasoning !== undefined && turnReasoning !== "") {
-          traceByHoistedMailId.set(mail.id, { reasoning: turnReasoning });
-        }
+        // Reloaded turns no longer carry a `reasoning` trace: upstream dropped
+        // it from the hub-client `InstanceEvent` turn variant with the session
+        // runtime retirement. Live reasoning still renders via the streaming
+        // path; hoisted-mail traces from history are simply absent now.
         deduped.push(mail);
       }
       continue;
@@ -172,18 +171,15 @@ export function composeChatMessages(
     if (!seen.has(msg.id)) {
       seen.add(msg.id);
       const feedbackTurnId = feedbackTurnIdByMailId.get(msg.id);
-      const trace = traceByHoistedMailId.get(msg.id);
       const groupId = groupIds[index];
       const withFeedback =
         feedbackTurnId !== undefined
           ? { ...msg, feedbackId: feedbackTurnId }
           : msg;
-      const withTrace: ChatMessage =
-        trace?.reasoning !== undefined && trace.reasoning.trim() !== ""
-          ? { ...withFeedback, reasoning: trace.reasoning }
-          : withFeedback;
       const withGroup: ChatMessage =
-        groupId !== undefined ? { ...withTrace, turnId: groupId } : withTrace;
+        groupId !== undefined
+          ? { ...withFeedback, turnId: groupId }
+          : withFeedback;
       messages.push({ ...withGroup, parts: liftToParts(withGroup) });
     }
   }

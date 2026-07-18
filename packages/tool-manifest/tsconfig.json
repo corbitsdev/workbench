@@ -2,7 +2,12 @@
   "extends": "../../tsconfig.json",
   "compilerOptions": {
     "rootDir": "src",
-    "noEmit": true
+    "noEmit": true,
+    "customConditions": [
+      "intx-src"
+    ]
   },
-  "include": ["src"]
+  "include": [
+    "src"
+  ]
 }

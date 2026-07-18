@@ -2,31 +2,22 @@
 // of the sidecar runtime — stores, SessionManager, HubLink — and
 // returns a single start/close handle the host driver uses.
 //
-// The host supplies policy (the data directory, the harness builder
-// implementation, the per-agent crypto factory, the low-level crypto
-// primitives, the hub credentials); the orchestrator does the
-// composition. SessionManager and HubLink reference each other through
-// SessionEventSink / ConnectorStateSink callbacks, but SessionManager
-// is constructed first so the sinks initially point at no-op closures
-// the orchestrator owns. After HubLink is constructed those closures
-// are rewired to hubLink.sendEvent and hubLink.sendConnectorState, so
-// the cross-reference is contained inside this module rather than
+// The host supplies policy (the data directory, the low-level crypto
+// primitives, the hub credentials, the deploy-router factory); the
+// orchestrator does the composition. The multi-step deploy path
+// forwards a spawned child's verified InferenceEvents to the hub
+// through a sink the orchestrator owns: it points at a no-op closure
+// until HubLink is constructed, then is rewired to hubLink.sendEvent,
+// so the cross-reference is contained inside this module rather than
 // leaking up to the host entry point.
 
 import { getLogger } from "@intx/log";
 import type { HubTransport } from "@intx/mail-memory";
-import type { DeployApplyErrorFrame } from "@intx/types/sidecar";
-import type {
-  ConnectorThreadState,
-  CryptoProvider,
-  InferenceEvent,
-  KeyPair,
-} from "@intx/types/runtime";
+import type { InferenceEvent, KeyPair } from "@intx/types/runtime";
 
 import { createAgentKeyStore, type AgentKeyStore } from "./agent-key-store";
 import { createAgentRepoStore, type AgentRepoStore } from "./agent-repo-store";
 import { createSessionManager, type SessionManager } from "./session-manager";
-import type { HarnessBuilder } from "./harness-builder";
 import {
   createHubLink,
   type DeployRouter,
@@ -34,6 +25,7 @@ import {
   type MailInboundRouter,
   type SignalInboundRouter,
   type DrainInboundRouter,
+  type SourcesInboundRouter,
   type ReconnectScheduler,
 } from "./ws/hub-link";
 
@@ -53,31 +45,21 @@ export type SidecarCryptoOps = {
  * Factory the orchestrator invokes once `sessions` and `keyStore`
  * are constructed. The host returns the `DeployRouter` the link
  * routes every inbound `agent.deploy` through; production wires
- * this against a workflow-host supervisor whose `trivialLaunch`
- * closes over `sessions.provisionAgent`. The host is responsible
- * for closing over any other state the router needs (transport,
- * substrate handle, signing keys) at the call site.
- *
- * `onAgentEvent` is the per-agent InferenceEvent subscription seam
- * the trivial-launch closure uses to bracket the workflow-run event
- * chain against the existing reactor moments
- * (`message.run.started` / `inference.start` / `message.run.ended`).
- * The orchestrator hands it through unchanged so the supervisor's
- * `recordRunEvent` callback fires for the right address.
+ * this against the sidecar's workflow-run deploy router. The host is
+ * responsible for closing over any other state the router needs
+ * (transport, substrate handle, signing keys) at the call site.
  */
 export type CreateDeployRouter = (deps: {
   sessions: SessionManager;
   keyStore: AgentKeyStore;
-  onAgentEvent: SessionManager["onAgentEvent"];
   /**
    * Per-event sink the multi-step branch routes a spawned child's
    * verified `InferenceEvent`s through, keyed by the deployment's agent
-   * address and the deploy's session id. Wired to the same hub-link
-   * `agent.event` sink the in-process path's `onEvent` uses, so a step
-   * agent's events reach the hub timeline keyed to the right session.
-   * The `sessionId` is optional because a deploy frame need not carry
-   * one (a headless deployment); the sink drops a sessionless event
-   * rather than guessing a session.
+   * address and the deploy's session id. Wired to the hub-link
+   * `agent.event` sink so a step agent's events reach the hub timeline
+   * keyed to the right session. The `sessionId` is optional because a
+   * deploy frame need not carry one (a headless deployment); the sink
+   * drops a sessionless event rather than guessing a session.
    */
   publishWorkflowInferenceEvent: (
     agentAddress: string,
@@ -92,8 +74,6 @@ export type SidecarOrchestratorConfig = {
   token: string;
   dataDir: string;
   transport: HubTransport;
-  buildHarness: HarnessBuilder;
-  createAgentCrypto: (keyPair: KeyPair) => CryptoProvider;
   cryptoOps: SidecarCryptoOps;
   /**
    * Host-injected `DeployRouter` factory. The orchestrator calls it
@@ -106,8 +86,8 @@ export type SidecarOrchestratorConfig = {
    * inbound `mail.inbound` frame. Production wires this against the
    * sidecar's multi-step deployment mail handler registry so a
    * deployment-address inbound flows into the supervisor's mail-bus
-   * subscription instead of the legacy session path. The orchestrator
-   * forwards the binding unchanged to `createHubLink`.
+   * subscription. The orchestrator forwards the binding unchanged to
+   * `createHubLink`.
    */
   mailInboundRouter?: MailInboundRouter;
   /**
@@ -127,9 +107,41 @@ export type SidecarOrchestratorConfig = {
    * orchestrator forwards the binding unchanged to `createHubLink`.
    */
   drainInboundRouter?: DrainInboundRouter;
+  /**
+   * Optional inbound sources-rotation dispatcher the link consults on
+   * every inbound `sources.update` frame. Production wires this against
+   * the sidecar's single-step deployment sources handler registry so a
+   * deployment-address rotation flows into the supervisor's
+   * `deliverSources`. The orchestrator forwards the binding unchanged to
+   * `createHubLink`.
+   */
+  sourcesInboundRouter?: SourcesInboundRouter;
+  /**
+   * Returns the workflow-substrate deployment addresses this sidecar
+   * currently hosts. Forwarded to the hub link, which announces them on
+   * every (re)connect so the hub re-registers them for routing (via the
+   * challenged reconnect frame). Production wires this to the deploy
+   * router's `activeAddresses`; omitted, the link announces none.
+   */
+  getWorkflowAddresses?: () => string[];
+  /**
+   * Invoked with the workflow-substrate addresses the link just answered a
+   * reconnect challenge for. Forwarded to the hub link, which fires it once
+   * per challenge so the workflow-run pack pusher can re-drive a push a
+   * disconnect cancelled -- gated on the address becoming routable again.
+   */
+  onWorkflowAddressesRoutable?: (addresses: string[]) => void;
+  /**
+   * Invoked on WS disconnect with the workflow-substrate addresses the link
+   * hosts, so the workflow-run pack pusher blocks their pushes until the
+   * reconnect challenge re-routes them. Paired with
+   * `onWorkflowAddressesRoutable`.
+   */
+  onWorkflowAddressesUnroutable?: (addresses: string[]) => void;
   pingIntervalMs?: number;
   reconnectDelayMs?: number;
-  // WORKBENCH-LOCAL (CL-2405): reconnect-backoff/outbound-queue tuning.
+  // WORKBENCH-LOCAL (CL-2405): reconnect-backoff/outbound-queue tuning
+  // forwarded to createHubLink (upstream uses a fixed delay + queue).
   maxReconnectDelayMs?: number;
   maxOutboundQueue?: number;
   scheduleReconnect?: ReconnectScheduler;
@@ -137,13 +149,6 @@ export type SidecarOrchestratorConfig = {
   // createHubLink so an attempt that blackholes (e.g. a redeploy overlap
   // window) is abandoned and retried rather than stalling indefinitely.
   connectTimeoutMs?: number;
-  // WORKBENCH-LOCAL (CL-3103): idle-eviction threshold (ms) forwarded to
-  // SessionManager. `0` disables eviction. The host also drives the periodic
-  // sweep timer that calls `sessions.evictIdleSessions()`.
-  idleEvictMs?: number;
-  // WORKBENCH-LOCAL (CL-3657): harness-build wedge-guard threshold (ms) forwarded to
-  // SessionManager. `0` disables the bound. Omitted leaves the package default.
-  buildTimeoutMs?: number;
 };
 
 export type SidecarOrchestrator = {
@@ -167,13 +172,15 @@ export function createSidecarOrchestrator(
     token,
     dataDir,
     transport,
-    buildHarness,
-    createAgentCrypto,
     cryptoOps,
     createDeployRouter,
     mailInboundRouter,
     signalInboundRouter,
     drainInboundRouter,
+    sourcesInboundRouter,
+    getWorkflowAddresses,
+    onWorkflowAddressesRoutable,
+    onWorkflowAddressesUnroutable,
     pingIntervalMs,
     reconnectDelayMs,
     // WORKBENCH-LOCAL (CL-2405)
@@ -182,10 +189,6 @@ export function createSidecarOrchestrator(
     scheduleReconnect,
     // WORKBENCH-LOCAL (CL-3826)
     connectTimeoutMs,
-    // WORKBENCH-LOCAL (CL-3103)
-    idleEvictMs,
-    // WORKBENCH-LOCAL (CL-3657): harness-build wedge guard.
-    buildTimeoutMs,
   } = config;
 
   const repoStore = createAgentRepoStore({ dataDir });
@@ -196,10 +199,10 @@ export function createSidecarOrchestrator(
     verifySSHSig: cryptoOps.verifySSHSig,
   });
 
-  // Pre-declare the sinks. SessionManager dispatches events into them
-  // synchronously; the closures point at no-ops until HubLink is
-  // constructed below, at which point they are swapped to the link's
-  // sendEvent / sendConnectorState methods.
+  // Sink the multi-step deploy path routes a spawned child's verified
+  // InferenceEvents through. It points at a no-op until HubLink is
+  // constructed below, at which point it is swapped to the link's
+  // sendEvent method.
   let dispatchEvent: (
     agentAddress: string,
     sessionId: string,
@@ -207,61 +210,15 @@ export function createSidecarOrchestrator(
   ) => void = () => {
     /* replaced after HubLink construction */
   };
-  let dispatchConnectorState: (
-    agentAddress: string,
-    state: ConnectorThreadState | null,
-  ) => void = () => {
-    /* replaced after HubLink construction */
-  };
-  let dispatchDeployApplyError: (
-    agentAddress: string,
-    payload: Omit<DeployApplyErrorFrame, "type" | "agentAddress">,
-  ) => void = () => {
-    /* replaced after HubLink construction */
-  };
 
-  const sessions = createSessionManager({
-    transport,
-    repoStore,
-    keyStore,
-    buildHarness,
-    createAgentCrypto,
-    onEvent(agentAddress, sessionId, event) {
-      dispatchEvent(agentAddress, sessionId, event);
-    },
-    onConnectorStateChanged(agentAddress, state) {
-      dispatchConnectorState(agentAddress, state);
-    },
-    onDeployApplyError(agentAddress, payload) {
-      dispatchDeployApplyError(agentAddress, payload);
-    },
-    // WORKBENCH-LOCAL (CL-3149): a mail-triggered wake exhausted its retries
-    // with the sender-acked message still parked. Surface it loudly at the
-    // host boundary so the stuck delivery is observable rather than silent.
-    onMailDeliveryFailed(agentAddress, info) {
-      log.error(
-        "Inbound mail to {agentAddress} is undelivered after wake failure ({parkedCount} parked): {cause}",
-        { agentAddress, parkedCount: info.parkedCount, cause: info.cause },
-      );
-    },
-    // WORKBENCH-LOCAL (CL-3103)
-    ...(idleEvictMs !== undefined ? { idleEvictMs } : {}),
-    // WORKBENCH-LOCAL (CL-3657): harness-build wedge guard.
-    ...(buildTimeoutMs !== undefined ? { buildTimeoutMs } : {}),
-  });
+  const sessions = createSessionManager({ repoStore });
 
   const deployRouter = createDeployRouter({
     sessions,
     keyStore,
-    onAgentEvent: sessions.onAgentEvent,
-    // Route a spawned child's verified InferenceEvents up the same
-    // hub-link `agent.event` sink the in-process path uses, so step
-    // agent events reach the hub timeline keyed to the deploy's
-    // session. `dispatchEvent` is a no-op until HubLink is constructed
-    // below; the closure reads it lazily so the post-construction swap
-    // is observed. A sessionless event is dropped rather than guessed
-    // onto an arbitrary session -- the hub timeline is session-keyed and
-    // a forged session id would mis-route the event.
+    // Route a spawned child's verified InferenceEvents up the hub-link
+    // `agent.event` sink, keyed to the deploy's session. A sessionless
+    // event is dropped rather than guessed onto an arbitrary session.
     publishWorkflowInferenceEvent: (agentAddress, event, sessionId) => {
       if (sessionId === undefined) {
         log.warn(
@@ -285,6 +242,14 @@ export function createSidecarOrchestrator(
     ...(mailInboundRouter !== undefined ? { mailInboundRouter } : {}),
     ...(signalInboundRouter !== undefined ? { signalInboundRouter } : {}),
     ...(drainInboundRouter !== undefined ? { drainInboundRouter } : {}),
+    ...(sourcesInboundRouter !== undefined ? { sourcesInboundRouter } : {}),
+    ...(getWorkflowAddresses !== undefined ? { getWorkflowAddresses } : {}),
+    ...(onWorkflowAddressesRoutable !== undefined
+      ? { onWorkflowAddressesRoutable }
+      : {}),
+    ...(onWorkflowAddressesUnroutable !== undefined
+      ? { onWorkflowAddressesUnroutable }
+      : {}),
     ...(pingIntervalMs !== undefined ? { pingIntervalMs } : {}),
     ...(reconnectDelayMs !== undefined ? { reconnectDelayMs } : {}),
     // WORKBENCH-LOCAL (CL-2405)
@@ -296,8 +261,6 @@ export function createSidecarOrchestrator(
   });
 
   dispatchEvent = hubLink.sendEvent;
-  dispatchConnectorState = hubLink.sendConnectorState;
-  dispatchDeployApplyError = hubLink.sendDeployApplyError;
 
   function start(): void {
     hubLink.connect();

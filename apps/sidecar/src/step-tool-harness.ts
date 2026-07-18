@@ -31,16 +31,79 @@ import {
   ToolManifestResponse,
   providerFromEnvKey,
 } from "@workbench/tool-credentials";
-import { ArgMap, WORKFLOW_STEP_BUDGET_DIRECTOR_ID } from "@workbench/agents";
+import {
+  ArgMap,
+  WORKFLOW_STEP_BUDGET_DIRECTOR_ID,
+  DYNAMIC_TOOLS_DIRECTOR_ID,
+  TRIAGE_BUDGET_DIRECTOR_ID,
+  INVOKE_BUDGET_DIRECTOR_ID,
+  resolveDynamicToolConfig,
+} from "@workbench/agents";
+import {
+  isTriageSessionPrompt,
+  isInvokeSessionPrompt,
+  resolveSeedMarker,
+  stripSeedMarker,
+  resolveInferenceParamsMarker,
+  stripInferenceParamsMarker,
+  INFERENCE_PARAMS_ENV_KEY,
+  type ResolvedInferenceDials,
+  type SeedWorkspaceFile,
+} from "@workbench/myra";
+import {
+  resolveTimeZoneMarker,
+  stripTimeZoneMarker,
+  withActiveContext,
+} from "@workbench/prompts";
+import { seedWorkspaceFiles } from "./seed-workspace-files";
+import {
+  catalogManagedNames,
+  createCatalogTools,
+  filterCatalogByAvailableTools,
+  filterExposureToCatalog,
+  persistExposure,
+  readPersistedExposure,
+  DYNAMIC_TOOLS_ENV_KEY,
+  type ToolCatalog,
+  type ToolExposureState,
+} from "@workbench/tools-catalog";
 import {
   fetchToolCredentials,
   loadToolPackages,
   mergeToolRunners,
+  filterToolRunner,
   type DefinedRunner,
 } from "./agent-tools";
+import { buildDispatchAllowedToolNames } from "./tool-dispatch-allowed-names";
 import { createGuardedMailRunner } from "./mail-guard";
+import type { DirectorRef } from "@intx/agent";
 
 const logger = getLogger(["sidecar", "step-tool-harness"]);
+
+/**
+ * Pure director-id selection for a WARM single-step agent (Myra/Oat/triage/
+ * gate), re-homed verbatim from the retired `default-harness.ts`
+ * `selectDirectorId` when the in-process harness runtime was replaced by the
+ * single-step-workflow launch path. A triage session always gets the triage
+ * budget director and an invoked-subagent session always gets the invoke
+ * budget director — both regardless of dynamic tool config, since each budget
+ * director's factory composes the dynamic-tools director internally when the
+ * harness env carries it. Triage takes priority over invoke in the (impossible
+ * in practice) case both markers were present. A plain agent with dynamic tool
+ * config gets the dynamic-tools director; everything else falls back to the
+ * registry default (`undefined`). Genuine multi-step workflow steps never reach
+ * this function — they are pinned to the budget director unconditionally.
+ */
+export function selectDirectorId(params: {
+  isTriageSession: boolean;
+  isInvokeSession: boolean;
+  hasDynamicToolConfig: boolean;
+}): string | undefined {
+  if (params.isTriageSession) return TRIAGE_BUDGET_DIRECTOR_ID;
+  if (params.isInvokeSession) return INVOKE_BUDGET_DIRECTOR_ID;
+  if (params.hasDynamicToolConfig) return DYNAMIC_TOOLS_DIRECTOR_ID;
+  return undefined;
+}
 
 /**
  * A workflow step declared a tool that was not pinned/loaded into the step's
@@ -239,6 +302,19 @@ async function buildStepTools(args: {
 }): Promise<{
   runner: DefinedRunner;
   loadedToolNames: Set<string>;
+  /**
+   * Native tool-package tool names only (posix/mail excluded). These are the
+   * catalog-gated candidates: the warm single-step path admits them through
+   * the dispatch allow-list only when the member is granted them.
+   */
+  packageToolNames: Set<string>;
+  /**
+   * Always-allowed local tool names (posix + mail). The warm single-step
+   * dispatch allow-list never gates these — they mirror the hub-proxy/local
+   * `agentConfig.tools` names the retired `default-harness` treated as
+   * unconditionally granted.
+   */
+  localToolNames: Set<string>;
   disposers: (() => Promise<void>)[];
 }> {
   const { ctx } = args;
@@ -326,6 +402,9 @@ async function buildStepTools(args: {
   const loadedRunners: DefinedRunner[] = [];
   const disposers: (() => Promise<void>)[] = [() => posixTools.dispose()];
   const loadedToolNames = new Set<string>();
+  const packageToolNames = new Set<string>();
+  const localToolNames = new Set<string>();
+  for (const def of posixTools.definitions) localToolNames.add(def.name);
   for (const pkg of loadedPackages) {
     for (const factory of pkg.factories) {
       let bundle: ReturnType<typeof factory>;
@@ -361,7 +440,10 @@ async function buildStepTools(args: {
         definitions: [...bundle.definitions],
         run: (call, signal) => bundle.run(call, signal),
       });
-      for (const def of bundle.definitions) loadedToolNames.add(def.name);
+      for (const def of bundle.definitions) {
+        loadedToolNames.add(def.name);
+        packageToolNames.add(def.name);
+      }
       if (bundle.dispose !== undefined) {
         const dispose = bundle.dispose;
         disposers.push(async () => {
@@ -404,7 +486,10 @@ async function buildStepTools(args: {
       }),
     );
     disposers.push(() => mailTools.dispose());
-    for (const def of mailTools.definitions) loadedToolNames.add(def.name);
+    for (const def of mailTools.definitions) {
+      loadedToolNames.add(def.name);
+      localToolNames.add(def.name);
+    }
   }
 
   // Steps expose every materialized native tool plus local posix tools; the
@@ -416,7 +501,202 @@ async function buildStepTools(args: {
   return {
     runner: merged,
     loadedToolNames,
+    packageToolNames,
+    localToolNames,
     disposers,
+  };
+}
+
+export interface PreparedWarmAgentPrompt {
+  /** Prompt with every control-plane marker stripped and the active-context
+   * block appended — what the model actually sees. */
+  systemPrompt: string;
+  /** Memory-seed files the agent documents but does not create itself. */
+  seedFiles: readonly SeedWorkspaceFile[];
+  /** True when a seed marker was present but resolved to zero files (a
+   * malformed marker / prompt-builder contract break). */
+  seedMalformed: boolean;
+  /** Member inference dials to thread via env; see the note below on WHY env. */
+  inferenceDials: ResolvedInferenceDials | undefined;
+}
+
+/**
+ * Re-home the retired `default-harness`'s prompt-marker handling onto the WARM
+ * single-step agent path. The hub stamps control-plane markers onto the launch
+ * prompt for the harness to act on: `workbench:memory-seed` (files to seed),
+ * the member-timezone marker (active-context date zone), and
+ * `workbench:inference-params` (member dials). With the in-process harness
+ * retired, NOTHING resolved them on the warm path — so all three markers leaked
+ * into the model prompt as raw text, the seed files were never seeded, and the
+ * live active-context (date) block was never applied, re-anchoring the agent to
+ * its training cutoff (the CL-1938 regression). The inference dials survived
+ * only incidentally, because the director still read the un-stripped marker off
+ * `agent.systemPrompt`.
+ *
+ * This resolves all three markers, strips them, and appends a fresh
+ * active-context block. Crucially it returns the dials to thread via ENV rather
+ * than leaving them on the prompt: `readInferenceParamsForDirector` reads env
+ * BEFORE the prompt marker, so once the marker is stripped the director must
+ * get the dials from env or the member's dials are silently lost. Pure so the
+ * marker/strip/active-context contract is unit-testable without a harness.
+ */
+export function prepareWarmAgentPrompt(
+  rawSystemPrompt: string,
+  now: Date,
+): PreparedWarmAgentPrompt {
+  const seed = resolveSeedMarker(rawSystemPrompt);
+  const timeZone = resolveTimeZoneMarker(rawSystemPrompt);
+  const inferenceDials = resolveInferenceParamsMarker(rawSystemPrompt);
+  const cleaned = stripInferenceParamsMarker(
+    stripTimeZoneMarker(stripSeedMarker(rawSystemPrompt)),
+  );
+  const systemPrompt = withActiveContext(cleaned, {
+    now,
+    ...(timeZone !== undefined ? { timeZone } : {}),
+  });
+  return {
+    systemPrompt,
+    seedFiles: seed.files,
+    seedMalformed: seed.malformed,
+    inferenceDials,
+  };
+}
+
+/**
+ * Re-home the retired `default-harness` director + dynamic-tools + exposure
+ * resolution onto the WARM single-step agent path. A single-step deployment
+ * (Myra/Oat/triage/gate agent) is a long-lived tool-capable agent, not a
+ * throwaway workflow step — so unlike a multi-step step (pinned to the budget
+ * director unconditionally) it resolves its director from its prompt markers
+ * and, for the personal agent, gets the dynamic tool catalog wired exactly as
+ * the pre-bump in-process harness did: only a base set plus the catalog tools
+ * advertised on turn one, the long-tail discoverable via `search_tools` and
+ * enabled by `load_tools`, with the exposure set persisted so it survives a
+ * harness/child rebuild.
+ *
+ * Returns the (possibly catalog-augmented, allow-list-filtered) runner, the
+ * director ref to pin on the step def, and the dynamic-tools env slot the
+ * director reads. When the definition declares its own `director` it is
+ * respected verbatim; otherwise the marker-driven `selectDirectorId` chooses.
+ */
+async function resolveWarmAgentHarness(args: {
+  def: { systemPrompt: string; director?: DirectorRef };
+  runner: DefinedRunner;
+  packageToolNames: ReadonlySet<string>;
+  localToolNames: ReadonlySet<string>;
+  authorize: (
+    resource: string,
+    action: string,
+  ) => Promise<{ effect: string | null }>;
+  storeDir: string;
+  address: string;
+}): Promise<{
+  runner: DefinedRunner;
+  director: DirectorRef | undefined;
+  dynamicEnv: Record<string, unknown>;
+}> {
+  const { def, storeDir, address } = args;
+  const dynamicToolConfig = resolveDynamicToolConfig(def.systemPrompt);
+  const isTriageSession = isTriageSessionPrompt(def.systemPrompt);
+  const isInvokeSession = isInvokeSessionPrompt(def.systemPrompt);
+
+  const directorId =
+    def.director?.id ??
+    selectDirectorId({
+      isTriageSession,
+      isInvokeSession,
+      hasDynamicToolConfig: dynamicToolConfig !== undefined,
+    });
+  const director: DirectorRef | undefined =
+    def.director ??
+    (directorId !== undefined ? { id: directorId, config: {} } : undefined);
+
+  if (dynamicToolConfig === undefined) {
+    // No dynamic catalog: full advertisement, no allow-list gate — identical
+    // to the retired harness's `grantedCatalogToolNames === undefined` path.
+    return { runner: args.runner, director, dynamicEnv: {} };
+  }
+
+  // Gate the catalog to tools this agent is GRANTED (the `tool:<llm-name>/
+  // invoke` grant rows), not to tools that happened to load: a package whose
+  // credential is missing is still catalogued from manifest metadata so the
+  // model can discover it via `search_tools`, while `createCatalogTools`
+  // (`availableToolNames`) stops `load_tools` exposing a name with no live
+  // runner (CL-3795).
+  const grantedCatalogToolNames = new Set<string>();
+  for (const name of catalogManagedNames(dynamicToolConfig.catalog)) {
+    const decision = await args.authorize(`tool:${name}`, "invoke");
+    if (decision.effect === "allow") grantedCatalogToolNames.add(name);
+  }
+  const availableCatalog: ToolCatalog = filterCatalogByAvailableTools(
+    dynamicToolConfig.catalog,
+    grantedCatalogToolNames,
+  );
+
+  // Rehydrate the exposure set persisted by earlier turns: a child rebuild
+  // (respawn / idle wake) starts with a fresh set, which would silently drop
+  // every tool the model already loaded. Only names still catalogued AND
+  // backed by a live runner are restored, so retired or credential-less tools
+  // never come back dead. A corrupt file degrades to empty (advisory state)
+  // rather than failing the whole harness build.
+  const exposureState: ToolExposureState = { exposed: new Set<string>() };
+  const persisted = await readPersistedExposure(storeDir);
+  if (persisted.corrupt !== undefined) {
+    logger.error(
+      "Corrupt tool-exposure state for {address}; proceeding with empty set: {reason}",
+      { address, reason: persisted.corrupt },
+    );
+  }
+  const rehydrated = filterExposureToCatalog(
+    persisted.exposed,
+    availableCatalog,
+  ).filter((name) => args.packageToolNames.has(name));
+  for (const name of rehydrated) exposureState.exposed.add(name);
+  if (rehydrated.length > 0) {
+    logger.info("Rehydrated {count} exposed dynamic tool(s) for {address}", {
+      count: rehydrated.length,
+      address,
+    });
+  }
+
+  const catalogRunner = createCatalogTools({
+    catalog: availableCatalog,
+    exposure: exposureState,
+    availableToolNames: args.packageToolNames,
+    onExposureChanged: (exposed) => {
+      void persistExposure(storeDir, exposed).catch((err: unknown) => {
+        logger.error("Failed to persist tool exposure for {address}: {error}", {
+          address,
+          error: String(err),
+        });
+      });
+    },
+  }) as DefinedRunner;
+
+  // Loaded package tools are gated on `grantedCatalogToolNames`; local tools
+  // (posix/mail) and the catalog control tools (search_tools/load_tools) are
+  // always allowed (CL-3848 admission).
+  const allowedNames = buildDispatchAllowedToolNames(
+    [...args.localToolNames],
+    args.packageToolNames,
+    catalogRunner.definitions.map((d) => d.name),
+    grantedCatalogToolNames,
+  );
+  const merged = mergeToolRunners([
+    args.runner,
+    catalogRunner,
+  ]) as DefinedRunner;
+  const filtered = filterToolRunner(merged, allowedNames);
+
+  return {
+    runner: filtered,
+    director,
+    dynamicEnv: {
+      [DYNAMIC_TOOLS_ENV_KEY]: {
+        catalog: availableCatalog,
+        exposure: exposureState,
+      },
+    },
   };
 }
 
@@ -749,6 +1029,17 @@ export interface StepAgentFactoryOpts {
     def: AgentDefinition<EnvReq>,
     env: EnvReq,
   ) => Promise<Agent>;
+  /**
+   * True when this factory builds the sole agent of a WARM single-step
+   * deployment (Myra/Oat/triage/gate agent), rather than a step of a genuine
+   * multi-step workflow. A warm agent resolves its director from its prompt
+   * markers (or its own `def.director`) and — for the personal agent — gets
+   * the dynamic tool catalog + exposure wired exactly as the retired
+   * in-process `default-harness` did. A multi-step step (the default, `false`)
+   * keeps the budget director unconditionally and full tool advertisement.
+   * Threaded from `env.spawn.warmKeep` in `workflow-substrate-factory.ts`.
+   */
+  warmKeep?: boolean;
 }
 
 /**
@@ -774,7 +1065,12 @@ export function createStepAgentFactory(opts: StepAgentFactoryOpts = {}) {
     // down when the step agent closes so disk does not grow unbounded.
     const storeDir = path.dirname(env.workdir);
 
-    const { runner, disposers } = await buildStepTools({
+    const {
+      runner: baseRunner,
+      packageToolNames,
+      localToolNames,
+      disposers,
+    } = await buildStepTools({
       ctx,
       env,
       storage: env.storage,
@@ -787,6 +1083,88 @@ export function createStepAgentFactory(opts: StepAgentFactoryOpts = {}) {
         tenantId: ctx.tenantId,
       });
 
+    // WORKBENCH-LOCAL: single-step (warm agent) vs multi-step (workflow step)
+    // director + dynamic-tools split. Upstream's single-step-workflow launch
+    // path (the runtime-retirement pin bump) routes Myra/Oat/triage/gate
+    // agents through this same step factory as a warm single-step deployment.
+    // Multi-step steps keep the budget director unconditionally (correct: an
+    // unattended step between HITL gates needs a runaway-loop cap and never
+    // opts into dynamic tools). A warm agent instead reproduces the retired
+    // `default-harness` semantics: per-agent director resolution
+    // (`selectDirectorId` / `def.director`) and, for the personal agent, the
+    // dynamic tool catalog + persisted exposure. `warmKeep` is threaded from
+    // `env.spawn.warmKeep`.
+    let runner = baseRunner;
+    let director: DirectorRef | undefined = {
+      id: WORKFLOW_STEP_BUDGET_DIRECTOR_ID,
+      config: {},
+    };
+    let dynamicEnv: Record<string, unknown> = {};
+    // A multi-step step's prompt carries no control-plane markers, so it ships
+    // to the model verbatim. A warm single-step agent's prompt does — re-home
+    // the retired default-harness's marker handling below and use the cleaned,
+    // active-context-appended result instead.
+    let systemPrompt = def.systemPrompt;
+    if (opts.warmKeep === true) {
+      const resolved = await resolveWarmAgentHarness({
+        def,
+        runner: baseRunner,
+        packageToolNames,
+        localToolNames,
+        authorize,
+        storeDir,
+        address: ctx.stepAddress,
+      });
+      runner = resolved.runner;
+      director = resolved.director;
+      dynamicEnv = resolved.dynamicEnv;
+
+      const prepared = prepareWarmAgentPrompt(def.systemPrompt, new Date());
+      systemPrompt = prepared.systemPrompt;
+      if (prepared.inferenceDials !== undefined) {
+        // Thread the dials via env: the marker is now stripped from the prompt,
+        // and the director reads env BEFORE the (gone) prompt marker, so this
+        // is how the member's dials still reach it.
+        dynamicEnv = {
+          ...dynamicEnv,
+          [INFERENCE_PARAMS_ENV_KEY]: prepared.inferenceDials,
+        };
+      }
+      if (prepared.seedMalformed) {
+        logger.warn(
+          "Seed marker for {address} resolved zero files (malformed)",
+          { address: ctx.stepAddress },
+        );
+      }
+      if (prepared.seedFiles.length > 0) {
+        // Seed the agent's documented-but-not-self-created memory files into
+        // its workspace. Idempotent (skips existing) and best-effort: a seed
+        // failure degrades the agent's starting context but must not fail the
+        // whole harness build.
+        try {
+          const seedResult = await seedWorkspaceFiles(env.workdir, [
+            ...prepared.seedFiles,
+          ]);
+          logger.info(
+            "Seeded {created} workspace file(s) for {address}, skipped {skipped} existing",
+            {
+              created: seedResult.created,
+              skipped: seedResult.skipped,
+              address: ctx.stepAddress,
+            },
+          );
+        } catch (err) {
+          logger.error(
+            "Failed to seed workspace files for {address}: {error}",
+            {
+              address: ctx.stepAddress,
+              error: err instanceof Error ? err.message : String(err),
+            },
+          );
+        }
+      }
+    }
+
     const toolsFactory = defineTool({
       id: "@workbench/sidecar/step-tools",
       factory: () => ({
@@ -797,21 +1175,14 @@ export function createStepAgentFactory(opts: StepAgentFactoryOpts = {}) {
 
     const stepDef = {
       id: def.id,
-      systemPrompt: def.systemPrompt,
+      systemPrompt,
       toolFactories: [toolsFactory] as const,
       capabilities: [],
       inference: { sources: [] as const },
-      // A workflow step turns unattended, between HITL gates, exactly like
-      // an ephemeral triage session — nobody watches a turn in progress. The
-      // original `def` never carries a `director` (deploy-time capability
-      // walk stubs), so without this every step ran under the interchange
-      // default director with no runaway-loop cap (gap 2 of the CL-3384
-      // runaway-inference audit). Pin every step agent to the budget-capped
-      // director unconditionally.
-      director: { id: WORKFLOW_STEP_BUDGET_DIRECTOR_ID, config: {} },
+      ...(director !== undefined ? { director } : {}),
     };
 
-    const agentEnv = { ...env, authorize };
+    const agentEnv = { ...env, ...dynamicEnv, authorize };
     const agent = await underlying(stepDef, agentEnv);
 
     const innerClose = agent.close.bind(agent);

@@ -517,16 +517,15 @@ async function bootSupervisor(opts: {
     subprocessSpawner: spawner,
     binaryPath: "/fake/bin/workflow-child",
     substrateEnv: { DATA_DIR: baseDir },
+    dynamicSpawnEnv: () => ({}),
     workflowRunRepoId: { kind: "workflow-run", id: "deployment-x" },
     workflowRunRef: "refs/heads/main",
     deploymentId: "deployment-x",
+    stepCount: 1,
     deploymentMailAddress: "deployment-x@example.com",
     readPrincipal: { kind: "supervisor" },
     deriveStepAddress: ({ deploymentId, stepId }) =>
       `${deploymentId}-${stepId}@example.com`,
-    trivialLaunch: () => {
-      throw new Error("trivialLaunch must not run in this test");
-    },
     ipcKeyPairFactory: () => Promise.resolve(supervisorIpcKeyPair),
     inboxPrimitives,
     ...(opts.terminalWriteWatchdogMs !== undefined

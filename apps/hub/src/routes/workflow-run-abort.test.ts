@@ -190,7 +190,10 @@ describe("operator gate on abort routes", () => {
   }
 
   function gatedApp(grants: GrantRule[]) {
-    const grantStore = { collectGrants: async () => grants };
+    const grantStore = {
+      collectGrants: async () => grants,
+      collectGrantsInChain: async () => grants,
+    };
     const guard = createWorkflowDeployGrantGuard({
       db: {} as Parameters<typeof createWorkflowDeployGrantGuard>[0]["db"],
       grantStore,

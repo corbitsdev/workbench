@@ -3,11 +3,11 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "bun --hot src/index.ts",
+    "dev": "BUN_OPTIONS=--conditions=intx-src bun --hot src/index.ts",
     "typecheck": "tsc --noEmit",
-    "test": "bun test --isolate",
-    "test:authz": "bun test --isolate src/step-tool-authz.test.ts",
-    "test:coverage": "bun test --isolate --coverage --coverage-reporter=lcov --coverage-reporter=text"
+    "test": "BUN_OPTIONS=--conditions=intx-src bun test --isolate",
+    "test:authz": "BUN_OPTIONS=--conditions=intx-src bun test --isolate src/step-tool-authz.test.ts",
+    "test:coverage": "BUN_OPTIONS=--conditions=intx-src bun test --isolate --coverage --coverage-reporter=lcov --coverage-reporter=text"
   },
   "dependencies": {
     "@intx/agent": "workspace:*",

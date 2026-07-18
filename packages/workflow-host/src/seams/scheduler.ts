@@ -43,7 +43,12 @@ import type {
   RepoId,
   RepoStore,
 } from "@intx/hub-sessions/substrate";
-import { subscribeKind } from "@intx/hub-sessions/substrate";
+import {
+  requireEventSeq,
+  subscribeKind,
+  WORKFLOW_RUN_EVENTS_DIR,
+  WORKFLOW_RUN_RUNS_PREFIX,
+} from "@intx/hub-sessions/substrate";
 
 /**
  * Substrate-shape envelope for the workflow-event blob committed to
@@ -350,14 +355,15 @@ type EventReadEntry = {
 
 /**
  * Read every timer-event blob across every run under the given
- * workflow-run repo. The recovery walk reads blobs from the
- * substrate's on-disk working tree directly via `enumerateEventBlobs`:
- * `subscribeKind` is a diff-shaped iterator over new commits, not a
- * "list everything at HEAD" primitive, so the startup ledger needs a
- * path-aware enumeration of the current ref tip rather than a tail
- * subscription. The substrate writes commit-then-checkout for every
- * ref-update, so the working tree is a coherent snapshot of the
- * current ref tip.
+ * workflow-run repo. Recovery reconstructs its ledger from committed
+ * state, so `enumerateEventBlobs` reads the git object store at the
+ * events ref tip via `openCommittedReads` rather than the materialized
+ * working tree, whose non-atomic post-commit checkout can lag the
+ * committed tree on a contended filesystem and hide an already-committed
+ * `TimerFired`. `subscribeKind` is a diff-shaped iterator over new
+ * commits, not a "list everything at HEAD" primitive, so the startup
+ * ledger needs this path-aware enumeration of the current ref tip rather
+ * than a tail subscription.
  */
 async function readAllEvents(
   opts: SchedulerOpts,
@@ -399,48 +405,37 @@ async function enumerateEventBlobs(
   opts: SchedulerOpts,
   repoId: RepoId,
 ): Promise<readonly RawEventRecord[]> {
-  const dir = opts.repoStore.getRepoDir(repoId);
-  const fs = await import("node:fs/promises");
-  const path = await import("node:path");
-  const runsDir = path.join(dir, "runs");
+  const reads = await opts.repoStore.openCommittedReads(
+    opts.principal,
+    repoId,
+    opts.ref,
+  );
+  if (reads === null) return [];
   const out: RawEventRecord[] = [];
-  let runEntries: string[];
-  try {
-    runEntries = await fs.readdir(runsDir);
-  } catch (cause) {
-    if (isErrnoNotFound(cause)) return out;
-    throw cause;
-  }
-  for (const runId of runEntries) {
-    const eventsDir = path.join(runsDir, runId, "events");
-    let blobs: string[];
-    try {
-      blobs = await fs.readdir(eventsDir);
-    } catch (cause) {
-      if (isErrnoNotFound(cause)) continue;
-      throw cause;
-    }
+  const runEntries = await reads.listDir(WORKFLOW_RUN_RUNS_PREFIX);
+  for (const runEntry of runEntries) {
+    if (runEntry.type !== "tree") continue;
+    const runId = runEntry.name;
+    const eventsDir = `${WORKFLOW_RUN_RUNS_PREFIX}/${runId}/${WORKFLOW_RUN_EVENTS_DIR}`;
+    const blobs = await reads.listDir(eventsDir);
     for (const blob of blobs) {
-      if (!/^(0|[1-9][0-9]*)\.json$/.test(blob)) continue;
-      const raw = await fs.readFile(path.join(eventsDir, blob), "utf8");
+      if (blob.type !== "blob") continue;
+      // Assert a legal <seq>.json name; an illegal one under the events
+      // prefix is corruption the recovery walk must not silently drop.
+      requireEventSeq(blob.name, `${eventsDir}/${blob.name}`);
+      const raw = await reads.readBlobByOid(blob.oid);
       let parsed: unknown;
       try {
-        parsed = JSON.parse(raw);
+        parsed = JSON.parse(new TextDecoder().decode(raw));
       } catch (cause) {
         throw new Error(
-          `scheduler recovery: cannot parse ${String(repoId.id)}/${runId}/events/${blob}: ${String(cause)}`,
+          `scheduler recovery: cannot parse ${String(repoId.id)}/${runId}/${WORKFLOW_RUN_EVENTS_DIR}/${blob.name}: ${String(cause)}`,
         );
       }
       out.push({ runId, payload: parsed });
     }
   }
   return out;
-}
-
-function isErrnoNotFound(cause: unknown): boolean {
-  if (cause === null || typeof cause !== "object") return false;
-  const code = (cause as { code?: unknown }).code;
-  return code === "ENOENT";
 }
 
 /**
@@ -462,7 +457,7 @@ async function commitTimerFired(
       `scheduler commit: cannot find deployment owning run ${runId}`,
     );
   }
-  const prefix = `runs/${runId}/events/`;
+  const prefix = `${WORKFLOW_RUN_RUNS_PREFIX}/${runId}/${WORKFLOW_RUN_EVENTS_DIR}/`;
   await opts.repoStore.writeTreePreservingPrefix(
     opts.principal,
     owningRepoId,
@@ -474,11 +469,7 @@ async function commitTimerFired(
         let alreadyFired = false;
         for (const [filepath, contents] of existing) {
           const name = filepath.slice(prefix.length);
-          const match = /^(0|[1-9][0-9]*)\.json$/.exec(name);
-          if (match === null) continue;
-          const seqStr = match[1];
-          if (seqStr === undefined) continue;
-          const seq = Number.parseInt(seqStr, 10);
+          const seq = requireEventSeq(name, `${prefix}${name}`);
           if (seq > maxSeq) maxSeq = seq;
           try {
             const parsed: unknown = JSON.parse(
@@ -524,17 +515,22 @@ async function findOwningDeployment(
   runId: string,
 ): Promise<RepoId | undefined> {
   const repoIds = await opts.listActiveDeployments();
-  const fs = await import("node:fs/promises");
-  const path = await import("node:path");
   for (const repoId of repoIds) {
-    const dir = opts.repoStore.getRepoDir(repoId);
-    try {
-      await fs.access(path.join(dir, "runs", runId, "events"));
-      return repoId;
-    } catch (cause) {
-      if (isErrnoNotFound(cause)) continue;
-      throw cause;
-    }
+    const reads = await opts.repoStore.openCommittedReads(
+      opts.principal,
+      repoId,
+      opts.ref,
+    );
+    if (reads === null) continue;
+    // The committed events subtree exists only when it holds at least
+    // one blob (git does not track empty trees), so a non-empty listing
+    // is exactly "this deployment owns the run". Reading committed state
+    // rather than the working tree keeps attribution correct when the
+    // checkout lags the object store.
+    const events = await reads.listDir(
+      `${WORKFLOW_RUN_RUNS_PREFIX}/${runId}/${WORKFLOW_RUN_EVENTS_DIR}`,
+    );
+    if (events.length > 0) return repoId;
   }
   return undefined;
 }

@@ -13,27 +13,10 @@
 // for incoming deploy packs.
 
 import fsp from "node:fs/promises";
-import path from "node:path";
-import { getLogger } from "@intx/log";
 import { hasCode, hexDecode } from "@intx/types";
 import type { KeyPair } from "@intx/types/runtime";
 
-import {
-  KEYS_DIR_NAME,
-  META_FILE,
-  PRIVATE_KEY_FILE,
-  PUBLIC_KEY_FILE,
-  keysDir,
-  privateKeyPath,
-  publicKeyPath,
-} from "./agent-paths";
-
-const logger = getLogger(["interchange", "hub-agent", "key-store"]);
-
-export type AgentKeyEntry = {
-  address: string;
-  keyPair: KeyPair;
-};
+import { keysDir, privateKeyPath, publicKeyPath } from "./agent-paths";
 
 export type AgentKeyStoreDeps = {
   dataDir: string;
@@ -68,26 +51,22 @@ export type AgentKeyStore = {
     address: string,
   ): Promise<{ keyPair: KeyPair; isNew: boolean }>;
   /**
-   * Read every persisted keypair in the data directory and warm the
-   * in-memory cache with each one. Used by the sidecar's restore path
-   * to recover agents across restarts. Directories with a partial
-   * keypair (one of the two files present) are skipped with a warning;
-   * the operator can re-pair or remove them manually.
-   */
-  scanKeys(): Promise<AgentKeyEntry[]>;
-  /**
-   * Sign the challenge payload with the agent's cached private key.
-   * Returns null when no key is cached for the address — the caller
-   * (HubLink) treats that as "skip this challenge."
+   * Sign the challenge payload with the agent's private key. On a cache
+   * miss the durable on-disk key is reloaded, so an address whose cache
+   * was wiped by forgetAgent (e.g. a challenge.failed during the deploy
+   * window) can still answer a later challenge instead of being stranded
+   * until process restart. Returns null only when no key is persisted for
+   * the address — the caller (HubLink) treats that as "skip this
+   * challenge."
    */
   signChallenge(
     address: string,
     payload: Uint8Array,
   ): Promise<Uint8Array | null>;
   /**
-   * Record the hub public key the agent has been paired with. Cached
-   * in memory only; on-disk persistence of the pairing record lives in
-   * AgentRepoStore.persistPairing.
+   * Record the hub public key the agent has been paired with. Cached in
+   * memory only; the deploy path re-records it on every deploy, so it
+   * does not need to survive a restart.
    */
   recordHubKey(address: string, hexHubPublicKey: string): void;
   /**
@@ -113,9 +92,7 @@ export function createAgentKeyStore(deps: AgentKeyStoreDeps): AgentKeyStore {
   const agentKeys = new Map<string, KeyPair>();
   const hubKeys = new Map<string, Uint8Array>();
 
-  async function loadOrGenerateKey(
-    address: string,
-  ): Promise<{ keyPair: KeyPair; isNew: boolean }> {
+  async function loadKeyFromDisk(address: string): Promise<KeyPair | null> {
     const privPath = privateKeyPath(dataDir, address);
     const pubPath = publicKeyPath(dataDir, address);
 
@@ -131,91 +108,44 @@ export function createAgentKeyStore(deps: AgentKeyStoreDeps): AgentKeyStore {
       );
     }
 
-    if (privExists) {
-      const [privateKey, publicKey] = await Promise.all([
-        fsp.readFile(privPath),
-        fsp.readFile(pubPath),
-      ]);
-      const keyPair: KeyPair = {
-        privateKey: new Uint8Array(privateKey),
-        publicKey: new Uint8Array(publicKey),
-      };
-      agentKeys.set(address, keyPair);
-      return { keyPair, isNew: false };
-    }
+    if (!privExists) return null;
+
+    const [privateKey, publicKey] = await Promise.all([
+      fsp.readFile(privPath),
+      fsp.readFile(pubPath),
+    ]);
+    const keyPair: KeyPair = {
+      privateKey: new Uint8Array(privateKey),
+      publicKey: new Uint8Array(publicKey),
+    };
+    agentKeys.set(address, keyPair);
+    return keyPair;
+  }
+
+  async function loadOrGenerateKey(
+    address: string,
+  ): Promise<{ keyPair: KeyPair; isNew: boolean }> {
+    const fromDisk = await loadKeyFromDisk(address);
+    if (fromDisk !== null) return { keyPair: fromDisk, isNew: false };
 
     const keyPair = await generateKeyPair();
     await fsp.mkdir(keysDir(dataDir, address), { recursive: true });
     await Promise.all([
-      fsp.writeFile(privPath, keyPair.privateKey, { mode: 0o600 }),
-      fsp.writeFile(pubPath, keyPair.publicKey),
+      fsp.writeFile(privateKeyPath(dataDir, address), keyPair.privateKey, {
+        mode: 0o600,
+      }),
+      fsp.writeFile(publicKeyPath(dataDir, address), keyPair.publicKey),
     ]);
     agentKeys.set(address, keyPair);
     return { keyPair, isNew: true };
-  }
-
-  async function scanKeys(): Promise<AgentKeyEntry[]> {
-    let entries;
-    try {
-      entries = await fsp.readdir(dataDir, { withFileTypes: true });
-    } catch (err: unknown) {
-      if (hasCode(err) && err.code === "ENOENT") return [];
-      throw err;
-    }
-
-    const results: AgentKeyEntry[] = [];
-    for (const entry of entries) {
-      if (!entry.isDirectory()) continue;
-      const dir = path.join(dataDir, entry.name);
-      const privPath = path.join(dir, KEYS_DIR_NAME, PRIVATE_KEY_FILE);
-      const pubPath = path.join(dir, KEYS_DIR_NAME, PUBLIC_KEY_FILE);
-      const [privOk, pubOk] = await Promise.all([
-        fileExists(privPath),
-        fileExists(pubPath),
-      ]);
-      if (!privOk && !pubOk) continue;
-      if (!privOk || !pubOk) {
-        logger.warn`Skipping ${entry.name}: incomplete key pair (private=${String(privOk)}, public=${String(pubOk)})`;
-        continue;
-      }
-      const metaRaw = await readOptional(path.join(dir, META_FILE));
-      if (metaRaw === null) {
-        // A key pair without a metadata file means the agent was
-        // half-provisioned and crashed. The restore composer logs
-        // and skips it; the operator can pair the key with a new
-        // config or remove the directory.
-        continue;
-      }
-      let parsed: unknown;
-      try {
-        parsed = JSON.parse(metaRaw);
-      } catch {
-        continue;
-      }
-      if (typeof parsed !== "object" || parsed === null) continue;
-      if (!("address" in parsed)) continue;
-      const address = parsed.address;
-      if (typeof address !== "string") continue;
-      const [privateKey, publicKey] = await Promise.all([
-        fsp.readFile(privPath),
-        fsp.readFile(pubPath),
-      ]);
-      const keyPair: KeyPair = {
-        privateKey: new Uint8Array(privateKey),
-        publicKey: new Uint8Array(publicKey),
-      };
-      agentKeys.set(address, keyPair);
-      results.push({ address, keyPair });
-    }
-    return results;
   }
 
   async function signChallenge(
     address: string,
     payload: Uint8Array,
   ): Promise<Uint8Array | null> {
-    const keyPair = agentKeys.get(address);
-    if (keyPair === undefined) return null;
+    const keyPair = agentKeys.get(address) ?? (await loadKeyFromDisk(address));
+    if (keyPair === null || keyPair === undefined) return null;
     return signEd25519(keyPair.privateKey, payload);
   }
 
@@ -244,7 +174,6 @@ export function createAgentKeyStore(deps: AgentKeyStoreDeps): AgentKeyStore {
 
   return {
     loadOrGenerateKey,
-    scanKeys,
     signChallenge,
     recordHubKey,
     verifyDeployCommit,
@@ -261,15 +190,6 @@ async function fileExists(filePath: string): Promise<boolean> {
     // Any other failure mode (EACCES, EBUSY, EIO, …) must surface so a
     // restart does not silently mint a fresh key over an existing one
     // when the existence check is denied or transiently failing.
-    throw err;
-  }
-}
-
-async function readOptional(filePath: string): Promise<string | null> {
-  try {
-    return await fsp.readFile(filePath, "utf-8");
-  } catch (err: unknown) {
-    if (hasCode(err) && err.code === "ENOENT") return null;
     throw err;
   }
 }

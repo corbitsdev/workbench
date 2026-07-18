@@ -343,16 +343,15 @@ async function buildBindings(opts: {
     subprocessSpawner: opts.spawner,
     binaryPath: "/fake/bin/workflow-child",
     substrateEnv: { DATA_DIR: opts.baseDir },
+    dynamicSpawnEnv: () => ({}),
     workflowRunRepoId: { kind: "workflow-run", id: "deployment-x" },
     workflowRunRef: "refs/heads/main",
     deploymentId: "deployment-x",
+    stepCount: 1,
     deploymentMailAddress: "deployment-x@example.com",
     readPrincipal: { kind: "supervisor" },
     deriveStepAddress: ({ deploymentId, stepId }) =>
       `${deploymentId}-${stepId}@example.com`,
-    trivialLaunch: () => {
-      throw new Error("trivialLaunch must not run in lifecycle-races tests");
-    },
     ipcKeyPairFactory: () => Promise.resolve(opts.ipcKeypair),
     inboxPrimitives: createMemoryInboxPrimitives(),
   };

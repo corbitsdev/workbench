@@ -9,7 +9,6 @@ import type { WorkflowDefinition } from "@intx/workflow";
 import type { HarnessConfig, InferenceSource } from "@intx/types/runtime";
 import type {
   AgentRepoStore,
-  SessionService,
   SidecarRouter,
 } from "@intx/hub-sessions";
 import type { HubDb } from "../db";
@@ -127,9 +126,6 @@ describe("catalog publish (disconnected) then per-run provision", () => {
       }),
     } as unknown as HubDb;
 
-    const sessionService = {
-      launchSession: async () => undefined,
-    } as unknown as SessionService;
 
     // Sidecar starts disconnected: any frame send throws until flipped.
     let sidecarConnected = false;
@@ -147,7 +143,6 @@ describe("catalog publish (disconnected) then per-run provision", () => {
       db,
       repoStore,
       sidecarRouter,
-      sessionService,
       directorRegistry: createWorkbenchDirectorRegistry(),
     });
 

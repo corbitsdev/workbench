@@ -108,29 +108,17 @@ export async function refreshInstanceGrantsFromDefinition(
     now,
   });
 
-  if (
-    !live ||
-    !live.sidecarRouter.getRoutableAddresses().includes(instance.address)
-  ) {
-    return { refreshed: true, pushed: false };
-  }
-
-  const grants = await live.grantStore.collectGrants(
-    instance.principalId,
-    instance.tenantId,
-  );
-  await live.sidecarRouter.sendGrantsUpdate(instance.address, grants);
-  await db
-    .update(agentInstance)
-    .set({ updatedAt: new Date() })
-    .where(eq(agentInstance.address, instance.address));
-  log.info("Live sidecar grants push", {
-    address: instance.address,
-    principalId: instance.principalId,
-    grantCount: grants.length,
-    toolCount: toolNames.length,
-  });
-  return { refreshed: true, pushed: true };
+  // BEHAVIOR CHANGE (runtime retirement): a live grants push to a running
+  // agent rode on the `grants.update` frame, which Interchange deleted when it
+  // retired the in-process session runtime (the hub also stopped pushing grants
+  // on reconnect — deploy-time DB reads are the single source). The grants are
+  // persisted above, so the reconcile is durable: an instance picks up the new
+  // set on its next deploy/reconnect rather than immediately. There is no live
+  // grants-push transport to call, so `pushed` is always false now. `live` is
+  // retained on the signature for call-site compatibility and a future
+  // routable-aware redeploy nudge.
+  void live;
+  return { refreshed: true, pushed: false };
 }
 
 /**

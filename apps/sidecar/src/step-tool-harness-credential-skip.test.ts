@@ -49,6 +49,9 @@ mock.module("./agent-tools", () => ({
     definitions: [],
     run: async () => ({ callId: "x", content: "" }),
   }),
+  // step-tool-harness now statically imports filterToolRunner (warm single-step
+  // path); the mock must export it or the module fails to link under the mock.
+  filterToolRunner: (runner: unknown) => runner,
 }));
 
 const { createStepAgentFactory, STEP_TOOL_CONTEXT_KEY } = await import(

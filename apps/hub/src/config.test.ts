@@ -5,6 +5,7 @@ import { getConfig, loadConfig } from "./config";
 const REQUIRED_ENV: Record<string, string> = {
   PORT: "3000",
   SIDECAR_TOKEN: "sidecar-secret",
+  SIDECAR_ID: "gtm-sidecar-1",
   BETTER_AUTH_SECRET: "auth-secret",
   BETTER_AUTH_BASE_URL: "https://auth.example.com",
   DATABASE_URL: "postgres://localhost:5433/db",
@@ -38,6 +39,7 @@ const MANAGED_KEYS = [
   "HUB_AGENT_GC_LOOSE_THRESHOLD",
   "HUB_AGENT_GC_WARN_BYTES",
   "AUTO_JOIN_TENANT_SLUGS",
+  "SIDECAR_URL",
 ];
 
 let savedEnv: Record<string, string | undefined>;
@@ -74,6 +76,8 @@ describe("loadConfig", () => {
     expect(config.isDev).toBe(true);
     expect(config.port).toBe("3000");
     expect(config.sidecarToken).toBe("sidecar-secret");
+    expect(config.sidecarId).toBe("gtm-sidecar-1");
+    expect(config.sidecarUrl).toBe("sidecar://in-cluster");
     expect(config.auth.secret).toBe("auth-secret");
     expect(config.auth.baseUrl).toBe("https://auth.example.com");
     expect(config.databaseUrl).toBe("postgres://localhost:5433/db");
@@ -86,6 +90,14 @@ describe("loadConfig", () => {
     });
     expect(config.granola.baseUrl).toBe("https://public-api.granola.ai/v1");
     expect(config.autoJoinTenantSlugs).toEqual([]);
+  });
+
+  it("defaults sidecarUrl and honors a SIDECAR_URL override", () => {
+    setRequiredEnv();
+    expect(loadConfig().sidecarUrl).toBe("sidecar://in-cluster");
+
+    process.env["SIDECAR_URL"] = "wss://sidecar.example.com";
+    expect(loadConfig().sidecarUrl).toBe("wss://sidecar.example.com");
   });
 
   it("parses AUTO_JOIN_TENANT_SLUGS as a deduped slug list", () => {

@@ -11,8 +11,8 @@
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "test": "bun test src && bun run scripts/check-openapi-parity.ts",
-    "test:coverage": "bun test --coverage --coverage-reporter=lcov --coverage-reporter=text src"
+    "test": "BUN_OPTIONS=--conditions=intx-src bun test src && bun run scripts/check-openapi-parity.ts",
+    "test:coverage": "BUN_OPTIONS=--conditions=intx-src bun test --coverage --coverage-reporter=lcov --coverage-reporter=text src"
   },
   "dependencies": {
     "@workbench/tool-credentials": "workspace:*",

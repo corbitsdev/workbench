@@ -13,18 +13,18 @@ import { Hono } from "hono";
 import { upgradeWebSocket, websocket } from "hono/bun";
 import {
   createSidecarRouter,
+  type SidecarAuthenticator,
   type SidecarRouter,
   type WsHandle,
 } from "@intx/hub-sessions";
+
+const acceptAnySidecar: SidecarAuthenticator = async ({ sidecarId }) => ({
+  kind: "sidecar",
+  sidecarId,
+});
 import { createInMemoryTransport } from "@intx/mail-memory";
 import { signEd25519, verifySSHSignature } from "@intx/crypto";
-import type {
-  HarnessConfig,
-  InboundMessage,
-  InferenceSource,
-  KeyPair,
-} from "@intx/types/runtime";
-import type { GrantRule } from "@intx/types/authz";
+import type { HarnessConfig, KeyPair } from "@intx/types/runtime";
 import { hexDecode } from "@intx/types";
 
 import {
@@ -33,7 +33,7 @@ import {
   type DeployRouter,
 } from "./hub-link";
 import type { AgentKeyStore } from "../agent-key-store";
-import type { AgentEventListener, SessionManager } from "../session-manager";
+import type { SessionManager } from "../session-manager";
 
 function createTestKeyStore(): AgentKeyStore & {
   registerKey(address: string, kp: KeyPair): void;
@@ -52,12 +52,6 @@ function createTestKeyStore(): AgentKeyStore & {
       const existing = agentKeys.get(address);
       if (existing !== undefined) return { keyPair: existing, isNew: false };
       throw new Error(`No key registered for ${address} in test store`);
-    },
-    async scanKeys() {
-      return [...agentKeys.entries()].map(([address, keyPair]) => ({
-        address,
-        keyPair,
-      }));
     },
     async signChallenge(address, payload) {
       const kp = agentKeys.get(address);
@@ -84,69 +78,12 @@ function createTestKeyStore(): AgentKeyStore & {
 }
 
 function createMockSessionManager(): SessionManager & {
-  provisioned: HarnessConfig[];
-  addresses: string[];
-  destroyed: string[];
   deletedDirs: string[];
 } {
   const mock = {
-    provisioned: [] as HarnessConfig[],
-    addresses: [] as string[],
-    destroyed: [] as string[],
     deletedDirs: [] as string[],
 
-    async provisionAgent(config: HarnessConfig) {
-      mock.provisioned.push(config);
-      mock.addresses.push(config.agentAddress);
-      return {
-        publicKey: "deadbeef",
-        keyPair: {
-          publicKey: new Uint8Array(32),
-          privateKey: new Uint8Array(32),
-        },
-      };
-    },
-    async startSession(_agentAddress: string): Promise<void> {
-      /* unused */
-    },
-    async destroySession(agentAddress: string): Promise<void> {
-      mock.destroyed.push(agentAddress);
-      mock.addresses = mock.addresses.filter((a) => a !== agentAddress);
-    },
-    async abortSession(_agentAddress: string, _reason: string): Promise<void> {
-      /* unused */
-    },
-    async abortTurn(_agentAddress: string): Promise<void> {
-      /* unused */
-    },
-    deliverMessage(_agentAddress: string, _message: InboundMessage): void {
-      /* unused */
-    },
-    async updateGrants(
-      _agentAddress: string,
-      _grants: GrantRule[],
-    ): Promise<void> {
-      /* unused */
-    },
-    async updateSources(
-      _agentAddress: string,
-      _sources: InferenceSource[],
-      _defaultSource: string,
-    ): Promise<void> {
-      /* unused */
-    },
-    hasSession(agentAddress: string): boolean {
-      return mock.addresses.includes(agentAddress);
-    },
-    isProvisioned(agentAddress: string): boolean {
-      return mock.addresses.includes(agentAddress);
-    },
-    getAddresses(): string[] {
-      return [...mock.addresses];
-    },
-    async restoreSessions() {
-      return { restored: [], failed: [] };
-    },
+    initRepo: () => Promise.resolve(),
     applyDeployPack: () => Promise.resolve(),
     applyAssetPack: () => Promise.resolve(),
     createStatePack: () =>
@@ -160,25 +97,9 @@ function createMockSessionManager(): SessionManager & {
       return Promise.resolve();
     },
     getDeployRef: (_agentAddress: string) => Promise.resolve(null),
-    persistHubPublicKey: (_agentAddress: string, _hubPublicKey: string) =>
-      Promise.resolve(),
-    commitInboundMail: (_agentAddress: string, _rawMessage: Uint8Array) =>
-      Promise.resolve(),
+    getAddresses: () => [],
     getSessionId: (_agentAddress: string) => undefined,
-    wakeAgent: (_agentAddress: string) => Promise.resolve(),
-    isWakeable: (_agentAddress: string) => false,
-    deliverInboundMail: (_agentAddress: string, _rawMessage: Uint8Array) => {
-      /* unused */
-    },
-    evictIdleSessions: () => Promise.resolve(),
-    onAgentEvent:
-      (_agentAddress: string, _listener: AgentEventListener) => () => {
-        /* unused */
-      },
   } satisfies SessionManager & {
-    provisioned: HarnessConfig[];
-    addresses: string[];
-    destroyed: string[];
     deletedDirs: string[];
   };
   return mock;
@@ -225,6 +146,7 @@ type TestEnv = {
 
 function startTestServer(requestTimeoutMs = 5000): TestEnv {
   const router = createSidecarRouter({
+    authenticateSidecar: acceptAnySidecar,
     requestTimeoutMs,
     hubPublicKey: "a".repeat(64),
     lookups: {},
@@ -284,13 +206,8 @@ describe("hub-link hibernate undeploy flavor", () => {
     const undeployed: string[] = [];
     const deployRouter: DeployRouter = {
       async deploy(frame) {
-        const result = await sessions.provisionAgent(frame.config);
         keyStore.recordHubKey(frame.agentAddress, frame.hubPublicKey);
-        await sessions.persistHubPublicKey(
-          frame.agentAddress,
-          frame.hubPublicKey,
-        );
-        return { publicKey: result.publicKey };
+        return { publicKey: "aa".repeat(32) };
       },
       async undeploy(frame) {
         undeployed.push(frame.agentAddress);
@@ -373,9 +290,8 @@ describe("hub-link hibernate undeploy flavor", () => {
     let hibernateCalls = 0;
     const deployRouter: DeployRouter = {
       async deploy(frame) {
-        const result = await sessions.provisionAgent(frame.config);
         keyStore.recordHubKey(frame.agentAddress, frame.hubPublicKey);
-        return { publicKey: result.publicKey };
+        return { publicKey: "aa".repeat(32) };
       },
       async hibernate() {
         hibernateCalls += 1;
@@ -449,9 +365,8 @@ describe("hub-link hibernate withholds the ack when it cannot hibernate", () => 
     const undeployed: string[] = [];
     const deployRouter: DeployRouter = {
       async deploy(frame) {
-        const result = await sessions.provisionAgent(frame.config);
         keyStore.recordHubKey(frame.agentAddress, frame.hubPublicKey);
-        return { publicKey: result.publicKey };
+        return { publicKey: "aa".repeat(32) };
       },
       async undeploy(frame) {
         undeployed.push(frame.agentAddress);
@@ -496,7 +411,6 @@ describe("hub-link hibernate withholds the ack when it cannot hibernate", () => 
       // undeploy hook nor any state deletion ran.
       expect(undeployed).toEqual([]);
       expect(sessions.deletedDirs).toEqual([]);
-      expect(sessions.destroyed).toEqual([]);
     } finally {
       client.close();
       await waitFor(
@@ -513,9 +427,8 @@ describe("hub-link hibernate withholds the ack when it cannot hibernate", () => 
     let hibernateCalls = 0;
     const deployRouter: DeployRouter = {
       async deploy(frame) {
-        const result = await sessions.provisionAgent(frame.config);
         keyStore.recordHubKey(frame.agentAddress, frame.hubPublicKey);
-        return { publicKey: result.publicKey };
+        return { publicKey: "aa".repeat(32) };
       },
       async hibernate() {
         hibernateCalls += 1;
@@ -556,7 +469,6 @@ describe("hub-link hibernate withholds the ack when it cannot hibernate", () => 
       ).rejects.toThrow();
       expect(hibernateCalls).toBe(2);
       expect(sessions.deletedDirs).toEqual([]);
-      expect(sessions.destroyed).toEqual([]);
     } finally {
       client.close();
       await waitFor(

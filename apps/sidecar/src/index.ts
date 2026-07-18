@@ -13,23 +13,24 @@ import type { InferenceEvent } from "@intx/types/runtime";
 import { hexEncode } from "@intx/types";
 import { createAgentRepoStore } from "@intx/hub-sessions";
 import { buildWorkbenchAdapterRegistry } from "./gemini-thought-signature-patch";
-import { createDefaultHarnessBuilder, wsUrlToHttp } from "./default-harness";
+import { wsUrlToHttp } from "./agent-tools";
 import {
   readAdapterManifest,
-  resolveAgentGCPolicy,
-  resolveSidecarBuildTimeoutMs,
   resolveSidecarHeartbeat,
   resolveSidecarHubLinkQueue,
-  resolveSidecarIdleEviction,
+  resolveSidecarSpawnReadyTimeoutMs,
   resolveToolPackageCache,
   resolveWorkflowRunPackLimits,
 } from "./config";
 // Workflow-host wiring: `createSidecarDeployRouter` is the production
 // deploy routing the orchestrator hands to the link's `agent.deploy`
-// handler. Every inbound frame flows through a freshly-constructed
-// workflow-host supervisor whose trivial branch calls back into the
-// sidecar's existing single-agent provisioning surface.
-import { createSidecarDeployRouter } from "./workflow-host-wiring";
+// handler. Every deploy stages through a workflow-host supervisor on the
+// workflow-run substrate; the in-process single-agent harness runtime is
+// retired.
+import {
+  createSidecarDeployRouter,
+  type SidecarDeployRouter,
+} from "./workflow-host-wiring";
 import { reconcileOrphanedDeploymentDirs } from "./boot-reconciler";
 import { getLogger } from "@intx/log";
 import { startMemoryTelemetry, startPeriodicGc } from "./memory-telemetry";
@@ -38,6 +39,7 @@ import {
   createMultistepDrainRouter,
   createMultistepMailRouter,
   createMultistepSignalRouter,
+  createMultistepSourcesRouter,
   createWorkflowRunPackClient,
   createWorkflowRunPackPushingRepoStore,
 } from "./workflow-run-pack-client";
@@ -70,16 +72,13 @@ const heartbeat = resolveSidecarHeartbeat(process.env);
 const hubLinkQueue = resolveSidecarHubLinkQueue(process.env);
 const dataDir = requireEnv("SIDECAR_DATA_DIR");
 const toolPackageCache = resolveToolPackageCache(process.env, dataDir);
-const agentGCPolicy = resolveAgentGCPolicy(process.env);
-const idleEviction = resolveSidecarIdleEviction(process.env);
-const harnessBuildTimeoutMs = resolveSidecarBuildTimeoutMs(process.env);
 
 // Operator-configured custom inference adapters, resolved once at the
 // boot edge. `buildWorkbenchAdapterRegistry` merges the statically-linked
 // built-ins with any custom adapters the manifest names, importing each
 // custom module eagerly here so a bad specifier fails the sidecar at
-// boot rather than at first inference. The SAME registry is threaded
-// into the in-process single-agent harness builder below; the workflow
+// boot rather than at first inference. The registry gates deploy-time
+// source admission (`assertSourceBuildable` below); the workflow
 // child cannot receive this object across the fork, so the validated
 // manifest is serialized into the child's spawn env (see
 // `multistepSubstrateEnv`) and the child rebuilds an equivalent
@@ -171,6 +170,11 @@ const deploymentAddressRegistry = createDeploymentAddressRegistry();
 const multistepMailRouter = createMultistepMailRouter();
 const multistepSignalRouter = createMultistepSignalRouter();
 const multistepDrainRouter = createMultistepDrainRouter();
+// Single-step (warm launched-agent) deployments register a sources-rotation
+// handler here once their supervisor spawns; the hub-link routes an inbound
+// `sources.update` frame through it. A multi-step deployment registers none,
+// so its address is reported unrouted.
+const multistepSourcesRouter = createMultistepSourcesRouter();
 
 const transport = createInMemoryTransport();
 
@@ -271,6 +275,37 @@ if (hostTmpdir !== undefined) {
   multistepSubstrateEnv["TMPDIR"] = hostTmpdir;
 }
 
+// WORKBENCH-LOCAL (CL-3368): the deploy router computes a deployment's on-disk
+// reclaim path (workflow-runs/<id>, and the resurrection-guard tombstone that
+// lives beside it) from `multistepSubstrateEnv.SIDECAR_DATA_DIR`
+// (`stepStateDataDir`), while the substrate roots its workflow-run repos under
+// the AgentRepoStore's own `dataDir`. Tombstone-reclaim correctness — and the
+// leak it closes — depends on both being the SAME root: a tombstone written
+// under one root is never seen by a restore scan reading the other. Both derive
+// from the single `dataDir` env today, but nothing structurally forces it. Tie
+// the two independent sources together at boot (the substrate's actual
+// getRepoDir path vs. the env the router reads) and fail loud if a future
+// config split diverges them, rather than silently reopening the
+// tombstone-never-reclaimed leak with a green build.
+const substrateWorkflowRunRoot = agentRepoStore.repoStore.getRepoDir({
+  kind: "workflow-run",
+  id: "__data_dir_invariant_probe__",
+});
+if (!substrateWorkflowRunRoot.startsWith(dataDir)) {
+  throw new Error(
+    `sidecar boot: workflow-run substrate root (${substrateWorkflowRunRoot}) is not under the deploy router's reclaim root SIDECAR_DATA_DIR (${dataDir}); the CL-3368 tombstone reclaim would target the wrong directory and leak terminated deployments`,
+  );
+}
+
+// The deploy-router handle, captured during `createDeployRouter` (which the
+// orchestrator invokes synchronously inside its constructor). The boot edge
+// needs it after construction to restore persisted deployments and to answer
+// the hub-link's `getWorkflowAddresses` announcement. Held in a box so reads
+// after the closure assignment see the declared type, not `null`.
+const deployRouterBox: { current: SidecarDeployRouter | null } = {
+  current: null,
+};
+
 const orchestrator = createSidecarOrchestrator({
   hubURL: hubWsUrl,
   sidecarId,
@@ -282,19 +317,7 @@ const orchestrator = createSidecarOrchestrator({
   // WORKBENCH-LOCAL (CL-3826)
   connectTimeoutMs: heartbeat.connectTimeoutMs,
   maxOutboundQueue: hubLinkQueue.maxOutboundQueue,
-  idleEvictMs: idleEviction.idleEvictMs,
-  buildTimeoutMs: harnessBuildTimeoutMs,
   transport,
-  buildHarness: createDefaultHarnessBuilder({
-    hubHttpUrl: wsUrlToHttp(hubWsUrl),
-    sidecarToken,
-    cacheRoot: toolPackageCache.cacheRoot,
-    cacheMaxBytes: toolPackageCache.cacheMaxBytes,
-    registryMaxTarballBytes: toolPackageCache.registryMaxTarballBytes,
-    adapters,
-    gcPolicy: agentGCPolicy,
-  }),
-  createAgentCrypto: createEd25519Crypto,
   cryptoOps: {
     generateKeyPair,
     signEd25519,
@@ -303,15 +326,45 @@ const orchestrator = createSidecarOrchestrator({
   mailInboundRouter: multistepMailRouter,
   signalInboundRouter: multistepSignalRouter,
   drainInboundRouter: multistepDrainRouter,
-  createDeployRouter: ({ sessions, keyStore, onAgentEvent }) =>
-    createSidecarDeployRouter({
+  sourcesInboundRouter: multistepSourcesRouter,
+  // Announce the workflow-deployment addresses this sidecar hosts on every
+  // (re)connect so the hub re-challenges and re-routes them.
+  getWorkflowAddresses: () => deployRouterBox.current?.activeAddresses() ?? [],
+  // Gate the workflow-run pack pusher on hub routability: block a deployment's
+  // pushes on WS disconnect, and re-drive them once the reconnect challenge
+  // re-routes the address.
+  onWorkflowAddressesRoutable: (addresses) => {
+    for (const address of addresses) {
+      wrappedRepoStore.notifyAddressRoutable(address);
+    }
+  },
+  onWorkflowAddressesUnroutable: (addresses) => {
+    for (const address of addresses) {
+      wrappedRepoStore.markAddressUnroutable(address);
+    }
+  },
+  createDeployRouter: ({ sessions, keyStore }) => {
+    const router = createSidecarDeployRouter({
       sessions,
       keyStore,
-      onAgentEvent,
       transport,
       repoStore: wrappedRepoStore,
       signingKeySeed: sidecarSigningKey.privateKey,
       createAgentCrypto: createEd25519Crypto,
+      // Source-admission gate: reject a deploy pinning a provider this sidecar
+      // cannot build, on the control plane rather than at first inference.
+      assertSourceBuildable: (source) => {
+        if (!adapters.has(source.provider)) {
+          throw new Error(
+            `Source provider "${source.provider}" is not registered`,
+          );
+        }
+      },
+      // Spawn-readiness deadline held STRICTLY below the hub's 30s deploy wait
+      // so a too-slow cold spawn fails on the sidecar (structured error ack)
+      // inside the hub's window instead of racing it to an ambiguous hub-side
+      // timeout that drops the waking mail. See config.ts for the margin.
+      readyTimeoutMs: resolveSidecarSpawnReadyTimeoutMs(process.env),
       registerDeployment: ({ deploymentId, agentAddress }) => {
         deploymentAddressRegistry.record(deploymentId, agentAddress);
       },
@@ -321,18 +374,24 @@ const orchestrator = createSidecarOrchestrator({
           "refs/heads/main",
         ),
       unregisterDeployment: ({ deploymentId }) => {
+        // The pack client's per-deployment cursor lifecycle converged upstream
+        // (commitPackedTip advances only on ack, resets only on a fresh
+        // createPack), so there is no forgetDeployment to call here.
         deploymentAddressRegistry.unregister(deploymentId);
-        workflowRunPackClient.forgetDeployment(deploymentId);
       },
       multistepMailRouter,
       multistepSignalRouter,
       multistepDrainRouter,
+      multistepSourcesRouter,
       multistepSubstrateEnv,
       publishWorkflowInferenceEvent: (agentAddress, event, sessionId) => {
         if (sessionId === undefined) return;
         workflowInferencePublisher.send?.(agentAddress, sessionId, event);
       },
-    }),
+    });
+    deployRouterBox.current = router;
+    return router;
+  },
 });
 
 resolvedHubLink = orchestrator.hubLink;
@@ -361,6 +420,15 @@ try {
   );
 }
 
+// Restore persisted workflow-deployment records BEFORE the hub link connects,
+// so `getWorkflowAddresses()` is already populated when the `open` handler
+// announces them through the challenged reconnect frame. Restore runs after
+// the orphan-dir reconciliation above so it never re-establishes a deployment
+// the hub has soft-deleted/superseded.
+if (deployRouterBox.current !== null) {
+  await deployRouterBox.current.restoreWorkflowDeployments();
+}
+
 orchestrator.start();
 
 // Always-on memory observability (rss/heap/external) + on-demand heap snapshot
@@ -372,20 +440,3 @@ startMemoryTelemetry(dataDir);
 // agent's turn memory stays in RSS until a GC is forced. Periodically force one
 // so memory tracks live load instead of the peak high-water-mark (CL-2813).
 startPeriodicGc();
-
-// CL-3103: periodically evict idle agent sessions so a conversation that has
-// gone quiet spins down and its heap is reclaimed; the next message rebuilds
-// the harness with full history from the durable repo store. Disabled when the
-// threshold is 0. No `.unref()` — matches the memory timers above so the sweep
-// keeps the event loop alive.
-if (idleEviction.sweepIntervalMs > 0) {
-  setInterval(() => {
-    void orchestrator.sessions.evictIdleSessions().catch((err: unknown) => {
-      const msg = err instanceof Error ? err.message : String(err);
-      getLogger(["sidecar", "idle-evict"]).warn(
-        "idle eviction sweep failed: {msg}",
-        { msg },
-      );
-    });
-  }, idleEviction.sweepIntervalMs);
-}

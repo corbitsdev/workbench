@@ -3,24 +3,23 @@ import { Hono } from "hono";
 import { upgradeWebSocket, websocket } from "hono/bun";
 import {
   createSidecarRouter,
+  type SidecarAuthenticator,
   type SidecarRouter,
   type WsHandle,
 } from "@intx/hub-sessions";
+
+const acceptAnySidecar: SidecarAuthenticator = async ({ sidecarId }) => ({
+  kind: "sidecar",
+  sidecarId,
+});
 import { createInMemoryTransport } from "@intx/mail-memory";
 import { signEd25519, verifySSHSignature } from "@intx/crypto";
-import type {
-  HarnessConfig,
-  InboundMessage,
-  InferenceSource,
-  KeyPair,
-} from "@intx/types/runtime";
-import type { GrantRule } from "@intx/types/authz";
+import type { HarnessConfig, KeyPair } from "@intx/types/runtime";
 import { hexDecode } from "@intx/types";
 
 import { createHubLink, type DeployRouter } from "./hub-link";
 import type { AgentKeyStore } from "../agent-key-store";
-import type { AgentEventListener, SessionManager } from "../session-manager";
-import { NoActiveTurnError } from "../session-manager";
+import type { SessionManager } from "../session-manager";
 
 // Focused regression harness for inline heartbeat handling. The helpers below
 // mirror the shared ones in `hub-link.test.ts`; this file stays self-contained
@@ -39,12 +38,6 @@ function createTestKeyStore(): AgentKeyStore & {
       const existing = agentKeys.get(address);
       if (existing !== undefined) return { keyPair: existing, isNew: false };
       throw new Error(`No key registered for ${address} in test store`);
-    },
-    async scanKeys() {
-      return [...agentKeys.entries()].map(([address, keyPair]) => ({
-        address,
-        keyPair,
-      }));
     },
     async signChallenge(address, payload) {
       const kp = agentKeys.get(address);
@@ -70,31 +63,23 @@ function createTestKeyStore(): AgentKeyStore & {
   };
 }
 
-function createTestDeployRouter(
-  sessions: SessionManager,
-  keyStore: AgentKeyStore,
-): DeployRouter {
+function createTestDeployRouter(keyStore: AgentKeyStore): DeployRouter {
   return {
     async deploy(frame) {
-      const result = await sessions.provisionAgent(frame.config);
       keyStore.recordHubKey(frame.agentAddress, frame.hubPublicKey);
-      await sessions.persistHubPublicKey(
-        frame.agentAddress,
-        frame.hubPublicKey,
-      );
-      return { publicKey: result.publicKey };
+      return { publicKey: "aa".repeat(32) };
     },
   };
 }
 
-function withTestDeployBindings(sessions: SessionManager): {
+function withTestDeployBindings(): {
   keyStore: AgentKeyStore & { registerKey(address: string, kp: KeyPair): void };
   deployRouter: DeployRouter;
 } {
   const keyStore = createTestKeyStore();
   return {
     keyStore,
-    deployRouter: createTestDeployRouter(sessions, keyStore),
+    deployRouter: createTestDeployRouter(keyStore),
   };
 }
 
@@ -111,80 +96,9 @@ async function waitFor(
   }
 }
 
-type DeliveredMessage = { agentAddress: string; message: InboundMessage };
-
-function createMockSessionManager(): SessionManager & {
-  provisionedAddresses: string[];
-} {
-  const mock = {
-    provisioned: [] as HarnessConfig[],
-    delivered: [] as DeliveredMessage[],
-    inboundMail: [] as { agentAddress: string; rawMessage: Uint8Array }[],
-    addresses: [] as string[],
-    provisionedAddresses: [] as string[],
-
-    async provisionAgent(config: HarnessConfig) {
-      mock.provisioned.push(config);
-      mock.provisionedAddresses.push(config.agentAddress);
-      return {
-        publicKey: "deadbeef",
-        keyPair: {
-          publicKey: new Uint8Array(32),
-          privateKey: new Uint8Array(32),
-        },
-      };
-    },
-    async startSession(agentAddress: string): Promise<void> {
-      mock.provisionedAddresses = mock.provisionedAddresses.filter(
-        (a) => a !== agentAddress,
-      );
-      mock.addresses.push(agentAddress);
-    },
-    async destroySession(agentAddress: string): Promise<void> {
-      mock.addresses = mock.addresses.filter((a) => a !== agentAddress);
-    },
-    async abortSession(agentAddress: string): Promise<void> {
-      mock.addresses = mock.addresses.filter((a) => a !== agentAddress);
-    },
-    async abortTurn(agentAddress: string): Promise<void> {
-      throw new NoActiveTurnError(agentAddress);
-    },
-    deliverMessage(agentAddress: string, message: InboundMessage): void {
-      mock.delivered.push({ agentAddress, message });
-    },
-    isWakeable(): boolean {
-      return false;
-    },
-    evictIdleSessions: () => Promise.resolve(),
-    async wakeAgent(agentAddress: string): Promise<void> {
-      if (!mock.addresses.includes(agentAddress)) {
-        mock.addresses.push(agentAddress);
-      }
-    },
-    deliverInboundMail(agentAddress: string, rawMessage: Uint8Array): void {
-      mock.inboundMail.push({ agentAddress, rawMessage });
-    },
-    async updateGrants(
-      _agentAddress: string,
-      _grants: GrantRule[],
-    ): Promise<void> {},
-    async updateSources(
-      _agentAddress: string,
-      _sources: InferenceSource[],
-      _defaultSource: string,
-    ): Promise<void> {},
-    hasSession(agentAddress: string): boolean {
-      return mock.addresses.includes(agentAddress);
-    },
-    isProvisioned(agentAddress: string): boolean {
-      return mock.provisionedAddresses.includes(agentAddress);
-    },
-    getAddresses(): string[] {
-      return [...mock.addresses];
-    },
-    async restoreSessions() {
-      return { restored: [], failed: [] };
-    },
+function createMockSessionManager(): SessionManager {
+  return {
+    initRepo: () => Promise.resolve(),
     applyDeployPack: () => Promise.resolve(),
     applyAssetPack: () => Promise.resolve(),
     createStatePack: () =>
@@ -195,15 +109,9 @@ function createMockSessionManager(): SessionManager & {
       }),
     deleteAgentDir: () => Promise.resolve(),
     getDeployRef: (_agentAddress: string) => Promise.resolve(null),
-    persistHubPublicKey: (_agentAddress: string, _hubPublicKey: string) =>
-      Promise.resolve(),
-    commitInboundMail: (_agentAddress: string, _rawMessage: Uint8Array) =>
-      Promise.resolve(),
+    getAddresses: () => [],
     getSessionId: (_agentAddress: string) => undefined,
-    onAgentEvent:
-      (_agentAddress: string, _listener: AgentEventListener) => () => {},
   };
-  return mock;
 }
 
 const TEST_CONFIG: HarnessConfig = {
@@ -234,6 +142,7 @@ type TestEnv = {
 
 function startTestServer(): TestEnv {
   const router = createSidecarRouter({
+    authenticateSidecar: acceptAnySidecar,
     requestTimeoutMs: 5000,
     hubPublicKey: "a".repeat(64),
   });
@@ -304,7 +213,7 @@ describe("hub-link heartbeat", () => {
       token: "test-token",
       transport,
       sessions,
-      ...withTestDeployBindings(sessions),
+      ...withTestDeployBindings(),
       pingIntervalMs: PING_INTERVAL_MS,
     });
 

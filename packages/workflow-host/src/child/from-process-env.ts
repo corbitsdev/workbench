@@ -25,7 +25,6 @@ import { parseSpawnTimeEnv, type SpawnTimeEnv } from "./env-bootstrap";
 import {
   runWorkflowChild,
   type RunWorkflowChildBindings,
-  type RunWorkflowChildOpts,
   type RunWorkflowChildResult,
 } from "./run-child";
 import {
@@ -165,11 +164,6 @@ export interface RunWorkflowChildFromProcessEnvOpts {
    * substrate-config keys MUST name them here.
    */
   substrateConfigKeys?: readonly string[];
-  /**
-   * WORKBENCH-LOCAL (CL-2535): forwarded verbatim to `runWorkflowChild`.
-   * Host-driven recovery of a run discovered parked at an `awaitSignal` gate.
-   */
-  recoverParkedRun?: RunWorkflowChildOpts["recoverParkedRun"];
 }
 
 /**
@@ -246,11 +240,6 @@ export async function runWorkflowChildFromProcessEnv(
     upstreamSender,
     substrateWriteBridge,
     outboundMailBridge,
-    // WORKBENCH-LOCAL (CL-2535): conditional spread so we never pass an
-    // explicit `undefined` to the optional prop under exactOptionalPropertyTypes.
-    ...(opts.recoverParkedRun !== undefined
-      ? { recoverParkedRun: opts.recoverParkedRun }
-      : {}),
   });
 }
 

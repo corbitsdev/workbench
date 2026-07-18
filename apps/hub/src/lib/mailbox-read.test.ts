@@ -57,7 +57,6 @@ function signedMorningBriefHeaders(): MessageHeaders {
     interchangeSchemaVersion: undefined,
     traceparent: undefined,
     tracestate: undefined,
-    extensionHeaders: undefined,
   };
 }
 

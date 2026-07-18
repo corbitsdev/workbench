@@ -183,8 +183,14 @@ async function launchAgentInstance(
       .where(eq(intxSchema.agentInstance.id, instanceId));
   });
 
+  let publicKey: string;
   try {
-    await sessionService.launchSession({
+    // Upstream retired the in-process session runtime; `deployInstanceAtHead`
+    // is the launchSession replacement (single-step workflow at the head,
+    // preserving the instance's real address). Persist the returned public key
+    // on the instance row so the sidecar reconnect challenge resolves via
+    // `lookupPublicKey` -> `agent_instance.public_key`.
+    ({ publicKey } = await sessionService.deployInstanceAtHead({
       agentAddress: address,
       agentId: agentDefinitionId,
       instanceId,
@@ -201,7 +207,7 @@ async function launchAgentInstance(
         defaultSource,
       },
       deployContent: { systemPrompt },
-    });
+    }));
   } catch (err) {
     // Mark session ended and instance failed so the orchestrator doesn't retry.
     await db
@@ -219,7 +225,7 @@ async function launchAgentInstance(
 
   await db
     .update(intxSchema.agentInstance)
-    .set({ status: "running", updatedAt: new Date() })
+    .set({ status: "running", publicKey, updatedAt: new Date() })
     .where(eq(intxSchema.agentInstance.id, instanceId));
 
   return { instanceId, address, sessionId };

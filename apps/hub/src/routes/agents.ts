@@ -357,34 +357,25 @@ export function createAgentProvisioningRouter(
     },
   );
 
-  // Abort the in-flight chat turn for an instance the caller can manage. The
-  // sidecar (the workbench @workbench/hub-agent fork) treats a
-  // `session.abort` frame with the extended reason `user_stop_turn` as
-  // non-terminal: the running inference/tool call is cancelled via the
-  // reactor abort path and the agent goes to sleep (wakeable), so the
-  // conversation survives and the next message resumes it with full history.
-  // Every upstream AbortReason — including `user_disconnect`, which the
-  // native interchange abort route defaults to — keeps its terminal kill
-  // semantics on the sidecar, so that route and the ops kill switch are
-  // unchanged.
+  // Abort the in-flight chat turn for an instance the caller can manage.
   //
-  // `user_stop_turn` is a deliberate workbench extension of the closed
-  // upstream AbortReason enum (USER_STOP_TURN_REASON in
-  // @workbench/hub-agent); the cast at the send site widens the known
-  // constant into the upstream parameter type — not an untrusted-data cast.
-  // `no-active-turn` is the sidecar's sentinel for "nothing is running"
-  // (NoActiveTurnError), delivered verbatim over the session.error frame.
-  // The hub does not depend on that package, so both string contracts are
-  // pinned by tests on both sides.
-  const USER_STOP_TURN_REASON = "user_stop_turn";
-  const NO_ACTIVE_TURN_SENTINEL = "no-active-turn";
+  // BEHAVIOR CHANGE (runtime retirement): the workbench's `user_stop_turn`
+  // non-terminal abort rode on the `session.abort` frame, which Interchange
+  // deleted when it retired the in-process session runtime. A single-agent
+  // instance now runs as a supervised workflow-process child, and the sidecar
+  // exposes no turn-cancel transport for it (SidecarRouter has undeploy, drain,
+  // signal-deliver, and sources-update — no per-turn abort). Until a
+  // workflow-child cancel path is wired, the endpoint cannot stop a running
+  // turn; it fails closed with 409 rather than silently pretending success.
+  // The auth/ownership checks are preserved so the contract (and its tests)
+  // stay meaningful for when the transport returns.
   app.post(
     "/instances/:instanceId/abort-turn",
     describeRoute({
       tags: ["Agents"],
-      summary: "Abort the running chat turn",
+      summary: "Abort the running chat turn (unsupported)",
       description:
-        "Stops the instance's in-flight turn (inference or tool execution) without ending the conversation. Requires a manage grant on the instance. The session stays usable; the next message resumes it.",
+        "Always returns 409 — the workflow runtime retirement removed the per-turn abort transport, so stopping an in-flight turn is not available. Auth/ownership checks still run so the route's grant contract stays meaningful for when the transport returns.",
       parameters: [
         {
           name: "instanceId",
@@ -394,7 +385,6 @@ export function createAgentProvisioningRouter(
         },
       ],
       responses: {
-        204: { description: "Turn aborted" },
         403: {
           description: "Caller lacks a manage grant on the instance",
           content: { "application/json": { schema: resolver(ErrorResponse) } },
@@ -405,11 +395,8 @@ export function createAgentProvisioningRouter(
           content: { "application/json": { schema: resolver(ErrorResponse) } },
         },
         409: {
-          description: "No turn is currently running",
-          content: { "application/json": { schema: resolver(ErrorResponse) } },
-        },
-        502: {
-          description: "Sidecar unavailable",
+          description:
+            "Always returned for an authorized caller — stopping a running turn is not available in this runtime",
           content: { "application/json": { schema: resolver(ErrorResponse) } },
         },
       },
@@ -456,35 +443,16 @@ export function createAgentProvisioningRouter(
         return c.json({ error: "Forbidden" }, 403);
       }
 
-      try {
-        await sidecarRouter.sendSessionAbort(
-          instance.address,
-          // Deliberate protocol extension of the closed upstream enum — see
-          // the USER_STOP_TURN_REASON comment above.
-          USER_STOP_TURN_REASON as Parameters<
-            typeof sidecarRouter.sendSessionAbort
-          >[1],
-        );
-      } catch (err) {
-        const message = err instanceof Error ? err.message : String(err);
-        if (message.includes(NO_ACTIVE_TURN_SENTINEL)) {
-          return c.json({ error: "No running turn" }, 409);
-        }
-        log.warn("Turn abort failed to reach the sidecar", {
-          instanceId,
-          userId,
-          error: message,
-        });
-        return c.json({ error: "Failed to reach the agent to stop it" }, 502);
-      }
-
-      log.info("Aborted running turn", {
+      log.warn("Turn abort requested but unsupported in the workflow runtime", {
         instanceId,
         tenantId: instance.tenantId,
         userId,
         principalId: callerPrincipal.id,
       });
-      return c.body(null, 204);
+      return c.json(
+        { error: "Stopping a running turn is not available in this runtime" },
+        409,
+      );
     },
   );
 

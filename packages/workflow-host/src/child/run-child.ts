@@ -73,7 +73,6 @@ import { createDefaultDirectorRegistry } from "@intx/agent";
 import type { AuthzCallResult } from "@intx/inference";
 
 import type {
-  BlobSubstrate,
   RunResult,
   Scheduler,
   StepInvokeRequest,
@@ -82,16 +81,17 @@ import type {
   SpawnChildWorkflow,
   WorkflowAuthorizeFn,
   WorkflowDefinition,
-  WorkflowEvent,
   WorkflowRun,
   WorkflowRuntimeEnv,
 } from "@intx/workflow";
-import { emptyState, resumeFromLog, runtimeRun } from "@intx/workflow";
+import { baseStepId, emptyState, runtimeRun } from "@intx/workflow";
 
 import {
   createWorkflowHostDrainController,
   type WorkflowHostDrainController,
 } from "../drain-controller";
+
+import type { InferenceSource } from "@intx/types/runtime";
 
 import { createWorkflowRunRepoStore } from "../adapters/repo-store";
 import { createWorkflowRunBlobSubstrate } from "../adapters/blob-substrate";
@@ -111,7 +111,7 @@ import type { CredentialsSnapshot } from "../supervisor/credentials";
 import { hashGrants } from "../supervisor/credentials";
 
 import type { SpawnTimeEnv } from "./env-bootstrap";
-import { discoverInFlightRuns, type DiscoveredRun } from "./self-discovery";
+import { discoverInFlightRuns } from "./self-discovery";
 import type { ChildOutboundMailBridge } from "./outbound-mail-bridge";
 import { createWarmAgentCache, type WarmAgentCache } from "./warm-agent-cache";
 
@@ -135,6 +135,19 @@ const WORKFLOW_JSON_PATH = "workflow.json";
  */
 export type CredentialsSnapshotRef = {
   current: CredentialsSnapshot | null;
+};
+
+/**
+ * Per-step inference-source table the build path reads through a mutable
+ * reference, keyed by stepId. Each value is the step's ordered failover
+ * chain (element 0 is the active source). The single-step build resolves
+ * its sources from `current` at build time, so a rotation that writes
+ * `current` before the first build is reflected in the built agent. A
+ * warm agent that is already built does not re-read this ref, so rotating
+ * its live sources is out of this ref's scope.
+ */
+export type SourcesSnapshotRef = {
+  current: Record<string, InferenceSource[]>;
 };
 
 /**
@@ -173,10 +186,19 @@ export function createCredentialsBackedAuthorize(
         "workflow-child authorize: no credentialsSnapshot active; the supervisor must push one before any step runs",
       );
     }
-    const entry = snapshot.steps.find((s) => s.stepId === stepId);
+    // The credentials snapshot is keyed per base step; a map iteration's
+    // scoped id `<base>[<index>]` resolves to its base entry so every
+    // iteration shares the base step's grants. `baseStepId` is the identity
+    // on an unscoped id, so a plain step is unaffected.
+    const lookupStepId = baseStepId(stepId);
+    const entry = snapshot.steps.find((s) => s.stepId === lookupStepId);
     if (entry === undefined) {
+      const scopedNote =
+        lookupStepId === stepId
+          ? ""
+          : ` (normalized from scoped invocation id ${stepId})`;
       throw new Error(
-        `workflow-child authorize: credentialsSnapshot has no entry for stepId ${stepId}`,
+        `workflow-child authorize: credentialsSnapshot has no entry for stepId ${lookupStepId}${scopedNote}`,
       );
     }
     return evaluate({
@@ -230,6 +252,7 @@ export type ChildStepInvoker = (
   onEvent: (event: EventPayload) => void,
   authorize: WorkflowAuthorizeFn,
   warmCache: WarmAgentCache | undefined,
+  sourcesRef: SourcesSnapshotRef,
 ) => Promise<StepInvokeResult>;
 
 /**
@@ -304,6 +327,14 @@ export interface RunWorkflowChildBindings {
    * value defers to the first `grants-updated` control frame.
    */
   initialCredentialsSnapshot?: CredentialsSnapshot;
+  /**
+   * Bootstrap per-step inference-source table (keyed by stepId), parsed
+   * from the spawn env by the host's substrate factory. Seeds the
+   * mutable `sourcesRef` the build path reads. Absent value defers to an
+   * empty table, so a step with no pinned source fails loudly at build
+   * rather than resolving a default.
+   */
+  initialSources?: Record<string, InferenceSource[]>;
   /**
    * Optional override for the child's Ed25519 keypair factory. The
    * child mints a fresh keypair at startup, holds the private half
@@ -381,20 +412,6 @@ export interface RunWorkflowChildOpts {
    * but no agent on the child side asked for an outbound send.
    */
   outboundMailBridge?: ChildOutboundMailBridge;
-  /**
-   * WORKBENCH-LOCAL (CL-2535): host-driven recovery of a run discovered
-   * parked at an `awaitSignal` gate. The in-process runtime declines to
-   * resume an awaiting-signal tail (`RuntimeResumeUnsupportedError`) and by
-   * design delegates recovery to the host. When this hook is set, the resume
-   * loop calls it for each such run. Return a seed log with the gate
-   * host-satisfied (`SignalReceived` + `StepCompleted`) to resume the run, or
-   * `null` to leave it parked (e.g. the signal has not been delivered yet)
-   * rather than failing it.
-   */
-  recoverParkedRun?: (
-    run: DiscoveredRun,
-    ctx: { blobs: BlobSubstrate },
-  ) => Promise<readonly WorkflowEvent[] | null>;
 }
 
 /**
@@ -434,84 +451,14 @@ export interface RunWorkflowChildResult {
  * emits `shutdown` (or ends without a frame, in which case the loop
  * exits cleanly).
  */
-// WORKBENCH-LOCAL (CL-2535): a discovered run has an "unresumable tail" when
-// any step's resumed phase is one the in-process runtime declines to resume
-// (`awaiting-signal` / `awaiting-timer` / `in-flight`) — exactly the runs
-// `runtimeRun` would reject with `RuntimeResumeUnsupportedError`. Those are
-// offered to the host's `recoverParkedRun` hook before the default path.
-function hasUnresumableTail(run: DiscoveredRun): boolean {
-  for (const step of run.resumedState.steps.values()) {
-    if (
-      step.phase === "awaiting-signal" ||
-      step.phase === "awaiting-timer" ||
-      step.phase === "in-flight"
-    ) {
-      return true;
-    }
-  }
-  return false;
-}
-
-// WORKBENCH-LOCAL (CL-2537): locate a run's gate parked in `awaiting-signal`
-// with a named signal — the install target for the live signal watcher. A run
-// parks one gate at a time today, so the first match is the one to watch.
-// Returns `undefined` when the unresumable tail is an `awaiting-timer` /
-// `in-flight` step the watcher does not handle; those fall through to the
-// default resume path unchanged (the awaiting-timer watcher is a follow-up).
-function findAwaitingSignalGate(
-  run: DiscoveredRun,
-): { stepId: string; name: string } | undefined {
-  for (const [stepId, step] of run.resumedState.steps) {
-    if (step.phase === "awaiting-signal" && step.awaitingSignal !== undefined) {
-      return { stepId, name: step.awaitingSignal.name };
-    }
-  }
-  return undefined;
-}
-
-// WORKBENCH-LOCAL (CL-2537): a live watcher tracked for teardown. `abort`
-// cancels the watch-phase `awaitNext` subscription; `done` settles when the
-// watch phase (subscribe + recheck + signal-channel stop) has fully torn down,
-// so the run-loop's `finally` can await it without blocking on a resumed run.
-type ParkedWatcher = {
-  abort: AbortController;
-  done: Promise<void>;
-};
-
-// WORKBENCH-LOCAL (CL-2537): the watcher reads the run log from the
-// per-deployment working tree while another writer (another run's append, a
-// `signal.deliver` commit) may be checking the tree out — transiently
-// unlinking a `<seq>.json` the read just enumerated and surfacing ENOENT. The
-// raw working-tree read (`createWorkflowRunRepoStore.read`) is not locked
-// against writes; the inconsistency is momentary, so a bounded retry re-reads
-// the settled tree rather than letting a benign concurrent-checkout race throw
-// the gate-recovery read (which would leave a recoverable run parked).
-async function readRunLogTolerant(
-  read: () => Promise<readonly WorkflowEvent[]>,
-): Promise<readonly WorkflowEvent[]> {
-  let lastError: unknown;
-  for (let attempt = 0; attempt < 16; attempt += 1) {
-    try {
-      return await read();
-    } catch (cause) {
-      if (!isErrnoNotFound(cause)) throw cause;
-      lastError = cause;
-      await new Promise((resolve) => setTimeout(resolve, 8));
-    }
-  }
-  throw lastError;
-}
-
-function isErrnoNotFound(cause: unknown): boolean {
-  if (cause === null || typeof cause !== "object") return false;
-  return (cause as { code?: unknown }).code === "ENOENT";
-}
-
 export async function runWorkflowChild(
   opts: RunWorkflowChildOpts,
 ): Promise<RunWorkflowChildResult> {
   const credentialsRef: CredentialsSnapshotRef = {
     current: opts.bindings.initialCredentialsSnapshot ?? null,
+  };
+  const sourcesRef: SourcesSnapshotRef = {
+    current: opts.bindings.initialSources ?? {},
   };
   const directors = opts.bindings.directors ?? createDefaultDirectorRegistry();
   const clock = opts.bindings.clock ?? defaultClock;
@@ -586,243 +533,15 @@ export async function runWorkflowChild(
     runtimeRepoStore,
   });
   const resumedRunIds: string[] = [];
-
-  // WORKBENCH-LOCAL (CL-2537): live signal watchers installed for runs
-  // discovered parked at an `awaitSignal` gate that is STILL waiting for a
-  // human (no signal delivered yet). The run-loop's `finally` aborts every
-  // live watcher and awaits its `done` so no `subscribeKind` iterator outlives
-  // the child.
-  const parkedWatchers = new Set<ParkedWatcher>();
-
-  // WORKBENCH-LOCAL (CL-2537): runIds a live signal watcher currently owns (from
-  // self-discovery install through resume-to-terminal). The control loop's
-  // `trigger.fire` handler consults this set so the supervisor's restart re-fire
-  // (`replayProcessingToInbox` re-queues the parked run's orphaned `processing/`
-  // entry) does NOT start a SECOND `runtimeRun` alongside the watcher. The single
-  // live child is the whole double-drive guarantee; the watcher is the sole
-  // driver and its terminal.event still unwedges the dispatch loop, so the
-  // re-fire must be a no-op — exactly as a freshly-parked run yields no second
-  // driver. Membership is held until the watcher's resume reaches terminal (or it
-  // aborts / woke unsatisfied) so a re-fire landing mid-resume is also deduped.
-  const watchedRunIds = new Set<string>();
-
-  // WORKBENCH-LOCAL (CL-2537): install a live signal watcher for a run parked
-  // at an `awaitSignal` gate whose human signal has NOT arrived. Today such a
-  // run dies on restart: `runtimeRun` rejects the still-waiting tail
-  // (`RuntimeResumeUnsupportedError`), the run is never driven to terminal, AND
-  // the orphaned mid-dispatch entry wedges the supervisor's strictly-serial
-  // dispatch loop so new runs never dispatch. Instead, keep the run parked
-  // in-process, subscribe to the gate's signal source, and when the human
-  // signal lands, host-satisfy + resume — which both saves the run and lets it
-  // reach terminal so the loop unwedges.
-  //
-  // Fire-and-forget, so it NEVER blocks `ready`. Process-scoped on purpose:
-  // single-live-child is the entire safety guarantee against double-drive, so
-  // the watcher is NOT hoisted to the supervisor/host. `recover` is the host's
-  // gate-completion hook (production wiring: `recoverParkedRunFromLog`); the
-  // watcher re-reads the log on signal arrival and calls it to append the
-  // missing `StepCompleted` from the now-durable `SignalReceived`.
-  function installSignalWatcher(
-    run: DiscoveredRun,
-    signalName: string,
-    recover: NonNullable<RunWorkflowChildOpts["recoverParkedRun"]>,
-  ): void {
-    const abort = new AbortController();
-    const signalChannel = createWorkflowHostSignalChannel({
-      repoStore: opts.bindings.substrate,
-      principal: opts.bindings.principal,
-      repoId: opts.bindings.workflowRunRepoId,
-      ref: opts.bindings.workflowRunRef,
-      runId: run.runId,
-      readState: () => emptyState(run.runId),
-      newId: () => newId("sig"),
-      clock,
-    });
-
-    const recoverFromCurrentLog = async (): Promise<
-      readonly WorkflowEvent[] | null
-    > => {
-      const log = await readRunLogTolerant(() =>
-        runtimeRepoStore.read(run.runId),
-      );
-      const blobs = createWorkflowRunBlobSubstrate({
-        substrate: opts.bindings.substrate,
-        repoId: opts.bindings.workflowRunRepoId,
-        principal: opts.bindings.principal,
-        runId: run.runId,
-        ref: opts.bindings.workflowRunRef,
-      });
-      const freshRun: DiscoveredRun = {
-        runId: run.runId,
-        seedEvents: log,
-        resumedState: resumeFromLog(run.runId, log),
-      };
-      return recover(freshRun, { blobs });
-    };
-
-    const resume = async (seed: readonly WorkflowEvent[]): Promise<void> => {
-      const env = buildRuntimeEnv({
-        runId: run.runId,
-        bindings: opts.bindings,
-        runtimeRepoStore,
-        authorize,
-        directors,
-        clock,
-        newId,
-        drainController,
-        warmCache,
-        onEvent: (event) => {
-          void eventSender.send(event).catch((cause) => {
-            logger.error`event-channel send failed during watcher resume run ${run.runId}: ${String(cause)}`;
-          });
-        },
-      });
-      const handle = runtimeRun(definition, env, {
-        runId: run.runId,
-        resumeFromEvents: seed,
-      });
-      await handle.complete
-        .then((result) => {
-          reclaimRunStorageIfCold({
-            warmKeep: opts.env.warmKeep,
-            cleanupRunStorage: opts.bindings.cleanupRunStorage,
-            runId: run.runId,
-          });
-          return emitTerminalEvent(upstreamSender, result);
-        })
-        .catch((cause) => {
-          logger.error`watcher-resumed run ${run.runId} failed: ${String(cause)}`;
-        });
-    };
-
-    // Watch phase. SUBSCRIBE-THEN-RECHECK closes the deliver-before-subscribe
-    // race: `subscribeKind` tails from `head` and never replays a signal
-    // committed before we subscribed, so after subscribing we re-read the log
-    // and try to satisfy the gate immediately; only if that finds nothing do we
-    // wait for a fresh delivery. The `done` promise this resolves into covers
-    // ONLY the watch phase (subscribe + recheck + channel stop) — never the
-    // resumed run — so teardown cannot block on an in-flight resume.
-    const watchPhase = (async (): Promise<readonly WorkflowEvent[] | null> => {
-      try {
-        const nextSignal = signalChannel.awaitNext(signalName, abort.signal);
-        // If the early recheck satisfies the gate we abort `nextSignal`;
-        // attach a no-op catch so the abort-rejection is never unhandled.
-        void nextSignal.catch(() => undefined);
-        const early = await recoverFromCurrentLog();
-        if (early !== null) {
-          abort.abort();
-          return early;
-        }
-        await nextSignal;
-        return await recoverFromCurrentLog();
-      } finally {
-        await signalChannel.stop().catch(() => undefined);
-      }
-    })();
-
-    const watcher: ParkedWatcher = {
-      abort,
-      done: watchPhase.then(
-        () => undefined,
-        () => undefined,
-      ),
-    };
-    parkedWatchers.add(watcher);
-    // WORKBENCH-LOCAL (CL-2537): claim the run for the watcher so a re-fired
-    // `trigger.fire` for it is deduped. Released only once the watcher's resume
-    // has reached terminal (or the watcher aborted / woke unsatisfied) — NOT when
-    // `resume` starts — so a re-fire landing mid-resume is also deduped.
-    watchedRunIds.add(run.runId);
-
-    void watchPhase
-      .then(async (outcome) => {
-        parkedWatchers.delete(watcher);
-        if (outcome !== null) {
-          try {
-            await resume(outcome);
-          } finally {
-            watchedRunIds.delete(run.runId);
-          }
-          return;
-        }
-        // Aborted (teardown) reaches here as a rejection, not this branch; a
-        // `null` outcome means the awaiter woke without a satisfiable seed.
-        watchedRunIds.delete(run.runId);
-        logger.warn`signal watcher for run ${run.runId} woke without a satisfiable seed; leaving parked`;
-      })
-      .catch((cause) => {
-        parkedWatchers.delete(watcher);
-        watchedRunIds.delete(run.runId);
-        if (!abort.signal.aborted) {
-          logger.error`signal watcher for run ${run.runId} failed: ${String(cause)}`;
-        }
-      });
-  }
-
+  // One-driver-per-run claim. A runId present here is already being
+  // driven by a live `runtimeRun` in this process (a resume below, or an
+  // earlier trigger). The trigger.fire path consults it to refuse
+  // spawning a second concurrent driver for the same runId: two drivers
+  // race to settle the same residual and the loser throws an uncaught
+  // TransitionError into its fire-and-forget continuation. Each site
+  // removes its entry when the run reaches terminal.
+  const runsInFlight = new Map<string, WorkflowRun>();
   for (const run of discovered) {
-    // WORKBENCH-LOCAL (CL-2535): a run whose tail the runtime cannot resume is
-    // offered to the host first. The hook returns a seed log with the parked
-    // gate host-satisfied (gate completed from the durable signal), or `null`
-    // if it cannot recover — in which case we fall through to the default
-    // resume path: `runtimeRun` rejects the unresumable tail (logged below; the
-    // run is left undriven, exactly as it was before this hook existed, and the
-    // hub's `failOrphanedRuns` reconciler fails it on its next pass).
-    let seedEvents: readonly WorkflowEvent[] = run.seedEvents;
-    let recovered = false;
-    let recoverThrew = false;
-    if (opts.recoverParkedRun !== undefined && hasUnresumableTail(run)) {
-      // WORKBENCH-LOCAL (CL-2535): a recovery-hook failure must NEVER crash the
-      // child. This runs during self-discovery, BEFORE `ready` is announced, so
-      // an uncaught throw here rejects `runWorkflowChild`, trips the binary's
-      // `unhandledRejection` -> `flushAndExit(1)`, and the child dies before
-      // `ready` — wedging the whole deployment's supervisor (it can no longer
-      // service triggers), durably across restarts. The self-discovery loop's
-      // invariant is that one bad run cannot block `ready`; the hook must honor
-      // it. On any throw, fall through to the default resume path (identical to
-      // no hook): `runtimeRun` rejects the unresumable tail, caught below.
-      try {
-        const blobs = createWorkflowRunBlobSubstrate({
-          substrate: opts.bindings.substrate,
-          repoId: opts.bindings.workflowRunRepoId,
-          principal: opts.bindings.principal,
-          runId: run.runId,
-          ref: opts.bindings.workflowRunRef,
-        });
-        const satisfied = await opts.recoverParkedRun(run, { blobs });
-        if (satisfied !== null) {
-          seedEvents = satisfied;
-          recovered = true;
-        }
-      } catch (cause) {
-        logger.error`recoverParkedRun failed for run ${run.runId}; falling through to default resume: ${String(cause)}`;
-        seedEvents = run.seedEvents;
-        recoverThrew = true;
-      }
-    }
-
-    // WORKBENCH-LOCAL (CL-2537): classifier branch. The host hook ran and
-    // cleanly DECLINED (returned null: no signal delivered yet) AND the run is
-    // parked at a still-waiting `awaitSignal` gate → install a LIVE WATCHER
-    // instead of letting the default path drive `runtimeRun` into a
-    // `RuntimeResumeUnsupportedError`. Do NOT call `runtimeRun`; do NOT push to
-    // `resumedRunIds` (the watcher resumes the run later, off the startup path).
-    // A hook that THREW (recoverThrew) is unreliable — a watcher reusing it
-    // could never satisfy the gate — so that case falls through to the default
-    // path unchanged (preserving the CL-2535 throw-guard behaviour). Guarded
-    // like the CL-2535 hook above: an install throw must NOT crash the child
-    // before `ready`, so on throw we fall through to the default path.
-    if (!recovered && !recoverThrew && opts.recoverParkedRun !== undefined) {
-      const gate = findAwaitingSignalGate(run);
-      if (gate !== undefined) {
-        try {
-          installSignalWatcher(run, gate.name, opts.recoverParkedRun);
-          continue;
-        } catch (cause) {
-          logger.error`signal watcher install failed for run ${run.runId}; falling through to default resume: ${String(cause)}`;
-        }
-      }
-    }
-
     const env = buildRuntimeEnv({
       runId: run.runId,
       bindings: opts.bindings,
@@ -833,6 +552,7 @@ export async function runWorkflowChild(
       newId,
       drainController,
       warmCache,
+      sourcesRef,
       onEvent: (event) => {
         void eventSender.send(event).catch((cause) => {
           logger.error`event-channel send failed during resume run ${run.runId}: ${String(cause)}`;
@@ -841,8 +561,9 @@ export async function runWorkflowChild(
     });
     const handle = runtimeRun(definition, env, {
       runId: run.runId,
-      resumeFromEvents: seedEvents,
+      resumeFromEvents: run.seedEvents,
     });
+    runsInFlight.set(run.runId, handle);
     // Fire-and-forget: the runtime body's `complete` settles when the
     // run reaches a terminal phase; the child's control-loop does not
     // block on resumed runs. The supervisor's dispatch loop / drain
@@ -859,6 +580,9 @@ export async function runWorkflowChild(
       })
       .catch((cause) => {
         logger.error`resumed run ${run.runId} failed: ${String(cause)}`;
+      })
+      .finally(() => {
+        runsInFlight.delete(run.runId);
       });
     resumedRunIds.push(run.runId);
   }
@@ -914,10 +638,9 @@ export async function runWorkflowChild(
           upstreamSender,
           drainController,
           triggeredRunIds,
-          // WORKBENCH-LOCAL (CL-2537): read-only view so the trigger.fire
-          // handler can dedup a re-fire against a watcher-owned run.
-          watchedRunIds,
+          runsInFlight,
           warmCache,
+          sourcesRef,
           ...(opts.substrateWriteBridge !== undefined
             ? { substrateWriteBridge: opts.substrateWriteBridge }
             : {}),
@@ -948,18 +671,6 @@ export async function runWorkflowChild(
     if (opts.outboundMailBridge !== undefined) {
       opts.outboundMailBridge.cancelAll("workflow-child control loop exited");
     }
-    // WORKBENCH-LOCAL (CL-2537): abort every live parked-signal watcher on any
-    // exit path and await its watch-phase teardown so no `subscribeKind`
-    // iterator outlives the run-loop. A watcher that already handed off to a
-    // resumed run has removed itself from the set; aborting an already-settled
-    // watcher is a no-op. The awaited `done` covers only the watch phase
-    // (subscribe + recheck + signal-channel stop), never the resumed run's
-    // completion, so teardown cannot block on an in-flight resume.
-    const liveWatchers = [...parkedWatchers];
-    for (const watcher of liveWatchers) {
-      watcher.abort.abort();
-    }
-    await Promise.all(liveWatchers.map((watcher) => watcher.done));
     // Evict the warm-agent cache (design §3b) on every exit path:
     // graceful (shutdown frame -> iterator end), dirty (thrown error),
     // or the control channel closing. Eviction runs the wrapped
@@ -1001,31 +712,32 @@ async function handleControlPayload(
     upstreamSender: ControlChannelSender;
     drainController: DrainController;
     triggeredRunIds: string[];
-    // WORKBENCH-LOCAL (CL-2537): runIds owned by a live signal watcher.
-    watchedRunIds: ReadonlySet<string>;
+    runsInFlight: Map<string, WorkflowRun>;
     warmCache: WarmAgentCache | undefined;
+    sourcesRef: SourcesSnapshotRef;
     substrateWriteBridge?: SubstrateWriteResponseSink;
     outboundMailBridge?: ChildOutboundMailBridge;
   },
 ): Promise<boolean> {
   switch (payload.type) {
     case "trigger.fire": {
-      // WORKBENCH-LOCAL (CL-2537): dedup. A live signal watcher installed by
-      // self-discovery already owns this runId — it IS the run's sole driver.
-      // After a sidecar restart the supervisor's `replayProcessingToInbox`
-      // re-queues the parked run's orphaned `processing/` entry and the dispatch
-      // loop re-fires `trigger.fire` for it; without this guard the handler would
-      // start a SECOND `runtimeRun` racing the watcher's resume (the double-drive
-      // — surfaces as an ERR-level "seq conflict … single-writer invariant
-      // violated" when the loser's append loses). Treat it as a no-op: the
-      // watcher drives the run to terminal and emits the lone `terminal.event`
-      // that unwedges the dispatch loop, so the run still completes — identical
-      // to a freshly-parked run, which likewise spawns no second driver. The
-      // dispatch loop stays blocked on this run's terminal until the human
-      // signals (the strictly-serial dispatchOne→waitForRunTerminal→markConsumed
-      // contract), exactly as it does for a normally-parked run.
-      if (ctx.watchedRunIds.has(payload.data.runId)) {
-        logger.info`workflow-child trigger.fire deduped: run ${payload.data.runId} is owned by a live signal watcher; not starting a second driver`;
+      // One driver per runId. If this child is already driving this
+      // runId -- self-discovery resumed it, or an earlier trigger opened
+      // it -- the supervisor's re-fire (which carries `runId = messageId`
+      // and no resumeFromEvents) must NOT spawn a second `runtimeRun`. A
+      // second concurrent driver would race the live one to settle the
+      // same residual and the loser throws an uncaught TransitionError,
+      // and even a driver that avoided the throw would double-emit the
+      // terminal. The live driver's completion continuation owns the
+      // single terminal emission; the supervisor's terminal-event-driven
+      // `markConsumed` consumes the message off that one terminal, so no
+      // work is dropped by declining here. Record the runId (the
+      // supervisor did fire a trigger and it was accepted) and signal
+      // "handled, not shutdown" the same way the normal trigger case
+      // returns, without awaiting the live handle's `complete` inline
+      // (that would block the control loop).
+      if (ctx.runsInFlight.has(payload.data.runId)) {
+        ctx.triggeredRunIds.push(payload.data.runId);
         return false;
       }
       // Resolve the inbound mail bytes for this messageId from the
@@ -1055,6 +767,7 @@ async function handleControlPayload(
         newId: ctx.newId,
         drainController: ctx.drainController,
         warmCache: ctx.warmCache,
+        sourcesRef: ctx.sourcesRef,
         onEvent: (event) => {
           void ctx.eventSender.send(event).catch((cause) => {
             logger.error`event-channel send failed during run ${payload.data.runId}: ${String(cause)}`;
@@ -1066,6 +779,7 @@ async function handleControlPayload(
         consumedMessageId: payload.data.messageId,
         triggerPayload,
       });
+      ctx.runsInFlight.set(payload.data.runId, handle);
       // Fan the run's terminal status back to the supervisor over the
       // upstream control channel. The supervisor's dispatch loop and
       // any armed drainTimeout accumulator subscribe through the
@@ -1085,6 +799,9 @@ async function handleControlPayload(
         })
         .catch((cause) => {
           logger.error`triggered run ${payload.data.runId} failed: ${String(cause)}`;
+        })
+        .finally(() => {
+          ctx.runsInFlight.delete(payload.data.runId);
         });
       ctx.triggeredRunIds.push(payload.data.runId);
       return false;
@@ -1191,7 +908,46 @@ async function handleControlPayload(
       return true;
     }
     case "sources-updated": {
-      logger.info`workflow-child sources-updated: ${JSON.stringify(payload.data)}`;
+      // Live inference-source rotation for the warm single-step agent. The
+      // wire boundary (`SourcesUpdatedData`) already guaranteed the list is
+      // non-empty, its ids are unique, and its head is the default, so this
+      // trusts the frame and does not re-validate it.
+      //
+      // Only a single-step deployment rotates sources: its sole step's id
+      // is the sole key in the sources table, so the whole table is
+      // replaced. A multi-step deployment has no single per-agent source
+      // identity to swap and is never routed a sources-updated frame;
+      // assert it so a mis-route fails loudly rather than corrupting the
+      // table.
+      if (ctx.definition.stepOrder.length !== 1) {
+        throw new Error(
+          `workflow-child sources-updated: only a single-step deployment can rotate sources; got ${String(ctx.definition.stepOrder.length)} steps`,
+        );
+      }
+      const stepId = ctx.definition.stepOrder[0];
+      if (stepId === undefined) {
+        throw new Error(
+          "workflow-child sources-updated: single-step deployment has no step id",
+        );
+      }
+      // A sources-updated only reaches a warm single-step deployment, which
+      // always builds a warm cache. An absent cache is a routing bug, not a
+      // silent no-op.
+      if (ctx.warmCache === undefined) {
+        throw new Error(
+          "workflow-child sources-updated: no warm cache; a sources rotation must target a warm single-step deployment",
+        );
+      }
+      // Swap the built warm agent first (a no-op when none is built yet),
+      // then update the table the next cold build reads. Applying to the
+      // agent first means a rotation racing eviction -- a closed-agent
+      // `setSources` throw -- leaves the table untouched rather than ahead
+      // of a half-applied swap.
+      ctx.warmCache.applySources(
+        payload.data.sources,
+        payload.data.defaultSource,
+      );
+      ctx.sourcesRef.current = { [stepId]: payload.data.sources };
       return false;
     }
     case "ready": {
@@ -1300,6 +1056,7 @@ function buildRuntimeEnv(args: {
   newId: (prefix: string) => string;
   drainController: DrainController;
   warmCache: WarmAgentCache | undefined;
+  sourcesRef: SourcesSnapshotRef;
   onEvent: (event: EventPayload) => void;
 }): WorkflowRuntimeEnv {
   const signalChannel = createWorkflowHostSignalChannel({
@@ -1332,6 +1089,7 @@ function buildRuntimeEnv(args: {
       args.onEvent,
       args.authorize,
       args.warmCache,
+      args.sourcesRef,
     );
   };
   return {
@@ -1357,29 +1115,34 @@ function buildRuntimeEnv(args: {
  * loop and any armed drainTimeout accumulator subscribed for the
  * runId.
  *
- * The mapping is total: every `terminalStatus` the runtime body
- * surfaces corresponds to exactly one `kind` in the wire union. The
- * `error.message` on `RunFailed` is taken from the last
- * `RunFailed`/`StepFailed` event the runtime emitted; when the log
- * does not carry one the supervisor's downstream consumers see an
- * empty message rather than a thrown error (the wire shape requires
- * the field).
+ * The frame mirrors the run's committed terminal event: every field --
+ * `kind`, `seq`, `at`, and (for `RunFailed`) `error.message` -- is
+ * sourced from that event, which is why the frame's `seq` matches the
+ * on-disk audit-log entry. `terminalStatus` is only the cross-check: the
+ * found event's `kind` must agree with it. A missing terminal event, or
+ * one whose kind disagrees, is a runtime producer bug (the runtime
+ * commits the terminal event last), and emitting a frame anyway would
+ * desync the supervisor from the durable log that `discoverInFlightRuns`
+ * reads on resume -- the supervisor would settle a run the on-disk log
+ * still shows in-flight. So this throws instead: no frame keeps the
+ * supervisor and the durable log agreeing that the run is unsettled, and
+ * the next recycle/restart resumes it. The throw propagates to the
+ * caller's `complete` continuation, which logs it.
  *
- * Errors flowing out of `upstreamSender.send` are logged but not
- * rethrown -- the supervisor's dispatch loop is the authoritative
- * settler for the dispatch entry through its cohort abort signal, so a
- * lost terminal frame surfaces structurally as a wedged dispatch
- * rather than a silent lifecycle failure.
+ * Errors flowing out of `upstreamSender.send` are a different case --
+ * a transport send failure, logged but not rethrown. The supervisor's
+ * dispatch loop is the authoritative settler through its cohort abort
+ * signal, so a lost frame surfaces structurally as a wedged dispatch
+ * rather than a silent lifecycle failure. The invariant throws above run
+ * before the send so that catch never swallows them.
  */
-function emitTerminalEvent(
+export function emitTerminalEvent(
   upstreamSender: ControlChannelSender,
   result: RunResult,
 ): Promise<void> {
-  const at = new Date().toISOString();
-  // Recover the terminal event blob from the committed event log so
-  // the wire frame's seq matches the on-disk audit-log entry. The
-  // runtime body commits the terminal event last; walking from the
-  // end finds it in one step without rebuilding the state machine.
+  // Recover the terminal event from the committed event log. The runtime
+  // body commits the terminal event last; walking from the end finds it in
+  // one step without rebuilding the state machine.
   let terminalEvent: (typeof result.events)[number] | null = null;
   for (let i = result.events.length - 1; i >= 0; i -= 1) {
     const candidate = result.events[i];
@@ -1393,34 +1156,49 @@ function emitTerminalEvent(
       break;
     }
   }
-  const seq = terminalEvent?.seq ?? 0;
-  const eventAt = terminalEvent?.at ?? at;
+  if (terminalEvent === null) {
+    throw new Error(
+      `emitTerminalEvent: run ${result.runId} terminated as ${result.terminalStatus} but its committed event log carries no terminal event (the runtime commits it last; this is a producer bug)`,
+    );
+  }
+  const expectedKind =
+    result.terminalStatus === "completed"
+      ? "RunCompleted"
+      : result.terminalStatus === "cancelled"
+        ? "RunCancelled"
+        : "RunFailed";
+  if (terminalEvent.kind !== expectedKind) {
+    throw new Error(
+      `emitTerminalEvent: run ${result.runId} terminated as ${result.terminalStatus} but its committed terminal event is ${terminalEvent.kind}`,
+    );
+  }
+  // The RunFailed-missing-error.message case the supervisor's
+  // `synthesizeTerminalEvent` guards is unreachable here: `result.events`
+  // is typed `WorkflowEvent[]`, and `RunFailed.error.message` is a
+  // non-optional `string`, so a RunFailed reached here always carries one.
+  // The supervisor needs that guard because it parses untrusted JSON.
   let payload: Extract<ControlPayload, { type: "terminal.event" }>["data"];
-  if (result.terminalStatus === "completed") {
+  if (terminalEvent.kind === "RunCompleted") {
     payload = {
       runId: result.runId,
-      seq,
+      seq: terminalEvent.seq,
       kind: "RunCompleted",
-      at: eventAt,
+      at: terminalEvent.at,
     };
-  } else if (result.terminalStatus === "cancelled") {
+  } else if (terminalEvent.kind === "RunCancelled") {
     payload = {
       runId: result.runId,
-      seq,
+      seq: terminalEvent.seq,
       kind: "RunCancelled",
-      at: eventAt,
+      at: terminalEvent.at,
     };
   } else {
-    const message =
-      terminalEvent !== null && terminalEvent.kind === "RunFailed"
-        ? terminalEvent.error.message
-        : "";
     payload = {
       runId: result.runId,
-      seq,
+      seq: terminalEvent.seq,
       kind: "RunFailed",
-      at: eventAt,
-      error: { message },
+      at: terminalEvent.at,
+      error: { message: terminalEvent.error.message },
     };
   }
   return upstreamSender
@@ -1461,9 +1239,12 @@ function reclaimRunStorageIfCold(opts: {
   });
 }
 
-// WORKBENCH-LOCAL (CL-3468): hub run-start mail carries JSON.stringify(input)
-// from hub@<deploymentDomain>; decode to an object for trigger.payload only for
-// that sender. Ordinary user mail keeps plain conversation text.
+// WORKBENCH-LOCAL (CL-3468): the hub starts a workflow run by delivering mail
+// whose body is `JSON.stringify(input)` from `hub@<deploymentDomain>`. Without
+// decoding, `trigger.payload` resolves to that JSON *string*, so a first step
+// whose input selector expects the structured object receives text and its
+// field reads fail. Only mail from the hub sender (paired local-part + domain)
+// is decoded to an object; ordinary user mail keeps plain conversation text.
 function normalizeMailFromAddress(fromHeader: string): string {
   const trimmed = fromHeader.trim();
   const angle = /<([^>]+)>/.exec(trimmed);
@@ -1546,8 +1327,9 @@ function materializeTriggerPayload(
  * `markConsumed` write), decodes the inlined raw MIME bytes, and
  * materializes the payload for `trigger.payload` selectors.
  *
- * Hub-originated run-start mail (`from: hub@…`) decodes the body as a
- * JSON object. All other senders keep the extracted conversation text.
+ * WORKBENCH-LOCAL (CL-3468): hub-originated run-start mail (`from: hub@…`)
+ * decodes the body as a JSON object. All other senders keep the extracted
+ * conversation text.
  *
  * Defensive: a missing processing entry, an entry with no inlined
  * bytes, or unparseable mail all throw. The run cannot proceed without
@@ -1579,6 +1361,8 @@ async function resolveTriggerPayload(args: {
     );
   }
   const raw = base64Decode(rawMessageBase64);
+  // WORKBENCH-LOCAL (CL-3468): read the `from` header so a hub-originated
+  // run-start body can be decoded as structured trigger JSON.
   const { headers } = parseHeaderSection(raw);
   const fromHeader = headers.get("from") ?? "";
   const bodyText = extractConversationText(raw, args.messageId);

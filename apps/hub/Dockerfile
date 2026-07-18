@@ -7,7 +7,7 @@ WORKDIR /app
 RUN apt-get update && apt-get install -y git && rm -rf /var/lib/apt/lists/* && \
     git clone --filter=blob:none --no-checkout \
       https://github.com/faremeter/interchange.git interchange && \
-    git -C interchange checkout 2792f05edf862325abbf8fc449f504db96d94b3b
+    git -C interchange checkout 6927e7e4b0117f29ce4800ad75a313ed9ad31b10
 
 # Copy only manifests so bun install caches until a package.json or lockfile changes
 COPY package.json bun.lock ./
@@ -149,4 +149,5 @@ RUN bun run --cwd apps/hub build:workflow-defs && \
 
 EXPOSE 4000
 
+ENV BUN_OPTIONS="--conditions=intx-src"
 CMD ["bun", "run", "apps/hub/src/index.ts"]

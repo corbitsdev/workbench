@@ -281,7 +281,10 @@ describe("createWorkflowDeployGrantGuard", () => {
   }
 
   function appWithGrants(grants: GrantRule[]) {
-    const grantStore = { collectGrants: async () => grants };
+    const grantStore = {
+      collectGrants: async () => grants,
+      collectGrantsInChain: async () => grants,
+    };
     const guard = createWorkflowDeployGrantGuard({
       db: {} as Parameters<typeof createWorkflowDeployGrantGuard>[0]["db"],
       grantStore,

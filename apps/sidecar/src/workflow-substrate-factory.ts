@@ -940,6 +940,16 @@ export function createSidecarStepInvoker(args: {
   outboundMailBridge?: ChildOutboundMailBridge;
   /** Deployment mailbox address; the step agent's outbound `address`. */
   mailboxAddress?: string;
+  /**
+   * WORKBENCH-LOCAL: true for a WARM single-step deployment (the sole warm
+   * agent — Myra/Oat/triage/gate), false for a genuine multi-step workflow
+   * step. Threaded into the tool-capable `createStepAgentFactory` so a warm
+   * agent resolves its director from its prompt markers and wires the dynamic
+   * tool catalog + exposure (the retired `default-harness` semantics), while a
+   * multi-step step keeps the budget director unconditionally. Sourced from
+   * `env.spawn.warmKeep`.
+   */
+  warmKeep?: boolean;
 }): StepInvoker {
   const buildEnv = createSidecarStepBuildEnv({
     table: args.table,
@@ -976,7 +986,9 @@ export function createSidecarStepInvoker(args: {
     agentFactory:
       args.agentFactory ??
       (args.resolveStepToolContext !== undefined
-        ? createStepAgentFactory()
+        ? createStepAgentFactory({
+            ...(args.warmKeep !== undefined ? { warmKeep: args.warmKeep } : {}),
+          })
         : createAgent),
     ...(args.onEvent !== undefined ? { onEvent: args.onEvent } : {}),
     // Warm-keep wiring (upstream §3b/§3c): forward the run-loop's per-
@@ -1516,6 +1528,10 @@ export function createSidecarSubstrateFactory(
         onEvent,
         outboundMailBridge: env.outboundMailBridge,
         mailboxAddress: env.spawn.mailboxAddress,
+        // WORKBENCH-LOCAL: a warm single-step deployment (Myra/Oat/triage/gate)
+        // gets per-agent director resolution + dynamic tools in the step
+        // factory; a multi-step step keeps the budget director unconditionally.
+        warmKeep: env.spawn.warmKeep,
         ...(warmCache !== undefined ? { warmCache } : {}),
         ...(durableConversation !== undefined ? { durableConversation } : {}),
         ...(onRunBoundary !== undefined ? { onRunBoundary } : {}),

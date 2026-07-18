@@ -437,7 +437,7 @@ When provisioning an agent, the hub:
 
 1. Creates the agent definition with `credentialRequirements` declaring what the agent needs (e.g. `[{ providerName: 'openai-compatible', source: 'tenant', name: 'Myra LLM' }]`).
 2. Creates the agent instance (**Interchange**: uses Interchange's `agent`, `agentInstance`, `tenant`, `principal` tables from `@intx/db`).
-3. Launches the session via `sessionService.launchSession` — Interchange's `resolveCredentialRequirement` walks the tenant hierarchy and builds `InferenceSource[]` from the agent's requirements. No credential IDs are passed to this call.
+3. Launches the agent via `deployWorkflowDefinition` as a single-step workflow deployment (`launchSession`/`launchAgentSession`'s prior in-process-harness launch path was removed when the interchange pin bumped past `6927e7e4`'s runtime retirement — upstream deleted `launchSession` outright). Interchange's `resolveCredentialRequirement` still walks the tenant hierarchy and builds `InferenceSource[]` from the agent's requirements at deploy time; no credential IDs are passed to this call.
 
 **No credential IDs in launch calls.** Credentials live on the tenant. The agent declares what it needs. Interchange finds them.
 

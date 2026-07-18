@@ -13,6 +13,7 @@ import {
   createHubSessionOrchestrator,
   createSessionService,
   createSidecarRouter,
+  createSidecarTokenAuthenticator,
   WORKSPACE_BUILTINS_REGISTRY,
   type SidecarLookups,
   type WsHandle,
@@ -209,6 +210,7 @@ import {
   lookupMember,
 } from "./lib/tenant-provisioning";
 import { reconcileMemberInstanceGrants } from "./services/grant-reconcile";
+import { bootstrapSidecarAuth } from "./lib/bootstrap-sidecar-auth";
 import { AGENT_TEMPLATES } from "@workbench/agents";
 import { setupObservability, flushSentry } from "@workbench/sentry";
 import {
@@ -255,6 +257,20 @@ log.info("Root tenant ready", { rootTenantId });
 // malformed template at deploy rather than silently shipping stale agents.
 await seedAgentTemplates(db, rootTenantId);
 log.info("Agent templates seeded", { rootTenantId });
+
+// Provision the `sidecar` auth row so the WS token authenticator
+// (createSidecarTokenAuthenticator) can admit the sidecar's handshake.
+// Interchange migration 0036 added the NOT-NULL `token_hash_sha256` column and
+// deleted the old REST self-registration route; nothing else writes it, so
+// without this boot upsert no sidecar could ever complete the WS handshake.
+// Fail-loud (requireEnv on SIDECAR_ID/SIDECAR_TOKEN in config) so a
+// misconfigured deploy surfaces here rather than as silent connect failures.
+await bootstrapSidecarAuth(db, {
+  id: config.sidecarId,
+  token: config.sidecarToken,
+  url: config.sidecarUrl,
+});
+log.info("Sidecar auth row ready", { sidecarId: config.sidecarId });
 
 // seedAgentTemplates updates the org agent rows, but existing member instances
 // keep the tool grants synthesized at their last launch — provisionMemberInstances
@@ -550,6 +566,12 @@ const lookups: SidecarLookups = {
 const sidecarRouter = createSidecarRouter({
   hubPublicKey: hexEncode(registry.active.publicKey),
   lookups,
+  // Upstream now authenticates the sidecar WS handshake against the per-sidecar
+  // token hash on the `sidecar` table (migration 0036). The token is hashed
+  // SHA-256 and looked up by digest; an unknown token fails the handshake
+  // closed. Sidecar rows carry `token_hash_sha256`; a sidecar presents its
+  // plaintext token (SIDECAR_TOKEN) on connect.
+  authenticateSidecar: createSidecarTokenAuthenticator({ db }),
 });
 
 const analyticsSubscriber = createAnalyticsSubscriber({ db });
@@ -597,7 +619,6 @@ createHubSessionOrchestrator({
   router: sidecarRouter,
   db,
   eventCollectors,
-  grantStore,
   agentRepoStore: repoStore,
 });
 
@@ -1475,7 +1496,6 @@ const workflowDeployService = createWorkflowDeployService({
   db,
   repoStore,
   sidecarRouter,
-  sessionService,
   directorRegistry: createWorkbenchDirectorRegistry(),
   reclaimDeployment,
 });

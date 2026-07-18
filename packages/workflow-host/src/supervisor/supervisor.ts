@@ -55,6 +55,7 @@ import {
   enqueueInbox as defaultEnqueueInbox,
   dequeueToProcessing as defaultDequeueToProcessing,
   markConsumed as defaultMarkConsumed,
+  readOwnedMessageIds,
   replayProcessingToInbox as defaultReplayProcessingToInbox,
   DEFAULT_CONSUMED_RETENTION_MS,
   type NewlyTerminalRun,
@@ -64,7 +65,7 @@ import {
 } from "@intx/hub-sessions/substrate";
 import { base64Decode, base64Encode, hexEncode } from "@intx/types";
 import { RepoId } from "@intx/types/sidecar";
-import type { OutboundMessage } from "@intx/types/runtime";
+import type { InferenceSource, OutboundMessage } from "@intx/types/runtime";
 import type { CancelOrigin } from "@intx/workflow";
 
 import {
@@ -84,7 +85,8 @@ import {
   type CredentialsSnapshot,
 } from "./credentials";
 import { commitCancelRequested } from "./cancel-signing";
-import { commitRunEvent, compactRunEvents } from "./run-event-signing";
+import { buildChildSpawnEnv } from "./spawn-env";
+import { compactRunEvents } from "./run-event-compaction";
 import {
   createDrainTimeoutAccumulator,
   DEFAULT_DRAIN_TIMEOUT_MS,
@@ -104,9 +106,7 @@ import type {
   DispatchSubstrateLeg,
   InboxPrimitives,
   MailAuditRef,
-  RecordRunEvent,
   SubprocessHandle,
-  SupervisorDeployFrame,
   TerminalEventSource,
   TerminalRunEvent,
   WorkflowSupervisorBindings,
@@ -115,6 +115,14 @@ import {
   createTerminalBroadcaster,
   type TerminalBroadcaster,
 } from "./terminal-broadcaster";
+import {
+  DEFAULT_KILL_TIMEOUT_MS,
+  DEFAULT_READY_TIMEOUT_MS,
+  defaultClearTimer,
+  defaultSetTimer,
+  killChildHandle,
+  waitDeadline,
+} from "./child-termination";
 
 const logger = getLogger(["workflow-host", "supervisor"]);
 
@@ -140,37 +148,6 @@ export const DEFAULT_TERMINAL_WRITE_WATCHDOG_MS = 30_000;
  * supervisor's internal state is encapsulated.
  */
 export interface WorkflowSupervisor {
-  /**
-   * Single ingress for `agent.deploy` frames. The supervisor owns
-   * the routing decision between trivial (1-step) and multi-step
-   * workflows -- the host hands the frame off and never re-decides.
-   *
-   * Trivial branch (Option Z, locked):
-   *   - Calls `bindings.trivialLaunch(frame)` directly.
-   *   - Does NOT open an IPC channel.
-   *   - Does NOT spawn a workflow-process child.
-   *   - Does NOT emit any workflow-run event. `signAsPrincipal`
-   *     is not invoked; for a trivial deploy there is no
-   *     workflow-process child to cancel, so cancellation stays
-   *     session-destroy at the host's layer.
-   *   - Does NOT assemble a `credentialsSnapshot`; the trivial
-   *     branch leaves `getCredentialsSnapshot()` returning `null`.
-   *
-   * Multi-step branch (`steps.length >= 2`):
-   *   - Provisions per-step `agent-state` repos, mints keys,
-   *     spawns the workflow-process child via `subprocessSpawner`,
-   *     registers the deployment's mail address, waits for the
-   *     child's `ready` frame, and assembles the
-   *     `credentialsSnapshot`. This is the body of `spawn(opts)`,
-   *     which is the multi-step branch's worker today.
-   *
-   * The `agent.deploy` wire frame today carries only a
-   * `HarnessConfig` (no workflow definition); every frame is
-   * therefore trivial. The supervisor codifies the seam so a frame-
-   * format extension that carries a `WorkflowDefinition` is a pure
-   * data-shape change.
-   */
-  deploy(frame: SupervisorDeployFrame): Promise<void>;
   /**
    * Spawn the workflow-process child, complete the IPC handshake,
    * assemble the credentialsSnapshot, register the deployment's mail
@@ -227,6 +204,14 @@ export interface WorkflowSupervisor {
    * for serializing delivery against `spawn` completion.
    */
   deliverSignal(opts: DeliverSignalOpts): Promise<void>;
+  /**
+   * Push a rotated inference-source list to the child's warm single-step
+   * agent. Mirrors `deliverSignal`: the supervisor is the single producer
+   * of `sources-updated` control frames, and delivery is phase-guarded to
+   * starting/running so a frame is never written into a recycling child's
+   * closing pipe. Throws otherwise.
+   */
+  deliverSources(opts: DeliverSourcesOpts): Promise<void>;
   /**
    * Current snapshot of the credentials pushed to the child. Surfaced
    * so the host can audit the per-step contentHash without
@@ -305,6 +290,17 @@ export type DeliverSignalOpts = {
   signalId: string;
   /** Opaque signal payload the awaiter resolves with. */
   payload: unknown;
+};
+
+export type DeliverSourcesOpts = {
+  /**
+   * The rotated ordered inference-source failover chain; element 0 is the
+   * active source. The wire boundary enforces a non-empty list with unique
+   * ids whose head is the default.
+   */
+  sources: InferenceSource[];
+  /** The default source id; the wire boundary requires it to equal `sources[0].id`. */
+  defaultSource: string;
 };
 
 export type RecycleOpts = {
@@ -554,6 +550,14 @@ export function createWorkflowSupervisor(
   // consumedRetentionMs` for the operator-owned invariant.
   const consumedRetentionMs =
     bindings.consumedRetentionMs ?? DEFAULT_CONSUMED_RETENTION_MS;
+  // Resolve the spawn ready-handshake timeout and its timers once at the
+  // bindings edge. The timers reuse the same injectable pair the drain
+  // path resolves (`bindings.setTimer`/`clearTimer`); the ready-timeout
+  // race and its kill-escalation drive them, and tests substitute a
+  // deterministic timer through the same bindings.
+  const readyTimeoutMs = bindings.readyTimeoutMs ?? DEFAULT_READY_TIMEOUT_MS;
+  const readySetTimer = bindings.setTimer ?? defaultSetTimer;
+  const readyClearTimer = bindings.clearTimer ?? defaultClearTimer;
   /**
    * Resolved on every successful `enqueueInbox`; the dispatch loop
    * awaits this promise after a null dequeue so it returns to
@@ -590,47 +594,10 @@ export function createWorkflowSupervisor(
   let recyclePolicy: RecyclePolicy | null = null;
   let recycleInProgress = false;
 
-  async function deploy(frame: SupervisorDeployFrame): Promise<void> {
-    // The `agent.deploy` wire frame currently carries only a
-    // `HarnessConfig`, which is the trivial-workflow shape (a single
-    // step derived from the agent's harness). The branching seam
-    // exists for the multi-step extension; for every frame today
-    // the supervisor calls trivialLaunch unchanged.
-    //
-    // Trivial-branch invariants:
-    //   - No IPC opens, no child spawn, no mail-bus registration.
-    //   - credentialsSnapshot is not assembled; the multi-step
-    //     branch owns it. `getCredentialsSnapshot()` continues to
-    //     return null on the trivial path.
-    //   - Run-lifecycle events are committed inline from the
-    //     supervisor process via `signAsPrincipal`. The supervisor
-    //     hands `recordRunEvent` to the host's `trivialLaunch`; the
-    //     host calls it from its per-message reactor / harness
-    //     lifecycle moments (`message.run.started` /
-    //     `message.run.ended`) so the on-disk event chain matches
-    //     the multi-step branch byte-for-byte.
-    const recordRunEvent: RecordRunEvent = (event) =>
-      commitRunEvent({
-        substrate: bindings.repoStore,
-        repoId: bindings.workflowRunRepoId,
-        ref: bindings.workflowRunRef,
-        deploymentId: bindings.deploymentId,
-        event,
-        signAsPrincipal: bindings.signAsPrincipal,
-      });
-    await bindings.trivialLaunch({
-      agentAddress: frame.agentAddress,
-      agentId: frame.agentId,
-      config: frame.config,
-      hubPublicKey: frame.hubPublicKey,
-      recordRunEvent,
-    });
-  }
-
   function onChildCrash(reason: string): void {
-    // WORKBENCH-LOCAL (CL-2651): upstream logs a literal `{reason}` (missing
-    // the `$`), so the crash cause never prints. Interpolate it so the reason
-    // is visible.
+    // WORKBENCH-LOCAL (CL-2651): upstream writes a literal `{reason}` (missing
+    // the `$`), so the crash cause never reaches the log and a wedged child is
+    // undiagnosable. Interpolate it so the reason is visible.
     logger.error`workflow-process control channel crash: ${reason}`;
     void shutdownInternal({ reason });
   }
@@ -1097,7 +1064,7 @@ export function createWorkflowSupervisor(
       // per-event form, which readers handle. There is no later trigger for
       // a run whose fold is interrupted here (e.g. by a crash before the
       // fold commits): the terminal signal fires once. A bounded recovery
-      // sweep is tracked as INTR-229; until then such a run stays
+      // sweep is not yet implemented; until then such a run stays
       // per-event. The fold commit carries no newly-added terminal event,
       // so it does not re-fire this terminal-write coupling.
       for (const { runId } of newlyTerminalRuns) {
@@ -1326,8 +1293,8 @@ export function createWorkflowSupervisor(
       channelId: args.channelId,
       reader: args.handle.eventReader,
       onCrash: (reason) => {
-        // WORKBENCH-LOCAL (CL-2651): same upstream `{reason}` typo as the
-        // control-channel crash log — interpolate so the cause prints.
+        // WORKBENCH-LOCAL (CL-2651): same literal `{reason}` typo as the
+        // control-channel crash log -- interpolate so the cause prints.
         logger.error`workflow-process event channel crash: ${reason}`;
         void shutdownInternal({ reason });
       },
@@ -1355,28 +1322,56 @@ export function createWorkflowSupervisor(
     const channelId = generateChannelId();
     const hmacKey = generateHmacKey();
     const ipcKeypair = await (bindings.ipcKeyPairFactory ?? generateKeyPair)();
-    const env: Record<string, string> = {
-      ...bindings.substrateEnv,
-      IPC_CHANNEL_ID: channelId,
-      IPC_HMAC_KEY: hexEncode(hmacKey),
-      HOST_PUBKEY: hexEncode(ipcKeypair.publicKey),
-      DEPLOYMENT_ID: bindings.deploymentId,
-      DEFINITION_HASH: opts.definitionHash,
-      MAILBOX_ADDRESS: bindings.deploymentMailAddress,
-      WARM_KEEP: opts.warmKeep ? "true" : "false",
-    };
+    const env = buildChildSpawnEnv({
+      substrateEnv: bindings.substrateEnv,
+      dynamicSpawnEnv: bindings.dynamicSpawnEnv,
+      channelId,
+      hmacKey,
+      hostPublicKey: ipcKeypair.publicKey,
+      deploymentId: bindings.deploymentId,
+      deploymentMailAddress: bindings.deploymentMailAddress,
+      stepCount: bindings.stepCount,
+      definitionHash: opts.definitionHash,
+      warmKeep: opts.warmKeep,
+    });
 
     const handle = bindings.subprocessSpawner({
       binaryPath: bindings.binaryPath,
       env,
     });
 
-    const wired = await wireChild({
-      channelId,
-      hmacKey,
-      ipcKeypair,
-      handle,
-      onInferenceEvent: opts.onInferenceEvent,
+    let wired: Awaited<ReturnType<typeof wireChild>>;
+    try {
+      wired = await wireChild({
+        channelId,
+        hmacKey,
+        ipcKeypair,
+        handle,
+        onInferenceEvent: opts.onInferenceEvent,
+      });
+    } catch (cause) {
+      // wireChild threw before any state record owns the handle, so
+      // shutdownInternal -- which reaches the handle through the
+      // active-state record -- would early-return on the "idle" phase
+      // without killing it. Kill the freshly-spawned child directly to
+      // avoid orphaning the OS process.
+      await killChildHandle(handle, DEFAULT_KILL_TIMEOUT_MS, {
+        setTimer: readySetTimer,
+        clearTimer: readyClearTimer,
+        logger,
+      });
+      throw cause;
+    }
+
+    // The ready handshake below folds `wired.readyPromise` into an
+    // outcome value, handling its rejection. But a startup teardown that
+    // fires BEFORE the handshake -- a throw during credentials assembly
+    // or mail registration -- kills the child, and that kill rejects
+    // `readyPromise` (the control channel ends). Attach a benign handler
+    // now so the rejection is never unhandled on that path; the
+    // handshake's own fold still observes the outcome when it runs.
+    void wired.readyPromise.catch(() => {
+      /* handled by the ready-handshake fold when the handshake runs */
     });
 
     // Cohort abort controller covers terminal-event watcher
@@ -1403,199 +1398,275 @@ export function createWorkflowSupervisor(
       replayDone: null,
     };
 
-    const credentialsSnapshot = await assembleCredentialsSnapshot({
-      repoStore: bindings.repoStore,
-      principal: bindings.readPrincipal,
-      stepOrder: opts.stepOrder,
-      deploymentId: bindings.deploymentId,
-      deriveStepAddress: bindings.deriveStepAddress,
-      ...(bindings.deriveStepRepoId !== undefined
-        ? { deriveStepRepoId: bindings.deriveStepRepoId }
-        : {}),
-    });
-    state.credentialsSnapshot = credentialsSnapshot;
+    // Everything from here to the successful `return` runs with the state
+    // record in "starting" (then "running"). A throw at any of these
+    // steps -- credentials assembly, mail registration, the ready
+    // handshake, the credentials push, the dispatch-loop start -- routes
+    // through shutdownInternal, the single owner of starting/running
+    // teardown: it kills the handle and releases the mail subscription
+    // and address registration installed below.
+    try {
+      const credentialsSnapshot = await assembleCredentialsSnapshot({
+        repoStore: bindings.repoStore,
+        principal: bindings.readPrincipal,
+        stepOrder: opts.stepOrder,
+        deploymentId: bindings.deploymentId,
+        deriveStepAddress: bindings.deriveStepAddress,
+        ...(bindings.deriveStepRepoId !== undefined
+          ? { deriveStepRepoId: bindings.deriveStepRepoId }
+          : {}),
+      });
+      state.credentialsSnapshot = credentialsSnapshot;
 
-    // Replay any orphaned `processing/` entries back to `inbox/`
-    // BEFORE the dispatch loop's first dequeue. A crash mid-dispatch
-    // in a prior supervisor incarnation can leave an entry in
-    // `processing/` with no owner; the FIFO contract requires the
-    // entry move back to `inbox/` so the next dispatch picks it up
-    // in its original arrival position. The replay runs off the
-    // spawn critical path (the substrate write may roundtrip through
-    // the pack-pushing wrap and a slow hub), but `runDispatchLoop`
-    // takes the promise as an argument and awaits it before its
-    // first `dequeueToProcessing` so a fresh inbound mail that lands
-    // during the replay window cannot ship ahead of the orphan once
-    // the replay completes.
-    const replayDone = inboxPrimitives
-      .replayProcessingToInbox(
+      // Replay any orphaned `processing/` entries back to `inbox/`
+      // BEFORE the dispatch loop's first dequeue. A crash mid-dispatch
+      // in a prior supervisor incarnation can leave an entry in
+      // `processing/` with no owner; the FIFO contract requires the
+      // entry move back to `inbox/` so the next dispatch picks it up
+      // in its original arrival position. The replay runs off the
+      // spawn critical path (the substrate write may roundtrip through
+      // the pack-pushing wrap and a slow hub), but `runDispatchLoop`
+      // takes the promise as an argument and awaits it before its
+      // first `dequeueToProcessing` so a fresh inbound mail that lands
+      // during the replay window cannot ship ahead of the orphan once
+      // the replay completes.
+      const replayDone = readOwnedMessageIds(
         bindings.repoStore,
-        inboxWritePrincipal,
         bindings.workflowRunRepoId,
-        bindings.deploymentMailAddress,
       )
-      .then(() => {
-        wakeDispatch();
-      })
-      .catch((cause) => {
-        // Documented best-effort: a failed replay leaves orphaned
-        // `processing/` entries parked and the dispatch loop will
-        // then ship newly-enqueued mail ahead of them, violating
-        // the FIFO contract described in the comment above.
-        // Tightening this to a fatal `onChildCrash` was attempted
-        // but caused spurious crashes in the integration suite
-        // where the first spawn legitimately has no
-        // `processing/` directory to replay; resolving that
-        // requires either a no-op-on-missing variant of
-        // `replayProcessingToInbox` or a dispatch-loop periodic
-        // sweep that picks up parked orphans. Left as logged
-        // best-effort until that lands.
-        const message = cause instanceof Error ? cause.message : String(cause);
-        logger.warn`replayProcessingToInbox on spawn failed: ${message}`;
-      });
-    // Hold the replay promise on the active-state record so
-    // `shutdownInternal` awaits its settlement before tearing the
-    // bindings down. A shutdown that lands while the replay is in
-    // flight would otherwise leave the substrate write pending past
-    // the supervisor's exit.
-    state.replayDone = replayDone;
+        .then((ownedMessageIds) =>
+          inboxPrimitives.replayProcessingToInbox(
+            bindings.repoStore,
+            inboxWritePrincipal,
+            bindings.workflowRunRepoId,
+            bindings.deploymentMailAddress,
+            { ownedMessageIds },
+          ),
+        )
+        .then(() => {
+          wakeDispatch();
+        })
+        .catch((cause) => {
+          // Documented best-effort: a failed replay leaves orphaned
+          // `processing/` entries parked and the dispatch loop will
+          // then ship newly-enqueued mail ahead of them, violating
+          // the FIFO contract described in the comment above.
+          // Tightening this to a fatal `onChildCrash` was attempted
+          // but caused spurious crashes in the integration suite
+          // where the first spawn legitimately has no
+          // `processing/` directory to replay; resolving that
+          // requires either a no-op-on-missing variant of
+          // `replayProcessingToInbox` or a dispatch-loop periodic
+          // sweep that picks up parked orphans. Left as logged
+          // best-effort until that lands.
+          const message =
+            cause instanceof Error ? cause.message : String(cause);
+          logger.warn`replayProcessingToInbox on spawn failed: ${message}`;
+        });
+      // Hold the replay promise on the active-state record so
+      // `shutdownInternal` awaits its settlement before tearing the
+      // bindings down. A shutdown that lands while the replay is in
+      // flight would otherwise leave the substrate write pending past
+      // the supervisor's exit.
+      state.replayDone = replayDone;
 
-    bindings.mailBus.registerAddress(bindings.deploymentMailAddress);
-    const mailUnsubscribe = bindings.mailBus.subscribeMailForAddress(
-      bindings.deploymentMailAddress,
-      onMailMessage,
-    );
-    state.mailUnsubscribe = mailUnsubscribe;
-
-    const readyInfo = await wired.readyPromise;
-
-    // Push the assembled credentialsSnapshot to the child before the
-    // mail buffer drains. Without this, the child's
-    // `createCredentialsBackedAuthorize` closure observes a null
-    // snapshot ref on the first authorize call and throws "no
-    // credentialsSnapshot active"; the run's first step fails before
-    // the runtime body can commit `StepCompleted`. The send rides the
-    // same control channel `trigger.fire` uses, so the ordering
-    // guarantee (`grants-updated` lands before `trigger.fire`) holds
-    // for buffered and post-ready inbound mail alike.
-    await wired.wiring.controlSender.send({
-      type: "grants-updated",
-      data: {
-        snapshot: {
-          steps: credentialsSnapshot.steps.map((s) => ({
-            stepId: s.stepId,
-            address: s.address,
-            grants: [...s.grants],
-            contentHash: s.contentHash,
-          })),
-        },
-      },
-    });
-
-    // Transition to running. The dispatch loop (started below)
-    // picks up any pre-ready buffered mail through the FIFO inbox
-    // queue rather than through an in-memory buffer; arrival order
-    // is preserved by the envelope's `receivedAt` prefix on the
-    // inbox filename.
-    const startingPhaseCohortAbort = state.terminalCohortAbort;
-    if (startingPhaseCohortAbort === null) {
-      throw new Error(
-        "supervisor: terminalCohortAbort missing after spawn handshake",
+      bindings.mailBus.registerAddress(bindings.deploymentMailAddress);
+      const mailUnsubscribe = bindings.mailBus.subscribeMailForAddress(
+        bindings.deploymentMailAddress,
+        onMailMessage,
       );
-    }
-    const startingPhaseBroadcaster = state.terminalBroadcaster;
-    const dispatchLoop = runDispatchLoop(
-      wired.wiring.controlSender,
-      startingPhaseCohortAbort,
-      startingPhaseBroadcaster,
-      replayDone,
-    );
-    // Surface dispatch-loop failures via the logger; the loop's own
-    // catch already swallows per-iteration faults, but a structural
-    // failure (e.g. the cohort abort handler itself throws) lands
-    // here.
-    void dispatchLoop.catch((cause) => {
-      const message = cause instanceof Error ? cause.message : String(cause);
-      logger.error`dispatch loop terminated with error: ${message}`;
-    });
-    state = {
-      phase: "running",
-      handle,
-      controlSender: wired.wiring.controlSender,
-      channelId,
-      eventPump: wired.wiring.eventPump,
-      onInferenceEvent: opts.onInferenceEvent,
-      mailUnsubscribe,
-      credentialsSnapshot,
-      terminalCohortAbort: startingPhaseCohortAbort,
-      terminalBroadcaster: startingPhaseBroadcaster,
-      dispatchLoop,
-      replayDone,
-    };
-    // Kick the dispatch loop in case mail landed in the inbox
-    // before the loop's first `await dispatchWake`. A wake against a
-    // freshly-minted promise is a no-op; the dispatch loop's first
-    // dequeue happens unconditionally.
-    wakeDispatch();
+      state.mailUnsubscribe = mailUnsubscribe;
 
-    // Cache the spawn context for the recycle path. The recycle path
-    // reuses the same stepOrder/definitionHash/onInferenceEvent on
-    // every respawn -- those are the strict-orthogonality anchors
-    // with redeploy, and the supervisor never mutates them.
-    const now = bindings.recyclePolicyNow ?? defaultNow;
-    spawnContext = {
-      stepOrder: opts.stepOrder,
-      definitionHash: opts.definitionHash,
-      warmKeep: opts.warmKeep,
-      onInferenceEvent: opts.onInferenceEvent,
-      spawnedAt: now(),
-    };
+      // Bound the `ready` handshake. `wired.readyPromise` resolves on `ready`
+      // and rejects when the control channel ends (the child exited); a child
+      // that neither readies nor exits would block here forever. Fold all three
+      // outcomes into values so the single `readyClearTimer` below runs on every
+      // path -- ready, child-exit failure, and timeout -- before we act on the
+      // result. A `Promise.race` that could reject would skip the clear on the
+      // child-exit path and leak an armed deadline that keeps the event loop
+      // alive for up to `readyTimeoutMs`. The deadline is resolve-only, so it
+      // contributes no rejection of its own. Kill on timeout uses the
+      // SIGTERM->SIGKILL escalation because a wedged child may ignore SIGTERM;
+      // SIGKILL guarantees `exited` settles.
+      const readyOutcome = wired.readyPromise.then(
+        (info) => ({ kind: "ready" as const, info }),
+        (err: unknown) => ({ kind: "failed" as const, err }),
+      );
+      const readyDeadline = waitDeadline(readySetTimer, readyTimeoutMs);
+      const readyRace = await Promise.race([
+        readyOutcome,
+        readyDeadline.promise.then(() => ({ kind: "timeout" as const })),
+      ]);
+      readyClearTimer(readyDeadline.handle);
+      if (readyRace.kind === "timeout") {
+        await killChildHandle(wired.wiring.handle, DEFAULT_KILL_TIMEOUT_MS, {
+          setTimer: readySetTimer,
+          clearTimer: readyClearTimer,
+          logger,
+        });
+        // The SIGTERM->SIGKILL escalation above is deliberate: a wedged
+        // child may ignore the plain kill shutdownInternal issues. The
+        // outer catch then runs shutdownInternal for the "starting"-phase
+        // teardown (subscription + address release); its kill against the
+        // already-killed handle is idempotent.
+        throw new Error(
+          `workflow-host supervisor: child did not emit ready within ${readyTimeoutMs}ms; killed`,
+        );
+      }
+      if (readyRace.kind === "failed") {
+        // The child exited during the handshake; the outer catch releases
+        // the subscription and registration via shutdownInternal.
+        throw readyRace.err;
+      }
+      const readyInfo = readyRace.info;
 
-    // Start the upstream control pump so the supervisor sees the
-    // child's `recycle.request` (and any future upstream variant) as
-    // it arrives. The pump exits when the iterator ends, which
-    // happens when the child closes its end of the control channel
-    // -- either on shutdown or on recycle's `kill` step. The pump
-    // closes over the cohort's broadcaster captured at pump-start
-    // time so a `terminal.event` frame the iterator dequeues after a
-    // recycle has minted a new cohort routes to THIS cohort's (now
-    // disposed) broadcaster, not the successor's.
-    void pumpUpstreamControl(
-      wired.controlIncoming,
-      startingPhaseBroadcaster,
-    ).catch((cause) => {
-      const message = cause instanceof Error ? cause.message : String(cause);
-      logger.error`upstream control pump failed: ${message}`;
-    });
-
-    // Arm the recycle policy. The policy is a no-op when all bounds
-    // are `undefined`; bounds resolution lives inside `createRecyclePolicy`.
-    if (bindings.recyclePolicy !== undefined) {
-      const setTimer = bindings.recyclePolicySetTimer ?? defaultSetTimer;
-      const clearTimer = bindings.recyclePolicyClearTimer ?? defaultClearTimer;
-      recyclePolicy = createRecyclePolicy({
-        bounds: bindings.recyclePolicy,
-        now,
-        spawnedAt: spawnContext.spawnedAt,
-        ...(bindings.readRssBytes !== undefined
-          ? { readRssBytes: bindings.readRssBytes }
-          : {}),
-        ...(bindings.readGrantsAgeMs !== undefined
-          ? { readGrantsAgeMs: bindings.readGrantsAgeMs }
-          : {}),
-        setTimer,
-        clearTimer,
-        trigger: async (reason) => {
-          await recycle({ reason, origin: "policy" });
+      // Push the assembled credentialsSnapshot to the child before the
+      // mail buffer drains. Without this, the child's
+      // `createCredentialsBackedAuthorize` closure observes a null
+      // snapshot ref on the first authorize call and throws "no
+      // credentialsSnapshot active"; the run's first step fails before
+      // the runtime body can commit `StepCompleted`. The send rides the
+      // same control channel `trigger.fire` uses, so the ordering
+      // guarantee (`grants-updated` lands before `trigger.fire`) holds
+      // for buffered and post-ready inbound mail alike.
+      await wired.wiring.controlSender.send({
+        type: "grants-updated",
+        data: {
+          snapshot: {
+            steps: credentialsSnapshot.steps.map((s) => ({
+              stepId: s.stepId,
+              address: s.address,
+              grants: [...s.grants],
+              contentHash: s.contentHash,
+            })),
+          },
         },
       });
-    }
 
-    return {
-      pid: readyInfo.childPid,
-      channelId,
-      credentialsSnapshot,
-    };
+      // Transition to running. The dispatch loop (started below)
+      // picks up any pre-ready buffered mail through the FIFO inbox
+      // queue rather than through an in-memory buffer; arrival order
+      // is preserved by the envelope's `receivedAt` prefix on the
+      // inbox filename.
+      const startingPhaseCohortAbort = state.terminalCohortAbort;
+      if (startingPhaseCohortAbort === null) {
+        throw new Error(
+          "supervisor: terminalCohortAbort missing after spawn handshake",
+        );
+      }
+      const startingPhaseBroadcaster = state.terminalBroadcaster;
+      const dispatchLoop = runDispatchLoop(
+        wired.wiring.controlSender,
+        startingPhaseCohortAbort,
+        startingPhaseBroadcaster,
+        replayDone,
+      );
+      // Surface dispatch-loop failures via the logger; the loop's own
+      // catch already swallows per-iteration faults, but a structural
+      // failure (e.g. the cohort abort handler itself throws) lands
+      // here.
+      void dispatchLoop.catch((cause) => {
+        const message = cause instanceof Error ? cause.message : String(cause);
+        logger.error`dispatch loop terminated with error: ${message}`;
+      });
+      state = {
+        phase: "running",
+        handle,
+        controlSender: wired.wiring.controlSender,
+        channelId,
+        eventPump: wired.wiring.eventPump,
+        onInferenceEvent: opts.onInferenceEvent,
+        mailUnsubscribe,
+        credentialsSnapshot,
+        terminalCohortAbort: startingPhaseCohortAbort,
+        terminalBroadcaster: startingPhaseBroadcaster,
+        dispatchLoop,
+        replayDone,
+      };
+      // Kick the dispatch loop in case mail landed in the inbox
+      // before the loop's first `await dispatchWake`. A wake against a
+      // freshly-minted promise is a no-op; the dispatch loop's first
+      // dequeue happens unconditionally.
+      wakeDispatch();
+
+      // Cache the spawn context for the recycle path. The recycle path
+      // reuses the same stepOrder/definitionHash/onInferenceEvent on
+      // every respawn -- those are the strict-orthogonality anchors
+      // with redeploy, and the supervisor never mutates them.
+      const now = bindings.recyclePolicyNow ?? defaultNow;
+      spawnContext = {
+        stepOrder: opts.stepOrder,
+        definitionHash: opts.definitionHash,
+        warmKeep: opts.warmKeep,
+        onInferenceEvent: opts.onInferenceEvent,
+        spawnedAt: now(),
+      };
+
+      // Start the upstream control pump so the supervisor sees the
+      // child's `recycle.request` (and any future upstream variant) as
+      // it arrives. The pump exits when the iterator ends, which
+      // happens when the child closes its end of the control channel
+      // -- either on shutdown or on recycle's `kill` step. The pump
+      // closes over the cohort's broadcaster captured at pump-start
+      // time so a `terminal.event` frame the iterator dequeues after a
+      // recycle has minted a new cohort routes to THIS cohort's (now
+      // disposed) broadcaster, not the successor's.
+      void pumpUpstreamControl(
+        wired.controlIncoming,
+        startingPhaseBroadcaster,
+      ).catch((cause) => {
+        const message = cause instanceof Error ? cause.message : String(cause);
+        logger.error`upstream control pump failed: ${message}`;
+      });
+
+      // Arm the recycle policy. The policy is a no-op when all bounds
+      // are `undefined`; bounds resolution lives inside `createRecyclePolicy`.
+      if (bindings.recyclePolicy !== undefined) {
+        const setTimer = bindings.recyclePolicySetTimer ?? defaultSetTimer;
+        const clearTimer =
+          bindings.recyclePolicyClearTimer ?? defaultClearTimer;
+        recyclePolicy = createRecyclePolicy({
+          bounds: bindings.recyclePolicy,
+          now,
+          spawnedAt: spawnContext.spawnedAt,
+          ...(bindings.readRssBytes !== undefined
+            ? { readRssBytes: bindings.readRssBytes }
+            : {}),
+          ...(bindings.readGrantsAgeMs !== undefined
+            ? { readGrantsAgeMs: bindings.readGrantsAgeMs }
+            : {}),
+          setTimer,
+          clearTimer,
+          trigger: async (reason) => {
+            await recycle({ reason, origin: "policy" });
+          },
+        });
+      }
+
+      return {
+        pid: readyInfo.childPid,
+        channelId,
+        credentialsSnapshot,
+      };
+    } catch (cause) {
+      const message = cause instanceof Error ? cause.message : String(cause);
+      // Defense-in-depth for a distinct invariant: the original spawn
+      // `cause` must survive the unwind. `shutdownInternal` is designed to
+      // be total and should not throw, but if it ever regresses this guard
+      // logs the secondary teardown error rather than letting it replace
+      // `cause` and hide the real startup failure. Mirrors the
+      // recycle-failure catch, which preserves its cause the same way.
+      await shutdownInternal({
+        reason: `spawn failed during startup: ${message}`,
+      }).catch((shutdownCause) => {
+        const inner =
+          shutdownCause instanceof Error
+            ? shutdownCause.message
+            : String(shutdownCause);
+        logger.error`shutdown after spawn failure also threw: ${inner}`;
+      });
+      throw cause;
+    }
   }
 
   /**
@@ -1916,107 +1987,162 @@ export function createWorkflowSupervisor(
     if (state.phase === "idle" || state.phase === "stopped") return;
     const prior = state;
     state = { phase: "stopping" };
-    // Stop every armed drainTimeout accumulator before tearing the
-    // child down. An accumulator left running would otherwise fire
-    // its `setTimeout` callback (or its terminal-event watcher's
-    // settle hook) against a shutdown-mid-flight supervisor; the
-    // explicit `stop()` makes the lifecycle deterministic.
+    // shutdownInternal is designed to be TOTAL: when a child is up it must
+    // always kill it and always reach `stopped`, no matter which teardown
+    // step throws. Rather than depend on every step being individually
+    // non-throwing (an approach that has already leaked an escape hatch),
+    // the whole teardown body runs inside one `try`, and the two
+    // load-bearing actions -- the child kill and the `phase = "stopped"`
+    // transition -- live in the `finally`, so a throw anywhere above them
+    // still runs both. This is the documented shutdown carve-out to the
+    // fail-loud rule: leaking the child or wedging the supervisor in
+    // `stopping` is strictly worse than logging and continuing, so the
+    // steps that can throw surface at `logger.warn` and execution proceeds.
+    // (`terminalCohortAbort.abort`, `rejectCohortAwaiters`, and
+    // `wakeDispatch` cannot throw, and the broadcaster's `dispose` is total
+    // by construction; they sit inside the `try` regardless so the
+    // invariant survives if that ever changes.)
     const accumulatorsToDispose = [...drainAccumulators.values()];
-    for (const accumulator of accumulatorsToDispose) {
-      accumulator.stop();
-    }
-    drainAccumulators.clear();
-    if (
-      prior.phase === "starting" ||
-      prior.phase === "running" ||
-      prior.phase === "recycling"
-    ) {
-      prior.terminalCohortAbort.abort();
-      // Reject every pending merge round-trip and markConsumed waiter
-      // so handler closures awaiting them (including fire-and-forget
-      // `handleSubstrateWriteRequest` instances) cannot outlive the
-      // dying cohort. Without this, the `await new Promise` inside
-      // each handler would sit forever on a resolver the dying control
-      // channel will never invoke.
-      rejectCohortAwaiters("shutdown");
-      // Dispose the cohort broadcaster so any minted iterator settles
-      // with `done: true` -- the dispatch loop's `waitForRunTerminal`
-      // and any drainTimeout watcher unblock through the same shutdown
-      // path the cohort abort drives.
-      prior.terminalBroadcaster.dispose();
-      // Wake the dispatch loop so its `dispatchWake` await settles
-      // and the loop notices the cohort abort. Without the wake, the
-      // loop's `Promise.race` would sit on the wake promise until
-      // some other actor woke it.
-      wakeDispatch();
-    }
-    // Await every accumulator's `disposed()` so a pending escalation
-    // commit or terminal-event watcher coroutine cannot outlive the
-    // supervisor and fire against torn-down bindings.
-    await Promise.all(
-      accumulatorsToDispose.map((a) =>
-        a.disposed().catch(() => {
-          /* swallowed: each accumulator already logs its own failure. */
-        }),
-      ),
-    );
-    if (
-      (prior.phase === "running" || prior.phase === "recycling") &&
-      prior.dispatchLoop !== null
-    ) {
-      await prior.dispatchLoop.catch(() => {
-        /* swallowed: dispatch-loop failures are surfaced by the
-           loop's own logger; the shutdown path only waits for the
-           loop's last iteration to settle. */
-      });
-    }
-    if (
-      (prior.phase === "starting" ||
-        prior.phase === "running" ||
-        prior.phase === "recycling") &&
-      prior.replayDone !== null
-    ) {
-      // Await the spawn-time replayProcessingToInbox before tearing
-      // the bindings down. The replay's substrate write
-      // (`processing/` -> `inbox/` rename via a tree commit) must
-      // settle before the supervisor's exit; without the await the
-      // substrate I/O outlives the supervisor and a subsequent boot
-      // can observe a partially-applied replay.
-      await prior.replayDone.catch(() => {
-        /* swallowed: the replay's own catch already surfaces the
-           failure to the supervisor's warn channel; the shutdown
-           path only waits for the substrate write to settle. */
-      });
-    }
-    if (recyclePolicy !== null) {
-      recyclePolicy.stop();
-      recyclePolicy = null;
-    }
-    spawnContext = null;
-    if (
-      prior.phase === "starting" ||
-      prior.phase === "running" ||
-      prior.phase === "recycling"
-    ) {
-      if (prior.mailUnsubscribe !== null) prior.mailUnsubscribe();
-      try {
-        bindings.mailBus.unregisterAddress(bindings.deploymentMailAddress);
-      } catch (cause) {
-        const message = cause instanceof Error ? cause.message : String(cause);
-        logger.warn`mail bus unregisterAddress threw: ${message}`;
+    try {
+      // Stop every armed drainTimeout accumulator before tearing the child
+      // down. An accumulator left running would otherwise fire its
+      // `setTimeout` callback (or its terminal-event watcher's settle hook)
+      // against a shutdown-mid-flight supervisor. Guard each `stop` so one
+      // throwing accumulator does not leave the rest armed.
+      for (const accumulator of accumulatorsToDispose) {
+        try {
+          accumulator.stop();
+        } catch (cause) {
+          const message =
+            cause instanceof Error ? cause.message : String(cause);
+          logger.warn`drain accumulator stop threw during shutdown: ${message}`;
+        }
       }
-      prior.handle.kill();
-      await prior.handle.exited.catch(() => {
-        /* swallowed: the host has already been told the deployment is
-           coming down; an error surfaced from the spawner is the
-           process exiting with a non-zero code, which is what the
-           shutdown path expects. */
-      });
-      await prior.eventPump.catch(() => {
-        /* swallowed for the same reason as above. */
-      });
+      drainAccumulators.clear();
+      if (
+        prior.phase === "starting" ||
+        prior.phase === "running" ||
+        prior.phase === "recycling"
+      ) {
+        prior.terminalCohortAbort.abort();
+        // Reject every pending merge round-trip and markConsumed waiter
+        // so handler closures awaiting them (including fire-and-forget
+        // `handleSubstrateWriteRequest` instances) cannot outlive the
+        // dying cohort. Without this, the `await new Promise` inside
+        // each handler would sit forever on a resolver the dying control
+        // channel will never invoke.
+        rejectCohortAwaiters("shutdown");
+        // Dispose the cohort broadcaster so any minted iterator settles
+        // with `done: true` -- the dispatch loop's `waitForRunTerminal`
+        // and any drainTimeout watcher unblock through the same shutdown
+        // path the cohort abort drives.
+        prior.terminalBroadcaster.dispose();
+        // Wake the dispatch loop so its `dispatchWake` await settles
+        // and the loop notices the cohort abort. Without the wake, the
+        // loop's `Promise.race` would sit on the wake promise until
+        // some other actor woke it.
+        wakeDispatch();
+      }
+      // Await every accumulator's `disposed()` so a pending escalation
+      // commit or terminal-event watcher coroutine cannot outlive the
+      // supervisor and fire against torn-down bindings.
+      await Promise.all(
+        accumulatorsToDispose.map((a) =>
+          a.disposed().catch(() => {
+            /* swallowed: each accumulator already logs its own failure. */
+          }),
+        ),
+      );
+      if (
+        (prior.phase === "running" || prior.phase === "recycling") &&
+        prior.dispatchLoop !== null
+      ) {
+        await prior.dispatchLoop.catch(() => {
+          /* swallowed: dispatch-loop failures are surfaced by the
+             loop's own logger; the shutdown path only waits for the
+             loop's last iteration to settle. */
+        });
+      }
+      if (
+        (prior.phase === "starting" ||
+          prior.phase === "running" ||
+          prior.phase === "recycling") &&
+        prior.replayDone !== null
+      ) {
+        // Await the spawn-time replayProcessingToInbox before tearing
+        // the bindings down. The replay's substrate write
+        // (`processing/` -> `inbox/` rename via a tree commit) must
+        // settle before the supervisor's exit; without the await the
+        // substrate I/O outlives the supervisor and a subsequent boot
+        // can observe a partially-applied replay.
+        await prior.replayDone.catch(() => {
+          /* swallowed: the replay's own catch already surfaces the
+             failure to the supervisor's warn channel; the shutdown
+             path only waits for the substrate write to settle. */
+        });
+      }
+      if (recyclePolicy !== null) {
+        try {
+          recyclePolicy.stop();
+        } catch (cause) {
+          const message =
+            cause instanceof Error ? cause.message : String(cause);
+          logger.warn`recycle policy stop threw during shutdown: ${message}`;
+        }
+        recyclePolicy = null;
+      }
+      spawnContext = null;
+      if (
+        prior.phase === "starting" ||
+        prior.phase === "running" ||
+        prior.phase === "recycling"
+      ) {
+        if (prior.mailUnsubscribe !== null) {
+          try {
+            prior.mailUnsubscribe();
+          } catch (cause) {
+            const message =
+              cause instanceof Error ? cause.message : String(cause);
+            logger.warn`mail unsubscribe threw during shutdown: ${message}`;
+          }
+        }
+        try {
+          bindings.mailBus.unregisterAddress(bindings.deploymentMailAddress);
+        } catch (cause) {
+          const message =
+            cause instanceof Error ? cause.message : String(cause);
+          logger.warn`mail bus unregisterAddress threw: ${message}`;
+        }
+      }
+    } finally {
+      // Load-bearing: the child kill and the `stopped` transition run
+      // whatever happened above, so a throwing teardown step can neither
+      // leak the child nor wedge the supervisor in `stopping`. The kill is
+      // itself guarded so a throw here cannot re-escape the `finally`.
+      if (
+        prior.phase === "starting" ||
+        prior.phase === "running" ||
+        prior.phase === "recycling"
+      ) {
+        try {
+          prior.handle.kill();
+        } catch (cause) {
+          const message =
+            cause instanceof Error ? cause.message : String(cause);
+          logger.warn`child kill threw during shutdown: ${message}`;
+        }
+        await prior.handle.exited.catch(() => {
+          /* swallowed: the host has already been told the deployment is
+             coming down; an error surfaced from the spawner is the
+             process exiting with a non-zero code, which is what the
+             shutdown path expects. */
+        });
+        await prior.eventPump.catch(() => {
+          /* swallowed for the same reason as above. */
+        });
+      }
+      state = { phase: "stopped" };
     }
-    state = { phase: "stopped" };
     logger.info`supervisor shutdown complete (${opts.reason})`;
   }
 
@@ -2311,6 +2437,9 @@ export function createWorkflowSupervisor(
             wakeDispatch();
           },
           onCrash: onChildCrash,
+          // Edge-resolved once at the supervisor factory; recycle bounds
+          // the respawn handshake with the same value the spawn path uses.
+          readyTimeoutMs,
           ...(bindings.recyclePolicySetTimer !== undefined
             ? { setTimer: bindings.recyclePolicySetTimer }
             : {}),
@@ -2385,6 +2514,27 @@ export function createWorkflowSupervisor(
     });
   }
 
+  async function deliverSources(opts: DeliverSourcesOpts): Promise<void> {
+    // The supervisor is the single producer of `sources-updated` control
+    // frames. `recycling` is rejected for the same reason as
+    // `deliverSignal`: `state.controlSender` still points at the dying
+    // child, so a frame would either buffer behind the SIGTERM or write
+    // into a closed pipe and be lost. Rejecting surfaces the race so the
+    // caller can retry once the recycle completes.
+    if (state.phase !== "running" && state.phase !== "starting") {
+      throw new Error(
+        `supervisor: deliverSources called in phase ${state.phase}; expected starting/running`,
+      );
+    }
+    await state.controlSender.send({
+      type: "sources-updated",
+      data: {
+        sources: opts.sources,
+        defaultSource: opts.defaultSource,
+      },
+    });
+  }
+
   function getCredentialsSnapshot(): CredentialsSnapshot | null {
     if (state.phase === "starting" || state.phase === "running") {
       return state.credentialsSnapshot;
@@ -2393,13 +2543,13 @@ export function createWorkflowSupervisor(
   }
 
   return {
-    deploy,
     spawn,
     requestCancel,
     shutdown,
     drain,
     recycle,
     deliverSignal,
+    deliverSources,
     getCredentialsSnapshot,
   };
 }
@@ -2512,15 +2662,6 @@ async function waitForReady(
 
 function defaultNow(): number {
   return Date.now();
-}
-
-function defaultSetTimer(cb: () => void, ms: number): unknown {
-  return setTimeout(cb, ms);
-}
-
-function defaultClearTimer(handle: unknown): void {
-  // eslint-disable-next-line @typescript-eslint/no-unsafe-type-assertion -- the handle is the value `setTimeout` returned, narrowed back at the boundary
-  clearTimeout(handle as ReturnType<typeof setTimeout>);
 }
 
 /**

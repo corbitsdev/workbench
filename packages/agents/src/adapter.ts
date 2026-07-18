@@ -124,9 +124,10 @@ export function convertInstanceEvents(
       content: event.content,
       createdAt: event.timestamp,
       ...(toolCalls !== undefined && toolCalls.length > 0 ? { toolCalls } : {}),
-      ...(event.reasoning !== undefined && event.reasoning.trim() !== ""
-        ? { reasoning: event.reasoning }
-        : {}),
+      // Upstream `InstanceEvent` (hub-client) dropped `reasoning` from the turn
+      // variant when the in-process session runtime was retired, so a reloaded
+      // turn no longer carries a persisted reasoning trace. Live reasoning still
+      // streams via the agent-phase path; only reloaded history loses the trace.
       ...(event.isError === true ? { status: "failed" as const } : {}),
     };
   });

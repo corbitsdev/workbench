@@ -74,7 +74,6 @@ import {
   type AuthorizeFn,
   type KindHandler,
   type RepoStore,
-  type SessionService,
   type SidecarRouter,
   type ValidatePushResult,
 } from "@intx/hub-sessions";
@@ -183,14 +182,15 @@ function buildDeployedWorkflow(): WorkflowDefinition {
 }
 
 type DeployProbes = {
-  launchSession: ReturnType<typeof mock>;
   sendAgentDeploy: ReturnType<typeof mock>;
 };
 
 async function deployDeployedWorkflow(): Promise<DeployProbes> {
   const workflow = buildDeployedWorkflow();
-  const launchSession = mock(async (_params: { agentId: string }) => undefined);
-  const sessionService = { launchSession } as unknown as SessionService;
+  // The in-process session runtime is retired: the deploy service wires a no-op
+  // per-step launch hook internally, so there is no `sessionService` seam to
+  // inject or probe. "No per-step launch" is now guaranteed by construction —
+  // the only sidecar hand-off is the single supervisor `sendAgentDeploy`.
   const sendAgentDeploy = mock(async () => ({ publicKey: "deadbeef" }));
   const sidecarRouter = {
     sendAgentDeploy,
@@ -209,11 +209,10 @@ async function deployDeployedWorkflow(): Promise<DeployProbes> {
     db,
     repoStore: toAgentRepoStore(repoStore),
     sidecarRouter,
-    sessionService,
     directorRegistry: createWorkbenchDirectorRegistry(),
   });
 
-  const result = await service.deployWorkflow({
+  await service.deployWorkflow({
     workflow,
     deploymentId: DEPLOYMENT_ID,
     deploymentDomain: DEPLOYMENT_DOMAIN,
@@ -223,8 +222,7 @@ async function deployDeployedWorkflow(): Promise<DeployProbes> {
     deployContent,
     hubPublicKey: Buffer.from(signingKey.publicKey).toString("hex"),
   });
-  expect(result.kind).toBe("multi-step");
-  return { launchSession, sendAgentDeploy };
+  return { sendAgentDeploy };
 }
 
 async function readStepGrants(
@@ -290,18 +288,15 @@ afterEach(async () => {
 
 describe("deployed-step deploy-artifact persistence with launches=0 (CL-2782)", () => {
   test("deploys a reasoning-with-tools workflow with launches=0, persists the deploy artifacts, and authorizes off the on-disk grants file", async () => {
-    const { launchSession, sendAgentDeploy } = await deployDeployedWorkflow();
+    const { sendAgentDeploy } = await deployDeployedWorkflow();
 
     const analyzeAgentId = deriveStepAgentId({
       deploymentId: DEPLOYMENT_ID,
       stepId: "analyze",
     });
 
-    // (a) launches=0 — NO per-step session was launched, in particular not for
-    // the DEPLOYED `analyze` step. Only the supervisor deploy frame fired.
-    expect(launchSession).not.toHaveBeenCalled();
-    const launchedIds = launchSession.mock.calls.map((c) => c[0]?.agentId);
-    expect(launchedIds).not.toContain(analyzeAgentId);
+    // (a) launches=0 — NO per-step session is launched (the deploy service has
+    // no launch seam at all now). Only the supervisor deploy frame fired.
     expect(sendAgentDeploy).toHaveBeenCalled();
 
     // (b) The deployed step's deploy artifacts persisted despite launches=0:

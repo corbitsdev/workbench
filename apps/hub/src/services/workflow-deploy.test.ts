@@ -10,11 +10,7 @@ import {
 import type { WorkflowDefinition } from "@intx/workflow";
 import type { HarnessConfig, InferenceSource } from "@intx/types/runtime";
 import type { DirectorRegistry } from "@intx/agent";
-import type {
-  AgentRepoStore,
-  SessionService,
-  SidecarRouter,
-} from "@intx/hub-sessions";
+import type { AgentRepoStore, SidecarRouter } from "@intx/hub-sessions";
 import type { HubDb } from "../db";
 import { evaluateGrants } from "@intx/authz";
 import type { GrantRule } from "@intx/authz";
@@ -47,7 +43,6 @@ import {
   createWorkflowRepoWriter,
   readWorkflowDefinition,
   resetWorkflowDefinitionCache,
-  toLaunchSession,
   toSendMultiStepDeploy,
   ensureDeploymentInstanceActive,
   writeDeploymentAgentRow,
@@ -84,71 +79,6 @@ describe("createWorkflowRepoWriter", () => {
     expect(repoId).toEqual({ kind: "workflow", id: "wf" });
     expect(ref).toBe("refs/heads/main");
     expect(content.files).toEqual({ "workflow.json": "{}", ".gitignore": "" });
-  });
-});
-
-describe("toLaunchSession", () => {
-  test("drops toolPackageManifest but carries systemPrompt, assetMounts, and pins", async () => {
-    const launchSession = mock(async (_params: unknown) => undefined);
-    const sessionService = { launchSession } as unknown as SessionService;
-    const assetMounts = new Map([["skill", "mounts/skill"]]);
-
-    await toLaunchSession(sessionService)({
-      agentAddress: "a@local",
-      agentId: "a",
-      instanceId: "i",
-      config: {} as HarnessConfig,
-      deployContent: {
-        systemPrompt: "p",
-        assetMounts,
-        toolPackageManifest: { dropped: true },
-      },
-      toolPackagePins: [{ name: "pkg", version: "1.0.0" }],
-    });
-
-    expect(launchSession).toHaveBeenCalledWith({
-      agentAddress: "a@local",
-      agentId: "a",
-      instanceId: "i",
-      config: {},
-      deployContent: { systemPrompt: "p", assetMounts },
-      toolPackagePins: [{ name: "pkg", version: "1.0.0" }],
-    });
-  });
-
-  test("no-ops launchSession for an inline step agentId (CL-2251 RAM win)", async () => {
-    const launchSession = mock(async (_params: unknown) => undefined);
-    const sessionService = { launchSession } as unknown as SessionService;
-    const inlineAgentIds = new Set(["ins_dep1-analyze"]);
-
-    // An inline step resolves to a no-op without touching the SessionService.
-    await toLaunchSession(
-      sessionService,
-      inlineAgentIds,
-    )({
-      agentAddress: "ins_dep1-analyze@local",
-      agentId: "ins_dep1-analyze",
-      instanceId: "ins_dep1-analyze",
-      config: {} as HarnessConfig,
-      deployContent: { systemPrompt: "p" },
-    });
-    expect(launchSession).not.toHaveBeenCalled();
-
-    // A deployed step still launches.
-    await toLaunchSession(
-      sessionService,
-      inlineAgentIds,
-    )({
-      agentAddress: "ins_dep1-fetch@local",
-      agentId: "ins_dep1-fetch",
-      instanceId: "ins_dep1-fetch",
-      config: {} as HarnessConfig,
-      deployContent: { systemPrompt: "p" },
-    });
-    expect(launchSession).toHaveBeenCalledTimes(1);
-    expect(launchSession.mock.calls[0]?.[0]).toMatchObject({
-      agentId: "ins_dep1-fetch",
-    });
   });
 });
 
@@ -604,8 +534,8 @@ describe("buildSupervisorDeployFrame", () => {
       "analyze",
       "intake",
     ]);
-    expect(frame.workflow.sources.intake).toBe(TENANT_SOURCE);
-    expect(frame.workflow.sources.analyze).toBe(TENANT_SOURCE);
+    expect(frame.workflow.sources.intake).toEqual([TENANT_SOURCE]);
+    expect(frame.workflow.sources.analyze).toEqual([TENANT_SOURCE]);
   });
 
   test("pins a step's preferred model when the resolved set carries it", () => {
@@ -646,8 +576,8 @@ describe("buildSupervisorDeployFrame", () => {
 
     // The write step prefers the writer model and the resolved set carries it,
     // so it pins WRITER_SOURCE; intake declares no preference and rides the head.
-    expect(frame.workflow.sources.write).toBe(WRITER_SOURCE);
-    expect(frame.workflow.sources.intake).toBe(TENANT_SOURCE);
+    expect(frame.workflow.sources.write).toEqual([WRITER_SOURCE]);
+    expect(frame.workflow.sources.intake).toEqual([TENANT_SOURCE]);
   });
 
   test("falls a step's preferred model back to the head when the set lacks it", () => {
@@ -678,7 +608,7 @@ describe("buildSupervisorDeployFrame", () => {
       sources: [TENANT_SOURCE],
     });
 
-    expect(frame.workflow.sources.write).toBe(TENANT_SOURCE);
+    expect(frame.workflow.sources.write).toEqual([TENANT_SOURCE]);
   });
 });
 
@@ -1058,18 +988,11 @@ describe("deployWorkflow inline-step partition (CL-2251)", () => {
       insert: deployWorkflowInsertMock(insertedRows),
     } as unknown as HubDb;
 
-    const launched: { agentId: string }[] = [];
-    const launchSession = mock(async (params: { agentId: string }) => {
-      launched.push(params);
-      return undefined;
-    });
-    const sessionService = { launchSession } as unknown as SessionService;
-
     const sendAgentDeploy = mock(
       async (
         _agentAddress: string,
         _config: HarnessConfig,
-        _workflow: { sources: Record<string, InferenceSource> },
+        _workflow: { sources: Record<string, InferenceSource[]> },
       ) => ({ publicKey: "pk" }),
     );
     const sidecarRouter = {
@@ -1081,7 +1004,6 @@ describe("deployWorkflow inline-step partition (CL-2251)", () => {
       db,
       repoStore,
       sidecarRouter,
-      sessionService,
       directorRegistry: createWorkbenchDirectorRegistry(),
     });
 
@@ -1096,15 +1018,12 @@ describe("deployWorkflow inline-step partition (CL-2251)", () => {
       hubPublicKey: "hubkey",
     });
 
-    expect(result.kind).toBe("multi-step");
 
     // CONDITION 2 — NO step launches a per-step session (CL-2782 no-op'd the
     // deployed-step launch too); the inline step never did. The supervisor uses
-    // sendAgentDeploy, not launchSession, so launches=0 across the whole deploy.
-    const launchedIds = launched.map((l) => l.agentId);
-    expect(launchedIds).toEqual([]);
-    expect(launchedIds).not.toContain("ins_ses_inline-draft");
-    expect(launchedIds).not.toContain("ins_ses_inline-analyze");
+    // No per-step launch happens at all now: the deploy service wires a no-op
+    // launch hook (the in-process session runtime is retired), so the sidecar is
+    // touched only by the single supervisor sendAgentDeploy above.
 
     // The deployed step's grants repo is STILL written (execution reads it at
     // run time) even though it no longer launches; the inline step gets none.
@@ -1128,8 +1047,8 @@ describe("deployWorkflow inline-step partition (CL-2251)", () => {
     const deployCall = sendAgentDeploy.mock.calls.at(0);
     if (!deployCall) throw new Error("sendAgentDeploy was not called");
     const frameWorkflow = deployCall[2];
-    expect(frameWorkflow.sources.analyze).toEqual(SOURCE);
-    expect(frameWorkflow.sources.draft).toEqual(SOURCE);
+    expect(frameWorkflow.sources.analyze).toEqual([SOURCE]);
+    expect(frameWorkflow.sources.draft).toEqual([SOURCE]);
   });
 });
 
@@ -1218,18 +1137,11 @@ describe("deployWorkflow deterministic-tool partition (CL-2252)", () => {
       insert: deployWorkflowInsertMock(insertedRows),
     } as unknown as HubDb;
 
-    const launched: { agentId: string }[] = [];
-    const launchSession = mock(async (params: { agentId: string }) => {
-      launched.push(params);
-      return undefined;
-    });
-    const sessionService = { launchSession } as unknown as SessionService;
-
     const sendAgentDeploy = mock(
       async (
         _agentAddress: string,
         _config: HarnessConfig,
-        _workflow: { sources: Record<string, InferenceSource> },
+        _workflow: { sources: Record<string, InferenceSource[]> },
       ) => ({ publicKey: "pk" }),
     );
     const sidecarRouter = {
@@ -1241,7 +1153,6 @@ describe("deployWorkflow deterministic-tool partition (CL-2252)", () => {
       db,
       repoStore,
       sidecarRouter,
-      sessionService,
       directorRegistry: createWorkbenchDirectorRegistry(),
     });
 
@@ -1256,15 +1167,10 @@ describe("deployWorkflow deterministic-tool partition (CL-2252)", () => {
       hubPublicKey: "hubkey",
     });
 
-    expect(result.kind).toBe("multi-step");
 
-    // No launchSession for ANY step — CL-2782 no-op'd the deployed-step launch
-    // too, so launches=0 across the deploy (deterministic, inline, AND the
-    // fully-deployed reasoning step).
-    const launchedIds = launched.map((l) => l.agentId);
-    expect(launchedIds).toEqual([]);
-    expect(launchedIds).not.toContain("ins_ses_det-draft");
-    expect(launchedIds).not.toContain("ins_ses_det-fetch");
+    // No per-step launch happens at all now: the deploy service wires a no-op
+    // launch hook (the in-process session runtime is retired), so no step —
+    // deterministic, inline, or fully-deployed reasoning — launches a session.
 
     // 0 agent-state repos for the deterministic tool step (no grants.json);
     // the deployed reasoning step still gets one (execution reads it).
@@ -1301,9 +1207,9 @@ describe("deployWorkflow deterministic-tool partition (CL-2252)", () => {
     const deployCall = sendAgentDeploy.mock.calls.at(0);
     if (!deployCall) throw new Error("sendAgentDeploy was not called");
     const frameWorkflow = deployCall[2];
-    expect(frameWorkflow.sources.fetch).toEqual(SOURCE);
-    expect(frameWorkflow.sources.analyze).toEqual(SOURCE);
-    expect(frameWorkflow.sources.draft).toEqual(SOURCE);
+    expect(frameWorkflow.sources.fetch).toEqual([SOURCE]);
+    expect(frameWorkflow.sources.analyze).toEqual([SOURCE]);
+    expect(frameWorkflow.sources.draft).toEqual([SOURCE]);
   });
 });
 
@@ -1363,9 +1269,6 @@ describe("deployWorkflow approves the catalog inference chain", () => {
         return { values: async () => undefined };
       }),
     } as unknown as HubDb;
-    const sessionService = {
-      launchSession: mock(async () => undefined),
-    } as unknown as SessionService;
     const sidecarRouter = {
       getRoutableAddresses: () => [],
       sendAgentDeploy,
@@ -1374,7 +1277,6 @@ describe("deployWorkflow approves the catalog inference chain", () => {
       db,
       repoStore,
       sidecarRouter,
-      sessionService,
       directorRegistry: createWorkbenchDirectorRegistry(),
     });
   }
@@ -1401,7 +1303,7 @@ describe("deployWorkflow approves the catalog inference chain", () => {
       async (
         _agentAddress: string,
         _config: HarnessConfig,
-        _workflow: { sources: Record<string, InferenceSource> },
+        _workflow: { sources: Record<string, InferenceSource[]> },
       ) => ({ publicKey: "pk" }),
     );
     const service = makeService(
@@ -1419,7 +1321,6 @@ describe("deployWorkflow approves the catalog inference chain", () => {
       hubPublicKey: "hubkey",
     });
 
-    expect(result.kind).toBe("multi-step");
 
     // The supervisor frame pinned the catalog chain head to every inline step —
     // proving the orchestrator's pickStepInferenceSource accepted the
@@ -1427,8 +1328,8 @@ describe("deployWorkflow approves the catalog inference chain", () => {
     const deployCall = sendAgentDeploy.mock.calls.at(0);
     if (!deployCall) throw new Error("sendAgentDeploy was not called");
     const frameWorkflow = deployCall[2];
-    expect(frameWorkflow.sources.analyze).toEqual(HEAD);
-    expect(frameWorkflow.sources.summarize).toEqual(HEAD);
+    expect(frameWorkflow.sources.analyze).toEqual([HEAD]);
+    expect(frameWorkflow.sources.summarize).toEqual([HEAD]);
   });
 });
 
@@ -1509,9 +1410,6 @@ describe("persistCatalog (hub-only publish)", () => {
       insert: deployWorkflowInsertMock(insertedRows),
     } as unknown as HubDb;
 
-    const sessionService = {
-      launchSession: mock(async () => undefined),
-    } as unknown as SessionService;
 
     // The sidecar is disconnected: any frame send throws. persistCatalog must
     // never reach it.
@@ -1527,7 +1425,6 @@ describe("persistCatalog (hub-only publish)", () => {
       db,
       repoStore,
       sidecarRouter,
-      sessionService,
       directorRegistry: createWorkbenchDirectorRegistry(),
     });
 
@@ -1542,7 +1439,6 @@ describe("persistCatalog (hub-only publish)", () => {
       hubPublicKey: "hubkey",
     });
 
-    expect(result.kind).toBe("multi-step");
 
     // No supervisor frame — the disconnected sidecar was never touched.
     expect(sendAgentDeploy).not.toHaveBeenCalled();
@@ -1591,7 +1487,6 @@ describe("ensureDeploymentRoutable", () => {
         repoStore: { writeTree: async () => ({ commitSha: "sha" }) },
       } as unknown as AgentRepoStore,
       sidecarRouter,
-      sessionService: {} as unknown as SessionService,
       directorRegistry: {} as unknown as DirectorRegistry,
     });
   }

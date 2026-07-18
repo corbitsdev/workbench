@@ -14,6 +14,9 @@ mock.module("../config", () => ({
     },
     workflowDeploy: { modelSourceCacheTtlMs: 45_000 },
   }),
+  // A module in the launch import graph resolves the credential-encryption key
+  // at load; the partial config mock must provide it or the file fails to load.
+  requireCredentialEncryptionKey: () => Buffer.alloc(32),
 }));
 
 mock.module("@intx/db", () => ({
@@ -139,6 +142,10 @@ function makeMockDb(opts: {
           ),
         ),
       },
+      // The launch source-resolution path collects the definition creator's
+      // grants (credential-use authorization); the grant store reads these.
+      principalRole: { findMany: mock(() => Promise.resolve([])) },
+      grant: { findMany: mock(() => Promise.resolve([])) },
     },
     select: mock(() => makeSelectChain([])),
     insert: mock(() => ({ values: mock(() => Promise.resolve()) })),
@@ -181,16 +188,17 @@ const BASE_OPTS = {
 describe("launchAgentSession failure cleanup", () => {
   it("deletes both tool and requirement grants when an unbound instance's launch ultimately fails", async () => {
     const { db, deleteCalls } = makeMockDb({ bound: false });
-    const launchSession = mock(() =>
+    const deployInstanceAtHead = mock(() =>
       Promise.reject(new Error("sidecar unavailable")),
     );
     const sessionService = {
-      launchSession,
+      deployInstanceAtHead,
       sendUserMessage: mock(() => Promise.reject(new Error("not implemented"))),
       endSession: mock(() => Promise.reject(new Error("not implemented"))),
     } as unknown as SessionService;
     const grantStore: GrantStore = {
       collectGrants: mock(() => Promise.resolve([])),
+      collectGrantsInChain: mock(() => Promise.resolve([])),
     };
 
     await expect(
@@ -215,16 +223,17 @@ describe("launchAgentSession failure cleanup", () => {
 
   it("does not strip a bound instance's just-persisted grants when launch ultimately fails", async () => {
     const { db, deleteCalls } = makeMockDb({ bound: true });
-    const launchSession = mock(() =>
+    const deployInstanceAtHead = mock(() =>
       Promise.reject(new Error("sidecar unavailable")),
     );
     const sessionService = {
-      launchSession,
+      deployInstanceAtHead,
       sendUserMessage: mock(() => Promise.reject(new Error("not implemented"))),
       endSession: mock(() => Promise.reject(new Error("not implemented"))),
     } as unknown as SessionService;
     const grantStore: GrantStore = {
       collectGrants: mock(() => Promise.resolve([])),
+      collectGrantsInChain: mock(() => Promise.resolve([])),
     };
 
     await expect(
@@ -252,9 +261,9 @@ describe("launchAgentSession failure cleanup", () => {
 
   it("warns when the persisted grant count is far below the expected floor", async () => {
     const { db } = makeMockDb({ bound: true });
-    const launchSession = mock(() => Promise.resolve());
+    const deployInstanceAtHead = mock(() => Promise.resolve({ publicKey: "pk" }));
     const sessionService = {
-      launchSession,
+      deployInstanceAtHead,
       sendUserMessage: mock(() => Promise.reject(new Error("not implemented"))),
       endSession: mock(() => Promise.reject(new Error("not implemented"))),
     } as unknown as SessionService;
@@ -264,6 +273,7 @@ describe("launchAgentSession failure cleanup", () => {
       collectGrants: mock(() =>
         Promise.resolve([fakeGrantRule("tool:exa_search")]),
       ),
+      collectGrantsInChain: mock(() => Promise.resolve([])),
     };
 
     await launchAgentSession(
@@ -283,9 +293,9 @@ describe("launchAgentSession failure cleanup", () => {
 
   it("does not warn when the persisted grant count matches the expected floor", async () => {
     const { db } = makeMockDb({ bound: true });
-    const launchSession = mock(() => Promise.resolve());
+    const deployInstanceAtHead = mock(() => Promise.resolve({ publicKey: "pk" }));
     const sessionService = {
-      launchSession,
+      deployInstanceAtHead,
       sendUserMessage: mock(() => Promise.reject(new Error("not implemented"))),
       endSession: mock(() => Promise.reject(new Error("not implemented"))),
     } as unknown as SessionService;
@@ -296,6 +306,7 @@ describe("launchAgentSession failure cleanup", () => {
           fakeGrantRule("tool:mail_send"),
         ]),
       ),
+      collectGrantsInChain: mock(() => Promise.resolve([])),
     };
 
     await launchAgentSession(

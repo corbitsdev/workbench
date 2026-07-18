@@ -41,6 +41,7 @@ type WriteTreeArgs = Parameters<RepoStore["writeTree"]>[3];
 type WriteTreePreservingPrefixArgs = Parameters<
   RepoStore["writeTreePreservingPrefix"]
 >[3];
+type WriteTreeDeltaArgs = Parameters<RepoStore["writeTreeDelta"]>[3];
 
 type SubscribeOpts = Parameters<RepoStore["subscribe"]>[3];
 
@@ -49,8 +50,9 @@ export interface CreateProxyWorkflowRunRepoStoreOpts {
    * Bare substrate handle the child opens against the shared on-disk
    * data dir. Used for the read-only methods that consult the
    * substrate's local state -- `getRepoDir` (path computation, no
-   * I/O), `resolveRef`, `listRefs`, `resolveHead`, `createPack`. The
-   * bare store is never used as a writer here; its
+   * I/O), `resolveRef`, `listRefs`, `resolveHead`, `openCommittedReads`,
+   * `openCommittedReadsAtCommit`, `createPack`. The bare store is never
+   * used as a writer here; its
    * `writeTreePreservingPrefix` / `writeTree` / `receivePack` are not
    * reachable through this proxy.
    */
@@ -166,6 +168,16 @@ export function createProxyWorkflowRunRepoStore(
         "workflow-child proxy substrate: receivePack is not supported (writes are proxied to the supervisor)",
       );
     },
+    writeTreeDelta: (
+      _principal: Principal,
+      _repoId: RepoId,
+      _ref: string,
+      _args: WriteTreeDeltaArgs,
+    ): Promise<WriteResult> => {
+      throw new Error(
+        "workflow-child proxy substrate: writeTreeDelta is not supported (claim-check writes run supervisor-side)",
+      );
+    },
     async writeTreePreservingPrefix(
       _principal: Principal,
       repoId: RepoId,
@@ -199,10 +211,14 @@ export function createProxyWorkflowRunRepoStore(
       return { commitSha: result.commitSha, newlyTerminalRuns: [] };
     },
     createPack: bareStore.createPack.bind(bareStore),
+    commitPackedTip: bareStore.commitPackedTip.bind(bareStore),
     resolveRef: bareStore.resolveRef.bind(bareStore),
     listRefs: bareStore.listRefs.bind(bareStore),
     resolveHead: bareStore.resolveHead.bind(bareStore),
     getRepoDir: bareStore.getRepoDir.bind(bareStore),
+    openCommittedReads: bareStore.openCommittedReads.bind(bareStore),
+    openCommittedReadsAtCommit:
+      bareStore.openCommittedReadsAtCommit.bind(bareStore),
     subscribe(
       _principal: Principal,
       repoId: RepoId,

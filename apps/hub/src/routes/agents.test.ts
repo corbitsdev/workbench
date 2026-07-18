@@ -102,13 +102,14 @@ function makeRequest(
 }
 
 const mockSessionService: SessionService = {
-  launchSession: mock(() => Promise.resolve()),
+  deployInstanceAtHead: mock(() => Promise.resolve({ publicKey: "pk" })),
   sendUserMessage: mock(() => Promise.reject(new Error("not implemented"))),
   endSession: mock(() => Promise.reject(new Error("not implemented"))),
 } as unknown as SessionService;
 
 const mockGrantStore: GrantStore = {
   collectGrants: mock(() => Promise.resolve([])),
+  collectGrantsInChain: mock(() => Promise.resolve([])),
 };
 
 const mockSidecarRouter: SidecarRouter = {
@@ -217,6 +218,16 @@ function makeMockDb(overrides: Record<string, unknown> = {}) {
         findMany: mock(() => Promise.resolve([])),
       },
       credential: {
+        findFirst: mock(() => Promise.resolve(undefined)),
+        findMany: mock(() => Promise.resolve([])),
+      },
+      // The launch source-resolution path collects the definition creator's
+      // grants (credential-use authorization); the grant store reads these.
+      principalRole: {
+        findFirst: mock(() => Promise.resolve(undefined)),
+        findMany: mock(() => Promise.resolve([])),
+      },
+      grant: {
         findFirst: mock(() => Promise.resolve(undefined)),
         findMany: mock(() => Promise.resolve([])),
       },
@@ -501,7 +512,7 @@ describe("POST /instances/:instanceId/sessions", () => {
   // launchAgentSession boundary (the shared launch coalescer), so two POSTs
   // racing for the same instance must collapse onto a single launch — no
   // losing attempt whose failure teardown could delete the row mid-ack of the
-  // winner (503 phase=provision). launchSession is the single sidecar call
+  // winner (503 phase=provision). deployInstanceAtHead is the single sidecar call
   // launchAgentSession makes, so one invocation proves one launchAgentSession.
   it("coalesces two concurrent POSTs for one instance onto a single launch", async () => {
     const db = makeMockDb();
@@ -516,13 +527,13 @@ describe("POST /instances/:instanceId/sessions", () => {
     // Hold the launch open so the second POST arrives while the first is still
     // in flight — the window the coalescer must close.
     let releaseLaunch: () => void = () => {};
-    const launchSession = mock(
+    const deployInstanceAtHead = mock(
       () =>
-        new Promise<void>((resolve) => {
-          releaseLaunch = resolve;
+        new Promise<{ publicKey: string }>((resolve) => {
+          releaseLaunch = () => resolve({ publicKey: "pk" });
         }),
     );
-    const sessionService = { ...mockSessionService, launchSession };
+    const sessionService = { ...mockSessionService, deployInstanceAtHead };
 
     const app = buildApp(db, sessionService);
     const fire = () =>
@@ -534,9 +545,9 @@ describe("POST /instances/:instanceId/sessions", () => {
     const first = fire();
     const second = fire();
 
-    // Wait until a request has reached launchSession (both are in flight by
+    // Wait until a request has reached deployInstanceAtHead (both are in flight by
     // then), then release it so the coalesced launch settles.
-    while (launchSession.mock.calls.length === 0) {
+    while (deployInstanceAtHead.mock.calls.length === 0) {
       await new Promise((resolve) => setTimeout(resolve, 0));
     }
     releaseLaunch();
@@ -546,7 +557,7 @@ describe("POST /instances/:instanceId/sessions", () => {
     expect(resB.status).toBe(200);
     expect(((await resA.json()) as ResBody).launched).toBe(true);
     expect(((await resB.json()) as ResBody).launched).toBe(true);
-    expect(launchSession).toHaveBeenCalledTimes(1);
+    expect(deployInstanceAtHead).toHaveBeenCalledTimes(1);
   });
 
   it("returns 200 with launched:true when the instance is already running (relaunches to recover after sidecar reconnect)", async () => {
@@ -560,7 +571,7 @@ describe("POST /instances/:instanceId/sessions", () => {
 
     const sessionService = {
       ...mockSessionService,
-      launchSession: mock(() => Promise.resolve()),
+      deployInstanceAtHead: mock(() => Promise.resolve({ publicKey: "pk" })),
     };
     const app = buildApp(db, sessionService);
     const res = await app.fetch(
@@ -571,7 +582,7 @@ describe("POST /instances/:instanceId/sessions", () => {
     expect(res.status).toBe(200);
     const json = (await res.json()) as ResBody;
     expect(json.launched).toBe(true);
-    expect(sessionService.launchSession).toHaveBeenCalled();
+    expect(sessionService.deployInstanceAtHead).toHaveBeenCalled();
   });
 
   // CL-2793: this route is now the SOLE wake path for a reaper-slept Myra (the
@@ -580,7 +591,7 @@ describe("POST /instances/:instanceId/sessions", () => {
   // `running` (relaunchable), and the address undeployed (NOT routable). Assert
   // that state drives a genuine cold relaunch: because the address is not
   // routable the route skips the idempotent live-refresh branch and calls
-  // launchSession, and because the pointed-at session is `ended` a FRESH session
+  // deployInstanceAtHead, and because the pointed-at session is `ended` a FRESH session
   // is minted rather than the dead one resumed.
   it("wakes a reaper-slept instance (session ended + instance running + unroutable) via a cold relaunch", async () => {
     const db = makeMockDb();
@@ -610,7 +621,7 @@ describe("POST /instances/:instanceId/sessions", () => {
 
     const sessionService = {
       ...mockSessionService,
-      launchSession: mock(() => Promise.resolve()),
+      deployInstanceAtHead: mock(() => Promise.resolve({ publicKey: "pk" })),
     };
     // Not routable — mirrors the reaper's undeployed output.
     const sidecarRouter = makeSidecarRouter([]);
@@ -625,7 +636,7 @@ describe("POST /instances/:instanceId/sessions", () => {
     const json = (await res.json()) as ResBody;
     expect(json.launched).toBe(true);
     // The wake contract: a cold, unroutable instance is relaunched.
-    expect(sessionService.launchSession).toHaveBeenCalled();
+    expect(sessionService.deployInstanceAtHead).toHaveBeenCalled();
     // A fresh session was minted (the ended one was not resumed).
     expect(insertedSessionIds.length).toBe(1);
     expect(insertedSessionIds[0]).not.toBe("ses-old");
@@ -636,7 +647,7 @@ describe("POST /instances/:instanceId/sessions", () => {
   // the launch config (`config.grants`), not a live sendGrantsUpdate push. This
   // guards the "skip live push when cold" contract: the grants collected for the
   // instance principal (persisted from the definition's capabilities) reach the
-  // sidecar through launchSession, and no out-of-band grant push is attempted.
+  // sidecar through deployInstanceAtHead, and no out-of-band grant push is attempted.
   it("carries the collected definition tool grants in the cold launch config without a live grants push", async () => {
     const db = makeMockDb();
     db.query.agentInstance.findFirst = mock(() =>
@@ -678,13 +689,12 @@ describe("POST /instances/:instanceId/sessions", () => {
     let capturedConfig: { config?: { grants?: unknown } } | undefined;
     const sessionService = {
       ...mockSessionService,
-      launchSession: mock((cfg: { config?: { grants?: unknown } }) => {
+      deployInstanceAtHead: mock((cfg: { config?: { grants?: unknown } }) => {
         capturedConfig = cfg;
-        return Promise.resolve();
+        return Promise.resolve({ publicKey: "pk" });
       }),
     };
-    const sendGrantsUpdate = mock(() => Promise.resolve());
-    const sidecarRouter = makeSidecarRouter([], { sendGrantsUpdate });
+    const sidecarRouter = makeSidecarRouter([]);
 
     try {
       const app = buildApp(db, sessionService, "user-1", sidecarRouter);
@@ -694,10 +704,9 @@ describe("POST /instances/:instanceId/sessions", () => {
         }),
       );
       expect(res.status).toBe(200);
-      // The definition's grants reached the sidecar via the launch config.
+      // The definition's grants reach the sidecar via the deploy config; there
+      // is no out-of-band live grants push (that transport is retired).
       expect(capturedConfig?.config?.grants).toEqual(definitionGrants);
-      // No out-of-band live push on the cold path (grants ride the launch).
-      expect(sendGrantsUpdate).not.toHaveBeenCalled();
     } finally {
       mockGrantStore.collectGrants = originalCollect;
     }
@@ -718,10 +727,12 @@ describe("POST /instances/:instanceId/sessions", () => {
     let capturedConfig: { config?: { systemPrompt?: string } } | undefined;
     const sessionService = {
       ...mockSessionService,
-      launchSession: mock((cfg: { config?: { systemPrompt?: string } }) => {
-        capturedConfig = cfg;
-        return Promise.resolve();
-      }),
+      deployInstanceAtHead: mock(
+        (cfg: { config?: { systemPrompt?: string } }) => {
+          capturedConfig = cfg;
+          return Promise.resolve({ publicKey: "pk" });
+        },
+      ),
     };
 
     const app = buildApp(db, sessionService);
@@ -753,7 +764,7 @@ describe("POST /instances/:instanceId/sessions", () => {
     expect(res.status).toBe(400);
   });
 
-  it("returns 200 with launched:true when launchSession fails because the agent already exists on the sidecar", async () => {
+  it("returns 200 with launched:true when deployInstanceAtHead fails because the agent already exists on the sidecar", async () => {
     const db = makeMockDb();
     // First read is the route's ownership check; second is the already-exists
     // re-read that recovers sessionId for ReviewGate scoping (CL-3286).
@@ -776,7 +787,7 @@ describe("POST /instances/:instanceId/sessions", () => {
     );
     const sessionService = {
       ...mockSessionService,
-      launchSession: mock(() => Promise.reject(provisionError)),
+      deployInstanceAtHead: mock(() => Promise.reject(provisionError)),
     };
     const app = buildApp(db, sessionService);
     const res = await app.fetch(
@@ -790,7 +801,7 @@ describe("POST /instances/:instanceId/sessions", () => {
     expect(json.sessionId).toBe("ses-already-exists");
     expect("launchError" in json).toBe(false);
     // Provision-phase failures must not be retried — one attempt only.
-    expect(sessionService.launchSession).toHaveBeenCalledTimes(1);
+    expect(sessionService.deployInstanceAtHead).toHaveBeenCalledTimes(1);
   });
 
   it("returns 503 with error when source resolution yields nothing", async () => {
@@ -835,7 +846,7 @@ describe("POST /instances/:instanceId/sessions", () => {
     );
     const sessionService = {
       ...mockSessionService,
-      launchSession: mock(() => Promise.reject(launchError)),
+      deployInstanceAtHead: mock(() => Promise.reject(launchError)),
     };
     const app = buildApp(db, sessionService);
     const res = await app.fetch(
@@ -926,7 +937,7 @@ describe("relaunchInstanceIfNeeded", () => {
 
   it('handles "agent already exists" gracefully when instance is running on sidecar', async () => {
     // After a sidecar restart the DB may still show "running" while the sidecar has the agent
-    // alive. launchSession throws "Agent already exists for address"; relaunchInstanceIfNeeded
+    // alive. deployInstanceAtHead throws "Agent already exists for address"; relaunchInstanceIfNeeded
     // must treat that as success rather than surfacing an error.
     const db = makeMockDb();
     db.query.agentInstance.findFirst = mock(() =>
@@ -945,7 +956,7 @@ describe("relaunchInstanceIfNeeded", () => {
       ...mockSessionService,
       // The sidecar wraps the "already exists" error in a provision-phase SessionLaunchError,
       // which breaks the retry loop and propagates to our isAgentAlreadyExistsError check.
-      launchSession: mock(() =>
+      deployInstanceAtHead: mock(() =>
         Promise.reject(
           new SessionLaunchError(
             "provision",
@@ -969,7 +980,7 @@ describe("relaunchInstanceIfNeeded", () => {
       ),
     ).resolves.toBeUndefined();
 
-    expect(sessionService.launchSession).toHaveBeenCalledTimes(1);
+    expect(sessionService.deployInstanceAtHead).toHaveBeenCalledTimes(1);
   });
 
   it("does not relaunch a deployed instance that still has an active session (harness owns continuity) (CL-1651)", async () => {
@@ -995,7 +1006,7 @@ describe("relaunchInstanceIfNeeded", () => {
 
     const sessionService = {
       ...mockSessionService,
-      launchSession: mock(() => Promise.resolve()),
+      deployInstanceAtHead: mock(() => Promise.resolve({ publicKey: "pk" })),
     };
     await relaunchInstanceIfNeeded(
       db as never,
@@ -1006,10 +1017,10 @@ describe("relaunchInstanceIfNeeded", () => {
       makeSidecarRouter() as never,
     );
 
-    expect(sessionService.launchSession).not.toHaveBeenCalled();
+    expect(sessionService.deployInstanceAtHead).not.toHaveBeenCalled();
   });
 
-  it("passes plaintext apiKey sources directly to launchSession (CL-1521: no decryption)", async () => {
+  it("passes plaintext apiKey sources directly to deployInstanceAtHead (CL-1521: no decryption)", async () => {
     const db = makeMockDb();
     // Cold start: no active session, so the hub launches and we can inspect sources.
     db.query.agentInstance.findFirst = mock(() =>
@@ -1026,7 +1037,7 @@ describe("relaunchInstanceIfNeeded", () => {
 
     const sessionService = {
       ...mockSessionService,
-      launchSession: mock(() => Promise.resolve()),
+      deployInstanceAtHead: mock(() => Promise.resolve({ publicKey: "pk" })),
     };
     await relaunchInstanceIfNeeded(
       db as never,
@@ -1037,8 +1048,8 @@ describe("relaunchInstanceIfNeeded", () => {
       makeSidecarRouter() as never,
     );
 
-    expect(sessionService.launchSession).toHaveBeenCalledTimes(1);
-    const launchArg = (sessionService.launchSession as ReturnType<typeof mock>)
+    expect(sessionService.deployInstanceAtHead).toHaveBeenCalledTimes(1);
+    const launchArg = (sessionService.deployInstanceAtHead as ReturnType<typeof mock>)
       .mock.calls[0]![0] as {
       config: { sources: { apiKey: string }[] };
     };
@@ -1057,7 +1068,7 @@ describe("relaunchInstanceIfNeeded", () => {
 
     const sessionService = {
       ...mockSessionService,
-      launchSession: mock(() => Promise.resolve()),
+      deployInstanceAtHead: mock(() => Promise.resolve({ publicKey: "pk" })),
     };
     await relaunchInstanceIfNeeded(
       db as never,
@@ -1068,7 +1079,7 @@ describe("relaunchInstanceIfNeeded", () => {
       makeSidecarRouter() as never,
     );
 
-    expect(sessionService.launchSession).not.toHaveBeenCalled();
+    expect(sessionService.deployInstanceAtHead).not.toHaveBeenCalled();
   });
 });
 
@@ -1453,7 +1464,7 @@ describe("POST /instances/:instanceId/sessions — branches", () => {
 
     const sessionService = {
       ...mockSessionService,
-      launchSession: mock(() => Promise.resolve()),
+      deployInstanceAtHead: mock(() => Promise.resolve({ publicKey: "pk" })),
     };
     const app = buildApp(
       db,
@@ -1472,10 +1483,14 @@ describe("POST /instances/:instanceId/sessions — branches", () => {
     // Steady-state live path must still hand the client a sessionId so
     // ReviewGate stays chat-scoped after reload/reopen (CL-3286).
     expect(json.sessionId).toBe("ses-live-1");
-    expect(sessionService.launchSession).not.toHaveBeenCalled();
+    expect(sessionService.deployInstanceAtHead).not.toHaveBeenCalled();
   });
 
-  it("refreshes grants and pushes sendGrantsUpdate when the agent is already routable", async () => {
+  // BEHAVIOR CHANGE (runtime retirement): an already-routable instance still
+  // refreshes its persisted grants, but there is no live `grants.update` push
+  // (that transport is gone). The new grants apply on the instance's next
+  // deploy; the route just reports launched:true.
+  it("refreshes grants without a live push when the agent is already routable", async () => {
     const db = makeMockDb();
     db.query.agentInstance.findFirst = mock(() => Promise.resolve(INSTANCE));
     db.query.principal.findFirst = mock(() => Promise.resolve(PRINCIPAL));
@@ -1488,10 +1503,7 @@ describe("POST /instances/:instanceId/sessions — branches", () => {
       }),
     );
 
-    const sendGrantsUpdate = mock(() => Promise.resolve());
-    const router = makeSidecarRouter([INSTANCE.address], {
-      sendGrantsUpdate,
-    } as Partial<SidecarRouter>);
+    const router = makeSidecarRouter([INSTANCE.address]);
 
     const app = buildApp(db, mockSessionService, "user-1", router);
     const res = await app.fetch(
@@ -1501,10 +1513,6 @@ describe("POST /instances/:instanceId/sessions — branches", () => {
     );
     expect(res.status).toBe(200);
     expect(((await res.json()) as ResBody).launched).toBe(true);
-    expect(sendGrantsUpdate).toHaveBeenCalledWith(
-      INSTANCE.address,
-      expect.any(Array),
-    );
   });
 
   it("returns 409 when the instance was explicitly deleted (stopped with endedAt)", async () => {
@@ -1856,7 +1864,7 @@ describe("POST /tenants/:tenantId/agents/instances", () => {
     );
     const sessionService = {
       ...mockSessionService,
-      launchSession: mock(() => Promise.reject(leakedError)),
+      deployInstanceAtHead: mock(() => Promise.reject(leakedError)),
     };
 
     const insertMock = mock(() => ({ values: mock(() => Promise.resolve()) }));
@@ -1920,7 +1928,7 @@ describe("POST /tenants/:tenantId/agents/instances", () => {
     );
     const sessionService = {
       ...mockSessionService,
-      launchSession: mock(() => Promise.reject(provisionError)),
+      deployInstanceAtHead: mock(() => Promise.reject(provisionError)),
     };
 
     const insertMock = mock(() => ({ values: mock(() => Promise.resolve()) }));
@@ -1939,7 +1947,7 @@ describe("POST /tenants/:tenantId/agents/instances", () => {
     // Launch was attempted, hit the already-exists race, and the route kept the
     // live instance instead of tearing it down + 503 (the failure branch returns
     // 503, so a 201 proves no teardown ran).
-    expect(sessionService.launchSession).toHaveBeenCalledTimes(1);
+    expect(sessionService.deployInstanceAtHead).toHaveBeenCalledTimes(1);
     expect(res.status).toBe(201);
     expect(((await res.json()) as ResBody).created).toBe(true);
   });
@@ -2042,8 +2050,8 @@ describe("launchAgentSession", () => {
       Promise.resolve([{ id: "src-1", apiKey: TEST_API_KEY }]);
     const createCollector = mock(() => {});
     const eventCollectors = { ...mockEventCollectors, create: createCollector };
-    const launchSession = mock(() => Promise.resolve());
-    const sessionService = { ...mockSessionService, launchSession };
+    const deployInstanceAtHead = mock(() => Promise.resolve({ publicKey: "pk" }));
+    const sessionService = { ...mockSessionService, deployInstanceAtHead };
 
     const result = await launchAgentSession(
       launchDb() as never,
@@ -2054,7 +2062,7 @@ describe("launchAgentSession", () => {
     );
     expect(result.address).toBe("ins-1@tenant-1.localhost");
     expect(typeof result.sessionId).toBe("string");
-    expect(launchSession).toHaveBeenCalledTimes(1);
+    expect(deployInstanceAtHead).toHaveBeenCalledTimes(1);
     expect(createCollector).toHaveBeenCalledTimes(1);
   });
 
@@ -2066,8 +2074,8 @@ describe("launchAgentSession", () => {
       new Error("rejected"),
       false,
     );
-    const launchSession = mock(() => Promise.reject(provisionError));
-    const sessionService = { ...mockSessionService, launchSession };
+    const deployInstanceAtHead = mock(() => Promise.reject(provisionError));
+    const sessionService = { ...mockSessionService, deployInstanceAtHead };
 
     await expect(
       launchAgentSession(
@@ -2078,20 +2086,20 @@ describe("launchAgentSession", () => {
         BASE_OPTS,
       ),
     ).rejects.toBe(provisionError);
-    expect(launchSession).toHaveBeenCalledTimes(1);
+    expect(deployInstanceAtHead).toHaveBeenCalledTimes(1);
   });
 
   it("retries after a transient (non-provision) launch failure and then succeeds", async () => {
     sourcesImpl = () =>
       Promise.resolve([{ id: "src-1", apiKey: TEST_API_KEY }]);
     let calls = 0;
-    const launchSession = mock(() => {
+    const deployInstanceAtHead = mock(() => {
       calls += 1;
       if (calls === 1)
         return Promise.reject(new Error("transient network blip"));
-      return Promise.resolve();
+      return Promise.resolve({ publicKey: "pk" });
     });
-    const sessionService = { ...mockSessionService, launchSession };
+    const sessionService = { ...mockSessionService, deployInstanceAtHead };
 
     const result = await launchAgentSession(
       launchDb() as never,
@@ -2101,7 +2109,7 @@ describe("launchAgentSession", () => {
       BASE_OPTS,
     );
     expect(result.sessionId).toBeTruthy();
-    expect(launchSession).toHaveBeenCalledTimes(2);
+    expect(deployInstanceAtHead).toHaveBeenCalledTimes(2);
   }, 10000);
 
   it("reuses the instance existing active session instead of minting a new one (CL-1651)", async () => {
@@ -2117,11 +2125,11 @@ describe("launchAgentSession", () => {
     const insertMock = mock(() => ({ values: mock(() => Promise.resolve()) }));
     db.insert = insertMock;
     let launchedSessionId: string | undefined;
-    const launchSession = mock((cfg: { config: { sessionId: string } }) => {
+    const deployInstanceAtHead = mock((cfg: { config: { sessionId: string } }) => {
       launchedSessionId = cfg.config.sessionId;
-      return Promise.resolve();
+      return Promise.resolve({ publicKey: "pk" });
     });
-    const sessionService = { ...mockSessionService, launchSession };
+    const sessionService = { ...mockSessionService, deployInstanceAtHead };
 
     const result = await launchAgentSession(
       db as never,
@@ -2145,11 +2153,11 @@ describe("launchAgentSession", () => {
       Promise.resolve({ id: "ses-ended", status: "ended" }),
     );
     let launchedSessionId: string | undefined;
-    const launchSession = mock((cfg: { config: { sessionId: string } }) => {
+    const deployInstanceAtHead = mock((cfg: { config: { sessionId: string } }) => {
       launchedSessionId = cfg.config.sessionId;
-      return Promise.resolve();
+      return Promise.resolve({ publicKey: "pk" });
     });
-    const sessionService = { ...mockSessionService, launchSession };
+    const sessionService = { ...mockSessionService, deployInstanceAtHead };
 
     const result = await launchAgentSession(
       db as never,
@@ -2176,8 +2184,8 @@ describe("launchAgentSession", () => {
       new Error("rejected"),
       false,
     );
-    const launchSession = mock(() => Promise.reject(provisionError));
-    const sessionService = { ...mockSessionService, launchSession };
+    const deployInstanceAtHead = mock(() => Promise.reject(provisionError));
+    const sessionService = { ...mockSessionService, deployInstanceAtHead };
 
     await expect(
       launchAgentSession(
@@ -2274,16 +2282,16 @@ describe("relaunchInstanceIfNeeded — early returns", () => {
   it("no-ops when the instance does not exist", async () => {
     const db = makeMockDb();
     db.query.agentInstance.findFirst = mock(() => Promise.resolve(undefined));
-    const launchSession = mock(() => Promise.resolve());
+    const deployInstanceAtHead = mock(() => Promise.resolve({ publicKey: "pk" }));
     await relaunchInstanceIfNeeded(
       db as never,
-      { ...mockSessionService, launchSession } as never,
+      { ...mockSessionService, deployInstanceAtHead } as never,
       mockGrantStore as never,
       mockEventCollectors as never,
       "ins-1",
       makeSidecarRouter() as never,
     );
-    expect(launchSession).not.toHaveBeenCalled();
+    expect(deployInstanceAtHead).not.toHaveBeenCalled();
   });
 
   it("no-ops when the instance was explicitly deleted (stopped with endedAt)", async () => {
@@ -2296,16 +2304,16 @@ describe("relaunchInstanceIfNeeded — early returns", () => {
         address: "ins-1@tenant-1.localhost",
       }),
     );
-    const launchSession = mock(() => Promise.resolve());
+    const deployInstanceAtHead = mock(() => Promise.resolve({ publicKey: "pk" }));
     await relaunchInstanceIfNeeded(
       db as never,
-      { ...mockSessionService, launchSession } as never,
+      { ...mockSessionService, deployInstanceAtHead } as never,
       mockGrantStore as never,
       mockEventCollectors as never,
       "ins-1",
       makeSidecarRouter() as never,
     );
-    expect(launchSession).not.toHaveBeenCalled();
+    expect(deployInstanceAtHead).not.toHaveBeenCalled();
   });
 
   it("no-ops when the agent is already routable on the sidecar", async () => {
@@ -2318,16 +2326,16 @@ describe("relaunchInstanceIfNeeded — early returns", () => {
         address: "ins-1@tenant-1.localhost",
       }),
     );
-    const launchSession = mock(() => Promise.resolve());
+    const deployInstanceAtHead = mock(() => Promise.resolve({ publicKey: "pk" }));
     await relaunchInstanceIfNeeded(
       db as never,
-      { ...mockSessionService, launchSession } as never,
+      { ...mockSessionService, deployInstanceAtHead } as never,
       mockGrantStore as never,
       mockEventCollectors as never,
       "ins-1",
       makeSidecarRouter(["ins-1@tenant-1.localhost"]) as never,
     );
-    expect(launchSession).not.toHaveBeenCalled();
+    expect(deployInstanceAtHead).not.toHaveBeenCalled();
   });
 
   it("no-ops when the instance already has an active session (sidecar owns it) (CL-1651)", async () => {
@@ -2346,16 +2354,16 @@ describe("relaunchInstanceIfNeeded — early returns", () => {
     db.query.agentSession.findFirst = mock(() =>
       Promise.resolve({ id: "ses-1", status: "active" }),
     );
-    const launchSession = mock(() => Promise.resolve());
+    const deployInstanceAtHead = mock(() => Promise.resolve({ publicKey: "pk" }));
     await relaunchInstanceIfNeeded(
       db as never,
-      { ...mockSessionService, launchSession } as never,
+      { ...mockSessionService, deployInstanceAtHead } as never,
       mockGrantStore as never,
       mockEventCollectors as never,
       "ins-1",
       makeSidecarRouter() as never,
     );
-    expect(launchSession).not.toHaveBeenCalled();
+    expect(deployInstanceAtHead).not.toHaveBeenCalled();
   });
 
   it("no-ops when the instance session is ending (mid-teardown) (CL-1651)", async () => {
@@ -2374,16 +2382,16 @@ describe("relaunchInstanceIfNeeded — early returns", () => {
     db.query.agentSession.findFirst = mock(() =>
       Promise.resolve({ id: "ses-ending", status: "ending" }),
     );
-    const launchSession = mock(() => Promise.resolve());
+    const deployInstanceAtHead = mock(() => Promise.resolve({ publicKey: "pk" }));
     await relaunchInstanceIfNeeded(
       db as never,
-      { ...mockSessionService, launchSession } as never,
+      { ...mockSessionService, deployInstanceAtHead } as never,
       mockGrantStore as never,
       mockEventCollectors as never,
       "ins-1",
       makeSidecarRouter() as never,
     );
-    expect(launchSession).not.toHaveBeenCalled();
+    expect(deployInstanceAtHead).not.toHaveBeenCalled();
   });
 
   it("relaunches when the instance session is no longer active (CL-1651)", async () => {
@@ -2422,16 +2430,16 @@ describe("relaunchInstanceIfNeeded — early returns", () => {
     );
     sourcesImpl = () =>
       Promise.resolve([{ id: "src-1", apiKey: TEST_API_KEY }]);
-    const launchSession = mock(() => Promise.resolve());
+    const deployInstanceAtHead = mock(() => Promise.resolve({ publicKey: "pk" }));
     await relaunchInstanceIfNeeded(
       db as never,
-      { ...mockSessionService, launchSession } as never,
+      { ...mockSessionService, deployInstanceAtHead } as never,
       mockGrantStore as never,
       mockEventCollectors as never,
       "ins-1",
       makeSidecarRouter() as never,
     );
-    expect(launchSession).toHaveBeenCalledTimes(1);
+    expect(deployInstanceAtHead).toHaveBeenCalledTimes(1);
   });
 
   it("no-ops when the tenant has no domain", async () => {
@@ -2448,16 +2456,16 @@ describe("relaunchInstanceIfNeeded — early returns", () => {
     db.query.tenant.findFirst = mock(() =>
       Promise.resolve({ id: "tenant-1", domain: null }),
     );
-    const launchSession = mock(() => Promise.resolve());
+    const deployInstanceAtHead = mock(() => Promise.resolve({ publicKey: "pk" }));
     await relaunchInstanceIfNeeded(
       db as never,
-      { ...mockSessionService, launchSession } as never,
+      { ...mockSessionService, deployInstanceAtHead } as never,
       mockGrantStore as never,
       mockEventCollectors as never,
       "ins-1",
       makeSidecarRouter() as never,
     );
-    expect(launchSession).not.toHaveBeenCalled();
+    expect(deployInstanceAtHead).not.toHaveBeenCalled();
   });
 
   it("no-ops when the agent has no system prompt", async () => {
@@ -2478,16 +2486,16 @@ describe("relaunchInstanceIfNeeded — early returns", () => {
     db.query.agent.findFirst = mock(() =>
       Promise.resolve({ id: "agt-1", systemPrompt: null }),
     );
-    const launchSession = mock(() => Promise.resolve());
+    const deployInstanceAtHead = mock(() => Promise.resolve({ publicKey: "pk" }));
     await relaunchInstanceIfNeeded(
       db as never,
-      { ...mockSessionService, launchSession } as never,
+      { ...mockSessionService, deployInstanceAtHead } as never,
       mockGrantStore as never,
       mockEventCollectors as never,
       "ins-1",
       makeSidecarRouter() as never,
     );
-    expect(launchSession).not.toHaveBeenCalled();
+    expect(deployInstanceAtHead).not.toHaveBeenCalled();
   });
 
   it('rethrows a non-"already exists" launch error', async () => {
@@ -2523,7 +2531,7 @@ describe("relaunchInstanceIfNeeded — early returns", () => {
     );
     sourcesImpl = () =>
       Promise.resolve([{ id: "src-1", apiKey: TEST_API_KEY }]);
-    const launchSession = mock(() =>
+    const deployInstanceAtHead = mock(() =>
       Promise.reject(
         new SessionLaunchError("provision", new Error("boom"), false),
       ),
@@ -2532,7 +2540,7 @@ describe("relaunchInstanceIfNeeded — early returns", () => {
     await expect(
       relaunchInstanceIfNeeded(
         db as never,
-        { ...mockSessionService, launchSession } as never,
+        { ...mockSessionService, deployInstanceAtHead } as never,
         mockGrantStore as never,
         mockEventCollectors as never,
         "ins-1",
@@ -2685,7 +2693,7 @@ describe("registerDisconnectReconciler", () => {
 
   function makeEventRouter(routable: string[] = []) {
     let disconnectListener:
-      | ((p: { agentAddresses: string[] }) => void)
+      | ((p: { ownedAddresses: string[] }) => void)
       | undefined;
     const router = {
       getRoutableAddresses: mock(() => routable),
@@ -2693,7 +2701,7 @@ describe("registerDisconnectReconciler", () => {
         on: mock(
           (
             type: string,
-            listener: (p: { agentAddresses: string[] }) => void,
+            listener: (p: { ownedAddresses: string[] }) => void,
           ) => {
             if (type === "sidecar.disconnect") disconnectListener = listener;
             return () => {};
@@ -2704,7 +2712,7 @@ describe("registerDisconnectReconciler", () => {
     return {
       router,
       fire: (addrs: string[]) =>
-        disconnectListener?.({ agentAddresses: addrs }),
+        disconnectListener?.({ ownedAddresses: addrs }),
     };
   }
 
@@ -2831,7 +2839,7 @@ describe("reconcileWedgedSessions", () => {
     const { db, calls } = makeWedgedDb();
     const sessionService = {
       ...mockSessionService,
-      launchSession: mock(() => Promise.resolve()),
+      deployInstanceAtHead: mock(() => Promise.resolve({ publicKey: "pk" })),
     };
     const tracker = new Map<string, number>();
     const grace = 100;
@@ -2849,16 +2857,16 @@ describe("reconcileWedgedSessions", () => {
 
     // First sighting: record only, never relaunch.
     await tick(0);
-    expect(sessionService.launchSession).not.toHaveBeenCalled();
+    expect(sessionService.deployInstanceAtHead).not.toHaveBeenCalled();
     expect(tracker.get(ADDR)).toBe(0);
 
     // Still within grace: still no relaunch.
     await tick(grace - 1);
-    expect(sessionService.launchSession).not.toHaveBeenCalled();
+    expect(sessionService.deployInstanceAtHead).not.toHaveBeenCalled();
 
     // Grace elapsed while continuously unroutable: now it acts.
     await tick(grace);
-    expect(sessionService.launchSession).toHaveBeenCalledTimes(1);
+    expect(sessionService.deployInstanceAtHead).toHaveBeenCalledTimes(1);
     expect(calls.some((c) => c.status === "ended")).toBe(true);
     // Tracker entry consumed after acting.
     expect(tracker.has(ADDR)).toBe(false);
@@ -2870,7 +2878,7 @@ describe("reconcileWedgedSessions", () => {
     const { db, calls } = makeWedgedDb();
     const sessionService = {
       ...mockSessionService,
-      launchSession: mock(() => Promise.resolve()),
+      deployInstanceAtHead: mock(() => Promise.resolve({ publicKey: "pk" })),
     };
     const tracker = new Map<string, number>();
     const grace = 100;
@@ -2911,7 +2919,7 @@ describe("reconcileWedgedSessions", () => {
       { graceMs: grace, now: grace * 5 },
     );
     expect(tracker.get(ADDR)).toBe(grace * 5);
-    expect(sessionService.launchSession).not.toHaveBeenCalled();
+    expect(sessionService.deployInstanceAtHead).not.toHaveBeenCalled();
     expect(calls.some((c) => c.status === "ended")).toBe(false);
   });
 
@@ -2940,9 +2948,9 @@ describe("reconcileWedgedSessions", () => {
 
     const sessionService = {
       ...mockSessionService,
-      launchSession: mock(() => {
+      deployInstanceAtHead: mock(() => {
         order.push("launch");
-        return Promise.resolve();
+        return Promise.resolve({ publicKey: "pk" });
       }),
     };
 
@@ -2968,7 +2976,7 @@ describe("reconcileWedgedSessions", () => {
     const { db, calls } = makeWedgedDb();
     const sessionService = {
       ...mockSessionService,
-      launchSession: mock(() => Promise.resolve()),
+      deployInstanceAtHead: mock(() => Promise.resolve({ publicKey: "pk" })),
     };
     // Entry present from a prior tick; a routable read must evict it.
     const tracker = new Map<string, number>([[ADDR, 0]]);
@@ -2983,7 +2991,7 @@ describe("reconcileWedgedSessions", () => {
       { graceMs: 100, now: 10_000 },
     );
 
-    expect(sessionService.launchSession).not.toHaveBeenCalled();
+    expect(sessionService.deployInstanceAtHead).not.toHaveBeenCalled();
     expect(calls.some((c) => c.status === "ended")).toBe(false);
     expect(tracker.has(ADDR)).toBe(false);
   });
@@ -3005,7 +3013,7 @@ describe("reconcileWedgedSessions", () => {
     const { db, calls } = makeWedgedDb();
     const sessionService = {
       ...mockSessionService,
-      launchSession: mock(() => Promise.resolve()),
+      deployInstanceAtHead: mock(() => Promise.resolve({ publicKey: "pk" })),
     };
     // Pre-seed past grace so the sweep would otherwise act this tick.
     const tracker = new Map<string, number>([[ADDR, 0]]);
@@ -3020,7 +3028,7 @@ describe("reconcileWedgedSessions", () => {
       { graceMs: 100, now: 1_000 },
     );
 
-    expect(sessionService.launchSession).not.toHaveBeenCalled();
+    expect(sessionService.deployInstanceAtHead).not.toHaveBeenCalled();
     expect(calls.some((c) => c.status === "ended")).toBe(false);
   });
 
@@ -3068,7 +3076,7 @@ describe("reconcileWedgedSessions", () => {
       makeSidecarRouter([]) as never,
       {
         ...mockSessionService,
-        launchSession: mock(() => Promise.resolve()),
+        deployInstanceAtHead: mock(() => Promise.resolve({ publicKey: "pk" })),
       } as never,
       mockGrantStore as never,
       mockEventCollectors as never,

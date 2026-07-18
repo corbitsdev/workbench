@@ -261,9 +261,11 @@ describe("supervisor-backed outbound signed send (Phase 4.3)", () => {
       },
       binaryPath: "/fake/bin/workflow-child",
       substrateEnv: {},
+      dynamicSpawnEnv: () => ({}),
       workflowRunRepoId: { kind: "workflow-run", id: "outbound-dep" },
       workflowRunRef: "refs/heads/main",
       deploymentId: "outbound-dep",
+      stepCount: 1,
       deploymentMailAddress: AGENT_ADDRESS,
       readPrincipal: { kind: "supervisor" },
       deriveStepAddress: () => AGENT_ADDRESS,
@@ -272,9 +274,6 @@ describe("supervisor-backed outbound signed send (Phase 4.3)", () => {
       // getRepoDir resolves the dir; no grants file is needed because the
       // outbound path never reads grants.
       deriveStepRepoId: () => ({ kind: "agent-state", id: "outbound-dep" }),
-      trivialLaunch: () => {
-        throw new Error("trivialLaunch not used in this test");
-      },
       inboxPrimitives: createNoopInboxPrimitives(),
       ipcKeyPairFactory: () => Promise.resolve(supervisorIpcKeyPair),
     });

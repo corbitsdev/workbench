@@ -31,6 +31,7 @@ import {
   type WorkflowSupervisorBindings,
 } from "./index";
 import { createRecyclePolicy, type RecyclePolicyBounds } from "./recycle";
+import { parseSpawnTimeEnv } from "../child/env-bootstrap";
 import { defaultStepRepoId, STEP_GRANTS_PATH } from "./credentials";
 import {
   createControlChannelSender,
@@ -243,6 +244,14 @@ async function seedStepGrants(
   );
 }
 
+async function corruptStepGrants(
+  baseDir: string,
+  repoId: RepoId,
+): Promise<void> {
+  const dir = path.join(baseDir, repoId.kind, repoId.id);
+  await fs.writeFile(path.join(dir, STEP_GRANTS_PATH), "{ this is not json");
+}
+
 type FakeChild = {
   pid: number;
   channelId: string | undefined;
@@ -257,12 +266,18 @@ type FakeChild = {
 type SpawnTracker = {
   spawner: SubprocessSpawner;
   children: FakeChild[];
+  spawnEnvs: Record<string, string>[];
   totalSpawns: number;
 };
 
-function createSpawnTracker(opts: { sigtermExits?: boolean }): SpawnTracker {
+function createSpawnTracker(opts: {
+  sigtermExits?: boolean;
+  killThrows?: boolean;
+}): SpawnTracker {
   const children: FakeChild[] = [];
+  const spawnEnvs: Record<string, string>[] = [];
   const spawner: SubprocessSpawner = ({ env }) => {
+    spawnEnvs.push(env);
     const supervisorToChild = createMemoryNdjsonStream();
     const childToSupervisor = createMemoryNdjsonStream();
     const eventChildToSupervisor = createMemoryFrameStream();
@@ -295,6 +310,11 @@ function createSpawnTracker(opts: { sigtermExits?: boolean }): SpawnTracker {
           childToSupervisor.close();
           child.resolveExit?.(0);
         }
+        // Settle the exit above BEFORE throwing so a shutdown awaiting
+        // `exited` does not hang; the throw exercises the kill-step guard.
+        if (opts.killThrows === true) {
+          throw new Error("child kill boom");
+        }
       },
       exited,
     };
@@ -303,6 +323,7 @@ function createSpawnTracker(opts: { sigtermExits?: boolean }): SpawnTracker {
   return {
     spawner,
     children,
+    spawnEnvs,
     get totalSpawns() {
       return children.length;
     },
@@ -468,16 +489,15 @@ async function buildBindings(opts: {
     subprocessSpawner: opts.spawner,
     binaryPath: "/fake/bin/workflow-child",
     substrateEnv: { DATA_DIR: opts.baseDir },
+    dynamicSpawnEnv: () => ({}),
     workflowRunRepoId: { kind: "workflow-run", id: "deployment-x" },
     workflowRunRef: "refs/heads/main",
     deploymentId: "deployment-x",
+    stepCount: 1,
     deploymentMailAddress: "deployment-x@example.com",
     readPrincipal: { kind: "supervisor" },
     deriveStepAddress: ({ deploymentId, stepId }) =>
       `${deploymentId}-${stepId}@example.com`,
-    trivialLaunch: () => {
-      throw new Error("trivialLaunch must not run in recycle tests");
-    },
     ipcKeyPairFactory: () => Promise.resolve(opts.ipcKeypair),
     inboxPrimitives: opts.inboxPrimitives ?? createMemoryInboxPrimitives(),
     ...(opts.recyclePolicy !== undefined
@@ -528,7 +548,221 @@ async function spawnSupervisor(opts: {
   return { supervisor, spawnResult: result, firstSender };
 }
 
+describe("supervisor spawn: failure cleanup", () => {
+  test("a spawn that times out releases the mail subscription and address", async () => {
+    // Regression: spawn registers + subscribes the deployment mail address
+    // before the ready handshake. A handshake that times out (or the child
+    // exiting mid-handshake) must release that subscription and unregister
+    // the address; otherwise a live subscription lingers with no dispatch
+    // loop to service it and a redeploy adds a second one.
+    const baseDir = await makeTempDir("spawn-timeout-");
+    const ipcKeypair = await generateKeyPair();
+    const mailBus = createMockMailBus();
+    // sigtermExits so the timeout path's kill settles the fake child.
+    const tracker = createSpawnTracker({ sigtermExits: true });
+    await seedStepGrants(
+      baseDir,
+      defaultStepRepoId({ deploymentId: "deployment-x", stepId: "step-1" }),
+      [{ resource: "thing", action: "read" }],
+    );
+    const bindings = await buildBindings({
+      baseDir,
+      spawner: tracker.spawner,
+      mailBus,
+      ipcKeypair,
+    });
+    const supervisor = createWorkflowSupervisor({
+      ...bindings,
+      readyTimeoutMs: 20,
+    });
+
+    // Spawn but never drive the child's `ready` frame, so the handshake
+    // times out.
+    await expect(
+      supervisor.spawn({
+        stepOrder: ["step-1"],
+        definitionHash: "def-hash-abc",
+        warmKeep: false,
+        onInferenceEvent: () => undefined,
+      }),
+    ).rejects.toThrow(/did not emit ready/);
+
+    // The address must not remain registered, and the history must carry
+    // both the register and its matching unregister.
+    expect(mailBus.registered()).not.toContain("deployment-x@example.com");
+    expect(mailBus.registrationHistory()).toContain(
+      "register:deployment-x@example.com",
+    );
+    expect(mailBus.registrationHistory()).toContain(
+      "unregister:deployment-x@example.com",
+    );
+  });
+
+  test("a throwing teardown step during spawn cleanup is absorbed", async () => {
+    // On a failed spawn the spawn-catch unwinds the cohort through
+    // shutdownInternal. Its teardown steps are individually guarded and the
+    // child kill lives in its `finally`, so a throwing step (here the mail
+    // unsubscribe) is absorbed end to end: the spawn still rejects with the
+    // real ready-timeout cause rather than the secondary teardown error,
+    // and the child is still reaped. The spawn-catch guard that preserves
+    // the cause is now defense-in-depth -- shutdownInternal is total by
+    // construction -- so the discriminating coverage of the teardown guards
+    // themselves lives in the "supervisor shutdown: teardown robustness"
+    // block below, which drives shutdownInternal directly.
+    const baseDir = await makeTempDir("spawn-teardown-mask-");
+    const ipcKeypair = await generateKeyPair();
+    const baseMailBus = createMockMailBus();
+    // The mail unsubscribe throws during the spawn-failure unwind.
+    const mailBus: MailBusBindings = {
+      ...baseMailBus,
+      subscribeMailForAddress(address, handler) {
+        baseMailBus.subscribeMailForAddress(address, handler);
+        return () => {
+          throw new Error("mail unsubscribe boom during teardown");
+        };
+      },
+    };
+    // sigtermExits so the ready-timeout reap settles the fake child.
+    const tracker = createSpawnTracker({ sigtermExits: true });
+    await seedStepGrants(
+      baseDir,
+      defaultStepRepoId({ deploymentId: "deployment-x", stepId: "step-1" }),
+      [{ resource: "thing", action: "read" }],
+    );
+    const bindings = await buildBindings({
+      baseDir,
+      spawner: tracker.spawner,
+      mailBus,
+      ipcKeypair,
+    });
+    const supervisor = createWorkflowSupervisor({
+      ...bindings,
+      readyTimeoutMs: 20,
+    });
+
+    // Never drive `ready`, so the handshake times out. The spawn cause
+    // (ready timeout) must surface even though the teardown then throws
+    // its own error.
+    await expect(
+      supervisor.spawn({
+        stepOrder: ["step-1"],
+        definitionHash: "def-hash-abc",
+        warmKeep: false,
+        onInferenceEvent: () => undefined,
+      }),
+    ).rejects.toThrow(/did not emit ready/);
+
+    // The child was reaped during the unwind despite the throwing
+    // unsubscribe -- a throwing teardown step leaves nothing orphaned.
+    const child = tracker.children[0];
+    if (child === undefined) {
+      throw new Error("tracker.children[0] missing");
+    }
+    expect(child.killSignals.length).toBeGreaterThan(0);
+  });
+});
+
+describe("supervisor spawn: dynamic env", () => {
+  test("a recycle respawn re-pulls dynamicSpawnEnv so a host revision survives", async () => {
+    // Mechanism behind a source rotation surviving a recycle: the spawn-env
+    // builder pulls dynamicSpawnEnv() on every spawn AND respawn, so a value
+    // the host revised between the two reaches the respawned child instead
+    // of reverting to the frozen substrateEnv value.
+    const baseDir = await makeTempDir("recycle-dynenv-");
+    const ipcKeypair = await generateKeyPair();
+    const mailBus = createMockMailBus();
+    const tracker = createSpawnTracker({});
+    await seedStepGrants(
+      baseDir,
+      defaultStepRepoId({ deploymentId: "deployment-x", stepId: "step-1" }),
+      [{ resource: "thing", action: "read" }],
+    );
+    let hostRevised = "before-rotation";
+    const bindings = await buildBindings({
+      baseDir,
+      spawner: tracker.spawner,
+      mailBus,
+      ipcKeypair,
+    });
+    const supervisor = createWorkflowSupervisor({
+      ...bindings,
+      dynamicSpawnEnv: () => ({ DYNAMIC_MARKER: hostRevised }),
+    });
+
+    const spawnPromise = supervisor.spawn({
+      stepOrder: ["step-1"],
+      definitionHash: "def-hash-abc",
+      warmKeep: false,
+      onInferenceEvent: () => undefined,
+    });
+    while (tracker.children.length === 0) {
+      await new Promise((r) => setTimeout(r, 1));
+    }
+    const firstChild = tracker.children[0];
+    if (firstChild === undefined) throw new Error("first child missing");
+    await driveReady(firstChild, ipcKeypair);
+    await spawnPromise;
+    expect(tracker.spawnEnvs[0]?.DYNAMIC_MARKER).toBe("before-rotation");
+
+    // The host revises the dynamic value (models a live source rotation),
+    // then a recycle respawns the child.
+    hostRevised = "after-rotation";
+    const recyclePromise = supervisor.recycle({ reason: "dynenv" });
+    while (tracker.children.length < 2) {
+      await new Promise((r) => setTimeout(r, 1));
+    }
+    const secondChild = tracker.children[1];
+    if (secondChild === undefined) throw new Error("second child missing");
+    await driveReady(secondChild, ipcKeypair);
+    await recyclePromise;
+
+    // The respawn env carries the REVISED value -- the rotation survived.
+    expect(tracker.spawnEnvs[1]?.DYNAMIC_MARKER).toBe("after-rotation");
+  });
+});
+
 describe("supervisor recycle: operator-initiated", () => {
+  test("the recycle respawn env satisfies the child spawn-time env contract", async () => {
+    // Regression: the recycle respawn env must carry every required
+    // spawn-time key. A recycle env that omitted a required key (STEP_COUNT)
+    // made the respawned child abort in parseSpawnTimeEnv before opening
+    // IPC, so every recycle tore the deployment down. The fake spawner does
+    // not run parseSpawnTimeEnv, so this asserts the captured env against it
+    // directly -- the check the real child binary performs at boot.
+    const baseDir = await makeTempDir("recycle-env-");
+    const ipcKeypair = await generateKeyPair();
+    const mailBus = createMockMailBus();
+    const tracker = createSpawnTracker({});
+    const { supervisor } = await spawnSupervisor({
+      baseDir,
+      tracker,
+      mailBus,
+      ipcKeypair,
+    });
+
+    const recyclePromise = supervisor.recycle({ reason: "env-contract" });
+    while (tracker.children.length < 2) {
+      await new Promise((r) => setTimeout(r, 1));
+    }
+    const secondChild = tracker.children[1];
+    if (secondChild === undefined) {
+      throw new Error("second child missing after recycle spawn");
+    }
+    await driveReady(secondChild, ipcKeypair);
+    await recyclePromise;
+
+    expect(tracker.spawnEnvs).toHaveLength(2);
+    const spawnEnv = tracker.spawnEnvs[0];
+    const respawnEnv = tracker.spawnEnvs[1];
+    if (spawnEnv === undefined || respawnEnv === undefined) {
+      throw new Error("expected two captured spawn envs");
+    }
+    // Both the initial spawn and the recycle respawn must satisfy the
+    // child's spawn-time env contract, with the same step count.
+    expect(parseSpawnTimeEnv(spawnEnv).stepCount).toBe(1);
+    expect(parseSpawnTimeEnv(respawnEnv).stepCount).toBe(1);
+  });
+
   test("drain mail sends, child is killed, fresh child spawns with a new channelId", async () => {
     const baseDir = await makeTempDir("recycle-op-");
     const ipcKeypair = await generateKeyPair();
@@ -635,6 +869,136 @@ describe("supervisor recycle: failure after the cohort handoff", () => {
     // when phase is already `stopped`).
     await supervisor.shutdown();
     expect(first.killSignals).toContain("SIGTERM");
+  });
+});
+
+describe("supervisor recycle: respawn handshake bound", () => {
+  test("a respawn that never emits ready times out, reaps the new child, and reaches a clean stopped state", async () => {
+    const baseDir = await makeTempDir("recycle-ready-timeout-");
+    const ipcKeypair = await generateKeyPair();
+    const mailBus = createMockMailBus();
+    // sigtermExits:false so the reap escalates SIGTERM -> SIGKILL: a wedged
+    // respawn is exactly the child that ignores SIGTERM, and the reap must
+    // still guarantee it dies.
+    const tracker = createSpawnTracker({ sigtermExits: false });
+    await seedStepGrants(
+      baseDir,
+      defaultStepRepoId({ deploymentId: "deployment-x", stepId: "step-1" }),
+      [{ resource: "thing", action: "read" }],
+    );
+    const bindings = await buildBindings({
+      baseDir,
+      spawner: tracker.spawner,
+      mailBus,
+      ipcKeypair,
+    });
+    const supervisor = createWorkflowSupervisor({
+      ...bindings,
+      // Collapse the recycle path's ready deadline and kill-escalation
+      // deadline to the next macrotask so the wedged-respawn path resolves
+      // without real-time waits. The child never emits ready, so timeout
+      // always wins the handshake race. The spawn path keeps the default
+      // real timer, so the first child readies normally.
+      recyclePolicySetTimer: (cb) => setTimeout(cb, 0),
+      recyclePolicyClearTimer: () => undefined,
+    });
+    const spawnPromise = supervisor.spawn({
+      stepOrder: ["step-1"],
+      definitionHash: "def-hash-abc",
+      warmKeep: false,
+      onInferenceEvent: () => undefined,
+    });
+    while (tracker.children.length === 0) {
+      await new Promise((r) => setTimeout(r, 1));
+    }
+    const first = tracker.children[0];
+    if (first === undefined) throw new Error("first child missing");
+    await driveReady(first, ipcKeypair);
+    await spawnPromise;
+
+    // Recycle spawns a second child but never drives its ready frame, so
+    // the bounded handshake times out.
+    let caught: unknown;
+    try {
+      await supervisor.recycle({ reason: "ready-timeout-test" });
+    } catch (err) {
+      caught = err;
+    }
+    expect(caught).toBeInstanceOf(Error);
+    expect(caught instanceof Error && caught.message).toMatch(
+      /did not emit ready/,
+    );
+
+    // The wedged respawn was reaped through the full SIGTERM -> SIGKILL
+    // ladder rather than left running as an orphan.
+    const second = tracker.children[1];
+    if (second === undefined) throw new Error("second child missing");
+    expect(second.killSignals).toEqual(["SIGTERM", "SIGKILL"]);
+
+    // The recycle failure routed through shutdownInternal to `stopped`, so
+    // a follow-up shutdown is a no-op.
+    await supervisor.shutdown();
+  });
+
+  test("a respawn whose control channel ends before ready rejects and reaps the new child", async () => {
+    const baseDir = await makeTempDir("recycle-ready-failed-");
+    const ipcKeypair = await generateKeyPair();
+    const mailBus = createMockMailBus();
+    // sigtermExits:true so the reap's SIGTERM settles the fake child; this
+    // path proves the child is killed even though the control channel end
+    // does not itself terminate the process.
+    const tracker = createSpawnTracker({ sigtermExits: true });
+    await seedStepGrants(
+      baseDir,
+      defaultStepRepoId({ deploymentId: "deployment-x", stepId: "step-1" }),
+      [{ resource: "thing", action: "read" }],
+    );
+    const bindings = await buildBindings({
+      baseDir,
+      spawner: tracker.spawner,
+      mailBus,
+      ipcKeypair,
+    });
+    // Default (real, 30s) ready timer: the deadline must NOT fire, so the
+    // control-channel-end failure wins the handshake race deterministically.
+    const supervisor = createWorkflowSupervisor(bindings);
+    const spawnPromise = supervisor.spawn({
+      stepOrder: ["step-1"],
+      definitionHash: "def-hash-abc",
+      warmKeep: false,
+      onInferenceEvent: () => undefined,
+    });
+    while (tracker.children.length === 0) {
+      await new Promise((r) => setTimeout(r, 1));
+    }
+    const first = tracker.children[0];
+    if (first === undefined) throw new Error("first child missing");
+    await driveReady(first, ipcKeypair);
+    await spawnPromise;
+
+    const recyclePromise = supervisor.recycle({ reason: "ready-failed-test" });
+    while (tracker.children.length < 2) {
+      await new Promise((r) => setTimeout(r, 1));
+    }
+    const second = tracker.children[1];
+    if (second === undefined) throw new Error("second child missing");
+    // End the new child's control channel before it emits ready: the
+    // handshake fails rather than hangs.
+    second.childToSupervisor.close();
+
+    let caught: unknown;
+    try {
+      await recyclePromise;
+    } catch (err) {
+      caught = err;
+    }
+    expect(caught).toBeInstanceOf(Error);
+    expect(caught instanceof Error && caught.message).toMatch(
+      /control channel ended before child emitted ready/,
+    );
+    expect(second.killSignals).toContain("SIGTERM");
+
+    await supervisor.shutdown();
   });
 });
 
@@ -1285,5 +1649,128 @@ describe("supervisor recycle: external drain phase guard", () => {
     await driveReady(second, ipcKeypair);
     await recyclePromise;
     await supervisor.shutdown();
+  });
+});
+
+describe("supervisor recycle: respawn credentials-read failure", () => {
+  test("a respawn whose credentials re-read throws reaps the freshly-spawned child", async () => {
+    const baseDir = await makeTempDir("recycle-credleak-");
+    const ipcKeypair = await generateKeyPair();
+    const mailBus = createMockMailBus();
+    // sigtermExits so the reap's SIGTERM settles the fake child.
+    const tracker = createSpawnTracker({ sigtermExits: true });
+    const { supervisor } = await spawnSupervisor({
+      baseDir,
+      tracker,
+      mailBus,
+      ipcKeypair,
+    });
+    expect(tracker.totalSpawns).toBe(1);
+
+    // Corrupt the step grants so the recycle's pre-handshake
+    // assembleCredentialsSnapshot re-read throws -- the recycle doubles
+    // as the grant-refresh path, so a malformed grants file is exactly
+    // the read that fails here.
+    await corruptStepGrants(
+      baseDir,
+      defaultStepRepoId({ deploymentId: "deployment-x", stepId: "step-1" }),
+    );
+
+    let caught: unknown;
+    try {
+      await supervisor.recycle({ reason: "credentials-leak-regression" });
+    } catch (err) {
+      caught = err;
+    }
+    expect(caught).toBeInstanceOf(Error);
+    expect(caught instanceof Error && caught.message).toMatch(/not valid JSON/);
+
+    // The respawn spawned the new child before the credentials read
+    // threw. Its catch must reap that child rather than leak it: the
+    // supervisor's recycle-failure teardown reaps only the PRIOR cohort
+    // (state.handle during `recycling`), so a child that failed before
+    // installation is invisible to it.
+    expect(tracker.totalSpawns).toBe(2);
+    const newChild = tracker.children[1];
+    if (newChild === undefined) {
+      throw new Error("tracker.children[1] missing");
+    }
+    expect(newChild.killSignals.length).toBeGreaterThan(0);
+  });
+});
+
+describe("supervisor shutdown: teardown robustness", () => {
+  test("shutdown still kills the child and reaches stopped when mail unsubscribe throws", async () => {
+    const baseDir = await makeTempDir("shutdown-unsub-throw-");
+    const ipcKeypair = await generateKeyPair();
+    const baseMailBus = createMockMailBus();
+    // The mail unsubscribe runs BEFORE the child kill in shutdown. Left
+    // unguarded, a throw here skips the kill (child leak) and leaves the
+    // supervisor wedged in `stopping`.
+    const mailBus: MailBusBindings = {
+      ...baseMailBus,
+      subscribeMailForAddress(address, handler) {
+        baseMailBus.subscribeMailForAddress(address, handler);
+        return () => {
+          throw new Error("mail unsubscribe boom during shutdown");
+        };
+      },
+    };
+    const tracker = createSpawnTracker({ sigtermExits: true });
+    const { supervisor } = await spawnSupervisor({
+      baseDir,
+      tracker,
+      mailBus,
+      ipcKeypair,
+    });
+    const child = tracker.children[0];
+    if (child === undefined) {
+      throw new Error("tracker.children[0] missing");
+    }
+
+    // Shutdown must resolve despite the throwing unsubscribe.
+    await supervisor.shutdown();
+
+    // The kill step was reached even though the unsubscribe (which runs
+    // first) threw.
+    expect(child.killSignals.length).toBe(1);
+
+    // The supervisor reached `stopped`, not wedged in `stopping`: a second
+    // shutdown is an idempotent no-op that returns without re-running the
+    // (throwing) teardown, so no further kill is issued.
+    await supervisor.shutdown();
+    expect(child.killSignals.length).toBe(1);
+  });
+
+  test("shutdown reaches stopped when the child kill throws", async () => {
+    const baseDir = await makeTempDir("shutdown-kill-throw-");
+    const ipcKeypair = await generateKeyPair();
+    const mailBus = createMockMailBus();
+    // The child kill throws (after settling exit). The `finally` must still
+    // drive the supervisor to `stopped` rather than leaving it in
+    // `stopping`.
+    const tracker = createSpawnTracker({
+      sigtermExits: true,
+      killThrows: true,
+    });
+    const { supervisor } = await spawnSupervisor({
+      baseDir,
+      tracker,
+      mailBus,
+      ipcKeypair,
+    });
+    const child = tracker.children[0];
+    if (child === undefined) {
+      throw new Error("tracker.children[0] missing");
+    }
+
+    // Shutdown must resolve even though kill threw.
+    await supervisor.shutdown();
+    expect(child.killSignals.length).toBe(1);
+
+    // Reached `stopped`: the second shutdown no-ops rather than re-entering
+    // teardown (which would call the throwing kill again).
+    await supervisor.shutdown();
+    expect(child.killSignals.length).toBe(1);
   });
 });
