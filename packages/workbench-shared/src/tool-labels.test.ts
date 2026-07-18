@@ -24,7 +24,7 @@ describe("skillTitle", () => {
   it("humanizes a slug-shaped displayName stored verbatim at creation", () => {
     expect(
       skillTitle({ name: "landing-page", displayName: "landing-page" }),
-    ).toBe("Landing Page");
+    ).toBe("Landing page");
   });
 
   it("leaves a real human title unchanged", () => {

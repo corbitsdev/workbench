@@ -162,7 +162,7 @@ describe("SkillsLibrary", () => {
     renderPage();
 
     await waitFor(() =>
-      expect(document.body.textContent).toContain("Landing Page"),
+      expect(document.body.textContent).toContain("Landing page"),
     );
     expect(document.body.textContent).not.toContain("landing-page");
   });
@@ -223,7 +223,7 @@ describe("SkillsLibrary", () => {
 
     await screen.findByRole("table");
     await waitFor(() =>
-      expect(document.body.textContent).toContain("Landing Page"),
+      expect(document.body.textContent).toContain("Landing page"),
     );
     expect(document.body.textContent).not.toContain("landing-page");
   });

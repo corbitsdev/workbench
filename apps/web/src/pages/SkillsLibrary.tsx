@@ -9,7 +9,7 @@ import {
   AppPageChromeRow,
   LibrarySearchInput,
   PagePanel,
-  toHumanLabel,
+  skillTitle,
   useViewMode,
   ViewToggle,
   type DataTableColumn,
@@ -44,7 +44,7 @@ function SkillCard({
   const hash = hashString(skill.id);
   const glyph = CATALOG_GLYPH_KINDS[hash % CATALOG_GLYPH_KINDS.length];
   const fill = CATALOG_GLYPH_FILLS[hash % CATALOG_GLYPH_FILLS.length];
-  const title = skill.displayName ?? toHumanLabel(skill.name);
+  const title = skillTitle(skill);
 
   return (
     <div
@@ -119,8 +119,7 @@ export function SkillsLibrary() {
       (skill) =>
         !q ||
         skill.name.toLowerCase().includes(q) ||
-        toHumanLabel(skill.name).toLowerCase().includes(q) ||
-        (skill.displayName ?? "").toLowerCase().includes(q),
+        skillTitle(skill).toLowerCase().includes(q),
     );
   }, [query, skillsQuery.data]);
 
@@ -171,7 +170,7 @@ export function SkillsLibrary() {
       key: "name",
       header: "Name",
       className: "font-medium text-text",
-      render: (s) => s.displayName ?? toHumanLabel(s.name),
+      render: (s) => skillTitle(s),
     },
     {
       key: "access",
@@ -252,7 +251,7 @@ export function SkillsLibrary() {
                     )
                   : undefined;
                 const revisionLabel = revisionTarget
-                  ? `revises ${revisionTarget.displayName ?? toHumanLabel(revisionTarget.name)}`
+                  ? `revises ${skillTitle(revisionTarget)}`
                   : isRevision
                     ? "revises existing skill"
                     : null;
@@ -306,11 +305,9 @@ export function SkillsLibrary() {
                             size="library"
                             disabled={busy}
                             onClick={() => {
-                              const targetName =
-                                revisionTarget?.displayName ??
-                                (revisionTarget
-                                  ? toHumanLabel(revisionTarget.name)
-                                  : draft.title);
+                              const targetName = revisionTarget
+                                ? skillTitle(revisionTarget)
+                                : draft.title;
                               if (
                                 !window.confirm(
                                   `Publish a new version of “${targetName}”? This updates the live skill.`,
