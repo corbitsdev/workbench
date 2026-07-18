@@ -78,6 +78,24 @@ There are two kinds of vendoring:
   handler) already catches and logs the rejection without crashing, and the
   hub's durable pending-signal rail re-delivers later, so the failed delivery
   self-heals once `RunStarted` lands.
+- **WORKBENCH-LOCAL change (CL-3880):** `child/serialized-tool-factories.ts`
+  (new file, no upstream counterpart) + a load-time call and export in
+  `child/run-child.ts` (both marked `// WORKBENCH-LOCAL (CL-3880)`).
+  Upstream serializes workflow definitions raw at both write points
+  (`sendMultiStepDeployFrame` puts `steps` on the deploy frame verbatim;
+  `writeWorkflowRepoTree` `JSON.stringify`s the whole workflow), and
+  `JSON.stringify` turns the function-valued `toolFactories` array
+  elements into `null`. The materialized `workflow.json` then crashes
+  `hashDefinition` → `projectAgent` (`factory.id` on null) at the first
+  `RunStarted` — every triggered run dies before any tool loading.
+  `apps/sidecar/src/step-agent-tools.ts` upstream documents a wire
+  projection that "strips closures" to `{ id, requires }`; no such
+  projection exists at pin `6927e7e4`. The sanitize rewrites unusable
+  entries to inert `{ id, requires }` stubs on load and passes proper
+  serialized entries through untouched, so the definition hash stays
+  stable once upstream implements the projection. Drop this block when
+  upstream serializes `toolFactories` properly (or hashes null-tolerantly);
+  guarded by `child/serialized-tool-factories.test.ts`.
 - **Lint:** the package is `eslint`-exempt (`eslint.config.ts` `globalIgnores`,
   same as `interchange/**`) — it is vendored upstream code with its own
   disable-directive conventions.
