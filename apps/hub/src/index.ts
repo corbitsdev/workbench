@@ -89,7 +89,6 @@ import { resolveAdapterCredential } from "./lib/task-credential";
 import { createDrizzleTaskPushStore } from "./lib/task-push-store";
 import { getIdentityAccounts } from "./lib/member-identity";
 import { seedHeartbeatSchedules } from "./services/scheduled-trigger-seeder";
-import { enrichHeartbeatTriggerPayload } from "./lib/heartbeat-trigger-payload";
 import {
   ensureOwnerSchedule,
   listEnabledSchedules,
@@ -172,7 +171,6 @@ import {
 import { createApprovalsEventBus } from "./lib/approvals-events";
 import { createFeedbackRouter } from "./routes/feedback";
 import type { MemberPreferences } from "@workbench/shared";
-import { resolveEnabledBriefSources } from "@workbench/shared";
 import { createMePreferencesRouter } from "./routes/me-preferences";
 import { createMeFeaturesRouter } from "./routes/me-features";
 import { createMeConnectionsRouter } from "./routes/me-connections";
@@ -1547,6 +1545,7 @@ const runStarter = createWorkflowRunStarter({
   ensureDeploymentRoutable,
   deploymentDomain: config.rootTenant.domain,
   cryptoProvider,
+  resolveUserIdentity,
 });
 
 // Public webhook firing surface: no session, authenticated only by
@@ -1628,7 +1627,6 @@ v1.route(
     db,
     runStarter,
     heartbeatKind: config.scheduler.heartbeatKind,
-    resolveUserIdentity,
   }),
 );
 
@@ -1667,6 +1665,7 @@ v1.route(
     ensureDeploymentRoutable,
     provisionRunDeployment,
     reclaimDeployment,
+    resolveUserIdentity,
     // CL-2707: bounded wait for the sidecar during the deploy window so a
     // start/resume that lands before the sidecar reconnects gets an honest 503
     // (auto-retryable) instead of an instant raw 500/503. Single-shared-sidecar
@@ -1806,32 +1805,24 @@ const scheduler = createScheduler({
   markFired: (id, dayUtc) => markScheduleFired(db, id, dayUtc),
   recordRunStarted: (args) => recordScheduleRunStarted(db, args),
   startWorkflowRun: async (fire) => {
-    // Re-read the member's brief-source preferences at the moment the
-    // schedule actually fires, rather than trusting whatever `enabledSources`
-    // (if any) was baked into the schedule row when it was created — a source
-    // toggle in Settings must take effect on the very next brief, not the next
-    // time the schedule row itself is edited.
-    const [prefs, identity] = await Promise.all([
-      readMemberPreferences(db, fire.tenantId, fire.creatorPrincipalId),
-      resolveUserIdentity(fire.creatorPrincipalId),
-    ]);
-    const triggerPayload = enrichHeartbeatTriggerPayload(
-      fire.triggerPayload,
-      fire.kind,
-      config.scheduler.heartbeatKind,
-      resolveEnabledBriefSources(prefs),
-      fire.nowMs,
-      fire.lastFiredDayUtc,
-      fire.hourUtc,
-      "scheduled",
-      identity,
-    );
+    // Trigger-payload enrichment (member identity, current brief-source
+    // preferences, the incremental since-last-fire lookback) happens INSIDE
+    // runStarter.startRun now — the one shared application point every start
+    // door funnels through (trigger-payload-enrichment-registry.ts). This
+    // closure's only job is forwarding the schedule's real fire-time window
+    // (lastFiredDayUtc/hourUtc) so the registry's heartbeat enricher computes
+    // the real "since yesterday" createdAfter instead of the flat 7-day
+    // fallback every other (non-scheduler) start door gets.
     const result = await runStarter.startRun({
       kind: fire.kind,
       tenantId: fire.tenantId,
-      input: triggerPayload,
+      input: fire.triggerPayload,
       creatorPrincipalId: fire.creatorPrincipalId,
       source: "scheduler",
+      heartbeatFire: {
+        lastFiredDayUtc: fire.lastFiredDayUtc,
+        hourUtc: fire.hourUtc,
+      },
     });
     if (!result.ok) {
       throw new Error(`run-start ${result.reason}: ${result.message}`);
@@ -2126,6 +2117,7 @@ app.route(
     deploymentDomain: config.rootTenant.domain,
     provisionRunDeployment,
     ensureDeploymentRoutable,
+    resolveUserIdentity,
   }),
 );
 app.route(

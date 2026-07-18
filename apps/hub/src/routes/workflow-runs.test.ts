@@ -153,6 +153,10 @@ const noopRepoStore = {} as unknown as RepoStore;
 const noopSessionService = {} as unknown as SessionService;
 const noopSidecarRouter = {} as unknown as SidecarRouter;
 const noopCrypto = {} as unknown as CryptoProvider;
+const noopResolveUserIdentity = async (principalId: string) => ({
+  userAddress: `usr_${principalId}@deploy.example.com`,
+  userRefId: principalId,
+});
 
 function buildApp(db: HubDb, userId = "user-1") {
   const parent = new Hono<{ Variables: { userId: string } }>();
@@ -177,6 +181,7 @@ function buildApp(db: HubDb, userId = "user-1") {
           Promise.resolve({ reestablished: false }),
         deploymentDomain: "deploy.example.com",
         cryptoProvider: noopCrypto,
+        resolveUserIdentity: noopResolveUserIdentity,
       }),
     }),
   );
@@ -395,6 +400,7 @@ describe("GET /workflow-runs (workbench-aware visibility)", () => {
             Promise.resolve({ reestablished: false }),
           deploymentDomain: "deploy.example.com",
           cryptoProvider: noopCrypto,
+          resolveUserIdentity: noopResolveUserIdentity,
         }),
       }),
     );
@@ -549,6 +555,7 @@ describe("POST /workflow-runs/:kind/start (shadowing + visibility)", () => {
             ensure ?? (() => Promise.resolve({ reestablished: false })),
           deploymentDomain: "deploy.example.com",
           cryptoProvider: noopCrypto,
+          resolveUserIdentity: noopResolveUserIdentity,
           ...(now ? { now } : {}),
         }),
       }),

@@ -11,6 +11,10 @@ import type { EnsureDeploymentRoutableFn } from "../routes/workflow-runs";
 import { slidingWindowLimiter } from "../lib/sliding-window";
 import { mintWorkflowRunId } from "../workflow-executor/mint-workflow-run-id";
 import {
+  enrichTriggerPayloadForStart,
+  type TriggerPayloadEnrichmentDeps,
+} from "../workflow-executor/trigger-payload-enrichment-registry";
+import {
   failRunIfStillRunning,
   insertRunRecord,
 } from "../workflow-executor/run-store";
@@ -55,6 +59,14 @@ export type StartRunInput = {
   // route already walks the chain for its deny-gate check; passing it avoids a
   // redundant getAncestorChain round-trip. When omitted, the starter walks it.
   chain?: string[];
+  // The scheduler's real fire-time window (its schedule row's last-fire day +
+  // hour) — the only caller with a genuine "since-last-fire" window to offer.
+  // Forwarded into the trigger-payload enrichment registry's `ctx` so the
+  // heartbeat enricher computes the real incremental lookback
+  // (`computeHeartbeatCreatedAfter`) instead of defaulting to the flat 7-day
+  // `manual-refresh` window every other source uses. Only meaningful with
+  // `source: "scheduler"`.
+  heartbeatFire?: { lastFiredDayUtc: number | null; hourUtc: number };
 };
 
 export type StartRunResult =
@@ -75,6 +87,11 @@ export function createWorkflowRunStarter(deps: {
   ensureDeploymentRoutable: EnsureDeploymentRoutableFn;
   deploymentDomain: string;
   cryptoProvider: CryptoProvider;
+  // Threaded into the same kind-registered trigger-payload enrichment every
+  // other start door applies (trigger-payload-enrichment-registry.ts) — this
+  // starter backs webhook triggers, the scheduler, AND the heartbeat manual-run
+  // route, none of which build their own enrichment anymore.
+  resolveUserIdentity: TriggerPayloadEnrichmentDeps["resolveUserIdentity"];
   /** Clock injection point for the per-tenant start-budget window in tests. */
   now?: () => number;
 }): WorkflowRunStarter {
@@ -91,6 +108,7 @@ export function createWorkflowRunStarter(deps: {
     creatorPrincipalId,
     source,
     chain: precomputedChain,
+    heartbeatFire,
   }: StartRunInput): Promise<StartRunResult> {
     if (source !== "scheduler" && !startBudget.tryAcquire(tenantId)) {
       log.error("workflow run-start budget exceeded", {
@@ -145,7 +163,27 @@ export function createWorkflowRunStarter(deps: {
 
     const runId = mintWorkflowRunId();
     const principalId = creatorPrincipalId ?? deployment.principalId;
-    const triggerPayload = { ...input, runId };
+    const enrichedInput = await enrichTriggerPayloadForStart(
+      {
+        db: deps.db,
+        resolveUserIdentity: deps.resolveUserIdentity,
+        ...(deps.now !== undefined ? { now: deps.now } : {}),
+      },
+      {
+        kind: deployment.kind,
+        tenantId: deployment.tenantId,
+        principalId,
+        ...(source === "scheduler"
+          ? {
+              lastFiredDayUtc: heartbeatFire?.lastFiredDayUtc ?? null,
+              hourUtc: heartbeatFire?.hourUtc ?? 0,
+              lookback: "scheduled" as const,
+            }
+          : {}),
+      },
+      input,
+    );
+    const triggerPayload = { ...enrichedInput, runId };
 
     try {
       await insertRunRecord(deps.db, {
