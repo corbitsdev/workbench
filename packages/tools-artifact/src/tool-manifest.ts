@@ -1,4 +1,8 @@
-import { manifestFromHubToolEntries } from "@workbench/tool-manifest";
+import {
+  hubToolEntriesFromDefinitions,
+  manifestFromHubToolEntries,
+} from "@workbench/tool-manifest";
+import { ARTIFACT_TOOL_DEFINITIONS } from "./definitions";
 
 export const toolManifestFile = {
   factories: [
@@ -6,44 +10,7 @@ export const toolManifestFile = {
       factoryId: "@workbench/tools-artifact/artifact",
       packageName: "@workbench/tools-artifact",
       providerName: null,
-      entries: {
-        artifact_create: {
-          sideEffect: "write",
-        },
-        artifact_read: {
-          sideEffect: "read",
-        },
-        artifact_read_chunk: {
-          sideEffect: "read",
-        },
-        artifact_write: {
-          sideEffect: "write",
-        },
-        artifact_list: {
-          sideEffect: "read",
-        },
-        artifact_find_by_title: {
-          sideEffect: "read",
-        },
-        artifact_link_file: {
-          sideEffect: "write",
-        },
-        artifact_link_presentation: {
-          sideEffect: "write",
-        },
-        artifact_link_gamma_presentation: {
-          sideEffect: "write",
-        },
-        write_artifact: {
-          sideEffect: "write",
-        },
-        memory_load: {
-          sideEffect: "read",
-        },
-        memory_save: {
-          sideEffect: "write",
-        },
-      },
+      entries: hubToolEntriesFromDefinitions(ARTIFACT_TOOL_DEFINITIONS),
       myraCatalog: {
         catalogPackage: "artifacts",
         summary:

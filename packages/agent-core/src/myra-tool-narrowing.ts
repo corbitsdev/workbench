@@ -1,7 +1,7 @@
 import { MYRA_TOOL_CATALOG } from "./dynamic-tools-catalog";
 
 /** LLM tool names disabled because their whole catalog package is turned off. */
-export function catalogToolNamesForPackages(
+function catalogToolNamesForPackages(
   disabledCatalogPackages: ReadonlySet<string>,
 ): Set<string> {
   const names = new Set<string>();
@@ -31,8 +31,9 @@ export function narrowMyraToolNamesByMemberPreference(
   );
 }
 
-export const MYRA_CATALOG_PACKAGE_KEYS: readonly string[] =
-  MYRA_TOOL_CATALOG.map((e) => e.package);
+const MYRA_CATALOG_PACKAGE_KEYS: readonly string[] = MYRA_TOOL_CATALOG.map(
+  (e) => e.package,
+);
 
 const CATALOG_TOOL_NAME_SET = new Set<string>(
   MYRA_TOOL_CATALOG.flatMap((e) => e.tools.map((t) => t.name)),

@@ -1,7 +1,11 @@
 import type { ToolDefinition } from "@intx/types/runtime";
+import type { ToolSideEffect } from "@workbench/tool-manifest";
 
-export const ARTIFACT_LINK_FILE_DEFINITION: ToolDefinition = {
+type ArtifactToolDefinition = ToolDefinition & { sideEffect: ToolSideEffect };
+
+export const ARTIFACT_LINK_FILE_DEFINITION: ArtifactToolDefinition = {
   name: "artifact_link_file",
+  sideEffect: "write",
   description:
     "Create a Workbench artifact row linked to a file in the agent workspace. Call this after writing the file with write_file.",
   inputSchema: {
@@ -26,8 +30,9 @@ export const ARTIFACT_LINK_FILE_DEFINITION: ToolDefinition = {
   },
 };
 
-export const ARTIFACT_CREATE_DEFINITION: ToolDefinition = {
+export const ARTIFACT_CREATE_DEFINITION: ArtifactToolDefinition = {
   name: "artifact_create",
+  sideEffect: "write",
   description:
     "Create a new Workbench artifact with inline content. Use this to save a document, note, draft, or other written output directly. Returns the artifact id and version. Revise it later with artifact_write.",
   inputSchema: {
@@ -48,8 +53,9 @@ export const ARTIFACT_CREATE_DEFINITION: ToolDefinition = {
   },
 };
 
-export const ARTIFACT_READ_DEFINITION: ToolDefinition = {
+export const ARTIFACT_READ_DEFINITION: ArtifactToolDefinition = {
   name: "artifact_read",
+  sideEffect: "read",
   description:
     "Read a Workbench artifact by id. Returns its title, kind, status, current version, and content. Pass version to read a specific past version. When the content is too large to return at once, the result includes a 'continuation' field with instructions to read the rest with artifact_read_chunk.",
   inputSchema: {
@@ -76,8 +82,9 @@ export const ARTIFACT_READ_DEFINITION: ToolDefinition = {
   },
 };
 
-export const ARTIFACT_READ_CHUNK_DEFINITION: ToolDefinition = {
+export const ARTIFACT_READ_CHUNK_DEFINITION: ArtifactToolDefinition = {
   name: "artifact_read_chunk",
+  sideEffect: "read",
   description:
     "Read one bounded chunk of a Workbench artifact's content by character range. Use this to read a large artifact whose content did not fit in a single artifact_read: pass the offset named in the prior result's 'continuation' field, and keep calling with each new offset until the result has no 'continuation' field, which means you have reached the end. Not supported for kind=web_site — use artifact_read (summary or path) instead.",
   inputSchema: {
@@ -109,8 +116,9 @@ export const ARTIFACT_READ_CHUNK_DEFINITION: ToolDefinition = {
   },
 };
 
-export const ARTIFACT_WRITE_DEFINITION: ToolDefinition = {
+export const ARTIFACT_WRITE_DEFINITION: ArtifactToolDefinition = {
   name: "artifact_write",
+  sideEffect: "write",
   description:
     "Revise an existing Workbench artifact, saving the change as a new version. Provide content and/or title; omitted fields keep their current value. Returns the new version number.",
   inputSchema: {
@@ -130,8 +138,9 @@ export const ARTIFACT_WRITE_DEFINITION: ToolDefinition = {
   },
 };
 
-export const ARTIFACT_LINK_PRESENTATION_DEFINITION: ToolDefinition = {
+export const ARTIFACT_LINK_PRESENTATION_DEFINITION: ArtifactToolDefinition = {
   name: "artifact_link_presentation",
+  sideEffect: "write",
   description:
     "Save a Gamma presentation as a Workbench artifact. Pass the Gamma URL as 'url', a 'title', and optionally an existing 'artifactId' to create a new version instead of a new artifact. Returns { artifactId, version, url }.",
   inputSchema: {
@@ -149,40 +158,43 @@ export const ARTIFACT_LINK_PRESENTATION_DEFINITION: ToolDefinition = {
   },
 };
 
-export const ARTIFACT_LINK_GAMMA_PRESENTATION_DEFINITION: ToolDefinition = {
-  name: "artifact_link_gamma_presentation",
-  description:
-    "Save a Gamma deck as a Workbench artifact of kind gamma_presentation. Pass the Gamma URL as 'url', a 'title', a short 'description' of the deck, and the 'gammaId'. Optionally pass an existing 'artifactId' to create a new version. Returns { artifactId, version, url }.",
-  inputSchema: {
-    type: "object",
-    properties: {
-      url: { type: "string", description: "The Gamma share URL." },
-      title: { type: "string", description: "Artifact title." },
-      description: {
-        type: "string",
-        description: "A short description of what the deck is.",
+export const ARTIFACT_LINK_GAMMA_PRESENTATION_DEFINITION: ArtifactToolDefinition =
+  {
+    name: "artifact_link_gamma_presentation",
+    sideEffect: "write",
+    description:
+      "Save a Gamma deck as a Workbench artifact of kind gamma_presentation. Pass the Gamma URL as 'url', a 'title', a short 'description' of the deck, and the 'gammaId'. Optionally pass an existing 'artifactId' to create a new version. Returns { artifactId, version, url }.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        url: { type: "string", description: "The Gamma share URL." },
+        title: { type: "string", description: "Artifact title." },
+        description: {
+          type: "string",
+          description: "A short description of what the deck is.",
+        },
+        gammaId: {
+          type: "string",
+          description: "The Gamma deck id.",
+        },
+        pdfUrl: {
+          type: "string",
+          description:
+            "Optional temporary Gamma export URL for the deck PDF. When provided, the PDF is downloaded and stored durably so the artifact offers a PDF download.",
+        },
+        artifactId: {
+          type: "string",
+          description:
+            "If provided, creates a new version of this artifact. If absent, creates a new artifact with kind=gamma_presentation.",
+        },
       },
-      gammaId: {
-        type: "string",
-        description: "The Gamma deck id.",
-      },
-      pdfUrl: {
-        type: "string",
-        description:
-          "Optional temporary Gamma export URL for the deck PDF. When provided, the PDF is downloaded and stored durably so the artifact offers a PDF download.",
-      },
-      artifactId: {
-        type: "string",
-        description:
-          "If provided, creates a new version of this artifact. If absent, creates a new artifact with kind=gamma_presentation.",
-      },
+      required: ["url", "title", "description", "gammaId"],
     },
-    required: ["url", "title", "description", "gammaId"],
-  },
-};
+  };
 
-export const ARTIFACT_FIND_BY_TITLE_DEFINITION: ToolDefinition = {
+export const ARTIFACT_FIND_BY_TITLE_DEFINITION: ArtifactToolDefinition = {
   name: "artifact_find_by_title",
+  sideEffect: "read",
   description:
     "Find a Workbench artifact by exact title and optional kind. Returns { artifactId, version } if found, null if not found.",
   inputSchema: {
@@ -198,8 +210,9 @@ export const ARTIFACT_FIND_BY_TITLE_DEFINITION: ToolDefinition = {
   },
 };
 
-export const ARTIFACT_LIST_DEFINITION: ToolDefinition = {
+export const ARTIFACT_LIST_DEFINITION: ArtifactToolDefinition = {
   name: "artifact_list",
+  sideEffect: "read",
   description:
     "List Workbench artifacts in this workbench, most recently updated first. Returns id, title, kind, status, version, and updatedAt for each. Optionally filter by kind or status.",
   inputSchema: {
@@ -220,8 +233,9 @@ export const ARTIFACT_LIST_DEFINITION: ToolDefinition = {
   },
 };
 
-export const WRITE_ARTIFACT_DEFINITION: ToolDefinition = {
+export const WRITE_ARTIFACT_DEFINITION: ArtifactToolDefinition = {
   name: "write_artifact",
+  sideEffect: "write",
   description:
     "Create or update a Workbench artifact with body text and optional citations. Returns artifactId, version, and title.",
   inputSchema: {
@@ -263,8 +277,9 @@ export const WRITE_ARTIFACT_DEFINITION: ToolDefinition = {
   },
 };
 
-export const MEMORY_LOAD_DEFINITION: ToolDefinition = {
+export const MEMORY_LOAD_DEFINITION: ArtifactToolDefinition = {
   name: "memory_load",
+  sideEffect: "read",
   description:
     "Load your durable memory — the standing brief on the person you work for, durable facts and decisions, and contacts. Returns the full memory text (empty when nothing is stored yet). Call this when a task needs the context it holds, not on every turn.",
   inputSchema: {
@@ -280,8 +295,9 @@ export const MEMORY_LOAD_DEFINITION: ToolDefinition = {
   },
 };
 
-export const MEMORY_SAVE_DEFINITION: ToolDefinition = {
+export const MEMORY_SAVE_DEFINITION: ArtifactToolDefinition = {
   name: "memory_save",
+  sideEffect: "write",
   description:
     "Save your durable memory, replacing the stored text with what you pass. Load it first, edit the whole text, then save the full result — saving overwrites, it does not append. Keep it organized under headings. Update only when you learn something durable, never for a greeting or simple reply.",
   inputSchema: {
@@ -301,7 +317,7 @@ export const MEMORY_SAVE_DEFINITION: ToolDefinition = {
   },
 };
 
-export const ARTIFACT_TOOL_DEFINITIONS: ToolDefinition[] = [
+export const ARTIFACT_TOOL_DEFINITIONS: ArtifactToolDefinition[] = [
   ARTIFACT_LINK_FILE_DEFINITION,
   ARTIFACT_CREATE_DEFINITION,
   ARTIFACT_READ_DEFINITION,

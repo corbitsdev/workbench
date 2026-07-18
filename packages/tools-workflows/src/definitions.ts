@@ -1,12 +1,16 @@
 import type { ToolDefinition } from "@intx/types/runtime";
+import type { ToolSideEffect } from "@workbench/tool-manifest";
 
 // Flat convenience params throughout (CL-2319): kimi-class models skip
 // optional nested-object params, so every argument the model must fill is a
 // top-level primitive. `input`/`payload` stay objects because they ARE the
 // opaque per-workflow payloads, not addressing parameters.
 
-export const WORKFLOW_LIST_KINDS_DEFINITION: ToolDefinition = {
+type WorkflowToolDefinition = ToolDefinition & { sideEffect: ToolSideEffect };
+
+export const WORKFLOW_LIST_KINDS_DEFINITION: WorkflowToolDefinition = {
   name: "workflow_list_kinds",
+  sideEffect: "read",
   description:
     "List workflow kinds the caller may start. Returns only kinds deployed on the tenant chain and allowed by the org run policy — the same runnable catalog as the Workflows page.",
   inputSchema: {
@@ -16,8 +20,9 @@ export const WORKFLOW_LIST_KINDS_DEFINITION: ToolDefinition = {
   },
 };
 
-export const WORKFLOW_START_DEFINITION: ToolDefinition = {
+export const WORKFLOW_START_DEFINITION: WorkflowToolDefinition = {
   name: "workflow_start",
+  sideEffect: "write",
   description:
     "Start a workflow run by kind on behalf of the user. Call workflow_list_kinds first and use a returned kind. The run is recorded against this conversation, so it appears in the chat's workflow dock. Returns { runId, kind, status }. Use workflow_list_runs to check progress and workflow_signal to resolve a pending gate.",
   inputSchema: {
@@ -38,8 +43,9 @@ export const WORKFLOW_START_DEFINITION: ToolDefinition = {
   },
 };
 
-export const WORKFLOW_LIST_RUNS_DEFINITION: ToolDefinition = {
+export const WORKFLOW_LIST_RUNS_DEFINITION: WorkflowToolDefinition = {
   name: "workflow_list_runs",
+  sideEffect: "read",
   description:
     "List the user's workflow runs. By default only runs started from the current conversation are returned; pass allConversations=true to list the user's runs from every conversation. Returns runId, kind, status, createdAt, originConversationId, and for runs with status 'awaiting' a pendingGates array (signalName plus optional payloadSchema describing the gate's expected fields).",
   inputSchema: {
@@ -59,8 +65,9 @@ export const WORKFLOW_LIST_RUNS_DEFINITION: ToolDefinition = {
   },
 };
 
-export const WORKFLOW_SIGNAL_DEFINITION: ToolDefinition = {
+export const WORKFLOW_SIGNAL_DEFINITION: WorkflowToolDefinition = {
   name: "workflow_signal",
+  sideEffect: "write",
   description:
     "Deliver a signal to a workflow run that is waiting on a gate (status 'awaiting'), resuming it. Read the run's pendingGates from workflow_list_runs first and pass that exact signalName — never invent one. Pass the runId, signalName, and an optional payload object matching the gate's fields. On a wrong signalName returns { ok: false, error, pendingGates } instead of succeeding. Returns the run's state after a successful signal.",
   inputSchema: {
@@ -85,7 +92,7 @@ export const WORKFLOW_SIGNAL_DEFINITION: ToolDefinition = {
   },
 };
 
-export const WORKFLOW_TOOL_DEFINITIONS: ToolDefinition[] = [
+export const WORKFLOW_TOOL_DEFINITIONS: WorkflowToolDefinition[] = [
   WORKFLOW_LIST_KINDS_DEFINITION,
   WORKFLOW_START_DEFINITION,
   WORKFLOW_LIST_RUNS_DEFINITION,

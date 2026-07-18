@@ -20,6 +20,7 @@ import { requestBodySchema } from "../lib/openapi";
 import { WorkflowMeta } from "../lib/workflow-meta";
 import { loadWorkflowCatalogKinds } from "../lib/workflow-catalog";
 import { seedDenyGrantForNewWorkflowKind } from "../lib/workflow-run-gate";
+import { escapeLikePattern } from "../lib/like-pattern";
 
 const log = getLogger(["api", "workflow-deploy"]);
 
@@ -108,12 +109,16 @@ export async function tearDownDeployment(deps: {
   // All backing instance rows for this deployment: the supervisor address and
   // every step address. Step addresses are `ins_<deploymentId>-<stepId>@<domain>`,
   // so a prefix match on `ins_<deploymentId>` within the tenant collects both
-  // without re-parsing the workflow definition. `_` and `%` do not appear in a
-  // `ses_…` deploymentId, so no LIKE escaping is required.
+  // without re-parsing the workflow definition. `deploymentId` is escaped
+  // through the shared LIKE helper on the way in — defense in depth even
+  // though a `ses_…` id is not expected to carry `%`/`_`/`\`.
   const instances = await db.query.agentInstance.findMany({
     where: and(
       eq(intxSchema.agentInstance.tenantId, deps.tenantId),
-      like(intxSchema.agentInstance.address, `ins_${deploymentId}%`),
+      like(
+        intxSchema.agentInstance.address,
+        `ins_${escapeLikePattern(deploymentId)}%`,
+      ),
     ),
     columns: { id: true, address: true },
   });

@@ -1,8 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import {
-  catalogToolNamesForPackages,
-  narrowMyraToolNamesByMemberPreference,
-} from "./myra-tool-narrowing";
+import { MYRA_TOOL_CATALOG } from "./dynamic-tools-catalog";
+import { narrowMyraToolNamesByMemberPreference } from "./myra-tool-narrowing";
 
 describe("narrowMyraToolNamesByMemberPreference", () => {
   const granted = [
@@ -20,8 +18,8 @@ describe("narrowMyraToolNamesByMemberPreference", () => {
   });
 
   test("disabled package removes every tool in that package", () => {
-    const attioTools = [...catalogToolNamesForPackages(new Set(["attio"]))];
-    expect(attioTools.length).toBeGreaterThan(0);
+    const attioEntry = MYRA_TOOL_CATALOG.find((e) => e.package === "attio");
+    expect(attioEntry?.tools.length).toBeGreaterThan(0);
     const narrowed = narrowMyraToolNamesByMemberPreference(
       granted,
       ["attio"],

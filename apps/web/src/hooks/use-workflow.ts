@@ -2,6 +2,7 @@ import { useEffect, useMemo } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { type } from "arktype";
 import { api, buildEventSourceUrl, withDeployRetry } from "../lib/api";
+import { isDev, logger } from "../lib/logger";
 import { subscribeWorkflowRunStateStream } from "../lib/workflow-run-state-stream";
 import {
   isLogStateTerminal,
@@ -426,11 +427,32 @@ export function useWorkflowRunState(
   // `useWorkflowRecord` would not get that re-render, leaving the gate/stream
   // stuck on a stale peek; such a consumer must also observe the record (or
   // this should be upgraded to `useWorkflowRecord` here).
-  const record = queryClient.getQueryData<RunRecord>([
-    "workflow-record",
-    runId,
-    tenantId ?? null,
-  ]);
+  const recordQueryKey = ["workflow-record", runId, tenantId ?? null];
+  const record = queryClient.getQueryData<RunRecord>(recordQueryKey);
+
+  // Dev-only self-check for the assumption documented above: this hook's
+  // provisioning gate only self-heals when a `useWorkflowRecord` for the SAME
+  // key is mounted alongside it. `record === undefined` alone can't tell "no
+  // query registered" apart from "query registered, still loading" — checking
+  // the query cache directly (rather than the data) distinguishes the two, so
+  // this only fires for the former. Runs in an effect (render stays pure;
+  // fires once per runId, not every render) with an exact-key match so a
+  // prefix-related query can never satisfy the check by accident.
+  useEffect(() => {
+    if (
+      isDev &&
+      runId !== null &&
+      queryClient.getQueryCache().find({
+        queryKey: ["workflow-record", runId, tenantId ?? null],
+        exact: true,
+      }) === undefined
+    ) {
+      logger.warn(
+        `useWorkflowRunState(${runId}): no co-mounted useWorkflowRecord found — the provisioning gate will default to firing immediately instead of waiting for a deploymentId.`,
+      );
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- dev-only diagnostic; re-check only when the run identity changes
+  }, [runId, tenantId]);
 
   // A run has no event log to read until its per-run deployment is minted
   // (CL-2755's `provisioning` window) — /state (and its SSE stream) 400s with
