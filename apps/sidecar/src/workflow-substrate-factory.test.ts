@@ -1067,6 +1067,81 @@ describe("createStepToolContextResolver", () => {
     );
     expect(decision.effect).toBe("allow");
   });
+
+  test("a single-STEP workflow (stepCount === 1, agentId === instance id) keeps the derived ins_<raw>-<step> step identity, NOT the empty supervisor identity", async () => {
+    // A single-step workflow definition (`stepOrder.length === 1`) is NOT a
+    // launched agent: it deploys via `deploySingleStepAtHead`, whose frame
+    // `agentId` is `deriveDeploymentAgentId(deploymentId)` === the mailbox
+    // address's instance id (`ins_dep`), backed by the EMPTY supervisor `agent`
+    // row (`writeDeploymentAgentRow`: toolPackages [], capabilities null). Its
+    // REAL step tools + grants live at `ins_<raw>-<stepId>` / `<raw>-<stepId>`
+    // (`writeStepAgentRows` / `writeStepGrantFiles`). Gating the single-agent
+    // branch on raw `stepCount === 1` (the pre-fix bug) keyed the credential +
+    // hub-backed rails on the supervisor identity — 0 tool packages, deny-all
+    // grants. Provenance (`singleAgentId === instanceId`) routes it to the
+    // step-identity else branch instead.
+    const grantsDir = await makeDataDir();
+    await fs.mkdir(path.join(grantsDir, "state"), { recursive: true });
+    const grantRule = {
+      id: "gr_step",
+      resource: "tool:granola_list_documents",
+      action: "invoke",
+      effect: "allow" as const,
+      origin: "system" as const,
+      conditions: null,
+      expiresAt: null,
+    };
+    await fs.writeFile(
+      path.join(grantsDir, "state", "grants.json"),
+      JSON.stringify({ grants: [grantRule] }),
+    );
+
+    const { store, calls } = makeRecordingBareStore(grantsDir);
+    const dataDir = await makeDataDir();
+    const resolve = createStepToolContextResolver({
+      bareStore: store,
+      dataDir,
+      mailboxAddress: "ins_dep@abklabs.com",
+      // A one-step workflow: physically head-collapsed on disk, so stepCount is 1.
+      stepCount: 1,
+      // RAW hub deploymentId (`deriveRawDeploymentId(ins_dep)` === `dep`).
+      deploymentId: "dep",
+      tenantId: "ten_1",
+      hubHttpUrl: "http://hub.invalid",
+      sidecarToken: "tok",
+      // The single-step workflow frame's agentId is the SUPERVISOR id, equal to
+      // the mailbox instance id — the signal that this is NOT a launched agent.
+      singleAgentId: "ins_dep",
+      singleAgentPrincipalId: "ins_dep",
+      cacheRoot: path.join(dataDir, "cache"),
+      cacheMaxBytes: 1024 * 1024,
+      registryMaxTarballBytes: 1024 * 1024,
+    });
+
+    const ctx = await resolve(makeReq("compare"));
+
+    // Identity is the hub-written step identity, NOT the empty supervisor id.
+    expect(ctx.stepAgentId).toBe("ins_dep-compare");
+    expect(ctx.principalId).toBe("ins_dep-compare");
+    expect(ctx.stepAgentId).not.toBe("ins_dep");
+    expect(ctx.principalId).not.toBe("ins_dep");
+
+    // Grants read from the per-step repo `<raw>-<stepId>`, NOT the supervisor's
+    // legacy `ins_dep` agent-state repo.
+    expect(calls).toContainEqual({ kind: "agent-state", id: "dep-compare" });
+    for (const call of calls) {
+      expect(call.id).not.toBe("ins_dep");
+    }
+
+    // The granted step tool resolves ALLOW: its grants were actually read.
+    expect(ctx.grants).toHaveLength(1);
+    const decision = await evaluateGrants(
+      ctx.grants,
+      "tool:granola_list_documents",
+      "invoke",
+    );
+    expect(decision.effect).toBe("allow");
+  });
 });
 
 // A stub agent whose send() count + last-content are observable, used to

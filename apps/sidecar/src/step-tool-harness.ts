@@ -144,6 +144,52 @@ export function assertStepToolAvailable(
 }
 
 /**
+ * A loaded tool-package entry carried a null/absent factory (or a factory
+ * missing its `id`/`requires` metadata). The `@intx/tool-packaging` loader
+ * never produces such an entry, so hitting this is a real integrity fault in
+ * the on-disk deploy tree or a wiring break — surfaced with the offending
+ * package + address instead of the opaque `null is not an object (evaluating
+ * 'factory.id')` NPE the raw loop would throw when it dereferences the absent
+ * factory. Fail loud, never silently ship an agent with fewer tools than it
+ * pinned.
+ */
+export class StepToolFactoryAbsentError extends Error {
+  readonly packageName: string;
+  readonly address: string;
+  constructor(packageName: string, address: string) {
+    super(
+      `tool package "${packageName}" resolved a null/absent factory for ${address}; ` +
+        `the deploy tree's pinned tool closure is corrupt or mis-materialized`,
+    );
+    this.name = "StepToolFactoryAbsentError";
+    this.packageName = packageName;
+    this.address = address;
+  }
+}
+
+/**
+ * Guard a loaded package's factory before its `id`/`requires` metadata is
+ * dereferenced. The loader guarantees non-null, id/requires-bearing factories;
+ * this is the fail-loud backstop for a corrupt closure that would otherwise
+ * crash the workflow child with an opaque `factory.id` NPE before it emits
+ * ready.
+ */
+export function assertLoadedFactory(
+  factory: unknown,
+  packageName: string,
+  address: string,
+): asserts factory is { id: string; requires: readonly string[] } {
+  if (
+    factory === null ||
+    (typeof factory !== "function" && typeof factory !== "object") ||
+    typeof (factory as { id?: unknown }).id !== "string" ||
+    !Array.isArray((factory as { requires?: unknown }).requires)
+  ) {
+    throw new StepToolFactoryAbsentError(packageName, address);
+  }
+}
+
+/**
  * Per-step identity + hub-connection context the step agentFactory needs
  * to materialize tools. `buildEnv` (which has the StepInvokeRequest in
  * scope) stashes this on the env under `STEP_TOOL_CONTEXT_KEY`; the
@@ -283,6 +329,7 @@ async function buildStepTools(args: {
   const requiredProviders = new Set<string>();
   for (const pkg of loadedPackages) {
     for (const factory of pkg.factories) {
+      assertLoadedFactory(factory, pkg.name, ctx.stepAddress);
       for (const key of factory.requires) {
         const provider = providerFromEnvKey(key);
         if (provider !== undefined) requiredProviders.add(provider);
@@ -348,6 +395,7 @@ async function buildStepTools(args: {
   for (const def of posixTools.definitions) localToolNames.add(def.name);
   for (const pkg of loadedPackages) {
     for (const factory of pkg.factories) {
+      assertLoadedFactory(factory, pkg.name, ctx.stepAddress);
       let bundle: ReturnType<typeof factory>;
       try {
         bundle = factory(factoryEnv);

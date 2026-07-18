@@ -27,8 +27,23 @@ import {
 } from "@intx/workflow";
 
 import type { RepoStore as RuntimeRepoStore } from "@intx/workflow";
+import { getLogger } from "@intx/log";
 
 const RUNS_PREFIX = "runs";
+
+// WORKBENCH-LOCAL (self-discovery resume quarantine): a persisted run whose
+// log the CURRENT interchange pin's state machine cannot replay must NOT crash
+// the whole workflow-child at boot. The runtime-retirement pin bump changed
+// workflow-event sequence numbering (events now start at seq >= 1), so a run
+// persisted BEFORE the bump with a `RunStarted` at `seq: 0` makes
+// `resumeFromLog` throw `TransitionError: sequence must be >= 1`. Because
+// self-discovery runs before the child emits `ready`, one such poison-pill run
+// takes down every launch on that sidecar (`control channel ended before child
+// emitted ready` -> 503) — including cold single-agent launches. Quarantine the
+// un-resumable run (log + skip) and boot with the runs that DO replay. Upstream
+// `@intx/workflow-host` lets the throw propagate; this file is a full vendor of
+// that package, so the quarantine lives here per the vendor-fix policy.
+const logger = getLogger(["workflow-host", "child", "self-discovery"]);
 
 /**
  * Per-run discovery entry. The runtime body re-applies `seedEvents`
@@ -73,11 +88,20 @@ export async function discoverInFlightRuns(
   }
   const out: DiscoveredRun[] = [];
   for (const runId of runDirs) {
-    const events = await opts.runtimeRepoStore.read(runId);
-    if (events.length === 0) continue;
-    const resumed = resumeFromLog(runId, events);
-    if (isTerminalRunPhase(resumed.phase)) continue;
-    out.push({ runId, seedEvents: events, resumedState: resumed });
+    // WORKBENCH-LOCAL (self-discovery resume quarantine): isolate each run's
+    // read+replay. A single run whose log is corrupt or version-incompatible
+    // (e.g. a pre-bump `RunStarted seq 0` the current state machine rejects)
+    // must be skipped with a loud error, never allowed to abort discovery and
+    // crash the child before it emits `ready`.
+    try {
+      const events = await opts.runtimeRepoStore.read(runId);
+      if (events.length === 0) continue;
+      const resumed = resumeFromLog(runId, events);
+      if (isTerminalRunPhase(resumed.phase)) continue;
+      out.push({ runId, seedEvents: events, resumedState: resumed });
+    } catch (cause) {
+      logger.error`self-discovery: skipping un-resumable run ${runId}; its persisted log could not be read or replayed and will not be resumed: ${cause instanceof Error ? cause.message : String(cause)}`;
+    }
   }
   return out;
 }
