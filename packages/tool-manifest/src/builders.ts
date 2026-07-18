@@ -63,6 +63,31 @@ export function manifestFromHubToolEntries(opts: {
   };
 }
 
+/**
+ * Build `HubToolEntries` from a package's own runtime array of tool
+ * definitions (the same array its `interchange-tools.ts` factory dispatches),
+ * plus a hand-authored side-effect table. A tool added to the runtime array
+ * without a matching `sideEffects` entry throws immediately at import time
+ * instead of silently missing its manifest entry — the entry name itself can
+ * never drift from the runtime, since it is read off `definition.name`.
+ */
+export function hubToolEntriesFromDefinitions(
+  definitions: readonly { name: string; description?: string }[],
+  sideEffects: Record<string, ToolSideEffect>,
+): HubToolEntries {
+  const entries: HubToolEntries = {};
+  for (const definition of definitions) {
+    const sideEffect = sideEffects[definition.name];
+    if (sideEffect === undefined) {
+      throw new Error(
+        `hubToolEntriesFromDefinitions: no side effect declared for tool "${definition.name}"`,
+      );
+    }
+    entries[definition.name] = { sideEffect, definition };
+  }
+  return entries;
+}
+
 export function manifestFromBareToolNames(opts: {
   factoryId: string;
   packageName: string;

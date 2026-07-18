@@ -257,3 +257,8 @@ function createPresetComposeTool(): AgentTool {
 export function createAbCompareTools(): AgentTool[] {
   return [createPresetQuorumTool(), createPresetComposeTool()];
 }
+
+export const AB_COMPARE_TOOL_DEFINITIONS: ToolDefinition[] = [
+  AB_PRESET_QUORUM_DEFINITION,
+  AB_PRESET_COMPOSE_DEFINITION,
+];
