@@ -190,6 +190,17 @@ pack-recv-gc-*.pack`, plus bare `TypeError`s from torn `.idx` loads).
 
 ### `packages/hub-agent` → `@workbench/hub-agent` (fork, NOT a verbatim vendor)
 
+- **Pin-bump seam — pack-reject reason string:** `hub-link.ts`'s workflow-run
+  pack bootstrap retry classifies a permanent rejection by substring-matching
+  `"path_violation"` in the error thrown by `@intx/pack-transport`'s sender
+  (`pack rejected by receiver (... reason=path_violation)`), because the wire
+  reason is not exposed as a typed field on the thrown error. Verified stable
+  at the current pin (the hub's `receiveWorkflowRunPack` only ever emits
+  `path_violation` or `corrupt`). On every interchange pin bump, re-verify the
+  sender's message format and the hub's reason space still match this
+  substring — drift silently re-enables the infinite identical-resend retry
+  loop this classification exists to prevent.
+
 - **Status:** genuine long-lived fork of `@intx/hub-agent`, predating the vendor
   discipline. It carries real workbench features upstream lacks (reconnect
   backoff/jitter and the outbound queue from the CL-2405 sidecar-disconnect work,

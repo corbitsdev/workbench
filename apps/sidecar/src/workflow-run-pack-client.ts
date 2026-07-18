@@ -717,6 +717,21 @@ export function createWorkflowRunPackPushingRepoStore(
             slot.terminalError = cause;
             break;
           }
+          // A receiver `path_violation` is a deterministic content rejection
+          // (the hub's tree validator refused the pack); re-shipping the
+          // identical delta on the next event append or reconnect re-drive
+          // fails identically forever. Latch it terminal like the size
+          // ceiling so this slot stops generating doomed traffic for the
+          // process lifetime. The substring couples to the pack-transport
+          // reject message — see the pin-bump seam note in docs/VENDORED.md.
+          if (
+            cause instanceof Error &&
+            cause.message.includes("path_violation")
+          ) {
+            logger.error`workflow-run pack push permanently rejected for deployment ${repoId.id} (${slot.agentAddress}); latching terminal: ${cause.message}`;
+            slot.terminalError = cause;
+            break;
+          }
           const msg = cause instanceof Error ? cause.message : String(cause);
           logger.warn`workflow-run pack push failed for deployment ${repoId.id} (${slot.agentAddress}): ${msg}`;
           slot.lastError =

@@ -1480,6 +1480,121 @@ describe("sidecar↔hub integration", () => {
       await wfrServer.stop(true);
     }
   });
+
+  // A receiver `path_violation` is a deterministic content rejection (the
+  // hub's tree validator refused the pack), not the transient initRepo
+  // bootstrap race. The bootstrap arm must NOT re-send the identical pack —
+  // retrying can never succeed and burns a transferId per attempt forever
+  // (observed on staging against a legacy repo whose pre-guard seq-0 event
+  // survives hub-side). This pins: exactly one send, and the push rejects.
+  test("a path_violation rejection is not retried by the bootstrap arm", async () => {
+    const transport = createInMemoryTransport();
+    const sessions = createMockSessionManager();
+
+    let receiveCount = 0;
+    const wfrRouter = createSidecarRouter({
+      authenticateSidecar: acceptAnySidecar,
+      requestTimeoutMs: 5000,
+      hubPublicKey: "a".repeat(64),
+      lookups: {
+        async receiveWorkflowRunPack(_repoId, _pack, _ref, _commitSha) {
+          receiveCount += 1;
+          // The wire frame's `reason` is a bare enum; the receiver's verbose
+          // detail is logged hub-side only. The client observes
+          // `pack rejected by receiver (... reason=path_violation)`.
+          return { accepted: false, reason: "path_violation" };
+        },
+      },
+    });
+
+    const wfrApp = new Hono();
+    wfrApp.get(
+      "/ws",
+      upgradeWebSocket((_c) => {
+        let handle: WsHandle;
+        return {
+          onOpen(_evt, ws) {
+            handle = {
+              send(data: string) {
+                ws.send(data);
+              },
+              close() {
+                ws.close();
+              },
+            };
+            wfrRouter.handleOpen(handle);
+          },
+          onMessage(evt, _ws) {
+            if (typeof evt.data === "string") {
+              wfrRouter.handleMessage(handle, evt.data);
+            }
+          },
+          onClose(_evt, _ws) {
+            wfrRouter.handleClose(handle);
+          },
+        };
+      }),
+    );
+
+    const wfrServer = Bun.serve({
+      fetch: wfrApp.fetch,
+      websocket,
+      port: 0,
+    });
+
+    const client = createHubLink({
+      hubURL: `ws://localhost:${wfrServer.port}/ws`,
+      sidecarId: "sc-wfr-path-violation",
+      token: "test-token",
+      transport,
+      sessions,
+      ...withTestDeployBindings(),
+    });
+
+    client.connect();
+    try {
+      await waitFor(() =>
+        wfrRouter.getConnectedSidecars().includes("sc-wfr-path-violation"),
+      );
+      const agentAddress = "pv-agent@test.interchange";
+      await wfrRouter.sendAgentDeploy(agentAddress, TEST_CONFIG);
+      await waitFor(() =>
+        wfrRouter.getRoutableAddresses().includes(agentAddress),
+      );
+
+      const pushArgs = {
+        agentAddress,
+        repoId: { kind: "workflow-run", id: "dep-path-violation" } as const,
+        pack: new Uint8Array([1, 2, 3]),
+        ref: "refs/heads/events",
+        commitSha: "b".repeat(40),
+      };
+      await expect(client.pushWorkflowRunPack(pushArgs)).rejects.toThrow(
+        /path_violation/,
+      );
+
+      // Exactly ONE receiver invocation: the deterministic rejection must
+      // not trigger the bootstrap re-send.
+      expect(receiveCount).toBe(1);
+
+      // A SECOND push to the same (repoId, ref) — the staging incident was
+      // recurrence ACROSS pushes (reconnect re-drives), each burning a
+      // retry. The key stays un-bootstrapped after a permanent rejection,
+      // so the second push must also send exactly once, not re-enter the
+      // bootstrap retry arm.
+      await expect(client.pushWorkflowRunPack(pushArgs)).rejects.toThrow(
+        /path_violation/,
+      );
+      expect(receiveCount).toBe(2);
+    } finally {
+      client.close();
+      await waitFor(
+        () =>
+          !wfrRouter.getConnectedSidecars().includes("sc-wfr-path-violation"),
+      );
+      await wfrServer.stop(true);
+    }
+  });
 });
 
 describe("register + reconnect frames on connect", () => {
