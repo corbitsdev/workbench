@@ -1,13 +1,23 @@
 /// <reference types="bun" />
 import "../test-setup";
 import { afterEach, beforeEach, describe, expect, it, mock } from "bun:test";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  within,
+} from "@testing-library/react";
 import React from "react";
 import { MemoryRouter, Route, Routes } from "react-router";
 import {
   ActiveContextProvider,
   useActiveContext,
 } from "../lib/active-context-store";
+import {
+  PageChromeProvider,
+  usePageChromeSlot,
+} from "../lib/page-chrome";
 
 type ThreadItem = {
   id: string;
@@ -172,25 +182,39 @@ function PublishedLabelProbe() {
   );
 }
 
+// Mirrors AppTopBar: renders whatever the page publishes via useSetPageChrome,
+// so the relocated info button (moved out of the in-panel header band per
+// CL-3910) is exercised where it actually renders — the top bar, not the
+// chat surface.
+function ChromeSlot() {
+  const chrome = usePageChromeSlot();
+  return React.createElement("div", { "data-testid": "page-chrome" }, chrome);
+}
+
 function threadPageTree(path: string) {
   return React.createElement(
-    MemoryRouter,
-    { initialEntries: [path] },
+    PageChromeProvider,
+    null,
     React.createElement(
-      ActiveContextProvider,
-      null,
-      React.createElement(PublishedLabelProbe),
+      MemoryRouter,
+      { initialEntries: [path] },
       React.createElement(
-        Routes,
+        ActiveContextProvider,
         null,
-        React.createElement(Route, {
-          path: "/chats/:threadId",
-          element: React.createElement(ChatThreadPage),
-        }),
-        React.createElement(Route, {
-          path: "/chats",
-          element: React.createElement(ChatThreadPage),
-        }),
+        React.createElement(PublishedLabelProbe),
+        React.createElement(ChromeSlot),
+        React.createElement(
+          Routes,
+          null,
+          React.createElement(Route, {
+            path: "/chats/:threadId",
+            element: React.createElement(ChatThreadPage),
+          }),
+          React.createElement(Route, {
+            path: "/chats",
+            element: React.createElement(ChatThreadPage),
+          }),
+        ),
       ),
     ),
   );
@@ -240,18 +264,31 @@ describe("ChatThreadPage", () => {
     screen.getByText(/loading your chats/i);
   });
 
-  it("renders the chat surface without an in-panel thread switcher and passes the Myra thread id as the dock's conversationId (conversationId == Myra thread id contract)", () => {
+  it("renders the chat surface without an in-panel thread switcher or header band, and passes the Myra thread id as the dock's conversationId (conversationId == Myra thread id contract)", () => {
     renderAt("/chats/t1");
     expect(screen.getByTestId("surface")).toBeDefined();
     // Full-page chat relies on the app top bar for the thread title; the
     // in-panel ThreadSwitcher (headerLeft) is not mounted.
     expect(screen.queryByTestId("header-left")).toBeNull();
+    // The agent-identity header band ("Myra / Personal agent") lived behind
+    // headerRight on the chat surface; it is no longer passed at all — the
+    // info button now renders in the app top bar instead (CL-3910).
+    expect(screen.queryByTestId("header-right")).toBeNull();
     // conversationId == Myra thread id; producers (workflow_start tool,
     // chat-initiated starts) stamp the same id as originConversationId — never
     // the instance id.
     expect(
       screen.getByTestId("workflow-dock").getAttribute("data-conversation-id"),
     ).toBe("t1");
+  });
+
+  it("renders the info button in the top bar next to the thread title, not inside the chat surface", () => {
+    renderAt("/chats/t1");
+    const chrome = screen.getByTestId("page-chrome");
+    expect(
+      within(chrome).getByRole("button", { name: "Chat details" }),
+    ).toBeDefined();
+    expect(screen.queryByTestId("header-right")).toBeNull();
   });
 
   it("shows a not-found state for an unknown thread id", () => {
