@@ -1,9 +1,8 @@
-import { and, eq, inArray, notInArray } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import { getLogger } from "@intx/log";
 import type { AgentRepoStore, RepoId } from "@intx/hub-sessions";
 import {
   upsertWorkflowRunFacts,
-  workflowRunFact,
   type WorkflowFactOutcome,
   type WorkflowRunFactInput,
   type WorkflowRunFacts,
@@ -153,9 +152,9 @@ interface RunCoordinateRow {
   status: RunStatus;
 }
 
-// Project a set of already-selected terminal run rows from their logs. Shared by
-// the full reproject and the boot backfill. Best-effort per run: a run whose log
-// is unreadable is skipped and logged, never fails the whole pass.
+// Project a set of already-selected terminal run rows from their logs. Used by
+// the on-demand reproject command. Best-effort per run: a run whose log is
+// unreadable is skipped and logged, never fails the whole pass.
 async function projectRunRows(
   deps: { db: HubDb; repoStore: AgentRepoStore; deploymentDomain: string },
   rows: RunCoordinateRow[],
@@ -186,15 +185,10 @@ async function projectRunRows(
       projected += 1;
     } catch (err) {
       skipped += 1;
-      const payload = {
+      log.warn(`${label}: failed to project run facts`, {
         runId: row.runId,
         error: err instanceof Error ? err.message : String(err),
-      };
-      if (label === "backfill") {
-        log.error(`${label}: failed to project run facts`, payload);
-      } else {
-        log.warn(`${label}: failed to project run facts`, payload);
-      }
+      });
     }
   }
   return { projected, skipped };
@@ -227,45 +221,4 @@ export async function reprojectWorkflowFacts(
     );
 
   return projectRunRows(deps, rows, "reproject");
-}
-
-// Boot backfill: project any TERMINAL run in the thin index that is MISSING a run
-// fact (CL-2670 review). The live projector only fires on a non-terminal →
-// terminal pack transition, so a throw there — or a run that reached terminal
-// while the projector was absent — permanently loses that run's facts. This
-// idempotent sweep recovers them: it selects only terminal runs whose runId is
-// absent from `workflow_run_fact` (already-projected runs are skipped; the upsert
-// is replace-by-runId, so a stray double-project is harmless anyway). Run on hub
-// boot near the reconciler bootstrap.
-export async function backfillMissingWorkflowFacts(
-  deps: { db: HubDb; repoStore: AgentRepoStore; deploymentDomain: string },
-  args: { tenantId?: string } = {},
-): Promise<{ projected: number; skipped: number }> {
-  const existing = await deps.db
-    .select({ runId: workflowRunFact.runId })
-    .from(workflowRunFact);
-  const haveFactRunIds = existing.map((r) => r.runId);
-
-  const conditions = [
-    inArray(workflowRunRecord.status, [...TERMINAL_RUN_STATUSES]),
-    ...(args.tenantId !== undefined
-      ? [eq(workflowRunRecord.tenantId, args.tenantId)]
-      : []),
-    ...(haveFactRunIds.length > 0
-      ? [notInArray(workflowRunRecord.id, haveFactRunIds)]
-      : []),
-  ];
-
-  const rows = await deps.db
-    .select({
-      runId: workflowRunRecord.id,
-      kind: workflowRunRecord.kind,
-      tenantId: workflowRunRecord.tenantId,
-      deploymentId: workflowRunRecord.deploymentId,
-      status: workflowRunRecord.status,
-    })
-    .from(workflowRunRecord)
-    .where(and(...conditions));
-
-  return projectRunRows(deps, rows, "backfill");
 }
