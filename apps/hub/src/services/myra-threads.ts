@@ -710,10 +710,9 @@ function runSerializedPerPrincipal<T>(
 
 /**
  * Run ONE title-generation turn via the shared tracked-one-shot primitive: an
- * ephemeral scratch repo (no durable per-principal state), the turn recorded
- * to a dedicated per-tenant bookkeeping instance (never the thread's own
- * instance — see the CL-3894 note below), and token usage forwarded to
- * analytics so it rolls up per member in /insights.
+ * ephemeral scratch repo (no durable per-principal state), no persisted
+ * `inference_turn`/`turn_part` row (see the CL-3894 note below), and token
+ * usage still forwarded to analytics so it rolls up per member in /insights.
  */
 async function runTitleTurn(
   db: HubDb,
@@ -727,72 +726,33 @@ async function runTitleTurn(
     signal: AbortSignal;
   },
 ): Promise<string | null> {
-  // The turn is recorded to `inference_turn`, whose `session_id` is a NOT NULL
-  // FK to `agent_session`; key it to one durable, reused title session per
-  // tenant, created idempotently on first use. instanceRow.principalId is also
-  // the attribution principal so title tokens roll up to the owning member.
-  // NOTE: this session is tenant-shared and its `principalId` belongs to
-  // whichever instance created it first — usage/attribution must key off the
-  // per-turn instanceId (as analytics does), never off session.principalId.
+  // Only needed for its principalId, the attribution target for analytics
+  // below — usage/attribution must key off the thread's own instance
+  // regardless of where (or whether) the turn itself gets persisted.
   const instanceRow = await db.query.agentInstance.findFirst({
     where: (i, { eq: ieq }) => ieq(i.id, opts.instanceId),
   });
   if (!instanceRow) return null;
 
-  const titleSessionId = `ses_myra-title-${opts.tenantId}`;
-  await db
-    .insert(agentSession)
-    .values({
-      id: titleSessionId,
-      tenantId: opts.tenantId,
-      agentId: instanceRow.agentId,
-      principalId: instanceRow.principalId,
-      status: "active",
-    })
-    .onConflictDoNothing({ target: agentSession.id });
-
-  // The title turn must NEVER be recorded under the thread's own instanceId.
-  // `/turns` — the same route the live chat transcript hydrates from — has no
-  // concept of "internal bookkeeping turn"; it returns every inference_turn
-  // row for a given instanceId. Recording the title turn there renders it
-  // inline as a stray, out-of-context assistant bubble in the user's own
-  // conversation the moment it completes (CL-3894). Route it to a durable,
-  // tenant-shared bookkeeping instance instead — created idempotently here,
-  // never granted to any member, and therefore never returned by any
-  // member-facing instance listing (those are all
-  // grant/memberAgentInstance-scoped) — so the turn stays inspectable for ops
-  // but invisible to chat.
-  const titleInstanceId = `ins_myra-title-${opts.tenantId}`;
-  const titlePrincipalId = `prn_myra-title-${opts.tenantId}`;
-  await db
-    .insert(principal)
-    .values({
-      id: titlePrincipalId,
-      tenantId: opts.tenantId,
-      kind: "agent",
-      refId: titleInstanceId,
-      status: "active",
-    })
-    .onConflictDoNothing({ target: principal.id });
-  await db
-    .insert(agentInstance)
-    .values({
-      id: titleInstanceId,
-      agentId: instanceRow.agentId,
-      tenantId: opts.tenantId,
-      principalId: titlePrincipalId,
-      address: `${titleInstanceId}@myra-title.internal`,
-      status: "deployed",
-    })
-    .onConflictDoNothing({ target: agentInstance.id });
+  // Deliberately no `turnRecording`: runTrackedOneShot's `turnRecording` is
+  // what persists an `inference_turn`/`turn_part` row. `/turns` — the same
+  // route the live chat transcript hydrates from — has no concept of
+  // "internal bookkeeping turn"; it returns every inference_turn row for a
+  // given instanceId. A title turn recorded under the thread's own instanceId
+  // rendered inline as a stray, out-of-context assistant bubble in the user's
+  // own conversation the moment it completed (CL-3894). Omitting
+  // `turnRecording` runs the turn usage-only: token usage still reaches
+  // analytics via `analytics.subscriber.onLocalInferenceEvent` below
+  // (independent of `turnRecording` in runTrackedOneShot's pump loop), but no
+  // DB row exists for any `/turns` query to ever surface.
 
   // Scratch repo for the turn, keyed per generation on the hub's persistent
   // volume (the same dataDir every other agent repo lives on) — mirrors the file
   // parser. A fresh per-generation id means each repo holds a single tiny commit
   // (no unbounded growth, no GC repack on the commit send() awaits) while
   // staying on the filesystem @intx/agent's isogit store is proven against, not
-  // an OS tmpdir. No GC policy, like the file parser. Usage + the turn record
-  // below are the tracking, not this repo.
+  // an OS tmpdir. No GC policy, like the file parser. Usage-only (see above) —
+  // this repo is not a persisted trace.
   const contextDir = join(
     getConfig().hub.dataDir,
     "myra-title",
@@ -813,10 +773,6 @@ async function runTitleTurn(
     analytics: {
       subscriber: opts.analytics,
       attributionPrincipalId: instanceRow.principalId,
-    },
-    turnRecording: {
-      sessionId: titleSessionId,
-      instanceId: titleInstanceId,
     },
     signal: opts.signal,
   });
