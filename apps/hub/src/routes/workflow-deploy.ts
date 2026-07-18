@@ -142,6 +142,18 @@ export async function tearDownDeployment(deps: {
       .set({ status: "stopped", endedAt: now, updatedAt: now })
       .where(inArray(intxSchema.agentInstance.id, instanceIds));
   }
+
+  // Drop the deployment's native `workflow_deployment` projection row so the
+  // torn-down deployment's public key can no longer satisfy a reconnect
+  // ownership challenge and the tenant's deployment list stays scoped to live
+  // deployments. Deleted rather than status-flipped because upstream's status
+  // enum ("deployed" | "error") has no terminal value yet — per-run ephemeral
+  // deployments need one upstream; until then the delete is the honest
+  // equivalent. No-op for pre-native (`ses_`-era) deployment ids, which never
+  // had a row.
+  await db
+    .delete(intxSchema.workflowDeployment)
+    .where(eq(intxSchema.workflowDeployment.id, deploymentId));
 }
 
 // Supersede every prior active deployment of `(kind, tenantId)` other than the

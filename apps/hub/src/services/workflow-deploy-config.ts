@@ -264,7 +264,11 @@ export async function resolveWorkflowDeployConfig(args: {
     modelMaxTokens: collectDeclaredStepModelMaxTokens(args.definition),
   });
   return assembleWorkflowDeployConfig({
-    deploymentId: generateId("session"),
+    // `dep_` is interchange's workflow-deployment id space
+    // (`isWorkflowDerivedAddress`): deploy acks and reconnect key lookups
+    // route through the `workflow_deployment` row instead of requiring
+    // per-step `agent_instance` rows.
+    deploymentId: generateId("deployment"),
     tenantId: args.tenantId,
     principalId: args.principalId,
     deploymentDomain: args.deploymentDomain,

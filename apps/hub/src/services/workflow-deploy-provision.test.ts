@@ -11,6 +11,7 @@ import type { AgentRepoStore, SidecarRouter } from "@intx/hub-sessions";
 import type { HubDb } from "../db";
 import {
   createWorkbenchDirectorRegistry,
+  deterministicToolStep,
   inlineInferenceStep,
 } from "@workbench/agents";
 import { workflowRun } from "../db/schema";
@@ -24,7 +25,66 @@ import { workflowRun } from "../db/schema";
 // deterministic (and @intx/db's catalog lookup is out of scope here). The
 // definition is read from a real on-disk workflow.json.
 
-const FRESH_ID = "ses_freshXYZ";
+const FRESH_ID = "dep_freshXYZ";
+
+// Insert mock speaking every chain runDeploy uses: plain awaited values()
+// (agent/instance rows), values().onConflictDoNothing() (harness session),
+// and values().onConflictDoNothing().returning() (native asset +
+// workflow_deployment identity rows — echo the inserted ids back, the
+// fresh-insert path).
+function provisionDbMock(recorded: {
+  instanceAddresses: string[];
+  workflowDeployments: { id: string; address: string }[];
+  tables: unknown[];
+}): HubDb {
+  return {
+    insert: (table: unknown) => {
+      recorded.tables.push(table);
+      if (table === intxSchema.agentSession) {
+        return {
+          values: () => ({ onConflictDoNothing: async () => undefined }),
+        };
+      }
+      if (
+        table === intxSchema.asset ||
+        table === intxSchema.workflowDeployment
+      ) {
+        return {
+          values: (rows: unknown) => ({
+            onConflictDoNothing: () => ({
+              returning: async () => {
+                const arr = (Array.isArray(rows) ? rows : [rows]) as {
+                  id: string;
+                  address?: string;
+                }[];
+                if (table === intxSchema.workflowDeployment) {
+                  for (const row of arr) {
+                    recorded.workflowDeployments.push({
+                      id: row.id,
+                      address: row.address ?? "",
+                    });
+                  }
+                }
+                return arr.map((row) => ({ id: row.id }));
+              },
+            }),
+          }),
+        };
+      }
+      if (table === intxSchema.agentInstance) {
+        return {
+          values: async (rows: unknown) => {
+            const arr = (Array.isArray(rows) ? rows : [rows]) as {
+              address: string;
+            }[];
+            for (const row of arr) recorded.instanceAddresses.push(row.address);
+          },
+        };
+      }
+      return { values: async () => undefined };
+    },
+  } as unknown as HubDb;
+}
 const SOURCE: InferenceSource = {
   id: "openai-compatible:m",
   provider: "openai-compatible",
@@ -111,18 +171,13 @@ describe("provisionRunDeployment (per-run deployment, CL-2582)", () => {
       "utf8",
     );
 
-    const insertedTables: unknown[] = [];
-    const db = {
-      insert: mock((table: unknown) => {
-        insertedTables.push(table);
-        if (table === intxSchema.agentSession) {
-          return {
-            values: () => ({ onConflictDoNothing: async () => undefined }),
-          };
-        }
-        return { values: async () => undefined };
-      }),
-    } as unknown as HubDb;
+    const recorded = {
+      instanceAddresses: [] as string[],
+      workflowDeployments: [] as { id: string; address: string }[],
+      tables: [] as unknown[],
+    };
+    const db = provisionDbMock(recorded);
+    const insertedTables = recorded.tables;
 
     const repoStore = {
       repoStore: {
@@ -149,6 +204,13 @@ describe("provisionRunDeployment (per-run deployment, CL-2582)", () => {
       // tree, so inject an explicit no-op rather than relying on a silent
       // fallback.
       stageWorkflowStep: () => Promise.resolve(),
+      // A one-step definition routes through the orchestrator's single-step
+      // branch, which requires this hand-off; record the head address it
+      // deploys (the single-step head IS the deployment address).
+      deploySingleStepAtHead: (headParams: { agentAddress: string }) => {
+        deployedAddresses.push(headParams.agentAddress);
+        return Promise.resolve({ publicKey: "pk" });
+      },
     });
 
     try {
@@ -203,16 +265,11 @@ describe("provisionRunDeployment (per-run deployment, CL-2582)", () => {
       "utf8",
     );
 
-    const db = {
-      insert: (table: unknown) => {
-        if (table === intxSchema.agentSession) {
-          return {
-            values: () => ({ onConflictDoNothing: async () => undefined }),
-          };
-        }
-        return { values: async () => undefined };
-      },
-    } as unknown as HubDb;
+    const db = provisionDbMock({
+      instanceAddresses: [],
+      workflowDeployments: [],
+      tables: [],
+    });
     const repoStore = {
       repoStore: {
         getRepoDir: () => dir,
@@ -236,6 +293,10 @@ describe("provisionRunDeployment (per-run deployment, CL-2582)", () => {
       // Provisioning REQUIRES a stager (FIX 2b); inject an explicit no-op so
       // the rollback path is reached via the sidecar error, not the guard.
       stageWorkflowStep: () => Promise.resolve(),
+      // The one-step definition takes the single-step branch; fail there to
+      // exercise the same rollback the supervisor-frame failure used to.
+      deploySingleStepAtHead: () =>
+        Promise.reject(new Error("sidecar deploy boom")),
       reclaimDeployment: async (args) => {
         reclaimed.push({
           deploymentId: args.deploymentId,
@@ -258,6 +319,101 @@ describe("provisionRunDeployment (per-run deployment, CL-2582)", () => {
       // The partial deploy was rolled back with the SAME freshly-minted id, so a
       // provision failure leaves no orphaned supervisor/step rows.
       expect(reclaimed).toEqual([{ deploymentId: FRESH_ID, tenantId: "t1" }]);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  // Native workflow-deployment identity: the minted `dep_` id puts every
+  // per-step deploy ack on interchange's workflow-derived-address path, which
+  // resolves against the `workflow_deployment` projection row — so the row
+  // must be written at provision, every step (inline, deterministic,
+  // deployed) stages through the orchestrator's native loop, and
+  // `agent_instance` rows stay attribution-only (deployed steps).
+  test("writes the native workflow_deployment row and stages every step class", async () => {
+    const deploymentDomain = "deploy.example.com";
+    const dir = await mkdtemp(join(tmpdir(), "wf-provision-inline-"));
+    const workflow = defineWorkflow({
+      id: "k1",
+      trigger: { type: "manual" },
+      steps: {
+        analyze: inlineInferenceStep({
+          id: "analyze",
+          systemPrompt: "extract pain points",
+        }),
+        fetch: deterministicToolStep({
+          id: "fetch-agent",
+          tool: "fetch_tool",
+          after: ["analyze"],
+        }),
+      },
+    });
+    await writeFile(
+      join(dir, "workflow.json"),
+      JSON.stringify(workflow),
+      "utf8",
+    );
+
+    const recorded = {
+      instanceAddresses: [] as string[],
+      workflowDeployments: [] as { id: string; address: string }[],
+      tables: [] as unknown[],
+    };
+    const db = provisionDbMock(recorded);
+    const repoStore = {
+      repoStore: {
+        getRepoDir: () => dir,
+        writeTree: async () => ({ commitSha: "sha" }),
+      },
+    } as unknown as AgentRepoStore;
+    const sidecarRouter = {
+      getRoutableAddresses: () => [],
+      sendAgentDeploy: async () => ({ publicKey: "pk" }),
+    } as unknown as SidecarRouter;
+
+    const stagedAgentIds: string[] = [];
+    const service = createWorkflowDeployService({
+      db,
+      repoStore,
+      sidecarRouter,
+      directorRegistry: createWorkbenchDirectorRegistry(),
+      stageWorkflowStep: (stepParams: { agentId: string }) => {
+        stagedAgentIds.push(stepParams.agentId);
+        return Promise.resolve();
+      },
+    });
+
+    try {
+      await service.provisionRunDeployment({
+        kind: "k1",
+        tenantId: "t1",
+        creatorPrincipalId: "p1",
+        deploymentDomain,
+        hubPublicKey: "hubkey",
+      });
+
+      // Every step class stages through the orchestrator's native loop —
+      // no workbench filtering.
+      expect(stagedAgentIds).toContain(`ins_${FRESH_ID}-fetch`);
+      expect(stagedAgentIds).toContain(`ins_${FRESH_ID}-analyze`);
+      // The native projection row exists for the deployment: interchange's
+      // deploy-ack handler stores the sidecar public key on it, and the
+      // reconnect ownership challenge reads it back.
+      expect(recorded.workflowDeployments).toEqual([
+        {
+          id: FRESH_ID,
+          address: `ins_${FRESH_ID}@${deploymentDomain}`,
+        },
+      ]);
+      // agent_instance rows stay attribution-only: neither the inline nor
+      // the deterministic step gets one (acks no longer resolve against
+      // them for dep_-prefixed workflow addresses).
+      expect(recorded.instanceAddresses).not.toContain(
+        `ins_${FRESH_ID}-fetch@${deploymentDomain}`,
+      );
+      expect(recorded.instanceAddresses).not.toContain(
+        `ins_${FRESH_ID}-analyze@${deploymentDomain}`,
+      );
     } finally {
       await rm(dir, { recursive: true, force: true });
     }
