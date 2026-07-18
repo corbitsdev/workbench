@@ -1,4 +1,5 @@
-const isDev = import.meta.env.DEV || process.env.NODE_ENV !== "production";
+export const isDev =
+  import.meta.env.DEV || process.env.NODE_ENV !== "production";
 
 export interface Logger {
   debug(message: string, ...args: unknown[]): void;
