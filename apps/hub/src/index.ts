@@ -66,10 +66,7 @@ import {
   wrapRepoStoreWithProjection,
   type ReclaimRunDeploymentFn,
 } from "./workflow-executor/projection-bridge";
-import {
-  backfillMissingWorkflowFacts,
-  projectWorkflowRunFacts,
-} from "./workflow-executor/workflow-run-facts";
+import { projectWorkflowRunFacts } from "./workflow-executor/workflow-run-facts";
 import { deliverRunTerminalMail } from "./workflow-executor/run-terminal-mail";
 import { deliverPendingGateMail } from "./workflow-executor/gate-mail";
 import { createWorkflowAnalyticsRouter } from "./routes/workflow-analytics";
@@ -423,9 +420,9 @@ const repoStore = wrapRepoStoreWithProjection(
       ).catch((err: unknown) => {
         // ERROR, not WARN: the WRN level is invisible in Sentry, and a lost
         // projection here permanently drops the run's facts on the live path
-        // (the projector only re-fires on a non-terminal → terminal transition).
-        // The boot backfill (backfillMissingWorkflowFacts) recovers it on next
-        // restart, but the failure must be Sentry-visible now (CL-2670 review).
+        // (the projector only re-fires on a non-terminal → terminal transition,
+        // and analytics tracks live runs only — there is no boot-time recovery
+        // sweep), so the failure must be Sentry-visible now (CL-2670 review).
         log.error("workflow analytics fact projection failed", {
           runId: args.runId,
           error: err instanceof Error ? err : new Error(String(err)),
@@ -1998,29 +1995,6 @@ void seedHeartbeatSchedules({
     error: err instanceof Error ? err : new Error(String(err)),
   });
 });
-
-// CL-2670: backfill analytics facts for any terminal run missing a fact — a run
-// whose live projection threw (WRN, now ERROR) or that reached terminal while the
-// projector was absent. Idempotent (skips runs that already have a fact) and
-// detached so it never blocks startup.
-void backfillMissingWorkflowFacts({
-  db,
-  repoStore,
-  deploymentDomain: config.rootTenant.domain,
-})
-  .then((result) => {
-    if (result.projected > 0) {
-      log.info("workflow analytics fact backfill projected {projected} runs", {
-        projected: result.projected,
-        skipped: result.skipped,
-      });
-    }
-  })
-  .catch((err) => {
-    log.error("workflow analytics fact backfill failed", {
-      error: err instanceof Error ? err : new Error(String(err)),
-    });
-  });
 
 // Workflow deploy, shared by the session-authorized operator path
 // (/api/v1/workflows/deploy, gated by the native grant check) and the
