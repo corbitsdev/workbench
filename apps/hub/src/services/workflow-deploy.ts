@@ -15,7 +15,7 @@ import {
 } from "@intx/workflow-deploy";
 import type { DirectorRegistry } from "@intx/agent";
 import { schema as intxSchema } from "@intx/db";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { generateId } from "@intx/hub-common";
 import { getLogger } from "@intx/log";
 import { type } from "arktype";
@@ -363,6 +363,34 @@ export function createWorkflowDeployService(deps: {
         tenantId: params.tenantId,
         creatorPrincipalId: params.creatorPrincipalId,
         harnessSessionId: params.config.sessionId,
+      });
+    }
+
+    // Native workflow-deployment identity (interchange's model): every
+    // published definition is anchored by a `workflow`-kind asset row, and
+    // every live deployment carries a `workflow_deployment` projection row
+    // keyed by its `dep_` id. Interchange's deploy-ack handler stores the
+    // sidecar public key on this row (`isWorkflowDerivedAddress` routes
+    // `ins_dep_...` addresses here, never through `agent_instance`), and the
+    // reconnect ownership challenge reads it back from the same row —
+    // without it every ack lands nowhere and reconnect fails closed. This
+    // mirrors exactly what interchange's own `deployWorkflowDefinition`
+    // writes; once the hub adopts that service wholesale this block is
+    // deleted with the rest of runDeploy.
+    const definitionAssetId = await ensureWorkflowDefinitionAsset({
+      db,
+      tenantId: params.tenantId,
+      workflowId: params.workflow.id,
+      creatorPrincipalId: params.creatorPrincipalId,
+    });
+    if (sendSupervisorFrame) {
+      await writeWorkflowDeploymentRow({
+        db,
+        deploymentId: params.deploymentId,
+        deploymentDomain: params.deploymentDomain,
+        tenantId: params.tenantId,
+        definitionAssetId,
+        creatorPrincipalId: params.creatorPrincipalId,
       });
     }
     // TEMP-INSTRUMENTATION CL-2780
@@ -1000,6 +1028,98 @@ export async function writeDeploymentInstanceRow(args: {
       deploymentDomain: args.deploymentDomain,
     }),
     status: "deployed" as const,
+    createdAt: now,
+    updatedAt: now,
+  });
+}
+
+// Native catalog identity: every published workflow definition is anchored by
+// a `workflow`-kind `asset` row (interchange's authoring model — its deploy
+// route hydrates definitions from these assets). The workbench still authors
+// definition content through its own registry, so this upsert converges the
+// IDENTITY first; content authoring moves onto the asset substrate with the
+// full native-service adoption. Idempotent on (tenantId, "workflow", name).
+export async function ensureWorkflowDefinitionAsset(args: {
+  db: HubDb;
+  tenantId: string;
+  workflowId: string;
+  creatorPrincipalId: string;
+}): Promise<string> {
+  const inserted = await args.db
+    .insert(intxSchema.asset)
+    .values({
+      id: generateId("asset"),
+      tenantId: args.tenantId,
+      kind: "workflow",
+      name: args.workflowId,
+      creatorPrincipalId: args.creatorPrincipalId,
+    })
+    .onConflictDoNothing()
+    .returning({ id: intxSchema.asset.id });
+  const freshId = inserted[0]?.id;
+  if (freshId !== undefined) return freshId;
+  const row = await args.db
+    .select({ id: intxSchema.asset.id })
+    .from(intxSchema.asset)
+    .where(
+      and(
+        eq(intxSchema.asset.tenantId, args.tenantId),
+        eq(intxSchema.asset.kind, "workflow"),
+        eq(intxSchema.asset.name, args.workflowId),
+      ),
+    )
+    .limit(1)
+    .then((rows) => rows[0]);
+  if (row === undefined) {
+    throw new Error(
+      `workflow definition asset for "${args.workflowId}" missing after upsert`,
+    );
+  }
+  return row.id;
+}
+
+// Native deployment projection: the `workflow_deployment` row interchange's
+// `deployWorkflowDefinition` writes, mirrored field-for-field. The deploy-ack
+// handler persists the sidecar's minted public key onto this row
+// (`isWorkflowDerivedAddress` routes every `ins_dep_...` ack here), and the
+// reconnect ownership challenge reads the key back from it. The creator read
+// grant mirrors the native path so the deploying principal can observe run
+// events. Idempotent for re-establishment: the row insert no-ops on the
+// existing address, and the grant is only seeded when the row was actually
+// inserted (a re-establish reuses the original deploy's grant).
+export async function writeWorkflowDeploymentRow(args: {
+  db: HubDb;
+  deploymentId: string;
+  deploymentDomain: string;
+  tenantId: string;
+  definitionAssetId: string;
+  creatorPrincipalId: string;
+}): Promise<void> {
+  const now = new Date();
+  const inserted = await args.db
+    .insert(intxSchema.workflowDeployment)
+    .values({
+      id: args.deploymentId,
+      tenantId: args.tenantId,
+      definitionAssetId: args.definitionAssetId,
+      address: deriveDeploymentAddress({
+        deploymentId: args.deploymentId,
+        deploymentDomain: args.deploymentDomain,
+      }),
+      status: "deployed" as const,
+      createdAt: now,
+    })
+    .onConflictDoNothing()
+    .returning({ id: intxSchema.workflowDeployment.id });
+  if (inserted.length === 0) return;
+  await args.db.insert(intxSchema.grant).values({
+    id: generateId("grant"),
+    tenantId: args.tenantId,
+    principalId: args.creatorPrincipalId,
+    resource: `workflow-run:${args.deploymentId}`,
+    action: "read",
+    effect: "allow",
+    origin: "creator",
     createdAt: now,
     updatedAt: now,
   });
