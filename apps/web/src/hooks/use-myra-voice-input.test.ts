@@ -2,13 +2,15 @@ import { afterEach, describe, expect, it, mock } from "bun:test";
 import { act, renderHook } from "@testing-library/react";
 import { PREFERENCE_KEYS } from "@workbench/ui";
 
-const buildEnabled = mock(() => true);
-mock.module("../lib/myra-voice-input", () => ({
-  isMyraVoiceInputBuildEnabled: () => buildEnabled(),
-  isMyraVoiceInputEnabled: (raw: string | null) => {
-    if (!buildEnabled()) return false;
-    return raw !== "false";
-  },
+const capabilityEnabled = mock(() => true);
+mock.module("./use-me-features", () => ({
+  useMeFeatures: () => ({
+    data: { features: [{ name: "voice-input", enabled: capabilityEnabled() }] },
+  }),
+  isFeatureEnabled: (
+    data: { features: { name: string; enabled: boolean }[] } | undefined,
+    name: string,
+  ) => data?.features.some((f) => f.name === name && f.enabled) ?? false,
 }));
 
 import { useMyraVoiceInput } from "./use-myra-voice-input";
@@ -17,15 +19,15 @@ const STORAGE_KEY = PREFERENCE_KEYS.myraVoiceInput;
 
 afterEach(() => {
   localStorage.clear();
-  buildEnabled.mockReset();
-  buildEnabled.mockReturnValue(true);
+  capabilityEnabled.mockReset();
+  capabilityEnabled.mockReturnValue(true);
 });
 
 describe("useMyraVoiceInput", () => {
-  it("defaults on when the build supports voice and writes nothing on mount", () => {
+  it("defaults on when the owner capability is enabled and writes nothing on mount", () => {
     const { result } = renderHook(() => useMyraVoiceInput());
 
-    expect(result.current.buildEnabled).toBe(true);
+    expect(result.current.capabilityEnabled).toBe(true);
     expect(result.current.enabled).toBe(true);
     expect(localStorage.getItem(STORAGE_KEY)).toBeNull();
   });
@@ -41,12 +43,12 @@ describe("useMyraVoiceInput", () => {
     expect(localStorage.getItem(STORAGE_KEY)).toBe("true");
   });
 
-  it("reports voice off when the build does not support it", () => {
-    buildEnabled.mockReturnValue(false);
+  it("reports voice off when the owner has not enabled the capability", () => {
+    capabilityEnabled.mockReturnValue(false);
     localStorage.setItem(STORAGE_KEY, "true");
     const { result } = renderHook(() => useMyraVoiceInput());
 
-    expect(result.current.buildEnabled).toBe(false);
+    expect(result.current.capabilityEnabled).toBe(false);
     expect(result.current.enabled).toBe(false);
   });
 });

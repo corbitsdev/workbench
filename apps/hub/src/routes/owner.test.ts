@@ -197,9 +197,14 @@ let ownerRouterShowDemos = false;
 // Toggled per-test to exercise a feature's emergency env override surfaced as
 // `forcedByEnv`. Reset to all-false by default.
 let ownerRouterFeatureEnvOverrides: Record<
-  "scheduler" | "triage" | "tasks-reconciler",
+  "scheduler" | "triage" | "tasks-reconciler" | "voice-input",
   boolean
-> = { scheduler: false, triage: false, "tasks-reconciler": false };
+> = {
+  scheduler: false,
+  triage: false,
+  "tasks-reconciler": false,
+  "voice-input": false,
+};
 
 describe("owner grant gate", () => {
   it("allows an owner (holds */* wildcard grant)", async () => {
@@ -1040,6 +1045,7 @@ describe("owner features routes", () => {
       scheduler: false,
       triage: false,
       "tasks-reconciler": false,
+      "voice-input": false,
     };
   });
 
@@ -1062,6 +1068,7 @@ describe("owner features routes", () => {
       "scheduler",
       "tasks-reconciler",
       "triage",
+      "voice-input",
     ]);
     expect(body.features.every((f) => !f.enabled)).toBe(true);
     expect(body.features.every((f) => !f.forcedByEnv)).toBe(true);
@@ -1086,6 +1093,7 @@ describe("owner features routes", () => {
       scheduler: false,
       triage: true,
       "tasks-reconciler": false,
+      "voice-input": false,
     };
     const { db } = featuresDb();
     const res = await buildApp(db).request("/owner/features");
