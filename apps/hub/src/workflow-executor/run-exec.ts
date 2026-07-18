@@ -22,6 +22,10 @@ import { isTerminalRunStatus } from "./run-status";
 import { validateResumePayload } from "./resume-payload-registry";
 import { mintWorkflowRunId } from "./mint-workflow-run-id";
 import {
+  enrichTriggerPayloadForStart,
+  type TriggerPayloadEnrichmentDeps,
+} from "./trigger-payload-enrichment-registry";
+import {
   failRunIfStillProvisioning,
   insertRunRecord,
   loadRunRecord,
@@ -216,6 +220,12 @@ export type StartWorkflowRunDeps = {
   // reconciler janitor is the backstop, but reclaiming eagerly here closes the
   // window immediately. Optional so non-route callers can omit it.
   reclaimDeployment?: ReclaimDeploymentFn;
+  // Resolves the firing member's mail identity so a kind registered in
+  // `trigger-payload-enrichment-registry.ts` (e.g. heartbeat) can fill in
+  // server-resolved facts the caller cannot be expected to supply — every start
+  // door (this route's HTTP handler AND the `workflow_start` hub tool) shares
+  // this single implementation, so both get the same enrichment.
+  resolveUserIdentity: TriggerPayloadEnrichmentDeps["resolveUserIdentity"];
 } & SidecarReadinessDeps;
 
 /**
@@ -270,7 +280,21 @@ export async function startWorkflowRun(
     !Array.isArray(opts.input)
       ? (opts.input as Record<string, unknown>)
       : {};
-  const triggerPayload = { ...inputObject, runId };
+  // Fill in any kind-specific server-resolved defaults (member
+  // identity, preferences) BEFORE minting runId, so a run started through this
+  // generic entrypoint gets the same trigger-payload contract a kind's own
+  // specialized start path (e.g. the heartbeat scheduler/manual-run routes)
+  // already provides.
+  const enrichedInput = await enrichTriggerPayloadForStart(
+    { db: deps.db, resolveUserIdentity: deps.resolveUserIdentity },
+    {
+      kind: opts.kind,
+      tenantId: definition.tenantId,
+      principalId: opts.principalId,
+    },
+    inputObject,
+  );
+  const triggerPayload = { ...enrichedInput, runId };
 
   // Durable-first: the run row exists (status `provisioning`, no deployment yet)
   // before we return, so the FE can poll it and show live "Starting…" progress

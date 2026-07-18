@@ -29,6 +29,7 @@ import {
   resumeWorkflowRun,
   startWorkflowRun,
   type RunExecFailure,
+  type StartWorkflowRunDeps,
 } from "../workflow-executor/run-exec";
 import type { ReclaimDeploymentFn } from "../services/workflow-deploy";
 import type {
@@ -384,6 +385,10 @@ export function createWorkflowRunRecordsRouter(deps: {
   // Tears down a run's single-use per-run deployment (CL-2582), used by the
   // archive route to free an active run's resources immediately.
   reclaimDeployment: ReclaimDeploymentFn;
+  // Threaded into `startWorkflowRun` so a kind registered in
+  // trigger-payload-enrichment-registry.ts (e.g. heartbeat) gets its
+  // server-resolved defaults regardless of which door the run came through.
+  resolveUserIdentity: StartWorkflowRunDeps["resolveUserIdentity"];
   // CL-2707: sidecar readiness probe (sidecarRouter.getConnectedSidecars). When
   // provided, start/resume wait bounded for a sidecar during the deploy window
   // instead of failing instantly. The timeout/interval overrides are for tests.
@@ -498,6 +503,7 @@ export function createWorkflowRunRecordsRouter(deps: {
           // AFTER the run was already failed (deadline race), so it never runs
           // behind a `failed` record.
           reclaimDeployment: deps.reclaimDeployment,
+          resolveUserIdentity: deps.resolveUserIdentity,
           ...(deps.isSidecarConnected !== undefined
             ? { isSidecarConnected: deps.isSidecarConnected }
             : {}),

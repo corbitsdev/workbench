@@ -1,5 +1,6 @@
 import type { AgentTool } from "@intx/agent";
 import type { HubDb } from "../db";
+import type { HeartbeatMemberIdentity } from "./heartbeat-trigger-payload";
 import { createPosixTools } from "@intx/tools-posix";
 import { TOOL_DEFINITIONS as MAIL_TOOL_DEFINITIONS } from "@intx/tools-mail";
 import type { ToolDefinition } from "@intx/types/runtime";
@@ -133,6 +134,11 @@ export type ContextToolEntry = {
     deploymentDomain?: string;
     provisionRunDeployment?: ProvisionRunDeploymentFn;
     ensureDeploymentRoutable?: EnsureDeploymentRoutableFn;
+    // Shared with the /workflow-exec routes so `workflow_start` gets
+    // the same trigger-payload enrichment as the generic HTTP start route.
+    resolveUserIdentity?: (
+      principalId: string,
+    ) => Promise<HeartbeatMemberIdentity>;
   }) => AgentTool[];
 };
 

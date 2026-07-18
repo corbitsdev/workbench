@@ -1667,6 +1667,7 @@ v1.route(
     ensureDeploymentRoutable,
     provisionRunDeployment,
     reclaimDeployment,
+    resolveUserIdentity,
     // CL-2707: bounded wait for the sidecar during the deploy window so a
     // start/resume that lands before the sidecar reconnects gets an honest 503
     // (auto-retryable) instead of an instant raw 500/503. Single-shared-sidecar
@@ -2126,6 +2127,7 @@ app.route(
     deploymentDomain: config.rootTenant.domain,
     provisionRunDeployment,
     ensureDeploymentRoutable,
+    resolveUserIdentity,
   }),
 );
 app.route(
