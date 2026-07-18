@@ -18,31 +18,38 @@ export type TriggerPayloadEnrichmentDeps = {
   now?: () => number;
 };
 
+/**
+ * Fire-time context a caller of `enrichTriggerPayloadForStart` MAY carry —
+ * currently only meaningful to the heartbeat enricher's lookback choice. Every
+ * start door except the scheduler defaults to `"manual-refresh"` (a full
+ * 7-day lookback): the scheduler is the only caller with a real
+ * "since-last-fire" window to offer, so it is the only one that passes
+ * `lastFiredDayUtc`/`hourUtc`/`"scheduled"` explicitly.
+ */
+export type TriggerPayloadEnrichmentCtx = {
+  kind: string;
+  tenantId: string;
+  principalId: string;
+  lastFiredDayUtc?: number | null;
+  hourUtc?: number;
+  lookback?: "scheduled" | "manual-refresh";
+};
+
 type TriggerPayloadEnricher = (
   deps: TriggerPayloadEnrichmentDeps,
-  ctx: { kind: string; tenantId: string; principalId: string },
+  ctx: TriggerPayloadEnrichmentCtx,
   input: Record<string, unknown>,
 ) => Promise<Record<string, unknown>>;
 
-// Per-workflow-kind trigger-payload defaults, applied uniformly by
-// `startWorkflowRun` (`./run-exec.ts`) — the SINGLE run-start implementation
-// shared by the generic `/workflow-exec/:kind/start` HTTP route and the
-// `workflow_start` hub tool. Without this, either entrypoint delivers whatever
-// bare body the caller supplied straight to the deployment, so a workflow whose
-// steps depend on server-resolved facts (the firing member's identity,
-// preferences) that no caller can be expected to supply fails deep in step
-// dispatch instead of starting correctly. A kind absent from this map
-// passes its input through unchanged.
-//
-// The heartbeat/manual-run route (`me-brief-run.ts`) and the scheduler
-// (`apps/hub/src/index.ts`) already build this same enrichment themselves —
-// they call `enrichHeartbeatTriggerPayload` directly because each has richer,
-// path-specific knowledge (the scheduler's fire-time last-run window; the
-// manual route's rate limit) that does not belong in a generic registry. This
-// entry exists for every OTHER start door: a heartbeat run kicked off through
-// the generic route or the Myra `workflow_start` tool gets the same
-// manual-refresh-style enrichment (current prefs, current identity, 7-day
-// lookback) instead of nothing.
+// Per-workflow-kind trigger-payload defaults, applied uniformly by every
+// workflow-start implementation — `startWorkflowRun` (`./run-exec.ts`, the
+// generic `/workflow-exec/:kind/start` HTTP route and the `workflow_start`
+// hub tool) AND `createWorkflowRunStarter` (`../services/workflow-run-starter.ts`,
+// webhook triggers, the scheduler, and the heartbeat manual-run route). This
+// is the ONE application point: no caller builds its own trigger-payload
+// enrichment anymore, so there is exactly one place that can drift from the
+// contract a workflow's steps depend on. A kind absent from this map passes
+// its input through unchanged.
 const TRIGGER_PAYLOAD_ENRICHERS: Record<string, TriggerPayloadEnricher> = {
   heartbeat: async (deps, ctx, input) => {
     const [prefs, identity] = await Promise.all([
@@ -55,9 +62,9 @@ const TRIGGER_PAYLOAD_ENRICHERS: Record<string, TriggerPayloadEnricher> = {
       ctx.kind,
       resolveEnabledBriefSources(prefs),
       (deps.now ?? Date.now)(),
-      null,
-      0,
-      "manual-refresh",
+      ctx.lastFiredDayUtc ?? null,
+      ctx.hourUtc ?? 0,
+      ctx.lookback ?? "manual-refresh",
       identity,
     );
   },
@@ -69,7 +76,7 @@ const TRIGGER_PAYLOAD_ENRICHERS: Record<string, TriggerPayloadEnricher> = {
  */
 export async function enrichTriggerPayloadForStart(
   deps: TriggerPayloadEnrichmentDeps,
-  ctx: { kind: string; tenantId: string; principalId: string },
+  ctx: TriggerPayloadEnrichmentCtx,
   input: Record<string, unknown>,
 ): Promise<Record<string, unknown>> {
   const enricher = TRIGGER_PAYLOAD_ENRICHERS[ctx.kind];
