@@ -17,17 +17,25 @@ declare global {
   }
 }
 
+const meResponse = {
+  userId: "u1",
+  userName: "Test User",
+  personalTenantId: "tenant-1",
+  rootTenantIds: [],
+  paInstanceId: null,
+  provisioned: true,
+  credentialResolved: true,
+};
+
+// A controllable getMe: most tests want it to resolve immediately, but the
+// tenant-gating flash test needs to hold it pending to observe the window
+// before `personalTenantId` (and so `tenantId`) resolves.
+let meDeferred: { promise: Promise<typeof meResponse> } = {
+  promise: Promise.resolve(meResponse),
+};
+
 mock.module("../lib/hub-api", () => ({
-  getMe: () =>
-    Promise.resolve({
-      userId: "u1",
-      userName: "Test User",
-      personalTenantId: "tenant-1",
-      rootTenantIds: [],
-      paInstanceId: null,
-      provisioned: true,
-      credentialResolved: true,
-    }),
+  getMe: () => meDeferred.promise,
 }));
 
 mock.module("react-router", () => ({
@@ -86,6 +94,7 @@ const skills = [
 beforeEach(() => {
   localStorage.clear();
   window.happyDOM.setURL("http://localhost/");
+  meDeferred = { promise: Promise.resolve(meResponse) };
   globalThis.fetch = mock((url: string) => {
     if (String(url).includes("/skills/share-targets")) {
       return Promise.resolve(
@@ -167,5 +176,25 @@ describe("SkillsLibrary", () => {
     renderPage();
 
     await screen.findByRole("table");
+  });
+
+  it("does not flash the empty state while tenantId is still resolving", async () => {
+    let resolveMe: (value: typeof meResponse) => void = () => {};
+    meDeferred = {
+      promise: new Promise((resolve) => {
+        resolveMe = resolve;
+      }),
+    };
+
+    renderPage();
+
+    // useSkillLibrary is disabled until tenantId resolves, so this window has
+    // no data and no fetch in flight — the empty-state text must not render.
+    expect(document.body.textContent).not.toContain("No skills yet");
+    expect(document.body.textContent).toContain("Loading skills");
+
+    resolveMe(meResponse);
+    await waitFor(() => expect(document.body.textContent).toContain("ASAP"));
+    expect(document.body.textContent).not.toContain("No skills yet");
   });
 });
