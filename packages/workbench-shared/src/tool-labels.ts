@@ -67,7 +67,10 @@ export function toAssetName(displayName: string): string {
 // user-supplied slug like "landing-page" persists as displayName rather than
 // null. Detect that case (the string already equals its own uncapped
 // slugification) and humanize it instead of trusting it as a real title.
-function isSlugShaped(value: string): boolean {
+// Exported so both the write side (createSkill's persist gate) and the read
+// side (skillTitle) share one definition of "is this a slug" — a value that
+// passes the write gate must be detected as a slug on render, and vice versa.
+export function isSlugShaped(value: string): boolean {
   return value !== "" && value === slugify(value);
 }
 

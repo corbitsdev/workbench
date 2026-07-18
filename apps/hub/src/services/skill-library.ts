@@ -13,7 +13,7 @@ import type { AssetService, RepoStore } from "@intx/hub-sessions";
 import { AssetServiceError } from "@intx/hub-sessions";
 import { resolveOwnerMemberPrincipalId } from "../lib/artifact-tools";
 import type { UserContext } from "../lib/user-context";
-import { toAssetName } from "@workbench/shared";
+import { isSlugShaped, toAssetName } from "@workbench/shared";
 
 export { toAssetName } from "@workbench/shared";
 
@@ -927,7 +927,7 @@ export async function createSkill(
   // A slug-shaped name (e.g. "landing-page") adds no information over the
   // asset name itself — store no displayName so the render side's null path
   // humanizes it, instead of persisting a redundant raw slug as the title.
-  const displayName = toAssetName(name) === name ? undefined : name;
+  const displayName = isSlugShaped(name) ? undefined : name;
 
   let asset;
   try {

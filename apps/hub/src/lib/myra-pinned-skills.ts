@@ -10,6 +10,7 @@ import {
   type PinnedSkillIndexEntry,
 } from "@workbench/myra";
 import { promptFormatForProvider } from "@workbench/prompts";
+import { skillTitle } from "@workbench/shared";
 import { readMyraVariantPreference } from "../services/myra-variant-preferences";
 import { listSkills, type SkillViewer } from "../services/skill-library";
 import { memberAgentInstance } from "../db/schema";
@@ -54,7 +55,7 @@ export async function resolvePinnedSkillIndexEntries(
     const skill = byId.get(id);
     if (!skill) continue;
     entries.push({
-      name: skill.displayName ?? skill.name,
+      name: skillTitle(skill),
       description: oneLineSkillDescription(skill.description),
     });
     triageRelevant.push(isPinnedSkillTriageRelevant(skill.description));
