@@ -1163,12 +1163,25 @@ export function createHubLink(config: HubLinkConfig): HubLink {
         if (isConnectionLost(first)) {
           throw first;
         }
+        // A receiver `path_violation` is a DETERMINISTIC content rejection
+        // (the hub's tree validator refused the pack — e.g. an append-only
+        // event blob diverging from the hub's copy), not the transient
+        // initRepo bootstrap race. Retrying re-sends the identical pack and
+        // fails identically, forever — observed on staging as an endless
+        // transferId-burning loop against a legacy repo whose pre-guard
+        // seq-0 event survives hub-side. Fail loud once and let the caller
+        // latch it; only an operator action (teardown / repo repair) can
+        // resolve a deterministic rejection.
+        const reason = first instanceof Error ? first.message : String(first);
+        if (reason.includes("path_violation")) {
+          logger.error`Workflow-run pack push permanently rejected for ${opts.repoId.id}/${opts.ref} (deterministic content rejection, not retried): ${reason}`;
+          throw first;
+        }
         // First push to a never-bootstrapped (repoId, ref) lost the
         // race with the hub substrate's `receivePack` initRepo step. The
         // hub has now initialized the repo as a side effect of the failed
         // push; the retry uses the same pack but observes the bootstrap
         // genesis as the CAS baseline and lands.
-        const reason = first instanceof Error ? first.message : String(first);
         logger.warn`Workflow-run pack push bootstrap retry for ${opts.repoId.id}/${opts.ref}: ${reason}`;
         await sendOnce();
       }
