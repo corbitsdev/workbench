@@ -18,6 +18,7 @@ import { useWorkflowRunEvents } from "../hooks/use-workflow-run-events";
 import { useDockFocus } from "../lib/dock-focus";
 import { useActiveWorkbench } from "../lib/active-workbench-context";
 import { usePublishActiveContext } from "../lib/active-context-store";
+import { useSetPageChrome } from "../lib/page-chrome";
 import { humanizeInstanceStatus } from "../lib/instance-status";
 import { myraInstanceTraceHref } from "../lib/myra-turn-trace";
 import {
@@ -181,17 +182,25 @@ export function ChatThreadPage() {
     active?.instanceId,
     tenantRoster?.instances,
   );
-  const infoButton =
-    active !== null ? (
-      <button
-        type="button"
-        onClick={() => setInfoOpen(true)}
-        aria-label="Chat details"
-        className="grid h-7 w-7 flex-none place-items-center rounded-[8px] text-text-3 transition-colors hover:bg-page hover:text-text active:scale-[0.97]"
-      >
-        <Info className="h-3.5 w-3.5" />
-      </button>
-    ) : null;
+  // Rendered in the app top bar (next to the thread title), not inside the
+  // chat surface — the in-panel agent-identity header band is app-level chrome
+  // that duplicates the top bar's "Thread — <title>" strip (CL-3910).
+  const hasActiveThread = active !== null;
+  const infoButton = useMemo(
+    () =>
+      hasActiveThread ? (
+        <button
+          type="button"
+          onClick={() => setInfoOpen(true)}
+          aria-label="Chat details"
+          className="grid h-7 w-7 flex-none place-items-center rounded-[8px] text-text-3 transition-colors hover:bg-page hover:text-text active:scale-[0.97]"
+        >
+          <Info className="h-3.5 w-3.5" />
+        </button>
+      ) : null,
+    [hasActiveThread],
+  );
+  useSetPageChrome(infoButton);
 
   if (isLoading) {
     return <CenteredNotice>Loading your chats…</CenteredNotice>;
@@ -277,7 +286,6 @@ export function ChatThreadPage() {
             }
             inserts={inserts}
             mentionCandidates={mentionCandidates}
-            {...(infoButton !== null ? { headerRight: infoButton } : {})}
           />
           {active !== null && (
             <ChatThreadInfoDialog
