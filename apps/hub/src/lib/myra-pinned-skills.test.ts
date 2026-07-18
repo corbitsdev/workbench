@@ -26,6 +26,18 @@ const listSkillsMock = mock(async () => [
     ownerUserId: "u1",
     ownerName: null,
   },
+  {
+    id: "skill-c",
+    name: "landing-page",
+    displayName: "landing-page",
+    description: "Landing page copy",
+    createdAt: "",
+    updatedAt: "",
+    scope: "tenant" as const,
+    accessTenantId: "tn",
+    ownerUserId: null,
+    ownerName: null,
+  },
 ]);
 
 mock.module("../services/skill-library", () => ({
@@ -45,6 +57,20 @@ describe("resolvePinnedSkillIndexEntries", () => {
     expect(entries[0]?.name).toBe("Alpha skill");
     expect(entries[0]?.description).toBe("First line");
     expect(entries[0]?.description).not.toContain("Body must not appear");
+  });
+
+  it("humanizes a slug-shaped displayName instead of feeding the raw slug into the prompt", async () => {
+    const { entries } = await resolvePinnedSkillIndexEntries(
+      {} as never,
+      { tenantId: "tn", userId: "u1" },
+      ["skill-c"],
+    );
+    expect(entries[0]?.name).toBe("Landing page");
+    expect(entries[0]?.name).not.toBe("landing-page");
+
+    const section = renderPinnedSkillsSection(entries, "xml");
+    expect(section).toContain("Landing page");
+    expect(section).not.toContain("landing-page");
   });
 
   it("enforces the max bound when resolving", async () => {

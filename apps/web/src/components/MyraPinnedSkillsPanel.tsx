@@ -1,5 +1,5 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { Badge, cn, LibrarySearchInput, toHumanLabel } from "@workbench/ui";
+import { Badge, cn, LibrarySearchInput, skillTitle } from "@workbench/ui";
 import { Pin, PinOff } from "lucide-react";
 import { useMemo, useState } from "react";
 import {
@@ -23,17 +23,12 @@ interface MyraPinnedSkillsPanelProps {
   readonly tenantId: string | null;
 }
 
-function skillLabel(skill: SkillLibraryItem): string {
-  return skill.displayName ?? toHumanLabel(skill.name);
-}
-
 function matchesQuery(skill: SkillLibraryItem, q: string): boolean {
   if (!q) return true;
   const needle = q.toLowerCase();
   return (
     skill.name.toLowerCase().includes(needle) ||
-    toHumanLabel(skill.name).toLowerCase().includes(needle) ||
-    (skill.displayName ?? "").toLowerCase().includes(needle) ||
+    skillTitle(skill).toLowerCase().includes(needle) ||
     (skill.description ?? "").toLowerCase().includes(needle)
   );
 }
@@ -175,7 +170,7 @@ export function MyraPinnedSkillsPanel({ tenantId }: MyraPinnedSkillsPanelProps) 
                 <span className="min-w-0 flex-1">
                   <span className="flex flex-wrap items-center gap-2">
                     <span className="text-sm font-medium text-text">
-                      {skillLabel(skill)}
+                      {skillTitle(skill)}
                     </span>
                     {skill.scope === "private" && (
                       <Badge tone="neutral">Private</Badge>
