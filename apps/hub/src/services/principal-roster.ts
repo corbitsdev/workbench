@@ -1,6 +1,6 @@
 import { schema as intxSchema } from "@intx/db";
 import { type } from "arktype";
-import { and, eq, inArray, isNull, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull, sql } from "drizzle-orm";
 
 import type { HubDb } from "../db";
 import { memberAgentInstance, workflowRunRecord } from "../db/schema";
@@ -116,6 +116,8 @@ async function getAgentPrincipalRoster(args: {
   if (instanceRows.length === 0) return null;
 
   const instanceIds = instanceRows.map((r) => r.instanceId);
+  // Most-recent mapping first so display fields are deterministic when an
+  // instance has more than one member_agent_instance row.
   const mappingRows = await args.db
     .select({
       id: memberAgentInstance.id,
@@ -130,10 +132,12 @@ async function getAgentPrincipalRoster(args: {
         eq(memberAgentInstance.tenantId, args.tenantId),
         inArray(memberAgentInstance.instanceId, instanceIds),
       ),
-    );
+    )
+    .orderBy(desc(memberAgentInstance.lastActivityAt));
 
-  // Prefer the first mapping per instance for display fields; collect every
-  // mapping id so runs started from any of this instance's conversations land.
+  // Prefer the most-recent mapping per instance for display fields; collect
+  // every mapping id so runs started from any of this instance's conversations
+  // land.
   const mappingByInstance = new Map<string, (typeof mappingRows)[number]>();
   const mappingIds: string[] = [];
   for (const m of mappingRows) {
@@ -182,7 +186,8 @@ async function getAgentPrincipalRoster(args: {
           isNull(workflowRunRecord.deletedAt),
           inArray(workflowRunRecord.originConversationId, mappingIds),
         ),
-      );
+      )
+      .orderBy(desc(workflowRunRecord.createdAt));
     runs = runRows.map((r) => ({
       runId: r.runId,
       kind: r.kind,
@@ -197,19 +202,14 @@ async function getAgentPrincipalRoster(args: {
   return parsed;
 }
 
-// Lists the agent instances a principal owns and the workflow runs it started,
-// tenant-scoped. For a USER principal: instances via member_agent_instance and
-// runs via workflow_run_record.principalId. For an AGENT principal (an
-// agent_instance.principal_id): the instance itself and runs started from its
-// conversation (origin_conversation_id = member_agent_instance.id).
-export async function getPrincipalRoster(args: {
+// Member-ownership path: instances via member_agent_instance and runs via
+// workflow_run_record.principalId. Shared by getPrincipalRoster so the agent
+// path is only probed when this returns empty (common case is a user).
+async function getUserPrincipalRoster(args: {
   db: HubDb;
   tenantId: string;
   principalId: string;
 }): Promise<PrincipalRoster> {
-  const agentRoster = await getAgentPrincipalRoster(args);
-  if (agentRoster !== null) return agentRoster;
-
   const instanceRows = await args.db
     .select({
       instanceId: memberAgentInstance.instanceId,
@@ -275,6 +275,30 @@ export async function getPrincipalRoster(args: {
     throw new Error(`Principal roster failed validation: ${parsed.summary}`);
   }
   return parsed;
+}
+
+// Lists the agent instances a principal owns and the workflow runs it started,
+// tenant-scoped. For a USER principal: instances via member_agent_instance and
+// runs via workflow_run_record.principalId. For an AGENT principal (an
+// agent_instance.principal_id): the instance itself and runs started from its
+// conversation (origin_conversation_id = member_agent_instance.id).
+//
+// User ownership is tried first so the common member path does not pay an
+// agent_instance probe; the agent path runs only when ownership is empty.
+export async function getPrincipalRoster(args: {
+  db: HubDb;
+  tenantId: string;
+  principalId: string;
+}): Promise<PrincipalRoster> {
+  const userRoster = await getUserPrincipalRoster(args);
+  if (userRoster.instances.length > 0 || userRoster.runs.length > 0) {
+    return userRoster;
+  }
+
+  const agentRoster = await getAgentPrincipalRoster(args);
+  if (agentRoster !== null) return agentRoster;
+
+  return userRoster;
 }
 
 // The tenant-wide roster reuses the same per-item shapes as the principal
