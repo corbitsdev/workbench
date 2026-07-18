@@ -60,6 +60,10 @@ async function packRealGammaToolPackage(): Promise<void> {
     format: "esm",
     minify: false,
     sourcemap: "none",
+    // Bun.build does not inherit BUN_OPTIONS=--conditions, so the intx-src
+    // exports condition must be passed explicitly or @intx/* imports in the
+    // bundled tool package resolve to the (unbuilt) dist and fail.
+    conditions: ["intx-src"],
   });
   if (!built.success) {
     throw new Error(
