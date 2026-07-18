@@ -1547,6 +1547,7 @@ const runStarter = createWorkflowRunStarter({
   ensureDeploymentRoutable,
   deploymentDomain: config.rootTenant.domain,
   cryptoProvider,
+  resolveUserIdentity,
 });
 
 // Public webhook firing surface: no session, authenticated only by

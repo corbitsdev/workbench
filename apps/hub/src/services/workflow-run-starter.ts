@@ -11,6 +11,10 @@ import type { EnsureDeploymentRoutableFn } from "../routes/workflow-runs";
 import { slidingWindowLimiter } from "../lib/sliding-window";
 import { mintWorkflowRunId } from "../workflow-executor/mint-workflow-run-id";
 import {
+  enrichTriggerPayloadForStart,
+  type TriggerPayloadEnrichmentDeps,
+} from "../workflow-executor/trigger-payload-enrichment-registry";
+import {
   failRunIfStillRunning,
   insertRunRecord,
 } from "../workflow-executor/run-store";
@@ -75,6 +79,12 @@ export function createWorkflowRunStarter(deps: {
   ensureDeploymentRoutable: EnsureDeploymentRoutableFn;
   deploymentDomain: string;
   cryptoProvider: CryptoProvider;
+  // Threaded into the same kind-registered trigger-payload enrichment the
+  // generic /workflow-exec/:kind/start route and the workflow_start hub tool
+  // apply (trigger-payload-enrichment-registry.ts) — this is the THIRD start
+  // door (webhook triggers, the heartbeat manual-run route), so it must run
+  // the same enrichment, not a bespoke copy.
+  resolveUserIdentity: TriggerPayloadEnrichmentDeps["resolveUserIdentity"];
   /** Clock injection point for the per-tenant start-budget window in tests. */
   now?: () => number;
 }): WorkflowRunStarter {
@@ -145,7 +155,12 @@ export function createWorkflowRunStarter(deps: {
 
     const runId = mintWorkflowRunId();
     const principalId = creatorPrincipalId ?? deployment.principalId;
-    const triggerPayload = { ...input, runId };
+    const enrichedInput = await enrichTriggerPayloadForStart(
+      { db: deps.db, resolveUserIdentity: deps.resolveUserIdentity },
+      { kind: deployment.kind, tenantId: deployment.tenantId, principalId },
+      input,
+    );
+    const triggerPayload = { ...enrichedInput, runId };
 
     try {
       await insertRunRecord(deps.db, {
