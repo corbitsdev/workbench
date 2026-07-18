@@ -22,6 +22,7 @@ import type {
   EnsureDeploymentRoutableFn,
   ProvisionRunDeploymentFn,
 } from "./workflow-runs";
+import type { HeartbeatMemberIdentity } from "../lib/heartbeat-trigger-payload";
 import { requestBodySchema } from "../lib/openapi";
 import { createToolLoopGuard } from "@workbench/shared";
 
@@ -66,6 +67,9 @@ export function createHubToolsRouter(
     deploymentDomain?: string;
     provisionRunDeployment?: ProvisionRunDeploymentFn;
     ensureDeploymentRoutable?: EnsureDeploymentRoutableFn;
+    resolveUserIdentity?: (
+      principalId: string,
+    ) => Promise<HeartbeatMemberIdentity>;
   },
 ): Hono {
   const router = new Hono();

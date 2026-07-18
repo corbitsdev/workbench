@@ -70,6 +70,7 @@ export function useSkillLibrary(tenantId?: string | null) {
       }
       return parsed.skills;
     },
+    enabled: tenantId !== null && tenantId !== undefined,
     staleTime: 5 * 60_000,
   });
 }

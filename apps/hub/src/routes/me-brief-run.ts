@@ -1,14 +1,8 @@
 import { type } from "arktype";
 import { Hono } from "hono";
 import { describeRoute, resolver } from "hono-openapi";
-import {
-  HeartbeatRunTriggerPayloadSchema,
-  resolveEnabledBriefSources,
-} from "@workbench/shared";
 import { resolveCallerMember } from "../lib/tenant-provisioning";
-import { readMemberPreferences } from "../lib/member-preferences";
 import { listOwnerSchedules } from "../lib/scheduled-triggers";
-import { enrichHeartbeatTriggerPayload } from "../lib/heartbeat-trigger-payload";
 import { slidingWindowLimiter } from "../lib/sliding-window";
 import { ErrorResponse } from "../lib/openapi";
 import type { HubDb } from "../db";
@@ -26,20 +20,27 @@ export const BriefRunResponse = type({
 export type BriefRunResponse = typeof BriefRunResponse.infer;
 
 // POST /me/brief-run: lets a member fire their own heartbeat brief on
-// demand, outside its daily schedule. Reads the same live brief-source
-// preferences as the scheduler (`resolveEnabledBriefSources`), but uses a
-// full 7-day `createdAfter` lookback (`manual-refresh`) instead of the
-// incremental since-last-scheduled-fire window — so an on-demand run is a
-// refresh, not "delta since this morning." Trigger path is `source: "manual"`;
-// the tenant-hour start budget in workflow-run-starter.ts does NOT exempt
-// manual (only "scheduler" is exempt).
+// demand, outside its daily schedule. Trigger-payload enrichment (current
+// brief-source preferences, mail identity, the manual-refresh 7-day
+// `createdAfter` lookback) is NOT done here — it happens inside
+// `runStarter.startRun` via the shared trigger-payload-enrichment registry,
+// the one application point every start door (webhook, scheduler, this
+// route, the generic /workflow-exec route, the workflow_start hub tool)
+// funnels through. This route's only job is resolving the caller and
+// building the base payload; `startRun`'s "manual" source defaults the
+// registry's lookback to the same 7-day `manual-refresh` window this route
+// used to compute itself.
+//
+// The `startRun` call is wrapped in a try/catch: the registry resolves the
+// member's mail identity as part of enrichment, and a failure there (e.g. a
+// transient identity lookup error) must still refund the member's rate-limit
+// slot and return the same crafted 502 this route already returns for a
+// structured `{ ok: false }` failure — not an unhandled 500 that both loses
+// the slot and leaks internals.
 export function createMeBriefRunRouter(deps: {
   db: HubDb;
   runStarter: WorkflowRunStarter;
   heartbeatKind: string;
-  resolveUserIdentity: (
-    memberPrincipalId: string,
-  ) => Promise<{ userAddress: string; userRefId: string }>;
   now?: () => number;
 }): Hono<{ Variables: { userId: string } }> {
   const app = new Hono<{ Variables: { userId: string } }>();
@@ -103,58 +104,29 @@ export function createMeBriefRunRouter(deps: {
       );
       // Schedule seeding is boot-only and env-gated, so a member can lack a
       // row through no fault of their own (fresh member, scheduler disabled).
-      // A manual run does not need the row — build the same payload ad hoc.
-      let basePayload: Record<string, unknown>;
-      let lastFiredDayUtc: number | null;
-      let hourUtc: number;
-      if (heartbeat) {
-        basePayload = heartbeat.triggerPayload;
-        lastFiredDayUtc = heartbeat.lastFiredDayUtc;
-        hourUtc = heartbeat.hourUtc;
-      } else {
-        basePayload = { reason: "manual-brief" };
-        lastFiredDayUtc = null;
-        hourUtc = 0;
-      }
+      // A manual run does not need the row — build the same base payload ad
+      // hoc; `startRun`'s registry enrichment fills in the rest.
+      const basePayload: Record<string, unknown> = {
+        ...(heartbeat ? heartbeat.triggerPayload : {}),
+        reason: "manual-brief",
+      };
 
-      let identity: { userAddress: string; userRefId: string };
+      let result: Awaited<ReturnType<WorkflowRunStarter["startRun"]>>;
       try {
-        identity = await deps.resolveUserIdentity(member.principalId);
+        result = await deps.runStarter.startRun({
+          kind: deps.heartbeatKind,
+          tenantId: member.tenantId,
+          input: basePayload,
+          creatorPrincipalId: member.principalId,
+          source: "manual",
+        });
       } catch {
+        // A run that never started — including one whose trigger-payload
+        // enrichment failed to resolve the caller's identity — must not cost
+        // the member their one manual slot for the window.
         briefRunLimiter.refund(member.principalId);
         return c.json({ error: "The brief could not be started" }, 502);
       }
-
-      const prefs = await readMemberPreferences(
-        deps.db,
-        member.tenantId,
-        member.principalId,
-      );
-      const nowMs = clock();
-      const triggerPayload = enrichHeartbeatTriggerPayload(
-        { ...basePayload, reason: "manual-brief" },
-        deps.heartbeatKind,
-        deps.heartbeatKind,
-        resolveEnabledBriefSources(prefs),
-        nowMs,
-        lastFiredDayUtc,
-        hourUtc,
-        "manual-refresh",
-        identity,
-      );
-      const validated = HeartbeatRunTriggerPayloadSchema(triggerPayload);
-      if (validated instanceof type.errors) {
-        briefRunLimiter.refund(member.principalId);
-        return c.json({ error: "The brief could not be started" }, 502);
-      }
-
-      const result = await deps.runStarter.startRun({
-        kind: deps.heartbeatKind,
-        tenantId: member.tenantId,
-        input: validated,
-        creatorPrincipalId: member.principalId,
-        source: "manual",
-      });
 
       if (!result.ok) {
         // A run that never started should not cost the member their one

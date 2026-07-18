@@ -386,7 +386,12 @@ export function SkillsLibrary() {
           </section>
         )}
 
-        {skillsQuery.isLoading && (
+        {/* isPending, not isLoading: useSkillLibrary is `enabled`-gated on
+            tenantId, and TanStack v5's isLoading (isPending && isFetching) is
+            false while a disabled query sits with no data — using isLoading
+            here would flash the "no skills" empty state on every load until
+            tenantId resolves. isPending stays true through that window. */}
+        {skillsQuery.isPending && (
           <div className="py-10 text-[13px] text-text-3">Loading skills…</div>
         )}
         {skillsQuery.isError && (
@@ -394,7 +399,7 @@ export function SkillsLibrary() {
             Could not load skills.
           </div>
         )}
-        {!skillsQuery.isLoading &&
+        {!skillsQuery.isPending &&
           !skillsQuery.isError &&
           filteredLibrary.length === 0 && (
             <div className="py-10 text-[13px] text-text-3">
@@ -418,7 +423,7 @@ export function SkillsLibrary() {
               )}
             </div>
           )}
-        {!skillsQuery.isLoading &&
+        {!skillsQuery.isPending &&
           !skillsQuery.isError &&
           filteredLibrary.length > 0 &&
           (viewMode === "rows" ? (

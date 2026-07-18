@@ -250,6 +250,32 @@ describe("ArtifactDetailPage", () => {
     );
   });
 
+  it("still surfaces Download for a gamma_presentation with a malformed upload field", async () => {
+    // gamma_presentation is not in DOWNLOADABLE_ARTIFACT_KINDS — its download
+    // action depends entirely on hasUploadSource(source). A legacy row whose
+    // upload.mimeType isn't a string must not lose the download action: the
+    // strict field-typed schema used by isCsvUpload/extractUploadFilename
+    // would reject the whole source, but presence of an upload is what gates
+    // this specific check.
+    artifactResult = {
+      data: {
+        id: "art-gamma-legacy",
+        kind: "gamma_presentation",
+        title: "Legacy Deck",
+        content: JSON.stringify({ url: "https://gamma.app/docs/legacy" }),
+        source: { upload: { filename: "Legacy.pdf", mimeType: 123 } },
+      },
+      isLoading: false,
+      isError: false,
+    };
+    const view = renderAt("art-gamma-legacy");
+    const chrome = view.getByTestId("page-chrome");
+    const link = await within(chrome).findByRole("link", { name: /download/i });
+    expect(link.getAttribute("href")).toMatch(
+      /\/artifacts\/art-gamma-legacy\/download$/,
+    );
+  });
+
   it("does not surface a Download action for a non-downloadable kind", () => {
     const view = renderAt("art-1");
     const chrome = view.getByTestId("page-chrome");

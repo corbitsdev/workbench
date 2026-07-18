@@ -3,6 +3,7 @@ import { describe, expect, it } from "bun:test";
 import {
   isLogStateTerminal,
   isRecordTerminal,
+  isStatusTerminal,
   reconcileRunState,
   runStateFromLog,
   stepOutputsFromLog,
@@ -16,6 +17,24 @@ describe("isRecordTerminal", () => {
     expect(isRecordTerminal("failed")).toBe(true);
     expect(isRecordTerminal("awaiting")).toBe(false);
     expect(isRecordTerminal("running")).toBe(false);
+  });
+});
+
+describe("isStatusTerminal", () => {
+  it("agrees with isRecordTerminal for every known run status", () => {
+    for (const status of [
+      "completed",
+      "failed",
+      "awaiting",
+      "running",
+      "provisioning",
+    ] as const) {
+      expect(isStatusTerminal(status)).toBe(isRecordTerminal(status));
+    }
+  });
+
+  it("treats an unrecognized status string as not terminal", () => {
+    expect(isStatusTerminal("some-future-status")).toBe(false);
   });
 });
 

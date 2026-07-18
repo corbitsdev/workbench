@@ -441,6 +441,10 @@ function routerWith(opts: {
       ensureDeploymentRoutable,
       provisionRunDeployment,
       reclaimDeployment,
+      resolveUserIdentity: async (principalId: string) => ({
+        userAddress: `usr_${principalId}@wf.localhost`,
+        userRefId: principalId,
+      }),
       isSidecarConnected,
       // Tiny bounds keep the deploy-window wait sub-second in tests.
       sidecarWaitTimeoutMs: 200,
