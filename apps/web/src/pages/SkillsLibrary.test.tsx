@@ -178,6 +178,17 @@ describe("SkillsLibrary", () => {
     await screen.findByRole("table");
   });
 
+  it("humanizes a kebab-case skill name in rows view when no displayName is set", async () => {
+    localStorage.setItem("cw-view-skills", "rows");
+    renderPage();
+
+    await screen.findByRole("table");
+    await waitFor(() =>
+      expect(document.body.textContent).toContain("Viral content"),
+    );
+    expect(document.body.textContent).not.toContain("viral-content");
+  });
+
   it("does not flash the empty state while tenantId is still resolving", async () => {
     let resolveMe: (value: typeof meResponse) => void = () => {};
     meDeferred = {
