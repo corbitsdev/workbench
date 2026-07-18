@@ -71,7 +71,12 @@ import {
   createIsogitStore,
   type CommitSigner,
 } from "@workbench/storage-isogit";
-import { createWorkbenchDirectorRegistry } from "@workbench/agents";
+import {
+  createWorkbenchDirectorRegistry,
+  createSummarizeCompactor,
+  resolveCompactorSource,
+  SUMMARIZE_COMPACTOR_NAME,
+} from "@workbench/agents";
 import {
   createAgentRepoStore,
   type Principal,
@@ -687,6 +692,18 @@ function createSidecarStepBuildEnv(
     const workdir = path.join(storeDir, "workspace");
     await fs.promises.mkdir(workdir, { recursive: true });
 
+    // Named "summarize" compaction strategy (CL-3803 / CL-3806): runs one
+    // bounded inference against the cheap summary model when an
+    // openai-compatible source is available, otherwise the agent's own
+    // default source (Anthropic-only agents still compact, just on their
+    // full-price model). Selection is explicit about provider + model —
+    // never first-match of an arbitrary openai-compatible gateway that
+    // may not serve SUMMARY_MODEL_ID.
+    //
+    // Only the warm single-step path (durable conversation) needs long-lived
+    // context compaction. Multi-step workflow agents are short-lived and
+    // keep the prior behavior of no registered compactor.
+    const inferenceDeps = createDependencies(deps.adapters);
     const env: StepEnvBase & Record<string, unknown> = {
       sources,
       defaultSource: activeSource.id,
@@ -700,8 +717,29 @@ function createSidecarStepBuildEnv(
       // custom-provider step source resolves in the child the same way
       // it does on the sidecar main path rather than hitting
       // `createAgent`'s built-ins-only default.
-      deps: createDependencies(deps.adapters),
+      deps: inferenceDeps,
     };
+
+    if (deps.durableConversation !== undefined) {
+      const resolved = resolveCompactorSource(sources);
+      if (!resolved.usesCheapSummaryModel) {
+        getLogger(["sidecar", "compactor"]).info(
+          "summarize compactor falling back to agent default source (provider={provider} model={model}) — no openai-compatible source serving the cheap summary model",
+          {
+            provider: resolved.source.provider,
+            model: resolved.source.model,
+            reason: resolved.reason,
+            stepId,
+          },
+        );
+      }
+      env.compactors = {
+        [SUMMARIZE_COMPACTOR_NAME]: createSummarizeCompactor({
+          source: resolved.source,
+          deps: inferenceDeps,
+        }),
+      };
+    }
 
     // Supervisor-backed transport for the step agent's mail tools (OUTBOUND
     // half of mailbox ownership, §3a). Inbound is inert -- the supervisor
