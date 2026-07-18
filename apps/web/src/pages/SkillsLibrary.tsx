@@ -171,7 +171,7 @@ export function SkillsLibrary() {
       key: "name",
       header: "Name",
       className: "font-medium text-text",
-      render: (s) => s.displayName ?? s.name,
+      render: (s) => s.displayName ?? toHumanLabel(s.name),
     },
     {
       key: "access",
@@ -252,7 +252,7 @@ export function SkillsLibrary() {
                     )
                   : undefined;
                 const revisionLabel = revisionTarget
-                  ? `revises ${revisionTarget.displayName ?? revisionTarget.name}`
+                  ? `revises ${revisionTarget.displayName ?? toHumanLabel(revisionTarget.name)}`
                   : isRevision
                     ? "revises existing skill"
                     : null;
@@ -308,8 +308,9 @@ export function SkillsLibrary() {
                             onClick={() => {
                               const targetName =
                                 revisionTarget?.displayName ??
-                                revisionTarget?.name ??
-                                draft.title;
+                                (revisionTarget
+                                  ? toHumanLabel(revisionTarget.name)
+                                  : draft.title);
                               if (
                                 !window.confirm(
                                   `Publish a new version of “${targetName}”? This updates the live skill.`,
