@@ -43,3 +43,26 @@ export function toHumanLabel(name: string): string {
     })
     .join(" ");
 }
+
+// Mirrors apps/hub/src/services/skill-library.ts's toAssetName kebab-casing —
+// a skill's displayName is stored verbatim at creation time, so a
+// user-supplied slug like "landing-page" persists as displayName rather than
+// null. Detect that case (the string already equals its own slugification)
+// and humanize it instead of trusting it as a real title.
+function isSlugShaped(value: string): boolean {
+  const slug = value
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 64);
+  return value === slug;
+}
+
+export function skillTitle(skill: {
+  name: string;
+  displayName: string | null;
+}): string {
+  if (skill.displayName === null) return toHumanLabel(skill.name);
+  if (isSlugShaped(skill.displayName)) return toHumanLabel(skill.displayName);
+  return skill.displayName;
+}

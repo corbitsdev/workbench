@@ -89,6 +89,17 @@ const skills = [
     ownerUserId: "usr-3",
     ownerName: "Alan Turing",
   },
+  {
+    id: "skill-4",
+    name: "landing-page",
+    displayName: "landing-page",
+    createdAt: "2026-06-17T00:00:00.000Z",
+    updatedAt: "2026-06-17T00:00:00.000Z",
+    scope: "tenant",
+    accessTenantId: "tenant-root",
+    ownerUserId: "usr-4",
+    ownerName: "Katherine Johnson",
+  },
 ];
 
 beforeEach(() => {
@@ -147,6 +158,23 @@ describe("SkillsLibrary", () => {
     expect(document.body.textContent).not.toContain("viral-content");
   });
 
+  it("humanizes a slug-shaped displayName stored verbatim at creation (card view)", async () => {
+    renderPage();
+
+    await waitFor(() =>
+      expect(document.body.textContent).toContain("Landing Page"),
+    );
+    expect(document.body.textContent).not.toContain("landing-page");
+  });
+
+  it("leaves a real human-authored displayName unchanged", async () => {
+    renderPage();
+
+    await waitFor(() =>
+      expect(document.body.textContent).toContain("Private One"),
+    );
+  });
+
   it("labels private skills as Private", async () => {
     renderPage();
 
@@ -187,6 +215,17 @@ describe("SkillsLibrary", () => {
       expect(document.body.textContent).toContain("Viral content"),
     );
     expect(document.body.textContent).not.toContain("viral-content");
+  });
+
+  it("humanizes a slug-shaped displayName in rows view", async () => {
+    localStorage.setItem("cw-view-skills", "rows");
+    renderPage();
+
+    await screen.findByRole("table");
+    await waitFor(() =>
+      expect(document.body.textContent).toContain("Landing Page"),
+    );
+    expect(document.body.textContent).not.toContain("landing-page");
   });
 
   it("does not flash the empty state while tenantId is still resolving", async () => {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { toHumanLabel } from "./tool-labels";
+import { toHumanLabel, skillTitle } from "./tool-labels";
 
 describe("toHumanLabel", () => {
   it.each([
@@ -17,5 +17,29 @@ describe("toHumanLabel", () => {
     ["founder-pov-post", "Founder POV post"],
   ])("formats %s as %s", (input, expected) => {
     expect(toHumanLabel(input)).toBe(expected);
+  });
+});
+
+describe("skillTitle", () => {
+  it("humanizes a slug-shaped displayName stored verbatim at creation", () => {
+    expect(
+      skillTitle({ name: "landing-page", displayName: "landing-page" }),
+    ).toBe("Landing Page");
+  });
+
+  it("leaves a real human title unchanged", () => {
+    expect(
+      skillTitle({ name: "company-research", displayName: "Company Research" }),
+    ).toBe("Company Research");
+  });
+
+  it("humanizes the name when displayName is null", () => {
+    expect(skillTitle({ name: "viral-content", displayName: null })).toBe(
+      "Viral content",
+    );
+  });
+
+  it("humanizes a single-word slug displayName", () => {
+    expect(skillTitle({ name: "asap", displayName: "asap" })).toBe("Asap");
   });
 });
