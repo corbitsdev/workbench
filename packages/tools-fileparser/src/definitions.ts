@@ -1,4 +1,7 @@
 import type { ToolDefinition } from "@intx/types/runtime";
+import type { ToolSideEffect } from "@workbench/tool-manifest";
+
+type FileparserToolDefinition = ToolDefinition & { sideEffect: ToolSideEffect };
 
 // The parse_file tool gives any agent — regardless of whether its own model can
 // read documents — a way to reason over a PDF or image artifact. The artifact
@@ -6,8 +9,9 @@ import type { ToolDefinition } from "@intx/types/runtime";
 // Linear); either way the agent passes its id here and the hub runs a
 // doc-capable (Anthropic) parse turn and returns the extracted text. It is for
 // binary files only — content that is already text must be read directly.
-export const PARSE_FILE_DEFINITION: ToolDefinition = {
+export const PARSE_FILE_DEFINITION: FileparserToolDefinition = {
   name: "parse_file",
+  sideEffect: "read",
   description:
     "Extract the text from a PDF or image artifact you cannot read directly. Returns the extracted text; optionally pass instructions to pull only what you need (e.g. 'list every action item'). Use it for binary files only, whether uploaded by the user or fetched from another source. Do not use it on content that is already text — notes, transcripts, tool outputs, or artifacts written by an agent; read those directly with artifact_read.",
   inputSchema: {
@@ -28,6 +32,6 @@ export const PARSE_FILE_DEFINITION: ToolDefinition = {
   },
 };
 
-export const FILEPARSER_TOOL_DEFINITIONS: ToolDefinition[] = [
+export const FILEPARSER_TOOL_DEFINITIONS: FileparserToolDefinition[] = [
   PARSE_FILE_DEFINITION,
 ];

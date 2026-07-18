@@ -1021,7 +1021,7 @@ describe("generateMyraThreadTitle", () => {
     };
   }
 
-  it("titles a default-labelled thread and records the turn under its instance", async () => {
+  it("titles a default-labelled thread without persisting any inference_turn row, and still forwards usage to analytics (CL-3894)", async () => {
     resetTitleMocks();
     const db = buildTitleDb({
       mappingRow: { id: "map-1", instanceId: "inst-1", label: "Chat" },
@@ -1051,18 +1051,22 @@ describe("generateMyraThreadTitle", () => {
       lastActivityAt: "2026-01-04T00:00:00.000Z",
       firstMessageAt: "2026-01-04T00:00:00.000Z",
     });
-    // The turn was recorded under the thread's instance + tenant.
-    expect(lastCreateEventCollectorConfig?.instanceId).toBe("inst-1");
-    expect(lastCreateEventCollectorConfig?.tenantId).toBe("tn-global");
-    // Events were actually pumped into the collector (and message.received filtered).
-    expect(collectorEvents.map((e) => e.type)).toEqual([
-      "inference.start",
-      "inference.done",
-    ]);
-    // Seam: token usage from the title turn is forwarded to analytics,
+    // No inference_turn/turn_part row is ever created for a title turn —
+    // `createEventCollector` (the only thing that persists one) is never
+    // invoked at all. `/turns` (the same route the live chat transcript
+    // hydrates from) returns every inference_turn row for an instanceId with
+    // no way to tell a title turn from a real reply, so persisting one under
+    // ANY instanceId — the thread's own or otherwise — would risk rendering
+    // the generated title inline as a stray assistant bubble in the user's
+    // own conversation (CL-3894). Running the turn usage-only avoids the
+    // whole class of bug rather than routing around it.
+    expect(lastCreateEventCollectorConfig).toBeNull();
+    expect(collectorEvents).toEqual([]);
+    // Seam: token usage from the title turn is still forwarded to analytics,
     // attributed to the thread instance's principal so it rolls up per member
-    // in /insights (CL-2887). The inference.done carries usage; the one-shot's
-    // own agent id namespaces the idempotency key.
+    // in /insights (CL-2887) — independent of turn persistence. The
+    // inference.done carries usage; the one-shot's own agent id namespaces
+    // the idempotency key.
     expect(analyticsMock.onLocalInferenceEvent).toHaveBeenCalled();
     const call = analyticsMock.onLocalInferenceEvent.mock.calls.find(
       (c) =>
@@ -1201,8 +1205,14 @@ describe("generateMyraThreadTitle", () => {
     });
 
     expect(result?.label).toBe("Pricing Deep Dive");
-    // The recorded turn is attributed to the active child tenant.
-    expect(lastCreateEventCollectorConfig?.tenantId).toBe("tn-child");
+    // The turn's usage is attributed to the active child tenant (no
+    // inference_turn row is persisted — see the CL-3894 test above).
+    const call = analyticsMock.onLocalInferenceEvent.mock.calls.find(
+      (c) =>
+        (c[0] as { event: { type: string } }).event.type === "inference.done",
+    );
+    expect(call).toBeDefined();
+    expect((call?.[0] as { tenantId: string }).tenantId).toBe("tn-child");
   });
 
   it("no-ops on a custom (non-default) label without running inference", async () => {
@@ -1344,8 +1354,14 @@ describe("generateMyraThreadTitle", () => {
       firstMessage: "How should we price the enterprise tier?",
     });
 
-    // The turn DID run (the failure is empty output, not a skipped turn).
-    expect(lastCreateEventCollectorConfig?.instanceId).toBe("inst-1");
+    // The turn DID run (the failure is empty output, not a skipped turn) —
+    // usage-only, so no inference_turn row is persisted either way (CL-3894).
+    expect(
+      analyticsMock.onLocalInferenceEvent.mock.calls.some(
+        (c) =>
+          (c[0] as { event: { type: string } }).event.type === "inference.done",
+      ),
+    ).toBe(true);
     // 40-char message (<= 48 budget): whole message, trailing "?" stripped.
     expect(labelRef.value).toBe("How should we price the enterprise tier");
     expect(result?.label).toBe("How should we price the enterprise tier");

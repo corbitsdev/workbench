@@ -1,9 +1,22 @@
-import { describe, expect, it } from "bun:test";
+import { describe, expect, it, test } from "bun:test";
+import type { ToolDefinition } from "@intx/types/runtime";
+import * as agentsIndex from "./index";
 import {
   parseListLimit,
   parsePrincipalIds,
   resolveStatusFilter,
 } from "./index";
+import { toolManifestFile } from "./tool-manifest";
+
+function isToolDefinitionLike(value: unknown): value is ToolDefinition {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    typeof (value as Record<string, unknown>).name === "string" &&
+    typeof (value as Record<string, unknown>).description === "string" &&
+    typeof (value as Record<string, unknown>).inputSchema === "object"
+  );
+}
 
 describe("resolveStatusFilter", () => {
   it("defaults to running when no status is given", () => {
@@ -66,5 +79,29 @@ describe("parseListLimit", () => {
     expect(parseListLimit(9999)).toBe(200);
     expect(parseListLimit(0)).toBe(1);
     expect(parseListLimit(10)).toBe(10);
+  });
+});
+
+describe("tool-manifest completeness", () => {
+  test("every exported tool definition is declared in the hand-authored manifest", () => {
+    // No single runtime array enumerates this package's tools the way
+    // ARTIFACT_TOOL_DEFINITIONS/SKILL_TOOL_DEFINITIONS do elsewhere — list_agents
+    // and identity_get/identity_set/invoke_agent dispatch through the sidecar
+    // factory in interchange-tools.ts, while search_agents dispatches as a
+    // hub-native ContextToolEntry (apps/hub/src/tools/search-agents.ts). Both
+    // paths re-export their `*_DEFINITION` through this module, so discovering
+    // every ToolDefinition-shaped export here (rather than hand-listing the
+    // paths) still gives a guard that automatically grows if a new tool
+    // definition is exported and re-exported through index.ts.
+    const runtimeNames = Object.values(agentsIndex)
+      .filter(isToolDefinitionLike)
+      .map((definition) => definition.name)
+      .sort();
+    const factory = toolManifestFile.factories[0];
+    if (!factory) {
+      throw new Error("expected the agents manifest to declare a factory");
+    }
+    const manifestNames = [...factory.bareToolNames].sort();
+    expect(manifestNames).toEqual(runtimeNames);
   });
 });

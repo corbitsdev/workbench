@@ -1,4 +1,8 @@
-import { manifestFromHubToolEntries } from "@workbench/tool-manifest";
+import {
+  hubToolEntriesFromDefinitions,
+  manifestFromHubToolEntries,
+} from "@workbench/tool-manifest";
+import { SKILL_TOOL_DEFINITIONS } from "./index";
 
 export const toolManifestFile = {
   factories: [
@@ -6,26 +10,7 @@ export const toolManifestFile = {
       factoryId: "@workbench/tools-skills/skills",
       packageName: "@workbench/tools-skills",
       providerName: null,
-      entries: {
-        list_skills: {
-          sideEffect: "read",
-        },
-        search_skills: {
-          sideEffect: "read",
-        },
-        load_skill: {
-          sideEffect: "read",
-        },
-        list_skill_drafts: {
-          sideEffect: "read",
-        },
-        load_skill_draft: {
-          sideEffect: "read",
-        },
-        skill_draft: {
-          sideEffect: "write",
-        },
-      },
+      entries: hubToolEntriesFromDefinitions(SKILL_TOOL_DEFINITIONS),
       myraCatalog: {
         catalogPackage: "skills",
         summary:
