@@ -1,9 +1,10 @@
 /// <reference types="bun" />
 import "../test-setup";
 import { afterEach, beforeEach, describe, expect, it, mock } from "bun:test";
-import { cleanup, render, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, waitFor } from "@testing-library/react";
 import React from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { PageChromeProvider, usePageChromeSlot } from "../lib/page-chrome";
 
 declare global {
   interface Window {
@@ -31,7 +32,8 @@ mock.module("react-router", () => ({
   useNavigate: () => mock(() => {}),
 }));
 
-import { AgentsPage } from "./AgentsPage";
+import { AgentsPage, filterAgents } from "./AgentsPage";
+import type { AgentInstanceItem } from "../hooks/use-agents";
 
 const originalFetch = globalThis.fetch;
 
@@ -91,6 +93,14 @@ afterEach(() => {
   globalThis.fetch = originalFetch;
 });
 
+function ChromeSlotProbe() {
+  return React.createElement(
+    "div",
+    { "data-testid": "chrome-slot" },
+    usePageChromeSlot(),
+  );
+}
+
 function renderPage() {
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false } },
@@ -99,7 +109,12 @@ function renderPage() {
     React.createElement(
       QueryClientProvider,
       { client },
-      React.createElement(AgentsPage),
+      React.createElement(
+        PageChromeProvider,
+        null,
+        React.createElement(ChromeSlotProbe),
+        React.createElement(AgentsPage),
+      ),
     ),
   );
 }
@@ -115,11 +130,84 @@ describe("AgentsPage", () => {
 
     await waitFor(() => expect(document.body.textContent).toContain("Oat"));
     expect(document.body.textContent).toContain("Shared workspace agent");
-    expect(document.body.textContent).toContain("running");
+    expect(document.body.textContent).toContain("Running");
     expect(document.body.textContent).toContain("ins-1@tenant-1.localhost");
 
     expect(document.body.textContent).toContain("Loop");
-    expect(document.body.textContent).toContain("stopped");
+    expect(document.body.textContent).toContain("Stopped");
+  });
+
+  it("exposes a copy control for each agent mailbox address", async () => {
+    const writeText = mock(() => Promise.resolve());
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: { writeText },
+    });
+
+    const { getByLabelText } = renderPage();
+    await waitFor(() =>
+      expect(
+        getByLabelText("Copy address ins-1@tenant-1.localhost"),
+      ).toBeTruthy(),
+    );
+
+    fireEvent.click(getByLabelText("Copy address ins-1@tenant-1.localhost"));
+    await waitFor(() => expect(writeText).toHaveBeenCalledTimes(1));
+    expect(writeText).toHaveBeenCalledWith("ins-1@tenant-1.localhost");
+  });
+
+  it("exposes a search field in the page chrome", async () => {
+    const { getByLabelText } = renderPage();
+    await waitFor(() => expect(document.body.textContent).toContain("Oat"));
+    expect(getByLabelText("Search agents")).toBeTruthy();
+  });
+
+  it("filterAgents matches name, description, and address", () => {
+    const items: AgentInstanceItem[] = [
+      {
+        id: "1",
+        agentId: "a1",
+        name: "Oat",
+        description: "Shared workspace agent",
+        tenantId: "t",
+        address: "ins-1@tenant-1.localhost",
+        status: "running",
+      },
+      {
+        id: "2",
+        agentId: "a2",
+        name: "Loop",
+        description: null,
+        tenantId: "t",
+        address: "ins-2@tenant-1.localhost",
+        status: "stopped",
+      },
+    ];
+    expect(filterAgents(items, "loop").map((a) => a.name)).toEqual(["Loop"]);
+    expect(filterAgents(items, "shared").map((a) => a.name)).toEqual(["Oat"]);
+    expect(filterAgents(items, "ins-2").map((a) => a.name)).toEqual(["Loop"]);
+    expect(filterAgents(items, "zzzz")).toEqual([]);
+    expect(filterAgents(items, "  ").map((a) => a.name)).toEqual([
+      "Oat",
+      "Loop",
+    ]);
+  });
+
+  it("switches between card and row layouts", async () => {
+    const { getByRole } = renderPage();
+    await waitFor(() => expect(document.body.textContent).toContain("Oat"));
+
+    // Default view mode is grid (cards); switch to rows for the table.
+    fireEvent.click(getByRole("button", { name: "Rows view" }));
+    await waitFor(() => {
+      expect(document.body.querySelector("table")).toBeTruthy();
+    });
+
+    fireEvent.click(getByRole("button", { name: "Grid view" }));
+    await waitFor(() => {
+      expect(document.body.querySelector("table")).toBeNull();
+      expect(document.body.textContent).toContain("Oat");
+    });
   });
 
   it("shows an error message when the agents request fails", async () => {
@@ -144,7 +232,10 @@ describe("AgentsPage", () => {
       expect(document.body.textContent).toContain("No agents yet"),
     );
     expect(document.body.textContent).toContain(
-      "Agents available to you will appear here.",
+      "Agents available to you will appear here",
+    );
+    expect(document.body.textContent).toContain(
+      "Creating and configuring agents is coming soon",
     );
   });
 

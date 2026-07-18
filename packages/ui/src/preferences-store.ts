@@ -25,11 +25,16 @@ export const PREFERENCE_KEYS = {
 
 /**
  * Library pages that support a Grid/Rows layout toggle. Each scope owns one
- * persisted view-mode preference, keyed by scope so the three pages never
- * collide. Adding a page is one entry here — the store, persister, and
- * hydration all derive their keys from this list.
+ * persisted view-mode preference, keyed by scope so the pages never collide.
+ * Adding a page is one entry here — the store, persister, and hydration all
+ * derive their keys from this list.
  */
-export const VIEW_MODE_SCOPES = ["artifacts", "tools", "skills"] as const;
+export const VIEW_MODE_SCOPES = [
+  "artifacts",
+  "tools",
+  "skills",
+  "agents",
+] as const;
 export type ViewModeScope = (typeof VIEW_MODE_SCOPES)[number];
 
 /** localStorage / store key for a scope's view-mode preference. */
