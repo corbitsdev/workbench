@@ -41,7 +41,7 @@ import {
   LogRunStateSchema,
   type LogRunState,
 } from "../workflow-executor/run-state-from-log";
-import { getRunStepLiveIssue } from "../services/run-step-live-issue";
+import { getRunStepLiveIssues } from "../services/run-step-live-issue";
 import type { CryptoProvider } from "@intx/types/runtime";
 import {
   deriveWorkflowRunRepoId,
@@ -323,33 +323,36 @@ async function attachLiveIssues(
   deploymentId: string,
   runState: LogRunState,
 ): Promise<LogRunState> {
-  const hasCandidate = runState.steps.some(
+  const candidates = runState.steps.filter(
     (s) =>
       s.phase === "in-flight" &&
       (s.stepType === "agent" || s.stepType === "inline"),
   );
-  if (!hasCandidate) return runState;
+  if (candidates.length === 0) return runState;
 
-  const steps = await Promise.all(
-    runState.steps.map(async (step) => {
-      if (
-        step.phase !== "in-flight" ||
-        (step.stepType !== "agent" && step.stepType !== "inline")
-      ) {
-        return step;
-      }
-      const since =
-        step.startedAt !== undefined ? new Date(step.startedAt) : new Date(0);
-      const issue = await getRunStepLiveIssue({
-        db,
-        tenantId,
-        deploymentId,
-        stepId: step.stepId,
-        since,
-      });
-      return issue === null ? step : { ...step, liveIssue: issue };
-    }),
-  );
+  // One batched, TTL-memoized query for every in-flight step of this run
+  // (CL-3887 review) — `analytics_event` has no secondary index (see the
+  // schema comment in packages/analytics/src/schema.ts), and this read fires
+  // on every SSE emitState delta, so a per-step query here would multiply an
+  // unindexed scan by the in-flight step count on every tick.
+  const issues = await getRunStepLiveIssues({
+    db,
+    tenantId,
+    deploymentId,
+    runId: runState.runId,
+    steps: candidates.map((step) => ({
+      stepId: step.stepId,
+      attempt: step.currentAttempt,
+      since:
+        step.startedAt !== undefined ? new Date(step.startedAt) : new Date(0),
+    })),
+  });
+  if (issues.size === 0) return runState;
+
+  const steps = runState.steps.map((step) => {
+    const issue = issues.get(step.stepId);
+    return issue === undefined ? step : { ...step, liveIssue: issue };
+  });
   return { ...runState, steps };
 }
 

@@ -214,14 +214,22 @@ mock.module("../workflow-executor/run-state-from-log", () => ({
 
 // The live-issue lookup (CL-3887) hits analytics_event via a real db query in
 // production; here it is a canned map keyed by stepId so route tests can
-// assert the attach step without a database.
+// assert the batched attach step without a database.
 let cannedLiveIssues = new Map<
   string,
-  { category: string; message: string; occurredAt: string }
+  { category: string; occurredAt: string }
 >();
+let liveIssueBatchCalls: { stepId: string }[][] = [];
 mock.module("../services/run-step-live-issue", () => ({
-  getRunStepLiveIssue: async (args: { stepId: string }) =>
-    cannedLiveIssues.get(args.stepId) ?? null,
+  getRunStepLiveIssues: async (args: { steps: { stepId: string }[] }) => {
+    liveIssueBatchCalls.push(args.steps.map((s) => ({ stepId: s.stepId })));
+    const result = new Map<string, { category: string; occurredAt: string }>();
+    for (const step of args.steps) {
+      const issue = cannedLiveIssues.get(step.stepId);
+      if (issue !== undefined) result.set(step.stepId, issue);
+    }
+    return result;
+  },
 }));
 
 // The live-gate the resume guard reads (CL-2681). `null` simulates an unreadable
@@ -305,6 +313,7 @@ function resetCaptures(): void {
   sidecarProbeCalls = 0;
   sidecarConnectsAtProbe = 1;
   cannedLiveIssues = new Map();
+  liveIssueBatchCalls = [];
 }
 
 const reclaimDeployment = async (args: {
@@ -1244,6 +1253,13 @@ describe("GET /workflow-exec/runs/:runId/state — log-derived RunState (CL-2669
           startedAt: "2026-07-18T00:00:00.000Z",
         },
         {
+          stepId: "review",
+          phase: "in-flight",
+          stepType: "inline",
+          currentAttempt: 1,
+          startedAt: "2026-07-18T00:00:00.000Z",
+        },
+        {
           stepId: "gate",
           phase: "completed",
           stepType: "human",
@@ -1253,7 +1269,6 @@ describe("GET /workflow-exec/runs/:runId/state — log-derived RunState (CL-2669
     };
     cannedLiveIssues.set("draft", {
       category: "timeout",
-      message: "inference call exceeded inactivity timeout",
       occurredAt: "2026-07-18T00:01:00.000Z",
     });
     const a = app();
@@ -1269,13 +1284,25 @@ describe("GET /workflow-exec/runs/:runId/state — log-derived RunState (CL-2669
     );
     expect(draftStep.liveIssue).toEqual({
       category: "timeout",
-      message: "inference call exceeded inactivity timeout",
       occurredAt: "2026-07-18T00:01:00.000Z",
     });
+    const reviewStep = read.json.steps.find(
+      (s: { stepId: string }) => s.stepId === "review",
+    );
+    expect(reviewStep.liveIssue).toBeUndefined();
     const gateStep = read.json.steps.find(
       (s: { stepId: string }) => s.stepId === "gate",
     );
     expect(gateStep.liveIssue).toBeUndefined();
+
+    // Both in-flight candidates are resolved through a SINGLE batched call —
+    // not one query per step (CL-3887 review) — and the completed gate step
+    // is never a candidate.
+    expect(liveIssueBatchCalls).toHaveLength(1);
+    expect(liveIssueBatchCalls[0]?.map((s) => s.stepId).sort()).toEqual([
+      "draft",
+      "review",
+    ]);
   });
 
   test("a run with no deployment is 400 and never reads the log", async () => {

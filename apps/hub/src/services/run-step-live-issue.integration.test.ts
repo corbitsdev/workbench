@@ -13,7 +13,7 @@ import { pushSchema } from "drizzle-kit/api";
 
 import { schema } from "../db";
 import type { HubDb } from "../db";
-import { getRunStepLiveIssue } from "./run-step-live-issue";
+import { getRunStepLiveIssues } from "./run-step-live-issue";
 
 const TENANT = "tn-live-issue";
 let client: PGlite;
@@ -64,8 +64,8 @@ beforeEach(async () => {
   }
 });
 
-describe("getRunStepLiveIssue", () => {
-  test("returns the latest inference_error for the step's own instance address", async () => {
+describe("getRunStepLiveIssues", () => {
+  test("returns the latest inference_error for the step's own instance address, without the raw message", async () => {
     await instance("ins_dep-draft", "ins_dep-draft@wb.local");
     await inferenceError({
       instanceId: "ins_dep-draft",
@@ -80,19 +80,71 @@ describe("getRunStepLiveIssue", () => {
       occurredAt: "2026-07-18T00:00:05Z",
     });
 
-    const issue = await getRunStepLiveIssue({
+    const issues = await getRunStepLiveIssues({
       db,
       tenantId: TENANT,
       deploymentId: "dep",
-      stepId: "draft",
-      since: new Date("2026-07-18T00:00:00Z"),
+      runId: "run-1",
+      steps: [
+        {
+          stepId: "draft",
+          attempt: 1,
+          since: new Date("2026-07-18T00:00:00Z"),
+        },
+      ],
     });
 
+    const issue = issues.get("draft");
     expect(issue).toEqual({
       category: "retryable",
-      message: "provider returned 503",
       occurredAt: "2026-07-18T00:00:05.000Z",
     });
+    expect(issue).not.toHaveProperty("message");
+  });
+
+  test("resolves multiple in-flight steps in a single batched call, each honoring its own since", async () => {
+    await instance("ins_dep-draft", "ins_dep-draft@wb.local");
+    await instance("ins_dep-polish", "ins_dep-polish@wb.local");
+    await inferenceError({
+      instanceId: "ins_dep-draft",
+      category: "timeout",
+      message: "inference call exceeded inactivity timeout",
+      occurredAt: "2026-07-18T00:00:01Z",
+    });
+    await inferenceError({
+      instanceId: "ins_dep-polish",
+      category: "rate_limited",
+      message: "provider rate limited",
+      occurredAt: "2026-07-18T00:00:02Z",
+    });
+
+    const issues = await getRunStepLiveIssues({
+      db,
+      tenantId: TENANT,
+      deploymentId: "dep",
+      runId: "run-2",
+      steps: [
+        {
+          stepId: "draft",
+          attempt: 1,
+          since: new Date("2026-07-18T00:00:00Z"),
+        },
+        {
+          // This step's own start is AFTER the polish error, so it must not
+          // pick up an issue that predates it, even though the batched query
+          // reads both addresses in one pass.
+          stepId: "polish",
+          attempt: 1,
+          since: new Date("2026-07-18T00:00:05Z"),
+        },
+      ],
+    });
+
+    expect(issues.get("draft")).toEqual({
+      category: "timeout",
+      occurredAt: "2026-07-18T00:00:01.000Z",
+    });
+    expect(issues.has("polish")).toBe(false);
   });
 
   test("does not attribute another step's instance on the same deployment", async () => {
@@ -105,14 +157,20 @@ describe("getRunStepLiveIssue", () => {
       occurredAt: "2026-07-18T00:00:01Z",
     });
 
-    const issue = await getRunStepLiveIssue({
+    const issues = await getRunStepLiveIssues({
       db,
       tenantId: TENANT,
       deploymentId: "dep",
-      stepId: "draft",
-      since: new Date("2026-07-18T00:00:00Z"),
+      runId: "run-3",
+      steps: [
+        {
+          stepId: "draft",
+          attempt: 1,
+          since: new Date("2026-07-18T00:00:00Z"),
+        },
+      ],
     });
-    expect(issue).toBeNull();
+    expect(issues.has("draft")).toBe(false);
   });
 
   test("ignores an error that occurred before the step's own start", async () => {
@@ -124,24 +182,97 @@ describe("getRunStepLiveIssue", () => {
       occurredAt: "2026-07-18T00:00:01Z",
     });
 
-    const issue = await getRunStepLiveIssue({
+    const issues = await getRunStepLiveIssues({
       db,
       tenantId: TENANT,
       deploymentId: "dep",
-      stepId: "draft",
-      since: new Date("2026-07-18T00:05:00Z"),
+      runId: "run-4",
+      steps: [
+        {
+          stepId: "draft",
+          attempt: 1,
+          since: new Date("2026-07-18T00:05:00Z"),
+        },
+      ],
     });
-    expect(issue).toBeNull();
+    expect(issues.has("draft")).toBe(false);
   });
 
-  test("returns null when no instance exists for that step address", async () => {
-    const issue = await getRunStepLiveIssue({
+  test("returns an empty map when no instance exists for that step address", async () => {
+    const issues = await getRunStepLiveIssues({
       db,
       tenantId: TENANT,
       deploymentId: "dep",
-      stepId: "draft",
-      since: new Date("2026-07-18T00:00:00Z"),
+      runId: "run-5",
+      steps: [
+        {
+          stepId: "draft",
+          attempt: 1,
+          since: new Date("2026-07-18T00:00:00Z"),
+        },
+      ],
     });
-    expect(issue).toBeNull();
+    expect(issues.size).toBe(0);
+  });
+
+  test("memoizes repeated calls with the same run/step/attempt signature", async () => {
+    await instance("ins_dep-draft", "ins_dep-draft@wb.local");
+    await inferenceError({
+      instanceId: "ins_dep-draft",
+      category: "timeout",
+      message: "inference call exceeded inactivity timeout",
+      occurredAt: "2026-07-18T00:00:01Z",
+    });
+
+    const queryArgs = {
+      db,
+      tenantId: TENANT,
+      deploymentId: "dep",
+      runId: "run-memo",
+      steps: [
+        {
+          stepId: "draft",
+          attempt: 1,
+          since: new Date("2026-07-18T00:00:00Z"),
+        },
+      ],
+    };
+    const first = await getRunStepLiveIssues(queryArgs);
+    expect(first.get("draft")).toEqual({
+      category: "timeout",
+      occurredAt: "2026-07-18T00:00:01.000Z",
+    });
+
+    // A new inference_error lands after the first read; a memoized read within
+    // the TTL window must still serve the earlier snapshot rather than
+    // re-scanning the unindexed table on every SSE delta.
+    await inferenceError({
+      instanceId: "ins_dep-draft",
+      category: "credential_failure",
+      message: "credential invalid",
+      occurredAt: "2026-07-18T00:00:02Z",
+    });
+    const second = await getRunStepLiveIssues(queryArgs);
+    expect(second.get("draft")).toEqual({
+      category: "timeout",
+      occurredAt: "2026-07-18T00:00:01.000Z",
+    });
+
+    // A bumped attempt changes the cache key, so a retried step's issue is
+    // never served stale from the previous attempt's cached entry.
+    const bumped = await getRunStepLiveIssues({
+      ...queryArgs,
+      steps: [
+        {
+          stepId: "draft",
+          attempt: 2,
+          since: new Date("2026-07-18T00:00:00Z"),
+        },
+      ],
+    });
+    expect(bumped.get("draft")).toEqual({
+      category: "credential_failure",
+      occurredAt: "2026-07-18T00:00:02.000Z",
+    });
   });
 });
