@@ -435,17 +435,24 @@ export function useWorkflowRunState(
   // key is mounted alongside it. `record === undefined` alone can't tell "no
   // query registered" apart from "query registered, still loading" — checking
   // the query cache directly (rather than the data) distinguishes the two, so
-  // this only fires for the former.
-  if (
-    isDev &&
-    runId !== null &&
-    queryClient.getQueryCache().find({ queryKey: recordQueryKey }) ===
-      undefined
-  ) {
-    logger.warn(
-      `useWorkflowRunState(${runId}): no co-mounted useWorkflowRecord found — the provisioning gate will default to firing immediately instead of waiting for a deploymentId.`,
-    );
-  }
+  // this only fires for the former. Runs in an effect (render stays pure;
+  // fires once per runId, not every render) with an exact-key match so a
+  // prefix-related query can never satisfy the check by accident.
+  useEffect(() => {
+    if (
+      isDev &&
+      runId !== null &&
+      queryClient.getQueryCache().find({
+        queryKey: ["workflow-record", runId, tenantId ?? null],
+        exact: true,
+      }) === undefined
+    ) {
+      logger.warn(
+        `useWorkflowRunState(${runId}): no co-mounted useWorkflowRecord found — the provisioning gate will default to firing immediately instead of waiting for a deploymentId.`,
+      );
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- dev-only diagnostic; re-check only when the run identity changes
+  }, [runId, tenantId]);
 
   // A run has no event log to read until its per-run deployment is minted
   // (CL-2755's `provisioning` window) — /state (and its SSE stream) 400s with
