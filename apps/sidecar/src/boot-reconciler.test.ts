@@ -264,6 +264,54 @@ describe("reconcileOrphanedDeploymentDirs — CL-2248 terminal-run second pass",
   });
 });
 
+describe("reconcileOrphanedDeploymentDirs — dep_ deployment ids (no boot restore)", () => {
+  // Newer deployments mint `dep_` ids (`generateId("deployment")`), not the
+  // legacy `ses_` shape. With sidecar boot-restore deleted, a
+  // `workflow-runs/<deploymentId>` dir is dead state the instant its id is
+  // absent from the hub's live set — this must reclaim regardless of which
+  // id shape produced the dir name.
+  const LIVE_DEP_ID = "dep_00112233445566778899aabbccddeeff";
+  const DEAD_DEP_ID = "dep_ffeeddccbbaa99887766554433221100";
+
+  test("reclaims a workflow-runs dir keyed by a dead dep_ deployment id", async () => {
+    const live = liveDeployment(LIVE_DEP_ID, ["plan"]);
+    const dead = liveDeployment(DEAD_DEP_ID, ["plan"]);
+    const liveDirs = await layAllForms(dataDir, live);
+    const deadDirs = await layAllForms(dataDir, dead);
+
+    await run([live]);
+
+    for (const dir of liveDirs) expect(await exists(dir)).toBe(true);
+    for (const dir of deadDirs) expect(await exists(dir)).toBe(false);
+  });
+
+  test("keeps a workflow-runs dir keyed by a live dep_ deployment id", async () => {
+    const live = liveDeployment(LIVE_DEP_ID, ["plan"]);
+    const liveDirs = await layAllForms(dataDir, live);
+
+    await run([live]);
+
+    for (const dir of liveDirs) expect(await exists(dir)).toBe(true);
+  });
+
+  test("FAIL-SAFE: a fetch failure keeps a dep_-keyed dir even though it looks dead", async () => {
+    const orphan = liveDeployment(DEAD_DEP_ID, ["plan"]);
+    const orphanDirs = await layAllForms(dataDir, orphan);
+
+    await reconcileOrphanedDeploymentDirs({
+      dataDir,
+      hubHttpUrl: "http://hub",
+      sidecarToken: "t",
+      logger: silentLogger,
+      fetchFn: (async () => {
+        throw new Error("network down");
+      }) as unknown as typeof fetch,
+    });
+
+    for (const dir of orphanDirs) expect(await exists(dir)).toBe(true);
+  });
+});
+
 describe("reconcileOrphanedDeploymentDirs — fail-safes", () => {
   test("FAIL-SAFE: a fetch that throws deletes nothing", async () => {
     const dead = liveDeployment(DEAD_ID, ["plan"]);

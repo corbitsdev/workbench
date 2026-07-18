@@ -77,15 +77,9 @@ import type {
   MultistepSourcesRouter,
 } from "./workflow-run-pack-client";
 import {
-  clearDeploymentDormantMarker,
-  deleteWorkflowDeploymentRecord,
   reclaimWorkflowDeploymentDir,
-  scanWorkflowDeploymentRecords,
-  writeDeploymentDormantMarker,
-  writeDeploymentTombstone,
-  writeWorkflowDeploymentRecord,
-  type WorkflowDeploymentRecord,
-} from "./workflow-deployment-record";
+  workflowDeploymentDir,
+} from "./workflow-deployment-dirs";
 import { SIDECAR_SUBSTRATE_CONFIG_KEYS } from "./workflow-substrate-factory";
 
 const logger = getLogger(["interchange", "sidecar", "workflow-host-wiring"]);
@@ -849,23 +843,12 @@ async function derivePrincipalPublicKeyHex(
 }
 
 /**
- * The sidecar's `DeployRouter` plus the boot-time restore driver. The link
- * routes `agent.deploy`/`agent.undeploy` through the `DeployRouter` surface;
- * the sidecar boot edge additionally calls `restoreWorkflowDeployments` once,
- * before connecting to the hub, to re-establish the deployments a prior
- * process persisted. The extra method is sidecar-app-only, so it rides on the
- * concrete router type rather than the shared `DeployRouter` contract.
+ * The sidecar's `DeployRouter` plus the app-only address listing. The link
+ * routes `agent.deploy`/`agent.undeploy` through the `DeployRouter` surface.
+ * There is no boot-time restore (CL-3884): a freshly-booted sidecar hosts
+ * nothing until the hub deploys to it.
  */
 export interface SidecarDeployRouter extends DeployRouter {
-  /**
-   * Re-establish every persisted workflow deployment on this sidecar's local
-   * substrate. Runs once at boot, before `hubLink.connect()`, so a single-step
-   * head's mailbox/transport registration is live before the hub routes to it.
-   * Soft-fails per deployment: a record that cannot be restored (unbuildable
-   * provider, corrupt `workflow.json`, spawn failure) is logged and left on
-   * disk for a later boot to retry -- it is never deleted here.
-   */
-  restoreWorkflowDeployments(): Promise<void>;
   /**
    * The workflow-substrate deployment addresses (`ins_dep_...`) this router
    * currently hosts a live supervisor for -- the set of addresses this
@@ -1085,14 +1068,6 @@ export function createSidecarDeployRouter(deps: {
    */
   readyTimeoutMs?: number;
   /**
-   * Deployment-record writer, injectable so a test can block or fail the
-   * persist at a controlled point -- the natural seam for exercising a
-   * recycle that interleaves the source-rotation persist window. Defaults
-   * to the real `writeWorkflowDeploymentRecord`; production never overrides
-   * it.
-   */
-  writeWorkflowDeploymentRecord?: typeof writeWorkflowDeploymentRecord;
-  /**
    * WORKBENCH-LOCAL (CL-2340): not in upstream — preserve on pin-bump re-sync.
    * Drain the boot-edge workflow-run pack-push pipeline for a deployment to a
    * hub-acked resting state. The undeploy hook awaits this after the
@@ -1145,8 +1120,6 @@ export function createSidecarDeployRouter(deps: {
   // no child ever rooted scratch and the undeploy reclaim is correctly
   // skipped.
   const stepStateDataDir = multistepSubstrateEnv.SIDECAR_DATA_DIR;
-  const persistDeploymentRecord =
-    deps.writeWorkflowDeploymentRecord ?? writeWorkflowDeploymentRecord;
   const multistepSpawner =
     deps.multistepSubprocessSpawner ?? defaultSubprocessSpawner;
   const multistepDeriveStepAddress: DeriveStepAddress =
@@ -1334,37 +1307,6 @@ export function createSidecarDeployRouter(deps: {
      * records no head key.
      */
     hubPublicKey: string | undefined;
-  }
-
-  /**
-   * Build the durable deployment record from a spec and a source table. The
-   * table is a parameter (not `spec.sources`) so the deploy path writes the
-   * deploy-time sources while the rotation handler writes the live-rotated
-   * ones -- both through one shape, so a rotation persists the same record a
-   * boot-time restore reseeds from.
-   */
-  function buildDeploymentRecord(
-    spec: WorkflowDeploySpec,
-    sources: WorkflowDeploymentRecord["sources"],
-  ): WorkflowDeploymentRecord {
-    return {
-      version: 1,
-      agentAddress: spec.agentAddress,
-      definitionId: spec.definition.id,
-      sources,
-      // WORKBENCH-LOCAL (CL-2199): persist the tenant + raw deployment id so a
-      // frame-less boot restore rebuilds a complete substrate env.
-      tenantId: spec.tenantId,
-      rawDeploymentId: spec.rawDeploymentId,
-      // WORKBENCH-LOCAL (CL-2199): persist the single-agent tool identity so a
-      // frame-less boot restore rebuilds the same substrate env.
-      singleAgentId: spec.agentId,
-      singleAgentPrincipalId: spec.instancePrincipalId,
-      ...(spec.sessionId !== undefined ? { sessionId: spec.sessionId } : {}),
-      ...(spec.hubPublicKey !== undefined
-        ? { hubPublicKey: spec.hubPublicKey }
-        : {}),
-    };
   }
 
   /**
@@ -1718,56 +1660,12 @@ export function createSidecarDeployRouter(deps: {
           spec.agentAddress,
           async (args) => {
             const rotated = { [rotationStepId]: args.sources };
-            // Swap `currentSources` synchronously BEFORE the durable persist.
-            // `currentSources` is the process-local respawn hint the
-            // supervisor reads synchronously through `dynamicSpawnEnv`, so a
-            // recycle that interleaves the persist `await` must respawn the
-            // child on the SAME sources being persisted, not the stale prior
-            // table. The obvious inverse -- persist first, then swap -- is
-            // rejected: it leaves the child on the OLD sources during the
-            // persist window while the record has already moved to NEW, so a
-            // recycle there respawns stale and a restart would "correct" it,
-            // i.e. the running child contradicts durable intent. Swapping
-            // first makes the only residual disagreement child-ahead-of-
-            // durable on a failed persist, which the next recycle heals down
-            // to the rolled-back durable truth -- the benign direction. The
-            // wire boundary guarantees `args.sources[0]` is the default,
-            // which the recycle env form pins as the active source.
-            const prevSources = currentSources;
+            // Process-local respawn hint only (CL-3884): the sidecar keeps
+            // no durable deployment record, so a rotation survives recycles
+            // (the supervisor respawns the child from `currentSources`) but
+            // not a full sidecar restart — the hub-driven re-deploy
+            // re-resolves sources fresh, which is the native source of truth.
             currentSources = rotated;
-            // The durable write still precedes the LIVE swap
-            // (`deliverSources`), preserving persist-before-externally-visible
-            // for state that outlives the process; only the process-local
-            // respawn hint moves ahead. On a failed persist, roll the hint
-            // back so `currentSources` and the record stay in agreement in the
-            // common (no interleaved recycle) failure case -- the invariant
-            // restart consistency depends on. Persistence lets the rotation
-            // survive a full sidecar restart, not just a recycle: the boot
-            // scan reseeds spec.sources from record.sources. Overwrites the
-            // deploy-time record in place. Skipped when no data dir was wired
-            // (a test router that never persists), matching the restore guard.
-            if (stepStateDataDir !== undefined) {
-              try {
-                await persistDeploymentRecord(
-                  stepStateDataDir,
-                  deploymentId,
-                  buildDeploymentRecord(spec, rotated),
-                );
-              } catch (cause) {
-                // Restoring unconditionally is safe because rotations for one
-                // deployment are serialized by the sidecar's per-connection
-                // inbound-frame queue: each hub frame, sources.update
-                // included, runs its handler to completion on that queue
-                // before the next frame's handler starts, so no second
-                // rotation is in flight whose committed table this rollback
-                // could clobber. This does NOT rely on the hub pacing its
-                // sends -- the hub dispatches sources.update fire-and-forget;
-                // the sidecar frame queue is the sole serializer. Parallelizing
-                // inbound-frame dispatch would break this rollback.
-                currentSources = prevSources;
-                throw cause;
-              }
-            }
             await wired.supervisor.deliverSources({
               sources: args.sources,
               defaultSource: args.defaultSource,
@@ -1993,7 +1891,6 @@ export function createSidecarDeployRouter(deps: {
           ? frame.hubPublicKey
           : undefined,
     };
-    const record = buildDeploymentRecord(spec, spec.sources);
 
     claimSlug(deploymentId, frame.agentAddress);
     // Hold the single-flight reservation across the async body below and clear
@@ -2004,20 +1901,6 @@ export function createSidecarDeployRouter(deps: {
     // yield control before this point.
     reservingDeployAddresses.add(frame.agentAddress);
     try {
-      // WORKBENCH-LOCAL (CL-3368): this deploy IS the wake path for a hibernated
-      // (dormant) deployment — the hub re-sends agent.deploy on a gate signal —
-      // and also runs after the resident-supervisor self-heal above, which
-      // hibernated a still-resident child. Either way, clear any dormant marker
-      // BEFORE re-persisting the record so the now-live deployment restores
-      // normally on a later restart instead of staying dormant. Idempotent when
-      // no marker is present (the common fresh-deploy case).
-      await clearDeploymentDormantMarker(dataDir, deploymentId);
-      // Persist the deployment record BEFORE the spawn so a crash mid-spawn
-      // leaves a record the boot scan re-drives (an idempotent re-spawn; the
-      // child's in-flight-run discovery resumes any run). A soft-failed deploy
-      // deletes it below, so only a crash-interrupted deploy leaves one.
-      await persistDeploymentRecord(dataDir, deploymentId, record);
-
       // Materialize the deploy-only durable state the spawned child and the
       // supervisor read from disk: the workflow definition (`workflow.json`)
       // and each step's grants. The restore path finds both already on disk
@@ -2041,21 +1924,12 @@ export function createSidecarDeployRouter(deps: {
       // Hand off to the shared spawn core.
       return await spawnWorkflowDeployment(spec);
     } catch (cause) {
-      // Soft failure (this process survived, the deploy threw): drop the
-      // record and release the slug so the failed deploy is neither restored
-      // nor leaks its slug. The record delete must not mask the real deploy
-      // error or skip releasing the slug: a rejecting delete is logged (the
-      // orphaned record is a durable-state leak the next boot scan re-drives)
-      // but `cause` is still what propagates and the slug is still released.
-      try {
-        await deleteWorkflowDeploymentRecord(dataDir, deploymentId);
-      } catch (cleanupError) {
-        const message =
-          cleanupError instanceof Error
-            ? cleanupError.message
-            : String(cleanupError);
-        logger.error`deploy cleanup: deleteWorkflowDeploymentRecord failed for ${deploymentId}: ${message}`;
-      }
+      // Soft failure (this process survived, the deploy threw): release the
+      // slug so the failed deploy does not leak it. There is no durable
+      // deployment record to clean up (CL-3884): the sidecar keeps no
+      // deployment memory, so a crash-interrupted deploy leaves only run
+      // state the hub-driven re-deploy (or the boot reconciler's dead-dir
+      // reclaim) handles.
       releaseSlug(deploymentId, frame.agentAddress);
       throw cause;
     } finally {
@@ -2086,27 +1960,11 @@ export function createSidecarDeployRouter(deps: {
     // frame racing the teardown is dropped at the router boundary rather than
     // dispatched into a supervisor mid child-teardown.
     const deploymentId = deriveDeploymentId(agentAddress);
-    // WORKBENCH-LOCAL (CL-3368): resurrection guard. On undeploy (reclaimDirs)
-    // write a durable tombstone BEFORE deleting the record or reclaiming the
-    // dir, so a crash between those write orders cannot leave a record the boot
-    // restore would re-spawn — the restore scan skips (and reclaims) any
-    // tombstoned dir. Hibernate (reclaimDirs: false) deliberately does NOT
-    // tombstone: its durable state must survive for the parked run to resume.
-    if (opts.reclaimDirs && stepStateDataDir !== undefined) {
-      await writeDeploymentTombstone(stepStateDataDir, deploymentId);
-    }
-    // WORKBENCH-LOCAL (CL-3368): hibernate (reclaimDirs: false) is the state-
-    // preserving teardown of a gate-parked run. Mark the surviving record
-    // dormant BEFORE the residency teardown so a boot restore never eagerly
-    // re-spawns it — the hub re-drives a fresh deploy on the next gate signal.
-    // Written at the top (like the tombstone) so a crash mid-teardown still
-    // leaves the marker: on a sidecar-only restart no child is resident, so
-    // "skip eager restore" is the correct outcome regardless. The wake path
-    // (deployMultiStep) clears it. This is what keeps hibernation from
-    // reproducing the eager-restore OOM shape on a sidecar restart.
-    if (!opts.reclaimDirs && stepStateDataDir !== undefined) {
-      await writeDeploymentDormantMarker(stepStateDataDir, deploymentId);
-    }
+    // CL-3884: no tombstone, no dormant marker — the sidecar keeps no
+    // deployment memory and never restores at boot, so there is nothing to
+    // guard against resurrection and nothing to mark dormant. Hibernate
+    // (reclaimDirs: false) simply tears residency down and preserves the
+    // durable run state; the hub re-deploys on the next gate signal.
     deps.multistepMailRouter?.unregister(agentAddress);
     deps.multistepSignalRouter?.unregister(agentAddress);
     deps.multistepDrainRouter?.unregister(agentAddress);
@@ -2189,27 +2047,18 @@ export function createSidecarDeployRouter(deps: {
         }
       }
     }
-    // WORKBENCH-LOCAL (CL-3104): the deployment record is durable state a
-    // parked run resumes from, so hibernate KEEPS it (reclaimDirs: false);
-    // undeploy drops it so a boot-time restore does not re-spawn a torn-down
-    // deployment. Runs even when no supervisor was active so a record left
-    // behind by a crash-interrupted deploy is reclaimed too.
-    if (opts.reclaimDirs && stepStateDataDir !== undefined) {
-      // WORKBENCH-LOCAL (CL-3368): when there is NO in-memory `active`
-      // supervisor, the CL-2231 owned-dir reclaim above never ran, and
-      // `deleteWorkflowDeploymentRecord` removes only `deployment.json` — the
-      // tombstone written at the top of teardown, plus the rest of the
-      // deployment's `workflow-runs/<deploymentId>` directory (workflow-run
-      // substrate included), would then leak until the next boot scan. Reclaim
-      // the whole directory directly. The tombstone is already durable (written
-      // before this rm), so a crash mid-reclaim still leaves nothing a boot
-      // restore would re-spawn. With an `active` supervisor the directory is
-      // covered by its `ownedDirs` sweep, so only the no-active path needs this.
-      if (active === undefined) {
-        await reclaimWorkflowDeploymentDir(stepStateDataDir, deploymentId);
-      } else {
-        await deleteWorkflowDeploymentRecord(stepStateDataDir, deploymentId);
-      }
+    // Undeploy (reclaimDirs) with NO in-memory `active` supervisor: the
+    // CL-2231 owned-dir reclaim above never ran, so the deployment's whole
+    // `workflow-runs/<deploymentId>` directory (workflow-run substrate
+    // included) would leak. Reclaim it directly. With an `active` supervisor
+    // the directory is covered by its `ownedDirs` sweep. Hibernate
+    // (reclaimDirs: false) keeps everything for the signal-driven resume.
+    if (
+      opts.reclaimDirs &&
+      stepStateDataDir !== undefined &&
+      active === undefined
+    ) {
+      await reclaimWorkflowDeploymentDir(stepStateDataDir, deploymentId);
     }
     releaseSlug(deploymentId, agentAddress);
     deps.unregisterDeployment({ deploymentId, agentAddress });
@@ -2245,116 +2094,6 @@ export function createSidecarDeployRouter(deps: {
     // restore spawns a fresh child that resumes the parked run from that state.
     async hibernate(frame): Promise<void> {
       await teardownDeployment(frame.agentAddress, { reclaimDirs: false });
-    },
-    async restoreWorkflowDeployments(): Promise<void> {
-      const dataDir = stepStateDataDir;
-      if (dataDir === undefined) {
-        // No substrate config was wired (a test router that never spawns a
-        // child): nothing was ever persisted under this data dir, so there
-        // is nothing to restore.
-        return;
-      }
-
-      const scanned = await scanWorkflowDeploymentRecords(dataDir);
-      // Restore serially, not in parallel: deterministic boot-log ordering,
-      // one isolable warning per failed record, and no concurrent
-      // child-spawn / transport-register storm. Restore runs before
-      // `hubLink.connect()`, so there are no concurrent deploys to contend
-      // with. Each record's failure is caught so one bad deployment cannot
-      // strand the rest.
-      for (const { deploymentId, record } of scanned) {
-        try {
-          // Integrity: the stored address must re-derive to its own directory
-          // name. A mismatch means a corrupt or misplaced record; skip it
-          // rather than restore a deployment under the wrong slug.
-          const derived = deriveDeploymentId(record.agentAddress);
-          if (derived !== deploymentId) {
-            logger.warn`skipping workflow deployment restore: ${record.agentAddress} derives slug ${derived}, not its directory ${deploymentId}`;
-            continue;
-          }
-
-          // Re-read and RE-VALIDATE the definition off disk with the exact
-          // gates the deploy path applies: the wire arktype
-          // (`AgentDeployWorkflow`) to narrow the untrusted on-disk shape,
-          // then `validateWorkflowProjection` for the structural invariants
-          // the arktype does not cover (non-empty stepOrder, every stepOrder
-          // entry backed by a `steps` entry). The on-disk `workflow.json` is
-          // untrusted at restore, so it must clear the same bar a fresh
-          // deploy frame clears -- no weaker.
-          const definitionRaw = await readWorkflowJson(
-            dataDir,
-            record.definitionId,
-          );
-          const projection = AgentDeployWorkflow({
-            definition: definitionRaw,
-            sources: record.sources,
-          });
-          if (projection instanceof type.errors) {
-            logger.warn`skipping workflow deployment restore for ${record.agentAddress}: workflow.json failed validation: ${projection.summary}`;
-            continue;
-          }
-          validateWorkflowProjection(projection);
-
-          // Re-run the source-admission gate: refuse to restore a deployment
-          // whose pinned provider this sidecar can no longer build. Every
-          // source in a step's failover chain must be buildable, so this
-          // iterates the whole list. The record is KEPT (not deleted) so a
-          // later boot with the provider restored retries it.
-          for (const stepId of projection.definition.stepOrder) {
-            const chain = projection.sources[stepId];
-            if (chain !== undefined) {
-              for (const source of chain) deps.assertSourceBuildable(source);
-            }
-          }
-
-          const spec: WorkflowDeploySpec = {
-            agentAddress: record.agentAddress,
-            definition: projection.definition,
-            sources: projection.sources,
-            // WORKBENCH-LOCAL (CL-2199): rebuild the substrate env from the
-            // persisted tenant + raw deployment id -- restore has no frame.
-            tenantId: record.tenantId,
-            rawDeploymentId: record.rawDeploymentId,
-            // WORKBENCH-LOCAL (CL-2199): rebuild the single-agent tool identity
-            // from the persisted record -- restore has no frame.
-            agentId: record.singleAgentId,
-            instancePrincipalId: record.singleAgentPrincipalId,
-            sessionId: record.sessionId,
-            hubPublicKey: record.hubPublicKey,
-          };
-
-          // The slug is the caller's, matching `deployMultiStep`: claim before
-          // the spawn, release on failure. Unlike deploy's soft-fail, restore
-          // does NOT delete the record and does NOT re-materialize
-          // `workflow.json` or the step grants -- all of that is already on
-          // disk from the original deploy. A failed restore just warns and
-          // leaves the record for the next boot; there is deliberately no GC
-          // of a permanently-unrestorable record here (an operator reclaims it
-          // by undeploying the address).
-          //
-          // Release only a slug THIS pass newly claimed: if the address is
-          // already live (its slug still held by the running deployment), the
-          // core's double-spawn guard throws, and freeing the slug then would
-          // strand a live deployment's collision guard. `claimSlug` is a
-          // no-op for an already-held (deploymentId, address) pair, so the
-          // pre-claim check distinguishes the two.
-          const slugNewlyClaimed =
-            slugClaims.get(deploymentId) !== record.agentAddress;
-          claimSlug(deploymentId, record.agentAddress);
-          try {
-            await spawnWorkflowDeployment(spec);
-            logger.info`Restored workflow deployment for ${record.agentAddress}`;
-          } catch (cause) {
-            if (slugNewlyClaimed) {
-              releaseSlug(deploymentId, record.agentAddress);
-            }
-            throw cause;
-          }
-        } catch (cause) {
-          const reason = cause instanceof Error ? cause.message : String(cause);
-          logger.warn`Failed to restore workflow deployment ${deploymentId}: ${reason}`;
-        }
-      }
     },
     activeAddresses(): string[] {
       // `activeSupervisors` is keyed by deployment agent address and holds

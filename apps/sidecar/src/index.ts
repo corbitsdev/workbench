@@ -420,14 +420,10 @@ try {
   );
 }
 
-// Restore persisted workflow-deployment records BEFORE the hub link connects,
-// so `getWorkflowAddresses()` is already populated when the `open` handler
-// announces them through the challenged reconnect frame. Restore runs after
-// the orphan-dir reconciliation above so it never re-establishes a deployment
-// the hub has soft-deleted/superseded.
-if (deployRouterBox.current !== null) {
-  await deployRouterBox.current.restoreWorkflowDeployments();
-}
+// No boot-time deployment restore (CL-3884): the sidecar boots empty and the
+// hub — the control plane — re-deploys what should be resident (mail-wake for
+// idle agents, gate signals + the awaiting prewarm for parked runs; the run
+// liveness sweep fails running runs whose child died with the process).
 
 orchestrator.start();
 
