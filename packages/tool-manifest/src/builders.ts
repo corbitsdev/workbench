@@ -85,6 +85,17 @@ export function hubToolEntriesFromDefinitions(
     }
     entries[definition.name] = { sideEffect, definition };
   }
+  // Exact set equality, both directions: a stale key left behind by a
+  // renamed/removed tool is dead weight that erodes the map's authority —
+  // fail loud so the map always mirrors the runtime array exactly.
+  const definitionNames = new Set(definitions.map((d) => d.name));
+  for (const key of Object.keys(sideEffects)) {
+    if (!definitionNames.has(key)) {
+      throw new Error(
+        `hubToolEntriesFromDefinitions: side-effect map declares "${key}" but no runtime tool definition has that name (stale or misspelled key)`,
+      );
+    }
+  }
   return entries;
 }
 
