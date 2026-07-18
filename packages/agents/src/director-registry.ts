@@ -112,9 +112,10 @@ export const TRIAGE_BUDGET_DIRECTOR_ID = "@workbench/agents/triage-budget";
  * `load_tools` in `MAILBOX_PERSONA_TOOLS`, but that alone does not opt a
  * triage session into dynamic tool exposure: `resolveDynamicToolConfig`
  * (`./dynamic-tools/index.ts`) only returns a config for the personal
- * agent's own "Chief of Staff" prompt marker, which the triage prompt never
- * carries — so the harness never sets the dynamic-tools env for a triage
- * launch, and this factory always wraps the plain default director.
+ * agent's control-plane identity marker (`<!-- workbench:personal-agent -->`,
+ * CL-3194), which the triage prompt never carries — so the harness never sets
+ * the dynamic-tools env for a triage launch, and this factory always wraps the
+ * plain default director.
  */
 export const triageBudgetDirector = defineDirector<typeof EmptyConfig.infer>({
   id: TRIAGE_BUDGET_DIRECTOR_ID,

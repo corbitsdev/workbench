@@ -20,7 +20,9 @@ import {
   PERSONAL_AGENT_BASE_TOOLS,
   PERSONAL_AGENT_NAME,
   PERSONAL_AGENT_PLATFORM_TOOLS,
+  PERSONAL_AGENT_IDENTITY_MARKER,
   buildPersonalAgentSystemPrompt,
+  withPersonalAgentIdentityMarker,
 } from "@workbench/myra";
 import { AGENT_TEMPLATES } from "../templates";
 import { createDynamicToolsDirector } from "./director";
@@ -137,9 +139,10 @@ describe("createDynamicToolsDirector advertisement", () => {
 });
 
 describe("resolveDynamicToolConfig opt-in gating", () => {
-  test("returns the Myra config for the personal-agent prompt", () => {
-    const prompt =
-      "You are Myra, Chief of Staff to the one person you work for.";
+  test("returns the Myra config when the personal-agent identity marker is present", () => {
+    const prompt = withPersonalAgentIdentityMarker(
+      "You are Myra, a personal GTM assistant.",
+    );
     expect(resolveDynamicToolConfig(prompt)).toBe(PERSONAL_AGENT_DYNAMIC_TOOLS);
   });
 
@@ -149,16 +152,35 @@ describe("resolveDynamicToolConfig opt-in gating", () => {
     ).toBeUndefined();
   });
 
-  // Guards the silent-disable landmine: the opt-in marker is a substring match
-  // against Myra's real prompt. If the prompt's role opening is reworded, the
-  // marker stops matching and the whole feature silently reverts to full
-  // advertisement with no other test failing — so pin it to the ACTUAL built
-  // prompt, not a hand-written literal.
+  test("does not opt in on role prose alone (no control marker)", () => {
+    const proseOnly =
+      "You are Myra, Chief of Staff to the one person you work for.";
+    expect(resolveDynamicToolConfig(proseOnly)).toBeUndefined();
+  });
+
+  // Guards the silent-disable landmine: the opt-in is the control-plane
+  // identity marker stamped by buildPersonalAgentSystemPrompt. Pin it to the
+  // ACTUAL built prompt so a composition regression fails loudly.
   test("matches the real built Myra system prompt (marker↔prompt drift guard)", () => {
     const realPrompt = buildPersonalAgentSystemPrompt(PERSONAL_AGENT_NAME, {
       xml: true,
     });
+    expect(realPrompt).toContain(PERSONAL_AGENT_IDENTITY_MARKER);
     expect(resolveDynamicToolConfig(realPrompt)).toBe(
+      PERSONAL_AGENT_DYNAMIC_TOOLS,
+    );
+  });
+
+  test("a rewritten role opening still opts in when the identity marker is present", () => {
+    const realPrompt = buildPersonalAgentSystemPrompt(PERSONAL_AGENT_NAME, {
+      xml: true,
+    });
+    const rewritten = realPrompt.replace(
+      /You are Myra, Chief of Staff[^<\n]*/,
+      "You are Myra, a personal GTM assistant",
+    );
+    expect(rewritten).not.toContain("Chief of Staff");
+    expect(resolveDynamicToolConfig(rewritten)).toBe(
       PERSONAL_AGENT_DYNAMIC_TOOLS,
     );
   });
