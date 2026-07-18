@@ -40,6 +40,8 @@ const SINGLE_STEP: WorkflowDeploymentRecord = {
   definitionId: "wf_abc123",
   tenantId: "ten_abc",
   rawDeploymentId: "ses_abc123",
+  singleAgentId: "agt_abc",
+  singleAgentPrincipalId: "prn_abc",
   sources: {
     "step-1": [
       {
@@ -63,6 +65,8 @@ const MULTI_STEP: WorkflowDeploymentRecord = {
   definitionId: "wf_xyz",
   tenantId: "ten_xyz",
   rawDeploymentId: "ses_dep_xyz",
+  singleAgentId: "agt_xyz",
+  singleAgentPrincipalId: "prn_xyz",
   sources: {
     plan: [
       {
