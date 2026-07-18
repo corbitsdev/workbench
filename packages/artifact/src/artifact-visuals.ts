@@ -4,7 +4,11 @@
 
 import type { ArtifactWithSession } from "@workbench/shared";
 import { isLinkedInPostArtifactKind } from "./artifact-kinds";
-import { previewExcerpt } from "./artifact-preview-family";
+import {
+  artifactPreviewFamily,
+  comparisonSummary,
+  previewExcerpt,
+} from "./artifact-preview-family";
 import { GalleryArtifactParseError, parseGalleryArtifact } from "./types";
 import type { ArtifactVisual, GalleryArtifact } from "./types";
 
@@ -26,6 +30,24 @@ const REPORT_VISUAL: ArtifactVisual = {
   span: "row-span-4",
   experimentalFill: "bg-charcoal/90",
   experimentalSpan: "row-span-4",
+};
+
+const PRESENTATION_VISUAL: ArtifactVisual = {
+  label: "Presentation",
+  viz: "deck",
+  fill: "bg-charcoal",
+  span: "row-span-4",
+  experimentalFill: "bg-charcoal/90",
+  experimentalSpan: "row-span-4",
+};
+
+const COMPARISON_VISUAL: ArtifactVisual = {
+  label: "Comparison",
+  viz: "grid",
+  fill: "bg-green",
+  span: "row-span-3",
+  experimentalFill: "bg-green/85",
+  experimentalSpan: "row-span-3",
 };
 
 const KIND_VISUALS: Record<string, ArtifactVisual> = {
@@ -77,7 +99,23 @@ const KIND_VISUALS: Record<string, ArtifactVisual> = {
     experimentalFill: "bg-charcoal/90",
     experimentalSpan: "row-span-4",
   },
+  "case-study-draft": {
+    label: "Case Study",
+    viz: "deck",
+    fill: "bg-charcoal",
+    span: "row-span-4",
+    experimentalFill: "bg-charcoal/90",
+    experimentalSpan: "row-span-4",
+  },
   "objection-handling": {
+    label: "Objection Handling",
+    viz: "deck",
+    fill: "bg-charcoal",
+    span: "row-span-4",
+    experimentalFill: "bg-charcoal/90",
+    experimentalSpan: "row-span-4",
+  },
+  "objection-handling-doc": {
     label: "Objection Handling",
     viz: "deck",
     fill: "bg-charcoal",
@@ -92,6 +130,65 @@ const KIND_VISUALS: Record<string, ArtifactVisual> = {
     span: "row-span-4",
     experimentalFill: "bg-charcoal/90",
     experimentalSpan: "row-span-4",
+  },
+  "customer-quote-pulls": {
+    label: "Customer Quotes",
+    viz: "deck",
+    fill: "bg-charcoal",
+    span: "row-span-4",
+    experimentalFill: "bg-charcoal/90",
+    experimentalSpan: "row-span-4",
+  },
+  "sales-one-pager": {
+    label: "Sales One-Pager",
+    viz: "deck",
+    fill: "bg-charcoal",
+    span: "row-span-4",
+    experimentalFill: "bg-charcoal/90",
+    experimentalSpan: "row-span-4",
+  },
+  "pain-points-blog": {
+    label: "Pain Points Blog",
+    viz: "deck",
+    fill: "bg-charcoal",
+    span: "row-span-4",
+    experimentalFill: "bg-charcoal/90",
+    experimentalSpan: "row-span-4",
+  },
+  "follow-up-email": {
+    label: "Follow-up Email",
+    viz: "lines",
+    fill: "bg-orange",
+    span: "row-span-3",
+    experimentalFill: "bg-orange/85",
+    experimentalSpan: "row-span-3",
+  },
+  "ab-comparison": COMPARISON_VISUAL,
+  presentation: PRESENTATION_VISUAL,
+  gamma_presentation: PRESENTATION_VISUAL,
+  "csv-export": {
+    label: "CSV",
+    viz: "grid",
+    fill: "bg-orange",
+    span: "row-span-2",
+    experimentalFill: "bg-orange/85",
+    experimentalSpan: "row-span-2",
+  },
+  file: {
+    label: "File",
+    viz: "grid",
+    fill: "bg-cream",
+    span: "row-span-2",
+    experimentalFill: "bg-cream",
+    experimentalSpan: "row-span-2",
+  },
+  selection: {
+    label: "Selection",
+    viz: "grid",
+    fill: "bg-cream",
+    span: "row-span-2",
+    experimentalFill: "bg-cream",
+    experimentalSpan: "row-span-2",
   },
   battlecard: {
     label: "Battlecard",
@@ -118,7 +215,7 @@ const KIND_VISUALS: Record<string, ArtifactVisual> = {
     experimentalSpan: "row-span-4",
   },
   web: {
-    label: "Web",
+    label: "Web page",
     viz: "deck",
     fill: "bg-blue",
     span: "row-span-4",
@@ -126,7 +223,7 @@ const KIND_VISUALS: Record<string, ArtifactVisual> = {
     experimentalSpan: "row-span-4",
   },
   web_site: {
-    label: "Web site",
+    label: "Web page",
     viz: "deck",
     fill: "bg-blue",
     span: "row-span-4",
@@ -281,9 +378,12 @@ export function toGalleryArtifact(
 ): GalleryArtifact {
   const visual = visualForKind(artifact.kind);
   const provenance = artifactProvenance(artifact.source);
-  const excerpt = previewExcerpt(artifact.content, {
-    fallbackTitle: artifact.title,
-  });
+  const family = artifactPreviewFamily(artifact.kind);
+  const excerpt =
+    family === "comparison"
+      ? (comparisonSummary(artifact.content) ??
+        previewExcerpt(artifact.content, { fallbackTitle: artifact.title }))
+      : previewExcerpt(artifact.content, { fallbackTitle: artifact.title });
   const from = artifactJobLabel(artifact);
   return parseGalleryArtifact({
     ...visual,

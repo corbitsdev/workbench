@@ -39,6 +39,7 @@ export { ArtifactDetailShell } from "./ArtifactDetailShell";
 export {
   ARTIFACT_PREVIEW_FAMILIES,
   artifactPreviewFamily,
+  comparisonSummary,
   labelForArtifactStatus,
   previewExcerpt,
   type ArtifactPreviewFamily,
