@@ -23,13 +23,19 @@ import {
 } from "@intx/hub-sessions";
 import type {
   AgentKeyStore,
+  AssistantLoopGuard,
   DeployRouter,
   DeployRouterResult,
   SessionManager,
 } from "@workbench/hub-agent";
 // WORKBENCH-LOCAL (CL-2231): the on-disk step-agent dir layout for the
 // undeploy reclaim sweep (T1 seam — must match what the substrate writes).
-import { sanitizeAddress } from "@workbench/hub-agent";
+// createAssistantLoopGuard: re-homed loop-guard consumer default (see
+// assistant-loop-guard-wiring.ts) — the guard's own logic is untouched.
+import {
+  createAssistantLoopGuard,
+  sanitizeAddress,
+} from "@workbench/hub-agent";
 import {
   createWorkflowSupervisor,
   STEP_GRANTS_PATH,
@@ -63,6 +69,7 @@ import {
 import { STEP_ID_PATTERN } from "@intx/workflow";
 import { deriveWorkflowRunRepoId } from "@intx/workflow-deploy";
 
+import { observeInferenceEventForAssistantLoopGuard } from "./assistant-loop-guard-wiring";
 import type {
   MultistepDrainRouter,
   MultistepMailRouter,
@@ -1084,6 +1091,19 @@ export function createSidecarDeployRouter(deps: {
    * without the pack-push facade (a test) omits it.
    */
   drainWorkflowRunPushes?: (deploymentId: string) => Promise<void>;
+  /**
+   * Assistant output loop guard (`@workbench/hub-agent`'s WORKBENCH-LOCAL
+   * CL-3340 guard), re-homed here onto this router's `onInferenceEvent`
+   * seam -- its pre-bump host, the in-process SessionManager's `onEvent`
+   * stream, was deleted with the retired runtime. Shared across every
+   * single-step (`warmKeep`) deployment this router spawns, keyed per call
+   * by the deployment's agent address so concurrent agents never share run
+   * state; the guard's own `DEFAULT_MAX_SESSIONS` eviction bounds its
+   * memory as deployments churn. Optional so a test can inject a
+   * deterministic guard (or assert calls against a spy); defaults to a
+   * fresh `createAssistantLoopGuard()` in production.
+   */
+  assistantLoopGuard?: AssistantLoopGuard;
 }): SidecarDeployRouter {
   // Validate the signing seed at construction so a malformed key fails
   // sidecar boot rather than the first multi-step deploy, where the
@@ -1120,6 +1140,8 @@ export function createSidecarDeployRouter(deps: {
   const multistepDeriveStepAddress: DeriveStepAddress =
     deps.multistepDeriveStepAddress ??
     (({ deploymentId, stepId }) => `${deploymentId}-${stepId}`);
+  const assistantLoopGuard =
+    deps.assistantLoopGuard ?? createAssistantLoopGuard();
 
   // Per-deployment supervisor tracking. The multi-step branch
   // constructs one `SidecarWorkflowSupervisor` per `agent.deploy`
@@ -1531,6 +1553,26 @@ export function createSidecarDeployRouter(deps: {
             return;
           }
           publishInferenceEvent(spec.agentAddress, validated, spec.sessionId);
+          // WORKBENCH-LOCAL (CL-3340): assistant loop guard, re-homed onto
+          // this seam (see assistant-loop-guard-wiring.ts). Scoped to
+          // `warmKeep` (the single long-lived interactive agent) --
+          // multi-step deployments can run independent steps concurrently
+          // on the same agent address, and this guard's single-turn
+          // contract assumes one serial dispatch loop per key.
+          if (warmKeep) {
+            observeInferenceEventForAssistantLoopGuard(validated, {
+              guard: assistantLoopGuard,
+              sessionKey: spec.agentAddress,
+              publish: (loopEvent) => {
+                publishInferenceEvent(
+                  spec.agentAddress,
+                  loopEvent,
+                  spec.sessionId,
+                );
+              },
+              drain: (deadlineMs) => wired.supervisor.drain({ deadlineMs }),
+            });
+          }
         },
       };
 
@@ -1596,6 +1638,11 @@ export function createSidecarDeployRouter(deps: {
       // `spawn` succeeds so a spawn-time rejection leaves the registry
       // untouched.
       deps.multistepMailRouter?.register(spec.agentAddress, (message) => {
+        // WORKBENCH-LOCAL (CL-3340): every inbound message starts a fresh
+        // turn for the guard's single-turn contract -- reset before
+        // forwarding so a new user message never inherits the prior turn's
+        // repeat count.
+        if (warmKeep) assistantLoopGuard.reset(spec.agentAddress);
         wired.routeInbound(message);
       });
       // Register the signal-delivery handler so a hub `signal.deliver` frame
@@ -2016,6 +2063,12 @@ export function createSidecarDeployRouter(deps: {
     // Unregister unconditionally (a no-op for a multi-step address that
     // registered no sources handler), matching the sibling routers.
     deps.multistepSourcesRouter?.unregister(agentAddress);
+    // WORKBENCH-LOCAL (CL-3340): drop the guard's run state so a churned
+    // deployment address does not linger in its map beyond the
+    // deployment's own lifetime (on top of the guard's own
+    // DEFAULT_MAX_SESSIONS eviction). A no-op for an address the guard
+    // never saw (multi-step, or a warmKeep deployment that never tripped).
+    assistantLoopGuard.reset(agentAddress);
     // Shut the per-deployment supervisor down so the workflow-process child,
     // its IPC pipes, and its event-channel fd are released. The supervisor's
     // `shutdown()` is idempotent and handles the kill + `exited` await
