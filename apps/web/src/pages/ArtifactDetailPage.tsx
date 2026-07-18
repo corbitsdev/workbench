@@ -33,7 +33,9 @@ import { useArchiveArtifact, useArtifact } from "@workbench/client/react";
 import { getMe } from "../lib/hub-api";
 import { buildApiUrl } from "../lib/api";
 import { clientOptions } from "../lib/client-options";
-import ArtifactBody from "../components/ArtifactBody";
+import ArtifactBody, {
+  ArtifactUploadSourceSchema,
+} from "../components/ArtifactBody";
 import { ErrorBoundary } from "../components/ErrorBoundary";
 import { resolveKindLabel } from "../lib/resolve-kind-label";
 import { useActiveWorkbench } from "../lib/active-workbench-context";
@@ -68,9 +70,9 @@ const ARTIFACT_DETAIL_CHROME_ACTION_CLASS =
   "inline-flex items-center gap-1.5 text-xs font-medium text-text-2 hover:text-text";
 
 function hasUploadSource(source: unknown): boolean {
-  if (typeof source !== "object" || source === null) return false;
-  const upload = (source as Record<string, unknown>).upload;
-  return typeof upload === "object" && upload !== null;
+  const parsed = ArtifactUploadSourceSchema(source);
+  if (parsed instanceof type.errors) return false;
+  return parsed.upload !== undefined;
 }
 
 // The Gamma deck URL lives in the artifact's JSON content, not on the row —

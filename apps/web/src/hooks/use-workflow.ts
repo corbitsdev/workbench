@@ -90,12 +90,18 @@ export const workflowDeploymentSchema = type({
 export type WorkflowDeployment = typeof workflowDeploymentSchema.infer;
 const workflowDeploymentListSchema = workflowDeploymentSchema.array();
 
+// Mirrors `isRecordTerminal`'s two terminal statuses without requiring the
+// caller's `status` to already be narrowed to `RunRecord["status"]` — the run
+// list here (and `WorkflowRun`) carries a plain `string` status, so any value
+// other than these two literals is conservatively treated as still active.
+const TERMINAL_RUN_STATUSES = new Set(["completed", "failed"]);
+
 // The run list is static once every run is terminal (or there are none) — a new
 // run only appears via a mutation that invalidates the query. Poll only while
 // something is still advancing so the app frame stops hitting the endpoint every
 // 5s forever when nothing is running.
 export function runListIsActive(runs: readonly { status: string }[]): boolean {
-  return runs.some((r) => !isRecordTerminal(r.status as RunRecord["status"]));
+  return runs.some((r) => !TERMINAL_RUN_STATUSES.has(r.status));
 }
 
 export function useWorkflowRuns(

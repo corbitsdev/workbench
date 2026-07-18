@@ -5,6 +5,7 @@ import {
   WebSiteContentError,
   type SessionStatus,
 } from "@workbench/shared";
+import { type } from "arktype";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Link2Off, User } from "lucide-react";
 import { buttonVariants, Markdown } from "@workbench/ui";
@@ -212,27 +213,35 @@ function UploadedCsvBody({
   );
 }
 
+// The `upload` reference lives at source.upload in the artifact's opaque
+// jsonb bag; parse it defensively via the shared schema rather than asserting
+// its shape here (same house pattern as GammaPresentationContentSchema).
+export const ArtifactUploadSourceSchema = type({
+  "upload?": {
+    "mimeType?": "string",
+    "filename?": "string",
+  },
+});
+export type ArtifactUploadSource = typeof ArtifactUploadSourceSchema.infer;
+
+function parseUploadSource(source: unknown): ArtifactUploadSource | null {
+  const parsed = ArtifactUploadSourceSchema(source);
+  if (parsed instanceof type.errors) return null;
+  return parsed;
+}
+
 // Uploaded CSVs are detected at render (no upload-time kind change, no
 // migration): the client-supplied mime is a routing hint and the `.csv`
 // extension is a secondary signal for browsers that send a vendor mime or none.
 // The parser, not this check, is the real gate — a mis-routed non-CSV degrades
 // to raw text.
 function isCsvUpload(source: unknown, filename: string | null): boolean {
-  if (typeof source === "object" && source !== null) {
-    const upload = (source as Record<string, unknown>).upload;
-    if (typeof upload === "object" && upload !== null) {
-      const mimeType = (upload as Record<string, unknown>).mimeType;
-      if (mimeType === "text/csv") return true;
-    }
-  }
+  if (parseUploadSource(source)?.upload?.mimeType === "text/csv") return true;
   return filename !== null && filename.toLowerCase().endsWith(".csv");
 }
 
 function extractUploadFilename(source: unknown): string | null {
-  if (typeof source !== "object" || source === null) return null;
-  const upload = (source as Record<string, unknown>).upload;
-  if (typeof upload !== "object" || upload === null) return null;
-  const filename = (upload as Record<string, unknown>).filename;
+  const filename = parseUploadSource(source)?.upload?.filename;
   return typeof filename === "string" && filename.length > 0 ? filename : null;
 }
 
