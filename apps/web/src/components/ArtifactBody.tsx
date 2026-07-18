@@ -224,6 +224,16 @@ export const ArtifactUploadSourceSchema = type({
 });
 export type ArtifactUploadSource = typeof ArtifactUploadSourceSchema.infer;
 
+// Presence-only sibling of ArtifactUploadSourceSchema: a caller that only
+// needs to know "does this artifact have an upload reference at all" (e.g. to
+// show a download button) must not fail on a legacy row whose upload.mimeType
+// or upload.filename is malformed — the strict schema above would treat the
+// whole source as unparseable and hide the download affordance even though an
+// upload genuinely exists. This schema only requires `upload` to be an object.
+export const ArtifactUploadPresenceSchema = type({
+  "upload?": "object",
+});
+
 function parseUploadSource(source: unknown): ArtifactUploadSource | null {
   const parsed = ArtifactUploadSourceSchema(source);
   if (parsed instanceof type.errors) return null;

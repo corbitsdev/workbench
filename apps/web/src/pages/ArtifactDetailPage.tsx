@@ -34,7 +34,7 @@ import { getMe } from "../lib/hub-api";
 import { buildApiUrl } from "../lib/api";
 import { clientOptions } from "../lib/client-options";
 import ArtifactBody, {
-  ArtifactUploadSourceSchema,
+  ArtifactUploadPresenceSchema,
 } from "../components/ArtifactBody";
 import { ErrorBoundary } from "../components/ErrorBoundary";
 import { resolveKindLabel } from "../lib/resolve-kind-label";
@@ -69,8 +69,12 @@ const DOWNLOADABLE_ARTIFACT_KINDS = new Set(["image", "file", "csv-export"]);
 const ARTIFACT_DETAIL_CHROME_ACTION_CLASS =
   "inline-flex items-center gap-1.5 text-xs font-medium text-text-2 hover:text-text";
 
+// A presence check only (not the strict field-typed schema used for
+// isCsvUpload/extractUploadFilename) — this decides whether to show a
+// download button, and a legacy row with a malformed upload.mimeType or
+// upload.filename still genuinely has upload metadata worth downloading.
 function hasUploadSource(source: unknown): boolean {
-  const parsed = ArtifactUploadSourceSchema(source);
+  const parsed = ArtifactUploadPresenceSchema(source);
   if (parsed instanceof type.errors) return false;
   return parsed.upload !== undefined;
 }
