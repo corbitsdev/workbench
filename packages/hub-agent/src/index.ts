@@ -49,3 +49,12 @@ export {
   splitMailAddressList,
   type SplitMailAddress,
 } from "./mail-address";
+export {
+  ASSISTANT_LOOP_THRESHOLD,
+  assistantCycleFingerprint,
+  assistantLoopInterruptMessage,
+  createAssistantLoopGuard,
+  normalizeAssistantOutput,
+  type AssistantLoopGuard,
+  type AssistantLoopGuardOpts,
+} from "./assistant-loop-guard";
