@@ -405,13 +405,13 @@ describe("provisionRunDeployment (per-run deployment, CL-2582)", () => {
           address: `ins_${FRESH_ID}@${deploymentDomain}`,
         },
       ]);
-      // agent_instance rows stay attribution-only: neither the inline nor
-      // the deterministic step gets one (acks no longer resolve against
-      // them for dep_-prefixed workflow addresses).
-      expect(recorded.instanceAddresses).not.toContain(
+      // Every step gets an agent_instance row uniformly: interchange's pack
+      // phase records session_asset rows with a hard FK to agent_instance
+      // for every staged step.
+      expect(recorded.instanceAddresses).toContain(
         `ins_${FRESH_ID}-fetch@${deploymentDomain}`,
       );
-      expect(recorded.instanceAddresses).not.toContain(
+      expect(recorded.instanceAddresses).toContain(
         `ins_${FRESH_ID}-analyze@${deploymentDomain}`,
       );
     } finally {
