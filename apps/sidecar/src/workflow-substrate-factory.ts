@@ -879,15 +879,22 @@ export interface StepToolContextResolverArgs {
   hubHttpUrl: string;
   sidecarToken: string;
   /**
-   * WORKBENCH-LOCAL (CL-2199): single-agent tool identity, used ONLY when
-   * `stepCount === 1`. A single launched agent (Myra/Oat/triage/gate) has no
-   * `ins_<raw>-<step>` hub row and stores its grants in the LEGACY agent-state
-   * repo keyed by the instance id — so the synthetic step identity resolves
-   * against nothing. `singleAgentId` is the REAL agent-definition id
-   * (`agt_<defId>`) the credential + hub-backed rails authorize against;
-   * `singleAgentPrincipalId` is the instance principal (`prn_...`) the
-   * hub-backed identity triple resolves the owning instance by. Multi-step
-   * (`stepCount > 1`) ignores both and keeps the `ins_<raw>-<step>` identity.
+   * WORKBENCH-LOCAL (CL-2199): single launched-agent tool identity, applied
+   * ONLY when this deploy is a genuine single agent — i.e. `stepCount === 1`
+   * AND `singleAgentId !== parseAgentAddress(mailboxAddress).instanceId` (the
+   * frame carries a REAL `agt_<defId>` distinct from the deployment instance
+   * id). A single launched agent (Myra/Oat/triage/gate) has no `ins_<raw>-<step>`
+   * hub row and stores its grants in the LEGACY agent-state repo keyed by the
+   * instance id — so the synthetic step identity resolves against nothing.
+   * `singleAgentId` is the REAL agent-definition id (`agt_<defId>`) the
+   * credential + hub-backed rails authorize against; `singleAgentPrincipalId`
+   * is the instance principal (`prn_...`) the hub-backed identity triple
+   * resolves the owning instance by.
+   *
+   * A single-STEP workflow (`stepCount === 1` but `singleAgentId ===
+   * instanceId`, because its frame `agentId` is `deriveDeploymentAgentId` ===
+   * the supervisor id) and every multi-step step (`stepCount > 1`) ignore both
+   * and keep the `ins_<raw>-<step>` identity the hub actually wrote.
    */
   singleAgentId: string;
   singleAgentPrincipalId: string;
@@ -920,40 +927,62 @@ export function createStepToolContextResolver(
     // declared tools are never loaded ("not in the step's loaded runner").
     const baseStepId = /^(.+)\[\d+\]$/.exec(stepId)?.[1] ?? stepId;
 
-    // WORKBENCH-LOCAL (CL-2199): single-agent vs multi-step tool identity.
+    // WORKBENCH-LOCAL (CL-2199): single launched-agent vs (single- OR multi-)step
+    // workflow tool identity.
     //
-    // A single launched agent (Myra/Oat/triage/gate, `stepCount === 1`) is
-    // deployed by interchange's `deployInstanceAtHead`, which writes NO
-    // `ins_<raw>-<step>` hub row and stores the agent's grants in the LEGACY
-    // agent-state repo keyed by the instance id (`parseAgentId(address)`) — see
-    // `createStepStrategy` / `writeStepGrants` in `workflow-host-wiring.ts`. So
-    // the synthetic `ins_<raw>-default` identity the multi-step branch derives
-    // matches NOTHING for a single agent: tool credentials 404, hub-backed
-    // tools 403, grants read miss (deny-all). Use the identity the hub actually
-    // has instead — the REAL agent-definition id (`agt_<defId>`, for the
-    // credential/hub-backed agent lookup + toolPackages gate), the instance
-    // principal (`prn_...`, so the hub-backed identity triple resolves the
-    // owning instance), and the legacy grants repo.
+    // A single launched agent (Myra/Oat/triage/gate) is deployed by interchange's
+    // `deployInstanceAtHead`, which writes NO `ins_<raw>-<step>` hub row and stores
+    // the agent's grants in the LEGACY agent-state repo keyed by the instance id
+    // (`parseAgentId(address)`) — see `createStepStrategy` / `writeStepGrants` in
+    // `workflow-host-wiring.ts`. So the synthetic `ins_<raw>-<step>` identity the
+    // workflow branch derives matches NOTHING for a single agent: tool credentials
+    // 404, hub-backed tools 403, grants read miss (deny-all). Use the identity the
+    // hub actually has instead — the REAL agent-definition id (`agt_<defId>`, for
+    // the credential/hub-backed agent lookup + toolPackages gate), the instance
+    // principal (`prn_...`, so the hub-backed identity triple resolves the owning
+    // instance), and the legacy grants repo.
     //
-    // A genuine multi-step step (`stepCount > 1`) keeps the `ins_<raw>-<step>`
-    // identity: the hub's `writeStepAgentRows` / `writeStepGrantFiles` persist
-    // the matching `agent` row and `<raw>-<step>` grants repo for it.
+    // The discriminator is DEPLOY PROVENANCE, not `stepCount`. `stepCount === 1`
+    // is ALSO true for a single-STEP workflow definition (`stepOrder.length === 1`),
+    // which is NOT a launched agent: it is deployed via `deploySingleStepAtHead`,
+    // whose frame carries `deriveDeploymentAgentId(deploymentId)` (=== the mailbox
+    // address's instance id `ins_<deploymentId>`) as `agentId` and the EMPTY
+    // supervisor `agent` row (`writeDeploymentAgentRow`: `toolPackages: []`,
+    // `capabilities: null`). Keying tool/credential/grant resolution on that
+    // supervisor identity strands the single-step workflow's REAL step tools +
+    // grants, which the hub wrote at `ins_<deploymentId>-<stepId>` /
+    // `<deploymentId>-<stepId>` (`writeStepAgentRows` / `writeStepGrantFiles`) — the
+    // exact `ins_<raw>-<step>` identity the else branch derives. A single launched
+    // agent instead carries a REAL `agt_<defId>` frame `agentId`, distinct from the
+    // instance id — so `singleAgentId !== instanceId` is the signal that this is a
+    // genuine single agent and the single-agent branch applies. The on-disk deploy
+    // tree location is a SEPARATE decision (`stepDeployTreeDir`, keyed off the
+    // physical `stepCount === 1` head collapse) and is unchanged: both a single
+    // agent and a single-step workflow stage their tree at the head.
+    //
+    // A genuine multi-step step keeps the `ins_<raw>-<step>` identity for the same
+    // reason a single-step workflow does — the hub's `writeStepAgentRows` /
+    // `writeStepGrantFiles` persist the matching `agent` row and `<raw>-<step>`
+    // grants repo for it.
+    const mailboxParsed = parseAgentAddress(args.mailboxAddress);
+    if (mailboxParsed === null) {
+      throw new Error(
+        `sidecar step tool-context: deployment mailbox address ${JSON.stringify(args.mailboxAddress)} is not a parseable agent address; cannot resolve the step's tool identity`,
+      );
+    }
+    const isSingleLaunchedAgent =
+      args.stepCount === 1 && args.singleAgentId !== mailboxParsed.instanceId;
+
     let stepAgentId: string;
     let principalId: string;
     let stepAddress: string;
     let grantsRepoId: RepoId;
     let includeRunId: boolean;
-    if (args.stepCount === 1) {
+    if (isSingleLaunchedAgent) {
       stepAgentId = args.singleAgentId;
       principalId = args.singleAgentPrincipalId;
       stepAddress = args.mailboxAddress;
-      const parsed = parseAgentAddress(args.mailboxAddress);
-      if (parsed === null) {
-        throw new Error(
-          `sidecar step tool-context: deployment mailbox address ${JSON.stringify(args.mailboxAddress)} is not a parseable agent address; cannot locate the single agent's legacy grants repo`,
-        );
-      }
-      grantsRepoId = { kind: "agent-state", id: parsed.instanceId };
+      grantsRepoId = { kind: "agent-state", id: mailboxParsed.instanceId };
       // A warm single-step agent's per-message runId is NOT a workflow-run
       // record id; forwarding it would trigger a spurious run lookup on the
       // hub. The single agent resolves tenant tool credentials, so omit it.
