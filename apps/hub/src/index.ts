@@ -1393,8 +1393,9 @@ v1.route("/", createMembersRouter(db));
 v1.route("/", createMyraThreadsRouter(db, sessionService, analyticsSubscriber));
 v1.route("/", createInvokedSubagentsRouter(db));
 v1.route("/", createArtifactsRouter(db, grantStore));
-v1.route("/", createFileParseRouter(db));
+v1.route("/", createFileParseRouter(db, analyticsSubscriber));
 v1.route("/", createMailAttachmentsRouter(db));
+
 v1.route("/", createGammaTemplatesRouter(db));
 v1.route("/", createApprovalsRouter(db, approvalsEventBus));
 v1.route("/", createFeedbackRouter(db));
