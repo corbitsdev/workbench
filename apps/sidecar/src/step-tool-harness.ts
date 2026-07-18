@@ -49,6 +49,7 @@ import {
   stripSeedMarker,
   resolveInferenceParamsMarker,
   stripInferenceParamsMarker,
+  stripPersonalAgentIdentityMarker,
   INFERENCE_PARAMS_ENV_KEY,
   type ResolvedInferenceDials,
   type SeedWorkspaceFile,
@@ -522,12 +523,13 @@ export interface PreparedWarmAgentPrompt {
  * only incidentally, because the director still read the un-stripped marker off
  * `agent.systemPrompt`.
  *
- * This resolves all three markers, strips them, and appends a fresh
- * active-context block. Crucially it returns the dials to thread via ENV rather
- * than leaving them on the prompt: `readInferenceParamsForDirector` reads env
- * BEFORE the prompt marker, so once the marker is stripped the director must
- * get the dials from env or the member's dials are silently lost. Pure so the
- * marker/strip/active-context contract is unit-testable without a harness.
+ * This resolves all three markers, strips them (plus the personal-agent
+ * identity marker), and appends a fresh active-context block. Crucially it
+ * returns the dials to thread via ENV rather than leaving them on the prompt:
+ * `readInferenceParamsForDirector` reads env BEFORE the prompt marker, so once
+ * the marker is stripped the director must get the dials from env or the
+ * member's dials are silently lost. Pure so the marker/strip/active-context
+ * contract is unit-testable without a harness.
  */
 export function prepareWarmAgentPrompt(
   rawSystemPrompt: string,
@@ -536,8 +538,10 @@ export function prepareWarmAgentPrompt(
   const seed = resolveSeedMarker(rawSystemPrompt);
   const timeZone = resolveTimeZoneMarker(rawSystemPrompt);
   const inferenceDials = resolveInferenceParamsMarker(rawSystemPrompt);
-  const cleaned = stripInferenceParamsMarker(
-    stripTimeZoneMarker(stripSeedMarker(rawSystemPrompt)),
+  const cleaned = stripPersonalAgentIdentityMarker(
+    stripInferenceParamsMarker(
+      stripTimeZoneMarker(stripSeedMarker(rawSystemPrompt)),
+    ),
   );
   const systemPrompt = withActiveContext(cleaned, {
     now,

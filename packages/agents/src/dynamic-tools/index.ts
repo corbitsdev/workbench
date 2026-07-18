@@ -6,7 +6,7 @@ import {
   type ToolCatalog,
 } from "@workbench/tools-catalog";
 import {
-  PERSONAL_AGENT_NAME,
+  isPersonalAgentIdentityPrompt,
   readInferenceParamsForDirector,
   wrapDirectorWithInferenceParams,
 } from "@workbench/myra";
@@ -33,19 +33,20 @@ export const PERSONAL_AGENT_DYNAMIC_TOOLS: DynamicToolConfig = {
   catalog: MYRA_TOOL_CATALOG,
 };
 
-const PERSONAL_AGENT_PROMPT_MARKER = `You are ${PERSONAL_AGENT_NAME}, Chief of Staff`;
-
 /**
- * Resolve the dynamic-tools config for an agent from its (marker-stripped)
- * system prompt. Only the personal agent (Myra) opts in today; every other
- * agent returns `undefined` and keeps full-advertisement behavior. Mirrors the
- * prompt-marker opt-in already used by `resolveMailOutboundLimit`, avoiding a
- * deploy-tree/DB schema change to carry a launch-time flag.
+ * Resolve the dynamic-tools config for an agent from its system prompt.
+ * Only the personal agent (Myra chat) opts in today; every other agent returns
+ * `undefined` and keeps full-advertisement behavior.
+ *
+ * Identity is a dedicated control-plane marker (`<!-- workbench:personal-agent
+ * -->`, stamped by `buildPersonalAgentSystemPrompt` and stripped before
+ * inference — CL-3194). Matching role prose ("You are Myra, Chief of Staff…")
+ * was load-bearing and broke silently on role rewrites.
  */
 export function resolveDynamicToolConfig(
   systemPrompt: string,
 ): DynamicToolConfig | undefined {
-  if (systemPrompt.includes(PERSONAL_AGENT_PROMPT_MARKER)) {
+  if (isPersonalAgentIdentityPrompt(systemPrompt)) {
     return PERSONAL_AGENT_DYNAMIC_TOOLS;
   }
   return undefined;
