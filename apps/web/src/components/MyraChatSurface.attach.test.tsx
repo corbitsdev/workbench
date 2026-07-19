@@ -9,6 +9,8 @@ import {
   screen,
 } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { useState, type ReactNode } from "react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ActiveContext } from "@workbench/shared";
 import { MyraChatSurface } from "./MyraChatSurface";
 import type { MyraSession } from "../hooks/use-myra-session";
@@ -16,6 +18,15 @@ import {
   ActiveContextProvider,
   usePublishActiveContext,
 } from "../lib/active-context-store";
+
+function Providers({ children }: { children: ReactNode }) {
+  const [client] = useState(() => new QueryClient());
+  return (
+    <QueryClientProvider client={client}>
+      <ActiveContextProvider>{children}</ActiveContextProvider>
+    </QueryClientProvider>
+  );
+}
 
 const ARTIFACT: ActiveContext = {
   kind: "artifact",
@@ -81,10 +92,10 @@ describe("MyraChatSurface active-context attach", () => {
   it("attaches the active surface on Cmd+I and composes its projection into the sent message", () => {
     const send = mock((_text: string) => {});
     render(
-      <ActiveContextProvider>
+      <Providers>
         <Publisher ctx={ARTIFACT} />
         <MyraChatSurface session={readySession(send)} />
-      </ActiveContextProvider>,
+      </Providers>,
     );
 
     expect(screen.queryByText("Launch brief")).toBeNull();
@@ -110,10 +121,10 @@ describe("MyraChatSurface active-context attach", () => {
   it("sends plain text untouched when nothing is attached", () => {
     const send = mock((_text: string) => {});
     render(
-      <ActiveContextProvider>
+      <Providers>
         <Publisher ctx={ARTIFACT} />
         <MyraChatSurface session={readySession(send)} />
-      </ActiveContextProvider>,
+      </Providers>,
     );
 
     const input = screen.getByPlaceholderText("Message Myra…");
@@ -130,7 +141,7 @@ describe("MyraChatSurface active-context attach", () => {
       Promise.resolve(),
     );
     render(
-      <ActiveContextProvider>
+      <Providers>
         <Publisher ctx={ARTIFACT} />
         <MyraChatSurface
           session={readySession(send)}
@@ -140,7 +151,7 @@ describe("MyraChatSurface active-context attach", () => {
           }}
           onResumeSignal={resume}
         />
-      </ActiveContextProvider>,
+      </Providers>,
     );
 
     pressAttach();
@@ -164,10 +175,10 @@ describe("MyraChatSurface active-context attach", () => {
   it("removes an attached pill via its close button", () => {
     const send = mock((_text: string) => {});
     render(
-      <ActiveContextProvider>
+      <Providers>
         <Publisher ctx={ARTIFACT} />
         <MyraChatSurface session={readySession(send)} />
-      </ActiveContextProvider>,
+      </Providers>,
     );
 
     pressAttach();
@@ -181,9 +192,9 @@ describe("MyraChatSurface clipboard paste (CL-3541)", () => {
   it("attaches a pasted image as a removable chip and sends it with the message", () => {
     const send = mock((_text: string, _attachments?: unknown) => {});
     render(
-      <ActiveContextProvider>
+      <Providers>
         <MyraChatSurface session={readySession(send)} />
-      </ActiveContextProvider>,
+      </Providers>,
     );
 
     const input = screen.getByPlaceholderText(
@@ -209,9 +220,9 @@ describe("MyraChatSurface clipboard paste (CL-3541)", () => {
     const user = userEvent.setup();
     const send = mock((_text: string) => {});
     render(
-      <ActiveContextProvider>
+      <Providers>
         <MyraChatSurface session={readySession(send)} />
-      </ActiveContextProvider>,
+      </Providers>,
     );
 
     const input = screen.getByPlaceholderText(
@@ -226,9 +237,9 @@ describe("MyraChatSurface clipboard paste (CL-3541)", () => {
   it("removes a pasted file chip before send", () => {
     const send = mock((_text: string) => {});
     render(
-      <ActiveContextProvider>
+      <Providers>
         <MyraChatSurface session={readySession(send)} />
-      </ActiveContextProvider>,
+      </Providers>,
     );
 
     const input = screen.getByPlaceholderText(
