@@ -4,6 +4,8 @@ import { afterEach, describe, expect, it, mock } from "bun:test";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import React from "react";
+import * as RealChatModule from "@workbench/chat";
+import * as RealAgentsBrowserModule from "@workbench/agents/browser";
 import type { MyraSession } from "../hooks/use-myra-session";
 
 let approvalsResult: unknown[] = [];
@@ -15,6 +17,7 @@ mock.module("../lib/approvals-api", () => ({
 }));
 
 mock.module("@workbench/chat", () => ({
+  ...RealChatModule,
   ChatPanel: (props: {
     messages: unknown[];
     onSend: (t: string) => void;
@@ -109,6 +112,7 @@ mock.module("@workbench/chat", () => ({
 }));
 
 mock.module("@workbench/agents/browser", () => ({
+  ...RealAgentsBrowserModule,
   friendlyToolSummary: () => "",
   friendlyToolSummaryKnown: () => null,
   friendlyToolResult: () => null,
@@ -138,23 +142,32 @@ function makeSession(over: Partial<MyraSession>): MyraSession {
 
 afterEach(() => cleanup());
 
+function renderSurface(
+  props: React.ComponentProps<typeof MyraChatSurface>,
+): ReturnType<typeof render> {
+  const client = new QueryClient();
+  return render(
+    React.createElement(
+      QueryClientProvider,
+      { client },
+      React.createElement(MyraChatSurface, props),
+    ),
+  );
+}
+
 describe("MyraChatSurface", () => {
   it("shows the provisioning notice while setting up", () => {
-    render(
-      React.createElement(MyraChatSurface, {
+    renderSurface({
         session: makeSession({ state: { phase: "provisioning" } }),
-      }),
-    );
+      });
     expect(screen.getByTestId("notice").textContent).toMatch(/Setting up Myra/);
     screen.getByTestId("disabled");
   });
 
   it("shows the credential notice when no key resolves", () => {
-    render(
-      React.createElement(MyraChatSurface, {
+    renderSurface({
         session: makeSession({ state: { phase: "credential-error" } }),
-      }),
-    );
+      });
     expect(screen.getByTestId("notice").textContent).toMatch(
       /No API credential/,
     );
@@ -162,28 +175,24 @@ describe("MyraChatSurface", () => {
 
   it("offers a retry that calls reconnect on error", () => {
     let reconnected = 0;
-    render(
-      React.createElement(MyraChatSurface, {
+    renderSurface({
         session: makeSession({
           state: { phase: "error", message: "x" },
           reconnect: () => reconnected++,
         }),
-      }),
-    );
+      });
     fireEvent.click(screen.getByRole("button", { name: /try again/i }));
     expect(reconnected).toBe(1);
   });
 
   it("shows a terminal notice with a manual retry on a fatal launch", () => {
     let reconnected = 0;
-    render(
-      React.createElement(MyraChatSurface, {
+    renderSurface({
         session: makeSession({
           state: { phase: "fatal", message: "Forbidden" },
           reconnect: () => reconnected++,
         }),
-      }),
-    );
+      });
     expect(screen.getByTestId("notice").textContent).toMatch(
       /Myra couldn't start/,
     );
@@ -203,9 +212,7 @@ describe("MyraChatSurface", () => {
       messages: [{}, {}] as any,
       send: sendSpy,
     });
-    render(
-      React.createElement(MyraChatSurface, { session, threadLabel: "Pricing" }),
-    );
+    renderSurface({ session, threadLabel: "Pricing" });
     expect(screen.getByTestId("count").textContent).toBe("2");
     expect(screen.getByTestId("agent-name").textContent).toBe("Pricing");
     expect(screen.getByTestId("tagline").textContent).toBe("Personal agent");
@@ -214,16 +221,14 @@ describe("MyraChatSurface", () => {
   });
 
   it("shows a reconnecting notice and keeps the composer enabled after a drop", () => {
-    render(
-      React.createElement(MyraChatSurface, {
+    renderSurface({
         session: makeSession({
           // biome-ignore lint/suspicious/noExplicitAny: minimal ready session
           state: { phase: "ready", session: {} as any },
           live: false,
           connectionNotice: "reconnecting",
         }),
-      }),
-    );
+      });
     expect(screen.getByTestId("accessory").textContent).toMatch(
       /Reconnecting to Myra/,
     );
@@ -232,38 +237,33 @@ describe("MyraChatSurface", () => {
   });
 
   it("shows no connection notice on a first connect before the session is live", () => {
-    render(
-      React.createElement(MyraChatSurface, {
+    renderSurface({
         session: makeSession({
           // biome-ignore lint/suspicious/noExplicitAny: minimal ready session
           state: { phase: "ready", session: {} as any },
           live: false,
           connectionNotice: null,
         }),
-      }),
-    );
+      });
     expect(screen.queryByTestId("accessory")).toBeNull();
     expect(screen.queryByTestId("disabled")).toBeNull();
   });
 
   it("hides the connection notice once the session is live", () => {
-    render(
-      React.createElement(MyraChatSurface, {
+    renderSurface({
         session: makeSession({
           // biome-ignore lint/suspicious/noExplicitAny: minimal ready session
           state: { phase: "ready", session: {} as any },
           live: true,
           connectionNotice: null,
         }),
-      }),
-    );
+      });
     expect(screen.queryByTestId("accessory")).toBeNull();
   });
 
   it("offers a retry that reconnects when a queued send has failed", () => {
     let reconnected = 0;
-    render(
-      React.createElement(MyraChatSurface, {
+    renderSurface({
         session: makeSession({
           // biome-ignore lint/suspicious/noExplicitAny: minimal ready session
           state: { phase: "ready", session: {} as any },
@@ -272,8 +272,7 @@ describe("MyraChatSurface", () => {
           queuedFailed: true,
           reconnect: () => reconnected++,
         }),
-      }),
-    );
+      });
     fireEvent.click(screen.getByRole("button", { name: /retry now/i }));
     expect(reconnected).toBe(1);
   });
@@ -288,13 +287,11 @@ describe("MyraChatSurface", () => {
   }
 
   it("runs the composer full width when docked and not expanded", () => {
-    render(
-      React.createElement(MyraChatSurface, {
+    renderSurface({
         session: readySession(() => {}),
         dockState: "docked",
         expanded: false,
-      }),
-    );
+      });
     expect(screen.getByTestId("composer-full-width").textContent).toBe("true");
   });
 
@@ -302,31 +299,25 @@ describe("MyraChatSurface", () => {
     // Regression (Emil): a docked panel that is Expanded goes near-fullscreen,
     // so composerFullWidth must fall back to false even though dockState stays
     // "docked".
-    render(
-      React.createElement(MyraChatSurface, {
+    renderSurface({
         session: readySession(() => {}),
         dockState: "docked",
         expanded: true,
-      }),
-    );
+      });
     expect(screen.getByTestId("composer-full-width").textContent).toBe("false");
   });
 
   it("centers the composer on the floating and full-page surfaces", () => {
-    render(
-      React.createElement(MyraChatSurface, {
+    renderSurface({
         session: readySession(() => {}),
         dockState: "floating",
-      }),
-    );
+      });
     expect(screen.getByTestId("composer-full-width").textContent).toBe("false");
   });
 
   it("does not mount the approval gate when no tenant is set", () => {
     approvalsResult = [];
-    render(
-      React.createElement(MyraChatSurface, { session: readySession(() => {}) }),
-    );
+    renderSurface({ session: readySession(() => {}) });
     expect(screen.queryByTestId("review-gate")).toBeNull();
   });
 
@@ -458,16 +449,14 @@ describe("MyraChatSurface", () => {
     const resumeSpy = mock(
       (_runId: string, _signal: string, _payload: unknown) => Promise.resolve(),
     );
-    render(
-      React.createElement(MyraChatSurface, {
+    renderSurface({
         session: readySession(sendSpy),
         signalRouting: {
           mode: "single",
           gate: { runId: "run_1", runKind: "k", signalName: "approve" },
         },
         onResumeSignal: resumeSpy,
-      }),
-    );
+      });
     fireEvent.click(screen.getByRole("button", { name: "send" }));
     // Free text resumes wrapped as an instruction (CL-2684).
     expect(resumeSpy).toHaveBeenCalledWith("run_1", "approve", {
@@ -482,16 +471,14 @@ describe("MyraChatSurface", () => {
       (_runId: string, _signal: string, _payload: unknown) =>
         Promise.reject(new Error("This run is no longer waiting for input.")),
     );
-    render(
-      React.createElement(MyraChatSurface, {
+    renderSurface({
         session: readySession(sendSpy),
         signalRouting: {
           mode: "single",
           gate: { runId: "run_1", runKind: "k", signalName: "approve" },
         },
         onResumeSignal: resumeSpy,
-      }),
-    );
+      });
     fireEvent.click(screen.getByRole("button", { name: "send" }));
     expect(resumeSpy).toHaveBeenCalledTimes(1);
     // The rejection is handled on a microtask; wait for the fallback + notice.
@@ -507,8 +494,7 @@ describe("MyraChatSurface", () => {
     const resumeSpy = mock(
       (_runId: string, _signal: string, _payload: unknown) => Promise.resolve(),
     );
-    render(
-      React.createElement(MyraChatSurface, {
+    renderSurface({
         session: readySession(sendSpy),
         signalRouting: {
           mode: "single",
@@ -516,8 +502,7 @@ describe("MyraChatSurface", () => {
         },
         onResumeSignal: resumeSpy,
         resumeInFlight: true,
-      }),
-    );
+      });
     fireEvent.click(screen.getByRole("button", { name: "send" }));
     expect(resumeSpy).not.toHaveBeenCalled();
     expect(sendSpy).not.toHaveBeenCalled();
@@ -528,16 +513,14 @@ describe("MyraChatSurface", () => {
     const resumeSpy = mock(
       (_runId: string, _signal: string, _payload: unknown) => Promise.resolve(),
     );
-    render(
-      React.createElement(MyraChatSurface, {
+    renderSurface({
         session: readySession(sendSpy),
         signalRouting: {
           mode: "single",
           gate: { runId: "run_9", runKind: "k", signalName: "review" },
         },
         onResumeSignal: resumeSpy,
-      }),
-    );
+      });
     fireEvent.click(screen.getByRole("button", { name: "respond" }));
     // Signal name comes from the response block; the run from the sole gate. A
     // payload-less choice resumes with the value wrapped as an instruction.
@@ -555,16 +538,14 @@ describe("MyraChatSurface", () => {
     const resumeSpy = mock(
       (_runId: string, _signal: string, _payload: unknown) => Promise.resolve(),
     );
-    render(
-      React.createElement(MyraChatSurface, {
+    renderSurface({
         session: readySession(sendSpy),
         signalRouting: {
           mode: "single",
           gate: { runId: "run_1", runKind: "k", signalName: "ab-config" },
         },
         onResumeSignal: resumeSpy,
-      }),
-    );
+      });
     fireEvent.click(screen.getByRole("button", { name: "respond-form" }));
     expect(resumeSpy).toHaveBeenCalledWith("run_1", "ab-config", {
       variants: [{ providerName: "openai-compatible", model: "kimi-k2.6" }],
@@ -578,8 +559,7 @@ describe("MyraChatSurface", () => {
     const resumeSpy = mock(
       (_runId: string, _signal: string, _payload: unknown) => {},
     );
-    render(
-      React.createElement(MyraChatSurface, {
+    renderSurface({
         session: readySession(sendSpy),
         signalRouting: {
           mode: "multi",
@@ -589,8 +569,7 @@ describe("MyraChatSurface", () => {
           ],
         },
         onResumeSignal: resumeSpy,
-      }),
-    );
+      });
     // The multi-gate hint tells the user to use a card, and the text is a normal turn.
     expect(screen.getByTestId("accessory").textContent).toMatch(
       /2 runs are waiting/,
