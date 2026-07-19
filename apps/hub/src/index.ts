@@ -72,6 +72,7 @@ import { deliverPendingGateMail } from "./workflow-executor/gate-mail";
 import { createWorkflowAnalyticsRouter } from "./routes/workflow-analytics";
 import {
   createWorkflowDeployService,
+  reconcileInstanceDeploymentProjections,
   type ReclaimDeploymentFn,
 } from "./services/workflow-deploy";
 import {
@@ -285,6 +286,23 @@ const reconciled = await reconcileMemberInstanceGrants(
 log.info("Member instance grants reconciled", {
   rootTenantId,
   results: reconciled,
+});
+
+// Converge the native `workflow_deployment` projection to the live launched
+// agents. `deployInstanceAtHead` (single-agent launch) writes no projection
+// row, so instances deployed before this converged — the live Myra/Oat
+// deployments — have none. Interchange's suspension registration resolves a
+// suspended write tool's tenancy through this table, so backfilling the row
+// here (the hub is the control plane) is what lets native-approvals be enabled
+// later without redeploying every agent. Also reclaims launched-agent rows left
+// behind by a crashed ephemeral teardown. Per-run deployments manage their own
+// rows and are skipped.
+const projectionReconcile = await reconcileInstanceDeploymentProjections({
+  db,
+});
+log.info("Instance deployment projections reconciled", {
+  rootTenantId,
+  ...projectionReconcile,
 });
 
 const { isDev, cors: corsConfig, auth: authConfig, google, hub } = config;
