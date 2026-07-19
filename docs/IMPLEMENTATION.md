@@ -50,9 +50,9 @@ never merged into any sidecar tool runner and never registered on any agent's
 tool list. The legacy read/resolve/create approval routes were then deleted
 (CL-3938): the native (Interchange-suspension) rail is the only approver. What
 remains is the shared notifications bus (`apps/hub/src/lib/approvals-events.ts`,
-now carrying only native `created`/`resolved` signals) and the orphaned
-`workbench_approval` table — inert storage whose physical drop is a separate,
-owner-approved migration (no code writes or reads it).
+now carrying only native `created`/`resolved` signals). The orphaned
+`workbench_approval` table itself was dropped by migration
+`0071_drop_workbench_approval.sql`.
 
 `HubToolRunner` is generic — it forwards every tool call to `POST /api/internal/tools/run` using `sidecarToken` auth. It has no knowledge of specific tools. Adding a new tool package never requires a sidecar change.
 
@@ -499,9 +499,14 @@ Its former backing table, `workbench_approval` (renamed from the legacy
 own `approval` table; `scripts/db-setup.ts` runs a pre-interchange reconcile that
 renames the workbench-shaped table + its PK, migration `0070` creates it on fresh
 DBs, and a migrations guard test fails on any future table-name intersection
-between the two migration sources), is now **orphaned inert storage**: no code
-writes or reads it. Its physical drop is deferred to a separate, owner-approved
-migration — this change removed code only, no DB migration.
+between the two migration sources) sat orphaned for one increment — no code
+wrote or read it — and was then **dropped** by migration
+`0071_drop_workbench_approval.sql` (`DROP INDEX`/`DROP TABLE IF EXISTS`,
+idempotent). This is irreversible: any pending/historical rows in the table
+are gone once the migration applies. The `workbenchApproval` table object and
+`approvalStatus` enum were removed from `schema.ts` in the same change; a
+`migrations.test.ts` guard asserts the drop statements exist and the table is
+gone from the drizzle schema.
 
 #### Native approval-suspension activation (`native-approvals` feature, deny-by-default)
 
@@ -511,7 +516,7 @@ migration — this change removed code only, no DB migration.
 - **Deployment-identity gap — CLOSED (CL-3931).** `registerSignalCorrelation` resolves tenancy by looking up a **deployed `workflow_deployment` by address**; single-agent instances (Myra/Oat) deploy via `deployInstanceAtHead` and historically wrote no such row, so the co-write threw and every single-agent suspension parked until timeout. `launchAgentSession` now writes the address-keyed `workflow_deployment` projection (plus a boot-time reconcile backfill) — see § Single-agent (launched) deployment identity — so the register co-write succeeds for Myra/Oat, not just multi-step workflow deployments.
 - **Decision surface (CL-3934) — mounted native routes + workbench list.** Interchange's `createApprovalRoutes` (mounted by `createApp`/`mountHubRoutes` at `/api/tenants/:tenantId/approvals`, behind `resolveTenant`) ships the working **approve/reject** halves but leaves its **list**/**get** a 501 stub, and `ApprovalStore` exposes no list read. The workbench therefore adds **only the read side**: `createNativeApprovalsRouter` (`apps/hub/src/routes/native-approvals.ts`) mounted on `hubApp` at `/api/tenants/:tenantId/native-approvals`, inheriting the same `resolveTenant` (active-membership; cross-tenant 403/404). The list is **ownership-scoped**: it joins `member_agent_instance` to the agent instances the caller owns and filters the `approval` rows to those instances' addresses, so one tenant member never sees another member's pending approval metadata (agent address / runId / deploymentId / timing). There is additionally no tool-ARGUMENT leak during the soak — the reactor's suspend-time co-write leaves `toolDefinition`/`toolArguments` null until the upstream arg-capture plumbing lands. The web `ReviewGate` (`apps/web/src/components/ReviewGate.tsx`) is now **native-only** (CL-3938 deleted the legacy card path): it lists the rail via `listNativeApprovals`, renders each with `NativeApprovalCard` (tool name from the snapshot when present, else the originating agent), ordered newest-first by `createdAt`. The rail is tenant-wide (a suspension has no session linkage), so `ReviewGate` takes only a `tenantId`.
 - **Notifications (native rail on the existing SSE bus).** The shared `approvals-events` bus now carries native change signals: `withNativeApprovalCreatedNotify` **wraps** interchange's `registerSignalCorrelation` in `apps/hub/src/index.ts` and publishes `created` after the native co-write commits (tenant re-read from the deployment), and an **outer middleware** ahead of the `hubApp` mount publishes `resolved` after a successful POST to the mounted approve/reject route. Both live in `apps/hub/src/lib/native-approval-notify.ts` and emit from the workbench mount/wrapper layer — **no `@intx/*` change**. The publish is **fully isolated** (try/catch + log): a publish failure (transient DB read, listener throw) can never propagate out of the register co-write — otherwise interchange's own handler would mis-attribute it as a `signal.correlation.register` failure even though the rows were durably written — and can never corrupt the resolve route's already-committed response. `ReviewGate` refetches the native list on each event.
-- **Retirement (CL-3934 → CL-3938).** The dead legacy sidecar gate `apps/sidecar/src/approval-gate.ts` and the `@workbench/approvals` (`ask_principal`) package were deleted first (CL-3934), removing the only writers of `workbench_approval`. With no writer left, CL-3938 then deleted the read/resolve/create surface: `createApprovalsRouter` + `createInternalApprovalsRouter` (`apps/hub/src/routes/approvals.ts`), the `callerCanResolveApproval`/`resolveOwnedApprovalPrincipalIds` ownership helpers, the web legacy fetch functions + `MailSendApprovalDetails` card + the legacy `ReviewGate` branch. **Kept:** the shared `approvals-events` bus and its SSE delivery (repurposed as the stream-only `createApprovalNotificationsRouter`), reused by the native rail. **Left in place, drop deferred to owner sign-off:** the `workbench_approval` table — inert storage, no code path touches it, and there is no data migration (a legacy row cannot become a native suspension).
+- **Retirement (CL-3934 → CL-3938, table drop CL-3938).** The dead legacy sidecar gate `apps/sidecar/src/approval-gate.ts` and the `@workbench/approvals` (`ask_principal`) package were deleted first (CL-3934), removing the only writers of `workbench_approval`. With no writer left, CL-3938 then deleted the read/resolve/create surface: `createApprovalsRouter` + `createInternalApprovalsRouter` (`apps/hub/src/routes/approvals.ts`), the `callerCanResolveApproval`/`resolveOwnedApprovalPrincipalIds` ownership helpers, the web legacy fetch functions + `MailSendApprovalDetails` card + the legacy `ReviewGate` branch. **Kept:** the shared `approvals-events` bus and its SSE delivery (repurposed as the stream-only `createApprovalNotificationsRouter`), reused by the native rail. **The `workbench_approval` table itself was dropped** by a follow-up migration (`0071_drop_workbench_approval.sql`) — there was no data migration (a legacy row cannot become a native suspension), so this is a one-way loss of any rows still in the table. The native rail is now the complete and only approval mechanism, with no vestigial storage left behind.
 - `POST /api/internal/tools/run` — hub-proxied tool execution. Body: `{ tenantId, toolName, args }`. Hub resolves the tenant credential for the tool's provider from Interchange, calls the tool package handler, returns `{ result: string, isError: boolean }`. Credentials are decrypted before use; never stored in sidecar.
 
 ### Deploy Prompts
