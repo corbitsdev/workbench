@@ -11,7 +11,7 @@ import {
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter } from "react-router";
 import type { TimelineEntry } from "@workbench/client";
-import { GrantsFacet } from "./principal-facets";
+import { GrantsFacet } from "./grants-facet";
 import { MomentDecomposition } from "./MomentWalker";
 import { GRANT_EFFECT_LABEL, grantEffect } from "./trace-links";
 
@@ -37,13 +37,13 @@ describe("GrantsFacet effect parity with the moment decomposition", () => {
     const expected = GRANT_EFFECT_LABEL[grantEffect(g)];
     expect(expected).toBe("Allowed");
 
+    // "workbench:*" is not a tool: resource, so it renders as a plain,
+    // ungrouped row — no expansion needed to reach it.
     const facet = render(
       <MemoryRouter>
         <GrantsFacet entries={[g]} />
       </MemoryRouter>,
     );
-    // The row starts inside a collapsed group; expand it to reach the raw rule.
-    fireEvent.click(screen.getByRole("button", { name: /Workbench/ }));
     within(facet.container).getByText(expected);
     expect(
       within(facet.container).queryByText("Effect not recorded"),
@@ -79,7 +79,7 @@ describe("GrantsFacet Granted by column", () => {
       </MemoryRouter>,
     );
     screen.getByText("Granted by");
-    fireEvent.click(screen.getByRole("button", { name: /Attio/ }));
+    // A single tool rule in its family renders flat — no expansion needed.
     const chip = screen.getByTestId("grant-origin");
     expect(chip.textContent).toBe("invoker");
   });
@@ -92,7 +92,6 @@ describe("GrantsFacet Granted by column", () => {
         />
       </MemoryRouter>,
     );
-    fireEvent.click(screen.getByRole("button", { name: /Attio/ }));
     expect(screen.queryByTestId("grant-origin")).toBeNull();
   });
 });
@@ -176,10 +175,10 @@ describe("GrantsFacet grouped rules (CL-3919)", () => {
     expect(within(rows[0]).getByText(GRANT_EFFECT_LABEL.blocked)).toBeTruthy();
   });
 
-  it("keeps unrelated resource families as separate groups", () => {
+  it("aria-controls on the toggle links to the expanded panel it reveals", () => {
     const entries = [
       grant("tool:attio__list_objects invoke allow", "g1"),
-      grant("instance:ins_123 invoke allow", "g2"),
+      grant("tool:attio__create_object invoke allow", "g2"),
     ];
 
     render(
@@ -188,6 +187,80 @@ describe("GrantsFacet grouped rules (CL-3919)", () => {
       </MemoryRouter>,
     );
 
-    expect(screen.getAllByTestId("grant-group-row")).toHaveLength(2);
+    const toggle = screen.getByRole("button", { name: /Attio/ });
+    expect(toggle.getAttribute("aria-expanded")).toBe("false");
+    const panelId = toggle.getAttribute("aria-controls");
+    expect(panelId).not.toBeNull();
+
+    fireEvent.click(toggle);
+    expect(toggle.getAttribute("aria-expanded")).toBe("true");
+    expect(document.getElementById(panelId ?? "")).not.toBeNull();
+  });
+});
+
+describe("GrantsFacet only groups tool: resources (CL-3919 review fix)", () => {
+  it("does not group non-tool resources on their bare prefix — a credential pair renders as two separate ungrouped rows", () => {
+    const entries = [
+      grant("credential:openai invoke allow", "g1"),
+      grant("credential:granola invoke allow", "g2"),
+    ];
+
+    render(
+      <MemoryRouter>
+        <GrantsFacet entries={entries} />
+      </MemoryRouter>,
+    );
+
+    expect(screen.queryAllByTestId("grant-group-row")).toHaveLength(0);
+    expect(screen.getAllByTestId("grant-rule-row")).toHaveLength(2);
+  });
+
+  it("a tool family with exactly one rule renders as a plain, non-collapsible row", () => {
+    const entries = [grant("tool:attio__list_objects invoke allow", "g1")];
+
+    render(
+      <MemoryRouter>
+        <GrantsFacet entries={entries} />
+      </MemoryRouter>,
+    );
+
+    expect(screen.queryAllByTestId("grant-group-row")).toHaveLength(0);
+    expect(screen.getAllByTestId("grant-rule-row")).toHaveLength(1);
+    // No toggle button anywhere in a table with a single, flat row.
+    expect(screen.queryByRole("button")).toBeNull();
+  });
+
+  it("mixes a multi-rule tool group with an ungrouped non-tool row in the same list", () => {
+    const entries = [
+      grant("tool:attio__list_objects invoke allow", "g1"),
+      grant("tool:attio__create_object invoke allow", "g2"),
+      grant("instance:ins_123 invoke allow", "g3"),
+    ];
+
+    render(
+      <MemoryRouter>
+        <GrantsFacet entries={entries} />
+      </MemoryRouter>,
+    );
+
+    expect(screen.getAllByTestId("grant-group-row")).toHaveLength(1);
+    // The instance row is flat and visible without expanding anything.
+    expect(screen.getAllByTestId("grant-rule-row")).toHaveLength(1);
+  });
+
+  it("falls back to the raw resource string as the label when a tool: resource has an empty factory segment", () => {
+    const entries = [
+      grant("tool:__foo invoke allow", "g1"),
+      grant("tool:__bar invoke allow", "g2"),
+    ];
+
+    render(
+      <MemoryRouter>
+        <GrantsFacet entries={entries} />
+      </MemoryRouter>,
+    );
+
+    expect(screen.getAllByTestId("grant-group-row")).toHaveLength(1);
+    screen.getByText("tool:__foo");
   });
 });
