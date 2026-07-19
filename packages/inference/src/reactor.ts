@@ -1103,16 +1103,6 @@ export function createReactor(config: ReactorConfig): Reactor {
       }
     }
 
-    emit({
-      type: "reactor.gate.blocked",
-      seq: nextSeq(),
-      data: {
-        reason: gateType,
-        gateId,
-        ...(correlationId !== undefined ? { correlationId } : {}),
-      },
-    });
-
     // WORKBENCH-LOCAL (CL-3940): surface the suspended tool call's snapshot on
     // the sanctioned `custom.*` inference-event channel (the only reactor event
     // shape whose `data` is an open `Record<string, unknown>`, so it survives
@@ -1122,6 +1112,12 @@ export function createReactor(config: ReactorConfig): Reactor {
     // keyed by this same `correlationId`, so the decision surface can name the
     // action and show its arguments instead of "Approval requested by <agent>".
     // A director-suspend (no `suspendedCall`) or an async marker emits nothing.
+    // This MUST be emitted BEFORE `reactor.gate.blocked`: on the warmKeep
+    // single-step path `gate.blocked` settles the interchange `agent.send` as
+    // `{type:"suspended"}`, whose `finally` nulls the event sink, so an event
+    // emitted after it is drained into a dead sink and never reaches the hub.
+    // The hub enricher buffers a snapshot that arrives before the gate-driven
+    // approval row and drains it on row creation, so the earlier order is safe.
     // Retirement: drop this block once interchange captures the snapshot at its
     // own suspend co-write (tracked as CL-3943).
     if (pendingOp?.suspendedCall !== undefined && correlationId !== undefined) {
@@ -1137,6 +1133,16 @@ export function createReactor(config: ReactorConfig): Reactor {
         },
       });
     }
+
+    emit({
+      type: "reactor.gate.blocked",
+      seq: nextSeq(),
+      data: {
+        reason: gateType,
+        gateId,
+        ...(correlationId !== undefined ? { correlationId } : {}),
+      },
+    });
 
     // Register the gate. onGateCleared enqueues the cleared event so the loop
     // processes it normally without blocking here.
