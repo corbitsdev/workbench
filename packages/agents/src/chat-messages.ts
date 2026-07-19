@@ -1,9 +1,83 @@
 import type { InstanceEvent } from "@intx/hub-client";
+import { turnToEvent } from "@intx/hub-client";
+import type { InferenceTurnResponse } from "@intx/types";
 import type { ChatMessage, ChatImage, Part } from "@workbench/agent-core/parts";
 import { liftToParts } from "@workbench/agent-core/parts";
 import { convertInstanceEvents } from "./adapter";
 
 export const STREAMING_BUBBLE_ID = "streaming-synthetic";
+
+/**
+ * Compensate for a gap in @intx/hub-client's `turnToEvent` (see
+ * interchange/packages/hub-client/src/transforms.ts): it drops any
+ * historical turn that carries no errors and no tool calls, on the
+ * assumption the turn's text survives via an echoed outbound assistant
+ * mail. That assumption held while the harness always sent that echo mail.
+ * Under the current workflow-host runtime, single-step deployments no
+ * longer send it, so for a plain-text turn the persisted `inference_turn`
+ * is the ONLY record of the assistant's reply — and `turnToEvent` silently
+ * drops it, leaving nothing to render on reload.
+ *
+ * This mirrors turnToEvent's own text-extraction exactly (same parts
+ * filter, same join, same timestamp source) so the reconstructed event is
+ * indistinguishable from what turnToEvent would have produced had it not
+ * dropped the turn — it hoists against a matching echo mail exactly like a
+ * turn that survived the transform, and dedupes the same way. Only fills
+ * the gap turnToEvent leaves (no errors, no tool calls, non-empty text);
+ * every turn turnToEvent already converts is left untouched.
+ *
+ * This is a workbench-side compensation for an upstream gap, not a
+ * permanent feature: delete it once the interchange pin carries the
+ * one-line fix (dropping a turn only when it ALSO has no text).
+ */
+export function reconstructDroppedTurnEvents(
+  turns: readonly InferenceTurnResponse[],
+): InstanceEvent[] {
+  const reconstructed: InstanceEvent[] = [];
+  for (const turn of turns) {
+    if (turnToEvent(turn) !== null) continue;
+    const rawContent = turn.parts
+      .filter(
+        (p): p is typeof p & { content: string } =>
+          p.type === "text" &&
+          typeof p.content === "string" &&
+          p.content.length > 0,
+      )
+      .map((p) => p.content)
+      .join("");
+    if (rawContent.length === 0) continue;
+    reconstructed.push({
+      kind: "turn",
+      turnId: turn.id,
+      content: rawContent,
+      timestamp: turn.startedAt,
+    });
+  }
+  return reconstructed;
+}
+
+/**
+ * Merge reconstructed turn events (see `reconstructDroppedTurnEvents`) into
+ * a hydrated event list, skipping any turnId the list already carries — a
+ * turn `turnToEvent` did NOT drop (it had errors or tool calls) is already
+ * present and must not be duplicated. Re-sorts by server timestamp only
+ * when an event was actually added, matching @intx/hub-client's own
+ * hydration sort so a reconstructed turn lands in its chronological slot
+ * rather than always at the tail.
+ */
+export function mergeReconstructedTurns(
+  events: readonly InstanceEvent[],
+  reconstructed: readonly InstanceEvent[],
+): InstanceEvent[] {
+  const existingTurnIds = new Set(
+    events.filter((e) => e.kind === "turn").map((e) => e.turnId),
+  );
+  const toAdd = reconstructed.filter((e) => !existingTurnIds.has(e.turnId));
+  if (toAdd.length === 0) return [...events];
+  return [...events, ...toAdd].sort((a, b) =>
+    a.timestamp < b.timestamp ? -1 : a.timestamp > b.timestamp ? 1 : 0,
+  );
+}
 
 export interface ComposeChatInput {
   events: InstanceEvent[];

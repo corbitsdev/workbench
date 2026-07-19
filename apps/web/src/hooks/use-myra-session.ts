@@ -11,12 +11,16 @@ import {
 import {
   ApiError,
   createInstanceSession,
+  type InstanceEvent,
   type InstanceSession,
   type Transport,
 } from "@intx/hub-client";
+import type { InferenceTurnResponse } from "@intx/types";
 import {
   composeChatMessages,
   createPartAssembler,
+  mergeReconstructedTurns,
+  reconstructDroppedTurnEvents,
   type PartAssembler,
 } from "@workbench/agents/browser";
 import type {
@@ -423,6 +427,11 @@ export function useMyraSession(
   // teardown that precedes a reconnect.
   const pendingQueueRef = useRef<PendingSend[]>([]);
   const lastMessagesRef = useRef<ChatMessage[]>([]);
+  // Turn events reconstructed from an independent /turns fetch to compensate
+  // for @intx/hub-client's turnToEvent dropping a historical text-only turn
+  // (see reconstructDroppedTurnEvents). Populated once per hydration below;
+  // reset on thread switch alongside the other history refs.
+  const reconstructedTurnEventsRef = useRef<InstanceEvent[]>([]);
   // Optimistic "awaiting agent" flag: set the instant a send is enqueued (or
   // a queued item starts flushing on reconnect) so the working indicator
   // renders in the same frame as the optimistic bubble, before any SSE event
@@ -465,6 +474,7 @@ export function useMyraSession(
     // re-resolves it for the new thread.
     resolvedInstanceIdRef.current = null;
     setResolvedInstanceId(null);
+    reconstructedTurnEventsRef.current = [];
   }
   const [, forceUpdate] = useState(0);
   const scheduleStreamRerender = useStreamRerender();
@@ -787,6 +797,29 @@ export function useMyraSession(
       }
     }
 
+    // Compensates for a gap in @intx/hub-client's turnToEvent (see
+    // reconstructDroppedTurnEvents): it drops a historical text-only turn on
+    // the assumption its content survives via an echoed outbound assistant
+    // mail, but the current workflow-host runtime no longer sends that echo
+    // for single-step deployments, so the turn's text is otherwise lost on
+    // reload. Fetches the same /turns endpoint hub-client's own hydration
+    // reads, independently, purely to recover what its transform silently
+    // drops. Best-effort: a fetch failure here leaves history exactly as
+    // hub-client's own hydration already produced it — no worse than before
+    // this compensation existed — so a broad catch is the correct behavior,
+    // not a swallowed real failure.
+    async function hydrateReconstructedTurns() {
+      const turnsPath = `/api/tenants/${targetTenantId}/agents/instances/${targetInstanceId}/turns?limit=100`;
+      const result = await transportRef.current
+        ?.fetch<{ data: InferenceTurnResponse[] }>("GET", turnsPath)
+        .catch(() => null);
+      if (cancelled || result === undefined || result === null) return;
+      reconstructedTurnEventsRef.current = reconstructDroppedTurnEvents(
+        result.data,
+      );
+      scheduleStreamRerender();
+    }
+
     async function connect() {
       try {
         const me = await ensureMeSynced();
@@ -828,6 +861,7 @@ export function useMyraSession(
         sessionRef.current = session;
         const stop = session.start();
         stopRef.current = stop;
+        void hydrateReconstructedTurns();
 
         assemblerRef.current = createPartAssembler(
           transport,
@@ -950,7 +984,10 @@ export function useMyraSession(
 
   const composed: ChatMessage[] = activeSession
     ? composeChatMessages({
-        events: activeSession.events,
+        events: mergeReconstructedTurns(
+          activeSession.events,
+          reconstructedTurnEventsRef.current,
+        ),
         streaming:
           assemblerRef.current !== null ? assemblerRef.current.text : "",
         reasoning:
