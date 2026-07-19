@@ -15,6 +15,7 @@ import {
 } from "../../hooks/use-mailbox";
 import { useMailboxLive } from "../../hooks/use-mailbox-live";
 import { useTasks } from "../../hooks/use-tasks";
+import { usePendingApprovalInstances } from "../../hooks/use-pending-approval-instances";
 import { formatRelativeTime } from "../../lib/relative-time";
 import { RefChip } from "../RefChip";
 
@@ -46,7 +47,10 @@ export function NotificationsBell() {
   });
   useMailboxLive();
   const { data: taskData } = useTasks({ refetchInterval: MAILBOX_POLL_MS });
+  const pendingApprovals = usePendingApprovalInstances();
 
+  const pendingApprovalCount = pendingApprovals.size;
+  const hasPendingApproval = pendingApprovalCount > 0;
   const messages = data ?? [];
   const unread = unreadCount ?? 0;
   const recent = messages.slice(0, RECENT_LIMIT);
@@ -65,8 +69,17 @@ export function NotificationsBell() {
     return () => document.removeEventListener("pointerdown", onPointerDown);
   }, [open]);
 
+  const labelParts: string[] = [];
+  if (unread > 0) labelParts.push(`${unread} unread`);
+  if (hasPendingApproval) {
+    labelParts.push(
+      `${pendingApprovalCount} pending approval${pendingApprovalCount === 1 ? "" : "s"}`,
+    );
+  }
   const label =
-    unread > 0 ? `Notifications, ${unread} unread` : "Notifications";
+    labelParts.length > 0
+      ? `Notifications, ${labelParts.join(", ")}`
+      : "Notifications";
   const badgeText = unread > BADGE_MAX ? `${BADGE_MAX}+` : String(unread);
 
   return (
@@ -91,6 +104,14 @@ export function NotificationsBell() {
         )}
       >
         <Bell size={18} />
+        {hasPendingApproval && (
+          <span
+            data-testid="bell-approval-dot"
+            title="Pending approval"
+            className="absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 rounded-full border-2 border-surface bg-orange"
+            aria-hidden="true"
+          />
+        )}
         <AnimatePresence initial={false}>
           {unread > 0 && (
             <motion.span
@@ -131,7 +152,28 @@ export function NotificationsBell() {
               )}
             </div>
 
-            {recent.length === 0 && recentTasks.length === 0 ? (
+            {hasPendingApproval && (
+              <div
+                data-testid="bell-approval-row"
+                className="flex items-center gap-2 border-b border-border bg-orange/5 px-4 py-2.5"
+              >
+                <span
+                  className="h-2 w-2 shrink-0 rounded-full bg-orange"
+                  aria-hidden="true"
+                />
+                <span className="text-[13px] font-medium text-text">
+                  {pendingApprovalCount} pending approval
+                  {pendingApprovalCount === 1 ? "" : "s"}
+                </span>
+                <span className="text-[11px] text-text-3">
+                  Open the chat to review
+                </span>
+              </div>
+            )}
+
+            {recent.length === 0 &&
+            recentTasks.length === 0 &&
+            !hasPendingApproval ? (
               <BellEmptyState />
             ) : (
               <ul className="max-h-[22rem] overflow-y-auto py-1">
