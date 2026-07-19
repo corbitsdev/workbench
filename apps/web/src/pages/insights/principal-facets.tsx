@@ -1,4 +1,5 @@
-
+import { useState } from "react";
+import { ChevronRight } from "lucide-react";
 import { Badge, Skeleton } from "@workbench/ui";
 import type { TimelineEntry } from "@workbench/client";
 import { usePrincipalRoster } from "../../hooks/use-principal-roster";
@@ -10,7 +11,7 @@ import {
   NodeGrid,
   type TraceNode,
 } from "./tracer-shell";
-import { humanizeToken } from "./activity-naming";
+import { humanizeToken, parseToolResource } from "./activity-naming";
 import {
   GRANT_EFFECT_LABEL,
   entityLinkForEntry,
@@ -66,6 +67,47 @@ function effectTone(
   return "neutral";
 }
 
+/**
+ * Resource family key for grouping (CL-3919). A raw grant list can carry
+ * 100+ rows for a single busy agent instance — one per distinct tool call it
+ * was ever granted — so we group by the resource's family before rendering:
+ * for a `tool:` resource that is the factory/package segment (parsed via the
+ * canonical `parseToolResource`, the SAME parser `grantResourceLabel` already
+ * reads through); for any other resource kind (`instance:`, `requirement:`,
+ * …) it is the prefix before the first `:`.
+ */
+function grantFamilyKey(resource: string): { key: string; label: string } {
+  const tool = parseToolResource(resource);
+  if (tool !== null) {
+    return { key: `tool:${tool.factory}`, label: humanizeToken(tool.factory) };
+  }
+  const prefix = resource.split(":")[0] ?? "";
+  const safePrefix = prefix === "" ? "other" : prefix;
+  return { key: safePrefix, label: humanizeToken(safePrefix) };
+}
+
+interface GrantGroup {
+  key: string;
+  label: string;
+  rows: GrantRow[];
+}
+
+function groupGrantRows(rows: GrantRow[]): GrantGroup[] {
+  const groups: GrantGroup[] = [];
+  const index = new Map<string, GrantGroup>();
+  for (const row of rows) {
+    const { key, label } = grantFamilyKey(row.resource);
+    let group = index.get(key);
+    if (group === undefined) {
+      group = { key, label, rows: [] };
+      index.set(key, group);
+      groups.push(group);
+    }
+    group.rows.push(row);
+  }
+  return groups;
+}
+
 export function GrantsFacet({ entries }: { entries: TimelineEntry[] }) {
   const grants = entries
     .filter((e) => e.kind === "grant")
@@ -74,14 +116,16 @@ export function GrantsFacet({ entries }: { entries: TimelineEntry[] }) {
     .filter(
       (g, i, all) => all.findIndex((o) => o.resource === g.resource) === i,
     );
+  const groups = groupGrantRows(grants);
 
   return (
     <div data-testid="facet-grants">
       <FacetDesc>
-        Permissions this principal holds, in plain language — the raw resource
-        id stays as a secondary reference.
+        Permissions this principal holds, grouped by resource family — the raw
+        resource id stays as a secondary reference. Expand a group to see its
+        individual rules.
       </FacetDesc>
-      {grants.length === 0 ? (
+      {groups.length === 0 ? (
         <FacetCard>
           <p className="text-[13px] text-text-2">
             No grant moments in the loaded window.
@@ -94,44 +138,15 @@ export function GrantsFacet({ entries }: { entries: TimelineEntry[] }) {
               <thead>
                 <tr>
                   <Th>Can</Th>
-                  <Th>Do what</Th>
+                  <Th>Rules</Th>
                   <Th>Decision</Th>
                   <Th>Granted by</Th>
                   <Th>Used</Th>
                 </tr>
               </thead>
               <tbody>
-                {grants.map((g) => (
-                  <tr
-                    key={g.id}
-                    className="border-b border-border last:border-0"
-                  >
-                    <Td>
-                      <div className="font-semibold text-text">{g.plain}</div>
-                      <div className="break-all font-mono text-[10px] text-text-3">
-                        {g.resource}
-                      </div>
-                    </Td>
-                    <Td className="text-text-2">{g.action}</Td>
-                    <Td>
-                      <Badge tone={effectTone(g.effect)}>
-                        {GRANT_EFFECT_LABEL[g.effect]}
-                      </Badge>
-                    </Td>
-                    <Td>
-                      {g.origin !== null ? (
-                        <span
-                          data-testid="grant-origin"
-                          className="inline-flex items-center rounded-[5px] border border-border bg-surface-2 px-1.5 py-0.5 font-mono text-[10px] text-text-2"
-                        >
-                          {g.origin}
-                        </span>
-                      ) : (
-                        <span className="text-text-3">—</span>
-                      )}
-                    </Td>
-                    <Td className="text-text-3">—</Td>
-                  </tr>
+                {groups.map((group) => (
+                  <GrantGroupRow key={group.key} group={group} />
                 ))}
               </tbody>
             </table>
@@ -139,6 +154,154 @@ export function GrantsFacet({ entries }: { entries: TimelineEntry[] }) {
         </FacetCard>
       )}
     </div>
+  );
+}
+
+/**
+ * One collapsed group row per resource family, with its own local expand
+ * state (default collapsed — CL-3919). A deny rule anywhere in the group is
+ * NEVER folded away inside an "allowed" summary: it always surfaces its own
+ * visible marker on the row, and deny rules sort first once expanded.
+ */
+function GrantGroupRow({ group }: { group: GrantGroup }) {
+  const [expanded, setExpanded] = useState(false);
+
+  const allowCount = group.rows.filter((r) => r.effect === "allowed").length;
+  const denyCount = group.rows.filter((r) => r.effect === "blocked").length;
+  const askCount = group.rows.filter(
+    (r) => r.effect === "needs-approval",
+  ).length;
+  const unknownCount = group.rows.filter((r) => r.effect === "unknown").length;
+  const hasDeny = denyCount > 0;
+
+  const origins = [
+    ...new Set(
+      group.rows.map((r) => r.origin).filter((o): o is string => o !== null),
+    ),
+  ];
+
+  const orderedRows = hasDeny
+    ? [...group.rows].sort((a, b) => {
+        const aDeny = a.effect === "blocked" ? 0 : 1;
+        const bDeny = b.effect === "blocked" ? 0 : 1;
+        return aDeny - bDeny;
+      })
+    : group.rows;
+
+  return (
+    <>
+      <tr
+        className="border-b border-border last:border-0"
+        data-testid="grant-group-row"
+      >
+        <Td>
+          <button
+            type="button"
+            onClick={() => setExpanded((e) => !e)}
+            aria-expanded={expanded}
+            className="flex items-center gap-1.5 font-semibold text-text outline-none focus-visible:ring-1 focus-visible:ring-accent"
+          >
+            <ChevronRight
+              className={`h-3.5 w-3.5 shrink-0 text-text-3 transition-transform ${expanded ? "rotate-90" : ""}`}
+            />
+            {group.label}
+          </button>
+        </Td>
+        <Td className="text-text-2">
+          {group.rows.length} {group.rows.length === 1 ? "rule" : "rules"}
+        </Td>
+        <Td>
+          <div className="flex flex-wrap items-center gap-1.5">
+            {allowCount > 0 && (
+              <Badge tone="positive">{allowCount} allowed</Badge>
+            )}
+            {hasDeny && (
+              <Badge tone="danger" data-testid="grant-group-deny-marker">
+                {denyCount} denied
+              </Badge>
+            )}
+            {askCount > 0 && (
+              <Badge tone="neutral">{askCount} needs approval</Badge>
+            )}
+            {unknownCount > 0 && (
+              <Badge tone="neutral">{unknownCount} unrecorded</Badge>
+            )}
+          </div>
+        </Td>
+        <Td>
+          {origins.length === 0 ? (
+            <span className="text-text-3">—</span>
+          ) : (
+            <div className="flex flex-wrap items-center gap-1">
+              {origins.map((origin) => (
+                <span
+                  key={origin}
+                  data-testid="grant-group-origin"
+                  className="inline-flex items-center rounded-[5px] border border-border bg-surface-2 px-1.5 py-0.5 font-mono text-[10px] text-text-2"
+                >
+                  {origin}
+                </span>
+              ))}
+            </div>
+          )}
+        </Td>
+        <Td className="text-text-3">—</Td>
+      </tr>
+      {expanded && (
+        <tr>
+          <td colSpan={5} className="p-0">
+            <div className="overflow-x-auto border-t border-border bg-surface-2/40 px-3 py-2">
+              <table className="w-full border-collapse text-[13px]">
+                <thead>
+                  <tr>
+                    <Th>Can</Th>
+                    <Th>Do what</Th>
+                    <Th>Decision</Th>
+                    <Th>Granted by</Th>
+                    <Th>Used</Th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {orderedRows.map((g) => (
+                    <tr
+                      key={g.id}
+                      data-testid="grant-rule-row"
+                      className="border-b border-border last:border-0"
+                    >
+                      <Td>
+                        <div className="font-semibold text-text">{g.plain}</div>
+                        <div className="break-all font-mono text-[10px] text-text-3">
+                          {g.resource}
+                        </div>
+                      </Td>
+                      <Td className="text-text-2">{g.action}</Td>
+                      <Td>
+                        <Badge tone={effectTone(g.effect)}>
+                          {GRANT_EFFECT_LABEL[g.effect]}
+                        </Badge>
+                      </Td>
+                      <Td>
+                        {g.origin !== null ? (
+                          <span
+                            data-testid="grant-origin"
+                            className="inline-flex items-center rounded-[5px] border border-border bg-surface-2 px-1.5 py-0.5 font-mono text-[10px] text-text-2"
+                          >
+                            {g.origin}
+                          </span>
+                        ) : (
+                          <span className="text-text-3">—</span>
+                        )}
+                      </Td>
+                      <Td className="text-text-3">—</Td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </td>
+        </tr>
+      )}
+    </>
   );
 }
 

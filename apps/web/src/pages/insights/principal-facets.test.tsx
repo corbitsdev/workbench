@@ -117,9 +117,9 @@ describe("GrantsFacet grouped rules (CL-3919)", () => {
     screen.getByText("3 rules");
 
     // Collapsed: none of the individual rule labels are in the DOM yet.
-    expect(screen.queryByText("List objects")).toBeNull();
-    expect(screen.queryByText("Create object")).toBeNull();
-    expect(screen.queryByText("Update object")).toBeNull();
+    expect(screen.queryByText(/List objects/)).toBeNull();
+    expect(screen.queryByText(/Create object/)).toBeNull();
+    expect(screen.queryByText(/Update object/)).toBeNull();
   });
 
   it("expands a group in place to reveal the raw rules table exactly as before", () => {
@@ -136,8 +136,8 @@ describe("GrantsFacet grouped rules (CL-3919)", () => {
 
     fireEvent.click(screen.getByRole("button", { name: /Attio/ }));
 
-    screen.getByText("List objects");
-    screen.getByText("Create object");
+    screen.getByText(/List objects/);
+    screen.getByText(/Create object/);
   });
 
   it("never hides a deny rule inside a collapsed allow group — surfaces a visible deny marker", () => {
