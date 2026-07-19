@@ -519,7 +519,10 @@ const approvalsEventBus = createApprovalsEventBus();
 // instead of "Approval requested by <agent>". Fed by the agent-event listener
 // (snapshot side) and the register-notify wrapper (row-created side); it joins
 // them by `correlationId` and handles either arrival order.
-const nativeApprovalEnricher = createNativeApprovalEnricher(db);
+const nativeApprovalEnricher = createNativeApprovalEnricher(
+  db,
+  approvalsEventBus,
+);
 
 // The native `approval` row is co-written inside interchange's
 // `registerSignalCorrelation` (which owns the transaction and resolves the

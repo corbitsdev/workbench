@@ -225,10 +225,7 @@ export async function persistInstanceToolGrants(
   },
 ): Promise<void> {
   const { tenantId, principalId, toolNames, now } = opts;
-  const askToolNames = await resolveAskToolNamesForTenant(
-    db as unknown as HubDb,
-    tenantId,
-  );
+  const askToolNames = await resolveAskToolNamesForTenant();
   const rows = buildToolGrantRows(toolNames, { tenantId, principalId }, now, {
     askToolNames,
   });

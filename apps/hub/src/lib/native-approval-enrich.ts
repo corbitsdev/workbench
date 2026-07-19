@@ -3,10 +3,58 @@ import { type } from "arktype";
 import { schema as intxSchema } from "@intx/db";
 import { getLogger } from "@intx/log";
 import type { HubDb } from "../db";
+import type { ApprovalsEventBus } from "./approvals-events";
+import { publishNativeApprovalUpdated } from "./native-approval-notify";
 
 const { approval } = intxSchema;
 
 const log = getLogger(["api", "native-approvals", "enrich"]);
+
+// Ceiling on the serialized tool arguments persisted onto the approval row. The
+// snapshot is approver-facing context, not the tool's real input (that rides the
+// suspension itself), so a huge payload is truncated to a bounded preview rather
+// than bloating the row. ~8KB is generous for a decision surface.
+const MAX_TOOL_ARGUMENTS_BYTES = 8 * 1024;
+
+// Argument values whose KEY matches a credential-shaped name are redacted before
+// persist: the snapshot is broadcast to every tenant member's ReviewGate, so a
+// token/secret in a tool argument must never land in the row.
+const SECRET_KEY_PATTERN =
+  /token|secret|password|api[_-]?key|authorization|bearer/i;
+const REDACTED = "[redacted]";
+
+function redactSecretValues(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(redactSecretValues);
+  if (value !== null && typeof value === "object") {
+    const out: Record<string, unknown> = {};
+    for (const [key, inner] of Object.entries(value)) {
+      out[key] = SECRET_KEY_PATTERN.test(key)
+        ? REDACTED
+        : redactSecretValues(inner);
+    }
+    return out;
+  }
+  return value;
+}
+
+/**
+ * Redact credential-keyed values, then cap the serialized size. An oversized
+ * payload is replaced by a bounded preview marked `__truncated` (a valid JSONB
+ * object) rather than persisting the full blob.
+ */
+export function sanitizeToolArguments(
+  args: Record<string, unknown>,
+): Record<string, unknown> {
+  const redacted = redactSecretValues(args) as Record<string, unknown>;
+  const serialized = JSON.stringify(redacted);
+  if (serialized.length > MAX_TOOL_ARGUMENTS_BYTES) {
+    return {
+      __truncated: true,
+      preview: serialized.slice(0, MAX_TOOL_ARGUMENTS_BYTES),
+    };
+  }
+  return redacted;
+}
 
 /**
  * The tool snapshot the reactor surfaces on `custom.approval.requested` at an
@@ -62,12 +110,19 @@ export interface NativeApprovalEnricher {
  */
 export function createNativeApprovalEnricher(
   db: HubDb,
+  bus?: ApprovalsEventBus,
 ): NativeApprovalEnricher {
   const buffered = new Map<string, ApprovalToolSnapshot>();
 
-  async function applyIfBuffered(correlationId: string): Promise<void> {
+  async function applyIfBuffered(
+    correlationId: string,
+  ): Promise<{ id: string; tenantId: string } | undefined> {
     const snapshot = buffered.get(correlationId);
-    if (snapshot === undefined) return;
+    if (snapshot === undefined) return undefined;
+    // The predicate keys on `correlationId` alone — no tenant scope. The column
+    // is globally unique (a DB unique constraint on `approval.correlation_id`),
+    // so a snapshot can only ever match its own suspension's row; the reactor
+    // emit carries no tenant/deployment to scope by without extra plumbing.
     const applied = await db
       .update(approval)
       .set({
@@ -81,13 +136,14 @@ export function createNativeApprovalEnricher(
           isNull(approval.toolDefinition),
         ),
       )
-      .returning({ id: approval.id });
-    // A hit means the row exists and was enriched (or was already enriched, in
-    // which case the `IS NULL` guard returned zero and we still drop the buffer
-    // entry so it does not linger). Distinguish only "row present" from "row
-    // absent": if the row exists at all the snapshot has done its job.
+      .returning({ id: approval.id, tenantId: approval.tenantId });
+    // A returned row means the update enriched a previously-unenriched row. When
+    // the `IS NULL` guard matches nothing (row absent, or already enriched) the
+    // returning is empty. Distinguish only "row present" from "row absent" for
+    // the buffer drop: if the row exists at all the snapshot has done its job.
+    const enriched = applied[0];
     const rowExists =
-      applied.length > 0 ||
+      enriched !== undefined ||
       (await db
         .select({ id: approval.id })
         .from(approval)
@@ -95,6 +151,7 @@ export function createNativeApprovalEnricher(
         .limit(1)
         .then((rows) => rows.length > 0));
     if (rowExists) buffered.delete(correlationId);
+    return enriched;
   }
 
   function bufferSnapshot(snapshot: ApprovalToolSnapshot): void {
@@ -117,9 +174,20 @@ export function createNativeApprovalEnricher(
         });
         return;
       }
-      bufferSnapshot(parsed);
+      bufferSnapshot({
+        ...parsed,
+        toolArguments: sanitizeToolArguments(parsed.toolArguments),
+      });
       try {
-        await applyIfBuffered(parsed.correlationId);
+        const enriched = await applyIfBuffered(parsed.correlationId);
+        // Snapshot-after-created: the row already existed, so its "created" event
+        // fired without the snapshot. Publish "updated" so an open ReviewGate
+        // refetches and picks up the action + args. Snapshot-before-created
+        // enriches via `enrichOnCreated` BEFORE "created" fires (that event
+        // carries the snapshot), so the created-side path never publishes here.
+        if (enriched !== undefined && bus !== undefined) {
+          publishNativeApprovalUpdated(bus, enriched.tenantId, enriched.id);
+        }
       } catch (err) {
         log.warn("native approval enrich (on snapshot) failed", {
           correlationId: parsed.correlationId,

@@ -1,5 +1,4 @@
 import { APPROVAL_GATED_TOOL_NAMES } from "@workbench/agents";
-import type { HubDb } from "../db";
 
 /**
  * The LLM-safe tool names whose instance grant is minted `effect: "ask"` — the
@@ -9,15 +8,9 @@ import type { HubDb } from "../db";
  * runs. This is unconditional (CL-3940): there is no owner toggle and no env
  * kill-switch — write tools always prompt. Read-classified tools are absent
  * from this set, so their grants stay `allow` and run automatically.
- *
- * `db`/`tenantId` are retained on the signature because the caller
- * (`persistInstanceToolGrants`) resolves the set per (tenant, instance); they
- * are unused now that gating is global, but keeping the seam avoids churning
- * every call site if a future per-tenant policy returns.
  */
-export async function resolveAskToolNamesForTenant(
-  _db: HubDb,
-  _tenantId: string,
-): Promise<ReadonlySet<string>> {
+export async function resolveAskToolNamesForTenant(): Promise<
+  ReadonlySet<string>
+> {
   return APPROVAL_GATED_TOOL_NAMES;
 }

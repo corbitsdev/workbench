@@ -43,6 +43,31 @@ export async function publishNativeApprovalCreated(
 }
 
 /**
+ * Emits the native rail's "updated" change notification (CL-3940) when a tool
+ * snapshot enriches an approval row that already exists — i.e. the snapshot
+ * arrived AFTER the row's "created" event, so that "created" went out without
+ * the tool name/arguments. The notification carries the `approvalId` so an open
+ * ReviewGate refetches and the decision surface picks up the action + args.
+ * Rides the same bus/envelope as created/resolved; best-effort, never thrown, so
+ * it cannot corrupt the enrich path (which is itself already isolated).
+ */
+export function publishNativeApprovalUpdated(
+  bus: ApprovalsEventBus,
+  tenantId: string,
+  approvalId: string,
+): void {
+  try {
+    bus.publish({ tenantId, sessionId: null, kind: "updated", approvalId });
+  } catch (err) {
+    log.warn("native approval updated-notify failed", {
+      tenantId,
+      approvalId,
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
+}
+
+/**
  * Emits the native rail's "resolved" change notification after interchange's
  * mounted approve/reject route resolves a suspension. A native approval has no
  * session linkage, so `sessionId` is null and the notification is tenant-wide.
