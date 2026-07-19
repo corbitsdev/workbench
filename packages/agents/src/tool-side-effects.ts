@@ -38,8 +38,9 @@ export const INTERNAL_WRITE_EXCLUSIONS: ReadonlySet<string> = new Set([
  * `sideEffect: "write"` bare name minus {@link INTERNAL_WRITE_EXCLUSIONS},
  * mapped through the CL-2306 `canonicalizeToolNames` → `toLlmToolName`
  * transform the harness applies before it matches a tool call. The model never
- * calls the bare name, so the gated set must be keyed on the safe name. The
- * sidecar's approval-gated runner matches these names before invoking the tool.
+ * calls the bare name, so the gated set must be keyed on the safe name. These
+ * are the names whose instance grant is minted `effect: "ask"` for the native
+ * approval rail, so Interchange's reactor suspends the call for human approval.
  */
 export function approvalGatedWriteNames(
   allWriteBareNames: readonly string[],
@@ -71,9 +72,9 @@ function hubOnlyWriteBareNames(): string[] {
 }
 
 /**
- * Build the LLM-safe names the sidecar's approval-gated runner matches — every
- * external / hard-to-undo write. Derived from committed manifest `sideEffects`
- * plus hub-only tools (tarballs carry no `sideEffect` metadata).
+ * Build the LLM-safe names the native approval rail gates as `effect: "ask"` —
+ * every external / hard-to-undo write. Derived from committed manifest
+ * `sideEffects` plus hub-only tools (tarballs carry no `sideEffect` metadata).
  */
 export function buildApprovalGatedToolNames(): ReadonlySet<string> {
   const writeBare = [
