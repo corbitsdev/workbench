@@ -26,6 +26,7 @@ import {
 } from "../../hooks/use-myra-threads";
 import { ThreadList } from "./ThreadList";
 import { WorkbenchSelector } from "./WorkbenchSelector";
+import { usePendingApprovalInstances } from "../../hooks/use-pending-approval-instances";
 import { branding } from "../../lib/app-env";
 
 const NAV_ITEMS = [
@@ -67,6 +68,7 @@ export function AppSidebar({
   const { session } = useAuth();
   const navigate = useNavigate();
   const createThread = useCreateMyraThread();
+  const hasPendingApproval = usePendingApprovalInstances().size > 0;
   const meQuery = useQuery({
     queryKey: ["me"],
     queryFn: getMe,
@@ -151,19 +153,31 @@ export function AppSidebar({
         className="mt-3 flex flex-col gap-0.5 px-3"
         aria-label="Main navigation"
       >
-        {NAV_ITEMS.map(({ to, label, icon: Icon, end }) => (
-          <NavLink
-            key={to}
-            to={to}
-            end={end}
-            onClick={onNavigate}
-            data-tour={to === "/inbox" ? "nav-inbox" : undefined}
-            className={({ isActive }) => navItemClass(isActive)}
-          >
-            <Icon size={17} />
-            {label}
-          </NavLink>
-        ))}
+        {NAV_ITEMS.map(({ to, label, icon: Icon, end }) => {
+          const showApprovalDot = to === "/inbox" && hasPendingApproval;
+          return (
+            <NavLink
+              key={to}
+              to={to}
+              end={end}
+              onClick={onNavigate}
+              data-tour={to === "/inbox" ? "nav-inbox" : undefined}
+              className={({ isActive }) => navItemClass(isActive)}
+            >
+              <Icon size={17} />
+              <span className="flex-1">{label}</span>
+              {showApprovalDot && (
+                <span
+                  data-testid="inbox-approval-dot"
+                  title="Pending approval"
+                  aria-label="Pending approval"
+                  role="status"
+                  className="h-1.5 w-1.5 shrink-0 rounded-full bg-orange"
+                />
+              )}
+            </NavLink>
+          );
+        })}
       </nav>
 
       {(meQuery.data?.demoLinks?.length ?? 0) > 0 && (
