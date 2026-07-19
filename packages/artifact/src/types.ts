@@ -47,6 +47,12 @@ export const GalleryArtifactSchema = ArtifactVisualSchema.and({
   "previewExcerpt?": "string",
   "thumbnailUrl?": "string",
   "thumbnailAlt?": "string",
+  /**
+   * Uppercase initials for the artifact's creator, present only when the
+   * creator is known AND is not the viewing user. Undefined on the viewer's
+   * own artifacts, and when the creator is unknown.
+   */
+  "creatorInitials?": "string",
 });
 
 export type GalleryArtifact = typeof GalleryArtifactSchema.infer;
