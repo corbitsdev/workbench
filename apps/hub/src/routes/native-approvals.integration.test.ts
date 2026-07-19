@@ -243,7 +243,29 @@ beforeEach(async () => {
   events = [];
   await client.exec(`DELETE FROM approval;`);
   await client.exec(`DELETE FROM signal_correlation;`);
+  await client.exec(`DELETE FROM auto_approved_tool;`);
 });
+
+async function autoApprovedRows(): Promise<
+  { principal_id: string; tool_name: string; created_by_principal_id: string }[]
+> {
+  const rows = await client.query<{
+    principal_id: string;
+    tool_name: string;
+    created_by_principal_id: string;
+  }>(
+    `select principal_id, tool_name, created_by_principal_id from auto_approved_tool`,
+  );
+  return rows.rows;
+}
+
+function autoApproveBody(approvalId: string, toolName: string, user = USER) {
+  return {
+    method: "POST",
+    headers: { "content-type": "application/json", "x-test-user": user },
+    body: JSON.stringify({ approvalId, toolName }),
+  };
+}
 
 describe("native approval rail", () => {
   test("list route returns the tenant's pending suspension", async () => {
@@ -354,5 +376,103 @@ describe("native approval rail", () => {
     );
     expect(res.status).toBe(200);
     expect(deliverCalls).toHaveLength(1);
+  });
+});
+
+describe("durable auto-approve (CL-3942)", () => {
+  test("auto-approve persists a record keyed on the instance principal", async () => {
+    await registerSuspension("corr-1", "apr-1");
+    const res = await buildApp().request(
+      `/api/tenants/${TENANT}/native-approvals/auto-approve`,
+      autoApproveBody("apr-1", "slack__post_message"),
+    );
+    expect(res.status).toBe(200);
+    const rows = await autoApprovedRows();
+    expect(rows).toEqual([
+      {
+        principal_id: PRINCIPAL,
+        tool_name: "slack__post_message",
+        created_by_principal_id: PRINCIPAL,
+      },
+    ]);
+  });
+
+  test("auto-approve is idempotent (repeat click is a no-op)", async () => {
+    await registerSuspension("corr-1", "apr-1");
+    await buildApp().request(
+      `/api/tenants/${TENANT}/native-approvals/auto-approve`,
+      autoApproveBody("apr-1", "slack__post_message"),
+    );
+    await buildApp().request(
+      `/api/tenants/${TENANT}/native-approvals/auto-approve`,
+      autoApproveBody("apr-1", "slack__post_message"),
+    );
+    expect(await autoApprovedRows()).toHaveLength(1);
+  });
+
+  test("auto-approve 404s an approval the caller does not own", async () => {
+    await registerSuspension("corr-1", "apr-1");
+    // Member B is a tenant member but owns no instance.
+    const res = await buildApp().request(
+      `/api/tenants/${TENANT}/native-approvals/auto-approve`,
+      autoApproveBody("apr-1", "slack__post_message", USER_B),
+    );
+    expect(res.status).toBe(404);
+    expect(await autoApprovedRows()).toHaveLength(0);
+  });
+
+  test("auto-approve 404s an unknown approval id", async () => {
+    const res = await buildApp().request(
+      `/api/tenants/${TENANT}/native-approvals/auto-approve`,
+      autoApproveBody("apr-nope", "slack__post_message"),
+    );
+    expect(res.status).toBe(404);
+  });
+
+  test("list returns the caller's records; another member sees none", async () => {
+    await registerSuspension("corr-1", "apr-1");
+    await buildApp().request(
+      `/api/tenants/${TENANT}/native-approvals/auto-approve`,
+      autoApproveBody("apr-1", "slack__post_message"),
+    );
+    const mine = await buildApp().request(
+      `/api/tenants/${TENANT}/native-approvals/auto-approved-tools`,
+    );
+    const mineBody = (await mine.json()) as { toolName: string }[];
+    expect(mineBody.map((r) => r.toolName)).toEqual(["slack__post_message"]);
+
+    const other = await buildApp().request(
+      `/api/tenants/${TENANT}/native-approvals/auto-approved-tools`,
+      { headers: { "x-test-user": USER_B } },
+    );
+    expect(await other.json()).toEqual([]);
+  });
+
+  test("revoke removes the record; a stranger cannot revoke it", async () => {
+    await registerSuspension("corr-1", "apr-1");
+    await buildApp().request(
+      `/api/tenants/${TENANT}/native-approvals/auto-approve`,
+      autoApproveBody("apr-1", "slack__post_message"),
+    );
+    const id = (await autoApprovedRows()).length;
+    expect(id).toBe(1);
+    const recordId = (
+      await client.query<{ id: string }>(`select id from auto_approved_tool`)
+    ).rows[0]?.id as string;
+
+    // Member B cannot revoke member A's decision.
+    const stranger = await buildApp().request(
+      `/api/tenants/${TENANT}/native-approvals/auto-approved-tools/${recordId}`,
+      { method: "DELETE", headers: { "x-test-user": USER_B } },
+    );
+    expect(stranger.status).toBe(404);
+    expect(await autoApprovedRows()).toHaveLength(1);
+
+    const res = await buildApp().request(
+      `/api/tenants/${TENANT}/native-approvals/auto-approved-tools/${recordId}`,
+      { method: "DELETE" },
+    );
+    expect(res.status).toBe(200);
+    expect(await autoApprovedRows()).toHaveLength(0);
   });
 });
