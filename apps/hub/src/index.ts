@@ -172,8 +172,8 @@ import {
 import { createNativeApprovalsRouter } from "./routes/native-approvals";
 import { createApprovalsEventBus } from "./lib/approvals-events";
 import {
-  publishNativeApprovalCreated,
   publishNativeApprovalResolved,
+  withNativeApprovalCreatedNotify,
 } from "./lib/native-approval-notify";
 import { createFeedbackRouter } from "./routes/feedback";
 import type { MemberPreferences } from "@workbench/shared";
@@ -556,14 +556,11 @@ const lookups: SidecarLookups = {
       });
     },
   }),
-  registerSignalCorrelation: async (registration) => {
-    await baseRegisterSignalCorrelation(registration);
-    await publishNativeApprovalCreated(
-      db,
-      approvalsEventBus,
-      registration.deploymentId,
-    );
-  },
+  registerSignalCorrelation: withNativeApprovalCreatedNotify(
+    db,
+    approvalsEventBus,
+    baseRegisterSignalCorrelation,
+  ),
   async receiveWorkflowRunPack(repoId, pack, ref, commitSha) {
     if (repoId.kind !== "workflow-run") {
       throw new Error(
