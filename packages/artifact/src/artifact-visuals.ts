@@ -310,7 +310,7 @@ function artifactJobLabel(artifact: ArtifactWithSession): string | undefined {
 
 // Two initials from a real name (e.g. "Jane Doe" -> "JD"); a single-word name
 // yields its first letter only.
-function initialsFromName(name: string): string {
+export function initialsFromName(name: string): string {
   const parts = name.trim().split(/\s+/).filter(Boolean);
   if (parts.length === 0) return "";
   const first = parts[0]?.[0] ?? "";
