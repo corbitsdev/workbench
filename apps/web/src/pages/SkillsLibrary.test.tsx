@@ -10,6 +10,14 @@ import {
 } from "@testing-library/react";
 import React from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { PageChromeProvider, usePageChromeSlot } from "../lib/page-chrome";
+
+// Stands in for AppTopBar's chrome consumer so tests can interact with the
+// search/view-toggle/add-skill controls SkillsLibrary pushes into the shared
+// top bar via useSetPageChrome, without mounting the whole app shell.
+function ChromeSlotProbe() {
+  return React.createElement("div", null, usePageChromeSlot());
+}
 
 declare global {
   interface Window {
@@ -135,7 +143,12 @@ function renderPage() {
     React.createElement(
       QueryClientProvider,
       { client },
-      React.createElement(SkillsLibrary),
+      React.createElement(
+        PageChromeProvider,
+        null,
+        React.createElement(ChromeSlotProbe, null),
+        React.createElement(SkillsLibrary),
+      ),
     ),
   );
 }
