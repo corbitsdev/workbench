@@ -45,6 +45,11 @@ const TENANT = "tnt-native";
 const OTHER_TENANT = "tnt-other";
 const PRINCIPAL = "prn-native";
 const USER = "usr-native";
+// A second member in the same tenant who owns no instance — the cross-member
+// isolation control.
+const PRINCIPAL_B = "prn-native-b";
+const USER_B = "usr-native-b";
+const INSTANCE = "ins-native";
 const DEPLOYMENT = "dep-native";
 const RUN = "run-native";
 const DOMAIN = "native.example.com";
@@ -57,28 +62,35 @@ let signalStore: SignalCorrelationStore;
 let deliverCalls: { runId: string; signalId: string }[];
 let events: ApprovalEvent[];
 
-const testUser: SessionUser = {
-  id: USER,
-  createdAt: new Date("2025-01-01"),
-  updatedAt: new Date("2025-01-01"),
-  email: "n@native.example.com",
-  emailVerified: true,
-  name: "Native Tester",
-};
+function makeUser(id: string): SessionUser {
+  return {
+    id,
+    createdAt: new Date("2025-01-01"),
+    updatedAt: new Date("2025-01-01"),
+    email: `${id}@native.example.com`,
+    emailVerified: true,
+    name: "Native Tester",
+  };
+}
 
-const testSession: SessionInfo = {
-  id: "ses-native",
-  createdAt: new Date("2025-01-01"),
-  updatedAt: new Date("2025-01-01"),
-  userId: USER,
-  expiresAt: new Date("2999-01-01"),
-  token: "tok",
-};
+function makeSession(userId: string): SessionInfo {
+  return {
+    id: `ses-${userId}`,
+    createdAt: new Date("2025-01-01"),
+    updatedAt: new Date("2025-01-01"),
+    userId,
+    expiresAt: new Date("2999-01-01"),
+    token: "tok",
+  };
+}
 
-const getSession: GetSession = async (headers) =>
-  headers.get("x-anon") === "1"
-    ? null
-    : { user: testUser, session: testSession };
+// Session resolves to the user named by `x-test-user` (default member A). An
+// `x-anon` header returns no session, exercising the 401 path.
+const getSession: GetSession = async (headers) => {
+  if (headers.get("x-anon") === "1") return null;
+  const userId = headers.get("x-test-user") ?? USER;
+  return { user: makeUser(userId), session: makeSession(userId) };
+};
 
 function mockSidecarRouter(): SidecarRouter {
   return new Proxy(
@@ -200,9 +212,25 @@ beforeAll(async () => {
       [id, slug, slug, `${slug}.example.com`],
     );
   }
+  for (const [id, user] of [
+    [PRINCIPAL, USER],
+    [PRINCIPAL_B, USER_B],
+  ]) {
+    await client.query(
+      `insert into principal (id, tenant_id, kind, ref_id, status) values ($1, $2, 'user', $3, 'active')`,
+      [id, TENANT, user],
+    );
+  }
+  // Member A owns the instance whose address the seeded approvals name; member B
+  // owns nothing. The list is scoped to owned instances, so B must see none of
+  // A's approvals.
   await client.query(
-    `insert into principal (id, tenant_id, kind, ref_id, status) values ($1, $2, 'user', $3, 'active')`,
-    [PRINCIPAL, TENANT, USER],
+    `insert into agent_instance (id, agent_id, tenant_id, principal_id, address, status) values ($1, $2, $3, $4, $5, 'running')`,
+    [INSTANCE, "agt-native", TENANT, PRINCIPAL, AGENT_ADDRESS],
+  );
+  await client.query(
+    `insert into member_agent_instance (id, tenant_id, member_principal_id, template_key, agent_id, instance_id) values ($1, $2, $3, 'myra', $4, $5)`,
+    ["mai-native", TENANT, PRINCIPAL, "agt-native", INSTANCE],
   );
 });
 
@@ -236,6 +264,22 @@ describe("native approval rail", () => {
       `/api/tenants/${OTHER_TENANT}/native-approvals`,
     );
     expect(res.status).toBe(403);
+  });
+
+  test("list route is ownership-scoped: another member sees nothing", async () => {
+    await registerSuspension("corr-1", "apr-1");
+    // Member A owns the instance and sees the approval.
+    const a = await buildApp().request(
+      `/api/tenants/${TENANT}/native-approvals`,
+    );
+    expect(await a.json()).toHaveLength(1);
+    // Member B is a tenant member but owns no instance, so sees none of A's.
+    const b = await buildApp().request(
+      `/api/tenants/${TENANT}/native-approvals`,
+      { headers: { "x-test-user": USER_B } },
+    );
+    expect(b.status).toBe(200);
+    expect(await b.json()).toEqual([]);
   });
 
   test("list route 404s an unknown tenant", async () => {
