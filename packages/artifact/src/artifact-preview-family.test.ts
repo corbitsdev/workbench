@@ -101,4 +101,18 @@ describe("comparisonSummary", () => {
     expect(comparisonSummary("not json")).toBeUndefined();
     expect(comparisonSummary('{"unrelated": true}')).toBeUndefined();
   });
+
+  it("drops the 'Winner:' prefix and just states the count when no ranking entry is rank 1 (e.g. a tie or an unranked comparison)", () => {
+    const noWinner = JSON.stringify({
+      ranking: [
+        { rank: 2, label: "Claude Opus" },
+        { rank: 2, label: "GPT-5" },
+      ],
+      variants: [
+        { label: "Claude Opus", content: "a" },
+        { label: "GPT-5", content: "b" },
+      ],
+    });
+    expect(comparisonSummary(noWinner)).toBe("2 variants");
+  });
 });
