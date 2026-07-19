@@ -16,7 +16,6 @@ const artifact: GalleryArtifact = {
   time: "2 hours ago",
   provenance: "Workflow",
   label: "Email",
-  viz: "lines",
   fill: "bg-orange",
   span: "row-span-3",
   status: "draft",

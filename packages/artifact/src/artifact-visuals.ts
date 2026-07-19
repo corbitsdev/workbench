@@ -1,9 +1,15 @@
 // Presentation mapping for the artifact gallery. The package returns clean
 // domain data; this module decides how to visualize it. Maps an artifact
-// `kind` to a gallery tile's label, decorative viz, fill color, and grid span.
+// `kind` to a gallery tile's label, fill color, and grid span. This is the
+// single source of truth for kind labels — apps/web's detail-page label
+// (`resolveKindLabel`) defers to `explicitVisualForKind` so the card chip and
+// the detail header never disagree.
 
 import type { ArtifactWithSession } from "@workbench/shared";
-import { isLinkedInPostArtifactKind } from "./artifact-kinds";
+import {
+  isLinkedInPostArtifactKind,
+  LINKEDIN_POST_ARTIFACT_KINDS,
+} from "./artifact-kinds";
 import {
   artifactPreviewFamily,
   comparisonSummary,
@@ -16,7 +22,6 @@ import type { ArtifactVisual, GalleryArtifact } from "./types";
 // so unknown kinds fall back to a neutral document tile.
 const LINKEDIN_POST_VISUAL: ArtifactVisual = {
   label: "LinkedIn Post",
-  viz: "lines",
   fill: "bg-blue",
   span: "row-span-2",
   experimentalFill: "bg-blue/85",
@@ -25,7 +30,6 @@ const LINKEDIN_POST_VISUAL: ArtifactVisual = {
 
 const REPORT_VISUAL: ArtifactVisual = {
   label: "Report",
-  viz: "deck",
   fill: "bg-charcoal",
   span: "row-span-4",
   experimentalFill: "bg-charcoal/90",
@@ -34,7 +38,6 @@ const REPORT_VISUAL: ArtifactVisual = {
 
 const PRESENTATION_VISUAL: ArtifactVisual = {
   label: "Presentation",
-  viz: "deck",
   fill: "bg-charcoal",
   span: "row-span-4",
   experimentalFill: "bg-charcoal/90",
@@ -43,7 +46,6 @@ const PRESENTATION_VISUAL: ArtifactVisual = {
 
 const COMPARISON_VISUAL: ArtifactVisual = {
   label: "Comparison",
-  viz: "grid",
   fill: "bg-green",
   span: "row-span-3",
   experimentalFill: "bg-green/85",
@@ -53,7 +55,6 @@ const COMPARISON_VISUAL: ArtifactVisual = {
 const KIND_VISUALS: Record<string, ArtifactVisual> = {
   email: {
     label: "Email",
-    viz: "lines",
     fill: "bg-orange",
     span: "row-span-3",
     experimentalFill: "bg-orange/85",
@@ -61,7 +62,6 @@ const KIND_VISUALS: Record<string, ArtifactVisual> = {
   },
   "twitter-post": {
     label: "Tweet",
-    viz: "lines",
     fill: "bg-blue",
     span: "row-span-2",
     experimentalFill: "bg-blue/85",
@@ -69,7 +69,6 @@ const KIND_VISUALS: Record<string, ArtifactVisual> = {
   },
   "founder-pov-post": {
     label: "Founder POV",
-    viz: "lines",
     fill: "bg-blue",
     span: "row-span-2",
     experimentalFill: "bg-blue/85",
@@ -77,7 +76,6 @@ const KIND_VISUALS: Record<string, ArtifactVisual> = {
   },
   "one-pager": {
     label: "One-Pager",
-    viz: "deck",
     fill: "bg-charcoal",
     span: "row-span-4",
     experimentalFill: "bg-charcoal/90",
@@ -85,7 +83,6 @@ const KIND_VISUALS: Record<string, ArtifactVisual> = {
   },
   blog: {
     label: "Blog Post",
-    viz: "deck",
     fill: "bg-charcoal",
     span: "row-span-4",
     experimentalFill: "bg-charcoal/90",
@@ -93,7 +90,6 @@ const KIND_VISUALS: Record<string, ArtifactVisual> = {
   },
   "case-study": {
     label: "Case Study",
-    viz: "deck",
     fill: "bg-charcoal",
     span: "row-span-4",
     experimentalFill: "bg-charcoal/90",
@@ -101,7 +97,6 @@ const KIND_VISUALS: Record<string, ArtifactVisual> = {
   },
   "case-study-draft": {
     label: "Case Study",
-    viz: "deck",
     fill: "bg-charcoal",
     span: "row-span-4",
     experimentalFill: "bg-charcoal/90",
@@ -109,7 +104,6 @@ const KIND_VISUALS: Record<string, ArtifactVisual> = {
   },
   "objection-handling": {
     label: "Objection Handling",
-    viz: "deck",
     fill: "bg-charcoal",
     span: "row-span-4",
     experimentalFill: "bg-charcoal/90",
@@ -117,7 +111,6 @@ const KIND_VISUALS: Record<string, ArtifactVisual> = {
   },
   "objection-handling-doc": {
     label: "Objection Handling",
-    viz: "deck",
     fill: "bg-charcoal",
     span: "row-span-4",
     experimentalFill: "bg-charcoal/90",
@@ -125,7 +118,6 @@ const KIND_VISUALS: Record<string, ArtifactVisual> = {
   },
   "customer-quotes": {
     label: "Customer Quotes",
-    viz: "deck",
     fill: "bg-charcoal",
     span: "row-span-4",
     experimentalFill: "bg-charcoal/90",
@@ -133,7 +125,6 @@ const KIND_VISUALS: Record<string, ArtifactVisual> = {
   },
   "customer-quote-pulls": {
     label: "Customer Quotes",
-    viz: "deck",
     fill: "bg-charcoal",
     span: "row-span-4",
     experimentalFill: "bg-charcoal/90",
@@ -141,7 +132,6 @@ const KIND_VISUALS: Record<string, ArtifactVisual> = {
   },
   "sales-one-pager": {
     label: "Sales One-Pager",
-    viz: "deck",
     fill: "bg-charcoal",
     span: "row-span-4",
     experimentalFill: "bg-charcoal/90",
@@ -149,7 +139,6 @@ const KIND_VISUALS: Record<string, ArtifactVisual> = {
   },
   "pain-points-blog": {
     label: "Pain Points Blog",
-    viz: "deck",
     fill: "bg-charcoal",
     span: "row-span-4",
     experimentalFill: "bg-charcoal/90",
@@ -157,7 +146,6 @@ const KIND_VISUALS: Record<string, ArtifactVisual> = {
   },
   "follow-up-email": {
     label: "Follow-up Email",
-    viz: "lines",
     fill: "bg-orange",
     span: "row-span-3",
     experimentalFill: "bg-orange/85",
@@ -168,7 +156,6 @@ const KIND_VISUALS: Record<string, ArtifactVisual> = {
   gamma_presentation: PRESENTATION_VISUAL,
   "csv-export": {
     label: "CSV",
-    viz: "grid",
     fill: "bg-orange",
     span: "row-span-2",
     experimentalFill: "bg-orange/85",
@@ -176,7 +163,6 @@ const KIND_VISUALS: Record<string, ArtifactVisual> = {
   },
   file: {
     label: "File",
-    viz: "grid",
     fill: "bg-cream",
     span: "row-span-2",
     experimentalFill: "bg-cream",
@@ -184,7 +170,6 @@ const KIND_VISUALS: Record<string, ArtifactVisual> = {
   },
   selection: {
     label: "Selection",
-    viz: "grid",
     fill: "bg-cream",
     span: "row-span-2",
     experimentalFill: "bg-cream",
@@ -192,7 +177,6 @@ const KIND_VISUALS: Record<string, ArtifactVisual> = {
   },
   battlecard: {
     label: "Battlecard",
-    viz: "grid",
     fill: "bg-green",
     span: "row-span-3",
     experimentalFill: "bg-green/85",
@@ -200,7 +184,6 @@ const KIND_VISUALS: Record<string, ArtifactVisual> = {
   },
   "pain-points": {
     label: "Pain Points",
-    viz: "bars",
     fill: "bg-orange",
     span: "row-span-3",
     experimentalFill: "bg-orange/85",
@@ -208,7 +191,6 @@ const KIND_VISUALS: Record<string, ArtifactVisual> = {
   },
   "call-transcript": {
     label: "Transcript",
-    viz: "lines",
     fill: "bg-cream",
     span: "row-span-4",
     experimentalFill: "bg-cream",
@@ -216,7 +198,6 @@ const KIND_VISUALS: Record<string, ArtifactVisual> = {
   },
   web: {
     label: "Web page",
-    viz: "deck",
     fill: "bg-blue",
     span: "row-span-4",
     experimentalFill: "bg-blue/85",
@@ -224,7 +205,6 @@ const KIND_VISUALS: Record<string, ArtifactVisual> = {
   },
   web_site: {
     label: "Web page",
-    viz: "deck",
     fill: "bg-blue",
     span: "row-span-4",
     experimentalFill: "bg-blue/85",
@@ -232,7 +212,6 @@ const KIND_VISUALS: Record<string, ArtifactVisual> = {
   },
   image: {
     label: "Image",
-    viz: "deck",
     fill: "bg-blue",
     span: "row-span-3",
     experimentalFill: "bg-blue/85",
@@ -248,18 +227,34 @@ const KIND_VISUALS: Record<string, ArtifactVisual> = {
 
 const FALLBACK_VISUAL: ArtifactVisual = {
   label: "Document",
-  viz: "lines",
   fill: "bg-cream",
   span: "row-span-3",
   experimentalFill: "bg-cream",
   experimentalSpan: "row-span-3",
 };
 
-export function visualForKind(kind: string): ArtifactVisual {
+/**
+ * The visual for a kind that is explicitly known to this module (a LinkedIn
+ * variant or a `KIND_VISUALS` entry), or undefined for anything else. This is
+ * the vocabulary other surfaces (e.g. apps/web's detail-page label) should
+ * defer to, rather than each maintaining its own kind → label table.
+ */
+export function explicitVisualForKind(kind: string): ArtifactVisual | undefined {
   if (isLinkedInPostArtifactKind(kind)) {
     return LINKEDIN_POST_VISUAL;
   }
-  return KIND_VISUALS[kind] ?? FALLBACK_VISUAL;
+  return KIND_VISUALS[kind];
+}
+
+/** Every kind with an explicit visual/label — the domain over which the
+ * card-chip and detail-header labels are guaranteed to agree. */
+export const KNOWN_ARTIFACT_KINDS: readonly string[] = [
+  ...LINKEDIN_POST_ARTIFACT_KINDS,
+  ...Object.keys(KIND_VISUALS),
+];
+
+export function visualForKind(kind: string): ArtifactVisual {
+  return explicitVisualForKind(kind) ?? FALLBACK_VISUAL;
 }
 
 const STATUS_LABELS: Record<string, string> = {

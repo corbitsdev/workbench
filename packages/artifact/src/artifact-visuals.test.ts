@@ -4,20 +4,39 @@ import { GalleryArtifactParseError, parseGalleryArtifact } from "./types";
 import {
   artifactProvenance,
   artifactProvenanceLabel,
+  explicitVisualForKind,
+  KNOWN_ARTIFACT_KINDS,
   toGalleryArtifact,
   tryToGalleryArtifact,
   visualForKind,
 } from "./artifact-visuals";
 
+describe("explicitVisualForKind", () => {
+  it("returns the visual for a kind with an explicit entry", () => {
+    expect(explicitVisualForKind("email")?.label).toBe("Email");
+  });
+
+  it("returns undefined (not the Document fallback) for an unmapped kind", () => {
+    expect(explicitVisualForKind("totally-unknown-kind")).toBeUndefined();
+  });
+
+  it("KNOWN_ARTIFACT_KINDS enumerates every kind explicitVisualForKind resolves", () => {
+    expect(KNOWN_ARTIFACT_KINDS.length).toBeGreaterThan(0);
+    for (const kind of KNOWN_ARTIFACT_KINDS) {
+      expect(explicitVisualForKind(kind)).toBeDefined();
+    }
+  });
+});
+
 describe("visualForKind", () => {
   it("maps known kinds to their visuals", () => {
     expect(visualForKind("email").label).toBe("Email");
-    expect(visualForKind("battlecard").viz).toBe("grid");
+    expect(visualForKind("battlecard").fill).toBe("bg-green");
   });
 
   it("maps legacy linkedin kinds through the canonical linkedin-post visual", () => {
     expect(visualForKind("linkedin-daily").label).toBe("LinkedIn Post");
-    expect(visualForKind("pain-points-linkedin-post").viz).toBe("lines");
+    expect(visualForKind("pain-points-linkedin-post").fill).toBe("bg-blue");
   });
 
   it("falls back to a neutral document tile for unknown kinds", () => {
@@ -34,7 +53,7 @@ describe("visualForKind", () => {
   it("labels the heartbeat's morning-brief kind as Report, not Document (CL-3503)", () => {
     const v = visualForKind("morning-brief");
     expect(v.label).toBe("Report");
-    expect(v.viz).toBe("deck");
+    expect(v.fill).toBe("bg-charcoal");
   });
 
   it("labels image artifacts as images", () => {
