@@ -2987,6 +2987,88 @@ describe("createReactor — beforeToolExtensions", () => {
     expect(blocked.data.result.callId).toBe("call-1");
   });
 
+  // WORKBENCH-LOCAL (CL-3940): a before-tool `suspend` that parks a tool call
+  // (the authz `ask` shape) publishes a `custom.approval.requested` event
+  // carrying the parked call's snapshot, keyed by the same correlationId the
+  // gate/pending-operation use, so the hub can enrich the native approval row.
+  test("suspending extension emits custom.approval.requested with the tool snapshot", async () => {
+    const CORR = "corr-approval-1";
+    const suspendCall: BeforeToolExtension = {
+      async beforeTool(call) {
+        const timeoutAt = Date.now() + 60_000;
+        return {
+          type: "suspend",
+          gate: {
+            type: "approval",
+            gateId: `pending-${CORR}`,
+            correlationId: CORR,
+            timeoutAt,
+          },
+          pendingOp: {
+            correlationId: CORR,
+            kind: "approval",
+            registeredAt: Date.now(),
+            gateId: `pending-${CORR}`,
+            timeoutAt,
+            suspendedCall: call,
+          },
+        };
+      },
+    };
+
+    const { reactor, events, waitFor } = createTestReactor({
+      director: directorFromTable({
+        "message.received": (_e, _s, caps) => caps.infer(),
+        "inference.done": (_e, _s, caps) =>
+          caps.executeTools(
+            [
+              {
+                id: "call-write",
+                name: "linear__create_issue",
+                arguments: { title: "Ship it" },
+              },
+            ],
+            true,
+          ),
+        "reactor.gate.cleared": (_e, _s, caps) => caps.done(),
+      }),
+      inferenceRunner: makeInferenceRunner({
+        type: "done",
+        turn: {
+          role: "assistant",
+          content: [
+            {
+              type: "tool_call",
+              id: "call-write",
+              name: "linear__create_issue",
+              arguments: { title: "Ship it" },
+            },
+          ],
+          model: "test-model",
+          timestamp: 1000,
+        },
+        usage: inferUsage,
+      }),
+      beforeToolExtensions: [suspendCall],
+      shutdownTimeoutMs: 500,
+    });
+
+    reactor.start();
+    reactor.deliver(makeInboundMessage());
+    await waitFor("reactor.gate.blocked");
+
+    const requested = getEvent(events, "custom.approval.requested");
+    expect(requested.data).toEqual({
+      correlationId: CORR,
+      callId: "call-write",
+      toolName: "linear__create_issue",
+      toolArguments: { title: "Ship it" },
+    });
+
+    reactor.abort("admin_kill");
+    await waitFor("reactor.done", 2000);
+  });
+
   test("first blocking extension wins and subsequent extensions are not called", async () => {
     const called: string[] = [];
 

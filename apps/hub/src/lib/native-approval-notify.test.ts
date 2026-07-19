@@ -158,6 +158,39 @@ describe("withNativeApprovalCreatedNotify", () => {
     expect(committed).toBe(true);
   });
 
+  test("calls the enricher with the correlationId after the co-write commits", async () => {
+    await client.query(
+      `insert into workflow_deployment (id, tenant_id, definition_asset_id, address, status) values ($1, $2, $3, $4, 'deployed')`,
+      [
+        DEPLOYMENT,
+        TENANT,
+        "ast-notify",
+        `ins_${DEPLOYMENT}@notify.example.com`,
+      ],
+    );
+    const bus = createApprovalsEventBus();
+    const enriched: string[] = [];
+    let committedBeforeEnrich = false;
+    let committed = false;
+    const base = async () => {
+      committed = true;
+    };
+    const enricher = {
+      recordToolSnapshot: async () => {},
+      enrichOnCreated: async (correlationId: string) => {
+        committedBeforeEnrich = committed;
+        enriched.push(correlationId);
+      },
+    };
+    const wrapped = withNativeApprovalCreatedNotify(db, bus, base, enricher);
+
+    await wrapped(registration(DEPLOYMENT));
+
+    expect(enriched).toEqual(["corr-x"]);
+    // Enrichment must run only after the register co-write committed the row.
+    expect(committedBeforeEnrich).toBe(true);
+  });
+
   test("a register failure DOES propagate (publish is never reached)", async () => {
     let published = false;
     const bus = createApprovalsEventBus();

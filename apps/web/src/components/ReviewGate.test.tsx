@@ -201,15 +201,21 @@ describe("ReviewGate — empty state", () => {
 });
 
 describe("ReviewGate — native rail", () => {
-  it("renders a native approval with the tool name from its snapshot", async () => {
+  it("renders a friendly action label derived from the tool snapshot", async () => {
     mockListNativeApprovals.mockResolvedValue([
-      makeNativeApproval({ toolDefinition: { name: "slack_post_message" } }),
+      makeNativeApproval({
+        toolDefinition: { name: "slack__post_message" },
+        toolArguments: { channel: "#gtm", text: "hi" },
+      }),
     ]);
     renderGate();
     await waitFor(() => {
       screen.getByTestId("native-approval-apr-native-1");
     });
-    screen.getByText("slack_post_message");
+    // The friendly catalog label, never the raw snake_case id and never the
+    // "Approval requested by <agent>" fallback.
+    screen.getByText("Posting to Slack #gtm");
+    expect(screen.queryByText("slack__post_message")).toBeNull();
   });
 
   it("falls back to the originating agent when no tool snapshot exists", async () => {
@@ -221,10 +227,10 @@ describe("ReviewGate — native rail", () => {
     screen.getByText(/Approval requested by ins_dep-1/);
   });
 
-  it("summarizes tool arguments when the snapshot carries them", async () => {
+  it("summarizes tool arguments as key: value pairs when the snapshot carries them", async () => {
     mockListNativeApprovals.mockResolvedValue([
       makeNativeApproval({
-        toolDefinition: { name: "slack_post_message" },
+        toolDefinition: { name: "slack__post_message" },
         toolArguments: { channel: "#gtm", text: "hi" },
       }),
     ]);
@@ -232,7 +238,8 @@ describe("ReviewGate — native rail", () => {
     await waitFor(() => {
       screen.getByTestId("native-approval-apr-native-1");
     });
-    screen.getByText("channel, text");
+    // Values, not just field names, so the approver sees what will actually run.
+    screen.getByText("channel: #gtm · text: hi");
   });
 
   it("resolves a native approval through the native approve route", async () => {
