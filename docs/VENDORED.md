@@ -673,9 +673,24 @@ runtime change.
 **Interchange DB migrations** (`packages/db/migrations/0038`–`0041`, approval +
 signal-correlation stores) apply automatically via drizzle's migrator against
 the submodule folder (`scripts/db-setup.ts` → `migrate(db, { migrationsFolder:
-"interchange/packages/db/migrations" })`); the bump updated `_journal.json`. No
-workbench migration was written; the workbench migration guard test
-(`apps/hub/src/db/migrations.test.ts`, workbench-schema-only) is unaffected.
+"interchange/packages/db/migrations" })`); the bump updated `_journal.json`.
+
+**Table-name collision (`approval`) — CL-3932 ship-blocker.** Interchange 0038's
+bare `CREATE TABLE "approval"` (no `IF NOT EXISTS`) collided with the workbench's
+own `approval` table (`apps/hub/migrations/0011_approval.sql`, the ask_principal
+rail), and `db-setup.ts` runs interchange migrations BEFORE the workbench ones —
+so an already-migrated DB aborted the deploy and a fresh DB silently got
+interchange's shape. Fixed by renaming the workbench table to `workbench_approval`:
+(1) a pre-interchange reconcile in `db-setup.ts`
+(`apps/hub/src/db/workbench-approval-reconcile.ts`) renames the workbench-shaped
+`approval` (+ its PK) on already-migrated DBs; (2) migration `0070` creates the
+canonical `workbench_approval` on fresh DBs; (3) the custom-migration runner
+skips workbench `0040`'s now-superseded `CREATE INDEX ... ON "approval"` when the
+live `approval` is interchange's (its columns differ, and Postgres validates
+index columns before the `IF NOT EXISTS` name check). A new guard test
+(`migrations.test.ts`) fails if any interchange migration table name collides
+with a LIVE workbench schema table, catching the next such collision at PR time;
+both deploy paths are covered by `workbench-approval-reconcile.integration.test.ts`.
 
 **Duck-typed seams re-verified:** T1 (`sanitizeAddress` import resolves,
 `workflow-host-wiring-undeploy-reclaim` green), T2 (supervisor/step-invoker
