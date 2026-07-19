@@ -17,6 +17,9 @@ export type ApprovalDisplayLookups = {
   principalByRefId: Map<string, string>;
   agentByInstanceId: Map<string, string>;
   agentByAddress: Map<string, string>;
+  /** Lowercased agent mailbox address → owning instance id, for scoping an
+   * approval row to the chat (agent instance) that raised it (CL-3940). */
+  instanceIdByAddress: Map<string, string>;
 };
 
 export function buildApprovalDisplayLookups(
@@ -32,9 +35,11 @@ export function buildApprovalDisplayLookups(
 
   const agentByInstanceId = new Map<string, string>();
   const agentByAddress = new Map<string, string>();
+  const instanceIdByAddress = new Map<string, string>();
   for (const instance of instances) {
     agentByInstanceId.set(instance.id, instance.agentName);
     agentByAddress.set(instance.address.toLowerCase(), instance.agentName);
+    instanceIdByAddress.set(instance.address.toLowerCase(), instance.id);
   }
 
   return {
@@ -42,7 +47,31 @@ export function buildApprovalDisplayLookups(
     principalByRefId,
     agentByInstanceId,
     agentByAddress,
+    instanceIdByAddress,
   };
+}
+
+/**
+ * Resolve an agent's mailbox address to its owning instance id (CL-3940). Used
+ * to scope a native approval to the chat that raised it. Prefers the exact
+ * address → instance-id map; for an `ins_<id>@…` mailbox (the common agent
+ * form, tag suffix allowed) the local-part is the instance id itself, so it
+ * resolves even before the instance list has loaded. Null when neither yields
+ * an id — the caller then shows no card rather than guessing a thread.
+ */
+export function instanceIdFromAddress(
+  address: string,
+  lookups: ApprovalDisplayLookups,
+): string | null {
+  const trimmed = address.trim();
+  const byAddress = lookups.instanceIdByAddress.get(trimmed.toLowerCase());
+  if (byAddress !== undefined) return byAddress;
+  const parts = splitMailAddress(trimmed);
+  if (parts !== null) {
+    const insId = instanceIdFromInsLocal(parts.local);
+    if (insId !== null) return insId;
+  }
+  return null;
 }
 
 export function splitMailAddress(

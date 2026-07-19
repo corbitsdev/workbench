@@ -1,10 +1,24 @@
 import { friendlyToolSummaryKnown } from "@workbench/agents/browser";
 import { toHumanLabel } from "@workbench/ui";
 import type { NativeApproval } from "../lib/approvals-api";
+import type { UnresolvedToolCall } from "../lib/unresolved-tool-call";
 import { providerLabel } from "../lib/tool-providers";
+
+/** The action a card presents: a tool name plus its arguments. */
+type EffectiveTool = {
+  name: string;
+  arguments: Record<string, unknown>;
+};
 
 export type NativeApprovalCardProps = {
   approval: NativeApproval;
+  /**
+   * The single unresolved tool call in the open thread's transcript, used as
+   * the action source when the backend snapshot is absent (CL-3940). Null when
+   * the thread yields zero or more than one candidate — the card then shows a
+   * neutral label rather than a guessed action (the no-mismatch guard).
+   */
+  fallbackToolCall: UnresolvedToolCall | null;
   requestState: "idle" | "approving" | "rejecting";
   error: string | null;
   onApprove: () => void;
@@ -15,6 +29,28 @@ export type NativeApprovalCardProps = {
 function snapshotToolName(approval: NativeApproval): string | null {
   const name = approval.toolDefinition?.["name"];
   return typeof name === "string" && name.length > 0 ? name : null;
+}
+
+/**
+ * The action a card presents, by precedence (CL-3940): (a) the backend tool
+ * snapshot when present; (b) else the open thread's single unresolved tool
+ * call; (c) else null → the card shows the neutral originating-agent fallback.
+ */
+function resolveEffectiveTool(
+  approval: NativeApproval,
+  fallbackToolCall: UnresolvedToolCall | null,
+): EffectiveTool | null {
+  const snapshotName = snapshotToolName(approval);
+  if (snapshotName !== null) {
+    return { name: snapshotName, arguments: approval.toolArguments ?? {} };
+  }
+  if (fallbackToolCall !== null) {
+    return {
+      name: fallbackToolCall.name,
+      arguments: fallbackToolCall.arguments,
+    };
+  }
+  return null;
 }
 
 /**
@@ -40,15 +76,18 @@ function friendlyActionLabel(
 }
 
 /**
- * The card headline. Once the reactor snapshot has enriched the row (CL-3940)
- * this is the friendly action label; before enrichment lands it falls back to
- * the originating agent's mailbox local-part — the only always-present
- * identifier of what asked. Derived from the row, never a hardcoded label.
+ * The card headline. When an action is resolved (backend snapshot or the open
+ * thread's single unresolved tool call, CL-3940) this is the friendly action
+ * label; with neither it falls back to the originating agent's mailbox
+ * local-part — the only always-present identifier of what asked. Derived from
+ * the row/transcript, never a hardcoded label.
  */
-function nativeHeadline(approval: NativeApproval): string {
-  const name = snapshotToolName(approval);
-  if (name !== null) {
-    return friendlyActionLabel(name, approval.toolArguments ?? {});
+function nativeHeadline(
+  approval: NativeApproval,
+  tool: EffectiveTool | null,
+): string {
+  if (tool !== null) {
+    return friendlyActionLabel(tool.name, tool.arguments);
   }
   const local = approval.agentAddress.split("@")[0] ?? approval.agentAddress;
   return `Approval requested by ${local}`;
@@ -125,11 +164,11 @@ function formatArgValue(value: unknown): string | null {
  * "+N more" cue is appended so nothing is dropped without a trace.
  */
 function nativeArgumentSummary(
-  approval: NativeApproval,
+  tool: EffectiveTool | null,
   headline: string,
 ): string | null {
-  const args = approval.toolArguments;
-  if (args === null) return null;
+  if (tool === null) return null;
+  const args = tool.arguments;
   const candidates = Object.entries(args).filter(([key, value]) => {
     if (!TITLE_LIKE_ARG_KEYS.has(key)) return true;
     const formatted = formatScalarArg(value);
@@ -160,6 +199,7 @@ function nativeArgumentSummary(
  */
 export function NativeApprovalCard({
   approval,
+  fallbackToolCall,
   requestState,
   error,
   onApprove,
@@ -168,8 +208,9 @@ export function NativeApprovalCard({
   const isApproving = requestState === "approving";
   const isRejecting = requestState === "rejecting";
   const isInFlight = isApproving || isRejecting;
-  const headline = nativeHeadline(approval);
-  const argSummary = nativeArgumentSummary(approval, headline);
+  const effectiveTool = resolveEffectiveTool(approval, fallbackToolCall);
+  const headline = nativeHeadline(approval, effectiveTool);
+  const argSummary = nativeArgumentSummary(effectiveTool, headline);
 
   return (
     <div

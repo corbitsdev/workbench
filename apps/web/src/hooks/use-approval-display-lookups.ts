@@ -12,6 +12,7 @@ const EMPTY_LOOKUPS: ApprovalDisplayLookups = {
   principalByRefId: new Map(),
   agentByInstanceId: new Map(),
   agentByAddress: new Map(),
+  instanceIdByAddress: new Map(),
 };
 
 export function useApprovalDisplayLookups(tenantId: string) {
