@@ -6,7 +6,7 @@ import { streamSSE } from "hono/streaming";
 import { schema as intxSchema } from "@intx/db";
 import type { DB } from "@intx/db";
 import { getLogger } from "@intx/log";
-import { approval } from "../db/schema";
+import { workbenchApproval as approval } from "../db/schema";
 import type { HubDb } from "../db";
 import type { ApprovalsEventBus } from "../lib/approvals-events";
 import {

@@ -216,7 +216,12 @@ function usage(input: number): StoreState["tokenUsage"] {
 }
 
 function pending(correlationId: string): PendingOperation {
-  return { correlationId, registeredAt: 1700000000, gateId: "gate-1" };
+  return {
+    correlationId,
+    kind: "approval",
+    registeredAt: 1700000000,
+    gateId: "gate-1",
+  };
 }
 
 function connectorState(lastMessageId: string): ConnectorThreadState {

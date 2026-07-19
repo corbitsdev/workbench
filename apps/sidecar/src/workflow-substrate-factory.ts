@@ -679,6 +679,34 @@ function createSidecarStepBuildEnv(
       deps.durableConversation !== undefined
         ? (await deps.durableConversation.acquire(stepId)).storage
         : await createIsogitStore(storeDir, deps.signer);
+
+    // Cold-path resume keying assertion (correct-by-construction guard for
+    // the resume-attempt invariant documented on `stepStorageRoot`). A
+    // resume re-invocation (`req.resume` present) delivers the correlated
+    // decision to the reactor, which rehydrates its gate from THIS store's
+    // pending operations. The store the runtime reopened is keyed by
+    // `attempt` (`stepStorageRoot` above); if that attempt does not match
+    // the attempt the step suspended on, the store carries no pending-op
+    // for the resumed correlationId, the reactor comes up gateless, and the
+    // delivered decision correlates against nothing -- a silent forever-hang.
+    // Make that keying violation loud here, at the single seam that both
+    // opened the store AND knows a resume must find its gate, rather than
+    // letting it surface as a hang. The warm path keys its durable store per
+    // agent (not per attempt) and rehydrates from a different lifecycle, so
+    // this assertion is cold-path only.
+    if (deps.durableConversation === undefined && req.resume !== undefined) {
+      const resumeCorrelationId = req.resume.correlationId;
+      const loaded = await storage.load();
+      const hasPendingOp = loaded.pendingOperations.some(
+        (op) => op.correlationId === resumeCorrelationId,
+      );
+      if (!hasPendingOp) {
+        throw new Error(
+          `sidecar workflow-child step invoker buildEnv: resume of step ${JSON.stringify(stepId)} (run ${JSON.stringify(runId)}, attempt ${String(attempt)}) reopened a ContextStore with no pending operation for correlationId ${JSON.stringify(resumeCorrelationId)}. The cold-path store is keyed by attempt (${storeDir}); a resume that finds no gate here means it reopened the wrong attempt's store -- the reactor would rehydrate no gate and the delivered decision would correlate against nothing. This is a keying violation, not a recoverable state.`,
+        );
+      }
+    }
+
     // `audit`: default-harness uses the isogit store as the agent's
     // ContextStore AND a separate mail-audit store (`createMailAuditStore`).
     // The agent harness's BaseEnv.audit is the AuditStore; default-harness
@@ -1855,6 +1883,13 @@ export function createSidecarSubstrateFactory(
     // subtree (every step/attempt the run produced) via `runStepStorageRoot`.
     // `rm -rf` semantics (recursive + force) so a run that never wrote
     // scratch is a no-op rather than an ENOENT throw.
+    //
+    // Parked-step safety: reclamation keys on the RUN's terminal status, and
+    // a step parked on a signal (`awaiting-signal`) keeps the run
+    // non-terminal, so this never fires while a suspended step's `attempt-N`
+    // store still holds a live pending-op the crash-resume path must reopen
+    // (the keying the `createSidecarStepBuildEnv` resume assertion depends
+    // on). Any future per-STEP reclamation must preserve that invariant.
     //
     // The warm single-step path keys its agent scratch STABLY under the
     // disjoint `warm/<stepId>/` sub-root (see `warmStepStorageRoot`), reused

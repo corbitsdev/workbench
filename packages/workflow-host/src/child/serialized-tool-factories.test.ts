@@ -59,9 +59,12 @@ function roundTrip(definition: Record<string, unknown>): WorkflowDefinition {
 describe("serialized toolFactories", () => {
   test("JSON round-trip turns function factories into null and hashDefinition crashes on them", () => {
     const parsed = roundTrip(authoredDefinition());
-    const step = (parsed.steps as Record<string, { agent: { toolFactories: unknown[] } }>)[
-      "step-1"
-    ];
+    const step = (
+      parsed.steps as unknown as Record<
+        string,
+        { agent: { toolFactories: unknown[] } }
+      >
+    )["step-1"];
     expect(step).toBeDefined();
     // Pin the JSON behavior this bug rides on: function -> null in arrays.
     expect(step?.agent.toolFactories).toEqual([null]);
@@ -115,8 +118,13 @@ describe("serialized toolFactories", () => {
       stepOrder: ["step-1", "map-1", "loop-1"],
     };
     const parsed = roundTrip(authored);
-    sanitizeSerializedToolFactories(parsed.steps as Record<string, unknown>);
-    const steps = parsed.steps as Record<string, Record<string, unknown>>;
+    sanitizeSerializedToolFactories(
+      parsed.steps as unknown as Record<string, unknown>,
+    );
+    const steps = parsed.steps as unknown as Record<
+      string,
+      Record<string, unknown>
+    >;
     const stepAgent = steps["step-1"]?.["agent"] as {
       toolFactories: { id: string; requires: readonly string[] }[];
     };

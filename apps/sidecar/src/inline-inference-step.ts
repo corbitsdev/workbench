@@ -113,6 +113,17 @@ export async function runInlineInferenceStep(args: {
   const draining = drainStream();
   try {
     const sendResult = await agent.send(synthesizeStepInput(args.req.input));
+    if (sendResult.type !== "reply") {
+      // Upstream's `SendResult` gained a `type: "suspended"` variant with the
+      // approval-suspension runtime. Inline single-turn steps carry no
+      // approval gate, so a suspension here is not a state this path models;
+      // fail loudly rather than returning a garbage output.
+      throw new Error(
+        `inline inference step ${JSON.stringify(
+          args.req.authzContext.stepId,
+        )} returned a non-reply SendResult (type=${sendResult.type}); inline single-turn steps do not support approval suspension`,
+      );
+    }
     return { output: { reply: sendResult.reply, turn: sendResult.turn } };
   } catch (cause) {
     // Never mask cancellation: an aborted signal is the run cancel/timeout, not

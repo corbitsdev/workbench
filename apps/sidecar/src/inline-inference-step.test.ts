@@ -94,6 +94,7 @@ function buildStreamingStubAgent(events: InferenceEvent[]): Agent {
   return {
     async send(): Promise<SendResult> {
       return {
+        type: "reply",
         reply: "ok",
         turn: {
           role: "assistant",
