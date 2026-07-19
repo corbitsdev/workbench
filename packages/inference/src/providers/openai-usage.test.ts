@@ -23,6 +23,7 @@ describe("openai adapter reasoning-token usage mapping (CL-3917)", () => {
       usage: {
         prompt_tokens: 100,
         completion_tokens: 50,
+        prompt_tokens_details: { cached_tokens: 64 },
         completion_tokens_details: { reasoning_tokens: 37 },
       },
     });
@@ -32,6 +33,7 @@ describe("openai adapter reasoning-token usage mapping (CL-3917)", () => {
 
     expect(usageEvent).toBeDefined();
     expect(usageEvent?.data.usage.thinking).toBe(37);
+    expect(usageEvent?.data.usage.cacheRead).toBe(64);
   });
 
   test("maps completion_tokens_details.reasoning_tokens on a usage-only chunk (no choices)", () => {
