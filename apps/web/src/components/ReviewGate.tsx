@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   approveNativeRequest,
@@ -7,23 +7,37 @@ import {
   subscribeApprovals,
 } from "../lib/approvals-api";
 import type { NativeApproval } from "../lib/approvals-api";
+import { instanceIdFromAddress } from "../lib/approval-display";
 import { logger } from "../lib/logger";
+import { useApprovalDisplayLookups } from "../hooks/use-approval-display-lookups";
+import {
+  THREAD_TURNS_QUERY_KEY,
+  useOpenThreadToolCall,
+} from "../hooks/use-thread-tool-calls";
 import { NativeApprovalCard } from "./NativeApprovalCard";
 
 export type ReviewGateProps = {
   /** Interchange tenant ID used to scope the native approval decision surface. */
   tenantId: string;
+  /**
+   * The instance id of the currently-open chat thread, or null on a new/empty
+   * chat. The card renders only for approvals raised by THIS instance so an
+   * approval never travels chat-to-chat (CL-3940).
+   */
+  openInstanceId: string | null;
 };
 
 type RequestState = "idle" | "approving" | "rejecting";
 
 /**
- * The native (Interchange-suspension) approval decision surface. The rail is
- * tenant-wide: a suspended tool call has no session linkage, so every pending
- * approval for the tenant surfaces here regardless of which chat is open. The
- * list is ownership-scoped server-side to the caller's own agent instances.
+ * The native (Interchange-suspension) approval decision surface. A suspended
+ * tool call has no session linkage, so the list route returns every pending
+ * approval the caller owns tenant-wide; the gate then scopes rendering to the
+ * open chat by resolving each approval's originating agent address to its
+ * instance id and matching it against `openInstanceId` (CL-3940). A new/empty
+ * chat (`openInstanceId` null) shows no card.
  */
-export function ReviewGate({ tenantId }: ReviewGateProps) {
+export function ReviewGate({ tenantId, openInstanceId }: ReviewGateProps) {
   const queryClient = useQueryClient();
   const enabled = tenantId !== "";
 
@@ -32,6 +46,21 @@ export function ReviewGate({ tenantId }: ReviewGateProps) {
     enabled,
     queryFn: () => listNativeApprovals(tenantId),
   });
+
+  const { lookups } = useApprovalDisplayLookups(tenantId);
+  const fallbackToolCall = useOpenThreadToolCall(tenantId, openInstanceId);
+
+  // Only approvals raised by the open thread's instance render here. Resolved
+  // from the row's originating agent address so a card never appears in another
+  // chat or a new empty one.
+  const scopedApprovals = useMemo(() => {
+    if (openInstanceId === null) return [];
+    return nativeApprovals.filter(
+      (approval) =>
+        instanceIdFromAddress(approval.agentAddress, lookups) ===
+        openInstanceId,
+    );
+  }, [nativeApprovals, openInstanceId, lookups]);
 
   // Event-driven refresh (CL-3285): fetch once on mount, then refetch only when
   // the hub pushes an approval change over the shared notifications stream. An
@@ -45,6 +74,11 @@ export function ReviewGate({ tenantId }: ReviewGateProps) {
       () => {
         void queryClient.invalidateQueries({
           queryKey: ["native-approvals", tenantId],
+        });
+        // Re-derive the open thread's suspended tool call so the card enriches
+        // from the transcript the moment an approval appears (CL-3940).
+        void queryClient.invalidateQueries({
+          queryKey: [THREAD_TURNS_QUERY_KEY, tenantId],
         });
       },
       // A terminally-failed stream (never opened) would otherwise leave the gate
@@ -85,7 +119,7 @@ export function ReviewGate({ tenantId }: ReviewGateProps) {
     });
   }
 
-  if (nativeApprovals.length === 0) return null;
+  if (scopedApprovals.length === 0) return null;
 
   async function handleApprove(id: string) {
     patchItemState(id, { requestState: "approving", error: null });
@@ -120,7 +154,7 @@ export function ReviewGate({ tenantId }: ReviewGateProps) {
   }
 
   // Newest-first so "what to review first" reads reliably top-to-bottom.
-  const queue = [...nativeApprovals].sort(
+  const queue = [...scopedApprovals].sort(
     (x: NativeApproval, y: NativeApproval) =>
       y.createdAt.localeCompare(x.createdAt),
   );
@@ -133,6 +167,7 @@ export function ReviewGate({ tenantId }: ReviewGateProps) {
           <NativeApprovalCard
             key={native.id}
             approval={native}
+            fallbackToolCall={fallbackToolCall}
             requestState={requestState}
             error={error}
             onApprove={() => void handleApprove(native.id)}

@@ -20,10 +20,35 @@ import {
 import React from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ApprovalEvent, NativeApproval } from "../lib/approvals-api";
+import type { UnresolvedToolCall } from "../lib/unresolved-tool-call";
 
 const mockListNativeApprovals = mock<() => Promise<NativeApproval[]>>();
 const mockApproveNativeRequest = mock<() => Promise<NativeApproval>>();
 const mockRejectNativeRequest = mock<() => Promise<NativeApproval>>();
+
+// The open thread's single unresolved tool call, controllable per-test so the
+// arg-sourcing precedence (BUG 2) can be exercised without a real /turns fetch.
+let mockToolCall: UnresolvedToolCall | null = null;
+mock.module("../hooks/use-thread-tool-calls", () => ({
+  THREAD_TURNS_QUERY_KEY: "thread-turns",
+  useOpenThreadToolCall: () => mockToolCall,
+}));
+
+// The address→instance-id resolver in ReviewGate works off the real
+// approval-display helper for `ins_` addresses even with empty lookups, so the
+// lookups hook is stubbed to avoid a real members/instances fetch.
+mock.module("../hooks/use-approval-display-lookups", () => ({
+  useApprovalDisplayLookups: () => ({
+    lookups: {
+      principalById: new Map(),
+      principalByRefId: new Map(),
+      agentByInstanceId: new Map(),
+      agentByAddress: new Map(),
+      instanceIdByAddress: new Map(),
+    },
+    isLoading: false,
+  }),
+}));
 
 // Captures the ReviewGate's event handler so a test can simulate an SSE
 // approval event. subscribeApprovals returns an unsubscribe function.
@@ -48,7 +73,12 @@ mock.module("../lib/approvals-api", () => ({
   rejectNativeRequest: mockRejectNativeRequest,
 }));
 
-function renderGate(tenantId = "tenant-1") {
+// The default approval below is raised by ins_dep-1, so the open thread defaults
+// to that instance and the card renders (BUG 1 scoping is satisfied).
+function renderGate(
+  tenantId = "tenant-1",
+  openInstanceId: string | null = "ins_dep-1",
+) {
   const { ReviewGate } =
     require("./ReviewGate") as typeof import("./ReviewGate");
   const client = new QueryClient({
@@ -58,7 +88,7 @@ function renderGate(tenantId = "tenant-1") {
     React.createElement(
       QueryClientProvider,
       { client },
-      React.createElement(ReviewGate, { tenantId }),
+      React.createElement(ReviewGate, { tenantId, openInstanceId }),
     ),
   );
 }
@@ -100,6 +130,7 @@ afterEach(() => {
   subscribeCalls.length = 0;
   unsubscribeCalls = 0;
   capturedOnEvent = null;
+  mockToolCall = null;
 });
 
 describe("ReviewGate — event-driven refresh", () => {
@@ -390,6 +421,85 @@ describe("ReviewGate — native rail", () => {
       "native-approval-native-new",
       "native-approval-native-old",
     ]);
+  });
+});
+
+describe("ReviewGate — scoped to the open thread (BUG 1)", () => {
+  it("renders the card when the open thread is the instance that raised it", async () => {
+    mockListNativeApprovals.mockResolvedValue([makeNativeApproval()]);
+    renderGate("tenant-1", "ins_dep-1");
+    await waitFor(() => {
+      screen.getByTestId("native-approval-apr-native-1");
+    });
+  });
+
+  it("does not render the card in a different thread", async () => {
+    mockListNativeApprovals.mockResolvedValue([makeNativeApproval()]);
+    renderGate("tenant-1", "ins_other");
+    await waitFor(() => {
+      expect(mockListNativeApprovals).toHaveBeenCalledTimes(1);
+    });
+    expect(screen.queryByTestId("review-gate")).toBeNull();
+    expect(screen.queryByTestId("native-approval-apr-native-1")).toBeNull();
+  });
+
+  it("does not render the card in a new/empty chat with no open instance", async () => {
+    mockListNativeApprovals.mockResolvedValue([makeNativeApproval()]);
+    renderGate("tenant-1", null);
+    await waitFor(() => {
+      expect(mockListNativeApprovals).toHaveBeenCalledTimes(1);
+    });
+    expect(screen.queryByTestId("review-gate")).toBeNull();
+  });
+});
+
+describe("ReviewGate — arg sourcing from the transcript (BUG 2)", () => {
+  it("uses the open thread's single unresolved tool call when there is no snapshot", async () => {
+    mockToolCall = {
+      callId: "call_1",
+      name: "linear__create_issue",
+      arguments: { title: "Fix the login bug" },
+    };
+    mockListNativeApprovals.mockResolvedValue([makeNativeApproval()]);
+    renderGate();
+    await waitFor(() => {
+      screen.getByTestId("native-approval-apr-native-1");
+    });
+    // The transcript-derived friendly label, not the neutral agent fallback.
+    screen.getByText(/Fix the login bug/);
+    expect(screen.queryByText(/Approval requested by ins_dep-1/)).toBeNull();
+  });
+
+  it("shows the neutral fallback when the transcript has no single unresolved call (no-mismatch)", async () => {
+    // Two unresolved calls in the thread → useOpenThreadToolCall returns null.
+    mockToolCall = null;
+    mockListNativeApprovals.mockResolvedValue([makeNativeApproval()]);
+    renderGate();
+    await waitFor(() => {
+      screen.getByTestId("native-approval-apr-native-1");
+    });
+    screen.getByText(/Approval requested by ins_dep-1/);
+  });
+
+  it("prefers the backend snapshot over the transcript-derived call", async () => {
+    // A transcript call is present, but the enriched snapshot must win.
+    mockToolCall = {
+      callId: "call_1",
+      name: "mail_send",
+      arguments: { to: "wrong@x.com" },
+    };
+    mockListNativeApprovals.mockResolvedValue([
+      makeNativeApproval({
+        toolDefinition: { name: "slack__post_message" },
+        toolArguments: { channel: "#gtm", text: "hi" },
+      }),
+    ]);
+    renderGate();
+    await waitFor(() => {
+      screen.getByTestId("native-approval-apr-native-1");
+    });
+    screen.getByText("Posting to Slack #gtm");
+    expect(screen.queryByText(/mail/i)).toBeNull();
   });
 });
 
