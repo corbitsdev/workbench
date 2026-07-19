@@ -313,4 +313,26 @@ describe("reconcileInstanceDeploymentProjections", () => {
     const second = await reconcileInstanceDeploymentProjections({ db });
     expect(second).toEqual({ written: 0, deleted: 0 });
   });
+
+  test("treats a mid-relaunch (updating) instance as live: row preserved, never reclaimed", async () => {
+    const updatingAddress = `ins_updating1@${DOMAIN}`;
+    await seedInstance({
+      id: "ins_updating1",
+      address: updatingAddress,
+      status: "updating",
+    });
+    await writeInstanceDeploymentProjection({
+      db,
+      instanceAddress: updatingAddress,
+      agentId: AGENT,
+      tenantId: TENANT,
+      creatorPrincipalId: PRINCIPAL,
+    });
+
+    const result = await reconcileInstanceDeploymentProjections({ db });
+    expect(result.deleted).toBe(0);
+
+    const addresses = (await deploymentRows()).map((r) => r.address);
+    expect(addresses).toContain(updatingAddress);
+  });
 });

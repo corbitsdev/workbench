@@ -1184,7 +1184,13 @@ export async function reconcileInstanceDeploymentProjections(args: {
     .where(
       and(
         isNull(intxSchema.agentInstance.endedAt),
-        inArray(intxSchema.agentInstance.status, ["running", "deployed"]),
+        // "updating" is live (mid-relaunch, endedAt null) — matches RELAUNCHABLE_STATUSES;
+        // omitting it let a boot reconcile racing a relaunch reclaim a live row.
+        inArray(intxSchema.agentInstance.status, [
+          "running",
+          "deployed",
+          "updating",
+        ]),
       ),
     );
 
