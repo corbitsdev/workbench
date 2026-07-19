@@ -166,6 +166,21 @@ There are two kinds of vendoring:
 - **Audit:** `rg 'WORKBENCH-LOCAL' packages/inference/` (the CL-3853 blocks
   are tagged `WORKBENCH-LOCAL` without an issue number, per repo owner
   preference — the plain-token grep still finds them)
+- **WORKBENCH-LOCAL change (CL-3917):** `src/providers/openai.ts`
+  `parseResponse`'s end-of-stream usage branch (the one that fires when
+  `chunk.usage` rides on the SAME SSE chunk as the final `choices` delta —
+  the shape Bifrost and other OpenAI-compatible gateways use) hardcoded
+  `thinking: 0` and `cacheRead: 0` instead of reading
+  `completion_tokens_details.reasoning_tokens` /
+  `prompt_tokens_details.cached_tokens`, unlike the sibling "usage-only
+  chunk" branch a few lines above it which already mapped both fields
+  correctly. This silently zeroed reasoning tokens (and prefix-cache reads)
+  in Insights for every gateway that shapes its final usage event this way.
+  Confirmed present upstream at the `6927e7e4` pin too
+  (`interchange/packages/inference/src/providers/openai.ts`), so this is a
+  bug we inherited via the vendor copy, not a workbench-introduced
+  regression — fixed here rather than upstream per the "vendor fixes stay
+  local" rule. Guarded by `src/providers/openai-usage.test.ts`.
 
 ### `packages/storage-isogit` → `@workbench/storage-isogit`
 
