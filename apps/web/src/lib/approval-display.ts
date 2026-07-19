@@ -126,56 +126,7 @@ export function humanizeOpaqueId(
   return value;
 }
 
-export function humanizeApprovalValue(
-  value: unknown,
-  lookups: ApprovalDisplayLookups,
-  key?: string,
-): unknown {
-  if (typeof value === "string") {
-    if (key === "to" || key === "from" || key === "address") {
-      return formatMailboxAddress(value, lookups);
-    }
-    return humanizeOpaqueId(value, lookups);
-  }
-  if (Array.isArray(value)) {
-    return value.map((entry) => humanizeApprovalValue(entry, lookups, key));
-  }
-  if (value !== null && typeof value === "object") {
-    const out: Record<string, unknown> = {};
-    for (const [childKey, childValue] of Object.entries(value)) {
-      out[childKey] = humanizeApprovalValue(childValue, lookups, childKey);
-    }
-    return out;
-  }
-  return value;
-}
-
-export function isMailSendApproval(resource: string): boolean {
-  return resource === "tool:mail_send";
-}
-
-export type MailSendContext = {
-  to?: unknown;
-  content?: unknown;
-  subject?: unknown;
-  type?: unknown;
-  refs?: unknown;
-};
-
-export function mailSendContext(
-  context: Record<string, unknown> | null,
-): MailSendContext | null {
-  if (context === null) return null;
-  return context;
-}
-
-export function mailSendBodyText(context: MailSendContext): string | null {
-  const content = context.content;
-  if (typeof content === "string" && content.trim() !== "") return content;
-  return null;
-}
-
-/** Headline for mail_send tool rows and approval cards (chat + ReviewGate). */
+/** Headline for mail_send tool rows in chat activity summaries. */
 export function mailSendToolSummaryHeadline(
   to: unknown,
   lookups: ApprovalDisplayLookups,

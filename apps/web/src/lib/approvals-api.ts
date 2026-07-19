@@ -1,55 +1,20 @@
 // Approval request API client.
 //
-// These routes are served by the workbench hub's own approvals router
-// (createApprovalsRouter), mounted under /api/v1
-// (/api/v1/tenants/:tenantId/approvals). Requests go through the shared api()
-// client so the /api/v1 prefix and error handling stay single-sourced with the
-// rest of the app. The tenantId must be obtained from /api/v1/me before calling
-// these functions.
+// The native approval rail (Interchange suspension). The list route is a
+// workbench-owned read served under /api/tenants/:tenantId/native-approvals
+// (Interchange leaves its own list route a 501 stub); approve/reject are
+// Interchange's mounted routes. Change notifications arrive over the SSE stream
+// served by the hub's approval-notifications router under /api/v1. The tenantId
+// must be obtained from /api/v1/me before calling these functions.
 
 import { type } from "arktype";
-import { api, buildEventSourceUrl } from "./api";
+import { buildEventSourceUrl } from "./api";
 import { hubFetch } from "./hub-api";
 import { subscribeSharedEventStream } from "./shared-event-stream";
 
-export const ApprovalSchema = type({
-  id: "string",
-  tenantId: "string",
-  principalId: "string",
-  agentId: "string",
-  sessionId: "string | null",
-  resource: "string",
-  action: "string",
-  context: "Record<string, unknown> | null",
-  status: "'pending' | 'approved' | 'rejected'",
-  message: "string | null",
-  createdAt: "string",
-  resolvedAt: "string | null",
-});
-export type Approval = typeof ApprovalSchema.infer;
-export type ApprovalStatus = Approval["status"];
-
-const ApprovalArraySchema = ApprovalSchema.array();
-
-function parseApproval(raw: unknown): Approval {
-  const parsed = ApprovalSchema(raw);
-  if (parsed instanceof type.errors) {
-    throw new Error(`Invalid approval response: ${parsed.summary}`);
-  }
-  return parsed;
-}
-
-function parseApprovals(raw: unknown): Approval[] {
-  const parsed = ApprovalArraySchema(raw);
-  if (parsed instanceof type.errors) {
-    throw new Error(`Invalid approvals response: ${parsed.summary}`);
-  }
-  return parsed;
-}
-
-// A change notification pushed over the workbench-owned approvals SSE stream —
-// never the approval data itself. The client refetches the ownership-scoped
-// list route on each event.
+// A change notification pushed over the approvals SSE stream — never the
+// approval data itself. The client refetches the ownership-scoped native list
+// route on each event.
 export const ApprovalEventSchema = type({
   tenantId: "string",
   sessionId: "string | null",
@@ -85,45 +50,6 @@ export function subscribeApprovals(
   );
 }
 
-/**
- * List the pending approval requests the caller owns for the given tenant.
- */
-export async function listApprovals(tenantId: string): Promise<Approval[]> {
-  const raw = await api<unknown>("GET", `tenants/${tenantId}/approvals`);
-  return parseApprovals(raw);
-}
-
-/**
- * Approve a pending approval request. The approve endpoint reads no request
- * body — the approval is resolved as a one-time grant server-side.
- */
-export async function approveRequest(
-  tenantId: string,
-  approvalId: string,
-): Promise<Approval> {
-  const raw = await api<unknown>(
-    "POST",
-    `tenants/${tenantId}/approvals/${approvalId}/approve`,
-  );
-  return parseApproval(raw);
-}
-
-/**
- * Reject a pending approval request with an optional feedback message.
- */
-export async function rejectRequest(
-  tenantId: string,
-  approvalId: string,
-  message?: string,
-): Promise<Approval> {
-  const raw = await api<unknown>(
-    "POST",
-    `tenants/${tenantId}/approvals/${approvalId}/reject`,
-    message !== undefined ? { message } : undefined,
-  );
-  return parseApproval(raw);
-}
-
 // ─── Native rail (Interchange suspension) ──────────────────────────
 //
 // The native approval rail lives on Interchange's un-versioned tenant routes
@@ -131,8 +57,7 @@ export async function rejectRequest(
 // go through hubFetch. The list is a workbench-owned read (Interchange leaves
 // its own list route a 501 stub); approve/reject are Interchange's mounted
 // routes. A native row is shaped by Interchange's `ApprovalResponse` — it
-// carries a tool snapshot (null until the upstream suspend-time plumbing lands)
-// rather than the legacy row's `resource`/`action`/`context`.
+// carries a tool snapshot (null until the upstream suspend-time plumbing lands).
 
 export const NativeApprovalSchema = type({
   id: "string",
