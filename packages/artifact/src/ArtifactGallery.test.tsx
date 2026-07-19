@@ -201,4 +201,38 @@ describe("ArtifactGallery", () => {
     expect(onOpen).toHaveBeenCalledTimes(1);
     expect(onOpen.mock.calls[0]?.[0]?.id).toBe("a-1");
   });
+
+  it("threads viewerPrincipalId into tiles so a non-own artifact shows the creator badge", () => {
+    render(
+      React.createElement(ArtifactGallery, {
+        artifacts: [
+          {
+            ...artifact,
+            ownerPrincipalId: "principal-2",
+            ownerName: "Sawyer Cutler",
+          },
+        ],
+        viewMode: "grid",
+        viewerPrincipalId: "principal-1",
+      }),
+    );
+    expect(screen.getByText("SC")).toBeDefined();
+  });
+
+  it("shows no creator badge on the viewer's own artifact even with viewerPrincipalId set", () => {
+    render(
+      React.createElement(ArtifactGallery, {
+        artifacts: [
+          {
+            ...artifact,
+            ownerPrincipalId: "principal-1",
+            ownerName: "Sawyer Cutler",
+          },
+        ],
+        viewMode: "grid",
+        viewerPrincipalId: "principal-1",
+      }),
+    );
+    expect(screen.queryByText("SC")).toBeNull();
+  });
 });

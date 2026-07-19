@@ -209,6 +209,47 @@ describe("toGalleryArtifact", () => {
     );
   });
 
+  it("omits creatorInitials when no viewerPrincipalId is supplied", () => {
+    const gallery = toGalleryArtifact({
+      ...base,
+      ownerPrincipalId: "principal-owner",
+      ownerName: "Sawyer Cutler",
+    });
+    expect(gallery.creatorInitials).toBeUndefined();
+  });
+
+  it("omits creatorInitials on the viewer's own artifact", () => {
+    const gallery = toGalleryArtifact(
+      { ...base, ownerPrincipalId: "principal-1", ownerName: "Sawyer Cutler" },
+      { viewerPrincipalId: "principal-1" },
+    );
+    expect(gallery.creatorInitials).toBeUndefined();
+  });
+
+  it("derives uppercase first+last initials for a non-own artifact's named creator", () => {
+    const gallery = toGalleryArtifact(
+      { ...base, ownerPrincipalId: "principal-2", ownerName: "Sawyer Cutler" },
+      { viewerPrincipalId: "principal-1" },
+    );
+    expect(gallery.creatorInitials).toBe("SC");
+  });
+
+  it("omits creatorInitials when the owner has no name", () => {
+    const gallery = toGalleryArtifact(
+      { ...base, ownerPrincipalId: "principal-2", ownerName: null },
+      { viewerPrincipalId: "principal-1" },
+    );
+    expect(gallery.creatorInitials).toBeUndefined();
+  });
+
+  it("omits creatorInitials when the artifact has no owner (unowned/system)", () => {
+    const gallery = toGalleryArtifact(
+      { ...base, ownerPrincipalId: null, ownerName: null },
+      { viewerPrincipalId: "principal-1" },
+    );
+    expect(gallery.creatorInitials).toBeUndefined();
+  });
+
   it("returns empty time string for an unparseable timestamp (NaN guard)", () => {
     expect(toGalleryArtifact({ ...base, updatedAt: "not-a-date" }).time).toBe(
       "",
