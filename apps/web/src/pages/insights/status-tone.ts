@@ -43,6 +43,9 @@ export function runStatusTone(status: string): StatusTone {
     return "attention";
   }
   if (status === "failed") return "danger";
+  // Explicit inert terminals (user stop + native cancel) stay neutral so they
+  // never pick up failed-red if the default branch ever changes.
+  if (status === "stopped" || status === "cancelled") return "neutral";
   return "neutral";
 }
 

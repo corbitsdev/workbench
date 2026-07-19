@@ -280,7 +280,15 @@ export function toolRowsFromSteps(steps: LogStepState[]): ToolRow[] {
   return [...byName.values()].sort((a, b) => b.calls - a.calls);
 }
 
-function runStatusPill(phase: string | undefined): StatusPill {
+function runStatusPill(
+  phase: string | undefined,
+  recordStatus?: string,
+): StatusPill {
+  // User-stopped runs persist as index status `stopped` (CL-3689). The log fold
+  // yields `cancelled`, but the product label is Stopped — never Failed red.
+  if (recordStatus === "stopped") {
+    return { tone: "neutral", label: "Stopped" };
+  }
   if (phase === "failed") return { tone: "danger", label: "Failed" };
   if (phase === "running" || phase === "in-flight") {
     return { tone: "progress", label: "Running" };
@@ -289,6 +297,7 @@ function runStatusPill(phase: string | undefined): StatusPill {
     return { tone: "attention", label: "Awaiting" };
   }
   if (phase === "completed") return { tone: "positive", label: "Completed" };
+  if (phase === "cancelled") return { tone: "neutral", label: "Cancelled" };
   return { tone: "neutral", label: phase ?? "Run" };
 }
 
@@ -406,7 +415,7 @@ export function WorkflowTracePage() {
     rawId: safeId ?? "—",
     tone: "run",
   };
-  const status = runStatusPill(logState?.phase);
+  const status = runStatusPill(logState?.phase, record?.status);
 
   const completed = steps.filter((s) => s.phase === "completed").length;
   const failed = steps.filter((s) => s.phase === "failed").length;

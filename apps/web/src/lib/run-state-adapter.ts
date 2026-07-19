@@ -11,7 +11,15 @@ export interface RunRecord {
   // `provisioning` (CL-2755): the run's per-run deployment is still cold-starting
   // off the /start critical path. Non-terminal — the FE shows a live "Starting…"
   // state until the projection advances it to `running`.
-  status: "provisioning" | "running" | "awaiting" | "completed" | "failed";
+  // `stopped` (CL-3688/CL-3689): user-initiated stop — terminal and distinct from
+  // `failed` so Insights can label it Stopped with neutral styling.
+  status:
+    | "provisioning"
+    | "running"
+    | "awaiting"
+    | "completed"
+    | "failed"
+    | "stopped";
   // The deployment that produced this run (CL-2321) — used to resolve the exact
   // deployed version and to read the run's event log / step outputs. Absent on
   // runs created before the record began persisting it.
@@ -34,7 +42,7 @@ export interface RunRecord {
 // a run-list row) — same two-literal invariant, no unsafe cast needed at the
 // call site.
 export function isStatusTerminal(status: string): boolean {
-  return status === "completed" || status === "failed";
+  return status === "completed" || status === "failed" || status === "stopped";
 }
 
 // True once the run can no longer advance on its own — the caller stops polling
@@ -170,10 +178,13 @@ export function stepOutputsFromLog(log: LogRunState): Record<string, unknown> {
 
 // Map the thin index status to a run-level `RunPhase` for the log-unavailable
 // fallback. `awaiting` (parked on a gate) is still live, so it maps to
-// `running` — the run has not settled.
+// `running` — the run has not settled. User-stopped maps to native `cancelled`
+// (there is no `stopped` RunPhase); the product label "Stopped" is applied at
+// the Insights surfaces that read the index status.
 function recordStatusToPhase(status: RunRecord["status"]): RunPhase {
   if (status === "completed") return "completed";
   if (status === "failed") return "failed";
+  if (status === "stopped") return "cancelled";
   return "running";
 }
 
