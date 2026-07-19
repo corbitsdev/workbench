@@ -21,6 +21,11 @@ mock.module("../../hooks/use-tasks", () => ({
   useTasks: () => ({ data: bellTaskData }),
 }));
 
+let bellPendingApprovals = new Set<string>();
+mock.module("../../hooks/use-pending-approval-instances", () => ({
+  usePendingApprovalInstances: () => bellPendingApprovals,
+}));
+
 const { NotificationsBell } = require("./NotificationsBell");
 
 function makeMessage(over: Partial<MailboxMessage>): MailboxMessage {
@@ -73,6 +78,7 @@ afterEach(() => {
   bellData = undefined;
   bellUnreadCount = undefined;
   bellTaskData = undefined;
+  bellPendingApprovals = new Set<string>();
 });
 bellData = undefined;
 bellUnreadCount = undefined;
@@ -97,6 +103,50 @@ describe("NotificationsBell", () => {
     expect(screen.queryByRole("button", { name: /unread/i })).toBeNull();
     // The bell itself is still present, just without an unread label.
     screen.getByRole("button", { name: /notifications/i });
+  });
+
+  it("shows a pending-approval dot on the bell when an approval is pending", () => {
+    bellPendingApprovals = new Set(["ins_alpha"]);
+    renderBell();
+    expect(screen.getByTestId("bell-approval-dot")).not.toBeNull();
+    screen.getByRole("button", { name: /1 pending approval/i });
+  });
+
+  it("shows no approval dot when nothing is pending", () => {
+    bellPendingApprovals = new Set<string>();
+    renderBell();
+    expect(screen.queryByTestId("bell-approval-dot")).toBeNull();
+    expect(
+      screen.queryByRole("button", { name: /pending approval/i }),
+    ).toBeNull();
+  });
+
+  it("clears the approval dot once the pending set empties", () => {
+    bellPendingApprovals = new Set(["ins_alpha"]);
+    renderBell();
+    expect(screen.getByTestId("bell-approval-dot")).not.toBeNull();
+    cleanup();
+    bellPendingApprovals = new Set<string>();
+    renderBell();
+    expect(screen.queryByTestId("bell-approval-dot")).toBeNull();
+  });
+
+  it("surfaces the pending-approval count in the open dropdown", () => {
+    bellPendingApprovals = new Set(["ins_alpha", "ins_beta"]);
+    renderBell();
+    fireEvent.click(screen.getByRole("button", { name: /notifications/i }));
+    const row = screen.getByTestId("bell-approval-row");
+    expect(row.textContent).toContain("2 pending approvals");
+  });
+
+  it("does not show the caught-up empty state when only an approval is pending", () => {
+    bellData = [];
+    bellTaskData = [];
+    bellPendingApprovals = new Set(["ins_alpha"]);
+    renderBell();
+    fireEvent.click(screen.getByRole("button", { name: /notifications/i }));
+    expect(screen.queryByText(/all caught up/i)).toBeNull();
+    screen.getByTestId("bell-approval-row");
   });
 
   it("opens a dropdown listing the most recent messages", () => {

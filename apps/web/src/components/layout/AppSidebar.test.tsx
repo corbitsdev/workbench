@@ -75,12 +75,18 @@ mock.module("../../lib/app-env", () => ({
   branding: { env: null, label: null, title: "Workbench" },
 }));
 
+let sidebarPendingApprovals = new Set<string>();
+mock.module("../../hooks/use-pending-approval-instances", () => ({
+  usePendingApprovalInstances: () => sidebarPendingApprovals,
+}));
+
 const { AppSidebar } = require("./AppSidebar");
 
 afterEach(() => {
   cleanup();
   sidebarDemoLinks = [];
   sidebarIsAdmin = false;
+  sidebarPendingApprovals = new Set<string>();
 });
 
 function renderSidebar(path = "/", props: Record<string, unknown> = {}) {
@@ -241,6 +247,31 @@ describe("AppSidebar", () => {
         screen.getByRole("link", { name: /settings/i }) as HTMLAnchorElement
       ).getAttribute("href"),
     ).toBe("/settings");
+  });
+
+  it("shows a pending-approval dot on the Inbox nav item when an approval is pending", () => {
+    sidebarPendingApprovals = new Set(["ins_alpha"]);
+    renderSidebar();
+    const inboxLink = screen.getByRole("link", { name: /inbox/i });
+    expect(
+      inboxLink.querySelector('[data-testid="inbox-approval-dot"]'),
+    ).not.toBeNull();
+  });
+
+  it("shows no Inbox approval dot when no approval is pending", () => {
+    sidebarPendingApprovals = new Set<string>();
+    renderSidebar();
+    expect(screen.queryByTestId("inbox-approval-dot")).toBeNull();
+  });
+
+  it("puts the approval dot on Inbox only, not other nav items", () => {
+    sidebarPendingApprovals = new Set(["ins_alpha"]);
+    renderSidebar();
+    expect(screen.getAllByTestId("inbox-approval-dot")).toHaveLength(1);
+    const chatsLink = screen.getByRole("link", { name: /^chats$/i });
+    expect(
+      chatsLink.querySelector('[data-testid="inbox-approval-dot"]'),
+    ).toBeNull();
   });
 
   it("does not show Sign out in the sidebar footer", () => {
