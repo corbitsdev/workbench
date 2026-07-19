@@ -314,7 +314,9 @@ function WorkflowRunPaneInner({
       terminal,
       confirmingStop,
       stopping,
-      stopRun,
+      // Depend on mutate only — the full mutation object is a new identity each
+      // render and would re-publish chrome every frame (see ArtifactDetailPage).
+      stopRun.mutate,
       runId,
     ],
   );
