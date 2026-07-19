@@ -111,6 +111,7 @@ export function featureEnvOverridesFromConfig(): Record<FeatureName, boolean> {
     triage: config.triageEnabled,
     "tasks-reconciler": config.tasksReconciler.enabled,
     "voice-input": false,
+    "native-approvals": false,
   };
 }
 

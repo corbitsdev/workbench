@@ -197,13 +197,14 @@ let ownerRouterShowDemos = false;
 // Toggled per-test to exercise a feature's emergency env override surfaced as
 // `forcedByEnv`. Reset to all-false by default.
 let ownerRouterFeatureEnvOverrides: Record<
-  "scheduler" | "triage" | "tasks-reconciler" | "voice-input",
+  "scheduler" | "triage" | "tasks-reconciler" | "voice-input" | "native-approvals",
   boolean
 > = {
   scheduler: false,
   triage: false,
   "tasks-reconciler": false,
   "voice-input": false,
+  "native-approvals": false,
 };
 
 describe("owner grant gate", () => {
@@ -1046,6 +1047,7 @@ describe("owner features routes", () => {
       triage: false,
       "tasks-reconciler": false,
       "voice-input": false,
+      "native-approvals": false,
     };
   });
 
@@ -1094,6 +1096,7 @@ describe("owner features routes", () => {
       triage: true,
       "tasks-reconciler": false,
       "voice-input": false,
+      "native-approvals": false,
     };
     const { db } = featuresDb();
     const res = await buildApp(db).request("/owner/features");

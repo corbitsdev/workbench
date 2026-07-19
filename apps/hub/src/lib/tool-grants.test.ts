@@ -63,4 +63,43 @@ describe("buildToolGrantRows", () => {
     const ids = new Set(rows.map((r) => r.id));
     expect(ids.size).toBe(3);
   });
+
+  describe("askToolNames (native-approvals activation)", () => {
+    it("stamps 'ask' on grants whose LLM-safe name is in askToolNames, 'allow' otherwise", () => {
+      const rows = buildToolGrantRows(
+        ["@workbench/tools-attio/attio:attio_update_task", "exa_search"],
+        scope,
+        now,
+        { askToolNames: new Set(["attio__update_task"]) },
+      );
+      const attio = rows.find(
+        (r) => r.resource === `${TOOL_GRANT_RESOURCE_PREFIX}attio__update_task`,
+      );
+      const exa = rows.find(
+        (r) => r.resource === `${TOOL_GRANT_RESOURCE_PREFIX}exa_search`,
+      );
+      expect(attio?.effect).toBe("ask");
+      expect(exa?.effect).toBe("allow");
+    });
+
+    it("matches askToolNames against the mapped LLM-safe name, not the bare input name", () => {
+      const rows = buildToolGrantRows(
+        ["@workbench/tools-slack/slack:slack_post_message"],
+        scope,
+        now,
+        // the ask set carries the LLM-safe name the model actually invokes
+        { askToolNames: new Set(["slack__post_message"]) },
+      );
+      expect(rows[0]?.effect).toBe("ask");
+    });
+
+    it("leaves every grant 'allow' when askToolNames is empty or omitted", () => {
+      const omitted = buildToolGrantRows(["exa_search"], scope, now);
+      const empty = buildToolGrantRows(["exa_search"], scope, now, {
+        askToolNames: new Set(),
+      });
+      expect(omitted[0]?.effect).toBe("allow");
+      expect(empty[0]?.effect).toBe("allow");
+    });
+  });
 });

@@ -779,6 +779,7 @@ export const FEATURE_NAMES = [
   "triage",
   "tasks-reconciler",
   "voice-input",
+  "native-approvals",
 ] as const;
 export type FeatureName = (typeof FEATURE_NAMES)[number];
 
@@ -815,6 +816,12 @@ export const FEATURE_GRANT_CATALOG: readonly FeatureCatalogEntry[] = [
     label: "Myra voice input",
     description:
       "Shows the microphone control in the Myra composer so members can dictate messages.",
+  },
+  {
+    name: "native-approvals",
+    label: "Native approval suspension",
+    description:
+      "Routes write-tool human approvals through Interchange's native suspend/resume rail: a write tool parks the run until a member approves it in ReviewGate, instead of the legacy hub approval poll. Off leaves the legacy path exactly as before.",
   },
 ];
 

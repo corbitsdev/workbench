@@ -23,18 +23,42 @@ export type ToolGrantRow = typeof intxSchema.grant.$inferInsert;
 export const TOOL_GRANT_RESOURCE_PREFIX = "tool:";
 
 /**
+ * Options controlling how tool grant effects are stamped.
+ */
+export type BuildToolGrantOptions = {
+  /**
+   * LLM-safe tool names whose grant is minted `effect: "ask"` instead of
+   * `allow` — the native approval-suspension activation (CL-3934). A call to an
+   * `ask` tool suspends the reactor natively (Interchange's authz-extension
+   * parks it awaiting a human decision) rather than running unattended. Callers
+   * pass the approval-gated write set only when the tenant's `native-approvals`
+   * feature is enabled; when omitted (feature off), every grant stays `allow`,
+   * preserving the legacy behavior exactly. Names are compared against the
+   * `toLlmToolName`-mapped resource name, so the set carries LLM-safe names
+   * (e.g. `slack__post_message`), matching what the model actually invokes.
+   */
+  askToolNames?: ReadonlySet<string>;
+};
+
+/**
  * Build the persisted grant rows for an instance principal's tool set. Tool
  * names are mapped to their LLM-safe form (`toLlmToolName`) so the grant
  * resource matches what the model actually invokes (the sidecar presents the
  * same safe name and the authz `beforeTool` check keys on `call.name`); the
  * canonical `:` name never round-trips through the model (CL-2306). Names are
  * de-duplicated after mapping; an empty list yields no rows.
+ *
+ * Each grant is `effect: "allow"` unless its LLM-safe name is in
+ * `opts.askToolNames`, in which case it is `effect: "ask"` (see
+ * {@link BuildToolGrantOptions}).
  */
 export function buildToolGrantRows(
   toolNames: string[],
   scope: { tenantId: string; principalId: string },
   now: Date,
+  opts: BuildToolGrantOptions = {},
 ): ToolGrantRow[] {
+  const askToolNames = opts.askToolNames ?? new Set<string>();
   const unique = [...new Set(toolNames.map(toLlmToolName))];
   return unique.map((name) => ({
     id: generateId("grant"),
@@ -43,7 +67,7 @@ export function buildToolGrantRows(
     roleId: null,
     resource: `${TOOL_GRANT_RESOURCE_PREFIX}${name}`,
     action: "invoke",
-    effect: "allow",
+    effect: askToolNames.has(name) ? "ask" : "allow",
     conditions: null,
     origin: "system",
     expiresAt: null,
