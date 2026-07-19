@@ -21,6 +21,10 @@ export const ApprovalEventSchema = type({
   tenantId: "string",
   sessionId: "string | null",
   kind: "'created' | 'resolved' | 'updated'",
+  // An "updated" notification carries the enriched approval's id; the hub
+  // publishes it so a client can target the exact row. Optional because
+  // "created"/"resolved" omit it.
+  "approvalId?": "string",
 });
 export type ApprovalEvent = typeof ApprovalEventSchema.infer;
 
