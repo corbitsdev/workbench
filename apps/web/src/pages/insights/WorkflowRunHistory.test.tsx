@@ -155,6 +155,30 @@ describe("WorkflowRunHistory", () => {
     screen.getByText("Last30days", { selector: "span" });
   });
 
+  it("offers a Stopped status filter and labels stopped runs as Stopped", () => {
+    runsResult = {
+      data: [
+        ...TWO_RUNS,
+        {
+          runId: "run-stopped",
+          kind: "pain",
+          status: "stopped",
+          createdAt: "2026-01-03T00:00:00Z",
+        },
+      ],
+      isLoading: false,
+      isError: false,
+      refetch: () => {},
+    };
+    renderHistory();
+    // Row label is Stopped (not Failed).
+    screen.getByText("Stopped", { selector: "span" });
+    fireEvent.click(screen.getByRole("button", { name: "Stopped" }));
+    expect(screen.queryByText("Deck build", { selector: "span" })).toBeNull();
+    expect(screen.queryByText("Last30days", { selector: "span" })).toBeNull();
+    screen.getByText("Pain", { selector: "span" });
+  });
+
   it("searches by workflow kind", () => {
     runsResult = {
       data: TWO_RUNS,
