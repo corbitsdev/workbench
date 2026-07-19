@@ -148,3 +148,69 @@ export async function rejectNativeRequest(
   );
   return parseNativeApproval(raw);
 }
+
+// ─── Durable auto-approve (CL-3942) ────────────────────────────────
+//
+// "Auto Approve (Caution) Always" records a durable member decision to stop
+// gating a tool. It is a workbench-owned surface under the native-approvals
+// path: interchange's approve route only issues `once`, so the durable decision
+// is recorded separately and the current call is released via the ordinary
+// approve route. Approving-always is therefore two server calls the client
+// orchestrates as one action (approve once + persist durable).
+
+/**
+ * Durably auto-approve the given tool for the caller's instance whose call the
+ * approval gated. Server-validated against `approvalId` so it can only whitelist
+ * a tool for a pending approval the caller owns. Approving the current call is a
+ * separate step (`approveNativeRequest`).
+ */
+export async function autoApproveTool(
+  tenantId: string,
+  approvalId: string,
+  toolName: string,
+): Promise<void> {
+  await hubFetch<unknown>(
+    "POST",
+    `tenants/${tenantId}/native-approvals/auto-approve`,
+    { approvalId, toolName },
+  );
+}
+
+export const AutoApprovedToolSchema = type({
+  id: "string",
+  tenantId: "string",
+  principalId: "string",
+  toolName: "string",
+  createdByPrincipalId: "string",
+  createdAt: "string",
+});
+export type AutoApprovedTool = typeof AutoApprovedToolSchema.infer;
+
+const AutoApprovedToolArraySchema = AutoApprovedToolSchema.array();
+
+/** List the caller's durable auto-approved tools (their own trust decisions). */
+export async function listAutoApprovedTools(
+  tenantId: string,
+): Promise<AutoApprovedTool[]> {
+  const raw = await hubFetch<unknown>(
+    "GET",
+    `tenants/${tenantId}/native-approvals/auto-approved-tools`,
+  );
+  const parsed = AutoApprovedToolArraySchema(raw);
+  if (parsed instanceof type.errors) {
+    throw new Error(`Invalid auto-approved tools response: ${parsed.summary}`);
+  }
+  return parsed;
+}
+
+/** Revoke one durable auto-approve decision; the tool reverts to requiring
+ * approval on the next grant reconcile. */
+export async function revokeAutoApprovedTool(
+  tenantId: string,
+  id: string,
+): Promise<void> {
+  await hubFetch<unknown>(
+    "DELETE",
+    `tenants/${tenantId}/native-approvals/auto-approved-tools/${id}`,
+  );
+}

@@ -1,14 +1,26 @@
+import { useState } from "react";
 import { friendlyToolSummaryKnown } from "@workbench/agents/browser";
 import { toHumanLabel } from "@workbench/ui";
 import type { NativeApproval } from "../lib/approvals-api";
 import type { UnresolvedToolCall } from "../lib/unresolved-tool-call";
 import { providerLabel } from "../lib/tool-providers";
+import {
+  buildApprovalArgRows,
+  type ApprovalArgRow,
+  type IdResolver,
+} from "../lib/native-approval-args";
 
 /** The action a card presents: a tool name plus its arguments. */
 type EffectiveTool = {
   name: string;
   arguments: Record<string, unknown>;
 };
+
+export type NativeApprovalRequestState =
+  | "idle"
+  | "approving"
+  | "rejecting"
+  | "auto-approving";
 
 export type NativeApprovalCardProps = {
   approval: NativeApproval;
@@ -19,10 +31,22 @@ export type NativeApprovalCardProps = {
    * neutral label rather than a guessed action (the no-mismatch guard).
    */
   fallbackToolCall: UnresolvedToolCall | null;
-  requestState: "idle" | "approving" | "rejecting";
+  requestState: NativeApprovalRequestState;
   error: string | null;
   onApprove: () => void;
   onReject: () => void;
+  /**
+   * Durably auto-approve THIS card's resolved tool for the caller ("Auto
+   * Approve Always"). Receives the resolved LLM-safe tool name — only invoked
+   * when a tool is known, so the caller never has to guess which tool to
+   * whitelist.
+   */
+  onAutoApprove: (toolName: string) => void;
+  /**
+   * Optional resolver mapping an opaque id argument (e.g. a Linear teamId) to a
+   * human name from already-loaded client data. Unresolvable ids are truncated.
+   */
+  resolveId?: IdResolver;
 };
 
 /** The tool name off the snapshot, or null when it is not yet enriched. */
@@ -93,102 +117,70 @@ function nativeHeadline(
   return `Approval requested by ${local}`;
 }
 
-/** Keys whose value is typically already spoken by the friendly headline
- * (e.g. `Creating Linear issue "<title>"`), so repeating them in the arg line
- * is noise. Only deduped when the value actually appears in the headline. */
+/** A long text value renders clamped to two lines with an inline expand rather
+ * than overflowing or being truncated away. */
+function LongArgValue({ text }: { text: string }) {
+  const [expanded, setExpanded] = useState(false);
+  return (
+    <span>
+      <span className={expanded ? "" : "line-clamp-2"}>{text}</span>
+      <button
+        type="button"
+        onClick={() => setExpanded((v) => !v)}
+        className="ml-1 text-[11.5px] font-semibold text-text-3 underline underline-offset-2 hover:text-text-2"
+      >
+        {expanded ? "Show less" : "Show more"}
+      </button>
+    </span>
+  );
+}
+
+/** One labeled key/value row. `id`-kind values render monospace; `long` values
+ * clamp with an expand; everything else is inline text. */
+function ArgRow({ row }: { row: ApprovalArgRow }) {
+  return (
+    <div className="flex gap-2 py-[3px] text-[12.5px] leading-snug">
+      <span className="w-24 shrink-0 font-semibold text-text-3">
+        {row.label}
+      </span>
+      {row.kind === "id" ? (
+        <span className="font-mono text-text-2">{row.display}</span>
+      ) : row.kind === "long" ? (
+        <span className="min-w-0 flex-1 text-text-2">
+          <LongArgValue text={row.display} />
+        </span>
+      ) : (
+        <span className="min-w-0 flex-1 break-words text-text-2">
+          {row.display}
+        </span>
+      )}
+    </div>
+  );
+}
+
+/** Title-like keys whose value the friendly headline typically already speaks;
+ * a row for one is dropped only when the headline restates it verbatim, so the
+ * card never shows the same title twice. */
 const TITLE_LIKE_ARG_KEYS = new Set(["title", "name", "subject"]);
 
-/** The most argument pairs we show inline before collapsing the rest into a
- * "+N more" cue. */
-const MAX_ARG_PAIRS = 3;
-
-/** Render a single scalar argument value inline; null for empties. */
-function formatScalarArg(value: unknown): string | null {
-  if (typeof value === "string") return value.trim() === "" ? null : value;
-  if (typeof value === "number" || typeof value === "boolean") {
-    return String(value);
-  }
-  return null;
-}
-
 /**
- * Render an array argument as a readable, truncated list — a `to: string[]`
- * recipient list is exactly what an approver must see, so it must never be
- * dropped. A short list renders its members (`a@x.com, b@y.com`); a long or
- * non-scalar list collapses to a `N items` count rather than an unreadable
- * blob.
+ * The structured argument list — a vertical set of humanized label/value rows so
+ * the human approves with full, legible context (Title, Team, Priority, …), not
+ * a cramped inline string. Nothing is hidden behind a "+N more"; long text
+ * clamps with an expand. A title-like field already spoken by the headline is
+ * deduped so the same title never appears twice.
  */
-function formatArrayArg(value: unknown[]): string | null {
-  if (value.length === 0) return null;
-  const items = value
-    .map(formatScalarArg)
-    .filter((item): item is string => item !== null);
-  if (items.length === value.length) {
-    const joined = items.join(", ");
-    if (items.length <= 4 && joined.length <= 60) return joined;
-  }
-  return `${value.length} items`;
-}
-
-/** Render an object argument compactly — a couple of its own scalar fields so a
- * nested shape still surfaces something the approver can read. */
-function formatObjectArg(value: Record<string, unknown>): string | null {
-  const parts: string[] = [];
-  for (const [key, inner] of Object.entries(value)) {
-    const formatted = formatScalarArg(inner);
-    if (formatted === null) continue;
-    parts.push(`${key}: ${formatted}`);
-    if (parts.length >= 2) break;
-  }
-  return parts.length > 0 ? `{ ${parts.join(", ")} }` : null;
-}
-
-/** Format any argument value — scalar, array, or object — for the inline
- * summary. Null only when the value carries nothing showable. */
-function formatArgValue(value: unknown): string | null {
-  if (Array.isArray(value)) return formatArrayArg(value);
-  if (value !== null && typeof value === "object") {
-    return formatObjectArg(value as Record<string, unknown>);
-  }
-  return formatScalarArg(value);
-}
-
-/**
- * A one-line `key: value` summary of the tool arguments so the human approves
- * with full context (title/body/recipient list), not just field names. Returns
- * null (no line) when the snapshot is absent or carries nothing showable —
- * never a stub. Bounded to a few pairs with per-value truncation so a long body
- * cannot blow out the card; arrays and objects are rendered rather than
- * silently dropped. Fields already spoken by `headline` are deduped so the
- * title is not repeated. When pairs are capped or any field is hidden, a
- * "+N more" cue is appended so nothing is dropped without a trace.
- */
-function nativeArgumentSummary(
+function nativeArgumentRows(
   tool: EffectiveTool | null,
   headline: string,
-): string | null {
-  if (tool === null) return null;
-  const args = tool.arguments;
-  const candidates = Object.entries(args).filter(([key, value]) => {
-    if (!TITLE_LIKE_ARG_KEYS.has(key)) return true;
-    const formatted = formatScalarArg(value);
-    return formatted === null || !headline.includes(formatted);
+  resolveId: IdResolver | undefined,
+): ApprovalArgRow[] {
+  if (tool === null) return [];
+  const rows = buildApprovalArgRows(tool.name, tool.arguments, { resolveId });
+  return rows.filter((row) => {
+    if (!TITLE_LIKE_ARG_KEYS.has(row.key)) return true;
+    return !headline.includes(row.display);
   });
-  const parts: string[] = [];
-  let shown = 0;
-  for (const [key, value] of candidates) {
-    if (parts.length >= MAX_ARG_PAIRS) break;
-    const formatted = formatArgValue(value);
-    if (formatted === null) continue;
-    const truncated =
-      formatted.length > 80 ? `${formatted.slice(0, 79)}…` : formatted;
-    parts.push(`${key}: ${truncated}`);
-    shown += 1;
-  }
-  if (parts.length === 0) return null;
-  const overflow = candidates.length - shown;
-  if (overflow > 0) parts.push(`+${overflow} more`);
-  return parts.join(" · ");
 }
 
 /**
@@ -204,13 +196,34 @@ export function NativeApprovalCard({
   error,
   onApprove,
   onReject,
+  onAutoApprove,
+  resolveId,
 }: NativeApprovalCardProps) {
   const isApproving = requestState === "approving";
   const isRejecting = requestState === "rejecting";
-  const isInFlight = isApproving || isRejecting;
+  const isAutoApproving = requestState === "auto-approving";
+  const isInFlight = isApproving || isRejecting || isAutoApproving;
   const effectiveTool = resolveEffectiveTool(approval, fallbackToolCall);
   const headline = nativeHeadline(approval, effectiveTool);
-  const argSummary = nativeArgumentSummary(effectiveTool, headline);
+  const argRows = nativeArgumentRows(effectiveTool, headline, resolveId);
+
+  // "Auto Approve Always" durably whitelists a specific tool; with no resolved
+  // tool we cannot know which tool to whitelist, so the option is disabled
+  // rather than guessing (the no-mismatch guard extends to the durable rail).
+  const toolName = effectiveTool?.name ?? null;
+  const canAutoApprove = toolName !== null;
+
+  const [confirmingAlways, setConfirmingAlways] = useState(false);
+
+  function handleAlwaysClick() {
+    if (toolName === null) return;
+    if (!confirmingAlways) {
+      setConfirmingAlways(true);
+      return;
+    }
+    setConfirmingAlways(false);
+    onAutoApprove(toolName);
+  }
 
   return (
     <div
@@ -222,8 +235,12 @@ export function NativeApprovalCard({
           Action Request
         </div>
         <p className="text-[13.5px] font-semibold text-text">{headline}</p>
-        {argSummary !== null ? (
-          <p className="mt-0.5 text-[12.5px] text-text-2">{argSummary}</p>
+        {argRows.length > 0 ? (
+          <div className="mt-2 rounded-sm bg-surface-2 px-3 py-2">
+            {argRows.map((row) => (
+              <ArgRow key={row.key} row={row} />
+            ))}
+          </div>
         ) : null}
       </div>
 
@@ -233,7 +250,7 @@ export function NativeApprovalCard({
         </p>
       )}
 
-      <div className="flex items-center gap-2">
+      <div className="flex flex-wrap items-center gap-2">
         <button
           type="button"
           disabled={isInFlight}
@@ -241,7 +258,7 @@ export function NativeApprovalCard({
           className="rounded-input bg-charcoal px-4 py-2.5 text-sm font-semibold text-cream shadow-[var(--shadow-card)] ring-1 ring-border-strong transition-[transform,opacity] hover:bg-charcoal-deep active:scale-[0.97] disabled:opacity-40 disabled:active:scale-100 motion-reduce:transition-none motion-reduce:active:scale-100"
           data-testid={`native-approve-${approval.id}`}
         >
-          {isApproving ? "Approving..." : "Approve"}
+          {isApproving ? "Approving..." : "Approve Once"}
         </button>
         <button
           type="button"
@@ -250,8 +267,35 @@ export function NativeApprovalCard({
           className="rounded-input bg-surface-2 px-4 py-2.5 text-sm font-semibold text-text-2 shadow-[var(--shadow-card)] transition-[transform,background-color,color] hover:bg-surface hover:text-text active:scale-[0.97] disabled:opacity-40 disabled:active:scale-100 motion-reduce:transition-none motion-reduce:active:scale-100"
           data-testid={`native-reject-${approval.id}`}
         >
-          {isRejecting ? "Rejecting..." : "Reject"}
+          {isRejecting ? "Rejecting..." : "Deny"}
         </button>
+        <button
+          type="button"
+          disabled={isInFlight || !canAutoApprove}
+          onClick={handleAlwaysClick}
+          title={
+            canAutoApprove
+              ? "Stop asking — always approve this tool for you"
+              : "The action is not identified, so it cannot be permanently approved"
+          }
+          className={`rounded-input px-4 py-2.5 text-sm font-semibold shadow-[var(--shadow-card)] ring-1 transition-[transform,background-color,color] active:scale-[0.97] disabled:opacity-40 disabled:active:scale-100 motion-reduce:transition-none motion-reduce:active:scale-100 ${
+            confirmingAlways
+              ? "bg-gold text-charcoal-deep ring-gold hover:opacity-90"
+              : "bg-surface text-gold ring-gold hover:bg-surface-2"
+          }`}
+          data-testid={`native-auto-approve-${approval.id}`}
+        >
+          {isAutoApproving
+            ? "Saving..."
+            : confirmingAlways
+              ? "Confirm — Always Approve"
+              : "Auto Approve Always"}
+        </button>
+        {confirmingAlways && !isInFlight ? (
+          <span className="text-[11.5px] text-text-3">
+            Caution: this stops asking for this action.
+          </span>
+        ) : null}
       </div>
     </div>
   );

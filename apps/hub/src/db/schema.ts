@@ -618,6 +618,38 @@ export const memberAgentInstance = pgTable(
   () => ({}),
 );
 
+/**
+ * A member's durable "auto-approve this tool for me" decision (the three-button
+ * approval card's "Auto Approve Always"). When recorded, the grant minting
+ * (`resolveAskToolNamesForTenant`) excludes the tool for this instance principal,
+ * so it mints `effect: "allow"` instead of `ask` and no longer suspends for
+ * human approval. Keyed on the agent-instance `principal_id` (what the grant
+ * mint keys on), attributed to the member principal who made the trust decision.
+ * Revoking a row reverts the tool to `ask` on the next grant reconcile.
+ * Workbench-owned only.
+ */
+export const autoApprovedTool = pgTable(
+  "auto_approved_tool",
+  {
+    id: text("id").primaryKey(),
+    tenantId: text("tenant_id").notNull(),
+    // The agent-instance principal the grant mint keys on.
+    principalId: text("principal_id").notNull(),
+    // LLM-safe tool name (e.g. slack__post_message), matching the ask-set keys.
+    toolName: text("tool_name").notNull(),
+    // The member principal who made this trust decision (attribution).
+    createdByPrincipalId: text("created_by_principal_id").notNull(),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (t) => ({
+    principalToolUniq: uniqueIndex("auto_approved_tool_principal_tool_uniq").on(
+      t.tenantId,
+      t.principalId,
+      t.toolName,
+    ),
+  }),
+);
+
 /** CL-3686: links a Myra thread (origin conversation) to an invoked subagent mapping. */
 export const memberInvokedSubagent = pgTable(
   "member_invoked_subagent",

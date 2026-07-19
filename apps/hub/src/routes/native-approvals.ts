@@ -1,12 +1,27 @@
 import { Hono, type Env } from "hono";
 import { and, desc, eq, inArray } from "drizzle-orm";
-import { describeRoute, resolver } from "hono-openapi";
-import { schema as intxSchema, parseApprovalRow } from "@intx/db";
+import { describeRoute, resolver, validator } from "hono-openapi";
+import { type } from "arktype";
+import { getLogger } from "@intx/log";
+import { schema as intxSchema, parseApprovalRow, type DB } from "@intx/db";
 import { ApprovalResponse } from "@intx/types";
 import { memberAgentInstance } from "../db/schema";
 import type { HubDb } from "../db";
+import {
+  deleteAutoApprovedTool,
+  listAutoApprovedToolsForMember,
+  persistAutoApprovedTool,
+} from "../lib/auto-approved-tools";
+import { refreshInstanceGrantsFromDefinition } from "../services/grant-reconcile";
 
 const { approval, agentInstance } = intxSchema;
+const log = getLogger(["api", "native-approvals", "auto-approve"]);
+
+/** Request body for durably auto-approving a tool from an approval card. */
+export const AutoApproveToolRequest = type({
+  approvalId: "string > 0",
+  toolName: "string > 0",
+});
 
 type NativeApprovalsEnv = Env & {
   Variables: {
@@ -132,6 +147,167 @@ export function createNativeApprovalsRouter({
         )
         .orderBy(desc(approval.createdAt));
       return c.json(rows.map(formatNativeApproval));
+    },
+  );
+
+  app.post(
+    "/auto-approve",
+    describeRoute({
+      tags: ["Approvals"],
+      summary: "Durably auto-approve a tool for the caller",
+      description:
+        "Records the member's 'Auto Approve Always' decision for one tool on the agent instance whose call the given approval gated, so the tool's grant re-mints `allow` (no longer suspends). Does not itself resolve the pending approval — the client pairs this with the native approve route to release the current call. The approvalId must name a pending approval the caller owns; a mismatch is masked as not-found so it can never whitelist a tool against an approval the caller does not own.",
+      responses: {
+        200: {
+          description: "Tool durably auto-approved",
+          content: {
+            "application/json": {
+              schema: resolver(type({ ok: "true", toolName: "string" })),
+            },
+          },
+        },
+        404: {
+          description: "No matching pending approval owned by the caller",
+        },
+      },
+    }),
+    validator("json", AutoApproveToolRequest),
+    async (c) => {
+      const tenantId = c.get("tenant").id;
+      const memberPrincipalId = c.get("principal").id;
+      const { approvalId, toolName } = c.req.valid("json");
+
+      const approvalRow = await db.query.approval.findFirst({
+        where: and(
+          eq(approval.id, approvalId),
+          eq(approval.tenantId, tenantId),
+          eq(approval.status, "pending"),
+        ),
+      });
+      if (!approvalRow) return c.json({ error: "not_found" }, 404);
+
+      const owned = await ownedInstanceAddresses(
+        db,
+        tenantId,
+        memberPrincipalId,
+      );
+      if (!owned.includes(approvalRow.agentAddress)) {
+        return c.json({ error: "not_found" }, 404);
+      }
+
+      const instance = await db.query.agentInstance.findFirst({
+        where: and(
+          eq(agentInstance.tenantId, tenantId),
+          eq(agentInstance.address, approvalRow.agentAddress),
+        ),
+      });
+      if (!instance) return c.json({ error: "not_found" }, 404);
+
+      await persistAutoApprovedTool(db, {
+        tenantId,
+        principalId: instance.principalId,
+        toolName,
+        createdByPrincipalId: memberPrincipalId,
+      });
+
+      // Re-mint the instance's grants now so the tool flips from `ask` to
+      // `allow` on the next sidecar reconnect rather than only on the next
+      // provisioning launch (the running session keeps its deploy-time grant).
+      await refreshInstanceGrantsFromDefinition(db as unknown as DB["db"], {
+        agentId: instance.agentId,
+        tenantId,
+        principalId: instance.principalId,
+        address: instance.address,
+        instanceId: instance.id,
+      });
+
+      log.info("Auto-approved tool for member", {
+        tenantId,
+        memberPrincipalId,
+        instancePrincipalId: instance.principalId,
+        toolName,
+      });
+
+      return c.json({ ok: true, toolName }, 200);
+    },
+  );
+
+  app.get(
+    "/auto-approved-tools",
+    describeRoute({
+      tags: ["Approvals"],
+      summary: "List the caller's durable auto-approved tools",
+      description:
+        "Returns the tools the caller has durably auto-approved (their own trust decisions), newest first, so they can be reviewed and revoked.",
+      responses: {
+        200: {
+          description: "The caller's auto-approved tools",
+        },
+      },
+    }),
+    async (c) => {
+      const tenantId = c.get("tenant").id;
+      const memberPrincipalId = c.get("principal").id;
+      const rows = await listAutoApprovedToolsForMember(
+        db,
+        tenantId,
+        memberPrincipalId,
+      );
+      return c.json(rows);
+    },
+  );
+
+  app.delete(
+    "/auto-approved-tools/:id",
+    describeRoute({
+      tags: ["Approvals"],
+      summary: "Revoke a durable auto-approved tool",
+      description:
+        "Deletes one of the caller's auto-approve decisions and re-mints the affected instance's grants so the tool reverts to requiring approval (`ask`). Scoped to the caller's own records.",
+      responses: {
+        200: { description: "Revoked" },
+        404: { description: "No matching record owned by the caller" },
+      },
+    }),
+    async (c) => {
+      const tenantId = c.get("tenant").id;
+      const memberPrincipalId = c.get("principal").id;
+      const id = c.req.param("id");
+
+      const removed = await deleteAutoApprovedTool(db, {
+        tenantId,
+        id,
+        memberPrincipalId,
+      });
+      if (!removed) return c.json({ error: "not_found" }, 404);
+
+      // Re-mint every instance the caller owns that runs on the affected
+      // principal so the tool returns to `ask`. In the single-agent model the
+      // principal maps to one instance; resolve and refresh it.
+      const instance = await db.query.agentInstance.findFirst({
+        where: and(
+          eq(agentInstance.tenantId, tenantId),
+          eq(agentInstance.principalId, removed.principalId),
+        ),
+      });
+      if (instance) {
+        await refreshInstanceGrantsFromDefinition(db as unknown as DB["db"], {
+          agentId: instance.agentId,
+          tenantId,
+          principalId: instance.principalId,
+          address: instance.address,
+          instanceId: instance.id,
+        });
+      }
+
+      log.info("Revoked auto-approved tool for member", {
+        tenantId,
+        memberPrincipalId,
+        instancePrincipalId: removed.principalId,
+        toolName: removed.toolName,
+      });
+
+      return c.json({ ok: true }, 200);
     },
   );
 
