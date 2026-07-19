@@ -1,6 +1,6 @@
 // Stateless artifact gallery. Data fetching lives in the app: callers pass
 // the artifacts array plus loading/error flags and selection/action callbacks.
-// The kind->viz/fill/span mapping lives in artifact-visuals (presentation is
+// The kind->label/fill/span mapping lives in artifact-visuals (presentation is
 // kept out of the transport layer).
 //
 // The gallery is split into two components so the toolbar (title, filters,
@@ -10,7 +10,7 @@
 //   - ArtifactGalleryToolbar: the header controls, as a standalone component.
 //   - ArtifactGallery: the results grid/table + load-more.
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { ChevronDown, FileStack } from "lucide-react";
 import {
   Menu,
@@ -428,14 +428,21 @@ export function ArtifactGallery({
   // Containment: artifacts that fail gallery mapping are dropped from BOTH
   // views (and from the empty-state count) so one corrupt artifact can
   // neither blank the page nor render inconsistently between grid and rows.
-  const renderable = artifacts.flatMap((artifact) => {
-    const thumbnailUrl = thumbnailUrlForArtifact?.(artifact);
-    const tile = tryToGalleryArtifact(artifact, {
-      ...(thumbnailUrl === undefined ? {} : { thumbnailUrl }),
-      thumbnailAlt: artifact.title,
-    });
-    return tile === undefined ? [] : [{ artifact, tile }];
-  });
+  // Memoized: each tile now parses its comparison content (parseComparisonResult)
+  // on top of the existing excerpt cleaning, so this must not rerun on every
+  // unrelated re-render (e.g. a sort/filter control's own local state).
+  const renderable = useMemo(
+    () =>
+      artifacts.flatMap((artifact) => {
+        const thumbnailUrl = thumbnailUrlForArtifact?.(artifact);
+        const tile = tryToGalleryArtifact(artifact, {
+          ...(thumbnailUrl === undefined ? {} : { thumbnailUrl }),
+          thumbnailAlt: artifact.title,
+        });
+        return tile === undefined ? [] : [{ artifact, tile }];
+      }),
+    [artifacts, thumbnailUrlForArtifact],
+  );
   const tiles = renderable.map((entry) => entry.tile);
   const tileByArtifactId = new Map(
     renderable.map((entry) => [entry.artifact.id, entry.tile]),

@@ -65,7 +65,6 @@ describe("ArtifactVisualSchema", () => {
   it("accepts a valid visual", () => {
     const result = ArtifactVisualSchema({
       label: "Email",
-      viz: "lines",
       fill: "bg-orange",
       span: "row-span-3",
     });
@@ -75,20 +74,9 @@ describe("ArtifactVisualSchema", () => {
     }
   });
 
-  it("rejects an invalid viz value", () => {
-    const result = ArtifactVisualSchema({
-      label: "X",
-      viz: "invalid",
-      fill: "bg-x",
-      span: "span-1",
-    });
-    expect(result instanceof type.errors).toBe(true);
-  });
-
   it("span accepts any string value", () => {
     const result = ArtifactVisualSchema({
       label: "X",
-      viz: "bars",
       fill: "bg-x",
       span: "completely-arbitrary-value",
     });
@@ -104,7 +92,6 @@ describe("ArtifactVisualSchema", () => {
 describe("GalleryArtifactSchema", () => {
   const valid = {
     label: "Email",
-    viz: "lines",
     fill: "bg-orange",
     span: "row-span-3",
     id: "a-1",
@@ -126,7 +113,7 @@ describe("GalleryArtifactSchema", () => {
   });
 
   it("rejects a record missing required fields", () => {
-    const result = GalleryArtifactSchema({ label: "X", viz: "bars" });
+    const result = GalleryArtifactSchema({ label: "X" });
     expect(result instanceof type.errors).toBe(true);
   });
 
@@ -143,7 +130,6 @@ describe("parseGalleryArtifact", () => {
   it("returns a GalleryArtifact for valid input", () => {
     const artifact = parseGalleryArtifact({
       label: "Tweet",
-      viz: "lines",
       fill: "bg-blue",
       span: "row-span-2",
       id: "a-2",

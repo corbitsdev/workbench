@@ -4,20 +4,39 @@ import { GalleryArtifactParseError, parseGalleryArtifact } from "./types";
 import {
   artifactProvenance,
   artifactProvenanceLabel,
+  explicitVisualForKind,
+  KNOWN_ARTIFACT_KINDS,
   toGalleryArtifact,
   tryToGalleryArtifact,
   visualForKind,
 } from "./artifact-visuals";
 
+describe("explicitVisualForKind", () => {
+  it("returns the visual for a kind with an explicit entry", () => {
+    expect(explicitVisualForKind("email")?.label).toBe("Email");
+  });
+
+  it("returns undefined (not the Document fallback) for an unmapped kind", () => {
+    expect(explicitVisualForKind("totally-unknown-kind")).toBeUndefined();
+  });
+
+  it("KNOWN_ARTIFACT_KINDS enumerates every kind explicitVisualForKind resolves", () => {
+    expect(KNOWN_ARTIFACT_KINDS.length).toBeGreaterThan(0);
+    for (const kind of KNOWN_ARTIFACT_KINDS) {
+      expect(explicitVisualForKind(kind)).toBeDefined();
+    }
+  });
+});
+
 describe("visualForKind", () => {
   it("maps known kinds to their visuals", () => {
     expect(visualForKind("email").label).toBe("Email");
-    expect(visualForKind("battlecard").viz).toBe("grid");
+    expect(visualForKind("battlecard").fill).toBe("bg-green");
   });
 
   it("maps legacy linkedin kinds through the canonical linkedin-post visual", () => {
     expect(visualForKind("linkedin-daily").label).toBe("LinkedIn Post");
-    expect(visualForKind("pain-points-linkedin-post").viz).toBe("lines");
+    expect(visualForKind("pain-points-linkedin-post").fill).toBe("bg-blue");
   });
 
   it("falls back to a neutral document tile for unknown kinds", () => {
@@ -34,11 +53,33 @@ describe("visualForKind", () => {
   it("labels the heartbeat's morning-brief kind as Report, not Document (CL-3503)", () => {
     const v = visualForKind("morning-brief");
     expect(v.label).toBe("Report");
-    expect(v.viz).toBe("deck");
+    expect(v.fill).toBe("bg-charcoal");
   });
 
   it("labels image artifacts as images", () => {
     expect(visualForKind("image").label).toBe("Image");
+  });
+
+  it("labels an A/B comparison artifact 'Comparison', not the generic 'Document' fallback", () => {
+    expect(visualForKind("ab-comparison").label).toBe("Comparison");
+  });
+
+  it("labels presentation kinds 'Presentation', not 'Document'", () => {
+    expect(visualForKind("presentation").label).toBe("Presentation");
+    expect(visualForKind("gamma_presentation").label).toBe("Presentation");
+  });
+
+  it("labels a CSV export 'CSV', not 'Document'", () => {
+    expect(visualForKind("csv-export").label).toBe("CSV");
+  });
+
+  it("labels a generic file artifact 'File', not 'Document'", () => {
+    expect(visualForKind("file").label).toBe("File");
+  });
+
+  it("labels web/web_site kinds 'Web page'", () => {
+    expect(visualForKind("web").label).toBe("Web page");
+    expect(visualForKind("web_site").label).toBe("Web page");
   });
 });
 
@@ -135,6 +176,37 @@ describe("toGalleryArtifact", () => {
       content: '{"id": 1}',
     });
     expect("previewExcerpt" in gallery).toBe(false);
+  });
+
+  it("summarizes a comparison artifact as 'Winner: <label> · N variants' instead of a prose excerpt", () => {
+    const comparison = {
+      ...base,
+      kind: "ab-comparison",
+      content: JSON.stringify({
+        ranking: [
+          { rank: 1, label: "Claude Opus" },
+          { rank: 2, label: "GPT-5" },
+        ],
+        variants: [
+          { label: "Claude Opus", content: "..." },
+          { label: "GPT-5", content: "..." },
+        ],
+      }),
+    } as ArtifactWithSession;
+    expect(toGalleryArtifact(comparison).previewExcerpt).toBe(
+      "Winner: Claude Opus · 2 variants",
+    );
+  });
+
+  it("falls back to the prose excerpt when comparison content fails to parse", () => {
+    const corruptComparison = {
+      ...base,
+      kind: "ab-comparison",
+      content: "not valid json",
+    } as ArtifactWithSession;
+    expect(toGalleryArtifact(corruptComparison).previewExcerpt).toBe(
+      "not valid json",
+    );
   });
 
   it("returns empty time string for an unparseable timestamp (NaN guard)", () => {

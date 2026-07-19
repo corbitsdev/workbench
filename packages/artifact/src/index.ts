@@ -5,7 +5,6 @@ export type {
   ArtifactWithSession,
   ArtifactWithVersions,
   ArtifactKind,
-  VizKind,
   ArtifactVisual,
   GalleryArtifact,
   ArtifactOrigin,
@@ -18,6 +17,8 @@ export {
   GalleryArtifactParseError,
 } from "./types";
 export {
+  explicitVisualForKind,
+  KNOWN_ARTIFACT_KINDS,
   visualForKind,
   toGalleryArtifact,
   tryToGalleryArtifact,
@@ -32,13 +33,13 @@ export {
   workflowAcceptsArtifactKind,
   workflowsAcceptingArtifactKind,
 } from "./artifact-workflow-eligibility";
-export { ArtifactViz } from "./ArtifactViz";
 export { ArtifactCard } from "./ArtifactCard";
 export { ArtifactCardPreview } from "./ArtifactCardPreview";
 export { ArtifactDetailShell } from "./ArtifactDetailShell";
 export {
   ARTIFACT_PREVIEW_FAMILIES,
   artifactPreviewFamily,
+  comparisonSummary,
   labelForArtifactStatus,
   previewExcerpt,
   type ArtifactPreviewFamily,

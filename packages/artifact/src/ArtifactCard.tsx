@@ -3,7 +3,6 @@
 
 import type { GalleryArtifact } from "./types";
 import { ArtifactCardPreview } from "./ArtifactCardPreview";
-import { ArtifactViz } from "./ArtifactViz";
 import {
   artifactPreviewFamily,
   labelForArtifactStatus,
@@ -83,23 +82,19 @@ export function ArtifactCard({
         className={`relative min-h-[120px] flex-1 overflow-hidden ${experimental ? `bg-surface/40 ${fill} bg-opacity-20` : fill}`}
       >
         <div className="flex h-full w-full items-center justify-center transition-transform duration-300 ease-out group-hover:scale-[1.02]">
-          {artifact.thumbnailUrl !== undefined || experimental ? (
-            <ArtifactCardPreview
-              family={family}
-              fill={fill}
-              {...(artifact.previewExcerpt === undefined
-                ? {}
-                : { excerpt: artifact.previewExcerpt })}
-              {...(artifact.thumbnailUrl === undefined
-                ? {}
-                : { thumbnailUrl: artifact.thumbnailUrl })}
-              {...(artifact.thumbnailAlt === undefined
-                ? {}
-                : { thumbnailAlt: artifact.thumbnailAlt })}
-            />
-          ) : (
-            <ArtifactViz kind={artifact.viz} />
-          )}
+          <ArtifactCardPreview
+            family={family}
+            fill={fill}
+            {...(artifact.previewExcerpt === undefined
+              ? {}
+              : { excerpt: artifact.previewExcerpt })}
+            {...(artifact.thumbnailUrl === undefined
+              ? {}
+              : { thumbnailUrl: artifact.thumbnailUrl })}
+            {...(artifact.thumbnailAlt === undefined
+              ? {}
+              : { thumbnailAlt: artifact.thumbnailAlt })}
+          />
         </div>
       </div>
       <div className="flex min-h-[68px] flex-col justify-center border-t border-border bg-surface px-[13px] py-[11px]">

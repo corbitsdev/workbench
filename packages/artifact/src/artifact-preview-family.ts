@@ -2,6 +2,7 @@
 // Families drive card chrome, icons, and excerpt shaping — not storage shape.
 
 import type { ArtifactStatus } from "@workbench/shared";
+import { parseComparisonResult } from "@workbench/ui";
 import {
   isLinkedInPostArtifactKind,
   usesSocialPostPreview,
@@ -106,4 +107,21 @@ export function previewExcerpt(
   const collapsed = cleaned.replace(/\s+/g, " ").trim();
   if (collapsed.length <= max) return collapsed;
   return `${collapsed.slice(0, max - 1).trimEnd()}…`;
+}
+
+/**
+ * A gallery-card summary line for a comparison artifact: the ranked winner
+ * plus how many variants were compared. Returns undefined when `content`
+ * does not parse as a `ComparisonResult` (e.g. a legacy or corrupt row), so
+ * callers can fall back to the generic prose excerpt rather than surfacing
+ * nothing.
+ */
+export function comparisonSummary(content: string): string | undefined {
+  const parsed = parseComparisonResult(content);
+  if (!parsed) return undefined;
+  const variantCount = parsed.variants.length;
+  const variantWord = variantCount === 1 ? "variant" : "variants";
+  const winner = parsed.ranking.find((entry) => entry.rank === 1);
+  if (!winner) return `${variantCount} ${variantWord}`;
+  return `Winner: ${winner.label} · ${variantCount} ${variantWord}`;
 }

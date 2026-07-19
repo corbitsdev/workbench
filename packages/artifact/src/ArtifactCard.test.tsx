@@ -16,7 +16,6 @@ const artifact: GalleryArtifact = {
   time: "2 hours ago",
   provenance: "Workflow",
   label: "Email",
-  viz: "lines",
   fill: "bg-orange",
   span: "row-span-3",
   status: "draft",
@@ -81,7 +80,6 @@ describe("ArtifactCard", () => {
     // status is "draft" — the default, non-signal state — so no badge.
     expect(screen.queryByText("Draft")).toBeNull();
     expect(card.querySelector("pre")).toBeNull();
-    expect(screen.queryByText("Quick follow-up on our call")).toBeNull();
     expect(card.querySelector(".bg-orange")).not.toBeNull();
   });
 
@@ -106,13 +104,27 @@ describe("ArtifactCard", () => {
     expect(screen.getByText("Quick follow-up on our call")).toBeDefined();
   });
 
-  it("renders ArtifactViz in the hero on default cards even when an excerpt exists", () => {
-    const { container } = render(
-      React.createElement(ArtifactCard, { artifact }),
-    );
-    const preview = container.querySelector('[class*="min-h-[120px]"]');
-    expect(screen.queryByText("Quick follow-up on our call")).toBeNull();
-    expect(preview?.querySelector("svg")).not.toBeNull();
+  it("renders the kind-family preview (not the decorative placeholder) on default gallery cards too, with the excerpt visible", () => {
+    render(React.createElement(ArtifactCard, { artifact }));
+    expect(screen.getByText("Quick follow-up on our call")).toBeDefined();
+  });
+
+  it("never renders an iframe in the card media area, for any kind", () => {
+    const kinds: Array<[string, string]> = [
+      ["email", "Email"],
+      ["ab-comparison", "Comparison"],
+      ["web", "Web page"],
+      ["one-pager", "One-Pager"],
+    ];
+    for (const [kind, label] of kinds) {
+      const { container, unmount } = render(
+        React.createElement(ArtifactCard, {
+          artifact: { ...artifact, kind, label },
+        }),
+      );
+      expect(container.querySelector("iframe")).toBeNull();
+      unmount();
+    }
   });
 
   it("renders image thumbnails on default gallery cards", () => {
@@ -132,6 +144,36 @@ describe("ArtifactCard", () => {
     expect(thumbnail.getAttribute("src")).toBe(
       "https://example.test/image.png",
     );
+  });
+
+  it("shows the kind-correct 'Image' chip, not a generic 'Document' label", () => {
+    render(
+      React.createElement(ArtifactCard, {
+        artifact: {
+          ...artifact,
+          kind: "image",
+          label: "Image",
+          thumbnailUrl: "https://example.test/image.png",
+          thumbnailAlt: "Uploaded image",
+        },
+      }),
+    );
+    expect(screen.getByText("Image")).toBeDefined();
+    expect(screen.queryByText("Document")).toBeNull();
+  });
+
+  it("shows the winner and variant count on a comparison card", () => {
+    render(
+      React.createElement(ArtifactCard, {
+        artifact: {
+          ...artifact,
+          kind: "ab-comparison",
+          label: "Comparison",
+          previewExcerpt: "Winner: Claude Opus · 2 variants",
+        },
+      }),
+    );
+    expect(screen.getByText("Winner: Claude Opus · 2 variants")).toBeDefined();
   });
 
   it("falls back to the shaped placeholder when the thumbnail fails to load", () => {
