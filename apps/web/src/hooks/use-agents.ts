@@ -59,3 +59,31 @@ export function useAgentInstances(tenantId: string | null) {
     staleTime: 5 * 60_000,
   });
 }
+
+export const AgentTemplateWireSchema = type({
+  key: "string",
+  name: "string",
+  description: "string",
+  tools: "string[]",
+});
+
+export const AgentTemplatesResponseSchema = type({
+  data: AgentTemplateWireSchema.array(),
+});
+
+export type AgentTemplateItem = typeof AgentTemplateWireSchema.infer;
+
+export function useAgentTemplates() {
+  return useQuery<AgentTemplateItem[]>({
+    queryKey: ["agent-templates"],
+    queryFn: async () => {
+      const raw = await api<unknown>("GET", "/agents/templates");
+      const parsed = AgentTemplatesResponseSchema(raw);
+      if (parsed instanceof type.errors) {
+        throw new Error(`Unexpected agent templates response: ${parsed.summary}`);
+      }
+      return parsed.data;
+    },
+    staleTime: 5 * 60_000,
+  });
+}

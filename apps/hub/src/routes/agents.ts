@@ -66,7 +66,7 @@ const AgentTemplate = type({
   key: "string",
   name: "string",
   description: "string",
-  tools: "unknown",
+  tools: "string[]",
 });
 const AgentTemplateListResponse = type({ data: AgentTemplate.array() });
 
