@@ -25,7 +25,10 @@ import {
   createSidecarStepInvoker,
 } from "./workflow-substrate-factory";
 
-type SendTurn = Awaited<ReturnType<Agent["send"]>>["turn"];
+type SendTurn = Extract<
+  Awaited<ReturnType<Agent["send"]>>,
+  { type: "reply" }
+>["turn"];
 
 const tmpDirs: string[] = [];
 

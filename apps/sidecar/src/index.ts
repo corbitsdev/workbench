@@ -10,7 +10,7 @@ import {
 } from "@intx/crypto";
 import { createSidecarOrchestrator, type HubLink } from "@workbench/hub-agent";
 import type { InferenceEvent } from "@intx/types/runtime";
-import { hexEncode } from "@intx/types";
+import { hexEncode, type SignalKind } from "@intx/types";
 import { createAgentRepoStore } from "@intx/hub-sessions";
 import { buildWorkbenchAdapterRegistry } from "./gemini-thought-signature-patch";
 import { wsUrlToHttp } from "./agent-tools";
@@ -222,6 +222,21 @@ const workflowInferencePublisher: {
   ) => void;
 } = {};
 
+// Late-bound suspension publisher, mirroring `workflowInferencePublisher`:
+// the deploy router is built inside `createSidecarOrchestrator` (before its
+// `hubLink` exists), so the router routes a supervisor's `park.notify`
+// registration through this box, and `send` is swapped to the link's
+// `sendSignalCorrelationRegister` once the orchestrator is constructed.
+const workflowSuspensionPublisher: {
+  send?: (registration: {
+    correlationId: string;
+    runId: string;
+    deploymentId: string;
+    agentAddress: string;
+    kind: SignalKind;
+  }) => void;
+} = {};
+
 const multistepSubstrateEnv: Record<string, string> = {
   SIDECAR_DATA_DIR: dataDir,
   SIDECAR_SIGNING_PUBLIC_KEY: hexEncode(sidecarSigningKey.publicKey),
@@ -385,6 +400,9 @@ const orchestrator = createSidecarOrchestrator({
         if (sessionId === undefined) return;
         workflowInferencePublisher.send?.(agentAddress, sessionId, event);
       },
+      publishWorkflowSuspension: (registration) => {
+        workflowSuspensionPublisher.send?.(registration);
+      },
     });
     deployRouterBox.current = router;
     return router;
@@ -393,6 +411,8 @@ const orchestrator = createSidecarOrchestrator({
 
 resolvedHubLink = orchestrator.hubLink;
 workflowInferencePublisher.send = orchestrator.hubLink.sendEvent;
+workflowSuspensionPublisher.send =
+  orchestrator.hubLink.sendSignalCorrelationRegister;
 
 // Prune orphaned on-disk deployment dirs BEFORE the orchestrator's hub-link
 // connects, so interchange's `restoreSessions()` never re-establishes

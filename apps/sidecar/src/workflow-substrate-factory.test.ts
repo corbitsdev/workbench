@@ -14,7 +14,12 @@ import type { Agent, AgentDefinition, BaseEnv } from "@intx/agent";
 
 // The assistant turn shape, derived from Agent.send rather than imported by
 // name — @intx/agent does not re-export ConversationTurn from its barrel.
-type SendTurn = Awaited<ReturnType<Agent["send"]>>["turn"];
+// `SendResult` is a discriminated union since the approval-suspension bump;
+// the turn lives on the `type: "reply"` variant.
+type SendTurn = Extract<
+  Awaited<ReturnType<Agent["send"]>>,
+  { type: "reply" }
+>["turn"];
 import { createDefaultDirectorRegistry } from "@intx/agent";
 import { evaluateGrants } from "@intx/authz";
 import { createBuiltinRegistry } from "@intx/inference/providers";
@@ -46,6 +51,21 @@ import {
 
 const tmpDirs: string[] = [];
 const realFetch = globalThis.fetch;
+
+// `StepInvokeResult` gained a `{ suspend }` variant with the approval-
+// suspension bump. Every step exercised here produces output (no approval
+// gates), so narrow to the output variant and fail loudly if a suspension
+// ever surfaces.
+function assertOutput(
+  result: { output: unknown } | { suspend: { correlationId: string } },
+): { output: unknown } {
+  if (!("output" in result)) {
+    throw new Error(
+      `expected an output StepInvokeResult, got a suspension: ${JSON.stringify(result)}`,
+    );
+  }
+  return result;
+}
 
 describe("createStepInferenceSourceResolver", () => {
   // Each step's pinned value is an ordered failover CHAIN (non-empty array),
@@ -216,7 +236,7 @@ describe("createSidecarStepInvoker", () => {
     const stubAgent: Agent = {
       send: async (content: Parameters<Agent["send"]>[0]) => {
         sentContent = typeof content === "string" ? content : content.content;
-        return { reply: REPLY, turn };
+        return { type: "reply", reply: REPLY, turn };
       },
       stream: () => ({
         [Symbol.asyncIterator]: () => ({
@@ -243,10 +263,10 @@ describe("createSidecarStepInvoker", () => {
 
     const result = await invoke(makeRequest());
 
-    expect(result.output).toEqual({ reply: REPLY, turn });
+    expect(assertOutput(result).output).toEqual({ reply: REPLY, turn });
     // Guard against regressing to the upstream stub, which echoed the
     // agent id with a null turn.
-    expect(result.output).not.toEqual({
+    expect(assertOutput(result).output).not.toEqual({
       reply: "agent-under-test",
       turn: null,
     });
@@ -261,6 +281,7 @@ describe("createSidecarStepInvoker", () => {
     let capturedEnv: BaseEnv | undefined;
     const stubAgent: Agent = {
       send: async () => ({
+        type: "reply",
         reply: "ok",
         turn: { role: "assistant", content: "ok" } as unknown as SendTurn,
       }),
@@ -336,6 +357,7 @@ describe("createSidecarStepInvoker", () => {
     let capturedEnv: BaseEnv | undefined;
     const stubAgent: Agent = {
       send: async () => ({
+        type: "reply",
         reply: "ok",
         turn: { role: "assistant", content: "ok" } as unknown as SendTurn,
       }),
@@ -450,6 +472,7 @@ describe("createSidecarStepInvoker", () => {
     let factoryCalled = false;
     const stubAgent: Agent = {
       send: async () => ({
+        type: "reply",
         reply: "ok",
         turn: { role: "assistant", content: "ok" } as unknown as SendTurn,
       }),
@@ -544,12 +567,14 @@ describe("createSidecarStepInvoker", () => {
     for (let i = 0; i < elements.length; i += 1) {
       const name = elements[i] as string;
       outputs.push(
-        await invoke({
-          agent: detAgent,
-          input: { path: name, content: `content-${name}` },
-          authzContext: { stepId: STEP_ID, attempt: i + 1, runId: RUN_ID },
-          signal: new AbortController().signal,
-        }),
+        assertOutput(
+          await invoke({
+            agent: detAgent,
+            input: { path: name, content: `content-${name}` },
+            authzContext: { stepId: STEP_ID, attempt: i + 1, runId: RUN_ID },
+            signal: new AbortController().signal,
+          }),
+        ),
       );
     }
 
@@ -584,7 +609,7 @@ describe("createSidecarStepInvoker", () => {
     const stubAgent: Agent = {
       send: async (content: Parameters<Agent["send"]>[0]) => {
         sentContent = typeof content === "string" ? content : content.content;
-        return { reply: INLINE_REPLY, turn };
+        return { type: "reply", reply: INLINE_REPLY, turn };
       },
       stream: () => ({
         [Symbol.asyncIterator]: () => ({
@@ -629,7 +654,7 @@ describe("createSidecarStepInvoker", () => {
     const result = await invoke(req);
 
     // The inline branch returned the real agent reply in the {reply,turn} shape.
-    expect(result.output).toEqual({ reply: INLINE_REPLY, turn });
+    expect(assertOutput(result).output).toEqual({ reply: INLINE_REPLY, turn });
     // CONDITION 1: the env's inference source is the pinned STEP_INFERENCE_SOURCES
     // entry for this step — credentials come from the env table, not on-demand.
     const env = capturedEnv as BaseEnv;
@@ -699,7 +724,7 @@ describe("createSidecarStepInvoker", () => {
     };
 
     const result = await invoke(nonFatalReq);
-    const output = result.output as {
+    const output = assertOutput(result).output as {
       reply: string;
       isError?: boolean;
       error?: string;
@@ -779,7 +804,9 @@ describe("createSidecarStepInvoker", () => {
       authzContext: { stepId: STEP_ID, attempt: 3, runId: RUN_ID },
       signal: new AbortController().signal,
     });
-    expect((last.output as { isError?: boolean }).isError).toBe(true);
+    expect((assertOutput(last).output as { isError?: boolean }).isError).toBe(
+      true,
+    );
   });
 
   test("a nonFatal inline step still rethrows on cancellation (never masks a run cancel)", async () => {
@@ -862,7 +889,7 @@ describe("createSidecarStepInvoker", () => {
     const stubAgent: Agent = {
       send: async (content: Parameters<Agent["send"]>[0]) => {
         void content;
-        return { reply: INLINE_REPLY, turn };
+        return { type: "reply", reply: INLINE_REPLY, turn };
       },
       stream: () => {
         streamInvoked = true;
@@ -930,7 +957,7 @@ describe("createSidecarStepInvoker", () => {
     const result = await invoke(req);
 
     // Reply is unchanged by the drain.
-    expect(result.output).toEqual({ reply: INLINE_REPLY, turn });
+    expect(assertOutput(result).output).toEqual({ reply: INLINE_REPLY, turn });
     // A draining consumer was attached and pulled every emitted event.
     expect(streamInvoked).toBe(true);
     expect(consumedEvents).toEqual([...emitted]);
@@ -1283,11 +1310,11 @@ describe("warm-keep single-step durability", () => {
     expect(agentLog.sends).toHaveLength(2);
     // The agent was NOT closed between messages (warm agents span messages).
     expect(agentLog.closed).toBe(false);
-    expect(first.output).toEqual({
+    expect(assertOutput(first).output).toEqual({
       reply: "reply-1",
       turn: { role: "assistant", content: "reply-1" } as unknown as SendTurn,
     });
-    expect(second.output).toEqual({
+    expect(assertOutput(second).output).toEqual({
       reply: "reply-2",
       turn: { role: "assistant", content: "reply-2" } as unknown as SendTurn,
     });
@@ -1351,6 +1378,7 @@ describe("supervisor-backed outbound transport wiring", () => {
       | undefined;
     const stubAgent: Agent = {
       send: async () => ({
+        type: "reply",
         reply: "ok",
         turn: { role: "assistant", content: "ok" } as unknown as SendTurn,
       }),
@@ -1413,6 +1441,7 @@ describe("supervisor-backed outbound transport wiring", () => {
     let capturedEnv: (BaseEnv & { transport?: unknown }) | undefined;
     const stubAgent: Agent = {
       send: async () => ({
+        type: "reply",
         reply: "ok",
         turn: { role: "assistant", content: "ok" } as unknown as SendTurn,
       }),
@@ -1631,7 +1660,7 @@ describe("live durable-conversation seam on a single-step (warmKeep) deploy", ()
     });
 
     // Startup did not block or throw: the deterministic tool ran to completion.
-    const output = result.output as Record<string, unknown>;
+    const output = assertOutput(result).output as Record<string, unknown>;
     expect(output).toHaveProperty("callId");
     expect(output.isError).not.toBe(true);
     // The durable seam fired on the live path: buildEnv acquired the store
