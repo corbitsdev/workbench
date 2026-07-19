@@ -54,9 +54,17 @@ function nativeHeadline(approval: NativeApproval): string {
   return `Approval requested by ${local}`;
 }
 
-/** Render a single scalar argument value inline; skip empties and nested
- * shapes (they do not read as a one-line summary). */
-function formatArgValue(value: unknown): string | null {
+/** Keys whose value is typically already spoken by the friendly headline
+ * (e.g. `Creating Linear issue "<title>"`), so repeating them in the arg line
+ * is noise. Only deduped when the value actually appears in the headline. */
+const TITLE_LIKE_ARG_KEYS = new Set(["title", "name", "subject"]);
+
+/** The most argument pairs we show inline before collapsing the rest into a
+ * "+N more" cue. */
+const MAX_ARG_PAIRS = 3;
+
+/** Render a single scalar argument value inline; null for empties. */
+function formatScalarArg(value: unknown): string | null {
   if (typeof value === "string") return value.trim() === "" ? null : value;
   if (typeof value === "number" || typeof value === "boolean") {
     return String(value);
@@ -65,25 +73,83 @@ function formatArgValue(value: unknown): string | null {
 }
 
 /**
- * A one-line `key: value` summary of the tool arguments so the human approves
- * with full context (title/body/recipient), not just field names. Returns null
- * (no line) when the snapshot is absent or carries no showable scalar — never a
- * stub. Bounded to a few pairs with per-value truncation so a long body cannot
- * blow out the card.
+ * Render an array argument as a readable, truncated list — a `to: string[]`
+ * recipient list is exactly what an approver must see, so it must never be
+ * dropped. A short list renders its members (`a@x.com, b@y.com`); a long or
+ * non-scalar list collapses to a `N items` count rather than an unreadable
+ * blob.
  */
-function nativeArgumentSummary(approval: NativeApproval): string | null {
+function formatArrayArg(value: unknown[]): string | null {
+  if (value.length === 0) return null;
+  const items = value
+    .map(formatScalarArg)
+    .filter((item): item is string => item !== null);
+  if (items.length === value.length) {
+    const joined = items.join(", ");
+    if (items.length <= 4 && joined.length <= 60) return joined;
+  }
+  return `${value.length} items`;
+}
+
+/** Render an object argument compactly — a couple of its own scalar fields so a
+ * nested shape still surfaces something the approver can read. */
+function formatObjectArg(value: Record<string, unknown>): string | null {
+  const parts: string[] = [];
+  for (const [key, inner] of Object.entries(value)) {
+    const formatted = formatScalarArg(inner);
+    if (formatted === null) continue;
+    parts.push(`${key}: ${formatted}`);
+    if (parts.length >= 2) break;
+  }
+  return parts.length > 0 ? `{ ${parts.join(", ")} }` : null;
+}
+
+/** Format any argument value — scalar, array, or object — for the inline
+ * summary. Null only when the value carries nothing showable. */
+function formatArgValue(value: unknown): string | null {
+  if (Array.isArray(value)) return formatArrayArg(value);
+  if (value !== null && typeof value === "object") {
+    return formatObjectArg(value as Record<string, unknown>);
+  }
+  return formatScalarArg(value);
+}
+
+/**
+ * A one-line `key: value` summary of the tool arguments so the human approves
+ * with full context (title/body/recipient list), not just field names. Returns
+ * null (no line) when the snapshot is absent or carries nothing showable —
+ * never a stub. Bounded to a few pairs with per-value truncation so a long body
+ * cannot blow out the card; arrays and objects are rendered rather than
+ * silently dropped. Fields already spoken by `headline` are deduped so the
+ * title is not repeated. When pairs are capped or any field is hidden, a
+ * "+N more" cue is appended so nothing is dropped without a trace.
+ */
+function nativeArgumentSummary(
+  approval: NativeApproval,
+  headline: string,
+): string | null {
   const args = approval.toolArguments;
   if (args === null) return null;
+  const candidates = Object.entries(args).filter(([key, value]) => {
+    if (!TITLE_LIKE_ARG_KEYS.has(key)) return true;
+    const formatted = formatScalarArg(value);
+    return formatted === null || !headline.includes(formatted);
+  });
   const parts: string[] = [];
-  for (const [key, value] of Object.entries(args)) {
+  let shown = 0;
+  for (const [key, value] of candidates) {
+    if (parts.length >= MAX_ARG_PAIRS) break;
     const formatted = formatArgValue(value);
     if (formatted === null) continue;
     const truncated =
       formatted.length > 80 ? `${formatted.slice(0, 79)}…` : formatted;
     parts.push(`${key}: ${truncated}`);
-    if (parts.length >= 3) break;
+    shown += 1;
   }
-  return parts.length > 0 ? parts.join(" · ") : null;
+  if (parts.length === 0) return null;
+  const overflow = candidates.length - shown;
+  if (overflow > 0) parts.push(`+${overflow} more`);
+  return parts.join(" · ");
 }
 
 /**
@@ -102,7 +168,8 @@ export function NativeApprovalCard({
   const isApproving = requestState === "approving";
   const isRejecting = requestState === "rejecting";
   const isInFlight = isApproving || isRejecting;
-  const argSummary = nativeArgumentSummary(approval);
+  const headline = nativeHeadline(approval);
+  const argSummary = nativeArgumentSummary(approval, headline);
 
   return (
     <div
@@ -113,9 +180,7 @@ export function NativeApprovalCard({
         <div className="mb-1 text-[12px] font-bold uppercase tracking-[0.05em] text-text-3">
           Action Request
         </div>
-        <p className="text-[13.5px] font-semibold text-text">
-          {nativeHeadline(approval)}
-        </p>
+        <p className="text-[13.5px] font-semibold text-text">{headline}</p>
         {argSummary !== null ? (
           <p className="mt-0.5 text-[12.5px] text-text-2">{argSummary}</p>
         ) : null}
