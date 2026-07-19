@@ -39,6 +39,8 @@ export {
 export {
   composeChatMessages,
   STREAMING_BUBBLE_ID,
+  reconstructDroppedTurnEvents,
+  mergeReconstructedTurns,
   type ComposeChatInput,
   type ComposeChatResult,
 } from "./chat-messages";

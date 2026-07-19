@@ -156,6 +156,12 @@ mock.module("@workbench/agents/browser", () => ({
       createdAt: "",
     })),
   }),
+  // Reconstruction is exercised end-to-end against the real implementation
+  // in packages/agents/src/chat-messages.turn-reconstruction.test.ts; this
+  // hook-level suite only needs the merge to be a pass-through no-op so the
+  // stubbed events above are untouched.
+  reconstructDroppedTurnEvents: () => [],
+  mergeReconstructedTurns: (events: StubEvent[]) => events,
   createPartAssembler: (
     _transport: unknown,
     _params: unknown,

@@ -139,6 +139,84 @@ describe("turn-identity stamping for renderer grouping", () => {
     expect(first?.turnId).not.toBe(second?.turnId as string);
   });
 
+  it("groups a reload-shaped final mail with its exchange's tool-call turn once the dropped text-only turn is reconstructed upstream", () => {
+    // @intx/hub-client's turnToEvent drops a historical turn with no tool
+    // calls/errors (its content is assumed to survive via the echoed mail).
+    // The hydration seam (reconstructDroppedTurnEvents /
+    // mergeReconstructedTurns, see chat-messages.turn-reconstruction.test.ts)
+    // re-derives that turn before events ever reach composeChatMessages, so
+    // by the time they arrive here the text-only turn is present and the
+    // existing content-match hoist groups it with the mail exactly like a
+    // turn turnToEvent never dropped in the first place.
+    const { messages } = composeChatMessages({
+      events: [
+        userMail("u1", "go", "2024-01-01T00:00:00.000Z"),
+        textTurn("t1", "Let me check.", "2024-01-01T00:00:10.000Z", {
+          toolCalls: [
+            { name: "crm_lookup", arguments: {}, result: "r", isError: false },
+          ],
+        }),
+        textTurn("t2", "Here is the final answer.", "2024-01-01T00:00:12.000Z"),
+        assistantMail(
+          "a1",
+          "Here is the final answer.",
+          "2024-01-01T00:00:15.000Z",
+        ),
+      ],
+      streaming: "",
+    });
+    const narration = messages.find((m) => m.content === "Let me check.");
+    const answer = messages.find(
+      (m) => m.content === "Here is the final answer.",
+    );
+    expect(narration?.turnId).toBeDefined();
+    expect(answer?.turnId).toBeDefined();
+    expect(answer?.turnId).toBe(narration?.turnId as string);
+  });
+
+  it("does not group an assistant mail arriving well outside the reply-echo window (gate mail / triage handoff / brief)", () => {
+    const { messages } = composeChatMessages({
+      events: [
+        userMail("u1", "go", "2024-01-01T00:00:00.000Z"),
+        textTurn("t1", "The real answer.", "2024-01-01T00:00:10.000Z", {
+          toolCalls: [
+            { name: "crm_lookup", arguments: {}, result: "r", isError: false },
+          ],
+        }),
+        assistantMail("m1", "Gate mail body.", "2024-01-01T00:01:00.000Z"),
+      ],
+      streaming: "",
+    });
+    const reply = messages.find((m) => m.content === "The real answer.");
+    const gateMail = messages.find((m) => m.content === "Gate mail body.");
+    expect(reply?.turnId).toBeDefined();
+    expect(gateMail?.turnId).toBeUndefined();
+  });
+
+  it("does not group a trailing assistant mail whose content does not match any turn in the exchange, even when that turn sent mail via mail_send", () => {
+    const { messages } = composeChatMessages({
+      events: [
+        userMail("u1", "go", "2024-01-01T00:00:00.000Z"),
+        textTurn("t1", "Messaging the team.", "2024-01-01T00:00:10.000Z", {
+          toolCalls: [
+            {
+              name: "mail_send",
+              arguments: {},
+              result: "sent",
+              isError: false,
+            },
+          ],
+        }),
+        assistantMail("m1", "Unrelated note.", "2024-01-01T00:00:12.000Z"),
+      ],
+      streaming: "",
+    });
+    const turn = messages.find((m) => m.content === "Messaging the team.");
+    const mail = messages.find((m) => m.content === "Unrelated note.");
+    expect(turn?.turnId).toBeDefined();
+    expect(mail?.turnId).toBeUndefined();
+  });
+
   it("stamps the live streaming bubble with the current exchange group so an in-flight turn stays grouped with its committed segments", () => {
     const { messages } = composeChatMessages({
       events: [

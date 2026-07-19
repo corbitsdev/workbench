@@ -77,6 +77,38 @@ describe("groupChatTurns", () => {
   });
 });
 
+describe("reloaded transcript rendering (CL-3930)", () => {
+  it("renders only the final answer for a reloaded multi-segment turn, dropping the interstitial and never showing a live indicator", () => {
+    // Shape composeChatMessages now produces for a reloaded (non-live)
+    // transcript once the mail-echo fix stamps the trailing assistant mail
+    // with its exchange's group: a tool-call-bearing narration segment
+    // sharing turnId with the final answer, both fully settled (no
+    // `status: "sending"` — a reload never carries live status).
+    const messages: ChatMessage[] = [
+      agent({
+        id: "t1",
+        content: "The exact message from the system was: rate limited.",
+        turnId: "g1",
+        toolCalls: [{ id: "c1", name: "crm_lookup", result: "429" }],
+      }),
+      agent({ id: "a1", content: "Here is the final answer.", turnId: "g1" }),
+    ];
+    const groups = groupChatTurns(messages);
+    expect(groups).toHaveLength(1);
+    expect(hasFailedSegment(groups[0]!)).toBe(false);
+    expect(isTurnLive(groups[0]!)).toBe(false);
+
+    const projected = projectSettledTurn(groups[0]!);
+    expect(projected).toHaveLength(1);
+    expect(projected[0]?.content).toBe("Here is the final answer.");
+    expect(
+      projected.some((m) =>
+        m.content.includes("The exact message from the system was"),
+      ),
+    ).toBe(false);
+  });
+});
+
 describe("isTurnLive / hasFailedSegment", () => {
   it("isTurnLive is true when any segment is still sending", () => {
     const segments = [
