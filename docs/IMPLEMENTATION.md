@@ -37,13 +37,19 @@
 
 ### `apps/sidecar/` — Tool Runner
 
-The sidecar carries three tool runners merged via `mergeToolRunners` before `filterToolRunner` gates model-visible definitions to whatever the hub configured in `HarnessConfig.tools`:
+The sidecar carries tool runners merged via `mergeToolRunners` before `filterToolRunner` gates model-visible definitions to whatever the hub configured in `HarnessConfig.tools`:
 
-| Runner               | Source                                | What it covers                                            |
-| -------------------- | ------------------------------------- | --------------------------------------------------------- |
-| `posixTools`         | `@intx/tools-posix`                   | File system, shell, LSP                                   |
-| `askPrincipalRunner` | `@workbench/approvals`                | Human approval flow (calls hub `/api/internal/approvals`) |
-| `hubToolRunner`      | `apps/sidecar/src/hub-tool-runner.ts` | All hub-managed tools (exa, granola, etc.)                |
+| Runner          | Source                                | What it covers                             |
+| --------------- | ------------------------------------- | ------------------------------------------ |
+| `posixTools`    | `@intx/tools-posix`                   | File system, shell, LSP                    |
+| `hubToolRunner` | `apps/sidecar/src/hub-tool-runner.ts` | All hub-managed tools (exa, granola, etc.) |
+
+The `ask_principal` tool (`@workbench/approvals`, the `askPrincipalRunner`) that
+previously appeared here was retired (CL-3934): it had zero non-test importers —
+never merged into any sidecar tool runner and never registered on any agent's
+tool list. The still-live legacy approval surface is the read/resolve path —
+`apps/hub/src/routes/approvals.ts`, `apps/hub/src/lib/approvals-events.ts`, and
+the `workbench_approval` table — which stays until its pending rows drain.
 
 `HubToolRunner` is generic — it forwards every tool call to `POST /api/internal/tools/run` using `sidecarToken` auth. It has no knowledge of specific tools. Adding a new tool package never requires a sidecar change.
 

@@ -15,8 +15,8 @@ const toolManifestFactories = loadCommittedToolManifestFactories();
 // therefore carry the prefixed name so the grants the hub seeds from them match
 // what the runtime asks for (CL-2145). Local sidecar runners — posix
 // (`read_file`, `write_file`, `edit_file`, `search_files`, `run_shell`, `grep`),
-// mail (`mail_*`), ask-principal — are merged directly (not loaded as packages)
-// and are NOT prefixed; they pass through unchanged.
+// mail (`mail_*`) — are merged directly (not loaded as packages) and are NOT
+// prefixed; they pass through unchanged.
 //
 // Bare tool names per factory id, derived from committed manifests — update
 // manifests and run `bun run build:tool-manifests` instead of editing here.
