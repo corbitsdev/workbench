@@ -252,7 +252,9 @@ function WorkflowRunPaneInner({
     () => (
       <div
         className="flex min-w-0 flex-1 flex-wrap items-center justify-end gap-3"
-        onMouseLeave={() => setConfirmingStop(false)}
+        onMouseLeave={() => {
+          if (!stopping) setConfirmingStop(false);
+        }}
       >
         {deploymentMeta ? (
           <WorkflowMetaBadge
@@ -271,7 +273,6 @@ function WorkflowRunPaneInner({
                 disabled={stopping}
                 data-testid="run-pane-stop-confirm"
                 onClick={() => {
-                  setConfirmingStop(false);
                   stopRun.mutate(runId);
                 }}
                 aria-label="Confirm: stop this run"
@@ -281,6 +282,7 @@ function WorkflowRunPaneInner({
               <Button
                 variant="ghost"
                 size="sm"
+                disabled={stopping}
                 onClick={() => setConfirmingStop(false)}
                 aria-label="Cancel stop"
               >

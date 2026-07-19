@@ -299,7 +299,9 @@ function WorkflowDockCard({
   return (
     <div
       data-testid="workflow-dock-card"
-      onMouseLeave={() => setConfirmingStop(false)}
+      onMouseLeave={() => {
+        if (!stopping) setConfirmingStop(false);
+      }}
       className={cn(
         "rounded-lg border border-border border-l-2 bg-surface-2",
         meta.stripe,
@@ -348,7 +350,6 @@ function WorkflowDockCard({
                 data-testid="dock-stop-confirm"
                 disabled={stopping}
                 onClick={() => {
-                  setConfirmingStop(false);
                   stopRun.mutate(run.runId);
                 }}
                 aria-label={`Confirm: stop ${run.kind} run`}
@@ -361,6 +362,7 @@ function WorkflowDockCard({
               </button>
               <button
                 type="button"
+                disabled={stopping}
                 onClick={() => setConfirmingStop(false)}
                 aria-label={`Cancel stopping ${run.kind} run`}
                 className={cn(
