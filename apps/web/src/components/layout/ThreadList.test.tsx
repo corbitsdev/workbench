@@ -41,6 +41,11 @@ mock.module("../../hooks/use-myra-threads", () => ({
   writeLastActiveThreadId: () => {},
 }));
 
+let pendingApprovalInstanceIds = new Set<string>();
+mock.module("../../hooks/use-pending-approval-instances", () => ({
+  usePendingApprovalInstances: () => pendingApprovalInstanceIds,
+}));
+
 const { ThreadList } = require("./ThreadList");
 const {
   resetLocallyUsedMyraThreads,
@@ -53,6 +58,7 @@ beforeEach(() => {
   useMyraThreadsSpy.mockClear();
   threadsData = [makeThread(1), makeThread(2)];
   totalCount = 2;
+  pendingApprovalInstanceIds = new Set<string>();
   resetLocallyUsedMyraThreads();
 });
 
@@ -168,6 +174,51 @@ describe("ThreadList", () => {
     const input = screen.getByDisplayValue("First");
     fireEvent.keyDown(input, { key: "Enter" });
     expect(renameMutate).not.toHaveBeenCalled();
+  });
+
+  it("shows a pending-approval dot only on the thread whose instance has a pending approval", () => {
+    // makeThread(n) has instanceId `i${n}`; only i1 has a pending approval.
+    pendingApprovalInstanceIds = new Set(["i1"]);
+    renderList();
+    const dots = screen.getAllByTestId("pending-approval-dot");
+    expect(dots).toHaveLength(1);
+    // The dot sits inside the "First" thread's row button, not "Second".
+    const firstRow = screen.getByText("First").closest("button");
+    expect(
+      firstRow?.querySelector('[data-testid="pending-approval-dot"]'),
+    ).not.toBeNull();
+    const secondRow = screen.getByText("Second").closest("button");
+    expect(
+      secondRow?.querySelector('[data-testid="pending-approval-dot"]'),
+    ).toBeNull();
+  });
+
+  it("shows no dot when no instance has a pending approval", () => {
+    pendingApprovalInstanceIds = new Set<string>();
+    renderList();
+    expect(screen.queryByTestId("pending-approval-dot")).toBeNull();
+  });
+
+  it("clears the dot once the approval resolves (empty set)", () => {
+    pendingApprovalInstanceIds = new Set(["i2"]);
+    const { rerender } = render(
+      React.createElement(
+        MemoryRouter,
+        { initialEntries: ["/chats/t1"] },
+        React.createElement(ThreadList),
+      ),
+    );
+    expect(screen.getAllByTestId("pending-approval-dot")).toHaveLength(1);
+    // Approval resolved → query invalidated → hook now returns an empty set.
+    pendingApprovalInstanceIds = new Set<string>();
+    rerender(
+      React.createElement(
+        MemoryRouter,
+        { initialEntries: ["/chats/t1"] },
+        React.createElement(ThreadList),
+      ),
+    );
+    expect(screen.queryByTestId("pending-approval-dot")).toBeNull();
   });
 
   it("deletes a thread from the options menu", () => {
