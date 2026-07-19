@@ -29,6 +29,7 @@ import {
   reseedAgentTemplateIfStale,
 } from "../lib/tenant-provisioning";
 import { resolveInstanceSourcesFromDefinition } from "./agent-provisioning";
+import { deleteInstanceDeploymentProjection } from "./workflow-deploy";
 import { getLogger } from "@intx/log";
 import { decryptToolCredentialSecret } from "../lib/credential-crypto";
 
@@ -223,6 +224,14 @@ export async function teardownThreadRows(
   db: HubDb,
   opts: { instanceId: string; mappingId: string; instancePrincipalId: string },
 ): Promise<void> {
+  // Read the instance's address before the row is deleted so the launched-agent
+  // deployment projection (keyed by the address-derived deploymentId) can be
+  // dropped too — a permanently torn-down thread must not leak its
+  // `workflow_deployment` row.
+  const instanceRow = await db.query.agentInstance.findFirst({
+    where: eq(agentInstance.id, opts.instanceId),
+    columns: { address: true },
+  });
   await db.transaction(async (rawTx) => {
     const tx = rawTx as unknown as HubDb;
     await tx
@@ -241,6 +250,12 @@ export async function teardownThreadRows(
         and(eq(principal.refId, opts.instanceId), eq(principal.kind, "agent")),
       );
   });
+  if (instanceRow?.address !== undefined) {
+    await deleteInstanceDeploymentProjection({
+      db,
+      instanceAddress: instanceRow.address,
+    });
+  }
 }
 
 export async function createMyraThread(

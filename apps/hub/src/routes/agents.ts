@@ -24,6 +24,7 @@ import {
   type LaunchErrorDescription,
 } from "../services/agent-provisioning";
 import { coalesceInstanceLaunch } from "../services/instance-launch-coalescer";
+import { deleteInstanceDeploymentProjection } from "../services/workflow-deploy";
 import { requestBodySchema } from "../lib/openapi";
 import {
   reconcileMemberInstanceGrants,
@@ -352,6 +353,14 @@ export function createAgentProvisioningRouter(
             error: err instanceof Error ? err.message : String(err),
           });
         });
+
+      // Both branches permanently retire the instance (hard-drop, or a soft-stop
+      // that stamps endedAt so it can never be re-launched), so drop its
+      // launched-agent deployment projection rather than leaving a stale row.
+      await deleteInstanceDeploymentProjection({
+        db: db as HubDb,
+        instanceAddress: instance.address,
+      });
 
       return c.body(null, 204);
     },

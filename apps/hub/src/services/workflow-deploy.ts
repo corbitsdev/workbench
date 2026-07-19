@@ -5,6 +5,8 @@ import {
   deriveDeploymentAddress,
   deriveStepAddress,
   deriveStepAgentId,
+  deriveWorkflowRunRepoId,
+  isWorkflowDerivedAddress,
   walkCapabilities,
   type CapabilityWalkResult,
   type DeployWorkflowResult,
@@ -15,7 +17,7 @@ import {
 } from "@intx/workflow-deploy";
 import type { DirectorRegistry } from "@intx/agent";
 import { schema as intxSchema } from "@intx/db";
-import { and, eq } from "drizzle-orm";
+import { and, eq, inArray, isNull } from "drizzle-orm";
 import { generateId } from "@intx/hub-common";
 import { getLogger } from "@intx/log";
 import { type } from "arktype";
@@ -1078,6 +1080,161 @@ export async function writeWorkflowDeploymentRow(args: {
     createdAt: now,
     updatedAt: now,
   });
+}
+
+// Native deployment projection for a single-agent (launched) instance — Myra,
+// Oat, triage/gate agents, ephemeral per-item Myra. Unlike a per-run workflow
+// deployment (whose `dep_`-keyed, workflow-derived `ins_dep_...` address routes
+// its key through `workflow_deployment`), a launched agent keeps its REAL
+// instance address and its deploy-ack key lands on `agent_instance` — so this
+// path never wrote a `workflow_deployment` row. Interchange's suspension
+// registration (`registerSignalCorrelation`) resolves a suspended write tool's
+// tenancy by looking THIS table up by the deployment mail address, and the
+// supervisor derives its deploymentId as `deriveWorkflowRunRepoId(address)` and
+// stamps the instance's real address as that mail address. Without the row the
+// suspension co-write throws `No deployed workflow deployment for address` and
+// the tool call parks until timeout. Mirror the fields
+// `deployWorkflowDefinition` writes: the `workflow`-kind asset, the projection
+// row keyed by `(id = deriveWorkflowRunRepoId(address), address)`, and the
+// creator read grant. `publicKey` stays null — a launched agent's reconnect
+// challenge routes to `agent_instance`, never here. Idempotent: the instance's
+// address (and therefore its deploymentId) is stable across mail-wake redeploy
+// cycles, so a relaunch upserts the same row rather than accumulating duplicates.
+export async function writeInstanceDeploymentProjection(args: {
+  db: HubDb;
+  instanceAddress: string;
+  agentId: string;
+  tenantId: string;
+  creatorPrincipalId: string;
+}): Promise<void> {
+  const deploymentId = deriveWorkflowRunRepoId(args.instanceAddress);
+  const definitionAssetId = await ensureWorkflowDefinitionAsset({
+    db: args.db,
+    tenantId: args.tenantId,
+    workflowId: `wf_${args.agentId}`,
+    creatorPrincipalId: args.creatorPrincipalId,
+  });
+  const now = new Date();
+  const inserted = await args.db
+    .insert(intxSchema.workflowDeployment)
+    .values({
+      id: deploymentId,
+      tenantId: args.tenantId,
+      definitionAssetId,
+      address: args.instanceAddress,
+      status: "deployed" as const,
+      createdAt: now,
+    })
+    .onConflictDoNothing()
+    .returning({ id: intxSchema.workflowDeployment.id });
+  if (inserted.length === 0) return;
+  await args.db.insert(intxSchema.grant).values({
+    id: generateId("grant"),
+    tenantId: args.tenantId,
+    principalId: args.creatorPrincipalId,
+    resource: `workflow-run:${deploymentId}`,
+    action: "read",
+    effect: "allow",
+    origin: "creator",
+    createdAt: now,
+    updatedAt: now,
+  });
+}
+
+// Drop a launched instance's deployment projection when the instance is
+// permanently retired (explicit delete, ephemeral thread teardown). NOT called
+// on idle-sleep: the reaper leaves `endedAt` unset so the instance stays
+// mail-wakeable, and its projection row must survive so a woken agent's write
+// tool can still register a suspension. The row's `id` is derived from the
+// (stable) instance address, so the delete is exact.
+export async function deleteInstanceDeploymentProjection(args: {
+  db: HubDb;
+  instanceAddress: string;
+}): Promise<void> {
+  const deploymentId = deriveWorkflowRunRepoId(args.instanceAddress);
+  await args.db
+    .delete(intxSchema.grant)
+    .where(eq(intxSchema.grant.resource, `workflow-run:${deploymentId}`));
+  await args.db
+    .delete(intxSchema.workflowDeployment)
+    .where(eq(intxSchema.workflowDeployment.id, deploymentId));
+}
+
+// Converge the `workflow_deployment` projection to the set of currently-live
+// launched agents. Runs at hub boot (the hub is the control plane) so instances
+// deployed before this projection existed — the ~20 live Myra/Oat deployments —
+// get their row without a redeploy, which is what lets native-approvals be
+// flipped on later without re-provisioning everything. Only launched-agent
+// (non-workflow-derived) rows are managed here: per-run deployments carry
+// `ins_dep_...` addresses and own their rows through `writeWorkflowDeploymentRow`
+// / `tearDownDeployment`, so they are skipped in both directions. Writes a row
+// for every active instance missing one, and deletes launched-agent rows whose
+// instance is no longer active (leaked ephemeral teardowns).
+export async function reconcileInstanceDeploymentProjections(args: {
+  db: HubDb;
+}): Promise<{ written: number; deleted: number }> {
+  const instances = await args.db
+    .select({
+      address: intxSchema.agentInstance.address,
+      agentId: intxSchema.agentInstance.agentId,
+      tenantId: intxSchema.agentInstance.tenantId,
+      principalId: intxSchema.agentInstance.principalId,
+    })
+    .from(intxSchema.agentInstance)
+    .where(
+      and(
+        isNull(intxSchema.agentInstance.endedAt),
+        // "updating" is live (mid-relaunch, endedAt null) — matches RELAUNCHABLE_STATUSES;
+        // omitting it let a boot reconcile racing a relaunch reclaim a live row.
+        inArray(intxSchema.agentInstance.status, [
+          "running",
+          "deployed",
+          "updating",
+        ]),
+      ),
+    );
+
+  const liveLaunched = instances.filter(
+    (row) => !isWorkflowDerivedAddress(row.address),
+  );
+  const liveAddresses = new Set(liveLaunched.map((row) => row.address));
+
+  let written = 0;
+  for (const row of liveLaunched) {
+    const before = await args.db
+      .select({ id: intxSchema.workflowDeployment.id })
+      .from(intxSchema.workflowDeployment)
+      .where(eq(intxSchema.workflowDeployment.address, row.address))
+      .limit(1);
+    if (before.length > 0) continue;
+    await writeInstanceDeploymentProjection({
+      db: args.db,
+      instanceAddress: row.address,
+      agentId: row.agentId,
+      tenantId: row.tenantId,
+      creatorPrincipalId: row.principalId,
+    });
+    written += 1;
+  }
+
+  const existing = await args.db
+    .select({
+      id: intxSchema.workflowDeployment.id,
+      address: intxSchema.workflowDeployment.address,
+    })
+    .from(intxSchema.workflowDeployment);
+  let deleted = 0;
+  for (const row of existing) {
+    if (isWorkflowDerivedAddress(row.address)) continue;
+    if (liveAddresses.has(row.address)) continue;
+    await deleteInstanceDeploymentProjection({
+      db: args.db,
+      instanceAddress: row.address,
+    });
+    deleted += 1;
+  }
+
+  return { written, deleted };
 }
 
 // Idempotently ensure the deployment-level supervisor `agent` + `agent_instance`

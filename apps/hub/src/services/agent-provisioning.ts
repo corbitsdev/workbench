@@ -49,6 +49,7 @@ import { runDedupedRelaunch } from "./relaunch-breaker";
 import { getCachedCatalogSources } from "./workflow-model-source-cache";
 import { memberAgentInstance } from "../db/schema";
 import { appendInferenceParamsMarkerForMyraLaunch } from "../lib/inference-params-launch";
+import { writeInstanceDeploymentProjection } from "./workflow-deploy";
 import type { HubDb } from "../db";
 
 const log = getLogger(["api", "agents"]);
@@ -734,6 +735,33 @@ export async function launchAgentSession(
         .update(agentInstance)
         .set({ status: "running", publicKey, updatedAt: new Date() })
         .where(eq(agentInstance.id, instanceId));
+      // Write the native deployment projection `deployInstanceAtHead` omits:
+      // interchange's suspension registration resolves a suspended write tool's
+      // tenancy by looking up this row by the deployment mail address (== this
+      // instance's real address), so without it a suspension co-write throws and
+      // the tool call parks until timeout. Best-effort: the deploy already
+      // succeeded, and the boot reconcile + the next relaunch both converge a
+      // missed write, so a projection failure must not fail an otherwise-live
+      // launch. Idempotent across mail-wake redeploys (address-stable id).
+      try {
+        await writeInstanceDeploymentProjection({
+          db: db as HubDb,
+          instanceAddress: address,
+          agentId,
+          tenantId,
+          creatorPrincipalId: instancePrincipalId,
+        });
+      } catch (projectionErr) {
+        log.warn("Failed to write instance deployment projection", {
+          instanceId,
+          agentId,
+          tenantId,
+          error:
+            projectionErr instanceof Error
+              ? projectionErr.message
+              : String(projectionErr),
+        });
+      }
       log.info("Agent session launched", { instanceId, agentId, tenantId });
       return { address, sessionId };
     } catch (err) {
