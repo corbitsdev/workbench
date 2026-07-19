@@ -1,9 +1,83 @@
 import type { InstanceEvent } from "@intx/hub-client";
+import { turnToEvent } from "@intx/hub-client";
+import type { InferenceTurnResponse } from "@intx/types";
 import type { ChatMessage, ChatImage, Part } from "@workbench/agent-core/parts";
 import { liftToParts } from "@workbench/agent-core/parts";
 import { convertInstanceEvents } from "./adapter";
 
 export const STREAMING_BUBBLE_ID = "streaming-synthetic";
+
+/**
+ * Compensate for a gap in @intx/hub-client's `turnToEvent` (see
+ * interchange/packages/hub-client/src/transforms.ts): it drops any
+ * historical turn that carries no errors and no tool calls, on the
+ * assumption the turn's text survives via an echoed outbound assistant
+ * mail. That assumption held while the harness always sent that echo mail.
+ * Under the current workflow-host runtime, single-step deployments no
+ * longer send it, so for a plain-text turn the persisted `inference_turn`
+ * is the ONLY record of the assistant's reply — and `turnToEvent` silently
+ * drops it, leaving nothing to render on reload.
+ *
+ * This mirrors turnToEvent's own text-extraction exactly (same parts
+ * filter, same join, same timestamp source) so the reconstructed event is
+ * indistinguishable from what turnToEvent would have produced had it not
+ * dropped the turn — it hoists against a matching echo mail exactly like a
+ * turn that survived the transform, and dedupes the same way. Only fills
+ * the gap turnToEvent leaves (no errors, no tool calls, non-empty text);
+ * every turn turnToEvent already converts is left untouched.
+ *
+ * This is a workbench-side compensation for an upstream gap, not a
+ * permanent feature: delete it once the interchange pin carries the
+ * one-line fix (dropping a turn only when it ALSO has no text).
+ */
+export function reconstructDroppedTurnEvents(
+  turns: readonly InferenceTurnResponse[],
+): InstanceEvent[] {
+  const reconstructed: InstanceEvent[] = [];
+  for (const turn of turns) {
+    if (turnToEvent(turn) !== null) continue;
+    const rawContent = turn.parts
+      .filter(
+        (p): p is typeof p & { content: string } =>
+          p.type === "text" &&
+          typeof p.content === "string" &&
+          p.content.length > 0,
+      )
+      .map((p) => p.content)
+      .join("");
+    if (rawContent.length === 0) continue;
+    reconstructed.push({
+      kind: "turn",
+      turnId: turn.id,
+      content: rawContent,
+      timestamp: turn.startedAt,
+    });
+  }
+  return reconstructed;
+}
+
+/**
+ * Merge reconstructed turn events (see `reconstructDroppedTurnEvents`) into
+ * a hydrated event list, skipping any turnId the list already carries — a
+ * turn `turnToEvent` did NOT drop (it had errors or tool calls) is already
+ * present and must not be duplicated. Re-sorts by server timestamp only
+ * when an event was actually added, matching @intx/hub-client's own
+ * hydration sort so a reconstructed turn lands in its chronological slot
+ * rather than always at the tail.
+ */
+export function mergeReconstructedTurns(
+  events: readonly InstanceEvent[],
+  reconstructed: readonly InstanceEvent[],
+): InstanceEvent[] {
+  const existingTurnIds = new Set(
+    events.filter((e) => e.kind === "turn").map((e) => e.turnId),
+  );
+  const toAdd = reconstructed.filter((e) => !existingTurnIds.has(e.turnId));
+  if (toAdd.length === 0) return [...events];
+  return [...events, ...toAdd].sort((a, b) =>
+    a.timestamp < b.timestamp ? -1 : a.timestamp > b.timestamp ? 1 : 0,
+  );
+}
 
 export interface ComposeChatInput {
   events: InstanceEvent[];
@@ -140,57 +214,23 @@ export function composeChatMessages(
 
   const converted = convertInstanceEvents(deduped, toolNames);
 
-  // A reloaded transcript never carries the plain-text final turn a live
-  // stream would have hoisted the mail against: @intx/hub-client's
-  // turnToEvent drops any historical turn with no tool calls/errors on the
-  // assumption its content survives via the echoed assistant mail (see this
-  // file's top comment). When that turn never arrives, content-matching
-  // cannot hoist the mail, so the mail falls back to arrival order: an
-  // unhoisted assistant mail landing within MAIL_ECHO_WINDOW_MS of the last
-  // turn in the CURRENT exchange — an exchange that never itself explicitly
-  // sent mail (no `mail_send` tool call, Myra's one available send tool) — is
-  // that dropped turn's own echoed reply, not an unrelated agent-initiated
-  // mail. Gate mail, triage handoffs, and morning briefs arrive well outside
-  // this window (they are not a reply to the exchange's own turns at all).
-  const MAIL_ECHO_WINDOW_MS = 30_000;
-
   // Turn-group identity for the renderer. Committed segments of one exchange
   // carry DISTINCT transport turnIds (each segment commits as its own turn
   // event — pinned by the composition regression spec), so the only real
   // exchange boundary is an inbound user mail. Stamp every turn-derived
-  // message (and any assistant mail hoisted into a turn's slot, live or
-  // echoed) with the current exchange's group key; standalone assistant
-  // mails (gate mail, triage handoffs, briefs) get NO group key so the
-  // renderer can never fold them into a neighbouring reply. Additive only —
-  // ordering, dedup, and hoisting semantics above are untouched.
+  // message (and any assistant mail hoisted into a turn's slot) with the
+  // current exchange's group key; standalone assistant mails (gate mail,
+  // triage handoffs, briefs) get NO group key so the renderer can never fold
+  // them into a neighbouring reply. Additive only — ordering, dedup, and
+  // hoisting semantics above are untouched.
   let exchangeIndex = 0;
-  let lastTurnTimestamp: string | null = null;
-  let exchangeSentMail = false;
   const groupIds = deduped.map((e): string | undefined => {
     if (e.kind === "mail" && e.role === "user") {
       exchangeIndex += 1;
-      lastTurnTimestamp = null;
-      exchangeSentMail = false;
       return undefined;
     }
-    if (e.kind === "turn") {
-      lastTurnTimestamp = e.timestamp;
-      if (e.toolCalls?.some((tc) => tc.name === "mail_send")) {
-        exchangeSentMail = true;
-      }
-      return `exchange-${exchangeIndex}`;
-    }
+    if (e.kind === "turn") return `exchange-${exchangeIndex}`;
     if (hoistedMailIds.has(e.id)) return `exchange-${exchangeIndex}`;
-    if (
-      e.kind === "mail" &&
-      e.role === "assistant" &&
-      !exchangeSentMail &&
-      lastTurnTimestamp !== null &&
-      Date.parse(e.timestamp) - Date.parse(lastTurnTimestamp) <=
-        MAIL_ECHO_WINDOW_MS
-    ) {
-      return `exchange-${exchangeIndex}`;
-    }
     return undefined;
   });
   const liveGroupId = `exchange-${exchangeIndex}`;

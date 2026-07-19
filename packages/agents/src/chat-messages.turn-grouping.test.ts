@@ -139,13 +139,15 @@ describe("turn-identity stamping for renderer grouping", () => {
     expect(first?.turnId).not.toBe(second?.turnId as string);
   });
 
-  it("groups a reload-shaped final mail with its exchange's tool-call turn even with no matching text-only turn to hoist against (CL-3930)", () => {
+  it("groups a reload-shaped final mail with its exchange's tool-call turn once the dropped text-only turn is reconstructed upstream", () => {
     // @intx/hub-client's turnToEvent drops a historical turn with no tool
-    // calls/errors (its content is assumed to survive via the echoed mail),
-    // so a reloaded transcript never carries the plain-text final turn a
-    // live stream would have hoisted the mail against — only the narration
-    // turn (kept because it carries tool calls) and the final assistant mail
-    // arrive.
+    // calls/errors (its content is assumed to survive via the echoed mail).
+    // The hydration seam (reconstructDroppedTurnEvents /
+    // mergeReconstructedTurns, see chat-messages.turn-reconstruction.test.ts)
+    // re-derives that turn before events ever reach composeChatMessages, so
+    // by the time they arrive here the text-only turn is present and the
+    // existing content-match hoist groups it with the mail exactly like a
+    // turn turnToEvent never dropped in the first place.
     const { messages } = composeChatMessages({
       events: [
         userMail("u1", "go", "2024-01-01T00:00:00.000Z"),
@@ -154,6 +156,7 @@ describe("turn-identity stamping for renderer grouping", () => {
             { name: "crm_lookup", arguments: {}, result: "r", isError: false },
           ],
         }),
+        textTurn("t2", "Here is the final answer.", "2024-01-01T00:00:12.000Z"),
         assistantMail(
           "a1",
           "Here is the final answer.",
@@ -190,7 +193,7 @@ describe("turn-identity stamping for renderer grouping", () => {
     expect(gateMail?.turnId).toBeUndefined();
   });
 
-  it("does not group a trailing assistant mail when the exchange already sent mail explicitly via mail_send", () => {
+  it("does not group a trailing assistant mail whose content does not match any turn in the exchange, even when that turn sent mail via mail_send", () => {
     const { messages } = composeChatMessages({
       events: [
         userMail("u1", "go", "2024-01-01T00:00:00.000Z"),
