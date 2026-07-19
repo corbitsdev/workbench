@@ -3069,6 +3069,98 @@ describe("createReactor — beforeToolExtensions", () => {
     await waitFor("reactor.done", 2000);
   });
 
+  // WORKBENCH-LOCAL (CL-3940): the enrichment `custom.approval.requested` MUST
+  // be emitted BEFORE `reactor.gate.blocked`. On the warmKeep single-step path
+  // `gate.blocked` settles the interchange `agent.send` as `{type:"suspended"}`,
+  // which runs the step-invoker `finally` that nulls the event sink; any event
+  // emitted after `gate.blocked` is drained into a dead sink and never crosses
+  // the event channel to the hub, so the approval row is never enriched and the
+  // card falls back to "Approval requested by <agent>". Emitting the custom
+  // event first keeps it on the live-sink side of the teardown.
+  test("custom.approval.requested is emitted before reactor.gate.blocked", async () => {
+    const CORR = "corr-approval-order";
+    const suspendCall: BeforeToolExtension = {
+      async beforeTool(call) {
+        const timeoutAt = Date.now() + 60_000;
+        return {
+          type: "suspend",
+          gate: {
+            type: "approval",
+            gateId: `pending-${CORR}`,
+            correlationId: CORR,
+            timeoutAt,
+          },
+          pendingOp: {
+            correlationId: CORR,
+            kind: "approval",
+            registeredAt: Date.now(),
+            gateId: `pending-${CORR}`,
+            timeoutAt,
+            suspendedCall: call,
+          },
+        };
+      },
+    };
+
+    const { reactor, events, waitFor } = createTestReactor({
+      director: directorFromTable({
+        "message.received": (_e, _s, caps) => caps.infer(),
+        "inference.done": (_e, _s, caps) =>
+          caps.executeTools(
+            [
+              {
+                id: "call-write",
+                name: "linear__create_issue",
+                arguments: { title: "Ship it" },
+              },
+            ],
+            true,
+          ),
+        "reactor.gate.cleared": (_e, _s, caps) => caps.done(),
+      }),
+      inferenceRunner: makeInferenceRunner({
+        type: "done",
+        turn: {
+          role: "assistant",
+          content: [
+            {
+              type: "tool_call",
+              id: "call-write",
+              name: "linear__create_issue",
+              arguments: { title: "Ship it" },
+            },
+          ],
+          model: "test-model",
+          timestamp: 1000,
+        },
+        usage: inferUsage,
+      }),
+      beforeToolExtensions: [suspendCall],
+      shutdownTimeoutMs: 500,
+    });
+
+    reactor.start();
+    reactor.deliver(makeInboundMessage());
+    await waitFor("reactor.gate.blocked");
+
+    const requestedIdx = events.findIndex(
+      (e) => e.type === "custom.approval.requested",
+    );
+    const blockedIdx = events.findIndex(
+      (e) => e.type === "reactor.gate.blocked",
+    );
+    expect(requestedIdx).toBeGreaterThanOrEqual(0);
+    expect(blockedIdx).toBeGreaterThanOrEqual(0);
+    expect(requestedIdx).toBeLessThan(blockedIdx);
+
+    const requested = getEvent(events, "custom.approval.requested");
+    const blocked = getEvent(events, "reactor.gate.blocked");
+    expect(requested.seq).toBeLessThan(blocked.seq);
+
+    reactor.abort("admin_kill");
+    await waitFor("reactor.done", 2000);
+  });
+
   test("first blocking extension wins and subsequent extensions are not called", async () => {
     const called: string[] = [];
 
