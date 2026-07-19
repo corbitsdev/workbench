@@ -5,12 +5,16 @@ import { friendlyToolSummaryKnown } from "@workbench/agents/browser";
 import type { ToolCall } from "@workbench/chat";
 import {
   approveRequest,
+  approveNativeRequest,
   listApprovals,
+  listNativeApprovals,
   rejectRequest,
+  rejectNativeRequest,
   subscribeApprovals,
 } from "../lib/approvals-api";
-import type { Approval } from "../lib/approvals-api";
+import type { Approval, NativeApproval } from "../lib/approvals-api";
 import { logger } from "../lib/logger";
+import { NativeApprovalCard } from "./NativeApprovalCard";
 import {
   humanizeApprovalValue,
   isMailSendApproval,
@@ -250,6 +254,16 @@ export function ReviewGate({
     },
   });
 
+  // The native rail is tenant-wide: a suspended tool call has no session
+  // linkage (the `approval` row carries no sessionId), so it surfaces in every
+  // ReviewGate for the tenant regardless of session scope — a member sees
+  // pending items from either rail during the soak.
+  const { data: nativeApprovals = [] } = useQuery({
+    queryKey: ["native-approvals", tenantId],
+    enabled,
+    queryFn: () => listNativeApprovals(tenantId),
+  });
+
   // Event-driven refresh replaces the former unconditional poll (CL-3285): the
   // gate fetches once on mount, then refetches only when the hub pushes an
   // approval change. An idle chat with no pending approvals issues no repeating
@@ -266,6 +280,9 @@ export function ReviewGate({
         }
         void queryClient.invalidateQueries({
           queryKey: ["approvals", tenantId, sessionId],
+        });
+        void queryClient.invalidateQueries({
+          queryKey: ["native-approvals", tenantId],
         });
       },
       // A terminally-failed stream (never opened) would otherwise leave the gate
@@ -306,7 +323,7 @@ export function ReviewGate({
     });
   }
 
-  if (approvals.length === 0) return null;
+  if (approvals.length === 0 && nativeApprovals.length === 0) return null;
 
   async function handleApprove(id: string) {
     patchItemState(id, { requestState: "approving", error: null });
@@ -331,6 +348,38 @@ export function ReviewGate({
       patchItemState(id, { requestState: "idle" });
       await queryClient.invalidateQueries({
         queryKey: ["approvals", tenantId, sessionId, sessionScope],
+      });
+    } catch (err) {
+      patchItemState(id, {
+        requestState: "idle",
+        error: err instanceof Error ? err.message : "Rejection failed.",
+      });
+    }
+  }
+
+  async function handleApproveNative(id: string) {
+    patchItemState(id, { requestState: "approving", error: null });
+    try {
+      await approveNativeRequest(tenantId, id);
+      patchItemState(id, { requestState: "idle" });
+      await queryClient.invalidateQueries({
+        queryKey: ["native-approvals", tenantId],
+      });
+    } catch (err) {
+      patchItemState(id, {
+        requestState: "idle",
+        error: err instanceof Error ? err.message : "Approval failed.",
+      });
+    }
+  }
+
+  async function handleRejectNative(id: string) {
+    patchItemState(id, { requestState: "rejecting", error: null });
+    try {
+      await rejectNativeRequest(tenantId, id);
+      patchItemState(id, { requestState: "idle" });
+      await queryClient.invalidateQueries({
+        queryKey: ["native-approvals", tenantId],
       });
     } catch (err) {
       patchItemState(id, {
@@ -499,6 +548,19 @@ export function ReviewGate({
           );
         })}
       </AnimatePresence>
+      {nativeApprovals.map((native: NativeApproval) => {
+        const { requestState, error } = getItemState(native.id);
+        return (
+          <NativeApprovalCard
+            key={native.id}
+            approval={native}
+            requestState={requestState}
+            error={error}
+            onApprove={() => void handleApproveNative(native.id)}
+            onReject={() => void handleRejectNative(native.id)}
+          />
+        );
+      })}
     </div>
   );
 }
