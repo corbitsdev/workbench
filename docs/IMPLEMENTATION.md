@@ -479,7 +479,7 @@ The `CredentialPicker` component (`apps/web/src/components/CredentialPicker.tsx`
 
 **Internal routes** (sidecarToken auth, mounted under `/api/internal/`):
 
-- `POST /api/internal/approvals` — human approval callback from sidecar (ask_principal tool); emits a `created` notification on the approvals event bus
+- `POST /api/internal/approvals` — human approval callback from sidecar (ask_principal tool); emits a `created` notification on the approvals event bus. The backing table is `workbench_approval` (renamed from the legacy `approval` at the 5a73d3cc pin bump: interchange's new approval-suspension runtime creates its own `approval` table, so `scripts/db-setup.ts` runs a pre-interchange reconcile that renames the workbench-shaped table + its PK, migration `0070` creates `workbench_approval` on fresh DBs, and a migrations guard test fails on any future table-name intersection between the two migration sources). Interchange's suspension rail itself (ask-effect authz → durable park → decision-driven resume) ships inert: no workbench grant configuration resolves to `effect: "ask"`, so nothing reaches it until a future change deliberately mints one.
 - `POST /api/internal/tools/run` — hub-proxied tool execution. Body: `{ tenantId, toolName, args }`. Hub resolves the tenant credential for the tool's provider from Interchange, calls the tool package handler, returns `{ result: string, isError: boolean }`. Credentials are decrypted before use; never stored in sidecar.
 
 ### Deploy Prompts
