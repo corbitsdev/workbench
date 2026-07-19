@@ -1,4 +1,7 @@
+import { friendlyToolSummaryKnown } from "@workbench/agents/browser";
+import { toHumanLabel } from "@workbench/ui";
 import type { NativeApproval } from "../lib/approvals-api";
+import { providerLabel } from "../lib/tool-providers";
 
 export type NativeApprovalCardProps = {
   approval: NativeApproval;
@@ -8,34 +11,79 @@ export type NativeApprovalCardProps = {
   onReject: () => void;
 };
 
+/** The tool name off the snapshot, or null when it is not yet enriched. */
+function snapshotToolName(approval: NativeApproval): string | null {
+  const name = approval.toolDefinition?.["name"];
+  return typeof name === "string" && name.length > 0 ? name : null;
+}
+
 /**
- * Reads the tool name from the native approval's tool snapshot. The snapshot is
- * null until the upstream suspend-time plumbing lands, so this falls back to the
- * originating agent's mailbox local-part — the only always-present identifier of
- * what asked. Derived from the row, never a hardcoded label.
+ * A friendly, human action label for a gated tool name. Prefers the shared
+ * `friendlyToolSummaryKnown` catalog (e.g. `linear__create_issue` → "Create a
+ * Linear issue: <title>"); when a tool is not catalogued, humanizes the name
+ * itself — provider + operation (`slack__post_message` → "Post Message
+ * (Slack)") or, for prefix-less local tools, the bare humanized name
+ * (`mail_send` → "Mail Send"). Never a raw snake_case id, never a single
+ * hardcoded label.
+ */
+function friendlyActionLabel(
+  name: string,
+  args: Record<string, unknown>,
+): string {
+  const known = friendlyToolSummaryKnown({ name, arguments: args });
+  if (known !== null) return known;
+  const [provider, ...rest] = name.split("__");
+  if (rest.length > 0 && provider !== undefined) {
+    return `${toHumanLabel(rest.join("__"))} (${providerLabel(provider)})`;
+  }
+  return toHumanLabel(name);
+}
+
+/**
+ * The card headline. Once the reactor snapshot has enriched the row (CL-3940)
+ * this is the friendly action label; before enrichment lands it falls back to
+ * the originating agent's mailbox local-part — the only always-present
+ * identifier of what asked. Derived from the row, never a hardcoded label.
  */
 function nativeHeadline(approval: NativeApproval): string {
-  const def = approval.toolDefinition;
-  if (def !== null) {
-    const name = def["name"];
-    if (typeof name === "string" && name.length > 0) {
-      return name;
-    }
+  const name = snapshotToolName(approval);
+  if (name !== null) {
+    return friendlyActionLabel(name, approval.toolArguments ?? {});
   }
   const local = approval.agentAddress.split("@")[0] ?? approval.agentAddress;
   return `Approval requested by ${local}`;
 }
 
+/** Render a single scalar argument value inline; skip empties and nested
+ * shapes (they do not read as a one-line summary). */
+function formatArgValue(value: unknown): string | null {
+  if (typeof value === "string") return value.trim() === "" ? null : value;
+  if (typeof value === "number" || typeof value === "boolean") {
+    return String(value);
+  }
+  return null;
+}
+
 /**
- * A one-line summary of the tool arguments when the snapshot carries them.
- * Returns null (no line) when there is nothing to show yet — never a stub.
+ * A one-line `key: value` summary of the tool arguments so the human approves
+ * with full context (title/body/recipient), not just field names. Returns null
+ * (no line) when the snapshot is absent or carries no showable scalar — never a
+ * stub. Bounded to a few pairs with per-value truncation so a long body cannot
+ * blow out the card.
  */
 function nativeArgumentSummary(approval: NativeApproval): string | null {
   const args = approval.toolArguments;
   if (args === null) return null;
-  const keys = Object.keys(args);
-  if (keys.length === 0) return null;
-  return keys.join(", ");
+  const parts: string[] = [];
+  for (const [key, value] of Object.entries(args)) {
+    const formatted = formatArgValue(value);
+    if (formatted === null) continue;
+    const truncated =
+      formatted.length > 80 ? `${formatted.slice(0, 79)}…` : formatted;
+    parts.push(`${key}: ${truncated}`);
+    if (parts.length >= 3) break;
+  }
+  return parts.length > 0 ? parts.join(" · ") : null;
 }
 
 /**

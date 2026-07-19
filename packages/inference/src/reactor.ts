@@ -1113,6 +1113,31 @@ export function createReactor(config: ReactorConfig): Reactor {
       },
     });
 
+    // WORKBENCH-LOCAL (CL-3940): surface the suspended tool call's snapshot on
+    // the sanctioned `custom.*` inference-event channel (the only reactor event
+    // shape whose `data` is an open `Record<string, unknown>`, so it survives
+    // `parseInferenceEvent` at the sidecar boundary unmodified). An authz `ask`
+    // suspension carries its parked call on `pendingOp.suspendedCall`; the hub
+    // enriches the native `approval` row's `toolDefinition`/`toolArguments`,
+    // keyed by this same `correlationId`, so the decision surface can name the
+    // action and show its arguments instead of "Approval requested by <agent>".
+    // A director-suspend (no `suspendedCall`) or an async marker emits nothing.
+    // Retirement: drop this block once interchange captures the snapshot at its
+    // own suspend co-write (tracked as CL-3943).
+    if (pendingOp?.suspendedCall !== undefined && correlationId !== undefined) {
+      const suspendedCall = pendingOp.suspendedCall;
+      emit({
+        type: "custom.approval.requested",
+        seq: nextSeq(),
+        data: {
+          correlationId,
+          callId: suspendedCall.id,
+          toolName: suspendedCall.name,
+          toolArguments: suspendedCall.arguments,
+        },
+      });
+    }
+
     // Register the gate. onGateCleared enqueues the cleared event so the loop
     // processes it normally without blocking here.
     void gates.register(

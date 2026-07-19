@@ -4,6 +4,7 @@ import { getLogger } from "@intx/log";
 import type { SidecarLookups } from "@intx/hub-sessions";
 import type { HubDb } from "../db";
 import type { ApprovalsEventBus } from "./approvals-events";
+import type { NativeApprovalEnricher } from "./native-approval-enrich";
 
 const { workflowDeployment } = intxSchema;
 
@@ -72,14 +73,25 @@ export function publishNativeApprovalResolved(
  * mis-attribute it as a `signal.correlation.register` failure even though the
  * approval + correlation rows were durably written. Mirrors the persistMail /
  * onUserMailboxRow best-effort pattern: publish can never fail the write path.
+ *
+ * The optional `enricher` closes the CL-3940 loop: interchange's co-write leaves
+ * the approver-facing `toolDefinition`/`toolArguments` null, and the reactor's
+ * snapshot (a `custom.approval.requested` inference event, keyed by the same
+ * `correlationId`) may arrive before the row exists. Calling `enrichOnCreated`
+ * after the co-write commits applies any buffered snapshot; it is best-effort
+ * and self-isolating (never throws), so it cannot fail the write path either.
  */
 export function withNativeApprovalCreatedNotify(
   db: HubDb,
   bus: ApprovalsEventBus,
   base: RegisterSignalCorrelation,
+  enricher?: NativeApprovalEnricher,
 ): RegisterSignalCorrelation {
   return async (registration) => {
     await base(registration);
+    if (enricher !== undefined) {
+      await enricher.enrichOnCreated(registration.correlationId);
+    }
     try {
       await publishNativeApprovalCreated(db, bus, registration.deploymentId);
     } catch (err) {
