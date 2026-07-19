@@ -2,9 +2,13 @@
 import { afterEach, describe, expect, it, mock } from "bun:test";
 import {
   approveRequest,
+  approveNativeRequest,
   listApprovals,
+  listNativeApprovals,
   rejectRequest,
+  rejectNativeRequest,
   type Approval,
+  type NativeApproval,
 } from "./approvals-api";
 
 const originalFetch = globalThis.fetch;
@@ -141,6 +145,71 @@ describe("approveRequest", () => {
 
     await expect(approveRequest("tenant-1", "apr-1")).rejects.toThrow(
       "Invalid approval response",
+    );
+  });
+});
+
+const VALID_NATIVE_ROW: NativeApproval = {
+  id: "apr-native-1",
+  tenantId: "tenant-1",
+  deploymentId: "dep-1",
+  runId: "run-1",
+  agentAddress: "ins_dep-1@agents.example.com",
+  correlationId: "corr-1",
+  toolDefinition: null,
+  toolArguments: null,
+  scope: null,
+  status: "pending",
+  timeoutAt: null,
+  resolvedAt: null,
+  createdAt: "2026-07-10T00:00:00.000Z",
+  updatedAt: "2026-07-10T00:00:00.000Z",
+};
+
+describe("native rail route targeting", () => {
+  it("lists native approvals from the un-versioned /api/tenants route", async () => {
+    const capture = stubFetch([VALID_NATIVE_ROW]);
+
+    const rows = await listNativeApprovals("tenant-1");
+
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.id).toBe("apr-native-1");
+    expect(new URL(capture.url()).pathname).toBe(
+      "/api/tenants/tenant-1/native-approvals",
+    );
+  });
+
+  it("approves via Interchange's un-versioned route with scope once", async () => {
+    const capture = stubFetch(VALID_NATIVE_ROW);
+
+    await approveNativeRequest("tenant-1", "apr-native-1");
+
+    expect(new URL(capture.url()).pathname).toBe(
+      "/api/tenants/tenant-1/approvals/apr-native-1/approve",
+    );
+    expect(JSON.parse(capture.init()?.body as string)).toEqual({
+      scope: "once",
+    });
+  });
+
+  it("rejects via Interchange's un-versioned route, forwarding the message", async () => {
+    const capture = stubFetch(VALID_NATIVE_ROW);
+
+    await rejectNativeRequest("tenant-1", "apr-native-1", "no");
+
+    expect(new URL(capture.url()).pathname).toBe(
+      "/api/tenants/tenant-1/approvals/apr-native-1/reject",
+    );
+    expect(JSON.parse(capture.init()?.body as string)).toEqual({
+      message: "no",
+    });
+  });
+
+  it("throws when a native row is malformed", async () => {
+    stubFetch([{ ...VALID_NATIVE_ROW, status: "bogus" }]);
+
+    await expect(listNativeApprovals("tenant-1")).rejects.toThrow(
+      "Invalid native approvals response",
     );
   });
 });

@@ -19,11 +19,18 @@ import {
 } from "@testing-library/react";
 import React from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import type { Approval, ApprovalEvent } from "../lib/approvals-api";
+import type {
+  Approval,
+  ApprovalEvent,
+  NativeApproval,
+} from "../lib/approvals-api";
 
 const mockListApprovals = mock<() => Promise<Approval[]>>();
 const mockApproveRequest = mock<() => Promise<Approval>>();
 const mockRejectRequest = mock<() => Promise<Approval>>();
+const mockListNativeApprovals = mock<() => Promise<NativeApproval[]>>();
+const mockApproveNativeRequest = mock<() => Promise<NativeApproval>>();
+const mockRejectNativeRequest = mock<() => Promise<NativeApproval>>();
 
 // Captures the ReviewGate's event handler so a test can simulate an SSE
 // approval event. subscribeApprovals returns an unsubscribe function.
@@ -46,6 +53,9 @@ mock.module("../lib/approvals-api", () => ({
   approveRequest: mockApproveRequest,
   rejectRequest: mockRejectRequest,
   subscribeApprovals: mockSubscribeApprovals,
+  listNativeApprovals: mockListNativeApprovals,
+  approveNativeRequest: mockApproveNativeRequest,
+  rejectNativeRequest: mockRejectNativeRequest,
 }));
 
 import { buildApprovalDisplayLookups } from "../lib/approval-display";
@@ -117,6 +127,13 @@ function renderGate(tenantId = "tenant-1", sessionId?: string) {
   );
 }
 
+// The native rail defaults to empty so the legacy-focused tests are unaffected;
+// native tests override it. React Query rejects an undefined queryFn result, so
+// this default must be set before every render.
+beforeEach(() => {
+  mockListNativeApprovals.mockResolvedValue([]);
+});
+
 afterEach(() => {
   cleanup();
   mockApprovalLookupsLoading = false;
@@ -124,6 +141,9 @@ afterEach(() => {
   mockApproveRequest.mockClear();
   mockRejectRequest.mockClear();
   mockSubscribeApprovals.mockClear();
+  mockListNativeApprovals.mockReset();
+  mockApproveNativeRequest.mockClear();
+  mockRejectNativeRequest.mockClear();
   subscribeCalls.length = 0;
   unsubscribeCalls = 0;
   capturedOnEvent = null;
@@ -653,5 +673,136 @@ describe("ReviewGate — subscription teardown", () => {
     view.unmount();
 
     expect(unsubscribeCalls).toBe(1);
+  });
+});
+
+function makeNativeApproval(
+  overrides: Partial<NativeApproval> = {},
+): NativeApproval {
+  return {
+    id: "apr-native-1",
+    tenantId: "tenant-1",
+    deploymentId: "dep-1",
+    runId: "run-1",
+    agentAddress: "ins_dep-1@agents.example.com",
+    correlationId: "corr-1",
+    toolDefinition: null,
+    toolArguments: null,
+    scope: null,
+    status: "pending",
+    timeoutAt: null,
+    resolvedAt: null,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+    ...overrides,
+  };
+}
+
+describe("ReviewGate — native rail", () => {
+  it("renders a native approval with the tool name from its snapshot", async () => {
+    mockListApprovals.mockResolvedValue([]);
+    mockListNativeApprovals.mockResolvedValue([
+      makeNativeApproval({ toolDefinition: { name: "slack_post_message" } }),
+    ]);
+    renderGate();
+    await waitFor(() => {
+      screen.getByTestId("native-approval-apr-native-1");
+    });
+    screen.getByText("slack_post_message");
+  });
+
+  it("falls back to the originating agent when no tool snapshot exists", async () => {
+    mockListApprovals.mockResolvedValue([]);
+    mockListNativeApprovals.mockResolvedValue([makeNativeApproval()]);
+    renderGate();
+    await waitFor(() => {
+      screen.getByTestId("native-approval-apr-native-1");
+    });
+    screen.getByText(/Approval requested by ins_dep-1/);
+  });
+
+  it("summarizes tool arguments when the snapshot carries them", async () => {
+    mockListApprovals.mockResolvedValue([]);
+    mockListNativeApprovals.mockResolvedValue([
+      makeNativeApproval({
+        toolDefinition: { name: "slack_post_message" },
+        toolArguments: { channel: "#gtm", text: "hi" },
+      }),
+    ]);
+    renderGate();
+    await waitFor(() => {
+      screen.getByTestId("native-approval-apr-native-1");
+    });
+    screen.getByText("channel, text");
+  });
+
+  it("resolves a native approval through the native approve route", async () => {
+    mockListApprovals.mockResolvedValue([]);
+    mockListNativeApprovals.mockResolvedValue([makeNativeApproval()]);
+    mockApproveNativeRequest.mockResolvedValue(
+      makeNativeApproval({ status: "approved" }),
+    );
+    renderGate();
+    const approve = await waitFor(() =>
+      screen.getByTestId("native-approve-apr-native-1"),
+    );
+    fireEvent.click(approve);
+    await waitFor(() => {
+      expect(mockApproveNativeRequest).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  it("rejects a native approval through the native reject route", async () => {
+    mockListApprovals.mockResolvedValue([]);
+    mockListNativeApprovals.mockResolvedValue([makeNativeApproval()]);
+    mockRejectNativeRequest.mockResolvedValue(
+      makeNativeApproval({ status: "rejected" }),
+    );
+    renderGate();
+    const reject = await waitFor(() =>
+      screen.getByTestId("native-reject-apr-native-1"),
+    );
+    fireEvent.click(reject);
+    await waitFor(() => {
+      expect(mockRejectNativeRequest).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  it("renders both rails together during the soak", async () => {
+    mockListApprovals.mockResolvedValue([makeApproval()]);
+    mockListNativeApprovals.mockResolvedValue([makeNativeApproval()]);
+    renderGate();
+    await waitFor(() => {
+      screen.getByTestId("review-gate");
+    });
+    screen.getByTestId("approval-appr-1");
+    screen.getByTestId("native-approval-apr-native-1");
+  });
+
+  it("merges both rails into one queue ordered newest-first by createdAt", async () => {
+    mockListApprovals.mockResolvedValue([
+      makeApproval({
+        id: "legacy-old",
+        createdAt: "2026-01-01T00:00:00.000Z",
+      }),
+    ]);
+    mockListNativeApprovals.mockResolvedValue([
+      makeNativeApproval({
+        id: "native-new",
+        createdAt: "2026-06-01T00:00:00.000Z",
+      }),
+    ]);
+    renderGate();
+    const gate = await waitFor(() => screen.getByTestId("review-gate"));
+    const order = Array.from(
+      gate.querySelectorAll(
+        "[data-testid^='approval-'], [data-testid^='native-approval-']",
+      ),
+    ).map((el) => el.getAttribute("data-testid"));
+    // Newer native card ahead of the older legacy card — rail-agnostic ordering.
+    expect(order).toEqual([
+      "native-approval-native-new",
+      "approval-legacy-old",
+    ]);
   });
 });
