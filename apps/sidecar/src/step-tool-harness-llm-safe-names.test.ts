@@ -108,7 +108,11 @@ mock.module("@intx/types/runtime", () => ({
   createBlobReader: mock(() => ({})),
 }));
 
-import { createStepAgentFactory, STEP_TOOL_CONTEXT_KEY } from "./step-tool-harness";
+import {
+  createStepAgentFactory,
+  runDeterministicToolStep,
+  STEP_TOOL_CONTEXT_KEY,
+} from "./step-tool-harness";
 import { buildPersonalAgentSystemPrompt } from "@workbench/myra";
 
 const MYRA_PROMPT = buildPersonalAgentSystemPrompt("Myra", { xml: true });
@@ -279,6 +283,75 @@ describe("step tool harness: LLM-safe package tool names (CL-3929)", () => {
       );
       expect(callResult.isError).not.toBe(true);
       expect(packageRun).toHaveBeenCalledTimes(1);
+    } finally {
+      await fs.promises.rm(storeDir, { recursive: true, force: true });
+    }
+  });
+});
+
+// CL-3929 round 2: `buildStepTools` is shared with `runDeterministicToolStep`,
+// which dispatches by the CANONICAL colon-form name a deterministic workflow
+// step declares (`deterministicToolStep`'s `STEP_TOOL_TAG`, threaded through
+// `workflow-substrate-factory.ts`). The LLM-safe alias projection above must
+// be scoped to the warm-agent path only — this pins that `buildStepTools`
+// itself still exposes and dispatches the CANONICAL name, so a deterministic
+// step referencing a real package tool (e.g. reddit-opportunity-scanner's
+// `reddit_subreddit_search`, sumble-account-intel, attio-task-agent) keeps
+// working. This would have failed against the round-1 fix, which renamed
+// `buildStepTools`'s definitions unconditionally and threw
+// `StepToolNotRegisteredError` for a canonical-name lookup.
+describe("runDeterministicToolStep: canonical (non-aliased) dispatch (CL-3929 round 2)", () => {
+  it("dispatches a package tool by its canonical colon-form name, not the LLM-safe alias", async () => {
+    const storeDir = await fs.promises.mkdtemp(
+      path.join(os.tmpdir(), "wb-step-det-canonical-"),
+    );
+    try {
+      const packageRun = mock(async (call: { id: string }) => ({
+        callId: call.id,
+        content: { results: ["ok"] },
+      }));
+      loadToolPackagesMock.mockImplementation(async () =>
+        fakeExaPackage(packageRun),
+      );
+
+      const workdir = path.join(storeDir, "workspace");
+      await fs.promises.mkdir(workdir, { recursive: true });
+      const ctx = {
+        hubHttpUrl: "http://localhost:4000",
+        sidecarToken: "test-token",
+        tenantId: "tenant-1",
+        stepAgentId: "ins_dep-search",
+        stepAddress: "ins_dep-search",
+        principalId: "ins_dep-search",
+        grants: [],
+        deployTreeDir: storeDir,
+        cacheRoot: path.join(storeDir, "cache"),
+        cacheMaxBytes: 1024 * 1024,
+        registryMaxTarballBytes: 1024 * 1024,
+      };
+      const env: Record<string, unknown> = {
+        sources: [],
+        defaultSource: "",
+        workdir,
+        directors: {},
+        [STEP_TOOL_CONTEXT_KEY]: ctx,
+      };
+
+      const result = await runDeterministicToolStep({
+        env: env as never,
+        toolName: EXA_CANONICAL_NAME,
+        input: { query: "gtm workbench" },
+        signal: new AbortController().signal,
+      });
+
+      expect(result.output).toMatchObject({
+        content: { results: ["ok"] },
+      });
+      expect(packageRun).toHaveBeenCalledTimes(1);
+      const dispatchedCall = packageRun.mock.calls[0]?.[0] as
+        | { name: string }
+        | undefined;
+      expect(dispatchedCall?.name).toBe(EXA_CANONICAL_NAME);
     } finally {
       await fs.promises.rm(storeDir, { recursive: true, force: true });
     }
