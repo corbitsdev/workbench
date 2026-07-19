@@ -9,10 +9,17 @@ const occurredAt = new Date("2026-07-18T00:00:00.000Z");
 
 // CL-3917: reproduces the shape an OpenAI-compatible gateway (Bifrost)
 // actually emits reasoning tokens in — `usage.completion_tokens_details.
-// reasoning_tokens` on the inference.usage event — and proves it survives
-// the full insights path: event -> analytics fact -> per-model token total.
-describe("reasoning tokens surface in insights aggregation (CL-3917)", () => {
-  test("a usage event carrying reasoning tokens produces a fact whose token total includes them", () => {
+// reasoning_tokens` on the inference.usage event. Covers the usage-event
+// mapping through factsFromInferenceEvent + sumAnalyticsModelTokens, i.e.
+// that thinkingTokens is mapped and summed correctly once present on a
+// fact. It does NOT cover the rollup/dashboard-total path: inference_usage
+// facts are excluded from rollup contribution in subscriber.ts's
+// persistFact (stored for auditing only); dashboard totals ride
+// inference.done's finalUsage, built by harness.ts folding adapter usage
+// events through mergeUsage — that fold is where this PR's adapter fix
+// actually reaches insights, not the path exercised here.
+describe("reasoning-token usage-event mapping and summing (CL-3917)", () => {
+  test("a usage event carrying reasoning tokens maps to a fact whose token total includes them", () => {
     const event: InferenceEvent = {
       type: "inference.usage",
       seq: 4,
