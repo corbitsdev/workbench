@@ -20,7 +20,12 @@ import { Bot, Check, Copy } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useSetPageChrome } from "../lib/page-chrome";
-import { useAgentInstances, type AgentInstanceItem } from "../hooks/use-agents";
+import {
+  useAgentInstances,
+  useAgentTemplates,
+  type AgentInstanceItem,
+  type AgentTemplateItem,
+} from "../hooks/use-agents";
 import { getMe } from "../lib/hub-api";
 
 const STATUS_TONE: Record<string, BadgeTone> = {
@@ -48,7 +53,25 @@ function statusLabel(status: string): string {
   return status.charAt(0).toUpperCase() + status.slice(1);
 }
 
-/** Filter agents by name, description, or mailbox address (case-insensitive). */
+export type AgentDefinitionItem = AgentTemplateItem & {
+  instance: AgentInstanceItem | null;
+};
+
+/** Filter agent definitions by name or description (case-insensitive). */
+export function filterAgentDefinitions(
+  definitions: AgentTemplateItem[],
+  query: string,
+): AgentTemplateItem[] {
+  const q = query.trim().toLowerCase();
+  if (q === "") return definitions;
+  return definitions.filter(
+    (definition) =>
+      definition.name.toLowerCase().includes(q) ||
+      definition.description.toLowerCase().includes(q),
+  );
+}
+
+/** Filter agent instances by name, description, or mailbox address (case-insensitive). */
 export function filterAgents(
   agents: AgentInstanceItem[],
   query: string,
@@ -97,6 +120,63 @@ function CopyAddressButton({ address }: { address: string }) {
         <Copy className="h-3 w-3" />
       )}
     </button>
+  );
+}
+
+function DefinitionCard({
+  definition,
+  index,
+}: {
+  definition: AgentDefinitionItem;
+  index: number;
+}) {
+  const hash = hashString(definition.key);
+  const glyph = CATALOG_GLYPH_KINDS[hash % CATALOG_GLYPH_KINDS.length];
+  const fill = CATALOG_GLYPH_FILLS[hash % CATALOG_GLYPH_FILLS.length];
+  const instance = definition.instance;
+
+  return (
+    <div className={cn(catalogCardClassName, "cursor-default")}>
+      <span className="absolute left-[10px] top-[10px] z-[2] rounded-full bg-[rgba(0,0,0,0.32)] px-2 py-[3px] text-[10px] font-bold uppercase tracking-[0.03em] text-white backdrop-blur-[6px]">
+        {instance === null ? "Not deployed" : statusLabel(instance.status)}
+      </span>
+      <div
+        className={`relative grid h-[112px] place-items-center overflow-hidden ${fill}`}
+      >
+        <CatalogGlyph kind={glyph} />
+        <span className="absolute bottom-[10px] right-3 font-mono text-[13px] font-bold text-[rgba(255,255,255,0.85)]">
+          A{index.toString().padStart(2, "0")}
+        </span>
+      </div>
+      <div className="border-t border-border bg-surface px-[13px] py-[11px]">
+        <div className="truncate text-[13.5px] font-semibold text-text">
+          {definition.name}
+        </div>
+        <p className="mt-0.5 line-clamp-2 text-pretty text-[11px] text-text-3">
+          {definition.description}
+        </p>
+        {definition.tools.length > 0 && (
+          <div className="mt-1.5 flex flex-wrap gap-1">
+            {definition.tools.map((tool) => (
+              <span
+                key={tool}
+                className="rounded-full bg-surface-2 px-1.5 py-[2px] text-[9.5px] text-text-3"
+              >
+                {tool}
+              </span>
+            ))}
+          </div>
+        )}
+        {instance !== null && (
+          <div className="mt-1.5 flex items-center gap-1">
+            <span className="min-w-0 truncate font-mono text-[10px] text-text-3/80">
+              {instance.address}
+            </span>
+            <CopyAddressButton address={instance.address} />
+          </div>
+        )}
+      </div>
+    </div>
   );
 }
 
@@ -153,22 +233,106 @@ export function AgentsPage() {
   const [query, setQuery] = useState("");
   const { mode: viewMode, setMode: setViewMode } = useViewMode("agents");
 
-  const agentsQuery = useAgentInstances(tenantId);
+  const templatesQuery = useAgentTemplates();
+  const instancesQuery = useAgentInstances(tenantId);
+
   const isLoading =
-    meQuery.isLoading || (Boolean(tenantId) && agentsQuery.isLoading);
+    meQuery.isLoading ||
+    templatesQuery.isLoading ||
+    (Boolean(tenantId) && instancesQuery.isLoading);
   const isError =
     meQuery.isError ||
-    agentsQuery.isError ||
+    templatesQuery.isError ||
+    instancesQuery.isError ||
     (!meQuery.isLoading && tenantId === null);
 
-  const filteredAgents = useMemo(() => {
-    const agents = agentsQuery.data === undefined ? [] : agentsQuery.data;
-    return filterAgents(agents, query);
-  }, [query, agentsQuery.data]);
+  const instancesByName = useMemo(() => {
+    const map = new Map<string, AgentInstanceItem>();
+    for (const instance of instancesQuery.data ?? []) {
+      if (!map.has(instance.name)) map.set(instance.name, instance);
+    }
+    return map;
+  }, [instancesQuery.data]);
+
+  const definitionNames = useMemo(
+    () => new Set((templatesQuery.data ?? []).map((t) => t.name)),
+    [templatesQuery.data],
+  );
+
+  const unmatchedInstances = useMemo(
+    () =>
+      (instancesQuery.data ?? []).filter(
+        (instance) => !definitionNames.has(instance.name),
+      ),
+    [instancesQuery.data, definitionNames],
+  );
+
+  const filteredDefinitions = useMemo(() => {
+    const definitions = templatesQuery.data ?? [];
+    return filterAgentDefinitions(definitions, query).map(
+      (definition): AgentDefinitionItem => ({
+        ...definition,
+        instance: instancesByName.get(definition.name) ?? null,
+      }),
+    );
+  }, [query, templatesQuery.data, instancesByName]);
 
   const isSearching = query.trim().length > 0;
 
-  const columns: DataTableColumn<AgentInstanceItem>[] = [
+  const columns: DataTableColumn<AgentDefinitionItem>[] = [
+    {
+      key: "name",
+      header: "Name",
+      className: "font-medium text-text",
+      render: (d) => d.name,
+    },
+    {
+      key: "description",
+      header: "Description",
+      className: "max-w-[360px]",
+      render: (d) => (
+        <span className="line-clamp-1 text-text-3">{d.description}</span>
+      ),
+    },
+    {
+      key: "tools",
+      header: "Tools",
+      render: (d) => (
+        <span className="line-clamp-1 text-text-3">
+          {d.tools.length > 0 ? d.tools.join(", ") : "—"}
+        </span>
+      ),
+    },
+    {
+      key: "status",
+      header: "Status",
+      render: (d) =>
+        d.instance === null ? (
+          <Badge tone="neutral">Not deployed</Badge>
+        ) : (
+          <Badge tone={statusTone(d.instance.status)}>
+            {statusLabel(d.instance.status)}
+          </Badge>
+        ),
+    },
+    {
+      key: "address",
+      header: "Address",
+      render: (d) =>
+        d.instance === null ? (
+          <span className="text-text-3">—</span>
+        ) : (
+          <span className="inline-flex max-w-full items-center gap-1">
+            <span className="min-w-0 truncate font-mono text-[12px]">
+              {d.instance.address}
+            </span>
+            <CopyAddressButton address={d.instance.address} />
+          </span>
+        ),
+    },
+  ];
+
+  const unmatchedColumns: DataTableColumn<AgentInstanceItem>[] = [
     {
       key: "name",
       header: "Name",
@@ -208,7 +372,7 @@ export function AgentsPage() {
 
   const pageChrome = useMemo(
     () => (
-      <AppPageChromeRow title="Agents" count={filteredAgents.length}>
+      <AppPageChromeRow title="Agents" count={filteredDefinitions.length}>
         <LibrarySearchInput
           label="Search agents"
           placeholder="Search agents"
@@ -218,7 +382,7 @@ export function AgentsPage() {
         <ViewToggle mode={viewMode} onChange={setViewMode} />
       </AppPageChromeRow>
     ),
-    [filteredAgents.length, query, viewMode, setViewMode],
+    [filteredDefinitions.length, query, viewMode, setViewMode],
   );
   useSetPageChrome(pageChrome);
 
@@ -235,7 +399,7 @@ export function AgentsPage() {
         )}
         {!isLoading &&
           !isError &&
-          filteredAgents.length === 0 &&
+          filteredDefinitions.length === 0 &&
           (isSearching ? (
             <div className="py-10 text-[13px] text-text-3">
               No results for &ldquo;{query.trim()}&rdquo;.
@@ -243,27 +407,52 @@ export function AgentsPage() {
           ) : (
             <RichEmptyState
               icon={<Bot className="h-6 w-6" strokeWidth={1.75} />}
-              title="No agents yet"
-              description="Agents available to you will appear here."
+              title="No agent definitions yet"
+              description="No agent definitions available yet."
             />
           ))}
         {!isLoading &&
           !isError &&
-          filteredAgents.length > 0 &&
+          filteredDefinitions.length > 0 &&
           (viewMode === "rows" ? (
-            <DataTable<AgentInstanceItem>
-              caption="Agents"
-              rows={filteredAgents}
-              getRowKey={(a) => a.id}
+            <DataTable<AgentDefinitionItem>
+              caption="Agent definitions"
+              rows={filteredDefinitions}
+              getRowKey={(d) => d.key}
               columns={columns}
             />
           ) : (
             <div className="grid grid-cols-[repeat(auto-fill,minmax(150px,1fr))] gap-[var(--gap)] sm:grid-cols-[repeat(auto-fill,minmax(190px,1fr))]">
-              {filteredAgents.map((agent, i) => (
-                <AgentCard key={agent.id} agent={agent} index={i + 1} />
+              {filteredDefinitions.map((definition, i) => (
+                <DefinitionCard
+                  key={definition.key}
+                  definition={definition}
+                  index={i + 1}
+                />
               ))}
             </div>
           ))}
+        {!isLoading && !isError && unmatchedInstances.length > 0 && (
+          <div className="mt-8">
+            <h2 className="mb-2 text-[13px] font-semibold text-text-2">
+              Deployed instances
+            </h2>
+            {viewMode === "rows" ? (
+              <DataTable<AgentInstanceItem>
+                caption="Deployed instances"
+                rows={unmatchedInstances}
+                getRowKey={(a) => a.id}
+                columns={unmatchedColumns}
+              />
+            ) : (
+              <div className="grid grid-cols-[repeat(auto-fill,minmax(150px,1fr))] gap-[var(--gap)] sm:grid-cols-[repeat(auto-fill,minmax(190px,1fr))]">
+                {unmatchedInstances.map((agent, i) => (
+                  <AgentCard key={agent.id} agent={agent} index={i + 1} />
+                ))}
+              </div>
+            )}
+          </div>
+        )}
       </div>
     </PagePanel>
   );
