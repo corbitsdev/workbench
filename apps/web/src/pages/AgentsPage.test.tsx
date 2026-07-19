@@ -271,6 +271,97 @@ describe("AgentsPage", () => {
     });
   });
 
+  it("shows all instances when a definition has more than one deployed", async () => {
+    fetchImpl = (url) => {
+      if (String(url).includes("/agents/templates")) {
+        return Promise.resolve(jsonResponse({ data: templates }));
+      }
+      if (String(url).includes("/agents")) {
+        return Promise.resolve(
+          jsonResponse({
+            data: [
+              deployedOatInstance,
+              {
+                id: "ins-2",
+                agentId: "agt-1",
+                agentName: "Oat",
+                agentDescription: "Shared workspace agent",
+                tenantId: "tenant-1",
+                address: "ins-2@tenant-1.localhost",
+                status: "stopped",
+              },
+            ],
+          }),
+        );
+      }
+      return Promise.resolve(jsonResponse({}));
+    };
+
+    renderPage();
+
+    await waitFor(() =>
+      expect(document.body.textContent).toContain("ins-1@tenant-1.localhost"),
+    );
+    // Both instances of the same "Oat" definition must be visible - the
+    // second one must not be dropped by a name-keyed single-instance map.
+    expect(document.body.textContent).toContain("ins-2@tenant-1.localhost");
+    expect(document.body.textContent).toContain("Running");
+    expect(document.body.textContent).toContain("Stopped");
+  });
+
+  it("filters the orphan section by the same query - no unfiltered table under a 'no results' message", async () => {
+    fetchImpl = (url) => {
+      if (String(url).includes("/agents/templates")) {
+        return Promise.resolve(jsonResponse({ data: templates }));
+      }
+      if (String(url).includes("/agents")) {
+        return Promise.resolve(
+          jsonResponse({
+            data: [
+              {
+                id: "ins-9",
+                agentId: "agt-9",
+                agentName: "Retired Agent",
+                agentDescription: "No longer a template",
+                tenantId: "tenant-1",
+                address: "ins-9@tenant-1.localhost",
+                status: "stopped",
+              },
+            ],
+          }),
+        );
+      }
+      return Promise.resolve(jsonResponse({}));
+    };
+
+    const { getByLabelText, queryByText } = renderPage();
+    await waitFor(() =>
+      expect(document.body.textContent).toContain("Retired Agent"),
+    );
+
+    // A query matching only the orphan instance, not any definition.
+    fireEvent.change(getByLabelText("Search agents"), {
+      target: { value: "retired" },
+    });
+
+    await waitFor(() => {
+      expect(queryByText("Retired Agent")).toBeTruthy();
+    });
+    expect(queryByText("Oat")).toBeNull();
+    expect(queryByText("Myra")).toBeNull();
+    expect(document.body.textContent).not.toContain("No results");
+
+    // A query matching neither a definition nor the orphan instance must
+    // filter the orphan section out too, not just hide it while unfiltered.
+    fireEvent.change(getByLabelText("Search agents"), {
+      target: { value: "zzz-no-match" },
+    });
+    await waitFor(() => {
+      expect(document.body.textContent).toContain("No results");
+    });
+    expect(queryByText("Retired Agent")).toBeNull();
+  });
+
   it("renders unmatched deployed instances in a separate section", async () => {
     fetchImpl = (url) => {
       if (String(url).includes("/agents/templates")) {

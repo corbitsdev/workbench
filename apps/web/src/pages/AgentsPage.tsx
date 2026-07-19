@@ -53,8 +53,15 @@ function statusLabel(status: string): string {
   return status.charAt(0).toUpperCase() + status.slice(1);
 }
 
-export type AgentDefinitionItem = AgentTemplateItem & {
-  instance: AgentInstanceItem | null;
+// Unified card/row shape for both a definition (0..N deployed instances,
+// tools known) and an orphaned deployed instance with no matching definition
+// (always exactly 1 instance, tools unknown — `tools: null`).
+export type AgentCardItem = {
+  id: string;
+  name: string;
+  description: string | null;
+  tools: string[] | null;
+  instances: AgentInstanceItem[];
 };
 
 /** Filter agent definitions by name or description (case-insensitive). */
@@ -123,22 +130,35 @@ function CopyAddressButton({ address }: { address: string }) {
   );
 }
 
-function DefinitionCard({
-  definition,
-  index,
-}: {
-  definition: AgentDefinitionItem;
-  index: number;
-}) {
-  const hash = hashString(definition.key);
+function InstanceRow({ instance }: { instance: AgentInstanceItem }) {
+  return (
+    <div className="flex items-center gap-1.5">
+      <Badge tone={statusTone(instance.status)}>
+        {statusLabel(instance.status)}
+      </Badge>
+      <span className="min-w-0 truncate font-mono text-[10px] text-text-3/80">
+        {instance.address}
+      </span>
+      <CopyAddressButton address={instance.address} />
+    </div>
+  );
+}
+
+function cardCornerLabel(instances: AgentInstanceItem[]): string {
+  if (instances.length === 0) return "Not deployed";
+  if (instances.length === 1) return statusLabel(instances[0].status);
+  return `${instances.length} deployed`;
+}
+
+function AgentCard({ item, index }: { item: AgentCardItem; index: number }) {
+  const hash = hashString(item.id);
   const glyph = CATALOG_GLYPH_KINDS[hash % CATALOG_GLYPH_KINDS.length];
   const fill = CATALOG_GLYPH_FILLS[hash % CATALOG_GLYPH_FILLS.length];
-  const instance = definition.instance;
 
   return (
     <div className={cn(catalogCardClassName, "cursor-default")}>
       <span className="absolute left-[10px] top-[10px] z-[2] rounded-full bg-[rgba(0,0,0,0.32)] px-2 py-[3px] text-[10px] font-bold uppercase tracking-[0.03em] text-white backdrop-blur-[6px]">
-        {instance === null ? "Not deployed" : statusLabel(instance.status)}
+        {cardCornerLabel(item.instances)}
       </span>
       <div
         className={`relative grid h-[112px] place-items-center overflow-hidden ${fill}`}
@@ -150,14 +170,14 @@ function DefinitionCard({
       </div>
       <div className="border-t border-border bg-surface px-[13px] py-[11px]">
         <div className="truncate text-[13.5px] font-semibold text-text">
-          {definition.name}
+          {item.name}
         </div>
         <p className="mt-0.5 line-clamp-2 text-pretty text-[11px] text-text-3">
-          {definition.description}
+          {item.description === null ? "No description" : item.description}
         </p>
-        {definition.tools.length > 0 && (
+        {item.tools !== null && item.tools.length > 0 && (
           <div className="mt-1.5 flex flex-wrap gap-1">
-            {definition.tools.map((tool) => (
+            {item.tools.map((tool) => (
               <span
                 key={tool}
                 className="rounded-full bg-surface-2 px-1.5 py-[2px] text-[9.5px] text-text-3"
@@ -167,55 +187,14 @@ function DefinitionCard({
             ))}
           </div>
         )}
-        {instance !== null && (
-          <div className="mt-1.5 flex items-center gap-1">
-            <span className="min-w-0 truncate font-mono text-[10px] text-text-3/80">
-              {instance.address}
-            </span>
-            <CopyAddressButton address={instance.address} />
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
-
-function AgentCard({
-  agent,
-  index,
-}: {
-  agent: AgentInstanceItem;
-  index: number;
-}) {
-  const hash = hashString(agent.id);
-  const glyph = CATALOG_GLYPH_KINDS[hash % CATALOG_GLYPH_KINDS.length];
-  const fill = CATALOG_GLYPH_FILLS[hash % CATALOG_GLYPH_FILLS.length];
-
-  return (
-    <div className={cn(catalogCardClassName, "cursor-default")}>
-      <span className="absolute left-[10px] top-[10px] z-[2] rounded-full bg-[rgba(0,0,0,0.32)] px-2 py-[3px] text-[10px] font-bold uppercase tracking-[0.03em] text-white backdrop-blur-[6px]">
-        {statusLabel(agent.status)}
-      </span>
-      <div
-        className={`relative grid h-[112px] place-items-center overflow-hidden ${fill}`}
-      >
-        <CatalogGlyph kind={glyph} />
-        <span className="absolute bottom-[10px] right-3 font-mono text-[13px] font-bold text-[rgba(255,255,255,0.85)]">
-          A{index.toString().padStart(2, "0")}
-        </span>
-      </div>
-      <div className="border-t border-border bg-surface px-[13px] py-[11px]">
-        <div className="truncate text-[13.5px] font-semibold text-text">
-          {agent.name}
-        </div>
-        <p className="mt-0.5 line-clamp-2 text-pretty text-[11px] text-text-3">
-          {agent.description === null ? "No description" : agent.description}
-        </p>
-        <div className="mt-1.5 flex items-center gap-1">
-          <span className="min-w-0 truncate font-mono text-[10px] text-text-3/80">
-            {agent.address}
-          </span>
-          <CopyAddressButton address={agent.address} />
+        <div className="mt-1.5 flex flex-col gap-1.5">
+          {item.instances.length === 0 ? (
+            <Badge tone="neutral">Not deployed</Badge>
+          ) : (
+            item.instances.map((instance) => (
+              <InstanceRow key={instance.id} instance={instance} />
+            ))
+          )}
         </div>
       </div>
     </div>
@@ -247,9 +226,11 @@ export function AgentsPage() {
     (!meQuery.isLoading && tenantId === null);
 
   const instancesByName = useMemo(() => {
-    const map = new Map<string, AgentInstanceItem>();
+    const map = new Map<string, AgentInstanceItem[]>();
     for (const instance of instancesQuery.data ?? []) {
-      if (!map.has(instance.name)) map.set(instance.name, instance);
+      const existing = map.get(instance.name);
+      if (existing) existing.push(instance);
+      else map.set(instance.name, [instance]);
     }
     return map;
   }, [instancesQuery.data]);
@@ -259,27 +240,41 @@ export function AgentsPage() {
     [templatesQuery.data],
   );
 
-  const unmatchedInstances = useMemo(
-    () =>
-      (instancesQuery.data ?? []).filter(
-        (instance) => !definitionNames.has(instance.name),
-      ),
-    [instancesQuery.data, definitionNames],
-  );
+  const hasDefinitions = (templatesQuery.data ?? []).length > 0;
 
-  const filteredDefinitions = useMemo(() => {
+  const filteredDefinitionItems = useMemo(() => {
     const definitions = templatesQuery.data ?? [];
     return filterAgentDefinitions(definitions, query).map(
-      (definition): AgentDefinitionItem => ({
-        ...definition,
-        instance: instancesByName.get(definition.name) ?? null,
+      (definition): AgentCardItem => ({
+        id: definition.key,
+        name: definition.name,
+        description: definition.description,
+        tools: definition.tools,
+        instances: instancesByName.get(definition.name) ?? [],
       }),
     );
   }, [query, templatesQuery.data, instancesByName]);
 
-  const isSearching = query.trim().length > 0;
+  const unmatchedInstanceItems = useMemo(() => {
+    const unmatched = (instancesQuery.data ?? []).filter(
+      (instance) => !definitionNames.has(instance.name),
+    );
+    return filterAgents(unmatched, query).map(
+      (instance): AgentCardItem => ({
+        id: instance.id,
+        name: instance.name,
+        description: instance.description,
+        tools: null,
+        instances: [instance],
+      }),
+    );
+  }, [instancesQuery.data, definitionNames, query]);
 
-  const columns: DataTableColumn<AgentDefinitionItem>[] = [
+  const isSearching = query.trim().length > 0;
+  const totalVisible =
+    filteredDefinitionItems.length + unmatchedInstanceItems.length;
+
+  const columns: DataTableColumn<AgentCardItem>[] = [
     {
       key: "name",
       header: "Name",
@@ -291,7 +286,9 @@ export function AgentsPage() {
       header: "Description",
       className: "max-w-[360px]",
       render: (d) => (
-        <span className="line-clamp-1 text-text-3">{d.description}</span>
+        <span className="line-clamp-1 text-text-3">
+          {d.description === null ? "—" : d.description}
+        </span>
       ),
     },
     {
@@ -299,7 +296,9 @@ export function AgentsPage() {
       header: "Tools",
       render: (d) => (
         <span className="line-clamp-1 text-text-3">
-          {d.tools.length > 0 ? d.tools.join(", ") : "—"}
+          {d.tools === null || d.tools.length === 0
+            ? "—"
+            : d.tools.join(", ")}
         </span>
       ),
     },
@@ -307,72 +306,45 @@ export function AgentsPage() {
       key: "status",
       header: "Status",
       render: (d) =>
-        d.instance === null ? (
+        d.instances.length === 0 ? (
           <Badge tone="neutral">Not deployed</Badge>
         ) : (
-          <Badge tone={statusTone(d.instance.status)}>
-            {statusLabel(d.instance.status)}
-          </Badge>
+          <div className="flex flex-col gap-1">
+            {d.instances.map((instance) => (
+              <Badge key={instance.id} tone={statusTone(instance.status)}>
+                {statusLabel(instance.status)}
+              </Badge>
+            ))}
+          </div>
         ),
     },
     {
       key: "address",
       header: "Address",
       render: (d) =>
-        d.instance === null ? (
+        d.instances.length === 0 ? (
           <span className="text-text-3">—</span>
         ) : (
-          <span className="inline-flex max-w-full items-center gap-1">
-            <span className="min-w-0 truncate font-mono text-[12px]">
-              {d.instance.address}
-            </span>
-            <CopyAddressButton address={d.instance.address} />
-          </span>
+          <div className="flex flex-col gap-1">
+            {d.instances.map((instance) => (
+              <span
+                key={instance.id}
+                className="inline-flex max-w-full items-center gap-1"
+              >
+                <span className="min-w-0 truncate font-mono text-[12px]">
+                  {instance.address}
+                </span>
+                <CopyAddressButton address={instance.address} />
+              </span>
+            ))}
+          </div>
         ),
-    },
-  ];
-
-  const unmatchedColumns: DataTableColumn<AgentInstanceItem>[] = [
-    {
-      key: "name",
-      header: "Name",
-      className: "font-medium text-text",
-      render: (a) => a.name,
-    },
-    {
-      key: "description",
-      header: "Description",
-      className: "max-w-[360px]",
-      render: (a) => (
-        <span className="line-clamp-1 text-text-3">
-          {a.description === null ? "—" : a.description}
-        </span>
-      ),
-    },
-    {
-      key: "address",
-      header: "Address",
-      render: (a) => (
-        <span className="inline-flex max-w-full items-center gap-1">
-          <span className="min-w-0 truncate font-mono text-[12px]">
-            {a.address}
-          </span>
-          <CopyAddressButton address={a.address} />
-        </span>
-      ),
-    },
-    {
-      key: "status",
-      header: "Status",
-      render: (a) => (
-        <Badge tone={statusTone(a.status)}>{statusLabel(a.status)}</Badge>
-      ),
     },
   ];
 
   const pageChrome = useMemo(
     () => (
-      <AppPageChromeRow title="Agents" count={filteredDefinitions.length}>
+      <AppPageChromeRow title="Agents" count={totalVisible}>
         <LibrarySearchInput
           label="Search agents"
           placeholder="Search agents"
@@ -382,7 +354,7 @@ export function AgentsPage() {
         <ViewToggle mode={viewMode} onChange={setViewMode} />
       </AppPageChromeRow>
     ),
-    [filteredDefinitions.length, query, viewMode, setViewMode],
+    [totalVisible, query, viewMode, setViewMode],
   );
   useSetPageChrome(pageChrome);
 
@@ -397,57 +369,60 @@ export function AgentsPage() {
             Could not load agents.
           </div>
         )}
+        {!isLoading && !isError && !hasDefinitions && (
+          <RichEmptyState
+            icon={<Bot className="h-6 w-6" strokeWidth={1.75} />}
+            title="No agent definitions yet"
+            description="No agent definitions available yet."
+          />
+        )}
         {!isLoading &&
           !isError &&
-          filteredDefinitions.length === 0 &&
-          (isSearching ? (
+          hasDefinitions &&
+          totalVisible === 0 &&
+          isSearching && (
             <div className="py-10 text-[13px] text-text-3">
               No results for &ldquo;{query.trim()}&rdquo;.
             </div>
-          ) : (
-            <RichEmptyState
-              icon={<Bot className="h-6 w-6" strokeWidth={1.75} />}
-              title="No agent definitions yet"
-              description="No agent definitions available yet."
-            />
-          ))}
+          )}
         {!isLoading &&
           !isError &&
-          filteredDefinitions.length > 0 &&
+          hasDefinitions &&
+          filteredDefinitionItems.length > 0 &&
           (viewMode === "rows" ? (
-            <DataTable<AgentDefinitionItem>
+            <DataTable<AgentCardItem>
               caption="Agent definitions"
-              rows={filteredDefinitions}
-              getRowKey={(d) => d.key}
+              rows={filteredDefinitionItems}
+              getRowKey={(d) => d.id}
               columns={columns}
             />
           ) : (
             <div className="grid grid-cols-[repeat(auto-fill,minmax(150px,1fr))] gap-[var(--gap)] sm:grid-cols-[repeat(auto-fill,minmax(190px,1fr))]">
-              {filteredDefinitions.map((definition, i) => (
-                <DefinitionCard
-                  key={definition.key}
-                  definition={definition}
-                  index={i + 1}
-                />
+              {filteredDefinitionItems.map((item, i) => (
+                <AgentCard key={item.id} item={item} index={i + 1} />
               ))}
             </div>
           ))}
-        {!isLoading && !isError && unmatchedInstances.length > 0 && (
+        {!isLoading && !isError && unmatchedInstanceItems.length > 0 && (
           <div className="mt-8">
             <h2 className="mb-2 text-[13px] font-semibold text-text-2">
               Deployed instances
             </h2>
             {viewMode === "rows" ? (
-              <DataTable<AgentInstanceItem>
+              <DataTable<AgentCardItem>
                 caption="Deployed instances"
-                rows={unmatchedInstances}
-                getRowKey={(a) => a.id}
-                columns={unmatchedColumns}
+                rows={unmatchedInstanceItems}
+                getRowKey={(d) => d.id}
+                columns={columns}
               />
             ) : (
               <div className="grid grid-cols-[repeat(auto-fill,minmax(150px,1fr))] gap-[var(--gap)] sm:grid-cols-[repeat(auto-fill,minmax(190px,1fr))]">
-                {unmatchedInstances.map((agent, i) => (
-                  <AgentCard key={agent.id} agent={agent} index={i + 1} />
+                {unmatchedInstanceItems.map((item, i) => (
+                  <AgentCard
+                    key={item.id}
+                    item={item}
+                    index={filteredDefinitionItems.length + i + 1}
+                  />
                 ))}
               </div>
             )}

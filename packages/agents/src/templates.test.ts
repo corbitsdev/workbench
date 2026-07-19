@@ -60,6 +60,16 @@ describe("AGENT_TEMPLATES", () => {
     expect(freddie?.capabilities.tools).not.toContain("mail_reply");
   });
 
+  // The hub resolves a deployed instance's agent definition by walking the
+  // tenant hierarchy for `agent.name === template.name` (apps/hub/src/routes/agents.ts,
+  // findDefInHierarchy), and the /agents page joins a deployed instance back
+  // to its definition card by the same `name` key. Both would silently
+  // mismatch if two templates ever shared a name.
+  it("has a unique name per template", () => {
+    const names = AGENT_TEMPLATES.map((t) => t.name);
+    expect(new Set(names).size).toBe(names.length);
+  });
+
   it("every template has a non-empty name, systemPrompt, and credentialRequirements", () => {
     for (const template of AGENT_TEMPLATES) {
       expect(template.name.length).toBeGreaterThan(0);
