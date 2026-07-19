@@ -77,7 +77,7 @@ describe("groupChatTurns", () => {
   });
 });
 
-describe("reloaded transcript rendering (CL-3930)", () => {
+describe("reloaded transcript rendering", () => {
   it("renders only the final answer for a reloaded multi-segment turn, dropping the interstitial and never showing a live indicator", () => {
     // Shape composeChatMessages now produces for a reloaded (non-live)
     // transcript once the mail-echo fix stamps the trailing assistant mail
