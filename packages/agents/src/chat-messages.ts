@@ -140,23 +140,57 @@ export function composeChatMessages(
 
   const converted = convertInstanceEvents(deduped, toolNames);
 
+  // A reloaded transcript never carries the plain-text final turn a live
+  // stream would have hoisted the mail against: @intx/hub-client's
+  // turnToEvent drops any historical turn with no tool calls/errors on the
+  // assumption its content survives via the echoed assistant mail (see this
+  // file's top comment). When that turn never arrives, content-matching
+  // cannot hoist the mail, so the mail falls back to arrival order: an
+  // unhoisted assistant mail landing within MAIL_ECHO_WINDOW_MS of the last
+  // turn in the CURRENT exchange — an exchange that never itself explicitly
+  // sent mail (no `mail_send` tool call, Myra's one available send tool) — is
+  // that dropped turn's own echoed reply, not an unrelated agent-initiated
+  // mail. Gate mail, triage handoffs, and morning briefs arrive well outside
+  // this window (they are not a reply to the exchange's own turns at all).
+  const MAIL_ECHO_WINDOW_MS = 30_000;
+
   // Turn-group identity for the renderer. Committed segments of one exchange
   // carry DISTINCT transport turnIds (each segment commits as its own turn
   // event — pinned by the composition regression spec), so the only real
   // exchange boundary is an inbound user mail. Stamp every turn-derived
-  // message (and any assistant mail hoisted into a turn's slot) with the
-  // current exchange's group key; standalone assistant mails (gate mail,
-  // triage handoffs, briefs) get NO group key so the renderer can never fold
-  // them into a neighbouring reply. Additive only — ordering, dedup, and
-  // hoisting semantics above are untouched.
+  // message (and any assistant mail hoisted into a turn's slot, live or
+  // echoed) with the current exchange's group key; standalone assistant
+  // mails (gate mail, triage handoffs, briefs) get NO group key so the
+  // renderer can never fold them into a neighbouring reply. Additive only —
+  // ordering, dedup, and hoisting semantics above are untouched.
   let exchangeIndex = 0;
+  let lastTurnTimestamp: string | null = null;
+  let exchangeSentMail = false;
   const groupIds = deduped.map((e): string | undefined => {
     if (e.kind === "mail" && e.role === "user") {
       exchangeIndex += 1;
+      lastTurnTimestamp = null;
+      exchangeSentMail = false;
       return undefined;
     }
-    if (e.kind === "turn") return `exchange-${exchangeIndex}`;
+    if (e.kind === "turn") {
+      lastTurnTimestamp = e.timestamp;
+      if (e.toolCalls?.some((tc) => tc.name === "mail_send")) {
+        exchangeSentMail = true;
+      }
+      return `exchange-${exchangeIndex}`;
+    }
     if (hoistedMailIds.has(e.id)) return `exchange-${exchangeIndex}`;
+    if (
+      e.kind === "mail" &&
+      e.role === "assistant" &&
+      !exchangeSentMail &&
+      lastTurnTimestamp !== null &&
+      Date.parse(e.timestamp) - Date.parse(lastTurnTimestamp) <=
+        MAIL_ECHO_WINDOW_MS
+    ) {
+      return `exchange-${exchangeIndex}`;
+    }
     return undefined;
   });
   const liveGroupId = `exchange-${exchangeIndex}`;
