@@ -12,7 +12,15 @@
     "declaration": true,
     "declarationMap": true,
     "jsx": "react-jsx",
-    "lib": ["ESNext", "DOM"]
+    "lib": [
+      "ESNext",
+      "DOM"
+    ],
+    "customConditions": [
+      "intx-src"
+    ]
   },
-  "include": ["src/**/*"]
+  "include": [
+    "src/**/*"
+  ]
 }

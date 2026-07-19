@@ -27,11 +27,13 @@ import { sanitizeAddress } from "@workbench/hub-agent";
 const defaultLogger = getLogger(["sidecar", "boot-reconciler"]);
 
 // Canonical deployment-id token. A workflow `deploymentId` is
-// `generateId("session")` = the `ses_` prefix + 32 lowercase hex chars
-// (16 random bytes, hex-encoded) — see `generateId` in
-// `interchange/packages/hub-common/src/ids.ts`. EVERY on-disk dir-name
-// form a deployment produces embeds this exact token verbatim, regardless
-// of which subsystem wrote the dir:
+// `generateId("session")` (legacy `ses_` prefix) or `generateId("deployment")`
+// (current `dep_` prefix) + 32 lowercase hex chars (16 random bytes,
+// hex-encoded) — see `generateId` in
+// `interchange/packages/hub-common/src/ids.ts`. Both id shapes can appear on
+// disk (a sidecar volume can outlive an id-shape change), and EVERY on-disk
+// dir-name form a deployment produces embeds this exact token verbatim,
+// regardless of which subsystem wrote the dir:
 //   - agent-state repo:  `agents/<deploymentId>-<stepId>`            (raw id)
 //   - session agent dir: `<dataDir>/ins_<deploymentId>-<stepId>_at_<domain>`
 //                         `<dataDir>/ins_<deploymentId>_at_<domain>` (supervisor)
@@ -41,11 +43,12 @@ const defaultLogger = getLogger(["sidecar", "boot-reconciler"]);
 //
 // Matching on this token instead of on whole-dir-name equality makes the
 // reconciler independent of the agentId-vs-sanitized-address-vs-slug
-// naming differences between those subsystems: a candidate dir is only
-// ever deleted when a deployment-id token can be POSITIVELY extracted from
-// its name AND that token is not in the live set. A dir name with no
-// extractable token is never provably a deployment dir, so it is kept.
-const DEPLOYMENT_ID_TOKEN = /ses_[0-9a-f]{32}/;
+// naming differences between those subsystems, AND independent of which
+// id-prefix minted the deployment: a candidate dir is only ever deleted
+// when a deployment-id token can be POSITIVELY extracted from its name AND
+// that token is not in the live set. A dir name with no extractable token
+// is never provably a deployment dir, so it is kept.
+const DEPLOYMENT_ID_TOKEN = /(?:ses|dep)_[0-9a-f]{32}/;
 
 // Extract the deployment-id token from a dir name, or `null` if the name
 // carries no canonical token. `null` means "not provably a deployment

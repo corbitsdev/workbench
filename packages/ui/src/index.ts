@@ -99,7 +99,7 @@ export {
   type MotionPresenceProps,
 } from "./motion";
 export { cn } from "./utils";
-export { toHumanLabel } from "@workbench/shared";
+export { toHumanLabel, skillTitle } from "@workbench/shared";
 export {
   formatShortDateUtc,
   formatShortDateRangeUtc,
@@ -233,4 +233,5 @@ export {
   type ClassifiedRunError,
   classifyRunError,
   failedRunError,
+  describeLiveInferenceIssue,
 } from "./workflow-run-error";

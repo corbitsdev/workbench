@@ -3,6 +3,7 @@ import { describe, expect, it } from "bun:test";
 import {
   ARTIFACT_PREVIEW_FAMILIES,
   artifactPreviewFamily,
+  comparisonSummary,
   labelForArtifactStatus,
   previewExcerpt,
 } from "./artifact-preview-family";
@@ -65,5 +66,53 @@ describe("previewExcerpt", () => {
 describe("labelForArtifactStatus", () => {
   it("labels known statuses", () => {
     expect(labelForArtifactStatus("approved")).toBe("Approved");
+  });
+});
+
+describe("comparisonSummary", () => {
+  const VALID = JSON.stringify({
+    ranking: [
+      { rank: 1, label: "Claude Opus" },
+      { rank: 2, label: "GPT-5" },
+      { rank: 3, label: "Gemini" },
+      { rank: 4, label: "Llama" },
+    ],
+    variants: [
+      { label: "Claude Opus", content: "a" },
+      { label: "GPT-5", content: "b" },
+      { label: "Gemini", content: "c" },
+      { label: "Llama", content: "d" },
+    ],
+  });
+
+  it("summarizes the winner and variant count", () => {
+    expect(comparisonSummary(VALID)).toBe("Winner: Claude Opus · 4 variants");
+  });
+
+  it("pluralizes a single variant correctly", () => {
+    const single = JSON.stringify({
+      ranking: [{ rank: 1, label: "Claude Opus" }],
+      variants: [{ label: "Claude Opus", content: "a" }],
+    });
+    expect(comparisonSummary(single)).toBe("Winner: Claude Opus · 1 variant");
+  });
+
+  it("returns undefined for content that is not a valid comparison result", () => {
+    expect(comparisonSummary("not json")).toBeUndefined();
+    expect(comparisonSummary('{"unrelated": true}')).toBeUndefined();
+  });
+
+  it("drops the 'Winner:' prefix and just states the count when no ranking entry is rank 1 (e.g. a tie or an unranked comparison)", () => {
+    const noWinner = JSON.stringify({
+      ranking: [
+        { rank: 2, label: "Claude Opus" },
+        { rank: 2, label: "GPT-5" },
+      ],
+      variants: [
+        { label: "Claude Opus", content: "a" },
+        { label: "GPT-5", content: "b" },
+      ],
+    });
+    expect(comparisonSummary(noWinner)).toBe("2 variants");
   });
 });

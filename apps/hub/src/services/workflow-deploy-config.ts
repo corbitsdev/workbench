@@ -1,6 +1,7 @@
 import { generateId } from "@intx/hub-common";
-import { resolveModelSources } from "@intx/db";
+import { resolveModelSources, createGrantStore } from "@intx/db";
 import type { ModelRequirement } from "@intx/types";
+import type { GrantRule } from "@intx/authz";
 import type { HarnessConfig, InferenceSource } from "@intx/types/runtime";
 import type { DeployContent } from "@intx/hub-sessions";
 import type { WorkflowDefinition } from "@intx/workflow";
@@ -104,9 +105,15 @@ async function resolveCatalogSourcesUncached(
   db: HubDb,
   tenantId: string,
   extraModels: readonly string[],
+  creatorGrants: GrantRule[],
 ): Promise<InferenceSource[]> {
   const requirement: ModelRequirement = { model: LLM_DEFAULT_MODEL };
-  const resolution = await resolveModelSources(db, tenantId, [requirement]);
+  const resolution = await resolveModelSources(
+    db,
+    tenantId,
+    [requirement],
+    creatorGrants,
+  );
   if (!resolution.ok) {
     if (resolution.reason === "no_requirements") {
       throw new Error(
@@ -130,7 +137,12 @@ async function resolveCatalogSourcesUncached(
   // so the deploy never fails on a preferred model the tenant lacks.
   const sources = [...resolution.sources];
   for (const model of extraModels) {
-    const extra = await resolveModelSources(db, tenantId, [{ model }]);
+    const extra = await resolveModelSources(
+      db,
+      tenantId,
+      [{ model }],
+      creatorGrants,
+    );
     if (!extra.ok) continue;
     for (const source of extra.sources) {
       const present = sources.some(
@@ -145,6 +157,10 @@ async function resolveCatalogSourcesUncached(
 export async function resolveWorkflowDeploySource(args: {
   db: HubDb;
   tenantId: string;
+  // Deploy creator principal whose `credential:{id}` / `use` grants authorize
+  // the tenant catalog's credential-backed sources (fail-closed gate). Its
+  // in-chain grants are collected here and passed to `resolveModelSources`.
+  creatorPrincipalId: string;
   // Extra models some step prefers (see `collectDeclaredStepModels`). Resolved
   // optionally and appended after the required default chain.
   extraModels?: readonly string[];
@@ -154,16 +170,43 @@ export async function resolveWorkflowDeploySource(args: {
   modelMaxTokens?: ReadonlyMap<string, number>;
 }): Promise<InferenceSource[]> {
   const extraModels = args.extraModels ?? [];
+  const creatorGrants = await createGrantStore(args.db).collectGrantsInChain(
+    args.creatorPrincipalId,
+    args.tenantId,
+  );
   // Catalog resolution is memoized per (tenant, declared-model set) with a short
   // TTL; maxTokens is a cheap pure map lifted onto fresh copies afterward, so it
-  // stays outside the cache and can vary per caller without a re-resolve.
+  // stays outside the cache and can vary per caller without a re-resolve. Fold
+  // the creator's credential-use authorization into the key: two deploys with
+  // the same model set but a differently-authorized creator must not share a
+  // cached chain (one might legitimately resolve a credential the other cannot).
+  const keyExtra = grantAuthorizationFingerprint(creatorGrants);
   const sources = await getCachedCatalogSources({
     tenantId: args.tenantId,
     extraModels,
+    keyExtra,
     resolve: () =>
-      resolveCatalogSourcesUncached(args.db, args.tenantId, extraModels),
+      resolveCatalogSourcesUncached(
+        args.db,
+        args.tenantId,
+        extraModels,
+        creatorGrants,
+      ),
   });
   return applyModelMaxTokens([...sources], args.modelMaxTokens ?? new Map());
+}
+
+// A stable fingerprint of a principal's grant set, used as the source-cache
+// discriminator. Credential-use authorization can come from an exact
+// `credential:{id}` / `use` grant OR a wildcard (`credential:*`, `*`) grant, so
+// the fingerprint deliberately covers the whole (resource, action, effect) set
+// rather than trying to pre-match globs — under-discriminating here would let a
+// less-authorized principal serve a more-authorized principal's cached chain.
+function grantAuthorizationFingerprint(grants: GrantRule[]): string {
+  const triples = grants
+    .map((g) => `${g.resource}|${g.action}|${g.effect}`)
+    .sort();
+  return JSON.stringify(triples);
 }
 
 // Assemble the base HarnessConfig from a resolved source chain and a
@@ -216,11 +259,16 @@ export async function resolveWorkflowDeployConfig(args: {
   const sources = await resolveWorkflowDeploySource({
     db: args.db,
     tenantId: args.tenantId,
+    creatorPrincipalId: args.principalId,
     extraModels: collectDeclaredStepModels(args.definition),
     modelMaxTokens: collectDeclaredStepModelMaxTokens(args.definition),
   });
   return assembleWorkflowDeployConfig({
-    deploymentId: generateId("session"),
+    // `dep_` is interchange's workflow-deployment id space
+    // (`isWorkflowDerivedAddress`): deploy acks and reconnect key lookups
+    // route through the `workflow_deployment` row instead of requiring
+    // per-step `agent_instance` rows.
+    deploymentId: generateId("deployment"),
     tenantId: args.tenantId,
     principalId: args.principalId,
     deploymentDomain: args.deploymentDomain,

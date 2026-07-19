@@ -18,6 +18,7 @@ import {
   type SkillIndexEntry,
 } from "@workbench/tools-skills";
 import { and, eq } from "drizzle-orm";
+import { skillTitle } from "@workbench/shared";
 import type { HubDb } from "../db";
 import { resolveOwnerMemberPrincipalId } from "../lib/artifact-tools";
 import type { UserContext } from "../lib/user-context";
@@ -92,7 +93,7 @@ function toIndexEntry(skill: SkillItem): SkillIndexEntry {
   return {
     id: skill.id,
     name: skill.name,
-    displayName: skill.displayName,
+    displayName: skillTitle(skill),
     description: skill.description,
   };
 }
@@ -210,7 +211,7 @@ async function loadSkillHandler(
   return jsonResult({
     id: skill.id,
     name: skill.name,
-    displayName: skill.displayName,
+    displayName: skillTitle(skill),
     body: bodyClamped.content ?? "",
     files: loadedSiblings,
     ...(truncated

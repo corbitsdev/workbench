@@ -17,6 +17,9 @@ export default defineConfig({
   },
   plugins: [react(), tailwindcss()],
   resolve: {
+    // @intx packages resolve to TS source in-repo via the intx-src exports
+    // condition (their default condition points at published dist/ output).
+    conditions: ["intx-src"],
     alias: {
       "@": path.resolve(__dirname, "./src"),
       // @intx/agent is a server-only package (uses node:path, process, etc).

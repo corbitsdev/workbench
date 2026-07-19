@@ -1,10 +1,11 @@
 /// <reference types="bun" />
 import "../test-setup";
-import { afterEach, describe, expect, it } from "bun:test";
+import { afterEach, describe, expect, it, spyOn } from "bun:test";
 import { cleanup, renderHook, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ReactNode } from "react";
 import { createElement } from "react";
+import { logger } from "../lib/logger";
 import {
   CONVERSATION_RUN_IDLE_POLL_MS,
   CONVERSATION_RUN_POLL_MS,
@@ -266,6 +267,103 @@ describe("useWorkflowRunState", () => {
       wrapper: wrapper(),
     });
     await waitFor(() => expect(result.current.isError).toBe(true));
+  });
+
+  it("does not fetch /state while a co-located record is provisioning with no deploymentId yet", async () => {
+    let calls = 0;
+    globalThis.fetch = ((..._args: Parameters<typeof fetch>) => {
+      calls += 1;
+      return Promise.resolve(jsonResponse(200, logRunState));
+    }) as typeof fetch;
+
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    client.setQueryData(["workflow-record", "wfr_1", "tn-x"], {
+      runId: "wfr_1",
+      kind: "pain-point-collateral",
+      status: "provisioning",
+    });
+
+    const { result } = renderHook(() => useWorkflowRunState("wfr_1", "tn-x"), {
+      wrapper: recordWrapper(client),
+    });
+
+    // Give any (wrongly) fired queryFn a tick to resolve before asserting.
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    expect(result.current.fetchStatus).toBe("idle");
+    expect(result.current.isError).toBe(false);
+    expect(calls).toBe(0);
+  });
+
+  it("fetches /state once the co-located record's deploymentId appears", async () => {
+    let calls = 0;
+    globalThis.fetch = ((..._args: Parameters<typeof fetch>) => {
+      calls += 1;
+      return Promise.resolve(jsonResponse(200, logRunState));
+    }) as typeof fetch;
+
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    client.setQueryData(["workflow-record", "wfr_1", "tn-x"], {
+      runId: "wfr_1",
+      kind: "pain-point-collateral",
+      status: "running",
+      deploymentId: "dep_abc",
+    });
+
+    const { result } = renderHook(() => useWorkflowRunState("wfr_1", "tn-x"), {
+      wrapper: recordWrapper(client),
+    });
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(calls).toBe(1);
+  });
+
+  it("warns when mounted without a co-located useWorkflowRecord for the same key", async () => {
+    globalThis.fetch = ((..._args: Parameters<typeof fetch>) =>
+      Promise.resolve(jsonResponse(200, logRunState))) as typeof fetch;
+    const warnSpy = spyOn(logger, "warn").mockImplementation(() => undefined);
+
+    renderHook(() => useWorkflowRunState("wfr_1", "tn-x"), {
+      wrapper: wrapper(),
+    });
+
+    expect(
+      warnSpy.mock.calls.some((call) =>
+        String(call[0]).includes("no co-mounted useWorkflowRecord"),
+      ),
+    ).toBe(true);
+    warnSpy.mockRestore();
+  });
+
+  it("does not warn when a co-located useWorkflowRecord query is registered for the same key", async () => {
+    globalThis.fetch = ((..._args: Parameters<typeof fetch>) =>
+      Promise.resolve(jsonResponse(200, logRunState))) as typeof fetch;
+    const warnSpy = spyOn(logger, "warn").mockImplementation(() => undefined);
+
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    // Registers the query entry (loading, no data yet) without seeding a
+    // record — this is the "record query mounted, still resolving" case,
+    // distinct from "no record query at all".
+    void client.prefetchQuery({
+      queryKey: ["workflow-record", "wfr_1", "tn-x"],
+      queryFn: () => new Promise(() => undefined),
+    });
+
+    renderHook(() => useWorkflowRunState("wfr_1", "tn-x"), {
+      wrapper: recordWrapper(client),
+    });
+
+    expect(
+      warnSpy.mock.calls.some((call) =>
+        String(call[0]).includes("no co-mounted useWorkflowRecord"),
+      ),
+    ).toBe(false);
+    warnSpy.mockRestore();
   });
 });
 

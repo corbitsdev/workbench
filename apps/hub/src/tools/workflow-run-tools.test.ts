@@ -209,6 +209,10 @@ function makeContext(overrides?: {
     deploymentDomain: "test.dev",
     provisionRunDeployment: async () => ({ deploymentId: "dep-run-1" }),
     ensureDeploymentRoutable: async () => ({ reestablished: false }),
+    resolveUserIdentity: async (principalId: string) => ({
+      userAddress: `usr_${principalId}@test.dev`,
+      userRefId: principalId,
+    }),
   };
 }
 

@@ -76,7 +76,7 @@ function makeGrantRule(resource: string, action: string): GrantRule {
 }
 
 function makeSidecarRouter(
-  used: Pick<SidecarRouter, "getRoutableAddresses" | "sendGrantsUpdate">,
+  used: Pick<SidecarRouter, "getRoutableAddresses">,
 ): SidecarRouter {
   const unused = (): never => {
     throw new Error("SidecarRouter method not stubbed for this test");
@@ -236,8 +236,11 @@ describe("reconcileMemberInstanceGrants", () => {
     expect(toolGrantCalls).toHaveLength(0);
   });
 
-  it("pushes a grants update only to live (routable) instances", async () => {
-    const sendGrantsUpdate = mock(async () => {});
+  // BEHAVIOR CHANGE (runtime retirement): the live grants-push transport
+  // (`grants.update`) is gone, so a reconcile never live-pushes — it persists
+  // the new grant set (picked up on the instance's next deploy) and always
+  // reports `pushed: 0`, routable or not.
+  it("persists grants and never live-pushes (transport retired)", async () => {
     const collectGrants = mock(async () => [
       { resource: "tool:x", action: "invoke" },
     ]);
@@ -268,56 +271,11 @@ describe("reconcileMemberInstanceGrants", () => {
     const live = {
       sidecarRouter: {
         getRoutableAddresses: () => ["live@global.example.com"],
-        sendGrantsUpdate,
       },
-      grantStore: { collectGrants },
-    } as never;
-
-    const [result] = await reconcileMemberInstanceGrants(
-      db,
-      "ten-1",
-      [MYRA],
-      live,
-    );
-    expect(result).toEqual({
-      templateKey: "myra",
-      reconciled: 1,
-      pushed: 1,
-      skipped: 0,
-    });
-    expect(sendGrantsUpdate).toHaveBeenCalledTimes(1);
-    expect(collectGrants).toHaveBeenCalledTimes(1);
-  });
-
-  it("does not push when the instance is not routable", async () => {
-    const sendGrantsUpdate = mock(async () => {});
-    const collectGrants = mock(async () => []);
-    const db = {
-      query: {
-        tenant: { findFirst: async () => ({ id: "ten-1" }) },
-        agent: {
-          findFirst: async () => ({
-            id: "agt-1",
-            capabilities: { tools: [CANONICAL_TOOL] },
-            grantRequirements: [],
-          }),
-        },
-        agentInstance: {
-          findFirst: async () => ({
-            id: "ins-1",
-            principalId: "prn-1",
-            address: "down@global.example.com",
-          }),
-        },
-        memberAgentInstance: {
-          findMany: async () => [{ instanceId: "ins-1" }],
-        },
+      grantStore: {
+        collectGrants,
+        collectGrantsInChain: collectGrants,
       },
-    } as unknown as Parameters<typeof reconcileMemberInstanceGrants>[0];
-
-    const live = {
-      sidecarRouter: { getRoutableAddresses: () => [], sendGrantsUpdate },
-      grantStore: { collectGrants },
     } as never;
 
     const [result] = await reconcileMemberInstanceGrants(
@@ -332,13 +290,15 @@ describe("reconcileMemberInstanceGrants", () => {
       pushed: 0,
       skipped: 0,
     });
-    expect(sendGrantsUpdate).not.toHaveBeenCalled();
   });
 });
 
 describe("refreshInstanceGrantsFromDefinition", () => {
-  it("pushes grants when live and routable", async () => {
-    const sendGrantsUpdate = mock(async () => {});
+  // BEHAVIOR CHANGE (runtime retirement): grants are rewritten in the DB but
+  // never live-pushed (the `grants.update` transport is gone), so `pushed` is
+  // always false regardless of routability. The instance picks up the new set
+  // on its next deploy/reconnect.
+  it("rewrites DB grants but never live-pushes (routable)", async () => {
     const collectGrants = mock(async () => [
       makeGrantRule("tool:attio_query_records", "invoke"),
     ]);
@@ -368,19 +328,20 @@ describe("refreshInstanceGrantsFromDefinition", () => {
       {
         sidecarRouter: makeSidecarRouter({
           getRoutableAddresses: () => ["live@global.example.com"],
-          sendGrantsUpdate,
         }),
-        grantStore: { collectGrants },
+        grantStore: {
+          collectGrants,
+          collectGrantsInChain: collectGrants,
+        },
       },
     );
 
-    expect(result).toEqual({ refreshed: true, pushed: true });
+    expect(result).toEqual({ refreshed: true, pushed: false });
     expect(toolGrantCalls).toHaveLength(1);
-    expect(sendGrantsUpdate).toHaveBeenCalledTimes(1);
   });
 
   it("rewrites DB grants but does not push when not routable", async () => {
-    const sendGrantsUpdate = mock(async () => {});
+    const collectGrants = mock(async (): Promise<GrantRule[]> => []);
     const db = {
       query: {
         agent: {
@@ -405,17 +366,16 @@ describe("refreshInstanceGrantsFromDefinition", () => {
       {
         sidecarRouter: makeSidecarRouter({
           getRoutableAddresses: () => [],
-          sendGrantsUpdate,
         }),
         grantStore: {
-          collectGrants: mock(async (): Promise<GrantRule[]> => []),
+          collectGrants,
+          collectGrantsInChain: collectGrants,
         },
       },
     );
 
     expect(result).toEqual({ refreshed: true, pushed: false });
     expect(toolGrantCalls).toHaveLength(1);
-    expect(sendGrantsUpdate).not.toHaveBeenCalled();
   });
 });
 

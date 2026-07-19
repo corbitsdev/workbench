@@ -2,10 +2,12 @@ import { useEffect, useMemo } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { type } from "arktype";
 import { api, buildEventSourceUrl, withDeployRetry } from "../lib/api";
+import { isDev, logger } from "../lib/logger";
 import { subscribeWorkflowRunStateStream } from "../lib/workflow-run-state-stream";
 import {
   isLogStateTerminal,
   isRecordTerminal,
+  isStatusTerminal,
   logRunStateSchema,
   reconcileRunState,
   runStateFromLog,
@@ -92,9 +94,12 @@ const workflowDeploymentListSchema = workflowDeploymentSchema.array();
 // The run list is static once every run is terminal (or there are none) — a new
 // run only appears via a mutation that invalidates the query. Poll only while
 // something is still advancing so the app frame stops hitting the endpoint every
-// 5s forever when nothing is running.
+// 5s forever when nothing is running. The run list here (and `WorkflowRun`)
+// carries a plain `string` status rather than `RunRecord["status"]`, so this
+// uses the widened `isStatusTerminal` sibling instead of casting into
+// `isRecordTerminal`.
 export function runListIsActive(runs: readonly { status: string }[]): boolean {
-  return runs.some((r) => !isRecordTerminal(r.status as RunRecord["status"]));
+  return runs.some((r) => !isStatusTerminal(r.status));
 }
 
 export function useWorkflowRuns(
@@ -416,17 +421,66 @@ export function useWorkflowRunState(
   tenantId?: string | null,
 ) {
   const queryClient = useQueryClient();
+
+  // NOTE: the record read below is a NON-reactive cache peek. It self-heals in
+  // every current consumer because they all mount `useWorkflowRecord` for the
+  // same key alongside this hook — so when the record advances (deploymentId
+  // appears, or the index flips terminal) that record query re-renders the
+  // component, re-running this hook to read the fresh cache. A FUTURE
+  // standalone consumer that calls `useWorkflowRunState` WITHOUT a co-located
+  // `useWorkflowRecord` would not get that re-render, leaving the gate/stream
+  // stuck on a stale peek; such a consumer must also observe the record (or
+  // this should be upgraded to `useWorkflowRecord` here).
+  const recordQueryKey = ["workflow-record", runId, tenantId ?? null];
+  const record = queryClient.getQueryData<RunRecord>(recordQueryKey);
+
+  // Dev-only self-check for the assumption documented above: this hook's
+  // provisioning gate only self-heals when a `useWorkflowRecord` for the SAME
+  // key is mounted alongside it. `record === undefined` alone can't tell "no
+  // query registered" apart from "query registered, still loading" — checking
+  // the query cache directly (rather than the data) distinguishes the two, so
+  // this only fires for the former. Runs in an effect (render stays pure;
+  // fires once per runId, not every render) with an exact-key match so a
+  // prefix-related query can never satisfy the check by accident.
+  useEffect(() => {
+    if (
+      isDev &&
+      runId !== null &&
+      queryClient.getQueryCache().find({
+        queryKey: ["workflow-record", runId, tenantId ?? null],
+        exact: true,
+      }) === undefined
+    ) {
+      logger.warn(
+        `useWorkflowRunState(${runId}): no co-mounted useWorkflowRecord found — the provisioning gate will default to firing immediately instead of waiting for a deploymentId.`,
+      );
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- dev-only diagnostic; re-check only when the run identity changes
+  }, [runId, tenantId]);
+
+  // A run has no event log to read until its per-run deployment is minted
+  // (CL-2755's `provisioning` window) — /state (and its SSE stream) 400s with
+  // "run has no deployment log to read" until then. Gating the read on a known
+  // deploymentId avoids ever caching that 400: with `retry: false` and no
+  // `refetchInterval`, a query that fires during the window would otherwise
+  // stay parked in `isError` — surfacing the misleading "Per-step detail isn't
+  // available for this run (it predates step-level tracing...)" message on a
+  // current-generation run that simply hasn't finished provisioning yet — and
+  // only self-heal via the slow (~90s worst case) SSE-reconnect fallback below
+  // (CL-3887). When no co-located record is cached yet, default to firing (the
+  // prior behavior), so a lone consumer of this hook is unaffected.
+  const deploymentKnown =
+    record === undefined || record.deploymentId !== undefined;
+
   // The per-step state now arrives live over SSE (CL-2779), pushed into this
   // cache entry by `useWorkflowRunStateStream` below — so there is no longer a
   // fixed-interval `refetchInterval` poll of /state (the source of the ~90s
   // "frozen while running" lag and the provisioning 400-loop, CL-2777). This
   // one-shot `queryFn` is the initial snapshot (and the stream-error fallback
-  // target); a genuine parse/read error still surfaces via `isError` — during
-  // the provisioning window /state 400s here exactly as before, so the panes'
-  // record-derived "Starting…" fallback is unchanged.
+  // target); a genuine parse/read error still surfaces via `isError`.
   const query = useQuery<LogRunState>({
     queryKey: ["workflow-run-state", runId, tenantId ?? null],
-    enabled: !!runId,
+    enabled: !!runId && deploymentKnown,
     staleTime: 0,
     retry: false,
     queryFn: () => fetchWorkflowRunState(runId as string, tenantId),
@@ -437,25 +491,12 @@ export function useWorkflowRunState(
   // query) and, when a record is mounted alongside, from the INDEX status — which
   // is authoritative for run-level terminal (CL-2727): an operator abort or the
   // liveness sweep writes `failed` only to the index, never the log.
-  //
-  // NOTE: the record read below is a NON-reactive cache peek. It self-heals in
-  // every current consumer because they all mount `useWorkflowRecord` for the
-  // same key alongside this hook — so when the index flips terminal that record
-  // query re-renders the component, re-running this hook to read the fresh cache
-  // and disable the stream. A FUTURE standalone consumer that calls
-  // `useWorkflowRunState` WITHOUT a co-located `useWorkflowRecord` would not get
-  // that re-render on an index-only abort (log stays non-terminal), leaving the
-  // stream open until unmount; such a consumer must also observe the record (or
-  // this should be upgraded to `useWorkflowRecord` here).
-  const record = queryClient.getQueryData<RunRecord>([
-    "workflow-record",
-    runId,
-    tenantId ?? null,
-  ]);
   const terminal =
     (record !== undefined && isRecordTerminal(record.status)) ||
     (query.data !== undefined && isLogStateTerminal(query.data.phase));
-  useWorkflowRunStateStream(runId, tenantId, { enabled: !terminal });
+  useWorkflowRunStateStream(runId, tenantId, {
+    enabled: !terminal && deploymentKnown,
+  });
 
   return query;
 }

@@ -12,6 +12,7 @@ import { drizzle } from "drizzle-orm/pglite";
 import { pushSchema } from "drizzle-kit/api";
 import { and, eq } from "drizzle-orm";
 import { resolveModelSources, schema as intxSchema } from "@intx/db";
+import type { GrantRule } from "@intx/types/authz";
 
 // The service pushes resolved sources to live sidecars through this native
 // primitive after any catalog mutation. No sidecars exist under PGlite, so mock
@@ -61,6 +62,25 @@ const SEEDED_TABLES = [
 ];
 
 const sidecarRouter = {} as never;
+
+// resolveModelSources fail-closes the credential secret unless the caller's
+// grants authorize `credential:{id}` / `use` (the same wildcard the tenant
+// system principal holds in production). Without it the resolved source would
+// be withheld as `credential_unauthorized`, so the apiKey assertions below
+// exercise the real gate rather than a bypass.
+const CREATOR_GRANTS: GrantRule[] = [
+  {
+    id: "grant-cred-use",
+    resource: "credential:*",
+    action: "use",
+    effect: "allow",
+    origin: "creator",
+    conditions: null,
+    expiresAt: null,
+    roleId: null,
+    principalId: null,
+  },
+];
 
 beforeAll(async () => {
   client = new PGlite();
@@ -149,9 +169,7 @@ describe("reconcileProviderCatalog over real Postgres", () => {
     // priority-2 direct source; see packages/catalog/src/offerings.ts).
     expect(offeringRow?.priority).toBe(2);
 
-    const resolution = await resolveModelSources(db, TENANT, [
-      { model: "kimi-k3" },
-    ]);
+    const resolution = await resolveModelSources(db, TENANT, [{ model: "kimi-k3" }], CREATOR_GRANTS);
     expect(resolution.ok).toBe(true);
     if (resolution.ok) {
       expect(resolution.sources[0]?.model).toBe("kimi-k3");
@@ -233,9 +251,7 @@ describe("reconcileProviderCatalog over real Postgres", () => {
     expect(providerRow?.baseURL).toBe(BASE_URL);
 
     // With the credential rebound, the model now resolves against a real secret.
-    const resolution = await resolveModelSources(db, TENANT, [
-      { model: "kimi-k3" },
-    ]);
+    const resolution = await resolveModelSources(db, TENANT, [{ model: "kimi-k3" }], CREATOR_GRANTS);
     expect(resolution.ok).toBe(true);
     expect(pushCalls).toContain(TENANT);
   });

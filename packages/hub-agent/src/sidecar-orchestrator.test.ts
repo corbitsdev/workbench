@@ -23,9 +23,7 @@ mock.module("./agent-key-store", () => ({
 }));
 
 mock.module("./session-manager", () => ({
-  createSessionManager: () => ({
-    onAgentEvent: () => () => {},
-  }),
+  createSessionManager: () => ({}),
 }));
 
 const sendEvent = mock(() => {});
@@ -35,8 +33,6 @@ mock.module("./ws/hub-link", () => ({
     connect: () => {},
     close: () => {},
     sendEvent,
-    sendConnectorState: () => {},
-    sendDeployApplyError: () => {},
   }),
 }));
 
@@ -55,8 +51,6 @@ function baseConfig(captureDeps: (deps: Deps) => void) {
     token: "tok",
     dataDir: "/data",
     transport: {} as never,
-    buildHarness: (() => {}) as never,
-    createAgentCrypto: (() => ({})) as never,
     cryptoOps: {
       generateKeyPair: async () => ({}) as never,
       signEd25519: () => new Uint8Array(),

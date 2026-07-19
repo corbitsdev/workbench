@@ -21,7 +21,7 @@ import {
   SKILL_VERSION_PAGE_SIZE,
 } from "../hooks/use-skills";
 import { getMe } from "../lib/hub-api";
-import { AppPageChromeRow, Button, toHumanLabel } from "@workbench/ui";
+import { AppPageChromeRow, Button, skillTitle } from "@workbench/ui";
 import { useSetPageChrome } from "../lib/page-chrome";
 
 type TreeNode =
@@ -252,25 +252,18 @@ export function SkillDetail() {
       });
   };
 
-  const skillTitle =
-    skill !== undefined
-      ? (skill.displayName ?? toHumanLabel(skill.name))
-      : undefined;
-  const skillSubtitle =
-    skill && skillTitle
-      ? skill.name.toLowerCase() === skillTitle.toLowerCase()
+  const title = skill !== undefined ? skillTitle(skill) : undefined;
+  const subtitle =
+    skill && title
+      ? skill.name.toLowerCase() === title.toLowerCase()
         ? undefined
         : skill.name
       : undefined;
 
   const pageChrome = useMemo(
     () =>
-      skillTitle ? (
-        <AppPageChromeRow
-          title={skillTitle}
-          titleSize="sm"
-          subtitle={skillSubtitle}
-        >
+      title ? (
+        <AppPageChromeRow title={title} titleSize="sm" subtitle={subtitle}>
           <Button
             type="button"
             variant="ghost"
@@ -283,7 +276,7 @@ export function SkillDetail() {
           </Button>
         </AppPageChromeRow>
       ) : null,
-    [skillTitle, skillSubtitle, navigate],
+    [title, subtitle, navigate],
   );
   useSetPageChrome(pageChrome);
 

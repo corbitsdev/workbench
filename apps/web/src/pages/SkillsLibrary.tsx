@@ -9,7 +9,7 @@ import {
   AppPageChromeRow,
   LibrarySearchInput,
   PagePanel,
-  toHumanLabel,
+  skillTitle,
   useViewMode,
   ViewToggle,
   type DataTableColumn,
@@ -44,7 +44,7 @@ function SkillCard({
   const hash = hashString(skill.id);
   const glyph = CATALOG_GLYPH_KINDS[hash % CATALOG_GLYPH_KINDS.length];
   const fill = CATALOG_GLYPH_FILLS[hash % CATALOG_GLYPH_FILLS.length];
-  const title = skill.displayName ?? toHumanLabel(skill.name);
+  const title = skillTitle(skill);
 
   return (
     <div
@@ -119,8 +119,7 @@ export function SkillsLibrary() {
       (skill) =>
         !q ||
         skill.name.toLowerCase().includes(q) ||
-        toHumanLabel(skill.name).toLowerCase().includes(q) ||
-        (skill.displayName ?? "").toLowerCase().includes(q),
+        skillTitle(skill).toLowerCase().includes(q),
     );
   }, [query, skillsQuery.data]);
 
@@ -171,7 +170,7 @@ export function SkillsLibrary() {
       key: "name",
       header: "Name",
       className: "font-medium text-text",
-      render: (s) => s.displayName ?? s.name,
+      render: (s) => skillTitle(s),
     },
     {
       key: "access",
@@ -252,7 +251,7 @@ export function SkillsLibrary() {
                     )
                   : undefined;
                 const revisionLabel = revisionTarget
-                  ? `revises ${revisionTarget.displayName ?? revisionTarget.name}`
+                  ? `revises ${skillTitle(revisionTarget)}`
                   : isRevision
                     ? "revises existing skill"
                     : null;
@@ -306,10 +305,9 @@ export function SkillsLibrary() {
                             size="library"
                             disabled={busy}
                             onClick={() => {
-                              const targetName =
-                                revisionTarget?.displayName ??
-                                revisionTarget?.name ??
-                                draft.title;
+                              const targetName = revisionTarget
+                                ? skillTitle(revisionTarget)
+                                : draft.title;
                               if (
                                 !window.confirm(
                                   `Publish a new version of “${targetName}”? This updates the live skill.`,
@@ -386,7 +384,12 @@ export function SkillsLibrary() {
           </section>
         )}
 
-        {skillsQuery.isLoading && (
+        {/* isPending, not isLoading: useSkillLibrary is `enabled`-gated on
+            tenantId, and TanStack v5's isLoading (isPending && isFetching) is
+            false while a disabled query sits with no data — using isLoading
+            here would flash the "no skills" empty state on every load until
+            tenantId resolves. isPending stays true through that window. */}
+        {skillsQuery.isPending && (
           <div className="py-10 text-[13px] text-text-3">Loading skills…</div>
         )}
         {skillsQuery.isError && (
@@ -394,7 +397,7 @@ export function SkillsLibrary() {
             Could not load skills.
           </div>
         )}
-        {!skillsQuery.isLoading &&
+        {!skillsQuery.isPending &&
           !skillsQuery.isError &&
           filteredLibrary.length === 0 && (
             <div className="py-10 text-[13px] text-text-3">
@@ -418,7 +421,7 @@ export function SkillsLibrary() {
               )}
             </div>
           )}
-        {!skillsQuery.isLoading &&
+        {!skillsQuery.isPending &&
           !skillsQuery.isError &&
           filteredLibrary.length > 0 &&
           (viewMode === "rows" ? (

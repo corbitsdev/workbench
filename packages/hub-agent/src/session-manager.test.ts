@@ -1,26 +1,12 @@
 import { describe, test, expect, afterEach } from "bun:test";
+import fs from "node:fs";
 import fsp from "node:fs/promises";
 import path from "node:path";
 import os from "node:os";
-import { createInMemoryTransport } from "@intx/mail-memory";
-import type { MailAuditStore } from "@workbench/storage-isogit";
-import type { Harness } from "@intx/harness";
-import type {
-  CryptoProvider,
-  HarnessConfig,
-  InferenceEvent,
-  InferenceSource,
-  KeyPair,
-} from "@intx/types/runtime";
+import git from "isomorphic-git";
 
-import { createAgentKeyStore } from "./agent-key-store";
-import { createAgentRepoStore, type AgentRepoStore } from "./agent-repo-store";
 import { createSessionManager } from "./session-manager";
-import type {
-  BuildHarnessArgs,
-  HarnessBuilder,
-  HarnessBundle,
-} from "./harness-builder";
+import type { AgentRepoStore } from "./agent-repo-store";
 
 const tempDirs: string[] = [];
 
@@ -35,769 +21,6 @@ afterEach(async () => {
   await Promise.all(
     dirs.map((d) => fsp.rm(d, { recursive: true, force: true })),
   );
-});
-
-function makeKeyPair(seed: number): KeyPair {
-  const privateKey = new Uint8Array(32);
-  const publicKey = new Uint8Array(32);
-  for (let i = 0; i < 32; i++) {
-    privateKey[i] = (seed + i) & 0xff;
-    publicKey[i] = (seed * 2 + i) & 0xff;
-  }
-  return { privateKey, publicKey };
-}
-
-function makeConfig(address: string): HarnessConfig {
-  return {
-    agentId: "test-agent",
-    agentAddress: address,
-    sessionId: "sess-1",
-    principalId: "principal-1",
-    tenantId: "tenant-1",
-    systemPrompt: "test",
-    tools: [],
-    grants: [],
-    sources: [
-      {
-        id: "test:test-model",
-        provider: "test",
-        apiKey: "key",
-        baseURL: "http://localhost",
-        model: "test-model",
-      },
-    ],
-    defaultSource: "test:test-model",
-  };
-}
-
-function makeCrypto(kp: KeyPair): CryptoProvider {
-  return {
-    async sign() {
-      return new Uint8Array(64);
-    },
-    async signSSH() {
-      return "unused";
-    },
-    async verify() {
-      return true;
-    },
-    getPublicKey: () => kp.publicKey,
-  };
-}
-
-function makeMailStoreStub(): MailAuditStore & { commits: string[] } {
-  const commits: string[] = [];
-
-  const store = {
-    commits,
-    async commitMail() {
-      commits.push("commit");
-      return null;
-    },
-  } as unknown as MailAuditStore & { commits: string[] };
-  return store;
-}
-
-function makeHarnessStub(
-  onSetSources?: (sources: InferenceSource[], defaultSource: string) => void,
-): Harness {
-  return {
-    start: () => {
-      /* no-op: harness.start is invoked by SessionManager but the tests
-         do not observe inference activity */
-    },
-    stop: () => {
-      /* no-op */
-    },
-    deliver: () => {
-      /* no-op */
-    },
-    setSource: () => {
-      /* no-op */
-    },
-    setSources: (sources: InferenceSource[], defaultSource: string) => {
-      onSetSources?.(sources, defaultSource);
-    },
-    get blobReader() {
-      throw new Error("blobReader unused in these tests");
-    },
-  } as unknown as Harness;
-}
-
-type SetSourcesRecord = {
-  sources: InferenceSource[];
-  defaultSource: string;
-};
-type RecordingBuilder = HarnessBuilder & {
-  buildCalls: BuildHarnessArgs[];
-  grants: GrantRecord[];
-  setSourcesCalls: SetSourcesRecord[];
-};
-type GrantRecord = { address: string; count: number };
-
-function makeRecordingBuilder(opts: {
-  rejectSource?: (s: { provider: string }) => boolean;
-  throwOnBuild?: boolean;
-}): RecordingBuilder {
-  const buildCalls: BuildHarnessArgs[] = [];
-  const grants: GrantRecord[] = [];
-  const setSourcesCalls: SetSourcesRecord[] = [];
-
-  return {
-    buildCalls,
-    grants,
-    setSourcesCalls,
-    canBuildSource(source) {
-      if (opts.rejectSource?.(source)) {
-        throw new Error(`source rejected: ${source.provider}`);
-      }
-    },
-    async build(args) {
-      buildCalls.push(args);
-      if (opts.throwOnBuild) {
-        throw new Error("builder boom");
-      }
-      const harness = makeHarnessStub((sources, defaultSource) => {
-        setSourcesCalls.push({ sources, defaultSource });
-      });
-      const mailStore = makeMailStoreStub();
-      const bundle: HarnessBundle = {
-        harness,
-        mailStore,
-        updateGrants(g) {
-          grants.push({ address: args.agentAddress, count: g.length });
-        },
-        disposers: [],
-      };
-      return bundle;
-    },
-  };
-}
-
-function makeManagerHarness(
-  dataDir: string,
-  opts: {
-    rejectSource?: (s: { provider: string }) => boolean;
-    throwOnBuild?: boolean;
-  } = {},
-): {
-  repoStore: ReturnType<typeof createAgentRepoStore>;
-  keyStore: ReturnType<typeof createAgentKeyStore>;
-  builder: RecordingBuilder;
-  transport: ReturnType<typeof createInMemoryTransport>;
-  manager: ReturnType<typeof createSessionManager>;
-  events: { addr: string; sid: string }[];
-} {
-  const repoStore = createAgentRepoStore({ dataDir });
-  const keyStore = createAgentKeyStore({
-    dataDir,
-    generateKeyPair: async () => makeKeyPair(11),
-    signEd25519: async () => new Uint8Array(64),
-    verifySSHSig: async () => true,
-  });
-  const builder = makeRecordingBuilder(opts);
-  const transport = createInMemoryTransport();
-  const events: { addr: string; sid: string }[] = [];
-  const manager = createSessionManager({
-    transport,
-    repoStore,
-    keyStore,
-    buildHarness: builder,
-    createAgentCrypto: (kp) => makeCrypto(kp),
-    onEvent: (addr, sid) => events.push({ addr, sid }),
-    onConnectorStateChanged: () => {
-      /* no-op: tests do not assert on connector state */
-    },
-  });
-  return { repoStore, keyStore, builder, transport, manager, events };
-}
-
-describe("SessionManager.provisionAgent + startSession happy path", () => {
-  test("invokes the builder with the resolved per-agent context", async () => {
-    const dataDir = await tempDir();
-    const { manager, builder } = makeManagerHarness(dataDir);
-    const cfg = makeConfig("agent@local");
-
-    await manager.provisionAgent(cfg);
-    await manager.startSession("agent@local");
-
-    expect(manager.hasSession("agent@local")).toBe(true);
-    expect(builder.buildCalls).toHaveLength(1);
-    const call = builder.buildCalls[0];
-    if (call === undefined) throw new Error("unreachable");
-    expect(call.agentAddress).toBe("agent@local");
-    expect(call.agentConfig.agentId).toBe("test-agent");
-    expect(call.defaultSource).toBe("test:test-model");
-    expect(call.sources.map((s) => s.id)).toContain("test:test-model");
-    expect(call.storeDir).toContain("agent_at_local");
-  });
-});
-
-describe("SessionManager.updateSources", () => {
-  const NEW_SOURCES: InferenceSource[] = [
-    {
-      id: "test:test-model",
-      provider: "test",
-      apiKey: "rotated-key",
-      baseURL: "http://localhost",
-      model: "test-model",
-    },
-    {
-      id: "test:fallback",
-      provider: "test",
-      apiKey: "fallback-key",
-      baseURL: "http://localhost",
-      model: "fallback-model",
-    },
-  ];
-
-  test("installs the full ordered list on the running harness", async () => {
-    const dataDir = await tempDir();
-    const { manager, builder } = makeManagerHarness(dataDir);
-    await manager.provisionAgent(makeConfig("agent@local"));
-    await manager.startSession("agent@local");
-
-    await manager.updateSources("agent@local", NEW_SOURCES, "test:test-model");
-
-    expect(builder.setSourcesCalls).toHaveLength(1);
-    const recorded = builder.setSourcesCalls[0];
-    if (recorded === undefined) throw new Error("unreachable");
-    expect(recorded.defaultSource).toBe("test:test-model");
-    expect(recorded.sources.map((s) => s.id)).toEqual([
-      "test:test-model",
-      "test:fallback",
-    ]);
-  });
-
-  test("rejects a default that names no source in the new list", async () => {
-    const dataDir = await tempDir();
-    const { manager } = makeManagerHarness(dataDir);
-    await manager.provisionAgent(makeConfig("agent@local"));
-    await manager.startSession("agent@local");
-
-    await expect(
-      manager.updateSources("agent@local", NEW_SOURCES, "test:missing"),
-    ).rejects.toThrow();
-  });
-});
-
-describe("SessionManager.startSession rollback when builder throws", () => {
-  test("restores provisioned state and unregisters the transport", async () => {
-    const dataDir = await tempDir();
-    const { manager, transport } = makeManagerHarness(dataDir, {
-      throwOnBuild: true,
-    });
-    const cfg = makeConfig("agent@local");
-
-    await manager.provisionAgent(cfg);
-    await expect(manager.startSession("agent@local")).rejects.toThrow(
-      "builder boom",
-    );
-
-    expect(manager.hasSession("agent@local")).toBe(false);
-    expect(manager.isProvisioned("agent@local")).toBe(true);
-    // Transport's per-agent view should be gone; getTransportFor throws
-    // for unregistered addresses.
-    expect(() => transport.getTransportFor("agent@local")).toThrow();
-  });
-});
-
-describe("SessionManager.restoreSessions mismatch handling", () => {
-  test("config without a key pair is reported as failed", async () => {
-    const dataDir = await tempDir();
-    const { manager, repoStore } = makeManagerHarness(dataDir);
-
-    // Agent with a config but no on-disk keypair → goes to `failed`.
-    await fsp.mkdir(path.join(dataDir, "ghost_at_local"), { recursive: true });
-    await repoStore.persistConfig("ghost@local", makeConfig("ghost@local"));
-
-    const result = await manager.restoreSessions();
-
-    expect(result.failed).toContain("ghost@local");
-    expect(result.restored.map((r) => r.address)).not.toContain("ghost@local");
-  });
-});
-
-describe("SessionManager.applyAssetPack materializes under the workspace dir", () => {
-  test("writes pack contents under <agentDir>/workspace/<mountPath>/", async () => {
-    const dataDir = await tempDir();
-    const { manager, repoStore } = makeManagerHarness(dataDir);
-
-    const address = "agent@local";
-    await manager.provisionAgent(makeConfig(address));
-
-    // Build a real pack from a tiny source repo so applyAssetPack
-    // can index it. Reuses isomorphic-git directly to avoid pulling
-    // in the asset-service surface for this test.
-    const sourceDir = path.join(dataDir, "asset-source");
-    await fsp.mkdir(sourceDir, { recursive: true });
-    const git = await import("isomorphic-git");
-    const fs = await import("node:fs");
-    await git.default.init({ fs, dir: sourceDir, defaultBranch: "main" });
-    await fsp.writeFile(path.join(sourceDir, "hello.txt"), "hello from asset");
-    await git.default.add({ fs, dir: sourceDir, filepath: "hello.txt" });
-    const commitSha = await git.default.commit({
-      fs,
-      dir: sourceDir,
-      message: "asset",
-      author: { name: "t", email: "t@t" },
-    });
-    const oids = new Set<string>([commitSha]);
-    const { commit } = await git.default.readCommit({
-      fs,
-      dir: sourceDir,
-      oid: commitSha,
-    });
-    oids.add(commit.tree);
-    const { tree } = await git.default.readTree({
-      fs,
-      dir: sourceDir,
-      oid: commit.tree,
-    });
-    for (const entry of tree) oids.add(entry.oid);
-    const packResult = await git.default.packObjects({
-      fs,
-      dir: sourceDir,
-      oids: [...oids],
-      write: false,
-    });
-    if (packResult.packfile === undefined) {
-      throw new Error("packObjects produced no pack");
-    }
-
-    await manager.applyAssetPack(
-      address,
-      "skills/greet/",
-      packResult.packfile,
-      "refs/heads/main",
-      commitSha,
-    );
-
-    const expected = path.join(
-      repoStore.getAgentDir(address),
-      "workspace",
-      "skills",
-      "greet",
-      "hello.txt",
-    );
-    const contents = await fsp.readFile(expected, "utf-8");
-    expect(contents).toBe("hello from asset");
-  });
-});
-
-describe("SessionManager.updateGrants routes through the bundle", () => {
-  test("calls bundle.updateGrants with the new grants and persists config", async () => {
-    const dataDir = await tempDir();
-    const { manager, builder, repoStore } = makeManagerHarness(dataDir);
-    const cfg = makeConfig("agent@local");
-
-    await manager.provisionAgent(cfg);
-    await manager.startSession("agent@local");
-
-    await manager.updateGrants("agent@local", [
-      {
-        id: "g-1",
-        resource: "*",
-        action: "*",
-        effect: "allow",
-        origin: "system",
-        conditions: null,
-        expiresAt: null,
-        roleId: null,
-        principalId: null,
-      },
-    ]);
-
-    expect(builder.grants).toEqual([{ address: "agent@local", count: 1 }]);
-
-    // Persisted config should now carry the new grants array length.
-    const configs = await repoStore.scanConfigs();
-    const entry = configs.find((c) => c.address === "agent@local");
-    expect(entry?.config.grants).toHaveLength(1);
-  });
-});
-
-describe("SessionManager.onAgentEvent per-agent fan-out", () => {
-  test("delivers events only to the subscribed agent's listeners and respects the disposer", async () => {
-    const dataDir = await tempDir();
-    const { manager, builder } = makeManagerHarness(dataDir);
-
-    await manager.provisionAgent(makeConfig("alice@local"));
-    await manager.startSession("alice@local");
-    await manager.provisionAgent(makeConfig("bob@local"));
-    await manager.startSession("bob@local");
-
-    const aliceBuild = builder.buildCalls.find(
-      (c) => c.agentAddress === "alice@local",
-    );
-    const bobBuild = builder.buildCalls.find(
-      (c) => c.agentAddress === "bob@local",
-    );
-    if (aliceBuild === undefined || bobBuild === undefined) {
-      throw new Error("unreachable: builder did not capture both addresses");
-    }
-
-    const aliceEvents: InferenceEvent[] = [];
-    const bobEvents: InferenceEvent[] = [];
-    const dispose = manager.onAgentEvent("alice@local", (e) =>
-      aliceEvents.push(e),
-    );
-    manager.onAgentEvent("bob@local", (e) => bobEvents.push(e));
-
-    const aliceTick: InferenceEvent = {
-      type: "inference.start",
-      seq: 0,
-      data: { model: "alice-m" },
-    };
-    const bobTick: InferenceEvent = {
-      type: "inference.start",
-      seq: 0,
-      data: { model: "bob-m" },
-    };
-    aliceBuild.onEvent(aliceTick);
-    bobBuild.onEvent(bobTick);
-
-    expect(aliceEvents).toEqual([aliceTick]);
-    expect(bobEvents).toEqual([bobTick]);
-
-    dispose();
-    aliceBuild.onEvent(aliceTick);
-    expect(aliceEvents).toEqual([aliceTick]);
-    // bob continues to receive after alice's disposer runs.
-    bobBuild.onEvent(bobTick);
-    expect(bobEvents).toEqual([bobTick, bobTick]);
-  });
-});
-
-async function seedAgentsOnDisk(
-  dataDir: string,
-  addresses: string[],
-): Promise<void> {
-  const seed = makeManagerHarness(dataDir);
-  for (const address of addresses) {
-    await seed.manager.provisionAgent(makeConfig(address));
-    await seed.manager.startSession(address);
-  }
-}
-
-function makeRestoredBundle(): HarnessBundle {
-  return {
-    harness: makeHarnessStub(),
-    mailStore: makeMailStoreStub(),
-    updateGrants() {
-      /* no-op: restore tests do not assert on grants */
-    },
-    disposers: [],
-  };
-}
-
-function makeRestoreStores(dataDir: string): {
-  repoStore: ReturnType<typeof createAgentRepoStore>;
-  keyStore: ReturnType<typeof createAgentKeyStore>;
-} {
-  return {
-    repoStore: createAgentRepoStore({ dataDir }),
-    keyStore: createAgentKeyStore({
-      dataDir,
-      generateKeyPair: async () => makeKeyPair(11),
-      signEd25519: async () => new Uint8Array(64),
-      verifySSHSig: async () => true,
-    }),
-  };
-}
-
-function inboundMessage(id: string, to: string): Uint8Array {
-  return new TextEncoder().encode(
-    [
-      "From: external@remote.interchange",
-      `To: ${to}`,
-      "Date: Thu, 17 Apr 2026 12:00:00 +0000",
-      `Message-ID: <${id}@remote.interchange>`,
-      "Subject: hi",
-      "Content-Type: text/plain",
-      "",
-      "body",
-    ].join("\r\n"),
-  );
-}
-
-function makeControlledBuilder(opts: {
-  gate?: Promise<void>;
-  failTimes?: Map<string, number>;
-}): { builder: HarnessBuilder; buildStarts: string[] } {
-  const buildStarts: string[] = [];
-  const remaining = opts.failTimes ?? new Map<string, number>();
-  const builder: HarnessBuilder = {
-    canBuildSource() {
-      /* accept every source */
-    },
-    async build(args) {
-      buildStarts.push(args.agentAddress);
-      if (opts.gate !== undefined) await opts.gate;
-      const left = remaining.get(args.agentAddress) ?? 0;
-      if (left > 0) {
-        remaining.set(args.agentAddress, left - 1);
-        throw new Error("build boom");
-      }
-      return makeRestoredBundle();
-    },
-  };
-  return { builder, buildStarts };
-}
-
-function makeLazyManager(
-  dataDir: string,
-  builder: HarnessBuilder,
-  opts: {
-    sleep?: (ms: number) => Promise<void>;
-    wakeMaxAttempts?: number;
-  } = {},
-): {
-  manager: ReturnType<typeof createSessionManager>;
-  transport: ReturnType<typeof createInMemoryTransport>;
-} {
-  const { repoStore, keyStore } = makeRestoreStores(dataDir);
-  const transport = createInMemoryTransport();
-  const manager = createSessionManager({
-    transport,
-    repoStore,
-    keyStore,
-    buildHarness: builder,
-    createAgentCrypto: (kp) => makeCrypto(kp),
-    onEvent: () => {
-      /* no-op */
-    },
-    onConnectorStateChanged: () => {
-      /* no-op */
-    },
-    ...(opts.sleep !== undefined ? { sleep: opts.sleep } : {}),
-    ...(opts.wakeMaxAttempts !== undefined
-      ? { wakeMaxAttempts: opts.wakeMaxAttempts }
-      : {}),
-  });
-  return { manager, transport };
-}
-
-describe("SessionManager.createSessionManager validation", () => {
-  test("rejects a non-positive wakeMaxAttempts", async () => {
-    const dataDir = await tempDir();
-    const { repoStore, keyStore } = makeRestoreStores(dataDir);
-    expect(() =>
-      createSessionManager({
-        transport: createInMemoryTransport(),
-        repoStore,
-        keyStore,
-        buildHarness: makeRecordingBuilder({}),
-        createAgentCrypto: (kp) => makeCrypto(kp),
-        onEvent: () => {
-          /* no-op */
-        },
-        onConnectorStateChanged: () => {
-          /* no-op */
-        },
-        wakeMaxAttempts: 0,
-      }),
-    ).toThrow(/wakeMaxAttempts must be a positive integer/);
-  });
-});
-
-describe("SessionManager.restoreSessions lazy registration", () => {
-  test("registers on-disk agents as wakeable without building a harness", async () => {
-    const dataDir = await tempDir();
-    const addresses = ["a@local", "b@local"];
-    await seedAgentsOnDisk(dataDir, addresses);
-
-    const { builder, buildStarts } = makeControlledBuilder({});
-    const { manager } = makeLazyManager(dataDir, builder);
-
-    const result = await manager.restoreSessions();
-
-    // No harness was built during restore — the whole point of lazy
-    // restore is to skip the tool-package build + credential fetch.
-    expect(buildStarts).toEqual([]);
-    expect(result.failed).toEqual([]);
-    expect(result.restored.map((r) => r.address).sort()).toEqual(
-      [...addresses].sort(),
-    );
-    for (const address of addresses) {
-      expect(manager.isWakeable(address)).toBe(true);
-      expect(manager.hasSession(address)).toBe(false);
-    }
-  });
-
-  test("config without a key pair is reported as failed and is not wakeable", async () => {
-    const dataDir = await tempDir();
-    const { manager, repoStore } = makeManagerHarness(dataDir);
-
-    await fsp.mkdir(path.join(dataDir, "ghost_at_local"), { recursive: true });
-    await repoStore.persistConfig("ghost@local", makeConfig("ghost@local"));
-
-    const result = await manager.restoreSessions();
-
-    expect(result.failed).toContain("ghost@local");
-    expect(result.restored.map((r) => r.address)).not.toContain("ghost@local");
-    expect(manager.isWakeable("ghost@local")).toBe(false);
-  });
-});
-
-describe("SessionManager.wakeAgent on-demand build", () => {
-  test("builds the harness on the first wake and clears wakeable", async () => {
-    const dataDir = await tempDir();
-    await seedAgentsOnDisk(dataDir, ["a@local"]);
-    const { builder, buildStarts } = makeControlledBuilder({});
-    const { manager } = makeLazyManager(dataDir, builder);
-    await manager.restoreSessions();
-
-    await manager.wakeAgent("a@local");
-
-    expect(buildStarts).toEqual(["a@local"]);
-    expect(manager.hasSession("a@local")).toBe(true);
-    expect(manager.isWakeable("a@local")).toBe(false);
-  });
-
-  test("concurrent wakes of the same agent build the harness once", async () => {
-    const dataDir = await tempDir();
-    await seedAgentsOnDisk(dataDir, ["a@local"]);
-    let release!: () => void;
-    const gate = new Promise<void>((resolve) => {
-      release = resolve;
-    });
-    const { builder, buildStarts } = makeControlledBuilder({ gate });
-    const { manager } = makeLazyManager(dataDir, builder);
-    await manager.restoreSessions();
-
-    const first = manager.wakeAgent("a@local");
-    const second = manager.wakeAgent("a@local");
-    release();
-    await Promise.all([first, second]);
-
-    expect(buildStarts).toEqual(["a@local"]);
-    expect(manager.hasSession("a@local")).toBe(true);
-  });
-
-  test("retries a failing build with bounded backoff, then succeeds", async () => {
-    const dataDir = await tempDir();
-    await seedAgentsOnDisk(dataDir, ["a@local"]);
-    const failTimes = new Map<string, number>([["a@local", 2]]);
-    const delays: number[] = [];
-    const sleep = async (ms: number) => {
-      delays.push(ms);
-    };
-    const { builder, buildStarts } = makeControlledBuilder({ failTimes });
-    const { manager } = makeLazyManager(dataDir, builder, { sleep });
-    await manager.restoreSessions();
-
-    await manager.wakeAgent("a@local");
-
-    // Two failed attempts, then a third that lands.
-    expect(buildStarts.length).toBe(3);
-    expect(delays.length).toBe(2);
-    expect(delays[1]).toBeGreaterThan(delays[0]!);
-    expect(manager.hasSession("a@local")).toBe(true);
-  });
-
-  test("a wake that exhausts its retries rejects and leaves the agent wakeable", async () => {
-    const dataDir = await tempDir();
-    await seedAgentsOnDisk(dataDir, ["a@local"]);
-    const failTimes = new Map<string, number>([["a@local", 99]]);
-    const sleep = async () => {
-      /* immediate */
-    };
-    const { builder, buildStarts } = makeControlledBuilder({ failTimes });
-    const { manager } = makeLazyManager(dataDir, builder, {
-      sleep,
-      wakeMaxAttempts: 3,
-    });
-    await manager.restoreSessions();
-
-    await expect(manager.wakeAgent("a@local")).rejects.toThrow("build boom");
-
-    expect(buildStarts.length).toBe(3);
-    expect(manager.hasSession("a@local")).toBe(false);
-    // Still wakeable: a failed wake must never leave the agent stuck.
-    expect(manager.isWakeable("a@local")).toBe(true);
-  });
-});
-
-describe("SessionManager lifecycle of a never-woken agent", () => {
-  test("destroySession drops the wakeable entry without a harness teardown", async () => {
-    const dataDir = await tempDir();
-    await seedAgentsOnDisk(dataDir, ["a@local"]);
-    const { builder, buildStarts } = makeControlledBuilder({});
-    const { manager } = makeLazyManager(dataDir, builder);
-    await manager.restoreSessions();
-
-    await manager.destroySession("a@local");
-
-    expect(buildStarts).toEqual([]);
-    expect(manager.isWakeable("a@local")).toBe(false);
-    // A later wake for the dropped address must fail loudly, not build.
-    await expect(manager.wakeAgent("a@local")).rejects.toThrow(
-      /No wakeable agent/,
-    );
-  });
-
-  test("re-provision supersedes the wakeable entry", async () => {
-    const dataDir = await tempDir();
-    await seedAgentsOnDisk(dataDir, ["a@local"]);
-    const { builder } = makeControlledBuilder({});
-    const { manager } = makeLazyManager(dataDir, builder);
-    await manager.restoreSessions();
-
-    await manager.provisionAgent(makeConfig("a@local"));
-
-    expect(manager.isWakeable("a@local")).toBe(false);
-    expect(manager.isProvisioned("a@local")).toBe(true);
-  });
-});
-
-describe("SessionManager.deliverInboundMail lazy delivery", () => {
-  test("parks messages during the build and replays them in order", async () => {
-    const dataDir = await tempDir();
-    const address = "a@local";
-    await seedAgentsOnDisk(dataDir, [address]);
-    let release!: () => void;
-    const gate = new Promise<void>((resolve) => {
-      release = resolve;
-    });
-    const { builder, buildStarts } = makeControlledBuilder({ gate });
-    const { manager, transport } = makeLazyManager(dataDir, builder);
-    await manager.restoreSessions();
-
-    // Two messages arrive before the harness finishes building. Neither is
-    // delivered yet (the mailbox is not registered until the build runs),
-    // and the second must not start a second build.
-    manager.deliverInboundMail(address, inboundMessage("m1", address));
-    manager.deliverInboundMail(address, inboundMessage("m2", address));
-    expect(buildStarts).toEqual([address]);
-    expect(manager.hasSession(address)).toBe(false);
-
-    release();
-    // The wake is already in flight; awaiting it (de-duplicated) waits for
-    // the build, and the parked-mail drain runs before this resolves
-    // because it was attached to the same build promise first.
-    await manager.wakeAgent(address);
-
-    const agentTransport = transport.getTransportFor(address);
-    const refs = await agentTransport.search("INBOX", {});
-    expect(refs.length).toBe(2);
-  });
-
-  test("delivers straight to a live session without parking", async () => {
-    const dataDir = await tempDir();
-    const address = "a@local";
-    await seedAgentsOnDisk(dataDir, [address]);
-    const { builder } = makeControlledBuilder({});
-    const { manager, transport } = makeLazyManager(dataDir, builder);
-    await manager.restoreSessions();
-    await manager.wakeAgent(address);
-
-    manager.deliverInboundMail(address, inboundMessage("m1", address));
-
-    const agentTransport = transport.getTransportFor(address);
-    const refs = await agentTransport.search("INBOX", {});
-    expect(refs.length).toBe(1);
-  });
 });
 
 function makeStubRepoStore(opts: {
@@ -815,35 +38,99 @@ function makeStubRepoStore(opts: {
     createStatePack: opts.createStatePack,
     getDeployRef: unused("getDeployRef"),
     remove: opts.remove,
-    persistConfig: unused("persistConfig"),
-    persistPairing: unused("persistPairing"),
-    scanConfigs: unused("scanConfigs"),
   };
 }
 
 function makeManagerWithRepoStore(
-  dataDir: string,
   repoStore: AgentRepoStore,
 ): ReturnType<typeof createSessionManager> {
-  return createSessionManager({
-    transport: createInMemoryTransport(),
-    repoStore,
-    keyStore: createAgentKeyStore({
-      dataDir,
-      generateKeyPair: async () => makeKeyPair(11),
-      signEd25519: async () => new Uint8Array(64),
-      verifySSHSig: async () => true,
-    }),
-    buildHarness: makeRecordingBuilder({}),
-    createAgentCrypto: (kp) => makeCrypto(kp),
-    onEvent: () => {
-      /* no-op */
-    },
-    onConnectorStateChanged: () => {
-      /* no-op */
-    },
-  });
+  return createSessionManager({ repoStore });
 }
+
+async function buildAssetPack(
+  files: Record<string, string>,
+): Promise<{ pack: Uint8Array; commitSha: string }> {
+  const sourceDir = await tempDir();
+  await git.init({ fs, dir: sourceDir, defaultBranch: "main" });
+
+  for (const [rel, content] of Object.entries(files)) {
+    const abs = path.join(sourceDir, rel);
+    await fsp.mkdir(path.dirname(abs), { recursive: true });
+    await fsp.writeFile(abs, content);
+    await git.add({ fs, dir: sourceDir, filepath: rel });
+  }
+
+  const commitSha = await git.commit({
+    fs,
+    dir: sourceDir,
+    message: "asset",
+    author: { name: "test", email: "test@test.dev" },
+  });
+
+  const oids = new Set<string>([commitSha]);
+  const { commit } = await git.readCommit({
+    fs,
+    dir: sourceDir,
+    oid: commitSha,
+  });
+  oids.add(commit.tree);
+  async function walkTree(treeOid: string): Promise<void> {
+    const { tree } = await git.readTree({ fs, dir: sourceDir, oid: treeOid });
+    for (const entry of tree) {
+      oids.add(entry.oid);
+      if (entry.type === "tree") await walkTree(entry.oid);
+    }
+  }
+  await walkTree(commit.tree);
+
+  const result = await git.packObjects({
+    fs,
+    dir: sourceDir,
+    oids: [...oids],
+    write: false,
+  });
+  if (result.packfile === undefined) {
+    throw new Error("packObjects produced no packfile");
+  }
+  return { pack: result.packfile, commitSha };
+}
+
+describe("SessionManager.applyAssetPack", () => {
+  test("materializes the pack under <agentDir>/workspace/<mountPath>/", async () => {
+    const dataDir = await tempDir();
+    const { pack, commitSha } = await buildAssetPack({
+      "greet/SKILL.md": "---\nname: greet\n---\nbody\n",
+    });
+
+    // The wrapper's only logic over `applyAssetPackFn` is the workspace-root
+    // composition: `<agentDir>/workspace`. Prove the pack lands there.
+    const repoStore = makeStubRepoStore({
+      dataDir,
+      createStatePack: () =>
+        Promise.reject(new Error("createStatePack not exercised by this test")),
+      remove: () =>
+        Promise.reject(new Error("remove not exercised by this test")),
+    });
+    const manager = makeManagerWithRepoStore(repoStore);
+
+    await manager.applyAssetPack(
+      "agent@local",
+      "skills/example/",
+      pack,
+      "refs/heads/main",
+      commitSha,
+    );
+
+    const materialized = path.join(
+      dataDir,
+      "agent@local",
+      "workspace",
+      "skills/example",
+      "greet/SKILL.md",
+    );
+    expect(fs.existsSync(materialized)).toBe(true);
+  });
+});
 
 describe("SessionManager repo-operation serialization", () => {
   test("deleteAgentDir removes the directory only after an in-flight state-pack read completes", async () => {
@@ -872,7 +159,7 @@ describe("SessionManager repo-operation serialization", () => {
       },
     });
 
-    const manager = makeManagerWithRepoStore(dataDir, repoStore);
+    const manager = makeManagerWithRepoStore(repoStore);
 
     const rejections: unknown[] = [];
     const onRejection = (reason: unknown) => rejections.push(reason);
@@ -925,7 +212,7 @@ describe("SessionManager repo-operation serialization", () => {
       },
     });
 
-    const manager = makeManagerWithRepoStore(dataDir, repoStore);
+    const manager = makeManagerWithRepoStore(repoStore);
 
     const rejections: unknown[] = [];
     const onRejection = (reason: unknown) => rejections.push(reason);

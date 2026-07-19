@@ -1,10 +1,20 @@
 // Presentation mapping for the artifact gallery. The package returns clean
 // domain data; this module decides how to visualize it. Maps an artifact
-// `kind` to a gallery tile's label, decorative viz, fill color, and grid span.
+// `kind` to a gallery tile's label, fill color, and grid span. This is the
+// single source of truth for kind labels — apps/web's detail-page label
+// (`resolveKindLabel`) defers to `explicitVisualForKind` so the card chip and
+// the detail header never disagree.
 
 import type { ArtifactWithSession } from "@workbench/shared";
-import { isLinkedInPostArtifactKind } from "./artifact-kinds";
-import { previewExcerpt } from "./artifact-preview-family";
+import {
+  isLinkedInPostArtifactKind,
+  LINKEDIN_POST_ARTIFACT_KINDS,
+} from "./artifact-kinds";
+import {
+  artifactPreviewFamily,
+  comparisonSummary,
+  previewExcerpt,
+} from "./artifact-preview-family";
 import { GalleryArtifactParseError, parseGalleryArtifact } from "./types";
 import type { ArtifactVisual, GalleryArtifact } from "./types";
 
@@ -12,7 +22,6 @@ import type { ArtifactVisual, GalleryArtifact } from "./types";
 // so unknown kinds fall back to a neutral document tile.
 const LINKEDIN_POST_VISUAL: ArtifactVisual = {
   label: "LinkedIn Post",
-  viz: "lines",
   fill: "bg-blue",
   span: "row-span-2",
   experimentalFill: "bg-blue/85",
@@ -21,17 +30,31 @@ const LINKEDIN_POST_VISUAL: ArtifactVisual = {
 
 const REPORT_VISUAL: ArtifactVisual = {
   label: "Report",
-  viz: "deck",
   fill: "bg-charcoal",
   span: "row-span-4",
   experimentalFill: "bg-charcoal/90",
   experimentalSpan: "row-span-4",
 };
 
+const PRESENTATION_VISUAL: ArtifactVisual = {
+  label: "Presentation",
+  fill: "bg-charcoal",
+  span: "row-span-4",
+  experimentalFill: "bg-charcoal/90",
+  experimentalSpan: "row-span-4",
+};
+
+const COMPARISON_VISUAL: ArtifactVisual = {
+  label: "Comparison",
+  fill: "bg-green",
+  span: "row-span-3",
+  experimentalFill: "bg-green/85",
+  experimentalSpan: "row-span-3",
+};
+
 const KIND_VISUALS: Record<string, ArtifactVisual> = {
   email: {
     label: "Email",
-    viz: "lines",
     fill: "bg-orange",
     span: "row-span-3",
     experimentalFill: "bg-orange/85",
@@ -39,7 +62,6 @@ const KIND_VISUALS: Record<string, ArtifactVisual> = {
   },
   "twitter-post": {
     label: "Tweet",
-    viz: "lines",
     fill: "bg-blue",
     span: "row-span-2",
     experimentalFill: "bg-blue/85",
@@ -47,7 +69,6 @@ const KIND_VISUALS: Record<string, ArtifactVisual> = {
   },
   "founder-pov-post": {
     label: "Founder POV",
-    viz: "lines",
     fill: "bg-blue",
     span: "row-span-2",
     experimentalFill: "bg-blue/85",
@@ -55,7 +76,6 @@ const KIND_VISUALS: Record<string, ArtifactVisual> = {
   },
   "one-pager": {
     label: "One-Pager",
-    viz: "deck",
     fill: "bg-charcoal",
     span: "row-span-4",
     experimentalFill: "bg-charcoal/90",
@@ -63,7 +83,6 @@ const KIND_VISUALS: Record<string, ArtifactVisual> = {
   },
   blog: {
     label: "Blog Post",
-    viz: "deck",
     fill: "bg-charcoal",
     span: "row-span-4",
     experimentalFill: "bg-charcoal/90",
@@ -71,7 +90,13 @@ const KIND_VISUALS: Record<string, ArtifactVisual> = {
   },
   "case-study": {
     label: "Case Study",
-    viz: "deck",
+    fill: "bg-charcoal",
+    span: "row-span-4",
+    experimentalFill: "bg-charcoal/90",
+    experimentalSpan: "row-span-4",
+  },
+  "case-study-draft": {
+    label: "Case Study",
     fill: "bg-charcoal",
     span: "row-span-4",
     experimentalFill: "bg-charcoal/90",
@@ -79,7 +104,13 @@ const KIND_VISUALS: Record<string, ArtifactVisual> = {
   },
   "objection-handling": {
     label: "Objection Handling",
-    viz: "deck",
+    fill: "bg-charcoal",
+    span: "row-span-4",
+    experimentalFill: "bg-charcoal/90",
+    experimentalSpan: "row-span-4",
+  },
+  "objection-handling-doc": {
+    label: "Objection Handling",
     fill: "bg-charcoal",
     span: "row-span-4",
     experimentalFill: "bg-charcoal/90",
@@ -87,15 +118,65 @@ const KIND_VISUALS: Record<string, ArtifactVisual> = {
   },
   "customer-quotes": {
     label: "Customer Quotes",
-    viz: "deck",
     fill: "bg-charcoal",
     span: "row-span-4",
     experimentalFill: "bg-charcoal/90",
     experimentalSpan: "row-span-4",
   },
+  "customer-quote-pulls": {
+    label: "Customer Quotes",
+    fill: "bg-charcoal",
+    span: "row-span-4",
+    experimentalFill: "bg-charcoal/90",
+    experimentalSpan: "row-span-4",
+  },
+  "sales-one-pager": {
+    label: "Sales One-Pager",
+    fill: "bg-charcoal",
+    span: "row-span-4",
+    experimentalFill: "bg-charcoal/90",
+    experimentalSpan: "row-span-4",
+  },
+  "pain-points-blog": {
+    label: "Pain Points Blog",
+    fill: "bg-charcoal",
+    span: "row-span-4",
+    experimentalFill: "bg-charcoal/90",
+    experimentalSpan: "row-span-4",
+  },
+  "follow-up-email": {
+    label: "Follow-up Email",
+    fill: "bg-orange",
+    span: "row-span-3",
+    experimentalFill: "bg-orange/85",
+    experimentalSpan: "row-span-3",
+  },
+  "ab-comparison": COMPARISON_VISUAL,
+  presentation: PRESENTATION_VISUAL,
+  gamma_presentation: PRESENTATION_VISUAL,
+  "csv-export": {
+    label: "CSV",
+    fill: "bg-orange",
+    span: "row-span-2",
+    experimentalFill: "bg-orange/85",
+    experimentalSpan: "row-span-2",
+  },
+  file: {
+    label: "File",
+    fill: "bg-cream",
+    span: "row-span-2",
+    experimentalFill: "bg-cream",
+    experimentalSpan: "row-span-2",
+  },
+  selection: {
+    label: "Selection",
+    fill: "bg-cream",
+    span: "row-span-2",
+    experimentalFill: "bg-cream",
+    experimentalSpan: "row-span-2",
+  },
   battlecard: {
     label: "Battlecard",
-    viz: "grid",
     fill: "bg-green",
     span: "row-span-3",
     experimentalFill: "bg-green/85",
@@ -103,7 +184,6 @@ const KIND_VISUALS: Record<string, ArtifactVisual> = {
   },
   "pain-points": {
     label: "Pain Points",
-    viz: "bars",
     fill: "bg-orange",
     span: "row-span-3",
     experimentalFill: "bg-orange/85",
@@ -111,23 +191,20 @@ const KIND_VISUALS: Record<string, ArtifactVisual> = {
   },
   "call-transcript": {
     label: "Transcript",
-    viz: "lines",
     fill: "bg-cream",
     span: "row-span-4",
     experimentalFill: "bg-cream",
     experimentalSpan: "row-span-4",
   },
   web: {
-    label: "Web",
-    viz: "deck",
+    label: "Web page",
     fill: "bg-blue",
     span: "row-span-4",
     experimentalFill: "bg-blue/85",
     experimentalSpan: "row-span-4",
   },
   web_site: {
-    label: "Web site",
-    viz: "deck",
+    label: "Web page",
     fill: "bg-blue",
     span: "row-span-4",
     experimentalFill: "bg-blue/85",
@@ -135,7 +212,6 @@ const KIND_VISUALS: Record<string, ArtifactVisual> = {
   },
   image: {
     label: "Image",
-    viz: "deck",
     fill: "bg-blue",
     span: "row-span-3",
     experimentalFill: "bg-blue/85",
@@ -151,18 +227,34 @@ const KIND_VISUALS: Record<string, ArtifactVisual> = {
 
 const FALLBACK_VISUAL: ArtifactVisual = {
   label: "Document",
-  viz: "lines",
   fill: "bg-cream",
   span: "row-span-3",
   experimentalFill: "bg-cream",
   experimentalSpan: "row-span-3",
 };
 
-export function visualForKind(kind: string): ArtifactVisual {
+/**
+ * The visual for a kind that is explicitly known to this module (a LinkedIn
+ * variant or a `KIND_VISUALS` entry), or undefined for anything else. This is
+ * the vocabulary other surfaces (e.g. apps/web's detail-page label) should
+ * defer to, rather than each maintaining its own kind → label table.
+ */
+export function explicitVisualForKind(kind: string): ArtifactVisual | undefined {
   if (isLinkedInPostArtifactKind(kind)) {
     return LINKEDIN_POST_VISUAL;
   }
-  return KIND_VISUALS[kind] ?? FALLBACK_VISUAL;
+  return KIND_VISUALS[kind];
+}
+
+/** Every kind with an explicit visual/label — the domain over which the
+ * card-chip and detail-header labels are guaranteed to agree. */
+export const KNOWN_ARTIFACT_KINDS: readonly string[] = [
+  ...LINKEDIN_POST_ARTIFACT_KINDS,
+  ...Object.keys(KIND_VISUALS),
+];
+
+export function visualForKind(kind: string): ArtifactVisual {
+  return explicitVisualForKind(kind) ?? FALLBACK_VISUAL;
 }
 
 const STATUS_LABELS: Record<string, string> = {
@@ -214,6 +306,33 @@ function artifactJobLabel(artifact: ArtifactWithSession): string | undefined {
     }
   }
   return undefined;
+}
+
+// Two initials from a real name (e.g. "Jane Doe" -> "JD"); a single-word name
+// yields its first letter only.
+export function initialsFromName(name: string): string {
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return "";
+  const first = parts[0]?.[0] ?? "";
+  const last = parts.length > 1 ? (parts[parts.length - 1]?.[0] ?? "") : "";
+  return (first + last).toUpperCase();
+}
+
+// The creator-initials badge is a "someone else made this" signal, never a
+// self-reference: it renders only when the artifact's owner is known, named,
+// and distinct from the viewer. `viewerPrincipalId` absent means the caller
+// has not identified a viewer (e.g. an unauthenticated/system render), so the
+// badge is suppressed rather than guessed.
+function creatorInitialsFor(
+  artifact: ArtifactWithSession,
+  viewerPrincipalId: string | undefined,
+): string | undefined {
+  if (viewerPrincipalId === undefined) return undefined;
+  if (artifact.ownerPrincipalId === null) return undefined;
+  if (artifact.ownerPrincipalId === viewerPrincipalId) return undefined;
+  if (!artifact.ownerName) return undefined;
+  const initials = initialsFromName(artifact.ownerName);
+  return initials.length > 0 ? initials : undefined;
 }
 
 const ORIGIN_LABELS: Record<string, string> = {
@@ -273,6 +392,8 @@ export function artifactProvenanceLabel(
 export type ToGalleryArtifactOptions = {
   thumbnailUrl?: string | undefined;
   thumbnailAlt?: string | undefined;
+  /** The viewing user's principal id, used to suppress the creator-initials badge on their own artifacts. */
+  viewerPrincipalId?: string | undefined;
 };
 
 export function toGalleryArtifact(
@@ -281,10 +402,17 @@ export function toGalleryArtifact(
 ): GalleryArtifact {
   const visual = visualForKind(artifact.kind);
   const provenance = artifactProvenance(artifact.source);
-  const excerpt = previewExcerpt(artifact.content, {
-    fallbackTitle: artifact.title,
-  });
+  const family = artifactPreviewFamily(artifact.kind);
+  const excerpt =
+    family === "comparison"
+      ? (comparisonSummary(artifact.content) ??
+        previewExcerpt(artifact.content, { fallbackTitle: artifact.title }))
+      : previewExcerpt(artifact.content, { fallbackTitle: artifact.title });
   const from = artifactJobLabel(artifact);
+  const creatorInitials = creatorInitialsFor(
+    artifact,
+    options.viewerPrincipalId,
+  );
   return parseGalleryArtifact({
     ...visual,
     id: artifact.id,
@@ -302,6 +430,7 @@ export function toGalleryArtifact(
     ...(options.thumbnailAlt !== undefined
       ? { thumbnailAlt: options.thumbnailAlt }
       : {}),
+    ...(creatorInitials !== undefined ? { creatorInitials } : {}),
   });
 }
 

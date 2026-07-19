@@ -29,11 +29,13 @@ function makeThread(n: number): {
 let threadsData = [makeThread(1), makeThread(2)];
 let totalCount = 2;
 
+const useMyraThreadsSpy = mock(() => ({
+  data: { threads: threadsData, total: totalCount },
+  isLoading: false,
+}));
+
 mock.module("../../hooks/use-myra-threads", () => ({
-  useMyraThreads: () => ({
-    data: { threads: threadsData, total: totalCount },
-    isLoading: false,
-  }),
+  useMyraThreads: useMyraThreadsSpy,
   useRenameMyraThread: () => ({ mutate: renameMutate, isPending: false }),
   useDeleteMyraThread: () => ({ mutate: deleteMutate, isPending: false }),
   writeLastActiveThreadId: () => {},
@@ -48,6 +50,7 @@ const {
 beforeEach(() => {
   renameMutate.mockClear();
   deleteMutate.mockClear();
+  useMyraThreadsSpy.mockClear();
   threadsData = [makeThread(1), makeThread(2)];
   totalCount = 2;
   resetLocallyUsedMyraThreads();
@@ -75,6 +78,13 @@ describe("ThreadList", () => {
   it("shows no 'View all' link when below the sidebar limit", () => {
     renderList();
     expect(screen.queryByText(/view all chats/i)).toBeNull();
+  });
+
+  it("queries the thread list once, not once per row", () => {
+    threadsData = Array.from({ length: 5 }, (_, i) => makeThread(i + 1));
+    totalCount = 5;
+    renderList();
+    expect(useMyraThreadsSpy).toHaveBeenCalledTimes(1);
   });
 
   it("shows no 'View all' link when the total equals what's shown", () => {

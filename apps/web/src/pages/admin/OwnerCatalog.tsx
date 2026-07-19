@@ -42,6 +42,7 @@ export function OwnerCatalog() {
   const credentials = useQuery({
     queryKey: ["owner", "credentials"],
     queryFn: getOwnerCredentials,
+    staleTime: 5 * 60_000,
   });
   const inferenceCredentials = credentials.data?.filter(
     (c) => c.kind === "inference",

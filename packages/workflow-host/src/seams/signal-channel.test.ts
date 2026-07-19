@@ -76,9 +76,10 @@ function makeIdGen(prefix: string): () => string {
   };
 }
 
-// Seeds a seq-1 RunStarted blob so `deliver()` has a non-empty log to append
-// to -- mirrors the runtime body's own first commit (repo-store.ts writes
-// the run's first event at seq 1, never seq 0).
+// WORKBENCH-LOCAL (CL-3641): seeds a seq-1 RunStarted blob so `deliver()` has a
+// non-empty log to append to -- the fork refuses a deliver against an empty log
+// (a seq-0 SignalReceived would be rejected by the state machine's seq >= 1
+// rule and poison the run), so every deliver test must start the run first.
 async function seedRunStarted(
   store: ReturnType<typeof createRepoStore>,
   repoId: RepoId,
@@ -473,8 +474,8 @@ describe("workflow-host signal channel", () => {
         );
         const entries = await fs.promises.readdir(eventsDir);
         const matching = entries.filter((n) => /^\d+\.json$/.test(n));
-        // The seeded RunStarted at seq 1 plus a single delivered blob --
-        // the re-issued signalId must not add a second one.
+        // WORKBENCH-LOCAL (CL-3641): the seeded RunStarted at seq 1 plus a single
+        // delivered blob -- the re-issued signalId must not add a second one.
         expect(matching).toHaveLength(2);
       } finally {
         await channel.stop();
@@ -483,6 +484,11 @@ describe("workflow-host signal channel", () => {
     { timeout: 5000 },
   );
 
+  // WORKBENCH-LOCAL (CL-3641): a signal delivered before the child commits
+  // RunStarted (seq 1) must be refused, not written at seq 0 -- the state
+  // machine rejects seq < 1, so a seq-0 SignalReceived would poison the run
+  // log permanently. This guards the cold-start race a reconciler's
+  // auto-delivered signal can hit.
   test(
     "deliver refuses to write when the run's events log is empty, and writes nothing",
     async () => {

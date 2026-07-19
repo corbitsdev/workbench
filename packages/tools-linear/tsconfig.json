@@ -11,7 +11,14 @@
     "skipLibCheck": true,
     "declaration": true,
     "declarationMap": true,
-    "lib": ["ESNext"]
+    "lib": [
+      "ESNext"
+    ],
+    "customConditions": [
+      "intx-src"
+    ]
   },
-  "include": ["src/**/*"]
+  "include": [
+    "src/**/*"
+  ]
 }

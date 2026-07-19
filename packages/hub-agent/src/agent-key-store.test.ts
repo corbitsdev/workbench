@@ -109,35 +109,75 @@ describe("AgentKeyStore — load-or-generate", () => {
   });
 });
 
-describe("AgentKeyStore — scanKeys", () => {
-  test("returns key entries whose directory has both files plus agent.json", async () => {
+describe("AgentKeyStore — signChallenge", () => {
+  test("signs with the cached key after load-or-generate", async () => {
+    const dataDir = await tempDir();
+    let signedWith: Uint8Array | undefined;
+    const store = createAgentKeyStore({
+      dataDir,
+      generateKeyPair: async () => makeKeyPair(9),
+      signEd25519: async (privateKey, _payload) => {
+        signedWith = privateKey;
+        return new Uint8Array(64);
+      },
+      verifySSHSig: stubCrypto.verifySSHSig,
+    });
+
+    await store.loadOrGenerateKey("agent@local");
+    const sig = await store.signChallenge(
+      "agent@local",
+      new Uint8Array([1, 2]),
+    );
+
+    expect(sig).not.toBeNull();
+    expect(signedWith).toEqual(makeKeyPair(9).privateKey);
+  });
+
+  test("returns null for an address that was never loaded or persisted", async () => {
     const dataDir = await tempDir();
     const store = createAgentKeyStore({
       dataDir,
       generateKeyPair: async () => makeKeyPair(3),
       ...stubCrypto,
     });
-    await store.loadOrGenerateKey("agent@local");
-    await fs.writeFile(
-      path.join(dataDir, "agent_at_local", "agent.json"),
-      JSON.stringify({ version: 1, address: "agent@local" }),
+
+    const sig = await store.signChallenge(
+      "never@local",
+      new Uint8Array([1, 2, 3]),
     );
 
-    const entries = await store.scanKeys();
-    expect(entries).toHaveLength(1);
-    expect(entries[0]?.address).toBe("agent@local");
+    expect(sig).toBeNull();
   });
 
-  test("skips an agent directory with no agent.json", async () => {
+  test("self-heals after forgetAgent by reloading the on-disk key", async () => {
     const dataDir = await tempDir();
+    let signedWith: Uint8Array | undefined;
     const store = createAgentKeyStore({
       dataDir,
-      generateKeyPair: async () => makeKeyPair(5),
-      ...stubCrypto,
+      generateKeyPair: async () => makeKeyPair(11),
+      signEd25519: async (privateKey, _payload) => {
+        signedWith = privateKey;
+        return new Uint8Array(64);
+      },
+      verifySSHSig: stubCrypto.verifySSHSig,
     });
+
+    // Deploy window: the key is minted and persisted to disk.
     await store.loadOrGenerateKey("agent@local");
 
-    const entries = await store.scanKeys();
-    expect(entries).toEqual([]);
+    // A racing reconnect draws challenge.failed, so the wire layer forgets
+    // the agent, wiping the in-memory cache while the on-disk key survives.
+    store.forgetAgent("agent@local");
+
+    // The next reconnect challenge must still be answerable: signChallenge
+    // reloads the durable on-disk key on a cache miss rather than stranding
+    // the deployment's route until process restart.
+    const sig = await store.signChallenge(
+      "agent@local",
+      new Uint8Array([4, 5, 6]),
+    );
+
+    expect(sig).not.toBeNull();
+    expect(signedWith).toEqual(makeKeyPair(11).privateKey);
   });
 });

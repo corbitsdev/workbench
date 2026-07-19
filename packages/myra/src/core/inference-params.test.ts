@@ -57,6 +57,35 @@ describe("resolveInferenceOptionsFromDials", () => {
     expect(opts.thinking).toBeUndefined();
     expect(opts.temperature).toBeCloseTo(0.2, 5);
   });
+
+  test("kimi-k3 default (null) dial keeps thinking disabled, mirroring kimi-k2.6", () => {
+    const opts = resolveInferenceOptionsFromDials({
+      model: "kimi-k3",
+      creative: null,
+      thinking: null,
+    });
+    expect(opts.providerOptions).toEqual({ thinking: { type: "disabled" } });
+  });
+
+  test("kimi-k3 thinking on omits temperature", () => {
+    const opts = resolveInferenceOptionsFromDials({
+      model: "kimi-k3",
+      creative: 80,
+      thinking: 80,
+    });
+    expect(opts.temperature).toBeUndefined();
+    expect(opts.providerOptions).toEqual({ thinking: { type: "enabled" } });
+  });
+
+  test("kimi-k3 thinking off sends temperature", () => {
+    const opts = resolveInferenceOptionsFromDials({
+      model: "kimi-k3",
+      creative: 50,
+      thinking: 10,
+    });
+    expect(opts.temperature).toBeCloseTo(0.6, 5);
+    expect(opts.providerOptions).toEqual({ thinking: { type: "disabled" } });
+  });
 });
 
 describe("readInferenceParamsForDirector", () => {

@@ -8,13 +8,14 @@ import {
   walkCapabilities,
   type CapabilityWalkResult,
   type DeployWorkflowResult,
+  type DeploySingleStepFn,
   type LaunchSessionFn,
   type SendMultiStepDeployFn,
   type WorkflowRepoWriter,
 } from "@intx/workflow-deploy";
 import type { DirectorRegistry } from "@intx/agent";
 import { schema as intxSchema } from "@intx/db";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { generateId } from "@intx/hub-common";
 import { getLogger } from "@intx/log";
 import { type } from "arktype";
@@ -38,7 +39,6 @@ import {
   workflowDefinitionEnvelopeSchema,
   type AgentRepoStore,
   type DeployContent,
-  type SessionService,
   type SidecarRouter,
 } from "@intx/hub-sessions";
 import {
@@ -164,11 +164,28 @@ export function createWorkflowDeployService(deps: {
   db: HubDb;
   repoStore: AgentRepoStore;
   sidecarRouter: SidecarRouter;
-  sessionService: SessionService;
   directorRegistry: DirectorRegistry;
   // Optional: roll back a partial per-run deploy on failure. Absent in unit
   // tests that never exercise the failure path.
   reclaimDeployment?: ReclaimDeploymentFn;
+  // Per-step deploy-tree stager (interchange `SessionService.stageWorkflowStep`):
+  // for each multi-step step, resolves the step's pinned tool closure into a
+  // `deploy/tool-packages-manifest.json` + asset tarballs and stages them on
+  // disk at the step's address, so the sidecar materializes the step's tools
+  // from disk (the on-disk model) rather than the retired hub-RPC manifest
+  // fetch. Absent in unit tests / catalog-publish, where staging is a no-op.
+  stageWorkflowStep?: LaunchSessionFn;
+  // Single-step (one-step workflow) hand-off (interchange
+  // `SessionService.deploySingleStepAtHead`): stages the head's deploy tree
+  // (deploy-tree write, pack, asset fan-out) AND fires the deployment
+  // `agent.deploy` frame in one call, mirroring `stageWorkflowStep` +
+  // `sendMultiStepDeploy` collapsed onto a single head deploy. Absent in unit
+  // tests / catalog-publish, where the single-step branch gets the no-op; a
+  // production single-step provision that reaches the orchestrator's
+  // single-step branch without this wired fails loud with
+  // `SingleStepDeployHandoffMissingError` (thrown by the orchestrator itself,
+  // mirroring `MultiStepDeployHandoffMissingError`).
+  deploySingleStepAtHead?: DeploySingleStepFn;
 }): WorkflowDeployService {
   const { db, directorRegistry } = deps;
 
@@ -181,12 +198,6 @@ export function createWorkflowDeployService(deps: {
     string,
     Promise<EnsureDeploymentRoutableResult>
   >();
-
-  // TEMP-INSTRUMENTATION CL-2780: deployWorkflow writes its measured DB+grant
-  // fan-out duration here so provisionRunDeployment can fold it into the
-  // one-line provision summary. Read synchronously right after the awaited
-  // deployWorkflow call resolves, so no interleave can clobber it.
-  let lastDbFanoutMs = 0;
 
   // Shared deploy body. `sendSupervisorFrame` gates the ONE sidecar hand-off:
   // true (per-run provisioning / re-establish) sends the supervisor
@@ -220,21 +231,19 @@ export function createWorkflowDeployService(deps: {
     //     NO grants file (the deny-all path never reads `grants.json`), and NO
     //     launchSession.
     //   deployed (reasoning with tools) — an `agent` row, an
-    //     `agent_instance` row, and a `state/grants.json`. As of CL-2782 its
-    //     per-step `launchSession` is ALSO no-op'd: the launched session was
-    //     pure up-front overhead (~17s of serialized deploy→pack→session-start
-    //     round-trips per step) that nothing the running step reads is
-    //     produced by. Execution rebuilds everything from these hub-written
-    //     artifacts — the agent def from workflow.json, the grants from
-    //     `state/grants.json`, and the tool manifest/credentials via hub RPC
-    //     gated on the `agent` row — none of it from the launch. The
-    //     `reestablishSupervisor` path already runs deployed steps with no
-    //     launched session (its production precedent).
+    //     `agent_instance` row, and a `state/grants.json`. Execution reads its
+    //     inputs from these hub-written artifacts: the agent def from
+    //     workflow.json, the grants from `state/grants.json`, the tools from
+    //     the on-disk deploy tree the per-step stager writes, and the
+    //     credentials via the hub credential rail gated on the `agent` row.
     //
-    // `launchSession` is no-op'd below for EVERY step class — inline,
-    // deterministic, and deployed — so no step launches a per-step session.
-    // That, plus skipping the inline/deterministic agent-state repos, is the
-    // session-per-step RAM win (now extended to deployed steps by CL-2782).
+    // The orchestrator calls its per-step `launchSession` hook once per step.
+    // In a production provision that hook is the on-disk tool stager
+    // (`stageWorkflowStep`), which stages each step's pinned tool closure into
+    // the deploy tree the sidecar materializes from disk; the catalog-publish
+    // path passes a no-op instead (it touches no sidecar). Skipping the
+    // inline/deterministic agent-state repos is the session-per-step RAM
+    // saving carried over from the retired in-process runtime.
     const inlineStepIds = collectInlineStepIds(params.workflow);
     const deterministicStepIds = collectDeterministicToolStepIds(
       params.workflow,
@@ -244,34 +253,28 @@ export function createWorkflowDeployService(deps: {
       (stepId) =>
         !inlineStepIds.has(stepId) && !deterministicStepIds.has(stepId),
     );
-    // Steps that keep an `agent` row: fully-deployed steps plus deterministic
-    // tool steps (CL-2252 — the tool endpoints 404 without it).
-    const agentRowStepIds = allStepIds.filter(
-      (stepId) => !inlineStepIds.has(stepId),
-    );
-    // No step launches a per-step session (CL-2782): every step's derived
-    // agentId is in the no-launch set, so `toLaunchSession` returns a resolved
-    // no-op for all of them and the SessionService is never touched.
-    const noLaunchAgentIds = new Set(
-      allStepIds.map((stepId) =>
-        deriveStepAgentId({ deploymentId: params.deploymentId, stepId }),
-      ),
-    );
+    // The orchestrator's per-step hook stages each step's tool tree on disk in
+    // a production provision so the sidecar materializes the step's tools from
+    // the deploy tree; the deploy also rebuilds each step from the other
+    // hub-written artifacts (workflow.json, `state/grants.json`, the `agent`
+    // row + the credential/grants hub rails) at execution time.
 
-    // Persist an `agent` row per step that needs one (deployed + deterministic
-    // tool). Interchange's launchSession never writes one, and the hub's
-    // tool-credential + manifest gate authorizes a step by that row's pins —
-    // every such step carries the same union pins the orchestrator hands it.
-    // Inline steps are skipped: no harness, no row.
+    // Persist `agent` rows UNIFORMLY for every step. Interchange's per-step
+    // staging fires for every stepOrder entry and its pack phase records a
+    // `session_asset` row (the tool-registry mount) whose FK chain requires
+    // an active `agent_instance` row — which itself FKs the `agent` row. The
+    // old inline/deterministic partitions repeatedly broke against those
+    // upstream invariants (ack resolution, session_asset FK), so every
+    // staged step now gets the full row pair; the rows are inert for steps
+    // that never use them. The hub's tool-credential + manifest gate also
+    // authorizes deterministic/deployed steps by this row's pins.
     const stepCapabilityNames = capabilityNames(walk);
-    // TEMP-INSTRUMENTATION CL-2780
-    const dbfanoutStart = performance.now();
     await writeStepAgentRows({
       db,
       deploymentId: params.deploymentId,
       tenantId: params.tenantId,
       creatorPrincipalId: params.creatorPrincipalId,
-      stepIds: agentRowStepIds,
+      stepIds: allStepIds,
       toolPackagePins,
       capabilityNames: stepCapabilityNames,
     });
@@ -291,28 +294,21 @@ export function createWorkflowDeployService(deps: {
       capabilityNames: stepCapabilityNames,
     });
 
-    // Persist a per-step `agent_instance` row for each deployed step. Its
-    // original justification — that the orchestrator's per-step launch fires
-    // an `agent.deploy` whose ack `requireInstance`-resolves this row — is
-    // STALE as of CL-2782: the deployed-step `launchSession` is now no-op'd,
-    // so no per-step `agent.deploy.ack` fires and nothing reads this row's
-    // public key. The row is KEPT (safe inert: null sessionId, no reader)
-    // because CL-2705 per-step usage attribution joins it — activity-overview's
-    // `workflowOwnerByInstance` maps a step's synthetic principal back to the
-    // run owner via `member_agent_instance`, and deployed reasoning steps emit
-    // inference usage, so dropping the row would silently regress per-step
-    // attribution. Do NOT "clean up the dead row": it is load-bearing for
-    // attribution, not for the (now absent) launch. Inline and deterministic-
-    // tool steps declare no reasoning usage under a per-step instance, so they
-    // get no instance row.
+    // Persist `agent_instance` rows UNIFORMLY for every step (matching the
+    // agent-row write above). Interchange's pack phase inserts a
+    // `session_asset` row per staged attachment with a hard FK to
+    // `agent_instance` — a staged step without a row fails the whole
+    // provision at phase "pack". Deploy acks no longer read these rows
+    // (dep_-prefixed workflow addresses resolve against the
+    // `workflow_deployment` projection), and CL-2705 per-step usage
+    // attribution still joins them for reasoning steps; rows for inline /
+    // deterministic steps are inert beyond the FK.
     //
     // Both `agent_instance` writers (step + supervisor) are gated on the
     // supervisor frame: a catalog publish spawns no supervisor and runs no
     // steps, so writing active (`endedAt` NULL) instance rows for it would
-    // accumulate permanently-"live" phantom rows nothing ever ends — no
-    // deploy-ack resolves them, no run attributes usage under them, and only
-    // best-effort supersede teardown would ever touch them. Per-run deploys
-    // still write both.
+    // accumulate permanently-"live" phantom rows nothing ever ends. Per-run
+    // deploys still write both.
     if (sendSupervisorFrame) {
       await writeStepInstanceRows({
         db,
@@ -320,7 +316,7 @@ export function createWorkflowDeployService(deps: {
         deploymentDomain: params.deploymentDomain,
         tenantId: params.tenantId,
         creatorPrincipalId: params.creatorPrincipalId,
-        stepIds: deployedStepIds,
+        stepIds: allStepIds,
       });
     }
 
@@ -353,40 +349,81 @@ export function createWorkflowDeployService(deps: {
         harnessSessionId: params.config.sessionId,
       });
     }
-    // TEMP-INSTRUMENTATION CL-2780
-    const dbfanoutMs = performance.now() - dbfanoutStart;
-    lastDbFanoutMs = dbfanoutMs;
 
-    // TEMP-INSTRUMENTATION CL-2780: accumulate per-launch timing across the
-    // deploy's launchSession calls (count/sum/max), wrapping the launch hook.
-    const launchTiming = { count: 0, sum: 0, max: 0 };
-    const timedLaunchSession: LaunchSessionFn = (launchParams) => {
-      const launchStart = performance.now();
-      const result = toLaunchSession(
-        deps.sessionService,
-        noLaunchAgentIds,
-      )(launchParams);
-      return result.finally(() => {
-        const ms = performance.now() - launchStart;
-        launchTiming.count += 1;
-        launchTiming.sum += ms;
-        if (ms > launchTiming.max) launchTiming.max = ms;
+    // Native workflow-deployment identity (interchange's model): every
+    // published definition is anchored by a `workflow`-kind asset row, and
+    // every live deployment carries a `workflow_deployment` projection row
+    // keyed by its `dep_` id. Interchange's deploy-ack handler stores the
+    // sidecar public key on this row (`isWorkflowDerivedAddress` routes
+    // `ins_dep_...` addresses here, never through `agent_instance`), and the
+    // reconnect ownership challenge reads it back from the same row —
+    // without it every ack lands nowhere and reconnect fails closed. This
+    // mirrors exactly what interchange's own `deployWorkflowDefinition`
+    // writes; once the hub adopts that service wholesale this block is
+    // deleted with the rest of runDeploy.
+    const definitionAssetId = await ensureWorkflowDefinitionAsset({
+      db,
+      tenantId: params.tenantId,
+      workflowId: params.workflow.id,
+      creatorPrincipalId: params.creatorPrincipalId,
+    });
+    if (sendSupervisorFrame) {
+      await writeWorkflowDeploymentRow({
+        db,
+        deploymentId: params.deploymentId,
+        deploymentDomain: params.deploymentDomain,
+        tenantId: params.tenantId,
+        definitionAssetId,
+        creatorPrincipalId: params.creatorPrincipalId,
       });
-    };
+    }
 
-    // The orchestrator still walks every step (it pins each step's
-    // InferenceSource into the supervisor frame's `sources` map, which the
-    // sidecar's STEP_INFERENCE_SOURCES table reads — inline steps need that
-    // entry too). It calls `launchSession` once per step; we wrap that hook so
-    // an inline OR deterministic-tool step's agentId resolves to a no-op
-    // promise WITHOUT touching the SessionService — zero agent-state repos,
-    // zero session launches for either. Built per-deploy because the
-    // no-launch agentId set depends on this workflow.
+    // The orchestrator walks every step (it pins each step's InferenceSource
+    // into the supervisor frame's `sources` map, which the sidecar's
+    // STEP_INFERENCE_SOURCES table reads — inline steps need that entry too)
+    // and calls its `launchSession` hook once per step.
+    // On-disk cutover: stage each multi-step step's pinned tool closure to
+    // disk so the sidecar materializes it from the deploy tree. Catalog
+    // publish (sendSupervisorFrame=false) must not touch the sidecar, so it
+    // gets the no-op. A production provision (sendSupervisorFrame=true)
+    // REQUIRES an injected stager: degrading it to the no-op when the stager
+    // is absent would deploy every step with no staged tool tree and load
+    // ZERO tools with no error — a silent-zero-tools regression. Fail loud on
+    // that misconfiguration instead (the repo's no-silent-fallback rule).
+    let stepStager: LaunchSessionFn;
+    if (sendSupervisorFrame) {
+      if (deps.stageWorkflowStep === undefined) {
+        throw new Error(
+          "workflow provision requires an injected stageWorkflowStep stager; without it every step would stage no tool tree and load zero tools",
+        );
+      }
+      stepStager = deps.stageWorkflowStep;
+    } else {
+      stepStager = noLaunchStepSession;
+    }
+
+    // A one-step workflow definition routes through the orchestrator's
+    // single-step branch, which requires its own hand-off: stage the head's
+    // deploy tree AND fire the supervisor `agent.deploy` frame in one call
+    // (`deps.deploySingleStepAtHead`, interchange's
+    // `SessionService.deploySingleStepAtHead`). Catalog publish gets the
+    // no-op, mirroring `sendMultiStepDeploy`. When a production provision
+    // (sendSupervisorFrame=true) has no dep wired, the key is left out of the
+    // orchestrator deps entirely (exactOptionalPropertyTypes forbids an
+    // explicit `undefined`) — the orchestrator itself then fails loud with
+    // `SingleStepDeployHandoffMissingError` if a single-step definition
+    // actually reaches that branch, mirroring `MultiStepDeployHandoffMissingError`.
+    let deploySingleStepAtHeadDep: DeploySingleStepFn | undefined;
+    if (sendSupervisorFrame) {
+      deploySingleStepAtHeadDep = deps.deploySingleStepAtHead;
+    } else {
+      deploySingleStepAtHeadDep = noopDeploySingleStepAtHead;
+    }
+
     const orchestrator = createWorkflowDeployOrchestrator({
       directorRegistry,
       workflowRepo: createWorkflowRepoWriter(deps.repoStore),
-      // TEMP-INSTRUMENTATION CL-2780: timed wrapper around toLaunchSession.
-      launchSession: timedLaunchSession,
+      launchSession: stepStager,
       // Catalog publish (sendSupervisorFrame=false) hands the orchestrator a
       // no-op that resolves without touching the sidecar, so the workflow repo
       // + capability walk run but no `agent.deploy` frame is sent and no
@@ -394,6 +431,9 @@ export function createWorkflowDeployService(deps: {
       sendMultiStepDeploy: sendSupervisorFrame
         ? toSendMultiStepDeploy(deps.sidecarRouter)
         : noopSendMultiStepDeploy,
+      ...(deploySingleStepAtHeadDep !== undefined
+        ? { deploySingleStepAtHead: deploySingleStepAtHeadDep }
+        : {}),
     });
 
     // Approve the workflow's own declared grants AND every inference source
@@ -415,16 +455,6 @@ export function createWorkflowDeployService(deps: {
       operatorApprovals,
       toolPackagePins,
     });
-    // TEMP-INSTRUMENTATION CL-2780
-    log.info(
-      "launchSession timing kind={kind}: launches={count} totalLaunchMs={sum} maxMs={max}",
-      {
-        kind: params.workflow.id,
-        count: launchTiming.count,
-        sum: Math.round(launchTiming.sum),
-        max: Math.round(launchTiming.max),
-      },
-    );
     return deployResult;
   };
 
@@ -460,17 +490,10 @@ export function createWorkflowDeployService(deps: {
     },
 
     provisionRunDeployment: async (args) => {
-      // TEMP-INSTRUMENTATION CL-2780
-      const provisionStart = performance.now();
-      const defStart = performance.now();
       const definition = await readWorkflowDefinition(
         deps.repoStore,
         args.kind,
       );
-      // TEMP-INSTRUMENTATION CL-2780
-      const defMs = performance.now() - defStart;
-      // TEMP-INSTRUMENTATION CL-2780
-      const configStart = performance.now();
       const { deploymentId, config, deployContent } =
         await resolveWorkflowDeployConfig({
           db,
@@ -479,10 +502,6 @@ export function createWorkflowDeployService(deps: {
           deploymentDomain: args.deploymentDomain,
           definition,
         });
-      // TEMP-INSTRUMENTATION CL-2780
-      const configMs = performance.now() - configStart;
-      // TEMP-INSTRUMENTATION CL-2780
-      const deployStart = performance.now();
       try {
         await service.deployWorkflow({
           workflow: definition,
@@ -517,21 +536,6 @@ export function createWorkflowDeployService(deps: {
         }
         throw err;
       }
-      // TEMP-INSTRUMENTATION CL-2780
-      const deployMs = performance.now() - deployStart;
-      // TEMP-INSTRUMENTATION CL-2780
-      log.info(
-        "provision timing kind={kind} steps={steps}: def={def}ms config={config}ms dbfanout={dbfanout}ms deployWorkflow={deployWorkflow}ms total={total}ms",
-        {
-          kind: args.kind,
-          steps: definition.stepOrder.length,
-          def: Math.round(defMs),
-          config: Math.round(configMs),
-          dbfanout: Math.round(lastDbFanoutMs),
-          deployWorkflow: Math.round(deployMs),
-          total: Math.round(performance.now() - provisionStart),
-        },
-      );
       log.info("provisioned per-run workflow deployment", {
         deploymentId,
         kind: args.kind,
@@ -568,6 +572,7 @@ async function reestablishSupervisor(deps: {
   const sources = await resolveWorkflowDeploySource({
     db: deps.db,
     tenantId: args.tenantId,
+    creatorPrincipalId: args.creatorPrincipalId,
     extraModels: collectDeclaredStepModels(definition),
     modelMaxTokens: collectDeclaredStepModelMaxTokens(definition),
   });
@@ -667,7 +672,7 @@ export function buildSupervisorDeployFrame(args: {
   config: HarnessConfig;
   workflow: {
     definition: AgentDeployWorkflow["definition"];
-    sources: Record<string, InferenceSource>;
+    sources: Record<string, InferenceSource[]>;
   };
 } {
   const address = deriveDeploymentAddress({
@@ -695,13 +700,16 @@ export function buildSupervisorDeployFrame(args: {
       "workflow deploy: cannot build supervisor frame with no inference sources",
     );
   }
-  const sources: Record<string, InferenceSource> = {};
+  // The deploy frame's `sources` map is now keyed by step id to a NON-EMPTY
+  // array of inference sources (upstream source-array + live-rotation change).
+  // The workflow path still pins exactly one source per step, so each entry is
+  // a single-element array; the runtime failover chain lands when upstream
+  // wires per-step routing into the workflow child.
+  const sources: Record<string, InferenceSource[]> = {};
   for (const stepId of args.definition.stepOrder) {
-    sources[stepId] = pickFrameStepSource(
-      args.definition.steps[stepId],
-      args.sources,
-      head,
-    );
+    sources[stepId] = [
+      pickFrameStepSource(args.definition.steps[stepId], args.sources, head),
+    ];
   }
   return {
     address,
@@ -980,6 +988,98 @@ export async function writeDeploymentInstanceRow(args: {
   });
 }
 
+// Native catalog identity: every published workflow definition is anchored by
+// a `workflow`-kind `asset` row (interchange's authoring model — its deploy
+// route hydrates definitions from these assets). The workbench still authors
+// definition content through its own registry, so this upsert converges the
+// IDENTITY first; content authoring moves onto the asset substrate with the
+// full native-service adoption. Idempotent on (tenantId, "workflow", name).
+export async function ensureWorkflowDefinitionAsset(args: {
+  db: HubDb;
+  tenantId: string;
+  workflowId: string;
+  creatorPrincipalId: string;
+}): Promise<string> {
+  const inserted = await args.db
+    .insert(intxSchema.asset)
+    .values({
+      id: generateId("asset"),
+      tenantId: args.tenantId,
+      kind: "workflow",
+      name: args.workflowId,
+      creatorPrincipalId: args.creatorPrincipalId,
+    })
+    .onConflictDoNothing()
+    .returning({ id: intxSchema.asset.id });
+  const freshId = inserted[0]?.id;
+  if (freshId !== undefined) return freshId;
+  const row = await args.db
+    .select({ id: intxSchema.asset.id })
+    .from(intxSchema.asset)
+    .where(
+      and(
+        eq(intxSchema.asset.tenantId, args.tenantId),
+        eq(intxSchema.asset.kind, "workflow"),
+        eq(intxSchema.asset.name, args.workflowId),
+      ),
+    )
+    .limit(1)
+    .then((rows) => rows[0]);
+  if (row === undefined) {
+    throw new Error(
+      `workflow definition asset for "${args.workflowId}" missing after upsert`,
+    );
+  }
+  return row.id;
+}
+
+// Native deployment projection: the `workflow_deployment` row interchange's
+// `deployWorkflowDefinition` writes, mirrored field-for-field. The deploy-ack
+// handler persists the sidecar's minted public key onto this row
+// (`isWorkflowDerivedAddress` routes every `ins_dep_...` ack here), and the
+// reconnect ownership challenge reads the key back from it. The creator read
+// grant mirrors the native path so the deploying principal can observe run
+// events. Idempotent for re-establishment: the row insert no-ops on the
+// existing address, and the grant is only seeded when the row was actually
+// inserted (a re-establish reuses the original deploy's grant).
+export async function writeWorkflowDeploymentRow(args: {
+  db: HubDb;
+  deploymentId: string;
+  deploymentDomain: string;
+  tenantId: string;
+  definitionAssetId: string;
+  creatorPrincipalId: string;
+}): Promise<void> {
+  const now = new Date();
+  const inserted = await args.db
+    .insert(intxSchema.workflowDeployment)
+    .values({
+      id: args.deploymentId,
+      tenantId: args.tenantId,
+      definitionAssetId: args.definitionAssetId,
+      address: deriveDeploymentAddress({
+        deploymentId: args.deploymentId,
+        deploymentDomain: args.deploymentDomain,
+      }),
+      status: "deployed" as const,
+      createdAt: now,
+    })
+    .onConflictDoNothing()
+    .returning({ id: intxSchema.workflowDeployment.id });
+  if (inserted.length === 0) return;
+  await args.db.insert(intxSchema.grant).values({
+    id: generateId("grant"),
+    tenantId: args.tenantId,
+    principalId: args.creatorPrincipalId,
+    resource: `workflow-run:${args.deploymentId}`,
+    action: "read",
+    effect: "allow",
+    origin: "creator",
+    createdAt: now,
+    updatedAt: now,
+  });
+}
+
 // Idempotently ensure the deployment-level supervisor `agent` + `agent_instance`
 // rows exist and are ACTIVE (`endedAt` cleared) before a re-establish sends the
 // supervisor deploy frame. Unlike `writeDeploymentAgentRow`/
@@ -1091,8 +1191,6 @@ export async function writeStepGrantFiles(args: {
   if (args.stepIds.length === 0) return;
   const grants = buildStepGrantRules(args.capabilityNames);
   const contents = JSON.stringify({ grants });
-  // TEMP-INSTRUMENTATION CL-2780
-  const grantLoopStart = performance.now();
   for (const stepId of args.stepIds) {
     const repoId = `${args.deploymentId}-${stepId}`;
     await args.repoStore.repoStore.writeTree(
@@ -1105,15 +1203,6 @@ export async function writeStepGrantFiles(args: {
       },
     );
   }
-  // TEMP-INSTRUMENTATION CL-2780
-  log.info(
-    "writeStepGrantFiles timing deploymentId={deploymentId}: steps={steps} writeTreeLoop={writeTreeLoop}ms",
-    {
-      deploymentId: args.deploymentId,
-      steps: args.stepIds.length,
-      writeTreeLoop: Math.round(performance.now() - grantLoopStart),
-    },
-  );
 }
 
 export function createWorkflowRepoWriter(
@@ -1184,59 +1273,13 @@ export function collectDeterministicToolStepIds(
   return deterministic;
 }
 
-// Wrap the SessionService launch hook so a no-launch step's agentId resolves
-// to a no-op resolved promise WITHOUT calling `launchSession`. As of CL-2782 the
-// no-launch set is EVERY step — inline-inference (CL-2251), deterministic-tool
-// (CL-2252), and fully-deployed reasoning steps: the orchestrator only awaits
-// the promise, so never launching means zero per-step sessions and drops the
-// ~17s of serialized per-step deploy→pack→session-start round-trips from
-// workflow start. Execution rebuilds each step's def/grants/tools/credentials
-// from the hub-written artifacts (workflow.json, `state/grants.json`, the
-// `agent` row + hub RPC), never from the launch. The orchestrator still calls
-// this hook once per step; because `noLaunchAgentIds` now covers `allStepIds`,
-// every call takes the no-op branch. The `launchDeployedSession` branch below is
-// retained as the launch mechanism but is not currently reached in the workflow
-// deploy path (no caller passes a step agentId outside the no-launch set).
-export function toLaunchSession(
-  sessionService: SessionService,
-  noLaunchAgentIds: ReadonlySet<string> = new Set(),
-): LaunchSessionFn {
-  return (params) => {
-    if (noLaunchAgentIds.has(params.agentId)) {
-      return Promise.resolve();
-    }
-    return launchDeployedSession(sessionService, params);
-  };
-}
-
-function launchDeployedSession(
-  sessionService: SessionService,
-  {
-    agentAddress,
-    agentId,
-    instanceId,
-    config,
-    deployContent,
-    toolPackagePins,
-  }: Parameters<LaunchSessionFn>[0],
-): ReturnType<LaunchSessionFn> {
-  return sessionService.launchSession({
-    agentAddress,
-    agentId,
-    instanceId,
-    config,
-    // toolPackageManifest is intentionally not forwarded: tools resolve from
-    // toolPackagePins through launchSession's own closure resolution, so the
-    // orchestrator's manifest field (typed `unknown`) is never our source.
-    deployContent: {
-      systemPrompt: deployContent.systemPrompt,
-      ...(deployContent.assetMounts
-        ? { assetMounts: deployContent.assetMounts }
-        : {}),
-    },
-    ...(toolPackagePins ? { toolPackagePins } : {}),
-  });
-}
+// The orchestrator requires a per-step `launchSession` hook, but upstream
+// retired the in-process session runtime: a workflow step is never launched as
+// its own warm session. Execution rebuilds each step from the hub-written
+// artifacts (workflow.json, `state/grants.json`, the `agent` row + hub RPC), so
+// the hook resolves immediately without touching a sidecar. Named (not inline)
+// so a step launch can never regress into a real session by accident.
+const noLaunchStepSession: LaunchSessionFn = () => Promise.resolve();
 
 // Catalog-publish hand-off: satisfies the orchestrator's required
 // `sendMultiStepDeploy` dep without sending an `agent.deploy` frame. The
@@ -1245,6 +1288,12 @@ function launchDeployedSession(
 // sidecar acked a deploy, and the catalog path (publishWorkflowDefinition)
 // ignores it (the per-run deploy is where a real supervisor pubkey is minted).
 const noopSendMultiStepDeploy: SendMultiStepDeployFn = () =>
+  Promise.resolve({ publicKey: "" });
+
+// Single-step counterpart to `noopSendMultiStepDeploy` for the catalog-publish
+// path (sendSupervisorFrame=false): the orchestrator writes the workflow repo
+// and walks the sole step, then awaits this without firing any deploy frame.
+const noopDeploySingleStepAtHead: DeploySingleStepFn = () =>
   Promise.resolve({ publicKey: "" });
 
 export function toSendMultiStepDeploy(

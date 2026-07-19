@@ -29,7 +29,7 @@ import type {
   AdvancedArtifactFilter,
 } from "@workbench/artifact";
 import { clientOptions } from "../../lib/client-options";
-import ArtifactBody from "../ArtifactBody";
+import ArtifactBody, { isImageUpload } from "../ArtifactBody";
 import { AddArtifactModal } from "../AddArtifactModal";
 import { resolveKindLabel } from "../../lib/resolve-kind-label";
 import { canUseArtifactInWorkflow } from "@workbench/artifact";
@@ -42,21 +42,17 @@ export { buildArtifactMessage };
 
 const SEARCH_DEBOUNCE_MS = 300;
 
-function isUploadReference(value: unknown): value is { id: string } {
-  if (typeof value !== "object" || value === null) return false;
-  if (!("id" in value)) return false;
-  return typeof value.id === "string" && value.id.length > 0;
-}
-
-function uploadIdFromSource(
-  source: ArtifactWithSession["source"],
-): string | null {
-  const upload = source.upload;
-  return isUploadReference(upload) ? upload.id : null;
-}
+// An image renders a gallery thumbnail whether its bytes live in the upload
+// table (direct upload, `source.upload.id` present) or as a data: URL with no
+// upload row (chat-imported via parse-file, CL-3906) — the download route
+// serves both. A legacy kind-"file" row with an image upload mime (imported
+// before the CL-3906 fix) gets the same thumbnail via `isImageUpload`, the
+// same detection ArtifactBody's inline-preview fallback uses.
 function imageThumbnailUrl(artifact: ArtifactWithSession): string | undefined {
-  if (artifact.kind !== "image") return undefined;
-  if (uploadIdFromSource(artifact.source) === null) return undefined;
+  const isImage =
+    artifact.kind === "image" ||
+    (artifact.kind === "file" && isImageUpload(artifact.source));
+  if (!isImage) return undefined;
   return buildSameOriginApiUrl(`/artifacts/${artifact.id}/download`);
 }
 
@@ -330,6 +326,7 @@ export function ArtifactGallery({
             : null
         }
         thumbnailUrlForArtifact={imageThumbnailUrl}
+        {...(myPrincipalId !== null ? { viewerPrincipalId: myPrincipalId } : {})}
       />
       <ArtifactModal
         open={selected !== null}

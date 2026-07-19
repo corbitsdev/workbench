@@ -363,4 +363,90 @@ describe("wrapDirectorWithCompaction", () => {
     expect(actions.some((a) => a.type === "infer")).toBe(false);
     expect(actions.some((a) => a.type === "reply")).toBe(true);
   });
+
+  it("emits fire / grace-skip telemetry under a sustained over-threshold breach", async () => {
+    const events: { type: string; consecutiveGraceSkips?: number }[] = [];
+    const director = wrapDirectorWithCompaction(
+      createDefaultDirector(systemPrompt, tools),
+      {
+        windowFor,
+        onEvent: (e) => {
+          events.push(e);
+        },
+      },
+    );
+    const cap = makeCapabilities();
+    const overThreshold = TEST_WINDOW * (COMPACTION_TRIGGER_THRESHOLD + 0.05);
+
+    await runDecide(
+      director,
+      toolDoneEvent("call-0"),
+      stateWithUsage(overThreshold),
+      cap,
+    );
+    await runDecide(
+      director,
+      toolDoneEvent("call-1"),
+      stateWithUsage(overThreshold),
+      cap,
+    );
+    await runDecide(
+      director,
+      toolDoneEvent("call-2"),
+      stateWithUsage(overThreshold),
+      cap,
+    );
+    await runDecide(
+      director,
+      toolDoneEvent("call-3"),
+      stateWithUsage(overThreshold),
+      cap,
+    );
+
+    expect(events.map((e) => e.type)).toEqual([
+      "fire",
+      "grace-skip",
+      "fire",
+      "grace-skip",
+    ]);
+    expect(events[1]).toMatchObject({
+      type: "grace-skip",
+      consecutiveGraceSkips: 1,
+    });
+    expect(events[3]).toMatchObject({
+      type: "grace-skip",
+      consecutiveGraceSkips: 2,
+    });
+  });
+
+  it("emits reset telemetry when usage drops below threshold after a latch", async () => {
+    const events: { type: string }[] = [];
+    const director = wrapDirectorWithCompaction(
+      createDefaultDirector(systemPrompt, tools),
+      {
+        windowFor,
+        onEvent: (e) => {
+          events.push(e);
+        },
+      },
+    );
+    const cap = makeCapabilities();
+    const overThreshold = TEST_WINDOW * (COMPACTION_TRIGGER_THRESHOLD + 0.05);
+    const belowThreshold = TEST_WINDOW * (COMPACTION_TRIGGER_THRESHOLD - 0.1);
+
+    await runDecide(
+      director,
+      toolDoneEvent("call-0"),
+      stateWithUsage(overThreshold),
+      cap,
+    );
+    await runDecide(
+      director,
+      toolDoneEvent("call-1"),
+      stateWithUsage(belowThreshold),
+      cap,
+    );
+
+    expect(events.map((e) => e.type)).toEqual(["fire", "reset"]);
+  });
 });

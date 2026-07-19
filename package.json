@@ -1,5 +1,5 @@
 {
-  "version": "0.7.14",
+  "version": "0.8.0",
   "name": "gtm-workbench",
   "private": true,
   "workspaces": [
@@ -10,21 +10,22 @@
     "interchange/apps/admin-ui"
   ],
   "scripts": {
-    "db:setup": "bun --env-file=.env run scripts/db-setup.ts",
-    "db:seed": "bun --env-file=.env run scripts/db-seed.ts",
-    "db:reset": "bun --env-file=.env run scripts/db-reset.ts",
-    "dev": "bun --env-file=.env.local run --parallel --filter @workbench/web --filter @workbench/hub --filter @workbench/sidecar dev",
-    "build": "bun run --parallel --filter @workbench/web --filter @workbench/hub build",
-    "typecheck": "bun run --filter '@workbench/*' typecheck",
-    "format": "bun run scripts/format-changed.ts",
+    "db:setup": "BUN_OPTIONS=--conditions=intx-src bun --env-file=.env run scripts/db-setup.ts",
+    "db:seed": "BUN_OPTIONS=--conditions=intx-src bun --env-file=.env run scripts/db-seed.ts",
+    "db:reset": "BUN_OPTIONS=--conditions=intx-src bun --env-file=.env run scripts/db-reset.ts",
+    "dev": "BUN_OPTIONS=--conditions=intx-src bun --env-file=.env.local run --parallel --filter @workbench/web --filter @workbench/hub --filter @workbench/sidecar dev",
+    "build": "BUN_OPTIONS=--conditions=intx-src bun run --parallel --filter @workbench/web --filter @workbench/hub build",
+    "preflight:intx-src": "BUN_OPTIONS=--conditions=intx-src bun run scripts/preflight-intx-src.ts",
+    "typecheck": "BUN_OPTIONS=--conditions=intx-src bun run scripts/preflight-intx-src.ts && BUN_OPTIONS=--conditions=intx-src bun run --filter '@workbench/*' typecheck",
+    "format": "BUN_OPTIONS=--conditions=intx-src bun run scripts/format-changed.ts",
     "format:all": "prettier --write .",
     "lint": "prettier --check . && eslint . && bun run lint:no-effect-fetch",
-    "lint:no-effect-fetch": "bun run scripts/lint-no-effect-fetch.ts",
-    "test": "bun run --filter '@workbench/*' test",
-    "test:coverage": "bun run --filter '@workbench/*' test:coverage",
+    "lint:no-effect-fetch": "BUN_OPTIONS=--conditions=intx-src bun run scripts/lint-no-effect-fetch.ts",
+    "test": "BUN_OPTIONS=--conditions=intx-src bun run scripts/preflight-intx-src.ts && BUN_OPTIONS=--conditions=intx-src bun run --filter '@workbench/*' test",
+    "test:coverage": "BUN_OPTIONS=--conditions=intx-src bun run --filter '@workbench/*' test:coverage",
     "coverage:report": "COVERAGE_THRESHOLD=80 bun run scripts/coverage-merge.ts",
-    "coverage": "bun run test:coverage && bun run coverage:report",
-    "interchange:check": "bun run scripts/check-interchange-sync.ts"
+    "coverage": "BUN_OPTIONS=--conditions=intx-src bun run test:coverage && bun run coverage:report",
+    "interchange:check": "BUN_OPTIONS=--conditions=intx-src bun run scripts/check-interchange-sync.ts"
   },
   "dependencies": {
     "arktype": "catalog:",

@@ -129,6 +129,10 @@ async function bundleInterchangeEntry(args: {
     format: "esm",
     minify: false,
     sourcemap: "none",
+    // Bun.build does not inherit BUN_OPTIONS=--conditions, so the intx-src
+    // exports condition must be passed explicitly or @intx/* imports in the
+    // bundled tool packages resolve to the (unbuilt) dist and fail.
+    conditions: ["intx-src"],
   });
   if (!result.success) {
     const messages = result.logs

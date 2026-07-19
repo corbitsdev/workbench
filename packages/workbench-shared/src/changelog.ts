@@ -37,6 +37,52 @@ export const CHANGELOG_NAV_ROUTES = [
 // Newest first.
 export const CHANGELOG: readonly ChangelogRelease[] = [
   {
+    version: "0.8.0",
+    date: "2026-07-19",
+    title: "A clearer, faster workbench",
+    entries: [
+      {
+        title: "A gallery that shows your work",
+        description:
+          "Artifact cards lead with the content itself — image previews, document excerpts, and comparison verdicts on clean, minimal cards.",
+        to: "/artifacts",
+      },
+      {
+        title: "Images everywhere",
+        description:
+          "Pictures you share in chat now display as pictures — in the gallery and on the artifact page.",
+        to: "/artifacts",
+      },
+      {
+        title: "The agent library",
+        description:
+          "The Agents page now shows every agent available to you, along with the ones you have deployed.",
+      },
+      {
+        title: "Skills with real names",
+        description:
+          "Skills show proper titles everywhere instead of technical file names.",
+      },
+      {
+        title: "More room to chat",
+        description:
+          "The chat page gives the whole screen to your conversation, with thread details tucked into the top bar.",
+        to: "/chats",
+      },
+      {
+        title: "Voice input, owner-controlled",
+        description:
+          "Owners can turn on voice dictation for chat from the Capabilities page.",
+        to: "/settings/owner/capabilities",
+      },
+      {
+        title: "Performance and bug fixes",
+        description:
+          "Faster agent startup, more reliable workflows and daily briefs, and accurate token reporting are all included in this release.",
+      },
+    ],
+  },
+  {
     version: "0.7.6",
     date: "2026-07-16",
     title: "Make Myra your own",

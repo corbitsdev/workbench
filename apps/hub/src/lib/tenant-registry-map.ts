@@ -14,9 +14,10 @@ export interface RegistryAssetRow {
  * winning asset's name per assetId so callers can derive a tarball's mount path
  * without a second DB hit.
  *
- * Both the tool-manifest rail (`createToolManifestRouter`) and the Tools-page
- * version lookup (`resolveToolVersions`) feed the same closure resolver, so the
- * dedupe/shadow rule must live in exactly one place — here.
+ * The Tools-page version lookup (`resolveToolVersions`) feeds the same closure
+ * resolver the deploy-time tool-tree staging uses (interchange's
+ * `SessionService` `buildAndResolve`), so the dedupe/shadow rule must live in
+ * exactly one place — here.
  */
 export function buildTenantRegistryMap(
   assetRows: readonly RegistryAssetRow[],

@@ -29,11 +29,19 @@ export interface RunRecord {
   };
 }
 
+// Widened sibling of `isRecordTerminal` for callers holding a run's `status`
+// as a plain string rather than the narrowed `RunRecord["status"]` union (e.g.
+// a run-list row) — same two-literal invariant, no unsafe cast needed at the
+// call site.
+export function isStatusTerminal(status: string): boolean {
+  return status === "completed" || status === "failed";
+}
+
 // True once the run can no longer advance on its own — the caller stops polling
 // and gates signal/resume actions. `awaiting` is NOT terminal: the run is parked
 // on a human-input gate and resumes when the panel posts a signal.
 export function isRecordTerminal(status: RunRecord["status"]): boolean {
-  return status === "completed" || status === "failed";
+  return isStatusTerminal(status);
 }
 
 // Log-derived run state (CL-2669 Phase 1b). Mirror of the hub's
@@ -55,6 +63,12 @@ export const logStepStateSchema = type({
   "awaitingSignalName?": "string",
   "startedAt?": "string",
   "endedAt?": "string",
+  // The most recent inference error/timeout observed while this step is
+  // in-flight (CL-3887) — the run page's only signal that a silently-running
+  // step is stalled on a raced provider rather than genuinely dead. Absent
+  // once the step advances past `in-flight`. The raw sidecar error text never
+  // ships on this wire — only the category mapping the UI renders.
+  "liveIssue?": { category: "string", occurredAt: "string" },
 });
 export type LogStepState = typeof logStepStateSchema.infer;
 

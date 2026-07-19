@@ -136,11 +136,41 @@ describe("createPartAssembler", () => {
     expect(assembler.activity).toBeNull();
   });
 
-  it("reports thinking once inference.start fires even before any text/reasoning delta arrives", () => {
+  it("reports no activity for a content-less inference.start with no open part (CL-3871)", () => {
     const { transport, emit } = createFakeTransport();
     const assembler = createPartAssembler(transport, params);
     emit({ type: "inference.start" });
+    expect(assembler.activity).toBeNull();
+  });
+
+  it("still reports thinking once a reasoning part actually opens after inference.start", () => {
+    const { transport, emit } = createFakeTransport();
+    const assembler = createPartAssembler(transport, params);
+    emit({ type: "inference.start" });
+    expect(assembler.activity).toBeNull();
+    emit({
+      type: "inference.thinking.delta",
+      data: { partial: { thinking: "Thinking..." } },
+    });
     expect(assembler.activity).toEqual({ type: "thinking" });
+  });
+
+  it("does not linger as thinking below a settled answer after a second content-less inference.start (CL-3871)", () => {
+    const { transport, emit } = createFakeTransport();
+    const assembler = createPartAssembler(transport, params);
+
+    emit({
+      type: "inference.text.delta",
+      data: { partial: { text: "Here is my answer." } },
+    });
+    expect(assembler.activity).toBeNull();
+    emit({ type: "turn.committed" });
+    expect(assembler.activity).toBeNull();
+
+    // A reactor follow-up (queued mail, decision-only pass) fires a second,
+    // content-less inference.start after the visible turn already settled.
+    emit({ type: "inference.start" });
+    expect(assembler.activity).toBeNull();
   });
 
   it("captures inline images from inference.image_output and clears them on turn end", () => {

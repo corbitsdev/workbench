@@ -29,6 +29,9 @@ import { type } from "arktype";
 
 import { InferenceSource } from "@intx/types/runtime";
 import type { InferenceEvent } from "@intx/types/runtime";
+import { parseAgentAddress } from "@intx/types";
+import { resolveStepAddress } from "@intx/workflow-deploy";
+import { sanitizeAddress } from "@workbench/hub-agent";
 import { evaluateGrants } from "@intx/authz";
 import type { GrantRule } from "@intx/authz";
 import { getLogger } from "@intx/log";
@@ -68,7 +71,12 @@ import {
   createIsogitStore,
   type CommitSigner,
 } from "@workbench/storage-isogit";
-import { createWorkbenchDirectorRegistry } from "@workbench/agents";
+import {
+  createWorkbenchDirectorRegistry,
+  createSummarizeCompactor,
+  resolveCompactorSource,
+  SUMMARIZE_COMPACTOR_NAME,
+} from "@workbench/agents";
 import {
   createAgentRepoStore,
   type Principal,
@@ -101,6 +109,7 @@ import {
 } from "./conversation-state";
 import type { MessageTransport } from "@intx/types/runtime";
 import {
+  baseStepId,
   createNoopDrainController,
   emptyState,
   runtimeRun,
@@ -164,6 +173,23 @@ export const SIDECAR_SUBSTRATE_CONFIG_KEYS = [
   // frame's `agentId` and threads it here. Pin-bump re-diffs: this key is
   // ours; keep it.
   "WORKFLOW_RAW_DEPLOYMENT_ID",
+  // WORKBENCH-LOCAL (CL-2199): single-agent (stepCount === 1) tool identity.
+  // A single launched agent (Myra/Oat/triage/gate) deploys via interchange's
+  // `deployInstanceAtHead`, which writes NO `ins_<raw>-<step>` step agent row
+  // and stores its grants in the LEGACY agent-state repo keyed by the
+  // instance id (`parseAgentId(address)`), not the synthetic `<raw>-<step>`
+  // repo the multi-step deploy writes. So the synthetic `ins_<raw>-default`
+  // identity the resolver derives for a multi-step step matches no hub row for
+  // a single agent (tool credentials + hub-backed tools 403, grants deny-all).
+  // The deploy router threads the REAL agent-definition id (`agt_<defId>`,
+  // `frame.agentId`) and the instance principal (`prn_...`,
+  // `frame.config.principalId`) here so the resolver's single-agent branch
+  // uses the identity the hub actually has. Both keys are always populated (a
+  // multi-step deploy sets them to its deployment agent id + supervisor
+  // principal, which the resolver's multi-step branch ignores). Pin-bump
+  // re-diffs: these keys are ours; keep them.
+  "WORKFLOW_SINGLE_AGENT_ID",
+  "WORKFLOW_SINGLE_AGENT_PRINCIPAL_ID",
 ] as const;
 
 const SubstrateConfig = type({
@@ -196,6 +222,12 @@ const SubstrateConfig = type({
   // WORKBENCH-LOCAL (CL-2199): not in upstream's SubstrateConfig — the child
   // requires the raw hub deploymentId to derive step agent/state-repo ids.
   WORKFLOW_RAW_DEPLOYMENT_ID: "string > 0",
+  // WORKBENCH-LOCAL (CL-2199): single-agent tool identity (see
+  // SIDECAR_SUBSTRATE_CONFIG_KEYS). The real agent-definition id and instance
+  // principal the resolver's single-agent branch keys the credential +
+  // hub-backed rails on.
+  WORKFLOW_SINGLE_AGENT_ID: "string > 0",
+  WORKFLOW_SINGLE_AGENT_PRINCIPAL_ID: "string > 0",
 }).onUndeclaredKey("ignore");
 
 /**
@@ -220,13 +252,18 @@ export function parseByteCap(raw: string, name: string): number {
 /**
  * Per-step `InferenceSource` table parsed from the spawn-time
  * `STEP_INFERENCE_SOURCES` env entry. The deploy router serializes
- * `frame.workflow.sources` (a `Record<stepId, InferenceSource>`) as
- * JSON and threads it through the supervisor's `substrateEnv`; the
- * factory parses and validates the table once at construction time
- * and pins it for `buildEnv` lookups.
+ * `frame.workflow.sources` (a `Record<stepId, InferenceSource[]>` — an
+ * ordered, non-empty failover chain per step, matching the
+ * `AgentDeployFrame` wire contract `InferenceSource.array().atLeastLength(1)`)
+ * as JSON and threads it through the supervisor's `substrateEnv`; the
+ * factory parses and validates the table once at construction time and
+ * pins it for `buildEnv` lookups. The array shape must match upstream's
+ * reference sidecar and the router's `JSON.stringify(spec.sources)`; a
+ * single-source shape here rejects every real spawn's arrays at the child
+ * boundary.
  */
 const StepInferenceSourceTable = type({
-  "[string]": InferenceSource,
+  "[string]": InferenceSource.array().atLeastLength(1),
 });
 type StepInferenceSourceTable = typeof StepInferenceSourceTable.infer;
 
@@ -234,11 +271,13 @@ type StepInferenceSourceTable = typeof StepInferenceSourceTable.infer;
  * Parse and validate the JSON-encoded `STEP_INFERENCE_SOURCES` entry
  * the supervisor threaded through `substrateEnv`. A malformed JSON
  * payload, a non-object root, or a value that does not match
- * `Record<string, InferenceSource>` is rejected at the boundary with
- * a structured error rather than being deferred to a deep-stack
- * `buildEnv` failure.
+ * `Record<string, InferenceSource[]>` (a non-empty failover chain per
+ * step) is rejected at the boundary with a structured error rather than
+ * being deferred to a deep-stack `buildEnv` failure.
  */
-function parseStepInferenceSources(raw: string): StepInferenceSourceTable {
+export function parseStepInferenceSources(
+  raw: string,
+): StepInferenceSourceTable {
   let parsed: unknown;
   try {
     parsed = JSON.parse(raw);
@@ -299,17 +338,18 @@ export function parseAdapterManifest(raw: string): AdapterManifest {
 }
 
 /**
- * Resolve the per-step `InferenceSource` pinned at factory
- * construction. The supervisor's multi-step branch only invokes a
- * step whose `stepId` appears in `frame.workflow.sources`; a lookup
+ * Resolve the per-step `InferenceSource` failover chain pinned at
+ * factory construction. The supervisor's multi-step branch only invokes
+ * a step whose `stepId` appears in `frame.workflow.sources`; a lookup
  * miss here is a programmer error in the supervisor, not a wire-side
  * failure, and the resolver surfaces it with the missing `stepId`
- * named.
+ * named. Returns the ordered, non-empty chain (element 0 is the active
+ * source; the rest are failover targets the reactor advances through).
  */
 export function createStepInferenceSourceResolver(
   table: StepInferenceSourceTable,
-): (stepId: string) => InferenceSource {
-  return (stepId: string): InferenceSource => {
+): (stepId: string) => InferenceSource[] {
+  return (stepId: string): InferenceSource[] => {
     const direct = table[stepId];
     if (direct !== undefined) return direct;
     // `map` fan-out expands a single `stepOrder` entry `<base>` into per-item
@@ -322,8 +362,8 @@ export function createStepInferenceSourceResolver(
     const mapBase = /^(.+)\[\d+\]$/.exec(stepId);
     const base = mapBase?.[1];
     if (base !== undefined) {
-      const baseSource = table[base];
-      if (baseSource !== undefined) return baseSource;
+      const baseChain = table[base];
+      if (baseChain !== undefined) return baseChain;
     }
     throw new Error(
       `sidecar workflow-child step invoker buildEnv: no InferenceSource pinned for stepId ${JSON.stringify(stepId)}; the supervisor must populate frame.workflow.sources for every stepOrder entry`,
@@ -579,7 +619,17 @@ function createSidecarStepBuildEnv(
         "sidecar workflow-child step invoker buildEnv: AuthorizeContext.stepId is required for per-step InferenceSource resolution; the workflow runtime must populate stepId on every step-originated invocation",
       );
     }
-    const source = resolveStepInferenceSource(stepId);
+    const sources = resolveStepInferenceSource(stepId);
+    // The table's arktype (`InferenceSource.array().atLeastLength(1)`)
+    // guarantees a non-empty chain; assert it here so the reactor's
+    // initial-source pin (element 0) is a checked fact rather than an
+    // unchecked index.
+    const activeSource = sources[0];
+    if (activeSource === undefined) {
+      throw new Error(
+        `sidecar workflow-child step invoker buildEnv: empty InferenceSource chain pinned for stepId ${JSON.stringify(stepId)}`,
+      );
+    }
 
     // Per-run/per-step storage root under SIDECAR_DATA_DIR, keyed by
     // repoId + runId + stepId + attempt so concurrent steps never share
@@ -642,9 +692,21 @@ function createSidecarStepBuildEnv(
     const workdir = path.join(storeDir, "workspace");
     await fs.promises.mkdir(workdir, { recursive: true });
 
+    // Named "summarize" compaction strategy (CL-3803 / CL-3806): runs one
+    // bounded inference against the cheap summary model when an
+    // openai-compatible source is available, otherwise the agent's own
+    // default source (Anthropic-only agents still compact, just on their
+    // full-price model). Selection is explicit about provider + model —
+    // never first-match of an arbitrary openai-compatible gateway that
+    // may not serve SUMMARY_MODEL_ID.
+    //
+    // Only the warm single-step path (durable conversation) needs long-lived
+    // context compaction. Multi-step workflow agents are short-lived and
+    // keep the prior behavior of no registered compactor.
+    const inferenceDeps = createDependencies(deps.adapters);
     const env: StepEnvBase & Record<string, unknown> = {
-      sources: [source],
-      defaultSource: source.id,
+      sources,
+      defaultSource: activeSource.id,
       storage,
       workdir,
       audit,
@@ -655,8 +717,29 @@ function createSidecarStepBuildEnv(
       // custom-provider step source resolves in the child the same way
       // it does on the sidecar main path rather than hitting
       // `createAgent`'s built-ins-only default.
-      deps: createDependencies(deps.adapters),
+      deps: inferenceDeps,
     };
+
+    if (deps.durableConversation !== undefined) {
+      const resolved = resolveCompactorSource(sources);
+      if (!resolved.usesCheapSummaryModel) {
+        getLogger(["sidecar", "compactor"]).info(
+          "summarize compactor falling back to agent default source (provider={provider} model={model}) — no openai-compatible source serving the cheap summary model",
+          {
+            provider: resolved.source.provider,
+            model: resolved.source.model,
+            reason: resolved.reason,
+            stepId,
+          },
+        );
+      }
+      env.compactors = {
+        [SUMMARIZE_COMPACTOR_NAME]: createSummarizeCompactor({
+          source: resolved.source,
+          deps: inferenceDeps,
+        }),
+      };
+    }
 
     // Supervisor-backed transport for the step agent's mail tools (OUTBOUND
     // half of mailbox ownership, §3a). Inbound is inert -- the supervisor
@@ -720,13 +803,9 @@ const StepGrantsFile = type({ grants: "unknown[]" });
  */
 async function readStepGrants(args: {
   bareStore: RepoStore;
-  deploymentId: string;
-  stepId: string;
+  repoId: RepoId;
 }): Promise<GrantRule[]> {
-  const repoId: RepoId = {
-    kind: "agent-state",
-    id: `${args.deploymentId}-${args.stepId}`,
-  };
+  const repoId = args.repoId;
   const dir = args.bareStore.getRepoDir(repoId);
   const filePath = path.join(dir, STEP_GRANTS_PATH);
   let raw: string;
@@ -765,12 +844,68 @@ async function readStepGrants(args: {
   return validated.grants as GrantRule[];
 }
 
+const INSTANCE_PREFIX = "ins_";
+
+/**
+ * Resolve the on-disk directory holding a step's deploy tree
+ * (`<dataDir>/<sanitizeAddress(stepAddress)>`), mirroring interchange's
+ * `apps/sidecar/src/step-agent-tools.ts` `stepDeployTreeDir`. The hub stages
+ * `deploy/tool-packages-manifest.json` + `deploy/asset-mounts.json` and the
+ * asset tarballs (`workspace/`) here at deploy time: single agents at the head
+ * via `deployInstanceAtHead`, multi-step steps at their derived address via
+ * `stageWorkflowStep`.
+ *
+ * The step address is recovered from the deployment mailbox address the
+ * supervisor threaded into the child (`ins_<deploymentId>@<domain>`): the
+ * instance-id local part minus the `ins_` prefix is the deploymentId, the
+ * address domain is the deploymentDomain, and `resolveStepAddress` owns the
+ * head/step collapse (for `stepCount === 1` the lone step IS the head, read at
+ * the deployment mailbox itself; otherwise `deriveStepAddress`). A `map`
+ * iteration's scoped id `<base>[<index>]` collapses to its `baseStepId` — every
+ * iteration reads the base step's one staged tree.
+ */
+export function stepDeployTreeDir(args: {
+  dataDir: string;
+  mailboxAddress: string;
+  stepId: string;
+  stepCount: number;
+}): string {
+  const parsed = parseAgentAddress(args.mailboxAddress);
+  if (parsed === null || !parsed.instanceId.startsWith(INSTANCE_PREFIX)) {
+    throw new Error(
+      `sidecar step tool-context: deployment mailbox address ${JSON.stringify(args.mailboxAddress)} is not a parseable ins_<deploymentId>@<domain> agent address; cannot locate the step's on-disk deploy tree`,
+    );
+  }
+  const deploymentId = parsed.instanceId.slice(INSTANCE_PREFIX.length);
+  const stepAddress = resolveStepAddress({
+    deploymentId,
+    stepId: baseStepId(args.stepId),
+    deploymentDomain: parsed.domain,
+    stepCount: args.stepCount,
+  });
+  return path.join(args.dataDir, sanitizeAddress(stepAddress));
+}
+
 /**
  * Inputs the production step tool-context resolver closes over. The
  * hub-connection anchors come from the validated substrate config.
  */
 export interface StepToolContextResolverArgs {
   bareStore: RepoStore;
+  /** Sidecar data dir; roots the on-disk deploy-tree lookup. */
+  dataDir: string;
+  /**
+   * Deployment mailbox address (`ins_<deploymentId>@<domain>`) the supervisor
+   * threaded into the child. Locates each step's on-disk deploy tree.
+   */
+  mailboxAddress: string;
+  /**
+   * Step count for the head/step address collapse. `1` for a single-step
+   * (single-agent / warm) deployment — the tree is read at the head; any value
+   * `> 1` reads each step at its derived address. Only the `=== 1` branch is
+   * significant to `resolveStepAddress`.
+   */
+  stepCount: number;
   /**
    * RAW hub deploymentId (`ses_<id>`), threaded via
    * `WORKFLOW_RAW_DEPLOYMENT_ID`. NOT the slugified workflow-run repo id
@@ -781,6 +916,26 @@ export interface StepToolContextResolverArgs {
   tenantId: string;
   hubHttpUrl: string;
   sidecarToken: string;
+  /**
+   * WORKBENCH-LOCAL (CL-2199): single launched-agent tool identity, applied
+   * ONLY when this deploy is a genuine single agent — i.e. `stepCount === 1`
+   * AND `singleAgentId !== parseAgentAddress(mailboxAddress).instanceId` (the
+   * frame carries a REAL `agt_<defId>` distinct from the deployment instance
+   * id). A single launched agent (Myra/Oat/triage/gate) has no `ins_<raw>-<step>`
+   * hub row and stores its grants in the LEGACY agent-state repo keyed by the
+   * instance id — so the synthetic step identity resolves against nothing.
+   * `singleAgentId` is the REAL agent-definition id (`agt_<defId>`) the
+   * credential + hub-backed rails authorize against; `singleAgentPrincipalId`
+   * is the instance principal (`prn_...`) the hub-backed identity triple
+   * resolves the owning instance by.
+   *
+   * A single-STEP workflow (`stepCount === 1` but `singleAgentId ===
+   * instanceId`, because its frame `agentId` is `deriveDeploymentAgentId` ===
+   * the supervisor id) and every multi-step step (`stepCount > 1`) ignore both
+   * and keep the `ins_<raw>-<step>` identity the hub actually wrote.
+   */
+  singleAgentId: string;
+  singleAgentPrincipalId: string;
   cacheRoot: string;
   cacheMaxBytes: number;
   registryMaxTarballBytes: number;
@@ -809,20 +964,90 @@ export function createStepToolContextResolver(
     // mapped step must resolve its tool-context against `<base>` — otherwise its
     // declared tools are never loaded ("not in the step's loaded runner").
     const baseStepId = /^(.+)\[\d+\]$/.exec(stepId)?.[1] ?? stepId;
-    // Must stay identical to `@intx/workflow-deploy`'s exported
-    // `deriveStepAgentId` (`ins_<deploymentId>-<stepId>`), which the hub's
-    // `writeStepAgentRows` uses to persist the row this id resolves.
-    // `args.deploymentId` is the RAW hub deploymentId (`ses_<id>`), so this
-    // yields `ins_ses_<id>-<step>` — the row the hub registered. The
-    // template is hand-rolled here (not imported) because `@intx/workflow-deploy`
-    // is not a sidecar dependency; on any change to that helper, update this.
-    const stepAgentId = `ins_${args.deploymentId}-${baseStepId}`;
+
+    // WORKBENCH-LOCAL (CL-2199): single launched-agent vs (single- OR multi-)step
+    // workflow tool identity.
+    //
+    // A single launched agent (Myra/Oat/triage/gate) is deployed by interchange's
+    // `deployInstanceAtHead`, which writes NO `ins_<raw>-<step>` hub row and stores
+    // the agent's grants in the LEGACY agent-state repo keyed by the instance id
+    // (`parseAgentId(address)`) — see `createStepStrategy` / `writeStepGrants` in
+    // `workflow-host-wiring.ts`. So the synthetic `ins_<raw>-<step>` identity the
+    // workflow branch derives matches NOTHING for a single agent: tool credentials
+    // 404, hub-backed tools 403, grants read miss (deny-all). Use the identity the
+    // hub actually has instead — the REAL agent-definition id (`agt_<defId>`, for
+    // the credential/hub-backed agent lookup + toolPackages gate), the instance
+    // principal (`prn_...`, so the hub-backed identity triple resolves the owning
+    // instance), and the legacy grants repo.
+    //
+    // The discriminator is DEPLOY PROVENANCE, not `stepCount`. `stepCount === 1`
+    // is ALSO true for a single-STEP workflow definition (`stepOrder.length === 1`),
+    // which is NOT a launched agent: it is deployed via `deploySingleStepAtHead`,
+    // whose frame carries `deriveDeploymentAgentId(deploymentId)` (=== the mailbox
+    // address's instance id `ins_<deploymentId>`) as `agentId` and the EMPTY
+    // supervisor `agent` row (`writeDeploymentAgentRow`: `toolPackages: []`,
+    // `capabilities: null`). Keying tool/credential/grant resolution on that
+    // supervisor identity strands the single-step workflow's REAL step tools +
+    // grants, which the hub wrote at `ins_<deploymentId>-<stepId>` /
+    // `<deploymentId>-<stepId>` (`writeStepAgentRows` / `writeStepGrantFiles`) — the
+    // exact `ins_<raw>-<step>` identity the else branch derives. A single launched
+    // agent instead carries a REAL `agt_<defId>` frame `agentId`, distinct from the
+    // instance id — so `singleAgentId !== instanceId` is the signal that this is a
+    // genuine single agent and the single-agent branch applies. The on-disk deploy
+    // tree location is a SEPARATE decision (`stepDeployTreeDir`, keyed off the
+    // physical `stepCount === 1` head collapse) and is unchanged: both a single
+    // agent and a single-step workflow stage their tree at the head.
+    //
+    // A genuine multi-step step keeps the `ins_<raw>-<step>` identity for the same
+    // reason a single-step workflow does — the hub's `writeStepAgentRows` /
+    // `writeStepGrantFiles` persist the matching `agent` row and `<raw>-<step>`
+    // grants repo for it.
+    const mailboxParsed = parseAgentAddress(args.mailboxAddress);
+    if (mailboxParsed === null) {
+      throw new Error(
+        `sidecar step tool-context: deployment mailbox address ${JSON.stringify(args.mailboxAddress)} is not a parseable agent address; cannot resolve the step's tool identity`,
+      );
+    }
+    const isSingleLaunchedAgent =
+      args.stepCount === 1 && args.singleAgentId !== mailboxParsed.instanceId;
+
+    let stepAgentId: string;
+    let principalId: string;
+    let stepAddress: string;
+    let grantsRepoId: RepoId;
+    let includeRunId: boolean;
+    if (isSingleLaunchedAgent) {
+      stepAgentId = args.singleAgentId;
+      principalId = args.singleAgentPrincipalId;
+      stepAddress = args.mailboxAddress;
+      grantsRepoId = { kind: "agent-state", id: mailboxParsed.instanceId };
+      // A warm single-step agent's per-message runId is NOT a workflow-run
+      // record id; forwarding it would trigger a spurious run lookup on the
+      // hub. The single agent resolves tenant tool credentials, so omit it.
+      includeRunId = false;
+    } else {
+      // Must stay identical to `@intx/workflow-deploy`'s exported
+      // `deriveStepAgentId` (`ins_<deploymentId>-<stepId>`), which the hub's
+      // `writeStepAgentRows` uses to persist the row this id resolves.
+      // `args.deploymentId` is the RAW hub deploymentId (`ses_<id>`), so this
+      // yields `ins_ses_<id>-<step>` — the row the hub registered. The template
+      // is hand-rolled here (not imported) because `@intx/workflow-deploy` is
+      // not a sidecar dependency; on any change to that helper, update this.
+      stepAgentId = `ins_${args.deploymentId}-${baseStepId}`;
+      principalId = stepAgentId;
+      stepAddress = stepAgentId;
+      grantsRepoId = {
+        kind: "agent-state",
+        id: `${args.deploymentId}-${baseStepId}`,
+      };
+      includeRunId = true;
+    }
+
     let grants: GrantRule[];
     try {
       grants = await readStepGrants({
         bareStore: args.bareStore,
-        deploymentId: args.deploymentId,
-        stepId: baseStepId,
+        repoId: grantsRepoId,
       });
     } catch (cause) {
       const reason = cause instanceof Error ? cause.message : String(cause);
@@ -830,15 +1055,22 @@ export function createStepToolContextResolver(
       grants = [];
     }
     const runId = req.authzContext.runId;
+    const deployTreeDir = stepDeployTreeDir({
+      dataDir: args.dataDir,
+      mailboxAddress: args.mailboxAddress,
+      stepId,
+      stepCount: args.stepCount,
+    });
     return {
       hubHttpUrl: args.hubHttpUrl,
       sidecarToken: args.sidecarToken,
       tenantId: args.tenantId,
       stepAgentId,
-      stepAddress: stepAgentId,
-      principalId: stepAgentId,
-      ...(runId !== undefined ? { workflowRunId: runId } : {}),
+      stepAddress,
+      principalId,
+      ...(includeRunId && runId !== undefined ? { workflowRunId: runId } : {}),
       grants,
+      deployTreeDir,
       cacheRoot: args.cacheRoot,
       cacheMaxBytes: args.cacheMaxBytes,
       registryMaxTarballBytes: args.registryMaxTarballBytes,
@@ -940,6 +1172,16 @@ export function createSidecarStepInvoker(args: {
   outboundMailBridge?: ChildOutboundMailBridge;
   /** Deployment mailbox address; the step agent's outbound `address`. */
   mailboxAddress?: string;
+  /**
+   * WORKBENCH-LOCAL: true for a WARM single-step deployment (the sole warm
+   * agent — Myra/Oat/triage/gate), false for a genuine multi-step workflow
+   * step. Threaded into the tool-capable `createStepAgentFactory` so a warm
+   * agent resolves its director from its prompt markers and wires the dynamic
+   * tool catalog + exposure (the retired `default-harness` semantics), while a
+   * multi-step step keeps the budget director unconditionally. Sourced from
+   * `env.spawn.warmKeep`.
+   */
+  warmKeep?: boolean;
 }): StepInvoker {
   const buildEnv = createSidecarStepBuildEnv({
     table: args.table,
@@ -976,7 +1218,9 @@ export function createSidecarStepInvoker(args: {
     agentFactory:
       args.agentFactory ??
       (args.resolveStepToolContext !== undefined
-        ? createStepAgentFactory()
+        ? createStepAgentFactory({
+            ...(args.warmKeep !== undefined ? { warmKeep: args.warmKeep } : {}),
+          })
         : createAgent),
     ...(args.onEvent !== undefined ? { onEvent: args.onEvent } : {}),
     // Warm-keep wiring (upstream §3b/§3c): forward the run-loop's per-
@@ -1443,13 +1687,31 @@ export function createSidecarSubstrateFactory(
       bareStore,
       // RAW hub deploymentId (`ses_<id>`), NOT `env.spawn.deploymentId`
       // (the slugified workflow-run repo id). The step agent row id and
-      // agent-state repo id the hub persisted are keyed on the raw id;
-      // the slug would make the step's tool-manifest fetch 404 and its
-      // grants read miss (deny-all). See `RAW_DEPLOYMENT_ID_ENV_KEY`.
+      // agent-state repo id the hub persisted are keyed on the raw id; the
+      // slug would make the step's credential lookup 404 and its grants read
+      // miss (deny-all). See `RAW_DEPLOYMENT_ID_ENV_KEY`. This id keys the
+      // KEPT credential + hub-backed rails; it does NOT locate the on-disk
+      // deploy tree (that is `mailboxAddress`-derived, below).
       deploymentId: validated.WORKFLOW_RAW_DEPLOYMENT_ID,
       tenantId: validated.TENANT_ID,
       hubHttpUrl: wsUrlToHttp(validated.HUB_WS_URL),
       sidecarToken: validated.SIDECAR_TOKEN,
+      // WORKBENCH-LOCAL (CL-2199): single-agent (stepCount === 1) tool identity
+      // — the real agent-definition id + instance principal the deploy router
+      // threaded from the frame. Ignored by the multi-step branch.
+      singleAgentId: validated.WORKFLOW_SINGLE_AGENT_ID,
+      singleAgentPrincipalId: validated.WORKFLOW_SINGLE_AGENT_PRINCIPAL_ID,
+      // On-disk deploy-tree lookup: the hub stages each step's pinned tool
+      // closure at `<dataDir>/<sanitizeAddress(stepAddress)>`. A single-step
+      // deploy reads the tree at the head; a genuine multi-step deploy reads
+      // each step at its derived address. `stepCount` is the real parsed
+      // `STEP_COUNT` (`env.spawn.stepCount`) and must drive step-address
+      // derivation directly — reconstructing it from `warmKeep` would
+      // mislocate a multi-step deploy tree if a future pin ever set
+      // `warmKeep` on a non-single-step deploy.
+      dataDir: validated.SIDECAR_DATA_DIR,
+      mailboxAddress: env.spawn.mailboxAddress,
+      stepCount: env.spawn.stepCount,
       cacheRoot: path.join(
         validated.SIDECAR_DATA_DIR,
         "cache",
@@ -1516,6 +1778,10 @@ export function createSidecarSubstrateFactory(
         onEvent,
         outboundMailBridge: env.outboundMailBridge,
         mailboxAddress: env.spawn.mailboxAddress,
+        // WORKBENCH-LOCAL: a warm single-step deployment (Myra/Oat/triage/gate)
+        // gets per-agent director resolution + dynamic tools in the step
+        // factory; a multi-step step keeps the budget director unconditionally.
+        warmKeep: env.spawn.warmKeep,
         ...(warmCache !== undefined ? { warmCache } : {}),
         ...(durableConversation !== undefined ? { durableConversation } : {}),
         ...(onRunBoundary !== undefined ? { onRunBoundary } : {}),

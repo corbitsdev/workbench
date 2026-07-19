@@ -469,6 +469,7 @@ describe("validatePreferencePatch", () => {
         artifactsViewMode: "rows",
         toolsViewMode: "grid",
         skillsViewMode: "rows",
+        agentsViewMode: "grid",
       }),
     ).toBeNull();
   });
@@ -616,7 +617,9 @@ describe("timezone preference", () => {
   });
 
   test("clearing the timezone (empty string) is accepted", () => {
-    expect(validatePreferencePatch({ [TIMEZONE_PREFERENCE_KEY]: "" })).toBeNull();
+    expect(
+      validatePreferencePatch({ [TIMEZONE_PREFERENCE_KEY]: "" }),
+    ).toBeNull();
   });
 
   test("a garbage zone is rejected", () => {
@@ -653,10 +656,12 @@ describe("timezone preference", () => {
     const withZone = resolvePreferenceSettings({
       [TIMEZONE_PREFERENCE_KEY]: "Europe/Berlin",
     });
-    expect(
-      withZone.find((s) => s.key === TIMEZONE_PREFERENCE_KEY)?.value,
-    ).toBe("Europe/Berlin");
+    expect(withZone.find((s) => s.key === TIMEZONE_PREFERENCE_KEY)?.value).toBe(
+      "Europe/Berlin",
+    );
     const unset = resolvePreferenceSettings({});
-    expect(unset.find((s) => s.key === TIMEZONE_PREFERENCE_KEY)?.value).toBe("");
+    expect(unset.find((s) => s.key === TIMEZONE_PREFERENCE_KEY)?.value).toBe(
+      "",
+    );
   });
 });

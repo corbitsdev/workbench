@@ -15,8 +15,8 @@
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "test": "bun test --preload ./src/test-setup.ts src",
-    "test:coverage": "bun test --preload ./src/test-setup.ts --coverage --coverage-reporter=lcov --coverage-reporter=text src"
+    "test": "BUN_OPTIONS=--conditions=intx-src bun test --preload ./src/test-setup.ts src",
+    "test:coverage": "BUN_OPTIONS=--conditions=intx-src bun test --preload ./src/test-setup.ts --coverage --coverage-reporter=lcov --coverage-reporter=text src"
   },
   "dependencies": {
     "arktype": "catalog:",

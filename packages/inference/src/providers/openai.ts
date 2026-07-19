@@ -685,14 +685,20 @@ function parseResponse(
   void choice.finish_reason;
 
   // Usage at end of stream (stream_options: { include_usage: true }).
+  // WORKBENCH-LOCAL (CL-3917): some OpenAI-compatible gateways (e.g. Bifrost)
+  // attach the final `usage` object to the SAME chunk that carries the last
+  // `choices` delta rather than a separate usage-only chunk, so this branch
+  // needs the same `completion_tokens_details.reasoning_tokens` mapping as
+  // the usage-only branch above — hardcoding `thinking: 0` here silently
+  // dropped reasoning tokens for every gateway that shapes usage this way.
   const usageInChunk = chunk.usage;
   if (usageInChunk != null) {
     const tokenUsage: TokenUsage = {
       input: usageInChunk.prompt_tokens ?? 0,
       output: usageInChunk.completion_tokens ?? 0,
-      cacheRead: 0,
+      cacheRead: usageInChunk.prompt_tokens_details?.cached_tokens ?? 0,
       cacheWrite: 0,
-      thinking: 0,
+      thinking: usageInChunk.completion_tokens_details?.reasoning_tokens ?? 0,
     };
     events.push({
       type: "inference.usage",

@@ -4,6 +4,7 @@ export {
   type CancelCommitInfo,
   type CancelRequestOpts,
   type DeliverSignalOpts,
+  type DeliverSourcesOpts,
   type DrainOpts,
   type RecycleOpts,
   type SpawnOpts,
@@ -32,13 +33,6 @@ export {
 } from "./cancel-signing";
 
 export {
-  commitRunEvent,
-  type CommitRunEventOpts,
-  type CommitRunEventResult,
-  type SupervisorRunEvent,
-} from "./run-event-signing";
-
-export {
   createDrainTimeoutAccumulator,
   DEFAULT_DRAIN_TIMEOUT_MS,
   type DrainTimeoutAccumulator,
@@ -46,10 +40,11 @@ export {
   type DrainTimeoutOpts,
 } from "./drain-timeout";
 
+export { DEFAULT_KILL_TIMEOUT_MS } from "./child-termination";
+
 export {
   createRecyclePolicy,
   triggerRecycle,
-  DEFAULT_KILL_TIMEOUT_MS,
   DEFAULT_POLICY_INTERVAL_MS,
   MAX_BUFFERED_MAIL,
   type ChildWiring,
@@ -71,15 +66,11 @@ export type {
   MailAuditRef,
   MailBusBindings,
   PrincipalSigner,
-  RecordRunEvent,
   SignedPayload,
   SubprocessHandle,
   SubprocessSpawner,
-  SupervisorDeployFrame,
   TerminalEventSource,
   TerminalRunEvent,
-  TrivialLaunch,
-  TrivialLaunchBindings,
   WorkflowSupervisorBindings,
   WorkflowSupervisorPrincipalKind,
 } from "./types";

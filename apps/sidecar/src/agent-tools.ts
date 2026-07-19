@@ -264,6 +264,17 @@ export async function loadToolPackages(args: {
   cacheRoot: string;
   cacheMaxBytes: number;
   registryMaxTarballBytes: number;
+  /**
+   * Workspace root the loader resolves `kind: "asset"` tarball mounts
+   * against. Defaults to `<storeDir>/workspace`. The on-disk deploy-tree
+   * path overrides it to the step's staged deploy-tree workspace
+   * (`<deployTreeDir>/workspace`, where the hub's asset-pack push lands the
+   * tarballs) while keeping the apply-state + tarball cache rooted per step
+   * under `storeDir` — the loader's asset source and the apply-state root
+   * are then two different directories, exactly as upstream's
+   * `materializeToolPackages` does it.
+   */
+  assetRoot?: string;
 }): Promise<
   Awaited<ReturnType<ReturnType<typeof createToolLoader>["loadManifest"]>>
 > {
@@ -304,7 +315,7 @@ export async function loadToolPackages(args: {
     return loader.loadManifest({
       manifest: validated,
       instanceScratchDir: scratchDir,
-      assetRoot: path.join(args.storeDir, "workspace"),
+      assetRoot: args.assetRoot ?? path.join(args.storeDir, "workspace"),
       assetMounts: args.assetMounts,
     });
   });

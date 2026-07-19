@@ -100,6 +100,7 @@ export {
   wrapDirectorWithCompaction,
   COMPACTION_TRIGGER_THRESHOLD,
   type CompactionDirectorOptions,
+  type CompactionTelemetryEvent,
 } from "./compaction-director";
 
 // Walter agent
@@ -133,11 +134,14 @@ export {
 // Summarize compactor — context compaction strategy
 export {
   createSummarizeCompactor,
+  resolveCompactorSource,
   SUMMARIZE_COMPACTOR_NAME,
   SUMMARIZE_COMPACTOR_VERSION,
   SUMMARY_MODEL_ID,
+  SUMMARY_MODEL_PROVIDER,
   RETAIN_RECENT_EXCHANGES,
   type CreateSummarizeCompactorOpts,
+  type CompactorSourceResolution,
 } from "./summarize-compactor";
 
 // Hammy — the humanizer

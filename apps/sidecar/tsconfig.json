@@ -9,11 +9,22 @@
     "verbatimModuleSyntax": true,
     "noEmit": true,
     "skipLibCheck": true,
-    "lib": ["ESNext"],
-    "types": ["bun"],
+    "lib": [
+      "ESNext"
+    ],
+    "types": [
+      "bun"
+    ],
     "paths": {
-      "@intx/hub-client": ["./src/intx-hub-client-server.ts"]
-    }
+      "@intx/hub-client": [
+        "./src/intx-hub-client-server.ts"
+      ]
+    },
+    "customConditions": [
+      "intx-src"
+    ]
   },
-  "include": ["src/**/*"]
+  "include": [
+    "src/**/*"
+  ]
 }

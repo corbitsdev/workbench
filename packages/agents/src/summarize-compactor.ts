@@ -36,11 +36,64 @@ if (summaryDefaultModel === undefined) {
 // something else.
 export const SUMMARY_MODEL_ID: string = summaryDefaultModel;
 
+/**
+ * Provider known to serve `SUMMARY_MODEL_ID` (OpenCode Zen / openai-compatible
+ * gateway). Selection is explicit about this pair — never "first
+ * openai-compatible source" without pinning the summary model, and never a
+ * different provider's openai-compatible-shaped source that may 400 on
+ * `deepseek-v4-flash`.
+ */
+export const SUMMARY_MODEL_PROVIDER = "openai-compatible" as const;
+
+export type CompactorSourceResolution = {
+  source: InferenceSource;
+  /** True when summarizing on SUMMARY_MODEL_ID via SUMMARY_MODEL_PROVIDER. */
+  usesCheapSummaryModel: boolean;
+  reason: "cheap-summary-provider" | "agent-default-fallback";
+};
+
+/**
+ * Pick the inference source the summarize compactor should run on.
+ *
+ * Prefer a source whose `provider` is exactly `SUMMARY_MODEL_PROVIDER` and pin
+ * its model to `SUMMARY_MODEL_ID`. If none is available (Anthropic-only agents
+ * today pin only their own provider), fall back to the first source unchanged
+ * so compaction still runs — just on the agent's own (full-price) model.
+ */
+export function resolveCompactorSource(
+  sources: readonly InferenceSource[],
+): CompactorSourceResolution {
+  if (sources.length === 0) {
+    throw new Error(
+      "resolveCompactorSource: no inference sources available for the summarize compactor",
+    );
+  }
+  const cheap = sources.find((s) => s.provider === SUMMARY_MODEL_PROVIDER);
+  if (cheap !== undefined) {
+    return {
+      source: { ...cheap, model: SUMMARY_MODEL_ID },
+      usesCheapSummaryModel: true,
+      reason: "cheap-summary-provider",
+    };
+  }
+  const fallback = sources[0];
+  if (fallback === undefined) {
+    throw new Error(
+      "resolveCompactorSource: no inference sources available for the summarize compactor",
+    );
+  }
+  return {
+    source: fallback,
+    usesCheapSummaryModel: false,
+    reason: "agent-default-fallback",
+  };
+}
+
 export type CreateSummarizeCompactorOpts = {
   // The inference source the compaction call runs on. Used verbatim — the
   // compactor does not rewrite its model. The caller must hand in a source
-  // whose provider actually serves whatever model is set on it (e.g. the
-  // sidecar harness selects an openai-compatible source and points it at
+  // whose provider actually serves whatever model is set on it (e.g.
+  // `resolveCompactorSource` selects an openai-compatible source and pins
   // `SUMMARY_MODEL_ID`, or falls back to the agent's own default source when
   // no such source is available).
   source: InferenceSource;

@@ -59,6 +59,14 @@ export const LogStepStateSchema = type({
   // awaitSignal gate wait in ms: SignalAwaited.at → SignalReceived.at (CL-2670).
   // Present only for a gate step whose signal was received.
   "gateWaitMs?": "number",
+  // The most recent inference error/timeout observed for this step while it is
+  // still in-flight (CL-3887), read from the existing analytics event stream —
+  // no new event plumbing. Set by the route layer (which holds the db handle),
+  // never by the fold itself; absent once the step advances past `in-flight`.
+  // The raw sidecar error text never ships on this wire — only the category
+  // mapping the UI renders — so `message` is intentionally not part of this
+  // shape.
+  "liveIssue?": { category: "string", occurredAt: "string" },
 });
 export type LogStepState = typeof LogStepStateSchema.infer;
 

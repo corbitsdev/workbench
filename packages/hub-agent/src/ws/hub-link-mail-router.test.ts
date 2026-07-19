@@ -17,24 +17,23 @@ import { Hono } from "hono";
 import { upgradeWebSocket, websocket } from "hono/bun";
 import {
   createSidecarRouter,
+  type SidecarAuthenticator,
   type SidecarRouter,
   type WsHandle,
 } from "@intx/hub-sessions";
 import { createInMemoryTransport } from "@intx/mail-memory";
-import { base64Encode } from "@intx/types";
+import { base64Encode, hexEncode } from "@intx/types";
 import type {
   HarnessConfig,
   InboundMessage,
-  InferenceSource,
   KeyPair,
 } from "@intx/types/runtime";
-import type { GrantRule } from "@intx/types/authz";
-import { signEd25519, verifySSHSignature } from "@intx/crypto";
+import { generateKeyPair, signEd25519, verifySSHSignature } from "@intx/crypto";
 import { hexDecode } from "@intx/types";
 
 import { createHubLink, type DeployRouter } from "./hub-link";
 import type { AgentKeyStore } from "../agent-key-store";
-import type { AgentEventListener, SessionManager } from "../session-manager";
+import type { SessionManager } from "../session-manager";
 
 function createTestKeyStore(): AgentKeyStore & {
   registerKey(address: string, kp: KeyPair): void;
@@ -49,12 +48,6 @@ function createTestKeyStore(): AgentKeyStore & {
       const existing = agentKeys.get(address);
       if (existing !== undefined) return { keyPair: existing, isNew: false };
       throw new Error(`No key registered for ${address} in test store`);
-    },
-    async scanKeys() {
-      return [...agentKeys.entries()].map(([address, keyPair]) => ({
-        address,
-        keyPair,
-      }));
     },
     async signChallenge(address, payload) {
       const kp = agentKeys.get(address);
@@ -80,31 +73,23 @@ function createTestKeyStore(): AgentKeyStore & {
   };
 }
 
-function createTestDeployRouter(
-  sessions: SessionManager,
-  keyStore: AgentKeyStore,
-): DeployRouter {
+function createTestDeployRouter(keyStore: AgentKeyStore): DeployRouter {
   return {
     async deploy(frame) {
-      const result = await sessions.provisionAgent(frame.config);
       keyStore.recordHubKey(frame.agentAddress, frame.hubPublicKey);
-      await sessions.persistHubPublicKey(
-        frame.agentAddress,
-        frame.hubPublicKey,
-      );
-      return { publicKey: result.publicKey };
+      return { publicKey: "aa".repeat(32) };
     },
   };
 }
 
-function withTestDeployBindings(sessions: SessionManager): {
+function withTestDeployBindings(): {
   keyStore: AgentKeyStore & { registerKey(address: string, kp: KeyPair): void };
   deployRouter: DeployRouter;
 } {
   const keyStore = createTestKeyStore();
   return {
     keyStore,
-    deployRouter: createTestDeployRouter(sessions, keyStore),
+    deployRouter: createTestDeployRouter(keyStore),
   };
 }
 
@@ -143,76 +128,9 @@ function createMockSessionManager(): SessionManager & {
     provisionedAddresses: [] as string[],
     shouldThrow: null as string | null,
 
-    async provisionAgent(config: HarnessConfig) {
-      if (mock.shouldThrow !== null) throw new Error(mock.shouldThrow);
-      mock.provisioned.push(config);
-      mock.provisionedAddresses.push(config.agentAddress);
-      return {
-        publicKey: "deadbeef",
-        keyPair: {
-          publicKey: new Uint8Array(32),
-          privateKey: new Uint8Array(32),
-        },
-      };
-    },
-    async startSession(agentAddress: string): Promise<void> {
-      if (mock.shouldThrow !== null) throw new Error(mock.shouldThrow);
-      mock.started.push(agentAddress);
-      mock.provisionedAddresses = mock.provisionedAddresses.filter(
-        (a) => a !== agentAddress,
-      );
-      mock.addresses.push(agentAddress);
-    },
-    async destroySession(agentAddress: string): Promise<void> {
-      if (mock.shouldThrow !== null) throw new Error(mock.shouldThrow);
-      mock.destroyed.push(agentAddress);
-      mock.addresses = mock.addresses.filter((a) => a !== agentAddress);
-    },
-    async abortSession(agentAddress: string, reason: string): Promise<void> {
-      if (mock.shouldThrow !== null) throw new Error(mock.shouldThrow);
-      mock.aborted.push({ address: agentAddress, reason });
-      mock.addresses = mock.addresses.filter((a) => a !== agentAddress);
-    },
-    async abortTurn(agentAddress: string): Promise<void> {
-      if (mock.shouldThrow !== null) throw new Error(mock.shouldThrow);
-      mock.addresses = mock.addresses.filter((a) => a !== agentAddress);
-    },
-    deliverMessage(agentAddress: string, message: InboundMessage): void {
-      if (mock.shouldThrow !== null) throw new Error(mock.shouldThrow);
-      mock.delivered.push({ agentAddress, message });
-    },
-    isWakeable(_agentAddress: string): boolean {
-      return false;
-    },
-    evictIdleSessions: () => Promise.resolve(),
-    wakeAgent: (_agentAddress: string) => Promise.resolve(),
-    deliverInboundMail(_agentAddress: string, _rawMessage: Uint8Array): void {
-      /* no-op: this test exercises the multi-step mail router path */
-    },
-    async updateGrants(
-      _agentAddress: string,
-      _grants: GrantRule[],
-    ): Promise<void> {
-      if (mock.shouldThrow !== null) throw new Error(mock.shouldThrow);
-    },
-    async updateSources(
-      _agentAddress: string,
-      _sources: InferenceSource[],
-      _defaultSource: string,
-    ): Promise<void> {
-      if (mock.shouldThrow !== null) throw new Error(mock.shouldThrow);
-    },
-    hasSession(agentAddress: string): boolean {
-      return mock.addresses.includes(agentAddress);
-    },
-    isProvisioned(agentAddress: string): boolean {
-      return mock.provisionedAddresses.includes(agentAddress);
-    },
+    initRepo: (_address: string) => Promise.resolve(),
     getAddresses(): string[] {
       return [...mock.addresses];
-    },
-    async restoreSessions() {
-      return { restored: [], failed: [] };
     },
     applyDeployPack: () => Promise.resolve(),
     applyAssetPack: () => Promise.resolve(),
@@ -224,15 +142,7 @@ function createMockSessionManager(): SessionManager & {
       }),
     deleteAgentDir: () => Promise.resolve(),
     getDeployRef: (_agentAddress: string) => Promise.resolve(null),
-    persistHubPublicKey: (_agentAddress: string, _hubPublicKey: string) =>
-      Promise.resolve(),
-    commitInboundMail: (_agentAddress: string, _rawMessage: Uint8Array) =>
-      Promise.resolve(),
     getSessionId: (_agentAddress: string) => undefined,
-    onAgentEvent:
-      (_agentAddress: string, _listener: AgentEventListener) => () => {
-        /* no-op disposer: this test does not exercise per-agent events */
-      },
   };
   return mock;
 }
@@ -253,12 +163,26 @@ const VALID_MESSAGE = new TextEncoder().encode(
 type TestEnv = {
   server: ReturnType<typeof Bun.serve>;
   router: SidecarRouter;
+  // address -> hex-encoded Ed25519 public key, backing the hub's fail-closed
+  // `lookupPublicKey`. A workflow deployment routes only after signing the
+  // hub's reconnect nonce with the key registered here.
+  deploymentKeys: Map<string, string>;
 };
 
+const acceptAnySidecar: SidecarAuthenticator = async ({ sidecarId }) => ({
+  kind: "sidecar",
+  sidecarId,
+});
+
 function startTestServer(): TestEnv {
+  const deploymentKeys = new Map<string, string>();
   const router = createSidecarRouter({
+    authenticateSidecar: acceptAnySidecar,
     requestTimeoutMs: 5000,
     hubPublicKey: "a".repeat(64),
+    lookups: {
+      lookupPublicKey: async (address) => deploymentKeys.get(address) ?? null,
+    },
   });
 
   const app = new Hono();
@@ -296,7 +220,7 @@ function startTestServer(): TestEnv {
     port: 0,
   });
 
-  return { server, router };
+  return { server, router, deploymentKeys };
 }
 
 const env = startTestServer();
@@ -305,11 +229,27 @@ afterAll(async () => {
   await env.server.stop(true);
 });
 
+/**
+ * Wire a workflow deployment for the challenged reconnect path: mint a
+ * keypair, register it in the sidecar keyStore (so `signChallenge` answers the
+ * hub nonce) and in the hub's `deploymentKeys` lookup (so the hub challenges
+ * and verifies). The deployment address then routes once the reconnect
+ * challenge round-trips.
+ */
+async function provisionDeploymentKey(
+  keyStore: ReturnType<typeof createTestKeyStore>,
+  address: string,
+): Promise<void> {
+  const kp = await generateKeyPair();
+  keyStore.registerKey(address, kp);
+  env.deploymentKeys.set(address, hexEncode(kp.publicKey));
+}
+
 describe("hub-link mail.inbound throwing router", () => {
   test("a throwing mailInboundRouter does not wedge subsequent frames", async () => {
     const transport = createInMemoryTransport();
     const sessions = createMockSessionManager();
-    const deploymentAddress = "dep_wedge-1@integration.interchange";
+    const deploymentAddress = "ins_dep_wedge1@integration.interchange";
     sessions.addresses.push(deploymentAddress);
 
     let calls = 0;
@@ -325,14 +265,17 @@ describe("hub-link mail.inbound throwing router", () => {
       },
     };
 
+    const bindings = withTestDeployBindings();
+    await provisionDeploymentKey(bindings.keyStore, deploymentAddress);
     const client = createHubLink({
       hubURL: `ws://localhost:${env.server.port}/ws`,
       sidecarId: "sc-mail-wedge",
       token: "test-token",
       transport,
       sessions,
-      ...withTestDeployBindings(sessions),
+      ...bindings,
       mailInboundRouter,
+      getWorkflowAddresses: () => [deploymentAddress],
     });
 
     client.connect();

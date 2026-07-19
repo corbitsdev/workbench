@@ -5,8 +5,10 @@ code into our tree so we can change behavior the upstream packages don't expose 
 seam for — without editing the `interchange/` submodule. Every divergence from the
 upstream original is tagged with a `// WORKBENCH-LOCAL (CL-XXXX)` comment.
 
-**Audit handle:** `git grep "WORKBENCH-LOCAL (CL-" -- apps/sidecar packages/workflow-host packages/inference packages/storage-isogit`
-lists every divergence in one pass. Run it before and after an interchange pin
+**Audit handle:** `git grep "WORKBENCH-LOCAL (CL-" -- apps/sidecar packages/workflow-host packages/inference packages/storage-isogit packages/hub-agent`
+lists every divergence in one pass (`packages/hub-agent` now carries several tagged
+blocks — CL-2405, CL-3104, CL-3340, CL-3779, CL-3826 — so it belongs in the handle
+too; a prior version of this line omitted it). Run it before and after an interchange pin
 bump and confirm no block disappeared. The re-sync process (diff each vendored
 file against the new upstream, re-apply upstream changes _while preserving every
 `WORKBENCH-LOCAL` block_) is documented in `AGENTS.md` → "Dockerfile Maintenance"
@@ -34,34 +36,18 @@ There are two kinds of vendoring:
   `child/run-child.ts` (`runWorkflowChild` → `establishChild`, ~1,250 LOC of
   tightly-coupled internal plumbing). A thin re-export could not inject into it,
   and re-vendoring only that file would have pulled most of the package anyway.
-- **WORKBENCH-LOCAL change (CL-2535):** a `recoverParkedRun` hook on
-  `runWorkflowChild` / `runWorkflowChildFromProcessEnv`. A run discovered with an
-  unresumable tail (`awaiting-signal` / `awaiting-timer` / `in-flight`) is offered
-  to the host, which returns a host-satisfied seed log (gate completed from the
-  durable signal) to resume it, or `null` to fall through to the default path.
-  The runtime (`@intx/workflow`) is **not** changed — resume is the host's job by
-  the runtime's own design. See the project "Resumable workflow runs (survive
-  redeploys)".
-- **WORKBENCH-LOCAL change (CL-2537):** a LIVE SIGNAL WATCHER on `runWorkflowChild`,
-  all in `child/run-child.ts` (marked `// WORKBENCH-LOCAL (CL-2537)`). The
-  self-discovery loop is restructured into a classifier: a run parked at an
-  `awaitSignal` gate STILL waiting (the host hook cleanly returned `null` — no
-  signal delivered yet) now installs a fire-and-forget, process-scoped watcher
-  instead of letting `runtimeRun` reject the unresumable tail. The watcher builds
-  a per-run `createWorkflowHostSignalChannel`, subscribes-then-rechecks (closing
-  the deliver-before-subscribe race, since `subscribeKind` tails from `head`), and
-  on signal arrival re-reads the log, calls the same `recoverParkedRun` hook to
-  satisfy the gate, and resumes via `runtimeRun` with the same terminal-event
-  continuation as the resume/trigger paths — saving the parked HITL run across a
-  sidecar restart and letting it reach terminal so the supervisor's serial
-  dispatch loop unwedges. A `parkedWatchers` set is aborted+awaited in the
-  run-loop `finally` so no `subscribeKind` iterator leaks. The watcher's
-  `recoverFromCurrentLog` read is wrapped in `readRunLogTolerant` (bounded ENOENT
-  retry) because the raw working-tree read can race a concurrent commit's
-  checkout. Process-scoped on purpose: single-live-child is the safety guarantee
-  against double-drive, so it is NOT hoisted to the supervisor (recycle awaits
-  `handle.exited` before respawn; redeploy mints a fresh deploymentId →
-  disjoint workflow-run repo). The runtime is **not** changed.
+- **RETIRED at the 6927e7e4 pin bump (2026-07-16, CL-3368): `recoverParkedRun`
+  (CL-2535) and the live signal watcher (CL-2537) are GONE.** Upstream now
+  natively resumes an untimed `awaitSignal` tail on its own boot/reconnect path
+  (`isResumableAwaitingSignalStep` / `isResumableReceivedAwaitSignalStep` in the
+  runtime's dag/run resume guard), so the host-side hook and the process-scoped
+  watcher that used to fill that gap are both dead code against the new pin —
+  deleted rather than re-applied. `apps/sidecar/src/workflow-resume.ts`
+  (`hostSatisfyAwaitSignal`, `recoverParkedRunFromLog`) is deleted with them.
+  Only a **timeout-bearing** `awaitSignal` or a `map`/`loop` container tail
+  remains host-unsupported at cold resume — unchanged upstream limitation, not
+  a workbench gap. `bin/workflow-child` no longer passes a `recoverParkedRun`
+  option into `@workbench/workflow-host`.
 - **WORKBENCH-LOCAL change (CL-2585):** the control channel moved off the
   child's stdin/stdout onto dedicated inherited fds, in
   `child/from-process-env.ts` (marked `// WORKBENCH-LOCAL (CL-2585)`). Upstream's
@@ -94,6 +80,48 @@ There are two kinds of vendoring:
   handler) already catches and logs the rejection without crashing, and the
   hub's durable pending-signal rail re-delivers later, so the failed delivery
   self-heals once `RunStarted` lands.
+- **WORKBENCH-LOCAL change (CL-3880):** `child/serialized-tool-factories.ts`
+  (new file, no upstream counterpart) + a load-time call and export in
+  `child/run-child.ts` (both marked `// WORKBENCH-LOCAL (CL-3880)`).
+  Upstream serializes workflow definitions raw at both write points
+  (`sendMultiStepDeployFrame` puts `steps` on the deploy frame verbatim;
+  `writeWorkflowRepoTree` `JSON.stringify`s the whole workflow), and
+  `JSON.stringify` turns the function-valued `toolFactories` array
+  elements into `null`. The materialized `workflow.json` then crashes
+  `hashDefinition` → `projectAgent` (`factory.id` on null) at the first
+  `RunStarted` — every triggered run dies before any tool loading.
+  `apps/sidecar/src/step-agent-tools.ts` upstream documents a wire
+  projection that "strips closures" to `{ id, requires }`; no such
+  projection exists at pin `6927e7e4`. The sanitize rewrites unusable
+  entries to inert `{ id, requires }` stubs on load and passes proper
+  serialized entries through untouched, so the definition hash stays
+  stable once upstream implements the projection. Drop this block when
+  upstream serializes `toolFactories` properly (or hashes null-tolerantly);
+  guarded by `child/serialized-tool-factories.test.ts`.
+- **WORKBENCH-LOCAL change (CL-3885):** `supervisor/supervisor.ts`'s
+  `armRecyclePolicy()` (marked `// WORKBENCH-LOCAL (CL-3885)` at its
+  definition and every call/stop site) replaces upstream's inline,
+  spawn-time-only `createRecyclePolicy(...)` construction. Upstream arms
+  the policy once at spawn and, on recycle, only refreshes
+  `spawnContext.spawnedAt` — but the already-running policy's
+  `createRecyclePolicy` closure captured the *old* `spawnedAt` as a plain
+  number, so the max-uptime (and, when present, max-rss) bounds never
+  actually reset across a recycle upstream. `armRecyclePolicy` stops and
+  recreates the policy against the fresh `spawnContext` on every spawn
+  **and** every successful recycle, so both bounds evaluate against the
+  live child. `recycle.ts` itself is untouched from upstream — this
+  package does not ship a built-in RSS reader; `readRssBytes` is purely a
+  host-supplied seam (`WorkflowSupervisorBindings.readRssBytes`,
+  pre-existing upstream). The sidecar wires its own `/proc`-based reader
+  through that seam (`apps/sidecar/src/workflow-child-rss.ts`,
+  `createPidTrackingRssReader` in `workflow-host-wiring.ts`) — see the
+  "Vendored sidecar files" section below. **Removal condition:** drop
+  `armRecyclePolicy` and its call sites (reverting to the inline
+  spawn-time construction) once upstream re-arms `recyclePolicy` on
+  recycle with the current `spawnedAt` itself. Guarded by the "max-rss
+  threshold trips" test group in `supervisor/recycle.test.ts` and by
+  `apps/sidecar/src/workflow-host-wiring.test.ts`'s
+  `createPidTrackingRssReader` / `resolveDefaultRecyclePolicy` suites.
 - **Lint:** the package is `eslint`-exempt (`eslint.config.ts` `globalIgnores`,
   same as `interchange/**`) — it is vendored upstream code with its own
   disable-directive conventions.
@@ -138,6 +166,21 @@ There are two kinds of vendoring:
 - **Audit:** `rg 'WORKBENCH-LOCAL' packages/inference/` (the CL-3853 blocks
   are tagged `WORKBENCH-LOCAL` without an issue number, per repo owner
   preference — the plain-token grep still finds them)
+- **WORKBENCH-LOCAL change (CL-3917):** `src/providers/openai.ts`
+  `parseResponse`'s end-of-stream usage branch (the one that fires when
+  `chunk.usage` rides on the SAME SSE chunk as the final `choices` delta —
+  the shape Bifrost and other OpenAI-compatible gateways use) hardcoded
+  `thinking: 0` and `cacheRead: 0` instead of reading
+  `completion_tokens_details.reasoning_tokens` /
+  `prompt_tokens_details.cached_tokens`, unlike the sibling "usage-only
+  chunk" branch a few lines above it which already mapped both fields
+  correctly. This silently zeroed reasoning tokens (and prefix-cache reads)
+  in Insights for every gateway that shapes its final usage event this way.
+  Confirmed present upstream at the `6927e7e4` pin too
+  (`interchange/packages/inference/src/providers/openai.ts`), so this is a
+  bug we inherited via the vendor copy, not a workbench-introduced
+  regression — fixed here rather than upstream per the "vendor fixes stay
+  local" rule. Guarded by `src/providers/openai-usage.test.ts`.
 
 ### `packages/storage-isogit` → `@workbench/storage-isogit`
 
@@ -186,11 +229,29 @@ pack-recv-gc-*.pack`, plus bare `TypeError`s from torn `.idx` loads).
 
 ### `packages/hub-agent` → `@workbench/hub-agent` (fork, NOT a verbatim vendor)
 
+- **Pin-bump seam — pack-reject reason string:** `hub-link.ts`'s workflow-run
+  pack bootstrap retry classifies a permanent rejection by substring-matching
+  `"path_violation"` in the error thrown by `@intx/pack-transport`'s sender
+  (`pack rejected by receiver (... reason=path_violation)`), because the wire
+  reason is not exposed as a typed field on the thrown error. Verified stable
+  at the current pin (the hub's `receiveWorkflowRunPack` only ever emits
+  `path_violation` or `corrupt`). On every interchange pin bump, re-verify the
+  sender's message format and the hub's reason space still match this
+  substring — drift silently re-enables the infinite identical-resend retry
+  loop this classification exists to prevent.
+
 - **Status:** genuine long-lived fork of `@intx/hub-agent`, predating the vendor
   discipline. It carries real workbench features upstream lacks (reconnect
   backoff/jitter and the outbound queue from the CL-2405 sidecar-disconnect work,
-  `sanitizeAddress`/agent-paths exports) but its divergences are **untagged** —
-  the WORKBENCH-LOCAL audit and the drift script are blind to it.
+  `sanitizeAddress`/agent-paths exports). **Correction (2026-07-18):** most of its
+  current divergences ARE now tagged (CL-2405, CL-3104, CL-3340, CL-3779,
+  CL-3826 all carry `// WORKBENCH-LOCAL` comments, confirmed by
+  `git grep "WORKBENCH-LOCAL (CL-" packages/hub-agent`) — the "untagged, audit-blind"
+  characterization below predates that tagging pass and is now stale for those
+  blocks. What remains genuinely untagged is the older, pre-discipline surface:
+  the `sanitizeAddress`/agent-paths export shape itself and the outbound-queue
+  mechanics underlying the CL-2405 reconnect work (the queue exists because of
+  CL-2405, but its internals were never individually tagged line-by-line).
 - **Known upstream fixes not yet adopted** (found in the 13fb9ac bump review,
   tracked in CL-2662): upstream's `repoOpQueues`/`drainRepoOps` model (serializes
   all per-agent repo ops and drains before `deleteAgentDir`; ours serializes only
@@ -212,50 +273,30 @@ pack-recv-gc-*.pack`, plus bare `TypeError`s from torn `.idx` loads).
   `apps/sidecar/src/config.ts`. Verified against real Bun: `ws.close()` on a
   CONNECTING socket aborts the pending connect immediately (close 1006).
   Blocks tagged `// WORKBENCH-LOCAL (CL-3826)`.
-- **WORKBENCH-LOCAL change (CL-3102):** lazy agent restore. `restoreSessions`
-  in `session-manager.ts` no longer builds a harness per on-disk agent — it
-  recovers only routing metadata (key cache + a `wakeable` config map) so the
-  reconnect frame still advertises every address, but no tool-package build or
-  credential HTTP fetch runs at boot/reconnect. The harness is built on demand
-  by `wakeAgent` (first inbound message via the new
-  `SessionManager.deliverInboundMail`, or an explicit `session.start`), with
-  concurrent triggers de-duplicated, inbound mail parked during the build and
-  replayed in order, bounded-backoff retries on a failed build (the agent stays
-  wakeable — never a credential-less harness), and an INFO log of wake duration
-  (message received → harness ready). `hub-link.ts`'s `mail.inbound` fallback
-  now delegates to `deliverInboundMail`, and `session.start` routes wakeable
-  agents through `wakeAgent` awaiting only the first attempt (the hub's ack
-  deadline is 30s; later retries continue in the background). Parked-mail
-  bound: the buffer is memory-only, so a parked trigger survives build
-  failures and retries but is lost on a process crash mid-wake or if the
-  wake retries exhaust with no later trigger; overflow past 256 messages
-  drops the oldest with a warning. A fresh `provisionAgent` supersedes an
-  in-flight wake via a per-wake ownership token, so the doomed build
-  discards itself and never tears down a session it did not install. All
-  blocks tagged `// WORKBENCH-LOCAL (CL-3102)`.
-- **WORKBENCH-LOCAL change (CL-3103):** idle agent eviction — the inverse of
-  the CL-3102 lazy wake, all in `session-manager.ts` (marked
-  `// WORKBENCH-LOCAL (CL-3103)`). `evictIdleSessions()` tears a live session
-  down (harness `close()` flushes conversation state to the durable repo
-  store, bundle disposers run, transport unregistered, `reclaimHeap`) and
-  returns the agent to the `wakeable` state, so the next inbound message
-  rebuilds it through the existing wake rails with full history — no
-  `deleteAgentDir`, no `endedAt` stamp, no conversation-ended event (idle
-  sleep, not undeploy). Idleness is derived from real seam signals: a
-  per-session `lastActivityAt` (bumped on any inference event, inbound mail,
-  and go-live) plus an `activeRuns` counter bracketed by the harness's
-  `message.run.started` / `message.run.ended` events (a turn — including its
-  tool execution, which emits no inference events — keeps the count above
-  zero). A session is never evicted while a turn is running, an in-process
-  event subscriber is attached (`agentEventListeners`), mail is parked, a
-  wake/build is in flight, or an eviction is already under way; `destroySession`
-  / `abortSession` await an in-flight eviction, and inbound mail parks during
-  one and is replayed by a post-eviction wake. The threshold is
-  `SessionManagerConfig.idleEvictMs` (0 disables), plumbed from the sidecar
-  (`SIDECAR_AGENT_IDLE_EVICT_MS`, default 60s) via `SidecarOrchestratorConfig`;
-  the periodic sweep timer that calls `evictIdleSessions()` lives in
-  `apps/sidecar/src/index.ts` alongside the memory-telemetry timers. Guarded by
-  `src/session-manager-idle-evict.test.ts`.
+- **RETIRED at the 6927e7e4 pin bump (2026-07-16, CL-3368): the in-process
+  harness runtime is gone, and CL-3102 (lazy agent restore) / CL-3103 (idle
+  agent eviction) are retired with it, not re-applied.** Upstream deleted
+  `launchSession` — there is no per-instance in-process harness left to lazily
+  restore or idle-evict. Single-agent instances (Myra/Oat/triage/gate agents)
+  now deploy as single-step `deployWorkflowDefinition` workflow deployments
+  (see `apps/hub/src/services/agent-provisioning.ts`); wake-on-mail and
+  idle-evict semantics re-home onto that deployment's own lifecycle (a warm
+  single-step deployment plus the CL-3104 hibernate teardown below), not onto
+  `session-manager.ts`. `session-manager.ts` itself is reduced to upstream's
+  thin serialization layer. **Deployment-record restore was itself retired at
+  CL-3884** (2026-07-18) — see the note below the vendored-files table.
+- **RETIRED at the 6927e7e4 pin bump (2026-07-16, CL-3368): CL-3415
+  (bootstrap-retry quarantine) and CL-3796 (retry-storm containment) are
+  gone, not re-applied.** Both were mitigations against a corrupt-pack retry
+  storm on the old session-per-instance `pushWorkflowRunPack` path; that path
+  no longer exists (`session.abort` and the live-grants push it protected were
+  retired in the same pin bump — see `c2970d0b`), and upstream's own
+  reconnect public-key challenge + additive register + in-flight
+  duplicate-deploy rejection covers the reconnect-storm case structurally.
+  `WorkflowRunPackQuarantinedError` and the `isHubSignaledRejection`
+  discriminator are deleted. CL-3409 (sleeping-agent sync log batching) is
+  retired for the same reason — the "sleeping agent" concept it batched log
+  lines for belongs to the deleted in-process runtime.
 - **WORKBENCH-LOCAL (CL-3104) — hibernate undeploy flavor** (`src/ws/hub-link.ts`):
   `DeployRouter.hibernate`, the exported `WORKFLOW_HIBERNATE_UNDEPLOY_REASON`
   protocol constant, and the reason-scoped `handleAgentHibernate` branch in
@@ -274,16 +315,6 @@ pack-recv-gc-*.pack`, plus bare `TypeError`s from torn `.idx` loads).
   depend on this package); a guard test in
   `apps/hub/src/services/workflow-reconciler.test.ts` pins the two literals
   byte-identical. Guarded by `src/ws/hub-link-hibernate.test.ts`.
-- **WORKBENCH-LOCAL (CL-3409) — sleeping-agent sync log batching**
-  (`src/session-manager.ts`): the per-agent "Updated grants/sources for
-  sleeping agent" info lines on hub reconnect are demoted to debug and
-  collected into an in-memory per-address batch flushed as ONE info summary
-  after a quiet window (`sleepingSyncFlushDelayMs`, default 250ms), with any
-  agent whose grant rule count falls below half the batch median logged
-  individually at warn so outliers stay visible. Logging-only — persist
-  ordering unchanged. Guarded by
-  `session-manager-sleeping-sync-batch.test.ts`.
-
 - **WORKBENCH-LOCAL (CL-3340) — assistant output loop guard**
   (`src/assistant-loop-guard.ts`, wired in `src/session-manager.ts`): the
   per-session `onEvent` wrapper checks each `inference.done` for the same
@@ -303,66 +334,35 @@ pack-recv-gc-*.pack`, plus bare `TypeError`s from torn `.idx` loads).
   session go-live clears the interrupted flag. Guarded by
   `src/assistant-loop-guard.test.ts` and
   `src/session-manager-assistant-loop.test.ts`.
+  **Status after the 6927e7e4 pin bump (2026-07-16):** `assistant-loop-guard.ts`
+  itself was preserved verbatim, but its wiring point — the `session-manager.ts`
+  per-session `onEvent` wrapper — was gone with the in-process harness runtime
+  it wrapped, leaving the guard unwired.
 
-- **WORKBENCH-LOCAL (CL-3415) — bounded workflow-run pack bootstrap-retry
-  quarantine** (`src/ws/hub-link.ts`): the pre-existing bootstrap-retry arm
-  in `pushWorkflowRunPack` (retry the FIRST push to a never-bootstrapped
-  `(repoId, ref)` once, absorbing the hub's `initRepo` CAS race) assumed a
-  retry failure could only be transient. On staging, a sidecar restart
-  drops the in-memory `lastAckedTip` cursor (CL-2340) and the
-  `workflowRunPackBootstrapped` flag at the same time, so a genuinely
-  diverged repo state — not just the race — made both the initial attempt
-  and the retry reject with `reason=corrupt`, and every subsequent
-  workflow-run event repeated the identical two-attempt failure forever
-  (`Workflow-run pack push bootstrap retry ... reason=corrupt` recurring
-  without bound). `workflowRunPackFailureCount` now counts consecutive
-  two-attempt failures per `(repoId, ref)`; at
-  `WORKFLOW_RUN_PACK_MAX_BOOTSTRAP_FAILURES` (3) the key moves into
-  `workflowRunPackQuarantined` — further pushes fail fast with no network
-  attempt, and a single ERROR (not a WARN per push) logs the pack size,
-  commit sha, and last rejection reason for triage. Quarantine and the
-  failure counter are cleared at the same undeploy/hibernate prune sites
-  that already clear `workflowRunPackBootstrapped`, so a redeploy gets a
-  clean slate. Root cause of the underlying repo divergence is NOT fixed
-  here — it needs the quarantined artifacts from staging to diagnose
-  further; this change bounds the blast radius (log spam + wasted receiver
-  round-trips) and gives a clear, one-shot diagnostic signal instead.
-  Guarded by the `"a persistently corrupt (repoId, ref) quarantines..."`
-  test in `src/ws/hub-link.test.ts`.
-
-- **WORKBENCH-LOCAL (CL-3796) — retry-storm containment on top of CL-3415**
-  (`src/ws/hub-link.ts`, `apps/sidecar/src/workflow-run-pack-client.ts`): the
-  CL-3415 quarantine bounds the blast radius per `(repoId, ref)`, but two
-  gaps in the surrounding retry/cursor logic still amplified load during a
-  fleet-wide WS reconnect storm (corrupt-pack retries starving the hub event
-  loop; the deep event-loop-off-thread fix is CL-3781, out of scope here).
-  Two new discriminators close them:
-  - `isHubSignaledRejection` (`hub-link.ts`) gates `runWithBootstrap`'s
-    immediate second `sendOnce()` retry AND the `workflowRunPackFailureCount`
-    increment on the first attempt's error carrying a `reason=` marker — i.e.
-    the hub actually responded with a `repo.pack.reject`. A connection-level
-    failure (`packSender.cancelAll("Connection lost")` on the client's own
-    reconnect, or a closed-transport throw) never reached the hub and carries
-    no divergence signal; retrying it immediately used to double outbound
-    load at exactly the moment a reconnect storm was already underway, and
-    falsely consumed a quarantine strike for a perfectly healthy `(repoId,
-ref)`. New `WorkflowRunPackQuarantinedError` class marks the quarantine
-    fast-fail distinctly from an ordinary per-attempt rejection.
-  - `workflow-run-pack-client.ts`'s `push()` no longer resets the `lastAckedTip`
-    cursor (CL-2340) when the failure is a `WorkflowRunPackQuarantinedError`.
-    A quarantined key is already known-rejected by the hub without a network
-    attempt; resetting the cursor to full-chain only makes the NEXT
-    `buildDeltaPack` walk more history — an ever-growing, event-loop-blocking
-    git walk for a push guaranteed to be dropped. Genuine hub-signaled
-    divergence still resets the cursor for self-heal, unchanged.
-    Guarded by `"a quarantined push does NOT reset the cursor..."` in
-    `apps/sidecar/src/workflow-run-pack-client.test.ts` and `"a
-connection-level failure mid-push does not trigger a redundant second
-send"` in `src/ws/hub-link.test.ts`. **Pin-bump re-verify**: the
-    `isHubSignaledRejection` substring check assumes `reason=` appears ONLY in
-    `@intx/pack-transport`'s `handleReject` message shape — see the comment at
-    its call site in `hub-link.ts` for the failure mode if that assumption
-    breaks upstream.
+  **Re-homed onto the sidecar's inference-event path (2026-07-17):** the
+  guard's pure logic (`assistant-loop-guard.ts`, its exports, its unit tests)
+  is untouched and re-exported from `packages/hub-agent`'s index. The new
+  consumer is `apps/sidecar/src/assistant-loop-guard-wiring.ts`
+  (`observeInferenceEventForAssistantLoopGuard`), wired into
+  `workflow-host-wiring.ts`'s `onInferenceEvent` (the T3 seam below) — scoped
+  to `warmKeep` single-step deployments, keyed per call by the deployment's
+  agent address so concurrent agents never share run state. The stop lever
+  changed with the runtime: instead of session eviction, a trip publishes a
+  synthetic `inference.error{category: "aborted", message:
+assistantLoopInterruptMessage(...)}` through the same
+  `publishWorkflowInferenceEvent` path real inference errors use (which
+  `@workbench/event-collector`'s existing `inference.error` handling already
+  turns into a visible, eagerly-persisted turn part — no new user-facing
+  surface needed) and calls `supervisor.drain({ deadlineMs: 0 })`, which
+  escalates the drainTimeout accumulator to a signed
+  `CancelRequested{origin: "supervisor-drain"}` immediately, tearing the
+  looping run down through the runtime's existing cancellation cascade. The
+  guard resets on every inbound mail message (the mail-router registration in
+  `workflow-host-wiring.ts`, also `// WORKBENCH-LOCAL (CL-3340)`) and on
+  undeploy. Guarded by `assistant-loop-guard-wiring.test.ts` (pure wiring
+  unit tests) and new cases in `workflow-host-wiring.test.ts`'s "assistant
+  loop guard wiring" describe block (end-to-end through the real HMAC event
+  channel and control channel).
 
 - **WORKBENCH-LOCAL (CL-3779) — inline heartbeat handling** (`src/ws/hub-link.ts`):
   every inbound WS frame — including the heartbeat `pong` — was chained onto a
@@ -395,28 +395,155 @@ send"` in `src/ws/hub-link.test.ts`. **Pin-bump re-verify**: the
 Copied from interchange's reference `apps/sidecar/src/*` and `bin/workflow-child`.
 Each row is a WORKBENCH-LOCAL divergence kept on top of the upstream copy.
 
-| Added      | CL      | Where                                                    | What                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
-| ---------- | ------- | -------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 2026-06-19 | CL-2199 | `workflow-host-wiring.ts`                                | `TENANT_ID` + `WORKFLOW_RAW_DEPLOYMENT_ID` in the multi-step `substrateEnv`; the workflow-child's `filterSubstrateConfig` requires both and throws without them.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
-| 2026-06-21 | CL-2231 | `workflow-host-wiring.ts`                                | `ownedDirs` capture + undeploy-hook reclaim sweep (deletes per-deployment git repos/step dirs) to stop the sidecar-volume inode leak.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
-| 2026-06-24 | CL-2340 | `workflow-run-pack-client.ts`, `workflow-host-wiring.ts` | Delta-cursor + size-ceiling pack push (`buildDeltaPack`, ack-gated `lastAckedTip`, `WorkflowRunPackTooLargeError`) + undeploy drain barriers, to stop the shared sidecar OOM-ing on a wedged run.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
-| 2026-06-25 | CL-2363 | `workflow-host-wiring.ts`                                | `assertSubstrateEnvComplete(substrateEnv)` guard — fails the deploy loudly if any required substrate key is missing instead of letting the child throw deep in a spawn.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
-| 2026-06-25 | CL-2400 | `workflow-host-wiring.ts`                                | Register-deployment-before-spawn ordering + reconnect re-register, fixing "no agent address registered for deployment".                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
-| 2026-06-25 | CL-2401 | `workflow-host-wiring.ts`                                | Non-fatal deterministic source steps (degrade to a recorded skip rather than failing the run).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
-| 2026-06-26 | CL-2503 | `bin/workflow-child`                                     | `setupObservability` + Sentry flush-on-teardown so workflow-step failures (the process where steps actually run) reach Sentry.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
-| 2026-06-27 | CL-2535 | `bin/workflow-child`                                     | Pass the `recoverParkedRun` hook (uses `recoverParkedRunFromLog` from `src/workflow-resume.ts`) into `@workbench/workflow-host`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
-| 2026-06-30 | CL-2585 | `workflow-host-wiring.ts`                                | `defaultSubprocessSpawner` spawns with `stdio: ["inherit","inherit","inherit","pipe","pipe","pipe"]` and wires the control channel off dedicated fds 4 (down) / 5 (up) instead of child stdin/stdout, so child logs reach container stdout/stderr at correct severity (pairs with the `from-process-env.ts` package change). Removed the interim `console.{log,info,debug}→stderr` redirect from `bin/workflow-child`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
-| 2026-07-04 | CL-2783 | `workflow-host-wiring.ts`                                | `writeStepGrants` per-step grant writes parallelized with a bounded worker pool (`STEP_GRANTS_WRITE_CONCURRENCY = 12`) instead of a serial `for ... await` loop. Each step writes a DISTINCT `<deploymentId>-<stepId>` repo and `@workbench/storage-isogit` locks per-DIRECTORY (`withRepoDirLock`), so concurrent different-repo writes never contend; the serial loop stacked each step's isogit commit+fsync wait (~254ms/step measured) onto the cold workflow-spawn critical path. `Promise.all` over the pool workers rejects on the first write failure, preserving the serial loop's fail-at-deploy contract (the caller's `finally` unwinds partial state). Guarded by `apps/sidecar/src/workflow-host-wiring-write-step-grants.test.ts`. The supervisor's `assembleCredentialsSnapshot` per-step READ loop (`packages/workflow-host/src/supervisor/credentials.ts`) was audited and deliberately NOT changed — `readStepGrants` is a plain working-tree `fs.readFile` + JSON.parse + sha256, not an isogit commit/fsync, so it is cheap and unlocked; parallelizing it buys nothing.                                                                                                                                |
-| 2026-07-09 | CL-3104 | `workflow-host-wiring.ts`                                | Resident-supervisor self-heal in `deployMultiStep`: if `activeSupervisors` already holds the address (a hibernate whose ack path failed left the child resident while the hub unrouted it), the deploy branch runs `teardownDeployment(address, { reclaimDirs: false })` before standing the fresh supervisor up — otherwise the old child leaks and two children drive one workflow-run repo. Guarded by `workflow-host-wiring-hibernate.test.ts`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
-| 2026-07-08 | CL-3104 | `workflow-host-wiring.ts`                                | Hibernate flavor of the deploy-router teardown: the undeploy hook body moved into a shared `teardownDeployment(agentAddress, { reclaimDirs })`, and a new `hibernate` router method calls it with `reclaimDirs: false` — same residency teardown (routers, supervisor/child kill, CL-2340 drain barrier, slug, deployment mapping) but the CL-2231 owned-dirs rm and the `workflow-step-state/<deploymentId>` scratch rm are gated OFF, so a gate-parked run's durable state survives for the signal-driven resume. On a pin-bump re-sync, re-apply upstream undeploy changes INSIDE `teardownDeployment`, preserving both `reclaimDirs` gates. Guarded by `workflow-host-wiring-hibernate.test.ts`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
-| 2026-07-04 | CL-2780 | `workflow-host-wiring.ts`                                | **TEMPORARY / REMOVABLE** provisioning-path timing instrumentation (marked `// WORKBENCH-LOCAL-TEMP (CL-2780)`): times the multi-step asset write, `writeStepGrants`, and `supervisor.spawn`, emitting one `multistep deploy timing kind=…` INFO line. Log-only, no behavior change. Remove once the 17s workflow-start latency is attributed. Audit token is `WORKBENCH-LOCAL-TEMP`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
-| 2026-07-15 | CL-3780 | `workflow-host-wiring.ts`                                | Dispose the trivial-branch `onAgentEvent` run-chain listener on deploy teardown. The listener attached in `trivialLaunch` lives on `SessionManager.agentEventListeners`, which `destroySession` does NOT prune, so a torn deploy (or an undeploy/hibernate) left it behind; a later inference event then fired the orphaned listener, whose `recordRunEvent` resolves the now-unregistered deployment address to `null` and threw "no agent address registered for deployment" on every workflow-run pack push — dropping run events (including a tool call's result) forever and wedging the turn. The disposer is now held in a `trivialRunEventDisposers` map and disposed at three sites: the trivial `finally` torn-deploy unwind (which also tears the provisioned harness down via `destroySession`), `teardownDeployment` (undeploy/hibernate), and before re-`set` on a same-address redeploy with no intervening teardown (dispose-before-set, so a still-resident redeploy neither leaks the prior listener nor doubles run-bracket events on one repo). Guarded by `apps/sidecar/src/workflow-host-wiring-trivial-listener-dispose.test.ts`. Does NOT touch the CL-2340 cursor or synthesize CL-2231 `ownedDirs`. |
-| 2026-07-11 | CL-3379 | `workflow-substrate-factory.ts`                          | The `INLINE_INFERENCE_KIND` dispatch branch in `createSidecarStepInvoker` now threads this invocation's `onEvent` sink into `runInlineInferenceStep` (previously omitted, so inline single-turn steps — the heartbeat brief's per-member inference — silently discarded their whole event stream and never reached `analytics_event`). The sink is the same per-step `onEvent` the inference branch (`createWorkflowStepInvoker`) receives, which chains up through `buildStepInvoker` → the child `invokeStep` binding → `workflow-host-wiring.ts`'s `onInferenceEvent`/`publishInferenceEvent`, carrying the deployment's `agentAddress`/`sessionId` attribution — no new identity was fabricated. The actual forwarding loop lives in `apps/sidecar/src/inline-inference-step.ts` (WORKBENCH-OWNED, no upstream counterpart, so it carries no vendored-file audit burden): its stream-drain loop now forwards every non-`message.received` event to the sink instead of discarding it, swallowing a throwing sink so a downstream consumer's failure can never fail the step. Guarded by `apps/sidecar/src/inline-inference-step.test.ts`.                                                                                 |
-| 2026-07-13 | CL-3468 | `child/run-child.ts`                                     | `resolveTriggerPayload` decodes hub run-start mail (`from: hub@…`, body `JSON.stringify(input)`) into a JSON object for `trigger.payload`; all other senders keep plain conversation text. Guarded by `packages/workflow-host/src/child/run-child.test.ts`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| Added      | CL      | Where                                                    | What                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| ---------- | ------- | -------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 2026-06-19 | CL-2199 | `workflow-host-wiring.ts`                                | `TENANT_ID` + `WORKFLOW_RAW_DEPLOYMENT_ID` in the multi-step `substrateEnv`; the workflow-child's `filterSubstrateConfig` requires both and throws without them.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| 2026-06-21 | CL-2231 | `workflow-host-wiring.ts`                                | `ownedDirs` capture + undeploy-hook reclaim sweep (deletes per-deployment git repos/step dirs) to stop the sidecar-volume inode leak.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| 2026-06-24 | CL-2340 | `workflow-run-pack-client.ts`, `workflow-host-wiring.ts` | Delta-cursor + size-ceiling pack push (`buildDeltaPack`, ack-gated `lastAckedTip`, `WorkflowRunPackTooLargeError`) + undeploy drain barriers, to stop the shared sidecar OOM-ing on a wedged run.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| 2026-06-25 | CL-2363 | `workflow-host-wiring.ts`                                | `assertSubstrateEnvComplete(substrateEnv)` guard — fails the deploy loudly if any required substrate key is missing instead of letting the child throw deep in a spawn.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| 2026-06-25 | CL-2401 | `workflow-host-wiring.ts`                                | Non-fatal deterministic source steps (degrade to a recorded skip rather than failing the run).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| 2026-06-26 | CL-2503 | `bin/workflow-child`                                     | `setupObservability` + Sentry flush-on-teardown so workflow-step failures (the process where steps actually run) reach Sentry.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| 2026-06-30 | CL-2585 | `workflow-host-wiring.ts`                                | `defaultSubprocessSpawner` spawns with `stdio: ["inherit","inherit","inherit","pipe","pipe","pipe"]` and wires the control channel off dedicated fds 4 (down) / 5 (up) instead of child stdin/stdout, so child logs reach container stdout/stderr at correct severity (pairs with the `from-process-env.ts` package change). Removed the interim `console.{log,info,debug}→stderr` redirect from `bin/workflow-child`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| 2026-07-04 | CL-2783 | `workflow-host-wiring.ts`                                | `writeStepGrants` per-step grant writes parallelized with a bounded worker pool (`STEP_GRANTS_WRITE_CONCURRENCY = 12`) instead of a serial `for ... await` loop. Each step writes a DISTINCT `<deploymentId>-<stepId>` repo and `@workbench/storage-isogit` locks per-DIRECTORY (`withRepoDirLock`), so concurrent different-repo writes never contend; the serial loop stacked each step's isogit commit+fsync wait (~254ms/step measured) onto the cold workflow-spawn critical path. The pool preserves the serial loop's fail-at-deploy contract (the first write failure rejects the call; the caller's `finally` unwinds partial state) AND drains: each worker records the first error and stops taking new steps but awaits its in-flight write, and the call awaits EVERY worker before re-throwing — so no sibling write is still mid-commit when the rejection reaches teardown (a bare `Promise.all` would reject while stragglers still commit, letting a retried deploy at the same address race a straggler's commit into a step repo). Guarded by `apps/sidecar/src/workflow-host-wiring-write-step-grants.test.ts`. The supervisor's `assembleCredentialsSnapshot` per-step READ loop (`packages/workflow-host/src/supervisor/credentials.ts`) was audited and deliberately NOT changed — `readStepGrants` is a plain working-tree `fs.readFile` + JSON.parse + sha256, not an isogit commit/fsync, so it is cheap and unlocked; parallelizing it buys nothing. |
+| 2026-07-09 | CL-3104 | `workflow-host-wiring.ts`                                | Resident-supervisor self-heal in `deployMultiStep`: if `activeSupervisors` already holds the address (a hibernate whose ack path failed left the child resident while the hub unrouted it), the deploy branch runs `teardownDeployment(address, { reclaimDirs: false })` before standing the fresh supervisor up — otherwise the old child leaks and two children drive one workflow-run repo. Guarded by `workflow-host-wiring-hibernate.test.ts`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| 2026-07-08 | CL-3104 | `workflow-host-wiring.ts`                                | Hibernate flavor of the deploy-router teardown: the undeploy hook body moved into a shared `teardownDeployment(agentAddress, { reclaimDirs })`, and a new `hibernate` router method calls it with `reclaimDirs: false` — same residency teardown (routers, supervisor/child kill, CL-2340 drain barrier, slug, deployment mapping) but the CL-2231 owned-dirs rm and the `workflow-step-state/<deploymentId>` scratch rm are gated OFF, so a gate-parked run's durable state survives for the signal-driven resume. On a pin-bump re-sync, re-apply upstream undeploy changes INSIDE `teardownDeployment`, preserving both `reclaimDirs` gates. Guarded by `workflow-host-wiring-hibernate.test.ts`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| 2026-07-11 | CL-3379 | `workflow-substrate-factory.ts`                          | The `INLINE_INFERENCE_KIND` dispatch branch in `createSidecarStepInvoker` now threads this invocation's `onEvent` sink into `runInlineInferenceStep` (previously omitted, so inline single-turn steps — the heartbeat brief's per-member inference — silently discarded their whole event stream and never reached `analytics_event`). The sink is the same per-step `onEvent` the inference branch (`createWorkflowStepInvoker`) receives, which chains up through `buildStepInvoker` → the child `invokeStep` binding → `workflow-host-wiring.ts`'s `onInferenceEvent`/`publishInferenceEvent`, carrying the deployment's `agentAddress`/`sessionId` attribution — no new identity was fabricated. The actual forwarding loop lives in `apps/sidecar/src/inline-inference-step.ts` (WORKBENCH-OWNED, no upstream counterpart, so it carries no vendored-file audit burden): its stream-drain loop now forwards every non-`message.received` event to the sink instead of discarding it, swallowing a throwing sink so a downstream consumer's failure can never fail the step. Guarded by `apps/sidecar/src/inline-inference-step.test.ts`.                                                                                                                                                                                                                                                                                                                                    |
+| 2026-07-13 | CL-3468 | `child/run-child.ts`                                     | `resolveTriggerPayload` decodes hub run-start mail (`from: hub@…`, body `JSON.stringify(input)`) into a JSON object for `trigger.payload`; all other senders keep plain conversation text. Guarded by `packages/workflow-host/src/child/run-child.test.ts`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| 2026-07-16 | CL-3368 | `workflow-deployment-record.ts`, `atomic-write.ts`       | NEW verbatim vendors (no upstream counterpart) added at the 6927e7e4 pin bump. **`workflow-deployment-record.ts` deleted at CL-3884 (2026-07-18)** — see "Deleted vendor — CL-3884 (2026-07-18)" below.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| 2026-07-18 | CL-3885 | `workflow-host-wiring.ts`, `workflow-child-rss.ts` (new) | Raised `DEFAULT_WORKFLOW_CHILD_MAX_RSS_BYTES` 1.5 GiB → 3 GiB (panel review: 1.5 GiB sat under the legitimate warm-agent baseline for a multi-step deployment, risking recycle thrashing). Added `apps/sidecar/src/workflow-child-rss.ts` (`readChildRssBytes`) — a Linux-only `/proc/<pid>/statm` reader wired into `packages/workflow-host`'s pre-existing `WorkflowSupervisorBindings.readRssBytes` host-supplied seam via the new `createPidTrackingRssReader` helper in `workflow-host-wiring.ts` (tracks the live child's pid by wrapping `subprocessSpawner`, since the seam's callback takes no pid argument and must follow every recycle respawn). Any failure or non-Linux platform returns `undefined` (the max-rss bound is simply skipped that tick); there is deliberately no Darwin/`ps` subprocess fallback — a synchronous `spawnSync` per policy tick per supervisor could stall the shared sidecar host, and every deployed sidecar target is Linux. Guarded by `apps/sidecar/src/workflow-child-rss.test.ts` and the `resolveDefaultRecyclePolicy` / `createPidTrackingRssReader` suites in `workflow-host-wiring.test.ts`. See `packages/workflow-host`'s own CL-3885 entry above for the paired `armRecyclePolicy` re-arm-on-recycle fix. |
 
-The non-vendored helper that backs the CL-2535 hook lives at
+**Retired at the 6927e7e4 pin bump (2026-07-16, CL-3368), not carried forward:**
+CL-2400 (register-deployment-before-spawn ordering — upstream's own reconnect
+public-key challenge + additive register + in-flight duplicate-deploy
+rejection now covers the "no agent address registered" failure mode
+structurally), CL-2535 (`recoverParkedRun` pass-through in `bin/workflow-child`
+— the hook itself is gone, see `packages/workflow-host` above), CL-2780
+(TEMPORARY provisioning-path timing instrumentation — was already marked
+removable, dropped as dead weight during the re-sync), and CL-3780 (trivial-
+branch `onAgentEvent` listener disposer — the trivial-launch branch it guarded
+does not exist on the new single-step-workflow launch path; the listener leak
+it fixed cannot recur because there is no more `trivialLaunch`).
+
+## Deleted vendor — CL-3884 (2026-07-18)
+
+### `apps/sidecar/src/workflow-deployment-record.ts` — DELETED
+
+Added at the 6927e7e4 pin bump (see history below), deleted at CL-3884 along
+with every boot-time restore path in `workflow-host-wiring.ts`
+(`restoreWorkflowDeployments`, the deployment-record write/scan/delete calls,
+dormant markers) and the `index.ts` boot call that invoked restore. The
+sidecar no longer persists anything durable beyond the workflow-run substrate
+itself; a freshly-booted sidecar hosts nothing until the hub deploys to it.
+
+Rationale: the hub is already the control plane for re-establishing every
+resident deployment — mail-wake re-deploys an idle single-step agent, gate
+signals plus the awaiting-prewarm re-establish a parked multi-step run, and
+the run-liveness sweep fails a running run whose child died with the sidecar
+process. The record-and-restore path duplicated that control-plane role
+sidecar-side for no case the hub didn't already cover, at the cost of the
+CL-2199 substrate-env persistence and the CL-3368 resurrection-guard tombstone
+below, both of which are retired with it (there is nothing left to guard
+against resurrecting once nothing is ever restored). A sources rotation
+(`sources.update`) is now a process-local respawn hint only: it survives a
+recycle respawn (the supervisor still holds `currentSources` in memory) but
+not a full sidecar restart — the hub-driven re-deploy re-resolves sources
+fresh, which is the native source of truth.
+
+`apps/sidecar/src/workflow-deployment-dirs.ts` is the small piece of that file
+kept as an owned (non-vendored) helper: `workflowDeploymentDir` (the pure path
+computation) and `reclaimWorkflowDeploymentDir` (the on-disk rm used when an
+undeploy has no in-memory supervisor to sweep via `ownedDirs`). Neither reads
+or writes a record — they operate on the directory itself.
+
+`apps/sidecar/src/atomic-write.ts` (the shared `writeFileAtomicDurable`
+primitive `workflow-deployment-record.ts` and its tombstone built on) had no
+caller left, so it is DELETED with the record layer (same cleanup).
+
+### `apps/sidecar/src/workflow-deployment-record.ts` + `atomic-write.ts` — history (6927e7e4 pin bump, 2026-07-16)
+
+Both were added as new verbatim-vendor files with no upstream counterpart
+(workbench-only sidecar-local persistence), added alongside the 6927e7e4 pin
+bump rather than carried forward from an older file. `workflow-deployment-record.ts`
+persisted the per-deployment record needed to re-establish a workflow
+deployment across a sidecar **process restart** (co-located with the
+deployment's workflow-run substrate at
+`${dataDir}/workflow-runs/<deploymentId>/deployment.json`). It carried:
+
+- **CL-2199:** the tenant scope + raw hub deploymentId (`ses_<id>`) the
+  substrate env threading needed to rebuild `SubstrateConfig` on restore — the
+  same two keys `workflow-host-wiring.ts` requires at deploy time (see the
+  `WorkflowDeploySpec` note below), also durable across a process restart
+  rather than frame/in-memory only.
+- **CL-3368 — resurrection-guard tombstone.** Upstream's boot restore
+  re-spawned every on-disk deployment record unconditionally. The hub's
+  undeploy/teardown call is fire-and-forget with only a boot-time 24h janitor
+  behind it, so a missed teardown ack plus a sidecar-only process restart (not
+  a full redeploy) could otherwise resurrect a terminated deployment forever —
+  its record still on disk, no live tombstone to say it's done. An undeploy
+  wrote a durable tombstone (atomic, via `writeFileAtomicDurable`) into the
+  deployment's directory before the directory itself was reclaimed; boot-time
+  restore checked for the tombstone and skipped re-spawning a tombstoned
+  deployment, then reclaimed the now-stale directory.
+
+Both mechanisms are retired at CL-3884 above — there is no boot-time restore
+left for a durable record or a tombstone to guard.
+
+### `apps/sidecar/src/workflow-substrate-factory.ts` — acknowledged FORK
+
+(like `packages/hub-agent`), now converging toward the upstream on-disk model
+
+**Update — hard cutover to on-disk tool materialization (2026-07-17).** The
+hub-RPC step-tool RESOLUTION fork is retired. Every deployed agent/step now
+reads its pinned tool closure from the deploy tree the hub stages on disk —
+upstream's model (`readDeployTree` → `@intx/tool-packaging` loader). What was
+deleted:
+
+- `apps/hub/src/routes/tool-manifest.ts` — the `/api/internal/tools/manifest`
+  rail (route + test) — and its wiring in `apps/hub/src/index.ts`.
+- `apps/sidecar/src/step-tool-harness.ts` `fetchStepToolManifest` — the hub-RPC
+  manifest fetch — replaced by `readStepDeployTree` reading the on-disk tree at
+  `<dataDir>/<sanitizeAddress(stepAddress)>/deploy/`.
+- The `ToolManifest{Request,Tarball,Response}` types in
+  `@workbench/tool-credentials`.
+
+What was ADDED / restored:
+
+- Multi-step per-step staging: `apps/hub/src/services/workflow-deploy.ts` now
+  wires the orchestrator's `launchSession` to interchange's
+  `SessionService.stageWorkflowStep` (was a no-op, `noLaunchStepSession`), so
+  each step's tool closure is resolved to a `deploy/tool-packages-manifest.json`
+  - asset tarballs and staged on disk. Single-agent instances stage their head
+    tree through interchange's `deployInstanceAtHead`, which wraps the harness as
+    a single-step workflow and routes THROUGH `deploySingleStepAtHead` (one path,
+    not two parallel ones) — the same single-step-at-head hand-off a one-step
+    workflow definition uses.
+- Sidecar `stepDeployTreeDir` (in `workflow-substrate-factory.ts`, mirroring
+  interchange `apps/sidecar/src/step-agent-tools.ts`) locates the on-disk tree
+  from the deployment mailbox address; `StepToolContext.deployTreeDir` carries
+  it to the harness.
+
+What was KEPT — the thin layer AROUND the native loader, NOT the resolution
+fork: the tenant tool-CREDENTIAL rail (`/api/internal/tools/credentials`,
+`fetchToolCredentials`), the hub-backed `RuntimeCapabilities` rail
+(`/api/internal/hub-tools/run`, the `HUB_RPC` context), the per-step grants
+read, `writeStepAgentRows` (feeds the credential/grants gate by `stepAgentId`),
+and the `WORKFLOW_RAW_DEPLOYMENT_ID` / `deriveRawDeploymentId` threading (keys
+those kept rails). The workbench keeps its own factory-invocation loop that
+injects credential env + `HUB_RPC` into each loaded factory — upstream's loader
+returns factories it does not invoke; the injection is the workbench's, the
+resolution is now upstream's.
+
+`workflow-substrate-factory.ts` remains an acknowledged FORK (upstream's own
+restructuring — `SubstrateFactoryEnv`/`SpawnTimeEnv`, the `substrateConfig`
+narrowing — must be merged **onto** the fork branch on each pin bump). Its
+`WORKBENCH-LOCAL` tags (CL-2199, CL-2401, CL-2650, CL-3379) are unchanged. The
+prior "follow-up: evaluate adopting on-disk materialization" is now DONE (this
+change).
+
+The non-vendored helper that used to back the CL-2535 hook,
 `apps/sidecar/src/workflow-resume.ts` (`hostSatisfyAwaitSignal`,
-`recoverParkedRunFromLog`) — it is our own code, not a vendored file.
+`recoverParkedRunFromLog`), is deleted along with the hook — see "RETIRED"
+above.
 
 ## Supersession audit — pin `13fb9ac` (CL-2651, 2026-07-01)
 
@@ -448,6 +575,100 @@ adjudicated against the `2c43b57..13fb9ac` range; none was superseded:
   needed.
 - **CL-2651 `{reason}` interpolation**: still broken upstream at `13fb9ac`
   (both crash-log sites); re-applied and kept.
+
+## Supersession audit — pin `6927e7e4` (runtime retirement, 2026-07-16)
+
+Upstream deleted `launchSession` and the whole in-process single-agent
+harness path this bump was gated on. Every WORKBENCH-LOCAL block from the
+prior pin was re-adjudicated against that deletion, not just diffed line by
+line:
+
+- **CL-2535 / CL-2537 (`recoverParkedRun` hook + live signal watcher)**:
+  superseded outright — upstream's own resume guard
+  (`isResumableAwaitingSignalStep` / `isResumableReceivedAwaitSignalStep`)
+  now covers the untimed-`awaitSignal` case these blocks existed for. Deleted,
+  not re-applied.
+- **CL-3102 / CL-3103 (lazy restore / idle eviction) and CL-3340 (loop guard)**:
+  their host object, `session-manager.ts`'s in-process harness runtime, is
+  gone. CL-3102/CL-3103 are retired outright (the deployment lifecycle now
+  owns wake/evict semantics). CL-3340 (`assistant-loop-guard.ts`) was
+  preserved as a file, unwired at bump time, and has since been re-homed onto
+  the sidecar's inference-event path — see the `packages/hub-agent` section
+  above.
+- **CL-2400 (register-before-spawn ordering) and CL-3415/CL-3796 (pack-push
+  quarantine/retry-storm containment)**: both were structural workarounds for
+  reconnect races on the old session-per-instance path; upstream's rewritten
+  reconnect protocol (public-key challenge + additive register + in-flight
+  duplicate-deploy rejection) removes the race class they guarded against.
+  Retired, not re-applied.
+- **CL-2199, CL-2231, CL-2340, CL-2363, CL-2401, CL-2503, CL-2585, CL-2651,
+  CL-2663, CL-2783, CL-3104, CL-3379, CL-3468, CL-3641, CL-3766, CL-3779,
+  CL-3826**: all still address a live upstream gap at `6927e7e4` (verified
+  per-block during the re-sync, not assumed) and were re-applied on top of
+  the re-synced files.
+- **New:** CL-3368 (deployment-record resurrection-guard tombstone) closed a
+  gap this bump's own architecture change opened (see "Deleted vendor —
+  CL-3884" above — both the record and the tombstone it needed are retired);
+  `workflow-substrate-factory.ts`'s FORK reclassification is a process change,
+  not a new behavioral block.
+
+## Divergence audit (2026-07-18)
+
+Every remaining divergence, enumerated via `git grep "WORKBENCH-LOCAL (CL-" --
+apps/sidecar packages` plus the package-level vendors this doc already
+catalogues above, classified against interchange at the current pin
+(`6927e7e4`). **delete-now** = upstream already covers it or the code is dead,
+cited to the exact upstream file+symbol. **delete-after-upstream** = a named
+upstream change is still needed first. **keep-with-reason** = interchange
+genuinely lacks it. This is a classification pass only — no code is deleted
+here; deletions go through the separate 2-agent consensus process.
+
+Verified this pass by reading the interchange submodule directly (not just
+trusting prior notes): CL-2651, CL-2663, CL-2405, CL-3779, CL-3826, CL-2585,
+CL-3641, CL-2401, CL-3766 were re-checked against `interchange/packages/*` at
+`6927e7e4` and confirmed the upstream gap still exists (evidence cited per
+row). The rest inherit their classification from the "Supersession audit —
+pin `6927e7e4`" section above, which already adjudicated every block against
+this same pin at the 2026-07-16 bump; nothing in that section's scope has
+changed since.
+
+| Divergence (token)                                        | Where                                                              | Classification         | Evidence / removal condition                                                                                                                                                                                                          |
+| ---------------------------------------------------------- | ------------------------------------------------------------------- | ---------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| CL-2199                                                     | `workflow-host-wiring.ts`, `workflow-substrate-factory.ts`           | keep-with-reason        | Multi-step `substrateEnv` needs `TENANT_ID`/`WORKFLOW_RAW_DEPLOYMENT_ID`; the workflow-child's `filterSubstrateConfig` still throws without both (unchanged upstream shape at this pin).                                              |
+| CL-2231                                                     | `workflow-host-wiring.ts`                                            | keep-with-reason        | Complementary to upstream's agent-repo GC, not overlapping (upstream reclaims objects INSIDE live agent repos; this reclaims ORPHANED per-deployment workflow-run directories). No sub-piece superseded — see prior supersession audit. |
+| CL-2340                                                     | `workflow-run-pack-client.ts`, `workflow-host-wiring.ts`             | keep-with-reason        | Upstream's substrate still exposes plain `createPack`/`lastPackedTip` with no delta-cursor ack gating or size ceiling; `WorkflowRunPackTooLargeError` has no upstream counterpart.                                                     |
+| CL-2363                                                     | `workflow-host-wiring.ts`                                            | keep-with-reason        | `assertSubstrateEnvComplete` is a fail-loud guard around the CL-2199 keys; upstream has no equivalent pre-flight, it lets the child throw deep in a spawn instead.                                                                    |
+| CL-2401                                                     | `workflow-host-wiring.ts`, `workflow-substrate-factory.ts`           | keep-with-reason        | Verified: `grep -rn 'nonFatal\|non-fatal\|degrade' interchange/packages/workflow/src` — no match. Upstream has no non-fatal deterministic-step concept; a failed source step still fails the run.                                    |
+| CL-2503                                                     | `bin/workflow-child`                                                 | keep-with-reason        | Upstream's reference entrypoint inits no observability; without this, workflow-step failures never reach Sentry.                                                                                                                      |
+| CL-2585                                                     | `workflow-host-wiring.ts`, `packages/workflow-host/src/child/from-process-env.ts` | keep-with-reason | Verified: upstream `from-process-env.ts:252-264` still defaults the control channel to `process.stdin`/`process.stdout` (`defaultControlReader`/`defaultControlWriter`). Reverting re-introduces the `control channel received non-JSON line` crash. |
+| CL-2650                                                     | `workflow-substrate-factory.ts`                                      | keep-with-reason        | `buildWorkbenchAdapterRegistry` is the workbench tool-registry construction path; upstream's loader has no adapter-registry concept to converge onto beyond what CL-2199/CL-3379 already track.                                        |
+| CL-2651                                                     | `packages/workflow-host/src/supervisor/supervisor.ts`                | keep-with-reason        | Verified: `interchange/packages/workflow-host/src/supervisor/supervisor.ts:598` still logs the literal string `` {reason} `` (missing `$`) — confirmed unfixed at `6927e7e4`. Drop when upstream interpolates the reason itself.       |
+| CL-2662                                                     | `packages/hub-agent/src/agent-paths.ts`, `sidecar-orchestrator.test.ts` | keep-with-reason     | Documentation-only note (deliberately NOT mirroring upstream's dependency-light `paths.ts` barrel since nothing here imports that subpath) — no runtime divergence to remove.                                                          |
+| CL-2663                                                     | `packages/storage-isogit/src/store.ts`                               | keep-with-reason        | Verified: upstream `store.ts` wraps write-path methods in `withRepoDirLock` (lines 356, 586, 645) but `readAt` (425) and `readManifestHistory` (547) remain unwrapped — the read-vs-GC race this block closes still exists upstream.   |
+| CL-2783                                                     | `workflow-host-wiring.ts`                                            | keep-with-reason        | Perf fix (bounded-parallel `writeStepGrants`); upstream's reference wiring is not packaged in any `@intx/*` to diff against — no upstream equivalent exists to converge onto.                                                          |
+| CL-2405 (`hub-agent`)                                       | `packages/hub-agent/src/ws/hub-link.ts`                              | keep-with-reason        | Verified: upstream `hub-link.ts:188-214` uses a fixed `DEFAULT_RECONNECT_DELAY_MS = 3_000` with no exponential backoff or jitter. Our backoff/jitter is still the only implementation of either.                                      |
+| CL-3104                                                     | `workflow-host-wiring.ts`, `packages/hub-agent/src/ws/hub-link.ts`   | keep-with-reason        | Upstream's `agent.undeploy` protocol has no hibernate reason/flavor; the state-preserving teardown this implements has no upstream counterpart at this pin.                                                                            |
+| CL-3340                                                     | `packages/hub-agent/src/assistant-loop-guard.ts`, `assistant-loop-guard-wiring.ts` | keep-with-reason | No upstream loop-detection mechanism exists for repeated assistant cycles; re-homed onto the sidecar inference-event path per the section above, still workbench-only.                                                                |
+| CL-3368                                                     | `apps/sidecar/src/index.ts`, `workflow-child-boot-graph.test.ts`     | keep-with-reason        | Both remaining CL-3368 sites are workbench-only tooling (a boot-time data-dir invariant guard for the CL-2231 reclaim path, and a repo-root-walk fix for `bun run --filter` cwd semantics) with no upstream equivalent to converge onto. |
+| CL-3379                                                     | `workflow-substrate-factory.ts`, `inline-inference-step.ts`          | keep-with-reason        | Fixes a workbench-only bug (inline single-turn steps discarding their event stream before reaching `analytics_event`); the forwarding sink is entirely workbench plumbing.                                                             |
+| CL-3468                                                     | `packages/workflow-host/src/child/run-child.ts`                      | keep-with-reason        | `resolveTriggerPayload`'s hub-mail-header decode is a workbench hub↔sidecar mail contract; upstream has no `trigger.payload` JSON-decode concept for a `from: hub@…` sender.                                                            |
+| CL-3641                                                     | `packages/workflow-host/src/seams/signal-channel.ts`                | keep-with-reason        | Verified: upstream `signal-channel.ts:270-306` computes `nextSeq = maxSeq + 1` unconditionally with no guard for `maxSeq === -1`, still permitting a seq-0 write that would poison the run log.                                        |
+| CL-3766                                                     | `packages/inference/src/providers/{anthropic,openai}.ts`             | keep-with-reason        | Verified: `grep -n '"effort"\|reasoning_effort' interchange/packages/inference/src/providers/{anthropic,openai}.ts` — no match. Upstream's anthropic provider only supports `budget_tokens`, not Opus 4.8's `effort` dial.             |
+| CL-3779                                                     | `packages/hub-agent/src/ws/hub-link.ts`                              | keep-with-reason        | Verified: upstream `hub-link.ts` still enqueues every frame — including `pong` — onto the serial `messageQueue` (line ~1266) with no inline fast-path before enqueue; the heartbeat-starvation bug this fixes is still live upstream.  |
+| CL-3826                                                     | `packages/hub-agent/src/ws/hub-link.ts`, `sidecar-orchestrator.ts`, `apps/sidecar/src/config.ts` | keep-with-reason | Verified: `grep -n -i 'connectTimeout' interchange/packages/hub-agent/src/ws/hub-link.ts` — no match. Upstream's `connect()` has no per-attempt timeout; an unbounded connect can still blackhole for the whole Railway overlap window. |
+| CL-3880                                                     | `packages/workflow-host/src/child/serialized-tool-factories.ts`, `run-child.ts` | delete-after-upstream | Needs upstream to serialize `toolFactories` as a proper `{id, requires}` wire projection at both write points (`sendMultiStepDeployFrame`, `writeWorkflowRepoTree`) or make `hashDefinition`/`projectAgent` null-tolerant — the CL-3881 upstream ask. Drop this block once either lands; guarded meanwhile by `serialized-tool-factories.test.ts`. |
+| `packages/workflow-host` (full vendor)                      | `packages/workflow-host/**`                                          | keep-with-reason        | The injection point (`child/run-child.ts`'s `establishChild`) is ~1,250 LOC of internal plumbing; a thin re-export can't inject into it and partial re-vendoring would pull most of the package anyway. Re-sync mechanically each bump. |
+| `packages/storage-isogit` (verbatim + CL-2663)               | `packages/storage-isogit/**`                                         | keep-with-reason        | 100% verbatim except the CL-2663 block above (itself keep-with-reason); re-copy cleanly on every bump, re-apply CL-2663 on top.                                                                                                        |
+| `packages/inference` (fork, CL-3766 + CL-3853)                | `packages/inference/**`                                              | keep-with-reason        | CL-3766 verified above (still needed). CL-3853 (tool-call argument recovery / `{_raw}` envelope unwrapping) not independently re-verified this pass beyond the existing `tool-args.test.ts` regression guard; no upstream change at this pin is known to touch it. |
+| `packages/hub-agent` (fork)                                  | `packages/hub-agent/**`                                              | keep-with-reason        | Long-lived fork predating vendor discipline; carries real features upstream lacks (reconnect backoff/jitter, hibernate teardown, loop guard — all separately itemized above). `repoOpQueues`/`drainRepoOps` and the empty-address `register`-on-open frame (CL-2662) are upstream fixes NOT YET ADOPTED here — tracked separately, not a deletion candidate (adopting them is additive, not a removal of local code). |
+| `apps/sidecar/workflow-substrate-factory.ts` (acknowledged fork) | `workflow-substrate-factory.ts`                                 | keep-with-reason        | The tool-RESOLUTION rail converged onto upstream's on-disk deploy-tree materialization on 2026-07-17 (hub-RPC manifest fetch deleted). What remains is a thin layer upstream's loader doesn't provide: the tenant tool-credential rail, the hub-backed `RuntimeCapabilities` rail, and the factory-invocation loop that injects credential env + `HUB_RPC` (upstream's loader returns factories it never invokes). Its CL-2199/CL-2401/CL-2650/CL-3379 tags are unchanged and separately itemized above. |
+| `apps/sidecar/workflow-deployment-dirs.ts`                   | `workflow-deployment-dirs.ts`                                        | keep-with-reason        | Pure path helpers (`workflowDeploymentDir`, `reclaimWorkflowDeploymentDir`) backing the CL-2231 reclaim sweep; the record/tombstone layer they used to sit beside was already deleted at CL-3884, these two helpers are the residue that's still called. |
+
+**Explicit non-findings:** no divergence in this pass qualified as **delete-now**
+— every currently-tagged block either still guards a live upstream gap
+(verified above) or documents a deliberate non-mirror choice (CL-2662). The
+only **delete-after-upstream** item is CL-3880, matching the standing CL-3881
+upstream ask already tracked before this audit.
 
 ## On every interchange pin bump
 

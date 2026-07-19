@@ -33,7 +33,9 @@ import { useArchiveArtifact, useArtifact } from "@workbench/client/react";
 import { getMe } from "../lib/hub-api";
 import { buildApiUrl } from "../lib/api";
 import { clientOptions } from "../lib/client-options";
-import ArtifactBody from "../components/ArtifactBody";
+import ArtifactBody, {
+  ArtifactUploadPresenceSchema,
+} from "../components/ArtifactBody";
 import { ErrorBoundary } from "../components/ErrorBoundary";
 import { resolveKindLabel } from "../lib/resolve-kind-label";
 import { useActiveWorkbench } from "../lib/active-workbench-context";
@@ -67,10 +69,14 @@ const DOWNLOADABLE_ARTIFACT_KINDS = new Set(["image", "file", "csv-export"]);
 const ARTIFACT_DETAIL_CHROME_ACTION_CLASS =
   "inline-flex items-center gap-1.5 text-xs font-medium text-text-2 hover:text-text";
 
+// A presence check only (not the strict field-typed schema used for
+// isCsvUpload/extractUploadFilename) — this decides whether to show a
+// download button, and a legacy row with a malformed upload.mimeType or
+// upload.filename still genuinely has upload metadata worth downloading.
 function hasUploadSource(source: unknown): boolean {
-  if (typeof source !== "object" || source === null) return false;
-  const upload = (source as Record<string, unknown>).upload;
-  return typeof upload === "object" && upload !== null;
+  const parsed = ArtifactUploadPresenceSchema(source);
+  if (parsed instanceof type.errors) return false;
+  return parsed.upload !== undefined;
 }
 
 // The Gamma deck URL lives in the artifact's JSON content, not on the row —

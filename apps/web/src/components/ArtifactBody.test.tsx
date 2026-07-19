@@ -335,6 +335,27 @@ describe("ArtifactBody rendering", () => {
     expect(screen.queryByRole("table")).toBeNull();
   });
 
+  it("renders a legacy kind-'file' image upload inline as an image, not a bare download chip (CL-3906)", () => {
+    render(
+      React.createElement(ArtifactBody, {
+        artifact: {
+          id: "art-img",
+          content: "",
+          kind: "file",
+          source: {
+            upload: { filename: "screenshot.png", mimeType: "image/png" },
+          },
+        },
+      }),
+    );
+    const img = screen.getByRole("img", { name: /screenshot\.png/i });
+    expect(img.getAttribute("src")).toMatch(
+      /\/api\/v1\/artifacts\/art-img\/download$/,
+    );
+    // Still offers the download action alongside the preview.
+    screen.getByRole("link", { name: /download screenshot\.png/i });
+  });
+
   it("renders web artifacts in a sandboxed iframe with a full-screen toggle", () => {
     render(
       React.createElement(ArtifactBody, {

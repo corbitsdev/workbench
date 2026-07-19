@@ -16,7 +16,6 @@ const artifact: GalleryArtifact = {
   time: "2 hours ago",
   provenance: "Workflow",
   label: "Email",
-  viz: "lines",
   fill: "bg-orange",
   span: "row-span-3",
   status: "draft",
@@ -24,13 +23,13 @@ const artifact: GalleryArtifact = {
 };
 
 describe("ArtifactCard", () => {
-  it("renders the type label, from, and time", () => {
+  it("renders title, from, and time — no kind label chrome", () => {
     render(React.createElement(ArtifactCard, { artifact }));
-    expect(screen.getByText("Email")).toBeDefined();
+    expect(screen.getByText("Sales automation ROI")).toBeDefined();
     expect(screen.getByText("Acme Corp")).toBeDefined();
     expect(screen.getByText("2 hours ago")).toBeDefined();
-    // Provenance badge is always surfaced.
-    expect(screen.getByText("Workflow")).toBeDefined();
+    // The kind label ("Email") no longer renders as card chrome.
+    expect(screen.queryByText("Email")).toBeNull();
   });
 
   it("renders no decorative position badge markup", () => {
@@ -44,32 +43,22 @@ describe("ArtifactCard", () => {
     }
   });
 
-  it("omits the provenance chip for an unknown/legacy source", () => {
-    render(
-      React.createElement(ArtifactCard, {
-        artifact: {
-          ...artifact,
-          provenance: "Unknown source",
-          provenanceTone: "unknown",
-        },
-      }),
-    );
-    expect(screen.queryByText("Unknown source")).toBeNull();
-  });
-
-  it("does not uppercase free-text provenance", () => {
-    render(
-      React.createElement(ArtifactCard, {
-        artifact: {
-          ...artifact,
-          provenance: "Last 30 Days",
-          provenanceTone: "free",
-        },
-      }),
-    );
-    const chip = screen.getByText("Last 30 Days");
-    expect(chip.className).not.toContain("uppercase");
-    expect(chip.className).toContain("truncate");
+  it("never renders the origin/provenance chip, for any tone", () => {
+    for (const [provenance, provenanceTone] of [
+      ["Workflow", "origin"],
+      ["Agent", "origin"],
+      ["Imported", "origin"],
+      ["Unknown source", "unknown"],
+      ["Last 30 Days", "free"],
+    ] as const) {
+      const { unmount } = render(
+        React.createElement(ArtifactCard, {
+          artifact: { ...artifact, provenance, provenanceTone },
+        }),
+      );
+      expect(screen.queryByText(provenance)).toBeNull();
+      unmount();
+    }
   });
 
   it("renders solid fill hero on default gallery cards, without a Draft badge", () => {
@@ -81,7 +70,6 @@ describe("ArtifactCard", () => {
     // status is "draft" — the default, non-signal state — so no badge.
     expect(screen.queryByText("Draft")).toBeNull();
     expect(card.querySelector("pre")).toBeNull();
-    expect(screen.queryByText("Quick follow-up on our call")).toBeNull();
     expect(card.querySelector(".bg-orange")).not.toBeNull();
   });
 
@@ -106,13 +94,27 @@ describe("ArtifactCard", () => {
     expect(screen.getByText("Quick follow-up on our call")).toBeDefined();
   });
 
-  it("renders ArtifactViz in the hero on default cards even when an excerpt exists", () => {
-    const { container } = render(
-      React.createElement(ArtifactCard, { artifact }),
-    );
-    const preview = container.querySelector('[class*="min-h-[120px]"]');
-    expect(screen.queryByText("Quick follow-up on our call")).toBeNull();
-    expect(preview?.querySelector("svg")).not.toBeNull();
+  it("renders the kind-family preview (not the decorative placeholder) on default gallery cards too, with the excerpt visible", () => {
+    render(React.createElement(ArtifactCard, { artifact }));
+    expect(screen.getByText("Quick follow-up on our call")).toBeDefined();
+  });
+
+  it("never renders an iframe in the card media area, for any kind", () => {
+    const kinds: Array<[string, string]> = [
+      ["email", "Email"],
+      ["ab-comparison", "Comparison"],
+      ["web", "Web page"],
+      ["one-pager", "One-Pager"],
+    ];
+    for (const [kind, label] of kinds) {
+      const { container, unmount } = render(
+        React.createElement(ArtifactCard, {
+          artifact: { ...artifact, kind, label },
+        }),
+      );
+      expect(container.querySelector("iframe")).toBeNull();
+      unmount();
+    }
   });
 
   it("renders image thumbnails on default gallery cards", () => {
@@ -132,6 +134,38 @@ describe("ArtifactCard", () => {
     expect(thumbnail.getAttribute("src")).toBe(
       "https://example.test/image.png",
     );
+  });
+
+  it("carries the kind-correct preview family attribute, without rendering any kind-label text", () => {
+    const { container } = render(
+      React.createElement(ArtifactCard, {
+        artifact: {
+          ...artifact,
+          kind: "image",
+          label: "Image",
+          thumbnailUrl: "https://example.test/image.png",
+          thumbnailAlt: "Uploaded image",
+        },
+      }),
+    );
+    const card = container.firstElementChild as HTMLElement;
+    expect(card.getAttribute("data-preview-family")).toBe("data");
+    expect(screen.queryByText("Image")).toBeNull();
+    expect(screen.queryByText("Document")).toBeNull();
+  });
+
+  it("shows the winner and variant count on a comparison card", () => {
+    render(
+      React.createElement(ArtifactCard, {
+        artifact: {
+          ...artifact,
+          kind: "ab-comparison",
+          label: "Comparison",
+          previewExcerpt: "Winner: Claude Opus · 2 variants",
+        },
+      }),
+    );
+    expect(screen.getByText("Winner: Claude Opus · 2 variants")).toBeDefined();
   });
 
   it("falls back to the shaped placeholder when the thumbnail fails to load", () => {
@@ -240,5 +274,19 @@ describe("ArtifactCard", () => {
     render(React.createElement(ArtifactCard, { artifact, onOpen }));
     fireEvent.keyDown(screen.getByRole("button"), { key: "a" });
     expect(onOpen).not.toHaveBeenCalled();
+  });
+
+  it("renders a creator-initials badge for a non-own artifact", () => {
+    render(
+      React.createElement(ArtifactCard, {
+        artifact: { ...artifact, creatorInitials: "SC" },
+      }),
+    );
+    expect(screen.getByText("SC")).toBeDefined();
+  });
+
+  it("renders no creator-initials badge when the field is absent (viewer's own artifact)", () => {
+    render(React.createElement(ArtifactCard, { artifact }));
+    expect(screen.queryByLabelText(/Created by/)).toBeNull();
   });
 });

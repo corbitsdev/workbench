@@ -6,6 +6,7 @@ import {
   resolveSidecarBuildTimeoutMs,
   resolveSidecarHeartbeat,
   resolveSidecarIdleEviction,
+  resolveSidecarSpawnReadyTimeoutMs,
   resolveToolPackageCache,
   resolveWorkflowRunPackLimits,
 } from "./config";
@@ -84,6 +85,44 @@ describe("resolveSidecarBuildTimeoutMs", () => {
     expect(() =>
       resolveSidecarBuildTimeoutMs({ SIDECAR_HARNESS_BUILD_TIMEOUT_MS: "abc" }),
     ).toThrow(/non-negative integer/);
+  });
+});
+
+describe("resolveSidecarSpawnReadyTimeoutMs", () => {
+  it("defaults to 25s — a margin below the hub's 30s deploy wait", () => {
+    expect(resolveSidecarSpawnReadyTimeoutMs({})).toBe(25_000);
+  });
+
+  it("honors an override", () => {
+    expect(
+      resolveSidecarSpawnReadyTimeoutMs({
+        SIDECAR_SPAWN_READY_TIMEOUT_MS: "20000",
+      }),
+    ).toBe(20_000);
+  });
+
+  it("rejects 0 (no disable value — disabling would re-lose the margin)", () => {
+    expect(() =>
+      resolveSidecarSpawnReadyTimeoutMs({
+        SIDECAR_SPAWN_READY_TIMEOUT_MS: "0",
+      }),
+    ).toThrow(/positive integer/);
+  });
+
+  it("rejects a negative value", () => {
+    expect(() =>
+      resolveSidecarSpawnReadyTimeoutMs({
+        SIDECAR_SPAWN_READY_TIMEOUT_MS: "-1",
+      }),
+    ).toThrow(/positive integer/);
+  });
+
+  it("rejects a non-integer value", () => {
+    expect(() =>
+      resolveSidecarSpawnReadyTimeoutMs({
+        SIDECAR_SPAWN_READY_TIMEOUT_MS: "abc",
+      }),
+    ).toThrow(/positive integer/);
   });
 });
 

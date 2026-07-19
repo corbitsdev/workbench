@@ -33,7 +33,7 @@ import { DETERMINISTIC_TOOL_KIND, STEP_KIND_TAG } from "@workbench/agents";
 
 import {
   createSidecarDeployRouter,
-  deriveTrivialDeploymentId,
+  deriveDeploymentId,
 } from "./workflow-host-wiring";
 import {
   createMultistepDrainRouter,
@@ -240,20 +240,29 @@ describe("createSidecarDeployRouter hibernate", () => {
 
     const router = createSidecarDeployRouter({
       sessions: {
+        // Single-step (warm) deploy stages its deploy tree at the head via the
+        // narrow initRepo seam, not provisionAgent.
+        initRepo: async () => {
+          /* no-op: no on-disk deploy tree needed for this test */
+        },
         provisionAgent: async () => {
-          throw new Error("multi-step branch must not invoke provisionAgent");
+          throw new Error("workflow deploy must not invoke provisionAgent");
         },
         persistHubPublicKey: async () => {
           throw new Error(
-            "multi-step branch must not invoke persistHubPublicKey",
+            "workflow deploy must not invoke persistHubPublicKey",
           );
         },
       } as unknown as Parameters<
         typeof createSidecarDeployRouter
       >[0]["sessions"],
       keyStore: {
+        // Single-step head records the hub key so the deploy pack verifies.
         recordHubKey: () => {
-          throw new Error("multi-step branch must not invoke recordHubKey");
+          /* no-op */
+        },
+        forgetAgent: () => {
+          /* no-op unwind */
         },
         loadOrGenerateKey: async () => ({
           keyPair: await generateKeyPair(),
@@ -262,13 +271,13 @@ describe("createSidecarDeployRouter hibernate", () => {
       } as unknown as Parameters<
         typeof createSidecarDeployRouter
       >[0]["keyStore"],
-      onAgentEvent: () => () => {
-        /* unused */
-      },
       transport,
       repoStore,
       signingKeySeed: keyPair.privateKey,
       createAgentCrypto: createEd25519Crypto,
+      assertSourceBuildable: () => {
+        /* every source buildable in this test */
+      },
       registerDeployment: () => {
         /* no-op */
       },
@@ -301,7 +310,10 @@ describe("createSidecarDeployRouter hibernate", () => {
       agentAddress: "ins_hibernate-parked@example.com",
       agentId: "ins_hibernate-parked-agent",
       hubPublicKey: "hub-pk",
-      config: { tenantId: "ten_test" } as AgentDeployFrame["config"],
+      config: {
+        tenantId: "ten_test",
+        principalId: "prn_test",
+      } as AgentDeployFrame["config"],
       workflow: {
         definition: {
           id: "wf-hibernate",
@@ -317,13 +329,15 @@ describe("createSidecarDeployRouter hibernate", () => {
           },
         },
         sources: {
-          "step-1": {
-            id: "step-1",
-            provider: "anthropic",
-            baseURL: "https://api.anthropic.com",
-            apiKey: "sk-step-1",
-            model: "claude-3-5",
-          },
+          "step-1": [
+            {
+              id: "step-1",
+              provider: "anthropic",
+              baseURL: "https://api.anthropic.com",
+              apiKey: "sk-step-1",
+              model: "claude-3-5",
+            },
+          ],
         },
       },
     };
@@ -364,7 +378,7 @@ describe("createSidecarDeployRouter hibernate", () => {
     await completeSpawnHandshake(first);
     await deployPromise;
 
-    const deploymentId = deriveTrivialDeploymentId(frame.agentAddress);
+    const deploymentId = deriveDeploymentId(frame.agentAddress);
 
     // Durable state the hibernate MUST preserve: the workflow-run repo
     // (the parked run's event log lives here), the step's agent-state repo

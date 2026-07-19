@@ -17,17 +17,25 @@ declare global {
   }
 }
 
+const meResponse = {
+  userId: "u1",
+  userName: "Test User",
+  personalTenantId: "tenant-1",
+  rootTenantIds: [],
+  paInstanceId: null,
+  provisioned: true,
+  credentialResolved: true,
+};
+
+// A controllable getMe: most tests want it to resolve immediately, but the
+// tenant-gating flash test needs to hold it pending to observe the window
+// before `personalTenantId` (and so `tenantId`) resolves.
+let meDeferred: { promise: Promise<typeof meResponse> } = {
+  promise: Promise.resolve(meResponse),
+};
+
 mock.module("../lib/hub-api", () => ({
-  getMe: () =>
-    Promise.resolve({
-      userId: "u1",
-      userName: "Test User",
-      personalTenantId: "tenant-1",
-      rootTenantIds: [],
-      paInstanceId: null,
-      provisioned: true,
-      credentialResolved: true,
-    }),
+  getMe: () => meDeferred.promise,
 }));
 
 mock.module("react-router", () => ({
@@ -81,11 +89,23 @@ const skills = [
     ownerUserId: "usr-3",
     ownerName: "Alan Turing",
   },
+  {
+    id: "skill-4",
+    name: "landing-page",
+    displayName: "landing-page",
+    createdAt: "2026-06-17T00:00:00.000Z",
+    updatedAt: "2026-06-17T00:00:00.000Z",
+    scope: "tenant",
+    accessTenantId: "tenant-root",
+    ownerUserId: "usr-4",
+    ownerName: "Katherine Johnson",
+  },
 ];
 
 beforeEach(() => {
   localStorage.clear();
   window.happyDOM.setURL("http://localhost/");
+  meDeferred = { promise: Promise.resolve(meResponse) };
   globalThis.fetch = mock((url: string) => {
     if (String(url).includes("/skills/share-targets")) {
       return Promise.resolve(
@@ -138,6 +158,23 @@ describe("SkillsLibrary", () => {
     expect(document.body.textContent).not.toContain("viral-content");
   });
 
+  it("humanizes a slug-shaped displayName stored verbatim at creation (card view)", async () => {
+    renderPage();
+
+    await waitFor(() =>
+      expect(document.body.textContent).toContain("Landing page"),
+    );
+    expect(document.body.textContent).not.toContain("landing-page");
+  });
+
+  it("leaves a real human-authored displayName unchanged", async () => {
+    renderPage();
+
+    await waitFor(() =>
+      expect(document.body.textContent).toContain("Private One"),
+    );
+  });
+
   it("labels private skills as Private", async () => {
     renderPage();
 
@@ -167,5 +204,47 @@ describe("SkillsLibrary", () => {
     renderPage();
 
     await screen.findByRole("table");
+  });
+
+  it("humanizes a kebab-case skill name in rows view when no displayName is set", async () => {
+    localStorage.setItem("cw-view-skills", "rows");
+    renderPage();
+
+    await screen.findByRole("table");
+    await waitFor(() =>
+      expect(document.body.textContent).toContain("Viral content"),
+    );
+    expect(document.body.textContent).not.toContain("viral-content");
+  });
+
+  it("humanizes a slug-shaped displayName in rows view", async () => {
+    localStorage.setItem("cw-view-skills", "rows");
+    renderPage();
+
+    await screen.findByRole("table");
+    await waitFor(() =>
+      expect(document.body.textContent).toContain("Landing page"),
+    );
+    expect(document.body.textContent).not.toContain("landing-page");
+  });
+
+  it("does not flash the empty state while tenantId is still resolving", async () => {
+    let resolveMe: (value: typeof meResponse) => void = () => {};
+    meDeferred = {
+      promise: new Promise((resolve) => {
+        resolveMe = resolve;
+      }),
+    };
+
+    renderPage();
+
+    // useSkillLibrary is disabled until tenantId resolves, so this window has
+    // no data and no fetch in flight — the empty-state text must not render.
+    expect(document.body.textContent).not.toContain("No skills yet");
+    expect(document.body.textContent).toContain("Loading skills");
+
+    resolveMe(meResponse);
+    await waitFor(() => expect(document.body.textContent).toContain("ASAP"));
+    expect(document.body.textContent).not.toContain("No skills yet");
   });
 });

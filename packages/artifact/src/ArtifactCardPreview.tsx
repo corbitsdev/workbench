@@ -95,19 +95,32 @@ function ResearchPreview({
   );
 }
 
-function ComparisonPreview({ fill }: { fill: string }) {
+function ComparisonPreview({
+  fill,
+  excerpt,
+}: {
+  fill: string;
+  excerpt?: string;
+}) {
   return (
-    <div className="grid h-full grid-cols-2 gap-px bg-border/40 p-3">
-      <div className="flex flex-col gap-1.5 rounded-sm bg-surface/80 p-2">
-        <div className={`h-1.5 w-8 rounded-full ${fill}`} />
-        <div className="h-2 w-full rounded-sm bg-text/10" />
-        <div className="h-2 w-[80%] rounded-sm bg-text/8" />
+    <div className="flex h-full flex-col gap-1.5 p-3">
+      <div className="grid flex-1 grid-cols-2 gap-px bg-border/40">
+        <div className="flex flex-col gap-1.5 rounded-sm bg-surface/80 p-2">
+          <div className={`h-1.5 w-8 rounded-full ${fill}`} />
+          <div className="h-2 w-full rounded-sm bg-text/10" />
+          <div className="h-2 w-[80%] rounded-sm bg-text/8" />
+        </div>
+        <div className="flex flex-col gap-1.5 rounded-sm bg-surface/80 p-2">
+          <div className="h-1.5 w-8 rounded-full bg-text/10" />
+          <div className="h-2 w-full rounded-sm bg-text/10" />
+          <div className="h-2 w-[70%] rounded-sm bg-text/8" />
+        </div>
       </div>
-      <div className="flex flex-col gap-1.5 rounded-sm bg-surface/80 p-2">
-        <div className="h-1.5 w-8 rounded-full bg-text/10" />
-        <div className="h-2 w-full rounded-sm bg-text/10" />
-        <div className="h-2 w-[70%] rounded-sm bg-text/8" />
-      </div>
+      {excerpt ? (
+        <p className="line-clamp-1 text-[10px] font-medium leading-snug text-text-3">
+          {excerpt}
+        </p>
+      ) : null}
     </div>
   );
 }
@@ -194,7 +207,7 @@ export function ArtifactCardPreview({
     case "research":
       return <ResearchPreview {...fillProps} />;
     case "comparison":
-      return <ComparisonPreview fill={fill} />;
+      return <ComparisonPreview {...fillProps} />;
     case "presentation":
       return <PresentationPreview fill={fill} />;
     case "data":

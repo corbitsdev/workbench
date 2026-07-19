@@ -108,6 +108,13 @@ export {
   TRIAGE_BUDGET_STOP_MARKER,
 } from "./core/triage-budget-director";
 export {
+  PERSONAL_AGENT_IDENTITY_MARKER,
+  hasPersonalAgentIdentityMarker,
+  isPersonalAgentIdentityPrompt,
+  withPersonalAgentIdentityMarker,
+  stripPersonalAgentIdentityMarker,
+} from "./core/personal-agent-identity";
+export {
   PERSONAL_AGENT_SEED_FILES,
   parseSeedMarker,
   resolveSeedMarker,
@@ -158,3 +165,47 @@ export {
   isInvokeSessionPrompt,
   isPersonalAgentDefinitionName,
 } from "./personas/invoke-policy";
+
+// Prompt evaluation harness (CL-3193) — synthetic cases, deterministic
+// scorer, scorecard. Live-model runs are an explicit admin command.
+// composePersonalAgentEvalPrompt is exported from @workbench/myra/eval only
+// so consumers that just need schemas/scorer do not pull the definition graph.
+export {
+  EvalCaseSchema,
+  EvalConstraintsSchema,
+  EvalFixedContextSchema,
+  EvalScoreSchema,
+  EvalToolCallSchema,
+  EvalToolResultSchema,
+  EvalTraceSchema,
+  EvalConstraintResultSchema,
+  EvalScorecardSchema,
+  parseEvalCase,
+  parseEvalTrace,
+  V1_EVAL_CASES,
+  evalCaseById,
+  EVAL_PLATFORM_TOOLS,
+  DEFAULT_EVAL_ADVERTISED_TOOL_NAMES,
+  evalToolsByName,
+  scoreTrace,
+  buildScorecard,
+  formatScorecardMarkdown,
+  runEvalCase,
+  createPassingScriptedAdapter,
+  createFailingScriptedAdapter,
+  composeStubEvalPrompt,
+  type EvalCase,
+  type EvalConstraints,
+  type EvalFixedContext,
+  type EvalScore,
+  type EvalToolCall,
+  type EvalToolResult,
+  type EvalTrace,
+  type EvalConstraintResult,
+  type EvalScorecard,
+  type ScorecardRun,
+  type EvalModelAdapter,
+  type EvalModelPlan,
+  type ComposeEvalPrompt,
+  type RunEvalCaseResult,
+} from "./eval/index";

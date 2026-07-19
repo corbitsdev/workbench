@@ -29,16 +29,13 @@ export function createMeFeaturesRouter(
             "application/json": { schema: resolver(MemberFeaturesResponse) },
           },
         },
-        404: {
-          description: "Caller is not a member of any tenant",
-        },
       },
     }),
     async (c) => {
       const userId = c.get("userId");
       const member = await resolveCallerMember(db, userId);
       if (!member) {
-        return c.json({ error: "No tenant membership" }, 404);
+        return c.json({ features: [] });
       }
       const features = await listMemberFeatureStates(db, member.tenantId);
       return c.json({ features });

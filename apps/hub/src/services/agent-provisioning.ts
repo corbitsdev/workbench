@@ -1,6 +1,10 @@
 import { createHash } from "node:crypto";
 import { eq, and, inArray, like } from "drizzle-orm";
-import { schema as intxSchema, resolveModelSources } from "@intx/db";
+import {
+  schema as intxSchema,
+  resolveModelSources,
+  createGrantStore,
+} from "@intx/db";
 import type { DB } from "@intx/db";
 import {
   ModelRequirements,
@@ -89,7 +93,18 @@ export async function resolveInstanceSourcesFromDefinition(
   for (const preference of preferences) {
     invokerPreferences[preference.model] = preference.providers;
   }
-  return resolveModelSources(db, tenantId, modelRequirements, {
+  // Interchange gates every credential-backed source on the agent creator
+  // holding `credential:{id}` / `use` (fail-closed). Collect the definition
+  // creator's grants across the tenant ancestor chain — matching Interchange's
+  // own `resolveInstanceModelSources` — so an inherited tenant-owned credential
+  // authorized to the org's system principal still resolves. Without this the
+  // 4th argument would be empty and every LLM source would be withheld as
+  // `credential_unauthorized`, making the instance unlaunchable.
+  const creatorGrants = await createGrantStore(db).collectGrantsInChain(
+    agentRow.creatorPrincipalId,
+    tenantId,
+  );
+  return resolveModelSources(db, tenantId, modelRequirements, creatorGrants, {
     invokerPreferences,
   });
 }
@@ -152,7 +167,14 @@ export async function resolveInstanceSourcesCached(
       ? ModelRequirements.assert(agentRow.modelRequirements)
       : [];
   const extraModels = modelRequirements.map((r) => r.model);
-  const keyExtra = JSON.stringify(modelRequirements);
+  // Fold the definition creator into the cache key: source resolution now also
+  // depends on the creator's `credential:{id}` / `use` grants (fail-closed
+  // gate), so two definitions with the same model set but different creators
+  // must not share a cached chain.
+  const keyExtra = JSON.stringify({
+    modelRequirements,
+    creatorPrincipalId: agentRow.creatorPrincipalId,
+  });
 
   try {
     // TTL is read from config by getCachedCatalogSources itself (same strict
@@ -413,12 +435,12 @@ export async function launchAgentSession(
           instanceId,
           provider: defaultSourceProvider,
         }),
-    composeMyraStyleOverlaySectionForInstance(db, {
+    composeMyraStyleOverlaySectionForInstance(hubDb, {
       tenantId,
       instanceId,
       provider: defaultSourceProvider,
     }),
-    composeMyraPinnedSkillsSectionForInstance(db, {
+    composeMyraPinnedSkillsSectionForInstance(hubDb, {
       tenantId,
       instanceId,
       provider: defaultSourceProvider,
@@ -685,13 +707,25 @@ export async function launchAgentSession(
   let lastError: unknown;
   for (let attempt = 0; attempt < MAX_LAUNCH_ATTEMPTS; attempt++) {
     try {
-      await sessionService.launchSession(launchConfig);
+      // Upstream retired the in-process session runtime: a single-agent
+      // instance now runs as a supervised single-step workflow child.
+      // `deployInstanceAtHead` is Interchange's launchSession replacement — it
+      // wraps the harness as a one-step workflow, keeps the instance's REAL
+      // address (so mail delivery and all `agent_instance` joins are
+      // unchanged), writes no `workflow_deployment` row, and returns the head's
+      // Ed25519 public key. We persist that key on the `agent_instance` row so
+      // the sidecar's reconnect challenge resolves it: `lookupPublicKey` routes
+      // a non-workflow-derived address (which ours are) to
+      // `agent_instance.public_key`. Without the write-through, every reconnect
+      // challenge would fail closed and the agent would go unroutable.
+      const { publicKey } =
+        await sessionService.deployInstanceAtHead(launchConfig);
       // Register the event collector before updating status so inference events
       // arriving immediately after launch are captured rather than dropped.
       eventCollectors.create(address, tenantId, sessionId, instanceId);
       await db
         .update(agentInstance)
-        .set({ status: "running", updatedAt: new Date() })
+        .set({ status: "running", publicKey, updatedAt: new Date() })
         .where(eq(agentInstance.id, instanceId));
       log.info("Agent session launched", { instanceId, agentId, tenantId });
       return { address, sessionId };
@@ -970,8 +1004,8 @@ export function registerDisconnectReconciler(deps: {
   const { db, router } = deps;
   const graceMs = deps.graceMs ?? DEFAULT_DISCONNECT_RECONCILE_GRACE_MS;
 
-  return router.events.on("sidecar.disconnect", ({ agentAddresses }) => {
-    for (const agentAddress of agentAddresses) {
+  return router.events.on("sidecar.disconnect", ({ ownedAddresses }) => {
+    for (const agentAddress of ownedAddresses) {
       setTimeout(() => {
         void reconcileDisconnectedSession(db, router, agentAddress).catch(
           (err) => {

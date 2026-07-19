@@ -4,11 +4,11 @@ import {
   buildSkillBundle,
   buildSkillTree,
   canManageSkill,
+  createSkill,
   excludeRepoInitCommit,
   filesFromZip,
   isSkillVisible,
   SkillLibraryError,
-  toAssetName,
   toVersionEntries,
 } from "./skill-library";
 
@@ -220,29 +220,6 @@ function file(path: string, content: string, mimeType = "text/markdown") {
   return { path, content: Buffer.from(content), mimeType };
 }
 
-describe("toAssetName", () => {
-  it("lowercases and kebab-cases a display name", () => {
-    expect(toAssetName("My ASAP Skill")).toBe("my-asap-skill");
-  });
-
-  it("collapses runs of non-alphanumeric characters to a single hyphen", () => {
-    expect(toAssetName("Skill: (v2) -- final!")).toBe("skill-v2-final");
-  });
-
-  it("strips leading and trailing hyphens", () => {
-    expect(toAssetName("---skill---")).toBe("skill");
-  });
-
-  it('falls back to "skill" for a blank or symbol-only name', () => {
-    expect(toAssetName("")).toBe("skill");
-    expect(toAssetName("!!!")).toBe("skill");
-  });
-
-  it("truncates to 64 characters", () => {
-    expect(toAssetName("a".repeat(100))).toHaveLength(64);
-  });
-});
-
 describe("buildSkillTree", () => {
   it("places files under <assetName>/ and strips the bundle prefix", () => {
     const bundle = buildSkillBundle([
@@ -413,5 +390,93 @@ describe("buildSkillBundle", () => {
     ).toThrow(
       "Skill bundle must include SKILL.md or at least one markdown file",
     );
+  });
+});
+
+describe("createSkill displayName policy", () => {
+  function makeFakeAssetService(now: Date) {
+    const created: Record<string, unknown>[] = [];
+    return {
+      created,
+      assetService: {
+        createAsset: async (params: Record<string, unknown>) => {
+          created.push(params);
+          return {
+            id: "skl_new",
+            name: params.name,
+            displayName: params.displayName ?? null,
+            tenantId: "ten_a",
+            createdAt: now,
+            updatedAt: now,
+          };
+        },
+        populateAsset: async () => undefined,
+      },
+    };
+  }
+
+  function makeInsertDb() {
+    return { insert: () => ({ values: async () => undefined }) };
+  }
+
+  const VIEWER = { tenantId: "ten_a", principalId: "prn_owner" };
+
+  it('stores no displayName when the supplied name is slug-shaped ("landing-page")', async () => {
+    const now = new Date();
+    const { assetService, created } = makeFakeAssetService(now);
+    const result = await createSkill(
+      assetService as never,
+      makeInsertDb() as never,
+      VIEWER,
+      {
+        name: "landing-page",
+        files: [file("landing-page/SKILL.md", "# Landing page")],
+        scope: "private",
+        ownerUserId: "usr_1",
+        ownerName: "Owner",
+      },
+    );
+    expect(created[0]?.displayName).toBeUndefined();
+    expect(result.displayName).toBeNull();
+  });
+
+  it('stores the verbatim title when the supplied name is human-authored ("Company Research")', async () => {
+    const now = new Date();
+    const { assetService, created } = makeFakeAssetService(now);
+    const result = await createSkill(
+      assetService as never,
+      makeInsertDb() as never,
+      VIEWER,
+      {
+        name: "Company Research",
+        files: [file("company-research/SKILL.md", "# Company Research")],
+        scope: "private",
+        ownerUserId: "usr_1",
+        ownerName: "Owner",
+      },
+    );
+    expect(created[0]?.displayName).toBe("Company Research");
+    expect(result.displayName).toBe("Company Research");
+  });
+
+  it("stores no displayName for a slug-shaped name longer than the 64-char asset-name cap", async () => {
+    const now = new Date();
+    const { assetService, created } = makeFakeAssetService(now);
+    const longSlug = `${"a".repeat(40)}-${"b".repeat(40)}`;
+    expect(longSlug.length).toBeGreaterThan(64);
+    const result = await createSkill(
+      assetService as never,
+      makeInsertDb() as never,
+      VIEWER,
+      {
+        name: longSlug,
+        files: [file("long/SKILL.md", "# Long")],
+        scope: "private",
+        ownerUserId: "usr_1",
+        ownerName: "Owner",
+      },
+    );
+    expect(created[0]?.displayName).toBeUndefined();
+    expect(result.displayName).toBeNull();
   });
 });

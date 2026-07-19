@@ -17,11 +17,43 @@ import { SUMMARIZE_COMPACTOR_NAME } from "./summarize-compactor";
  */
 export const COMPACTION_TRIGGER_THRESHOLD = 0.8;
 
+/**
+ * Telemetry for the compaction latch (CL-3806). Under a sustained
+ * over-threshold breach the latch alternates fire/grace-skip; these events
+ * make that pattern visible without changing the self-healing policy.
+ */
+export type CompactionTelemetryEvent =
+  | {
+      type: "fire";
+      model: string;
+      ratio: number;
+      window: number;
+      consecutiveGraceSkips: number;
+    }
+  | {
+      type: "grace-skip";
+      model: string;
+      ratio: number;
+      window: number;
+      consecutiveGraceSkips: number;
+    }
+  | {
+      type: "reset";
+      model: string;
+      ratio: number;
+      window: number;
+    };
+
 export type CompactionDirectorOptions = {
   /** Resolves a model id to its context window. Defaults to the catalog. */
   windowFor?: (modelId: string) => number;
   /** Usage ratio at which compaction fires. Defaults to 0.8. */
   threshold?: number;
+  /**
+   * Optional sink for latch/fire telemetry. Defaults to a no-op; production
+   * wiring may log or forward these events. Tests assert on the stream.
+   */
+  onEvent?: (event: CompactionTelemetryEvent) => void;
 };
 
 function toArray(actions: ReactorAction | ReactorAction[]): ReactorAction[] {
@@ -48,6 +80,12 @@ function toArray(actions: ReactorAction | ReactorAction[]): ReactorAction[] {
  * firing, to absorb the one stale reading) rather than staying latched
  * indefinitely — so a persistent breach retries on the cycle after that
  * instead of never firing again.
+ *
+ * Under sustained breach this produces an alternating fire/grace-skip
+ * pattern. That is intentional and self-healing; `onEvent` reports each
+ * fire and grace-skip (with a running grace-skip count) so operators can
+ * see repeated failed or insufficient compactions without changing the
+ * policy (CL-3806).
  */
 export function wrapDirectorWithCompaction(
   inner: ReactorDirector,
@@ -55,7 +93,9 @@ export function wrapDirectorWithCompaction(
 ): ReactorDirector {
   const windowFor = opts.windowFor ?? contextWindowForModel;
   const threshold = opts.threshold ?? COMPACTION_TRIGGER_THRESHOLD;
+  const onEvent = opts.onEvent;
   let latched = false;
+  let consecutiveGraceSkips = 0;
 
   return {
     async decide(
@@ -69,11 +109,16 @@ export function wrapDirectorWithCompaction(
         return actions;
       }
 
-      const window = windowFor(state.lastCycleSource.model);
+      const model = state.lastCycleSource.model;
+      const window = windowFor(model);
       const ratio = state.lastCycleUsage.input / window;
 
       if (ratio < threshold) {
+        if (latched || consecutiveGraceSkips > 0) {
+          onEvent?.({ type: "reset", model, ratio, window });
+        }
         latched = false;
+        consecutiveGraceSkips = 0;
         return actions;
       }
 
@@ -89,10 +134,29 @@ export function wrapDirectorWithCompaction(
         // rather than staying latched forever — a persistent breach will
         // fire again on the cycle after this one.
         latched = false;
+        consecutiveGraceSkips += 1;
+        onEvent?.({
+          type: "grace-skip",
+          model,
+          ratio,
+          window,
+          consecutiveGraceSkips,
+        });
         return actions;
       }
 
       latched = true;
+      onEvent?.({
+        type: "fire",
+        model,
+        ratio,
+        window,
+        consecutiveGraceSkips,
+      });
+      // A successful fire path still counts prior grace skips until usage
+      // drops below threshold (reset above). Do not zero here — a fire after
+      // grace-skips under sustained breach is exactly the alternating pattern
+      // we want visible.
       const compactAction = capabilities.compact(
         SUMMARIZE_COMPACTOR_NAME,
         `context-window-${Math.round(ratio * 100)}pct`,

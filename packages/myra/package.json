@@ -10,12 +10,17 @@
     "./seed": {
       "types": "./src/core/seed-files.ts",
       "default": "./src/core/seed-files.ts"
+    },
+    "./eval": {
+      "types": "./src/eval/index.ts",
+      "default": "./src/eval/index.ts"
     }
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "test": "bun test src",
-    "test:coverage": "bun test --coverage --coverage-reporter=lcov --coverage-reporter=text src"
+    "test": "BUN_OPTIONS=--conditions=intx-src bun test src",
+    "test:coverage": "BUN_OPTIONS=--conditions=intx-src bun test --coverage --coverage-reporter=lcov --coverage-reporter=text src",
+    "eval:baseline": "bun run src/eval/run-baseline.ts --runs 3"
   },
   "dependencies": {
     "arktype": "catalog:",

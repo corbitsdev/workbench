@@ -26,7 +26,11 @@ import {
   isExternalIntegrationTool,
   attachmentPolicyForAgent,
 } from "@workbench/agents/browser";
-import { useCompactToolActivity, useToolSummaryStyle } from "@workbench/ui";
+import {
+  useCompactToolActivity,
+  useToolSummaryStyle,
+  skillTitle,
+} from "@workbench/ui";
 import type { ToolCall } from "@workbench/chat";
 import {
   activeContextToRef,
@@ -233,7 +237,7 @@ export function MyraChatSurface({
     if (skillLibrary === undefined) return undefined;
     return skillLibrary.map((skill) => ({
       name: skill.name,
-      description: skill.description ?? skill.displayName ?? skill.name,
+      description: skill.description ?? skillTitle(skill),
     }));
   }, [skillLibrary]);
   const formatToolSummary = useMemo(
@@ -570,7 +574,6 @@ export function MyraChatSurface({
       messages={session.messages}
       {...(inserts !== undefined ? { inserts } : {})}
       onSend={handleSend}
-      onAbort={session.abortTurn}
       onRespond={handleRespond}
       inputAccessory={inputAccessory}
       {...(MYRA_ATTACHMENT_POLICY !== undefined

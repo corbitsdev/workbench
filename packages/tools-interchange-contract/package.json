@@ -4,8 +4,8 @@
   "type": "module",
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "test": "bun test --isolate src",
-    "test:coverage": "bun test --isolate --coverage --coverage-reporter=lcov --coverage-reporter=text src"
+    "test": "BUN_OPTIONS=--conditions=intx-src bun test --isolate src",
+    "test:coverage": "BUN_OPTIONS=--conditions=intx-src bun test --isolate --coverage --coverage-reporter=lcov --coverage-reporter=text src"
   },
   "devDependencies": {
     "@intx/agent": "workspace:*",

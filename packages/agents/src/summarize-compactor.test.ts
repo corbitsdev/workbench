@@ -65,9 +65,13 @@ mock.module("@workbench/inference", () => ({
   },
 }));
 
-const { createSummarizeCompactor, RETAIN_RECENT_EXCHANGES } = await import(
-  "./summarize-compactor"
-);
+const {
+  createSummarizeCompactor,
+  RETAIN_RECENT_EXCHANGES,
+  resolveCompactorSource,
+  SUMMARY_MODEL_ID,
+  SUMMARY_MODEL_PROVIDER,
+} = await import("./summarize-compactor");
 
 function userTurn(text: string): ConversationTurn {
   return {
@@ -343,5 +347,51 @@ describe("createSummarizeCompactor", () => {
     });
 
     expect(result.output).toEqual(turns);
+  });
+});
+
+describe("resolveCompactorSource", () => {
+  test("pins SUMMARY_MODEL_ID on an openai-compatible source", () => {
+    const anthropic = {
+      id: "a",
+      provider: "anthropic",
+      model: "claude-opus-4-6",
+      baseURL: "https://api.anthropic.com",
+      apiKey: "k",
+    };
+    const openaiCompat = {
+      id: "o",
+      provider: SUMMARY_MODEL_PROVIDER,
+      model: "some-other-model",
+      baseURL: "http://localhost:1",
+      apiKey: "k",
+    };
+    const resolved = resolveCompactorSource([anthropic, openaiCompat]);
+    expect(resolved.usesCheapSummaryModel).toBe(true);
+    expect(resolved.reason).toBe("cheap-summary-provider");
+    expect(resolved.source).toEqual({
+      ...openaiCompat,
+      model: SUMMARY_MODEL_ID,
+    });
+  });
+
+  test("falls back to the agent default when no openai-compatible source is present", () => {
+    const anthropic = {
+      id: "a",
+      provider: "anthropic",
+      model: "claude-opus-4-6",
+      baseURL: "https://api.anthropic.com",
+      apiKey: "k",
+    };
+    const resolved = resolveCompactorSource([anthropic]);
+    expect(resolved.usesCheapSummaryModel).toBe(false);
+    expect(resolved.reason).toBe("agent-default-fallback");
+    expect(resolved.source).toEqual(anthropic);
+  });
+
+  test("throws when the sources list is empty", () => {
+    expect(() => resolveCompactorSource([])).toThrow(
+      /no inference sources available/,
+    );
   });
 });

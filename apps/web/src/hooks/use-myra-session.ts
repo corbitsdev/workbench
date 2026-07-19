@@ -26,7 +26,6 @@ import type {
   PendingAttachment,
 } from "@workbench/chat";
 import {
-  abortInstanceTurn,
   ensureMeSynced,
   getMailAttachmentRefs,
   getOutputFeedback,
@@ -364,12 +363,6 @@ export type MyraSession = {
     text: string,
     attachments?: PendingAttachment[],
   ) => void | Promise<void>;
-  /**
-   * Stops the in-flight turn server-side. Resolves once the sidecar has
-   * settled the turn (the conversation stays usable); rejects with a
-   * user-facing message on failure.
-   */
-  abortTurn: () => Promise<void>;
   reconnect: () => void;
   instanceId: string | null;
   onRate?: (
@@ -935,27 +928,6 @@ export function useMyraSession(
     },
   });
 
-  const { mutateAsync: abortMutateAsync } = useMutation({
-    mutationFn: (iid: string) => abortInstanceTurn(iid),
-  });
-  const abortTurn = useCallback(async (): Promise<void> => {
-    const iid = resolvedInstanceIdRef.current;
-    if (iid === null) {
-      throw new Error("Not connected yet. Try again in a moment.");
-    }
-    try {
-      await abortMutateAsync(iid);
-    } catch (err) {
-      const message =
-        err instanceof Error && err.message.trim().length > 0
-          ? err.message
-          : "Couldn't stop Myra. Try again.";
-      throw new Error(message);
-    }
-    assemblerRef.current?.closeOpenPart();
-    stopAwaitingAgent();
-  }, [abortMutateAsync, stopAwaitingAgent]);
-
   const reconnect = useCallback(() => setAttempt((n) => n + 1), []);
 
   // Feed this session's phase to the app-level reconnecting overlay so a
@@ -1327,7 +1299,6 @@ export function useMyraSession(
     connectionNotice,
     sessionId,
     send,
-    abortTurn,
     reconnect,
     instanceId: resolvedInstanceId,
     resolveAttachmentUrl,

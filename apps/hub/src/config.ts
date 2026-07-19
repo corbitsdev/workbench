@@ -205,6 +205,18 @@ export function loadConfig() {
     isDev,
     port: requireEnv("PORT"),
     sidecarToken: requireEnv("SIDECAR_TOKEN"),
+    // Identity + auth material for the boot-time `sidecar` row bootstrap
+    // (see lib/bootstrap-sidecar-auth.ts). The hub upserts a row keyed by
+    // SIDECAR_ID whose `token_hash_sha256` is sha256(SIDECAR_TOKEN); the WS
+    // token authenticator (createSidecarTokenAuthenticator) reads it to admit
+    // the sidecar's handshake. SIDECAR_ID must match the sidecar process's own
+    // SIDECAR_ID so the verified row id agrees with the frame's claimed id.
+    sidecarId: requireEnv("SIDECAR_ID"),
+    // Informational only. The sidecar dials the hub over HUB_WS_URL, so the hub
+    // never connects to this URL — it exists solely to satisfy the `sidecar`
+    // table's NOT NULL `url` column and to aid operators inspecting the row.
+    // Genuinely optional with a single contract-guaranteed default.
+    sidecarUrl: optionalEnv("SIDECAR_URL") ?? "sidecar://in-cluster",
     auth: {
       secret: requireEnv("BETTER_AUTH_SECRET"),
       baseUrl: authBaseUrl,

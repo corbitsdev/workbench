@@ -1,6 +1,7 @@
 import { eq, and } from "drizzle-orm";
-import { schema as intxSchema } from "@intx/db";
+import { schema as intxSchema, createGrantStore } from "@intx/db";
 import type { DB } from "@intx/db";
+import type { GrantRule } from "@intx/types/authz";
 import { getLogger } from "@intx/log";
 import { generateId } from "@intx/hub-common";
 import {
@@ -457,6 +458,7 @@ export async function ensureSystemPrincipal(
 
   const existing = await reselect();
   if (existing) {
+    await ensureSystemPrincipalCredentialUseGrant(db, tenantId, existing.id);
     return { principalId: existing.id };
   }
 
@@ -472,6 +474,7 @@ export async function ensureSystemPrincipal(
       createdAt: now,
       updatedAt: now,
     });
+    await ensureSystemPrincipalCredentialUseGrant(db, tenantId, principalId);
     log.info("System principal provisioned", { tenantId, principalId });
     return { principalId };
   } catch (err) {
@@ -480,6 +483,11 @@ export async function ensureSystemPrincipal(
     // insert. Reselect on a fresh connection.
     const existingOnConflict = await reselect();
     if (existingOnConflict) {
+      await ensureSystemPrincipalCredentialUseGrant(
+        db,
+        tenantId,
+        existingOnConflict.id,
+      );
       log.info("System principal created concurrently, reselected", {
         tenantId,
         principalId: existingOnConflict.id,
@@ -488,6 +496,71 @@ export async function ensureSystemPrincipal(
     }
     throw err;
   }
+}
+
+/**
+ * Collect the tenant system principal's in-chain grants — the authorization set
+ * for org agent definitions (all created by the system principal). Matches what
+ * agent launch resolves through `resolveModelSources`, so an availability check
+ * that passes these grants agrees with what will actually launch. Returns `[]`
+ * when the tenant has no system principal yet (fail-closed: nothing resolves).
+ */
+export async function collectSystemPrincipalGrants(
+  db: DB["db"],
+  tenantId: string,
+): Promise<GrantRule[]> {
+  const sys = await db.query.principal.findFirst({
+    where: and(
+      eq(principal.tenantId, tenantId),
+      eq(principal.kind, "user"),
+      eq(principal.refId, SYSTEM_PRINCIPAL_REF_ID),
+    ),
+  });
+  if (!sys) return [];
+  return createGrantStore(db).collectGrantsInChain(sys.id, tenantId);
+}
+
+// Interchange now fail-closes credential-backed inference sources on the agent
+// creator holding `credential:{id}` / `use` (buildSource in
+// `resolveModelSources`). Every org agent definition is created BY the system
+// principal, and the workbench's LLM credentials are tenant-owned
+// (`principal_id` NULL) — which migration 0037 deliberately does NOT backfill.
+// Without an explicit grant the system principal authorizes no credential, so
+// every Myra/Oat/triage/gate launch would fail with `model_unavailable`. Grant
+// the system principal a tenant-scoped `credential:*` / `use` (unconditional,
+// so buildSource's no-condition evaluation accepts it) — the workbench's
+// tenant-owned credentials are trusted for its own org-owned definitions.
+// Idempotent: a no-op once the grant exists.
+async function ensureSystemPrincipalCredentialUseGrant(
+  db: ProductionDB,
+  tenantId: string,
+  principalId: string,
+): Promise<void> {
+  const existing = await db.query.grant.findFirst({
+    where: and(
+      eq(grant.principalId, principalId),
+      eq(grant.resource, "credential:*"),
+      eq(grant.action, "use"),
+    ),
+  });
+  if (existing) return;
+  const now = new Date();
+  await db.insert(grant).values({
+    id: generateId("grant"),
+    tenantId,
+    principalId,
+    resource: "credential:*",
+    action: "use",
+    effect: "allow",
+    origin: "creator",
+    conditions: null,
+    createdAt: now,
+    updatedAt: now,
+  });
+  log.info("System principal credential-use grant ensured", {
+    tenantId,
+    principalId,
+  });
 }
 
 /**

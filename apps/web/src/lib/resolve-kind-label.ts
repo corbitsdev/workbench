@@ -1,15 +1,14 @@
 import { toHumanLabel } from "@workbench/ui";
+import { explicitVisualForKind } from "@workbench/artifact";
 
-// Kinds whose humanized form would read wrong (acronyms, casing) get an explicit
-// label; everything else falls back to the generic humanizer.
-const KIND_LABEL_OVERRIDES: Record<string, string> = {
-  "ab-comparison": "A/B Comparison",
-};
-
-// Humanize a raw workflow/artifact kind for display.
+// The gallery card chip and this detail-page label must always agree, so
+// this defers to @workbench/artifact's kind→label vocabulary (the same table
+// that drives the card chip) rather than keeping a second, independently
+// maintained override map. Only a kind with no explicit entry there falls
+// back to the generic humanizer.
 export function resolveKindLabel(
   kind: string | null | undefined,
 ): string | undefined {
   if (!kind) return undefined;
-  return KIND_LABEL_OVERRIDES[kind] ?? toHumanLabel(kind);
+  return explicitVisualForKind(kind)?.label ?? toHumanLabel(kind);
 }

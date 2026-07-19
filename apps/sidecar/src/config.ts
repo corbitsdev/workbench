@@ -132,6 +132,33 @@ export function resolveSidecarBuildTimeoutMs(
   );
 }
 
+// Workflow-child spawn-readiness timeout. The hub's deploy wait
+// (`sendAgentDeploy` `requestTimeoutMs`, 30s in interchange — not editable
+// here) is the OUTER bound on a cold mail-wake: the mail POST blocks
+// synchronously through wake -> launch -> sidecar spawn, and if the hub's wait
+// elapses first, the wake error is only warn-logged and the inbound mail is
+// DROPPED (no redelivery for the HTTP mail-send surface). The sidecar's own
+// spawn-readiness deadline must therefore fire STRICTLY BELOW the hub's, so a
+// too-slow cold spawn fails DEFINITIVELY on the sidecar (kills the child and
+// sends a structured error ack) inside the hub's window, instead of racing it
+// to an ambiguous hub-side timeout. Default 25s — a 5s margin under the hub's
+// 30s, still generous headroom over a healthy cold spawn (single-digit seconds
+// in practice; monitor `probe-launch-latency` p95). Must be a POSITIVE integer:
+// there is deliberately no "disable" value, since disabling would fall the
+// supervisor back to its own 30s default and re-lose the margin. Do NOT set
+// this at or above the hub's 30s.
+export const DEFAULT_SIDECAR_SPAWN_READY_TIMEOUT_MS = 25_000;
+
+export function resolveSidecarSpawnReadyTimeoutMs(
+  env: Record<string, string | undefined>,
+): number {
+  return parsePositiveInt(
+    "SIDECAR_SPAWN_READY_TIMEOUT_MS",
+    env.SIDECAR_SPAWN_READY_TIMEOUT_MS,
+    DEFAULT_SIDECAR_SPAWN_READY_TIMEOUT_MS,
+  );
+}
+
 export type ToolPackageCache = {
   cacheRoot: string;
   cacheMaxBytes: number;

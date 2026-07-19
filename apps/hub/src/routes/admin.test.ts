@@ -1,6 +1,6 @@
 import { describe, expect, it, mock } from "bun:test";
 import { Hono } from "hono";
-import type { GrantStore } from "@intx/authz";
+import type { GrantStore, GrantRule } from "@intx/authz";
 
 // The guard resolves userId -> principalId via ensureMember; vary it per test.
 let callerPrincipalId = "prn_member";
@@ -82,24 +82,25 @@ const { createAdminRouter } = await import("./admin");
 // a member holds none. The guard's isAdmin() -> authorize() runs for real, so
 // this exercises the route -> guard -> grant-evaluation seam end to end.
 function grantStoreFor(): GrantStore {
-  return {
-    collectGrants: async (principalId: string) => {
-      if (principalId !== "prn_admin") return [];
-      return [
-        {
-          id: "grt_admin",
-          resource: "*",
-          action: "*",
-          effect: "allow" as const,
-          origin: "system",
-          conditions: null,
-          expiresAt: null,
-          roleId: null,
-          principalId: "prn_admin",
-        },
-      ];
-    },
+  const collectGrants = async (
+    principalId: string,
+  ): Promise<GrantRule[]> => {
+    if (principalId !== "prn_admin") return [];
+    return [
+      {
+        id: "grt_admin",
+        resource: "*",
+        action: "*",
+        effect: "allow" as const,
+        origin: "system",
+        conditions: null,
+        expiresAt: null,
+        roleId: null,
+        principalId: "prn_admin",
+      },
+    ];
   };
+  return { collectGrants, collectGrantsInChain: collectGrants };
 }
 
 function buildApp() {

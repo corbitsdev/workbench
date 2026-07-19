@@ -11,8 +11,10 @@ import {
   createAssetService,
   createHubSessionLookups,
   createHubSessionOrchestrator,
+  bridgeOrchestratorDeployContent,
   createSessionService,
   createSidecarRouter,
+  createSidecarTokenAuthenticator,
   WORKSPACE_BUILTINS_REGISTRY,
   type SidecarLookups,
   type WsHandle,
@@ -64,10 +66,7 @@ import {
   wrapRepoStoreWithProjection,
   type ReclaimRunDeploymentFn,
 } from "./workflow-executor/projection-bridge";
-import {
-  backfillMissingWorkflowFacts,
-  projectWorkflowRunFacts,
-} from "./workflow-executor/workflow-run-facts";
+import { projectWorkflowRunFacts } from "./workflow-executor/workflow-run-facts";
 import { deliverRunTerminalMail } from "./workflow-executor/run-terminal-mail";
 import { deliverPendingGateMail } from "./workflow-executor/gate-mail";
 import { createWorkflowAnalyticsRouter } from "./routes/workflow-analytics";
@@ -90,7 +89,6 @@ import { resolveAdapterCredential } from "./lib/task-credential";
 import { createDrizzleTaskPushStore } from "./lib/task-push-store";
 import { getIdentityAccounts } from "./lib/member-identity";
 import { seedHeartbeatSchedules } from "./services/scheduled-trigger-seeder";
-import { enrichHeartbeatTriggerPayload } from "./lib/heartbeat-trigger-payload";
 import {
   ensureOwnerSchedule,
   listEnabledSchedules,
@@ -173,7 +171,6 @@ import {
 import { createApprovalsEventBus } from "./lib/approvals-events";
 import { createFeedbackRouter } from "./routes/feedback";
 import type { MemberPreferences } from "@workbench/shared";
-import { resolveEnabledBriefSources } from "@workbench/shared";
 import { createMePreferencesRouter } from "./routes/me-preferences";
 import { createMeFeaturesRouter } from "./routes/me-features";
 import { createMeConnectionsRouter } from "./routes/me-connections";
@@ -197,7 +194,6 @@ import { createInboxRouter } from "./routes/inbox";
 import { createMeTasksRouter } from "./routes/me-tasks";
 import { createHubToolsRouter } from "./routes/hub-tools";
 import { createToolCredentialsRouter } from "./routes/tool-credentials";
-import { createToolManifestRouter } from "./routes/tool-manifest";
 import { createInternalDeploymentsRouter } from "./routes/internal-deployments";
 import { buildToolDefinitions } from "./lib/tool-registry";
 import { schema } from "./db";
@@ -209,6 +205,7 @@ import {
   lookupMember,
 } from "./lib/tenant-provisioning";
 import { reconcileMemberInstanceGrants } from "./services/grant-reconcile";
+import { bootstrapSidecarAuth } from "./lib/bootstrap-sidecar-auth";
 import { AGENT_TEMPLATES } from "@workbench/agents";
 import { setupObservability, flushSentry } from "@workbench/sentry";
 import {
@@ -255,6 +252,20 @@ log.info("Root tenant ready", { rootTenantId });
 // malformed template at deploy rather than silently shipping stale agents.
 await seedAgentTemplates(db, rootTenantId);
 log.info("Agent templates seeded", { rootTenantId });
+
+// Provision the `sidecar` auth row so the WS token authenticator
+// (createSidecarTokenAuthenticator) can admit the sidecar's handshake.
+// Interchange migration 0036 added the NOT-NULL `token_hash_sha256` column and
+// deleted the old REST self-registration route; nothing else writes it, so
+// without this boot upsert no sidecar could ever complete the WS handshake.
+// Fail-loud (requireEnv on SIDECAR_ID/SIDECAR_TOKEN in config) so a
+// misconfigured deploy surfaces here rather than as silent connect failures.
+await bootstrapSidecarAuth(db, {
+  id: config.sidecarId,
+  token: config.sidecarToken,
+  url: config.sidecarUrl,
+});
+log.info("Sidecar auth row ready", { sidecarId: config.sidecarId });
 
 // seedAgentTemplates updates the org agent rows, but existing member instances
 // keep the tool grants synthesized at their last launch — provisionMemberInstances
@@ -407,9 +418,9 @@ const repoStore = wrapRepoStoreWithProjection(
       ).catch((err: unknown) => {
         // ERROR, not WARN: the WRN level is invisible in Sentry, and a lost
         // projection here permanently drops the run's facts on the live path
-        // (the projector only re-fires on a non-terminal → terminal transition).
-        // The boot backfill (backfillMissingWorkflowFacts) recovers it on next
-        // restart, but the failure must be Sentry-visible now (CL-2670 review).
+        // (the projector only re-fires on a non-terminal → terminal transition,
+        // and analytics tracks live runs only — there is no boot-time recovery
+        // sweep), so the failure must be Sentry-visible now (CL-2670 review).
         log.error("workflow analytics fact projection failed", {
           runId: args.runId,
           error: err instanceof Error ? err : new Error(String(err)),
@@ -550,6 +561,12 @@ const lookups: SidecarLookups = {
 const sidecarRouter = createSidecarRouter({
   hubPublicKey: hexEncode(registry.active.publicKey),
   lookups,
+  // Upstream now authenticates the sidecar WS handshake against the per-sidecar
+  // token hash on the `sidecar` table (migration 0036). The token is hashed
+  // SHA-256 and looked up by digest; an unknown token fails the handshake
+  // closed. Sidecar rows carry `token_hash_sha256`; a sidecar presents its
+  // plaintext token (SIDECAR_TOKEN) on connect.
+  authenticateSidecar: createSidecarTokenAuthenticator({ db }),
 });
 
 const analyticsSubscriber = createAnalyticsSubscriber({ db });
@@ -597,7 +614,6 @@ createHubSessionOrchestrator({
   router: sidecarRouter,
   db,
   eventCollectors,
-  grantStore,
   agentRepoStore: repoStore,
 });
 
@@ -1375,9 +1391,10 @@ v1.route("/", createMembersRouter(db));
 v1.route("/", createMyraThreadsRouter(db, sessionService, analyticsSubscriber));
 v1.route("/", createInvokedSubagentsRouter(db));
 v1.route("/", createArtifactsRouter(db, grantStore));
-v1.route("/", createFileParseRouter(db));
+v1.route("/", createFileParseRouter(db, analyticsSubscriber));
 v1.route("/", createMailAttachmentsRouter(db));
 v1.route("/", createGammaTemplatesRouter(db));
+
 v1.route("/", createApprovalsRouter(db, approvalsEventBus));
 v1.route("/", createFeedbackRouter(db));
 v1.route("/", createMePreferencesRouter(db, grantStore));
@@ -1465,6 +1482,7 @@ v1.route(
       scheduler: config.scheduler.enabled,
       triage: config.triageEnabled,
       "tasks-reconciler": config.tasksReconciler.enabled,
+      "voice-input": false,
     },
   }),
 );
@@ -1475,9 +1493,30 @@ const workflowDeployService = createWorkflowDeployService({
   db,
   repoStore,
   sidecarRouter,
-  sessionService,
   directorRegistry: createWorkbenchDirectorRegistry(),
   reclaimDeployment,
+  // Stage each multi-step step's pinned tool closure on disk (on-disk tool
+  // materialization) so the sidecar reads the step's tools from its deploy
+  // tree instead of the retired hub-RPC manifest rail.
+  stageWorkflowStep: (params) =>
+    sessionService.stageWorkflowStep({
+      ...params,
+      // The orchestrator's structural `DeployContent` (opaque
+      // `toolPackageManifest`) must be narrowed to the hub-sessions shape,
+      // exactly as interchange's own `launchSessionCallback` does.
+      deployContent: bridgeOrchestratorDeployContent(params.deployContent),
+    }),
+  // Single-step (one-step workflow) hand-off: stage the head's deploy tree
+  // AND fire the deployment `agent.deploy` frame in one call. Without this a
+  // single-step workflow (e.g. an emit-only step) deploys with zero staged
+  // tools; interchange's `deploySingleStepAtHead` is the same
+  // `executeLaunchPhases` machinery `stageWorkflowStep` + the multi-step
+  // supervisor frame use, collapsed onto the head.
+  deploySingleStepAtHead: (params) =>
+    sessionService.deploySingleStepAtHead({
+      ...params,
+      deployContent: bridgeOrchestratorDeployContent(params.deployContent),
+    }),
 });
 
 const hubPublicKeyHex = hexEncode(registry.active.publicKey);
@@ -1507,6 +1546,7 @@ const runStarter = createWorkflowRunStarter({
   ensureDeploymentRoutable,
   deploymentDomain: config.rootTenant.domain,
   cryptoProvider,
+  resolveUserIdentity,
 });
 
 // Public webhook firing surface: no session, authenticated only by
@@ -1588,7 +1628,6 @@ v1.route(
     db,
     runStarter,
     heartbeatKind: config.scheduler.heartbeatKind,
-    resolveUserIdentity,
   }),
 );
 
@@ -1627,6 +1666,7 @@ v1.route(
     ensureDeploymentRoutable,
     provisionRunDeployment,
     reclaimDeployment,
+    resolveUserIdentity,
     // CL-2707: bounded wait for the sidecar during the deploy window so a
     // start/resume that lands before the sidecar reconnects gets an honest 503
     // (auto-retryable) instead of an instant raw 500/503. Single-shared-sidecar
@@ -1766,32 +1806,24 @@ const scheduler = createScheduler({
   markFired: (id, dayUtc) => markScheduleFired(db, id, dayUtc),
   recordRunStarted: (args) => recordScheduleRunStarted(db, args),
   startWorkflowRun: async (fire) => {
-    // Re-read the member's brief-source preferences at the moment the
-    // schedule actually fires, rather than trusting whatever `enabledSources`
-    // (if any) was baked into the schedule row when it was created — a source
-    // toggle in Settings must take effect on the very next brief, not the next
-    // time the schedule row itself is edited.
-    const [prefs, identity] = await Promise.all([
-      readMemberPreferences(db, fire.tenantId, fire.creatorPrincipalId),
-      resolveUserIdentity(fire.creatorPrincipalId),
-    ]);
-    const triggerPayload = enrichHeartbeatTriggerPayload(
-      fire.triggerPayload,
-      fire.kind,
-      config.scheduler.heartbeatKind,
-      resolveEnabledBriefSources(prefs),
-      fire.nowMs,
-      fire.lastFiredDayUtc,
-      fire.hourUtc,
-      "scheduled",
-      identity,
-    );
+    // Trigger-payload enrichment (member identity, current brief-source
+    // preferences, the incremental since-last-fire lookback) happens INSIDE
+    // runStarter.startRun now — the one shared application point every start
+    // door funnels through (trigger-payload-enrichment-registry.ts). This
+    // closure's only job is forwarding the schedule's real fire-time window
+    // (lastFiredDayUtc/hourUtc) so the registry's heartbeat enricher computes
+    // the real "since yesterday" createdAfter instead of the flat 7-day
+    // fallback every other (non-scheduler) start door gets.
     const result = await runStarter.startRun({
       kind: fire.kind,
       tenantId: fire.tenantId,
-      input: triggerPayload,
+      input: fire.triggerPayload,
       creatorPrincipalId: fire.creatorPrincipalId,
       source: "scheduler",
+      heartbeatFire: {
+        lastFiredDayUtc: fire.lastFiredDayUtc,
+        hourUtc: fire.hourUtc,
+      },
     });
     if (!result.ok) {
       throw new Error(`run-start ${result.reason}: ${result.message}`);
@@ -1957,29 +1989,6 @@ void seedHeartbeatSchedules({
   });
 });
 
-// CL-2670: backfill analytics facts for any terminal run missing a fact — a run
-// whose live projection threw (WRN, now ERROR) or that reached terminal while the
-// projector was absent. Idempotent (skips runs that already have a fact) and
-// detached so it never blocks startup.
-void backfillMissingWorkflowFacts({
-  db,
-  repoStore,
-  deploymentDomain: config.rootTenant.domain,
-})
-  .then((result) => {
-    if (result.projected > 0) {
-      log.info("workflow analytics fact backfill projected {projected} runs", {
-        projected: result.projected,
-        skipped: result.skipped,
-      });
-    }
-  })
-  .catch((err) => {
-    log.error("workflow analytics fact backfill failed", {
-      error: err instanceof Error ? err : new Error(String(err)),
-    });
-  });
-
 // Workflow deploy, shared by the session-authorized operator path
 // (/api/v1/workflows/deploy, gated by the native grant check) and the
 // service-token machine path (/api/internal/workflows/deploy).
@@ -2109,15 +2118,12 @@ app.route(
     deploymentDomain: config.rootTenant.domain,
     provisionRunDeployment,
     ensureDeploymentRoutable,
+    resolveUserIdentity,
   }),
 );
 app.route(
   "/api/internal",
   createToolCredentialsRouter(db, config.sidecarToken),
-);
-app.route(
-  "/api/internal",
-  createToolManifestRouter(db, config.sidecarToken, assetService),
 );
 app.route(
   "/api/internal",

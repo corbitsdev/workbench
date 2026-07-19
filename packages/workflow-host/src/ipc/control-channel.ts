@@ -37,7 +37,7 @@
 import { type } from "arktype";
 
 import { hexDecode, hexEncode } from "@intx/types";
-import { InterchangeType } from "@intx/types/runtime";
+import { InferenceSource, InterchangeType } from "@intx/types/runtime";
 
 import {
   decodeEnvelope,
@@ -66,6 +66,44 @@ export const CredentialsSnapshotStepPayload = type({
 
 export const CredentialsSnapshotPayload = type({
   steps: CredentialsSnapshotStepPayload.array(),
+});
+
+/**
+ * Wire shape of a `sources-updated` frame's `data`: the full ordered
+ * inference-source failover chain plus the default source id. Carried
+ * inline like the grants snapshot -- a single-producer, single-consumer
+ * supervisor->child push, so a substrate round-trip would only add
+ * latency. No per-source hash rides along; a source list is flat, with no
+ * per-item pin for a receiver to cross-check.
+ *
+ * The `narrow` pins two frame-structural invariants at this boundary so
+ * every consumer can trust them without re-checking: source ids are
+ * unique, and the first element is the default source. The head-is-default
+ * rule is what keeps the two rotation paths in agreement -- a warm agent's
+ * `setSources` activates the matched default index, while a cold rebuild
+ * pins element 0 -- so they pick the same active source only when the
+ * default is the head.
+ */
+export const SourcesUpdatedData = type({
+  sources: InferenceSource.array().atLeastLength(1),
+  defaultSource: "string > 0",
+}).narrow((data, ctx) => {
+  const seen = new Set<string>();
+  for (const source of data.sources) {
+    if (seen.has(source.id)) {
+      return ctx.mustBe(
+        `a source list with unique ids; "${source.id}" appears more than once`,
+      );
+    }
+    seen.add(source.id);
+  }
+  const head = data.sources[0];
+  if (head === undefined || head.id !== data.defaultSource) {
+    return ctx.mustBe(
+      "a source list whose first element is the default source",
+    );
+  }
+  return true;
 });
 
 /**
@@ -176,9 +214,7 @@ export const ControlPayload = type(
   })
   .or({
     type: "'sources-updated'",
-    data: {
-      "sourceHashes?": "Record<string, string>",
-    },
+    data: SourcesUpdatedData,
   })
   .or({
     type: "'ready'",

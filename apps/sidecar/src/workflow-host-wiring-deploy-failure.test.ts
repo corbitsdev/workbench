@@ -1,29 +1,16 @@
-// Pins H-A1 + CL-2400: a deploy-router rejection must not leave the
-// `DeploymentAddressRegistry` populated.
+// Pins H-A1: a deploy-router rejection must not leave the
+// `DeploymentAddressRegistry` populated. The multi-step branch defers
+// `registerDeployment` until every step that can throw (asset
+// materialization, `supervisor.spawn`) has succeeded. The link's
+// `handleAgentDeploy` catches a rejection and sends `agent.error`
+// without invoking `deployRouter.undeploy(frame)`, so a premature
+// registration would retain a `(deploymentId -> agentAddress)` mapping
+// for a deployment that does not exist. The multi-step test drives that
+// failure through a subprocess spawner that throws synchronously.
 //
-// CL-2400 reordered registration: the router now records the
-// `(deploymentId -> agentAddress)` mapping BEFORE `supervisor.spawn`
-// (multi-step) / `supervisor.deploy` (trivial), because those steps
-// commit run events through the workflow-run pack-push pipeline, which
-// resolves the agent address via this registry -- registering after
-// spawn made the push throw "no agent address registered" and the
-// supervisor swallowed it as a best-effort warn, losing the event.
-//
-// The original H-A1 invariant (registry clean on deploy failure) is
-// preserved by unwinding the early registration: a failure after the
-// reordered `registerDeployment` invokes `unregisterDeployment` in the
-// `finally`. The link's `handleAgentDeploy` catches the rejection and
-// sends `agent.error` without invoking `deployRouter.undeploy(frame)`,
-// so without the unwind the registry would retain a mapping for a
-// deployment that never stood up.
-//
-// Both branches drive their failure path through this test and assert
-// BOTH properties: (1) the mapping is already recorded at the moment
-// the throwy step runs (proves register-before-spawn), and (2) the
-// registry is clean after the failure (proves the unwind):
-//   - trivial: `sessions.provisionAgent` throws.
-//   - multi-step: the subprocess spawner throws synchronously so
-//     `supervisor.spawn` rejects.
+// The first test pins the router's frame-shape guard: a frame carrying
+// neither `provisionStep` nor a workflow definition is rejected before
+// any deploy work, so a malformed frame cannot leak registry state.
 
 import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -42,14 +29,12 @@ import {
   createMultistepMailRouter,
   createMultistepSignalRouter,
 } from "./workflow-run-pack-client";
-import {
-  createSidecarDeployRouter,
-  deriveTrivialDeploymentId,
-} from "./workflow-host-wiring";
+import { createSidecarDeployRouter } from "./workflow-host-wiring";
 
 function stubKeyStore(): Parameters<
   typeof createSidecarDeployRouter
 >[0]["keyStore"] {
+  // eslint-disable-next-line @typescript-eslint/no-unsafe-type-assertion -- test stub
   return {
     async loadOrGenerateKey() {
       // The single-step multi-step branch registers the agent's signing
@@ -58,9 +43,6 @@ function stubKeyStore(): Parameters<
       // succeeds and the SPAWNER failure remains the failure this test
       // exercises.
       return { keyPair: await generateKeyPair(), isNew: false };
-    },
-    async scanKeys() {
-      return [];
     },
     signChallenge() {
       return null;
@@ -77,12 +59,12 @@ function stubKeyStore(): Parameters<
   } as unknown as Parameters<typeof createSidecarDeployRouter>[0]["keyStore"];
 }
 
-function stubFailingSessions(
-  onProvision?: () => void,
-): Parameters<typeof createSidecarDeployRouter>[0]["sessions"] {
+function stubFailingSessions(): Parameters<
+  typeof createSidecarDeployRouter
+>[0]["sessions"] {
+  // eslint-disable-next-line @typescript-eslint/no-unsafe-type-assertion -- test stub
   return {
     async provisionAgent() {
-      onProvision?.();
       throw new Error("provisionAgent forced failure");
     },
   } as unknown as Parameters<typeof createSidecarDeployRouter>[0]["sessions"];
@@ -98,30 +80,25 @@ function makeRouterDeps() {
 }
 
 describe("deploy-failure registry leak", () => {
-  test("trivial deploy: provisionAgent throws and registry stays clean", async () => {
+  test("a frame carrying neither provisionStep nor a workflow is rejected before any deploy work", async () => {
     const { registry, mailRouter, signalRouter, drainRouter, transport } =
       makeRouterDeps();
 
-    const slug = deriveTrivialDeploymentId("agent-fail@x.example");
-    const probe: { resolvedAtProvision: string | null } = {
-      resolvedAtProvision: null,
-    };
-    const sessions = stubFailingSessions(() => {
-      probe.resolvedAtProvision = registry.resolve(slug);
-    });
-    const keyStore = stubKeyStore();
-
+    let spawnerInvoked = false;
     const router = createSidecarDeployRouter({
-      sessions,
-      keyStore,
-      onAgentEvent: () => () => undefined,
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-type-assertion -- an unsupported frame throws before sessions is touched
+      sessions: {} as Parameters<
+        typeof createSidecarDeployRouter
+      >[0]["sessions"],
+      keyStore: stubKeyStore(),
       transport,
-
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-type-assertion -- an unsupported frame throws before any repoStore usage
       repoStore: {} as Parameters<
         typeof createSidecarDeployRouter
       >[0]["repoStore"],
       signingKeySeed: new Uint8Array(32),
       createAgentCrypto: createEd25519Crypto,
+      assertSourceBuildable: () => undefined,
       registerDeployment: ({ deploymentId, agentAddress }) => {
         registry.record(deploymentId, agentAddress);
       },
@@ -131,35 +108,31 @@ describe("deploy-failure registry leak", () => {
       multistepMailRouter: mailRouter,
       multistepSignalRouter: signalRouter,
       multistepDrainRouter: drainRouter,
+      multistepSubprocessSpawner: () => {
+        spawnerInvoked = true;
+        throw new Error("spawner must not run for an unsupported frame");
+      },
     });
 
+    // Neither `provisionStep` nor a workflow definition: the router has
+    // no path to stage this frame through the substrate, so it rejects on
+    // shape before reaching any deploy work.
     const frame: AgentDeployFrame = {
       type: "agent.deploy",
-      agentAddress: "agent-fail@x.example",
-      agentId: "agent-fail",
+      agentAddress: "agent-unsupported@x.example",
+      agentId: "agent-unsupported",
       hubPublicKey: "00".repeat(32),
-
-      config: {
-        agentAddress: "agent-fail@x.example",
-        agentId: "agent-fail",
-        sessionId: "session-fail",
-        sources: [],
-        defaultSource: "primary",
-        grants: [],
-      } as unknown as AgentDeployFrame["config"],
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-type-assertion -- config is irrelevant; the frame is rejected on shape before config is read
+      config: {} as unknown as AgentDeployFrame["config"],
     };
 
-    let threw = false;
-    try {
-      await router.deploy(frame);
-    } catch {
-      threw = true;
-    }
-    expect(threw).toBe(true);
-
-    // Register-before-deploy: the mapping was live when `provisionAgent` ran.
-    expect(probe.resolvedAtProvision).toBe("agent-fail@x.example");
-    // Unwind: the failed deploy left the registry clean.
+    await expect(router.deploy(frame)).rejects.toThrow(
+      /unsupported deploy frame/,
+    );
+    // The throw fires before any deploy work: no spawn, and the registry
+    // is never touched.
+    expect(spawnerInvoked).toBe(false);
+    const slug = "agent-unsupported-x-example";
     expect(registry.resolve(slug)).toBeNull();
   });
 
@@ -169,10 +142,7 @@ describe("deploy-failure registry leak", () => {
     const sessions = stubFailingSessions();
     const keyStore = stubKeyStore();
 
-    const slug = deriveTrivialDeploymentId("ins_mstep@x.example");
-    const probe: { resolvedAtSpawn: string | null } = { resolvedAtSpawn: null };
     const failingSpawner: SubprocessSpawner = () => {
-      probe.resolvedAtSpawn = registry.resolve(slug);
       throw new Error("spawner forced failure");
     };
 
@@ -203,12 +173,12 @@ describe("deploy-failure registry leak", () => {
     const router = createSidecarDeployRouter({
       sessions,
       keyStore,
-      onAgentEvent: () => () => undefined,
       transport,
-
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-type-assertion -- test stub: only getRepoDir + writeTree are exercised before the spawn-time failure
       repoStore: repoStoreStub as RepoStore,
       signingKeySeed: new Uint8Array(32),
       createAgentCrypto: createEd25519Crypto,
+      assertSourceBuildable: () => undefined,
       registerDeployment: ({ deploymentId, agentAddress }) => {
         registry.record(deploymentId, agentAddress);
       },
@@ -218,20 +188,16 @@ describe("deploy-failure registry leak", () => {
       multistepMailRouter: mailRouter,
       multistepSignalRouter: signalRouter,
       multistepDrainRouter: drainRouter,
-      // The boot-edge substrate constants the router merges into the
-      // assembled child env; `assertSubstrateEnvComplete` (CL-2363) fails the
-      // deploy before spawn if any `SIDECAR_SUBSTRATE_CONFIG_KEYS` member is
-      // missing, so supply the full set the router does not inject per-deploy.
       multistepSubstrateEnv: {
         SIDECAR_DATA_DIR: tmpDir,
+        SIDECAR_CACHE_MAX_BYTES: "1000000",
+        SIDECAR_REGISTRY_MAX_TARBALL_BYTES: "1000000",
+        SIDECAR_ADAPTER_MANIFEST: "[]",
         SIDECAR_SIGNING_PUBLIC_KEY: "00".repeat(32),
         SIDECAR_SIGNING_PRIVATE_KEY: "00".repeat(32),
         HUB_WS_URL: "ws://test",
         SIDECAR_ID: "sc",
         SIDECAR_TOKEN: "tok",
-        SIDECAR_CACHE_MAX_BYTES: "1000000",
-        SIDECAR_REGISTRY_MAX_TARBALL_BYTES: "1000000",
-        SIDECAR_ADAPTER_MANIFEST: "[]",
         PATH: "/usr/bin",
       },
       multistepSubprocessSpawner: failingSpawner,
@@ -243,23 +209,18 @@ describe("deploy-failure registry leak", () => {
       // address into the legacy agent-state repo id, so it must carry the
       // canonical `ins_<id>@<domain>` shape.
       agentAddress: "ins_mstep@x.example",
-      // `agentId` must carry the orchestrator's `deriveDeploymentAgentId`
-      // shape "ins_<rawDeploymentId>" (CL-2199) or `deriveRawDeploymentId`
-      // throws before spawn -- the failure this test means to exercise is
-      // the subprocess spawner rejecting inside `supervisor.spawn`.
       agentId: "ins_mstep",
       hubPublicKey: "00".repeat(32),
-
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-type-assertion -- multi-step branch does not consult config before failing
       config: {
         agentAddress: "ins_mstep@x.example",
-        agentId: "ins_mstep",
+        agentId: "mstep",
+        tenantId: "ten_test",
+        principalId: "prn_test",
         sessionId: "s",
         sources: [],
         defaultSource: "primary",
         grants: [],
-        // `TENANT_ID` (CL-2199) is threaded from `config.tenantId`;
-        // `assertSubstrateEnvComplete` rejects an empty value before spawn.
-        tenantId: "tnt_test",
       } as unknown as AgentDeployFrame["config"],
       workflow: {
         definition: {
@@ -269,13 +230,15 @@ describe("deploy-failure registry leak", () => {
           steps: { s1: { kind: "step" } },
         },
         sources: {
-          s1: {
-            id: "primary",
-            provider: "anthropic",
-            baseURL: "https://api.anthropic.com",
-            apiKey: "sk-x",
-            model: "claude-3-5",
-          },
+          s1: [
+            {
+              id: "primary",
+              provider: "anthropic",
+              baseURL: "https://api.anthropic.com",
+              apiKey: "sk-x",
+              model: "claude-3-5",
+            },
+          ],
         },
       },
     };
@@ -288,9 +251,158 @@ describe("deploy-failure registry leak", () => {
     }
     expect(threw).toBe(true);
 
-    // Register-before-spawn: the mapping was live when the spawner ran.
-    expect(probe.resolvedAtSpawn).toBe("ins_mstep@x.example");
-    // Unwind: the failed deploy left the registry clean.
+    const slug = "ins_mstep-x-example";
     expect(registry.resolve(slug)).toBeNull();
+  });
+
+  test("single-step spawn failure reverses the recorded hub key but preserves the head repo", async () => {
+    const { registry, mailRouter, signalRouter, drainRouter, transport } =
+      makeRouterDeps();
+
+    const initedRepos: string[] = [];
+    const removedRepos: string[] = [];
+    const recordedHubKeys: string[] = [];
+    const forgottenAgents: string[] = [];
+
+    // A sessions stub whose `initRepo` succeeds (so the single-step head
+    // proceeds to record the hub key and then fail at spawn) and whose
+    // `deleteAgentDir` is spied: the unwind must NOT call it, because the
+    // head repo directory also holds the durable identity keypair.
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-type-assertion -- test stub: only initRepo runs on the happy path; deleteAgentDir is spied to prove it is NOT called
+    const sessions = {
+      initRepo: async (address: string) => {
+        initedRepos.push(address);
+      },
+      deleteAgentDir: async (address: string) => {
+        removedRepos.push(address);
+      },
+    } as unknown as Parameters<typeof createSidecarDeployRouter>[0]["sessions"];
+
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-type-assertion -- test stub
+    const keyStore = {
+      async loadOrGenerateKey() {
+        return { keyPair: await generateKeyPair(), isNew: false };
+      },
+      signChallenge() {
+        return null;
+      },
+      recordHubKey(address: string) {
+        recordedHubKeys.push(address);
+      },
+      verifyDeployCommit() {
+        return true;
+      },
+      forgetAgent(address: string) {
+        forgottenAgents.push(address);
+      },
+    } as unknown as Parameters<typeof createSidecarDeployRouter>[0]["keyStore"];
+
+    const failingSpawner: SubprocessSpawner = () => {
+      throw new Error("spawner forced failure");
+    };
+
+    const tmpDir = mkdtempSync(pathJoin(tmpdir(), "single-step-unwind-"));
+
+    const repoStoreStub: Partial<RepoStore> = {
+      getRepoDir(repoId: RepoId): string {
+        return pathJoin(tmpDir, repoId.kind, repoId.id);
+      },
+      writeTree(_p, repoId, _ref, content) {
+        const dir = pathJoin(tmpDir, repoId.kind, repoId.id);
+        for (const [relPath, contents] of Object.entries(content.files)) {
+          const full = pathJoin(dir, relPath);
+          mkdirSync(dirname(full), { recursive: true });
+          writeFileSync(full, contents);
+        }
+        return Promise.resolve({
+          commitSha: "stub-sha",
+          newlyTerminalRuns: [],
+        });
+      },
+    };
+
+    const router = createSidecarDeployRouter({
+      sessions,
+      keyStore,
+      transport,
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-type-assertion -- test stub: only getRepoDir + writeTree are exercised before the spawn-time failure
+      repoStore: repoStoreStub as RepoStore,
+      signingKeySeed: new Uint8Array(32),
+      createAgentCrypto: createEd25519Crypto,
+      assertSourceBuildable: () => undefined,
+      registerDeployment: ({ deploymentId, agentAddress }) => {
+        registry.record(deploymentId, agentAddress);
+      },
+      unregisterDeployment: ({ deploymentId }) => {
+        registry.unregister(deploymentId);
+      },
+      multistepMailRouter: mailRouter,
+      multistepSignalRouter: signalRouter,
+      multistepDrainRouter: drainRouter,
+      multistepSubstrateEnv: {
+        SIDECAR_DATA_DIR: tmpDir,
+        SIDECAR_CACHE_MAX_BYTES: "1000000",
+        SIDECAR_REGISTRY_MAX_TARBALL_BYTES: "1000000",
+        SIDECAR_ADAPTER_MANIFEST: "[]",
+        SIDECAR_SIGNING_PUBLIC_KEY: "00".repeat(32),
+        SIDECAR_SIGNING_PRIVATE_KEY: "00".repeat(32),
+        HUB_WS_URL: "ws://test",
+        SIDECAR_ID: "sc",
+        SIDECAR_TOKEN: "tok",
+        PATH: "/usr/bin",
+      },
+      multistepSubprocessSpawner: failingSpawner,
+    });
+
+    const frame: AgentDeployFrame = {
+      type: "agent.deploy",
+      agentAddress: "ins_single@x.example",
+      agentId: "ins_single",
+      hubPublicKey: "00".repeat(32),
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-type-assertion -- single-step branch does not consult config before failing at spawn
+      config: {
+        agentAddress: "ins_single@x.example",
+        agentId: "single",
+        tenantId: "ten_test",
+        principalId: "prn_test",
+        sessionId: "s",
+        sources: [],
+        defaultSource: "primary",
+        grants: [],
+      } as unknown as AgentDeployFrame["config"],
+      workflow: {
+        definition: {
+          id: "wf-single",
+          triggers: [{ type: "manual" }],
+          stepOrder: ["s1"],
+          steps: { s1: { kind: "step" } },
+        },
+        sources: {
+          s1: [
+            {
+              id: "primary",
+              provider: "anthropic",
+              baseURL: "https://api.anthropic.com",
+              apiKey: "sk-x",
+              model: "claude-3-5",
+            },
+          ],
+        },
+      },
+    };
+
+    await expect(router.deploy(frame)).rejects.toThrow();
+
+    // The single-step head initialized its repo and recorded the hub key
+    // before the spawn failed.
+    expect(initedRepos).toEqual(["ins_single@x.example"]);
+    expect(recordedHubKeys).toEqual(["ins_single@x.example"]);
+    // The unwind reversed the in-memory hub key...
+    expect(forgottenAgents).toEqual(["ins_single@x.example"]);
+    // ...but did NOT remove the head repo directory (it holds the durable
+    // identity keypair a rerouted head must keep across a failed redeploy).
+    expect(removedRepos).toEqual([]);
+    // Registry untouched.
+    expect(registry.resolve("ins_single-x-example")).toBeNull();
   });
 });

@@ -7,6 +7,7 @@ import { type } from "arktype";
 
 import { generateKeyPair } from "@intx/crypto";
 import { hexDecode, hexEncode } from "@intx/types";
+import type { InferenceSource } from "@intx/types/runtime";
 import type { RepoId, RepoStore } from "@intx/hub-sessions";
 
 import {
@@ -19,7 +20,6 @@ import {
   type SubprocessSpawner,
   type SubprocessHandle,
   type SignedPayload,
-  type SupervisorRunEvent,
   type WorkflowSupervisorBindings,
 } from "./index";
 import {
@@ -63,6 +63,26 @@ function parseTriggerFireRunIds(lines: readonly string[]): string[] {
   return ids;
 }
 
+function parseSourcesUpdatedFrames(
+  lines: readonly string[],
+): { sources: InferenceSource[]; defaultSource: string }[] {
+  const out: { sources: InferenceSource[]; defaultSource: string }[] = [];
+  for (const line of lines) {
+    if (!line.includes("sources-updated")) continue;
+    const raw: unknown = JSON.parse(line);
+    const signed = SignedEnvelope(raw);
+    if (signed instanceof type.errors) continue;
+    const payload = ControlPayload(signed.envelope.payload);
+    if (payload instanceof type.errors) continue;
+    if (payload.type !== "sources-updated") continue;
+    out.push({
+      sources: payload.data.sources,
+      defaultSource: payload.data.defaultSource,
+    });
+  }
+  return out;
+}
+
 const CancelRequestedBlob = type({
   type: "string",
   seq: "number",
@@ -82,27 +102,6 @@ function readCancelRequestedBlob(
   const validated = CancelRequestedBlob(parsed);
   if (validated instanceof type.errors) {
     throw new Error(`unexpected blob shape: ${validated.summary}`);
-  }
-  return validated;
-}
-
-const RunEventBlob = type({
-  type: "string",
-  seq: "number",
-  runId: "string",
-  at: "string",
-  signature: {
-    principalKind: "string",
-    sig: "string",
-  },
-  "+": "ignore",
-});
-
-function readRunEventBlob(raw: string): typeof RunEventBlob.infer {
-  const parsed: unknown = JSON.parse(raw);
-  const validated = RunEventBlob(parsed);
-  if (validated instanceof type.errors) {
-    throw new Error(`unexpected run-event blob shape: ${validated.summary}`);
   }
   return validated;
 }
@@ -484,7 +483,6 @@ async function buildBindings(opts: {
   spawner: SubprocessSpawner;
   signSpy: (kind: string, payload: Uint8Array) => SignedPayload;
   mailBus: MailBusBindings;
-  trivialLaunch?: WorkflowSupervisorBindings["trivialLaunch"];
   onWrite?: (args: {
     principal: { kind: string };
     repoId: RepoId;
@@ -506,18 +504,15 @@ async function buildBindings(opts: {
     subprocessSpawner: opts.spawner,
     binaryPath: "/fake/bin/workflow-child",
     substrateEnv: { DATA_DIR: opts.baseDir },
+    dynamicSpawnEnv: () => ({}),
     workflowRunRepoId: { kind: "workflow-run", id: "deployment-x" },
     workflowRunRef: "refs/heads/main",
     deploymentId: "deployment-x",
+    stepCount: 1,
     deploymentMailAddress: "deployment-x@example.com",
     readPrincipal: { kind: "supervisor" },
     deriveStepAddress: ({ deploymentId, stepId }) =>
       `${deploymentId}-${stepId}@example.com`,
-    trivialLaunch:
-      opts.trivialLaunch ??
-      (() => {
-        throw new Error("trivialLaunch not provided to this test binding");
-      }),
     inboxPrimitives: opts.inboxPrimitives ?? createMemoryInboxPrimitives(),
   };
 }
@@ -550,7 +545,6 @@ describe("createWorkflowSupervisor", () => {
       mailBus: createMockMailBus(),
     });
     const supervisor = createWorkflowSupervisor(bindings);
-    expect(typeof supervisor.deploy).toBe("function");
     expect(typeof supervisor.spawn).toBe("function");
     expect(typeof supervisor.requestCancel).toBe("function");
     expect(typeof supervisor.shutdown).toBe("function");
@@ -737,6 +731,234 @@ describe("createWorkflowSupervisor", () => {
     await supervisor.shutdown();
     expect(killed).toBe(true);
     expect(mailBus.registered()).not.toContain("deployment-x@example.com");
+  });
+
+  // Harness for the ready-timeout tests: an injected FakeTimer registry
+  // (deterministic, per greybeard's ruling against real timers) plus a
+  // controllable child whose control reader the test can close to model a
+  // child that exits before signalling ready. `createdTimers` retains every
+  // timer even after it is cleared, so a test can capture the ready deadline
+  // and later assert it was cancelled.
+  async function makeReadyTimeoutHarness(readyTimeoutMs: number) {
+    type FakeTimer = { cb: () => void; ms: number; cancelled: boolean };
+    const timers = new Set<FakeTimer>();
+    const createdTimers: FakeTimer[] = [];
+
+    const baseDir = await makeTempDir("supervisor-ready-timeout-");
+    const supervisorIpcKeyPair = await generateKeyPair();
+    const supervisorToChild = createMemoryNdjsonStream();
+    const childToSupervisor = createMemoryNdjsonStream();
+    const eventChildToSupervisor = createMemoryFrameStream();
+    let resolveExit: ((code: number) => void) | undefined;
+    const exited = new Promise<number>((resolve) => {
+      resolveExit = resolve;
+    });
+    const killSignals: string[] = [];
+
+    const spawner: SubprocessSpawner = ({ env: _env }) => ({
+      pid: 5150,
+      controlWriter: supervisorToChild.writer,
+      controlReader: childToSupervisor.reader,
+      eventReader: eventChildToSupervisor.reader,
+      kill: (signal) => {
+        killSignals.push(
+          typeof signal === "string" ? signal : String(signal ?? ""),
+        );
+        childToSupervisor.close();
+        eventChildToSupervisor.close();
+        resolveExit?.(0);
+      },
+      exited,
+    });
+
+    const mailBus = createMockMailBus();
+    const baseBindings = await buildBindings({
+      baseDir,
+      spawner,
+      signSpy: () => ({ sig: new Uint8Array(64), principalKind: "supervisor" }),
+      mailBus,
+    });
+    const bindings: WorkflowSupervisorBindings = {
+      ...baseBindings,
+      ipcKeyPairFactory: () => Promise.resolve(supervisorIpcKeyPair),
+      readyTimeoutMs,
+      setTimer: (cb, ms) => {
+        const t: FakeTimer = { cb, ms, cancelled: false };
+        timers.add(t);
+        createdTimers.push(t);
+        return t;
+      },
+      clearTimer: (handle) => {
+        if (handle === null || typeof handle !== "object") return;
+        for (const t of timers) {
+          if (t === handle) {
+            t.cancelled = true;
+            timers.delete(t);
+            return;
+          }
+        }
+      },
+    };
+    const supervisor = createWorkflowSupervisor(bindings);
+
+    // Resolve once the spawn has armed its ready deadline (which happens
+    // after the spawner is invoked, so this also confirms the child spawned).
+    async function waitForReadyDeadline(): Promise<FakeTimer> {
+      for (;;) {
+        const t = createdTimers.find((x) => x.ms === readyTimeoutMs);
+        if (t !== undefined) return t;
+        await new Promise((r) => setTimeout(r, 1));
+      }
+    }
+
+    return { supervisor, killSignals, childToSupervisor, waitForReadyDeadline };
+  }
+
+  const readyTimeoutSpawnOpts = {
+    stepOrder: ["step-1"],
+    definitionHash: "def-hash-abc",
+    warmKeep: false,
+    onInferenceEvent: () => {
+      /* unused in the ready-timeout tests */
+    },
+  };
+
+  test("spawn times out, kills the child, rejects, and clears the ready deadline", async () => {
+    const h = await makeReadyTimeoutHarness(7_777);
+    // Never send `ready`. Spawn blocks on the handshake until the deadline.
+    const spawnPromise = h.supervisor.spawn(readyTimeoutSpawnOpts);
+    const readyDeadline = await h.waitForReadyDeadline();
+    readyDeadline.cb();
+
+    await expect(spawnPromise).rejects.toThrow(
+      /child did not emit ready within 7777ms; killed/,
+    );
+    expect(h.killSignals).toContain("SIGTERM");
+    // The unconditional deadline-timer clear ran on the timeout path.
+    expect(readyDeadline.cancelled).toBe(true);
+  });
+
+  test("spawn clears the ready deadline when the child exits before ready", async () => {
+    const h = await makeReadyTimeoutHarness(8_888);
+    const spawnPromise = h.supervisor.spawn(readyTimeoutSpawnOpts);
+    const readyDeadline = await h.waitForReadyDeadline();
+
+    // The child exits before signalling ready: closing the control reader
+    // ends `waitForReady`, rejecting the ready promise. Because the outcomes
+    // are folded to values, the race resolves to the failed outcome rather
+    // than rejecting, so the unconditional deadline-timer clear still runs.
+    // A race that rejected here would skip the clear and leak an armed
+    // deadline that keeps the event loop alive for up to readyTimeoutMs.
+    h.childToSupervisor.close();
+
+    await expect(spawnPromise).rejects.toThrow(
+      /control channel ended before child emitted ready/,
+    );
+    expect(readyDeadline.cancelled).toBe(true);
+  });
+
+  // A spawn that throws AFTER the OS child is running but BEFORE the
+  // supervisor reaches the ready handshake must not orphan the child or
+  // leave the mail address registered. `shutdownInternal` owns that
+  // teardown once the state record enters "starting"; the spawn body
+  // routes every post-seam throw through it.
+  async function makePreRegistrationFailureHarness(opts: {
+    failSubscribe?: boolean;
+    failDeriveStepAddress?: boolean;
+  }) {
+    const baseDir = await makeTempDir("supervisor-spawn-leak-");
+    await seedStepGrants(
+      baseDir,
+      defaultStepRepoId({ deploymentId: "deployment-x", stepId: "step-1" }),
+      [{ resource: "thing", action: "read" }],
+    );
+    const supervisorIpcKeyPair = await generateKeyPair();
+    const supervisorToChild = createMemoryNdjsonStream();
+    const childToSupervisor = createMemoryNdjsonStream();
+    const eventChildToSupervisor = createMemoryFrameStream();
+    let resolveExit: ((code: number) => void) | undefined;
+    const exited = new Promise<number>((resolve) => {
+      resolveExit = resolve;
+    });
+    const killSignals: string[] = [];
+    const spawner: SubprocessSpawner = () => ({
+      pid: 4321,
+      controlWriter: supervisorToChild.writer,
+      controlReader: childToSupervisor.reader,
+      eventReader: eventChildToSupervisor.reader,
+      kill: (signal) => {
+        killSignals.push(
+          typeof signal === "string" ? signal : String(signal ?? ""),
+        );
+        childToSupervisor.close();
+        eventChildToSupervisor.close();
+        resolveExit?.(0);
+      },
+      exited,
+    });
+    const mailBus = createMockMailBus();
+    const bindingsMailBus: MailBusBindings = {
+      ...mailBus,
+      subscribeMailForAddress:
+        opts.failSubscribe === true
+          ? () => {
+              throw new Error("injected subscribe failure");
+            }
+          : mailBus.subscribeMailForAddress,
+    };
+    const baseBindings = await buildBindings({
+      baseDir,
+      spawner,
+      signSpy: () => ({ sig: new Uint8Array(64), principalKind: "supervisor" }),
+      mailBus: bindingsMailBus,
+    });
+    const bindings: WorkflowSupervisorBindings = {
+      ...baseBindings,
+      ipcKeyPairFactory: () => Promise.resolve(supervisorIpcKeyPair),
+      ...(opts.failDeriveStepAddress === true
+        ? {
+            deriveStepAddress: () => {
+              throw new Error("injected deriveStepAddress failure");
+            },
+          }
+        : {}),
+    };
+    return {
+      supervisor: createWorkflowSupervisor(bindings),
+      killSignals,
+      registered: mailBus.registered,
+    };
+  }
+
+  const preRegistrationSpawnOpts = {
+    stepOrder: ["step-1"],
+    definitionHash: "def-hash-abc",
+    warmKeep: false,
+    onInferenceEvent: () => {
+      /* unused in the pre-registration failure tests */
+    },
+  };
+
+  test("a spawn whose mail subscription throws kills the child and releases the address", async () => {
+    const h = await makePreRegistrationFailureHarness({ failSubscribe: true });
+    await expect(h.supervisor.spawn(preRegistrationSpawnOpts)).rejects.toThrow(
+      "injected subscribe failure",
+    );
+    // The address was registered just before subscribe threw; the
+    // teardown must unregister it so no orphaned registration survives.
+    expect(h.registered()).toHaveLength(0);
+    expect(h.killSignals.length).toBeGreaterThan(0);
+  });
+
+  test("a spawn whose credentials assembly throws kills the child", async () => {
+    const h = await makePreRegistrationFailureHarness({
+      failDeriveStepAddress: true,
+    });
+    await expect(h.supervisor.spawn(preRegistrationSpawnOpts)).rejects.toThrow(
+      "injected deriveStepAddress failure",
+    );
+    expect(h.registered()).toHaveLength(0);
+    expect(h.killSignals.length).toBeGreaterThan(0);
   });
 
   test("drain() forwards the `drain` control frame and arms a drainTimeout accumulator per in-flight run", async () => {
@@ -1237,231 +1459,6 @@ describe("createWorkflowSupervisor", () => {
     expect(onDisk.signature.sig).toMatch(/^01[0-9a-f]+$/);
   });
 
-  test("deploy routes the trivial branch through the host-injected trivialLaunch callback", async () => {
-    const baseDir = await makeTempDir("supervisor-deploy-trivial-");
-    const trivialCalls: {
-      agentAddress: string;
-      agentId: string;
-      hubPublicKey: string;
-      config: unknown;
-    }[] = [];
-    const signSpyCalls: { kind: string }[] = [];
-    const bindings = await buildBindings({
-      baseDir,
-      spawner: () => {
-        throw new Error(
-          "subprocessSpawner must not be invoked on the trivial branch",
-        );
-      },
-      signSpy: (kind) => {
-        signSpyCalls.push({ kind });
-        return { sig: new Uint8Array(64), principalKind: "supervisor" };
-      },
-      mailBus: createMockMailBus(),
-      trivialLaunch: async (b) => {
-        trivialCalls.push({
-          agentAddress: b.agentAddress,
-          agentId: b.agentId,
-          hubPublicKey: b.hubPublicKey,
-          config: b.config,
-        });
-      },
-    });
-    const supervisor = createWorkflowSupervisor(bindings);
-    const frame = {
-      agentAddress: "agent-1@example.com",
-      agentId: "agent-1",
-      config: { sentinel: "config-bytes" },
-      hubPublicKey: "deadbeef",
-    };
-    await supervisor.deploy(frame);
-    expect(trivialCalls).toHaveLength(1);
-    expect(trivialCalls[0]).toEqual({
-      agentAddress: "agent-1@example.com",
-      agentId: "agent-1",
-      hubPublicKey: "deadbeef",
-      config: { sentinel: "config-bytes" },
-    });
-    // No signAsPrincipal calls on the trivial branch -- the
-    // workflow-process-cancel path never engages.
-    expect(signSpyCalls).toEqual([]);
-    // credentialsSnapshot is multi-step-only; the trivial deploy
-    // does not assemble one.
-    expect(supervisor.getCredentialsSnapshot()).toBeNull();
-  });
-
-  test("deploy does not register a mailbox or open IPC on the trivial branch", async () => {
-    const baseDir = await makeTempDir("supervisor-deploy-no-mailbus-");
-    const mailBus = createMockMailBus();
-    const bindings = await buildBindings({
-      baseDir,
-      spawner: () => {
-        throw new Error("spawner must not be invoked on the trivial branch");
-      },
-      signSpy: () => ({
-        sig: new Uint8Array(64),
-        principalKind: "supervisor",
-      }),
-      mailBus,
-      trivialLaunch: () => Promise.resolve(),
-    });
-    const supervisor = createWorkflowSupervisor(bindings);
-    await supervisor.deploy({
-      agentAddress: "agent-2@example.com",
-      agentId: "agent-2",
-      config: {},
-      hubPublicKey: "cafef00d",
-    });
-    // The mail bus is the multi-step branch's seam; the trivial
-    // branch must not touch it.
-    expect(mailBus.registered()).not.toContain("deployment-x@example.com");
-  });
-
-  test("deploy hands recordRunEvent into trivialLaunch and commits the canonical four-event chain", async () => {
-    const baseDir = await makeTempDir("supervisor-deploy-run-events-");
-    const signSpyCalls: { kind: string; payload: Uint8Array }[] = [];
-    const observedWrites: {
-      principal: { kind: string };
-      repoId: RepoId;
-      ref: string;
-      files: Record<string, string | Uint8Array>;
-    }[] = [];
-    const bindings = await buildBindings({
-      baseDir,
-      spawner: () => {
-        throw new Error("spawner must not be invoked on the trivial branch");
-      },
-      signSpy: (kind, payload) => {
-        signSpyCalls.push({ kind, payload });
-        const sig = new Uint8Array(64);
-        sig[0] = signSpyCalls.length;
-        return { sig, principalKind: "supervisor" };
-      },
-      mailBus: createMockMailBus(),
-      onWrite: (args) => observedWrites.push(args),
-      statefulWrites: true,
-      trivialLaunch: async (b) => {
-        const runId = "run-trivial-1";
-        const messageId = "msg-1";
-        const stepId = "step-1";
-        const chain: readonly SupervisorRunEvent[] = [
-          {
-            kind: "RunStarted",
-            runId,
-            at: "2026-01-01T00:00:00.000Z",
-            definitionHash: "def-hash-trivial",
-            trigger: { type: "mail", payload: { to: b.agentAddress } },
-            consumedMessageId: messageId,
-          },
-          {
-            kind: "StepStarted",
-            runId,
-            at: "2026-01-01T00:00:00.001Z",
-            stepId,
-            attempt: 1,
-            input: { ref: "refs/heads/main" },
-          },
-          {
-            kind: "StepCompleted",
-            runId,
-            at: "2026-01-01T00:00:00.002Z",
-            stepId,
-            attempt: 1,
-            output: { ref: "refs/heads/main" },
-          },
-          {
-            kind: "RunCompleted",
-            runId,
-            at: "2026-01-01T00:00:00.003Z",
-          },
-        ];
-        for (const event of chain) {
-          await b.recordRunEvent(event);
-        }
-      },
-    });
-    const supervisor = createWorkflowSupervisor(bindings);
-    await supervisor.deploy({
-      agentAddress: "agent-4@example.com",
-      agentId: "agent-4",
-      config: {},
-      hubPublicKey: "abc",
-    });
-
-    // Every event in the chain flowed through signAsPrincipal with
-    // kind `"supervisor"` and against payload bytes containing the
-    // expected discriminator.
-    expect(signSpyCalls.map((c) => c.kind)).toEqual([
-      "supervisor",
-      "supervisor",
-      "supervisor",
-      "supervisor",
-    ]);
-    const decodedPayloads = signSpyCalls.map((c) =>
-      new TextDecoder().decode(c.payload),
-    );
-    expect(decodedPayloads[0]).toContain("RunStarted");
-    expect(decodedPayloads[0]).toContain("def-hash-trivial");
-    expect(decodedPayloads[0]).toContain("msg-1");
-    expect(decodedPayloads[1]).toContain("StepStarted");
-    expect(decodedPayloads[2]).toContain("StepCompleted");
-    expect(decodedPayloads[3]).toContain("RunCompleted");
-
-    // Every commit went through the supervisor principal against the
-    // deployment's workflow-run repo.
-    expect(observedWrites.length).toBe(4);
-    for (const write of observedWrites) {
-      expect(write.principal.kind).toBe("supervisor");
-      expect(write.repoId).toEqual({
-        kind: "workflow-run",
-        id: "deployment-x",
-      });
-      expect(write.ref).toBe("refs/heads/main");
-    }
-
-    // The on-disk envelopes are filed under runs/<runId>/events/<seq>.json
-    // with monotonically increasing seq from 0.
-    const expectedTypes = [
-      "RunStarted",
-      "StepStarted",
-      "StepCompleted",
-      "RunCompleted",
-    ];
-    for (const [index, write] of observedWrites.entries()) {
-      const expectedSeq = index;
-      const expectedPath = `runs/run-trivial-1/events/${String(expectedSeq)}.json`;
-      const bytes = write.files[expectedPath];
-      if (bytes === undefined) {
-        throw new Error(
-          `commit ${String(index)} did not contain the expected event blob at ${expectedPath}`,
-        );
-      }
-      const expectedType = expectedTypes[index];
-      if (expectedType === undefined) {
-        throw new Error(
-          `unreachable: expectedTypes[${String(index)}] is undefined`,
-        );
-      }
-      // Every prior commit's blob is also carried through the prefix-
-      // preserving merge so the substrate's append-only invariant
-      // holds; assert the count here so a regression that drops a
-      // prior blob surfaces at the test seam.
-      expect(Object.keys(write.files)).toHaveLength(expectedSeq + 1);
-      const blobJson =
-        typeof bytes === "string" ? bytes : new TextDecoder().decode(bytes);
-      const blob = readRunEventBlob(blobJson);
-      expect(blob.type).toBe(expectedType);
-      expect(blob.seq).toBe(expectedSeq);
-      expect(blob.runId).toBe("run-trivial-1");
-      expect(blob.signature.principalKind).toBe("supervisor");
-      expect(blob.signature.sig.length).toBe(128);
-    }
-    // The trivial branch does not assemble a credentials snapshot
-    // even though the event chain landed; observability and
-    // process topology are independent surfaces.
-    expect(supervisor.getCredentialsSnapshot()).toBeNull();
-  });
-
   test("drain() threads the per-cohort terminal broadcaster into each accumulator's opts", async () => {
     const baseDir = await makeTempDir("supervisor-drain-terminal-source-");
     await seedStepGrants(
@@ -1769,32 +1766,6 @@ describe("createWorkflowSupervisor", () => {
     await supervisor.shutdown();
   });
 
-  test("deploy surfaces a trivialLaunch failure to the caller", async () => {
-    const baseDir = await makeTempDir("supervisor-deploy-error-");
-    const bindings = await buildBindings({
-      baseDir,
-      spawner: () => {
-        throw new Error("spawner must not be invoked on the trivial branch");
-      },
-      signSpy: () => ({
-        sig: new Uint8Array(64),
-        principalKind: "supervisor",
-      }),
-      mailBus: createMockMailBus(),
-      trivialLaunch: () =>
-        Promise.reject(new Error("provisionAgent failed in test")),
-    });
-    const supervisor = createWorkflowSupervisor(bindings);
-    await expect(
-      supervisor.deploy({
-        agentAddress: "agent-3@example.com",
-        agentId: "agent-3",
-        config: {},
-        hubPublicKey: "abc",
-      }),
-    ).rejects.toThrow(/provisionAgent failed in test/);
-  });
-
   test("drain() is a no-op when the supervisor is idle (no spawn has run)", async () => {
     // Pins the defensive contract for an inbound drain.deliver frame
     // that lands while the supervisor has no in-flight runs to escalate
@@ -1880,6 +1851,138 @@ describe("createWorkflowSupervisor", () => {
         payload: null,
       }),
     ).rejects.toThrow(/deliverSignal called in phase idle/);
+  });
+
+  test("deliverSources() rejects when the supervisor is idle (no spawn has run)", async () => {
+    // Same phase-guard contract as deliverSignal: a sources rotation
+    // landing against a supervisor that is not starting/running throws so
+    // the sidecar router's rejection surfaces to the hub-link rather than
+    // writing into a dead child's pipe.
+    const baseDir = await makeTempDir("supervisor-deliver-sources-idle-");
+    const bindings = await buildBindings({
+      baseDir,
+      spawner: () => {
+        throw new Error("spawner must not be invoked on the idle sources path");
+      },
+      signSpy: () => ({
+        sig: new Uint8Array(64),
+        principalKind: "supervisor",
+      }),
+      mailBus: createMockMailBus(),
+    });
+    const supervisor = createWorkflowSupervisor(bindings);
+    await expect(
+      supervisor.deliverSources({
+        sources: [
+          {
+            id: "primary",
+            provider: "anthropic",
+            baseURL: "https://api.anthropic.com",
+            apiKey: "sk-x",
+            model: "claude-test",
+          },
+        ],
+        defaultSource: "primary",
+      }),
+    ).rejects.toThrow(/deliverSources called in phase idle/);
+  });
+
+  test("deliverSources() sends a sources-updated frame when running", async () => {
+    const baseDir = await makeTempDir("supervisor-deliver-sources-running-");
+    await seedStepGrants(
+      baseDir,
+      defaultStepRepoId({ deploymentId: "deployment-x", stepId: "step-1" }),
+      [{ resource: "thing", action: "read" }],
+    );
+
+    const supervisorIpcKeyPair = await generateKeyPair();
+    const childIpcKeyPair = await generateKeyPair();
+    const supervisorToChild = createMemoryNdjsonStream();
+    const childToSupervisor = createMemoryNdjsonStream();
+    const eventChildToSupervisor = createMemoryFrameStream();
+    let resolveExit: ((code: number) => void) | undefined;
+    const exited = new Promise<number>((resolve) => {
+      resolveExit = resolve;
+    });
+
+    let observedEnv: Record<string, string> | undefined;
+    const spawner: SubprocessSpawner = ({ env }) => {
+      observedEnv = env;
+      const handle: SubprocessHandle = {
+        pid: 4321,
+        controlWriter: supervisorToChild.writer,
+        controlReader: childToSupervisor.reader,
+        eventReader: eventChildToSupervisor.reader,
+        kill: () => {
+          childToSupervisor.close();
+          eventChildToSupervisor.close();
+          resolveExit?.(0);
+        },
+        exited,
+      };
+      return handle;
+    };
+
+    const baseBindings = await buildBindings({
+      baseDir,
+      spawner,
+      signSpy: () => ({ sig: new Uint8Array(64), principalKind: "supervisor" }),
+      mailBus: createMockMailBus(),
+    });
+    const bindings: WorkflowSupervisorBindings = {
+      ...baseBindings,
+      ipcKeyPairFactory: () => Promise.resolve(supervisorIpcKeyPair),
+    };
+    const supervisor = createWorkflowSupervisor(bindings);
+
+    const spawnPromise = supervisor.spawn({
+      stepOrder: ["step-1"],
+      definitionHash: "def-hash-abc",
+      warmKeep: true,
+      onInferenceEvent: () => undefined,
+    });
+    while (observedEnv === undefined) {
+      await new Promise((r) => setTimeout(r, 1));
+    }
+    const channelId = observedEnv.IPC_CHANNEL_ID;
+    if (channelId === undefined) {
+      throw new Error("IPC_CHANNEL_ID not set in spawn-time env");
+    }
+    const childSender = createControlChannelSender({
+      privateKeySeed: childIpcKeyPair.privateKey,
+      channelId,
+      writer: {
+        write(line: string) {
+          childToSupervisor.inject(line);
+        },
+      },
+    });
+    await childSender.send({
+      type: "ready",
+      data: {
+        childPid: 4321,
+        childPublicKey: Buffer.from(childIpcKeyPair.publicKey).toString("hex"),
+      },
+    });
+    await spawnPromise;
+
+    const sources: InferenceSource[] = [
+      {
+        id: "primary",
+        provider: "anthropic",
+        baseURL: "https://api.anthropic.com",
+        apiKey: "sk-primary",
+        model: "claude-test",
+      },
+    ];
+    await supervisor.deliverSources({ sources, defaultSource: "primary" });
+
+    const frames = parseSourcesUpdatedFrames(supervisorToChild.flushed());
+    expect(frames).toHaveLength(1);
+    expect(frames[0]?.sources).toEqual(sources);
+    expect(frames[0]?.defaultSource).toBe("primary");
+
+    await supervisor.shutdown();
   });
 });
 

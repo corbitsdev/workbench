@@ -5,7 +5,6 @@ export type {
   ArtifactWithSession,
   ArtifactWithVersions,
   ArtifactKind,
-  VizKind,
   ArtifactVisual,
   GalleryArtifact,
   ArtifactOrigin,
@@ -18,11 +17,14 @@ export {
   GalleryArtifactParseError,
 } from "./types";
 export {
+  explicitVisualForKind,
+  KNOWN_ARTIFACT_KINDS,
   visualForKind,
   toGalleryArtifact,
   tryToGalleryArtifact,
   artifactProvenance,
   artifactProvenanceLabel,
+  initialsFromName,
 } from "./artifact-visuals";
 export type { ArtifactProvenance, ProvenanceTone } from "./artifact-visuals";
 export {
@@ -32,19 +34,18 @@ export {
   workflowAcceptsArtifactKind,
   workflowsAcceptingArtifactKind,
 } from "./artifact-workflow-eligibility";
-export { ArtifactViz } from "./ArtifactViz";
 export { ArtifactCard } from "./ArtifactCard";
 export { ArtifactCardPreview } from "./ArtifactCardPreview";
 export { ArtifactDetailShell } from "./ArtifactDetailShell";
 export {
   ARTIFACT_PREVIEW_FAMILIES,
   artifactPreviewFamily,
+  comparisonSummary,
   labelForArtifactStatus,
   previewExcerpt,
   type ArtifactPreviewFamily,
 } from "./artifact-preview-family";
 export { shouldShowArtifactStatusBadge } from "./artifact-status-badge";
-export { iconForPreviewFamily } from "./artifact-family-icon";
 export {
   ArtifactGallery,
   ArtifactGalleryToolbar,

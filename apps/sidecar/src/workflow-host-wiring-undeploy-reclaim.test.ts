@@ -255,13 +255,13 @@ async function standUpDeployment(
       },
       loadOrGenerateKey: async () => ({ keyPair, isNew: false }),
     } as unknown as Parameters<typeof createSidecarDeployRouter>[0]["keyStore"],
-    onAgentEvent: () => () => {
-      /* unused */
-    },
     transport,
     repoStore,
     signingKeySeed: keyPair.privateKey,
     createAgentCrypto: createEd25519Crypto,
+    assertSourceBuildable: () => {
+      /* every source buildable in this test */
+    },
     registerDeployment: () => {
       /* no-op */
     },
@@ -291,13 +291,17 @@ async function standUpDeployment(
   const sources: Record<string, unknown> = {};
   for (const stepId of stepIds) {
     steps[stepId] = { kind: "step" };
-    sources[stepId] = {
-      id: stepId,
-      provider: "anthropic",
-      baseURL: "https://api.anthropic.com",
-      apiKey: `sk-${stepId}`,
-      model: "claude-3-5",
-    };
+    // Upstream sources are per-step ordered failover chains (arrays), not a
+    // single source object.
+    sources[stepId] = [
+      {
+        id: stepId,
+        provider: "anthropic",
+        baseURL: "https://api.anthropic.com",
+        apiKey: `sk-${stepId}`,
+        model: "claude-3-5",
+      },
+    ];
   }
 
   const frame: AgentDeployFrame = {
@@ -306,7 +310,10 @@ async function standUpDeployment(
     agentId: `ins_${rawDeploymentId}`,
     hubPublicKey: "hub-pk",
 
-    config: { tenantId: "ten_test" } as AgentDeployFrame["config"],
+    config: {
+      tenantId: "ten_test",
+      principalId: "prn_test",
+    } as AgentDeployFrame["config"],
     workflow: {
       definition: {
         id: `wf-${rawDeploymentId}`,
@@ -393,7 +400,7 @@ async function exists(p: string): Promise<boolean> {
 describe("createSidecarDeployRouter multi-step undeploy reclaims on-disk footprint (CL-2231)", () => {
   test("removes the workflow-run repo + every per-step dir, leaving an unrelated deployment untouched", async () => {
     const harness = await standUpDeployment(
-      "reclaim-a@example.com",
+      "ins_reclaim-a@example.com",
       "ses_reclaimA",
       ["step-1", "step-2"],
     );
@@ -431,14 +438,52 @@ describe("createSidecarDeployRouter multi-step undeploy reclaims on-disk footpri
     }
   });
 
+  test("no-active undeploy reclaims the whole deployment dir, not just one file inside it", async () => {
+    // A deployment this router never deployed in this process (no in-memory
+    // supervisor) -- e.g. run state left on disk by a prior sidecar process
+    // or crash. Undeploy must reach the no-active teardown branch and reclaim
+    // the ENTIRE workflow-runs/<deploymentId> directory, not just a single
+    // file inside it.
+    const harness = await standUpDeployment(
+      "ins_reclaim-c@example.com",
+      "ses_reclaimC",
+      ["step-1", "step-2"],
+    );
+
+    const orphanAddress = "orphan-d@example.com";
+    const orphanId = slugDeploymentId(orphanAddress);
+    const orphanDir = path.join(harness.dataDir, "workflow-runs", orphanId);
+    await fs.mkdir(orphanDir, { recursive: true });
+    // Stand-ins for whatever the workflow-run substrate leaves on disk; the
+    // reclaim sweep must remove the whole directory, not just one file.
+    await fs.writeFile(path.join(orphanDir, "run-state"), "x", "utf8");
+    await fs.writeFile(path.join(orphanDir, "other-file"), "x", "utf8");
+    expect(await exists(orphanDir)).toBe(true);
+
+    const undeploy = harness.router.undeploy;
+    if (undeploy === undefined) throw new Error("router.undeploy is undefined");
+    await undeploy({
+      type: "agent.undeploy",
+      agentAddress: orphanAddress,
+      reason: "no-active teardown",
+    });
+
+    expect(await exists(orphanDir)).toBe(false);
+    expect(await exists(path.join(orphanDir, "run-state"))).toBe(false);
+    expect(await exists(path.join(orphanDir, "other-file"))).toBe(false);
+  });
+
   test("is idempotent: undeploy does not throw when the owned dirs are already absent", async () => {
     const harness = await standUpDeployment(
-      "reclaim-b@example.com",
+      "ins_reclaim-b@example.com",
       "ses_reclaimB",
       ["step-1", "step-2"],
     );
-    // Deliberately do NOT materialize the owned dirs.
-    for (const dir of harness.ownedDirs) {
+    // Deliberately do NOT materialize the per-step git repos. Only the
+    // per-step dirs are asserted absent here; the point of the test is that
+    // undeploy's reclaim converges (and does not throw) even when the git
+    // repos were never written.
+    for (const dir of harness.ownedDirs.slice(1)) {
       expect(await exists(dir)).toBe(false);
     }
 

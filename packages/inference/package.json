@@ -19,7 +19,7 @@
     "arktype": "catalog:"
   },
   "scripts": {
-    "test": "bun test"
+    "test": "BUN_OPTIONS=--conditions=intx-src bun test"
   },
   "devDependencies": {
     "@intx/mime": "workspace:*"

@@ -16,6 +16,15 @@ import { deriveAgentPhase, type AgentPhase } from "./agent-phase";
  * Crucially it recovers: a turn that ends without committing — error, abort,
  * dropped sidecar — would otherwise leave the last reasoning text in place and
  * pulse "thinking" forever. Termination events reset all state to idle.
+ *
+ * A content-less inference pass (a reactor decision cycle that ends in
+ * "wait" rather than a reply) never fires any of those termination events —
+ * the server has nothing to commit or abort. Left alone, `active` would
+ * latch true and the row would read "thinking" indefinitely (CL-3871). Such
+ * a pass still always emits `inference.done` with an empty `turn.content`,
+ * so that specific event is treated as an extra, narrower reset: it clears
+ * `active` only when the pass produced no text/reasoning/tool content,
+ * leaving a genuinely productive `inference.done` (content present) alone.
  */
 export interface AgentPhaseTracker {
   readonly phase: AgentPhase;
@@ -43,6 +52,16 @@ function partialField(raw: unknown, field: "text" | "thinking"): string | null {
   if (typeof partial !== "object" || partial === null) return null;
   const value = (partial as Record<string, unknown>)[field];
   return typeof value === "string" ? value : null;
+}
+
+function isContentlessInferenceDone(raw: unknown): boolean {
+  if (typeof raw !== "object" || raw === null) return false;
+  const { data } = raw as { data?: unknown };
+  if (typeof data !== "object" || data === null) return false;
+  const { turn } = data as { turn?: unknown };
+  if (typeof turn !== "object" || turn === null) return false;
+  const { content } = turn as { content?: unknown };
+  return Array.isArray(content) && content.length === 0;
 }
 
 export function createAgentPhaseTracker(
@@ -85,6 +104,14 @@ export function createAgentPhaseTracker(
       if (type === "inference.start") {
         active = true;
         recompute();
+        return;
+      }
+
+      if (type === "inference.done") {
+        if (isContentlessInferenceDone(raw)) {
+          active = false;
+          recompute();
+        }
         return;
       }
 

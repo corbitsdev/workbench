@@ -197,7 +197,7 @@ export function createMeTasksRouter(
           description: "Invalid body",
           content: { "application/json": { schema: resolver(ErrorResponse) } },
         },
-        409: {
+        403: {
           description: "Caller has no provisioned membership yet",
           content: { "application/json": { schema: resolver(ErrorResponse) } },
         },
@@ -212,7 +212,7 @@ export function createMeTasksRouter(
       }
       const member = await resolveCallerMember(db, userId);
       if (!member) {
-        return c.json({ error: "No provisioned membership" }, 409);
+        return c.json({ error: "No provisioned membership" }, 403);
       }
       const linkError = validateTaskLinks(body.links ?? []);
       if (linkError !== null) {
@@ -258,7 +258,7 @@ export function createMeTasksRouter(
           description: "No such task owned by the caller",
           content: { "application/json": { schema: resolver(ErrorResponse) } },
         },
-        409: {
+        403: {
           description: "Caller has no provisioned membership yet",
           content: { "application/json": { schema: resolver(ErrorResponse) } },
         },
@@ -286,7 +286,7 @@ export function createMeTasksRouter(
       }
       const member = await resolveCallerMember(db, userId);
       if (!member) {
-        return c.json({ error: "No provisioned membership" }, 409);
+        return c.json({ error: "No provisioned membership" }, 403);
       }
       // Assignment is owner-only: the update itself is already scoped to the
       // caller's own owned tasks below (ownerPrincipalId in the WHERE
@@ -354,7 +354,7 @@ export function createMeTasksRouter(
             "Invalid JSON, invalid body, non-UUID id, or too many ids",
           content: { "application/json": { schema: resolver(ErrorResponse) } },
         },
-        409: {
+        403: {
           description: "Caller has no provisioned membership yet",
           content: { "application/json": { schema: resolver(ErrorResponse) } },
         },
@@ -381,7 +381,7 @@ export function createMeTasksRouter(
       }
       const member = await resolveCallerMember(db, userId);
       if (!member) {
-        return c.json({ error: "No provisioned membership" }, 409);
+        return c.json({ error: "No provisioned membership" }, 403);
       }
       const updatedIds = await bulkUpdateOwnerTaskStatus(db, {
         tenantId: member.tenantId,
@@ -424,7 +424,7 @@ export function createMeTasksRouter(
           description: "No such task owned by the caller",
           content: { "application/json": { schema: resolver(ErrorResponse) } },
         },
-        409: {
+        403: {
           description: "Caller has no provisioned membership yet",
           content: { "application/json": { schema: resolver(ErrorResponse) } },
         },
@@ -446,7 +446,7 @@ export function createMeTasksRouter(
       }
       const member = await resolveCallerMember(db, userId);
       if (!member) {
-        return c.json({ error: "No provisioned membership" }, 409);
+        return c.json({ error: "No provisioned membership" }, 403);
       }
       // Ownership check: the push service loads the task by id alone, so gate
       // here on the caller owning it before any external write.

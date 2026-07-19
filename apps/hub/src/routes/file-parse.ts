@@ -7,11 +7,13 @@ import { randomUUID } from "node:crypto";
 import { getLogger } from "@intx/log";
 import { isAllowedMimeType } from "@intx/types";
 import { schema as intxSchema } from "@intx/db";
+import type { AnalyticsSubscriber } from "@workbench/analytics";
 import type { HubDb } from "../db";
 import { artifact, artifactVersion, memberAgentInstance } from "../db/schema";
 import { parseDocument, FileParseError } from "../services/file-parser";
 import { getRequestedUserContext } from "../lib/user-context";
 import { requestBodySchema } from "../lib/openapi";
+import { uploadArtifactKind } from "../lib/upload-artifact-kind";
 
 const log = getLogger(["api", "file-parse"]);
 
@@ -76,9 +78,14 @@ const ErrorResponse = type({ error: "string" });
  * message it sends Myra. Documents must never ride inline to Myra — her
  * openai-compatible adapter throws on document content blocks — so this is the
  * upload path her composer routes documents through.
+ *
+ * Parse turns are attributed to the target agent instance's principal so the
+ * usage event lands on that instance (and rolls up to its owning member via
+ * `member_agent_instance`) rather than being dropped as unattributed.
  */
 export function createFileParseRouter(
   db: HubDb,
+  analytics: AnalyticsSubscriber,
 ): Hono<{ Variables: { userId: string } }> {
   const router = new Hono<{ Variables: { userId: string } }>();
 
@@ -222,13 +229,23 @@ export function createFileParseRouter(
       let parsedText: string;
       try {
         parsedText = await withParseTimeout(
-          parseDocument(db, {
-            tenantId: userContext.tenantId,
-            traceId: artifactId,
-            filename: parsed.filename,
-            mimeType,
-            bytes,
-          }),
+          parseDocument(
+            db,
+            {
+              tenantId: userContext.tenantId,
+              traceId: artifactId,
+              filename: parsed.filename,
+              mimeType,
+              bytes,
+            },
+            {
+              analytics,
+              // Instance principal (not the human) — onLocalInferenceEvent
+              // resolves the active agent_instance by this id so the usage row
+              // lands on the Myra being uploaded to and rolls up to its owner.
+              attributionPrincipalId: instance.principalId,
+            },
+          ),
         );
       } catch (err) {
         if (err instanceof ParseTimeoutError) {
@@ -266,7 +283,7 @@ export function createFileParseRouter(
           tenantId: userContext.tenantId,
           principalId: userContext.principalId,
           ownerPrincipalId: userContext.principalId,
-          kind: "file",
+          kind: uploadArtifactKind(mimeType),
           title: parsed.filename,
           content,
           source,

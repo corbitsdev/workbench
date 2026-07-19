@@ -21,6 +21,7 @@ import { listRunnableWorkflowKinds } from "../lib/workflow-run-gate";
 import {
   resumeWorkflowRun,
   startWorkflowRun,
+  type StartWorkflowRunDeps,
 } from "../workflow-executor/run-exec";
 import { describePendingGates } from "../workflow-executor/pending-gate-info";
 import { listRunRecords, loadRunRecord } from "../workflow-executor/run-store";
@@ -37,6 +38,10 @@ export type WorkflowRunToolsContext = {
   deploymentDomain?: string;
   provisionRunDeployment?: ProvisionRunDeploymentFn;
   ensureDeploymentRoutable?: EnsureDeploymentRoutableFn;
+  // Shared with the /workflow-exec routes so the `workflow_start` hub
+  // tool gets the same kind-specific trigger-payload enrichment as every other
+  // start door (trigger-payload-enrichment-registry.ts).
+  resolveUserIdentity?: StartWorkflowRunDeps["resolveUserIdentity"];
 };
 
 // Resolve who the calling agent acts FOR and which conversation it speaks
@@ -86,6 +91,7 @@ function requireWorkflowDeps(context: WorkflowRunToolsContext): {
   deploymentDomain: string;
   provisionRunDeployment: ProvisionRunDeploymentFn;
   ensureDeploymentRoutable: EnsureDeploymentRoutableFn;
+  resolveUserIdentity: StartWorkflowRunDeps["resolveUserIdentity"];
 } {
   const {
     sessionService,
@@ -95,6 +101,7 @@ function requireWorkflowDeps(context: WorkflowRunToolsContext): {
     deploymentDomain,
     provisionRunDeployment,
     ensureDeploymentRoutable,
+    resolveUserIdentity,
   } = context;
   if (
     !sessionService ||
@@ -103,7 +110,8 @@ function requireWorkflowDeps(context: WorkflowRunToolsContext): {
     !cryptoProvider ||
     deploymentDomain === undefined ||
     !provisionRunDeployment ||
-    !ensureDeploymentRoutable
+    !ensureDeploymentRoutable ||
+    !resolveUserIdentity
   ) {
     throw new Error(
       "workflow tools are not wired: hub workflow services missing from tool context",
@@ -117,6 +125,7 @@ function requireWorkflowDeps(context: WorkflowRunToolsContext): {
     deploymentDomain,
     provisionRunDeployment,
     ensureDeploymentRoutable,
+    resolveUserIdentity,
   };
 }
 
@@ -169,6 +178,7 @@ export function createWorkflowRunTools(
             cryptoProvider: deps.cryptoProvider,
             deploymentDomain: deps.deploymentDomain,
             provisionRunDeployment: deps.provisionRunDeployment,
+            resolveUserIdentity: deps.resolveUserIdentity,
           },
           {
             kind,

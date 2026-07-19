@@ -14,14 +14,21 @@
 // transferId is minted inside `HubLink.pushWorkflowRunPack`.
 
 import fs from "node:fs";
+
+import { type } from "arktype";
 import git from "isomorphic-git";
+
 import { getLogger } from "@intx/log";
-import type { RepoId, RepoStore } from "@intx/hub-sessions";
+import { SourcesUpdatedData } from "@workbench/workflow-host";
 import { collectReachableObjects } from "@workbench/storage-isogit";
-import {
-  WorkflowRunPackQuarantinedError,
-  type HubLink,
-} from "@workbench/hub-agent";
+import type { InferenceSource } from "@intx/types/runtime";
+import type {
+  RepoId,
+  RepoStore,
+  WorkflowRunSupervisorPrincipal,
+} from "@intx/hub-sessions";
+import type { HubLink } from "@workbench/hub-agent";
+
 import {
   DEFAULT_WORKFLOW_RUN_PACK_MAX_COMMITS,
   DEFAULT_WORKFLOW_RUN_PACK_MAX_OBJECTS,
@@ -34,26 +41,14 @@ const logger = getLogger([
   "workflow-run-pack-client",
 ]);
 
-// =============================================================================
 // WORKBENCH-LOCAL (CL-2340): not in upstream interchange — preserve on every
-// pin-bump re-sync of the vendored sidecar files. The delta-cursor + size-
-// ceiling machinery below (WorkflowRunPackTooLargeError, buildDeltaPack, the
-// ack-gated `lastAckedTip` cursor, `forgetDeployment`, and the
-// `WorkflowRunPackLimits` plumbing) replaces the substrate's own
-// `createPack`/`lastPackedTip` path to stop the shared sidecar from OOM-ing on
-// a wedged run. A literal upstream copy would silently delete it with a green
-// build. See AGENTS.md "Vendored workflow-host wiring (pin-bump gate)".
-// =============================================================================
-
-/**
- * Thrown when the objects reachable from a workflow-run ref exceed the
- * configured safety ceiling. A wedged or looping run appends one commit per
- * event without bound; left uncapped the pack builder materializes the whole
- * history into one in-memory buffer and OOM-kills the shared sidecar (CL-2340).
- * Surfaced loudly per the defensive-coding rule — it rides the existing
- * latched-error path on the boot-edge facade, failing the offending run rather
- * than the process.
- */
+// pin-bump re-sync. The base ack-gated cursor (createPack builds the delta from
+// the last-ACKED tip; commitPackedTip advances only on ack) has CONVERGED
+// upstream, so only the size-ceiling remains a workbench divergence: a single
+// wedged workflow run can accumulate an un-acked delta whose packfile, built in
+// one shot, OOMs the SHARED sidecar and takes every other deployment down with
+// it. A pre-flight walk (below) trips a safety ceiling and fails just that run
+// BEFORE the giant packfile is ever built, rather than the process.
 export class WorkflowRunPackTooLargeError extends Error {
   readonly repoId: string;
   readonly ref: string;
@@ -81,41 +76,41 @@ export class WorkflowRunPackTooLargeError extends Error {
   }
 }
 
-// Build a packfile carrying every object reachable from the ref tip back to
-// `sinceTip` (exclusive), walking the first-parent chain. Workflow-run repos
-// are linear, append-one-commit-per-event histories, so the hub's receiver
-// must see every commit transition between the base it already holds and the
-// new tip; a pack that omits any intervening commit makes the receiver throw
-// `pack_walk_dangling_parent`.
-//
-// `sinceTip` is the last commit the hub durably ACKED (see the cursor below):
-//   - null  -> walk to the root, shipping the FULL chain (cold hub / first
-//              push / post-restart). Always applicable to an empty hub.
-//   - a sha -> stop at it (exclusive). The hub provably holds `sinceTip` and
-//              every ancestor, so the receiver validates the oldest new
-//              commit's parent against its store and dedupes the rest. This is
-//              the delta that keeps each push proportional to NEW commits
-//              rather than total run length (CL-2340).
-//
-// We must NOT use the substrate's `createPack` (its workflow-run branch
-// advances its own `lastPackedTip` cursor on pack *construction*, before and
-// regardless of push success — a first push the hub never receives poisons
-// every later delta whose base the hub lacks, for the life of the process).
-// Our cursor advances only on ACK (below), so it can only ever lag the hub's
-// true tip, never lead it: a lagging cursor ships an over-large but always
-// applicable pack; a leading cursor would dangle. Returns null when the tip
-// already equals `sinceTip` (nothing new to ship).
-async function buildDeltaPack(
+// WORKBENCH-LOCAL (CL-2340): pre-flight the delta the substrate's `createPack`
+// is about to build. Walk the first-parent chain from the ref tip back to
+// `sinceTip` (the last-ACKED commit, exclusive — the same base createPack packs
+// from, since this client is the sole advancer of that cursor), counting
+// commits + reachable objects. Throw before `createPack` runs if the delta
+// exceeds the ceiling, so the one-shot in-memory packfile that OOMs the shared
+// sidecar is never built. Healthy runs stop at `sinceTip` after a one-commit
+// delta, so this adds only a bounded walk on the hot path; a wedged run trips
+// the ceiling and fails just that run. The ceiling is a safety trip, not an
+// exact byte budget: `seen` can overshoot by one commit's reachable set (we add
+// then test), which is harmless because the throw still precedes the pack build.
+async function assertDeltaWithinCeiling(
   dir: string,
   ref: string,
   sinceTip: string | null,
   limits: WorkflowRunPackLimits,
   repoIdLabel: string,
-): Promise<{ pack: Uint8Array; commitSha: string } | null> {
-  const commitSha = await git.resolveRef({ fs, dir, ref });
-  if (commitSha === sinceTip) {
-    return null;
+): Promise<void> {
+  let commitSha: string;
+  try {
+    commitSha = await git.resolveRef({ fs, dir, ref });
+  } catch (cause) {
+    // No resolvable tip (missing ref / not-yet-materialized repo) means there
+    // is no history to walk and so no oversized pack to build -- the ceiling is
+    // moot. Let the real `createPack` handle whatever state the repo is in.
+    if (
+      cause instanceof Error &&
+      (cause.name === "NotFoundError" ||
+        cause.message.includes("Could not find"))
+    ) {
+      return;
+    }
+    throw cause;
   }
+  if (commitSha === sinceTip) return;
   const seen = new Set<string>();
   let current: string | null = commitSha;
   let commitCount = 0;
@@ -124,11 +119,6 @@ async function buildDeltaPack(
       seen.add(oid);
     }
     commitCount += 1;
-    // `seen` can overshoot the object ceiling by one commit's reachable set
-    // (we add a commit's objects, then test). That is harmless: the throw fires
-    // before `git.packObjects` runs, so the single large in-memory packfile —
-    // the thing that OOMs the sidecar — is still never built. The ceiling is a
-    // safety trip, not an exact byte budget.
     if (commitCount > limits.maxCommits || seen.size > limits.maxObjects) {
       logger.warn`workflow-run pack push ceiling exceeded for ${repoIdLabel}/${ref} (${commitSha}): ${String(commitCount)} commits / ${String(seen.size)} objects over limit ${String(limits.maxCommits)}/${String(limits.maxObjects)}; failing run`;
       throw new WorkflowRunPackTooLargeError({
@@ -143,18 +133,6 @@ async function buildDeltaPack(
     const parent = commit.parent[0];
     current = parent ?? null;
   }
-  const result = await git.packObjects({
-    fs,
-    dir,
-    oids: [...seen],
-    write: false,
-  });
-  if (result.packfile === undefined) {
-    throw new Error(
-      `packObjects returned no packfile for ref "${ref}" (${commitSha})`,
-    );
-  }
-  return { pack: result.packfile, commitSha };
 }
 
 export type WorkflowRunPackClient = {
@@ -165,31 +143,21 @@ export type WorkflowRunPackClient = {
    * transfer, or on a substrate-side `createPack` failure. The push
    * failure shape is intentionally loud per the project's
    * defensive-coding rule.
-   *
-   * On a successful ack the per-(repoId.id, ref) cursor advances to the
-   * pushed tip, so the next push ships only commits appended since.
    */
   push(opts: {
     agentAddress: string;
     repoId: RepoId;
     ref: string;
   }): Promise<void>;
-  /**
-   * Drop any delta cursors held for a deployment. Called on
-   * `agent.undeploy` so a redeployed deployment re-bootstraps from a full
-   * chain rather than reusing a tip the (possibly fresh) hub no longer
-   * holds.
-   */
-  forgetDeployment(deploymentId: string): void;
 };
 
 export type CreateWorkflowRunPackClientOpts = {
   substrate: RepoStore;
   hubLink: Pick<HubLink, "pushWorkflowRunPack">;
   /**
-   * Safety ceiling on a single pack's reachable objects/commits. Defaults
-   * to the generous module constants when omitted; the sidecar boot path
-   * threads in the env-resolved values.
+   * WORKBENCH-LOCAL (CL-2340): safety ceiling on a single pack's reachable
+   * objects/commits. Defaults to the generous module constants when omitted;
+   * the sidecar boot path threads in the env-resolved values.
    */
   limits?: WorkflowRunPackLimits;
 };
@@ -198,33 +166,28 @@ export function createWorkflowRunPackClient(
   opts: CreateWorkflowRunPackClientOpts,
 ): WorkflowRunPackClient {
   const { substrate, hubLink } = opts;
+  // WORKBENCH-LOCAL (CL-2340): pack size ceiling for the pre-flight below.
   const limits: WorkflowRunPackLimits = opts.limits ?? {
     maxCommits: DEFAULT_WORKFLOW_RUN_PACK_MAX_COMMITS,
     maxObjects: DEFAULT_WORKFLOW_RUN_PACK_MAX_OBJECTS,
   };
 
-  // Per-deployment, per-ref last-ACKED tip. Advanced only after
-  // `pushWorkflowRunPack` resolves (the hub durably wrote the ref and acked),
-  // so it can only lag the hub's true tip, never lead it. Process-memory only:
-  // lost on restart -> null -> full chain, which is cold-hub-safe (CL-2340).
-  //
-  // Nested `deploymentId -> (ref -> tip)` rather than a flat composite-string
-  // key: `forgetDeployment` then drops a whole deployment with one O(1)
-  // `delete(deploymentId)` and cannot be tricked by a separator that happens to
-  // appear in a deploymentId or ref (a flat `${id} ${ref}` key would prefix-
-  // collide if either ever contained the separator char).
-  const lastAckedTip = new Map<string, Map<string, string>>();
-
-  // Per-deployment generation counter, bumped by `forgetDeployment`. A push
-  // captures the generation at START and only mutates the cursor on settle if
-  // it is unchanged. This closes the resurrection race: a push parked on an
-  // unresolved `pushWorkflowRunPack` when `forgetDeployment` lands must NOT
-  // re-set (ack) or re-delete (failure) the cursor when it finally settles —
-  // the deployment it belonged to is gone, and a stale ack-set would resurrect
-  // a tip a fresh hub lacks → dangling-delta on redeploy. The undeploy-hook
-  // drain barrier normally serializes this, but the cursor logic stays correct
-  // even if an ack genuinely races the clear (CL-2340).
-  const generation = new Map<string, number>();
+  // Shadow of the substrate's shipped-tip cursor, keyed by `(repoId.id, ref)`.
+  // This client is the SOLE caller of `commitPackedTip` for the workflow-run
+  // kind, so its own record of "the last commitSha I acked" cannot drift from
+  // the substrate cursor. It exists to answer one question `createPack` cannot
+  // answer to its caller: is the current ref tip already shipped? When the tip
+  // equals the last acked sha there is nothing un-acked to ship, and building
+  // a pack would produce an empty delta whose declared tip is not in the pack
+  // -- which the hub rejects as `sha_mismatch`. Skipping the wire send in that
+  // case is what makes a re-drive of an already-shipped tip a clean no-op
+  // rather than a spurious rejection. The reconnect re-drive path
+  // (`notifyAddressRoutable`) can legitimately fire for a slot whose commits
+  // already landed on an earlier attempt, so this guard is load-bearing.
+  const lastAckedSha = new Map<string, string>();
+  function ackKey(repoId: RepoId, ref: string): string {
+    return `${repoId.id}/${ref}`;
+  }
 
   return {
     async push({ agentAddress, repoId, ref }) {
@@ -233,81 +196,58 @@ export function createWorkflowRunPackClient(
           `workflow-run pack client: repoId.kind must be "workflow-run", got ${JSON.stringify(repoId.kind)}`,
         );
       }
-      const startGen = generation.get(repoId.id) ?? 0;
-      const sinceTip = lastAckedTip.get(repoId.id)?.get(ref) ?? null;
-      const built = await buildDeltaPack(
+      const principal: WorkflowRunSupervisorPrincipal = {
+        kind: "supervisor",
+        deploymentId: repoId.id,
+      };
+      // Nothing to ship when the local tip is already the last acked tip:
+      // the run's commits landed on a prior push. Return without a wire send
+      // so a re-drive of an already-shipped tip is a clean no-op instead of
+      // an empty-delta pack the hub rejects.
+      const tip = await substrate.resolveRef(principal, repoId, ref);
+      if (tip !== null && tip === lastAckedSha.get(ackKey(repoId, ref))) {
+        return;
+      }
+      // WORKBENCH-LOCAL (CL-2340): pre-flight the delta size BEFORE
+      // `createPack` builds the one-shot packfile, so a wedged run's un-acked
+      // delta trips the safety ceiling and fails just that run instead of
+      // OOM-ing the shared sidecar. Walks from `tip` back to this client's
+      // last-acked cursor — the same base `createPack` packs from.
+      await assertDeltaWithinCeiling(
         substrate.getRepoDir(repoId),
         ref,
-        sinceTip,
+        lastAckedSha.get(ackKey(repoId, ref)) ?? null,
         limits,
         repoId.id,
       );
-      if (built === null) {
-        return;
-      }
-      try {
-        await hubLink.pushWorkflowRunPack({
-          agentAddress,
-          repoId,
-          pack: built.pack,
-          ref,
-          commitSha: built.commitSha,
-        });
-      } catch (err) {
-        // WORKBENCH-LOCAL (CL-3796): a quarantined key has already been
-        // rejected by the hub `WORKFLOW_RUN_PACK_MAX_BOOTSTRAP_FAILURES`
-        // times and fails fast on the hub-link side without a network
-        // attempt (hub-link.ts). Resetting the cursor here buys nothing --
-        // the hub is already known to reject this ref -- and only makes the
-        // NEXT `buildDeltaPack` walk more history (an ever-growing,
-        // event-loop-blocking git walk) for a push that is guaranteed to be
-        // dropped before it reaches the wire. Leaving the cursor in place
-        // keeps every subsequent quarantined attempt's walk bounded to the
-        // same small delta instead of regrowing toward a full-chain rebuild
-        // every event -- this is the retry-storm amplifier the CL-3796
-        // incident traced to this path.
-        if (err instanceof WorkflowRunPackQuarantinedError) {
-          throw err;
-        }
-        // The push did not ack. The hub may never have received this base, or
-        // may have lost it (a cold-restarted hub whose durable repo was
-        // wiped). Drop the cursor so the NEXT push re-bootstraps a full,
-        // self-healing chain rather than a delta whose base the hub lacks.
-        // Resetting can only make the next pack larger (the cursor lags
-        // further back), never dangling — the safe direction. (CL-2340)
-        //
-        // Skip if a forget raced this push: the cursor is already gone and the
-        // deployment is being torn down; touching it would only re-create an
-        // empty ref map for a dead deployment.
-        if ((generation.get(repoId.id) ?? 0) === startGen) {
-          lastAckedTip.get(repoId.id)?.delete(ref);
-        }
-        throw err;
-      }
-      // Ack received (the push resolved). Only now is the hub known to hold
-      // this tip, so only now may the cursor advance — UNLESS a forget raced
-      // this push (generation bumped), in which case the ack belongs to a torn-
-      // down deployment and must not resurrect its cursor.
-      if ((generation.get(repoId.id) ?? 0) !== startGen) {
-        return;
-      }
-      let refs = lastAckedTip.get(repoId.id);
-      if (refs === undefined) {
-        refs = new Map<string, string>();
-        lastAckedTip.set(repoId.id, refs);
-      }
-      refs.set(ref, built.commitSha);
-    },
-    forgetDeployment(deploymentId) {
-      lastAckedTip.delete(deploymentId);
-      generation.set(deploymentId, (generation.get(deploymentId) ?? 0) + 1);
+      const { pack, commitSha } = await substrate.createPack(
+        principal,
+        repoId,
+        ref,
+      );
+      await hubLink.pushWorkflowRunPack({
+        agentAddress,
+        repoId,
+        pack,
+        ref,
+        commitSha,
+      });
+      // `pushWorkflowRunPack` resolves only on the hub's
+      // `repo.pack.ack` and rejects on a reject or a reconnect that
+      // cancels the transfer. Advancing the substrate's shipped-tip
+      // cursor here — after the ack, never at build time — is what
+      // lets a cancelled transfer be re-shipped: a rejected push throws
+      // before this line, so the cursor stays put and the next
+      // `createPack` re-includes the un-acked commits.
+      substrate.commitPackedTip(repoId, ref, commitSha);
+      lastAckedSha.set(ackKey(repoId, ref), commitSha);
     },
   };
 }
 
 /**
  * Mapping registry the boot-edge substrate facade consults to resolve
- * `repoId.id` (the workflow-run deploymentId, which the trivial branch
+ * `repoId.id` (the workflow-run deploymentId, which the deploy router
  * derives by slugging the agent's mail address) back into the
  * agentAddress carried on every outbound pack frame. Populated by the
  * deploy router as each `agent.deploy` frame lands.
@@ -344,11 +284,9 @@ export type MultistepMailHandler = (message: Uint8Array) => void;
 
 /**
  * Per-deployment-address mail handler registry the sidecar hub-link
- * consults before falling back to `transport.deliver` /
- * `sessions.commitInboundMail`. The trivial deploy path never registers
- * a handler -- its mail flows through the legacy session path. The
- * multi-step deploy router registers a handler against the deployment's
- * mail address after `wired.supervisor.spawn` succeeds, so an inbound
+ * consults before falling back to `transport.deliver`. The multi-step
+ * deploy router registers a handler against the deployment's mail
+ * address after `wired.supervisor.spawn` succeeds, so an inbound
  * `mail.inbound` frame for that address dispatches into the
  * supervisor's mail-bus subscription rather than the
  * never-provisioned-for-this-address transport mailbox.
@@ -403,11 +341,11 @@ export type MultistepSignalHandler = (args: {
 
 /**
  * Per-deployment-address signal handler registry the sidecar hub-link
- * consults on every inbound `signal.deliver` frame. The trivial deploy
- * path never registers a handler. The multi-step deploy router
+ * consults on every inbound `signal.deliver` frame. The deploy router
  * registers a handler against the deployment's mail address after
- * `wired.supervisor.spawn` succeeds; the handler dispatches the signal
- * into the supervisor's `deliverSignal`.
+ * `wired.supervisor.spawn` succeeds, for single-step and multi-step
+ * deployments alike; the handler dispatches the signal into the
+ * supervisor's `deliverSignal`.
  *
  * The registry lives at the sidecar's host layer (not inside the
  * workflow-host library) for the same boundary reason as
@@ -468,11 +406,11 @@ export type MultistepDrainHandler = (args: {
 
 /**
  * Per-deployment-address drain handler registry the sidecar hub-link
- * consults on every inbound `drain.deliver` frame. The trivial deploy
- * path never registers a handler. The multi-step deploy router
+ * consults on every inbound `drain.deliver` frame. The deploy router
  * registers a handler against the deployment's mail address after
- * `wired.supervisor.spawn` succeeds; the handler dispatches into the
- * supervisor's `drain`.
+ * `wired.supervisor.spawn` succeeds, for single-step and multi-step
+ * deployments alike; the handler dispatches into the supervisor's
+ * `drain`.
  *
  * The registry lives at the sidecar's host layer (not inside the
  * workflow-host library) for the same boundary reason as
@@ -510,6 +448,85 @@ export function createMultistepDrainRouter(): MultistepDrainRouter {
 }
 
 /**
+ * Per-deployment sources-rotation handler the deploy router installs
+ * against the `MultistepSourcesRouter` after a supervisor's `spawn`
+ * succeeds -- but ONLY for a single-step (warm launched-agent)
+ * deployment. The handler hands the rotated list off to the supervisor's
+ * `deliverSources`, which sends a `sources-updated` control IPC frame to
+ * the workflow-process child, where the warm agent's live sources are
+ * swapped in place. A multi-step deployment has no single warm agent to
+ * rotate, so the router registers no handler for it and an inbound
+ * `sources.update` for a multi-step address is unrouted.
+ */
+export type MultistepSourcesHandler = (args: {
+  sources: InferenceSource[];
+  defaultSource: string;
+}) => Promise<void>;
+
+/**
+ * Per-deployment-address sources-rotation handler registry. Only a
+ * single-step warm deployment registers a handler (after
+ * `wired.supervisor.spawn` succeeds); a multi-step deployment never
+ * does, so `tryRoute` resolves a rotation only for a registered
+ * single-step address and returns `false` for any other.
+ *
+ * The registry lives at the sidecar's host layer for the same boundary
+ * reason as the mail/signal/drain routers: the routing decision is a
+ * concrete sidecar host concern, and the workflow-host package stays
+ * agnostic to which transport surface its supervisor handle rides on.
+ */
+export type MultistepSourcesRouter = {
+  register(address: string, handler: MultistepSourcesHandler): void;
+  unregister(address: string): void;
+  tryRoute(frame: {
+    type: "sources.update";
+    agentAddress: string;
+    sources: InferenceSource[];
+    defaultSource: string;
+  }): Promise<boolean>;
+};
+
+export function createMultistepSourcesRouter(): MultistepSourcesRouter {
+  const handlers = new Map<string, MultistepSourcesHandler>();
+  return {
+    register(address, handler) {
+      handlers.set(address, handler);
+    },
+    unregister(address) {
+      handlers.delete(address);
+    },
+    async tryRoute(frame) {
+      const handler = handlers.get(frame.agentAddress);
+      // Registration check first: an unregistered (multi-step or torn-down)
+      // address is unrouted -- reported as `false`, its payload never
+      // inspected, because it would not be acted on regardless.
+      if (handler === undefined) return false;
+      // Validate the rotation BEFORE dispatch. This is the only inbound
+      // router that validates its frame, and deliberately so: a bad list
+      // (duplicate ids, or a default that is not the head element) would
+      // reach the child's control-channel receiver and crash it on
+      // `SourcesUpdatedData`'s narrow -- the sources-updated frame is the
+      // only inbound frame carrying a crash-on-invalid narrow downstream,
+      // and the only one that is request/ack. Rejecting here throws, and
+      // the hub-link turns the throw into a truthful `session.error`
+      // instead of acking and detonating the child.
+      const validated = SourcesUpdatedData({
+        sources: frame.sources,
+        defaultSource: frame.defaultSource,
+      });
+      if (validated instanceof type.errors) {
+        throw new Error(validated.summary);
+      }
+      await handler({
+        sources: frame.sources,
+        defaultSource: frame.defaultSource,
+      });
+      return true;
+    },
+  };
+}
+
+/**
  * Boot-edge facade around the substrate-shaped `RepoStore`. Forwards
  * every method to the underlying store; intercepts the
  * `writeTreePreservingPrefix` return path so a successful write
@@ -528,22 +545,29 @@ export function createMultistepDrainRouter(): MultistepDrainRouter {
  * pushes (the one already running when the burst starts, plus one
  * more for everything that arrived during it), rather than N
  * serial round-trips' worth of hub-ack latency. The push body
- * captures the current local ref tip at the moment it runs, and the
- * pack client builds a DELTA from the last ACKED tip to the current
- * tip (a full chain only when the hub holds nothing yet, or after a
- * failed push reset the cursor). The pack therefore covers every
- * commit landed since the hub last confirmed, and the receiver dedupes
- * and applies only genuinely-new commits (CL-2340).
+ * captures the current local ref tip at the moment it runs, so the
+ * single pack it builds covers every commit landed since the prior
+ * ACKED tip -- the substrate's incremental `createPack` walks the
+ * chain from the cursor `commitPackedTip` last committed on an ack
+ * forward, so the receiver still sees every commit transition.
  *
  * Single-writer + FIFO correctness: the underlying substrate
  * serialises local writes via `withRepoLock`, so commits land on
  * disk in submission order. The hub's `receivePack` validates each
- * commit's parent against its existing-commits set; the delta carries
- * the chain from the last acked tip (which the hub provably holds) to
- * the current tip, so every intermediate commit is validated by the
- * receiver. Coalescing multiple local commits into one network push
- * therefore preserves the receive-time CAS invariant while collapsing
- * N hub round-trips into 1.
+ * commit's parent against its existing-commits set; as long as the
+ * pack carries the full chain from prior acked tip to current tip,
+ * every intermediate commit is validated by the receiver. Coalescing
+ * multiple local commits into one network push therefore preserves
+ * the receive-time CAS invariant while collapsing N hub round-trips
+ * into 1.
+ *
+ * Reconnect-safe re-shipping: the substrate advances its shipped-tip
+ * cursor on the ack (`push` calls `commitPackedTip` only after
+ * `pushWorkflowRunPack` resolves), never at build time. A transfer a
+ * reconnect cancels before its ack therefore leaves the cursor where
+ * it was, so the retry loop's next `createPack` re-includes the
+ * un-acked commits and the receiver gets a self-consistent chain
+ * rather than a pack whose base commit it never received.
  *
  * Failure surfacing: a failed push latches its error on the
  * per-(repoId, ref) slot's `lastError` field. The next call to
@@ -561,9 +585,7 @@ export function createMultistepDrainRouter(): MultistepDrainRouter {
  */
 export type WorkflowRunPackPushingRepoStoreOpts = {
   underlying: RepoStore;
-  // The facade only fires pushes; cursor lifecycle (`forgetDeployment`) is
-  // driven from the deploy router, so it depends on the narrowest surface.
-  packClient: Pick<WorkflowRunPackClient, "push">;
+  packClient: WorkflowRunPackClient;
   registry: DeploymentAddressRegistry;
 };
 
@@ -585,6 +607,31 @@ export type WorkflowRunPackPushingRepoStore = RepoStore & {
    * surface).
    */
   flushWorkflowRunPushes: (repoId: RepoId, ref: string) => Promise<void>;
+  /**
+   * Re-drive any workflow-run push for `agentAddress` that a disconnect
+   * cancelled. Called when the hub-link observes the deployment address
+   * become routable again after a reconnect challenge. For each slot bound
+   * to `agentAddress` whose last push attempt failed (its `lastError` is
+   * latched), it re-arms the coalescing loop so a fresh `createPack` re-ships
+   * the un-acked commits -- the liveness path a synchronous single-step run
+   * lacks, because it has no later local write to re-set `dirty`.
+   *
+   * A re-ship that fails again re-latches without self-retrying, so a
+   * genuinely unrecoverable failure still surfaces loudly on the next local
+   * write rather than spinning. It is gated on the address being routable
+   * again (the caller only fires post-challenge) so the re-ship cannot race
+   * ahead of the hub re-routing the address.
+   */
+  notifyAddressRoutable: (agentAddress: string) => void;
+  /**
+   * Block workflow-run pushes for `agentAddress` until the next
+   * `notifyAddressRoutable`. Called when the hub-link observes its WS drop:
+   * the address's hub route is gone until the reconnect challenge re-proves
+   * ownership, so a push shipped in the interim is dropped by the hub as
+   * "unrouted". Holding the push at the block -- rather than shipping and
+   * failing -- is what lets the reconnect re-ship wait for the challenge.
+   */
+  markAddressUnroutable: (agentAddress: string) => void;
 };
 
 export function createWorkflowRunPackPushingRepoStore(
@@ -594,15 +641,39 @@ export function createWorkflowRunPackPushingRepoStore(
 
   type Slot = {
     agentAddress: string;
+    repoId: RepoId;
+    ref: string;
     inFlight: Promise<void> | null;
     dirty: boolean;
     lastError: Error | null;
+    // WORKBENCH-LOCAL (CL-2340): sticky TERMINAL error, distinct from the
+    // retryable `lastError`. Set when a push trips the size ceiling
+    // (WorkflowRunPackTooLargeError) — an unrecoverable state: the un-acked
+    // delta only grows, so retrying re-walks the same growing range and
+    // re-throws forever. Unlike `lastError`, this is never cleared by a read:
+    // once set, every subsequent workflow-run write for this slot re-throws it,
+    // so the wedged run stops appending events (bounding the delta) and fails
+    // loudly rather than silently oscillating (write fails → retry succeeds and
+    // grows the delta → next push re-throws) with only a Sentry-invisible WARN.
+    terminalError: Error | null;
     settled: (() => void)[];
   };
   const slots = new Map<string, Slot>();
   function slotKey(repoId: RepoId, ref: string): string {
     return `${repoId.kind}/${repoId.id}/${ref}`;
   }
+
+  // Addresses whose hub route was dropped and has not been re-established by a
+  // reconnect challenge. Absent means routable -- the steady state, and the
+  // first-connect state (a deployment routes via its `agent.deploy`, not a
+  // challenge, so it is never blocked before its first push). An address is
+  // added on `markAddressUnroutable` (WS disconnect) and removed on
+  // `notifyAddressRoutable` (challenge passed). A push for a blocked address
+  // is held: the coalescing loop pauses with `dirty` still set rather than
+  // shipping to a hub that has not yet re-routed the address -- which is what
+  // makes the reconnect re-ship wait for the challenge instead of racing
+  // ahead of it and being dropped as "unrouted".
+  const blockedAddresses = new Set<string>();
 
   function notifySettled(slot: Slot): void {
     const callbacks = slot.settled;
@@ -612,8 +683,18 @@ export function createWorkflowRunPackPushingRepoStore(
 
   function startLoop(slot: Slot, repoId: RepoId, ref: string): void {
     if (slot.inFlight !== null) return;
+    // Hold the push while the address is not routable (dropped, awaiting the
+    // reconnect challenge). Leave `dirty` set and start no loop: the loop
+    // resumes when `notifyAddressRoutable` clears the block and re-arms it.
+    // Shipping now would race ahead of the hub re-routing the address, and
+    // the frames would be dropped as "unrouted".
+    if (blockedAddresses.has(slot.agentAddress)) return;
     slot.inFlight = (async () => {
       while (slot.dirty) {
+        // Re-check routability each iteration: a disconnect mid-drain must
+        // pause the loop rather than push into a severed link. Leave `dirty`
+        // set so the post-challenge resume re-ships.
+        if (blockedAddresses.has(slot.agentAddress)) break;
         slot.dirty = false;
         try {
           await packClient.push({
@@ -623,6 +704,34 @@ export function createWorkflowRunPackPushingRepoStore(
           });
           slot.lastError = null;
         } catch (cause) {
+          // WORKBENCH-LOCAL (CL-2340): the size-ceiling breach is TERMINAL, not
+          // retryable. Log at ERROR (the sink forwards only error/fatal to
+          // Sentry — a WARN here would black the run out invisibly) and latch it
+          // as the sticky terminal error so every subsequent write for this run
+          // re-throws it: the run stops growing its un-shippable delta and fails
+          // loudly instead of silently churning. Stop the loop (leave `dirty`
+          // false) — re-running the push would only re-walk the same oversized
+          // range and re-throw.
+          if (cause instanceof WorkflowRunPackTooLargeError) {
+            logger.error`workflow-run pack push exceeded the size ceiling for deployment ${repoId.id} (${slot.agentAddress}); failing the run: ${cause.message}`;
+            slot.terminalError = cause;
+            break;
+          }
+          // A receiver `path_violation` is a deterministic content rejection
+          // (the hub's tree validator refused the pack); re-shipping the
+          // identical delta on the next event append or reconnect re-drive
+          // fails identically forever. Latch it terminal like the size
+          // ceiling so this slot stops generating doomed traffic for the
+          // process lifetime. The substring couples to the pack-transport
+          // reject message — see the pin-bump seam note in docs/VENDORED.md.
+          if (
+            cause instanceof Error &&
+            cause.message.includes("path_violation")
+          ) {
+            logger.error`workflow-run pack push permanently rejected for deployment ${repoId.id} (${slot.agentAddress}); latching terminal: ${cause.message}`;
+            slot.terminalError = cause;
+            break;
+          }
           const msg = cause instanceof Error ? cause.message : String(cause);
           logger.warn`workflow-run pack push failed for deployment ${repoId.id} (${slot.agentAddress}): ${msg}`;
           slot.lastError =
@@ -644,9 +753,12 @@ export function createWorkflowRunPackPushingRepoStore(
     if (slot === undefined) {
       slot = {
         agentAddress,
+        repoId,
+        ref,
         inFlight: null,
         dirty: false,
         lastError: null,
+        terminalError: null,
         settled: [],
       };
       slots.set(key, slot);
@@ -670,12 +782,65 @@ export function createWorkflowRunPackPushingRepoStore(
     return err;
   }
 
+  // WORKBENCH-LOCAL (CL-2340): read the sticky terminal error WITHOUT clearing
+  // it. A run whose delta tripped the size ceiling is unrecoverable, so every
+  // subsequent write must keep failing (bounding the un-shippable delta) rather
+  // than clearing the error and letting the run grow again.
+  function peekTerminalError(repoId: RepoId, ref: string): Error | null {
+    return slots.get(slotKey(repoId, ref))?.terminalError ?? null;
+  }
+
+  function markAddressUnroutable(agentAddress: string): void {
+    // The hub route for this address just dropped (WS disconnect). Block its
+    // pushes until the reconnect challenge re-routes it. A push already
+    // in-flight when the link dropped rejects through `packSender.cancelAll`
+    // and latches its error; the block stops the coalescing loop from
+    // immediately re-shipping on the fresh (not-yet-challenged) connection.
+    blockedAddresses.add(agentAddress);
+  }
+
+  function notifyAddressRoutable(agentAddress: string): void {
+    // The reconnect challenge re-routed this address on the hub. Clear the
+    // block and re-drive so a push the disconnect cancelled -- or one held
+    // while the block was up -- ships now. This is the liveness path a
+    // synchronous single-step run lacks: with all its events in one batch it
+    // has no later local write to re-arm the coalescing loop, so the drop
+    // would otherwise strand it forever.
+    blockedAddresses.delete(agentAddress);
+    for (const slot of slots.values()) {
+      if (slot.agentAddress !== agentAddress) continue;
+      // Re-drive a slot that has pending work (`dirty`, e.g. a push held at
+      // the block) OR whose last attempt failed (`lastError` latched by the
+      // disconnect-cancel). A slot that is clean and already acked
+      // (`!dirty && lastError === null`) has nothing un-shipped -- the
+      // `packClient.push` empty-delta guard would skip it anyway, but not
+      // re-arming it avoids a pointless loop spin. Re-arming `dirty` and
+      // restarting is safe against double-ship: `startLoop` no-ops when a
+      // push is already in flight, and the per-(repoId, ref) serialization in
+      // the hub-link's `pushWorkflowRunPack` prevents overlapping transfers.
+      // WORKBENCH-LOCAL (CL-2340): never re-drive a terminally-failed run (size
+      // ceiling). Retrying only re-walks the same oversized delta and re-throws;
+      // the run is already failed loudly.
+      if (slot.terminalError !== null) continue;
+      if (!slot.dirty && slot.lastError === null) continue;
+      slot.dirty = true;
+      startLoop(slot, slot.repoId, slot.ref);
+    }
+  }
+
   async function flushWorkflowRunPushes(
     repoId: RepoId,
     ref: string,
   ): Promise<void> {
     const slot = slots.get(slotKey(repoId, ref));
     if (slot === undefined) return;
+    // WORKBENCH-LOCAL (CL-2340): a terminally-failed run (size ceiling) surfaces
+    // its sticky error to any flush too, WITHOUT clearing it — the run stays
+    // failed. Checked before the drain wait: a terminal slot's loop has already
+    // stopped, so there is nothing to await.
+    if (slot.terminalError !== null) {
+      throw slot.terminalError;
+    }
     if (slot.inFlight === null && !slot.dirty) {
       if (slot.lastError !== null) {
         const err = slot.lastError;
@@ -687,6 +852,9 @@ export function createWorkflowRunPackPushingRepoStore(
     await new Promise<void>((resolve) => {
       slot.settled.push(resolve);
     });
+    if (slot.terminalError !== null) {
+      throw slot.terminalError;
+    }
     if (slot.lastError !== null) {
       const err = slot.lastError;
       slot.lastError = null;
@@ -699,14 +867,24 @@ export function createWorkflowRunPackPushingRepoStore(
     writeTree: underlying.writeTree.bind(underlying),
     receivePack: underlying.receivePack.bind(underlying),
     createPack: underlying.createPack.bind(underlying),
+    commitPackedTip: underlying.commitPackedTip.bind(underlying),
     resolveRef: underlying.resolveRef.bind(underlying),
     listRefs: underlying.listRefs.bind(underlying),
     resolveHead: underlying.resolveHead.bind(underlying),
     getRepoDir: underlying.getRepoDir.bind(underlying),
+    openCommittedReads: underlying.openCommittedReads.bind(underlying),
+    openCommittedReadsAtCommit:
+      underlying.openCommittedReadsAtCommit.bind(underlying),
     subscribe: underlying.subscribe.bind(underlying),
     flushWorkflowRunPushes,
+    notifyAddressRoutable,
+    markAddressUnroutable,
     async writeTreePreservingPrefix(principal, repoId, ref, args) {
       if (repoId.kind === "workflow-run") {
+        const terminal = peekTerminalError(repoId, ref);
+        if (terminal !== null) {
+          throw terminal;
+        }
         const latched = takeLatchedError(repoId, ref);
         if (latched !== null) {
           throw latched;
@@ -723,17 +901,35 @@ export function createWorkflowRunPackPushingRepoStore(
       }
       const agentAddress = registry.resolve(repoId.id);
       if (agentAddress === null) {
-        // WORKBENCH-LOCAL (CL-2400): the deploy wiring now records the mapping
-        // before spawn/deploy, so the routine deploy-ordering race this used to
-        // catch is gone. Reaching here is almost always a genuine invariant
-        // violation (a run-event commit for a deployment the router never
-        // registered) -- worth surfacing. The one expected case is a torn
-        // deploy: a crash-recovery replay push whose address resolves AFTER the
-        // failure unwind already unregistered the deployment; that is rare and
-        // the run is already being torn down. Log at error either way so a real
-        // violation reaches Sentry rather than being swallowed as the
-        // supervisor's best-effort warn upstream.
-        logger.error`workflow-run pack push: no agent address registered for deployment ${repoId.id}; run event dropped`;
+        throw new Error(
+          `workflow-run pack push: no agent address registered for deployment ${repoId.id}; the deploy router must record the mapping before the supervisor commits run events`,
+        );
+      }
+      schedulePush(agentAddress, repoId, ref);
+      return result;
+    },
+    async writeTreeDelta(principal, repoId, ref, args) {
+      if (repoId.kind === "workflow-run") {
+        const terminal = peekTerminalError(repoId, ref);
+        if (terminal !== null) {
+          throw terminal;
+        }
+        const latched = takeLatchedError(repoId, ref);
+        if (latched !== null) {
+          throw latched;
+        }
+      }
+      const result = await underlying.writeTreeDelta(
+        principal,
+        repoId,
+        ref,
+        args,
+      );
+      if (repoId.kind !== "workflow-run") {
+        return result;
+      }
+      const agentAddress = registry.resolve(repoId.id);
+      if (agentAddress === null) {
         throw new Error(
           `workflow-run pack push: no agent address registered for deployment ${repoId.id}; the deploy router must record the mapping before the supervisor commits run events`,
         );

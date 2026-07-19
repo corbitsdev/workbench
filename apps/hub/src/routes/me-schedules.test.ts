@@ -466,7 +466,7 @@ describe("POST /me/schedules", () => {
     expect(res.status).toBe(400);
   });
 
-  it("409s when the caller has no membership", async () => {
+  it("403s when the caller has no membership", async () => {
     createThrows = null;
     const res = await mountApp().fetch(
       req("/me/schedules", {
@@ -475,7 +475,7 @@ describe("POST /me/schedules", () => {
         body: JSON.stringify({ kind: "deck", hourUtc: 9 }),
       }),
     );
-    expect(res.status).toBe(409);
+    expect(res.status).toBe(403);
   });
 
   it("409s with a distinct message on a duplicate (tenant, owner, kind) schedule", async () => {

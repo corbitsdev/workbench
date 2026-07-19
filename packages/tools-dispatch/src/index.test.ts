@@ -137,7 +137,7 @@ function makeFakeDb(config: FakeDbConfig) {
 }
 
 type SessionServiceFake = {
-  launchSession: ReturnType<typeof mock>;
+  deployInstanceAtHead: ReturnType<typeof mock>;
   sendUserMessage: ReturnType<typeof mock>;
 };
 
@@ -145,7 +145,7 @@ function makeSessionService(
   overrides: Partial<SessionServiceFake> = {},
 ): SessionServiceFake {
   return {
-    launchSession: mock(async () => {}),
+    deployInstanceAtHead: mock(async () => ({ publicKey: "pk" })),
     sendUserMessage: mock(async () => {}),
     ...overrides,
   };
@@ -350,7 +350,7 @@ describe("launchAgentInstance — via handler", () => {
       tenantRow: { domain: "corp.test" },
     });
     const sessionService = makeSessionService({
-      launchSession: mock(async () => {
+      deployInstanceAtHead: mock(async () => {
         throw new Error("sidecar unavailable");
       }),
     });
@@ -406,9 +406,9 @@ describe("dispatch_agent handler — full success path", () => {
       "email",
     ]);
 
-    // launchSession received the resolved sources and defaulted to the first.
-    expect(sessionService.launchSession).toHaveBeenCalledTimes(1);
-    const launchArg = sessionService.launchSession.mock.calls[0]![0] as {
+    // deployInstanceAtHead received the resolved sources and defaulted to the first.
+    expect(sessionService.deployInstanceAtHead).toHaveBeenCalledTimes(1);
+    const launchArg = sessionService.deployInstanceAtHead.mock.calls[0]![0] as {
       config: {
         sources: { id: string }[];
         defaultSource: string;
@@ -486,8 +486,9 @@ describe("dispatch_agent handler — full success path", () => {
     });
     const controller = new AbortController();
     const sessionService = makeSessionService({
-      launchSession: mock(async () => {
+      deployInstanceAtHead: mock(async () => {
         controller.abort();
+        return { publicKey: "pk" };
       }),
     });
     const handler = getHandler(makeContext({ db, sessionService }));

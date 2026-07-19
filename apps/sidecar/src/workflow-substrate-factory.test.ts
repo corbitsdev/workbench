@@ -16,6 +16,7 @@ import type { Agent, AgentDefinition, BaseEnv } from "@intx/agent";
 // name — @intx/agent does not re-export ConversationTurn from its barrel.
 type SendTurn = Awaited<ReturnType<Agent["send"]>>["turn"];
 import { createDefaultDirectorRegistry } from "@intx/agent";
+import { evaluateGrants } from "@intx/authz";
 import { createBuiltinRegistry } from "@intx/inference/providers";
 import type { InferenceSource } from "@intx/types/runtime";
 import type { GrantEvaluator } from "@workbench/workflow-host";
@@ -29,6 +30,7 @@ import {
   createStepInferenceSourceResolver,
   createStepToolContextResolver,
   parseAdapterManifest,
+  parseStepInferenceSources,
 } from "./workflow-substrate-factory";
 import type { Principal, RepoId, RepoStore } from "@intx/hub-sessions";
 import {
@@ -46,38 +48,94 @@ const tmpDirs: string[] = [];
 const realFetch = globalThis.fetch;
 
 describe("createStepInferenceSourceResolver", () => {
-  const src = { provider: "openai-compatible", model: "m" } as InferenceSource;
-  const other = {
-    provider: "openai-compatible",
-    model: "n",
-  } as InferenceSource;
+  // Each step's pinned value is an ordered failover CHAIN (non-empty array),
+  // matching the `AgentDeployFrame` wire contract and the router's
+  // `JSON.stringify(spec.sources)`.
+  const chain = [
+    { provider: "openai-compatible", model: "m" },
+  ] as InferenceSource[];
+  const other = [
+    { provider: "openai-compatible", model: "n" },
+  ] as InferenceSource[];
+  const failoverChain = [
+    { provider: "openai-compatible", model: "primary" },
+    { provider: "openai-compatible", model: "backup" },
+  ] as InferenceSource[];
 
-  test("resolves a directly-pinned stepId", () => {
-    const resolve = createStepInferenceSourceResolver({ analyze: src });
-    expect(resolve("analyze")).toEqual(src);
+  test("resolves a directly-pinned stepId to its full chain", () => {
+    const resolve = createStepInferenceSourceResolver({ analyze: chain });
+    expect(resolve("analyze")).toEqual(chain);
   });
 
-  test("falls back a map-expanded stepId to its base step source", () => {
+  test("returns the whole failover chain, not just the head", () => {
+    const resolve = createStepInferenceSourceResolver({
+      analyze: failoverChain,
+    });
+    expect(resolve("analyze")).toEqual(failoverChain);
+    expect(resolve("analyze")).toHaveLength(2);
+  });
+
+  test("falls back a map-expanded stepId to its base step chain", () => {
     // `map` fans out `generate` into `generate[0]`, `generate[1]`, … at run
     // time; those dynamic ids are not in the statically-pinned table, so they
-    // must resolve to the base step's pinned source.
-    const resolve = createStepInferenceSourceResolver({ generate: src });
-    expect(resolve("generate[0]")).toEqual(src);
-    expect(resolve("generate[12]")).toEqual(src);
+    // must resolve to the base step's pinned chain.
+    const resolve = createStepInferenceSourceResolver({ generate: chain });
+    expect(resolve("generate[0]")).toEqual(chain);
+    expect(resolve("generate[12]")).toEqual(chain);
   });
 
   test("prefers a direct pin over the base fallback", () => {
     const resolve = createStepInferenceSourceResolver({
       generate: other,
-      "generate[0]": src,
+      "generate[0]": chain,
     });
-    expect(resolve("generate[0]")).toEqual(src);
+    expect(resolve("generate[0]")).toEqual(chain);
   });
 
   test("throws when neither the stepId nor its base is pinned", () => {
-    const resolve = createStepInferenceSourceResolver({ analyze: src });
+    const resolve = createStepInferenceSourceResolver({ analyze: chain });
     expect(() => resolve("generate[0]")).toThrow(/no InferenceSource pinned/);
     expect(() => resolve("missing")).toThrow(/no InferenceSource pinned/);
+  });
+});
+
+describe("parseStepInferenceSources", () => {
+  // The wire/router shape is `Record<stepId, InferenceSource[]>`: the deploy
+  // router serializes `spec.sources` (arrays) into STEP_INFERENCE_SOURCES.
+  // This is the exact payload the workflow-child crashed on when the parser
+  // was mistyped to a single `InferenceSource`.
+  const wireSource = {
+    id: "src-emit",
+    provider: "openai-compatible",
+    baseURL: "https://example.invalid",
+    apiKey: "sk-test",
+    model: "test-model",
+  };
+
+  test("accepts the router's array-shaped payload (regression)", () => {
+    const payload = JSON.stringify({
+      emit: [wireSource],
+      scrape: [wireSource],
+    });
+    const parsed = parseStepInferenceSources(payload);
+    expect(parsed.emit).toEqual([wireSource]);
+    expect(parsed.scrape).toEqual([wireSource]);
+  });
+
+  test("rejects a single-object (non-array) source shape", () => {
+    // A bare object per step is the mis-shape that silently broke every
+    // multi-step child spawn: the parser must demand the array contract.
+    const payload = JSON.stringify({ emit: wireSource });
+    expect(() => parseStepInferenceSources(payload)).toThrow(
+      /STEP_INFERENCE_SOURCES failed validation/,
+    );
+  });
+
+  test("rejects an empty chain for a step", () => {
+    const payload = JSON.stringify({ emit: [] });
+    expect(() => parseStepInferenceSources(payload)).toThrow(
+      /STEP_INFERENCE_SOURCES failed validation/,
+    );
   });
 });
 
@@ -88,20 +146,12 @@ afterAll(async () => {
   );
 });
 
-// Empty hub manifest + no credentials: the step loads only its local posix
-// tools, enough to dispatch `write_file` through the deterministic branch.
+// No credentials: the step loads only its local posix tools, enough to
+// dispatch `write_file` through the deterministic branch. Tool resolution is
+// on-disk now, so the sidecar makes no manifest fetch.
 function stubHubFetch(): void {
   globalThis.fetch = (async (input: string | URL | Request) => {
     const url = String(input);
-    if (url.includes("/api/internal/tools/manifest")) {
-      return new Response(
-        JSON.stringify({
-          manifest: { schemaVersion: "1", topLevel: [], entries: [] },
-          tarballs: [],
-        }),
-        { headers: { "content-type": "application/json" } },
-      );
-    }
     if (url.includes("/api/internal/tools/credentials")) {
       return new Response(JSON.stringify({ credentials: {} }), {
         headers: { "content-type": "application/json" },
@@ -182,7 +232,7 @@ describe("createSidecarStepInvoker", () => {
     } as unknown as Agent;
 
     const invoke = createSidecarStepInvoker({
-      table: { [STEP_ID]: SOURCE },
+      table: { [STEP_ID]: [SOURCE] },
       dataDir,
       signer: async () => "test-signature",
       directors: createDefaultDirectorRegistry(),
@@ -227,7 +277,7 @@ describe("createSidecarStepInvoker", () => {
 
     const directors = createDefaultDirectorRegistry();
     const invoke = createSidecarStepInvoker({
-      table: { [STEP_ID]: SOURCE },
+      table: { [STEP_ID]: [SOURCE] },
       dataDir,
       signer: async () => "sig",
       directors,
@@ -253,13 +303,86 @@ describe("createSidecarStepInvoker", () => {
     expect(env.workdir).toContain(STEP_ID);
     // storage + audit are the same per-step isogit store (mirrors default-harness).
     expect(env.audit).toBe(env.storage as unknown as typeof env.audit);
+    // Cold multi-step path: no summarize compactor registered (CL-3806).
+    expect(
+      (env as BaseEnv & { compactors?: Record<string, unknown> }).compactors,
+    ).toBeUndefined();
+  });
+
+  test("warm durable-conversation path registers the summarize compactor (CL-3806)", async () => {
+    const dataDir = await makeDataDir();
+    const repoDir = await makeDataDir();
+    const repoId: RepoId = { kind: "workflow-run", id: "wfr_compactor_test" };
+    const principal: Principal = {
+      kind: "workflow-process",
+      deploymentId: "ses_compactor_test",
+    } as unknown as Principal;
+    const substrate = createOnDiskSubstrate(repoDir);
+
+    const durableStore = await createDurableConversationStore({
+      localStoreDir: path.join(dataDir, "compactor-store"),
+      signer: async () => "sig",
+      substrate,
+      workflowRunRepoId: repoId,
+      workflowRunRef: "refs/heads/main",
+      principal,
+      agentKey: STEP_ID,
+    });
+    const durableConversation: DurableConversationRegistry = {
+      get: () => durableStore,
+      acquire: async () => durableStore,
+    };
+
+    let capturedEnv: BaseEnv | undefined;
+    const stubAgent: Agent = {
+      send: async () => ({
+        reply: "ok",
+        turn: { role: "assistant", content: "ok" } as unknown as SendTurn,
+      }),
+      stream: () => ({
+        [Symbol.asyncIterator]: () => ({
+          next: () => Promise.resolve({ value: undefined, done: true }),
+        }),
+      }),
+      deliver: () => {},
+      close: async () => {},
+      setSource: () => {},
+      setSources: () => {},
+    } as unknown as Agent;
+
+    const invoke = createSidecarStepInvoker({
+      table: { [STEP_ID]: [SOURCE] },
+      dataDir,
+      workflowRunRepoId: repoId,
+      signer: async () => "sig",
+      directors: createDefaultDirectorRegistry(),
+      adapters: createBuiltinRegistry(),
+      evaluateGrants: allowAll,
+      durableConversation,
+      agentFactory: async (_def, env) => {
+        capturedEnv = env;
+        return stubAgent;
+      },
+    });
+
+    await invoke(makeRequest());
+
+    expect(capturedEnv).toBeDefined();
+    const compactors = (
+      capturedEnv as BaseEnv & {
+        compactors?: Record<string, { name?: string }>;
+      }
+    ).compactors;
+    expect(compactors).toBeDefined();
+    expect(compactors?.summarize).toBeDefined();
+    expect(compactors?.summarize?.name).toBe("summarize");
   });
 
   test("rejects a step request missing runId before building an agent", async () => {
     const dataDir = await makeDataDir();
     let factoryCalled = false;
     const invoke = createSidecarStepInvoker({
-      table: { [STEP_ID]: SOURCE },
+      table: { [STEP_ID]: [SOURCE] },
       dataDir,
       signer: async () => "sig",
       directors: createDefaultDirectorRegistry(),
@@ -286,7 +409,7 @@ describe("createSidecarStepInvoker", () => {
     const dataDir = await makeDataDir();
     let factoryCalled = false;
     const invoke = createSidecarStepInvoker({
-      table: { [STEP_ID]: SOURCE },
+      table: { [STEP_ID]: [SOURCE] },
       dataDir,
       signer: async () => "sig",
       directors: createDefaultDirectorRegistry(),
@@ -341,7 +464,7 @@ describe("createSidecarStepInvoker", () => {
       setSources: () => {},
     } as unknown as Agent;
     const invoke = createSidecarStepInvoker({
-      table: { [STEP_ID]: SOURCE },
+      table: { [STEP_ID]: [SOURCE] },
       dataDir,
       signer: async () => "sig",
       directors: createDefaultDirectorRegistry(),
@@ -379,13 +502,16 @@ describe("createSidecarStepInvoker", () => {
         stepAddress: `ins_dep-${stepId}`,
         principalId: `ins_dep-${stepId}`,
         grants: [],
+        // No deploy/ subtree under dataDir → empty on-disk manifest → local
+        // (posix) tools only, which is what the deterministic dispatch needs.
+        deployTreeDir: dataDir,
         cacheRoot: path.join(dataDir, "cache"),
         cacheMaxBytes: 1024 * 1024,
         registryMaxTarballBytes: 1024 * 1024,
       };
     };
     const invoke = createSidecarStepInvoker({
-      table: { [STEP_ID]: SOURCE },
+      table: { [STEP_ID]: [SOURCE] },
       dataDir,
       signer: async () => "sig",
       directors: createDefaultDirectorRegistry(),
@@ -475,7 +601,7 @@ describe("createSidecarStepInvoker", () => {
 
     // No resolveStepToolContext wired — exactly the production inline path.
     const invoke = createSidecarStepInvoker({
-      table: { [STEP_ID]: SOURCE },
+      table: { [STEP_ID]: [SOURCE] },
       dataDir,
       signer: async () => "sig",
       directors: createDefaultDirectorRegistry(),
@@ -550,7 +676,7 @@ describe("createSidecarStepInvoker", () => {
     } as unknown as Agent;
 
     const invoke = createSidecarStepInvoker({
-      table: { [STEP_ID]: SOURCE },
+      table: { [STEP_ID]: [SOURCE] },
       dataDir,
       signer: async () => "sig",
       directors: createDefaultDirectorRegistry(),
@@ -615,7 +741,7 @@ describe("createSidecarStepInvoker", () => {
     } as unknown as Agent;
 
     const invoke = createSidecarStepInvoker({
-      table: { [STEP_ID]: SOURCE },
+      table: { [STEP_ID]: [SOURCE] },
       dataDir,
       signer: async () => "sig",
       directors: createDefaultDirectorRegistry(),
@@ -676,7 +802,7 @@ describe("createSidecarStepInvoker", () => {
     } as unknown as Agent;
 
     const invoke = createSidecarStepInvoker({
-      table: { [STEP_ID]: SOURCE },
+      table: { [STEP_ID]: [SOURCE] },
       dataDir,
       signer: async () => "sig",
       directors: createDefaultDirectorRegistry(),
@@ -781,7 +907,7 @@ describe("createSidecarStepInvoker", () => {
     };
 
     const invoke = createSidecarStepInvoker({
-      table: { [STEP_ID]: SOURCE },
+      table: { [STEP_ID]: [SOURCE] },
       dataDir,
       signer: async () => "sig",
       directors: createDefaultDirectorRegistry(),
@@ -836,12 +962,19 @@ describe("createStepToolContextResolver", () => {
     const dataDir = await makeDataDir();
     const resolve = createStepToolContextResolver({
       bareStore: makeStubBareStore(dataDir),
+      dataDir,
+      mailboxAddress: "ins_dep@tenant.example",
+      stepCount: 2,
       // RAW hub deploymentId (`ses_<id>`), the value the deploy router
       // threads via WORKFLOW_RAW_DEPLOYMENT_ID.
       deploymentId: "ses_218f6ab782774a3e70b5d86f01e602d8",
       tenantId: "ten_1",
       hubHttpUrl: "http://hub.invalid",
       sidecarToken: "tok",
+      // Single-agent identity is ignored on the multi-step (stepCount > 1)
+      // branch these tests exercise; supplied to satisfy the required args.
+      singleAgentId: "agt_ignored",
+      singleAgentPrincipalId: "prn_ignored",
       cacheRoot: path.join(dataDir, "cache"),
       cacheMaxBytes: 1024 * 1024,
       registryMaxTarballBytes: 1024 * 1024,
@@ -865,10 +998,17 @@ describe("createStepToolContextResolver", () => {
     const dataDir = await makeDataDir();
     const resolve = createStepToolContextResolver({
       bareStore: makeStubBareStore(dataDir),
+      dataDir,
+      mailboxAddress: "ins_dep@tenant.example",
+      stepCount: 2,
       deploymentId: "ses_218f6ab782774a3e70b5d86f01e602d8",
       tenantId: "ten_1",
       hubHttpUrl: "http://hub.invalid",
       sidecarToken: "tok",
+      // Single-agent identity is ignored on the multi-step (stepCount > 1)
+      // branch these tests exercise; supplied to satisfy the required args.
+      singleAgentId: "agt_ignored",
+      singleAgentPrincipalId: "prn_ignored",
       cacheRoot: path.join(dataDir, "cache"),
       cacheMaxBytes: 1024 * 1024,
       registryMaxTarballBytes: 1024 * 1024,
@@ -889,10 +1029,17 @@ describe("createStepToolContextResolver", () => {
     // the double-prefixed, dot-slugged id the hub never registered.
     const resolve = createStepToolContextResolver({
       bareStore: makeStubBareStore(dataDir),
+      dataDir,
+      mailboxAddress: "ins_dep@tenant.example",
+      stepCount: 2,
       deploymentId: "ins_ses_abc-abklabs-com",
       tenantId: "ten_1",
       hubHttpUrl: "http://hub.invalid",
       sidecarToken: "tok",
+      // Single-agent identity is ignored on the multi-step (stepCount > 1)
+      // branch these tests exercise; supplied to satisfy the required args.
+      singleAgentId: "agt_ignored",
+      singleAgentPrincipalId: "prn_ignored",
       cacheRoot: path.join(dataDir, "cache"),
       cacheMaxBytes: 1024 * 1024,
       registryMaxTarballBytes: 1024 * 1024,
@@ -902,6 +1049,171 @@ describe("createStepToolContextResolver", () => {
 
     expect(ctx.stepAgentId).toBe("ins_ins_ses_abc-abklabs-com-intake");
     expect(ctx.stepAgentId).not.toBe("ins_ses_abc-intake");
+  });
+
+  // A recording bare store: captures every `getRepoDir(repoId)` and points the
+  // grants read at a single on-disk dir where the test stages `state/grants.json`.
+  function makeRecordingBareStore(dir: string): {
+    store: RepoStore;
+    calls: RepoId[];
+  } {
+    const calls: RepoId[] = [];
+    const store = {
+      getRepoDir: (repoId: RepoId) => {
+        calls.push(repoId);
+        return dir;
+      },
+    } as unknown as RepoStore;
+    return { store, calls };
+  }
+
+  test("single-agent (stepCount === 1) keys the credential + hub-backed rails on the REAL agent id + instance principal and reads the LEGACY grants repo, not ins_<raw>-default", async () => {
+    // A single launched agent (Myra/Oat) is deployed via `deployInstanceAtHead`:
+    // NO `ins_<raw>-<step>` hub row, and its grants live in the legacy
+    // agent-state repo keyed by the instance id (`parseAgentId(address)`). The
+    // pre-fix resolver derived `ins_<raw>-default` for both the credential
+    // agentId and the grants repo, matching NOTHING the hub wrote — tool
+    // credentials 404, hub-backed tools 403, grants deny-all.
+    const grantsDir = await makeDataDir();
+    // Stage a real granted native tool in the LEGACY repo working tree.
+    await fs.mkdir(path.join(grantsDir, "state"), { recursive: true });
+    const grantRule = {
+      id: "gr_1",
+      resource: "tool:granola_list_documents",
+      action: "invoke",
+      effect: "allow" as const,
+      origin: "system" as const,
+      conditions: null,
+      expiresAt: null,
+    };
+    await fs.writeFile(
+      path.join(grantsDir, "state", "grants.json"),
+      JSON.stringify({ grants: [grantRule] }),
+    );
+
+    const { store, calls } = makeRecordingBareStore(grantsDir);
+    const dataDir = await makeDataDir();
+    const resolve = createStepToolContextResolver({
+      bareStore: store,
+      dataDir,
+      // The deployment's REAL (legacy) mail address; its instance id is the
+      // legacy agent-state repo key.
+      mailboxAddress: "ins_hex7f@abklabs.com",
+      stepCount: 1,
+      // RAW hub deploymentId (`deriveRawDeploymentId(ins_hex7f)` === `hex7f`).
+      // The pre-fix resolver would have keyed everything off this.
+      deploymentId: "hex7f",
+      tenantId: "ten_1",
+      hubHttpUrl: "http://hub.invalid",
+      sidecarToken: "tok",
+      // The identity the hub actually has for the single agent.
+      singleAgentId: "agt_myra",
+      singleAgentPrincipalId: "prn_instance_1",
+      cacheRoot: path.join(dataDir, "cache"),
+      cacheMaxBytes: 1024 * 1024,
+      registryMaxTarballBytes: 1024 * 1024,
+    });
+
+    const ctx = await resolve(makeReq("default"));
+
+    // Credential rail (`agentId`) + hub-backed rail (`agentId` + `principalId`)
+    // use the identity the hub wrote, NOT the synthetic step id.
+    expect(ctx.stepAgentId).toBe("agt_myra");
+    expect(ctx.principalId).toBe("prn_instance_1");
+    expect(ctx.stepAgentId).not.toBe("ins_hex7f-default");
+    expect(ctx.principalId).not.toBe("ins_hex7f-default");
+
+    // Grants were read from the LEGACY agent-state repo keyed by the instance
+    // id — the same repo `writeStepGrants` + the single-agent `deriveStepRepoId`
+    // wrote them to — NOT `hex7f-default`.
+    expect(calls).toContainEqual({ kind: "agent-state", id: "ins_hex7f" });
+    for (const call of calls) {
+      expect(call.id).not.toBe("hex7f-default");
+    }
+
+    // The granted native tool resolves as ALLOW (authorized, not deny-all).
+    expect(ctx.grants).toHaveLength(1);
+    const decision = await evaluateGrants(
+      ctx.grants,
+      "tool:granola_list_documents",
+      "invoke",
+    );
+    expect(decision.effect).toBe("allow");
+  });
+
+  test("a single-STEP workflow (stepCount === 1, agentId === instance id) keeps the derived ins_<raw>-<step> step identity, NOT the empty supervisor identity", async () => {
+    // A single-step workflow definition (`stepOrder.length === 1`) is NOT a
+    // launched agent: it deploys via `deploySingleStepAtHead`, whose frame
+    // `agentId` is `deriveDeploymentAgentId(deploymentId)` === the mailbox
+    // address's instance id (`ins_dep`), backed by the EMPTY supervisor `agent`
+    // row (`writeDeploymentAgentRow`: toolPackages [], capabilities null). Its
+    // REAL step tools + grants live at `ins_<raw>-<stepId>` / `<raw>-<stepId>`
+    // (`writeStepAgentRows` / `writeStepGrantFiles`). Gating the single-agent
+    // branch on raw `stepCount === 1` (the pre-fix bug) keyed the credential +
+    // hub-backed rails on the supervisor identity — 0 tool packages, deny-all
+    // grants. Provenance (`singleAgentId === instanceId`) routes it to the
+    // step-identity else branch instead.
+    const grantsDir = await makeDataDir();
+    await fs.mkdir(path.join(grantsDir, "state"), { recursive: true });
+    const grantRule = {
+      id: "gr_step",
+      resource: "tool:granola_list_documents",
+      action: "invoke",
+      effect: "allow" as const,
+      origin: "system" as const,
+      conditions: null,
+      expiresAt: null,
+    };
+    await fs.writeFile(
+      path.join(grantsDir, "state", "grants.json"),
+      JSON.stringify({ grants: [grantRule] }),
+    );
+
+    const { store, calls } = makeRecordingBareStore(grantsDir);
+    const dataDir = await makeDataDir();
+    const resolve = createStepToolContextResolver({
+      bareStore: store,
+      dataDir,
+      mailboxAddress: "ins_dep@abklabs.com",
+      // A one-step workflow: physically head-collapsed on disk, so stepCount is 1.
+      stepCount: 1,
+      // RAW hub deploymentId (`deriveRawDeploymentId(ins_dep)` === `dep`).
+      deploymentId: "dep",
+      tenantId: "ten_1",
+      hubHttpUrl: "http://hub.invalid",
+      sidecarToken: "tok",
+      // The single-step workflow frame's agentId is the SUPERVISOR id, equal to
+      // the mailbox instance id — the signal that this is NOT a launched agent.
+      singleAgentId: "ins_dep",
+      singleAgentPrincipalId: "ins_dep",
+      cacheRoot: path.join(dataDir, "cache"),
+      cacheMaxBytes: 1024 * 1024,
+      registryMaxTarballBytes: 1024 * 1024,
+    });
+
+    const ctx = await resolve(makeReq("compare"));
+
+    // Identity is the hub-written step identity, NOT the empty supervisor id.
+    expect(ctx.stepAgentId).toBe("ins_dep-compare");
+    expect(ctx.principalId).toBe("ins_dep-compare");
+    expect(ctx.stepAgentId).not.toBe("ins_dep");
+    expect(ctx.principalId).not.toBe("ins_dep");
+
+    // Grants read from the per-step repo `<raw>-<stepId>`, NOT the supervisor's
+    // legacy `ins_dep` agent-state repo.
+    expect(calls).toContainEqual({ kind: "agent-state", id: "dep-compare" });
+    for (const call of calls) {
+      expect(call.id).not.toBe("ins_dep");
+    }
+
+    // The granted step tool resolves ALLOW: its grants were actually read.
+    expect(ctx.grants).toHaveLength(1);
+    const decision = await evaluateGrants(
+      ctx.grants,
+      "tool:granola_list_documents",
+      "invoke",
+    );
+    expect(decision.effect).toBe("allow");
   });
 });
 
@@ -946,7 +1258,7 @@ describe("warm-keep single-step durability", () => {
     const mirroredKeys: string[] = [];
 
     const invoke = createSidecarStepInvoker({
-      table: { [STEP_ID]: SOURCE },
+      table: { [STEP_ID]: [SOURCE] },
       dataDir,
       signer: async () => "sig",
       directors: createDefaultDirectorRegistry(),
@@ -989,7 +1301,7 @@ describe("warm-keep single-step durability", () => {
     let buildCount = 0;
     let closeCount = 0;
     const invoke = createSidecarStepInvoker({
-      table: { [STEP_ID]: SOURCE },
+      table: { [STEP_ID]: [SOURCE] },
       dataDir,
       signer: async () => "sig",
       directors: createDefaultDirectorRegistry(),
@@ -1054,7 +1366,7 @@ describe("supervisor-backed outbound transport wiring", () => {
     } as unknown as Agent;
 
     const invoke = createSidecarStepInvoker({
-      table: { [STEP_ID]: SOURCE },
+      table: { [STEP_ID]: [SOURCE] },
       dataDir,
       signer: async () => "sig",
       directors: createDefaultDirectorRegistry(),
@@ -1116,7 +1428,7 @@ describe("supervisor-backed outbound transport wiring", () => {
     } as unknown as Agent;
 
     const invoke = createSidecarStepInvoker({
-      table: { [STEP_ID]: SOURCE },
+      table: { [STEP_ID]: [SOURCE] },
       dataDir,
       signer: async () => "sig",
       directors: createDefaultDirectorRegistry(),
@@ -1272,6 +1584,8 @@ describe("live durable-conversation seam on a single-step (warmKeep) deploy", ()
         stepAddress: `ins_dep-${stepId}`,
         principalId: `ins_dep-${stepId}`,
         grants: [],
+        // No deploy/ subtree under dataDir → empty on-disk manifest.
+        deployTreeDir: dataDir,
         cacheRoot: path.join(dataDir, "cache"),
         cacheMaxBytes: 1024 * 1024,
         registryMaxTarballBytes: 1024 * 1024,
@@ -1279,7 +1593,7 @@ describe("live durable-conversation seam on a single-step (warmKeep) deploy", ()
     };
 
     const invoke = createSidecarStepInvoker({
-      table: { [STEP_ID]: SOURCE },
+      table: { [STEP_ID]: [SOURCE] },
       dataDir,
       workflowRunRepoId: repoId,
       signer: async () => "sig",

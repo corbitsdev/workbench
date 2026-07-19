@@ -2,8 +2,8 @@
 //
 // Domain shapes (Artifact, ArtifactWithSession, ArtifactVersion, etc.) are
 // owned by @workbench/shared and re-exported here so consumers can pull both
-// the data model and its UI from one package. Presentation types (VizKind,
-// ArtifactVisual, GalleryArtifact) live here because they describe how the
+// the data model and its UI from one package. Presentation types
+// (ArtifactVisual, GalleryArtifact) live here because they describe how the
 // package renders artifacts, not how they are stored.
 
 import { type } from "arktype";
@@ -19,22 +19,8 @@ export type {
   ArtifactSource,
 } from "@workbench/shared";
 
-// VizKind is a presentation-internal union used only within this package to
-// index tile visuals. It is not serialized across any API boundary, so it
-// stays as a plain type alias.
-export type VizKind =
-  | "bars"
-  | "donut"
-  | "grid"
-  | "lines"
-  | "nodes"
-  | "heat"
-  | "deck"
-  | "cal";
-
 export const ArtifactVisualSchema = type({
   label: "string",
-  viz: "'bars'|'donut'|'grid'|'lines'|'nodes'|'heat'|'deck'|'cal'",
   fill: "string",
   span: "string",
   "experimentalFill?": "string",
@@ -61,6 +47,12 @@ export const GalleryArtifactSchema = ArtifactVisualSchema.and({
   "previewExcerpt?": "string",
   "thumbnailUrl?": "string",
   "thumbnailAlt?": "string",
+  /**
+   * Uppercase initials for the artifact's creator, present only when the
+   * creator is known AND is not the viewing user. Undefined on the viewer's
+   * own artifacts, and when the creator is unknown.
+   */
+  "creatorInitials?": "string",
 });
 
 export type GalleryArtifact = typeof GalleryArtifactSchema.infer;

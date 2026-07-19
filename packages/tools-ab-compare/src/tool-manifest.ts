@@ -1,4 +1,8 @@
-import { manifestFromHubToolEntries } from "@workbench/tool-manifest";
+import {
+  hubToolEntriesFromDefinitions,
+  manifestFromHubToolEntries,
+} from "@workbench/tool-manifest";
+import { AB_COMPARE_TOOL_DEFINITIONS } from "./tools";
 
 export const toolManifestFile = {
   factories: [
@@ -6,14 +10,7 @@ export const toolManifestFile = {
       factoryId: "@workbench/tools-ab-compare/compose",
       packageName: "@workbench/tools-ab-compare",
       providerName: null,
-      entries: {
-        ab_preset_quorum: {
-          sideEffect: "read",
-        },
-        ab_preset_compose: {
-          sideEffect: "read",
-        },
-      },
+      entries: hubToolEntriesFromDefinitions(AB_COMPARE_TOOL_DEFINITIONS),
       myraCatalog: null,
       credentialCatalog: null,
     }),

@@ -545,16 +545,15 @@ async function boot(opts: { prefix: string }): Promise<
     subprocessSpawner: spawner,
     binaryPath: "/fake/bin/workflow-child",
     substrateEnv: { DATA_DIR: baseDir },
+    dynamicSpawnEnv: () => ({}),
     workflowRunRepoId,
     workflowRunRef: "refs/heads/main",
     deploymentId: "deployment-x",
+    stepCount: 1,
     deploymentMailAddress,
     readPrincipal: { kind: "supervisor" },
     deriveStepAddress: ({ deploymentId, stepId }) =>
       `${deploymentId}-${stepId}@example.com`,
-    trivialLaunch: () => {
-      throw new Error("trivialLaunch must not run in this test");
-    },
     ipcKeyPairFactory: () => Promise.resolve(supervisorIpcKeyPair),
     inboxPrimitives: gatedInbox.primitives,
   };

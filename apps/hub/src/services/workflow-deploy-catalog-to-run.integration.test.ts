@@ -7,11 +7,7 @@ import { deriveDeploymentAddress } from "@intx/workflow-deploy";
 import { defineWorkflow } from "@intx/workflow";
 import type { WorkflowDefinition } from "@intx/workflow";
 import type { HarnessConfig, InferenceSource } from "@intx/types/runtime";
-import type {
-  AgentRepoStore,
-  SessionService,
-  SidecarRouter,
-} from "@intx/hub-sessions";
+import type { AgentRepoStore, SidecarRouter } from "@intx/hub-sessions";
 import type { HubDb } from "../db";
 import {
   createWorkbenchDirectorRegistry,
@@ -127,10 +123,6 @@ describe("catalog publish (disconnected) then per-run provision", () => {
       }),
     } as unknown as HubDb;
 
-    const sessionService = {
-      launchSession: async () => undefined,
-    } as unknown as SessionService;
-
     // Sidecar starts disconnected: any frame send throws until flipped.
     let sidecarConnected = false;
     const deployedAddresses: string[] = [];
@@ -147,8 +139,11 @@ describe("catalog publish (disconnected) then per-run provision", () => {
       db,
       repoStore,
       sidecarRouter,
-      sessionService,
       directorRegistry: createWorkbenchDirectorRegistry(),
+      // This service both publishes the catalog AND provisions a run;
+      // provisioning REQUIRES a stager (FIX 2b), so inject an explicit no-op
+      // rather than relying on a silent fallback.
+      stageWorkflowStep: () => Promise.resolve(),
     });
 
     try {

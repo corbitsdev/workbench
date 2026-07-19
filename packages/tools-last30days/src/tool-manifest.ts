@@ -31,6 +31,12 @@ export const toolManifestFile = {
         heartbeat_merge_brief_sources: {
           sideEffect: "read",
         },
+        heartbeat_format_brief_mail_refs: {
+          sideEffect: "read",
+        },
+        heartbeat_format_brief_title: {
+          sideEffect: "read",
+        },
       },
       myraCatalog: null,
       credentialCatalog: null,

@@ -23,10 +23,12 @@ function useActiveThreadId(): string | null {
 function ThreadRow({
   thread,
   active,
+  threads,
   onOpen,
 }: {
   thread: MyraThread;
   active: boolean;
+  threads: MyraThread[];
   onOpen: (thread: MyraThread) => void;
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
@@ -35,8 +37,6 @@ function ThreadRow({
   const rename = useRenameMyraThread();
   const remove = useDeleteMyraThread();
   const navigate = useNavigate();
-  const threads =
-    useMyraThreads({ limit: SIDEBAR_THREAD_LIMIT }).data?.threads ?? [];
 
   const commitRename = () => {
     const label = draft.trim();
@@ -201,6 +201,7 @@ export function ThreadList() {
           key={thread.id}
           thread={thread}
           active={thread.id === activeThreadId}
+          threads={data?.threads ?? []}
           onOpen={openThread}
         />
       ))}

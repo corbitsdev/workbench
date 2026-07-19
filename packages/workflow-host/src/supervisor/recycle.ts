@@ -83,7 +83,6 @@
 import { getLogger } from "@intx/log";
 
 import { generateKeyPair } from "@intx/crypto";
-import { hexEncode } from "@intx/types";
 
 import {
   createControlChannelSender,
@@ -101,6 +100,15 @@ import {
   type CredentialsSnapshot,
 } from "./credentials";
 import type { SubprocessHandle, WorkflowSupervisorBindings } from "./types";
+import { buildChildSpawnEnv } from "./spawn-env";
+import {
+  DEFAULT_KILL_TIMEOUT_MS,
+  DEFAULT_READY_TIMEOUT_MS,
+  defaultClearTimer,
+  defaultSetTimer,
+  killChildHandle,
+  waitDeadline,
+} from "./child-termination";
 
 const logger = getLogger(["workflow-host", "supervisor", "recycle"]);
 
@@ -111,13 +119,6 @@ const logger = getLogger(["workflow-host", "supervisor", "recycle"]);
  * stuck partway through. Either case is one the operator must see.
  */
 export const MAX_BUFFERED_MAIL = 256;
-
-/**
- * Default kill-timeout between SIGTERM and SIGKILL during step 2.
- * Operator-overridable per deployment via the supervisor's recycle
- * bindings; this is the value used when no override is supplied.
- */
-export const DEFAULT_KILL_TIMEOUT_MS = 5_000;
 
 /**
  * Default supervisor-policy check interval. The policy thread wakes
@@ -232,6 +233,14 @@ export interface RecycleContext {
    */
   readonly killTimeoutMs?: number;
   /**
+   * Deadline (ms) for the respawned child's `ready` handshake, matching
+   * the bound the spawn path applies. The supervisor resolves the
+   * effective value at its edge (`bindings.readyTimeoutMs ??
+   * DEFAULT_READY_TIMEOUT_MS`) and passes it through; the `??` fallback
+   * here only fires for a direct test caller.
+   */
+  readonly readyTimeoutMs?: number;
+  /**
    * Optional drain deadline (ms) used in step 1. The supervisor's own
    * drainTimeout accumulator escalates separately; this deadline is
    * the wait the recycle path itself observes before proceeding to
@@ -304,7 +313,11 @@ export async function triggerRecycle(
   // `killTimeoutMs`, the handle's hard kill lands. The injected
   // spawner's `SubprocessHandle.kill()` is the surface the recycle
   // path touches; the spawner owns the Node primitives.
-  await killChildHandle(ctx.current.handle, killTimeoutMs, ctx);
+  await killChildHandle(ctx.current.handle, killTimeoutMs, {
+    logger,
+    ...(ctx.setTimer !== undefined ? { setTimer: ctx.setTimer } : {}),
+    ...(ctx.clearTimer !== undefined ? { clearTimer: ctx.clearTimer } : {}),
+  });
 
   // Step 3: respawn. Fresh channelId, fresh HMAC key, fresh Ed25519
   // IPC keypair. Per-step credentials are re-read so a grants update
@@ -316,16 +329,18 @@ export async function triggerRecycle(
   const ipcKeypair = await (
     ctx.bindings.ipcKeyPairFactory ?? generateKeyPair
   )();
-  const env: Record<string, string> = {
-    ...ctx.bindings.substrateEnv,
-    IPC_CHANNEL_ID: channelId,
-    IPC_HMAC_KEY: hexEncode(hmacKey),
-    HOST_PUBKEY: hexEncode(ipcKeypair.publicKey),
-    DEPLOYMENT_ID: ctx.bindings.deploymentId,
-    DEFINITION_HASH: ctx.definitionHash,
-    MAILBOX_ADDRESS: ctx.bindings.deploymentMailAddress,
-    WARM_KEEP: ctx.warmKeep ? "true" : "false",
-  };
+  const env = buildChildSpawnEnv({
+    substrateEnv: ctx.bindings.substrateEnv,
+    dynamicSpawnEnv: ctx.bindings.dynamicSpawnEnv,
+    channelId,
+    hmacKey,
+    hostPublicKey: ipcKeypair.publicKey,
+    deploymentId: ctx.bindings.deploymentId,
+    deploymentMailAddress: ctx.bindings.deploymentMailAddress,
+    stepCount: ctx.bindings.stepCount,
+    definitionHash: ctx.definitionHash,
+    warmKeep: ctx.warmKeep,
+  });
 
   const handle = ctx.bindings.subprocessSpawner({
     binaryPath: ctx.bindings.binaryPath,
@@ -346,6 +361,14 @@ export async function triggerRecycle(
   });
 
   const readyPromise = waitForReady(controlIncoming);
+  // Attach a benign handler at creation, before the fold below consumes
+  // the rejection: `readyPromise` is created here but not raced until
+  // after `assembleCredentialsSnapshot` awaits. A child that exits during
+  // that window rejects `readyPromise` with no handler yet attached -- an
+  // unhandled rejection across the await boundary. Mirrors the spawn
+  // path's identical guard. Attaching `.catch` here and `.then` at the
+  // race is fine; both observe the same settled value.
+  void readyPromise.catch(() => undefined);
 
   const eventIter = receiveEventChannel({
     hmacKey,
@@ -355,25 +378,93 @@ export async function triggerRecycle(
   });
   const eventPump = pumpEvents(eventIter, ctx.onInferenceEvent);
 
+  // The child handshake below is deadline-bounded and needs these timer
+  // bindings; the pre-handshake credentials-read reap needs them too, so
+  // derive them before that read.
+  const setTimer = ctx.setTimer ?? defaultSetTimer;
+  const clearTimer = ctx.clearTimer ?? defaultClearTimer;
+
   // Re-read per-step credentials. A grants update that landed during
   // the previous child's lifetime is picked up here -- the recycle
   // doubles as the supervisor's grant-refresh path. The deploy tree
   // is not consulted; this read is against the `agent-state` repos
   // alone, whose contents are independent of `workflow.json`.
-  const credentialsSnapshot = await assembleCredentialsSnapshot({
-    repoStore: ctx.bindings.repoStore,
-    principal: ctx.bindings.readPrincipal,
-    stepOrder: ctx.stepOrder,
-    deploymentId: ctx.bindings.deploymentId,
-    deriveStepAddress: ctx.bindings.deriveStepAddress,
-    ...(ctx.bindings.deriveStepRepoId !== undefined
-      ? { deriveStepRepoId: ctx.bindings.deriveStepRepoId }
-      : {}),
-  });
+  //
+  // This is a substrate read that can reject -- a grants file that
+  // became malformed is precisely the recycle's grant-refresh path. The
+  // new child is already spawned and wired but not yet installed on
+  // `state`, so the supervisor's recycle-failure teardown (which reaps
+  // the PRIOR cohort) cannot see it; reap it here on failure or it
+  // leaks. The spawn path routes this same throw through its teardown
+  // owner. The try wraps only the awaited read: the handle and pumps it
+  // reaps are all constructed above, so the reap always has live
+  // handles.
+  let credentialsSnapshot: CredentialsSnapshot;
+  try {
+    credentialsSnapshot = await assembleCredentialsSnapshot({
+      repoStore: ctx.bindings.repoStore,
+      principal: ctx.bindings.readPrincipal,
+      stepOrder: ctx.stepOrder,
+      deploymentId: ctx.bindings.deploymentId,
+      deriveStepAddress: ctx.bindings.deriveStepAddress,
+      ...(ctx.bindings.deriveStepRepoId !== undefined
+        ? { deriveStepRepoId: ctx.bindings.deriveStepRepoId }
+        : {}),
+    });
+  } catch (cause) {
+    await reapUnreadyChild(handle, eventPump, controlIncoming, {
+      killTimeoutMs,
+      setTimer,
+      clearTimer,
+      phase: "credentials read failure",
+    });
+    throw cause;
+  }
 
   // Steps 4 + 5: self-discover + resume. These run inside the child
-  // before it emits `ready`; the supervisor waits.
-  const readyInfo = await readyPromise;
+  // before it emits `ready`; the supervisor waits, but bounded -- a child
+  // that neither readies nor exits must not park the recycle (and thus
+  // the supervisor) in `recycling` forever. Bound the handshake exactly
+  // as the spawn path bounds its own: fold ready/failed into values, race
+  // a resolve-only deadline, clear the timer on every path.
+  //
+  // NOTE: `assembleCredentialsSnapshot` above is a substrate read that
+  // sits OUTSIDE this deadline; a wedged substrate is a supervisor-side
+  // fault bounded at its own layer, not by overloading this handshake
+  // timer. The respawn is deadline-bounded on the child handshake, not on
+  // that read.
+  const readyTimeoutMs = ctx.readyTimeoutMs ?? DEFAULT_READY_TIMEOUT_MS;
+  const readyOutcome = readyPromise.then(
+    (info) => ({ kind: "ready" as const, info }),
+    (err: unknown) => ({ kind: "failed" as const, err }),
+  );
+  const readyDeadline = waitDeadline(setTimer, readyTimeoutMs);
+  const readyRace = await Promise.race([
+    readyOutcome,
+    readyDeadline.promise.then(() => ({ kind: "timeout" as const })),
+  ]);
+  clearTimer(readyDeadline.handle);
+  if (readyRace.kind !== "ready") {
+    // The new child was never installed on `state`, so the supervisor's
+    // recycle-failure teardown (which reaps the PRIOR cohort) would leak
+    // it. Reap it here. `killChildHandle` on an already-dead handle is a
+    // cheap no-op, so the `failed` path (a control-channel end does not
+    // guarantee the process died, since the event channel is separate)
+    // is reaped too, not just the timeout.
+    await reapUnreadyChild(handle, eventPump, controlIncoming, {
+      killTimeoutMs,
+      setTimer,
+      clearTimer,
+      phase: "handshake failure",
+    });
+    if (readyRace.kind === "timeout") {
+      throw new Error(
+        `workflow-host supervisor recycle: child did not emit ready within ${String(readyTimeoutMs)}ms; killed`,
+      );
+    }
+    throw readyRace.err;
+  }
+  const readyInfo = readyRace.info;
   logger.info`recycle ${opts.origin}: child ready (pid=${String(readyInfo.childPid)}, newChannelId=${channelId})`;
 
   const newWiring: ChildWiring = {
@@ -404,57 +495,45 @@ export async function triggerRecycle(
 }
 
 /**
- * Issue SIGTERM and wait for the child to exit. If the exit does not
- * land within `killTimeoutMs`, escalate to SIGKILL and wait again.
- * The supervisor's spawner returns the `exited` promise; the recycle
- * path does not consult OS primitives directly.
+ * Reap a respawned child that was spawned and wired but never installed
+ * on `state`. Such a child is invisible to the supervisor's
+ * recycle-failure teardown -- that path reaps the PRIOR cohort
+ * (`state.handle` during `recycling`) -- so a respawn that fails after
+ * the spawn must reap the new child here or it leaks its OS process and
+ * both IPC channels.
+ *
+ * Kill FIRST, then finalize the pumps: process death drives EOF on both
+ * channels, which unparks `waitForReady`'s in-flight `iter.next()`
+ * (letting `controlIncoming.return` complete) and ends `pumpEvents`.
+ * Awaiting either finalizer before the kill would hang behind the
+ * still-open channels. `killChildHandle` on an already-dead handle is a
+ * cheap no-op, so a child that died on its own -- not just one killed on
+ * timeout -- is reaped safely too.
  */
-async function killChildHandle(
+async function reapUnreadyChild(
   handle: SubprocessHandle,
-  killTimeoutMs: number,
-  ctx: RecycleContext,
+  eventPump: Promise<void>,
+  controlIncoming: AsyncGenerator<ControlPayload, void, void>,
+  deps: {
+    killTimeoutMs: number;
+    setTimer: (cb: () => void, ms: number) => unknown;
+    clearTimer: (handle: unknown) => void;
+    phase: string;
+  },
 ): Promise<void> {
-  const setTimer = ctx.setTimer ?? defaultSetTimer;
-  const clearTimer = ctx.clearTimer ?? defaultClearTimer;
-
-  handle.kill("SIGTERM");
-  const sigTermDeadline = waitDeadline(setTimer, killTimeoutMs);
-  const exitedFirst = await Promise.race([
-    handle.exited.then(() => "exited" as const),
-    sigTermDeadline.promise.then(() => "deadline" as const),
-  ]);
-  if (exitedFirst === "exited") {
-    clearTimer(sigTermDeadline.handle);
-    return;
-  }
-  clearTimer(sigTermDeadline.handle);
-  logger.warn`recycle: SIGTERM did not land within ${String(killTimeoutMs)}ms; escalating to SIGKILL`;
-  handle.kill("SIGKILL");
-  await handle.exited.catch(() => {
-    /* swallowed: a non-zero exit on SIGKILL is the expected outcome;
-       the recycle path treats handle exit as success regardless of
-       code. */
+  await killChildHandle(handle, deps.killTimeoutMs, {
+    logger,
+    setTimer: deps.setTimer,
+    clearTimer: deps.clearTimer,
   });
-}
-
-function waitDeadline(
-  setTimer: (cb: () => void, ms: number) => unknown,
-  ms: number,
-): { promise: Promise<void>; handle: unknown } {
-  let h: unknown;
-  const promise = new Promise<void>((resolve) => {
-    h = setTimer(() => resolve(), ms);
+  void eventPump.catch((cause: unknown) => {
+    const message = cause instanceof Error ? cause.message : String(cause);
+    logger.warn`recycle: reaped child eventPump failed after ${deps.phase}: ${message}`;
   });
-  return { promise, handle: h };
-}
-
-function defaultSetTimer(cb: () => void, ms: number): unknown {
-  return setTimeout(cb, ms);
-}
-
-function defaultClearTimer(handle: unknown): void {
-  // eslint-disable-next-line @typescript-eslint/no-unsafe-type-assertion -- production wiring; the handle is the value `setTimeout` returned, narrowed back at the boundary
-  clearTimeout(handle as ReturnType<typeof setTimeout>);
+  void controlIncoming.return(undefined).catch((cause: unknown) => {
+    const message = cause instanceof Error ? cause.message : String(cause);
+    logger.warn`recycle: reaped child controlIncoming.return failed after ${deps.phase}: ${message}`;
+  });
 }
 
 /**
