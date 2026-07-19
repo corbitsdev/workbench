@@ -4,7 +4,7 @@ React 19 + Vite + Tailwind CSS frontend. Human-facing UI for GTM Workbench.
 
 ## Key rules
 
-- No `console.log` — nothing in web (no logger available in browser builds)
+- No bare `console.*` calls — log through `src/lib/logger.ts`'s `logger`/`createLogger` (`debug`/`info` are gated to dev builds via `isDev`; `warn`/`error` always emit, so gate the call site with `isDev` yourself for dev-only diagnostics)
 - Design tokens live in `packages/ui/src/styles.css` — do not hardcode colors or radii
 - Use `@workbench/ui` primitives for buttons, inputs, and layout shells
 - Prefer event handlers and derived state over `useEffect` — see `apps/web/CLAUDE.md` for detail

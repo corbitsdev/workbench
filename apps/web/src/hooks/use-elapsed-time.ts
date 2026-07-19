@@ -1,6 +1,13 @@
 import { useEffect, useState } from "react";
 
-/** Same threshold/format convention as trace-waterfall's formatStepDuration. */
+/**
+ * Deliberately coarser than trace-waterfall's formatStepDuration: this backs
+ * a live ticker that recomputes once per second (see useElapsedTime below),
+ * so sub-second precision (an `ms` branch, decimal seconds under 10s) would
+ * only flicker between rounding artifacts, not convey real precision.
+ * formatStepDuration formats an exact, already-closed span between two fixed
+ * timestamps, where that precision is real and worth showing.
+ */
 export function formatElapsedMs(ms: number): string {
   const seconds = Math.max(0, Math.floor(ms / 1000));
   if (seconds < 60) return `${seconds}s`;
