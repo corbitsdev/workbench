@@ -196,7 +196,7 @@ import { createHubToolsRouter } from "./routes/hub-tools";
 import { createToolCredentialsRouter } from "./routes/tool-credentials";
 import { createInternalDeploymentsRouter } from "./routes/internal-deployments";
 import { buildToolDefinitions } from "./lib/tool-registry";
-import { schema } from "./db";
+import { schema, type HubDb } from "./db";
 import { loadSigningKeyRegistry } from "./lib/signing-keys";
 import {
   seedGlobalTenant,
@@ -228,7 +228,10 @@ const config = loadConfig();
 // ─── Database ──────────────────────────────────────────────────────
 
 const sql = postgres(config.databaseUrl);
-const db = drizzle(sql, { schema });
+// `drizzle(...)` infers `PostgresJsDatabase<typeof schema>` (the spread
+// reconstruction); cast to HubDb (the intersection form) so the db threads
+// through interchange helpers — see the HubDb note in ./db.
+const db = drizzle(sql, { schema }) as HubDb;
 
 await sql`SELECT 1`;
 log.info("Database connection established");

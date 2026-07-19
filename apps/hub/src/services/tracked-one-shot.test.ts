@@ -48,7 +48,9 @@ mock.module("@intx/agent", () => ({
         yield streamEvent;
         yield { type: "message.received", data: {} };
       },
-      send: mock(() => Promise.resolve({ reply: sendReply })),
+      send: mock(() =>
+        Promise.resolve({ type: "reply" as const, reply: sendReply }),
+      ),
       close: mock(() => Promise.resolve()),
     }),
   ),
