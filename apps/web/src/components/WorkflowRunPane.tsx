@@ -31,6 +31,7 @@ import {
   runStateFromRecord,
   runWasInterrupted,
   useResumeWorkflow,
+  useStopWorkflowRun,
   useWorkflowCredentials,
   useWorkflowDeployments,
   useWorkflowRecord,
@@ -97,6 +98,7 @@ function WorkflowRunPaneInner({
   // record's deploymentId, which 404s under per-run deployments (CL-2582).
   const { data: stepOutputsData } = useWorkflowStepOutputs(runId, tenantId);
   const resume = useResumeWorkflow(runId, tenantId);
+  const stopRun = useStopWorkflowRun(tenantId);
   const { data: credentials } = useWorkflowCredentials(tenantId);
   const { data: skills } = useSkillLibrary(tenantId);
   const { data: deployments } = useWorkflowDeployments(tenantId);
@@ -113,6 +115,7 @@ function WorkflowRunPaneInner({
   // True while a resume is auto-retrying through the deploy window (CL-2707), so
   // the pane shows an honest transient banner instead of flashing an error.
   const [redeploying, setRedeploying] = useState(false);
+  const [confirmingStop, setConfirmingStop] = useState(false);
 
   const kind = record?.kind ?? null;
   const recordDeploymentId = record?.deploymentId ?? null;
@@ -243,9 +246,14 @@ function WorkflowRunPaneInner({
 
   const Panel = uiModule?.Panel;
 
+  const terminal = record ? isRecordTerminal(record.status) : false;
+  const stopping = stopRun.isPending;
   const runChrome = useMemo(
     () => (
-      <div className="flex min-w-0 flex-1 flex-wrap items-center justify-end gap-3">
+      <div
+        className="flex min-w-0 flex-1 flex-wrap items-center justify-end gap-3"
+        onMouseLeave={() => setConfirmingStop(false)}
+      >
         {deploymentMeta ? (
           <WorkflowMetaBadge
             version={deploymentMeta.version}
@@ -253,16 +261,63 @@ function WorkflowRunPaneInner({
             deployedAt={deploymentMeta.deployedAt}
           />
         ) : null}
+        {record &&
+          !terminal &&
+          (confirmingStop ? (
+            <div className="flex items-center gap-1">
+              <Button
+                variant="ghost"
+                size="sm"
+                disabled={stopping}
+                data-testid="run-pane-stop-confirm"
+                onClick={() => {
+                  setConfirmingStop(false);
+                  stopRun.mutate(runId);
+                }}
+                aria-label="Confirm: stop this run"
+              >
+                {stopping ? "Stopping…" : "Confirm stop"}
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setConfirmingStop(false)}
+                aria-label="Cancel stop"
+              >
+                Cancel
+              </Button>
+            </div>
+          ) : (
+            <Button
+              variant="ghost"
+              size="sm"
+              disabled={stopping}
+              data-testid="run-pane-stop"
+              onClick={() => setConfirmingStop(true)}
+              title="Stop this run — leaves it in history as Stopped"
+              aria-label="Stop this run"
+            >
+              Stop
+            </Button>
+          ))}
         <Button variant="ghost" size="sm" onClick={onClose}>
           Close
         </Button>
       </div>
     ),
-    [deploymentMeta, onClose],
+    [
+      deploymentMeta,
+      onClose,
+      record,
+      terminal,
+      confirmingStop,
+      stopping,
+      stopRun,
+      runId,
+    ],
   );
   useSetPageChrome(record ? runChrome : null);
 
-  const terminal = record ? isRecordTerminal(record.status) : false;
   // Index says failed but the log is still non-terminal — the run was killed
   // externally (redeploy/abort), not a genuine step failure. Drives the
   // interrupted-vs-failed copy in the generic blocks fallback.
