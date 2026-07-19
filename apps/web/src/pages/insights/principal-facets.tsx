@@ -1,5 +1,4 @@
-
-import { Badge, Skeleton } from "@workbench/ui";
+import { Skeleton } from "@workbench/ui";
 import type { TimelineEntry } from "@workbench/client";
 import { usePrincipalRoster } from "../../hooks/use-principal-roster";
 import { usePrincipalAnalytics } from "../../hooks/use-principal-analytics";
@@ -11,14 +10,10 @@ import {
   type TraceNode,
 } from "./tracer-shell";
 import { humanizeToken } from "./activity-naming";
-import {
-  GRANT_EFFECT_LABEL,
-  entityLinkForEntry,
-  grantEffect,
-  grantOrigin,
-  grantResourceLabel,
-  type GrantEffect,
-} from "./trace-links";
+import { entityLinkForEntry } from "./trace-links";
+import { Td, Th } from "./grants-facet";
+
+export { GrantsFacet } from "./grants-facet";
 
 /**
  * The non-timeline facets of the principal trace, all derived from the SAME
@@ -26,121 +21,8 @@ import {
  * calls, and linkable entities are projected out of the real entries; the
  * values the record model does not carry (grant usage, tool I/O, per-principal
  * token cost) are shown as explicit honest-gap banners, never invented.
+ * The Grants facet itself lives in ./grants-facet (CL-3919 split).
  */
-
-interface GrantRow {
-  id: string;
-  resource: string;
-  plain: string;
-  action: string;
-  origin: string | null;
-  effect: GrantEffect;
-}
-
-/**
- * Projects a grant timeline entry to a row using the CANONICAL parsers from
- * trace-links (grantEffect / grantOrigin / grantResourceLabel) — the same
- * source of truth the moment decomposition reads, so the two surfaces can never
- * report a different effect for the same row.
- */
-function toGrantRow(entry: TimelineEntry): GrantRow {
-  const resource =
-    (entry.summary ?? "").trim().split(/\s+/).filter(Boolean)[0] ?? "";
-  const action =
-    (entry.summary ?? "").trim().split(/\s+/).filter(Boolean)[1] ?? "";
-  return {
-    id: entry.id,
-    resource,
-    plain: resource === "" ? "Permission" : grantResourceLabel(resource),
-    action: action === "" ? "—" : humanizeToken(action),
-    origin: grantOrigin(entry),
-    effect: grantEffect(entry),
-  };
-}
-
-function effectTone(
-  effect: GrantRow["effect"],
-): "positive" | "danger" | "neutral" {
-  if (effect === "allowed") return "positive";
-  if (effect === "blocked") return "danger";
-  return "neutral";
-}
-
-export function GrantsFacet({ entries }: { entries: TimelineEntry[] }) {
-  const grants = entries
-    .filter((e) => e.kind === "grant")
-    .map(toGrantRow)
-    // De-dup a permission that appears more than once in the loaded window.
-    .filter(
-      (g, i, all) => all.findIndex((o) => o.resource === g.resource) === i,
-    );
-
-  return (
-    <div data-testid="facet-grants">
-      <FacetDesc>
-        Permissions this principal holds, in plain language — the raw resource
-        id stays as a secondary reference.
-      </FacetDesc>
-      {grants.length === 0 ? (
-        <FacetCard>
-          <p className="text-[13px] text-text-2">
-            No grant moments in the loaded window.
-          </p>
-        </FacetCard>
-      ) : (
-        <FacetCard>
-          <div className="overflow-x-auto">
-            <table className="w-full border-collapse text-[13px]">
-              <thead>
-                <tr>
-                  <Th>Can</Th>
-                  <Th>Do what</Th>
-                  <Th>Decision</Th>
-                  <Th>Granted by</Th>
-                  <Th>Used</Th>
-                </tr>
-              </thead>
-              <tbody>
-                {grants.map((g) => (
-                  <tr
-                    key={g.id}
-                    className="border-b border-border last:border-0"
-                  >
-                    <Td>
-                      <div className="font-semibold text-text">{g.plain}</div>
-                      <div className="break-all font-mono text-[10px] text-text-3">
-                        {g.resource}
-                      </div>
-                    </Td>
-                    <Td className="text-text-2">{g.action}</Td>
-                    <Td>
-                      <Badge tone={effectTone(g.effect)}>
-                        {GRANT_EFFECT_LABEL[g.effect]}
-                      </Badge>
-                    </Td>
-                    <Td>
-                      {g.origin !== null ? (
-                        <span
-                          data-testid="grant-origin"
-                          className="inline-flex items-center rounded-[5px] border border-border bg-surface-2 px-1.5 py-0.5 font-mono text-[10px] text-text-2"
-                        >
-                          {g.origin}
-                        </span>
-                      ) : (
-                        <span className="text-text-3">—</span>
-                      )}
-                    </Td>
-                    <Td className="text-text-3">—</Td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </FacetCard>
-      )}
-    </div>
-  );
-}
 
 export interface ToolRow {
   name: string;
@@ -547,27 +429,5 @@ export function CostFacet({
         </FacetCard>
       )}
     </div>
-  );
-}
-
-function Th({ children }: { children: React.ReactNode }) {
-  return (
-    <th className="border-b border-border pb-2 pr-3 text-left font-mono text-[9px] font-semibold uppercase tracking-[0.08em] text-text-3">
-      {children}
-    </th>
-  );
-}
-
-function Td({
-  children,
-  className,
-}: {
-  children: React.ReactNode;
-  className?: string;
-}) {
-  return (
-    <td className={`py-2.5 pr-3 align-middle ${className ?? ""}`}>
-      {children}
-    </td>
   );
 }
