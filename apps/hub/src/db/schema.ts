@@ -697,28 +697,12 @@ export const skillAccess = pgTable("skill_access", {
 
 export type SkillAccessRow = typeof skillAccess.$inferSelect;
 
-// ─── Approvals ─────────────────────────────────────────────────────
-
-export const approvalStatus = ["pending", "approved", "rejected"] as const;
-
-// Renamed from "approval" → "workbench_approval" at the 5a73d3cc interchange
-// pin (CL-3932): interchange introduced its own "approval" table. The pre-
-// interchange reconcile in scripts/db-setup.ts owns the live migration; see
-// migration 0070 and apps/hub/src/db/workbench-approval-reconcile.ts.
-export const workbenchApproval = pgTable("workbench_approval", {
-  id: uuid("id").primaryKey().defaultRandom(),
-  tenantId: text("tenant_id").notNull(),
-  principalId: text("principal_id").notNull(),
-  agentId: text("agent_id").notNull(),
-  sessionId: text("session_id"),
-  resource: text("resource").notNull(),
-  action: text("action").notNull(),
-  context: jsonb("context").$type<Record<string, unknown>>(),
-  status: text("status", { enum: approvalStatus }).notNull().default("pending"),
-  message: text("message"),
-  createdAt: timestamp("created_at").notNull().defaultNow(),
-  resolvedAt: timestamp("resolved_at"),
-});
+// workbench_approval (the legacy pre-native ask_principal / ReviewGate rail,
+// created in 0011_approval.sql, renamed in 0070 to avoid the interchange
+// "approval" table collision) was dropped in migration 0071 (CL-3938): its
+// entire code path was deleted in #1134, and the native approval rail
+// (interchange's own "approval" table) is now the sole mechanism. Removed
+// here so the schema no longer describes a table that no longer exists.
 
 export { feedbackSubjectKinds as feedbackSubjectKind } from "@workbench/shared";
 export type { FeedbackSubjectKind } from "@workbench/shared";

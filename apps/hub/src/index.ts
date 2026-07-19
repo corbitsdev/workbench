@@ -505,11 +505,11 @@ const grantStore = createGrantStore(db);
 
 const baseLookups = createHubSessionLookups({ db, agentRepoStore: repoStore });
 
-// Workbench-owned approval change-notify bus (CL-3285). Shared by the legacy
-// workbench_approval SSE/mutation routes AND the native rail's created/resolved
-// notifications (CL-3934) so a ReviewGate open on either rail refetches the
-// instant a native suspension is registered or resolved. Constructed here, ahead
-// of the sidecar lookups and the hubApp mount, because both wrap this instance.
+// Workbench-owned approval change-notify bus (CL-3285). Carries the native
+// rail's created/resolved notifications (CL-3934) so a ReviewGate refetches
+// the instant a native suspension is registered or resolved. Constructed
+// here, ahead of the sidecar lookups and the hubApp mount, because both wrap
+// this instance.
 const approvalsEventBus = createApprovalsEventBus();
 
 // The native `approval` row is co-written inside interchange's
