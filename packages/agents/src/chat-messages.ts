@@ -283,7 +283,28 @@ export function composeChatMessages(
   const liveText = streaming.trim();
   const liveReasoning = reasoning.trim();
   const hasLiveImages = liveImages !== undefined && liveImages.length > 0;
-  if (liveText !== "" || liveReasoning !== "" || hasLiveImages) {
+  // The final segment of the current turn can commit its text while the live
+  // streaming buffer still holds that same text — the turn is parked on a
+  // native approval gate and never reset the buffer. The trailing committed
+  // bubble then already shows the final line; synthesizing a streaming bubble
+  // would render it twice, and the STREAMING_BUBBLE_ID dedupe can't catch it
+  // (the committed bubble carries its own id). Suppress on NORMALIZED-equal
+  // content only, so a genuine continuation with different text still streams
+  // as its own bubble (CL-3948). The empty-commit overwrite path (CL-1398 /
+  // CL-1643) is unaffected — an empty trailing bubble never matches non-empty
+  // live text.
+  const trailing = messages[messages.length - 1];
+  const trailingDuplicatesLiveText =
+    trailing?.role === "agent" &&
+    trailing.turnId === liveGroupId &&
+    liveText !== "" &&
+    trailing.content !== "" &&
+    normalizeAssistantText(trailing.content) ===
+      normalizeAssistantText(streaming);
+  if (
+    (liveText !== "" || liveReasoning !== "" || hasLiveImages) &&
+    !trailingDuplicatesLiveText
+  ) {
     const last = messages[messages.length - 1];
     if (last?.role === "agent" && last.content === "") {
       if (liveText !== "") last.content = streaming;
