@@ -1486,6 +1486,7 @@ v1.route(
       triage: config.triageEnabled,
       "tasks-reconciler": config.tasksReconciler.enabled,
       "voice-input": false,
+      "native-approvals": false,
     },
   }),
 );

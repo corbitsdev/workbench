@@ -44,6 +44,7 @@ import {
   buildToolGrantRows,
   TOOL_GRANT_RESOURCE_PREFIX,
 } from "../lib/tool-grants";
+import { resolveAskToolNamesForTenant } from "../lib/native-approvals";
 import { runDedupedRelaunch } from "./relaunch-breaker";
 import { getCachedCatalogSources } from "./workflow-model-source-cache";
 import { memberAgentInstance } from "../db/schema";
@@ -223,7 +224,13 @@ export async function persistInstanceToolGrants(
   },
 ): Promise<void> {
   const { tenantId, principalId, toolNames, now } = opts;
-  const rows = buildToolGrantRows(toolNames, { tenantId, principalId }, now);
+  const askToolNames = await resolveAskToolNamesForTenant(
+    db as unknown as HubDb,
+    tenantId,
+  );
+  const rows = buildToolGrantRows(toolNames, { tenantId, principalId }, now, {
+    askToolNames,
+  });
   await db.transaction(async (tx) => {
     await tx
       .delete(grant)

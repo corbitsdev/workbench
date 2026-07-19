@@ -148,6 +148,7 @@ function buildApp(db: unknown) {
         triage: false,
         "tasks-reconciler": false,
         "voice-input": false,
+        "native-approvals": false,
       },
     }),
   );

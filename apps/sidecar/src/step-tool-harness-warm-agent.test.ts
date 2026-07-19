@@ -130,12 +130,15 @@ afterEach(() => {
   globalThis.fetch = originalFetch;
 });
 
-function toolGrants(llmNames: string[]): unknown[] {
+function toolGrants(
+  llmNames: string[],
+  effect: "allow" | "ask" = "allow",
+): unknown[] {
   return llmNames.map((name) => ({
     id: `grant-${name}`,
     resource: `tool:${name}`,
     action: "invoke",
-    effect: "allow",
+    effect,
     conditions: null,
   }));
 }
@@ -196,6 +199,7 @@ type Built = {
 async function buildWarmAgent(args: {
   systemPrompt: string;
   grantedLlmNames: string[];
+  askLlmNames?: string[];
   warmKeep: boolean;
   storeDir: string;
   director?: { id: string; config: Record<string, unknown> };
@@ -221,7 +225,10 @@ async function buildWarmAgent(args: {
     stepAgentId: "ins_ses_1-step",
     stepAddress: "myra@tenant.localhost",
     principalId: "ins_ses_1-step",
-    grants: toolGrants(args.grantedLlmNames) as never,
+    grants: [
+      ...toolGrants(args.grantedLlmNames),
+      ...toolGrants(args.askLlmNames ?? [], "ask"),
+    ] as never,
     // loadToolPackages is module-mocked here; the on-disk read just needs a
     // valid dir (no deploy/ → undefined manifest, ignored by the mock).
     deployTreeDir: args.storeDir,
@@ -411,6 +418,35 @@ describe("warm single-step agent: dynamic tool catalog + gating", () => {
       const managed = catalogManagedNames(dynamic.catalog as never);
       expect(managed.has(GRANTED)).toBe(true);
       expect(managed.has(UNGRANTED)).toBe(true);
+    } finally {
+      await fs.promises.rm(storeDir, { recursive: true, force: true });
+    }
+  });
+
+  it("advertises a catalog package granted with the 'ask' effect (native-approvals)", async () => {
+    // An `ask` grant authorizes the tool — it just suspends the call for human
+    // approval at invoke time. The catalog gate must treat `ask` as granted, or
+    // a write tool would silently vanish from the dynamic catalog the moment the
+    // native-approvals feature flips its grant from allow to ask.
+    const storeDir = await makeStoreDir();
+    try {
+      loadToolPackagesMock.mockImplementation(async () =>
+        fakePackages([
+          { factoryId: "@workbench/tools-a/a", toolName: GRANTED },
+        ]),
+      );
+      const built = await buildWarmAgent({
+        systemPrompt: MYRA_PROMPT,
+        grantedLlmNames: [],
+        askLlmNames: [GRANTED],
+        warmKeep: true,
+        storeDir,
+      });
+      const dynamic = built.agentEnv[DYNAMIC_TOOLS_ENV_KEY] as {
+        catalog: unknown[];
+      };
+      const managed = catalogManagedNames(dynamic.catalog as never);
+      expect(managed.has(GRANTED)).toBe(true);
     } finally {
       await fs.promises.rm(storeDir, { recursive: true, force: true });
     }
