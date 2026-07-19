@@ -117,6 +117,47 @@ describe("composeChatMessages", () => {
     expect(agentMessages[1]?.status).toBe("sending");
   });
 
+  it("suppresses a duplicate streaming bubble when the final segment already committed the same text (CL-3948)", () => {
+    // The final segment commits its text ("Got it. Let me log this...") while
+    // the live streaming buffer still holds that same text — the turn is parked
+    // on a native approval gate and never reset the buffer. Synthesizing a
+    // STREAMING_BUBBLE_ID bubble here would render the final line twice; the
+    // id-dedupe can't catch it (the committed bubble carries its own id).
+    const committed: InstanceEvent = {
+      kind: "turn",
+      turnId: "t1",
+      content: "Got it. Let me log this as an issue in Linear.",
+      timestamp: "2024-01-01T00:00:30.000Z",
+    };
+    const { messages } = composeChatMessages({
+      events: [userMail("u1", "log a bug"), committed],
+      streaming: "Got it. Let me log this as an issue in Linear.",
+    });
+    const agentMessages = messages.filter((m) => m.role === "agent");
+    expect(agentMessages).toHaveLength(1);
+    expect(agentMessages[0]?.content).toBe(
+      "Got it. Let me log this as an issue in Linear.",
+    );
+    expect(messages.some((m) => m.id === STREAMING_BUBBLE_ID)).toBe(false);
+  });
+
+  it("still streams a genuinely different continuation as its own bubble (no over-suppression, CL-3948)", () => {
+    const committed: InstanceEvent = {
+      kind: "turn",
+      turnId: "t1",
+      content: "Let me search for that.",
+      timestamp: "2024-01-01T00:00:30.000Z",
+    };
+    const { messages } = composeChatMessages({
+      events: [userMail("u1", "find x"), committed],
+      streaming: "Here is what I found.",
+    });
+    const agentMessages = messages.filter((m) => m.role === "agent");
+    expect(agentMessages).toHaveLength(2);
+    expect(agentMessages[1]?.id).toBe(STREAMING_BUBBLE_ID);
+    expect(agentMessages[1]?.content).toBe("Here is what I found.");
+  });
+
   it("shows no streaming bubble once the durable reply has landed and streaming cleared", () => {
     const { messages } = composeChatMessages({
       events: [userMail("u1", "hi"), assistantMail("a1", "Real answer")],

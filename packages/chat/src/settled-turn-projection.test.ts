@@ -299,7 +299,7 @@ describe("projectLiveTurn", () => {
     ]);
   });
 
-  it("strips every already-settled segment even with several ahead of the streaming one", () => {
+  it("drops non-final settled narration, keeping only the final settled line and the streaming segment (CL-3948)", () => {
     const segments: ChatMessage[] = [
       agent({
         id: "a1",
@@ -322,15 +322,104 @@ describe("projectLiveTurn", () => {
       }),
     ];
     const projected = projectLiveTurn(segments);
-    expect(projected[0]?.reasoning).toBeUndefined();
+    // The non-final interstitial "Narration one." is dropped; only the final
+    // settled line survives, stripped to outputs, plus the streaming segment.
+    expect(projected.map((m) => m.id)).toEqual(["a2", "a3"]);
+    expect(projected.some((m) => m.content === "Narration one.")).toBe(false);
+    expect(projected[0]?.toolCalls).toBeUndefined();
     expect(projected[0]?.parts).toEqual([
-      { type: "text", text: "Narration one." },
-    ]);
-    expect(projected[1]?.toolCalls).toBeUndefined();
-    expect(projected[1]?.parts).toEqual([
       { type: "text", text: "Narration two." },
     ]);
-    expect(projected[2]).toBe(segments[2]);
+    expect(projected[1]).toBe(segments[2]);
+  });
+
+  it("collapses interstitial narration while a turn is parked on an approval, keeping only the final line and the pending action (CL-3948)", () => {
+    const segments: ChatMessage[] = [
+      agent({
+        id: "a1",
+        content: "Let me check the records.",
+        status: "sent",
+        turnId: "g1",
+      }),
+      agent({
+        id: "a2",
+        content: "Let me look that up.",
+        status: "sent",
+        turnId: "g1",
+        toolCalls: [{ id: "c1", name: "crm_lookup", result: "found" }],
+      }),
+      agent({
+        id: "a3",
+        content: "Got it. Let me log this as an issue in Linear.",
+        status: "sent",
+        turnId: "g1",
+      }),
+      agent({
+        id: "a4",
+        content: "",
+        status: "sending",
+        turnId: "g1",
+        toolCalls: [{ id: "c2", name: "create_issue" }],
+      }),
+    ];
+    const projected = projectLiveTurn(segments);
+    // Only the final settled line and the parked tool-call segment survive.
+    expect(projected.map((m) => m.id)).toEqual(["a3", "a4"]);
+    expect(projected[0]?.content).toBe(
+      "Got it. Let me log this as an issue in Linear.",
+    );
+    expect(
+      projected.some((m) => m.content === "Let me check the records."),
+    ).toBe(false);
+    expect(projected.some((m) => m.content === "Let me look that up.")).toBe(
+      false,
+    );
+    // The parked segment is untouched so its pending action card still renders.
+    expect(projected[1]).toBe(segments[3]);
+  });
+
+  it("keeps a non-final settled segment carrying a UI block during the live phase (CL-3948)", () => {
+    const blockContent = [
+      "Here's the document.",
+      "```ui",
+      '{"kind":"document","title":"ABK Demo","source":"# Call"}',
+      "```",
+    ].join("\n");
+    const segments: ChatMessage[] = [
+      agent({
+        id: "a1",
+        content: "Let me draft it.",
+        status: "sent",
+        turnId: "g1",
+      }),
+      agent({
+        id: "a2",
+        content: blockContent,
+        status: "sent",
+        turnId: "g1",
+        toolCalls: [{ id: "c1", name: "doc_build", result: "ok" }],
+      }),
+      agent({
+        id: "a3",
+        content: "Anything else?",
+        status: "sent",
+        turnId: "g1",
+      }),
+      agent({
+        id: "a4",
+        content: "",
+        status: "sending",
+        turnId: "g1",
+        toolCalls: [{ id: "c2", name: "create_issue" }],
+      }),
+    ];
+    const projected = projectLiveTurn(segments);
+    // Block segment (product) survives; the "Let me draft it." narration is
+    // dropped; the final settled line and the streaming segment remain.
+    expect(projected.map((m) => m.id)).toEqual(["a2", "a3", "a4"]);
+    expect(projected.some((m) => m.content === "Let me draft it.")).toBe(false);
+    expect(projected[0]?.content).toBe(blockContent);
+    expect(projected[0]?.toolCalls).toBeUndefined();
   });
 
   it("drops a settled reasoning-only segment that projects to no output (CL-3752)", () => {
