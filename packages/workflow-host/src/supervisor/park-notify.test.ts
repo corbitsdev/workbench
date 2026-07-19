@@ -129,7 +129,6 @@ function createStubRepoStore(baseDir: string): RepoStore {
       return path.join(baseDir, repoId.kind, repoId.id);
     },
   };
-  // eslint-disable-next-line @typescript-eslint/no-unsafe-type-assertion -- test stub; only getRepoDir is exercised and any other method throws via the proxy
   return new Proxy(stub as RepoStore, {
     get(target, prop, receiver) {
       const value = Reflect.get(target, prop, receiver);
