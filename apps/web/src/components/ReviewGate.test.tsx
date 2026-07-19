@@ -154,6 +154,40 @@ describe("ReviewGate — event-driven refresh", () => {
     });
   });
 
+  it("refetches on an 'updated' event, transitioning the card from fallback to enriched", async () => {
+    // Before enrichment the row has no tool snapshot: the card shows the
+    // originating-agent fallback headline and no arg line.
+    mockListNativeApprovals.mockResolvedValue([makeNativeApproval()]);
+    renderGate();
+    await waitFor(() => {
+      screen.getByTestId("native-approval-apr-native-1");
+    });
+    screen.getByText(/Approval requested by ins_dep-1/);
+    expect(screen.queryByText("Posting to Slack #gtm")).toBeNull();
+
+    // The hub enriches the existing approval and pushes an 'updated' event.
+    mockListNativeApprovals.mockResolvedValue([
+      makeNativeApproval({
+        toolDefinition: { name: "slack__post_message" },
+        toolArguments: { channel: "#gtm", text: "hi" },
+      }),
+    ]);
+    act(() => {
+      capturedOnEvent?.({
+        tenantId: "tenant-1",
+        sessionId: null,
+        kind: "updated",
+      });
+    });
+
+    // The card re-renders with the enriched label + args; the fallback is gone.
+    await waitFor(() => {
+      screen.getByText("Posting to Slack #gtm");
+    });
+    screen.getByText("channel: #gtm · text: hi");
+    expect(screen.queryByText(/Approval requested by ins_dep-1/)).toBeNull();
+  });
+
   it("refetches when a resolved event arrives, clearing the gate", async () => {
     const pending = makeNativeApproval();
     mockListNativeApprovals.mockResolvedValue([pending]);
@@ -240,6 +274,57 @@ describe("ReviewGate — native rail", () => {
     });
     // Values, not just field names, so the approver sees what will actually run.
     screen.getByText("channel: #gtm · text: hi");
+  });
+
+  it("surfaces an array-valued recipient argument the approver must see", async () => {
+    mockListNativeApprovals.mockResolvedValue([
+      makeNativeApproval({
+        toolDefinition: { name: "mail_send" },
+        toolArguments: {
+          to: ["a@x.com", "b@y.com"],
+          subject: "Launch",
+        },
+      }),
+    ]);
+    renderGate();
+    await waitFor(() => {
+      screen.getByTestId("native-approval-apr-native-1");
+    });
+    // The recipient list is rendered, not dropped as a non-scalar.
+    screen.getByText(/to: a@x\.com, b@y\.com/);
+  });
+
+  it("shows a '+N more' overflow cue when more than three args are present", async () => {
+    mockListNativeApprovals.mockResolvedValue([
+      makeNativeApproval({
+        toolDefinition: { name: "some_tool" },
+        toolArguments: { a: "1", b: "2", c: "3", d: "4", e: "5" },
+      }),
+    ]);
+    renderGate();
+    await waitFor(() => {
+      screen.getByTestId("native-approval-apr-native-1");
+    });
+    // Three pairs are shown; the remaining two collapse into the overflow cue
+    // rather than being silently dropped.
+    screen.getByText(/a: 1 · b: 2 · c: 3 · \+2 more/);
+  });
+
+  it("does not repeat the title in the arg line when the headline already speaks it", async () => {
+    mockListNativeApprovals.mockResolvedValue([
+      makeNativeApproval({
+        toolDefinition: { name: "linear__create_issue" },
+        toolArguments: { title: "Fix the login bug" },
+      }),
+    ]);
+    renderGate();
+    await waitFor(() => {
+      screen.getByTestId("native-approval-apr-native-1");
+    });
+    // The headline carries the title verbatim...
+    screen.getByText(/Fix the login bug/);
+    // ...so the arg-summary line must not restate it as `title: ...`.
+    expect(screen.queryByText(/title: Fix the login bug/)).toBeNull();
   });
 
   it("resolves a native approval through the native approve route", async () => {

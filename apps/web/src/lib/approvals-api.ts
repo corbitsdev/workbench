@@ -14,11 +14,13 @@ import { subscribeSharedEventStream } from "./shared-event-stream";
 
 // A change notification pushed over the approvals SSE stream — never the
 // approval data itself. The client refetches the ownership-scoped native list
-// route on each event.
+// route on each event. `updated` is emitted when a tool snapshot enriches an
+// already-created approval after its `created` event; the gate must refetch on
+// it so the card re-renders from its fallback to the enriched label + args.
 export const ApprovalEventSchema = type({
   tenantId: "string",
   sessionId: "string | null",
-  kind: "'created' | 'resolved'",
+  kind: "'created' | 'resolved' | 'updated'",
 });
 export type ApprovalEvent = typeof ApprovalEventSchema.infer;
 
