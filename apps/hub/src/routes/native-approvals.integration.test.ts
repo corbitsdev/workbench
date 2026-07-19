@@ -1,0 +1,314 @@
+import {
+  afterAll,
+  beforeAll,
+  beforeEach,
+  describe,
+  expect,
+  test,
+} from "bun:test";
+import { PGlite } from "@electric-sql/pglite";
+import { drizzle } from "drizzle-orm/pglite";
+import { pushSchema } from "drizzle-kit/api";
+import { Hono } from "hono";
+
+import {
+  createApprovalStore,
+  createSignalCorrelationStore,
+  type SignalCorrelationStore,
+} from "@intx/db";
+import { createInMemoryGrantStore } from "@intx/authz";
+import { createApp } from "@intx/hub-api";
+import type { GetSession, SessionUser, SessionInfo } from "@intx/hub-api";
+import { signalName } from "@intx/types";
+import type { GrantRule } from "@intx/types/authz";
+import type {
+  EventCollectorRegistry,
+  SessionService,
+  SidecarRouter,
+} from "@intx/hub-sessions";
+import type { Handler } from "hono";
+
+import { schema } from "../db";
+import type { HubDb } from "../db";
+import { createNativeApprovalsRouter } from "./native-approvals";
+import { createApprovalsEventBus } from "../lib/approvals-events";
+import type { ApprovalEvent } from "../lib/approvals-events";
+import { publishNativeApprovalResolved } from "../lib/native-approval-notify";
+
+// Real-Postgres (PGlite) exercise of the native approval rail (CL-3934), driven
+// through interchange's own `createApp` so the mounted approve/reject routes and
+// resolveTenant auth run exactly as in production. The only mocked boundary is
+// the sidecar transport (`sendSignalDeliver`); the resolve transaction, stores,
+// grant check, and tenant middleware are all real.
+
+const TENANT = "tnt-native";
+const OTHER_TENANT = "tnt-other";
+const PRINCIPAL = "prn-native";
+const USER = "usr-native";
+const DEPLOYMENT = "dep-native";
+const RUN = "run-native";
+const DOMAIN = "native.example.com";
+const AGENT_ADDRESS = `ins_${DEPLOYMENT}@${DOMAIN}`;
+
+let client: PGlite;
+let db: HubDb;
+let signalStore: SignalCorrelationStore;
+
+let deliverCalls: { runId: string; signalId: string }[];
+let events: ApprovalEvent[];
+
+const testUser: SessionUser = {
+  id: USER,
+  createdAt: new Date("2025-01-01"),
+  updatedAt: new Date("2025-01-01"),
+  email: "n@native.example.com",
+  emailVerified: true,
+  name: "Native Tester",
+};
+
+const testSession: SessionInfo = {
+  id: "ses-native",
+  createdAt: new Date("2025-01-01"),
+  updatedAt: new Date("2025-01-01"),
+  userId: USER,
+  expiresAt: new Date("2999-01-01"),
+  token: "tok",
+};
+
+const getSession: GetSession = async (headers) =>
+  headers.get("x-anon") === "1"
+    ? null
+    : { user: testUser, session: testSession };
+
+function mockSidecarRouter(): SidecarRouter {
+  return new Proxy(
+    {
+      sendSignalDeliver: (args: { runId: string; signalId: string }) => {
+        deliverCalls.push({ runId: args.runId, signalId: args.signalId });
+      },
+    },
+    {
+      get(target, prop, receiver) {
+        if (prop in target) return Reflect.get(target, prop, receiver);
+        return () => {
+          throw new Error(`mock sidecarRouter.${String(prop)} not implemented`);
+        };
+      },
+    },
+  ) as unknown as SidecarRouter;
+}
+
+function resolveGrant(): GrantRule {
+  return {
+    id: "grant-native",
+    resource: `approval:${DEPLOYMENT}`,
+    action: "resolve",
+    effect: "allow",
+    origin: "system",
+    conditions: null,
+    expiresAt: null,
+    roleId: null,
+    principalId: PRINCIPAL,
+  };
+}
+
+function buildApp(): Hono {
+  const bus = createApprovalsEventBus();
+  bus.subscribe(TENANT, (e) => events.push(e));
+
+  const noAuth: Handler = (c) => c.body(null, 404);
+  const hubApp = createApp({
+    getSession,
+    authHandler: noAuth,
+    db: db as never,
+    sidecarRouter: mockSidecarRouter(),
+    sessionService: {} as unknown as SessionService,
+    eventCollectors: {} as unknown as EventCollectorRegistry,
+    grantStore: createInMemoryGrantStore([resolveGrant()]),
+    assetService: null,
+    repoStore: null,
+    maxTarballBytes: 10 * 1024 * 1024,
+  });
+  // Mirror index.ts: the workbench-owned native list route mounts on hubApp so
+  // it inherits interchange's resolveTenant.
+  hubApp.route(
+    "/api/tenants/:tenantId/native-approvals",
+    createNativeApprovalsRouter({ db }),
+  );
+
+  const app = new Hono();
+  // Mirror index.ts: the "resolved" change notification fires from an outer
+  // middleware ahead of the hub-app mount.
+  const nativeResolvePath =
+    /^\/api\/tenants\/([^/]+)\/approvals\/[^/]+\/(?:approve|reject)$/;
+  app.use(
+    "/api/tenants/:tenantId/approvals/:approvalId/:decision",
+    async (c, next) => {
+      await next();
+      if (c.req.method !== "POST" || !c.res.ok) return;
+      const match = nativeResolvePath.exec(new URL(c.req.url).pathname);
+      const tenantId = match?.[1];
+      if (tenantId !== undefined) publishNativeApprovalResolved(bus, tenantId);
+    },
+  );
+  app.route("/", hubApp as never);
+  return app;
+}
+
+async function registerSuspension(correlationId: string, approvalId: string) {
+  await signalStore.registerIfAbsent({
+    correlationId,
+    tenantId: TENANT,
+    deploymentId: DEPLOYMENT,
+    agentAddress: AGENT_ADDRESS,
+    runId: RUN,
+    signalName: signalName(correlationId),
+    kind: "approval",
+  });
+  await createApprovalStore(db as never).createIfAbsent({
+    id: approvalId,
+    tenantId: TENANT,
+    deploymentId: DEPLOYMENT,
+    runId: RUN,
+    agentAddress: AGENT_ADDRESS,
+    correlationId,
+    status: "pending",
+    toolDefinition: null,
+    toolArguments: null,
+    scope: null,
+    timeoutAt: null,
+  });
+}
+
+beforeAll(async () => {
+  client = new PGlite();
+  const bootstrap = drizzle(client, { schema });
+  const { apply } = await pushSchema(schema, bootstrap as never);
+  await apply();
+  db = bootstrap as unknown as HubDb;
+  signalStore = createSignalCorrelationStore(db as never);
+
+  // FK off for seeding: the tenant + membership rows resolveTenant reads, and the
+  // approval/correlation rows, are inserted directly.
+  await client.exec(`SET session_replication_role = 'replica';`);
+  for (const [id, slug] of [
+    [TENANT, "native"],
+    [OTHER_TENANT, "other"],
+  ]) {
+    await client.query(
+      `insert into tenant (id, name, slug, domain) values ($1, $2, $3, $4)`,
+      [id, slug, slug, `${slug}.example.com`],
+    );
+  }
+  await client.query(
+    `insert into principal (id, tenant_id, kind, ref_id, status) values ($1, $2, 'user', $3, 'active')`,
+    [PRINCIPAL, TENANT, USER],
+  );
+});
+
+afterAll(async () => {
+  await client?.close();
+});
+
+beforeEach(async () => {
+  deliverCalls = [];
+  events = [];
+  await client.exec(`DELETE FROM approval;`);
+  await client.exec(`DELETE FROM signal_correlation;`);
+});
+
+describe("native approval rail", () => {
+  test("list route returns the tenant's pending suspension", async () => {
+    await registerSuspension("corr-1", "apr-1");
+    const res = await buildApp().request(
+      `/api/tenants/${TENANT}/native-approvals`,
+    );
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { id: string; status: string }[];
+    expect(body).toHaveLength(1);
+    expect(body[0]?.id).toBe("apr-1");
+    expect(body[0]?.status).toBe("pending");
+  });
+
+  test("list route rejects a non-member with 403 (cross-tenant scoping)", async () => {
+    await registerSuspension("corr-1", "apr-1");
+    const res = await buildApp().request(
+      `/api/tenants/${OTHER_TENANT}/native-approvals`,
+    );
+    expect(res.status).toBe(403);
+  });
+
+  test("list route 404s an unknown tenant", async () => {
+    const res = await buildApp().request(
+      `/api/tenants/tnt-nope/native-approvals`,
+    );
+    expect(res.status).toBe(404);
+  });
+
+  test("list route 401s an unauthenticated caller", async () => {
+    const res = await buildApp().request(
+      `/api/tenants/${TENANT}/native-approvals`,
+      { headers: { "x-anon": "1" } },
+    );
+    expect(res.status).toBe(401);
+  });
+
+  test("approve resolves the row, fires delivery, and notifies", async () => {
+    await registerSuspension("corr-1", "apr-1");
+    const res = await buildApp().request(
+      `/api/tenants/${TENANT}/approvals/apr-1/approve`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ scope: "once" }),
+      },
+    );
+    expect(res.status).toBe(200);
+    expect(deliverCalls).toHaveLength(1);
+    expect(deliverCalls[0]?.runId).toBe(RUN);
+    expect(events).toEqual([
+      { tenantId: TENANT, sessionId: null, kind: "resolved" },
+    ]);
+
+    const list = await buildApp().request(
+      `/api/tenants/${TENANT}/native-approvals`,
+    );
+    expect(await list.json()).toEqual([]);
+  });
+
+  test("a second resolve of the same approval is a 409", async () => {
+    await registerSuspension("corr-1", "apr-1");
+    const first = await buildApp().request(
+      `/api/tenants/${TENANT}/approvals/apr-1/approve`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ scope: "once" }),
+      },
+    );
+    expect(first.status).toBe(200);
+    const second = await buildApp().request(
+      `/api/tenants/${TENANT}/approvals/apr-1/reject`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({}),
+      },
+    );
+    expect(second.status).toBe(409);
+  });
+
+  test("reject resolves a pending suspension and fires delivery", async () => {
+    await registerSuspension("corr-2", "apr-2");
+    const res = await buildApp().request(
+      `/api/tenants/${TENANT}/approvals/apr-2/reject`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ message: "no" }),
+      },
+    );
+    expect(res.status).toBe(200);
+    expect(deliverCalls).toHaveLength(1);
+  });
+});

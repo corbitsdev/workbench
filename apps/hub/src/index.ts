@@ -169,7 +169,12 @@ import {
   createApprovalsRouter,
   createInternalApprovalsRouter,
 } from "./routes/approvals";
+import { createNativeApprovalsRouter } from "./routes/native-approvals";
 import { createApprovalsEventBus } from "./lib/approvals-events";
+import {
+  publishNativeApprovalCreated,
+  publishNativeApprovalResolved,
+} from "./lib/native-approval-notify";
 import { createFeedbackRouter } from "./routes/feedback";
 import type { MemberPreferences } from "@workbench/shared";
 import { createMePreferencesRouter } from "./routes/me-preferences";
@@ -503,6 +508,24 @@ const grantStore = createGrantStore(db);
 
 const baseLookups = createHubSessionLookups({ db, agentRepoStore: repoStore });
 
+// Workbench-owned approval change-notify bus (CL-3285). Shared by the legacy
+// workbench_approval SSE/mutation routes AND the native rail's created/resolved
+// notifications (CL-3934) so a ReviewGate open on either rail refetches the
+// instant a native suspension is registered or resolved. Constructed here, ahead
+// of the sidecar lookups and the hubApp mount, because both wrap this instance.
+const approvalsEventBus = createApprovalsEventBus();
+
+// The native `approval` row is co-written inside interchange's
+// `registerSignalCorrelation` (which owns the transaction and resolves the
+// tenant from the deployment); it is out of scope to modify, so the "created"
+// notification is emitted from this wrapper AFTER the co-write commits.
+const baseRegisterSignalCorrelation = baseLookups.registerSignalCorrelation;
+if (baseRegisterSignalCorrelation === undefined) {
+  throw new Error(
+    "createHubSessionLookups did not provide registerSignalCorrelation",
+  );
+}
+
 function isWorkflowRunBootstrapRace(message: string): boolean {
   return /non_fast_forward: ref refs\/heads\/main expected null but found [0-9a-f]{40}/.test(
     message,
@@ -533,6 +556,14 @@ const lookups: SidecarLookups = {
       });
     },
   }),
+  registerSignalCorrelation: async (registration) => {
+    await baseRegisterSignalCorrelation(registration);
+    await publishNativeApprovalCreated(
+      db,
+      approvalsEventBus,
+      registration.deploymentId,
+    );
+  },
   async receiveWorkflowRunPack(repoId, pack, ref, commitSha) {
     if (repoId.kind !== "workflow-run") {
       throw new Error(
@@ -920,6 +951,17 @@ hubApp.route(
   createActorDetailRouter({ db }),
 );
 
+// The native rail's decision surface (CL-3934). Mounted on hubApp so it inherits
+// interchange's `resolveTenant` (active-membership, tenant/principal context) —
+// auth-consistent with the native approve/reject routes createApp already mounts
+// at `/api/tenants/:tenantId/approvals`. A distinct path segment (not
+// `/approvals/native`) so interchange's `GET /approvals/:approvalId` 501 stub
+// does not shadow it.
+hubApp.route(
+  "/api/tenants/:tenantId/native-approvals",
+  createNativeApprovalsRouter({ db }),
+);
+
 // ─── Parent Hono ────────────────────────────────────────────────────
 
 const app = new Hono<{ Variables: { [SERVER_ERROR_LOGGED]?: boolean } }>();
@@ -1082,15 +1124,33 @@ app.use(
 // draining process accept (or hang on) a new connection.
 app.use("/api/sidecars/ws", createSidecarWsDrainGuard());
 
+// Emit the native rail's "resolved" change notification (CL-3934). Interchange's
+// mounted approve/reject routes own the resolve transaction and are out of scope
+// to modify, so this outer middleware runs ahead of the hub app mount and, after
+// a successful resolve, publishes onto the shared approvals bus so an open
+// ReviewGate refetches. Gated on POST + a 2xx response so the 501 GET stub and
+// failed resolves never publish. The path is the un-versioned native rail
+// (`/api/tenants/...`), never the `/api/v1/...` legacy router.
+const NATIVE_RESOLVE_PATH =
+  /^\/api\/tenants\/([^/]+)\/approvals\/[^/]+\/(?:approve|reject)$/;
+app.use(
+  "/api/tenants/:tenantId/approvals/:approvalId/:decision",
+  async (c, next) => {
+    await next();
+    if (c.req.method !== "POST" || !c.res.ok) return;
+    // The middleware's own path params are not reliably populated over a
+    // mounted sub-app, so the tenant + decision are read from the pathname.
+    const match = NATIVE_RESOLVE_PATH.exec(new URL(c.req.url).pathname);
+    const tenantId = match?.[1];
+    if (tenantId === undefined) return;
+    publishNativeApprovalResolved(approvalsEventBus, tenantId);
+  },
+);
+
 // Mount hub app
 app.route("/", hubApp);
 
 // ─── Workbench routes ──────────────────────────────────────────────
-
-// Workbench-owned approvals change bus (CL-3285). One in-process instance shared
-// by the user-facing router (SSE stream + resolve emits) and the internal router
-// (create emit) so a sidecar-created approval reaches an open browser stream.
-const approvalsEventBus = createApprovalsEventBus();
 
 const v1 = new Hono<{ Variables: { userId: string; userName: string } }>();
 
