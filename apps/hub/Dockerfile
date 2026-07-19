@@ -7,7 +7,7 @@ WORKDIR /app
 RUN apt-get update && apt-get install -y git && rm -rf /var/lib/apt/lists/* && \
     git clone --filter=blob:none --no-checkout \
       https://github.com/faremeter/interchange.git interchange && \
-    git -C interchange checkout 6927e7e4b0117f29ce4800ad75a313ed9ad31b10
+    git -C interchange checkout 5a73d3ccb4be8923d57bc2634a074329b30956b9
 
 # Copy only manifests so bun install caches until a package.json or lockfile changes
 COPY package.json bun.lock ./
