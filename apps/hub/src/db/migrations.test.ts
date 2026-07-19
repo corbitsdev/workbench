@@ -298,6 +298,27 @@ describe("0036 drops pain_point and artifact provenance columns (CL-2669)", () =
   });
 });
 
+describe("0071 drops workbench_approval (CL-3938)", () => {
+  const sql = readFileSync(
+    join(import.meta.dir, "../../migrations/0071_drop_workbench_approval.sql"),
+    "utf-8",
+  );
+
+  it("drops the workbench_approval table and its index", () => {
+    expect(sql).toMatch(/DROP TABLE IF EXISTS "workbench_approval"/i);
+    expect(sql).toMatch(
+      /DROP INDEX IF EXISTS "approval_tenant_principal_created_idx"/i,
+    );
+  });
+
+  it("drops workbench_approval from the drizzle schema too (no resurrection via the coverage guard)", () => {
+    const schemaTables = Object.values(schema)
+      .filter((value) => isTable(value))
+      .map((table) => getTableName(table as Table));
+    expect(schemaTables).not.toContain("workbench_approval");
+  });
+});
+
 describe("0031 adds meta to workflow_run (CL-2321)", () => {
   const sql = readFileSync(
     join(import.meta.dir, "../../migrations/0031_workflow_run_meta.sql"),
