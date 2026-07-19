@@ -39,12 +39,22 @@ async function fakeApi(
       status: "running",
     };
   }
+  const stopMatch = /\/workflow-exec\/records\/([^/]+)\/stop/.exec(path);
+  if (stopMatch?.[1] !== undefined) {
+    return { stopped: true };
+  }
   throw new Error(`unexpected api call: ${method} ${path}`);
 }
 
 function listRow(
   runId: string,
-  status: "provisioning" | "running" | "awaiting" | "completed" | "failed",
+  status:
+    | "provisioning"
+    | "running"
+    | "awaiting"
+    | "completed"
+    | "failed"
+    | "stopped",
   kind = "ab-compare-quality",
 ) {
   return {
@@ -409,5 +419,52 @@ describe("WorkflowDock", () => {
     expect(container.querySelector(".animate-spin")).not.toBeNull();
     // The frozen "waiting" copy is NOT shown for a provisioning run.
     expect(screen.queryByText("Waiting for the first step…")).toBeNull();
+  });
+
+  it("shows Stop on non-terminal cards and hides it on terminal ones (CL-3687)", async () => {
+    records = [
+      listRow("run_live", "running"),
+      listRow("run_done", "completed"),
+      listRow("run_stopped", "stopped"),
+    ];
+    statesByRunId["run_live"] = logState("run_live", "running", [
+      { stepId: "draft", phase: "in-flight" },
+    ]);
+    statesByRunId["run_done"] = logState("run_done", "completed", [
+      { stepId: "draft", phase: "completed" },
+    ]);
+    statesByRunId["run_stopped"] = logState("run_stopped", "cancelled", [
+      { stepId: "draft", phase: "cancelled" },
+    ]);
+    renderDock();
+    await waitFor(() =>
+      expect(screen.getAllByTestId("workflow-dock-card").length).toBe(3),
+    );
+    // One Stop control for the live run only.
+    expect(screen.getAllByTestId("dock-stop")).toHaveLength(1);
+    expect(screen.getByLabelText("Stop ab-compare-quality run")).toBeTruthy();
+  });
+
+  it("two-step confirm POSTs stop and does not fire on the first click (CL-3687)", async () => {
+    records = [listRow("run_live", "running")];
+    statesByRunId["run_live"] = logState("run_live", "running", [
+      { stepId: "draft", phase: "in-flight" },
+    ]);
+    renderDock();
+    await waitFor(() => screen.getByTestId("dock-stop"));
+
+    fireEvent.click(screen.getByTestId("dock-stop"));
+    expect(apiCalls.some((c) => c.path.includes("/stop"))).toBe(false);
+
+    fireEvent.click(screen.getByTestId("dock-stop-confirm"));
+    await waitFor(() =>
+      expect(
+        apiCalls.some(
+          (c) =>
+            c.method === "POST" &&
+            c.path.includes("/workflow-exec/records/run_live/stop"),
+        ),
+      ).toBe(true),
+    );
   });
 });

@@ -14,6 +14,7 @@ import {
   runListIsActive,
   useConversationWorkflowRuns,
   useArchiveWorkflowRun,
+  useStopWorkflowRun,
   useResumeWorkflow,
   useStartWorkflow,
   useWorkflowRecord,
@@ -721,6 +722,61 @@ describe("useArchiveWorkflowRun", () => {
       )) as typeof fetch;
 
     const { result } = renderHook(() => useArchiveWorkflowRun(), {
+      wrapper: wrapper(),
+    });
+    await expect(result.current.mutateAsync("wfr_1")).rejects.toThrow();
+  });
+});
+
+describe("useStopWorkflowRun", () => {
+  it("POSTs to the stop endpoint and invalidates live-run queries", async () => {
+    let requested = "";
+    let method = "";
+    globalThis.fetch = ((
+      url: Parameters<typeof fetch>[0],
+      init?: RequestInit,
+    ) => {
+      requested = String(url);
+      method = init?.method ?? "GET";
+      return Promise.resolve(jsonResponse(200, { stopped: true }));
+    }) as typeof fetch;
+
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    const invalidatedKeys: unknown[][] = [];
+    client.invalidateQueries = ((filters?: {
+      queryKey?: readonly unknown[];
+    }) => {
+      if (filters?.queryKey) invalidatedKeys.push([...filters.queryKey]);
+      return Promise.resolve();
+    }) as typeof client.invalidateQueries;
+
+    const { result } = renderHook(() => useStopWorkflowRun("tn-x"), {
+      wrapper: recordWrapper(client),
+    });
+    await result.current.mutateAsync("wfr_1");
+
+    expect(method).toBe("POST");
+    expect(requested).toContain("/workflow-exec/records/wfr_1/stop");
+    expect(requested).toContain("tenantId=tn-x");
+    expect(invalidatedKeys).toEqual(
+      expect.arrayContaining([
+        ["workflow-runs"],
+        ["conversation-workflow-runs"],
+        ["workflow-record", "wfr_1", "tn-x"],
+        ["workflow-run-state", "wfr_1", "tn-x"],
+      ]),
+    );
+  });
+
+  it("rejects when the stop request fails", async () => {
+    globalThis.fetch = ((..._args: Parameters<typeof fetch>) =>
+      Promise.resolve(
+        jsonResponse(403, { error: "Forbidden" }),
+      )) as typeof fetch;
+
+    const { result } = renderHook(() => useStopWorkflowRun(), {
       wrapper: wrapper(),
     });
     await expect(result.current.mutateAsync("wfr_1")).rejects.toThrow();
