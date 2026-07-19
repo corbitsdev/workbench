@@ -32,7 +32,7 @@ mock.module("react-router", () => ({
   useNavigate: () => mock(() => {}),
 }));
 
-import { AgentsPage, filterAgents } from "./AgentsPage";
+import { AgentsPage, filterAgentDefinitions, filterAgents } from "./AgentsPage";
 import type { AgentInstanceItem } from "../hooks/use-agents";
 
 const originalFetch = globalThis.fetch;
@@ -46,43 +46,47 @@ function jsonResponse(body: unknown): Response {
   } as unknown as Response;
 }
 
-const agents = [
+const templates = [
   {
-    id: "ins-1",
-    agentId: "agt-1",
-    agentName: "Oat",
-    agentDescription: "Shared workspace agent",
-    tenantId: "tenant-1",
-    address: "ins-1@tenant-1.localhost",
-    status: "running",
+    key: "oat",
+    name: "Oat",
+    description: "Shared workspace agent",
+    tools: ["gamma", "exa"],
   },
   {
-    id: "ins-2",
-    agentId: "agt-2",
-    agentName: "Loop",
-    agentDescription: null,
-    tenantId: "tenant-1",
-    address: "ins-2@tenant-1.localhost",
-    status: "stopped",
+    key: "myra",
+    name: "Myra",
+    description: "Personal assistant",
+    tools: [],
   },
 ];
 
-let fetchImpl: (url: string) => Promise<Response> = (url) => {
+const deployedOatInstance = {
+  id: "ins-1",
+  agentId: "agt-1",
+  agentName: "Oat",
+  agentDescription: "Shared workspace agent",
+  tenantId: "tenant-1",
+  address: "ins-1@tenant-1.localhost",
+  status: "running",
+};
+
+function defaultFetchImpl(url: string): Promise<Response> {
+  if (String(url).includes("/agents/templates")) {
+    return Promise.resolve(jsonResponse({ data: templates }));
+  }
   if (String(url).includes("/agents")) {
-    return Promise.resolve(jsonResponse({ data: agents }));
+    return Promise.resolve(jsonResponse({ data: [] }));
   }
   return Promise.resolve(jsonResponse({}));
-};
+}
+
+let fetchImpl: (url: string) => Promise<Response> = defaultFetchImpl;
 
 beforeEach(() => {
   window.happyDOM.setURL("http://localhost/");
   meImpl = () => Promise.resolve(defaultMe);
-  fetchImpl = (url) => {
-    if (String(url).includes("/agents")) {
-      return Promise.resolve(jsonResponse({ data: agents }));
-    }
-    return Promise.resolve(jsonResponse({}));
-  };
+  fetchImpl = defaultFetchImpl;
   globalThis.fetch = mock((url: string) =>
     fetchImpl(url),
   ) as unknown as typeof fetch;
@@ -125,19 +129,48 @@ describe("AgentsPage", () => {
     expect(document.body.textContent).toContain("Loading agents");
   });
 
-  it("renders each agent's name, description, status, and address once loaded", async () => {
+  it("renders agent definitions from the templates response when no instances are deployed", async () => {
     renderPage();
 
     await waitFor(() => expect(document.body.textContent).toContain("Oat"));
     expect(document.body.textContent).toContain("Shared workspace agent");
+    expect(document.body.textContent).toContain("Myra");
+    expect(document.body.textContent).toContain("Personal assistant");
+    expect(document.body.textContent).toContain("Not deployed");
+  });
+
+  it("shows a deployed instance's status and address on its matching definition card", async () => {
+    fetchImpl = (url) => {
+      if (String(url).includes("/agents/templates")) {
+        return Promise.resolve(jsonResponse({ data: templates }));
+      }
+      if (String(url).includes("/agents")) {
+        return Promise.resolve(jsonResponse({ data: [deployedOatInstance] }));
+      }
+      return Promise.resolve(jsonResponse({}));
+    };
+
+    renderPage();
+
+    await waitFor(() => expect(document.body.textContent).toContain("Oat"));
     expect(document.body.textContent).toContain("Running");
     expect(document.body.textContent).toContain("ins-1@tenant-1.localhost");
 
-    expect(document.body.textContent).toContain("Loop");
-    expect(document.body.textContent).toContain("Stopped");
+    expect(document.body.textContent).toContain("Myra");
+    expect(document.body.textContent).toContain("Not deployed");
   });
 
-  it("exposes a copy control for each agent mailbox address", async () => {
+  it("exposes a copy control for a deployed instance's mailbox address", async () => {
+    fetchImpl = (url) => {
+      if (String(url).includes("/agents/templates")) {
+        return Promise.resolve(jsonResponse({ data: templates }));
+      }
+      if (String(url).includes("/agents")) {
+        return Promise.resolve(jsonResponse({ data: [deployedOatInstance] }));
+      }
+      return Promise.resolve(jsonResponse({}));
+    };
+
     const writeText = mock(() => Promise.resolve());
     Object.defineProperty(navigator, "clipboard", {
       configurable: true,
@@ -160,6 +193,34 @@ describe("AgentsPage", () => {
     const { getByLabelText } = renderPage();
     await waitFor(() => expect(document.body.textContent).toContain("Oat"));
     expect(getByLabelText("Search agents")).toBeTruthy();
+  });
+
+  it("filters definitions by name or description", async () => {
+    const { getByLabelText, queryByText } = renderPage();
+    await waitFor(() => expect(document.body.textContent).toContain("Oat"));
+
+    fireEvent.change(getByLabelText("Search agents"), {
+      target: { value: "personal" },
+    });
+
+    await waitFor(() => {
+      expect(queryByText("Myra")).toBeTruthy();
+      expect(queryByText("Oat")).toBeNull();
+    });
+  });
+
+  it("filterAgentDefinitions matches name or description", () => {
+    expect(
+      filterAgentDefinitions(templates, "personal").map((t) => t.name),
+    ).toEqual(["Myra"]);
+    expect(filterAgentDefinitions(templates, "shared").map((t) => t.name)).toEqual([
+      "Oat",
+    ]);
+    expect(filterAgentDefinitions(templates, "zzzz")).toEqual([]);
+    expect(filterAgentDefinitions(templates, "  ").map((t) => t.name)).toEqual([
+      "Oat",
+      "Myra",
+    ]);
   });
 
   it("filterAgents matches name, description, and address", () => {
@@ -210,6 +271,39 @@ describe("AgentsPage", () => {
     });
   });
 
+  it("renders unmatched deployed instances in a separate section", async () => {
+    fetchImpl = (url) => {
+      if (String(url).includes("/agents/templates")) {
+        return Promise.resolve(jsonResponse({ data: templates }));
+      }
+      if (String(url).includes("/agents")) {
+        return Promise.resolve(
+          jsonResponse({
+            data: [
+              {
+                id: "ins-9",
+                agentId: "agt-9",
+                agentName: "Retired Agent",
+                agentDescription: "No longer a template",
+                tenantId: "tenant-1",
+                address: "ins-9@tenant-1.localhost",
+                status: "stopped",
+              },
+            ],
+          }),
+        );
+      }
+      return Promise.resolve(jsonResponse({}));
+    };
+
+    renderPage();
+
+    await waitFor(() =>
+      expect(document.body.textContent).toContain("Retired Agent"),
+    );
+    expect(document.body.textContent).toContain("Deployed instances");
+  });
+
   it("shows an error message when the agents request fails", async () => {
     fetchImpl = () => Promise.reject(new Error("network down"));
     renderPage();
@@ -219,8 +313,11 @@ describe("AgentsPage", () => {
     );
   });
 
-  it("shows the empty state when there are no agents", async () => {
+  it("shows the empty state when there are no agent definitions", async () => {
     fetchImpl = (url) => {
+      if (String(url).includes("/agents/templates")) {
+        return Promise.resolve(jsonResponse({ data: [] }));
+      }
       if (String(url).includes("/agents")) {
         return Promise.resolve(jsonResponse({ data: [] }));
       }
@@ -229,10 +326,9 @@ describe("AgentsPage", () => {
     renderPage();
 
     await waitFor(() =>
-      expect(document.body.textContent).toContain("No agents yet"),
-    );
-    expect(document.body.textContent).toContain(
-      "Agents available to you will appear here",
+      expect(document.body.textContent).toContain(
+        "No agent definitions available yet.",
+      ),
     );
     expect(document.body.textContent).not.toContain("coming soon");
   });
@@ -243,7 +339,7 @@ describe("AgentsPage", () => {
     await waitFor(() => {
       getByText("Could not load agents.");
     });
-    expect(queryByText(/No agents yet/)).toBeNull();
+    expect(queryByText(/No agent definitions/)).toBeNull();
   });
 
   it("shows the error state, not the empty state, when no personal tenant resolves", async () => {
@@ -252,6 +348,6 @@ describe("AgentsPage", () => {
     await waitFor(() => {
       getByText("Could not load agents.");
     });
-    expect(queryByText(/No agents yet/)).toBeNull();
+    expect(queryByText(/No agent definitions/)).toBeNull();
   });
 });
