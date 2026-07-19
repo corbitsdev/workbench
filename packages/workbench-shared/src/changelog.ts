@@ -37,7 +37,7 @@ export const CHANGELOG_NAV_ROUTES = [
 // Newest first.
 export const CHANGELOG: readonly ChangelogRelease[] = [
   {
-    version: "0.9.0",
+    version: "0.8.3",
     date: "2026-07-19",
     title: "Under-the-hood upgrade",
     entries: [
