@@ -172,6 +172,7 @@ import {
   publishNativeApprovalResolved,
   withNativeApprovalCreatedNotify,
 } from "./lib/native-approval-notify";
+import { createNativeApprovalEnricher } from "./lib/native-approval-enrich";
 import { createFeedbackRouter } from "./routes/feedback";
 import type { MemberPreferences } from "@workbench/shared";
 import { createMePreferencesRouter } from "./routes/me-preferences";
@@ -512,6 +513,17 @@ const baseLookups = createHubSessionLookups({ db, agentRepoStore: repoStore });
 // this instance.
 const approvalsEventBus = createApprovalsEventBus();
 
+// Buffers the reactor's suspend-time tool snapshot (a `custom.approval.requested`
+// inference event) and writes it onto the native `approval` row — the CL-3940
+// enrichment that lets the decision surface name the action + show its arguments
+// instead of "Approval requested by <agent>". Fed by the agent-event listener
+// (snapshot side) and the register-notify wrapper (row-created side); it joins
+// them by `correlationId` and handles either arrival order.
+const nativeApprovalEnricher = createNativeApprovalEnricher(
+  db,
+  approvalsEventBus,
+);
+
 // The native `approval` row is co-written inside interchange's
 // `registerSignalCorrelation` (which owns the transaction and resolves the
 // tenant from the deployment); it is out of scope to modify, so the "created"
@@ -557,6 +569,7 @@ const lookups: SidecarLookups = {
     db,
     approvalsEventBus,
     baseRegisterSignalCorrelation,
+    nativeApprovalEnricher,
   ),
   async receiveWorkflowRunPack(repoId, pack, ref, commitSha) {
     if (repoId.kind !== "workflow-run") {
@@ -626,6 +639,19 @@ sidecarRouter.events.on("agent.event", ({ agentAddress, event }) => {
     return;
   }
   void analyticsSubscriber.onAgentEvent({ agentAddress, event: validated });
+});
+
+// CL-3940: the reactor emits `custom.approval.requested` at an authz `ask`
+// suspension, carrying the parked tool's name + arguments keyed by
+// `correlationId`. Buffer it and enrich the native `approval` row (which
+// interchange co-writes with those columns null) so the decision surface can
+// name the action and show its arguments. Isolated from analytics: the enricher
+// never throws and this listener does no other work.
+sidecarRouter.events.on("agent.event", ({ event }) => {
+  const validated = parseInferenceEvent(event);
+  if (validated instanceof type.errors) return;
+  if (validated.type !== "custom.approval.requested") return;
+  void nativeApprovalEnricher.recordToolSnapshot(validated.data);
 });
 
 const sidecarConnections = createSidecarConnectionRegistry();

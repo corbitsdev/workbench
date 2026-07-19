@@ -4,6 +4,7 @@ import { getLogger } from "@intx/log";
 import type { SidecarLookups } from "@intx/hub-sessions";
 import type { HubDb } from "../db";
 import type { ApprovalsEventBus } from "./approvals-events";
+import type { NativeApprovalEnricher } from "./native-approval-enrich";
 
 const { workflowDeployment } = intxSchema;
 
@@ -42,6 +43,31 @@ export async function publishNativeApprovalCreated(
 }
 
 /**
+ * Emits the native rail's "updated" change notification (CL-3940) when a tool
+ * snapshot enriches an approval row that already exists — i.e. the snapshot
+ * arrived AFTER the row's "created" event, so that "created" went out without
+ * the tool name/arguments. The notification carries the `approvalId` so an open
+ * ReviewGate refetches and the decision surface picks up the action + args.
+ * Rides the same bus/envelope as created/resolved; best-effort, never thrown, so
+ * it cannot corrupt the enrich path (which is itself already isolated).
+ */
+export function publishNativeApprovalUpdated(
+  bus: ApprovalsEventBus,
+  tenantId: string,
+  approvalId: string,
+): void {
+  try {
+    bus.publish({ tenantId, sessionId: null, kind: "updated", approvalId });
+  } catch (err) {
+    log.warn("native approval updated-notify failed", {
+      tenantId,
+      approvalId,
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
+}
+
+/**
  * Emits the native rail's "resolved" change notification after interchange's
  * mounted approve/reject route resolves a suspension. A native approval has no
  * session linkage, so `sessionId` is null and the notification is tenant-wide.
@@ -72,14 +98,25 @@ export function publishNativeApprovalResolved(
  * mis-attribute it as a `signal.correlation.register` failure even though the
  * approval + correlation rows were durably written. Mirrors the persistMail /
  * onUserMailboxRow best-effort pattern: publish can never fail the write path.
+ *
+ * The optional `enricher` closes the CL-3940 loop: interchange's co-write leaves
+ * the approver-facing `toolDefinition`/`toolArguments` null, and the reactor's
+ * snapshot (a `custom.approval.requested` inference event, keyed by the same
+ * `correlationId`) may arrive before the row exists. Calling `enrichOnCreated`
+ * after the co-write commits applies any buffered snapshot; it is best-effort
+ * and self-isolating (never throws), so it cannot fail the write path either.
  */
 export function withNativeApprovalCreatedNotify(
   db: HubDb,
   bus: ApprovalsEventBus,
   base: RegisterSignalCorrelation,
+  enricher?: NativeApprovalEnricher,
 ): RegisterSignalCorrelation {
   return async (registration) => {
     await base(registration);
+    if (enricher !== undefined) {
+      await enricher.enrichOnCreated(registration.correlationId);
+    }
     try {
       await publishNativeApprovalCreated(db, bus, registration.deploymentId);
     } catch (err) {

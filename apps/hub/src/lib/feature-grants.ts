@@ -111,7 +111,11 @@ export function featureEnvOverridesFromConfig(): Record<FeatureName, boolean> {
     triage: config.triageEnabled,
     "tasks-reconciler": config.tasksReconciler.enabled,
     "voice-input": false,
-    "native-approvals": config.nativeApprovalsEnabled,
+    // Retained as a resolvable feature name (owner.test.ts pins "resolvable but
+    // not owner self-serve"), but its env kill-switch is gone (CL-3940): native
+    // write-tool approvals now gate unconditionally via `resolveAskToolNamesForTenant`,
+    // so nothing reads this override. Hardwired off.
+    "native-approvals": false,
   };
 }
 

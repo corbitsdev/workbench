@@ -181,6 +181,25 @@ There are two kinds of vendoring:
   bug we inherited via the vendor copy, not a workbench-introduced
   regression — fixed here rather than upstream per the "vendor fixes stay
   local" rule. Guarded by `src/providers/openai-usage.test.ts`.
+- **WORKBENCH-LOCAL change (CL-3940):** `src/reactor.ts` `suspendOnGate`
+  publishes a `custom.approval.requested` inference event whenever it parks an
+  authz `ask` suspension (`pendingOp.suspendedCall` present), carrying
+  `{correlationId, callId, toolName, toolArguments}`. Interchange's suspend-time
+  co-write (`registerSignalCorrelation`) leaves the native `approval` row's
+  `toolDefinition`/`toolArguments` null, so the decision surface can only render
+  "Approval requested by <agent>". This event is the workbench-side carrier of
+  the parked tool snapshot: the hub buffers it and enriches the row, keyed by the
+  same `correlationId`, so the card names the action and shows its arguments. The
+  `custom.*` channel is used deliberately — it is the only reactor event shape
+  whose `data` is an open `Record<string, unknown>`, so it survives
+  `parseInferenceEvent` at the sidecar boundary unmodified (a `reactor.gate.blocked`
+  enrichment would be stripped by that variant's closed schema). Tagged
+  `// WORKBENCH-LOCAL (CL-3940)`; guarded by the "suspending extension emits
+  custom.approval.requested" test in `src/reactor.test.ts`. This is the FIRST
+  divergence in `src/reactor.ts` (previously 1:1 with upstream). **Retirement:**
+  drop the block once interchange captures the tool snapshot at its own suspend
+  co-write (tracked as CL-3943); a literal upstream copy that omits it silently
+  re-introduces the "no action name, no args" regression with a green build.
 
 ### `packages/storage-isogit` → `@workbench/storage-isogit`
 

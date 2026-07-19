@@ -4,7 +4,6 @@ import {
   beforeEach,
   describe,
   expect,
-  mock,
   test,
 } from "bun:test";
 import { PGlite } from "@electric-sql/pglite";
@@ -12,34 +11,21 @@ import { drizzle } from "drizzle-orm/pglite";
 import { pushSchema } from "drizzle-kit/api";
 import { APPROVAL_GATED_TOOL_NAMES } from "@workbench/agents";
 
-// `resolveAskToolNamesForTenant` reads the memoized feature check plus the staff
-// env override, both via `getConfig()`. The env override is OFF here so this
-// suite exercises the admin-grant enable path (the seeded member-role grant).
-mock.module("../config", () => ({
-  getConfig: () => ({
-    featureGrantCacheTtlMs: 30_000,
-    nativeApprovalsEnabled: false,
-  }),
-}));
-
 import { schema } from "../db";
 import type { HubDb } from "../db";
-import { setFeatureGrant, resetFeatureGrantCache } from "./feature-grants";
 import { resolveAskToolNamesForTenant } from "./native-approvals";
 import { persistInstanceToolGrants } from "../services/agent-provisioning";
 
-// Real-Postgres (PGlite) exercise of the native-approvals activation seam: the
-// `native-approvals` feature grant flips write-tool grant minting from `allow`
-// to `ask`, and leaves it `allow` when off. FK enforcement is off for seeding.
+// Real-Postgres (PGlite) exercise of the native-approvals activation seam
+// (CL-3940): write-tool grant minting is `ask` UNCONDITIONALLY (no owner
+// toggle, no env flag), while read tools stay `allow`. `sideEffect: "write"`
+// drives it via `APPROVAL_GATED_TOOL_NAMES`.
 
 const TENANT = "ten-na";
-const MEMBER_ROLE = "rol-member";
 const PRINCIPAL = "prn-inst";
 
 let client: PGlite;
 let db: HubDb;
-
-const SEEDED_TABLES = ['"grant"', "role"];
 
 // A stable write-gated tool name (Slack post) and a read tool (Exa search).
 const WRITE_TOOL = "@workbench/tools-slack/slack:slack_post_message";
@@ -68,58 +54,26 @@ afterAll(async () => {
 });
 
 beforeEach(async () => {
-  resetFeatureGrantCache();
-  for (const table of SEEDED_TABLES) {
-    await client.exec(`DELETE FROM ${table};`);
-  }
-  await client.query(
-    `insert into role (id, tenant_id, name, is_system) values ($1, $2, 'member', true)`,
-    [MEMBER_ROLE, TENANT],
-  );
+  await client.exec(`DELETE FROM "grant";`);
 });
 
 describe("resolveAskToolNamesForTenant", () => {
-  test("empty when native-approvals is off (default)", async () => {
-    const names = await resolveAskToolNamesForTenant(db, TENANT);
-    expect(names.size).toBe(0);
-  });
-
-  test("the approval-gated write set when native-approvals is on", async () => {
-    await setFeatureGrant(db, {
-      tenantId: TENANT,
-      roleId: MEMBER_ROLE,
-      name: "native-approvals",
-      enabled: true,
-    });
-    const names = await resolveAskToolNamesForTenant(db, TENANT);
+  test("always the approval-gated write set (write tool present)", async () => {
+    const names = await resolveAskToolNamesForTenant();
     expect(names).toEqual(APPROVAL_GATED_TOOL_NAMES);
     expect(names.has(WRITE_TOOL_LLM)).toBe(true);
   });
+
+  test("read tools are never in the ask set", async () => {
+    const names = await resolveAskToolNamesForTenant();
+    expect(names.has(READ_TOOL)).toBe(false);
+  });
 });
 
-describe("persistInstanceToolGrants native-approvals activation", () => {
-  const now = new Date("2026-07-18T00:00:00.000Z");
+describe("persistInstanceToolGrants unconditional gating", () => {
+  const now = new Date("2026-07-19T00:00:00.000Z");
 
-  test("feature off: every tool grant is allow", async () => {
-    await persistInstanceToolGrants(db as never, {
-      tenantId: TENANT,
-      principalId: PRINCIPAL,
-      toolNames: [WRITE_TOOL, READ_TOOL],
-      now,
-    });
-    const effects = await grantEffects();
-    expect(effects.get(`tool:${WRITE_TOOL_LLM}`)).toBe("allow");
-    expect(effects.get(`tool:${READ_TOOL}`)).toBe("allow");
-  });
-
-  test("feature on: write tool grant is ask, read tool grant is allow", async () => {
-    await setFeatureGrant(db, {
-      tenantId: TENANT,
-      roleId: MEMBER_ROLE,
-      name: "native-approvals",
-      enabled: true,
-    });
-    resetFeatureGrantCache();
+  test("write tool grant is ask, read tool grant is allow — no feature grant needed", async () => {
     await persistInstanceToolGrants(db as never, {
       tenantId: TENANT,
       principalId: PRINCIPAL,

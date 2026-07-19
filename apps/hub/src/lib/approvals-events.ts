@@ -3,13 +3,17 @@ import { createKeyedEventBus } from "./keyed-event-bus";
 
 // A change NOTIFICATION, never the approval data itself. The payload carries
 // only the tenant it belongs to, an optional session for client-side filtering,
-// and whether an approval was created or resolved. Clients react by refetching
-// the ownership-scoped list endpoint — sensitive tool-call context never rides
-// this broadcast channel.
+// and whether an approval was created, updated, or resolved. Clients react by
+// refetching the ownership-scoped list endpoint — sensitive tool-call context
+// never rides this broadcast channel. `updated` fires when a tool snapshot
+// enriches an already-created approval row (the snapshot arrived after its
+// "created" event); it carries the `approvalId` so a client can target the
+// changed row, and is otherwise the same refetch hint as the other kinds.
 export const ApprovalEventSchema = type({
   tenantId: "string",
   sessionId: "string | null",
-  kind: "'created' | 'resolved'",
+  kind: "'created' | 'updated' | 'resolved'",
+  "approvalId?": "string",
 });
 export type ApprovalEvent = typeof ApprovalEventSchema.infer;
 

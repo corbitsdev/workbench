@@ -1,6 +1,8 @@
 /// <reference types="bun" />
 import { afterEach, describe, expect, it, mock } from "bun:test";
+import { type } from "arktype";
 import {
+  ApprovalEventSchema,
   approveNativeRequest,
   listNativeApprovals,
   rejectNativeRequest,
@@ -114,5 +116,25 @@ describe("native rail route targeting", () => {
     await expect(listNativeApprovals("tenant-1")).rejects.toThrow(
       "Not implemented",
     );
+  });
+});
+
+describe("ApprovalEventSchema", () => {
+  it("accepts an 'updated' change notification so enrichment events refetch", () => {
+    const parsed = ApprovalEventSchema({
+      tenantId: "tenant-1",
+      sessionId: null,
+      kind: "updated",
+    });
+    expect(parsed instanceof type.errors).toBe(false);
+  });
+
+  it("rejects an unknown event kind", () => {
+    const parsed = ApprovalEventSchema({
+      tenantId: "tenant-1",
+      sessionId: null,
+      kind: "bogus",
+    });
+    expect(parsed instanceof type.errors).toBe(true);
   });
 });
