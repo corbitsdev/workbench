@@ -16,6 +16,26 @@ mock.module("../lib/approvals-api", () => ({
   subscribeApprovals: mock(() => () => {}),
 }));
 
+// The scoped ReviewGate's supporting hooks — stubbed so mounting it drives no
+// real members/instances/turns fetch. Address→instance-id scoping still works
+// off the real approval-display helper for `ins_` addresses.
+mock.module("../hooks/use-thread-tool-calls", () => ({
+  THREAD_TURNS_QUERY_KEY: "thread-turns",
+  useOpenThreadToolCall: () => null,
+}));
+mock.module("../hooks/use-approval-display-lookups", () => ({
+  useApprovalDisplayLookups: () => ({
+    lookups: {
+      principalById: new Map(),
+      principalByRefId: new Map(),
+      agentByInstanceId: new Map(),
+      agentByAddress: new Map(),
+      instanceIdByAddress: new Map(),
+    },
+    isLoading: false,
+  }),
+}));
+
 mock.module("@workbench/chat", () => ({
   ...RealChatModule,
   ChatPanel: (props: {
@@ -321,7 +341,7 @@ describe("MyraChatSurface", () => {
     expect(screen.queryByTestId("review-gate")).toBeNull();
   });
 
-  it("mounts the approval gate and surfaces a pending native approval for the tenant", async () => {
+  it("mounts the approval gate and surfaces a pending approval raised by the open thread (CL-3940)", async () => {
     approvalsResult = [
       {
         id: "apr-1",
@@ -351,6 +371,9 @@ describe("MyraChatSurface", () => {
             state: { phase: "ready", session: {} as any },
             live: true,
             sessionId: "sess-chat",
+            // The open thread is the instance that raised the approval, so the
+            // card renders here.
+            instanceId: "ins_dep-1",
             send: () => {},
           }),
           tenantId: "tenant-1",
@@ -358,9 +381,55 @@ describe("MyraChatSurface", () => {
       ),
     );
     const gate = await screen.findByTestId("review-gate");
-    expect(gate.textContent).toContain("notion__create_page");
+    // The card shows the friendly action label from the snapshot, never the raw
+    // snake_case tool id.
+    expect(gate.textContent).toContain("Create page (Notion)");
+    expect(gate.textContent).not.toContain("notion__create_page");
     await screen.findByTestId("native-approve-apr-1");
     await screen.findByTestId("native-reject-apr-1");
+  });
+
+  it("does not surface an approval raised by a different thread (CL-3940)", async () => {
+    approvalsResult = [
+      {
+        id: "apr-2",
+        tenantId: "tenant-1",
+        deploymentId: "dep-1",
+        runId: "run-1",
+        agentAddress: "ins_dep-1@agents.example.com",
+        correlationId: "corr-1",
+        toolDefinition: { name: "notion__create_page" },
+        toolArguments: null,
+        scope: null,
+        status: "pending",
+        timeoutAt: null,
+        resolvedAt: null,
+        createdAt: "2026-07-10T00:00:00.000Z",
+        updatedAt: "2026-07-10T00:00:00.000Z",
+      },
+    ];
+    const client = new QueryClient();
+    render(
+      React.createElement(
+        QueryClientProvider,
+        { client },
+        React.createElement(MyraChatSurface, {
+          session: makeSession({
+            // biome-ignore lint/suspicious/noExplicitAny: minimal ready session
+            state: { phase: "ready", session: {} as any },
+            live: true,
+            sessionId: "sess-chat",
+            // A different open thread than the one that raised the approval.
+            instanceId: "ins_other",
+            send: () => {},
+          }),
+          tenantId: "tenant-1",
+        }),
+      ),
+    );
+    // Give the approvals query time to settle, then assert no gate rendered.
+    await Promise.resolve();
+    expect(screen.queryByTestId("native-approval-apr-2")).toBeNull();
   });
 
   it("routes free text to the sole pending gate instead of a chat turn (CL-2681)", () => {
