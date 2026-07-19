@@ -104,6 +104,8 @@ export interface ArtifactGalleryProps {
   thumbnailUrlForArtifact?: (
     artifact: ArtifactWithSession,
   ) => string | undefined;
+  /** The viewing user's principal id — suppresses the creator-initials badge on their own artifacts. */
+  viewerPrincipalId?: string;
 }
 
 /** Date-range + provenance facet selection driven by the gallery filter bar. */
@@ -424,6 +426,7 @@ export function ArtifactGallery({
   isLoadingMore = false,
   loadMoreError = null,
   thumbnailUrlForArtifact,
+  viewerPrincipalId,
 }: ArtifactGalleryProps) {
   // Containment: artifacts that fail gallery mapping are dropped from BOTH
   // views (and from the empty-state count) so one corrupt artifact can
@@ -438,10 +441,11 @@ export function ArtifactGallery({
         const tile = tryToGalleryArtifact(artifact, {
           ...(thumbnailUrl === undefined ? {} : { thumbnailUrl }),
           thumbnailAlt: artifact.title,
+          ...(viewerPrincipalId === undefined ? {} : { viewerPrincipalId }),
         });
         return tile === undefined ? [] : [{ artifact, tile }];
       }),
-    [artifacts, thumbnailUrlForArtifact],
+    [artifacts, thumbnailUrlForArtifact, viewerPrincipalId],
   );
   const tiles = renderable.map((entry) => entry.tile);
   const tileByArtifactId = new Map(

@@ -308,6 +308,33 @@ function artifactJobLabel(artifact: ArtifactWithSession): string | undefined {
   return undefined;
 }
 
+// Two initials from a real name (e.g. "Jane Doe" -> "JD"); a single-word name
+// yields its first letter only.
+export function initialsFromName(name: string): string {
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return "";
+  const first = parts[0]?.[0] ?? "";
+  const last = parts.length > 1 ? (parts[parts.length - 1]?.[0] ?? "") : "";
+  return (first + last).toUpperCase();
+}
+
+// The creator-initials badge is a "someone else made this" signal, never a
+// self-reference: it renders only when the artifact's owner is known, named,
+// and distinct from the viewer. `viewerPrincipalId` absent means the caller
+// has not identified a viewer (e.g. an unauthenticated/system render), so the
+// badge is suppressed rather than guessed.
+function creatorInitialsFor(
+  artifact: ArtifactWithSession,
+  viewerPrincipalId: string | undefined,
+): string | undefined {
+  if (viewerPrincipalId === undefined) return undefined;
+  if (artifact.ownerPrincipalId === null) return undefined;
+  if (artifact.ownerPrincipalId === viewerPrincipalId) return undefined;
+  if (!artifact.ownerName) return undefined;
+  const initials = initialsFromName(artifact.ownerName);
+  return initials.length > 0 ? initials : undefined;
+}
+
 const ORIGIN_LABELS: Record<string, string> = {
   workflow: "Workflow",
   agent: "Agent",
@@ -365,6 +392,8 @@ export function artifactProvenanceLabel(
 export type ToGalleryArtifactOptions = {
   thumbnailUrl?: string | undefined;
   thumbnailAlt?: string | undefined;
+  /** The viewing user's principal id, used to suppress the creator-initials badge on their own artifacts. */
+  viewerPrincipalId?: string | undefined;
 };
 
 export function toGalleryArtifact(
@@ -380,6 +409,10 @@ export function toGalleryArtifact(
         previewExcerpt(artifact.content, { fallbackTitle: artifact.title }))
       : previewExcerpt(artifact.content, { fallbackTitle: artifact.title });
   const from = artifactJobLabel(artifact);
+  const creatorInitials = creatorInitialsFor(
+    artifact,
+    options.viewerPrincipalId,
+  );
   return parseGalleryArtifact({
     ...visual,
     id: artifact.id,
@@ -397,6 +430,7 @@ export function toGalleryArtifact(
     ...(options.thumbnailAlt !== undefined
       ? { thumbnailAlt: options.thumbnailAlt }
       : {}),
+    ...(creatorInitials !== undefined ? { creatorInitials } : {}),
   });
 }
 

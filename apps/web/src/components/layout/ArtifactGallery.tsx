@@ -326,6 +326,7 @@ export function ArtifactGallery({
             : null
         }
         thumbnailUrlForArtifact={imageThumbnailUrl}
+        {...(myPrincipalId !== null ? { viewerPrincipalId: myPrincipalId } : {})}
       />
       <ArtifactModal
         open={selected !== null}

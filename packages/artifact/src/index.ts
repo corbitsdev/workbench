@@ -24,6 +24,7 @@ export {
   tryToGalleryArtifact,
   artifactProvenance,
   artifactProvenanceLabel,
+  initialsFromName,
 } from "./artifact-visuals";
 export type { ArtifactProvenance, ProvenanceTone } from "./artifact-visuals";
 export {
@@ -45,7 +46,6 @@ export {
   type ArtifactPreviewFamily,
 } from "./artifact-preview-family";
 export { shouldShowArtifactStatusBadge } from "./artifact-status-badge";
-export { iconForPreviewFamily } from "./artifact-family-icon";
 export {
   ArtifactGallery,
   ArtifactGalleryToolbar,
