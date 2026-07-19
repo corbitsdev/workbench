@@ -778,4 +778,31 @@ describe("ReviewGate — native rail", () => {
     screen.getByTestId("approval-appr-1");
     screen.getByTestId("native-approval-apr-native-1");
   });
+
+  it("merges both rails into one queue ordered newest-first by createdAt", async () => {
+    mockListApprovals.mockResolvedValue([
+      makeApproval({
+        id: "legacy-old",
+        createdAt: "2026-01-01T00:00:00.000Z",
+      }),
+    ]);
+    mockListNativeApprovals.mockResolvedValue([
+      makeNativeApproval({
+        id: "native-new",
+        createdAt: "2026-06-01T00:00:00.000Z",
+      }),
+    ]);
+    renderGate();
+    const gate = await waitFor(() => screen.getByTestId("review-gate"));
+    const order = Array.from(
+      gate.querySelectorAll(
+        "[data-testid^='approval-'], [data-testid^='native-approval-']",
+      ),
+    ).map((el) => el.getAttribute("data-testid"));
+    // Newer native card ahead of the older legacy card — rail-agnostic ordering.
+    expect(order).toEqual([
+      "native-approval-native-new",
+      "approval-legacy-old",
+    ]);
+  });
 });
