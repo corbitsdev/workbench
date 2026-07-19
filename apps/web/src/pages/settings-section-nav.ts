@@ -15,6 +15,7 @@ export const SETTINGS_SECTIONS: readonly SettingsSectionLink[] = [
   { id: "myra-style", label: "Personality & style" },
   { id: "inbox-capabilities", label: "Your inbox & brief" },
   { id: "connections", label: "Connections" },
+  { id: "auto-approved-actions", label: "Always-approved actions" },
   { id: "schedules", label: "Schedules" },
   { id: "account", label: "Account" },
   { id: "whats-new", label: "What's new" },

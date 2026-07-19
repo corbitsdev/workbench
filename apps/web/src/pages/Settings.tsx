@@ -35,6 +35,7 @@ import { useTourLauncher } from "../components/tour/OnboardingTour";
 import { useActiveWorkbench } from "../lib/active-workbench-context";
 import { WhatsNewSection } from "../components/whats-new/WhatsNewSection";
 import { MemberConnectionsPanel } from "../components/MemberConnectionsPanel";
+import { AutoApprovedToolsPanel } from "../components/AutoApprovedToolsPanel";
 import { MyraDefaultsPanel } from "../components/MyraDefaultsPanel";
 import { MyraStylePanel } from "../components/MyraStylePanel";
 import { MyraPinnedSkillsPanel } from "../components/MyraPinnedSkillsPanel";
@@ -336,6 +337,14 @@ export default function Settings() {
           description="Connect your accounts to bring outside data into the workbench."
         >
           <MemberConnectionsPanel />
+        </SettingsGroup>
+
+        <SettingsGroup
+          id="auto-approved-actions"
+          title="Always-approved actions"
+          description="Actions you chose to stop being asked about. Revoke one to require approval again."
+        >
+          <AutoApprovedToolsPanel tenantId={activeTenantId} />
         </SettingsGroup>
 
         {schedulerEnabled && (

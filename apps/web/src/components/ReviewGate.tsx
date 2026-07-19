@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   approveNativeRequest,
+  autoApproveTool,
   listNativeApprovals,
   rejectNativeRequest,
   subscribeApprovals,
@@ -27,7 +28,7 @@ export type ReviewGateProps = {
   openInstanceId: string | null;
 };
 
-type RequestState = "idle" | "approving" | "rejecting";
+type RequestState = "idle" | "approving" | "rejecting" | "auto-approving";
 
 /**
  * The native (Interchange-suspension) approval decision surface. A suspended
@@ -137,6 +138,27 @@ export function ReviewGate({ tenantId, openInstanceId }: ReviewGateProps) {
     }
   }
 
+  // "Auto Approve Always": persist the durable decision FIRST (it requires the
+  // approval to still be pending, and validates the tool against it), then
+  // release the current call through the ordinary approve route. One user action
+  // = approve once + stop-asking.
+  async function handleAutoApprove(id: string, toolName: string) {
+    patchItemState(id, { requestState: "auto-approving", error: null });
+    try {
+      await autoApproveTool(tenantId, id, toolName);
+      await approveNativeRequest(tenantId, id);
+      patchItemState(id, { requestState: "idle" });
+      await queryClient.invalidateQueries({
+        queryKey: ["native-approvals", tenantId],
+      });
+    } catch (err) {
+      patchItemState(id, {
+        requestState: "idle",
+        error: err instanceof Error ? err.message : "Auto-approve failed.",
+      });
+    }
+  }
+
   async function handleReject(id: string) {
     patchItemState(id, { requestState: "rejecting", error: null });
     try {
@@ -172,6 +194,9 @@ export function ReviewGate({ tenantId, openInstanceId }: ReviewGateProps) {
             error={error}
             onApprove={() => void handleApprove(native.id)}
             onReject={() => void handleReject(native.id)}
+            onAutoApprove={(toolName) =>
+              void handleAutoApprove(native.id, toolName)
+            }
           />
         );
       })}

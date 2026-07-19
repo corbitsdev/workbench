@@ -66,11 +66,14 @@ const mockSubscribeApprovals = mock(
   },
 );
 
+const mockAutoApproveTool = mock(async () => {});
+
 mock.module("../lib/approvals-api", () => ({
   subscribeApprovals: mockSubscribeApprovals,
   listNativeApprovals: mockListNativeApprovals,
   approveNativeRequest: mockApproveNativeRequest,
   rejectNativeRequest: mockRejectNativeRequest,
+  autoApproveTool: mockAutoApproveTool,
 }));
 
 // The default approval below is raised by ins_dep-1, so the open thread defaults
@@ -211,11 +214,13 @@ describe("ReviewGate — event-driven refresh", () => {
       });
     });
 
-    // The card re-renders with the enriched label + args; the fallback is gone.
+    // The card re-renders with the enriched label + structured arg rows; the
+    // fallback is gone.
     await waitFor(() => {
       screen.getByText("Posting to Slack #gtm");
     });
-    screen.getByText("channel: #gtm · text: hi");
+    screen.getByText("Channel");
+    screen.getByText("#gtm");
     expect(screen.queryByText(/Approval requested by ins_dep-1/)).toBeNull();
   });
 
@@ -292,7 +297,7 @@ describe("ReviewGate — native rail", () => {
     screen.getByText(/Approval requested by ins_dep-1/);
   });
 
-  it("summarizes tool arguments as key: value pairs when the snapshot carries them", async () => {
+  it("renders tool arguments as humanized label/value rows when the snapshot carries them", async () => {
     mockListNativeApprovals.mockResolvedValue([
       makeNativeApproval({
         toolDefinition: { name: "slack__post_message" },
@@ -303,8 +308,12 @@ describe("ReviewGate — native rail", () => {
     await waitFor(() => {
       screen.getByTestId("native-approval-apr-native-1");
     });
-    // Values, not just field names, so the approver sees what will actually run.
-    screen.getByText("channel: #gtm · text: hi");
+    // Humanized field labels and their values, so the approver sees what will
+    // actually run — not just field names.
+    screen.getByText("Channel");
+    screen.getByText("#gtm");
+    screen.getByText("Text");
+    screen.getByText("hi");
   });
 
   it("surfaces an array-valued recipient argument the approver must see", async () => {
@@ -322,10 +331,11 @@ describe("ReviewGate — native rail", () => {
       screen.getByTestId("native-approval-apr-native-1");
     });
     // The recipient list is rendered, not dropped as a non-scalar.
-    screen.getByText(/to: a@x\.com, b@y\.com/);
+    screen.getByText("To");
+    screen.getByText("a@x.com, b@y.com");
   });
 
-  it("shows a '+N more' overflow cue when more than three args are present", async () => {
+  it("shows every meaningful field as a row, with no '+N more' collapse", async () => {
     mockListNativeApprovals.mockResolvedValue([
       makeNativeApproval({
         toolDefinition: { name: "some_tool" },
@@ -336,12 +346,14 @@ describe("ReviewGate — native rail", () => {
     await waitFor(() => {
       screen.getByTestId("native-approval-apr-native-1");
     });
-    // Three pairs are shown; the remaining two collapse into the overflow cue
-    // rather than being silently dropped.
-    screen.getByText(/a: 1 · b: 2 · c: 3 · \+2 more/);
+    // All five fields render cleanly rather than three-plus-overflow.
+    for (const value of ["1", "2", "3", "4", "5"]) {
+      screen.getByText(value);
+    }
+    expect(screen.queryByText(/more/)).toBeNull();
   });
 
-  it("does not repeat the title in the arg line when the headline already speaks it", async () => {
+  it("does not repeat the title as a row when the headline already speaks it", async () => {
     mockListNativeApprovals.mockResolvedValue([
       makeNativeApproval({
         toolDefinition: { name: "linear__create_issue" },
@@ -354,8 +366,8 @@ describe("ReviewGate — native rail", () => {
     });
     // The headline carries the title verbatim...
     screen.getByText(/Fix the login bug/);
-    // ...so the arg-summary line must not restate it as `title: ...`.
-    expect(screen.queryByText(/title: Fix the login bug/)).toBeNull();
+    // ...so a redundant "Title" row is not also shown.
+    expect(screen.queryByText("Title")).toBeNull();
   });
 
   it("resolves a native approval through the native approve route", async () => {
