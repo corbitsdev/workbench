@@ -126,26 +126,51 @@ function hasRenderableOutput(segment: ChatMessage): boolean {
 }
 
 /**
- * Live-phase projection (CL-3734): apply the same outputs-only rule to every
- * segment that has ALREADY settled within a still-live group, so process rows
- * disappear the moment a segment commits rather than waiting for the whole
- * turn to end. The one segment still `status: "sending"` is left untouched —
- * it keeps its parts intact so `AgentTurn` renders the single rolling
- * activity line for it. This does not merge/drop segments the way
- * `projectSettledTurn` does (the final segment isn't known yet); each settled
- * segment gets ONLY its own outputs. A settled segment that projects to no
- * output at all is dropped (CL-3752) — an interstitial reasoning-only step is
- * process, not an output, and must leave no orphan turn behind (this mirrors
- * `projectSettledTurn`, where such narration simply disappears). When the last
- * segment settles, the caller switches to `projectSettledTurn`, which
- * re-derives the merged final answer — so the transcript re-projects to the
- * same result a reload would produce.
+ * True when a segment carries an output the transcript must preserve even when
+ * it is not the final line: an embedded UI block (a product), a produced file,
+ * or an inline image/attachment. Pure-text narration has none of these and is
+ * treated as interstitial process during the live-phase collapse.
+ */
+function hasNonNarrationOutput(segment: ChatMessage): boolean {
+  if (extractUIBlockFromText(segment.content) !== null) return true;
+  const parts = segment.parts ?? liftToParts(segment);
+  if (parts.some((part) => part.type === "file")) return true;
+  if ((segment.images?.length ?? 0) > 0) return true;
+  if ((segment.attachments?.length ?? 0) > 0) return true;
+  return false;
+}
+
+/**
+ * Live-phase projection (CL-3734, CL-3948): apply the outputs-only rule to
+ * every segment that has ALREADY settled within a still-live group, so process
+ * rows disappear the moment a segment commits rather than waiting for the whole
+ * turn to end. The segment(s) still `status: "sending"` are left untouched —
+ * each keeps its parts intact so `AgentTurn` renders its rolling activity line.
+ *
+ * Among the settled segments this mirrors `projectSettledTurn`'s
+ * interstitial-collapse rule: only the FINAL settled text segment survives,
+ * plus any settled segment carrying real output (UI block / file / attachment /
+ * image). Earlier settled pure-narration segments — the "Let me check…/Let me
+ * look up…" lines — are dropped. This matters while a turn is parked on a
+ * native approval gate: the turn never settles, so without this collapse every
+ * interstitial narration line would linger above the pending action
+ * (CL-3948). A settled segment that projects to no output at all is dropped
+ * too (CL-3752). When the last segment settles, the caller switches to
+ * `projectSettledTurn`, which re-derives the merged final answer — so the
+ * transcript re-projects to the same result a reload would produce.
  */
 export function projectLiveTurn(segments: ChatMessage[]): ChatMessage[] {
+  const finalSettledText = [...segments]
+    .reverse()
+    .find((m) => m.status !== "sending" && m.content.trim() !== "");
   return segments.flatMap((segment) => {
     if (segment.status === "sending") return [segment];
     const projected = projectOutputs(segment, []);
-    return hasRenderableOutput(projected) ? [projected] : [];
+    if (!hasRenderableOutput(projected)) return [];
+    if (segment === finalSettledText || hasNonNarrationOutput(segment)) {
+      return [projected];
+    }
+    return [];
   });
 }
 
