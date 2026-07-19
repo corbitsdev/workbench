@@ -165,10 +165,7 @@ import { createPrincipalAnalyticsRouter } from "./routes/principal-analytics";
 import { createTenantRosterRouter } from "./routes/tenant-roster";
 import { createMyraVariantsRouter } from "./routes/myra-variants";
 import { createGammaTemplatesRouter } from "./routes/gamma-templates";
-import {
-  createApprovalsRouter,
-  createInternalApprovalsRouter,
-} from "./routes/approvals";
+import { createApprovalNotificationsRouter } from "./routes/approval-notifications";
 import { createNativeApprovalsRouter } from "./routes/native-approvals";
 import { createApprovalsEventBus } from "./lib/approvals-events";
 import {
@@ -1473,7 +1470,7 @@ v1.route("/", createFileParseRouter(db, analyticsSubscriber));
 v1.route("/", createMailAttachmentsRouter(db));
 v1.route("/", createGammaTemplatesRouter(db));
 
-v1.route("/", createApprovalsRouter(db, approvalsEventBus));
+v1.route("/", createApprovalNotificationsRouter(db, approvalsEventBus));
 v1.route("/", createFeedbackRouter(db));
 v1.route("/", createMePreferencesRouter(db, grantStore));
 v1.route("/", createMeFeaturesRouter(db));
@@ -2178,10 +2175,6 @@ app.route("/api/v1", v1);
 
 // ─── Internal routes (sidecar token auth) ──────────────────────────
 
-app.route(
-  "/api/internal",
-  createInternalApprovalsRouter(db, config.sidecarToken, approvalsEventBus),
-);
 app.route(
   "/api/internal",
   createHubToolsRouter(db, config.sidecarToken, {

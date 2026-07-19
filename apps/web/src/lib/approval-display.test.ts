@@ -2,7 +2,6 @@ import { describe, expect, it } from "bun:test";
 import {
   buildApprovalDisplayLookups,
   formatMailboxAddress,
-  humanizeApprovalValue,
   mailSendToolSummaryHeadline,
 } from "./approval-display";
 import type { AgentInstance } from "./hub-api";
@@ -45,16 +44,9 @@ describe("approval-display", () => {
     );
   });
 
-  it("maps bare principal and instance ids", () => {
-    const lookups = buildApprovalDisplayLookups(members, instances);
-    expect(humanizeApprovalValue("prn_ada", lookups)).toBe("Ada Lovelace");
-    expect(humanizeApprovalValue("ins_oat", lookups)).toBe("Oat");
-  });
-
   it("falls back without exposing raw ids when unknown", () => {
     const lookups = buildApprovalDisplayLookups([], []);
     expect(formatMailboxAddress("ins_unknown@x.com", lookups)).toBe("Agent");
-    expect(humanizeApprovalValue("prn_unknown", lookups)).toBe("Team member");
   });
 
   it("mailSendToolSummaryHeadline uses Recipient while lookups load", () => {
