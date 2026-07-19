@@ -59,13 +59,13 @@ beforeEach(async () => {
 
 describe("resolveAskToolNamesForTenant", () => {
   test("always the approval-gated write set (write tool present)", async () => {
-    const names = await resolveAskToolNamesForTenant(db, TENANT);
+    const names = await resolveAskToolNamesForTenant();
     expect(names).toEqual(APPROVAL_GATED_TOOL_NAMES);
     expect(names.has(WRITE_TOOL_LLM)).toBe(true);
   });
 
   test("read tools are never in the ask set", async () => {
-    const names = await resolveAskToolNamesForTenant(db, TENANT);
+    const names = await resolveAskToolNamesForTenant();
     expect(names.has(READ_TOOL)).toBe(false);
   });
 });

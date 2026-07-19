@@ -10,9 +10,14 @@ import { PGlite } from "@electric-sql/pglite";
 import { drizzle } from "drizzle-orm/pglite";
 import { pushSchema } from "drizzle-kit/api";
 
+import { parseInferenceEvent } from "@intx/types/runtime";
+import { type } from "arktype";
+
 import { schema } from "../db";
 import type { HubDb } from "../db";
 import { createNativeApprovalEnricher } from "./native-approval-enrich";
+import { createApprovalsEventBus } from "./approvals-events";
+import type { ApprovalEvent } from "./approvals-events";
 
 const TENANT = "tnt-enrich";
 const DEPLOYMENT = "dep-enrich";
@@ -168,5 +173,188 @@ describe("createNativeApprovalEnricher", () => {
     await expect(
       enricher.recordToolSnapshot({ correlationId: 123 }),
     ).resolves.toBeUndefined();
+  });
+
+  test("the EXACT reactor event validates through parseInferenceEvent and drives enrichment", async () => {
+    const enricher = createNativeApprovalEnricher(db);
+    await insertApproval("corr-reactor");
+
+    // The literal frame the reactor emits at an authz `ask` suspension. It must
+    // survive interchange's real validator with type + data intact (the
+    // `custom.*` branch keeps `data` as an open Record), then enrich the row.
+    const wire = {
+      type: "custom.approval.requested",
+      seq: 7,
+      data: {
+        correlationId: "corr-reactor",
+        callId: "call-reactor",
+        toolName: "linear__create_issue",
+        toolArguments: { title: "From reactor" },
+      },
+    };
+    const validated = parseInferenceEvent(wire);
+    expect(validated instanceof type.errors).toBe(false);
+    if (validated instanceof type.errors) throw new Error(validated.summary);
+    expect(validated.type).toBe("custom.approval.requested");
+    expect(validated.data).toEqual(wire.data);
+
+    await enricher.recordToolSnapshot(validated.data);
+
+    const snap = await readSnapshot("corr-reactor");
+    expect(snap?.toolDefinition).toEqual({ name: "linear__create_issue" });
+    expect(snap?.toolArguments).toEqual({ title: "From reactor" });
+  });
+
+  test("buffered-race: two snapshots buffered (rows absent) then drained, each row keeps its OWN snapshot", async () => {
+    const enricher = createNativeApprovalEnricher(db);
+
+    // Both snapshots arrive before either row exists — both buffer.
+    await enricher.recordToolSnapshot({
+      correlationId: "corr-buf-a",
+      callId: "call-buf-a",
+      toolName: "linear__create_issue",
+      toolArguments: { title: "Buffered A" },
+    });
+    await enricher.recordToolSnapshot({
+      correlationId: "corr-buf-b",
+      callId: "call-buf-b",
+      toolName: "slack__post_message",
+      toolArguments: { channel: "#buf-b", text: "Buffered B" },
+    });
+    expect(await readSnapshot("corr-buf-a")).toBeUndefined();
+    expect(await readSnapshot("corr-buf-b")).toBeUndefined();
+
+    // Rows land, drained via enrichOnCreated in parallel.
+    await insertApproval("corr-buf-a");
+    await insertApproval("corr-buf-b");
+    await Promise.all([
+      enricher.enrichOnCreated("corr-buf-a"),
+      enricher.enrichOnCreated("corr-buf-b"),
+    ]);
+
+    const a = await readSnapshot("corr-buf-a");
+    const b = await readSnapshot("corr-buf-b");
+    expect(a?.toolDefinition).toEqual({ name: "linear__create_issue" });
+    expect(a?.toolArguments).toEqual({ title: "Buffered A" });
+    expect(b?.toolDefinition).toEqual({ name: "slack__post_message" });
+    expect(b?.toolArguments).toEqual({ channel: "#buf-b", text: "Buffered B" });
+  });
+
+  test("redacts secret-keyed values and caps oversized arguments before persist", async () => {
+    const enricher = createNativeApprovalEnricher(db);
+    await insertApproval("corr-redact");
+
+    await enricher.recordToolSnapshot({
+      correlationId: "corr-redact",
+      callId: "call-redact",
+      toolName: "slack__post_message",
+      toolArguments: {
+        channel: "#gtm",
+        api_key: "sk-live-123",
+        headers: { Authorization: "Bearer abc", "X-Trace": "keep-me" },
+        nested: { password: "hunter2", note: "visible" },
+      },
+    });
+
+    const snap = await readSnapshot("corr-redact");
+    expect(snap?.toolArguments).toEqual({
+      channel: "#gtm",
+      api_key: "[redacted]",
+      headers: { Authorization: "[redacted]", "X-Trace": "keep-me" },
+      nested: { password: "[redacted]", note: "visible" },
+    });
+  });
+
+  test("caps an oversized argument payload and marks it truncated", async () => {
+    const enricher = createNativeApprovalEnricher(db);
+    await insertApproval("corr-big");
+
+    await enricher.recordToolSnapshot({
+      correlationId: "corr-big",
+      callId: "call-big",
+      toolName: "slack__post_message",
+      toolArguments: { blob: "x".repeat(20_000) },
+    });
+
+    const snap = (await readSnapshot("corr-big"))?.toolArguments as Record<
+      string,
+      unknown
+    >;
+    expect(snap.__truncated).toBe(true);
+    expect(typeof snap.preview).toBe("string");
+    expect((snap.preview as string).length).toBeLessThanOrEqual(8 * 1024);
+  });
+});
+
+describe("createNativeApprovalEnricher post-creation notify (refetch contract)", () => {
+  test("snapshot AFTER created publishes an 'updated' event with the approvalId", async () => {
+    const bus = createApprovalsEventBus();
+    const seen: ApprovalEvent[] = [];
+    bus.subscribe(TENANT, (e) => seen.push(e));
+    const enricher = createNativeApprovalEnricher(db, bus);
+
+    // Row already exists (its "created" event has already fired elsewhere).
+    await insertApproval("corr-upd");
+    await enricher.recordToolSnapshot({
+      correlationId: "corr-upd",
+      callId: "call-upd",
+      toolName: "linear__create_issue",
+      toolArguments: { title: "late" },
+    });
+
+    expect(seen).toEqual([
+      {
+        tenantId: TENANT,
+        sessionId: null,
+        kind: "updated",
+        approvalId: "apr-corr-upd",
+      },
+    ]);
+  });
+
+  test("snapshot BEFORE created publishes nothing (created will carry the snapshot)", async () => {
+    const bus = createApprovalsEventBus();
+    const seen: ApprovalEvent[] = [];
+    bus.subscribe(TENANT, (e) => seen.push(e));
+    const enricher = createNativeApprovalEnricher(db, bus);
+
+    // Snapshot first, row absent: buffers, no publish.
+    await enricher.recordToolSnapshot({
+      correlationId: "corr-pre",
+      callId: "call-pre",
+      toolName: "slack__post_message",
+      toolArguments: { channel: "#pre", text: "hi" },
+    });
+    // Row lands; enrichOnCreated applies the buffer but must NOT publish —
+    // the "created" event (fired by the notify wrapper right after) already
+    // carries the enriched snapshot.
+    await insertApproval("corr-pre");
+    await enricher.enrichOnCreated("corr-pre");
+
+    expect(seen).toEqual([]);
+  });
+
+  test("a redelivered snapshot for an already-enriched row publishes no second 'updated'", async () => {
+    const bus = createApprovalsEventBus();
+    const seen: ApprovalEvent[] = [];
+    bus.subscribe(TENANT, (e) => seen.push(e));
+    const enricher = createNativeApprovalEnricher(db, bus);
+
+    await insertApproval("corr-idem-pub");
+    await enricher.recordToolSnapshot({
+      correlationId: "corr-idem-pub",
+      callId: "call-1",
+      toolName: "linear__create_issue",
+      toolArguments: { title: "first" },
+    });
+    await enricher.recordToolSnapshot({
+      correlationId: "corr-idem-pub",
+      callId: "call-1",
+      toolName: "linear__create_issue",
+      toolArguments: { title: "second" },
+    });
+
+    expect(seen).toHaveLength(1);
+    expect(seen[0]?.kind).toBe("updated");
   });
 });

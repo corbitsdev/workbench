@@ -65,6 +65,38 @@ describe("createApprovalsEventBus", () => {
     expect(b).toBe(1);
   });
 
+  it("routes an updated event carrying the approvalId to the tenant", () => {
+    const bus = createApprovalsEventBus();
+    const received: unknown[] = [];
+    bus.subscribe("tenant-a", (e) => received.push(e));
+
+    bus.publish({
+      tenantId: "tenant-a",
+      sessionId: null,
+      kind: "updated",
+      approvalId: "apr-1",
+    });
+
+    expect(received).toEqual([
+      {
+        tenantId: "tenant-a",
+        sessionId: null,
+        kind: "updated",
+        approvalId: "apr-1",
+      },
+    ]);
+  });
+
+  it("accepts an 'updated' kind with an approvalId in the schema", () => {
+    const ok = ApprovalEventSchema({
+      tenantId: "t",
+      sessionId: null,
+      kind: "updated",
+      approvalId: "apr-1",
+    });
+    expect(ok instanceof type.errors).toBe(false);
+  });
+
   it("exposes an arktype schema that rejects an unknown kind", () => {
     const bad = ApprovalEventSchema({
       tenantId: "t",
