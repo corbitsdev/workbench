@@ -427,34 +427,24 @@ async function buildStepTools(args: {
         );
         continue;
       }
-      // The tool-packaging loader prefixes every tool definition with
-      // `<factoryId>:<name>` (e.g. `@workbench/tools-exa/exa:exa_search`).
-      // That string carries `@`, `/`, and `:`, which violate LLM
-      // function-name constraints and do not round-trip (kimi truncates at
-      // the `:`, CL-2306) — so the model's tool call would never match its
-      // grant or the loader's own dispatch entry. Present the LLM-safe alias
-      // to the model and translate it back to the canonical name before
-      // delegating to the bundle's run(). The dynamic tool catalog
-      // (`packages/agent-core/src/dynamic-tools-catalog.ts`) advertises
-      // tools in this same `toLlmToolName` form, so `packageToolNames` must
-      // carry it too — otherwise `load_tools`/`search_tools` never find a
-      // successfully-loaded, credentialed package tool in the available set
-      // and misreport it as needing a credential (CL-3929).
-      const aliasToCanonical = new Map<string, string>();
-      const safeDefinitions = bundle.definitions.map((def) => {
-        const safe = toLlmToolName(def.name);
-        aliasToCanonical.set(safe, def.name);
-        return { ...def, name: safe };
-      });
+      // Keep definitions in the tool-packaging loader's canonical
+      // `<factoryId>:<name>` form here (e.g. `@workbench/tools-exa/exa:exa_search`).
+      // `buildStepTools` is shared by two consumers with DIFFERENT name
+      // contracts: `runDeterministicToolStep` dispatches by the canonical
+      // colon-form name a deterministic workflow step declares
+      // (`deterministicToolStep`'s `STEP_TOOL_TAG`, threaded through
+      // `workflow-substrate-factory.ts`'s `runDeterministicToolStep` call),
+      // while the warm single-step agent path needs the LLM-safe
+      // `toLlmToolName` alias the model can actually call (CL-2306) and the
+      // dynamic tool catalog advertises (CL-3929). Renaming here would break
+      // every deterministic package-tool step. The warm-agent-only alias
+      // projection is applied in `resolveWarmAgentHarness`, the one
+      // model-facing consumer that needs it.
       loadedRunners.push({
-        definitions: safeDefinitions,
-        run: (call, signal) =>
-          bundle.run(
-            { ...call, name: aliasToCanonical.get(call.name) ?? call.name },
-            signal,
-          ),
+        definitions: [...bundle.definitions],
+        run: (call, signal) => bundle.run(call, signal),
       });
-      for (const def of safeDefinitions) {
+      for (const def of bundle.definitions) {
         loadedToolNames.add(def.name);
         packageToolNames.add(def.name);
       }
@@ -580,6 +570,68 @@ export function prepareWarmAgentPrompt(
 }
 
 /**
+ * Present each PACKAGE tool's canonical `<factoryId>:<name>` definition to
+ * the model under its LLM-safe `toLlmToolName` alias (e.g.
+ * `@workbench/tools-exa/exa:exa_search` -> `exa__search`), and translate a
+ * dispatched call back to the canonical name before it reaches the
+ * underlying runner. That string carries `@`, `/`, and `:`, which violate
+ * LLM function-name constraints and do not round-trip (kimi truncates at the
+ * `:`, CL-2306) — so the model's tool call would never match its grant or
+ * the loader's own dispatch entry — and the dynamic tool catalog
+ * (`packages/agent-core/src/dynamic-tools-catalog.ts`) advertises tools in
+ * this same alias form, so `load_tools`/`search_tools` need it to recognize a
+ * successfully-loaded, credentialed, granted package tool (CL-3929).
+ *
+ * Scoped to the WARM single-step agent path only: `buildStepTools`'s
+ * definitions/`packageToolNames` stay canonical, because `buildStepTools` is
+ * also used by `runDeterministicToolStep`, which dispatches by the canonical
+ * colon-form name a deterministic workflow step declares
+ * (`deterministicToolStep`'s `STEP_TOOL_TAG`) — aliasing there would throw
+ * `StepToolNotRegisteredError` on every deterministic package-tool step.
+ * Local tools (posix/mail) are already unprefixed (not in `packageToolNames`)
+ * and pass through unchanged.
+ *
+ * Two distinct canonical names that happen to collide on the same alias
+ * (a package/tool-name combination degenerate enough to produce the same
+ * `<pkgShort>__<tool>`) would otherwise silently shadow one another via
+ * last-write-wins `Map.set`; log it loudly instead so a real collision is a
+ * visible operational signal rather than one tool quietly vanishing.
+ */
+function applyLlmSafeAliases(
+  runner: DefinedRunner,
+  packageToolNames: ReadonlySet<string>,
+  address: string,
+): { runner: DefinedRunner; packageToolNames: Set<string> } {
+  const aliasToCanonical = new Map<string, string>();
+  const safePackageToolNames = new Set<string>();
+  const definitions = runner.definitions.map((def) => {
+    if (!packageToolNames.has(def.name)) return def;
+    const safe = toLlmToolName(def.name);
+    const collision = aliasToCanonical.get(safe);
+    if (collision !== undefined && collision !== def.name) {
+      logger.error(
+        "LLM-safe tool name collision for {address}: canonical names {a} and {b} both alias to {safe}; {b} shadows {a}",
+        { address, a: collision, b: def.name, safe },
+      );
+    }
+    aliasToCanonical.set(safe, def.name);
+    safePackageToolNames.add(safe);
+    return { ...def, name: safe };
+  });
+  return {
+    runner: {
+      definitions,
+      run: (call, signal) =>
+        runner.run(
+          { ...call, name: aliasToCanonical.get(call.name) ?? call.name },
+          signal,
+        ),
+    },
+    packageToolNames: safePackageToolNames,
+  };
+}
+
+/**
  * Re-home the retired `default-harness` director + dynamic-tools + exposure
  * resolution onto the WARM single-step agent path. A single-step deployment
  * (Myra/Oat/triage/gate agent) is a long-lived tool-capable agent, not a
@@ -613,6 +665,13 @@ async function resolveWarmAgentHarness(args: {
   dynamicEnv: Record<string, unknown>;
 }> {
   const { def, storeDir, address } = args;
+  const aliased = applyLlmSafeAliases(
+    args.runner,
+    args.packageToolNames,
+    address,
+  );
+  const runner = aliased.runner;
+  const packageToolNames = aliased.packageToolNames;
   const dynamicToolConfig = resolveDynamicToolConfig(def.systemPrompt);
   const isTriageSession = isTriageSessionPrompt(def.systemPrompt);
   const isInvokeSession = isInvokeSessionPrompt(def.systemPrompt);
@@ -631,7 +690,7 @@ async function resolveWarmAgentHarness(args: {
   if (dynamicToolConfig === undefined) {
     // No dynamic catalog: full advertisement, no allow-list gate — identical
     // to the retired harness's `grantedCatalogToolNames === undefined` path.
-    return { runner: args.runner, director, dynamicEnv: {} };
+    return { runner, director, dynamicEnv: {} };
   }
 
   // Gate the catalog to tools this agent is GRANTED (the `tool:<llm-name>/
@@ -667,7 +726,7 @@ async function resolveWarmAgentHarness(args: {
   const rehydrated = filterExposureToCatalog(
     persisted.exposed,
     availableCatalog,
-  ).filter((name) => args.packageToolNames.has(name));
+  ).filter((name) => packageToolNames.has(name));
   for (const name of rehydrated) exposureState.exposed.add(name);
   if (rehydrated.length > 0) {
     logger.info("Rehydrated {count} exposed dynamic tool(s) for {address}", {
@@ -679,7 +738,7 @@ async function resolveWarmAgentHarness(args: {
   const catalogRunner = createCatalogTools({
     catalog: availableCatalog,
     exposure: exposureState,
-    availableToolNames: args.packageToolNames,
+    availableToolNames: packageToolNames,
     onExposureChanged: (exposed) => {
       void persistExposure(storeDir, exposed).catch((err: unknown) => {
         logger.error("Failed to persist tool exposure for {address}: {error}", {
@@ -695,14 +754,11 @@ async function resolveWarmAgentHarness(args: {
   // always allowed (CL-3848 admission).
   const allowedNames = buildDispatchAllowedToolNames(
     [...args.localToolNames],
-    args.packageToolNames,
+    packageToolNames,
     catalogRunner.definitions.map((d) => d.name),
     grantedCatalogToolNames,
   );
-  const merged = mergeToolRunners([
-    args.runner,
-    catalogRunner,
-  ]) as DefinedRunner;
+  const merged = mergeToolRunners([runner, catalogRunner]) as DefinedRunner;
   const filtered = filterToolRunner(merged, allowedNames);
 
   return {
