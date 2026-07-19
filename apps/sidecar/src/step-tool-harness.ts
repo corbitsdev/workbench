@@ -41,6 +41,7 @@ import {
   TRIAGE_BUDGET_DIRECTOR_ID,
   INVOKE_BUDGET_DIRECTOR_ID,
   resolveDynamicToolConfig,
+  toLlmToolName,
 } from "@workbench/agents";
 import {
   isTriageSessionPrompt,
@@ -426,11 +427,34 @@ async function buildStepTools(args: {
         );
         continue;
       }
-      loadedRunners.push({
-        definitions: [...bundle.definitions],
-        run: (call, signal) => bundle.run(call, signal),
+      // The tool-packaging loader prefixes every tool definition with
+      // `<factoryId>:<name>` (e.g. `@workbench/tools-exa/exa:exa_search`).
+      // That string carries `@`, `/`, and `:`, which violate LLM
+      // function-name constraints and do not round-trip (kimi truncates at
+      // the `:`, CL-2306) — so the model's tool call would never match its
+      // grant or the loader's own dispatch entry. Present the LLM-safe alias
+      // to the model and translate it back to the canonical name before
+      // delegating to the bundle's run(). The dynamic tool catalog
+      // (`packages/agent-core/src/dynamic-tools-catalog.ts`) advertises
+      // tools in this same `toLlmToolName` form, so `packageToolNames` must
+      // carry it too — otherwise `load_tools`/`search_tools` never find a
+      // successfully-loaded, credentialed package tool in the available set
+      // and misreport it as needing a credential (CL-3929).
+      const aliasToCanonical = new Map<string, string>();
+      const safeDefinitions = bundle.definitions.map((def) => {
+        const safe = toLlmToolName(def.name);
+        aliasToCanonical.set(safe, def.name);
+        return { ...def, name: safe };
       });
-      for (const def of bundle.definitions) {
+      loadedRunners.push({
+        definitions: safeDefinitions,
+        run: (call, signal) =>
+          bundle.run(
+            { ...call, name: aliasToCanonical.get(call.name) ?? call.name },
+            signal,
+          ),
+      });
+      for (const def of safeDefinitions) {
         loadedToolNames.add(def.name);
         packageToolNames.add(def.name);
       }
