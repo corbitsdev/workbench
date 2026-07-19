@@ -138,6 +138,28 @@ async function checkDatabase(): Promise<void> {
   }
 }
 
+/**
+ * Reconcile the workbench `approval` table BEFORE interchange migrations run.
+ * Interchange 0038 does a bare `CREATE TABLE "approval"` that collides with the
+ * workbench's own `approval` table; on an already-migrated DB this renames the
+ * workbench table (and its PK) to `workbench_approval` so interchange's create
+ * succeeds. On a fresh DB it no-ops — the table is created by workbench
+ * migration 0070, and 0040's now-superseded approval index is skipped below.
+ * See `apps/hub/src/db/workbench-approval-reconcile.ts`.
+ */
+async function reconcileWorkbenchApproval(
+  client: import("postgres").Sql<{}>,
+): Promise<void> {
+  const { reconcileWorkbenchApprovalTable } = await import(
+    "../apps/hub/src/db/workbench-approval-reconcile"
+  );
+  console.log(
+    "\n  → Reconciling workbench approval table (pre-interchange)...",
+  );
+  await reconcileWorkbenchApprovalTable((sql) => client.unsafe(sql));
+  console.log("  ✅ Workbench approval table reconciled");
+}
+
 async function runInterchangeMigrations(
   client: import("postgres").Sql<{}>,
 ): Promise<void> {
@@ -236,6 +258,24 @@ async function runCustomMigrations(
   );
   const start = Date.now();
 
+  const { isSupersededApprovalIndexStatement } = await import(
+    "../apps/hub/src/db/workbench-approval-reconcile"
+  );
+  // CL-3932: the workbench `approval` table was renamed to `workbench_approval`
+  // (interchange introduced its own `approval`). Historical workbench migrations
+  // that index the `approval` table (only 0040) now target interchange's table
+  // on a fresh DB, which lacks the workbench `principal_id` column and would
+  // abort the migration. Skip those superseded statements when the live
+  // `approval` is not the workbench table; the index lives on workbench_approval
+  // (migration 0070). A `principal_id` column marks the workbench-shaped table.
+  const approvalPrincipalCol = await client`
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema = current_schema()
+      AND table_name = 'approval'
+      AND column_name = 'principal_id'
+  `;
+  const approvalIsWorkbenchTable = approvalPrincipalCol.length > 0;
+
   for (const file of pending) {
     const raw = fs.readFileSync(path.join(migrationsDir, file), "utf-8");
     const statements = raw
@@ -247,6 +287,15 @@ async function runCustomMigrations(
     // cleanly and the file is not recorded as applied.
     await client.begin(async (tx) => {
       for (const stmt of statements) {
+        if (
+          !approvalIsWorkbenchTable &&
+          isSupersededApprovalIndexStatement(stmt)
+        ) {
+          console.log(
+            `    (skipped superseded approval-index statement in ${file})`,
+          );
+          continue;
+        }
         await tx.unsafe(stmt);
       }
       await tx`
@@ -276,6 +325,7 @@ async function runMigrations(): Promise<void> {
 
   console.log("Running forward-only migrations...");
 
+  await reconcileWorkbenchApproval(client);
   await runInterchangeMigrations(client);
   await runCustomMigrations(client);
 

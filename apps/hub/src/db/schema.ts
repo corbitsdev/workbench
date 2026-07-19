@@ -701,7 +701,11 @@ export type SkillAccessRow = typeof skillAccess.$inferSelect;
 
 export const approvalStatus = ["pending", "approved", "rejected"] as const;
 
-export const approval = pgTable("approval", {
+// Renamed from "approval" → "workbench_approval" at the 5a73d3cc interchange
+// pin (CL-3932): interchange introduced its own "approval" table. The pre-
+// interchange reconcile in scripts/db-setup.ts owns the live migration; see
+// migration 0070 and apps/hub/src/db/workbench-approval-reconcile.ts.
+export const workbenchApproval = pgTable("workbench_approval", {
   id: uuid("id").primaryKey().defaultRandom(),
   tenantId: text("tenant_id").notNull(),
   principalId: text("principal_id").notNull(),
