@@ -26,7 +26,6 @@
     "@intx/workflow": "workspace:*",
     "@intx/workflow-deploy": "workspace:*",
     "@workbench/agents": "workspace:*",
-    "@workbench/approvals": "workspace:*",
     "@workbench/tools-catalog": "workspace:*",
     "@workbench/context-repair": "workspace:*",
     "@workbench/hub-agent": "workspace:*",

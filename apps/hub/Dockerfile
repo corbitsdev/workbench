@@ -16,7 +16,6 @@ COPY apps/sidecar/package.json apps/sidecar/
 COPY apps/web/package.json apps/web/
 COPY packages/agents/package.json packages/agents/
 COPY packages/agent-core/package.json packages/agent-core/
-COPY packages/approvals/package.json packages/approvals/
 COPY packages/artifact/package.json packages/artifact/
 COPY packages/blocks/package.json packages/blocks/
 COPY packages/chat/package.json packages/chat/

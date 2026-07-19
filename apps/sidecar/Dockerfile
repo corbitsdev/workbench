@@ -21,7 +21,6 @@ COPY apps/sidecar/package.json apps/sidecar/
 COPY apps/web/package.json apps/web/
 COPY packages/agents/package.json packages/agents/
 COPY packages/agent-core/package.json packages/agent-core/
-COPY packages/approvals/package.json packages/approvals/
 COPY packages/artifact/package.json packages/artifact/
 COPY packages/blocks/package.json packages/blocks/
 COPY packages/chat/package.json packages/chat/
@@ -101,7 +100,6 @@ COPY packages/agent-core/ packages/agent-core/
 COPY packages/myra/ packages/myra/
 COPY packages/inference/ packages/inference/
 COPY packages/tools-catalog/ packages/tools-catalog/
-COPY packages/approvals/ packages/approvals/
 COPY packages/catalog/ packages/catalog/
 COPY packages/context-repair/ packages/context-repair/
 COPY packages/hub-agent/ packages/hub-agent/
