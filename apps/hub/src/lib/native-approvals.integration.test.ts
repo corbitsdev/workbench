@@ -4,12 +4,23 @@ import {
   beforeEach,
   describe,
   expect,
+  mock,
   test,
 } from "bun:test";
 import { PGlite } from "@electric-sql/pglite";
 import { drizzle } from "drizzle-orm/pglite";
 import { pushSchema } from "drizzle-kit/api";
 import { APPROVAL_GATED_TOOL_NAMES } from "@workbench/agents";
+
+// `resolveAskToolNamesForTenant` reads the memoized feature check plus the staff
+// env override, both via `getConfig()`. The env override is OFF here so this
+// suite exercises the admin-grant enable path (the seeded member-role grant).
+mock.module("../config", () => ({
+  getConfig: () => ({
+    featureGrantCacheTtlMs: 30_000,
+    nativeApprovalsEnabled: false,
+  }),
+}));
 
 import { schema } from "../db";
 import type { HubDb } from "../db";

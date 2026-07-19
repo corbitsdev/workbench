@@ -817,12 +817,14 @@ export const FEATURE_GRANT_CATALOG: readonly FeatureCatalogEntry[] = [
     description:
       "Shows the microphone control in the Myra composer so members can dictate messages.",
   },
-  {
-    name: "native-approvals",
-    label: "Native approval suspension",
-    description:
-      "Routes write-tool human approvals through Interchange's native suspend/resume rail: a write tool parks the run until a member approves it in ReviewGate, instead of the legacy hub approval poll. Off leaves the legacy path exactly as before.",
-  },
+  // NOTE: `native-approvals` is intentionally NOT in this catalog. It is a
+  // resolvable feature name (see `FEATURE_NAMES`) but must stay off the owner
+  // self-serve surface — the decision surface (ReviewGate over the native
+  // approval store) is not shipped yet, so a one-click enable would park every
+  // single-agent write tool until timeout with no way to resolve it. It is
+  // enabled only via the staff-controlled env override path
+  // (`featureEnvOverridesFromConfig`) for integration tests and a future staged
+  // rollout, and returns to this catalog in the increment that ships ReviewGate.
 ];
 
 export const FeatureNameSchema = type.enumerated(...FEATURE_NAMES);

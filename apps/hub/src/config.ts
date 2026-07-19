@@ -349,6 +349,12 @@ export function loadConfig() {
     // (per-item session, prepare-only by default). Default OFF; opt in per
     // environment.
     triageEnabled: parseBooleanEnv("TRIAGE_ENABLED"),
+    // Staff-controlled env override for the `native-approvals` feature (CL-3934).
+    // Native ask-grant suspension is deliberately NOT an owner self-serve
+    // feature (absent from FEATURE_GRANT_CATALOG) while the ReviewGate decision
+    // surface is unshipped, so this global override is its only enable path for
+    // integration exercise and a future staged rollout. Default OFF.
+    nativeApprovalsEnabled: parseBooleanEnv("NATIVE_APPROVALS_ENABLED"),
     // Global override for the Demos sidebar section (hidden by default). When
     // true the demo links are served to every client regardless of the org-wide
     // owner toggle; absent/false leaves demos to the owner grant.

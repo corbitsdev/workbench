@@ -197,7 +197,11 @@ let ownerRouterShowDemos = false;
 // Toggled per-test to exercise a feature's emergency env override surfaced as
 // `forcedByEnv`. Reset to all-false by default.
 let ownerRouterFeatureEnvOverrides: Record<
-  "scheduler" | "triage" | "tasks-reconciler" | "voice-input" | "native-approvals",
+  | "scheduler"
+  | "triage"
+  | "tasks-reconciler"
+  | "voice-input"
+  | "native-approvals",
   boolean
 > = {
   scheduler: false,
@@ -1155,6 +1159,22 @@ describe("owner features routes", () => {
       body: JSON.stringify({ enabled: true }),
     });
     expect(res.status).toBe(404);
+  });
+
+  it("PUT rejects native-approvals: a resolvable feature name, but not owner self-serve", async () => {
+    // `native-approvals` is a real feature name (env-override enablable) but is
+    // deliberately absent from FEATURE_GRANT_CATALOG, so an owner cannot one-
+    // click it while the ReviewGate decision surface is unshipped. The toggle
+    // route must reject it exactly like any non-catalog name.
+    callerPrincipalId = "prn_owner";
+    const { db, insertedGrants } = featuresDb();
+    const res = await buildApp(db).request("/owner/features/native-approvals", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ enabled: true }),
+    });
+    expect(res.status).toBe(404);
+    expect(insertedGrants).toHaveLength(0);
   });
 
   it("PUT rejects a non-boolean body with 400", async () => {
