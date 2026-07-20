@@ -404,6 +404,15 @@ function WorkflowDockCard({
             </button>
           )}
       </div>
+      {stopRun.isError && (
+        <p
+          role="alert"
+          data-testid="dock-stop-error"
+          className="px-3 pb-2 text-xs text-red-500"
+        >
+          Couldn't stop this run. Try again.
+        </p>
+      )}
       {open && (
         <div
           role="status"

@@ -302,6 +302,11 @@ function WorkflowRunPaneInner({
               Stop
             </Button>
           ))}
+        {record && !terminal && stopRun.isError && (
+          <span role="alert" className="text-xs text-red-500">
+            Couldn't stop this run. Try again.
+          </span>
+        )}
         <Button variant="ghost" size="sm" onClick={onClose}>
           Close
         </Button>
@@ -314,6 +319,7 @@ function WorkflowRunPaneInner({
       terminal,
       confirmingStop,
       stopping,
+      stopRun.isError,
       // Depend on mutate only — the full mutation object is a new identity each
       // render and would re-publish chrome every frame (see ArtifactDetailPage).
       stopRun.mutate,

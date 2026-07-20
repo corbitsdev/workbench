@@ -15,6 +15,7 @@ import { WorkflowDock } from "./WorkflowDock";
 type ApiCall = { method: string; path: string; body?: unknown };
 
 let apiCalls: ApiCall[] = [];
+let failStopRuns = false;
 let records: unknown = [];
 let statesByRunId: Record<string, unknown> = {};
 
@@ -41,6 +42,7 @@ async function fakeApi(
   }
   const stopMatch = /\/workflow-exec\/records\/([^/]+)\/stop/.exec(path);
   if (stopMatch?.[1] !== undefined) {
+    if (failStopRuns) throw new Error("stop failed");
     return { stopped: true };
   }
   throw new Error(`unexpected api call: ${method} ${path}`);
@@ -105,6 +107,7 @@ function renderDock(conversationId: string | null = "conv-1") {
 
 beforeEach(() => {
   apiCalls = [];
+  failStopRuns = false;
   records = [];
   statesByRunId = {};
   localStorage.clear();
@@ -466,5 +469,25 @@ describe("WorkflowDock", () => {
         ),
       ).toBe(true),
     );
+  });
+
+  it("surfaces a legible error when the stop request fails (CL-3687)", async () => {
+    failStopRuns = true;
+    records = [listRow("run_live", "running")];
+    statesByRunId["run_live"] = logState("run_live", "running", [
+      { stepId: "draft", phase: "in-flight" },
+    ]);
+    renderDock();
+    await waitFor(() => screen.getByTestId("dock-stop"));
+
+    fireEvent.click(screen.getByTestId("dock-stop"));
+    fireEvent.click(screen.getByTestId("dock-stop-confirm"));
+
+    await waitFor(() => screen.getByTestId("dock-stop-error"));
+    expect(
+      screen.getByText("Couldn't stop this run. Try again."),
+    ).toBeTruthy();
+    // Confirm stays available so the user can retry the stop.
+    expect(screen.getByTestId("dock-stop-confirm")).toBeTruthy();
   });
 });

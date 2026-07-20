@@ -95,6 +95,7 @@ const resumeMutateAsync = mock(
   }): Promise<undefined> => undefined,
 );
 const stopMutate = mock((_runId: string) => undefined);
+let stopIsError = false;
 
 mock.module("../hooks/use-workflow", () => ({
   ...workflowHooks,
@@ -111,6 +112,7 @@ mock.module("../hooks/use-workflow", () => ({
   useStopWorkflowRun: () => ({
     mutate: stopMutate,
     isPending: false,
+    isError: stopIsError,
     variables: undefined,
   }),
   useWorkflowCredentials: () => ({ data: [] }),
@@ -174,6 +176,7 @@ describe("WorkflowRunPane", () => {
     resumeMutateAsync.mockReset();
     resumeMutateAsync.mockImplementation(async () => undefined);
     stopMutate.mockReset();
+    stopIsError = false;
     resolveSlowPanel = null;
   });
 
@@ -187,6 +190,19 @@ describe("WorkflowRunPane", () => {
     expect(stopMutate).not.toHaveBeenCalled();
     fireEvent.click(screen.getByTestId("run-pane-stop-confirm"));
     expect(stopMutate).toHaveBeenCalledWith("wfr_1");
+  });
+
+  it("surfaces a legible error when the stop request fails (CL-3687)", async () => {
+    record = makeRecord({ status: "running" });
+    stopIsError = true;
+    render(<WorkflowRunPane deploymentId="wfr_1" onClose={() => undefined} />, {
+      wrapper,
+    });
+    await waitFor(() =>
+      screen.getByText("Couldn't stop this run. Try again."),
+    );
+    // Stop stays available so the user can retry.
+    expect(screen.getByTestId("run-pane-stop")).toBeTruthy();
   });
 
   it("hides Stop in chrome for terminal runs (CL-3687)", async () => {
