@@ -28,6 +28,7 @@ worktrees
 .env.maven11
 .env.circleclick
 
-# Dispatch orchestration artifacts (local runs)
+# Local orchestration / planning artifacts (not product source)
 dispatch/
-dispatch/
+specs/
+plans/
