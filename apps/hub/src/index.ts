@@ -2181,9 +2181,10 @@ v1.delete(
 // Abort workflow RUNS (CL-2262), operator-gated by the same session grant guard
 // as the deploy/delete-deployment routes — an operator can abort ANY run, so
 // there is no per-user ownership check (unlike the user-facing /workflow-exec
-// read/resume routes). Marks the run record terminal; CL-2248's boot-reconciler
-// reaps the sidecar dir on next restart. `abort-active` is registered before the
-// `:runId` route so the literal segment is not captured as a runId.
+// read/resume routes). Marks the run record terminal; sidecar dir reclamation
+// is deferred (no automatic reaper currently — follow-up work). `abort-active`
+// is registered before the `:runId` route so the literal segment is not
+// captured as a runId.
 v1.post(
   "/workflow-exec/records/abort-active",
   abortActiveRunsRouteDescription,

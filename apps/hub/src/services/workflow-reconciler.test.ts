@@ -413,8 +413,8 @@ describe("failOrphanedRuns", () => {
     // across a restart (CL-2535/2537). failOrphanedRuns must NOT fail it even
     // though its supervisor is absent from the pre-reconcile routable snapshot —
     // failing it would flip the record terminal, drop the deployment out of
-    // activeRunDeploymentIds, and let the sidecar boot-reconciler reap the
-    // workflow-run repo → resume push dangles → reason=corrupt.
+    // activeRunDeploymentIds, and make the run look reapable while it is
+    // still parked → resume push dangles → reason=corrupt.
     const runs: RunRow[] = [
       { id: "run_parked", deploymentId: "ses_gone", status: "awaiting" },
     ];
@@ -1058,9 +1058,7 @@ describe("reconcileAwaiting — hibernation of long-parked runs", () => {
       routable: [addressOf("ses_run_exhausted")],
       maxSignalRedeliveries: 3,
     });
-    failRowsRef = new Map([
-      ["run_ses_run_exhausted", { status: "awaiting" }],
-    ]);
+    failRowsRef = new Map([["run_ses_run_exhausted", { status: "awaiting" }]]);
 
     const summary = await h.reconciler.reconcileAwaiting();
 
