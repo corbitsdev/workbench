@@ -10,7 +10,7 @@
 
 ## Project
 
-GTM Workbench is an AI-assisted GTM workspace built on top of Interchange. Users get a personal agent (Myra), shared workspace agents (Oat, others), and workflows for turning call data into publishable collateral. For current product and architecture details, read the scribe-managed docs.
+Workbench is a horizontal agentic workspace built on top of Interchange — AI teammates on the team's own evidence, with every external side effect behind human approval. GTM is its first workflow pack and current wedge, not the identity (see `docs/POSITIONING.md`). Users get a personal agent (Myra), shared workbench agents (Oat, others), and workflows — the flagship pack turns call data into publishable collateral. For current product and architecture details, read the scribe-managed docs.
 
 Operators run all tenancy, credential, tool, and workflow operations through the admin CLI — `bun run admin` / `admin:staging` / `admin:production` (`apps/hub/bin/admin/`); see `docs/ADMIN_CLI.md`.
 

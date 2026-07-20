@@ -1,8 +1,10 @@
-# GTM Workbench — Product Documentation
+# Workbench — Product Documentation
 
 ## What We're Building
 
-A human-in-the-loop (HITL) GTM workspace where AI agents and workflows assist users in turning sales call data into publishable collateral assets.
+Workbench is a horizontal agentic workspace: AI teammates (a personal agent, Myra, and shared agents like Oat) working alongside a team on the team's own evidence, with every external side effect behind human approval. Nothing in the substrate — inbox, agents, grants, workflows — is vertical-specific; vertical content ships as workflow packs. The canonical identity statement is [POSITIONING.md](./POSITIONING.md).
+
+The first workflow pack is GTM: a human-in-the-loop (HITL) pipeline where agents and workflows assist users in turning sales call data into publishable collateral assets. GTM is the current go-to-market wedge, not the product identity.
 
 The agent layer handles analysis and first-draft generation. The human handles curation, approval, and refinement at every stage. This is **intentionally not** a fully automated pipeline.
 
@@ -197,8 +199,8 @@ connection.
 
 ## Target Users
 
-- Sales and marketing teams who want to turn call insights into usable content
-- Teams that need lightweight, fast collateral without waiting for a content team
+- Small teams that want AI teammates working on their own evidence without giving up human control
+- Current wedge: sales and marketing teams who want to turn call insights into usable content, and need lightweight, fast collateral without waiting for a content team
 
 ## Core Value Propositions
 
