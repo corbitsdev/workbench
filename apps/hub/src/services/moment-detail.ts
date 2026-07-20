@@ -1,4 +1,5 @@
 import {
+  buildCompactionDetailQuery,
   buildRunDetailQuery,
   buildToolCallDetailQuery,
   buildTurnDetailQuery,
@@ -223,6 +224,34 @@ async function runDetail(
   };
 }
 
+// Compaction metadata + token sum from analytics_event (CL-3839). Counts and
+// reason come from the event metadata; tokens are the summarization call's own
+// cost (not the session total). Zero tokens means no usage was attributed
+// (e.g. a non-summarize compactor) — surface as null so the UI omits the row.
+async function compactionDetail(
+  db: HubDb,
+  base: { kind: string; id: string },
+  scope: { id: string; tenantId: string; principalIds: string[] },
+): Promise<MomentDetail | null> {
+  const rows = rowsOf(await db.execute(buildCompactionDetailQuery(scope)));
+  const row = rows[0];
+  if (row === undefined) return null;
+  const tokens = toNumberOrNull(row["total_tokens"]);
+  return {
+    ...base,
+    compaction: {
+      turnsIn: toNumberOrNull(row["turns_in"]),
+      turnsOut: toNumberOrNull(row["turns_out"]),
+      summaryChars: toNumberOrNull(row["summary_chars"]),
+      kept: toNumberOrNull(row["kept"]),
+      dropped: toNumberOrNull(row["dropped"]),
+      summarized: toNumberOrNull(row["summarized"]),
+      reason: toStringOrNull(row["reason"]),
+      tokens: tokens !== null && tokens > 0 ? tokens : null,
+    },
+  };
+}
+
 /**
  * Expand one opened moment into its rich detail. Resolves the same
  * attribution set the timeline union uses, dispatches a per-kind join, and
@@ -249,6 +278,8 @@ export async function getMomentDetail(args: {
     detail = await turnDetail(args.db, args.repoStore, base, scope);
   } else if (args.kind === "workflow_run") {
     detail = await runDetail(args.db, base, scope);
+  } else if (args.kind === "compaction") {
+    detail = await compactionDetail(args.db, base, scope);
   } else {
     // A kind with no detail enrichment has nothing to expand and no scoped
     // existence check we can honor, so 200-echoing the id would imply an

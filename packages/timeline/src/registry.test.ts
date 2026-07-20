@@ -10,8 +10,8 @@ const dialect = new PgDialect();
 const scope = { tenantId: "ten_test", principalIds: ["prn_test"] };
 
 describe("timeline source registry", () => {
-  test("registers all 13 sources, one per kind, kinds unique", () => {
-    expect(timelineSources).toHaveLength(13);
+  test("registers all 14 sources, one per kind, kinds unique", () => {
+    expect(timelineSources).toHaveLength(14);
     const kinds = timelineSources.map((s) => s.kind);
     expect(new Set(kinds).size).toBe(kinds.length);
     expect([...kinds].sort()).toEqual([...timelineEntryKinds].sort());
@@ -43,14 +43,26 @@ describe("timeline source registry", () => {
     }
   });
 
-  test("only tool_call carries a client-supplied timestamp, and it is flagged with a note", () => {
+  test("tool_call and compaction carry client-supplied timestamps, each flagged with a note", () => {
     const clientSupplied = timelineSources.filter(
       (s) => s.timestamp.clientSupplied,
     );
-    expect(clientSupplied.map((s) => s.kind)).toEqual(["tool_call"]);
+    expect(clientSupplied.map((s) => s.kind).sort()).toEqual([
+      "compaction",
+      "tool_call",
+    ]);
     for (const source of clientSupplied) {
       expect(source.timestamp.note ?? "").not.toBe("");
     }
+  });
+
+  test("compaction projects before→after turn counts from metadata", () => {
+    const compaction = timelineSources.find((s) => s.kind === "compaction");
+    expect(compaction).toBeDefined();
+    expect(compaction?.table).toBe("analytics_event");
+    expect(compaction?.filterSql).toContain("event_type = 'compaction'");
+    expect(compaction?.summarySql).toContain("turnsIn");
+    expect(compaction?.summarySql).toContain("turnsOut");
   });
 
   test("every summary projection is a static expression with no bound params", () => {
