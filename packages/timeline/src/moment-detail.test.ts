@@ -97,6 +97,7 @@ describe("buildCompactionDetailQuery", () => {
     expect(sql).toContain("metadata -> 'decisions' ->> 'summarized'");
     expect(sql).toContain("metadata ->> 'reason'");
     expect(sql).toContain("total_tokens");
+    expect(sql).toContain("coalesce(ae.input_tokens, 0)");
     expect(params).toEqual(["m1", "ten", "prn_a", "prn_b"]);
   });
 });

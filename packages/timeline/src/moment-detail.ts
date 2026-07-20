@@ -254,11 +254,11 @@ export function buildCompactionDetailQuery(scope: MomentDetailScope): SQL {
       ae.metadata -> 'decisions' ->> 'summarized' as summarized,
       ae.metadata ->> 'reason' as reason,
       (
-        ae.input_tokens
-        + ae.output_tokens
-        + ae.cache_read_tokens
-        + ae.cache_write_tokens
-        + ae.thinking_tokens
+        coalesce(ae.input_tokens, 0)
+        + coalesce(ae.output_tokens, 0)
+        + coalesce(ae.cache_read_tokens, 0)
+        + coalesce(ae.cache_write_tokens, 0)
+        + coalesce(ae.thinking_tokens, 0)
       ) as total_tokens
     from analytics_event ae
     where ae.id = ${scope.id}

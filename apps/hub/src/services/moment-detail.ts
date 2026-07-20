@@ -226,7 +226,8 @@ async function runDetail(
 
 // Compaction metadata + token sum from analytics_event (CL-3839). Counts and
 // reason come from the event metadata; tokens are the summarization call's own
-// cost (not the session total).
+// cost (not the session total). Zero tokens means no usage was attributed
+// (e.g. a non-summarize compactor) — surface as null so the UI omits the row.
 async function compactionDetail(
   db: HubDb,
   base: { kind: string; id: string },
@@ -235,6 +236,7 @@ async function compactionDetail(
   const rows = rowsOf(await db.execute(buildCompactionDetailQuery(scope)));
   const row = rows[0];
   if (row === undefined) return null;
+  const tokens = toNumberOrNull(row["total_tokens"]);
   return {
     ...base,
     compaction: {
@@ -245,7 +247,7 @@ async function compactionDetail(
       dropped: toNumberOrNull(row["dropped"]),
       summarized: toNumberOrNull(row["summarized"]),
       reason: toStringOrNull(row["reason"]),
-      tokens: toNumberOrNull(row["total_tokens"]),
+      tokens: tokens !== null && tokens > 0 ? tokens : null,
     },
   };
 }
