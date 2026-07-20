@@ -28,14 +28,15 @@ export const TOOL_GRANT_RESOURCE_PREFIX = "tool:";
 export type BuildToolGrantOptions = {
   /**
    * LLM-safe tool names whose grant is minted `effect: "ask"` instead of
-   * `allow` — the native approval-suspension activation (CL-3934). A call to an
+   * `allow` — the native approval suspension (CL-3934). A call to an
    * `ask` tool suspends the reactor natively (Interchange's authz-extension
-   * parks it awaiting a human decision) rather than running unattended. Callers
-   * pass the approval-gated write set only when the tenant's `native-approvals`
-   * feature is enabled; when omitted (feature off), every grant stays `allow`,
-   * preserving the legacy behavior exactly. Names are compared against the
-   * `toLlmToolName`-mapped resource name, so the set carries LLM-safe names
-   * (e.g. `slack__post_message`), matching what the model actually invokes.
+   * parks it awaiting a human decision) rather than running unattended.
+   * Gating is unconditional (the CL-3934 feature gate is retired, CL-3940):
+   * callers pass the approval-gated write set minus the principal's durable
+   * auto-approvals (CL-3942); when omitted, every grant stays `allow`. Names
+   * are compared against the `toLlmToolName`-mapped resource name, so the set
+   * carries LLM-safe names (e.g. `slack__post_message`), matching what the
+   * model actually invokes.
    */
   askToolNames?: ReadonlySet<string>;
 };
