@@ -1,4 +1,8 @@
-# GTM Workbench
+# Workbench
+
+An agentic workbench built around a shared knowledge base. Agents don't wait
+to be asked — they work the evidence, run automations, and bring you finished
+work (or decisions) to approve.
 
 ## Testing & coverage
 
