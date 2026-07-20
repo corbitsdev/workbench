@@ -10,7 +10,6 @@ export const timelineEntryKinds = [
   "artifact_version",
   "upload",
   "memory",
-  "approval",
   "output_feedback",
   "grant",
   "credential",
@@ -36,7 +35,6 @@ export const TimelineEntrySchema = type({ kind: "'session'", ...base })
   .or({ kind: "'artifact_version'", ...base })
   .or({ kind: "'upload'", ...base })
   .or({ kind: "'memory'", ...base })
-  .or({ kind: "'approval'", ...base })
   .or({ kind: "'output_feedback'", ...base })
   .or({ kind: "'grant'", ...base })
   .or({ kind: "'credential'", ...base });

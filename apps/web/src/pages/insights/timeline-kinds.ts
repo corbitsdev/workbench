@@ -1,5 +1,4 @@
 import {
-  CheckCircle2,
   CircleDot,
   Database,
   FileText,
@@ -18,7 +17,7 @@ import { formatRelativeTime, type BadgeTone } from "@workbench/ui";
 import type { TimelineEntry, TimelineEntryKind } from "@workbench/client";
 
 /**
- * Shared presentation metadata for the 13 timeline entry kinds: a neutral,
+ * Shared presentation metadata for the timeline entry kinds: a neutral,
  * non-anthropomorphizing label, an icon, and a badge tone. Kept in one place so
  * every timeline surface renders a kind identically.
  *
@@ -27,7 +26,7 @@ import type { TimelineEntry, TimelineEntryKind } from "@workbench/client";
  *
  * Tone policy (mirrors the Badge doc): `identity` for who/what an actor is
  * (session/message), `positive` for produced/accepted state
- * (artifact/approval), `neutral` for quiet metadata rows (including historical
+ * (artifact), `neutral` for quiet metadata rows (including historical
  * event kinds like workflow_run/upload and permission-sensitive rows —
  * grant/credential — which are not themselves failures). `accent` (the single
  * orange action tone) is never used on a static timeline badge. A grant's tone
@@ -50,7 +49,6 @@ export const KIND_META: Record<
   },
   upload: { label: "Upload", icon: Upload, tone: "neutral" },
   memory: { label: "Memory", icon: Database, tone: "neutral" },
-  approval: { label: "Approval", icon: CheckCircle2, tone: "positive" },
   output_feedback: {
     label: "Feedback",
     icon: MessageCircle,
