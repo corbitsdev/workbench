@@ -23,6 +23,7 @@ import {
   runStateFromLog,
   useConversationWorkflowRuns,
   useResumeConversationGate,
+  useStopWorkflowRun,
   useWorkflowRunState,
   type ConversationWorkflowRun,
 } from "../hooks/use-workflow";
@@ -38,6 +39,7 @@ const ATTENTION_ORDER: Record<RunStatus, number> = {
   provisioning: 1,
   failed: 2,
   completed: 3,
+  stopped: 4,
 };
 
 // State is the only color in this surface: blue running, amber needs-you,
@@ -81,11 +83,18 @@ const STATUS_META: Record<
     stripe: "border-l-red",
     chip: "text-red",
   },
+  stopped: {
+    label: "Stopped",
+    dot: "bg-text-3",
+    stripe: "border-l-border",
+    chip: "text-text-3",
+  },
 };
 
 function fallbackPhase(status: RunStatus): DockRunPhase {
   if (status === "completed") return "completed";
   if (status === "failed") return "failed";
+  if (status === "stopped") return "cancelled";
   // `provisioning` (CL-2755) has no log yet — treat it as the live `running`
   // phase for the dock-block fallback; the card body renders a Starting state.
   return "running";
@@ -182,6 +191,7 @@ function stateCountSummary(runs: readonly ConversationWorkflowRun[]): string {
     "running",
     "failed",
     "completed",
+    "stopped",
   ];
   const parts: string[] = [];
   for (const status of order) {
@@ -206,8 +216,13 @@ function WorkflowDockCard({
     isError,
   } = useWorkflowRunState(run.runId, tenantId);
   const resumeGate = useResumeConversationGate(tenantId);
+  const stopRun = useStopWorkflowRun(tenantId);
   // Finished runs collapse to their one-line summary by default.
   const [open, setOpen] = useState(() => !isRecordTerminal(run.status));
+  // Two-tap confirm for Stop (same pattern as Insights Archive).
+  const [confirmingStop, setConfirmingStop] = useState(false);
+  const stopping = stopRun.isPending && stopRun.variables === run.runId;
+  const canStop = !isRecordTerminal(run.status);
 
   // A gate choice block carries its `awaitSignal` name (CL-2681); selecting it
   // resumes THIS run with that signal + the option value as payload. The
@@ -284,6 +299,9 @@ function WorkflowDockCard({
   return (
     <div
       data-testid="workflow-dock-card"
+      onMouseLeave={() => {
+        if (!stopping) setConfirmingStop(false);
+      }}
       className={cn(
         "rounded-lg border border-border border-l-2 bg-surface-2",
         meta.stripe,
@@ -324,20 +342,77 @@ function WorkflowDockCard({
         >
           Open
         </Link>
-        {run.status === "failed" && onDismiss !== undefined && (
-          <button
-            type="button"
-            aria-label={`Dismiss ${run.kind}`}
-            onClick={() => onDismiss(run.runId)}
-            className={cn(
-              "shrink-0 rounded-md px-1.5 py-0.5 text-xs text-text-3 hover:bg-row-hover hover:text-text",
-              FOCUS_RING,
-            )}
-          >
-            Dismiss
-          </button>
-        )}
+        {canStop &&
+          (confirmingStop ? (
+            <div className="flex shrink-0 items-center gap-1">
+              <button
+                type="button"
+                data-testid="dock-stop-confirm"
+                disabled={stopping}
+                onClick={() => {
+                  stopRun.mutate(run.runId);
+                }}
+                aria-label={`Confirm: stop ${run.kind} run`}
+                className={cn(
+                  "rounded-md bg-red-500 px-2 py-0.5 text-xs font-medium text-white hover:bg-red-600 disabled:opacity-50",
+                  FOCUS_RING,
+                )}
+              >
+                {stopping ? "Stopping…" : "Confirm stop"}
+              </button>
+              <button
+                type="button"
+                disabled={stopping}
+                onClick={() => setConfirmingStop(false)}
+                aria-label={`Cancel stopping ${run.kind} run`}
+                className={cn(
+                  "rounded-md px-1.5 py-0.5 text-xs text-text-3 hover:bg-row-hover hover:text-text",
+                  FOCUS_RING,
+                )}
+              >
+                Cancel
+              </button>
+            </div>
+          ) : (
+            <button
+              type="button"
+              data-testid="dock-stop"
+              disabled={stopping}
+              onClick={() => setConfirmingStop(true)}
+              title="Stop this run — leaves it in history as Stopped"
+              aria-label={`Stop ${run.kind} run`}
+              className={cn(
+                "shrink-0 rounded-md px-1.5 py-0.5 text-xs text-text-3 hover:bg-row-hover hover:text-text disabled:opacity-50",
+                FOCUS_RING,
+              )}
+            >
+              Stop
+            </button>
+          ))}
+        {(run.status === "failed" || run.status === "stopped") &&
+          onDismiss !== undefined && (
+            <button
+              type="button"
+              aria-label={`Dismiss ${run.kind}`}
+              onClick={() => onDismiss(run.runId)}
+              className={cn(
+                "shrink-0 rounded-md px-1.5 py-0.5 text-xs text-text-3 hover:bg-row-hover hover:text-text",
+                FOCUS_RING,
+              )}
+            >
+              Dismiss
+            </button>
+          )}
       </div>
+      {stopRun.isError && (
+        <p
+          role="alert"
+          data-testid="dock-stop-error"
+          className="px-3 pb-2 text-xs text-red-500"
+        >
+          Couldn't stop this run. Try again.
+        </p>
+      )}
       {open && (
         <div
           role="status"
@@ -408,13 +483,16 @@ export function WorkflowDock({
   const [sawActive, setSawActive] = useState(false);
 
   // Failed runs count as needing attention: hiding a failure on reload would
-  // bury it. Only a conversation whose runs are all completed loads dock-less.
-  // A dismissed failed run no longer counts — the user has acknowledged it.
+  // bury it. Only a conversation whose runs are all completed or user-stopped
+  // loads dock-less. A dismissed failed/stopped run no longer counts — the user
+  // has acknowledged it.
   const visibleRuns = useMemo(
     () => (runs ?? []).filter((run) => !dismissed.includes(run.runId)),
     [runs, dismissed],
   );
-  const hasActive = visibleRuns.some((run) => run.status !== "completed");
+  const hasActive = visibleRuns.some(
+    (run) => run.status !== "completed" && run.status !== "stopped",
+  );
   useEffect(() => {
     if (hasActive) setSawActive(true);
   }, [hasActive]);

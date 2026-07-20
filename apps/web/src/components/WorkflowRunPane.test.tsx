@@ -94,6 +94,8 @@ const resumeMutateAsync = mock(
     onRedeploying?: () => void;
   }): Promise<undefined> => undefined,
 );
+const stopMutate = mock((_runId: string) => undefined);
+let stopIsError = false;
 
 mock.module("../hooks/use-workflow", () => ({
   ...workflowHooks,
@@ -106,6 +108,12 @@ mock.module("../hooks/use-workflow", () => ({
   useResumeWorkflow: () => ({
     mutateAsync: resumeMutateAsync,
     isPending: false,
+  }),
+  useStopWorkflowRun: () => ({
+    mutate: stopMutate,
+    isPending: false,
+    isError: stopIsError,
+    variables: undefined,
   }),
   useWorkflowCredentials: () => ({ data: [] }),
   useWorkflowDeployments: () => ({ data: deployments }),
@@ -126,9 +134,7 @@ mock.module("../hooks/use-skills", () => ({
 import { WorkflowRunPane } from "./WorkflowRunPane";
 
 function ChromeSlotProbe() {
-  return (
-    <div data-testid="chrome-slot">{usePageChromeSlot()}</div>
-  );
+  return <div data-testid="chrome-slot">{usePageChromeSlot()}</div>;
 }
 
 function wrapper({ children }: { children: React.ReactNode }) {
@@ -169,7 +175,43 @@ describe("WorkflowRunPane", () => {
     stepOutputsRequestedId = undefined;
     resumeMutateAsync.mockReset();
     resumeMutateAsync.mockImplementation(async () => undefined);
+    stopMutate.mockReset();
+    stopIsError = false;
     resolveSlowPanel = null;
+  });
+
+  it("shows Stop in chrome for live runs and two-step confirms (CL-3687)", async () => {
+    record = makeRecord({ status: "running" });
+    render(<WorkflowRunPane deploymentId="wfr_1" onClose={() => undefined} />, {
+      wrapper,
+    });
+    await waitFor(() => screen.getByTestId("run-pane-stop"));
+    fireEvent.click(screen.getByTestId("run-pane-stop"));
+    expect(stopMutate).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByTestId("run-pane-stop-confirm"));
+    expect(stopMutate).toHaveBeenCalledWith("wfr_1");
+  });
+
+  it("surfaces a legible error when the stop request fails (CL-3687)", async () => {
+    record = makeRecord({ status: "running" });
+    stopIsError = true;
+    render(<WorkflowRunPane deploymentId="wfr_1" onClose={() => undefined} />, {
+      wrapper,
+    });
+    await waitFor(() =>
+      screen.getByText("Couldn't stop this run. Try again."),
+    );
+    // Stop stays available so the user can retry.
+    expect(screen.getByTestId("run-pane-stop")).toBeTruthy();
+  });
+
+  it("hides Stop in chrome for terminal runs (CL-3687)", async () => {
+    record = makeRecord({ status: "stopped" });
+    render(<WorkflowRunPane deploymentId="wfr_1" onClose={() => undefined} />, {
+      wrapper,
+    });
+    await waitFor(() => screen.getByTestId("chrome-slot"));
+    expect(screen.queryByTestId("run-pane-stop")).toBeNull();
   });
 
   it("renders the workflow kind own Panel when its module exports one", async () => {
