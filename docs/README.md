@@ -10,6 +10,7 @@ here rather than duplicated — duplicated detail drifts.
 | If you are…                                            | Read                                                                                                                         |
 | ------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------- |
 | New to the product                                     | [`PRODUCT.md`](PRODUCT.md) — the product model and user-facing features                                                      |
+| Asking what the product *is* (identity, category)      | [`POSITIONING.md`](POSITIONING.md) — horizontal identity; GTM is the first workflow pack, not the identity                   |
 | Designing a change                                     | [`ARCHITECTURE.md`](ARCHITECTURE.md) — system design, the generic workflow-run + artifact model, Interchange boundary        |
 | Understanding how a workflow runs                      | [`WORKFLOWS.md`](WORKFLOWS.md) — the execution model, divergences from Interchange + why, the vendored surface, convergence  |
 | Implementing in the hub/sidecar                        | [`IMPLEMENTATION.md`](IMPLEMENTATION.md) — technical details and conventions                                                 |
