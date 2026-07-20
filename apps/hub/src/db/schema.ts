@@ -618,6 +618,38 @@ export const memberAgentInstance = pgTable(
   () => ({}),
 );
 
+/**
+ * A member's durable "auto-approve this tool for me" decision (the three-button
+ * approval card's "Auto Approve Always"). When recorded, the grant minting
+ * (`resolveAskToolNamesForTenant`) excludes the tool for this instance principal,
+ * so it mints `effect: "allow"` instead of `ask` and no longer suspends for
+ * human approval. Keyed on the agent-instance `principal_id` (what the grant
+ * mint keys on), attributed to the member principal who made the trust decision.
+ * Revoking a row reverts the tool to `ask` on the next grant reconcile.
+ * Workbench-owned only.
+ */
+export const autoApprovedTool = pgTable(
+  "auto_approved_tool",
+  {
+    id: text("id").primaryKey(),
+    tenantId: text("tenant_id").notNull(),
+    // The agent-instance principal the grant mint keys on.
+    principalId: text("principal_id").notNull(),
+    // LLM-safe tool name (e.g. slack__post_message), matching the ask-set keys.
+    toolName: text("tool_name").notNull(),
+    // The member principal who made this trust decision (attribution).
+    createdByPrincipalId: text("created_by_principal_id").notNull(),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (t) => ({
+    principalToolUniq: uniqueIndex("auto_approved_tool_principal_tool_uniq").on(
+      t.tenantId,
+      t.principalId,
+      t.toolName,
+    ),
+  }),
+);
+
 /** CL-3686: links a Myra thread (origin conversation) to an invoked subagent mapping. */
 export const memberInvokedSubagent = pgTable(
   "member_invoked_subagent",
@@ -697,24 +729,12 @@ export const skillAccess = pgTable("skill_access", {
 
 export type SkillAccessRow = typeof skillAccess.$inferSelect;
 
-// ─── Approvals ─────────────────────────────────────────────────────
-
-export const approvalStatus = ["pending", "approved", "rejected"] as const;
-
-export const approval = pgTable("approval", {
-  id: uuid("id").primaryKey().defaultRandom(),
-  tenantId: text("tenant_id").notNull(),
-  principalId: text("principal_id").notNull(),
-  agentId: text("agent_id").notNull(),
-  sessionId: text("session_id"),
-  resource: text("resource").notNull(),
-  action: text("action").notNull(),
-  context: jsonb("context").$type<Record<string, unknown>>(),
-  status: text("status", { enum: approvalStatus }).notNull().default("pending"),
-  message: text("message"),
-  createdAt: timestamp("created_at").notNull().defaultNow(),
-  resolvedAt: timestamp("resolved_at"),
-});
+// workbench_approval (the legacy pre-native ask_principal / ReviewGate rail,
+// created in 0011_approval.sql, renamed in 0070 to avoid the interchange
+// "approval" table collision) was dropped in migration 0071 (CL-3938): its
+// entire code path was deleted in #1134, and the native approval rail
+// (interchange's own "approval" table) is now the sole mechanism. Removed
+// here so the schema no longer describes a table that no longer exists.
 
 export { feedbackSubjectKinds as feedbackSubjectKind } from "@workbench/shared";
 export type { FeedbackSubjectKind } from "@workbench/shared";

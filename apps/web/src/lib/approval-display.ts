@@ -17,6 +17,9 @@ export type ApprovalDisplayLookups = {
   principalByRefId: Map<string, string>;
   agentByInstanceId: Map<string, string>;
   agentByAddress: Map<string, string>;
+  /** Lowercased agent mailbox address → owning instance id, for scoping an
+   * approval row to the chat (agent instance) that raised it (CL-3940). */
+  instanceIdByAddress: Map<string, string>;
 };
 
 export function buildApprovalDisplayLookups(
@@ -32,9 +35,11 @@ export function buildApprovalDisplayLookups(
 
   const agentByInstanceId = new Map<string, string>();
   const agentByAddress = new Map<string, string>();
+  const instanceIdByAddress = new Map<string, string>();
   for (const instance of instances) {
     agentByInstanceId.set(instance.id, instance.agentName);
     agentByAddress.set(instance.address.toLowerCase(), instance.agentName);
+    instanceIdByAddress.set(instance.address.toLowerCase(), instance.id);
   }
 
   return {
@@ -42,7 +47,31 @@ export function buildApprovalDisplayLookups(
     principalByRefId,
     agentByInstanceId,
     agentByAddress,
+    instanceIdByAddress,
   };
+}
+
+/**
+ * Resolve an agent's mailbox address to its owning instance id (CL-3940). Used
+ * to scope a native approval to the chat that raised it. Prefers the exact
+ * address → instance-id map; for an `ins_<id>@…` mailbox (the common agent
+ * form, tag suffix allowed) the local-part is the instance id itself, so it
+ * resolves even before the instance list has loaded. Null when neither yields
+ * an id — the caller then shows no card rather than guessing a thread.
+ */
+export function instanceIdFromAddress(
+  address: string,
+  lookups: ApprovalDisplayLookups,
+): string | null {
+  const trimmed = address.trim();
+  const byAddress = lookups.instanceIdByAddress.get(trimmed.toLowerCase());
+  if (byAddress !== undefined) return byAddress;
+  const parts = splitMailAddress(trimmed);
+  if (parts !== null) {
+    const insId = instanceIdFromInsLocal(parts.local);
+    if (insId !== null) return insId;
+  }
+  return null;
 }
 
 export function splitMailAddress(
@@ -126,56 +155,7 @@ export function humanizeOpaqueId(
   return value;
 }
 
-export function humanizeApprovalValue(
-  value: unknown,
-  lookups: ApprovalDisplayLookups,
-  key?: string,
-): unknown {
-  if (typeof value === "string") {
-    if (key === "to" || key === "from" || key === "address") {
-      return formatMailboxAddress(value, lookups);
-    }
-    return humanizeOpaqueId(value, lookups);
-  }
-  if (Array.isArray(value)) {
-    return value.map((entry) => humanizeApprovalValue(entry, lookups, key));
-  }
-  if (value !== null && typeof value === "object") {
-    const out: Record<string, unknown> = {};
-    for (const [childKey, childValue] of Object.entries(value)) {
-      out[childKey] = humanizeApprovalValue(childValue, lookups, childKey);
-    }
-    return out;
-  }
-  return value;
-}
-
-export function isMailSendApproval(resource: string): boolean {
-  return resource === "tool:mail_send";
-}
-
-export type MailSendContext = {
-  to?: unknown;
-  content?: unknown;
-  subject?: unknown;
-  type?: unknown;
-  refs?: unknown;
-};
-
-export function mailSendContext(
-  context: Record<string, unknown> | null,
-): MailSendContext | null {
-  if (context === null) return null;
-  return context;
-}
-
-export function mailSendBodyText(context: MailSendContext): string | null {
-  const content = context.content;
-  if (typeof content === "string" && content.trim() !== "") return content;
-  return null;
-}
-
-/** Headline for mail_send tool rows and approval cards (chat + ReviewGate). */
+/** Headline for mail_send tool rows in chat activity summaries. */
 export function mailSendToolSummaryHeadline(
   to: unknown,
   lookups: ApprovalDisplayLookups,

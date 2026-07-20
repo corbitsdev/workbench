@@ -1,6 +1,7 @@
 // Default conversational director — reference ReactorDirector implementation.
 //
-// Implements the decision table from INFERENCE.md § Director Decision Function:
+// Inbound-event → action map (see INFERENCE.md § Director Decision Function
+// for the director contract and action-validation rules):
 //
 //   message.received          → infer
 //   inference.done (tools)    → checkpoint + execute_tools
@@ -9,6 +10,12 @@
 //   inference.error           → checkpoint + reply (error message to user)
 //   abort                     → done
 //   reactor.gate.cleared      → checkpoint + infer (resume after gate)
+//   resume.execute_tools      → execute_tools (re-run a parked approved call)
+//   resume.tool_result        → checkpoint + infer (parked call denied/timed out)
+//
+// The inference.done branch additionally runs the optional afterInferenceDone
+// policy hook, whose continue/abort/halt decisions route independently of the
+// event map above. See AfterInferenceDecision for that contract.
 //
 // The director never throws. Inference errors are surfaced to the user as a
 // reply so the problem is visible, and the agent remains alive for retries.
@@ -32,21 +39,24 @@ const logger = getLogger(["interchange", "inference", "default-director"]);
  *
  *   continue — proceed with the director's normal post-inference logic
  *              (tool extraction, reply, or wait per the existing flow).
- *   abort    — terminate the agent. Routes to `[checkpoint, reply, done]`
- *              and the reactor shuts down. Stronger than the
+ *   abort    — terminate the agent. Routes to `[checkpoint, done]` and
+ *              the reactor shuts down. Stronger than the
  *              `inference.error` branch, which only replies and stays
  *              alive — `abort` is for "session is over, do not accept
  *              further inputs."
  *   halt     — pause the current cycle without terminating. Routes to
- *              `[checkpoint, reply, wait]`. Reactor stays alive waiting
- *              for the next inbound event. There is no auto-resume; an
- *              external event (mail, gate clearance, etc.) must reach
- *              the reactor for the agent to make progress again.
+ *              `[checkpoint, reply]`; the reply returns the reactor to
+ *              waiting for the next inbound event, so it stays alive.
+ *              There is no auto-resume; an external event (mail, gate
+ *              clearance, etc.) must reach the reactor for the agent to
+ *              make progress again.
  *
- * `reason` becomes the connector reply text verbatim — policy authors
- * choose what is safe to surface to the user. There is no separate
- * private-reason / user-message split today; add one if a real need
- * appears.
+ * `reason` on a `halt` becomes the connector reply text verbatim, so
+ * policy authors choose what is safe to surface to the user. On an
+ * `abort` the reason is not surfaced: a terminal action cannot carry a
+ * reply, since a reply invites continuation. Delivering an abort reason
+ * to the user needs a dedicated terminal-notice path, which does not
+ * exist today.
  */
 export type AfterInferenceDecision =
   | { type: "continue" }
@@ -237,17 +247,21 @@ export class DefaultDirector implements ReactorDirector {
             };
           }
           if (decision.type === "abort") {
+            // A reply invites the next inbound message, but abort is
+            // terminal — the reactor rejects reply paired with done. The
+            // reason is therefore not surfaced on this path.
             return [
               capabilities.checkpoint("after-inference-abort"),
-              capabilities.reply(decision.reason),
               capabilities.done(),
             ];
           }
           if (decision.type === "halt") {
+            // A reply already returns the reactor to waiting for the next
+            // inbound message, so no separate wait is needed (and the
+            // reactor rejects reply paired with wait).
             return [
               capabilities.checkpoint("after-inference-halt"),
               capabilities.reply(decision.reason),
-              capabilities.wait(),
             ];
           }
           // decision.type === "continue" — fall through.
@@ -283,6 +297,32 @@ export class DefaultDirector implements ReactorDirector {
         // the next inbound message. The reactor only shuts down on explicit
         // stop (abort), never because the model produced an empty turn.
         return [capabilities.checkpoint("inference-done"), capabilities.wait()];
+      }
+
+      case "resume.execute_tools": {
+        // A resumed approval re-runs its parked tool call. The reactor drives
+        // the execution; this director owns the outstanding-result count, so
+        // seed it to the number of calls about to run — exactly as the
+        // inference.done branch seeds it for a fresh tool batch. Without this
+        // seed the count stays zero and the re-dispatched call's tool.done
+        // would decrement to -1 and re-infer off a negative count by accident.
+        this.pendingToolResults = event.calls.length;
+        return capabilities.executeTools(event.calls, false, true);
+      }
+
+      case "resume.tool_result": {
+        // A parked approval ended without running its tool (rejected or timed
+        // out). The reactor appends the synthetic error result that answers the
+        // parked call, then this re-infers once so the model sees the failure
+        // and continues. No tool ran, so pendingToolResults is untouched — the
+        // counter only gates batches of real executions.
+        return [
+          capabilities.checkpoint("resume-tool-result"),
+          capabilities.infer({
+            systemPrompt: this.systemPrompt,
+            tools: this.toolDefinitions,
+          }),
+        ];
       }
 
       case "tool.done": {

@@ -702,7 +702,13 @@ async function resolveWarmAgentHarness(args: {
   const grantedCatalogToolNames = new Set<string>();
   for (const name of catalogManagedNames(dynamicToolConfig.catalog)) {
     const decision = await args.authorize(`tool:${name}`, "invoke");
-    if (decision.effect === "allow") grantedCatalogToolNames.add(name);
+    // `ask` is a grant, not a denial: the tool is authorized and merely
+    // suspends for human approval at invoke time (CL-3934 native-approvals). It
+    // must stay in the catalog, or a write tool would vanish the moment its
+    // grant flips from allow to ask.
+    if (decision.effect === "allow" || decision.effect === "ask") {
+      grantedCatalogToolNames.add(name);
+    }
   }
   const availableCatalog: ToolCatalog = filterCatalogByAvailableTools(
     dynamicToolConfig.catalog,

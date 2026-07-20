@@ -52,9 +52,10 @@ import {
   type SpawnOpts,
   type SubprocessHandle,
   type SubprocessSpawner,
+  type SuspensionRegistration,
   type WorkflowSupervisor,
 } from "@workbench/workflow-host";
-import { hexEncode } from "@intx/types";
+import { hexEncode, type SignalKind } from "@intx/types";
 import {
   parseInferenceEvent,
   type CryptoProvider,
@@ -647,6 +648,15 @@ export type CreateSidecarWorkflowSupervisorOpts = {
    */
   readyTimeoutMs?: number;
   /**
+   * Control-plane suspension sink forwarded to the supervisor's
+   * `onSuspensionRegister` binding. The supervisor stamps `deploymentId` +
+   * `agentAddress` and invokes this when a workflow-process child reports a
+   * `park.notify`; production wiring routes it to the hub link so a
+   * `signal.correlation.register` frame reaches the hub. Absent means the
+   * deployment registers no suspensions.
+   */
+  onSuspensionRegister?: (registration: SuspensionRegistration) => void;
+  /**
    * Recycle-policy bounds forwarded to the supervisor. Production
    * defaults apply a max-RSS bound so a runaway workflow child is
    * recycled instead of growing the host to multi-GB. Tests may
@@ -976,6 +986,22 @@ export function createSidecarDeployRouter(deps: {
     sessionId: string | undefined,
   ) => void;
   /**
+   * Callback the supervisor invokes for every control-plane suspension a
+   * workflow-process child reports (`park.notify`). The multi-step branch
+   * threads it into the supervisor's `onSuspensionRegister` binding so a
+   * parked run's correlation is registered at the hub (routing + approval
+   * rows). The supervisor stamps `deploymentId` + `agentAddress` before
+   * invoking it. Defaults to a no-op; production wiring supplies the
+   * hub-link-backed publisher.
+   */
+  publishWorkflowSuspension?: (registration: {
+    correlationId: string;
+    runId: string;
+    deploymentId: string;
+    agentAddress: string;
+    kind: SignalKind;
+  }) => void;
+  /**
    * Optional override for the multi-step branch's per-step mail-address
    * derivation. Defaults to `${deploymentId}-${stepId}@<deploymentDomain>`
    * derived from the frame's agent address. Tests inject a deterministic
@@ -1122,6 +1148,18 @@ export function createSidecarDeployRouter(deps: {
     ): void => {
       /* no-op default: tests and production-without-a-publisher
          deployments do not consume events. */
+    });
+  const publishSuspension =
+    deps.publishWorkflowSuspension ??
+    ((_registration: {
+      correlationId: string;
+      runId: string;
+      deploymentId: string;
+      agentAddress: string;
+      kind: SignalKind;
+    }): void => {
+      /* no-op default: tests and production-without-a-publisher
+         deployments do not register suspensions. */
     });
   const multistepSubstrateEnv = deps.multistepSubstrateEnv ?? {};
   // Sidecar data dir the deployment's per-step scratch is rooted under
@@ -1444,6 +1482,11 @@ export function createSidecarDeployRouter(deps: {
         deploymentMailAddress: spec.agentAddress,
         deriveStepAddress: stepStrategy.deriveStepAddress,
         deriveStepRepoId: stepStrategy.deriveStepRepoId,
+        // The supervisor stamps `deploymentId` + `agentAddress` before
+        // invoking this; forward the fully-stamped registration to the
+        // hub-link-backed publisher so a `signal.correlation.register` frame
+        // reaches the hub for the parked run.
+        onSuspensionRegister: publishSuspension,
         substrateEnv,
         // Recomputed on every spawn AND recycle respawn. The rotation
         // handler below revises `currentSources` in place, so a respawn
@@ -2257,6 +2300,9 @@ export function createSidecarWorkflowSupervisor(
     deploymentMailAddress: opts.deploymentMailAddress,
     readPrincipal: supervisorPrincipal,
     deriveStepAddress: opts.deriveStepAddress,
+    ...(opts.onSuspensionRegister !== undefined
+      ? { onSuspensionRegister: opts.onSuspensionRegister }
+      : {}),
     ...(opts.deriveStepRepoId !== undefined
       ? { deriveStepRepoId: opts.deriveStepRepoId }
       : {}),

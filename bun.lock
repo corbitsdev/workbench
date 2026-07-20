@@ -124,7 +124,6 @@
         "@intx/workflow": "workspace:*",
         "@intx/workflow-deploy": "workspace:*",
         "@workbench/agents": "workspace:*",
-        "@workbench/approvals": "workspace:*",
         "@workbench/context-repair": "workspace:*",
         "@workbench/hub-agent": "workspace:*",
         "@workbench/myra": "workspace:*",
@@ -553,6 +552,7 @@
       "dependencies": {
         "@intx/agent": "workspace:*",
         "@intx/inference": "workspace:*",
+        "@intx/types": "workspace:*",
         "arktype": "catalog:",
       },
     },
@@ -645,18 +645,6 @@
         "arktype": "catalog:",
         "drizzle-orm": "catalog:",
         "hono": "catalog:",
-      },
-      "devDependencies": {
-        "@types/bun": "latest",
-        "typescript": "^5.9.0",
-      },
-    },
-    "packages/approvals": {
-      "name": "@workbench/approvals",
-      "dependencies": {
-        "@intx/agent": "workspace:*",
-        "@intx/types": "workspace:*",
-        "arktype": "catalog:",
       },
       "devDependencies": {
         "@types/bun": "latest",
@@ -2600,8 +2588,6 @@
     "@workbench/agents": ["@workbench/agents@workspace:packages/agents"],
 
     "@workbench/analytics": ["@workbench/analytics@workspace:packages/analytics"],
-
-    "@workbench/approvals": ["@workbench/approvals@workspace:packages/approvals"],
 
     "@workbench/artifact": ["@workbench/artifact@workspace:packages/artifact"],
 

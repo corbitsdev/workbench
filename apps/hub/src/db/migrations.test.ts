@@ -34,6 +34,61 @@ describe("migrations cover the schema", () => {
   });
 });
 
+// Guards against the class of bug CL-3932 fixed: an interchange pin bump adds a
+// table whose name collides with a LIVE workbench table. scripts/db-setup.ts
+// runs interchange migrations BEFORE the workbench ones, and interchange's
+// CREATE TABLE statements have no IF NOT EXISTS — so a collision aborts the whole
+// deploy on already-migrated DBs (interchange 0038's bare `CREATE TABLE
+// "approval"` vs the workbench's own approval table, now renamed to
+// workbench_approval). Catch the next such collision at PR time, not deploy time.
+describe("no table-name collision with interchange migrations", () => {
+  function createTableNames(sqlDir: string): Set<string> {
+    const names = new Set<string>();
+    const re = /CREATE TABLE (?:IF NOT EXISTS )?"?([a-z_][a-z0-9_]*)"?/gi;
+    for (const f of readdirSync(sqlDir).filter((n) => n.endsWith(".sql"))) {
+      const sql = readFileSync(join(sqlDir, f), "utf-8");
+      let m: RegExpExecArray | null;
+      while ((m = re.exec(sql)) !== null) {
+        const name = m[1];
+        if (name !== undefined) names.add(name.toLowerCase());
+      }
+    }
+    return names;
+  }
+
+  const workbenchMigrationsDir = join(import.meta.dir, "../../migrations");
+  const interchangeMigrationsDir = join(
+    import.meta.dir,
+    "../../../../interchange/packages/db/migrations",
+  );
+  const liveWorkbenchTables = new Set(
+    Object.values(schema)
+      .filter((v) => isTable(v))
+      .map((t) => getTableName(t as Table)),
+  );
+
+  it("no live workbench schema table shares a name with an interchange migration table", () => {
+    const intxTables = createTableNames(interchangeMigrationsDir);
+    const collisions = [...liveWorkbenchTables].filter((t) =>
+      intxTables.has(t),
+    );
+    expect(collisions).toEqual([]);
+  });
+
+  it("any workbench-migration table name shared with interchange is a renamed-away legacy table, never a live one", () => {
+    const intxTables = createTableNames(interchangeMigrationsDir);
+    const wbMigrationTables = createTableNames(workbenchMigrationsDir);
+    // Historical collisions are tolerated ONLY when the workbench table has
+    // since been renamed out of the live schema (e.g. legacy "approval" →
+    // workbench_approval, whose 0011 CREATE is immutable history). A collision
+    // on a table still present in schema.ts is a real, ship-blocking defect.
+    const liveCollisions = [...wbMigrationTables].filter(
+      (t) => intxTables.has(t) && liveWorkbenchTables.has(t),
+    );
+    expect(liveCollisions).toEqual([]);
+  });
+});
+
 describe("0015 scopes workbench_workflows per principal (CL-1450)", () => {
   const sql = readFileSync(
     join(
@@ -240,6 +295,27 @@ describe("0036 drops pain_point and artifact provenance columns (CL-2669)", () =
       .filter((value) => isTable(value))
       .map((table) => getTableName(table as Table));
     expect(schemaTables).not.toContain("pain_point");
+  });
+});
+
+describe("0071 drops workbench_approval (CL-3938)", () => {
+  const sql = readFileSync(
+    join(import.meta.dir, "../../migrations/0071_drop_workbench_approval.sql"),
+    "utf-8",
+  );
+
+  it("drops the workbench_approval table and its index", () => {
+    expect(sql).toMatch(/DROP TABLE IF EXISTS "workbench_approval"/i);
+    expect(sql).toMatch(
+      /DROP INDEX IF EXISTS "approval_tenant_principal_created_idx"/i,
+    );
+  });
+
+  it("drops workbench_approval from the drizzle schema too (no resurrection via the coverage guard)", () => {
+    const schemaTables = Object.values(schema)
+      .filter((value) => isTable(value))
+      .map((table) => getTableName(table as Table));
+    expect(schemaTables).not.toContain("workbench_approval");
   });
 });
 

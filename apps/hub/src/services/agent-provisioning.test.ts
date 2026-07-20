@@ -62,6 +62,13 @@ mock.module("@intx/db", () => ({
   },
 }));
 
+// Spy the native deployment-projection writer at the module boundary so the
+// launch-wiring test asserts the seam is exercised without needing a real DB.
+const writeInstanceDeploymentProjectionSpy = mock(() => Promise.resolve());
+mock.module("./workflow-deploy", () => ({
+  writeInstanceDeploymentProjection: writeInstanceDeploymentProjectionSpy,
+}));
+
 import {
   launchAgentSession,
   relaunchInstanceIfNeeded,
@@ -206,7 +213,9 @@ describe("relaunchInstanceIfNeeded", () => {
     // short-circuit before launching.
     sourcesImpl = () => Promise.resolve([]);
 
-    const deployInstanceAtHead = mock(() => Promise.resolve({ publicKey: "pk" }));
+    const deployInstanceAtHead = mock(() =>
+      Promise.resolve({ publicKey: "pk" }),
+    );
     const sessionService = { ...mockSessionService, deployInstanceAtHead };
 
     await relaunchInstanceIfNeeded(
@@ -234,7 +243,9 @@ describe("relaunchInstanceIfNeeded", () => {
     sourcesImpl = () =>
       Promise.resolve([{ id: "src-1", apiKey: TEST_API_KEY }]);
 
-    const deployInstanceAtHead = mock(() => Promise.resolve({ publicKey: "pk" }));
+    const deployInstanceAtHead = mock(() =>
+      Promise.resolve({ publicKey: "pk" }),
+    );
     const sessionService = { ...mockSessionService, deployInstanceAtHead };
 
     await relaunchInstanceIfNeeded(
@@ -255,7 +266,9 @@ describe("relaunchInstanceIfNeeded", () => {
       Promise.resolve(coldInstance()),
     );
 
-    const deployInstanceAtHead = mock(() => Promise.resolve({ publicKey: "pk" }));
+    const deployInstanceAtHead = mock(() =>
+      Promise.resolve({ publicKey: "pk" }),
+    );
     const sessionService = { ...mockSessionService, deployInstanceAtHead };
 
     await relaunchInstanceIfNeeded(
@@ -496,6 +509,58 @@ describe("launchAgentSession retry behavior", () => {
     expect(deployInstanceAtHead).toHaveBeenCalledTimes(1);
   });
 
+  it("writes the native deployment projection after a successful single-agent deploy", async () => {
+    sourcesImpl = () =>
+      Promise.resolve([{ id: "src-1", apiKey: TEST_API_KEY }]);
+    writeInstanceDeploymentProjectionSpy.mockClear();
+    const deployInstanceAtHead = mock(() =>
+      Promise.resolve({ publicKey: "pk" }),
+    );
+    const sessionService = { ...mockSessionService, deployInstanceAtHead };
+
+    await launchAgentSession(
+      launchDb() as never,
+      sessionService as never,
+      mockGrantStore as never,
+      mockEventCollectors as never,
+      BASE_OPTS,
+    );
+
+    expect(writeInstanceDeploymentProjectionSpy).toHaveBeenCalledTimes(1);
+    // biome-ignore lint/suspicious/noExplicitAny: reading the spy call arg
+    const arg = (writeInstanceDeploymentProjectionSpy.mock.calls[0] as any)[0];
+    expect(arg).toMatchObject({
+      instanceAddress: "ins-1@tenant-1.localhost",
+      agentId: "agt-1",
+      tenantId: "tenant-1",
+      creatorPrincipalId: "prn-agent-1",
+    });
+  });
+
+  it("does not write the projection when the deploy fails on every attempt", async () => {
+    sourcesImpl = () =>
+      Promise.resolve([{ id: "src-1", apiKey: TEST_API_KEY }]);
+    writeInstanceDeploymentProjectionSpy.mockClear();
+    const provisionError = new SessionLaunchError(
+      "provision",
+      new Error("rejected"),
+      false,
+    );
+    const deployInstanceAtHead = mock(() => Promise.reject(provisionError));
+    const sessionService = { ...mockSessionService, deployInstanceAtHead };
+
+    await expect(
+      launchAgentSession(
+        launchDb() as never,
+        sessionService as never,
+        mockGrantStore as never,
+        mockEventCollectors as never,
+        BASE_OPTS,
+      ),
+    ).rejects.toBe(provisionError);
+    expect(writeInstanceDeploymentProjectionSpy).not.toHaveBeenCalled();
+  });
+
   it("launches an instance whose definition lives in an ancestor tenant", async () => {
     // The definition is owned by a parent tenant ("tnt-parent"); the instance
     // launches in the child tenant ("tnt-child"). The tenant-exact resolver
@@ -526,7 +591,9 @@ describe("launchAgentSession retry behavior", () => {
       Promise.resolve({ id: "ins-child", sessionId: null }),
     );
 
-    const deployInstanceAtHead = mock(() => Promise.resolve({ publicKey: "pk" }));
+    const deployInstanceAtHead = mock(() =>
+      Promise.resolve({ publicKey: "pk" }),
+    );
     const sessionService = { ...mockSessionService, deployInstanceAtHead };
 
     try {
@@ -656,7 +723,9 @@ describe("launchAgentSession retry behavior", () => {
       }),
     );
 
-    const deployInstanceAtHead = mock(() => Promise.resolve({ publicKey: "pk" }));
+    const deployInstanceAtHead = mock(() =>
+      Promise.resolve({ publicKey: "pk" }),
+    );
     const sessionService = { ...mockSessionService, deployInstanceAtHead };
 
     await expect(
@@ -742,9 +811,7 @@ describe("launchAgentSession timezone marker stamping", () => {
     );
 
     const prompt = await captureLaunchPrompt(db);
-    expect(prompt).toContain(
-      "<!-- workbench:timezone=America/Los_Angeles -->",
-    );
+    expect(prompt).toContain("<!-- workbench:timezone=America/Los_Angeles -->");
   });
 
   it("stamps no marker when the member has no stored timezone (harness labels UTC)", async () => {

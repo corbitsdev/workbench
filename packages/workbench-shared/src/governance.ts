@@ -779,6 +779,7 @@ export const FEATURE_NAMES = [
   "triage",
   "tasks-reconciler",
   "voice-input",
+  "native-approvals",
 ] as const;
 export type FeatureName = (typeof FEATURE_NAMES)[number];
 
@@ -816,6 +817,14 @@ export const FEATURE_GRANT_CATALOG: readonly FeatureCatalogEntry[] = [
     description:
       "Shows the microphone control in the Myra composer so members can dictate messages.",
   },
+  // NOTE: `native-approvals` is intentionally NOT in this catalog. It is a
+  // resolvable feature name (see `FEATURE_NAMES`) but must stay off the owner
+  // self-serve surface — the decision surface (ReviewGate over the native
+  // approval store) is not shipped yet, so a one-click enable would park every
+  // single-agent write tool until timeout with no way to resolve it. It is
+  // enabled only via the staff-controlled env override path
+  // (`featureEnvOverridesFromConfig`) for integration tests and a future staged
+  // rollout, and returns to this catalog in the increment that ships ReviewGate.
 ];
 
 export const FeatureNameSchema = type.enumerated(...FEATURE_NAMES);

@@ -8,6 +8,7 @@ import {
   writeLastActiveThreadId,
 } from "../../hooks/use-myra-threads";
 import { isMyraThreadUsed } from "../../hooks/myra-threads-cache";
+import { usePendingApprovalInstances } from "../../hooks/use-pending-approval-instances";
 import type { MyraThread } from "../../lib/hub-api";
 
 // The sidebar shows only the most-recently-active chats; the rest live on the
@@ -24,11 +25,13 @@ function ThreadRow({
   thread,
   active,
   threads,
+  hasPendingApproval,
   onOpen,
 }: {
   thread: MyraThread;
   active: boolean;
   threads: MyraThread[];
+  hasPendingApproval: boolean;
   onOpen: (thread: MyraThread) => void;
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
@@ -88,13 +91,22 @@ function ThreadRow({
       <button
         type="button"
         onClick={() => onOpen(thread)}
-        className={`flex-1 truncate rounded-[8px] px-2 py-1.5 text-left text-sm transition-colors ${
+        className={`flex flex-1 items-center gap-1.5 truncate rounded-[8px] px-2 py-1.5 text-left text-sm transition-colors ${
           active
             ? "bg-orange/10 font-medium text-orange"
             : "text-text-2 hover:bg-page hover:text-text"
         }`}
       >
-        {thread.label}
+        {hasPendingApproval && (
+          <span
+            data-testid="pending-approval-dot"
+            role="status"
+            aria-label="Pending approval"
+            title="Pending approval"
+            className="h-1.5 w-1.5 shrink-0 rounded-full bg-orange"
+          />
+        )}
+        <span className="truncate">{thread.label}</span>
       </button>
       <button
         type="button"
@@ -146,6 +158,7 @@ export function ThreadList() {
     limit: SIDEBAR_THREAD_LIMIT,
   });
   const activeThreadId = useActiveThreadId();
+  const pendingApprovalInstances = usePendingApprovalInstances();
   const navigate = useNavigate();
 
   const openThread = (thread: MyraThread) => {
@@ -202,6 +215,7 @@ export function ThreadList() {
           thread={thread}
           active={thread.id === activeThreadId}
           threads={data?.threads ?? []}
+          hasPendingApproval={pendingApprovalInstances.has(thread.instanceId)}
           onOpen={openThread}
         />
       ))}

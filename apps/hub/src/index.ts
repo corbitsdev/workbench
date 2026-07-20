@@ -72,6 +72,7 @@ import { deliverPendingGateMail } from "./workflow-executor/gate-mail";
 import { createWorkflowAnalyticsRouter } from "./routes/workflow-analytics";
 import {
   createWorkflowDeployService,
+  reconcileInstanceDeploymentProjections,
   type ReclaimDeploymentFn,
 } from "./services/workflow-deploy";
 import {
@@ -164,11 +165,14 @@ import { createPrincipalAnalyticsRouter } from "./routes/principal-analytics";
 import { createTenantRosterRouter } from "./routes/tenant-roster";
 import { createMyraVariantsRouter } from "./routes/myra-variants";
 import { createGammaTemplatesRouter } from "./routes/gamma-templates";
-import {
-  createApprovalsRouter,
-  createInternalApprovalsRouter,
-} from "./routes/approvals";
+import { createApprovalNotificationsRouter } from "./routes/approval-notifications";
+import { createNativeApprovalsRouter } from "./routes/native-approvals";
 import { createApprovalsEventBus } from "./lib/approvals-events";
+import {
+  publishNativeApprovalResolved,
+  withNativeApprovalCreatedNotify,
+} from "./lib/native-approval-notify";
+import { createNativeApprovalEnricher } from "./lib/native-approval-enrich";
 import { createFeedbackRouter } from "./routes/feedback";
 import type { MemberPreferences } from "@workbench/shared";
 import { createMePreferencesRouter } from "./routes/me-preferences";
@@ -196,7 +200,7 @@ import { createHubToolsRouter } from "./routes/hub-tools";
 import { createToolCredentialsRouter } from "./routes/tool-credentials";
 import { createInternalDeploymentsRouter } from "./routes/internal-deployments";
 import { buildToolDefinitions } from "./lib/tool-registry";
-import { schema } from "./db";
+import { schema, type HubDb } from "./db";
 import { loadSigningKeyRegistry } from "./lib/signing-keys";
 import {
   seedGlobalTenant,
@@ -228,7 +232,10 @@ const config = loadConfig();
 // ─── Database ──────────────────────────────────────────────────────
 
 const sql = postgres(config.databaseUrl);
-const db = drizzle(sql, { schema });
+// `drizzle(...)` infers `PostgresJsDatabase<typeof schema>` (the spread
+// reconstruction); cast to HubDb (the intersection form) so the db threads
+// through interchange helpers — see the HubDb note in ./db.
+const db = drizzle(sql, { schema }) as HubDb;
 
 await sql`SELECT 1`;
 log.info("Database connection established");
@@ -282,6 +289,23 @@ const reconciled = await reconcileMemberInstanceGrants(
 log.info("Member instance grants reconciled", {
   rootTenantId,
   results: reconciled,
+});
+
+// Converge the native `workflow_deployment` projection to the live launched
+// agents. `deployInstanceAtHead` (single-agent launch) writes no projection
+// row, so instances deployed before this converged — the live Myra/Oat
+// deployments — have none. Interchange's suspension registration resolves a
+// suspended write tool's tenancy through this table, so backfilling the row
+// here (the hub is the control plane) is what lets native-approvals be enabled
+// later without redeploying every agent. Also reclaims launched-agent rows left
+// behind by a crashed ephemeral teardown. Per-run deployments manage their own
+// rows and are skipped.
+const projectionReconcile = await reconcileInstanceDeploymentProjections({
+  db,
+});
+log.info("Instance deployment projections reconciled", {
+  rootTenantId,
+  ...projectionReconcile,
 });
 
 const { isDev, cors: corsConfig, auth: authConfig, google, hub } = config;
@@ -482,6 +506,35 @@ const grantStore = createGrantStore(db);
 
 const baseLookups = createHubSessionLookups({ db, agentRepoStore: repoStore });
 
+// Workbench-owned approval change-notify bus (CL-3285). Carries the native
+// rail's created/resolved notifications (CL-3934) so a ReviewGate refetches
+// the instant a native suspension is registered or resolved. Constructed
+// here, ahead of the sidecar lookups and the hubApp mount, because both wrap
+// this instance.
+const approvalsEventBus = createApprovalsEventBus();
+
+// Buffers the reactor's suspend-time tool snapshot (a `custom.approval.requested`
+// inference event) and writes it onto the native `approval` row — the CL-3940
+// enrichment that lets the decision surface name the action + show its arguments
+// instead of "Approval requested by <agent>". Fed by the agent-event listener
+// (snapshot side) and the register-notify wrapper (row-created side); it joins
+// them by `correlationId` and handles either arrival order.
+const nativeApprovalEnricher = createNativeApprovalEnricher(
+  db,
+  approvalsEventBus,
+);
+
+// The native `approval` row is co-written inside interchange's
+// `registerSignalCorrelation` (which owns the transaction and resolves the
+// tenant from the deployment); it is out of scope to modify, so the "created"
+// notification is emitted from this wrapper AFTER the co-write commits.
+const baseRegisterSignalCorrelation = baseLookups.registerSignalCorrelation;
+if (baseRegisterSignalCorrelation === undefined) {
+  throw new Error(
+    "createHubSessionLookups did not provide registerSignalCorrelation",
+  );
+}
+
 function isWorkflowRunBootstrapRace(message: string): boolean {
   return /non_fast_forward: ref refs\/heads\/main expected null but found [0-9a-f]{40}/.test(
     message,
@@ -512,6 +565,12 @@ const lookups: SidecarLookups = {
       });
     },
   }),
+  registerSignalCorrelation: withNativeApprovalCreatedNotify(
+    db,
+    approvalsEventBus,
+    baseRegisterSignalCorrelation,
+    nativeApprovalEnricher,
+  ),
   async receiveWorkflowRunPack(repoId, pack, ref, commitSha) {
     if (repoId.kind !== "workflow-run") {
       throw new Error(
@@ -580,6 +639,19 @@ sidecarRouter.events.on("agent.event", ({ agentAddress, event }) => {
     return;
   }
   void analyticsSubscriber.onAgentEvent({ agentAddress, event: validated });
+});
+
+// CL-3940: the reactor emits `custom.approval.requested` at an authz `ask`
+// suspension, carrying the parked tool's name + arguments keyed by
+// `correlationId`. Buffer it and enrich the native `approval` row (which
+// interchange co-writes with those columns null) so the decision surface can
+// name the action and show its arguments. Isolated from analytics: the enricher
+// never throws and this listener does no other work.
+sidecarRouter.events.on("agent.event", ({ event }) => {
+  const validated = parseInferenceEvent(event);
+  if (validated instanceof type.errors) return;
+  if (validated.type !== "custom.approval.requested") return;
+  void nativeApprovalEnricher.recordToolSnapshot(validated.data);
 });
 
 const sidecarConnections = createSidecarConnectionRegistry();
@@ -899,6 +971,17 @@ hubApp.route(
   createActorDetailRouter({ db }),
 );
 
+// The native rail's decision surface (CL-3934). Mounted on hubApp so it inherits
+// interchange's `resolveTenant` (active-membership, tenant/principal context) —
+// auth-consistent with the native approve/reject routes createApp already mounts
+// at `/api/tenants/:tenantId/approvals`. A distinct path segment (not
+// `/approvals/native`) so interchange's `GET /approvals/:approvalId` 501 stub
+// does not shadow it.
+hubApp.route(
+  "/api/tenants/:tenantId/native-approvals",
+  createNativeApprovalsRouter({ db }),
+);
+
 // ─── Parent Hono ────────────────────────────────────────────────────
 
 const app = new Hono<{ Variables: { [SERVER_ERROR_LOGGED]?: boolean } }>();
@@ -1061,15 +1144,33 @@ app.use(
 // draining process accept (or hang on) a new connection.
 app.use("/api/sidecars/ws", createSidecarWsDrainGuard());
 
+// Emit the native rail's "resolved" change notification (CL-3934). Interchange's
+// mounted approve/reject routes own the resolve transaction and are out of scope
+// to modify, so this outer middleware runs ahead of the hub app mount and, after
+// a successful resolve, publishes onto the shared approvals bus so an open
+// ReviewGate refetches. Gated on POST + a 2xx response so the 501 GET stub and
+// failed resolves never publish. The path is the un-versioned native rail
+// (`/api/tenants/...`), never the `/api/v1/...` legacy router.
+const NATIVE_RESOLVE_PATH =
+  /^\/api\/tenants\/([^/]+)\/approvals\/[^/]+\/(?:approve|reject)$/;
+app.use(
+  "/api/tenants/:tenantId/approvals/:approvalId/:decision",
+  async (c, next) => {
+    await next();
+    if (c.req.method !== "POST" || !c.res.ok) return;
+    // The middleware's own path params are not reliably populated over a
+    // mounted sub-app, so the tenant + decision are read from the pathname.
+    const match = NATIVE_RESOLVE_PATH.exec(new URL(c.req.url).pathname);
+    const tenantId = match?.[1];
+    if (tenantId === undefined) return;
+    publishNativeApprovalResolved(approvalsEventBus, tenantId);
+  },
+);
+
 // Mount hub app
 app.route("/", hubApp);
 
 // ─── Workbench routes ──────────────────────────────────────────────
-
-// Workbench-owned approvals change bus (CL-3285). One in-process instance shared
-// by the user-facing router (SSE stream + resolve emits) and the internal router
-// (create emit) so a sidecar-created approval reaches an open browser stream.
-const approvalsEventBus = createApprovalsEventBus();
 
 const v1 = new Hono<{ Variables: { userId: string; userName: string } }>();
 
@@ -1395,7 +1496,7 @@ v1.route("/", createFileParseRouter(db, analyticsSubscriber));
 v1.route("/", createMailAttachmentsRouter(db));
 v1.route("/", createGammaTemplatesRouter(db));
 
-v1.route("/", createApprovalsRouter(db, approvalsEventBus));
+v1.route("/", createApprovalNotificationsRouter(db, approvalsEventBus));
 v1.route("/", createFeedbackRouter(db));
 v1.route("/", createMePreferencesRouter(db, grantStore));
 v1.route("/", createMeFeaturesRouter(db));
@@ -1483,6 +1584,7 @@ v1.route(
       triage: config.triageEnabled,
       "tasks-reconciler": config.tasksReconciler.enabled,
       "voice-input": false,
+      "native-approvals": false,
     },
   }),
 );
@@ -2079,9 +2181,10 @@ v1.delete(
 // Abort workflow RUNS (CL-2262), operator-gated by the same session grant guard
 // as the deploy/delete-deployment routes — an operator can abort ANY run, so
 // there is no per-user ownership check (unlike the user-facing /workflow-exec
-// read/resume routes). Marks the run record terminal; CL-2248's boot-reconciler
-// reaps the sidecar dir on next restart. `abort-active` is registered before the
-// `:runId` route so the literal segment is not captured as a runId.
+// read/resume routes). Marks the run record terminal; sidecar dir reclamation
+// is deferred (no automatic reaper currently — follow-up work). `abort-active`
+// is registered before the `:runId` route so the literal segment is not
+// captured as a runId.
 v1.post(
   "/workflow-exec/records/abort-active",
   abortActiveRunsRouteDescription,
@@ -2099,10 +2202,6 @@ app.route("/api/v1", v1);
 
 // ─── Internal routes (sidecar token auth) ──────────────────────────
 
-app.route(
-  "/api/internal",
-  createInternalApprovalsRouter(db, config.sidecarToken, approvalsEventBus),
-);
 app.route(
   "/api/internal",
   createHubToolsRouter(db, config.sidecarToken, {

@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, mock } from "bun:test";
 import { Hono } from "hono";
 import type { GrantStore } from "@intx/authz";
 import { INBOX_SOURCE_CATALOG } from "@workbench/shared";
+import * as RealSlackApiClientModule from "../lib/slack-api-client";
 
 // CL-3584: owner GET/PUT for tenant-wide inbox source enablement. Mirrors the
 // owner feature routes; the guard runs for real over a fake grant store.
@@ -28,6 +29,7 @@ let slackTeamIdResult: string | null = "T0TEAM";
 const upsertSlackTeamMappingCalls: { tenantId: string; slackTeamId: string }[] =
   [];
 mock.module("../lib/slack-api-client", () => ({
+  ...RealSlackApiClientModule,
   resolveSlackCredential: async () => slackCredentialResult,
   fetchSlackTeamId: async () => slackTeamIdResult,
 }));
@@ -146,6 +148,7 @@ function buildApp(db: unknown) {
         triage: false,
         "tasks-reconciler": false,
         "voice-input": false,
+        "native-approvals": false,
       },
     }),
   );

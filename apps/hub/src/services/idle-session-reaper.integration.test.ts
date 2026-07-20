@@ -201,9 +201,9 @@ describe("createIdleSessionReaper", () => {
   test("CL-2802: eviction never stamps agent_instance.endedAt (sleep/wake conversation retention guard)", async () => {
     // The reaper's only safe-to-sleep property is that `agent_instance.endedAt`
     // stays NULL after eviction: that NULL is what keeps the instance in
-    // `liveAgentAddresses` so the sidecar boot-reconciler does not reap its
-    // isogit conversation dir on a restart mid-sleep. If a future change ever
-    // stamped `agent_instance.endedAt` here, this must fail.
+    // `liveAgentAddresses` so it is not treated as orphaned by any future
+    // dir-reclaim pass while sleeping. If a future change ever stamped
+    // `agent_instance.endedAt` here, this must fail.
     const address = `ins_myra10@${DOMAIN}`;
     const { sessionId } = await seedChatAgent({
       instanceId: "ins_myra10",

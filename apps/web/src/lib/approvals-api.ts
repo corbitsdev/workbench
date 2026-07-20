@@ -1,58 +1,30 @@
 // Approval request API client.
 //
-// These routes are served by the workbench hub's own approvals router
-// (createApprovalsRouter), mounted under /api/v1
-// (/api/v1/tenants/:tenantId/approvals). Requests go through the shared api()
-// client so the /api/v1 prefix and error handling stay single-sourced with the
-// rest of the app. The tenantId must be obtained from /api/v1/me before calling
-// these functions.
+// The native approval rail (Interchange suspension). The list route is a
+// workbench-owned read served under /api/tenants/:tenantId/native-approvals
+// (Interchange leaves its own list route a 501 stub); approve/reject are
+// Interchange's mounted routes. Change notifications arrive over the SSE stream
+// served by the hub's approval-notifications router under /api/v1. The tenantId
+// must be obtained from /api/v1/me before calling these functions.
 
 import { type } from "arktype";
-import { api, buildEventSourceUrl } from "./api";
+import { buildEventSourceUrl } from "./api";
+import { hubFetch } from "./hub-api";
 import { subscribeSharedEventStream } from "./shared-event-stream";
 
-export const ApprovalSchema = type({
-  id: "string",
-  tenantId: "string",
-  principalId: "string",
-  agentId: "string",
-  sessionId: "string | null",
-  resource: "string",
-  action: "string",
-  context: "Record<string, unknown> | null",
-  status: "'pending' | 'approved' | 'rejected'",
-  message: "string | null",
-  createdAt: "string",
-  resolvedAt: "string | null",
-});
-export type Approval = typeof ApprovalSchema.infer;
-export type ApprovalStatus = Approval["status"];
-
-const ApprovalArraySchema = ApprovalSchema.array();
-
-function parseApproval(raw: unknown): Approval {
-  const parsed = ApprovalSchema(raw);
-  if (parsed instanceof type.errors) {
-    throw new Error(`Invalid approval response: ${parsed.summary}`);
-  }
-  return parsed;
-}
-
-function parseApprovals(raw: unknown): Approval[] {
-  const parsed = ApprovalArraySchema(raw);
-  if (parsed instanceof type.errors) {
-    throw new Error(`Invalid approvals response: ${parsed.summary}`);
-  }
-  return parsed;
-}
-
-// A change notification pushed over the workbench-owned approvals SSE stream —
-// never the approval data itself. The client refetches the ownership-scoped
-// list route on each event.
+// A change notification pushed over the approvals SSE stream — never the
+// approval data itself. The client refetches the ownership-scoped native list
+// route on each event. `updated` is emitted when a tool snapshot enriches an
+// already-created approval after its `created` event; the gate must refetch on
+// it so the card re-renders from its fallback to the enriched label + args.
 export const ApprovalEventSchema = type({
   tenantId: "string",
   sessionId: "string | null",
-  kind: "'created' | 'resolved'",
+  kind: "'created' | 'resolved' | 'updated'",
+  // An "updated" notification carries the enriched approval's id; the hub
+  // publishes it so a client can target the exact row. Optional because
+  // "created"/"resolved" omit it.
+  "approvalId?": "string",
 });
 export type ApprovalEvent = typeof ApprovalEventSchema.infer;
 
@@ -84,41 +56,161 @@ export function subscribeApprovals(
   );
 }
 
-/**
- * List the pending approval requests the caller owns for the given tenant.
- */
-export async function listApprovals(tenantId: string): Promise<Approval[]> {
-  const raw = await api<unknown>("GET", `tenants/${tenantId}/approvals`);
-  return parseApprovals(raw);
+// ─── Native rail (Interchange suspension) ──────────────────────────
+//
+// The native approval rail lives on Interchange's un-versioned tenant routes
+// (`/api/tenants/:tenantId/...`), not the workbench `/api/v1` router, so these
+// go through hubFetch. The list is a workbench-owned read (Interchange leaves
+// its own list route a 501 stub); approve/reject are Interchange's mounted
+// routes. A native row is shaped by Interchange's `ApprovalResponse` — it
+// carries a tool snapshot (null until the upstream suspend-time plumbing lands).
+
+export const NativeApprovalSchema = type({
+  id: "string",
+  tenantId: "string",
+  deploymentId: "string",
+  runId: "string",
+  agentAddress: "string",
+  correlationId: "string",
+  toolDefinition: "Record<string, unknown> | null",
+  toolArguments: "Record<string, unknown> | null",
+  scope: "'once' | 'always' | null",
+  status: "'pending' | 'approved' | 'rejected' | 'timeout' | 'expired'",
+  timeoutAt: "string | null",
+  resolvedAt: "string | null",
+  createdAt: "string",
+  updatedAt: "string",
+});
+export type NativeApproval = typeof NativeApprovalSchema.infer;
+
+const NativeApprovalArraySchema = NativeApprovalSchema.array();
+
+function parseNativeApproval(raw: unknown): NativeApproval {
+  const parsed = NativeApprovalSchema(raw);
+  if (parsed instanceof type.errors) {
+    throw new Error(`Invalid native approval response: ${parsed.summary}`);
+  }
+  return parsed;
+}
+
+function parseNativeApprovals(raw: unknown): NativeApproval[] {
+  const parsed = NativeApprovalArraySchema(raw);
+  if (parsed instanceof type.errors) {
+    throw new Error(`Invalid native approvals response: ${parsed.summary}`);
+  }
+  return parsed;
 }
 
 /**
- * Approve a pending approval request. The approve endpoint reads no request
- * body — the approval is resolved as a one-time grant server-side.
+ * List the tenant's pending native approvals (the native rail's decision
+ * surface). Tenant-scoped server-side behind Interchange's resolveTenant.
  */
-export async function approveRequest(
+export async function listNativeApprovals(
+  tenantId: string,
+): Promise<NativeApproval[]> {
+  const raw = await hubFetch<unknown>(
+    "GET",
+    `tenants/${tenantId}/native-approvals`,
+  );
+  return parseNativeApprovals(raw);
+}
+
+/**
+ * Approve a pending native approval as a one-time grant. Interchange's approve
+ * route requires a scope; the workbench decision surface only issues `once`
+ * (scope `always` is not yet supported upstream — the suspend path does not
+ * capture the tool identity a standing grant needs).
+ */
+export async function approveNativeRequest(
   tenantId: string,
   approvalId: string,
-): Promise<Approval> {
-  const raw = await api<unknown>(
+): Promise<NativeApproval> {
+  const raw = await hubFetch<unknown>(
     "POST",
     `tenants/${tenantId}/approvals/${approvalId}/approve`,
+    { scope: "once" },
   );
-  return parseApproval(raw);
+  return parseNativeApproval(raw);
 }
 
 /**
- * Reject a pending approval request with an optional feedback message.
+ * Reject a pending native approval with an optional feedback message.
  */
-export async function rejectRequest(
+export async function rejectNativeRequest(
   tenantId: string,
   approvalId: string,
   message?: string,
-): Promise<Approval> {
-  const raw = await api<unknown>(
+): Promise<NativeApproval> {
+  const raw = await hubFetch<unknown>(
     "POST",
     `tenants/${tenantId}/approvals/${approvalId}/reject`,
-    message !== undefined ? { message } : undefined,
+    message !== undefined ? { message } : {},
   );
-  return parseApproval(raw);
+  return parseNativeApproval(raw);
+}
+
+// ─── Durable auto-approve (CL-3942) ────────────────────────────────
+//
+// "Auto Approve (Caution) Always" records a durable member decision to stop
+// gating a tool. It is a workbench-owned surface under the native-approvals
+// path: interchange's approve route only issues `once`, so the durable decision
+// is recorded separately and the current call is released via the ordinary
+// approve route. Approving-always is therefore two server calls the client
+// orchestrates as one action (approve once + persist durable).
+
+/**
+ * Durably auto-approve the given tool for the caller's instance whose call the
+ * approval gated. Server-validated against `approvalId` so it can only whitelist
+ * a tool for a pending approval the caller owns. Approving the current call is a
+ * separate step (`approveNativeRequest`).
+ */
+export async function autoApproveTool(
+  tenantId: string,
+  approvalId: string,
+  toolName: string,
+): Promise<void> {
+  await hubFetch<unknown>(
+    "POST",
+    `tenants/${tenantId}/native-approvals/auto-approve`,
+    { approvalId, toolName },
+  );
+}
+
+export const AutoApprovedToolSchema = type({
+  id: "string",
+  tenantId: "string",
+  principalId: "string",
+  toolName: "string",
+  createdByPrincipalId: "string",
+  createdAt: "string",
+});
+export type AutoApprovedTool = typeof AutoApprovedToolSchema.infer;
+
+const AutoApprovedToolArraySchema = AutoApprovedToolSchema.array();
+
+/** List the caller's durable auto-approved tools (their own trust decisions). */
+export async function listAutoApprovedTools(
+  tenantId: string,
+): Promise<AutoApprovedTool[]> {
+  const raw = await hubFetch<unknown>(
+    "GET",
+    `tenants/${tenantId}/native-approvals/auto-approved-tools`,
+  );
+  const parsed = AutoApprovedToolArraySchema(raw);
+  if (parsed instanceof type.errors) {
+    throw new Error(`Invalid auto-approved tools response: ${parsed.summary}`);
+  }
+  return parsed;
+}
+
+/** Revoke one durable auto-approve decision; the tool reverts to requiring
+ * approval on the next grant reconcile. */
+export async function revokeAutoApprovedTool(
+  tenantId: string,
+  id: string,
+): Promise<void> {
+  await hubFetch<unknown>(
+    "DELETE",
+    `tenants/${tenantId}/native-approvals/auto-approved-tools/${id}`,
+  );
 }

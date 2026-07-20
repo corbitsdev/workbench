@@ -1486,7 +1486,7 @@ describe("archive workflow run (CL-2629)", () => {
     const r = await archive(a, runId);
     expect(r.status).toBe(200);
     // The run's OWN per-run deployment (ses_run_1) is reclaimed immediately,
-    // in the run's tenant — no waiting for the boot-reconciler.
+    // in the run's tenant, rather than deferred to a later sweep.
     expect(reclaimCalls).toEqual([
       { deploymentId: "ses_run_1", tenantId: "tn-1" },
     ]);

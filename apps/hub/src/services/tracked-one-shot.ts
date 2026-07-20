@@ -209,7 +209,11 @@ export async function runTrackedOneShot(
     await agentInst.close();
     await pumpDone.catch(logTeardownError("pump stream"));
     if (collector) await collector.abandon();
-    text = finalizedText ?? collector?.getAccumulatedText() ?? result.reply;
+    // `SendResult` is a discriminated union since the approval-suspension
+    // bump; a tracked one-shot carries no approval gate, so only the reply
+    // variant yields text (a suspended result falls through to "").
+    const replyText = result.type === "reply" ? result.reply : "";
+    text = finalizedText ?? collector?.getAccumulatedText() ?? replyText;
   } catch (err) {
     await agentInst.close().catch(logTeardownError("close agent"));
     await pumpDone.catch(logTeardownError("pump stream"));

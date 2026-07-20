@@ -7,7 +7,7 @@ WORKDIR /app
 RUN apt-get update && apt-get install -y git && rm -rf /var/lib/apt/lists/* && \
     git clone --filter=blob:none --no-checkout \
       https://github.com/faremeter/interchange.git interchange && \
-    git -C interchange checkout 6927e7e4b0117f29ce4800ad75a313ed9ad31b10
+    git -C interchange checkout 5a73d3ccb4be8923d57bc2634a074329b30956b9
 
 # Manifests for EVERY workspace member. bun.lock is workspace-global, so
 # `bun install --frozen-lockfile` compares the on-disk member set against the
@@ -21,7 +21,6 @@ COPY apps/sidecar/package.json apps/sidecar/
 COPY apps/web/package.json apps/web/
 COPY packages/agents/package.json packages/agents/
 COPY packages/agent-core/package.json packages/agent-core/
-COPY packages/approvals/package.json packages/approvals/
 COPY packages/artifact/package.json packages/artifact/
 COPY packages/blocks/package.json packages/blocks/
 COPY packages/chat/package.json packages/chat/
@@ -101,7 +100,6 @@ COPY packages/agent-core/ packages/agent-core/
 COPY packages/myra/ packages/myra/
 COPY packages/inference/ packages/inference/
 COPY packages/tools-catalog/ packages/tools-catalog/
-COPY packages/approvals/ packages/approvals/
 COPY packages/catalog/ packages/catalog/
 COPY packages/context-repair/ packages/context-repair/
 COPY packages/hub-agent/ packages/hub-agent/

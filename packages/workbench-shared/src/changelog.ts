@@ -37,6 +37,18 @@ export const CHANGELOG_NAV_ROUTES = [
 // Newest first.
 export const CHANGELOG: readonly ChangelogRelease[] = [
   {
+    version: "0.8.3",
+    date: "2026-07-19",
+    title: "Under-the-hood upgrade",
+    entries: [
+      {
+        title: "Performance and bug fixes",
+        description:
+          "Chats reload their full history reliably, web-search tools connect without hiccups, and the platform runtime moved to its latest version. No workflow changes needed on your side.",
+      },
+    ],
+  },
+  {
     version: "0.8.0",
     date: "2026-07-19",
     title: "A clearer, faster workbench",
