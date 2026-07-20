@@ -28,19 +28,20 @@ export interface WorkflowRunAbortDeps {
   db: HubDb;
 }
 
-// Mark a single run terminal (status:'failed'). CL-2248's boot-reconciler reaps
-// the run's sidecar dir on next restart once the record is terminal (this also
-// clears a CL-2261 corrupt-log run). The record mark is the source of truth; the
-// abort reason is not persisted (the log is the source of truth for run detail,
-// CL-2669).
+// Mark a single run terminal (status:'failed'). Sidecar dir reclamation for the
+// run's deployment is deferred — there is no automatic sweep today (follow-up
+// work); the record mark is the source of truth, and this also clears a
+// CL-2261 corrupt-log run. The abort reason is not persisted (the log is the
+// source of truth for run detail, CL-2669).
 //
 // Best-effort sidecar cancel: the runtime emits `RunCancelled` (which the
 // projection bridge already folds → 'failed'), but the SidecarRouter exposes no
 // per-RUN cancel — only `sendDrain(agentAddress, deadlineMs)`, which drains the
 // whole DEPLOYMENT and would over-cancel sibling runs sharing that supervisor.
 // Using it to abort one run is the wrong granularity, so we mark-terminal-only
-// and let the boot-reconciler reclaim the dir. If a per-run cancel is added
-// upstream, call it here (address = deriveDeploymentAddress, like /resume).
+// and leave sidecar dir reclamation to follow-up work. If a per-run cancel is
+// added upstream, call it here (address = deriveDeploymentAddress, like
+// /resume).
 async function markRunAborted(db: HubDb, state: RunState): Promise<void> {
   await markRunStopped(db, state);
 }
@@ -110,7 +111,7 @@ export const abortRunRouteDescription = describeRoute({
   tags: ["Workflows"],
   summary: "Abort a workflow run",
   description:
-    "Operator-gated. Marks the run terminal (status:'failed') so the boot-reconciler reaps its sidecar dir on next restart. An operator can abort ANY run. Best-effort sidecar cancel is omitted — there is no per-run cancel primitive (see code).",
+    "Operator-gated. Marks the run terminal (status:'failed'); sidecar dir reclamation is deferred (no automatic reaper currently — follow-up work). An operator can abort ANY run. Best-effort sidecar cancel is omitted — there is no per-run cancel primitive (see code).",
   parameters: [
     {
       name: "runId",

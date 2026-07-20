@@ -13,7 +13,6 @@ import type { InferenceEvent } from "@intx/types/runtime";
 import { hexEncode, type SignalKind } from "@intx/types";
 import { createAgentRepoStore } from "@intx/hub-sessions";
 import { buildWorkbenchAdapterRegistry } from "./gemini-thought-signature-patch";
-import { wsUrlToHttp } from "./agent-tools";
 import {
   readAdapterManifest,
   resolveSidecarHeartbeat,
@@ -31,8 +30,6 @@ import {
   createSidecarDeployRouter,
   type SidecarDeployRouter,
 } from "./workflow-host-wiring";
-import { reconcileOrphanedDeploymentDirs } from "./boot-reconciler";
-import { getLogger } from "@intx/log";
 import { startMemoryTelemetry, startPeriodicGc } from "./memory-telemetry";
 import {
   createDeploymentAddressRegistry,
@@ -293,12 +290,12 @@ if (hostTmpdir !== undefined) {
 // The deploy router computes a deployment's on-disk reclaim path
 // (workflow-runs/<id>) from `multistepSubstrateEnv.SIDECAR_DATA_DIR`
 // (`stepStateDataDir`), while the substrate roots its workflow-run repos under
-// the AgentRepoStore's own `dataDir`. Teardown/boot-reconciler reclaim
-// correctness depends on both being the SAME root: a directory reclaimed under
-// one root while the substrate writes under another leaks terminated
-// deployments' state. Both derive from the single `dataDir` env today, but
-// nothing structurally forces it — tie the two together at boot and fail loud
-// if a future config split diverges them.
+// the AgentRepoStore's own `dataDir`. Teardown reclaim correctness depends on
+// both being the SAME root: a directory reclaimed under one root while the
+// substrate writes under another leaks terminated deployments' state. Both
+// derive from the single `dataDir` env today, but nothing structurally forces
+// it — tie the two together at boot and fail loud if a future config split
+// diverges them.
 const substrateWorkflowRunRoot = agentRepoStore.repoStore.getRepoDir({
   kind: "workflow-run",
   id: "__data_dir_invariant_probe__",
@@ -413,29 +410,6 @@ resolvedHubLink = orchestrator.hubLink;
 workflowInferencePublisher.send = orchestrator.hubLink.sendEvent;
 workflowSuspensionPublisher.send =
   orchestrator.hubLink.sendSignalCorrelationRegister;
-
-// Prune orphaned on-disk deployment dirs BEFORE the orchestrator's hub-link
-// connects, so interchange's `restoreSessions()` never re-establishes
-// deployments the hub has soft-deleted/superseded (CL-2231 part 2). The
-// reconciler is fail-safe (deletes nothing unless it positively confirms the
-// hub's live set), and a throw here must NEVER prevent the sidecar from
-// starting — wrap and continue.
-try {
-  await reconcileOrphanedDeploymentDirs({
-    dataDir,
-    hubHttpUrl: wsUrlToHttp(hubWsUrl),
-    sidecarToken,
-  });
-} catch (err) {
-  // Defensive: the reconciler swallows its own failures, but a thrown error
-  // (e.g. an unexpected logger fault) must not gate boot.
-  getLogger(["sidecar", "boot"]).error(
-    "boot reconciler threw; continuing sidecar start: {msg}",
-    {
-      msg: err instanceof Error ? err.message : String(err),
-    },
-  );
-}
 
 // No boot-time deployment restore (CL-3884): the sidecar boots empty and the
 // hub — the control plane — re-deploys what should be resident (mail-wake for

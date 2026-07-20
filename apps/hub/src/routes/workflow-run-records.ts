@@ -1283,7 +1283,7 @@ export function createWorkflowRunRecordsRouter(deps: {
   // Archive a run (CL-2629): stop it, free its resources, and drop it from the
   // list. Owner-scoped (same ownership gate as read/resume). An ACTIVE run
   // (non-terminal) is marked terminal and its single-use per-run deployment
-  // (CL-2582) is torn down immediately — no waiting for the boot-reconciler.
+  // (CL-2582) is torn down immediately rather than deferred to a later sweep.
   // A terminal run's deployment is already reclaimed on the terminal
   // transition, so this only soft-deletes the record. Teardown is best-effort:
   // the record is soft-deleted regardless, so a sidecar hiccup never leaves a
