@@ -358,7 +358,7 @@ function WorkflowDockCard({
                   FOCUS_RING,
                 )}
               >
-                {stopping ? "Stopping…" : "Confirm"}
+                {stopping ? "Stopping…" : "Confirm stop"}
               </button>
               <button
                 type="button"
@@ -474,8 +474,9 @@ export function WorkflowDock({
   const [sawActive, setSawActive] = useState(false);
 
   // Failed runs count as needing attention: hiding a failure on reload would
-  // bury it. Only a conversation whose runs are all completed loads dock-less.
-  // A dismissed failed run no longer counts — the user has acknowledged it.
+  // bury it. Only a conversation whose runs are all completed or user-stopped
+  // loads dock-less. A dismissed failed/stopped run no longer counts — the user
+  // has acknowledged it.
   const visibleRuns = useMemo(
     () => (runs ?? []).filter((run) => !dismissed.includes(run.runId)),
     [runs, dismissed],
