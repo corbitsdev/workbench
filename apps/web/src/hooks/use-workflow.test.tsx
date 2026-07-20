@@ -51,11 +51,13 @@ afterEach(() => {
 });
 
 describe("isRecordTerminal", () => {
-  it("is true only for completed and failed", () => {
+  it("is true for completed, failed, and stopped", () => {
     expect(isRecordTerminal("completed")).toBe(true);
     expect(isRecordTerminal("failed")).toBe(true);
+    expect(isRecordTerminal("stopped")).toBe(true);
     expect(isRecordTerminal("running")).toBe(false);
     expect(isRecordTerminal("awaiting")).toBe(false);
+    expect(isRecordTerminal("provisioning")).toBe(false);
   });
 });
 
@@ -65,6 +67,7 @@ describe("runListIsActive", () => {
     expect(
       runListIsActive([{ status: "completed" }, { status: "failed" }]),
     ).toBe(false);
+    expect(runListIsActive([{ status: "stopped" }])).toBe(false);
     expect(
       runListIsActive([{ status: "completed" }, { status: "running" }]),
     ).toBe(true);
@@ -81,6 +84,9 @@ describe("conversationRunPollInterval", () => {
         { status: "failed" },
       ]),
     ).toBe(CONVERSATION_RUN_IDLE_POLL_MS);
+    expect(conversationRunPollInterval([{ status: "stopped" }])).toBe(
+      CONVERSATION_RUN_IDLE_POLL_MS,
+    );
   });
 
   it("keeps the 5s cadence while any run is non-terminal, and before first data", () => {

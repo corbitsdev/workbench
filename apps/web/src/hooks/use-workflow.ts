@@ -45,7 +45,7 @@ export type WorkflowMeta = typeof workflowMetaSchema.infer;
 export const runRecordSchema = type({
   runId: "string",
   kind: "string",
-  status: "'provisioning'|'running'|'awaiting'|'completed'|'failed'",
+  status: "'provisioning'|'running'|'awaiting'|'completed'|'failed'|'stopped'",
   "deploymentId?": "string",
   // The run's deploy-time version meta, joined on the hub from the run's own
   // deployment so the version badge does not depend on the grant-filtered
@@ -144,7 +144,7 @@ export function useWorkflowRuns(
 export const conversationRunSchema = type({
   runId: "string",
   kind: "string",
-  status: "'provisioning'|'running'|'awaiting'|'completed'|'failed'",
+  status: "'provisioning'|'running'|'awaiting'|'completed'|'failed'|'stopped'",
   createdAt: "string",
   originConversationId: "string|null",
 });
