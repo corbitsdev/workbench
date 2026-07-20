@@ -6,7 +6,8 @@ export type AnalyticsEventType =
   | "inference_error"
   | "tool_call"
   | "turn_completed"
-  | "turn_failed";
+  | "turn_failed"
+  | "compaction";
 
 export type AnalyticsFact = {
   eventKey: string;
@@ -22,6 +23,49 @@ export type AnalyticsFact = {
   source: unknown | null;
   metadata: unknown | null;
   occurredAt: Date;
+};
+
+type CustomEventMapper = (args: {
+  agentAddress: string;
+  event: Extract<InferenceEvent, { type: `custom.${string}` }>;
+  baseKey: string;
+  now: Date;
+}) => AnalyticsFact[];
+
+/**
+ * Registry of `custom.<name>` → analytics fact mappers.
+ * Registering a new custom type does not require editing the switch in
+ * `factsFromInferenceEvent`; unregistered custom types drop without throwing
+ * (matching the previous default: return []).
+ */
+const customEventMappers: Record<string, CustomEventMapper> = {
+  compaction: ({ event, baseKey, now }) => {
+    const data = event.data;
+    const usage = isTokenUsage(data.usage) ? data.usage : null;
+    const source = isInferenceSource(data.source) ? data.source : null;
+    return [
+      {
+        eventKey: baseKey,
+        eventType: "compaction",
+        model: source?.model ?? null,
+        toolCallId: null,
+        status: "completed",
+        ...tokens(usage),
+        source,
+        metadata: {
+          compactor: data.compactor,
+          reason: data.reason,
+          turnsIn: data.turnsIn,
+          turnsOut: data.turnsOut,
+          decisions: data.decisions,
+          ...(data.summaryChars !== undefined
+            ? { summaryChars: data.summaryChars }
+            : {}),
+        },
+        occurredAt: now,
+      },
+    ];
+  },
 };
 
 export function factsFromInferenceEvent(args: {
@@ -120,8 +164,28 @@ export function factsFromInferenceEvent(args: {
     // inference.retry fires between retry attempts — terminal usage is attributed on
     // inference.done for the successful attempt. No additional rollup contribution.
     default:
-      return [];
+      return factsFromCustomEvent({ agentAddress, event, baseKey, now });
   }
+}
+
+function factsFromCustomEvent(args: {
+  agentAddress: string;
+  event: InferenceEvent;
+  baseKey: string;
+  now: Date;
+}): AnalyticsFact[] {
+  const { event, baseKey, now, agentAddress } = args;
+  if (!event.type.startsWith("custom.")) return [];
+  const customName = event.type.slice("custom.".length);
+  const mapper = customEventMappers[customName];
+  if (mapper === undefined) return [];
+  // Narrow: every `custom.*` InferenceEvent member carries open `data`.
+  return mapper({
+    agentAddress,
+    event: event as Extract<InferenceEvent, { type: `custom.${string}` }>,
+    baseKey,
+    now,
+  });
 }
 
 function tokens(
@@ -140,4 +204,36 @@ function tokens(
     cacheWriteTokens: usage?.cacheWrite ?? 0,
     thinkingTokens: usage?.thinking ?? 0,
   };
+}
+
+function isTokenUsage(
+  value: unknown,
+): value is {
+  input: number;
+  output: number;
+  cacheRead: number;
+  cacheWrite: number;
+  thinking: number;
+} {
+  if (value === null || typeof value !== "object") return false;
+  const v = value as Record<string, unknown>;
+  return (
+    typeof v.input === "number" &&
+    typeof v.output === "number" &&
+    typeof v.cacheRead === "number" &&
+    typeof v.cacheWrite === "number" &&
+    typeof v.thinking === "number"
+  );
+}
+
+function isInferenceSource(
+  value: unknown,
+): value is { sourceId: string; provider: string; model: string } {
+  if (value === null || typeof value !== "object") return false;
+  const v = value as Record<string, unknown>;
+  return (
+    typeof v.sourceId === "string" &&
+    typeof v.provider === "string" &&
+    typeof v.model === "string"
+  );
 }

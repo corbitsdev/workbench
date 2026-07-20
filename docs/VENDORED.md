@@ -142,9 +142,14 @@ There are two kinds of vendoring:
 - **Vendors:** `@intx/inference` (copy of `interchange/packages/inference`).
 - **Imported by:** `packages/agents` (director inference path) and any workspace
   member that resolves `@intx/inference` via the root `package.json` override.
-- **Why vendored:** Myra Creative / Thinking dials need provider-specific request
-  bodies (`reasoning_effort`, Kimi `thinking` + `reasoning_content`, Opus 4.8
-  thinking `effort`, temperature omission rules) before upstream exposes them.
+- **Why vendored:** two independent reasons — (1) Myra Creative / Thinking dials
+  need provider-specific request bodies (`reasoning_effort`, Kimi `thinking` +
+  `reasoning_content`, Opus 4.8 thinking `effort`, temperature omission rules)
+  before upstream exposes them; (2) reactor-path telemetry that must emit on the
+  sanctioned `custom.*` channel after compaction completes (CL-3837) and after
+  authz `ask` suspension (CL-3940). A pin-bump re-sync must re-apply every
+  WORKBENCH-LOCAL block in `src/reactor.ts` and the provider files — a literal
+  upstream copy silently drops both divergences with a green build.
 - **WORKBENCH-LOCAL change (CL-3766):** `src/providers/openai.ts` merges
   `providerOptions` into chat-completions bodies and applies Kimi thinking rules;
   `src/providers/anthropic.ts` applies Opus 4.8 thinking `effort` and omits
@@ -200,6 +205,18 @@ There are two kinds of vendoring:
   drop the block once interchange captures the tool snapshot at its own suspend
   co-write (tracked as CL-3943); a literal upstream copy that omits it silently
   re-introduces the "no action name, no args" regression with a green build.
+- **WORKBENCH-LOCAL change (CL-3837):** `src/reactor.ts` `executeCompact`
+  emits `custom.compaction` after a successful compact, carrying
+  `{compactor, reason, turnsIn, turnsOut, decisions}` plus optional
+  `usage`/`source`/`summaryChars` when the compactor puts them on
+  `TransformRecord.parameters`. Analytics maps registered `custom.*` types
+  through a registry (`packages/analytics` event-mapping); unregistered
+  custom types still drop. Tagged `// WORKBENCH-LOCAL (CL-3837)`; guarded by
+  the "successful compact emits custom.compaction" test in
+  `src/reactor.test.ts`. **Retirement:** drop once upstream emits a
+  first-class compaction event from the reactor path; a literal upstream
+  copy that omits it silently re-introduces the analytics undercount of
+  compaction spend with a green build.
 
 ### `packages/storage-isogit` → `@workbench/storage-isogit`
 

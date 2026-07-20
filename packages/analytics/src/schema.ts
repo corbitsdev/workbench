@@ -104,6 +104,7 @@ export const analyticsEvent = pgTable(
         "tool_call",
         "turn_completed",
         "turn_failed",
+        "compaction",
       ],
     }).notNull(),
     model: text("model"),
