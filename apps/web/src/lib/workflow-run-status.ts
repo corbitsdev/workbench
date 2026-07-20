@@ -37,14 +37,15 @@ export function statusLabel(status: string): string {
 export function statusTextClass(status: string): string {
   if (status === "completed") return "text-green";
   if (status === "failed") return "text-red-500";
-  // Neutral (not error red) so a user-stopped run does not read as a failure.
-  if (status === "stopped") return "text-text-3";
+  // Neutral (not error red) so a user-stopped / cancelled run does not read as a failure.
+  if (status === "stopped" || status === "cancelled") return "text-text-3";
   return "text-blue";
 }
 
 export function statusDotClass(status: string): string {
   if (status === "completed") return "bg-green";
   if (status === "failed") return "bg-red-500";
-  if (status === "stopped") return "bg-text-3";
+  if (status === "stopped" || status === "cancelled") return "bg-text-3";
   return "bg-blue";
 }
+

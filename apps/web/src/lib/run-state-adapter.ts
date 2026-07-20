@@ -39,8 +39,8 @@ export interface RunRecord {
 
 // Widened sibling of `isRecordTerminal` for callers holding a run's `status`
 // as a plain string rather than the narrowed `RunRecord["status"]` union (e.g.
-// a run-list row) — same two-literal invariant, no unsafe cast needed at the
-// call site.
+// a run-list row) — same three-literal terminal set (completed / failed /
+// stopped), no unsafe cast needed at the call site.
 export function isStatusTerminal(status: string): boolean {
   return status === "completed" || status === "failed" || status === "stopped";
 }

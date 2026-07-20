@@ -35,6 +35,10 @@ describe("statusTextClass", () => {
     expect(cls.includes("red")).toBe(false);
   });
 
+  it("styles cancelled as the same neutral tone as stopped", () => {
+    expect(statusTextClass("cancelled")).toBe("text-text-3");
+  });
+
   it("keeps failed as red and completed as green", () => {
     expect(statusTextClass("failed")).toContain("red");
     expect(statusTextClass("completed")).toContain("green");
@@ -46,6 +50,10 @@ describe("statusDotClass", () => {
     const cls = statusDotClass("stopped");
     expect(cls).toBe("bg-text-3");
     expect(cls.includes("red")).toBe(false);
+  });
+
+  it("styles cancelled as the same neutral tone as stopped", () => {
+    expect(statusDotClass("cancelled")).toBe("bg-text-3");
   });
 
   it("keeps failed as red and completed as green", () => {
