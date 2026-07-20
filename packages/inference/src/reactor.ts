@@ -936,8 +936,12 @@ export function createReactor(config: ReactorConfig): Reactor {
     // before/after shape (and, when present, summarization usage carried on
     // TransformRecord.parameters). Only the reactor knows whether the compactor
     // actually ran — the director-driven emit seam is the wrong caller because
-    // the director would have to predict a compaction. Retirement: drop once
-    // upstream emits a first-class compaction event from the reactor path.
+    // the director would have to predict a compaction. Nested summarize
+    // inference (when the compactor itself calls the model) uses a private
+    // seq and does not reach analytics, so token cost is counted once here on
+    // the custom.compaction fact — never double-counted with inference_done.
+    // Retirement: drop once upstream emits a first-class compaction event
+    // from the reactor path.
     const params = result.record.parameters;
     emit({
       type: "custom.compaction",

@@ -221,8 +221,11 @@ async function persistFact(
 
     if (inserted.length === 0) return;
 
-    // Raw inference_usage facts are stored for auditing; rollups count tokens only
-    // on inference_done. inference_error has no rollup contribution.
+    // Raw inference_usage facts are stored for auditing; rollups count tokens
+    // only on inference_done and compaction (summarizer cost attributed once on
+    // the custom.compaction fact — nested summarize inference uses a private
+    // seq and never reaches this subscriber). inference_error has no rollup
+    // contribution.
     if (
       fact.eventType === "inference_error" ||
       fact.eventType === "inference_usage"
