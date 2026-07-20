@@ -266,35 +266,34 @@ removes the deployment from the active set and stops its runtime. What the
 sidecar reclaims above is its **working copy** of that state on the agent
 volume, not the hub's source-of-truth record.
 
-### Why the sidecar reclaims, and the boot reconciler (CL-2231)
+### Why the sidecar reclaims (CL-2231), and why there is no boot-time sweep (CL-3955)
 
 Without reclamation the sidecar volume accumulated orphaned per-deployment git
 repos and eventually hit `ENOSPC` — **inode exhaustion**, not bytes (repos are
 file-count-heavy). The driver was deployment **churn** (repeated redeploys
-without teardown), not runs: all runs of a kind share one deployment's supervisor
+without teardown), not runs. (Tool packages are not a factor — they are
+content-addressed and hardlinked, one copy per `package@version` shared across
+tenants.)
 
-- step agents, so per-run cost is tiny. (Tool packages are not a factor — they
-  are content-addressed and hardlinked, one copy per `package@version` shared
-  across tenants.)
+Reclamation today has two layers, both hub-driven: the undeploy hook above
+reclaims a deployment's `ownedDirs` when the hub tears it down (fired on every
+terminal run transition), and `WorkflowReconciler.reclaimOrphanedDeployments`
+re-sweeps terminal runs within a 24h window for teardowns lost to a hub crash.
+Do not issue hub-driven delete RPCs for sidecar-local mirrors beyond these
+paths.
 
-The undeploy hook above reclaims a deployment whose supervisor is still live in
-the sidecar's in-memory map. The **boot reconciler**
-(`apps/sidecar/src/boot-reconciler.ts`) closes the restart gap: before the
-hub-link connects, it fetches the live deployment set from the hub
-(`GET /api/internal/deployments/live`, read-only) and prunes only on-disk dirs
-whose embedded `ses_<deploymentId>` token is confirmed **absent** from that set.
-It also prunes durable-conversation mirrors under
-`agent-conversation-state/<workflowRunSlug>/` when their deployment token is no
-longer live, while preserving mirrors for live paused/terminal deployments so a
-redeploy or next message can resume. It is fail-safe — any fetch/parse failure,
-or an empty live set while tokenized sidecar state exists, deletes **nothing** —
-and sidecar-local only. Interim operator reclaim is therefore a sidecar restart:
-the boot reconciler performs the sweep before the hub-link restores sessions; do
-not issue hub-driven delete RPCs for sidecar-local mirrors. The residual boot
-`Reconnection rejected by governance` noise is _live_ step-agents re-establishing
-(bounded, benign); eliminating step agents entirely is the **CL-2232** spike
-(inline `@intx/agent` inference). See IMPLEMENTATION.md § Sidecar deployment
-reclamation.
+There was previously a third layer — a boot-time reconciler that pruned on-disk
+dirs absent from the hub's live-deployment set after a restart. It was
+**removed (CL-3955)**: the live set (`GET /api/internal/deployments/live`) is
+built from the `workflow_run` catalog table, which per-run (single-use)
+deployments never write to, so the sweep deleted the run history of any run
+parked at an `awaitSignal` gate on every sidecar restart — permanently breaking
+resume ("signal deliver refused: run log has no events yet"). Losing parked-run
+state is strictly worse than the slow accumulation the sweep backstopped, so
+dirs that miss both remaining layers now persist until a correct reclaim design
+lands (a complete live set including `running`/`awaiting` rows from
+`workflow_run_record`). The endpoint is kept for that follow-up. See
+IMPLEMENTATION.md § Sidecar deployment reclamation.
 
 ## Serialization constraint
 
