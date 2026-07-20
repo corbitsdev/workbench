@@ -153,19 +153,9 @@ export const timelineSources: readonly TimelineSourceDescriptor[] = [
     // member (CL-2743 F2).
     tenantWideSummarySql: "null::text",
   },
-  {
-    kind: "approval",
-    table: "approval",
-    idColumn: "id",
-    timestamp: {
-      column: "created_at",
-      meaning: "row-created",
-      clientSupplied: false,
-    },
-    tenantScope: { column: "tenant_id" },
-    principalScope: { column: "principal_id" },
-    summarySql: "src.resource || ' ' || src.action || ' ' || src.status",
-  },
+  // No approval source: the workbench approval table was dropped (its name now
+  // resolves to interchange's approval table, which has no principal scope), so
+  // approvals cannot back a principal-scoped timeline entry.
   {
     kind: "output_feedback",
     table: "output_feedback",

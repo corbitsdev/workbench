@@ -68,7 +68,6 @@ describe("entityLinkForEntry", () => {
       "credential",
       "upload",
       "memory",
-      "approval",
       "output_feedback",
     ] as const) {
       expect(entityLinkForEntry(entry({ kind }))).toBeNull();
