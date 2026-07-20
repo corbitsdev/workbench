@@ -4951,6 +4951,57 @@ describe("createReactor — transform chain ordering and compact action", () => 
     expect(flatRecords.some((r) => r.strategy === "tail-only")).toBe(true);
   });
 
+  // WORKBENCH-LOCAL (CL-3837): successful compaction must surface on the
+  // custom.* channel so analytics can map it; a failed (unknown) compact
+  // must not emit the event.
+  test("successful compact emits custom.compaction with before/after shape", async () => {
+    const recording = makeRecordingContextStore();
+    const compactor = truncatingCompactor("tail-only");
+
+    let messages = 0;
+    const director: ReactorDirector = {
+      async decide(event, _state, caps) {
+        if (event.type === "message.received") {
+          messages++;
+          if (messages === 1) {
+            return caps.compact("tail-only", "explicit-test");
+          }
+          return caps.done();
+        }
+        return caps.done();
+      },
+    };
+
+    const { reactor, events, waitFor } = createDirectReactor({
+      contextStore: recording.store,
+      director,
+      compactors: { "tail-only": compactor },
+    });
+
+    reactor.start();
+    reactor.deliver(makeInboundMessage());
+    setTimeout(() => reactor.deliver(makeInboundMessage()), 30);
+    await waitFor("reactor.done");
+
+    const compaction = events.find((e) => e.type === "custom.compaction");
+    expect(compaction).toBeDefined();
+    if (compaction === undefined || compaction.type !== "custom.compaction") {
+      throw new Error("expected custom.compaction event");
+    }
+    expect(compaction.data.compactor).toBe("tail-only");
+    expect(compaction.data.reason).toBe("explicit-test");
+    expect(typeof compaction.data.turnsIn).toBe("number");
+    expect(typeof compaction.data.turnsOut).toBe("number");
+    expect(compaction.data.turnsOut).toBe(1);
+    expect(compaction.data.turnsIn).toBeGreaterThanOrEqual(
+      compaction.data.turnsOut as number,
+    );
+    expect(compaction.data.decisions).toEqual({
+      kept: 1,
+      dropped: expect.any(Number),
+    });
+  });
+
   test("compact for an unknown name emits a fatal error and shuts down", async () => {
     const recording = makeRecordingContextStore();
     const { reactor, events, waitFor } = createDirectReactor({

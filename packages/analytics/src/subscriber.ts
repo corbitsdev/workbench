@@ -252,7 +252,8 @@ async function upsertDailyRollup(
   const toolCallCount = fact.eventType === "tool_call" ? 1 : 0;
   const toolErrorCount =
     fact.eventType === "tool_call" && fact.status === "error" ? 1 : 0;
-  const countTokens = fact.eventType === "inference_done";
+  const countTokens =
+    fact.eventType === "inference_done" || fact.eventType === "compaction";
 
   await db
     .insert(analyticsRollupDaily)

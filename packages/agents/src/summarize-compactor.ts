@@ -284,6 +284,18 @@ export function createSummarizeCompactor(
 
       let seq = 0;
       let summaryText: string | undefined;
+      let summaryUsage:
+        | {
+            input: number;
+            output: number;
+            cacheRead: number;
+            cacheWrite: number;
+            thinking: number;
+          }
+        | undefined;
+      let summarySource:
+        | { sourceId: string; provider: string; model: string }
+        | undefined;
       try {
         for await (const event of runInference({
           turns: [systemTurn, conversationTurn],
@@ -299,6 +311,8 @@ export function createSummarizeCompactor(
             if (textBlock !== undefined && textBlock.type === "text") {
               summaryText = textBlock.text;
             }
+            summaryUsage = event.data.usage;
+            summarySource = event.data.source;
           }
         }
       } catch {
@@ -326,6 +340,9 @@ export function createSummarizeCompactor(
 
       const tail = retainedTail(turns);
       const output = [summaryTurn, ...tail];
+      const summaryChars = summaryTurn.content[0]?.type === "text"
+        ? summaryTurn.content[0].text.length
+        : 0;
 
       return {
         output,
@@ -335,6 +352,12 @@ export function createSummarizeCompactor(
           parameters: {
             retainRecentExchanges: RETAIN_RECENT_EXCHANGES,
             model: opts.source.model,
+            // CL-3837/CL-3838: ride usage + source on open parameters so the
+            // reactor can emit custom.compaction without reconciling the
+            // summarizer's private seq space with the reactor's.
+            ...(summaryUsage !== undefined ? { usage: summaryUsage } : {}),
+            ...(summarySource !== undefined ? { source: summarySource } : {}),
+            summaryChars,
           },
           reason: ctx.trigger,
           decisions: {
