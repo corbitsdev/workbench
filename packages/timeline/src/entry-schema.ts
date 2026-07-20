@@ -5,6 +5,7 @@ export const timelineEntryKinds = [
   "message",
   "inference_turn",
   "tool_call",
+  "compaction",
   "workflow_run",
   "artifact",
   "artifact_version",
@@ -31,6 +32,7 @@ export const TimelineEntrySchema = type({ kind: "'session'", ...base })
   .or({ kind: "'message'", ...base })
   .or({ kind: "'inference_turn'", ...base })
   .or({ kind: "'tool_call'", ...base })
+  .or({ kind: "'compaction'", ...base })
   .or({ kind: "'workflow_run'", ...base })
   .or({ kind: "'artifact'", ...base })
   .or({ kind: "'artifact_version'", ...base })

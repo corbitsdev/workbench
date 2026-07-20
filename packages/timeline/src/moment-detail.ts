@@ -69,6 +69,25 @@ export const MomentRunDetailSchema = type({
 export type MomentRunDetail = typeof MomentRunDetailSchema.infer;
 
 /**
+ * A context-compaction event's before/after turn counts, what was kept /
+ * dropped / summarized, trigger reason, and the summarization call's own
+ * token total (CL-3839). Flattened from analytics_event.metadata + the
+ * fact's token columns — never fabricated.
+ */
+export const MomentCompactionDetailSchema = type({
+  turnsIn: "number | null",
+  turnsOut: "number | null",
+  summaryChars: "number | null",
+  kept: "number | null",
+  dropped: "number | null",
+  summarized: "number | null",
+  reason: "string | null",
+  /** Sum of the fact's token columns (the compaction call's own cost). */
+  tokens: "number | null",
+});
+export type MomentCompactionDetail = typeof MomentCompactionDetailSchema.infer;
+
+/**
  * The expanded detail for one moment. Only the block matching the moment's
  * kind is present. A kind we do not enrich (session, memory, grant, …) has
  * nothing to expand and 404s rather than echoing an unverified id. A block
@@ -81,6 +100,7 @@ export const MomentDetailSchema = type({
   "toolCall?": MomentToolCallDetailSchema,
   "turn?": MomentTurnDetailSchema,
   "run?": MomentRunDetailSchema,
+  "compaction?": MomentCompactionDetailSchema,
 });
 export type MomentDetail = typeof MomentDetailSchema.infer;
 
@@ -89,6 +109,7 @@ export const detailEnrichedKinds = [
   "tool_call",
   "inference_turn",
   "workflow_run",
+  "compaction",
 ] as const;
 export type DetailEnrichedKind = (typeof detailEnrichedKinds)[number];
 
@@ -215,5 +236,34 @@ export function buildRunDetailQuery(scope: MomentDetailScope): SQL {
     where r.id = ${scope.id}
       and r.tenant_id = ${scope.tenantId}
       and ${inSet(sql`r.principal_id`, scope.principalIds)}
+    limit 1`;
+}
+
+// Compaction detail is a single analytics_event row (event_type = 'compaction').
+// Metadata carries the trigger reason, before/after turn counts, and the
+// kept/dropped/summarized decisions; the fact's token columns sum to the
+// summarization call's own cost (CL-3839 / CL-3838).
+export function buildCompactionDetailQuery(scope: MomentDetailScope): SQL {
+  return sql`
+    select
+      ae.metadata ->> 'turnsIn' as turns_in,
+      ae.metadata ->> 'turnsOut' as turns_out,
+      ae.metadata ->> 'summaryChars' as summary_chars,
+      ae.metadata -> 'decisions' ->> 'kept' as kept,
+      ae.metadata -> 'decisions' ->> 'dropped' as dropped,
+      ae.metadata -> 'decisions' ->> 'summarized' as summarized,
+      ae.metadata ->> 'reason' as reason,
+      (
+        ae.input_tokens
+        + ae.output_tokens
+        + ae.cache_read_tokens
+        + ae.cache_write_tokens
+        + ae.thinking_tokens
+      ) as total_tokens
+    from analytics_event ae
+    where ae.id = ${scope.id}
+      and ae.event_type = 'compaction'
+      and ae.tenant_id = ${scope.tenantId}
+      and ${inSet(sql`ae.principal_id`, scope.principalIds)}
     limit 1`;
 }
