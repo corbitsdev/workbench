@@ -34,6 +34,7 @@ const DETAIL_ENRICHED_KINDS = new Set([
   "tool_call",
   "inference_turn",
   "workflow_run",
+  "compaction",
 ]);
 
 /** A quiet, single-line honest absence — no loud gold chip. */
@@ -55,6 +56,7 @@ function Absent({
 function dotClass(entry: TimelineEntry): string {
   if (entry.kind === "tool_call") return "bg-green";
   if (entry.kind === "workflow_run") return "bg-blue-deep";
+  if (entry.kind === "compaction") return "bg-text-3";
   if (entry.kind === "artifact" || entry.kind === "artifact_version") {
     return "bg-accent";
   }
@@ -322,6 +324,83 @@ export function MomentDecomposition({
                 {moment.run.outcome}
               </span>
             </DecompRow>
+          )}
+        </>
+      )}
+
+      {entry.kind === "compaction" && (
+        <>
+          {detailLoading && moment?.compaction === undefined && (
+            <DecompRow label="Compaction">
+              <Absent>Loading…</Absent>
+            </DecompRow>
+          )}
+          {moment?.compaction !== undefined && (
+            <>
+              <DecompRow label="Turns">
+                <span
+                  data-testid="moment-compaction-turns"
+                  className="font-mono text-[11.5px] text-text-2"
+                >
+                  {moment.compaction.turnsIn ?? "?"} →{" "}
+                  {moment.compaction.turnsOut ?? "?"}
+                </span>
+              </DecompRow>
+              {(moment.compaction.kept !== null ||
+                moment.compaction.dropped !== null ||
+                moment.compaction.summarized !== null) && (
+                <DecompRow label="Decisions">
+                  <span
+                    data-testid="moment-compaction-decisions"
+                    className="font-mono text-[11.5px] text-text-2"
+                  >
+                    {[
+                      moment.compaction.kept !== null
+                        ? `${moment.compaction.kept} kept`
+                        : null,
+                      moment.compaction.dropped !== null
+                        ? `${moment.compaction.dropped} dropped`
+                        : null,
+                      moment.compaction.summarized !== null
+                        ? `${moment.compaction.summarized} summarized`
+                        : null,
+                    ]
+                      .filter(Boolean)
+                      .join(" · ")}
+                  </span>
+                </DecompRow>
+              )}
+              {moment.compaction.reason !== null && (
+                <DecompRow label="Reason">
+                  <span
+                    data-testid="moment-compaction-reason"
+                    className="font-mono text-[11.5px] text-text-2"
+                  >
+                    {moment.compaction.reason}
+                  </span>
+                </DecompRow>
+              )}
+              {moment.compaction.summaryChars !== null && (
+                <DecompRow label="Summary size">
+                  <span
+                    data-testid="moment-compaction-summary-chars"
+                    className="font-mono text-[11.5px] text-text-2"
+                  >
+                    {moment.compaction.summaryChars.toLocaleString()} chars
+                  </span>
+                </DecompRow>
+              )}
+              {moment.compaction.tokens !== null && (
+                <DecompRow label="Tokens">
+                  <span
+                    data-testid="moment-compaction-tokens"
+                    className="font-mono text-[11.5px] text-text-2"
+                  >
+                    {moment.compaction.tokens.toLocaleString()}
+                  </span>
+                </DecompRow>
+              )}
+            </>
           )}
         </>
       )}

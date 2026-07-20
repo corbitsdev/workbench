@@ -89,9 +89,30 @@ function describeToolCall(summary: string | null): EntryDescription {
 }
 
 /**
+ * Compaction summary is `turnsIn→turnsOut` from the timeline projection
+ * (CL-3839). Surface the boundary as the action, with the size drop as detail.
+ */
+function describeCompaction(summary: string | null): EntryDescription {
+  if (summary === null || summary.trim() === "") {
+    return { headline: "Context compacted", detail: null };
+  }
+  const match = /^(.+?)→(.+)$/.exec(summary.trim());
+  if (match === null) {
+    return { headline: "Context compacted", detail: summary };
+  }
+  const turnsIn = match[1] ?? "?";
+  const turnsOut = match[2] ?? "?";
+  return {
+    headline: "Context compacted",
+    detail: `${turnsIn} → ${turnsOut} turns`,
+  };
+}
+
+/**
  * Maps a timeline entry to an action-first headline. Grant rows are re-framed as
- * the action they allowed; tool calls as what ran; everything else keeps its
- * kind label as the headline with the raw summary as detail.
+ * the action they allowed; tool calls as what ran; compaction as the context
+ * boundary; everything else keeps its kind label as the headline with the raw
+ * summary as detail.
  */
 export function describeActivityEntry(entry: TimelineEntry): EntryDescription {
   if (entry.kind === "grant") {
@@ -99,6 +120,9 @@ export function describeActivityEntry(entry: TimelineEntry): EntryDescription {
   }
   if (entry.kind === "tool_call") {
     return describeToolCall(entry.summary);
+  }
+  if (entry.kind === "compaction") {
+    return describeCompaction(entry.summary);
   }
   return {
     headline: KIND_META[entry.kind].label,
@@ -123,6 +147,7 @@ const ANCHOR_KINDS: TimelineEntry["kind"][] = [
   "artifact",
   "upload",
   "tool_call",
+  "compaction",
   "message",
   "session",
 ];
