@@ -17,6 +17,7 @@ export const toolManifestFile = {
         prospect_engine_format_slack_digest: { sideEffect: "read" },
         prospect_engine_format_mail_refs: { sideEffect: "read" },
         prospect_engine_serialize_ledger: { sideEffect: "read" },
+        prospect_engine_extract_list_org_ids: { sideEffect: "read" },
       },
     }),
   ],

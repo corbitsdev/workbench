@@ -3,6 +3,7 @@
 import {
   PROSPECT_ENGINE_CHARGE_CREDITS_DEFINITION,
   PROSPECT_ENGINE_DEDUPE_CANDIDATES_DEFINITION,
+  PROSPECT_ENGINE_EXTRACT_LIST_ORG_IDS_DEFINITION,
   PROSPECT_ENGINE_FORMAT_MAIL_REFS_DEFINITION,
   PROSPECT_ENGINE_FORMAT_REPORT_DEFINITION,
   PROSPECT_ENGINE_FORMAT_SLACK_DIGEST_DEFINITION,
@@ -76,5 +77,12 @@ export const PROSPECT_ENGINE_HUB_TOOLS: Record<string, ContextToolEntry> = {
     sideEffect: "read",
     definition: PROSPECT_ENGINE_SERIALIZE_LEDGER_DEFINITION,
     createTools: toolByName("prospect_engine_serialize_ledger"),
+  },
+  // Used by the workflow graph to project Sumble list steps into org-id arrays
+  // without content-key collisions on merge (see extractListOrgs step).
+  prospect_engine_extract_list_org_ids: {
+    sideEffect: "read",
+    definition: PROSPECT_ENGINE_EXTRACT_LIST_ORG_IDS_DEFINITION,
+    createTools: toolByName("prospect_engine_extract_list_org_ids"),
   },
 };

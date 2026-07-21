@@ -83,6 +83,46 @@ describe("prospect-engine tools", () => {
     expect(content.removed.length).toBe(2);
   });
 
+  test("parse ledger cold-start returns empty ledger without content", async () => {
+    const empty = await call("prospect_engine_parse_ledger", {});
+    expect(empty.isError).toBeUndefined();
+    expect((empty.content as { ledger: { accounts: unknown[] } }).ledger.accounts)
+      .toEqual([]);
+
+    const errEnvelope = await call("prospect_engine_parse_ledger", {
+      content: { isError: true, content: "not found" },
+    });
+    expect(errEnvelope.isError).toBeUndefined();
+    expect(
+      (errEnvelope.content as { ledger: { accounts: unknown[] } }).ledger
+        .accounts,
+    ).toEqual([]);
+  });
+
+  test("format report always emits creditsUsed and stopReason for argMaps", async () => {
+    const result = await call("prospect_engine_format_report", {
+      runDate: "2026-07-19",
+      accounts: [
+        {
+          organizationId: 1,
+          name: "Acme",
+          lane: "growth",
+          score: 70,
+        },
+      ],
+      creditsUsed: 42,
+    });
+    expect(result.isError).toBeUndefined();
+    const content = result.content as {
+      creditsUsed: number;
+      stopReason: string | null;
+      accounts: unknown[];
+    };
+    expect(content.creditsUsed).toBe(42);
+    expect(content.stopReason).toBeNull();
+    expect(content.accounts).toHaveLength(1);
+  });
+
   test("extract_list_org_ids projects pipeline/growth/enterprise without collision", async () => {
     const result = await call("prospect_engine_extract_list_org_ids", {
       pipeline: {

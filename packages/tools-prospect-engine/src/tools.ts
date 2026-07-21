@@ -306,8 +306,9 @@ function createParseLedgerTool(): AgentTool {
     definition: PROSPECT_ENGINE_PARSE_LEDGER_DEFINITION,
     handler: async (call) => {
       const args = coerceArgsObject(call.arguments);
-      let content = args.content ?? args.body;
-      // artifact_read / memory_load nest under content.content or content.text
+      // Cold-start / nonFatal artifact_read: tolerate missing body, nested
+      // window content, or an isError envelope and return empty ledger.
+      let content: unknown = args.content ?? args.body;
       if (isRecord(content) && "content" in content) {
         content = content.content;
       }
@@ -328,8 +329,8 @@ function createMergeLedgerTool(): AgentTool {
     kind: "full",
     definition: PROSPECT_ENGINE_MERGE_LEDGER_DEFINITION,
     handler: async (call) => {
-      const args = coerceArgsObject(call.arguments);
       try {
+        const args = coerceArgsObject(call.arguments);
         const ledger = parseProspectEngineLedger(args.ledger);
         const runDate = args.runDate;
         if (typeof runDate !== "string" || runDate.trim().length === 0) {
@@ -470,6 +471,8 @@ function createFormatReportTool(): AgentTool {
       const markdown = buildProspectEngineReportMarkdown(reportInput);
       const csv = buildProspectEngineReportCsv(accounts);
       const body = `${markdown}\n\n## CSV\n\n\`\`\`csv\n${csv}\n\`\`\`\n`;
+      // Always emit creditsUsed + stopReason so downstream argMaps never hit
+      // optional-skip (missing optional keys skip the entire deterministic step).
       return ok(call.id, {
         body,
         markdown,
@@ -482,6 +485,9 @@ function createFormatReportTool(): AgentTool {
           .filter((a) => a.lane === "enterprise")
           .map((a) => a.organizationId),
         accounts,
+        creditsUsed,
+        stopReason:
+          typeof args.stopReason === "string" ? args.stopReason : null,
       });
     },
   };

@@ -139,6 +139,8 @@ export const workflow = defineWorkflow({
 
     // Durable ledger is a per-owner artifact (principalId + title + kind),
     // not global memory_save — avoids clobbering Myra/operator memory.
+    // Cold start: find returns JSON null → readLedger skips (optional
+    // artifactId) → parseLedger still runs and emits empty ledger.
     findLedger: deterministicToolStep({
       id: "prospect-engine-find-ledger",
       title: "Locate seen-accounts ledger artifact",
@@ -149,31 +151,39 @@ export const workflow = defineWorkflow({
         kind: { literal: PROSPECT_ENGINE_ARTIFACT_KIND_LEDGER },
       },
       after: ["initBudget"],
-      nonFatal: true,
     }),
 
     readLedger: deterministicToolStep({
       id: "prospect-engine-read-ledger",
-      title: "Read ledger artifact body",
+      title: "Read seen-accounts ledger body",
       tool: "artifact_read",
       input: { from: "steps.findLedger.output" },
       argMap: {
-        artifactId: { fromJson: "content", field: "artifactId" },
+        // optional: when find returns null (no ledger yet), skip this step
+        // rather than fail the night. parseLedger tolerates missing body.
+        artifactId: {
+          fromJson: "content",
+          field: "artifactId",
+          optional: true,
+        },
       },
       after: ["findLedger"],
       nonFatal: true,
     }),
-
     parseLedger: deterministicToolStep({
       id: "prospect-engine-parse-ledger",
       title: "Parse seen-accounts ledger",
       tool: "prospect_engine_parse_ledger",
-      input: { from: "steps.readLedger.output" },
-      argMap: {
-        // artifact_read windowContent: { content: bodyString }
-        content: { from: "content" },
+      // Always run after the read attempt. No argMap: cold-start nights (and
+      // nonFatal artifact_read isError envelopes) omit `content`; the parse
+      // tool returns an empty ledger instead of failing the run.
+      input: {
+        merge: [
+          { from: "steps.initBudget.output.content" },
+          { from: "steps.readLedger.output" },
+        ],
       },
-      after: ["readLedger"],
+      after: ["initBudget", "readLedger"],
     }),
 
     pipeline: deterministicToolStep({
@@ -213,6 +223,7 @@ export const workflow = defineWorkflow({
     }),
 
     // One extract step — project list steps like heartbeat_merge_brief_sources.
+    // Fatal when registered: empty list reads still produce [] org ids.
     extractListOrgs: deterministicToolStep({
       id: "prospect-engine-extract-list-org-ids",
       title: "Extract exclusion list org ids",
@@ -222,7 +233,6 @@ export const workflow = defineWorkflow({
         fields: ["pipeline", "growthList", "enterpriseList"],
       },
       after: ["pipeline", "growthList", "enterpriseList"],
-      nonFatal: true,
     }),
 
     discover: step({
@@ -261,6 +271,8 @@ export const workflow = defineWorkflow({
       argMap: {
         candidates: { fromJson: "reply", field: "candidates" },
         ledger: { from: "ledger" },
+        // Defaults to [] when a list read failed nonFatally and extract saw
+        // error envelopes (extractOrganizationIds returns []).
         pipelineOrgIds: { from: "pipelineOrgIds" },
         growthOrgIds: { from: "growthOrgIds" },
         enterpriseOrgIds: { from: "enterpriseOrgIds" },
@@ -320,12 +332,18 @@ export const workflow = defineWorkflow({
       },
       argMap: {
         runDate: { from: "runDate" },
-        // Prefer map/reveal accounts (with contacts); qualify is fallback only
-        // via merge when reply.accounts is absent — tool parses candidates.
+        // Map/reveal must always emit accounts (may be []). Required field —
+        // optional:true would skip the entire delivery path.
         accounts: { fromJson: "reply", field: "accounts" },
-        // Agent reports creditsCharged; fall back is unused (0 from init).
-        creditsUsed: { fromJson: "reply", field: "creditsCharged" },
-        stopReason: { fromJson: "reply", field: "stopReason" },
+        // creditsCharged / stopReason may be omitted by a flaky agent reply;
+        // optional so we still deliver partial work (tools default credits=0
+        // and stopReason=null).
+        creditsUsed: {
+          fromJson: "reply",
+          field: "creditsCharged",
+          optional: true,
+        },
+        stopReason: { fromJson: "reply", field: "stopReason", optional: true },
       },
       after: ["mapReveal", "qualify", "initBudget"],
     }),
@@ -350,6 +368,9 @@ export const workflow = defineWorkflow({
     }),
 
     // Digest after persist so Slack deep-links include artifactId + runId.
+    // Read accounts/credits/stopReason from formatReport (always present) —
+    // never re-parse map reply or optional trigger fields (optional argMap
+    // keys skip the whole step when absent).
     formatDigest: deterministicToolStep({
       id: "prospect-engine-format-slack-digest",
       title: "Format Slack digest",
@@ -358,22 +379,18 @@ export const workflow = defineWorkflow({
         merge: [
           { from: "trigger.payload" },
           { from: "steps.formatReport.output.content" },
-          { from: "steps.initBudget.output.content" },
           { from: "steps.persist.output" },
-          { from: "steps.mapReveal.output" },
         ],
       },
       argMap: {
         runDate: { from: "runDate" },
         accounts: { from: "accounts" },
-        creditsUsed: { fromJson: "reply", field: "creditsCharged" },
-        remainingBudget: { from: "remaining" },
-        sumbleCreditBalance: { from: "sumbleCreditBalance" },
-        stopReason: { fromJson: "reply", field: "stopReason" },
+        creditsUsed: { from: "creditsUsed" },
+        stopReason: { from: "stopReason" },
         artifactId: { fromJson: "content", field: "artifactId" },
         runId: { from: "runId" },
       },
-      after: ["formatReport", "initBudget", "persist", "mapReveal"],
+      after: ["formatReport", "persist"],
     }),
 
     mergeLedger: deterministicToolStep({
@@ -385,19 +402,16 @@ export const workflow = defineWorkflow({
           { from: "trigger.payload" },
           { from: "steps.parseLedger.output.content" },
           { from: "steps.formatReport.output.content" },
-          { from: "steps.initBudget.output.content" },
-          { from: "steps.mapReveal.output" },
         ],
       },
       argMap: {
         ledger: { from: "ledger" },
         runDate: { from: "runDate" },
         accounts: { from: "accounts" },
-        creditsUsed: { fromJson: "reply", field: "creditsCharged" },
-        stopReason: { fromJson: "reply", field: "stopReason" },
-        remainingBalance: { from: "sumbleCreditBalance" },
+        creditsUsed: { from: "creditsUsed" },
+        stopReason: { from: "stopReason" },
       },
-      after: ["parseLedger", "formatReport", "initBudget", "mapReveal"],
+      after: ["parseLedger", "formatReport"],
     }),
 
     saveLedger: deterministicToolStep({

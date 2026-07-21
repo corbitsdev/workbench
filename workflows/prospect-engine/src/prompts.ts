@@ -17,7 +17,7 @@ Lane A (~60%): Series A-C, ~20-500 employees, verticals AI, payments, workflow, 
 Lane B (~40%): enterprise or regulated (finserv, banking, insurance, healthcare) with agent/GenAI hiring.
 
 Process:
-1. Resolve tech/job-function names with sumble_search_technologies / sumble_lookup_job_titles BEFORE filtering. Known-good tech slugs: langchain, openai-gpt-models, anthropic-claude, crewai, n8n, mcp.
+1. Resolve tech/job-function names with sumble_find_technologies / sumble_lookup_technologies / sumble_lookup_job_titles BEFORE filtering. Known-good tech slugs: langchain, openai-gpt-models, anthropic-claude, crewai, n8n, mcp.
 2. Run 2-3 org filter queries per lane via sumble_search_organizations (agent-stack query: LLM, RAG, LangChain, OpenAI, Anthropic, vector DBs, agent frameworks). Prefer job_post_concentration style evidence when available.
 3. Run sumble_search_signals for GenAI-project and new-AI-leader signals.
 4. Skip Ramp AI Index when rampAIIndexInputs is absent; note "Ramp skipped" in notes.
@@ -65,9 +65,9 @@ Rules:
 - Call prospect_engine_charge_credits before each batch of reveals.
 - Pull org signals when cheap and attach suggested_contacts when present.
 
-Return ONE strict JSON object:
-- accounts: same orgs with contacts: [{ name, title?, linkedinUrl?, email?, personId? }]
-- creditsCharged: number (sum of successful charges this step)
-- stopReason?: "credit-cap" | "wall-clock" | string
+Return ONE strict JSON object (no markdown fence). ALL fields required every night:
+- accounts: array (may be empty) of orgs with contacts: [{ name, title?, linkedinUrl?, email?, personId? }]
+- creditsCharged: number (sum of successful charges this step; use 0 if none)
+- stopReason: null when finished normally, or "credit-cap" | "wall-clock" | string when stopping early
 `;
 }
