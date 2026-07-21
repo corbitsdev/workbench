@@ -593,6 +593,20 @@ function filterTasksByCutoff(
   );
 }
 
+// Long-open means it predates the window; a task with no created_at cannot be
+// proven new, so it stays.
+function filterTasksBeforeCutoff(
+  tasks: unknown[],
+  cutoff: string | null,
+): unknown[] {
+  if (cutoff === null) {
+    return tasks;
+  }
+  return tasks.filter(
+    (task) => !isAtOrAfterCutoff(taskTimestamp(task, "created_at"), cutoff),
+  );
+}
+
 async function recentActivity(
   config: AttioToolsConfig,
   args: Record<string, unknown>,
@@ -614,7 +628,7 @@ async function recentActivity(
 
   const newTasksPage = await fetchTaskPage(
     config,
-    { sort: "created_at:desc" },
+    { isCompleted: false, sort: "created_at:desc" },
     signal,
   );
   const completedTasksPage = await fetchTaskPage(
@@ -640,7 +654,9 @@ async function recentActivity(
         "completed_at",
         cutoff,
       ).map(compactTask),
-      longOpenTasks: longOpenTasksPage.map(compactTask),
+      longOpenTasks: filterTasksBeforeCutoff(longOpenTasksPage, cutoff).map(
+        compactTask,
+      ),
     },
   };
 }

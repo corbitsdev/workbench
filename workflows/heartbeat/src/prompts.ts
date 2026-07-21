@@ -16,10 +16,11 @@ export interface BriefSourceDescriptor {
 // the reply must stand entirely on its own — no preamble, no sign-off, no
 // "here is your brief" framing.
 //
-// Generic over WIRED_BRIEF_SOURCES: naming today's sources (Granola) in prose
-// is entirely data-driven, not hand-written per source, so adding a new wired
-// source (Vercel, Linear, Attio, ...) changes nothing here — only its catalog
-// entry needs a `briefSource.tool`.
+// Source NAMES in prose are data-driven over WIRED_BRIEF_SOURCES, but the
+// recency-slice section below is a hand-maintained per-source enumeration of
+// each tool's output keys (CL-4087): adding a wired source or changing a brief
+// tool's output shape requires updating that list, or the prompt silently goes
+// stale about that source's slices.
 export function buildMorningBriefSystemPrompt(
   sources: readonly BriefSourceDescriptor[] = WIRED_BRIEF_SOURCES,
 ): string {
