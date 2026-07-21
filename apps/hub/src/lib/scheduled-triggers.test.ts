@@ -5,6 +5,7 @@ import {
   createOwnerSchedule,
   deleteOwnerSchedule,
   ensureOwnerSchedule,
+  getOwnerSchedule,
   listEnabledSchedules,
   listTenantScopedSchedules,
   markScheduleFired,
@@ -133,6 +134,22 @@ describe("updateOwnerSchedule", () => {
       enabled: false,
     });
     expect(result).toBeNull();
+  });
+
+  it("replaces the trigger payload when provided", async () => {
+    let patch: unknown;
+    const row = dbRow({ triggerPayload: { audience: "founders" } });
+    const result = await updateOwnerSchedule(
+      updateDb([row], (v) => (patch = v)),
+      {
+        tenantId: "tenant-root",
+        ownerPrincipalId: "principal-1",
+        id: "sch-1",
+        payload: { audience: "founders" },
+      },
+    );
+    expect(result).toEqual(row);
+    expect(patch).toEqual({ triggerPayload: { audience: "founders" } });
   });
 
   it("returns the updated row and only patches provided fields", async () => {

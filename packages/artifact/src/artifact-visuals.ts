@@ -218,11 +218,17 @@ const KIND_VISUALS: Record<string, ArtifactVisual> = {
     experimentalSpan: "row-span-3",
   },
   // The workflow's persisted `research` kind, the generic `report` kind, and
-  // the heartbeat's stable `morning-brief` kind (CL-3503) share one tile
-  // treatment.
+  // the heartbeat's stable `morning-brief` kind (CL-3503) and the prospect
+  // engine's nightly report (CL-3497) share one tile treatment.
   research: REPORT_VISUAL,
   report: REPORT_VISUAL,
   "morning-brief": REPORT_VISUAL,
+  // Overnight prospect engine nightly list (CL-3497). Ledger kind intentionally
+  // omitted so it stays out of the gallery vocabulary (de-emphasized).
+  "prospect-engine-report": {
+    ...REPORT_VISUAL,
+    label: "Prospect list",
+  },
 };
 
 const FALLBACK_VISUAL: ArtifactVisual = {
@@ -239,7 +245,9 @@ const FALLBACK_VISUAL: ArtifactVisual = {
  * the vocabulary other surfaces (e.g. apps/web's detail-page label) should
  * defer to, rather than each maintaining its own kind → label table.
  */
-export function explicitVisualForKind(kind: string): ArtifactVisual | undefined {
+export function explicitVisualForKind(
+  kind: string,
+): ArtifactVisual | undefined {
   if (isLinkedInPostArtifactKind(kind)) {
     return LINKEDIN_POST_VISUAL;
   }

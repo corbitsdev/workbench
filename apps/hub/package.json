@@ -74,6 +74,7 @@
     "@workbench/tools-granola": "workspace:*",
     "@workbench/tools-hackernews": "workspace:*",
     "@workbench/tools-last30days": "workspace:*",
+    "@workbench/tools-prospect-engine": "workspace:*",
     "@workbench/tools-linear": "workspace:*",
     "@workbench/tools-notion": "workspace:*",
     "@workbench/tools-polymarket": "workspace:*",

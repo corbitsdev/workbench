@@ -1,0 +1,922 @@
+{
+  "kind": "prospect-engine",
+  "version": "0.1.0",
+  "label": "Prospect engine",
+  "description": "Nightly unattended prospecting: Sumble discover → qualify → map contacts → scored list + Slack digest. List building only — never outreach.",
+  "displayFlow": [
+    {
+      "key": "prelude",
+      "label": "Load budget and exclusion lists",
+      "stepIds": [
+        "initBudget",
+        "loadMemory",
+        "parseLedger",
+        "pipeline",
+        "growthList",
+        "enterpriseList"
+      ]
+    },
+    {
+      "key": "discover",
+      "label": "Discover candidates",
+      "stepIds": [
+        "discover"
+      ]
+    },
+    {
+      "key": "filter",
+      "label": "Dedupe and score",
+      "stepIds": [
+        "dedupe",
+        "score",
+        "qualify"
+      ]
+    },
+    {
+      "key": "map",
+      "label": "Map contacts",
+      "stepIds": [
+        "mapReveal"
+      ]
+    },
+    {
+      "key": "package",
+      "label": "Package report",
+      "stepIds": [
+        "formatReport",
+        "formatDigest"
+      ]
+    },
+    {
+      "key": "deliver",
+      "label": "Deliver",
+      "stepIds": [
+        "persist",
+        "mergeLedger",
+        "saveMemory",
+        "addGrowth",
+        "addEnterprise",
+        "mailRefs",
+        "mail",
+        "notify"
+      ]
+    }
+  ],
+  "requiresIntake": false,
+  "humanGateCount": 0,
+  "intakeFields": [
+    {
+      "kind": "text",
+      "name": "slackChannelId",
+      "label": "Slack channel id (#prospect-engine)",
+      "placeholder": "C…",
+      "required": true
+    },
+    {
+      "kind": "text",
+      "name": "growthEngineListId",
+      "label": "Engine - Growth Sumble list id",
+      "required": true
+    },
+    {
+      "kind": "text",
+      "name": "enterpriseEngineListId",
+      "label": "Engine - Enterprise Sumble list id",
+      "required": true
+    },
+    {
+      "kind": "string-array",
+      "name": "verticals",
+      "label": "Vertical focus (optional)",
+      "placeholder": "AI, payments, legal tech"
+    }
+  ],
+  "definition": {
+    "id": "prospect-engine",
+    "triggers": [
+      {
+        "type": "manual"
+      }
+    ],
+    "steps": {
+      "initBudget": {
+        "kind": "step",
+        "id": "initBudget",
+        "agent": {
+          "id": "prospect-engine-init-budget",
+          "systemPrompt": "",
+          "toolFactories": [],
+          "capabilities": [
+            "prospect_engine_init_budget"
+          ],
+          "inference": {
+            "sources": []
+          },
+          "description": "Deterministic tool call: prospect_engine_init_budget",
+          "tags": {
+            "workbench.stepKind": "deterministic-tool",
+            "workbench.tool": "prospect_engine_init_budget",
+            "workbench.argMap": "{}",
+            "workbench.title": "Initialize credit budget"
+          }
+        },
+        "drainBehavior": "cancel",
+        "input": {
+          "from": "trigger.payload"
+        }
+      },
+      "loadMemory": {
+        "kind": "step",
+        "id": "loadMemory",
+        "agent": {
+          "id": "prospect-engine-load-memory",
+          "systemPrompt": "",
+          "toolFactories": [],
+          "capabilities": [
+            "@workbench/tools-artifact/artifact:memory_load"
+          ],
+          "inference": {
+            "sources": []
+          },
+          "description": "Deterministic tool call: @workbench/tools-artifact/artifact:memory_load",
+          "tags": {
+            "workbench.stepKind": "deterministic-tool",
+            "workbench.tool": "@workbench/tools-artifact/artifact:memory_load",
+            "workbench.argMap": "{\"scope\":{\"literal\":\"global\"}}",
+            "workbench.nonFatal": "true",
+            "workbench.title": "Load durable memory"
+          }
+        },
+        "drainBehavior": "cancel",
+        "input": {
+          "from": "trigger.payload"
+        },
+        "after": [
+          "initBudget"
+        ]
+      },
+      "parseLedger": {
+        "kind": "step",
+        "id": "parseLedger",
+        "agent": {
+          "id": "prospect-engine-parse-ledger",
+          "systemPrompt": "",
+          "toolFactories": [],
+          "capabilities": [
+            "prospect_engine_parse_ledger"
+          ],
+          "inference": {
+            "sources": []
+          },
+          "description": "Deterministic tool call: prospect_engine_parse_ledger",
+          "tags": {
+            "workbench.stepKind": "deterministic-tool",
+            "workbench.tool": "prospect_engine_parse_ledger",
+            "workbench.argMap": "{\"content\":{\"from\":\"content\"}}",
+            "workbench.title": "Parse seen-accounts ledger"
+          }
+        },
+        "drainBehavior": "cancel",
+        "input": {
+          "from": "steps.loadMemory.output"
+        },
+        "after": [
+          "loadMemory"
+        ]
+      },
+      "pipeline": {
+        "kind": "step",
+        "id": "pipeline",
+        "agent": {
+          "id": "prospect-engine-read-pipeline-list",
+          "systemPrompt": "",
+          "toolFactories": [],
+          "capabilities": [
+            "@workbench/tools-sumble/sumble:sumble_get_organization_list"
+          ],
+          "inference": {
+            "sources": []
+          },
+          "description": "Deterministic tool call: @workbench/tools-sumble/sumble:sumble_get_organization_list",
+          "tags": {
+            "workbench.stepKind": "deterministic-tool",
+            "workbench.tool": "@workbench/tools-sumble/sumble:sumble_get_organization_list",
+            "workbench.argMap": "{\"listId\":{\"literal\":80088}}",
+            "workbench.nonFatal": "true",
+            "workbench.title": "Read Attio Active Pipeline exclusions"
+          }
+        },
+        "drainBehavior": "cancel",
+        "input": {
+          "from": "trigger.payload"
+        },
+        "after": [
+          "parseLedger"
+        ]
+      },
+      "growthList": {
+        "kind": "step",
+        "id": "growthList",
+        "agent": {
+          "id": "prospect-engine-read-growth-list",
+          "systemPrompt": "",
+          "toolFactories": [],
+          "capabilities": [
+            "@workbench/tools-sumble/sumble:sumble_get_organization_list"
+          ],
+          "inference": {
+            "sources": []
+          },
+          "description": "Deterministic tool call: @workbench/tools-sumble/sumble:sumble_get_organization_list",
+          "tags": {
+            "workbench.stepKind": "deterministic-tool",
+            "workbench.tool": "@workbench/tools-sumble/sumble:sumble_get_organization_list",
+            "workbench.argMap": "{\"listId\":{\"from\":\"growthEngineListId\"}}",
+            "workbench.nonFatal": "true",
+            "workbench.title": "Read Engine - Growth list"
+          }
+        },
+        "drainBehavior": "cancel",
+        "input": {
+          "from": "trigger.payload"
+        },
+        "after": [
+          "parseLedger"
+        ]
+      },
+      "enterpriseList": {
+        "kind": "step",
+        "id": "enterpriseList",
+        "agent": {
+          "id": "prospect-engine-read-enterprise-list",
+          "systemPrompt": "",
+          "toolFactories": [],
+          "capabilities": [
+            "@workbench/tools-sumble/sumble:sumble_get_organization_list"
+          ],
+          "inference": {
+            "sources": []
+          },
+          "description": "Deterministic tool call: @workbench/tools-sumble/sumble:sumble_get_organization_list",
+          "tags": {
+            "workbench.stepKind": "deterministic-tool",
+            "workbench.tool": "@workbench/tools-sumble/sumble:sumble_get_organization_list",
+            "workbench.argMap": "{\"listId\":{\"from\":\"enterpriseEngineListId\"}}",
+            "workbench.nonFatal": "true",
+            "workbench.title": "Read Engine - Enterprise list"
+          }
+        },
+        "drainBehavior": "cancel",
+        "input": {
+          "from": "trigger.payload"
+        },
+        "after": [
+          "parseLedger"
+        ]
+      },
+      "discover": {
+        "kind": "step",
+        "id": "discover",
+        "agent": {
+          "id": "prospect-engine-discover",
+          "systemPrompt": "You are the Corbits overnight prospect engine discover step. You run unattended.\n\nGoal: collect ~30 net-new candidate organizations for Corbits / Interchange (agent OS: audit and control of AI agents at scale). Never contact anyone. Never write to Sumble lists, mail, Slack, artifacts, or memory.\n\nLane A (~60%): Series A-C, ~20-500 employees, verticals AI, payments, workflow, legal tech, family offices, logistics, devtools.\nLane B (~40%): enterprise or regulated (finserv, banking, insurance, healthcare) with agent/GenAI hiring.\n\nProcess:\n1. Resolve tech/job-function names with sumble_search_technologies / sumble_lookup_job_titles BEFORE filtering. Known-good tech slugs: langchain, openai-gpt-models, anthropic-claude, crewai, n8n, mcp.\n2. Run 2-3 org filter queries per lane via sumble_search_organizations (agent-stack query: LLM, RAG, LangChain, OpenAI, Anthropic, vector DBs, agent frameworks). Prefer job_post_concentration style evidence when available.\n3. Run sumble_search_signals for GenAI-project and new-AI-leader signals.\n4. Skip Ramp AI Index when rampAIIndexInputs is absent; note \"Ramp skipped\" in notes.\n5. Do not use person_score as primary ranker. Collect evidence only.\n\nHard constraints:\n- Cap awareness: 800 Sumble credits / 45 minutes for the whole run. Prefer cheap searches.\n- Pipeline list id 80088 is exclusion only (already loaded upstream).\n- No write tools. No email/phone reveals in this step.\n\nReturn ONE strict JSON object (no markdown fence) with:\n- candidates: array of { organizationId (number), name?, domain?, slug?, lane (\"growth\"|\"enterprise\"), industry?, employeeCount?, fundingRound?, fundingDate?, sumbleUrl?, evidence?: string[], whyNow? }\n- queriesRun: string[]\n- notes: string (include \"Ramp skipped\" when applicable)\n",
+          "toolFactories": [],
+          "capabilities": [
+            "@workbench/tools-sumble/sumble:sumble_search_organizations",
+            "@workbench/tools-sumble/sumble:sumble_search_signals",
+            "@workbench/tools-sumble/sumble:sumble_find_technologies",
+            "@workbench/tools-sumble/sumble:sumble_lookup_technologies",
+            "@workbench/tools-sumble/sumble:sumble_lookup_job_titles",
+            "@workbench/tools-sumble/sumble:sumble_get_organization_signals",
+            "@workbench/tools-sumble/sumble:sumble_resolve_organization",
+            "prospect_engine_charge_credits"
+          ],
+          "inference": {
+            "sources": [
+              {
+                "provider": "openai-compatible",
+                "model": "deepseek-v4-flash"
+              }
+            ]
+          },
+          "description": "Read-only Sumble discovery for overnight prospect engine.",
+          "tags": {
+            "credentialName": "opencode-zen",
+            "workbench.title": "Discover candidates"
+          }
+        },
+        "drainBehavior": "cancel",
+        "input": {
+          "merge": [
+            {
+              "from": "trigger.payload"
+            },
+            {
+              "from": "steps.initBudget.output"
+            },
+            {
+              "from": "steps.parseLedger.output"
+            },
+            {
+              "from": "steps.pipeline.output"
+            },
+            {
+              "from": "steps.growthList.output"
+            },
+            {
+              "from": "steps.enterpriseList.output"
+            }
+          ]
+        },
+        "after": [
+          "initBudget",
+          "parseLedger",
+          "pipeline",
+          "growthList",
+          "enterpriseList"
+        ]
+      },
+      "dedupe": {
+        "kind": "step",
+        "id": "dedupe",
+        "agent": {
+          "id": "prospect-engine-dedupe-candidates",
+          "systemPrompt": "",
+          "toolFactories": [],
+          "capabilities": [
+            "prospect_engine_dedupe_candidates"
+          ],
+          "inference": {
+            "sources": []
+          },
+          "description": "Deterministic tool call: prospect_engine_dedupe_candidates",
+          "tags": {
+            "workbench.stepKind": "deterministic-tool",
+            "workbench.tool": "prospect_engine_dedupe_candidates",
+            "workbench.argMap": "{\"candidates\":{\"fromJson\":\"reply\",\"field\":\"candidates\"},\"ledger\":{\"from\":\"ledger\"},\"pipelineListResult\":{\"from\":\"content\"},\"growthListResult\":{\"from\":\"content\"},\"enterpriseListResult\":{\"from\":\"content\"}}",
+            "workbench.title": "Dedupe candidates"
+          }
+        },
+        "drainBehavior": "cancel",
+        "input": {
+          "merge": [
+            {
+              "from": "steps.discover.output"
+            },
+            {
+              "from": "steps.parseLedger.output.content"
+            },
+            {
+              "from": "steps.pipeline.output"
+            },
+            {
+              "from": "steps.growthList.output"
+            },
+            {
+              "from": "steps.enterpriseList.output"
+            }
+          ]
+        },
+        "after": [
+          "discover",
+          "parseLedger",
+          "pipeline",
+          "growthList",
+          "enterpriseList"
+        ]
+      },
+      "score": {
+        "kind": "step",
+        "id": "score",
+        "agent": {
+          "id": "prospect-engine-score",
+          "systemPrompt": "Treat Corbits, Corbits.dev, Interchange, and Faremeter as canonical Corbits names; spell them exactly. When source material contains a clear speech-to-text or spelling variant, use the canonical spelling in your output. Do not replace an ambiguous term unless surrounding context identifies it.\n\nYou are the Corbits overnight prospect engine qualify step. Score each supplied candidate 0-100 with breakdown. Never invent orgs not in the input.\n\nRubric:\n- agent surface (0-30): GenAI project posts; agent-stack job mentions\n- momentum (0-20): hiring growth\n- governance need (0-20): multi-cloud, k8s/terraform, compliance/security hiring, regulated industry\n- lane fit (0-15): size, funding stage, vertical\n- why now (0-15): live signal\n\nQualify at 60+. Prefer 10-15 accounts. If fewer than 5 qualify, keep the thin set — do not pad with weak accounts.\n\nReturn ONE strict JSON object:\n- candidates: array of input candidates with score, scoreBreakdown { agentSurface, momentum, governanceNeed, laneFit, whyNow }, wedge (one-line), whyNow text, lane confirmed\n",
+          "toolFactories": [],
+          "capabilities": [],
+          "inference": {
+            "sources": [
+              {
+                "provider": "openai-compatible",
+                "model": "kimi-k2.6",
+                "parameters": {
+                  "maxTokens": 8192
+                }
+              }
+            ]
+          },
+          "description": "Inline single-turn inference: prospect-engine-score",
+          "tags": {
+            "workbench.stepKind": "inline-inference",
+            "workbench.title": "Score candidates"
+          }
+        },
+        "drainBehavior": "cancel",
+        "input": {
+          "merge": [
+            {
+              "from": "trigger.payload"
+            },
+            {
+              "from": "steps.dedupe.output.content"
+            }
+          ]
+        },
+        "after": [
+          "dedupe"
+        ]
+      },
+      "qualify": {
+        "kind": "step",
+        "id": "qualify",
+        "agent": {
+          "id": "prospect-engine-qualify",
+          "systemPrompt": "",
+          "toolFactories": [],
+          "capabilities": [
+            "prospect_engine_qualify"
+          ],
+          "inference": {
+            "sources": []
+          },
+          "description": "Deterministic tool call: prospect_engine_qualify",
+          "tags": {
+            "workbench.stepKind": "deterministic-tool",
+            "workbench.tool": "prospect_engine_qualify",
+            "workbench.argMap": "{\"candidates\":{\"fromJson\":\"reply\",\"field\":\"candidates\"}}",
+            "workbench.title": "Qualify shortlist"
+          }
+        },
+        "drainBehavior": "cancel",
+        "input": {
+          "from": "steps.score.output"
+        },
+        "after": [
+          "score"
+        ]
+      },
+      "mapReveal": {
+        "kind": "step",
+        "id": "mapReveal",
+        "agent": {
+          "id": "prospect-engine-map-reveal",
+          "systemPrompt": "You are the Corbits overnight prospect engine map/reveal step. For each qualified account, map the buying center and reveal emails for the top 2-3 contacts only.\n\nLane A titles: Head of AI, VP/Dir Eng, platform, data eng.\nLane B: add CISO, risk, compliance.\n\nRules:\n- Use sumble_search_people with revealEmail + confirmEmailRevealSpend only after calling prospect_engine_charge_credits for 10 credits per reveal. If charge returns charged:false, stop reveals and keep partial contacts.\n- Never reveal phones.\n- Prefer LinkedIn URLs on every contact.\n- Call prospect_engine_charge_credits before each batch of reveals.\n- Pull org signals when cheap and attach suggested_contacts when present.\n\nReturn ONE strict JSON object:\n- accounts: same orgs with contacts: [{ name, title?, linkedinUrl?, email?, personId? }]\n- creditsCharged: number (sum of successful charges this step)\n- stopReason?: \"credit-cap\" | \"wall-clock\" | string\n",
+          "toolFactories": [],
+          "capabilities": [
+            "@workbench/tools-sumble/sumble:sumble_search_people",
+            "@workbench/tools-sumble/sumble:sumble_get_organization_signals",
+            "@workbench/tools-sumble/sumble:sumble_list_jobs",
+            "prospect_engine_charge_credits"
+          ],
+          "inference": {
+            "sources": [
+              {
+                "provider": "openai-compatible",
+                "model": "deepseek-v4-flash"
+              }
+            ]
+          },
+          "description": "Map buying centers and reveal top contact emails under credit cap.",
+          "tags": {
+            "credentialName": "opencode-zen",
+            "workbench.title": "Map contacts"
+          }
+        },
+        "drainBehavior": "cancel",
+        "input": {
+          "merge": [
+            {
+              "from": "trigger.payload"
+            },
+            {
+              "from": "steps.initBudget.output.content"
+            },
+            {
+              "from": "steps.qualify.output.content"
+            }
+          ]
+        },
+        "after": [
+          "qualify",
+          "initBudget"
+        ]
+      },
+      "formatReport": {
+        "kind": "step",
+        "id": "formatReport",
+        "agent": {
+          "id": "prospect-engine-format-report",
+          "systemPrompt": "",
+          "toolFactories": [],
+          "capabilities": [
+            "prospect_engine_format_report"
+          ],
+          "inference": {
+            "sources": []
+          },
+          "description": "Deterministic tool call: prospect_engine_format_report",
+          "tags": {
+            "workbench.stepKind": "deterministic-tool",
+            "workbench.tool": "prospect_engine_format_report",
+            "workbench.argMap": "{\"runDate\":{\"from\":\"runDate\"},\"accounts\":{\"fromJson\":\"reply\",\"field\":\"accounts\"},\"creditsUsed\":{\"from\":\"used\"},\"stopReason\":{\"fromJson\":\"reply\",\"field\":\"stopReason\"}}",
+            "workbench.title": "Format nightly report"
+          }
+        },
+        "drainBehavior": "cancel",
+        "input": {
+          "merge": [
+            {
+              "from": "trigger.payload"
+            },
+            {
+              "from": "steps.mapReveal.output"
+            },
+            {
+              "from": "steps.qualify.output.content"
+            },
+            {
+              "from": "steps.initBudget.output.content"
+            }
+          ]
+        },
+        "after": [
+          "mapReveal",
+          "qualify",
+          "initBudget"
+        ]
+      },
+      "formatDigest": {
+        "kind": "step",
+        "id": "formatDigest",
+        "agent": {
+          "id": "prospect-engine-format-slack-digest",
+          "systemPrompt": "",
+          "toolFactories": [],
+          "capabilities": [
+            "prospect_engine_format_slack_digest"
+          ],
+          "inference": {
+            "sources": []
+          },
+          "description": "Deterministic tool call: prospect_engine_format_slack_digest",
+          "tags": {
+            "workbench.stepKind": "deterministic-tool",
+            "workbench.tool": "prospect_engine_format_slack_digest",
+            "workbench.argMap": "{\"runDate\":{\"from\":\"runDate\"},\"accounts\":{\"from\":\"accounts\"},\"creditsUsed\":{\"from\":\"used\"},\"remainingBudget\":{\"from\":\"remaining\"},\"sumbleCreditBalance\":{\"from\":\"sumbleCreditBalance\"},\"stopReason\":{\"fromJson\":\"reply\",\"field\":\"stopReason\"}}",
+            "workbench.title": "Format Slack digest"
+          }
+        },
+        "drainBehavior": "cancel",
+        "input": {
+          "merge": [
+            {
+              "from": "trigger.payload"
+            },
+            {
+              "from": "steps.formatReport.output.content"
+            },
+            {
+              "from": "steps.initBudget.output.content"
+            },
+            {
+              "from": "steps.mapReveal.output"
+            }
+          ]
+        },
+        "after": [
+          "formatReport",
+          "initBudget",
+          "mapReveal"
+        ]
+      },
+      "persist": {
+        "kind": "step",
+        "id": "persist",
+        "agent": {
+          "id": "prospect-engine-save-nightly-report",
+          "systemPrompt": "",
+          "toolFactories": [],
+          "capabilities": [
+            "@workbench/tools-artifact/artifact:write_artifact"
+          ],
+          "inference": {
+            "sources": []
+          },
+          "description": "Deterministic tool call: @workbench/tools-artifact/artifact:write_artifact",
+          "tags": {
+            "workbench.stepKind": "deterministic-tool",
+            "workbench.tool": "@workbench/tools-artifact/artifact:write_artifact",
+            "workbench.argMap": "{\"title\":{\"from\":\"artifactTitle\"},\"body\":{\"from\":\"body\"},\"kind\":{\"literal\":\"prospect-engine-report\"},\"jobLabel\":{\"literal\":\"Prospect engine\"}}",
+            "workbench.title": "Save the nightly prospect report"
+          }
+        },
+        "drainBehavior": "cancel",
+        "input": {
+          "merge": [
+            {
+              "from": "trigger.payload"
+            },
+            {
+              "from": "steps.formatReport.output.content"
+            }
+          ]
+        },
+        "after": [
+          "formatReport"
+        ]
+      },
+      "mergeLedger": {
+        "kind": "step",
+        "id": "mergeLedger",
+        "agent": {
+          "id": "prospect-engine-merge-ledger",
+          "systemPrompt": "",
+          "toolFactories": [],
+          "capabilities": [
+            "prospect_engine_merge_ledger"
+          ],
+          "inference": {
+            "sources": []
+          },
+          "description": "Deterministic tool call: prospect_engine_merge_ledger",
+          "tags": {
+            "workbench.stepKind": "deterministic-tool",
+            "workbench.tool": "prospect_engine_merge_ledger",
+            "workbench.argMap": "{\"ledger\":{\"from\":\"ledger\"},\"runDate\":{\"from\":\"runDate\"},\"accounts\":{\"from\":\"accounts\"},\"creditsUsed\":{\"from\":\"used\"},\"stopReason\":{\"fromJson\":\"reply\",\"field\":\"stopReason\"},\"remainingBalance\":{\"from\":\"sumbleCreditBalance\"}}",
+            "workbench.title": "Merge tonight into ledger"
+          }
+        },
+        "drainBehavior": "cancel",
+        "input": {
+          "merge": [
+            {
+              "from": "trigger.payload"
+            },
+            {
+              "from": "steps.parseLedger.output.content"
+            },
+            {
+              "from": "steps.formatReport.output.content"
+            },
+            {
+              "from": "steps.initBudget.output.content"
+            },
+            {
+              "from": "steps.mapReveal.output"
+            }
+          ]
+        },
+        "after": [
+          "parseLedger",
+          "formatReport",
+          "initBudget",
+          "mapReveal"
+        ]
+      },
+      "saveMemory": {
+        "kind": "step",
+        "id": "saveMemory",
+        "agent": {
+          "id": "prospect-engine-save-durable-memory",
+          "systemPrompt": "",
+          "toolFactories": [],
+          "capabilities": [
+            "@workbench/tools-artifact/artifact:memory_save"
+          ],
+          "inference": {
+            "sources": []
+          },
+          "description": "Deterministic tool call: @workbench/tools-artifact/artifact:memory_save",
+          "tags": {
+            "workbench.stepKind": "deterministic-tool",
+            "workbench.tool": "@workbench/tools-artifact/artifact:memory_save",
+            "workbench.argMap": "{\"content\":{\"from\":\"content\"},\"scope\":{\"literal\":\"global\"}}",
+            "workbench.title": "Save the prospect ledger"
+          }
+        },
+        "drainBehavior": "cancel",
+        "input": {
+          "from": "steps.mergeLedger.output.content"
+        },
+        "after": [
+          "mergeLedger"
+        ]
+      },
+      "addGrowth": {
+        "kind": "step",
+        "id": "addGrowth",
+        "agent": {
+          "id": "prospect-engine-add-growth-organizations",
+          "systemPrompt": "",
+          "toolFactories": [],
+          "capabilities": [
+            "@workbench/tools-sumble/sumble:sumble_add_organization_list_organizations"
+          ],
+          "inference": {
+            "sources": []
+          },
+          "description": "Deterministic tool call: @workbench/tools-sumble/sumble:sumble_add_organization_list_organizations",
+          "tags": {
+            "workbench.stepKind": "deterministic-tool",
+            "workbench.tool": "@workbench/tools-sumble/sumble:sumble_add_organization_list_organizations",
+            "workbench.argMap": "{\"listId\":{\"from\":\"growthEngineListId\"},\"organizationIds\":{\"from\":\"growthOrganizationIds\"}}",
+            "workbench.nonFatal": "true",
+            "workbench.title": "Add qualified orgs to Engine - Growth"
+          }
+        },
+        "drainBehavior": "cancel",
+        "input": {
+          "merge": [
+            {
+              "from": "trigger.payload"
+            },
+            {
+              "from": "steps.formatReport.output.content"
+            }
+          ]
+        },
+        "after": [
+          "formatReport"
+        ]
+      },
+      "addEnterprise": {
+        "kind": "step",
+        "id": "addEnterprise",
+        "agent": {
+          "id": "prospect-engine-add-enterprise-organizations",
+          "systemPrompt": "",
+          "toolFactories": [],
+          "capabilities": [
+            "@workbench/tools-sumble/sumble:sumble_add_organization_list_organizations"
+          ],
+          "inference": {
+            "sources": []
+          },
+          "description": "Deterministic tool call: @workbench/tools-sumble/sumble:sumble_add_organization_list_organizations",
+          "tags": {
+            "workbench.stepKind": "deterministic-tool",
+            "workbench.tool": "@workbench/tools-sumble/sumble:sumble_add_organization_list_organizations",
+            "workbench.argMap": "{\"listId\":{\"from\":\"enterpriseEngineListId\"},\"organizationIds\":{\"from\":\"enterpriseOrganizationIds\"}}",
+            "workbench.nonFatal": "true",
+            "workbench.title": "Add qualified orgs to Engine - Enterprise"
+          }
+        },
+        "drainBehavior": "cancel",
+        "input": {
+          "merge": [
+            {
+              "from": "trigger.payload"
+            },
+            {
+              "from": "steps.formatReport.output.content"
+            }
+          ]
+        },
+        "after": [
+          "formatReport"
+        ]
+      },
+      "mailRefs": {
+        "kind": "step",
+        "id": "mailRefs",
+        "agent": {
+          "id": "prospect-engine-format-mail-refs",
+          "systemPrompt": "",
+          "toolFactories": [],
+          "capabilities": [
+            "prospect_engine_format_mail_refs"
+          ],
+          "inference": {
+            "sources": []
+          },
+          "description": "Deterministic tool call: prospect_engine_format_mail_refs",
+          "tags": {
+            "workbench.stepKind": "deterministic-tool",
+            "workbench.tool": "prospect_engine_format_mail_refs",
+            "workbench.argMap": "{\"artifactId\":{\"fromJson\":\"content\",\"field\":\"artifactId\"},\"runId\":{\"from\":\"runId\"},\"workflowLabel\":{\"literal\":\"Prospect engine\"}}",
+            "workbench.nonFatal": "true",
+            "workbench.title": "Build mail deep links"
+          }
+        },
+        "drainBehavior": "cancel",
+        "input": {
+          "merge": [
+            {
+              "from": "trigger.payload"
+            },
+            {
+              "from": "steps.persist.output"
+            }
+          ]
+        },
+        "after": [
+          "persist"
+        ]
+      },
+      "mail": {
+        "kind": "step",
+        "id": "mail",
+        "agent": {
+          "id": "prospect-engine-mail-digest",
+          "systemPrompt": "",
+          "toolFactories": [],
+          "capabilities": [
+            "mail_send"
+          ],
+          "inference": {
+            "sources": []
+          },
+          "description": "Deterministic tool call: mail_send",
+          "tags": {
+            "workbench.stepKind": "deterministic-tool",
+            "workbench.tool": "mail_send",
+            "workbench.argMap": "{\"to\":{\"from\":\"userAddress\"},\"subject\":{\"from\":\"artifactTitle\"},\"content\":{\"from\":\"text\"},\"refs\":{\"from\":\"refs\"}}",
+            "workbench.nonFatal": "true",
+            "workbench.title": "Mail the prospect list"
+          }
+        },
+        "drainBehavior": "cancel",
+        "input": {
+          "merge": [
+            {
+              "from": "trigger.payload"
+            },
+            {
+              "from": "steps.formatDigest.output.content"
+            },
+            {
+              "from": "steps.mailRefs.output.content"
+            }
+          ]
+        },
+        "after": [
+          "formatDigest",
+          "mailRefs"
+        ]
+      },
+      "notify": {
+        "kind": "step",
+        "id": "notify",
+        "agent": {
+          "id": "prospect-engine-post-slack-digest",
+          "systemPrompt": "",
+          "toolFactories": [],
+          "capabilities": [
+            "@workbench/tools-slack/slack:slack_post_message"
+          ],
+          "inference": {
+            "sources": []
+          },
+          "description": "Deterministic tool call: @workbench/tools-slack/slack:slack_post_message",
+          "tags": {
+            "workbench.stepKind": "deterministic-tool",
+            "workbench.tool": "@workbench/tools-slack/slack:slack_post_message",
+            "workbench.argMap": "{\"channel\":{\"from\":\"slackChannelId\"},\"text\":{\"from\":\"text\"}}",
+            "workbench.title": "Post the Slack digest"
+          }
+        },
+        "drainBehavior": "cancel",
+        "input": {
+          "merge": [
+            {
+              "from": "trigger.payload"
+            },
+            {
+              "from": "steps.formatDigest.output.content"
+            }
+          ]
+        },
+        "after": [
+          "persist",
+          "saveMemory",
+          "addGrowth",
+          "addEnterprise",
+          "formatDigest",
+          "mail"
+        ]
+      }
+    },
+    "stepOrder": [
+      "initBudget",
+      "loadMemory",
+      "parseLedger",
+      "pipeline",
+      "growthList",
+      "enterpriseList",
+      "discover",
+      "dedupe",
+      "score",
+      "qualify",
+      "mapReveal",
+      "formatReport",
+      "formatDigest",
+      "persist",
+      "mergeLedger",
+      "saveMemory",
+      "addGrowth",
+      "addEnterprise",
+      "mailRefs",
+      "mail",
+      "notify"
+    ]
+  }
+}

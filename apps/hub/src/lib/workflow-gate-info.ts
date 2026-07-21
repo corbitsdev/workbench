@@ -1,13 +1,16 @@
 import { type } from "arktype";
 
 // Serialized intake-field descriptor carried in the embedded workflow def so the
+// Serialized intake-field descriptor carried in the embedded workflow def so the
 // attach UI can render a workflow's first-intake form without importing workflow
-// code (CL-3509 + CL-3860 schedule field metadata).
+// code (CL-3509 + CL-3860 schedule field metadata). Includes string-array for
+// multi-value schedule fields (prospect-engine verticals).
 export const EmbeddedIntakeFieldSchema = type({
   name: "string > 0",
   label: "string > 0",
-  "inputHint?": "'text' | 'textarea' | 'url' | 'select' | 'boolean'",
-  "kind?": "'text' | 'textarea' | 'url' | 'select' | 'boolean'",
+  "inputHint?": "'text' | 'textarea' | 'url' | 'select' | 'boolean' | 'string-array'",
+  "kind?": "'text' | 'textarea' | 'url' | 'select' | 'boolean' | 'string-array'",
+
   "required?": "boolean",
   "placeholder?": "string",
   "help?": "string",

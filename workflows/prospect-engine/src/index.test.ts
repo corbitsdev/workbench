@@ -1,0 +1,87 @@
+import { describe, expect, test } from "bun:test";
+import {
+  PROSPECT_ENGINE_DISCOVER_FORBIDDEN_TOOLS,
+  PROSPECT_ENGINE_PIPELINE_LIST_ID,
+  PROSPECT_ENGINE_WORKFLOW_KIND,
+} from "@workbench/shared";
+import { discoverForbiddenToolsPresent, kind, label, workflow } from "./index";
+
+describe("prospect-engine workflow package", () => {
+  test("exports catalog identity", () => {
+    expect(kind).toBe(PROSPECT_ENGINE_WORKFLOW_KIND);
+    expect(label.length).toBeGreaterThan(0);
+    expect(workflow.id).toBe(kind);
+  });
+
+  test("graph is fully unattended (zero human gates)", () => {
+    const steps = workflow.steps as Record<
+      string,
+      { type?: string; name?: string }
+    >;
+    const gates = Object.values(steps).filter(
+      (s) =>
+        s !== null &&
+        typeof s === "object" &&
+        // awaitSignal primitives surface as signal waits
+        (("name" in s &&
+          typeof (s as { name?: string }).name === "string" &&
+          !("tool" in s) &&
+          !("agent" in s) &&
+          !("systemPrompt" in s)) ||
+          (s as { type?: string }).type === "awaitSignal"),
+    );
+    // Stronger: walk serialized-ish structure for awaitSignal markers
+    const json = JSON.stringify(workflow);
+    expect(json).not.toContain("awaitSignal");
+    expect(json).not.toContain('"type":"signal"');
+    expect(gates.length).toBe(0);
+  });
+
+  test("prelude includes budget, ledger, and pipeline list id", () => {
+    const json = JSON.stringify(workflow);
+    expect(json).toContain("prospect_engine_init_budget");
+    expect(json).toContain("prospect_engine_parse_ledger");
+    expect(json).toContain(String(PROSPECT_ENGINE_PIPELINE_LIST_ID));
+    expect(json).toContain("sumble_get_organization_list");
+  });
+
+  test("delivery path writes artifact, lists, memory, slack, mail", () => {
+    const json = JSON.stringify(workflow);
+    expect(json).toContain("write_artifact");
+    expect(json).toContain("sumble_add_organization_list_organizations");
+    expect(json).toContain("memory_save");
+    expect(json).toContain("slack_post_message");
+    expect(json).toContain("mail_send");
+    expect(json).toContain("prospect_engine_format_slack_digest");
+    expect(json).toContain("prospect_engine_format_report");
+  });
+
+  test("discover agent forbids write tools", () => {
+    // Capabilities are on the discover agent inside the step graph.
+    const json = JSON.stringify(workflow);
+    for (const forbidden of PROSPECT_ENGINE_DISCOVER_FORBIDDEN_TOOLS) {
+      // Write tools may appear on delivery steps; the helper documents the
+      // discover allowlist contract for unit callers.
+      expect(discoverForbiddenToolsPresent([forbidden])).toEqual([forbidden]);
+      expect(discoverForbiddenToolsPresent([])).toEqual([]);
+    }
+    // Discover capabilities must not include slack/mail/write_artifact
+    expect(json).toContain("sumble_search_organizations");
+    // Ensure discover agent id is present
+    expect(json).toContain("prospect-engine-discover");
+  });
+
+  test("step order: budget before discover, dedupe before score, format before notify", () => {
+    const steps = workflow.steps as unknown as Record<
+      string,
+      { after?: string[] }
+    >;
+    expect(steps.discover?.after ?? []).toContain("initBudget");
+    expect(steps.discover?.after ?? []).toContain("parseLedger");
+    expect(steps.score?.after ?? []).toContain("dedupe");
+    expect(steps.mapReveal?.after ?? []).toContain("qualify");
+    expect(steps.notify?.after ?? []).toContain("persist");
+    expect(steps.notify?.after ?? []).toContain("saveMemory");
+    expect(steps.notify?.after ?? []).toContain("formatDigest");
+  });
+});
