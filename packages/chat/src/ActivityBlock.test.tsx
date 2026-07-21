@@ -240,4 +240,20 @@ describe("ActivityBlock", () => {
       expect(detail.textContent).toContain("First paragraph of reasoning.");
     });
   });
+
+  describe("CL-4120: reasoning panel must wrap instead of widening the chat column", () => {
+    it("constrains the expanded reasoning panel so unbroken tokens wrap", () => {
+      render(
+        <ActivityBlock
+          parts={[reasoningPart("looking at wfr_" + "a".repeat(300))]}
+          streaming={false}
+          messageKey="m1"
+          isExpanded={() => true}
+        />,
+      );
+      const panel = screen.getByTestId("activity-reasoning");
+      expect(panel.className).toContain("min-w-0");
+      expect(panel.className).toContain("[overflow-wrap:anywhere]");
+    });
+  });
 });

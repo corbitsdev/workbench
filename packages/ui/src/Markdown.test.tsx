@@ -24,6 +24,20 @@ describe("Markdown", () => {
     expect(first.closest("ul")).not.toBeNull();
   });
 
+  it("lets an unbroken inline-code token wrap instead of forcing overflow", () => {
+    const token = "wfr_" + "a".repeat(200);
+    render(<Markdown>{`before \`${token}\` after`}</Markdown>);
+    const code = screen.getByText(token);
+    expect(code.tagName).toBe("CODE");
+    expect(code.className).toContain("[overflow-wrap:anywhere]");
+  });
+
+  it("wraps unbroken plain-text tokens at any point (shrinks min-content width)", () => {
+    render(<Markdown>{"x".repeat(300)}</Markdown>);
+    const root = document.querySelector(".wb-markdown");
+    expect(root?.className).toContain("[overflow-wrap:anywhere]");
+  });
+
   it("renders links opening in a new tab with a safe rel", () => {
     render(<Markdown>{"[site](https://example.com)"}</Markdown>);
     const link = screen.getByRole("link", { name: "site" });
