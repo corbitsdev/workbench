@@ -11,8 +11,10 @@ import {
   STEP_TITLE_TAG,
 } from "@workbench/agents";
 import {
+  PROSPECT_ENGINE_ARTIFACT_KIND_LEDGER,
   PROSPECT_ENGINE_ARTIFACT_KIND_REPORT,
   PROSPECT_ENGINE_DISCOVER_FORBIDDEN_TOOLS,
+  PROSPECT_ENGINE_LEDGER_ARTIFACT_TITLE,
   PROSPECT_ENGINE_PIPELINE_LIST_ID,
   PROSPECT_ENGINE_WORKFLOW_KIND,
 } from "@workbench/shared";
@@ -114,12 +116,13 @@ const mapRevealAgent = defineAgent({
 // ---------------------------------------------------------------------------
 // Graph (gate-free / unattended)
 //
-//   initBudget → loadMemory → parseLedger
-//   pipeline / growthList / enterpriseList (nonFatal, parallel after parseLedger)
-//   discover (agent, read-only Sumble)
-//   dedupe → score (inline) → qualify → mapReveal (agent)
-//   formatReport → formatDigest → persist → mergeLedger → serializeLedger
-//   saveMemory → addGrowth → addEnterprise → mailRefs → mail → slack
+//   initBudget → findLedger → readLedger? → parseLedger
+//   pipeline / growthList / enterpriseList (nonFatal)
+//   extract list org ids (avoids content-key collisions on merge)
+//   discover (agent) → dedupe → score → qualify → mapReveal
+//   formatReport → persist → formatDigest (after persist for artifact deep link)
+//   mergeLedger → saveLedger (write_artifact upsert by title)
+//   addGrowth / addEnterprise → mailRefs → mail → slack
 // ---------------------------------------------------------------------------
 
 export const workflow = defineWorkflow({
@@ -134,15 +137,30 @@ export const workflow = defineWorkflow({
       argMap: {},
     }),
 
-    loadMemory: deterministicToolStep({
-      id: "prospect-engine-load-memory",
-      title: "Load durable memory",
-      tool: "memory_load",
+    // Durable ledger is a per-owner artifact (principalId + title + kind),
+    // not global memory_save — avoids clobbering Myra/operator memory.
+    findLedger: deterministicToolStep({
+      id: "prospect-engine-find-ledger",
+      title: "Locate seen-accounts ledger artifact",
+      tool: "artifact_find_by_title",
       input: { from: "trigger.payload" },
       argMap: {
-        scope: { literal: "global" },
+        title: { literal: PROSPECT_ENGINE_LEDGER_ARTIFACT_TITLE },
+        kind: { literal: PROSPECT_ENGINE_ARTIFACT_KIND_LEDGER },
       },
       after: ["initBudget"],
+      nonFatal: true,
+    }),
+
+    readLedger: deterministicToolStep({
+      id: "prospect-engine-read-ledger",
+      title: "Read ledger artifact body",
+      tool: "artifact_read",
+      input: { from: "steps.findLedger.output" },
+      argMap: {
+        artifactId: { fromJson: "content", field: "artifactId" },
+      },
+      after: ["findLedger"],
       nonFatal: true,
     }),
 
@@ -150,11 +168,12 @@ export const workflow = defineWorkflow({
       id: "prospect-engine-parse-ledger",
       title: "Parse seen-accounts ledger",
       tool: "prospect_engine_parse_ledger",
-      input: { from: "steps.loadMemory.output" },
+      input: { from: "steps.readLedger.output" },
       argMap: {
+        // artifact_read windowContent: { content: bodyString }
         content: { from: "content" },
       },
-      after: ["loadMemory"],
+      after: ["readLedger"],
     }),
 
     pipeline: deterministicToolStep({
@@ -193,6 +212,19 @@ export const workflow = defineWorkflow({
       nonFatal: true,
     }),
 
+    // One extract step — project list steps like heartbeat_merge_brief_sources.
+    extractListOrgs: deterministicToolStep({
+      id: "prospect-engine-extract-list-org-ids",
+      title: "Extract exclusion list org ids",
+      tool: "prospect_engine_extract_list_org_ids",
+      input: {
+        project: { from: "steps" },
+        fields: ["pipeline", "growthList", "enterpriseList"],
+      },
+      after: ["pipeline", "growthList", "enterpriseList"],
+      nonFatal: true,
+    }),
+
     discover: step({
       agent: discoverAgent,
       input: {
@@ -211,6 +243,7 @@ export const workflow = defineWorkflow({
         "pipeline",
         "growthList",
         "enterpriseList",
+        "extractListOrgs",
       ],
     }),
 
@@ -222,25 +255,17 @@ export const workflow = defineWorkflow({
         merge: [
           { from: "steps.discover.output" },
           { from: "steps.parseLedger.output.content" },
-          { from: "steps.pipeline.output" },
-          { from: "steps.growthList.output" },
-          { from: "steps.enterpriseList.output" },
+          { from: "steps.extractListOrgs.output.content" },
         ],
       },
       argMap: {
         candidates: { fromJson: "reply", field: "candidates" },
         ledger: { from: "ledger" },
-        pipelineListResult: { from: "content" },
-        growthListResult: { from: "content" },
-        enterpriseListResult: { from: "content" },
+        pipelineOrgIds: { from: "pipelineOrgIds" },
+        growthOrgIds: { from: "growthOrgIds" },
+        enterpriseOrgIds: { from: "enterpriseOrgIds" },
       },
-      after: [
-        "discover",
-        "parseLedger",
-        "pipeline",
-        "growthList",
-        "enterpriseList",
-      ],
+      after: ["discover", "parseLedger", "extractListOrgs"],
     }),
 
     score: inlineInferenceStep({
@@ -295,34 +320,14 @@ export const workflow = defineWorkflow({
       },
       argMap: {
         runDate: { from: "runDate" },
+        // Prefer map/reveal accounts (with contacts); qualify is fallback only
+        // via merge when reply.accounts is absent — tool parses candidates.
         accounts: { fromJson: "reply", field: "accounts" },
-        creditsUsed: { from: "used" },
+        // Agent reports creditsCharged; fall back is unused (0 from init).
+        creditsUsed: { fromJson: "reply", field: "creditsCharged" },
         stopReason: { fromJson: "reply", field: "stopReason" },
       },
       after: ["mapReveal", "qualify", "initBudget"],
-    }),
-
-    formatDigest: deterministicToolStep({
-      id: "prospect-engine-format-slack-digest",
-      title: "Format Slack digest",
-      tool: "prospect_engine_format_slack_digest",
-      input: {
-        merge: [
-          { from: "trigger.payload" },
-          { from: "steps.formatReport.output.content" },
-          { from: "steps.initBudget.output.content" },
-          { from: "steps.mapReveal.output" },
-        ],
-      },
-      argMap: {
-        runDate: { from: "runDate" },
-        accounts: { from: "accounts" },
-        creditsUsed: { from: "used" },
-        remainingBudget: { from: "remaining" },
-        sumbleCreditBalance: { from: "sumbleCreditBalance" },
-        stopReason: { fromJson: "reply", field: "stopReason" },
-      },
-      after: ["formatReport", "initBudget", "mapReveal"],
     }),
 
     persist: deterministicToolStep({
@@ -344,6 +349,33 @@ export const workflow = defineWorkflow({
       after: ["formatReport"],
     }),
 
+    // Digest after persist so Slack deep-links include artifactId + runId.
+    formatDigest: deterministicToolStep({
+      id: "prospect-engine-format-slack-digest",
+      title: "Format Slack digest",
+      tool: "prospect_engine_format_slack_digest",
+      input: {
+        merge: [
+          { from: "trigger.payload" },
+          { from: "steps.formatReport.output.content" },
+          { from: "steps.initBudget.output.content" },
+          { from: "steps.persist.output" },
+          { from: "steps.mapReveal.output" },
+        ],
+      },
+      argMap: {
+        runDate: { from: "runDate" },
+        accounts: { from: "accounts" },
+        creditsUsed: { fromJson: "reply", field: "creditsCharged" },
+        remainingBudget: { from: "remaining" },
+        sumbleCreditBalance: { from: "sumbleCreditBalance" },
+        stopReason: { fromJson: "reply", field: "stopReason" },
+        artifactId: { fromJson: "content", field: "artifactId" },
+        runId: { from: "runId" },
+      },
+      after: ["formatReport", "initBudget", "persist", "mapReveal"],
+    }),
+
     mergeLedger: deterministicToolStep({
       id: "prospect-engine-merge-ledger",
       title: "Merge tonight into ledger",
@@ -361,21 +393,25 @@ export const workflow = defineWorkflow({
         ledger: { from: "ledger" },
         runDate: { from: "runDate" },
         accounts: { from: "accounts" },
-        creditsUsed: { from: "used" },
+        creditsUsed: { fromJson: "reply", field: "creditsCharged" },
         stopReason: { fromJson: "reply", field: "stopReason" },
         remainingBalance: { from: "sumbleCreditBalance" },
       },
       after: ["parseLedger", "formatReport", "initBudget", "mapReveal"],
     }),
 
-    saveMemory: deterministicToolStep({
-      id: "prospect-engine-save-durable-memory",
-      title: "Save the prospect ledger",
-      tool: "memory_save",
-      input: { from: "steps.mergeLedger.output.content" },
+    saveLedger: deterministicToolStep({
+      id: "prospect-engine-save-ledger-artifact",
+      title: "Save the prospect ledger artifact",
+      tool: "write_artifact",
+      input: {
+        merge: [{ from: "steps.mergeLedger.output.content" }],
+      },
       argMap: {
-        content: { from: "content" },
-        scope: { literal: "global" },
+        title: { literal: PROSPECT_ENGINE_LEDGER_ARTIFACT_TITLE },
+        body: { from: "content" },
+        kind: { literal: PROSPECT_ENGINE_ARTIFACT_KIND_LEDGER },
+        jobLabel: { literal: label },
       },
       after: ["mergeLedger"],
     }),
@@ -469,7 +505,7 @@ export const workflow = defineWorkflow({
       },
       after: [
         "persist",
-        "saveMemory",
+        "saveLedger",
         "addGrowth",
         "addEnterprise",
         "formatDigest",

@@ -83,6 +83,42 @@ describe("prospect-engine tools", () => {
     expect(content.removed.length).toBe(2);
   });
 
+  test("extract_list_org_ids projects pipeline/growth/enterprise without collision", async () => {
+    const result = await call("prospect_engine_extract_list_org_ids", {
+      pipeline: {
+        output: {
+          callId: "p",
+          isError: false,
+          content: JSON.stringify({
+            organizations: [{ organizationId: 10 }, { id: 11 }],
+          }),
+        },
+      },
+      growthList: {
+        output: {
+          callId: "g",
+          isError: false,
+          content: JSON.stringify({ organizationIds: [20, 21] }),
+        },
+      },
+      enterpriseList: {
+        output: {
+          callId: "e",
+          isError: false,
+          content: JSON.stringify([{ organization_id: 30 }]),
+        },
+      },
+    });
+    const content = result.content as {
+      pipelineOrgIds: number[];
+      growthOrgIds: number[];
+      enterpriseOrgIds: number[];
+    };
+    expect(content.pipelineOrgIds.sort()).toEqual([10, 11]);
+    expect(content.growthOrgIds.sort()).toEqual([20, 21]);
+    expect(content.enterpriseOrgIds).toEqual([30]);
+  });
+
   test("format report + slack digest shapes", async () => {
     const accounts = [
       {
@@ -125,7 +161,7 @@ describe("prospect-engine tools", () => {
     expect((refs.content as { refs: unknown[] }).refs).toHaveLength(2);
   });
 
-  test("merge ledger serializes for memory_save", async () => {
+  test("merge ledger serializes for write_artifact body", async () => {
     const merged = await call("prospect_engine_merge_ledger", {
       ledger: emptyProspectEngineLedger(),
       runDate: "2026-07-20",

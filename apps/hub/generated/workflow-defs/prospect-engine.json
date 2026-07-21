@@ -9,11 +9,13 @@
       "label": "Load budget and exclusion lists",
       "stepIds": [
         "initBudget",
-        "loadMemory",
+        "findLedger",
+        "readLedger",
         "parseLedger",
         "pipeline",
         "growthList",
-        "enterpriseList"
+        "enterpriseList",
+        "extractListOrgs"
       ]
     },
     {
@@ -44,6 +46,7 @@
       "label": "Package report",
       "stepIds": [
         "formatReport",
+        "persist",
         "formatDigest"
       ]
     },
@@ -51,9 +54,8 @@
       "key": "deliver",
       "label": "Deliver",
       "stepIds": [
-        "persist",
         "mergeLedger",
-        "saveMemory",
+        "saveLedger",
         "addGrowth",
         "addEnterprise",
         "mailRefs",
@@ -125,26 +127,26 @@
           "from": "trigger.payload"
         }
       },
-      "loadMemory": {
+      "findLedger": {
         "kind": "step",
-        "id": "loadMemory",
+        "id": "findLedger",
         "agent": {
-          "id": "prospect-engine-load-memory",
+          "id": "prospect-engine-find-ledger",
           "systemPrompt": "",
           "toolFactories": [],
           "capabilities": [
-            "@workbench/tools-artifact/artifact:memory_load"
+            "@workbench/tools-artifact/artifact:artifact_find_by_title"
           ],
           "inference": {
             "sources": []
           },
-          "description": "Deterministic tool call: @workbench/tools-artifact/artifact:memory_load",
+          "description": "Deterministic tool call: @workbench/tools-artifact/artifact:artifact_find_by_title",
           "tags": {
             "workbench.stepKind": "deterministic-tool",
-            "workbench.tool": "@workbench/tools-artifact/artifact:memory_load",
-            "workbench.argMap": "{\"scope\":{\"literal\":\"global\"}}",
+            "workbench.tool": "@workbench/tools-artifact/artifact:artifact_find_by_title",
+            "workbench.argMap": "{\"title\":{\"literal\":\"Prospect engine — seen-accounts ledger\"},\"kind\":{\"literal\":\"prospect-engine-ledger\"}}",
             "workbench.nonFatal": "true",
-            "workbench.title": "Load durable memory"
+            "workbench.title": "Locate seen-accounts ledger artifact"
           }
         },
         "drainBehavior": "cancel",
@@ -153,6 +155,36 @@
         },
         "after": [
           "initBudget"
+        ]
+      },
+      "readLedger": {
+        "kind": "step",
+        "id": "readLedger",
+        "agent": {
+          "id": "prospect-engine-read-ledger",
+          "systemPrompt": "",
+          "toolFactories": [],
+          "capabilities": [
+            "@workbench/tools-artifact/artifact:artifact_read"
+          ],
+          "inference": {
+            "sources": []
+          },
+          "description": "Deterministic tool call: @workbench/tools-artifact/artifact:artifact_read",
+          "tags": {
+            "workbench.stepKind": "deterministic-tool",
+            "workbench.tool": "@workbench/tools-artifact/artifact:artifact_read",
+            "workbench.argMap": "{\"artifactId\":{\"fromJson\":\"content\",\"field\":\"artifactId\"}}",
+            "workbench.nonFatal": "true",
+            "workbench.title": "Read ledger artifact body"
+          }
+        },
+        "drainBehavior": "cancel",
+        "input": {
+          "from": "steps.findLedger.output"
+        },
+        "after": [
+          "findLedger"
         ]
       },
       "parseLedger": {
@@ -178,10 +210,10 @@
         },
         "drainBehavior": "cancel",
         "input": {
-          "from": "steps.loadMemory.output"
+          "from": "steps.readLedger.output"
         },
         "after": [
-          "loadMemory"
+          "readLedger"
         ]
       },
       "pipeline": {
@@ -274,6 +306,44 @@
           "parseLedger"
         ]
       },
+      "extractListOrgs": {
+        "kind": "step",
+        "id": "extractListOrgs",
+        "agent": {
+          "id": "prospect-engine-extract-list-org-ids",
+          "systemPrompt": "",
+          "toolFactories": [],
+          "capabilities": [
+            "prospect_engine_extract_list_org_ids"
+          ],
+          "inference": {
+            "sources": []
+          },
+          "description": "Deterministic tool call: prospect_engine_extract_list_org_ids",
+          "tags": {
+            "workbench.stepKind": "deterministic-tool",
+            "workbench.tool": "prospect_engine_extract_list_org_ids",
+            "workbench.nonFatal": "true",
+            "workbench.title": "Extract exclusion list org ids"
+          }
+        },
+        "drainBehavior": "cancel",
+        "input": {
+          "project": {
+            "from": "steps"
+          },
+          "fields": [
+            "pipeline",
+            "growthList",
+            "enterpriseList"
+          ]
+        },
+        "after": [
+          "pipeline",
+          "growthList",
+          "enterpriseList"
+        ]
+      },
       "discover": {
         "kind": "step",
         "id": "discover",
@@ -333,7 +403,8 @@
           "parseLedger",
           "pipeline",
           "growthList",
-          "enterpriseList"
+          "enterpriseList",
+          "extractListOrgs"
         ]
       },
       "dedupe": {
@@ -353,7 +424,7 @@
           "tags": {
             "workbench.stepKind": "deterministic-tool",
             "workbench.tool": "prospect_engine_dedupe_candidates",
-            "workbench.argMap": "{\"candidates\":{\"fromJson\":\"reply\",\"field\":\"candidates\"},\"ledger\":{\"from\":\"ledger\"},\"pipelineListResult\":{\"from\":\"content\"},\"growthListResult\":{\"from\":\"content\"},\"enterpriseListResult\":{\"from\":\"content\"}}",
+            "workbench.argMap": "{\"candidates\":{\"fromJson\":\"reply\",\"field\":\"candidates\"},\"ledger\":{\"from\":\"ledger\"},\"pipelineOrgIds\":{\"from\":\"pipelineOrgIds\"},\"growthOrgIds\":{\"from\":\"growthOrgIds\"},\"enterpriseOrgIds\":{\"from\":\"enterpriseOrgIds\"}}",
             "workbench.title": "Dedupe candidates"
           }
         },
@@ -367,22 +438,14 @@
               "from": "steps.parseLedger.output.content"
             },
             {
-              "from": "steps.pipeline.output"
-            },
-            {
-              "from": "steps.growthList.output"
-            },
-            {
-              "from": "steps.enterpriseList.output"
+              "from": "steps.extractListOrgs.output.content"
             }
           ]
         },
         "after": [
           "discover",
           "parseLedger",
-          "pipeline",
-          "growthList",
-          "enterpriseList"
+          "extractListOrgs"
         ]
       },
       "score": {
@@ -517,7 +580,7 @@
           "tags": {
             "workbench.stepKind": "deterministic-tool",
             "workbench.tool": "prospect_engine_format_report",
-            "workbench.argMap": "{\"runDate\":{\"from\":\"runDate\"},\"accounts\":{\"fromJson\":\"reply\",\"field\":\"accounts\"},\"creditsUsed\":{\"from\":\"used\"},\"stopReason\":{\"fromJson\":\"reply\",\"field\":\"stopReason\"}}",
+            "workbench.argMap": "{\"runDate\":{\"from\":\"runDate\"},\"accounts\":{\"fromJson\":\"reply\",\"field\":\"accounts\"},\"creditsUsed\":{\"fromJson\":\"reply\",\"field\":\"creditsCharged\"},\"stopReason\":{\"fromJson\":\"reply\",\"field\":\"stopReason\"}}",
             "workbench.title": "Format nightly report"
           }
         },
@@ -542,50 +605,6 @@
           "mapReveal",
           "qualify",
           "initBudget"
-        ]
-      },
-      "formatDigest": {
-        "kind": "step",
-        "id": "formatDigest",
-        "agent": {
-          "id": "prospect-engine-format-slack-digest",
-          "systemPrompt": "",
-          "toolFactories": [],
-          "capabilities": [
-            "prospect_engine_format_slack_digest"
-          ],
-          "inference": {
-            "sources": []
-          },
-          "description": "Deterministic tool call: prospect_engine_format_slack_digest",
-          "tags": {
-            "workbench.stepKind": "deterministic-tool",
-            "workbench.tool": "prospect_engine_format_slack_digest",
-            "workbench.argMap": "{\"runDate\":{\"from\":\"runDate\"},\"accounts\":{\"from\":\"accounts\"},\"creditsUsed\":{\"from\":\"used\"},\"remainingBudget\":{\"from\":\"remaining\"},\"sumbleCreditBalance\":{\"from\":\"sumbleCreditBalance\"},\"stopReason\":{\"fromJson\":\"reply\",\"field\":\"stopReason\"}}",
-            "workbench.title": "Format Slack digest"
-          }
-        },
-        "drainBehavior": "cancel",
-        "input": {
-          "merge": [
-            {
-              "from": "trigger.payload"
-            },
-            {
-              "from": "steps.formatReport.output.content"
-            },
-            {
-              "from": "steps.initBudget.output.content"
-            },
-            {
-              "from": "steps.mapReveal.output"
-            }
-          ]
-        },
-        "after": [
-          "formatReport",
-          "initBudget",
-          "mapReveal"
         ]
       },
       "persist": {
@@ -624,6 +643,54 @@
           "formatReport"
         ]
       },
+      "formatDigest": {
+        "kind": "step",
+        "id": "formatDigest",
+        "agent": {
+          "id": "prospect-engine-format-slack-digest",
+          "systemPrompt": "",
+          "toolFactories": [],
+          "capabilities": [
+            "prospect_engine_format_slack_digest"
+          ],
+          "inference": {
+            "sources": []
+          },
+          "description": "Deterministic tool call: prospect_engine_format_slack_digest",
+          "tags": {
+            "workbench.stepKind": "deterministic-tool",
+            "workbench.tool": "prospect_engine_format_slack_digest",
+            "workbench.argMap": "{\"runDate\":{\"from\":\"runDate\"},\"accounts\":{\"from\":\"accounts\"},\"creditsUsed\":{\"fromJson\":\"reply\",\"field\":\"creditsCharged\"},\"remainingBudget\":{\"from\":\"remaining\"},\"sumbleCreditBalance\":{\"from\":\"sumbleCreditBalance\"},\"stopReason\":{\"fromJson\":\"reply\",\"field\":\"stopReason\"},\"artifactId\":{\"fromJson\":\"content\",\"field\":\"artifactId\"},\"runId\":{\"from\":\"runId\"}}",
+            "workbench.title": "Format Slack digest"
+          }
+        },
+        "drainBehavior": "cancel",
+        "input": {
+          "merge": [
+            {
+              "from": "trigger.payload"
+            },
+            {
+              "from": "steps.formatReport.output.content"
+            },
+            {
+              "from": "steps.initBudget.output.content"
+            },
+            {
+              "from": "steps.persist.output"
+            },
+            {
+              "from": "steps.mapReveal.output"
+            }
+          ]
+        },
+        "after": [
+          "formatReport",
+          "initBudget",
+          "persist",
+          "mapReveal"
+        ]
+      },
       "mergeLedger": {
         "kind": "step",
         "id": "mergeLedger",
@@ -641,7 +708,7 @@
           "tags": {
             "workbench.stepKind": "deterministic-tool",
             "workbench.tool": "prospect_engine_merge_ledger",
-            "workbench.argMap": "{\"ledger\":{\"from\":\"ledger\"},\"runDate\":{\"from\":\"runDate\"},\"accounts\":{\"from\":\"accounts\"},\"creditsUsed\":{\"from\":\"used\"},\"stopReason\":{\"fromJson\":\"reply\",\"field\":\"stopReason\"},\"remainingBalance\":{\"from\":\"sumbleCreditBalance\"}}",
+            "workbench.argMap": "{\"ledger\":{\"from\":\"ledger\"},\"runDate\":{\"from\":\"runDate\"},\"accounts\":{\"from\":\"accounts\"},\"creditsUsed\":{\"fromJson\":\"reply\",\"field\":\"creditsCharged\"},\"stopReason\":{\"fromJson\":\"reply\",\"field\":\"stopReason\"},\"remainingBalance\":{\"from\":\"sumbleCreditBalance\"}}",
             "workbench.title": "Merge tonight into ledger"
           }
         },
@@ -672,30 +739,34 @@
           "mapReveal"
         ]
       },
-      "saveMemory": {
+      "saveLedger": {
         "kind": "step",
-        "id": "saveMemory",
+        "id": "saveLedger",
         "agent": {
-          "id": "prospect-engine-save-durable-memory",
+          "id": "prospect-engine-save-ledger-artifact",
           "systemPrompt": "",
           "toolFactories": [],
           "capabilities": [
-            "@workbench/tools-artifact/artifact:memory_save"
+            "@workbench/tools-artifact/artifact:write_artifact"
           ],
           "inference": {
             "sources": []
           },
-          "description": "Deterministic tool call: @workbench/tools-artifact/artifact:memory_save",
+          "description": "Deterministic tool call: @workbench/tools-artifact/artifact:write_artifact",
           "tags": {
             "workbench.stepKind": "deterministic-tool",
-            "workbench.tool": "@workbench/tools-artifact/artifact:memory_save",
-            "workbench.argMap": "{\"content\":{\"from\":\"content\"},\"scope\":{\"literal\":\"global\"}}",
-            "workbench.title": "Save the prospect ledger"
+            "workbench.tool": "@workbench/tools-artifact/artifact:write_artifact",
+            "workbench.argMap": "{\"title\":{\"literal\":\"Prospect engine — seen-accounts ledger\"},\"body\":{\"from\":\"content\"},\"kind\":{\"literal\":\"prospect-engine-ledger\"},\"jobLabel\":{\"literal\":\"Prospect engine\"}}",
+            "workbench.title": "Save the prospect ledger artifact"
           }
         },
         "drainBehavior": "cancel",
         "input": {
-          "from": "steps.mergeLedger.output.content"
+          "merge": [
+            {
+              "from": "steps.mergeLedger.output.content"
+            }
+          ]
         },
         "after": [
           "mergeLedger"
@@ -887,7 +958,7 @@
         },
         "after": [
           "persist",
-          "saveMemory",
+          "saveLedger",
           "addGrowth",
           "addEnterprise",
           "formatDigest",
@@ -897,21 +968,23 @@
     },
     "stepOrder": [
       "initBudget",
-      "loadMemory",
+      "findLedger",
+      "readLedger",
       "parseLedger",
       "pipeline",
       "growthList",
       "enterpriseList",
+      "extractListOrgs",
       "discover",
       "dedupe",
       "score",
       "qualify",
       "mapReveal",
       "formatReport",
-      "formatDigest",
       "persist",
+      "formatDigest",
       "mergeLedger",
-      "saveMemory",
+      "saveLedger",
       "addGrowth",
       "addEnterprise",
       "mailRefs",

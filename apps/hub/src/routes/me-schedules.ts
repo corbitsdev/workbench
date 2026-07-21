@@ -224,7 +224,10 @@ export function createMeSchedulesRouter(
         ),
       );
 
-      if (gateInfo.requiresIntake) {
+      // Validate schedule trigger payload when a schema is registered for the
+      // kind's intake signal — not only when requiresIntake. Gate-free workflows
+      // (e.g. prospect-engine) still need Slack + Engine list ids at attach time.
+      {
         const check = validateResumePayload(
           body.kind,
           INTAKE_SIGNAL_NAME,
@@ -232,7 +235,9 @@ export function createMeSchedulesRouter(
         );
         if (!check.ok) {
           return c.json(
-            { error: `invalid intake for "${body.kind}": ${check.error}` },
+            {
+              error: `invalid schedule payload for "${body.kind}": ${check.error}`,
+            },
             400,
           );
         }
@@ -353,7 +358,7 @@ export function createMeSchedulesRouter(
             ([key]) => !RESERVED_PAYLOAD_KEYS.has(key),
           ),
         );
-        const gateInfos = await loadWorkflowGateInfos();
+const gateInfos = await loadWorkflowGateInfos();
         const gateInfo = gateInfos.get(existing.workflowKind);
         if (gateInfo?.requiresIntake) {
           const check = validateResumePayload(

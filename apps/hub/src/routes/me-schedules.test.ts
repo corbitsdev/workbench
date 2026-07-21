@@ -301,7 +301,7 @@ describe("POST /me/schedules attach gate (CL-3508/CL-3509)", () => {
     );
     expect(res.status).toBe(400);
     expect(await res.json()).toMatchObject({
-      error: expect.stringContaining("invalid intake"),
+      error: expect.stringContaining("invalid schedule payload"),
     });
     expect(storeCalls.some((c) => c.fn === "create")).toBe(false);
   });

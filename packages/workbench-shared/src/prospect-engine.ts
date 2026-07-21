@@ -10,6 +10,10 @@ export const PROSPECT_ENGINE_WORKFLOW_KIND = "prospect-engine";
 export const PROSPECT_ENGINE_ARTIFACT_KIND_REPORT = "prospect-engine-report";
 export const PROSPECT_ENGINE_ARTIFACT_KIND_LEDGER = "prospect-engine-ledger";
 
+/** Stable title used by write_artifact upsert (principalId + title + kind). */
+export const PROSPECT_ENGINE_LEDGER_ARTIFACT_TITLE =
+  "Prospect engine — seen-accounts ledger";
+
 /** Stable memory/artifact source key for the seen-accounts ledger. */
 export const PROSPECT_ENGINE_LEDGER_SOURCE_KEY = "prospect-engine-ledger";
 
@@ -63,17 +67,21 @@ export const ProspectEngineLaneSchema = type("'growth' | 'enterprise'");
 export type ProspectEngineLane = typeof ProspectEngineLaneSchema.infer;
 
 /**
- * Schedule / hub trigger payload. List ids and Slack channel are operator
- * config (CL-3703 / CL-3717) until tenant constants ship.
+ * Schedule / hub trigger payload after fire-time enrichment. List ids and
+ * Slack channel are operator config (CL-3703 / CL-3717) until tenant constants
+ * ship. `userAddress`/`userRefId`/`runDate`/`artifactTitle`/`runId` are
+ * server-stamped — never trusted from the schedule row alone.
  */
 export const ProspectEngineTriggerPayloadSchema = type({
-  reason: "string",
-  userRefId: "string",
-  runDate: "string",
-  artifactTitle: "string",
-  slackChannelId: "string",
+  reason: "string > 0",
+  userAddress: "string > 0",
+  userRefId: "string > 0",
+  runDate: "string > 0",
+  artifactTitle: "string > 0",
+  slackChannelId: "string > 0",
   growthEngineListId: "number.integer > 0",
   enterpriseEngineListId: "number.integer > 0",
+  "runId?": "string > 0",
   "rampAIIndexInputs?": "string[]",
   "sumbleCreditBalance?": "number.integer >= 0",
 });
@@ -81,17 +89,85 @@ export type ProspectEngineTriggerPayload =
   typeof ProspectEngineTriggerPayloadSchema.infer;
 
 /**
- * Intake shape used by schedule UI / PATCH body (string-array verticals).
+ * Intake shape used by schedule UI / PATCH body. Required fields so a schedule
+ * cannot be saved without Slack + both Engine list ids (CL-3703 / CL-3717).
  * Coerced to {@link ProspectEngineTriggerPayload} at fire time.
  */
 export const ProspectEngineIntakePayloadSchema = type({
-  "slackChannelId?": "string",
-  "growthEngineListId?": "string | number",
-  "enterpriseEngineListId?": "string | number",
+  slackChannelId: "string > 0",
+  growthEngineListId: "string | number",
+  enterpriseEngineListId: "string | number",
   "verticals?": "string[]",
 });
 export type ProspectEngineIntakePayload =
   typeof ProspectEngineIntakePayloadSchema.infer;
+
+export type ProspectEngineMemberIdentity = {
+  userAddress: string;
+  userRefId: string;
+};
+
+/**
+ * Coerce a schedule-stored list id (string from the intake form or number) into
+ * a positive integer. Returns undefined when the value is missing/invalid so
+ * the caller can fail closed rather than writing Sumble list 0.
+ */
+export function coercePositiveIntId(value: unknown): number | undefined {
+  if (typeof value === "number" && Number.isInteger(value) && value > 0) {
+    return value;
+  }
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (trimmed.length === 0) return undefined;
+    const n = Number(trimmed);
+    if (Number.isInteger(n) && n > 0) return n;
+  }
+  return undefined;
+}
+
+/** Calendar date in America/New_York as YYYY-MM-DD (nightly digest stamp). */
+export function prospectEngineRunDateEt(nowMs: number): string {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/New_York",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date(nowMs));
+}
+
+/**
+ * Fire-time enrichment for prospect-engine starts (scheduler + manual). Stamps
+ * identity, ET run date, artifact title, reason, and coerces list ids to numbers
+ * so Sumble write tools receive integers.
+ */
+export function enrichProspectEngineTriggerPayload(
+  triggerPayload: Record<string, unknown>,
+  nowMs: number,
+  memberIdentity: ProspectEngineMemberIdentity,
+  lookback: "scheduled" | "manual-refresh" = "scheduled",
+): Record<string, unknown> {
+  const runDate = prospectEngineRunDateEt(nowMs);
+  const growth = coercePositiveIntId(triggerPayload.growthEngineListId);
+  const enterprise = coercePositiveIntId(triggerPayload.enterpriseEngineListId);
+  const slackRaw = triggerPayload.slackChannelId;
+  const slackChannelId =
+    typeof slackRaw === "string" ? slackRaw.trim() : String(slackRaw ?? "");
+
+  return {
+    ...triggerPayload,
+    reason:
+      lookback === "manual-refresh"
+        ? "manual-prospect-engine"
+        : "scheduled-prospect-engine",
+    userAddress: memberIdentity.userAddress,
+    userRefId: memberIdentity.userRefId,
+    runDate,
+    artifactTitle: `Prospect engine — ${runDate}`,
+    slackChannelId,
+    ...(growth !== undefined ? { growthEngineListId: growth } : {}),
+    ...(enterprise !== undefined ? { enterpriseEngineListId: enterprise } : {}),
+  };
+}
 
 export const ProspectEngineScoreBreakdownSchema = type({
   agentSurface: "0 <= number.integer <= 30",
@@ -251,8 +327,25 @@ function collectOrgIds(value: unknown, out: Set<number>): void {
     return;
   }
   if (typeof value === "string") {
-    const n = Number(value);
-    if (Number.isInteger(n) && n > 0) out.add(n);
+    const trimmed = value.trim();
+    if (trimmed.length === 0) return;
+    // Numeric id string
+    const n = Number(trimmed);
+    if (Number.isInteger(n) && n > 0 && String(n) === trimmed) {
+      out.add(n);
+      return;
+    }
+    // String-tool / artifact payloads often JSON-encode the real structure
+    if (
+      (trimmed.startsWith("{") && trimmed.endsWith("}")) ||
+      (trimmed.startsWith("[") && trimmed.endsWith("]"))
+    ) {
+      try {
+        collectOrgIds(JSON.parse(trimmed), out);
+      } catch {
+        /* not JSON */
+      }
+    }
     return;
   }
   if (Array.isArray(value)) {
@@ -675,7 +768,6 @@ export const PROSPECT_ENGINE_DISCOVER_FORBIDDEN_TOOLS = [
 /** Deterministic write tools allowed on the delivery path only. */
 export const PROSPECT_ENGINE_ALLOWED_WRITE_TOOLS = [
   "write_artifact",
-  "memory_save",
   "sumble_add_organization_list_organizations",
   "slack_post_message",
   "mail_send",

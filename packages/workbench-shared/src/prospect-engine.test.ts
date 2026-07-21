@@ -4,24 +4,29 @@ import {
   PROSPECT_ENGINE_CREDIT_CAP,
   PROSPECT_ENGINE_PIPELINE_LIST_ID,
   PROSPECT_ENGINE_SLACK_BALANCE_WARN,
+  ProspectEngineIntakePayloadSchema,
   ProspectEngineLedgerSchema,
   ProspectEngineTriggerPayloadSchema,
   buildProspectEngineReportCsv,
   buildProspectEngineReportMarkdown,
   chargeProspectEngineCredits,
+  coercePositiveIntId,
   dedupeProspectCandidates,
   emptyProspectEngineLedger,
+  enrichProspectEngineTriggerPayload,
   formatProspectEngineSlackDigest,
   initProspectEngineCreditBudget,
   mergeProspectEngineLedger,
   parseProspectEngineLedger,
   prospectEngineMailRefs,
+  prospectEngineRunDateEt,
   qualifyProspects,
 } from "./prospect-engine";
 
 describe("ProspectEngineTriggerPayloadSchema", () => {
   const payload = {
     reason: "scheduled-prospect-engine",
+    userAddress: "usr_123@workbench.local",
     userRefId: "usr_123",
     runDate: "2026-07-20",
     artifactTitle: "Prospect engine - 2026-07-20",
@@ -39,9 +44,10 @@ describe("ProspectEngineTriggerPayloadSchema", () => {
     ).toBe(false);
   });
 
-  test("requires Slack and both configured Engine list ids", () => {
+  test("requires Slack, identity, and both configured Engine list ids", () => {
     for (const key of [
       "slackChannelId",
+      "userAddress",
       "growthEngineListId",
       "enterpriseEngineListId",
     ] as const) {
@@ -51,6 +57,52 @@ describe("ProspectEngineTriggerPayloadSchema", () => {
         ProspectEngineTriggerPayloadSchema(candidate) instanceof type.errors,
       ).toBe(true);
     }
+  });
+});
+
+describe("ProspectEngineIntakePayloadSchema", () => {
+  test("requires Slack channel and both Engine list ids", () => {
+    expect(ProspectEngineIntakePayloadSchema({}) instanceof type.errors).toBe(
+      true,
+    );
+    expect(
+      ProspectEngineIntakePayloadSchema({
+        slackChannelId: "C1",
+        growthEngineListId: "12",
+        enterpriseEngineListId: 34,
+      }) instanceof type.errors,
+    ).toBe(false);
+  });
+});
+
+describe("enrichProspectEngineTriggerPayload", () => {
+  test("stamps ET runDate, artifactTitle, identity, and coerces list ids", () => {
+    // 2026-07-20 06:00 UTC = 02:00 America/New_York (EDT)
+    const nowMs = Date.parse("2026-07-20T06:00:00.000Z");
+    expect(prospectEngineRunDateEt(nowMs)).toBe("2026-07-20");
+    const enriched = enrichProspectEngineTriggerPayload(
+      {
+        slackChannelId: " C0123 ",
+        growthEngineListId: "80089",
+        enterpriseEngineListId: "80090",
+        verticals: ["AI"],
+      },
+      nowMs,
+      {
+        userAddress: "usr_abc@workbench.local",
+        userRefId: "usr_abc",
+      },
+      "scheduled",
+    );
+    expect(enriched.reason).toBe("scheduled-prospect-engine");
+    expect(enriched.userAddress).toBe("usr_abc@workbench.local");
+    expect(enriched.userRefId).toBe("usr_abc");
+    expect(enriched.runDate).toBe("2026-07-20");
+    expect(enriched.artifactTitle).toBe("Prospect engine — 2026-07-20");
+    expect(enriched.slackChannelId).toBe("C0123");
+    expect(enriched.growthEngineListId).toBe(80089);
+    expect(enriched.enterpriseEngineListId).toBe(80090);
+    expect(coercePositiveIntId("not-a-number")).toBeUndefined();
   });
 });
 

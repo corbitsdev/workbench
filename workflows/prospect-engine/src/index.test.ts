@@ -37,23 +37,28 @@ describe("prospect-engine workflow package", () => {
     expect(gates.length).toBe(0);
   });
 
-  test("prelude includes budget, ledger, and pipeline list id", () => {
+  test("prelude includes budget, ledger artifact, and pipeline list id", () => {
     const json = JSON.stringify(workflow);
     expect(json).toContain("prospect_engine_init_budget");
     expect(json).toContain("prospect_engine_parse_ledger");
+    expect(json).toContain("artifact_find_by_title");
+    expect(json).toContain("artifact_read");
     expect(json).toContain(String(PROSPECT_ENGINE_PIPELINE_LIST_ID));
     expect(json).toContain("sumble_get_organization_list");
+    expect(json).toContain("prospect_engine_extract_list_org_ids");
   });
 
-  test("delivery path writes artifact, lists, memory, slack, mail", () => {
+  test("delivery path writes artifacts, lists, slack, mail (not memory_save)", () => {
     const json = JSON.stringify(workflow);
     expect(json).toContain("write_artifact");
     expect(json).toContain("sumble_add_organization_list_organizations");
-    expect(json).toContain("memory_save");
+    expect(json).not.toContain("memory_save");
+    expect(json).not.toContain("memory_load");
     expect(json).toContain("slack_post_message");
     expect(json).toContain("mail_send");
     expect(json).toContain("prospect_engine_format_slack_digest");
     expect(json).toContain("prospect_engine_format_report");
+    expect(json).toContain("prospect-engine-save-ledger-artifact");
   });
 
   test("discover agent forbids write tools", () => {
@@ -71,7 +76,7 @@ describe("prospect-engine workflow package", () => {
     expect(json).toContain("prospect-engine-discover");
   });
 
-  test("step order: budget before discover, dedupe before score, format before notify", () => {
+  test("step order: budget before discover, dedupe before score, persist before digest/notify", () => {
     const steps = workflow.steps as unknown as Record<
       string,
       { after?: string[] }
@@ -80,8 +85,9 @@ describe("prospect-engine workflow package", () => {
     expect(steps.discover?.after ?? []).toContain("parseLedger");
     expect(steps.score?.after ?? []).toContain("dedupe");
     expect(steps.mapReveal?.after ?? []).toContain("qualify");
+    expect(steps.formatDigest?.after ?? []).toContain("persist");
     expect(steps.notify?.after ?? []).toContain("persist");
-    expect(steps.notify?.after ?? []).toContain("saveMemory");
+    expect(steps.notify?.after ?? []).toContain("saveLedger");
     expect(steps.notify?.after ?? []).toContain("formatDigest");
   });
 });

@@ -2,6 +2,7 @@ import type { AgentTool } from "@intx/agent";
 import type { ToolDefinition } from "@intx/types/runtime";
 import { type } from "arktype";
 import {
+  PROSPECT_ENGINE_CREDIT_CAP,
   ProspectEngineCandidateSchema,
   ProspectEngineCreditBudgetSchema,
   type ProspectEngineCandidate,
@@ -178,13 +179,23 @@ export const PROSPECT_ENGINE_FORMAT_MAIL_REFS_DEFINITION: ToolDefinition = {
 export const PROSPECT_ENGINE_SERIALIZE_LEDGER_DEFINITION: ToolDefinition = {
   name: "prospect_engine_serialize_ledger",
   description:
-    "Serialize a ledger object to a JSON string for memory_save content.",
+    "Serialize a ledger object to a JSON string for write_artifact body.",
   inputSchema: {
     type: "object",
     properties: {
       ledger: { type: "object" },
     },
     required: ["ledger"],
+  },
+};
+
+export const PROSPECT_ENGINE_EXTRACT_LIST_ORG_IDS_DEFINITION: ToolDefinition = {
+  name: "prospect_engine_extract_list_org_ids",
+  description:
+    "Internal prospect-engine helper. Accept projected list steps (pipeline / growthList / enterpriseList) and return { pipelineOrgIds, growthOrgIds, enterpriseOrgIds } so dedupe never collides on content keys.",
+  inputSchema: {
+    type: "object",
+    additionalProperties: true,
   },
 };
 
@@ -295,10 +306,13 @@ function createParseLedgerTool(): AgentTool {
     definition: PROSPECT_ENGINE_PARSE_LEDGER_DEFINITION,
     handler: async (call) => {
       const args = coerceArgsObject(call.arguments);
-      let content = args.content;
-      // memory_load often nests under content.content or content.text
+      let content = args.content ?? args.body;
+      // artifact_read / memory_load nest under content.content or content.text
       if (isRecord(content) && "content" in content) {
         content = content.content;
+      }
+      if (isRecord(content) && typeof content.body === "string") {
+        content = content.body;
       }
       if (isRecord(content) && typeof content.text === "string") {
         content = content.text;
@@ -486,8 +500,13 @@ function createFormatSlackDigestTool(): AgentTool {
       const accounts = parseCandidates(args.accounts);
       const creditsUsed =
         typeof args.creditsUsed === "number" ? args.creditsUsed : 0;
+      // Prefer explicit remaining; otherwise derive from run cap − used.
+      // (initBudget.remaining is always the full cap and is not a live counter.)
       const remainingBudget =
-        typeof args.remainingBudget === "number" ? args.remainingBudget : 0;
+        typeof args.remainingBudget === "number" &&
+        args.remainingBudget < PROSPECT_ENGINE_CREDIT_CAP
+          ? args.remainingBudget
+          : Math.max(0, PROSPECT_ENGINE_CREDIT_CAP - creditsUsed);
       const digestInput: {
         runDate: string;
         accounts: ProspectEngineCandidate[];
@@ -561,6 +580,35 @@ function createSerializeLedgerTool(): AgentTool {
   };
 }
 
+function createExtractListOrgIdsTool(): AgentTool {
+  return {
+    kind: "full",
+    definition: PROSPECT_ENGINE_EXTRACT_LIST_ORG_IDS_DEFINITION,
+    handler: async (call) => {
+      const args = coerceArgsObject(call.arguments);
+      // Heartbeat-style projected steps: { stepId: { output: ToolResult } }
+      const stepContent = (stepId: string): unknown => {
+        const step = args[stepId];
+        if (!isRecord(step)) return undefined;
+        const output = step.output;
+        if (!isRecord(output)) return output;
+        return "content" in output ? output.content : output;
+      };
+      return ok(call.id, {
+        pipelineOrgIds: extractOrganizationIds(
+          stepContent("pipeline") ?? args.pipelineListResult,
+        ),
+        growthOrgIds: extractOrganizationIds(
+          stepContent("growthList") ?? args.growthListResult,
+        ),
+        enterpriseOrgIds: extractOrganizationIds(
+          stepContent("enterpriseList") ?? args.enterpriseListResult,
+        ),
+      });
+    },
+  };
+}
+
 /** Stateless prospect-engine hub tools (no credential, no host context). */
 export function createProspectEngineTools(): AgentTool[] {
   return [
@@ -574,5 +622,6 @@ export function createProspectEngineTools(): AgentTool[] {
     createFormatSlackDigestTool(),
     createFormatMailRefsTool(),
     createSerializeLedgerTool(),
+    createExtractListOrgIdsTool(),
   ];
 }
