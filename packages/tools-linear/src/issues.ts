@@ -10,6 +10,7 @@ import { IssueIdArgsSchema } from "./schemas";
 import { resolveTeamId } from "./teams";
 import {
   BRIEF_SOURCE_SKIPPED_MARKER,
+  DEFAULT_BRIEF_ISSUE_LIMIT,
   DEFAULT_ISSUE_LIMIT,
   extractMutationIssue,
   isBriefSourceFetchEnabled,
@@ -34,6 +35,21 @@ const ISSUE_FIELDS = `
   state { name }
   assignee { name }
   team { name }
+  updatedAt
+  url
+`;
+
+const BRIEF_ISSUE_FIELDS = `
+  id
+  identifier
+  title
+  state { name type }
+  assignee { name }
+  team { name }
+  project { name }
+  priority
+  createdAt
+  completedAt
   updatedAt
   url
 `;
@@ -72,21 +88,25 @@ const ISSUE_CUSTOMER_NEEDS_FIELDS = `
   }
 `;
 
-const LIST_ISSUES_QUERY = `query ListIssues($first: Int!, $after: String, $filter: IssueFilter, $orderBy: PaginationOrderBy) {
+function listIssuesQuery(fields: string): string {
+  return `query ListIssues($first: Int!, $after: String, $filter: IssueFilter, $orderBy: PaginationOrderBy) {
   issues(first: $first, after: $after, filter: $filter, orderBy: $orderBy) {
-    nodes {${ISSUE_FIELDS}}
+    nodes {${fields}}
     pageInfo { endCursor hasNextPage }
   }
 }`;
+}
 
-const LIST_TEAM_ISSUES_QUERY = `query ListTeamIssues($teamId: String!, $first: Int!, $after: String, $filter: IssueFilter, $orderBy: PaginationOrderBy) {
+function listTeamIssuesQuery(fields: string): string {
+  return `query ListTeamIssues($teamId: String!, $first: Int!, $after: String, $filter: IssueFilter, $orderBy: PaginationOrderBy) {
   team(id: $teamId) {
     issues(first: $first, after: $after, filter: $filter, orderBy: $orderBy) {
-      nodes {${ISSUE_FIELDS}}
+      nodes {${fields}}
       pageInfo { endCursor hasNextPage }
     }
   }
 }`;
+}
 
 const GET_ISSUE_QUERY = `query GetIssue($id: String!) {
   issue(id: $id) {
@@ -333,6 +353,39 @@ function buildOrderBy(args: Record<string, unknown>): string | null {
   return null;
 }
 
+type BriefIssueBuckets = {
+  newIssues: unknown[];
+  completedIssues: unknown[];
+  updatedIssues: unknown[];
+};
+
+function bucketBriefIssues(
+  nodes: unknown[],
+  cutoff: string | null,
+): BriefIssueBuckets {
+  const buckets: BriefIssueBuckets = {
+    newIssues: [],
+    completedIssues: [],
+    updatedIssues: [],
+  };
+  for (const node of nodes) {
+    if (cutoff !== null && isRecord(node)) {
+      const createdAt = optionalString(node.createdAt);
+      if (createdAt !== null && createdAt > cutoff) {
+        buckets.newIssues.push(node);
+        continue;
+      }
+      const completedAt = optionalString(node.completedAt);
+      if (completedAt !== null && completedAt > cutoff) {
+        buckets.completedIssues.push(node);
+        continue;
+      }
+    }
+    buckets.updatedIssues.push(node);
+  }
+  return buckets;
+}
+
 export async function listIssues(
   config: LinearToolsConfig,
   rawArgs: Record<string, unknown>,
@@ -344,23 +397,29 @@ export async function listIssues(
     return BRIEF_SOURCE_SKIPPED_MARKER;
   }
 
+  const briefShaped = enabledSources !== undefined;
   const pagination = resolveListPagination(
     args,
-    DEFAULT_ISSUE_LIMIT,
+    briefShaped ? DEFAULT_BRIEF_ISSUE_LIMIT : DEFAULT_ISSUE_LIMIT,
     MAX_LIST_LIMIT_ISSUES,
   );
   const teamId =
     optionalString(args.teamId) ?? optionalString(args.team);
-  const briefShaped = enabledSources !== undefined;
   const filter = buildIssueFilter(args, briefShaped);
-  const orderBy = buildOrderBy(args);
+  const briefCutoff = briefShaped
+    ? optionalString(args.updatedAfter) ?? optionalString(args.createdAfter)
+    : null;
+  const explicitOrderBy = buildOrderBy(args);
+  const orderBy =
+    explicitOrderBy ?? (briefShaped && briefCutoff !== null ? "updatedAt" : null);
+  const fields = briefShaped ? BRIEF_ISSUE_FIELDS : ISSUE_FIELDS;
   const shapeResult = (connection: unknown): unknown => {
     const shaped = connectionResult(connection);
     if (!briefShaped) return shaped;
     if (!isRecord(shaped) || !Array.isArray(shaped.nodes)) {
-      return { issues: [] };
+      return bucketBriefIssues([], briefCutoff);
     }
-    return { issues: shaped.nodes };
+    return bucketBriefIssues(shaped.nodes, briefCutoff);
   };
 
   const variables: Record<string, unknown> = {
@@ -373,7 +432,7 @@ export async function listIssues(
     const resolvedTeamId = await resolveTeamId(config, teamId, signal);
     const data = await fetchLinearGraphQL(
       config,
-      LIST_TEAM_ISSUES_QUERY,
+      listTeamIssuesQuery(fields),
       { teamId: resolvedTeamId, ...variables },
       signal,
     );
@@ -385,7 +444,7 @@ export async function listIssues(
 
   const data = await fetchLinearGraphQL(
     config,
-    LIST_ISSUES_QUERY,
+    listIssuesQuery(fields),
     variables,
     signal,
   );
@@ -589,14 +648,15 @@ export async function linkIssues(
 export const LINEAR_LIST_ISSUES_DEFINITION: ToolDefinition = {
   name: "linear_list_issues",
   description:
-    "List Linear issues across the workspace. Read-only. Scope with team, state, assignee, project, cycle, label, priority, or query; supports cursor pagination and orderBy (createdAt|updatedAt). Brief heartbeat calls may pass enabledSources.",
+    "List Linear issues across the workspace. Read-only. Scope with team, state, assignee, project, cycle, label, priority, or query; supports cursor pagination and orderBy (createdAt|updatedAt). Brief heartbeat calls may pass enabledSources; brief-shaped results are bucketed into newIssues/completedIssues/updatedIssues and default orderBy to updatedAt when a cutoff is present.",
   inputSchema: {
     type: "object",
     properties: {
       limit: { type: "number", description: "Page size (alias for first)." },
       first: {
         type: "number",
-        description: "Maximum issues (default 10, max 250).",
+        description:
+          "Maximum issues (default 10, max 250; brief-shaped calls default to 50).",
       },
       cursor: { type: "string", description: "Pagination cursor (after)." },
       after: { type: "string", description: "Pagination cursor alias." },
