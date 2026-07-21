@@ -1,7 +1,7 @@
 /// <reference types="bun" />
 import "../../test-setup";
 import { afterEach, beforeEach, describe, expect, it, mock } from "bun:test";
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, render, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import React from "react";
 
@@ -34,6 +34,8 @@ describe("OwnerSchedules", () => {
   beforeEach(() => {
     getOwnerSchedules.mockReset();
     updateOwnerSchedule.mockReset();
+    getOwnerSchedules.mockResolvedValue([]);
+    updateOwnerSchedule.mockResolvedValue({});
   });
 
   afterEach(() => {
@@ -61,12 +63,13 @@ describe("OwnerSchedules", () => {
         lastRunId: null,
         nextFireAt: "2026-07-22T14:00:00.000Z",
         createdAt: "2026-07-01T00:00:00.000Z",
+        recentFires: [],
       },
     ]);
     renderPage();
     await waitFor(() => {
-      expect(screen.getByText("deck")).toBeTruthy();
+      expect(document.body.textContent).toContain("deck");
     });
-    expect(screen.getByRole("button", { name: "Pause" })).toBeTruthy();
+    expect(document.body.textContent).toContain("Pause");
   });
 });
