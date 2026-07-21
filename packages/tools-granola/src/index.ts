@@ -577,7 +577,7 @@ async function getNote(
 export const GRANOLA_LIST_NOTES_DEFINITION: ToolDefinition = {
   name: "granola_list_notes",
   description:
-    "List recent Granola notes for the configured workbench. Use this to find calls before fetching a full transcript.",
+    "List recent Granola notes for the configured workbench. Use this to find calls before fetching a full transcript. Brief-shaped calls (enabledSources set with createdAfter) query both created_after and updated_after, paginate up to 5 pages per query at page_size 30, merge by note id sorted by created_at desc, and tag notes created before the cutoff but updated after it with `updatedOnly: true` (a revised earlier meeting, not a new one).",
   inputSchema: {
     type: "object",
     properties: {

@@ -118,7 +118,7 @@ export const VERCEL_LIST_PROJECTS_DEFINITION: ToolDefinition = {
 export const VERCEL_LIST_DEPLOYMENTS_DEFINITION: ToolDefinition = {
   name: "vercel_list_deployments",
   description:
-    "List recent Vercel deployments visible to the configured token. Read-only. Optionally scope by projectId and teamId.",
+    "List recent Vercel deployments visible to the configured token. Read-only. Optionally scope by projectId, teamId, target (e.g. production), or state (comma-separable, e.g. ERROR,CANCELED). createdAfter must be a parseable date and bounds the window (since/until). Brief-shaped calls (enabledSources set) return compact deployments plus `truncated: true` when the API has more matching deployments than the page returned.",
   inputSchema: {
     type: "object",
     properties: {
@@ -397,7 +397,7 @@ async function listDeployments(
   if (briefShaped) {
     const next = response.pagination?.next ?? null;
     const truncated =
-      sinceMillis !== undefined && next !== null && next > sinceMillis;
+      next !== null && (sinceMillis === undefined || next > sinceMillis);
     return jsonResult({
       deployments: response.deployments.map(toCompactDeployment),
       truncated,

@@ -374,14 +374,14 @@ function bucketBriefIssues(
   };
   for (const node of nodes) {
     if (cutoff !== null && isRecord(node)) {
-      const createdAt = optionalString(node.createdAt);
-      if (createdAt !== null && createdAt > cutoff) {
-        buckets.newIssues.push(node);
-        continue;
-      }
       const completedAt = optionalString(node.completedAt);
       if (completedAt !== null && completedAt > cutoff) {
         buckets.completedIssues.push(node);
+        continue;
+      }
+      const createdAt = optionalString(node.createdAt);
+      if (createdAt !== null && createdAt > cutoff) {
+        buckets.newIssues.push(node);
         continue;
       }
     }
