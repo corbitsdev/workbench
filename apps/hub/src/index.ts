@@ -1640,15 +1640,17 @@ const provisionRunDeployment: ProvisionRunDeploymentFn = (args) =>
   });
 
 // Callable run-start: shared by the HTTP start handler and the
-// scheduler, so a scheduled run fires through the same resolution +
-// routability + mail-trigger delivery as an HTTP-initiated one.
+// scheduler. Provisions a fresh per-run deployment (pins + stages step
+// tools) then delivers the trigger — same contract as catalog start
+// (CL-4069). Long-lived catalog deploy reuse is not used here.
 const runStarter = createWorkflowRunStarter({
   db,
   sessionService,
-  ensureDeploymentRoutable,
+  provisionRunDeployment,
   deploymentDomain: config.rootTenant.domain,
   cryptoProvider,
   resolveUserIdentity,
+  reclaimDeployment,
 });
 
 // Public webhook firing surface: no session, authenticated only by

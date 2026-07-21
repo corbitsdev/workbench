@@ -22,18 +22,29 @@ type Candidate = {
   kind: string;
   tenantId: string;
   principalId: string;
+  status: string;
   createdAt: Date;
   deletedAt: Date | null;
+};
+
+type MakeDbOptions = {
+  /** When true, setRunDeployment's update throws after recording the id. */
+  throwOnSetDeployment?: boolean;
+  /** failRunIfStillProvisioning return: empty = flip lost (projection won). */
+  failFlipRows?: Array<{ id: string }>;
 };
 
 type TestDb = HubDb & {
   inserted: Record<string, unknown>[];
   failUpdateCalls: number;
+  deploymentIdSets: string[];
 };
 
-function makeDb(candidates: Candidate[]): TestDb {
+function makeDb(candidates: Candidate[], options: MakeDbOptions = {}): TestDb {
   const inserted: Record<string, unknown>[] = [];
   let failUpdateCalls = 0;
+  const deploymentIdSets: string[] = [];
+  const failFlipRows = options.failFlipRows ?? [{ id: "flipped" }];
   return {
     query: {
       workflowRun: {
@@ -52,16 +63,35 @@ function makeDb(candidates: Candidate[]): TestDb {
       },
     }),
     update: () => ({
-      set: () => ({
-        where: () => ({
-          returning: async () => {
-            failUpdateCalls += 1;
-            return [{ id: "flipped" }];
-          },
-        }),
-      }),
+      set: (vals: Record<string, unknown>) => {
+        if (typeof vals.deploymentId === "string") {
+          deploymentIdSets.push(vals.deploymentId);
+          if (options.throwOnSetDeployment) {
+            return {
+              where: () => Promise.reject(new Error("attach write failed")),
+            };
+          }
+        }
+        // Thenable query builder: setRunDeployment awaits where() directly;
+        // failRunIfStillProvisioning awaits where().returning().
+        return {
+          where: () => ({
+            then(
+              onFulfilled?: (v: unknown) => unknown,
+              onRejected?: (e: unknown) => unknown,
+            ) {
+              return Promise.resolve(undefined).then(onFulfilled, onRejected);
+            },
+            returning: async () => {
+              failUpdateCalls += 1;
+              return failFlipRows;
+            },
+          }),
+        };
+      },
     }),
     inserted,
+    deploymentIdSets,
     get failUpdateCalls() {
       return failUpdateCalls;
     },
@@ -77,20 +107,58 @@ const resolveUserIdentity = async (principalId: string) => ({
 
 function candidate(overrides: Partial<Candidate>): Candidate {
   return {
-    deploymentId: "dep-1",
+    deploymentId: "dep-catalog-1",
     kind: "generic-workflow",
     tenantId: "t-root",
     principalId: "principal-1",
+    status: "deployed",
     createdAt: new Date("2026-01-01T00:00:00Z"),
     deletedAt: null,
     ...overrides,
   };
 }
 
+function starterDeps(overrides: {
+  db: TestDb;
+  sessionService?: SessionService;
+  provisionRunDeployment?: (a: {
+    kind: string;
+    tenantId: string;
+    creatorPrincipalId: string;
+  }) => Promise<{ deploymentId: string }>;
+  reclaimDeployment?: (a: {
+    deploymentId: string;
+    tenantId: string;
+    reason: string;
+  }) => Promise<void>;
+  now?: () => number;
+  resolveUserIdentity?: typeof resolveUserIdentity;
+}) {
+  return {
+    db: overrides.db,
+    sessionService:
+      overrides.sessionService ??
+      ({
+        sendUserMessage: async () => {},
+      } as unknown as SessionService),
+    provisionRunDeployment:
+      overrides.provisionRunDeployment ??
+      (async () => ({ deploymentId: "dep-run-fresh" })),
+    deploymentDomain: DOMAIN,
+    cryptoProvider: {} as never,
+    resolveUserIdentity: overrides.resolveUserIdentity ?? resolveUserIdentity,
+    ...(overrides.reclaimDeployment
+      ? { reclaimDeployment: overrides.reclaimDeployment }
+      : {}),
+    ...(overrides.now !== undefined ? { now: overrides.now } : {}),
+  };
+}
+
 describe("createWorkflowRunStarter", () => {
-  it("selects the most-specific deployment along the chain and delivers to it", async () => {
+  it("selects the most-specific catalog definition, provisions a fresh deploy, and delivers to it", async () => {
     chainRef = ["t-child", "t-root"];
     const sent: Record<string, unknown>[] = [];
+    const provisionArgs: Record<string, unknown>[] = [];
     const sessionService = {
       sendUserMessage: async (a: Record<string, unknown>) => {
         sent.push(a);
@@ -105,14 +173,16 @@ describe("createWorkflowRunStarter", () => {
         principalId: "principal-child",
       }),
     ]);
-    const starter = createWorkflowRunStarter({
-      db,
-      sessionService,
-      ensureDeploymentRoutable: async () => ({ reestablished: false }),
-      deploymentDomain: DOMAIN,
-      cryptoProvider: {} as never,
-      resolveUserIdentity,
-    });
+    const starter = createWorkflowRunStarter(
+      starterDeps({
+        db,
+        sessionService,
+        provisionRunDeployment: async (a) => {
+          provisionArgs.push(a);
+          return { deploymentId: "dep-run-1" };
+        },
+      }),
+    );
 
     const input = { reason: "scheduled-heartbeat" };
     const result = await starter.startRun({
@@ -122,13 +192,21 @@ describe("createWorkflowRunStarter", () => {
     });
 
     expect(result.ok).toBe(true);
-    expect(result).toMatchObject({ ok: true, deploymentId: "dep-child" });
+    // Per-run deploy id — NOT the catalog's dep-child (CL-4069).
+    expect(result).toMatchObject({ ok: true, deploymentId: "dep-run-1" });
     if (!result.ok) throw new Error("expected ok result");
     expect(isUuid(result.runId)).toBe(true);
+    expect(provisionArgs).toEqual([
+      {
+        kind: "generic-workflow",
+        tenantId: "t-child",
+        creatorPrincipalId: "principal-child",
+      },
+    ]);
     expect(sent).toHaveLength(1);
     expect(sent[0]?.agentAddress).toBe(
       deriveDeploymentAddress({
-        deploymentId: "dep-child",
+        deploymentId: "dep-run-1",
         deploymentDomain: DOMAIN,
       }),
     );
@@ -138,24 +216,28 @@ describe("createWorkflowRunStarter", () => {
     expect(sent[0]?.tenantId).toBe("t-child");
     expect(sent[0]?.from).toBe(`hub@${DOMAIN}`);
     expect(db.inserted).toHaveLength(1);
-    expect(db.inserted[0]?.deploymentId).toBe("dep-child");
+    // Durable-first: insert with null deployment, then setRunDeployment attaches.
+    expect(db.inserted[0]?.deploymentId).toBeNull();
+    expect(db.inserted[0]?.status).toBe("provisioning");
+    expect(db.deploymentIdSets).toEqual(["dep-run-1"]);
     expect(sent[0]?.messageId).toBe(db.inserted[0]?.id);
   });
 
   it("returns not_found when no candidate is deployed for the kind", async () => {
     chainRef = ["t-root"];
-    const starter = createWorkflowRunStarter({
-      db: makeDb([]),
-      sessionService: {
-        sendUserMessage: async () => {
-          throw new Error("must not deliver");
+    const starter = createWorkflowRunStarter(
+      starterDeps({
+        db: makeDb([]),
+        sessionService: {
+          sendUserMessage: async () => {
+            throw new Error("must not deliver");
+          },
+        } as unknown as SessionService,
+        provisionRunDeployment: async () => {
+          throw new Error("must not provision");
         },
-      } as unknown as SessionService,
-      ensureDeploymentRoutable: async () => ({ reestablished: false }),
-      deploymentDomain: DOMAIN,
-      cryptoProvider: {} as never,
-      resolveUserIdentity,
-    });
+      }),
+    );
 
     const result = await starter.startRun({
       kind: "generic-workflow",
@@ -167,30 +249,29 @@ describe("createWorkflowRunStarter", () => {
     if (!result.ok) expect(result.reason).toBe("not_found");
   });
 
-  it("ensures routability with the deployment's creator before delivering", async () => {
+  it("provisions a fresh deploy before delivering (CL-4069 pin path)", async () => {
     chainRef = ["t-root"];
     const sequence: string[] = [];
-    let routableArgs: Record<string, unknown> | undefined;
+    let provisionArgs: Record<string, unknown> | undefined;
     const sessionService = {
       sendUserMessage: async () => {
         sequence.push("send");
       },
     } as unknown as SessionService;
 
-    const starter = createWorkflowRunStarter({
-      db: makeDb([
-        candidate({ deploymentId: "dep-1", principalId: "creator-9" }),
-      ]),
-      sessionService,
-      ensureDeploymentRoutable: async (a) => {
-        sequence.push("routable");
-        routableArgs = a;
-        return { reestablished: false };
-      },
-      deploymentDomain: DOMAIN,
-      cryptoProvider: {} as never,
-      resolveUserIdentity,
-    });
+    const starter = createWorkflowRunStarter(
+      starterDeps({
+        db: makeDb([
+          candidate({ deploymentId: "dep-catalog", principalId: "creator-9" }),
+        ]),
+        sessionService,
+        provisionRunDeployment: async (a) => {
+          sequence.push("provision");
+          provisionArgs = a;
+          return { deploymentId: "dep-run-fresh" };
+        },
+      }),
+    );
 
     const result = await starter.startRun({
       kind: "generic-workflow",
@@ -199,33 +280,31 @@ describe("createWorkflowRunStarter", () => {
     });
 
     expect(result.ok).toBe(true);
-    expect(sequence).toEqual(["routable", "send"]);
-    expect(routableArgs).toEqual({
-      deploymentId: "dep-1",
+    expect(sequence).toEqual(["provision", "send"]);
+    // Provision uses the catalog definition's principal (deployer), not a
+    // schedule-owner override — matches startWorkflowRun / provisionRunDeployment.
+    expect(provisionArgs).toEqual({
       kind: "generic-workflow",
       tenantId: "t-root",
       creatorPrincipalId: "creator-9",
     });
   });
 
-  it("attributes routability to an explicit creatorPrincipalId when provided", async () => {
+  it("attributes the run to an explicit creatorPrincipalId while provisioning with the catalog principal", async () => {
     chainRef = ["t-root"];
-    let routableArgs: Record<string, unknown> | undefined;
-    const starter = createWorkflowRunStarter({
-      db: makeDb([
-        candidate({ deploymentId: "dep-1", principalId: "deployment-owner" }),
-      ]),
-      sessionService: {
-        sendUserMessage: async () => {},
-      } as unknown as SessionService,
-      ensureDeploymentRoutable: async (a) => {
-        routableArgs = a;
-        return { reestablished: false };
-      },
-      deploymentDomain: DOMAIN,
-      cryptoProvider: {} as never,
-      resolveUserIdentity,
-    });
+    let provisionArgs: Record<string, unknown> | undefined;
+    const db = makeDb([
+      candidate({ deploymentId: "dep-1", principalId: "deployment-owner" }),
+    ]);
+    const starter = createWorkflowRunStarter(
+      starterDeps({
+        db,
+        provisionRunDeployment: async (a) => {
+          provisionArgs = a;
+          return { deploymentId: "dep-run-2" };
+        },
+      }),
+    );
 
     await starter.startRun({
       kind: "generic-workflow",
@@ -234,24 +313,52 @@ describe("createWorkflowRunStarter", () => {
       creatorPrincipalId: "schedule-owner",
     });
 
-    expect(routableArgs?.creatorPrincipalId).toBe("schedule-owner");
+    expect(provisionArgs?.creatorPrincipalId).toBe("deployment-owner");
+    expect(db.inserted[0]?.principalId).toBe("schedule-owner");
   });
 
-  it("returns delivery_failed when delivery throws", async () => {
+  it("returns provision_failed when provision throws", async () => {
     chainRef = ["t-root"];
     const db = makeDb([candidate({ deploymentId: "dep-1" })]);
-    const starter = createWorkflowRunStarter({
-      db,
-      sessionService: {
-        sendUserMessage: async () => {
-          throw new Error("sidecar unreachable");
+    const starter = createWorkflowRunStarter(
+      starterDeps({
+        db,
+        provisionRunDeployment: async () => {
+          throw new Error("package registry empty");
         },
-      } as unknown as SessionService,
-      ensureDeploymentRoutable: async () => ({ reestablished: false }),
-      deploymentDomain: DOMAIN,
-      cryptoProvider: {} as never,
-      resolveUserIdentity,
+      }),
+    );
+
+    const result = await starter.startRun({
+      kind: "generic-workflow",
+      tenantId: "t-root",
+      input: {},
     });
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.reason).toBe("provision_failed");
+    expect(db.inserted).toHaveLength(1);
+    expect(db.failUpdateCalls).toBe(1);
+  });
+
+  it("returns delivery_failed when delivery throws and reclaims the provisioned deploy", async () => {
+    chainRef = ["t-root"];
+    const db = makeDb([candidate({ deploymentId: "dep-1" })]);
+    const reclaimed: Record<string, unknown>[] = [];
+    const starter = createWorkflowRunStarter(
+      starterDeps({
+        db,
+        sessionService: {
+          sendUserMessage: async () => {
+            throw new Error("sidecar unreachable");
+          },
+        } as unknown as SessionService,
+        provisionRunDeployment: async () => ({ deploymentId: "dep-run-3" }),
+        reclaimDeployment: async (a) => {
+          reclaimed.push(a);
+        },
+      }),
+    );
 
     const result = await starter.startRun({
       kind: "generic-workflow",
@@ -263,21 +370,90 @@ describe("createWorkflowRunStarter", () => {
     if (!result.ok) expect(result.reason).toBe("delivery_failed");
     expect(db.inserted).toHaveLength(1);
     expect(db.failUpdateCalls).toBe(1);
+    expect(reclaimed).toHaveLength(1);
+    expect(reclaimed[0]?.deploymentId).toBe("dep-run-3");
+    expect(reclaimed[0]?.tenantId).toBe("t-root");
+    expect(String(reclaimed[0]?.reason)).toContain("delivery failed");
+  });
+
+  it("does not reclaim when delivery fails but the fail flip loses to projection", async () => {
+    chainRef = ["t-root"];
+    const db = makeDb([candidate({ deploymentId: "dep-1" })], {
+      failFlipRows: [],
+    });
+    const reclaimed: Record<string, unknown>[] = [];
+    const starter = createWorkflowRunStarter(
+      starterDeps({
+        db,
+        sessionService: {
+          sendUserMessage: async () => {
+            throw new Error("sidecar unreachable");
+          },
+        } as unknown as SessionService,
+        provisionRunDeployment: async () => ({ deploymentId: "dep-run-live" }),
+        reclaimDeployment: async (a) => {
+          reclaimed.push(a);
+        },
+      }),
+    );
+
+    const result = await starter.startRun({
+      kind: "generic-workflow",
+      tenantId: "t-root",
+      input: {},
+    });
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.reason).toBe("delivery_failed");
+    expect(db.failUpdateCalls).toBe(1);
+    expect(reclaimed).toHaveLength(0);
+  });
+
+  it("returns attach_failed and reclaims when setRunDeployment throws", async () => {
+    chainRef = ["t-root"];
+    const db = makeDb([candidate({ deploymentId: "dep-1" })], {
+      throwOnSetDeployment: true,
+    });
+    const reclaimed: Record<string, unknown>[] = [];
+    const starter = createWorkflowRunStarter(
+      starterDeps({
+        db,
+        sessionService: {
+          sendUserMessage: async () => {
+            throw new Error("must not deliver after attach failure");
+          },
+        } as unknown as SessionService,
+        provisionRunDeployment: async () => ({
+          deploymentId: "dep-run-attach",
+        }),
+        reclaimDeployment: async (a) => {
+          reclaimed.push(a);
+        },
+      }),
+    );
+
+    const result = await starter.startRun({
+      kind: "generic-workflow",
+      tenantId: "t-root",
+      input: {},
+    });
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.reason).toBe("attach_failed");
+    expect(db.deploymentIdSets).toEqual(["dep-run-attach"]);
+    expect(reclaimed).toHaveLength(1);
+    expect(reclaimed[0]?.deploymentId).toBe("dep-run-attach");
+    expect(String(reclaimed[0]?.reason)).toContain("attach failed");
   });
 
   it("starts runs while under the per-tenant hourly budget", async () => {
     chainRef = ["t-root"];
-    const starter = createWorkflowRunStarter({
-      db: makeDb([candidate({ deploymentId: "dep-1" })]),
-      sessionService: {
-        sendUserMessage: async () => {},
-      } as unknown as SessionService,
-      ensureDeploymentRoutable: async () => ({ reestablished: false }),
-      deploymentDomain: DOMAIN,
-      cryptoProvider: {} as never,
-      resolveUserIdentity,
-      now: () => 1_000,
-    });
+    const starter = createWorkflowRunStarter(
+      starterDeps({
+        db: makeDb([candidate({ deploymentId: "dep-1" })]),
+        now: () => 1_000,
+      }),
+    );
 
     const result = await starter.startRun({
       kind: "generic-workflow",
@@ -291,19 +467,17 @@ describe("createWorkflowRunStarter", () => {
   it("returns rate_limited once the per-tenant hourly budget is exhausted", async () => {
     chainRef = ["t-root"];
     let sends = 0;
-    const starter = createWorkflowRunStarter({
-      db: makeDb([candidate({ deploymentId: "dep-1" })]),
-      sessionService: {
-        sendUserMessage: async () => {
-          sends += 1;
-        },
-      } as unknown as SessionService,
-      ensureDeploymentRoutable: async () => ({ reestablished: false }),
-      deploymentDomain: DOMAIN,
-      cryptoProvider: {} as never,
-      resolveUserIdentity,
-      now: () => 1_000,
-    });
+    const starter = createWorkflowRunStarter(
+      starterDeps({
+        db: makeDb([candidate({ deploymentId: "dep-1" })]),
+        sessionService: {
+          sendUserMessage: async () => {
+            sends += 1;
+          },
+        } as unknown as SessionService,
+        now: () => 1_000,
+      }),
+    );
 
     for (let i = 0; i < 60; i++) {
       const ok = await starter.startRun({
@@ -328,19 +502,17 @@ describe("createWorkflowRunStarter", () => {
   it("exempts scheduler-sourced starts from the budget so a large member fan-out is never dropped", async () => {
     chainRef = ["t-root"];
     let sends = 0;
-    const starter = createWorkflowRunStarter({
-      db: makeDb([candidate({ deploymentId: "dep-1" })]),
-      sessionService: {
-        sendUserMessage: async () => {
-          sends += 1;
-        },
-      } as unknown as SessionService,
-      ensureDeploymentRoutable: async () => ({ reestablished: false }),
-      deploymentDomain: DOMAIN,
-      cryptoProvider: {} as never,
-      resolveUserIdentity,
-      now: () => 1_000,
-    });
+    const starter = createWorkflowRunStarter(
+      starterDeps({
+        db: makeDb([candidate({ deploymentId: "dep-1" })]),
+        sessionService: {
+          sendUserMessage: async () => {
+            sends += 1;
+          },
+        } as unknown as SessionService,
+        now: () => 1_000,
+      }),
+    );
 
     for (let i = 0; i < 61; i++) {
       const ok = await starter.startRun({
@@ -364,17 +536,12 @@ describe("createWorkflowRunStarter", () => {
   it("slides the window: the budget frees up once old starts expire", async () => {
     chainRef = ["t-root"];
     let clock = 1_000;
-    const starter = createWorkflowRunStarter({
-      db: makeDb([candidate({ deploymentId: "dep-1" })]),
-      sessionService: {
-        sendUserMessage: async () => {},
-      } as unknown as SessionService,
-      ensureDeploymentRoutable: async () => ({ reestablished: false }),
-      deploymentDomain: DOMAIN,
-      cryptoProvider: {} as never,
-      resolveUserIdentity,
-      now: () => clock,
-    });
+    const starter = createWorkflowRunStarter(
+      starterDeps({
+        db: makeDb([candidate({ deploymentId: "dep-1" })]),
+        now: () => clock,
+      }),
+    );
 
     for (let i = 0; i < 60; i++) {
       await starter.startRun({
@@ -405,17 +572,12 @@ describe("createWorkflowRunStarter", () => {
       candidate({ deploymentId: "dep-a", tenantId: "t-a" }),
       candidate({ deploymentId: "dep-b", tenantId: "t-b" }),
     ]);
-    const starter = createWorkflowRunStarter({
-      db,
-      sessionService: {
-        sendUserMessage: async () => {},
-      } as unknown as SessionService,
-      ensureDeploymentRoutable: async () => ({ reestablished: false }),
-      deploymentDomain: DOMAIN,
-      cryptoProvider: {} as never,
-      resolveUserIdentity,
-      now: () => 1_000,
-    });
+    const starter = createWorkflowRunStarter(
+      starterDeps({
+        db,
+        now: () => 1_000,
+      }),
+    );
 
     for (let i = 0; i < 60; i++) {
       await starter.startRun({
@@ -455,18 +617,17 @@ describe("createWorkflowRunStarter", () => {
       },
     } as unknown as SessionService;
 
-    const starter = createWorkflowRunStarter({
-      db: makeDb([candidate({ deploymentId: "dep-1", kind: "heartbeat" })]),
-      sessionService,
-      ensureDeploymentRoutable: async () => ({ reestablished: false }),
-      deploymentDomain: DOMAIN,
-      cryptoProvider: {} as never,
-      resolveUserIdentity: async (principalId: string) => ({
-        userAddress: `usr_${principalId}@${DOMAIN}`,
-        userRefId: principalId,
-        userDisplayName: "Jordan Lee",
+    const starter = createWorkflowRunStarter(
+      starterDeps({
+        db: makeDb([candidate({ deploymentId: "dep-1", kind: "heartbeat" })]),
+        sessionService,
+        resolveUserIdentity: async (principalId: string) => ({
+          userAddress: `usr_${principalId}@${DOMAIN}`,
+          userRefId: principalId,
+          userDisplayName: "Jordan Lee",
+        }),
       }),
-    });
+    );
 
     // The exact shape webhook-trigger-fire.ts's dispatchRun sends: no
     // enrichment of its own, just the raw webhook payload wrapped once.
@@ -501,16 +662,14 @@ describe("createWorkflowRunStarter", () => {
       },
     } as unknown as SessionService;
 
-    const starter = createWorkflowRunStarter({
-      db: makeDb([
-        candidate({ deploymentId: "dep-1", kind: "generic-workflow" }),
-      ]),
-      sessionService,
-      ensureDeploymentRoutable: async () => ({ reestablished: false }),
-      deploymentDomain: DOMAIN,
-      cryptoProvider: {} as never,
-      resolveUserIdentity,
-    });
+    const starter = createWorkflowRunStarter(
+      starterDeps({
+        db: makeDb([
+          candidate({ deploymentId: "dep-1", kind: "generic-workflow" }),
+        ]),
+        sessionService,
+      }),
+    );
 
     const result = await starter.startRun({
       kind: "generic-workflow",
@@ -558,18 +717,17 @@ describe("createWorkflowRunStarter", () => {
     const today = Math.floor(nowMs / 86_400_000);
     const yesterday = today - 1;
 
-    const starter = createWorkflowRunStarter({
-      db: makeDb([candidate({ deploymentId: "dep-1", kind: "heartbeat" })]),
-      sessionService,
-      ensureDeploymentRoutable: async () => ({ reestablished: false }),
-      deploymentDomain: DOMAIN,
-      cryptoProvider: {} as never,
-      resolveUserIdentity: async (principalId: string) => ({
-        userAddress: `usr_${principalId}@${DOMAIN}`,
-        userRefId: principalId,
+    const starter = createWorkflowRunStarter(
+      starterDeps({
+        db: makeDb([candidate({ deploymentId: "dep-1", kind: "heartbeat" })]),
+        sessionService,
+        resolveUserIdentity: async (principalId: string) => ({
+          userAddress: `usr_${principalId}@${DOMAIN}`,
+          userRefId: principalId,
+        }),
+        now: () => nowMs,
       }),
-      now: () => nowMs,
-    });
+    );
 
     const result = await starter.startRun({
       kind: "heartbeat",
@@ -594,37 +752,18 @@ describe("createWorkflowRunStarter", () => {
     expect(delivered.createdAfter).not.toBe(sevenDayFallback);
   });
 
-  // Same fail-loud invariant as the other two start doors: resolveUserIdentity
-  // throwing on a missing principal must fail the whole start, not degrade to
-  // an unenriched delivery.
-  it("a webhook-fired heartbeat run whose identity cannot be resolved fails the start instead of delivering unenriched", async () => {
+  it("marks scheduler-sourced starts with triggerSource=scheduler on the run row", async () => {
     chainRef = ["t-root"];
-    const sent: Record<string, unknown>[] = [];
-    const sessionService = {
-      sendUserMessage: async (a: Record<string, unknown>) => {
-        sent.push(a);
-      },
-    } as unknown as SessionService;
+    const db = makeDb([candidate({ deploymentId: "dep-1" })]);
+    const starter = createWorkflowRunStarter(starterDeps({ db }));
 
-    const starter = createWorkflowRunStarter({
-      db: makeDb([candidate({ deploymentId: "dep-1", kind: "heartbeat" })]),
-      sessionService,
-      ensureDeploymentRoutable: async () => ({ reestablished: false }),
-      deploymentDomain: DOMAIN,
-      cryptoProvider: {} as never,
-      resolveUserIdentity: async () => {
-        throw new Error("principal not found: prn-ghost");
-      },
+    await starter.startRun({
+      kind: "generic-workflow",
+      tenantId: "t-root",
+      input: {},
+      source: "scheduler",
     });
 
-    await expect(
-      starter.startRun({
-        kind: "heartbeat",
-        tenantId: "t-root",
-        input: { reason: "webhook", triggerId: "wht_3", payload: {} },
-        source: "webhook",
-      }),
-    ).rejects.toThrow("principal not found: prn-ghost");
-    expect(sent).toHaveLength(0);
+    expect(db.inserted[0]?.triggerSource).toBe("scheduler");
   });
 });
