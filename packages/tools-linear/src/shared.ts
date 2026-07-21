@@ -17,6 +17,7 @@ export type LinearToolsConfig = typeof LinearToolsConfigSchema.infer & {
 export const DEFAULT_BASE_URL = "https://api.linear.app/graphql";
 
 export const DEFAULT_ISSUE_LIMIT = 10;
+export const DEFAULT_BRIEF_ISSUE_LIMIT = 50;
 export const DEFAULT_LIST_LIMIT = 25;
 export const MAX_LIST_LIMIT = 100;
 export const MAX_LIST_LIMIT_ISSUES = 250;
