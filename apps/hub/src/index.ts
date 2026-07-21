@@ -115,6 +115,10 @@ import { createSkillsRouter } from "./routes/skills";
 import { createToolsRouter } from "./routes/tools";
 import { createAdminRouter } from "./routes/admin";
 import { createOwnerRouter } from "./routes/owner";
+import { createWorkUnitQueue } from "./services/work-unit-queue";
+import { createWorkUnitWorker } from "./services/work-unit-worker";
+import { bindKnowledgeCaptureWorkUnitQueue } from "./services/knowledge-capture-hook";
+import { createDefaultAgentTaskTurnRunner } from "./services/agent-task-auto-pickup";
 import { isDemosEnabledByGrant, resolveDemoLinks } from "./lib/demos-gate";
 import { isFeatureEnabledForTenantCached } from "./lib/feature-grants";
 import { isWorkspaceInboxSourceEnabledForTenant } from "./lib/workspace-inbox-source-gate";
@@ -1578,6 +1582,12 @@ v1.route(
   "/",
   createAdminRouter({ db, grantStore, assetService, rootTenantId }),
 );
+
+// Durable work-unit queue (WQ.2–WQ.6). Bound early so owner routes + product
+// write hooks can enqueue/ops against the same instance the worker drains.
+const workUnitQueue = createWorkUnitQueue(db);
+bindKnowledgeCaptureWorkUnitQueue(workUnitQueue);
+
 v1.route(
   "/",
   createOwnerRouter({
@@ -1593,6 +1603,7 @@ v1.route(
       "voice-input": false,
       "native-approvals": false,
     },
+    workUnitQueue,
   }),
 );
 // Built before the runs router so the run-start/signal handlers and the
@@ -2034,6 +2045,15 @@ const granolaCallJobRunner = createGranolaCallJobRunner({
   pipeline: granolaPipeline,
 });
 granolaCallJobRunner.start();
+
+const workUnitWorker = createWorkUnitWorker({
+  db,
+  queue: workUnitQueue,
+  scanAgentAutoPickup: true,
+  agentTaskTurnRunner: createDefaultAgentTaskTurnRunner(db),
+});
+workUnitWorker.start();
+
 
 const inboxIntake = createInboxIntake({
   db,
