@@ -42,27 +42,55 @@ function stepPrimitive(id: string) {
 }
 
 // Mirror of the sidecar's argMap reshape (`runDeterministicToolStep`): each key
-// pulls a top-level field off the evaluated input (`{ from }`) or a constant
-// (`{ literal }`). Used to prove the mail/artifact argMaps resolve against a real
-// merged step input, not just to snapshot the static tag.
+// pulls a top-level field (`{ from }`), a constant (`{ literal }`), or a field
+// off a JSON envelope (`{ fromJson, field }` — for stringTool outputs whose
+// payload is `{ content: "<json>" }`). Used to prove the mail/artifact argMaps
+// resolve against a real merged step input, not just to snapshot the static tag.
 function resolveArgMap(
-  argMap: Record<string, { from: string } | { literal: unknown }>,
+  argMap: Record<
+    string,
+    | { from: string }
+    | { literal: unknown }
+    | { fromJson: string; field: string; optional?: boolean }
+  >,
   input: Record<string, unknown>,
 ): Record<string, unknown> {
   const out: Record<string, unknown> = {};
   for (const [key, spec] of Object.entries(argMap)) {
-    if ("from" in spec) {
-      out[key] = input[spec.from];
-    } else {
+    if ("literal" in spec) {
       out[key] = spec.literal;
+      continue;
     }
+    if ("fromJson" in spec) {
+      const envelope = input[spec.fromJson];
+      let parsed: unknown;
+      if (typeof envelope === "string") {
+        try {
+          parsed = JSON.parse(envelope);
+        } catch {
+          parsed = undefined;
+        }
+      } else if (envelope !== null && typeof envelope === "object") {
+        parsed = envelope;
+      }
+      const record =
+        parsed !== null && typeof parsed === "object" && !Array.isArray(parsed)
+          ? (parsed as Record<string, unknown>)
+          : undefined;
+      out[key] = record?.[spec.field];
+      continue;
+    }
+    out[key] = input[spec.from];
   }
   return out;
 }
 
-function argMapOf(
-  id: string,
-): Record<string, { from: string } | { literal: unknown }> {
+function argMapOf(id: string): Record<
+  string,
+  | { from: string }
+  | { literal: unknown }
+  | { fromJson: string; field: string; optional?: boolean }
+> {
   const tag = stepPrimitive(id).agent.tags?.[STEP_ARGMAP_TAG];
   if (tag === undefined) throw new Error(`expected argMap tag on step "${id}"`);
   return JSON.parse(tag);
@@ -303,11 +331,30 @@ describe("heartbeat native workflow", () => {
   // -------------------------------------------------------------------------
   test("mail-refs argMap builds artifact and workflow_run refs from persist + trigger runId", () => {
     expect(argMapOf("mail-refs")).toEqual({
-      artifactId: { from: "artifactId" },
+      artifactId: { fromJson: "content", field: "artifactId" },
       runId: { from: "runId" },
       workflowLabel: { literal: "Company Heartbeat" },
     });
     expect(stepPrimitive("mail-refs").after).toEqual(["persist"]);
+  });
+
+  test("mail-refs argMap resolves artifactId from write_artifact stringTool content envelope", () => {
+    // Real write_artifact returns JSON.stringify({ artifactId, version, title })
+    // as the tool content; the step output is { content: "<that json>" }.
+    // A top-level { from: "artifactId" } never sees it (prod failure after
+    // CL-4069 unblocked tool pins).
+    const mailRefsInput = {
+      ...TRIGGER_PAYLOAD,
+      content: JSON.stringify({
+        artifactId: "art_1",
+        version: 1,
+        title: "Jordan Lee's Morning Brief - 04/07/26",
+      }),
+    };
+    const args = resolveArgMap(argMapOf("mail-refs"), mailRefsInput);
+    expect(args.artifactId).toBe("art_1");
+    expect(args.runId).toBe(TRIGGER_PAYLOAD.runId);
+    expect(args.workflowLabel).toBe("Company Heartbeat");
   });
 
   test("notify argMap addresses the mail to the firing user with the computed title as subject, the brief as content, and artifact refs", () => {
@@ -373,7 +420,13 @@ describe("heartbeat native workflow", () => {
       "heartbeat-title": {
         content: { title: "Jordan Lee's Morning Brief - 04/07/26" },
       },
-      "heartbeat-persist": { artifactId: "art_1", version: 1 },
+      "heartbeat-persist": {
+        content: JSON.stringify({
+          artifactId: "art_1",
+          version: 1,
+          title: "Jordan Lee's Morning Brief - 04/07/26",
+        }),
+      },
       "heartbeat-mail-refs": {
         content: {
           refs: [
@@ -446,7 +499,13 @@ describe("heartbeat native workflow", () => {
       "heartbeat-title": {
         content: { title: "Jordan Lee's Morning Brief - 04/07/26" },
       },
-      "heartbeat-persist": { artifactId: "art_1", version: 1 },
+      "heartbeat-persist": {
+        content: JSON.stringify({
+          artifactId: "art_1",
+          version: 1,
+          title: "Jordan Lee's Morning Brief - 04/07/26",
+        }),
+      },
       "heartbeat-mail-refs": {
         content: {
           refs: [

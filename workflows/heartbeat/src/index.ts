@@ -150,6 +150,10 @@ export const workflow = defineWorkflow({
     }),
 
     // Build mailbox refs from the persisted morning-brief artifact (CL-3521).
+    // write_artifact is a stringTool: its step output is
+    // `{ content: "{\"artifactId\":...,\"version\":...,\"title\":...}" }`,
+    // so artifactId is only reachable via fromJson (same pattern as gamma
+    // presentation creator's content envelope).
     "mail-refs": deterministicToolStep({
       id: "heartbeat-mail-refs",
       title: "Link saved brief in mail",
@@ -158,7 +162,7 @@ export const workflow = defineWorkflow({
         merge: [{ from: "trigger.payload" }, { from: "steps.persist.output" }],
       },
       argMap: {
-        artifactId: { from: "artifactId" },
+        artifactId: { fromJson: "content", field: "artifactId" },
         runId: { from: "runId" },
         workflowLabel: { literal: label },
       },

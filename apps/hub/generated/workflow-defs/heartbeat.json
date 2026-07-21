@@ -311,7 +311,7 @@
           "tags": {
             "workbench.stepKind": "deterministic-tool",
             "workbench.tool": "@workbench/tools-last30days/core:heartbeat_format_brief_mail_refs",
-            "workbench.argMap": "{\"artifactId\":{\"from\":\"artifactId\"},\"runId\":{\"from\":\"runId\"},\"workflowLabel\":{\"literal\":\"Company Heartbeat\"}}",
+            "workbench.argMap": "{\"artifactId\":{\"fromJson\":\"content\",\"field\":\"artifactId\"},\"runId\":{\"from\":\"runId\"},\"workflowLabel\":{\"literal\":\"Company Heartbeat\"}}",
             "workbench.title": "Link saved brief in mail"
           }
         },
