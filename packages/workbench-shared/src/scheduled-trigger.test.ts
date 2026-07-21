@@ -1,13 +1,80 @@
 import { describe, expect, it } from "bun:test";
 import { type } from "arktype";
 import {
+  CreateScheduledTriggerBodySchema,
   HEARTBEAT_WORKFLOW_KIND,
   HeartbeatTriggerPayloadSchema,
+  scheduleScopesForKind,
+  ScheduledTriggerSchema,
 } from "./scheduled-trigger";
 
 describe("HEARTBEAT_WORKFLOW_KIND", () => {
   it("is the single shared literal for the heartbeat workflow kind", () => {
     expect(HEARTBEAT_WORKFLOW_KIND).toBe("heartbeat");
+  });
+});
+
+describe("scheduleScopesForKind", () => {
+  it("keeps heartbeat personal-only even when attachable", () => {
+    expect(scheduleScopesForKind("heartbeat", true)).toEqual({
+      allowedScopes: ["personal"],
+      defaultScope: "personal",
+    });
+  });
+
+  it("offers personal + tenant for other attachable kinds", () => {
+    expect(scheduleScopesForKind("morning-brief", true)).toEqual({
+      allowedScopes: ["personal", "tenant"],
+      defaultScope: "personal",
+    });
+  });
+
+  it("defaults non-attachable kinds to personal-only", () => {
+    expect(scheduleScopesForKind("gated-workflow", false)).toEqual({
+      allowedScopes: ["personal"],
+      defaultScope: "personal",
+    });
+  });
+});
+
+describe("CreateScheduledTriggerBodySchema", () => {
+  it("accepts optional scope", () => {
+    const body = CreateScheduledTriggerBodySchema({
+      kind: "morning-brief",
+      hourUtc: 9,
+      scope: "tenant",
+    });
+    expect(body).not.toBeInstanceOf(type.errors);
+  });
+
+  it("rejects invalid scope", () => {
+    expect(
+      CreateScheduledTriggerBodySchema({
+        kind: "morning-brief",
+        hourUtc: 9,
+        scope: "team",
+      }),
+    ).toBeInstanceOf(type.errors);
+  });
+});
+
+describe("ScheduledTriggerSchema", () => {
+  it("requires scope and ownerMemberPrincipalId", () => {
+    const ok = ScheduledTriggerSchema({
+      id: "sch-1",
+      workflowKind: "heartbeat",
+      hourUtc: 13,
+      enabled: true,
+      scope: "personal",
+      ownerMemberPrincipalId: "prn-1",
+      triggerPayload: {},
+      createdAt: "2026-01-02T00:00:00.000Z",
+      lastFiredDayUtc: null,
+      lastRunId: null,
+      recentFires: [],
+      nextFireAt: null,
+    });
+    expect(ok).not.toBeInstanceOf(type.errors);
   });
 });
 

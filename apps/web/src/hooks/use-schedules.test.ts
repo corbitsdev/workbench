@@ -28,9 +28,13 @@ const scheduleOn = {
   workflowKind: "morning-brief",
   hourUtc: 13,
   enabled: true,
+  scope: "personal" as const,
+  ownerMemberPrincipalId: "prn_1",
   triggerPayload: {},
   createdAt: "2026-01-01T00:00:00.000Z",
   lastFiredDayUtc: null,
+  lastRunId: null,
+  recentFires: [],
   nextFireAt: "2026-01-02T13:00:00.000Z",
 };
 

@@ -89,6 +89,8 @@ const catalog: WorkflowCatalog = {
         { id: "s2", title: "Approve Draft", kind: "human" },
       ],
       attachable: false,
+      allowedScopes: ["personal"] as const,
+      defaultScope: "personal" as const,
     },
     {
       kind: "gamma",
@@ -98,6 +100,8 @@ const catalog: WorkflowCatalog = {
       pauseCount: 0,
       steps: [{ id: "a", title: "Ingest Content", kind: "auto" }],
       attachable: false,
+      allowedScopes: ["personal"] as const,
+      defaultScope: "personal" as const,
     },
   ],
 };

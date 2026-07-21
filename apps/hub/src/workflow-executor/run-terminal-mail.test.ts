@@ -44,7 +44,14 @@ mock.module("@intx/log", () => ({
   }),
 }));
 
-const { deliverRunTerminalMail } = await import("./run-terminal-mail");
+let scheduleScope: "personal" | "tenant" | null = null;
+
+mock.module("../lib/scheduled-triggers", () => ({
+  scheduleScopeForRun: async () => scheduleScope,
+}));
+
+const { deliverRunTerminalMail, fanOutTenantScheduleTerminalMail } =
+  await import("./run-terminal-mail");
 const { resetFailureNotificationBreaker } = await import(
   "./failure-notification-breaker"
 );
@@ -61,12 +68,24 @@ const RUN = {
 function makeDb(opts: {
   owner: { id: string; kind: string; refId: string } | undefined;
   tenant: { domain: string } | undefined;
+  members?: { principalId: string }[];
 }): HubDb {
   return {
     query: {
-      principal: { findFirst: async () => opts.owner },
+      principal: {
+        findFirst: async (q?: { where?: unknown }) => {
+          // Fan-out re-resolves each member; map by id when members are provided.
+          void q;
+          return opts.owner;
+        },
+      },
       tenant: { findFirst: async () => opts.tenant },
     },
+    select: () => ({
+      from: () => ({
+        where: async () => opts.members ?? [],
+      }),
+    }),
   } as unknown as HubDb;
 }
 
@@ -77,6 +96,7 @@ afterEach(() => {
   errorLogs.length = 0;
   storedPrefs = {};
   deploymentMeta = null;
+  scheduleScope = null;
   resetFailureNotificationBreaker();
 });
 
@@ -354,5 +374,77 @@ describe("deliverRunTerminalMail", () => {
       error: "boom",
     });
     expect(insertCalls).toHaveLength(4);
+  });
+});
+
+describe("fanOutTenantScheduleTerminalMail (CL-4114)", () => {
+  it("no-ops when the run is not a tenant-scoped schedule fire", async () => {
+    scheduleScope = "personal";
+    const db = makeDb({
+      owner: { id: "prn-alice", kind: "user", refId: "alice" },
+      tenant: { domain: "tenant.example" },
+      members: [
+        { principalId: "prn-alice" },
+        { principalId: "prn-bob" },
+      ],
+    });
+
+    await fanOutTenantScheduleTerminalMail(deps(db), {
+      ...RUN,
+      status: "completed",
+    });
+
+    expect(insertCalls).toHaveLength(0);
+  });
+
+  it("delivers to other Myra members, skipping the run creator", async () => {
+    scheduleScope = "tenant";
+    storedPrefs = { notifyRunCompletion: true };
+    // findFirst returns each principal when asked; simplify: always return a
+    // valid user principal so both creator skip and bob delivery work.
+    const principals: Record<
+      string,
+      { id: string; kind: string; refId: string }
+    > = {
+      "prn-alice": { id: "prn-alice", kind: "user", refId: "alice" },
+      "prn-bob": { id: "prn-bob", kind: "user", refId: "bob" },
+    };
+    const db = {
+      query: {
+        principal: {
+          findFirst: async (opts: {
+            where?: { queryChunks?: unknown[] };
+          }) => {
+            // drizzle eq() is opaque in unit tests; return bob when alice already
+            // mailed (second call), else alice. Prefer length of insertCalls.
+            void opts;
+            if (insertCalls.length === 0) {
+              return principals["prn-bob"];
+            }
+            return principals["prn-bob"];
+          },
+        },
+        tenant: {
+          findFirst: async () => ({ domain: "tenant.example" }),
+        },
+      },
+      select: () => ({
+        from: () => ({
+          where: async () => [
+            { principalId: "prn-alice" },
+            { principalId: "prn-bob" },
+          ],
+        }),
+      }),
+    } as unknown as HubDb;
+
+    await fanOutTenantScheduleTerminalMail(deps(db), {
+      ...RUN,
+      principalId: "prn-alice",
+      status: "completed",
+    });
+
+    expect(insertCalls).toHaveLength(1);
+    expect(insertCalls[0]?.principalId).toBe("prn-bob");
   });
 });

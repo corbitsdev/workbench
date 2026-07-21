@@ -29,6 +29,8 @@ const catalog = {
       pauseCount: 0,
       steps: [],
       attachable: true,
+      allowedScopes: ["personal"] as const,
+      defaultScope: "personal" as const,
     },
     {
       kind: "last30days-research",
@@ -38,6 +40,8 @@ const catalog = {
       pauseCount: 0,
       steps: [],
       attachable: true,
+      allowedScopes: ["personal", "tenant"] as const,
+      defaultScope: "personal" as const,
       intakeFields: [
         { kind: "text", name: "topic", label: "Topic", required: true },
         { kind: "textarea", name: "focus", label: "Focus (optional)" },
@@ -51,6 +55,8 @@ const catalog = {
       pauseCount: 3,
       steps: [],
       attachable: false,
+      allowedScopes: ["personal"] as const,
+      defaultScope: "personal" as const,
     },
   ],
 };

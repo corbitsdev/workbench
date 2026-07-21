@@ -70,6 +70,8 @@ type OwnerRow = {
   enabled: boolean;
   triggerPayload: Record<string, unknown>;
   createdAt: Date;
+  scope?: string;
+  ownerMemberPrincipalId?: string;
 };
 let ownerRows: OwnerRow[] = [];
 let updateResult: OwnerRow | null = null;
@@ -81,6 +83,8 @@ mock.module("../lib/scheduled-triggers", () => ({
     workflowKind: r.workflowKind,
     hourUtc: r.hourUtc,
     enabled: r.enabled,
+    scope: r.scope ?? "personal",
+    ownerMemberPrincipalId: r.ownerMemberPrincipalId ?? "principal-a",
     triggerPayload: r.triggerPayload,
     createdAt: r.createdAt.toISOString(),
     lastFiredDayUtc: null,
@@ -98,6 +102,8 @@ mock.module("../lib/scheduled-triggers", () => ({
       workflowKind: r.workflowKind,
       hourUtc: r.hourUtc,
       enabled: r.enabled,
+      scope: r.scope ?? "personal",
+      ownerMemberPrincipalId: r.ownerMemberPrincipalId ?? "principal-a",
       triggerPayload: r.triggerPayload,
       createdAt: r.createdAt.toISOString(),
       lastFiredDayUtc: null,
@@ -125,6 +131,8 @@ mock.module("../lib/scheduled-triggers", () => ({
       workflowKind: args["kind"],
       hourUtc: args["hourUtc"],
       enabled: true,
+      scope: args["scope"] ?? "personal",
+      ownerMemberPrincipalId: args["ownerPrincipalId"],
       triggerPayload: args["payload"],
       createdAt: new Date("2026-01-01T00:00:00.000Z"),
     };
@@ -391,11 +399,80 @@ describe("POST /me/schedules", () => {
       ownerPrincipalId: "principal-a",
       kind: "deck",
       hourUtc: 9,
+      scope: "personal",
       payload: {
         x: 1,
         userAddress: "usr_user-a@workbench.example",
         userRefId: "user-a",
       },
+    });
+  });
+
+  it("creates an Everyone (tenant) schedule when scope is allowed (CL-4108)", async () => {
+    storeCalls.length = 0;
+    createThrows = null;
+    const res = await mountApp().fetch(
+      req("/me/schedules", {
+        method: "POST",
+        user: "user-a",
+        body: JSON.stringify({
+          kind: "deck",
+          hourUtc: 9,
+          scope: "tenant",
+          payload: { x: 1 },
+        }),
+      }),
+    );
+    expect(res.status).toBe(201);
+    const create = storeCalls.find((c) => c.fn === "create");
+    expect(create?.args).toMatchObject({
+      kind: "deck",
+      scope: "tenant",
+      ownerPrincipalId: "principal-a",
+    });
+    const body = (await res.json()) as { scope: string };
+    expect(body.scope).toBe("tenant");
+  });
+
+  it("rejects tenant scope for heartbeat (personal-only, CL-4110)", async () => {
+    storeCalls.length = 0;
+    const res = await mountApp().fetch(
+      req("/me/schedules", {
+        method: "POST",
+        user: "user-a",
+        body: JSON.stringify({
+          kind: "heartbeat",
+          hourUtc: 7,
+          scope: "tenant",
+          payload: { reason: "scheduled-heartbeat" },
+        }),
+      }),
+    );
+    expect(res.status).toBe(400);
+    expect(await res.json()).toMatchObject({
+      error: expect.stringContaining('does not allow schedule scope "tenant"'),
+    });
+    expect(storeCalls.some((c) => c.fn === "create")).toBe(false);
+  });
+
+  it("409s with a tenant-scope message when an Everyone schedule already exists", async () => {
+    storeCalls.length = 0;
+    createThrows = Object.assign(new Error("duplicate"), { code: "23505" });
+    const res = await mountApp().fetch(
+      req("/me/schedules", {
+        method: "POST",
+        user: "user-a",
+        body: JSON.stringify({
+          kind: "deck",
+          hourUtc: 9,
+          scope: "tenant",
+        }),
+      }),
+    );
+    createThrows = null;
+    expect(res.status).toBe(409);
+    expect(await res.json()).toMatchObject({
+      error: expect.stringContaining("Everyone schedule"),
     });
   });
 
