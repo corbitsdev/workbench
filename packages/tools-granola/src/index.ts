@@ -4,6 +4,10 @@ import type { ToolDefinition } from "@intx/types/runtime";
 
 const DEFAULT_LIST_LIMIT = 10;
 const MAX_LIST_LIMIT = 30;
+// Bounds the internal pagination the heartbeat brief path performs per date
+// filter (created_after, updated_after) so an unbounded cursor loop can never
+// run away against a runaway API response.
+const BRIEF_MAX_PAGES_PER_QUERY = 5;
 
 /**
  * Granola's public API base URL. Owned by the tool package so callers only
@@ -80,9 +84,14 @@ const GranolaNote = type({
   id: "string",
   title: "string | null",
   created_at: "string",
+  "updated_at?": "string",
   "participants?": "string[]",
   "summary?": "string",
   "transcript?": GranolaTranscriptItem.array(),
+  // Set client-side for the heartbeat brief path: true when a note's
+  // created_at predates the brief cutoff but its updated_at does not — the
+  // synthesizer uses this to label the note "revised" rather than "new".
+  "updatedOnly?": "boolean",
 });
 
 const GranolaListResponse = type({
@@ -316,6 +325,127 @@ function parseFolderListResponse(value: unknown): GranolaFolderListResponse {
   return parsed;
 }
 
+// Fetches every page (bounded by BRIEF_MAX_PAGES_PER_QUERY) of a single
+// created_after/updated_after query for the heartbeat brief path, at the API's
+// max page_size, following the response cursor.
+async function fetchBriefPages(
+  config: ResolvedGranolaConfig,
+  baseUrl: string,
+  dateParam: "created_after" | "updated_after",
+  cutoff: string,
+  createdBefore: string | null,
+  folderId: string | null,
+  signal: AbortSignal,
+): Promise<GranolaNote[]> {
+  const notes: GranolaNote[] = [];
+  let cursor: string | null = null;
+
+  for (let page = 0; page < BRIEF_MAX_PAGES_PER_QUERY; page += 1) {
+    const url = new URL(`${baseUrl}/notes`);
+    url.searchParams.set("page_size", MAX_LIST_LIMIT.toString());
+    url.searchParams.set(dateParam, cutoff);
+    if (createdBefore !== null) {
+      url.searchParams.set("created_before", createdBefore);
+    }
+    if (folderId !== null) {
+      url.searchParams.set("folder_id", folderId);
+    }
+    if (cursor !== null) {
+      url.searchParams.set("cursor", cursor);
+    }
+
+    const response = parseListResponse(
+      await fetchGranolaJSON(config, url, signal),
+    );
+    notes.push(...response.notes);
+
+    if (!response.hasMore || response.cursor === undefined) {
+      break;
+    }
+    cursor = response.cursor;
+  }
+
+  return notes;
+}
+
+// Merges the created_after and updated_after result sets by note id: a note
+// present in the created_after set is new and always wins; a note present
+// only in the updated_after set predates the cutoff and is tagged
+// `updatedOnly` so the synthesizer can label it revised rather than new.
+// The merged result is sorted by created_at desc since the API has no sort
+// parameter.
+function mergeBriefNotes(
+  createdNotes: GranolaNote[],
+  updatedNotes: GranolaNote[],
+  cutoff: string,
+): GranolaNote[] {
+  const cutoffMs = new Date(cutoff).getTime();
+  const byId = new Map<string, GranolaNote>();
+
+  for (const note of createdNotes) {
+    byId.set(note.id, note);
+  }
+  for (const note of updatedNotes) {
+    if (byId.has(note.id)) {
+      continue;
+    }
+    const createdMs = new Date(note.created_at).getTime();
+    byId.set(
+      note.id,
+      createdMs < cutoffMs ? { ...note, updatedOnly: true } : note,
+    );
+  }
+
+  return Array.from(byId.values()).sort(
+    (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
+  );
+}
+
+async function listNotesForBrief(
+  config: ResolvedGranolaConfig,
+  createdAfter: string,
+  createdBefore: string | null,
+  folderId: string | null,
+  signal: AbortSignal,
+): Promise<GranolaListResponse> {
+  const baseUrl = normalizeBaseUrl(config.baseUrl);
+
+  try {
+    const [createdNotes, updatedNotes] = await Promise.all([
+      fetchBriefPages(
+        config,
+        baseUrl,
+        "created_after",
+        createdAfter,
+        createdBefore,
+        folderId,
+        signal,
+      ),
+      fetchBriefPages(
+        config,
+        baseUrl,
+        "updated_after",
+        createdAfter,
+        createdBefore,
+        folderId,
+        signal,
+      ),
+    ]);
+
+    const notes = mergeBriefNotes(createdNotes, updatedNotes, createdAfter);
+    const parsed = GranolaListResponse({ notes, hasMore: false });
+    if (parsed instanceof type.errors) {
+      throw new Error("Granola response contains an invalid notes list");
+    }
+    return parsed;
+  } catch (error) {
+    if (error instanceof GranolaAuthError) {
+      return SKIPPED_LIST_RESULT;
+    }
+    throw error;
+  }
+}
+
 async function listNotes(
   config: ResolvedGranolaConfig,
   rawArgs: Record<string, unknown>,
@@ -339,16 +469,27 @@ async function listNotes(
     throw new Error("Granola apiKey is required");
   }
 
+  const createdAfter = args.createdAfter ?? null;
+  const createdBefore = args.createdBefore ?? null;
+  const folderId = args.folderId ?? null;
+
+  if (heartbeatShaped && createdAfter !== null) {
+    return listNotesForBrief(
+      config,
+      createdAfter,
+      createdBefore,
+      folderId,
+      signal,
+    );
+  }
+
   const limit = optionalPositiveInteger(
     args.limit,
     DEFAULT_LIST_LIMIT,
     MAX_LIST_LIMIT,
   );
   const cursor = args.cursor ?? null;
-  const createdAfter = args.createdAfter ?? null;
-  const createdBefore = args.createdBefore ?? null;
   const updatedAfter = args.updatedAfter ?? null;
-  const folderId = args.folderId ?? null;
 
   const url = new URL(`${normalizeBaseUrl(config.baseUrl)}/notes`);
   url.searchParams.set("page_size", limit.toString());
