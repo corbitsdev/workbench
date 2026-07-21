@@ -451,7 +451,7 @@ function ToolRow({
                 failed &&
                 call.result !== undefined &&
                 call.result !== "" && (
-                  <pre className="max-h-60 overflow-auto whitespace-pre-wrap break-words rounded bg-surface-2 px-2 py-1.5 font-mono text-text-3">
+                  <pre className="max-h-60 overflow-auto whitespace-pre-wrap [overflow-wrap:anywhere] rounded bg-surface-2 px-2 py-1.5 font-mono text-text-3">
                     {call.result}
                   </pre>
                 )}
@@ -464,12 +464,12 @@ function ToolRow({
                 </pre>
               )}
               {failed && call.result !== undefined && call.result !== "" && (
-                <pre className="max-h-60 overflow-auto whitespace-pre-wrap break-words rounded bg-surface-2 px-2 py-1.5 font-mono text-text-3">
+                <pre className="max-h-60 overflow-auto whitespace-pre-wrap [overflow-wrap:anywhere] rounded bg-surface-2 px-2 py-1.5 font-mono text-text-3">
                   {call.result}
                 </pre>
               )}
               {resultBlock !== null && resultBlock.kind === "text" && (
-                <pre className="max-h-60 overflow-auto whitespace-pre-wrap break-words rounded bg-surface-2 px-2 py-1.5 font-mono text-text-2">
+                <pre className="max-h-60 overflow-auto whitespace-pre-wrap [overflow-wrap:anywhere] rounded bg-surface-2 px-2 py-1.5 font-mono text-text-2">
                   {resultBlock.text}
                 </pre>
               )}

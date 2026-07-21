@@ -42,6 +42,19 @@ describe("MessageBubble", () => {
     expect(screen.getByText("Hello agent")).not.toBeNull();
   });
 
+  it("CL-4120: user bubble lets unbroken tokens wrap instead of overflowing", () => {
+    const token = "sig_" + "a".repeat(300);
+    const message: ChatMessage = {
+      id: "wrap-1",
+      role: "user",
+      content: token,
+      createdAt: "2026-06-04T00:00:00Z",
+    };
+    const { container } = render(<MessageBubble message={message} />);
+    const body = container.querySelector(".bg-orange") as HTMLElement;
+    expect(body.className).toContain("[overflow-wrap:anywhere]");
+  });
+
   it("renders a mention in a sent user message as a pill, not the raw token", () => {
     const message: ChatMessage = {
       id: "mention-1",

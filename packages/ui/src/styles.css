@@ -337,6 +337,9 @@ button {
   border-radius: 0;
   font-size: inherit;
   color: inherit;
+  /* Block code scrolls in its <pre> (overflow-x-auto); never mid-token wrap
+     it — that would break copy-paste fidelity of code samples (CL-4120). */
+  overflow-wrap: normal;
 }
 
 /*
