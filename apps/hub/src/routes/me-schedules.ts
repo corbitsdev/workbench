@@ -6,6 +6,7 @@ import {
   ScheduledTriggerListResponseSchema,
   ScheduledTriggerSchema,
   UpdateScheduledTriggerBodySchema,
+  scheduleScopesForKind,
 } from "@workbench/shared";
 import { resolveCallerMember } from "../lib/tenant-provisioning";
 import { isRunnableKind } from "../lib/workflow-run-gate";
@@ -51,9 +52,10 @@ export type ResolveUserIdentity = (
   memberPrincipalId: string,
 ) => Promise<{ userAddress: string; userRefId: string }>;
 
-// Owner-scoped CRUD over the caller's automation triggers. Every read and write
-// is scoped to the caller's own member principal, so a member can never see or
-// mutate another member's schedule. Unblocks the scheduling UI.
+// Owner-scoped CRUD over the caller's automation triggers. List includes the
+// caller's personal schedules plus tenant-scoped (Everyone) schedules in their
+// tenant (CL-4108). Mutates remain owner-principal-scoped so a member can never
+// rewrite another member's schedule.
 export function createMeSchedulesRouter(
   db: HubDb,
   resolveUserIdentity: ResolveUserIdentity,
@@ -203,6 +205,17 @@ export function createMeSchedulesRouter(
         );
       }
 
+      const scopePolicy = scheduleScopesForKind(body.kind, true);
+      const scope = body.scope ?? scopePolicy.defaultScope;
+      if (!scopePolicy.allowedScopes.includes(scope)) {
+        return c.json(
+          {
+            error: `workflow "${body.kind}" does not allow schedule scope "${scope}"`,
+          },
+          400,
+        );
+      }
+
       const clientPayload = Object.fromEntries(
         Object.entries(body.payload ?? {}).filter(
           ([key]) => !RESERVED_PAYLOAD_KEYS.has(key),
@@ -245,12 +258,18 @@ export function createMeSchedulesRouter(
           kind: body.kind,
           hourUtc: body.hourUtc,
           payload,
+          scope,
         });
         return c.json(toApiSchedule(created), 201);
       } catch (err) {
         if (isUniqueViolation(err)) {
           return c.json(
-            { error: "You already have a schedule for this workflow." },
+            {
+              error:
+                scope === "tenant"
+                  ? "This workspace already has an Everyone schedule for this workflow."
+                  : "You already have a schedule for this workflow.",
+            },
             409,
           );
         }

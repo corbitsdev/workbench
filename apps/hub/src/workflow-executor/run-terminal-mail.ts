@@ -1,9 +1,11 @@
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { principal, tenant } from "@intx/db/schema";
 import { getLogger } from "@intx/log";
 import { deriveUserMailAddress } from "@workbench/hub-agent";
 import { deepLinkPath } from "@workbench/shared";
 import type { HubDb } from "../db";
+import { memberAgentInstance } from "../db/schema";
+import { scheduleScopeForRun } from "../lib/scheduled-triggers";
 import { readMemberPreferences } from "../lib/member-preferences";
 import { writeMailboxMessage } from "../lib/mailbox-write";
 import type { MailboxEventBus } from "../lib/mailbox-events";
@@ -246,4 +248,39 @@ export async function deliverRunTerminalMail(
     },
     deps.mailboxEventBus,
   );
+}
+
+/**
+ * Subscribe fan-out for tenant-scoped (Everyone) schedule fires (CL-4114).
+ * One run already finished under the schedule creator; deliver the same terminal
+ * outcome mail to every other Myra-provisioned member in the tenant, each gated
+ * by their own notify prefs. Creator is skipped — they already received mail via
+ * `deliverRunTerminalMail`. Personal schedules and non-schedule runs are no-ops.
+ */
+export async function fanOutTenantScheduleTerminalMail(
+  deps: DeliverRunTerminalMailDeps,
+  run: TerminalRunContext,
+): Promise<void> {
+  if (run.status === "failed" && run.error === "cancelled") return;
+
+  const scope = await scheduleScopeForRun(deps.db, run.runId);
+  if (scope !== "tenant") return;
+
+  const members = await deps.db
+    .select({ principalId: memberAgentInstance.memberPrincipalId })
+    .from(memberAgentInstance)
+    .where(
+      and(
+        eq(memberAgentInstance.tenantId, run.tenantId),
+        eq(memberAgentInstance.templateKey, "myra"),
+      ),
+    );
+
+  for (const member of members) {
+    if (member.principalId === run.principalId) continue;
+    await deliverRunTerminalMail(deps, {
+      ...run,
+      principalId: member.principalId,
+    });
+  }
 }

@@ -491,6 +491,10 @@ export const WorkflowCatalogEntrySchema = type({
   // The intake fields the attach UI collects for a requiresIntake kind (CL-3509);
   // absent for kinds that need no intake.
   "intakeFields?": WorkflowIntakeFieldSchema.array(),
+  // Schedule scopes this kind accepts (CL-4110). Always present; non-attachable
+  // kinds still report personal-only so the client never special-cases absence.
+  allowedScopes: "('personal' | 'tenant')[]",
+  defaultScope: "'personal' | 'tenant'",
 });
 export type WorkflowCatalogEntry = typeof WorkflowCatalogEntrySchema.infer;
 

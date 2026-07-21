@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { Button } from "@workbench/ui";
+import type { ScheduleScope } from "@workbench/shared";
 import {
   useCreateSchedule,
   useMeSchedules,
@@ -15,6 +16,9 @@ import {
 export interface SchedulePopoverProps {
   kind: string;
   label: string;
+  /** Scopes this kind accepts (CL-4110). Defaults to personal-only. */
+  allowedScopes?: readonly ScheduleScope[];
+  defaultScope?: ScheduleScope;
 }
 
 function ClockIcon() {
@@ -65,26 +69,44 @@ function HourPicker({
   );
 }
 
+function scopeLabel(scope: ScheduleScope): string {
+  return scope === "tenant" ? "Everyone" : "Just for me";
+}
+
 // The schedule affordance for a single catalog workflow: opens a popover that
 // either creates a daily schedule (local-time hour picker, stored as UTC) or,
 // when one already exists for this workflow, surfaces its state with inline
-// pause/resume and an hour edit.
-export function SchedulePopover({ kind, label }: SchedulePopoverProps) {
+// pause/resume and an hour edit. Scope (Just for me | Everyone) is chosen at
+// attach time when the kind allows both (CL-4111 / CL-4112).
+export function SchedulePopover({
+  kind,
+  label,
+  allowedScopes = ["personal"],
+  defaultScope = "personal",
+}: SchedulePopoverProps) {
   const reduceMotion = useReducedMotion();
   const [open, setOpen] = useState(false);
   const [draftHourUtc, setDraftHourUtc] = useState(() => localHourToUtc(8));
+  const [draftScope, setDraftScope] = useState<ScheduleScope>(defaultScope);
   const [error, setError] = useState<string | null>(null);
 
   const { data: schedules } = useMeSchedules();
-  const existing = schedules?.find((s) => s.workflowKind === kind) ?? null;
+  // Prefer personal when both exist for the same kind (allowed by uniqueness).
+  const existing =
+    schedules?.find(
+      (s) => s.workflowKind === kind && s.scope === "personal",
+    ) ??
+    schedules?.find((s) => s.workflowKind === kind) ??
+    null;
 
   const createSchedule = useCreateSchedule();
   const updateSchedule = useUpdateSchedule();
+  const showScopePicker = allowedScopes.length > 1 && !existing;
 
   const handleCreate = () => {
     setError(null);
     createSchedule
-      .mutateAsync({ kind, hourUtc: draftHourUtc })
+      .mutateAsync({ kind, hourUtc: draftHourUtc, scope: draftScope })
       .catch((err: unknown) => {
         setError(
           err instanceof Error ? err.message : "Could not save the schedule.",
@@ -121,18 +143,25 @@ export function SchedulePopover({ kind, label }: SchedulePopoverProps) {
     setDraftHourUtc(hourUtc);
   };
 
+  const scopeSuffix =
+    existing?.scope === "tenant"
+      ? " · Everyone"
+      : existing
+        ? " · Just for me"
+        : "";
+
   const triggerLabel =
     existing && existing.enabled
-      ? `Scheduled · ${formatUtcHourLocal(existing.hourUtc)}`
+      ? `Scheduled · ${formatUtcHourLocal(existing.hourUtc)}${scopeSuffix}`
       : existing
-        ? "Schedule paused"
+        ? `Schedule paused${scopeSuffix}`
         : "Schedule";
 
   return (
     <div className="relative">
       <button
         type="button"
-        data-tour="workflow-schedule"
+        data-testid="workflow-schedule"
         aria-expanded={open}
         aria-haspopup="dialog"
         onClick={() => setOpen((v) => !v)}
@@ -174,9 +203,43 @@ export function SchedulePopover({ kind, label }: SchedulePopoverProps) {
               </p>
               <p className="mb-3 text-xs leading-relaxed text-text-3">
                 {existing
-                  ? "Runs every day at the time below, in your local time."
+                  ? existing.scope === "tenant"
+                    ? "Runs once for the workspace every day at the time below. Outcomes go to everyone's inbox."
+                    : "Runs every day at the time below, in your local time."
                   : `Run "${label}" every day at a time you pick.`}
               </p>
+
+              {showScopePicker && (
+                <fieldset className="mb-3">
+                  <legend className="mb-1.5 text-xs font-semibold uppercase tracking-[0.05em] text-text-3">
+                    Who is this for
+                  </legend>
+                  <div className="flex flex-col gap-1.5">
+                    {allowedScopes.map((scope) => (
+                      <label
+                        key={scope}
+                        className="flex cursor-pointer items-center gap-2 text-[13px] text-text"
+                      >
+                        <input
+                          type="radio"
+                          name={`sched-scope-${kind}`}
+                          value={scope}
+                          checked={draftScope === scope}
+                          onChange={() => setDraftScope(scope)}
+                          className="accent-accent"
+                        />
+                        {scopeLabel(scope)}
+                      </label>
+                    ))}
+                  </div>
+                </fieldset>
+              )}
+
+              {existing && (
+                <p className="mb-2 text-xs font-medium text-text-2">
+                  {scopeLabel(existing.scope)}
+                </p>
+              )}
 
               <label
                 htmlFor={`sched-hour-${kind}`}

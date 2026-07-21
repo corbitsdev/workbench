@@ -886,8 +886,8 @@ export type PrincipalMailboxRow = typeof principalMailbox.$inferSelect;
 // workflow run on a daily UTC-hour cadence. The hub scheduler loads enabled
 // rows each tick and starts a run for any whose target hour has arrived and has
 // not fired today (tracked by `last_fired_day_utc`, the integer UTC day index
-// floor(ms / 86_400_000)). Only `hour_utc` is honored today. Unique per
-// (tenant, owner, kind) so the boot heartbeat seeder is idempotent.
+// floor(ms / 86_400_000)). Only `hour_utc` is honored today.
+// Unique per scope (CL-4108): personal → (tenant, owner, kind); tenant → (tenant, kind).
 export const scheduledTrigger = pgTable(
   "scheduled_trigger",
   {
@@ -896,6 +896,8 @@ export const scheduledTrigger = pgTable(
     ownerMemberPrincipalId: text("owner_member_principal_id").notNull(),
     workflowKind: text("workflow_kind").notNull(),
     hourUtc: integer("hour_utc").notNull(),
+    // personal = Just for me; tenant = Everyone (CL-4108).
+    scope: text("scope").notNull().default("personal"),
     triggerPayload: jsonb("trigger_payload")
       .$type<Record<string, unknown>>()
       .notNull()
@@ -911,9 +913,21 @@ export const scheduledTrigger = pgTable(
       .$onUpdate(() => new Date()),
   },
   (t) => ({
-    scheduledTriggerOwnerKindUniq: unique(
-      "scheduled_trigger_owner_kind_uniq",
-    ).on(t.tenantId, t.ownerMemberPrincipalId, t.workflowKind),
+    scheduledTriggerScopeCheck: check(
+      "scheduled_trigger_scope_check",
+      sql`${t.scope} IN ('personal', 'tenant')`,
+    ),
+    // Partial uniques (CL-4108): personal is per owner+kind; tenant is per tenant+kind.
+    scheduledTriggerPersonalOwnerKindUniq: uniqueIndex(
+      "scheduled_trigger_personal_owner_kind_uniq",
+    )
+      .on(t.tenantId, t.ownerMemberPrincipalId, t.workflowKind)
+      .where(sql`${t.scope} = 'personal'`),
+    scheduledTriggerTenantKindUniq: uniqueIndex(
+      "scheduled_trigger_tenant_kind_uniq",
+    )
+      .on(t.tenantId, t.workflowKind)
+      .where(sql`${t.scope} = 'tenant'`),
   }),
 );
 

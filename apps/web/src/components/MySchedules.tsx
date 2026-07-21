@@ -155,6 +155,9 @@ function ScheduleRow({
       <div className="flex min-w-0 flex-1 flex-col gap-0.5">
         <span className="truncate text-sm font-semibold text-text">
           {label}
+          <span className="ml-1.5 font-normal text-text-3">
+            · {schedule.scope === "tenant" ? "Everyone" : "Just for me"}
+          </span>
         </span>
         <span className="text-xs text-text-3">
           Last fired:{" "}
