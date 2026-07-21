@@ -358,7 +358,12 @@ async function listDeployments(
   const url = apiUrl(config, "/v6/deployments");
   url.searchParams.set(
     "limit",
-    String(normalizeLimit(parsed.limit, briefShaped ? BRIEF_DEFAULT_LIMIT : DEFAULT_LIMIT)),
+    String(
+      normalizeLimit(
+        parsed.limit,
+        briefShaped ? BRIEF_DEFAULT_LIMIT : DEFAULT_LIMIT,
+      ),
+    ),
   );
   if (parsed.projectId !== undefined) {
     url.searchParams.set("projectId", parsed.projectId);

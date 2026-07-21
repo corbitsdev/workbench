@@ -563,7 +563,9 @@ describe("linear_list_issues handler", () => {
       if (body.query.includes("TeamByName")) {
         return Promise.resolve(
           new Response(
-            JSON.stringify({ data: { teams: { nodes: [{ id: "team-uuid" }] } } }),
+            JSON.stringify({
+              data: { teams: { nodes: [{ id: "team-uuid" }] } },
+            }),
             { status: 200, headers: { "Content-Type": "application/json" } },
           ),
         );
@@ -914,8 +916,14 @@ describe("linear_create_issue handler", () => {
       url: "https://linear.app/x/issue/ENG-9",
     };
     const fetcher = makeRoutingFetchStub([
-      { includes: "TeamByName", data: { teams: { nodes: [{ id: "team-uuid" }] } } },
-      { includes: "issueCreate", data: { issueCreate: { success: true, issue } } },
+      {
+        includes: "TeamByName",
+        data: { teams: { nodes: [{ id: "team-uuid" }] } },
+      },
+      {
+        includes: "issueCreate",
+        data: { issueCreate: { success: true, issue } },
+      },
     ]);
     const runner = createToolRunner(
       createLinearTools({ apiKey: "k", fetcher }),
@@ -957,8 +965,14 @@ describe("linear_create_issue handler", () => {
   it("omits optional fields when not provided", async () => {
     const issue = { id: "uuid-1", identifier: "ENG-1", title: "T", url: "u" };
     const fetcher = makeRoutingFetchStub([
-      { includes: "TeamByName", data: { teams: { nodes: [{ id: "team-uuid" }] } } },
-      { includes: "issueCreate", data: { issueCreate: { success: true, issue } } },
+      {
+        includes: "TeamByName",
+        data: { teams: { nodes: [{ id: "team-uuid" }] } },
+      },
+      {
+        includes: "issueCreate",
+        data: { issueCreate: { success: true, issue } },
+      },
     ]);
     const runner = createToolRunner(
       createLinearTools({ apiKey: "k", fetcher }),
@@ -1026,7 +1040,10 @@ describe("linear_create_issue handler", () => {
 
   it("errors when Linear rejects the create and returns no issue", async () => {
     const fetcher = makeRoutingFetchStub([
-      { includes: "TeamByName", data: { teams: { nodes: [{ id: "team-uuid" }] } } },
+      {
+        includes: "TeamByName",
+        data: { teams: { nodes: [{ id: "team-uuid" }] } },
+      },
       {
         includes: "issueCreate",
         data: { issueCreate: { success: false, issue: null } },
@@ -1046,7 +1063,9 @@ describe("linear_create_issue handler", () => {
     );
 
     expect(result.isError).toBe(true);
-    expect(result.content).toContain("Linear did not return the issue from issueCreate");
+    expect(result.content).toContain(
+      "Linear did not return the issue from issueCreate",
+    );
     expect(fetcher.mock.calls).toHaveLength(2);
   });
 });

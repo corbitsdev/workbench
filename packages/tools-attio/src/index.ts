@@ -503,7 +503,12 @@ async function fetchNewCompanies(
   if (cutoff !== null) {
     body.filter = { created_at: { $gte: cutoff } };
   }
-  const raw = await fetchAttioJSON(config, url, { method: "POST", body }, signal);
+  const raw = await fetchAttioJSON(
+    config,
+    url,
+    { method: "POST", body },
+    signal,
+  );
   const data = parseDataResponse(raw);
   return Array.isArray(data) ? data : [];
 }
@@ -568,9 +573,7 @@ function taskTimestamp(
   task: unknown,
   field: "created_at" | "completed_at",
 ): string | null {
-  return isRecord(task) && typeof task[field] === "string"
-    ? task[field]
-    : null;
+  return isRecord(task) && typeof task[field] === "string" ? task[field] : null;
 }
 
 function isAtOrAfterCutoff(timestamp: string | null, cutoff: string): boolean {
