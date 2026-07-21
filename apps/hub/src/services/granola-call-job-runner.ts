@@ -12,11 +12,14 @@ import {
   type GranolaCallPipeline,
 } from "./granola-call-pipeline";
 import type { GranolaCallJobQueue } from "./granola-call-job-queue";
+import { DEFAULT_GRANOLA_LEASE_MS } from "./granola-call-job-queue";
 
 const log = getLogger(["services", "granola-call-job-runner"]);
 
 const DEFAULT_TICK_INTERVAL_MS = 15_000;
 const DEFAULT_BATCH_SIZE = 5;
+const DEFAULT_HEARTBEAT_MS = 30_000;
+const DEFAULT_WORKER_ID = "granola-call-job-runner";
 
 const TranscriptItem = type({ "text?": "string" });
 const FullNote = type({
@@ -113,6 +116,9 @@ export interface GranolaCallJobRunnerDeps {
   pipeline: GranolaCallPipeline;
   tickIntervalMs?: number;
   batchSize?: number;
+  leaseMs?: number;
+  heartbeatMs?: number;
+  workerId?: string;
 }
 
 export interface GranolaCallJobRunner {
@@ -127,7 +133,19 @@ async function processJob(
   deps: GranolaCallJobRunnerDeps,
   job: GranolaCallJobRow,
   signal: AbortSignal,
+  workerId: string,
+  leaseMs: number,
+  heartbeatMs: number,
 ): Promise<void> {
+  const heartbeat = setInterval(() => {
+    deps.queue.heartbeat(job.id, workerId, leaseMs).catch((err) => {
+      log.warn("granola call job: heartbeat failed {jobId}", {
+        jobId: job.id,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    });
+  }, heartbeatMs);
+
   try {
     const note = await fetchFullNote(deps.db, job.tenantId, job.noteId, signal);
     const result = await deps.pipeline.processCall({
@@ -144,6 +162,8 @@ async function processJob(
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     await deps.queue.fail(job.id, job.attempts + 1, message);
+  } finally {
+    clearInterval(heartbeat);
   }
 }
 
@@ -153,13 +173,23 @@ export function createGranolaCallJobRunner(
   let timer: ReturnType<typeof setInterval> | undefined;
   const tickIntervalMs = deps.tickIntervalMs ?? DEFAULT_TICK_INTERVAL_MS;
   const batchSize = deps.batchSize ?? DEFAULT_BATCH_SIZE;
+  const leaseMs = deps.leaseMs ?? DEFAULT_GRANOLA_LEASE_MS;
+  const heartbeatMs = deps.heartbeatMs ?? DEFAULT_HEARTBEAT_MS;
+  const workerId = deps.workerId ?? DEFAULT_WORKER_ID;
 
   async function runOnce(): Promise<void> {
-    const jobs = await deps.queue.claimDue(batchSize);
+    const jobs = await deps.queue.claimDue(batchSize, workerId, leaseMs);
     if (jobs.length === 0) return;
     const controller = new AbortController();
     for (const job of jobs) {
-      await processJob(deps, job, controller.signal);
+      await processJob(
+        deps,
+        job,
+        controller.signal,
+        workerId,
+        leaseMs,
+        heartbeatMs,
+      );
     }
   }
 

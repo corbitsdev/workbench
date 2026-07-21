@@ -130,4 +130,28 @@ describe("granola call job queue", () => {
     const reclaimed = await queue.claimDue(10);
     expect(reclaimed).toHaveLength(0);
   });
+
+  test("expired processing lease is reclaimable (process death)", async () => {
+    const queue = createGranolaCallJobQueue(db);
+    await queue.enqueue(TENANT, "note-lease");
+    const first = await queue.claimDue(10, "worker-a", 1);
+    expect(first).toHaveLength(1);
+    await new Promise((r) => setTimeout(r, 15));
+    const second = await queue.claimDue(10, "worker-b", 60_000);
+    expect(second).toHaveLength(1);
+    expect(second[0]?.id).toBe(first[0]?.id);
+    expect(second[0]?.leaseOwner).toBe("worker-b");
+  });
+
+  test("heartbeat keeps a live lease from being reclaimed", async () => {
+    const queue = createGranolaCallJobQueue(db);
+    await queue.enqueue(TENANT, "note-hb");
+    const [job] = await queue.claimDue(10, "worker-a", 40);
+    expect(job).toBeDefined();
+    const ok = await queue.heartbeat(job!.id, "worker-a", 60_000);
+    expect(ok).toBe(true);
+    await new Promise((r) => setTimeout(r, 50));
+    const other = await queue.claimDue(10, "worker-b", 60_000);
+    expect(other).toHaveLength(0);
+  });
 });
