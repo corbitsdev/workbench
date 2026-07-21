@@ -83,7 +83,6 @@ import { Hono } from "hono";
 import {
   createWorkflowRunsRouter,
   deriveWorkflowRunRepoId,
-  type EnsureDeploymentRoutableFn,
 } from "./workflow-runs";
 import type { HubDb } from "../db";
 import { createWorkflowRunStarter } from "../services/workflow-run-starter";
@@ -94,6 +93,7 @@ type WorkflowRunRow = {
   status: string;
   createdAt: string;
   tenantId: string;
+  principalId?: string;
 };
 
 // Captured update calls from the PATCH /status route.
@@ -146,6 +146,24 @@ function makeListDb(
       },
       role: { findMany: mock(() => Promise.resolve([])) },
     },
+    // startRun durable-first path (CL-4069): insert provisioning row, then
+    // setRunDeployment / failRunIfStillProvisioning via update.
+    insert: () => ({
+      values: async () => {},
+    }),
+    update: () => ({
+      set: () => ({
+        where: () => ({
+          then(
+            onFulfilled?: (v: unknown) => unknown,
+            onRejected?: (e: unknown) => unknown,
+          ) {
+            return Promise.resolve(undefined).then(onFulfilled, onRejected);
+          },
+          returning: async () => [],
+        }),
+      }),
+    }),
   } as unknown as HubDb;
 }
 
@@ -177,8 +195,7 @@ function buildApp(db: HubDb, userId = "user-1") {
       runStarter: createWorkflowRunStarter({
         db,
         sessionService: noopSessionService,
-        ensureDeploymentRoutable: () =>
-          Promise.resolve({ reestablished: false }),
+        provisionRunDeployment: async () => ({ deploymentId: "dep-run-fresh" }),
         deploymentDomain: "deploy.example.com",
         cryptoProvider: noopCrypto,
         resolveUserIdentity: noopResolveUserIdentity,
@@ -396,8 +413,9 @@ describe("GET /workflow-runs (workbench-aware visibility)", () => {
         runStarter: createWorkflowRunStarter({
           db,
           sessionService: noopSessionService,
-          ensureDeploymentRoutable: () =>
-            Promise.resolve({ reestablished: false }),
+          provisionRunDeployment: async () => ({
+            deploymentId: "dep-run-fresh",
+          }),
           deploymentDomain: "deploy.example.com",
           cryptoProvider: noopCrypto,
           resolveUserIdentity: noopResolveUserIdentity,
@@ -523,7 +541,11 @@ describe("POST /workflow-runs/:kind/start (shadowing + visibility)", () => {
   function startApp(
     db: HubDb,
     capture: { msg?: { tenantId: string } },
-    ensure?: EnsureDeploymentRoutableFn,
+    provision?: (args: {
+      kind: string;
+      tenantId: string;
+      creatorPrincipalId: string;
+    }) => Promise<{ deploymentId: string }>,
     now?: () => number,
   ) {
     const sessionService = {
@@ -546,13 +568,13 @@ describe("POST /workflow-runs/:kind/start (shadowing + visibility)", () => {
         sessionService,
         cryptoProvider: noopCrypto,
         deploymentDomain: "deploy.example.com",
-        ensureDeploymentRoutable:
-          ensure ?? (() => Promise.resolve({ reestablished: false })),
+        ensureDeploymentRoutable: () =>
+          Promise.resolve({ reestablished: false }),
         runStarter: createWorkflowRunStarter({
           db,
           sessionService,
-          ensureDeploymentRoutable:
-            ensure ?? (() => Promise.resolve({ reestablished: false })),
+          provisionRunDeployment:
+            provision ?? (async () => ({ deploymentId: "dep-run-fresh" })),
           deploymentDomain: "deploy.example.com",
           cryptoProvider: noopCrypto,
           resolveUserIdentity: noopResolveUserIdentity,
@@ -563,7 +585,7 @@ describe("POST /workflow-runs/:kind/start (shadowing + visibility)", () => {
     return parent;
   }
 
-  it("re-establishes the supervisor before delivering, and does not deliver if that fails", async () => {
+  it("provisions a fresh deploy before delivering, and does not deliver if that fails (CL-4069)", async () => {
     userContextImpl = () =>
       Promise.resolve({
         context: { tenantId: "tenant-1", principalId: "p-1" },
@@ -574,21 +596,30 @@ describe("POST /workflow-runs/:kind/start (shadowing + visibility)", () => {
       {
         deploymentId: "dep-wb",
         kind: "deck",
-        status: "idle",
+        status: "deployed",
         createdAt: "2026-06-01T00:00:00.000Z",
         tenantId: "tenant-1",
+        principalId: "p-deployer",
       },
     ];
-    const ensureArgs: { deploymentId: string; kind: string }[] = [];
-    const ensure: EnsureDeploymentRoutableFn = (args) => {
-      ensureArgs.push({ deploymentId: args.deploymentId, kind: args.kind });
-      return Promise.reject(new Error("sidecar down"));
+    const provisionArgs: {
+      kind: string;
+      tenantId: string;
+      creatorPrincipalId: string;
+    }[] = [];
+    const provision = (args: {
+      kind: string;
+      tenantId: string;
+      creatorPrincipalId: string;
+    }) => {
+      provisionArgs.push(args);
+      return Promise.reject(new Error("package registry empty"));
     };
     const capture: { msg?: { tenantId: string } } = {};
     const res = await startApp(
       makeListDb([], candidates),
       capture,
-      ensure,
+      provision,
     ).request(
       new Request("http://local/workflow-runs/deck/start?tenantId=tenant-1", {
         method: "POST",
@@ -597,9 +628,14 @@ describe("POST /workflow-runs/:kind/start (shadowing + visibility)", () => {
       }),
     );
     expect(res.status).toBe(500);
-    // ensure was invoked with the resolved deployment's identity...
-    expect(ensureArgs).toEqual([{ deploymentId: "dep-wb", kind: "deck" }]);
-    // ...and the trigger was NOT delivered because re-establishment failed.
+    expect(provisionArgs).toEqual([
+      {
+        kind: "deck",
+        tenantId: "tenant-1",
+        creatorPrincipalId: "p-deployer",
+      },
+    ]);
+    // Trigger was NOT delivered because provision failed.
     expect(capture.msg).toBeUndefined();
   });
 
@@ -614,16 +650,18 @@ describe("POST /workflow-runs/:kind/start (shadowing + visibility)", () => {
       {
         deploymentId: "dep-global",
         kind: "deck",
-        status: "idle",
+        status: "deployed",
         createdAt: "2026-06-10T00:00:00.000Z",
         tenantId: "tenant-global",
+        principalId: "p-global",
       },
       {
         deploymentId: "dep-wb",
         kind: "deck",
-        status: "idle",
+        status: "deployed",
         createdAt: "2026-06-01T00:00:00.000Z",
         tenantId: "tenant-1",
+        principalId: "p-wb",
       },
     ];
     const capture: { msg?: { tenantId: string } } = {};
@@ -636,7 +674,8 @@ describe("POST /workflow-runs/:kind/start (shadowing + visibility)", () => {
     );
     expect(res.status).toBe(202);
     const body = (await res.json()) as { deploymentId: string };
-    expect(body.deploymentId).toBe("dep-wb");
+    // Fresh per-run deploy id (not the catalog dep-wb).
+    expect(body.deploymentId).toBe("dep-run-fresh");
     expect(capture.msg?.tenantId).toBe("tenant-1");
   });
 
@@ -651,9 +690,10 @@ describe("POST /workflow-runs/:kind/start (shadowing + visibility)", () => {
       {
         deploymentId: "dep-global",
         kind: "deck",
-        status: "idle",
+        status: "deployed",
         createdAt: "2026-06-10T00:00:00.000Z",
         tenantId: "tenant-global",
+        principalId: "p-global",
       },
     ];
     const capture: { msg?: { tenantId: string } } = {};
@@ -679,9 +719,10 @@ describe("POST /workflow-runs/:kind/start (shadowing + visibility)", () => {
       {
         deploymentId: "dep-wb",
         kind: "deck",
-        status: "idle",
+        status: "deployed",
         createdAt: "2026-06-01T00:00:00.000Z",
         tenantId: "tenant-1",
+        principalId: "p-1",
       },
     ];
     const capture: { msg?: { tenantId: string } } = {};

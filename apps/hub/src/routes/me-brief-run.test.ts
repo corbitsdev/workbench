@@ -67,7 +67,12 @@ let startRunResult:
   | { ok: true; deploymentId: string; runId: string }
   | {
       ok: false;
-      reason: "not_found" | "delivery_failed" | "rate_limited";
+      reason:
+        | "not_found"
+        | "provision_failed"
+        | "attach_failed"
+        | "delivery_failed"
+        | "rate_limited";
       message: string;
     } = {
   ok: true,
