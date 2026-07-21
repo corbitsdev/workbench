@@ -194,8 +194,9 @@ describe("linear_list_issues handler", () => {
 
     const body = lastBody(fetcher);
     expect(body.variables).toEqual({
-      first: 10,
+      first: 50,
       filter: { updatedAt: { gt: "2026-07-01T00:00:00.000Z" } },
+      orderBy: "updatedAt",
     });
   });
 
@@ -247,7 +248,11 @@ describe("linear_list_issues handler", () => {
 
     expect(result.isError).toBeUndefined();
     expect(fetcher).toHaveBeenCalledTimes(1);
-    expect(JSON.parse(String(result.content))).toEqual({ issues: nodes });
+    expect(JSON.parse(String(result.content))).toEqual({
+      newIssues: [],
+      completedIssues: [],
+      updatedIssues: nodes,
+    });
   });
 
   it("carries the Linear issue's url straight through brief-shaping (CL-3504)", async () => {
@@ -273,8 +278,10 @@ describe("linear_list_issues handler", () => {
       new AbortController().signal,
     );
 
-    const issues = JSON.parse(String(result.content)).issues;
-    expect(issues[0].url).toBe("https://linear.app/workbench/issue/ENG-1");
+    const parsed = JSON.parse(String(result.content));
+    expect(parsed.updatedIssues[0].url).toBe(
+      "https://linear.app/workbench/issue/ENG-1",
+    );
   });
 
   it("skips the network call and reports skipped when linear is not in enabledSources", async () => {
@@ -316,7 +323,11 @@ describe("linear_list_issues handler", () => {
       new AbortController().signal,
     );
 
-    expect(JSON.parse(String(result.content))).toEqual({ issues: nodes });
+    expect(JSON.parse(String(result.content))).toEqual({
+      newIssues: [],
+      completedIssues: [],
+      updatedIssues: nodes,
+    });
   });
 
   it("returns a paginated connection for non-brief callers", async () => {
@@ -354,7 +365,11 @@ describe("linear_list_issues handler", () => {
     );
 
     expect(result.isError).toBeUndefined();
-    expect(JSON.parse(String(result.content))).toEqual({ issues: [] });
+    expect(JSON.parse(String(result.content))).toEqual({
+      newIssues: [],
+      completedIssues: [],
+      updatedIssues: [],
+    });
   });
 
   it("forwards orderBy as a PaginationOrderBy scalar", async () => {
@@ -376,6 +391,203 @@ describe("linear_list_issues handler", () => {
     expect(body.variables.orderBy).toBe("updatedAt");
   });
 
+  it("forces updatedAt ordering on brief-shaped calls with a cutoff (CL-4084)", async () => {
+    const fetcher = makeFetchStub({ data: { issues: { nodes: [] } } });
+    const runner = createToolRunner(
+      createLinearTools({ apiKey: "k", fetcher }),
+    );
+
+    await runner.run(
+      {
+        id: "c1",
+        name: "linear_list_issues",
+        arguments: {
+          enabledSources: ["linear"],
+          createdAfter: "2026-07-01T00:00:00.000Z",
+        },
+      },
+      new AbortController().signal,
+    );
+
+    const body = lastBody(fetcher);
+    expect(body.variables.orderBy).toBe("updatedAt");
+  });
+
+  it("respects an explicit orderBy on brief-shaped calls instead of forcing updatedAt (CL-4084)", async () => {
+    const fetcher = makeFetchStub({ data: { issues: { nodes: [] } } });
+    const runner = createToolRunner(
+      createLinearTools({ apiKey: "k", fetcher }),
+    );
+
+    await runner.run(
+      {
+        id: "c1",
+        name: "linear_list_issues",
+        arguments: {
+          enabledSources: ["linear"],
+          createdAfter: "2026-07-01T00:00:00.000Z",
+          orderBy: "createdAt",
+        },
+      },
+      new AbortController().signal,
+    );
+
+    const body = lastBody(fetcher);
+    expect(body.variables.orderBy).toBe("createdAt");
+  });
+
+  it("does not force orderBy on brief-shaped calls without a cutoff (CL-4084)", async () => {
+    const fetcher = makeFetchStub({ data: { issues: { nodes: [] } } });
+    const runner = createToolRunner(
+      createLinearTools({ apiKey: "k", fetcher }),
+    );
+
+    await runner.run(
+      {
+        id: "c1",
+        name: "linear_list_issues",
+        arguments: { enabledSources: ["linear"] },
+      },
+      new AbortController().signal,
+    );
+
+    const body = lastBody(fetcher);
+    expect(body.variables.orderBy).toBeUndefined();
+  });
+
+  it("widens the brief field selection to createdAt, completedAt, priority, state.type, project (CL-4084)", async () => {
+    const fetcher = makeFetchStub({ data: { issues: { nodes: [] } } });
+    const runner = createToolRunner(
+      createLinearTools({ apiKey: "k", fetcher }),
+    );
+
+    await runner.run(
+      {
+        id: "c1",
+        name: "linear_list_issues",
+        arguments: { enabledSources: ["linear"] },
+      },
+      new AbortController().signal,
+    );
+
+    const body = lastBody(fetcher);
+    expect(body.query).toContain("createdAt");
+    expect(body.query).toContain("completedAt");
+    expect(body.query).toContain("priority");
+    expect(body.query).toContain("state { name type }");
+    expect(body.query).toContain("project { name }");
+  });
+
+  it("defaults brief-shaped calls to a page size of 50 (CL-4084)", async () => {
+    const fetcher = makeFetchStub({ data: { issues: { nodes: [] } } });
+    const runner = createToolRunner(
+      createLinearTools({ apiKey: "k", fetcher }),
+    );
+
+    await runner.run(
+      {
+        id: "c1",
+        name: "linear_list_issues",
+        arguments: { enabledSources: ["linear"] },
+      },
+      new AbortController().signal,
+    );
+
+    const body = lastBody(fetcher);
+    expect(body.variables.first).toBe(50);
+  });
+
+  it("keeps the non-brief default page size at 10 (CL-4084)", async () => {
+    const fetcher = makeFetchStub({ data: { issues: { nodes: [] } } });
+    const runner = createToolRunner(
+      createLinearTools({ apiKey: "k", fetcher }),
+    );
+
+    await runner.run(
+      { id: "c1", name: "linear_list_issues", arguments: {} },
+      new AbortController().signal,
+    );
+
+    const body = lastBody(fetcher);
+    expect(body.variables.first).toBe(10);
+  });
+
+  it("buckets brief-shaped issues into newIssues, completedIssues, updatedIssues by cutoff (CL-4084)", async () => {
+    const cutoff = "2026-07-01T00:00:00.000Z";
+    const nodes = [
+      {
+        id: "uuid-new",
+        identifier: "ENG-1",
+        createdAt: "2026-07-05T00:00:00.000Z",
+        updatedAt: "2026-07-05T00:00:00.000Z",
+      },
+      {
+        id: "uuid-completed",
+        identifier: "ENG-2",
+        createdAt: "2026-06-01T00:00:00.000Z",
+        completedAt: "2026-07-10T00:00:00.000Z",
+        updatedAt: "2026-07-10T00:00:00.000Z",
+      },
+      {
+        id: "uuid-updated",
+        identifier: "ENG-3",
+        createdAt: "2026-06-01T00:00:00.000Z",
+        updatedAt: "2026-07-08T00:00:00.000Z",
+      },
+    ];
+    const fetcher = makeFetchStub({ data: { issues: { nodes } } });
+    const runner = createToolRunner(
+      createLinearTools({ apiKey: "k", fetcher }),
+    );
+
+    const result = await runner.run(
+      {
+        id: "c1",
+        name: "linear_list_issues",
+        arguments: { enabledSources: ["linear"], updatedAfter: cutoff },
+      },
+      new AbortController().signal,
+    );
+
+    expect(JSON.parse(String(result.content))).toEqual({
+      newIssues: [nodes[0]],
+      completedIssues: [nodes[1]],
+      updatedIssues: [nodes[2]],
+    });
+  });
+
+  it("buckets an issue created and completed inside the window as completed, not new (CL-4084)", async () => {
+    const cutoff = "2026-07-01T00:00:00.000Z";
+    const nodes = [
+      {
+        id: "uuid-quick-fix",
+        identifier: "ENG-9",
+        createdAt: "2026-07-05T00:00:00.000Z",
+        completedAt: "2026-07-05T12:00:00.000Z",
+        updatedAt: "2026-07-05T12:00:00.000Z",
+      },
+    ];
+    const fetcher = makeFetchStub({ data: { issues: { nodes } } });
+    const runner = createToolRunner(
+      createLinearTools({ apiKey: "k", fetcher }),
+    );
+
+    const result = await runner.run(
+      {
+        id: "c1",
+        name: "linear_list_issues",
+        arguments: { enabledSources: ["linear"], updatedAfter: cutoff },
+      },
+      new AbortController().signal,
+    );
+
+    expect(JSON.parse(String(result.content))).toEqual({
+      newIssues: [],
+      completedIssues: [nodes[0]],
+      updatedIssues: [],
+    });
+  });
+
   it("scopes to a team and caps first at the issue list maximum", async () => {
     const nodes = [{ id: "uuid-1", identifier: "ENG-1" }];
     const fetcher = mock((_input: string, init: RequestInit) => {
@@ -383,7 +595,9 @@ describe("linear_list_issues handler", () => {
       if (body.query.includes("TeamByName")) {
         return Promise.resolve(
           new Response(
-            JSON.stringify({ data: { teams: { nodes: [{ id: "team-uuid" }] } } }),
+            JSON.stringify({
+              data: { teams: { nodes: [{ id: "team-uuid" }] } },
+            }),
             { status: 200, headers: { "Content-Type": "application/json" } },
           ),
         );
@@ -734,8 +948,14 @@ describe("linear_create_issue handler", () => {
       url: "https://linear.app/x/issue/ENG-9",
     };
     const fetcher = makeRoutingFetchStub([
-      { includes: "TeamByName", data: { teams: { nodes: [{ id: "team-uuid" }] } } },
-      { includes: "issueCreate", data: { issueCreate: { success: true, issue } } },
+      {
+        includes: "TeamByName",
+        data: { teams: { nodes: [{ id: "team-uuid" }] } },
+      },
+      {
+        includes: "issueCreate",
+        data: { issueCreate: { success: true, issue } },
+      },
     ]);
     const runner = createToolRunner(
       createLinearTools({ apiKey: "k", fetcher }),
@@ -777,8 +997,14 @@ describe("linear_create_issue handler", () => {
   it("omits optional fields when not provided", async () => {
     const issue = { id: "uuid-1", identifier: "ENG-1", title: "T", url: "u" };
     const fetcher = makeRoutingFetchStub([
-      { includes: "TeamByName", data: { teams: { nodes: [{ id: "team-uuid" }] } } },
-      { includes: "issueCreate", data: { issueCreate: { success: true, issue } } },
+      {
+        includes: "TeamByName",
+        data: { teams: { nodes: [{ id: "team-uuid" }] } },
+      },
+      {
+        includes: "issueCreate",
+        data: { issueCreate: { success: true, issue } },
+      },
     ]);
     const runner = createToolRunner(
       createLinearTools({ apiKey: "k", fetcher }),
@@ -846,7 +1072,10 @@ describe("linear_create_issue handler", () => {
 
   it("errors when Linear rejects the create and returns no issue", async () => {
     const fetcher = makeRoutingFetchStub([
-      { includes: "TeamByName", data: { teams: { nodes: [{ id: "team-uuid" }] } } },
+      {
+        includes: "TeamByName",
+        data: { teams: { nodes: [{ id: "team-uuid" }] } },
+      },
       {
         includes: "issueCreate",
         data: { issueCreate: { success: false, issue: null } },
@@ -866,7 +1095,9 @@ describe("linear_create_issue handler", () => {
     );
 
     expect(result.isError).toBe(true);
-    expect(result.content).toContain("Linear did not return the issue from issueCreate");
+    expect(result.content).toContain(
+      "Linear did not return the issue from issueCreate",
+    );
     expect(fetcher.mock.calls).toHaveLength(2);
   });
 });
