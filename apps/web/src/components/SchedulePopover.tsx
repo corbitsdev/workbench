@@ -10,6 +10,7 @@ import {
 import {
   formatUtcHourLocal,
   localHourToUtc,
+  scheduleScopeLabel,
   utcHourOptions,
 } from "../lib/schedule-time";
 
@@ -67,10 +68,6 @@ function HourPicker({
       ))}
     </select>
   );
-}
-
-function scopeLabel(scope: ScheduleScope): string {
-  return scope === "tenant" ? "Everyone" : "Just for me";
 }
 
 // The schedule affordance for a single catalog workflow: opens a popover that
@@ -204,8 +201,8 @@ export function SchedulePopover({
               <p className="mb-3 text-xs leading-relaxed text-text-3">
                 {existing
                   ? existing.scope === "tenant"
-                    ? "Runs once for the workspace every day at the time below. Outcomes go to everyone's inbox."
-                    : "Runs every day at the time below, in your local time."
+                    ? "One shared run for the workspace each day — not once per person. Outcomes land in every member's inbox."
+                    : "Runs every day at the time below, in your local time — only for you."
                   : `Run "${label}" every day at a time you pick.`}
               </p>
 
@@ -218,7 +215,7 @@ export function SchedulePopover({
                     {allowedScopes.map((scope) => (
                       <label
                         key={scope}
-                        className="flex cursor-pointer items-center gap-2 text-[13px] text-text"
+                        className="flex cursor-pointer items-start gap-2 text-[13px] text-text"
                       >
                         <input
                           type="radio"
@@ -226,9 +223,16 @@ export function SchedulePopover({
                           value={scope}
                           checked={draftScope === scope}
                           onChange={() => setDraftScope(scope)}
-                          className="accent-accent"
+                          className="mt-0.5 accent-accent"
                         />
-                        {scopeLabel(scope)}
+                        <span>
+                          <span className="font-medium">{scheduleScopeLabel(scope)}</span>
+                          <span className="mt-0.5 block text-xs text-text-3">
+                            {scope === "tenant"
+                              ? "Workspace (tenant): one shared run; outcomes fan out to inboxes."
+                              : "Only you own the schedule and receive the outcome."}
+                          </span>
+                        </span>
                       </label>
                     ))}
                   </div>
@@ -237,7 +241,7 @@ export function SchedulePopover({
 
               {existing && (
                 <p className="mb-2 text-xs font-medium text-text-2">
-                  {scopeLabel(existing.scope)}
+                  {scheduleScopeLabel(existing.scope)}
                 </p>
               )}
 

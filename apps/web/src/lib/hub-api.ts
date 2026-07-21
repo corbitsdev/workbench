@@ -342,6 +342,98 @@ export async function getOwnerWorkflows(): Promise<OwnerWorkflows> {
   return parsed;
 }
 
+/** Everyone (tenant-scoped) schedules for the root workbench (owner-guarded, CL-4113). */
+export async function getOwnerSchedules(): Promise<ScheduledTrigger[]> {
+  const raw = await hubFetch<unknown>("GET", "v1/owner/schedules");
+  const parsed = ScheduledTriggerListResponseSchema(raw);
+  if (parsed instanceof type.errors) {
+    throw new Error(`Malformed /owner/schedules response: ${parsed.summary}`);
+  }
+  return parsed.items;
+}
+
+/** Pause or retarget an Everyone schedule (owner-guarded, CL-4113). */
+export async function updateOwnerSchedule(
+  id: string,
+  body: UpdateScheduledTriggerBody,
+): Promise<ScheduledTrigger> {
+  return parseSchedule(
+    await hubFetch<unknown>(
+      "PATCH",
+      `v1/owner/schedules/${encodeURIComponent(id)}`,
+      body,
+    ),
+  );
+}
+
+export type WorkUnitHealth = {
+  byStatus: Record<string, number>;
+  byKindStatus?: Array<{ kind: string; status: string; count: number }>;
+  oldestPendingAgeMs: number | null;
+  deadCount: number;
+  agedLeasedCount: number;
+};
+
+export type OwnerWorkUnitRow = {
+  id: string;
+  tenantId: string;
+  kind: string;
+  idempotencyKey: string;
+  status: string;
+  attempts: number;
+  maxAttempts?: number;
+  lastError: string | null;
+  leaseOwner?: string | null;
+  leaseUntil?: string | null;
+  updatedAt: string;
+  createdAt?: string;
+};
+
+/** Work-unit queue health (owner-guarded, WQ.6). */
+export async function getOwnerWorkUnitHealth(): Promise<WorkUnitHealth> {
+  return hubFetch<WorkUnitHealth>("GET", "v1/owner/work-units/health");
+}
+
+/** Dead-lettered work units (owner-guarded, WQ.6). */
+export async function getOwnerDeadWorkUnits(): Promise<OwnerWorkUnitRow[]> {
+  const raw = await hubFetch<{ items: OwnerWorkUnitRow[] }>(
+    "GET",
+    "v1/owner/work-units/dead",
+  );
+  return raw.items ?? [];
+}
+
+/** Aged leased work units (owner-guarded, WQ.6). */
+export async function getOwnerAgedLeasedWorkUnits(): Promise<
+  OwnerWorkUnitRow[]
+> {
+  const raw = await hubFetch<{ items: OwnerWorkUnitRow[] }>(
+    "GET",
+    "v1/owner/work-units/aged-leased",
+  );
+  return raw.items ?? [];
+}
+
+/** Retry a dead work unit (owner-guarded, WQ.6). */
+export async function retryOwnerWorkUnit(
+  id: string,
+): Promise<{ ok: boolean; id: string }> {
+  return hubFetch<{ ok: boolean; id: string }>(
+    "POST",
+    `v1/owner/work-units/${encodeURIComponent(id)}/retry`,
+  );
+}
+
+/** Discard a dead work unit without requeue (owner-guarded, WQ.6). */
+export async function discardOwnerWorkUnit(
+  id: string,
+): Promise<{ ok: boolean; id: string }> {
+  return hubFetch<{ ok: boolean; id: string }>(
+    "POST",
+    `v1/owner/work-units/${encodeURIComponent(id)}/discard`,
+  );
+}
+
 /** Tenant members with their owner-role status (owner-guarded, CL-3634). */
 export async function getOwnerMembers(): Promise<OwnerMembersState> {
   const raw = await hubFetch<unknown>("GET", "v1/owner/members");

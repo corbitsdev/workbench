@@ -1,0 +1,72 @@
+/// <reference types="bun" />
+import "../../test-setup";
+import { afterEach, beforeEach, describe, expect, it, mock } from "bun:test";
+import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import React from "react";
+
+const getOwnerSchedules = mock(async () => [] as Array<Record<string, unknown>>);
+const updateOwnerSchedule = mock(
+  async (_id: string, _body: { enabled?: boolean; hourUtc?: number }) => ({}),
+);
+
+mock.module("../../lib/hub-api", () => ({
+  getOwnerSchedules,
+  updateOwnerSchedule,
+}));
+
+const { OwnerSchedules } = await import("./OwnerSchedules");
+
+function renderPage() {
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
+  return render(
+    React.createElement(
+      QueryClientProvider,
+      { client },
+      React.createElement(OwnerSchedules),
+    ),
+  );
+}
+
+describe("OwnerSchedules", () => {
+  beforeEach(() => {
+    getOwnerSchedules.mockReset();
+    updateOwnerSchedule.mockReset();
+  });
+
+  afterEach(() => {
+    cleanup();
+  });
+
+  it("explains Everyone semantics and empty state", async () => {
+    getOwnerSchedules.mockResolvedValue([]);
+    renderPage();
+    await waitFor(() => {
+      expect(document.body.textContent).toContain("Everyone");
+    });
+    expect(document.body.textContent).toContain("No Everyone schedules yet");
+  });
+
+  it("lists a tenant schedule with pause control", async () => {
+    getOwnerSchedules.mockResolvedValue([
+      {
+        id: "sch_1",
+        workflowKind: "deck",
+        hourUtc: 14,
+        enabled: true,
+        scope: "tenant",
+        lastFiredDayUtc: null,
+        lastRunId: null,
+        nextFireAt: "2026-07-22T14:00:00.000Z",
+        createdAt: "2026-07-01T00:00:00.000Z",
+      },
+    ]);
+    renderPage();
+    await waitFor(() => {
+      expect(screen.getByText("deck")).toBeTruthy();
+    });
+    expect(screen.getByRole("button", { name: "Pause" })).toBeTruthy();
+  });
+});

@@ -53,6 +53,8 @@ import { OwnerCatalog } from "./pages/admin/OwnerCatalog";
 import { OwnerGammaTemplates } from "./pages/admin/OwnerGammaTemplates";
 import { OwnerCapabilities } from "./pages/admin/OwnerCapabilities";
 import { OwnerWorkflows } from "./pages/admin/OwnerWorkflows";
+import { OwnerSchedules } from "./pages/admin/OwnerSchedules";
+import { OwnerWorkUnits } from "./pages/admin/OwnerWorkUnits";
 import { OwnerMembers } from "./pages/admin/OwnerMembers";
 import { OwnerDemos } from "./pages/admin/OwnerDemos";
 import {
@@ -358,6 +360,8 @@ export const router = createBrowserRouter([
                     element: <OwnerGammaTemplates />,
                   },
                   { path: "workflows", element: <OwnerWorkflows /> },
+                  { path: "schedules", element: <OwnerSchedules /> },
+                  { path: "work-units", element: <OwnerWorkUnits /> },
                   { path: "demos", element: <OwnerDemos /> },
                   { path: "members", element: <OwnerMembers /> },
                   // Legacy owner sub-routes → their new homes, still under

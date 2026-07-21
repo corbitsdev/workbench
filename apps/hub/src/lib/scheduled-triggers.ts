@@ -398,3 +398,54 @@ export async function scheduleScopeForRun(
   if (scope === "tenant" || scope === "personal") return scope;
   return null;
 }
+
+/**
+ * Platform-owner control plane: every **Everyone** (`scope = tenant`) schedule
+ * in a tenant (CL-4113). Not paginated — tenant-scoped schedules are expected
+ * to stay sparse (one row per kind).
+ */
+export async function listTenantScopedSchedules(
+  db: HubDb,
+  tenantId: string,
+): Promise<ScheduledTriggerRow[]> {
+  return db.query.scheduledTrigger.findMany({
+    where: and(
+      eq(scheduledTrigger.tenantId, tenantId),
+      eq(scheduledTrigger.scope, "tenant"),
+    ),
+    orderBy: [desc(scheduledTrigger.createdAt), desc(scheduledTrigger.id)],
+  });
+}
+
+/**
+ * Platform-owner mutation of an Everyone schedule (CL-4113). Matches by
+ * (tenant, id, scope=tenant) so owners can pause/retarget any workspace
+ * schedule without being the creating principal.
+ */
+export async function updateTenantScopedSchedule(
+  db: HubDb,
+  args: {
+    tenantId: string;
+    id: string;
+    enabled?: boolean;
+    hourUtc?: number;
+  },
+): Promise<ScheduledTriggerRow | null> {
+  const patch: { enabled?: boolean; hourUtc?: number } = {};
+  if (args.enabled !== undefined) patch.enabled = args.enabled;
+  if (args.hourUtc !== undefined) patch.hourUtc = args.hourUtc;
+  if (Object.keys(patch).length === 0) return null;
+
+  const [updated] = await db
+    .update(scheduledTrigger)
+    .set(patch)
+    .where(
+      and(
+        eq(scheduledTrigger.id, args.id),
+        eq(scheduledTrigger.tenantId, args.tenantId),
+        eq(scheduledTrigger.scope, "tenant"),
+      ),
+    )
+    .returning();
+  return updated ?? null;
+}

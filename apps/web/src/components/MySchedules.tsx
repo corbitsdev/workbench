@@ -12,6 +12,7 @@ import { useWorkflowsCatalog } from "../hooks/use-workflows-catalog";
 import {
   formatLastFired,
   formatNextFire,
+  scheduleScopeLabel,
   utcHourOptions,
 } from "../lib/schedule-time";
 import { scheduleRunDeepLink } from "../lib/schedule-run-link";
@@ -156,7 +157,8 @@ function ScheduleRow({
         <span className="truncate text-sm font-semibold text-text">
           {label}
           <span className="ml-1.5 font-normal text-text-3">
-            · {schedule.scope === "tenant" ? "Everyone" : "Just for me"}
+            · {scheduleScopeLabel(schedule.scope)}
+
           </span>
         </span>
         <span className="text-xs text-text-3">
@@ -243,7 +245,9 @@ export function MySchedules({ tenantId, embedded = false }: MySchedulesProps) {
             My schedules
           </h2>
           <p className="text-[12px] text-text-3">
-            Workflows you&rsquo;ve put on a daily cadence.
+            Daily automations you own.{" "}
+            <span className="text-text-2">Everyone</span> schedules run once for
+            the workspace and fan outcomes into inboxes — not once per person.
           </p>
         </div>
       )}

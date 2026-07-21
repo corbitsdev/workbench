@@ -152,7 +152,11 @@ describe("SchedulePopover", () => {
 
     await user.click(screen.getByRole("button", { name: "Schedule" }));
     const dialog = await screen.findByRole("dialog");
-    await user.click(within(dialog).getByLabelText("Everyone"));
+    expect(within(dialog).getByText("Just for me")).toBeTruthy();
+    expect(within(dialog).getByText("Everyone")).toBeTruthy();
+    expect(dialog.textContent).toContain("Workspace (tenant)");
+    expect(dialog.textContent).toContain("one shared run");
+    await user.click(within(dialog).getByRole("radio", { name: /Everyone/ }));
     await user.click(within(dialog).getByRole("button", { name: "Schedule" }));
 
     await waitFor(() => expect(body).not.toBeNull());

@@ -6,9 +6,11 @@ import {
   deleteOwnerSchedule,
   ensureOwnerSchedule,
   listEnabledSchedules,
+  listTenantScopedSchedules,
   markScheduleFired,
   toApiSchedule,
   updateOwnerSchedule,
+  updateTenantScopedSchedule,
 } from "./scheduled-triggers";
 
 function dbRow(
@@ -261,5 +263,71 @@ describe("ensureOwnerSchedule", () => {
     });
 
     expect(inserted).toBe(false);
+  });
+});
+
+describe("listTenantScopedSchedules (CL-4113)", () => {
+  it("queries only tenant-scoped rows for the given tenant", async () => {
+    let findOpts: unknown;
+    const rows = [dbRow({ scope: "tenant", workflowKind: "deck" })];
+    const db = {
+      query: {
+        scheduledTrigger: {
+          findMany: async (opts: unknown) => {
+            findOpts = opts;
+            return rows;
+          },
+        },
+      },
+    } as unknown as HubDb;
+
+    const result = await listTenantScopedSchedules(db, "tenant-root");
+    expect(result).toEqual(rows);
+    expect(findOpts).toBeDefined();
+  });
+});
+
+describe("updateTenantScopedSchedule (CL-4113)", () => {
+  it("returns null when no tenant-scoped row matches", async () => {
+    const db = {
+      update: () => ({
+        set: () => ({
+          where: () => ({
+            returning: async () => [],
+          }),
+        }),
+      }),
+    } as unknown as HubDb;
+    expect(
+      await updateTenantScopedSchedule(db, {
+        tenantId: "tenant-root",
+        id: "sch-missing",
+        enabled: false,
+      }),
+    ).toBeNull();
+  });
+
+  it("returns the updated row when a tenant schedule matches", async () => {
+    const updated = dbRow({
+      id: "sch-tenant",
+      scope: "tenant",
+      enabled: false,
+    });
+    const db = {
+      update: () => ({
+        set: () => ({
+          where: () => ({
+            returning: async () => [updated],
+          }),
+        }),
+      }),
+    } as unknown as HubDb;
+    expect(
+      await updateTenantScopedSchedule(db, {
+        tenantId: "tenant-root",
+        id: "sch-tenant",
+        enabled: false,
+      }),
+    ).toEqual(updated);
   });
 });
