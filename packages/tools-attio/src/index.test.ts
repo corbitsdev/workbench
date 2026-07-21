@@ -1432,7 +1432,7 @@ describe("attio_recent_activity handler", () => {
           { status: 200 },
         );
       }
-      if (url.includes("is_completed=false")) {
+      if (url.includes("sort=created_at%3Aasc")) {
         return new Response(
           JSON.stringify({
             data: [
@@ -1547,18 +1547,18 @@ describe("attio_recent_activity handler", () => {
       (c) =>
         c.url.includes("/v2/tasks") && c.url.includes("sort=created_at%3Adesc"),
     );
-    expect(newTasksCall?.url).not.toContain("is_completed");
+    expect(newTasksCall?.url).toContain("is_completed=false");
     const completedTasksCall = calls.find((c) =>
       c.url.includes("is_completed=true"),
     );
     expect(completedTasksCall?.url).toContain("sort=completed_at%3Adesc");
     const longOpenTasksCall = calls.find((c) =>
-      c.url.includes("is_completed=false"),
+      c.url.includes("sort=created_at%3Aasc"),
     );
-    expect(longOpenTasksCall?.url).toContain("sort=created_at%3Aasc");
+    expect(longOpenTasksCall?.url).toContain("is_completed=false");
   });
 
-  it("client-side filters newTasks/completedTasks by createdAfter and leaves longOpenTasks unfiltered", async () => {
+  it("client-side filters newTasks/completedTasks by createdAfter and drops post-cutoff tasks from longOpenTasks", async () => {
     const fetcher: AttioFetch = mock(async (url: string) => {
       if (url.includes("/records/query")) {
         return new Response(JSON.stringify({ data: [] }), { status: 200 });
@@ -1582,7 +1582,7 @@ describe("attio_recent_activity handler", () => {
           { status: 200 },
         );
       }
-      if (url.includes("is_completed=false")) {
+      if (url.includes("sort=created_at%3Aasc")) {
         return new Response(
           JSON.stringify({
             data: [
@@ -1590,6 +1590,15 @@ describe("attio_recent_activity handler", () => {
                 id: { task_id: "long_open" },
                 content_plaintext: "stale",
                 created_at: "2020-01-01T00:00:00Z",
+              },
+              {
+                id: { task_id: "no_created_at" },
+                content_plaintext: "undated",
+              },
+              {
+                id: { task_id: "sneaky_new" },
+                content_plaintext: "created after cutoff",
+                created_at: "2026-07-05T00:00:00Z",
               },
             ],
           }),
@@ -1640,6 +1649,7 @@ describe("attio_recent_activity handler", () => {
     ]);
     expect(activity.longOpenTasks.map((t: { id: string }) => t.id)).toEqual([
       "long_open",
+      "no_created_at",
     ]);
   });
 

@@ -556,6 +556,38 @@ describe("linear_list_issues handler", () => {
     });
   });
 
+  it("buckets an issue created and completed inside the window as completed, not new (CL-4084)", async () => {
+    const cutoff = "2026-07-01T00:00:00.000Z";
+    const nodes = [
+      {
+        id: "uuid-quick-fix",
+        identifier: "ENG-9",
+        createdAt: "2026-07-05T00:00:00.000Z",
+        completedAt: "2026-07-05T12:00:00.000Z",
+        updatedAt: "2026-07-05T12:00:00.000Z",
+      },
+    ];
+    const fetcher = makeFetchStub({ data: { issues: { nodes } } });
+    const runner = createToolRunner(
+      createLinearTools({ apiKey: "k", fetcher }),
+    );
+
+    const result = await runner.run(
+      {
+        id: "c1",
+        name: "linear_list_issues",
+        arguments: { enabledSources: ["linear"], updatedAfter: cutoff },
+      },
+      new AbortController().signal,
+    );
+
+    expect(JSON.parse(String(result.content))).toEqual({
+      newIssues: [],
+      completedIssues: [nodes[0]],
+      updatedIssues: [],
+    });
+  });
+
   it("scopes to a team and caps first at the issue list maximum", async () => {
     const nodes = [{ id: "uuid-1", identifier: "ENG-1" }];
     const fetcher = mock((_input: string, init: RequestInit) => {

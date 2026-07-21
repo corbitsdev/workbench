@@ -248,6 +248,21 @@ describe("Vercel tools", () => {
     expect(JSON.parse(result).truncated).toBe(false);
   });
 
+  test("marks truncated on a brief call without createdAfter when pagination.next is present", async () => {
+    const fetcher: VercelFetch = async () =>
+      response({
+        deployments: [],
+        pagination: { next: 1_770_000_000_000 },
+      });
+
+    const result = await stringTool("vercel_list_deployments", fetcher).handler(
+      { enabledSources: ["vercel"] },
+      new AbortController().signal,
+    );
+
+    expect(JSON.parse(result).truncated).toBe(true);
+  });
+
   test("passes target and state through as query params", async () => {
     const calls: string[] = [];
     const fetcher: VercelFetch = async (url) => {
