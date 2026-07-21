@@ -397,7 +397,8 @@ function mergeBriefNotes(
   }
 
   return Array.from(byId.values()).sort(
-    (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
+    (a, b) =>
+      new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
   );
 }
 

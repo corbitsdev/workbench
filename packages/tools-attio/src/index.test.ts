@@ -1385,9 +1385,8 @@ describe("attio_recent_activity handler", () => {
 
       if (url.includes("/records/query")) {
         const body = init.body ? JSON.parse(String(init.body)) : {};
-        const isTouchedQuery = JSON.stringify(body).includes(
-          "last_interaction",
-        );
+        const isTouchedQuery =
+          JSON.stringify(body).includes("last_interaction");
         if (isTouchedQuery) {
           return new Response(
             JSON.stringify({
@@ -1524,7 +1523,9 @@ describe("attio_recent_activity handler", () => {
       },
     });
 
-    const companiesCalls = calls.filter((c) => c.url.includes("/records/query"));
+    const companiesCalls = calls.filter((c) =>
+      c.url.includes("/records/query"),
+    );
     expect(companiesCalls).toHaveLength(2);
     expect(companiesCalls[0]?.body).toMatchObject({
       filter: { created_at: { $gte: "2026-07-04T00:00:00Z" } },
@@ -1544,8 +1545,7 @@ describe("attio_recent_activity handler", () => {
 
     const newTasksCall = calls.find(
       (c) =>
-        c.url.includes("/v2/tasks") &&
-        c.url.includes("sort=created_at%3Adesc"),
+        c.url.includes("/v2/tasks") && c.url.includes("sort=created_at%3Adesc"),
     );
     expect(newTasksCall?.url).not.toContain("is_completed");
     const completedTasksCall = calls.find((c) =>
@@ -1694,9 +1694,8 @@ describe("attio_recent_activity handler", () => {
     const fetcher: AttioFetch = mock(async (url: string, init: RequestInit) => {
       if (url.includes("/records/query")) {
         const body = init.body ? JSON.parse(String(init.body)) : {};
-        const isTouchedQuery = JSON.stringify(body).includes(
-          "last_interaction",
-        );
+        const isTouchedQuery =
+          JSON.stringify(body).includes("last_interaction");
         if (isTouchedQuery) {
           return new Response(
             JSON.stringify({ message: "unknown attribute last_interaction" }),

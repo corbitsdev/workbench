@@ -134,7 +134,11 @@ describe("createGranolaTools", () => {
         return new Response(
           JSON.stringify({
             notes: [
-              { id: "n1", title: "New call", created_at: "2026-07-10T00:00:00Z" },
+              {
+                id: "n1",
+                title: "New call",
+                created_at: "2026-07-10T00:00:00Z",
+              },
             ],
             hasMore: false,
           }),
@@ -183,9 +187,7 @@ describe("createGranolaTools", () => {
       "n1",
       "n2",
     ]);
-    const revised = body.notes.find(
-      (note: { id: string }) => note.id === "n2",
-    );
+    const revised = body.notes.find((note: { id: string }) => note.id === "n2");
     expect(revised.updatedOnly).toBe(true);
     const fresh = body.notes.find((note: { id: string }) => note.id === "n1");
     expect(fresh.updatedOnly).toBeUndefined();
@@ -201,10 +203,9 @@ describe("createGranolaTools", () => {
         updated_at: "2026-07-10T00:00:00Z",
       };
       if (url.searchParams.has("created_after")) {
-        return new Response(
-          JSON.stringify({ notes: [note], hasMore: false }),
-          { status: 200 },
-        );
+        return new Response(JSON.stringify({ notes: [note], hasMore: false }), {
+          status: 200,
+        });
       }
       return new Response(JSON.stringify({ notes: [note], hasMore: false }), {
         status: 200,

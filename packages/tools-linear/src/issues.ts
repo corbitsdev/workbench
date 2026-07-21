@@ -282,7 +282,11 @@ async function resolveWorkflowStateId(
     throw new Error(`Linear team not found: ${teamId}`);
   }
   const states = teamData.team.states;
-  if (!isRecord(states) || !Array.isArray(states.nodes) || states.nodes.length === 0) {
+  if (
+    !isRecord(states) ||
+    !Array.isArray(states.nodes) ||
+    states.nodes.length === 0
+  ) {
     throw new Error(`Workflow state not found: ${state}`);
   }
   const first = states.nodes[0];
@@ -403,15 +407,15 @@ export async function listIssues(
     briefShaped ? DEFAULT_BRIEF_ISSUE_LIMIT : DEFAULT_ISSUE_LIMIT,
     MAX_LIST_LIMIT_ISSUES,
   );
-  const teamId =
-    optionalString(args.teamId) ?? optionalString(args.team);
+  const teamId = optionalString(args.teamId) ?? optionalString(args.team);
   const filter = buildIssueFilter(args, briefShaped);
   const briefCutoff = briefShaped
-    ? optionalString(args.updatedAfter) ?? optionalString(args.createdAfter)
+    ? (optionalString(args.updatedAfter) ?? optionalString(args.createdAfter))
     : null;
   const explicitOrderBy = buildOrderBy(args);
   const orderBy =
-    explicitOrderBy ?? (briefShaped && briefCutoff !== null ? "updatedAt" : null);
+    explicitOrderBy ??
+    (briefShaped && briefCutoff !== null ? "updatedAt" : null);
   const fields = briefShaped ? BRIEF_ISSUE_FIELDS : ISSUE_FIELDS;
   const shapeResult = (connection: unknown): unknown => {
     const shaped = connectionResult(connection);
@@ -613,7 +617,9 @@ export async function linkIssues(
   const issueId = optionalString(args.issueId);
   const relatedIssueId = optionalString(args.relatedIssueId);
   if (issueId === null || relatedIssueId === null) {
-    throw new Error("issueId and relatedIssueId are required when action is add");
+    throw new Error(
+      "issueId and relatedIssueId are required when action is add",
+    );
   }
   const relationType = args.type ?? "related";
   let createIssueId = issueId;

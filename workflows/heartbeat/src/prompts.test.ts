@@ -75,6 +75,8 @@ describe("buildMorningBriefSystemPrompt", () => {
   test("instructs leading with new activity and separating carry-over items (CL-4087)", () => {
     const prompt = buildMorningBriefSystemPrompt();
     expect(prompt).toContain("Still open");
-    expect(prompt).toContain('never present them as new activity or as "what happened"');
+    expect(prompt).toContain(
+      'never present them as new activity or as "what happened"',
+    );
   });
 });
