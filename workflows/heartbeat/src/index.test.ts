@@ -44,12 +44,14 @@ function stepPrimitive(id: string) {
 // Mirror of the sidecar's argMap reshape (`runDeterministicToolStep`): each key
 // pulls a top-level field (`{ from }`), a constant (`{ literal }`), or a field
 // off a JSON envelope (`{ fromJson, field }` — for stringTool outputs whose
-// payload is `{ content: "<json>" }`). Used to prove the mail/artifact argMaps
-// resolve against a real merged step input, not just to snapshot the static tag.
+// payload is `{ content: "<json>" }`). Required `from` / `fromJson` fields throw
+// when absent (same fail-loud contract as the sidecar harness). Used to prove
+// the mail/artifact argMaps resolve against a real merged step input, not just
+// to snapshot the static tag.
 function resolveArgMap(
   argMap: Record<
     string,
-    | { from: string }
+    | { from: string; optional?: boolean }
     | { literal: unknown }
     | { fromJson: string; field: string; optional?: boolean }
   >,
@@ -62,7 +64,8 @@ function resolveArgMap(
       continue;
     }
     if ("fromJson" in spec) {
-      const envelope = input[spec.fromJson];
+      const envelope =
+        spec.fromJson in input ? input[spec.fromJson] : undefined;
       let parsed: unknown;
       if (typeof envelope === "string") {
         try {
@@ -77,8 +80,22 @@ function resolveArgMap(
         parsed !== null && typeof parsed === "object" && !Array.isArray(parsed)
           ? (parsed as Record<string, unknown>)
           : undefined;
-      out[key] = record?.[spec.field];
+      const fieldPresent = record !== undefined && spec.field in record;
+      if (!fieldPresent) {
+        if (spec.optional === true) continue;
+        throw new Error(
+          `argMap maps tool arg "${key}" from JSON field "${spec.field}" of input field "${spec.fromJson}", but that field is absent on the evaluated step input`,
+        );
+      }
+      out[key] = record[spec.field];
       continue;
+    }
+    const present = spec.from in input;
+    if (!present) {
+      if (spec.optional === true) continue;
+      throw new Error(
+        `argMap maps tool arg "${key}" from input field "${spec.from}", but that field is absent on the evaluated step input`,
+      );
     }
     out[key] = input[spec.from];
   }
@@ -87,7 +104,7 @@ function resolveArgMap(
 
 function argMapOf(id: string): Record<
   string,
-  | { from: string }
+  | { from: string; optional?: boolean }
   | { literal: unknown }
   | { fromJson: string; field: string; optional?: boolean }
 > {
@@ -357,6 +374,15 @@ describe("heartbeat native workflow", () => {
     expect(args.workflowLabel).toBe("Company Heartbeat");
   });
 
+  test("mail-refs argMap throws when write_artifact content lacks artifactId", () => {
+    expect(() =>
+      resolveArgMap(argMapOf("mail-refs"), {
+        ...TRIGGER_PAYLOAD,
+        content: JSON.stringify({ version: 1, title: "no id" }),
+      }),
+    ).toThrow(/artifactId/);
+  });
+
   test("notify argMap addresses the mail to the firing user with the computed title as subject, the brief as content, and artifact refs", () => {
     expect(argMapOf("notify")).toEqual({
       to: { from: "userAddress" },
@@ -527,6 +553,17 @@ describe("heartbeat native workflow", () => {
     });
     const result = await run.complete;
     expect(result.terminalStatus).toBe("completed");
+
+    // Pin the persist → mail-refs handoff on the recorded merge input, not only
+    // the static argMap tag: mail-refs must see write_artifact's content envelope.
+    const mailRefsInput = ran.find((r) => r.id === "heartbeat-mail-refs")
+      ?.input as Record<string, unknown> | undefined;
+    if (mailRefsInput === undefined)
+      throw new Error("mail-refs step did not run");
+    const mailRefsArgs = resolveArgMap(argMapOf("mail-refs"), mailRefsInput);
+    expect(mailRefsArgs.artifactId).toBe("art_1");
+    expect(mailRefsArgs.runId).toBe(TRIGGER_PAYLOAD.runId);
+    expect(mailRefsArgs.workflowLabel).toBe("Company Heartbeat");
 
     const notifyInput = ran.find((r) => r.id === "heartbeat-notify")?.input as
       | Record<string, unknown>
