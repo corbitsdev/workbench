@@ -104,6 +104,7 @@ Existing `granola_call_job` already has enqueue-dedupe, backoff, and dead. WQ.3 
 - Owner-fenced `complete` / `fail` on both `work_unit` and `granola_call_job` (require `lease_owner = workerId`).
 - Unique per-process `workerId` (`pid` + random suffix) so multi-replica hubs do not share a lease identity.
 - Heartbeat returns `boolean`; workers abort in-flight work when the lease is lost.
+- Workers claim **one unit at a time** (loop up to batch size) so idle batch members are not left leased without a heartbeat.
 - Tests cover stolen complete/fail no-ops, multi-claim isolation, lease expiry reclaim.
 
 **Deferred (non-blocking):**

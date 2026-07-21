@@ -199,11 +199,20 @@ export function createGranolaCallJobRunner(
   const workerId = deps.workerId ?? defaultWorkerId();
 
   async function runOnce(): Promise<void> {
-    const jobs = await deps.queue.claimDue(batchSize, workerId, leaseMs);
-    if (jobs.length === 0) return;
-    for (const job of jobs) {
+    // Claim one job at a time so idle batch members don't sit leased without a
+    // heartbeat while an earlier job runs (reclaim race / double-process).
+    for (let i = 0; i < batchSize; i++) {
+      const jobs = await deps.queue.claimDue(1, workerId, leaseMs);
+      if (jobs.length === 0) return;
       const controller = new AbortController();
-      await processJob(deps, job, controller, workerId, leaseMs, heartbeatMs);
+      await processJob(
+        deps,
+        jobs[0]!,
+        controller,
+        workerId,
+        leaseMs,
+        heartbeatMs,
+      );
     }
   }
 

@@ -129,14 +129,17 @@ export function createWorkUnitWorker(
       }
     }
 
-    const units = await deps.queue.claimDue({
-      workerId,
-      limit: batchSize,
-      leaseMs,
-      kinds: [KNOWLEDGE_CAPTURE_KIND, AGENT_TASK_TURN_KIND],
-    });
-    for (const unit of units) {
-      await processUnit(unit);
+    // Claim one unit at a time so a long-running unit doesn't leave the rest
+    // of a batch leased-without-heartbeat (reclaim race / double-process).
+    for (let i = 0; i < batchSize; i++) {
+      const units = await deps.queue.claimDue({
+        workerId,
+        limit: 1,
+        leaseMs,
+        kinds: [KNOWLEDGE_CAPTURE_KIND, AGENT_TASK_TURN_KIND],
+      });
+      if (units.length === 0) break;
+      await processUnit(units[0]!);
     }
   }
 

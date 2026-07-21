@@ -67,15 +67,17 @@ function fakeQueue(jobs: GranolaCallJobRow[]): {
 } {
   const completed: string[] = [];
   const failed: { jobId: string; attempts: number; error: string }[] = [];
+  const pending = [...jobs];
   const queue: GranolaCallJobQueue = {
     enqueue: async () => {},
-    claimDue: async () => jobs,
+    claimDue: async (limit) => pending.splice(0, Math.max(0, limit)),
     complete: async (jobId) => {
       completed.push(jobId);
     },
-    fail: async (jobId, attempts, error) => {
+    fail: async (jobId, _workerId, attempts, error) => {
       failed.push({ jobId, attempts, error });
     },
+    heartbeat: async () => true,
   };
   return { queue, completed, failed };
 }
