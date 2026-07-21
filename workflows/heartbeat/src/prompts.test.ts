@@ -54,4 +54,29 @@ describe("buildMorningBriefSystemPrompt", () => {
     expect(prompt).toContain("must be rendered as a markdown link");
     expect(prompt).toContain("Never fabricate a url");
   });
+
+  test("documents the recency slice keys the intake tools emit (CL-4087)", () => {
+    const prompt = buildMorningBriefSystemPrompt();
+    for (const key of [
+      "newCompanies",
+      "recentlyTouchedCompanies",
+      "newTasks",
+      "completedTasks",
+      "longOpenTasks",
+      "newIssues",
+      "updatedIssues",
+      "completedIssues",
+      "updatedOnly",
+    ]) {
+      expect(prompt).toContain(key);
+    }
+  });
+
+  test("instructs leading with new activity and separating carry-over items (CL-4087)", () => {
+    const prompt = buildMorningBriefSystemPrompt();
+    expect(prompt).toContain("Still open");
+    expect(prompt).toContain(
+      'never present them as new activity or as "what happened"',
+    );
+  });
 });

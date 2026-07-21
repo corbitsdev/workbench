@@ -467,6 +467,7 @@ function compactTask(task: unknown): {
   id: string | null;
   content: string | null;
   deadlineAt: string | null;
+  completedAt: string | null;
 } {
   return {
     id:
@@ -481,7 +482,129 @@ function compactTask(task: unknown): {
       isRecord(task) && typeof task.deadline_at === "string"
         ? task.deadline_at
         : null,
+    completedAt:
+      isRecord(task) && typeof task.completed_at === "string"
+        ? task.completed_at
+        : null,
   };
+}
+
+async function fetchNewCompanies(
+  config: AttioToolsConfig,
+  cutoff: string | null,
+  signal: AbortSignal,
+): Promise<unknown[]> {
+  const url = attioUrl(config, "/v2/objects/companies/records/query");
+  const body: Record<string, unknown> = {
+    limit: DEFAULT_LIMIT,
+    offset: DEFAULT_OFFSET,
+    sorts: [{ attribute: "created_at", direction: "desc" }],
+  };
+  if (cutoff !== null) {
+    body.filter = { created_at: { $gte: cutoff } };
+  }
+  const raw = await fetchAttioJSON(
+    config,
+    url,
+    { method: "POST", body },
+    signal,
+  );
+  const data = parseDataResponse(raw);
+  return Array.isArray(data) ? data : [];
+}
+
+// `last_interaction` sortability is undocumented in the Attio API, so this
+// query sorts on `created_at` (server-side sort is optional here; the caller
+// does not depend on ordering). Some workspaces do not have interaction
+// attributes available at all — degrade to an empty list rather than failing
+// the whole brief source.
+async function fetchRecentlyTouchedCompanies(
+  config: AttioToolsConfig,
+  cutoff: string | null,
+  signal: AbortSignal,
+): Promise<unknown[]> {
+  if (cutoff === null) {
+    return [];
+  }
+  const url = attioUrl(config, "/v2/objects/companies/records/query");
+  const body: Record<string, unknown> = {
+    limit: DEFAULT_LIMIT,
+    offset: DEFAULT_OFFSET,
+    sorts: [{ attribute: "created_at", direction: "desc" }],
+    filter: {
+      $and: [
+        { last_interaction: { interacted_at: { $gte: cutoff } } },
+        { created_at: { $lt: cutoff } },
+      ],
+    },
+  };
+  try {
+    const raw = await fetchAttioJSON(
+      config,
+      url,
+      { method: "POST", body },
+      signal,
+    );
+    const data = parseDataResponse(raw);
+    return Array.isArray(data) ? data : [];
+  } catch {
+    return [];
+  }
+}
+
+async function fetchTaskPage(
+  config: AttioToolsConfig,
+  params: { isCompleted?: boolean; sort: string },
+  signal: AbortSignal,
+): Promise<unknown[]> {
+  const url = attioUrl(config, "/v2/tasks");
+  url.searchParams.set("limit", String(DEFAULT_LIMIT));
+  url.searchParams.set("offset", String(DEFAULT_OFFSET));
+  url.searchParams.set("sort", params.sort);
+  if (params.isCompleted !== undefined) {
+    url.searchParams.set("is_completed", String(params.isCompleted));
+  }
+  const raw = await fetchAttioJSON(config, url, { method: "GET" }, signal);
+  const data = parseDataResponse(raw);
+  return Array.isArray(data) ? data : [];
+}
+
+function taskTimestamp(
+  task: unknown,
+  field: "created_at" | "completed_at",
+): string | null {
+  return isRecord(task) && typeof task[field] === "string" ? task[field] : null;
+}
+
+function isAtOrAfterCutoff(timestamp: string | null, cutoff: string): boolean {
+  return timestamp !== null && Date.parse(timestamp) >= Date.parse(cutoff);
+}
+
+function filterTasksByCutoff(
+  tasks: unknown[],
+  field: "created_at" | "completed_at",
+  cutoff: string | null,
+): unknown[] {
+  if (cutoff === null) {
+    return tasks;
+  }
+  return tasks.filter((task) =>
+    isAtOrAfterCutoff(taskTimestamp(task, field), cutoff),
+  );
+}
+
+// Long-open means it predates the window; a task with no created_at cannot be
+// proven new, so it stays.
+function filterTasksBeforeCutoff(
+  tasks: unknown[],
+  cutoff: string | null,
+): unknown[] {
+  if (cutoff === null) {
+    return tasks;
+  }
+  return tasks.filter(
+    (task) => !isAtOrAfterCutoff(taskTimestamp(task, "created_at"), cutoff),
+  );
 }
 
 async function recentActivity(
@@ -494,43 +617,46 @@ async function recentActivity(
     return BRIEF_SOURCE_SKIPPED_MARKER;
   }
 
-  const createdAfter = optionalString(args.createdAfter);
+  const cutoff = optionalString(args.createdAfter);
 
-  const companiesUrl = attioUrl(config, "/v2/objects/companies/records/query");
-  const companiesBody: Record<string, unknown> = {
-    limit: DEFAULT_LIMIT,
-    offset: DEFAULT_OFFSET,
-    sorts: [{ attribute: "created_at", direction: "desc" }],
-  };
-  if (createdAfter !== null) {
-    companiesBody.filter = { created_at: { $gte: createdAfter } };
-  }
-  const companiesRaw = await fetchAttioJSON(
+  const newCompanies = await fetchNewCompanies(config, cutoff, signal);
+  const recentlyTouchedCompanies = await fetchRecentlyTouchedCompanies(
     config,
-    companiesUrl,
-    { method: "POST", body: companiesBody },
+    cutoff,
     signal,
   );
-  const companies = parseDataResponse(companiesRaw);
 
-  const tasksUrl = attioUrl(config, "/v2/tasks");
-  tasksUrl.searchParams.set("limit", String(DEFAULT_LIMIT));
-  tasksUrl.searchParams.set("offset", String(DEFAULT_OFFSET));
-  tasksUrl.searchParams.set("is_completed", "false");
-  const tasksRaw = await fetchAttioJSON(
+  const newTasksPage = await fetchTaskPage(
     config,
-    tasksUrl,
-    { method: "GET" },
+    { isCompleted: false, sort: "created_at:desc" },
     signal,
   );
-  const tasks = parseDataResponse(tasksRaw);
+  const completedTasksPage = await fetchTaskPage(
+    config,
+    { isCompleted: true, sort: "completed_at:desc" },
+    signal,
+  );
+  const longOpenTasksPage = await fetchTaskPage(
+    config,
+    { isCompleted: false, sort: "created_at:asc" },
+    signal,
+  );
 
   return {
     attioActivity: {
-      newCompanies: Array.isArray(companies)
-        ? companies.map(compactCompany)
-        : [],
-      openTasks: Array.isArray(tasks) ? tasks.map(compactTask) : [],
+      newCompanies: newCompanies.map(compactCompany),
+      recentlyTouchedCompanies: recentlyTouchedCompanies.map(compactCompany),
+      newTasks: filterTasksByCutoff(newTasksPage, "created_at", cutoff).map(
+        compactTask,
+      ),
+      completedTasks: filterTasksByCutoff(
+        completedTasksPage,
+        "completed_at",
+        cutoff,
+      ).map(compactTask),
+      longOpenTasks: filterTasksBeforeCutoff(longOpenTasksPage, cutoff).map(
+        compactTask,
+      ),
     },
   };
 }
@@ -966,7 +1092,7 @@ const RECENT_ACTIVITY_INPUT_SCHEMA = {
 export const ATTIO_RECENT_ACTIVITY_DEFINITION: ToolDefinition = {
   name: "attio_recent_activity",
   description:
-    "Compact snapshot of recent Attio CRM activity: companies created since createdAfter and currently open tasks. Read-only.",
+    "Compact snapshot of recent Attio CRM activity: newCompanies (created since createdAfter), recentlyTouchedCompanies (older companies with a recent interaction), newTasks (created since createdAfter), completedTasks (completed since createdAfter), and longOpenTasks (oldest still-open tasks). Read-only.",
   inputSchema: RECENT_ACTIVITY_INPUT_SCHEMA,
 };
 

@@ -12,6 +12,7 @@ export { deployStaticFilesToVercel, MAX_STATIC_FILE_BYTES } from "./deploy";
 
 const DEFAULT_BASE_URL = "https://api.vercel.com";
 const DEFAULT_LIMIT = 20;
+const BRIEF_DEFAULT_LIMIT = 100;
 const MAX_LIMIT = 100;
 
 const VercelProjectSchema = type({
@@ -33,10 +34,17 @@ const VercelDeploymentSchema = type({
   "readyState?": "string",
   "createdAt?": "number | string",
   "target?": "string | null",
+  "ready?": "number",
+  "errorMessage?": "string | null",
+});
+
+const VercelDeploymentsPagination = type({
+  next: "number | null",
 });
 
 const VercelDeploymentsResponse = type({
   deployments: VercelDeploymentSchema.array(),
+  "pagination?": VercelDeploymentsPagination,
 });
 
 const ListProjectsArgs = type({
@@ -49,6 +57,8 @@ const ListDeploymentsArgs = type({
   "teamId?": "string > 0",
   "limit?": "number",
   "createdAfter?": "string",
+  "target?": "string > 0",
+  "state?": "string > 0",
   // Workbench-internal: the calling member's currently-enabled brief source
   // keys (see @workbench/shared's BriefSourceFetchInputSchema). When set and
   // it omits "vercel", this call is skipped instead of hitting the Vercel API
@@ -74,6 +84,10 @@ export const CompactDeploymentSchema = type({
   state: "string | null",
   url: "string | null",
   createdAt: "number | string | null",
+  target: "string | null",
+  readyState: "string | null",
+  ready: "number | null",
+  "errorMessage?": "string",
 });
 type CompactDeployment = typeof CompactDeploymentSchema.infer;
 
@@ -104,7 +118,7 @@ export const VERCEL_LIST_PROJECTS_DEFINITION: ToolDefinition = {
 export const VERCEL_LIST_DEPLOYMENTS_DEFINITION: ToolDefinition = {
   name: "vercel_list_deployments",
   description:
-    "List recent Vercel deployments visible to the configured token. Read-only. Optionally scope by projectId and teamId.",
+    "List recent Vercel deployments visible to the configured token. Read-only. Optionally scope by projectId, teamId, target (e.g. production), or state (comma-separable, e.g. ERROR,CANCELED). createdAfter must be a parseable date and bounds the window (since/until). Brief-shaped calls (enabledSources set) return compact deployments plus `truncated: true` when the API has more matching deployments than the page returned.",
   inputSchema: {
     type: "object",
     properties: {
@@ -118,6 +132,15 @@ export const VERCEL_LIST_DEPLOYMENTS_DEFINITION: ToolDefinition = {
         type: "string",
         description:
           "Return only deployments created after this ISO date-time.",
+      },
+      target: {
+        type: "string",
+        description: "Optional deployment target filter, e.g. production.",
+      },
+      state: {
+        type: "string",
+        description:
+          "Optional Vercel deployment state filter, comma-separated per Vercel's API, e.g. READY,ERROR.",
       },
       enabledSources: {
         type: "array",
@@ -211,9 +234,12 @@ function jsonResult(value: unknown): string {
   return JSON.stringify(value, null, 2);
 }
 
-function normalizeLimit(limit: number | undefined): number {
+function normalizeLimit(
+  limit: number | undefined,
+  defaultLimit: number = DEFAULT_LIMIT,
+): number {
   if (limit === undefined || !Number.isInteger(limit) || limit <= 0) {
-    return DEFAULT_LIMIT;
+    return defaultLimit;
   }
   return Math.min(limit, MAX_LIMIT);
 }
@@ -299,12 +325,19 @@ async function listProjects(
 function toCompactDeployment(
   deployment: typeof VercelDeploymentSchema.infer,
 ): CompactDeployment {
-  return {
+  const compact: CompactDeployment = {
     name: deployment.name ?? null,
     state: deployment.state ?? deployment.readyState ?? null,
     url: deployment.url ?? null,
     createdAt: deployment.createdAt ?? null,
+    target: deployment.target ?? null,
+    readyState: deployment.readyState ?? null,
+    ready: deployment.ready ?? null,
   };
+  if (deployment.readyState === "ERROR" && deployment.errorMessage != null) {
+    compact.errorMessage = deployment.errorMessage;
+  }
+  return compact;
 }
 
 async function listDeployments(
@@ -323,15 +356,35 @@ async function listDeployments(
   }
 
   const url = apiUrl(config, "/v6/deployments");
-  url.searchParams.set("limit", String(normalizeLimit(parsed.limit)));
+  url.searchParams.set(
+    "limit",
+    String(
+      normalizeLimit(
+        parsed.limit,
+        briefShaped ? BRIEF_DEFAULT_LIMIT : DEFAULT_LIMIT,
+      ),
+    ),
+  );
   if (parsed.projectId !== undefined) {
     url.searchParams.set("projectId", parsed.projectId);
   }
+  if (parsed.target !== undefined) {
+    url.searchParams.set("target", parsed.target);
+  }
+  if (parsed.state !== undefined) {
+    url.searchParams.set("state", parsed.state);
+  }
+
+  let sinceMillis: number | undefined;
   if (parsed.createdAfter !== undefined) {
-    const sinceMillis = Date.parse(parsed.createdAfter);
-    if (!Number.isNaN(sinceMillis)) {
-      url.searchParams.set("since", String(sinceMillis));
+    sinceMillis = Date.parse(parsed.createdAfter);
+    if (Number.isNaN(sinceMillis)) {
+      throw new Error(
+        `vercel_list_deployments: createdAfter is not a parseable date: "${parsed.createdAfter}"`,
+      );
     }
+    url.searchParams.set("since", String(sinceMillis));
+    url.searchParams.set("until", String(Date.now()));
   }
   withTeamId(url, parsed.teamId);
 
@@ -342,8 +395,12 @@ async function listDeployments(
   }
 
   if (briefShaped) {
+    const next = response.pagination?.next ?? null;
+    const truncated =
+      next !== null && (sinceMillis === undefined || next > sinceMillis);
     return jsonResult({
       deployments: response.deployments.map(toCompactDeployment),
+      truncated,
     });
   }
   return jsonResult(response.deployments);

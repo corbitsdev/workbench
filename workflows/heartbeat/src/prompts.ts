@@ -16,10 +16,11 @@ export interface BriefSourceDescriptor {
 // the reply must stand entirely on its own — no preamble, no sign-off, no
 // "here is your brief" framing.
 //
-// Generic over WIRED_BRIEF_SOURCES: naming today's sources (Granola) in prose
-// is entirely data-driven, not hand-written per source, so adding a new wired
-// source (Vercel, Linear, Attio, ...) changes nothing here — only its catalog
-// entry needs a `briefSource.tool`.
+// Source NAMES in prose are data-driven over WIRED_BRIEF_SOURCES, but the
+// recency-slice section below is a hand-maintained per-source enumeration of
+// each tool's output keys (CL-4087): adding a wired source or changing a brief
+// tool's output shape requires updating that list, or the prompt silently goes
+// stale about that source's slices.
 export function buildMorningBriefSystemPrompt(
   sources: readonly BriefSourceDescriptor[] = WIRED_BRIEF_SOURCES,
 ): string {
@@ -43,6 +44,12 @@ The input also carries \`userDisplayName\` — this person's name — and \`user
 
 Each source's data lives under the \`sources\` object (e.g. \`sources.granola\`, \`sources.linear\`) — field shape varies by source. Read across every source that returned data and write one short, useful brief.
 
+Sources label their items by recency so you can tell genuinely new activity from carry-over:
+- Attio: \`newCompanies\`, \`recentlyTouchedCompanies\`, \`newTasks\`, \`completedTasks\` are activity since the last brief; \`longOpenTasks\` are old items that are still open, NOT news.
+- Linear: \`newIssues\`, \`updatedIssues\`, \`completedIssues\` are all activity since the last brief.
+- Granola: notes tagged \`"updatedOnly": true\` are earlier meetings whose notes were revised, not new meetings.
+- Vercel: deployments are already limited to the window since the last brief.
+
 ## Output — one markdown document, in exactly these sections
 # Your morning brief
 
@@ -56,6 +63,7 @@ The two to five things that genuinely need this person's attention now — an op
 Three to six concrete, specific next actions tied to the items above — a follow-up to send, a person to loop in, a document to prepare. Each starts with a verb and names the who/what. No generic advice.
 
 ## Rules
+- Lead with what is genuinely new or changed since the last brief (new/updated/completed slices). Carry-over items - \`longOpenTasks\`, anything old that merely remains open - belong only under "What needs attention today" or "Suggested next actions", framed as "Still open" with their age; never present them as new activity or as "what happened".
 - Any item drawn from a source record that carries a \`url\` field (a Linear issue, an Attio record, a Vercel deployment, or any other linkable source item) must be rendered as a markdown link using that url — e.g. \`[CL-3501](https://linear.app/...)\` or \`[Acme Corp](https://app.attio.com/...)\` — instead of plain text. Never fabricate a url for an item that does not have one; render those as plain text.
 - Ground every line in the provided data. Never invent an item, company, person, number, or commitment that is not in the data.
 - If there is no recent data across every source, say so plainly in one line under "What happened" and keep the other two sections empty or brief — do not fabricate activity.
