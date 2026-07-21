@@ -21,7 +21,6 @@
     "@intx/tool-packaging": "workspace:*",
     "@intx/tools-lsp": "workspace:*",
     "@intx/tools-mail": "workspace:*",
-    "@intx/tools-posix": "workspace:*",
     "@intx/types": "workspace:*",
     "@intx/workflow": "workspace:*",
     "@intx/workflow-deploy": "workspace:*",

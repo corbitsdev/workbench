@@ -72,18 +72,6 @@ mock.module("./agent-tools", () => ({
   wsUrlToHttp: (u: string) => u,
 }));
 
-mock.module("@intx/tools-posix", () => ({
-  createPosixTools: mock(() => ({
-    definitions: [{ name: "read_file" }],
-    dispose: mock(async () => {}),
-    run: mock(async () => ({ callId: "x", content: "" })),
-  })),
-}));
-
-mock.module("@intx/types/runtime", () => ({
-  createBlobReader: mock(() => ({})),
-}));
-
 import {
   createStepAgentFactory,
   selectDirectorId,
@@ -196,6 +184,16 @@ type Built = {
   tools: DefinedRunner;
 };
 
+/** POSIX tool names that must never be advertised on the warm single-step path. */
+const POSIX_TOOL_NAMES = [
+  "read_file",
+  "write_file",
+  "edit_file",
+  "search_files",
+  "grep",
+  "run_shell",
+] as const;
+
 async function buildWarmAgent(args: {
   systemPrompt: string;
   grantedLlmNames: string[];
@@ -203,6 +201,11 @@ async function buildWarmAgent(args: {
   warmKeep: boolean;
   storeDir: string;
   director?: { id: string; config: Record<string, unknown> };
+  /**
+   * When set, placed on the step env as `transport` so `buildStepTools`
+   * injects mail tools (mirrors the workflow substrate mailbox path).
+   */
+  transport?: unknown;
 }): Promise<Built> {
   let capturedDef: Built["stepDef"] | undefined;
   let capturedEnv: Record<string, unknown> | undefined;
@@ -237,7 +240,7 @@ async function buildWarmAgent(args: {
     registryMaxTarballBytes: 1024 * 1024,
   };
 
-  const env = {
+  const env: Record<string, unknown> = {
     sources: [],
     defaultSource: "src-1",
     storage: { type: "isogit" },
@@ -251,6 +254,9 @@ async function buildWarmAgent(args: {
     }),
     [STEP_TOOL_CONTEXT_KEY]: ctx,
   };
+  if (args.transport !== undefined) {
+    env.transport = args.transport;
+  }
 
   const def = {
     id: "agent-1",
@@ -680,6 +686,48 @@ describe("warm single-step agent: exposure persistence across rebuilds", () => {
         await new Promise((r) => setTimeout(r, 20));
       }
       expect(persisted).toEqual([GRANTED]);
+    } finally {
+      await fs.promises.rm(storeDir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("warm single-step agent: no auto-injected local tools", () => {
+  it("advertises zero POSIX tool names on the warm Myra path", async () => {
+    // Product contract: warm single-step (Myra) must not auto-inject POSIX.
+    const storeDir = await makeStoreDir();
+    try {
+      const built = await buildWarmAgent({
+        systemPrompt: MYRA_PROMPT,
+        grantedLlmNames: [],
+        warmKeep: true,
+        storeDir,
+      });
+      const names = built.tools.definitions.map((d) => d.name);
+      for (const posixName of POSIX_TOOL_NAMES) {
+        expect(names).not.toContain(posixName);
+      }
+    } finally {
+      await fs.promises.rm(storeDir, { recursive: true, force: true });
+    }
+  });
+
+  it("does not advertise mail_* tools on the warm path even when transport is present", async () => {
+    // Mail is a det-step construct; warm must not advertise mail tools even
+    // when the substrate places a transport on the step env.
+    const storeDir = await makeStoreDir();
+    try {
+      const built = await buildWarmAgent({
+        systemPrompt: MYRA_PROMPT,
+        grantedLlmNames: [],
+        warmKeep: true,
+        storeDir,
+        // Minimal stub: createMailTools only holds the handle for definitions.
+        transport: {},
+      });
+      const names = built.tools.definitions.map((d) => d.name);
+      const mailNames = names.filter((n) => n.startsWith("mail_"));
+      expect(mailNames).toEqual([]);
     } finally {
       await fs.promises.rm(storeDir, { recursive: true, force: true });
     }

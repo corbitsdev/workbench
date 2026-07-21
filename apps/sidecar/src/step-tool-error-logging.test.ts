@@ -79,6 +79,11 @@ async function makeEnv(): Promise<Record<string, unknown>> {
     workdir,
     audit: storage,
     directors: {},
+    // Stub transport so mail_send is registered; the failure under test is the
+    // harness shape guard (non-object input), not tool availability.
+    transport: {
+      send: async () => ({ messageId: "m1" }),
+    },
     [STEP_TOOL_CONTEXT_KEY]: {
       hubHttpUrl: "http://hub.invalid",
       sidecarToken: "tok",
@@ -87,8 +92,8 @@ async function makeEnv(): Promise<Record<string, unknown>> {
       stepAddress: "ins_dep-render",
       principalId: "ins_dep-render",
       grants: [],
-      // No deploy/ subtree under storeDir → empty on-disk manifest → local
-      // tools only, enough to drive the deterministic failure-logging paths.
+      // No deploy/ subtree under storeDir → empty on-disk manifest → no package
+      // tools. Mail loads via the transport stub above.
       deployTreeDir: storeDir,
       cacheRoot: path.join(storeDir, "cache"),
       cacheMaxBytes: 1024 * 1024,
@@ -108,7 +113,7 @@ describe("deterministic step failure logging (Sentry capture seam)", () => {
     await expect(
       runDeterministicToolStep({
         env: env as never,
-        toolName: "write_file",
+        toolName: "mail_send",
         input: "not-an-object",
         signal: new AbortController().signal,
       }),
@@ -117,7 +122,7 @@ describe("deterministic step failure logging (Sentry capture seam)", () => {
     const failureLog = errorCalls.find((c) => c.message === FAILED_MSG);
     expect(failureLog).toBeTruthy();
     expect(failureLog?.fields?.error).toBeInstanceOf(Error);
-    expect(failureLog?.fields?.tool).toBe("write_file");
+    expect(failureLog?.fields?.tool).toBe("mail_send");
   });
 
   test("a cancelled step (aborted signal) does NOT log the failure — no paging on teardown", async () => {
@@ -131,7 +136,7 @@ describe("deterministic step failure logging (Sentry capture seam)", () => {
     await expect(
       runDeterministicToolStep({
         env: env as never,
-        toolName: "write_file",
+        toolName: "mail_send",
         input: "not-an-object",
         nonFatal: true,
         signal: controller.signal,
