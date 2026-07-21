@@ -141,13 +141,12 @@ function makeStepEnv(
   storeDir: string,
 ): BaseEnv & Record<string, unknown> {
   // The step env carries the StepToolContext stash plus the BaseEnv slots
-  // the buildEnv path fills; the factory reads `storage`/`workdir` for the
-  // local posix tools.
+  // the buildEnv path fills (storage/workdir for package tool runners).
   return {
     sources: [],
     defaultSource: "src",
-    // The factory only reads `storage` to build a blob reader for posix
-    // tools; a minimal stub satisfies that read.
+    // Minimal storage stub for BaseEnv shape; package tools (when pinned)
+    // read workdir/storage from here.
     storage: {
       load: async () => ({ turns: [] }),
     } as unknown as BaseEnv["storage"],

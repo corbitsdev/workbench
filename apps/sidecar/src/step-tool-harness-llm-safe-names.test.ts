@@ -96,18 +96,6 @@ mock.module("./agent-tools", () => ({
   wsUrlToHttp: (u: string) => u,
 }));
 
-mock.module("@intx/tools-posix", () => ({
-  createPosixTools: mock(() => ({
-    definitions: [{ name: "read_file" }],
-    dispose: mock(async () => {}),
-    run: mock(async () => ({ callId: "x", content: "" })),
-  })),
-}));
-
-mock.module("@intx/types/runtime", () => ({
-  createBlobReader: mock(() => ({})),
-}));
-
 import {
   createStepAgentFactory,
   runDeterministicToolStep,

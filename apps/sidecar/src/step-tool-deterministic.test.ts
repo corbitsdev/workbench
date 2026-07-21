@@ -2,8 +2,9 @@
 // agent carries the deterministic marker tags invokes the named tool's runner
 // DIRECTLY with the runtime-resolved `req.input` and returns its output — no
 // agent is constructed, no inference runs. It also dispatches via the real
-// `buildStepTools` runner (a local posix tool here, since the hub manifest is
-// stubbed empty) and fails loud when the declared tool is not pinned.
+// `buildStepTools` runner (mail_send when a transport is injected, since the
+// hub/deploy tree is stubbed empty and free local POSIX is no longer auto-
+// injected) and fails loud when the declared tool is not pinned.
 //
 // `mock.module` is process-global and leaks across this suite, so this file
 // stubs ONLY `globalThis.fetch` (restored per-test) — never `./agent-tools` —
@@ -33,10 +34,10 @@ afterEach(async () => {
   tmpDirs.length = 0;
 });
 
-// Empty deploy tree + no credentials: the step loads only its local posix
-// tools, which is enough to prove the deterministic dispatch invokes the named
-// tool's runner with `req.input` and returns its `ToolResult`. Only the
-// credential rail is still a hub fetch.
+// Empty deploy tree + no credentials: no package pins. Local mail tools load
+// only when a transport is present on the step env — enough to prove the
+// deterministic dispatch invokes the named tool's runner with `req.input` and
+// returns its `ToolResult`. Only the credential rail is still a hub fetch.
 function stubHubFetch(): void {
   globalThis.fetch = (async (input: string | URL | Request) => {
     const url = String(input);
@@ -49,8 +50,15 @@ function stubHubFetch(): void {
   }) as unknown as typeof fetch;
 }
 
+/** Stub transport that succeeds every send — enough for mail_send to resolve. */
+function successTransport(): { send: () => Promise<{ messageId: string }> } {
+  return {
+    send: async () => ({ messageId: "m1" }),
+  };
+}
+
 async function makeEnv(opts?: {
-  transport?: ReturnType<typeof createInMemoryTransport>;
+  transport?: ReturnType<typeof createInMemoryTransport> | { send: unknown };
 }): Promise<{
   env: Record<string, unknown>;
   workdir: string;
@@ -70,8 +78,8 @@ async function makeEnv(opts?: {
     stepAddress: "ins_dep-render",
     principalId: "ins_dep-render",
     grants: [],
-    // No deploy/ subtree under storeDir → empty on-disk manifest → local tools
-    // only (posix/mail), which is what the deterministic dispatch exercises.
+    // No deploy/ subtree under storeDir → empty on-disk manifest → no package
+    // tools. Mail loads only when opts.transport (or a later assignment) is set.
     deployTreeDir: storeDir,
     cacheRoot: path.join(storeDir, "cache"),
     cacheMaxBytes: 1024 * 1024,
@@ -90,6 +98,14 @@ async function makeEnv(opts?: {
     env.transport = opts.transport;
   }
   return { env, workdir };
+}
+
+/** Env with a success-stub transport so mail_send is registered and runnable. */
+async function makeMailEnv(): Promise<{
+  env: Record<string, unknown>;
+  workdir: string;
+}> {
+  return makeEnv({ transport: successTransport() });
 }
 
 async function mailSendUnregisteredSenderFixture(): Promise<{
@@ -118,16 +134,16 @@ async function mailSendUnregisteredSenderFixture(): Promise<{
 describe("runDeterministicToolStep", () => {
   test("invokes the named tool with req.input and returns its output", async () => {
     stubHubFetch();
-    const { env } = await makeEnv();
-    // `write_file` is a real local posix tool the step runner always loads;
-    // the deterministic path must call it with `req.input` as the arguments.
-    // A wrong-args call (e.g. an agent reply, or empty args) would error; a
-    // successful, non-error ToolResult proves the runner received our input
-    // object verbatim as the tool arguments and ran without any inference.
-    const input = { path: "out.txt", content: "deck rendered" };
+    const { env } = await makeMailEnv();
+    // `mail_send` is the real local tool the step runner loads when a transport
+    // is present; the deterministic path must call it with `req.input` as the
+    // arguments. A wrong-args call would error; a successful, non-error
+    // ToolResult proves the runner received our input object verbatim as the
+    // tool arguments and ran without any inference.
+    const input = { to: "usr_x@tenant.example", content: "deck rendered" };
     const result = await runDeterministicToolStep({
       env: env as never,
-      toolName: "write_file",
+      toolName: "mail_send",
       input,
       signal: new AbortController().signal,
     });
@@ -143,11 +159,11 @@ describe("runDeterministicToolStep", () => {
 
   test("rejects a non-object, non-null input rather than guessing tool arguments", async () => {
     stubHubFetch();
-    const { env } = await makeEnv();
+    const { env } = await makeMailEnv();
     await expect(
       runDeterministicToolStep({
         env: env as never,
-        toolName: "write_file",
+        toolName: "mail_send",
         input: "not-an-object",
         signal: new AbortController().signal,
       }),
@@ -156,18 +172,18 @@ describe("runDeterministicToolStep", () => {
 
   test("coerces null input to empty tool arguments (no-arg tool call)", async () => {
     stubHubFetch();
-    const { env } = await makeEnv();
+    const { env } = await makeMailEnv();
     // A step with no `input` selector resolves to null; a no-arg tool call
     // must run with {} rather than throwing at the harness shape guard.
-    // write_file then returns isError for missing path, which fails the step.
+    // mail_send then returns isError for missing `to`, which fails the step.
     await expect(
       runDeterministicToolStep({
         env: env as never,
-        toolName: "write_file",
+        toolName: "mail_send",
         input: null,
         signal: new AbortController().signal,
       }),
-    ).rejects.toThrow(/required argument "path"/);
+    ).rejects.toThrow(/to/);
   });
 
   test("fails loud when the declared tool is not in the loaded runner", async () => {
@@ -185,18 +201,22 @@ describe("runDeterministicToolStep", () => {
 
   test("reshapes the evaluated input into tool args via the argMap (rename + literal)", async () => {
     stubHubFetch();
-    // The evaluated input names its fields `body`/`name`, NOT the tool's
-    // `content`/`path`. The argMap renames `body` -> `content` and supplies
-    // `path` as a literal; a non-error ToolResult proves the runner received
-    // the reshaped args (write_file requires both `content` and `path`).
-    const { env } = await makeEnv();
+    // The evaluated input names its fields `body`/`recipient`, NOT the tool's
+    // `content`/`to`. The argMap renames `body` -> `content` and supplies
+    // `to` as a literal; a non-error ToolResult proves the runner received
+    // the reshaped args (mail_send requires both `to` and `content`).
+    const { env } = await makeMailEnv();
     const reshaped = await runDeterministicToolStep({
       env: env as never,
-      toolName: "write_file",
-      input: { body: "deck rendered", name: "out.txt", ignored: "drop me" },
+      toolName: "mail_send",
+      input: {
+        body: "deck rendered",
+        recipient: "usr_x@tenant.example",
+        ignored: "drop me",
+      },
       argMapJson: JSON.stringify({
         content: { from: "body" },
-        path: { literal: "out.txt" },
+        to: { literal: "usr_x@tenant.example" },
       }),
       signal: new AbortController().signal,
     });
@@ -207,7 +227,7 @@ describe("runDeterministicToolStep", () => {
 
   test("nonFatal: a throwing step degrades to an isError envelope instead of rejecting", async () => {
     stubHubFetch();
-    const { env } = await makeEnv();
+    const { env } = await makeMailEnv();
     // A non-object input throws in `verbatimToolArguments` (a real step failure).
     // Without nonFatal it rejects (asserted above); with nonFatal the harness
     // must swallow the throw and return a completed isError envelope so the run
@@ -215,7 +235,7 @@ describe("runDeterministicToolStep", () => {
     // in `content` so the brief can record it in skippedSources with the why.
     const result = await runDeterministicToolStep({
       env: env as never,
-      toolName: "write_file",
+      toolName: "mail_send",
       input: "not-an-object",
       nonFatal: true,
       signal: new AbortController().signal,
@@ -223,13 +243,13 @@ describe("runDeterministicToolStep", () => {
     const output = result.output as Record<string, unknown>;
     expect(output.isError).toBe(true);
     expect(typeof output.content).toBe("string");
-    expect(output.content as string).toContain("write_file");
+    expect(output.content as string).toContain("mail_send");
     expect(output.content as string).toContain("requires an object");
   });
 
   test("nonFatal does NOT mask cancellation: an aborted signal rethrows instead of degrading", async () => {
     stubHubFetch();
-    const { env } = await makeEnv();
+    const { env } = await makeMailEnv();
     // Run cancel/timeout aborts the step's signal. The throw is the
     // cancellation, not a source failure — degrading it to a completed
     // isError step would let the run march on past the cancel. The harness
@@ -239,7 +259,7 @@ describe("runDeterministicToolStep", () => {
     await expect(
       runDeterministicToolStep({
         env: env as never,
-        toolName: "write_file",
+        toolName: "mail_send",
         input: "not-an-object",
         nonFatal: true,
         signal: controller.signal,
@@ -345,15 +365,15 @@ describe("runDeterministicToolStep", () => {
 
   test("fails loud when an argMap `from` field is absent on the evaluated input", async () => {
     stubHubFetch();
-    const { env } = await makeEnv();
+    const { env } = await makeMailEnv();
     await expect(
       runDeterministicToolStep({
         env: env as never,
-        toolName: "write_file",
-        input: { path: "out.txt" },
+        toolName: "mail_send",
+        input: { to: "usr_x@tenant.example" },
         argMapJson: JSON.stringify({
           content: { from: "reply" },
-          path: { from: "path" },
+          to: { from: "to" },
         }),
         signal: new AbortController().signal,
       }),
@@ -362,14 +382,14 @@ describe("runDeterministicToolStep", () => {
 
   test("a non-optional argMap field that is an empty string on the input passes through verbatim", async () => {
     stubHubFetch();
-    const { env } = await makeEnv();
+    const { env } = await makeMailEnv();
     const result = await runDeterministicToolStep({
       env: env as never,
-      toolName: "write_file",
-      input: { path: "out.txt", reply: "" },
+      toolName: "mail_send",
+      input: { to: "usr_x@tenant.example", reply: "" },
       argMapJson: JSON.stringify({
         content: { from: "reply" },
-        path: { from: "path" },
+        to: { from: "to" },
       }),
       signal: new AbortController().signal,
     });
@@ -380,14 +400,14 @@ describe("runDeterministicToolStep", () => {
 
   test("an optional argMap field absent from the input skips the tool call without throwing", async () => {
     stubHubFetch();
-    const { env } = await makeEnv();
+    const { env } = await makeMailEnv();
     const result = await runDeterministicToolStep({
       env: env as never,
-      toolName: "write_file",
-      input: { path: "out.txt" },
+      toolName: "mail_send",
+      input: { to: "usr_x@tenant.example" },
       argMapJson: JSON.stringify({
         content: { from: "reply", optional: true },
-        path: { from: "path" },
+        to: { from: "to" },
       }),
       signal: new AbortController().signal,
     });
@@ -396,14 +416,14 @@ describe("runDeterministicToolStep", () => {
 
   test("an optional argMap field that is an empty string on the input also skips", async () => {
     stubHubFetch();
-    const { env } = await makeEnv();
+    const { env } = await makeMailEnv();
     const result = await runDeterministicToolStep({
       env: env as never,
-      toolName: "write_file",
-      input: { path: "out.txt", reply: "" },
+      toolName: "mail_send",
+      input: { to: "usr_x@tenant.example", reply: "" },
       argMapJson: JSON.stringify({
         content: { from: "reply", optional: true },
-        path: { from: "path" },
+        to: { from: "to" },
       }),
       signal: new AbortController().signal,
     });
@@ -412,14 +432,14 @@ describe("runDeterministicToolStep", () => {
 
   test("an optional argMap field present with a real value is used, not skipped", async () => {
     stubHubFetch();
-    const { env } = await makeEnv();
+    const { env } = await makeMailEnv();
     const result = await runDeterministicToolStep({
       env: env as never,
-      toolName: "write_file",
-      input: { path: "out.txt", reply: "real content" },
+      toolName: "mail_send",
+      input: { to: "usr_x@tenant.example", reply: "real content" },
       argMapJson: JSON.stringify({
         content: { from: "reply", optional: true },
-        path: { from: "path" },
+        to: { from: "to" },
       }),
       signal: new AbortController().signal,
     });
@@ -430,12 +450,12 @@ describe("runDeterministicToolStep", () => {
 
   test("a fromJson argMap field reads a field out of a JSON-string envelope field", async () => {
     stubHubFetch();
-    const { env } = await makeEnv();
+    const { env } = await makeMailEnv();
     const result = await runDeterministicToolStep({
       env: env as never,
-      toolName: "write_file",
+      toolName: "mail_send",
       input: {
-        path: "out.txt",
+        to: "usr_x@tenant.example",
         content: JSON.stringify({
           gammaUrl: "https://x",
           exportUrl: "",
@@ -443,7 +463,7 @@ describe("runDeterministicToolStep", () => {
       },
       argMapJson: JSON.stringify({
         content: { fromJson: "content", field: "gammaUrl" },
-        path: { from: "path" },
+        to: { from: "to" },
       }),
       signal: new AbortController().signal,
     });
@@ -454,18 +474,18 @@ describe("runDeterministicToolStep", () => {
 
   test("a non-optional fromJson field missing on the parsed envelope throws", async () => {
     stubHubFetch();
-    const { env } = await makeEnv();
+    const { env } = await makeMailEnv();
     await expect(
       runDeterministicToolStep({
         env: env as never,
-        toolName: "write_file",
+        toolName: "mail_send",
         input: {
-          path: "out.txt",
+          to: "usr_x@tenant.example",
           content: JSON.stringify({ exportUrl: "" }),
         },
         argMapJson: JSON.stringify({
           content: { fromJson: "content", field: "gammaUrl" },
-          path: { from: "path" },
+          to: { from: "to" },
         }),
         signal: new AbortController().signal,
       }),
@@ -474,17 +494,17 @@ describe("runDeterministicToolStep", () => {
 
   test("an optional fromJson field absent from the parsed envelope skips without throwing", async () => {
     stubHubFetch();
-    const { env } = await makeEnv();
+    const { env } = await makeMailEnv();
     const result = await runDeterministicToolStep({
       env: env as never,
-      toolName: "write_file",
+      toolName: "mail_send",
       input: {
-        path: "out.txt",
+        to: "usr_x@tenant.example",
         content: JSON.stringify({ gammaUrl: "https://x" }),
       },
       argMapJson: JSON.stringify({
         content: { fromJson: "content", field: "exportUrl", optional: true },
-        path: { from: "path" },
+        to: { from: "to" },
       }),
       signal: new AbortController().signal,
     });
@@ -493,17 +513,17 @@ describe("runDeterministicToolStep", () => {
 
   test("an optional fromJson field that is an empty string in the parsed envelope also skips", async () => {
     stubHubFetch();
-    const { env } = await makeEnv();
+    const { env } = await makeMailEnv();
     const result = await runDeterministicToolStep({
       env: env as never,
-      toolName: "write_file",
+      toolName: "mail_send",
       input: {
-        path: "out.txt",
+        to: "usr_x@tenant.example",
         content: JSON.stringify({ gammaUrl: "https://x", exportUrl: "" }),
       },
       argMapJson: JSON.stringify({
         content: { fromJson: "content", field: "exportUrl", optional: true },
-        path: { from: "path" },
+        to: { from: "to" },
       }),
       signal: new AbortController().signal,
     });
@@ -512,17 +532,17 @@ describe("runDeterministicToolStep", () => {
 
   test("a non-optional fromJson field present as an empty string passes through verbatim", async () => {
     stubHubFetch();
-    const { env } = await makeEnv();
+    const { env } = await makeMailEnv();
     const result = await runDeterministicToolStep({
       env: env as never,
-      toolName: "write_file",
+      toolName: "mail_send",
       input: {
-        path: "out.txt",
+        to: "usr_x@tenant.example",
         content: JSON.stringify({ gammaUrl: "https://x", exportUrl: "" }),
       },
       argMapJson: JSON.stringify({
         content: { fromJson: "content", field: "exportUrl" },
-        path: { from: "path" },
+        to: { from: "to" },
       }),
       signal: new AbortController().signal,
     });
@@ -533,17 +553,17 @@ describe("runDeterministicToolStep", () => {
 
   test("a fromJson envelope field that is already an object (not a JSON string) still resolves the field", async () => {
     stubHubFetch();
-    const { env } = await makeEnv();
+    const { env } = await makeMailEnv();
     const result = await runDeterministicToolStep({
       env: env as never,
-      toolName: "write_file",
+      toolName: "mail_send",
       input: {
-        path: "out.txt",
+        to: "usr_x@tenant.example",
         content: { gammaUrl: "https://x", exportUrl: "" },
       },
       argMapJson: JSON.stringify({
         content: { fromJson: "content", field: "gammaUrl" },
-        path: { from: "path" },
+        to: { from: "to" },
       }),
       signal: new AbortController().signal,
     });

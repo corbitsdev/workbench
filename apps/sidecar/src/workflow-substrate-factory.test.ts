@@ -166,8 +166,9 @@ afterAll(async () => {
   );
 });
 
-// No credentials: the step loads only its local posix tools, enough to
-// dispatch `write_file` through the deterministic branch. Tool resolution is
+// No credentials / empty deploy tree: no package pins. Deterministic tests
+// that need a runnable tool inject an outbound mail bridge so `mail_send`
+// resolves (free local POSIX is no longer auto-injected). Tool resolution is
 // on-disk now, so the sidecar makes no manifest fetch.
 function stubHubFetch(): void {
   globalThis.fetch = (async (input: string | URL | Request) => {
@@ -507,8 +508,8 @@ describe("createSidecarStepInvoker", () => {
   // dispatches each per-element invocation through the deterministic branch, not
   // inference. The runtime calls the step invoker once per element with the same
   // deterministic-tagged step request shape, so we drive `invoke` per element and
-  // assert: the real tool runner ran once per element (a file written per item)
-  // and the inference agent factory was never constructed.
+  // assert: the real tool runner ran once per element (mail_send per item via the
+  // outbound bridge) and the inference agent factory was never constructed.
   test("dispatches a per-element map invocation through the deterministic tool branch, never inference", async () => {
     stubHubFetch();
     const dataDir = await makeDataDir();
@@ -525,13 +526,19 @@ describe("createSidecarStepInvoker", () => {
         stepAddress: `ins_dep-${stepId}`,
         principalId: `ins_dep-${stepId}`,
         grants: [],
-        // No deploy/ subtree under dataDir → empty on-disk manifest → local
-        // (posix) tools only, which is what the deterministic dispatch needs.
+        // No deploy/ subtree under dataDir → empty on-disk manifest → no
+        // package tools. Outbound bridge below loads mail_send for det dispatch.
         deployTreeDir: dataDir,
         cacheRoot: path.join(dataDir, "cache"),
         cacheMaxBytes: 1024 * 1024,
         registryMaxTarballBytes: 1024 * 1024,
       };
+    };
+    const bridge: ChildOutboundMailBridge = {
+      submit: async () => ({ messageId: "mid-map", status: "delivered" }),
+      handleResult: () => {},
+      cancelAll: () => {},
+      pendingCount: 0,
     };
     const invoke = createSidecarStepInvoker({
       table: { [STEP_ID]: [SOURCE] },
@@ -541,6 +548,8 @@ describe("createSidecarStepInvoker", () => {
       adapters: createBuiltinRegistry(),
       evaluateGrants: allowAll,
       resolveStepToolContext,
+      outboundMailBridge: bridge,
+      mailboxAddress: "ins_ses_warm@example.com",
       agentFactory: async () => {
         factoryCalled = true;
         throw new Error(
@@ -550,10 +559,10 @@ describe("createSidecarStepInvoker", () => {
     });
 
     const detAgent: AgentDefinition<BaseEnv> = {
-      ...makeAgentDefinition("deterministic-write_file"),
+      ...makeAgentDefinition("deterministic-mail_send"),
       tags: {
         "workbench.stepKind": "deterministic-tool",
-        "workbench.tool": "write_file",
+        "workbench.tool": "mail_send",
       },
     };
 
@@ -562,15 +571,15 @@ describe("createSidecarStepInvoker", () => {
     // attempt so the per-step store teardown does not race (a test-harness
     // concern, not a product one) and assert every element dispatched through
     // the deterministic tool branch.
-    const elements = ["a.txt", "b.txt", "c.txt"];
+    const elements = ["a@tenant.example", "b@tenant.example", "c@tenant.example"];
     const outputs: { output: unknown }[] = [];
     for (let i = 0; i < elements.length; i += 1) {
-      const name = elements[i] as string;
+      const recipient = elements[i] as string;
       outputs.push(
         assertOutput(
           await invoke({
             agent: detAgent,
-            input: { path: name, content: `content-${name}` },
+            input: { to: recipient, content: `content-${recipient}` },
             authzContext: { stepId: STEP_ID, attempt: i + 1, runId: RUN_ID },
             signal: new AbortController().signal,
           }),
@@ -1613,12 +1622,20 @@ describe("live durable-conversation seam on a single-step (warmKeep) deploy", ()
         stepAddress: `ins_dep-${stepId}`,
         principalId: `ins_dep-${stepId}`,
         grants: [],
-        // No deploy/ subtree under dataDir → empty on-disk manifest.
+        // No deploy/ subtree under dataDir → empty on-disk manifest → no
+        // package tools. Outbound bridge below loads mail_send for det dispatch.
         deployTreeDir: dataDir,
         cacheRoot: path.join(dataDir, "cache"),
         cacheMaxBytes: 1024 * 1024,
         registryMaxTarballBytes: 1024 * 1024,
       };
+    };
+
+    const bridge: ChildOutboundMailBridge = {
+      submit: async () => ({ messageId: "mid-durable", status: "delivered" }),
+      handleResult: () => {},
+      cancelAll: () => {},
+      pendingCount: 0,
     };
 
     const invoke = createSidecarStepInvoker({
@@ -1630,6 +1647,8 @@ describe("live durable-conversation seam on a single-step (warmKeep) deploy", ()
       adapters: createBuiltinRegistry(),
       evaluateGrants: allowAll,
       resolveStepToolContext,
+      outboundMailBridge: bridge,
+      mailboxAddress: "ins_ses_warm@example.com",
       // Wiring a real durableConversation is what selects the warm-path env
       // keying and triggers the acquire/restore seam in buildEnv.
       durableConversation: registry,
@@ -1645,16 +1664,19 @@ describe("live durable-conversation seam on a single-step (warmKeep) deploy", ()
     });
 
     const detAgent: AgentDefinition<BaseEnv> = {
-      ...makeAgentDefinition("deterministic-write_file"),
+      ...makeAgentDefinition("deterministic-mail_send"),
       tags: {
         "workbench.stepKind": "deterministic-tool",
-        "workbench.tool": "write_file",
+        "workbench.tool": "mail_send",
       },
     };
 
     const result = await invoke({
       agent: detAgent,
-      input: { path: "c3.txt", content: "durable-seam-ok" },
+      input: {
+        to: "usr_x@tenant.example",
+        content: "durable-seam-ok",
+      },
       authzContext: { stepId: STEP_ID, attempt: 1, runId: RUN_ID },
       signal: new AbortController().signal,
     });

@@ -25,10 +25,8 @@ import { evaluateGrants } from "@intx/authz";
 import type { GrantRule } from "@intx/authz";
 import { createHarnessRuntimeCapabilities } from "@intx/harness";
 import { getLogger } from "@intx/log";
-import { createBlobReader } from "@intx/types/runtime";
-import type { ContextStore, MessageTransport } from "@intx/types/runtime";
+import type { MessageTransport } from "@intx/types/runtime";
 import { createMailTools } from "@intx/tools-mail";
-import { createPosixTools } from "@intx/tools-posix";
 import { readDeployTree } from "@workbench/hub-agent";
 import {
   HUB_RPC_ENV_KEY,
@@ -278,30 +276,23 @@ function readStepToolContext(env: Record<string, unknown>): StepToolContext {
  * Build the merged, filtered tool runner for a step agent: its pinned
  * native tool packages (materialized from the hub manifest), the provider
  * credentials they declare, the hub-RPC context for hub-backed packages,
- * and local posix tools. Returns the runner plus the disposers the agent
- * lifetime must run.
+ * and (when `env.transport` is present) local mail tools for deterministic
+ * `mail_send` steps. Package tools only — no free local POSIX inject.
+ * Returns the runner plus the disposers the agent lifetime must run.
  */
 async function buildStepTools(args: {
   ctx: StepToolContext;
   env: BaseEnv;
-  storage: ContextStore;
   workdir: string;
 }): Promise<{
   runner: DefinedRunner;
   loadedToolNames: Set<string>;
   /**
-   * Native tool-package tool names only (posix/mail excluded). These are the
+   * Native tool-package tool names only (mail excluded). These are the
    * catalog-gated candidates: the warm single-step path admits them through
    * the dispatch allow-list only when the member is granted them.
    */
   packageToolNames: Set<string>;
-  /**
-   * Always-allowed local tool names (posix + mail). The warm single-step
-   * dispatch allow-list never gates these — they mirror the hub-proxy/local
-   * `agentConfig.tools` names the retired `default-harness` treated as
-   * unconditionally granted.
-   */
-  localToolNames: Set<string>;
   disposers: (() => Promise<void>)[];
 }> {
   const { ctx } = args;
@@ -375,12 +366,6 @@ async function buildStepTools(args: {
     sessionId: "",
   };
 
-  const blobReader = createBlobReader(args.storage);
-  const posixTools = createPosixTools({
-    cwd: args.workdir,
-    blobReader,
-  });
-
   // The factory env is the agent env plus the credential + hub-RPC keys the
   // tool-package factories declare via `requires`.
   const factoryEnv = {
@@ -390,11 +375,9 @@ async function buildStepTools(args: {
   };
 
   const loadedRunners: DefinedRunner[] = [];
-  const disposers: (() => Promise<void>)[] = [() => posixTools.dispose()];
+  const disposers: (() => Promise<void>)[] = [];
   const loadedToolNames = new Set<string>();
   const packageToolNames = new Set<string>();
-  const localToolNames = new Set<string>();
-  for (const def of posixTools.definitions) localToolNames.add(def.name);
   for (const pkg of loadedPackages) {
     for (const factory of pkg.factories) {
       assertLoadedFactory(factory, pkg.name, ctx.stepAddress);
@@ -464,17 +447,18 @@ async function buildStepTools(args: {
     });
   }
 
-  const runners: DefinedRunner[] = [posixTools, ...loadedRunners];
+  const runners: DefinedRunner[] = [...loadedRunners];
 
   // The workflow substrate injects an in-process mail transport on the step
   // env (env.transport) whenever the deployment has a mailbox. Mail is a
   // local runner, never a pinned package, so it must be merged here for a
-  // deterministic `mail_send` step to resolve — mirroring the live agent
-  // harness. Guard on presence: pure-inference deployments and test seams
-  // inject no transport and get no mail tools. The env value is constructed
-  // in-process by the substrate this same run and never crosses a trust
-  // boundary, so a plain narrowing cast is sound (same reasoning as
-  // readStepToolContext).
+  // deterministic `mail_send` step to resolve. Guard on presence:
+  // pure-inference deployments and test seams inject no transport and get no
+  // mail tools. The warm single-step path constructs mail the same way but
+  // does not advertise `mail_*` to the model (see resolveWarmAgentHarness).
+  // The env value is constructed in-process by the substrate this same run
+  // and never crosses a trust boundary, so a plain narrowing cast is sound
+  // (same reasoning as readStepToolContext).
   const transport = (args.env as unknown as Record<string, unknown>).transport;
   if (transport !== undefined) {
     const mailTools = createMailTools({
@@ -492,21 +476,19 @@ async function buildStepTools(args: {
     disposers.push(() => mailTools.dispose());
     for (const def of mailTools.definitions) {
       loadedToolNames.add(def.name);
-      localToolNames.add(def.name);
     }
   }
 
-  // Steps expose every materialized native tool plus local posix tools; the
-  // grants-backed `authorize` the factory installs is the real per-call gate,
-  // and the hub gates which packages were resolvable at all via the step's
-  // pins. No name-filter is applied here — it would be a no-op (every loaded
-  // tool name is already in the merged set).
+  // Steps expose every materialized native package tool (plus mail when
+  // transport is present). The grants-backed `authorize` the factory installs
+  // is the real per-call gate, and the hub gates which packages were
+  // resolvable at all via the step's pins. No name-filter is applied here —
+  // it would be a no-op (every loaded tool name is already in the merged set).
   const merged = mergeToolRunners(runners) as DefinedRunner;
   return {
     runner: merged,
     loadedToolNames,
     packageToolNames,
-    localToolNames,
     disposers,
   };
 }
@@ -588,8 +570,8 @@ export function prepareWarmAgentPrompt(
  * colon-form name a deterministic workflow step declares
  * (`deterministicToolStep`'s `STEP_TOOL_TAG`) — aliasing there would throw
  * `StepToolNotRegisteredError` on every deterministic package-tool step.
- * Local tools (posix/mail) are already unprefixed (not in `packageToolNames`)
- * and pass through unchanged.
+ * Local mail tools are already unprefixed (not in `packageToolNames`) and
+ * pass through unchanged here; warm advertisement strips them separately.
  *
  * Two distinct canonical names that happen to collide on the same alias
  * (a package/tool-name combination degenerate enough to produce the same
@@ -632,6 +614,23 @@ function applyLlmSafeAliases(
 }
 
 /**
+ * Warm single-step agents must not advertise `mail_*` tools to the model even
+ * when `buildStepTools` constructed them for a present transport (det
+ * `mail_send` still resolves by name on the unfiltered runner). Strip mail
+ * definitions from the warm advertisement surface only.
+ */
+function stripMailFromWarmAdvertisement(runner: DefinedRunner): DefinedRunner {
+  const definitions = runner.definitions.filter(
+    (d) => !d.name.startsWith("mail_"),
+  );
+  if (definitions.length === runner.definitions.length) return runner;
+  return {
+    definitions,
+    run: (call, signal) => runner.run(call, signal),
+  };
+}
+
+/**
  * Re-home the retired `default-harness` director + dynamic-tools + exposure
  * resolution onto the WARM single-step agent path. A single-step deployment
  * (Myra/Oat/triage/gate agent) is a long-lived tool-capable agent, not a
@@ -652,7 +651,6 @@ async function resolveWarmAgentHarness(args: {
   def: { systemPrompt: string; director?: DirectorRef };
   runner: DefinedRunner;
   packageToolNames: ReadonlySet<string>;
-  localToolNames: ReadonlySet<string>;
   authorize: (
     resource: string,
     action: string,
@@ -670,7 +668,9 @@ async function resolveWarmAgentHarness(args: {
     args.packageToolNames,
     address,
   );
-  const runner = aliased.runner;
+  // Mail may still sit on the underlying runner for det bookkeeping, but warm
+  // never advertises `mail_*` names (or any free local inject) to the model.
+  const runner = stripMailFromWarmAdvertisement(aliased.runner);
   const packageToolNames = aliased.packageToolNames;
   const dynamicToolConfig = resolveDynamicToolConfig(def.systemPrompt);
   const isTriageSession = isTriageSessionPrompt(def.systemPrompt);
@@ -688,8 +688,9 @@ async function resolveWarmAgentHarness(args: {
     (directorId !== undefined ? { id: directorId, config: {} } : undefined);
 
   if (dynamicToolConfig === undefined) {
-    // No dynamic catalog: full advertisement, no allow-list gate — identical
-    // to the retired harness's `grantedCatalogToolNames === undefined` path.
+    // No dynamic catalog: full package advertisement, no allow-list gate —
+    // identical to the retired harness's `grantedCatalogToolNames === undefined`
+    // path. Mail already stripped above so even this early return stays clean.
     return { runner, director, dynamicEnv: {} };
   }
 
@@ -755,11 +756,12 @@ async function resolveWarmAgentHarness(args: {
     },
   }) as DefinedRunner;
 
-  // Loaded package tools are gated on `grantedCatalogToolNames`; local tools
-  // (posix/mail) and the catalog control tools (search_tools/load_tools) are
-  // always allowed (CL-3848 admission).
+  // Loaded package tools are gated on `grantedCatalogToolNames`; the catalog
+  // control tools (search_tools/load_tools) are always allowed (CL-3848
+  // admission). No free local inject (posix gone; mail is not advertised on
+  // warm — stripMailFromWarmAdvertisement already dropped those definitions).
   const allowedNames = buildDispatchAllowedToolNames(
-    [...args.localToolNames],
+    [],
     packageToolNames,
     catalogRunner.definitions.map((d) => d.name),
     grantedCatalogToolNames,
@@ -990,7 +992,6 @@ export async function runDeterministicToolStep(args: {
   const { runner, disposers } = await buildStepTools({
     ctx,
     env: stepEnv,
-    storage: args.env.storage,
     workdir: args.env.workdir,
   });
 
@@ -1147,12 +1148,10 @@ export function createStepAgentFactory(opts: StepAgentFactoryOpts = {}) {
     const {
       runner: baseRunner,
       packageToolNames,
-      localToolNames,
       disposers,
     } = await buildStepTools({
       ctx,
       env,
-      storage: env.storage,
       workdir: env.workdir,
     });
 
@@ -1189,7 +1188,6 @@ export function createStepAgentFactory(opts: StepAgentFactoryOpts = {}) {
         def,
         runner: baseRunner,
         packageToolNames,
-        localToolNames,
         authorize,
         storeDir,
         address: ctx.stepAddress,
