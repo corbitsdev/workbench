@@ -152,6 +152,26 @@ describe("work unit queue", () => {
     expect(health.byStatus["done"]).toBe(1);
   });
 
+  test("complete/fail no-op when worker is not the lease owner", async () => {
+    const queue = createWorkUnitQueue(db);
+    await queue.enqueue({
+      tenantId: TENANT,
+      kind: "knowledge_capture",
+      idempotencyKey: "fence-1",
+    });
+    const [claimed] = await queue.claimDue({ workerId: "w1", limit: 1 });
+    await queue.complete(claimed!.id, "w2");
+    let health = await queue.health();
+    expect(health.byStatus["leased"]).toBe(1);
+    expect(health.byStatus["done"]).toBeUndefined();
+    await queue.fail(claimed!.id, "w2", "stolen");
+    health = await queue.health();
+    expect(health.byStatus["leased"]).toBe(1);
+    await queue.complete(claimed!.id, "w1");
+    health = await queue.health();
+    expect(health.byStatus["done"]).toBe(1);
+  });
+
   test("fail below max reverts to pending with backoff; at max marks dead", async () => {
     const queue = createWorkUnitQueue(db);
     await queue.enqueue({

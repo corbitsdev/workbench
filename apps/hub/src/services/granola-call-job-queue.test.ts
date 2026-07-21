@@ -94,7 +94,7 @@ describe("granola call job queue", () => {
     const queue = createGranolaCallJobQueue(db);
     await queue.enqueue(TENANT, "note-1");
     const [job] = await queue.claimDue(10);
-    await queue.complete(job!.id);
+    await queue.complete(job!.id, "granola-runner");
     const rows = (await jobRows()).rows;
     expect(rows[0]?.status).toBe("done");
   });
@@ -104,7 +104,7 @@ describe("granola call job queue", () => {
     await queue.enqueue(TENANT, "note-1");
     const [job] = await queue.claimDue(10);
     const before = Date.now();
-    await queue.fail(job!.id, 1, "transient LLM error");
+    await queue.fail(job!.id, "granola-runner", 1, "transient LLM error");
     const rows = (await jobRows()).rows;
     expect(rows[0]?.status).toBe("pending");
     expect(rows[0]?.attempts).toBe(1);
@@ -117,7 +117,7 @@ describe("granola call job queue", () => {
     const queue = createGranolaCallJobQueue(db);
     await queue.enqueue(TENANT, "note-1");
     const [job] = await queue.claimDue(10);
-    await queue.fail(job!.id, MAX_ATTEMPTS, "still failing");
+    await queue.fail(job!.id, "granola-runner", MAX_ATTEMPTS, "still failing");
     const rows = (await jobRows()).rows;
     expect(rows[0]?.status).toBe("dead");
   });
@@ -126,9 +126,24 @@ describe("granola call job queue", () => {
     const queue = createGranolaCallJobQueue(db);
     await queue.enqueue(TENANT, "note-1");
     const [job] = await queue.claimDue(10);
-    await queue.fail(job!.id, 1, "transient");
+    await queue.fail(job!.id, "granola-runner", 1, "transient");
     const reclaimed = await queue.claimDue(10);
     expect(reclaimed).toHaveLength(0);
+  });
+
+  test("complete/fail no-op when worker is not the lease owner", async () => {
+    const queue = createGranolaCallJobQueue(db);
+    await queue.enqueue(TENANT, "note-1");
+    const [job] = await queue.claimDue(10, "owner-a");
+    await queue.complete(job!.id, "owner-b");
+    let rows = (await jobRows()).rows;
+    expect(rows[0]?.status).toBe("processing");
+    await queue.fail(job!.id, "owner-b", 1, "stolen");
+    rows = (await jobRows()).rows;
+    expect(rows[0]?.status).toBe("processing");
+    await queue.complete(job!.id, "owner-a");
+    rows = (await jobRows()).rows;
+    expect(rows[0]?.status).toBe("done");
   });
 
   test("expired processing lease is reclaimable (process death)", async () => {

@@ -20,7 +20,10 @@ const log = getLogger(["services", "work-unit-worker"]);
 const DEFAULT_TICK_MS = 5_000;
 const DEFAULT_BATCH = 5;
 const DEFAULT_HEARTBEAT_MS = 20_000;
-const DEFAULT_WORKER_ID = "work-unit-worker";
+
+function defaultWorkerId(): string {
+  return `work-unit-worker:${process.pid}:${Math.random().toString(36).slice(2, 8)}`;
+}
 
 export type WorkUnitWorkerDeps = {
   db: HubDb;
@@ -50,7 +53,7 @@ export function createWorkUnitWorker(
   const batchSize = deps.batchSize ?? DEFAULT_BATCH;
   const leaseMs = deps.leaseMs ?? DEFAULT_LEASE_MS;
   const heartbeatMs = deps.heartbeatMs ?? DEFAULT_HEARTBEAT_MS;
-  const workerId = deps.workerId ?? DEFAULT_WORKER_ID;
+  const workerId = deps.workerId ?? defaultWorkerId();
   const agentRunner =
     deps.agentTaskTurnRunner ?? createDefaultAgentTaskTurnRunner(deps.db);
   const knowledgeRunner =
@@ -69,12 +72,23 @@ export function createWorkUnitWorker(
   ): Promise<void> {
     const controller = new AbortController();
     const heartbeat = setInterval(() => {
-      deps.queue.heartbeat(unit.id, workerId, leaseMs).catch((err) => {
-        log.warn("work-unit worker: heartbeat failed {unitId}", {
-          unitId: unit.id,
-          error: err instanceof Error ? err.message : String(err),
+      deps.queue
+        .heartbeat(unit.id, workerId, leaseMs)
+        .then((ok) => {
+          if (!ok && !controller.signal.aborted) {
+            log.warn("work-unit worker: lost lease; aborting {unitId}", {
+              unitId: unit.id,
+              workerId,
+            });
+            controller.abort();
+          }
+        })
+        .catch((err) => {
+          log.warn("work-unit worker: heartbeat failed {unitId}", {
+            unitId: unit.id,
+            error: err instanceof Error ? err.message : String(err),
+          });
         });
-      });
     }, heartbeatMs);
 
     try {

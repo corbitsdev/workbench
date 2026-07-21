@@ -227,14 +227,18 @@ export function createWorkUnitQueue(db: HubDb): WorkUnitQueue {
     workerId: string,
     error: string,
   ): Promise<void> {
-    const current = await db
-      .select()
-      .from(workUnit)
-      .where(eq(workUnit.id, unitId))
-      .limit(1);
-    const row = current[0];
-    if (!row) return;
-    if (row.status !== "leased" || row.leaseOwner !== workerId) {
+    // Atomic fence: only the current lease owner may fail/backoff/dead-letter.
+    // Read attempts/max under the same owner predicate so reclaim cannot race.
+    const current = await db.execute(sql`
+      SELECT attempts, max_attempts
+      FROM work_unit
+      WHERE id = ${unitId}::uuid
+        AND status = 'leased'
+        AND lease_owner = ${workerId}
+      LIMIT 1
+    `);
+    const cur = rowsOf(current)[0];
+    if (!cur) {
       log.warn("work_unit fail: not leased by worker {unitId}", {
         unitId,
         workerId,
@@ -242,23 +246,27 @@ export function createWorkUnitQueue(db: HubDb): WorkUnitQueue {
       return;
     }
 
-    const attempts = row.attempts + 1;
-    if (attempts >= row.maxAttempts) {
+    const attempts = Number(cur["attempts"]) + 1;
+    const maxAttempts = Number(cur["max_attempts"]);
+    if (attempts >= maxAttempts) {
       log.error("work_unit: exhausted retries; marking dead {unitId}", {
         unitId,
         attempts,
         error: new Error(error),
       });
-      await db
-        .update(workUnit)
-        .set({
-          status: "dead",
-          attempts,
-          lastError: error,
-          leaseOwner: null,
-          leaseUntil: null,
-        })
-        .where(eq(workUnit.id, unitId));
+      await db.execute(sql`
+        UPDATE work_unit
+        SET
+          status = 'dead',
+          attempts = ${attempts},
+          last_error = ${error},
+          lease_owner = NULL,
+          lease_until = NULL,
+          updated_at = now()
+        WHERE id = ${unitId}::uuid
+          AND status = 'leased'
+          AND lease_owner = ${workerId}
+      `);
       return;
     }
 
@@ -269,17 +277,20 @@ export function createWorkUnitQueue(db: HubDb): WorkUnitQueue {
       backoffMs,
       error: new Error(error),
     });
-    await db
-      .update(workUnit)
-      .set({
-        status: "pending",
-        attempts,
-        lastError: error,
-        nextAttemptAt: new Date(Date.now() + backoffMs),
-        leaseOwner: null,
-        leaseUntil: null,
-      })
-      .where(eq(workUnit.id, unitId));
+    await db.execute(sql`
+      UPDATE work_unit
+      SET
+        status = 'pending',
+        attempts = ${attempts},
+        last_error = ${error},
+        next_attempt_at = now() + (${backoffMs}::text || ' milliseconds')::interval,
+        lease_owner = NULL,
+        lease_until = NULL,
+        updated_at = now()
+      WHERE id = ${unitId}::uuid
+        AND status = 'leased'
+        AND lease_owner = ${workerId}
+    `);
   }
 
   async function retryDead(unitId: string): Promise<boolean> {

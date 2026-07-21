@@ -58,11 +58,16 @@ export interface GranolaCallJobQueue {
     workerId: string,
     leaseMs?: number,
   ): Promise<boolean>;
-  /** Marks a claimed job done. */
-  complete(jobId: string): Promise<void>;
+  /** Marks a claimed job done (owner-fenced). */
+  complete(jobId: string, workerId: string): Promise<void>;
   /** Records a failed attempt: increments `attempts`, sets `next_attempt_at`
-   * to the backoff window, or marks `dead` past `MAX_ATTEMPTS`. */
-  fail(jobId: string, attempts: number, error: string): Promise<void>;
+   * to the backoff window, or marks `dead` past `MAX_ATTEMPTS` (owner-fenced). */
+  fail(
+    jobId: string,
+    workerId: string,
+    attempts: number,
+    error: string,
+  ): Promise<void>;
 }
 
 export function createGranolaCallJobQueue(db: HubDb): GranolaCallJobQueue {
@@ -137,8 +142,8 @@ export function createGranolaCallJobQueue(db: HubDb): GranolaCallJobQueue {
     return rowsOf(result).length > 0;
   }
 
-  async function complete(jobId: string): Promise<void> {
-    await db.execute(sql`
+  async function complete(jobId: string, workerId: string): Promise<void> {
+    const result = await db.execute(sql`
       UPDATE granola_call_job
       SET
         status = 'done',
@@ -146,11 +151,21 @@ export function createGranolaCallJobQueue(db: HubDb): GranolaCallJobQueue {
         lease_until = NULL,
         updated_at = now()
       WHERE id = ${jobId}::uuid
+        AND status = 'processing'
+        AND lease_owner = ${workerId}
+      RETURNING id
     `);
+    if (rowsOf(result).length === 0) {
+      log.warn("granola call job complete: not owned by worker {jobId}", {
+        jobId,
+        workerId,
+      });
+    }
   }
 
   async function fail(
     jobId: string,
+    workerId: string,
     attempts: number,
     error: string,
   ): Promise<void> {
@@ -170,6 +185,8 @@ export function createGranolaCallJobQueue(db: HubDb): GranolaCallJobQueue {
           lease_until = NULL,
           updated_at = now()
         WHERE id = ${jobId}::uuid
+          AND status = 'processing'
+          AND lease_owner = ${workerId}
       `);
       return;
     }
@@ -192,6 +209,8 @@ export function createGranolaCallJobQueue(db: HubDb): GranolaCallJobQueue {
         lease_until = NULL,
         updated_at = now()
       WHERE id = ${jobId}::uuid
+        AND status = 'processing'
+        AND lease_owner = ${workerId}
     `);
   }
 

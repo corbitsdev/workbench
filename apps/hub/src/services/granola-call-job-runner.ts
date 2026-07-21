@@ -19,7 +19,10 @@ const log = getLogger(["services", "granola-call-job-runner"]);
 const DEFAULT_TICK_INTERVAL_MS = 15_000;
 const DEFAULT_BATCH_SIZE = 5;
 const DEFAULT_HEARTBEAT_MS = 30_000;
-const DEFAULT_WORKER_ID = "granola-call-job-runner";
+
+function defaultWorkerId(): string {
+  return `granola-call-job-runner:${process.pid}:${Math.random().toString(36).slice(2, 8)}`;
+}
 
 const TranscriptItem = type({ "text?": "string" });
 const FullNote = type({
@@ -132,18 +135,30 @@ export interface GranolaCallJobRunner {
 async function processJob(
   deps: GranolaCallJobRunnerDeps,
   job: GranolaCallJobRow,
-  signal: AbortSignal,
+  controller: AbortController,
   workerId: string,
   leaseMs: number,
   heartbeatMs: number,
 ): Promise<void> {
+  const signal = controller.signal;
   const heartbeat = setInterval(() => {
-    deps.queue.heartbeat(job.id, workerId, leaseMs).catch((err) => {
-      log.warn("granola call job: heartbeat failed {jobId}", {
-        jobId: job.id,
-        error: err instanceof Error ? err.message : String(err),
+    deps.queue
+      .heartbeat(job.id, workerId, leaseMs)
+      .then((ok) => {
+        if (!ok && !controller.signal.aborted) {
+          log.warn("granola call job: lost lease; aborting {jobId}", {
+            jobId: job.id,
+            workerId,
+          });
+          controller.abort();
+        }
+      })
+      .catch((err) => {
+        log.warn("granola call job: heartbeat failed {jobId}", {
+          jobId: job.id,
+          error: err instanceof Error ? err.message : String(err),
+        });
       });
-    });
   }, heartbeatMs);
 
   try {
@@ -158,10 +173,16 @@ async function processJob(
       tenantId: job.tenantId,
       status: result.status,
     });
-    await deps.queue.complete(job.id);
+    await deps.queue.complete(job.id, workerId);
   } catch (err) {
+    if (controller.signal.aborted) {
+      log.warn("granola call job: aborted after lease loss {jobId}", {
+        jobId: job.id,
+      });
+      return;
+    }
     const message = err instanceof Error ? err.message : String(err);
-    await deps.queue.fail(job.id, job.attempts + 1, message);
+    await deps.queue.fail(job.id, workerId, job.attempts + 1, message);
   } finally {
     clearInterval(heartbeat);
   }
@@ -175,21 +196,14 @@ export function createGranolaCallJobRunner(
   const batchSize = deps.batchSize ?? DEFAULT_BATCH_SIZE;
   const leaseMs = deps.leaseMs ?? DEFAULT_GRANOLA_LEASE_MS;
   const heartbeatMs = deps.heartbeatMs ?? DEFAULT_HEARTBEAT_MS;
-  const workerId = deps.workerId ?? DEFAULT_WORKER_ID;
+  const workerId = deps.workerId ?? defaultWorkerId();
 
   async function runOnce(): Promise<void> {
     const jobs = await deps.queue.claimDue(batchSize, workerId, leaseMs);
     if (jobs.length === 0) return;
-    const controller = new AbortController();
     for (const job of jobs) {
-      await processJob(
-        deps,
-        job,
-        controller.signal,
-        workerId,
-        leaseMs,
-        heartbeatMs,
-      );
+      const controller = new AbortController();
+      await processJob(deps, job, controller, workerId, leaseMs, heartbeatMs);
     }
   }
 
@@ -213,3 +227,4 @@ export function createGranolaCallJobRunner(
 
   return { start, stop, runOnce };
 }
+
