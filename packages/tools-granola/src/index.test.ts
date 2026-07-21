@@ -58,18 +58,24 @@ describe("createGranolaTools", () => {
   });
 
   it("accepts a hub-enriched heartbeat trigger payload (extra mail fields)", async () => {
-    const fetcher = mock(async () => {
-      return new Response(
-        JSON.stringify({
-          notes: [
-            { id: "n1", title: "Call", created_at: "2026-07-10T00:00:00Z" },
-          ],
-          hasMore: false,
-        }),
-        {
-          status: 200,
-        },
-      );
+    const fetcher = mock(async (input: string) => {
+      const url = new URL(String(input));
+      if (url.searchParams.has("created_after")) {
+        return new Response(
+          JSON.stringify({
+            notes: [
+              { id: "n1", title: "Call", created_at: "2026-07-10T00:00:00Z" },
+            ],
+            hasMore: false,
+          }),
+          {
+            status: 200,
+          },
+        );
+      }
+      return new Response(JSON.stringify({ notes: [], hasMore: false }), {
+        status: 200,
+      });
     });
 
     const runner = createToolRunner(
@@ -92,7 +98,7 @@ describe("createGranolaTools", () => {
     );
 
     expect(result.isError).toBeUndefined();
-    expect(fetcher).toHaveBeenCalledTimes(1);
+    expect(fetcher).toHaveBeenCalledTimes(2);
     expect(JSON.parse(String(result.content)).notes).toHaveLength(1);
   });
 
@@ -118,6 +124,237 @@ describe("createGranolaTools", () => {
 
     expect(result.isError).toBeUndefined();
     expect(fetcher).toHaveBeenCalledTimes(1);
+  });
+
+  it("queries both created_after and updated_after and merges by note id (CL-4085)", async () => {
+    const fetcher = mock(async (input: string) => {
+      const url = new URL(String(input));
+      expect(url.searchParams.get("page_size")).toBe("30");
+      if (url.searchParams.get("created_after") === "2026-07-04T00:00:00Z") {
+        return new Response(
+          JSON.stringify({
+            notes: [
+              { id: "n1", title: "New call", created_at: "2026-07-10T00:00:00Z" },
+            ],
+            hasMore: false,
+          }),
+          { status: 200 },
+        );
+      }
+      expect(url.searchParams.get("updated_after")).toBe(
+        "2026-07-04T00:00:00Z",
+      );
+      return new Response(
+        JSON.stringify({
+          notes: [
+            {
+              id: "n2",
+              title: "Revised call",
+              created_at: "2026-07-01T00:00:00Z",
+              updated_at: "2026-07-11T00:00:00Z",
+            },
+          ],
+          hasMore: false,
+        }),
+        { status: 200 },
+      );
+    });
+
+    const runner = createToolRunner(
+      createGranolaTools({ apiKey: "tenant-api-key", fetcher }),
+    );
+
+    const result = await runner.run(
+      {
+        id: "call_brief_merge",
+        name: "granola_list_notes",
+        arguments: {
+          enabledSources: ["granola"],
+          createdAfter: "2026-07-04T00:00:00Z",
+        },
+      },
+      new AbortController().signal,
+    );
+
+    expect(result.isError).toBeUndefined();
+    expect(fetcher).toHaveBeenCalledTimes(2);
+    const body = JSON.parse(String(result.content));
+    expect(body.notes.map((note: { id: string }) => note.id)).toEqual([
+      "n1",
+      "n2",
+    ]);
+    const revised = body.notes.find(
+      (note: { id: string }) => note.id === "n2",
+    );
+    expect(revised.updatedOnly).toBe(true);
+    const fresh = body.notes.find((note: { id: string }) => note.id === "n1");
+    expect(fresh.updatedOnly).toBeUndefined();
+  });
+
+  it("does not tag a note updatedOnly when it also matches created_after (CL-4085)", async () => {
+    const fetcher = mock(async (input: string) => {
+      const url = new URL(String(input));
+      const note = {
+        id: "n1",
+        title: "New call",
+        created_at: "2026-07-10T00:00:00Z",
+        updated_at: "2026-07-10T00:00:00Z",
+      };
+      if (url.searchParams.has("created_after")) {
+        return new Response(
+          JSON.stringify({ notes: [note], hasMore: false }),
+          { status: 200 },
+        );
+      }
+      return new Response(JSON.stringify({ notes: [note], hasMore: false }), {
+        status: 200,
+      });
+    });
+
+    const runner = createToolRunner(
+      createGranolaTools({ apiKey: "tenant-api-key", fetcher }),
+    );
+
+    const result = await runner.run(
+      {
+        id: "call_brief_dedupe",
+        name: "granola_list_notes",
+        arguments: {
+          enabledSources: ["granola"],
+          createdAfter: "2026-07-04T00:00:00Z",
+        },
+      },
+      new AbortController().signal,
+    );
+
+    expect(result.isError).toBeUndefined();
+    const body = JSON.parse(String(result.content));
+    expect(body.notes).toHaveLength(1);
+    expect(body.notes[0].updatedOnly).toBeUndefined();
+  });
+
+  it("sorts the brief-shaped merged result by created_at desc (CL-4085)", async () => {
+    const fetcher = mock(async (input: string) => {
+      const url = new URL(String(input));
+      if (url.searchParams.has("created_after")) {
+        return new Response(
+          JSON.stringify({
+            notes: [
+              { id: "old", title: "Old", created_at: "2026-07-05T00:00:00Z" },
+              { id: "new", title: "New", created_at: "2026-07-12T00:00:00Z" },
+            ],
+            hasMore: false,
+          }),
+          { status: 200 },
+        );
+      }
+      return new Response(JSON.stringify({ notes: [], hasMore: false }), {
+        status: 200,
+      });
+    });
+
+    const runner = createToolRunner(
+      createGranolaTools({ apiKey: "tenant-api-key", fetcher }),
+    );
+
+    const result = await runner.run(
+      {
+        id: "call_brief_sort",
+        name: "granola_list_notes",
+        arguments: {
+          enabledSources: ["granola"],
+          createdAfter: "2026-07-04T00:00:00Z",
+        },
+      },
+      new AbortController().signal,
+    );
+
+    expect(result.isError).toBeUndefined();
+    const body = JSON.parse(String(result.content));
+    expect(body.notes.map((note: { id: string }) => note.id)).toEqual([
+      "new",
+      "old",
+    ]);
+  });
+
+  it("follows the cursor per query up to a 5-page cap (CL-4085)", async () => {
+    let createdAfterCalls = 0;
+    const fetcher = mock(async (input: string) => {
+      const url = new URL(String(input));
+      if (!url.searchParams.has("created_after")) {
+        return new Response(JSON.stringify({ notes: [], hasMore: false }), {
+          status: 200,
+        });
+      }
+      createdAfterCalls += 1;
+      return new Response(
+        JSON.stringify({
+          notes: [
+            {
+              id: `n${createdAfterCalls}`,
+              title: "Call",
+              created_at: "2026-07-10T00:00:00Z",
+            },
+          ],
+          hasMore: true,
+          cursor: `cursor-${createdAfterCalls}`,
+        }),
+        { status: 200 },
+      );
+    });
+
+    const runner = createToolRunner(
+      createGranolaTools({ apiKey: "tenant-api-key", fetcher }),
+    );
+
+    const result = await runner.run(
+      {
+        id: "call_brief_pagination",
+        name: "granola_list_notes",
+        arguments: {
+          enabledSources: ["granola"],
+          createdAfter: "2026-07-04T00:00:00Z",
+        },
+      },
+      new AbortController().signal,
+    );
+
+    expect(result.isError).toBeUndefined();
+    expect(createdAfterCalls).toBe(5);
+    const body = JSON.parse(String(result.content));
+    expect(body.notes).toHaveLength(5);
+  });
+
+  it("degrades to skipped when the brief-shaped dual query hits a 401 (CL-4085)", async () => {
+    const fetcher = mock(
+      async () =>
+        new Response(JSON.stringify({ error: "Unauthorized" }), {
+          status: 401,
+        }),
+    );
+
+    const runner = createToolRunner(
+      createGranolaTools({ apiKey: "invalid-key", fetcher }),
+    );
+
+    const result = await runner.run(
+      {
+        id: "call_brief_auth",
+        name: "granola_list_notes",
+        arguments: {
+          enabledSources: ["granola"],
+          createdAfter: "2026-07-04T00:00:00Z",
+        },
+      },
+      new AbortController().signal,
+    );
+
+    expect(result.isError).toBeUndefined();
+    expect(JSON.parse(String(result.content))).toEqual({
+      notes: [],
+      hasMore: false,
+      skipped: true,
+    });
   });
 
   it("returns the Granola agent tools", () => {
