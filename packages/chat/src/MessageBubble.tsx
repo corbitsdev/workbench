@@ -361,7 +361,7 @@ export function MessageBubble({
       {(hasBody || (message.status === "sending" && !hasReasoning)) && (
         <div
           className={cn(
-            "text-library-body-sm break-words",
+            "text-library-body-sm [overflow-wrap:anywhere]",
             message.role === "agent" && CHAT_ASSISTANT_BODY,
             isUser && CHAT_USER_BUBBLE_SURFACE,
             isUser && "max-w-[80%] rounded-input px-3 py-2",
