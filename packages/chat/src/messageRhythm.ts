@@ -34,7 +34,7 @@ export const CHAT_MARKER_SLOT = "h-4 w-4 shrink-0";
 export const CHAT_TRACE_ROW = "flex items-start gap-3.5";
 
 /** Vertical stack inside a turn or trace block. */
-export const CHAT_TURN_STACK = "flex w-full flex-col gap-3.5";
+export const CHAT_TURN_STACK = "flex w-full min-w-0 flex-col gap-3.5";
 
 export const CHAT_TRACE_STACK = "flex flex-col gap-3.5";
 
@@ -42,7 +42,7 @@ export const CHAT_TRACE_STACK = "flex flex-col gap-3.5";
 export const CHAT_RESPONSE_STACK = "flex flex-col gap-3.5";
 
 /** Activity block's header-to-detail gap — tighter than CHAT_TURN_STACK. */
-export const CHAT_ACTIVITY_STACK = "flex w-full flex-col gap-2";
+export const CHAT_ACTIVITY_STACK = "flex w-full min-w-0 flex-col gap-2";
 
 /** Label/count/chevron gap within one trace or activity-summary row. */
 export const CHAT_TRACE_INLINE_GAP = "gap-1.5";
@@ -55,8 +55,11 @@ export const CHAT_TRACE_MARKER_ALIGN = "mt-0.5";
  */
 export const CHAT_TRACE_DETAIL_OFFSET = "ml-[30px]";
 
-/** Bordered reasoning / tool expand panel. */
-export const CHAT_TRACE_DETAIL_PANEL = `${CHAT_TRACE_DETAIL_OFFSET} border-l border-border pl-3.5`;
+/**
+ * Bordered reasoning / tool expand panel. `min-w-0` + `overflow-wrap: anywhere`
+ * so unbroken reasoning tokens wrap instead of widening the chat column (CL-4120).
+ */
+export const CHAT_TRACE_DETAIL_PANEL = `${CHAT_TRACE_DETAIL_OFFSET} min-w-0 [overflow-wrap:anywhere] border-l border-border pl-3.5`;
 
 export const CHAT_TRACE_DETAIL_TOP = "mt-2";
 
