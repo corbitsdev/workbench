@@ -53,7 +53,7 @@ schedule for K also exists.
 
 ## Non-goals (this slice)
 
-- Per-subscriber opt-in table beyond "all Myra members" (CL-4113 / later)
-- Owner fire heatmap (CL-4107)
+- Per-subscriber opt-in table beyond "all Myra members" (later)
+- Owner fire heatmap visualization (optional stretch of CL-4113; v1 is the list)
 - Replacing personal heartbeats that re-poll shared sources (CL-4109)
 - Durable work-queue lanes (CL-4070+) — schedule fire still starts a workflow run
