@@ -1,7 +1,10 @@
 import { describe, expect, test } from "bun:test";
 import {
   StepToolNotRegisteredError,
+  StepToolCredentialMissingError,
+  StepToolFactoryAbsentError,
   assertStepToolAvailable,
+  isStepToolInfrastructureFault,
 } from "./step-tool-harness";
 
 // GOAL B (CL-2503): a step that declares a tool which never loaded (the
@@ -50,5 +53,77 @@ describe("assertStepToolAvailable", () => {
     expect(() =>
       assertStepToolAvailable("missing_tool", new Set<string>()),
     ).toThrow(/loaded tools: none/);
+  });
+
+  // CL-4196: a package that materialized but was dropped for a missing tenant
+  // credential must fail with a credential-specific error naming the
+  // provider, not the generic (and false) "not pinned" error.
+  test("throws StepToolCredentialMissingError naming the provider when the tool's factory was credential-skipped", () => {
+    let thrown: unknown;
+    try {
+      assertStepToolAvailable(
+        "@workbench/tools-sumble/sumble:sumble_get_organization_list",
+        new Set(["@workbench/tools-artifact/core:artifact_write"]),
+        [
+          {
+            factoryId: "@workbench/tools-sumble/sumble",
+            providerName: "sumble",
+          },
+        ],
+      );
+    } catch (err) {
+      thrown = err;
+    }
+    expect(thrown).toBeInstanceOf(StepToolCredentialMissingError);
+    const error = thrown as StepToolCredentialMissingError;
+    expect(error.toolName).toBe(
+      "@workbench/tools-sumble/sumble:sumble_get_organization_list",
+    );
+    expect(error.providerName).toBe("sumble");
+    expect(error.message).toContain('provider "sumble"');
+    expect(error.message).toContain("configure");
+  });
+
+  test("falls back to StepToolNotRegisteredError when the tool's factory was never credential-skipped", () => {
+    expect(() =>
+      assertStepToolAvailable(
+        "@workbench/tools-other/other:other_tool",
+        new Set<string>(),
+        [
+          {
+            factoryId: "@workbench/tools-sumble/sumble",
+            providerName: "sumble",
+          },
+        ],
+      ),
+    ).toThrow(StepToolNotRegisteredError);
+  });
+});
+
+describe("isStepToolInfrastructureFault", () => {
+  test("classifies StepToolNotRegisteredError as an infrastructure fault", () => {
+    expect(
+      isStepToolInfrastructureFault(new StepToolNotRegisteredError("t", [])),
+    ).toBe(true);
+  });
+
+  test("classifies StepToolCredentialMissingError as an infrastructure fault", () => {
+    expect(
+      isStepToolInfrastructureFault(
+        new StepToolCredentialMissingError("t", "sumble"),
+      ),
+    ).toBe(true);
+  });
+
+  test("classifies StepToolFactoryAbsentError as an infrastructure fault", () => {
+    expect(
+      isStepToolInfrastructureFault(
+        new StepToolFactoryAbsentError("pkg", "addr"),
+      ),
+    ).toBe(true);
+  });
+
+  test("does not classify a plain Error (a genuine tool/data failure) as an infrastructure fault", () => {
+    expect(isStepToolInfrastructureFault(new Error("boom"))).toBe(false);
   });
 });

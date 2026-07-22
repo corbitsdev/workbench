@@ -131,16 +131,77 @@ export class StepToolNotRegisteredError extends Error {
 }
 
 /**
- * Throw a clear, named {@link StepToolNotRegisteredError} when a step's declared
- * tool is absent from the tools that actually loaded for the step.
+ * A step declared a tool whose owning tool-package factory materialized but
+ * threw `ToolCredentialMissingError` at construction time — the tenant has no
+ * credential configured for the provider the tool requires. Distinct from
+ * {@link StepToolNotRegisteredError}: the tool WAS pinned and its package DID
+ * resolve, it was dropped for a missing tenant credential, so "not pinned" is
+ * false and misleading. Named + carries the provider so the run-failure detail
+ * tells an operator exactly which credential to configure.
+ */
+export class StepToolCredentialMissingError extends Error {
+  readonly toolName: string;
+  readonly providerName: string;
+  constructor(toolName: string, providerName: string) {
+    super(
+      `tool "${toolName}" requires a credential for provider "${providerName}" ` +
+        `that is not configured for this tenant; configure a "${providerName}" ` +
+        `credential before this step can run`,
+    );
+    this.name = "StepToolCredentialMissingError";
+    this.toolName = toolName;
+    this.providerName = providerName;
+  }
+}
+
+/**
+ * A tool-package factory `buildStepTools` skipped because it threw
+ * `ToolCredentialMissingError` — recorded so a later `assertStepToolAvailable`
+ * call can tell a genuinely-unpinned tool apart from one dropped for a
+ * missing credential. `factoryId` is the loader's canonical factory id (the
+ * prefix of every `<factoryId>:<name>` tool the factory would have defined).
+ */
+export interface CredentialSkippedFactory {
+  readonly factoryId: string;
+  readonly providerName: string;
+}
+
+/**
+ * Throw a clear, named error when a step's declared tool is absent from the
+ * tools that actually loaded for the step. When the tool's owning factory was
+ * skipped for a missing tenant credential (`credentialSkips`), throws the
+ * credential-specific {@link StepToolCredentialMissingError} instead of the
+ * generic, misleading "not pinned" {@link StepToolNotRegisteredError}.
  */
 export function assertStepToolAvailable(
   toolName: string,
   available: ReadonlySet<string>,
+  credentialSkips: readonly CredentialSkippedFactory[] = [],
 ): void {
-  if (!available.has(toolName)) {
-    throw new StepToolNotRegisteredError(toolName, [...available]);
+  if (available.has(toolName)) return;
+  const skip = credentialSkips.find((s) =>
+    toolName.startsWith(`${s.factoryId}:`),
+  );
+  if (skip !== undefined) {
+    throw new StepToolCredentialMissingError(toolName, skip.providerName);
   }
+  throw new StepToolNotRegisteredError(toolName, [...available]);
+}
+
+/**
+ * Faults that indicate the step's tool infrastructure itself is broken or
+ * misconfigured — the tool was never pinned, its credential is missing, or
+ * its loaded closure is corrupt — as opposed to the tool running and failing
+ * on its own terms (a data/execution fault). Infrastructure faults must never
+ * be absorbed by a `nonFatal` degrade: swallowing them reports a run as
+ * COMPLETED when it never actually attempted the work.
+ */
+export function isStepToolInfrastructureFault(error: unknown): boolean {
+  return (
+    error instanceof StepToolNotRegisteredError ||
+    error instanceof StepToolCredentialMissingError ||
+    error instanceof StepToolFactoryAbsentError
+  );
 }
 
 /**
@@ -293,6 +354,13 @@ async function buildStepTools(args: {
    * the dispatch allow-list only when the member is granted them.
    */
   packageToolNames: Set<string>;
+  /**
+   * Factories dropped because their tenant-scoped credential is missing —
+   * threaded to `assertStepToolAvailable` so a deterministic step's dispatch
+   * failure names the missing credential instead of reporting the tool as
+   * unpinned.
+   */
+  credentialSkips: CredentialSkippedFactory[];
   disposers: (() => Promise<void>)[];
 }> {
   const { ctx } = args;
@@ -378,6 +446,7 @@ async function buildStepTools(args: {
   const disposers: (() => Promise<void>)[] = [];
   const loadedToolNames = new Set<string>();
   const packageToolNames = new Set<string>();
+  const credentialSkips: CredentialSkippedFactory[] = [];
   for (const pkg of loadedPackages) {
     for (const factory of pkg.factories) {
       assertLoadedFactory(factory, pkg.name, ctx.stepAddress);
@@ -390,14 +459,23 @@ async function buildStepTools(args: {
         // in this process — `instanceof` can miss across bundles. `err.name`
         // survives bundling, so match on it instead.
         if (err instanceof Error && err.name === "ToolCredentialMissingError") {
-          logger.info(
+          const providerName = (err as { providerName?: string }).providerName;
+          // A missing tenant credential silently dropped this package from
+          // the step's runner: a later dispatch to one of its tools must fail
+          // with a credential-specific error, not the misleading "not
+          // pinned" StepToolNotRegisteredError, so log at error — this is an
+          // actionable operator-facing fault, not routine info.
+          logger.error(
             "Tool package {id} skipped for {address}: no credential configured for provider {providerName}",
             {
               id: factory.id,
               address: ctx.stepAddress,
-              providerName: (err as { providerName?: string }).providerName,
+              providerName,
             },
           );
+          if (providerName !== undefined) {
+            credentialSkips.push({ factoryId: factory.id, providerName });
+          }
           continue;
         }
         logger.warn(
@@ -489,6 +567,7 @@ async function buildStepTools(args: {
     runner: merged,
     loadedToolNames,
     packageToolNames,
+    credentialSkips,
     disposers,
   };
 }
@@ -1053,7 +1132,7 @@ export async function runDeterministicToolStep(args: {
     }),
   };
 
-  const { runner, disposers } = await buildStepTools({
+  const { runner, disposers, credentialSkips } = await buildStepTools({
     ctx,
     env: stepEnv,
     workdir: args.env.workdir,
@@ -1061,7 +1140,7 @@ export async function runDeterministicToolStep(args: {
 
   try {
     const available = new Set(runner.definitions.map((d) => d.name));
-    assertStepToolAvailable(args.toolName, available);
+    assertStepToolAvailable(args.toolName, available, credentialSkips);
     let toolArguments: Record<string, unknown>;
     if (args.argMapJson !== undefined) {
       const reshaped = reshapeWithArgMap(
@@ -1099,7 +1178,16 @@ export async function runDeterministicToolStep(args: {
           "Deterministic step tool {tool} returned isError for {address}: {msg}",
           { tool: args.toolName, address: ctx.stepAddress, msg: toolError },
         );
-        return { output: result };
+        // A genuine tool-execution failure (the tool ran and reported its
+        // own error) is exactly what `nonFatal` is for. Mark the envelope so
+        // the run surface can tell a degraded step apart from a clean
+        // completion instead of reporting it as indistinguishable success.
+        return {
+          output: {
+            ...(result as Record<string, unknown>),
+            degraded: true,
+          },
+        };
       }
       if (!args.signal.aborted) {
         logger.error("Deterministic step tool {tool} failed for {address}", {
@@ -1116,7 +1204,18 @@ export async function runDeterministicToolStep(args: {
     // cancel/timeout), the throw is the cancellation, not a source failure —
     // rethrow it so the runtime propagates the cancel instead of letting the
     // run march on into brief/write/persist.
-    if (args.nonFatal !== true || args.signal.aborted) {
+    //
+    // A degrade must also never mask an infrastructure fault: a tool that was
+    // never pinned, a package dropped for a missing credential, or a corrupt
+    // tool closure means the step never actually ran the work it was meant
+    // to. `nonFatal` exists to absorb a genuine tool-execution/data failure —
+    // the tool ran and reported its own error — not to paper over broken
+    // tool infrastructure as a clean completion.
+    if (
+      args.nonFatal !== true ||
+      args.signal.aborted ||
+      isStepToolInfrastructureFault(cause)
+    ) {
       // Log WITH the Error so the child's Sentry sink captures the stack via
       // captureException — the on-disk StepFailed event keeps only the message.
       // Skip on cancellation (signal aborted): teardown is not a fault.
@@ -1138,6 +1237,7 @@ export async function runDeterministicToolStep(args: {
       output: {
         content: `${args.toolName} step failed: ${reason}`,
         isError: true,
+        degraded: true,
       },
     };
   } finally {

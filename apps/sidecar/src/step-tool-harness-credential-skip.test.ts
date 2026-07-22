@@ -1,10 +1,13 @@
 // A tenant that hasn't configured an optional tool provider (e.g. notion)
-// should not WARN on every step launch — that's expected, not a fault.
-// getToolCredential throws ToolCredentialMissingError when the env key is
-// entirely absent; the harness must detect it via `err.name` (tool packages
-// load from published tarballs, so `instanceof` can miss across bundle
-// copies of the class) and log at info, not warn. A malformed credential
-// (present but invalid) is still a wiring fault and must still warn.
+// drops that provider's package from the step's runner. getToolCredential
+// throws ToolCredentialMissingError when the env key is entirely absent; the
+// harness must detect it via `err.name` (tool packages load from published
+// tarballs, so `instanceof` can miss across bundle copies of the class).
+// CL-4196: this is an actionable, operator-facing fault (a step later fails
+// dispatch for it) so the skip logs at ERROR, not info/warn — it must not be
+// silently swallowed as routine. A malformed credential (present but
+// invalid) is a distinct wiring fault and still warns via the generic
+// construction-failure path.
 //
 // mock.module is process-global; this file mocks @intx/log and must run
 // under `bun test --isolate`. The mock is registered before the harness is
@@ -23,8 +26,11 @@ interface LoggedCall {
 }
 const warnCalls: LoggedCall[] = [];
 const infoCalls: LoggedCall[] = [];
+const errorCalls: LoggedCall[] = [];
 const spyLogger = {
-  error: () => {},
+  error: (message: string, fields?: Record<string, unknown>) => {
+    errorCalls.push({ message, fields });
+  },
   warn: (message: string, fields?: Record<string, unknown>) => {
     warnCalls.push({ message, fields });
   },
@@ -54,9 +60,13 @@ mock.module("./agent-tools", () => ({
   filterToolRunner: (runner: unknown) => runner,
 }));
 
-const { createStepAgentFactory, STEP_TOOL_CONTEXT_KEY } = await import(
-  "./step-tool-harness"
-);
+const {
+  createStepAgentFactory,
+  runDeterministicToolStep,
+  STEP_TOOL_CONTEXT_KEY,
+  StepToolCredentialMissingError,
+  StepToolNotRegisteredError,
+} = await import("./step-tool-harness");
 
 const realFetch = globalThis.fetch;
 const tmpDirs: string[] = [];
@@ -64,6 +74,7 @@ const tmpDirs: string[] = [];
 beforeEach(() => {
   warnCalls.length = 0;
   infoCalls.length = 0;
+  errorCalls.length = 0;
   loadToolPackagesMock.mockClear();
 });
 afterEach(async () => {
@@ -121,8 +132,8 @@ const fakeAgent = {
   close: async () => {},
 };
 
-describe("step tool harness: missing-credential skip is quiet", () => {
-  test("a factory throwing ToolCredentialMissingError is skipped at info level, not warn", async () => {
+describe("step tool harness: missing-credential skip logs loud", () => {
+  test("a factory throwing ToolCredentialMissingError is skipped at ERROR level, not silently at info", async () => {
     stubHubFetch();
     loadToolPackagesMock.mockImplementationOnce(async () => [
       {
@@ -146,11 +157,80 @@ describe("step tool harness: missing-credential skip is quiet", () => {
     expect(
       warnCalls.some((c) => c.message.includes("failed to construct")),
     ).toBe(false);
-    const skipLog = infoCalls.find((c) =>
+    expect(
+      infoCalls.some((c) => c.message.includes("no credential configured")),
+    ).toBe(false);
+    const skipLog = errorCalls.find((c) =>
       c.message.includes("no credential configured"),
     );
     expect(skipLog).toBeTruthy();
     expect(skipLog?.fields?.providerName).toBe("notion");
+  });
+
+  // CL-4196: a deterministic step dispatched to a tool whose owning factory
+  // was credential-skipped must fail with the credential-specific error, not
+  // the misleading generic "not pinned" error — and `nonFatal` must NOT
+  // absorb this, since it is an infrastructure fault, not a genuine
+  // tool-execution failure.
+  test("runDeterministicToolStep fails dispatch with StepToolCredentialMissingError naming the provider", async () => {
+    stubHubFetch();
+    loadToolPackagesMock.mockImplementationOnce(async () => [
+      {
+        factories: [
+          Object.assign(
+            () => {
+              throw new ToolCredentialMissingError("sumble");
+            },
+            { id: "@workbench/tools-sumble/sumble", requires: [] },
+          ),
+        ],
+      },
+    ]);
+
+    const env = await buildStepEnv();
+    let thrown: unknown;
+    try {
+      await runDeterministicToolStep({
+        env: env as never,
+        toolName: "@workbench/tools-sumble/sumble:sumble_get_organization_list",
+        input: {},
+        signal: new AbortController().signal,
+      });
+    } catch (err) {
+      thrown = err;
+    }
+    expect(thrown).toBeInstanceOf(StepToolCredentialMissingError);
+    expect(thrown).not.toBeInstanceOf(StepToolNotRegisteredError);
+    const error = thrown as InstanceType<typeof StepToolCredentialMissingError>;
+    expect(error.providerName).toBe("sumble");
+    expect(error.message).toContain('provider "sumble"');
+  });
+
+  test("runDeterministicToolStep with nonFatal still rejects for a credential-missing tool (infra fault bypasses degrade)", async () => {
+    stubHubFetch();
+    loadToolPackagesMock.mockImplementationOnce(async () => [
+      {
+        factories: [
+          Object.assign(
+            () => {
+              throw new ToolCredentialMissingError("sumble");
+            },
+            { id: "@workbench/tools-sumble/sumble", requires: [] },
+          ),
+        ],
+      },
+    ]);
+
+    const env = await buildStepEnv();
+    await expect(
+      runDeterministicToolStep({
+        env: env as never,
+        toolName: "@workbench/tools-sumble/sumble:sumble_get_organization_list",
+        input: {},
+        nonFatal: true,
+        signal: new AbortController().signal,
+      }),
+    ).rejects.toBeInstanceOf(StepToolCredentialMissingError);
   });
 
   test("a factory throwing a generic Error still warns", async () => {

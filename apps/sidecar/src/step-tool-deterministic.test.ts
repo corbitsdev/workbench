@@ -245,6 +245,9 @@ describe("runDeterministicToolStep", () => {
     expect(typeof output.content).toBe("string");
     expect(output.content as string).toContain("mail_send");
     expect(output.content as string).toContain("requires an object");
+    // A degraded non-fatal step must be distinguishable from a clean
+    // completion at the run level (CL-4196).
+    expect(output.degraded).toBe(true);
   });
 
   test("nonFatal does NOT mask cancellation: an aborted signal rethrows instead of degrading", async () => {
@@ -267,21 +270,22 @@ describe("runDeterministicToolStep", () => {
     ).rejects.toThrow(/requires an object/);
   });
 
-  test("nonFatal degrade also covers an unpinned tool (misconfiguration is logged + skipped, not fatal)", async () => {
+  // CL-4196: an unpinned tool is a tool-infrastructure fault (the tool was
+  // never pinned/loaded at all), not a genuine tool-execution failure —
+  // `nonFatal` must NOT absorb it, or the run reports COMPLETED while never
+  // having attempted the step's actual work.
+  test("nonFatal does NOT degrade an unpinned tool: it rethrows StepToolNotRegisteredError", async () => {
     stubHubFetch();
     const { env } = await makeEnv();
-    const result = await runDeterministicToolStep({
-      env: env as never,
-      toolName: "gamma_create_from_template",
-      input: {},
-      nonFatal: true,
-      signal: new AbortController().signal,
-    });
-    const output = result.output as Record<string, unknown>;
-    expect(output.isError).toBe(true);
-    expect(output.content as string).toContain(
-      "is not registered/available for this deployment",
-    );
+    await expect(
+      runDeterministicToolStep({
+        env: env as never,
+        toolName: "gamma_create_from_template",
+        input: {},
+        nonFatal: true,
+        signal: new AbortController().signal,
+      }),
+    ).rejects.toThrow(/is not registered\/available for this deployment/);
   });
 
   test("mail_send delivers through the substrate-injected transport", async () => {
@@ -346,6 +350,9 @@ describe("runDeterministicToolStep", () => {
     expect(output.isError).toBe(true);
     const content = output.content as Record<string, unknown>;
     expect(content.error).toMatch(/send_failed/);
+    // A degraded non-fatal step must be distinguishable from a clean
+    // completion at the run level (CL-4196).
+    expect(output.degraded).toBe(true);
   });
 
   test("mail_send stays unavailable when no transport is injected", async () => {
