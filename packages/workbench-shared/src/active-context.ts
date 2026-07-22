@@ -77,11 +77,12 @@ export const PrincipalContextSchema = type({
 });
 export type PrincipalContext = typeof PrincipalContextSchema.infer;
 
-export const ActiveContextSchema = ArtifactContextSchema.or(
+export const ActiveContextSchema = type.or(
+  ArtifactContextSchema,
   WorkflowRunContextSchema,
-)
-  .or(ThreadContextSchema)
-  .or(PrincipalContextSchema);
+  ThreadContextSchema,
+  PrincipalContextSchema,
+);
 export type ActiveContext = typeof ActiveContextSchema.infer;
 
 /**

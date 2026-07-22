@@ -76,12 +76,11 @@ export const STEP_INLINE_RETRY_MAX_TAG = "workbench.inlineRetryMaxAttempts";
  * skip of the whole tool call rather than a throw. Must be JSON-serializable:
  * the workflow definition is JSON-deployed, so no functions.
  */
-export const ArgMapSpec = type({
-  from: "string",
-  "optional?": "boolean",
-})
-  .or({ literal: "unknown" })
-  .or({ fromJson: "string", field: "string", "optional?": "boolean" });
+export const ArgMapSpec = type.or(
+  { from: "string", "optional?": "boolean" },
+  { literal: "unknown" },
+  { fromJson: "string", field: "string", "optional?": "boolean" },
+);
 export type ArgMapSpec = typeof ArgMapSpec.infer;
 
 export const ArgMap = type({ "[string]": ArgMapSpec });

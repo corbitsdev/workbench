@@ -46,8 +46,11 @@ export const SettingsSelectField = type({
 });
 export type SettingsSelectField = typeof SettingsSelectField.infer;
 
-export const SettingsField =
-  SettingsTextField.or(SettingsToggleField).or(SettingsSelectField);
+export const SettingsField = type.or(
+  SettingsTextField,
+  SettingsToggleField,
+  SettingsSelectField,
+);
 export type SettingsField = typeof SettingsField.infer;
 
 export const SettingsSectionDescriptor = type({

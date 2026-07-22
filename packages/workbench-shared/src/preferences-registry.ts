@@ -44,16 +44,15 @@ export type PreferenceOption = typeof PreferenceOptionSchema.infer;
  * it verbatim so the web settings surface can gate rendering without
  * re-deriving the registry client-side.
  */
-export const AvailabilitySignalSchema = type({
-  kind: "'workflow-deployed'",
-  workflowKind: "string",
-})
-  .or({ kind: "'capability'", provider: "string" })
-  .or({ kind: "'credential-connected'", provider: "string" })
-  .or({
+export const AvailabilitySignalSchema = type.or(
+  { kind: "'workflow-deployed'", workflowKind: "string" },
+  { kind: "'capability'", provider: "string" },
+  { kind: "'credential-connected'", provider: "string" },
+  {
     kind: "'feature-enabled'",
     feature: "'scheduler' | 'triage' | 'tasks-reconciler'",
-  });
+  },
+);
 export type AvailabilitySignal = typeof AvailabilitySignalSchema.infer;
 
 /**
