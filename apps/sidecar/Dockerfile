@@ -68,7 +68,9 @@ COPY packages/tools-scrapecreators/package.json packages/tools-scrapecreators/
 COPY packages/tools-skills/package.json packages/tools-skills/
 COPY packages/tools-slack/package.json packages/tools-slack/
 COPY packages/tools-sumble/package.json packages/tools-sumble/
+COPY packages/tools-prospect-engine/package.json packages/tools-prospect-engine/
 COPY packages/tools-workflows/package.json packages/tools-workflows/
+
 COPY packages/tools-x/package.json packages/tools-x/
 COPY packages/tools-youtube/package.json packages/tools-youtube/
 COPY packages/test-utils/package.json packages/test-utils/
@@ -91,7 +93,9 @@ COPY workflows/multi-source-collateral/package.json workflows/multi-source-colla
 COPY workflows/reddit-opportunity-scanner/package.json workflows/reddit-opportunity-scanner/
 COPY workflows/smoke-test/package.json workflows/smoke-test/
 COPY workflows/sumble-account-intel/package.json workflows/sumble-account-intel/
+COPY workflows/prospect-engine/package.json workflows/prospect-engine/
 COPY workflows/competitor-analysis/package.json workflows/competitor-analysis/
+
 RUN bun install --frozen-lockfile
 
 # Full source for the sidecar's runtime closure ONLY. Tool packages reach the
