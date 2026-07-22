@@ -81,7 +81,7 @@ Workers use a **unique** `workerId` per process (pid + random suffix) so multi-r
 
 ## Granola
 
-Granola note processing is a **work unit kind** (`granola_call`), not a second lease table. `createGranolaCallJobQueue` is a thin facade: `enqueue(tenant, noteId)` → `work_unit` with idempotency `note:{noteId}` and payload `{ noteId }`. Claim / heartbeat / complete / fail all go through the shared queue (owner-fenced). Migration `0076_granola_call_to_work_unit` copies open specialized rows onto `work_unit` and closes the legacy table as a runtime path; drop is a follow-up.
+Granola note processing is a **work unit kind** (`granola_call`), not a second lease table. `createGranolaCallJobQueue` is a thin facade: `enqueue(tenant, noteId)` → `work_unit` with idempotency `note:{noteId}` and payload `{ noteId }`. Claim / heartbeat / complete / fail all go through the shared queue (owner-fenced). Migration `0076_granola_call_to_work_unit` copied open specialized rows onto `work_unit`; migration `0077_drop_granola_call_job` removes the legacy table.
 
 ## Owner ops (WQ.6)
 
@@ -110,8 +110,7 @@ Granola note processing is a **work unit kind** (`granola_call`), not a second l
 
 **Deferred (non-blocking):**
 
-1. **Drop `granola_call_job` table** after staging has drained and ops confirm owner work-units surface covers dead notes.
-2. **No dedicated sweeper / metrics exporter** — reclaim is claim-time only; owner health is count-based. Fine until multi-tenant ops need latency histograms.
-3. **Work unit kinds are free-form strings** — no registry/enum yet; add when a second product surface wants to plug in.
-4. **Schedule fire → work unit (WQ.7 / CL-4070)** not in this PR; schedules fire through the existing scheduler path.
-5. **Visibility timeout vs hard kill of LLM calls** — abort signal is wired; underlying model SDKs may not always honor it mid-stream. Acceptable; track if we see zombie token spend after reclaim.
+1. **No dedicated sweeper / metrics exporter** — reclaim is claim-time only; owner health is count-based. Fine until multi-tenant ops need latency histograms.
+2. **Work unit kinds are free-form strings** — no registry/enum yet; add when a second product surface wants to plug in.
+3. **Schedule fire → work unit (WQ.7 / CL-4070)** not in this PR; schedules fire through the existing scheduler path.
+4. **Visibility timeout vs hard kill of LLM calls** — abort signal is wired; underlying model SDKs may not always honor it mid-stream. Acceptable; track if we see zombie token spend after reclaim.

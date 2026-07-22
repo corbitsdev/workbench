@@ -992,58 +992,23 @@ export const inboxIntakeCursor = pgTable("inbox_intake_cursor", {
 
 export type InboxIntakeCursorRow = typeof inboxIntakeCursor.$inferSelect;
 
-// A queued Granola call: enqueued by the workspace intake tick (cheap,
-// LLM-free) and drained off-tick by the job runner, which does the transcript
-// fetch + reasoning turn + artifact persistence (CL-3627). One row per
-// (tenant, note); the unique constraint is both the enqueue-dedupe backstop
-// (a re-listed note within the same tick window upserts onto its existing row
-// rather than creating a second job) and the durable retry/backoff state —
-// `nextAttemptAt` gates the runner's claim query, `attempts` grows the
-// backoff, and `status = 'dead'` after the attempt ceiling stops a
-// permanently-broken note from being retried forever (logged loudly, not
-// silently dropped).
-export const granolaCallJobStatuses = [
-  "pending",
-  "processing",
-  "done",
-  "dead",
-] as const;
-
-export const granolaCallJob = pgTable(
-  "granola_call_job",
-  {
-    id: uuid("id").primaryKey().defaultRandom(),
-    tenantId: text("tenant_id").notNull(),
-    noteId: text("note_id").notNull(),
-    status: text("status", { enum: granolaCallJobStatuses })
-      .notNull()
-      .default("pending"),
-    attempts: integer("attempts").notNull().default(0),
-    nextAttemptAt: timestamp("next_attempt_at").notNull().defaultNow(),
-    lastError: text("last_error"),
-    // WQ.3: visibility lease so a dead worker cannot stick a job in processing.
-    leaseOwner: text("lease_owner"),
-    leaseUntil: timestamp("lease_until"),
-    createdAt: timestamp("created_at").notNull().defaultNow(),
-    updatedAt: timestamp("updated_at")
-      .notNull()
-      .defaultNow()
-      .$onUpdate(() => new Date()),
-  },
-  (t) => ({
-    granolaCallJobTenantNoteUniq: unique(
-      "granola_call_job_tenant_note_uniq",
-    ).on(t.tenantId, t.noteId),
-    granolaCallJobStatusNextAttemptIdx: index(
-      "granola_call_job_status_next_attempt_idx",
-    ).on(t.status, t.nextAttemptAt),
-    granolaCallJobLeaseUntilIdx: index(
-      "granola_call_job_lease_until_idx",
-    ).on(t.status, t.leaseUntil),
-  }),
-);
-
-export type GranolaCallJobRow = typeof granolaCallJob.$inferSelect;
+// Historical facade shape for Granola note jobs. The `granola_call_job` table
+// was dropped in 0077 (CL-4203) after cutover to work_unit kind `granola_call`;
+// the granola-call-job-queue facade still maps work_unit rows onto this shape
+// for runner / inbox callers.
+export type GranolaCallJobRow = {
+  id: string;
+  tenantId: string;
+  noteId: string;
+  status: "pending" | "processing" | "done" | "dead";
+  attempts: number;
+  nextAttemptAt: Date;
+  lastError: string | null;
+  leaseOwner: string | null;
+  leaseUntil: Date | null;
+  createdAt: Date;
+  updatedAt: Date;
+};
 
 // Durable background work unit (WQ.1–WQ.2). Product tasks are never leased;
 // workers claim work_unit rows with FOR UPDATE SKIP LOCKED + lease_until.
