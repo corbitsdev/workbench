@@ -105,7 +105,7 @@ function buildSections(
                 label: "Voice input in Myra",
                 kind: "toggle" as const,
                 description:
-                  "Show the microphone control in the Myra composer to dictate messages.",
+                  "Show the microphone control in the Myra composer to dictate messages. Uses the browser speech service (Chrome/Edge work best; Brave may block it).",
               },
             ]
           : []),
