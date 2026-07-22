@@ -64,6 +64,7 @@
     "@workbench/tools-artifact": "workspace:*",
     "@workbench/tools-attio": "workspace:*",
     "@workbench/tools-bluesky": "workspace:*",
+    "@workbench/tools-corbits-knowledge-engine": "workspace:*",
     "@workbench/tools-dispatch": "workspace:*",
     "@workbench/tools-exa": "workspace:*",
     "@workbench/tools-fileparser": "workspace:*",

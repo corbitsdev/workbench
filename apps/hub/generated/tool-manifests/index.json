@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-07-18T22:30:21.952Z",
+  "generatedAt": "2026-07-21T04:25:29.290Z",
   "factories": [
     {
       "factoryId": "@workbench/tools-ab-compare/compose",
@@ -201,6 +201,43 @@
         "secondaryField": {
           "label": "Handle",
           "placeholder": "you.bsky.social",
+          "required": true
+        }
+      }
+    },
+    {
+      "factoryId": "@workbench/tools-corbits-knowledge-engine/corbits-knowledge-engine",
+      "packageName": "@workbench/tools-corbits-knowledge-engine",
+      "providerName": "corbits-knowledge-engine",
+      "bareToolNames": [
+        "capture_to_knowledge",
+        "search_company_knowledge"
+      ],
+      "sideEffects": {
+        "search_company_knowledge": "read",
+        "capture_to_knowledge": "write"
+      },
+      "descriptions": {
+        "search_company_knowledge": "Search the team's shared knowledge base (call notes, docs, and other captured evidence) for passages relevant to a query. Returns ranked hits, each with a title, a snippet of the matching passage, a relevance score, and a documentId you can cite or use to fetch the source further.",
+        "capture_to_knowledge": "Capture a piece of evidence (a note, an excerpt, a finding) into the team's shared knowledge base so it becomes searchable via search_company_knowledge. Provide either `text` (captured as a single chunk) or `chunks` (pre-split passages, in order). Returns the resulting document's id, version id, chunk count, and ingest status."
+      },
+      "myraCatalog": {
+        "catalogPackage": "corbits-knowledge-engine",
+        "summary": "Corbits Knowledge Engine — search and capture the team's shared knowledge base.",
+        "tags": [
+          "knowledge",
+          "search",
+          "capture",
+          "memory",
+          "evidence"
+        ]
+      },
+      "credentialCatalog": {
+        "label": "Corbits Knowledge Engine",
+        "secretLabel": "Service token",
+        "secondaryField": {
+          "label": "Engine URL",
+          "placeholder": "https://knowledge-engine.internal",
           "required": true
         }
       }

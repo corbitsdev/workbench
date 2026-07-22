@@ -312,6 +312,25 @@ export function buildEntries(): CredentialEntry[] {
     });
   }
 
+  const knowledgeEngineToken = env("KNOWLEDGE_ENGINE_TOKEN");
+  if (knowledgeEngineToken) {
+    const knowledgeEngineUrl = env("KNOWLEDGE_ENGINE_URL");
+    if (!knowledgeEngineUrl) {
+      console.error(
+        "[seed-credentials] KNOWLEDGE_ENGINE_TOKEN is set but KNOWLEDGE_ENGINE_URL is missing — skipping",
+      );
+    } else {
+      entries.push({
+        providerName: "corbits-knowledge-engine",
+        providerPlugin: "corbits-knowledge-engine",
+        credentialName: "Corbits Knowledge Engine",
+        secret: knowledgeEngineToken,
+        kind: "tool",
+        metadata: { baseURL: knowledgeEngineUrl },
+      });
+    }
+  }
+
   const xaiKey = env("XAI_API_KEY");
   if (xaiKey) {
     entries.push({

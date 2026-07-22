@@ -52,6 +52,7 @@ describe("Fannie definition", () => {
       "github",
       "scrapecreators",
       "bluesky",
+      "corbits-knowledge-engine",
     ]);
 
     const requirementProviders = FANNIE_CREDENTIAL_REQUIREMENTS.map(

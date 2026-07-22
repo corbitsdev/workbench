@@ -66,6 +66,7 @@
         "@workbench/tools-attio": "workspace:*",
         "@workbench/tools-bluesky": "workspace:*",
         "@workbench/tools-catalog": "workspace:*",
+        "@workbench/tools-corbits-knowledge-engine": "workspace:*",
         "@workbench/tools-dispatch": "workspace:*",
         "@workbench/tools-exa": "workspace:*",
         "@workbench/tools-fileparser": "workspace:*",
@@ -1061,6 +1062,21 @@
         "arktype": "catalog:",
       },
       "devDependencies": {
+        "@intx/types": "workspace:*",
+        "@types/bun": "latest",
+        "typescript": "^5.9.0",
+      },
+    },
+    "packages/tools-corbits-knowledge-engine": {
+      "name": "@workbench/tools-corbits-knowledge-engine",
+      "version": "0.1.0",
+      "dependencies": {
+        "@workbench/tool-credentials": "workspace:*",
+        "@workbench/tool-manifest": "workspace:*",
+        "arktype": "catalog:",
+      },
+      "devDependencies": {
+        "@intx/agent": "workspace:*",
         "@intx/types": "workspace:*",
         "@types/bun": "latest",
         "typescript": "^5.9.0",
@@ -2650,6 +2666,8 @@
     "@workbench/tools-bluesky": ["@workbench/tools-bluesky@workspace:packages/tools-bluesky"],
 
     "@workbench/tools-catalog": ["@workbench/tools-catalog@workspace:packages/tools-catalog"],
+
+    "@workbench/tools-corbits-knowledge-engine": ["@workbench/tools-corbits-knowledge-engine@workspace:packages/tools-corbits-knowledge-engine"],
 
     "@workbench/tools-dispatch": ["@workbench/tools-dispatch@workspace:packages/tools-dispatch"],
 

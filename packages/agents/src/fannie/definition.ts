@@ -29,6 +29,7 @@ export const FANNIE_CREDENTIAL_PROVIDER_NAMES = [
   "github",
   "scrapecreators",
   "bluesky",
+  "corbits-knowledge-engine",
 ] as const;
 
 export const FANNIE_CAPABILITIES = {
@@ -62,6 +63,8 @@ export const FANNIE_CAPABILITIES = {
     "scrapecreators_instagram",
     "scrapecreators_threads",
     "scrapecreators_pinterest",
+    "search_company_knowledge",
+    "capture_to_knowledge",
   ]),
 } as const;
 
