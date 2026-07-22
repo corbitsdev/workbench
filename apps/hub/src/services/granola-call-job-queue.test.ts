@@ -13,6 +13,7 @@ import { schema } from "../db";
 import type { HubDb } from "../db";
 import {
   createGranolaCallJobQueue,
+  GRANOLA_CALL_KIND,
   MAX_ATTEMPTS,
 } from "./granola-call-job-queue";
 
@@ -21,15 +22,18 @@ const TENANT = "ten-granola";
 let client: PGlite;
 let db: HubDb;
 
-async function jobRows() {
+async function unitRows() {
   return client.query<{
     tenant_id: string;
-    note_id: string;
+    kind: string;
+    idempotency_key: string;
     status: string;
     attempts: number;
     next_attempt_at: string;
+    payload: { noteId?: string };
   }>(
-    `select tenant_id, note_id, status, attempts, next_attempt_at from granola_call_job`,
+    `select tenant_id, kind, idempotency_key, status, attempts, next_attempt_at, payload
+     from work_unit where kind = 'granola_call'`,
   );
 }
 
@@ -47,40 +51,44 @@ afterAll(async () => {
 });
 
 beforeEach(async () => {
-  await client.exec(`DELETE FROM granola_call_job;`);
+  await client.exec(`DELETE FROM work_unit;`);
 });
 
-describe("granola call job queue", () => {
-  test("enqueue creates a pending job", async () => {
+describe("granola call job queue (work_unit kind)", () => {
+  test("enqueue creates a pending granola_call work unit", async () => {
     const queue = createGranolaCallJobQueue(db);
     await queue.enqueue(TENANT, "note-1");
-    const rows = (await jobRows()).rows;
+    const rows = (await unitRows()).rows;
     expect(rows).toHaveLength(1);
+    expect(rows[0]?.kind).toBe(GRANOLA_CALL_KIND);
     expect(rows[0]?.status).toBe("pending");
+    expect(rows[0]?.idempotency_key).toBe("note:note-1");
+    expect(rows[0]?.payload?.noteId).toBe("note-1");
     expect(rows[0]?.attempts).toBe(0);
   });
 
-  test("enqueue is idempotent per (tenant, note) — a re-listed note does not create a second job", async () => {
+  test("enqueue is idempotent per (tenant, note) — a re-listed note does not create a second unit", async () => {
     const queue = createGranolaCallJobQueue(db);
     await queue.enqueue(TENANT, "note-1");
     await queue.enqueue(TENANT, "note-1");
-    const rows = (await jobRows()).rows;
+    const rows = (await unitRows()).rows;
     expect(rows).toHaveLength(1);
   });
 
-  test("claimDue returns due pending jobs and marks them processing", async () => {
+  test("claimDue returns due pending jobs and marks them leased (processing facade)", async () => {
     const queue = createGranolaCallJobQueue(db);
     await queue.enqueue(TENANT, "note-1");
     await queue.enqueue(TENANT, "note-2");
 
     const claimed = await queue.claimDue(10);
     expect(claimed.map((j) => j.noteId).sort()).toEqual(["note-1", "note-2"]);
+    expect(claimed.every((j) => j.status === "processing")).toBe(true);
 
-    const rows = (await jobRows()).rows;
-    expect(rows.every((r) => r.status === "processing")).toBe(true);
+    const rows = (await unitRows()).rows;
+    expect(rows.every((r) => r.status === "leased")).toBe(true);
   });
 
-  test("claimDue does not re-claim a job already claimed (processing)", async () => {
+  test("claimDue does not re-claim a job already claimed (leased)", async () => {
     const queue = createGranolaCallJobQueue(db);
     await queue.enqueue(TENANT, "note-1");
     const first = await queue.claimDue(10);
@@ -95,7 +103,7 @@ describe("granola call job queue", () => {
     await queue.enqueue(TENANT, "note-1");
     const [job] = await queue.claimDue(10);
     await queue.complete(job!.id, "granola-runner");
-    const rows = (await jobRows()).rows;
+    const rows = (await unitRows()).rows;
     expect(rows[0]?.status).toBe("done");
   });
 
@@ -104,8 +112,8 @@ describe("granola call job queue", () => {
     await queue.enqueue(TENANT, "note-1");
     const [job] = await queue.claimDue(10);
     const before = Date.now();
-    await queue.fail(job!.id, "granola-runner", 1, "transient LLM error");
-    const rows = (await jobRows()).rows;
+    await queue.fail(job!.id, "granola-runner", "transient LLM error");
+    const rows = (await unitRows()).rows;
     expect(rows[0]?.status).toBe("pending");
     expect(rows[0]?.attempts).toBe(1);
     expect(new Date(rows[0]!.next_attempt_at).getTime()).toBeGreaterThan(
@@ -116,17 +124,25 @@ describe("granola call job queue", () => {
   test("fail at the attempt ceiling marks the job dead instead of retrying forever", async () => {
     const queue = createGranolaCallJobQueue(db);
     await queue.enqueue(TENANT, "note-1");
-    const [job] = await queue.claimDue(10);
-    await queue.fail(job!.id, "granola-runner", MAX_ATTEMPTS, "still failing");
-    const rows = (await jobRows()).rows;
+    for (let i = 0; i < MAX_ATTEMPTS; i++) {
+      const [job] = await queue.claimDue(10, `w-${i}`, 60_000);
+      expect(job).toBeDefined();
+      await queue.fail(job!.id, `w-${i}`, "still failing");
+      // Clear backoff so the next claim is immediately due (not needed after dead).
+      await client.exec(
+        `UPDATE work_unit SET next_attempt_at = now() - interval '1 second' WHERE status = 'pending'`,
+      );
+    }
+    const rows = (await unitRows()).rows;
     expect(rows[0]?.status).toBe("dead");
+    expect(rows[0]?.attempts).toBe(MAX_ATTEMPTS);
   });
 
   test("a backed-off job is not claimed again until its next_attempt_at passes", async () => {
     const queue = createGranolaCallJobQueue(db);
     await queue.enqueue(TENANT, "note-1");
     const [job] = await queue.claimDue(10);
-    await queue.fail(job!.id, "granola-runner", 1, "transient");
+    await queue.fail(job!.id, "granola-runner", "transient");
     const reclaimed = await queue.claimDue(10);
     expect(reclaimed).toHaveLength(0);
   });
@@ -136,13 +152,13 @@ describe("granola call job queue", () => {
     await queue.enqueue(TENANT, "note-1");
     const [job] = await queue.claimDue(10, "owner-a");
     await queue.complete(job!.id, "owner-b");
-    let rows = (await jobRows()).rows;
-    expect(rows[0]?.status).toBe("processing");
-    await queue.fail(job!.id, "owner-b", 1, "stolen");
-    rows = (await jobRows()).rows;
-    expect(rows[0]?.status).toBe("processing");
+    let rows = (await unitRows()).rows;
+    expect(rows[0]?.status).toBe("leased");
+    await queue.fail(job!.id, "owner-b", "stolen");
+    rows = (await unitRows()).rows;
+    expect(rows[0]?.status).toBe("leased");
     await queue.complete(job!.id, "owner-a");
-    rows = (await jobRows()).rows;
+    rows = (await unitRows()).rows;
     expect(rows[0]?.status).toBe("done");
   });
 

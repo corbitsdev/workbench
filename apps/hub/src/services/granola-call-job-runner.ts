@@ -182,7 +182,7 @@ async function processJob(
       return;
     }
     const message = err instanceof Error ? err.message : String(err);
-    await deps.queue.fail(job.id, workerId, job.attempts + 1, message);
+    await deps.queue.fail(job.id, workerId, message);
   } finally {
     clearInterval(heartbeat);
   }
