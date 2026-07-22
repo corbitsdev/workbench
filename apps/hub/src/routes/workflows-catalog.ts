@@ -145,8 +145,10 @@ export function createWorkflowsCatalogRouter(deps: {
       const displayFlows = await loadWorkflowDisplayFlows();
       // Gate shape + intake form per kind (CL-3508/CL-3509): whether the kind is
       // attachable to a brief schedule, and the intake fields the attach UI
-      // collects for a requiresIntake kind. Both read from the committed embedded
-      // catalog alongside the display flows.
+      // collects. Intake fields ship whenever the embedded def declares them —
+      // including gate-free unattended kinds (prospect-engine) that still need
+      // Slack channel + Engine list ids at schedule-attach time. `requiresIntake`
+      // only describes awaitSignal gates; do not gate the form on it.
       const gateInfos = await loadWorkflowGateInfos();
       const intakeFieldsByKind = await loadWorkflowIntakeFields();
 
@@ -161,10 +163,7 @@ export function createWorkflowsCatalogRouter(deps: {
         const attachable =
           gateInfo !== undefined &&
           isKindStructurallyAttachable(gateInfo, entry.kind);
-        const intakeFields =
-          gateInfo?.requiresIntake === true
-            ? intakeFieldsByKind.get(entry.kind)
-            : undefined;
+const intakeFields = intakeFieldsByKind.get(entry.kind);
         const scopes = scheduleScopesForKind(entry.kind, attachable);
         entries.push({
           kind: entry.kind,

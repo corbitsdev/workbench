@@ -24,6 +24,7 @@ import {
   PainPointSelectionPayloadSchema,
   SumbleIntakePayloadSchema,
   SumbleReviewPayloadSchema,
+  ProspectEngineIntakePayloadSchema,
   SyncApprovalPayloadSchema,
   TaskSelectionPayloadSchema,
 } from "@workbench/shared";
@@ -135,7 +136,7 @@ const RESUME_PAYLOAD_SCHEMAS: Record<string, Record<string, Type>> = {
     intake: SumbleIntakePayloadSchema,
     review: SumbleReviewPayloadSchema,
   },
-  // competitor-analysis (CL-4029): the intake gate REQUIRES an http(s) company
+// competitor-analysis (CL-4029): the intake gate REQUIRES an http(s) company
   // URL — the scrape step fetches it, so a blank/non-URL intake is rejected at
   // the /resume boundary rather than failing deep in the crawl. The review gate
   // carries the approval decision before the report is persisted. The block form
@@ -143,6 +144,11 @@ const RESUME_PAYLOAD_SCHEMAS: Record<string, Record<string, Type>> = {
   "competitor-analysis": {
     intake: CompetitorAnalysisIntakePayloadSchema,
     review: CompetitorAnalysisReviewPayloadSchema,
+  },
+  // prospect-engine (CL-3497): schedule/attach intake for list ids + Slack +
+  // optional verticals. Fire-time enrichment builds the full trigger payload.
+  "prospect-engine": {
+    intake: ProspectEngineIntakePayloadSchema,
   },
   // Multi-gate scheduler integration fixture (CL-3528): intake then a post-intake
   // confirm gate with an empty payload — exercises scheduled Myra gate-drive.

@@ -37,6 +37,7 @@ import { SKILLS_HUB_TOOLS } from "../tools/list-skills";
 import { GAMMA_TEMPLATES_HUB_TOOLS } from "../tools/gamma-templates";
 import { AB_COMPARE_HUB_TOOLS } from "../tools/ab-compare-tools";
 import { LAST30DAYS_CORE_HUB_TOOLS } from "../tools/last30days-core-tools";
+import { PROSPECT_ENGINE_HUB_TOOLS } from "../tools/prospect-engine-tools";
 import { TASK_HUB_TOOLS } from "../tools/task-tools";
 import { VERCEL_DEPLOY_ARTIFACT_HUB_TOOLS } from "../tools/vercel-deploy-artifact";
 import type {
@@ -89,6 +90,7 @@ export const KNOWN_TOOLS: Record<string, ToolEntry> = {
   ...YOUTUBE_HUB_TOOLS,
   ...AB_COMPARE_HUB_TOOLS,
   ...LAST30DAYS_CORE_HUB_TOOLS,
+  ...PROSPECT_ENGINE_HUB_TOOLS,
   // Hub-backed (permanent; need hub db/services)
   ...ARTIFACT_HUB_TOOLS,
   ...FILEPARSER_HUB_TOOLS,

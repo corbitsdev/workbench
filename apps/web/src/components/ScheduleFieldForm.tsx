@@ -96,7 +96,35 @@ export function ScheduleFieldForm({
                 onChange={(e) => setValue(field.name, e.target.value)}
                 className="w-full rounded-[10px] border border-border bg-page px-3 py-2 text-sm text-text placeholder:text-text-3 focus:outline-none focus-visible:ring-2 focus-visible:ring-border-strong disabled:opacity-60"
               />
+            ) : hint === "string-array" ? (
+              <textarea
+                id={fieldId}
+                name={field.name}
+                value={
+                  Array.isArray(raw)
+                    ? raw
+                        .filter((item): item is string => typeof item === "string")
+                        .join("\n")
+                    : str
+                }
+                placeholder={field.placeholder ?? "One value per line"}
+                required={field.required}
+                disabled={disabled || fromProfile}
+                readOnly={fromProfile}
+                rows={3}
+                onChange={(e) =>
+                  setValue(
+                    field.name,
+                    e.target.value
+                      .split("\n")
+                      .map((line) => line.trim())
+                      .filter((line) => line.length > 0),
+                  )
+                }
+                className="w-full rounded-[10px] border border-border bg-page px-3 py-2 text-sm text-text placeholder:text-text-3 focus:outline-none focus-visible:ring-2 focus-visible:ring-border-strong disabled:opacity-60"
+              />
             ) : hint === "boolean" ? (
+
               <label className="inline-flex items-center gap-2 text-sm text-text">
                 <input
                   id={fieldId}
@@ -157,7 +185,9 @@ export function scheduleFieldsComplete(
     const v = values[field.name];
     if (v === undefined || v === null) return false;
     if (typeof v === "string" && v.trim() === "") return false;
+    if (Array.isArray(v) && v.length === 0) return false;
     if (typeof v === "boolean") continue;
+
   }
   return true;
 }

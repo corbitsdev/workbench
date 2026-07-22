@@ -57,6 +57,7 @@ COPY packages/tools-github/package.json packages/tools-github/
 COPY packages/tools-granola/package.json packages/tools-granola/
 COPY packages/tools-hackernews/package.json packages/tools-hackernews/
 COPY packages/tools-last30days/package.json packages/tools-last30days/
+COPY packages/tools-prospect-engine/package.json packages/tools-prospect-engine/
 COPY packages/tools-polymarket/package.json packages/tools-polymarket/
 COPY packages/tools-reddit/package.json packages/tools-reddit/
 COPY packages/tools-scrapecreators/package.json packages/tools-scrapecreators/
@@ -84,6 +85,7 @@ COPY workflows/last30days-research/package.json workflows/last30days-research/
 COPY workflows/pain-point-collateral/package.json workflows/pain-point-collateral/
 COPY workflows/multi-source-collateral/package.json workflows/multi-source-collateral/
 COPY workflows/reddit-opportunity-scanner/package.json workflows/reddit-opportunity-scanner/
+COPY workflows/prospect-engine/package.json workflows/prospect-engine/
 COPY workflows/smoke-test/package.json workflows/smoke-test/
 COPY workflows/sumble-account-intel/package.json workflows/sumble-account-intel/
 COPY workflows/competitor-analysis/package.json workflows/competitor-analysis/
@@ -131,6 +133,7 @@ COPY packages/tools-github/ packages/tools-github/
 COPY packages/tools-granola/ packages/tools-granola/
 COPY packages/tools-hackernews/ packages/tools-hackernews/
 COPY packages/tools-last30days/ packages/tools-last30days/
+COPY packages/tools-prospect-engine/ packages/tools-prospect-engine/
 COPY packages/tools-polymarket/ packages/tools-polymarket/
 COPY packages/tools-reddit/ packages/tools-reddit/
 COPY packages/tools-scrapecreators/ packages/tools-scrapecreators/

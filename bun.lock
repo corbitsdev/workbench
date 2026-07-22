@@ -79,6 +79,7 @@
         "@workbench/tools-linear": "workspace:*",
         "@workbench/tools-notion": "workspace:*",
         "@workbench/tools-polymarket": "workspace:*",
+        "@workbench/tools-prospect-engine": "workspace:*",
         "@workbench/tools-reddit": "workspace:*",
         "@workbench/tools-scrapecreators": "workspace:*",
         "@workbench/tools-skills": "workspace:*",
@@ -1298,6 +1299,21 @@
         "typescript": "^5.9.0",
       },
     },
+    "packages/tools-prospect-engine": {
+      "name": "@workbench/tools-prospect-engine",
+      "version": "0.1.0",
+      "dependencies": {
+        "@workbench/shared": "workspace:*",
+        "@workbench/tool-manifest": "workspace:*",
+        "arktype": "catalog:",
+      },
+      "devDependencies": {
+        "@intx/agent": "workspace:*",
+        "@intx/types": "workspace:*",
+        "@types/bun": "latest",
+        "typescript": "^5.9.0",
+      },
+    },
     "packages/tools-reddit": {
       "name": "@workbench/tools-reddit",
       "version": "0.1.0",
@@ -1736,6 +1752,20 @@
       },
       "peerDependencies": {
         "react": "*",
+      },
+    },
+    "workflows/prospect-engine": {
+      "name": "@workbench/workflow-prospect-engine",
+      "version": "0.1.0",
+      "dependencies": {
+        "@intx/agent": "workspace:*",
+        "@intx/workflow": "workspace:*",
+        "@workbench/agents": "workspace:*",
+        "@workbench/shared": "workspace:*",
+      },
+      "devDependencies": {
+        "@types/bun": "latest",
+        "typescript": "catalog:",
       },
     },
     "workflows/reddit-opportunity-scanner": {
@@ -2763,6 +2793,8 @@
 
     "@workbench/tools-polymarket": ["@workbench/tools-polymarket@workspace:packages/tools-polymarket"],
 
+    "@workbench/tools-prospect-engine": ["@workbench/tools-prospect-engine@workspace:packages/tools-prospect-engine"],
+
     "@workbench/tools-reddit": ["@workbench/tools-reddit@workspace:packages/tools-reddit"],
 
     "@workbench/tools-scrapecreators": ["@workbench/tools-scrapecreators@workspace:packages/tools-scrapecreators"],
@@ -2810,6 +2842,8 @@
     "@workbench/workflow-multi-source-collateral": ["@workbench/workflow-multi-source-collateral@workspace:workflows/multi-source-collateral"],
 
     "@workbench/workflow-pain-point-collateral": ["@workbench/workflow-pain-point-collateral@workspace:workflows/pain-point-collateral"],
+
+    "@workbench/workflow-prospect-engine": ["@workbench/workflow-prospect-engine@workspace:workflows/prospect-engine"],
 
     "@workbench/workflow-reddit-opportunity-scanner": ["@workbench/workflow-reddit-opportunity-scanner@workspace:workflows/reddit-opportunity-scanner"],
 

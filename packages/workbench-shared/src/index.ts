@@ -23,6 +23,7 @@ export * from "./pain-point-collateral";
 export * from "./multi-source-collateral";
 export * from "./sumble-account-intel";
 export * from "./competitor-analysis";
+export * from "./prospect-engine";
 
 export * from "./web-site";
 export * from "./preferences-registry";
@@ -472,11 +473,13 @@ export type WorkflowFlowStep = typeof WorkflowFlowStepSchema.infer;
 // needs to render its row and its step-flow preview without a further call:
 // the member's favorite state, the classified step DAG, and the pause count.
 // A workflow's first-intake form field, as surfaced to the attach UI so it can
+// A workflow's first-intake form field, as surfaced to the attach UI so it can
 // collect the intake payload a scheduled run is pre-filled with (CL-3509) and
 // enriched for schema-driven schedule forms (CL-3860). Input kinds cover the
 // form renderer; `fromProfile` marks fire-time profile-supplied fields.
+// `string-array` supports multi-value verticals (prospect-engine schedule intake).
 export const ScheduleFieldInputKindSchema = type(
-  "'text' | 'textarea' | 'url' | 'select' | 'boolean'",
+  "'text' | 'textarea' | 'url' | 'select' | 'boolean' | 'string-array'",
 );
 export type ScheduleFieldInputKind = typeof ScheduleFieldInputKindSchema.infer;
 
@@ -496,6 +499,7 @@ export const ScheduleFieldMetadataSchema = type({
    * When both are set, `inputHint` wins.
    */
   "kind?": ScheduleFieldInputKindSchema,
+
   "required?": "boolean",
   "placeholder?": "string",
   "help?": "string",

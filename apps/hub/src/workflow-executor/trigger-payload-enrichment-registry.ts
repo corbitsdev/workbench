@@ -4,7 +4,10 @@ import {
   enrichHeartbeatTriggerPayload,
   type HeartbeatMemberIdentity,
 } from "../lib/heartbeat-trigger-payload";
-import { resolveEnabledBriefSources } from "@workbench/shared";
+import {
+  enrichProspectEngineTriggerPayload,
+  resolveEnabledBriefSources,
+} from "@workbench/shared";
 
 export type TriggerPayloadEnrichmentDeps = {
   db: HubDb;
@@ -66,6 +69,21 @@ const TRIGGER_PAYLOAD_ENRICHERS: Record<string, TriggerPayloadEnricher> = {
       ctx.hourUtc ?? 0,
       ctx.lookback ?? "manual-refresh",
       identity,
+    );
+  },
+  // Overnight prospect engine (CL-3497): stamp ET runDate + artifact title,
+  // resolve mail identity, coerce Engine list ids from schedule strings to
+  // integers Sumble write tools accept.
+  "prospect-engine": async (deps, ctx, input) => {
+    const identity = await deps.resolveUserIdentity(ctx.principalId);
+    return enrichProspectEngineTriggerPayload(
+      input,
+      (deps.now ?? Date.now)(),
+      {
+        userAddress: identity.userAddress,
+        userRefId: identity.userRefId,
+      },
+      ctx.lookback ?? "manual-refresh",
     );
   },
 };
