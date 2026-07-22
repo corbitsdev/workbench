@@ -7,6 +7,7 @@ import { createCorrelationRegistry } from "./correlation";
 import { createReactor } from "./reactor";
 import { createDefaultDependencies } from "./providers";
 import { createDefaultDirector } from "./default-director";
+import { classifyHTTPError } from "./errors";
 import { assertWellFormedToolSequence } from "./turns";
 import { createInboundMessage } from "@intx/mime";
 
@@ -5601,6 +5602,29 @@ describe("createReactor — source failover", () => {
     expect(getEvent(events, "inference.error").data.error.category).toBe(
       "context_overflow",
     );
+  });
+
+  test("an OpenCode-Zen-style 400 rate limit retries then fails over, not aborts", async () => {
+    const rateLimitedAs400 = classifyHTTPError(
+      400,
+      "Error from provider: rate limit exceeded, please try again later",
+      undefined,
+      1,
+    );
+    const { reactor, events, waitFor, attemptedSourceIds } = multiSourceReactor(
+      {
+        sourceIds: ["s0", "s1"],
+        resultFor: (id) => (id === "s0" ? rateLimitedAs400 : "done"),
+      },
+    );
+    reactor.start();
+    reactor.deliver(makeInboundMessage());
+    await waitFor("reactor.done");
+
+    // Before the fix this classified as `fatal`, which aborts the cycle
+    // immediately and never reaches s1.
+    expect(attemptedSourceIds).toEqual(["s0", "s0", "s1"]);
+    expect(getEvent(events, "inference.done").data.source.sourceId).toBe("s1");
   });
 
   test("surfaces the last error when every source is exhausted", async () => {

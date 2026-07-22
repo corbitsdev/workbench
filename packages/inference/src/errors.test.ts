@@ -56,6 +56,41 @@ describe("classifyHTTPError", () => {
     expect(err.category).toBe("fatal");
   });
 
+  test("400 with 'rate limit exceeded' body text → quota_exhausted", () => {
+    const err = classifyHTTPError(
+      400,
+      "Error from provider: rate limit exceeded, please try again later",
+    );
+    expect(err.category).toBe("quota_exhausted");
+    expect(err.statusCode).toBe(400);
+  });
+
+  test("400 rate-limit message honors retryAfterMs from headers", () => {
+    const err = classifyHTTPError(
+      400,
+      "rate limit exceeded, please try again later",
+      undefined,
+      5000,
+    );
+    expect(err.category).toBe("quota_exhausted");
+    if (err.category === "quota_exhausted") {
+      expect(err.retryAfterMs).toBe(5000);
+    }
+  });
+
+  test("400 with 'too many requests' body text → quota_exhausted", () => {
+    const err = classifyHTTPError(400, "too many requests, slow down");
+    expect(err.category).toBe("quota_exhausted");
+  });
+
+  test("400 with unrelated message still classifies as fatal (no widening)", () => {
+    const err = classifyHTTPError(
+      400,
+      "invalid request: missing field 'model'",
+    );
+    expect(err.category).toBe("fatal");
+  });
+
   test("404 → fatal", () => {
     const err = classifyHTTPError(404, "Not Found");
     expect(err.category).toBe("fatal");

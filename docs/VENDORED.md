@@ -217,6 +217,25 @@ There are two kinds of vendoring:
   first-class compaction event from the reactor path; a literal upstream
   copy that omits it silently re-introduces the analytics undercount of
   compaction spend with a green build.
+- **WORKBENCH-LOCAL change (CL-4177):** `src/errors.ts` `classifyHTTPError`'s
+  400 branch adds an `isRateLimitMessage` check (mirroring the existing
+  `isContextOverflowMessage` shape) before falling through to `fatal`: a 400
+  whose body text matches rate-limit phrasing (`"rate limit"`, `"rate-limit"`,
+  `"too many requests"`) classifies as `quota_exhausted` instead. OpenCode Zen
+  returns rate limits as HTTP 400 with the reason in the body rather than
+  HTTP 429, and `fatal` is excluded from the reactor's failover branch
+  (`src/reactor.ts:717-724`) by design — the reactor and retry-policy code
+  are untouched, since `quota_exhausted` already gets a same-source backoff
+  retry then failover for free. Deliberately does NOT widen `fatal` failover
+  more broadly (out of scope, see CL-4177). Guarded by the "400 with 'rate
+  limit exceeded'/'too many requests' body text" and "unrelated message still
+  classifies as fatal" cases in `src/errors.test.ts`, plus an end-to-end
+  "OpenCode-Zen-style 400 rate limit retries then fails over" case in
+  `src/reactor.test.ts`. Upstream also lacks this detection; should be
+  carried to Interchange separately. **Retirement:** drop once upstream adds
+  its own rate-limit body-text detection; a literal upstream copy that omits
+  it silently re-introduces the "rate limit ends the turn instead of failing
+  over" regression with a green build.
 
 ### `packages/storage-isogit` → `@workbench/storage-isogit`
 
