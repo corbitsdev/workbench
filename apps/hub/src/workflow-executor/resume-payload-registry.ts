@@ -11,6 +11,7 @@ import {
   RedditReviewPayloadSchema,
   RedditSelectionPayloadSchema,
   GammaIntakePayloadSchema,
+  GtmScriptsBriefsIntakePayloadSchema,
   PainPointContextPayloadSchema,
   PainPointFormatSelectionPayloadSchema,
   PainPointNoteSelectionPayloadSchema,
@@ -71,6 +72,11 @@ const RESUME_PAYLOAD_SCHEMAS: Record<string, Record<string, Type>> = {
   // reads both. There is no preview/round gate; the run generates once and
   // persists.
   "gamma-presentation-creator": GAMMA_SIGNALS,
+  // gtm-scripts-briefs (CL-4031): retrieval and grounding require a non-empty
+  // topic and positive research window before the writer can select a story.
+  "gtm-scripts-briefs": {
+    intake: GtmScriptsBriefsIntakePayloadSchema,
+  },
   // last30days-research (CL-2765): the one `intake` gate REQUIRES a non-empty
   // topic — every source query and the report title derive from it, so a
   // topic-less intake is rejected here rather than grounding the scan on nothing.

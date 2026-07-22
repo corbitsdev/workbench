@@ -484,6 +484,26 @@ describe("validateResumePayload", () => {
       }),
     ).toEqual({ ok: true });
   });
+
+  test("accepts a complete research-backed scripts-and-briefs intake", () => {
+    expect(
+      validateResumePayload("gtm-scripts-briefs", "intake", {
+        topic: "AI agent launches for revenue teams",
+        days: 30,
+        audience: "VP Sales",
+        objective: "Start informed sales conversations.",
+      }),
+    ).toEqual({ ok: true });
+  });
+
+  test("rejects a scripts-and-briefs intake without a viable research query", () => {
+    expect(
+      validateResumePayload("gtm-scripts-briefs", "intake", {
+        topic: "",
+        days: 0,
+      }).ok,
+    ).toBe(false);
+  });
 });
 
 describe("describeResumePayload", () => {

@@ -280,12 +280,10 @@ function buildEntityRoundSteps(
   return steps;
 }
 
-export const workflow = defineWorkflow({
-  id: kind,
-  trigger: { type: "manual" },
-  steps: {
-    intake: awaitSignal({ name: "intake" }),
-
+// Shared research substrate for workflows that need a current, grounded story.
+// It intentionally stops at `brief`: callers own their final artifact-writing step.
+export function buildResearchSteps(): Record<string, StepPrimitive> {
+  return {
     // Genuine-reasoning grounding (W1.1): turns the topic + focus into one search
     // query tailored to each platform. Robust to a degraded or malformed grounding
     // REPLY — `groundQueries` backfills any missing/blank source with the
@@ -386,12 +384,16 @@ export const workflow = defineWorkflow({
       input: { from: "steps" },
       after: ["curate"],
     }),
+  };
+}
 
-    // The synthesis turn runs on a heavier model (LLM_WRITER_MODEL) than the
-    // research/grounding steps: long-form, grounded report writing benefits from
-    // the deeper model, while grounding/rerank stay on the fast default. Falls
-    // back to the default when the tenant catalog does not carry the writer model
-    // (resolveWorkflowDeploySource resolves it optionally).
+export const workflow = defineWorkflow({
+  id: kind,
+  trigger: { type: "manual" },
+  steps: {
+    intake: awaitSignal({ name: "intake" }),
+    ...buildResearchSteps(),
+
     write: inlineInferenceStep({
       id: "last30days-write-report",
       title: "Write the report",

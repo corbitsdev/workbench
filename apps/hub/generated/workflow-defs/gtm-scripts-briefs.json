@@ -1,0 +1,727 @@
+{
+  "kind": "gtm-scripts-briefs",
+  "version": "0.1.0",
+  "label": "GTM Scripts & Briefs",
+  "description": "Research current stories, select a grounded angle, and turn it into a GTM script and brief artifact.",
+  "requiresIntake": true,
+  "humanGateCount": 1,
+  "definition": {
+    "id": "gtm-scripts-briefs",
+    "triggers": [
+      {
+        "type": "manual"
+      }
+    ],
+    "steps": {
+      "intake": {
+        "kind": "awaitSignal",
+        "id": "intake",
+        "name": "intake",
+        "drainBehavior": "wait"
+      },
+      "ground": {
+        "kind": "step",
+        "id": "ground",
+        "agent": {
+          "id": "last30days-ground",
+          "systemPrompt": "Treat Corbits, Corbits.dev, Interchange, and Faremeter as canonical Corbits names; spell them exactly. When source material contains a clear speech-to-text or spelling variant, use the canonical spelling in your output. Do not replace an ambiguous term unless surrounding context identifies it.\n\nYou turn a research topic into one search query per platform for a last-30-days scan. Each platform surfaces a topic differently, so tailor the query to how people actually post and search there — never reuse the raw topic verbatim everywhere\n\nInput: a topic and an optional focus (the angle to emphasize)\n\nHonor the ACTION in the topic. If the topic is about launches/releases/debuts (e.g. \"Neobank Launches\"), search for the EVENT - \"neobank just launched\", \"new neobank\", \"digital bank launch\" - NOT the bare category noun (\"neobank\"), which pulls complaint threads and \"which is best?\" questions instead of the actual news. The same holds for other actions (acquisitions, outages, funding): query the event, not just the subject\n\nReturn JSON only, no prose, no code fences:\n{ \"hackernews\": \"...\", \"github\": \"...\", \"web\": \"...\", \"webB\": \"...\", \"webC\": \"...\", \"reddit\": \"...\", \"x\": \"...\", \"youtube\": \"...\", \"polymarket\": \"...\" }\n\nThe THREE web queries (web/webB/webC) are the SPINE - a semantic news engine returns a different slice per phrasing, so make them DISTINCT, short, and complementary to maximize the union of real named launches it surfaces. Do NOT include a year (you do not know today's date - the engine already filters to recent); do NOT add complaint/opinion words or over-narrow to one entity.\n- web: the bare event sweep - \"<category> launch\" / \"<category> just launched\"\n- webB: the novelty framing - \"new <category>\" / \"<category> debut\"\n- webC: an adjacent phrasing that catches the variants the first two miss - e.g. \"digital <category> launch\", \"first <category>\", or the crypto/onchain/regional angle if the category has one\n\nPer platform\n- hackernews: concise tech/industry phrasing, how a Show HN / launch / discussion would be titled\n- github: the product, library, org, or repo names behind the topic — what a repo search matches, not a sentence\n- reddit: the words a community member would use REACTING to the event, including likely subreddit vocabulary; favor named entities and \"launch/new/just dropped\" over the bare category, which returns generic complaint threads\n- x: how it trends on X — handles, cashtags, product names, the short phrase people quote about the new thing\n- youtube: how a creator titles a video on it (launch, review, demo, explainer)\n- polymarket: the market/event framing a prediction market would price; if the topic has no plausible market, repeat the topic\n\nRules\n- Keep each query tight and high-signal; the three web queries must be distinct from one another\n- Stay on the topic and focus; never broaden to an unrelated category; never hardcode a year\n- Every key must be present and a non-empty string",
+          "toolFactories": [],
+          "capabilities": [],
+          "inference": {
+            "sources": []
+          },
+          "description": "Inline single-turn inference: last30days-ground",
+          "tags": {
+            "workbench.stepKind": "inline-inference",
+            "workbench.title": "Ground the topic"
+          }
+        },
+        "drainBehavior": "cancel",
+        "input": {
+          "from": "steps.intake.output"
+        },
+        "after": [
+          "intake"
+        ]
+      },
+      "groundQueries": {
+        "kind": "step",
+        "id": "groundQueries",
+        "agent": {
+          "id": "last30days-ground-queries",
+          "systemPrompt": "",
+          "toolFactories": [],
+          "capabilities": [
+            "@workbench/tools-last30days/core:last30days_ground_queries"
+          ],
+          "inference": {
+            "sources": []
+          },
+          "description": "Deterministic tool call: @workbench/tools-last30days/core:last30days_ground_queries",
+          "tags": {
+            "workbench.stepKind": "deterministic-tool",
+            "workbench.tool": "@workbench/tools-last30days/core:last30days_ground_queries",
+            "workbench.title": "Draft per-source queries"
+          }
+        },
+        "drainBehavior": "cancel",
+        "input": {
+          "merge": [
+            {
+              "from": "steps.intake.output"
+            },
+            {
+              "from": "steps.ground.output"
+            }
+          ]
+        },
+        "after": [
+          "ground"
+        ]
+      },
+      "web": {
+        "kind": "step",
+        "id": "web",
+        "agent": {
+          "id": "last30days-fetch-web",
+          "systemPrompt": "",
+          "toolFactories": [],
+          "capabilities": [
+            "@workbench/tools-exa/exa:exa_search"
+          ],
+          "inference": {
+            "sources": []
+          },
+          "description": "Deterministic tool call: @workbench/tools-exa/exa:exa_search",
+          "tags": {
+            "workbench.stepKind": "deterministic-tool",
+            "workbench.tool": "@workbench/tools-exa/exa:exa_search",
+            "workbench.argMap": "{\"query\":{\"from\":\"web\"},\"limit\":{\"literal\":25}}",
+            "workbench.nonFatal": "true",
+            "workbench.title": "Search the web"
+          }
+        },
+        "drainBehavior": "cancel",
+        "input": {
+          "from": "steps.groundQueries.output.content"
+        },
+        "after": [
+          "groundQueries"
+        ]
+      },
+      "webB": {
+        "kind": "step",
+        "id": "webB",
+        "agent": {
+          "id": "last30days-fetch-webB",
+          "systemPrompt": "",
+          "toolFactories": [],
+          "capabilities": [
+            "@workbench/tools-exa/exa:exa_search"
+          ],
+          "inference": {
+            "sources": []
+          },
+          "description": "Deterministic tool call: @workbench/tools-exa/exa:exa_search",
+          "tags": {
+            "workbench.stepKind": "deterministic-tool",
+            "workbench.tool": "@workbench/tools-exa/exa:exa_search",
+            "workbench.argMap": "{\"query\":{\"from\":\"webB\"},\"limit\":{\"literal\":25}}",
+            "workbench.nonFatal": "true",
+            "workbench.title": "Search the web again"
+          }
+        },
+        "drainBehavior": "cancel",
+        "input": {
+          "from": "steps.groundQueries.output.content"
+        },
+        "after": [
+          "web"
+        ]
+      },
+      "webC": {
+        "kind": "step",
+        "id": "webC",
+        "agent": {
+          "id": "last30days-fetch-webC",
+          "systemPrompt": "",
+          "toolFactories": [],
+          "capabilities": [
+            "@workbench/tools-exa/exa:exa_search"
+          ],
+          "inference": {
+            "sources": []
+          },
+          "description": "Deterministic tool call: @workbench/tools-exa/exa:exa_search",
+          "tags": {
+            "workbench.stepKind": "deterministic-tool",
+            "workbench.tool": "@workbench/tools-exa/exa:exa_search",
+            "workbench.argMap": "{\"query\":{\"from\":\"webC\"},\"limit\":{\"literal\":25}}",
+            "workbench.nonFatal": "true",
+            "workbench.title": "Search the web once more"
+          }
+        },
+        "drainBehavior": "cancel",
+        "input": {
+          "from": "steps.groundQueries.output.content"
+        },
+        "after": [
+          "webB"
+        ]
+      },
+      "hackernews": {
+        "kind": "step",
+        "id": "hackernews",
+        "agent": {
+          "id": "last30days-fetch-hackernews",
+          "systemPrompt": "",
+          "toolFactories": [],
+          "capabilities": [
+            "@workbench/tools-hackernews/hackernews:hackernews_search"
+          ],
+          "inference": {
+            "sources": []
+          },
+          "description": "Deterministic tool call: @workbench/tools-hackernews/hackernews:hackernews_search",
+          "tags": {
+            "workbench.stepKind": "deterministic-tool",
+            "workbench.tool": "@workbench/tools-hackernews/hackernews:hackernews_search",
+            "workbench.argMap": "{\"query\":{\"from\":\"hackernews\"},\"limit\":{\"literal\":20}}",
+            "workbench.nonFatal": "true",
+            "workbench.title": "Search Hacker News"
+          }
+        },
+        "drainBehavior": "cancel",
+        "input": {
+          "from": "steps.groundQueries.output.content"
+        },
+        "after": [
+          "webC"
+        ]
+      },
+      "github": {
+        "kind": "step",
+        "id": "github",
+        "agent": {
+          "id": "last30days-fetch-github",
+          "systemPrompt": "",
+          "toolFactories": [],
+          "capabilities": [
+            "@workbench/tools-github/github:github_activity"
+          ],
+          "inference": {
+            "sources": []
+          },
+          "description": "Deterministic tool call: @workbench/tools-github/github:github_activity",
+          "tags": {
+            "workbench.stepKind": "deterministic-tool",
+            "workbench.tool": "@workbench/tools-github/github:github_activity",
+            "workbench.argMap": "{\"query\":{\"from\":\"github\"},\"limit\":{\"literal\":15}}",
+            "workbench.nonFatal": "true",
+            "workbench.title": "Scan GitHub activity"
+          }
+        },
+        "drainBehavior": "cancel",
+        "input": {
+          "from": "steps.groundQueries.output.content"
+        },
+        "after": [
+          "hackernews"
+        ]
+      },
+      "reddit": {
+        "kind": "step",
+        "id": "reddit",
+        "agent": {
+          "id": "last30days-fetch-reddit",
+          "systemPrompt": "",
+          "toolFactories": [],
+          "capabilities": [
+            "@workbench/tools-reddit/reddit:reddit_search"
+          ],
+          "inference": {
+            "sources": []
+          },
+          "description": "Deterministic tool call: @workbench/tools-reddit/reddit:reddit_search",
+          "tags": {
+            "workbench.stepKind": "deterministic-tool",
+            "workbench.tool": "@workbench/tools-reddit/reddit:reddit_search",
+            "workbench.argMap": "{\"query\":{\"from\":\"reddit\"},\"limit\":{\"literal\":20}}",
+            "workbench.nonFatal": "true",
+            "workbench.title": "Search Reddit"
+          }
+        },
+        "drainBehavior": "cancel",
+        "input": {
+          "from": "steps.groundQueries.output.content"
+        },
+        "after": [
+          "github"
+        ]
+      },
+      "x": {
+        "kind": "step",
+        "id": "x",
+        "agent": {
+          "id": "last30days-fetch-x",
+          "systemPrompt": "",
+          "toolFactories": [],
+          "capabilities": [
+            "@workbench/tools-x/x:x_search"
+          ],
+          "inference": {
+            "sources": []
+          },
+          "description": "Deterministic tool call: @workbench/tools-x/x:x_search",
+          "tags": {
+            "workbench.stepKind": "deterministic-tool",
+            "workbench.tool": "@workbench/tools-x/x:x_search",
+            "workbench.argMap": "{\"query\":{\"from\":\"x\"},\"limit\":{\"literal\":15}}",
+            "workbench.nonFatal": "true",
+            "workbench.title": "Search X"
+          }
+        },
+        "drainBehavior": "cancel",
+        "input": {
+          "from": "steps.groundQueries.output.content"
+        },
+        "after": [
+          "reddit"
+        ]
+      },
+      "youtube": {
+        "kind": "step",
+        "id": "youtube",
+        "agent": {
+          "id": "last30days-fetch-youtube",
+          "systemPrompt": "",
+          "toolFactories": [],
+          "capabilities": [
+            "@workbench/tools-youtube/youtube:youtube_search"
+          ],
+          "inference": {
+            "sources": []
+          },
+          "description": "Deterministic tool call: @workbench/tools-youtube/youtube:youtube_search",
+          "tags": {
+            "workbench.stepKind": "deterministic-tool",
+            "workbench.tool": "@workbench/tools-youtube/youtube:youtube_search",
+            "workbench.argMap": "{\"query\":{\"from\":\"youtube\"},\"limit\":{\"literal\":12}}",
+            "workbench.nonFatal": "true",
+            "workbench.title": "Search YouTube"
+          }
+        },
+        "drainBehavior": "cancel",
+        "input": {
+          "from": "steps.groundQueries.output.content"
+        },
+        "after": [
+          "x"
+        ]
+      },
+      "polymarket": {
+        "kind": "step",
+        "id": "polymarket",
+        "agent": {
+          "id": "last30days-fetch-polymarket",
+          "systemPrompt": "",
+          "toolFactories": [],
+          "capabilities": [
+            "@workbench/tools-polymarket/polymarket:polymarket_odds"
+          ],
+          "inference": {
+            "sources": []
+          },
+          "description": "Deterministic tool call: @workbench/tools-polymarket/polymarket:polymarket_odds",
+          "tags": {
+            "workbench.stepKind": "deterministic-tool",
+            "workbench.tool": "@workbench/tools-polymarket/polymarket:polymarket_odds",
+            "workbench.argMap": "{\"query\":{\"from\":\"polymarket\"},\"limit\":{\"literal\":15}}",
+            "workbench.nonFatal": "true",
+            "workbench.title": "Check Polymarket odds"
+          }
+        },
+        "drainBehavior": "cancel",
+        "input": {
+          "from": "steps.groundQueries.output.content"
+        },
+        "after": [
+          "youtube"
+        ]
+      },
+      "entities": {
+        "kind": "step",
+        "id": "entities",
+        "agent": {
+          "id": "last30days-entities",
+          "systemPrompt": "Treat Corbits, Corbits.dev, Interchange, and Faremeter as canonical Corbits names; spell them exactly. When source material contains a clear speech-to-text or spelling variant, use the canonical spelling in your output. Do not replace an ambiguous term unless surrounding context identifies it.\n\nYou read the first round of last-30-days research results and find the specific named entities worth chasing deeper — the actual product launches, company/bank/app names, named people, and repos that surfaced. Then you write one follow-up search query per platform that targets those concrete entities, NOT the broad topic again\n\nInput: the topic, the focus, and the first-round source step results (each source's items: title, url, source, author)\n\nMethod\n- Prioritize the entities that match the topic's ACTION. For a launch topic, list the actual NEWLY-LAUNCHED products/banks/apps that appeared in the web news (e.g. specific named banks that just went live) — not pre-existing brands that only show up in complaint threads. The web items are the spine; pull your entities from them first\n- List the 4-8 strongest such entities — the ones a reader would want more on\n- Ignore generic or off-topic noise; if few entities surfaced, chase the few that did\n- Build each platform query from those entity names so round 2 returns deeper coverage and community reaction on the SAME launches, not new unrelated ones\n\nReturn JSON only, no prose, no code fences:\n{ \"web\": \"...\", \"reddit\": \"...\", \"x\": \"...\", \"youtube\": \"...\" }\n\nPer platform\n- web: a news query naming 2-4 of the discovered entities to pull more articles and dates on them\n- reddit: the discovered product/company names plus their likely dedicated subreddits and launch-reaction words (launch, review, \"is it legit\", worth it) - keep it tied to the NAMED launches so it returns reaction to them, not generic complaint/scam threads\n- x: the discovered handles/product names and the short phrase people quote about them\n- youtube: how a creator would title a launch/review/demo video on the discovered entities\n\nRules\n- Every key present and a non-empty string; if nothing concrete surfaced for a platform, repeat the topic\n- Stay on the discovered entities; never broaden to an unrelated category",
+          "toolFactories": [],
+          "capabilities": [],
+          "inference": {
+            "sources": []
+          },
+          "description": "Inline single-turn inference: last30days-entities",
+          "tags": {
+            "workbench.stepKind": "inline-inference",
+            "workbench.title": "Extract key entities"
+          }
+        },
+        "drainBehavior": "cancel",
+        "input": {
+          "from": "steps"
+        },
+        "after": [
+          "polymarket"
+        ]
+      },
+      "entityQueries": {
+        "kind": "step",
+        "id": "entityQueries",
+        "agent": {
+          "id": "last30days-entity-queries",
+          "systemPrompt": "",
+          "toolFactories": [],
+          "capabilities": [
+            "@workbench/tools-last30days/core:last30days_entity_queries"
+          ],
+          "inference": {
+            "sources": []
+          },
+          "description": "Deterministic tool call: @workbench/tools-last30days/core:last30days_entity_queries",
+          "tags": {
+            "workbench.stepKind": "deterministic-tool",
+            "workbench.tool": "@workbench/tools-last30days/core:last30days_entity_queries",
+            "workbench.title": "Draft entity queries"
+          }
+        },
+        "drainBehavior": "cancel",
+        "input": {
+          "merge": [
+            {
+              "from": "steps.intake.output"
+            },
+            {
+              "from": "steps.entities.output"
+            }
+          ]
+        },
+        "after": [
+          "entities"
+        ]
+      },
+      "web2": {
+        "kind": "step",
+        "id": "web2",
+        "agent": {
+          "id": "last30days-fetch-web2",
+          "systemPrompt": "",
+          "toolFactories": [],
+          "capabilities": [
+            "@workbench/tools-exa/exa:exa_search"
+          ],
+          "inference": {
+            "sources": []
+          },
+          "description": "Deterministic tool call: @workbench/tools-exa/exa:exa_search",
+          "tags": {
+            "workbench.stepKind": "deterministic-tool",
+            "workbench.tool": "@workbench/tools-exa/exa:exa_search",
+            "workbench.argMap": "{\"query\":{\"from\":\"web\"},\"limit\":{\"literal\":30}}",
+            "workbench.nonFatal": "true",
+            "workbench.title": "Dig deeper on the web"
+          }
+        },
+        "drainBehavior": "cancel",
+        "input": {
+          "from": "steps.entityQueries.output.content"
+        },
+        "after": [
+          "entityQueries"
+        ]
+      },
+      "reddit2": {
+        "kind": "step",
+        "id": "reddit2",
+        "agent": {
+          "id": "last30days-fetch-reddit2",
+          "systemPrompt": "",
+          "toolFactories": [],
+          "capabilities": [
+            "@workbench/tools-reddit/reddit:reddit_search"
+          ],
+          "inference": {
+            "sources": []
+          },
+          "description": "Deterministic tool call: @workbench/tools-reddit/reddit:reddit_search",
+          "tags": {
+            "workbench.stepKind": "deterministic-tool",
+            "workbench.tool": "@workbench/tools-reddit/reddit:reddit_search",
+            "workbench.argMap": "{\"query\":{\"from\":\"reddit\"},\"limit\":{\"literal\":18}}",
+            "workbench.nonFatal": "true",
+            "workbench.title": "Dig deeper on Reddit"
+          }
+        },
+        "drainBehavior": "cancel",
+        "input": {
+          "from": "steps.entityQueries.output.content"
+        },
+        "after": [
+          "web2"
+        ]
+      },
+      "x2": {
+        "kind": "step",
+        "id": "x2",
+        "agent": {
+          "id": "last30days-fetch-x2",
+          "systemPrompt": "",
+          "toolFactories": [],
+          "capabilities": [
+            "@workbench/tools-x/x:x_search"
+          ],
+          "inference": {
+            "sources": []
+          },
+          "description": "Deterministic tool call: @workbench/tools-x/x:x_search",
+          "tags": {
+            "workbench.stepKind": "deterministic-tool",
+            "workbench.tool": "@workbench/tools-x/x:x_search",
+            "workbench.argMap": "{\"query\":{\"from\":\"x\"},\"limit\":{\"literal\":15}}",
+            "workbench.nonFatal": "true",
+            "workbench.title": "Dig deeper on X"
+          }
+        },
+        "drainBehavior": "cancel",
+        "input": {
+          "from": "steps.entityQueries.output.content"
+        },
+        "after": [
+          "reddit2"
+        ]
+      },
+      "youtube2": {
+        "kind": "step",
+        "id": "youtube2",
+        "agent": {
+          "id": "last30days-fetch-youtube2",
+          "systemPrompt": "",
+          "toolFactories": [],
+          "capabilities": [
+            "@workbench/tools-youtube/youtube:youtube_search"
+          ],
+          "inference": {
+            "sources": []
+          },
+          "description": "Deterministic tool call: @workbench/tools-youtube/youtube:youtube_search",
+          "tags": {
+            "workbench.stepKind": "deterministic-tool",
+            "workbench.tool": "@workbench/tools-youtube/youtube:youtube_search",
+            "workbench.argMap": "{\"query\":{\"from\":\"youtube\"},\"limit\":{\"literal\":12}}",
+            "workbench.nonFatal": "true",
+            "workbench.title": "Dig deeper on YouTube"
+          }
+        },
+        "drainBehavior": "cancel",
+        "input": {
+          "from": "steps.entityQueries.output.content"
+        },
+        "after": [
+          "x2"
+        ]
+      },
+      "collect": {
+        "kind": "step",
+        "id": "collect",
+        "agent": {
+          "id": "last30days-collect",
+          "systemPrompt": "",
+          "toolFactories": [],
+          "capabilities": [
+            "@workbench/tools-last30days/core:last30days_collect"
+          ],
+          "inference": {
+            "sources": []
+          },
+          "description": "Deterministic tool call: @workbench/tools-last30days/core:last30days_collect",
+          "tags": {
+            "workbench.stepKind": "deterministic-tool",
+            "workbench.tool": "@workbench/tools-last30days/core:last30days_collect",
+            "workbench.title": "Collect & dedupe results"
+          }
+        },
+        "drainBehavior": "cancel",
+        "input": {
+          "from": "steps"
+        },
+        "after": [
+          "youtube2"
+        ]
+      },
+      "curate": {
+        "kind": "step",
+        "id": "curate",
+        "agent": {
+          "id": "last30days-curate",
+          "systemPrompt": "Treat Corbits, Corbits.dev, Interchange, and Faremeter as canonical Corbits names; spell them exactly. When source material contains a clear speech-to-text or spelling variant, use the canonical spelling in your output. Do not replace an ambiguous term unless surrounding context identifies it.\n\nYou are the editorial judgment for a last-30-days research brief. You receive a clean pool of candidate items (date-filtered and deduped) and turn it into a tight, honest brief: aggressively drop the junk, GROUP the survivors into a FEW real themes, and pull the sharpest verbatim community quotes. You are the judgment the raw tools lack — most of the pool is noise and your main job is to cut it\n\nInput (JSON in the tool result): { topic, days, items: [ { url, title, source, author?, publishedAt, engagement?: { upvotes?, comments?, views?, stars? }, topComments?: [ { text, author?, score } ] } ] }\n\n## Honor the topic's intent — the lede tracks the ACTION\nRead the topic. If it is about launches/releases/debuts (e.g. \"Neobank Launches\"), the PRIMARY themes are the ACTUAL launches and their coverage — the specific new products/banks/apps that went live in the window, drawn from the web news items. Name them. A general complaint thread or a \"which X is best?\" question about a PRE-EXISTING product is NOT a launch — it is secondary color at most: include at most ONE such community theme, never as theme 1, and DROP it if it would crowd out a real launch. Do not let a big cluster of Reddit complaint posts become the headline of a launches brief. The same intent-matching holds for other actions (acquisitions, outages, funding)\n\n## Judge hard — DROP the junk (most of the pool)\nCut these completely; never let one anchor a theme:\n- GitHub for a consumer/news/product topic is almost always pure noise: DROP every pet project, clone, template, fork, scaffold, portfolio piece, tutorial output, dashboard demo, and any repo under ~50 stars. Keep a repo ONLY if it is a notable, high-traction project clearly central to the topic. For most non-developer topics you will drop ALL GitHub items\n- YouTube/web promo: ad uploads, AMAs, \"I made $X\" / \"zero balance account\" SEO tutorials, $TOKEN shills, faceless AI-voice spam, engagement-farming reactions, listicles and vendor landing pages that assert nothing a human said\n- Bare handles, one-word posts, off-topic keyword collisions (a repo or video that merely contains the topic word but is unrelated) — drop silently\nKeep an item only if it documents a REAL launch/event/announcement on the topic, or a real person said something a reader would want to know or quote\n\n## Group into 3-6 real themes — HARD CAP 6, never one-per-item\nName themes a human would actually name: the launch wave, the backlash, the migration, the open question. A theme MUST be backed by EITHER a real named launch/event OR corroboration across 2+ items OR a single very-high-engagement item. A lone 1-star repo or a single low-view video is NEVER its own theme — either fold it into a real theme or drop it. NEVER emit more than 6 themes. If you find yourself making a theme per repo, you are doing it wrong — drop the repos. Order themes strongest-first (most real, recent, cross-source evidence). Each theme lists only urls present in the input\n\n## Pull 3-5 verbatim quotes — on-topic, look hard before giving up\nThe community's actual words are the headline value of this brief, not optional. AIM for 3-5 quotes:\n- Each quote must be ON-TOPIC: reaction to a named launch in this brief, OR a clear take about the topic's space (for \"Neobank Launches\": a take on a new neobank, a \"which new neobank / best neobank\" question, the launch trend). EXCLUDE only clearly unrelated threads - a scam/\"account frozen\"/\"got hacked\" complaint about an unrelated pre-existing product is noise, not a launch reaction\n- A quote may be a high-vote topComment OR a post/video TITLE that states an opinion or a concrete claim (Reddit and X titles are usually the quotable unit here)\n- Reddit/X items with even modest engagement (roughly 5+ upvotes) and a clear, specific on-topic take QUALIFY — prefer the sharpest and most opinionated\n- Quote the exact text; attribute it (u/subreddit, @handle, or channel); carry its real engagement number (comment score, or the post's upvotes/views)\n- Return fewer than 3 only if the pool genuinely has no on-topic opinionated community item — inspect every reddit and x item first\nNever invent a quote, author, url, or number — every quote.url MUST be one of the input items\n\nReturn JSON only, no prose, no code fences:\n{\n  \"themes\": [\n    { \"title\": \"<specific theme name>\", \"summary\": \"<1-2 sentences on the theme and its evidence>\", \"itemUrls\": [\"<url>\", \"<url>\"] }\n  ],\n  \"quotes\": [\n    { \"quote\": \"<verbatim text>\", \"author\": \"<u/name or handle>\", \"source\": \"reddit|x|youtube|hn|github|web|...\", \"engagement\": <number>, \"url\": \"<item url>\" }\n  ]\n}\n\nRules\n- HARD CAP: at most 6 themes. Quality over coverage — a tight 3-theme brief beats a 15-theme dump\n- Every itemUrl and every quote.url must be a url present in the input items\n- source must be the item's source label exactly\n- If the pool is thin after cutting junk, return fewer themes and say so in the summary rather than padding; honest and short beats padded and junky",
+          "toolFactories": [],
+          "capabilities": [],
+          "inference": {
+            "sources": [
+              {
+                "provider": "openai-compatible",
+                "model": "kimi-k2.6",
+                "parameters": {
+                  "maxTokens": 8192
+                }
+              }
+            ]
+          },
+          "description": "Inline single-turn inference: last30days-curate",
+          "tags": {
+            "workbench.stepKind": "inline-inference",
+            "workbench.title": "Curate themes & quotes"
+          }
+        },
+        "drainBehavior": "cancel",
+        "input": {
+          "from": "steps.collect.output.content"
+        },
+        "after": [
+          "collect"
+        ]
+      },
+      "brief": {
+        "kind": "step",
+        "id": "brief",
+        "agent": {
+          "id": "last30days-build-brief",
+          "systemPrompt": "",
+          "toolFactories": [],
+          "capabilities": [
+            "@workbench/tools-last30days/core:last30days_workflow_brief"
+          ],
+          "inference": {
+            "sources": []
+          },
+          "description": "Deterministic tool call: @workbench/tools-last30days/core:last30days_workflow_brief",
+          "tags": {
+            "workbench.stepKind": "deterministic-tool",
+            "workbench.tool": "@workbench/tools-last30days/core:last30days_workflow_brief",
+            "workbench.title": "Assemble the brief"
+          }
+        },
+        "drainBehavior": "cancel",
+        "input": {
+          "from": "steps"
+        },
+        "after": [
+          "curate"
+        ]
+      },
+      "write": {
+        "kind": "step",
+        "id": "write",
+        "agent": {
+          "id": "gtm-scripts-briefs-write",
+          "systemPrompt": "Treat Corbits, Corbits.dev, Interchange, and Faremeter as canonical Corbits names; spell them exactly. When source material contains a clear speech-to-text or spelling variant, use the canonical spelling in your output. Do not replace an ambiguous term unless surrounding context identifies it.\n\nYou are a senior GTM content strategist. Turn the supplied current-story research brief into one polished, long-form deliverable a sales or marketing team can use immediately.\n\nInput fields\n- topic: the subject the user asked us to research\n- days: the research window\n- audience: the intended reader or viewer, if provided\n- objective: the business outcome the deliverable should support, if provided\n- content: the grounded research brief, including selected themes, source URLs, and evidence\n\nSelect the strongest, most relevant current story or story cluster from the grounded research brief. Build the deliverable only on evidence in that brief. Do not invent customer results, quotes, statistics, product capabilities, dates, or source claims. If the research cannot support a useful claim, say what needs confirmation rather than making it up.\n\nWrite clear Markdown. Produce a combined strategic brief and ready-to-use script: include a factual story brief with linked source notes, a recommended GTM angle, the intended audience and objective, supporting points, a natural near-verbatim spoken narrative with transitions, delivery coaching, a call to action, and explicit assumptions or proof still needed.\n\nReturn only the finished deliverable. Do not mention these instructions or describe your process.",
+          "toolFactories": [],
+          "capabilities": [],
+          "inference": {
+            "sources": [
+              {
+                "provider": "openai-compatible",
+                "model": "kimi-k2.6",
+                "parameters": {
+                  "maxTokens": 16384
+                }
+              }
+            ]
+          },
+          "description": "Inline single-turn inference: gtm-scripts-briefs-write",
+          "tags": {
+            "workbench.stepKind": "inline-inference",
+            "workbench.title": "Write the deliverable"
+          }
+        },
+        "drainBehavior": "cancel",
+        "input": {
+          "merge": [
+            {
+              "from": "steps.intake.output"
+            },
+            {
+              "from": "steps.brief.output"
+            }
+          ]
+        },
+        "after": [
+          "brief"
+        ]
+      },
+      "persist": {
+        "kind": "step",
+        "id": "persist",
+        "agent": {
+          "id": "gtm-scripts-briefs-persist-artifact",
+          "systemPrompt": "",
+          "toolFactories": [],
+          "capabilities": [
+            "@workbench/tools-artifact/artifact:write_artifact"
+          ],
+          "inference": {
+            "sources": []
+          },
+          "description": "Deterministic tool call: @workbench/tools-artifact/artifact:write_artifact",
+          "tags": {
+            "workbench.stepKind": "deterministic-tool",
+            "workbench.tool": "@workbench/tools-artifact/artifact:write_artifact",
+            "workbench.argMap": "{\"title\":{\"from\":\"topic\"},\"body\":{\"from\":\"reply\"},\"kind\":{\"literal\":\"long-form-script-package\"},\"data\":{\"object\":{\"workflowKind\":{\"literal\":\"gtm-scripts-briefs\"},\"topic\":{\"from\":\"topic\"},\"days\":{\"from\":\"days\"},\"audience\":{\"from\":\"audience\",\"optional\":true},\"objective\":{\"from\":\"objective\",\"optional\":true},\"artifactKind\":{\"literal\":\"long-form-script-package\"}}},\"jobLabel\":{\"literal\":\"GTM scripts and briefs\"}}",
+            "workbench.title": "Save the deliverable"
+          }
+        },
+        "drainBehavior": "cancel",
+        "input": {
+          "merge": [
+            {
+              "from": "steps.intake.output"
+            },
+            {
+              "from": "steps.brief.output"
+            },
+            {
+              "from": "steps.write.output"
+            }
+          ]
+        },
+        "after": [
+          "write"
+        ]
+      }
+    },
+    "stepOrder": [
+      "intake",
+      "ground",
+      "groundQueries",
+      "web",
+      "webB",
+      "webC",
+      "hackernews",
+      "github",
+      "reddit",
+      "x",
+      "youtube",
+      "polymarket",
+      "entities",
+      "entityQueries",
+      "web2",
+      "reddit2",
+      "x2",
+      "youtube2",
+      "collect",
+      "curate",
+      "brief",
+      "write",
+      "persist"
+    ]
+  }
+}

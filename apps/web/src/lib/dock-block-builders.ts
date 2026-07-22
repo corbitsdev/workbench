@@ -6,6 +6,7 @@ import {
 import { buildAbPresetBlocks } from "@workbench/ab-compare-presets/blocks";
 import { buildAttioTaskAgentBlocks } from "@workbench/workflow-attio-task-agent/blocks";
 import { buildGammaBlocks } from "@workbench/workflow-gamma-presentation-creator/blocks";
+import { buildGtmScriptsBriefsBlocks } from "@workbench/workflow-gtm-scripts-briefs/blocks";
 import { buildLast30daysBlocks } from "@workbench/workflow-last30days-research/blocks";
 import { buildPainPointCollateralBlocks } from "@workbench/workflow-pain-point-collateral/blocks";
 import { buildRedditOpportunityScannerBlocks } from "@workbench/workflow-reddit-opportunity-scanner/blocks";
@@ -31,6 +32,7 @@ const builders: Record<string, DockBlockBuilder> = {
   "ab-compare-standard": buildAbPresetBlocks,
   "attio-task-agent": buildAttioTaskAgentBlocks,
   "gamma-presentation-creator": buildGammaBlocks,
+  "gtm-scripts-briefs": buildGtmScriptsBriefsBlocks,
   "last30days-research": buildLast30daysBlocks,
   "pain-point-collateral": buildPainPointCollateralBlocks,
   "reddit-opportunity-scanner": buildRedditOpportunityScannerBlocks,

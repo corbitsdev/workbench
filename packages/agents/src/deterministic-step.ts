@@ -76,11 +76,19 @@ export const STEP_INLINE_RETRY_MAX_TAG = "workbench.inlineRetryMaxAttempts";
  * skip of the whole tool call rather than a throw. Must be JSON-serializable:
  * the workflow definition is JSON-deployed, so no functions.
  */
-export const ArgMapSpec = type.or(
-  { from: "string", "optional?": "boolean" },
-  { literal: "unknown" },
-  { fromJson: "string", field: "string", "optional?": "boolean" },
-);
+const ArgMapValue = type({
+  from: "string",
+  "optional?": "boolean",
+})
+  .or({ literal: "unknown" })
+  .or({ fromJson: "string", field: "string", "optional?": "boolean" });
+
+// Compose a structured tool argument from the evaluated input without requiring
+// a workflow-specific transform step. Template values use the same selectors as
+// top-level arguments, while optional values are omitted from the object.
+export const ArgMapSpec = ArgMapValue.or({
+  object: { "[string]": ArgMapValue },
+});
 export type ArgMapSpec = typeof ArgMapSpec.infer;
 
 export const ArgMap = type({ "[string]": ArgMapSpec });

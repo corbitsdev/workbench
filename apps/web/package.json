@@ -34,6 +34,7 @@
     "@workbench/ab-compare-presets": "workspace:*",
     "@workbench/workflow-attio-task-agent": "workspace:*",
     "@workbench/workflow-gamma-presentation-creator": "workspace:*",
+    "@workbench/workflow-gtm-scripts-briefs": "workspace:*",
     "@workbench/workflow-heartbeat": "workspace:*",
     "@workbench/workflow-last30days-research": "workspace:*",
     "@workbench/workflow-pain-point-collateral": "workspace:*",

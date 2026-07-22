@@ -78,6 +78,7 @@ COPY workflows/ab-compare-speed/package.json workflows/ab-compare-speed/
 COPY workflows/ab-compare-standard/package.json workflows/ab-compare-standard/
 COPY workflows/attio-task-agent/package.json workflows/attio-task-agent/
 COPY workflows/gamma-presentation-creator/package.json workflows/gamma-presentation-creator/
+COPY workflows/gtm-scripts-briefs/package.json workflows/gtm-scripts-briefs/
 COPY workflows/heartbeat/package.json workflows/heartbeat/
 COPY workflows/last30days-research/package.json workflows/last30days-research/
 COPY workflows/pain-point-collateral/package.json workflows/pain-point-collateral/

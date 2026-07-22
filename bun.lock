@@ -166,6 +166,7 @@
         "@workbench/workflow-attio-task-agent": "workspace:*",
         "@workbench/workflow-competitor-analysis": "workspace:*",
         "@workbench/workflow-gamma-presentation-creator": "workspace:*",
+        "@workbench/workflow-gtm-scripts-briefs": "workspace:*",
         "@workbench/workflow-heartbeat": "workspace:*",
         "@workbench/workflow-last30days-research": "workspace:*",
         "@workbench/workflow-pain-point-collateral": "workspace:*",
@@ -1622,6 +1623,21 @@
         "react": "*",
       },
     },
+    "workflows/gtm-scripts-briefs": {
+      "name": "@workbench/workflow-gtm-scripts-briefs",
+      "version": "0.1.0",
+      "dependencies": {
+        "@intx/workflow": "workspace:*",
+        "@workbench/agents": "workspace:*",
+        "@workbench/blocks": "workspace:*",
+        "@workbench/workflow-last30days-research": "workspace:*",
+      },
+      "devDependencies": {
+        "@types/bun": "latest",
+        "@workbench/test-utils": "workspace:*",
+        "typescript": "catalog:",
+      },
+    },
     "workflows/heartbeat": {
       "name": "@workbench/workflow-heartbeat",
       "version": "0.1.0",
@@ -2755,6 +2771,8 @@
     "@workbench/workflow-competitor-analysis": ["@workbench/workflow-competitor-analysis@workspace:workflows/competitor-analysis"],
 
     "@workbench/workflow-gamma-presentation-creator": ["@workbench/workflow-gamma-presentation-creator@workspace:workflows/gamma-presentation-creator"],
+
+    "@workbench/workflow-gtm-scripts-briefs": ["@workbench/workflow-gtm-scripts-briefs@workspace:workflows/gtm-scripts-briefs"],
 
     "@workbench/workflow-heartbeat": ["@workbench/workflow-heartbeat@workspace:workflows/heartbeat"],
 
