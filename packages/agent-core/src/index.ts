@@ -19,6 +19,8 @@ export {
   bareToolNamesForPin,
   producibleLlmToolNamesForPins,
   canonicalizeToolNames,
+  canonicalizeStepToolName,
+  LOCAL_RUNNER_TOOL_NAMES,
   toLlmToolName,
   expandToolAliasGrants,
   toolPackagesForCapabilities,

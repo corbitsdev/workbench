@@ -49,6 +49,30 @@ describe("deterministicToolStep", () => {
     );
   });
 
+  test("fails the build, naming the step and the unresolvable tool, for an unknown tool name", () => {
+    expect(() =>
+      deterministicToolStep({
+        id: "extractOrgIds",
+        tool: "prospect_engine_extract_list_org_id",
+      }),
+    ).toThrow(/extractOrgIds/);
+    expect(() =>
+      deterministicToolStep({
+        id: "extractOrgIds",
+        tool: "prospect_engine_extract_list_org_id",
+      }),
+    ).toThrow(/prospect_engine_extract_list_org_id/);
+  });
+
+  test("passes a legitimate local-runner tool (mail_send) through unprefixed", () => {
+    const primitive = deterministicToolStep({
+      id: "notify",
+      tool: "mail_send",
+    });
+    expect(primitive.agent.tags?.[STEP_TOOL_TAG]).toBe("mail_send");
+    expect(primitive.agent.capabilities).toEqual(["mail_send"]);
+  });
+
   test("omits the non-fatal tag by default (a failing step fails the run)", () => {
     const primitive = deterministicToolStep({
       id: "render",

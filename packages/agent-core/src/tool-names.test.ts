@@ -1,8 +1,10 @@
 /// <reference types="bun" />
 import { describe, expect, it } from "bun:test";
 import {
+  canonicalizeStepToolName,
   canonicalizeToolNames,
   expandToolAliasGrants,
+  LOCAL_RUNNER_TOOL_NAMES,
   providersForToolPackages,
   toLlmToolName,
   toolPackagesForCapabilities,
@@ -142,6 +144,61 @@ describe("canonicalizeToolNames (CL-2145)", () => {
     const runtimeResource =
       "tool:@workbench/tools-granola/granola:granola_list_notes";
     expect(seededResource).toBe(runtimeResource);
+  });
+});
+
+describe("canonicalizeStepToolName (fail-closed on unresolvable step tool)", () => {
+  it("prefixes a real package tool exactly like canonicalizeToolNames", () => {
+    expect(canonicalizeStepToolName("render", "granola_list_notes")).toBe(
+      "@workbench/tools-granola/granola:granola_list_notes",
+    );
+  });
+
+  it("passes through the explicit local-runner names unchanged", () => {
+    expect(canonicalizeStepToolName("notify", "mail_send")).toBe("mail_send");
+    expect(canonicalizeStepToolName("notify", "mail_reply")).toBe("mail_reply");
+    expect(canonicalizeStepToolName("check", "mail_search")).toBe(
+      "mail_search",
+    );
+    expect(canonicalizeStepToolName("check", "mail_read")).toBe("mail_read");
+    expect(canonicalizeStepToolName("check", "mail_wait")).toBe("mail_wait");
+  });
+
+  it("throws, naming the step and the unresolvable tool, for a typo'd/retired name", () => {
+    expect(() =>
+      canonicalizeStepToolName(
+        "extractOrgIds",
+        "prospect_engine_extract_list_org_id",
+      ),
+    ).toThrow(/extractOrgIds/);
+    expect(() =>
+      canonicalizeStepToolName(
+        "extractOrgIds",
+        "prospect_engine_extract_list_org_id",
+      ),
+    ).toThrow(/prospect_engine_extract_list_org_id/);
+  });
+
+  it("throws for a retired posix local-runner name (no longer served by the sidecar)", () => {
+    expect(() => canonicalizeStepToolName("readStep", "read_file")).toThrow(
+      /read_file/,
+    );
+  });
+
+  it("does not include the retired posix names in the explicit local-runner set", () => {
+    expect(LOCAL_RUNNER_TOOL_NAMES.has("read_file")).toBe(false);
+    expect(LOCAL_RUNNER_TOOL_NAMES.has("run_shell")).toBe(false);
+    expect(LOCAL_RUNNER_TOOL_NAMES.has("mail_send")).toBe(true);
+  });
+
+  it("includes all five interchange mail tools, not just the write pair", () => {
+    expect([...LOCAL_RUNNER_TOOL_NAMES].sort()).toEqual([
+      "mail_read",
+      "mail_reply",
+      "mail_search",
+      "mail_send",
+      "mail_wait",
+    ]);
   });
 });
 

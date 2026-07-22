@@ -2,7 +2,7 @@ import { type } from "arktype";
 import { defineAgent } from "@intx/agent";
 import { step } from "@intx/workflow";
 import type { StepPrimitive, Selector, RetryPolicy } from "@intx/workflow";
-import { canonicalizeToolNames } from "./tool-names";
+import { canonicalizeStepToolName } from "./tool-names";
 import { LLM_PROVIDER } from "./constants";
 import { withCorbitsVocabulary } from "./corbits-vocabulary";
 
@@ -145,12 +145,7 @@ export interface DeterministicToolStepOpts {
 export function deterministicToolStep(
   opts: DeterministicToolStepOpts,
 ): StepPrimitive {
-  const [canonicalTool] = canonicalizeToolNames([opts.tool]);
-  if (canonicalTool === undefined) {
-    throw new Error(
-      `deterministicToolStep: tool name "${opts.tool}" canonicalized to nothing`,
-    );
-  }
+  const canonicalTool = canonicalizeStepToolName(opts.id, opts.tool);
   const agent = defineAgent({
     id: opts.id,
     description: `Deterministic tool call: ${canonicalTool}`,
