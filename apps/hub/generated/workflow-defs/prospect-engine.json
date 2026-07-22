@@ -109,15 +109,15 @@
           "systemPrompt": "",
           "toolFactories": [],
           "capabilities": [
-            "prospect_engine_init_budget"
+            "@workbench/tools-prospect-engine/core:prospect_engine_init_budget"
           ],
           "inference": {
             "sources": []
           },
-          "description": "Deterministic tool call: prospect_engine_init_budget",
+          "description": "Deterministic tool call: @workbench/tools-prospect-engine/core:prospect_engine_init_budget",
           "tags": {
             "workbench.stepKind": "deterministic-tool",
-            "workbench.tool": "prospect_engine_init_budget",
+            "workbench.tool": "@workbench/tools-prospect-engine/core:prospect_engine_init_budget",
             "workbench.argMap": "{}",
             "workbench.title": "Initialize credit budget"
           }
@@ -145,7 +145,6 @@
             "workbench.stepKind": "deterministic-tool",
             "workbench.tool": "@workbench/tools-artifact/artifact:artifact_find_by_title",
             "workbench.argMap": "{\"title\":{\"literal\":\"Prospect engine — seen-accounts ledger\"},\"kind\":{\"literal\":\"prospect-engine-ledger\"}}",
-            "workbench.nonFatal": "true",
             "workbench.title": "Locate seen-accounts ledger artifact"
           }
         },
@@ -174,9 +173,9 @@
           "tags": {
             "workbench.stepKind": "deterministic-tool",
             "workbench.tool": "@workbench/tools-artifact/artifact:artifact_read",
-            "workbench.argMap": "{\"artifactId\":{\"fromJson\":\"content\",\"field\":\"artifactId\"}}",
+            "workbench.argMap": "{\"artifactId\":{\"fromJson\":\"content\",\"field\":\"artifactId\",\"optional\":true}}",
             "workbench.nonFatal": "true",
-            "workbench.title": "Read ledger artifact body"
+            "workbench.title": "Read seen-accounts ledger body"
           }
         },
         "drainBehavior": "cancel",
@@ -195,24 +194,31 @@
           "systemPrompt": "",
           "toolFactories": [],
           "capabilities": [
-            "prospect_engine_parse_ledger"
+            "@workbench/tools-prospect-engine/core:prospect_engine_parse_ledger"
           ],
           "inference": {
             "sources": []
           },
-          "description": "Deterministic tool call: prospect_engine_parse_ledger",
+          "description": "Deterministic tool call: @workbench/tools-prospect-engine/core:prospect_engine_parse_ledger",
           "tags": {
             "workbench.stepKind": "deterministic-tool",
-            "workbench.tool": "prospect_engine_parse_ledger",
-            "workbench.argMap": "{\"content\":{\"from\":\"content\"}}",
+            "workbench.tool": "@workbench/tools-prospect-engine/core:prospect_engine_parse_ledger",
             "workbench.title": "Parse seen-accounts ledger"
           }
         },
         "drainBehavior": "cancel",
         "input": {
-          "from": "steps.readLedger.output"
+          "merge": [
+            {
+              "from": "steps.initBudget.output.content"
+            },
+            {
+              "from": "steps.readLedger.output"
+            }
+          ]
         },
         "after": [
+          "initBudget",
           "readLedger"
         ]
       },
@@ -314,16 +320,15 @@
           "systemPrompt": "",
           "toolFactories": [],
           "capabilities": [
-            "prospect_engine_extract_list_org_ids"
+            "@workbench/tools-prospect-engine/core:prospect_engine_extract_list_org_ids"
           ],
           "inference": {
             "sources": []
           },
-          "description": "Deterministic tool call: prospect_engine_extract_list_org_ids",
+          "description": "Deterministic tool call: @workbench/tools-prospect-engine/core:prospect_engine_extract_list_org_ids",
           "tags": {
             "workbench.stepKind": "deterministic-tool",
-            "workbench.tool": "prospect_engine_extract_list_org_ids",
-            "workbench.nonFatal": "true",
+            "workbench.tool": "@workbench/tools-prospect-engine/core:prospect_engine_extract_list_org_ids",
             "workbench.title": "Extract exclusion list org ids"
           }
         },
@@ -349,7 +354,7 @@
         "id": "discover",
         "agent": {
           "id": "prospect-engine-discover",
-          "systemPrompt": "You are the Corbits overnight prospect engine discover step. You run unattended.\n\nGoal: collect ~30 net-new candidate organizations for Corbits / Interchange (agent OS: audit and control of AI agents at scale). Never contact anyone. Never write to Sumble lists, mail, Slack, artifacts, or memory.\n\nLane A (~60%): Series A-C, ~20-500 employees, verticals AI, payments, workflow, legal tech, family offices, logistics, devtools.\nLane B (~40%): enterprise or regulated (finserv, banking, insurance, healthcare) with agent/GenAI hiring.\n\nProcess:\n1. Resolve tech/job-function names with sumble_search_technologies / sumble_lookup_job_titles BEFORE filtering. Known-good tech slugs: langchain, openai-gpt-models, anthropic-claude, crewai, n8n, mcp.\n2. Run 2-3 org filter queries per lane via sumble_search_organizations (agent-stack query: LLM, RAG, LangChain, OpenAI, Anthropic, vector DBs, agent frameworks). Prefer job_post_concentration style evidence when available.\n3. Run sumble_search_signals for GenAI-project and new-AI-leader signals.\n4. Skip Ramp AI Index when rampAIIndexInputs is absent; note \"Ramp skipped\" in notes.\n5. Do not use person_score as primary ranker. Collect evidence only.\n\nHard constraints:\n- Cap awareness: 800 Sumble credits / 45 minutes for the whole run. Prefer cheap searches.\n- Pipeline list id 80088 is exclusion only (already loaded upstream).\n- No write tools. No email/phone reveals in this step.\n\nReturn ONE strict JSON object (no markdown fence) with:\n- candidates: array of { organizationId (number), name?, domain?, slug?, lane (\"growth\"|\"enterprise\"), industry?, employeeCount?, fundingRound?, fundingDate?, sumbleUrl?, evidence?: string[], whyNow? }\n- queriesRun: string[]\n- notes: string (include \"Ramp skipped\" when applicable)\n",
+          "systemPrompt": "You are the Corbits overnight prospect engine discover step. You run unattended.\n\nGoal: collect ~30 net-new candidate organizations for Corbits / Interchange (agent OS: audit and control of AI agents at scale). Never contact anyone. Never write to Sumble lists, mail, Slack, artifacts, or memory.\n\nLane A (~60%): Series A-C, ~20-500 employees, verticals AI, payments, workflow, legal tech, family offices, logistics, devtools.\nLane B (~40%): enterprise or regulated (finserv, banking, insurance, healthcare) with agent/GenAI hiring.\n\nProcess:\n1. Resolve tech/job-function names with sumble_find_technologies / sumble_lookup_technologies / sumble_lookup_job_titles BEFORE filtering. Known-good tech slugs: langchain, openai-gpt-models, anthropic-claude, crewai, n8n, mcp.\n2. Run 2-3 org filter queries per lane via sumble_search_organizations (agent-stack query: LLM, RAG, LangChain, OpenAI, Anthropic, vector DBs, agent frameworks). Prefer job_post_concentration style evidence when available.\n3. Run sumble_search_signals for GenAI-project and new-AI-leader signals.\n4. Skip Ramp AI Index when rampAIIndexInputs is absent; note \"Ramp skipped\" in notes.\n5. Do not use person_score as primary ranker. Collect evidence only.\n\nHard constraints:\n- Cap awareness: 800 Sumble credits / 45 minutes for the whole run. Prefer cheap searches.\n- Pipeline list id 80088 is exclusion only (already loaded upstream).\n- No write tools. No email/phone reveals in this step.\n\nReturn ONE strict JSON object (no markdown fence) with:\n- candidates: array of { organizationId (number), name?, domain?, slug?, lane (\"growth\"|\"enterprise\"), industry?, employeeCount?, fundingRound?, fundingDate?, sumbleUrl?, evidence?: string[], whyNow? }\n- queriesRun: string[]\n- notes: string (include \"Ramp skipped\" when applicable)\n",
           "toolFactories": [],
           "capabilities": [
             "@workbench/tools-sumble/sumble:sumble_search_organizations",
@@ -359,7 +364,7 @@
             "@workbench/tools-sumble/sumble:sumble_lookup_job_titles",
             "@workbench/tools-sumble/sumble:sumble_get_organization_signals",
             "@workbench/tools-sumble/sumble:sumble_resolve_organization",
-            "prospect_engine_charge_credits"
+            "@workbench/tools-prospect-engine/core:prospect_engine_charge_credits"
           ],
           "inference": {
             "sources": [
@@ -415,15 +420,15 @@
           "systemPrompt": "",
           "toolFactories": [],
           "capabilities": [
-            "prospect_engine_dedupe_candidates"
+            "@workbench/tools-prospect-engine/core:prospect_engine_dedupe_candidates"
           ],
           "inference": {
             "sources": []
           },
-          "description": "Deterministic tool call: prospect_engine_dedupe_candidates",
+          "description": "Deterministic tool call: @workbench/tools-prospect-engine/core:prospect_engine_dedupe_candidates",
           "tags": {
             "workbench.stepKind": "deterministic-tool",
-            "workbench.tool": "prospect_engine_dedupe_candidates",
+            "workbench.tool": "@workbench/tools-prospect-engine/core:prospect_engine_dedupe_candidates",
             "workbench.argMap": "{\"candidates\":{\"fromJson\":\"reply\",\"field\":\"candidates\"},\"ledger\":{\"from\":\"ledger\"},\"pipelineOrgIds\":{\"from\":\"pipelineOrgIds\"},\"growthOrgIds\":{\"from\":\"growthOrgIds\"},\"enterpriseOrgIds\":{\"from\":\"enterpriseOrgIds\"}}",
             "workbench.title": "Dedupe candidates"
           }
@@ -496,15 +501,15 @@
           "systemPrompt": "",
           "toolFactories": [],
           "capabilities": [
-            "prospect_engine_qualify"
+            "@workbench/tools-prospect-engine/core:prospect_engine_qualify"
           ],
           "inference": {
             "sources": []
           },
-          "description": "Deterministic tool call: prospect_engine_qualify",
+          "description": "Deterministic tool call: @workbench/tools-prospect-engine/core:prospect_engine_qualify",
           "tags": {
             "workbench.stepKind": "deterministic-tool",
-            "workbench.tool": "prospect_engine_qualify",
+            "workbench.tool": "@workbench/tools-prospect-engine/core:prospect_engine_qualify",
             "workbench.argMap": "{\"candidates\":{\"fromJson\":\"reply\",\"field\":\"candidates\"}}",
             "workbench.title": "Qualify shortlist"
           }
@@ -522,13 +527,13 @@
         "id": "mapReveal",
         "agent": {
           "id": "prospect-engine-map-reveal",
-          "systemPrompt": "You are the Corbits overnight prospect engine map/reveal step. For each qualified account, map the buying center and reveal emails for the top 2-3 contacts only.\n\nLane A titles: Head of AI, VP/Dir Eng, platform, data eng.\nLane B: add CISO, risk, compliance.\n\nRules:\n- Use sumble_search_people with revealEmail + confirmEmailRevealSpend only after calling prospect_engine_charge_credits for 10 credits per reveal. If charge returns charged:false, stop reveals and keep partial contacts.\n- Never reveal phones.\n- Prefer LinkedIn URLs on every contact.\n- Call prospect_engine_charge_credits before each batch of reveals.\n- Pull org signals when cheap and attach suggested_contacts when present.\n\nReturn ONE strict JSON object:\n- accounts: same orgs with contacts: [{ name, title?, linkedinUrl?, email?, personId? }]\n- creditsCharged: number (sum of successful charges this step)\n- stopReason?: \"credit-cap\" | \"wall-clock\" | string\n",
+          "systemPrompt": "You are the Corbits overnight prospect engine map/reveal step. For each qualified account, map the buying center and reveal emails for the top 2-3 contacts only.\n\nLane A titles: Head of AI, VP/Dir Eng, platform, data eng.\nLane B: add CISO, risk, compliance.\n\nRules:\n- Charge credits with prospect_engine_charge_credits using budgetId from initBudget (durable across steps). Do NOT reconstruct a budget with used:0 — that bypasses the run cap. amount is 10 credits per email reveal.\n- Use sumble_search_people with revealEmail + confirmEmailRevealSpend only after a successful charge (charged:true). If charge returns charged:false, stop reveals and keep partial contacts.\n- Never reveal phones. Never request phone attributes or confirmEmailRevealSpend for phones (80 credits, forbidden).\n- Prefer LinkedIn URLs on every contact.\n- Pull org signals when cheap and attach suggested_contacts when present.\n\nReturn ONE strict JSON object (no markdown fence). ALL fields required every night:\n- accounts: array (may be empty) of orgs with contacts: [{ name, title?, linkedinUrl?, email?, personId? }] — no phone fields\n- creditsCharged: number (sum of successful charges this step; use 0 if none)\n- stopReason: null when finished normally, or \"credit-cap\" | \"wall-clock\" | string when stopping early\n",
           "toolFactories": [],
           "capabilities": [
             "@workbench/tools-sumble/sumble:sumble_search_people",
             "@workbench/tools-sumble/sumble:sumble_get_organization_signals",
             "@workbench/tools-sumble/sumble:sumble_list_jobs",
-            "prospect_engine_charge_credits"
+            "@workbench/tools-prospect-engine/core:prospect_engine_charge_credits"
           ],
           "inference": {
             "sources": [
@@ -571,16 +576,16 @@
           "systemPrompt": "",
           "toolFactories": [],
           "capabilities": [
-            "prospect_engine_format_report"
+            "@workbench/tools-prospect-engine/core:prospect_engine_format_report"
           ],
           "inference": {
             "sources": []
           },
-          "description": "Deterministic tool call: prospect_engine_format_report",
+          "description": "Deterministic tool call: @workbench/tools-prospect-engine/core:prospect_engine_format_report",
           "tags": {
             "workbench.stepKind": "deterministic-tool",
-            "workbench.tool": "prospect_engine_format_report",
-            "workbench.argMap": "{\"runDate\":{\"from\":\"runDate\"},\"accounts\":{\"fromJson\":\"reply\",\"field\":\"accounts\"},\"creditsUsed\":{\"fromJson\":\"reply\",\"field\":\"creditsCharged\"},\"stopReason\":{\"fromJson\":\"reply\",\"field\":\"stopReason\"}}",
+            "workbench.tool": "@workbench/tools-prospect-engine/core:prospect_engine_format_report",
+            "workbench.argMap": "{\"runDate\":{\"from\":\"runDate\"},\"baseAccounts\":{\"from\":\"accounts\"},\"accounts\":{\"fromJson\":\"reply\",\"field\":\"accounts\",\"optional\":true},\"budgetId\":{\"from\":\"budgetId\",\"optional\":true},\"creditsUsed\":{\"fromJson\":\"reply\",\"field\":\"creditsCharged\",\"optional\":true},\"stopReason\":{\"fromJson\":\"reply\",\"field\":\"stopReason\",\"optional\":true}}",
             "workbench.title": "Format nightly report"
           }
         },
@@ -651,16 +656,16 @@
           "systemPrompt": "",
           "toolFactories": [],
           "capabilities": [
-            "prospect_engine_format_slack_digest"
+            "@workbench/tools-prospect-engine/core:prospect_engine_format_slack_digest"
           ],
           "inference": {
             "sources": []
           },
-          "description": "Deterministic tool call: prospect_engine_format_slack_digest",
+          "description": "Deterministic tool call: @workbench/tools-prospect-engine/core:prospect_engine_format_slack_digest",
           "tags": {
             "workbench.stepKind": "deterministic-tool",
-            "workbench.tool": "prospect_engine_format_slack_digest",
-            "workbench.argMap": "{\"runDate\":{\"from\":\"runDate\"},\"accounts\":{\"from\":\"accounts\"},\"creditsUsed\":{\"fromJson\":\"reply\",\"field\":\"creditsCharged\"},\"remainingBudget\":{\"from\":\"remaining\"},\"sumbleCreditBalance\":{\"from\":\"sumbleCreditBalance\"},\"stopReason\":{\"fromJson\":\"reply\",\"field\":\"stopReason\"},\"artifactId\":{\"fromJson\":\"content\",\"field\":\"artifactId\"},\"runId\":{\"from\":\"runId\"}}",
+            "workbench.tool": "@workbench/tools-prospect-engine/core:prospect_engine_format_slack_digest",
+            "workbench.argMap": "{\"runDate\":{\"from\":\"runDate\"},\"accounts\":{\"from\":\"accounts\"},\"creditsUsed\":{\"from\":\"creditsUsed\"},\"stopReason\":{\"from\":\"stopReason\"},\"artifactId\":{\"fromJson\":\"content\",\"field\":\"artifactId\"},\"runId\":{\"from\":\"runId\"}}",
             "workbench.title": "Format Slack digest"
           }
         },
@@ -674,21 +679,13 @@
               "from": "steps.formatReport.output.content"
             },
             {
-              "from": "steps.initBudget.output.content"
-            },
-            {
               "from": "steps.persist.output"
-            },
-            {
-              "from": "steps.mapReveal.output"
             }
           ]
         },
         "after": [
           "formatReport",
-          "initBudget",
-          "persist",
-          "mapReveal"
+          "persist"
         ]
       },
       "mergeLedger": {
@@ -699,16 +696,16 @@
           "systemPrompt": "",
           "toolFactories": [],
           "capabilities": [
-            "prospect_engine_merge_ledger"
+            "@workbench/tools-prospect-engine/core:prospect_engine_merge_ledger"
           ],
           "inference": {
             "sources": []
           },
-          "description": "Deterministic tool call: prospect_engine_merge_ledger",
+          "description": "Deterministic tool call: @workbench/tools-prospect-engine/core:prospect_engine_merge_ledger",
           "tags": {
             "workbench.stepKind": "deterministic-tool",
-            "workbench.tool": "prospect_engine_merge_ledger",
-            "workbench.argMap": "{\"ledger\":{\"from\":\"ledger\"},\"runDate\":{\"from\":\"runDate\"},\"accounts\":{\"from\":\"accounts\"},\"creditsUsed\":{\"fromJson\":\"reply\",\"field\":\"creditsCharged\"},\"stopReason\":{\"fromJson\":\"reply\",\"field\":\"stopReason\"},\"remainingBalance\":{\"from\":\"sumbleCreditBalance\"}}",
+            "workbench.tool": "@workbench/tools-prospect-engine/core:prospect_engine_merge_ledger",
+            "workbench.argMap": "{\"ledger\":{\"from\":\"ledger\"},\"runDate\":{\"from\":\"runDate\"},\"accounts\":{\"from\":\"accounts\"},\"creditsUsed\":{\"from\":\"creditsUsed\"},\"stopReason\":{\"from\":\"stopReason\"}}",
             "workbench.title": "Merge tonight into ledger"
           }
         },
@@ -723,20 +720,12 @@
             },
             {
               "from": "steps.formatReport.output.content"
-            },
-            {
-              "from": "steps.initBudget.output.content"
-            },
-            {
-              "from": "steps.mapReveal.output"
             }
           ]
         },
         "after": [
           "parseLedger",
-          "formatReport",
-          "initBudget",
-          "mapReveal"
+          "formatReport"
         ]
       },
       "saveLedger": {
@@ -854,15 +843,15 @@
           "systemPrompt": "",
           "toolFactories": [],
           "capabilities": [
-            "prospect_engine_format_mail_refs"
+            "@workbench/tools-prospect-engine/core:prospect_engine_format_mail_refs"
           ],
           "inference": {
             "sources": []
           },
-          "description": "Deterministic tool call: prospect_engine_format_mail_refs",
+          "description": "Deterministic tool call: @workbench/tools-prospect-engine/core:prospect_engine_format_mail_refs",
           "tags": {
             "workbench.stepKind": "deterministic-tool",
-            "workbench.tool": "prospect_engine_format_mail_refs",
+            "workbench.tool": "@workbench/tools-prospect-engine/core:prospect_engine_format_mail_refs",
             "workbench.argMap": "{\"artifactId\":{\"fromJson\":\"content\",\"field\":\"artifactId\"},\"runId\":{\"from\":\"runId\"},\"workflowLabel\":{\"literal\":\"Prospect engine\"}}",
             "workbench.nonFatal": "true",
             "workbench.title": "Build mail deep links"

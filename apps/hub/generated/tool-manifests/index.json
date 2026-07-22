@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-07-21T07:22:24.612Z",
+  "generatedAt": "2026-07-22T23:00:04.206Z",
   "factories": [
     {
       "factoryId": "@workbench/tools-ab-compare/compose",
@@ -821,6 +821,7 @@
       "bareToolNames": [
         "prospect_engine_charge_credits",
         "prospect_engine_dedupe_candidates",
+        "prospect_engine_extract_list_org_ids",
         "prospect_engine_format_mail_refs",
         "prospect_engine_format_report",
         "prospect_engine_format_slack_digest",
@@ -840,7 +841,8 @@
         "prospect_engine_format_report": "read",
         "prospect_engine_format_slack_digest": "read",
         "prospect_engine_format_mail_refs": "read",
-        "prospect_engine_serialize_ledger": "read"
+        "prospect_engine_serialize_ledger": "read",
+        "prospect_engine_extract_list_org_ids": "read"
       },
       "myraCatalog": null,
       "credentialCatalog": null

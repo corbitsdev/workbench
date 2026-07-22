@@ -150,8 +150,15 @@ COPY workflows/ workflows/
 
 # Hub image does not run `apps/hub` package `build` on Railway. Rebuild embedded
 # workflow defs and tool tarballs from sources in this commit (CL-2593, CL-3626).
-RUN bun run --cwd apps/hub build:workflow-defs && \
-    bun run --cwd apps/hub build:tool-manifests && \
+# Tool manifests MUST be rebuilt before workflow defs: `build:workflow-defs`
+# canonicalizes step tool names against the committed tool-manifest index, so
+# stamping defs before the index is regenerated bakes in a bare (unprefixed)
+# name for any tool added since the last manifest regen. The drift check runs
+# between the two so a stale committed index fails the image build instead of
+# silently shipping a broken def.
+RUN bun run --cwd apps/hub build:tool-manifests && \
+    bun run --cwd apps/hub check:tool-manifest-drift && \
+    bun run --cwd apps/hub build:workflow-defs && \
     bun run --cwd apps/hub build:tool-packages
 
 EXPOSE 4000

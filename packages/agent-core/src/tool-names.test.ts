@@ -119,6 +119,14 @@ describe("canonicalizeToolNames (CL-2145)", () => {
     ).toEqual(["mail_search", "read_file", "run_shell"]);
   });
 
+  it("prefixes a prospect-engine tool with its factory id (regression: build order must not bake a bare name)", () => {
+    expect(
+      canonicalizeToolNames(["prospect_engine_extract_list_org_ids"]),
+    ).toEqual([
+      "@workbench/tools-prospect-engine/core:prospect_engine_extract_list_org_ids",
+    ]);
+  });
+
   it("passes through names with no known package (no false prefixing)", () => {
     expect(canonicalizeToolNames(["granola_search"])).toEqual([
       "granola_search",
