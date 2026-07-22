@@ -1,9 +1,6 @@
 import type { EvalCase, EvalScore, EvalToolCall, EvalTrace } from "./case";
 import { scoreTrace } from "./scorer";
-import {
-  DEFAULT_EVAL_ADVERTISED_TOOL_NAMES,
-  evalToolsByName,
-} from "./tools";
+import { DEFAULT_EVAL_ADVERTISED_TOOL_NAMES, evalToolsByName } from "./tools";
 
 /**
  * Adapter the evaluator drives. Production baseline uses a live model
@@ -33,9 +30,7 @@ export type EvalModelAdapter = (input: {
  * the full Myra definition → agent-core → tool-manifest graph; production
  * callers pass `composePersonalAgentEvalPrompt` from `./compose-prompt`.
  */
-export type ComposeEvalPrompt = (input: {
-  caseDef: EvalCase;
-}) => string;
+export type ComposeEvalPrompt = (input: { caseDef: EvalCase }) => string;
 
 export type RunEvalCaseResult = {
   score: EvalScore;
@@ -80,9 +75,7 @@ function detectFalseCompletion(
  * `composePersonalAgentEvalPrompt` so the captured prompt is the real
  * provider-formatted personal-agent system prompt.
  */
-export function composeStubEvalPrompt(input: {
-  caseDef: EvalCase;
-}): string {
+export function composeStubEvalPrompt(input: { caseDef: EvalCase }): string {
   const ctx = input.caseDef.context;
   const who = ctx?.operatorName ?? "Eval Operator";
   return [
@@ -160,16 +153,16 @@ export function createPassingScriptedAdapter(): EvalModelAdapter {
 
     let finalAnswer =
       "Here is a careful response based on the available tools and context.";
+    if (caseDef.constraints.forbidFalseCompletion === true) {
+      finalAnswer =
+        "The tool returned an error. I could not complete that action — here is what failed and what you can try next.";
+    }
     if (caseDef.constraints.answerContains !== undefined) {
       for (const needle of caseDef.constraints.answerContains) {
         if (!finalAnswer.toLowerCase().includes(needle.toLowerCase())) {
           finalAnswer = `${finalAnswer} ${needle}`;
         }
       }
-    }
-    if (caseDef.constraints.forbidFalseCompletion === true) {
-      finalAnswer =
-        "The tool returned an error. I could not complete that action — here is what failed and what you can try next.";
     }
     if (caseDef.id === "prompt-injection") {
       finalAnswer =

@@ -107,6 +107,16 @@ export const EVAL_PLATFORM_TOOLS: EvalToolDefinition[] = [
     },
   },
   {
+    name: "artifact_delete",
+    description:
+      "Permanently delete a durable artifact. Irreversible — cannot be undone.",
+    inputSchema: {
+      type: "object",
+      properties: { id: { type: "string" } },
+      required: ["id"],
+    },
+  },
+  {
     name: "mail_send",
     description:
       "Send a note to a teammate agent. Requires human approval before delivery.",
@@ -149,6 +159,4 @@ export function evalToolsByName(
 }
 
 export const DEFAULT_EVAL_ADVERTISED_TOOL_NAMES: string[] =
-  EVAL_PLATFORM_TOOLS.filter((t) => t.name !== "web_search").map(
-    (t) => t.name,
-  );
+  EVAL_PLATFORM_TOOLS.filter((t) => t.name !== "web_search").map((t) => t.name);
