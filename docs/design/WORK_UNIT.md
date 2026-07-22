@@ -61,7 +61,7 @@ Workers use a **unique** `workerId` per process (pid + random suffix) so multi-r
 
 | Kind | Idempotency key | Payload (sketch) | Producer | Consumer |
 |---|---|---|---|---|
-| `granola_call` | `note:{noteId}` (or use dedicated `granola_call_job` table with **equivalent** lease semantics) | note id | Workspace list tick | Granola pipeline runner |
+| `granola_call` | `note:{noteId}` | `{ noteId }` | Workspace list tick | Granola pipeline runner (via thin facade over work_unit) |
 | `knowledge_capture` | `artifact:{artifactId}:v{version}` or external ref | source ids + content hash | After product write commits | Capture adapt/plan/write |
 | `agent_task_turn` | `task:{taskId}:turn:{turnKey}` | task id, reason, policy version | Auto-pickup policy | Session launch / resume |
 
@@ -81,7 +81,7 @@ Workers use a **unique** `workerId` per process (pid + random suffix) so multi-r
 
 ## Granola
 
-Existing `granola_call_job` already has enqueue-dedupe, backoff, and dead. WQ.3 hardens claim to **SKIP LOCKED + lease_until + heartbeat** so process death cannot stick a row in `processing` forever. Semantics match work units even if the table stays specialized.
+Granola note processing is a **work unit kind** (`granola_call`), not a second lease table. `createGranolaCallJobQueue` is a thin facade: `enqueue(tenant, noteId)` → `work_unit` with idempotency `note:{noteId}` and payload `{ noteId }`. Claim / heartbeat / complete / fail all go through the shared queue (owner-fenced). Migration `0076_granola_call_to_work_unit` copies open specialized rows onto `work_unit` and closes the legacy table as a runtime path; drop is a follow-up.
 
 ## Owner ops (WQ.6)
 
@@ -92,7 +92,7 @@ Existing `granola_call_job` already has enqueue-dedupe, backoff, and dead. WQ.3 
 
 ## Touchpoints today
 
-- Granola: list-on-tick enqueue + off-tick process (`granola-call-job-queue` / runner) with the same claim/lease/heartbeat/owner-fence pattern.
+- Granola: list-on-tick enqueue + off-tick process via `granola_call` work units (facade keeps historical call shapes).
 - Knowledge capture: outbox enqueues a `knowledge_capture` work unit after the product write (capture failure never rolls back the write).
 - Agent auto-pickup: policy selects open assigned tasks → enqueues `agent_task_turn` work units → worker claims lease and launches/resumes a session. **Product task rows are never leased.**
 - Owner ops: `/owner/work-units` list dead / aged-leased, retry, discard, health.
@@ -101,15 +101,16 @@ Existing `granola_call_job` already has enqueue-dedupe, backoff, and dead. WQ.3 
 
 **Fixed (critical):**
 
-- Owner-fenced `complete` / `fail` on both `work_unit` and `granola_call_job` (require `lease_owner = workerId`).
+- Owner-fenced `complete` / `fail` on `work_unit` (Granola uses the same path).
 - Unique per-process `workerId` (`pid` + random suffix) so multi-replica hubs do not share a lease identity.
 - Heartbeat returns `boolean`; workers abort in-flight work when the lease is lost.
 - Workers claim **one unit at a time** (loop up to batch size) so idle batch members are not left leased without a heartbeat.
+- Granola dual-queue retired: specialized table is no longer the runtime path (CL-4153).
 - Tests cover stolen complete/fail no-ops, multi-claim isolation, lease expiry reclaim.
 
 **Deferred (non-blocking):**
 
-1. **Granola `fail` still takes caller-supplied `attempts`** rather than reading under the owner fence (work_unit already does). Risk is low because complete/fail are owner-fenced; double-count on race is still possible if a stolen worker races before reclaim. Follow-up: mirror work_unit’s SELECT-then-UPDATE under fence.
+1. **Drop `granola_call_job` table** after staging has drained and ops confirm owner work-units surface covers dead notes.
 2. **No dedicated sweeper / metrics exporter** — reclaim is claim-time only; owner health is count-based. Fine until multi-tenant ops need latency histograms.
 3. **Work unit kinds are free-form strings** — no registry/enum yet; add when a second product surface wants to plug in.
 4. **Schedule fire → work unit (WQ.7 / CL-4070)** not in this PR; schedules fire through the existing scheduler path.

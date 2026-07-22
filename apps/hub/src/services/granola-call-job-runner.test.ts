@@ -63,10 +63,10 @@ function makeJob(
 function fakeQueue(jobs: GranolaCallJobRow[]): {
   queue: GranolaCallJobQueue;
   completed: string[];
-  failed: { jobId: string; attempts: number; error: string }[];
+  failed: { jobId: string; error: string }[];
 } {
   const completed: string[] = [];
-  const failed: { jobId: string; attempts: number; error: string }[] = [];
+  const failed: { jobId: string; error: string }[] = [];
   const pending = [...jobs];
   const queue: GranolaCallJobQueue = {
     enqueue: async () => {},
@@ -74,8 +74,8 @@ function fakeQueue(jobs: GranolaCallJobRow[]): {
     complete: async (jobId) => {
       completed.push(jobId);
     },
-    fail: async (jobId, _workerId, attempts, error) => {
-      failed.push({ jobId, attempts, error });
+    fail: async (jobId, _workerId, error) => {
+      failed.push({ jobId, error });
     },
     heartbeat: async () => true,
   };
@@ -117,7 +117,7 @@ describe("granola call job runner", () => {
     expect(completed).toEqual(["job-1"]);
   });
 
-  test("a transcript-fetch failure fails the job with the incremented attempt count (retry path)", async () => {
+  test("a transcript-fetch failure fails the job (retry path via work_unit attempts)", async () => {
     getNoteShouldThrow = true;
     const job = makeJob({ attempts: 2 });
     const { queue, failed } = fakeQueue([job]);
@@ -133,7 +133,6 @@ describe("granola call job runner", () => {
     expect(calls).toHaveLength(0);
     expect(failed).toHaveLength(1);
     expect(failed[0]?.jobId).toBe("job-1");
-    expect(failed[0]?.attempts).toBe(3);
     expect(failed[0]?.error).toContain("granola API 503");
   });
 
@@ -154,7 +153,7 @@ describe("granola call job runner", () => {
 
     expect(completed).toEqual([]);
     expect(failed).toEqual([
-      { jobId: "job-1", attempts: 1, error: "transient LLM error" },
+      { jobId: "job-1", error: "transient LLM error" },
     ]);
   });
 
