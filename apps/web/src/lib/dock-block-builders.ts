@@ -9,6 +9,7 @@ import { buildGammaBlocks } from "@workbench/workflow-gamma-presentation-creator
 import { buildGtmScriptsBriefsBlocks } from "@workbench/workflow-gtm-scripts-briefs/blocks";
 import { buildLast30daysBlocks } from "@workbench/workflow-last30days-research/blocks";
 import { buildPainPointCollateralBlocks } from "@workbench/workflow-pain-point-collateral/blocks";
+import { buildMultiSourceCollateralBlocks } from "@workbench/workflow-multi-source-collateral/blocks";
 import { buildRedditOpportunityScannerBlocks } from "@workbench/workflow-reddit-opportunity-scanner/blocks";
 import { buildSumbleAccountIntelBlocks } from "@workbench/workflow-sumble-account-intel/blocks";
 import { buildCompetitorAnalysisBlocks } from "@workbench/workflow-competitor-analysis/blocks";
@@ -35,6 +36,7 @@ const builders: Record<string, DockBlockBuilder> = {
   "gtm-scripts-briefs": buildGtmScriptsBriefsBlocks,
   "last30days-research": buildLast30daysBlocks,
   "pain-point-collateral": buildPainPointCollateralBlocks,
+  "multi-source-collateral": buildMultiSourceCollateralBlocks,
   "reddit-opportunity-scanner": buildRedditOpportunityScannerBlocks,
   "sumble-account-intel": buildSumbleAccountIntelBlocks,
   "competitor-analysis": buildCompetitorAnalysisBlocks,

@@ -12,6 +12,11 @@ import {
   RedditSelectionPayloadSchema,
   GammaIntakePayloadSchema,
   GtmScriptsBriefsIntakePayloadSchema,
+  MultiSourceOptionsPayloadSchema,
+  MultiSourceReviewFinalPayloadSchema,
+  MultiSourceReviewPayloadSchema,
+  MultiSourceSourcesPayloadSchema,
+  multiSourceSourcesHasAtLeastOne,
   PainPointContextPayloadSchema,
   PainPointFormatSelectionPayloadSchema,
   PainPointNoteSelectionPayloadSchema,
@@ -111,6 +116,16 @@ const RESUME_PAYLOAD_SCHEMAS: Record<string, Record<string, Type>> = {
     "format-selection": PainPointFormatSelectionPayloadSchema,
     review: PainPointReviewPayloadSchema,
   },
+  // multi-source-collateral (CL-4034): multi-select sources → options items →
+  // review (good/bad + optional one-pass regenerate) → review-final when regenerating.
+  // Sources also require at least one of artifacts/notes/issues/text (see
+  // validateResumePayload cross-field check).
+  "multi-source-collateral": {
+    sources: MultiSourceSourcesPayloadSchema,
+    options: MultiSourceOptionsPayloadSchema,
+    review: MultiSourceReviewPayloadSchema,
+    "review-final": MultiSourceReviewFinalPayloadSchema,
+  },
   // sumble-account-intel (CL-3424): the intake gate REQUIRES a non-empty
   // organization domain/slug — every Sumble lookup keys off it, so a blank
   // intake is rejected at the /resume boundary rather than resolving nothing.
@@ -157,6 +172,28 @@ export function validateResumePayload(
   const out = schema(payload);
   if (out instanceof type.errors) {
     return { ok: false, error: out.summary };
+  }
+  if (
+    kind === "multi-source-collateral" &&
+    signalName === "sources" &&
+    !multiSourceSourcesHasAtLeastOne(out)
+  ) {
+    return {
+      ok: false,
+      error:
+        "sources requires at least one artifact, note, Linear issue, or non-empty text",
+    };
+  }
+  if (
+    kind === "multi-source-collateral" &&
+    signalName === "review" &&
+    out.shouldRegenerate === true &&
+    out.regenerateItems.length === 0
+  ) {
+    return {
+      ok: false,
+      error: "shouldRegenerate requires at least one regenerateItems entry",
+    };
   }
   return { ok: true };
 }

@@ -19,6 +19,8 @@ const importers: Record<string, () => Promise<WorkflowUIModule>> = {
   heartbeat: () => import("@workbench/workflow-heartbeat/ui"),
   "pain-point-collateral": () =>
     import("@workbench/workflow-pain-point-collateral/ui"),
+  "multi-source-collateral": () =>
+    import("@workbench/workflow-multi-source-collateral/ui"),
   "reddit-opportunity-scanner": () =>
     import("@workbench/workflow-reddit-opportunity-scanner/ui"),
   "last30days-research": () =>

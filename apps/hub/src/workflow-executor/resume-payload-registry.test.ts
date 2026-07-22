@@ -485,7 +485,7 @@ describe("validateResumePayload", () => {
     ).toEqual({ ok: true });
   });
 
-  test("accepts a complete research-backed scripts-and-briefs intake", () => {
+test("accepts a complete research-backed scripts-and-briefs intake", () => {
     expect(
       validateResumePayload("gtm-scripts-briefs", "intake", {
         topic: "AI agent launches for revenue teams",
@@ -503,6 +503,90 @@ describe("validateResumePayload", () => {
         days: 0,
       }).ok,
     ).toBe(false);
+  });
+
+  test("accepts multi-source-collateral sources with mixed picks (CL-4034)", () => {
+    expect(
+      validateResumePayload("multi-source-collateral", "sources", {
+        artifactItems: [{ artifactId: "art_1" }],
+        noteItems: [],
+        issueItems: [{ id: "CL-1" }],
+        text: "extra brief",
+      }),
+    ).toEqual({ ok: true });
+  });
+
+  test("rejects multi-source-collateral sources with nothing selected", () => {
+    const result = validateResumePayload("multi-source-collateral", "sources", {
+      artifactItems: [],
+      noteItems: [],
+      issueItems: [],
+      text: "   ",
+    });
+    expect(result.ok).toBe(false);
+  });
+
+  test("accepts multi-source-collateral options with generate items", () => {
+    expect(
+      validateResumePayload("multi-source-collateral", "options", {
+        items: [
+          {
+            contentType: "linkedin-post",
+            sourceContext: "Call notes…",
+            systemPrompt: "Write short.",
+            tone: "direct",
+          },
+        ],
+      }),
+    ).toEqual({ ok: true });
+  });
+
+  test("rejects multi-source-collateral options with empty items", () => {
+    expect(
+      validateResumePayload("multi-source-collateral", "options", {
+        items: [],
+      }).ok,
+    ).toBe(false);
+  });
+
+  test("accepts multi-source-collateral review with regenerate path", () => {
+    expect(
+      validateResumePayload("multi-source-collateral", "review", {
+        approvedPieces: [
+          { format: "blog-short", title: "T", content: "Body" },
+        ],
+        shouldRegenerate: true,
+        regenerateItems: [
+          {
+            contentType: "linkedin-post",
+            sourceContext: "ctx",
+            systemPrompt: "p",
+            previousContent: "old",
+            feedback: "make punchier",
+          },
+        ],
+      }),
+    ).toEqual({ ok: true });
+  });
+
+  test("rejects multi-source-collateral review shouldRegenerate without items", () => {
+    expect(
+      validateResumePayload("multi-source-collateral", "review", {
+        approvedPieces: [],
+        shouldRegenerate: true,
+        regenerateItems: [],
+      }).ok,
+    ).toBe(false);
+  });
+
+  test("accepts multi-source-collateral review-final", () => {
+    expect(
+      validateResumePayload("multi-source-collateral", "review-final", {
+        approvedPieces: [
+          { format: "twitter-post", title: "X", content: "post body" },
+        ],
+      }),
+    ).toEqual({ ok: true });
   });
 });
 

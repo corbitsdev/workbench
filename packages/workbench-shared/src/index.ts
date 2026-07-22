@@ -20,6 +20,7 @@ export * from "./webhook-trigger";
 export * from "./tasks";
 export * from "./task-links";
 export * from "./pain-point-collateral";
+export * from "./multi-source-collateral";
 export * from "./sumble-account-intel";
 export * from "./competitor-analysis";
 
