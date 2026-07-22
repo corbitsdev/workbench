@@ -14,7 +14,7 @@ export const toolManifestFile = {
       myraCatalog: {
         catalogPackage: "artifacts",
         summary:
-          "Advanced artifact tools — chunked reads, lookup by title, linking.",
+          "Artifact tools beyond the basics: read large artifacts in chunks, look up an artifact by title, and link a file or presentation to one.",
         tags: ["artifact", "deliverable", "chunk", "link", "presentation"],
       },
       credentialCatalog: null,

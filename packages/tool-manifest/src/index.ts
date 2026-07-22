@@ -26,6 +26,11 @@ export {
 } from "./derive";
 export { assertToolManifestFactoryInvariants } from "./invariants";
 export {
+  assertCatalogDescriptionStyle,
+  CATALOG_BANNED_PHRASES,
+  MAX_CATALOG_SUMMARY_LENGTH,
+} from "./catalog-style";
+export {
   parseToolManifestFile,
   parseToolManifestIndex,
   ToolFactoryManifestSchema,

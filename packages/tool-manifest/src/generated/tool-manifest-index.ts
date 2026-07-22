@@ -117,7 +117,7 @@ export const COMMITTED_TOOL_MANIFEST_INDEX: unknown = {
       myraCatalog: {
         catalogPackage: "artifacts",
         summary:
-          "Advanced artifact tools — chunked reads, lookup by title, linking.",
+          "Artifact tools beyond the basics: read large artifacts in chunks, look up an artifact by title, and link a file or presentation to one.",
         tags: ["artifact", "deliverable", "chunk", "link", "presentation"],
       },
       credentialCatalog: null,
@@ -174,7 +174,7 @@ export const COMMITTED_TOOL_MANIFEST_INDEX: unknown = {
         attio_create_record:
           "Create a record for an Attio object (e.g. add a new company or person). Pass `object` (the slug) and `values` (attribute map). WRITES to Attio: use only after explicit human approval. Pass `matchingAttribute` to make the write safe to retry — a record matching that attribute is updated instead of creating a duplicate. Returns the created (or matched) record with its `id` and `values`.",
         attio_recent_activity:
-          "Compact snapshot of recent Attio CRM activity: companies created since createdAfter and currently open tasks. Read-only.",
+          "Compact snapshot of recent Attio CRM activity: newCompanies (created since createdAfter), recentlyTouchedCompanies (older companies with a recent interaction), newTasks (created since createdAfter), completedTasks (completed since createdAfter), and longOpenTasks (oldest still-open tasks). Read-only.",
       },
       myraCatalog: {
         catalogPackage: "attio",
@@ -533,7 +533,7 @@ export const COMMITTED_TOOL_MANIFEST_INDEX: unknown = {
       },
       descriptions: {
         granola_list_notes:
-          "List recent Granola notes for the configured workbench. Use this to find calls before fetching a full transcript.",
+          "List recent Granola notes for the configured workbench. Use this to find calls before fetching a full transcript. Brief-shaped calls (enabledSources set with createdAfter) query both created_after and updated_after, paginate up to 5 pages per query at page_size 30, merge by note id sorted by created_at desc, and tag notes created before the cutoff but updated after it with `updatedOnly: true` (a revised earlier meeting, not a new one).",
         granola_get_note:
           "Fetch a single Granola note, including its transcript, by note ID.",
         granola_list_folders:
@@ -692,7 +692,7 @@ export const COMMITTED_TOOL_MANIFEST_INDEX: unknown = {
       },
       descriptions: {
         linear_list_issues:
-          "List Linear issues across the workspace. Read-only. Scope with team, state, assignee, project, cycle, label, priority, or query; supports cursor pagination and orderBy (createdAt|updatedAt). Brief heartbeat calls may pass enabledSources.",
+          "List Linear issues across the workspace. Read-only. Scope with team, state, assignee, project, cycle, label, priority, or query; supports cursor pagination and orderBy (createdAt|updatedAt). Brief heartbeat calls may pass enabledSources; brief-shaped results are bucketed into newIssues/completedIssues/updatedIssues and default orderBy to updatedAt when a cutoff is present.",
         linear_get_issue:
           'Get a Linear issue by UUID or identifier (e.g. "ENG-123"). Optional includeRelations returns this issue\'s outbound relation edges only (blocks, related, duplicate); inverse edges such as blocked-by require querying the related issue.',
         linear_create_issue:
@@ -1129,7 +1129,7 @@ export const COMMITTED_TOOL_MANIFEST_INDEX: unknown = {
       myraCatalog: {
         catalogPackage: "sumble",
         summary:
-          "Sumble v9 — full Public API: organizations, teams, people, jobs, signals, lookups, saved lists, support, and intelligence briefs.",
+          "Sumble account intelligence — look up organizations, teams, people, jobs, and buying signals; build intelligence briefs and manage saved lists.",
         tags: [
           "sumble",
           "account",
@@ -1174,7 +1174,7 @@ export const COMMITTED_TOOL_MANIFEST_INDEX: unknown = {
         vercel_list_projects:
           "List Vercel projects visible to the configured token. Read-only. Optionally pass teamId and limit.",
         vercel_list_deployments:
-          "List recent Vercel deployments visible to the configured token. Read-only. Optionally scope by projectId and teamId.",
+          "List recent Vercel deployments visible to the configured token. Read-only. Optionally scope by projectId, teamId, target (e.g. production), or state (comma-separable, e.g. ERROR,CANCELED). createdAfter must be a parseable date and bounds the window (since/until). Brief-shaped calls (enabledSources set) return compact deployments plus `truncated: true` when the API has more matching deployments than the page returned.",
         vercel_deploy_static_file:
           'Deploy one static HTML file to a public Vercel URL. This is an irreversible write action that publishes content the user can see. It pauses for explicit human approval before it runs, so call it directly when the user asks to deploy — do not ask for approval separately. Defaults to a preview deployment; only request target "production" when the user asks to deploy to production.',
       },
