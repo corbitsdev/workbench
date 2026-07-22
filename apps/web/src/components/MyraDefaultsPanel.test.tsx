@@ -48,6 +48,9 @@ const variants = [
 type PutCall = { method: string; body: unknown };
 
 const EMPTY_STYLE_AXES = {
+  instructionsGlobal: null,
+  instructionsChat: null,
+  instructionsTriage: null,
   personality: null,
   emojiUse: null,
   uiType: null,

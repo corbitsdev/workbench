@@ -37,6 +37,7 @@ import { WhatsNewSection } from "../components/whats-new/WhatsNewSection";
 import { MemberConnectionsPanel } from "../components/MemberConnectionsPanel";
 import { AutoApprovedToolsPanel } from "../components/AutoApprovedToolsPanel";
 import { MyraDefaultsPanel } from "../components/MyraDefaultsPanel";
+import { MyraInstructionsPanel } from "../components/MyraInstructionsPanel";
 import { MyraStylePanel } from "../components/MyraStylePanel";
 import { MyraPinnedSkillsPanel } from "../components/MyraPinnedSkillsPanel";
 import { MyraToolsPanel } from "../components/MyraToolsPanel";
@@ -281,6 +282,14 @@ export default function Settings() {
           description="Pick which Myra definition powers your chat and inbox automation."
         >
           <MyraDefaultsPanel tenantId={activeTenantId} />
+        </SettingsGroup>
+
+        <SettingsGroup
+          id="myra-instructions"
+          title="Standing instructions"
+          description="Guidance Myra follows on every reply — set once globally, and optionally override it for chat or inbox automation."
+        >
+          <MyraInstructionsPanel tenantId={activeTenantId} />
         </SettingsGroup>
 
         <SettingsGroup
