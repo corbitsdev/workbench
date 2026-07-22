@@ -165,28 +165,25 @@ describe("AppSidebar", () => {
     expect(closed).toBe(1);
   });
 
-  it("renders the Demos section from the /me payload, linking out to each demo", async () => {
+  it("renders the Demos section collapsed by default, with links still available", async () => {
     sidebarDemoLinks = DEMO_FIXTURE;
     renderSidebar();
-    const cases = [
-      { name: /deal scout/i, href: "https://deal-scout-abklabs.vercel.app/" },
-      {
-        name: /notion spike/i,
-        href: "https://app-notion-spike.up.railway.app/",
-      },
-      {
-        name: /workbench \(staging\)/i,
-        href: "https://workbench-ui-git-staging-abklabs.vercel.app/",
-      },
-    ];
-    for (const { name, href } of cases) {
-      const link = (await screen.findByRole("link", {
-        name,
-      })) as HTMLAnchorElement;
-      expect(link.getAttribute("href")).toBe(href);
-      expect(link.getAttribute("target")).toBe("_blank");
-      expect(link.getAttribute("rel")).toBe("noopener noreferrer");
-    }
+    const summary = await screen.findByText("Demos");
+    const details = summary.closest("details");
+    expect(details).not.toBeNull();
+    // Default is collapsed: no `open` attribute so demos don't steal
+    // vertical space from the chat list on first paint.
+    expect(details!.hasAttribute("open")).toBe(false);
+    // Opening the section reveals the demo links.
+    details!.setAttribute("open", "");
+    const link = (await screen.findByRole("link", {
+      name: /deal scout/i,
+    })) as HTMLAnchorElement;
+    expect(link.getAttribute("href")).toBe(
+      "https://deal-scout-abklabs.vercel.app/",
+    );
+    expect(link.getAttribute("target")).toBe("_blank");
+    expect(link.getAttribute("rel")).toBe("noopener noreferrer");
   });
 
   it("hides the Demos section entirely when the payload carries no demo links", async () => {
