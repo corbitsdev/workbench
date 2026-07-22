@@ -189,7 +189,12 @@ function PreviewPanel({
         >
           {starting ? "Starting…" : "Start run"}
         </button>
-        <SchedulePopover kind={entry.kind} label={entry.label} />
+        <SchedulePopover
+          kind={entry.kind}
+          label={entry.label}
+          allowedScopes={entry.allowedScopes}
+          defaultScope={entry.defaultScope}
+        />
       </div>
     </div>
   );

@@ -22,11 +22,26 @@ function jsonResponse(body: unknown, status = 200): Response {
   } as unknown as Response;
 }
 
-const schedule = {
+const schedule: {
+  id: string;
+  workflowKind: string;
+  hourUtc: number;
+  enabled: boolean;
+  scope: "personal" | "tenant";
+  ownerMemberPrincipalId: string;
+  triggerPayload: Record<string, unknown>;
+  createdAt: string;
+  lastFiredDayUtc: number | null;
+  lastRunId: string | null;
+  recentFires: Array<{ runId: string; firedAt: string; status: string }>;
+  nextFireAt: string | null;
+} = {
   id: "sch_1",
   workflowKind: "morning-brief",
   hourUtc: 13,
   enabled: true,
+  scope: "personal",
+  ownerMemberPrincipalId: "prn_1",
   triggerPayload: {},
   createdAt: "2026-01-01T00:00:00.000Z",
   lastFiredDayUtc: null,
@@ -45,6 +60,8 @@ const catalog = {
       pauseCount: 0,
       steps: [],
       attachable: true,
+      allowedScopes: ["personal", "tenant"] as const,
+      defaultScope: "personal" as const,
     },
   ],
 };
@@ -115,6 +132,7 @@ describe("MySchedules", () => {
     globalThis.fetch = makeFetch([schedule]) as unknown as typeof fetch;
     renderList();
     await screen.findByText("Morning Brief");
+    expect(screen.getByText(/Just for me/)).toBeTruthy();
   });
 
   it("pauses a schedule via PATCH when the switch is toggled", async () => {

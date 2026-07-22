@@ -6,9 +6,11 @@ import {
   deleteOwnerSchedule,
   ensureOwnerSchedule,
   listEnabledSchedules,
+  listTenantScopedSchedules,
   markScheduleFired,
   toApiSchedule,
   updateOwnerSchedule,
+  updateTenantScopedSchedule,
 } from "./scheduled-triggers";
 
 function dbRow(
@@ -20,6 +22,7 @@ function dbRow(
     ownerMemberPrincipalId: "principal-1",
     workflowKind: "heartbeat",
     hourUtc: 13,
+    scope: "personal",
     triggerPayload: { reason: "scheduled-heartbeat" },
     enabled: true,
     lastFiredDayUtc: null,
@@ -38,6 +41,8 @@ describe("toApiSchedule", () => {
       workflowKind: "heartbeat",
       hourUtc: 9,
       enabled: false,
+      scope: "personal",
+      ownerMemberPrincipalId: "principal-1",
       triggerPayload: { reason: "scheduled-heartbeat" },
       createdAt: "2026-01-02T00:00:00.000Z",
       lastFiredDayUtc: null,
@@ -197,18 +202,21 @@ describe("createOwnerSchedule", () => {
 });
 
 describe("ensureOwnerSchedule", () => {
-  it("inserts with onConflictDoNothing so an existing row is preserved", async () => {
+  it("inserts a personal schedule when none exists", async () => {
     let values: unknown;
-    let conflict: unknown;
+    let findWhere: unknown;
     const db = {
+      query: {
+        scheduledTrigger: {
+          findFirst: async (opts: { where: unknown }) => {
+            findWhere = opts.where;
+            return undefined;
+          },
+        },
+      },
       insert: () => ({
-        values: (v: unknown) => {
+        values: async (v: unknown) => {
           values = v;
-          return {
-            onConflictDoNothing: async (c: unknown) => {
-              conflict = c;
-            },
-          };
         },
       }),
     } as unknown as HubDb;
@@ -221,13 +229,105 @@ describe("ensureOwnerSchedule", () => {
       payload: { reason: "scheduled-heartbeat" },
     });
 
+    expect(findWhere).toBeDefined();
     expect(values).toEqual({
       tenantId: "tenant-root",
       ownerMemberPrincipalId: "principal-1",
       workflowKind: "heartbeat",
       hourUtc: 13,
       triggerPayload: { reason: "scheduled-heartbeat" },
+      scope: "personal",
     });
-    expect(conflict).toBeDefined();
+  });
+
+  it("skips insert when a personal schedule already exists", async () => {
+    let inserted = false;
+    const db = {
+      query: {
+        scheduledTrigger: {
+          findFirst: async () => ({ id: "sch-existing" }),
+        },
+      },
+      insert: () => {
+        inserted = true;
+        return { values: async () => undefined };
+      },
+    } as unknown as HubDb;
+
+    await ensureOwnerSchedule(db, {
+      tenantId: "tenant-root",
+      ownerPrincipalId: "principal-1",
+      kind: "heartbeat",
+      hourUtc: 13,
+      payload: { reason: "scheduled-heartbeat" },
+    });
+
+    expect(inserted).toBe(false);
+  });
+});
+
+describe("listTenantScopedSchedules (CL-4113)", () => {
+  it("queries only tenant-scoped rows for the given tenant", async () => {
+    let findOpts: unknown;
+    const rows = [dbRow({ scope: "tenant", workflowKind: "deck" })];
+    const db = {
+      query: {
+        scheduledTrigger: {
+          findMany: async (opts: unknown) => {
+            findOpts = opts;
+            return rows;
+          },
+        },
+      },
+    } as unknown as HubDb;
+
+    const result = await listTenantScopedSchedules(db, "tenant-root");
+    expect(result).toEqual(rows);
+    expect(findOpts).toBeDefined();
+  });
+});
+
+describe("updateTenantScopedSchedule (CL-4113)", () => {
+  it("returns null when no tenant-scoped row matches", async () => {
+    const db = {
+      update: () => ({
+        set: () => ({
+          where: () => ({
+            returning: async () => [],
+          }),
+        }),
+      }),
+    } as unknown as HubDb;
+    expect(
+      await updateTenantScopedSchedule(db, {
+        tenantId: "tenant-root",
+        id: "sch-missing",
+        enabled: false,
+      }),
+    ).toBeNull();
+  });
+
+  it("returns the updated row when a tenant schedule matches", async () => {
+    const updated = dbRow({
+      id: "sch-tenant",
+      scope: "tenant",
+      enabled: false,
+    });
+    const db = {
+      update: () => ({
+        set: () => ({
+          where: () => ({
+            returning: async () => [updated],
+          }),
+        }),
+      }),
+    } as unknown as HubDb;
+    expect(
+      await updateTenantScopedSchedule(db, {
+        tenantId: "tenant-root",
+        id: "sch-tenant",
+        enabled: false,
+      }),
+    ).toEqual(updated);
   });
 });

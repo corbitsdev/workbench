@@ -7,6 +7,7 @@ import { WRITE_ARTIFACT_DEFINITION } from "@workbench/tools-artifact";
 import { and, eq, max } from "drizzle-orm";
 import { artifact, artifactVersion } from "../db/schema";
 import type { ContextToolEntry } from "../lib/tool-registry";
+import { maybeEnqueueKnowledgeCaptureAfterArtifactWrite } from "../services/knowledge-capture-hook";
 
 const log = getLogger(["tools", "write-artifact"]);
 
@@ -131,6 +132,19 @@ export async function writeArtifactDeduped(params: {
     }
 
     return { artifactId, version: nextVersion };
+  }).then(async (result) => {
+    // After the product write commits: enqueue knowledge capture as a work
+    // unit when the outbox flag is on. Failures never roll back the write.
+    try {
+      await maybeEnqueueKnowledgeCaptureAfterArtifactWrite({
+        tenantId,
+        artifactId: result.artifactId,
+        version: result.version,
+      });
+    } catch {
+      // Fail-soft: capture must never block product writes.
+    }
+    return result;
   });
 }
 

@@ -886,8 +886,8 @@ export type PrincipalMailboxRow = typeof principalMailbox.$inferSelect;
 // workflow run on a daily UTC-hour cadence. The hub scheduler loads enabled
 // rows each tick and starts a run for any whose target hour has arrived and has
 // not fired today (tracked by `last_fired_day_utc`, the integer UTC day index
-// floor(ms / 86_400_000)). Only `hour_utc` is honored today. Unique per
-// (tenant, owner, kind) so the boot heartbeat seeder is idempotent.
+// floor(ms / 86_400_000)). Only `hour_utc` is honored today.
+// Unique per scope (CL-4108): personal → (tenant, owner, kind); tenant → (tenant, kind).
 export const scheduledTrigger = pgTable(
   "scheduled_trigger",
   {
@@ -896,6 +896,8 @@ export const scheduledTrigger = pgTable(
     ownerMemberPrincipalId: text("owner_member_principal_id").notNull(),
     workflowKind: text("workflow_kind").notNull(),
     hourUtc: integer("hour_utc").notNull(),
+    // personal = Just for me; tenant = Everyone (CL-4108).
+    scope: text("scope").notNull().default("personal"),
     triggerPayload: jsonb("trigger_payload")
       .$type<Record<string, unknown>>()
       .notNull()
@@ -911,9 +913,21 @@ export const scheduledTrigger = pgTable(
       .$onUpdate(() => new Date()),
   },
   (t) => ({
-    scheduledTriggerOwnerKindUniq: unique(
-      "scheduled_trigger_owner_kind_uniq",
-    ).on(t.tenantId, t.ownerMemberPrincipalId, t.workflowKind),
+    scheduledTriggerScopeCheck: check(
+      "scheduled_trigger_scope_check",
+      sql`${t.scope} IN ('personal', 'tenant')`,
+    ),
+    // Partial uniques (CL-4108): personal is per owner+kind; tenant is per tenant+kind.
+    scheduledTriggerPersonalOwnerKindUniq: uniqueIndex(
+      "scheduled_trigger_personal_owner_kind_uniq",
+    )
+      .on(t.tenantId, t.ownerMemberPrincipalId, t.workflowKind)
+      .where(sql`${t.scope} = 'personal'`),
+    scheduledTriggerTenantKindUniq: uniqueIndex(
+      "scheduled_trigger_tenant_kind_uniq",
+    )
+      .on(t.tenantId, t.workflowKind)
+      .where(sql`${t.scope} = 'tenant'`),
   }),
 );
 
@@ -1007,6 +1021,9 @@ export const granolaCallJob = pgTable(
     attempts: integer("attempts").notNull().default(0),
     nextAttemptAt: timestamp("next_attempt_at").notNull().defaultNow(),
     lastError: text("last_error"),
+    // WQ.3: visibility lease so a dead worker cannot stick a job in processing.
+    leaseOwner: text("lease_owner"),
+    leaseUntil: timestamp("lease_until"),
     createdAt: timestamp("created_at").notNull().defaultNow(),
     updatedAt: timestamp("updated_at")
       .notNull()
@@ -1020,10 +1037,71 @@ export const granolaCallJob = pgTable(
     granolaCallJobStatusNextAttemptIdx: index(
       "granola_call_job_status_next_attempt_idx",
     ).on(t.status, t.nextAttemptAt),
+    granolaCallJobLeaseUntilIdx: index(
+      "granola_call_job_lease_until_idx",
+    ).on(t.status, t.leaseUntil),
   }),
 );
 
 export type GranolaCallJobRow = typeof granolaCallJob.$inferSelect;
+
+// Durable background work unit (WQ.1–WQ.2). Product tasks are never leased;
+// workers claim work_unit rows with FOR UPDATE SKIP LOCKED + lease_until.
+export const workUnitStatuses = [
+  "pending",
+  "leased",
+  "done",
+  "dead",
+] as const;
+
+export const workUnitKinds = [
+  "knowledge_capture",
+  "agent_task_turn",
+  "granola_call",
+] as const;
+
+export const workUnit = pgTable(
+  "work_unit",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: text("tenant_id").notNull(),
+    kind: text("kind").notNull(),
+    idempotencyKey: text("idempotency_key").notNull(),
+    status: text("status", { enum: workUnitStatuses })
+      .notNull()
+      .default("pending"),
+    payload: jsonb("payload").$type<Record<string, unknown>>().notNull().default({}),
+    attempts: integer("attempts").notNull().default(0),
+    maxAttempts: integer("max_attempts").notNull().default(8),
+    nextAttemptAt: timestamp("next_attempt_at").notNull().defaultNow(),
+    leaseOwner: text("lease_owner"),
+    leaseUntil: timestamp("lease_until"),
+    lastError: text("last_error"),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at")
+      .notNull()
+      .defaultNow()
+      .$onUpdate(() => new Date()),
+  },
+  (t) => ({
+    workUnitTenantKindKeyUniq: unique("work_unit_tenant_kind_key_uniq").on(
+      t.tenantId,
+      t.kind,
+      t.idempotencyKey,
+    ),
+    workUnitClaimIdx: index("work_unit_claim_idx").on(
+      t.status,
+      t.nextAttemptAt,
+      t.leaseUntil,
+    ),
+    workUnitKindStatusIdx: index("work_unit_kind_status_idx").on(
+      t.kind,
+      t.status,
+    ),
+  }),
+);
+
+export type WorkUnitRow = typeof workUnit.$inferSelect;
 
 export {
   analyticsEvent,

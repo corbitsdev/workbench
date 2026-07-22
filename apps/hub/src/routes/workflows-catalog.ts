@@ -12,6 +12,7 @@ import {
 } from "@workbench/agents";
 import {
   orderCatalogEntries,
+  scheduleScopesForKind,
   WorkflowCatalogSchema,
   type WorkflowCatalogEntry,
 } from "@workbench/shared";
@@ -164,6 +165,7 @@ export function createWorkflowsCatalogRouter(deps: {
           gateInfo?.requiresIntake === true
             ? intakeFieldsByKind.get(entry.kind)
             : undefined;
+        const scopes = scheduleScopesForKind(entry.kind, attachable);
         entries.push({
           kind: entry.kind,
           label: entry.label ?? humanizeKind(entry.kind),
@@ -178,6 +180,8 @@ export function createWorkflowsCatalogRouter(deps: {
           ...(intakeFields !== undefined && intakeFields.length > 0
             ? { intakeFields }
             : {}),
+          allowedScopes: scopes.allowedScopes,
+          defaultScope: scopes.defaultScope,
         });
       }
 

@@ -19,6 +19,8 @@ function entry(
     pauseCount: 0,
     steps: [],
     attachable: false,
+    allowedScopes: ["personal"],
+    defaultScope: "personal",
   };
 }
 
@@ -74,6 +76,8 @@ describe("WorkflowCatalogEntrySchema", () => {
       stepCount: 2,
       pauseCount: 1,
       attachable: true,
+      allowedScopes: ["personal", "tenant"],
+      defaultScope: "personal",
       steps: [
         { id: "s1", title: "Fetch", kind: "auto" },
         { id: "s2", title: "Approve", kind: "human" },

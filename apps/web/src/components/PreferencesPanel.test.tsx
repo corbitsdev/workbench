@@ -84,6 +84,8 @@ const HEARTBEAT_DEPLOYED_CATALOG: WorkflowCatalog = {
       pauseCount: 0,
       steps: [],
       attachable: false,
+      allowedScopes: ["personal"] as const,
+      defaultScope: "personal" as const,
     },
   ],
 };

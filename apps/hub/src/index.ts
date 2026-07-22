@@ -67,7 +67,7 @@ import {
   type ReclaimRunDeploymentFn,
 } from "./workflow-executor/projection-bridge";
 import { projectWorkflowRunFacts } from "./workflow-executor/workflow-run-facts";
-import { deliverRunTerminalMail } from "./workflow-executor/run-terminal-mail";
+import { deliverRunTerminalMail, fanOutTenantScheduleTerminalMail } from "./workflow-executor/run-terminal-mail";
 import { deliverPendingGateMail } from "./workflow-executor/gate-mail";
 import { createWorkflowAnalyticsRouter } from "./routes/workflow-analytics";
 import {
@@ -92,7 +92,7 @@ import { getIdentityAccounts } from "./lib/member-identity";
 import { seedHeartbeatSchedules } from "./services/scheduled-trigger-seeder";
 import {
   ensureOwnerSchedule,
-  listEnabledSchedules,
+  listAllEnabledSchedules,
   markScheduleFired,
   recordScheduleRunStarted,
 } from "./lib/scheduled-triggers";
@@ -115,6 +115,10 @@ import { createSkillsRouter } from "./routes/skills";
 import { createToolsRouter } from "./routes/tools";
 import { createAdminRouter } from "./routes/admin";
 import { createOwnerRouter } from "./routes/owner";
+import { createWorkUnitQueue } from "./services/work-unit-queue";
+import { createWorkUnitWorker } from "./services/work-unit-worker";
+import { bindKnowledgeCaptureWorkUnitQueue } from "./services/knowledge-capture-hook";
+import { createDefaultAgentTaskTurnRunner } from "./services/agent-task-auto-pickup";
 import { isDemosEnabledByGrant, resolveDemoLinks } from "./lib/demos-gate";
 import { isFeatureEnabledForTenantCached } from "./lib/feature-grants";
 import { isWorkspaceInboxSourceEnabledForTenant } from "./lib/workspace-inbox-source-gate";
@@ -480,19 +484,26 @@ const repoStore = wrapRepoStoreWithProjection(
     // run reaches a terminal status. Fire-and-forget; the deliverer owns its
     // errors and must never block pack receipt.
     deliverRunMail: (args) => {
-      void deliverRunTerminalMail(
-        {
-          db,
-          deploymentDomain: config.rootTenant.domain,
-          mailboxEventBus,
-        },
-        args,
-      ).catch((err: unknown) => {
+      const mailDeps = {
+        db,
+        deploymentDomain: config.rootTenant.domain,
+        mailboxEventBus,
+      };
+      void deliverRunTerminalMail(mailDeps, args).catch((err: unknown) => {
         log.error("workflow run terminal mail delivery failed", {
           runId: args.runId,
           error: err instanceof Error ? err : new Error(String(err)),
         });
       });
+      // Everyone schedules: one run, many inboxes (CL-4114).
+      void fanOutTenantScheduleTerminalMail(mailDeps, args).catch(
+        (err: unknown) => {
+          log.error("tenant schedule terminal mail fan-out failed", {
+            runId: args.runId,
+            error: err instanceof Error ? err : new Error(String(err)),
+          });
+        },
+      );
     },
   },
 );
@@ -1571,6 +1582,12 @@ v1.route(
   "/",
   createAdminRouter({ db, grantStore, assetService, rootTenantId }),
 );
+
+// Durable work-unit queue (WQ.2–WQ.6). Bound early so owner routes + product
+// write hooks can enqueue/ops against the same instance the worker drains.
+const workUnitQueue = createWorkUnitQueue(db);
+bindKnowledgeCaptureWorkUnitQueue(workUnitQueue);
+
 v1.route(
   "/",
   createOwnerRouter({
@@ -1586,6 +1603,7 @@ v1.route(
       "voice-input": false,
       "native-approvals": false,
     },
+    workUnitQueue,
   }),
 );
 // Built before the runs router so the run-start/signal handlers and the
@@ -1906,7 +1924,7 @@ const scheduler = createScheduler({
       "scheduler",
       config.scheduler.enabled,
     ),
-  listSchedules: () => listEnabledSchedules(db, rootTenantId),
+  listSchedules: () => listAllEnabledSchedules(db),
   markFired: (id, dayUtc) => markScheduleFired(db, id, dayUtc),
   recordRunStarted: (args) => recordScheduleRunStarted(db, args),
   startWorkflowRun: async (fire) => {
@@ -2027,6 +2045,15 @@ const granolaCallJobRunner = createGranolaCallJobRunner({
   pipeline: granolaPipeline,
 });
 granolaCallJobRunner.start();
+
+const workUnitWorker = createWorkUnitWorker({
+  db,
+  queue: workUnitQueue,
+  scanAgentAutoPickup: true,
+  agentTaskTurnRunner: createDefaultAgentTaskTurnRunner(db),
+});
+workUnitWorker.start();
+
 
 const inboxIntake = createInboxIntake({
   db,

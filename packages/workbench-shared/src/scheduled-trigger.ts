@@ -7,6 +7,16 @@ import { type } from "arktype";
 // from workflows/heartbeat.
 export const HEARTBEAT_WORKFLOW_KIND = "heartbeat";
 
+// Schedule scope (CL-4108 / CL-4111): personal = Just for me; tenant = Everyone.
+// Team ≡ Tenant in product language — there is no third "team" scope.
+export const ScheduleScopeSchema = type("'personal' | 'tenant'");
+export type ScheduleScope = typeof ScheduleScopeSchema.infer;
+
+export const SCHEDULE_SCOPES = [
+  "personal",
+  "tenant",
+] as const satisfies readonly ScheduleScope[];
+
 // Automation triggers that fire a workflow run on a daily cadence.
 // The hub scheduler loads enabled rows each tick and starts a run for any whose
 // target UTC hour has arrived and has not already fired today. These schemas are
@@ -22,12 +32,20 @@ export const ScheduledTriggerFireSchema = type({
 });
 export type ScheduledTriggerFire = typeof ScheduledTriggerFireSchema.infer;
 
-// A schedule as returned to its owner.
+// A schedule as returned to its owner (and, for tenant scope, to tenant members).
 export const ScheduledTriggerSchema = type({
   id: "string",
   workflowKind: "string",
   hourUtc: "number.integer",
   enabled: "boolean",
+  /** personal = Just for me; tenant = Everyone (CL-4108). */
+  scope: ScheduleScopeSchema,
+  /**
+   * Principal that created the schedule. For personal scope this is the only
+   * member who can mutate it; for tenant scope any member may see the row but
+   * only the creator mutates it (v1).
+   */
+  ownerMemberPrincipalId: "string",
   triggerPayload: { "[string]": "unknown" },
   createdAt: "string",
   lastFiredDayUtc: "number.integer | null",
@@ -40,9 +58,8 @@ export const ScheduledTriggerSchema = type({
 });
 export type ScheduledTrigger = typeof ScheduledTriggerSchema.infer;
 
-// The GET /me/schedules response: one keyset-paginated page of the caller's
-// schedules, newest first, with an opaque cursor for the next page when one
-// exists.
+// The GET /me/schedules response: one keyset-paginated page of schedules visible
+// to the caller (owned personal + tenant-scoped in their tenant), newest first.
 export const ScheduledTriggerListResponseSchema = type({
   items: ScheduledTriggerSchema.array(),
   "nextCursor?": "string",
@@ -50,11 +67,13 @@ export const ScheduledTriggerListResponseSchema = type({
 export type ScheduledTriggerListResponse =
   typeof ScheduledTriggerListResponseSchema.infer;
 
-// Create body: which workflow, at which UTC hour, with which trigger payload.
+// Create body: which workflow, at which UTC hour, with which trigger payload,
+// and (CL-4108) which scope — default personal when omitted.
 export const CreateScheduledTriggerBodySchema = type({
   kind: "string > 0",
   hourUtc: "0 <= number.integer <= 23",
   "payload?": { "[string]": "unknown" },
+  "scope?": ScheduleScopeSchema,
 });
 export type CreateScheduledTriggerBody =
   typeof CreateScheduledTriggerBodySchema.infer;
@@ -89,10 +108,30 @@ export type HeartbeatRunTriggerPayload =
   typeof HeartbeatRunTriggerPayloadSchema.infer;
 
 // Update body: toggle enablement and/or move the fire hour. At least one field
-// is required; an empty patch is a no-op the route rejects.
+// is required; an empty patch is a no-op the route rejects. Scope is immutable
+// after create (delete + re-attach to change).
 export const UpdateScheduledTriggerBodySchema = type({
   "enabled?": "boolean",
   "hourUtc?": "0 <= number.integer <= 23",
 });
 export type UpdateScheduledTriggerBody =
   typeof UpdateScheduledTriggerBodySchema.infer;
+
+/**
+ * Resolve allowed schedule scopes for a catalog kind (CL-4110).
+ * Heartbeat is personal-only (member identity). Other attachable kinds may
+ * offer Everyone; non-attachable kinds still report personal-only defaults
+ * so the catalog field is always present.
+ */
+export function scheduleScopesForKind(
+  kind: string,
+  attachable: boolean,
+): { allowedScopes: ScheduleScope[]; defaultScope: ScheduleScope } {
+  if (!attachable || kind === HEARTBEAT_WORKFLOW_KIND) {
+    return { allowedScopes: ["personal"], defaultScope: "personal" };
+  }
+  return {
+    allowedScopes: ["personal", "tenant"],
+    defaultScope: "personal",
+  };
+}

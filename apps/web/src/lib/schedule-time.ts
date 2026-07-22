@@ -1,4 +1,4 @@
-import { utcDayToDate } from "@workbench/shared";
+import { utcDayToDate, type ScheduleScope } from "@workbench/shared";
 import { formatTimeOnly } from "@workbench/ui";
 
 // The scheduler stores an integer UTC hour (0-23). Users think in their own
@@ -7,6 +7,11 @@ import { formatTimeOnly } from "@workbench/ui";
 // stored value is always an exact UTC hour.
 
 export type HourOption = { hourUtc: number; label: string };
+
+/** Product labels for schedule scope (CL-4111). Keep in one place. */
+export function scheduleScopeLabel(scope: ScheduleScope): string {
+  return scope === "tenant" ? "Everyone" : "Just for me";
+}
 
 /** The local wall-clock label (e.g. "8:00 AM") a given UTC hour fires at. */
 export function formatUtcHourLocal(hourUtc: number): string {

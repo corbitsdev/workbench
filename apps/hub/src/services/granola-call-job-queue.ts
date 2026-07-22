@@ -1,6 +1,6 @@
-import { and, asc, eq, inArray, lte, sql } from "drizzle-orm";
+import { sql } from "drizzle-orm";
 import { getLogger } from "@intx/log";
-import { granolaCallJob, type GranolaCallJobRow } from "../db/schema";
+import { type GranolaCallJobRow } from "../db/schema";
 import type { HubDb } from "../db";
 
 const log = getLogger(["services", "granola-call-job-queue"]);
@@ -12,74 +12,160 @@ const log = getLogger(["services", "granola-call-job-queue"]);
 const BASE_BACKOFF_MS = 60_000;
 const MAX_BACKOFF_MS = 30 * 60_000;
 export const MAX_ATTEMPTS = 8;
+export const DEFAULT_GRANOLA_LEASE_MS = 120_000;
 
 function backoffForAttempt(attempts: number): number {
   const exponent = Math.max(0, attempts - 1);
   return Math.min(BASE_BACKOFF_MS * 2 ** exponent, MAX_BACKOFF_MS);
 }
 
+function rowsOf(result: unknown): Record<string, unknown>[] {
+  if (Array.isArray(result)) return result as Record<string, unknown>[];
+  return (result as { rows: Record<string, unknown>[] }).rows ?? [];
+}
+
+function mapJobRow(row: Record<string, unknown>): GranolaCallJobRow {
+  return {
+    id: String(row["id"]),
+    tenantId: String(row["tenant_id"]),
+    noteId: String(row["note_id"]),
+    status: row["status"] as GranolaCallJobRow["status"],
+    attempts: Number(row["attempts"] ?? 0),
+    nextAttemptAt: new Date(String(row["next_attempt_at"])),
+    lastError: row["last_error"] == null ? null : String(row["last_error"]),
+    leaseOwner: row["lease_owner"] == null ? null : String(row["lease_owner"]),
+    leaseUntil:
+      row["lease_until"] == null ? null : new Date(String(row["lease_until"])),
+    createdAt: new Date(String(row["created_at"])),
+    updatedAt: new Date(String(row["updated_at"])),
+  };
+}
+
 export interface GranolaCallJobQueue {
   /** Enqueues one note for a tenant. Idempotent: a note already queued (any
    * status) is left untouched — this is enqueue-dedupe, not a resubmit. */
   enqueue(tenantId: string, noteId: string): Promise<void>;
-  /** Claims up to `limit` due jobs (`pending`/backed-off, `next_attempt_at` <=
-   * now) and marks them `processing`, oldest first. A claimed row will not be
-   * claimed again by a concurrent runner tick until it is completed/failed. */
-  claimDue(limit: number): Promise<GranolaCallJobRow[]>;
-  /** Marks a claimed job done. */
-  complete(jobId: string): Promise<void>;
+  /** Claims up to `limit` due jobs with FOR UPDATE SKIP LOCKED + visibility
+   * lease. Expired processing leases reclaim without a sweeper. */
+  claimDue(
+    limit: number,
+    workerId?: string,
+    leaseMs?: number,
+  ): Promise<GranolaCallJobRow[]>;
+  /** Extends the lease while the same worker still holds it. */
+  heartbeat(
+    jobId: string,
+    workerId: string,
+    leaseMs?: number,
+  ): Promise<boolean>;
+  /** Marks a claimed job done (owner-fenced). */
+  complete(jobId: string, workerId: string): Promise<void>;
   /** Records a failed attempt: increments `attempts`, sets `next_attempt_at`
-   * to the backoff window, or marks `dead` past `MAX_ATTEMPTS`. */
-  fail(jobId: string, attempts: number, error: string): Promise<void>;
+   * to the backoff window, or marks `dead` past `MAX_ATTEMPTS` (owner-fenced). */
+  fail(
+    jobId: string,
+    workerId: string,
+    attempts: number,
+    error: string,
+  ): Promise<void>;
 }
 
 export function createGranolaCallJobQueue(db: HubDb): GranolaCallJobQueue {
   async function enqueue(tenantId: string, noteId: string): Promise<void> {
-    await db
-      .insert(granolaCallJob)
-      .values({ tenantId, noteId })
-      .onConflictDoNothing({
-        target: [granolaCallJob.tenantId, granolaCallJob.noteId],
+    await db.execute(sql`
+      INSERT INTO granola_call_job (tenant_id, note_id)
+      VALUES (${tenantId}, ${noteId})
+      ON CONFLICT (tenant_id, note_id) DO NOTHING
+    `);
+  }
+
+  async function claimDue(
+    limit: number,
+    workerId: string = "granola-runner",
+    leaseMs: number = DEFAULT_GRANOLA_LEASE_MS,
+  ): Promise<GranolaCallJobRow[]> {
+    const capped = Math.max(1, Math.min(limit, 100));
+    const result = await db.execute(sql`
+      UPDATE granola_call_job AS j
+      SET
+        status = 'processing',
+        lease_owner = ${workerId},
+        lease_until = now() + (${leaseMs}::text || ' milliseconds')::interval,
+        updated_at = now()
+      FROM (
+        SELECT id
+        FROM granola_call_job
+        WHERE (
+          (status = 'pending' AND next_attempt_at <= now())
+          OR (
+            status = 'processing'
+            AND lease_until IS NOT NULL
+            AND lease_until <= now()
+          )
+        )
+        ORDER BY next_attempt_at ASC
+        LIMIT ${capped}
+        FOR UPDATE SKIP LOCKED
+      ) AS due
+      WHERE j.id = due.id
+      RETURNING
+        j.id,
+        j.tenant_id,
+        j.note_id,
+        j.status,
+        j.attempts,
+        j.next_attempt_at,
+        j.last_error,
+        j.lease_owner,
+        j.lease_until,
+        j.created_at,
+        j.updated_at
+    `);
+    return rowsOf(result).map(mapJobRow);
+  }
+
+  async function heartbeat(
+    jobId: string,
+    workerId: string,
+    leaseMs: number = DEFAULT_GRANOLA_LEASE_MS,
+  ): Promise<boolean> {
+    const result = await db.execute(sql`
+      UPDATE granola_call_job
+      SET
+        lease_until = now() + (${leaseMs}::text || ' milliseconds')::interval,
+        updated_at = now()
+      WHERE id = ${jobId}::uuid
+        AND status = 'processing'
+        AND lease_owner = ${workerId}
+      RETURNING id
+    `);
+    return rowsOf(result).length > 0;
+  }
+
+  async function complete(jobId: string, workerId: string): Promise<void> {
+    const result = await db.execute(sql`
+      UPDATE granola_call_job
+      SET
+        status = 'done',
+        lease_owner = NULL,
+        lease_until = NULL,
+        updated_at = now()
+      WHERE id = ${jobId}::uuid
+        AND status = 'processing'
+        AND lease_owner = ${workerId}
+      RETURNING id
+    `);
+    if (rowsOf(result).length === 0) {
+      log.warn("granola call job complete: not owned by worker {jobId}", {
+        jobId,
+        workerId,
       });
-  }
-
-  async function claimDue(limit: number): Promise<GranolaCallJobRow[]> {
-    const due = await db
-      .select({ id: granolaCallJob.id })
-      .from(granolaCallJob)
-      .where(
-        and(
-          eq(granolaCallJob.status, "pending"),
-          lte(granolaCallJob.nextAttemptAt, sql`now()`),
-        ),
-      )
-      .orderBy(asc(granolaCallJob.nextAttemptAt))
-      .limit(limit);
-
-    if (due.length === 0) return [];
-
-    const ids = due.map((row) => row.id);
-    return db
-      .update(granolaCallJob)
-      .set({ status: "processing" })
-      .where(
-        and(
-          eq(granolaCallJob.status, "pending"),
-          inArray(granolaCallJob.id, ids),
-        ),
-      )
-      .returning();
-  }
-
-  async function complete(jobId: string): Promise<void> {
-    await db
-      .update(granolaCallJob)
-      .set({ status: "done" })
-      .where(eq(granolaCallJob.id, jobId));
+    }
   }
 
   async function fail(
     jobId: string,
+    workerId: string,
     attempts: number,
     error: string,
   ): Promise<void> {
@@ -89,10 +175,19 @@ export function createGranolaCallJobQueue(db: HubDb): GranolaCallJobQueue {
         attempts,
         error: new Error(error),
       });
-      await db
-        .update(granolaCallJob)
-        .set({ status: "dead", attempts, lastError: error })
-        .where(eq(granolaCallJob.id, jobId));
+      await db.execute(sql`
+        UPDATE granola_call_job
+        SET
+          status = 'dead',
+          attempts = ${attempts},
+          last_error = ${error},
+          lease_owner = NULL,
+          lease_until = NULL,
+          updated_at = now()
+        WHERE id = ${jobId}::uuid
+          AND status = 'processing'
+          AND lease_owner = ${workerId}
+      `);
       return;
     }
 
@@ -103,16 +198,21 @@ export function createGranolaCallJobQueue(db: HubDb): GranolaCallJobQueue {
       backoffMs,
       error: new Error(error),
     });
-    await db
-      .update(granolaCallJob)
-      .set({
-        status: "pending",
-        attempts,
-        lastError: error,
-        nextAttemptAt: new Date(Date.now() + backoffMs),
-      })
-      .where(eq(granolaCallJob.id, jobId));
+    await db.execute(sql`
+      UPDATE granola_call_job
+      SET
+        status = 'pending',
+        attempts = ${attempts},
+        last_error = ${error},
+        next_attempt_at = now() + (${backoffMs}::text || ' milliseconds')::interval,
+        lease_owner = NULL,
+        lease_until = NULL,
+        updated_at = now()
+      WHERE id = ${jobId}::uuid
+        AND status = 'processing'
+        AND lease_owner = ${workerId}
+    `);
   }
 
-  return { enqueue, claimDue, complete, fail };
+  return { enqueue, claimDue, complete, fail, heartbeat };
 }

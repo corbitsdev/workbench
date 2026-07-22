@@ -40,10 +40,19 @@ import {
   OwnerWorkflowState,
   OwnerWorkflowToggle,
   workflowRunResource,
+  ScheduledTriggerListResponseSchema,
+  ScheduledTriggerSchema,
+  UpdateScheduledTriggerBodySchema,
 } from "@workbench/shared";
 import type { HubDb } from "../db";
 import { workflowRun } from "../db/schema";
 import { createOwnerGrantGuard } from "../lib/admin-grant";
+import {
+  listTenantScopedSchedules,
+  toApiSchedule,
+  updateTenantScopedSchedule,
+} from "../lib/scheduled-triggers";
+import { UuidParam } from "../lib/uuid";
 import {
   fetchSlackTeamId,
   ProviderMetadataSchema,
@@ -68,6 +77,7 @@ import {
   workflowRunDenied,
 } from "../lib/workflow-run-gate";
 import { recordAudit } from "../services/admin-audit";
+import type { WorkUnitQueue } from "../services/work-unit-queue";
 import {
   clearCatalogProvidersForCredentials,
   reconcileProviderCatalog,
@@ -118,6 +128,8 @@ export interface CreateOwnerRouterDeps {
   // TRIAGE_ENABLED, TASKS_RECONCILER_ENABLED), keyed by `FeatureName`. Reported
   // per feature as `forcedByEnv`, same purpose as `showDemos`.
   featureEnvOverrides: Record<FeatureName, boolean>;
+  /** Optional durable work-unit queue for owner ops (dead letter / health). */
+  workUnitQueue?: WorkUnitQueue;
 }
 
 // Parses a provider row's persisted `metadata` through `ProviderMetadataSchema`
@@ -150,6 +162,7 @@ export function createOwnerRouter(
     rootTenantId,
     showDemos,
     featureEnvOverrides,
+    workUnitQueue,
   } = deps;
   const router = new Hono<OwnerRouteEnv>();
 
@@ -1270,6 +1283,234 @@ export function createOwnerRouter(
         updatedAt: null,
         ...(responseBaseURL ? { baseURL: responseBaseURL } : {}),
       });
+    },
+  );
+
+  // ── Tenant schedules (CL-4113) ──────────────────────────────────────────
+  // Everyone schedules for the root tenant: list + pause/retarget. Platform
+  // owners manage workspace cadence without being the creating principal.
+
+  router.get(
+    "/owner/schedules",
+    describeRoute({
+      tags: ["Owner"],
+      summary: "List Everyone (tenant-scoped) schedules",
+      description:
+        "Every tenant-scoped schedule in the root workbench tenant. Personal schedules are intentionally omitted — members manage those under /me/schedules.",
+      responses: {
+        200: {
+          description: "Tenant-scoped schedules",
+          content: {
+            "application/json": {
+              schema: resolver(ScheduledTriggerListResponseSchema),
+            },
+          },
+        },
+      },
+    }),
+    async (c) => {
+      const rows = await listTenantScopedSchedules(db, rootTenantId);
+      const now = new Date();
+      return c.json({
+        items: rows.map((row) => toApiSchedule(row, now)),
+      });
+    },
+  );
+
+  router.patch(
+    "/owner/schedules/:id",
+    describeRoute({
+      tags: ["Owner"],
+      summary: "Pause or retarget an Everyone schedule",
+      description:
+        "Toggle enablement and/or change the UTC fire hour of a tenant-scoped schedule. Scope is immutable; personal schedules are not reachable here.",
+      responses: {
+        200: {
+          description: "Updated schedule",
+          content: {
+            "application/json": {
+              schema: resolver(ScheduledTriggerSchema),
+            },
+          },
+        },
+        400: { description: "Empty or invalid patch body" },
+        404: { description: "No tenant-scoped schedule with that id" },
+      },
+    }),
+    async (c) => {
+      const id = UuidParam(c.req.param("id"));
+      if (id instanceof type.errors) {
+        return c.json({ error: "Schedule id must be a UUID" }, 400);
+      }
+      let body: unknown;
+      try {
+        body = await c.req.json();
+      } catch {
+        return c.json({ error: "Invalid JSON body" }, 400);
+      }
+      const parsed = UpdateScheduledTriggerBodySchema(body);
+      if (parsed instanceof type.errors) {
+        return c.json({ error: parsed.summary }, 400);
+      }
+      if (parsed.enabled === undefined && parsed.hourUtc === undefined) {
+        return c.json({ error: "no fields to update" }, 400);
+      }
+      const updated = await updateTenantScopedSchedule(db, {
+        tenantId: rootTenantId,
+        id,
+        ...(parsed.enabled !== undefined ? { enabled: parsed.enabled } : {}),
+        ...(parsed.hourUtc !== undefined ? { hourUtc: parsed.hourUtc } : {}),
+      });
+      if (!updated) {
+        return c.json({ error: "Schedule not found" }, 404);
+      }
+      return c.json(toApiSchedule(updated));
+    },
+  );
+
+  // ── Work unit ops (WQ.6) ─────────────────────────────────────────────────
+  // Dead-letter + aged-lease surface. Owner-only; product tasks are never listed.
+
+  router.get(
+    "/owner/work-units/health",
+    describeRoute({
+      tags: ["Owner"],
+      summary: "Work unit queue health",
+      description:
+        "Depth by status/kind, oldest pending age, dead count. Does not expose product tasks.",
+      responses: {
+        200: { description: "Queue health" },
+        503: { description: "Work unit queue not configured" },
+      },
+    }),
+    async (c) => {
+      if (!workUnitQueue) {
+        return c.json({ error: "Work unit queue not configured" }, 503);
+      }
+      const health = await workUnitQueue.health();
+      return c.json(health);
+    },
+  );
+
+  router.get(
+    "/owner/work-units/dead",
+    describeRoute({
+      tags: ["Owner"],
+      summary: "List dead work units",
+      description:
+        "Dead-lettered work units for operator retry/discard. Product tasks are never listed.",
+      responses: {
+        200: { description: "Dead work units" },
+        503: { description: "Work unit queue not configured" },
+      },
+    }),
+    async (c) => {
+      if (!workUnitQueue) {
+        return c.json({ error: "Work unit queue not configured" }, 503);
+      }
+      const limitRaw = c.req.query("limit");
+      const limit =
+        limitRaw && /^\d+$/.test(limitRaw) ? Number(limitRaw) : undefined;
+      const items = await workUnitQueue.listDead({ limit });
+      return c.json({
+        items: items.map((u) => ({
+          id: u.id,
+          tenantId: u.tenantId,
+          kind: u.kind,
+          idempotencyKey: u.idempotencyKey,
+          status: u.status,
+          attempts: u.attempts,
+          maxAttempts: u.maxAttempts,
+          lastError: u.lastError,
+          updatedAt: u.updatedAt.toISOString(),
+          createdAt: u.createdAt.toISOString(),
+        })),
+      });
+    },
+  );
+
+  router.get(
+    "/owner/work-units/aged-leased",
+    describeRoute({
+      tags: ["Owner"],
+      summary: "List aged leased work units",
+      description:
+        "Work units still leased past a grace window — possible stuck workers.",
+      responses: {
+        200: { description: "Aged leased units" },
+        503: { description: "Work unit queue not configured" },
+      },
+    }),
+    async (c) => {
+      if (!workUnitQueue) {
+        return c.json({ error: "Work unit queue not configured" }, 503);
+      }
+      const items = await workUnitQueue.listAgedLeased({});
+      return c.json({
+        items: items.map((u) => ({
+          id: u.id,
+          tenantId: u.tenantId,
+          kind: u.kind,
+          idempotencyKey: u.idempotencyKey,
+          status: u.status,
+          leaseOwner: u.leaseOwner,
+          leaseUntil: u.leaseUntil?.toISOString() ?? null,
+          attempts: u.attempts,
+          updatedAt: u.updatedAt.toISOString(),
+        })),
+      });
+    },
+  );
+
+  router.post(
+    "/owner/work-units/:id/retry",
+    describeRoute({
+      tags: ["Owner"],
+      summary: "Retry a dead work unit",
+      description:
+        "Re-queue a dead unit as pending with attempts reset. Idempotent if not dead.",
+      responses: {
+        200: { description: "Retried or not found" },
+        400: { description: "Invalid id" },
+        503: { description: "Work unit queue not configured" },
+      },
+    }),
+    async (c) => {
+      if (!workUnitQueue) {
+        return c.json({ error: "Work unit queue not configured" }, 503);
+      }
+      const id = UuidParam(c.req.param("id"));
+      if (id instanceof type.errors) {
+        return c.json({ error: "Work unit id must be a UUID" }, 400);
+      }
+      const ok = await workUnitQueue.retryDead(id);
+      return c.json({ ok, id });
+    },
+  );
+
+  router.post(
+    "/owner/work-units/:id/discard",
+    describeRoute({
+      tags: ["Owner"],
+      summary: "Discard a dead work unit",
+      description:
+        "Acknowledge a dead unit without requeue. Stays dead; operator-facing ack.",
+      responses: {
+        200: { description: "Discarded or not found" },
+        400: { description: "Invalid id" },
+        503: { description: "Work unit queue not configured" },
+      },
+    }),
+    async (c) => {
+      if (!workUnitQueue) {
+        return c.json({ error: "Work unit queue not configured" }, 503);
+      }
+      const id = UuidParam(c.req.param("id"));
+      if (id instanceof type.errors) {
+        return c.json({ error: "Work unit id must be a UUID" }, 400);
+      }
+      const ok = await workUnitQueue.discardDead(id);
+      return c.json({ ok, id });
     },
   );
 
