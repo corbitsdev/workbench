@@ -196,6 +196,35 @@ const KIND_VISUALS: Record<string, ArtifactVisual> = {
     experimentalFill: "bg-cream",
     experimentalSpan: "row-span-4",
   },
+  // Legacy combined Granola call artifact (pre-CL-3647 single-kind path).
+  "granola-call": {
+    label: "Call",
+    fill: "bg-orange",
+    span: "row-span-3",
+    experimentalFill: "bg-orange/85",
+    experimentalSpan: "row-span-3",
+  },
+  "granola-call-pain-points": {
+    label: "Call Pain Points",
+    fill: "bg-orange",
+    span: "row-span-3",
+    experimentalFill: "bg-orange/85",
+    experimentalSpan: "row-span-3",
+  },
+  "granola-call-summary": {
+    label: "Call Summary",
+    fill: "bg-charcoal",
+    span: "row-span-3",
+    experimentalFill: "bg-charcoal/90",
+    experimentalSpan: "row-span-3",
+  },
+  "granola-call-brief": {
+    label: "Call Brief",
+    fill: "bg-charcoal",
+    span: "row-span-4",
+    experimentalFill: "bg-charcoal/90",
+    experimentalSpan: "row-span-4",
+  },
   web: {
     label: "Web page",
     fill: "bg-blue",

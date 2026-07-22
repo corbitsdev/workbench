@@ -20,6 +20,7 @@ type InsertedArtifact = {
   title: string;
   content: string;
   status: string;
+  sourceRef?: string;
   source: {
     origin: string;
     citations: unknown[];
@@ -605,5 +606,130 @@ describe("write_artifact tool", () => {
     expect(artifactInserts[0]?.title).toBe("Wrapped");
     expect(artifactInserts[0]?.content).toBe("body");
     expect(JSON.parse(raw as string).title).toBe("Wrapped");
+  });
+
+  it("advertises sourceRef in the tool schema", async () => {
+    const { WRITE_ARTIFACT_DEFINITION } = await import(
+      "@workbench/tools-artifact"
+    );
+    expect(WRITE_ARTIFACT_DEFINITION.inputSchema.properties).toHaveProperty(
+      "sourceRef",
+    );
+  });
+
+  it("stamps sourceRef on insert when provided", async () => {
+    const artifactInserts: InsertedArtifact[] = [];
+    const db = makeMockDb({ captureArtifactInserts: artifactInserts });
+    const handler = getStringHandler({
+      db,
+      tenantId: "tnt-1",
+      principalId: "prn-1",
+    });
+
+    await handler(
+      {
+        title: "Call notes",
+        body: "Body",
+        kind: "granola-call",
+        sourceRef: "granola:call:note-42",
+        citations: [],
+      },
+      SIGNAL,
+    );
+
+    expect(artifactInserts).toHaveLength(1);
+    expect(artifactInserts[0]?.sourceRef).toBe("granola:call:note-42");
+  });
+
+  it("omits sourceRef on insert when absent or blank", async () => {
+    const insertsA: InsertedArtifact[] = [];
+    await getStringHandler({
+      db: makeMockDb({ captureArtifactInserts: insertsA }),
+      tenantId: "t",
+      principalId: "p",
+    })({ title: "T", body: "B", kind: "report", citations: [] }, SIGNAL);
+    expect(insertsA[0]?.sourceRef).toBeUndefined();
+
+    const insertsB: InsertedArtifact[] = [];
+    await getStringHandler({
+      db: makeMockDb({ captureArtifactInserts: insertsB }),
+      tenantId: "t",
+      principalId: "p",
+    })(
+      {
+        title: "T",
+        body: "B",
+        kind: "report",
+        sourceRef: "   ",
+        citations: [],
+      },
+      SIGNAL,
+    );
+    expect(insertsB[0]?.sourceRef).toBeUndefined();
+  });
+
+  it("re-write with same sourceRef returns existing id and does not insert a second row", async () => {
+    const artifactInserts: InsertedArtifact[] = [];
+    const versionInserts: InsertedVersion[] = [];
+    const updates: Record<string, unknown>[] = [];
+    const db = makeMockDb({
+      existingArtifactId: "art-existing-src",
+      prevMaxVersion: 1,
+      captureArtifactInserts: artifactInserts,
+      captureVersionInserts: versionInserts,
+      captureArtifactUpdates: updates,
+    });
+    const handler = getStringHandler({
+      db,
+      tenantId: "tnt-1",
+      principalId: "prn-1",
+    });
+
+    const raw = await handler(
+      {
+        title: "Call notes",
+        body: "Updated body",
+        kind: "granola-call",
+        sourceRef: "granola:call:note-42",
+        citations: [],
+      },
+      SIGNAL,
+    );
+
+    const result = JSON.parse(raw as string);
+    expect(result.artifactId).toBe("art-existing-src");
+    expect(result.version).toBe(2);
+    // No second artifact row — only a version bump + content update.
+    expect(artifactInserts).toHaveLength(0);
+    expect(versionInserts).toHaveLength(1);
+    expect(versionInserts[0]?.content).toBe("Updated body");
+    expect(updates).toHaveLength(1);
+    expect(updates[0]?.content).toBe("Updated body");
+  });
+
+  it("writeArtifactDeduped dedupes by sourceRef over title+kind", async () => {
+    const inserts: InsertedArtifact[] = [];
+    const updates: Record<string, unknown>[] = [];
+    const db = makeMockDb({
+      existingArtifactId: "art-by-source-ref",
+      prevMaxVersion: 3,
+      captureArtifactInserts: inserts,
+      captureArtifactUpdates: updates,
+    });
+    const { writeArtifactDeduped } = await import("./write-artifact");
+    const result = await writeArtifactDeduped({
+      db: db as never,
+      tenantId: "tnt-1",
+      principalId: "prn-other",
+      title: "Different title",
+      body: "new content",
+      kind: "granola-call",
+      source: { origin: "workflow" },
+      sourceRef: "granola:call:note-99",
+    });
+    expect(result.artifactId).toBe("art-by-source-ref");
+    expect(result.version).toBe(4);
+    expect(inserts).toHaveLength(0);
+    expect(updates).toHaveLength(1);
   });
 });

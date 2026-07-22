@@ -1006,6 +1006,8 @@ export type GranolaCallJobRow = {
   lastError: string | null;
   leaseOwner: string | null;
   leaseUntil: Date | null;
+  /** Workflow run id already started for this unit (single-flight on reclaim). */
+  activeRunId: string | null;
   createdAt: Date;
   updatedAt: Date;
 };

@@ -13,7 +13,10 @@ import { NOTION_HUB_TOOLS } from "@workbench/tools-notion";
 import { KNOWLEDGE_ENGINE_HUB_TOOLS } from "@workbench/tools-corbits-knowledge-engine";
 import { FIRECRAWL_HUB_TOOLS } from "@workbench/tools-firecrawl";
 import { GAMMA_HUB_TOOLS } from "@workbench/tools-gamma";
-import { GRANOLA_HUB_TOOLS } from "@workbench/tools-granola";
+import {
+  GRANOLA_HUB_TOOLS,
+  GRANOLA_WORKFLOW_HUB_TOOLS,
+} from "@workbench/tools-granola";
 import { HACKERNEWS_HUB_TOOLS } from "@workbench/tools-hackernews";
 import { GITHUB_HUB_TOOLS } from "@workbench/tools-github";
 import { POLYMARKET_HUB_TOOLS } from "@workbench/tools-polymarket";
@@ -40,6 +43,7 @@ import { LAST30DAYS_CORE_HUB_TOOLS } from "../tools/last30days-core-tools";
 import { PROSPECT_ENGINE_HUB_TOOLS } from "../tools/prospect-engine-tools";
 import { TASK_HUB_TOOLS } from "../tools/task-tools";
 import { VERCEL_DEPLOY_ARTIFACT_HUB_TOOLS } from "../tools/vercel-deploy-artifact";
+import { GRANOLA_CALL_HUB_TOOLS } from "../tools/granola-call-tools";
 import type {
   SessionService,
   EventCollectorRegistry,
@@ -77,6 +81,7 @@ export const KNOWN_TOOLS: Record<string, ToolEntry> = {
   ...GAMMA_HUB_TOOLS,
   ...GAMMA_TEMPLATES_HUB_TOOLS,
   ...GRANOLA_HUB_TOOLS,
+  ...GRANOLA_WORKFLOW_HUB_TOOLS,
   ...HACKERNEWS_HUB_TOOLS,
   ...GITHUB_HUB_TOOLS,
   ...POLYMARKET_HUB_TOOLS,
@@ -105,6 +110,7 @@ export const KNOWN_TOOLS: Record<string, ToolEntry> = {
   ...WRITE_ARTIFACT_HUB_TOOLS,
   ...WORKFLOWS_HUB_TOOLS,
   ...TASK_HUB_TOOLS,
+  ...GRANOLA_CALL_HUB_TOOLS,
 };
 
 export type CredentialToolEntry = {

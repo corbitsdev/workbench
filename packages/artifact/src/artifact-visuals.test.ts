@@ -69,6 +69,15 @@ describe("visualForKind", () => {
     expect(visualForKind("gamma_presentation").label).toBe("Presentation");
   });
 
+  it("labels Granola call artifact kinds (legacy + typed, CL-3647)", () => {
+    expect(visualForKind("granola-call").label).toBe("Call");
+    expect(visualForKind("granola-call-pain-points").label).toBe(
+      "Call Pain Points",
+    );
+    expect(visualForKind("granola-call-summary").label).toBe("Call Summary");
+    expect(visualForKind("granola-call-brief").label).toBe("Call Brief");
+  });
+
   it("labels a CSV export 'CSV', not 'Document'", () => {
     expect(visualForKind("csv-export").label).toBe("CSV");
   });

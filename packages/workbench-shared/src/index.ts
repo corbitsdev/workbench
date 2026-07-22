@@ -22,6 +22,7 @@ export * from "./tasks";
 export * from "./task-links";
 export * from "./pain-point-collateral";
 export * from "./multi-source-collateral";
+export * from "./granola-call";
 export * from "./sumble-account-intel";
 export * from "./competitor-analysis";
 export * from "./prospect-engine";

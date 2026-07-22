@@ -39,6 +39,12 @@ export async function writeArtifactDeduped(params: {
   source: Record<string, unknown>;
   /** Human owner principal (e.g. Myra's member). Stamped for skill-drafts. */
   ownerPrincipalId?: string | null;
+  /**
+   * Optional stable origin key (unique per tenant via
+   * `artifact_tenant_source_ref_uniq`). When set, dedupe is by
+   * (tenantId, sourceRef) instead of (principalId, title, kind).
+   */
+  sourceRef?: string;
 }): Promise<{ artifactId: string; version: number }> {
   const {
     db,
@@ -49,20 +55,42 @@ export async function writeArtifactDeduped(params: {
     kind,
     source,
     ownerPrincipalId,
+    sourceRef,
   } = params;
+  const normalizedSourceRef =
+    typeof sourceRef === "string" && sourceRef.trim().length > 0
+      ? sourceRef.trim()
+      : undefined;
+
   return db.transaction(async (tx) => {
-    const existingRows = await tx
-      .select({ id: artifact.id })
-      .from(artifact)
-      .where(
-        and(
-          eq(artifact.principalId, principalId),
-          eq(artifact.title, title),
-          eq(artifact.kind, kind),
-        ),
-      )
-      .limit(1)
-      .for("update");
+    // Prefer sourceRef when present — it's the stronger, tenant-scoped
+    // idempotency key (same unique index the Granola pipeline uses). Fall
+    // back to the historical principal+title+kind lookup otherwise.
+    const existingRows =
+      normalizedSourceRef !== undefined
+        ? await tx
+            .select({ id: artifact.id })
+            .from(artifact)
+            .where(
+              and(
+                eq(artifact.tenantId, tenantId),
+                eq(artifact.sourceRef, normalizedSourceRef),
+              ),
+            )
+            .limit(1)
+            .for("update")
+        : await tx
+            .select({ id: artifact.id })
+            .from(artifact)
+            .where(
+              and(
+                eq(artifact.principalId, principalId),
+                eq(artifact.title, title),
+                eq(artifact.kind, kind),
+              ),
+            )
+            .limit(1)
+            .for("update");
 
     const existingId =
       existingRows.length > 0 ? existingRows[0]?.id : undefined;
@@ -79,6 +107,9 @@ export async function writeArtifactDeduped(params: {
           principalId,
           ...(ownerPrincipalId !== undefined
             ? { ownerPrincipalId: ownerPrincipalId ?? null }
+            : {}),
+          ...(normalizedSourceRef !== undefined
+            ? { sourceRef: normalizedSourceRef }
             : {}),
           kind,
           title,
@@ -224,6 +255,11 @@ export function createWriteArtifactTool(
           source.jobLabel = args.jobLabel.trim();
         }
 
+        const sourceRef =
+          typeof args.sourceRef === "string" && args.sourceRef.trim().length > 0
+            ? args.sourceRef.trim()
+            : undefined;
+
         const result = await writeArtifactDeduped({
           db: context.db,
           tenantId: context.tenantId,
@@ -232,6 +268,7 @@ export function createWriteArtifactTool(
           body,
           kind,
           source,
+          ...(sourceRef !== undefined ? { sourceRef } : {}),
         });
 
         return JSON.stringify({

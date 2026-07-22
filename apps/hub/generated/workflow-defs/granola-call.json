@@ -1,0 +1,492 @@
+{
+  "kind": "granola-call",
+  "version": "0.1.0",
+  "label": "Granola Call Processing",
+  "description": "Process one Granola call: classify internal vs external, analyze with a single agent step, persist typed artifacts, create tasks, and fan out mail.",
+  "displayFlow": [
+    {
+      "key": "fetch",
+      "label": "Fetch note",
+      "stepIds": [
+        "fetch"
+      ]
+    },
+    {
+      "key": "normalize",
+      "label": "Normalize",
+      "stepIds": [
+        "normalize"
+      ]
+    },
+    {
+      "key": "classify",
+      "label": "Classify",
+      "stepIds": [
+        "classify"
+      ]
+    },
+    {
+      "key": "analyze",
+      "label": "Analyze",
+      "stepIds": [
+        "analyze"
+      ],
+      "activityLabel": "Analyzing the call"
+    },
+    {
+      "key": "parse",
+      "label": "Parse analysis",
+      "stepIds": [
+        "parse"
+      ]
+    },
+    {
+      "key": "prepare",
+      "label": "Prepare artifacts",
+      "stepIds": [
+        "prepare"
+      ]
+    },
+    {
+      "key": "persist",
+      "label": "Persist artifacts",
+      "stepIds": [
+        "persist-pain",
+        "persist-summary",
+        "persist-brief"
+      ],
+      "activityLabel": "Saving call artifacts"
+    },
+    {
+      "key": "create-tasks",
+      "label": "Create tasks",
+      "stepIds": [
+        "create-tasks"
+      ]
+    },
+    {
+      "key": "fanout",
+      "label": "Fan out",
+      "stepIds": [
+        "fanout"
+      ]
+    },
+    {
+      "key": "emit",
+      "label": "Emit outputs",
+      "stepIds": [
+        "emit"
+      ]
+    }
+  ],
+  "requiresIntake": false,
+  "humanGateCount": 0,
+  "definition": {
+    "id": "granola-call",
+    "triggers": [
+      {
+        "type": "manual"
+      }
+    ],
+    "steps": {
+      "fetch": {
+        "kind": "step",
+        "id": "fetch",
+        "agent": {
+          "id": "granola-call-fetch",
+          "systemPrompt": "",
+          "toolFactories": [],
+          "capabilities": [
+            "@workbench/tools-granola/granola:granola_get_note"
+          ],
+          "inference": {
+            "sources": []
+          },
+          "description": "Deterministic tool call: @workbench/tools-granola/granola:granola_get_note",
+          "tags": {
+            "workbench.stepKind": "deterministic-tool",
+            "workbench.tool": "@workbench/tools-granola/granola:granola_get_note",
+            "workbench.argMap": "{\"noteId\":{\"from\":\"noteId\"}}",
+            "workbench.title": "Fetch note"
+          }
+        },
+        "drainBehavior": "cancel",
+        "input": {
+          "from": "trigger.payload"
+        }
+      },
+      "normalize": {
+        "kind": "step",
+        "id": "normalize",
+        "agent": {
+          "id": "granola-call-normalize",
+          "systemPrompt": "",
+          "toolFactories": [],
+          "capabilities": [
+            "granola_normalize_note"
+          ],
+          "inference": {
+            "sources": []
+          },
+          "description": "Deterministic tool call: granola_normalize_note",
+          "tags": {
+            "workbench.stepKind": "deterministic-tool",
+            "workbench.tool": "granola_normalize_note",
+            "workbench.title": "Normalize"
+          }
+        },
+        "drainBehavior": "cancel",
+        "input": {
+          "from": "steps.fetch.output"
+        },
+        "after": [
+          "fetch"
+        ]
+      },
+      "classify": {
+        "kind": "step",
+        "id": "classify",
+        "agent": {
+          "id": "granola-call-classify",
+          "systemPrompt": "",
+          "toolFactories": [],
+          "capabilities": [
+            "granola_classify_call"
+          ],
+          "inference": {
+            "sources": []
+          },
+          "description": "Deterministic tool call: granola_classify_call",
+          "tags": {
+            "workbench.stepKind": "deterministic-tool",
+            "workbench.tool": "granola_classify_call",
+            "workbench.argMap": "{\"note\":{\"from\":\"content\"},\"tenantDomain\":{\"from\":\"tenantDomain\",\"optional\":true}}",
+            "workbench.title": "Classify"
+          }
+        },
+        "drainBehavior": "cancel",
+        "input": {
+          "merge": [
+            {
+              "from": "steps.normalize.output"
+            },
+            {
+              "from": "trigger.payload"
+            }
+          ]
+        },
+        "after": [
+          "normalize"
+        ]
+      },
+      "analyze": {
+        "kind": "step",
+        "id": "analyze",
+        "agent": {
+          "id": "granola-call-analyze",
+          "systemPrompt": "Treat Corbits, Corbits.dev, Interchange, and Faremeter as canonical Corbits names; spell them exactly. When source material contains a clear speech-to-text or spelling variant, use the canonical spelling in your output. Do not replace an ambiguous term unless surrounding context identifies it.\n\nYou analyze a sales/meeting call transcript and return STRICT JSON only (no prose, no code fences).\n\nReturn an object with these keys:\n- \"summary\": a concise plain-text summary of the call (3-6 sentences).\n- \"painPoints\": string[] — customer pain points / problems raised.\n- \"decisions\": string[] — decisions made on the call.\n- \"actionItems\": { \"description\": string, \"assignee\"?: string }[] — near-term action items. Set \"assignee\" to the person's name or email when the transcript makes it clear who owns it; omit otherwise.\n- \"tasks\": { \"description\": string, \"assignee\"?: string }[] — concrete follow-up tasks (may overlap conceptually with action items but should be the trackable work).\n- \"peopleMentioned\": string[] — names or emails of people discussed but not necessarily attendees.\n\nOutput ONLY the JSON object.",
+          "toolFactories": [],
+          "capabilities": [],
+          "inference": {
+            "sources": []
+          },
+          "description": "Inline single-turn inference: granola-call-analyze",
+          "tags": {
+            "workbench.stepKind": "inline-inference",
+            "workbench.title": "Analyze"
+          }
+        },
+        "drainBehavior": "cancel",
+        "input": {
+          "from": "steps.normalize.output"
+        },
+        "after": [
+          "normalize"
+        ]
+      },
+      "parse": {
+        "kind": "step",
+        "id": "parse",
+        "agent": {
+          "id": "granola-call-parse",
+          "systemPrompt": "",
+          "toolFactories": [],
+          "capabilities": [
+            "granola_parse_analysis"
+          ],
+          "inference": {
+            "sources": []
+          },
+          "description": "Deterministic tool call: granola_parse_analysis",
+          "tags": {
+            "workbench.stepKind": "deterministic-tool",
+            "workbench.tool": "granola_parse_analysis",
+            "workbench.title": "Parse analysis"
+          }
+        },
+        "drainBehavior": "cancel",
+        "input": {
+          "from": "steps.analyze.output"
+        },
+        "after": [
+          "analyze"
+        ]
+      },
+      "prepare": {
+        "kind": "step",
+        "id": "prepare",
+        "agent": {
+          "id": "granola-call-prepare",
+          "systemPrompt": "",
+          "toolFactories": [],
+          "capabilities": [
+            "granola_prepare_artifacts"
+          ],
+          "inference": {
+            "sources": []
+          },
+          "description": "Deterministic tool call: granola_prepare_artifacts",
+          "tags": {
+            "workbench.stepKind": "deterministic-tool",
+            "workbench.tool": "granola_prepare_artifacts",
+            "workbench.title": "Prepare artifacts"
+          }
+        },
+        "drainBehavior": "cancel",
+        "input": {
+          "project": {
+            "from": "steps"
+          },
+          "fields": [
+            "normalize",
+            "parse",
+            "classify"
+          ]
+        },
+        "after": [
+          "normalize",
+          "parse",
+          "classify"
+        ]
+      },
+      "persist-pain": {
+        "kind": "step",
+        "id": "persist-pain",
+        "agent": {
+          "id": "granola-call-persist-pain",
+          "systemPrompt": "",
+          "toolFactories": [],
+          "capabilities": [
+            "@workbench/tools-artifact/artifact:write_artifact"
+          ],
+          "inference": {
+            "sources": []
+          },
+          "description": "Deterministic tool call: @workbench/tools-artifact/artifact:write_artifact",
+          "tags": {
+            "workbench.stepKind": "deterministic-tool",
+            "workbench.tool": "@workbench/tools-artifact/artifact:write_artifact",
+            "workbench.argMap": "{\"title\":{\"fromJson\":\"content\",\"field\":\"painTitle\"},\"kind\":{\"fromJson\":\"content\",\"field\":\"painKind\"},\"body\":{\"fromJson\":\"content\",\"field\":\"painContent\"},\"sourceRef\":{\"fromJson\":\"content\",\"field\":\"painSourceRef\"}}",
+            "workbench.title": "Persist pain points"
+          }
+        },
+        "drainBehavior": "cancel",
+        "input": {
+          "from": "steps.prepare.output"
+        },
+        "after": [
+          "prepare"
+        ]
+      },
+      "persist-summary": {
+        "kind": "step",
+        "id": "persist-summary",
+        "agent": {
+          "id": "granola-call-persist-summary",
+          "systemPrompt": "",
+          "toolFactories": [],
+          "capabilities": [
+            "@workbench/tools-artifact/artifact:write_artifact"
+          ],
+          "inference": {
+            "sources": []
+          },
+          "description": "Deterministic tool call: @workbench/tools-artifact/artifact:write_artifact",
+          "tags": {
+            "workbench.stepKind": "deterministic-tool",
+            "workbench.tool": "@workbench/tools-artifact/artifact:write_artifact",
+            "workbench.argMap": "{\"title\":{\"fromJson\":\"content\",\"field\":\"summaryTitle\"},\"kind\":{\"fromJson\":\"content\",\"field\":\"summaryKind\"},\"body\":{\"fromJson\":\"content\",\"field\":\"summaryContent\"},\"sourceRef\":{\"fromJson\":\"content\",\"field\":\"summarySourceRef\"}}",
+            "workbench.title": "Persist summary"
+          }
+        },
+        "drainBehavior": "cancel",
+        "input": {
+          "from": "steps.prepare.output"
+        },
+        "after": [
+          "prepare"
+        ]
+      },
+      "persist-brief": {
+        "kind": "step",
+        "id": "persist-brief",
+        "agent": {
+          "id": "granola-call-persist-brief",
+          "systemPrompt": "",
+          "toolFactories": [],
+          "capabilities": [
+            "@workbench/tools-artifact/artifact:write_artifact"
+          ],
+          "inference": {
+            "sources": []
+          },
+          "description": "Deterministic tool call: @workbench/tools-artifact/artifact:write_artifact",
+          "tags": {
+            "workbench.stepKind": "deterministic-tool",
+            "workbench.tool": "@workbench/tools-artifact/artifact:write_artifact",
+            "workbench.argMap": "{\"title\":{\"fromJson\":\"content\",\"field\":\"briefTitle\"},\"kind\":{\"fromJson\":\"content\",\"field\":\"briefKind\"},\"body\":{\"fromJson\":\"content\",\"field\":\"briefContent\"},\"sourceRef\":{\"fromJson\":\"content\",\"field\":\"briefSourceRef\"}}",
+            "workbench.title": "Persist brief"
+          }
+        },
+        "drainBehavior": "cancel",
+        "input": {
+          "from": "steps.prepare.output"
+        },
+        "after": [
+          "prepare"
+        ]
+      },
+      "create-tasks": {
+        "kind": "step",
+        "id": "create-tasks",
+        "agent": {
+          "id": "granola-call-create-tasks",
+          "systemPrompt": "",
+          "toolFactories": [],
+          "capabilities": [
+            "granola_create_tasks"
+          ],
+          "inference": {
+            "sources": []
+          },
+          "description": "Deterministic tool call: granola_create_tasks",
+          "tags": {
+            "workbench.stepKind": "deterministic-tool",
+            "workbench.tool": "granola_create_tasks",
+            "workbench.title": "Create tasks"
+          }
+        },
+        "drainBehavior": "cancel",
+        "input": {
+          "project": {
+            "from": "steps"
+          },
+          "fields": [
+            "prepare",
+            "parse",
+            "persist-pain",
+            "persist-summary",
+            "persist-brief"
+          ]
+        },
+        "after": [
+          "prepare",
+          "parse",
+          "persist-pain",
+          "persist-summary",
+          "persist-brief"
+        ]
+      },
+      "fanout": {
+        "kind": "step",
+        "id": "fanout",
+        "agent": {
+          "id": "granola-call-fanout",
+          "systemPrompt": "",
+          "toolFactories": [],
+          "capabilities": [
+            "granola_fanout_call"
+          ],
+          "inference": {
+            "sources": []
+          },
+          "description": "Deterministic tool call: granola_fanout_call",
+          "tags": {
+            "workbench.stepKind": "deterministic-tool",
+            "workbench.tool": "granola_fanout_call",
+            "workbench.title": "Fan out"
+          }
+        },
+        "drainBehavior": "cancel",
+        "input": {
+          "project": {
+            "from": "steps"
+          },
+          "fields": [
+            "prepare",
+            "persist-brief"
+          ]
+        },
+        "after": [
+          "prepare",
+          "persist-brief"
+        ]
+      },
+      "emit": {
+        "kind": "step",
+        "id": "emit",
+        "agent": {
+          "id": "granola-call-emit",
+          "systemPrompt": "",
+          "toolFactories": [],
+          "capabilities": [
+            "granola_emit_run_outputs"
+          ],
+          "inference": {
+            "sources": []
+          },
+          "description": "Deterministic tool call: granola_emit_run_outputs",
+          "tags": {
+            "workbench.stepKind": "deterministic-tool",
+            "workbench.tool": "granola_emit_run_outputs",
+            "workbench.title": "Emit outputs"
+          }
+        },
+        "drainBehavior": "cancel",
+        "input": {
+          "project": {
+            "from": "steps"
+          },
+          "fields": [
+            "prepare",
+            "persist-pain",
+            "persist-summary",
+            "persist-brief"
+          ]
+        },
+        "after": [
+          "prepare",
+          "persist-pain",
+          "persist-summary",
+          "persist-brief",
+          "create-tasks",
+          "fanout"
+        ]
+      }
+    },
+    "stepOrder": [
+      "fetch",
+      "normalize",
+      "classify",
+      "analyze",
+      "parse",
+      "prepare",
+      "persist-pain",
+      "persist-summary",
+      "persist-brief",
+      "create-tasks",
+      "fanout",
+      "emit"
+    ]
+  }
+}

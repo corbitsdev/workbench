@@ -1,5 +1,5 @@
 import { manifestFromHubToolEntries } from "@workbench/tool-manifest";
-import { GRANOLA_HUB_TOOLS } from "./index";
+import { GRANOLA_HUB_TOOLS, GRANOLA_WORKFLOW_HUB_TOOLS } from "./index";
 
 export const toolManifestFile = {
   factories: [
@@ -16,6 +16,14 @@ export const toolManifestFile = {
       credentialCatalog: {
         label: "Granola",
       },
+    }),
+    manifestFromHubToolEntries({
+      factoryId: "@workbench/tools-granola/workflow",
+      packageName: "@workbench/tools-granola",
+      providerName: null,
+      entries: GRANOLA_WORKFLOW_HUB_TOOLS,
+      myraCatalog: null,
+      credentialCatalog: null,
     }),
   ],
 };

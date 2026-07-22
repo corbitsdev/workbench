@@ -12,6 +12,7 @@ import { GAMMA_TEMPLATES_HUB_TOOLS } from "../tools/gamma-templates";
 import { WORKFLOWS_HUB_TOOLS } from "../tools/workflow-run-tools";
 import { VERCEL_DEPLOY_ARTIFACT_HUB_TOOLS } from "../tools/vercel-deploy-artifact";
 import { TASK_HUB_TOOLS } from "../tools/task-tools";
+import { GRANOLA_CALL_HUB_TOOLS } from "../tools/granola-call-tools";
 import type { ContextToolEntry } from "./tool-registry";
 
 // The hub-backed tools served over the scoped `/api/internal/hub-tools/run`
@@ -35,4 +36,5 @@ export const HUB_BACKED_TOOLS: Record<string, ContextToolEntry> = {
   ...WORKFLOWS_HUB_TOOLS,
   ...VERCEL_DEPLOY_ARTIFACT_HUB_TOOLS,
   ...TASK_HUB_TOOLS,
+  ...GRANOLA_CALL_HUB_TOOLS,
 };

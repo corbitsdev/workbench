@@ -272,6 +272,11 @@ export const WRITE_ARTIFACT_DEFINITION: ArtifactToolDefinition = {
         description:
           "Optional display name for the gallery tile of a session-less workflow artifact (e.g. the producing workflow's name). Stored under source.jobLabel.",
       },
+      sourceRef: {
+        type: "string",
+        description:
+          "Optional stable origin key (e.g. granola:call:<noteId>). When set, re-writes with the same tenant+sourceRef return the existing artifactId instead of creating a second row.",
+      },
     },
     required: ["title", "body", "kind"],
   },

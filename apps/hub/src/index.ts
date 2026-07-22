@@ -138,14 +138,11 @@ import {
 import { createMembersRouter } from "./routes/members";
 import { createMyraThreadsRouter } from "./routes/myra-threads";
 import { createInvokedSubagentsRouter } from "./routes/invoked-subagents";
-import {
-  recordMyraThreadActivity,
-  resolveMyraDefinition,
-} from "./services/myra-threads";
-import { createGranolaCallFanout } from "./services/granola-call-fanout";
-import { createGranolaCallPipeline } from "./services/granola-call-pipeline";
+import { recordMyraThreadActivity } from "./services/myra-threads";
 import { createGranolaCallJobQueue } from "./services/granola-call-job-queue";
 import { createGranolaCallJobRunner } from "./services/granola-call-job-runner";
+import { createGranolaCallFanout } from "./services/granola-call-fanout";
+import { setGranolaCallToolDeps } from "./tools/granola-call-tools";
 import { createGranolaWorkspaceInboxSource } from "./services/inbox-sources/granola-workspace";
 import { INBOX_SOURCE_REGISTRY } from "./services/inbox-source-registry";
 import {
@@ -558,6 +555,18 @@ function isWorkflowRunBootstrapRace(message: string): boolean {
 // so a connected client is notified the instant any of those write a row —
 // never mail content, only {type:"mailbox", id}.
 const mailboxEventBus = createMailboxEventBus();
+
+// Granola-call workflow hub tools (create_tasks + fanout) need the fanout
+// service; ContextToolEntry cannot supply grantStore/mailboxEventBus, so we
+// inject the fully-wired instance once at boot.
+const granolaCallFanout = createGranolaCallFanout({
+  db,
+  grantStore,
+  rootTenantId,
+  rootTenantDomain: config.rootTenant.domain,
+  mailboxEventBus,
+});
+setGranolaCallToolDeps({ fanout: granolaCallFanout });
 
 // Late-bound: constructed below once sessionService exists. The persist hook
 // and the turn-finalized fan-out both fire only after boot completes, so the
@@ -2013,34 +2022,11 @@ const listInboxMembers = async () => {
   }));
 };
 
-const granolaFanout = createGranolaCallFanout({
-  db,
-  grantStore,
-  rootTenantId,
-  rootTenantDomain: config.rootTenant.domain,
-  mailboxEventBus,
-});
-const granolaPipeline = createGranolaCallPipeline({
-  db,
-  rootTenantDomain: config.rootTenant.domain,
-  resolveInferenceSource: async (tenantId) => {
-    const def = await resolveMyraDefinition(db, tenantId);
-    if (!def) return null;
-    const res = await resolveInstanceSourcesFromDefinition(
-      db,
-      tenantId,
-      def,
-      null,
-    );
-    return res.ok ? (res.sources[0] ?? null) : null;
-  },
-  fanout: granolaFanout,
-});
 const granolaCallJobQueue = createGranolaCallJobQueue(db);
 const granolaCallJobRunner = createGranolaCallJobRunner({
   db,
   queue: granolaCallJobQueue,
-  pipeline: granolaPipeline,
+  startRun: (args) => runStarter.startRun(args),
 });
 granolaCallJobRunner.start();
 

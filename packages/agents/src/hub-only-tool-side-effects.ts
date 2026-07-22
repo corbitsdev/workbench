@@ -10,4 +10,6 @@ export const HUB_ONLY_TOOL_SIDE_EFFECTS: Record<string, ToolSideEffect> = {
   task_update: "write",
   heartbeat_format_brief_title: "read",
   heartbeat_format_brief_mail_refs: "read",
+  granola_create_tasks: "write",
+  granola_fanout_call: "write",
 };

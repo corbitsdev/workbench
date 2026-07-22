@@ -122,8 +122,8 @@ async function handleWorkspaceTick(
       if (ctx.signal.aborted) return;
       // Enqueue only — no transcript fetch, no LLM turn on the tick. The
       // job-queue's (tenant, note) unique constraint is the enqueue-dedupe
-      // backstop; the job runner (off-tick) does the transcript fetch +
-      // reasoning turn + artifact persistence (CL-3627).
+      // backstop; the job runner (off-tick) starts the deployed granola-call
+      // workflow via the run-start seam (CL-3627 / CL-3647).
       await queue.enqueue(ctx.tenantId, summaryNote.id);
       ctx.log.info("granola workspace source: enqueued {noteId}", {
         noteId: summaryNote.id,
@@ -164,8 +164,8 @@ async function handleWorkspaceTick(
  * tenant-owned Granola credential. Lists notes created since the tick cutoff
  * and enqueues each genuinely-new call onto the job queue — no transcript
  * fetch, no LLM turn on the tick. A separate off-tick runner
- * (`granola-call-job-runner.ts`) drains the queue and hands each call to the
- * call pipeline.
+ * (`granola-call-job-runner.ts`) drains the queue and starts a
+ * `granola-call` workflow run for each job.
  *
  * WEBHOOKS: Granola's public API (public-api.granola.ai/v1) exposes no
  * webhook/push subscription — notes are only retrievable by polling

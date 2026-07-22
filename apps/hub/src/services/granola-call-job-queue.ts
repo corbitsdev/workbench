@@ -1,4 +1,5 @@
 import { getLogger } from "@intx/log";
+import { sql } from "drizzle-orm";
 import type { GranolaCallJobRow, WorkUnitRow } from "../db/schema";
 import type { HubDb } from "../db";
 import type { WorkUnitQueue } from "./work-unit-queue";
@@ -29,6 +30,11 @@ function noteIdFromUnit(unit: WorkUnitRow): string {
   return key.startsWith("note:") ? key.slice("note:".length) : key;
 }
 
+function activeRunIdFromUnit(unit: WorkUnitRow): string | null {
+  const v = unit.payload["activeRunId"];
+  return typeof v === "string" && v.length > 0 ? v : null;
+}
+
 /** Map work_unit status onto the historical GranolaCallJobRow status enum. */
 function mapStatus(status: WorkUnitRow["status"]): GranolaCallJobRow["status"] {
   if (status === "leased") return "processing";
@@ -49,6 +55,7 @@ export function workUnitToGranolaJob(unit: WorkUnitRow): GranolaCallJobRow {
     lastError: unit.lastError,
     leaseOwner: unit.leaseOwner,
     leaseUntil: unit.leaseUntil,
+    activeRunId: activeRunIdFromUnit(unit),
     createdAt: unit.createdAt,
     updatedAt: unit.updatedAt,
   };
@@ -68,6 +75,15 @@ export interface GranolaCallJobQueue {
     jobId: string,
     workerId: string,
     leaseMs?: number,
+  ): Promise<boolean>;
+  /**
+   * Persist the workflow run id on the unit payload (owner-fenced) so a reclaim
+   * can attach to the same run instead of starting a second concurrent run.
+   */
+  setActiveRunId(
+    jobId: string,
+    workerId: string,
+    runId: string,
   ): Promise<boolean>;
   complete(jobId: string, workerId: string): Promise<void>;
   /** Owner-fenced fail; attempt counter lives on work_unit (not caller-supplied). */
@@ -121,6 +137,29 @@ export function createGranolaCallJobQueue(
     return workUnits.heartbeat(jobId, workerId, leaseMs);
   }
 
+  async function setActiveRunId(
+    jobId: string,
+    workerId: string,
+    runId: string,
+  ): Promise<boolean> {
+    // Merge activeRunId into payload without clobbering noteId. Owner-fenced so
+    // a reclaimed unit cannot be written by a zombie worker.
+    const result = await db.execute(sql`
+      UPDATE work_unit
+      SET
+        payload = coalesce(payload, '{}'::jsonb) || ${JSON.stringify({ activeRunId: runId })}::jsonb,
+        updated_at = now()
+      WHERE id = ${jobId}::uuid
+        AND status = 'leased'
+        AND lease_owner = ${workerId}
+      RETURNING id
+    `);
+    const rows = Array.isArray(result)
+      ? result
+      : ((result as { rows?: unknown[] }).rows ?? []);
+    return rows.length > 0;
+  }
+
   async function complete(jobId: string, workerId: string): Promise<void> {
     await workUnits.complete(jobId, workerId);
   }
@@ -133,7 +172,7 @@ export function createGranolaCallJobQueue(
     await workUnits.fail(jobId, workerId, error);
   }
 
-  return { enqueue, claimDue, complete, fail, heartbeat };
+  return { enqueue, claimDue, complete, fail, heartbeat, setActiveRunId };
 }
 
 // Re-export for callers that previously imported lease default from here.
