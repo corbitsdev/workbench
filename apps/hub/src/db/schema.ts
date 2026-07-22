@@ -1098,6 +1098,18 @@ export const workUnit = pgTable(
       t.kind,
       t.status,
     ),
+    workUnitStatusCheck: check(
+      "work_unit_status_check",
+      sql`${t.status} IN ('pending', 'leased', 'done', 'dead')`,
+    ),
+    workUnitAttemptsNonneg: check(
+      "work_unit_attempts_nonneg",
+      sql`${t.attempts} >= 0`,
+    ),
+    workUnitMaxAttemptsPos: check(
+      "work_unit_max_attempts_pos",
+      sql`${t.maxAttempts} > 0`,
+    ),
   }),
 );
 

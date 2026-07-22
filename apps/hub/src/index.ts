@@ -2303,6 +2303,8 @@ for (const signal of ["SIGTERM", "SIGINT"]) {
       stopWedgeSweepReconciler();
       stopAwaitingSupervisorPrewarm();
       stopStalledScheduledRunReconciler();
+      workUnitWorker.stop();
+      granolaCallJobRunner.stop();
       log.info("Closing sidecar connections", {
         count: sidecarConnections.size(),
       });

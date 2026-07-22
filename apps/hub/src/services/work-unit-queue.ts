@@ -116,6 +116,11 @@ export function createWorkUnitQueue(db: HubDb): WorkUnitQueue {
       .limit(1);
     const id = existing[0]?.id;
     if (!id) {
+      log.error("work_unit enqueue: conflict but row missing {kind}", {
+        kind: input.kind,
+        idempotencyKey: input.idempotencyKey,
+        tenantId: input.tenantId,
+      });
       throw new Error(
         `work_unit enqueue conflict but row missing for ${input.kind}/${input.idempotencyKey}`,
       );
@@ -133,12 +138,33 @@ export function createWorkUnitQueue(db: HubDb): WorkUnitQueue {
     const limit = Math.max(1, Math.min(args.limit, 100));
     const kinds = args.kinds;
 
+    // A worker whose lease expires without ack/fail must not be reclaimed
+    // forever — charge an attempt on reclaim and dead-letter units that
+    // would exceed max_attempts before they are ever handed back out.
+    await db.execute(sql`
+      UPDATE work_unit
+      SET
+        status = 'dead',
+        attempts = attempts + 1,
+        last_error = 'lease expired',
+        lease_owner = NULL,
+        lease_until = NULL,
+        updated_at = now()
+      WHERE status = 'leased'
+        AND lease_until IS NOT NULL
+        AND lease_until <= now()
+        AND attempts + 1 >= max_attempts
+    `);
+
     // Atomic claim: pick due rows under SKIP LOCKED, set lease in one statement.
     // Due = pending with next_attempt_at <= now, OR leased with lease_until <= now.
+    // A reclaimed expired lease charges an attempt (wu.status still 'leased'
+    // at SET-evaluation time, before this statement's own write).
     const result = await db.execute(sql`
       UPDATE work_unit AS wu
       SET
         status = 'leased',
+        attempts = CASE WHEN wu.status = 'leased' THEN wu.attempts + 1 ELSE wu.attempts END,
         lease_owner = ${args.workerId},
         lease_until = now() + (${leaseMs}::text || ' milliseconds')::interval,
         updated_at = now()
@@ -254,7 +280,7 @@ export function createWorkUnitQueue(db: HubDb): WorkUnitQueue {
         attempts,
         error: new Error(error),
       });
-      await db.execute(sql`
+      const deadResult = await db.execute(sql`
         UPDATE work_unit
         SET
           status = 'dead',
@@ -266,7 +292,14 @@ export function createWorkUnitQueue(db: HubDb): WorkUnitQueue {
         WHERE id = ${unitId}::uuid
           AND status = 'leased'
           AND lease_owner = ${workerId}
+        RETURNING id
       `);
+      if (rowsOf(deadResult).length === 0) {
+        log.warn("work_unit fail: not leased by worker {unitId}", {
+          unitId,
+          workerId,
+        });
+      }
       return;
     }
 
@@ -277,7 +310,7 @@ export function createWorkUnitQueue(db: HubDb): WorkUnitQueue {
       backoffMs,
       error: new Error(error),
     });
-    await db.execute(sql`
+    const backoffResult = await db.execute(sql`
       UPDATE work_unit
       SET
         status = 'pending',
@@ -290,7 +323,14 @@ export function createWorkUnitQueue(db: HubDb): WorkUnitQueue {
       WHERE id = ${unitId}::uuid
         AND status = 'leased'
         AND lease_owner = ${workerId}
+      RETURNING id
     `);
+    if (rowsOf(backoffResult).length === 0) {
+      log.warn("work_unit fail: not leased by worker {unitId}", {
+        unitId,
+        workerId,
+      });
+    }
   }
 
   async function retryDead(unitId: string): Promise<boolean> {

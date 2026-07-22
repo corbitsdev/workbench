@@ -115,6 +115,60 @@ describe("work unit queue", () => {
     expect(reclaimed[0]?.leaseOwner).toBe("w2");
   });
 
+  test("expired-lease reclaim charges an attempt", async () => {
+    const queue = createWorkUnitQueue(db);
+    await queue.enqueue({
+      tenantId: TENANT,
+      kind: "agent_task_turn",
+      idempotencyKey: "task:attempt-charge:turn:1",
+      maxAttempts: 5,
+    });
+    const [claimed] = await queue.claimDue({
+      workerId: "w1",
+      limit: 1,
+      leaseMs: 1,
+    });
+    expect(claimed!.attempts).toBe(0);
+    await new Promise((r) => setTimeout(r, 15));
+
+    const [reclaimed] = await queue.claimDue({ workerId: "w2", limit: 1 });
+    expect(reclaimed).toBeDefined();
+    expect(reclaimed!.id).toBe(claimed!.id);
+    expect(reclaimed!.attempts).toBe(1);
+  });
+
+  test("a unit whose lease keeps expiring is dead-lettered at max_attempts and never handed out again", async () => {
+    const queue = createWorkUnitQueue(db);
+    await queue.enqueue({
+      tenantId: TENANT,
+      kind: "agent_task_turn",
+      idempotencyKey: "task:never-acked:turn:1",
+      maxAttempts: 3,
+    });
+
+    let last: Awaited<ReturnType<typeof queue.claimDue>>[number] | undefined;
+    for (let i = 0; i < 3; i++) {
+      const [claimed] = await queue.claimDue({
+        workerId: `worker-${i}`,
+        limit: 1,
+        leaseMs: 1,
+      });
+      if (claimed) last = claimed;
+      await new Promise((r) => setTimeout(r, 15));
+    }
+
+    expect(last).toBeDefined();
+    const none = await queue.claimDue({ workerId: "final", limit: 1 });
+    expect(none).toHaveLength(0);
+
+    const dead = await queue.listDead();
+    expect(dead).toHaveLength(1);
+    expect(dead[0]?.id).toBe(last!.id);
+    expect(dead[0]?.attempts).toBe(3);
+    expect(dead[0]?.lastError).toBe("lease expired");
+    expect(dead[0]?.leaseOwner).toBeNull();
+  });
+
   test("heartbeat extends lease so a slow worker is not reclaimed", async () => {
     const queue = createWorkUnitQueue(db);
     await queue.enqueue({

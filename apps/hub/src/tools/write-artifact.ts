@@ -141,8 +141,12 @@ export async function writeArtifactDeduped(params: {
         artifactId: result.artifactId,
         version: result.version,
       });
-    } catch {
+    } catch (cause) {
       // Fail-soft: capture must never block product writes.
+      log.error("write-artifact: knowledge capture enqueue failed", {
+        artifactId: result.artifactId,
+        error: cause,
+      });
     }
     return result;
   });
