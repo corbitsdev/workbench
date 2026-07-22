@@ -12,7 +12,8 @@ too; a prior version of this line omitted it). Run it before and after an interc
 bump and confirm no block disappeared. The re-sync process (diff each vendored
 file against the new upstream, re-apply upstream changes _while preserving every
 `WORKBENCH-LOCAL` block_) is documented in `AGENTS.md` → "Dockerfile Maintenance"
-and "Vendored workflow-host wiring (pin-bump gate)".
+and "Dockerfile Maintenance". The full pin-bump procedure for duck-typed seams
+also lives in this file under **On every interchange pin bump**.
 
 There are two kinds of vendoring:
 
@@ -60,7 +61,7 @@ There are two kinds of vendoring:
   reader (`control channel received non-JSON line`) → `onChildCrash` → run
   died with `reason=corrupt`. The fd constants are exported and must stay in
   lockstep with the supervisor's `Bun.spawn` `stdio` indices in
-  `apps/sidecar/src/workflow-host-wiring.ts` (a duck-typed seam — see AGENTS.md).
+  `apps/sidecar/src/workflow-host-wiring.ts` (a duck-typed seam — see **Duck-typed seams** below in this file).
   This supersedes the interim console→stderr redirect that was carried in
   `bin/workflow-child` (now removed).
 - **WORKBENCH-LOCAL change (CL-2651):** interpolation fix in
@@ -825,3 +826,50 @@ upstream ask already tracked before this audit.
    `bun run --filter @workbench/workflow-host typecheck`.
 4. `scripts/check-vendored-drift.sh <prior-ref>` surfaces dropped WORKBENCH-LOCAL
    lines for review.
+5. Re-verify the `as AgentDeployWorkflow['definition']` cast in
+   `apps/hub/src/services/workflow-deploy.ts` still reflects only exactOptional
+   variance.
+
+### Duck-typed seams to re-verify (these will NOT surface at compile time)
+
+The hand-off between the vendored sidecar wiring and `@intx/workflow-host` is
+duck-typed, so an upstream shape change compiles but mis-wires the harness.
+Re-check each on every bump:
+
+- **T1 — on-disk address mapping.** `sanitizeAddress` (imported from
+  `@workbench/hub-agent`) determines the owned-dirs on-disk layout for the
+  CL-2231 reclaim sweep. Pinned by `workflow-host-wiring-undeploy-reclaim.test.ts`;
+  confirm the import resolves and the mapping matches what the substrate writes.
+- **T2 — supervisor / step-invoker contract.** `warmKeep` (single-step warm-keep
+  flag, computed in `workflow-substrate-factory.ts` from `stepOrder.length === 1`),
+  `stepCount` (the real parsed `STEP_COUNT` from
+  `packages/workflow-host/src/child/env-bootstrap.ts`, surfaced as
+  `env.spawn.stepCount`; it MUST be used directly for step-address derivation in
+  `resolveStepToolContext` — never reconstructed from `warmKeep`
+  (`env.spawn.warmKeep ? 1 : 2`), which would mislocate a multi-step deploy tree if
+  a future pin set `warmKeep` on a non-single-step deploy), `mailboxAddress`
+  (threaded through env-bootstrap's `MAILBOX_ADDRESS` key into `run-child.ts`), and
+  the **5-arg `invokeStep`** signature
+  (`(req, onEvent, authorize, warmCache, sourcesRef)`, matched between
+  `RunWorkflowChildBindings["invokeStep"]` in `workflow-substrate-factory.ts` and
+  `ChildStepInvoker` in `packages/workflow-host/src/child/run-child.ts`).
+- **T3 — inference event discriminants.** `parseInferenceEvent` in
+  `workflow-host-wiring.ts` is imported directly from `@intx/types/runtime` (no
+  local duplicate), and `onInferenceEvent` forwards the whole validated union
+  opaquely to `publishInferenceEvent` rather than switching on individual variants —
+  so a new upstream event type passes through rather than being silently dropped.
+  Keep this forwarding variant-agnostic; a consumer that switches on individual
+  event kinds reintroduces the drop risk.
+- **T4 — IPC channel fd convention (CL-2585).** The workflow-child's
+  `EVENT_CHANNEL_FD = 3` / `CONTROL_DOWN_FD = 4` / `CONTROL_UP_FD = 5` in
+  `packages/workflow-host/src/child/from-process-env.ts` MUST stay in lockstep with
+  the `Bun.spawn` `stdio` indices in `workflow-host-wiring.ts`'s
+  `defaultSubprocessSpawner`
+  (`["inherit","inherit","inherit","pipe","pipe","pipe"]` → event on `stdio[3]`,
+  control-down on `stdio[4]`, control-up on `stdio[5]`). The control channel is
+  bidirectional and needs TWO pipes (a single Bun `"pipe"` slot is unidirectional).
+  A re-sync that reverts the control channel to stdin/stdout (or renumbers the fds)
+  compiles but re-introduces the log-corruption crash
+  (`control channel received non-JSON line` → `reason=corrupt`). Guarded by
+  `apps/sidecar/src/workflow-host-wiring-spawner.test.ts` and
+  `packages/workflow-host/src/ipc/control-channel-log-corruption.repro.test.ts`.

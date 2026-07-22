@@ -150,7 +150,14 @@ Forks: replace the Railway host in root `vercel.json` `/api` + `/sidecar` rewrit
 
 ### Railway (reference deployment)
 
-Each service is a separate Railway service in the same project, all using the **repo root** as the Docker build context.
+Each service is a separate Railway service in the same project, all using the **repo root** as the Docker build context. This is a shared monorepo (one Bun workspace): every service depends on the shared lockfile, `packages/*`, and the vendored `interchange/packages/*`, so the build context cannot be scoped to a single app folder.
+
+Two consequences follow from that:
+
+- **Root Directory must stay `/`.** A per-service root directory would scope the Docker build to one app folder and break the workspace install.
+- **The `railway.toml` does not follow the Root Directory** (per Railway's monorepo docs) — set each service's Config-as-Code path to its absolute repo-root path (below).
+
+Once configured, every push to `staging` (or `main`) deploys the affected services automatically — each service's `watchPatterns` decides which ones rebuild.
 
 1. Create a new Railway project
 2. Add a new service → "GitHub Repo" → select your fork

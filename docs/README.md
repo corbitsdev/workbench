@@ -24,7 +24,7 @@ here rather than duplicated — duplicated detail drifts.
 | Designing the Slack integration                        | [`design/SLACK_INTEGRATION.md`](design/SLACK_INTEGRATION.md) — @Myra in Slack + Slack-as-context design and ticket breakdown |
 | Setting up inbox intake (Linear, Attio, Granola, Slack) | [`OWNER_SETUP_INBOX.md`](OWNER_SETUP_INBOX.md) — step-by-step owner walkthrough: credentials, toggles, webhooks, gating order |
 | Setting up / following engineering rules               | [`../AGENTS.md`](../AGENTS.md)                                                                                               |
-| Deploying / running coverage                           | [`../README.md`](../README.md)                                                                                               |
+| Deploying / running coverage                           | [`../DEPLOY.md`](../DEPLOY.md) · [`../DEV.md#testing--coverage`](../DEV.md#testing--coverage)                                 |
 
 ## Scope: root docs vs. package docs
 
