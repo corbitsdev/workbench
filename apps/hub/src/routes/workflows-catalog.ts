@@ -11,6 +11,7 @@ import {
   type DisplayFlowStep,
 } from "@workbench/agents";
 import {
+  isAutomationEligibleKind,
   orderCatalogEntries,
   scheduleScopesForKind,
   WorkflowCatalogSchema,
@@ -160,10 +161,12 @@ export function createWorkflowsCatalogRouter(deps: {
           displayFlows.get(entry.kind),
         );
         const gateInfo = gateInfos.get(entry.kind);
+        // attachable = structural gate shape AND product allowlist (CL-4204).
         const attachable =
           gateInfo !== undefined &&
-          isKindStructurallyAttachable(gateInfo, entry.kind);
-const intakeFields = intakeFieldsByKind.get(entry.kind);
+          isKindStructurallyAttachable(gateInfo, entry.kind) &&
+          isAutomationEligibleKind(entry.kind);
+        const intakeFields = intakeFieldsByKind.get(entry.kind);
         const scopes = scheduleScopesForKind(entry.kind, attachable);
         entries.push({
           kind: entry.kind,

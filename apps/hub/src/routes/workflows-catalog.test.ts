@@ -58,6 +58,23 @@ mock.module("../lib/tenant-provisioning", () => ({
     Promise.resolve({ tenantId: "t-root", principalId: "p1" }),
 }));
 
+// Gate shape per kind (CL-3508 + product allowlist CL-4204). Unattended kinds
+// are structurally attachable; attachable on the wire also requires product
+// eligibility (heartbeat / prospect-engine / last30days-research only).
+let gateInfos = new Map<
+  string,
+  { requiresIntake: boolean; humanGateCount: number }
+>([
+  ["heartbeat", { requiresIntake: false, humanGateCount: 0 }],
+  ["deck", { requiresIntake: false, humanGateCount: 0 }],
+  ["last30days-research", { requiresIntake: true, humanGateCount: 1 }],
+]);
+mock.module("../lib/workflow-catalog", () => ({
+  loadWorkflowDisplayFlows: async () => new Map(),
+  loadWorkflowGateInfos: async () => gateInfos,
+  loadWorkflowIntakeFields: async () => new Map(),
+}));
+
 import { Hono } from "hono";
 import { createWorkflowsCatalogRouter } from "./workflows-catalog";
 import type { HubDb } from "../db";
@@ -92,6 +109,7 @@ type Entry = {
   stepCount: number;
   pauseCount: number;
   steps: { id: string; title: string; kind: string }[];
+  attachable?: boolean;
 };
 
 describe("GET /workflows", () => {
@@ -171,5 +189,27 @@ describe("GET /workflows", () => {
     userContext = { context: null, forbidden: false };
     const res = await get();
     expect(res.status).toBe(403);
+  });
+
+  it("marks attachable only when structural AND product-eligible (CL-4204)", async () => {
+    userContext = {
+      context: { tenantId: "t1", principalId: "p1" },
+      forbidden: false,
+    };
+    favorites = [];
+    kinds = [
+      { kind: "heartbeat", label: "Heartbeat" },
+      { kind: "deck", label: "Deck" },
+      { kind: "alpha", label: "Alpha" },
+    ];
+
+    const body = (await (await get()).json()) as { entries: Entry[] };
+    const byKind = Object.fromEntries(body.entries.map((e) => [e.kind, e]));
+    // Product-eligible + structurally attachable
+    expect(byKind["heartbeat"]!.attachable).toBe(true);
+    // Structurally attachable but not on the product allowlist
+    expect(byKind["deck"]!.attachable).toBe(false);
+    // No gate info → not attachable
+    expect(byKind["alpha"]!.attachable).toBe(false);
   });
 });

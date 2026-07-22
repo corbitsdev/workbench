@@ -3,6 +3,7 @@ import { Hono } from "hono";
 import { describeRoute, resolver } from "hono-openapi";
 import {
   CreateScheduledTriggerBodySchema,
+  isAutomationEligibleKind,
   ScheduledTriggerListResponseSchema,
   ScheduledTriggerSchema,
   UpdateScheduledTriggerBodySchema,
@@ -202,6 +203,17 @@ export function createMeSchedulesRouter(
         return c.json(
           {
             error: `workflow "${body.kind}" cannot be scheduled: it needs input this schedule can't supply`,
+          },
+          400,
+        );
+      }
+
+      // Product allowlist (CL-4204): structural attachability is necessary but not
+      // sufficient — only product-eligible kinds may be scheduled under Automations.
+      if (!isAutomationEligibleKind(body.kind)) {
+        return c.json(
+          {
+            error: `workflow "${body.kind}" is not available for Automations schedules`,
           },
           400,
         );

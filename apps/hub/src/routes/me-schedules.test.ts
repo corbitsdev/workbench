@@ -33,10 +33,12 @@ mock.module("../lib/workflow-run-gate", () => ({
     runnableKinds.some((k) => k.kind === kind),
 }));
 
-// Attach gate (CL-3508/CL-3509/CL-3528): the route reads gate shapes from the
-// embedded catalog. "deck"/"heartbeat" are unattended; "last30days-research" is
-// intake-only; "multi-gate" has intake plus a post-intake human gate and is
-// attachable only when allowsScheduledPostIntakeDrive is set (CL-3528). A kind absent from
+// Attach gate (CL-3508/CL-3509/CL-3528) + product allowlist (CL-4204): the route
+// reads gate shapes from the embedded catalog. "deck"/"heartbeat" are unattended;
+// "last30days-research" is intake-only; "multi-gate" has intake plus a post-intake
+// human gate and is structurally attachable only when allowsScheduledPostIntakeDrive
+// is set (CL-3528). Product eligibility is a second gate — only heartbeat,
+// prospect-engine, and last30days-research may be scheduled. A kind absent from
 // this map is treated as not-attachable. The real intake payload validation
 // (resume-payload-registry) is NOT mocked — last30days requires a non-empty topic.
 const gateInfos = new Map<
@@ -356,9 +358,10 @@ describe("POST /me/schedules attach gate (CL-3508/CL-3509)", () => {
     expect(storeCalls.find((c) => c.fn === "create")).toBeUndefined();
   });
 
-  it("stores a schedule for an intake-first multi-gate kind when catalog allows drive (CL-3528)", async () => {
+  it("rejects a multi-gate kind that is structurally attachable but not product-eligible (CL-4204)", async () => {
+    // multi-gate has allowsScheduledPostIntakeDrive so structural attach passes;
+    // product allowlist does not include multi-gate.
     storeCalls.length = 0;
-    createThrows = null;
     const res = await mountApp().fetch(
       req("/me/schedules", {
         method: "POST",
@@ -370,17 +373,28 @@ describe("POST /me/schedules attach gate (CL-3508/CL-3509)", () => {
         }),
       }),
     );
-    expect(res.status).toBe(201);
-    const create = storeCalls.find((c) => c.fn === "create");
-    expect(create?.args).toMatchObject({
-      kind: "multi-gate",
-      hourUtc: 9,
-      payload: {
-        topic: "x",
-        userAddress: "usr_user-a@workbench.example",
-        userRefId: "user-a",
-      },
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({
+      error: 'workflow "multi-gate" is not available for Automations schedules',
     });
+    expect(storeCalls.find((c) => c.fn === "create")).toBeUndefined();
+  });
+
+  it("rejects a structurally attachable kind not on the product allowlist (CL-4204)", async () => {
+    // deck is unattended (structurally attachable) but not product-eligible.
+    storeCalls.length = 0;
+    const res = await mountApp().fetch(
+      req("/me/schedules", {
+        method: "POST",
+        user: "user-a",
+        body: JSON.stringify({ kind: "deck", hourUtc: 9 }),
+      }),
+    );
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({
+      error: 'workflow "deck" is not available for Automations schedules',
+    });
+    expect(storeCalls.some((c) => c.fn === "create")).toBe(false);
   });
 
   it("rejects a runnable kind that has no embedded gate info", async () => {
@@ -407,7 +421,11 @@ describe("POST /me/schedules", () => {
       req("/me/schedules", {
         method: "POST",
         user: "user-a",
-        body: JSON.stringify({ kind: "deck", hourUtc: 9, payload: { x: 1 } }),
+        body: JSON.stringify({
+          kind: "heartbeat",
+          hourUtc: 9,
+          payload: { x: 1 },
+        }),
       }),
     );
     expect(res.status).toBe(201);
@@ -415,7 +433,7 @@ describe("POST /me/schedules", () => {
     expect(create?.args).toEqual({
       tenantId: "tenant-root",
       ownerPrincipalId: "principal-a",
-      kind: "deck",
+      kind: "heartbeat",
       hourUtc: 9,
       scope: "personal",
       payload: {
@@ -434,17 +452,17 @@ describe("POST /me/schedules", () => {
         method: "POST",
         user: "user-a",
         body: JSON.stringify({
-          kind: "deck",
+          kind: "last30days-research",
           hourUtc: 9,
           scope: "tenant",
-          payload: { x: 1 },
+          payload: { topic: "AI agents for GTM" },
         }),
       }),
     );
     expect(res.status).toBe(201);
     const create = storeCalls.find((c) => c.fn === "create");
     expect(create?.args).toMatchObject({
-      kind: "deck",
+      kind: "last30days-research",
       scope: "tenant",
       ownerPrincipalId: "principal-a",
     });
@@ -481,9 +499,10 @@ describe("POST /me/schedules", () => {
         method: "POST",
         user: "user-a",
         body: JSON.stringify({
-          kind: "deck",
+          kind: "last30days-research",
           hourUtc: 9,
           scope: "tenant",
+          payload: { topic: "AI agents for GTM" },
         }),
       }),
     );
@@ -527,7 +546,7 @@ describe("POST /me/schedules", () => {
         method: "POST",
         user: "user-a",
         body: JSON.stringify({
-          kind: "deck",
+          kind: "heartbeat",
           hourUtc: 9,
           payload: { blob: "x".repeat(9000) },
         }),
@@ -543,7 +562,7 @@ describe("POST /me/schedules", () => {
       req("/me/schedules", {
         method: "POST",
         user: "user-a",
-        body: JSON.stringify({ kind: "deck", hourUtc: 25 }),
+        body: JSON.stringify({ kind: "heartbeat", hourUtc: 25 }),
       }),
     );
     expect(res.status).toBe(400);
@@ -567,7 +586,7 @@ describe("POST /me/schedules", () => {
       req("/me/schedules", {
         method: "POST",
         user: "user-none",
-        body: JSON.stringify({ kind: "deck", hourUtc: 9 }),
+        body: JSON.stringify({ kind: "heartbeat", hourUtc: 9 }),
       }),
     );
     expect(res.status).toBe(403);
@@ -582,7 +601,7 @@ describe("POST /me/schedules", () => {
       req("/me/schedules", {
         method: "POST",
         user: "user-a",
-        body: JSON.stringify({ kind: "deck", hourUtc: 9 }),
+        body: JSON.stringify({ kind: "heartbeat", hourUtc: 9 }),
       }),
     );
     expect(res.status).toBe(409);
