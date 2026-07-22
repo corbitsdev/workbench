@@ -32,8 +32,11 @@ export type ExistsScope = typeof ExistsScopeSchema.infer;
 export const TenantScopeSchema = ColumnScopeSchema.or(ExistsScopeSchema);
 export type TenantScope = typeof TenantScopeSchema.infer;
 
-export const PrincipalScopeSchema =
-  ColumnScopeSchema.or(AnyColumnScopeSchema).or(ExistsScopeSchema);
+export const PrincipalScopeSchema = type.or(
+  ColumnScopeSchema,
+  AnyColumnScopeSchema,
+  ExistsScopeSchema,
+);
 export type PrincipalScope = typeof PrincipalScopeSchema.infer;
 
 export type TimelineSourceDescriptor = {
