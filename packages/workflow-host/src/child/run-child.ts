@@ -84,8 +84,15 @@ import type {
   WorkflowPark,
   WorkflowRun,
   WorkflowRuntimeEnv,
+  ActionHandler,
+  LoopFnRegistry,
 } from "@intx/workflow";
-import { baseStepId, emptyState, runtimeRun } from "@intx/workflow";
+import {
+  baseStepId,
+  emptyState,
+  runtimeRun,
+  createLoopIteration,
+} from "@intx/workflow";
 
 import {
   createWorkflowHostDrainController,
@@ -96,6 +103,13 @@ import type { InferenceSource } from "@intx/types/runtime";
 
 import { createWorkflowRunRepoStore } from "../adapters/repo-store";
 import { createWorkflowRunBlobSubstrate } from "../adapters/blob-substrate";
+import {
+  createActionHandlerRegistry,
+  createLoopFnRegistry,
+  createWorkflowActionInvoker,
+} from "../adapters/action-invoker";
+
+import { createWorkflowRunEffectLedger } from "../adapters/effect-ledger";
 import {
   createControlChannelSender,
   createEventChannelSender,
@@ -298,6 +312,20 @@ export interface RunWorkflowChildBindings {
    * `createWorkflowSpawnChild`; tests inject a stub.
    */
   spawnChild: SpawnChildWorkflow;
+  /**
+   * Resolve an action primitive's `handler` string ref to a host
+   * TypeScript function. Defaults to a fail-closed empty registry
+   * (unknown ref throws). Production hosts that ship action-using
+   * workflows pass a registry of host-owned handlers.
+   */
+  resolveActionHandler?: (ref: string) => ActionHandler;
+  /**
+   * Resolve a loop primitive's `while`/`carry` string refs to pure
+   * functions. Defaults to a fail-closed empty registry. Production
+   * hosts that ship loop-using workflows pass a registry of pure fns.
+   */
+  loopFns?: LoopFnRegistry;
+
   /** Host-process scheduler singleton. The child consumes the same instance. */
   scheduler: Scheduler;
   /** Grant evaluator wired against the host's grant-rule grammar. */
@@ -495,7 +523,15 @@ export async function runWorkflowChild(
     opts.bindings.evaluateGrants,
   );
 
+  // Resolve once at child entry — same empty fail-closed defaults for every
+  // run this process drives (resume + trigger). Per-run rebuild would
+  // re-allocate identical empty registries for no reason.
+  const resolveActionHandler =
+    opts.bindings.resolveActionHandler ?? createActionHandlerRegistry({});
+  const loopFns = opts.bindings.loopFns ?? createLoopFnRegistry({});
+
   const drainController = createWorkflowHostDrainController({ definition });
+
 
   // Warm-agent cache (design §3b). Built only when the deployment is a
   // warm candidate (the single-step long-lived agent the deploy
@@ -550,6 +586,8 @@ export async function runWorkflowChild(
       bindings: opts.bindings,
       runtimeRepoStore,
       authorize,
+      resolveActionHandler,
+      loopFns,
       directors,
       clock,
       newId,
@@ -563,6 +601,7 @@ export async function runWorkflowChild(
       },
       upstreamSender,
     });
+
     const handle = runtimeRun(definition, env, {
       runId: run.runId,
       resumeFromEvents: run.seedEvents,
@@ -635,6 +674,8 @@ export async function runWorkflowChild(
           runtimeRepoStore,
           definition,
           authorize,
+          resolveActionHandler,
+          loopFns,
           directors,
           clock,
           newId,
@@ -645,6 +686,7 @@ export async function runWorkflowChild(
           runsInFlight,
           warmCache,
           sourcesRef,
+
           ...(opts.substrateWriteBridge !== undefined
             ? { substrateWriteBridge: opts.substrateWriteBridge }
             : {}),
@@ -709,7 +751,10 @@ async function handleControlPayload(
     runtimeRepoStore: ReturnType<typeof createWorkflowRunRepoStore>;
     definition: WorkflowDefinition;
     authorize: WorkflowAuthorizeFn;
+    resolveActionHandler: (ref: string) => ActionHandler;
+    loopFns: LoopFnRegistry;
     directors: DirectorRegistry;
+
     clock: () => Date;
     newId: (prefix: string) => string;
     eventSender: ReturnType<typeof createEventChannelSender>;
@@ -766,6 +811,8 @@ async function handleControlPayload(
         bindings: ctx.bindings,
         runtimeRepoStore: ctx.runtimeRepoStore,
         authorize: ctx.authorize,
+        resolveActionHandler: ctx.resolveActionHandler,
+        loopFns: ctx.loopFns,
         directors: ctx.directors,
         clock: ctx.clock,
         newId: ctx.newId,
@@ -779,6 +826,7 @@ async function handleControlPayload(
         },
         upstreamSender: ctx.upstreamSender,
       });
+
       const handle: WorkflowRun = runtimeRun(ctx.definition, env, {
         runId: payload.data.runId,
         consumedMessageId: payload.data.messageId,
@@ -1056,15 +1104,20 @@ async function handleControlPayload(
 
 /**
  * Construct a `WorkflowRuntimeEnv` for one run. Each run gets its own
- * `BlobSubstrate` and `SignalChannel` because both are per-run by
- * shape; the substrate handle and per-deployment `RepoStore` adapter
- * are shared across runs.
+ * `BlobSubstrate`, `SignalChannel`, and `EffectLedger` because those
+ * are per-run by shape; the substrate handle and per-deployment
+ * `RepoStore` adapter are shared across runs. The action invoker +
+ * loop-iteration runner are constructed per-run so the effect ledger
+ * stays scoped to this run's identity keys. Action-handler and loop-fn
+ * registries are resolved once at child entry and passed in here.
  */
 function buildRuntimeEnv(args: {
   runId: string;
   bindings: RunWorkflowChildBindings;
   runtimeRepoStore: ReturnType<typeof createWorkflowRunRepoStore>;
   authorize: WorkflowAuthorizeFn;
+  resolveActionHandler: (ref: string) => ActionHandler;
+  loopFns: LoopFnRegistry;
   directors: DirectorRegistry;
   clock: () => Date;
   newId: (prefix: string) => string;
@@ -1107,7 +1160,21 @@ function buildRuntimeEnv(args: {
       args.sourcesRef,
     );
   };
-  return {
+
+  const effects = createWorkflowRunEffectLedger({
+    substrate: args.bindings.substrate,
+    repoId: args.bindings.workflowRunRepoId,
+    principal: args.bindings.principal,
+    runId: args.runId,
+    ref: args.bindings.workflowRunRef,
+  });
+  const invokeAction = createWorkflowActionInvoker({
+    authorize: args.authorize,
+    effects,
+    resolveHandler: args.resolveActionHandler,
+  });
+
+  const env: WorkflowRuntimeEnv = {
     repoStore: args.runtimeRepoStore,
     scheduler: args.bindings.scheduler,
     signalChannel,
@@ -1115,6 +1182,8 @@ function buildRuntimeEnv(args: {
     directors: args.directors,
     authorize: args.authorize,
     invokeStep,
+    invokeAction,
+    effects,
     spawnChild: args.bindings.spawnChild,
     clock: args.clock,
     newId: args.newId,
@@ -1127,7 +1196,13 @@ function buildRuntimeEnv(args: {
     onPark: (park) => {
       void emitParkNotify(args.upstreamSender, park);
     },
+    loopFns: args.loopFns,
   };
+  // Wired after construction because the loop-iteration runner closes
+  // over the env it belongs to, so each iteration's child run shares
+  // the parent's repoStore, blobs, and effect ledger.
+  env.runLoopIteration = createLoopIteration(env);
+  return env;
 }
 
 /**

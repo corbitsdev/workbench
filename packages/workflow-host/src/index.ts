@@ -7,6 +7,17 @@ export {
   type WorkflowRunBlobSubstrateOpts,
 } from "./adapters/blob-substrate";
 export {
+  createWorkflowRunEffectLedger,
+  type WorkflowRunEffectLedgerOpts,
+} from "./adapters/effect-ledger";
+export {
+  createWorkflowActionInvoker,
+  createActionHandlerRegistry,
+  createLoopFnRegistry,
+  type ActionHandler,
+  type WorkflowActionInvokerOpts,
+} from "./adapters/action-invoker";
+export {
   createWorkflowStepInvoker,
   type StepEnvBase,
   type WorkflowStepInvokerOpts,
