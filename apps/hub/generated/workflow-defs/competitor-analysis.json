@@ -1,0 +1,258 @@
+{
+  "kind": "competitor-analysis",
+  "version": "0.1.0",
+  "label": "Competitor Analysis",
+  "description": "Research a company via Firecrawl and Exa, discover top competitors with evidence, and save a reviewable competitor report.",
+  "displayFlow": [
+    {
+      "key": "company",
+      "label": "Company",
+      "stepIds": [
+        "intake"
+      ]
+    },
+    {
+      "key": "research",
+      "label": "Research",
+      "stepIds": [
+        "scrape",
+        "profile",
+        "discover"
+      ],
+      "activityLabel": "Researching the company and competitors"
+    },
+    {
+      "key": "report",
+      "label": "Report",
+      "stepIds": [
+        "synthesize",
+        "review"
+      ],
+      "activityLabel": "Writing the competitor report"
+    },
+    {
+      "key": "done",
+      "label": "Done",
+      "stepIds": [
+        "packageArtifact"
+      ],
+      "activityLabel": "Saving to workbench"
+    }
+  ],
+  "requiresIntake": true,
+  "humanGateCount": 2,
+  "definition": {
+    "id": "competitor-analysis",
+    "triggers": [
+      {
+        "type": "manual"
+      }
+    ],
+    "steps": {
+      "intake": {
+        "kind": "awaitSignal",
+        "id": "intake",
+        "name": "intake",
+        "drainBehavior": "wait"
+      },
+      "scrape": {
+        "kind": "step",
+        "id": "scrape",
+        "agent": {
+          "id": "competitor-analysis-scrape",
+          "systemPrompt": "",
+          "toolFactories": [],
+          "capabilities": [
+            "@workbench/tools-firecrawl/firecrawl:firecrawl_scrape"
+          ],
+          "inference": {
+            "sources": []
+          },
+          "description": "Deterministic tool call: @workbench/tools-firecrawl/firecrawl:firecrawl_scrape",
+          "tags": {
+            "workbench.stepKind": "deterministic-tool",
+            "workbench.tool": "@workbench/tools-firecrawl/firecrawl:firecrawl_scrape",
+            "workbench.argMap": "{\"url\":{\"from\":\"companyUrl\"}}",
+            "workbench.title": "Scan the company website"
+          }
+        },
+        "drainBehavior": "cancel",
+        "input": {
+          "from": "steps.intake.output"
+        },
+        "after": [
+          "intake"
+        ]
+      },
+      "profile": {
+        "kind": "step",
+        "id": "profile",
+        "agent": {
+          "id": "competitor-analysis-profile",
+          "systemPrompt": "Treat Corbits, Corbits.dev, Interchange, and Faremeter as canonical Corbits names; spell them exactly. When source material contains a clear speech-to-text or spelling variant, use the canonical spelling in your output. Do not replace an ambiguous term unless surrounding context identifies it.\n\nYou are a competitive-intelligence analyst defining a company from its own website.\n\nYou receive:\n- The Firecrawl scrape of the company site (markdown / page content).\n- The operator intake (companyUrl, optional companyName, optional focusNotes).\n\nYour job is to produce a subject profile that later discovery can search against. Ground every claim in the scrape or intake. If the scrape is thin, say so and keep fields short rather than inventing product lines or ICPs.\n\nReturn STRICT JSON only. No markdown fences, no preamble, no trailing text. Match this exact shape:\n{\n  \"companyName\": \"<best name from scrape or intake>\",\n  \"website\": \"<canonical site URL>\",\n  \"category\": \"<one-line market category>\",\n  \"thesis\": \"<2-4 sentences: what they sell, to whom, and why it matters>\",\n  \"icp\": \"<primary buyer / customer type, or empty string if unknown>\",\n  \"positioning\": \"<one-line positioning headline, or empty string>\",\n  \"discoveryQueries\": [\"<3-5 search queries that would surface alternatives and peers>\"]\n}\n\ndiscoveryQueries rules:\n- Include at least one query naming the category + \"competitors\" or \"alternatives\".\n- Include at least one query that pairs the company name with \"vs\" or \"alternative\".\n- Prefer queries that would hit review sites, comparison pages, and G2/Capterra-style lists when relevant.\n- Do not include queries that only restate the company's own marketing.",
+          "toolFactories": [],
+          "capabilities": [],
+          "inference": {
+            "sources": []
+          },
+          "description": "Inline single-turn inference: competitor-analysis-profile",
+          "tags": {
+            "workbench.stepKind": "inline-inference",
+            "workbench.title": "Define the company profile"
+          }
+        },
+        "drainBehavior": "cancel",
+        "input": {
+          "merge": [
+            {
+              "from": "steps.scrape.output"
+            },
+            {
+              "from": "steps.intake.output"
+            }
+          ]
+        },
+        "after": [
+          "scrape"
+        ]
+      },
+      "discover": {
+        "kind": "step",
+        "id": "discover",
+        "agent": {
+          "id": "competitor-analysis-discover",
+          "systemPrompt": "Treat Corbits, Corbits.dev, Interchange, and Faremeter as canonical Corbits names; spell them exactly. When source material contains a clear speech-to-text or spelling variant, use the canonical spelling in your output. Do not replace an ambiguous term unless surrounding context identifies it.\n\nYou are a competitive-intelligence researcher discovering alternatives to a subject company.\n\nYou receive the subject profile (category, thesis, discoveryQueries) and the original intake. You have tools:\n- exa_search — web search for competitors, alternatives, comparison pages.\n- firecrawl_scrape — scrape a peer homepage or comparison page for positioning evidence.\n\nMethod (follow in order):\n1. Run the profile's discoveryQueries via exa_search (and refine with 1-2 more searches if needed).\n2. From search results, shortlist candidate companies that appear as alternatives.\n3. Optionally scrape 2-4 top peer homepages to ground positioning (do not scrape every hit).\n4. Segment each competitor:\n   - direct: same category, same buyer problem\n   - indirect: different approach to the same problem\n   - adjacent: overlapping buyers but different primary use case\n   - status_quo: spreadsheets, hiring internally, doing nothing, etc. when evidence supports it\n5. Shortlist roughly 3-7 direct peers; include lighter indirect/adjacent when evidence is clear.\n\nGrounding rules (non-negotiable):\n- Only list competitors you can support with a tool result (search hit or scrape). Cite sources.\n- Never invent a peer list from model memory. If tools return little, return fewer competitors and set notes explaining the thin evidence.\n- Leave strengths/gaps empty unless a cited source supports them.\n- Prefer company websites and reputable comparison pages over random blogs.\n\nReturn STRICT JSON only. No markdown fences, no preamble, no trailing text. Match this exact shape:\n{\n  \"subjectName\": \"<subject company name>\",\n  \"category\": \"<category from profile>\",\n  \"notes\": \"<1-3 sentences on discovery quality / gaps>\",\n  \"competitors\": [\n    {\n      \"name\": \"<company name>\",\n      \"website\": \"<https URL or empty string>\",\n      \"segment\": \"direct|indirect|adjacent|status_quo\",\n      \"thesis\": \"<one sentence on what they do>\",\n      \"whyCompetes\": \"<why a buyer would consider them instead of the subject>\",\n      \"positioning\": \"<their positioning headline or empty string>\",\n      \"strengths\": [\"<optional, only when cited>\"],\n      \"gaps\": [\"<optional, only when cited>\"],\n      \"sources\": [\"<URL or short source label>\"]\n    }\n  ]\n}\n\nIf you find zero competitors with evidence, return competitors: [] and explain in notes.",
+          "toolFactories": [],
+          "capabilities": [
+            "@workbench/tools-exa/exa:exa_search",
+            "@workbench/tools-firecrawl/firecrawl:firecrawl_scrape"
+          ],
+          "inference": {
+            "sources": [
+              {
+                "provider": "openai-compatible",
+                "model": "kimi-k2.6"
+              }
+            ]
+          },
+          "description": "Discovers competitors with public evidence via Exa search and optional peer scrapes.",
+          "tags": {
+            "credentialName": "opencode-zen",
+            "workbench.title": "Discover competitors"
+          }
+        },
+        "drainBehavior": "cancel",
+        "input": {
+          "merge": [
+            {
+              "from": "steps.profile.output"
+            },
+            {
+              "from": "steps.intake.output"
+            }
+          ]
+        },
+        "after": [
+          "profile"
+        ]
+      },
+      "synthesize": {
+        "kind": "step",
+        "id": "synthesize",
+        "agent": {
+          "id": "competitor-analysis-synthesize",
+          "systemPrompt": "Treat Corbits, Corbits.dev, Interchange, and Faremeter as canonical Corbits names; spell them exactly. When source material contains a clear speech-to-text or spelling variant, use the canonical spelling in your output. Do not replace an ambiguous term unless surrounding context identifies it.\n\nYou are a competitive-intelligence writer assembling a reviewable competitor report for a GTM team.\n\nYou receive:\n- The subject profile (from the profile step).\n- The discover step output (competitor shortlist with sources).\n- The original intake.\n\nGround every claim in those inputs. Never invent competitors that were not in the discover list. If discover returned an empty list, say so plainly and still produce a useful subject brief.\n\nWrite for an operator who will act on this today. Be concrete. No filler, no hype, no buzzwords, no em dashes.\n\nThe markdown content must include, in this order:\n1. Subject brief: company, category, thesis, ICP, positioning (2-4 short paragraphs or bullets).\n2. Competitive landscape: how the market is segmented (direct vs indirect vs adjacent vs status quo).\n3. Competitor cards: for each competitor, name, segment, why they compete, positioning, and sources as links when URLs are present.\n4. Open questions / thin evidence: what the tools could not establish.\n\nReturn STRICT JSON only. No markdown fences, no preamble, no trailing text. Match this exact shape:\n{\n  \"title\": \"<company name> — competitor analysis\",\n  \"content\": \"<full markdown report described above, newlines escaped as \\n>\",\n  \"competitors\": [\n    {\n      \"name\": \"<company name>\",\n      \"website\": \"<https URL or empty string>\",\n      \"segment\": \"direct|indirect|adjacent|status_quo\",\n      \"whyCompetes\": \"<why they compete>\",\n      \"positioning\": \"<positioning or empty string>\",\n      \"sources\": [\"<source>\"]\n    }\n  ]\n}\n\nThe competitors array must match the discover shortlist (you may tighten wording, not add new names). If discover was empty, competitors must be [].",
+          "toolFactories": [],
+          "capabilities": [],
+          "inference": {
+            "sources": [
+              {
+                "provider": "openai-compatible",
+                "model": "kimi-k2.6",
+                "parameters": {
+                  "maxTokens": 8192
+                }
+              }
+            ]
+          },
+          "description": "Inline single-turn inference: competitor-analysis-synthesize",
+          "tags": {
+            "workbench.stepKind": "inline-inference",
+            "workbench.title": "Write the competitor report"
+          }
+        },
+        "drainBehavior": "cancel",
+        "input": {
+          "project": {
+            "from": "steps"
+          },
+          "fields": [
+            "intake",
+            "profile",
+            "discover"
+          ]
+        },
+        "after": [
+          "discover"
+        ]
+      },
+      "review": {
+        "kind": "awaitSignal",
+        "id": "review",
+        "name": "review",
+        "drainBehavior": "wait",
+        "after": [
+          "synthesize"
+        ]
+      },
+      "packageArtifact": {
+        "kind": "step",
+        "id": "packageArtifact",
+        "agent": {
+          "id": "competitor-analysis-package",
+          "systemPrompt": "",
+          "toolFactories": [],
+          "capabilities": [
+            "@workbench/tools-artifact/artifact:write_artifact"
+          ],
+          "inference": {
+            "sources": []
+          },
+          "description": "Deterministic tool call: @workbench/tools-artifact/artifact:write_artifact",
+          "tags": {
+            "workbench.stepKind": "deterministic-tool",
+            "workbench.tool": "@workbench/tools-artifact/artifact:write_artifact",
+            "workbench.argMap": "{\"title\":{\"from\":\"companyUrl\"},\"body\":{\"from\":\"reply\"},\"kind\":{\"literal\":\"research\"},\"jobLabel\":{\"literal\":\"Competitor analysis\"}}",
+            "workbench.title": "Save the competitor report"
+          }
+        },
+        "drainBehavior": "cancel",
+        "input": {
+          "merge": [
+            {
+              "from": "steps.intake.output"
+            },
+            {
+              "from": "steps.synthesize.output"
+            },
+            {
+              "from": "steps.review.output"
+            }
+          ]
+        },
+        "after": [
+          "review"
+        ]
+      }
+    },
+    "stepOrder": [
+      "intake",
+      "scrape",
+      "profile",
+      "discover",
+      "synthesize",
+      "review",
+      "packageArtifact"
+    ]
+  }
+}

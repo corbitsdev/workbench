@@ -3,6 +3,8 @@ import {
   AbPresetConfigPayloadSchema,
   AbDecisionPayloadSchema,
   ClarificationPayloadSchema,
+  CompetitorAnalysisIntakePayloadSchema,
+  CompetitorAnalysisReviewPayloadSchema,
   Last30daysIntakePayloadSchema,
   MemberSelectionPayloadSchema,
   RedditIntakePayloadSchema,
@@ -111,6 +113,15 @@ const RESUME_PAYLOAD_SCHEMAS: Record<string, Record<string, Type>> = {
   "sumble-account-intel": {
     intake: SumbleIntakePayloadSchema,
     review: SumbleReviewPayloadSchema,
+  },
+  // competitor-analysis (CL-4029): the intake gate REQUIRES an http(s) company
+  // URL — the scrape step fetches it, so a blank/non-URL intake is rejected at
+  // the /resume boundary rather than failing deep in the crawl. The review gate
+  // carries the approval decision before the report is persisted. The block form
+  // and the run-page panel POST the same shapes.
+  "competitor-analysis": {
+    intake: CompetitorAnalysisIntakePayloadSchema,
+    review: CompetitorAnalysisReviewPayloadSchema,
   },
   // Multi-gate scheduler integration fixture (CL-3528): intake then a post-intake
   // confirm gate with an empty payload — exercises scheduled Myra gate-drive.

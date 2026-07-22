@@ -1,0 +1,45 @@
+{
+  "name": "@workbench/workflow-competitor-analysis",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./src/index.ts"
+    },
+    "./ui": {
+      "types": "./src/ui.tsx",
+      "default": "./src/ui.tsx"
+    },
+    "./blocks": {
+      "types": "./src/blocks.ts",
+      "default": "./src/blocks.ts"
+    }
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "bun test --preload ./src/test-setup.ts --isolate src",
+    "test:coverage": "bun test --preload ./src/test-setup.ts --isolate --coverage --coverage-reporter=lcov --coverage-reporter=text src"
+  },
+  "dependencies": {
+    "@intx/agent": "workspace:*",
+    "@intx/workflow": "workspace:*",
+    "@workbench/agents": "workspace:*",
+    "@workbench/blocks": "workspace:*",
+    "@workbench/shared": "workspace:*",
+    "@workbench/ui": "workspace:*",
+    "arktype": "catalog:",
+    "react": "^19.0.0"
+  },
+  "devDependencies": {
+    "@workbench/test-utils": "workspace:*",
+    "@testing-library/react": "^16.3.2",
+    "@types/bun": "latest",
+    "@types/react": "^19.0.0",
+    "typescript": "catalog:"
+  },
+  "peerDependencies": {
+    "react": "*"
+  }
+}

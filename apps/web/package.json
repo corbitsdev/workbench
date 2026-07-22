@@ -39,6 +39,7 @@
     "@workbench/workflow-pain-point-collateral": "workspace:*",
     "@workbench/workflow-reddit-opportunity-scanner": "workspace:*",
     "@workbench/workflow-sumble-account-intel": "workspace:*",
+    "@workbench/workflow-competitor-analysis": "workspace:*",
     "arktype": "^2.2.0",
     "better-auth": "^1.1.43",
     "class-variance-authority": "^0.7.1",

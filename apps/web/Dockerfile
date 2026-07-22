@@ -79,6 +79,7 @@ COPY workflows/pain-point-collateral/package.json workflows/pain-point-collatera
 COPY workflows/reddit-opportunity-scanner/package.json workflows/reddit-opportunity-scanner/
 COPY workflows/smoke-test/package.json workflows/smoke-test/
 COPY workflows/sumble-account-intel/package.json workflows/sumble-account-intel/
+COPY workflows/competitor-analysis/package.json workflows/competitor-analysis/
 COPY packages/timeline/package.json packages/timeline/
 COPY packages/tool-credentials/package.json packages/tool-credentials/
 COPY packages/tool-manifest/package.json packages/tool-manifest/

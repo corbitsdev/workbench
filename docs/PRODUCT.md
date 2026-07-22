@@ -162,10 +162,11 @@ Selecting a result navigates straight to it. Navigation commands are matched on 
 
 ## Workflows Currently Shipped
 
-Each workflow is a deployed pipeline (`collateral-generation`, `gamma-presentation-creator`, `resource-enrichment`, `reddit-opportunity-scanner`, `blind-ab-comparison`). Examples:
+Each workflow is a deployed pipeline (`collateral-generation`, `gamma-presentation-creator`, `resource-enrichment`, `reddit-opportunity-scanner`, `sumble-account-intel`, `competitor-analysis`, `blind-ab-comparison`). Examples:
 
 - **Collateral Generation** — call documents into case studies, one-pagers, and email drafts.
 - **SEO / Resource Enrichment** — a product-catalog spreadsheet into row-by-row option variants; the user picks the best per field in a review gate and exports the chosen copy as a CSV.
+- **Competitor Analysis** — company website URL in; Firecrawl scrape + Exa discovery; structured competitor shortlist report with evidence, human-approved before save.
 
 ## Skill Library
 

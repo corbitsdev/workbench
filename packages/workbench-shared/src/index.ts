@@ -20,6 +20,8 @@ export * from "./tasks";
 export * from "./task-links";
 export * from "./pain-point-collateral";
 export * from "./sumble-account-intel";
+export * from "./competitor-analysis";
+
 export * from "./web-site";
 export * from "./preferences-registry";
 export * from "./heartbeat-brief-merge";

@@ -84,6 +84,7 @@ COPY workflows/pain-point-collateral/package.json workflows/pain-point-collatera
 COPY workflows/reddit-opportunity-scanner/package.json workflows/reddit-opportunity-scanner/
 COPY workflows/smoke-test/package.json workflows/smoke-test/
 COPY workflows/sumble-account-intel/package.json workflows/sumble-account-intel/
+COPY workflows/competitor-analysis/package.json workflows/competitor-analysis/
 RUN bun install --frozen-lockfile
 
 COPY interchange/ interchange/
