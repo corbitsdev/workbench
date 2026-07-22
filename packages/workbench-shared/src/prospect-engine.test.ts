@@ -17,6 +17,7 @@ import {
   formatProspectEngineSlackDigest,
   initProspectEngineCreditBudget,
   mergeProspectEngineLedger,
+  mergeProspectEngineShortlist,
   parseProspectEngineLedger,
   prospectEngineMailRefs,
   prospectEngineRunDateEt,
@@ -283,5 +284,35 @@ describe("qualify + formatters", () => {
       { kind: "workflow_run", ref: "run_1", label: "Open Prospect engine" },
     ]);
     expect(() => prospectEngineMailRefs("", "run_1")).toThrow();
+  });
+
+  test("mergeProspectEngineShortlist preserves base membership and strips phones", () => {
+    const base = [
+      { organizationId: 1, name: "Acme", lane: "growth" as const, score: 80 },
+      { organizationId: 2, name: "Beta", lane: "enterprise" as const, score: 70 },
+    ];
+    const overlay = [
+      {
+        organizationId: 1,
+        contacts: [
+          { name: "Ada", email: "a@x.com", phone: "555" } as {
+            name: string;
+            email: string;
+            phone?: string;
+          },
+        ],
+      },
+      { organizationId: 99, name: "OnlyInOverlay" },
+    ];
+    const merged = mergeProspectEngineShortlist(
+      base,
+      overlay as Parameters<typeof mergeProspectEngineShortlist>[1],
+    );
+    expect(merged.map((a) => a.organizationId)).toEqual([1, 2]);
+    expect(merged[0]?.contacts?.[0]?.email).toBe("a@x.com");
+    expect(
+      (merged[0]?.contacts?.[0] as { phone?: string } | undefined)?.phone,
+    ).toBeUndefined();
+    expect(merged[1]?.name).toBe("Beta");
   });
 });

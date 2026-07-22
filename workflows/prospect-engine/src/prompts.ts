@@ -59,14 +59,14 @@ Lane A titles: Head of AI, VP/Dir Eng, platform, data eng.
 Lane B: add CISO, risk, compliance.
 
 Rules:
-- Use sumble_search_people with revealEmail + confirmEmailRevealSpend only after calling prospect_engine_charge_credits for 10 credits per reveal. If charge returns charged:false, stop reveals and keep partial contacts.
-- Never reveal phones.
+- Charge credits with prospect_engine_charge_credits using budgetId from initBudget (durable across steps). Do NOT reconstruct a budget with used:0 — that bypasses the run cap. amount is 10 credits per email reveal.
+- Use sumble_search_people with revealEmail + confirmEmailRevealSpend only after a successful charge (charged:true). If charge returns charged:false, stop reveals and keep partial contacts.
+- Never reveal phones. Never request phone attributes or confirmEmailRevealSpend for phones (80 credits, forbidden).
 - Prefer LinkedIn URLs on every contact.
-- Call prospect_engine_charge_credits before each batch of reveals.
 - Pull org signals when cheap and attach suggested_contacts when present.
 
 Return ONE strict JSON object (no markdown fence). ALL fields required every night:
-- accounts: array (may be empty) of orgs with contacts: [{ name, title?, linkedinUrl?, email?, personId? }]
+- accounts: array (may be empty) of orgs with contacts: [{ name, title?, linkedinUrl?, email?, personId? }] — no phone fields
 - creditsCharged: number (sum of successful charges this step; use 0 if none)
 - stopReason: null when finished normally, or "credit-cap" | "wall-clock" | string when stopping early
 `;

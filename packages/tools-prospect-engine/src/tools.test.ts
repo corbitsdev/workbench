@@ -4,16 +4,28 @@ import {
   emptyProspectEngineLedger,
   mergeProspectEngineLedger,
 } from "@workbench/shared";
-import { createProspectEngineTools } from "./tools";
+import {
+  createInMemoryProspectEngineBudgetStore,
+  createProspectEngineTools,
+} from "./tools";
 
-function tool(name: string) {
-  const t = createProspectEngineTools().find((x) => x.definition.name === name);
+function tool(
+  name: string,
+  store = createInMemoryProspectEngineBudgetStore(),
+) {
+  const t = createProspectEngineTools({ budgetStore: store }).find(
+    (x) => x.definition.name === name,
+  );
   if (t === undefined) throw new Error(`missing tool ${name}`);
   return t;
 }
 
-async function call(name: string, args: Record<string, unknown>) {
-  const t = tool(name);
+async function call(
+  name: string,
+  args: Record<string, unknown>,
+  store = createInMemoryProspectEngineBudgetStore(),
+) {
+  const t = tool(name, store);
   if (t.kind !== "full") throw new Error("expected full tool");
   return t.handler(
     {
@@ -26,35 +38,121 @@ async function call(name: string, args: Record<string, unknown>) {
 }
 
 describe("prospect-engine tools", () => {
-  test("init + charge fail-closed at cap", async () => {
-    const init = await call("prospect_engine_init_budget", { nowMs: 1000 });
+  test("init + charge fail-closed at cap via durable budgetId", async () => {
+    const store = createInMemoryProspectEngineBudgetStore();
+    const init = await call(
+      "prospect_engine_init_budget",
+      { nowMs: 1000 },
+      store,
+    );
     expect(init.isError).toBeUndefined();
-    const budget = (init.content as { cap: number }).cap;
-    expect(budget).toBe(PROSPECT_ENGINE_CREDIT_CAP);
+    const initBody = init.content as {
+      budgetId: string;
+      cap: number;
+      used: number;
+    };
+    expect(initBody.cap).toBe(PROSPECT_ENGINE_CREDIT_CAP);
+    expect(typeof initBody.budgetId).toBe("string");
+    expect(initBody.budgetId.length).toBeGreaterThan(0);
 
-    const charged = await call("prospect_engine_charge_credits", {
-      budget: init.content,
-      amount: 700,
-      nowMs: 1000,
-    });
+    const charged = await call(
+      "prospect_engine_charge_credits",
+      {
+        budgetId: initBody.budgetId,
+        amount: 700,
+        nowMs: 1000,
+      },
+      store,
+    );
     expect(charged.isError).toBeUndefined();
     const body = charged.content as {
       charged: boolean;
       budget: { used: number };
     };
     expect(body.charged).toBe(true);
+    expect(body.budget.used).toBe(700);
 
-    const over = await call("prospect_engine_charge_credits", {
-      budget: body.budget,
-      amount: 200,
-      nowMs: 1000,
-    });
+    // Second charge without replaying prior used — store holds cumulative state
+    const over = await call(
+      "prospect_engine_charge_credits",
+      {
+        budgetId: initBody.budgetId,
+        amount: 200,
+        nowMs: 1000,
+      },
+      store,
+    );
     const overBody = over.content as {
       charged: boolean;
       stopReason?: string;
     };
     expect(overBody.charged).toBe(false);
     expect(overBody.stopReason).toBe("credit-cap");
+  });
+
+  test("charge rejects reconstructed used:0 when budgetId store holds prior usage", async () => {
+    const store = createInMemoryProspectEngineBudgetStore();
+    const init = await call(
+      "prospect_engine_init_budget",
+      { nowMs: 1000 },
+      store,
+    );
+    const { budgetId } = init.content as { budgetId: string };
+    await call(
+      "prospect_engine_charge_credits",
+      { budgetId, amount: 500, nowMs: 1000 },
+      store,
+    );
+    // Agent mistakenly passes a fresh budget with used:0 — store wins
+    const again = await call(
+      "prospect_engine_charge_credits",
+      {
+        budgetId,
+        budget: {
+          used: 0,
+          cap: PROSPECT_ENGINE_CREDIT_CAP,
+          remaining: PROSPECT_ENGINE_CREDIT_CAP,
+          startedAtMs: 1000,
+          wallClockMs: 45 * 60 * 1000,
+        },
+        amount: 400,
+        nowMs: 1000,
+      },
+      store,
+    );
+    const body = again.content as {
+      charged: boolean;
+      budget: { used: number };
+      stopReason?: string;
+    };
+    expect(body.charged).toBe(false);
+    expect(body.stopReason).toBe("credit-cap");
+    expect(store.get(budgetId)?.used).toBe(500);
+  });
+
+  test("wall-clock stop is hard on charge", async () => {
+    const store = createInMemoryProspectEngineBudgetStore();
+    const init = await call(
+      "prospect_engine_init_budget",
+      { nowMs: 0 },
+      store,
+    );
+    const { budgetId } = init.content as { budgetId: string };
+    const late = await call(
+      "prospect_engine_charge_credits",
+      {
+        budgetId,
+        amount: 10,
+        nowMs: 45 * 60 * 1000 + 1,
+      },
+      store,
+    );
+    const body = late.content as {
+      charged: boolean;
+      stopReason?: string;
+    };
+    expect(body.charged).toBe(false);
+    expect(body.stopReason).toBe("wall-clock");
   });
 
   test("dedupe removes pipeline overlap", async () => {
@@ -97,6 +195,74 @@ describe("prospect-engine tools", () => {
       (errEnvelope.content as { ledger: { accounts: unknown[] } }).ledger
         .accounts,
     ).toEqual([]);
+  });
+
+  test("format report merges baseAccounts + map overlay and strips phones", async () => {
+    const store = createInMemoryProspectEngineBudgetStore();
+    const init = await call(
+      "prospect_engine_init_budget",
+      { nowMs: 1000 },
+      store,
+    );
+    const { budgetId } = init.content as { budgetId: string };
+    await call(
+      "prospect_engine_charge_credits",
+      { budgetId, amount: 42, nowMs: 1000 },
+      store,
+    );
+
+    const result = await call(
+      "prospect_engine_format_report",
+      {
+        runDate: "2026-07-19",
+        baseAccounts: [
+          {
+            organizationId: 1,
+            name: "Acme",
+            lane: "growth",
+            score: 70,
+          },
+          {
+            organizationId: 2,
+            name: "Beta",
+            lane: "enterprise",
+            score: 65,
+          },
+        ],
+        accounts: [
+          {
+            organizationId: 1,
+            contacts: [
+              {
+                name: "Ada",
+                email: "ada@acme.com",
+                phone: "+1-555-0100",
+              },
+            ],
+          },
+          // overlay-only org is dropped
+          { organizationId: 99, name: "Noise" },
+        ],
+        budgetId,
+      },
+      store,
+    );
+    expect(result.isError).toBeUndefined();
+    const content = result.content as {
+      creditsUsed: number;
+      stopReason: string | null;
+      accounts: Array<{
+        organizationId: number;
+        name?: string;
+        contacts?: Array<Record<string, unknown>>;
+      }>;
+    };
+    expect(content.creditsUsed).toBe(42);
+    expect(content.stopReason).toBeNull();
+    expect(content.accounts.map((a) => a.organizationId)).toEqual([1, 2]);
+    expect(content.accounts[0]?.name).toBe("Acme");
+    expect(content.accounts[0]?.contacts?.[0]?.email).toBe("ada@acme.com");
+    expect(content.accounts[0]?.contacts?.[0]?.phone).toBeUndefined();
   });
 
   test("format report always emits creditsUsed and stopReason for argMaps", async () => {

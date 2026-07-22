@@ -582,6 +582,62 @@ export function qualifyProspects(
     .slice(0, maxKeep);
 }
 
+/** Drop phone fields — v1 never reveals phones (80 credits each). */
+export function sanitizeProspectEngineContacts(
+  contacts: ProspectEngineContact[] | undefined,
+): ProspectEngineContact[] | undefined {
+  if (contacts === undefined) return undefined;
+  return contacts.map((c) => {
+    const next: ProspectEngineContact = { name: c.name };
+    if (c.title !== undefined) next.title = c.title;
+    if (c.linkedinUrl !== undefined) next.linkedinUrl = c.linkedinUrl;
+    if (c.email !== undefined) next.email = c.email;
+    if (c.personId !== undefined) next.personId = c.personId;
+    return next;
+  });
+}
+
+/**
+ * Merge map/reveal enrichments onto the qualified shortlist.
+ * Base order and membership win so delivery never depends solely on the
+ * map agent emitting a complete accounts array. Overlay-only orgs are dropped.
+ */
+export function mergeProspectEngineShortlist(
+  base: ProspectEngineCandidate[],
+  overlay: ProspectEngineCandidate[],
+): ProspectEngineCandidate[] {
+  const overById = new Map(overlay.map((a) => [a.organizationId, a]));
+  return base.map((b) => {
+    const o = overById.get(b.organizationId);
+    if (!o) {
+      return {
+        ...b,
+        contacts: sanitizeProspectEngineContacts(b.contacts),
+      };
+    }
+    const contacts =
+      sanitizeProspectEngineContacts(o.contacts) ??
+      sanitizeProspectEngineContacts(b.contacts);
+    return {
+      ...b,
+      ...o,
+      organizationId: b.organizationId,
+      // Prefer overlay enrichments, fall back to base for missing fields
+      name: o.name ?? b.name,
+      domain: o.domain ?? b.domain,
+      lane: o.lane ?? b.lane,
+      score: o.score ?? b.score,
+      scoreBreakdown: o.scoreBreakdown ?? b.scoreBreakdown,
+      whyNow: o.whyNow ?? b.whyNow,
+      wedge: o.wedge ?? b.wedge,
+      sumbleUrl: o.sumbleUrl ?? b.sumbleUrl,
+      evidence: o.evidence ?? b.evidence,
+      industry: o.industry ?? b.industry,
+      ...(contacts !== undefined ? { contacts } : {}),
+    };
+  });
+}
+
 export function buildProspectEngineReportMarkdown(input: {
   runDate: string;
   accounts: ProspectEngineCandidate[];

@@ -17,10 +17,13 @@ import {
   formatProspectEngineSlackDigest,
   initProspectEngineCreditBudget,
   mergeProspectEngineLedger,
+  mergeProspectEngineShortlist,
   parseProspectEngineLedger,
   prospectEngineMailRefs,
   qualifyProspects,
+  sanitizeProspectEngineContacts,
 } from "@workbench/shared";
+import { randomUUID } from "node:crypto";
 
 // ---------------------------------------------------------------------------
 // Definitions
@@ -29,7 +32,7 @@ import {
 export const PROSPECT_ENGINE_INIT_BUDGET_DEFINITION: ToolDefinition = {
   name: "prospect_engine_init_budget",
   description:
-    "Initialize the overnight prospect-engine credit + wall-clock budget (800 credits / 45 minutes).",
+    "Initialize the overnight prospect-engine credit + wall-clock budget (800 credits / 45 minutes). Returns budgetId for durable cross-step charging.",
   inputSchema: {
     type: "object",
     properties: {
@@ -41,15 +44,22 @@ export const PROSPECT_ENGINE_INIT_BUDGET_DEFINITION: ToolDefinition = {
 export const PROSPECT_ENGINE_CHARGE_CREDITS_DEFINITION: ToolDefinition = {
   name: "prospect_engine_charge_credits",
   description:
-    "Fail-closed charge against the run budget. Returns updated budget; sets stopReason without charging when cap or wall clock is hit.",
+    "Fail-closed charge against the run budget. Prefer budgetId from init_budget (durable across steps). Returns updated budget; sets stopReason without charging when cap or wall clock is hit.",
   inputSchema: {
     type: "object",
     properties: {
-      budget: { type: "object", description: "Current budget object." },
+      budgetId: {
+        type: "string",
+        description: "Durable budget id from init_budget (preferred).",
+      },
+      budget: {
+        type: "object",
+        description: "Inline budget object (fallback when budgetId missing).",
+      },
       amount: { type: "number", description: "Credits to charge." },
       nowMs: { type: "number" },
     },
-    required: ["budget", "amount"],
+    required: ["amount"],
   },
 };
 
@@ -128,16 +138,29 @@ export const PROSPECT_ENGINE_QUALIFY_DEFINITION: ToolDefinition = {
 export const PROSPECT_ENGINE_FORMAT_REPORT_DEFINITION: ToolDefinition = {
   name: "prospect_engine_format_report",
   description:
-    "Build nightly markdown table + CSV body and structured artifact data from a scored shortlist.",
+    "Build nightly markdown table + CSV body and structured artifact data. Merges baseAccounts (qualify shortlist) with accounts (map enrichments) so delivery never depends solely on the map agent.",
   inputSchema: {
     type: "object",
     properties: {
       runDate: { type: "string" },
-      accounts: { type: "array", items: { type: "object" } },
+      baseAccounts: {
+        type: "array",
+        items: { type: "object" },
+        description: "Qualified shortlist (membership + order).",
+      },
+      accounts: {
+        type: "array",
+        items: { type: "object" },
+        description: "Map/reveal overlay or full shortlist when baseAccounts omitted.",
+      },
+      budgetId: {
+        type: "string",
+        description: "Durable budget id — preferred source of creditsUsed.",
+      },
       creditsUsed: { type: "number" },
       stopReason: { type: "string" },
     },
-    required: ["runDate", "accounts", "creditsUsed"],
+    required: ["runDate"],
   },
 };
 
@@ -226,14 +249,23 @@ function parseCandidates(raw: unknown): ProspectEngineCandidate[] {
   for (const item of raw) {
     const v = ProspectEngineCandidateSchema(item);
     if (!(v instanceof type.errors)) {
-      out.push(v);
+      out.push({
+        ...v,
+        contacts: sanitizeProspectEngineContacts(v.contacts),
+      });
       continue;
     }
     // Tolerant path: accept minimal { organizationId } from discover JSON.
     if (isRecord(item) && typeof item.organizationId === "number") {
+      const contacts = Array.isArray(item.contacts)
+        ? sanitizeProspectEngineContacts(
+            item.contacts as ProspectEngineCandidate["contacts"],
+          )
+        : undefined;
       out.push({
         organizationId: item.organizationId,
         ...item,
+        ...(contacts !== undefined ? { contacts } : {}),
       } as ProspectEngineCandidate);
     }
   }
@@ -257,10 +289,36 @@ function fail(callId: string, message: string) {
 }
 
 // ---------------------------------------------------------------------------
+// Durable run-scoped budget store (process-local, survives across steps)
+// ---------------------------------------------------------------------------
+
+export type ProspectEngineBudgetStore = {
+  get(budgetId: string): ProspectEngineCreditBudget | undefined;
+  set(budgetId: string, budget: ProspectEngineCreditBudget): void;
+};
+
+export function createInMemoryProspectEngineBudgetStore(): ProspectEngineBudgetStore {
+  const map = new Map<string, ProspectEngineCreditBudget>();
+  return {
+    get: (id) => map.get(id),
+    set: (id, budget) => {
+      map.set(id, budget);
+    },
+  };
+}
+
+/** Hub process singleton so charges accumulate across workflow steps. */
+const defaultBudgetStore = createInMemoryProspectEngineBudgetStore();
+
+export type CreateProspectEngineToolsOpts = {
+  budgetStore?: ProspectEngineBudgetStore;
+};
+
+// ---------------------------------------------------------------------------
 // Tools
 // ---------------------------------------------------------------------------
 
-function createInitBudgetTool(): AgentTool {
+function createInitBudgetTool(store: ProspectEngineBudgetStore): AgentTool {
   return {
     kind: "full",
     definition: PROSPECT_ENGINE_INIT_BUDGET_DEFINITION,
@@ -270,29 +328,67 @@ function createInitBudgetTool(): AgentTool {
         typeof args.nowMs === "number" && Number.isFinite(args.nowMs)
           ? args.nowMs
           : Date.now();
-      return ok(call.id, initProspectEngineCreditBudget(nowMs));
+      const budget = initProspectEngineCreditBudget(nowMs);
+      const budgetId = randomUUID();
+      store.set(budgetId, budget);
+      return ok(call.id, { budgetId, ...budget });
     },
   };
 }
 
-function createChargeCreditsTool(): AgentTool {
+function createChargeCreditsTool(store: ProspectEngineBudgetStore): AgentTool {
   return {
     kind: "full",
     definition: PROSPECT_ENGINE_CHARGE_CREDITS_DEFINITION,
     handler: async (call) => {
       const args = coerceArgsObject(call.arguments);
       try {
-        const budget = parseBudget(args.budget);
         const amount = args.amount;
         if (typeof amount !== "number" || !Number.isFinite(amount)) {
           return fail(call.id, "amount is required");
         }
+        const budgetId =
+          typeof args.budgetId === "string" && args.budgetId.length > 0
+            ? args.budgetId
+            : null;
+
+        let budget: ProspectEngineCreditBudget;
+        if (budgetId !== null) {
+          const stored = store.get(budgetId);
+          if (stored) {
+            budget = stored;
+          } else if (args.budget !== undefined) {
+            // Store miss (hub restart mid-run): fall back to inline budget.
+            budget = parseBudget(args.budget);
+          } else {
+            return fail(
+              call.id,
+              `Unknown budgetId ${budgetId} and no inline budget provided`,
+            );
+          }
+        } else {
+          budget = parseBudget(args.budget);
+        }
+
+        // Prefer server wall-clock so agents cannot soft-bypass by freezing nowMs.
+        // Tests may still pass nowMs to advance the clock deterministically.
         const nowMs =
           typeof args.nowMs === "number" && Number.isFinite(args.nowMs)
             ? args.nowMs
             : Date.now();
         const result = chargeProspectEngineCredits(budget, amount, nowMs);
-        return ok(call.id, result);
+        if (budgetId !== null) {
+          store.set(budgetId, result.budget);
+        }
+        return ok(call.id, {
+          ...result,
+          budgetId,
+          // Convenience aliases for agents/argMaps
+          charged: result.charged,
+          remaining: result.budget.remaining,
+          used: result.budget.used,
+          stopReason: result.stopReason ?? result.budget.stopReason ?? null,
+        });
       } catch (err) {
         return fail(call.id, err instanceof Error ? err.message : String(err));
       }
@@ -440,7 +536,7 @@ function createQualifyTool(): AgentTool {
   };
 }
 
-function createFormatReportTool(): AgentTool {
+function createFormatReportTool(store: ProspectEngineBudgetStore): AgentTool {
   return {
     kind: "full",
     definition: PROSPECT_ENGINE_FORMAT_REPORT_DEFINITION,
@@ -450,9 +546,35 @@ function createFormatReportTool(): AgentTool {
       if (typeof runDate !== "string") {
         return fail(call.id, "runDate is required");
       }
-      const accounts = parseCandidates(args.accounts);
-      const creditsUsed =
+
+      // Prefer baseAccounts (qualify shortlist) + accounts (map overlay).
+      // When baseAccounts is absent, treat accounts as the full shortlist.
+      const baseAccounts =
+        args.baseAccounts !== undefined
+          ? parseCandidates(args.baseAccounts)
+          : parseCandidates(args.accounts);
+      const overlay =
+        args.baseAccounts !== undefined
+          ? parseCandidates(args.accounts)
+          : [];
+      const accounts =
+        args.baseAccounts !== undefined
+          ? mergeProspectEngineShortlist(baseAccounts, overlay)
+          : baseAccounts;
+
+      // Prefer durable budgetId for creditsUsed (survives agent soft-state).
+      let creditsUsed =
         typeof args.creditsUsed === "number" ? args.creditsUsed : 0;
+      let stopReason: string | null =
+        typeof args.stopReason === "string" ? args.stopReason : null;
+      if (typeof args.budgetId === "string" && args.budgetId.length > 0) {
+        const b = store.get(args.budgetId);
+        if (b) {
+          creditsUsed = b.used;
+          if (b.stopReason) stopReason = b.stopReason;
+        }
+      }
+
       const reportInput: {
         runDate: string;
         accounts: ProspectEngineCandidate[];
@@ -465,8 +587,8 @@ function createFormatReportTool(): AgentTool {
         creditsUsed,
         thinNight: accounts.length < 5,
       };
-      if (typeof args.stopReason === "string") {
-        reportInput.stopReason = args.stopReason;
+      if (stopReason !== null) {
+        reportInput.stopReason = stopReason;
       }
       const markdown = buildProspectEngineReportMarkdown(reportInput);
       const csv = buildProspectEngineReportCsv(accounts);
@@ -486,8 +608,7 @@ function createFormatReportTool(): AgentTool {
           .map((a) => a.organizationId),
         accounts,
         creditsUsed,
-        stopReason:
-          typeof args.stopReason === "string" ? args.stopReason : null,
+        stopReason,
       });
     },
   };
@@ -615,16 +736,19 @@ function createExtractListOrgIdsTool(): AgentTool {
   };
 }
 
-/** Stateless prospect-engine hub tools (no credential, no host context). */
-export function createProspectEngineTools(): AgentTool[] {
+/** Prospect-engine hub tools. Budget store is process-local so charges accumulate across steps. */
+export function createProspectEngineTools(
+  opts?: CreateProspectEngineToolsOpts,
+): AgentTool[] {
+  const store = opts?.budgetStore ?? defaultBudgetStore;
   return [
-    createInitBudgetTool(),
-    createChargeCreditsTool(),
+    createInitBudgetTool(store),
+    createChargeCreditsTool(store),
     createParseLedgerTool(),
     createMergeLedgerTool(),
     createDedupeTool(),
     createQualifyTool(),
-    createFormatReportTool(),
+    createFormatReportTool(store),
     createFormatSlackDigestTool(),
     createFormatMailRefsTool(),
     createSerializeLedgerTool(),

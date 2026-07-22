@@ -332,12 +332,18 @@ export const workflow = defineWorkflow({
       },
       argMap: {
         runDate: { from: "runDate" },
-        // Map/reveal must always emit accounts (may be []). Required field —
-        // optional:true would skip the entire delivery path.
-        accounts: { fromJson: "reply", field: "accounts" },
-        // creditsCharged / stopReason may be omitted by a flaky agent reply;
-        // optional so we still deliver partial work (tools default credits=0
-        // and stopReason=null).
+        // Qualified shortlist is the membership/order authority.
+        baseAccounts: { from: "accounts" },
+        // Map/reveal overlay (contacts/emails). Optional so a thin/failed map
+        // still delivers the qualified shortlist via baseAccounts merge.
+        accounts: {
+          fromJson: "reply",
+          field: "accounts",
+          optional: true,
+        },
+        // Durable budget id — format_report reads used credits from the store.
+        budgetId: { from: "budgetId", optional: true },
+        // Fallback if budget store miss (agent-reported charges).
         creditsUsed: {
           fromJson: "reply",
           field: "creditsCharged",
