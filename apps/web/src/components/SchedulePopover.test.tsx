@@ -14,6 +14,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
 import { SchedulePopover } from "./SchedulePopover";
 import { localHourToUtc } from "../lib/schedule-time";
+import { TOUR_STEPS } from "./tour/tour-steps";
 
 const originalFetch = globalThis.fetch;
 
@@ -82,6 +83,21 @@ afterEach(() => {
 });
 
 describe("SchedulePopover", () => {
+  it("carries the onboarding tour anchor the schedule step targets", async () => {
+    const scheduleStep = TOUR_STEPS.find((step) => step.id === "schedule");
+    if (!scheduleStep || !scheduleStep.targetSelector) {
+      throw new Error("Expected a schedule tour step with a targetSelector");
+    }
+    globalThis.fetch = makeFetch([]) as unknown as typeof fetch;
+    renderPopover();
+
+    await waitFor(() =>
+      expect(
+        document.querySelector(scheduleStep.targetSelector as string),
+      ).not.toBeNull(),
+    );
+  });
+
   it("creates a schedule via POST with the workflow kind and picked UTC hour", async () => {
     let body: unknown = null;
     globalThis.fetch = makeFetch([], (_url, init) => {

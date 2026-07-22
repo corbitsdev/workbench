@@ -159,6 +159,7 @@ export function SchedulePopover({
       <button
         type="button"
         data-testid="workflow-schedule"
+        data-tour="workflow-schedule"
         aria-expanded={open}
         aria-haspopup="dialog"
         onClick={() => setOpen((v) => !v)}

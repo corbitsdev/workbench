@@ -18,6 +18,9 @@ import { adminTableCard } from "./admin-ui";
 export function OwnerWorkUnits() {
   const queryClient = useQueryClient();
   const [error, setError] = useState<string | null>(null);
+  const [confirmDiscardId, setConfirmDiscardId] = useState<string | null>(
+    null,
+  );
 
   const health = useQuery({
     queryKey: ["owner", "work-units", "health"],
@@ -55,6 +58,7 @@ export function OwnerWorkUnits() {
     mutationFn: (id: string) => discardOwnerWorkUnit(id),
     onSuccess: () => {
       setError(null);
+      setConfirmDiscardId(null);
       invalidate();
     },
     onError: () => setError("Could not discard the work unit. Try again."),
@@ -130,14 +134,35 @@ export function OwnerWorkUnits() {
                 >
                   Retry
                 </Button>
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  disabled={discard.isPending}
-                  onClick={() => discard.mutate(u.id)}
-                >
-                  Discard
-                </Button>
+                {confirmDiscardId === u.id ? (
+                  <>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      disabled={discard.isPending}
+                      onClick={() => discard.mutate(u.id)}
+                    >
+                      Confirm discard
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      disabled={discard.isPending}
+                      onClick={() => setConfirmDiscardId(null)}
+                    >
+                      Cancel
+                    </Button>
+                  </>
+                ) : (
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    disabled={discard.isPending}
+                    onClick={() => setConfirmDiscardId(u.id)}
+                  >
+                    Discard
+                  </Button>
+                )}
               </div>
             )}
           />

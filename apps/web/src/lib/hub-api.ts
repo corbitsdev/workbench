@@ -366,72 +366,116 @@ export async function updateOwnerSchedule(
   );
 }
 
-export type WorkUnitHealth = {
-  byStatus: Record<string, number>;
-  byKindStatus?: Array<{ kind: string; status: string; count: number }>;
-  oldestPendingAgeMs: number | null;
-  deadCount: number;
-  agedLeasedCount: number;
-};
+export const WorkUnitHealthSchema = type({
+  byStatus: { "[string]": "number" },
+  "byKindStatus?": type({
+    kind: "string",
+    status: "string",
+    count: "number",
+  }).array(),
+  oldestPendingAgeMs: "number | null",
+  deadCount: "number",
+  agedLeasedCount: "number",
+});
+export type WorkUnitHealth = typeof WorkUnitHealthSchema.infer;
 
-export type OwnerWorkUnitRow = {
-  id: string;
-  tenantId: string;
-  kind: string;
-  idempotencyKey: string;
-  status: string;
-  attempts: number;
-  maxAttempts?: number;
-  lastError: string | null;
-  leaseOwner?: string | null;
-  leaseUntil?: string | null;
-  updatedAt: string;
-  createdAt?: string;
-};
+export const OwnerWorkUnitRowSchema = type({
+  id: "string",
+  tenantId: "string",
+  kind: "string",
+  idempotencyKey: "string",
+  status: "string",
+  attempts: "number",
+  "maxAttempts?": "number",
+  lastError: "string | null",
+  "leaseOwner?": "string | null",
+  "leaseUntil?": "string | null",
+  updatedAt: "string",
+  "createdAt?": "string",
+});
+export type OwnerWorkUnitRow = typeof OwnerWorkUnitRowSchema.infer;
+
+const OwnerWorkUnitListResponseSchema = type({
+  items: OwnerWorkUnitRowSchema.array(),
+});
 
 /** Work-unit queue health (owner-guarded, WQ.6). */
 export async function getOwnerWorkUnitHealth(): Promise<WorkUnitHealth> {
-  return hubFetch<WorkUnitHealth>("GET", "v1/owner/work-units/health");
+  const raw = await hubFetch<unknown>("GET", "v1/owner/work-units/health");
+  const parsed = WorkUnitHealthSchema(raw);
+  if (parsed instanceof type.errors) {
+    throw new Error(
+      `Malformed /owner/work-units/health response: ${parsed.summary}`,
+    );
+  }
+  return parsed;
 }
 
 /** Dead-lettered work units (owner-guarded, WQ.6). */
 export async function getOwnerDeadWorkUnits(): Promise<OwnerWorkUnitRow[]> {
-  const raw = await hubFetch<{ items: OwnerWorkUnitRow[] }>(
-    "GET",
-    "v1/owner/work-units/dead",
-  );
-  return raw.items ?? [];
+  const raw = await hubFetch<unknown>("GET", "v1/owner/work-units/dead");
+  const parsed = OwnerWorkUnitListResponseSchema(raw);
+  if (parsed instanceof type.errors) {
+    throw new Error(
+      `Malformed /owner/work-units/dead response: ${parsed.summary}`,
+    );
+  }
+  return parsed.items;
 }
 
 /** Aged leased work units (owner-guarded, WQ.6). */
 export async function getOwnerAgedLeasedWorkUnits(): Promise<
   OwnerWorkUnitRow[]
 > {
-  const raw = await hubFetch<{ items: OwnerWorkUnitRow[] }>(
+  const raw = await hubFetch<unknown>(
     "GET",
     "v1/owner/work-units/aged-leased",
   );
-  return raw.items ?? [];
+  const parsed = OwnerWorkUnitListResponseSchema(raw);
+  if (parsed instanceof type.errors) {
+    throw new Error(
+      `Malformed /owner/work-units/aged-leased response: ${parsed.summary}`,
+    );
+  }
+  return parsed.items;
 }
+
+const OwnerWorkUnitOpResultSchema = type({
+  ok: "boolean",
+  id: "string",
+});
+export type OwnerWorkUnitOpResult = typeof OwnerWorkUnitOpResultSchema.infer;
 
 /** Retry a dead work unit (owner-guarded, WQ.6). */
 export async function retryOwnerWorkUnit(
   id: string,
-): Promise<{ ok: boolean; id: string }> {
-  return hubFetch<{ ok: boolean; id: string }>(
+): Promise<OwnerWorkUnitOpResult> {
+  const raw = await hubFetch<unknown>(
     "POST",
     `v1/owner/work-units/${encodeURIComponent(id)}/retry`,
   );
+  const parsed = OwnerWorkUnitOpResultSchema(raw);
+  if (parsed instanceof type.errors) {
+    throw new Error(`Malformed work-unit retry response: ${parsed.summary}`);
+  }
+  return parsed;
 }
 
 /** Discard a dead work unit without requeue (owner-guarded, WQ.6). */
 export async function discardOwnerWorkUnit(
   id: string,
-): Promise<{ ok: boolean; id: string }> {
-  return hubFetch<{ ok: boolean; id: string }>(
+): Promise<OwnerWorkUnitOpResult> {
+  const raw = await hubFetch<unknown>(
     "POST",
     `v1/owner/work-units/${encodeURIComponent(id)}/discard`,
   );
+  const parsed = OwnerWorkUnitOpResultSchema(raw);
+  if (parsed instanceof type.errors) {
+    throw new Error(
+      `Malformed work-unit discard response: ${parsed.summary}`,
+    );
+  }
+  return parsed;
 }
 
 /** Tenant members with their owner-role status (owner-guarded, CL-3634). */
