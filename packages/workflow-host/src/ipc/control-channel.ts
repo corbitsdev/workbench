@@ -157,7 +157,9 @@ export type OutboundMessagePayload = typeof OutboundMessagePayload.infer;
  * union and not by widening the envelope shape. Inference events
  * NEVER appear here; they ride the event channel.
  */
-export const ControlPayload = type(
+// WORKBENCH-LOCAL (CL-4183): single-shot type.or avoids precompiling 14
+// intermediate unions at import (~per-process RSS)
+export const ControlPayload = type.or(
   {
     type: "'trigger.fire'",
     data: {
@@ -166,7 +168,6 @@ export const ControlPayload = type(
       receivedAt: "number",
     },
   },
-  "|",
   {
     type: "'signal.deliver'",
     data: {
@@ -176,20 +177,19 @@ export const ControlPayload = type(
       payload: "unknown",
     },
   },
-)
-  .or({
+  {
     type: "'drain'",
     data: {
       deadlineMs: "number",
     },
-  })
-  .or({
+  },
+  {
     type: "'shutdown'",
     data: {
       reason: "string",
     },
-  })
-  .or({
+  },
+  {
     type: "'grants-updated'",
     data: {
       /**
@@ -211,12 +211,12 @@ export const ControlPayload = type(
        */
       "stepHashes?": "Record<string, string>",
     },
-  })
-  .or({
+  },
+  {
     type: "'sources-updated'",
     data: SourcesUpdatedData,
-  })
-  .or({
+  },
+  {
     type: "'ready'",
     data: {
       childPid: "number",
@@ -228,8 +228,8 @@ export const ControlPayload = type(
        */
       childPublicKey: "string",
     },
-  })
-  .or({
+  },
+  {
     // Child-initiated request to recycle the workflow-process. The
     // child emits this when its own self-check decides it needs to be
     // recycled (an internal consistency error it can't recover from,
@@ -243,8 +243,8 @@ export const ControlPayload = type(
     data: {
       reason: "string",
     },
-  })
-  .or({
+  },
+  {
     // Child-initiated `writeTreePreservingPrefix` request. The child
     // does not hold a substrate write authority for the workflow-run
     // repo (single-writer at the ref tip belongs to the supervisor);
@@ -267,8 +267,8 @@ export const ControlPayload = type(
       preservePrefix: "string > 0",
       message: "string > 0",
     },
-  })
-  .or({
+  },
+  {
     // Supervisor-initiated request for the child's merge bytes. Fired
     // from inside the supervisor's `writeTreePreservingPrefix` merge
     // callback while the per-repo lock is held; the child receives the
@@ -285,8 +285,8 @@ export const ControlPayload = type(
         contentBase64: "string",
       }).array(),
     },
-  })
-  .or({
+  },
+  {
     // Child's merge result. `requestId` correlates with the
     // `substrate.write.request` that started the write; the supervisor
     // resumes its merge callback with the supplied entries (or
@@ -309,8 +309,8 @@ export const ControlPayload = type(
         },
       ),
     },
-  })
-  .or({
+  },
+  {
     // Supervisor's terminal reply to a child's `substrate.write.request`.
     // The `requestId` echoes the child's allocated correlation id so
     // the child's pending-id map resolves the awaiter. A successful
@@ -334,8 +334,8 @@ export const ControlPayload = type(
         },
       ),
     },
-  })
-  .or({
+  },
+  {
     // Child-initiated outbound-mail request (OUTBOUND half of mailbox
     // ownership, §3a). The workflow-process child never holds the
     // agent's signing key and never calls `transport.send` itself. When
@@ -361,8 +361,8 @@ export const ControlPayload = type(
       "mailbox?": "string",
       message: OutboundMessagePayload,
     },
-  })
-  .or({
+  },
+  {
     // Supervisor's terminal reply to a child's `outbound.message`. The
     // `requestId` echoes the child's correlation id so the child's
     // pending mail-tool awaiter resolves. A successful send surfaces the
@@ -386,8 +386,8 @@ export const ControlPayload = type(
         },
       ),
     },
-  })
-  .or({
+  },
+  {
     // Child-initiated terminal-run notification. The workflow-process
     // child emits this when one of its runs reaches a terminal phase
     // (`RunCompleted`, `RunFailed`, `RunCancelled`) so the supervisor's
@@ -413,8 +413,8 @@ export const ControlPayload = type(
         message: "string",
       },
     },
-  })
-  .or({
+  },
+  {
     // Child-initiated control-plane suspension notification. The
     // workflow-process child emits this when a workflow agent step parks
     // on a reserved `signalName(correlationId)` channel (`env.onPark`),
@@ -435,7 +435,8 @@ export const ControlPayload = type(
       correlationId: "string > 0",
       kind: SignalKind,
     },
-  });
+  },
+);
 
 export type ControlPayload = typeof ControlPayload.infer;
 
