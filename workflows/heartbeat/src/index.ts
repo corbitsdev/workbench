@@ -10,7 +10,7 @@ import {
 export { heartbeatIntakeStepKey };
 import { buildMorningBriefSystemPrompt } from "./prompts";
 
-export const label = "Company Heartbeat";
+export const label = "Morning brief";
 export const description =
   "On a schedule, pull recent brief-source data (Granola calls today), synthesize a morning brief, mail it to the user, and save it as an artifact.";
 export const kind = "heartbeat";

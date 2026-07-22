@@ -464,16 +464,96 @@ export type WorkflowFlowStep = typeof WorkflowFlowStepSchema.infer;
 // needs to render its row and its step-flow preview without a further call:
 // the member's favorite state, the classified step DAG, and the pause count.
 // A workflow's first-intake form field, as surfaced to the attach UI so it can
-// collect the intake payload a scheduled run is pre-filled with (CL-3509). A
-// minimal subset of the block `FormField` surface (text / textarea only).
-export const WorkflowIntakeFieldSchema = type({
+// collect the intake payload a scheduled run is pre-filled with (CL-3509) and
+// enriched for schema-driven schedule forms (CL-3860). Input kinds cover the
+// form renderer; `fromProfile` marks fire-time profile-supplied fields.
+export const ScheduleFieldInputKindSchema = type(
+  "'text' | 'textarea' | 'url' | 'select' | 'boolean'",
+);
+export type ScheduleFieldInputKind = typeof ScheduleFieldInputKindSchema.infer;
+
+export const ScheduleFieldOptionSchema = type({
+  value: "string",
+  label: "string > 0",
+});
+export type ScheduleFieldOption = typeof ScheduleFieldOptionSchema.infer;
+
+export const ScheduleFieldMetadataSchema = type({
   name: "string > 0",
   label: "string > 0",
-  kind: "'text' | 'textarea'",
+  /** Input control kind. Legacy packages may still use `kind` as the key. */
+  "inputHint?": ScheduleFieldInputKindSchema,
+  /**
+   * Legacy alias for `inputHint` (CL-3509 INTAKE_FIELDS). Prefer `inputHint`.
+   * When both are set, `inputHint` wins.
+   */
+  "kind?": ScheduleFieldInputKindSchema,
   "required?": "boolean",
   "placeholder?": "string",
+  "help?": "string",
+  /** Sort key ascending; missing order sorts after numbered fields (stable by name). */
+  "order?": "number.integer",
+  /** Select options when inputHint/kind is `select`. */
+  "options?": ScheduleFieldOptionSchema.array(),
+  /**
+   * When set, fire-time merge supplies this value from the member profile; the
+   * form renders the field read-only with a "from your profile" chip.
+   */
+  "fromProfile?": "string > 0",
 });
-export type WorkflowIntakeField = typeof WorkflowIntakeFieldSchema.infer;
+export type ScheduleFieldMetadata = typeof ScheduleFieldMetadataSchema.infer;
+
+/** @deprecated Prefer ScheduleFieldMetadataSchema — same shape, CL-3509 name. */
+export const WorkflowIntakeFieldSchema = ScheduleFieldMetadataSchema;
+export type WorkflowIntakeField = ScheduleFieldMetadata;
+
+/** Resolve the effective input control for a field. */
+export function scheduleFieldInputHint(
+  field: ScheduleFieldMetadata,
+): ScheduleFieldInputKind {
+  return field.inputHint ?? field.kind ?? "text";
+}
+
+/**
+ * Sort fields for form rendering: explicit `order` ascending, then name.
+ * Pure — does not mutate the input array.
+ */
+export function sortScheduleFields(
+  fields: readonly ScheduleFieldMetadata[],
+): ScheduleFieldMetadata[] {
+  return [...fields].sort((a, b) => {
+    const ao = a.order ?? Number.MAX_SAFE_INTEGER;
+    const bo = b.order ?? Number.MAX_SAFE_INTEGER;
+    if (ao !== bo) return ao - bo;
+    return a.name.localeCompare(b.name);
+  });
+}
+
+/**
+ * Fallback field list when a kind has intake schema names but no metadata
+ * export: field name as label, text input. Metadata enriches, never gates.
+ */
+export function fallbackScheduleFields(
+  fieldNames: readonly string[],
+): ScheduleFieldMetadata[] {
+  return fieldNames.map((name, i) => ({
+    name,
+    label: name,
+    inputHint: "text" as const,
+    order: i,
+  }));
+}
+
+/**
+ * True when every metadata field name is in the intake schema name set (catches
+ * drift between scheduleFields and the arktype intake schema).
+ */
+export function scheduleFieldsMatchIntakeSchema(
+  metadata: readonly ScheduleFieldMetadata[],
+  intakeFieldNames: ReadonlySet<string>,
+): boolean {
+  return metadata.every((f) => intakeFieldNames.has(f.name));
+}
 
 export const WorkflowCatalogEntrySchema = type({
   kind: "string",

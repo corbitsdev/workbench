@@ -32,10 +32,15 @@ export function useCreateSchedule() {
   });
 }
 
-type UpdateVars = { id: string; enabled?: boolean; hourUtc?: number };
+type UpdateVars = {
+  id: string;
+  enabled?: boolean;
+  hourUtc?: number;
+  payload?: Record<string, unknown>;
+};
 
-// Toggling enablement (or moving the hour) applies optimistically so the switch
-// responds instantly, and rolls the cache back to its prior value on failure.
+// Toggling enablement (or moving the hour / payload) applies optimistically so
+// the switch responds instantly, and rolls the cache back on failure.
 export function useUpdateSchedule() {
   const queryClient = useQueryClient();
   return useMutation<
@@ -45,7 +50,7 @@ export function useUpdateSchedule() {
     { previous: ScheduledTrigger[] | undefined }
   >({
     mutationFn: ({ id, ...patch }) => updateMeSchedule(id, patch),
-    onMutate: async ({ id, enabled, hourUtc }) => {
+    onMutate: async ({ id, enabled, hourUtc, payload }) => {
       await queryClient.cancelQueries({ queryKey: SCHEDULES_KEY });
       const previous =
         queryClient.getQueryData<ScheduledTrigger[]>(SCHEDULES_KEY);
@@ -58,6 +63,7 @@ export function useUpdateSchedule() {
                   ...s,
                   ...(enabled !== undefined ? { enabled } : {}),
                   ...(hourUtc !== undefined ? { hourUtc } : {}),
+                  ...(payload !== undefined ? { triggerPayload: payload } : {}),
                 }
               : s,
           ),

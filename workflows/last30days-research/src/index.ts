@@ -36,24 +36,30 @@ export const kind = "last30days-research";
 // browser-safe module.
 export { DISPLAY_STEPS } from "./display-steps";
 
-// The first-intake form descriptor (CL-3509): the fields the attach UI collects
-// when this workflow is scheduled, so a scheduled run's `intake` gate is
-// pre-filled and auto-delivered without a human. Mirrors the `intakeForm` block
-// (topic required, focus optional); the stored payload validates against
+// The first-intake form descriptor (CL-3509 / CL-3860): schedule field metadata
+// the attach UI and Automations form collect so a scheduled run's `intake` gate
+// is pre-filled and auto-delivered without a human. Mirrors the intake form
+// (topic required, focus optional); payload validates against
 // Last30daysIntakePayloadSchema at the /resume boundary.
 export const INTAKE_FIELDS = [
   {
     kind: "text",
+    inputHint: "text",
     name: "topic",
     label: "Topic",
     placeholder: "e.g. AI coding agents for GTM teams",
     required: true,
+    help: "What should each scheduled run research?",
+    order: 0,
   },
   {
     kind: "textarea",
+    inputHint: "textarea",
     name: "focus",
     label: "Focus (optional)",
     placeholder: "Narrow the query or angle",
+    help: "Optional angle or constraints for the brief.",
+    order: 1,
   },
 ] as const;
 

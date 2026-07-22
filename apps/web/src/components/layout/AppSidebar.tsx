@@ -12,6 +12,7 @@ import {
   FlaskConical,
   ChevronDown,
   ExternalLink,
+  Zap,
   Bot,
   type LucideIcon,
 } from "lucide-react";
@@ -34,6 +35,7 @@ const NAV_ITEMS = [
   { to: "/chats", label: "Chats", icon: Home, end: false },
   { to: "/artifacts", label: "Artifacts", icon: Files, end: false },
   { to: "/workflows", label: "Workflows", icon: Workflow, end: false },
+  { to: "/automations", label: "Automations", icon: Zap, end: false },
   { to: "/skills", label: "Skills", icon: BookOpen, end: false },
   { to: "/agents", label: "Agents", icon: Bot, end: false },
   { to: "/insights", label: "Insights", icon: BarChart2, end: false },

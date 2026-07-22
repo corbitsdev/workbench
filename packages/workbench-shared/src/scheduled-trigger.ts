@@ -107,12 +107,14 @@ export const HeartbeatRunTriggerPayloadSchema = type({
 export type HeartbeatRunTriggerPayload =
   typeof HeartbeatRunTriggerPayloadSchema.infer;
 
-// Update body: toggle enablement and/or move the fire hour. At least one field
-// is required; an empty patch is a no-op the route rejects. Scope is immutable
-// after create (delete + re-attach to change).
+// Update body: toggle enablement, move the fire hour, and/or replace the
+// stored intake payload (CL-3861 edit path). At least one field is required;
+// an empty patch is a no-op the route rejects. Scope is immutable after create
+// (delete + re-attach to change).
 export const UpdateScheduledTriggerBodySchema = type({
   "enabled?": "boolean",
   "hourUtc?": "0 <= number.integer <= 23",
+  "payload?": { "[string]": "unknown" },
 });
 export type UpdateScheduledTriggerBody =
   typeof UpdateScheduledTriggerBodySchema.infer;

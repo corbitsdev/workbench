@@ -137,10 +137,28 @@ mock.module("../lib/scheduled-triggers", () => ({
       createdAt: new Date("2026-01-01T00:00:00.000Z"),
     };
   },
+  getOwnerSchedule: async (_db: unknown, args: Record<string, unknown>) => {
+    storeCalls.push({ fn: "get", args });
+    if (updateResult && updateResult.id === args["id"]) {
+      return {
+        id: updateResult.id,
+        workflowKind: updateResult.workflowKind,
+        hourUtc: updateResult.hourUtc,
+        enabled: updateResult.enabled,
+        scope: updateResult.scope ?? "personal",
+        ownerMemberPrincipalId:
+          updateResult.ownerMemberPrincipalId ?? "principal-a",
+        triggerPayload: updateResult.triggerPayload,
+        createdAt: updateResult.createdAt,
+      };
+    }
+    return null;
+  },
   updateOwnerSchedule: async (_db: unknown, args: Record<string, unknown>) => {
     storeCalls.push({ fn: "update", args });
     return updateResult;
   },
+
   deleteOwnerSchedule: async (_db: unknown, args: Record<string, unknown>) => {
     storeCalls.push({ fn: "delete", args });
     return deleteResult;
@@ -636,6 +654,41 @@ describe("PATCH /me/schedules/:id", () => {
       }),
     );
     expect(res.status).toBe(404);
+  });
+
+  it("fences identity on payload update (strips client userAddress, re-injects caller's)", async () => {
+    storeCalls.length = 0;
+    updateResult = {
+      id: SCHED_ID,
+      workflowKind: "no-gate",
+      hourUtc: 13,
+      enabled: true,
+      scope: "personal",
+      ownerMemberPrincipalId: "principal-a",
+      triggerPayload: { topic: "old", reason: "scheduled-heartbeat" },
+      createdAt: new Date("2026-01-01T00:00:00.000Z"),
+    };
+    const res = await mountApp().fetch(
+      req(`/me/schedules/${SCHED_ID}`, {
+        method: "PATCH",
+        user: "user-a",
+        body: JSON.stringify({
+          payload: {
+            topic: "new-topic",
+            userAddress: "usr_attacker@evil.example",
+            userRefId: "attacker",
+          },
+        }),
+      }),
+    );
+    expect(res.status).toBe(200);
+    const update = storeCalls.find((c) => c.fn === "update");
+    expect(update?.args["triggerPayload"]).toEqual({
+      topic: "new-topic",
+      reason: "scheduled-heartbeat",
+      userAddress: "usr_user-a@workbench.example",
+      userRefId: "user-a",
+    });
   });
 });
 

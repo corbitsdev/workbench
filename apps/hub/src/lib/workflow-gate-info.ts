@@ -2,16 +2,18 @@ import { type } from "arktype";
 
 // Serialized intake-field descriptor carried in the embedded workflow def so the
 // attach UI can render a workflow's first-intake form without importing workflow
-// code (CL-3509). A minimal subset of @workbench/blocks `FormField` (text /
-// textarea only) — the attach form collects short scalar inputs, not the full
-// block form surface. A workflow exports `INTAKE_FIELDS` matching this shape; the
-// build serializes it into the def.
+// code (CL-3509 + CL-3860 schedule field metadata).
 export const EmbeddedIntakeFieldSchema = type({
   name: "string > 0",
   label: "string > 0",
-  kind: "'text' | 'textarea'",
+  "inputHint?": "'text' | 'textarea' | 'url' | 'select' | 'boolean'",
+  "kind?": "'text' | 'textarea' | 'url' | 'select' | 'boolean'",
   "required?": "boolean",
   "placeholder?": "string",
+  "help?": "string",
+  "order?": "number.integer",
+  "options?": type({ value: "string", label: "string > 0" }).array(),
+  "fromProfile?": "string > 0",
 });
 export type EmbeddedIntakeField = typeof EmbeddedIntakeFieldSchema.infer;
 

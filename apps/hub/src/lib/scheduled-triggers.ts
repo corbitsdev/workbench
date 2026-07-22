@@ -126,9 +126,7 @@ export async function toApiSchedulesForOwner(
     tenantId,
     rows.map((r) => r.id),
   );
-  return rows.map((row) =>
-    toApiSchedule(row, now, fires.get(row.id) ?? []),
-  );
+  return rows.map((row) => toApiSchedule(row, now, fires.get(row.id) ?? []));
 }
 
 /** Called by the scheduler after `startWorkflowRun` succeeds (CL-3526). */
@@ -282,6 +280,20 @@ export async function createOwnerSchedule(
 // triple — a missing id OR another member's id both surface as "not found",
 // so a member can never mutate another's schedule (including tenant schedules
 // they did not create).
+export async function getOwnerSchedule(
+  db: HubDb,
+  args: { tenantId: string; ownerPrincipalId: string; id: string },
+): Promise<ScheduledTriggerRow | null> {
+  const row = await db.query.scheduledTrigger.findFirst({
+    where: and(
+      eq(scheduledTrigger.id, args.id),
+      eq(scheduledTrigger.tenantId, args.tenantId),
+      eq(scheduledTrigger.ownerMemberPrincipalId, args.ownerPrincipalId),
+    ),
+  });
+  return row ?? null;
+}
+
 export async function updateOwnerSchedule(
   db: HubDb,
   args: {
@@ -290,11 +302,20 @@ export async function updateOwnerSchedule(
     id: string;
     enabled?: boolean;
     hourUtc?: number;
+    /** Replace the stored intake/trigger payload (CL-3861 edit path). */
+    triggerPayload?: Record<string, unknown>;
   },
 ): Promise<ScheduledTriggerRow | null> {
-  const patch: { enabled?: boolean; hourUtc?: number } = {};
+  const patch: {
+    enabled?: boolean;
+    hourUtc?: number;
+    triggerPayload?: Record<string, unknown>;
+  } = {};
   if (args.enabled !== undefined) patch.enabled = args.enabled;
   if (args.hourUtc !== undefined) patch.hourUtc = args.hourUtc;
+  if (args.triggerPayload !== undefined) {
+    patch.triggerPayload = args.triggerPayload;
+  }
 
   const [updated] = await db
     .update(scheduledTrigger)

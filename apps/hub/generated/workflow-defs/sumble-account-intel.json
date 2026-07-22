@@ -45,6 +45,28 @@
   ],
   "requiresIntake": true,
   "humanGateCount": 2,
+  "intakeFields": [
+    {
+      "name": "organizationDomain",
+      "label": "Organization domain",
+      "kind": "text",
+      "inputHint": "text",
+      "required": true,
+      "placeholder": "acme.com",
+      "help": "Company domain or Sumble org slug to research.",
+      "order": 0
+    },
+    {
+      "name": "pushToAttio",
+      "label": "Push to Attio",
+      "kind": "boolean",
+      "inputHint": "boolean",
+      "required": false,
+      "help": "When on, write the account brief back to Attio after review.",
+      "order": 1
+    }
+  ],
+  "allowsScheduledPostIntakeDrive": true,
   "definition": {
     "id": "sumble-account-intel",
     "triggers": [

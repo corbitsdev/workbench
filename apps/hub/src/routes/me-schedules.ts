@@ -18,11 +18,13 @@ import { UuidParam } from "../lib/uuid";
 import {
   createOwnerSchedule,
   deleteOwnerSchedule,
+  getOwnerSchedule,
   listOwnerSchedules,
   toApiSchedule,
   toApiSchedulesForOwner,
   updateOwnerSchedule,
 } from "../lib/scheduled-triggers";
+
 import { ErrorResponse, requestBodySchema } from "../lib/openapi";
 import { clampLimit, decodeCursor, MAX_PAGE_LIMIT } from "../lib/keyset";
 import type { HubDb } from "../db";
@@ -322,7 +324,11 @@ export function createMeSchedulesRouter(
       if (body instanceof type.errors) {
         return c.json({ error: body.summary }, 400);
       }
-      if (body.enabled === undefined && body.hourUtc === undefined) {
+      if (
+        body.enabled === undefined &&
+        body.hourUtc === undefined &&
+        body.payload === undefined
+      ) {
         return c.json({ error: "no fields to update" }, 400);
       }
 
@@ -331,12 +337,71 @@ export function createMeSchedulesRouter(
         return c.json({ error: "No provisioned membership" }, 403);
       }
 
+      let triggerPayload: Record<string, unknown> | undefined;
+      if (body.payload !== undefined) {
+        // Same identity fencing as create: strip reserved keys, re-inject the
+        // caller's address, validate intake when the kind requires it (CL-3861).
+        const existing = await getOwnerSchedule(db, {
+          tenantId: member.tenantId,
+          ownerPrincipalId: member.principalId,
+          id,
+        });
+        if (!existing) return c.json({ error: "schedule not found" }, 404);
+
+        const clientPayload = Object.fromEntries(
+          Object.entries(body.payload).filter(
+            ([key]) => !RESERVED_PAYLOAD_KEYS.has(key),
+          ),
+        );
+        const gateInfos = await loadWorkflowGateInfos();
+        const gateInfo = gateInfos.get(existing.workflowKind);
+        if (gateInfo?.requiresIntake) {
+          const check = validateResumePayload(
+            existing.workflowKind,
+            INTAKE_SIGNAL_NAME,
+            clientPayload,
+          );
+          if (!check.ok) {
+            return c.json(
+              {
+                error: `invalid intake for "${existing.workflowKind}": ${check.error}`,
+              },
+              400,
+            );
+          }
+        }
+        const identity = await resolveUserIdentity(member.principalId);
+        // Merge form fields over the stored payload so server-owned / non-form
+        // keys (e.g. heartbeat `reason`) survive hour-only or partial updates.
+        const previous = Object.fromEntries(
+          Object.entries(existing.triggerPayload ?? {}).filter(
+            ([key]) => !RESERVED_PAYLOAD_KEYS.has(key),
+          ),
+        );
+        triggerPayload = {
+          ...previous,
+          ...clientPayload,
+          userAddress: identity.userAddress,
+          userRefId: identity.userRefId,
+        };
+        const payloadBytes = new TextEncoder().encode(
+          JSON.stringify(triggerPayload),
+        ).byteLength;
+        if (payloadBytes > MAX_PAYLOAD_BYTES) {
+          return c.json(
+            { error: `payload exceeds ${MAX_PAYLOAD_BYTES} bytes` },
+            400,
+          );
+        }
+      }
+
       const updated = await updateOwnerSchedule(db, {
         tenantId: member.tenantId,
         ownerPrincipalId: member.principalId,
         id,
         ...(body.enabled !== undefined ? { enabled: body.enabled } : {}),
         ...(body.hourUtc !== undefined ? { hourUtc: body.hourUtc } : {}),
+        ...(triggerPayload !== undefined ? { triggerPayload } : {}),
       });
       if (!updated) return c.json({ error: "schedule not found" }, 404);
       return c.json(toApiSchedule(updated));

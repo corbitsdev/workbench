@@ -15,10 +15,33 @@ export const description =
   "Research an account across Sumble (org, teams, jobs, tech stack, contacts, signals), enrich contacts on X, and synthesize a reviewable account intelligence brief.";
 export const kind = "sumble-account-intel";
 
-// Re-export the user-facing display flow so it travels with the workflow package
-// for the server catalog classifier; the client panel imports it from the same
-// browser-safe module.
 export { DISPLAY_STEPS } from "./display-steps";
+
+// Schedule field metadata (CL-3860): organization domain + optional Attio push.
+// Multi-gate workflow — opt into scheduled post-intake drive so it is attachable.
+export const ALLOWS_SCHEDULED_POST_INTAKE_DRIVE = true;
+
+export const INTAKE_FIELDS = [
+  {
+    name: "organizationDomain",
+    label: "Organization domain",
+    kind: "text",
+    inputHint: "text",
+    required: true,
+    placeholder: "acme.com",
+    help: "Company domain or Sumble org slug to research.",
+    order: 0,
+  },
+  {
+    name: "pushToAttio",
+    label: "Push to Attio",
+    kind: "boolean",
+    inputHint: "boolean",
+    required: false,
+    help: "When on, write the account brief back to Attio after review.",
+    order: 1,
+  },
+] as const;
 
 // The synthesis turn produces a multi-section brief plus a contacts CSV and a
 // Slack-ready draft as strict JSON; without an explicit ceiling the writer source
