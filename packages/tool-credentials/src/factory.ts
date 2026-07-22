@@ -10,6 +10,7 @@ import {
 } from "@intx/agent";
 import type { ToolDefinition, ToolResult } from "@intx/types/runtime";
 import { type } from "arktype";
+import { withToolErrorRecoveryGuidance } from "@workbench/shared";
 import {
   HUB_RPC_ENV_KEY,
   type ToolCredential,
@@ -119,7 +120,9 @@ export function defineHubBackedToolPackage(opts: {
               const text = await res.text();
               return {
                 callId: call.id,
-                content: `hub tool ${call.name} failed: ${String(res.status)} ${text}`,
+                content: withToolErrorRecoveryGuidance(
+                  `hub tool ${call.name} failed: ${String(res.status)} ${text}`,
+                ),
                 isError: true,
               };
             }
@@ -127,19 +130,25 @@ export function defineHubBackedToolPackage(opts: {
             if (parsed instanceof type.errors) {
               return {
                 callId: call.id,
-                content: `invalid hub-tool response: ${parsed.summary}`,
+                content: withToolErrorRecoveryGuidance(
+                  `invalid hub-tool response: ${parsed.summary}`,
+                ),
                 isError: true,
               };
             }
             return {
               callId: call.id,
-              content: parsed.result,
+              content: parsed.isError
+                ? withToolErrorRecoveryGuidance(parsed.result)
+                : parsed.result,
               isError: parsed.isError,
             };
           } catch (err) {
             return {
               callId: call.id,
-              content: err instanceof Error ? err.message : String(err),
+              content: withToolErrorRecoveryGuidance(
+                err instanceof Error ? err.message : String(err),
+              ),
               isError: true,
             };
           }

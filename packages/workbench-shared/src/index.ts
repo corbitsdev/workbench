@@ -42,6 +42,10 @@ export {
   TOOL_LOOP_BLOCK_THRESHOLD,
   type ToolLoopGuard,
 } from "./tool-loop-guard";
+export {
+  TOOL_ERROR_RECOVERY_GUIDANCE,
+  withToolErrorRecoveryGuidance,
+} from "./tool-error-recovery";
 
 export type Severity = "low" | "medium" | "high" | "critical";
 
