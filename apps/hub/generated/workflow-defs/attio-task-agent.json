@@ -244,9 +244,8 @@
               }
             ]
           },
-          "description": "Inline single-turn inference: attio-task-agent-execute",
+          "description": "Reasoning step: attio-task-agent-execute",
           "tags": {
-            "workbench.stepKind": "inline-inference",
             "workbench.title": "Do the work"
           }
         },
@@ -279,9 +278,8 @@
           "inference": {
             "sources": []
           },
-          "description": "Inline single-turn inference: attio-task-agent-review-artifacts",
+          "description": "Reasoning step: attio-task-agent-review-artifacts",
           "tags": {
-            "workbench.stepKind": "inline-inference",
             "workbench.title": "Check the drafts"
           }
         },
@@ -349,9 +347,8 @@
           "inference": {
             "sources": []
           },
-          "description": "Inline single-turn inference: attio-task-agent-suggest",
+          "description": "Reasoning step: attio-task-agent-suggest",
           "tags": {
-            "workbench.stepKind": "inline-inference",
             "workbench.title": "Suggest follow-ups"
           }
         },

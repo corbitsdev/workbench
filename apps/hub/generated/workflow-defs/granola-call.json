@@ -26,6 +26,13 @@
       ]
     },
     {
+      "key": "build-prompt",
+      "label": "Build analysis prompt",
+      "stepIds": [
+        "build-prompt"
+      ]
+    },
+    {
       "key": "analyze",
       "label": "Analyze",
       "stepIds": [
@@ -123,15 +130,15 @@
           "systemPrompt": "",
           "toolFactories": [],
           "capabilities": [
-            "granola_normalize_note"
+            "@workbench/tools-granola/workflow:granola_normalize_note"
           ],
           "inference": {
             "sources": []
           },
-          "description": "Deterministic tool call: granola_normalize_note",
+          "description": "Deterministic tool call: @workbench/tools-granola/workflow:granola_normalize_note",
           "tags": {
             "workbench.stepKind": "deterministic-tool",
-            "workbench.tool": "granola_normalize_note",
+            "workbench.tool": "@workbench/tools-granola/workflow:granola_normalize_note",
             "workbench.title": "Normalize"
           }
         },
@@ -151,16 +158,16 @@
           "systemPrompt": "",
           "toolFactories": [],
           "capabilities": [
-            "granola_classify_call"
+            "@workbench/tools-granola/workflow:granola_classify_call"
           ],
           "inference": {
             "sources": []
           },
-          "description": "Deterministic tool call: granola_classify_call",
+          "description": "Deterministic tool call: @workbench/tools-granola/workflow:granola_classify_call",
           "tags": {
             "workbench.stepKind": "deterministic-tool",
-            "workbench.tool": "granola_classify_call",
-            "workbench.argMap": "{\"note\":{\"from\":\"content\"},\"tenantDomain\":{\"from\":\"tenantDomain\",\"optional\":true}}",
+            "workbench.tool": "@workbench/tools-granola/workflow:granola_classify_call",
+            "workbench.argMap": "{\"note\":{\"from\":\"content\"},\"tenantDomain\":{\"from\":\"tenantDomain\"}}",
             "workbench.title": "Classify"
           }
         },
@@ -179,6 +186,34 @@
           "normalize"
         ]
       },
+      "build-prompt": {
+        "kind": "step",
+        "id": "build-prompt",
+        "agent": {
+          "id": "granola-call-build-prompt",
+          "systemPrompt": "",
+          "toolFactories": [],
+          "capabilities": [
+            "@workbench/tools-granola/workflow:granola_build_analysis_prompt"
+          ],
+          "inference": {
+            "sources": []
+          },
+          "description": "Deterministic tool call: @workbench/tools-granola/workflow:granola_build_analysis_prompt",
+          "tags": {
+            "workbench.stepKind": "deterministic-tool",
+            "workbench.tool": "@workbench/tools-granola/workflow:granola_build_analysis_prompt",
+            "workbench.title": "Build analysis prompt"
+          }
+        },
+        "drainBehavior": "cancel",
+        "input": {
+          "from": "steps.normalize.output"
+        },
+        "after": [
+          "normalize"
+        ]
+      },
       "analyze": {
         "kind": "step",
         "id": "analyze",
@@ -190,18 +225,17 @@
           "inference": {
             "sources": []
           },
-          "description": "Inline single-turn inference: granola-call-analyze",
+          "description": "Reasoning step: granola-call-analyze",
           "tags": {
-            "workbench.stepKind": "inline-inference",
             "workbench.title": "Analyze"
           }
         },
         "drainBehavior": "cancel",
         "input": {
-          "from": "steps.normalize.output"
+          "from": "steps.build-prompt.output"
         },
         "after": [
-          "normalize"
+          "build-prompt"
         ]
       },
       "parse": {
@@ -212,15 +246,15 @@
           "systemPrompt": "",
           "toolFactories": [],
           "capabilities": [
-            "granola_parse_analysis"
+            "@workbench/tools-granola/workflow:granola_parse_analysis"
           ],
           "inference": {
             "sources": []
           },
-          "description": "Deterministic tool call: granola_parse_analysis",
+          "description": "Deterministic tool call: @workbench/tools-granola/workflow:granola_parse_analysis",
           "tags": {
             "workbench.stepKind": "deterministic-tool",
-            "workbench.tool": "granola_parse_analysis",
+            "workbench.tool": "@workbench/tools-granola/workflow:granola_parse_analysis",
             "workbench.title": "Parse analysis"
           }
         },
@@ -240,15 +274,15 @@
           "systemPrompt": "",
           "toolFactories": [],
           "capabilities": [
-            "granola_prepare_artifacts"
+            "@workbench/tools-granola/workflow:granola_prepare_artifacts"
           ],
           "inference": {
             "sources": []
           },
-          "description": "Deterministic tool call: granola_prepare_artifacts",
+          "description": "Deterministic tool call: @workbench/tools-granola/workflow:granola_prepare_artifacts",
           "tags": {
             "workbench.stepKind": "deterministic-tool",
-            "workbench.tool": "granola_prepare_artifacts",
+            "workbench.tool": "@workbench/tools-granola/workflow:granola_prepare_artifacts",
             "workbench.title": "Prepare artifacts"
           }
         },
@@ -286,7 +320,7 @@
           "tags": {
             "workbench.stepKind": "deterministic-tool",
             "workbench.tool": "@workbench/tools-artifact/artifact:write_artifact",
-            "workbench.argMap": "{\"title\":{\"fromJson\":\"content\",\"field\":\"painTitle\"},\"kind\":{\"fromJson\":\"content\",\"field\":\"painKind\"},\"body\":{\"fromJson\":\"content\",\"field\":\"painContent\"},\"sourceRef\":{\"fromJson\":\"content\",\"field\":\"painSourceRef\"}}",
+            "workbench.argMap": "{\"title\":{\"from\":\"painTitle\"},\"kind\":{\"from\":\"painKind\"},\"body\":{\"from\":\"painContent\"},\"sourceRef\":{\"from\":\"painSourceRef\"}}",
             "workbench.title": "Persist pain points"
           }
         },
@@ -315,7 +349,7 @@
           "tags": {
             "workbench.stepKind": "deterministic-tool",
             "workbench.tool": "@workbench/tools-artifact/artifact:write_artifact",
-            "workbench.argMap": "{\"title\":{\"fromJson\":\"content\",\"field\":\"summaryTitle\"},\"kind\":{\"fromJson\":\"content\",\"field\":\"summaryKind\"},\"body\":{\"fromJson\":\"content\",\"field\":\"summaryContent\"},\"sourceRef\":{\"fromJson\":\"content\",\"field\":\"summarySourceRef\"}}",
+            "workbench.argMap": "{\"title\":{\"from\":\"summaryTitle\"},\"kind\":{\"from\":\"summaryKind\"},\"body\":{\"from\":\"summaryContent\"},\"sourceRef\":{\"from\":\"summarySourceRef\"}}",
             "workbench.title": "Persist summary"
           }
         },
@@ -344,7 +378,7 @@
           "tags": {
             "workbench.stepKind": "deterministic-tool",
             "workbench.tool": "@workbench/tools-artifact/artifact:write_artifact",
-            "workbench.argMap": "{\"title\":{\"fromJson\":\"content\",\"field\":\"briefTitle\"},\"kind\":{\"fromJson\":\"content\",\"field\":\"briefKind\"},\"body\":{\"fromJson\":\"content\",\"field\":\"briefContent\"},\"sourceRef\":{\"fromJson\":\"content\",\"field\":\"briefSourceRef\"}}",
+            "workbench.argMap": "{\"title\":{\"from\":\"briefTitle\"},\"kind\":{\"from\":\"briefKind\"},\"body\":{\"from\":\"briefContent\"},\"sourceRef\":{\"from\":\"briefSourceRef\"}}",
             "workbench.title": "Persist brief"
           }
         },
@@ -364,15 +398,15 @@
           "systemPrompt": "",
           "toolFactories": [],
           "capabilities": [
-            "granola_create_tasks"
+            "@workbench/tools-granola/call:granola_create_tasks"
           ],
           "inference": {
             "sources": []
           },
-          "description": "Deterministic tool call: granola_create_tasks",
+          "description": "Deterministic tool call: @workbench/tools-granola/call:granola_create_tasks",
           "tags": {
             "workbench.stepKind": "deterministic-tool",
-            "workbench.tool": "granola_create_tasks",
+            "workbench.tool": "@workbench/tools-granola/call:granola_create_tasks",
             "workbench.title": "Create tasks"
           }
         },
@@ -382,16 +416,16 @@
             "from": "steps"
           },
           "fields": [
-            "prepare",
             "parse",
+            "prepare",
             "persist-pain",
             "persist-summary",
             "persist-brief"
           ]
         },
         "after": [
-          "prepare",
           "parse",
+          "prepare",
           "persist-pain",
           "persist-summary",
           "persist-brief"
@@ -405,15 +439,15 @@
           "systemPrompt": "",
           "toolFactories": [],
           "capabilities": [
-            "granola_fanout_call"
+            "@workbench/tools-granola/call:granola_fanout_call"
           ],
           "inference": {
             "sources": []
           },
-          "description": "Deterministic tool call: granola_fanout_call",
+          "description": "Deterministic tool call: @workbench/tools-granola/call:granola_fanout_call",
           "tags": {
             "workbench.stepKind": "deterministic-tool",
-            "workbench.tool": "granola_fanout_call",
+            "workbench.tool": "@workbench/tools-granola/call:granola_fanout_call",
             "workbench.title": "Fan out"
           }
         },
@@ -424,11 +458,17 @@
           },
           "fields": [
             "prepare",
+            "create-tasks",
+            "persist-pain",
+            "persist-summary",
             "persist-brief"
           ]
         },
         "after": [
           "prepare",
+          "create-tasks",
+          "persist-pain",
+          "persist-summary",
           "persist-brief"
         ]
       },
@@ -440,15 +480,15 @@
           "systemPrompt": "",
           "toolFactories": [],
           "capabilities": [
-            "granola_emit_run_outputs"
+            "@workbench/tools-granola/workflow:granola_emit_run_outputs"
           ],
           "inference": {
             "sources": []
           },
-          "description": "Deterministic tool call: granola_emit_run_outputs",
+          "description": "Deterministic tool call: @workbench/tools-granola/workflow:granola_emit_run_outputs",
           "tags": {
             "workbench.stepKind": "deterministic-tool",
-            "workbench.tool": "granola_emit_run_outputs",
+            "workbench.tool": "@workbench/tools-granola/workflow:granola_emit_run_outputs",
             "workbench.title": "Emit outputs"
           }
         },
@@ -478,6 +518,7 @@
       "fetch",
       "normalize",
       "classify",
+      "build-prompt",
       "analyze",
       "parse",
       "prepare",

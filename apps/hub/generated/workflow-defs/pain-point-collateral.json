@@ -146,9 +146,8 @@
           "inference": {
             "sources": []
           },
-          "description": "Inline single-turn inference: pain-point-collateral-analyze",
+          "description": "Reasoning step: pain-point-collateral-analyze",
           "tags": {
-            "workbench.stepKind": "inline-inference",
             "workbench.title": "Find the pain points"
           }
         },
@@ -202,9 +201,8 @@
             "inference": {
               "sources": []
             },
-            "description": "Inline single-turn inference: pain-point-collateral-generate",
+            "description": "Reasoning step: pain-point-collateral-generate",
             "tags": {
-              "workbench.stepKind": "inline-inference",
               "workbench.title": "Draft each piece"
             }
           },

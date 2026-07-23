@@ -315,9 +315,8 @@
               }
             ]
           },
-          "description": "Inline single-turn inference: sumble-account-intel-synthesize",
+          "description": "Reasoning step: sumble-account-intel-synthesize",
           "tags": {
-            "workbench.stepKind": "inline-inference",
             "workbench.title": "Write the account brief"
           }
         },

@@ -286,9 +286,8 @@
             "inference": {
               "sources": []
             },
-            "description": "Inline single-turn inference: multi-source-collateral-generate",
+            "description": "Reasoning step: multi-source-collateral-generate",
             "tags": {
-              "workbench.stepKind": "inline-inference",
               "workbench.title": "Draft each piece"
             }
           },
@@ -339,9 +338,8 @@
             "inference": {
               "sources": []
             },
-            "description": "Inline single-turn inference: multi-source-collateral-regenerate",
+            "description": "Reasoning step: multi-source-collateral-regenerate",
             "tags": {
-              "workbench.stepKind": "inline-inference",
               "workbench.title": "Revise with feedback"
             }
           },

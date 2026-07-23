@@ -207,9 +207,8 @@
           "inference": {
             "sources": []
           },
-          "description": "Inline single-turn inference: heartbeat-brief",
+          "description": "Reasoning step: heartbeat-brief",
           "tags": {
-            "workbench.stepKind": "inline-inference",
             "workbench.title": "Write the brief"
           }
         },

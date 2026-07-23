@@ -95,9 +95,8 @@
           "inference": {
             "sources": []
           },
-          "description": "Inline single-turn inference: competitor-analysis-profile",
+          "description": "Reasoning step: competitor-analysis-profile",
           "tags": {
-            "workbench.stepKind": "inline-inference",
             "workbench.title": "Define the company profile"
           }
         },
@@ -175,9 +174,8 @@
               }
             ]
           },
-          "description": "Inline single-turn inference: competitor-analysis-synthesize",
+          "description": "Reasoning step: competitor-analysis-synthesize",
           "tags": {
-            "workbench.stepKind": "inline-inference",
             "workbench.title": "Write the competitor report"
           }
         },

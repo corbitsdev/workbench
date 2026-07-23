@@ -100,9 +100,8 @@
           "inference": {
             "sources": []
           },
-          "description": "Inline single-turn inference: last30days-ground",
+          "description": "Reasoning step: last30days-ground",
           "tags": {
-            "workbench.stepKind": "inline-inference",
             "workbench.title": "Ground the topic"
           }
         },
@@ -430,9 +429,8 @@
           "inference": {
             "sources": []
           },
-          "description": "Inline single-turn inference: last30days-entities",
+          "description": "Reasoning step: last30days-entities",
           "tags": {
-            "workbench.stepKind": "inline-inference",
             "workbench.title": "Extract key entities"
           }
         },
@@ -646,9 +644,8 @@
               }
             ]
           },
-          "description": "Inline single-turn inference: last30days-curate",
+          "description": "Reasoning step: last30days-curate",
           "tags": {
-            "workbench.stepKind": "inline-inference",
             "workbench.title": "Curate themes & quotes"
           }
         },
@@ -707,9 +704,8 @@
               }
             ]
           },
-          "description": "Inline single-turn inference: last30days-write-report",
+          "description": "Reasoning step: last30days-write-report",
           "tags": {
-            "workbench.stepKind": "inline-inference",
             "workbench.title": "Write the report"
           }
         },

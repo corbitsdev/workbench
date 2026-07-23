@@ -25,5 +25,16 @@ export const toolManifestFile = {
       myraCatalog: null,
       credentialCatalog: null,
     }),
+    manifestFromHubToolEntries({
+      factoryId: "@workbench/tools-granola/call",
+      packageName: "@workbench/tools-granola",
+      providerName: null,
+      entries: {
+        granola_create_tasks: { sideEffect: "write" },
+        granola_fanout_call: { sideEffect: "write" },
+      },
+      myraCatalog: null,
+      credentialCatalog: null,
+    }),
   ],
 };

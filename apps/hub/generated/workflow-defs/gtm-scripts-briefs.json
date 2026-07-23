@@ -3,6 +3,55 @@
   "version": "0.1.0",
   "label": "GTM Scripts & Briefs",
   "description": "Research current stories, select a grounded angle, and turn it into a GTM script and brief artifact.",
+  "displayFlow": [
+    {
+      "key": "intake",
+      "label": "Topic",
+      "stepIds": [
+        "intake"
+      ]
+    },
+    {
+      "key": "research",
+      "label": "Research",
+      "stepIds": [
+        "ground",
+        "groundQueries",
+        "web",
+        "webB",
+        "webC",
+        "hackernews",
+        "github",
+        "reddit",
+        "x",
+        "youtube",
+        "polymarket",
+        "entities",
+        "entityQueries",
+        "web2",
+        "reddit2",
+        "x2",
+        "youtube2",
+        "collect",
+        "curate",
+        "brief"
+      ]
+    },
+    {
+      "key": "write",
+      "label": "Script & Brief",
+      "stepIds": [
+        "write"
+      ]
+    },
+    {
+      "key": "done",
+      "label": "Done",
+      "stepIds": [
+        "persist"
+      ]
+    }
+  ],
   "requiresIntake": true,
   "humanGateCount": 1,
   "definition": {
@@ -30,9 +79,8 @@
           "inference": {
             "sources": []
           },
-          "description": "Inline single-turn inference: last30days-ground",
+          "description": "Reasoning step: last30days-ground",
           "tags": {
-            "workbench.stepKind": "inline-inference",
             "workbench.title": "Ground the topic"
           }
         },
@@ -360,9 +408,8 @@
           "inference": {
             "sources": []
           },
-          "description": "Inline single-turn inference: last30days-entities",
+          "description": "Reasoning step: last30days-entities",
           "tags": {
-            "workbench.stepKind": "inline-inference",
             "workbench.title": "Extract key entities"
           }
         },
@@ -576,9 +623,8 @@
               }
             ]
           },
-          "description": "Inline single-turn inference: last30days-curate",
+          "description": "Reasoning step: last30days-curate",
           "tags": {
-            "workbench.stepKind": "inline-inference",
             "workbench.title": "Curate themes & quotes"
           }
         },
@@ -637,9 +683,8 @@
               }
             ]
           },
-          "description": "Inline single-turn inference: gtm-scripts-briefs-write",
+          "description": "Reasoning step: gtm-scripts-briefs-write",
           "tags": {
-            "workbench.stepKind": "inline-inference",
             "workbench.title": "Write the deliverable"
           }
         },

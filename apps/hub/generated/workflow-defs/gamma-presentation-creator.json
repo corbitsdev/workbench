@@ -173,9 +173,8 @@
           "inference": {
             "sources": []
           },
-          "description": "Inline single-turn inference: presentation-generate",
+          "description": "Reasoning step: presentation-generate",
           "tags": {
-            "workbench.stepKind": "inline-inference",
             "workbench.title": "Draft the deck"
           }
         },
@@ -250,9 +249,8 @@
               }
             ]
           },
-          "description": "Inline single-turn inference: presentation-describe",
+          "description": "Reasoning step: presentation-describe",
           "tags": {
-            "workbench.stepKind": "inline-inference",
             "workbench.title": "Summarize the deck"
           }
         },

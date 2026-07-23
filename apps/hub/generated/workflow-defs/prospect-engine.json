@@ -472,9 +472,8 @@
               }
             ]
           },
-          "description": "Inline single-turn inference: prospect-engine-score",
+          "description": "Reasoning step: prospect-engine-score",
           "tags": {
-            "workbench.stepKind": "inline-inference",
             "workbench.title": "Score candidates"
           }
         },
