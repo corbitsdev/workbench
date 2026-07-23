@@ -1641,6 +1641,21 @@
         "react": "*",
       },
     },
+    "workflows/firecrawl-url-watch": {
+      "name": "@workbench/workflow-firecrawl-url-watch",
+      "version": "0.1.0",
+      "dependencies": {
+        "@intx/agent": "workspace:*",
+        "@intx/workflow": "workspace:*",
+        "@workbench/agents": "workspace:*",
+        "@workbench/shared": "workspace:*",
+        "arktype": "catalog:",
+      },
+      "devDependencies": {
+        "@types/bun": "latest",
+        "typescript": "catalog:",
+      },
+    },
     "workflows/gamma-presentation-creator": {
       "name": "@workbench/workflow-gamma-presentation-creator",
       "version": "0.1.0",
@@ -2874,6 +2889,8 @@
     "@workbench/workflow-attio-task-agent": ["@workbench/workflow-attio-task-agent@workspace:workflows/attio-task-agent"],
 
     "@workbench/workflow-competitor-analysis": ["@workbench/workflow-competitor-analysis@workspace:workflows/competitor-analysis"],
+
+    "@workbench/workflow-firecrawl-url-watch": ["@workbench/workflow-firecrawl-url-watch@workspace:workflows/firecrawl-url-watch"],
 
     "@workbench/workflow-gamma-presentation-creator": ["@workbench/workflow-gamma-presentation-creator@workspace:workflows/gamma-presentation-creator"],
 
