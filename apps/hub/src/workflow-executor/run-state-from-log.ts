@@ -10,13 +10,17 @@ import {
 import { resumeFromLog, type WorkflowEvent } from "@intx/workflow";
 import type { AgentDefinition, BaseEnv } from "@intx/agent";
 import type { WorkflowDefinition } from "@intx/workflow";
-import {
-  DETERMINISTIC_TOOL_KIND,
-  INLINE_INFERENCE_KIND,
-  STEP_KIND_TAG,
-} from "@workbench/agents";
+import { DETERMINISTIC_TOOL_KIND, STEP_KIND_TAG } from "@workbench/agents";
 import { readWorkflowDefinition } from "../services/workflow-deploy";
 import { deriveWorkflowRunRepoId } from "../routes/workflow-runs";
+
+// The retired `inline-inference` authoring kind's tag value. `inlineInferenceStep`
+// and its `INLINE_INFERENCE_KIND` export are deleted — no NEW workflow definition
+// can ever carry this tag — but historical run definitions committed to disk
+// before the retirement still do, and this fold must keep classifying them
+// correctly when a completed run's log is replayed. Kept as a literal, not an
+// import, so it survives the authoring surface's deletion.
+const LEGACY_INLINE_INFERENCE_TAG = "inline-inference";
 
 // Read a workflow run's authoritative state directly from its native git event
 // log (CL-2669 Phase 1a). Where the projection bridge folds the log into a
@@ -115,7 +119,7 @@ export function classifyStepKinds(
     }
     const tag = agent.tags?.[STEP_KIND_TAG];
     if (tag === DETERMINISTIC_TOOL_KIND) kinds.set(stepId, "deterministic");
-    else if (tag === INLINE_INFERENCE_KIND) kinds.set(stepId, "inline");
+    else if (tag === LEGACY_INLINE_INFERENCE_TAG) kinds.set(stepId, "inline");
     else kinds.set(stepId, "agent");
   }
   return kinds;

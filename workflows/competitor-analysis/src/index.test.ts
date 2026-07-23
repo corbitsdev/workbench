@@ -1,7 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import {
   DETERMINISTIC_TOOL_KIND,
-  INLINE_INFERENCE_KIND,
   STEP_ARGMAP_TAG,
   STEP_KIND_TAG,
   STEP_TOOL_TAG,
@@ -63,9 +62,9 @@ describe("competitor-analysis workflow structure", () => {
     });
   });
 
-  test("profile is an inline-inference step with a real prompt and no tools", () => {
+  test("profile is a native reasoning step (agentStep) with a real prompt and no tools", () => {
     const profile = stepPrimitive("profile");
-    expect(profile.agent.tags?.[STEP_KIND_TAG]).toBe(INLINE_INFERENCE_KIND);
+    expect(profile.agent.tags?.[STEP_KIND_TAG]).toBeUndefined();
     expect(profile.agent.tags?.[STEP_TOOL_TAG]).toBeUndefined();
     expect(profile.agent.systemPrompt.length).toBeGreaterThan(0);
     expect(profile.agent.systemPrompt).toContain("discoveryQueries");
@@ -73,7 +72,7 @@ describe("competitor-analysis workflow structure", () => {
 
   test("discover is a tool-using agent with Exa and Firecrawl capabilities", () => {
     const discover = stepPrimitive("discover");
-    // Tool-using ReAct step — not a deterministicToolStep / inlineInferenceStep.
+    // Tool-using ReAct step — not a deterministicToolStep / agentStep.
     expect(discover.agent.tags?.[STEP_KIND_TAG]).toBeUndefined();
     expect(discover.agent.systemPrompt.length).toBeGreaterThan(0);
     expect(discover.agent.systemPrompt).toContain(
@@ -87,9 +86,9 @@ describe("competitor-analysis workflow structure", () => {
     expect(caps).not.toContain("artifact_create");
   });
 
-  test("synthesize is an inline-inference step with a real prompt and no tools", () => {
+  test("synthesize is a native reasoning step (agentStep) with a real prompt and no tools", () => {
     const synth = stepPrimitive("synthesize");
-    expect(synth.agent.tags?.[STEP_KIND_TAG]).toBe(INLINE_INFERENCE_KIND);
+    expect(synth.agent.tags?.[STEP_KIND_TAG]).toBeUndefined();
     expect(synth.agent.tags?.[STEP_TOOL_TAG]).toBeUndefined();
     expect(synth.agent.systemPrompt.length).toBeGreaterThan(0);
     expect(synth.agent.systemPrompt).toContain("competitor");

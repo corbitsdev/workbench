@@ -91,7 +91,10 @@ describe("buildAbPresetBlocks", () => {
       stepOutputs: {
         exec0: { reply: "opus answer" },
         exec1: { reply: "gpt answer" },
-        exec2: { reply: "", isError: true, error: "provider 503" },
+        // A completed step with an empty reply — the one non-throwing failure
+        // mode retry can't catch (a variant step that actually fails after
+        // retry exhaustion fails the whole run instead of completing here).
+        exec2: { reply: "" },
         exec3: { reply: "grok answer" },
       },
     };
@@ -137,7 +140,7 @@ describe("buildAbPresetBlocks", () => {
       ],
       stepOutputs: {
         exec0: { reply: "a" },
-        exec1: { reply: "", isError: true },
+        exec1: { reply: "" },
         exec2: { reply: "c" },
       },
     };
@@ -159,7 +162,9 @@ describe("buildAbPresetBlocks", () => {
     ]);
   });
 
-  test("all-variants-failed: a comparison block of no-response cells, a run error, no documents", () => {
+  test("all-variants-empty: a comparison block of no-response cells, a run error, no documents", () => {
+    // Every variant genuinely COMPLETED (empty reply, not a step failure) —
+    // the quorum guard is what fails the run below its non-empty-answer floor.
     const input: AbPresetBlockInput = {
       runId: "run_1",
       phase: "failed",
@@ -170,8 +175,8 @@ describe("buildAbPresetBlocks", () => {
         { stepId: "quorum", phase: "failed" },
       ],
       stepOutputs: {
-        exec0: { reply: "", isError: true },
-        exec1: { reply: "", isError: true },
+        exec0: { reply: "" },
+        exec1: { reply: "" },
       },
     };
     const blocks = buildAbPresetBlocks(input);
@@ -191,13 +196,37 @@ describe("buildAbPresetBlocks", () => {
       ),
     ).toBe(true);
 
-    // The failed variant lanes are shown as failed, not a misleading green done.
+    // The variant steps genuinely completed — the plain phase mapping shows
+    // them "done", not a per-lane failed override (that only applied to the
+    // retired nonFatal degrade). Only the quorum gate itself is "failed".
     const progress = blocks.find((b) => b.kind === "progress");
     if (progress?.kind !== "progress") throw new Error("no progress block");
     const variantStates = progress.steps
       .filter((s) => (s.label ?? "").startsWith("Variant"))
       .map((s) => s.state);
-    expect(variantStates).toEqual(["failed", "failed"]);
+    expect(variantStates).toEqual(["done", "done"]);
+  });
+
+  test("a variant step that actually fails renders through the plain phase mapping, no per-lane override", () => {
+    const input: AbPresetBlockInput = {
+      runId: "run_1",
+      phase: "failed",
+      errorMessage: "step failed",
+      steps: [
+        { stepId: "exec0", phase: "completed" },
+        { stepId: "exec1", phase: "failed" },
+      ],
+      stepOutputs: {
+        exec0: { reply: "opus answer" },
+      },
+    };
+    const blocks = buildAbPresetBlocks(input);
+    const progress = blocks.find((b) => b.kind === "progress");
+    if (progress?.kind !== "progress") throw new Error("no progress block");
+    const variantStates = progress.steps
+      .filter((s) => (s.label ?? "").startsWith("Variant"))
+      .map((s) => s.state);
+    expect(variantStates).toEqual(["done", "failed"]);
   });
 
   test("humanizes progress labels: exec ids read as Variant N", () => {

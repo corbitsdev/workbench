@@ -2,10 +2,14 @@ import { describe, expect, it } from "bun:test";
 import type { WorkflowDefinition } from "@intx/workflow";
 import {
   DETERMINISTIC_TOOL_KIND,
-  INLINE_INFERENCE_KIND,
   STEP_KIND_TAG,
   STEP_TITLE_TAG,
 } from "./deterministic-step";
+
+// The retired `inline-inference` tag value, kept as a literal (not an export —
+// the authoring kind is deleted) so historical workflow definitions that still
+// carry it on disk classify correctly when read back.
+const LEGACY_INLINE_INFERENCE_TAG = "inline-inference";
 import { classifyWorkflowSteps, countHumanGates } from "./flow-classify";
 
 function stepAgent(tag?: string, title?: string) {
@@ -29,7 +33,7 @@ function makeDefinition(): WorkflowDefinition {
       synthesize_brief: {
         kind: "step",
         id: "synthesize_brief",
-        ...stepAgent(INLINE_INFERENCE_KIND),
+        ...stepAgent(),
       },
       reviewDraft: {
         kind: "awaitSignal",
@@ -104,7 +108,7 @@ describe("classifyWorkflowSteps", () => {
     expect(classifyWorkflowSteps(def)[0]!.kind).toBe("agent");
   });
 
-  it("classifies a map by its inner step's tag", () => {
+  it("classifies a historical inline-inference-tagged step as a reasoning agent step", () => {
     const def = {
       id: "wf",
       triggers: [],
@@ -116,7 +120,7 @@ describe("classifyWorkflowSteps", () => {
           step: {
             kind: "step",
             id: "inner",
-            ...stepAgent(INLINE_INFERENCE_KIND),
+            ...stepAgent(LEGACY_INLINE_INFERENCE_TAG),
           },
         },
       },

@@ -1,7 +1,7 @@
 import { awaitSignal, defineWorkflow } from "@intx/workflow";
 import {
   deterministicToolStep,
-  inlineInferenceStep,
+  agentStep,
   LLM_WRITER_MODEL,
 } from "@workbench/agents";
 import { buildResearchSteps } from "@workbench/workflow-last30days-research";
@@ -23,7 +23,7 @@ export const workflow = defineWorkflow({
     // Reuse the proven current-story retrieval, grounding, and curation sequence.
     ...buildResearchSteps(),
 
-    write: inlineInferenceStep({
+    write: agentStep({
       id: "gtm-scripts-briefs-write",
       title: "Write the deliverable",
       systemPrompt: buildScriptsBriefsSystemPrompt(),

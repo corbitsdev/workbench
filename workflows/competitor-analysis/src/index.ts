@@ -3,7 +3,7 @@ import { awaitSignal, defineWorkflow, step } from "@intx/workflow";
 import {
   canonicalizeToolNames,
   deterministicToolStep,
-  inlineInferenceStep,
+  agentStep,
   LLM_CREDENTIAL_NAME,
   LLM_WRITER_MODEL,
   LLM_PROVIDER,
@@ -73,7 +73,7 @@ export const workflow = defineWorkflow({
     }),
 
     // 3. Infer subject profile + discovery search queries from the scrape.
-    profile: inlineInferenceStep({
+    profile: agentStep({
       id: "competitor-analysis-profile",
       title: "Define the company profile",
       systemPrompt: buildProfileSystemPrompt(),
@@ -99,7 +99,7 @@ export const workflow = defineWorkflow({
     }),
 
     // 5. Fold profile + discover into a reviewable report (markdown + cards).
-    synthesize: inlineInferenceStep({
+    synthesize: agentStep({
       id: "competitor-analysis-synthesize",
       title: "Write the competitor report",
       systemPrompt: buildSynthesizeSystemPrompt(),

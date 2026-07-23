@@ -1,5 +1,5 @@
 import { awaitSignal, defineWorkflow, map } from "@intx/workflow";
-import { deterministicToolStep, inlineInferenceStep } from "@workbench/agents";
+import { deterministicToolStep, agentStep } from "@workbench/agents";
 import {
   buildCollateralGenerationSystemPrompt,
   buildExtractionSystemPrompt,
@@ -11,10 +11,10 @@ import {
 
 // `analyze` and `generate` are pure single-turn reasoning steps: each returns
 // strict JSON and never calls a tool (the deterministic `persist` step does the
-// artifact creation). Both run as inline-inference steps (CL-2251): the sidecar
-// runs them in-process with a bare `createAgent` and the hub deploys no per-step
-// session for them. See the `analyze` and `generate` steps below — there are no
-// longer analyze/generate defineAgents.
+// artifact creation). Both are native `agentStep`s — a plain `step({ agent })`
+// the hub deploys no per-step session for (no step class launches one). See
+// the `analyze` and `generate` steps below — there are no longer
+// analyze/generate defineAgents.
 
 // -------------------------------------------------------------------------
 // Workflow metadata
@@ -38,11 +38,11 @@ export { DISPLAY_STEPS } from "./display-steps";
 //   select       awaitSignal            note-selection      → {noteId}
 //   fetch        deterministicToolStep  granola_get_note    input from steps.select.output
 //   context      awaitSignal            context             → {context: string}
-//   analyze      inlineInferenceStep    input merge fetch+context outputs
+//   analyze      agentStep    input merge fetch+context outputs
 //   ppSelection  awaitSignal            pain-point-selection → {selectedIds: string[]}
 //   fmtSelection awaitSignal            format-selection    → {items: Array<{format,painPointId,...}>}
 //   generate     map over fmtSelection.output.items (max 9: 3 pain points × 3 formats)
-//     └ inlineInferenceStep input from trigger.payload only (item carries all LLM-needed data)
+//     └ agentStep input from trigger.payload only (item carries all LLM-needed data)
 //   review       awaitSignal            review              → {decisions: Array<{format,title,content}>}
 //                                       (panel sends ONLY approved pieces)
 //   persist      map over review.output.decisions
@@ -61,7 +61,7 @@ export { DISPLAY_STEPS } from "./display-steps";
 //   per entry unconditionally.
 // -------------------------------------------------------------------------
 
-const generateStep = inlineInferenceStep({
+const generateStep = agentStep({
   id: "pain-point-collateral-generate",
   title: "Draft each piece",
   systemPrompt: buildCollateralGenerationSystemPrompt(),
@@ -114,7 +114,7 @@ export const workflow = defineWorkflow({
 
     // 5. LLM extracts pain points (input = fetched transcript + user context merged).
     //    Inline single-turn inference (CL-2251): no tools, so no per-step session.
-    analyze: inlineInferenceStep({
+    analyze: agentStep({
       id: "pain-point-collateral-analyze",
       title: "Find the pain points",
       systemPrompt: buildExtractionSystemPrompt(),

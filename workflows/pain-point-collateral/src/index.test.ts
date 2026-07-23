@@ -5,7 +5,6 @@ import { runLocal } from "@intx/workflow/runlocal";
 import type { StepInvoker } from "@intx/workflow/runtime";
 import {
   DETERMINISTIC_TOOL_KIND,
-  INLINE_INFERENCE_KIND,
   STEP_ARGMAP_TAG,
   STEP_KIND_TAG,
   STEP_TOOL_TAG,
@@ -134,12 +133,12 @@ describe("pain-point-collateral native workflow", () => {
     expect(fetch.agent.inference.sources).toEqual([]);
   });
 
-  test("analyze is an inline-inference step (no per-step session) with a real prompt", () => {
+  test("analyze is a native reasoning step (agentStep) with a real prompt and no dispatch tag", () => {
     const analyze = stepPrimitive("analyze");
-    // Inline single-turn inference (CL-2251): marker tag set, no deterministic
-    // tool tag, real reasoning prompt, and no source declared on the definition
-    // (the source is pinned at deploy time / resolved by the sidecar).
-    expect(analyze.agent.tags?.[STEP_KIND_TAG]).toBe(INLINE_INFERENCE_KIND);
+    // No Workbench dispatch tag at all: no deterministic tool tag, real
+    // reasoning prompt, and no source declared on the definition (the source
+    // is pinned at deploy time / resolved by the sidecar).
+    expect(analyze.agent.tags?.[STEP_KIND_TAG]).toBeUndefined();
     expect(analyze.agent.tags?.[STEP_TOOL_TAG]).toBeUndefined();
     expect(analyze.agent.systemPrompt.length).toBeGreaterThan(0);
     expect(analyze.agent.capabilities).toEqual([]);

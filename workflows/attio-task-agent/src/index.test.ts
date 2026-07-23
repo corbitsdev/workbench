@@ -3,7 +3,6 @@ import { runLocal } from "@intx/workflow/runlocal";
 import type { StepInvoker } from "@intx/workflow/runtime";
 import {
   DETERMINISTIC_TOOL_KIND,
-  INLINE_INFERENCE_KIND,
   STEP_ARGMAP_TAG,
   STEP_KIND_TAG,
   STEP_NONFATAL_TAG,
@@ -207,7 +206,7 @@ describe("attio-task-agent native workflow", () => {
     expect(workflow.steps["gate-cold-email"]).toBeUndefined();
 
     const exec = inlinePrimitive("execute");
-    expect(exec.agent.tags?.[STEP_KIND_TAG]).toBe(INLINE_INFERENCE_KIND);
+    expect(exec.agent.tags?.[STEP_KIND_TAG]).toBeUndefined();
     // It sees the plan + task + clarification (merged; envelope keys don't collide).
     expect(exec.input).toEqual({
       merge: [
@@ -223,14 +222,14 @@ describe("attio-task-agent native workflow", () => {
 
   test("reviewArtifacts is the agent REVIEWER, reading the executor's outputs before the human", () => {
     const review = inlinePrimitive("reviewArtifacts");
-    expect(review.agent.tags?.[STEP_KIND_TAG]).toBe(INLINE_INFERENCE_KIND);
+    expect(review.agent.tags?.[STEP_KIND_TAG]).toBeUndefined();
     expect(review.input).toEqual({ from: "steps.execute.output" });
     expect(review.agent.systemPrompt).toContain("verdict");
   });
 
-  test("suggest is an inline-inference step on the cheaper default model", () => {
+  test("suggest is a native reasoning step (agentStep) on the cheaper default model", () => {
     const s = stepPrimitive("suggest");
-    expect(s.agent.tags?.[STEP_KIND_TAG]).toBe(INLINE_INFERENCE_KIND);
+    expect(s.agent.tags?.[STEP_KIND_TAG]).toBeUndefined();
     expect(s.agent.capabilities).toEqual([]);
     expect(s.agent.systemPrompt.length).toBeGreaterThan(0);
     expect(s.agent.inference.sources).toEqual([]);

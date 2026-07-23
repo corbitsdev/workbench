@@ -18,7 +18,7 @@ import {
 } from "@intx/hub-sessions";
 import { awaitSignal, defineWorkflow, step } from "@intx/workflow";
 import { defineAgent } from "@intx/agent";
-import { deterministicToolStep, inlineInferenceStep } from "@workbench/agents";
+import { deterministicToolStep, STEP_KIND_TAG } from "@workbench/agents";
 
 // readWorkflowDefinition (reached via run-state-from-log) reads its cache TTL
 // from getConfig(); apps/hub tests do not preload test-setup/loadConfig, so stub
@@ -317,7 +317,7 @@ describe("getWorkflowRunState — native log fold across layouts", () => {
 });
 
 describe("classifyStepKinds — step-type classification from the definition", () => {
-  test("classifies human, agent, deterministic, and inline steps", () => {
+  test("classifies human, agent, and deterministic steps", () => {
     const reasoningAgent = defineAgent({
       id: "reasoner",
       description: "A genuine reasoning agent",
@@ -337,7 +337,6 @@ describe("classifyStepKinds — step-type classification from the definition", (
           id: "crunch-agent",
           tool: "some_tool",
         }),
-        muse: inlineInferenceStep({ id: "muse-agent", systemPrompt: "Muse." }),
       },
     });
 
@@ -345,6 +344,30 @@ describe("classifyStepKinds — step-type classification from the definition", (
     expect(kinds.get("gate")).toBe("human");
     expect(kinds.get("brains")).toBe("agent");
     expect(kinds.get("crunch")).toBe("deterministic");
+  });
+
+  test("classifies a historical inline-inference-tagged step as 'inline' — the retired kind has no author, but old run definitions on disk still carry the tag", () => {
+    // `inlineInferenceStep` (the authoring helper) is deleted; a completed
+    // run's committed workflow.json from before the retirement can still
+    // carry this literal tag value, and this fold must keep reading it
+    // correctly rather than misclassifying old history.
+    const museAgent = defineAgent({
+      id: "muse-agent",
+      description: "Historical inline single-turn step",
+      systemPrompt: "Muse.",
+      tools: [],
+      capabilities: [],
+      inference: { sources: [] },
+      tags: { [STEP_KIND_TAG]: "inline-inference" },
+    });
+
+    const definition = defineWorkflow({
+      id: "classify-wf-legacy",
+      triggers: [{ type: "manual" }],
+      steps: { muse: step({ agent: museAgent }) },
+    });
+
+    const kinds = classifyStepKinds(definition);
     expect(kinds.get("muse")).toBe("inline");
   });
 });

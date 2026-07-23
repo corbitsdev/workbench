@@ -3,7 +3,6 @@ import { runLocal } from "@intx/workflow/runlocal";
 import type { StepInvoker } from "@intx/workflow/runtime";
 import {
   DETERMINISTIC_TOOL_KIND,
-  INLINE_INFERENCE_KIND,
   STEP_ARGMAP_TAG,
   STEP_KIND_TAG,
   STEP_NONFATAL_TAG,
@@ -160,9 +159,9 @@ describe("sumble-account-intel workflow structure", () => {
     });
   });
 
-  test("synthesize is an inline-inference step with a real prompt and no tools", () => {
+  test("synthesize is a native reasoning step (agentStep) with a real prompt and no tools", () => {
     const synth = stepPrimitive("synthesize");
-    expect(synth.agent.tags?.[STEP_KIND_TAG]).toBe(INLINE_INFERENCE_KIND);
+    expect(synth.agent.tags?.[STEP_KIND_TAG]).toBeUndefined();
     expect(synth.agent.tags?.[STEP_TOOL_TAG]).toBeUndefined();
     expect(synth.agent.systemPrompt.length).toBeGreaterThan(0);
     expect(synth.input).toEqual({ from: "steps" });

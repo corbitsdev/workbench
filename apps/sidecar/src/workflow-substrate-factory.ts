@@ -47,9 +47,7 @@ import {
   STEP_ARGMAP_TAG,
   STEP_NONFATAL_TAG,
   DETERMINISTIC_TOOL_KIND,
-  INLINE_INFERENCE_KIND,
 } from "@workbench/agents";
-import { runInlineInferenceStep } from "./inline-inference-step";
 import { wsUrlToHttp } from "./agent-tools";
 import type {
   Agent,
@@ -1266,22 +1264,17 @@ export function createSidecarStepInvoker(args: {
   // carries the deterministic marker tags is a pure tool/API call: build the
   // step env (which materializes the per-step tool context) and invoke the
   // named tool directly, skipping the reactor + inference entirely. Every
-  // other step delegates to the real inference invoker above. The existing
-  // test seam (a test-injected `agentFactory` for pure inference) is
-  // untouched — the deterministic branch only triggers on the tag.
-  // Inline single-turn inference dispatch (CL-2251). A step whose
-  // placeholder agent carries the inline marker tag is a pure reasoning turn
-  // the hub deliberately did NOT deploy as a per-step session (no agent-state
-  // repo / DB rows / grants file). We must therefore run it with a BARE
-  // `createAgent` and NEVER route it through `createStepAgentFactory`, which
-  // reads a `STEP_TOOL_CONTEXT_KEY` the inline step's env never carries (the
-  // hub wrote no per-step tool context for it) and throws when it is absent.
-  // The step env's `sources`/`defaultSource` come from the same
-  // `STEP_INFERENCE_SOURCES` table the deployed step path uses — credentials
-  // are pinned at deploy time, never resolved on demand in the sidecar.
-  // A deny-all `authorize` fails closed: an inline step declares no tools, so
-  // a tool call (which would only arise from a misdeclared step) is denied.
-  const inlineAgentFactory = args.agentFactory ?? createAgent;
+  // other step (every reasoning step, native or historical) delegates to the
+  // real inference invoker above. The existing test seam (a test-injected
+  // `agentFactory` for pure inference) is untouched — the deterministic
+  // branch only triggers on the tag.
+  //
+  // The former inline single-turn inference dispatch (CL-2251) is retired:
+  // staging-only step provisioning removed the per-step session cost it
+  // existed to dodge, so every reasoning step — including what used to be
+  // authored as `inlineInferenceStep` — now runs through the same real
+  // `inferenceInvoker`/`createStepAgentFactory` path as any other deployed
+  // step.
   return async (req) => {
     const tags = req.agent.tags;
     const toolName = tags?.[STEP_TOOL_TAG];
@@ -1302,20 +1295,6 @@ export function createSidecarStepInvoker(args: {
         ...(argMapJson !== undefined ? { argMapJson } : {}),
         ...(nonFatal ? { nonFatal } : {}),
         signal: req.signal,
-      });
-    }
-    if (tags?.[STEP_KIND_TAG] === INLINE_INFERENCE_KIND) {
-      // WORKBENCH-LOCAL (CL-3379): forward this invocation's `onEvent` (the
-      // same per-step sink the inference branch below wires) so inline
-      // single-turn steps stop discarding their event stream -- the
-      // heartbeat brief's per-member inline inference now reaches
-      // `analytics_event` through the same `onInferenceEvent` ->
-      // `publishInferenceEvent` rail launched steps use.
-      return runInlineInferenceStep({
-        req,
-        buildEnv,
-        agentFactory: inlineAgentFactory,
-        ...(args.onEvent !== undefined ? { onEvent: args.onEvent } : {}),
       });
     }
     return inferenceInvoker(req);

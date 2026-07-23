@@ -5,7 +5,6 @@ import { evaluateSelector } from "@intx/workflow/runtime";
 import { mergeHeartbeatBriefSources } from "@workbench/shared";
 import {
   DETERMINISTIC_TOOL_KIND,
-  INLINE_INFERENCE_KIND,
   STEP_ARGMAP_TAG,
   STEP_KIND_TAG,
   STEP_NONFATAL_TAG,
@@ -102,7 +101,9 @@ function resolveArgMap(
   return out;
 }
 
-function argMapOf(id: string): Record<
+function argMapOf(
+  id: string,
+): Record<
   string,
   | { from: string; optional?: boolean }
   | { literal: unknown }
@@ -233,9 +234,9 @@ describe("heartbeat native workflow", () => {
   // -------------------------------------------------------------------------
   // Inline-inference brief step (default model)
   // -------------------------------------------------------------------------
-  test("brief is an inline-inference step with a real prompt and the default model", () => {
+  test("brief is a native reasoning step (agentStep) with a real prompt and the default model", () => {
     const brief = stepPrimitive("brief");
-    expect(brief.agent.tags?.[STEP_KIND_TAG]).toBe(INLINE_INFERENCE_KIND);
+    expect(brief.agent.tags?.[STEP_KIND_TAG]).toBeUndefined();
     expect(brief.agent.tags?.[STEP_TOOL_TAG]).toBeUndefined();
     expect(brief.agent.systemPrompt.length).toBeGreaterThan(0);
     expect(brief.agent.capabilities).toEqual([]);

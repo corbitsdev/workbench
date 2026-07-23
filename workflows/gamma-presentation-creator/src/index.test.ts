@@ -7,7 +7,6 @@ import {
   STEP_ARGMAP_TAG,
   STEP_NONFATAL_TAG,
   DETERMINISTIC_TOOL_KIND,
-  INLINE_INFERENCE_KIND,
 } from "@workbench/agents";
 
 import { workflow } from "./index";
@@ -166,7 +165,7 @@ describe("artifact → gamma deck workflow (single-shot)", () => {
     if (generate === undefined || generate.kind !== "step") {
       throw new Error("expected a step primitive for generate");
     }
-    expect(generate.agent.tags?.[STEP_KIND_TAG]).toBe(INLINE_INFERENCE_KIND);
+    expect(generate.agent.tags?.[STEP_KIND_TAG]).toBeUndefined();
     expect(generate.agent.capabilities).toEqual([]);
     expect(generate.agent.systemPrompt.length).toBeGreaterThan(0);
 
@@ -187,7 +186,7 @@ describe("artifact → gamma deck workflow (single-shot)", () => {
     if (describe === undefined || describe.kind !== "step") {
       throw new Error("expected a step primitive for describe");
     }
-    expect(describe.agent.tags?.[STEP_KIND_TAG]).toBe(INLINE_INFERENCE_KIND);
+    expect(describe.agent.tags?.[STEP_KIND_TAG]).toBeUndefined();
     expect(describe.agent.systemPrompt.length).toBeGreaterThan(0);
 
     const persist = workflow.steps["persist"];

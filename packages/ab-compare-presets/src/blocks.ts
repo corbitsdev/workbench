@@ -46,8 +46,11 @@ interface PresetVariant {
 // One entry per `exec<i>` step, in index order, with its blind label, the text
 // it produced, and its lifecycle status: a lane not yet terminal is "streaming"
 // (keeps its slot with a calm placeholder), a terminal lane with a reply is
-// "responded", and a terminal empty/errored lane is "no-response" (kept in the
-// grid as a gold marker, never dropped).
+// "responded", and a terminal lane with an empty reply is "no-response" (kept
+// in the grid as a gold marker, never dropped). A variant step that actually
+// FAILS now fails the whole run — it never reaches "completed" with a
+// recorded skip — so a failed lane surfaces as the run-level error block
+// below, not as a per-lane marker here.
 function readVariants(input: AbPresetBlockInput): PresetVariant[] {
   const execIds = input.steps
     .map((step) => step.stepId)
@@ -58,12 +61,11 @@ function readVariants(input: AbPresetBlockInput): PresetVariant[] {
     const terminal = step !== undefined && TERMINAL_PHASES.has(step.phase);
     const output = input.stepOutputs[id];
     const reply = isRecord(output) ? output.reply : undefined;
-    const failed = isRecord(output) && output.isError === true;
-    const content = !failed && typeof reply === "string" ? reply : "";
+    const content = typeof reply === "string" ? reply : "";
     let status: VariantStatus;
     if (!terminal) {
       status = "streaming";
-    } else if (failed || content.trim().length === 0) {
+    } else if (content.trim().length === 0) {
       status = "no-response";
     } else {
       status = "responded";
@@ -129,20 +131,15 @@ export function buildAbPresetBlocks(input: AbPresetBlockInput): UIBlock[] {
   const blocks: UIBlock[] = [];
 
   if (input.steps.length > 0) {
-    const steps: ProgressStep[] = input.steps.map((step) => {
-      // A `nonFatal` variant that errored still COMPLETES its step (it returns
-      // an isError output), so its phase is "completed" — show it as failed in
-      // the progress rail instead of a misleading green check.
-      const output = input.stepOutputs[step.stepId];
-      const variantFailed =
-        AB_PRESET_EXEC_STEP_ID.test(step.stepId) &&
-        isRecord(output) &&
-        output.isError === true;
-      return {
-        state: variantFailed ? "failed" : progressStateForStepPhase(step.phase),
-        label: abPresetHumanizeStepLabel(step.stepId),
-      };
-    });
+    // A variant step's failure now fails the step itself (phase "failed"),
+    // so the plain phase→progress-state mapping already renders it correctly
+    // — no per-lane isError override needed (that only applied to the retired
+    // nonFatal degrade, which completed a failed variant with a recorded
+    // skip instead of failing the step).
+    const steps: ProgressStep[] = input.steps.map((step) => ({
+      state: progressStateForStepPhase(step.phase),
+      label: abPresetHumanizeStepLabel(step.stepId),
+    }));
     blocks.push({ kind: "progress", steps });
   }
 

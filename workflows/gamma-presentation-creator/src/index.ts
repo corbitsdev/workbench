@@ -2,7 +2,7 @@ import { awaitSignal, defineWorkflow } from "@intx/workflow";
 import type { Primitive } from "@intx/workflow";
 import {
   deterministicToolStep,
-  inlineInferenceStep,
+  agentStep,
   LLM_DEFAULT_MODEL,
 } from "@workbench/agents";
 import {
@@ -66,7 +66,7 @@ const setupSteps: Record<string, Primitive> = {
     argMap: { noteId: { from: "noteId", optional: true } },
     nonFatal: true,
   }),
-  generate: inlineInferenceStep({
+  generate: agentStep({
     id: "presentation-generate",
     title: "Draft the deck",
     systemPrompt: PRESENTATION_GENERATE_SYSTEM_PROMPT,
@@ -92,7 +92,7 @@ const setupSteps: Record<string, Primitive> = {
     },
     argMap: { gammaId: { from: "gammaId" }, prompt: { from: "reply" } },
   }),
-  describe: inlineInferenceStep({
+  describe: agentStep({
     id: "presentation-describe",
     title: "Summarize the deck",
     systemPrompt: PRESENTATION_DESCRIBE_SYSTEM_PROMPT,

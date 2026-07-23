@@ -7,7 +7,6 @@ import {
   STEP_ARGMAP_TAG,
   STEP_NONFATAL_TAG,
   DETERMINISTIC_TOOL_KIND,
-  INLINE_INFERENCE_KIND,
   LLM_WRITER_MODEL,
 } from "@workbench/agents";
 
@@ -205,7 +204,7 @@ describe("last30days-research native workflow", () => {
     if (ground === undefined || ground.kind !== "step") {
       throw new Error("expected a step primitive for ground");
     }
-    expect(ground.agent.tags?.[STEP_KIND_TAG]).toBe(INLINE_INFERENCE_KIND);
+    expect(ground.agent.tags?.[STEP_KIND_TAG]).toBeUndefined();
     expect(ground.after).toEqual(["intake"]);
 
     const groundQueries = workflow.steps.groundQueries;
@@ -257,7 +256,7 @@ describe("last30days-research native workflow", () => {
     if (entities === undefined || entities.kind !== "step") {
       throw new Error("expected a step primitive for entities");
     }
-    expect(entities.agent.tags?.[STEP_KIND_TAG]).toBe(INLINE_INFERENCE_KIND);
+    expect(entities.agent.tags?.[STEP_KIND_TAG]).toBeUndefined();
     expect(entities.after).toEqual(["polymarket"]);
 
     const entityQueries = workflow.steps.entityQueries;
@@ -310,7 +309,7 @@ describe("last30days-research native workflow", () => {
     if (curate === undefined || curate.kind !== "step") {
       throw new Error("expected a step primitive for curate");
     }
-    expect(curate.agent.tags?.[STEP_KIND_TAG]).toBe(INLINE_INFERENCE_KIND);
+    expect(curate.agent.tags?.[STEP_KIND_TAG]).toBeUndefined();
     expect(curate.after).toEqual(["collect"]);
 
     // The brief now gates on curation, not on a relevance rerank.
@@ -320,12 +319,12 @@ describe("last30days-research native workflow", () => {
     expect(workflow.steps.rerank).toBeUndefined();
   });
 
-  test("write is an inline-inference step; persist is deterministic and gated on write", () => {
+  test("write is a native reasoning step (agentStep); persist is deterministic and gated on write", () => {
     const write = workflow.steps.write;
     if (write === undefined || write.kind !== "step") {
       throw new Error("expected a step primitive for write");
     }
-    expect(write.agent.tags?.[STEP_KIND_TAG]).toBe(INLINE_INFERENCE_KIND);
+    expect(write.agent.tags?.[STEP_KIND_TAG]).toBeUndefined();
     expect(write.agent.tags?.[STEP_TOOL_TAG]).toBeUndefined();
     expect(write.agent.systemPrompt.length).toBeGreaterThan(0);
 

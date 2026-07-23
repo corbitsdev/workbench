@@ -2,7 +2,7 @@ import { awaitSignal, defineWorkflow } from "@intx/workflow";
 import type { StepPrimitive } from "@intx/workflow";
 import {
   deterministicToolStep,
-  inlineInferenceStep,
+  agentStep,
   LLM_WRITER_MODEL,
 } from "@workbench/agents";
 import {
@@ -290,7 +290,7 @@ export function buildResearchSteps(): Record<string, StepPrimitive> {
     // untailored base query. It is NOT, however, best-effort against an inference
     // OUTAGE: like `rerank`/`write`, an inline step cannot carry `nonFatal`, so a
     // failed grounding turn fails the run (a one-call dependency, same as those).
-    ground: inlineInferenceStep({
+    ground: agentStep({
       id: "last30days-ground",
       title: "Ground the topic",
       systemPrompt: buildGroundingSystemPrompt(),
@@ -322,7 +322,7 @@ export function buildResearchSteps(): Record<string, StepPrimitive> {
     // names the concrete launches/entities that surfaced, emitting an entity-focused
     // follow-up query per platform so round 2 chases them deeper. Best-effort — the
     // parse tool falls back to the base query if the reply is malformed.
-    entities: inlineInferenceStep({
+    entities: agentStep({
       id: "last30days-entities",
       title: "Extract key entities",
       systemPrompt: buildEntityExtractSystemPrompt(),
@@ -365,7 +365,7 @@ export function buildResearchSteps(): Record<string, StepPrimitive> {
     // survivors into 3-6 named themes, and select 3-5 verbatim community quotes.
     // Runs on the heavier writer model. Best-effort — the brief tool falls back to
     // the deterministic buildReport pipeline if the curate JSON is missing or junk.
-    curate: inlineInferenceStep({
+    curate: agentStep({
       id: "last30days-curate",
       title: "Curate themes & quotes",
       systemPrompt: buildCurateSystemPrompt(),
@@ -394,7 +394,7 @@ export const workflow = defineWorkflow({
     intake: awaitSignal({ name: "intake" }),
     ...buildResearchSteps(),
 
-    write: inlineInferenceStep({
+    write: agentStep({
       id: "last30days-write-report",
       title: "Write the report",
       systemPrompt: buildWriterSystemPrompt(),

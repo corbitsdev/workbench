@@ -1,6 +1,6 @@
 import { defineWorkflow } from "@intx/workflow";
 import type { StepPrimitive } from "@intx/workflow";
-import { deterministicToolStep, inlineInferenceStep } from "@workbench/agents";
+import { deterministicToolStep, agentStep } from "@workbench/agents";
 import {
   HEARTBEAT_BRIEF_SOURCE_FETCH_ARG_MAP,
   heartbeatIntakeStepKey,
@@ -27,7 +27,7 @@ const MORNING_BRIEF_ARTIFACT_KIND = morningBriefArtifactKind();
 //                     concurrent, input = trigger.payload, nonFatal: true
 //   merge-sources     deterministicToolStep  heartbeat_merge_brief_sources
 //                      project every intake step → { sources: { … } }
-//   brief             inlineInferenceStep    default model
+//   brief             agentStep    default model
 //                      merge(payload, merge-sources content)
 //   persist           deterministicToolStep  write_artifact  body = brief reply (before notify)
 //   mail-refs         deterministicToolStep  heartbeat_format_brief_mail_refs
@@ -98,7 +98,7 @@ export const workflow = defineWorkflow({
 
     // Synthesize the brief. Inline single-turn inference on the deploy default
     // model (deepseek-v4-flash) — no per-step model preference declared.
-    brief: inlineInferenceStep({
+    brief: agentStep({
       id: "heartbeat-brief",
       title: "Write the brief",
       systemPrompt: buildMorningBriefSystemPrompt(),

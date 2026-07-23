@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import {
-  INLINE_INFERENCE_KIND,
+  DETERMINISTIC_TOOL_KIND,
   STEP_KIND_TAG,
   STEP_TOOL_TAG,
 } from "@workbench/agents";
@@ -48,14 +48,17 @@ describe("granola-call workflow", () => {
     expect(stepIds).toHaveLength(13);
   });
 
-  test("exactly one inlineInferenceStep (analyze)", () => {
+  test("exactly one native reasoning step (analyze) — no Workbench dispatch tag", () => {
     const steps = Object.keys(workflow.steps).map((id) => stepPrimitive(id));
-    const inferenceSteps = steps.filter(
-      (step) => step.agent.tags?.[STEP_KIND_TAG] === INLINE_INFERENCE_KIND,
+    const reasoningSteps = steps.filter(
+      (step) => step.agent.tags?.[STEP_KIND_TAG] !== DETERMINISTIC_TOOL_KIND,
     );
-    expect(inferenceSteps.map((s) => s.agent.id)).toEqual([
+    expect(reasoningSteps.map((s) => s.agent.id)).toEqual([
       "granola-call-analyze",
     ]);
+    expect(
+      stepPrimitive("analyze").agent.tags?.[STEP_KIND_TAG],
+    ).toBeUndefined();
   });
 
   test("deterministic tool tags for pure + hub tools", () => {

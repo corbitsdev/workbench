@@ -25,7 +25,6 @@ import type { GrantRule } from "@intx/authz";
 import {
   toolPackagesForCapabilities,
   DETERMINISTIC_TOOL_KIND,
-  INLINE_INFERENCE_KIND,
   STEP_KIND_TAG,
 } from "@workbench/agents";
 import { getConfig } from "../config";
@@ -220,12 +219,9 @@ export function createWorkflowDeployService(deps: {
       params.toolPackagePins ??
       toolPackagesForCapabilities(capabilityNames(walk));
 
-    // Partition every step into one of three classes by its CL-2251
+    // Partition every step into one of two classes by its CL-2251
     // `STEP_KIND_TAG`:
     //
-    //   inline-inference (CL-2251) — a no-tool single-turn reasoning turn the
-    //     sidecar runs in-process with a bare `createAgent`. NO `agent` row,
-    //     NO `agent_instance` row, NO grants file, NO launchSession.
     //   deterministic-tool (CL-2252) — a tool/API call the sidecar runs
     //     against a deny-all `authorize` directly (no reactor, no session).
     //     The tool manifest/credentials endpoints gate on its `agent` row, so
@@ -238,22 +234,25 @@ export function createWorkflowDeployService(deps: {
     //     workflow.json, the grants from `state/grants.json`, the tools from
     //     the on-disk deploy tree the per-step stager writes, and the
     //     credentials via the hub credential rail gated on the `agent` row.
+    //     `agentStep` (`@workbench/agents`) is the standard author helper for
+    //     this class; the retired `inline-inference` third class (a no-tool
+    //     single-turn reasoning turn dispatched through a bare `createAgent`)
+    //     is gone — no in-repo workflow can construct one anymore, so this
+    //     partition only ever sees the two classes above.
     //
     // The orchestrator calls its per-step `launchSession` hook once per step.
     // In a production provision that hook is the on-disk tool stager
     // (`stageWorkflowStep`), which stages each step's pinned tool closure into
     // the deploy tree the sidecar materializes from disk; the catalog-publish
     // path passes a no-op instead (it touches no sidecar). Skipping the
-    // inline/deterministic agent-state repos is the session-per-step RAM
+    // deterministic step's agent-state repo is the session-per-step RAM
     // saving carried over from the retired in-process runtime.
-    const inlineStepIds = collectInlineStepIds(params.workflow);
     const deterministicStepIds = collectDeterministicToolStepIds(
       params.workflow,
     );
     const allStepIds = [...walk.perStep.keys()];
     const deployedStepIds = allStepIds.filter(
-      (stepId) =>
-        !inlineStepIds.has(stepId) && !deterministicStepIds.has(stepId),
+      (stepId) => !deterministicStepIds.has(stepId),
     );
     // The orchestrator's per-step hook stages each step's tool tree on disk in
     // a production provision so the sidecar materializes the step's tools from
@@ -285,10 +284,9 @@ export function createWorkflowDeployService(deps: {
     // repo so both interchange's supervisor (credentialsSnapshot assembly)
     // and our sidecar's `readStepGrants` see real grants. Without this the
     // step agent's grant set is empty and every `tool:<name>`/`invoke` is
-    // denied. Inline steps declare no tools, and deterministic tool steps run
-    // against a hardcoded deny-all `authorize` that never consults
-    // `grants.json` (CL-2252), so neither gets a grants file (nor an
-    // agent-state repo to hold one).
+    // denied. Deterministic tool steps run against a hardcoded deny-all
+    // `authorize` that never consults `grants.json` (CL-2252), so they get no
+    // grants file (nor an agent-state repo to hold one).
     await writeStepGrantFiles({
       repoStore: deps.repoStore,
       deploymentId: params.deploymentId,
@@ -303,8 +301,8 @@ export function createWorkflowDeployService(deps: {
     // provision at phase "pack". Deploy acks no longer read these rows
     // (dep_-prefixed workflow addresses resolve against the
     // `workflow_deployment` projection), and CL-2705 per-step usage
-    // attribution still joins them for reasoning steps; rows for inline /
-    // deterministic steps are inert beyond the FK.
+    // attribution still joins them for reasoning steps; rows for deterministic
+    // steps are inert beyond the FK.
     //
     // Both `agent_instance` writers (step + supervisor) are gated on the
     // supervisor frame: a catalog publish spawns no supervisor and runs no
@@ -1392,23 +1390,6 @@ function extractStepAgent(
   if (primitive.kind === "step") return primitive.agent;
   if (primitive.kind === "map") return primitive.step.agent;
   return null;
-}
-
-// The step ids whose agent carries the inline-inference marker tag (CL-2251).
-// These steps are NOT deployed as per-step sessions: the hub skips their
-// agent/instance/grants writers and no-ops their `launchSession`.
-export function collectInlineStepIds(
-  workflow: WorkflowDefinition,
-): Set<string> {
-  const inline = new Set<string>();
-  for (const stepId of workflow.stepOrder) {
-    const primitive = workflow.steps[stepId];
-    const agent = extractStepAgent(primitive);
-    if (agent?.tags?.[STEP_KIND_TAG] === INLINE_INFERENCE_KIND) {
-      inline.add(stepId);
-    }
-  }
-  return inline;
 }
 
 // The step ids whose agent carries the deterministic-tool marker tag (CL-2252).

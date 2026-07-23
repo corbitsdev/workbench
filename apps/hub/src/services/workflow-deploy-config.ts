@@ -16,7 +16,7 @@ export type WorkflowDeployConfig = {
 };
 
 // The distinct non-default models a workflow's steps declare as a preferred
-// inference source (via `inlineInferenceStep({ model })`). The deploy resolves
+// inference source (via `agentStep({ model })`). The deploy resolves
 // these into `config.sources` IN ADDITION to the default chain so a step that
 // prefers one can pin it. Driving the extra-model set off the definition keeps
 // the per-step model a property of the workflow that declares it — the generic
@@ -39,7 +39,7 @@ export function collectDeclaredStepModels(
 }
 
 // The per-step output-token ceiling a step declares on its preferred inference
-// source (via `inlineInferenceStep({ model, maxTokens })`, carried as
+// source (via `agentStep({ model, maxTokens })`, carried as
 // `parameters.maxTokens`). Keyed by model so the deploy can lift it onto the
 // matching resolved `InferenceSource.defaults.maxTokens` — the source-level knob
 // the runtime merges into each call. Without this a heavy writer step runs on the

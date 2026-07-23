@@ -9,10 +9,7 @@ import type { WorkflowDefinition } from "@intx/workflow";
 import type { HarnessConfig, InferenceSource } from "@intx/types/runtime";
 import type { AgentRepoStore, SidecarRouter } from "@intx/hub-sessions";
 import type { HubDb } from "../db";
-import {
-  createWorkbenchDirectorRegistry,
-  inlineInferenceStep,
-} from "@workbench/agents";
+import { createWorkbenchDirectorRegistry, agentStep } from "@workbench/agents";
 
 // Catalog publish is hub-only: persistCatalog writes the git `workflow`
 // definition repo + DB rows with the sidecar disconnected, and the supervisor is
@@ -77,12 +74,12 @@ describe("catalog publish (disconnected) then per-run provision", () => {
     const deploymentDomain = "deploy.example.com";
     const dir = await mkdtemp(join(tmpdir(), "wf-catalog-run-"));
 
-    // A single inline-inference step keeps the deploy to just the supervisor.
+    // A single native reasoning step (agentStep) keeps the deploy simple.
     const workflow = defineWorkflow({
       id: "k1",
       trigger: { type: "manual" },
       steps: {
-        analyze: inlineInferenceStep({
+        analyze: agentStep({
           id: "analyze",
           systemPrompt: "extract pain points",
         }),

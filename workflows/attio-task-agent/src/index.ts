@@ -14,7 +14,7 @@ import {
   LLM_WRITER_MODEL,
   canonicalizeToolNames,
   deterministicToolStep,
-  inlineInferenceStep,
+  agentStep,
   STEP_TITLE_TAG,
   withCorbitsVocabulary,
 } from "@workbench/agents";
@@ -86,11 +86,11 @@ const analyzeAgent = defineAgent({
 //   fetchTask     deterministicToolStep  attio_get_task      from selectTask
 //   analyze       step({agent})   PLANNER: ReAct read-only  → AttioAnalyzeDecision (draftActions[] + proposedTaskUpdate?)
 //   clarify       awaitSignal            clarification       → {answers?}
-//   execute       inlineInferenceStep  EXECUTOR: performs every draftAction → {outputs:[{type,title,content,brief}]}
-//   reviewArtifacts inlineInferenceStep  REVIEWER: validates outputs vs briefs → {overall, items:[{type,verdict,notes}]}
+//   execute       agentStep  EXECUTOR: performs every draftAction → {outputs:[{type,title,content,brief}]}
+//   reviewArtifacts agentStep  REVIEWER: validates outputs vs briefs → {overall, items:[{type,verdict,notes}]}
 //   review        awaitSignal            review              → {approvedPieces:[{type,title,content}]}
 //   persist       map artifact_create    over approvedPieces
-//   suggest       inlineInferenceStep    merge fetch+analyze → completion summary + follow-ups
+//   suggest       agentStep    merge fetch+analyze → completion summary + follow-ups
 //   approveSync   awaitSignal            sync-approval       → {confirm,taskId,parentObject,parentRecordId,note}
 //   syncGate      gate on confirm        → writeNote | skipWriteBack
 //   writeNote     deterministicToolStep  attio_create_note   FATAL (loud on real Attio errors)
@@ -143,7 +143,7 @@ const persistStep = deterministicToolStep({
 // their envelope keys (reply / content / answers) don't collide, so the merge is
 // lossless. `review` reads only `execute.output` — each produced item echoes its
 // brief, so the reviewer judges against the exact instruction with no join.
-const executeStep = inlineInferenceStep({
+const executeStep = agentStep({
   id: "attio-task-agent-execute",
   title: "Do the work",
   systemPrompt: buildExecutorSystemPrompt(),
@@ -159,7 +159,7 @@ const executeStep = inlineInferenceStep({
   after: ["clarify"],
 });
 
-const reviewStep = inlineInferenceStep({
+const reviewStep = agentStep({
   id: "attio-task-agent-review-artifacts",
   title: "Check the drafts",
   systemPrompt: buildReviewSystemPrompt(),
@@ -249,7 +249,7 @@ export const workflow = defineWorkflow({
       after: ["review"],
     }),
 
-    suggest: inlineInferenceStep({
+    suggest: agentStep({
       id: "attio-task-agent-suggest",
       title: "Suggest follow-ups",
       systemPrompt: buildSuggestSystemPrompt(),

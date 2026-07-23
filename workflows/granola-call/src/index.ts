@@ -1,5 +1,5 @@
 import { defineWorkflow } from "@intx/workflow";
-import { deterministicToolStep, inlineInferenceStep } from "@workbench/agents";
+import { deterministicToolStep, agentStep } from "@workbench/agents";
 import { GRANOLA_CALL_ANALYSIS_SYSTEM_PROMPT } from "./prompts";
 
 export const label = "Granola Call Processing";
@@ -10,14 +10,14 @@ export const kind = "granola-call";
 export { DISPLAY_STEPS } from "./display-steps";
 
 // -------------------------------------------------------------------------
-// Workflow definition — deterministic steps + one inlineInferenceStep
+// Workflow definition — deterministic steps + one agentStep
 //
 // Step graph:
 //   fetch           granola_get_note (credentialed)
 //   normalize       granola_normalize_note
 //   classify        granola_classify_call  (merge trigger + normalize)
 //   build-prompt    granola_build_analysis_prompt
-//   analyze         inlineInferenceStep   ← the only agent step
+//   analyze         agentStep             ← the only agent step
 //   parse           granola_parse_analysis
 //   prepare         granola_prepare_artifacts  (merge normalize+parse+classify)
 //   persist-pain    write_artifact
@@ -83,7 +83,7 @@ export const workflow = defineWorkflow({
     }),
 
     // Single agent step for the whole workflow (CL-3647).
-    analyze: inlineInferenceStep({
+    analyze: agentStep({
       id: "granola-call-analyze",
       title: "Analyze",
       systemPrompt: GRANOLA_CALL_ANALYSIS_SYSTEM_PROMPT,
@@ -169,7 +169,13 @@ export const workflow = defineWorkflow({
           "persist-brief",
         ],
       },
-      after: ["parse", "prepare", "persist-pain", "persist-summary", "persist-brief"],
+      after: [
+        "parse",
+        "prepare",
+        "persist-pain",
+        "persist-summary",
+        "persist-brief",
+      ],
     }),
 
     fanout: deterministicToolStep({

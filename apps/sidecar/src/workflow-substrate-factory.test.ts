@@ -38,10 +38,7 @@ import {
   parseStepInferenceSources,
 } from "./workflow-substrate-factory";
 import type { Principal, RepoId, RepoStore } from "@intx/hub-sessions";
-import {
-  STEP_TOOL_CONTEXT_KEY,
-  type StepToolContext,
-} from "./step-tool-harness";
+import { type StepToolContext } from "./step-tool-harness";
 import {
   createDurableConversationRegistry,
   createDurableConversationStore,
@@ -571,7 +568,11 @@ describe("createSidecarStepInvoker", () => {
     // attempt so the per-step store teardown does not race (a test-harness
     // concern, not a product one) and assert every element dispatched through
     // the deterministic tool branch.
-    const elements = ["a@tenant.example", "b@tenant.example", "c@tenant.example"];
+    const elements = [
+      "a@tenant.example",
+      "b@tenant.example",
+      "c@tenant.example",
+    ];
     const outputs: { output: unknown }[] = [];
     for (let i = 0; i < elements.length; i += 1) {
       const recipient = elements[i] as string;
@@ -596,382 +597,6 @@ describe("createSidecarStepInvoker", () => {
       expect(tr).toHaveProperty("callId");
       expect(tr.isError).not.toBe(true);
     }
-  });
-
-  // Inline-inference dispatch (CL-2251). An inline-tagged step is a no-tool
-  // single-turn reasoning turn the hub did NOT deploy as a per-step session,
-  // so the sidecar runs it with a bare createAgent against the step's pinned
-  // STEP_INFERENCE_SOURCES entry — never the tool-capable factory, and the
-  // step env carries NO tool context (the hub wrote none for it).
-  test("runs an inline-inference-tagged step with the pinned source and no tool context", async () => {
-    const dataDir = await makeDataDir();
-    const INLINE_REPLY = '{"painPoints":[]}';
-    const turn = {
-      role: "assistant",
-      content: INLINE_REPLY,
-    } as unknown as SendTurn;
-
-    let capturedEnv: BaseEnv | undefined;
-    let capturedDef: AgentDefinition<BaseEnv> | undefined;
-    let sentContent: string | undefined;
-    let closed = false;
-    const stubAgent: Agent = {
-      send: async (content: Parameters<Agent["send"]>[0]) => {
-        sentContent = typeof content === "string" ? content : content.content;
-        return { type: "reply", reply: INLINE_REPLY, turn };
-      },
-      stream: () => ({
-        [Symbol.asyncIterator]: () => ({
-          next: () => Promise.resolve({ value: undefined, done: true }),
-        }),
-      }),
-      deliver: () => {},
-      close: async () => {
-        closed = true;
-      },
-      setSource: () => {},
-      setSources: () => {},
-    } as unknown as Agent;
-
-    // No resolveStepToolContext wired — exactly the production inline path.
-    const invoke = createSidecarStepInvoker({
-      table: { [STEP_ID]: [SOURCE] },
-      dataDir,
-      signer: async () => "sig",
-      directors: createDefaultDirectorRegistry(),
-      adapters: createBuiltinRegistry(),
-      evaluateGrants: allowAll,
-      agentFactory: async (def, env) => {
-        capturedDef = def as AgentDefinition<BaseEnv>;
-        capturedEnv = env;
-        return stubAgent;
-      },
-    });
-
-    const inlineAgent: AgentDefinition<BaseEnv> = {
-      ...makeAgentDefinition("inline-analyze"),
-      systemPrompt: "extract pain points and return JSON",
-      tags: { "workbench.stepKind": "inline-inference" },
-    };
-    const req: StepInvokeRequest = {
-      agent: inlineAgent,
-      input: { transcript: "they hate slow onboarding" },
-      authzContext: { stepId: STEP_ID, attempt: 1, runId: RUN_ID },
-      signal: new AbortController().signal,
-    };
-
-    const result = await invoke(req);
-
-    // The inline branch returned the real agent reply in the {reply,turn} shape.
-    expect(assertOutput(result).output).toEqual({ reply: INLINE_REPLY, turn });
-    // CONDITION 1: the env's inference source is the pinned STEP_INFERENCE_SOURCES
-    // entry for this step — credentials come from the env table, not on-demand.
-    const env = capturedEnv as BaseEnv;
-    expect(env.sources).toEqual([SOURCE]);
-    expect(env.defaultSource).toBe(SOURCE.id);
-    // No tool context was stashed on the env: the inline path never builds a
-    // tool-capable harness, so createStepAgentFactory's key is absent.
-    expect(
-      (env as unknown as Record<string, unknown>)[STEP_TOOL_CONTEXT_KEY],
-    ).toBeUndefined();
-    // The step's real system prompt reached the bare agent factory.
-    expect(capturedDef?.systemPrompt).toBe(
-      "extract pain points and return JSON",
-    );
-    // The resolved input reached the agent's send path, JSON-encoded.
-    expect(sentContent).toBe(
-      JSON.stringify({ transcript: "they hate slow onboarding" }),
-    );
-    // The inline branch tore the agent down.
-    expect(closed).toBe(true);
-  });
-
-  // Non-fatal inline steps (the A/B preset quorum): a failed turn degrades to a
-  // completed isError output instead of failing the run, so one dead variant
-  // does not kill the comparison. A step WITHOUT the tag still throws.
-  test("a nonFatal-tagged inline step degrades a failed turn to an isError output", async () => {
-    const dataDir = await makeDataDir();
-    let closed = false;
-    const throwingAgent: Agent = {
-      send: async () => {
-        throw new Error("provider 503");
-      },
-      stream: () => ({
-        [Symbol.asyncIterator]: () => ({
-          next: () => Promise.resolve({ value: undefined, done: true }),
-        }),
-      }),
-      deliver: () => {},
-      close: async () => {
-        closed = true;
-      },
-      setSource: () => {},
-      setSources: () => {},
-    } as unknown as Agent;
-
-    const invoke = createSidecarStepInvoker({
-      table: { [STEP_ID]: [SOURCE] },
-      dataDir,
-      signer: async () => "sig",
-      directors: createDefaultDirectorRegistry(),
-      adapters: createBuiltinRegistry(),
-      evaluateGrants: allowAll,
-      agentFactory: async () => throwingAgent,
-    });
-
-    const nonFatalReq: StepInvokeRequest = {
-      agent: {
-        ...makeAgentDefinition("inline-variant"),
-        tags: {
-          "workbench.stepKind": "inline-inference",
-          "workbench.nonFatal": "true",
-        },
-      },
-      input: { input: "run it" },
-      authzContext: { stepId: STEP_ID, attempt: 1, runId: RUN_ID },
-      signal: new AbortController().signal,
-    };
-
-    const result = await invoke(nonFatalReq);
-    const output = assertOutput(result).output as {
-      reply: string;
-      isError?: boolean;
-      error?: string;
-    };
-    expect(output.isError).toBe(true);
-    expect(output.error).toBe("provider 503");
-    expect(output.reply).toBe("");
-    // The agent was still torn down on the degrade path.
-    expect(closed).toBe(true);
-
-    // Same failure WITHOUT the nonFatal tag propagates (fails the run).
-    const fatalReq: StepInvokeRequest = {
-      agent: {
-        ...makeAgentDefinition("inline-variant"),
-        tags: { "workbench.stepKind": "inline-inference" },
-      },
-      input: { input: "run it" },
-      authzContext: { stepId: STEP_ID, attempt: 2, runId: RUN_ID },
-      signal: new AbortController().signal,
-    };
-    await expect(invoke(fatalReq)).rejects.toThrow("provider 503");
-  });
-
-  test("a nonFatal step with a retry policy throws until the last attempt, then degrades (so retry actually fires)", async () => {
-    const dataDir = await makeDataDir();
-    const throwingAgent: Agent = {
-      send: async () => {
-        throw new Error("provider 503");
-      },
-      stream: () => ({
-        [Symbol.asyncIterator]: () => ({
-          next: () => Promise.resolve({ value: undefined, done: true }),
-        }),
-      }),
-      deliver: () => {},
-      close: async () => {},
-      setSource: () => {},
-      setSources: () => {},
-    } as unknown as Agent;
-
-    const invoke = createSidecarStepInvoker({
-      table: { [STEP_ID]: [SOURCE] },
-      dataDir,
-      signer: async () => "sig",
-      directors: createDefaultDirectorRegistry(),
-      adapters: createBuiltinRegistry(),
-      evaluateGrants: allowAll,
-      agentFactory: async () => throwingAgent,
-    });
-
-    const agent = {
-      ...makeAgentDefinition("inline-variant"),
-      tags: {
-        "workbench.stepKind": "inline-inference",
-        "workbench.nonFatal": "true",
-        "workbench.inlineRetryMaxAttempts": "3",
-      },
-    };
-
-    // Attempts 1 and 2 THROW — the engine's RetryPolicy re-invokes (this is what
-    // makes retry fire at all for a non-fatal step).
-    for (const attempt of [1, 2]) {
-      await expect(
-        invoke({
-          agent,
-          input: { input: "run it" },
-          authzContext: { stepId: STEP_ID, attempt, runId: RUN_ID },
-          signal: new AbortController().signal,
-        }),
-      ).rejects.toThrow("provider 503");
-    }
-
-    // The final attempt degrades to the non-fatal isError skip.
-    const last = await invoke({
-      agent,
-      input: { input: "run it" },
-      authzContext: { stepId: STEP_ID, attempt: 3, runId: RUN_ID },
-      signal: new AbortController().signal,
-    });
-    expect((assertOutput(last).output as { isError?: boolean }).isError).toBe(
-      true,
-    );
-  });
-
-  test("a nonFatal inline step still rethrows on cancellation (never masks a run cancel)", async () => {
-    const dataDir = await makeDataDir();
-    const controller = new AbortController();
-    const throwingAgent: Agent = {
-      send: async () => {
-        controller.abort();
-        throw new Error("aborted mid-turn");
-      },
-      stream: () => ({
-        [Symbol.asyncIterator]: () => ({
-          next: () => Promise.resolve({ value: undefined, done: true }),
-        }),
-      }),
-      deliver: () => {},
-      close: async () => {},
-      setSource: () => {},
-      setSources: () => {},
-    } as unknown as Agent;
-
-    const invoke = createSidecarStepInvoker({
-      table: { [STEP_ID]: [SOURCE] },
-      dataDir,
-      signer: async () => "sig",
-      directors: createDefaultDirectorRegistry(),
-      adapters: createBuiltinRegistry(),
-      evaluateGrants: allowAll,
-      agentFactory: async () => throwingAgent,
-    });
-
-    const req: StepInvokeRequest = {
-      agent: {
-        ...makeAgentDefinition("inline-variant"),
-        tags: {
-          "workbench.stepKind": "inline-inference",
-          "workbench.nonFatal": "true",
-        },
-      },
-      input: { input: "run it" },
-      authzContext: { stepId: STEP_ID, attempt: 1, runId: RUN_ID },
-      signal: controller.signal,
-    };
-    // Signal aborted during the turn → the throw is the cancellation, not a
-    // variant failure, so it must propagate even with nonFatal set.
-    await expect(invoke(req)).rejects.toThrow("aborted mid-turn");
-  });
-
-  // CL-2253: the inline branch must attach a draining stream() consumer so the
-  // agent's pre-start event buffer drains instead of overflowing (the WARN
-  // "no stream() consumer ever attached to drain it" on staging) and the step's
-  // live progress events are observable. This stub emits events through stream()
-  // and blocks the iterator open until close() fires; the assertion is that the
-  // inline branch consumed every emitted event AND returned the correct reply.
-  // Under the pre-CL-2253 no-drain code stream() is never called, so
-  // consumedEvents stays empty and this test fails.
-  test("inline-inference branch drains the agent event stream", async () => {
-    const dataDir = await makeDataDir();
-    const INLINE_REPLY = '{"painPoints":[]}';
-    const turn = {
-      role: "assistant",
-      content: INLINE_REPLY,
-    } as unknown as SendTurn;
-    const emitted = [
-      { type: "reactor.start" },
-      { type: "inference.done" },
-    ] as const;
-
-    const consumedEvents: unknown[] = [];
-    let streamInvoked = false;
-    let closed = false;
-    // Gate the iterator's terminal `done` on close() so the test proves the
-    // consumer drains concurrently with send() and exits cleanly on teardown
-    // (a leaked, never-closing iterator would hang the invoker).
-    let resolveDone: (() => void) | undefined;
-    const donePromise = new Promise<void>((resolve) => {
-      resolveDone = resolve;
-    });
-
-    const stubAgent: Agent = {
-      send: async (content: Parameters<Agent["send"]>[0]) => {
-        void content;
-        return { type: "reply", reply: INLINE_REPLY, turn };
-      },
-      stream: () => {
-        streamInvoked = true;
-        let index = 0;
-        return {
-          [Symbol.asyncIterator]: () => ({
-            next: async () => {
-              if (index < emitted.length) {
-                const value = emitted[index];
-                index += 1;
-                return { value, done: false };
-              }
-              await donePromise;
-              return { value: undefined, done: true };
-            },
-          }),
-        };
-      },
-      deliver: () => {},
-      close: async () => {
-        closed = true;
-        resolveDone?.();
-      },
-      setSource: () => {},
-      setSources: () => {},
-    } as unknown as Agent;
-
-    // Wrap stream() so the test observes exactly which events the inline branch
-    // pulled off the iterator.
-    const realStream = stubAgent.stream.bind(stubAgent);
-    stubAgent.stream = () => {
-      const it = realStream()[Symbol.asyncIterator]();
-      return {
-        [Symbol.asyncIterator]: () => ({
-          next: async () => {
-            const r = await it.next();
-            if (!r.done) consumedEvents.push(r.value);
-            return r;
-          },
-        }),
-      };
-    };
-
-    const invoke = createSidecarStepInvoker({
-      table: { [STEP_ID]: [SOURCE] },
-      dataDir,
-      signer: async () => "sig",
-      directors: createDefaultDirectorRegistry(),
-      adapters: createBuiltinRegistry(),
-      evaluateGrants: allowAll,
-      agentFactory: async () => stubAgent,
-    });
-
-    const inlineAgent: AgentDefinition<BaseEnv> = {
-      ...makeAgentDefinition("inline-analyze"),
-      tags: { "workbench.stepKind": "inline-inference" },
-    };
-    const req: StepInvokeRequest = {
-      agent: inlineAgent,
-      input: { transcript: "they hate slow onboarding" },
-      authzContext: { stepId: STEP_ID, attempt: 1, runId: RUN_ID },
-      signal: new AbortController().signal,
-    };
-
-    const result = await invoke(req);
-
-    // Reply is unchanged by the drain.
-    expect(assertOutput(result).output).toEqual({ reply: INLINE_REPLY, turn });
-    // A draining consumer was attached and pulled every emitted event.
-    expect(streamInvoked).toBe(true);
-    expect(consumedEvents).toEqual([...emitted]);
-    // The agent was torn down (which is what releases the iterator).
-    expect(closed).toBe(true);
   });
 });
 
@@ -1493,7 +1118,7 @@ describe("supervisor-backed outbound transport wiring", () => {
 // `durableConversation` registry and the per-step env build runs
 // `acquire(stepId)` -> `restoreFromSubstrate()` on the live path. It is a clean
 // no-op on a first-ever run (restore returns false; the only writer is the warm
-// inference send path the deterministic/inline branches never reach), but that
+// inference send path the deterministic branch never reaches), but that
 // exact production combination — a real durable registry wired into a
 // non-inference dispatch — was untested. This exercises it end-to-end against a
 // real registry + on-disk substrate and asserts startup neither throws nor
@@ -1568,7 +1193,7 @@ describe("live durable-conversation seam on a single-step (warmKeep) deploy", ()
     // durable store over a substrate with no prior snapshot returns false from
     // restoreFromSubstrate and neither throws nor hangs. This is exactly what
     // the registry runs inside acquire(); asserting the boolean here proves the
-    // first-ever-run path the deterministic/inline branches hit is a clean
+    // first-ever-run path the deterministic branch hits is a clean
     // no-op, not a silent failure.
     const probeStore: DurableConversationStore =
       await createDurableConversationStore({

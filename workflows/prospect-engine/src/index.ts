@@ -3,7 +3,7 @@ import { defineWorkflow, step } from "@intx/workflow";
 import {
   canonicalizeToolNames,
   deterministicToolStep,
-  inlineInferenceStep,
+  agentStep,
   LLM_CREDENTIAL_NAME,
   LLM_DEFAULT_MODEL,
   LLM_PROVIDER,
@@ -280,7 +280,7 @@ export const workflow = defineWorkflow({
       after: ["discover", "parseLedger", "extractListOrgs"],
     }),
 
-    score: inlineInferenceStep({
+    score: agentStep({
       id: "prospect-engine-score",
       title: "Score candidates",
       systemPrompt: buildProspectEngineScorePrompt(),

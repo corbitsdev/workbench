@@ -19,7 +19,7 @@ import { defineAgent } from "@intx/agent";
 import {
   createWorkbenchDirectorRegistry,
   deterministicToolStep,
-  inlineInferenceStep,
+  agentStep,
 } from "@workbench/agents";
 
 // readWorkflowDefinition reads its cache TTL from getConfig(); apps/hub tests do
@@ -38,7 +38,6 @@ import {
   buildSupervisorDeployFrame,
   collectDeterministicToolStepIds,
   collectGrants,
-  collectInlineStepIds,
   createWorkflowDeployService,
   createWorkflowRepoWriter,
   readWorkflowDefinition,
@@ -824,60 +823,6 @@ describe("readWorkflowDefinition", () => {
   });
 });
 
-describe("collectInlineStepIds", () => {
-  test("collects only steps whose agent carries the inline-inference marker tag", () => {
-    const inlineAgent = defineAgent({
-      id: "analyze",
-      description: "inline",
-      systemPrompt: "reason",
-      tools: [],
-      capabilities: [],
-      inference: { sources: [] },
-      tags: { "workbench.stepKind": "inline-inference" },
-    });
-    const deployedAgent = defineAgent({
-      id: "draft",
-      description: "deployed reasoning",
-      systemPrompt: "reason",
-      tools: [],
-      capabilities: [],
-      inference: { sources: [{ provider: "openai-compatible", model: "m" }] },
-    });
-    const wf = defineWorkflow({
-      id: "wf",
-      trigger: { type: "manual" },
-      steps: {
-        analyze: inlineInferenceStep({ id: "analyze", systemPrompt: "reason" }),
-        draft: step({ agent: deployedAgent, after: ["analyze"] }),
-      },
-    });
-
-    const inline = collectInlineStepIds(wf);
-    expect([...inline]).toEqual(["analyze"]);
-    expect(inline.has("draft")).toBe(false);
-
-    // Sanity: the marker comes from the tag, not the id.
-    expect(inlineAgent.tags?.["workbench.stepKind"]).toBe("inline-inference");
-  });
-
-  test("finds an inline step nested inside a map primitive", () => {
-    const wf = defineWorkflow({
-      id: "wf",
-      trigger: { type: "manual" },
-      steps: {
-        fan: map({
-          over: { literal: [] },
-          step: inlineInferenceStep({
-            id: "fan-inner",
-            systemPrompt: "reason",
-          }),
-        }),
-      },
-    });
-    expect([...collectInlineStepIds(wf)]).toEqual(["fan"]);
-  });
-});
-
 describe("collectDeterministicToolStepIds", () => {
   test("collects only steps whose agent carries the deterministic-tool marker tag", () => {
     const deployedAgent = defineAgent({
@@ -896,7 +841,7 @@ describe("collectDeterministicToolStepIds", () => {
           id: "fetch",
           tool: "granola_list_notes",
         }),
-        analyze: inlineInferenceStep({
+        analyze: agentStep({
           id: "analyze",
           systemPrompt: "reason",
           after: ["fetch"],
@@ -926,161 +871,6 @@ describe("collectDeterministicToolStepIds", () => {
       },
     });
     expect([...collectDeterministicToolStepIds(wf)]).toEqual(["fan"]);
-  });
-});
-
-// Integration-style proof of CONDITION 2: a workflow with an inline step
-// deploys creating ZERO agent-state repos for the inline step, while the
-// deployed step still gets its agent-state grants repo + agent/instance rows.
-// Neither launches a session — CL-2782 no-op'd the deployed-step launch too, so
-// launches=0 for the whole deploy. Exercises the real `createWorkflowDeployService`
-// (real director registry + real orchestrator) across its seams; only the
-// db / repoStore / sessionService / sidecarRouter boundaries are mocked.
-describe("deployWorkflow inline-step partition (CL-2251)", () => {
-  const SOURCE: InferenceSource = {
-    id: "openai-compatible:m",
-    provider: "openai-compatible",
-    baseURL: "https://llm.example.com",
-    apiKey: "secret",
-    model: "m",
-  };
-
-  function makeConfig(
-    deploymentId: string,
-    deploymentDomain: string,
-  ): HarnessConfig {
-    return {
-      sessionId: "sess_1",
-      agentId: deploymentId,
-      tenantId: "t1",
-      principalId: "p1",
-      agentAddress: `${deploymentId}@${deploymentDomain}`,
-      systemPrompt: "",
-      tools: [],
-      grants: [],
-      sources: [SOURCE],
-      defaultSource: SOURCE.id,
-    } as unknown as HarnessConfig;
-  }
-
-  test("skips per-step agent-state repo writes + launchSession for the inline step only", async () => {
-    const deploymentId = "ses_inline";
-    const deploymentDomain = "deploy.example.com";
-
-    // The deployed reasoning step declares the tenant source so the walk
-    // surfaces its inference grant (which becomes an operator approval); the
-    // inline step's source falls back to the same approved default.
-    const draftAgent = defineAgent({
-      id: "draft",
-      description: "deployed reasoning step",
-      systemPrompt: "draft something",
-      tools: [],
-      capabilities: [],
-      inference: { sources: [{ provider: "openai-compatible", model: "m" }] },
-    });
-    const workflow = defineWorkflow({
-      id: "pain-point-collateral",
-      trigger: { type: "manual" },
-      steps: {
-        analyze: inlineInferenceStep({
-          id: "analyze",
-          systemPrompt: "extract pain points",
-        }),
-        draft: step({ agent: draftAgent, after: ["analyze"] }),
-      },
-    });
-
-    // Record every writeTree (workflow repo + per-step grants repos) and every
-    // DB insert (step agent/instance rows) so we can prove the inline step
-    // produced none of its own.
-    const writeTreeRepoIds: { kind: string; id: string }[] = [];
-    const writeTree = mock(
-      async (
-        _principal: { kind: string },
-        repoId: { kind: string; id: string },
-        _ref: string,
-        _content: unknown,
-      ) => {
-        writeTreeRepoIds.push(repoId);
-        return { commitSha: "sha" };
-      },
-    );
-    const repoStore = { repoStore: { writeTree } } as unknown as AgentRepoStore;
-
-    const insertedRows: {
-      table: "agent" | "agentInstance" | "asset" | "workflowDeployment" | "grant";
-      rows: { id: string }[];
-    }[] = [];
-    const db = {
-      insert: deployWorkflowInsertMock(insertedRows),
-    } as unknown as HubDb;
-
-    const sendAgentDeploy = mock(
-      async (
-        _agentAddress: string,
-        _config: HarnessConfig,
-        _workflow: { sources: Record<string, InferenceSource[]> },
-      ) => ({ publicKey: "pk" }),
-    );
-    const sidecarRouter = {
-      getRoutableAddresses: () => [],
-      sendAgentDeploy,
-    } as unknown as SidecarRouter;
-
-    const service = createWorkflowDeployService({
-      db,
-      repoStore,
-      sidecarRouter,
-      directorRegistry: createWorkbenchDirectorRegistry(),
-      // Provisioning REQUIRES a stager (FIX 2b); this unit test stages no real
-      // tool tree, so inject an explicit no-op rather than relying on a
-      // silent fallback.
-      stageWorkflowStep: () => Promise.resolve(),
-    });
-
-    const result = await service.deployWorkflow({
-      workflow,
-      deploymentId,
-      deploymentDomain,
-      tenantId: "t1",
-      creatorPrincipalId: "p1",
-      config: makeConfig(deploymentId, deploymentDomain),
-      deployContent: { systemPrompt: "" },
-      hubPublicKey: "hubkey",
-    });
-
-    // CONDITION 2 — NO step launches a per-step session (CL-2782 no-op'd the
-    // deployed-step launch too); the inline step never did. The supervisor uses
-    // No per-step launch happens at all now: the deploy service wires a no-op
-    // launch hook (the in-process session runtime is retired), so the sidecar is
-    // touched only by the single supervisor sendAgentDeploy above.
-
-    // The deployed step's grants repo is STILL written (execution reads it at
-    // run time) even though it no longer launches; the inline step gets none.
-    // (The workflow-kind repo write is separate.)
-    const agentStateIds = writeTreeRepoIds
-      .filter((r) => r.kind === "agent-state")
-      .map((r) => r.id);
-    expect(agentStateIds).toContain("ses_inline-draft");
-    expect(agentStateIds).not.toContain("ses_inline-analyze");
-
-    // Every step gets its agent/instance rows uniformly (interchange's pack
-    // phase FKs session_asset -> agent_instance for every staged step); the
-    // inline partition now only scopes the grants repo.
-    const allRowIds = insertedRows.flatMap((b) => b.rows.map((r) => r.id));
-    expect(allRowIds).toContain("ins_ses_inline-draft");
-    expect(allRowIds).toContain("ins_ses_inline-analyze");
-    // The supervisor rows are still written (deployment-level, not step-level).
-    expect(allRowIds).toContain("ins_ses_inline");
-
-    // The supervisor frame still pins an inference source for the inline step
-    // (the sidecar's STEP_INFERENCE_SOURCES table reads it for the bare-agent
-    // inference) — proving the inline step is reachable, just not deployed.
-    const deployCall = sendAgentDeploy.mock.calls.at(0);
-    if (!deployCall) throw new Error("sendAgentDeploy was not called");
-    const frameWorkflow = deployCall[2];
-    expect(frameWorkflow.sources.analyze).toEqual([SOURCE]);
-    expect(frameWorkflow.sources.draft).toEqual([SOURCE]);
   });
 });
 
@@ -1138,7 +928,7 @@ describe("deployWorkflow deterministic-tool partition (CL-2252)", () => {
           id: "fetch",
           tool: "granola_list_notes",
         }),
-        analyze: inlineInferenceStep({
+        analyze: agentStep({
           id: "analyze",
           systemPrompt: "extract pain points",
           after: ["fetch"],
@@ -1162,7 +952,12 @@ describe("deployWorkflow deterministic-tool partition (CL-2252)", () => {
     const repoStore = { repoStore: { writeTree } } as unknown as AgentRepoStore;
 
     const insertedRows: {
-      table: "agent" | "agentInstance" | "asset" | "workflowDeployment" | "grant";
+      table:
+        | "agent"
+        | "agentInstance"
+        | "asset"
+        | "workflowDeployment"
+        | "grant";
       rows: { id: string }[];
     }[] = [];
     const db = {
@@ -1205,16 +1000,17 @@ describe("deployWorkflow deterministic-tool partition (CL-2252)", () => {
 
     // No per-step launch happens at all now: the deploy service wires a no-op
     // launch hook (the in-process session runtime is retired), so no step —
-    // deterministic, inline, or fully-deployed reasoning — launches a session.
+    // deterministic or fully-deployed reasoning — launches a session.
 
     // 0 agent-state repos for the deterministic tool step (no grants.json);
-    // the deployed reasoning step still gets one (execution reads it).
+    // both reasoning steps (`analyze`, a native `agentStep`, and `draft`, a
+    // hand-built `defineAgent`+`step`) get one — execution reads it.
     const agentStateIds = writeTreeRepoIds
       .filter((r) => r.kind === "agent-state")
       .map((r) => r.id);
     expect(agentStateIds).toContain("ses_det-draft");
+    expect(agentStateIds).toContain("ses_det-analyze");
     expect(agentStateIds).not.toContain("ses_det-fetch");
-    expect(agentStateIds).not.toContain("ses_det-analyze");
 
     // Every step keeps BOTH rows uniformly: interchange's pack phase records
     // a session_asset row per staged attachment with a hard FK to
@@ -1229,7 +1025,7 @@ describe("deployWorkflow deterministic-tool partition (CL-2252)", () => {
     expect(agentRowIds).toContain("ins_ses_det-fetch");
     expect(instanceRowIds).toContain("ins_ses_det-fetch");
 
-    // Deployed reasoning step and inline step keep both rows too.
+    // Both reasoning steps keep both rows too.
     expect(agentRowIds).toContain("ins_ses_det-draft");
     expect(instanceRowIds).toContain("ins_ses_det-draft");
     expect(agentRowIds).toContain("ins_ses_det-analyze");
@@ -1250,13 +1046,14 @@ describe("deployWorkflow deterministic-tool partition (CL-2252)", () => {
   });
 });
 
-// Regression for the catalog-inference fix: an all-inline workflow declares
-// `sources:[]` on every step, so the capability walk emits NO
-// `inference.source:*` grant. Before the fix, `pickStepInferenceSource` rejected
-// the deploy's catalog-resolved `defaultSource` as unapproved and the deploy
+// Regression for the catalog-inference fix: a workflow whose steps declare NO
+// preferred model (`sources:[]` on every step, e.g. every `agentStep` built
+// with no `model` opt) emits NO `inference.source:*` grant from the
+// capability walk. Before the fix, `pickStepInferenceSource` rejected the
+// deploy's catalog-resolved `defaultSource` as unapproved and the deploy
 // threw "step ... has no approved inference source". The deploy now seeds
-// `operatorApprovals` from the resolved chain, so the all-inline deploy
-// succeeds. Exercises the real orchestrator across its seams.
+// `operatorApprovals` from the resolved chain, so the deploy succeeds.
+// Exercises the real orchestrator across its seams.
 describe("deployWorkflow approves the catalog inference chain", () => {
   const HEAD: InferenceSource = {
     id: "off_head",
@@ -1343,18 +1140,18 @@ describe("deployWorkflow approves the catalog inference chain", () => {
     });
   }
 
-  test("deploys an all-inline workflow whose steps declare no inference source", async () => {
+  test("deploys a workflow whose steps declare no preferred inference source", async () => {
     const deploymentId = "ses_allinline";
     const deploymentDomain = "deploy.example.com";
     const workflow = defineWorkflow({
       id: "all-inline",
       trigger: { type: "manual" },
       steps: {
-        analyze: inlineInferenceStep({
+        analyze: agentStep({
           id: "analyze",
           systemPrompt: "extract pain points",
         }),
-        summarize: inlineInferenceStep({
+        summarize: agentStep({
           id: "summarize",
           systemPrompt: "summarize",
           after: ["analyze"],
@@ -1405,7 +1202,7 @@ describe("deployWorkflow approves the catalog inference chain", () => {
       id: "no-stager",
       trigger: { type: "manual" },
       steps: {
-        analyze: inlineInferenceStep({
+        analyze: agentStep({
           id: "analyze",
           systemPrompt: "extract pain points",
         }),
@@ -1662,7 +1459,7 @@ describe("persistCatalog (hub-only publish)", () => {
       id: "pain-point-collateral",
       trigger: { type: "manual" },
       steps: {
-        analyze: inlineInferenceStep({
+        analyze: agentStep({
           id: "analyze",
           systemPrompt: "extract pain points",
         }),
@@ -1685,7 +1482,12 @@ describe("persistCatalog (hub-only publish)", () => {
     const repoStore = { repoStore: { writeTree } } as unknown as AgentRepoStore;
 
     const insertedRows: {
-      table: "agent" | "agentInstance" | "asset" | "workflowDeployment" | "grant";
+      table:
+        | "agent"
+        | "agentInstance"
+        | "asset"
+        | "workflowDeployment"
+        | "grant";
       rows: { id: string }[];
     }[] = [];
     const db = {

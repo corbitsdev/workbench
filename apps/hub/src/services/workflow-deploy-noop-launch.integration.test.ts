@@ -79,7 +79,7 @@ import {
 } from "@intx/hub-sessions";
 import {
   createWorkbenchDirectorRegistry,
-  inlineInferenceStep,
+  agentStep,
   LLM_DEFAULT_MODEL,
 } from "@workbench/agents";
 
@@ -154,9 +154,9 @@ function toAgentRepoStore(store: RepoStore): AgentRepoStore {
   return { repoStore: store } as unknown as AgentRepoStore;
 }
 
-// A minimal but genuine deployed workflow: an inline-inference step feeding a
-// deployed (reasoning-with-tools) `analyze` step that declares real tool
-// capabilities and the tenant's default model.
+// A minimal but genuine deployed workflow: a native reasoning step (agentStep,
+// no tools) feeding a deployed (reasoning-with-tools) `analyze` step that
+// declares real tool capabilities and the tenant's default model.
 function buildDeployedWorkflow(): WorkflowDefinition {
   const analyzeAgent = defineAgent({
     id: "analyze",
@@ -172,7 +172,7 @@ function buildDeployedWorkflow(): WorkflowDefinition {
     id: "attio-task-agent",
     trigger: { type: "manual" },
     steps: {
-      ground: inlineInferenceStep({
+      ground: agentStep({
         id: "ground",
         systemPrompt: "summarize the input",
       }),

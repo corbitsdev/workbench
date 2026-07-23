@@ -10,7 +10,7 @@ Steps:
 1. **intake** — `awaitSignal('intake')`, collect the topic and an optional focus.
    Intake sends a single `query` string (focus or topic) — no separate normalize
    step.
-2. **ground** — `inlineInferenceStep` that turns the topic + focus into one search
+2. **ground** — `agentStep` that turns the topic + focus into one search
    query tailored to each platform (HN/GitHub/web/Reddit/X/YouTube/Polymarket).
 3. **groundQueries** — `deterministicToolStep` (`last30days_ground_queries`) that
    parses the grounding reply into a per-source query map (object `content`,
@@ -22,11 +22,11 @@ Steps:
    `polymarket_odds`), each reading its own tailored query and a per-source
    `limit` sized toward the tool's cap (HN 30, github 25, exa 25, reddit 40, x 20,
    youtube 20, polymarket 25) to deepen the candidate pool.
-5. **rerank** — `inlineInferenceStep` relevance judge (W1.2); its JSON reply feeds
+5. **rerank** — `agentStep` relevance judge (W1.2); its JSON reply feeds
    the brief, which applies the scores before ranking.
 6. **brief** — `deterministicToolStep` (`last30days_workflow_brief`) that folds the
    source outputs into a `buildReport` brief.
-7. **write** — `inlineInferenceStep` that writes the long-form, grounded report
+7. **write** — `agentStep` that writes the long-form, grounded report
    from the brief.
 8. **persist** — `deterministicToolStep` (`write_artifact`) storing the brief +
    prose as a `research` artifact.
@@ -54,7 +54,7 @@ completed `isError` envelope rather than failing the step — the brief records 
 
 ### Per-step models (CL-2496)
 
-`inlineInferenceStep({ model })` declares a preferred `(LLM_PROVIDER, model)`
+`agentStep({ model })` declares a preferred `(LLM_PROVIDER, model)`
 source on the step's agent, which the deploy orchestrator's
 `pickStepInferenceSource` pins (and the re-drive `buildSupervisorDeployFrame`
 mirrors). The grounding and rerank steps ride the deploy default
@@ -62,9 +62,11 @@ mirrors). The grounding and rerank steps ride the deploy default
 `LLM_WRITER_MODEL` (kimi-k2.6). `resolveWorkflowDeploySource` resolves the
 models a definition's steps declare (via `collectDeclaredStepModels`) into
 `config.sources` optionally — a step falls back to the default when the tenant
-catalog does not carry it, so the deploy never fails on its absence. The per-step
-model binds only on the sidecar inline-inference path; the hub-side reasoning
-fallback (`createHubReasoningRunner`) always runs on the default model.
+catalog does not carry it, so the deploy never fails on its absence. The
+per-step model binds on the sidecar's normal per-step `STEP_INFERENCE_SOURCES`
+resolution (the same table every deployed reasoning step reads); the hub-side
+reasoning fallback (`createHubReasoningRunner`) always runs on the default
+model.
 
 ## Shape
 

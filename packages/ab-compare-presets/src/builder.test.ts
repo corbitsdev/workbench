@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import type { StepInvoker } from "@intx/workflow/runtime";
 import { runLocal } from "@intx/workflow/runlocal";
-import { STEP_KIND_TAG, STEP_NONFATAL_TAG } from "@workbench/agents";
+import { STEP_KIND_TAG } from "@workbench/agents";
 import { buildAbPresetWorkflow } from "./builder";
 import {
   AB_PRESETS,
@@ -96,18 +96,44 @@ describe("buildAbPresetWorkflow", () => {
     expect(quorum.agent.tags?.["workbench.tool"]).toContain("ab_preset_quorum");
   });
 
-  test("every execute step is inline-inference, non-fatal, and retries", () => {
+  test("every execute step is a native reasoning step (no dispatch tag) that retries, with no non-fatal degrade", () => {
     const built = buildAbPresetWorkflow(SPEED_PRESET);
     for (let i = 0; i < 4; i += 1) {
       const step = built.workflow.steps[`exec${i}`];
       if (step === undefined || step.kind !== "step") {
         throw new Error(`expected a step primitive for exec${i}`);
       }
-      expect(step.agent.tags?.[STEP_KIND_TAG]).toBe("inline-inference");
-      expect(step.agent.tags?.[STEP_NONFATAL_TAG]).toBe("true");
+      expect(step.agent.tags?.[STEP_KIND_TAG]).toBeUndefined();
       expect(step.retry?.maxAttempts).toBe(3);
     }
   });
+
+  test("a variant that still fails after retry exhaustion fails the run — no recorded skip", async () => {
+    // The engine's DAG dependency is "terminal", not "succeeded": a
+    // downstream step still runs once its failed upstream settles (its
+    // `output` is simply absent), so quorum/decision/compose still complete
+    // using the three survivors. But the run's overall terminalStatus is
+    // "failed" the moment ANY step permanently fails — independent of
+    // whether the rest of the DAG went on to complete — so there is no
+    // "recorded skip" path left: the run always reports failed and the whole
+    // comparison must be rerun.
+    const built = buildAbPresetWorkflow(QUALITY_PRESET);
+    const invoker: StepInvoker = async ({ agent }) => {
+      if (agent.id === "exec2") throw new Error("provider 503");
+      return { output: { reply: `${agent.id} answer`, turn: null } };
+    };
+    const run = runLocal(built.workflow, { invokeStep: invoker });
+
+    await run.signal("ab-config", { input: "Write a tagline." });
+    await run.signal("ab-decision", {
+      ranking: [{ rank: 1, label: "Variant 1" }],
+    });
+    const result = await run.complete;
+
+    // The engine's RetryPolicy (maxAttempts: 3) retries the throwing variant
+    // twice on real backoff before giving up — proving retry still applies.
+    expect(result.terminalStatus).toBe("failed");
+  }, 15_000);
 
   test("each execute step pins its own fixed model (not a shared map source)", () => {
     const built = buildAbPresetWorkflow(STANDARD_PRESET);

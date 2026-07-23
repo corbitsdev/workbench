@@ -1,5 +1,5 @@
 import { awaitSignal, defineWorkflow, gate, map } from "@intx/workflow";
-import { deterministicToolStep, inlineInferenceStep } from "@workbench/agents";
+import { deterministicToolStep, agentStep } from "@workbench/agents";
 import { buildGenerationSystemPrompt } from "./prompts";
 
 export const label = "Multi-Source Collateral";
@@ -8,7 +8,11 @@ export const description =
 export const kind = "multi-source-collateral";
 
 export { DISPLAY_STEPS } from "./display-steps";
-export { CONTENT_TYPES, MAX_CONTENT_TYPES, defaultPromptForType } from "./prompts";
+export {
+  CONTENT_TYPES,
+  MAX_CONTENT_TYPES,
+  defaultPromptForType,
+} from "./prompts";
 
 // ---------------------------------------------------------------------------
 // Step graph
@@ -24,14 +28,14 @@ export { CONTENT_TYPES, MAX_CONTENT_TYPES, defaultPromptForType } from "./prompt
 //   else: persist over review.approvedPieces
 // ---------------------------------------------------------------------------
 
-const generateStep = inlineInferenceStep({
+const generateStep = agentStep({
   id: "multi-source-collateral-generate",
   title: "Draft each piece",
   systemPrompt: buildGenerationSystemPrompt(),
   input: { from: "trigger.payload" },
 });
 
-const regenerateStep = inlineInferenceStep({
+const regenerateStep = agentStep({
   id: "multi-source-collateral-regenerate",
   title: "Revise with feedback",
   systemPrompt: buildGenerationSystemPrompt(),

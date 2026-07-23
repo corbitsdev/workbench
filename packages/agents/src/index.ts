@@ -23,19 +23,17 @@ export {
 export { HUB_ONLY_TOOL_SIDE_EFFECTS } from "./hub-only-tool-side-effects";
 export {
   deterministicToolStep,
-  inlineInferenceStep,
+  agentStep,
   STEP_KIND_TAG,
   STEP_TOOL_TAG,
   STEP_TITLE_TAG,
   STEP_ARGMAP_TAG,
   STEP_NONFATAL_TAG,
-  STEP_INLINE_RETRY_MAX_TAG,
   DETERMINISTIC_TOOL_KIND,
-  INLINE_INFERENCE_KIND,
   ArgMap,
   ArgMapSpec,
   type DeterministicToolStepOpts,
-  type InlineInferenceStepOpts,
+  type AgentStepOpts,
 } from "./deterministic-step";
 export {
   classifyWorkflowSteps,

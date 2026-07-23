@@ -113,29 +113,45 @@ instance rows.
 A step declares its class with a tag, `workbench.stepKind`
 (`packages/agents/src/deterministic-step.ts:13`):
 
-| Class                               | Author helper                                        | Tag value                    | Per-step session? |
-| ----------------------------------- | ---------------------------------------------------- | ---------------------------- | ----------------- |
-| **inline-inference**                | `inlineInferenceStep` (`deterministic-step.ts`)      | `inline-inference`           | No                |
-| **deterministic-tool**              | `deterministicToolStep` (`deterministic-step.ts`)    | `deterministic-tool`         | No                |
-| **deployed** (reasoning-with-tools) | plain `step({ agent })` with `defineAgent`           | _(no tag)_                   | No                |
+| Class                               | Author helper                                                                         | Tag value            | Per-step session? |
+| ----------------------------------- | ------------------------------------------------------------------------------------- | -------------------- | ----------------- |
+| **deterministic-tool**              | `deterministicToolStep` (`deterministic-step.ts`)                                     | `deterministic-tool` | No                |
+| **deployed** (reasoning-with-tools) | `agentStep` (`deterministic-step.ts`) or a plain `step({ agent })` with `defineAgent` | _(no tag)_           | No                |
+
+Every reasoning step now authors as `agentStep` — a plain native
+`step({ agent })` under the hood, with no Workbench dispatch tag and no
+sidecar branch to interpret it. `inline-inference` (`inlineInferenceStep`) and
+its sidecar dispatch branch (`apps/sidecar/src/inline-inference-step.ts`) are
+DELETED: the kind existed only to dodge the former per-step session cost,
+which the staging-only provisioning above already removed, so a native step
+now costs the same. `packages/ab-compare-presets/src/builder.ts`'s A/B variant
+steps — the one caller that used the retired kind's `nonFatal + retry`
+degrade — are migrated to `agentStep` too; a variant that still fails after
+its retries now fails the run outright (product call: rerun the comparison,
+accepting the inference cost already spent on the sibling variants that
+succeeded). A historical run's committed `workflow.json` from before this
+retirement may still carry the `inline-inference` tag value on disk — the
+read-only classifiers that fold a run's log back into state
+(`classifyStepKinds` in `apps/hub/src/workflow-executor/run-state-from-log.ts`)
+keep a literal string for that legacy value so old runs still classify
+correctly, decoupled from the now-deleted authoring export.
 
 **No step class holds a per-step session.** Every step is STAGED (tool tree on
 disk + uniform DB rows) but never launched as a session; only the deployed
-reasoning class carries a grants file (`state/grants.json` — inline steps
-declare no tools, deterministic steps run against a hardcoded deny-all
-authorize). Step execution rebuilds everything from hub-written artifacts (the
-agent def from `workflow.json`, grants from `state/grants.json`, tools from the
-staged tool tree / hub rails gated on the persisted `agent` row). The historic
+reasoning class carries a grants file (`state/grants.json` — deterministic
+steps run against a hardcoded deny-all authorize and need none). Step
+execution rebuilds everything from hub-written artifacts (the agent def from
+`workflow.json`, grants from `state/grants.json`, tools from the staged tool
+tree / hub rails gated on the persisted `agent` row). The historic
 launched-session model cost ~17s of serialized deploy → pack → session-start
 round-trips per deployed step; staging-only provisioning runs in ~1s/step.
 
 Each step executes the same way inside the child (step 5 above): the child's
 `createSidecarStepInvoker`
 (`apps/sidecar/src/workflow-substrate-factory.ts:888`) dispatches a
-`deterministic-tool`-tagged step to `runDeterministicToolStep` (`:1020-1026` —
-no reactor, no inference, tool called directly), an `inline-inference` step to a
-bare `createAgent` inference (`:1035`), and every other (deployed) step to the
-real tool-capable agent harness.
+`deterministic-tool`-tagged step to `runDeterministicToolStep` (no reactor, no
+inference, tool called directly) and every other (deployed reasoning) step to
+the real tool-capable agent harness.
 
 ### The hub-RPC tool rail
 
@@ -210,7 +226,7 @@ same execution model as manual starts, with two hub automations on human gates:
    auto-delivers the `intake` `awaitSignal` gate so the owner does not have to
    open the dock. Kinds with only an `intake` gate (or no gates) can complete
    unattended once intake is valid.
-2. **Post-intake gates (CL-3528).** Kinds with *additional* human gates after
+2. **Post-intake gates (CL-3528).** Kinds with _additional_ human gates after
    `intake` are **opt-in** for unattended schedule attachment. The hub spins a
    short-lived **Myra** ephemeral session (`createScheduledWorkflowGateAgent` in
    `apps/hub/src/services/scheduled-workflow-gate-agent.ts`) that calls

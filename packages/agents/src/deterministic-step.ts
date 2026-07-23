@@ -23,17 +23,6 @@ export const DETERMINISTIC_TOOL_KIND = "deterministic-tool";
 export const STEP_TITLE_TAG = "workbench.title";
 
 /**
- * Marker the sidecar's step invoker reads to dispatch a step as an
- * in-process single-turn inference (CL-2251) instead of a full deployed
- * session. An inline-inference step is a pure reasoning turn: it carries a
- * real systemPrompt but no tools/capabilities, so the supervisor needs no
- * per-step agent-state repo, DB rows, or grants file, and the hub skips
- * `launchSession` for it. The sidecar runs it with a bare `createAgent`
- * against the step's pinned `InferenceSource` and a deny-all `authorize`.
- */
-export const INLINE_INFERENCE_KIND = "inline-inference";
-
-/**
  * Tag carrying the JSON-serialized `argMap` (a controlled producer/consumer
  * pair: `deterministicToolStep` writes it, the sidecar's
  * `runDeterministicToolStep` reads + re-validates it). Tags are
@@ -50,16 +39,6 @@ export const STEP_ARGMAP_TAG = "workbench.argMap";
  * still surfaced (logged with the why, and recorded by the consumer as a skip).
  */
 export const STEP_NONFATAL_TAG = "workbench.nonFatal";
-
-/**
- * The retry policy's `maxAttempts`, stringified, set when an inline step declares
- * both `retry` and `nonFatal`. The engine's `RetryPolicy` re-invokes the step on
- * a throw, but a `nonFatal` runner that returns an `isError` output on the first
- * failure never throws — so retry would never fire. The runner reads this tag
- * plus `AuthorizeContext.attempt` to degrade to the non-fatal skip only on the
- * LAST attempt, throwing (and letting the engine retry) on earlier ones.
- */
-export const STEP_INLINE_RETRY_MAX_TAG = "workbench.inlineRetryMaxAttempts";
 
 /**
  * Per-tool-argument reshape spec. Maps a TOOL argument name to one of:
@@ -170,11 +149,10 @@ export function deterministicToolStep(
   });
 }
 
-export interface InlineInferenceStepOpts {
+export interface AgentStepOpts {
   /**
    * Unique step-agent id. Distinct per step, mirroring the existing
-   * agents' id convention. Inline steps persist no per-step rows, but the
-   * id still names the step's placeholder agent in the deployed definition.
+   * agents' id convention.
    */
   id: string;
   /** The agent's real system prompt — the single-turn reasoning instruction. */
@@ -184,45 +162,26 @@ export interface InlineInferenceStepOpts {
   /** Step ids this step depends on. */
   after?: readonly string[];
   /**
-   * Optional per-step model preference. When set, the step's placeholder agent
-   * declares this `(LLM_PROVIDER, model)` as its preferred inference source, so
-   * the deploy orchestrator's `pickStepInferenceSource` pins that model for this
-   * step instead of the deploy default — provided the workflow deploy resolved
-   * the model into `config.sources` (see `resolveWorkflowDeploySource`). Absent,
-   * the step uses the deploy's default model. Use to route a heavier synthesis
-   * step (e.g. `LLM_WRITER_MODEL`) while the rest stay on `LLM_DEFAULT_MODEL`.
+   * Optional per-step model preference. When set, the step's agent declares
+   * this `(provider, model)` as its preferred inference source, so the deploy
+   * orchestrator's `pickStepInferenceSource` pins that model for this step
+   * instead of the deploy default. Absent, the step uses the deploy's default
+   * model.
    */
   model?: string;
   /**
    * Optional inference-provider plugin for the declared `model` (e.g. `anthropic`,
    * `openai`, `google-genai`). Defaults to `LLM_PROVIDER` ("openai-compatible").
-   * The declared `(provider, model)` is what the deploy's source resolution pins,
-   * so a step can run on a native-provider model (Opus via `anthropic`) rather
-   * than only the openai-compatible gateway. Ignored when `model` is absent.
+   * Ignored when `model` is absent.
    */
   provider?: string;
-  /**
-   * When true, a failure of this step degrades to a recorded skip (via
-   * `STEP_NONFATAL_TAG`) instead of failing the whole run — the same contract
-   * `deterministicToolStep({ nonFatal })` provides. Used by the A/B preset
-   * workflows so one dead variant does not kill the comparison; a downstream
-   * quorum step decides whether enough variants succeeded.
-   */
-  nonFatal?: boolean;
-  /**
-   * Optional retry policy for transient failures, passed through to the
-   * underlying `step`. Auto-retries the same pinned source (no cross-provider
-   * failover — that is not wired in the workflow path).
-   */
+  /** Optional retry policy for transient failures, passed through to `step`. */
   retry?: RetryPolicy;
   /**
    * Optional per-step output-token ceiling. Carried on the step's preferred
    * inference source as `parameters.maxTokens`; the workflow deploy lifts it
-   * onto the resolved `InferenceSource.defaults.maxTokens` so the step's model
-   * turn runs with this ceiling instead of the source's small/unset default —
-   * the cause of clean `finish_reason:"length"` truncation on long writers.
-   * Only meaningful alongside `model`: with no `model` the step declares no
-   * preferred source, so there is nothing to carry the ceiling and it is ignored.
+   * onto the resolved `InferenceSource.defaults.maxTokens`. Only meaningful
+   * alongside `model`.
    */
   maxTokens?: number;
   /**
@@ -233,34 +192,21 @@ export interface InlineInferenceStepOpts {
 }
 
 /**
- * Declare a workflow step as an inline single-turn inference (CL-2251): a
- * pure reasoning turn the sidecar runs in-process with a bare `createAgent`,
- * WITHOUT a deployed per-step session. The placeholder agent keeps a real
- * systemPrompt (this is genuine reasoning) but declares no tools/capabilities
- * and no inference source in the definition — the source is pinned at deploy
- * time and resolved by the sidecar from its per-step `STEP_INFERENCE_SOURCES`
- * table, exactly as a deployed step would. The marker tag tells the hub to
- * skip the per-step agent/instance/grants writers and no-op `launchSession`
- * for this step, and tells the sidecar's step invoker to dispatch it through
- * the bare-inference branch instead of building a tool-capable harness.
- *
- * Only valid for no-tool reasoning steps. A step that invokes a tool must use
- * a deployed `step({ agent })` (tool-capable harness) or `deterministicToolStep`.
+ * Declare a workflow step as a native reasoning-with-tools step: a plain
+ * `step({ agent })` built from `defineAgent`. This is the "deployed" step
+ * class every workflow step now runs as — the sidecar's default inference
+ * invoker dispatches it directly, with no Workbench-specific dispatch tag
+ * and no bespoke sidecar branch to interpret. The only tag it carries is the
+ * cross-cutting `STEP_TITLE_TAG`, shared with every step class, which names
+ * the step in the catalog/run-UI preview.
  */
-export function inlineInferenceStep(
-  opts: InlineInferenceStepOpts,
-): StepPrimitive {
+export function agentStep(opts: AgentStepOpts): StepPrimitive {
   const agent = defineAgent({
     id: opts.id,
-    description: `Inline single-turn inference: ${opts.id}`,
+    description: `Reasoning step: ${opts.id}`,
     systemPrompt: withCorbitsVocabulary(opts.systemPrompt),
     tools: [],
     capabilities: [],
-    // A declared preferred source makes the capability walk emit the
-    // `inference.source:<provider>:<model>` grant and the orchestrator's
-    // pickStepInferenceSource pin that model for the step; with none declared the
-    // step falls back to the deploy defaultSource. The sidecar still resolves the
-    // concrete pinned source from STEP_INFERENCE_SOURCES at runtime either way.
     inference:
       opts.model !== undefined
         ? {
@@ -275,14 +221,9 @@ export function inlineInferenceStep(
             ],
           }
         : { sources: [] },
-    tags: {
-      [STEP_KIND_TAG]: INLINE_INFERENCE_KIND,
-      ...(opts.nonFatal === true ? { [STEP_NONFATAL_TAG]: "true" } : {}),
-      ...(opts.retry !== undefined
-        ? { [STEP_INLINE_RETRY_MAX_TAG]: String(opts.retry.maxAttempts) }
-        : {}),
-      ...(opts.title !== undefined ? { [STEP_TITLE_TAG]: opts.title } : {}),
-    },
+    ...(opts.title !== undefined
+      ? { tags: { [STEP_TITLE_TAG]: opts.title } }
+      : {}),
   });
   return step({
     agent,

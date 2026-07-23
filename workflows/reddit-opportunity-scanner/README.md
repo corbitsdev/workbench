@@ -8,7 +8,7 @@ Steps:
 1. **intake** — `awaitSignal('intake')`, collect the website URL and optional
    brand, geography, or ICP hints.
 2. **scrape** — `deterministicToolStep` calling `firecrawl_scrape` on the URL.
-3. **analyze** — `inlineInferenceStep` that reasons over the scraped content to
+3. **analyze** — `agentStep` that reasons over the scraped content to
    infer what the business sells, its keywords, competitors, and subreddits.
 4. **review** — `awaitSignal('recommendation-review')`, a human gate where the
    operator accepts, edits, or removes recommended keywords and subreddits.

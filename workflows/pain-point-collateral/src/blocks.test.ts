@@ -17,7 +17,7 @@ function toolEnvelope(value: unknown): { content: string } {
   return { content: JSON.stringify(value) };
 }
 
-// An inline-inference step's output is { reply: JSON-string }.
+// An agentStep's output is { reply: JSON-string }.
 function reply(value: unknown): { reply: string } {
   return { reply: JSON.stringify(value) };
 }

@@ -1,7 +1,7 @@
 import { awaitSignal, defineWorkflow, map } from "@intx/workflow";
 import {
   deterministicToolStep,
-  inlineInferenceStep,
+  agentStep,
   LLM_WRITER_MODEL,
 } from "@workbench/agents";
 import { buildAccountIntelSystemPrompt } from "./prompts";
@@ -169,7 +169,7 @@ export const workflow = defineWorkflow({
     // 9. Synthesize the account intelligence brief from every upstream step.
     //    Emits strict JSON containing the brief content, a contacts CSV string,
     //    and a Slack-ready draft so the package step can persist all three.
-    synthesize: inlineInferenceStep({
+    synthesize: agentStep({
       id: "sumble-account-intel-synthesize",
       title: "Write the account brief",
       systemPrompt: buildAccountIntelSystemPrompt(),

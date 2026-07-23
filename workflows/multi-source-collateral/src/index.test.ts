@@ -3,7 +3,6 @@ import { runLocal } from "@intx/workflow/runlocal";
 import type { StepInvoker } from "@intx/workflow/runtime";
 import {
   DETERMINISTIC_TOOL_KIND,
-  INLINE_INFERENCE_KIND,
   STEP_KIND_TAG,
   STEP_NONFATAL_TAG,
   STEP_TOOL_TAG,
@@ -72,7 +71,7 @@ describe("multi-source-collateral package", () => {
 
   test("generate map uses inline inference", () => {
     const m = mapPrimitive("generate");
-    expect(m.step.agent.tags?.[STEP_KIND_TAG]).toBe(INLINE_INFERENCE_KIND);
+    expect(m.step.agent.tags?.[STEP_KIND_TAG]).toBeUndefined();
   });
 
   test("persist map targets artifact_create", () => {
@@ -239,12 +238,12 @@ describe("parse helpers", () => {
   });
 
   test("parseNoteList and parseIssueList tolerate wrappers", () => {
-    expect(
-      parseNoteList({ notes: [{ id: "n", title: "T" }] }).status,
-    ).toBe("ok");
-    expect(
-      parseIssueList({ issues: [{ id: "i", title: "I" }] }).status,
-    ).toBe("ok");
+    expect(parseNoteList({ notes: [{ id: "n", title: "T" }] }).status).toBe(
+      "ok",
+    );
+    expect(parseIssueList({ issues: [{ id: "i", title: "I" }] }).status).toBe(
+      "ok",
+    );
   });
 
   test("buildSourceContext concatenates sources", () => {

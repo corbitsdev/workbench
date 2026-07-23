@@ -3,7 +3,6 @@ import {
   STEP_KIND_TAG,
   STEP_TITLE_TAG,
   DETERMINISTIC_TOOL_KIND,
-  INLINE_INFERENCE_KIND,
 } from "./deterministic-step";
 
 export type FlowStepClass = "auto" | "agent" | "human";
@@ -41,13 +40,15 @@ function humanize(raw: string): string {
 }
 
 // A `step` primitive is deterministic or reasoning purely by its authoring tag:
-// deterministicToolStep writes "deterministic-tool", inlineInferenceStep writes
-// "inline-inference", and a plain tool-capable reasoning step carries no tag.
+// deterministicToolStep writes "deterministic-tool"; every reasoning step
+// (agentStep's native `step({ agent })`) carries no deterministic tag and
+// classifies as "agent" by default. A historical run's definition may still
+// carry the retired `inline-inference` tag value on disk; that also has no
+// deterministic tag, so it classifies as "agent" here too.
 function classifyStepByTag(
   tags: Record<string, string> | undefined,
 ): FlowStepClass {
   if (tags?.[STEP_KIND_TAG] === DETERMINISTIC_TOOL_KIND) return "auto";
-  if (tags?.[STEP_KIND_TAG] === INLINE_INFERENCE_KIND) return "agent";
   return "agent";
 }
 

@@ -29,10 +29,10 @@ function args(overrides: Record<string, unknown> = {}) {
 }
 
 describe("readPresetVariants", () => {
-  test("folds each exec output against the fixed metadata and counts survivors", () => {
+  test("folds each exec output against the fixed metadata and counts survivors — an empty completion is a non-answer", () => {
     const { variants, survived, total } = readPresetVariants(
       args({
-        exec1: { output: { reply: "", isError: true, error: "503" } },
+        exec1: { output: { reply: "" } },
       }),
     );
     expect(total).toBe(3);
@@ -42,12 +42,24 @@ describe("readPresetVariants", () => {
       "",
       "glm answer",
     ]);
-    // The failed variant still carries its blind label + model for the artifact.
+    // The empty-completion variant still carries its blind label + model for
+    // the artifact.
     expect(variants[1]).toEqual({
       label: "Variant 2",
       model: "gpt-5.5",
       content: "",
     });
+  });
+
+  test("a permanently failed step (missing output) counts the same as a non-answer", () => {
+    // The engine still runs a failed step's dependents, but a step that
+    // exhausted its retries carries no `output` at all — not an isError
+    // envelope (that degrade path is retired).
+    const { survived, total } = readPresetVariants(
+      args({ exec1: { output: undefined } }),
+    );
+    expect(total).toBe(3);
+    expect(survived).toBe(2);
   });
 });
 
@@ -60,8 +72,8 @@ describe("enforcePresetQuorum", () => {
     expect(() =>
       enforcePresetQuorum(
         args({
-          exec1: { output: { reply: "", isError: true } },
-          exec2: { output: { reply: "", isError: true } },
+          exec1: { output: { reply: "" } },
+          exec2: { output: { reply: "" } },
         }),
       ),
     ).toThrow(new RegExp(`at least ${AB_PRESET_QUORUM}`));
@@ -83,7 +95,7 @@ describe("composePresetComparisonResult", () => {
   test("carries a failed variant (empty content) when the quorum still holds", () => {
     const result = composePresetComparisonResult(
       args({
-        exec2: { output: { reply: "", isError: true, error: "503" } },
+        exec2: { output: { reply: "" } },
         decision: { output: { ranking: [{ rank: 1, label: "Variant 1" }] } },
       }),
     );
@@ -110,8 +122,8 @@ describe("composePresetComparisonResult", () => {
     expect(() =>
       composePresetComparisonResult(
         args({
-          exec1: { output: { reply: "", isError: true } },
-          exec2: { output: { reply: "", isError: true } },
+          exec1: { output: { reply: "" } },
+          exec2: { output: { reply: "" } },
           decision: { output: { ranking: [] } },
         }),
       ),

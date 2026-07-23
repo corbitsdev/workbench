@@ -1,6 +1,5 @@
 import { describe, expect, test } from "bun:test";
 import {
-  INLINE_INFERENCE_KIND,
   LLM_WRITER_MODEL,
   STEP_ARGMAP_TAG,
   STEP_KIND_TAG,
@@ -56,7 +55,7 @@ describe("gtm-scripts-briefs workflow", () => {
     if (write === undefined || write.kind !== "step") {
       throw new Error("expected a write step");
     }
-    expect(write.agent.tags?.[STEP_KIND_TAG]).toBe(INLINE_INFERENCE_KIND);
+    expect(write.agent.tags?.[STEP_KIND_TAG]).toBeUndefined();
     expect(write.agent.inference.sources[0]?.model).toBe(LLM_WRITER_MODEL);
     expect(write.agent.inference.sources[0]?.parameters).toEqual({
       maxTokens: 16384,
