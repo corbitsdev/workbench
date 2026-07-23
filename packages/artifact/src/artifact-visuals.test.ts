@@ -99,7 +99,6 @@ describe("toGalleryArtifact", () => {
     kind: "email",
     title: "Title",
     content: "body",
-    status: "approved",
     version: 1,
     ownerPrincipalId: null,
     archivedAt: null,
@@ -275,7 +274,7 @@ describe("toGalleryArtifact", () => {
   it("returns undefined from tryToGalleryArtifact for an artifact that fails the gallery schema", () => {
     const corrupt = {
       ...base,
-      status: "bogus",
+      id: 123,
     } as unknown as ArtifactWithSession;
     expect(tryToGalleryArtifact(corrupt)).toBeUndefined();
   });

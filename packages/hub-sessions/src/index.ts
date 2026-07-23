@@ -59,6 +59,14 @@ export {
   type SkillSidecarPrincipal,
 } from "./skill-kind";
 export {
+  skillDraftKindHandler,
+  skillDraftAuthorize,
+  SKILL_DRAFT_PREFIX,
+  SKILL_DRAFT_ENTRYPOINT,
+  SKILL_DRAFT_META_PATH,
+  type SkillDraftHubPrincipal,
+} from "./skill-draft-kind";
+export {
   packageRegistryKindHandler,
   packageRegistryAuthorize,
   asTarballEntry,

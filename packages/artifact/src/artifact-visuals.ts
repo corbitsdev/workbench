@@ -294,16 +294,6 @@ export function visualForKind(kind: string): ArtifactVisual {
   return explicitVisualForKind(kind) ?? FALLBACK_VISUAL;
 }
 
-const STATUS_LABELS: Record<string, string> = {
-  draft: "Draft",
-  approved: "Approved",
-  rejected: "Rejected",
-};
-
-export function labelForStatus(status: string): string {
-  return STATUS_LABELS[status] ?? status;
-}
-
 const RELATIVE_TIME = new Intl.RelativeTimeFormat("en", { numeric: "auto" });
 const DIVISIONS: { amount: number; unit: Intl.RelativeTimeFormatUnit }[] = [
   { amount: 60, unit: "second" },
@@ -459,7 +449,6 @@ export function toGalleryArtifact(
     time: formatRelativeTime(artifact.updatedAt),
     provenance: provenance.label,
     provenanceTone: provenance.tone,
-    status: artifact.status,
     ...(excerpt.length > 0 ? { previewExcerpt: excerpt } : {}),
     ...(options.thumbnailUrl !== undefined
       ? { thumbnailUrl: options.thumbnailUrl }

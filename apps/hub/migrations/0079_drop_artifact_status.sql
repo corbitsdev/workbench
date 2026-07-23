@@ -1,0 +1,18 @@
+-- CL-4215: artifact status is not a used product concept — every artifact
+-- kind other than skill-draft was always 'draft', and skill-draft's review
+-- state has moved to existence-as-state on a `skill-draft` asset kind (see
+-- @workbench/hub-sessions and apps/hub/src/services/skill-library.ts):
+--
+--   draft asset exists, no skill asset of the same name -> pending review
+--   skill asset exists                                  -> approved
+--   draft asset gone                                     -> discarded
+--
+-- Run apps/hub/bin/migrate-skill-drafts-to-assets.ts BEFORE this migration —
+-- it moves every in-flight (status='draft') skill-draft artifact row onto a
+-- skill-draft asset. It cannot run as SQL: creating an asset requires
+-- writing git-backed content, which is outside a plain migration's reach.
+-- An 'approved' skill-draft row's content already lives on its linked skill
+-- asset; a 'rejected' row's tombstone has no equivalent under
+-- existence-as-state. Both are historical and are not migrated — this
+-- migration drops the column under them either way.
+ALTER TABLE "artifact" DROP COLUMN IF EXISTS "status";

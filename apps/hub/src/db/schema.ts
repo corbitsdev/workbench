@@ -31,7 +31,6 @@ const bytea = customType<{ data: Buffer; driverData: Buffer }>({
   },
 });
 
-export const artifactStatus = ["draft", "approved", "rejected"] as const;
 export const transcriptSource = ["paste", "granola", "artifact"] as const;
 
 export const transcript = pgTable("transcript", {
@@ -392,11 +391,11 @@ export const artifact = pgTable(
     title: text("title").notNull(),
     content: text("content").notNull(),
     source: jsonb("source").$type<Record<string, unknown>>(),
-    status: text("status", { enum: artifactStatus }).notNull().default("draft"),
     version: integer("version").notNull().default(1),
     // Soft-archive (CL-3156): null = visible, a timestamp = hidden from default
-    // listings. Reversible; distinct from `status` so archiving never clobbers a
-    // draft/approved/rejected state.
+    // listings. Reversible; independent of any per-kind review state (skill
+    // drafts now live as `skill-draft` assets — see @workbench/hub-sessions —
+    // whose existence, not a status column, is the review state).
     archivedAt: timestamp("archived_at"),
     // Idempotency backstop for a source that can race a duplicate insert past
     // an app-level existence check (CL-3577 review fix B; extended to a

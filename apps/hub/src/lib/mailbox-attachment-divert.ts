@@ -141,7 +141,9 @@ export async function divertInboundAttachments(
               : String(err),
         },
       );
-      const reason = timedOut ? "took too long to process" : "could not be parsed";
+      const reason = timedOut
+        ? "took too long to process"
+        : "could not be parsed";
       contextBlocks.push(
         `<context>\nAttachment "${attachment.name}" ${reason} and was omitted.\n</context>`,
       );
@@ -170,7 +172,6 @@ export async function divertInboundAttachments(
             mimeType: attachment.contentType,
           },
         },
-        status: "draft",
         version: 1,
         createdAt: now,
         updatedAt: now,

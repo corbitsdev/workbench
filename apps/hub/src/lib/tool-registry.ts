@@ -49,6 +49,7 @@ import type {
   EventCollectorRegistry,
   SidecarRouter,
   RepoStore,
+  AssetService,
 } from "@workbench/hub-sessions";
 import type { CryptoProvider } from "@intx/types/runtime";
 import type {
@@ -136,6 +137,7 @@ export type ContextToolEntry = {
     // CL-2801) so its tokens land in analytics_event attributed to the caller.
     analytics?: AnalyticsSubscriber;
     repoStore?: RepoStore;
+    assetService?: AssetService;
     buildToolDefinitions?: (names: string[]) => ToolDefinition[];
     // Workflow-exec wiring for the workflow-run tools (CL-2678); pre-bound in
     // index.ts alongside the /workflow-exec routes so both rails share the

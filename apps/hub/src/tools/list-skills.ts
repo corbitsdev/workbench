@@ -22,7 +22,6 @@ import { skillTitle } from "@workbench/shared";
 import type { HubDb } from "../db";
 import { resolveOwnerMemberPrincipalId } from "../lib/artifact-tools";
 import type { UserContext } from "../lib/user-context";
-import { artifact } from "../db/schema";
 import {
   getOwnedSkillDraftItem,
   getSkillAsset,
@@ -30,9 +29,10 @@ import {
   listSkillDrafts,
   listSkills,
   matchSkillIdByDraftName,
+  upsertSkillDraft,
   type SkillItem,
 } from "../services/skill-library";
-import { writeArtifactDeduped } from "./write-artifact";
+import type { AssetService } from "@workbench/hub-sessions";
 import type { ContextToolEntry } from "../lib/tool-registry";
 
 const log = getLogger(["api", "skill-tools"]);
@@ -49,6 +49,7 @@ export {
 export type SkillToolsContext = {
   db: HubDb;
   repoStore: RepoStore;
+  assetService: AssetService;
   tenantId: string;
   principalId: string;
 };
@@ -245,7 +246,7 @@ async function listSkillDraftsHandler(
 ): Promise<string> {
   const owner = await resolveOwnerContext(context);
   if (owner === null) return jsonResult({ drafts: [] });
-  const drafts = await listSkillDrafts(context.db, owner);
+  const drafts = await listSkillDrafts(context.db, context.repoStore, owner);
   return jsonResult({
     drafts: drafts.map((draft) => ({
       id: draft.id,
@@ -264,7 +265,12 @@ async function loadSkillDraftHandler(
   if (owner === null) {
     throw new Error(`Skill draft not found: ${id}`);
   }
-  const draft = await getOwnedSkillDraftItem(context.db, owner, id);
+  const draft = await getOwnedSkillDraftItem(
+    context.db,
+    context.repoStore,
+    owner,
+    id,
+  );
 
   const budget = { remaining: MAX_SKILL_LOAD_CHARS };
   const bodyClamped = clampContent(draft.content, budget);
@@ -297,9 +303,6 @@ async function skillDraftHandler(
   args: Record<string, unknown>,
 ): Promise<string> {
   const draft = parseDraftSkillArgs(args);
-  const source: Record<string, unknown> = { origin: "skill-draft" };
-  if (draft.description !== undefined) source.description = draft.description;
-  if (draft.files && draft.files.length > 0) source.files = draft.files;
 
   // Stamp the human owner (Myra's member principal), not the agent principal.
   // Approve/list authorize against this id so the human can act on their agent's drafts.
@@ -316,8 +319,9 @@ async function skillDraftHandler(
   // Prefer an explicit existingSkillId; otherwise resolve a library skill by
   // asset slug / displayName so a second draft revises rather than 409-create.
   // Draft titles are often display-ish ("Company Research"); library name is
-  // the kebab slug from toAssetName.
-  let existingSkillId = draft.existingSkillId;
+  // the kebab slug from toAssetName. `upsertSkillDraft` preserves a prior
+  // stamp itself when re-authoring the same draft without an explicit one.
+  let existingSkillId = draft.existingSkillId ?? null;
   if (!existingSkillId) {
     const userId = await resolveViewerUserId(
       context.db,
@@ -334,48 +338,28 @@ async function skillDraftHandler(
     }
   }
 
-  // Preserve a prior stamp on the same principal+title draft row —
-  // writeArtifactDeduped replaces source wholesale.
-  if (!existingSkillId) {
-    const prior = await context.db
-      .select({ source: artifact.source })
-      .from(artifact)
-      .where(
-        and(
-          eq(artifact.tenantId, context.tenantId),
-          eq(artifact.principalId, context.principalId),
-          eq(artifact.title, draft.name),
-          eq(artifact.kind, "skill-draft"),
-        ),
-      )
-      .limit(1);
-    const priorSource = (prior[0]?.source ?? {}) as Record<string, unknown>;
-    const priorId =
-      typeof priorSource.existingSkillId === "string" &&
-      priorSource.existingSkillId
-        ? priorSource.existingSkillId
-        : null;
-    if (priorId) existingSkillId = priorId;
+  const result = await upsertSkillDraft(
+    context.assetService,
+    context.db,
+    context.repoStore,
+    {
+      tenantId: context.tenantId,
+      ownerPrincipalId,
+      title: draft.name,
+      body: draft.body,
+      description: draft.description,
+      files: draft.files,
+      existingSkillId,
+    },
+  );
+
+  if (existingSkillId) {
+    return JSON.stringify({
+      draftId: result.draftId,
+      existingSkillId,
+    });
   }
-
-  if (existingSkillId) source.existingSkillId = existingSkillId;
-
-  const result = await writeArtifactDeduped({
-    db: context.db as DB["db"],
-    tenantId: context.tenantId,
-    principalId: context.principalId,
-    title: draft.name,
-    body: draft.body,
-    kind: "skill-draft",
-    source,
-    ownerPrincipalId,
-  });
-
-  return JSON.stringify({
-    draftId: result.artifactId,
-    version: result.version,
-    ...(existingSkillId ? { existingSkillId } : {}),
-  });
+  return JSON.stringify({ draftId: result.draftId });
 }
 
 export function createSkillTools(context: SkillToolsContext): AgentTool[] {
@@ -416,11 +400,17 @@ export function createSkillTools(context: SkillToolsContext): AgentTool[] {
 function requireSkillContext(context: {
   db: unknown;
   repoStore?: RepoStore;
+  assetService?: AssetService;
   tenantId: string;
   principalId: string;
 }): SkillToolsContext {
   if (!context.repoStore) {
     throw new Error("Skill tools require a repoStore in the hub tool context");
+  }
+  if (!context.assetService) {
+    throw new Error(
+      "Skill tools require an assetService in the hub tool context",
+    );
   }
   // The registry types `db` against the Interchange schema; the runtime value
   // is the hub db (a superset). The skill-library service is hub-internal and
@@ -428,6 +418,7 @@ function requireSkillContext(context: {
   return {
     db: context.db as HubDb,
     repoStore: context.repoStore,
+    assetService: context.assetService,
     tenantId: context.tenantId,
     principalId: context.principalId,
   };

@@ -1,6 +1,5 @@
 export type {
   Artifact,
-  ArtifactStatus,
   ArtifactVersion,
   ArtifactWithSession,
   ArtifactWithVersions,
@@ -41,11 +40,9 @@ export {
   ARTIFACT_PREVIEW_FAMILIES,
   artifactPreviewFamily,
   comparisonSummary,
-  labelForArtifactStatus,
   previewExcerpt,
   type ArtifactPreviewFamily,
 } from "./artifact-preview-family";
-export { shouldShowArtifactStatusBadge } from "./artifact-status-badge";
 export {
   ArtifactGallery,
   ArtifactGalleryToolbar,

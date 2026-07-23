@@ -15,6 +15,7 @@ import type {
   EventCollectorRegistry,
   SidecarRouter,
   RepoStore,
+  AssetService,
 } from "@workbench/hub-sessions";
 import type { CryptoProvider } from "@intx/types/runtime";
 import type { AnalyticsSubscriber } from "@workbench/analytics";
@@ -61,6 +62,7 @@ export function createHubToolsRouter(
     sidecarRouter: SidecarRouter;
     analytics: AnalyticsSubscriber;
     repoStore: RepoStore;
+    assetService: AssetService;
     buildToolDefinitions: typeof buildToolDefinitions;
     // Workflow-exec wiring for the workflow-run tools (CL-2678).
     cryptoProvider?: CryptoProvider;

@@ -37,7 +37,7 @@ export async function writeArtifactDeduped(params: {
   body: string;
   kind: string;
   source: Record<string, unknown>;
-  /** Human owner principal (e.g. Myra's member). Stamped for skill-drafts. */
+  /** Human owner principal (e.g. Myra's member), when a caller needs one stamped. */
   ownerPrincipalId?: string | null;
   /**
    * Optional stable origin key (unique per tenant via
@@ -116,7 +116,6 @@ export async function writeArtifactDeduped(params: {
             title,
             content: body,
             source,
-            status: "draft",
             version: 1,
             createdAt: now,
             updatedAt: now,
@@ -153,9 +152,6 @@ export async function writeArtifactDeduped(params: {
             source,
             version: nextVersion,
             updatedAt: now,
-            // skill-draft re-authoring reopens an approved/rejected row so
-            // approve can run again on the new content.
-            ...(kind === "skill-draft" ? { status: "draft" as const } : {}),
             ...(ownerPrincipalId !== undefined
               ? { ownerPrincipalId: ownerPrincipalId ?? null }
               : {}),

@@ -16,6 +16,8 @@ import {
   createSidecarRouter,
   createSidecarTokenAuthenticator,
   WORKSPACE_BUILTINS_REGISTRY,
+  skillDraftKindHandler,
+  skillDraftAuthorize,
   type SidecarLookups,
   type WsHandle,
 } from "@workbench/hub-sessions";
@@ -426,6 +428,18 @@ const repoStore = wrapRepoStoreWithProjection(
     // Retention is fixed to keep-history: the hub is the long-term archive
     // of an agent's state graph (see the HUB_AGENT_GC_* notes in config.ts).
     gc: { ...hub.agentGc, retention: "keep-history" },
+    // CL-4215: registers `skill-draft` as a real asset kind (its own
+    // directoryPrefix + validatePush) via the CL-4231 kind seam, so skill
+    // drafts get git-backed content instead of an `artifact` row with a
+    // status column. Existence is the review state: a draft asset with no
+    // matching `skill` asset is pending; the skill asset's existence is
+    // approval. See skill-library.ts.
+    handlers: {
+      "skill-draft": {
+        handler: skillDraftKindHandler,
+        authorize: skillDraftAuthorize,
+      },
+    },
   }),
   {
     db,
@@ -2283,6 +2297,7 @@ app.route(
     sidecarRouter,
     analytics: analyticsSubscriber,
     repoStore: repoStore.repoStore,
+    assetService,
     buildToolDefinitions,
     // Workflow-run tools (CL-2678) share the /workflow-exec routes' pre-bound
     // start/resume wiring.

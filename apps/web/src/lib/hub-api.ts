@@ -1310,7 +1310,6 @@ export const ActivityOverviewSchema = type({
   artifacts: {
     total: "number",
     createdInRange: "number",
-    byStatus: ActivityCountRowSchema.array(),
     byKind: ActivityCountRowSchema.array(),
   },
   workflowRuns: {

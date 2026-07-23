@@ -25,11 +25,7 @@ import {
 } from "@workbench/ui";
 import type { ArtifactWithSession } from "@workbench/shared";
 import type { GalleryArtifact } from "./types";
-import {
-  labelForStatus,
-  tryToGalleryArtifact,
-  visualForKind,
-} from "./artifact-visuals";
+import { tryToGalleryArtifact, visualForKind } from "./artifact-visuals";
 import { ArtifactCard } from "./ArtifactCard";
 
 export interface ArtifactGalleryToolbarProps {
@@ -137,11 +133,6 @@ const artifactRowColumns: DataTableColumn<ArtifactWithSession>[] = [
     key: "owner",
     header: "Owner",
     render: (a) => a.ownerName ?? "—",
-  },
-  {
-    key: "status",
-    header: "Status",
-    render: (a) => labelForStatus(a.status),
   },
   {
     key: "updated",

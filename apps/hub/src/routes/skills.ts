@@ -118,7 +118,7 @@ export function createSkillsRouter(
     if (forbidden) return c.json({ error: "Tenant not accessible" }, 403);
     if (!context) return c.json({ error: "User context not found" }, 403);
     try {
-      const drafts = await listSkillDrafts(db, context);
+      const drafts = await listSkillDrafts(db, repoStore, context);
       return c.json({ drafts }, 200);
     } catch (err) {
       return errorResponse(c, err);
@@ -316,6 +316,7 @@ export function createSkillsRouter(
       const result = await approveSkillDraft(
         assetService,
         db,
+        repoStore,
         context,
         draftId,
         {
@@ -341,6 +342,7 @@ export function createSkillsRouter(
     try {
       const draft = await discardSkillDraft(
         db,
+        repoStore,
         context,
         c.req.param("draftId"),
       );

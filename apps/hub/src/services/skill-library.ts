@@ -8,10 +8,14 @@ import { and, asc, desc, eq, inArray } from "drizzle-orm";
 import { schema as intxSchema, getAncestorChain } from "@intx/db";
 import { getLogger } from "@intx/log";
 import type { HubDb } from "../db";
-import { artifact, skillAccess } from "../db/schema";
+import { skillAccess } from "../db/schema";
 import type { AssetService, RepoStore } from "@workbench/hub-sessions";
-import { AssetServiceError } from "@workbench/hub-sessions";
-import { resolveOwnerMemberPrincipalId } from "../lib/artifact-tools";
+import {
+  AssetServiceError,
+  SKILL_DRAFT_ENTRYPOINT,
+  SKILL_DRAFT_META_PATH,
+  SKILL_DRAFT_PREFIX,
+} from "@workbench/hub-sessions";
 import type { UserContext } from "../lib/user-context";
 import { isSlugShaped, toAssetName } from "@workbench/shared";
 
@@ -1059,11 +1063,50 @@ export async function updateSkill(
   return refreshed;
 }
 
+// ─── Skill drafts (CL-4215) ─────────────────────────────────────────
+//
+// Skill drafts are storage only: authored via the `skill_draft` hub tool,
+// reviewed in the web UI's Pending drafts panel, never attached to an agent
+// session. They are `skill-draft`-kind assets, not `artifact` rows with a
+// status column — existence is the state:
+//
+//   draft asset exists, no skill asset of the same name → pending review
+//   skill asset exists                                  → approved
+//   draft asset gone                                     → discarded
+//
+// The concurrency guard for a racing approve/discard is a conditional
+// `DELETE ... RETURNING` on the draft asset row: exactly one caller's delete
+// returns a row (the "claim"); the other gets zero rows back and 409s. This
+// needs no CAS column, no lock table, no lease — the row's own existence,
+// governed by ordinary Postgres MVCC, is the guard. Approve-vs-approve is
+// additionally guarded by the asset unique constraint on
+// (tenant, kind, name): the loser's `createAsset`/`updateSkill` publish
+// races the winner's and 409s on the duplicate-asset error, which the
+// existing `createSkill` fallback-to-update path already handles.
+//
+// A failed publish (after the claiming delete succeeds but before the skill
+// asset is durably created) reinstates a fresh `skill-draft` asset with the
+// claimed content, so the draft is listable and retryable — never "stuck
+// approved" with no skill, because there is no approved status to get stuck
+// in. A draft that is gone is either a skill (approved) or nothing
+// (discarded); a failed approve leaves it existing again as pending.
+//
+// `rejected` is not modelled: discard deletes the row outright. No consumer
+// reads a rejected draft — the client type used to advertise a three-state
+// union, but nothing ever listed rejected drafts, and a discarded row now
+// surfaces only as a not-found error, same as it always effectively did.
+
 const SkillDraftSourceFileSchema = type({
   path: "string",
   content: "string",
 });
 const SkillDraftSourceFilesSchema = SkillDraftSourceFileSchema.array();
+
+const SkillDraftMetaSchema = type({
+  "title?": "string",
+  "description?": "string | null",
+  "existingSkillId?": "string | null",
+});
 
 export type SkillDraftSupportFile = {
   path: string;
@@ -1076,9 +1119,8 @@ export type SkillDraftItem = {
   content: string;
   description: string | null;
   existingSkillId: string | null;
-  /** Support files from source.files (SKILL.md body is `content`, not listed here). */
+  /** Support files under the draft/ prefix (SKILL.md body is `content`, not listed here). */
   files: SkillDraftSupportFile[];
-  status: "draft" | "approved" | "rejected";
   updatedAt: string;
   createdAt: string;
 };
@@ -1089,66 +1131,217 @@ export type ApproveSkillDraftOpts = {
   ownerName: string;
 };
 
-/**
- * Authorize the human caller against a skill-draft. Stamped ownerPrincipalId is
- * the sole gate when present; unstamped legacy rows fall back to resolving the
- * agent principal's owning member (or direct principal match for human-authored).
- */
-export async function canActOnSkillDraft(
-  db: HubDb,
-  draft: {
-    ownerPrincipalId: string | null;
-    principalId: string | null;
-    tenantId: string | null;
-  },
-  userContext: UserContext,
-): Promise<boolean> {
-  if (draft.ownerPrincipalId != null) {
-    return draft.ownerPrincipalId === userContext.principalId;
+type SkillDraftAssetRow = {
+  id: string;
+  tenantId: string;
+  name: string;
+  displayName: string | null;
+  creatorPrincipalId: string | null;
+  createdAt: Date;
+  updatedAt: Date;
+};
+
+type SkillDraftContent = {
+  title: string | null;
+  content: string;
+  description: string | null;
+  existingSkillId: string | null;
+  files: SkillDraftSupportFile[];
+};
+
+function skillDraftRepoDir(repoStore: RepoStore, assetId: string): string {
+  return repoStore.getRepoDir({ kind: "skill-draft", id: assetId });
+}
+
+async function readDraftBlob(
+  repoStore: RepoStore,
+  assetId: string,
+  treePath: string,
+  fs: typeof nodefs = nodefs,
+): Promise<Buffer | null> {
+  const dir = skillDraftRepoDir(repoStore, assetId);
+  try {
+    const commitSha = await git.resolveRef({ fs, dir, ref: SKILL_BUNDLE_REF });
+    const { blob } = await git.readBlob({
+      fs,
+      dir,
+      oid: commitSha,
+      filepath: treePath,
+    });
+    return Buffer.from(blob);
+  } catch (err) {
+    const name = err instanceof Error ? err.name : "";
+    if (name === "NotFoundError" || name === "TreeOrBlobNotFoundError")
+      return null;
+    log.error("Unexpected error reading skill-draft blob", {
+      assetId,
+      treePath,
+      error: String(err),
+    });
+    return null;
   }
-  if (draft.principalId === userContext.principalId) return true;
-  if (!draft.principalId || !draft.tenantId) return false;
-  const owner = await resolveOwnerMemberPrincipalId(db, {
-    tenantId: draft.tenantId,
-    principalId: draft.principalId,
+}
+
+async function listDraftSupportFiles(
+  repoStore: RepoStore,
+  assetId: string,
+  fs: typeof nodefs = nodefs,
+): Promise<SkillDraftSupportFile[]> {
+  const dir = skillDraftRepoDir(repoStore, assetId);
+  try {
+    const entries = await git.walk({
+      fs,
+      dir,
+      trees: [git.TREE({ ref: SKILL_BUNDLE_REF })],
+      map: async (filepath, [entry]) => {
+        if (!entry) return null;
+        if ((await entry.type()) !== "blob") return undefined;
+        if (!filepath.startsWith(SKILL_DRAFT_PREFIX)) return undefined;
+        const relativePath = filepath.slice(SKILL_DRAFT_PREFIX.length);
+        if (
+          !relativePath ||
+          relativePath === "SKILL.md" ||
+          relativePath === ".draft-meta.json"
+        ) {
+          return null;
+        }
+        const blob = await entry.content();
+        if (!blob) return null;
+        let content: string;
+        try {
+          content = new TextDecoder("utf-8", { fatal: true }).decode(blob);
+        } catch {
+          return null; // binary support file — omitted from the review payload
+        }
+        return { path: relativePath, content };
+      },
+    });
+    return (entries.filter(Boolean) as SkillDraftSupportFile[]).sort((a, b) =>
+      a.path.localeCompare(b.path),
+    );
+  } catch (err) {
+    const name = err instanceof Error ? err.name : "";
+    if (name !== "NotFoundError" && name !== "TreeOrBlobNotFoundError") {
+      log.error("Unexpected error listing skill-draft support files", {
+        assetId,
+        error: String(err),
+      });
+    }
+    return [];
+  }
+}
+
+/** Reads a draft's full content (body, meta, support files) straight from its git repo. */
+async function loadSkillDraftContent(
+  repoStore: RepoStore,
+  assetId: string,
+  fs: typeof nodefs = nodefs,
+): Promise<SkillDraftContent> {
+  const [bodyBuf, metaBuf, files] = await Promise.all([
+    readDraftBlob(repoStore, assetId, SKILL_DRAFT_ENTRYPOINT, fs),
+    readDraftBlob(repoStore, assetId, SKILL_DRAFT_META_PATH, fs),
+    listDraftSupportFiles(repoStore, assetId, fs),
+  ]);
+
+  // A draft's meta blob is written by us on every draft write, so a missing or
+  // unparseable one is corruption, not a legacy shape to tolerate. Fail loudly
+  // rather than silently serving a draft with empty title/description.
+  let meta: {
+    title?: string;
+    description?: string | null;
+    existingSkillId?: string | null;
+  } = {};
+  if (metaBuf) {
+    let raw: unknown;
+    try {
+      raw = JSON.parse(metaBuf.toString("utf8"));
+    } catch (err) {
+      throw new SkillLibraryError(
+        `Skill draft ${assetId} has an unparseable meta blob: ${String(err)}`,
+        500,
+      );
+    }
+    const parsed = SkillDraftMetaSchema(raw);
+    if (parsed instanceof type.errors) {
+      throw new SkillLibraryError(
+        `Skill draft ${assetId} has an invalid meta blob: ${parsed.summary}`,
+        500,
+      );
+    }
+    meta = parsed;
+  }
+
+  return {
+    title: meta.title ?? null,
+    content: bodyBuf ? bodyBuf.toString("utf8") : "",
+    description: meta.description ?? null,
+    existingSkillId: meta.existingSkillId ?? null,
+    files,
+  };
+}
+
+/** Builds the draft/ tree written on every create/update/reinstate of a skill-draft asset. */
+function buildSkillDraftTree(input: {
+  title: string;
+  description: string | null;
+  existingSkillId: string | null;
+  body: string;
+  files: SkillDraftSupportFile[];
+}): Record<string, Uint8Array> {
+  const files: Record<string, Uint8Array> = {};
+  files[SKILL_DRAFT_ENTRYPOINT] = new TextEncoder().encode(input.body);
+  const meta = {
+    title: input.title,
+    description: input.description,
+    existingSkillId: input.existingSkillId,
+  };
+  files[SKILL_DRAFT_META_PATH] = new TextEncoder().encode(
+    JSON.stringify(meta, null, 2),
+  );
+  for (const file of input.files) {
+    const normalizedPath = normalizeBundlePath(file.path);
+    if (
+      !normalizedPath ||
+      normalizedPath === "SKILL.md" ||
+      normalizedPath === ".draft-meta.json"
+    ) {
+      continue;
+    }
+    files[`${SKILL_DRAFT_PREFIX}${normalizedPath}`] = new TextEncoder().encode(
+      file.content,
+    );
+  }
+  return files;
+}
+
+async function removeDraftRepoDir(
+  repoStore: RepoStore,
+  assetId: string,
+): Promise<void> {
+  const dir = skillDraftRepoDir(repoStore, assetId);
+  await nodefs.promises.rm(dir, { recursive: true, force: true }).catch((err) => {
+    log.error("Failed to remove skill-draft git repo", {
+      assetId,
+      dir,
+      error: String(err),
+    });
   });
-  return owner === userContext.principalId;
 }
 
-async function loadOwnedSkillDraft(
-  db: HubDb,
-  userContext: UserContext,
-  draftId: string,
-): Promise<typeof artifact.$inferSelect> {
-  const rows = await db
-    .select()
-    .from(artifact)
-    .where(
-      and(
-        eq(artifact.id, draftId),
-        eq(artifact.kind, "skill-draft"),
-        eq(artifact.tenantId, userContext.tenantId),
-      ),
-    )
-    .limit(1);
-
-  const draft = rows[0];
-  if (!draft) throw new SkillLibraryError("Draft not found", 404);
-  const allowed = await canActOnSkillDraft(db, draft, userContext);
-  if (!allowed) throw new SkillLibraryError("Draft not found", 404);
-  return draft;
-}
-
-function draftSourceDescription(
-  source: Record<string, unknown>,
-): string | null {
-  return typeof source.description === "string" ? source.description : null;
-}
-
-function draftExistingSkillId(source: Record<string, unknown>): string | null {
-  return typeof source.existingSkillId === "string" && source.existingSkillId
-    ? source.existingSkillId
-    : null;
+function toSkillDraftItem(
+  row: SkillDraftAssetRow,
+  content: SkillDraftContent,
+): SkillDraftItem {
+  return {
+    id: row.id,
+    title: content.title ?? row.displayName ?? row.name,
+    content: content.content,
+    description: content.description,
+    existingSkillId: content.existingSkillId,
+    files: content.files,
+    updatedAt: row.updatedAt.toISOString(),
+    createdAt: row.createdAt.toISOString(),
+  };
 }
 
 /**
@@ -1184,151 +1377,259 @@ async function resolveSkillIdByDraftTitle(
   return matchSkillIdByDraftName(visible, draftTitle);
 }
 
-/** Support files for review/list. Malformed source.files yields [] (approve still validates). */
-function supportFilesFromSource(
-  source: Record<string, unknown>,
-): SkillDraftSupportFile[] {
-  if (source.files === undefined) return [];
-  const parsed = SkillDraftSourceFilesSchema(source.files);
-  if (parsed instanceof type.errors) return [];
-  const out: SkillDraftSupportFile[] = [];
-  for (const file of parsed) {
-    const normalizedPath = normalizeBundlePath(file.path);
-    if (!normalizedPath || normalizedPath === "SKILL.md") continue;
-    out.push({ path: normalizedPath, content: file.content });
-  }
-  return out;
+function draftAssetWhere(
+  draftId: string,
+  tenantId: string,
+  ownerPrincipalId: string,
+) {
+  return and(
+    eq(intxSchema.asset.id, draftId),
+    eq(intxSchema.asset.kind, "skill-draft"),
+    eq(intxSchema.asset.tenantId, tenantId),
+    eq(intxSchema.asset.creatorPrincipalId, ownerPrincipalId),
+  );
 }
 
-function filesFromSkillDraft(
-  draft: typeof artifact.$inferSelect,
-): SkillBundleFileInput[] {
-  const source = (draft.source ?? {}) as Record<string, unknown>;
-  const files: SkillBundleFileInput[] = [
-    { path: "SKILL.md", content: Buffer.from(draft.content ?? "") },
-  ];
-
-  if (source.files === undefined) return files;
-
-  const parsed = SkillDraftSourceFilesSchema(source.files);
-  if (parsed instanceof type.errors) {
-    throw new SkillLibraryError(`Invalid draft files: ${parsed.summary}`, 400);
-  }
-
-  for (const file of parsed) {
-    const normalizedPath = normalizeBundlePath(file.path);
-    if (!normalizedPath) {
-      throw new SkillLibraryError(`Unsafe skill bundle path: ${file.path}`);
-    }
-    // Body is the SKILL.md entrypoint; skip duplicates from source.files.
-    if (normalizedPath === "SKILL.md") continue;
-    files.push({
-      path: normalizedPath,
-      content: Buffer.from(file.content),
-    });
-  }
-  return files;
-}
-
-function toSkillDraftItem(draft: typeof artifact.$inferSelect): SkillDraftItem {
-  const source = (draft.source ?? {}) as Record<string, unknown>;
-  return {
-    id: draft.id,
-    title: draft.title,
-    content: draft.content ?? "",
-    description: draftSourceDescription(source),
-    existingSkillId: draftExistingSkillId(source),
-    files: supportFilesFromSource(source),
-    status: draft.status,
-    updatedAt: draft.updatedAt.toISOString(),
-    createdAt: draft.createdAt.toISOString(),
-  };
-}
+export type UpsertSkillDraftInput = {
+  tenantId: string;
+  /** Human owner principal (Myra's member), not the agent principal. */
+  ownerPrincipalId: string;
+  title: string;
+  body: string;
+  description: string | null | undefined;
+  files: SkillDraftSupportFile[] | undefined;
+  existingSkillId: string | null | undefined;
+};
 
 /**
- * Load one of the caller's PENDING drafts as a shaped `SkillDraftItem`. Reachable
- * exactly when `listSkillDrafts` would surface the row: owned via the stamped
- * `ownerPrincipalId` and still `draft`-status. Anything else — a missing id, a row
- * the caller does not own, a legacy unstamped row, or one already approved or
- * rejected — surfaces as a not-found error naming the id (the `load_skill`
- * convention), so load and list never disagree on what is a pending draft.
+ * Create or update the caller's pending draft for `title` — the `skill_draft`
+ * tool's write path. Drafts are per-(tenant, kind, name) via the asset unique
+ * constraint (the same constraint published skills use), so two different
+ * users drafting the exact same title in one tenant collide with a 409 —
+ * consistent with how a name collision on `createSkill` already behaves.
  */
-export async function getOwnedSkillDraftItem(
+export async function upsertSkillDraft(
+  assetService: AssetService,
   db: HubDb,
-  userContext: UserContext,
-  draftId: string,
-): Promise<SkillDraftItem> {
-  let draft: typeof artifact.$inferSelect;
+  repoStore: RepoStore,
+  input: UpsertSkillDraftInput,
+): Promise<{ draftId: string }> {
+  const title = input.title.trim();
+  if (!title) throw new SkillLibraryError("Draft name is required");
+  const assetName = toAssetName(title);
+  const displayName = isSlugShaped(title) ? undefined : title;
+
+  const rows = await db
+    .select({
+      id: intxSchema.asset.id,
+      creatorPrincipalId: intxSchema.asset.creatorPrincipalId,
+    })
+    .from(intxSchema.asset)
+    .where(
+      and(
+        eq(intxSchema.asset.tenantId, input.tenantId),
+        eq(intxSchema.asset.kind, "skill-draft"),
+        eq(intxSchema.asset.name, assetName),
+      ),
+    )
+    .limit(1);
+  const existingDraft = rows[0];
+
+  if (existingDraft && existingDraft.creatorPrincipalId !== input.ownerPrincipalId) {
+    throw new SkillLibraryError(
+      `A draft named "${title}" already exists`,
+      409,
+    );
+  }
+
+  // Preserve a prior stamp when re-authoring without an explicit one.
+  let existingSkillId = input.existingSkillId ?? null;
+  if (existingSkillId === null && existingDraft) {
+    const prior = await loadSkillDraftContent(repoStore, existingDraft.id);
+    existingSkillId = prior.existingSkillId;
+  }
+
+  const description = input.description === undefined ? null : input.description;
+  const files = input.files === undefined ? [] : input.files;
+  const treeFiles = buildSkillDraftTree({
+    title,
+    description,
+    existingSkillId,
+    body: input.body,
+    files,
+  });
+
+  if (existingDraft) {
+    await assetService.populateAsset({
+      assetId: existingDraft.id,
+      ref: SKILL_BUNDLE_REF,
+      tree: {
+        files: treeFiles,
+        clearPrefix: SKILL_DRAFT_PREFIX,
+        message: `Update draft ${title}`,
+      },
+      principal: { kind: "hub" },
+    });
+    return { draftId: existingDraft.id };
+  }
+
+  let asset;
   try {
-    draft = await loadOwnedSkillDraft(db, userContext, draftId);
+    if (displayName === undefined) {
+      asset = await assetService.createAsset({
+        tenantId: input.tenantId,
+        kind: "skill-draft",
+        name: assetName,
+        creatorPrincipalId: input.ownerPrincipalId,
+      });
+    } else {
+      asset = await assetService.createAsset({
+        tenantId: input.tenantId,
+        kind: "skill-draft",
+        name: assetName,
+        displayName,
+        creatorPrincipalId: input.ownerPrincipalId,
+      });
+    }
   } catch (err) {
-    if (err instanceof SkillLibraryError && err.status === 404) {
-      throw new SkillLibraryError(`Skill draft not found: ${draftId}`, 404);
+    if (err instanceof AssetServiceError && err.reason === "duplicate_asset") {
+      throw new SkillLibraryError(
+        `A draft named "${title}" already exists`,
+        409,
+      );
     }
     throw err;
   }
-  if (
-    draft.ownerPrincipalId !== userContext.principalId ||
-    draft.status !== "draft"
-  ) {
-    throw new SkillLibraryError(`Skill draft not found: ${draftId}`, 404);
+
+  try {
+    await assetService.populateAsset({
+      assetId: asset.id,
+      ref: SKILL_BUNDLE_REF,
+      tree: {
+        files: treeFiles,
+        clearPrefix: SKILL_DRAFT_PREFIX,
+        message: `Create draft ${title}`,
+      },
+      principal: { kind: "hub" },
+    });
+  } catch (err) {
+    await db
+      .delete(intxSchema.asset)
+      .where(eq(intxSchema.asset.id, asset.id))
+      .catch((deleteErr) => {
+        log.error("Failed to clean up orphaned skill-draft asset after create failure", {
+          assetId: asset.id,
+          error: String(deleteErr),
+        });
+      });
+    throw err;
   }
-  return toSkillDraftItem(draft);
+
+  return { draftId: asset.id };
+}
+
+/**
+ * Load one of the caller's pending drafts. Reachable exactly when
+ * `listSkillDrafts` would surface the row: owned via `creatorPrincipalId`.
+ * A missing id, a row the caller does not own, or a discarded/approved
+ * (i.e. no-longer-existing) draft all surface as the same not-found error
+ * naming the id — list and load never disagree on what is pending.
+ */
+export async function getOwnedSkillDraftItem(
+  db: HubDb,
+  repoStore: RepoStore,
+  userContext: UserContext,
+  draftId: string,
+): Promise<SkillDraftItem> {
+  const rows = await db
+    .select()
+    .from(intxSchema.asset)
+    .where(
+      draftAssetWhere(draftId, userContext.tenantId, userContext.principalId),
+    )
+    .limit(1);
+  const row = rows[0];
+  if (!row) throw new SkillLibraryError(`Skill draft not found: ${draftId}`, 404);
+  const content = await loadSkillDraftContent(repoStore, row.id);
+  return toSkillDraftItem(row, content);
 }
 
 export async function listSkillDrafts(
   db: HubDb,
+  repoStore: RepoStore,
   userContext: UserContext,
 ): Promise<SkillDraftItem[]> {
   const rows = await db
     .select()
-    .from(artifact)
+    .from(intxSchema.asset)
     .where(
       and(
-        eq(artifact.tenantId, userContext.tenantId),
-        eq(artifact.kind, "skill-draft"),
-        eq(artifact.status, "draft"),
-        eq(artifact.ownerPrincipalId, userContext.principalId),
+        eq(intxSchema.asset.tenantId, userContext.tenantId),
+        eq(intxSchema.asset.kind, "skill-draft"),
+        eq(intxSchema.asset.creatorPrincipalId, userContext.principalId),
       ),
     )
-    .orderBy(desc(artifact.updatedAt));
+    .orderBy(desc(intxSchema.asset.updatedAt));
 
-  return rows.map(toSkillDraftItem);
+  return Promise.all(
+    rows.map(async (row) => {
+      const content = await loadSkillDraftContent(repoStore, row.id);
+      return toSkillDraftItem(row, content);
+    }),
+  );
 }
 
+/**
+ * Discard a pending draft. The claim is a conditional `DELETE ... RETURNING`:
+ * exactly one racing discard/approve gets the row back; the loser 409s. The
+ * pre-check surfaces genuine not-found (never existed / not owned) as 404,
+ * distinct from the 409 a real race produces.
+ */
 export async function discardSkillDraft(
   db: HubDb,
+  repoStore: RepoStore,
   userContext: UserContext,
   draftId: string,
-): Promise<SkillDraftItem> {
-  const draft = await loadOwnedSkillDraft(db, userContext, draftId);
-  if (draft.status !== "draft") {
-    throw new SkillLibraryError("Draft is not in draft status", 400);
+): Promise<{ draftId: string; title: string }> {
+  const preRows = await db
+    .select({ id: intxSchema.asset.id })
+    .from(intxSchema.asset)
+    .where(
+      draftAssetWhere(draftId, userContext.tenantId, userContext.principalId),
+    )
+    .limit(1);
+  if (!preRows[0]) {
+    throw new SkillLibraryError(`Skill draft not found: ${draftId}`, 404);
   }
 
-  // CAS: only reject while still draft so concurrent discard/approve cannot race.
-  const [updated] = await db
-    .update(artifact)
-    .set({ status: "rejected", updatedAt: new Date() })
+  const deleted = await db
+    .delete(intxSchema.asset)
     .where(
-      and(
-        eq(artifact.id, draftId),
-        eq(artifact.tenantId, userContext.tenantId),
-        eq(artifact.kind, "skill-draft"),
-        eq(artifact.status, "draft"),
-      ),
+      draftAssetWhere(draftId, userContext.tenantId, userContext.principalId),
     )
     .returning();
-
-  if (!updated) {
+  const row = deleted[0];
+  if (!row) {
     throw new SkillLibraryError("Draft is no longer pending", 409);
   }
-  return toSkillDraftItem(updated);
+
+  await removeDraftRepoDir(repoStore, row.id);
+  return { draftId: row.id, title: row.displayName ?? row.name };
 }
 
+/**
+ * Approve a pending draft: publish it as a skill asset (create or update),
+ * then delete the draft. The claim is the same conditional delete
+ * `discardSkillDraft` uses, so a racing approve and discard can never both
+ * win. If the publish step fails after the claim succeeds, the draft is
+ * reinstated as a fresh `skill-draft` asset carrying the claimed content —
+ * unambiguously pending again, never a stuck "approved with no skill" state,
+ * because there is no approved status for it to get stuck in.
+ */
 export async function approveSkillDraft(
   assetService: AssetService,
   db: HubDb,
+  repoStore: RepoStore,
   userContext: UserContext,
   draftId: string,
   opts: ApproveSkillDraftOpts,
@@ -1342,41 +1643,41 @@ export async function approveSkillDraft(
     );
   }
 
-  const draft = await loadOwnedSkillDraft(db, userContext, draftId);
-  if (draft.status !== "draft") {
-    throw new SkillLibraryError("Draft is not in draft status", 400);
+  const preRows = await db
+    .select({ id: intxSchema.asset.id })
+    .from(intxSchema.asset)
+    .where(
+      draftAssetWhere(draftId, userContext.tenantId, userContext.principalId),
+    )
+    .limit(1);
+  if (!preRows[0]) {
+    throw new SkillLibraryError(`Skill draft not found: ${draftId}`, 404);
   }
 
-  // Pre-validate so obviously bad drafts stay pending (claim is not wasted).
-  // The publish payload is taken from the *claimed* row so a concurrent
-  // skill_draft rewrite between load and claim cannot approve stale content.
-  filesFromSkillDraft(draft);
-
-  // CAS claim: flip draft → approved before create/update so concurrent approves
-  // cannot both publish. If publish fails, reopen the draft.
-  const [claimed] = await db
-    .update(artifact)
-    .set({ status: "approved", updatedAt: new Date() })
+  const deleted = await db
+    .delete(intxSchema.asset)
     .where(
-      and(
-        eq(artifact.id, draftId),
-        eq(artifact.tenantId, userContext.tenantId),
-        eq(artifact.kind, "skill-draft"),
-        eq(artifact.status, "draft"),
-      ),
+      draftAssetWhere(draftId, userContext.tenantId, userContext.principalId),
     )
     .returning();
-
+  const claimed = deleted[0];
   if (!claimed) {
     throw new SkillLibraryError("Draft is no longer pending", 409);
   }
 
-  const claimedSource = (claimed.source ?? {}) as Record<string, unknown>;
-  const files = filesFromSkillDraft(claimed);
-  const description = draftSourceDescription(claimedSource);
-  const name = claimed.title;
+  const draftContent = await loadSkillDraftContent(repoStore, claimed.id);
+  const name = draftContent.title ?? claimed.displayName ?? claimed.name;
+  const description = draftContent.description;
   const scope = opts.scope === "private" ? "private" : "tenant";
-  let existingSkillId = draftExistingSkillId(claimedSource);
+  const files: SkillBundleFileInput[] = [
+    { path: "SKILL.md", content: Buffer.from(draftContent.content) },
+  ];
+  for (const supportFile of draftContent.files) {
+    files.push({
+      path: supportFile.path,
+      content: Buffer.from(supportFile.content),
+    });
+  }
 
   const actor: SkillActor = {
     tenantId: userContext.tenantId,
@@ -1389,16 +1690,13 @@ export async function approveSkillDraft(
   };
 
   try {
-    // Approve-side resolve: agent may have drafted with a display title that
-    // never stamped existingSkillId (slug mismatch). Prefer update over create.
+    let existingSkillId = draftContent.existingSkillId;
     if (!existingSkillId) {
       existingSkillId = await resolveSkillIdByDraftTitle(db, viewer, name);
     }
 
     let skill: SkillItem;
     if (existingSkillId) {
-      // Guard: a stamped id that does not match this draft title must not
-      // overwrite an unrelated skill the caller can manage.
       const target = await getSkillAsset(db, viewer, existingSkillId);
       if (!target) {
         throw new SkillLibraryError("Skill not found", 404);
@@ -1426,7 +1724,7 @@ export async function approveSkillDraft(
         });
       } catch (createErr) {
         // 409 name collision: skill exists but wasn't linked — fall through to
-        // update so approve never 409-sticks the draft.
+        // update so approve never has to reinstate on a resolvable collision.
         if (
           !(createErr instanceof SkillLibraryError) ||
           createErr.status !== 409
@@ -1443,62 +1741,57 @@ export async function approveSkillDraft(
       }
     }
 
-    // Best-effort stamp after successful publish. Never reopen if this fails —
-    // the skill is already live; stamp only helps the next re-draft path.
+    await removeDraftRepoDir(repoStore, claimed.id);
+    return { skill, draftId: claimed.id };
+  } catch (err) {
     try {
-      await db
-        .update(artifact)
-        .set({
-          source: {
-            ...claimedSource,
-            existingSkillId: skill.id,
-          },
-          updatedAt: new Date(),
-        })
-        .where(
-          and(
-            eq(artifact.id, draftId),
-            eq(artifact.tenantId, userContext.tenantId),
-            eq(artifact.kind, "skill-draft"),
-            eq(artifact.status, "approved"),
-          ),
-        );
-    } catch (stampErr) {
+      let reinstated;
+      if (claimed.displayName === null) {
+        reinstated = await assetService.createAsset({
+          tenantId: userContext.tenantId,
+          kind: "skill-draft",
+          name: claimed.name,
+          creatorPrincipalId: userContext.principalId,
+        });
+      } else {
+        reinstated = await assetService.createAsset({
+          tenantId: userContext.tenantId,
+          kind: "skill-draft",
+          name: claimed.name,
+          displayName: claimed.displayName,
+          creatorPrincipalId: userContext.principalId,
+        });
+      }
+      await assetService.populateAsset({
+        assetId: reinstated.id,
+        ref: SKILL_BUNDLE_REF,
+        tree: {
+          files: buildSkillDraftTree({
+            title: name,
+            description,
+            existingSkillId: draftContent.existingSkillId,
+            body: draftContent.content,
+            files: draftContent.files,
+          }),
+          clearPrefix: SKILL_DRAFT_PREFIX,
+          message: "Reinstate draft after failed publish",
+        },
+        principal: { kind: "hub" },
+      });
+    } catch (reinstateErr) {
       log.error(
-        "skill-draft approve succeeded but failed to stamp existingSkillId",
+        "skill-draft approve failed and could not reinstate the draft; content only survives in the orphaned repo",
         {
           draftId,
-          skillId: skill.id,
           tenantId: userContext.tenantId,
           error:
-            stampErr instanceof Error ? stampErr.message : String(stampErr),
+            reinstateErr instanceof Error
+              ? reinstateErr.message
+              : String(reinstateErr),
         },
       );
-    }
-
-    return { skill, draftId };
-  } catch (err) {
-    const [reopened] = await db
-      .update(artifact)
-      .set({ status: "draft", updatedAt: new Date() })
-      .where(
-        and(
-          eq(artifact.id, draftId),
-          eq(artifact.tenantId, userContext.tenantId),
-          eq(artifact.kind, "skill-draft"),
-          eq(artifact.status, "approved"),
-        ),
-      )
-      .returning();
-    if (!reopened) {
-      log.error(
-        "skill-draft approve failed and could not reopen draft; stuck approved",
-        {
-          draftId,
-          tenantId: userContext.tenantId,
-          error: err instanceof Error ? err.message : String(err),
-        },
-      );
+    } finally {
+      await removeDraftRepoDir(repoStore, claimed.id).catch(() => {});
     }
     throw err;
   }

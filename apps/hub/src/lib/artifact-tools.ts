@@ -26,7 +26,6 @@ import { getLogger } from "@intx/log";
 import { and, desc, eq, isNull, ne } from "drizzle-orm";
 import {
   artifact,
-  artifactStatus,
   artifactVersion,
   MAX_UPLOAD_BYTES,
   memberAgentInstance,
@@ -44,8 +43,6 @@ export {
   ARTIFACT_READ_DEFINITION,
   ARTIFACT_WRITE_DEFINITION,
 };
-
-type ArtifactStatus = (typeof artifactStatus)[number];
 
 type FetchFn = typeof fetch;
 
@@ -222,17 +219,6 @@ function optionalNonEmptyString(
   return trimmed;
 }
 
-function optionalStatus(
-  args: Record<string, unknown>,
-): ArtifactStatus | undefined {
-  const value = optionalString(args, "status");
-  if (value === undefined) return undefined;
-  if (!artifactStatus.includes(value as ArtifactStatus)) {
-    throw new Error(`status must be one of: ${artifactStatus.join(", ")}`);
-  }
-  return value as ArtifactStatus;
-}
-
 function optionalVersion(args: Record<string, unknown>): number | undefined {
   const value = args.version;
   if (value === undefined) return undefined;
@@ -266,7 +252,6 @@ type ReadResult = {
   artifactId: string;
   title: string;
   kind: string;
-  status: string;
   version: number;
   content: string;
   contentLength?: number;
@@ -393,7 +378,6 @@ function createLinkFileHandler(context: ArtifactToolContext): AgentTool {
             title,
             content,
             source,
-            status: "draft",
             version: 1,
             createdAt: now,
             updatedAt: now,
@@ -465,7 +449,6 @@ function createCreateHandler(context: ArtifactToolContext): AgentTool {
             title,
             content,
             source,
-            status: "draft",
             version: 1,
             createdAt: now,
             updatedAt: now,
@@ -589,7 +572,6 @@ async function resolveArtifactContent(
         artifactId: row.id,
         title: row.title,
         kind: row.kind,
-        status: row.status,
         version: row.version,
       },
       content: row.content,
@@ -616,7 +598,6 @@ async function resolveArtifactContent(
       artifactId: row.id,
       title: versionRow.title,
       kind: row.kind,
-      status: row.status,
       version: versionRow.version,
     },
     content: versionRow.content,
@@ -928,9 +909,7 @@ async function upsertLinkedArtifact(
       origin: "agent",
       type: "inline",
       agentId: context.agentId,
-      ...(context.sessionId.length > 0
-        ? { sessionId: context.sessionId }
-        : {}),
+      ...(context.sessionId.length > 0 ? { sessionId: context.sessionId } : {}),
       ...(uploadRef !== null ? { upload: uploadRef } : {}),
     };
 
@@ -944,7 +923,6 @@ async function upsertLinkedArtifact(
         title,
         content,
         source,
-        status: "draft",
         version: 1,
         createdAt: now,
         updatedAt: now,
@@ -1090,7 +1068,6 @@ function createListHandler(context: ArtifactToolContext): AgentTool {
       if (kind === "skill-draft") {
         return jsonResult({ artifacts: [] });
       }
-      const status = optionalStatus(args);
       const rawLimit =
         typeof args.limit === "number" && Number.isFinite(args.limit)
           ? args.limit
@@ -1104,14 +1081,12 @@ function createListHandler(context: ArtifactToolContext): AgentTool {
         isNull(artifact.archivedAt),
       ];
       if (kind !== undefined) conditions.push(eq(artifact.kind, kind));
-      if (status !== undefined) conditions.push(eq(artifact.status, status));
 
       const rows = await context.db
         .select({
           id: artifact.id,
           title: artifact.title,
           kind: artifact.kind,
-          status: artifact.status,
           version: artifact.version,
           updatedAt: artifact.updatedAt,
         })

@@ -34,10 +34,6 @@ export function OperationalLedger({ data }: { data: ActivityOverview }) {
         />
       </div>
       <div className="grid items-start gap-4 lg:grid-cols-2">
-        <CountTable
-          title="Artifacts by status"
-          rows={data.artifacts.byStatus}
-        />
         <CountTable title="Artifacts by kind" rows={data.artifacts.byKind} />
       </div>
     </div>

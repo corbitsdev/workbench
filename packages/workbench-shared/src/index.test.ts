@@ -24,7 +24,6 @@ describe("Artifact schema carries the archive marker", () => {
     kind: "document",
     title: "T",
     content: "C",
-    status: "draft",
     version: 1,
     ownerPrincipalId: null,
     createdAt: "2026-07-09T00:00:00.000Z",

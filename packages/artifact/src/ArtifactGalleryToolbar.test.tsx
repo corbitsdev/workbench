@@ -20,7 +20,6 @@ const artifact: ArtifactWithSession = {
   kind: "email",
   title: "Sales automation ROI",
   content: "body",
-  status: "approved",
   version: 1,
   ownerPrincipalId: null,
   archivedAt: null,

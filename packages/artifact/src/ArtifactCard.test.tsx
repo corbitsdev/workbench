@@ -18,7 +18,6 @@ const artifact: GalleryArtifact = {
   label: "Email",
   fill: "bg-orange",
   span: "row-span-3",
-  status: "draft",
   previewExcerpt: "Quick follow-up on our call",
 };
 
@@ -61,14 +60,12 @@ describe("ArtifactCard", () => {
     }
   });
 
-  it("renders solid fill hero on default gallery cards, without a Draft badge", () => {
+  it("renders solid fill hero on default gallery cards", () => {
     const { container } = render(
       React.createElement(ArtifactCard, { artifact }),
     );
     const card = container.firstElementChild as HTMLElement;
     expect(card.getAttribute("data-preview-family")).toBe("email");
-    // status is "draft" — the default, non-signal state — so no badge.
-    expect(screen.queryByText("Draft")).toBeNull();
     expect(card.querySelector("pre")).toBeNull();
     expect(card.querySelector(".bg-orange")).not.toBeNull();
   });
@@ -184,41 +181,6 @@ describe("ArtifactCard", () => {
     // The broken image is replaced by the deterministic placeholder — neither
     // the <img> nor the browser's broken-image glyph is left in the card.
     expect(screen.queryByRole("img")).toBeNull();
-  });
-
-  it("styles approved status with workbench green tokens and shows the badge", () => {
-    render(
-      React.createElement(ArtifactCard, {
-        artifact: { ...artifact, status: "approved" },
-      }),
-    );
-    const approved = screen.getByText("Approved");
-    expect(approved.className).toContain("bg-green/10");
-    expect(approved.className).toContain("text-green");
-  });
-
-  it("shows the Rejected badge for a rejected artifact", () => {
-    render(
-      React.createElement(ArtifactCard, {
-        artifact: { ...artifact, status: "rejected" },
-      }),
-    );
-    const rejected = screen.getByText("Rejected");
-    expect(rejected.className).toContain("text-red");
-  });
-
-  it("shows the status badge in the experimental overlay only for a non-draft status", () => {
-    const { rerender } = render(
-      React.createElement(ArtifactCard, { artifact, experimental: true }),
-    );
-    expect(screen.queryByText("Draft")).toBeNull();
-    rerender(
-      React.createElement(ArtifactCard, {
-        artifact: { ...artifact, status: "approved" },
-        experimental: true,
-      }),
-    );
-    expect(screen.getByText("Approved")).toBeDefined();
   });
 
   it("honors experimental fill and span overrides", () => {

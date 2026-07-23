@@ -4,7 +4,6 @@ import {
   ARTIFACT_PREVIEW_FAMILIES,
   artifactPreviewFamily,
   comparisonSummary,
-  labelForArtifactStatus,
   previewExcerpt,
 } from "./artifact-preview-family";
 
@@ -60,12 +59,6 @@ describe("previewExcerpt", () => {
     expect(previewExcerpt('{"id": 1}', { fallbackTitle: "Data Export" })).toBe(
       "Data Export",
     );
-  });
-});
-
-describe("labelForArtifactStatus", () => {
-  it("labels known statuses", () => {
-    expect(labelForArtifactStatus("approved")).toBe("Approved");
   });
 });
 

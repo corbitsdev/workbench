@@ -84,8 +84,6 @@ export type ArtifactKind =
   | "gamma_presentation"
   | "skill-draft";
 
-export type ArtifactStatus = "draft" | "approved" | "rejected";
-
 // Structured content stored in a `gamma_presentation` artifact. The DB `content`
 // column holds the JSON serialization of this shape; hub writes it, web parses it
 // to render the deck (iframe with a View-in-Gamma fallback).
@@ -141,7 +139,6 @@ export const Artifact = type({
   kind: "string",
   title: "string",
   content: "string",
-  status: "'draft' | 'approved' | 'rejected'",
   version: "number",
   ownerPrincipalId: "string | null",
   archivedAt: "string | null",

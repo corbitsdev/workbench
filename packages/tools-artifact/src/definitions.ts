@@ -57,7 +57,7 @@ export const ARTIFACT_READ_DEFINITION: ArtifactToolDefinition = {
   name: "artifact_read",
   sideEffect: "read",
   description:
-    "Read a Workbench artifact by id. Returns its title, kind, status, current version, and content. Pass version to read a specific past version. When the content is too large to return at once, the result includes a 'continuation' field with instructions to read the rest with artifact_read_chunk.",
+    "Read a Workbench artifact by id. Returns its title, kind, current version, and content. Pass version to read a specific past version. When the content is too large to return at once, the result includes a 'continuation' field with instructions to read the rest with artifact_read_chunk.",
   inputSchema: {
     type: "object",
     properties: {
@@ -214,15 +214,11 @@ export const ARTIFACT_LIST_DEFINITION: ArtifactToolDefinition = {
   name: "artifact_list",
   sideEffect: "read",
   description:
-    "List Workbench artifacts in this workbench, most recently updated first. Returns id, title, kind, status, version, and updatedAt for each. Optionally filter by kind or status.",
+    "List Workbench artifacts in this workbench, most recently updated first. Returns id, title, kind, version, and updatedAt for each. Optionally filter by kind.",
   inputSchema: {
     type: "object",
     properties: {
       kind: { type: "string", description: "Optional kind filter." },
-      status: {
-        type: "string",
-        description: "Optional status filter: draft, approved, or rejected.",
-      },
       limit: {
         type: "number",
         description:
