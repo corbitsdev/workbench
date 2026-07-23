@@ -6,7 +6,7 @@ import { deriveDeploymentAddress } from "@intx/workflow-deploy";
 import type { SessionService } from "@workbench/hub-sessions";
 import type { CryptoProvider } from "@intx/types/runtime";
 import type { HubDb } from "../db";
-import { workflowRun } from "../db/schema";
+import { WORKFLOW_CATALOG_ACTIVE_STATUS, workflowRun } from "../db/schema";
 import type { ProvisionRunDeploymentFn } from "../routes/workflow-runs";
 import type { ReclaimDeploymentFn } from "./workflow-deploy";
 import { slidingWindowLimiter } from "../lib/sliding-window";
@@ -182,16 +182,17 @@ export function createWorkflowRunStarter(deps: {
       precomputedChain ?? (await getAncestorChain(deps.db, tenantId));
 
     // Resolve a published kind definition for metadata (tenant, principal,
-    // kind). Require status `deployed` and a non-null catalog deploymentId —
-    // both are set by publish. Catalog resolveDeployment historically filtered
-    // only on deploymentId (for reuse); we keep status as the publish marker
-    // and still require deploymentId so half-published rows cannot start.
-    // The catalog deploymentId is NOT reused for the run — fresh provision
-    // below mints a per-run deploy.
+    // kind). Require the catalog-active status and a non-null catalog
+    // deploymentId — both set by publish (`workflow_run` catalog rows carry
+    // `running`, never the agent-instance `deployed`; filtering on `deployed`
+    // here matched zero rows and made every kind unresolvable).
+    // Requiring deploymentId keeps half-published rows from starting. The
+    // catalog deploymentId is NOT reused for the run — fresh provision below
+    // mints a per-run deploy.
     const candidates = await deps.db.query.workflowRun.findMany({
       where: and(
         eq(workflowRun.kind, kind),
-        eq(workflowRun.status, "deployed"),
+        eq(workflowRun.status, WORKFLOW_CATALOG_ACTIVE_STATUS),
         isNotNull(workflowRun.deploymentId),
         inArray(workflowRun.tenantId, chain),
         isNull(workflowRun.deletedAt),

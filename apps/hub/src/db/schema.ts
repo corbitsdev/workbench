@@ -220,6 +220,15 @@ export type UploadRow = typeof upload.$inferSelect;
 // can share it without a route↔lib import cycle.
 export const MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
 
+// The status a live catalog/deployment row carries in `workflow_run`. This
+// table's status vocabulary is `running` (published, active) / `stopped` /
+// `superseded` / `deleted` — NOT the agent-instance vocabulary (`deployed`) and
+// NOT `workflowRunStateStatus` below, which belongs to `workflow_run_record`.
+// Publish inserts with this constant and the shared run starter resolves with
+// it; a mismatch between those two sites made every kind unresolvable at
+// fire time, so both must reference this single definition.
+export const WORKFLOW_CATALOG_ACTIVE_STATUS = "running";
+
 export const workflowRun = pgTable("workflow_run", {
   id: uuid("id").primaryKey().defaultRandom(),
   // Native-deploy index column (M6.8): the @intx/workflow-deploy deploymentId

@@ -11,7 +11,7 @@ import { workflowDefinitionEnvelopeSchema } from "@workbench/hub-sessions";
 import { deriveDeploymentAddress } from "@intx/workflow-deploy";
 import { getLogger } from "@intx/log";
 import type { HubDb } from "../db";
-import { workflowRun } from "../db/schema";
+import { WORKFLOW_CATALOG_ACTIVE_STATUS, workflowRun } from "../db/schema";
 import { getRequestedUserContext } from "../lib/user-context";
 import { ensureMember } from "../lib/tenant-provisioning";
 import type { WorkflowDeployService } from "../services/workflow-deploy";
@@ -344,7 +344,7 @@ export async function publishWorkflowDefinition(
     tenantId: targetTenantId,
     principalId: owner.id,
     kind: definition.id,
-    status: "running",
+    status: WORKFLOW_CATALOG_ACTIVE_STATUS,
     ...(deployMeta !== null ? { meta: deployMeta } : {}),
   });
 

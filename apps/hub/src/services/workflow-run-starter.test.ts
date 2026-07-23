@@ -3,7 +3,10 @@ import { mock } from "bun:test";
 import { deriveDeploymentAddress } from "@intx/workflow-deploy";
 import * as intxDb from "@intx/db";
 import type { SessionService } from "@workbench/hub-sessions";
+import type { SQL } from "drizzle-orm";
+import { PgDialect } from "drizzle-orm/pg-core";
 import type { HubDb } from "../db";
+import { WORKFLOW_CATALOG_ACTIVE_STATUS } from "../db/schema";
 import { isUuid } from "../lib/uuid";
 
 // getAncestorChain walks the tenant table via the db; the run-starter imports it
@@ -38,6 +41,8 @@ type TestDb = HubDb & {
   inserted: Record<string, unknown>[];
   failUpdateCalls: number;
   deploymentIdSets: string[];
+  /** The `where` the starter passed to the catalog findMany, for seam pins. */
+  catalogWhere: SQL | undefined;
 };
 
 function makeDb(candidates: Candidate[], options: MakeDbOptions = {}): TestDb {
@@ -45,10 +50,14 @@ function makeDb(candidates: Candidate[], options: MakeDbOptions = {}): TestDb {
   let failUpdateCalls = 0;
   const deploymentIdSets: string[] = [];
   const failFlipRows = options.failFlipRows ?? [{ id: "flipped" }];
+  let catalogWhere: SQL | undefined;
   return {
     query: {
       workflowRun: {
-        findMany: async () => candidates,
+        findMany: async (args?: { where?: SQL }) => {
+          catalogWhere = args?.where;
+          return candidates;
+        },
       },
       // Read by the heartbeat trigger-payload enricher (resolveEnabledBriefSources)
       // for the dedicated "generic-workflow has no enricher, heartbeat does" test
@@ -95,6 +104,9 @@ function makeDb(candidates: Candidate[], options: MakeDbOptions = {}): TestDb {
     get failUpdateCalls() {
       return failUpdateCalls;
     },
+    get catalogWhere() {
+      return catalogWhere;
+    },
   } as unknown as TestDb;
 }
 
@@ -111,7 +123,11 @@ function candidate(overrides: Partial<Candidate>): Candidate {
     kind: "generic-workflow",
     tenantId: "t-root",
     principalId: "principal-1",
-    status: "deployed",
+    // Must mirror what publish actually inserts (`workflow_run` catalog rows
+    // carry the catalog-active status, not the agent-instance `deployed`) —
+    // a fixture using a status production never writes hid the resolver
+    // filtering on the wrong vocabulary and matching zero rows in staging.
+    status: WORKFLOW_CATALOG_ACTIVE_STATUS,
     createdAt: new Date("2026-01-01T00:00:00Z"),
     deletedAt: null,
     ...overrides,
@@ -221,6 +237,30 @@ describe("createWorkflowRunStarter", () => {
     expect(db.inserted[0]?.status).toBe("provisioning");
     expect(db.deploymentIdSets).toEqual(["dep-run-1"]);
     expect(sent[0]?.messageId).toBe(db.inserted[0]?.id);
+  });
+
+  it("queries the catalog with the status publish writes, not the agent-instance vocabulary", async () => {
+    // The mock findMany does not evaluate `where`, so the fixture alone cannot
+    // catch a wrong status filter. Pin the emitted query instead: render the
+    // starter's `where` to SQL and assert its bound params use the shared
+    // catalog-active status. This is the seam that broke in production — the
+    // resolver filtered on `deployed`, a status no `workflow_run` writer ever
+    // stamps, and every kind became unresolvable while this suite stayed green.
+    chainRef = ["t-root"];
+    const db = makeDb([candidate({})]);
+    const starter = createWorkflowRunStarter(starterDeps({ db }));
+
+    const result = await starter.startRun({
+      kind: "generic-workflow",
+      tenantId: "t-root",
+      input: {},
+    });
+
+    expect(result.ok).toBe(true);
+    expect(db.catalogWhere).toBeDefined();
+    const { params } = new PgDialect().sqlToQuery(db.catalogWhere!.getSQL());
+    expect(params).toContain(WORKFLOW_CATALOG_ACTIVE_STATUS);
+    expect(params).not.toContain("deployed");
   });
 
   it("returns not_found when no candidate is deployed for the kind", async () => {
