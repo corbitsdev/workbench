@@ -1,8 +1,9 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, it, test } from "bun:test";
 import type { BaseEnv } from "@intx/agent";
-import { toolCredentialEnvKey } from "./index";
+import { HUB_RPC_ENV_KEY, toolCredentialEnvKey } from "./index";
 import {
   defineCredentialedToolPackage,
+  defineHubBackedToolPackage,
   writeToolNamesFromEntries,
 } from "./factory";
 
@@ -61,4 +62,44 @@ describe("defineCredentialedToolPackage", () => {
       }),
     ).toEqual(["b_write", "c_write"]);
   });
+});
+
+// The rail's structured contract: a kind-full hub tool's object content must
+// arrive as an OBJECT on the ToolResult, never as JSON text — step selectors
+// (e.g. heartbeat notify-prep merging persist.output.content) consume it
+// directly and a string operand fails the merge.
+it("passes structured hub-tool results through as objects", async () => {
+  const factory = defineHubBackedToolPackage({
+    id: "@workbench/tools-test/structured",
+    definitions: [
+      { name: "structured_tool", description: "t", inputSchema: { type: "object", properties: {} } },
+    ],
+  });
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = (async () =>
+    Response.json({
+      result: JSON.stringify({ artifactId: "art-1", version: 2 }),
+      structuredResult: { artifactId: "art-1", version: 2 },
+      isError: false,
+    })) as unknown as typeof fetch;
+  try {
+    const bundle = factory({
+      [HUB_RPC_ENV_KEY]: {
+        baseURL: "https://hub.test",
+        token: "t",
+        tenantId: "t1",
+        agentId: "a1",
+        principalId: "p1",
+        sessionId: "s1",
+      },
+    } as never);
+    const result = await bundle.run(
+      { id: "c1", name: "structured_tool", arguments: {} },
+      new AbortController().signal,
+    );
+    expect(result.isError).toBe(false);
+    expect(result.content).toEqual({ artifactId: "art-1", version: 2 });
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
 });

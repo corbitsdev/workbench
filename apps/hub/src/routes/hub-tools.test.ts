@@ -148,10 +148,12 @@ describe("POST /hub-tools/run", () => {
 
   // write_artifact is a structured (kind: "full") tool — the shape every
   // workflow persist step reaches through this rail. The route must execute
-  // full handlers and flatten their structured content to the RPC's string
-  // contract (the sidecar client pins `result: "string"`); rejecting the
-  // kind broke every scheduled workflow's persist step in production.
-  test("executes a kind-full tool (write_artifact), flattening structured content to the string contract", async () => {
+  // full handlers and return their structured content INTACT: downstream
+  // selectors consume the step output's `content` as an object (heartbeat's
+  // notify-prep merges persist.output.content), so flattening to a JSON
+  // string breaks every such consumer with "merge selector requires each
+  // operand to be an object" — the production failure this pins.
+  test("executes a kind-full tool (write_artifact), returning structured content intact", async () => {
     const insertChain = () => ({
       values: (row: Record<string, unknown>) => {
         const p: Record<string, unknown> = {
@@ -180,13 +182,20 @@ describe("POST /hub-tools/run", () => {
       args: { title: "Digest", body: "hello", kind: "research" },
     });
     expect(res.status).toBe(200);
-    const body = (await res.json()) as { result: string; isError: boolean };
+    const body = (await res.json()) as {
+      result: string;
+      structuredResult?: unknown;
+      isError: boolean;
+    };
     expect(body.isError).toBe(false);
-    expect(JSON.parse(body.result)).toEqual({
+    // Additive wire shape: `result` keeps the text form for stale clients;
+    // `structuredResult` carries the object verbatim for updated ones.
+    expect(body.structuredResult).toEqual({
       artifactId: "art-1",
       version: 1,
       title: "Digest",
     });
+    expect(JSON.parse(body.result)).toEqual(body.structuredResult);
   });
 
   test("rejects a tool not in the agent capabilities with 403", async () => {

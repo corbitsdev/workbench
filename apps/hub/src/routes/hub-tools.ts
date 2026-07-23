@@ -279,10 +279,11 @@ export function createHubToolsRouter(
         c.req.raw.signal.addEventListener("abort", () => controller.abort());
         if (tool.kind === "full") {
           // Structured tools (e.g. write_artifact) return a full ToolResult.
-          // The RPC contract to the sidecar is string-typed
-          // (defineHubBackedToolPackage pins `result: "string"`), so flatten
-          // non-string content to JSON text — the same stringification the
-          // reactor applies before structured tool content reaches the model.
+          // Their content crosses the rail INTACT via `structuredResult` —
+          // downstream selectors consume the step output's `content` as an
+          // object (heartbeat's notify-prep merges persist.output.content),
+          // so flattening alone breaks every such consumer. Error content is
+          // still coerced to text for the loop guard + recovery guidance.
           const full = await tool.handler(
             { id: crypto.randomUUID(), name: toolName, arguments: args },
             controller.signal,
@@ -297,25 +298,37 @@ export function createHubToolsRouter(
               500,
             );
           }
-          const flattened =
-            typeof full.content === "string"
-              ? full.content
-              : JSON.stringify(full.content);
           if (full.isError === true) {
+            const message =
+              typeof full.content === "string"
+                ? full.content
+                : JSON.stringify(full.content);
             const escalation = loopGuard.recordFailure(
               sessionId,
               toolName,
               args,
-              new Error(flattened),
+              new Error(message),
             );
             const result =
               escalation === undefined
-                ? flattened
-                : `${flattened}\n\n${escalation}`;
+                ? message
+                : `${message}\n\n${escalation}`;
             return c.json({ result, isError: true });
           }
           loopGuard.recordSuccess(sessionId);
-          return c.json({ result: flattened, isError: false });
+          // Additive wire shape for rollout safety: `result` stays the
+          // flattened string old clients validate against; updated clients
+          // prefer `structuredResult` (the object verbatim). A stale tarball
+          // client mid-skew keeps working on the string; a new client
+          // against an old hub falls back to the string.
+          if (typeof full.content === "string") {
+            return c.json({ result: full.content, isError: false });
+          }
+          return c.json({
+            result: JSON.stringify(full.content),
+            structuredResult: full.content,
+            isError: false,
+          });
         }
         const result = await tool.handler(args, controller.signal);
         loopGuard.recordSuccess(sessionId);
