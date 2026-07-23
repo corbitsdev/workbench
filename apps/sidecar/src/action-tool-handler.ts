@@ -43,7 +43,12 @@ import { type } from "arktype";
 import type { ActionHandler, StepInvokeRequest } from "@intx/workflow";
 import type { RepoId, RepoStore } from "@workbench/hub-sessions/substrate";
 import type { AgentDefinition, BaseEnv } from "@intx/agent";
+import type { MessageTransport } from "@intx/types/runtime";
 import { getLogger } from "@intx/log";
+import {
+  createSupervisorBackedTransport,
+  type ChildOutboundMailBridge,
+} from "@workbench/workflow-host";
 
 import {
   assertStepToolResolvable,
@@ -138,11 +143,31 @@ async function loadActionHandlerStepIds(
 /** Placeholder `BaseEnv` slots `runDeterministicToolStep`'s tool-dispatch
  * path structurally requires but never reads for an action (no reactor, no
  * `createAgent`) — the same trivial shape `step-tool-deterministic.test.ts`
- * fixtures already use. `workdir` is real: tools that touch disk need it. */
+ * fixtures already use. `workdir` is real: tools that touch disk need it.
+ *
+ * `transport` mirrors `createSidecarStepBuildEnv`'s wiring in
+ * `workflow-substrate-factory.ts`: `buildStepTools` (`step-tool-harness.ts`)
+ * only merges `@intx/tools-mail`'s local-runner tools into a step's runner
+ * when `env.transport` is present, so a `mail_send`/`mail_reply`/etc. action
+ * handler resolves and dispatches only when the deployment's outbound-mail
+ * bridge + mailbox address are threaded through here exactly as they are for
+ * a deterministic step. Omitted (no mail tools available) when either is
+ * undefined — a mailbox-less deployment (e.g. a pure-inference test seam). */
 function buildScratchEnv(
   workdir: string,
   stepToolContext: StepToolContext,
+  mail?: {
+    outboundMailBridge: ChildOutboundMailBridge;
+    mailboxAddress: string;
+  },
 ): Omit<BaseEnv, "authorize"> {
+  const transport: MessageTransport | undefined =
+    mail !== undefined
+      ? createSupervisorBackedTransport(
+          mail.outboundMailBridge,
+          mail.mailboxAddress,
+        )
+      : undefined;
   return {
     sources: [],
     defaultSource: "",
@@ -151,6 +176,9 @@ function buildScratchEnv(
     directors: {},
     workdir,
     [STEP_TOOL_CONTEXT_KEY]: stepToolContext,
+    ...(transport !== undefined
+      ? { transport, address: mail?.mailboxAddress }
+      : {}),
   } as unknown as Omit<BaseEnv, "authorize">;
 }
 
@@ -166,8 +194,12 @@ async function bindActionHandler(args: {
   dataDir: string;
   toolName: string;
   stepToolContext: StepToolContext;
+  mail?: {
+    outboundMailBridge: ChildOutboundMailBridge;
+    mailboxAddress: string;
+  };
 }): Promise<ActionHandler> {
-  const { dataDir, toolName, stepToolContext } = args;
+  const { dataDir, toolName, stepToolContext, mail } = args;
 
   const preflightDir = path.join(
     dataDir,
@@ -180,7 +212,7 @@ async function bindActionHandler(args: {
   await fs.promises.mkdir(preflightWorkdir, { recursive: true });
   try {
     await assertStepToolResolvable({
-      env: buildScratchEnv(preflightWorkdir, stepToolContext),
+      env: buildScratchEnv(preflightWorkdir, stepToolContext, mail),
       toolName,
     });
   } finally {
@@ -219,7 +251,7 @@ async function bindActionHandler(args: {
         capability: toolName,
         run: async () => {
           const result = await runDeterministicToolStep({
-            env: buildScratchEnv(workdir, stepToolContext),
+            env: buildScratchEnv(workdir, stepToolContext, mail),
             toolName,
             input,
             signal,
@@ -268,11 +300,31 @@ export async function createActionToolHandlerRegistry(args: {
   substrate: RepoStore;
   workflowDefinitionRepoId: RepoId;
   resolveStepToolContext: (req: StepInvokeRequest) => Promise<StepToolContext>;
+  /**
+   * The deployment's outbound-mail bridge + mailbox address, threaded from
+   * the same `SubstrateFactoryEnv` fields `createSidecarStepBuildEnv` wires
+   * onto a deterministic/inference step's env (`env.outboundMailBridge`,
+   * `env.spawn.mailboxAddress` in `workflow-substrate-factory.ts`). Omitted
+   * for a mailbox-less deployment (a pure-inference test seam) or a test
+   * caller that never wires mail — an action handler naming a mail tool then
+   * fails loudly at `assertStepToolResolvable`/dispatch instead of silently
+   * resolving to a no-op transport.
+   */
+  outboundMailBridge?: ChildOutboundMailBridge;
+  mailboxAddress?: string;
 }): Promise<(ref: string) => ActionHandler> {
   const actionRefs = await loadActionHandlerStepIds(
     args.substrate,
     args.workflowDefinitionRepoId,
   );
+
+  const mail =
+    args.outboundMailBridge !== undefined && args.mailboxAddress !== undefined
+      ? {
+          outboundMailBridge: args.outboundMailBridge,
+          mailboxAddress: args.mailboxAddress,
+        }
+      : undefined;
 
   const handlers = new Map<string, ActionHandler>();
   for (const [toolName, stepId] of actionRefs) {
@@ -288,6 +340,7 @@ export async function createActionToolHandlerRegistry(args: {
         dataDir: args.dataDir,
         toolName,
         stepToolContext,
+        ...(mail !== undefined ? { mail } : {}),
       }),
     );
   }

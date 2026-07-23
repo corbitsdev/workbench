@@ -2020,6 +2020,8 @@ export function createSidecarSubstrateFactory(
       substrate,
       workflowDefinitionRepoId,
       resolveStepToolContext,
+      outboundMailBridge: env.outboundMailBridge,
+      mailboxAddress: env.spawn.mailboxAddress,
     });
 
     const bindings: RunWorkflowChildBindings = {

@@ -26,6 +26,14 @@ import {
 } from "bun:test";
 import type { EffectContext, StepInvokeRequest } from "@intx/workflow";
 import type { RepoId, RepoStore } from "@workbench/hub-sessions/substrate";
+import {
+  createChildOutboundMailBridge,
+  type ChildOutboundMailBridge,
+} from "@workbench/workflow-host";
+import type {
+  ControlPayload,
+  ControlChannelSender,
+} from "@workbench/workflow-host";
 import type { StepToolContext } from "./step-tool-harness";
 import { isStepToolInfrastructureFault } from "./step-tool-harness";
 import { createActionToolHandlerRegistry } from "./action-tool-handler";
@@ -589,5 +597,137 @@ describe("createActionToolHandlerRegistry — bound handler positive path", () =
     } finally {
       globalThis.fetch = realFetch2;
     }
+  });
+});
+
+// Reproduces the live production incident: a native `action` step declaring
+// a local-runner mail tool (`mail_send`) crashed `createActionToolHandlerRegistry`
+// at construction — `assertStepToolResolvable`'s `available` set never
+// contained a mail tool name because the action path's scratch env never
+// wired a mail transport the way `createSidecarStepBuildEnv` wires one for a
+// deterministic/inference step. Proves both directions: the fix resolves AND
+// dispatches a mail action for real (through a real `ChildOutboundMailBridge`,
+// not a mock of the mail tools), and a genuinely unknown tool name still
+// fails the same way it always did — the check is not weakened into a
+// blanket local-runner bypass.
+describe("createActionToolHandlerRegistry — mail action steps (local-runner tools)", () => {
+  /** Auto-resolves every `outbound.message` frame as a successful send, so
+   * `bridge.submit` (and therefore the mail tool's `send` call) resolves
+   * without a real supervisor process on the other end of the IPC. */
+  function createAutoResolvingMailBridge(): {
+    bridge: ChildOutboundMailBridge;
+    sentMessages: Extract<
+      ControlPayload,
+      { type: "outbound.message" }
+    >["data"][];
+  } {
+    const sentMessages: Extract<
+      ControlPayload,
+      { type: "outbound.message" }
+    >["data"][] = [];
+    let bridge: ChildOutboundMailBridge;
+    const sender: ControlChannelSender = {
+      get seq() {
+        return sentMessages.length;
+      },
+      async send(payload: ControlPayload) {
+        if (payload.type !== "outbound.message") return;
+        sentMessages.push(payload.data);
+        bridge.handleResult({
+          requestId: payload.data.requestId,
+          result: {
+            ok: true,
+            messageId: "<m-test@example.com>",
+            status: "delivered",
+          },
+        });
+      },
+    };
+    bridge = createChildOutboundMailBridge({ upstreamSender: sender });
+    return { bridge, sentMessages };
+  }
+
+  test("a mail_send action step throws StepToolNotRegisteredError when no mail transport is wired (mailbox-less deployment)", async () => {
+    stubHubFetch();
+    const dataDir = await makeDataDir();
+    const deployTreeDir = await makeEmptyDeployTree();
+    const { substrate } = await writeWorkflowDefinition({
+      "heartbeat-notify": { kind: "action", handler: "mail_send" },
+    });
+
+    await expect(
+      createActionToolHandlerRegistry({
+        dataDir,
+        substrate,
+        workflowDefinitionRepoId: WORKFLOW_DEFINITION_REPO_ID,
+        resolveStepToolContext: async () =>
+          stepToolContextFixture(deployTreeDir),
+        // No outboundMailBridge/mailboxAddress — mirrors the un-fixed
+        // action path and a genuine mailbox-less deployment.
+      }),
+    ).rejects.toThrow(/is not registered\/available for this deployment/);
+  });
+
+  test("a mail_send action step resolves and dispatches through the real mail transport once the deployment's mail bridge + address are wired", async () => {
+    stubHubFetch();
+    const dataDir = await makeDataDir();
+    const deployTreeDir = await makeEmptyDeployTree();
+    const { substrate } = await writeWorkflowDefinition({
+      "heartbeat-notify": { kind: "action", handler: "mail_send" },
+    });
+    const { bridge, sentMessages } = createAutoResolvingMailBridge();
+
+    const registry = await createActionToolHandlerRegistry({
+      dataDir,
+      substrate,
+      workflowDefinitionRepoId: WORKFLOW_DEFINITION_REPO_ID,
+      resolveStepToolContext: async () => stepToolContextFixture(deployTreeDir),
+      outboundMailBridge: bridge,
+      mailboxAddress: "ins_dep-step-1@workbench.test",
+    });
+
+    const handler = registry("mail_send");
+    const output = await handler(
+      { to: "usr_recipient@workbench.test", subject: "hi", content: "body" },
+      {
+        async perform({ run }) {
+          return run();
+        },
+      },
+      new AbortController().signal,
+    );
+
+    // The handler actually reached the real bridge/transport, not a
+    // dispatch-time no-op: the send frame carries the mailbox address as
+    // sender and the declared recipient/content.
+    expect(sentMessages).toHaveLength(1);
+    expect(sentMessages[0]?.senderAddress).toBe(
+      "ins_dep-step-1@workbench.test",
+    );
+    expect(sentMessages[0]?.message.to).toBe("usr_recipient@workbench.test");
+    const record = output as Record<string, unknown>;
+    expect(record.isError).not.toBe(true);
+  });
+
+  test("an unknown tool name still fails clearly even with a mail transport wired — the fix does not blanket-bypass the availability check", async () => {
+    stubHubFetch();
+    const dataDir = await makeDataDir();
+    const deployTreeDir = await makeEmptyDeployTree();
+    const { substrate } = await writeWorkflowDefinition({
+      "step-1": { kind: "action", handler: "totally_unknown_tool" },
+    });
+    const { bridge } = createAutoResolvingMailBridge();
+
+    await expect(
+      createActionToolHandlerRegistry({
+        dataDir,
+        substrate,
+        workflowDefinitionRepoId: WORKFLOW_DEFINITION_REPO_ID,
+        resolveStepToolContext: async () =>
+          stepToolContextFixture(deployTreeDir),
+        outboundMailBridge: bridge,
+        mailboxAddress: "ins_dep-step-1@workbench.test",
+      }),
+    ).rejects.toThrow(/is not registered\/available for this deployment/);
   });
 });
