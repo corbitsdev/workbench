@@ -91,6 +91,7 @@ COPY workflows/prospect-engine/package.json workflows/prospect-engine/
 COPY workflows/smoke-test/package.json workflows/smoke-test/
 COPY workflows/sumble-account-intel/package.json workflows/sumble-account-intel/
 COPY workflows/competitor-analysis/package.json workflows/competitor-analysis/
+COPY workflows/firecrawl-url-watch/package.json workflows/firecrawl-url-watch/
 RUN bun install --frozen-lockfile
 
 COPY interchange/ interchange/

@@ -5,6 +5,7 @@ export const ROUTINE_ELIGIBLE_KINDS = [
   "prospect-engine",
   "last30days-research",
   "granola-call",
+  "firecrawl-url-watch",
 ] as const;
 
 export type RoutineEligibleKind = (typeof ROUTINE_ELIGIBLE_KINDS)[number];
