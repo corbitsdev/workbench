@@ -5,7 +5,7 @@ import {
   agentStep,
   LLM_WRITER_MODEL,
 } from "@workbench/agents";
-import type { StepUIHints } from "@workbench/blocks";
+import { INTAKE_SIGNAL, STEP_UI_HINTS } from "./step-ui-hints";
 import {
   buildCurateSystemPrompt,
   buildEntityExtractSystemPrompt,
@@ -388,42 +388,13 @@ export function buildResearchSteps(): Record<string, StepPrimitive> {
   };
 }
 
-// The intake gate's `awaitSignal` name (matches the step below).
-export const INTAKE_SIGNAL = "intake";
-
-// Declarative step -> component mapping (CL-3923): which block renders the
-// `intake` gate, colocated with the step definition it describes instead of a
-// hand-written `blocks.ts` builder. Mirrors INTAKE_FIELDS above (the
-// first-intake form descriptor for scheduled/pre-filled runs) but in the
-// UIBlock vocabulary the live dock renders: topic (required) + focus
-// (optional), emitted VERBATIM as `{ topic, focus }` — the pipeline's
-// server-side `normalizeIntake` (@workbench/last30days-core) derives
-// `query`/`days` from that payload, so a hint-driven run and a
-// panel-driven run hand the pipeline the identical shape. Consumed generically
-// by `blocksFromStepUIHints` (@workbench/blocks) — no per-workflow builder.
-export const STEP_UI_HINTS: StepUIHints = {
-  [INTAKE_SIGNAL]: {
-    kind: "form",
-    prompt:
-      "What should we research? We scan the last 30 days across Hacker News, GitHub, web, Reddit, X, YouTube, and Polymarket, then synthesize a cited brief.",
-    submitLabel: "Start research",
-    fields: [
-      {
-        kind: "text",
-        name: "topic",
-        label: "Topic",
-        placeholder: "e.g. AI coding agents for GTM teams",
-        required: true,
-      },
-      {
-        kind: "textarea",
-        name: "focus",
-        label: "Focus (optional)",
-        placeholder: "Narrow the query or angle",
-      },
-    ],
-  },
-};
+// Re-exported so server-side consumers of the main entry (the workflow
+// catalog, the pipeline) keep working unchanged. Browser consumers must
+// import these from the `./browser` subpath instead (see package.json
+// exports) — importing this main entry pulls in `defineWorkflow` and
+// `@workbench/agents`, both of which construct agents at module load time
+// and crash in the browser.
+export { INTAKE_SIGNAL, STEP_UI_HINTS };
 
 export const workflow = defineWorkflow({
   id: kind,

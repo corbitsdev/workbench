@@ -1,7 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import { type } from "arktype";
 import { blocksFromStepUIHints } from "@workbench/blocks";
-import { STEP_UI_HINTS } from "@workbench/workflow-last30days-research";
+import { STEP_UI_HINTS } from "@workbench/workflow-last30days-research/browser";
 import { Last30daysIntakePayloadSchema } from "@workbench/shared";
 import {
   logRunStateSchema,

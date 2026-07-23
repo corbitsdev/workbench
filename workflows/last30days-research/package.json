@@ -8,6 +8,10 @@
     "./ui": {
       "types": "./src/ui.tsx",
       "default": "./src/ui.tsx"
+    },
+    "./browser": {
+      "types": "./src/step-ui-hints.ts",
+      "default": "./src/step-ui-hints.ts"
     }
   },
   "scripts": {

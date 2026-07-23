@@ -9,7 +9,7 @@ import { buildAbPresetBlocks } from "@workbench/ab-compare-presets/blocks";
 import { buildAttioTaskAgentBlocks } from "@workbench/workflow-attio-task-agent/blocks";
 import { buildGammaBlocks } from "@workbench/workflow-gamma-presentation-creator/blocks";
 import { buildGtmScriptsBriefsBlocks } from "@workbench/workflow-gtm-scripts-briefs/blocks";
-import { STEP_UI_HINTS as last30daysStepUIHints } from "@workbench/workflow-last30days-research";
+import { STEP_UI_HINTS as last30daysStepUIHints } from "@workbench/workflow-last30days-research/browser";
 import { buildPainPointCollateralBlocks } from "@workbench/workflow-pain-point-collateral/blocks";
 import { buildMultiSourceCollateralBlocks } from "@workbench/workflow-multi-source-collateral/blocks";
 import { buildRedditOpportunityScannerBlocks } from "@workbench/workflow-reddit-opportunity-scanner/blocks";
