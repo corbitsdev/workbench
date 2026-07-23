@@ -8,14 +8,17 @@ import { type } from "arktype";
 export const EmbeddedIntakeFieldSchema = type({
   name: "string > 0",
   label: "string > 0",
-  "inputHint?": "'text' | 'textarea' | 'url' | 'select' | 'boolean' | 'string-array'",
-  "kind?": "'text' | 'textarea' | 'url' | 'select' | 'boolean' | 'string-array'",
+  "inputHint?":
+    "'text' | 'textarea' | 'url' | 'select' | 'boolean' | 'string-array'",
+  "kind?":
+    "'text' | 'textarea' | 'url' | 'select' | 'boolean' | 'string-array'",
 
   "required?": "boolean",
   "placeholder?": "string",
   "help?": "string",
   "order?": "number.integer",
   "options?": type({ value: "string", label: "string > 0" }).array(),
+  "optionsSource?": "string > 0",
   "fromProfile?": "string > 0",
 });
 export type EmbeddedIntakeField = typeof EmbeddedIntakeFieldSchema.infer;

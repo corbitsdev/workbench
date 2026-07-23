@@ -19,6 +19,21 @@ describe("prospect-engine workflow package", () => {
     expect(workflow.id).toBe(kind);
   });
 
+  test("list-id intake fields are options-sourced from Sumble, not free text (CL-4279)", () => {
+    const listFields = INTAKE_FIELDS.filter((f) =>
+      f.name.endsWith("EngineListId"),
+    );
+    expect(listFields.length).toBe(2);
+    for (const field of listFields) {
+      expect(field.kind).toBe("select");
+      expect(field.optionsSource).toBe("sumble-organization-lists");
+    }
+    // The Slack channel and verticals fields remain plain free-text/array
+    // inputs — this mechanism must not touch fields that aren't list ids.
+    const slackField = INTAKE_FIELDS.find((f) => f.name === "slackChannelId");
+    expect(slackField?.kind).toBe("text");
+  });
+
   test("graph is fully unattended (zero human gates)", () => {
     const steps = workflow.steps as Record<
       string,

@@ -15,3 +15,7 @@ export {
   SUMBLE_HUB_TOOLS,
   SUMBLE_TOOL_SPECS,
 } from "./registry";
+export {
+  mapOrganizationListsToOptions,
+  type SumbleOrganizationListOption,
+} from "./handlers";

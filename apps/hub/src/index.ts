@@ -169,6 +169,7 @@ import { createPrincipalAnalyticsRouter } from "./routes/principal-analytics";
 import { createTenantRosterRouter } from "./routes/tenant-roster";
 import { createMyraVariantsRouter } from "./routes/myra-variants";
 import { createGammaTemplatesRouter } from "./routes/gamma-templates";
+import { createScheduleFieldOptionsRouter } from "./routes/schedule-field-options";
 import { createApprovalNotificationsRouter } from "./routes/approval-notifications";
 import { createNativeApprovalsRouter } from "./routes/native-approvals";
 import { createApprovalsEventBus } from "./lib/approvals-events";
@@ -1600,6 +1601,7 @@ v1.route("/", createArtifactsRouter(db, grantStore));
 v1.route("/", createFileParseRouter(db, analyticsSubscriber));
 v1.route("/", createMailAttachmentsRouter(db));
 v1.route("/", createGammaTemplatesRouter(db));
+v1.route("/", createScheduleFieldOptionsRouter(db));
 
 v1.route("/", createApprovalNotificationsRouter(db, approvalsEventBus));
 v1.route("/", createFeedbackRouter(db));

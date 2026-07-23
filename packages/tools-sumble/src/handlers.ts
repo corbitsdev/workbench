@@ -730,6 +730,53 @@ export async function listOrganizationLists(
   );
 }
 
+export type SumbleOrganizationListOption = { value: string; label: string };
+
+const OrganizationListRowSchema = type({
+  "id?": "number | string",
+  "list_id?": "number | string",
+  "name?": "string",
+  "title?": "string",
+  "+": "ignore",
+});
+
+function extractOrganizationListRows(raw: unknown): unknown[] {
+  if (Array.isArray(raw)) return raw;
+  if (isRecord(raw)) {
+    for (const key of ["organization_lists", "lists", "data", "items"]) {
+      const value = raw[key];
+      if (Array.isArray(value)) return value;
+    }
+  }
+  throw new Error(
+    "sumble_list_organization_lists: unexpected response shape from Sumble (expected an array of lists)",
+  );
+}
+
+/**
+ * Maps a `sumble_list_organization_lists` response into schedule-field-select
+ * options (CL-4279): human-readable name as label, list id as value. A row
+ * with no usable id is dropped rather than shown as an unselectable option;
+ * a response that is not list-shaped at all fails loudly instead of
+ * degrading to an empty list.
+ */
+export function mapOrganizationListsToOptions(
+  raw: unknown,
+): SumbleOrganizationListOption[] {
+  const rows = extractOrganizationListRows(raw);
+  const options: SumbleOrganizationListOption[] = [];
+  for (const row of rows) {
+    const parsed = OrganizationListRowSchema(row);
+    if (parsed instanceof type.errors) continue;
+    const id = parsed.id ?? parsed.list_id;
+    if (id === undefined) continue;
+    const value = String(id);
+    const label = parsed.name ?? parsed.title ?? `List ${value}`;
+    options.push({ value, label });
+  }
+  return options;
+}
+
 export async function getOrganizationList(
   config: SumbleToolsConfig,
   args: Record<string, unknown>,

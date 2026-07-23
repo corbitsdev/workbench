@@ -1,7 +1,10 @@
 /// <reference types="bun" />
 import "../test-setup";
-import { afterEach, describe, expect, it } from "bun:test";
-import { cleanup, render, screen } from "@testing-library/react";
+import { afterEach, describe, expect, it, mock } from "bun:test";
+import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import React from "react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ScheduleFieldMetadata } from "@workbench/shared";
 import { ScheduleFieldForm, scheduleFieldsComplete } from "./ScheduleFieldForm";
 
@@ -29,13 +32,35 @@ const fields: ScheduleFieldMetadata[] = [
   },
 ];
 
+const originalFetch = globalThis.fetch;
+
+function jsonResponse(body: unknown, status = 200): Response {
+  return {
+    ok: status >= 200 && status < 300,
+    status,
+    headers: { get: () => null },
+    json: () => Promise.resolve(body),
+  } as unknown as Response;
+}
+
+function renderWithQuery(ui: React.ReactElement) {
+  const client = new QueryClient({
+    defaultOptions: {
+      queries: { retry: false },
+      mutations: { retry: false },
+    },
+  });
+  render(React.createElement(QueryClientProvider, { client }, ui));
+}
+
 afterEach(() => {
   cleanup();
+  globalThis.fetch = originalFetch;
 });
 
 describe("ScheduleFieldForm (CL-3861)", () => {
   it("renders labels, help, and profile chip from metadata", () => {
-    render(
+    renderWithQuery(
       <ScheduleFieldForm fields={fields} values={{}} onChange={() => {}} />,
     );
     expect(screen.getByLabelText(/Topic/)).toBeTruthy();
@@ -44,7 +69,9 @@ describe("ScheduleFieldForm (CL-3861)", () => {
   });
 
   it("renders empty state when no fields", () => {
-    render(<ScheduleFieldForm fields={[]} values={{}} onChange={() => {}} />);
+    renderWithQuery(
+      <ScheduleFieldForm fields={[]} values={{}} onChange={() => {}} />,
+    );
     expect(screen.getByTestId("schedule-field-form-empty")).toBeTruthy();
   });
 
@@ -52,5 +79,78 @@ describe("ScheduleFieldForm (CL-3861)", () => {
     expect(scheduleFieldsComplete(fields, {})).toBe(false);
     expect(scheduleFieldsComplete(fields, { topic: "x" })).toBe(true);
     expect(scheduleFieldsComplete(fields, { topic: "  " })).toBe(false);
+  });
+
+  it("a free-text field is unaffected by option-source rendering", () => {
+    renderWithQuery(
+      <ScheduleFieldForm fields={fields} values={{}} onChange={() => {}} />,
+    );
+    const topic = screen.getByLabelText(/Topic/) as HTMLInputElement;
+    expect(topic.tagName).toBe("INPUT");
+    expect(topic.type).toBe("text");
+  });
+});
+
+describe("ScheduleFieldForm option-backed field (CL-4279)", () => {
+  const optionField: ScheduleFieldMetadata = {
+    name: "growthEngineListId",
+    label: "Engine - Growth Sumble list",
+    inputHint: "select",
+    optionsSource: "sumble-organization-lists",
+    required: true,
+  };
+
+  it("renders as a select populated from the source, and submits the id not the label", async () => {
+    globalThis.fetch = mock(() =>
+      Promise.resolve(
+        jsonResponse({
+          options: [
+            { value: "101", label: "Engine - Growth" },
+            { value: "202", label: "Engine - Enterprise" },
+          ],
+        }),
+      ),
+    ) as unknown as typeof fetch;
+
+    let latestValues: Record<string, unknown> = {};
+    const onChange = (next: Record<string, unknown>) => {
+      latestValues = next;
+    };
+
+    renderWithQuery(
+      <ScheduleFieldForm
+        fields={[optionField]}
+        values={{}}
+        onChange={onChange}
+      />,
+    );
+
+    const select = await screen.findByLabelText(/Engine - Growth Sumble list/);
+    await waitFor(() => {
+      expect(screen.getByText("Engine - Growth")).toBeTruthy();
+    });
+
+    await userEvent.selectOptions(select, "101");
+    expect(latestValues.growthEngineListId).toBe("101");
+  });
+
+  it("surfaces a failure state rather than an empty select", async () => {
+    globalThis.fetch = mock(() =>
+      Promise.resolve(jsonResponse({ error: "Sumble unreachable" }, 502)),
+    ) as unknown as typeof fetch;
+
+    renderWithQuery(
+      <ScheduleFieldForm
+        fields={[optionField]}
+        values={{}}
+        onChange={() => {}}
+      />,
+    );
+
+    const error = await screen.findByTestId(
+      "field-options-error-growthEngineListId",
+    );
+    expect(error.textContent).toMatch(/Could not load options/);
+    expect(screen.queryByLabelText(/Engine - Growth Sumble list/)).toBeNull();
   });
 });

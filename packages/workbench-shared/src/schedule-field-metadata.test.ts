@@ -44,6 +44,17 @@ describe("ScheduleFieldMetadataSchema (CL-3860)", () => {
     });
     expect(parsed instanceof type.errors).toBe(false);
   });
+
+  it("accepts a select field backed by a live optionsSource (CL-4279)", () => {
+    const parsed = ScheduleFieldMetadataSchema({
+      name: "growthEngineListId",
+      label: "Engine - Growth Sumble list",
+      inputHint: "select",
+      optionsSource: "sumble-organization-lists",
+      required: true,
+    });
+    expect(parsed instanceof type.errors).toBe(false);
+  });
 });
 
 describe("sortScheduleFields", () => {

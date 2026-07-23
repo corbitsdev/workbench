@@ -513,12 +513,28 @@ export const ScheduleFieldMetadataSchema = type({
   /** Select options when inputHint/kind is `select`. */
   "options?": ScheduleFieldOptionSchema.array(),
   /**
+   * Key naming a live options source the hub resolves at render time (CL-4279),
+   * e.g. a Sumble org list a workflow author cannot enumerate statically.
+   * Mutually intended with `inputHint: "select"`; the hub's
+   * `GET /schedule-field-options/:sourceId` route resolves this key to
+   * `ScheduleFieldOption[]` — never Sumble- or provider-specific here, so any
+   * future live-sourced field reuses the same mechanism.
+   */
+  "optionsSource?": "string > 0",
+  /**
    * When set, fire-time merge supplies this value from the member profile; the
    * form renders the field read-only with a "from your profile" chip.
    */
   "fromProfile?": "string > 0",
 });
 export type ScheduleFieldMetadata = typeof ScheduleFieldMetadataSchema.infer;
+
+/** Response body for the live schedule-field-options resolver route (CL-4279). */
+export const ScheduleFieldOptionsResponseSchema = type({
+  options: ScheduleFieldOptionSchema.array(),
+});
+export type ScheduleFieldOptionsResponse =
+  typeof ScheduleFieldOptionsResponseSchema.infer;
 
 /** @deprecated Prefer ScheduleFieldMetadataSchema — same shape, CL-3509 name. */
 export const WorkflowIntakeFieldSchema = ScheduleFieldMetadataSchema;

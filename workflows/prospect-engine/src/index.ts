@@ -42,15 +42,17 @@ export const INTAKE_FIELDS = [
     required: false,
   },
   {
-    kind: "text",
+    kind: "select",
     name: "growthEngineListId",
-    label: "Engine - Growth Sumble list id",
+    label: "Engine - Growth Sumble list",
+    optionsSource: "sumble-organization-lists",
     required: true,
   },
   {
-    kind: "text",
+    kind: "select",
     name: "enterpriseEngineListId",
-    label: "Engine - Enterprise Sumble list id",
+    label: "Engine - Enterprise Sumble list",
+    optionsSource: "sumble-organization-lists",
     required: true,
   },
   {

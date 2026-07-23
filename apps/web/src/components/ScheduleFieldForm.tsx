@@ -3,6 +3,74 @@ import {
   sortScheduleFields,
   type ScheduleFieldMetadata,
 } from "@workbench/shared";
+import { useScheduleFieldOptions } from "../hooks/use-schedule-field-options";
+
+/**
+ * Select control for a field whose options come from a live source
+ * (CL-4279) rather than being declared statically. A separate component so
+ * `useScheduleFieldOptions` is called unconditionally per option-backed
+ * field, not inside the parent's field-list loop. Renders the option label
+ * but submits the underlying id; on fetch failure it says so explicitly
+ * instead of falling back to free text or an empty select — either of those
+ * would reintroduce the unanswerable-list-id bug this mechanism fixes.
+ */
+function ScheduleFieldOptionsSelect({
+  field,
+  fieldId,
+  value,
+  disabled,
+  onChange,
+}: {
+  field: ScheduleFieldMetadata;
+  fieldId: string;
+  value: string;
+  disabled: boolean;
+  onChange: (value: string) => void;
+}) {
+  const query = useScheduleFieldOptions(field.optionsSource);
+
+  if (query.isPending) {
+    return (
+      <p
+        className="text-xs text-text-3"
+        data-testid={`field-options-loading-${field.name}`}
+      >
+        Loading options…
+      </p>
+    );
+  }
+
+  if (query.isError) {
+    return (
+      <p
+        className="text-xs text-red-500"
+        data-testid={`field-options-error-${field.name}`}
+        role="alert"
+      >
+        Could not load options: {query.error.message}
+      </p>
+    );
+  }
+
+  return (
+    <select
+      id={fieldId}
+      name={field.name}
+      value={value}
+      required={field.required}
+      disabled={disabled}
+      onChange={(e) => onChange(e.target.value)}
+      className="w-full rounded-[10px] border border-border bg-page px-3 py-2 text-sm text-text focus:outline-none focus-visible:ring-2 focus-visible:ring-border-strong disabled:opacity-60"
+    >
+      <option value="">Select…</option>
+      {query.data.map((opt) => (
+        <option key={opt.value} value={opt.value}>
+          {opt.label}
+        </option>
+      ))}
+    </select>
+  );
+}
 
 export type ScheduleFieldFormProps = {
   fields: readonly ScheduleFieldMetadata[];
@@ -103,7 +171,9 @@ export function ScheduleFieldForm({
                 value={
                   Array.isArray(raw)
                     ? raw
-                        .filter((item): item is string => typeof item === "string")
+                        .filter(
+                          (item): item is string => typeof item === "string",
+                        )
                         .join("\n")
                     : str
                 }
@@ -124,7 +194,6 @@ export function ScheduleFieldForm({
                 className="w-full rounded-[10px] border border-border bg-page px-3 py-2 text-sm text-text placeholder:text-text-3 focus:outline-none focus-visible:ring-2 focus-visible:ring-border-strong disabled:opacity-60"
               />
             ) : hint === "boolean" ? (
-
               <label className="inline-flex items-center gap-2 text-sm text-text">
                 <input
                   id={fieldId}
@@ -137,6 +206,14 @@ export function ScheduleFieldForm({
                 />
                 <span>{field.placeholder ?? "Enabled"}</span>
               </label>
+            ) : hint === "select" && field.optionsSource ? (
+              <ScheduleFieldOptionsSelect
+                field={field}
+                fieldId={fieldId}
+                value={str}
+                disabled={disabled || fromProfile}
+                onChange={(next) => setValue(field.name, next)}
+              />
             ) : hint === "select" ? (
               <select
                 id={fieldId}
@@ -187,7 +264,6 @@ export function scheduleFieldsComplete(
     if (typeof v === "string" && v.trim() === "") return false;
     if (Array.isArray(v) && v.length === 0) return false;
     if (typeof v === "boolean") continue;
-
   }
   return true;
 }
