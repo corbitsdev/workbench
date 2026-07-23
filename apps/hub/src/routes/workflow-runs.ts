@@ -921,6 +921,9 @@ export function createWorkflowRunsRouter(deps: {
       if (!result.ok && result.reason === "not_found") {
         return c.json({ error: result.message }, 404);
       }
+      if (!result.ok && result.reason === "invalid_input") {
+        return c.json({ error: result.message }, 400);
+      }
       if (!result.ok && result.reason === "rate_limited") {
         return c.json({ error: result.message }, 429);
       }

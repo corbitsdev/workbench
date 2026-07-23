@@ -15,6 +15,7 @@ import {
   enrichTriggerPayloadForStart,
   type TriggerPayloadEnrichmentDeps,
 } from "../workflow-executor/trigger-payload-enrichment-registry";
+import { validateTriggerPayloadForStart } from "../workflow-executor/trigger-payload-validation-registry";
 import {
   failRunIfStillProvisioning,
   insertRunRecord,
@@ -87,6 +88,7 @@ export type StartRunResult =
       ok: false;
       reason:
         | "not_found"
+        | "invalid_input"
         | "provision_failed"
         | "attach_failed"
         | "delivery_failed"
@@ -240,6 +242,23 @@ export function createWorkflowRunStarter(deps: {
       },
       input,
     );
+
+    // Fail fast, before any deployment is provisioned, when a kind's declared
+    // required inputs are still missing after enrichment — never let a run
+    // start and die several steps in on an opaque "field is absent" argMap
+    // failure (the schedule/webhook/manual analog of run-exec.ts's own check).
+    const validation = validateTriggerPayloadForStart(
+      definition.kind,
+      enrichedInput,
+    );
+    if (!validation.ok) {
+      return {
+        ok: false,
+        reason: "invalid_input",
+        message: validation.message,
+      };
+    }
+
     const triggerPayload = { ...enrichedInput, runId };
 
     // Durable-first: run row exists (provisioning, no deployment yet) before

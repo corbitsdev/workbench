@@ -766,4 +766,77 @@ describe("createWorkflowRunStarter", () => {
 
     expect(db.inserted[0]?.triggerSource).toBe("scheduler");
   });
+
+  // Real staging failure: prospect-engine had no intake declaration, so a run
+  // with no list ids sailed past start and died several steps in at the first
+  // Sumble step dereferencing an absent `enterpriseEngineListId`. Required
+  // inputs must fail the run BEFORE any deployment is provisioned, naming
+  // exactly what is missing.
+  it("rejects a prospect-engine run missing its required Sumble list ids and Slack channel", async () => {
+    chainRef = ["t-root"];
+    let provisioned = false;
+    const starter = createWorkflowRunStarter(
+      starterDeps({
+        db: makeDb([
+          candidate({ deploymentId: "dep-1", kind: "prospect-engine" }),
+        ]),
+        provisionRunDeployment: async () => {
+          provisioned = true;
+          return { deploymentId: "dep-run-1" };
+        },
+      }),
+    );
+
+    const result = await starter.startRun({
+      kind: "prospect-engine",
+      tenantId: "t-root",
+      input: { reason: "manual-prospect-engine" },
+    });
+
+    expect(result.ok).toBe(false);
+    if (result.ok) throw new Error("expected invalid_input");
+    expect(result.reason).toBe("invalid_input");
+    expect(result.message).toContain("Slack channel id");
+    expect(result.message).toContain("Engine - Growth Sumble list id");
+    expect(result.message).toContain("Engine - Enterprise Sumble list id");
+    expect(provisioned).toBe(false);
+  });
+
+  it("starts a prospect-engine run once Slack channel and both Engine list ids are present", async () => {
+    chainRef = ["t-root"];
+    const sent: Record<string, unknown>[] = [];
+    const sessionService = {
+      sendUserMessage: async (a: Record<string, unknown>) => {
+        sent.push(a);
+      },
+    } as unknown as SessionService;
+
+    const starter = createWorkflowRunStarter(
+      starterDeps({
+        db: makeDb([
+          candidate({ deploymentId: "dep-1", kind: "prospect-engine" }),
+        ]),
+        sessionService,
+      }),
+    );
+
+    const result = await starter.startRun({
+      kind: "prospect-engine",
+      tenantId: "t-root",
+      input: {
+        slackChannelId: "C0123456789",
+        growthEngineListId: "80089",
+        enterpriseEngineListId: "80090",
+      },
+    });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error("expected ok result");
+    const delivered = JSON.parse(sent[0]?.content as string) as Record<
+      string,
+      unknown
+    >;
+    expect(delivered.growthEngineListId).toBe(80089);
+    expect(delivered.enterpriseEngineListId).toBe(80090);
+  });
 });

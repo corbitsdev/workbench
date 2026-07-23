@@ -136,6 +136,54 @@ export function prospectEngineRunDateEt(nowMs: number): string {
 }
 
 /**
+ * Human-readable labels for the prospect-engine intake fields a run cannot
+ * start without, keyed by the trigger-payload field name. Mirrors the labels
+ * on the workflow's own `INTAKE_FIELDS` (Routine setup form) so a run-start
+ * validation failure names the same thing the setup form asked for.
+ */
+export const PROSPECT_ENGINE_REQUIRED_INTAKE_FIELD_LABELS: Record<
+  string,
+  string
+> = {
+  slackChannelId: "Slack channel id",
+  growthEngineListId: "Engine - Growth Sumble list id",
+  enterpriseEngineListId: "Engine - Enterprise Sumble list id",
+};
+
+/**
+ * The subset of the (post-enrichment) trigger payload that is genuinely
+ * per-schedule input rather than server-stamped identity/date/title —
+ * `enrichProspectEngineTriggerPayload` coerces `growthEngineListId` /
+ * `enterpriseEngineListId` to positive integers and drops them from the
+ * payload when the schedule never supplied a valid id, so their absence here
+ * IS the "missing required input" signal a run-start check needs.
+ */
+export function findMissingProspectEngineIntakeFields(
+  payload: Record<string, unknown>,
+): string[] {
+  const missing: string[] = [];
+  const slackChannelId = payload.slackChannelId;
+  if (typeof slackChannelId !== "string" || slackChannelId.trim() === "") {
+    missing.push("slackChannelId");
+  }
+  if (
+    typeof payload.growthEngineListId !== "number" ||
+    !Number.isInteger(payload.growthEngineListId) ||
+    payload.growthEngineListId <= 0
+  ) {
+    missing.push("growthEngineListId");
+  }
+  if (
+    typeof payload.enterpriseEngineListId !== "number" ||
+    !Number.isInteger(payload.enterpriseEngineListId) ||
+    payload.enterpriseEngineListId <= 0
+  ) {
+    missing.push("enterpriseEngineListId");
+  }
+  return missing;
+}
+
+/**
  * Fire-time enrichment for prospect-engine starts (scheduler + manual). Stamps
  * identity, ET run date, artifact title, reason, and coerces list ids to numbers
  * so Sumble write tools receive integers.
