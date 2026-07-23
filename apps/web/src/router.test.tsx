@@ -153,6 +153,34 @@ describe("router", () => {
     }
   });
 
+  it("actually redirects /admin to /settings/admin", async () => {
+    const landed = await landedAt("/admin", "/settings/admin", "/admin");
+    expect(landed).toBe("/settings/admin");
+  });
+
+  it("actually redirects /admin/* to /settings/admin/*, using the splat tail only", async () => {
+    const landed = await landedAt(
+      "/admin/*",
+      "/settings/admin/*",
+      "/admin/principals/prn_1",
+    );
+    expect(landed).toBe("/settings/admin/principals/prn_1");
+  });
+
+  it("actually redirects /owner to /settings/owner", async () => {
+    const landed = await landedAt("/owner", "/settings/owner", "/owner");
+    expect(landed).toBe("/settings/owner");
+  });
+
+  it("actually redirects /owner/* to /settings/owner/*", async () => {
+    const landed = await landedAt(
+      "/owner/*",
+      "/settings/owner/*",
+      "/owner/capabilities/gamma",
+    );
+    expect(landed).toBe("/settings/owner/capabilities/gamma");
+  });
+
   it("mounts Artifacts, Skills, and Agents as sibling views under the Library layout", () => {
     const libraryPaths = [
       "/library",
