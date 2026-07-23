@@ -1,5 +1,5 @@
 import type { CredentialRequirement, GrantRequirement } from "@intx/types";
-import { canonicalizeToolNames } from "../tool-names";
+import { canonicalizeAgentCapabilityNames } from "../tool-names";
 import { buildHammySystemPrompt } from "./prompt";
 import type { AgentDeployDescriptor } from "../deploy-descriptor";
 import { LLM_CREDENTIAL_NAME } from "../constants";
@@ -22,12 +22,7 @@ export const HAMMY_DEPLOY_PROMPT: string = buildHammySystemPrompt("Hammy", {
 });
 
 export const HAMMY_CAPABILITIES = {
-  tools: canonicalizeToolNames([
-    "read_file",
-    "write_file",
-    "edit_file",
-    "artifact_link_file",
-  ]),
+  tools: canonicalizeAgentCapabilityNames("Hammy", ["artifact_link_file"]),
 } as const;
 
 export const HAMMY_MODEL_CONFIG = {

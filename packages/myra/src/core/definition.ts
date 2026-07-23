@@ -1,5 +1,5 @@
 import { GrantRequirement, CredentialRequirement } from "@intx/types";
-import { canonicalizeToolNames } from "@workbench/agent-core/tool-names";
+import { canonicalizeAgentCapabilityNames } from "@workbench/agent-core/tool-names";
 import {
   MYRA_CATALOG_BARE_TOOL_NAMES,
   MYRA_PLATFORM_BARE_TOOL_NAMES,
@@ -98,11 +98,28 @@ export const PERSONAL_AGENT_TRIAGE_DEPLOY_PROMPT: string =
  * is catalog-managed (see MYRA_TOOL_CATALOG) and hidden until
  * `search_tools` → `load_tools` exposes it.
  */
-export const PERSONAL_AGENT_PLATFORM_TOOLS: string[] = [
+/**
+ * Hand-maintained mirror of the hub-native, non-package tool names Myra's
+ * capability lists may legitimately declare — `search_tools` / `load_tools`
+ * are catalog-runner locals added directly below; `task_create` is a
+ * hub-backed tool (`apps/hub/src/tools/task-tools.ts`, also mirrored in
+ * `@workbench/agents`' `HUB_ONLY_TOOL_SIDE_EFFECTS`). Neither ships from a
+ * `@workbench/tools-*` package, so `canonicalizeAgentCapabilityNames` cannot
+ * resolve them from the manifest table alone — this is the explicit
+ * allowlist that keeps them from failing the build.
+ */
+const MYRA_NATIVE_TOOL_NAMES: ReadonlySet<string> = new Set([
   "search_tools",
   "load_tools",
-  ...canonicalizeToolNames(MYRA_PLATFORM_BARE_TOOL_NAMES),
-];
+  "task_create",
+]);
+
+export const PERSONAL_AGENT_PLATFORM_TOOLS: string[] =
+  canonicalizeAgentCapabilityNames(
+    "Myra",
+    ["search_tools", "load_tools", ...MYRA_PLATFORM_BARE_TOOL_NAMES],
+    MYRA_NATIVE_TOOL_NAMES,
+  );
 
 /**
  * The full authorized toolset (the grant list) every Myra instance starts with.
@@ -116,5 +133,9 @@ export const PERSONAL_AGENT_PLATFORM_TOOLS: string[] = [
  */
 export const PERSONAL_AGENT_BASE_TOOLS: string[] = [
   ...PERSONAL_AGENT_PLATFORM_TOOLS,
-  ...canonicalizeToolNames(MYRA_CATALOG_BARE_TOOL_NAMES),
+  ...canonicalizeAgentCapabilityNames(
+    "Myra",
+    MYRA_CATALOG_BARE_TOOL_NAMES,
+    MYRA_NATIVE_TOOL_NAMES,
+  ),
 ];

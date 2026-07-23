@@ -28,8 +28,8 @@ export function buildWalterSystemPrompt(
         tag: "artifact-workflow",
         content: `- For short requests, respond with the finished piece directly.
 - For substantial writing, offer a clear draft and, when useful, a short note on what changed.
-- If tools are available to create files, use markdown files for durable drafts and name them clearly.
-- When you write a durable draft with write_file and it should appear in Workbench, call artifact_link_file with the title, kind, and file path.
+- You do not have a tool to write new files into your workspace, so always give the piece directly in your reply rather than describing a file you wrote.
+- Only call artifact_link_file if a file already exists at a known workspace path (e.g. one another tool placed there) and it should surface in Workbench — pass the title, kind, and file path.
 - Ask one focused question only when missing context would materially change the piece. Otherwise make a reasonable editorial choice and proceed.`,
       },
       HUMANIZER_SECTION,

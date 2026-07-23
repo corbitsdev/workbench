@@ -1,6 +1,7 @@
 /// <reference types="bun" />
 import { describe, expect, it } from "bun:test";
 import {
+  canonicalizeAgentCapabilityNames,
   canonicalizeStepToolName,
   canonicalizeToolNames,
   expandToolAliasGrants,
@@ -199,6 +200,64 @@ describe("canonicalizeStepToolName (fail-closed on unresolvable step tool)", () 
       "mail_send",
       "mail_wait",
     ]);
+  });
+});
+
+describe("canonicalizeAgentCapabilityNames (fail-closed on unresolvable agent capability)", () => {
+  it("prefixes a real package tool exactly like canonicalizeToolNames", () => {
+    expect(
+      canonicalizeAgentCapabilityNames("Oat", ["granola_list_notes"]),
+    ).toEqual(["@workbench/tools-granola/granola:granola_list_notes"]);
+  });
+
+  it("passes through explicit local-runner (mail) names unchanged", () => {
+    expect(canonicalizeAgentCapabilityNames("Myra", ["mail_send"])).toEqual([
+      "mail_send",
+    ]);
+  });
+
+  it("passes through a caller-declared native tool name unchanged", () => {
+    expect(
+      canonicalizeAgentCapabilityNames(
+        "Myra",
+        ["search_tools", "load_tools"],
+        new Set(["search_tools", "load_tools"]),
+      ),
+    ).toEqual(["search_tools", "load_tools"]);
+  });
+
+  it("throws, naming the agent and the unresolvable capability, for a typo'd/retired name", () => {
+    expect(() =>
+      canonicalizeAgentCapabilityNames("Freddie", ["granola_search"]),
+    ).toThrow(/Freddie/);
+    expect(() =>
+      canonicalizeAgentCapabilityNames("Freddie", ["granola_search"]),
+    ).toThrow(/granola_search/);
+  });
+
+  it("throws for a retired posix local-runner name (no longer served by the sidecar)", () => {
+    expect(() =>
+      canonicalizeAgentCapabilityNames("Walter", ["read_file"]),
+    ).toThrow(/read_file/);
+  });
+
+  it("does not accept a native name unless the caller declares it", () => {
+    expect(() =>
+      canonicalizeAgentCapabilityNames("Myra", ["search_tools"]),
+    ).toThrow(/search_tools/);
+  });
+
+  // Resolution here is purely name-based (does a package/local-runner/native
+  // name exist?), never runtime-credential-based (does a tenant have a key
+  // for it?). A real tool with no tenant credential yet must still resolve —
+  // apps/sidecar/src/step-tool-harness.ts's buildStepTools is what skips
+  // credential-less packages for agents at runtime, deliberately downstream
+  // of this build-time guard. This pins that separation so a future refactor
+  // does not fold credential availability into name resolution.
+  it("resolves a real tool with a credentialed provider regardless of credential availability", () => {
+    expect(
+      canonicalizeAgentCapabilityNames("Freddy", ["firecrawl_scrape"]),
+    ).toEqual(["@workbench/tools-firecrawl/firecrawl:firecrawl_scrape"]);
   });
 });
 

@@ -20,6 +20,7 @@ export {
   producibleLlmToolNamesForPins,
   canonicalizeToolNames,
   canonicalizeStepToolName,
+  canonicalizeAgentCapabilityNames,
   LOCAL_RUNNER_TOOL_NAMES,
   toLlmToolName,
   expandToolAliasGrants,

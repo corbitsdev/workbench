@@ -10,14 +10,12 @@ import {
 const researchTools = [
   "firecrawl_search",
   "firecrawl_scrape",
-  "granola_search",
+  "granola_list_notes",
   "hackernews_search",
   "github_activity",
   "bluesky_search",
   "scrapecreators_tiktok",
   "write_artifact",
-  "read_file",
-  "write_file",
 ];
 
 describe("Fannie definition", () => {
@@ -43,6 +41,19 @@ describe("Fannie definition", () => {
     }
 
     expect(FANNIE_CAPABILITIES.tools).not.toContain("mail_send");
+  });
+
+  it("does not carry retired posix runner names", () => {
+    for (const retired of [
+      "read_file",
+      "write_file",
+      "edit_file",
+      "search_files",
+      "run_shell",
+      "grep",
+    ]) {
+      expect(FANNIE_CAPABILITIES.tools).not.toContain(retired);
+    }
   });
 
   it("keeps tool providers in onboarding metadata, not launch credential requirements", () => {

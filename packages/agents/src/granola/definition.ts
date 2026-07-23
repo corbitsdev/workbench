@@ -1,5 +1,5 @@
 import type { GrantRequirement, CredentialRequirement } from "@intx/types";
-import { canonicalizeToolNames } from "../tool-names";
+import { canonicalizeAgentCapabilityNames } from "../tool-names";
 import { buildGranolaSystemPrompt } from "./prompt";
 import type { AgentDeployDescriptor } from "../deploy-descriptor";
 import { LLM_CREDENTIAL_NAME } from "../constants";
@@ -36,7 +36,7 @@ export const GRANOLA_DEPLOY_PROMPT: string = buildGranolaSystemPrompt("Oat", {
  * to configure tools.
  */
 export const GRANOLA_CAPABILITIES = {
-  tools: canonicalizeToolNames([
+  tools: canonicalizeAgentCapabilityNames("Oat", [
     "granola_list_notes",
     "granola_get_note",
     "granola_list_folders",

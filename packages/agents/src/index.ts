@@ -8,6 +8,7 @@ export {
 export {
   canonicalizeToolNames,
   canonicalizeStepToolName,
+  canonicalizeAgentCapabilityNames,
   expandToolAliasGrants,
   toolPackagesForCapabilities,
   providersForToolPackages,

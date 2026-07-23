@@ -177,6 +177,43 @@ export function canonicalizeStepToolName(stepId: string, name: string): string {
 }
 
 /**
+ * Strict, build-time-only canonicalization for an agent definition's declared
+ * `capabilities`/tool list — the counterpart of `canonicalizeStepToolName` for
+ * workflow steps. `canonicalizeToolNames` (above) stays lenient because
+ * several legitimate runtime callers (the hub's grant gate, capability walks)
+ * pass names that must never throw; an agent *definition* is a bounded,
+ * hand-authored list evaluated at module load, so a typo'd, retired, or
+ * never-real tool name here can and should fail the build instead of
+ * deploying an agent that only discovers the gap when the model calls it
+ * mid-conversation.
+ *
+ * `nativeToolNames` is the escape hatch for hub-native tools that carry no
+ * `@workbench/tools-*` package (e.g. Myra's catalog-runner locals `search_tools`
+ * / `load_tools`, or hub-backed writes like `task_create`) — pass the caller's
+ * own hand-maintained set of those names. Do not widen `LOCAL_RUNNER_TOOL_NAMES`
+ * for this; that set is reserved for the interchange mail-tools mirror and has
+ * its own drift test.
+ */
+export function canonicalizeAgentCapabilityNames(
+  agentLabel: string,
+  names: readonly string[],
+  nativeToolNames: ReadonlySet<string> = new Set(),
+): string[] {
+  return names.map((name) => {
+    const factoryId = FACTORY_ID_BY_TOOL[name];
+    if (factoryId !== undefined) return `${factoryId}:${name}`;
+    if (LOCAL_RUNNER_TOOL_NAMES.has(name)) return name;
+    if (nativeToolNames.has(name)) return name;
+    throw new Error(
+      `Agent "${agentLabel}" declares capability "${name}", which is not a known ` +
+        `tool-package name, local-runner name, or declared native tool name. ` +
+        `Regenerate tool manifests (bun run build:tool-manifests) if this is a real, ` +
+        `newly-added tool, or fix the capability name if it is a typo/retired tool.`,
+    );
+  });
+}
+
+/**
  * Map a canonical runtime tool name (`<factoryId>:<tool>`) to an LLM-safe
  * function name. Provider function names must match `[a-zA-Z0-9_-]` (≤64); the
  * canonical name's `@`, `/`, and especially `:` do not round-trip (kimi-k2.6

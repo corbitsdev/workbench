@@ -12,14 +12,12 @@ import {
 const researchTools = [
   "firecrawl_search",
   "firecrawl_scrape",
-  "granola_search",
+  "granola_list_notes",
   "hackernews_search",
   "github_activity",
   "bluesky_search",
   "scrapecreators_tiktok",
   "write_artifact",
-  "read_file",
-  "write_file",
 ];
 
 describe("Freddie definition", () => {
@@ -45,6 +43,19 @@ describe("Freddie definition", () => {
     }
 
     expect(FREDDIE_CAPABILITIES.tools).not.toContain("mail_send");
+  });
+
+  it("does not carry retired posix runner names", () => {
+    for (const retired of [
+      "read_file",
+      "write_file",
+      "edit_file",
+      "search_files",
+      "run_shell",
+      "grep",
+    ]) {
+      expect(FREDDIE_CAPABILITIES.tools).not.toContain(retired);
+    }
   });
 
   it("appends Workbench operating context guidance onto the base prompt", () => {

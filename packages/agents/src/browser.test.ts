@@ -8,20 +8,8 @@ describe("browser premade agents", () => {
       label: "Walter - Writer",
       name: "Walter",
       credentialProviderNames: ["openai-compatible"],
-      defaultTools: [
-        "read_file",
-        "write_file",
-        "edit_file",
-        "search_files",
-        "@workbench/tools-artifact/artifact:artifact_link_file",
-      ],
-      requiredTools: [
-        "read_file",
-        "write_file",
-        "edit_file",
-        "search_files",
-        "@workbench/tools-artifact/artifact:artifact_link_file",
-      ],
+      defaultTools: ["@workbench/tools-artifact/artifact:artifact_link_file"],
+      requiredTools: ["@workbench/tools-artifact/artifact:artifact_link_file"],
     });
     expect(WALTER_DEPLOY_DESCRIPTOR.systemPrompt).toContain(
       "traditional written artifacts",
