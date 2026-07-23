@@ -88,6 +88,7 @@ COPY workflows/last30days-research/package.json workflows/last30days-research/
 COPY workflows/pain-point-collateral/package.json workflows/pain-point-collateral/
 COPY workflows/multi-source-collateral/package.json workflows/multi-source-collateral/
 COPY workflows/reddit-opportunity-scanner/package.json workflows/reddit-opportunity-scanner/
+COPY workflows/reddit-opportunity-watch/package.json workflows/reddit-opportunity-watch/
 COPY workflows/prospect-engine/package.json workflows/prospect-engine/
 COPY workflows/smoke-test/package.json workflows/smoke-test/
 COPY workflows/sumble-account-intel/package.json workflows/sumble-account-intel/

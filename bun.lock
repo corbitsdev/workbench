@@ -1867,6 +1867,21 @@
         "react": "^19.0.0",
       },
     },
+    "workflows/reddit-opportunity-watch": {
+      "name": "@workbench/workflow-reddit-opportunity-watch",
+      "version": "0.1.0",
+      "dependencies": {
+        "@intx/agent": "workspace:*",
+        "@intx/workflow": "workspace:*",
+        "@workbench/agents": "workspace:*",
+        "@workbench/shared": "workspace:*",
+        "arktype": "catalog:",
+      },
+      "devDependencies": {
+        "@types/bun": "latest",
+        "typescript": "catalog:",
+      },
+    },
     "workflows/smoke-test": {
       "name": "@workbench/workflow-smoke-test",
       "version": "0.1.0",
@@ -2928,6 +2943,8 @@
     "@workbench/workflow-prospect-engine": ["@workbench/workflow-prospect-engine@workspace:workflows/prospect-engine"],
 
     "@workbench/workflow-reddit-opportunity-scanner": ["@workbench/workflow-reddit-opportunity-scanner@workspace:workflows/reddit-opportunity-scanner"],
+
+    "@workbench/workflow-reddit-opportunity-watch": ["@workbench/workflow-reddit-opportunity-watch@workspace:workflows/reddit-opportunity-watch"],
 
     "@workbench/workflow-smoke-test": ["@workbench/workflow-smoke-test@workspace:workflows/smoke-test"],
 
