@@ -1641,6 +1641,21 @@
         "react": "*",
       },
     },
+    "workflows/exa-topic-watch": {
+      "name": "@workbench/workflow-exa-topic-watch",
+      "version": "0.1.0",
+      "dependencies": {
+        "@intx/agent": "workspace:*",
+        "@intx/workflow": "workspace:*",
+        "@workbench/agents": "workspace:*",
+        "@workbench/shared": "workspace:*",
+        "arktype": "catalog:",
+      },
+      "devDependencies": {
+        "@types/bun": "latest",
+        "typescript": "catalog:",
+      },
+    },
     "workflows/firecrawl-url-watch": {
       "name": "@workbench/workflow-firecrawl-url-watch",
       "version": "0.1.0",
@@ -2889,6 +2904,8 @@
     "@workbench/workflow-attio-task-agent": ["@workbench/workflow-attio-task-agent@workspace:workflows/attio-task-agent"],
 
     "@workbench/workflow-competitor-analysis": ["@workbench/workflow-competitor-analysis@workspace:workflows/competitor-analysis"],
+
+    "@workbench/workflow-exa-topic-watch": ["@workbench/workflow-exa-topic-watch@workspace:workflows/exa-topic-watch"],
 
     "@workbench/workflow-firecrawl-url-watch": ["@workbench/workflow-firecrawl-url-watch@workspace:workflows/firecrawl-url-watch"],
 

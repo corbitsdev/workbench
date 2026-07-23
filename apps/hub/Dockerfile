@@ -79,6 +79,7 @@ COPY workflows/ab-compare-quality/package.json workflows/ab-compare-quality/
 COPY workflows/ab-compare-speed/package.json workflows/ab-compare-speed/
 COPY workflows/ab-compare-standard/package.json workflows/ab-compare-standard/
 COPY workflows/attio-task-agent/package.json workflows/attio-task-agent/
+COPY workflows/exa-topic-watch/package.json workflows/exa-topic-watch/
 COPY workflows/gamma-presentation-creator/package.json workflows/gamma-presentation-creator/
 COPY workflows/granola-call/package.json workflows/granola-call/
 COPY workflows/gtm-scripts-briefs/package.json workflows/gtm-scripts-briefs/
