@@ -1461,14 +1461,26 @@ export function collectGrants(walk: CapabilityWalkResult): ReadonlySet<string> {
   return grants;
 }
 
-// The tool capability names the walk surfaced across all steps (the `capability:`
-// grants, stripped of their prefix), used to resolve the deploy's tool packages.
+// The tool capability names the walk surfaced across all steps, used to
+// resolve the deploy's tool packages. Two grant shapes carry a tool
+// capability name: `capability:<name>` (an agent's `AgentDefinition.capabilities`)
+// and `effect:<name>` (a native `action` step's `effect.requires` — actions
+// carry no `toolFactories`/`capabilities` of their own, so an action's tool
+// package is pinned ONLY if its `effect.requires` entries are, BY HOST
+// CONVENTION, the same tool-capability-name vocabulary `capability:` grants
+// use — bare tool short name or canonical `<factoryId>:<name>` —
+// `toolPackagesForCapabilities` below resolves both the same way. This is
+// the mechanism that pins a tool package into a deployment whose steps are
+// actions: there is no separate action-specific pinning path.
 export function capabilityNames(walk: CapabilityWalkResult): string[] {
   const names = new Set<string>();
   for (const { grants } of walk.perStep.values()) {
     for (const grant of grants) {
       if (grant.startsWith("capability:")) {
         names.add(grant.slice("capability:".length));
+      }
+      if (grant.startsWith("effect:")) {
+        names.add(grant.slice("effect:".length));
       }
     }
   }

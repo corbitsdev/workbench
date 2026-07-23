@@ -1099,6 +1099,61 @@ function toolResultErrorMessage(output: unknown): string | undefined {
   return "deterministic tool step returned an error envelope";
 }
 
+/**
+ * Eagerly validate that `toolName` resolves against a step's pinned tool
+ * packages + tenant credentials — load the packages, resolve credentials,
+ * assert the tool is present, then dispose immediately without invoking it.
+ * Throws the same `isStepToolInfrastructureFault` family
+ * `runDeterministicToolStep` raises (`StepToolNotRegisteredError` /
+ * `StepToolCredentialMissingError` / `StepToolFactoryAbsentError`).
+ *
+ * Used by the action-handler registry (`action-tool-handler.ts`) to fail an
+ * unresolvable action `handler` ref AT DEPLOYMENT ESTABLISH — a missing tool
+ * package or an unconfigured tenant credential surfaces immediately, in
+ * front of whoever is watching the deploy, instead of silently succeeding
+ * until the action is first dispatched deep into an unattended run.
+ */
+export async function assertStepToolResolvable(args: {
+  env: Omit<BaseEnv, "authorize">;
+  toolName: string;
+}): Promise<void> {
+  const ctx = readStepToolContext(
+    args.env as unknown as Record<string, unknown>,
+  );
+  const stepEnv: BaseEnv = {
+    ...args.env,
+    authorize: async () => ({
+      effect: null,
+      matchingGrants: [],
+      resolvedBy: null,
+    }),
+  };
+  const { runner, disposers, credentialSkips } = await buildStepTools({
+    ctx,
+    env: stepEnv,
+    workdir: args.env.workdir,
+  });
+  try {
+    const available = new Set(runner.definitions.map((d) => d.name));
+    assertStepToolAvailable(args.toolName, available, credentialSkips);
+  } finally {
+    for (const dispose of disposers) {
+      try {
+        await dispose();
+      } catch (err) {
+        logger.warn(
+          "assertStepToolResolvable: disposer failed for {tool} at {address}: {msg}",
+          {
+            tool: args.toolName,
+            address: ctx.stepAddress,
+            msg: err instanceof Error ? err.message : String(err),
+          },
+        );
+      }
+    }
+  }
+}
+
 export async function runDeterministicToolStep(args: {
   env: Omit<BaseEnv, "authorize">;
   toolName: string;

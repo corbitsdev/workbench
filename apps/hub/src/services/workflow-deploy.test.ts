@@ -36,6 +36,7 @@ mock.module("../config", () => ({
 import {
   buildStepGrantRules,
   buildSupervisorDeployFrame,
+  capabilityNames,
   collectDeterministicToolStepIds,
   collectGrants,
   createWorkflowDeployService,
@@ -509,6 +510,42 @@ describe("collectGrants", () => {
   });
 });
 
+describe("capabilityNames", () => {
+  test("folds an action step's effect: grants in alongside an agent step's capability: grants", () => {
+    // An `action` step carries no `toolFactories`/`capabilities` of its own —
+    // `capability-walk.ts` emits `effect:<cap>` for it instead, from the
+    // primitive's `effect.requires`. Without also folding `effect:` here, a
+    // deployment whose steps are actions would resolve zero tool packages
+    // and ship with none of its tools loaded — the incident this fix
+    // prevents.
+    const walk: CapabilityWalkResult = {
+      perStep: new Map([
+        ["agent-step", { grants: ["capability:granola_list_notes"] }],
+        [
+          "action-step",
+          { grants: ["effect:@workbench/tools-gamma/gamma:create_deck"] },
+        ],
+      ]),
+      unresolvedDirectors: [],
+    };
+    expect(capabilityNames(walk).sort()).toEqual([
+      "@workbench/tools-gamma/gamma:create_deck",
+      "granola_list_notes",
+    ]);
+  });
+
+  test("dedups a capability name declared by both an agent step and an action step", () => {
+    const walk: CapabilityWalkResult = {
+      perStep: new Map([
+        ["a", { grants: ["capability:exa_search"] }],
+        ["b", { grants: ["effect:exa_search"] }],
+      ]),
+      unresolvedDirectors: [],
+    };
+    expect(capabilityNames(walk)).toEqual(["exa_search"]);
+  });
+});
+
 const TENANT_SOURCE: InferenceSource = {
   id: "openai-compatible:m",
   provider: "openai-compatible",
@@ -871,6 +908,166 @@ describe("collectDeterministicToolStepIds", () => {
       },
     });
     expect([...collectDeterministicToolStepIds(wf)]).toEqual(["fan"]);
+  });
+});
+
+// Integration-style proof of CONDITION 2: a workflow with an inline step
+// deploys creating ZERO agent-state repos for the inline step, while the
+// deployed step still gets its agent-state grants repo + agent/instance rows.
+// Neither launches a session — CL-2782 no-op'd the deployed-step launch too, so
+// launches=0 for the whole deploy. Exercises the real `createWorkflowDeployService`
+// (real director registry + real orchestrator) across its seams; only the
+// db / repoStore / sessionService / sidecarRouter boundaries are mocked.
+describe("deployWorkflow inline-step partition (CL-2251)", () => {
+  const SOURCE: InferenceSource = {
+    id: "openai-compatible:m",
+    provider: "openai-compatible",
+    baseURL: "https://llm.example.com",
+    apiKey: "secret",
+    model: "m",
+  };
+
+  function makeConfig(
+    deploymentId: string,
+    deploymentDomain: string,
+  ): HarnessConfig {
+    return {
+      sessionId: "sess_1",
+      agentId: deploymentId,
+      tenantId: "t1",
+      principalId: "p1",
+      agentAddress: `${deploymentId}@${deploymentDomain}`,
+      systemPrompt: "",
+      tools: [],
+      grants: [],
+      sources: [SOURCE],
+      defaultSource: SOURCE.id,
+    } as unknown as HarnessConfig;
+  }
+
+  test("skips per-step agent-state repo writes + launchSession for the inline step only", async () => {
+    const deploymentId = "ses_inline";
+    const deploymentDomain = "deploy.example.com";
+
+    // The deployed reasoning step declares the tenant source so the walk
+    // surfaces its inference grant (which becomes an operator approval); the
+    // inline step's source falls back to the same approved default.
+    const draftAgent = defineAgent({
+      id: "draft",
+      description: "deployed reasoning step",
+      systemPrompt: "draft something",
+      tools: [],
+      capabilities: [],
+      inference: { sources: [{ provider: "openai-compatible", model: "m" }] },
+    });
+    const workflow = defineWorkflow({
+      id: "pain-point-collateral",
+      trigger: { type: "manual" },
+      steps: {
+        analyze: inlineInferenceStep({
+          id: "analyze",
+          systemPrompt: "extract pain points",
+        }),
+        draft: step({ agent: draftAgent, after: ["analyze"] }),
+      },
+    });
+
+    // Record every writeTree (workflow repo + per-step grants repos) and every
+    // DB insert (step agent/instance rows) so we can prove the inline step
+    // produced none of its own.
+    const writeTreeRepoIds: { kind: string; id: string }[] = [];
+    const writeTree = mock(
+      async (
+        _principal: { kind: string },
+        repoId: { kind: string; id: string },
+        _ref: string,
+        _content: unknown,
+      ) => {
+        writeTreeRepoIds.push(repoId);
+        return { commitSha: "sha" };
+      },
+    );
+    const repoStore = { repoStore: { writeTree } } as unknown as AgentRepoStore;
+
+    const insertedRows: {
+      table:
+        | "agent"
+        | "agentInstance"
+        | "asset"
+        | "workflowDeployment"
+        | "grant";
+      rows: { id: string }[];
+    }[] = [];
+    const db = {
+      insert: deployWorkflowInsertMock(insertedRows),
+    } as unknown as HubDb;
+
+    const sendAgentDeploy = mock(
+      async (
+        _agentAddress: string,
+        _config: HarnessConfig,
+        _workflow: { sources: Record<string, InferenceSource[]> },
+      ) => ({ publicKey: "pk" }),
+    );
+    const sidecarRouter = {
+      getRoutableAddresses: () => [],
+      sendAgentDeploy,
+    } as unknown as SidecarRouter;
+
+    const service = createWorkflowDeployService({
+      db,
+      repoStore,
+      sidecarRouter,
+      directorRegistry: createWorkbenchDirectorRegistry(),
+      // Provisioning REQUIRES a stager (FIX 2b); this unit test stages no real
+      // tool tree, so inject an explicit no-op rather than relying on a
+      // silent fallback.
+      stageWorkflowStep: () => Promise.resolve(),
+    });
+
+    const result = await service.deployWorkflow({
+      workflow,
+      deploymentId,
+      deploymentDomain,
+      tenantId: "t1",
+      creatorPrincipalId: "p1",
+      config: makeConfig(deploymentId, deploymentDomain),
+      deployContent: { systemPrompt: "" },
+      hubPublicKey: "hubkey",
+    });
+
+    // CONDITION 2 — NO step launches a per-step session (CL-2782 no-op'd the
+    // deployed-step launch too); the inline step never did. The supervisor uses
+    // No per-step launch happens at all now: the deploy service wires a no-op
+    // launch hook (the in-process session runtime is retired), so the sidecar is
+    // touched only by the single supervisor sendAgentDeploy above.
+
+    // The deployed step's grants repo is STILL written (execution reads it at
+    // run time) even though it no longer launches; the inline step gets none.
+    // (The workflow-kind repo write is separate.)
+    const agentStateIds = writeTreeRepoIds
+      .filter((r) => r.kind === "agent-state")
+      .map((r) => r.id);
+    expect(agentStateIds).toContain("ses_inline-draft");
+    expect(agentStateIds).not.toContain("ses_inline-analyze");
+
+    // Every step gets its agent/instance rows uniformly (interchange's pack
+    // phase FKs session_asset -> agent_instance for every staged step); the
+    // inline partition now only scopes the grants repo.
+    const allRowIds = insertedRows.flatMap((b) => b.rows.map((r) => r.id));
+    expect(allRowIds).toContain("ins_ses_inline-draft");
+    expect(allRowIds).toContain("ins_ses_inline-analyze");
+    // The supervisor rows are still written (deployment-level, not step-level).
+    expect(allRowIds).toContain("ins_ses_inline");
+
+    // The supervisor frame still pins an inference source for the inline step
+    // (the sidecar's STEP_INFERENCE_SOURCES table reads it for the bare-agent
+    // inference) — proving the inline step is reachable, just not deployed.
+    const deployCall = sendAgentDeploy.mock.calls.at(0);
+    if (!deployCall) throw new Error("sendAgentDeploy was not called");
+    const frameWorkflow = deployCall[2];
+    expect(frameWorkflow.sources.analyze).toEqual([SOURCE]);
+    expect(frameWorkflow.sources.draft).toEqual([SOURCE]);
   });
 });
 

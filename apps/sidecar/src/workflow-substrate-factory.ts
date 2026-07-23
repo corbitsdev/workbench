@@ -48,6 +48,7 @@ import {
   STEP_NONFATAL_TAG,
   DETERMINISTIC_TOOL_KIND,
 } from "@workbench/agents";
+import { createActionToolHandlerRegistry } from "./action-tool-handler";
 import { wsUrlToHttp } from "./agent-tools";
 import type {
   Agent,
@@ -1894,6 +1895,26 @@ export function createSidecarSubstrateFactory(
               { recursive: true, force: true },
             );
 
+    // Native `action` steps carry no `agent`, so they never reach
+    // `buildStepInvoker`/`invokeStep` above — the runtime dispatches them
+    // through the SEPARATE `ActionInvoker` seam (`@intx/workflow`'s
+    // `createWorkflowActionInvoker`), which this `resolveActionHandler`
+    // binding resolves `handler` refs for. Every action step's tool
+    // closure is resolved EAGERLY here, before the child establishes: the
+    // workflow-definition repo's working tree (`workflowDefinitionRepoId`
+    // on `substrate`) is already materialized at this point in establish —
+    // the same tree `packages/workflow-host`'s `loadWorkflowDefinition`
+    // reads moments later — so a missing tool package or an unconfigured
+    // tenant credential fails now, not at the action's first dispatch deep
+    // into an unattended run. Wired unconditionally: an action-free
+    // deployment enumerates zero action steps and resolves nothing.
+    const resolveActionHandler = await createActionToolHandlerRegistry({
+      dataDir: validated.SIDECAR_DATA_DIR,
+      substrate,
+      workflowDefinitionRepoId,
+      resolveStepToolContext,
+    });
+
     const bindings: RunWorkflowChildBindings = {
       substrate,
       workflowRunRepoId,
@@ -1903,6 +1924,7 @@ export function createSidecarSubstrateFactory(
       workflowDefinitionRef: validated.WORKFLOW_DEFINITION_REF,
       invokeStep,
       spawnChild,
+      resolveActionHandler,
       scheduler,
       evaluateGrants: evaluateGrantsAdapter,
       ...(cleanupRunStorage !== undefined ? { cleanupRunStorage } : {}),
