@@ -16,7 +16,7 @@ export * from "./now-feed";
 export * from "./reddit-opportunity-scanner";
 export * from "./scheduled-trigger";
 export * from "./schedule-next-fire";
-export * from "./automation-eligible";
+export * from "./routine-eligible";
 export * from "./webhook-trigger";
 export * from "./tasks";
 export * from "./task-links";

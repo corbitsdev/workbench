@@ -140,7 +140,7 @@ describe("MyraStylePanel", () => {
     );
     expect(document.body.textContent).toContain("Artifact usage");
     expect(document.body.textContent).toContain("Chat");
-    expect(document.body.textContent).toContain("Inbox automation");
+    expect(document.body.textContent).toContain("Inbox routine");
     expect(document.querySelectorAll('[role="radiogroup"]').length).toBe(3);
   });
 
@@ -239,7 +239,7 @@ describe("MyraStylePanel", () => {
     expect(errors.length).toBe(1);
     const subGroup = errors[0]?.parentElement;
     expect(subGroup?.textContent).toContain("Chat");
-    expect(subGroup?.textContent).not.toContain("Inbox automation");
+    expect(subGroup?.textContent).not.toContain("Inbox routine");
   });
 
   it("clears a surface's error after that field next saves successfully", async () => {

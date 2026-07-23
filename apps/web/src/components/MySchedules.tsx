@@ -89,10 +89,7 @@ function HourSelect({
   );
 }
 
-function runStatusFor(
-  schedule: ScheduledTrigger,
-  runId: string,
-): string {
+function runStatusFor(schedule: ScheduledTrigger, runId: string): string {
   return (
     schedule.recentFires.find((f) => f.runId === runId)?.status ?? "running"
   );
@@ -158,7 +155,6 @@ function ScheduleRow({
           {label}
           <span className="ml-1.5 font-normal text-text-3">
             · {scheduleScopeLabel(schedule.scope)}
-
           </span>
         </span>
         <span className="text-xs text-text-3">
@@ -218,7 +214,7 @@ function ScheduleRow({
   );
 }
 
-// The member's automation schedules: one row per scheduled workflow with an
+// The member's routine schedules: one row per scheduled workflow with an
 // enable/pause switch and a confirm-guarded remove. Workflow labels are resolved
 // against the same catalog the schedules were created from.
 export function MySchedules({ tenantId, embedded = false }: MySchedulesProps) {
@@ -235,9 +231,7 @@ export function MySchedules({ tenantId, embedded = false }: MySchedulesProps) {
 
   return (
     <section
-      className={
-        embedded ? "flex flex-col gap-4" : "mt-10 flex flex-col gap-4"
-      }
+      className={embedded ? "flex flex-col gap-4" : "mt-10 flex flex-col gap-4"}
     >
       {!embedded && (
         <div className="flex flex-col gap-1">
@@ -245,7 +239,7 @@ export function MySchedules({ tenantId, embedded = false }: MySchedulesProps) {
             My schedules
           </h2>
           <p className="text-[12px] text-text-3">
-            Daily automations you own.{" "}
+            Daily routines you own.{" "}
             <span className="text-text-2">Everyone</span> schedules run once for
             the workspace and fan outcomes into inboxes — not once per person.
           </p>

@@ -2,10 +2,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Badge, cn, LibrarySearchInput, skillTitle } from "@workbench/ui";
 import { Pin, PinOff } from "lucide-react";
 import { useMemo, useState } from "react";
-import {
-  useSkillLibrary,
-  type SkillLibraryItem,
-} from "../hooks/use-skills";
+import { useSkillLibrary, type SkillLibraryItem } from "../hooks/use-skills";
 import {
   myraPreferencesKey,
   putMyraPreferences,
@@ -17,7 +14,7 @@ import {
 const MAX_PINNED_SKILLS = 10;
 
 const APPLIES_NOTE =
-  "Pinned skills are indexed in the system prompt for new chat threads and inbox automation (name and short description only — not the full skill text). Existing threads keep the prompt they started with.";
+  "Pinned skills are indexed in the system prompt for new chat threads and inbox routines (name and short description only — not the full skill text). Existing threads keep the prompt they started with.";
 
 interface MyraPinnedSkillsPanelProps {
   readonly tenantId: string | null;
@@ -33,7 +30,9 @@ function matchesQuery(skill: SkillLibraryItem, q: string): boolean {
   );
 }
 
-export function MyraPinnedSkillsPanel({ tenantId }: MyraPinnedSkillsPanelProps) {
+export function MyraPinnedSkillsPanel({
+  tenantId,
+}: MyraPinnedSkillsPanelProps) {
   const queryClient = useQueryClient();
   const [query, setQuery] = useState("");
   const skillsQuery = useSkillLibrary(tenantId);
@@ -51,15 +50,20 @@ export function MyraPinnedSkillsPanel({ tenantId }: MyraPinnedSkillsPanelProps) 
     },
     onMutate: async (pinnedSkillIds) => {
       if (!tenantId) return { previous: undefined };
-      await queryClient.cancelQueries({ queryKey: myraPreferencesKey(tenantId) });
+      await queryClient.cancelQueries({
+        queryKey: myraPreferencesKey(tenantId),
+      });
       const previous = queryClient.getQueryData<MyraPreferences>(
         myraPreferencesKey(tenantId),
       );
       if (previous) {
-        queryClient.setQueryData<MyraPreferences>(myraPreferencesKey(tenantId), {
-          ...previous,
-          pinnedSkillIds,
-        });
+        queryClient.setQueryData<MyraPreferences>(
+          myraPreferencesKey(tenantId),
+          {
+            ...previous,
+            pinnedSkillIds,
+          },
+        );
       }
       return { previous };
     },
@@ -165,7 +169,11 @@ export function MyraPinnedSkillsPanel({ tenantId }: MyraPinnedSkillsPanelProps) 
                 )}
               >
                 <span className="mt-0.5 text-text-3" aria-hidden>
-                  {pinned ? <Pin className="size-4" /> : <PinOff className="size-4" />}
+                  {pinned ? (
+                    <Pin className="size-4" />
+                  ) : (
+                    <PinOff className="size-4" />
+                  )}
                 </span>
                 <span className="min-w-0 flex-1">
                   <span className="flex flex-wrap items-center gap-2">

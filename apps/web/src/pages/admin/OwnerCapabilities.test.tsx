@@ -124,7 +124,7 @@ describe("OwnerCapabilities", () => {
         features: [
           {
             name: "scheduler",
-            label: "Automation scheduler",
+            label: "Routine scheduler",
             description: "Fires durable scheduled triggers.",
             enabled: false,
             forcedByEnv: false,
@@ -134,7 +134,7 @@ describe("OwnerCapabilities", () => {
       },
     };
     renderCapabilities();
-    await waitFor(() => expect(screen.getByText("Automation scheduler")));
+    await waitFor(() => expect(screen.getByText("Routine scheduler")));
     expect(screen.getByText("Disabled"));
     expect(screen.getByText("Enable"));
   });
@@ -171,7 +171,7 @@ describe("OwnerCapabilities", () => {
         features: [
           {
             name: "scheduler",
-            label: "Automation scheduler",
+            label: "Routine scheduler",
             description: "Fires durable scheduled triggers.",
             enabled: false,
             forcedByEnv: false,
@@ -181,7 +181,7 @@ describe("OwnerCapabilities", () => {
       },
     };
     renderCapabilities();
-    await waitFor(() => expect(screen.getByText("Automation scheduler")));
+    await waitFor(() => expect(screen.getByText("Routine scheduler")));
     screen.getByRole("button", { name: "Enable" }).click();
     await waitFor(() =>
       expect(setOwnerFeatureEnabledMock).toHaveBeenCalledWith(
@@ -260,7 +260,7 @@ describe("OwnerCapabilities", () => {
         features: [
           {
             name: "scheduler",
-            label: "Automation scheduler",
+            label: "Routine scheduler",
             description: "Fires durable scheduled triggers.",
             enabled: false,
             forcedByEnv: false,
@@ -285,7 +285,7 @@ describe("OwnerCapabilities", () => {
         }),
     );
     renderCapabilities();
-    await waitFor(() => expect(screen.getByText("Automation scheduler")));
+    await waitFor(() => expect(screen.getByText("Routine scheduler")));
 
     const enableButtons = () =>
       screen.getAllByRole("button", { name: "Enable" }) as HTMLButtonElement[];

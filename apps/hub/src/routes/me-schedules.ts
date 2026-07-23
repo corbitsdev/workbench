@@ -3,7 +3,7 @@ import { Hono } from "hono";
 import { describeRoute, resolver } from "hono-openapi";
 import {
   CreateScheduledTriggerBodySchema,
-  isAutomationEligibleKind,
+  isRoutineEligibleKind,
   ScheduledTriggerListResponseSchema,
   ScheduledTriggerSchema,
   UpdateScheduledTriggerBodySchema,
@@ -55,7 +55,7 @@ export type ResolveUserIdentity = (
   memberPrincipalId: string,
 ) => Promise<{ userAddress: string; userRefId: string }>;
 
-// Owner-scoped CRUD over the caller's automation triggers. List includes the
+// Owner-scoped CRUD over the caller's routine triggers. List includes the
 // caller's personal schedules plus tenant-scoped (Everyone) schedules in their
 // tenant (CL-4108). Mutates remain owner-principal-scoped so a member can never
 // rewrite another member's schedule.
@@ -69,7 +69,7 @@ export function createMeSchedulesRouter(
     "/me/schedules",
     describeRoute({
       tags: ["Me"],
-      summary: "List the caller's automation schedules",
+      summary: "List the caller's routine schedules",
       parameters: [
         {
           name: "limit",
@@ -143,7 +143,7 @@ export function createMeSchedulesRouter(
     "/me/schedules",
     describeRoute({
       tags: ["Me"],
-      summary: "Create an automation schedule for the caller",
+      summary: "Create a routine schedule for the caller",
       requestBody: {
         content: {
           "application/json": {
@@ -209,11 +209,11 @@ export function createMeSchedulesRouter(
       }
 
       // Product allowlist (CL-4204): structural attachability is necessary but not
-      // sufficient — only product-eligible kinds may be scheduled under Automations.
-      if (!isAutomationEligibleKind(body.kind)) {
+      // sufficient — only product-eligible kinds may be scheduled under Routines.
+      if (!isRoutineEligibleKind(body.kind)) {
         return c.json(
           {
-            error: `workflow "${body.kind}" is not available for Automations schedules`,
+            error: `workflow "${body.kind}" is not available for Routines schedules`,
           },
           400,
         );
@@ -370,7 +370,7 @@ export function createMeSchedulesRouter(
             ([key]) => !RESERVED_PAYLOAD_KEYS.has(key),
           ),
         );
-const gateInfos = await loadWorkflowGateInfos();
+        const gateInfos = await loadWorkflowGateInfos();
         const gateInfo = gateInfos.get(existing.workflowKind);
         if (gateInfo?.requiresIntake) {
           const check = validateResumePayload(

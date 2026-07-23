@@ -38,7 +38,7 @@ export const kind = "last30days-research";
 export { DISPLAY_STEPS } from "./display-steps";
 
 // The first-intake form descriptor (CL-3509 / CL-3860): schedule field metadata
-// the attach UI and Automations form collect so a scheduled run's `intake` gate
+// the attach UI and Routines form collect so a scheduled run's `intake` gate
 // is pre-filled and auto-delivered without a human. Mirrors the intake form
 // (topic required, focus optional); payload validates against
 // Last30daysIntakePayloadSchema at the /resume boundary.

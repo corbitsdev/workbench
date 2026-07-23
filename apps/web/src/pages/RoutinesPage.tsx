@@ -25,11 +25,12 @@ import {
 } from "../lib/schedule-time";
 
 /**
- * Automations home (CL-3862): lists schedulable workflows with schedule status
- * and manage-in-place create/edit using schema-driven field forms (CL-3861).
+ * Routines home (CL-3862, renamed from Automations in CL-4211): lists
+ * schedulable workflows with schedule status and manage-in-place create/edit
+ * using schema-driven field forms (CL-3861).
  * Morning brief (heartbeat) uses product naming from the catalog label.
  */
-export function AutomationsPage() {
+export function RoutinesPage() {
   const catalogQuery = useQuery({
     queryKey: ["workflow-catalog"],
     queryFn: () => getWorkflowsCatalog(),
@@ -148,21 +149,21 @@ export function AutomationsPage() {
   const hourOptions = utcHourOptions();
 
   return (
-    <div className="mx-auto max-w-3xl px-4 py-8" data-testid="automations-page">
-      <LibraryPageHeader title="Automations" />
+    <div className="mx-auto max-w-3xl px-4 py-8" data-testid="routines-page">
+      <LibraryPageHeader title="Routines" />
       <p className="mt-2 text-sm text-text-2">
         Workflows you can put on a daily cadence. Status and manage in place —
         no separate settings hop.
       </p>
 
       {loading ? (
-        <p className="mt-6 text-sm text-text-3">Loading automations…</p>
+        <p className="mt-6 text-sm text-text-3">Loading routines…</p>
       ) : null}
       {loadError ? (
         <p className="mt-6 text-sm text-danger" role="alert">
           {loadError instanceof Error
             ? loadError.message
-            : "Could not load automations."}
+            : "Could not load routines."}
         </p>
       ) : null}
 
@@ -186,7 +187,7 @@ export function AutomationsPage() {
             <li
               key={entry.kind}
               className="rounded-xl border border-border bg-surface p-4"
-              data-testid={`automation-row-${entry.kind}`}
+              data-testid={`routine-row-${entry.kind}`}
             >
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div className="min-w-0 flex-1">
@@ -280,7 +281,7 @@ export function AutomationsPage() {
                     fields={fields}
                     values={draftValues}
                     onChange={setDraftValues}
-                    idPrefix={`auto-${entry.kind}`}
+                    idPrefix={`routine-${entry.kind}`}
                   />
 
                   {error ? (

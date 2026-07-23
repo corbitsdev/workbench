@@ -68,7 +68,7 @@ const preferenceSettings = [
     default: 13,
     label: "Morning brief time",
     description: "",
-    category: "Automations",
+    category: "Routines",
     value: 13,
   },
 ];

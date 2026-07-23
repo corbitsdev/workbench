@@ -40,7 +40,7 @@ type InstanceMetrics = {
 
 type InstanceDisplay = {
   name: string;
-  badgeLabel: "Chat" | "Inbox automation" | null;
+  badgeLabel: "Chat" | "Inbox routine" | null;
 };
 
 /** Shown when an instance has no usable title/subject yet. */
@@ -50,7 +50,7 @@ function fallbackTitle(instance: RosterInstance): string {
 
 /**
  * Names one Myra instance for the roster row (CL-3770): a chat thread reads
- * "Myra — <thread title>", a triage/automation instance reads
+ * "Myra — <thread title>", a triage/routine instance reads
  * "Myra — <mail subject>" (the hub stores that as "Triage: <subject>" in the
  * same label column — CL-2737's mailbox-triage.ts), and any other agent kind
  * keeps its existing definition name with no badge.
@@ -64,7 +64,7 @@ export function displayForInstance(instance: RosterInstance): InstanceDisplay {
   if (surface === "triage") {
     const subject = instance.label?.replace(TRIAGE_LABEL_PREFIX, "").trim();
     const title = subject || fallbackTitle(instance);
-    return { name: `Myra — ${title}`, badgeLabel: "Inbox automation" };
+    return { name: `Myra — ${title}`, badgeLabel: "Inbox routine" };
   }
   return { name: instance.name, badgeLabel: null };
 }

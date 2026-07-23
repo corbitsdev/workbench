@@ -33,9 +33,9 @@ const FIELDS: readonly FieldConfig[] = [
   },
   {
     field: "instructionsTriage",
-    label: "Inbox automation instructions",
+    label: "Inbox routine instructions",
     description:
-      "Applied on top of global guidance during unattended inbox automation.",
+      "Applied on top of global guidance during unattended inbox routines.",
   },
 ];
 

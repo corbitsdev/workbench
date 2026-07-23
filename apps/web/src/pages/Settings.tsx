@@ -279,7 +279,7 @@ export default function Settings() {
         <SettingsGroup
           id="myra-defaults"
           title="Myra defaults"
-          description="Pick which Myra definition powers your chat and inbox automation."
+          description="Pick which Myra definition powers your chat and inbox routines."
         >
           <MyraDefaultsPanel tenantId={activeTenantId} />
         </SettingsGroup>
@@ -287,7 +287,7 @@ export default function Settings() {
         <SettingsGroup
           id="myra-instructions"
           title="Standing instructions"
-          description="Guidance Myra follows on every reply — set once globally, and optionally override it for chat or inbox automation."
+          description="Guidance Myra follows on every reply — set once globally, and optionally override it for chat or inbox routines."
         >
           <MyraInstructionsPanel tenantId={activeTenantId} />
         </SettingsGroup>
@@ -295,7 +295,7 @@ export default function Settings() {
         <SettingsGroup
           id="myra-style"
           title="Personality & style"
-          description="Shape how Myra talks and works. Personality, emoji use, and UI type apply everywhere; artifact, tool, and skill usage can differ between chat and inbox automation."
+          description="Shape how Myra talks and works. Personality, emoji use, and UI type apply everywhere; artifact, tool, and skill usage can differ between chat and inbox routines."
         >
           <MyraStylePanel tenantId={activeTenantId} />
         </SettingsGroup>
@@ -334,7 +334,7 @@ export default function Settings() {
           }
         >
           <div id={MORNING_BRIEF_ANCHOR_ID} className="scroll-mt-4">
-            <PreferencesPanel categories={["Automations"]} />
+            <PreferencesPanel categories={["Routines"]} />
           </div>
           <PreferencesPanel categories={["Inbox", "Notifications"]} />
           <ConnectedToInboxPanel />

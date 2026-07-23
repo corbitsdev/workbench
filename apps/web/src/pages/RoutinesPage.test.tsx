@@ -90,7 +90,7 @@ mock.module("../lib/hub-api", () => ({
   deleteMeSchedule,
 }));
 
-const { AutomationsPage } = await import("./AutomationsPage");
+const { RoutinesPage } = await import("./RoutinesPage");
 
 function renderPage() {
   const client = new QueryClient({
@@ -98,7 +98,7 @@ function renderPage() {
   });
   return render(
     <QueryClientProvider client={client}>
-      <AutomationsPage />
+      <RoutinesPage />
     </QueryClientProvider>,
   );
 }
@@ -109,14 +109,14 @@ afterEach(() => {
   updateMeSchedule.mockClear();
 });
 
-describe("AutomationsPage (CL-3862)", () => {
+describe("RoutinesPage (CL-3862)", () => {
   it("lists schedulable workflows with Morning brief product name and status", async () => {
     renderPage();
     await waitFor(() => {
-      expect(screen.getByTestId("automations-page")).toBeTruthy();
-      expect(screen.getByTestId("automation-row-heartbeat")).toBeTruthy();
+      expect(screen.getByTestId("routines-page")).toBeTruthy();
+      expect(screen.getByTestId("routine-row-heartbeat")).toBeTruthy();
       expect(
-        screen.getByTestId("automation-row-last30days-research"),
+        screen.getByTestId("routine-row-last30days-research"),
       ).toBeTruthy();
     });
     expect(screen.getByText("Morning brief")).toBeTruthy();

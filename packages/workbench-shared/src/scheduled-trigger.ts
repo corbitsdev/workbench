@@ -17,7 +17,7 @@ export const SCHEDULE_SCOPES = [
   "tenant",
 ] as const satisfies readonly ScheduleScope[];
 
-// Automation triggers that fire a workflow run on a daily cadence.
+// Routine triggers that fire a workflow run on a daily cadence.
 // The hub scheduler loads enabled rows each tick and starts a run for any whose
 // target UTC hour has arrived and has not already fired today. These schemas are
 // the API boundary between the hub routes and the web client.

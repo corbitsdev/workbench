@@ -19,14 +19,14 @@ import {
 
 export const PREFERENCE_CATEGORIES = [
   "Agent",
-  "Automations",
+  "Routines",
   "Notifications",
   "Inbox",
   "General",
 ] as const;
 
 export const PreferenceCategorySchema = type(
-  "'Agent' | 'Automations' | 'Notifications' | 'Inbox' | 'General'",
+  "'Agent' | 'Routines' | 'Notifications' | 'Inbox' | 'General'",
 );
 export type PreferenceCategory = typeof PreferenceCategorySchema.infer;
 
@@ -95,7 +95,7 @@ const PREFERENCE_REGISTRY_BASE: readonly PreferenceEntry[] = [
     default: 13,
     label: "Morning brief time",
     description: "When your morning brief arrives.",
-    category: "Automations",
+    category: "Routines",
     // Owner feature grant is the product kill switch (CL-3823). Heartbeat
     // deploy is still required for the brief to run; that is enforced at
     // schedule/run time, not by double-gating this control.
@@ -176,7 +176,7 @@ const PREFERENCE_REGISTRY_BASE: readonly PreferenceEntry[] = [
     label: "Triage may create tasks",
     description:
       "Let Myra's inbox triage leave a task behind for an actionable message.",
-    category: "Automations",
+    category: "Routines",
     availableWhen: { kind: "feature-enabled", feature: "triage" },
   },
   // Gated on the owner feature grant for the task reconciler (CL-3823). The
@@ -190,7 +190,7 @@ const PREFERENCE_REGISTRY_BASE: readonly PreferenceEntry[] = [
     label: "Auto-send tasks to CRM",
     description:
       "Push new tasks to your connected CRM/tracker automatically instead of sending them on request.",
-    category: "Automations",
+    category: "Routines",
     availableWhen: { kind: "feature-enabled", feature: "tasks-reconciler" },
   },
   {
@@ -378,7 +378,7 @@ const BRIEF_SOURCE_ENTRIES: readonly PreferenceEntry[] =
     default: source.defaultEnabled,
     label: source.label,
     description: source.description,
-    category: "Automations",
+    category: "Routines",
   }));
 
 const INBOX_SOURCE_ENTRIES: readonly PreferenceEntry[] =

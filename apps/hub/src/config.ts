@@ -433,7 +433,7 @@ export function loadConfig() {
         "milliseconds",
       ),
     },
-    // Automation scheduler. Opt-in kill switch, default OFF (mirrors
+    // Routine scheduler. Opt-in kill switch, default OFF (mirrors
     // workflowAutopublishOnBoot). When enabled, the hub fires durable
     // scheduled_trigger rows on a daily UTC-hour cadence and seeds one
     // heartbeat schedule per Myra member at `heartbeatHourUtc` on boot.

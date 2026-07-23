@@ -1904,7 +1904,7 @@ void workflowReconciler
     });
   });
 
-// Automation scheduler: fire durable scheduled_trigger rows on a
+// Routine scheduler: fire durable scheduled_trigger rows on a
 // daily UTC-hour cadence by calling the run-start service directly (no HTTP
 // self-call). Single-replica assumption — like the disconnect reconciler, N
 // replicas would fire N runs/schedule/day; a DB-backed fire-lock is the

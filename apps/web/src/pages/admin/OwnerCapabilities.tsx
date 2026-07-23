@@ -128,7 +128,7 @@ export function OwnerCapabilities() {
       <div>
         <h2 className="mb-2 text-sm font-semibold text-text">Features</h2>
         <p className="mb-2 text-sm text-text-2">
-          Turn background automation on or off for this workbench.
+          Turn background routines on or off for this workbench.
         </p>
         {featureError && (
           <p className="mb-2 text-sm text-red" role="status">
@@ -235,9 +235,7 @@ export function OwnerCapabilities() {
                     className="flex items-center justify-between gap-4 p-3"
                   >
                     <div className="min-w-0">
-                      <p className="text-sm font-medium text-text">
-                        {s.label}
-                      </p>
+                      <p className="text-sm font-medium text-text">{s.label}</p>
                       <p className="mt-0.5 text-xs text-text-2">
                         {s.description}
                       </p>
@@ -298,8 +296,7 @@ export function OwnerCapabilities() {
                   // provider that is.
                   const busy =
                     toggleOauthCapability.isPending &&
-                    toggleOauthCapability.variables?.provider ===
-                      cap.provider;
+                    toggleOauthCapability.variables?.provider === cap.provider;
                   return (
                     <li
                       key={cap.provider}

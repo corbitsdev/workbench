@@ -427,10 +427,7 @@ export async function getOwnerDeadWorkUnits(): Promise<OwnerWorkUnitRow[]> {
 export async function getOwnerAgedLeasedWorkUnits(): Promise<
   OwnerWorkUnitRow[]
 > {
-  const raw = await hubFetch<unknown>(
-    "GET",
-    "v1/owner/work-units/aged-leased",
-  );
+  const raw = await hubFetch<unknown>("GET", "v1/owner/work-units/aged-leased");
   const parsed = OwnerWorkUnitListResponseSchema(raw);
   if (parsed instanceof type.errors) {
     throw new Error(
@@ -471,9 +468,7 @@ export async function discardOwnerWorkUnit(
   );
   const parsed = OwnerWorkUnitOpResultSchema(raw);
   if (parsed instanceof type.errors) {
-    throw new Error(
-      `Malformed work-unit discard response: ${parsed.summary}`,
-    );
+    throw new Error(`Malformed work-unit discard response: ${parsed.summary}`);
   }
   return parsed;
 }
@@ -608,7 +603,7 @@ export async function getWorkflowsCatalog(
   return parsed;
 }
 
-/** The caller's own automation schedules, parsed at the boundary. Reads the
+/** The caller's own routine schedules, parsed at the boundary. Reads the
  * first page of the keyset-paginated list; nextCursor is ignored for now. */
 export async function listMeSchedules(): Promise<ScheduledTrigger[]> {
   const raw = await hubFetch<unknown>("GET", "v1/me/schedules");

@@ -131,7 +131,7 @@ describe("MyraInstructionsPanel", () => {
     expect(textareaFor("Chat instructions").value).toBe(
       "Keep chat replies short.",
     );
-    expect(textareaFor("Inbox automation instructions").value).toBe("");
+    expect(textareaFor("Inbox routine instructions").value).toBe("");
   });
 
   it("saves an edited field and PUTs only that field", async () => {

@@ -13,7 +13,7 @@ import { adminTableCard } from "./admin-ui";
 /**
  * Owner → Schedules (CL-4113). Control-plane list of **Everyone**
  * (tenant-scoped) schedules for the root workbench tenant — kind, cadence,
- * last/next fire, pause. Personal schedules stay under member Automations.
+ * last/next fire, pause. Personal schedules stay under member Routines.
  *
  * Labels use `workflowKind` (owner workflow catalog has no display names).
  */
@@ -59,10 +59,10 @@ export function OwnerSchedules() {
   return (
     <div className="space-y-4">
       <p className="text-sm text-text-2">
-        Workspace automations scheduled for{" "}
+        Workspace routines scheduled for{" "}
         <span className="font-medium text-text">Everyone</span> — one run per
         fire for the whole workbench, not once per member. Personal schedules
-        live under each member&rsquo;s Automations list.
+        live under each member&rsquo;s Routines list.
       </p>
       {error && (
         <p className="text-sm text-red-500" role="status">

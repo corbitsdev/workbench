@@ -12,7 +12,7 @@ export const MYRA_INSTRUCTIONS_MAX_LENGTH = 4000;
 
 /**
  * The two Myra surfaces a member can pick a definition for: interactive chat
- * threads and unattended inbox-triage automation runs.
+ * threads and unattended inbox-triage routine runs.
  */
 export const MyraVariantSchema = type({
   id: "string",

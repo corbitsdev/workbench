@@ -315,7 +315,7 @@ export async function listRunnableWorkflowKinds(
 
 // Whether `kind` is runnable for the tenant: resolves the tenant's ancestor
 // chain and checks the kind against the runnable catalog. The single gate the
-// /me automation routes apply before accepting a workflow kind from a client.
+// /me routine routes apply before accepting a workflow kind from a client.
 export async function isRunnableKind(
   db: HubDb,
   tenantId: string,

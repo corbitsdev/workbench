@@ -124,7 +124,7 @@ describe("displayForInstance", () => {
     );
     expect(result).toEqual({
       name: "Myra — Q3 renewal follow-up",
-      badgeLabel: "Inbox automation",
+      badgeLabel: "Inbox routine",
     });
   });
 
@@ -163,7 +163,7 @@ describe("displayForInstance", () => {
       ),
     ).toEqual({
       name: "Myra — Invoice question",
-      badgeLabel: "Inbox automation",
+      badgeLabel: "Inbox routine",
     });
   });
 });

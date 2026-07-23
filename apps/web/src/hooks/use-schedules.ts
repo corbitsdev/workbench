@@ -12,7 +12,7 @@ import {
 
 const SCHEDULES_KEY = ["me-schedules"] as const;
 
-// The caller's own automation schedules. Server-derived identity means these are
+// The caller's own routine schedules. Server-derived identity means these are
 // never tenant-keyed — they belong to the authenticated member.
 export function useMeSchedules(options?: { enabled?: boolean }) {
   return useQuery<ScheduledTrigger[]>({

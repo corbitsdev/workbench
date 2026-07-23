@@ -139,10 +139,10 @@ describe("PREFERENCE_REGISTRY", () => {
     ]);
   });
 
-  test("registers briefHourUtc defaulting to 13 in Automations", () => {
+  test("registers briefHourUtc defaulting to 13 in Routines", () => {
     const entry = getPreferenceEntry("briefHourUtc");
     expect(entry?.type).toBe("hourUtc");
-    expect(entry?.category).toBe("Automations");
+    expect(entry?.category).toBe("Routines");
     expect(entry?.default).toBe(13);
   });
 
@@ -158,7 +158,7 @@ describe("PREFERENCE_REGISTRY", () => {
   test("registers the tasks toggles with defaults that keep current behavior", () => {
     const triageCreate = getPreferenceEntry("tasksTriageCreate");
     expect(triageCreate?.type).toBe("boolean");
-    expect(triageCreate?.category).toBe("Automations");
+    expect(triageCreate?.category).toBe("Routines");
     expect(triageCreate?.default).toBe(true);
 
     // Task-event mail is a single preference owned by the delivery seam.
@@ -168,7 +168,7 @@ describe("PREFERENCE_REGISTRY", () => {
 
     const autoSend = getPreferenceEntry("tasksAutoSendAdapter");
     expect(autoSend?.type).toBe("boolean");
-    expect(autoSend?.category).toBe("Automations");
+    expect(autoSend?.category).toBe("Routines");
     expect(autoSend?.default).toBe(false);
 
     const showCompleted = getPreferenceEntry("tasksShowCompleted");
@@ -187,7 +187,7 @@ describe("PREFERENCE_REGISTRY", () => {
     for (const source of BRIEF_SOURCE_CATALOG) {
       const entry = getPreferenceEntry(briefSourcePreferenceKey(source.key));
       expect(entry?.type).toBe("boolean");
-      expect(entry?.category).toBe("Automations");
+      expect(entry?.category).toBe("Routines");
       expect(entry?.default).toBe(false);
       expect(source.defaultEnabled).toBe(false);
     }

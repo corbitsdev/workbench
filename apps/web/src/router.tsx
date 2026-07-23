@@ -27,7 +27,7 @@ import { ChatsListPage } from "./pages/ChatsListPage";
 import { ArtifactsPage } from "./pages/ArtifactsPage";
 import { ArtifactDetailPage } from "./pages/ArtifactDetailPage";
 import { WorkflowsPage } from "./pages/WorkflowsPage";
-import { AutomationsPage } from "./pages/AutomationsPage";
+import { RoutinesPage } from "./pages/RoutinesPage";
 import { InboxPage } from "./pages/InboxPage";
 import Settings from "./pages/Settings";
 import SettingsLayout from "./pages/SettingsLayout";
@@ -307,7 +307,11 @@ export const router = createBrowserRouter([
           },
           { path: "/workflows", element: <WorkflowsPage /> },
           { path: "/workflows/:workflowId", element: <WorkflowsPage /> },
-          { path: "/automations", element: <AutomationsPage /> },
+          { path: "/routines", element: <RoutinesPage /> },
+          {
+            path: "/automations",
+            element: <Navigate to="/routines" replace />,
+          },
           {
             path: "/settings",
             element: <SettingsLayout />,

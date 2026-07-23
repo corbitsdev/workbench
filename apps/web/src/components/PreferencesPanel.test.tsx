@@ -66,7 +66,7 @@ const SETTINGS: PreferenceSetting[] = [
     default: false,
     label: "Auto-send tasks to CRM",
     description: "Push new tasks to your connected CRM automatically.",
-    category: "Automations",
+    category: "Routines",
     value: false,
     availableWhen: { kind: "feature-enabled", feature: "tasks-reconciler" },
   },

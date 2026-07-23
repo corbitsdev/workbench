@@ -212,7 +212,7 @@ export const PAGE_CONTEXT_CATALOG: readonly PageContextEntry[] = [
     id: "insights-runs",
     match: (p) => p === "/insights/runs",
     context:
-      "Workflow run history: searchable list of workflow executions with status, timing, and links to traces. Used to debug failures and audit automation.",
+      "Workflow run history: searchable list of workflow executions with status, timing, and links to traces. Used to debug failures and audit routine runs.",
   },
   {
     id: "insights-actor",

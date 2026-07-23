@@ -375,7 +375,7 @@ describe("POST /me/schedules attach gate (CL-3508/CL-3509)", () => {
     );
     expect(res.status).toBe(400);
     expect(await res.json()).toEqual({
-      error: 'workflow "multi-gate" is not available for Automations schedules',
+      error: 'workflow "multi-gate" is not available for Routines schedules',
     });
     expect(storeCalls.find((c) => c.fn === "create")).toBeUndefined();
   });
@@ -392,7 +392,7 @@ describe("POST /me/schedules attach gate (CL-3508/CL-3509)", () => {
     );
     expect(res.status).toBe(400);
     expect(await res.json()).toEqual({
-      error: 'workflow "deck" is not available for Automations schedules',
+      error: 'workflow "deck" is not available for Routines schedules',
     });
     expect(storeCalls.some((c) => c.fn === "create")).toBe(false);
   });
