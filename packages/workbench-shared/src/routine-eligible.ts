@@ -7,6 +7,7 @@ export const ROUTINE_ELIGIBLE_KINDS = [
   "granola-call",
   "firecrawl-url-watch",
   "exa-topic-watch",
+  "reddit-opportunity-watch",
 ] as const;
 
 export type RoutineEligibleKind = (typeof ROUTINE_ELIGIBLE_KINDS)[number];

@@ -13,6 +13,7 @@ describe("ROUTINE_ELIGIBLE_KINDS", () => {
       "granola-call",
       "firecrawl-url-watch",
       "exa-topic-watch",
+      "reddit-opportunity-watch",
     ]);
   });
 });
