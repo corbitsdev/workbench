@@ -288,6 +288,16 @@ export const WRITE_ARTIFACT_DEFINITION: ArtifactToolDefinition = {
         description:
           "Optional prefix prepended verbatim to title (include any separator, e.g. 'Transcript — '). For callers that derive title from upstream data but cannot concatenate strings.",
       },
+      parentSourceRefPrefix: {
+        type: "string",
+        description:
+          "Optional lineage: composes the PARENT artifact's sourceRef as `<parentSourceRefPrefix>-<parentSourceRefKey>`, resolved to that artifact's id and stamped as this artifact's parent. Best-effort — a missing parent never fails the write. Requires parentSourceRefKey.",
+      },
+      parentSourceRefKey: {
+        type: "string",
+        description:
+          "Optional per-item key joined with parentSourceRefPrefix into the parent's sourceRef. Requires parentSourceRefPrefix.",
+      },
     },
     required: ["title", "body", "kind"],
   },

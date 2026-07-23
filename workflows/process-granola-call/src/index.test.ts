@@ -42,9 +42,9 @@ describe("process-granola-call workflow", () => {
     ]);
     expect(stepPrimitive("transcript").after).toEqual(["fetch"]);
     expect(stepPrimitive("extract").after).toEqual(["fetch"]);
-    expect(stepPrimitive("processed").after).toEqual(["extract"]);
+    expect(stepPrimitive("processed").after).toEqual(["extract", "transcript"]);
     expect(stepPrimitive("finalize").after).toEqual(["extract"]);
-    expect(stepPrimitive("persist").after).toEqual(["finalize"]);
+    expect(stepPrimitive("persist").after).toEqual(["finalize", "processed"]);
   });
 
   test("fetch maps the intake noteId to granola_get_note", () => {
@@ -72,6 +72,21 @@ describe("process-granola-call workflow", () => {
       "granola-call-note",
     ]);
     expect(new Set(prefixes).size).toBe(3);
+  });
+
+  test("lineage: working notes descend from the transcript, call notes from the working notes", () => {
+    const processed = argMapOf("processed");
+    expect(processed.parentSourceRefPrefix).toEqual({
+      literal: "granola-transcript",
+    });
+    expect(processed.parentSourceRefKey).toEqual({ from: "noteId" });
+    const persist = argMapOf("persist");
+    expect(persist.parentSourceRefPrefix).toEqual({
+      literal: "granola-processed",
+    });
+    expect(persist.parentSourceRefKey).toEqual({ from: "noteId" });
+    // The transcript is the chain root — no parent.
+    expect(argMapOf("transcript").parentSourceRefPrefix).toBeUndefined();
   });
 
   test("reasoning outputs reach artifact bodies through the invoker's real field (reply)", () => {

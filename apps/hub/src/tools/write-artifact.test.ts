@@ -20,6 +20,7 @@ type InsertedArtifact = {
   content: string;
   status: string;
   sourceRef?: string;
+  parentId?: string;
   source: {
     origin: string;
     citations: unknown[];
@@ -43,6 +44,8 @@ function makeMockDb(
     captureVersionInserts?: InsertedVersion[];
     captureArtifactInserts?: InsertedArtifact[];
     captureArtifactUpdates?: Record<string, unknown>[];
+    /** sourceRef → artifact id rows the parent-lineage lookup can resolve. */
+    parentsBySourceRef?: Record<string, string>;
   } = {},
 ) {
   const {
@@ -51,12 +54,40 @@ function makeMockDb(
     captureVersionInserts = [],
     captureArtifactInserts = [],
     captureArtifactUpdates = [],
+    parentsBySourceRef = {},
   } = opts;
 
   let selectCallCount = 0;
 
   // biome-ignore lint/suspicious/noExplicitAny: test mock
   const db: any = {};
+
+  // Parent-lineage lookup: db.query.artifact.findFirst by (tenantId,
+  // sourceRef). The fake walks the opaque drizzle condition for string
+  // leaves and matches them against the registered parent sourceRefs.
+  db.query = {
+    artifact: {
+      findFirst: async (findOpts: { where: unknown }) => {
+        const strings: string[] = [];
+        const seen = new Set<object>();
+        const walk = (value: unknown): void => {
+          if (typeof value === "string") {
+            strings.push(value);
+            return;
+          }
+          if (value === null || typeof value !== "object") return;
+          if (seen.has(value)) return;
+          seen.add(value);
+          for (const child of Object.values(value)) walk(child);
+        };
+        walk(findOpts.where);
+        for (const [sourceRef, id] of Object.entries(parentsBySourceRef)) {
+          if (strings.includes(sourceRef)) return { id };
+        }
+        return undefined;
+      },
+    },
+  };
 
   db.transaction = mock(
     async <T>(fn: (tx: typeof db) => Promise<T>): Promise<T> => {
@@ -252,6 +283,70 @@ describe("write_artifact tool", () => {
           body: "B",
           kind: "document",
           sourceRefPrefix: "granola-transcript",
+        },
+        SIGNAL,
+      ),
+    ).rejects.toThrow("must be provided together");
+  });
+
+  // Artifact-chain lineage: parentSourceRefPrefix + parentSourceRefKey
+  // compose the PARENT's sourceRef, resolved to its artifact id and stamped
+  // as parentId — so a per-item chain (transcript → working notes → call
+  // notes) renders as a linked family instead of unrelated cards.
+  it("resolves parentSourceRefPrefix/Key to the parent artifact and stamps parentId", async () => {
+    const inserts: InsertedArtifact[] = [];
+    const db = makeMockDb({
+      captureArtifactInserts: inserts,
+      parentsBySourceRef: { "granola-transcript-note_1": "art-parent-1" },
+    });
+    const handler = getStringHandler({ db, tenantId: "t", principalId: "p" });
+
+    await handler(
+      {
+        title: "Working notes",
+        body: "B",
+        kind: "research",
+        sourceRefPrefix: "granola-processed",
+        sourceRefKey: "note_1",
+        parentSourceRefPrefix: "granola-transcript",
+        parentSourceRefKey: "note_1",
+      },
+      SIGNAL,
+    );
+
+    expect(inserts[0]?.parentId).toBe("art-parent-1");
+  });
+
+  it("a missing parent is best-effort: the artifact still writes, without lineage", async () => {
+    const inserts: InsertedArtifact[] = [];
+    const db = makeMockDb({ captureArtifactInserts: inserts });
+    const handler = getStringHandler({ db, tenantId: "t", principalId: "p" });
+
+    await handler(
+      {
+        title: "Working notes",
+        body: "B",
+        kind: "research",
+        parentSourceRefPrefix: "granola-transcript",
+        parentSourceRefKey: "note_missing",
+      },
+      SIGNAL,
+    );
+
+    expect(inserts).toHaveLength(1);
+    expect(inserts[0]?.parentId).toBeUndefined();
+  });
+
+  it("half a parent prefix/key pair fails loudly", async () => {
+    const db = makeMockDb({});
+    const handler = getStringHandler({ db, tenantId: "t", principalId: "p" });
+    await expect(
+      handler(
+        {
+          title: "T",
+          body: "B",
+          kind: "research",
+          parentSourceRefKey: "note_1",
         },
         SIGNAL,
       ),

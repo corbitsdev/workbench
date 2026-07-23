@@ -161,7 +161,7 @@
           "tags": {
             "workbench.stepKind": "deterministic-tool",
             "workbench.tool": "@workbench/tools-artifact/artifact:write_artifact",
-            "workbench.argMap": "{\"title\":{\"fromJson\":\"content\",\"field\":\"title\"},\"titlePrefix\":{\"literal\":\"Working notes — \"},\"body\":{\"from\":\"reply\"},\"kind\":{\"literal\":\"research\"},\"sourceRefPrefix\":{\"literal\":\"granola-processed\"},\"sourceRefKey\":{\"from\":\"noteId\"},\"jobLabel\":{\"literal\":\"Process Granola Call\"}}",
+            "workbench.argMap": "{\"title\":{\"fromJson\":\"content\",\"field\":\"title\"},\"titlePrefix\":{\"literal\":\"Working notes — \"},\"body\":{\"from\":\"reply\"},\"kind\":{\"literal\":\"research\"},\"sourceRefPrefix\":{\"literal\":\"granola-processed\"},\"sourceRefKey\":{\"from\":\"noteId\"},\"parentSourceRefPrefix\":{\"literal\":\"granola-transcript\"},\"parentSourceRefKey\":{\"from\":\"noteId\"},\"jobLabel\":{\"literal\":\"Process Granola Call\"}}",
             "workbench.title": "Save the working notes"
           }
         },
@@ -180,7 +180,8 @@
           ]
         },
         "after": [
-          "extract"
+          "extract",
+          "transcript"
         ]
       },
       "finalize": {
@@ -239,7 +240,7 @@
           "tags": {
             "workbench.stepKind": "deterministic-tool",
             "workbench.tool": "@workbench/tools-artifact/artifact:write_artifact",
-            "workbench.argMap": "{\"title\":{\"fromJson\":\"content\",\"field\":\"title\"},\"body\":{\"from\":\"reply\"},\"kind\":{\"literal\":\"research\"},\"sourceRefPrefix\":{\"literal\":\"granola-call-note\"},\"sourceRefKey\":{\"from\":\"noteId\"},\"jobLabel\":{\"literal\":\"Process Granola Call\"}}",
+            "workbench.argMap": "{\"title\":{\"fromJson\":\"content\",\"field\":\"title\"},\"body\":{\"from\":\"reply\"},\"kind\":{\"literal\":\"research\"},\"sourceRefPrefix\":{\"literal\":\"granola-call-note\"},\"sourceRefKey\":{\"from\":\"noteId\"},\"parentSourceRefPrefix\":{\"literal\":\"granola-processed\"},\"parentSourceRefKey\":{\"from\":\"noteId\"},\"jobLabel\":{\"literal\":\"Process Granola Call\"}}",
             "workbench.title": "Save the call notes"
           }
         },
@@ -258,7 +259,8 @@
           ]
         },
         "after": [
-          "finalize"
+          "finalize",
+          "processed"
         ]
       }
     },

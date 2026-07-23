@@ -45,6 +45,11 @@ export async function writeArtifactDeduped(params: {
    * (tenantId, sourceRef) instead of (principalId, title, kind).
    */
   sourceRef?: string;
+  /** Optional lineage parent (an existing artifact's id). Stamped on create
+   * and overwritten on re-write WHEN SUPPLIED; a re-write that omits it
+   * leaves any existing parentId untouched (there is deliberately no
+   * un-parenting path through this tool). */
+  parentId?: string;
 }): Promise<{ artifactId: string; version: number }> {
   const {
     db,
@@ -56,6 +61,7 @@ export async function writeArtifactDeduped(params: {
     source,
     ownerPrincipalId,
     sourceRef,
+    parentId,
   } = params;
   const normalizedSourceRef =
     typeof sourceRef === "string" && sourceRef.trim().length > 0
@@ -112,6 +118,7 @@ export async function writeArtifactDeduped(params: {
             ...(normalizedSourceRef !== undefined
               ? { sourceRef: normalizedSourceRef }
               : {}),
+            ...(parentId !== undefined ? { parentId } : {}),
             kind,
             title,
             content: body,
@@ -152,6 +159,7 @@ export async function writeArtifactDeduped(params: {
             source,
             version: nextVersion,
             updatedAt: now,
+            ...(parentId !== undefined ? { parentId } : {}),
             ...(ownerPrincipalId !== undefined
               ? { ownerPrincipalId: ownerPrincipalId ?? null }
               : {}),
@@ -304,6 +312,46 @@ export function createWriteArtifactTool(
             ? `${refPrefix}-${refKey}`
             : undefined);
 
+        // Artifact-chain lineage: the parent pair composes the PARENT
+        // artifact's sourceRef, resolved to its id and stamped as parentId.
+        // Best-effort by design — a missing parent (e.g. an upstream
+        // artifact deleted between steps) must never fail the write; the
+        // lineage is presentation, the content is the product.
+        const parentPrefix =
+          typeof args.parentSourceRefPrefix === "string" &&
+          args.parentSourceRefPrefix.trim() !== ""
+            ? args.parentSourceRefPrefix.trim()
+            : undefined;
+        const parentKey =
+          typeof args.parentSourceRefKey === "string" &&
+          args.parentSourceRefKey.trim() !== ""
+            ? args.parentSourceRefKey.trim()
+            : undefined;
+        if ((parentPrefix === undefined) !== (parentKey === undefined)) {
+          throw new Error(
+            "write_artifact: parentSourceRefPrefix and parentSourceRefKey must be provided together",
+          );
+        }
+        let parentId: string | undefined;
+        if (parentPrefix !== undefined && parentKey !== undefined) {
+          const parentRef = `${parentPrefix}-${parentKey}`;
+          const parent = await context.db.query.artifact.findFirst({
+            where: and(
+              eq(artifact.tenantId, context.tenantId),
+              eq(artifact.sourceRef, parentRef),
+            ),
+            columns: { id: true },
+          });
+          if (parent !== undefined) {
+            parentId = parent.id;
+          } else {
+            log.warn(
+              "write_artifact: parent sourceRef resolved to no artifact; writing without lineage",
+              { title, parentRef },
+            );
+          }
+        }
+
         const result = await writeArtifactDeduped({
           db: context.db,
           tenantId: context.tenantId,
@@ -313,6 +361,7 @@ export function createWriteArtifactTool(
           kind,
           source,
           ...(sourceRef !== undefined ? { sourceRef } : {}),
+          ...(parentId !== undefined ? { parentId } : {}),
         });
 
         return {

@@ -133,9 +133,18 @@ export const workflow = defineWorkflow({
         kind: { literal: "research" },
         sourceRefPrefix: { literal: "granola-processed" },
         sourceRefKey: { from: "noteId" },
+        // Lineage: working notes descend from the raw transcript, so the
+        // chain renders as a linked family (write_artifact resolves the
+        // parent by its composed sourceRef; best-effort server-side).
+        parentSourceRefPrefix: { literal: "granola-transcript" },
+        parentSourceRefKey: { from: "noteId" },
         jobLabel: { literal: label },
       },
-      after: ["extract"],
+      // transcript is an explicit dependency: the parent lookup is a plain
+      // read at write time, so the parent artifact must exist BEFORE this
+      // step runs — sibling DAG branches run concurrently otherwise and the
+      // lineage silently loses the race.
+      after: ["extract", "transcript"],
     }),
 
     finalize: agentStep({
@@ -175,9 +184,14 @@ export const workflow = defineWorkflow({
         kind: { literal: "research" },
         sourceRefPrefix: { literal: "granola-call-note" },
         sourceRefKey: { from: "noteId" },
+        // Lineage: the final call notes descend from the working notes.
+        parentSourceRefPrefix: { literal: "granola-processed" },
+        parentSourceRefKey: { from: "noteId" },
         jobLabel: { literal: label },
       },
-      after: ["finalize"],
+      // processed is an explicit dependency for the same lineage-race
+      // reason as transcript above.
+      after: ["finalize", "processed"],
     }),
   },
 });
