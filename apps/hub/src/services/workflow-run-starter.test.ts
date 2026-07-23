@@ -827,8 +827,9 @@ describe("createWorkflowRunStarter", () => {
   // with no list ids sailed past start and died several steps in at the first
   // Sumble step dereferencing an absent `enterpriseEngineListId`. Required
   // inputs must fail the run BEFORE any deployment is provisioned, naming
-  // exactly what is missing.
-  it("rejects a prospect-engine run missing its required Sumble list ids and Slack channel", async () => {
+  // exactly what is missing. Slack is NOT a required input (CL-4288) — the
+  // digest always mails to the user's inbox regardless of Slack config.
+  it("rejects a prospect-engine run missing its required Sumble list ids", async () => {
     chainRef = ["t-root"];
     let provisioned = false;
     const starter = createWorkflowRunStarter(
@@ -852,13 +853,51 @@ describe("createWorkflowRunStarter", () => {
     expect(result.ok).toBe(false);
     if (result.ok) throw new Error("expected invalid_input");
     expect(result.reason).toBe("invalid_input");
-    expect(result.message).toContain("Slack channel id");
+    expect(result.message).not.toContain("Slack channel id");
     expect(result.message).toContain("Engine - Growth Sumble list id");
     expect(result.message).toContain("Engine - Enterprise Sumble list id");
     expect(provisioned).toBe(false);
   });
 
-  it("starts a prospect-engine run once Slack channel and both Engine list ids are present", async () => {
+  it("starts a prospect-engine run once both Engine list ids are present, with no Slack channel", async () => {
+    chainRef = ["t-root"];
+    const sent: Record<string, unknown>[] = [];
+    const sessionService = {
+      sendUserMessage: async (a: Record<string, unknown>) => {
+        sent.push(a);
+      },
+    } as unknown as SessionService;
+
+    const starter = createWorkflowRunStarter(
+      starterDeps({
+        db: makeDb([
+          candidate({ deploymentId: "dep-1", kind: "prospect-engine" }),
+        ]),
+        sessionService,
+      }),
+    );
+
+    const result = await starter.startRun({
+      kind: "prospect-engine",
+      tenantId: "t-root",
+      input: {
+        growthEngineListId: "80089",
+        enterpriseEngineListId: "80090",
+      },
+    });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error("expected ok result");
+    const delivered = JSON.parse(sent[0]?.content as string) as Record<
+      string,
+      unknown
+    >;
+    expect(delivered.growthEngineListId).toBe(80089);
+    expect(delivered.enterpriseEngineListId).toBe(80090);
+    expect(delivered.slackChannelId).toBeUndefined();
+  });
+
+  it("starts a prospect-engine run with a Slack channel present alongside both Engine list ids", async () => {
     chainRef = ["t-root"];
     const sent: Record<string, unknown>[] = [];
     const sessionService = {
@@ -892,6 +931,7 @@ describe("createWorkflowRunStarter", () => {
       string,
       unknown
     >;
+    expect(delivered.slackChannelId).toBe("C0123456789");
     expect(delivered.growthEngineListId).toBe(80089);
     expect(delivered.enterpriseEngineListId).toBe(80090);
   });

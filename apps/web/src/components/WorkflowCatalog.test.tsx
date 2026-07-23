@@ -121,6 +121,31 @@ const catalog: WorkflowCatalog = {
       allowedScopes: ["personal"] as const,
       defaultScope: "personal" as const,
     },
+    {
+      kind: "prospect-engine",
+      label: "Prospect Engine",
+      isFavorite: false,
+      stepCount: 1,
+      pauseCount: 0,
+      steps: [{ id: "c", title: "Discover", kind: "auto", stepIds: ["c"] }],
+      attachable: true,
+      intakeFields: [
+        {
+          name: "growthEngineListId",
+          label: "Engine - Growth Sumble list id",
+          inputHint: "text",
+          required: true,
+        },
+        {
+          name: "slackChannelId",
+          label: "Slack channel id (optional)",
+          inputHint: "text",
+          required: false,
+        },
+      ],
+      allowedScopes: ["personal"] as const,
+      defaultScope: "personal" as const,
+    },
   ],
 };
 
@@ -223,6 +248,61 @@ describe("WorkflowCatalog", () => {
     fireEvent.click(screen.getByText("Morning Brief"));
     const link = screen.getByRole("link", { name: "Schedule in Routines →" });
     expect(link.getAttribute("href")).toBe("/routines");
+  });
+
+  it("collects required inline inputs and blocks start until they are filled", async () => {
+    renderCatalog(onWorkflowStarted);
+    fireEvent.click(screen.getByText("Prospect Engine"));
+
+    const startButton = screen.getByRole("button", {
+      name: /start run/i,
+    }) as HTMLButtonElement;
+    expect(startButton.disabled).toBe(true);
+
+    fireEvent.change(screen.getByLabelText(/Engine - Growth Sumble list id/i), {
+      target: { value: "80089" },
+    });
+    expect(startButton.disabled).toBe(false);
+
+    fireEvent.click(startButton);
+    await waitFor(() =>
+      expect(onWorkflowStarted).toHaveBeenCalledWith("started-prospect-engine"),
+    );
+    expect(lastStartVars).toMatchObject({
+      kind: "prospect-engine",
+      input: { growthEngineListId: "80089" },
+    });
+  });
+
+  it("starts an inline run without the optional Slack channel filled in", async () => {
+    renderCatalog(onWorkflowStarted);
+    fireEvent.click(screen.getByText("Prospect Engine"));
+    fireEvent.change(screen.getByLabelText(/Engine - Growth Sumble list id/i), {
+      target: { value: "80089" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /start run/i }));
+    await waitFor(() =>
+      expect(onWorkflowStarted).toHaveBeenCalledWith("started-prospect-engine"),
+    );
+    const input = lastStartVars?.input as Record<string, unknown>;
+    expect(input.slackChannelId).toBeUndefined();
+  });
+
+  it("resets inline input values when switching to a different workflow", () => {
+    renderCatalog(onWorkflowStarted);
+    fireEvent.click(screen.getByText("Prospect Engine"));
+    fireEvent.change(screen.getByLabelText(/Engine - Growth Sumble list id/i), {
+      target: { value: "80089" },
+    });
+    fireEvent.click(screen.getByText("Gamma Presentation Creator"));
+    fireEvent.click(screen.getByText("Prospect Engine"));
+    expect(
+      (
+        screen.getByLabelText(
+          /Engine - Growth Sumble list id/i,
+        ) as HTMLInputElement
+      ).value,
+    ).toBe("");
   });
 
   it("shows loading, error, and empty states", () => {

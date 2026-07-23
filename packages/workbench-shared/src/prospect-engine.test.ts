@@ -14,6 +14,7 @@ import {
   dedupeProspectCandidates,
   emptyProspectEngineLedger,
   enrichProspectEngineTriggerPayload,
+  findMissingProspectEngineIntakeFields,
   formatProspectEngineSlackDigest,
   initProspectEngineCreditBudget,
   mergeProspectEngineLedger,
@@ -45,9 +46,8 @@ describe("ProspectEngineTriggerPayloadSchema", () => {
     ).toBe(false);
   });
 
-  test("requires Slack, identity, and both configured Engine list ids", () => {
+  test("requires identity and both configured Engine list ids", () => {
     for (const key of [
-      "slackChannelId",
       "userAddress",
       "growthEngineListId",
       "enterpriseEngineListId",
@@ -59,16 +59,30 @@ describe("ProspectEngineTriggerPayloadSchema", () => {
       ).toBe(true);
     }
   });
+
+  test("accepts a payload with no Slack channel configured", () => {
+    const candidate: Record<string, unknown> = { ...payload };
+    delete candidate.slackChannelId;
+    expect(
+      ProspectEngineTriggerPayloadSchema(candidate) instanceof type.errors,
+    ).toBe(false);
+  });
 });
 
 describe("ProspectEngineIntakePayloadSchema", () => {
-  test("requires Slack channel and both Engine list ids", () => {
+  test("requires both Engine list ids but not a Slack channel", () => {
     expect(ProspectEngineIntakePayloadSchema({}) instanceof type.errors).toBe(
       true,
     );
     expect(
       ProspectEngineIntakePayloadSchema({
         slackChannelId: "C1",
+        growthEngineListId: "12",
+        enterpriseEngineListId: 34,
+      }) instanceof type.errors,
+    ).toBe(false);
+    expect(
+      ProspectEngineIntakePayloadSchema({
         growthEngineListId: "12",
         enterpriseEngineListId: 34,
       }) instanceof type.errors,
@@ -104,6 +118,37 @@ describe("enrichProspectEngineTriggerPayload", () => {
     expect(enriched.growthEngineListId).toBe(80089);
     expect(enriched.enterpriseEngineListId).toBe(80090);
     expect(coercePositiveIntId("not-a-number")).toBeUndefined();
+  });
+
+  test("leaves slackChannelId absent when never supplied", () => {
+    const nowMs = Date.parse("2026-07-20T06:00:00.000Z");
+    const enriched = enrichProspectEngineTriggerPayload(
+      { growthEngineListId: "80089", enterpriseEngineListId: "80090" },
+      nowMs,
+      { userAddress: "usr_abc@workbench.local", userRefId: "usr_abc" },
+      "scheduled",
+    );
+    expect(enriched.slackChannelId).toBeUndefined();
+  });
+});
+
+describe("findMissingProspectEngineIntakeFields", () => {
+  test("does not flag a missing Slack channel", () => {
+    expect(
+      findMissingProspectEngineIntakeFields({
+        growthEngineListId: 1,
+        enterpriseEngineListId: 2,
+      }),
+    ).toEqual([]);
+  });
+
+  test("flags a genuinely missing required list id", () => {
+    expect(
+      findMissingProspectEngineIntakeFields({
+        slackChannelId: "C1",
+        enterpriseEngineListId: 2,
+      }),
+    ).toEqual(["growthEngineListId"]);
   });
 });
 
@@ -289,7 +334,12 @@ describe("qualify + formatters", () => {
   test("mergeProspectEngineShortlist preserves base membership and strips phones", () => {
     const base = [
       { organizationId: 1, name: "Acme", lane: "growth" as const, score: 80 },
-      { organizationId: 2, name: "Beta", lane: "enterprise" as const, score: 70 },
+      {
+        organizationId: 2,
+        name: "Beta",
+        lane: "enterprise" as const,
+        score: 70,
+      },
     ];
     const overlay = [
       {

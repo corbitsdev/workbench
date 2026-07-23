@@ -78,7 +78,7 @@ export const ProspectEngineTriggerPayloadSchema = type({
   userRefId: "string > 0",
   runDate: "string > 0",
   artifactTitle: "string > 0",
-  slackChannelId: "string > 0",
+  "slackChannelId?": "string > 0",
   growthEngineListId: "number.integer > 0",
   enterpriseEngineListId: "number.integer > 0",
   "runId?": "string > 0",
@@ -94,7 +94,7 @@ export type ProspectEngineTriggerPayload =
  * Coerced to {@link ProspectEngineTriggerPayload} at fire time.
  */
 export const ProspectEngineIntakePayloadSchema = type({
-  slackChannelId: "string > 0",
+  "slackChannelId?": "string > 0",
   growthEngineListId: "string | number",
   enterpriseEngineListId: "string | number",
   "verticals?": "string[]",
@@ -139,13 +139,14 @@ export function prospectEngineRunDateEt(nowMs: number): string {
  * Human-readable labels for the prospect-engine intake fields a run cannot
  * start without, keyed by the trigger-payload field name. Mirrors the labels
  * on the workflow's own `INTAKE_FIELDS` (Routine setup form) so a run-start
- * validation failure names the same thing the setup form asked for.
+ * validation failure names the same thing the setup form asked for. Slack is
+ * not listed here — it is an optional delivery destination, not a required
+ * input; the digest always mails to the user's inbox.
  */
 export const PROSPECT_ENGINE_REQUIRED_INTAKE_FIELD_LABELS: Record<
   string,
   string
 > = {
-  slackChannelId: "Slack channel id",
   growthEngineListId: "Engine - Growth Sumble list id",
   enterpriseEngineListId: "Engine - Enterprise Sumble list id",
 };
@@ -157,15 +158,13 @@ export const PROSPECT_ENGINE_REQUIRED_INTAKE_FIELD_LABELS: Record<
  * `enterpriseEngineListId` to positive integers and drops them from the
  * payload when the schedule never supplied a valid id, so their absence here
  * IS the "missing required input" signal a run-start check needs.
+ * `slackChannelId` is intentionally not checked — it is optional; the digest
+ * always mails to the user's inbox regardless of whether Slack is configured.
  */
 export function findMissingProspectEngineIntakeFields(
   payload: Record<string, unknown>,
 ): string[] {
   const missing: string[] = [];
-  const slackChannelId = payload.slackChannelId;
-  if (typeof slackChannelId !== "string" || slackChannelId.trim() === "") {
-    missing.push("slackChannelId");
-  }
   if (
     typeof payload.growthEngineListId !== "number" ||
     !Number.isInteger(payload.growthEngineListId) ||
@@ -199,9 +198,11 @@ export function enrichProspectEngineTriggerPayload(
   const enterprise = coercePositiveIntId(triggerPayload.enterpriseEngineListId);
   const slackRaw = triggerPayload.slackChannelId;
   const slackChannelId =
-    typeof slackRaw === "string" ? slackRaw.trim() : String(slackRaw ?? "");
+    typeof slackRaw === "string" && slackRaw.trim().length > 0
+      ? slackRaw.trim()
+      : undefined;
 
-  return {
+  const enriched: Record<string, unknown> = {
     ...triggerPayload,
     reason:
       lookback === "manual-refresh"
@@ -211,10 +212,12 @@ export function enrichProspectEngineTriggerPayload(
     userRefId: memberIdentity.userRefId,
     runDate,
     artifactTitle: `Prospect engine — ${runDate}`,
-    slackChannelId,
-    ...(growth !== undefined ? { growthEngineListId: growth } : {}),
-    ...(enterprise !== undefined ? { enterpriseEngineListId: enterprise } : {}),
   };
+  delete enriched.slackChannelId;
+  if (slackChannelId !== undefined) enriched.slackChannelId = slackChannelId;
+  if (growth !== undefined) enriched.growthEngineListId = growth;
+  if (enterprise !== undefined) enriched.enterpriseEngineListId = enterprise;
+  return enriched;
 }
 
 export const ProspectEngineScoreBreakdownSchema = type({

@@ -70,9 +70,9 @@
     {
       "kind": "text",
       "name": "slackChannelId",
-      "label": "Slack channel id (#prospect-engine)",
+      "label": "Slack channel id (#prospect-engine, optional — digest always mails to your inbox)",
       "placeholder": "C…",
-      "required": true
+      "required": false
     },
     {
       "kind": "text",
@@ -929,7 +929,8 @@
           "tags": {
             "workbench.stepKind": "deterministic-tool",
             "workbench.tool": "@workbench/tools-slack/slack:slack_post_message",
-            "workbench.argMap": "{\"channel\":{\"from\":\"slackChannelId\"},\"text\":{\"from\":\"text\"}}",
+            "workbench.argMap": "{\"channel\":{\"from\":\"slackChannelId\",\"skipStepIfAbsent\":true},\"text\":{\"from\":\"text\"}}",
+            "workbench.nonFatal": "true",
             "workbench.title": "Post the Slack digest"
           }
         },

@@ -31,7 +31,7 @@ const TRIGGER_PAYLOAD_VALIDATORS: Record<string, TriggerPayloadValidator> = {
     const noun = labels.length > 1 ? "inputs" : "input";
     return {
       ok: false,
-      message: `Missing required workflow ${noun}: ${labels.join(", ")}. Set them on the Routine before running.`,
+      message: `Missing required workflow ${noun}: ${labels.join(", ")}. Provide them when starting the run, or set them on a Routine for recurring runs.`,
     };
   },
 };

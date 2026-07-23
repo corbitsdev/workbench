@@ -36,9 +36,10 @@ export const INTAKE_FIELDS = [
   {
     kind: "text",
     name: "slackChannelId",
-    label: "Slack channel id (#prospect-engine)",
+    label:
+      "Slack channel id (#prospect-engine, optional — digest always mails to your inbox)",
     placeholder: "C…",
-    required: true,
+    required: false,
   },
   {
     kind: "text",
@@ -512,6 +513,10 @@ export const workflow = defineWorkflow({
       nonFatal: true,
     }),
 
+    // Slack is one delivery destination among several, not a prerequisite —
+    // the digest already reached the user's inbox via `mail` above. Skip this
+    // step entirely when no channel is configured (skipStepIfAbsent), and
+    // nonFatal as a safety net so a Slack failure never blocks the run.
     notify: deterministicToolStep({
       id: "prospect-engine-post-slack-digest",
       title: "Post the Slack digest",
@@ -523,7 +528,7 @@ export const workflow = defineWorkflow({
         ],
       },
       argMap: {
-        channel: { from: "slackChannelId" },
+        channel: { from: "slackChannelId", skipStepIfAbsent: true },
         text: { from: "text" },
       },
       after: [
@@ -534,6 +539,7 @@ export const workflow = defineWorkflow({
         "formatDigest",
         "mail",
       ],
+      nonFatal: true,
     }),
   },
 });

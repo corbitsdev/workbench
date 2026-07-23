@@ -4,7 +4,13 @@ import {
   PROSPECT_ENGINE_PIPELINE_LIST_ID,
   PROSPECT_ENGINE_WORKFLOW_KIND,
 } from "@workbench/shared";
-import { discoverForbiddenToolsPresent, kind, label, workflow } from "./index";
+import {
+  discoverForbiddenToolsPresent,
+  INTAKE_FIELDS,
+  kind,
+  label,
+  workflow,
+} from "./index";
 
 describe("prospect-engine workflow package", () => {
   test("exports catalog identity", () => {
@@ -89,5 +95,42 @@ describe("prospect-engine workflow package", () => {
     expect(steps.notify?.after ?? []).toContain("persist");
     expect(steps.notify?.after ?? []).toContain("saveLedger");
     expect(steps.notify?.after ?? []).toContain("formatDigest");
+  });
+
+  // CL-4288: Slack is an optional delivery destination, not a prerequisite —
+  // the digest always mails to the user's inbox via the `mail` step regardless
+  // of Slack config. A missing channel must never fail the run.
+  test("Slack channel intake field is optional", () => {
+    const slackField = INTAKE_FIELDS.find((f) => f.name === "slackChannelId");
+    expect(slackField?.required).toBe(false);
+  });
+
+  test("Slack post step is skipped (not fatal) when no channel is configured", () => {
+    const steps = workflow.steps as unknown as Record<
+      string,
+      { agent?: { tags?: Record<string, string> } }
+    >;
+    const tags = steps.notify?.agent?.tags ?? {};
+    expect(tags["workbench.tool"]).toBe(
+      "@workbench/tools-slack/slack:slack_post_message",
+    );
+    expect(tags["workbench.nonFatal"]).toBe("true");
+    const argMap = JSON.parse(tags["workbench.argMap"] ?? "{}") as {
+      channel?: { skipStepIfAbsent?: boolean };
+    };
+    expect(argMap.channel?.skipStepIfAbsent).toBe(true);
+  });
+
+  test("mail step delivers the digest to the user's inbox unconditionally", () => {
+    const steps = workflow.steps as unknown as Record<
+      string,
+      { agent?: { tags?: Record<string, string> } }
+    >;
+    const tags = steps.mail?.agent?.tags ?? {};
+    expect(tags["workbench.tool"]).toBe("mail_send");
+    const argMap = JSON.parse(tags["workbench.argMap"] ?? "{}") as {
+      to?: { from?: string };
+    };
+    expect(argMap.to?.from).toBe("userAddress");
   });
 });

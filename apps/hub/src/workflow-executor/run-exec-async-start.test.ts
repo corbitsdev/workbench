@@ -500,7 +500,7 @@ describe("startWorkflowRun required-input validation (prospect-engine)", () => {
     expect(result.ok).toBe(false);
     if (result.ok) throw new Error("expected a 400 validation failure");
     expect(result.status).toBe(400);
-    expect(result.error).toContain("Slack channel id");
+    expect(result.error).not.toContain("Slack channel id");
     expect(result.error).toContain("Engine - Growth Sumble list id");
     expect(result.error).toContain("Engine - Enterprise Sumble list id");
     expect(provisionCalled).toBe(false);
