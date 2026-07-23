@@ -183,7 +183,7 @@ export function AppSidebar({
       </nav>
 
       {(meQuery.data?.demoLinks?.length ?? 0) > 0 && (
-        <details open className="group/demos mt-3 px-3">
+        <details className="group/demos mt-3 px-3">
           <summary className="flex cursor-pointer list-none items-center gap-1 px-2.5 pb-1 text-[11px] font-medium uppercase tracking-wide text-text-3 hover:text-text-2 [&::-webkit-details-marker]:hidden">
             <ChevronDown
               size={12}
