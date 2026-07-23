@@ -57,6 +57,12 @@ export const LogStepStateSchema = type({
   currentAttempt: "number",
   "outputRef?": "string",
   "lastError?": { message: "string" },
+  // Whether the most recent `StepFailed` for this step exhausted its retry
+  // policy (CL-3509 dead-parked-run follow-up). `phase === "failed"` alone is
+  // a re-entrancy marker between attempts, not a terminal verdict — this is
+  // the field that distinguishes "permanently dead" from "backing off before
+  // the next attempt". Present only once the step has failed at least once.
+  "retriesExhausted?": "boolean",
   "awaitingSignalName?": "string",
   "startedAt?": "string",
   "endedAt?": "string",
@@ -140,6 +146,19 @@ interface StepTiming {
   endedAt?: string;
   awaitedAt?: string;
   gateWaitMs?: number;
+  // The most recent `StepFailed.retriesExhausted` observed for this step
+  // (CL-3509 dead-parked-run follow-up). The native RunState's `failed` phase
+  // is a RE-ENTRANCY MARKER, not a terminal verdict: the runtime commits
+  // `StepFailed` on every attempt, including one it is about to retry after a
+  // backoff (`TimerSet`/`AttemptScheduled` follow in the SAME commit only when
+  // `retriesExhausted` is false). Reading `phase === "failed"` alone cannot
+  // distinguish "this step is permanently dead" from "this step is between
+  // attempts" — only this flag can. Latest-wins is correct: once exhausted, no
+  // further `StepFailed` for this step is possible (phase never leaves
+  // `failed`); while retrying, each new `StepFailed` overwrites the previous
+  // attempt's (always `false`) value, and a step that eventually succeeds
+  // moves phase away from `failed` entirely, making the stale value moot.
+  retriesExhausted?: boolean;
 }
 
 // Derive run + per-step wall-clock timing from each event's `EventBase.at`.
@@ -195,10 +214,19 @@ function deriveTiming(events: readonly WorkflowRunEvent[]): {
         break;
       }
       case "StepCompleted":
-      case "StepFailed":
       case "CancelPropagated": {
         const id = stepId(body);
         if (id !== undefined) ensure(id).endedAt = ts;
+        break;
+      }
+      case "StepFailed": {
+        const id = stepId(body);
+        if (id === undefined) break;
+        ensure(id).endedAt = ts;
+        const exhausted = body["retriesExhausted"];
+        if (typeof exhausted === "boolean") {
+          ensure(id).retriesExhausted = exhausted;
+        }
         break;
       }
       case "SignalAwaited": {
@@ -267,6 +295,8 @@ export interface NativeRunStepProjection {
   attempts: number;
   startedAt?: string;
   endedAt?: string;
+  errorMessage?: string;
+  retriesExhausted?: boolean;
 }
 
 export interface NativeRunStateProjection {
@@ -302,6 +332,12 @@ export async function projectRunStateFromLog(
       attempts: step.currentAttempt,
       ...(t?.startedAt !== undefined ? { startedAt: t.startedAt } : {}),
       ...(t?.endedAt !== undefined ? { endedAt: t.endedAt } : {}),
+      ...(step.lastError !== undefined
+        ? { errorMessage: step.lastError.message }
+        : {}),
+      ...(t?.retriesExhausted !== undefined
+        ? { retriesExhausted: t.retriesExhausted }
+        : {}),
     });
   }
 
@@ -381,6 +417,9 @@ export async function getWorkflowRunStateForRepo(
       ...(t?.startedAt !== undefined ? { startedAt: t.startedAt } : {}),
       ...(t?.endedAt !== undefined ? { endedAt: t.endedAt } : {}),
       ...(t?.gateWaitMs !== undefined ? { gateWaitMs: t.gateWaitMs } : {}),
+      ...(t?.retriesExhausted !== undefined
+        ? { retriesExhausted: t.retriesExhausted }
+        : {}),
     });
   }
 

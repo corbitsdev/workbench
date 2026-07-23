@@ -353,6 +353,19 @@ export const workflowRunStep = pgTable(
     phase: text("phase", { enum: workflowRunStepPhases }).notNull(),
     // The native StepState.currentAttempt (1-based once a step has started).
     attempts: integer("attempts").notNull().default(0),
+    // The native StepState.lastError.message when phase is `failed` (CL-3509
+    // follow-up: dead-parked-run reconciler). Lets the reconciler name the
+    // step that actually failed and why without re-reading the run's git
+    // event log at sweep time.
+    errorMessage: text("error_message"),
+    // The most recent `StepFailed.retriesExhausted` (CL-3509 follow-up). A
+    // `failed` phase is a re-entrancy marker between retry attempts, NOT a
+    // terminal verdict — the runtime commits `StepFailed` on every attempt,
+    // including ones it is about to retry after backoff. The dead-parked-run
+    // reconciler must require this `true` before settling a run: a step still
+    // retrying must never trigger it. Defaults `false` so a pre-migration
+    // failed row never satisfies that join by default.
+    retriesExhausted: boolean("retries_exhausted").notNull().default(false),
     startedAt: timestamp("started_at"),
     endedAt: timestamp("ended_at"),
     createdAt: timestamp("created_at").notNull().defaultNow(),

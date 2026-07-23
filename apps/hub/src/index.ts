@@ -1979,10 +1979,19 @@ const stopAwaitingSupervisorPrewarm = registerAwaitingSupervisorPrewarm({
   reconciler: workflowReconciler,
   intervalMs: config.awaitingSupervisorPrewarmIntervalMs,
 });
-// CL-3509: fail scheduler-fired runs parked at a gate past the timeout. A
-// scheduled run has no human to answer a gate — its `intake` is auto-delivered —
-// so one still `awaiting` long after its last log advance is wedged and is failed
-// legibly instead of lingering in the Now feed. Interactive runs are untouched.
+// CL-3509 (+ dead-parked-run follow-up): two sweeps on one rail. (1) fail
+// scheduler-fired runs parked at a gate past the timeout — a scheduled run has
+// no human to answer a gate, so one still `awaiting` long after its last log
+// advance is wedged. (2) fail ANY run that is `awaiting` a gate while a
+// sibling step has PERMANENTLY failed (retries exhausted) — `@intx/workflow`'s
+// `areDepsResolved` only checks that a dependency is terminal, so a
+// permanently-failed dependency still lets its dependent gate get scheduled
+// and park; nothing a human supplies to that gate can revive the run, so it
+// is settled immediately, not after a timeout. A step still retrying (`failed`
+// is a re-entrancy marker between attempts, not terminal — see
+// `workflowRunStep.retriesExhausted`) never triggers this, and a run
+// legitimately parked at a gate with no permanently-failed step (interactive
+// or otherwise) is never touched by either sweep.
 const stopStalledScheduledRunReconciler = registerStalledScheduledRunReconciler(
   {
     db,

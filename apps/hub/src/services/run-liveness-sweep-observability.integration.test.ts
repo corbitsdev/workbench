@@ -58,6 +58,8 @@ const WORKFLOW_RUN_STEP_DDL = `
     step_id text NOT NULL,
     phase text NOT NULL,
     attempts integer NOT NULL DEFAULT 0,
+    error_message text,
+    retries_exhausted boolean NOT NULL DEFAULT false,
     started_at timestamp,
     ended_at timestamp,
     created_at timestamp NOT NULL DEFAULT now(),
