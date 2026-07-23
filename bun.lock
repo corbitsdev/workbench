@@ -1697,6 +1697,21 @@
         "react": "*",
       },
     },
+    "workflows/github-topic-watch": {
+      "name": "@workbench/workflow-github-topic-watch",
+      "version": "0.1.0",
+      "dependencies": {
+        "@intx/agent": "workspace:*",
+        "@intx/workflow": "workspace:*",
+        "@workbench/agents": "workspace:*",
+        "@workbench/shared": "workspace:*",
+        "arktype": "catalog:",
+      },
+      "devDependencies": {
+        "@types/bun": "latest",
+        "typescript": "catalog:",
+      },
+    },
     "workflows/granola-call": {
       "name": "@workbench/workflow-granola-call",
       "version": "0.1.0",
@@ -2925,6 +2940,8 @@
     "@workbench/workflow-firecrawl-url-watch": ["@workbench/workflow-firecrawl-url-watch@workspace:workflows/firecrawl-url-watch"],
 
     "@workbench/workflow-gamma-presentation-creator": ["@workbench/workflow-gamma-presentation-creator@workspace:workflows/gamma-presentation-creator"],
+
+    "@workbench/workflow-github-topic-watch": ["@workbench/workflow-github-topic-watch@workspace:workflows/github-topic-watch"],
 
     "@workbench/workflow-granola-call": ["@workbench/workflow-granola-call@workspace:workflows/granola-call"],
 
