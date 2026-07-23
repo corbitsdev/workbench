@@ -282,15 +282,12 @@ export const workflow = defineWorkflow({
       id: "attio-task-agent-write-note",
       title: "Post the note to Attio",
       tool: "attio_create_note",
+      // The panel emits parentObject/parentRecordId/content/idempotencyKey
+      // directly (idempotencyKey duplicates taskId so a re-run of the SAME
+      // task after a mid-write-back failure dedupes instead of creating a
+      // second note) — no argMap needed, the signal payload already is
+      // attio_create_note's arguments.
       input: { from: "steps.approveSync.output" },
-      argMap: {
-        parentObject: { from: "parentObject" },
-        parentRecordId: { from: "parentRecordId" },
-        content: { from: "note" },
-        // Key the note by the task id so a re-run of the SAME task after a
-        // mid-write-back failure dedupes instead of creating a second note.
-        idempotencyKey: { from: "taskId" },
-      },
       after: ["syncGate"],
     }),
 

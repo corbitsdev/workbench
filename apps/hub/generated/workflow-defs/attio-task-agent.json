@@ -405,7 +405,6 @@
           "tags": {
             "workbench.stepKind": "deterministic-tool",
             "workbench.tool": "@workbench/tools-attio/attio:attio_create_note",
-            "workbench.argMap": "{\"parentObject\":{\"from\":\"parentObject\"},\"parentRecordId\":{\"from\":\"parentRecordId\"},\"content\":{\"from\":\"note\"},\"idempotencyKey\":{\"from\":\"taskId\"}}",
             "workbench.title": "Post the note to Attio"
           }
         },

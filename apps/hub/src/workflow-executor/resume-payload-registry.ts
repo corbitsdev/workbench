@@ -17,6 +17,7 @@ import {
   MultiSourceReviewPayloadSchema,
   MultiSourceSourcesPayloadSchema,
   multiSourceSourcesHasAtLeastOne,
+  normalizeSyncApprovalPayload,
   PainPointContextPayloadSchema,
   PainPointFormatSelectionPayloadSchema,
   PainPointNoteSelectionPayloadSchema,
@@ -136,7 +137,7 @@ const RESUME_PAYLOAD_SCHEMAS: Record<string, Record<string, Type>> = {
     intake: SumbleIntakePayloadSchema,
     review: SumbleReviewPayloadSchema,
   },
-// competitor-analysis (CL-4029): the intake gate REQUIRES an http(s) company
+  // competitor-analysis (CL-4029): the intake gate REQUIRES an http(s) company
   // URL — the scrape step fetches it, so a blank/non-URL intake is rejected at
   // the /resume boundary rather than failing deep in the crawl. The review gate
   // carries the approval decision before the report is persisted. The block form
@@ -159,7 +160,7 @@ const RESUME_PAYLOAD_SCHEMAS: Record<string, Record<string, Type>> = {
 };
 
 export type ResumePayloadValidation =
-  | { ok: true }
+  | { ok: true; payload?: unknown }
   | { ok: false; error: string };
 
 /**
@@ -167,6 +168,12 @@ export type ResumePayloadValidation =
  * workflow kind + signal name. Returns `{ ok: true }` when there is no
  * registered schema (pass-through) or the payload matches; `{ ok: false }` with
  * an error summary on a registered-but-mismatched payload.
+ *
+ * A registered schema may also NORMALIZE the payload (e.g. folding a
+ * transitional legacy shape to the current one) — when it does, `payload`
+ * carries the normalized value the caller should dispatch instead of the raw
+ * submitted one. Every other kind/signal leaves `payload` unset and the
+ * caller keeps using the raw payload it received (pass-through, unchanged).
  */
 export function validateResumePayload(
   kind: string,
@@ -200,6 +207,9 @@ export function validateResumePayload(
       ok: false,
       error: "shouldRegenerate requires at least one regenerateItems entry",
     };
+  }
+  if (kind === "attio-task-agent" && signalName === "sync-approval") {
+    return { ok: true, payload: normalizeSyncApprovalPayload(out) };
   }
   return { ok: true };
 }

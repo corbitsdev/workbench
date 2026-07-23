@@ -81,7 +81,7 @@ describe("granola workflow pure tools", () => {
     expect(result.summary).toBe("Discussed pricing.");
   });
 
-  test("prepare_artifacts emits flat write_artifact fields", async () => {
+  test("prepare_artifacts emits nested write_artifact-shaped payloads", async () => {
     const normalized = await run("granola_normalize_note", { note });
     const analysis = await run("granola_parse_analysis", {
       text: analysisJson,
@@ -90,12 +90,12 @@ describe("granola workflow pure tools", () => {
       note: normalized,
       analysis,
       classification: "external",
-    })) as Record<string, unknown>;
-    expect(result.painKind).toBe("granola-call-pain-points");
-    expect(result.summaryKind).toBe("granola-call-summary");
-    expect(result.briefKind).toBe("granola-call-brief");
-    expect(String(result.painSourceRef)).toContain("granola:call:note-1:");
-    expect(String(result.painContent)).toContain("Billing friction");
+    })) as Record<string, Record<string, unknown>>;
+    expect(result.pain?.kind).toBe("granola-call-pain-points");
+    expect(result.summary?.kind).toBe("granola-call-summary");
+    expect(result.brief?.kind).toBe("granola-call-brief");
+    expect(String(result.pain?.sourceRef)).toContain("granola:call:note-1:");
+    expect(String(result.pain?.body)).toContain("Billing friction");
   });
 
   test("emit_run_outputs builds artifactsByKind", async () => {

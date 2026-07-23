@@ -289,7 +289,7 @@ function readAnalysisText(args: Record<string, unknown>): string {
 export const GRANOLA_PREPARE_ARTIFACTS_DEFINITION: ToolDefinition = {
   name: "granola_prepare_artifacts",
   description:
-    "Build the three typed Granola call artifact payloads (pain points, summary, brief) as flat fields for write_artifact argMaps.",
+    "Build the three typed Granola call artifact payloads (pain points, summary, brief), each already shaped as write_artifact's arguments ({ title, kind, body, sourceRef }).",
   inputSchema: {
     type: "object",
     properties: {
@@ -387,18 +387,24 @@ function prepareArtifactsPayload(args: Record<string, unknown>) {
     classification,
     note,
     analysis,
-    painTitle: granolaCallArtifactTitle(note.title, "Pain Points"),
-    painKind: kinds.painPoints,
-    painContent: renderPainPointsContent(note, classification, analysis),
-    painSourceRef: granolaCallSourceRef(note.id, kinds.painPoints),
-    summaryTitle: granolaCallArtifactTitle(note.title, "Summary"),
-    summaryKind: kinds.summary,
-    summaryContent: renderSummaryContent(note, classification, analysis),
-    summarySourceRef: granolaCallSourceRef(note.id, kinds.summary),
-    briefTitle: granolaCallArtifactTitle(note.title, "Brief"),
-    briefKind: kinds.brief,
-    briefContent: renderBriefContent(note, classification, analysis),
-    briefSourceRef: granolaCallSourceRef(note.id, kinds.brief),
+    pain: {
+      title: granolaCallArtifactTitle(note.title, "Pain Points"),
+      kind: kinds.painPoints,
+      body: renderPainPointsContent(note, classification, analysis),
+      sourceRef: granolaCallSourceRef(note.id, kinds.painPoints),
+    },
+    summary: {
+      title: granolaCallArtifactTitle(note.title, "Summary"),
+      kind: kinds.summary,
+      body: renderSummaryContent(note, classification, analysis),
+      sourceRef: granolaCallSourceRef(note.id, kinds.summary),
+    },
+    brief: {
+      title: granolaCallArtifactTitle(note.title, "Brief"),
+      kind: kinds.brief,
+      body: renderBriefContent(note, classification, analysis),
+      sourceRef: granolaCallSourceRef(note.id, kinds.brief),
+    },
   };
 }
 

@@ -795,7 +795,7 @@ export function createWorkflowRunsRouter(deps: {
         if (!result.ok) {
           return c.json(
             { error: result.error },
-            result.status as 404 | 409 | 500,
+            result.status as 400 | 404 | 409 | 500,
           );
         }
       } catch (err) {

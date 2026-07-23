@@ -127,8 +127,9 @@ describe("attio-task-agent native workflow", () => {
       confirm: true,
       parentObject: "companies",
       parentRecordId: "rec_1",
-      note: "Drafted outreach.",
+      content: "Drafted outreach.",
       taskId: "task_1",
+      idempotencyKey: "task_1",
     });
 
     const result = await run.complete;
@@ -264,9 +265,9 @@ describe("attio-task-agent native workflow", () => {
     const note = stepPrimitive("writeNote");
     expect(note.agent.tags?.[STEP_TOOL_TAG]).toContain("attio_create_note");
     expect(note.agent.tags?.[STEP_NONFATAL_TAG]).toBeUndefined();
-    const noteArgMap = JSON.parse(note.agent.tags?.[STEP_ARGMAP_TAG] ?? "{}");
-    expect(noteArgMap.content).toEqual({ from: "note" });
-    expect(noteArgMap.idempotencyKey).toEqual({ from: "taskId" });
+    // The sync-approval payload already is attio_create_note's arguments
+    // (content/idempotencyKey/parentObject/parentRecordId) — no argMap.
+    expect(note.agent.tags?.[STEP_ARGMAP_TAG]).toBeUndefined();
 
     const complete = stepPrimitive("writeComplete");
     expect(complete.agent.tags?.[STEP_TOOL_TAG]).toContain("attio_update_task");

@@ -293,7 +293,7 @@ function syncApprovalBlocks(input: AttioTaskAgentBlockInput): UIBlock[] {
         proposedNote !== undefined && proposedNote.length > 0
           ? `Suggested: ${proposedNote}`
           : "The note to attach to the record…",
-      payloadKey: "note",
+      payloadKey: "content",
       required: true,
     },
     options: [
@@ -304,6 +304,10 @@ function syncApprovalBlocks(input: AttioTaskAgentBlockInput): UIBlock[] {
         payload: {
           confirm: true,
           taskId,
+          // Duplicated as idempotencyKey: attio_create_note keys retries by
+          // it, attio_update_task by taskId — the write-back steps read this
+          // payload directly with no argMap.
+          idempotencyKey: taskId,
           parentObject: record.object,
           parentRecordId: record.recordId,
         },

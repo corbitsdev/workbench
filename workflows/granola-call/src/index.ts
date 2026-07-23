@@ -67,10 +67,6 @@ export const workflow = defineWorkflow({
           { from: "trigger.payload" },
         ],
       },
-      argMap: {
-        note: { from: "content" },
-        tenantDomain: { from: "tenantDomain" },
-      },
       after: ["normalize"],
     }),
 
@@ -115,13 +111,7 @@ export const workflow = defineWorkflow({
       id: "granola-call-persist-pain",
       title: "Persist pain points",
       tool: "write_artifact",
-      input: { from: "steps.prepare.output" },
-      argMap: {
-        title: { from: "painTitle" },
-        kind: { from: "painKind" },
-        body: { from: "painContent" },
-        sourceRef: { from: "painSourceRef" },
-      },
+      input: { from: "steps.prepare.output.pain" },
       after: ["prepare"],
     }),
 
@@ -129,13 +119,7 @@ export const workflow = defineWorkflow({
       id: "granola-call-persist-summary",
       title: "Persist summary",
       tool: "write_artifact",
-      input: { from: "steps.prepare.output" },
-      argMap: {
-        title: { from: "summaryTitle" },
-        kind: { from: "summaryKind" },
-        body: { from: "summaryContent" },
-        sourceRef: { from: "summarySourceRef" },
-      },
+      input: { from: "steps.prepare.output.summary" },
       after: ["prepare"],
     }),
 
@@ -143,13 +127,7 @@ export const workflow = defineWorkflow({
       id: "granola-call-persist-brief",
       title: "Persist brief",
       tool: "write_artifact",
-      input: { from: "steps.prepare.output" },
-      argMap: {
-        title: { from: "briefTitle" },
-        kind: { from: "briefKind" },
-        body: { from: "briefContent" },
-        sourceRef: { from: "briefSourceRef" },
-      },
+      input: { from: "steps.prepare.output.brief" },
       after: ["prepare"],
     }),
 

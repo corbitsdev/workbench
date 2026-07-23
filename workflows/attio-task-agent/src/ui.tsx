@@ -605,8 +605,9 @@ function ApproveSyncForm(props: {
                   confirm: true,
                   parentObject: props.record?.object,
                   parentRecordId: props.record?.recordId,
-                  note,
+                  content: note,
                   taskId: props.taskId,
+                  idempotencyKey: props.taskId,
                 })
               }
             >

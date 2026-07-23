@@ -167,7 +167,6 @@
           "tags": {
             "workbench.stepKind": "deterministic-tool",
             "workbench.tool": "@workbench/tools-granola/workflow:granola_classify_call",
-            "workbench.argMap": "{\"note\":{\"from\":\"content\"},\"tenantDomain\":{\"from\":\"tenantDomain\"}}",
             "workbench.title": "Classify"
           }
         },
@@ -320,13 +319,12 @@
           "tags": {
             "workbench.stepKind": "deterministic-tool",
             "workbench.tool": "@workbench/tools-artifact/artifact:write_artifact",
-            "workbench.argMap": "{\"title\":{\"from\":\"painTitle\"},\"kind\":{\"from\":\"painKind\"},\"body\":{\"from\":\"painContent\"},\"sourceRef\":{\"from\":\"painSourceRef\"}}",
             "workbench.title": "Persist pain points"
           }
         },
         "drainBehavior": "cancel",
         "input": {
-          "from": "steps.prepare.output"
+          "from": "steps.prepare.output.pain"
         },
         "after": [
           "prepare"
@@ -349,13 +347,12 @@
           "tags": {
             "workbench.stepKind": "deterministic-tool",
             "workbench.tool": "@workbench/tools-artifact/artifact:write_artifact",
-            "workbench.argMap": "{\"title\":{\"from\":\"summaryTitle\"},\"kind\":{\"from\":\"summaryKind\"},\"body\":{\"from\":\"summaryContent\"},\"sourceRef\":{\"from\":\"summarySourceRef\"}}",
             "workbench.title": "Persist summary"
           }
         },
         "drainBehavior": "cancel",
         "input": {
-          "from": "steps.prepare.output"
+          "from": "steps.prepare.output.summary"
         },
         "after": [
           "prepare"
@@ -378,13 +375,12 @@
           "tags": {
             "workbench.stepKind": "deterministic-tool",
             "workbench.tool": "@workbench/tools-artifact/artifact:write_artifact",
-            "workbench.argMap": "{\"title\":{\"from\":\"briefTitle\"},\"kind\":{\"from\":\"briefKind\"},\"body\":{\"from\":\"briefContent\"},\"sourceRef\":{\"from\":\"briefSourceRef\"}}",
             "workbench.title": "Persist brief"
           }
         },
         "drainBehavior": "cancel",
         "input": {
-          "from": "steps.prepare.output"
+          "from": "steps.prepare.output.brief"
         },
         "after": [
           "prepare"
