@@ -144,14 +144,14 @@
           "tags": {
             "workbench.stepKind": "deterministic-tool",
             "workbench.tool": "@workbench/tools-exa/exa:exa_search",
-            "workbench.argMap": "{\"query\":{\"from\":\"web\"},\"limit\":{\"literal\":25}}",
+            "workbench.argMap": "{\"query\":{\"from\":\"query\"},\"limit\":{\"literal\":25}}",
             "workbench.nonFatal": "true",
             "workbench.title": "Search the web"
           }
         },
         "drainBehavior": "cancel",
         "input": {
-          "from": "steps.groundQueries.output.content"
+          "from": "steps.groundQueries.output.content.web"
         },
         "after": [
           "groundQueries"
@@ -174,14 +174,14 @@
           "tags": {
             "workbench.stepKind": "deterministic-tool",
             "workbench.tool": "@workbench/tools-exa/exa:exa_search",
-            "workbench.argMap": "{\"query\":{\"from\":\"webB\"},\"limit\":{\"literal\":25}}",
+            "workbench.argMap": "{\"query\":{\"from\":\"query\"},\"limit\":{\"literal\":25}}",
             "workbench.nonFatal": "true",
             "workbench.title": "Search the web again"
           }
         },
         "drainBehavior": "cancel",
         "input": {
-          "from": "steps.groundQueries.output.content"
+          "from": "steps.groundQueries.output.content.webB"
         },
         "after": [
           "web"
@@ -204,14 +204,14 @@
           "tags": {
             "workbench.stepKind": "deterministic-tool",
             "workbench.tool": "@workbench/tools-exa/exa:exa_search",
-            "workbench.argMap": "{\"query\":{\"from\":\"webC\"},\"limit\":{\"literal\":25}}",
+            "workbench.argMap": "{\"query\":{\"from\":\"query\"},\"limit\":{\"literal\":25}}",
             "workbench.nonFatal": "true",
             "workbench.title": "Search the web once more"
           }
         },
         "drainBehavior": "cancel",
         "input": {
-          "from": "steps.groundQueries.output.content"
+          "from": "steps.groundQueries.output.content.webC"
         },
         "after": [
           "webB"
@@ -234,14 +234,14 @@
           "tags": {
             "workbench.stepKind": "deterministic-tool",
             "workbench.tool": "@workbench/tools-hackernews/hackernews:hackernews_search",
-            "workbench.argMap": "{\"query\":{\"from\":\"hackernews\"},\"limit\":{\"literal\":20}}",
+            "workbench.argMap": "{\"query\":{\"from\":\"query\"},\"limit\":{\"literal\":20}}",
             "workbench.nonFatal": "true",
             "workbench.title": "Search Hacker News"
           }
         },
         "drainBehavior": "cancel",
         "input": {
-          "from": "steps.groundQueries.output.content"
+          "from": "steps.groundQueries.output.content.hackernews"
         },
         "after": [
           "webC"
@@ -264,14 +264,14 @@
           "tags": {
             "workbench.stepKind": "deterministic-tool",
             "workbench.tool": "@workbench/tools-github/github:github_activity",
-            "workbench.argMap": "{\"query\":{\"from\":\"github\"},\"limit\":{\"literal\":15}}",
+            "workbench.argMap": "{\"query\":{\"from\":\"query\"},\"limit\":{\"literal\":15}}",
             "workbench.nonFatal": "true",
             "workbench.title": "Scan GitHub activity"
           }
         },
         "drainBehavior": "cancel",
         "input": {
-          "from": "steps.groundQueries.output.content"
+          "from": "steps.groundQueries.output.content.github"
         },
         "after": [
           "hackernews"
@@ -294,14 +294,14 @@
           "tags": {
             "workbench.stepKind": "deterministic-tool",
             "workbench.tool": "@workbench/tools-reddit/reddit:reddit_search",
-            "workbench.argMap": "{\"query\":{\"from\":\"reddit\"},\"limit\":{\"literal\":20}}",
+            "workbench.argMap": "{\"query\":{\"from\":\"query\"},\"limit\":{\"literal\":20}}",
             "workbench.nonFatal": "true",
             "workbench.title": "Search Reddit"
           }
         },
         "drainBehavior": "cancel",
         "input": {
-          "from": "steps.groundQueries.output.content"
+          "from": "steps.groundQueries.output.content.reddit"
         },
         "after": [
           "github"
@@ -324,14 +324,14 @@
           "tags": {
             "workbench.stepKind": "deterministic-tool",
             "workbench.tool": "@workbench/tools-x/x:x_search",
-            "workbench.argMap": "{\"query\":{\"from\":\"x\"},\"limit\":{\"literal\":15}}",
+            "workbench.argMap": "{\"query\":{\"from\":\"query\"},\"limit\":{\"literal\":15}}",
             "workbench.nonFatal": "true",
             "workbench.title": "Search X"
           }
         },
         "drainBehavior": "cancel",
         "input": {
-          "from": "steps.groundQueries.output.content"
+          "from": "steps.groundQueries.output.content.x"
         },
         "after": [
           "reddit"
@@ -354,14 +354,14 @@
           "tags": {
             "workbench.stepKind": "deterministic-tool",
             "workbench.tool": "@workbench/tools-youtube/youtube:youtube_search",
-            "workbench.argMap": "{\"query\":{\"from\":\"youtube\"},\"limit\":{\"literal\":12}}",
+            "workbench.argMap": "{\"query\":{\"from\":\"query\"},\"limit\":{\"literal\":12}}",
             "workbench.nonFatal": "true",
             "workbench.title": "Search YouTube"
           }
         },
         "drainBehavior": "cancel",
         "input": {
-          "from": "steps.groundQueries.output.content"
+          "from": "steps.groundQueries.output.content.youtube"
         },
         "after": [
           "x"
@@ -384,14 +384,14 @@
           "tags": {
             "workbench.stepKind": "deterministic-tool",
             "workbench.tool": "@workbench/tools-polymarket/polymarket:polymarket_odds",
-            "workbench.argMap": "{\"query\":{\"from\":\"polymarket\"},\"limit\":{\"literal\":15}}",
+            "workbench.argMap": "{\"query\":{\"from\":\"query\"},\"limit\":{\"literal\":15}}",
             "workbench.nonFatal": "true",
             "workbench.title": "Check Polymarket odds"
           }
         },
         "drainBehavior": "cancel",
         "input": {
-          "from": "steps.groundQueries.output.content"
+          "from": "steps.groundQueries.output.content.polymarket"
         },
         "after": [
           "youtube"
@@ -473,14 +473,14 @@
           "tags": {
             "workbench.stepKind": "deterministic-tool",
             "workbench.tool": "@workbench/tools-exa/exa:exa_search",
-            "workbench.argMap": "{\"query\":{\"from\":\"web\"},\"limit\":{\"literal\":30}}",
+            "workbench.argMap": "{\"query\":{\"from\":\"query\"},\"limit\":{\"literal\":30}}",
             "workbench.nonFatal": "true",
             "workbench.title": "Dig deeper on the web"
           }
         },
         "drainBehavior": "cancel",
         "input": {
-          "from": "steps.entityQueries.output.content"
+          "from": "steps.entityQueries.output.content.web"
         },
         "after": [
           "entityQueries"
@@ -503,14 +503,14 @@
           "tags": {
             "workbench.stepKind": "deterministic-tool",
             "workbench.tool": "@workbench/tools-reddit/reddit:reddit_search",
-            "workbench.argMap": "{\"query\":{\"from\":\"reddit\"},\"limit\":{\"literal\":18}}",
+            "workbench.argMap": "{\"query\":{\"from\":\"query\"},\"limit\":{\"literal\":18}}",
             "workbench.nonFatal": "true",
             "workbench.title": "Dig deeper on Reddit"
           }
         },
         "drainBehavior": "cancel",
         "input": {
-          "from": "steps.entityQueries.output.content"
+          "from": "steps.entityQueries.output.content.reddit"
         },
         "after": [
           "web2"
@@ -533,14 +533,14 @@
           "tags": {
             "workbench.stepKind": "deterministic-tool",
             "workbench.tool": "@workbench/tools-x/x:x_search",
-            "workbench.argMap": "{\"query\":{\"from\":\"x\"},\"limit\":{\"literal\":15}}",
+            "workbench.argMap": "{\"query\":{\"from\":\"query\"},\"limit\":{\"literal\":15}}",
             "workbench.nonFatal": "true",
             "workbench.title": "Dig deeper on X"
           }
         },
         "drainBehavior": "cancel",
         "input": {
-          "from": "steps.entityQueries.output.content"
+          "from": "steps.entityQueries.output.content.x"
         },
         "after": [
           "reddit2"
@@ -563,14 +563,14 @@
           "tags": {
             "workbench.stepKind": "deterministic-tool",
             "workbench.tool": "@workbench/tools-youtube/youtube:youtube_search",
-            "workbench.argMap": "{\"query\":{\"from\":\"youtube\"},\"limit\":{\"literal\":12}}",
+            "workbench.argMap": "{\"query\":{\"from\":\"query\"},\"limit\":{\"literal\":12}}",
             "workbench.nonFatal": "true",
             "workbench.title": "Dig deeper on YouTube"
           }
         },
         "drainBehavior": "cancel",
         "input": {
-          "from": "steps.entityQueries.output.content"
+          "from": "steps.entityQueries.output.content.youtube"
         },
         "after": [
           "x2"

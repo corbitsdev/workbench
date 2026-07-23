@@ -20,7 +20,7 @@ export const DISPLAY_STEPS: DisplayStep[] = [
   {
     key: "done",
     label: "Done",
-    stepIds: ["packageArtifact"],
+    stepIds: ["document", "packageArtifact"],
     activityLabel: "Saving to workbench",
   },
 ];

@@ -58,6 +58,7 @@ describe("sumble-account-intel workflow structure", () => {
       "enrichSocial",
       "synthesize",
       "review",
+      "document",
       "packageArtifact",
     ]);
   });
@@ -167,6 +168,15 @@ describe("sumble-account-intel workflow structure", () => {
     expect(synth.input).toEqual({ from: "steps" });
   });
 
+  test("document pairs organizationDomain and the synthesize agent's reply into { title, body }", () => {
+    const document = stepPrimitive("document");
+    expect(document.agent.tags?.[STEP_KIND_TAG]).toBe(DETERMINISTIC_TOOL_KIND);
+    expect(document.agent.tags?.[STEP_TOOL_TAG]).toContain(
+      "sumble_account_intel_format_report_document",
+    );
+    expect(document.agent.tags?.[STEP_ARGMAP_TAG]).toBeUndefined();
+  });
+
   test("packageArtifact persists via write_artifact with the research argMap", () => {
     const pkg = stepPrimitive("packageArtifact");
     expect(pkg.agent.tags?.[STEP_KIND_TAG]).toBe(DETERMINISTIC_TOOL_KIND);
@@ -175,8 +185,8 @@ describe("sumble-account-intel workflow structure", () => {
     if (argMap === undefined)
       throw new Error("expected argMap on packageArtifact");
     expect(JSON.parse(argMap)).toEqual({
-      title: { from: "organizationDomain" },
-      body: { from: "reply" },
+      title: { from: "title" },
+      body: { from: "body" },
       kind: { literal: "research" },
       jobLabel: { literal: "Sumble account intel" },
     });
@@ -195,7 +205,11 @@ describe("sumble-account-intel workflow structure", () => {
     if (!review || review.kind !== "awaitSignal")
       throw new Error("expected review awaitSignal");
     expect(review.after).toEqual(["synthesize"]);
-    expect(stepPrimitive("packageArtifact").after).toEqual(["review"]);
+    expect(stepPrimitive("document").after).toEqual(["synthesize"]);
+    expect(stepPrimitive("packageArtifact").after).toEqual([
+      "document",
+      "review",
+    ]);
   });
 });
 
@@ -222,6 +236,9 @@ describe("sumble-account-intel workflow execution", () => {
           slackDraft: "Acme is worth a look.",
         }),
       ),
+      "sumble-account-intel-document": {
+        content: { title: "acme.com", body: "## Account summary" },
+      },
       "sumble-account-intel-package": {
         content: JSON.stringify({ artifactId: "art_1" }),
       },
@@ -259,6 +276,9 @@ describe("sumble-account-intel workflow execution", () => {
           slackDraft: "s",
         }),
       ),
+      "sumble-account-intel-document": {
+        content: { title: "acme.com", body: "c" },
+      },
     });
     const run = runLocal(workflow, { invokeStep: invoker });
     await run.signal("intake", { organizationDomain: "acme.com" });

@@ -33,6 +33,7 @@ describe("competitor-analysis workflow structure", () => {
       "discover",
       "synthesize",
       "review",
+      "document",
       "packageArtifact",
     ]);
   });
@@ -94,6 +95,15 @@ describe("competitor-analysis workflow structure", () => {
     expect(synth.agent.systemPrompt).toContain("competitor");
   });
 
+  test("document pairs companyUrl and the synthesize agent's reply into { title, body }", () => {
+    const document = stepPrimitive("document");
+    expect(document.agent.tags?.[STEP_KIND_TAG]).toBe(DETERMINISTIC_TOOL_KIND);
+    expect(document.agent.tags?.[STEP_TOOL_TAG]).toContain(
+      "competitor_analysis_format_report_document",
+    );
+    expect(document.agent.tags?.[STEP_ARGMAP_TAG]).toBeUndefined();
+  });
+
   test("packageArtifact persists via write_artifact with the research argMap", () => {
     const pkg = stepPrimitive("packageArtifact");
     expect(pkg.agent.tags?.[STEP_KIND_TAG]).toBe(DETERMINISTIC_TOOL_KIND);
@@ -102,8 +112,8 @@ describe("competitor-analysis workflow structure", () => {
     if (argMap === undefined)
       throw new Error("expected argMap on packageArtifact");
     expect(JSON.parse(argMap)).toEqual({
-      title: { from: "companyUrl" },
-      body: { from: "reply" },
+      title: { from: "title" },
+      body: { from: "body" },
       kind: { literal: "research" },
       jobLabel: { literal: "Competitor analysis" },
     });
@@ -118,6 +128,10 @@ describe("competitor-analysis workflow structure", () => {
     if (!review || review.kind !== "awaitSignal")
       throw new Error("expected review awaitSignal");
     expect(review.after).toEqual(["synthesize"]);
-    expect(stepPrimitive("packageArtifact").after).toEqual(["review"]);
+    expect(stepPrimitive("document").after).toEqual(["synthesize"]);
+    expect(stepPrimitive("packageArtifact").after).toEqual([
+      "document",
+      "review",
+    ]);
   });
 });

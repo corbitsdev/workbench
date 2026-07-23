@@ -17,6 +17,7 @@ describe("heartbeat DISPLAY_STEPS", () => {
   test("failure watch covers plumbing steps omitted from the stepper", () => {
     expect(HEARTBEAT_FAILURE_WATCH_STEP_IDS).toContain("merge-sources");
     expect(HEARTBEAT_FAILURE_WATCH_STEP_IDS).toContain("title");
-    expect(HEARTBEAT_FAILURE_WATCH_STEP_IDS).toContain("mail-refs");
+    expect(HEARTBEAT_FAILURE_WATCH_STEP_IDS).toContain("document");
+    expect(HEARTBEAT_FAILURE_WATCH_STEP_IDS).toContain("notify-prep");
   });
 });

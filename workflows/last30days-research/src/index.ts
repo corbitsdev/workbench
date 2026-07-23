@@ -68,11 +68,12 @@ export const INTAKE_FIELDS = [
 // than the raw topic, so e.g. github_activity gets repo/org names and
 // youtube_search gets video-title phrasing instead of all sources searching the
 // same string. `last30days_ground_queries` guarantees every key is a non-empty
-// string (falling back to the base query), so a thin grounding reply never
-// blanks a source.
-const groundedQueriesInput = {
-  from: "steps.groundQueries.output.content",
-} as const;
+// string (falling back to the base query) nested under `{ query }` (CL-4232),
+// so a plain per-source path selector already yields the tool's own argument
+// name — no per-source rename.
+function groundedQueryInput(sourceKey: string) {
+  return { from: `steps.groundQueries.output.content.${sourceKey}` } as const;
+}
 
 // A source fetch is best-effort: a dead search API (rate-limit/auth/network)
 // must degrade to a recorded skip in the brief, never fail the run. `nonFatal`
@@ -83,10 +84,11 @@ const groundedQueriesInput = {
 // being retried. Acceptable here: not killing the run dominates, and the
 // chronic failures (e.g. bluesky) are permanent, not transient.
 //
-// `sourceKey` selects this source's tailored query off the grounded-queries map;
-// `limit` raises the per-source result count off each tool's small default
-// toward its cap so the candidate pool is deep enough to survive date-filtering
-// and the relevance floor.
+// `sourceKey` selects this source's own path off the grounded-queries map
+// (CL-4232: `{ query }` already matches the tool's own argument name); `limit`
+// raises the per-source result count off each tool's small default toward its
+// cap so the candidate pool is deep enough to survive date-filtering and the
+// relevance floor.
 function sourceStep(opts: {
   id: string;
   tool: string;
@@ -99,9 +101,9 @@ function sourceStep(opts: {
     id: opts.id,
     tool: opts.tool,
     title: opts.title,
-    input: groundedQueriesInput,
+    input: groundedQueryInput(opts.sourceKey),
     argMap: {
-      query: { from: opts.sourceKey },
+      query: { from: "query" },
       limit: { literal: opts.limit },
     },
     after: opts.after,
@@ -215,9 +217,9 @@ function buildSourceSteps(firstAfter: string): Record<string, StepPrimitive> {
 // each key is a non-empty string (base-query fallback). Serial like round 1
 // (the CL-2314 single-writer constraint): chained off `firstAfter` and each
 // predecessor, and starting only after the entire round-1 chain has drained.
-const entityQueriesInput = {
-  from: "steps.entityQueries.output.content",
-} as const;
+function entityQueryInput(mapKey: string) {
+  return { from: `steps.entityQueries.output.content.${mapKey}` } as const;
+}
 
 const ROUND2_SOURCES = [
   {
@@ -268,9 +270,9 @@ function buildEntityRoundSteps(
       id: `last30days-fetch-${source.id}`,
       tool: source.tool,
       title: source.title,
-      input: entityQueriesInput,
+      input: entityQueryInput(source.mapKey),
       argMap: {
-        query: { from: source.mapKey },
+        query: { from: "query" },
         limit: { literal: source.limit },
       },
       after: [previous],
@@ -418,25 +420,40 @@ export const workflow = defineWorkflow({
       after: ["brief"],
     }),
 
+    // Pairs the intake topic with the writer agent's reply into { title, body }
+    // (CL-4232) — the one place the agent's `reply` output field is read, so
+    // persist never reshapes it.
+    document: deterministicToolStep({
+      id: "last30days-document",
+      title: "Compose the report document",
+      tool: "last30days_format_report_document",
+      input: {
+        merge: [
+          { from: "steps.intake.output" },
+          { from: "steps.write.output" },
+        ],
+      },
+      after: ["write"],
+    }),
+
     persist: deterministicToolStep({
       id: "last30days-persist-artifact",
       title: "Save the research artifact",
       tool: "write_artifact",
       input: {
         merge: [
-          { from: "steps.intake.output" },
+          { from: "steps.document.output.content" },
           { from: "steps.brief.output" },
-          { from: "steps.write.output" },
         ],
       },
       argMap: {
-        title: { from: "topic" },
-        body: { from: "reply" },
+        title: { from: "title" },
+        body: { from: "body" },
         kind: { literal: "research" },
         content: { from: "content" },
         jobLabel: { literal: "Last 30 days research" },
       },
-      after: ["write"],
+      after: ["document"],
     }),
   },
 });

@@ -46,20 +46,27 @@ describe("last30days-research native workflow", () => {
       "last30days-ground": { reply: "{}" },
       "last30days-ground-queries": {
         content: {
-          hackernews: "q",
-          github: "q",
-          web: "q",
-          reddit: "q",
-          x: "q",
-          youtube: "q",
-          polymarket: "q",
+          hackernews: { query: "q" },
+          github: { query: "q" },
+          web: { query: "q" },
+          webB: { query: "q" },
+          webC: { query: "q" },
+          reddit: { query: "q" },
+          x: { query: "q" },
+          youtube: { query: "q" },
+          polymarket: { query: "q" },
         },
       },
       "last30days-entities": {
         reply: '{"web":"q","reddit":"q","x":"q","youtube":"q"}',
       },
       "last30days-entity-queries": {
-        content: { web: "q", reddit: "q", x: "q", youtube: "q" },
+        content: {
+          web: { query: "q" },
+          reddit: { query: "q" },
+          x: { query: "q" },
+          youtube: { query: "q" },
+        },
       },
       "last30days-collect": {
         content: { topic: "AI coding tools", days: 30, items: [] },
@@ -68,6 +75,12 @@ describe("last30days-research native workflow", () => {
       "last30days-build-brief": { content: '{"topic":"AI coding tools"}' },
       "last30days-write-report": {
         reply: "What I learned about AI coding tools:",
+      },
+      "last30days-document": {
+        content: {
+          title: "AI coding tools",
+          body: "What I learned about AI coding tools:",
+        },
       },
       "last30days-persist-artifact": { artifactId: "art_1" },
     });
@@ -160,7 +173,13 @@ describe("last30days-research native workflow", () => {
         throw new Error(`expected an argMap on source step ${source}`);
       }
       const argMap = JSON.parse(argMapJson) as { query?: { from?: string } };
-      expect(argMap.query?.from).toBe(source);
+      // CL-4232: the source's own path selector (`steps.groundQueries.output
+      // .content.<source>`) already yields `{ query }` nested under the
+      // source's key — the argMap entry is now a plain identity passthrough.
+      expect(argMap.query?.from).toBe("query");
+      expect(step.input).toEqual({
+        from: `steps.groundQueries.output.content.${source}`,
+      });
       expect(groundingPrompt).toContain(`"${source}"`);
     }
   });
@@ -295,7 +314,12 @@ describe("last30days-research native workflow", () => {
         throw new Error(`expected an argMap on round-2 step ${id}`);
       }
       const argMap = JSON.parse(argMapJson) as { query?: { from?: string } };
-      expect(argMap.query?.from).toBe(round2QueryKey[id]);
+      // CL-4232: identity passthrough — the per-source path selector already
+      // selects this round's `{ query }` off the entity-queries map.
+      expect(argMap.query?.from).toBe("query");
+      expect(step.input).toEqual({
+        from: `steps.entityQueries.output.content.${round2QueryKey[id]}`,
+      });
     }
 
     const collect = workflow.steps.collect;
@@ -328,13 +352,22 @@ describe("last30days-research native workflow", () => {
     expect(write.agent.tags?.[STEP_TOOL_TAG]).toBeUndefined();
     expect(write.agent.systemPrompt.length).toBeGreaterThan(0);
 
+    const document = workflow.steps.document;
+    if (document === undefined || document.kind !== "step") {
+      throw new Error("expected a step primitive for document");
+    }
+    expect(document.agent.tags?.[STEP_TOOL_TAG]).toContain(
+      "last30days_format_report_document",
+    );
+    expect(document.after).toEqual(["write"]);
+
     const persist = workflow.steps.persist;
     if (persist === undefined || persist.kind !== "step") {
       throw new Error("expected a step primitive for persist");
     }
     expect(persist.agent.tags?.[STEP_KIND_TAG]).toBe(DETERMINISTIC_TOOL_KIND);
     expect(persist.agent.tags?.[STEP_TOOL_TAG]).toContain("write_artifact");
-    expect(persist.after).toContain("write");
+    expect(persist.after).toEqual(["document"]);
     expect(persist.after).not.toContain("validate");
   });
 });

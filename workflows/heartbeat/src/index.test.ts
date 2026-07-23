@@ -129,7 +129,7 @@ describe("heartbeat native workflow", () => {
   // -------------------------------------------------------------------------
   test("has no awaitSignal steps — every step is a plain step or map", () => {
     const kinds = Object.values(workflow.steps).map((s) => s.kind);
-    expect(kinds.length).toBe(6 + WIRED_BRIEF_SOURCES.length);
+    expect(kinds.length).toBe(7 + WIRED_BRIEF_SOURCES.length);
     for (const kind of kinds) {
       expect(kind === "step" || kind === "map").toBe(true);
       expect(kind).not.toBe("awaitSignal");
@@ -159,9 +159,10 @@ describe("heartbeat native workflow", () => {
     );
     expect(nonIntakeSteps.sort()).toEqual([
       "brief",
-      "mail-refs",
+      "document",
       "merge-sources",
       "notify",
+      "notify-prep",
       "persist",
       "title",
     ]);
@@ -345,58 +346,61 @@ describe("heartbeat native workflow", () => {
   });
 
   // -------------------------------------------------------------------------
-  // Mail addressing argMap
+  // Document composition — the one place the agent's `reply` field is read
   // -------------------------------------------------------------------------
-  test("mail-refs argMap builds artifact and workflow_run refs from persist + trigger runId", () => {
-    expect(argMapOf("mail-refs")).toEqual({
-      artifactId: { fromJson: "content", field: "artifactId" },
+  test("document merges title.output.content and brief.output with no argMap", () => {
+    const document = stepPrimitive("document");
+    expect(document.agent.tags?.[STEP_KIND_TAG]).toBe(DETERMINISTIC_TOOL_KIND);
+    expect(document.agent.tags?.[STEP_TOOL_TAG]).toContain(
+      "heartbeat_format_brief_document",
+    );
+    expect(document.agent.tags?.[STEP_ARGMAP_TAG]).toBeUndefined();
+    expect(document.input).toEqual({
+      merge: [
+        { from: "steps.title.output.content" },
+        { from: "steps.brief.output" },
+      ],
+    });
+    expect(document.after).toEqual(["title", "brief"]);
+  });
+
+  // -------------------------------------------------------------------------
+  // Mail addressing
+  // -------------------------------------------------------------------------
+  test("notify-prep argMap builds mail_send's exact argument shape from the document + persisted artifact", () => {
+    expect(argMapOf("notify-prep")).toEqual({
+      userAddress: { from: "userAddress" },
+      title: { from: "title" },
+      body: { from: "body" },
+      artifactId: { from: "artifactId" },
       runId: { from: "runId" },
-      workflowLabel: { literal: "Company Heartbeat" },
+      workflowLabel: { literal: "Morning brief" },
     });
-    expect(stepPrimitive("mail-refs").after).toEqual(["persist"]);
+    expect(stepPrimitive("notify-prep").after).toEqual(["document", "persist"]);
   });
 
-  test("mail-refs argMap resolves artifactId from write_artifact stringTool content envelope", () => {
-    // Real write_artifact returns JSON.stringify({ artifactId, version, title })
-    // as the tool content; the step output is { content: "<that json>" }.
-    // A top-level { from: "artifactId" } never sees it (prod failure after
-    // CL-4069 unblocked tool pins).
-    const mailRefsInput = {
+  test("notify-prep argMap resolves artifactId from write_artifact's content object directly", () => {
+    // write_artifact's step output is { content: { artifactId, version, title } }
+    // — a real object, not a stringified envelope — so a top-level
+    // { from: "artifactId" } sees it directly with no JSON unwrap.
+    const notifyPrepInput = {
       ...TRIGGER_PAYLOAD,
-      content: JSON.stringify({
-        artifactId: "art_1",
-        version: 1,
-        title: "Jordan Lee's Morning Brief - 04/07/26",
-      }),
+      title: "Jordan Lee's Morning Brief - 04/07/26",
+      body: "# Morning brief\n\nAll clear today.",
+      artifactId: "art_1",
     };
-    const args = resolveArgMap(argMapOf("mail-refs"), mailRefsInput);
+    const args = resolveArgMap(argMapOf("notify-prep"), notifyPrepInput);
     expect(args.artifactId).toBe("art_1");
+    expect(args.userAddress).toBe(TRIGGER_PAYLOAD.userAddress);
     expect(args.runId).toBe(TRIGGER_PAYLOAD.runId);
-    expect(args.workflowLabel).toBe("Company Heartbeat");
+    expect(args.workflowLabel).toBe("Morning brief");
   });
 
-  test("mail-refs argMap throws when write_artifact content lacks artifactId", () => {
-    expect(() =>
-      resolveArgMap(argMapOf("mail-refs"), {
-        ...TRIGGER_PAYLOAD,
-        content: JSON.stringify({ version: 1, title: "no id" }),
-      }),
-    ).toThrow(/artifactId/);
-  });
-
-  test("notify argMap addresses the mail to the firing user with the computed title as subject, the brief as content, and artifact refs", () => {
-    expect(argMapOf("notify")).toEqual({
-      to: { from: "userAddress" },
-      subject: { from: "title" },
-      content: { from: "reply" },
-      refs: { from: "refs" },
-    });
-    expect(stepPrimitive("notify").after).toEqual([
-      "brief",
-      "title",
-      "persist",
-      "mail-refs",
-    ]);
+  test("notify is a pure passthrough of notify-prep's output — no argMap", () => {
+    const notify = stepPrimitive("notify");
+    expect(notify.agent.tags?.[STEP_ARGMAP_TAG]).toBeUndefined();
+    expect(notify.input).toEqual({ from: "steps.notify-prep.output.content" });
+    expect(notify.after).toEqual(["notify-prep"]);
   });
 
   // -------------------------------------------------------------------------
@@ -405,11 +409,14 @@ describe("heartbeat native workflow", () => {
   test("persist argMap saves the brief body as a stable morning-brief artifact, never 'report'", () => {
     expect(argMapOf("persist")).toEqual({
       title: { from: "title" },
-      body: { from: "reply" },
+      body: { from: "body" },
       kind: { literal: "morning-brief" },
       jobLabel: { literal: "Morning Brief" },
     });
-    expect(stepPrimitive("persist").after).toEqual(["brief", "title"]);
+    expect(stepPrimitive("persist").input).toEqual({
+      from: "steps.document.output.content",
+    });
+    expect(stepPrimitive("persist").after).toEqual(["document"]);
   });
 
   // -------------------------------------------------------------------------
@@ -447,21 +454,30 @@ describe("heartbeat native workflow", () => {
       "heartbeat-title": {
         content: { title: "Jordan Lee's Morning Brief - 04/07/26" },
       },
+      "heartbeat-document": {
+        content: {
+          title: "Jordan Lee's Morning Brief - 04/07/26",
+          body: briefReply,
+        },
+      },
       "heartbeat-persist": {
-        content: JSON.stringify({
+        content: {
           artifactId: "art_1",
           version: 1,
           title: "Jordan Lee's Morning Brief - 04/07/26",
-        }),
+        },
       },
-      "heartbeat-mail-refs": {
+      "heartbeat-notify-prep": {
         content: {
+          to: TRIGGER_PAYLOAD.userAddress,
+          subject: "Jordan Lee's Morning Brief - 04/07/26",
+          content: briefReply,
           refs: [
             { kind: "artifact", ref: "art_1", label: "Open brief" },
             {
               kind: "workflow_run",
               ref: "run-heartbeat-1",
-              label: "Open Company Heartbeat",
+              label: "Open Morning brief",
             },
           ],
         },
@@ -486,15 +502,16 @@ describe("heartbeat native workflow", () => {
     expect(ranIds).toContain("heartbeat-merge-sources");
     expect(ranIds).toContain("heartbeat-brief");
     expect(ranIds).toContain("heartbeat-title");
+    expect(ranIds).toContain("heartbeat-document");
     expect(ranIds).toContain("heartbeat-persist");
-    expect(ranIds).toContain("heartbeat-mail-refs");
+    expect(ranIds).toContain("heartbeat-notify-prep");
     expect(ranIds).toContain("heartbeat-notify");
     const persistIdx = ranIds.indexOf("heartbeat-persist");
-    const mailRefsIdx = ranIds.indexOf("heartbeat-mail-refs");
+    const notifyPrepIdx = ranIds.indexOf("heartbeat-notify-prep");
     const notifyIdx = ranIds.indexOf("heartbeat-notify");
     expect(persistIdx).toBeGreaterThanOrEqual(0);
-    expect(mailRefsIdx).toBeGreaterThan(persistIdx);
-    expect(notifyIdx).toBeGreaterThan(mailRefsIdx);
+    expect(notifyPrepIdx).toBeGreaterThan(persistIdx);
+    expect(notifyIdx).toBeGreaterThan(notifyPrepIdx);
   });
 
   // -------------------------------------------------------------------------
@@ -526,21 +543,30 @@ describe("heartbeat native workflow", () => {
       "heartbeat-title": {
         content: { title: "Jordan Lee's Morning Brief - 04/07/26" },
       },
+      "heartbeat-document": {
+        content: {
+          title: "Jordan Lee's Morning Brief - 04/07/26",
+          body: briefReply,
+        },
+      },
       "heartbeat-persist": {
-        content: JSON.stringify({
+        content: {
           artifactId: "art_1",
           version: 1,
           title: "Jordan Lee's Morning Brief - 04/07/26",
-        }),
+        },
       },
-      "heartbeat-mail-refs": {
+      "heartbeat-notify-prep": {
         content: {
+          to: TRIGGER_PAYLOAD.userAddress,
+          subject: "Jordan Lee's Morning Brief - 04/07/26",
+          content: briefReply,
           refs: [
             { kind: "artifact", ref: "art_1", label: "Open brief" },
             {
               kind: "workflow_run",
               ref: "run-heartbeat-1",
-              label: "Open Company Heartbeat",
+              label: "Open Morning brief",
             },
           ],
         },
@@ -555,33 +581,38 @@ describe("heartbeat native workflow", () => {
     const result = await run.complete;
     expect(result.terminalStatus).toBe("completed");
 
-    // Pin the persist → mail-refs handoff on the recorded merge input, not only
-    // the static argMap tag: mail-refs must see write_artifact's content envelope.
-    const mailRefsInput = ran.find((r) => r.id === "heartbeat-mail-refs")
+    // Pin the persist → notify-prep handoff on the recorded merge input, not
+    // only the static argMap tag: notify-prep must see write_artifact's
+    // content object directly (no JSON envelope).
+    const notifyPrepInput = ran.find((r) => r.id === "heartbeat-notify-prep")
       ?.input as Record<string, unknown> | undefined;
-    if (mailRefsInput === undefined)
-      throw new Error("mail-refs step did not run");
-    const mailRefsArgs = resolveArgMap(argMapOf("mail-refs"), mailRefsInput);
-    expect(mailRefsArgs.artifactId).toBe("art_1");
-    expect(mailRefsArgs.runId).toBe(TRIGGER_PAYLOAD.runId);
-    expect(mailRefsArgs.workflowLabel).toBe("Company Heartbeat");
+    if (notifyPrepInput === undefined)
+      throw new Error("notify-prep step did not run");
+    const notifyPrepArgs = resolveArgMap(
+      argMapOf("notify-prep"),
+      notifyPrepInput,
+    );
+    expect(notifyPrepArgs.artifactId).toBe("art_1");
+    expect(notifyPrepArgs.userAddress).toBe(TRIGGER_PAYLOAD.userAddress);
+    expect(notifyPrepArgs.runId).toBe(TRIGGER_PAYLOAD.runId);
+    expect(notifyPrepArgs.workflowLabel).toBe("Morning brief");
 
     const notifyInput = ran.find((r) => r.id === "heartbeat-notify")?.input as
       | Record<string, unknown>
       | undefined;
     if (notifyInput === undefined) throw new Error("notify step did not run");
 
-    const mailArgs = resolveArgMap(argMapOf("notify"), notifyInput);
-    expect(mailArgs.to).toBe(TRIGGER_PAYLOAD.userAddress);
-    expect(String(mailArgs.to).startsWith("usr_")).toBe(true);
-    expect(mailArgs.subject).toBe("Jordan Lee's Morning Brief - 04/07/26");
-    expect(mailArgs.content).toBe(briefReply);
-    expect(mailArgs.refs).toEqual([
+    // notify has no argMap — its recorded input IS the mail_send arguments.
+    expect(notifyInput.to).toBe(TRIGGER_PAYLOAD.userAddress);
+    expect(String(notifyInput.to).startsWith("usr_")).toBe(true);
+    expect(notifyInput.subject).toBe("Jordan Lee's Morning Brief - 04/07/26");
+    expect(notifyInput.content).toBe(briefReply);
+    expect(notifyInput.refs).toEqual([
       { kind: "artifact", ref: "art_1", label: "Open brief" },
       {
         kind: "workflow_run",
         ref: "run-heartbeat-1",
-        label: "Open Company Heartbeat",
+        label: "Open Morning brief",
       },
     ]);
 

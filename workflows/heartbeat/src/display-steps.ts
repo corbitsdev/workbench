@@ -11,7 +11,8 @@ export const HEARTBEAT_FAILURE_WATCH_STEP_IDS = [
   "merge-sources",
   "title",
   "brief",
-  "mail-refs",
+  "document",
+  "notify-prep",
   "persist",
   "notify",
 ] as const;

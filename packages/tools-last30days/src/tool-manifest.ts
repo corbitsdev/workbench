@@ -13,6 +13,9 @@ export const toolManifestFile = {
         last30days_core_report: {
           sideEffect: "read",
         },
+        last30days_format_report_document: {
+          sideEffect: "read",
+        },
         last30days_ground_queries: {
           sideEffect: "read",
         },
@@ -31,10 +34,19 @@ export const toolManifestFile = {
         heartbeat_merge_brief_sources: {
           sideEffect: "read",
         },
-        heartbeat_format_brief_mail_refs: {
+        heartbeat_format_brief_document: {
+          sideEffect: "read",
+        },
+        heartbeat_format_brief_notify: {
           sideEffect: "read",
         },
         heartbeat_format_brief_title: {
+          sideEffect: "read",
+        },
+        competitor_analysis_format_report_document: {
+          sideEffect: "read",
+        },
+        sumble_account_intel_format_report_document: {
           sideEffect: "read",
         },
       },

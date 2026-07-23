@@ -24,23 +24,26 @@ import { workflow } from "./index";
 //   - an inline inference step stores `{ reply, turn }`
 //     (workflow-substrate-factory.ts:1118).
 //   - an awaitSignal step stores the signal payload verbatim (run.ts runAwaitSignal).
+// CL-4232: each source's query is nested under a `query` key so a source
+// step's own per-source path selector already yields `{ query }` — the
+// tool's own argument name.
 const GROUND_MAP = {
-  hackernews: "hn query",
-  github: "gh query",
-  web: "web query",
-  webB: "web query B",
-  webC: "web query C",
-  reddit: "reddit query",
-  x: "x query",
-  youtube: "youtube query",
-  polymarket: "polymarket query",
+  hackernews: { query: "hn query" },
+  github: { query: "gh query" },
+  web: { query: "web query" },
+  webB: { query: "web query B" },
+  webC: { query: "web query C" },
+  reddit: { query: "reddit query" },
+  x: { query: "x query" },
+  youtube: { query: "youtube query" },
+  polymarket: { query: "polymarket query" },
 };
 
 const ENTITY_MAP = {
-  web: "entity web query",
-  reddit: "entity reddit query",
-  x: "entity x query",
-  youtube: "entity youtube query",
+  web: { query: "entity web query" },
+  reddit: { query: "entity reddit query" },
+  x: { query: "entity x query" },
+  youtube: { query: "entity youtube query" },
 };
 
 // A minimal but schema-valid Report — what last30days_workflow_brief stringifies
@@ -74,6 +77,13 @@ const STORED_OUTPUTS: Record<string, unknown> = {
   "last30days-write-report": {
     reply: "# AI coding tools\n\nThe report body.",
     turn: 1,
+  },
+  "last30days-document": {
+    callId: "call_d",
+    content: {
+      title: "AI coding tools",
+      body: "# AI coding tools\n\nThe report body.",
+    },
   },
   "last30days-persist-artifact": { artifactId: "art_1", version: 1 },
 };
@@ -114,11 +124,11 @@ function reshapeLikeSidecar(
 }
 
 describe("CL-2640 runtime shape confirmation (real selector resolution)", () => {
-  // Empirical ground truth #1: the deep dotted input selector resolves PAST
-  // `.output` — `steps.<id>.output.content` yields the tool's content object,
-  // not the whole `{ callId, content }` record — so the source argMap's
-  // top-level source keys line up with the evaluated input.
-  test("steps.<id>.output.content resolves the tool's content map (deep path)", () => {
+  // Empirical ground truth #1 (CL-4232): the deep dotted input selector
+  // resolves PAST `.output.content` straight to a single source's nested
+  // `{ query }` object — so a source step's own `query: { from: "query" }`
+  // argMap entry (an identity passthrough) resolves with no per-source rename.
+  test("steps.<id>.output.content.<source> resolves that source's { query } object (deep path)", () => {
     const ctx = {
       trigger: { payload: {} },
       steps: {
@@ -126,46 +136,38 @@ describe("CL-2640 runtime shape confirmation (real selector resolution)", () => 
       },
     };
     const resolved = evaluateSelector(
-      { from: "steps.groundQueries.output.content" },
+      { from: "steps.groundQueries.output.content.web" },
       ctx as never,
     );
-    expect(resolved).toEqual(GROUND_MAP);
-    // Every source key is a TOP-LEVEL field on the resolved input — the exact
-    // precondition the argMap `{ from: "<source>" }` requires.
-    for (const key of Object.keys(GROUND_MAP)) {
-      expect(resolved as Record<string, unknown>).toHaveProperty(key);
-    }
+    expect(resolved).toEqual(GROUND_MAP.web);
+    expect(resolved as Record<string, unknown>).toHaveProperty("query");
   });
 
-  // Empirical ground truth #2: the awaitSignal (intake) output exposes `topic`
-  // at the top level — NOT nested under a `payload`/`signal` key — so persist's
-  // `title: { from: "topic" }` (over a merge that includes intake.output)
-  // resolves.
-  test("steps.intake.output exposes the signal payload's topic at top level", () => {
-    const payload = {
-      topic: "AI coding tools",
-      query: "AI coding tools",
-      days: 30,
-    };
+  // Empirical ground truth #2: the deterministic document step (CL-4232) pairs
+  // the intake topic with the writer's reply into `{ title, body }`, and
+  // persist merges that document output with the brief's `content` — no
+  // `intake`/`write` fields reach persist directly, only the composed shape.
+  test("steps.document.output.content exposes title/body for persist, merged with the brief's content", () => {
     const merged = evaluateSelector(
       {
         merge: [
-          { from: "steps.intake.output" },
+          { from: "steps.document.output.content" },
           { from: "steps.brief.output" },
-          { from: "steps.write.output" },
         ],
       },
       {
-        trigger: { payload },
+        trigger: { payload: {} },
         steps: {
-          intake: { output: payload },
+          document: { output: STORED_OUTPUTS["last30days-document"] },
           brief: { output: STORED_OUTPUTS["last30days-build-brief"] },
-          write: { output: STORED_OUTPUTS["last30days-write-report"] },
         },
       } as never,
     ) as Record<string, unknown>;
-    expect(merged).toHaveProperty("topic", "AI coding tools");
-    expect(merged).toHaveProperty("reply");
+    expect(merged).toHaveProperty("title", "AI coding tools");
+    expect(merged).toHaveProperty(
+      "body",
+      "# AI coding tools\n\nThe report body.",
+    );
     // The brief tool stores its Report JSON under `content`; the hub
     // write_artifact handler reads exactly this key for rich rendering, so it
     // is present on the merge that feeds persist (the ticket's "dead mapping"

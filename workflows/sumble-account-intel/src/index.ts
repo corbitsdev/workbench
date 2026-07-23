@@ -182,29 +182,45 @@ export const workflow = defineWorkflow({
     // 10. Human reviews and approves the brief before it is persisted.
     review: awaitSignal({ name: "review", after: ["synthesize"] }),
 
-    // 11. Persist the brief as a research artifact.
+    // 11. Pairs the organization domain with the synthesize agent's reply into
+    // { title, body } (CL-4232) — the one place the agent's `reply` output
+    // field is read, so persist never reshapes it.
+    document: deterministicToolStep({
+      id: "sumble-account-intel-document",
+      title: "Compose the account brief document",
+      tool: "sumble_account_intel_format_report_document",
+      input: {
+        merge: [
+          { from: "steps.intake.output" },
+          { from: "steps.synthesize.output" },
+        ],
+      },
+      after: ["synthesize"],
+    }),
+
+    // 12. Persist the brief as a research artifact. `body` carries the full
+    // synthesized brief (summary + contacts CSV + Slack draft); write_artifact's
+    // optional structured `content` field is omitted — the synthesize step
+    // emits a single `reply`, not a separate Report object, so mapping a
+    // `content` field would fail the reshape. document already emits
+    // write_artifact's title/body verbatim, so only the two literals remain.
     packageArtifact: deterministicToolStep({
       id: "sumble-account-intel-package",
       title: "Save the account brief",
       tool: "write_artifact",
       input: {
         merge: [
-          { from: "steps.intake.output" },
-          { from: "steps.synthesize.output" },
+          { from: "steps.document.output.content" },
           { from: "steps.review.output" },
         ],
       },
-      // `body` carries the full synthesized brief (summary + contacts CSV +
-      // Slack draft). write_artifact's optional structured `content` field is
-      // omitted — the synthesize step emits a single `reply`, not a separate
-      // Report object, so mapping a `content` field would fail the reshape.
       argMap: {
-        title: { from: "organizationDomain" },
-        body: { from: "reply" },
+        title: { from: "title" },
+        body: { from: "body" },
         kind: { literal: "research" },
         jobLabel: { literal: "Sumble account intel" },
       },
-      after: ["review"],
+      after: ["document", "review"],
     }),
   },
 });

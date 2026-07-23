@@ -29,9 +29,14 @@ const MORNING_BRIEF_ARTIFACT_KIND = morningBriefArtifactKind();
 //                      project every intake step → { sources: { … } }
 //   brief             agentStep    default model
 //                      merge(payload, merge-sources content)
-//   persist           deterministicToolStep  write_artifact  body = brief reply (before notify)
-//   mail-refs         deterministicToolStep  heartbeat_format_brief_mail_refs
-//   notify            deterministicToolStep  mail_send   to = userAddress + artifact refs
+//   document          deterministicToolStep  heartbeat_format_brief_document
+//                      pairs title.output.content + brief.output.reply into
+//                      { title, body } — the one place the agent's `reply`
+//                      field is read, so persist/notify never reshape it
+//   persist           deterministicToolStep  write_artifact  (before notify)
+//   notify-prep       deterministicToolStep  heartbeat_format_brief_notify
+//                      builds mail_send's exact { to, subject, content, refs }
+//   notify            deterministicToolStep  mail_send   verbatim from notify-prep
 //
 // The intake steps are generated from `WIRED_BRIEF_SOURCES`
 // (`@workbench/shared`'s projection of `CREDENTIAL_PROVIDER_CATALOG` entries
@@ -125,6 +130,24 @@ export const workflow = defineWorkflow({
       },
     }),
 
+    // Pairs the title step's title with the brief agent's reply into the
+    // { title, body } document persist and notify-prep both need (CL-4232).
+    // This is the ONE place the agent's `reply` output field is read — every
+    // downstream deterministic step sees plain `title`/`body` fields, never
+    // `reply`.
+    document: deterministicToolStep({
+      id: "heartbeat-document",
+      title: "Compose the brief document",
+      tool: "heartbeat_format_brief_document",
+      input: {
+        merge: [
+          { from: "steps.title.output.content" },
+          { from: "steps.brief.output" },
+        ],
+      },
+      after: ["title", "brief"],
+    }),
+
     // Persist the brief as a morning-brief artifact in the user's workbench.
     // `kind` is the stable `morning-brief` literal (CL-3503) — never "report"
     // — so the artifact's type never drifts across runs. Runs before notify so
@@ -133,62 +156,52 @@ export const workflow = defineWorkflow({
       id: "heartbeat-persist",
       title: "Save the brief",
       tool: "write_artifact",
-      input: {
-        merge: [
-          { from: "trigger.payload" },
-          { from: "steps.brief.output" },
-          { from: "steps.title.output.content" },
-        ],
-      },
+      input: { from: "steps.document.output.content" },
       argMap: {
         title: { from: "title" },
-        body: { from: "reply" },
+        body: { from: "body" },
         kind: { literal: MORNING_BRIEF_ARTIFACT_KIND },
         jobLabel: { literal: "Morning Brief" },
       },
-      after: ["brief", "title"],
+      after: ["document"],
     }),
 
-    // Build mailbox refs from the persisted morning-brief artifact (CL-3521).
-    // write_artifact is a stringTool: its step output is
-    // `{ content: "{\"artifactId\":...,\"version\":...,\"title\":...}" }`,
-    // so artifactId is only reachable via fromJson (same pattern as gamma
-    // presentation creator's content envelope).
-    "mail-refs": deterministicToolStep({
-      id: "heartbeat-mail-refs",
-      title: "Link saved brief in mail",
-      tool: "heartbeat_format_brief_mail_refs",
+    // Builds mail_send's exact { to, subject, content, refs } argument shape
+    // from the firing user's address, the brief document, and the persisted
+    // artifact id (CL-4232) — write_artifact's `content` carries the
+    // { artifactId, version, title } object directly (not stringified), so
+    // artifactId is a plain top-level field, no JSON envelope to unwrap.
+    "notify-prep": deterministicToolStep({
+      id: "heartbeat-notify-prep",
+      title: "Prepare the notify mail",
+      tool: "heartbeat_format_brief_notify",
       input: {
-        merge: [{ from: "trigger.payload" }, { from: "steps.persist.output" }],
+        merge: [
+          { from: "trigger.payload" },
+          { from: "steps.document.output.content" },
+          { from: "steps.persist.output.content" },
+        ],
       },
       argMap: {
-        artifactId: { fromJson: "content", field: "artifactId" },
+        userAddress: { from: "userAddress" },
+        title: { from: "title" },
+        body: { from: "body" },
+        artifactId: { from: "artifactId" },
         runId: { from: "runId" },
         workflowLabel: { literal: label },
       },
-      after: ["persist"],
+      after: ["document", "persist"],
     }),
 
     // Deliver the brief to the firing user's `usr_` inbox (T3 resolver).
+    // notify-prep already emits mail_send's exact argument names, so this
+    // step is a pure passthrough — no argMap.
     notify: deterministicToolStep({
       id: "heartbeat-notify",
       title: "Send the brief",
       tool: "mail_send",
-      input: {
-        merge: [
-          { from: "trigger.payload" },
-          { from: "steps.brief.output" },
-          { from: "steps.title.output.content" },
-          { from: "steps.mail-refs.output.content" },
-        ],
-      },
-      argMap: {
-        to: { from: "userAddress" },
-        subject: { from: "title" },
-        content: { from: "reply" },
-        refs: { from: "refs" },
-      },
-      after: ["brief", "title", "persist", "mail-refs"],
+      input: { from: "steps.notify-prep.output.content" },
+      after: ["notify-prep"],
     }),
   },
 });

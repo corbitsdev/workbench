@@ -115,27 +115,41 @@ export const workflow = defineWorkflow({
     // 6. Human approves the report before it is persisted.
     review: awaitSignal({ name: "review", after: ["synthesize"] }),
 
-    // 7. Persist the report as a research artifact.
+    // 7. Pairs the researched company's URL with the synthesize agent's reply
+    // into { title, body } (CL-4232) — the one place the agent's `reply`
+    // output field is read, so persist never reshapes it.
+    document: deterministicToolStep({
+      id: "competitor-analysis-document",
+      title: "Compose the report document",
+      tool: "competitor_analysis_format_report_document",
+      input: {
+        merge: [
+          { from: "steps.intake.output" },
+          { from: "steps.synthesize.output" },
+        ],
+      },
+      after: ["synthesize"],
+    }),
+
+    // 8. Persist the report as a research artifact. document already emits
+    // write_artifact's title/body verbatim, so only the two literals remain.
     packageArtifact: deterministicToolStep({
       id: "competitor-analysis-package",
       title: "Save the competitor report",
       tool: "write_artifact",
       input: {
         merge: [
-          { from: "steps.intake.output" },
-          { from: "steps.synthesize.output" },
+          { from: "steps.document.output.content" },
           { from: "steps.review.output" },
         ],
       },
-      // title uses companyUrl (always present on intake). body is the full
-      // synthesize reply (strict JSON including markdown content).
       argMap: {
-        title: { from: "companyUrl" },
-        body: { from: "reply" },
+        title: { from: "title" },
+        body: { from: "body" },
         kind: { literal: "research" },
         jobLabel: { literal: "Competitor analysis" },
       },
-      after: ["review"],
+      after: ["document", "review"],
     }),
   },
 });

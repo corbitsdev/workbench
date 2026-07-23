@@ -34,6 +34,7 @@
       "key": "done",
       "label": "Done",
       "stepIds": [
+        "document",
         "packageArtifact"
       ],
       "activityLabel": "Saving to workbench"
@@ -203,6 +204,41 @@
           "synthesize"
         ]
       },
+      "document": {
+        "kind": "step",
+        "id": "document",
+        "agent": {
+          "id": "competitor-analysis-document",
+          "systemPrompt": "",
+          "toolFactories": [],
+          "capabilities": [
+            "@workbench/tools-last30days/core:competitor_analysis_format_report_document"
+          ],
+          "inference": {
+            "sources": []
+          },
+          "description": "Deterministic tool call: @workbench/tools-last30days/core:competitor_analysis_format_report_document",
+          "tags": {
+            "workbench.stepKind": "deterministic-tool",
+            "workbench.tool": "@workbench/tools-last30days/core:competitor_analysis_format_report_document",
+            "workbench.title": "Compose the report document"
+          }
+        },
+        "drainBehavior": "cancel",
+        "input": {
+          "merge": [
+            {
+              "from": "steps.intake.output"
+            },
+            {
+              "from": "steps.synthesize.output"
+            }
+          ]
+        },
+        "after": [
+          "synthesize"
+        ]
+      },
       "packageArtifact": {
         "kind": "step",
         "id": "packageArtifact",
@@ -220,7 +256,7 @@
           "tags": {
             "workbench.stepKind": "deterministic-tool",
             "workbench.tool": "@workbench/tools-artifact/artifact:write_artifact",
-            "workbench.argMap": "{\"title\":{\"from\":\"companyUrl\"},\"body\":{\"from\":\"reply\"},\"kind\":{\"literal\":\"research\"},\"jobLabel\":{\"literal\":\"Competitor analysis\"}}",
+            "workbench.argMap": "{\"title\":{\"from\":\"title\"},\"body\":{\"from\":\"body\"},\"kind\":{\"literal\":\"research\"},\"jobLabel\":{\"literal\":\"Competitor analysis\"}}",
             "workbench.title": "Save the competitor report"
           }
         },
@@ -228,10 +264,7 @@
         "input": {
           "merge": [
             {
-              "from": "steps.intake.output"
-            },
-            {
-              "from": "steps.synthesize.output"
+              "from": "steps.document.output.content"
             },
             {
               "from": "steps.review.output"
@@ -239,6 +272,7 @@
           ]
         },
         "after": [
+          "document",
           "review"
         ]
       }
@@ -250,6 +284,7 @@
       "discover",
       "synthesize",
       "review",
+      "document",
       "packageArtifact"
     ]
   }
