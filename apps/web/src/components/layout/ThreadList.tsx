@@ -9,6 +9,7 @@ import {
 } from "../../hooks/use-myra-threads";
 import { isMyraThreadUsed } from "../../hooks/myra-threads-cache";
 import { usePendingApprovalInstances } from "../../hooks/use-pending-approval-instances";
+import { threadHasNewActivity } from "../../hooks/thread-activity";
 import type { MyraThread } from "../../lib/hub-api";
 
 // The sidebar shows only the most-recently-active chats; the rest live on the
@@ -26,12 +27,14 @@ function ThreadRow({
   active,
   threads,
   hasPendingApproval,
+  hasNewActivity,
   onOpen,
 }: {
   thread: MyraThread;
   active: boolean;
   threads: MyraThread[];
   hasPendingApproval: boolean;
+  hasNewActivity: boolean;
   onOpen: (thread: MyraThread) => void;
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
@@ -107,6 +110,15 @@ function ThreadRow({
           />
         )}
         <span className="truncate">{thread.label}</span>
+        {!active && hasNewActivity && (
+          <span
+            data-testid="thread-new-activity-dot"
+            role="status"
+            aria-label="New activity"
+            title="New activity"
+            className="ml-auto h-1.5 w-1.5 shrink-0 rounded-full bg-blue"
+          />
+        )}
       </button>
       <button
         type="button"
@@ -167,12 +179,14 @@ export function ThreadList() {
   };
 
   if (isLoading) {
-    return <div className="px-2 py-1 text-xs text-text-3">Loading chats…</div>;
+    return (
+      <div className="px-2 py-1 text-xs text-text-3">Loading threads…</div>
+    );
   }
 
   if (isError) {
     return (
-      <div className="px-2 py-1 text-xs text-text-3">Couldn't load chats</div>
+      <div className="px-2 py-1 text-xs text-text-3">Couldn't load threads</div>
     );
   }
 
@@ -194,13 +208,13 @@ export function ThreadList() {
     // beyond it — keep the "View all" escape hatch reachable.
     return (
       <div className="flex flex-col gap-0.5">
-        <div className="px-2 py-1 text-xs text-text-3">No chats yet</div>
+        <div className="px-2 py-1 text-xs text-text-3">No threads yet</div>
         {hasMore && (
           <Link
             to="/chats"
             className="rounded-[8px] px-2 py-1.5 text-left text-xs text-text-3 transition-colors hover:bg-page hover:text-text"
           >
-            View all chats
+            View all threads
           </Link>
         )}
       </div>
@@ -216,6 +230,7 @@ export function ThreadList() {
           active={thread.id === activeThreadId}
           threads={data?.threads ?? []}
           hasPendingApproval={pendingApprovalInstances.has(thread.instanceId)}
+          hasNewActivity={threadHasNewActivity(thread)}
           onOpen={openThread}
         />
       ))}
@@ -224,7 +239,7 @@ export function ThreadList() {
           to="/chats"
           className="rounded-[8px] px-2 py-1.5 text-left text-xs text-text-3 transition-colors hover:bg-page hover:text-text"
         >
-          View all chats
+          View all threads
         </Link>
       )}
     </div>

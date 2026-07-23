@@ -209,9 +209,9 @@ export const NAV_COMMANDS: PaletteResultItem[] = [
   {
     id: "nav:chats",
     category: "navigation",
-    title: "Chats",
+    title: "Threads",
     to: "/chats",
-    keywords: ["conversations", "myra", "messages"],
+    keywords: ["conversations", "myra", "messages", "chats"],
   },
   {
     id: "nav:inbox",

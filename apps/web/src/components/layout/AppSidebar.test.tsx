@@ -132,9 +132,9 @@ describe("AppSidebar", () => {
     expect(labels[0]).toBe("Inbox");
   });
 
-  it("renders the New Chat action and the thread list", () => {
+  it("renders the New Thread action and the thread list", () => {
     renderSidebar();
-    const newChat = screen.getByRole("button", { name: /new chat/i });
+    const newChat = screen.getByRole("button", { name: /new thread/i });
     expect((newChat as HTMLButtonElement).disabled).toBe(false);
     expect(screen.getByText("First chat").textContent).toBe("First chat");
   });
@@ -260,7 +260,7 @@ describe("AppSidebar", () => {
     sidebarPendingApprovals = new Set(["ins_alpha"]);
     renderSidebar();
     expect(screen.getAllByTestId("inbox-approval-dot")).toHaveLength(1);
-    const chatsLink = screen.getByRole("link", { name: /^chats$/i });
+    const chatsLink = screen.getByRole("link", { name: /^threads$/i });
     expect(
       chatsLink.querySelector('[data-testid="inbox-approval-dot"]'),
     ).toBeNull();

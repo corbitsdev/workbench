@@ -83,7 +83,7 @@ describe("ThreadList", () => {
 
   it("shows no 'View all' link when below the sidebar limit", () => {
     renderList();
-    expect(screen.queryByText(/view all chats/i)).toBeNull();
+    expect(screen.queryByText(/view all threads/i)).toBeNull();
   });
 
   it("queries the thread list once, not once per row", () => {
@@ -98,7 +98,7 @@ describe("ThreadList", () => {
     threadsData = Array.from({ length: 10 }, (_, i) => makeThread(i + 1));
     totalCount = 10;
     renderList();
-    expect(screen.queryByText(/view all chats/i)).toBeNull();
+    expect(screen.queryByText(/view all threads/i)).toBeNull();
   });
 
   it("links to /chats when the total exceeds the shown page", () => {
@@ -106,7 +106,7 @@ describe("ThreadList", () => {
     threadsData = Array.from({ length: 10 }, (_, i) => makeThread(i + 1));
     totalCount = 15;
     renderList();
-    const link = screen.getByText(/view all chats/i);
+    const link = screen.getByText(/view all threads/i);
     expect(link.getAttribute("href")).toBe("/chats");
   });
 
@@ -132,7 +132,7 @@ describe("ThreadList", () => {
       { ...makeThread(2), firstMessageAt: null },
     ];
     renderList();
-    screen.getByText(/no chats yet/i);
+    screen.getByText(/no threads yet/i);
   });
 
   it("keeps the 'View all' link reachable when the page filters empty but more threads exist", () => {
@@ -142,8 +142,8 @@ describe("ThreadList", () => {
     }));
     totalCount = 15;
     renderList();
-    screen.getByText(/no chats yet/i);
-    const link = screen.getByText(/view all chats/i);
+    screen.getByText(/no threads yet/i);
+    const link = screen.getByText(/view all threads/i);
     expect(link.getAttribute("href")).toBe("/chats");
   });
 

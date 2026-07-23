@@ -17,6 +17,7 @@ import {
   writeLastActiveThreadId,
 } from "../hooks/use-myra-threads";
 import { isMyraThreadUsed } from "../hooks/myra-threads-cache";
+import { threadHasNewActivity } from "../hooks/thread-activity";
 import type { MyraThreadListItem } from "../lib/hub-api";
 
 const DAY_MS = 86_400_000;
@@ -88,7 +89,7 @@ function NewChatButton({
       className="flex items-center gap-[7px] px-[14px] py-[7px] text-[12.5px]"
     >
       <Plus size={16} />
-      {pending ? "Creating…" : "New chat"}
+      {pending ? "Creating…" : "New thread"}
     </Button>
   );
 }
@@ -139,7 +140,7 @@ export function ChatsListPage() {
         navigate(`/chats/${thread.id}`);
       },
       onError: () => {
-        setNewChatError("Could not start a new chat. Try again.");
+        setNewChatError("Could not start a new thread. Try again.");
       },
     });
   }, [createThreadMutate, navigate]);
@@ -155,7 +156,7 @@ export function ChatsListPage() {
 
   const pageChrome = useMemo(
     () => (
-      <AppPageChromeRow title="Chats" titleSize="sm">
+      <AppPageChromeRow title="Threads" titleSize="sm">
         {hasThreads && (
           <>
             {newChatError && (
@@ -164,8 +165,8 @@ export function ChatsListPage() {
               </span>
             )}
             <LibrarySearchInput
-              label="Search chats"
-              placeholder="Search chats"
+              label="Search threads"
+              placeholder="Search threads"
               value={query}
               onChange={setQuery}
               variant="ghost"
@@ -200,8 +201,8 @@ export function ChatsListPage() {
 
         {isError && (
           <CenteredState
-            headline="Could not load chats."
-            subline="Something went wrong while loading your chats."
+            headline="Could not load threads."
+            subline="Something went wrong while loading your threads."
           >
             <Button
               type="button"
@@ -216,8 +217,8 @@ export function ChatsListPage() {
 
         {!isLoading && !isError && !hasThreads && (
           <CenteredState
-            headline="No chats yet"
-            subline="Start a new chat when you're ready."
+            headline="No threads yet"
+            subline="Start a new thread when you're ready."
           >
             <div className="flex flex-col items-center gap-2 pt-1">
               <NewChatButton onClick={newChat} pending={createThreadPending} />
@@ -232,7 +233,7 @@ export function ChatsListPage() {
 
         {!isLoading && !isError && hasThreads && filtered.length === 0 && (
           <CenteredState
-            headline={`No chats match “${query.trim()}”`}
+            headline={`No threads match “${query.trim()}”`}
             subline="Try a different search."
           />
         )}
@@ -261,6 +262,15 @@ export function ChatsListPage() {
                     <span className="truncate text-[14px] font-medium text-text">
                       {thread.label}
                     </span>
+                    {threadHasNewActivity(thread) && (
+                      <span
+                        data-testid="thread-new-activity-dot"
+                        role="status"
+                        aria-label="New activity"
+                        title="New activity"
+                        className="h-1.5 w-1.5 shrink-0 rounded-full bg-blue"
+                      />
+                    )}
                     <span className="flex-1" />
                     <span className="shrink-0 text-[12px] tabular-nums text-text-3">
                       {formatRelativeTime(thread.lastActivityAt, now)}

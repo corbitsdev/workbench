@@ -29,7 +29,7 @@ export function ThreadSwitcher({
   const triggerRef = useRef<HTMLButtonElement>(null);
 
   const active = threads.find((t) => t.id === activeThreadId) ?? null;
-  const label = active?.label ?? "Chat";
+  const label = active?.label ?? "Thread";
 
   const ordered = [...threads].sort((a, b) =>
     b.createdAt.localeCompare(a.createdAt),
@@ -95,7 +95,7 @@ export function ThreadSwitcher({
                       setQuery(e.target.value);
                       setVisible(PAGE_SIZE);
                     }}
-                    placeholder="Search chats"
+                    placeholder="Search threads"
                     className="w-full bg-transparent text-xs text-text outline-none placeholder:text-text-3"
                   />
                 </div>
@@ -104,7 +104,7 @@ export function ThreadSwitcher({
               <div className="min-h-0 flex-1 overflow-auto">
                 {shown.length === 0 && (
                   <p className="px-3 py-3 text-xs text-text-3">
-                    No chats found
+                    No threads found
                   </p>
                 )}
                 {shown.map((t) => (
@@ -146,7 +146,7 @@ export function ThreadSwitcher({
                 className="mt-1 flex w-full items-center gap-2 border-t border-border px-3 py-2 text-left text-xs font-medium text-orange transition-colors hover:bg-page disabled:opacity-50"
               >
                 <Plus size={14} />
-                {creating ? "Creating…" : "New chat"}
+                {creating ? "Creating…" : "New thread"}
               </button>
             </div>
           </>,

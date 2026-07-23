@@ -29,6 +29,7 @@ import {
   useMyraThreads,
   writeLastActiveThreadId,
 } from "../hooks/use-myra-threads";
+import { markThreadViewed } from "../hooks/thread-activity";
 
 function CenteredNotice({ children }: { children: React.ReactNode }) {
   return (
@@ -59,10 +60,18 @@ export function ChatThreadPage() {
     threadList.length > 0 &&
     active === null;
 
-  // Remember the resolved thread for the FAB and root redirect. Writes an
+  // Remember the resolved thread for the FAB and root redirect, and mark it
+  // viewed as of its own lastActivityAt — the watermark the thread lists
+  // compare against to show a "new activity" indicator (CL-4257). Re-runs
+  // whenever `active` changes identity, including when its lastActivityAt
+  // advances from a reply arriving while this page is open, so the indicator
+  // never lights up for the thread you're already looking at. Writes an
   // external store only (no re-render), so an effect is the right tool here.
   useEffect(() => {
-    if (active) writeLastActiveThreadId(active.id);
+    if (active) {
+      writeLastActiveThreadId(active.id);
+      markThreadViewed(active.id, active.lastActivityAt);
+    }
   }, [active]);
 
   const session = useMyraSession(
@@ -103,11 +112,11 @@ export function ChatThreadPage() {
   );
 
   // A brand-new thread carries the hub's auto-assigned default label
-  // ("Chat", "Chat 2", …) until the async title lands — show "New chat"
+  // ("Chat", "Chat 2", …) until the async title lands — show "New thread"
   // instead of that placeholder in the breadcrumb.
   const activeThreadLabel =
     active !== null && isDefaultThreadLabel(active.label)
-      ? "New chat"
+      ? "New thread"
       : (active?.label ?? null);
 
   usePublishActiveContext(
@@ -192,7 +201,7 @@ export function ChatThreadPage() {
         <button
           type="button"
           onClick={() => setInfoOpen(true)}
-          aria-label="Chat details"
+          aria-label="Thread details"
           className="grid h-7 w-7 flex-none place-items-center rounded-[8px] text-text-3 transition-colors hover:bg-page hover:text-text active:scale-[0.97]"
         >
           <Info className="h-3.5 w-3.5" />
@@ -203,7 +212,7 @@ export function ChatThreadPage() {
   useSetPageChrome(infoButton);
 
   if (isLoading) {
-    return <CenteredNotice>Loading your chats…</CenteredNotice>;
+    return <CenteredNotice>Loading your threads…</CenteredNotice>;
   }
 
   if (isError) {
@@ -211,7 +220,7 @@ export function ChatThreadPage() {
       <CenteredNotice>
         <div className="flex flex-col items-center gap-2">
           <span>
-            Couldn't load your chats. Check your connection and try again.
+            Couldn't load your threads. Check your connection and try again.
           </span>
           <button
             type="button"
@@ -229,7 +238,7 @@ export function ChatThreadPage() {
     return (
       <CenteredNotice>
         <div className="flex flex-col items-center gap-3">
-          <span>You don't have any chats yet.</span>
+          <span>You don't have any threads yet.</span>
           <button
             type="button"
             disabled={createThread.isPending}
@@ -243,7 +252,7 @@ export function ChatThreadPage() {
             }
             className="rounded-[8px] bg-orange px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
           >
-            {createThread.isPending ? "Starting…" : "Start a chat"}
+            {createThread.isPending ? "Starting…" : "Start a thread"}
           </button>
         </div>
       </CenteredNotice>
@@ -254,9 +263,9 @@ export function ChatThreadPage() {
     return (
       <CenteredNotice>
         <div className="flex flex-col items-center gap-2">
-          <span>This chat couldn't be found.</span>
+          <span>This thread couldn't be found.</span>
           <Link to="/chats" className="text-orange underline">
-            Back to all chats
+            Back to all threads
           </Link>
         </div>
       </CenteredNotice>
