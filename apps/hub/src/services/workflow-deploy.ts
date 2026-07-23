@@ -1312,26 +1312,62 @@ export async function ensureDeploymentInstanceActive(args: {
     });
 }
 
+// The resource-string prefix a native `action` step's `EffectContext.perform`
+// authorizes against (`interchange/packages/workflow/src/runtime/
+// effect-context.ts`'s `createEffectContext`: `authorize(\`effect:${capability}\`,
+// "invoke", ...)`). Distinct from `TOOL_GRANT_RESOURCE_PREFIX` — an agent-step
+// tool call authorizes `tool:<name>`, an action step's effect authorizes
+// `effect:<name>`, and the two checks are never interchangeable.
+const EFFECT_GRANT_RESOURCE_PREFIX = "effect:";
+
 // Build the on-disk `GrantRule` set that authorizes a step agent to invoke
-// each of its tools. This is the runtime grammar `@intx/authz`'s
+// each of its tools AND, for a native `action` step, to perform each of its
+// declared effects. This is the runtime grammar `@intx/authz`'s
 // `evaluateGrants` matches (NOT a DB `grant` row) — it mirrors
 // `buildToolGrantRows` but emits the `GrantRule` shape the sidecar evaluates
-// off `state/grants.json`. One allow rule per de-duplicated tool name.
+// off `state/grants.json`.
+//
+// `capabilityNames` (from `capabilityNames(walk)`) folds an agent step's
+// `capability:<name>` grants together with an action step's `effect:<name>`
+// grants into one flat, indistinguishable name set — so a name in this list
+// may belong to either kind of step, or both. Emitting BOTH a `tool:<name>`
+// and an `effect:<name>` allow rule for every name is therefore required, not
+// redundant: an action step's `EffectContext.perform` authorizes
+// `effect:<capability>` (see `createEffectContext`), which a `tool:`-only
+// grants file never satisfies — every native `action` step's first tool call
+// throws "action effect ... was not authorized (null)" without this, since
+// the step's own `state/grants.json` carried no matching resource for that
+// check, regardless of tool pinning or credential configuration. An
+// agent-step tool call authorizes `tool:<name>` and never reads the
+// `effect:` rule, so the extra rule is inert for that class of step.
 export function buildStepGrantRules(
   capabilityNames: readonly string[],
 ): GrantRule[] {
   const unique = [...new Set(capabilityNames)];
-  return unique.map((name) => ({
-    id: generateId("grant"),
-    resource: `${TOOL_GRANT_RESOURCE_PREFIX}${name}`,
-    action: "invoke",
-    effect: "allow" as const,
-    origin: "system" as const,
-    conditions: null,
-    expiresAt: null,
-    roleId: null,
-    principalId: null,
-  }));
+  return unique.flatMap((name) => [
+    {
+      id: generateId("grant"),
+      resource: `${TOOL_GRANT_RESOURCE_PREFIX}${name}`,
+      action: "invoke",
+      effect: "allow" as const,
+      origin: "system" as const,
+      conditions: null,
+      expiresAt: null,
+      roleId: null,
+      principalId: null,
+    },
+    {
+      id: generateId("grant"),
+      resource: `${EFFECT_GRANT_RESOURCE_PREFIX}${name}`,
+      action: "invoke",
+      effect: "allow" as const,
+      origin: "system" as const,
+      conditions: null,
+      expiresAt: null,
+      roleId: null,
+      principalId: null,
+    },
+  ]);
 }
 
 // Persist each step's grants snapshot to its agent-state repo. Every step's

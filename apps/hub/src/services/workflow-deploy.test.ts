@@ -14,7 +14,7 @@ import type { AgentRepoStore, SidecarRouter } from "@workbench/hub-sessions";
 import type { HubDb } from "../db";
 import { evaluateGrants } from "@intx/authz";
 import type { GrantRule } from "@intx/authz";
-import { defineWorkflow, map, step } from "@intx/workflow";
+import { createEffectContext, defineWorkflow, map, step } from "@intx/workflow";
 import { defineAgent } from "@intx/agent";
 import {
   createWorkbenchDirectorRegistry,
@@ -412,16 +412,18 @@ describe("ensureDeploymentInstanceActive", () => {
 });
 
 describe("buildStepGrantRules", () => {
-  test("emits one tool:<name>/invoke allow rule per de-duplicated capability", () => {
+  test("emits a tool:<name> AND an effect:<name>/invoke allow rule per de-duplicated capability", () => {
     const rules = buildStepGrantRules([
       "granola_list_notes",
       "gamma_generate",
       "granola_list_notes",
     ]);
-    expect(rules).toHaveLength(2);
-    expect(rules.map((r) => r.resource)).toEqual([
-      "tool:granola_list_notes",
+    expect(rules).toHaveLength(4);
+    expect(rules.map((r) => r.resource).sort()).toEqual([
+      "effect:gamma_generate",
+      "effect:granola_list_notes",
       "tool:gamma_generate",
+      "tool:granola_list_notes",
     ]);
     expect(
       rules.every((r) => r.action === "invoke" && r.effect === "allow"),
@@ -442,6 +444,56 @@ describe("buildStepGrantRules", () => {
       "invoke",
     );
     expect(ungranted.effect).not.toBe("allow");
+  });
+
+  test("also grants effect:<name>/invoke — the resource a native action step's EffectContext.perform authorizes (createEffectContext) — so an action step is not authorized against a tool:-only grants file", async () => {
+    // Regression test for the pain-point-collateral `intake`/`fetch` action
+    // steps failing every dispatch: `EffectContext.perform` (interchange's
+    // `createEffectContext`) authorizes `effect:<capability>`, not
+    // `tool:<capability>`. Before this fix, `buildStepGrantRules` emitted
+    // only `tool:` rules, so this check always found zero matching grant and
+    // threw "action effect ... was not authorized (null)" regardless of
+    // credentials or tool pinning.
+    const rules = buildStepGrantRules(["granola_list_notes"]);
+    const granted = await evaluateGrants(
+      rules,
+      "effect:granola_list_notes",
+      "invoke",
+    );
+    expect(granted.effect).toBe("allow");
+  });
+
+  test("end-to-end through the REAL @intx/workflow EffectContext: a step's persisted grants file authorizes its own action's effect call", async () => {
+    // Drives the exact seam that was broken: interchange's own
+    // `createEffectContext` (not a test double) evaluating an authorize
+    // function backed by the grants `buildStepGrantRules` writes to
+    // `state/grants.json`. Before this fix, `perform` threw here with
+    // "action effect ... was not authorized (null)" even though the tool
+    // was pinned and its credential was configured — proving the failure
+    // was a pure authorization-resource mismatch, not a credential or
+    // pinning defect.
+    const rules = buildStepGrantRules(["granola_list_notes"]);
+    const authorize: Parameters<typeof createEffectContext>[0]["authorize"] =
+      async (resource, action) => {
+        const decision = await evaluateGrants(rules, resource, action);
+        return { effect: decision.effect, matchingGrants: [], resolvedBy: null };
+      };
+    const ctx = createEffectContext({
+      authorize,
+      effects: {
+        lookup: async () => undefined,
+        record: async () => {},
+      },
+      requires: ["granola_list_notes"],
+      authzContext: { runId: "run_1", stepId: "intake" },
+      input: {},
+    });
+    const output = await ctx.perform({
+      effectId: "tool-call",
+      capability: "granola_list_notes",
+      run: async () => ({ notes: [], hasMore: false }),
+    });
+    expect(output).toEqual({ notes: [], hasMore: false });
   });
 });
 
