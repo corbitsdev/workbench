@@ -21,21 +21,39 @@ const MEMBER_IDENTITY = {
 describe("computeHeartbeatCreatedAfter", () => {
   it("uses the last fire's exact instant when it is known and recent", () => {
     const yesterday = TODAY - 1;
-    const result = computeHeartbeatCreatedAfter(NOW, yesterday, 9);
+    const result = computeHeartbeatCreatedAfter(NOW, yesterday, 9 * 60);
     expect(result).toBe(
       new Date(yesterday * MS_PER_DAY + 9 * 3_600_000).toISOString(),
     );
   });
 
   it("falls back to now minus 24h when the schedule has never fired", () => {
-    const result = computeHeartbeatCreatedAfter(NOW, null, 9);
+    const result = computeHeartbeatCreatedAfter(NOW, null, 9 * 60);
     expect(result).toBe(new Date(NOW - 24 * 3_600_000).toISOString());
   });
 
   it("clamps a stale last fire to at most 7 days back", () => {
     const staleDay = TODAY - 30;
-    const result = computeHeartbeatCreatedAfter(NOW, staleDay, 9);
+    const result = computeHeartbeatCreatedAfter(NOW, staleDay, 9 * 60);
     expect(result).toBe(new Date(NOW - 7 * MS_PER_DAY).toISOString());
+  });
+
+  it("uses the anchor's real minute, not just its hour (CL-4278)", () => {
+    const yesterday = TODAY - 1;
+    const anchorMinuteUtc = 9 * 60 + 15; // 09:15 UTC
+    const result = computeHeartbeatCreatedAfter(
+      NOW,
+      yesterday,
+      anchorMinuteUtc,
+    );
+    const hourTruncated = new Date(
+      yesterday * MS_PER_DAY + 9 * 3_600_000,
+    ).toISOString();
+    const minutePrecise = new Date(
+      yesterday * MS_PER_DAY + 9 * 3_600_000 + 15 * 60_000,
+    ).toISOString();
+    expect(result).toBe(minutePrecise);
+    expect(result).not.toBe(hourTruncated);
   });
 });
 
@@ -56,7 +74,7 @@ describe("enrichHeartbeatTriggerPayload", () => {
       ["granola"],
       NOW,
       null,
-      9,
+      9 * 60,
       "scheduled",
       MEMBER_IDENTITY,
     );
@@ -78,7 +96,7 @@ describe("enrichHeartbeatTriggerPayload", () => {
       ["granola"],
       NOW,
       null,
-      9,
+      9 * 60,
       "scheduled",
       MEMBER_IDENTITY,
     );
@@ -93,7 +111,7 @@ describe("enrichHeartbeatTriggerPayload", () => {
       [],
       NOW,
       null,
-      9,
+      9 * 60,
       "scheduled",
       MEMBER_IDENTITY,
     );
@@ -109,7 +127,7 @@ describe("enrichHeartbeatTriggerPayload", () => {
       [],
       NOW,
       yesterday,
-      9,
+      9 * 60,
       "scheduled",
       MEMBER_IDENTITY,
     );
@@ -130,7 +148,7 @@ describe("enrichHeartbeatTriggerPayload", () => {
       [],
       NOW,
       null,
-      9,
+      9 * 60,
       "scheduled",
       { userAddress: "usr_new@workbench.local", userRefId: "new" },
     );
@@ -146,7 +164,7 @@ describe("enrichHeartbeatTriggerPayload", () => {
       ["granola"],
       NOW,
       null,
-      9,
+      9 * 60,
       "scheduled",
       { userAddress: "usr_abc@workbench.local", userRefId: "abc" },
     );
@@ -162,7 +180,7 @@ describe("enrichHeartbeatTriggerPayload", () => {
       ["granola"],
       NOW,
       null,
-      9,
+      9 * 60,
       "scheduled",
       {
         userAddress: "usr_abc@d",
@@ -181,7 +199,7 @@ describe("enrichHeartbeatTriggerPayload", () => {
       ["granola"],
       NOW,
       null,
-      9,
+      9 * 60,
       "scheduled",
       MEMBER_IDENTITY,
     );
@@ -197,7 +215,7 @@ describe("enrichHeartbeatTriggerPayload", () => {
       ["granola", "linear"],
       NOW,
       yesterday,
-      9,
+      9 * 60,
       "manual-refresh",
       MEMBER_IDENTITY,
     );
@@ -222,7 +240,7 @@ describe("enrichHeartbeatTriggerPayload", () => {
       ["granola"],
       NOW,
       null,
-      9,
+      9 * 60,
       "scheduled",
       MEMBER_IDENTITY,
     );

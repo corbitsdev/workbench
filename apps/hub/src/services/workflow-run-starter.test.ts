@@ -701,8 +701,8 @@ describe("createWorkflowRunStarter", () => {
   // defeating computeHeartbeatCreatedAfter's "day 2+ never re-briefs since
   // yesterday" contract and duplicating call coverage forever. `startRun`'s
   // `heartbeatFire` field is how the scheduler forwards its real
-  // lastFiredDayUtc/hourUtc through to the registry; this drives that path
-  // through the REAL starter (not a re-implementation) and asserts the
+  // lastFiredDayUtc/anchorMinuteUtc through to the registry; this drives that
+  // path through the REAL starter (not a re-implementation) and asserts the
   // delivered createdAfter is the incremental since-yesterday window, not the
   // 7-day fallback.
   it("a scheduler-sourced heartbeat run gets the incremental since-last-fire createdAfter, not the 7-day manual-refresh fallback", async () => {
@@ -735,7 +735,7 @@ describe("createWorkflowRunStarter", () => {
       input: { reason: "scheduled-heartbeat" },
       creatorPrincipalId: "prn-owner",
       source: "scheduler",
-      heartbeatFire: { lastFiredDayUtc: yesterday, hourUtc: 9 },
+      heartbeatFire: { lastFiredDayUtc: yesterday, anchorMinuteUtc: 9 * 60 },
     });
 
     expect(result.ok).toBe(true);
@@ -750,6 +750,62 @@ describe("createWorkflowRunStarter", () => {
     ).toISOString();
     expect(delivered.createdAfter).toBe(incrementalWindow);
     expect(delivered.createdAfter).not.toBe(sevenDayFallback);
+  });
+
+  // CL-4278 (review fix #1): a heartbeat "starting at" of e.g. 08:15 must
+  // survive as a real 15-minute offset all the way to the delivered
+  // createdAfter — the anchor used to be truncated to the hour
+  // (`Math.floor(anchorMinuteUtc / 60)`) at the scheduler → startRun seam,
+  // silently shifting the incremental lookback by up to 59 minutes against
+  // what the member actually set.
+  it("forwards a heartbeat anchor's real minute, not just its hour, into the incremental lookback", async () => {
+    chainRef = ["t-root"];
+    const sent: Record<string, unknown>[] = [];
+    const sessionService = {
+      sendUserMessage: async (a: Record<string, unknown>) => {
+        sent.push(a);
+      },
+    } as unknown as SessionService;
+    const nowMs = Date.UTC(2026, 0, 9, 13, 0, 0);
+    const today = Math.floor(nowMs / 86_400_000);
+    const yesterday = today - 1;
+    const anchorMinuteUtc = 8 * 60 + 15; // 08:15 UTC
+
+    const starter = createWorkflowRunStarter(
+      starterDeps({
+        db: makeDb([candidate({ deploymentId: "dep-1", kind: "heartbeat" })]),
+        sessionService,
+        resolveUserIdentity: async (principalId: string) => ({
+          userAddress: `usr_${principalId}@${DOMAIN}`,
+          userRefId: principalId,
+        }),
+        now: () => nowMs,
+      }),
+    );
+
+    const result = await starter.startRun({
+      kind: "heartbeat",
+      tenantId: "t-root",
+      input: { reason: "scheduled-heartbeat" },
+      creatorPrincipalId: "prn-owner",
+      source: "scheduler",
+      heartbeatFire: { lastFiredDayUtc: yesterday, anchorMinuteUtc },
+    });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error("unreachable");
+    const delivered = JSON.parse(sent[0]?.content as string) as Record<
+      string,
+      unknown
+    >;
+    const hourTruncatedWindow = new Date(
+      yesterday * 86_400_000 + 8 * 3_600_000,
+    ).toISOString();
+    const minutePreciseWindow = new Date(
+      yesterday * 86_400_000 + 8 * 3_600_000 + 15 * 60_000,
+    ).toISOString();
+    expect(delivered.createdAfter).toBe(minutePreciseWindow);
+    expect(delivered.createdAfter).not.toBe(hourTruncatedWindow);
   });
 
   it("marks scheduler-sourced starts with triggerSource=scheduler on the run row", async () => {

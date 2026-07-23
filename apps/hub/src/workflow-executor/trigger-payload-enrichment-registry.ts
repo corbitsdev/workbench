@@ -27,14 +27,17 @@ export type TriggerPayloadEnrichmentDeps = {
  * start door except the scheduler defaults to `"manual-refresh"` (a full
  * 7-day lookback): the scheduler is the only caller with a real
  * "since-last-fire" window to offer, so it is the only one that passes
- * `lastFiredDayUtc`/`hourUtc`/`"scheduled"` explicitly.
+ * `lastFiredDayUtc`/`anchorMinuteUtc`/`"scheduled"` explicitly.
  */
 export type TriggerPayloadEnrichmentCtx = {
   kind: string;
   tenantId: string;
   principalId: string;
   lastFiredDayUtc?: number | null;
-  hourUtc?: number;
+  /** Minute-of-UTC-day the schedule anchors on (CL-4278) — minute precision,
+   * not truncated to the hour, so the enricher's since-last-fire lookback
+   * matches the actual anchor a member set (e.g. 08:15, not 08:00). */
+  anchorMinuteUtc?: number;
   lookback?: "scheduled" | "manual-refresh";
 };
 
@@ -66,7 +69,7 @@ const TRIGGER_PAYLOAD_ENRICHERS: Record<string, TriggerPayloadEnricher> = {
       resolveEnabledBriefSources(prefs),
       (deps.now ?? Date.now)(),
       ctx.lastFiredDayUtc ?? null,
-      ctx.hourUtc ?? 0,
+      ctx.anchorMinuteUtc ?? 0,
       ctx.lookback ?? "manual-refresh",
       identity,
     );

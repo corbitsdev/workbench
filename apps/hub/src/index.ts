@@ -2050,6 +2050,10 @@ const scheduler = createScheduler({
     // (intervalMinutes=1440) cadence, and for that cadence the window index
     // IS the UTC day index (see scheduler.test.ts), so `lastFiredWindowIndex`
     // maps directly onto the enricher's day-granularity `lastFiredDayUtc`.
+    // `anchorMinuteUtc` is forwarded at its real minute precision (CL-4278) —
+    // it used to be truncated to `Math.floor(.../60)` here, silently
+    // discarding up to 59 minutes of the member's chosen "starting at" time
+    // and skewing the enricher's since-last-fire lookback by the same amount.
     const result = await runStarter.startRun({
       kind: fire.kind,
       tenantId: fire.tenantId,
@@ -2058,7 +2062,7 @@ const scheduler = createScheduler({
       source: "scheduler",
       heartbeatFire: {
         lastFiredDayUtc: fire.lastFiredWindowIndex,
-        hourUtc: Math.floor(fire.anchorMinuteUtc / 60),
+        anchorMinuteUtc: fire.anchorMinuteUtc,
       },
     });
     if (!result.ok) {

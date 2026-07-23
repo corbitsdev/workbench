@@ -1,80 +1,102 @@
 /// <reference types="bun" />
 import { describe, expect, it } from "bun:test";
 import {
-  decodeRecurrenceKey,
+  amountUnitFromInterval,
+  anchorToLocalTimeInputValue,
   defaultRecurrence,
-  encodeRecurrence,
   formatLastFiredAt,
   formatNextFire,
   formatRecurrence,
   formatUtcHourLocal,
-  recurrenceOptions,
+  intervalFromAmountUnit,
+  localTimeInputValueToAnchor,
+  onlyDailyAllowedForKind,
 } from "./schedule-time";
 
-describe("recurrenceOptions", () => {
-  it("offers all 24 daily-hour options plus the sub-daily interval presets", () => {
-    const options = recurrenceOptions();
-    const dailyKeys = options.filter((o) => o.key.startsWith("daily:"));
-    const intervalKeys = options.filter((o) => o.key.startsWith("interval:"));
-    expect(dailyKeys).toHaveLength(24);
-    expect(intervalKeys.length).toBeGreaterThan(0);
-    expect(new Set(options.map((o) => o.key)).size).toBe(options.length);
+describe("amountUnitFromInterval / intervalFromAmountUnit", () => {
+  it("round-trips a sub-hourly interval (CL-4278)", () => {
+    const { amount, unit } = amountUnitFromInterval(5);
+    expect(amount).toBe(5);
+    expect(unit).toBe("minutes");
+    expect(intervalFromAmountUnit(amount, unit)).toBe(5);
   });
 
-  it("labels every daily option with a clock time", () => {
-    for (const { key, label } of recurrenceOptions()) {
-      if (!key.startsWith("daily:")) continue;
-      expect(label).toMatch(/\d/);
-    }
+  it("decomposes a daily interval to 1 day, not 1440 minutes", () => {
+    expect(amountUnitFromInterval(1440)).toEqual({ amount: 1, unit: "days" });
   });
 
-  it("labels sub-daily options in plain minutes/hour language", () => {
-    const labels = recurrenceOptions()
-      .filter((o) => o.key.startsWith("interval:"))
-      .map((o) => o.label);
-    expect(labels).toContain("Every 5 minutes");
-    expect(labels).toContain("Every hour");
+  it("decomposes a weekly interval to 1 week", () => {
+    expect(amountUnitFromInterval(10080)).toEqual({
+      amount: 1,
+      unit: "weeks",
+    });
+  });
+
+  it("decomposes an hours-multiple interval to hours, not minutes", () => {
+    expect(amountUnitFromInterval(180)).toEqual({ amount: 3, unit: "hours" });
+  });
+
+  it("falls back to minutes for an interval with no clean larger unit", () => {
+    expect(amountUnitFromInterval(7)).toEqual({ amount: 7, unit: "minutes" });
+  });
+
+  it("clamps a recomposed interval to the schema's 1..10080 bounds", () => {
+    expect(intervalFromAmountUnit(0, "minutes")).toBe(1);
+    expect(intervalFromAmountUnit(999, "weeks")).toBe(10080);
   });
 });
 
-describe("encodeRecurrence / decodeRecurrenceKey", () => {
-  it("round-trips a daily recurrence through its key", () => {
-    const recurrence = { intervalMinutes: 1440, anchorMinuteUtc: 9 * 60 };
-    const key = encodeRecurrence(recurrence);
-    expect(decodeRecurrenceKey(key)).toEqual(recurrence);
-  });
-
-  it("round-trips a sub-daily preset recurrence through its key", () => {
-    const recurrence = { intervalMinutes: 5, anchorMinuteUtc: 0 };
-    const key = encodeRecurrence(recurrence);
-    expect(decodeRecurrenceKey(key)).toEqual(recurrence);
-  });
-
-  it("falls back to the nearest daily hour for a recurrence with no preset key", () => {
-    // e.g. an every-20-minutes schedule set via the API directly, not the
-    // picker's presets — must still resolve to a real, non-blank selection.
-    const recurrence = { intervalMinutes: 20, anchorMinuteUtc: 3 * 60 };
-    const key = encodeRecurrence(recurrence);
-    expect(key).toBe("daily:3");
+describe("anchorToLocalTimeInputValue / localTimeInputValueToAnchor", () => {
+  it("round-trips a local time-of-day value", () => {
+    const value = "08:15";
+    const anchor = localTimeInputValueToAnchor(value);
+    expect(anchorToLocalTimeInputValue(anchor)).toBe(value);
   });
 });
 
 describe("formatRecurrence", () => {
-  it("formats a daily recurrence in local clock time", () => {
+  it("renders a sub-hourly cadence correctly (CL-4278)", () => {
+    const label = formatRecurrence({
+      intervalMinutes: 5,
+      anchorMinuteUtc: 0,
+    });
+    expect(label).toContain("Every 5 minutes");
+    expect(label).toContain("starting at");
+  });
+
+  it("renders a daily cadence in plain language", () => {
     const label = formatRecurrence({
       intervalMinutes: 1440,
       anchorMinuteUtc: 0,
     });
-    expect(label).toContain("Daily at");
+    expect(label).toContain("Once a day");
+    expect(label).toContain("starting at");
   });
 
-  it("formats a sub-daily recurrence in plain language", () => {
-    expect(formatRecurrence({ intervalMinutes: 5, anchorMinuteUtc: 0 })).toBe(
-      "Every 5 minutes",
-    );
-    expect(formatRecurrence({ intervalMinutes: 60, anchorMinuteUtc: 0 })).toBe(
-      "Every hour",
-    );
+  it("renders a weekly cadence in plain language", () => {
+    const label = formatRecurrence({
+      intervalMinutes: 10080,
+      anchorMinuteUtc: 0,
+    });
+    expect(label).toContain("Once a week");
+  });
+
+  it("renders a multi-unit cadence with pluralized units", () => {
+    const label = formatRecurrence({
+      intervalMinutes: 180,
+      anchorMinuteUtc: 0,
+    });
+    expect(label).toContain("Every 3 hours");
+  });
+});
+
+describe("onlyDailyAllowedForKind", () => {
+  it("locks heartbeat to a daily-only cadence", () => {
+    expect(onlyDailyAllowedForKind("heartbeat")).toBe(true);
+  });
+
+  it("leaves other kinds free to pick any interval", () => {
+    expect(onlyDailyAllowedForKind("gamma")).toBe(false);
   });
 });
 

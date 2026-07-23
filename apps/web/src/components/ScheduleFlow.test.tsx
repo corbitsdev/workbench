@@ -1,5 +1,6 @@
 /// <reference types="bun" />
 import "../test-setup";
+import { useState } from "react";
 import { afterEach, describe, expect, it, mock } from "bun:test";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import type {
@@ -7,10 +8,7 @@ import type {
   ScheduleRecurrence,
   WorkflowCatalogEntry,
 } from "@workbench/shared";
-import {
-  buildScheduleFlowSteps,
-  ScheduleFlow,
-} from "./ScheduleFlow";
+import { buildScheduleFlowSteps, ScheduleFlow } from "./ScheduleFlow";
 
 const baseEntry: WorkflowCatalogEntry = {
   kind: "gamma",
@@ -86,14 +84,10 @@ describe("ScheduleFlow", () => {
     expect(screen.getByTestId("schedule-flow-step-availability")).toBeTruthy();
 
     fireEvent.click(screen.getByTestId("schedule-flow-primary"));
-    expect(
-      screen.getByTestId("schedule-flow-body-recurrence"),
-    ).toBeTruthy();
+    expect(screen.getByTestId("schedule-flow-body-recurrence")).toBeTruthy();
 
     fireEvent.click(screen.getByTestId("schedule-flow-primary"));
-    expect(
-      screen.getByTestId("schedule-flow-body-availability"),
-    ).toBeTruthy();
+    expect(screen.getByTestId("schedule-flow-body-availability")).toBeTruthy();
 
     fireEvent.click(screen.getByTestId("schedule-flow-primary"));
     expect(onSave).toHaveBeenCalled();
@@ -162,6 +156,85 @@ describe("ScheduleFlow", () => {
     );
     fireEvent.click(screen.getByTestId("schedule-flow-primary"));
     expect(onSave).toHaveBeenCalled();
+  });
+
+  it("round-trips a sub-hourly interval selection through save and back into the editor (CL-4278)", () => {
+    const onSave = mock(() => undefined);
+
+    function Harness({ persisted }: { persisted: ScheduleRecurrence }) {
+      const [recurrence, setRecurrence] = useState(persisted);
+      return (
+        <ScheduleFlow
+          entry={baseEntry}
+          productLabel="Gamma"
+          recurrence={recurrence}
+          onRecurrenceChange={setRecurrence}
+          scope="personal"
+          onScopeChange={() => undefined}
+          fieldValues={{}}
+          onFieldValuesChange={() => undefined}
+          fields={[]}
+          error={null}
+          onCancel={() => undefined}
+          onSave={onSave}
+        />
+      );
+    }
+
+    const { rerender } = render(<Harness key="a" persisted={daily} />);
+
+    fireEvent.click(screen.getByTestId("schedule-flow-primary")); // open → recurrence
+
+    const unitSelect = screen.getByLabelText("Interval unit");
+    fireEvent.change(unitSelect, { target: { value: "minutes" } });
+    const amountInput = screen.getByLabelText("How often") as HTMLInputElement;
+    fireEvent.change(amountInput, { target: { value: "5" } });
+
+    expect(amountInput.value).toBe("5");
+    expect((unitSelect as HTMLSelectElement).value).toBe("minutes");
+
+    const saved: ScheduleRecurrence = {
+      intervalMinutes: 5,
+      anchorMinuteUtc: 14 * 60,
+    };
+
+    // Reopen: a fresh mount with the saved recurrence must select the same
+    // amount/unit back into the controls.
+    rerender(<Harness key="b" persisted={saved} />);
+    fireEvent.click(screen.getByTestId("schedule-flow-primary")); // open → recurrence
+    expect((screen.getByLabelText("How often") as HTMLInputElement).value).toBe(
+      "5",
+    );
+    expect(
+      (screen.getByLabelText("Interval unit") as HTMLSelectElement).value,
+    ).toBe("minutes");
+    expect(screen.getByText(/Every 5 minutes, starting at/)).toBeTruthy();
+  });
+
+  it("locks the interval control to Once a day for a daily-only kind (heartbeat)", () => {
+    render(
+      <ScheduleFlow
+        entry={{
+          ...baseEntry,
+          kind: "heartbeat",
+          allowedScopes: ["personal"],
+        }}
+        productLabel="Morning brief"
+        recurrence={daily}
+        onRecurrenceChange={() => undefined}
+        scope="personal"
+        onScopeChange={() => undefined}
+        fieldValues={{}}
+        onFieldValuesChange={() => undefined}
+        fields={[]}
+        error={null}
+        onCancel={() => undefined}
+        onSave={() => undefined}
+      />,
+    );
+    fireEvent.click(screen.getByTestId("schedule-flow-primary")); // open → recurrence
+    expect(screen.getByTestId("recurrence-daily-only-heartbeat")).toBeTruthy();
+    expect(screen.queryByLabelText("Interval unit")).toBeNull();
   });
 
   it("collapses availability on edit", () => {

@@ -5,17 +5,25 @@ import type {
   ScheduleScope,
   WorkflowCatalogEntry,
 } from "@workbench/shared";
+import { ScheduleFieldForm, scheduleFieldsComplete } from "./ScheduleFieldForm";
+import { RecurrenceAmountInput } from "./RecurrenceAmountInput";
 import {
-  ScheduleFieldForm,
-  scheduleFieldsComplete,
-} from "./ScheduleFieldForm";
-import {
-  decodeRecurrenceKey,
-  encodeRecurrence,
-  recurrenceOptions,
+  amountUnitFromInterval,
+  anchorToLocalTimeInputValue,
+  formatRecurrence,
+  intervalFromAmountUnit,
+  localTimeInputValueToAnchor,
+  onlyDailyAllowedForKind,
   scheduleScopeLabel,
-  type RecurrenceOption,
+  type RecurrenceUnit,
 } from "../lib/schedule-time";
+
+const RECURRENCE_UNIT_OPTIONS: { value: RecurrenceUnit; label: string }[] = [
+  { value: "minutes", label: "minutes" },
+  { value: "hours", label: "hours" },
+  { value: "days", label: "days" },
+  { value: "weeks", label: "weeks" },
+];
 
 /** Ordered schedule create/edit steps (CL-4263). */
 export type ScheduleFlowStepId =
@@ -63,16 +71,17 @@ export type ScheduleFlowProps = {
   busy?: boolean;
   onCancel: () => void;
   onSave: () => void | Promise<void>;
-  /** Optional recurrence options (tests can inject). */
-  recurrenceChoices?: RecurrenceOption[];
 };
 
 /**
  * Multi-step schedule create/edit walk (CL-4263):
  * Open → Recurrence → Inputs (if any) → Availability (if choosable).
  *
- * Recurrence uses the closed set from schedule-time (daily local hour or
- * sub-daily intervals) introduced with real recurrence support.
+ * Recurrence is two raw controls (CL-4278): an amount + unit for "how often"
+ * (decomposed to `intervalMinutes`, minute granularity available) and a
+ * local time-of-day for "starting at" (decomposed to `anchorMinuteUtc`).
+ * Kinds whose per-kind rule requires a fixed daily cadence (e.g. heartbeat,
+ * see `onlyDailyAllowedForKind`) lock the "how often" control to once a day.
  */
 export function ScheduleFlow({
   entry,
@@ -89,7 +98,6 @@ export function ScheduleFlow({
   busy = false,
   onCancel,
   onSave,
-  recurrenceChoices: recurrenceChoicesProp,
 }: ScheduleFlowProps) {
   const isEdit = existing != null;
   const canChooseScope = !isEdit && entry.allowedScopes.length > 1;
@@ -107,7 +115,22 @@ export function ScheduleFlow({
 
   const currentStep = steps[stepIndex] ?? "open";
   const isLast = stepIndex >= steps.length - 1;
-  const recurrenceChoices = recurrenceChoicesProp ?? recurrenceOptions();
+  const dailyOnly = onlyDailyAllowedForKind(entry.kind);
+  const { amount, unit } = amountUnitFromInterval(recurrence.intervalMinutes);
+
+  const updateInterval = (nextAmount: number, nextUnit: RecurrenceUnit) => {
+    onRecurrenceChange({
+      ...recurrence,
+      intervalMinutes: intervalFromAmountUnit(nextAmount, nextUnit),
+    });
+  };
+
+  const setAnchor = (localTimeValue: string) => {
+    onRecurrenceChange({
+      ...recurrence,
+      anchorMinuteUtc: localTimeInputValueToAnchor(localTimeValue),
+    });
+  };
 
   const goBack = () => {
     setStepError(null);
@@ -116,7 +139,10 @@ export function ScheduleFlow({
 
   const goNext = () => {
     setStepError(null);
-    if (currentStep === "inputs" && !scheduleFieldsComplete(fields, fieldValues)) {
+    if (
+      currentStep === "inputs" &&
+      !scheduleFieldsComplete(fields, fieldValues)
+    ) {
       setStepError("Fill in the required fields.");
       return;
     }
@@ -199,28 +225,58 @@ export function ScheduleFlow({
       {currentStep === "recurrence" ? (
         <div data-testid="schedule-flow-body-recurrence">
           <label
-            htmlFor={`recurrence-${entry.kind}`}
+            htmlFor={`recurrence-amount-${entry.kind}`}
             className="mb-1 block text-xs font-semibold uppercase tracking-[0.05em] text-text-3"
           >
             How often
           </label>
-          <select
-            id={`recurrence-${entry.kind}`}
-            value={encodeRecurrence(recurrence)}
-            onChange={(e) =>
-              onRecurrenceChange(decodeRecurrenceKey(e.target.value))
-            }
-            className="w-full max-w-xs rounded-[10px] border border-border bg-page px-3 py-2 text-sm"
+          {dailyOnly ? (
+            <p
+              className="text-sm text-text"
+              data-testid={`recurrence-daily-only-${entry.kind}`}
+            >
+              Once a day
+            </p>
+          ) : (
+            <div className="flex items-start gap-2">
+              <span className="mt-2 text-sm text-text-2">Every</span>
+              <RecurrenceAmountInput
+                id={`recurrence-amount-${entry.kind}`}
+                amount={amount}
+                onCommit={(nextAmount) => updateInterval(nextAmount, unit)}
+                className="w-20 rounded-[10px] border border-border bg-page px-3 py-2 text-sm"
+              />
+              <select
+                aria-label="Interval unit"
+                value={unit}
+                onChange={(e) =>
+                  updateInterval(amount, e.target.value as RecurrenceUnit)
+                }
+                className="rounded-[10px] border border-border bg-page px-3 py-2 text-sm"
+              >
+                {RECURRENCE_UNIT_OPTIONS.map((o) => (
+                  <option key={o.value} value={o.value}>
+                    {o.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+          <label
+            htmlFor={`recurrence-anchor-${entry.kind}`}
+            className="mb-1 mt-3 block text-xs font-semibold uppercase tracking-[0.05em] text-text-3"
           >
-            {recurrenceChoices.map((opt) => (
-              <option key={opt.key} value={opt.key}>
-                {opt.label}
-              </option>
-            ))}
-          </select>
+            Starting at
+          </label>
+          <input
+            id={`recurrence-anchor-${entry.kind}`}
+            type="time"
+            value={anchorToLocalTimeInputValue(recurrence.anchorMinuteUtc)}
+            onChange={(e) => setAnchor(e.target.value)}
+            className="w-full max-w-xs rounded-[10px] border border-border bg-page px-3 py-2 text-sm"
+          />
           <p className="mt-2 text-xs text-text-3">
-            Daily times use your local clock; interval cadences fire on UTC
-            anchors.
+            {formatRecurrence(recurrence)}
           </p>
         </div>
       ) : null}
@@ -275,8 +331,8 @@ export function ScheduleFlow({
       {isEdit && currentStep === "open" ? (
         <p className="mt-3 text-xs text-text-3">
           Scope is set when a schedule is created and can&rsquo;t be changed
-          here — remove this schedule and create a new one to change who it
-          runs for.
+          here — remove this schedule and create a new one to change who it runs
+          for.
         </p>
       ) : null}
 

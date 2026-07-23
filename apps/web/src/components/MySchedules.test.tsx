@@ -131,7 +131,6 @@ describe("MySchedules", () => {
     renderList();
     await screen.findByText("Morning Brief");
     expect(screen.getByText(/Just me/)).toBeTruthy();
-
   });
 
   it("pauses a schedule via PATCH when the switch is toggled", async () => {
@@ -191,7 +190,7 @@ describe("MySchedules", () => {
     expect(screen.getByText(/Last fired: Not yet fired/)).toBeTruthy();
   });
 
-  it("changes the cadence via PATCH when a new option is selected", async () => {
+  it("changes the cadence to a sub-hourly interval via PATCH (CL-4278)", async () => {
     let patch: { url: string; body: unknown } | null = null;
     globalThis.fetch = makeFetch([schedule], (url, init) => {
       if (init.method === "PATCH")
@@ -200,14 +199,26 @@ describe("MySchedules", () => {
     const user = userEvent.setup();
     renderList();
 
-    const select = await screen.findByLabelText(
-      "Change cadence for Morning Brief",
+    const unitSelect = await screen.findByLabelText(
+      "Change interval unit for Morning Brief",
     );
-    await user.selectOptions(select, "daily:9");
+    await user.selectOptions(unitSelect, "minutes");
     await waitFor(() => expect(patch).not.toBeNull());
     expect(patch!.url).toContain("/me/schedules/sch_1");
+    expect(
+      (patch!.body as { recurrence: { intervalMinutes: number } }).recurrence
+        .intervalMinutes,
+    ).toBe(1);
+
+    patch = null;
+    const amountInput = screen.getByLabelText(
+      "Change interval amount for Morning Brief",
+    );
+    await user.clear(amountInput);
+    await user.type(amountInput, "5");
+    await waitFor(() => expect(patch).not.toBeNull());
     expect(patch!.body).toEqual({
-      recurrence: { intervalMinutes: 1440, anchorMinuteUtc: 9 * 60 },
+      recurrence: { intervalMinutes: 5, anchorMinuteUtc: 13 * 60 },
     });
   });
 

@@ -1,16 +1,28 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import { Button } from "@workbench/ui";
 import type { ScheduledTrigger, ScheduleRecurrence } from "@workbench/shared";
 import { getOwnerSchedules, updateOwnerSchedule } from "../../lib/hub-api";
+import { RecurrenceAmountInput } from "../../components/RecurrenceAmountInput";
 import {
-  decodeRecurrenceKey,
-  encodeRecurrence,
+  amountUnitFromInterval,
+  anchorToLocalTimeInputValue,
   formatLastFiredAt,
   formatNextFire,
-  recurrenceOptions,
+  formatRecurrence,
+  intervalFromAmountUnit,
+  localTimeInputValueToAnchor,
+  onlyDailyAllowedForKind,
+  type RecurrenceUnit,
 } from "../../lib/schedule-time";
 import { adminTableCard } from "./admin-ui";
+
+const RECURRENCE_UNIT_OPTIONS: { value: RecurrenceUnit; label: string }[] = [
+  { value: "minutes", label: "minutes" },
+  { value: "hours", label: "hours" },
+  { value: "days", label: "days" },
+  { value: "weeks", label: "weeks" },
+];
 
 /**
  * Owner → Schedules (CL-4113). Control-plane list of **Everyone**
@@ -113,8 +125,19 @@ function ScheduleRow({
   onToggle: () => void;
   onRecurrenceChange: (recurrence: ScheduleRecurrence) => void;
 }) {
-  const options = useMemo(() => recurrenceOptions(), []);
   const kind = schedule.workflowKind;
+  const dailyOnly = onlyDailyAllowedForKind(kind);
+  const { amount, unit } = amountUnitFromInterval(
+    schedule.recurrence.intervalMinutes,
+  );
+
+  const updateInterval = (nextAmount: number, nextUnit: RecurrenceUnit) => {
+    onRecurrenceChange({
+      ...schedule.recurrence,
+      intervalMinutes: intervalFromAmountUnit(nextAmount, nextUnit),
+    });
+  };
+
   return (
     <li className="flex flex-wrap items-center justify-between gap-3 p-3">
       <div className="min-w-0">
@@ -123,23 +146,55 @@ function ScheduleRow({
           Last: {formatLastFiredAt(schedule.recentFires[0]?.firedAt ?? null)} ·
           Next: {formatNextFire(schedule.nextFireAt, schedule.enabled)}
         </p>
+        <p className="mt-1 text-xs text-text-3">
+          {formatRecurrence(schedule.recurrence)}
+        </p>
       </div>
       <div className="flex flex-wrap items-center gap-2">
-        <select
-          aria-label={`Change cadence for ${kind}`}
-          value={encodeRecurrence(schedule.recurrence)}
+        {dailyOnly ? (
+          <span className="text-xs text-text-3">Once a day</span>
+        ) : (
+          <>
+            <span className="text-xs text-text-3">Every</span>
+            <RecurrenceAmountInput
+              ariaLabel={`Change interval amount for ${kind}`}
+              amount={amount}
+              disabled={busy}
+              onCommit={(nextAmount) => updateInterval(nextAmount, unit)}
+              className="w-14 rounded-[8px] border border-border bg-surface-2 px-2 py-1 text-xs text-text disabled:opacity-50"
+            />
+            <select
+              aria-label={`Change interval unit for ${kind}`}
+              value={unit}
+              disabled={busy}
+              onChange={(e) =>
+                updateInterval(amount, e.target.value as RecurrenceUnit)
+              }
+              className="rounded-[8px] border border-border bg-surface-2 px-2 py-1 text-xs text-text disabled:opacity-50"
+            >
+              {RECURRENCE_UNIT_OPTIONS.map((o) => (
+                <option key={o.value} value={o.value}>
+                  {o.label}
+                </option>
+              ))}
+            </select>
+          </>
+        )}
+        <input
+          type="time"
+          aria-label={`Change starting time for ${kind}`}
+          value={anchorToLocalTimeInputValue(
+            schedule.recurrence.anchorMinuteUtc,
+          )}
           disabled={busy}
           onChange={(e) =>
-            onRecurrenceChange(decodeRecurrenceKey(e.target.value))
+            onRecurrenceChange({
+              ...schedule.recurrence,
+              anchorMinuteUtc: localTimeInputValueToAnchor(e.target.value),
+            })
           }
-          className="rounded-[8px] border border-border bg-surface-2 px-2 py-1 text-xs text-text focus:outline-none focus-visible:ring-2 focus-visible:ring-border-strong disabled:opacity-50"
-        >
-          {options.map((o) => (
-            <option key={o.key} value={o.key}>
-              {o.label}
-            </option>
-          ))}
-        </select>
+          className="rounded-[8px] border border-border bg-surface-2 px-2 py-1 text-xs text-text disabled:opacity-50"
+        />
         <Button
           type="button"
           variant={schedule.enabled ? "ghost" : "primary"}

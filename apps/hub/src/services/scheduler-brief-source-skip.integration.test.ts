@@ -61,7 +61,7 @@ function fireAndCapturePayload(
         enabledSources,
         fire.nowMs,
         fire.lastFiredWindowIndex,
-        Math.floor(fire.anchorMinuteUtc / 60),
+        fire.anchorMinuteUtc,
         "scheduled",
         {
           userAddress: "usr_principal-1@workbench.example",

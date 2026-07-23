@@ -73,13 +73,17 @@ export type StartRunInput = {
   // redundant getAncestorChain round-trip. When omitted, the starter walks it.
   chain?: string[];
   // The scheduler's real fire-time window (its schedule row's last-fire day +
-  // hour) — the only caller with a genuine "since-last-fire" window to offer.
-  // Forwarded into the trigger-payload enrichment registry's `ctx` so the
-  // heartbeat enricher computes the real incremental lookback
-  // (`computeHeartbeatCreatedAfter`) instead of defaulting to the flat 7-day
-  // `manual-refresh` window every other source uses. Only meaningful with
-  // `source: "scheduler"`.
-  heartbeatFire?: { lastFiredDayUtc: number | null; hourUtc: number };
+  // anchor minute-of-day, both UTC) — the only caller with a genuine
+  // "since-last-fire" window to offer. Forwarded into the trigger-payload
+  // enrichment registry's `ctx` so the heartbeat enricher computes the real
+  // incremental lookback (`computeHeartbeatCreatedAfter`) instead of
+  // defaulting to the flat 7-day `manual-refresh` window every other source
+  // uses. Only meaningful with `source: "scheduler"`. Carries minute
+  // precision (CL-4278) — heartbeat's recurrence is daily-only
+  // (`isRecurrenceAllowedForKind`) but the anchor itself can still be any
+  // minute of the day, and truncating it to the hour here would silently
+  // shift the lookback against what the member actually set.
+  heartbeatFire?: { lastFiredDayUtc: number | null; anchorMinuteUtc: number };
 };
 
 export type StartRunResult =
@@ -235,7 +239,7 @@ export function createWorkflowRunStarter(deps: {
         ...(source === "scheduler"
           ? {
               lastFiredDayUtc: heartbeatFire?.lastFiredDayUtc ?? null,
-              hourUtc: heartbeatFire?.hourUtc ?? 0,
+              anchorMinuteUtc: heartbeatFire?.anchorMinuteUtc ?? 0,
               lookback: "scheduled" as const,
             }
           : {}),
