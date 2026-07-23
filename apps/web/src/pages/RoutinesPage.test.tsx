@@ -58,6 +58,18 @@ const getWorkflowsCatalog = mock(async () => ({
       defaultScope: "personal" as const,
       intakeFields: [],
     },
+    {
+      kind: "gamma",
+      label: "Gamma Presentation Creator",
+      isFavorite: false,
+      stepCount: 1,
+      pauseCount: 0,
+      steps: [],
+      attachable: true,
+      allowedScopes: ["personal", "tenant"] as ("personal" | "tenant")[],
+      defaultScope: "personal" as const,
+      intakeFields: [],
+    },
   ],
 }));
 
@@ -122,7 +134,7 @@ describe("RoutinesPage (CL-3862)", () => {
     expect(screen.getByText("Morning brief")).toBeTruthy();
     expect(screen.queryByText("Manual")).toBeNull();
     expect(screen.getByText(/Scheduled/)).toBeTruthy();
-    expect(screen.getByText("Not scheduled")).toBeTruthy();
+    expect(screen.getAllByText("Not scheduled").length).toBeGreaterThan(0);
   });
 
   it("creates a research schedule with form payload", async () => {
@@ -145,6 +157,43 @@ describe("RoutinesPage (CL-3862)", () => {
     };
     expect(body.kind).toBe("last30days-research");
     expect(body.payload).toEqual({ topic: "AI agents" });
+  });
+
+  it("creates a tenant-scoped schedule when the kind allows Everyone", async () => {
+    renderPage();
+    await waitFor(() => screen.getByTestId("schedule-gamma"));
+    fireEvent.click(screen.getByTestId("schedule-gamma"));
+    await waitFor(() => screen.getByTestId("schedule-editor-gamma"));
+    fireEvent.click(screen.getByRole("radio", { name: /everyone/i }));
+    fireEvent.click(screen.getByRole("button", { name: "Create schedule" }));
+    await waitFor(() => {
+      expect(createMeSchedule).toHaveBeenCalled();
+    });
+    const body = createMeSchedule.mock.calls[0]?.[0] as {
+      kind: string;
+      scope: string;
+    };
+    expect(body.kind).toBe("gamma");
+    expect(body.scope).toBe("tenant");
+  });
+
+  it("does not offer a scope choice for a personal-only kind", async () => {
+    renderPage();
+    await waitFor(() => screen.getByTestId("schedule-last30days-research"));
+    fireEvent.click(screen.getByTestId("schedule-last30days-research"));
+    await waitFor(() =>
+      screen.getByTestId("schedule-editor-last30days-research"),
+    );
+    expect(screen.queryByText("Who is this for")).toBeNull();
+    fireEvent.change(screen.getByLabelText(/Topic/), {
+      target: { value: "AI agents" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Create schedule" }));
+    await waitFor(() => {
+      expect(createMeSchedule).toHaveBeenCalled();
+    });
+    const body = createMeSchedule.mock.calls[0]?.[0] as { scope: string };
+    expect(body.scope).toBe("personal");
   });
 
   it("hour-only edit does not send empty payload for heartbeat", async () => {

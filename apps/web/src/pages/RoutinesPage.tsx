@@ -4,6 +4,7 @@ import {
   HEARTBEAT_WORKFLOW_KIND,
   type ScheduleFieldMetadata,
   type ScheduledTrigger,
+  type ScheduleScope,
   type WorkflowCatalogEntry,
 } from "@workbench/shared";
 import { LibraryPageHeader } from "@workbench/ui";
@@ -63,6 +64,7 @@ export function RoutinesPage() {
 
   const [expandedKind, setExpandedKind] = useState<string | null>(null);
   const [draftHour, setDraftHour] = useState(14);
+  const [draftScope, setDraftScope] = useState<ScheduleScope>("personal");
   const [draftValues, setDraftValues] = useState<Record<string, unknown>>({});
   const [error, setError] = useState<string | null>(null);
 
@@ -73,6 +75,7 @@ export function RoutinesPage() {
     setError(null);
     setExpandedKind(entry.kind);
     setDraftHour(existing?.hourUtc ?? 14);
+    setDraftScope(existing?.scope ?? entry.defaultScope);
     const fields = (entry.intakeFields ?? []) as ScheduleFieldMetadata[];
     const initial: Record<string, unknown> = {};
     for (const f of fields) {
@@ -133,6 +136,7 @@ export function RoutinesPage() {
         await createSchedule.mutateAsync({
           kind: entry.kind,
           hourUtc: draftHour,
+          scope: draftScope,
           payload: formPayload,
         });
       }
@@ -276,6 +280,49 @@ export function RoutinesPage() {
                       </option>
                     ))}
                   </select>
+
+                  {!existing && entry.allowedScopes.length > 1 ? (
+                    <fieldset className="mb-3">
+                      <legend className="mb-1.5 text-xs font-semibold uppercase tracking-[0.05em] text-text-3">
+                        Who is this for
+                      </legend>
+                      <div className="flex flex-col gap-1.5">
+                        {entry.allowedScopes.map((scope) => (
+                          <label
+                            key={scope}
+                            className="flex cursor-pointer items-start gap-2 text-sm text-text"
+                          >
+                            <input
+                              type="radio"
+                              name={`routine-scope-${entry.kind}`}
+                              value={scope}
+                              checked={draftScope === scope}
+                              onChange={() => setDraftScope(scope)}
+                              className="mt-0.5 accent-accent"
+                            />
+                            <span>
+                              <span className="font-medium">
+                                {scheduleScopeLabel(scope)}
+                              </span>
+                              <span className="mt-0.5 block text-xs text-text-3">
+                                {scope === "tenant"
+                                  ? "One shared run for the workspace; outcomes fan out to every member's inbox."
+                                  : "Only you own the schedule and receive the outcome."}
+                              </span>
+                            </span>
+                          </label>
+                        ))}
+                      </div>
+                    </fieldset>
+                  ) : null}
+
+                  {existing ? (
+                    <p className="mb-3 text-xs text-text-3">
+                      Scope is set when a schedule is created and can&rsquo;t be
+                      changed here — remove this schedule and create a new one
+                      to change who it runs for.
+                    </p>
+                  ) : null}
 
                   <ScheduleFieldForm
                     fields={fields}

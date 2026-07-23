@@ -1,11 +1,10 @@
 import { useMemo } from "react";
-import { useNavigate, useParams } from "react-router";
+import { Link, useNavigate, useParams } from "react-router";
 import { AppPageChromeRow } from "@workbench/ui";
 import { ErrorBoundary } from "../components/ErrorBoundary";
 import { useSetPageChrome } from "../lib/page-chrome";
 import { ActiveWorkflowRuns } from "../components/ActiveWorkflowRuns";
 import { WorkflowCatalog } from "../components/WorkflowCatalog";
-import { MySchedules } from "../components/MySchedules";
 import { WorkflowRunPane } from "../components/WorkflowRunPane";
 import { useActiveWorkbench } from "../lib/active-workbench-context";
 
@@ -15,6 +14,8 @@ import { useActiveWorkbench } from "../lib/active-workbench-context";
  * animated step preview; starting or opening a run shows its interactive
  * detail at `/workflows/:workflowId` so its human gates can be completed.
  * Browsable run history lives in Insights (`/insights/runs`), not here.
+ * Recurrence lives in Routines (CL-4248) — this page only launches one-off
+ * runs; the catalog links out to Routines for any schedulable kind.
  */
 export function WorkflowsPage() {
   const { workflowId } = useParams<{ workflowId?: string }>();
@@ -68,9 +69,16 @@ function WorkflowsCatalog({
           tenantId={scopedTenantId}
           onWorkflowStarted={(runId) => navigate(`/workflows/${runId}`)}
         />
-        <ErrorBoundary>
-          <MySchedules tenantId={scopedTenantId} />
-        </ErrorBoundary>
+        <p className="mt-10 text-[13px] text-text-3">
+          Looking for your schedules? Recurring runs now live in{" "}
+          <Link
+            to="/routines"
+            className="font-medium text-text-2 underline-offset-2 hover:underline"
+          >
+            Routines
+          </Link>
+          .
+        </p>
       </div>
     </div>
   );

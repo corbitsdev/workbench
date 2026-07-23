@@ -61,10 +61,6 @@ mock.module("../components/WorkflowCatalog", () => ({
   },
 }));
 
-mock.module("../components/MySchedules", () => ({
-  MySchedules: () => null,
-}));
-
 const { WorkflowsPage } = require("./WorkflowsPage");
 
 afterEach(() => {
@@ -102,6 +98,12 @@ describe("WorkflowsPage", () => {
     expect(screen.queryByLabelText("Search runs")).toBeNull();
     expect(screen.queryByRole("button", { name: /new run/i })).toBeNull();
     expect(screen.queryByRole("button", { name: "Failed" })).toBeNull();
+  });
+
+  it("points to Routines instead of embedding its own schedules list", () => {
+    renderWorkflowsPage();
+    const link = screen.getByRole("link", { name: "Routines" });
+    expect(link.getAttribute("href")).toBe("/routines");
   });
 
   it("navigates to the interactive run detail when a run is started", () => {

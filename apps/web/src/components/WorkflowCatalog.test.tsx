@@ -10,6 +10,7 @@ import {
   within,
 } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { MemoryRouter } from "react-router";
 import type { WorkflowCatalog } from "@workbench/shared";
 
 let catalogResult: {
@@ -71,7 +72,9 @@ function wrapper({ children }: { children: React.ReactNode }) {
     defaultOptions: { queries: { retry: false } },
   });
   return (
-    <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+    <QueryClientProvider client={queryClient}>
+      <MemoryRouter>{children}</MemoryRouter>
+    </QueryClientProvider>
   );
 }
 
@@ -100,6 +103,17 @@ const catalog: WorkflowCatalog = {
       pauseCount: 0,
       steps: [{ id: "a", title: "Ingest Content", kind: "auto" }],
       attachable: false,
+      allowedScopes: ["personal"] as const,
+      defaultScope: "personal" as const,
+    },
+    {
+      kind: "heartbeat",
+      label: "Morning Brief",
+      isFavorite: false,
+      stepCount: 1,
+      pauseCount: 0,
+      steps: [{ id: "b", title: "Compile Brief", kind: "auto" }],
+      attachable: true,
       allowedScopes: ["personal"] as const,
       defaultScope: "personal" as const,
     },
@@ -196,6 +210,15 @@ describe("WorkflowCatalog", () => {
     screen.getByText("Finishing an update — retrying…");
     expect(screen.queryByText("no capacity")).toBeNull();
     resolveStart?.();
+  });
+
+  it("points an attachable workflow at Routines instead of a schedule popover", () => {
+    renderCatalog(onWorkflowStarted);
+    // The first (favorited) entry, "pain", is not attachable — no pointer.
+    expect(screen.queryByText("Schedule in Routines →")).toBeNull();
+    fireEvent.click(screen.getByText("Morning Brief"));
+    const link = screen.getByRole("link", { name: "Schedule in Routines →" });
+    expect(link.getAttribute("href")).toBe("/routines");
   });
 
   it("shows loading, error, and empty states", () => {

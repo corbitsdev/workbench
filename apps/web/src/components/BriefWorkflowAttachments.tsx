@@ -84,7 +84,7 @@ function AttachedRow({
 /**
  * Lets a member attach catalog workflows to their brief window: attaching
  * creates a `scheduled_trigger` row for that workflow at the member's brief
- * hour (the same substrate `/me/schedules` and `SchedulePopover` already use —
+ * hour (the same `/me/schedules` substrate Routines' recurring schedules use —
  * no new execution rail). Attached workflows run alongside the brief; their
  * output lands as its own inbox item, never inlined into the brief mail.
  */

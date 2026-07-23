@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { Link } from "react-router";
 import { Workflow } from "lucide-react";
 import { RichEmptyState } from "@workbench/ui";
 import type { WorkflowCatalogEntry } from "@workbench/shared";
@@ -8,7 +9,6 @@ import {
   useWorkflowsCatalog,
 } from "../hooks/use-workflows-catalog";
 import { WorkflowFlowPreview } from "./WorkflowFlowPreview";
-import { SchedulePopover } from "./SchedulePopover";
 
 export interface WorkflowCatalogProps {
   tenantId: string | null;
@@ -189,12 +189,14 @@ function PreviewPanel({
         >
           {starting ? "Starting…" : "Start run"}
         </button>
-        <SchedulePopover
-          kind={entry.kind}
-          label={entry.label}
-          allowedScopes={entry.allowedScopes}
-          defaultScope={entry.defaultScope}
-        />
+        {entry.attachable && (
+          <Link
+            to="/routines"
+            className="text-[13px] font-medium text-text-2 underline-offset-2 hover:text-text hover:underline"
+          >
+            Schedule in Routines →
+          </Link>
+        )}
       </div>
     </div>
   );
