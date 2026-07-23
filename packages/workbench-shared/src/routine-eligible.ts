@@ -4,6 +4,7 @@ export const ROUTINE_ELIGIBLE_KINDS = [
   "heartbeat",
   "prospect-engine",
   "last30days-research",
+  "granola-call",
 ] as const;
 
 export type RoutineEligibleKind = (typeof ROUTINE_ELIGIBLE_KINDS)[number];

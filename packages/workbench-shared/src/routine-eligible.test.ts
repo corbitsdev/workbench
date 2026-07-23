@@ -10,6 +10,7 @@ describe("ROUTINE_ELIGIBLE_KINDS", () => {
       "heartbeat",
       "prospect-engine",
       "last30days-research",
+      "granola-call",
     ]);
   });
 });

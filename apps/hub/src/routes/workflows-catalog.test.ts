@@ -68,6 +68,7 @@ let gateInfos = new Map<
   ["heartbeat", { requiresIntake: false, humanGateCount: 0 }],
   ["deck", { requiresIntake: false, humanGateCount: 0 }],
   ["last30days-research", { requiresIntake: true, humanGateCount: 1 }],
+  ["granola-call", { requiresIntake: false, humanGateCount: 0 }],
 ]);
 mock.module("../lib/workflow-catalog", () => ({
   loadWorkflowDisplayFlows: async () => new Map(),
@@ -201,6 +202,7 @@ describe("GET /workflows", () => {
       { kind: "heartbeat", label: "Heartbeat" },
       { kind: "deck", label: "Deck" },
       { kind: "alpha", label: "Alpha" },
+      { kind: "granola-call", label: "Granola Call Processing" },
     ];
 
     const body = (await (await get()).json()) as { entries: Entry[] };
@@ -211,5 +213,7 @@ describe("GET /workflows", () => {
     expect(byKind["deck"]!.attachable).toBe(false);
     // No gate info → not attachable
     expect(byKind["alpha"]!.attachable).toBe(false);
+    // Gate-free (zero human gates) + product-eligible — passes both gates
+    expect(byKind["granola-call"]!.attachable).toBe(true);
   });
 });
