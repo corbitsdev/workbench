@@ -45,3 +45,8 @@ export {
   type DockRunStep,
   type DockStepPhase,
 } from "./run-dock-blocks";
+export {
+  blocksFromStepUIHints,
+  type GateUIHint,
+  type StepUIHints,
+} from "./step-ui-hints";

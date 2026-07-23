@@ -1,20 +1,21 @@
 import { describe, expect, it } from "bun:test";
 import { type } from "arktype";
-import { buildLast30daysBlocks } from "@workbench/workflow-last30days-research/blocks";
+import { blocksFromStepUIHints } from "@workbench/blocks";
+import { STEP_UI_HINTS } from "@workbench/workflow-last30days-research";
 import { Last30daysIntakePayloadSchema } from "@workbench/shared";
 import {
   logRunStateSchema,
   runStateFromLog,
-  stepOutputsFromLog,
   type LogRunState,
 } from "./run-state-adapter";
 
 // Drives a real log-derived run state through the production
-// `stepOutputsFromLog` + `runStateFromLog` decoders — exactly what WorkflowDock
-// does — and only THEN into the block builder, so the test starts from
-// wire-shaped data, not a pre-trusted object (mirrors the gamma/ab-compare seam
-// tests). Asserts the emitted intake FORM payload validates at the /resume
-// boundary schema the hub enforces (CL-2765).
+// `runStateFromLog` decoder — exactly what WorkflowDock does — and only THEN
+// into `blocksFromStepUIHints` fed the workflow's declared `STEP_UI_HINTS`
+// (CL-3923), so the test starts from wire-shaped data, not a pre-trusted
+// object (mirrors the gamma/ab-compare seam tests). Asserts the emitted
+// intake FORM payload validates at the /resume boundary schema the hub
+// enforces (CL-2765).
 
 function parseLog(raw: unknown): LogRunState {
   const parsed = logRunStateSchema(raw);
@@ -34,7 +35,7 @@ function toSteps(log: LogRunState) {
   }));
 }
 
-describe("last30days-research blocks — real log→state→blocks seam (CL-2765)", () => {
+describe("last30days-research blocks — real log→state→blocks seam (CL-2765, CL-3923)", () => {
   const rawIntakeLog = {
     runId: "run_l30",
     phase: "running" as const,
@@ -53,11 +54,10 @@ describe("last30days-research blocks — real log→state→blocks seam (CL-2765
   it("emits a topic+focus form whose verbatim payload validates at the resume boundary", () => {
     const log = parseLog(rawIntakeLog);
 
-    const blocks = buildLast30daysBlocks({
+    const blocks = blocksFromStepUIHints(STEP_UI_HINTS, {
       runId: log.runId,
       phase: runStateFromLog(log).phase,
       steps: toSteps(log),
-      stepOutputs: stepOutputsFromLog(log),
     });
 
     const form = blocks.find((b) => b.kind === "form");
