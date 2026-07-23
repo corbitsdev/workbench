@@ -163,13 +163,17 @@ beforeEach(() => {
 afterEach(() => cleanup());
 
 describe("ArtifactDetailPage", () => {
-  it("renders the artifact full-page without a redundant title header", () => {
+  it("renders the artifact full-page with the title as the page heading", () => {
     const view = renderAt("art-1");
     expect(view.getByTestId("body").textContent).toBe("Acme One-Pager");
     expect(view.getByTestId("artifact-detail-shell")).toBeDefined();
-    // Wayfinding lives in the top bar (Back to Artifacts); the detail shell must
-    // not repeat the title as a secondary <h1> header band.
-    expect(view.queryByRole("heading", { name: "Acme One-Pager" })).toBeNull();
+    // Per direct product direction (2026-07-23): the artifact title must be
+    // visible ON the page, not only on the gallery card — the body content
+    // frequently opens with prose, not a heading, leaving the page unnamed.
+    // This reverses the earlier "no redundant title header" decision.
+    expect(
+      view.getByRole("heading", { name: "Acme One-Pager" }),
+    ).toBeDefined();
     const leading = view.getByTestId("page-chrome-leading");
     expect(
       within(leading).getByRole("link", { name: "Back to Artifacts" }),

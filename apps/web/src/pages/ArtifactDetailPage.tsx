@@ -73,19 +73,26 @@ function resolveGammaUrl(kind: string, content: string): string | null {
 }
 
 function ArtifactSummaryHeader({
+  title,
   kindLabel,
   version,
   createdAt,
 }: {
+  title: string;
   kindLabel: string | undefined;
   version: number;
   createdAt: string;
 }) {
   return (
-    <div className="flex flex-wrap items-center gap-2 text-sm">
-      {kindLabel && <span className="font-medium text-text">{kindLabel}</span>}
-      <span className="text-text-3">v{version}</span>
-      <span className="text-text-3">{formatArtifactDate(createdAt)}</span>
+    <div className="flex flex-col gap-1">
+      <h1 className="text-lg font-semibold leading-snug text-text">{title}</h1>
+      <div className="flex flex-wrap items-center gap-2 text-sm">
+        {kindLabel && (
+          <span className="font-medium text-text">{kindLabel}</span>
+        )}
+        <span className="text-text-3">v{version}</span>
+        <span className="text-text-3">{formatArtifactDate(createdAt)}</span>
+      </div>
     </div>
   );
 }
@@ -298,6 +305,7 @@ export function ArtifactDetailPage() {
       accentClass={accent}
       header={
         <ArtifactSummaryHeader
+          title={artifact.title}
           kindLabel={kindLabel}
           version={artifact.version}
           createdAt={artifact.createdAt}

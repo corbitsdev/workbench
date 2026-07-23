@@ -82,13 +82,18 @@ describe("process-granola-call workflow", () => {
     expect(argMapOf("transcript").body).toEqual({ from: "content" });
   });
 
-  test("model cascade: extract on the deploy default, finalize pinned to the writer model", () => {
+  test("model cascade: extract on the deploy default, finalize pinned to the writer model with a real token ceiling", () => {
     const extract = stepPrimitive("extract");
     const finalize = stepPrimitive("finalize");
     expect(extract.agent.inference).toEqual({ sources: [] });
     expect(
       finalize.agent.inference.sources.map((s) => s.model),
     ).toEqual([LLM_WRITER_MODEL]);
+    // Truncated call notes shipped to production when this was absent — the
+    // source's default output ceiling cut documents off mid-sentence.
+    expect(
+      finalize.agent.inference.sources[0]?.parameters?.maxTokens,
+    ).toBe(16384);
   });
 
   test("display steps cover the flow", () => {

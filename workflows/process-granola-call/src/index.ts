@@ -143,6 +143,12 @@ export const workflow = defineWorkflow({
       title: "Verify and write call notes",
       systemPrompt: FINALIZE_SYSTEM_PROMPT,
       model: LLM_WRITER_MODEL,
+      // Without an explicit ceiling the source's small default truncates the
+      // call notes mid-sentence at finish_reason "length" (observed in
+      // production: a document cut off inside "Pain points"). Same ceiling
+      // the other writer-model steps use (gtm-scripts-briefs,
+      // last30days-research).
+      maxTokens: 16384,
       input: {
         merge: [
           { from: "steps.fetch.output" },

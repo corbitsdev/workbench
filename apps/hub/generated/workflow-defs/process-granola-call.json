@@ -195,7 +195,10 @@
             "sources": [
               {
                 "provider": "openai-compatible",
-                "model": "kimi-k2.6"
+                "model": "kimi-k2.6",
+                "parameters": {
+                  "maxTokens": 16384
+                }
               }
             ]
           },
