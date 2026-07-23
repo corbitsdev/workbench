@@ -90,21 +90,6 @@ function renderDetail(id: string) {
   );
 }
 
-function continueUntilPrimary(label: RegExp | string) {
-  for (let i = 0; i < 6; i++) {
-    const primary = screen.getByTestId("schedule-flow-primary");
-    if (
-      primary.textContent?.match(
-        typeof label === "string" ? new RegExp(label, "i") : label,
-      )
-    ) {
-      return primary;
-    }
-    fireEvent.click(primary);
-  }
-  return screen.getByTestId("schedule-flow-primary");
-}
-
 const schedA = {
   id: "sched-a",
   workflowKind: "last30days-research",
@@ -163,8 +148,7 @@ describe("RoutineDetailPage (CL-4277)", () => {
         .length,
     ).toBe(1);
 
-    const saveBtn = continueUntilPrimary(/save changes/i);
-    fireEvent.click(saveBtn);
+    fireEvent.click(screen.getByRole("button", { name: /save changes/i }));
     await waitFor(() => {
       expect(updateMeSchedule).toHaveBeenCalled();
     });
@@ -182,8 +166,7 @@ describe("RoutineDetailPage (CL-4277)", () => {
         .length,
     ).toBe(2);
 
-    const saveBtn = continueUntilPrimary(/save changes/i);
-    fireEvent.click(saveBtn);
+    fireEvent.click(screen.getByRole("button", { name: /save changes/i }));
     await waitFor(() => {
       expect(updateMeSchedule).toHaveBeenCalled();
     });

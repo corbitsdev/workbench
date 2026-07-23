@@ -154,9 +154,7 @@ describe("RoutinesPage (CL-4277 schedule-driven rows, list + detail)", () => {
     expect(screen.queryByText("Manual")).toBeNull();
     expect(screen.getByText(/Scheduled/)).toBeTruthy();
     // No placeholder rows for unscheduled kinds like the research workflow.
-    expect(
-      screen.queryByTestId("routine-row-last30days-research"),
-    ).toBeNull();
+    expect(screen.queryByTestId("routine-row-last30days-research")).toBeNull();
     expect(screen.queryByText("Not scheduled")).toBeNull();
   });
 
@@ -231,8 +229,6 @@ describe("RoutinesPage (CL-4277 schedule-driven rows, list + detail)", () => {
     await waitFor(() =>
       screen.getByTestId("schedule-editor-last30days-research"),
     );
-    fireEvent.click(screen.getByTestId("schedule-flow-primary")); // open → recurrence
-    fireEvent.click(screen.getByTestId("schedule-flow-primary")); // recurrence → inputs
     fireEvent.change(screen.getByLabelText(/Topic/), {
       target: { value: "AI agents" },
     });
@@ -253,8 +249,6 @@ describe("RoutinesPage (CL-4277 schedule-driven rows, list + detail)", () => {
     await waitFor(() => screen.getByTestId("new-routine-button"));
     startNewRoutine("gamma");
     await waitFor(() => screen.getByTestId("schedule-editor-gamma"));
-    fireEvent.click(screen.getByTestId("schedule-flow-primary")); // open → recurrence
-    fireEvent.click(screen.getByTestId("schedule-flow-primary")); // recurrence → availability
     fireEvent.click(screen.getByRole("radio", { name: /everyone/i }));
     fireEvent.click(screen.getByRole("button", { name: "Create schedule" }));
     await waitFor(() => {
@@ -275,9 +269,7 @@ describe("RoutinesPage (CL-4277 schedule-driven rows, list + detail)", () => {
     await waitFor(() =>
       screen.getByTestId("schedule-editor-last30days-research"),
     );
-    expect(screen.queryByTestId("schedule-flow-step-availability")).toBeNull();
-    fireEvent.click(screen.getByTestId("schedule-flow-primary"));
-    fireEvent.click(screen.getByTestId("schedule-flow-primary"));
+    expect(screen.queryByText(/Who is this for/)).toBeNull();
     fireEvent.change(screen.getByLabelText(/Topic/), {
       target: { value: "AI agents" },
     });
@@ -294,7 +286,6 @@ describe("RoutinesPage (CL-4277 schedule-driven rows, list + detail)", () => {
     await waitFor(() => screen.getByTestId("routine-row-sched-1"));
     startNewRoutine("heartbeat");
     await waitFor(() => screen.getByTestId("schedule-editor-heartbeat"));
-    fireEvent.click(screen.getByTestId("schedule-flow-primary")); // open → recurrence
     fireEvent.click(screen.getByRole("button", { name: "Create schedule" }));
     await waitFor(() => {
       expect(createMeSchedule).toHaveBeenCalled();

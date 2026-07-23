@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import type {
   ScheduleFieldMetadata,
   ScheduleRecurrence,
@@ -25,36 +25,6 @@ const RECURRENCE_UNIT_OPTIONS: { value: RecurrenceUnit; label: string }[] = [
   { value: "weeks", label: "weeks" },
 ];
 
-/** Ordered schedule create/edit steps (CL-4263). */
-export type ScheduleFlowStepId =
-  | "open"
-  | "recurrence"
-  | "inputs"
-  | "availability";
-
-export const SCHEDULE_FLOW_STEP_LABELS: Record<ScheduleFlowStepId, string> = {
-  open: "Open",
-  recurrence: "Recurrence",
-  inputs: "Inputs",
-  availability: "Availability",
-};
-
-/**
- * Build the visible step list for a schedule create/edit walk.
- * - Inputs collapses when the kind has no schedule field metadata.
- * - Availability collapses when scope cannot be chosen (edit, or a single
- *   allowed scope — defaultScope is applied silently).
- */
-export function buildScheduleFlowSteps(opts: {
-  hasInputFields: boolean;
-  canChooseScope: boolean;
-}): ScheduleFlowStepId[] {
-  const steps: ScheduleFlowStepId[] = ["open", "recurrence"];
-  if (opts.hasInputFields) steps.push("inputs");
-  if (opts.canChooseScope) steps.push("availability");
-  return steps;
-}
-
 export type ScheduleFlowProps = {
   entry: WorkflowCatalogEntry;
   productLabel: string;
@@ -74,8 +44,12 @@ export type ScheduleFlowProps = {
 };
 
 /**
- * Multi-step schedule create/edit walk (CL-4263):
- * Open → Recurrence → Inputs (if any) → Availability (if choosable).
+ * Single-form schedule create/edit panel (CL-4282, replacing the CL-4263
+ * Open → Recurrence → Inputs → Availability wizard, which buried the time
+ * control behind a Continue click). Every field here is independent and
+ * short, so all applicable sections render stacked in one panel; sections
+ * that don't apply (no input fields, scope not choosable) stay absent using
+ * the same conditions the wizard steps used to gate on.
  *
  * Recurrence is two raw controls (CL-4278): an amount + unit for "how often"
  * (decomposed to `intervalMinutes`, minute granularity available) and a
@@ -101,22 +75,11 @@ export function ScheduleFlow({
 }: ScheduleFlowProps) {
   const isEdit = existing != null;
   const canChooseScope = !isEdit && entry.allowedScopes.length > 1;
-  const steps = useMemo(
-    () =>
-      buildScheduleFlowSteps({
-        hasInputFields: fields.length > 0,
-        canChooseScope,
-      }),
-    [fields.length, canChooseScope],
-  );
-
-  const [stepIndex, setStepIndex] = useState(0);
-  const [stepError, setStepError] = useState<string | null>(null);
-
-  const currentStep = steps[stepIndex] ?? "open";
-  const isLast = stepIndex >= steps.length - 1;
+  const hasInputFields = fields.length > 0;
   const dailyOnly = onlyDailyAllowedForKind(entry.kind);
   const { amount, unit } = amountUnitFromInterval(recurrence.intervalMinutes);
+
+  const [validationError, setValidationError] = useState<string | null>(null);
 
   const updateInterval = (nextAmount: number, nextUnit: RecurrenceUnit) => {
     onRecurrenceChange({
@@ -132,157 +95,100 @@ export function ScheduleFlow({
     });
   };
 
-  const goBack = () => {
-    setStepError(null);
-    setStepIndex((i) => Math.max(0, i - 1));
-  };
-
-  const goNext = () => {
-    setStepError(null);
-    if (
-      currentStep === "inputs" &&
-      !scheduleFieldsComplete(fields, fieldValues)
-    ) {
-      setStepError("Fill in the required fields.");
+  const handleSave = () => {
+    setValidationError(null);
+    if (hasInputFields && !scheduleFieldsComplete(fields, fieldValues)) {
+      setValidationError("Fill in the required fields.");
       return;
     }
-    if (isLast) {
-      void onSave();
-      return;
-    }
-    setStepIndex((i) => Math.min(steps.length - 1, i + 1));
+    void onSave();
   };
 
-  const primaryLabel = isLast
-    ? isEdit
-      ? "Save changes"
-      : "Create schedule"
-    : "Continue";
+  const primaryLabel = isEdit ? "Save changes" : "Create schedule";
 
   return (
     <div
       className="mt-4 border-t border-border pt-4"
       data-testid={`schedule-editor-${entry.kind}`}
-      data-schedule-flow-step={currentStep}
     >
-      <nav
-        className="mb-4 flex flex-wrap items-center gap-1.5"
-        aria-label="Schedule steps"
-        data-testid="schedule-flow-steps"
-      >
-        {steps.map((id, idx) => {
-          const active = idx === stepIndex;
-          const done = idx < stepIndex;
-          let stepClass =
-            "rounded-full bg-page px-2.5 py-0.5 text-xs font-medium text-text-3";
-          if (active) {
-            stepClass =
-              "rounded-full bg-orange px-2.5 py-0.5 text-xs font-semibold text-white";
-          } else if (done) {
-            stepClass =
-              "rounded-full bg-surface-2 px-2.5 py-0.5 text-xs font-medium text-text-2";
-          }
-          return (
-            <div key={id} className="flex items-center gap-1.5">
-              {idx > 0 ? (
-                <span className="text-text-3" aria-hidden>
-                  →
-                </span>
-              ) : null}
-              <span
-                data-testid={`schedule-flow-step-${id}`}
-                data-active={active ? "true" : "false"}
-                data-done={done ? "true" : "false"}
-                className={stepClass}
-              >
-                {SCHEDULE_FLOW_STEP_LABELS[id]}
-              </span>
-            </div>
-          );
-        })}
-      </nav>
-
-      {currentStep === "open" ? (
-        <div data-testid="schedule-flow-body-open">
-          <h3 className="text-sm font-semibold text-text">{productLabel}</h3>
-          {entry.description ? (
-            <p className="mt-1 text-sm text-text-2">{entry.description}</p>
-          ) : (
-            <p className="mt-1 text-sm text-text-2">
-              {isEdit
-                ? "Review this routine, then set when it runs."
-                : "Put this routine on autopilot. Next: when it runs."}
-            </p>
-          )}
+      <div className="mb-4">
+        <h3 className="text-sm font-semibold text-text">{productLabel}</h3>
+        {entry.description ? (
+          <p className="mt-1 text-sm text-text-2">{entry.description}</p>
+        ) : null}
+        <p className="mt-1 text-xs text-text-3">
+          {isEdit ? "Editing schedule" : "New schedule"} ·{" "}
+          {scheduleScopeLabel(isEdit ? existing.scope : entry.defaultScope)}
+          {canChooseScope ? " (you can change who it runs for later)" : null}
+        </p>
+        {isEdit ? (
           <p className="mt-2 text-xs text-text-3">
-            {isEdit ? "Editing schedule" : "New schedule"} ·{" "}
-            {scheduleScopeLabel(isEdit ? existing.scope : entry.defaultScope)}
-            {canChooseScope ? " (you can change who it runs for later)" : null}
+            Scope is set when a schedule is created and can&rsquo;t be changed
+            here — remove this schedule and create a new one to change who it
+            runs for.
           </p>
-        </div>
-      ) : null}
+        ) : null}
+      </div>
 
-      {currentStep === "recurrence" ? (
-        <div data-testid="schedule-flow-body-recurrence">
-          <label
-            htmlFor={`recurrence-amount-${entry.kind}`}
-            className="mb-1 block text-xs font-semibold uppercase tracking-[0.05em] text-text-3"
+      <div className="mb-4">
+        <label
+          htmlFor={`recurrence-amount-${entry.kind}`}
+          className="mb-1 block text-xs font-semibold uppercase tracking-[0.05em] text-text-3"
+        >
+          How often
+        </label>
+        {dailyOnly ? (
+          <p
+            className="text-sm text-text"
+            data-testid={`recurrence-daily-only-${entry.kind}`}
           >
-            How often
-          </label>
-          {dailyOnly ? (
-            <p
-              className="text-sm text-text"
-              data-testid={`recurrence-daily-only-${entry.kind}`}
+            Once a day
+          </p>
+        ) : (
+          <div className="flex items-start gap-2">
+            <span className="mt-2 text-sm text-text-2">Every</span>
+            <RecurrenceAmountInput
+              id={`recurrence-amount-${entry.kind}`}
+              amount={amount}
+              onCommit={(nextAmount) => updateInterval(nextAmount, unit)}
+              className="w-20 rounded-[10px] border border-border bg-page px-3 py-2 text-sm"
+            />
+            <select
+              aria-label="Interval unit"
+              value={unit}
+              onChange={(e) =>
+                updateInterval(amount, e.target.value as RecurrenceUnit)
+              }
+              className="rounded-[10px] border border-border bg-page px-3 py-2 text-sm"
             >
-              Once a day
-            </p>
-          ) : (
-            <div className="flex items-start gap-2">
-              <span className="mt-2 text-sm text-text-2">Every</span>
-              <RecurrenceAmountInput
-                id={`recurrence-amount-${entry.kind}`}
-                amount={amount}
-                onCommit={(nextAmount) => updateInterval(nextAmount, unit)}
-                className="w-20 rounded-[10px] border border-border bg-page px-3 py-2 text-sm"
-              />
-              <select
-                aria-label="Interval unit"
-                value={unit}
-                onChange={(e) =>
-                  updateInterval(amount, e.target.value as RecurrenceUnit)
-                }
-                className="rounded-[10px] border border-border bg-page px-3 py-2 text-sm"
-              >
-                {RECURRENCE_UNIT_OPTIONS.map((o) => (
-                  <option key={o.value} value={o.value}>
-                    {o.label}
-                  </option>
-                ))}
-              </select>
-            </div>
-          )}
-          <label
-            htmlFor={`recurrence-anchor-${entry.kind}`}
-            className="mb-1 mt-3 block text-xs font-semibold uppercase tracking-[0.05em] text-text-3"
-          >
-            Starting at
-          </label>
-          <input
-            id={`recurrence-anchor-${entry.kind}`}
-            type="time"
-            value={anchorToLocalTimeInputValue(recurrence.anchorMinuteUtc)}
-            onChange={(e) => setAnchor(e.target.value)}
-            className="w-full max-w-xs rounded-[10px] border border-border bg-page px-3 py-2 text-sm"
-          />
-          <p className="mt-2 text-xs text-text-3">
-            {formatRecurrence(recurrence)}
-          </p>
-        </div>
-      ) : null}
+              {RECURRENCE_UNIT_OPTIONS.map((o) => (
+                <option key={o.value} value={o.value}>
+                  {o.label}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
+        <label
+          htmlFor={`recurrence-anchor-${entry.kind}`}
+          className="mb-1 mt-3 block text-xs font-semibold uppercase tracking-[0.05em] text-text-3"
+        >
+          Starting at
+        </label>
+        <input
+          id={`recurrence-anchor-${entry.kind}`}
+          type="time"
+          value={anchorToLocalTimeInputValue(recurrence.anchorMinuteUtc)}
+          onChange={(e) => setAnchor(e.target.value)}
+          className="w-full max-w-xs rounded-[10px] border border-border bg-page px-3 py-2 text-sm"
+        />
+        <p className="mt-2 text-xs text-text-3">
+          {formatRecurrence(recurrence)}
+        </p>
+      </div>
 
-      {currentStep === "inputs" ? (
-        <div data-testid="schedule-flow-body-inputs">
+      {hasInputFields ? (
+        <div className="mb-4">
           <p className="mb-2 text-xs font-semibold uppercase tracking-[0.05em] text-text-3">
             Inputs for each run
           </p>
@@ -295,8 +201,8 @@ export function ScheduleFlow({
         </div>
       ) : null}
 
-      {currentStep === "availability" ? (
-        <fieldset data-testid="schedule-flow-body-availability">
+      {canChooseScope ? (
+        <fieldset className="mb-4">
           <legend className="mb-1.5 text-xs font-semibold uppercase tracking-[0.05em] text-text-3">
             Who is this for
           </legend>
@@ -328,35 +234,17 @@ export function ScheduleFlow({
         </fieldset>
       ) : null}
 
-      {isEdit && currentStep === "open" ? (
-        <p className="mt-3 text-xs text-text-3">
-          Scope is set when a schedule is created and can&rsquo;t be changed
-          here — remove this schedule and create a new one to change who it runs
-          for.
-        </p>
-      ) : null}
-
-      {stepError || error ? (
+      {validationError || error ? (
         <p className="mt-2 text-sm text-danger" role="alert">
-          {stepError ?? error}
+          {validationError ?? error}
         </p>
       ) : null}
 
       <div className="mt-4 flex flex-wrap gap-2">
-        {stepIndex > 0 ? (
-          <button
-            type="button"
-            className="rounded-[10px] border border-border px-3.5 py-2 text-sm text-text-2"
-            onClick={goBack}
-            disabled={busy}
-          >
-            Back
-          </button>
-        ) : null}
         <button
           type="button"
           className="rounded-[10px] bg-orange px-3.5 py-2 text-sm font-semibold text-white"
-          onClick={goNext}
+          onClick={handleSave}
           disabled={busy}
           data-testid="schedule-flow-primary"
         >

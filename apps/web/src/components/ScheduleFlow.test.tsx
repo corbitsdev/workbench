@@ -8,7 +8,7 @@ import type {
   ScheduleRecurrence,
   WorkflowCatalogEntry,
 } from "@workbench/shared";
-import { buildScheduleFlowSteps, ScheduleFlow } from "./ScheduleFlow";
+import { ScheduleFlow } from "./ScheduleFlow";
 
 const baseEntry: WorkflowCatalogEntry = {
   kind: "gamma",
@@ -43,22 +43,8 @@ afterEach(() => {
   cleanup();
 });
 
-describe("buildScheduleFlowSteps", () => {
-  it("always includes open and recurrence", () => {
-    expect(
-      buildScheduleFlowSteps({ hasInputFields: false, canChooseScope: false }),
-    ).toEqual(["open", "recurrence"]);
-  });
-
-  it("adds inputs and availability when applicable", () => {
-    expect(
-      buildScheduleFlowSteps({ hasInputFields: true, canChooseScope: true }),
-    ).toEqual(["open", "recurrence", "inputs", "availability"]);
-  });
-});
-
 describe("ScheduleFlow", () => {
-  it("walks Open → Recurrence → Availability for multi-scope empty-input kinds", () => {
+  it("renders every applicable section at once, with no step nav", () => {
     const onSave = mock(() => undefined);
     render(
       <ScheduleFlow
@@ -77,23 +63,17 @@ describe("ScheduleFlow", () => {
       />,
     );
 
-    expect(screen.getByTestId("schedule-flow-step-open").dataset.active).toBe(
-      "true",
-    );
-    expect(screen.queryByTestId("schedule-flow-step-inputs")).toBeNull();
-    expect(screen.getByTestId("schedule-flow-step-availability")).toBeTruthy();
-
-    fireEvent.click(screen.getByTestId("schedule-flow-primary"));
-    expect(screen.getByTestId("schedule-flow-body-recurrence")).toBeTruthy();
-
-    fireEvent.click(screen.getByTestId("schedule-flow-primary"));
-    expect(screen.getByTestId("schedule-flow-body-availability")).toBeTruthy();
+    expect(screen.queryByTestId("schedule-flow-steps")).toBeNull();
+    expect(screen.getByText("Gamma")).toBeTruthy();
+    expect(screen.getByLabelText("How often")).toBeTruthy();
+    expect(screen.getByLabelText("Starting at")).toBeTruthy();
+    expect(screen.getByText(/Who is this for/)).toBeTruthy();
 
     fireEvent.click(screen.getByTestId("schedule-flow-primary"));
     expect(onSave).toHaveBeenCalled();
   });
 
-  it("includes inputs when fields exist and blocks continue until required filled", () => {
+  it("includes inputs when fields exist and blocks save until required filled", () => {
     const onSave = mock(() => undefined);
     let values: Record<string, unknown> = {};
     const { rerender } = render(
@@ -120,9 +100,7 @@ describe("ScheduleFlow", () => {
       />,
     );
 
-    fireEvent.click(screen.getByTestId("schedule-flow-primary")); // open → recurrence
-    fireEvent.click(screen.getByTestId("schedule-flow-primary")); // recurrence → inputs
-    expect(screen.getByTestId("schedule-flow-body-inputs")).toBeTruthy();
+    expect(screen.getByText(/Inputs for each run/)).toBeTruthy();
     fireEvent.click(screen.getByTestId("schedule-flow-primary"));
     expect(screen.getByText("Fill in the required fields.")).toBeTruthy();
     expect(onSave).not.toHaveBeenCalled();
@@ -183,8 +161,6 @@ describe("ScheduleFlow", () => {
 
     const { rerender } = render(<Harness key="a" persisted={daily} />);
 
-    fireEvent.click(screen.getByTestId("schedule-flow-primary")); // open → recurrence
-
     const unitSelect = screen.getByLabelText("Interval unit");
     fireEvent.change(unitSelect, { target: { value: "minutes" } });
     const amountInput = screen.getByLabelText("How often") as HTMLInputElement;
@@ -201,7 +177,6 @@ describe("ScheduleFlow", () => {
     // Reopen: a fresh mount with the saved recurrence must select the same
     // amount/unit back into the controls.
     rerender(<Harness key="b" persisted={saved} />);
-    fireEvent.click(screen.getByTestId("schedule-flow-primary")); // open → recurrence
     expect((screen.getByLabelText("How often") as HTMLInputElement).value).toBe(
       "5",
     );
@@ -232,12 +207,11 @@ describe("ScheduleFlow", () => {
         onSave={() => undefined}
       />,
     );
-    fireEvent.click(screen.getByTestId("schedule-flow-primary")); // open → recurrence
     expect(screen.getByTestId("recurrence-daily-only-heartbeat")).toBeTruthy();
     expect(screen.queryByLabelText("Interval unit")).toBeNull();
   });
 
-  it("collapses availability on edit", () => {
+  it("collapses availability on edit and shows the scope-lock note", () => {
     render(
       <ScheduleFlow
         entry={baseEntry}
@@ -255,7 +229,32 @@ describe("ScheduleFlow", () => {
         onSave={() => undefined}
       />,
     );
-    expect(screen.queryByTestId("schedule-flow-step-availability")).toBeNull();
+    expect(screen.queryByText(/Who is this for/)).toBeNull();
     expect(screen.getByText(/Editing schedule/)).toBeTruthy();
+    expect(
+      screen.getByText(/Scope is set when a schedule is created/),
+    ).toBeTruthy();
+  });
+
+  it("lets the user choose scope directly, no navigation required", () => {
+    const onScopeChange = mock(() => undefined);
+    render(
+      <ScheduleFlow
+        entry={baseEntry}
+        productLabel="Gamma"
+        recurrence={daily}
+        onRecurrenceChange={() => undefined}
+        scope="personal"
+        onScopeChange={onScopeChange}
+        fieldValues={{}}
+        onFieldValuesChange={() => undefined}
+        fields={[]}
+        error={null}
+        onCancel={() => undefined}
+        onSave={() => undefined}
+      />,
+    );
+    fireEvent.click(screen.getByRole("radio", { name: /everyone/i }));
+    expect(onScopeChange).toHaveBeenCalledWith("tenant");
   });
 });
