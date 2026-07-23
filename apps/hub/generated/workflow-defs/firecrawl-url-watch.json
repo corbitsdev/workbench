@@ -91,7 +91,7 @@
               "from": "steps.intake.output"
             },
             {
-              "from": "steps.fetch.output.content"
+              "from": "steps.fetch.output"
             }
           ]
         },

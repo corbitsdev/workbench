@@ -68,10 +68,12 @@ export const workflow = defineWorkflow({
       id: "firecrawl-url-watch-digest",
       title: "Write the digest",
       systemPrompt: DIGEST_SYSTEM_PROMPT,
+      // Merge objects only. firecrawl_scrape is a stringTool — content is a
+      // JSON string, so merge the whole envelope ({ content }), not .content.
       input: {
         merge: [
           { from: "steps.intake.output" },
-          { from: "steps.fetch.output.content" },
+          { from: "steps.fetch.output" },
         ],
       },
       after: ["fetch"],

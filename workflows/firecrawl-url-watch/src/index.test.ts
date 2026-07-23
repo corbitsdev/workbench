@@ -31,7 +31,11 @@ describe("firecrawl-url-watch", () => {
   test("gates on intake, scrapes via firecrawl_scrape, digests, formats, persists", async () => {
     const { invoker, ran } = makeRecordingInvoker({
       "firecrawl-url-watch-fetch": {
-        content: { markdown: "# Hello" },
+        // stringTool shape — content is a JSON string, not a parsed object
+        content: JSON.stringify({
+          success: true,
+          data: { markdown: "# Hello" },
+        }),
       },
       "firecrawl-url-watch-digest": { reply: "Digest body" },
       "firecrawl-url-watch-document": {
