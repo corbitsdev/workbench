@@ -27,7 +27,8 @@ function subDailyLabel(intervalMinutes: number): string {
 
 /** Product labels for schedule scope (CL-4111). Keep in one place. */
 export function scheduleScopeLabel(scope: ScheduleScope): string {
-  return scope === "tenant" ? "Everyone" : "Just for me";
+  return scope === "tenant" ? "Everyone" : "Just me";
+
 }
 
 /** The local wall-clock label (e.g. "8:00 AM") a given UTC hour fires at. */

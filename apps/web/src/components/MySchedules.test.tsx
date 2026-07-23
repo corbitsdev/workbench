@@ -130,7 +130,8 @@ describe("MySchedules", () => {
     globalThis.fetch = makeFetch([schedule]) as unknown as typeof fetch;
     renderList();
     await screen.findByText("Morning Brief");
-    expect(screen.getByText(/Just for me/)).toBeTruthy();
+    expect(screen.getByText(/Just me/)).toBeTruthy();
+
   });
 
   it("pauses a schedule via PATCH when the switch is toggled", async () => {

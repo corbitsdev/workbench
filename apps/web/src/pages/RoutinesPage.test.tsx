@@ -114,13 +114,25 @@ function renderPage() {
   );
 }
 
+/** Advance ScheduleFlow past open (+ optional intermediate) to the last step. */
+function continueUntilPrimary(label: RegExp | string) {
+  for (let i = 0; i < 6; i++) {
+    const primary = screen.getByTestId("schedule-flow-primary");
+    if (primary.textContent?.match(typeof label === "string" ? new RegExp(label, "i") : label)) {
+      return primary;
+    }
+    fireEvent.click(primary);
+  }
+  return screen.getByTestId("schedule-flow-primary");
+}
+
 afterEach(() => {
   cleanup();
   createMeSchedule.mockClear();
   updateMeSchedule.mockClear();
 });
 
-describe("RoutinesPage (CL-3862)", () => {
+describe("RoutinesPage (CL-3862 + CL-4263 flow)", () => {
   it("lists schedulable workflows with Morning brief product name and status", async () => {
     renderPage();
     await waitFor(() => {
@@ -136,13 +148,15 @@ describe("RoutinesPage (CL-3862)", () => {
     expect(screen.getAllByText("Not scheduled").length).toBeGreaterThan(0);
   });
 
-  it("creates a research schedule with form payload", async () => {
+  it("creates a research schedule with form payload via multi-step flow", async () => {
     renderPage();
     await waitFor(() => screen.getByTestId("schedule-last30days-research"));
     fireEvent.click(screen.getByTestId("schedule-last30days-research"));
     await waitFor(() =>
       screen.getByTestId("schedule-editor-last30days-research"),
     );
+    fireEvent.click(screen.getByTestId("schedule-flow-primary")); // open → recurrence
+    fireEvent.click(screen.getByTestId("schedule-flow-primary")); // recurrence → inputs
     fireEvent.change(screen.getByLabelText(/Topic/), {
       target: { value: "AI agents" },
     });
@@ -163,6 +177,8 @@ describe("RoutinesPage (CL-3862)", () => {
     await waitFor(() => screen.getByTestId("schedule-gamma"));
     fireEvent.click(screen.getByTestId("schedule-gamma"));
     await waitFor(() => screen.getByTestId("schedule-editor-gamma"));
+    fireEvent.click(screen.getByTestId("schedule-flow-primary")); // open → recurrence
+    fireEvent.click(screen.getByTestId("schedule-flow-primary")); // recurrence → availability
     fireEvent.click(screen.getByRole("radio", { name: /everyone/i }));
     fireEvent.click(screen.getByRole("button", { name: "Create schedule" }));
     await waitFor(() => {
@@ -176,14 +192,16 @@ describe("RoutinesPage (CL-3862)", () => {
     expect(body.scope).toBe("tenant");
   });
 
-  it("does not offer a scope choice for a personal-only kind", async () => {
+  it("does not offer a scope step for a personal-only kind", async () => {
     renderPage();
     await waitFor(() => screen.getByTestId("schedule-last30days-research"));
     fireEvent.click(screen.getByTestId("schedule-last30days-research"));
     await waitFor(() =>
       screen.getByTestId("schedule-editor-last30days-research"),
     );
-    expect(screen.queryByText("Who is this for")).toBeNull();
+    expect(screen.queryByTestId("schedule-flow-step-availability")).toBeNull();
+    fireEvent.click(screen.getByTestId("schedule-flow-primary"));
+    fireEvent.click(screen.getByTestId("schedule-flow-primary"));
     fireEvent.change(screen.getByLabelText(/Topic/), {
       target: { value: "AI agents" },
     });
@@ -195,12 +213,13 @@ describe("RoutinesPage (CL-3862)", () => {
     expect(body.scope).toBe("personal");
   });
 
-  it("hour-only edit does not send empty payload for heartbeat", async () => {
+  it("recurrence-only edit does not send empty payload for heartbeat", async () => {
     renderPage();
     await waitFor(() => screen.getByTestId("edit-schedule-heartbeat"));
     fireEvent.click(screen.getByTestId("edit-schedule-heartbeat"));
     await waitFor(() => screen.getByTestId("schedule-editor-heartbeat"));
-    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+    const saveBtn = continueUntilPrimary(/save changes/i);
+    fireEvent.click(saveBtn);
     await waitFor(() => {
       expect(updateMeSchedule).toHaveBeenCalled();
     });
