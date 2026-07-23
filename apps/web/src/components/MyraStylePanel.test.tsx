@@ -45,6 +45,9 @@ type PutCall = { method: string; body: unknown };
 const EMPTY_PREFERENCES = {
   chat: null,
   triage: null,
+  instructionsGlobal: null,
+  instructionsChat: null,
+  instructionsTriage: null,
   personality: null,
   emojiUse: null,
   uiType: null,
@@ -55,6 +58,13 @@ const EMPTY_PREFERENCES = {
   skillUsageChat: null,
   skillUsageTriage: null,
   pinnedSkillIds: [],
+  disabledCatalogPackages: [],
+  disabledToolNames: [],
+  toolCatalog: [],
+  creativeChat: null,
+  thinkingChat: null,
+  creativeTriage: null,
+  thinkingTriage: null,
 };
 
 let preferences: Record<string, string | null | string[]>;

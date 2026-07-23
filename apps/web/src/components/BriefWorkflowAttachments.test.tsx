@@ -91,9 +91,13 @@ function makeFetch(
           workflowKind: body.kind,
           hourUtc: body.hourUtc,
           enabled: true,
+          scope: "personal",
+          ownerMemberPrincipalId: "member-1",
           triggerPayload: {},
           createdAt: "2026-01-01T00:00:00.000Z",
           lastFiredDayUtc: null,
+          lastRunId: null,
+          recentFires: [],
           nextFireAt: "2026-01-02T13:00:00.000Z",
         };
         schedules = [...schedules, created];
@@ -189,9 +193,13 @@ describe("BriefWorkflowAttachments", () => {
         workflowKind: "last30days-research",
         hourUtc: 13,
         enabled: true,
+        scope: "personal",
+        ownerMemberPrincipalId: "member-1",
         triggerPayload: {},
         createdAt: "2026-01-01T00:00:00.000Z",
         lastFiredDayUtc: null,
+        lastRunId: null,
+        recentFires: [],
         nextFireAt: "2026-01-02T13:00:00.000Z",
       },
     ]) as unknown as typeof fetch;
