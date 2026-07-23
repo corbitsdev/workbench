@@ -6,7 +6,10 @@ import type {
   InboxSourceTickResult,
   WorkspaceInboxSourceContext,
 } from "../inbox-source-registry";
-import type { GranolaCallJobQueue } from "../granola-call-job-queue";
+import { granolaCallArtifactsProcessed } from "../granola-call-artifacts";
+import type { StartRunInput, StartRunResult } from "../workflow-run-starter";
+import type { HubDb } from "../../db";
+import { getConfig } from "../../config";
 
 /**
  * The registry key for the Granola workspace poller. It doubles as the tenant
@@ -78,9 +81,71 @@ function maxCreatedAt(
   return max;
 }
 
+function rootTenantDomainBestEffort(): string {
+  try {
+    return getConfig().rootTenant.domain ?? "";
+  } catch {
+    // Unit tests may not boot full hub config; classify still runs with empty domain.
+    return "";
+  }
+}
+
+/**
+ * Start (or skip) processing for one listed note. Checks the artifact table
+ * for the note's three sourceRefs before starting a run (CL-4213) — a call
+ * already fully processed is never re-run, and the check is a cost
+ * optimization only: `write_artifact`'s sourceRef dedupe plus the
+ * `artifact_tenant_source_ref_uniq` partial unique index make a race here
+ * (two ticks both missing the check) harmless, not just unlikely.
+ */
+async function processListedNote(
+  ctx: WorkspaceInboxSourceContext,
+  deps: {
+    db: HubDb;
+    startRun: (args: StartRunInput) => Promise<StartRunResult>;
+  },
+  noteId: string,
+): Promise<void> {
+  const alreadyProcessed = await granolaCallArtifactsProcessed(
+    deps.db,
+    ctx.tenantId,
+    noteId,
+  );
+  if (alreadyProcessed) {
+    ctx.log.info(
+      "granola workspace source: skipping already-processed {noteId}",
+      { noteId },
+    );
+    return;
+  }
+
+  const domain = rootTenantDomainBestEffort();
+  const result = await deps.startRun({
+    kind: "granola-call",
+    tenantId: ctx.tenantId,
+    input: domain.length > 0 ? { noteId, tenantDomain: domain } : { noteId },
+    source: "scheduler",
+  });
+  if (!result.ok) {
+    ctx.log.warn("granola workspace source: start run failed {noteId}", {
+      noteId,
+      reason: result.reason,
+      message: result.message,
+    });
+    return;
+  }
+  ctx.log.info("granola workspace source: started run {noteId} run={runId}", {
+    noteId,
+    runId: result.runId,
+  });
+}
+
 async function handleWorkspaceTick(
   ctx: WorkspaceInboxSourceContext,
-  queue: GranolaCallJobQueue,
+  deps: {
+    db: HubDb;
+    startRun: (args: StartRunInput) => Promise<StartRunResult>;
+  },
 ): Promise<InboxSourceTickResult | undefined> {
   const tools = createGranolaTools({
     apiKey: ctx.credential.apiKey,
@@ -120,14 +185,10 @@ async function handleWorkspaceTick(
 
     for (const summaryNote of list.notes) {
       if (ctx.signal.aborted) return;
-      // Enqueue only — no transcript fetch, no LLM turn on the tick. The
-      // job-queue's (tenant, note) unique constraint is the enqueue-dedupe
-      // backstop; the job runner (off-tick) starts the deployed granola-call
-      // workflow via the run-start seam (CL-3627 / CL-3647).
-      await queue.enqueue(ctx.tenantId, summaryNote.id);
-      ctx.log.info("granola workspace source: enqueued {noteId}", {
-        noteId: summaryNote.id,
-      });
+      // Skip-if-processed check + direct run start (CL-4213) — no queue, no
+      // lease, no claim protocol. The artifact sourceRef dedupe (skip check +
+      // unique-index backstop) is the only idempotency mechanism needed.
+      await processListedNote(ctx, deps, summaryNote.id);
       processedNotes.push(summaryNote);
     }
 
@@ -150,22 +211,28 @@ async function handleWorkspaceTick(
     // instead of pinning at `since` — guarantees forward progress through a
     // sustained backlog (>= perSourceLimit new notes every tick) rather than
     // re-issuing the identical query forever. Absent any created_at, fall
-    // back to the unchanged floor and rely on the job queue's per-note
-    // dedupe to absorb the re-fetched overlap.
+    // back to the unchanged floor; the per-note artifact-existence check
+    // above absorbs the re-fetched overlap.
     return { nextCursor: maxCreatedAt(processedNotes) ?? since };
   }
   return undefined;
 }
 
 /**
- * The Granola workspace inbox source (CL-3578, off-tick pipeline CL-3627).
- * Workspace-scoped: runs once per tenant per intake tick, gated by the
- * owner-level `inbox-source:granola` enablement (default OFF) and a
+ * The Granola workspace inbox source (CL-3578, direct-start pipeline
+ * CL-4213). Workspace-scoped: runs once per tenant per intake tick, gated by
+ * the owner-level `inbox-source:granola` enablement (default OFF) and a
  * tenant-owned Granola credential. Lists notes created since the tick cutoff
- * and enqueues each genuinely-new call onto the job queue — no transcript
- * fetch, no LLM turn on the tick. A separate off-tick runner
- * (`granola-call-job-runner.ts`) drains the queue and starts a
- * `granola-call` workflow run for each job.
+ * and, for each note whose three typed artifacts don't already exist, starts
+ * a `granola-call` workflow run directly via the run-start seam — no
+ * transcript fetch, no LLM turn on the tick itself; the deployed workflow
+ * does that work off-tick once started.
+ *
+ * There is no queue between "listed" and "started": each note either already
+ * has all three artifacts (skip) or is started immediately. Idempotency is
+ * carried entirely by artifact `sourceRef` (see granola-call-artifacts.ts) —
+ * the database unique index is the correctness backstop, this check is only
+ * the cost optimization that avoids re-paying for an LLM turn.
  *
  * WEBHOOKS: Granola's public API (public-api.granola.ai/v1) exposes no
  * webhook/push subscription — notes are only retrievable by polling
@@ -173,14 +240,15 @@ async function handleWorkspaceTick(
  * infrastructure is built (or possible) today.
  */
 export function createGranolaWorkspaceInboxSource(deps: {
-  queue: GranolaCallJobQueue;
+  db: HubDb;
+  startRun: (args: StartRunInput) => Promise<StartRunResult>;
 }): InboxSourceRegistryEntry {
   return {
     key: GRANOLA_WORKSPACE_SOURCE_KEY,
     scope: "workspace",
     handle: async (ctx) => {
       if (ctx.scope !== "workspace") return;
-      return handleWorkspaceTick(ctx, deps.queue);
+      return handleWorkspaceTick(ctx, deps);
     },
   };
 }

@@ -399,10 +399,14 @@ export const artifact = pgTable(
     // draft/approved/rejected state.
     archivedAt: timestamp("archived_at"),
     // Idempotency backstop for a source that can race a duplicate insert past
-    // an app-level existence check (CL-3577 review fix B — the Granola call
-    // pipeline sets `granola:call:<noteId>`). Null for every artifact created
-    // through the artifact_* tools / write_artifact; the partial unique index
-    // only constrains rows that opt in by setting this column.
+    // an app-level existence check (CL-3577 review fix B; extended to a
+    // per-artifact-kind key and made the primary dedupe mechanism for Granola
+    // call processing under CL-4213 — see granola-call-artifacts.ts). The
+    // Granola pipeline sets `granola:call:<noteId>:<kind>`, one per typed
+    // artifact (pain points / summary / brief). Null for every artifact
+    // created through the artifact_* tools / write_artifact without a
+    // sourceRef; the partial unique index only constrains rows that opt in by
+    // setting this column.
     sourceRef: text("source_ref"),
     createdAt: timestamp("created_at").notNull().defaultNow(),
     updatedAt: timestamp("updated_at")
@@ -992,40 +996,21 @@ export const inboxIntakeCursor = pgTable("inbox_intake_cursor", {
 
 export type InboxIntakeCursorRow = typeof inboxIntakeCursor.$inferSelect;
 
-// Historical facade shape for Granola note jobs. The `granola_call_job` table
-// was dropped in 0077 (CL-4203) after cutover to work_unit kind `granola_call`;
-// the granola-call-job-queue facade still maps work_unit rows onto this shape
-// for runner / inbox callers.
-export type GranolaCallJobRow = {
-  id: string;
-  tenantId: string;
-  noteId: string;
-  status: "pending" | "processing" | "done" | "dead";
-  attempts: number;
-  nextAttemptAt: Date;
-  lastError: string | null;
-  leaseOwner: string | null;
-  leaseUntil: Date | null;
-  /** Workflow run id already started for this unit (single-flight on reclaim). */
-  activeRunId: string | null;
-  createdAt: Date;
-  updatedAt: Date;
-};
-
 // Durable background work unit (WQ.1–WQ.2). Product tasks are never leased;
 // workers claim work_unit rows with FOR UPDATE SKIP LOCKED + lease_until.
-export const workUnitStatuses = [
-  "pending",
-  "leased",
-  "done",
-  "dead",
-] as const;
+//
+// The `granola_call` kind (and the `granola-call-job-queue` facade + off-tick
+// runner that claimed it) was removed in CL-4213: Granola note processing
+// dedupes on artifact `sourceRef` instead (granola-call-artifacts.ts), so it
+// needs no lease/claim machinery of its own. This table stays — and so does
+// its claiming machinery — because `knowledge_capture`
+// (knowledge-capture-outbox.ts / knowledge-capture-hook.ts) and
+// `agent_task_turn` (agent-task-auto-pickup.ts) are both still live
+// consumers with no natural output key to dedupe on the way Granola's
+// artifacts do.
+export const workUnitStatuses = ["pending", "leased", "done", "dead"] as const;
 
-export const workUnitKinds = [
-  "knowledge_capture",
-  "agent_task_turn",
-  "granola_call",
-] as const;
+export const workUnitKinds = ["knowledge_capture", "agent_task_turn"] as const;
 
 export const workUnit = pgTable(
   "work_unit",
@@ -1037,7 +1022,10 @@ export const workUnit = pgTable(
     status: text("status", { enum: workUnitStatuses })
       .notNull()
       .default("pending"),
-    payload: jsonb("payload").$type<Record<string, unknown>>().notNull().default({}),
+    payload: jsonb("payload")
+      .$type<Record<string, unknown>>()
+      .notNull()
+      .default({}),
     attempts: integer("attempts").notNull().default(0),
     maxAttempts: integer("max_attempts").notNull().default(8),
     nextAttemptAt: timestamp("next_attempt_at").notNull().defaultNow(),

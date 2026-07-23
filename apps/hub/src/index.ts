@@ -67,7 +67,10 @@ import {
   type ReclaimRunDeploymentFn,
 } from "./workflow-executor/projection-bridge";
 import { projectWorkflowRunFacts } from "./workflow-executor/workflow-run-facts";
-import { deliverRunTerminalMail, fanOutTenantScheduleTerminalMail } from "./workflow-executor/run-terminal-mail";
+import {
+  deliverRunTerminalMail,
+  fanOutTenantScheduleTerminalMail,
+} from "./workflow-executor/run-terminal-mail";
 import { deliverPendingGateMail } from "./workflow-executor/gate-mail";
 import { createWorkflowAnalyticsRouter } from "./routes/workflow-analytics";
 import {
@@ -139,8 +142,6 @@ import { createMembersRouter } from "./routes/members";
 import { createMyraThreadsRouter } from "./routes/myra-threads";
 import { createInvokedSubagentsRouter } from "./routes/invoked-subagents";
 import { recordMyraThreadActivity } from "./services/myra-threads";
-import { createGranolaCallJobQueue } from "./services/granola-call-job-queue";
-import { createGranolaCallJobRunner } from "./services/granola-call-job-runner";
 import { createGranolaCallFanout } from "./services/granola-call-fanout";
 import { setGranolaCallToolDeps } from "./tools/granola-call-tools";
 import { createGranolaWorkspaceInboxSource } from "./services/inbox-sources/granola-workspace";
@@ -2022,14 +2023,6 @@ const listInboxMembers = async () => {
   }));
 };
 
-const granolaCallJobQueue = createGranolaCallJobQueue(db);
-const granolaCallJobRunner = createGranolaCallJobRunner({
-  db,
-  queue: granolaCallJobQueue,
-  startRun: (args) => runStarter.startRun(args),
-});
-granolaCallJobRunner.start();
-
 const workUnitWorker = createWorkUnitWorker({
   db,
   queue: workUnitQueue,
@@ -2038,13 +2031,15 @@ const workUnitWorker = createWorkUnitWorker({
 });
 workUnitWorker.start();
 
-
 const inboxIntake = createInboxIntake({
   db,
   grantStore,
   registry: [
     ...INBOX_SOURCE_REGISTRY,
-    createGranolaWorkspaceInboxSource({ queue: granolaCallJobQueue }),
+    createGranolaWorkspaceInboxSource({
+      db,
+      startRun: (args) => runStarter.startRun(args),
+    }),
   ],
   listMembers: listInboxMembers,
   mailboxEventBus,
@@ -2290,7 +2285,6 @@ for (const signal of ["SIGTERM", "SIGINT"]) {
       stopAwaitingSupervisorPrewarm();
       stopStalledScheduledRunReconciler();
       workUnitWorker.stop();
-      granolaCallJobRunner.stop();
       log.info("Closing sidecar connections", {
         count: sidecarConnections.size(),
       });
