@@ -168,7 +168,7 @@ describe("CommandPaletteProvider", () => {
     const artifacts = r.getByRole("option", { name: "Artifacts" });
     fireEvent.click(artifacts);
 
-    expect(r.getByTestId("location").textContent).toBe("/artifacts");
+    expect(r.getByTestId("location").textContent).toBe("/library/artifacts");
     expect(r.queryByRole("combobox")).toBeNull();
   });
 

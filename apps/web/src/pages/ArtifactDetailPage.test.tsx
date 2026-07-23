@@ -113,7 +113,7 @@ function renderAt(id: string): RenderResult {
         { client },
         React.createElement(
           MemoryRouter,
-          { initialEntries: [`/artifacts/${id}`] },
+          { initialEntries: [`/library/artifacts/${id}`] },
           React.createElement(LocationProbe),
           React.createElement(ChromeSlot),
           React.createElement(LeadingSlot),
@@ -121,11 +121,11 @@ function renderAt(id: string): RenderResult {
             Routes,
             null,
             React.createElement(Route, {
-              path: "/artifacts/:artifactId",
+              path: "/library/artifacts/:artifactId",
               element: React.createElement(ArtifactDetailPage),
             }),
             React.createElement(Route, {
-              path: "/artifacts",
+              path: "/library/artifacts",
               element: React.createElement(
                 "div",
                 { "data-testid": "gallery-redirect" },
@@ -178,7 +178,7 @@ describe("ArtifactDetailPage", () => {
       within(leading)
         .getByRole("link", { name: "Back to Artifacts" })
         .getAttribute("href"),
-    ).toBe("/artifacts");
+    ).toBe("/library/artifacts");
   });
 
   it("shows the kind, version, and date in the page header", () => {
@@ -408,7 +408,7 @@ describe("ArtifactDetailPage", () => {
         view.getByRole("button", { name: /derived from a previous version/i }),
       );
       expect(view.getByTestId("location-path").textContent).toBe(
-        "/artifacts/art-1",
+        "/library/artifacts/art-1",
       );
     });
   });

@@ -67,7 +67,7 @@ function stubSearchFetch() {
                 id: "artifact:a1",
                 category: "artifact",
                 title: "Q3 pricing one-pager",
-                to: "/artifacts/a1",
+                to: "/library/artifacts/a1",
               },
             ],
             page: 0,
@@ -155,7 +155,9 @@ describe("command palette query→render integration", () => {
       .find((o) => (o.textContent ?? "").includes("Q3 pricing one-pager"))!;
     fireEvent.click(option);
 
-    expect(screen.getByTestId("location").textContent).toBe("/artifacts/a1");
+    expect(screen.getByTestId("location").textContent).toBe(
+      "/library/artifacts/a1",
+    );
     expect(screen.queryByRole("combobox")).toBeNull();
   });
 });

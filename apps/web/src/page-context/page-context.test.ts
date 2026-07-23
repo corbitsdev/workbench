@@ -11,16 +11,18 @@ const PRIMARY_PATH_SAMPLES = [
   "/chats/thr_sample",
   "/inbox",
   "/inbox/msg_sample",
-  "/artifacts",
-  "/artifacts/art_sample",
+  "/library",
+  "/library/artifacts",
+  "/library/artifacts/art_sample",
+  "/library/skills",
+  "/library/skills/new",
+  "/library/skills/id_sample",
+  "/library/agents",
   "/workflows",
   "/workflows/wf_sample",
   "/settings",
   "/settings/connections",
   "/settings/tools/id_sample",
-  "/skills",
-  "/skills/new",
-  "/skills/id_sample",
   "/settings/admin/tools",
   "/settings/admin/tools/tool_sample",
   "/settings/admin",
@@ -50,8 +52,10 @@ describe("pageContextForPathname", () => {
   });
 
   it("resolves artifacts list vs detail", () => {
-    expect(pageContextForPathname("/artifacts")).toContain("library");
-    expect(pageContextForPathname("/artifacts/art-1")).toContain("detail");
+    expect(pageContextForPathname("/library/artifacts")).toContain("library");
+    expect(pageContextForPathname("/library/artifacts/art-1")).toContain(
+      "detail",
+    );
   });
 
   it("catalog copy must not look like secrets or PII", () => {

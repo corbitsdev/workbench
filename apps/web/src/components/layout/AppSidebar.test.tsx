@@ -113,11 +113,6 @@ describe("AppSidebar", () => {
     ).toBe("/workflows");
     expect(
       (
-        screen.getByRole("link", { name: /skills/i }) as HTMLAnchorElement
-      ).getAttribute("href"),
-    ).toBe("/skills");
-    expect(
-      (
         screen.getByRole("link", { name: /insights/i }) as HTMLAnchorElement
       ).getAttribute("href"),
     ).toBe("/insights");

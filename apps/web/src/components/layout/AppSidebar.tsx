@@ -2,7 +2,6 @@ import {
   Home,
   Mail,
   Settings,
-  BookOpen,
   BarChart2,
   Workflow,
   Plus,
@@ -13,7 +12,6 @@ import {
   ChevronDown,
   ExternalLink,
   Zap,
-  Bot,
   type LucideIcon,
 } from "lucide-react";
 import { NavLink, Link, useNavigate } from "react-router";
@@ -33,11 +31,9 @@ import { branding } from "../../lib/app-env";
 const NAV_ITEMS = [
   { to: "/inbox", label: "Inbox", icon: Mail, end: false },
   { to: "/chats", label: "Chats", icon: Home, end: false },
-  { to: "/artifacts", label: "Artifacts", icon: Files, end: false },
+  { to: "/library", label: "Library", icon: Files, end: false },
   { to: "/workflows", label: "Workflows", icon: Workflow, end: false },
   { to: "/routines", label: "Routines", icon: Zap, end: false },
-  { to: "/skills", label: "Skills", icon: BookOpen, end: false },
-  { to: "/agents", label: "Agents", icon: Bot, end: false },
   { to: "/insights", label: "Insights", icon: BarChart2, end: false },
 ] as const;
 

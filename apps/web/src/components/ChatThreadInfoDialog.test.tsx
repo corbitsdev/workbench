@@ -92,7 +92,7 @@ describe("ChatThreadInfoDialog", () => {
       screen
         .getByRole("link", { name: "Open Agents page" })
         .getAttribute("href"),
-    ).toBe("/agents");
+    ).toBe("/library/agents");
   });
 
   it("closes on the close button", () => {

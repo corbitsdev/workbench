@@ -18,7 +18,7 @@ export type DeepLinkKind = (typeof deepLinkKinds)[number];
 export function deepLinkPath(kind: DeepLinkKind, id: string): string {
   switch (kind) {
     case "artifact":
-      return `/artifacts/${encodeURIComponent(id)}`;
+      return `/library/artifacts/${encodeURIComponent(id)}`;
     case "workflow_run":
       return `/workflows/${encodeURIComponent(id)}`;
     case "workflow_trace":

@@ -39,7 +39,9 @@ export function ArtifactsPage() {
       <PagePanel>
         <ArtifactGallery
           tenantId={activeTenantId}
-          onOpenArtifact={(artifact) => navigate(`/artifacts/${artifact.id}`)}
+          onOpenArtifact={(artifact) =>
+            navigate(`/library/artifacts/${artifact.id}`)
+          }
         />
       </PagePanel>
     </ErrorBoundary>

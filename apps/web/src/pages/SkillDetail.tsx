@@ -245,7 +245,7 @@ export function SkillDetail() {
     deleteMutation
       .mutateAsync({ assetId: id, tenantId })
       .then(() => {
-        navigate("/skills");
+        navigate("/library/skills");
       })
       .catch(() => {
         setConfirmDelete(false);
@@ -268,7 +268,7 @@ export function SkillDetail() {
             type="button"
             variant="ghost"
             size="sm"
-            onClick={() => navigate("/skills")}
+            onClick={() => navigate("/library/skills")}
             className="gap-1.5"
           >
             <ArrowLeft className="h-4 w-4" aria-hidden />

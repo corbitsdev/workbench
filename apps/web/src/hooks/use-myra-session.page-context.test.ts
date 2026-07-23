@@ -79,10 +79,10 @@ function renderAt(pathname: string) {
 describe("useMyraSession page context (CL-3527)", () => {
   it("sends route pageContext on session launch", async () => {
     launchInstanceSession.mockClear();
-    renderAt("/artifacts/art-1");
+    renderAt("/library/artifacts/art-1");
     await waitFor(() => expect(launchInstanceSession).toHaveBeenCalled());
     expect(launchInstanceSession).toHaveBeenCalledWith("inst-1", {
-      pageContext: pageContextForPathname("/artifacts/art-1"),
+      pageContext: pageContextForPathname("/library/artifacts/art-1"),
     });
   });
 });

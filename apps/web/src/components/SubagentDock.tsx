@@ -269,7 +269,7 @@ export function SubagentDock({
           ))}
           {sorted.length > MAX_DOCK_CARDS && (
             <Link
-              to="/agents"
+              to="/library/agents"
               className={cn(
                 "block rounded-md px-2 py-1.5 text-xs text-text-2 hover:bg-row-hover hover:text-text",
                 FOCUS_RING,
@@ -350,7 +350,7 @@ export function SubagentDock({
         ))}
         {sorted.length > MAX_DOCK_CARDS && (
           <Link
-            to="/agents"
+            to="/library/agents"
             className={cn(
               "block rounded-md px-2 py-1.5 text-xs text-text-2 hover:bg-row-hover hover:text-text",
               FOCUS_RING,

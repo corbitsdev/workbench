@@ -223,7 +223,7 @@ export function ArtifactGallery({
 
   function handleOpenParent(parentId: string) {
     setSelected(null);
-    navigate(`/artifacts/${parentId}`);
+    navigate(`/library/artifacts/${parentId}`);
   }
 
   // The mutation invalidates the artifact list, so the new row refetches into
@@ -326,7 +326,9 @@ export function ArtifactGallery({
             : null
         }
         thumbnailUrlForArtifact={imageThumbnailUrl}
-        {...(myPrincipalId !== null ? { viewerPrincipalId: myPrincipalId } : {})}
+        {...(myPrincipalId !== null
+          ? { viewerPrincipalId: myPrincipalId }
+          : {})}
       />
       <ArtifactModal
         open={selected !== null}

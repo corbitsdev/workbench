@@ -49,9 +49,7 @@ export function SettingsSectionNav() {
 
   return (
     <nav aria-label="Settings sections" className="flex flex-col gap-1">
-      {managementGroups.length > 0 && (
-        <div className={GROUP_HEADING_CLASS}>Personal</div>
-      )}
+      <div className={GROUP_HEADING_CLASS}>Personal</div>
       <div className="flex gap-1 overflow-x-auto pb-2 lg:flex-col lg:overflow-visible lg:pb-0">
         {SETTINGS_SECTIONS.map((section) => {
           const isActive = activeAnchorId === section.id;

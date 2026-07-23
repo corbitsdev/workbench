@@ -211,7 +211,7 @@ export function ArtifactDetailPage() {
               onConfirm={() =>
                 archiveMutation.mutate(
                   { artifactId: artifact.id, tenantId: activeTenantId },
-                  { onSuccess: () => navigate("/artifacts") },
+                  { onSuccess: () => navigate("/library/artifacts") },
                 )
               }
               className={ARTIFACT_DETAIL_CHROME_ACTION_CLASS}
@@ -244,7 +244,7 @@ export function ArtifactDetailPage() {
     if (artifact === undefined) return null;
     return (
       <Link
-        to="/artifacts"
+        to="/library/artifacts"
         className="inline-flex items-center gap-1.5 text-sm text-text-2 transition-colors hover:text-text"
       >
         <ArrowLeft size={14} aria-hidden />
@@ -263,7 +263,7 @@ export function ArtifactDetailPage() {
       <CenteredNotice>
         <div className="flex flex-col items-center gap-2">
           <span>This artifact couldn't be found.</span>
-          <Link to="/artifacts" className="text-orange underline">
+          <Link to="/library/artifacts" className="text-orange underline">
             Back to Artifacts
           </Link>
         </div>
@@ -276,7 +276,7 @@ export function ArtifactDetailPage() {
   }
 
   function handleOpenParent(parentId: string) {
-    navigate(`/artifacts/${parentId}`);
+    navigate(`/library/artifacts/${parentId}`);
   }
 
   const kindLabel = resolveKindLabel(artifact.kind);
