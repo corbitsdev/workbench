@@ -69,6 +69,7 @@ let gateInfos = new Map<
   ["deck", { requiresIntake: false, humanGateCount: 0 }],
   ["last30days-research", { requiresIntake: true, humanGateCount: 1 }],
   ["granola-call", { requiresIntake: false, humanGateCount: 0 }],
+  ["github-topic-watch", { requiresIntake: true, humanGateCount: 1 }],
 ]);
 mock.module("../lib/workflow-catalog", () => ({
   loadWorkflowDisplayFlows: async () => new Map(),
@@ -203,6 +204,7 @@ describe("GET /workflows", () => {
       { kind: "deck", label: "Deck" },
       { kind: "alpha", label: "Alpha" },
       { kind: "granola-call", label: "Granola Call Processing" },
+      { kind: "github-topic-watch", label: "GitHub topic watch" },
     ];
 
     const body = (await (await get()).json()) as { entries: Entry[] };
@@ -215,5 +217,7 @@ describe("GET /workflows", () => {
     expect(byKind["alpha"]!.attachable).toBe(false);
     // Gate-free (zero human gates) + product-eligible — passes both gates
     expect(byKind["granola-call"]!.attachable).toBe(true);
+    // Intake-only + product-eligible — schedule pre-fills intake (CL-4270)
+    expect(byKind["github-topic-watch"]!.attachable).toBe(true);
   });
 });

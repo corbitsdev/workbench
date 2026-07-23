@@ -1,0 +1,173 @@
+{
+  "kind": "github-topic-watch",
+  "version": "0.1.0",
+  "label": "GitHub topic watch",
+  "description": "On a schedule, search GitHub for recent repos, issues, and PRs on a topic and save a short digest.",
+  "requiresIntake": true,
+  "humanGateCount": 1,
+  "intakeFields": [
+    {
+      "kind": "text",
+      "inputHint": "text",
+      "name": "topic",
+      "label": "Topic",
+      "required": true,
+      "help": "Keyword terms only — no GitHub qualifiers (is:issue, repo:, etc.).",
+      "placeholder": "e.g. AI coding agents",
+      "order": 0
+    }
+  ],
+  "definition": {
+    "id": "github-topic-watch",
+    "triggers": [
+      {
+        "type": "manual"
+      }
+    ],
+    "steps": {
+      "intake": {
+        "kind": "awaitSignal",
+        "id": "intake",
+        "name": "intake",
+        "drainBehavior": "wait"
+      },
+      "fetch": {
+        "kind": "step",
+        "id": "fetch",
+        "agent": {
+          "id": "github-topic-watch-fetch",
+          "systemPrompt": "",
+          "toolFactories": [],
+          "capabilities": [
+            "@workbench/tools-github/github:github_activity"
+          ],
+          "inference": {
+            "sources": []
+          },
+          "description": "Deterministic tool call: @workbench/tools-github/github:github_activity",
+          "tags": {
+            "workbench.stepKind": "deterministic-tool",
+            "workbench.tool": "@workbench/tools-github/github:github_activity",
+            "workbench.argMap": "{\"query\":{\"from\":\"topic\"},\"days\":{\"literal\":7}}",
+            "workbench.nonFatal": "true",
+            "workbench.title": "Search GitHub activity"
+          }
+        },
+        "drainBehavior": "cancel",
+        "input": {
+          "from": "steps.intake.output"
+        },
+        "after": [
+          "intake"
+        ]
+      },
+      "digest": {
+        "kind": "step",
+        "id": "digest",
+        "agent": {
+          "id": "github-topic-watch-digest",
+          "systemPrompt": "Treat Corbits, Corbits.dev, Interchange, and Faremeter as canonical Corbits names; spell them exactly. When source material contains a clear speech-to-text or spelling variant, use the canonical spelling in your output. Do not replace an ambiguous term unless surrounding context identifies it.\n\nYou write short unattended GitHub topic digests for a scheduled watch.\n\nYou receive the watch topic, optional lookback days, and raw github_activity results (JSON research items: repos, issues, PRs with url, title, publishedAt, engagement).\n\nWrite a concise markdown digest:\n1. One-line headline of what moved\n2. Notable repos (if any) with star/activity signal\n3. Notable issues/PRs worth reading\n4. \"Worth a closer look\" — 0–3 items with why\n\nNo preamble. No tool calls. Markdown body only.",
+          "toolFactories": [],
+          "capabilities": [],
+          "inference": {
+            "sources": []
+          },
+          "description": "Reasoning step: github-topic-watch-digest",
+          "tags": {
+            "workbench.title": "Write the digest"
+          }
+        },
+        "drainBehavior": "cancel",
+        "input": {
+          "merge": [
+            {
+              "from": "steps.intake.output"
+            },
+            {
+              "from": "steps.fetch.output"
+            }
+          ]
+        },
+        "after": [
+          "fetch"
+        ]
+      },
+      "document": {
+        "kind": "step",
+        "id": "document",
+        "agent": {
+          "id": "github-topic-watch-document",
+          "systemPrompt": "",
+          "toolFactories": [],
+          "capabilities": [
+            "@workbench/tools-last30days/core:last30days_format_report_document"
+          ],
+          "inference": {
+            "sources": []
+          },
+          "description": "Deterministic tool call: @workbench/tools-last30days/core:last30days_format_report_document",
+          "tags": {
+            "workbench.stepKind": "deterministic-tool",
+            "workbench.tool": "@workbench/tools-last30days/core:last30days_format_report_document",
+            "workbench.argMap": "{\"topic\":{\"from\":\"topic\"},\"reply\":{\"from\":\"reply\"}}",
+            "workbench.title": "Compose the digest document"
+          }
+        },
+        "drainBehavior": "cancel",
+        "input": {
+          "merge": [
+            {
+              "from": "steps.intake.output"
+            },
+            {
+              "from": "steps.digest.output"
+            }
+          ]
+        },
+        "after": [
+          "digest"
+        ]
+      },
+      "persist": {
+        "kind": "step",
+        "id": "persist",
+        "agent": {
+          "id": "github-topic-watch-persist",
+          "systemPrompt": "",
+          "toolFactories": [],
+          "capabilities": [
+            "@workbench/tools-artifact/artifact:write_artifact"
+          ],
+          "inference": {
+            "sources": []
+          },
+          "description": "Deterministic tool call: @workbench/tools-artifact/artifact:write_artifact",
+          "tags": {
+            "workbench.stepKind": "deterministic-tool",
+            "workbench.tool": "@workbench/tools-artifact/artifact:write_artifact",
+            "workbench.argMap": "{\"title\":{\"from\":\"title\"},\"body\":{\"from\":\"body\"},\"kind\":{\"literal\":\"research\"},\"jobLabel\":{\"literal\":\"GitHub topic watch\"}}",
+            "workbench.title": "Save digest artifact"
+          }
+        },
+        "drainBehavior": "cancel",
+        "input": {
+          "merge": [
+            {
+              "from": "steps.document.output.content"
+            }
+          ]
+        },
+        "after": [
+          "document"
+        ]
+      }
+    },
+    "stepOrder": [
+      "intake",
+      "fetch",
+      "digest",
+      "document",
+      "persist"
+    ]
+  }
+}
