@@ -40,6 +40,32 @@ const FACTORY_ID_BY_TOOL: Record<string, string> = Object.fromEntries(
 export const PACKAGE_PROVIDERS_TABLE: Record<string, string> =
   derivePackageProviders(toolManifestFactories);
 
+/**
+ * Every canonical `<factoryId>:<name>` tool name the given pinned tool
+ * packages ship. This is the grant surface a workflow deploy authorizes its
+ * step agents for: grants derived from the staged packages themselves, not
+ * from a hand-collected union of per-step declared names. The declared-name
+ * union repeatedly stranded workflows at runtime — any tool or action effect
+ * whose name no step happened to declare (granola_get_note from a digest
+ * step, last30days_ground_queries / heartbeat_format_brief_title from action
+ * steps) was visible to the model but denied at the grant layer with
+ * "No matching grants" / "not authorized (null)". The workflow author chose
+ * the packages; the deployment is per-run; side-effect approval is a separate
+ * rail — so the package surface is the honest grant boundary.
+ */
+export function canonicalToolNamesForPackages(
+  pins: readonly ToolPackagePin[],
+): string[] {
+  const pinNames = new Set(pins.map((pin) => pin.name));
+  const names: string[] = [];
+  for (const [factoryId, tools] of Object.entries(PACKAGE_TOOLS_TABLE)) {
+    const packageName = factoryId.split("/").slice(0, 2).join("/");
+    if (!pinNames.has(packageName)) continue;
+    for (const tool of tools) names.push(`${factoryId}:${tool}`);
+  }
+  return names.sort();
+}
+
 // The distinct credential providers a set of pinned tool packages requires.
 // The hub credential gate authorizes a deployed agent (or workflow step) for
 // exactly these providers — derived from its persisted pins, not a tool-name

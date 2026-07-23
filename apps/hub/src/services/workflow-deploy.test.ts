@@ -13,6 +13,7 @@ import type { DirectorRegistry } from "@intx/agent";
 import type { AgentRepoStore, SidecarRouter } from "@workbench/hub-sessions";
 import type { HubDb } from "../db";
 import { evaluateGrants } from "@intx/authz";
+import { toolPackagesForCapabilities } from "@workbench/agents";
 import type { GrantRule } from "@intx/authz";
 import { createEffectContext, defineWorkflow, map, step } from "@intx/workflow";
 import { defineAgent } from "@intx/agent";
@@ -37,6 +38,7 @@ import {
   buildStepGrantRules,
   buildSupervisorDeployFrame,
   capabilityNames,
+  stepGrantCapabilityNames,
   collectDeterministicToolStepIds,
   collectGrants,
   createWorkflowDeployService,
@@ -408,6 +410,58 @@ describe("ensureDeploymentInstanceActive", () => {
     expect(update.target).toBe(intxSchema.agentInstance.id);
     expect(update.set.endedAt).toBeNull();
     expect(update.set.status).toBe("deployed");
+  });
+});
+
+describe("stepGrantCapabilityNames", () => {
+  // The grant surface a deploy authorizes is the FULL canonical tool surface
+  // of the staged packages, not the hand-collected union of per-step declared
+  // names. The declared-name union stranded three workflows in one day, all
+  // with the same runtime denial and nothing at deploy time to catch it:
+  // granola-call's digest calling granola_get_note ("No matching grants"),
+  // last30days' ground-queries action ("effect
+  // @workbench/tools-last30days/core:last30days_ground_queries was not
+  // authorized (null)"), and heartbeat's brief-title action (same, for
+  // heartbeat_format_brief_title). Declaring one tool from a package stages
+  // the whole package's definitions in front of the model — entitlement to
+  // call must match entitlement to see.
+  test("declaring one granola tool grants the package's whole canonical surface", () => {
+    const declared = ["@workbench/tools-granola/granola:granola_list_notes"];
+    const names = stepGrantCapabilityNames(
+      declared,
+      toolPackagesForCapabilities(declared),
+    );
+    expect(names).toContain(
+      "@workbench/tools-granola/granola:granola_get_note",
+    );
+    expect(names).toContain(
+      "@workbench/tools-granola/granola:granola_list_notes",
+    );
+  });
+
+  test("declared names survive expansion even when no package backs them (local-runner tools)", () => {
+    const names = stepGrantCapabilityNames(["send_mail"], []);
+    expect(names).toContain("send_mail");
+  });
+
+  test("the expanded surface authorizes an action effect no step declared, through the real evaluator", async () => {
+    // The exact production check that failed: EffectContext.perform
+    // authorizes `effect:<canonical>` for a name the workflow's steps never
+    // listed. Expansion from the staged package must satisfy it.
+    const declared = [
+      "@workbench/tools-last30days/core:last30days_ground_queries",
+    ];
+    const names = stepGrantCapabilityNames(
+      declared,
+      toolPackagesForCapabilities(declared),
+    );
+    const rules = buildStepGrantRules(names);
+    const granted = await evaluateGrants(
+      rules,
+      "effect:@workbench/tools-last30days/core:heartbeat_format_brief_title",
+      "invoke",
+    );
+    expect(granted.effect).toBe("allow");
   });
 });
 

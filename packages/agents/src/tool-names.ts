@@ -9,6 +9,7 @@ export {
   producibleLlmToolNamesForPins,
   canonicalizeToolNames,
   canonicalizeStepToolName,
+  canonicalToolNamesForPackages,
   canonicalizeAgentCapabilityNames,
   LOCAL_RUNNER_TOOL_NAMES,
   toLlmToolName,

@@ -24,6 +24,7 @@ import { type } from "arktype";
 import type { GrantRule } from "@intx/authz";
 import {
   toolPackagesForCapabilities,
+  canonicalToolNamesForPackages,
   DETERMINISTIC_TOOL_KIND,
   STEP_KIND_TAG,
 } from "@workbench/agents";
@@ -269,7 +270,13 @@ export function createWorkflowDeployService(deps: {
     // staged step now gets the full row pair; the rows are inert for steps
     // that never use them. The hub's tool-credential + manifest gate also
     // authorizes deterministic/deployed steps by this row's pins.
-    const stepCapabilityNames = capabilityNames(walk);
+    // Grants + agent-row capabilities cover the FULL canonical surface of the
+    // staged packages (see stepGrantCapabilityNames) — package staging itself
+    // still derives from the declared names above.
+    const stepCapabilityNames = stepGrantCapabilityNames(
+      capabilityNames(walk),
+      toolPackagePins,
+    );
     await writeStepAgentRows({
       db,
       deploymentId: params.deploymentId,
@@ -1340,6 +1347,22 @@ const EFFECT_GRANT_RESOURCE_PREFIX = "effect:";
 // check, regardless of tool pinning or credential configuration. An
 // agent-step tool call authorizes `tool:<name>` and never reads the
 // `effect:` rule, so the extra rule is inert for that class of step.
+// The capability-name set a deploy authorizes its step agents for: the
+// declared per-step names UNIONED with the full canonical tool surface of the
+// staged packages. Declaring one tool from a package stages the whole
+// package's definitions in front of every step's model — so entitlement to
+// call must match entitlement to see, or an undeclared name fails only at
+// runtime ("No matching grants" for an agent-step tool call, "action effect
+// ... was not authorized (null)" for a native action's EffectContext) with
+// nothing at deploy time to catch it. Declared names are kept in the union
+// verbatim for the local-runner tools no package backs (mail_*).
+export function stepGrantCapabilityNames(
+  declared: readonly string[],
+  pins: readonly ToolPackagePin[],
+): string[] {
+  return [...new Set([...declared, ...canonicalToolNamesForPackages(pins)])];
+}
+
 export function buildStepGrantRules(
   capabilityNames: readonly string[],
 ): GrantRule[] {

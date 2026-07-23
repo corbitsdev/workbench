@@ -11,6 +11,7 @@ export {
   canonicalizeAgentCapabilityNames,
   expandToolAliasGrants,
   toolPackagesForCapabilities,
+  canonicalToolNamesForPackages,
   providersForToolPackages,
   toLlmToolName,
 } from "./tool-names";
