@@ -5,6 +5,10 @@ import { beforeEach, describe, expect, it, mock } from "bun:test";
 // serves the already-processed artifact lookup.
 const startCalls: Record<string, unknown>[] = [];
 let startResult: (opts: Record<string, unknown>) => Record<string, unknown>;
+// resolveDeployment is the SAME resolver the real start path uses (run-exec);
+// the tool reuses it rather than hand-rolling a second published-kind query,
+// so the mock controls both from one module boundary.
+let childKindResolved = true;
 mock.module("../workflow-executor/run-exec", () => ({
   startWorkflowRun: async (
     _deps: unknown,
@@ -13,6 +17,14 @@ mock.module("../workflow-executor/run-exec", () => ({
     startCalls.push(opts);
     return startResult(opts);
   },
+  resolveDeployment: async (
+    _db: unknown,
+    _chain: readonly string[],
+    kind: string,
+  ) =>
+    childKindResolved && kind === "process-granola-call"
+      ? { deploymentId: "dep-pub", tenantId: "t-1", principalId: "p-pub" }
+      : null,
 }));
 import * as intxDb from "@intx/db";
 mock.module("@intx/db", () => ({
@@ -26,7 +38,31 @@ type ToolContext = Parameters<
   (typeof GRANOLA_SPAWN_HUB_TOOLS)["granola_spawn_call_runs"]["createTools"]
 >[0];
 
-function makeContext(processedSourceRefs: string[]): ToolContext {
+// Same string-walk trick used for the artifact fake below: the drizzle
+// condition passed to findFirst/findMany is an opaque (cyclic) SQL object, so
+// match by walking it for string leaves rather than parsing its shape.
+function conditionStrings(where: unknown): string[] {
+  const strings: string[] = [];
+  const seen = new Set<object>();
+  const walk = (value: unknown): void => {
+    if (typeof value === "string") {
+      strings.push(value);
+      return;
+    }
+    if (value === null || typeof value !== "object") return;
+    if (seen.has(value)) return;
+    seen.add(value);
+    for (const child of Object.values(value)) walk(child);
+  };
+  walk(where);
+  return strings;
+}
+
+function makeContext(
+  processedSourceRefs: string[],
+  options: { childKindPublished?: boolean } = {},
+): ToolContext {
+  childKindResolved = options.childKindPublished ?? true;
   return {
     db: {
       query: {
@@ -34,21 +70,7 @@ function makeContext(processedSourceRefs: string[]): ToolContext {
           findFirst: async (opts: {
             where: unknown;
           }): Promise<{ id: string } | undefined> => {
-            // The drizzle condition is an opaque (cyclic) SQL object; walk it
-            // for string leaves and match the bound sourceRef param.
-            const strings: string[] = [];
-            const seen = new Set<object>();
-            const walk = (value: unknown): void => {
-              if (typeof value === "string") {
-                strings.push(value);
-                return;
-              }
-              if (value === null || typeof value !== "object") return;
-              if (seen.has(value)) return;
-              seen.add(value);
-              for (const child of Object.values(value)) walk(child);
-            };
-            walk(opts.where);
+            const strings = conditionStrings(opts.where);
             return processedSourceRefs.some((ref) => strings.includes(ref))
               ? { id: "art-1" }
               : undefined;
@@ -168,5 +190,27 @@ describe("granola_spawn_call_runs", () => {
     await expect(
       handler({ content: JSON.stringify({ nope: true }) }, SIGNAL),
     ).rejects.toThrow("notes array");
+  });
+
+  it("rejects loudly when the child kind has no published definition in the tenant chain", async () => {
+    const handler = spawnHandler(
+      makeContext([], { childKindPublished: false }),
+    );
+    await expect(
+      handler({ content: listContent(["n1"]) }, SIGNAL),
+    ).rejects.toThrow("process-granola-call");
+    expect(startCalls).toHaveLength(0);
+  });
+
+  it("rejects loudly when every spawn in the batch fails not_found, even past the up-front publish check", async () => {
+    startResult = () => ({
+      ok: false,
+      status: 404,
+      error: 'no deployed workflow of kind "process-granola-call"',
+    });
+    const handler = spawnHandler(makeContext([]));
+    await expect(
+      handler({ content: listContent(["n1", "n2"]) }, SIGNAL),
+    ).rejects.toThrow("process-granola-call");
   });
 });

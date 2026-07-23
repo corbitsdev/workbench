@@ -2,9 +2,17 @@ import { and, eq } from "drizzle-orm";
 import { getLogger } from "@intx/log";
 import { getAncestorChain } from "@intx/db";
 import { GRANOLA_SPAWN_CALL_RUNS_DEFINITION } from "@workbench/tools-granola";
-import { artifact } from "../db/schema";
+import {
+  WORKFLOW_CATALOG_ACTIVE_STATUS,
+  artifact,
+  workflowRun,
+} from "../db/schema";
+import type { HubDb } from "../db";
 import type { ContextToolEntry } from "../lib/tool-registry";
-import { startWorkflowRun } from "../workflow-executor/run-exec";
+import {
+  resolveDeployment,
+  startWorkflowRun,
+} from "../workflow-executor/run-exec";
 
 const log = getLogger(["tools", "granola-spawn-runs"]);
 
@@ -105,12 +113,19 @@ export const GRANOLA_SPAWN_HUB_TOOLS: Record<string, ContextToolEntry> = {
             );
           }
 
-          const noteIds = parseNoteIds(content).slice(0, maxCalls);
           const chain = await getAncestorChain(context.db, context.tenantId);
+          if (!(await resolveDeployment(context.db, chain, CHILD_KIND))) {
+            throw new Error(
+              `granola_spawn_call_runs: no published workflow of kind "${CHILD_KIND}" in this workbench's tenant chain`,
+            );
+          }
+
+          const noteIds = parseNoteIds(content).slice(0, maxCalls);
 
           const spawned: { noteId: string; runId: string }[] = [];
           const skipped: string[] = [];
-          const failed: { noteId: string; error: string }[] = [];
+          const failed: { noteId: string; error: string; notFound: boolean }[] =
+            [];
           // Serial on purpose: N is small (<= 25) and each start's heavy
           // provisioning runs in its own background task — this loop only
           // creates run rows and fires the starts.
@@ -148,7 +163,11 @@ export const GRANOLA_SPAWN_HUB_TOOLS: Record<string, ContextToolEntry> = {
                 },
               );
               if (!result.ok) {
-                failed.push({ noteId, error: result.error });
+                failed.push({
+                  noteId,
+                  error: result.error,
+                  notFound: result.status === 404,
+                });
                 continue;
               }
               // Deliberately NOT awaiting result.backgroundTask: per-run
@@ -159,8 +178,23 @@ export const GRANOLA_SPAWN_HUB_TOOLS: Record<string, ContextToolEntry> = {
               failed.push({
                 noteId,
                 error: cause instanceof Error ? cause.message : String(cause),
+                notFound: false,
               });
             }
+          }
+
+          // Belt and braces: the up-front publish check should already have
+          // caught an unpublished child kind, but if every spawn in the batch
+          // still failed not_found (e.g. a race with un-publish mid-loop),
+          // fail the step loudly rather than report a quietly-empty success.
+          if (
+            spawned.length === 0 &&
+            failed.length > 0 &&
+            failed.every((entry) => entry.notFound)
+          ) {
+            throw new Error(
+              `granola_spawn_call_runs: every spawn failed — no published workflow of kind "${CHILD_KIND}" in this workbench's tenant chain`,
+            );
           }
 
           if (failed.length > 0) {
@@ -172,7 +206,7 @@ export const GRANOLA_SPAWN_HUB_TOOLS: Record<string, ContextToolEntry> = {
           return JSON.stringify({
             spawned,
             skippedAlreadyProcessed: skipped.length,
-            failed,
+            failed: failed.map(({ noteId, error }) => ({ noteId, error })),
             considered: noteIds.length,
           });
         },
