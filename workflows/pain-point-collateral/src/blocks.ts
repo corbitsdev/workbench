@@ -24,8 +24,10 @@
  * identical shapes, so a block-driven run and a panel-driven run are interchangeable.
  */
 import {
+  gateFallbackBlock,
   pendingGateForRun,
   progressStateForStepPhase,
+  runPageRedirectBlock,
   type DockRunInput,
   type FormField,
   type ProgressStep,
@@ -56,14 +58,6 @@ export interface PainPointCollateralBlockInput extends DockRunInput {
 
 function humanizeStepId(stepId: string): string {
   return stepId.replace(/[-_]+/gu, " ").trim();
-}
-
-function runPageLink(
-  runId: string,
-  title: string,
-  description: string,
-): UIBlock {
-  return { kind: "link", url: `/workflows/${runId}`, title, description };
 }
 
 function noteChoice(signalName: string, notes: GranolaNote[]): UIBlock {
@@ -199,11 +193,17 @@ function gateBlocks(
       return [noteChoice(signalName, notes.value)];
     }
     return [
-      runPageLink(
-        input.runId,
-        "Open the run to pick a transcript",
-        "Your Granola notes aren't available here yet — pick a transcript on the run page.",
-      ),
+      gateFallbackBlock({
+        runId: input.runId,
+        producingStepId: "intake",
+        steps: input.steps,
+        ...(input.surface !== undefined ? { surface: input.surface } : {}),
+        dataStatus: notes.status === "ok" ? "empty" : "unavailable",
+        emptyMessage: "No Granola notes were found for this call.",
+        unavailableTitle: "Open the run to pick a transcript",
+        unavailableDescription:
+          "Your Granola notes aren't available here yet — pick a transcript on the run page.",
+      }),
     ];
   }
 
@@ -217,11 +217,17 @@ function gateBlocks(
       return [painPointForm(signalName, painPoints.value)];
     }
     return [
-      runPageLink(
-        input.runId,
-        "Open the run to select pain points",
-        "The extracted pain points aren't available here — review and select them on the run page.",
-      ),
+      gateFallbackBlock({
+        runId: input.runId,
+        producingStepId: "analyze",
+        steps: input.steps,
+        ...(input.surface !== undefined ? { surface: input.surface } : {}),
+        dataStatus: painPoints.status === "ok" ? "empty" : "unavailable",
+        emptyMessage: "No pain points were extracted from this call.",
+        unavailableTitle: "Open the run to select pain points",
+        unavailableDescription:
+          "The extracted pain points aren't available here — review and select them on the run page.",
+      }),
     ];
   }
 
@@ -229,12 +235,14 @@ function gateBlocks(
     // The panel pre-computes the (pain point × format) cartesian product and
     // posts one generation item per pair — a join the dock's form/multiSelect
     // primitives can't express. Send the user to the run page rather than POST a
-    // shape the dock can't build (CL-2775).
+    // shape the dock can't build (CL-2775) — unless the run page IS the
+    // surface asking, in which case there's nowhere else to send it (CL-4284).
     return [
-      runPageLink(
+      runPageRedirectBlock(
         input.runId,
         "Choose collateral formats on the run page",
         "Pick which formats to generate for each pain point on the run page.",
+        input.surface,
       ),
     ];
   }
@@ -245,21 +253,28 @@ function gateBlocks(
       return [reviewList(signalName, pieces.value)];
     }
     return [
-      runPageLink(
-        input.runId,
-        "Open the run to review collateral",
-        "The generated collateral isn't available here — review and approve it on the run page.",
-      ),
+      gateFallbackBlock({
+        runId: input.runId,
+        producingStepId: "generate",
+        steps: input.steps,
+        ...(input.surface !== undefined ? { surface: input.surface } : {}),
+        dataStatus: pieces.status === "ok" ? "empty" : "unavailable",
+        emptyMessage: "No collateral was generated to review.",
+        unavailableTitle: "Open the run to review collateral",
+        unavailableDescription:
+          "The generated collateral isn't available here — review and approve it on the run page.",
+      }),
     ];
   }
 
   // Any unknown gate needs input the dock can't collect — send the user to the
   // run page rather than POST an empty payload and corrupt the run.
   return [
-    runPageLink(
+    runPageRedirectBlock(
       input.runId,
       "Continue on the run page",
       "This run needs input the dock can't collect yet — continue on the run page.",
+      input.surface,
     ),
   ];
 }

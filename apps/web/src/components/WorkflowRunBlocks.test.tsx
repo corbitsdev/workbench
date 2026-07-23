@@ -535,4 +535,48 @@ describe("WorkflowRunBlocks", () => {
 
     screen.getByText("Waiting for run activity…");
   });
+
+  it("passes surface 'run-page' to the block builder so a gate never dead-ends on a self-link (CL-4284)", () => {
+    // pain-point-collateral's note-selection gate falls back to a run-page link
+    // when its producing step's output isn't readable — but the run page IS
+    // that page, so it must render an honest message instead, never the link.
+    const log: LogRunState = {
+      runId: "wfr_6",
+      phase: "running",
+      lastSeq: 1,
+      steps: [
+        {
+          stepId: "intake",
+          phase: "in-flight",
+          stepType: "deterministic",
+          currentAttempt: 1,
+        },
+        {
+          stepId: "note-selection",
+          phase: "awaiting-signal",
+          stepType: "human",
+          currentAttempt: 1,
+          awaitingSignalName: "note-selection",
+        },
+      ],
+    };
+    render(
+      <WorkflowRunBlocks
+        runId="wfr_6"
+        kind="pain-point-collateral"
+        state={makeState(log, "running")}
+        logState={log}
+        stepOutputs={{}}
+        terminal={false}
+        interrupted={false}
+        onRespond={() => undefined}
+        onClose={() => undefined}
+      />,
+    );
+
+    expect(screen.queryByText("Open the run to pick a transcript")).toBeNull();
+    screen.getByText(
+      "Your Granola notes aren't available here yet — pick a transcript on the run page.",
+    );
+  });
 });

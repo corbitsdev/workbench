@@ -270,11 +270,15 @@ function WorkflowDockCard({
       buildDockBlocks(run.kind, {
         runId: run.runId,
         phase,
+        surface: "dock",
         steps: (log?.steps ?? []).map((step) => ({
           stepId: step.stepId,
           phase: step.phase,
           ...(step.awaitingSignalName !== undefined
             ? { awaitingSignalName: step.awaitingSignalName }
+            : {}),
+          ...(step.lastError !== undefined
+            ? { lastError: step.lastError }
             : {}),
         })),
         stepOutputs: log !== undefined ? stepOutputsFromLog(log) : {},

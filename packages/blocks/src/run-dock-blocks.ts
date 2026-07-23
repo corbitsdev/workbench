@@ -26,8 +26,16 @@ export const DockRunStepSchema = type({
   // The gate's `awaitSignal` name, recovered from the run's log state (CL-2681).
   // Present only on a step parked on a gate; drives the resume affordance.
   "awaitingSignalName?": "string",
+  // The step's classified failure, carried through from the log fold (CL-4284).
+  // Lets a gate whose input comes from an EARLIER step tell "that step failed"
+  // apart from "its output just isn't readable here" instead of collapsing both
+  // into the same dead-end run-page link.
+  "lastError?": { message: "string" },
 });
 export type DockRunStep = typeof DockRunStepSchema.infer;
+
+export const DockSurfaceSchema = type("'dock'|'run-page'");
+export type DockSurface = typeof DockSurfaceSchema.infer;
 
 export const DockRunInputSchema = type({
   runId: "string",
@@ -39,6 +47,11 @@ export const DockRunInputSchema = type({
     title: "string",
     "description?": "string",
   },
+  // Which surface is rendering these blocks (CL-4284) — the chat dock or the
+  // run's own page. A run-page link is a dead end when it's already the page
+  // being viewed, so block builders must gate it on this. Undefined (the
+  // pre-CL-4284 callers) behaves as "dock" — the existing, more-common case.
+  "surface?": DockSurfaceSchema,
 });
 export type DockRunInput = typeof DockRunInputSchema.infer;
 

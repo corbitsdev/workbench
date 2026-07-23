@@ -162,11 +162,15 @@ export function WorkflowRunBlocks({
       buildDockBlocks(kind, {
         runId,
         phase,
+        surface: "run-page",
         steps: (logState?.steps ?? []).map((step) => ({
           stepId: step.stepId,
           phase: step.phase,
           ...(step.awaitingSignalName !== undefined
             ? { awaitingSignalName: step.awaitingSignalName }
+            : {}),
+          ...(step.lastError !== undefined
+            ? { lastError: step.lastError }
             : {}),
         })),
         stepOutputs,

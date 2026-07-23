@@ -34,8 +34,10 @@
  * than an empty choice.
  */
 import {
+  gateFallbackBlock,
   pendingGateForRun,
   progressStateForStepPhase,
+  runPageRedirectBlock,
   type DockRunInput,
   type ProgressStep,
   type UIBlock,
@@ -67,14 +69,6 @@ function humanizeStepId(stepId: string): string {
   return stepId.replace(/[-_]+/gu, " ").trim();
 }
 
-function runPageLink(
-  runId: string,
-  title: string,
-  description: string,
-): UIBlock {
-  return { kind: "link", url: `/workflows/${runId}`, title, description };
-}
-
 // The step that PRODUCES a gate's options is a distinct earlier step (e.g.
 // `listMembers` feeds the `member-selection` gate). A "pending" decode means its
 // output is absent — but that has two very different causes: the producing step
@@ -97,27 +91,24 @@ function sourceStepStillRunning(
 // instead of a dead control (CL-2683 lesson).
 function memberSelectionBlock(input: AttioTaskAgentBlockInput): UIBlock {
   const members = parseMembers(input.stepOutputs.listMembers);
-  if (members.status === "pending") {
-    if (sourceStepStillRunning(input, "listMembers")) {
-      return { kind: "text", text: "Loading workspace members…" };
-    }
-    // The producing step is terminal but its output isn't client-resolvable
-    // (blob-omitted / unreadable) — a run-page link, not a perpetual spinner.
-    return runPageLink(
-      input.runId,
-      "Open the run to pick a member",
-      "The member list is too large to load here — choose on the run page.",
-    );
+  if (
+    members.status === "pending" &&
+    sourceStepStillRunning(input, "listMembers")
+  ) {
+    return { kind: "text", text: "Loading workspace members…" };
   }
-  if (members.status === "malformed") {
-    return { kind: "error", message: "Couldn't load workspace members." };
-  }
-  if (members.value.length === 0) {
-    return runPageLink(
-      input.runId,
-      "Open the run to pick a member",
-      "No workspace members are available here — choose on the run page.",
-    );
+  if (members.status !== "ok" || members.value.length === 0) {
+    return gateFallbackBlock({
+      runId: input.runId,
+      producingStepId: "listMembers",
+      steps: input.steps,
+      ...(input.surface !== undefined ? { surface: input.surface } : {}),
+      dataStatus: members.status === "ok" ? "empty" : "unavailable",
+      emptyMessage: "No workspace members are available to assign.",
+      unavailableTitle: "Open the run to pick a member",
+      unavailableDescription:
+        "The member list is too large to load here — choose on the run page.",
+    });
   }
   return {
     kind: "choice",
@@ -139,25 +130,24 @@ function memberSelectionBlock(input: AttioTaskAgentBlockInput): UIBlock {
 
 function taskSelectionBlock(input: AttioTaskAgentBlockInput): UIBlock {
   const tasks = parseTasks(input.stepOutputs.listTasks);
-  if (tasks.status === "pending") {
-    if (sourceStepStillRunning(input, "listTasks")) {
-      return { kind: "text", text: "Loading open tasks…" };
-    }
-    return runPageLink(
-      input.runId,
-      "Open the run to pick a task",
-      "The task list is too large to load here — choose on the run page.",
-    );
+  if (
+    tasks.status === "pending" &&
+    sourceStepStillRunning(input, "listTasks")
+  ) {
+    return { kind: "text", text: "Loading open tasks…" };
   }
-  if (tasks.status === "malformed") {
-    return { kind: "error", message: "Couldn't load the task list." };
-  }
-  if (tasks.value.length === 0) {
-    return runPageLink(
-      input.runId,
-      "Open the run to pick a task",
-      "No open tasks are available here — choose on the run page.",
-    );
+  if (tasks.status !== "ok" || tasks.value.length === 0) {
+    return gateFallbackBlock({
+      runId: input.runId,
+      producingStepId: "listTasks",
+      steps: input.steps,
+      ...(input.surface !== undefined ? { surface: input.surface } : {}),
+      dataStatus: tasks.status === "ok" ? "empty" : "unavailable",
+      emptyMessage: "No open tasks are available for this member.",
+      unavailableTitle: "Open the run to pick a task",
+      unavailableDescription:
+        "The task list is too large to load here — choose on the run page.",
+    });
   }
   return {
     kind: "choice",
@@ -235,6 +225,26 @@ function clarificationBlock(input: AttioTaskAgentBlockInput): UIBlock {
 function syncApprovalBlocks(input: AttioTaskAgentBlockInput): UIBlock[] {
   const recordDecoded = parseFirstLinkedRecord(input.stepOutputs.fetchTask);
   const taskDecoded = parseSelectedTaskId(input.stepOutputs.selectTask);
+  const failedProducer = input.steps.find(
+    (step) =>
+      (step.stepId === "fetchTask" || step.stepId === "selectTask") &&
+      step.phase === "failed",
+  );
+  if (failedProducer !== undefined) {
+    return [
+      gateFallbackBlock({
+        runId: input.runId,
+        producingStepId: failedProducer.stepId,
+        steps: input.steps,
+        ...(input.surface !== undefined ? { surface: input.surface } : {}),
+        dataStatus: "unavailable",
+        emptyMessage: "No linked Attio record to write back to.",
+        unavailableTitle: "Complete the write-back on the run page",
+        unavailableDescription:
+          "The task details couldn't be read here — review and finish the sync on the run page.",
+      }),
+    ];
+  }
   if (
     recordDecoded.status === "malformed" ||
     taskDecoded.status === "malformed"
@@ -244,10 +254,11 @@ function syncApprovalBlocks(input: AttioTaskAgentBlockInput): UIBlock[] {
     // rather than dead-ending on an error (CL-2684).
     return [
       { kind: "error", message: "Couldn't read the task details to sync." },
-      runPageLink(
+      runPageRedirectBlock(
         input.runId,
         "Complete the write-back on the run page",
         "The task details couldn't be read here — review and finish the sync on the run page.",
+        input.surface,
       ),
     ];
   }
@@ -343,10 +354,11 @@ export function buildAttioTaskAgentBlocks(
       // the choice block can't collect. Send the human to the run page's panel
       // (full block-driven review is CL-2715).
       blocks.push(
-        runPageLink(
+        runPageRedirectBlock(
           input.runId,
           "Review the drafts on the run page",
           "Choose which drafts to save on the run page — the dock can't edit them yet.",
+          input.surface,
         ),
       );
     } else if (gate.signalName === SYNC_APPROVAL_SIGNAL) {
@@ -357,10 +369,11 @@ export function buildAttioTaskAgentBlocks(
       // An unknown gate the dock can't collect — send the human to the run page
       // rather than inventing an affordance (CL-2683 lesson).
       blocks.push(
-        runPageLink(
+        runPageRedirectBlock(
           input.runId,
           "Continue on the run page",
           "This run needs input the dock can't collect yet — continue on the run page.",
+          input.surface,
         ),
       );
     }

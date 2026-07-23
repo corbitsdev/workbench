@@ -393,6 +393,52 @@ describe("WorkflowDock", () => {
     expect(screen.queryByRole("button", { name: "Continue" })).toBeNull();
   });
 
+  it("renders the run-page link (surface 'dock') for a gate whose producing step's output isn't readable here yet (CL-4284)", async () => {
+    records = [listRow("run_notes", "awaiting", "pain-point-collateral")];
+    statesByRunId["run_notes"] = logState("run_notes", "running", [
+      { stepId: "intake", phase: "in-flight" },
+      {
+        stepId: "note-selection",
+        phase: "awaiting-signal",
+        awaitingSignalName: "note-selection",
+      },
+    ]);
+    renderDock();
+    await waitFor(() => screen.getByTestId("workflow-dock-card"));
+    screen.getByText("Open the run to pick a transcript");
+  });
+
+  it("names the failed step with a CLASSIFIED detail instead of a run-page link when its producing step FAILED (CL-4284)", async () => {
+    records = [
+      listRow("run_notes_failed", "awaiting", "pain-point-collateral"),
+    ];
+    statesByRunId["run_notes_failed"] = logState(
+      "run_notes_failed",
+      "running",
+      [
+        {
+          stepId: "intake",
+          phase: "failed",
+          lastError: { message: "Granola API error: 401 Unauthorized" },
+        },
+        {
+          stepId: "note-selection",
+          phase: "awaiting-signal",
+          awaitingSignalName: "note-selection",
+        },
+      ],
+    );
+    renderDock();
+    await waitFor(() => screen.getByTestId("workflow-dock-card"));
+    expect(screen.queryByText("Open the run to pick a transcript")).toBeNull();
+    screen.getByText(/"intake" failed, so this step can't continue\./);
+    // Classified, plain-language detail — never the raw provider error string.
+    screen.getByText(
+      "Granola declined the request (401). Check the connected Granola credential's access and try again.",
+    );
+    expect(screen.queryByText(/API error: 401/)).toBeNull();
+  });
+
   it("links each card to the full run page", async () => {
     records = [listRow("run_running", "running")];
     statesByRunId["run_running"] = logState("run_running", "running", [
@@ -484,9 +530,7 @@ describe("WorkflowDock", () => {
     fireEvent.click(screen.getByTestId("dock-stop-confirm"));
 
     await waitFor(() => screen.getByTestId("dock-stop-error"));
-    expect(
-      screen.getByText("Couldn't stop this run. Try again."),
-    ).toBeTruthy();
+    expect(screen.getByText("Couldn't stop this run. Try again.")).toBeTruthy();
     // Confirm stays available so the user can retry the stop.
     expect(screen.getByTestId("dock-stop-confirm")).toBeTruthy();
   });

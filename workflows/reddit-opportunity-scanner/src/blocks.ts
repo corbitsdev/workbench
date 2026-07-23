@@ -32,8 +32,10 @@
  * the tool complete.
  */
 import {
+  gateFallbackBlock,
   pendingGateForRun,
   progressStateForStepPhase,
+  runPageRedirectBlock,
   type DockRunInput,
   type FormField,
   type ProgressStep,
@@ -61,14 +63,6 @@ export interface RedditOpportunityScannerBlockInput extends DockRunInput {
 
 function humanizeStepId(stepId: string): string {
   return stepId.replace(/[-_]+/gu, " ").trim();
-}
-
-function runPageLink(
-  runId: string,
-  title: string,
-  description: string,
-): UIBlock {
-  return { kind: "link", url: `/workflows/${runId}`, title, description };
 }
 
 function intakeForm(signalName: string): UIBlock {
@@ -295,11 +289,18 @@ export function buildRedditOpportunityScannerBlocks(
         blocks.push(reviewForm(gate.signalName, analysis));
       } else {
         blocks.push(
-          runPageLink(
-            input.runId,
-            "Review the search plan on the run page",
-            "Review the inferred keywords, subreddits, and search plan on the run page before scanning Reddit.",
-          ),
+          gateFallbackBlock({
+            runId: input.runId,
+            producingStepId: "analyze",
+            steps: input.steps,
+            ...(input.surface !== undefined ? { surface: input.surface } : {}),
+            dataStatus: "unavailable",
+            emptyMessage:
+              "No keywords or subreddits were inferred from this site.",
+            unavailableTitle: "Review the search plan on the run page",
+            unavailableDescription:
+              "Review the inferred keywords, subreddits, and search plan on the run page before scanning Reddit.",
+          }),
         );
       }
     } else if (gate.signalName === SELECTION_SIGNAL) {
@@ -309,19 +310,27 @@ export function buildRedditOpportunityScannerBlocks(
         blocks.push(selectionList(gate.signalName, opportunities));
       } else {
         blocks.push(
-          runPageLink(
-            input.runId,
-            "Review opportunities on the run page",
-            "The ranked opportunities aren't available here yet — review and select them on the run page.",
-          ),
+          gateFallbackBlock({
+            runId: input.runId,
+            producingStepId: "curate",
+            steps: input.steps,
+            ...(input.surface !== undefined ? { surface: input.surface } : {}),
+            dataStatus: Array.isArray(curated) ? "empty" : "unavailable",
+            emptyMessage:
+              "No opportunities were found on Reddit for this scan.",
+            unavailableTitle: "Review opportunities on the run page",
+            unavailableDescription:
+              "The ranked opportunities aren't available here yet — review and select them on the run page.",
+          }),
         );
       }
     } else {
       blocks.push(
-        runPageLink(
+        runPageRedirectBlock(
           input.runId,
           "Continue on the run page",
           "This run needs input the dock can't collect yet — continue on the run page.",
+          input.surface,
         ),
       );
     }

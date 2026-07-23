@@ -38,15 +38,24 @@ export {
   DockRunPhaseSchema,
   DockRunStepSchema,
   DockStepPhaseSchema,
+  DockSurfaceSchema,
   dockRunBlocks,
   progressStateForStepPhase,
   type DockRunInput,
   type DockRunPhase,
   type DockRunStep,
   type DockStepPhase,
+  type DockSurface,
 } from "./run-dock-blocks";
 export {
   blocksFromStepUIHints,
   type GateUIHint,
   type StepUIHints,
 } from "./step-ui-hints";
+export {
+  gateFallbackBlock,
+  runPageLink,
+  runPageRedirectBlock,
+  type GateDataStatus,
+  type GateFallbackInput,
+} from "./gate-fallback";
