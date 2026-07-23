@@ -1765,6 +1765,7 @@
         "@types/bun": "latest",
         "@types/react": "^19.0.0",
         "@workbench/test-utils": "workspace:*",
+        "@workbench/tools-granola": "workspace:*",
         "typescript": "catalog:",
       },
       "peerDependencies": {

@@ -65,28 +65,17 @@
     ],
     "steps": {
       "intake": {
-        "kind": "step",
+        "kind": "action",
         "id": "intake",
-        "agent": {
-          "id": "pain-point-collateral-intake",
-          "systemPrompt": "",
-          "toolFactories": [],
-          "capabilities": [
-            "@workbench/tools-granola/granola:granola_list_notes"
-          ],
-          "inference": {
-            "sources": []
-          },
-          "description": "Deterministic tool call: @workbench/tools-granola/granola:granola_list_notes",
-          "tags": {
-            "workbench.stepKind": "deterministic-tool",
-            "workbench.tool": "@workbench/tools-granola/granola:granola_list_notes",
-            "workbench.title": "List your call notes"
-          }
-        },
+        "handler": "@workbench/tools-granola/granola:granola_list_notes",
         "drainBehavior": "cancel",
         "input": {
           "literal": {}
+        },
+        "effect": {
+          "requires": [
+            "@workbench/tools-granola/granola:granola_list_notes"
+          ]
         }
       },
       "select": {
@@ -99,28 +88,17 @@
         ]
       },
       "fetch": {
-        "kind": "step",
+        "kind": "action",
         "id": "fetch",
-        "agent": {
-          "id": "pain-point-collateral-fetch",
-          "systemPrompt": "",
-          "toolFactories": [],
-          "capabilities": [
-            "@workbench/tools-granola/granola:granola_get_note"
-          ],
-          "inference": {
-            "sources": []
-          },
-          "description": "Deterministic tool call: @workbench/tools-granola/granola:granola_get_note",
-          "tags": {
-            "workbench.stepKind": "deterministic-tool",
-            "workbench.tool": "@workbench/tools-granola/granola:granola_get_note",
-            "workbench.title": "Load the chosen note"
-          }
-        },
+        "handler": "@workbench/tools-granola/granola:granola_get_note",
         "drainBehavior": "cancel",
         "input": {
           "from": "steps.select.output"
+        },
+        "effect": {
+          "requires": [
+            "@workbench/tools-granola/granola:granola_get_note"
+          ]
         },
         "after": [
           "select"

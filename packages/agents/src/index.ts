@@ -7,6 +7,7 @@ export {
 } from "./constants";
 export {
   canonicalizeToolNames,
+  canonicalizeStepToolName,
   expandToolAliasGrants,
   toolPackagesForCapabilities,
   providersForToolPackages,
