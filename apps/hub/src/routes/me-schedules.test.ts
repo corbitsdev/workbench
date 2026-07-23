@@ -28,19 +28,20 @@ let runnableKinds = [
   { kind: "last30days-research" },
   { kind: "multi-gate" },
   { kind: "granola-call" },
+  { kind: "unattended-eligible" },
 ];
 mock.module("../lib/workflow-run-gate", () => ({
   isRunnableKind: async (_db: unknown, _tenantId: string, kind: string) =>
     runnableKinds.some((k) => k.kind === kind),
 }));
 
-// Attach gate (CL-3508/CL-3509/CL-3528) + product allowlist (CL-4204): the route
-// reads gate shapes from the embedded catalog. "deck"/"heartbeat" are unattended;
-// "last30days-research" is intake-only; "multi-gate" has intake plus a post-intake
-// human gate and is structurally attachable only when allowsScheduledPostIntakeDrive
-// is set (CL-3528). Product eligibility is a second gate — only heartbeat,
-// prospect-engine, and last30days-research may be scheduled. A kind absent from
-// this map is treated as not-attachable. The real intake payload validation
+// Attach gate (CL-3508/CL-3509/CL-3528) + derived routine eligibility
+// (CL-4204): the route reads gate shapes from the embedded catalog.
+// "deck"/"heartbeat"/"granola-call"/"unattended-eligible" are unattended;
+// "last30days-research" is intake-only; "multi-gate" has intake plus a
+// post-intake human gate and is structurally attachable only when
+// allowsScheduledPostIntakeDrive is set (CL-3528). A kind absent from this
+// map is treated as not-attachable. The real intake payload validation
 // (resume-payload-registry) is NOT mocked — last30days requires a non-empty topic.
 const gateInfos = new Map<
   string,
@@ -49,6 +50,7 @@ const gateInfos = new Map<
   ["heartbeat", { requiresIntake: false, humanGateCount: 0 }],
   ["deck", { requiresIntake: false, humanGateCount: 0 }],
   ["granola-call", { requiresIntake: false, humanGateCount: 0 }],
+  ["unattended-eligible", { requiresIntake: false, humanGateCount: 0 }],
   ["last30days-research", { requiresIntake: true, humanGateCount: 1 }],
   [
     "multi-gate",
@@ -59,8 +61,31 @@ const gateInfos = new Map<
     },
   ],
 ]);
+// Entry-step required trigger fields per kind (CL-4204 derivation). "deck"
+// requires a field that is neither a declared intake field nor enriched, so
+// it fails eligibility on the correctness rule alone (not a bare allowlist
+// miss). "granola-call" requires `noteId` off the raw trigger payload with
+// no intake field and no registered enricher — the real-world bug this
+// derivation exists to catch. "unattended-eligible" and "heartbeat" require
+// nothing beyond what a registered enricher supplies (heartbeat) or require
+// nothing at all.
+const entryTriggerFieldsByKind = new Map<string, string[]>([
+  ["heartbeat", ["enabledSources", "createdAfter"]],
+  ["deck", ["missingField"]],
+  ["granola-call", ["noteId"]],
+  ["multi-gate", ["missingField"]],
+  ["unattended-eligible", []],
+]);
+const intakeFieldsByKind = new Map<string, { name: string }[]>([
+  ["last30days-research", [{ name: "topic" }, { name: "focus" }]],
+]);
 mock.module("../lib/workflow-catalog", () => ({
   loadWorkflowGateInfos: async () => gateInfos,
+  loadWorkflowEntryTriggerFields: async () => entryTriggerFieldsByKind,
+  loadWorkflowIntakeFields: async () => intakeFieldsByKind,
+}));
+mock.module("../workflow-executor/trigger-payload-enrichment-registry", () => ({
+  ENRICHED_TRIGGER_KINDS: new Set(["heartbeat"]),
 }));
 
 const DAILY_9 = { intervalMinutes: 1440, anchorMinuteUtc: 9 * 60 };
@@ -374,9 +399,10 @@ describe("POST /me/schedules attach gate (CL-3508/CL-3509)", () => {
     expect(storeCalls.find((c) => c.fn === "create")).toBeUndefined();
   });
 
-  it("rejects a multi-gate kind that is structurally attachable but not product-eligible (CL-4204)", async () => {
+  it("rejects a multi-gate kind that is structurally attachable but has an unsatisfiable required trigger field (CL-4204)", async () => {
     // multi-gate has allowsScheduledPostIntakeDrive so structural attach passes;
-    // product allowlist does not include multi-gate.
+    // its entry step still requires a trigger field no intake field or
+    // enricher supplies.
     storeCalls.length = 0;
     const res = await mountApp().fetch(
       req("/me/schedules", {
@@ -396,8 +422,10 @@ describe("POST /me/schedules attach gate (CL-3508/CL-3509)", () => {
     expect(storeCalls.find((c) => c.fn === "create")).toBeUndefined();
   });
 
-  it("rejects a structurally attachable kind not on the product allowlist (CL-4204)", async () => {
-    // deck is unattended (structurally attachable) but not product-eligible.
+  it("rejects a structurally attachable kind whose required trigger field is neither declared intake nor enriched (CL-4204)", async () => {
+    // deck is unattended (structurally attachable) but its entry step needs
+    // `missingField` straight from the trigger payload, which no intake field
+    // or enricher supplies.
     storeCalls.length = 0;
     const res = await mountApp().fetch(
       req("/me/schedules", {
@@ -409,6 +437,22 @@ describe("POST /me/schedules attach gate (CL-3508/CL-3509)", () => {
     expect(res.status).toBe(400);
     expect(await res.json()).toEqual({
       error: 'workflow "deck" is not available for Routines schedules',
+    });
+    expect(storeCalls.some((c) => c.fn === "create")).toBe(false);
+  });
+
+  it("rejects granola-call: it reads noteId off the raw trigger payload with no intake field and no enricher (CL-4204)", async () => {
+    storeCalls.length = 0;
+    const res = await mountApp().fetch(
+      req("/me/schedules", {
+        method: "POST",
+        user: "user-a",
+        body: JSON.stringify({ kind: "granola-call", recurrence: DAILY_9 }),
+      }),
+    );
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({
+      error: 'workflow "granola-call" is not available for Routines schedules',
     });
     expect(storeCalls.some((c) => c.fn === "create")).toBe(false);
   });
@@ -487,7 +531,7 @@ describe("POST /me/schedules", () => {
         method: "POST",
         user: "user-a",
         body: JSON.stringify({
-          kind: "granola-call",
+          kind: "unattended-eligible",
           recurrence: { intervalMinutes: 5, anchorMinuteUtc: 0 },
           payload: { x: 1 },
         }),

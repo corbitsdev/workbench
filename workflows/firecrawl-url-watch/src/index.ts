@@ -49,7 +49,9 @@ export const workflow = defineWorkflow({
   steps: {
     // Intake-only human gate — scheduler pre-fills + auto-delivers on schedule
     // fire (CL-3509). humanGateCount === 1 + requiresIntake → structurally
-    // attachable; product allowlist is ROUTINE_ELIGIBLE_KINDS.
+    // attachable; routine eligibility is derived (CL-4204) from whether the
+    // entry step's required trigger fields are covered by declared intake
+    // fields (`url`, `focus`) — see `@workbench/shared`'s `isRoutineEligibleKind`.
     intake: awaitSignal({ name: "intake" }),
 
     fetch: deterministicToolStep({

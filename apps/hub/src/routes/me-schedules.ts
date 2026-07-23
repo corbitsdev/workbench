@@ -12,9 +12,14 @@ import {
 } from "@workbench/shared";
 import { resolveCallerMember } from "../lib/tenant-provisioning";
 import { isRunnableKind } from "../lib/workflow-run-gate";
-import { loadWorkflowGateInfos } from "../lib/workflow-catalog";
+import {
+  loadWorkflowEntryTriggerFields,
+  loadWorkflowGateInfos,
+  loadWorkflowIntakeFields,
+} from "../lib/workflow-catalog";
 import { isKindStructurallyAttachable } from "../lib/workflow-gate-info";
 import { INTAKE_SIGNAL_NAME } from "../lib/scheduled-intake";
+import { ENRICHED_TRIGGER_KINDS } from "../workflow-executor/trigger-payload-enrichment-registry";
 import { validateResumePayload } from "../workflow-executor/resume-payload-registry";
 import { UuidParam } from "../lib/uuid";
 import {
@@ -222,9 +227,24 @@ export function createMeSchedulesRouter(
         );
       }
 
-      // Product allowlist (CL-4204): structural attachability is necessary but not
-      // sufficient — only product-eligible kinds may be scheduled under Routines.
-      if (!isRoutineEligibleKind(body.kind)) {
+      // Derived routine eligibility (CL-4204): structural attachability is
+      // necessary but not sufficient — the entry step's required trigger
+      // fields must also be satisfiable unattended (declared intake field or
+      // a registered trigger-payload enricher for the kind).
+      const [entryTriggerFieldsByKind, intakeFieldsByKind] = await Promise.all([
+        loadWorkflowEntryTriggerFields(),
+        loadWorkflowIntakeFields(),
+      ]);
+      const intakeFieldNames = new Set(
+        (intakeFieldsByKind.get(body.kind) ?? []).map((f) => f.name),
+      );
+      if (
+        !isRoutineEligibleKind(
+          entryTriggerFieldsByKind.get(body.kind) ?? [],
+          intakeFieldNames,
+          ENRICHED_TRIGGER_KINDS.has(body.kind),
+        )
+      ) {
         return c.json(
           {
             error: `workflow "${body.kind}" is not available for Routines schedules`,

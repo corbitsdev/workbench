@@ -74,6 +74,59 @@ export function deriveWorkflowGateInfo(definition: unknown): WorkflowGateInfo {
   return { requiresIntake, humanGateCount };
 }
 
+// Shape read by `deriveEntryStepRequiredTriggerFields` — only the fields that
+// derivation touches; extra keys on the real step/agent objects are ignored.
+type RawTriggerStep = {
+  kind?: string;
+  input?: { from?: string };
+  agent?: { tags?: Record<string, unknown> };
+};
+
+/**
+ * The trigger-payload fields a workflow's entry step reads directly (CL-4204
+ * routine eligibility derivation). Only meaningful for a fully-unattended
+ * entry (a deterministic `step`, not an `awaitSignal` gate) whose input comes
+ * straight from `trigger.payload` — an intake-gated entry has no direct
+ * trigger read; its inputs are the declared intake fields instead, handled
+ * separately. The deterministic-tool arg map (`workbench.argMap`, stamped by
+ * `deterministicToolStep`) names exactly which trigger-payload keys the entry
+ * step's tool call requires — e.g. `granola-call`'s entry step requires
+ * `noteId`, which is neither a declared intake field nor supplied by any
+ * registered trigger-payload enricher, so it correctly comes back non-empty
+ * and fails eligibility. A step with no arg map (nothing read from the
+ * trigger beyond identity/reserved keys, e.g. `prospect-engine`'s
+ * `initBudget`) returns no required fields.
+ */
+export function deriveEntryStepRequiredTriggerFields(
+  definition: unknown,
+): string[] {
+  const def = definition as
+    | { steps?: Record<string, RawTriggerStep>; stepOrder?: unknown }
+    | null
+    | undefined;
+  const stepOrder = Array.isArray(def?.stepOrder) ? def.stepOrder : [];
+  const firstId = stepOrder[0];
+  if (typeof firstId !== "string") return [];
+  const first = def?.steps?.[firstId];
+  if (first === undefined || first.kind !== "step") return [];
+  if (first.input?.from !== "trigger.payload") return [];
+  const argMapRaw = first.agent?.tags?.["workbench.argMap"];
+  if (typeof argMapRaw !== "string") return [];
+  let argMap: unknown;
+  try {
+    argMap = JSON.parse(argMapRaw);
+  } catch {
+    return [];
+  }
+  if (argMap === null || typeof argMap !== "object") return [];
+  const fields: string[] = [];
+  for (const value of Object.values(argMap as Record<string, unknown>)) {
+    const from = (value as { from?: unknown } | null)?.from;
+    if (typeof from === "string") fields.push(from);
+  }
+  return fields;
+}
+
 // Whether a kind can be attached to a schedule at all (structural), ignoring
 // whether intake input has actually been supplied. Fully-unattended workflows (no
 // gates) always qualify. Intake-only workflows qualify: the scheduler pre-fills and

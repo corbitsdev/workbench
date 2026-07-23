@@ -92,6 +92,15 @@ const TRIGGER_PAYLOAD_ENRICHERS: Record<string, TriggerPayloadEnricher> = {
 };
 
 /**
+ * Kinds with a registered trigger-payload enricher (CL-4204 routine
+ * eligibility derivation): these kinds may rely on the enricher to supply
+ * entry-step trigger fields that are not collected as schedule intake.
+ */
+export const ENRICHED_TRIGGER_KINDS: ReadonlySet<string> = new Set(
+  Object.keys(TRIGGER_PAYLOAD_ENRICHERS),
+);
+
+/**
  * Apply the registered trigger-payload enrichment for `ctx.kind`, if any.
  * Kinds with no registered enricher pass `input` through unchanged.
  */

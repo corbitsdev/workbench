@@ -1,5 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import {
+  deriveEntryStepRequiredTriggerFields,
   deriveWorkflowGateInfo,
   isKindStructurallyAttachable,
   kindAllowsScheduledPostIntakeDrive,
@@ -132,6 +133,55 @@ describe("isKindStructurallyAttachable", () => {
         "config-first",
       ),
     ).toBe(false);
+  });
+});
+
+describe("deriveEntryStepRequiredTriggerFields", () => {
+  function stepDef(steps: Record<string, unknown>): unknown {
+    return { id: "wf", steps, stepOrder: Object.keys(steps) };
+  }
+
+  it("extracts the trigger-payload keys named in the entry step's arg map (granola-call's noteId)", () => {
+    const fields = deriveEntryStepRequiredTriggerFields(
+      stepDef({
+        fetch: {
+          kind: "step",
+          input: { from: "trigger.payload" },
+          agent: {
+            tags: { "workbench.argMap": '{"noteId":{"from":"noteId"}}' },
+          },
+        },
+      }),
+    );
+    expect(fields).toEqual(["noteId"]);
+  });
+
+  it("returns no required fields for an entry step with no arg map (prospect-engine's initBudget)", () => {
+    const fields = deriveEntryStepRequiredTriggerFields(
+      stepDef({
+        initBudget: {
+          kind: "step",
+          input: { from: "trigger.payload" },
+          agent: { tags: { "workbench.argMap": "{}" } },
+        },
+      }),
+    );
+    expect(fields).toEqual([]);
+  });
+
+  it("returns no required fields when the entry is an intake gate, not a direct trigger read", () => {
+    const fields = deriveEntryStepRequiredTriggerFields(
+      stepDef({
+        intake: { kind: "awaitSignal", name: "intake" },
+        work: { kind: "step" },
+      }),
+    );
+    expect(fields).toEqual([]);
+  });
+
+  it("returns no required fields for a malformed definition rather than throwing", () => {
+    expect(deriveEntryStepRequiredTriggerFields(null)).toEqual([]);
+    expect(deriveEntryStepRequiredTriggerFields({})).toEqual([]);
   });
 });
 

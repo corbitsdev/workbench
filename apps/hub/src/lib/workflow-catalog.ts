@@ -6,9 +6,10 @@ import {
   EmbeddedWorkflowDefSchema,
   embeddedWorkflowDefsDir,
 } from "./workflow-defs-embedded";
-import type {
-  EmbeddedIntakeField,
-  WorkflowGateInfo,
+import {
+  deriveEntryStepRequiredTriggerFields,
+  type EmbeddedIntakeField,
+  type WorkflowGateInfo,
 } from "./workflow-gate-info";
 
 /**
@@ -128,6 +129,21 @@ export async function loadWorkflowGateInfos(
     });
   }
   return infos;
+}
+
+// The trigger-payload fields each kind's entry step requires directly (CL-4204
+// routine eligibility derivation), read from the committed embedded catalog's
+// `definition`. Used alongside declared intake fields and the trigger-payload-
+// enricher registry to decide whether a kind can actually run unattended from
+// a schedule's stored intake — see `@workbench/shared`'s `isRoutineEligibleKind`.
+export async function loadWorkflowEntryTriggerFields(
+  defsDir: string = embeddedWorkflowDefsDir(),
+): Promise<Map<string, string[]>> {
+  const fields = new Map<string, string[]>();
+  for (const def of await readEmbeddedDefs(defsDir)) {
+    fields.set(def.kind, deriveEntryStepRequiredTriggerFields(def.definition));
+  }
+  return fields;
 }
 
 // The first-intake form fields per kind, read from the committed embedded catalog

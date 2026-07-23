@@ -27,11 +27,13 @@ import { readWorkflowDefinition } from "../services/workflow-deploy";
 import { readMemberPreferences } from "../lib/member-preferences";
 import {
   loadWorkflowDisplayFlows,
+  loadWorkflowEntryTriggerFields,
   loadWorkflowGateInfos,
   loadWorkflowIntakeFields,
 } from "../lib/workflow-catalog";
 import { isKindStructurallyAttachable } from "../lib/workflow-gate-info";
 import { getRootTenantId, lookupMember } from "../lib/tenant-provisioning";
+import { ENRICHED_TRIGGER_KINDS } from "../workflow-executor/trigger-payload-enrichment-registry";
 
 const log = getLogger("workflows-catalog");
 
@@ -152,6 +154,7 @@ export function createWorkflowsCatalogRouter(deps: {
       // only describes awaitSignal gates; do not gate the form on it.
       const gateInfos = await loadWorkflowGateInfos();
       const intakeFieldsByKind = await loadWorkflowIntakeFields();
+      const entryTriggerFieldsByKind = await loadWorkflowEntryTriggerFields();
 
       const entries: WorkflowCatalogEntry[] = [];
       for (const entry of kinds) {
@@ -161,12 +164,18 @@ export function createWorkflowsCatalogRouter(deps: {
           displayFlows.get(entry.kind),
         );
         const gateInfo = gateInfos.get(entry.kind);
-        // attachable = structural gate shape AND product allowlist (CL-4204).
+        const intakeFields = intakeFieldsByKind.get(entry.kind);
+        // attachable = structural gate shape AND derived routine eligibility
+        // (CL-4204): every trigger field the entry step requires is either a
+        // declared intake field or supplied by a registered enricher.
         const attachable =
           gateInfo !== undefined &&
           isKindStructurallyAttachable(gateInfo, entry.kind) &&
-          isRoutineEligibleKind(entry.kind);
-        const intakeFields = intakeFieldsByKind.get(entry.kind);
+          isRoutineEligibleKind(
+            entryTriggerFieldsByKind.get(entry.kind) ?? [],
+            new Set((intakeFields ?? []).map((f) => f.name)),
+            ENRICHED_TRIGGER_KINDS.has(entry.kind),
+          );
         const scopes = scheduleScopesForKind(entry.kind, attachable);
         entries.push({
           kind: entry.kind,

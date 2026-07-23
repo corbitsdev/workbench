@@ -1,40 +1,34 @@
 import { describe, expect, it } from "bun:test";
-import {
-  ROUTINE_ELIGIBLE_KINDS,
-  isRoutineEligibleKind,
-} from "./routine-eligible";
-
-describe("ROUTINE_ELIGIBLE_KINDS", () => {
-  it("lists the product-eligible Routines workflow kinds", () => {
-    expect([...ROUTINE_ELIGIBLE_KINDS]).toEqual([
-      "heartbeat",
-      "prospect-engine",
-      "last30days-research",
-      "granola-call",
-      "firecrawl-url-watch",
-      "exa-topic-watch",
-      "reddit-opportunity-watch",
-      "github-topic-watch",
-    ]);
-  });
-});
+import { isRoutineEligibleKind } from "./routine-eligible";
 
 describe("isRoutineEligibleKind", () => {
-  it("returns true for each allowlisted kind", () => {
-    for (const kind of ROUTINE_ELIGIBLE_KINDS) {
-      expect(isRoutineEligibleKind(kind)).toBe(true);
-    }
+  it("is eligible when every required trigger field is a declared intake field", () => {
+    expect(
+      isRoutineEligibleKind(["topic"], new Set(["topic", "focus"]), false),
+    ).toBe(true);
   });
 
-  it("returns false for structurally attachable but product-ineligible kinds", () => {
-    expect(isRoutineEligibleKind("deck")).toBe(false);
-    expect(isRoutineEligibleKind("smoke-test")).toBe(false);
-    expect(isRoutineEligibleKind("competitor-analysis")).toBe(false);
-    expect(isRoutineEligibleKind("granola")).toBe(false);
+  it("is eligible when a registered enricher covers required trigger fields absent from intake", () => {
+    expect(
+      isRoutineEligibleKind(
+        ["enabledSources", "createdAfter"],
+        new Set(),
+        true,
+      ),
+    ).toBe(true);
   });
 
-  it("returns false for unknown kinds", () => {
-    expect(isRoutineEligibleKind("not-a-workflow")).toBe(false);
-    expect(isRoutineEligibleKind("")).toBe(false);
+  it("is eligible with no required trigger fields, enricher or not", () => {
+    expect(isRoutineEligibleKind([], new Set(), false)).toBe(true);
+  });
+
+  it("is NOT eligible when a required trigger field is neither declared nor enriched (granola-call's noteId)", () => {
+    expect(isRoutineEligibleKind(["noteId"], new Set(), false)).toBe(false);
+  });
+
+  it("is NOT eligible when only some required fields are covered", () => {
+    expect(
+      isRoutineEligibleKind(["topic", "noteId"], new Set(["topic"]), false),
+    ).toBe(false);
   });
 });
