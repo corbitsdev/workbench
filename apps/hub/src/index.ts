@@ -1995,6 +1995,12 @@ const stopAwaitingSupervisorPrewarm = registerAwaitingSupervisorPrewarm({
 const stopStalledScheduledRunReconciler = registerStalledScheduledRunReconciler(
   {
     db,
+    // CL-4289: the owner was mailed when the run parked on a gate; if it still
+    // times out, they must be told it was failed, not left to wonder.
+    mailDeps: {
+      deploymentDomain: config.rootTenant.domain,
+      mailboxEventBus,
+    },
   },
 );
 // CL-2248: fail orphaned in-flight runs FIRST, on the pre-reconcile routable

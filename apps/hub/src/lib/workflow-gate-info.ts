@@ -36,12 +36,17 @@ export const WorkflowGateInfoSchema = type({
 });
 export type WorkflowGateInfo = typeof WorkflowGateInfoSchema.infer;
 
-/** Kinds explicitly cleared for unattended Myra post-intake gate-drive (CL-3528). */
+// Kinds explicitly cleared to be attachable to a schedule despite having
+// post-intake human gates (CL-3528). Historically named for an unattended
+// Myra auto-drive path; that driver is NOT wired into production (CL-4289 —
+// see scheduled-workflow-gate-agent.ts), so today these post-intake gates
+// simply deliver gate mail to the owner like any other gate, same as every
+// other allowlisted kind reaching `allowsScheduledPostIntakeDrive`.
 export const SCHEDULED_POST_INTAKE_DRIVE_KIND_ALLOWLIST = new Set([
   "scheduler-multi-gate-test",
 ]);
 
-/** Whether a kind may use Myra to auto-drive human gates after intake on scheduler runs. */
+/** Whether a kind's post-intake human gates may be attached to a schedule at all. */
 export function kindAllowsScheduledPostIntakeDrive(
   kind: string,
   info: WorkflowGateInfo,

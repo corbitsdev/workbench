@@ -36,6 +36,14 @@ import { launchAgentSession } from "./agent-provisioning";
 import { resolveMyraDefinition, teardownThreadRows } from "./myra-threads";
 import type { RepoStore } from "@workbench/hub-sessions";
 
+// NOT WIRED (CL-4289): nothing in production calls `maybeEnqueue` — the only
+// production hook on the running -> awaiting transition is `deliverGateMail`
+// (see gate-mail.ts / apps/hub/src/index.ts), which now mails the owner for
+// every genuinely-unattended gate instead. This module is exercised only by
+// its own tests. Keep it (rather than delete) as the built-but-inert shape for
+// an opt-in unattended auto-driver; do not describe it elsewhere as something
+// that runs today, and do not wire it without also bounding it against any
+// external side effect (it must never auto-approve one).
 const log = getLogger(["services", "scheduled-workflow-gate-agent"]);
 
 export {

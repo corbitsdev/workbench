@@ -36,9 +36,7 @@ let runTriggerSource: string | null | undefined = null;
 mock.module("./run-store", () => ({
   loadDeploymentMeta: async () => deploymentMeta,
   loadRunRecord: async () =>
-    runTriggerSource === undefined
-      ? null
-      : { triggerSource: runTriggerSource },
+    runTriggerSource === undefined ? null : { triggerSource: runTriggerSource },
   setPendingSignal: async () => undefined,
 }));
 
@@ -205,7 +203,7 @@ describe("deliverPendingGateMail", () => {
     expect(errorLogs[0]?.message).toContain("No tenant row");
   });
 
-  it("skips gate mail for scheduler-sourced runs (CL-3528)", async () => {
+  it("delivers gate mail for a mid-run (post-intake) gate on a scheduler-sourced run (CL-4289)", async () => {
     runTriggerSource = "scheduler";
     pendingGates = [{ signalName: "confirm" }];
     const db = makeDb({
@@ -218,7 +216,60 @@ describe("deliverPendingGateMail", () => {
       principalId: "prn-alice",
     });
 
+    expect(insertCalls).toHaveLength(1);
+    expect(insertCalls[0]?.messageKey).toBe("gate:wfr-1:confirm");
+  });
+
+  it("does not deliver gate mail for the entry intake gate on a scheduler-sourced run (auto-signaled, CL-4289)", async () => {
+    runTriggerSource = "scheduler";
+    pendingGates = [{ signalName: "intake" }];
+    const db = makeDb({
+      owner: { id: "prn-alice", kind: "user", refId: "alice" },
+      tenant: { domain: "tenant.example" },
+    });
+
+    await deliverPendingGateMail(deps(db), {
+      ...RUN,
+      principalId: "prn-alice",
+    });
+
     expect(insertCalls).toHaveLength(0);
+    // Expected auto-resolved case, not a warn-worthy "no readable gate".
+    expect(warnLogs).toHaveLength(0);
+  });
+
+  it("delivers mail only for the non-intake gate when both intake and a post-intake gate are open on a scheduler run (CL-4289)", async () => {
+    runTriggerSource = "scheduler";
+    pendingGates = [{ signalName: "intake" }, { signalName: "confirm" }];
+    const db = makeDb({
+      owner: { id: "prn-alice", kind: "user", refId: "alice" },
+      tenant: { domain: "tenant.example" },
+    });
+
+    await deliverPendingGateMail(deps(db), {
+      ...RUN,
+      principalId: "prn-alice",
+    });
+
+    expect(insertCalls).toHaveLength(1);
+    expect(insertCalls[0]?.messageKey).toBe("gate:wfr-1:confirm");
+  });
+
+  it("still delivers gate mail for an interactive (non-scheduler) run's gate (unchanged, CL-4289)", async () => {
+    runTriggerSource = null;
+    pendingGates = [{ signalName: "approval" }];
+    const db = makeDb({
+      owner: { id: "prn-alice", kind: "user", refId: "alice" },
+      tenant: { domain: "tenant.example" },
+    });
+
+    await deliverPendingGateMail(deps(db), {
+      ...RUN,
+      principalId: "prn-alice",
+    });
+
+    expect(insertCalls).toHaveLength(1);
+    expect(insertCalls[0]?.messageKey).toBe("gate:wfr-1:approval");
   });
 
   it("writes nothing when no open gate is readable from the log", async () => {
