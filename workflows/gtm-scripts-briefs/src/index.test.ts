@@ -5,7 +5,7 @@ import {
   STEP_KIND_TAG,
   STEP_TOOL_TAG,
 } from "@workbench/agents";
-import { kind, workflow } from "./index";
+import { DISPLAY_STEPS, kind, workflow } from "./index";
 
 describe("gtm-scripts-briefs workflow", () => {
   test("collects intake, reuses grounded research, then writes and persists", () => {
@@ -89,5 +89,11 @@ describe("gtm-scripts-briefs workflow", () => {
   test("keeps the workflow identity stable", () => {
     expect(workflow.id).toBe(kind);
     expect(kind).toBe("gtm-scripts-briefs");
+  });
+
+  test("DISPLAY_STEPS covers every declared step exactly once", () => {
+    const declared = DISPLAY_STEPS.flatMap((group) => group.stepIds);
+    expect(declared.sort()).toEqual(Object.keys(workflow.steps).sort());
+    expect(new Set(declared).size).toBe(declared.length);
   });
 });

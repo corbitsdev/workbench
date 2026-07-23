@@ -14,6 +14,10 @@ export const description =
   "Research current stories, select a grounded angle, and turn it into a GTM script and brief artifact.";
 export const kind = "gtm-scripts-briefs";
 
+// Re-export the user-facing display flow so it travels with the workflow
+// package for the server catalog classifier and run panel.
+export { DISPLAY_STEPS } from "./display-steps";
+
 export const workflow = defineWorkflow({
   id: kind,
   trigger: { type: "manual" },
