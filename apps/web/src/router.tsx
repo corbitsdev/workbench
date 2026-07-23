@@ -28,6 +28,7 @@ import { ArtifactsPage } from "./pages/ArtifactsPage";
 import { ArtifactDetailPage } from "./pages/ArtifactDetailPage";
 import { WorkflowsPage } from "./pages/WorkflowsPage";
 import { RoutinesPage } from "./pages/RoutinesPage";
+import { RoutineDetailPage } from "./pages/RoutineDetailPage";
 import { InboxPage } from "./pages/InboxPage";
 import Settings from "./pages/Settings";
 import SettingsLayout from "./pages/SettingsLayout";
@@ -429,6 +430,7 @@ export const router = createBrowserRouter([
           { path: "/workflows", element: <WorkflowsPage /> },
           { path: "/workflows/:workflowId", element: <WorkflowsPage /> },
           { path: "/routines", element: <RoutinesPage /> },
+          { path: "/routines/:id", element: <RoutineDetailPage /> },
           {
             path: "/automations",
             element: <Navigate to="/routines" replace />,

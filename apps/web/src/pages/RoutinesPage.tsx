@@ -1,5 +1,6 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { useNavigate } from "react-router";
 import {
   HEARTBEAT_WORKFLOW_KIND,
   type ScheduleFieldMetadata,
@@ -8,102 +9,33 @@ import {
   type ScheduleScope,
   type WorkflowCatalogEntry,
 } from "@workbench/shared";
-import { AppPageChromeRow, Badge } from "@workbench/ui";
-import { Link } from "react-router";
+import { AppPageChromeRow, Button, PagePanel } from "@workbench/ui";
+import { Plus } from "lucide-react";
 import { getWorkflowsCatalog } from "../lib/hub-api";
-import { useSetPageChrome } from "../lib/page-chrome";
-import {
-  useCreateSchedule,
-  useDeleteSchedule,
-  useMeSchedules,
-  useUpdateSchedule,
-} from "../hooks/use-schedules";
+import { useCreateSchedule, useMeSchedules } from "../hooks/use-schedules";
 import { scheduleFieldsComplete } from "../components/ScheduleFieldForm";
 import { ScheduleFlow } from "../components/ScheduleFlow";
+import { useSetPageChrome } from "../lib/page-chrome";
 import {
   defaultRecurrence,
-  formatLastFiredAt,
-  formatNextFire,
   formatRecurrence,
   scheduleScopeLabel,
 } from "../lib/schedule-time";
-import { scheduleRunDeepLink } from "../lib/schedule-run-link";
-import { statusLabel } from "../lib/workflow-run-status";
-
-/** Recent fires for one routine, newest first, each linking to its run when
- * the run record is still resolvable. Only rendered for an already-scheduled
- * routine — a routine that has never been scheduled has no history to show. */
-function RunHistory({ existing }: { existing: ScheduledTrigger }) {
-  return (
-    <div
-      className="mt-4 border-t border-border pt-4"
-      data-testid={`run-history-${existing.workflowKind}`}
-    >
-      <div className="mb-2 flex items-center justify-between text-xs">
-        <h3 className="font-semibold uppercase tracking-[0.05em] text-text-3">
-          Run history
-        </h3>
-        <span className="text-text-3">
-          Next: {formatNextFire(existing.nextFireAt, existing.enabled)}
-        </span>
-      </div>
-      {existing.recentFires.length === 0 ? (
-        <p className="text-sm text-text-3">
-          Not yet fired — the scheduler hasn&rsquo;t triggered this routine
-          yet.
-        </p>
-      ) : (
-        <ul className="flex flex-col gap-1.5">
-          {existing.recentFires.map((fire) => (
-            <li
-              key={`${fire.runId}-${fire.firedAt}`}
-              className="flex items-center justify-between gap-3 text-sm"
-            >
-              {fire.status === "unknown" ? (
-                <span className="text-text-3">
-                  {formatLastFiredAt(fire.firedAt)}
-                </span>
-              ) : (
-                <Link
-                  to={scheduleRunDeepLink(fire.status, fire.runId)}
-                  className="font-medium text-text-2 underline-offset-2 hover:underline"
-                >
-                  {formatLastFiredAt(fire.firedAt)}
-                </Link>
-              )}
-              <span className="shrink-0 text-xs text-text-3">
-                {statusLabel(fire.status)}
-              </span>
-            </li>
-          ))}
-        </ul>
-      )}
-    </div>
-  );
-}
 
 /**
- * Routines home (CL-3862, renamed from Automations in CL-4211): a scannable
- * list of schedulable workflows — cadence, scope, and status legible without
- * opening a row — where opening a row expands the multi-step schedule
- * create/edit walk (CL-4263's `ScheduleFlow`, Open → Recurrence → Inputs →
- * Availability) and run history in place (CL-4267). Morning brief
- * (heartbeat) uses product naming from the catalog label.
+ * Routines home (CL-3862, renamed from Automations in CL-4211): a list of the
+ * member's actual schedules — one row per schedule, not per catalog kind
+ * (CL-4277), since schedules are unique on (tenant, owner, kind, name) and a
+ * single kind can have several. Clicking a row navigates to that schedule's
+ * own detail page (`/routines/:id`, `RoutineDetailPage`), which owns editing
+ * (`ScheduleFlow`) and run history — this list page only creates. "+ New
+ * Routine" opens a kind picker (matching the "+ New thread" / "+ Add skill"
+ * pattern on ChatsListPage/SkillsLibrary) that drops into the same
+ * `ScheduleFlow` inline; picking a kind that already has a schedule creates
+ * an additional one, which is how a kind gets a second schedule.
  */
 export function RoutinesPage() {
-  const chrome = useMemo(
-    () => (
-      <AppPageChromeRow
-        title="Routines"
-        titleSize="sm"
-        subtitle="Workflows on a recurring cadence"
-        className="[&_h1]:text-[20px] [&_h1]:tracking-[-0.01em]"
-      />
-    ),
-    [],
-  );
-  useSetPageChrome(chrome);
-
+  const navigate = useNavigate();
   const catalogQuery = useQuery({
     queryKey: ["workflow-catalog"],
     queryFn: () => getWorkflowsCatalog(),
@@ -111,8 +43,6 @@ export function RoutinesPage() {
   });
   const schedulesQuery = useMeSchedules();
   const createSchedule = useCreateSchedule();
-  const updateSchedule = useUpdateSchedule();
-  const deleteSchedule = useDeleteSchedule();
 
   const schedulable = useMemo(() => {
     const entries = catalogQuery.data?.entries ?? [];
@@ -126,78 +56,49 @@ export function RoutinesPage() {
       });
   }, [catalogQuery.data?.entries]);
 
-  const scheduleByKind = useMemo(() => {
-    const map = new Map<string, ScheduledTrigger>();
-    for (const s of schedulesQuery.data ?? []) {
-      map.set(s.workflowKind, s);
+  const entryByKind = useMemo(() => {
+    const map = new Map<string, WorkflowCatalogEntry>();
+    for (const e of catalogQuery.data?.entries ?? []) {
+      map.set(e.kind, e);
     }
     return map;
-  }, [schedulesQuery.data]);
+  }, [catalogQuery.data?.entries]);
 
-  const [expandedKind, setExpandedKind] = useState<string | null>(null);
+  const schedules = schedulesQuery.data ?? [];
+
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [creatingEntry, setCreatingEntry] =
+    useState<WorkflowCatalogEntry | null>(null);
   const [draftRecurrence, setDraftRecurrence] =
     useState<ScheduleRecurrence>(defaultRecurrence());
   const [draftScope, setDraftScope] = useState<ScheduleScope>("personal");
   const [draftValues, setDraftValues] = useState<Record<string, unknown>>({});
   const [error, setError] = useState<string | null>(null);
 
-  const rowRefs = useRef<Map<string, HTMLLIElement>>(new Map());
-
-  useEffect(() => {
-    if (expandedKind === null) return;
-    const node = rowRefs.current.get(expandedKind);
-    node?.scrollIntoView({ block: "nearest" });
-  }, [expandedKind]);
-
-  const openEditor = (
-    entry: WorkflowCatalogEntry,
-    existing?: ScheduledTrigger,
-  ) => {
-    setError(null);
-    setExpandedKind(entry.kind);
-    setDraftRecurrence(existing?.recurrence ?? defaultRecurrence());
-    setDraftScope(existing?.scope ?? entry.defaultScope);
-    const fields = (entry.intakeFields ?? []) as ScheduleFieldMetadata[];
-    const initial: Record<string, unknown> = {};
-    for (const f of fields) {
-      if (existing?.triggerPayload?.[f.name] !== undefined) {
-        initial[f.name] = existing.triggerPayload[f.name];
-      }
-    }
-    setDraftValues(initial);
-  };
-
-  const closeEditor = () => {
-    setExpandedKind(null);
-    setError(null);
-  };
-
-  const toggleEditor = (
-    entry: WorkflowCatalogEntry,
-    existing?: ScheduledTrigger,
-  ) => {
-    if (expandedKind === entry.kind) {
-      closeEditor();
-    } else {
-      openEditor(entry, existing);
-    }
-  };
-
   const fieldsFor = (entry: WorkflowCatalogEntry): ScheduleFieldMetadata[] =>
     (entry.intakeFields ?? []) as ScheduleFieldMetadata[];
 
-  const save = async (
-    entry: WorkflowCatalogEntry,
-    existing?: ScheduledTrigger,
-  ) => {
+  const startCreate = (entry: WorkflowCatalogEntry) => {
+    setError(null);
+    setPickerOpen(false);
+    setCreatingEntry(entry);
+    setDraftRecurrence(defaultRecurrence());
+    setDraftScope(entry.defaultScope);
+    setDraftValues({});
+  };
+
+  const closeCreate = () => {
+    setCreatingEntry(null);
+    setError(null);
+  };
+
+  const save = async (entry: WorkflowCatalogEntry) => {
     setError(null);
     const fields = fieldsFor(entry);
     if (!scheduleFieldsComplete(fields, draftValues)) {
       setError("Fill in the required fields.");
       return;
     }
-    // Only form-owned keys. Recurrence-only edits on empty-intake workflows must
-    // not replace triggerPayload (e.g. heartbeat `reason: scheduled-heartbeat`).
     const formPayload: Record<string, unknown> = {};
     for (const field of fields) {
       if (field.fromProfile) continue;
@@ -207,32 +108,13 @@ export function RoutinesPage() {
       formPayload[field.name] = v;
     }
     try {
-      if (existing) {
-        await updateSchedule.mutateAsync({
-          id: existing.id,
-          recurrence: draftRecurrence,
-          ...(fields.length > 0
-            ? {
-                payload: {
-                  ...Object.fromEntries(
-                    Object.entries(existing.triggerPayload ?? {}).filter(
-                      ([key]) => !(key in formPayload),
-                    ),
-                  ),
-                  ...formPayload,
-                },
-              }
-            : {}),
-        });
-      } else {
-        await createSchedule.mutateAsync({
-          kind: entry.kind,
-          recurrence: draftRecurrence,
-          scope: draftScope,
-          payload: formPayload,
-        });
-      }
-      closeEditor();
+      await createSchedule.mutateAsync({
+        kind: entry.kind,
+        recurrence: draftRecurrence,
+        scope: draftScope,
+        payload: formPayload,
+      });
+      closeCreate();
     } catch (err) {
       setError(
         err instanceof Error ? err.message : "Could not save the schedule.",
@@ -242,172 +124,169 @@ export function RoutinesPage() {
 
   const loading = catalogQuery.isLoading || schedulesQuery.isLoading;
   const loadError = catalogQuery.error ?? schedulesQuery.error;
-  const busy = createSchedule.isPending || updateSchedule.isPending;
+  const busy = createSchedule.isPending;
+
+  const pageChrome = useMemo(
+    () => (
+      <AppPageChromeRow title="Routines" titleSize="sm">
+        <Button
+          type="button"
+          variant="primary"
+          onClick={() => {
+            setError(null);
+            setCreatingEntry(null);
+            setPickerOpen((open) => !open);
+          }}
+          className="flex items-center gap-[7px] px-[14px] py-[7px] text-[12.5px]"
+          data-testid="new-routine-button"
+        >
+          <Plus size={16} />
+          New routine
+        </Button>
+      </AppPageChromeRow>
+    ),
+    [],
+  );
+  useSetPageChrome(pageChrome);
 
   return (
-    <div className="h-full overflow-y-auto" data-testid="routines-page">
-      <div className="mx-auto max-w-3xl px-4 py-8">
+    <PagePanel>
+      <div
+        className="flex-1 px-4 pb-10 pt-4 sm:px-7"
+        data-testid="routines-page"
+      >
+        <p className="mb-4 text-[13px] text-text-3">
+          Workflows on a cadence. Open a routine to edit it or see its run
+          history.
+        </p>
+
         {loading ? (
-          <p className="text-sm text-text-3">Loading routines…</p>
+          <p className="py-10 text-[13px] text-text-3">Loading routines…</p>
         ) : null}
         {loadError ? (
-          <p className="text-sm text-danger" role="alert">
+          <p className="py-10 text-[13px] text-danger" role="alert">
             {loadError instanceof Error
               ? loadError.message
               : "Could not load routines."}
           </p>
         ) : null}
 
-        {!loading && !loadError && schedulable.length === 0 ? (
-          <p className="text-sm text-text-3">
-            No schedulable workflows are available in this workspace yet.
+        {pickerOpen ? (
+          <div
+            className="mb-4 rounded-xl border border-border bg-surface p-4"
+            data-testid="routine-picker"
+          >
+            <p className="mb-2 text-xs font-semibold uppercase tracking-[0.05em] text-text-3">
+              Choose a workflow to schedule
+            </p>
+            <ul className="flex flex-col gap-1.5">
+              {schedulable.map((entry) => (
+                <li key={entry.kind}>
+                  <button
+                    type="button"
+                    className="w-full rounded-[10px] border border-border px-3 py-2 text-left text-sm text-text hover:bg-page"
+                    onClick={() => startCreate(entry)}
+                    data-testid={`routine-picker-option-${entry.kind}`}
+                  >
+                    {entry.kind === HEARTBEAT_WORKFLOW_KIND
+                      ? entry.label || "Morning brief"
+                      : entry.label}
+                  </button>
+                </li>
+              ))}
+              {schedulable.length === 0 ? (
+                <li className="text-sm text-text-3">
+                  No schedulable workflows are available in this workspace
+                  yet.
+                </li>
+              ) : null}
+            </ul>
+          </div>
+        ) : null}
+
+        {creatingEntry ? (
+          <div
+            className="mb-4 rounded-xl border border-border bg-surface p-4"
+            data-testid={`routine-row-new-${creatingEntry.kind}`}
+          >
+            <ScheduleFlow
+              entry={creatingEntry}
+              productLabel={
+                creatingEntry.kind === HEARTBEAT_WORKFLOW_KIND
+                  ? creatingEntry.label || "Morning brief"
+                  : creatingEntry.label
+              }
+              existing={null}
+              recurrence={draftRecurrence}
+              onRecurrenceChange={setDraftRecurrence}
+              scope={draftScope}
+              onScopeChange={setDraftScope}
+              fieldValues={draftValues}
+              onFieldValuesChange={setDraftValues}
+              fields={fieldsFor(creatingEntry)}
+              error={error}
+              busy={busy}
+              onCancel={closeCreate}
+              onSave={() => save(creatingEntry)}
+            />
+          </div>
+        ) : null}
+
+        {!loading && !loadError && schedules.length === 0 && !creatingEntry ? (
+          <p className="py-10 text-[13px] text-text-3">
+            No routines yet. Use "New routine" to put a workflow on a cadence.
           </p>
         ) : null}
 
-        {!loading && !loadError && schedulable.length > 0 ? (
-          <ul className="flex flex-col divide-y divide-border rounded-xl border border-border bg-surface">
-            {schedulable.map((entry) => {
-              const existing = scheduleByKind.get(entry.kind);
-              const expanded = expandedKind === entry.kind;
-              const fields = fieldsFor(entry);
-              const productLabel =
-                entry.kind === HEARTBEAT_WORKFLOW_KIND
-                  ? entry.label || "Morning brief"
-                  : entry.label;
+        <ul className="flex flex-col gap-3">
+          {schedules.map((existing: ScheduledTrigger) => {
+            const entry = entryByKind.get(existing.workflowKind);
+            if (!entry) return null;
+            const productLabel =
+              entry.kind === HEARTBEAT_WORKFLOW_KIND
+                ? entry.label || "Morning brief"
+                : entry.label;
 
-              return (
-                <li
-                  key={entry.kind}
-                  ref={(node) => {
-                    if (node) rowRefs.current.set(entry.kind, node);
-                    else rowRefs.current.delete(entry.kind);
+            return (
+              <li key={existing.id}>
+                <div
+                  role="button"
+                  tabIndex={0}
+                  data-testid={`routine-row-${existing.id}`}
+                  onClick={() => navigate(`/routines/${existing.id}`)}
+                  onKeyDown={(e) => {
+                    if (e.key !== "Enter" && e.key !== " ") return;
+                    e.preventDefault();
+                    navigate(`/routines/${existing.id}`);
                   }}
-                  data-testid={`routine-row-${entry.kind}`}
+                  className="flex cursor-pointer flex-wrap items-start justify-between gap-3 rounded-xl border border-border bg-surface p-4 hover:bg-page"
                 >
-                  <div className="flex flex-wrap items-center gap-3 px-4 py-3">
-                    <button
-                      type="button"
-                      aria-expanded={expanded}
-                      aria-label={
-                        expanded
-                          ? `Collapse ${productLabel}`
-                          : `Expand ${productLabel}`
-                      }
-                      onClick={() => toggleEditor(entry, existing)}
-                      className="flex h-6 w-6 shrink-0 items-center justify-center rounded-[6px] text-text-3 hover:bg-page hover:text-text"
-                    >
-                      <span
-                        aria-hidden="true"
-                        className={`inline-block transition-transform ${expanded ? "rotate-90" : ""}`}
-                      >
-                        ›
-                      </span>
-                    </button>
-
-                    <div className="min-w-0 flex-1">
-                      <h2 className="truncate text-sm font-semibold text-text">
-                        {productLabel}
-                      </h2>
-                      {entry.description ? (
-                        <p className="truncate text-xs text-text-3">
-                          {entry.description}
-                        </p>
-                      ) : null}
-                    </div>
-
-                    <div className="w-32 shrink-0 text-xs text-text-2">
-                      {existing ? formatRecurrence(existing.recurrence) : "—"}
-                    </div>
-
-                    <div className="w-24 shrink-0 text-xs text-text-2">
-                      {existing ? scheduleScopeLabel(existing.scope) : "—"}
-                    </div>
-
-                    <div className="w-24 shrink-0">
-                      {existing ? (
-                        <Badge
-                          tone={existing.enabled ? "positive" : "neutral"}
-                        >
-                          {existing.enabled ? "Active" : "Paused"}
-                        </Badge>
-                      ) : (
-                        <Badge tone="neutral">Not scheduled</Badge>
-                      )}
-                    </div>
-
-                    <div className="flex shrink-0 flex-wrap items-center gap-2">
-                      {existing ? (
-                        <>
-                          <button
-                            type="button"
-                            className="rounded-[10px] border border-border px-3 py-1.5 text-sm font-medium text-text-2 hover:bg-page"
-                            onClick={() =>
-                              updateSchedule.mutate({
-                                id: existing.id,
-                                enabled: !existing.enabled,
-                              })
-                            }
-                          >
-                            {existing.enabled ? "Pause" : "Resume"}
-                          </button>
-                          <button
-                            type="button"
-                            className="rounded-[10px] border border-border px-3 py-1.5 text-sm font-medium text-text-2 hover:bg-page"
-                            onClick={() => toggleEditor(entry, existing)}
-                            data-testid={`edit-schedule-${entry.kind}`}
-                          >
-                            Edit
-                          </button>
-                          <button
-                            type="button"
-                            className="rounded-[10px] border border-border px-3 py-1.5 text-sm font-medium text-danger hover:bg-page"
-                            onClick={() =>
-                              deleteSchedule.mutate({ id: existing.id })
-                            }
-                          >
-                            Remove
-                          </button>
-                        </>
-                      ) : (
-                        <button
-                          type="button"
-                          className="rounded-[10px] bg-orange px-3 py-1.5 text-sm font-semibold text-white hover:opacity-90"
-                          onClick={() => toggleEditor(entry)}
-                          data-testid={`schedule-${entry.kind}`}
-                        >
-                          Schedule
-                        </button>
-                      )}
-                    </div>
+                  <div className="min-w-0 flex-1">
+                    <h2 className="text-base font-semibold text-text">
+                      {productLabel}
+                    </h2>
+                    {existing.name !== entry.kind ? (
+                      <p className="mt-0.5 text-xs font-medium text-text-3">
+                        {existing.name}
+                      </p>
+                    ) : null}
+                    {entry.description ? (
+                      <p className="mt-1 text-sm text-text-2">
+                        {entry.description}
+                      </p>
+                    ) : null}
+                    <p className="mt-2 text-xs text-text-3">
+                      {existing.enabled
+                        ? `Scheduled · ${formatRecurrence(existing.recurrence)} · ${scheduleScopeLabel(existing.scope)}`
+                        : `Paused · ${scheduleScopeLabel(existing.scope)}`}
+                    </p>
                   </div>
-
-                  {expanded ? (
-                    <>
-                      <ScheduleFlow
-                        entry={entry}
-                        productLabel={productLabel}
-                        existing={existing ?? null}
-                        recurrence={draftRecurrence}
-                        onRecurrenceChange={setDraftRecurrence}
-                        scope={draftScope}
-                        onScopeChange={setDraftScope}
-                        fieldValues={draftValues}
-                        onFieldValuesChange={setDraftValues}
-                        fields={fields}
-                        error={error}
-                        busy={busy}
-                        onCancel={closeEditor}
-                        onSave={() => save(entry, existing)}
-                      />
-                      {existing ? <RunHistory existing={existing} /> : null}
-                    </>
-                  ) : null}
-                </li>
-              );
-            })}
-          </ul>
-        ) : null}
+                </div>
+              </li>
+            );
+          })}
+        </ul>
       </div>
-    </div>
+    </PagePanel>
   );
 }

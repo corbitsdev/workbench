@@ -9,7 +9,8 @@ import {
   waitFor,
 } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { MemoryRouter } from "react-router";
+import { MemoryRouter, useLocation } from "react-router";
+import { PageChromeProvider, usePageChromeSlot } from "../lib/page-chrome";
 
 const getWorkflowsCatalog = mock(async () => ({
   entries: [
@@ -74,23 +75,22 @@ const getWorkflowsCatalog = mock(async () => ({
   ],
 }));
 
-const baseHeartbeatSchedule = {
-  id: "sched-1",
-  workflowKind: "heartbeat",
-  recurrence: { intervalMinutes: 1440, anchorMinuteUtc: 14 * 60 },
-  enabled: true,
-  scope: "personal" as const,
-  ownerMemberPrincipalId: "p1",
-  triggerPayload: { reason: "scheduled-heartbeat" },
-  createdAt: new Date().toISOString(),
-  lastRunId: null as string | null,
-  recentFires: [] as { runId: string; firedAt: string; status: string }[],
-  nextFireAt: null as string | null,
-};
-
-let heartbeatSchedule = baseHeartbeatSchedule;
-
-const listMeSchedules = mock(async () => [heartbeatSchedule]);
+const listMeSchedules = mock(async () => [
+  {
+    id: "sched-1",
+    workflowKind: "heartbeat",
+    name: "heartbeat",
+    recurrence: { intervalMinutes: 1440, anchorMinuteUtc: 14 * 60 },
+    enabled: true,
+    scope: "personal" as const,
+    ownerMemberPrincipalId: "p1",
+    triggerPayload: { reason: "scheduled-heartbeat" },
+    createdAt: new Date().toISOString(),
+    lastRunId: null,
+    recentFires: [],
+    nextFireAt: null,
+  },
+]);
 
 const createMeSchedule = mock(async (body: unknown) => body);
 const updateMeSchedule = mock(async (_id: string, patch: unknown) => patch);
@@ -106,108 +106,128 @@ mock.module("../lib/hub-api", () => ({
 
 const { RoutinesPage } = await import("./RoutinesPage");
 
+function ChromeSlotProbe() {
+  return <div data-testid="chrome-slot">{usePageChromeSlot()}</div>;
+}
+
+function LocationProbe() {
+  const location = useLocation();
+  return <div data-testid="location-pathname">{location.pathname}</div>;
+}
+
 function renderPage() {
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
   return render(
     <QueryClientProvider client={client}>
-      <MemoryRouter>
-        <RoutinesPage />
+      <MemoryRouter initialEntries={["/routines"]}>
+        <PageChromeProvider>
+          <ChromeSlotProbe />
+          <LocationProbe />
+          <RoutinesPage />
+        </PageChromeProvider>
       </MemoryRouter>
     </QueryClientProvider>,
   );
 }
 
-/** Advance ScheduleFlow past open (+ optional intermediate) to the last step. */
-function continueUntilPrimary(label: RegExp | string) {
-  for (let i = 0; i < 6; i++) {
-    const primary = screen.getByTestId("schedule-flow-primary");
-    if (primary.textContent?.match(typeof label === "string" ? new RegExp(label, "i") : label)) {
-      return primary;
-    }
-    fireEvent.click(primary);
-  }
-  return screen.getByTestId("schedule-flow-primary");
+/** Open the "+ New Routine" picker and pick a workflow kind. */
+function startNewRoutine(kind: string) {
+  fireEvent.click(screen.getByTestId("new-routine-button"));
+  fireEvent.click(screen.getByTestId(`routine-picker-option-${kind}`));
 }
 
 afterEach(() => {
   cleanup();
   createMeSchedule.mockClear();
   updateMeSchedule.mockClear();
-  heartbeatSchedule = baseHeartbeatSchedule;
 });
 
-describe("RoutinesPage (CL-3862 + CL-4263 flow)", () => {
-  it("lists schedulable workflows with Morning brief product name and status", async () => {
+describe("RoutinesPage (CL-4277 schedule-driven rows, list + detail)", () => {
+  it("lists only actual schedules, not every catalog kind", async () => {
     renderPage();
     await waitFor(() => {
-      expect(screen.getByTestId("routines-page")).toBeTruthy();
-      expect(screen.getByTestId("routine-row-heartbeat")).toBeTruthy();
-      expect(
-        screen.getByTestId("routine-row-last30days-research"),
-      ).toBeTruthy();
+      expect(screen.getByTestId("routine-row-sched-1")).toBeTruthy();
     });
     expect(screen.getByText("Morning brief")).toBeTruthy();
     expect(screen.queryByText("Manual")).toBeNull();
-    expect(screen.getByText("Active")).toBeTruthy();
-    expect(screen.getAllByText("Not scheduled").length).toBeGreaterThan(0);
-  });
-
-  it("expands a row to show the editor and collapses it again without losing the row", async () => {
-    renderPage();
-    await waitFor(() => screen.getByTestId("schedule-last30days-research"));
+    expect(screen.getByText(/Scheduled/)).toBeTruthy();
+    // No placeholder rows for unscheduled kinds like the research workflow.
     expect(
-      screen.queryByTestId("schedule-editor-last30days-research"),
+      screen.queryByTestId("routine-row-last30days-research"),
     ).toBeNull();
+    expect(screen.queryByText("Not scheduled")).toBeNull();
+  });
 
-    fireEvent.click(screen.getByLabelText("Expand Last 30 Days Research"));
-    await waitFor(() =>
-      screen.getByTestId("schedule-editor-last30days-research"),
-    );
-
-    fireEvent.click(screen.getByLabelText("Collapse Last 30 Days Research"));
+  it("clicking a schedule row navigates to its own detail page", async () => {
+    renderPage();
+    await waitFor(() => screen.getByTestId("routine-row-sched-1"));
+    fireEvent.click(screen.getByTestId("routine-row-sched-1"));
     await waitFor(() => {
-      expect(
-        screen.queryByTestId("schedule-editor-last30days-research"),
-      ).toBeNull();
+      expect(screen.getByTestId("location-pathname").textContent).toBe(
+        "/routines/sched-1",
+      );
     });
-    expect(screen.getByTestId("routine-row-last30days-research")).toBeTruthy();
   });
 
-  it("shows an honest empty run-history state for a schedule that has never fired", async () => {
+  it("renders two schedules of the same kind as distinct rows, each linking to its own id", async () => {
+    listMeSchedules.mockImplementationOnce(async () => [
+      {
+        id: "sched-a",
+        workflowKind: "last30days-research",
+        name: "last30days-research",
+        recurrence: { intervalMinutes: 1440, anchorMinuteUtc: 9 * 60 },
+        enabled: true,
+        scope: "personal" as const,
+        ownerMemberPrincipalId: "p1",
+        triggerPayload: { topic: "AI agents" },
+        createdAt: new Date().toISOString(),
+        lastRunId: null,
+        recentFires: [],
+        nextFireAt: null,
+      },
+      {
+        id: "sched-b",
+        workflowKind: "last30days-research",
+        name: "last30days-research 2",
+        recurrence: { intervalMinutes: 1440, anchorMinuteUtc: 17 * 60 },
+        enabled: true,
+        scope: "personal" as const,
+        ownerMemberPrincipalId: "p1",
+        triggerPayload: { topic: "Robotics" },
+        createdAt: new Date().toISOString(),
+        lastRunId: null,
+        recentFires: [],
+        nextFireAt: null,
+      },
+    ]);
     renderPage();
-    await waitFor(() => screen.getByTestId("edit-schedule-heartbeat"));
-    fireEvent.click(screen.getByTestId("edit-schedule-heartbeat"));
-    await waitFor(() => screen.getByTestId("run-history-heartbeat"));
-    expect(screen.getByText(/hasn.t triggered this routine yet/)).toBeTruthy();
+    await waitFor(() => {
+      expect(screen.getByTestId("routine-row-sched-a")).toBeTruthy();
+      expect(screen.getByTestId("routine-row-sched-b")).toBeTruthy();
+    });
+    expect(screen.getByText("last30days-research 2")).toBeTruthy();
+
+    fireEvent.click(screen.getByTestId("routine-row-sched-a"));
+    await waitFor(() => {
+      expect(screen.getByTestId("location-pathname").textContent).toBe(
+        "/routines/sched-a",
+      );
+    });
+
+    fireEvent.click(screen.getByTestId("routine-row-sched-b"));
+    await waitFor(() => {
+      expect(screen.getByTestId("location-pathname").textContent).toBe(
+        "/routines/sched-b",
+      );
+    });
   });
 
-  it("surfaces recent fires and links to the run when one exists", async () => {
-    heartbeatSchedule = {
-      ...baseHeartbeatSchedule,
-      lastRunId: "run-123",
-      recentFires: [
-        {
-          runId: "run-123",
-          firedAt: "2026-07-20T14:00:00.000Z",
-          status: "completed",
-        },
-      ],
-    };
+  it("creates a research schedule with form payload via New Routine → picker → flow", async () => {
     renderPage();
-    await waitFor(() => screen.getByTestId("edit-schedule-heartbeat"));
-    fireEvent.click(screen.getByTestId("edit-schedule-heartbeat"));
-    await waitFor(() => screen.getByTestId("run-history-heartbeat"));
-    expect(screen.getByText("Completed")).toBeTruthy();
-    const runLink = screen.getByRole("link", { name: /Jul/ });
-    expect(runLink.getAttribute("href")).toContain("run-123");
-  });
-
-  it("creates a research schedule with form payload via multi-step flow", async () => {
-    renderPage();
-    await waitFor(() => screen.getByTestId("schedule-last30days-research"));
-    fireEvent.click(screen.getByTestId("schedule-last30days-research"));
+    await waitFor(() => screen.getByTestId("new-routine-button"));
+    startNewRoutine("last30days-research");
     await waitFor(() =>
       screen.getByTestId("schedule-editor-last30days-research"),
     );
@@ -230,8 +250,8 @@ describe("RoutinesPage (CL-3862 + CL-4263 flow)", () => {
 
   it("creates a tenant-scoped schedule when the kind allows Everyone", async () => {
     renderPage();
-    await waitFor(() => screen.getByTestId("schedule-gamma"));
-    fireEvent.click(screen.getByTestId("schedule-gamma"));
+    await waitFor(() => screen.getByTestId("new-routine-button"));
+    startNewRoutine("gamma");
     await waitFor(() => screen.getByTestId("schedule-editor-gamma"));
     fireEvent.click(screen.getByTestId("schedule-flow-primary")); // open → recurrence
     fireEvent.click(screen.getByTestId("schedule-flow-primary")); // recurrence → availability
@@ -250,8 +270,8 @@ describe("RoutinesPage (CL-3862 + CL-4263 flow)", () => {
 
   it("does not offer a scope step for a personal-only kind", async () => {
     renderPage();
-    await waitFor(() => screen.getByTestId("schedule-last30days-research"));
-    fireEvent.click(screen.getByTestId("schedule-last30days-research"));
+    await waitFor(() => screen.getByTestId("new-routine-button"));
+    startNewRoutine("last30days-research");
     await waitFor(() =>
       screen.getByTestId("schedule-editor-last30days-research"),
     );
@@ -269,21 +289,17 @@ describe("RoutinesPage (CL-3862 + CL-4263 flow)", () => {
     expect(body.scope).toBe("personal");
   });
 
-  it("recurrence-only edit does not send empty payload for heartbeat", async () => {
+  it("picking a kind that already has a schedule creates an additional one", async () => {
     renderPage();
-    await waitFor(() => screen.getByTestId("edit-schedule-heartbeat"));
-    fireEvent.click(screen.getByTestId("edit-schedule-heartbeat"));
+    await waitFor(() => screen.getByTestId("routine-row-sched-1"));
+    startNewRoutine("heartbeat");
     await waitFor(() => screen.getByTestId("schedule-editor-heartbeat"));
-    const saveBtn = continueUntilPrimary(/save changes/i);
-    fireEvent.click(saveBtn);
+    fireEvent.click(screen.getByTestId("schedule-flow-primary")); // open → recurrence
+    fireEvent.click(screen.getByRole("button", { name: "Create schedule" }));
     await waitFor(() => {
-      expect(updateMeSchedule).toHaveBeenCalled();
+      expect(createMeSchedule).toHaveBeenCalled();
     });
-    const [, patch] = updateMeSchedule.mock.calls[0] as [
-      string,
-      { recurrence?: unknown; payload?: unknown },
-    ];
-    expect(patch.recurrence).toBeDefined();
-    expect(patch.payload).toBeUndefined();
+    const body = createMeSchedule.mock.calls[0]?.[0] as { kind: string };
+    expect(body.kind).toBe("heartbeat");
   });
 });
