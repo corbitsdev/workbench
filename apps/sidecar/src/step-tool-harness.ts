@@ -643,14 +643,21 @@ export function prepareWarmAgentPrompt(
  * this same alias form, so `load_tools`/`search_tools` need it to recognize a
  * successfully-loaded, credentialed, granted package tool (CL-3929).
  *
- * Scoped to the WARM single-step agent path only: `buildStepTools`'s
- * definitions/`packageToolNames` stay canonical, because `buildStepTools` is
- * also used by `runDeterministicToolStep`, which dispatches by the canonical
- * colon-form name a deterministic workflow step declares
- * (`deterministicToolStep`'s `STEP_TOOL_TAG`) — aliasing there would throw
- * `StepToolNotRegisteredError` on every deterministic package-tool step.
- * Local mail tools are already unprefixed (not in `packageToolNames`) and
- * pass through unchanged here; warm advertisement strips them separately.
+ * WORKBENCH-LOCAL: applied to every MODEL-FACING agent this factory builds —
+ * both the warm single-step agent and a genuine multi-step workflow step.
+ * Every reasoning step hands its tool definitions to a provider exactly like
+ * a warm agent does, so an over-length or symbol-bearing canonical name
+ * (`@`, `/`, `:`) blows the same 64-char/charset provider limit there. Only
+ * `buildStepTools`'s OWN return value (its `definitions`/`packageToolNames`,
+ * consumed directly by `runDeterministicToolStep`) stays canonical — that
+ * dispatches by the colon-form name a deterministic workflow step declares
+ * (`deterministicToolStep`'s `STEP_TOOL_TAG`), and aliasing there would throw
+ * `StepToolNotRegisteredError` on every deterministic package-tool step. The
+ * alias projection happens only on the copy handed to `createAgent` in
+ * `createStepAgentFactory`, so both consumers of `buildStepTools` keep their
+ * own contract. Local mail tools are already unprefixed (not in
+ * `packageToolNames`) and pass through unchanged here; warm advertisement
+ * strips them separately.
  *
  * Two distinct canonical names that happen to collide on the same alias
  * (a package/tool-name combination degenerate enough to produce the same
@@ -725,6 +732,11 @@ function stripMailFromWarmAdvertisement(runner: DefinedRunner): DefinedRunner {
  * director ref to pin on the step def, and the dynamic-tools env slot the
  * director reads. When the definition declares its own `director` it is
  * respected verbatim; otherwise the marker-driven `selectDirectorId` chooses.
+ *
+ * WORKBENCH-LOCAL: `args.runner`/`args.packageToolNames` are expected
+ * ALREADY LLM-safe-aliased — `createStepAgentFactory` now applies
+ * `applyLlmSafeAliases` once, ahead of the warm/multi-step branch, so both
+ * paths present the same alias form to the model without double-aliasing.
  */
 async function resolveWarmAgentHarness(args: {
   def: { systemPrompt: string; director?: DirectorRef };
@@ -742,15 +754,10 @@ async function resolveWarmAgentHarness(args: {
   dynamicEnv: Record<string, unknown>;
 }> {
   const { def, storeDir, address } = args;
-  const aliased = applyLlmSafeAliases(
-    args.runner,
-    args.packageToolNames,
-    address,
-  );
   // Mail may still sit on the underlying runner for det bookkeeping, but warm
   // never advertises `mail_*` names (or any free local inject) to the model.
-  const runner = stripMailFromWarmAdvertisement(aliased.runner);
-  const packageToolNames = aliased.packageToolNames;
+  const runner = stripMailFromWarmAdvertisement(args.runner);
+  const packageToolNames = args.packageToolNames;
   const dynamicToolConfig = resolveDynamicToolConfig(def.systemPrompt);
   const isTriageSession = isTriageSessionPrompt(def.systemPrompt);
   const isInvokeSession = isInvokeSessionPrompt(def.systemPrompt);
@@ -1394,6 +1401,20 @@ export function createStepAgentFactory(opts: StepAgentFactoryOpts = {}) {
         tenantId: ctx.tenantId,
       });
 
+    // WORKBENCH-LOCAL: project every package tool's canonical
+    // `<factoryId>:<name>` definition to its LLM-safe alias BEFORE the
+    // warm/multi-step branch below — this is the one place `createAgent`
+    // (the model-facing consumer) is built for either kind of step agent, so
+    // both get the same provider-safe tool names and the same canonical
+    // dispatch translation. `buildStepTools`'s own return value stays
+    // canonical for `runDeterministicToolStep`'s separate, unaliased
+    // dispatch contract (see `applyLlmSafeAliases`'s docstring).
+    const aliased = applyLlmSafeAliases(
+      baseRunner,
+      packageToolNames,
+      ctx.stepAddress,
+    );
+
     // WORKBENCH-LOCAL: single-step (warm agent) vs multi-step (workflow step)
     // director + dynamic-tools split. Upstream's single-step-workflow launch
     // path (the runtime-retirement pin bump) routes Myra/Oat/triage/gate
@@ -1405,7 +1426,7 @@ export function createStepAgentFactory(opts: StepAgentFactoryOpts = {}) {
     // (`selectDirectorId` / `def.director`) and, for the personal agent, the
     // dynamic tool catalog + persisted exposure. `warmKeep` is threaded from
     // `env.spawn.warmKeep`.
-    let runner = baseRunner;
+    let runner = aliased.runner;
     let director: DirectorRef | undefined = {
       id: WORKFLOW_STEP_BUDGET_DIRECTOR_ID,
       config: {},
@@ -1419,8 +1440,8 @@ export function createStepAgentFactory(opts: StepAgentFactoryOpts = {}) {
     if (opts.warmKeep === true) {
       const resolved = await resolveWarmAgentHarness({
         def,
-        runner: baseRunner,
-        packageToolNames,
+        runner: aliased.runner,
+        packageToolNames: aliased.packageToolNames,
         authorize,
         storeDir,
         address: ctx.stepAddress,

@@ -136,10 +136,12 @@ const EXA_FACTORY_ID = "@workbench/tools-exa/exa";
 const EXA_CANONICAL_NAME = `${EXA_FACTORY_ID}:exa_search`;
 const EXA_LLM_NAME = "exa__search";
 
-function fakeExaPackage(run: (call: { id: string }) => Promise<{
-  callId: string;
-  content: unknown;
-}>): unknown[] {
+function fakeExaPackage(
+  run: (call: { id: string }) => Promise<{
+    callId: string;
+    content: unknown;
+  }>,
+): unknown[] {
   return [
     {
       factories: [
@@ -210,9 +212,11 @@ async function buildWarmAgent(storeDir: string): Promise<DefinedRunner> {
   };
 
   await factory(def as never, env as never);
-  if (capturedDef === undefined) throw new Error("agentFactory was not invoked");
+  if (capturedDef === undefined)
+    throw new Error("agentFactory was not invoked");
   const toolFactory = capturedDef.toolFactories[0];
-  if (toolFactory === undefined) throw new Error("step def has no tool factory");
+  if (toolFactory === undefined)
+    throw new Error("step def has no tool factory");
   return toolFactory({});
 }
 
@@ -288,6 +292,158 @@ describe("step tool harness: LLM-safe package tool names (CL-3929)", () => {
 // working. This would have failed against the round-1 fix, which renamed
 // `buildStepTools`'s definitions unconditionally and threw
 // `StepToolNotRegisteredError` for a canonical-name lookup.
+// A genuine multi-step workflow step (warmKeep undefined/false) is a
+// tool-capable, model-facing agent exactly like the warm path — its
+// `createAgent` call needs the SAME LLM-safe alias projection, or the model
+// is handed the raw `<factoryId>:<name>` canonical form (illegal chars,
+// >64-char provider limit) and every tool call fails at the wire before the
+// tool ever dispatches. This regression shipped when all reasoning steps
+// were migrated onto the deployed step path: `applyLlmSafeAliases` was only
+// ever invoked from `resolveWarmAgentHarness`, gated on `warmKeep === true`.
+async function buildMultiStepAgent(storeDir: string): Promise<DefinedRunner> {
+  let capturedDef:
+    | { toolFactories: readonly ((env: unknown) => DefinedRunner)[] }
+    | undefined;
+  const factory = createStepAgentFactory({
+    agentFactory: (async (def: unknown) => {
+      capturedDef = def as {
+        toolFactories: readonly ((env: unknown) => DefinedRunner)[];
+      };
+      return { send: async () => {}, close: async () => {} };
+    }) as never,
+  });
+
+  const workdir = path.join(storeDir, "workspace");
+  await fs.promises.mkdir(workdir, { recursive: true });
+
+  const ctx = {
+    hubHttpUrl: "http://localhost:4000",
+    sidecarToken: "test-token",
+    tenantId: "tenant-1",
+    stepAgentId: "step-agt-1",
+    stepAddress: "step@tenant.localhost",
+    principalId: "prn_step_1",
+    grants: [],
+    deployTreeDir: storeDir,
+    cacheRoot: path.join(storeDir, "cache"),
+    cacheMaxBytes: 1024 * 1024,
+    registryMaxTarballBytes: 1024 * 1024,
+  };
+
+  const env = {
+    sources: [],
+    defaultSource: "src-1",
+    storage: { type: "isogit" },
+    workdir,
+    audit: { type: "audit" },
+    directors: {},
+    authorize: async () => ({
+      effect: null,
+      matchingGrants: [],
+      resolvedBy: null,
+    }),
+    [STEP_TOOL_CONTEXT_KEY]: ctx,
+  };
+
+  const def = {
+    id: "step-def",
+    systemPrompt: "You are a workflow step.",
+    toolFactories: [],
+    capabilities: [],
+    inference: { sources: [] },
+  };
+
+  await factory(def as never, env as never);
+  if (capturedDef === undefined)
+    throw new Error("agentFactory was not invoked");
+  const toolFactory = capturedDef.toolFactories[0];
+  if (toolFactory === undefined)
+    throw new Error("step def has no tool factory");
+  return toolFactory({});
+}
+
+describe("step tool harness: LLM-safe package tool names for multi-step workflow steps", () => {
+  it("advertises a package tool's LLM-safe alias, not the canonical colon-form name, to the model-facing agent", async () => {
+    const storeDir = await fs.promises.mkdtemp(
+      path.join(os.tmpdir(), "wb-step-multi-llm-safe-"),
+    );
+    try {
+      const packageRun = mock(async (call: { id: string }) => ({
+        callId: call.id,
+        content: { results: [] },
+      }));
+      loadToolPackagesMock.mockImplementation(async () =>
+        fakeExaPackage(packageRun),
+      );
+
+      const tools = await buildMultiStepAgent(storeDir);
+
+      const names = tools.definitions.map((d) => d.name);
+      expect(names).toContain(EXA_LLM_NAME);
+      expect(names).not.toContain(EXA_CANONICAL_NAME);
+
+      const callResult = await tools.run(
+        { id: "call-1", name: EXA_LLM_NAME, arguments: { query: "x" } },
+        new AbortController().signal,
+      );
+      expect(callResult.isError).not.toBe(true);
+      expect(packageRun).toHaveBeenCalledTimes(1);
+    } finally {
+      await fs.promises.rm(storeDir, { recursive: true, force: true });
+    }
+  });
+
+  it("aliases a canonical tool name that exceeds the 64-char provider limit", async () => {
+    const storeDir = await fs.promises.mkdtemp(
+      path.join(os.tmpdir(), "wb-step-multi-longname-"),
+    );
+    try {
+      const longFactoryId = "@workbench/tools-artifact-management/artifact";
+      const longCanonicalName = `${longFactoryId}:artifact_link_file_to_gamma_deck`;
+      expect(longCanonicalName.length).toBeGreaterThan(64);
+
+      const packageRun = mock(async (call: { id: string }) => ({
+        callId: call.id,
+        content: { linked: true },
+      }));
+      loadToolPackagesMock.mockImplementation(async () => [
+        {
+          factories: [
+            Object.assign(
+              () => ({
+                definitions: [{ name: longCanonicalName }],
+                run: packageRun,
+              }),
+              { id: longFactoryId, requires: [] },
+            ),
+          ],
+        },
+      ]);
+
+      const tools = await buildMultiStepAgent(storeDir);
+      const def = tools.definitions.find(
+        (d) => d.name.includes("artifact") && d.name.includes("link"),
+      );
+      if (def === undefined) throw new Error("aliased definition not found");
+      expect(def.name.length).toBeLessThanOrEqual(64);
+      expect(def.name).not.toBe(longCanonicalName);
+
+      const callResult = await tools.run(
+        { id: "call-1", name: def.name, arguments: {} },
+        new AbortController().signal,
+      );
+      expect(callResult.isError).not.toBe(true);
+      expect(packageRun).toHaveBeenCalledTimes(1);
+      const dispatched = packageRun.mock.calls[0]?.[0] as
+        | { name: string }
+        | undefined;
+      expect(dispatched?.name).toBe(longCanonicalName);
+    } finally {
+      await fs.promises.rm(storeDir, { recursive: true, force: true });
+    }
+  });
+});
+
 describe("runDeterministicToolStep: canonical (non-aliased) dispatch (CL-3929 round 2)", () => {
   it("dispatches a package tool by its canonical colon-form name, not the LLM-safe alias", async () => {
     const storeDir = await fs.promises.mkdtemp(

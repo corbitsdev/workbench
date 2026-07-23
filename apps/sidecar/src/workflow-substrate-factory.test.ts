@@ -23,7 +23,7 @@ type SendTurn = Extract<
 import { createDefaultDirectorRegistry } from "@intx/agent";
 import { evaluateGrants } from "@intx/authz";
 import { createBuiltinRegistry } from "@intx/inference/providers";
-import type { InferenceSource } from "@intx/types/runtime";
+import type { InferenceEvent, InferenceSource } from "@intx/types/runtime";
 import type { GrantEvaluator } from "@workbench/workflow-host";
 import { createWarmAgentCache } from "@workbench/workflow-host";
 import type { ChildOutboundMailBridge } from "@workbench/workflow-host";
@@ -396,6 +396,74 @@ describe("createSidecarStepInvoker", () => {
     expect(compactors).toBeDefined();
     expect(compactors?.summarize).toBeDefined();
     expect(compactors?.summarize?.name).toBe("summarize");
+  });
+
+  test("fails a multi-step reasoning step whose inference errored, instead of completing with the error text as its reply", async () => {
+    // Mirrors the default director's `inference.error` branch
+    // (`packages/inference/src/default-director.ts`, vendored): the reactor
+    // emits an `inference.error` event on its stream and `agent.send`
+    // resolves `{ type: "reply" }` with the formatted error text as the
+    // reply content — exactly the shape a real inference failure produces
+    // once the provider rejects (e.g. an over-length tool name on the wire).
+    const dataDir = await makeDataDir();
+    const ERROR_REPLY =
+      "This agent encountered a temporary error communicating with the inference provider [HTTP 400]: some provider error";
+    const errorEvent: InferenceEvent = {
+      type: "inference.error",
+      seq: 1,
+      data: {
+        error: {
+          category: "retryable",
+          message: "some provider error",
+          statusCode: 400,
+        },
+        partial: { content: [] },
+      },
+    } as unknown as InferenceEvent;
+
+    const stubAgent: Agent = {
+      send: async () => ({
+        type: "reply",
+        reply: ERROR_REPLY,
+        turn: {
+          role: "assistant",
+          content: ERROR_REPLY,
+        } as unknown as SendTurn,
+      }),
+      stream: () => {
+        let delivered = false;
+        return {
+          [Symbol.asyncIterator]: () => ({
+            next: () => {
+              if (delivered) {
+                return Promise.resolve({ value: undefined, done: true });
+              }
+              delivered = true;
+              return Promise.resolve({ value: errorEvent, done: false });
+            },
+          }),
+        };
+      },
+      deliver: () => {},
+      close: async () => {},
+      setSource: () => {},
+      setSources: () => {},
+    } as unknown as Agent;
+
+    const invoke = createSidecarStepInvoker({
+      table: { [STEP_ID]: [SOURCE] },
+      dataDir,
+      signer: async () => "test-signature",
+      directors: createDefaultDirectorRegistry(),
+      adapters: createBuiltinRegistry(),
+      evaluateGrants: allowAll,
+      agentFactory: async () => stubAgent,
+      onEvent: () => {},
+    });
+
+    await expect(invoke(makeRequest())).rejects.toThrow(
+      /inference call failed/,
+    );
   });
 
   test("rejects a step request missing runId before building an agent", async () => {

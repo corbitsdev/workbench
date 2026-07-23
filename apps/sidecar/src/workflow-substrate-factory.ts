@@ -1137,6 +1137,87 @@ function createSidecarStepWorkflowAuthorize(
 }
 
 /**
+ * The interchange default director (see `packages/inference/src/
+ * default-director.ts`, vendored) degrades `inference.error` to a
+ * `checkpoint + reply` action carrying the formatted error text as the
+ * reply — correct for a conversational agent (the human sees the error and
+ * can retry), wrong for an unattended workflow step: `agent.send` resolves
+ * `{ type: "reply" }` exactly as it would for a genuine successful turn, so
+ * `stepResultFromSend` (`@workbench/workflow-host`) hands the step's output
+ * `{ reply: "<formatted provider error>", turn }` and the step COMPLETES.
+ * A downstream step then tries to parse structured data out of that error
+ * string and fails with a confusing, unrelated error many steps later — the
+ * root failure (an inference-provider error) never surfaces as a step
+ * failure at all.
+ *
+ * There is no seam on `SendResult`/`StepInvokeResult` distinguishing "this
+ * reply is the formatted text of an `inference.error`" from a genuine
+ * assistant reply — the director's `reply` action is a plain string. This
+ * tracker observes the per-step `InferenceEvent` stream (already threaded
+ * through `onEvent` for observability) and records whether an
+ * `inference.error` fired during the CURRENT step invocation. Because the
+ * default director's `inference.error` branch is a terminal action for
+ * its message-run (closes the bracket, returns to waiting — see
+ * `default-director.ts`), an `inference.error` and a genuine successful
+ * reply can never both settle the same `agent.send()` call: observing one
+ * during a call that resolved with a reply means that reply IS the
+ * error text.
+ *
+ * `reset()` must be called at the start of every step invocation (both the
+ * deterministic and inference branches use the same tracker instance) so a
+ * PRIOR step's error does not leak onto the next step's success.
+ *
+ * Concurrency safety is load-bearing and comes from the CALLER: `buildStepInvoker`
+ * constructs a fresh `createSidecarStepInvoker` — and therefore a fresh tracker
+ * closure — for every `invokeStep` request, so concurrently running steps never
+ * share one. Pooling or reusing invokers for performance would silently break
+ * that and let one step's inference error settle another step's result.
+ */
+function createStepInvokerErrorTracker(
+  forward: ((event: InferenceEvent) => void) | undefined,
+): {
+  onEvent: (event: InferenceEvent) => void;
+  reset: () => void;
+  lastError: () => { message: string; category: string } | undefined;
+} {
+  let last: { message: string; category: string } | undefined;
+  return {
+    onEvent: (event) => {
+      if (event.type === "inference.error") {
+        last = {
+          message: event.data.error.message,
+          category: event.data.error.category,
+        };
+      }
+      forward?.(event);
+    },
+    reset: () => {
+      last = undefined;
+    },
+    lastError: () => last,
+  };
+}
+
+/**
+ * Thrown when a reasoning workflow step's `agent.send` resolved with a reply
+ * that is the formatted text of an `inference.error` the default director
+ * degraded to a reply (see `createStepInvokerErrorTracker`). Named so the
+ * run-failure detail names the real cause (a provider/inference failure)
+ * instead of surfacing as the misleading "reply" content some downstream
+ * step failed to parse.
+ */
+export class StepInferenceFailedError extends Error {
+  readonly category: string;
+  constructor(message: string, category: string) {
+    super(
+      `workflow step's inference call failed (category: ${category}): ${message}`,
+    );
+    this.name = "StepInferenceFailedError";
+    this.category = category;
+  }
+}
+
+/**
  * Compose the real `createWorkflowStepInvoker` adapter for the
  * sidecar's parent-step path. Exported so the wiring is testable in
  * isolation: a test injects a stub `agentFactory` and asserts the step
@@ -1233,6 +1314,12 @@ export function createSidecarStepInvoker(args: {
       : {}),
   });
 
+  // WORKBENCH-LOCAL: track the most recent `inference.error` event seen
+  // during the CURRENT `inferenceInvoker` call, so the returned invoker
+  // below can tell a step's terminal reply apart from a provider error the
+  // director degraded to a reply (see `stepInvokerErrorTracker` docstring).
+  const errorTracker = createStepInvokerErrorTracker(args.onEvent);
+
   const inferenceInvoker = createWorkflowStepInvoker({
     workflowAuthorize:
       args.workflowAuthorize ??
@@ -1249,7 +1336,7 @@ export function createSidecarStepInvoker(args: {
             ...(args.warmKeep !== undefined ? { warmKeep: args.warmKeep } : {}),
           })
         : createAgent),
-    ...(args.onEvent !== undefined ? { onEvent: args.onEvent } : {}),
+    onEvent: errorTracker.onEvent,
     // Warm-keep wiring (upstream §3b/§3c): forward the run-loop's per-
     // deployment warm cache and the run-boundary durability flush so the
     // inference invoker reuses one cached agent across messages and mirrors
@@ -1298,7 +1385,27 @@ export function createSidecarStepInvoker(args: {
         signal: req.signal,
       });
     }
-    return inferenceInvoker(req);
+    // WORKBENCH-LOCAL: reset the per-invocation error tracker before every
+    // reasoning-step call, then fail the step loudly if this call's result
+    // is the director's degraded inference-error reply rather than a
+    // genuine assistant reply. Scoped to genuine multi-step workflow steps
+    // (`warmKeep !== true`): a WARM single-step agent (Myra/Oat/triage/gate)
+    // is a conversational deployment where the default director's
+    // reply-on-error behavior is intentional — the human sees the error in
+    // chat and can retry — so it keeps that behavior unchanged. See
+    // `createStepInvokerErrorTracker` and `StepInferenceFailedError` above.
+    errorTracker.reset();
+    const result = await inferenceInvoker(req);
+    if (args.warmKeep !== true && "output" in result) {
+      const lastError = errorTracker.lastError();
+      if (lastError !== undefined) {
+        throw new StepInferenceFailedError(
+          lastError.message,
+          lastError.category,
+        );
+      }
+    }
+    return result;
   };
 }
 
