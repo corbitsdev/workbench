@@ -8,6 +8,7 @@ import type { WorkflowDefinition } from "@intx/workflow";
 import { LLM_DEFAULT_MODEL } from "@workbench/agents";
 import type { HubDb } from "../db";
 import { getCachedCatalogSources } from "./workflow-model-source-cache";
+import { frameGrantRules } from "./step-grants";
 
 export type WorkflowDeployConfig = {
   deploymentId: string;
@@ -221,6 +222,7 @@ export function assembleWorkflowDeployConfig(args: {
   principalId: string;
   deploymentDomain: string;
   sources: InferenceSource[];
+  definition: WorkflowDefinition;
 }): WorkflowDeployConfig {
   const [head] = args.sources;
   if (head === undefined) {
@@ -238,7 +240,14 @@ export function assembleWorkflowDeployConfig(args: {
       agentAddress: `${args.deploymentId}@${args.deploymentDomain}`,
       systemPrompt: "",
       tools: [],
-      grants: [],
+      // The frame's grants are what the sidecar writes into EVERY step's
+      // state/grants.json at spawn and what the workflow child's authorize
+      // (agent-step tool calls AND native action EffectContext.perform)
+      // actually evaluates. This shipped `[]` for every deployment — so every
+      // action effect check failed "not authorized (null)" no matter what
+      // the hub-side per-step grant files carried. Derive the real surface
+      // from the definition (see step-grants.ts).
+      grants: frameGrantRules(args.definition),
       sources: args.sources,
       defaultSource: head.id,
     },
@@ -273,5 +282,6 @@ export async function resolveWorkflowDeployConfig(args: {
     principalId: args.principalId,
     deploymentDomain: args.deploymentDomain,
     sources,
+    definition: args.definition,
   });
 }

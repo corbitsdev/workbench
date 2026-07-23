@@ -24,10 +24,14 @@ import { type } from "arktype";
 import type { GrantRule } from "@intx/authz";
 import {
   toolPackagesForCapabilities,
-  canonicalToolNamesForPackages,
   DETERMINISTIC_TOOL_KIND,
   STEP_KIND_TAG,
 } from "@workbench/agents";
+import {
+  buildStepGrantRules,
+  capabilityNames,
+  stepGrantCapabilityNames,
+} from "./step-grants";
 import { getConfig } from "../config";
 import type { HubDb } from "../db";
 import type { WorkflowDefinition } from "@intx/workflow";
@@ -692,6 +696,7 @@ export function buildSupervisorDeployFrame(args: {
     principalId: args.creatorPrincipalId,
     deploymentDomain: args.deploymentDomain,
     sources: args.sources,
+    definition: args.definition,
   });
   const deploymentConfig: HarnessConfig = {
     ...config,
@@ -1356,42 +1361,9 @@ const EFFECT_GRANT_RESOURCE_PREFIX = "effect:";
 // ... was not authorized (null)" for a native action's EffectContext) with
 // nothing at deploy time to catch it. Declared names are kept in the union
 // verbatim for the local-runner tools no package backs (mail_*).
-export function stepGrantCapabilityNames(
-  declared: readonly string[],
-  pins: readonly ToolPackagePin[],
-): string[] {
-  return [...new Set([...declared, ...canonicalToolNamesForPackages(pins)])];
-}
+export { stepGrantCapabilityNames } from "./step-grants";
 
-export function buildStepGrantRules(
-  capabilityNames: readonly string[],
-): GrantRule[] {
-  const unique = [...new Set(capabilityNames)];
-  return unique.flatMap((name) => [
-    {
-      id: generateId("grant"),
-      resource: `${TOOL_GRANT_RESOURCE_PREFIX}${name}`,
-      action: "invoke",
-      effect: "allow" as const,
-      origin: "system" as const,
-      conditions: null,
-      expiresAt: null,
-      roleId: null,
-      principalId: null,
-    },
-    {
-      id: generateId("grant"),
-      resource: `${EFFECT_GRANT_RESOURCE_PREFIX}${name}`,
-      action: "invoke",
-      effect: "allow" as const,
-      origin: "system" as const,
-      conditions: null,
-      expiresAt: null,
-      roleId: null,
-      principalId: null,
-    },
-  ]);
-}
+export { buildStepGrantRules } from "./step-grants";
 
 // Persist each step's grants snapshot to its agent-state repo. Every step's
 // agent gets the same union capability set the deploy resolved, expressed as
@@ -1531,17 +1503,4 @@ export function collectGrants(walk: CapabilityWalkResult): ReadonlySet<string> {
 // `toolPackagesForCapabilities` below resolves both the same way. This is
 // the mechanism that pins a tool package into a deployment whose steps are
 // actions: there is no separate action-specific pinning path.
-export function capabilityNames(walk: CapabilityWalkResult): string[] {
-  const names = new Set<string>();
-  for (const { grants } of walk.perStep.values()) {
-    for (const grant of grants) {
-      if (grant.startsWith("capability:")) {
-        names.add(grant.slice("capability:".length));
-      }
-      if (grant.startsWith("effect:")) {
-        names.add(grant.slice("effect:".length));
-      }
-    }
-  }
-  return [...names];
-}
+export { capabilityNames } from "./step-grants";

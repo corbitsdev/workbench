@@ -660,11 +660,19 @@ const TENANT_SOURCE: InferenceSource = {
   model: "m",
 };
 
+// Step agents carry the walk-required surfaces (toolFactories/capabilities)
+// exactly as persisted workflow.json does — buildSupervisorDeployFrame now
+// derives real frame grants from the definition, so a fixture stripped below
+// the envelope shape crashes the capability walk instead of testing anything.
+const BARE_STEP = {
+  kind: "step",
+  agent: { id: "a", toolFactories: [], capabilities: [] },
+};
 const VALID_DEFINITION = {
   id: "pain-point-collateral",
   triggers: [{ type: "manual" }],
   stepOrder: ["intake", "analyze"],
-  steps: { intake: { kind: "step" }, analyze: { kind: "step" } },
+  steps: { intake: BARE_STEP, analyze: BARE_STEP },
 } as unknown as WorkflowDefinition;
 
 describe("buildSupervisorDeployFrame", () => {
@@ -720,10 +728,13 @@ describe("buildSupervisorDeployFrame", () => {
       triggers: [{ type: "manual" }],
       stepOrder: ["intake", "write"],
       steps: {
-        intake: { kind: "step" },
+        intake: BARE_STEP,
         write: {
           kind: "step",
           agent: {
+            id: "w",
+            toolFactories: [],
+            capabilities: [],
             inference: {
               sources: [
                 { provider: "openai-compatible", model: "writer-model" },
@@ -758,6 +769,9 @@ describe("buildSupervisorDeployFrame", () => {
         write: {
           kind: "step",
           agent: {
+            id: "w",
+            toolFactories: [],
+            capabilities: [],
             inference: {
               sources: [
                 { provider: "openai-compatible", model: "absent-model" },
