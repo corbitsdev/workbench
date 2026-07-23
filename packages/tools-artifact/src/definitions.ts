@@ -273,6 +273,21 @@ export const WRITE_ARTIFACT_DEFINITION: ArtifactToolDefinition = {
         description:
           "Optional stable origin key (e.g. granola:call:<noteId>). When set, re-writes with the same tenant+sourceRef return the existing artifactId instead of creating a second row.",
       },
+      sourceRefPrefix: {
+        type: "string",
+        description:
+          "Optional sourceRef namespace, joined server-side as `<sourceRefPrefix>-<sourceRefKey>`. For callers (e.g. workflow argMaps) that carry an item key but cannot concatenate strings. Requires sourceRefKey; ignored when sourceRef is set explicitly.",
+      },
+      sourceRefKey: {
+        type: "string",
+        description:
+          "Optional per-item key joined with sourceRefPrefix into the artifact's sourceRef. Requires sourceRefPrefix.",
+      },
+      titlePrefix: {
+        type: "string",
+        description:
+          "Optional prefix prepended verbatim to title (include any separator, e.g. 'Transcript — '). For callers that derive title from upstream data but cannot concatenate strings.",
+      },
     },
     required: ["title", "body", "kind"],
   },

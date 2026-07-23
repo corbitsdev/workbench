@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-07-23T05:38:35.594Z",
+  "generatedAt": "2026-07-23T17:20:03.228Z",
   "factories": [
     {
       "factoryId": "@workbench/tools-ab-compare/compose",
@@ -551,6 +551,19 @@
       "credentialCatalog": {
         "label": "Granola"
       }
+    },
+    {
+      "factoryId": "@workbench/tools-granola/hub",
+      "packageName": "@workbench/tools-granola",
+      "providerName": null,
+      "bareToolNames": [
+        "granola_spawn_call_runs"
+      ],
+      "sideEffects": {
+        "granola_spawn_call_runs": "write"
+      },
+      "myraCatalog": null,
+      "credentialCatalog": null
     },
     {
       "factoryId": "@workbench/tools-granola/workflow",

@@ -19,13 +19,12 @@ describe("granola-call workflow", () => {
     expect(description.length).toBeGreaterThan(20);
   });
 
-  test("defineWorkflow succeeds with exactly the discover/digest/persist steps", () => {
+  test("defineWorkflow succeeds with exactly the discover/spawn steps", () => {
     expect(workflow.id).toBe("granola-call");
-    const stepIds = Object.keys(workflow.steps);
-    expect(stepIds.sort()).toEqual(["digest", "discover", "persist"]);
+    expect(Object.keys(workflow.steps).sort()).toEqual(["discover", "spawn"]);
   });
 
-  test("trigger is manual — no noteId, no signal gate; maxCalls is the only intake field", () => {
+  test("trigger is manual — maxCalls is the only intake field", () => {
     expect(workflow.triggers).toEqual([{ type: "manual" }]);
     expect(INTAKE_FIELDS).toHaveLength(1);
     expect(INTAKE_FIELDS[0].name).toBe("maxCalls");
@@ -34,8 +33,8 @@ describe("granola-call workflow", () => {
 
   test("discover reads maxCalls (renamed to the tool's `limit` arg) and never throws when absent", () => {
     const discover = stepPrimitive("discover");
-    expect(discover.agent.tags?.["workbench.tool"]).toContain(
-      "granola_list_notes",
+    expect(discover.agent.tags?.["workbench.tool"]).toBe(
+      "@workbench/tools-granola/granola:granola_list_notes",
     );
     const argMapTag = discover.agent.tags?.["workbench.argMap"];
     expect(argMapTag).toBeDefined();
@@ -49,31 +48,36 @@ describe("granola-call workflow", () => {
     }
   });
 
-  test("digest is a native reasoning step (no Workbench dispatch tag) fed by discover", () => {
-    const digest = stepPrimitive("digest");
-    expect(digest.agent.tags?.["workbench.stepKind"]).toBeUndefined();
-    expect(digest.after).toEqual(expect.arrayContaining(["discover"]));
+  test("spawn forwards discover's list content and the optional maxCalls cap", () => {
+    const spawn = stepPrimitive("spawn");
+    expect(spawn.agent.tags?.["workbench.tool"]).toBe(
+      "@workbench/tools-granola/hub:granola_spawn_call_runs",
+    );
+    expect(spawn.after).toEqual(["discover"]);
+    const argMap = JSON.parse(
+      spawn.agent.tags?.["workbench.argMap"] as string,
+    ) as Record<string, unknown>;
+    // `content` is the discover ToolResult's JSON — REQUIRED: a missing
+    // field must fail the step loudly, never spawn zero children silently.
+    expect(argMap.content).toEqual({ from: "content" });
+    expect(argMap.maxCalls).toEqual({ from: "maxCalls", optional: true });
   });
 
-  test("persist saves the digest under a stable sourceRef (idempotent — a quiet run does not duplicate)", () => {
-    const persist = stepPrimitive("persist");
-    expect(persist.agent.tags?.["workbench.tool"]).toContain("write_artifact");
-    const argMapTag = persist.agent.tags?.["workbench.argMap"];
-    expect(argMapTag).toBeDefined();
-    const argMap = JSON.parse(argMapTag as string) as Record<string, unknown>;
-    expect(argMap.sourceRef).toEqual({ literal: "granola-call-digest" });
-    // `reply` is the field the step invoker's agent-step output actually
-    // carries ({ reply, turn }); pinning `content` here previously froze in
-    // the field-that-never-exists bug.
-    expect(argMap.body).toEqual({ from: "reply" });
-    expect(persist.after).toEqual(expect.arrayContaining(["digest"]));
+  test("every step is deterministic — the parent runs no inference", () => {
+    for (const stepId of Object.keys(workflow.steps)) {
+      const step = stepPrimitive(stepId);
+      expect(step.agent.tags?.["workbench.stepKind"]).toBe(
+        "deterministic-tool",
+      );
+      expect(step.agent.inference).toEqual({ sources: [] });
+    }
   });
 
   test("display steps cover the flow", () => {
-    expect(DISPLAY_STEPS.map((s) => s.key)).toEqual([
-      "discover",
-      "digest",
-      "persist",
-    ]);
+    expect(DISPLAY_STEPS.map((s) => s.key)).toEqual(["discover", "spawn"]);
+    const displayed = new Set(DISPLAY_STEPS.flatMap((s) => s.stepIds));
+    for (const stepId of Object.keys(workflow.steps)) {
+      expect(displayed.has(stepId)).toBe(true);
+    }
   });
 });

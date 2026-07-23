@@ -1,6 +1,6 @@
 import type { DisplayStep } from "@workbench/ui";
 
-/** Catalog / UI display flow for the granola-call workflow. */
+/** Catalog / UI display flow for the granola-call fan-out parent. */
 export const DISPLAY_STEPS: DisplayStep[] = [
   {
     key: "discover",
@@ -8,14 +8,9 @@ export const DISPLAY_STEPS: DisplayStep[] = [
     stepIds: ["discover"],
   },
   {
-    key: "digest",
-    label: "Write the call digest",
-    stepIds: ["digest"],
-    activityLabel: "Writing the call digest",
-  },
-  {
-    key: "persist",
-    label: "Save the digest",
-    stepIds: ["persist"],
+    key: "spawn",
+    label: "Start per-call processing",
+    stepIds: ["spawn"],
+    activityLabel: "Starting per-call processing",
   },
 ];

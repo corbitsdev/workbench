@@ -199,7 +199,14 @@ export function createWriteArtifactTool(
       handler: async (call, _signal) => {
         const rawArgs = call.arguments;
         const args = unwrapArgsEnvelope(rawArgs, ["title", "body", "kind"]);
-        const title = requireString(args, "title");
+        const bareTitle = requireString(args, "title");
+        // Server-side title prefixing for callers that derive `title` from
+        // upstream data but cannot concatenate strings (workflow argMaps).
+        // The prefix is prepended verbatim — it carries its own separator.
+        const title =
+          typeof args.titlePrefix === "string" && args.titlePrefix.trim() !== ""
+            ? `${args.titlePrefix}${bareTitle}`
+            : bareTitle;
         const body = requireString(args, "body");
         const kind = requireString(args, "kind");
         if (kind === "skill-draft") {
@@ -262,10 +269,40 @@ export function createWriteArtifactTool(
           source.jobLabel = args.jobLabel.trim();
         }
 
-        const sourceRef =
+        // Server-side sourceRef composition for the same argMap-shaped
+        // callers: `<sourceRefPrefix>-<sourceRefKey>`. An explicit sourceRef
+        // wins; half a pair is a caller bug and fails loudly rather than
+        // silently writing an unprefixed (colliding) ref.
+        const refPrefix =
+          typeof args.sourceRefPrefix === "string" &&
+          args.sourceRefPrefix.trim() !== ""
+            ? args.sourceRefPrefix.trim()
+            : undefined;
+        const refKey =
+          typeof args.sourceRefKey === "string" &&
+          args.sourceRefKey.trim() !== ""
+            ? args.sourceRefKey.trim()
+            : undefined;
+        const explicitRef =
           typeof args.sourceRef === "string" && args.sourceRef.trim().length > 0
             ? args.sourceRef.trim()
             : undefined;
+        // Per the tool schema, the pair is ignored entirely when an explicit
+        // sourceRef is set — so the half-pair check only applies when the
+        // pair is actually the ref source.
+        if (
+          explicitRef === undefined &&
+          (refPrefix === undefined) !== (refKey === undefined)
+        ) {
+          throw new Error(
+            "write_artifact: sourceRefPrefix and sourceRefKey must be provided together",
+          );
+        }
+        const sourceRef =
+          explicitRef ??
+          (refPrefix !== undefined && refKey !== undefined
+            ? `${refPrefix}-${refKey}`
+            : undefined);
 
         const result = await writeArtifactDeduped({
           db: context.db,

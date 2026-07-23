@@ -83,6 +83,7 @@ COPY workflows/exa-topic-watch/package.json workflows/exa-topic-watch/
 COPY workflows/gamma-presentation-creator/package.json workflows/gamma-presentation-creator/
 COPY workflows/github-topic-watch/package.json workflows/github-topic-watch/
 COPY workflows/granola-call/package.json workflows/granola-call/
+COPY workflows/process-granola-call/package.json workflows/process-granola-call/
 COPY workflows/gtm-scripts-briefs/package.json workflows/gtm-scripts-briefs/
 COPY workflows/heartbeat/package.json workflows/heartbeat/
 COPY workflows/last30days-research/package.json workflows/last30days-research/

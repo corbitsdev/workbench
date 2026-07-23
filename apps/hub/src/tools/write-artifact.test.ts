@@ -178,6 +178,86 @@ describe("write_artifact tool", () => {
     expect(content.version).toBe(1);
   });
 
+  // Server-side composition for argMap-shaped callers (workflow steps carry
+  // an item key but cannot concatenate strings): sourceRef from
+  // `<sourceRefPrefix>-<sourceRefKey>`, title from `<titlePrefix><title>`.
+  it("composes sourceRef from sourceRefPrefix + sourceRefKey and prepends titlePrefix", async () => {
+    const inserts: InsertedArtifact[] = [];
+    const db = makeMockDb({ captureArtifactInserts: inserts });
+    const handler = getStringHandler({ db, tenantId: "t", principalId: "p" });
+
+    await handler(
+      {
+        title: "Engineering Sync",
+        titlePrefix: "Transcript — ",
+        body: "Body",
+        kind: "document",
+        sourceRefPrefix: "granola-transcript",
+        sourceRefKey: "note_123",
+      },
+      SIGNAL,
+    );
+
+    expect(inserts[0]?.sourceRef).toBe("granola-transcript-note_123");
+    expect(inserts[0]?.title).toBe("Transcript — Engineering Sync");
+  });
+
+  it("an explicit sourceRef wins over the prefix/key pair", async () => {
+    const inserts: InsertedArtifact[] = [];
+    const db = makeMockDb({ captureArtifactInserts: inserts });
+    const handler = getStringHandler({ db, tenantId: "t", principalId: "p" });
+
+    await handler(
+      {
+        title: "T",
+        body: "B",
+        kind: "document",
+        sourceRef: "explicit-ref",
+        sourceRefPrefix: "granola-transcript",
+        sourceRefKey: "note_123",
+      },
+      SIGNAL,
+    );
+
+    expect(inserts[0]?.sourceRef).toBe("explicit-ref");
+  });
+
+  it("a stray half-pair alongside an explicit sourceRef is ignored, per the schema", async () => {
+    const inserts: InsertedArtifact[] = [];
+    const db = makeMockDb({ captureArtifactInserts: inserts });
+    const handler = getStringHandler({ db, tenantId: "t", principalId: "p" });
+
+    await handler(
+      {
+        title: "T",
+        body: "B",
+        kind: "document",
+        sourceRef: "explicit-ref",
+        sourceRefPrefix: "granola-transcript",
+      },
+      SIGNAL,
+    );
+
+    expect(inserts[0]?.sourceRef).toBe("explicit-ref");
+  });
+
+  it("half a prefix/key pair fails loudly instead of writing an unprefixed ref", async () => {
+    const db = makeMockDb({});
+    const handler = getStringHandler({ db, tenantId: "t", principalId: "p" });
+
+    await expect(
+      handler(
+        {
+          title: "T",
+          body: "B",
+          kind: "document",
+          sourceRefPrefix: "granola-transcript",
+        },
+        SIGNAL,
+      ),
+    ).rejects.toThrow("must be provided together");
+  });
+
   it("tenantId: artifact insert includes tenantId from context", async () => {
     const artifactInserts: InsertedArtifact[] = [];
     const db = makeMockDb({ captureArtifactInserts: artifactInserts });

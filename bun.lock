@@ -1843,6 +1843,22 @@
         "react": "*",
       },
     },
+    "workflows/process-granola-call": {
+      "name": "@workbench/workflow-process-granola-call",
+      "version": "0.1.0",
+      "dependencies": {
+        "@intx/agent": "workspace:*",
+        "@intx/workflow": "workspace:*",
+        "@workbench/agents": "workspace:*",
+        "@workbench/shared": "workspace:*",
+        "@workbench/ui": "workspace:*",
+        "arktype": "catalog:",
+      },
+      "devDependencies": {
+        "@types/bun": "latest",
+        "typescript": "catalog:",
+      },
+    },
     "workflows/prospect-engine": {
       "name": "@workbench/workflow-prospect-engine",
       "version": "0.1.0",
@@ -2956,6 +2972,8 @@
     "@workbench/workflow-multi-source-collateral": ["@workbench/workflow-multi-source-collateral@workspace:workflows/multi-source-collateral"],
 
     "@workbench/workflow-pain-point-collateral": ["@workbench/workflow-pain-point-collateral@workspace:workflows/pain-point-collateral"],
+
+    "@workbench/workflow-process-granola-call": ["@workbench/workflow-process-granola-call@workspace:workflows/process-granola-call"],
 
     "@workbench/workflow-prospect-engine": ["@workbench/workflow-prospect-engine@workspace:workflows/prospect-engine"],
 

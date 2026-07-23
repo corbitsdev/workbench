@@ -2,7 +2,7 @@
   "kind": "granola-call",
   "version": "0.1.0",
   "label": "Granola Call Processing",
-  "description": "Automatic Granola call processing: on every run, discover recent calls and publish a digest. Bounded by maxCalls (default 10). Idempotent — a quiet run is a clean no-op, and reruns never duplicate output (CL-4283).",
+  "description": "Automatic Granola call processing: on every run, discover recent calls and start one process-granola-call run per call that has no call-notes artifact yet. Bounded by maxCalls (default 10). Idempotent — already-processed calls are skipped, so a quiet run spawns nothing.",
   "displayFlow": [
     {
       "key": "discover",
@@ -12,19 +12,12 @@
       ]
     },
     {
-      "key": "digest",
-      "label": "Write the call digest",
+      "key": "spawn",
+      "label": "Start per-call processing",
       "stepIds": [
-        "digest"
+        "spawn"
       ],
-      "activityLabel": "Writing the call digest"
-    },
-    {
-      "key": "persist",
-      "label": "Save the digest",
-      "stepIds": [
-        "persist"
-      ]
+      "activityLabel": "Starting per-call processing"
     }
   ],
   "requiresIntake": false,
@@ -74,64 +67,46 @@
           "from": "trigger.payload"
         }
       },
-      "digest": {
+      "spawn": {
         "kind": "step",
-        "id": "digest",
+        "id": "spawn",
         "agent": {
-          "id": "granola-call-digest",
-          "systemPrompt": "Treat Corbits, Corbits.dev, Interchange, and Faremeter as canonical Corbits names; spell them exactly. When source material contains a clear speech-to-text or spelling variant, use the canonical spelling in your output. Do not replace an ambiguous term unless surrounding context identifies it.\n\nYou write a short unattended digest for a Granola call-processing run.\n\nYou receive the raw granola_list_notes result (JSON: notes[], hasMore, cursor?) for the most recent notes, bounded by the run's maxCalls.\n\nWrite a concise markdown digest:\n1. One-line headline: how many calls were found (0 is fine — say so plainly, e.g. \"No new calls since the last run.\")\n2. For each call: title, created date, and a short one-paragraph summary of what the call covered and any notable pain points, decisions, or action items visible in its transcript/summary field\n3. Keep each call's writeup independent — this is per-call ground truth, not a single blended narrative\n\nNo preamble. No tool calls. Markdown body only.",
-          "toolFactories": [],
-          "capabilities": [],
-          "inference": {
-            "sources": []
-          },
-          "description": "Reasoning step: granola-call-digest",
-          "tags": {
-            "workbench.title": "Write the call digest"
-          }
-        },
-        "drainBehavior": "cancel",
-        "input": {
-          "from": "steps.discover.output"
-        },
-        "after": [
-          "discover"
-        ]
-      },
-      "persist": {
-        "kind": "step",
-        "id": "persist",
-        "agent": {
-          "id": "granola-call-persist",
+          "id": "granola-call-spawn",
           "systemPrompt": "",
           "toolFactories": [],
           "capabilities": [
-            "@workbench/tools-artifact/artifact:write_artifact"
+            "@workbench/tools-granola/hub:granola_spawn_call_runs"
           ],
           "inference": {
             "sources": []
           },
-          "description": "Deterministic tool call: @workbench/tools-artifact/artifact:write_artifact",
+          "description": "Deterministic tool call: @workbench/tools-granola/hub:granola_spawn_call_runs",
           "tags": {
             "workbench.stepKind": "deterministic-tool",
-            "workbench.tool": "@workbench/tools-artifact/artifact:write_artifact",
-            "workbench.argMap": "{\"title\":{\"literal\":\"Granola calls — digest\"},\"body\":{\"from\":\"content\"},\"kind\":{\"literal\":\"research\"},\"sourceRef\":{\"literal\":\"granola-call-digest\"},\"jobLabel\":{\"literal\":\"Granola Call Processing\"}}",
-            "workbench.title": "Save the call digest"
+            "workbench.tool": "@workbench/tools-granola/hub:granola_spawn_call_runs",
+            "workbench.argMap": "{\"content\":{\"from\":\"content\"},\"maxCalls\":{\"from\":\"maxCalls\",\"optional\":true}}",
+            "workbench.title": "Start per-call processing"
           }
         },
         "drainBehavior": "cancel",
         "input": {
-          "from": "steps.digest.output"
+          "merge": [
+            {
+              "from": "steps.discover.output"
+            },
+            {
+              "from": "trigger.payload"
+            }
+          ]
         },
         "after": [
-          "digest"
+          "discover"
         ]
       }
     },
     "stepOrder": [
       "discover",
-      "digest",
-      "persist"
+      "spawn"
     ]
   }
 }
