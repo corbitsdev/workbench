@@ -172,30 +172,31 @@
         ]
       },
       "techStack": {
-        "kind": "step",
+        "kind": "action",
         "id": "techStack",
-        "agent": {
-          "id": "sumble-account-intel-tech-stack",
-          "systemPrompt": "",
-          "toolFactories": [],
-          "capabilities": [
-            "@workbench/tools-sumble/sumble:sumble_get_org_tech_stack"
-          ],
-          "inference": {
-            "sources": []
-          },
-          "description": "Deterministic tool call: @workbench/tools-sumble/sumble:sumble_get_org_tech_stack",
-          "tags": {
-            "workbench.stepKind": "deterministic-tool",
-            "workbench.tool": "@workbench/tools-sumble/sumble:sumble_get_org_tech_stack",
-            "workbench.argMap": "{\"slug\":{\"from\":\"slug\"},\"limit\":{\"literal\":25}}",
-            "workbench.nonFatal": "true",
-            "workbench.title": "Read the tech stack"
-          }
-        },
+        "handler": "@workbench/tools-sumble/sumble:sumble_get_org_tech_stack",
         "drainBehavior": "cancel",
         "input": {
-          "from": "steps.resolve.output.content"
+          "merge": [
+            {
+              "project": {
+                "from": "steps.resolve.output.content"
+              },
+              "fields": [
+                "slug"
+              ]
+            },
+            {
+              "literal": {
+                "limit": 25
+              }
+            }
+          ]
+        },
+        "effect": {
+          "requires": [
+            "@workbench/tools-sumble/sumble:sumble_get_org_tech_stack"
+          ]
         },
         "after": [
           "jobs"
@@ -339,25 +340,9 @@
         ]
       },
       "document": {
-        "kind": "step",
+        "kind": "action",
         "id": "document",
-        "agent": {
-          "id": "sumble-account-intel-document",
-          "systemPrompt": "",
-          "toolFactories": [],
-          "capabilities": [
-            "@workbench/tools-last30days/core:sumble_account_intel_format_report_document"
-          ],
-          "inference": {
-            "sources": []
-          },
-          "description": "Deterministic tool call: @workbench/tools-last30days/core:sumble_account_intel_format_report_document",
-          "tags": {
-            "workbench.stepKind": "deterministic-tool",
-            "workbench.tool": "@workbench/tools-last30days/core:sumble_account_intel_format_report_document",
-            "workbench.title": "Compose the account brief document"
-          }
-        },
+        "handler": "@workbench/tools-last30days/core:sumble_account_intel_format_report_document",
         "drainBehavior": "cancel",
         "input": {
           "merge": [
@@ -369,31 +354,19 @@
             }
           ]
         },
+        "effect": {
+          "requires": [
+            "@workbench/tools-last30days/core:sumble_account_intel_format_report_document"
+          ]
+        },
         "after": [
           "synthesize"
         ]
       },
       "packageArtifact": {
-        "kind": "step",
+        "kind": "action",
         "id": "packageArtifact",
-        "agent": {
-          "id": "sumble-account-intel-package",
-          "systemPrompt": "",
-          "toolFactories": [],
-          "capabilities": [
-            "@workbench/tools-artifact/artifact:write_artifact"
-          ],
-          "inference": {
-            "sources": []
-          },
-          "description": "Deterministic tool call: @workbench/tools-artifact/artifact:write_artifact",
-          "tags": {
-            "workbench.stepKind": "deterministic-tool",
-            "workbench.tool": "@workbench/tools-artifact/artifact:write_artifact",
-            "workbench.argMap": "{\"title\":{\"from\":\"title\"},\"body\":{\"from\":\"body\"},\"kind\":{\"literal\":\"research\"},\"jobLabel\":{\"literal\":\"Sumble account intel\"}}",
-            "workbench.title": "Save the account brief"
-          }
-        },
+        "handler": "@workbench/tools-artifact/artifact:write_artifact",
         "drainBehavior": "cancel",
         "input": {
           "merge": [
@@ -402,7 +375,18 @@
             },
             {
               "from": "steps.review.output"
+            },
+            {
+              "literal": {
+                "kind": "research",
+                "jobLabel": "Sumble account intel"
+              }
             }
+          ]
+        },
+        "effect": {
+          "requires": [
+            "@workbench/tools-artifact/artifact:write_artifact"
           ]
         },
         "after": [

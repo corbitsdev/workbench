@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { runLocal } from "@intx/workflow/runlocal";
+import type { ActionHandler } from "@intx/workflow";
 import type { StepInvoker } from "@intx/workflow/runtime";
 import {
   DETERMINISTIC_TOOL_KIND,
@@ -9,7 +10,12 @@ import {
   STEP_TOOL_TAG,
 } from "@workbench/agents";
 
-import { workflow } from "./index";
+import {
+  workflow,
+  DOCUMENT_HANDLER,
+  PACKAGE_ARTIFACT_HANDLER,
+  TECH_STACK_HANDLER,
+} from "./index";
 
 function makeRecordingInvoker(outputs: Record<string, unknown> = {}): {
   invoker: StepInvoker;
@@ -23,11 +29,41 @@ function makeRecordingInvoker(outputs: Record<string, unknown> = {}): {
   return { invoker, ran };
 }
 
+/**
+ * Records each action dispatch by its handler ref and returns a canned
+ * output, mirroring `makeRecordingInvoker` for the `step` primitive but for
+ * native `action` primitives (no agent, no step-tool tags — dispatched via
+ * `runLocal`'s `actionResolver`, not `invokeStep`).
+ */
+function makeRecordingActionResolver(outputs: Record<string, unknown> = {}): {
+  resolver: (ref: string) => ActionHandler;
+  ran: { handler: string; input: unknown }[];
+} {
+  const ran: { handler: string; input: unknown }[] = [];
+  const resolver = (ref: string): ActionHandler => {
+    return async (input) => {
+      ran.push({ handler: ref, input });
+      return outputs[ref] ?? null;
+    };
+  };
+  return { resolver, ran };
+}
+
 function stepPrimitive(id: string) {
   const primitive = workflow.steps[id];
   if (primitive === undefined || primitive.kind !== "step") {
     throw new Error(
       `expected step primitive for "${id}", got ${primitive?.kind ?? "undefined"}`,
+    );
+  }
+  return primitive;
+}
+
+function actionPrimitive(id: string) {
+  const primitive = workflow.steps[id];
+  if (primitive === undefined || primitive.kind !== "action") {
+    throw new Error(
+      `expected action primitive for "${id}", got ${primitive?.kind ?? "undefined"}`,
     );
   }
   return primitive;
@@ -80,7 +116,6 @@ describe("sumble-account-intel workflow structure", () => {
       resolve: "sumble_resolve_organization",
       teams: "sumble_list_teams",
       jobs: "sumble_list_jobs",
-      techStack: "sumble_get_org_tech_stack",
       contacts: "sumble_search_people",
       signals: "sumble_search_signals",
     };
@@ -104,21 +139,31 @@ describe("sumble-account-intel workflow structure", () => {
   });
 
   test("downstream Sumble steps read the resolved org's structured content", () => {
-    for (const stepId of [
-      "teams",
-      "jobs",
-      "techStack",
-      "contacts",
-      "signals",
-    ]) {
+    for (const stepId of ["teams", "jobs", "contacts", "signals"]) {
       expect(stepPrimitive(stepId).input).toEqual({
         from: "steps.resolve.output.content",
       });
     }
   });
 
+  test("techStack is a native action reading the resolved org's slug directly (no rename needed)", () => {
+    const techStack = actionPrimitive("techStack");
+    expect(techStack.handler).toBe(TECH_STACK_HANDLER);
+    expect(techStack.input).toEqual({
+      merge: [
+        {
+          project: { from: "steps.resolve.output.content" },
+          fields: ["slug"],
+        },
+        { literal: { limit: 25 } },
+      ],
+    });
+    expect(techStack.effect).toEqual({ requires: [TECH_STACK_HANDLER] });
+    expect("agent" in techStack).toBe(false);
+  });
+
   test("the bounded Sumble steps cap per-call cost with limit 25", () => {
-    for (const stepId of ["teams", "jobs", "techStack", "signals"]) {
+    for (const stepId of ["teams", "jobs", "signals"]) {
       const argMap = stepPrimitive(stepId).agent.tags?.[STEP_ARGMAP_TAG];
       if (argMap === undefined)
         throw new Error(`expected argMap on ${stepId} step`);
@@ -127,7 +172,7 @@ describe("sumble-account-intel workflow structure", () => {
   });
 
   test("the best-effort Sumble steps are marked non-fatal", () => {
-    for (const stepId of ["teams", "jobs", "techStack", "signals"]) {
+    for (const stepId of ["teams", "jobs", "signals"]) {
       expect(stepPrimitive(stepId).agent.tags?.[STEP_NONFATAL_TAG]).toBe(
         "true",
       );
@@ -168,35 +213,38 @@ describe("sumble-account-intel workflow structure", () => {
     expect(synth.input).toEqual({ from: "steps" });
   });
 
-  test("document pairs organizationDomain and the synthesize agent's reply into { title, body }", () => {
-    const document = stepPrimitive("document");
-    expect(document.agent.tags?.[STEP_KIND_TAG]).toBe(DETERMINISTIC_TOOL_KIND);
-    expect(document.agent.tags?.[STEP_TOOL_TAG]).toContain(
-      "sumble_account_intel_format_report_document",
-    );
-    expect(document.agent.tags?.[STEP_ARGMAP_TAG]).toBeUndefined();
+  test("document is a native action pairing organizationDomain and the synthesize agent's reply into { title, body }", () => {
+    const document = actionPrimitive("document");
+    expect(document.handler).toBe(DOCUMENT_HANDLER);
+    expect(document.input).toEqual({
+      merge: [
+        { from: "steps.intake.output" },
+        { from: "steps.synthesize.output" },
+      ],
+    });
+    expect(document.effect).toEqual({ requires: [DOCUMENT_HANDLER] });
+    expect("agent" in document).toBe(false);
   });
 
-  test("packageArtifact persists via write_artifact with the research argMap", () => {
-    const pkg = stepPrimitive("packageArtifact");
-    expect(pkg.agent.tags?.[STEP_KIND_TAG]).toBe(DETERMINISTIC_TOOL_KIND);
-    expect(pkg.agent.tags?.[STEP_TOOL_TAG]).toContain("write_artifact");
-    const argMap = pkg.agent.tags?.[STEP_ARGMAP_TAG];
-    if (argMap === undefined)
-      throw new Error("expected argMap on packageArtifact");
-    expect(JSON.parse(argMap)).toEqual({
-      title: { from: "title" },
-      body: { from: "body" },
-      kind: { literal: "research" },
-      jobLabel: { literal: "Sumble account intel" },
+  test("packageArtifact is a native action persisting via write_artifact", () => {
+    const pkg = actionPrimitive("packageArtifact");
+    expect(pkg.handler).toBe(PACKAGE_ARTIFACT_HANDLER);
+    expect(pkg.input).toEqual({
+      merge: [
+        { from: "steps.document.output.content" },
+        { from: "steps.review.output" },
+        { literal: { kind: "research", jobLabel: "Sumble account intel" } },
+      ],
     });
+    expect(pkg.effect).toEqual({ requires: [PACKAGE_ARTIFACT_HANDLER] });
+    expect("agent" in pkg).toBe(false);
   });
 
   test("step `after` dependencies chain as specified", () => {
     expect(stepPrimitive("resolve").after).toEqual(["intake"]);
     expect(stepPrimitive("teams").after).toEqual(["resolve"]);
     expect(stepPrimitive("jobs").after).toEqual(["teams"]);
-    expect(stepPrimitive("techStack").after).toEqual(["jobs"]);
+    expect(actionPrimitive("techStack").after).toEqual(["jobs"]);
     expect(stepPrimitive("contacts").after).toEqual(["techStack"]);
     expect(stepPrimitive("signals").after).toEqual(["contacts"]);
     expect(mapPrimitive("enrichSocial").after).toEqual(["signals"]);
@@ -205,8 +253,8 @@ describe("sumble-account-intel workflow structure", () => {
     if (!review || review.kind !== "awaitSignal")
       throw new Error("expected review awaitSignal");
     expect(review.after).toEqual(["synthesize"]);
-    expect(stepPrimitive("document").after).toEqual(["synthesize"]);
-    expect(stepPrimitive("packageArtifact").after).toEqual([
+    expect(actionPrimitive("document").after).toEqual(["synthesize"]);
+    expect(actionPrimitive("packageArtifact").after).toEqual([
       "document",
       "review",
     ]);
@@ -236,15 +284,21 @@ describe("sumble-account-intel workflow execution", () => {
           slackDraft: "Acme is worth a look.",
         }),
       ),
-      "sumble-account-intel-document": {
+    });
+    const { resolver, ran: actionsRan } = makeRecordingActionResolver({
+      [TECH_STACK_HANDLER]: { content: "{}" },
+      [DOCUMENT_HANDLER]: {
         content: { title: "acme.com", body: "## Account summary" },
       },
-      "sumble-account-intel-package": {
+      [PACKAGE_ARTIFACT_HANDLER]: {
         content: JSON.stringify({ artifactId: "art_1" }),
       },
     });
 
-    const run = runLocal(workflow, { invokeStep: invoker });
+    const run = runLocal(workflow, {
+      invokeStep: invoker,
+      actionResolver: resolver,
+    });
     await run.signal("intake", { organizationDomain: "acme.com" });
     await run.signal("review", { approved: true, pushToAttio: false });
     const result = await run.complete;
@@ -259,7 +313,10 @@ describe("sumble-account-intel workflow execution", () => {
       ran.filter((r) => r.id === "sumble-account-intel-enrich-social"),
     ).toHaveLength(2);
     expect(ranIds).toContain("sumble-account-intel-synthesize");
-    expect(ranIds).toContain("sumble-account-intel-package");
+    const actionRefs = actionsRan.map((r) => r.handler);
+    expect(actionRefs).toContain(TECH_STACK_HANDLER);
+    expect(actionRefs).toContain(DOCUMENT_HANDLER);
+    expect(actionRefs).toContain(PACKAGE_ARTIFACT_HANDLER);
   });
 
   test("blocks at the review gate until the review signal arrives", async () => {
@@ -276,11 +333,17 @@ describe("sumble-account-intel workflow execution", () => {
           slackDraft: "s",
         }),
       ),
-      "sumble-account-intel-document": {
+    });
+    const { resolver, ran: actionsRan } = makeRecordingActionResolver({
+      [TECH_STACK_HANDLER]: { content: "{}" },
+      [DOCUMENT_HANDLER]: {
         content: { title: "acme.com", body: "c" },
       },
     });
-    const run = runLocal(workflow, { invokeStep: invoker });
+    const run = runLocal(workflow, {
+      invokeStep: invoker,
+      actionResolver: resolver,
+    });
     await run.signal("intake", { organizationDomain: "acme.com" });
 
     await new Promise<void>((resolve) => {
@@ -293,7 +356,7 @@ describe("sumble-account-intel workflow execution", () => {
     });
 
     // packageArtifact must NOT have run — blocked on the review signal.
-    expect(ran.some((r) => r.id === "sumble-account-intel-package")).toBe(
+    expect(actionsRan.some((r) => r.handler === PACKAGE_ARTIFACT_HANDLER)).toBe(
       false,
     );
 
