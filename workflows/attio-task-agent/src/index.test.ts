@@ -1,14 +1,22 @@
 import { describe, expect, test } from "bun:test";
 import { runLocal } from "@intx/workflow/runlocal";
+import type { ActionHandler } from "@intx/workflow";
 import type { StepInvoker } from "@intx/workflow/runtime";
 import {
-  DETERMINISTIC_TOOL_KIND,
   STEP_ARGMAP_TAG,
   STEP_KIND_TAG,
-  STEP_NONFATAL_TAG,
   STEP_TOOL_TAG,
 } from "@workbench/agents";
-import { description, label, workflow } from "./index";
+import {
+  CREATE_NOTE_HANDLER,
+  description,
+  GET_TASK_HANDLER,
+  label,
+  LIST_TASKS_HANDLER,
+  LIST_WORKSPACE_MEMBERS_HANDLER,
+  UPDATE_TASK_HANDLER,
+  workflow,
+} from "./index";
 
 function makeRecordingInvoker(outputs: Record<string, unknown> = {}): {
   invoker: StepInvoker;
@@ -22,6 +30,26 @@ function makeRecordingInvoker(outputs: Record<string, unknown> = {}): {
   return { invoker, ran };
 }
 
+/**
+ * Records each action dispatch by its handler ref and returns a canned
+ * output, mirroring `makeRecordingInvoker` for the `step` primitive but for
+ * native `action` primitives (no agent, no step-tool tags — dispatched via
+ * `runLocal`'s `actionResolver`, not `invokeStep`).
+ */
+function makeRecordingActionResolver(outputs: Record<string, unknown> = {}): {
+  resolver: (ref: string) => ActionHandler;
+  ran: { handler: string; input: unknown }[];
+} {
+  const ran: { handler: string; input: unknown }[] = [];
+  const resolver = (ref: string): ActionHandler => {
+    return async (input) => {
+      ran.push({ handler: ref, input });
+      return outputs[ref] ?? null;
+    };
+  };
+  return { resolver, ran };
+}
+
 function stepPrimitive(id: string) {
   const primitive = workflow.steps[id];
   if (primitive === undefined || primitive.kind !== "step") {
@@ -32,11 +60,11 @@ function stepPrimitive(id: string) {
   return primitive;
 }
 
-function inlinePrimitive(id: string) {
+function actionPrimitive(id: string) {
   const primitive = workflow.steps[id];
-  if (primitive === undefined || primitive.kind !== "step") {
+  if (primitive === undefined || primitive.kind !== "action") {
     throw new Error(
-      `expected inline step primitive for "${id}", got ${primitive?.kind ?? "undefined"}`,
+      `expected action primitive for "${id}", got ${primitive?.kind ?? "undefined"}`,
     );
   }
   return primitive;
@@ -79,18 +107,6 @@ describe("attio-task-agent native workflow", () => {
       proposedTaskUpdate: { markComplete: true, note: "Drafted outreach." },
     };
     const { invoker, ran } = makeRecordingInvoker({
-      "attio-task-agent-list-members": {
-        members: [
-          { id: { workspace_member_id: "wm_1" }, email: "me@abklabs.com" },
-        ],
-      },
-      "attio-task-agent-list-tasks": {
-        tasks: [{ id: { task_id: "task_1" }, content_plaintext: "Reach out" }],
-      },
-      "attio-task-agent-fetch-task": {
-        task: { id: { task_id: "task_1" } },
-        linkedRecords: [{ object: "companies", recordId: "rec_1" }],
-      },
       "attio-task-agent-analyze": decision,
       "attio-task-agent-execute": {
         outputs: [
@@ -108,11 +124,28 @@ describe("attio-task-agent native workflow", () => {
       },
       "attio-task-agent-persist": { artifactId: "art_1" },
       "attio-task-agent-suggest": "Sent the draft. Next: schedule a follow-up.",
-      "attio-task-agent-write-note": { id: { note_id: "note_1" } },
-      "attio-task-agent-write-complete": { id: { task_id: "task_1" } },
+    });
+    const { resolver, ran: actionsRan } = makeRecordingActionResolver({
+      [LIST_WORKSPACE_MEMBERS_HANDLER]: {
+        members: [
+          { id: { workspace_member_id: "wm_1" }, email: "me@abklabs.com" },
+        ],
+      },
+      [LIST_TASKS_HANDLER]: {
+        tasks: [{ id: { task_id: "task_1" }, content_plaintext: "Reach out" }],
+      },
+      [GET_TASK_HANDLER]: {
+        task: { id: { task_id: "task_1" } },
+        linkedRecords: [{ object: "companies", recordId: "rec_1" }],
+      },
+      [CREATE_NOTE_HANDLER]: { id: { note_id: "note_1" } },
+      [UPDATE_TASK_HANDLER]: { id: { task_id: "task_1" } },
     });
 
-    const run = runLocal(workflow, { invokeStep: invoker });
+    const run = runLocal(workflow, {
+      invokeStep: invoker,
+      actionResolver: resolver,
+    });
 
     await run.signal("member-selection", { assignee: "me@abklabs.com" });
     await run.signal("task-selection", { taskId: "task_1" });
@@ -140,8 +173,13 @@ describe("attio-task-agent native workflow", () => {
     expect(ranIds).toContain("attio-task-agent-execute");
     expect(ranIds).toContain("attio-task-agent-review-artifacts");
     expect(ranIds).toContain("attio-task-agent-persist");
-    expect(ranIds).toContain("attio-task-agent-write-note");
-    expect(ranIds).toContain("attio-task-agent-write-complete");
+
+    const actionRefs = actionsRan.map((r) => r.handler);
+    expect(actionRefs).toContain(LIST_WORKSPACE_MEMBERS_HANDLER);
+    expect(actionRefs).toContain(LIST_TASKS_HANDLER);
+    expect(actionRefs).toContain(GET_TASK_HANDLER);
+    expect(actionRefs).toContain(CREATE_NOTE_HANDLER);
+    expect(actionRefs).toContain(UPDATE_TASK_HANDLER);
 
     // The executor runs AFTER the planner and BEFORE the agent reviewer.
     expect(ranIds.indexOf("attio-task-agent-analyze")).toBeLessThan(
@@ -150,6 +188,15 @@ describe("attio-task-agent native workflow", () => {
     expect(ranIds.indexOf("attio-task-agent-execute")).toBeLessThan(
       ranIds.indexOf("attio-task-agent-review-artifacts"),
     );
+
+    // writeNote runs strictly before writeComplete (note-first ordering).
+    const noteIndex = actionsRan.findIndex(
+      (r) => r.handler === CREATE_NOTE_HANDLER,
+    );
+    const completeIndex = actionsRan.findIndex(
+      (r) => r.handler === UPDATE_TASK_HANDLER,
+    );
+    expect(noteIndex).toBeLessThan(completeIndex);
   });
 
   test("analyze is the PLANNER: a tool-capable step grounded in READ-ONLY tools", () => {
@@ -173,31 +220,32 @@ describe("attio-task-agent native workflow", () => {
     expect(caps).not.toContain("artifact_create");
   });
 
-  test("listMembers and listTasks are deterministic; listTasks is scoped to the selected member", () => {
-    const members = stepPrimitive("listMembers");
-    expect(members.agent.tags?.[STEP_TOOL_TAG]).toContain(
-      "attio_list_workspace_members",
-    );
-    // First step, no `input` selector: on the sidecar path the supervisor hands
-    // the run's string trigger payload to the step as tool args, which the
-    // harness rejects ("requires an object … got string"). An empty argMap pins
-    // the no-arg tool to {} regardless of the trigger. (CL-2658)
-    expect(JSON.parse(members.agent.tags?.[STEP_ARGMAP_TAG] ?? "null")).toEqual(
-      {},
-    );
-
-    const list = stepPrimitive("listTasks");
-    expect(list.agent.tags?.[STEP_KIND_TAG]).toBe(DETERMINISTIC_TOOL_KIND);
-    expect(list.agent.tags?.[STEP_TOOL_TAG]).toContain("attio_list_tasks");
-    expect(list.input).toEqual({ from: "steps.selectMember.output" });
-    expect(JSON.parse(list.agent.tags?.[STEP_ARGMAP_TAG] ?? "{}")).toEqual({
-      assignee: { from: "assignee" },
-      isCompleted: { literal: false },
+  test("listMembers and listTasks are native action primitives — no Workbench dispatch tags, no agent", () => {
+    const members = actionPrimitive("listMembers");
+    expect(members.handler).toBe(LIST_WORKSPACE_MEMBERS_HANDLER);
+    // No `input` selector needed: `{ literal: {} }` pins the no-arg tool's
+    // args regardless of the trigger payload (replaces the old empty-argMap
+    // workaround, CL-2658).
+    expect(members.input).toEqual({ literal: {} });
+    expect(members.effect).toEqual({
+      requires: [LIST_WORKSPACE_MEMBERS_HANDLER],
     });
+    expect("agent" in members).toBe(false);
 
-    const fetch = stepPrimitive("fetchTask");
-    expect(fetch.agent.tags?.[STEP_TOOL_TAG]).toContain("attio_get_task");
+    const list = actionPrimitive("listTasks");
+    expect(list.handler).toBe(LIST_TASKS_HANDLER);
+    expect(list.input).toEqual({
+      merge: [
+        { from: "steps.selectMember.output" },
+        { literal: { isCompleted: false } },
+      ],
+    });
+    expect(list.effect).toEqual({ requires: [LIST_TASKS_HANDLER] });
+
+    const fetch = actionPrimitive("fetchTask");
+    expect(fetch.handler).toBe(GET_TASK_HANDLER);
     expect(fetch.input).toEqual({ from: "steps.selectTask.output" });
+    expect(fetch.effect).toEqual({ requires: [GET_TASK_HANDLER] });
   });
 
   test("execute is a single inline EXECUTOR step over the whole plan (not a per-kind fan-out)", () => {
@@ -206,7 +254,7 @@ describe("attio-task-agent native workflow", () => {
     expect(workflow.steps["gen-cold-email"]).toBeUndefined();
     expect(workflow.steps["gate-cold-email"]).toBeUndefined();
 
-    const exec = inlinePrimitive("execute");
+    const exec = stepPrimitive("execute");
     expect(exec.agent.tags?.[STEP_KIND_TAG]).toBeUndefined();
     // It sees the plan + task + clarification (merged; envelope keys don't collide).
     expect(exec.input).toEqual({
@@ -222,7 +270,7 @@ describe("attio-task-agent native workflow", () => {
   });
 
   test("reviewArtifacts is the agent REVIEWER, reading the executor's outputs before the human", () => {
-    const review = inlinePrimitive("reviewArtifacts");
+    const review = stepPrimitive("reviewArtifacts");
     expect(review.agent.tags?.[STEP_KIND_TAG]).toBeUndefined();
     expect(review.input).toEqual({ from: "steps.execute.output" });
     expect(review.agent.systemPrompt).toContain("verdict");
@@ -252,7 +300,7 @@ describe("attio-task-agent native workflow", () => {
     });
   });
 
-  test("destructive write-back stays gated on an explicit confirm flag with FATAL writes", () => {
+  test("destructive write-back stays gated on an explicit confirm flag, as native FATAL action primitives", () => {
     const syncGate = workflow.steps.syncGate;
     if (!syncGate || syncGate.kind !== "gate") {
       throw new Error("expected a gate for syncGate");
@@ -262,23 +310,31 @@ describe("attio-task-agent native workflow", () => {
     expect(syncGate.else).toBe("skipWriteBack");
     expect(workflow.steps.skipWriteBack?.kind).toBe("sleep");
 
-    const note = stepPrimitive("writeNote");
-    expect(note.agent.tags?.[STEP_TOOL_TAG]).toContain("attio_create_note");
-    expect(note.agent.tags?.[STEP_NONFATAL_TAG]).toBeUndefined();
+    const note = actionPrimitive("writeNote");
+    expect(note.handler).toBe(CREATE_NOTE_HANDLER);
+    expect(note.effect).toEqual({ requires: [CREATE_NOTE_HANDLER] });
     // The sync-approval payload already is attio_create_note's arguments
-    // (content/idempotencyKey/parentObject/parentRecordId) — no argMap.
-    expect(note.agent.tags?.[STEP_ARGMAP_TAG]).toBeUndefined();
+    // (content/idempotencyKey/parentObject/parentRecordId) — no reshape.
+    expect(note.input).toEqual({ from: "steps.approveSync.output" });
+    // Native actions carry no Workbench dispatch tags at all — there is
+    // nothing for a `STEP_NONFATAL_TAG` to hang off, so a real Attio error
+    // always propagates and fails the step (FATAL by construction).
+    expect("agent" in note).toBe(false);
 
-    const complete = stepPrimitive("writeComplete");
-    expect(complete.agent.tags?.[STEP_TOOL_TAG]).toContain("attio_update_task");
-    expect(complete.agent.tags?.[STEP_NONFATAL_TAG]).toBeUndefined();
+    const complete = actionPrimitive("writeComplete");
+    expect(complete.handler).toBe(UPDATE_TASK_HANDLER);
+    expect(complete.effect).toEqual({ requires: [UPDATE_TASK_HANDLER] });
+    expect(complete.input).toEqual({
+      merge: [
+        { project: { from: "steps.approveSync.output" }, fields: ["taskId"] },
+        { literal: { isCompleted: true } },
+      ],
+    });
+    expect("agent" in complete).toBe(false);
   });
 
   test("declining the write-back routes to the no-op skip leaf, not a write", async () => {
-    const { invoker, ran } = makeRecordingInvoker({
-      "attio-task-agent-list-members": { members: [] },
-      "attio-task-agent-list-tasks": { tasks: [] },
-      "attio-task-agent-fetch-task": { task: {}, linkedRecords: [] },
+    const { invoker } = makeRecordingInvoker({
       "attio-task-agent-analyze": {
         status: "ready",
         reasoning: "x",
@@ -294,7 +350,15 @@ describe("attio-task-agent native workflow", () => {
       "attio-task-agent-persist": { artifactId: "a" },
       "attio-task-agent-suggest": "done",
     });
-    const run = runLocal(workflow, { invokeStep: invoker });
+    const { resolver, ran: actionsRan } = makeRecordingActionResolver({
+      [LIST_WORKSPACE_MEMBERS_HANDLER]: { members: [] },
+      [LIST_TASKS_HANDLER]: { tasks: [] },
+      [GET_TASK_HANDLER]: { task: {}, linkedRecords: [] },
+    });
+    const run = runLocal(workflow, {
+      invokeStep: invoker,
+      actionResolver: resolver,
+    });
     await run.signal("member-selection", { assignee: "x" });
     await run.signal("task-selection", { taskId: "task_1" });
     await run.signal("clarification", { answers: "" });
@@ -304,9 +368,9 @@ describe("attio-task-agent native workflow", () => {
     await run.signal("sync-approval", { confirm: false });
     const result = await run.complete;
     expect(result.terminalStatus).toBe("completed");
-    const ranIds = ran.map((r) => r.id);
-    expect(ranIds).not.toContain("attio-task-agent-write-note");
-    expect(ranIds).not.toContain("attio-task-agent-write-complete");
+    const actionRefs = actionsRan.map((r) => r.handler);
+    expect(actionRefs).not.toContain(CREATE_NOTE_HANDLER);
+    expect(actionRefs).not.toContain(UPDATE_TASK_HANDLER);
   });
 
   test("HITL gates carry the expected signal names — and there is no kind-selection gate", () => {

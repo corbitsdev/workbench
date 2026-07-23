@@ -65,29 +65,17 @@
     ],
     "steps": {
       "listMembers": {
-        "kind": "step",
+        "kind": "action",
         "id": "listMembers",
-        "agent": {
-          "id": "attio-task-agent-list-members",
-          "systemPrompt": "",
-          "toolFactories": [],
-          "capabilities": [
-            "@workbench/tools-attio/attio:attio_list_workspace_members"
-          ],
-          "inference": {
-            "sources": []
-          },
-          "description": "Deterministic tool call: @workbench/tools-attio/attio:attio_list_workspace_members",
-          "tags": {
-            "workbench.stepKind": "deterministic-tool",
-            "workbench.tool": "@workbench/tools-attio/attio:attio_list_workspace_members",
-            "workbench.argMap": "{}",
-            "workbench.title": "List workspace members"
-          }
-        },
+        "handler": "@workbench/tools-attio/attio:attio_list_workspace_members",
         "drainBehavior": "cancel",
         "input": {
-          "from": "trigger.payload"
+          "literal": {}
+        },
+        "effect": {
+          "requires": [
+            "@workbench/tools-attio/attio:attio_list_workspace_members"
+          ]
         }
       },
       "selectMember": {
@@ -100,29 +88,26 @@
         ]
       },
       "listTasks": {
-        "kind": "step",
+        "kind": "action",
         "id": "listTasks",
-        "agent": {
-          "id": "attio-task-agent-list-tasks",
-          "systemPrompt": "",
-          "toolFactories": [],
-          "capabilities": [
-            "@workbench/tools-attio/attio:attio_list_tasks"
-          ],
-          "inference": {
-            "sources": []
-          },
-          "description": "Deterministic tool call: @workbench/tools-attio/attio:attio_list_tasks",
-          "tags": {
-            "workbench.stepKind": "deterministic-tool",
-            "workbench.tool": "@workbench/tools-attio/attio:attio_list_tasks",
-            "workbench.argMap": "{\"assignee\":{\"from\":\"assignee\"},\"isCompleted\":{\"literal\":false}}",
-            "workbench.title": "List open tasks"
-          }
-        },
+        "handler": "@workbench/tools-attio/attio:attio_list_tasks",
         "drainBehavior": "cancel",
         "input": {
-          "from": "steps.selectMember.output"
+          "merge": [
+            {
+              "from": "steps.selectMember.output"
+            },
+            {
+              "literal": {
+                "isCompleted": false
+              }
+            }
+          ]
+        },
+        "effect": {
+          "requires": [
+            "@workbench/tools-attio/attio:attio_list_tasks"
+          ]
         },
         "after": [
           "selectMember"
@@ -138,29 +123,17 @@
         ]
       },
       "fetchTask": {
-        "kind": "step",
+        "kind": "action",
         "id": "fetchTask",
-        "agent": {
-          "id": "attio-task-agent-fetch-task",
-          "systemPrompt": "",
-          "toolFactories": [],
-          "capabilities": [
-            "@workbench/tools-attio/attio:attio_get_task"
-          ],
-          "inference": {
-            "sources": []
-          },
-          "description": "Deterministic tool call: @workbench/tools-attio/attio:attio_get_task",
-          "tags": {
-            "workbench.stepKind": "deterministic-tool",
-            "workbench.tool": "@workbench/tools-attio/attio:attio_get_task",
-            "workbench.argMap": "{\"taskId\":{\"from\":\"taskId\"}}",
-            "workbench.title": "Load the task"
-          }
-        },
+        "handler": "@workbench/tools-attio/attio:attio_get_task",
         "drainBehavior": "cancel",
         "input": {
           "from": "steps.selectTask.output"
+        },
+        "effect": {
+          "requires": [
+            "@workbench/tools-attio/attio:attio_get_task"
+          ]
         },
         "after": [
           "selectTask"
@@ -389,57 +362,48 @@
         ]
       },
       "writeNote": {
-        "kind": "step",
+        "kind": "action",
         "id": "writeNote",
-        "agent": {
-          "id": "attio-task-agent-write-note",
-          "systemPrompt": "",
-          "toolFactories": [],
-          "capabilities": [
-            "@workbench/tools-attio/attio:attio_create_note"
-          ],
-          "inference": {
-            "sources": []
-          },
-          "description": "Deterministic tool call: @workbench/tools-attio/attio:attio_create_note",
-          "tags": {
-            "workbench.stepKind": "deterministic-tool",
-            "workbench.tool": "@workbench/tools-attio/attio:attio_create_note",
-            "workbench.title": "Post the note to Attio"
-          }
-        },
+        "handler": "@workbench/tools-attio/attio:attio_create_note",
         "drainBehavior": "cancel",
         "input": {
           "from": "steps.approveSync.output"
+        },
+        "effect": {
+          "requires": [
+            "@workbench/tools-attio/attio:attio_create_note"
+          ]
         },
         "after": [
           "syncGate"
         ]
       },
       "writeComplete": {
-        "kind": "step",
+        "kind": "action",
         "id": "writeComplete",
-        "agent": {
-          "id": "attio-task-agent-write-complete",
-          "systemPrompt": "",
-          "toolFactories": [],
-          "capabilities": [
-            "@workbench/tools-attio/attio:attio_update_task"
-          ],
-          "inference": {
-            "sources": []
-          },
-          "description": "Deterministic tool call: @workbench/tools-attio/attio:attio_update_task",
-          "tags": {
-            "workbench.stepKind": "deterministic-tool",
-            "workbench.tool": "@workbench/tools-attio/attio:attio_update_task",
-            "workbench.argMap": "{\"taskId\":{\"from\":\"taskId\"},\"isCompleted\":{\"literal\":true}}",
-            "workbench.title": "Mark the task complete"
-          }
-        },
+        "handler": "@workbench/tools-attio/attio:attio_update_task",
         "drainBehavior": "cancel",
         "input": {
-          "from": "steps.approveSync.output"
+          "merge": [
+            {
+              "project": {
+                "from": "steps.approveSync.output"
+              },
+              "fields": [
+                "taskId"
+              ]
+            },
+            {
+              "literal": {
+                "isCompleted": true
+              }
+            }
+          ]
+        },
+        "effect": {
+          "requires": [
+            "@workbench/tools-attio/attio:attio_update_task"
+          ]
         },
         "after": [
           "writeNote"
