@@ -51,16 +51,36 @@ export const STEP_NONFATAL_TAG = "workbench.nonFatal";
  *   step's output: `stringTool` tools encode their result as
  *   `{ content: "<json>" }`, so the fields are only reachable after parsing.
  *
- * `optional` (on `from` and `fromJson`) treats an absent-or-empty value as a
- * skip of the whole tool call rather than a throw. Must be JSON-serializable:
- * the workflow definition is JSON-deployed, so no functions.
+ * `optional` (on `from` and `fromJson`) treats an absent-or-empty value as
+ * "this ARGUMENT may legitimately be missing" — the field is OMITTED from
+ * the tool call arguments, and the tool still runs (and the step still
+ * completes with real output). It never skips the whole step: an absent
+ * optional argument that the tool schema itself requires still surfaces as a
+ * tool-call failure, exactly as calling the tool by hand without that
+ * argument would.
+ *
+ * `skipStepIfAbsent` (on `from` and `fromJson`) is the rarer case: an
+ * absent-or-empty value means the deterministic tool call must not run AT
+ * ALL for this step (e.g. a single-argument argMap whose sole field is the
+ * tool's only required argument, so there is no sensible "omit and call
+ * anyway"). Use this only when the step is genuinely conditional on the
+ * field's presence, not as a synonym for `optional`.
+ *
+ * Must be JSON-serializable: the workflow definition is JSON-deployed, so no
+ * functions.
  */
 const ArgMapValue = type({
   from: "string",
   "optional?": "boolean",
+  "skipStepIfAbsent?": "boolean",
 })
   .or({ literal: "unknown" })
-  .or({ fromJson: "string", field: "string", "optional?": "boolean" });
+  .or({
+    fromJson: "string",
+    field: "string",
+    "optional?": "boolean",
+    "skipStepIfAbsent?": "boolean",
+  });
 
 // Compose a structured tool argument from the evaluated input without requiring
 // a workflow-specific transform step. Template values use the same selectors as
@@ -89,12 +109,15 @@ export interface DeterministicToolStepOpts {
    * Each key is a TOOL argument name; the value pulls a top-level field off
    * the evaluated input (`{ from }`) or supplies a constant (`{ literal }`).
    * When absent, the evaluated input is passed verbatim as the tool args.
-   * A `{ from }` spec may set `optional: true` to mean "this field may
+   * A `{ from }` spec may set `optional: true` to mean "this ARGUMENT may
    * legitimately be absent (or an empty string) on the evaluated input" —
    * e.g. an intake field that only exists for one run source. The sidecar's
-   * `reshapeWithArgMap` treats an absent/empty OPTIONAL field as a skip
-   * (no tool call, no throw) rather than the loud failure a non-optional
-   * `{ from }` still raises for a missing field.
+   * `reshapeWithArgMap` OMITS an absent/empty optional field from the tool
+   * call rather than the loud failure a non-optional `{ from }` still raises
+   * for a missing field — the tool still runs and the step still completes
+   * with real output. Use `skipStepIfAbsent: true` instead, on the rare field
+   * whose absence means the whole tool call must not run (e.g. the sole field
+   * of an argMap that is the tool's only required argument).
    */
   argMap?: ArgMap;
   /** Step ids this step depends on. */

@@ -173,7 +173,7 @@
           "tags": {
             "workbench.stepKind": "deterministic-tool",
             "workbench.tool": "@workbench/tools-artifact/artifact:artifact_read",
-            "workbench.argMap": "{\"artifactId\":{\"fromJson\":\"content\",\"field\":\"artifactId\",\"optional\":true}}",
+            "workbench.argMap": "{\"artifactId\":{\"fromJson\":\"content\",\"field\":\"artifactId\",\"skipStepIfAbsent\":true}}",
             "workbench.nonFatal": "true",
             "workbench.title": "Read seen-accounts ledger body"
           }

@@ -159,12 +159,15 @@ export const workflow = defineWorkflow({
       tool: "artifact_read",
       input: { from: "steps.findLedger.output" },
       argMap: {
-        // optional: when find returns null (no ledger yet), skip this step
-        // rather than fail the night. parseLedger tolerates missing body.
+        // artifactId is the sole argMap field and artifact_read's only
+        // required argument, so there is no sensible "call it without an
+        // id" — skipStepIfAbsent: when find returns null (no ledger yet),
+        // skip this step entirely rather than fail the night. parseLedger
+        // tolerates missing body.
         artifactId: {
           fromJson: "content",
           field: "artifactId",
-          optional: true,
+          skipStepIfAbsent: true,
         },
       },
       after: ["findLedger"],

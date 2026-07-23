@@ -142,7 +142,11 @@ describe("artifact → gamma deck workflow (single-shot)", () => {
     });
   });
 
-  test("the readers are deterministic, non-fatal, and reshape the intake id as optional", () => {
+  test("the readers are deterministic, non-fatal, and skip the whole step when the intake id is absent", () => {
+    // artifactId/noteId are each the sole argMap field and the underlying
+    // tool's only required argument, so there is no sensible "call without
+    // it" — these use skipStepIfAbsent, not optional (which would omit the
+    // argument and call the tool anyway).
     for (const [key, tool, arg] of [
       ["fetch-artifact", "artifact_read", "artifactId"],
       ["fetch-note", "granola_get_note", "noteId"],
@@ -155,7 +159,7 @@ describe("artifact → gamma deck workflow (single-shot)", () => {
       expect(reader.agent.tags?.[STEP_TOOL_TAG]).toContain(tool);
       expect(reader.agent.tags?.[STEP_NONFATAL_TAG]).toBe("true");
       expect(JSON.parse(reader.agent.tags?.[STEP_ARGMAP_TAG] ?? "{}")).toEqual({
-        [arg]: { from: arg, optional: true },
+        [arg]: { from: arg, skipStepIfAbsent: true },
       });
     }
   });

@@ -119,7 +119,7 @@
           "tags": {
             "workbench.stepKind": "deterministic-tool",
             "workbench.tool": "@workbench/tools-artifact/artifact:artifact_read",
-            "workbench.argMap": "{\"artifactId\":{\"from\":\"artifactId\",\"optional\":true}}",
+            "workbench.argMap": "{\"artifactId\":{\"from\":\"artifactId\",\"skipStepIfAbsent\":true}}",
             "workbench.nonFatal": "true",
             "workbench.title": "Load the chosen artifact"
           }
@@ -149,7 +149,7 @@
           "tags": {
             "workbench.stepKind": "deterministic-tool",
             "workbench.tool": "@workbench/tools-granola/granola:granola_get_note",
-            "workbench.argMap": "{\"noteId\":{\"from\":\"noteId\",\"optional\":true}}",
+            "workbench.argMap": "{\"noteId\":{\"from\":\"noteId\",\"skipStepIfAbsent\":true}}",
             "workbench.nonFatal": "true",
             "workbench.title": "Load the chosen note"
           }

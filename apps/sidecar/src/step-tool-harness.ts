@@ -895,9 +895,11 @@ function verbatimToolArguments(
 
 /**
  * Result of reshaping a step's evaluated input into tool arguments per its
- * `argMap`. A `skip` result means an OPTIONAL `{ from }` field was absent (or
+ * `argMap`. A `skip` result means a `skipStepIfAbsent` field was absent (or
  * an empty string) on the evaluated input — the caller must not invoke the
- * tool at all, and must not treat this as an error.
+ * tool at all, and must not treat this as an error. An absent/empty
+ * `optional` field is NOT a skip: it is simply omitted from
+ * `toolArguments`, and the tool call still proceeds.
  */
 export type ArgMapReshapeResult =
   | { skip: true; reason: string }
@@ -907,18 +909,23 @@ export type ArgMapReshapeResult =
  * Reshape the evaluated step input into tool arguments per the step's
  * `argMap`. The argMap JSON is parsed + validated through arktype at this
  * trust boundary. For each `[argName, spec]`: `{ from }` pulls a top-level
- * field off the evaluated input. Non-optional `{ from }`: absence is a
- * missing key on the evaluated step input and fails loud, naming it — an
- * empty string is a real value and passes through unchanged. Optional
- * `{ from, optional: true }`: an absent key OR an empty-string value returns
- * a skip result instead of throwing. `{ literal }` supplies the constant.
- * `{ fromJson, field }` reads `fromJson` off the input, JSON-parses it when
- * it is a string (an already-object value is tolerated), then applies the
- * same presence/optional rules to `field` on the parsed object — for a
- * deterministic step consuming another deterministic tool's `stringTool`
- * output (encoded as `{ content: "<json>" }`).
+ * field off the evaluated input. Non-optional, non-skip `{ from }`: absence
+ * is a missing key on the evaluated step input and fails loud, naming it —
+ * an empty string is a real value and passes through unchanged. Optional
+ * `{ from, optional: true }`: an absent key OR an empty-string value OMITS
+ * `argName` from the returned `toolArguments` — the tool is still called,
+ * just without that one argument. `{ from, skipStepIfAbsent: true }`: an
+ * absent key OR an empty-string value skips the tool call entirely — for the
+ * rare argMap whose field is the tool's own only required argument, where
+ * there is no sensible "call without it". `{ literal }` supplies the
+ * constant. `{ fromJson, field }` reads `fromJson` off the input,
+ * JSON-parses it when it is a string (an already-object value is
+ * tolerated), then applies the same presence/optional/skipStepIfAbsent
+ * rules to `field` on the parsed object — for a deterministic step
+ * consuming another deterministic tool's `stringTool` output (encoded as
+ * `{ content: "<json>" }`).
  */
-function reshapeWithArgMap(
+export function reshapeWithArgMap(
   toolName: string,
   input: unknown,
   argMapJson: string,
@@ -975,13 +982,17 @@ function reshapeWithArgMap(
           const present =
             parsedRecord !== undefined && fieldSpec.field in parsedRecord;
           const value = present ? parsedRecord[fieldSpec.field] : undefined;
-          if (!present || (fieldSpec.optional === true && value === "")) {
-            if (fieldSpec.optional === true) {
-              return {
-                skip: true,
-                reason: `optional object field "${fieldName}" is absent or empty`,
-              };
-            }
+          const isAbsentOrEmpty = !present || value === "";
+          if (isAbsentOrEmpty && fieldSpec.skipStepIfAbsent === true) {
+            return {
+              skip: true,
+              reason: `object field "${fieldName}" is absent or empty and skipStepIfAbsent is set`,
+            };
+          }
+          if (isAbsentOrEmpty && fieldSpec.optional === true) {
+            continue;
+          }
+          if (!present) {
             throw new Error(
               `step-tool-harness: deterministic step "${toolName}" argMap maps object field "${fieldName}" from JSON field "${fieldSpec.field}" of input field "${fieldSpec.fromJson}", but that field is absent on the evaluated step input`,
             );
@@ -992,13 +1003,17 @@ function reshapeWithArgMap(
         const present =
           inputRecord !== undefined && fieldSpec.from in inputRecord;
         const value = present ? inputRecord[fieldSpec.from] : undefined;
-        if (!present || (fieldSpec.optional === true && value === "")) {
-          if (fieldSpec.optional === true) {
-            return {
-              skip: true,
-              reason: `optional object field "${fieldName}" is absent or empty`,
-            };
-          }
+        const isAbsentOrEmpty = !present || value === "";
+        if (isAbsentOrEmpty && fieldSpec.skipStepIfAbsent === true) {
+          return {
+            skip: true,
+            reason: `object field "${fieldName}" is absent or empty and skipStepIfAbsent is set`,
+          };
+        }
+        if (isAbsentOrEmpty && fieldSpec.optional === true) {
+          continue;
+        }
+        if (!present) {
           throw new Error(
             `step-tool-harness: deterministic step "${toolName}" argMap maps object field "${fieldName}" from input field "${fieldSpec.from}", but that field is absent on the evaluated step input`,
           );
@@ -1034,16 +1049,15 @@ function reshapeWithArgMap(
       const fieldPresent =
         parsedRecord !== undefined && spec.field in parsedRecord;
       const fieldValue = fieldPresent ? parsedRecord[spec.field] : undefined;
-      if (spec.optional === true) {
-        const isEmptyString =
-          typeof fieldValue === "string" && fieldValue === "";
-        if (!fieldPresent || isEmptyString) {
-          return {
-            skip: true,
-            reason: `deterministic step "${toolName}" argMap maps tool arg "${argName}" from optional JSON field "${spec.field}" of "${spec.fromJson}", which is absent or empty on the evaluated step input`,
-          };
-        }
-        toolArguments[argName] = fieldValue;
+      const isEmptyString = typeof fieldValue === "string" && fieldValue === "";
+      const isAbsentOrEmpty = !fieldPresent || isEmptyString;
+      if (isAbsentOrEmpty && spec.skipStepIfAbsent === true) {
+        return {
+          skip: true,
+          reason: `deterministic step "${toolName}" argMap maps tool arg "${argName}" from JSON field "${spec.field}" of "${spec.fromJson}", which is absent or empty on the evaluated step input and skipStepIfAbsent is set`,
+        };
+      }
+      if (isAbsentOrEmpty && spec.optional === true) {
         continue;
       }
       if (!fieldPresent) {
@@ -1056,15 +1070,15 @@ function reshapeWithArgMap(
     }
     const present = inputRecord !== undefined && spec.from in inputRecord;
     const rawValue = present ? inputRecord[spec.from] : undefined;
-    if (spec.optional === true) {
-      const isEmptyString = typeof rawValue === "string" && rawValue === "";
-      if (!present || isEmptyString) {
-        return {
-          skip: true,
-          reason: `deterministic step "${toolName}" argMap maps tool arg "${argName}" from optional input field "${spec.from}", which is absent or empty on the evaluated step input`,
-        };
-      }
-      toolArguments[argName] = rawValue;
+    const isEmptyString = typeof rawValue === "string" && rawValue === "";
+    const isAbsentOrEmpty = !present || isEmptyString;
+    if (isAbsentOrEmpty && spec.skipStepIfAbsent === true) {
+      return {
+        skip: true,
+        reason: `deterministic step "${toolName}" argMap maps tool arg "${argName}" from input field "${spec.from}", which is absent or empty on the evaluated step input and skipStepIfAbsent is set`,
+      };
+    }
+    if (isAbsentOrEmpty && spec.optional === true) {
       continue;
     }
     if (!present) {
