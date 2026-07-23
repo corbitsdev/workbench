@@ -84,6 +84,11 @@ COPY workflows/reddit-opportunity-scanner/package.json workflows/reddit-opportun
 COPY workflows/smoke-test/package.json workflows/smoke-test/
 COPY workflows/sumble-account-intel/package.json workflows/sumble-account-intel/
 COPY workflows/competitor-analysis/package.json workflows/competitor-analysis/
+COPY workflows/exa-topic-watch/package.json workflows/exa-topic-watch/
+COPY workflows/firecrawl-url-watch/package.json workflows/firecrawl-url-watch/
+COPY workflows/prospect-engine/package.json workflows/prospect-engine/
+COPY workflows/reddit-opportunity-watch/package.json workflows/reddit-opportunity-watch/
+COPY packages/tools-prospect-engine/package.json packages/tools-prospect-engine/
 COPY packages/timeline/package.json packages/timeline/
 COPY packages/tool-credentials/package.json packages/tool-credentials/
 COPY packages/tool-manifest/package.json packages/tool-manifest/

@@ -97,6 +97,9 @@ COPY workflows/smoke-test/package.json workflows/smoke-test/
 COPY workflows/sumble-account-intel/package.json workflows/sumble-account-intel/
 COPY workflows/prospect-engine/package.json workflows/prospect-engine/
 COPY workflows/competitor-analysis/package.json workflows/competitor-analysis/
+COPY workflows/exa-topic-watch/package.json workflows/exa-topic-watch/
+COPY workflows/firecrawl-url-watch/package.json workflows/firecrawl-url-watch/
+COPY workflows/reddit-opportunity-watch/package.json workflows/reddit-opportunity-watch/
 
 RUN bun install --frozen-lockfile
 
