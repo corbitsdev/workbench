@@ -2,8 +2,10 @@ import { describe, expect, it } from "bun:test";
 import { type } from "arktype";
 import {
   CreateScheduledTriggerBodySchema,
+  DAILY_INTERVAL_MINUTES,
   HEARTBEAT_WORKFLOW_KIND,
   HeartbeatTriggerPayloadSchema,
+  isRecurrenceAllowedForKind,
   scheduleScopesForKind,
   ScheduledTriggerSchema,
 } from "./scheduled-trigger";
@@ -11,6 +13,41 @@ import {
 describe("HEARTBEAT_WORKFLOW_KIND", () => {
   it("is the single shared literal for the heartbeat workflow kind", () => {
     expect(HEARTBEAT_WORKFLOW_KIND).toBe("heartbeat");
+  });
+});
+
+describe("isRecurrenceAllowedForKind", () => {
+  it("rejects a non-daily interval for heartbeat", () => {
+    expect(
+      isRecurrenceAllowedForKind("heartbeat", {
+        intervalMinutes: 5,
+        anchorMinuteUtc: 0,
+      }),
+    ).toBe(false);
+    expect(
+      isRecurrenceAllowedForKind("heartbeat", {
+        intervalMinutes: 60,
+        anchorMinuteUtc: 0,
+      }),
+    ).toBe(false);
+  });
+
+  it("allows the daily interval for heartbeat", () => {
+    expect(
+      isRecurrenceAllowedForKind("heartbeat", {
+        intervalMinutes: DAILY_INTERVAL_MINUTES,
+        anchorMinuteUtc: 9 * 60,
+      }),
+    ).toBe(true);
+  });
+
+  it("allows any interval for a non-heartbeat kind", () => {
+    expect(
+      isRecurrenceAllowedForKind("granola-call", {
+        intervalMinutes: 5,
+        anchorMinuteUtc: 0,
+      }),
+    ).toBe(true);
   });
 });
 
@@ -41,7 +78,7 @@ describe("CreateScheduledTriggerBodySchema", () => {
   it("accepts optional scope", () => {
     const body = CreateScheduledTriggerBodySchema({
       kind: "morning-brief",
-      hourUtc: 9,
+      recurrence: { intervalMinutes: 1440, anchorMinuteUtc: 9 * 60 },
       scope: "tenant",
     });
     expect(body).not.toBeInstanceOf(type.errors);
@@ -51,10 +88,27 @@ describe("CreateScheduledTriggerBodySchema", () => {
     expect(
       CreateScheduledTriggerBodySchema({
         kind: "morning-brief",
-        hourUtc: 9,
+        recurrence: { intervalMinutes: 1440, anchorMinuteUtc: 9 * 60 },
         scope: "team",
       }),
     ).toBeInstanceOf(type.errors);
+  });
+
+  it("rejects a non-positive interval", () => {
+    expect(
+      CreateScheduledTriggerBodySchema({
+        kind: "morning-brief",
+        recurrence: { intervalMinutes: 0, anchorMinuteUtc: 0 },
+      }),
+    ).toBeInstanceOf(type.errors);
+  });
+
+  it("accepts a sub-hourly interval", () => {
+    const body = CreateScheduledTriggerBodySchema({
+      kind: "granola-call",
+      recurrence: { intervalMinutes: 5, anchorMinuteUtc: 0 },
+    });
+    expect(body).not.toBeInstanceOf(type.errors);
   });
 });
 
@@ -63,13 +117,12 @@ describe("ScheduledTriggerSchema", () => {
     const ok = ScheduledTriggerSchema({
       id: "sch-1",
       workflowKind: "heartbeat",
-      hourUtc: 13,
+      recurrence: { intervalMinutes: 1440, anchorMinuteUtc: 13 * 60 },
       enabled: true,
       scope: "personal",
       ownerMemberPrincipalId: "prn-1",
       triggerPayload: {},
       createdAt: "2026-01-02T00:00:00.000Z",
-      lastFiredDayUtc: null,
       lastRunId: null,
       recentFires: [],
       nextFireAt: null,

@@ -178,7 +178,10 @@ import {
 } from "./lib/native-approval-notify";
 import { createNativeApprovalEnricher } from "./lib/native-approval-enrich";
 import { createFeedbackRouter } from "./routes/feedback";
-import type { MemberPreferences } from "@workbench/shared";
+import {
+  DAILY_INTERVAL_MINUTES,
+  type MemberPreferences,
+} from "@workbench/shared";
 import { createMePreferencesRouter } from "./routes/me-preferences";
 import { createMeFeaturesRouter } from "./routes/me-features";
 import { createMeConnectionsRouter } from "./routes/me-connections";
@@ -2020,9 +2023,12 @@ const scheduler = createScheduler({
     // runStarter.startRun now — the one shared application point every start
     // door funnels through (trigger-payload-enrichment-registry.ts). This
     // closure's only job is forwarding the schedule's real fire-time window
-    // (lastFiredDayUtc/hourUtc) so the registry's heartbeat enricher computes
-    // the real "since yesterday" createdAfter instead of the flat 7-day
-    // fallback every other (non-scheduler) start door gets.
+    // so the registry's heartbeat enricher computes the real "since
+    // yesterday" createdAfter instead of the flat 7-day fallback every other
+    // (non-scheduler) start door gets. Heartbeat is always a daily
+    // (intervalMinutes=1440) cadence, and for that cadence the window index
+    // IS the UTC day index (see scheduler.test.ts), so `lastFiredWindowIndex`
+    // maps directly onto the enricher's day-granularity `lastFiredDayUtc`.
     const result = await runStarter.startRun({
       kind: fire.kind,
       tenantId: fire.tenantId,
@@ -2030,8 +2036,8 @@ const scheduler = createScheduler({
       creatorPrincipalId: fire.creatorPrincipalId,
       source: "scheduler",
       heartbeatFire: {
-        lastFiredDayUtc: fire.lastFiredDayUtc,
-        hourUtc: fire.hourUtc,
+        lastFiredDayUtc: fire.lastFiredWindowIndex,
+        hourUtc: Math.floor(fire.anchorMinuteUtc / 60),
       },
     });
     if (!result.ok) {
@@ -2164,12 +2170,17 @@ void seedHeartbeatSchedules({
   hourUtc: config.scheduler.heartbeatHourUtc,
   listMyraTargets,
   resolveUserIdentity,
+  // Heartbeat stays a daily-at-hour cadence; the DAILY_INTERVAL_MINUTES
+  // recurrence is the schedule model's general representation of that.
   ensureSchedule: (args) =>
     ensureOwnerSchedule(db, {
       tenantId: rootTenantId,
       ownerPrincipalId: args.ownerPrincipalId,
       kind: args.kind,
-      hourUtc: args.hourUtc,
+      recurrence: {
+        intervalMinutes: DAILY_INTERVAL_MINUTES,
+        anchorMinuteUtc: args.hourUtc * 60,
+      },
       payload: args.payload,
     }),
 }).catch((err) => {

@@ -3,6 +3,7 @@ import { Hono } from "hono";
 import { describeRoute, resolver } from "hono-openapi";
 import {
   CreateScheduledTriggerBodySchema,
+  isRecurrenceAllowedForKind,
   isRoutineEligibleKind,
   ScheduledTriggerListResponseSchema,
   ScheduledTriggerSchema,
@@ -189,6 +190,18 @@ export function createMeSchedulesRouter(
         return c.json({ error: `unknown workflow kind "${body.kind}"` }, 400);
       }
 
+      // Heartbeat's fire-time createdAfter math assumes a daily cadence
+      // (see isRecurrenceAllowedForKind) — reject any other interval before
+      // it ever reaches storage.
+      if (!isRecurrenceAllowedForKind(body.kind, body.recurrence)) {
+        return c.json(
+          {
+            error: `workflow "${body.kind}" only supports a daily schedule`,
+          },
+          400,
+        );
+      }
+
       // Attach gate (CL-3508/CL-3509/CL-3528): schedules fire unattended. Kinds
       // with only `intake` (auto-delivered from stored payload), no gates, or
       // multi-gate shapes opted in via `allowsScheduledPostIntakeDrive` / allowlist
@@ -275,7 +288,7 @@ export function createMeSchedulesRouter(
           tenantId: member.tenantId,
           ownerPrincipalId: member.principalId,
           kind: body.kind,
-          hourUtc: body.hourUtc,
+          recurrence: body.recurrence,
           payload,
           scope,
         });
@@ -343,7 +356,7 @@ export function createMeSchedulesRouter(
       }
       if (
         body.enabled === undefined &&
-        body.hourUtc === undefined &&
+        body.recurrence === undefined &&
         body.payload === undefined
       ) {
         return c.json({ error: "no fields to update" }, 400);
@@ -354,17 +367,35 @@ export function createMeSchedulesRouter(
         return c.json({ error: "No provisioned membership" }, 403);
       }
 
-      let triggerPayload: Record<string, unknown> | undefined;
-      if (body.payload !== undefined) {
-        // Same identity fencing as create: strip reserved keys, re-inject the
-        // caller's address, validate intake when the kind requires it (CL-3861).
-        const existing = await getOwnerSchedule(db, {
+      // Fetched once and reused for both the recurrence guard and the payload
+      // fencing below — both need to know the schedule's kind/current state.
+      let existing: Awaited<ReturnType<typeof getOwnerSchedule>> | undefined;
+      if (body.recurrence !== undefined || body.payload !== undefined) {
+        existing = await getOwnerSchedule(db, {
           tenantId: member.tenantId,
           ownerPrincipalId: member.principalId,
           id,
         });
         if (!existing) return c.json({ error: "schedule not found" }, 404);
+      }
 
+      if (
+        body.recurrence !== undefined &&
+        existing &&
+        !isRecurrenceAllowedForKind(existing.workflowKind, body.recurrence)
+      ) {
+        return c.json(
+          {
+            error: `workflow "${existing.workflowKind}" only supports a daily schedule`,
+          },
+          400,
+        );
+      }
+
+      let triggerPayload: Record<string, unknown> | undefined;
+      if (body.payload !== undefined && existing) {
+        // Same identity fencing as create: strip reserved keys, re-inject the
+        // caller's address, validate intake when the kind requires it (CL-3861).
         const clientPayload = Object.fromEntries(
           Object.entries(body.payload).filter(
             ([key]) => !RESERVED_PAYLOAD_KEYS.has(key),
@@ -417,7 +448,9 @@ export function createMeSchedulesRouter(
         ownerPrincipalId: member.principalId,
         id,
         ...(body.enabled !== undefined ? { enabled: body.enabled } : {}),
-        ...(body.hourUtc !== undefined ? { hourUtc: body.hourUtc } : {}),
+        ...(body.recurrence !== undefined
+          ? { recurrence: body.recurrence }
+          : {}),
         ...(triggerPayload !== undefined ? { triggerPayload } : {}),
       });
       if (!updated) return c.json({ error: "schedule not found" }, 404);

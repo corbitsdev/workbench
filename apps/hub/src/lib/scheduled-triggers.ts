@@ -1,6 +1,7 @@
 import { and, desc, eq, inArray, or } from "drizzle-orm";
 import {
   nextFireAt,
+  type ScheduleRecurrence,
   type ScheduleScope,
   type ScheduledTrigger,
   type ScheduledTriggerFire,
@@ -12,7 +13,10 @@ import {
   workflowRunRecord,
   type ScheduledTriggerRow,
 } from "../db/schema";
-import type { ScheduledTriggerRow as SchedulerRow } from "../services/scheduler";
+import {
+  windowIndexFor,
+  type ScheduledTriggerRow as SchedulerRow,
+} from "../services/scheduler";
 import { keysetBefore, takePage, type KeysetCursor } from "./keyset";
 
 const DEFAULT_SCHEDULE_LIMIT = 50;
@@ -37,8 +41,9 @@ function toSchedulerRow(row: ScheduledTriggerRow): SchedulerRow {
     id: row.id,
     tenantId: row.tenantId,
     workflowKind: row.workflowKind,
-    hourUtc: row.hourUtc,
-    lastFiredDayUtc: row.lastFiredDayUtc,
+    intervalMinutes: row.intervalMinutes,
+    anchorMinuteUtc: row.anchorMinuteUtc,
+    lastFiredWindowIndex: row.lastFiredWindowIndex,
     ownerMemberPrincipalId: row.ownerMemberPrincipalId,
     triggerPayload: row.triggerPayload,
   };
@@ -56,17 +61,24 @@ export function toApiSchedule(
   return {
     id: row.id,
     workflowKind: row.workflowKind,
-    hourUtc: row.hourUtc,
+    recurrence: {
+      intervalMinutes: row.intervalMinutes,
+      anchorMinuteUtc: row.anchorMinuteUtc,
+    },
     enabled: row.enabled,
     scope: asScope(row.scope),
     ownerMemberPrincipalId: row.ownerMemberPrincipalId,
     triggerPayload: row.triggerPayload,
     createdAt: row.createdAt.toISOString(),
-    lastFiredDayUtc: row.lastFiredDayUtc,
     lastRunId: row.lastRunId ?? null,
     recentFires,
     nextFireAt: row.enabled
-      ? nextFireAt(row.hourUtc, row.lastFiredDayUtc, now).toISOString()
+      ? nextFireAt(
+          row.intervalMinutes,
+          row.anchorMinuteUtc,
+          row.lastFiredWindowIndex,
+          now,
+        ).toISOString()
       : null,
   };
 }
@@ -170,7 +182,8 @@ async function trimScheduleFireHistory(
 }
 
 // Scheduler read path: every enabled schedule in the tenant. `shouldFire`
-// filters by hour/day, so this returns all enabled rows regardless of time.
+// filters by recurrence window, so this returns all enabled rows regardless
+// of time.
 export async function listEnabledSchedules(
   db: HubDb,
   tenantId: string,
@@ -197,16 +210,16 @@ export async function listAllEnabledSchedules(
   return rows.map(toSchedulerRow);
 }
 
-// Scheduler mark path: record the UTC day a schedule last fired on. Called
-// before the run-start await so a slow start cannot double-fire.
+// Scheduler mark path: record the recurrence window a schedule last fired in.
+// Called before the run-start await so a slow start cannot double-fire.
 export async function markScheduleFired(
   db: HubDb,
   id: string,
-  dayUtc: number,
+  windowIndex: number,
 ): Promise<void> {
   await db
     .update(scheduledTrigger)
-    .set({ lastFiredDayUtc: dayUtc })
+    .set({ lastFiredWindowIndex: windowIndex })
     .where(eq(scheduledTrigger.id, id));
 }
 
@@ -247,25 +260,45 @@ export async function listOwnerSchedules(
   return takePage(rows, limit);
 }
 
+// Stamping `lastFiredWindowIndex` to the window index current AT WRITE TIME
+// (not null) is what keeps a freshly created/retargeted schedule from firing
+// immediately: `shouldFire`'s catch-up rule (`windowIndex >
+// lastFiredWindowIndex`) would otherwise treat a schedule sitting mid-window
+// as already overdue. See scheduler.ts `shouldFire` for the full reasoning.
+function currentWindowIndex(
+  recurrence: ScheduleRecurrence,
+  now: () => number,
+): number {
+  return windowIndexFor(
+    now(),
+    recurrence.intervalMinutes,
+    recurrence.anchorMinuteUtc,
+  );
+}
+
 export async function createOwnerSchedule(
   db: HubDb,
   args: {
     tenantId: string;
     ownerPrincipalId: string;
     kind: string;
-    hourUtc: number;
+    recurrence: ScheduleRecurrence;
     payload: Record<string, unknown>;
     scope?: ScheduleScope;
+    now?: () => number;
   },
 ): Promise<ScheduledTriggerRow> {
   const scope = args.scope ?? "personal";
+  const now = args.now ?? Date.now;
   const [inserted] = await db
     .insert(scheduledTrigger)
     .values({
       tenantId: args.tenantId,
       ownerMemberPrincipalId: args.ownerPrincipalId,
       workflowKind: args.kind,
-      hourUtc: args.hourUtc,
+      intervalMinutes: args.recurrence.intervalMinutes,
+      anchorMinuteUtc: args.recurrence.anchorMinuteUtc,
+      lastFiredWindowIndex: currentWindowIndex(args.recurrence, now),
       triggerPayload: args.payload,
       scope,
     })
@@ -301,18 +334,32 @@ export async function updateOwnerSchedule(
     ownerPrincipalId: string;
     id: string;
     enabled?: boolean;
-    hourUtc?: number;
+    recurrence?: ScheduleRecurrence;
     /** Replace the stored intake/trigger payload (CL-3861 edit path). */
     triggerPayload?: Record<string, unknown>;
+    now?: () => number;
   },
 ): Promise<ScheduledTriggerRow | null> {
   const patch: {
     enabled?: boolean;
-    hourUtc?: number;
+    intervalMinutes?: number;
+    anchorMinuteUtc?: number;
+    lastFiredWindowIndex?: number;
     triggerPayload?: Record<string, unknown>;
   } = {};
   if (args.enabled !== undefined) patch.enabled = args.enabled;
-  if (args.hourUtc !== undefined) patch.hourUtc = args.hourUtc;
+  if (args.recurrence !== undefined) {
+    patch.intervalMinutes = args.recurrence.intervalMinutes;
+    patch.anchorMinuteUtc = args.recurrence.anchorMinuteUtc;
+    // Retargeting the cadence must not let the OLD lastFiredWindowIndex (a
+    // window index under the OLD interval/anchor) satisfy the NEW catch-up
+    // rule and fire immediately — re-stamp to the new cadence's current
+    // window, same as creation.
+    patch.lastFiredWindowIndex = currentWindowIndex(
+      args.recurrence,
+      args.now ?? Date.now,
+    );
+  }
   if (args.triggerPayload !== undefined) {
     patch.triggerPayload = args.triggerPayload;
   }
@@ -360,8 +407,9 @@ export async function ensureOwnerSchedule(
     tenantId: string;
     ownerPrincipalId: string;
     kind: string;
-    hourUtc: number;
+    recurrence: ScheduleRecurrence;
     payload: Record<string, unknown>;
+    now?: () => number;
   },
 ): Promise<void> {
   const existing = await db.query.scheduledTrigger.findFirst({
@@ -379,7 +427,12 @@ export async function ensureOwnerSchedule(
       tenantId: args.tenantId,
       ownerMemberPrincipalId: args.ownerPrincipalId,
       workflowKind: args.kind,
-      hourUtc: args.hourUtc,
+      intervalMinutes: args.recurrence.intervalMinutes,
+      anchorMinuteUtc: args.recurrence.anchorMinuteUtc,
+      lastFiredWindowIndex: currentWindowIndex(
+        args.recurrence,
+        args.now ?? Date.now,
+      ),
       triggerPayload: args.payload,
       scope: "personal",
     });
@@ -449,12 +502,25 @@ export async function updateTenantScopedSchedule(
     tenantId: string;
     id: string;
     enabled?: boolean;
-    hourUtc?: number;
+    recurrence?: ScheduleRecurrence;
+    now?: () => number;
   },
 ): Promise<ScheduledTriggerRow | null> {
-  const patch: { enabled?: boolean; hourUtc?: number } = {};
+  const patch: {
+    enabled?: boolean;
+    intervalMinutes?: number;
+    anchorMinuteUtc?: number;
+    lastFiredWindowIndex?: number;
+  } = {};
   if (args.enabled !== undefined) patch.enabled = args.enabled;
-  if (args.hourUtc !== undefined) patch.hourUtc = args.hourUtc;
+  if (args.recurrence !== undefined) {
+    patch.intervalMinutes = args.recurrence.intervalMinutes;
+    patch.anchorMinuteUtc = args.recurrence.anchorMinuteUtc;
+    patch.lastFiredWindowIndex = currentWindowIndex(
+      args.recurrence,
+      args.now ?? Date.now,
+    );
+  }
   if (Object.keys(patch).length === 0) return null;
 
   const [updated] = await db

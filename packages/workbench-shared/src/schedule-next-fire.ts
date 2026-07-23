@@ -1,29 +1,28 @@
-const MS_PER_DAY = 86_400_000;
-
-/** Midnight UTC of the given "days since epoch" counter, as stored by the
- * scheduler's `lastFiredDayUtc`. */
-export function utcDayToDate(dayUtc: number): Date {
-  return new Date(dayUtc * MS_PER_DAY);
-}
+const MS_PER_MINUTE = 60_000;
 
 /** The next UTC instant a schedule fires at, mirroring the scheduler's
- * `shouldFire` rule: it fires the first tick where the UTC hour matches and
- * today's UTC day differs from `lastFiredDayUtc`. */
+ * `shouldFire` catch-up rule (see apps/hub/src/services/scheduler.ts): a
+ * schedule fires whenever the current recurrence window index is greater
+ * than `lastFiredWindowIndex`. So the next fire is the boundary of the
+ * CURRENT window (which may already be <= `now` — imminent/overdue, catch-up
+ * pending) when that window hasn't fired yet, or the boundary of the next
+ * window when it has. `lastFiredWindowIndex` is never null in practice —
+ * every write path (creation, retargeting, migration backfill) stamps a real
+ * window index, the same structural guarantee `scheduler.ts` relies on. */
 export function nextFireAt(
-  hourUtc: number,
-  lastFiredDayUtc: number | null,
+  intervalMinutes: number,
+  anchorMinuteUtc: number,
+  lastFiredWindowIndex: number,
   now: Date = new Date(),
 ): Date {
-  const todayUtcDay = Math.floor(now.getTime() / MS_PER_DAY);
-  const alreadyFiredToday = lastFiredDayUtc === todayUtcDay;
-  // Strictly greater: the target hour itself is still the firing window (the
-  // scheduler's `shouldFire` fires on the next tick while `now` sits inside
-  // it), so `>=` here would wrongly roll a not-yet-fired current hour to
-  // tomorrow.
-  const hourAlreadyPassedToday = now.getUTCHours() > hourUtc;
-  const targetDay =
-    alreadyFiredToday || hourAlreadyPassedToday ? todayUtcDay + 1 : todayUtcDay;
-  const target = utcDayToDate(targetDay);
-  target.setUTCHours(hourUtc, 0, 0, 0);
-  return target;
+  const nowMinuteUtc = Math.floor(now.getTime() / MS_PER_MINUTE);
+  const currentWindowIndex = Math.floor(
+    (nowMinuteUtc - anchorMinuteUtc) / intervalMinutes,
+  );
+  const targetWindowIndex =
+    currentWindowIndex > lastFiredWindowIndex
+      ? currentWindowIndex
+      : lastFiredWindowIndex + 1;
+  const targetMinuteUtc = anchorMinuteUtc + targetWindowIndex * intervalMinutes;
+  return new Date(targetMinuteUtc * MS_PER_MINUTE);
 }

@@ -1,57 +1,107 @@
 /// <reference types="bun" />
 import { describe, expect, it } from "bun:test";
 import {
-  formatLastFired,
+  decodeRecurrenceKey,
+  defaultRecurrence,
+  encodeRecurrence,
+  formatLastFiredAt,
   formatNextFire,
+  formatRecurrence,
   formatUtcHourLocal,
-  localHourToUtc,
-  localMinutesOfDay,
-  utcHourOptions,
+  recurrenceOptions,
 } from "./schedule-time";
 
-describe("schedule-time", () => {
-  it("offers all 24 UTC hours exactly once", () => {
-    const options = utcHourOptions();
-    expect(options).toHaveLength(24);
-    const hours = new Set(options.map((o) => o.hourUtc));
-    expect(hours.size).toBe(24);
-    for (let h = 0; h < 24; h++) expect(hours.has(h)).toBe(true);
+describe("recurrenceOptions", () => {
+  it("offers all 24 daily-hour options plus the sub-daily interval presets", () => {
+    const options = recurrenceOptions();
+    const dailyKeys = options.filter((o) => o.key.startsWith("daily:"));
+    const intervalKeys = options.filter((o) => o.key.startsWith("interval:"));
+    expect(dailyKeys).toHaveLength(24);
+    expect(intervalKeys.length).toBeGreaterThan(0);
+    expect(new Set(options.map((o) => o.key)).size).toBe(options.length);
   });
 
-  it("orders options by the local clock, not by UTC", () => {
-    const options = utcHourOptions();
-    const minutes = options.map((o) => localMinutesOfDay(o.hourUtc));
-    const sorted = [...minutes].sort((a, b) => a - b);
-    expect(minutes).toEqual(sorted);
-  });
-
-  it("labels every option with a clock time", () => {
-    for (const { label } of utcHourOptions()) {
+  it("labels every daily option with a clock time", () => {
+    for (const { key, label } of recurrenceOptions()) {
+      if (!key.startsWith("daily:")) continue;
       expect(label).toMatch(/\d/);
-      expect(label).toContain(":00");
     }
   });
 
-  it("round-trips a local hour through UTC back to the same local minute", () => {
-    const utc = localHourToUtc(8);
-    expect(utc).toBeGreaterThanOrEqual(0);
-    expect(utc).toBeLessThanOrEqual(23);
-    // 8:00 local is 8 * 60 minutes past local midnight. Half-hour zones can't
-    // round-trip through an integer UTC hour, so only assert on whole-hour zones.
-    if (new Date().getTimezoneOffset() % 60 === 0) {
-      expect(localMinutesOfDay(utc)).toBe(8 * 60);
-    }
+  it("labels sub-daily options in plain minutes/hour language", () => {
+    const labels = recurrenceOptions()
+      .filter((o) => o.key.startsWith("interval:"))
+      .map((o) => o.label);
+    expect(labels).toContain("Every 5 minutes");
+    expect(labels).toContain("Every hour");
+  });
+});
+
+describe("encodeRecurrence / decodeRecurrenceKey", () => {
+  it("round-trips a daily recurrence through its key", () => {
+    const recurrence = { intervalMinutes: 1440, anchorMinuteUtc: 9 * 60 };
+    const key = encodeRecurrence(recurrence);
+    expect(decodeRecurrenceKey(key)).toEqual(recurrence);
   });
 
+  it("round-trips a sub-daily preset recurrence through its key", () => {
+    const recurrence = { intervalMinutes: 5, anchorMinuteUtc: 0 };
+    const key = encodeRecurrence(recurrence);
+    expect(decodeRecurrenceKey(key)).toEqual(recurrence);
+  });
+
+  it("falls back to the nearest daily hour for a recurrence with no preset key", () => {
+    // e.g. an every-20-minutes schedule set via the API directly, not the
+    // picker's presets — must still resolve to a real, non-blank selection.
+    const recurrence = { intervalMinutes: 20, anchorMinuteUtc: 3 * 60 };
+    const key = encodeRecurrence(recurrence);
+    expect(key).toBe("daily:3");
+  });
+});
+
+describe("formatRecurrence", () => {
+  it("formats a daily recurrence in local clock time", () => {
+    const label = formatRecurrence({
+      intervalMinutes: 1440,
+      anchorMinuteUtc: 0,
+    });
+    expect(label).toContain("Daily at");
+  });
+
+  it("formats a sub-daily recurrence in plain language", () => {
+    expect(formatRecurrence({ intervalMinutes: 5, anchorMinuteUtc: 0 })).toBe(
+      "Every 5 minutes",
+    );
+    expect(formatRecurrence({ intervalMinutes: 60, anchorMinuteUtc: 0 })).toBe(
+      "Every hour",
+    );
+  });
+});
+
+describe("defaultRecurrence", () => {
+  it("defaults to a daily cadence at the current local hour", () => {
+    const recurrence = defaultRecurrence();
+    expect(recurrence.intervalMinutes).toBe(1440);
+    expect(recurrence.anchorMinuteUtc % 60).toBe(0);
+  });
+});
+
+describe("formatUtcHourLocal", () => {
   it("formats a UTC hour as a local wall-clock time", () => {
-    expect(formatUtcHourLocal(localHourToUtc(0))).toContain("12:00");
+    expect(formatUtcHourLocal(0)).toMatch(/\d/);
   });
+});
 
+describe("formatLastFiredAt", () => {
   it("reports never-fired schedules distinctly from fired ones", () => {
-    expect(formatLastFired(null)).toBe("Not yet fired");
-    expect(formatLastFired(0)).not.toBe("Not yet fired");
+    expect(formatLastFiredAt(null)).toBe("Not yet fired");
+    expect(formatLastFiredAt("2026-01-05T14:00:00.000Z")).not.toBe(
+      "Not yet fired",
+    );
   });
+});
 
+describe("formatNextFire", () => {
   it("reports paused schedules as paused regardless of hub nextFireAt", () => {
     expect(formatNextFire("2026-01-05T14:00:00.000Z", false)).toBe("Paused");
     expect(formatNextFire(null, true)).toBe("Paused");

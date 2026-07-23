@@ -1,12 +1,14 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
 import { Button } from "@workbench/ui";
-import type { ScheduledTrigger } from "@workbench/shared";
+import type { ScheduledTrigger, ScheduleRecurrence } from "@workbench/shared";
 import { getOwnerSchedules, updateOwnerSchedule } from "../../lib/hub-api";
 import {
-  formatLastFired,
+  decodeRecurrenceKey,
+  encodeRecurrence,
+  formatLastFiredAt,
   formatNextFire,
-  utcHourOptions,
+  recurrenceOptions,
 } from "../../lib/schedule-time";
 import { adminTableCard } from "./admin-ui";
 
@@ -33,7 +35,7 @@ export function OwnerSchedules() {
       body,
     }: {
       id: string;
-      body: { enabled?: boolean; hourUtc?: number };
+      body: { enabled?: boolean; recurrence?: ScheduleRecurrence };
     }) => updateOwnerSchedule(id, body),
     onSuccess: () => {
       setError(null);
@@ -88,8 +90,8 @@ export function OwnerSchedules() {
                     body: { enabled: !s.enabled },
                   })
                 }
-                onHourChange={(hourUtc) =>
-                  patch.mutate({ id: s.id, body: { hourUtc } })
+                onRecurrenceChange={(recurrence) =>
+                  patch.mutate({ id: s.id, body: { recurrence } })
                 }
               />
             ))}
@@ -104,35 +106,37 @@ function ScheduleRow({
   schedule,
   busy,
   onToggle,
-  onHourChange,
+  onRecurrenceChange,
 }: {
   schedule: ScheduledTrigger;
   busy: boolean;
   onToggle: () => void;
-  onHourChange: (hourUtc: number) => void;
+  onRecurrenceChange: (recurrence: ScheduleRecurrence) => void;
 }) {
-  const hourOptions = useMemo(() => utcHourOptions(), []);
+  const options = useMemo(() => recurrenceOptions(), []);
   const kind = schedule.workflowKind;
   return (
     <li className="flex flex-wrap items-center justify-between gap-3 p-3">
       <div className="min-w-0">
         <p className="font-mono text-sm font-medium text-text">{kind}</p>
         <p className="mt-1 text-xs text-text-3">
-          Last: {formatLastFired(schedule.lastFiredDayUtc)} · Next:{" "}
-          {formatNextFire(schedule.nextFireAt, schedule.enabled)}
+          Last: {formatLastFiredAt(schedule.recentFires[0]?.firedAt ?? null)} ·
+          Next: {formatNextFire(schedule.nextFireAt, schedule.enabled)}
         </p>
       </div>
       <div className="flex flex-wrap items-center gap-2">
         <select
-          aria-label={`Change fire time for ${kind}`}
-          value={schedule.hourUtc}
+          aria-label={`Change cadence for ${kind}`}
+          value={encodeRecurrence(schedule.recurrence)}
           disabled={busy}
-          onChange={(e) => onHourChange(Number(e.target.value))}
+          onChange={(e) =>
+            onRecurrenceChange(decodeRecurrenceKey(e.target.value))
+          }
           className="rounded-[8px] border border-border bg-surface-2 px-2 py-1 text-xs text-text focus:outline-none focus-visible:ring-2 focus-visible:ring-border-strong disabled:opacity-50"
         >
-          {hourOptions.map((o) => (
-            <option key={o.hourUtc} value={o.hourUtc}>
-              {o.label} ({o.hourUtc}:00 UTC)
+          {options.map((o) => (
+            <option key={o.key} value={o.key}>
+              {o.label}
             </option>
           ))}
         </select>

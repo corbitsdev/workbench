@@ -1408,11 +1408,12 @@ describe("owner schedules routes", () => {
     tenantId: "ten_root",
     ownerMemberPrincipalId: "prn_creator",
     workflowKind: "deck",
-    hourUtc: 14,
+    intervalMinutes: 1440,
+    anchorMinuteUtc: 14 * 60,
     scope: "tenant" as const,
     triggerPayload: {},
     enabled: true,
-    lastFiredDayUtc: 20000,
+    lastFiredWindowIndex: 20000,
     lastRunId: "run_abc",
     createdAt: new Date("2026-03-01T00:00:00.000Z"),
     updatedAt: new Date("2026-03-01T00:00:00.000Z"),
@@ -1477,6 +1478,29 @@ describe("owner schedules routes", () => {
     const body = (await res.json()) as { id: string; enabled: boolean };
     expect(body.id).toBe(scheduleId);
     expect(body.enabled).toBe(false);
+  });
+
+  it("retargets a tenant schedule's recurrence", async () => {
+    callerPrincipalId = "prn_owner";
+    const res = await buildApp(
+      schedulesDb({
+        updateReturn: { ...tenantRow, intervalMinutes: 30, anchorMinuteUtc: 0 },
+      }),
+    ).request(`/owner/schedules/${scheduleId}`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        recurrence: { intervalMinutes: 30, anchorMinuteUtc: 0 },
+      }),
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      recurrence: { intervalMinutes: number; anchorMinuteUtc: number };
+    };
+    expect(body.recurrence).toEqual({
+      intervalMinutes: 30,
+      anchorMinuteUtc: 0,
+    });
   });
 
   it("404s when the schedule is not tenant-scoped or missing", async () => {

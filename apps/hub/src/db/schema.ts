@@ -885,11 +885,13 @@ export const principalMailbox = pgTable(
 
 export type PrincipalMailboxRow = typeof principalMailbox.$inferSelect;
 
-// Routine triggers: durable per-member schedules that fire a
-// workflow run on a daily UTC-hour cadence. The hub scheduler loads enabled
-// rows each tick and starts a run for any whose target hour has arrived and has
-// not fired today (tracked by `last_fired_day_utc`, the integer UTC day index
-// floor(ms / 86_400_000)). Only `hour_utc` is honored today.
+// Routine triggers: durable per-member schedules that fire a workflow run on
+// a recurring cadence (CL-4212). A recurrence is `interval_minutes` (how often)
+// plus `anchor_minute_utc` (minute-of-UTC-day phase, 0-1439) that fixes wall-clock
+// alignment; the daily-at-hour model is `interval_minutes=1440,
+// anchor_minute_utc=hour*60`. The hub scheduler loads enabled rows each tick and
+// fires whenever `floor((nowMinuteUtc - anchor_minute_utc) / interval_minutes)`
+// advances past `last_fired_window_index`.
 // Unique per scope (CL-4108): personal → (tenant, owner, kind); tenant → (tenant, kind).
 export const scheduledTrigger = pgTable(
   "scheduled_trigger",
@@ -898,7 +900,8 @@ export const scheduledTrigger = pgTable(
     tenantId: text("tenant_id").notNull(),
     ownerMemberPrincipalId: text("owner_member_principal_id").notNull(),
     workflowKind: text("workflow_kind").notNull(),
-    hourUtc: integer("hour_utc").notNull(),
+    intervalMinutes: integer("interval_minutes").notNull(),
+    anchorMinuteUtc: integer("anchor_minute_utc").notNull(),
     // personal = Just for me; tenant = Everyone (CL-4108).
     scope: text("scope").notNull().default("personal"),
     triggerPayload: jsonb("trigger_payload")
@@ -906,7 +909,12 @@ export const scheduledTrigger = pgTable(
       .notNull()
       .default({}),
     enabled: boolean("enabled").notNull().default(true),
-    lastFiredDayUtc: integer("last_fired_day_utc"),
+    // NOT NULL: every write path (createOwnerSchedule, ensureOwnerSchedule,
+    // updateOwnerSchedule, updateTenantScopedSchedule, and migration 0080's
+    // backfill for never-fired legacy rows) stamps a real window index — see
+    // scheduler.ts shouldFire for why "no last-fired window" must never be
+    // representable as an ambiguous NULL.
+    lastFiredWindowIndex: integer("last_fired_window_index").notNull(),
     // Most recent run id the scheduler started for this schedule (CL-3526).
     lastRunId: text("last_run_id"),
     createdAt: timestamp("created_at").notNull().defaultNow(),
@@ -919,6 +927,14 @@ export const scheduledTrigger = pgTable(
     scheduledTriggerScopeCheck: check(
       "scheduled_trigger_scope_check",
       sql`${t.scope} IN ('personal', 'tenant')`,
+    ),
+    scheduledTriggerIntervalCheck: check(
+      "scheduled_trigger_interval_check",
+      sql`${t.intervalMinutes} >= 1`,
+    ),
+    scheduledTriggerAnchorCheck: check(
+      "scheduled_trigger_anchor_check",
+      sql`${t.anchorMinuteUtc} >= 0 AND ${t.anchorMinuteUtc} < 1440`,
     ),
     // Partial uniques (CL-4108): personal is per owner+kind; tenant is per tenant+kind.
     scheduledTriggerPersonalOwnerKindUniq: uniqueIndex(

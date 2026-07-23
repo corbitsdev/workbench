@@ -1352,14 +1352,16 @@ export function createOwnerRouter(
       if (parsed instanceof type.errors) {
         return c.json({ error: parsed.summary }, 400);
       }
-      if (parsed.enabled === undefined && parsed.hourUtc === undefined) {
+      if (parsed.enabled === undefined && parsed.recurrence === undefined) {
         return c.json({ error: "no fields to update" }, 400);
       }
       const updated = await updateTenantScopedSchedule(db, {
         tenantId: rootTenantId,
         id,
         ...(parsed.enabled !== undefined ? { enabled: parsed.enabled } : {}),
-        ...(parsed.hourUtc !== undefined ? { hourUtc: parsed.hourUtc } : {}),
+        ...(parsed.recurrence !== undefined
+          ? { recurrence: parsed.recurrence }
+          : {}),
       });
       if (!updated) {
         return c.json({ error: "Schedule not found" }, 404);

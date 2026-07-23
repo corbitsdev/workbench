@@ -77,13 +77,12 @@ const listMeSchedules = mock(async () => [
   {
     id: "sched-1",
     workflowKind: "heartbeat",
-    hourUtc: 14,
+    recurrence: { intervalMinutes: 1440, anchorMinuteUtc: 14 * 60 },
     enabled: true,
     scope: "personal" as const,
     ownerMemberPrincipalId: "p1",
     triggerPayload: { reason: "scheduled-heartbeat" },
     createdAt: new Date().toISOString(),
-    lastFiredDayUtc: null,
     lastRunId: null,
     recentFires: [],
     nextFireAt: null,
@@ -207,9 +206,9 @@ describe("RoutinesPage (CL-3862)", () => {
     });
     const [, patch] = updateMeSchedule.mock.calls[0] as [
       string,
-      { hourUtc?: number; payload?: unknown },
+      { recurrence?: unknown; payload?: unknown },
     ];
-    expect(patch.hourUtc).toBeDefined();
+    expect(patch.recurrence).toBeDefined();
     expect(patch.payload).toBeUndefined();
   });
 });

@@ -10,10 +10,12 @@ import {
 } from "../hooks/use-schedules";
 import { useWorkflowsCatalog } from "../hooks/use-workflows-catalog";
 import {
-  formatLastFired,
+  decodeRecurrenceKey,
+  encodeRecurrence,
+  formatLastFiredAt,
   formatNextFire,
+  recurrenceOptions,
   scheduleScopeLabel,
-  utcHourOptions,
 } from "../lib/schedule-time";
 import { scheduleRunDeepLink } from "../lib/schedule-run-link";
 
@@ -60,29 +62,29 @@ function EnabledToggle({
   );
 }
 
-function HourSelect({
-  hourUtc,
+function RecurrenceSelect({
+  recurrence,
   disabled,
   label,
   onChange,
 }: {
-  hourUtc: number;
+  recurrence: ScheduledTrigger["recurrence"];
   disabled: boolean;
   label: string;
-  onChange: (hourUtc: number) => void;
+  onChange: (recurrence: ScheduledTrigger["recurrence"]) => void;
 }) {
-  const options = useMemo(() => utcHourOptions(), []);
+  const options = useMemo(() => recurrenceOptions(), []);
   return (
     <select
-      aria-label={`Change fire time for ${label}`}
-      value={hourUtc}
+      aria-label={`Change cadence for ${label}`}
+      value={encodeRecurrence(recurrence)}
       disabled={disabled}
-      onChange={(e) => onChange(Number(e.target.value))}
+      onChange={(e) => onChange(decodeRecurrenceKey(e.target.value))}
       className="rounded-[8px] border border-border bg-surface-2 px-2 py-1 text-xs text-text focus:outline-none focus-visible:ring-2 focus-visible:ring-border-strong disabled:opacity-50"
     >
       {options.map((o) => (
-        <option key={o.hourUtc} value={o.hourUtc}>
-          {o.label} ({o.hourUtc}:00 UTC)
+        <option key={o.key} value={o.key}>
+          {o.label}
         </option>
       ))}
     </select>
@@ -119,8 +121,10 @@ function ScheduleRow({
     });
   };
 
-  const handleHourChange = (hourUtc: number) => {
-    updateSchedule.mutateAsync({ id: schedule.id, hourUtc }).catch(() => {
+  const handleRecurrenceChange = (
+    recurrence: ScheduledTrigger["recurrence"],
+  ) => {
+    updateSchedule.mutateAsync({ id: schedule.id, recurrence }).catch(() => {
       /* optimistic update rolled back in the hook */
     });
   };
@@ -167,10 +171,10 @@ function ScheduleRow({
               )}
               className="font-medium text-text-2 underline-offset-2 hover:underline"
             >
-              {formatLastFired(schedule.lastFiredDayUtc)}
+              {formatLastFiredAt(schedule.recentFires[0]?.firedAt ?? null)}
             </Link>
           ) : (
-            formatLastFired(schedule.lastFiredDayUtc)
+            formatLastFiredAt(schedule.recentFires[0]?.firedAt ?? null)
           )}{" "}
           · Next: {formatNextFire(schedule.nextFireAt, schedule.enabled)}
         </span>
@@ -195,11 +199,11 @@ function ScheduleRow({
           </ul>
         )}
       </div>
-      <HourSelect
-        hourUtc={schedule.hourUtc}
+      <RecurrenceSelect
+        recurrence={schedule.recurrence}
         disabled={updateSchedule.isPending}
         label={label}
-        onChange={handleHourChange}
+        onChange={handleRecurrenceChange}
       />
       <ConfirmButton
         variant="ghost"

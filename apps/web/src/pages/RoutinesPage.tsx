@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import {
   HEARTBEAT_WORKFLOW_KIND,
   type ScheduleFieldMetadata,
+  type ScheduleRecurrence,
   type ScheduledTrigger,
   type ScheduleScope,
   type WorkflowCatalogEntry,
@@ -20,9 +21,12 @@ import {
   scheduleFieldsComplete,
 } from "../components/ScheduleFieldForm";
 import {
-  formatUtcHourLocal,
+  decodeRecurrenceKey,
+  defaultRecurrence,
+  encodeRecurrence,
+  formatRecurrence,
+  recurrenceOptions,
   scheduleScopeLabel,
-  utcHourOptions,
 } from "../lib/schedule-time";
 
 /**
@@ -63,7 +67,8 @@ export function RoutinesPage() {
   }, [schedulesQuery.data]);
 
   const [expandedKind, setExpandedKind] = useState<string | null>(null);
-  const [draftHour, setDraftHour] = useState(14);
+  const [draftRecurrence, setDraftRecurrence] =
+    useState<ScheduleRecurrence>(defaultRecurrence());
   const [draftScope, setDraftScope] = useState<ScheduleScope>("personal");
   const [draftValues, setDraftValues] = useState<Record<string, unknown>>({});
   const [error, setError] = useState<string | null>(null);
@@ -74,7 +79,7 @@ export function RoutinesPage() {
   ) => {
     setError(null);
     setExpandedKind(entry.kind);
-    setDraftHour(existing?.hourUtc ?? 14);
+    setDraftRecurrence(existing?.recurrence ?? defaultRecurrence());
     setDraftScope(existing?.scope ?? entry.defaultScope);
     const fields = (entry.intakeFields ?? []) as ScheduleFieldMetadata[];
     const initial: Record<string, unknown> = {};
@@ -118,7 +123,7 @@ export function RoutinesPage() {
       if (existing) {
         await updateSchedule.mutateAsync({
           id: existing.id,
-          hourUtc: draftHour,
+          recurrence: draftRecurrence,
           ...(fields.length > 0
             ? {
                 payload: {
@@ -135,7 +140,7 @@ export function RoutinesPage() {
       } else {
         await createSchedule.mutateAsync({
           kind: entry.kind,
-          hourUtc: draftHour,
+          recurrence: draftRecurrence,
           scope: draftScope,
           payload: formPayload,
         });
@@ -150,7 +155,7 @@ export function RoutinesPage() {
 
   const loading = catalogQuery.isLoading || schedulesQuery.isLoading;
   const loadError = catalogQuery.error ?? schedulesQuery.error;
-  const hourOptions = utcHourOptions();
+  const recurrenceChoices = recurrenceOptions();
 
   return (
     <div className="mx-auto max-w-3xl px-4 py-8" data-testid="routines-page">
@@ -206,7 +211,7 @@ export function RoutinesPage() {
                   <p className="mt-2 text-xs text-text-3">
                     {existing
                       ? existing.enabled
-                        ? `Scheduled · ${formatUtcHourLocal(existing.hourUtc)} · ${scheduleScopeLabel(existing.scope)}`
+                        ? `Scheduled · ${formatRecurrence(existing.recurrence)} · ${scheduleScopeLabel(existing.scope)}`
                         : `Paused · ${scheduleScopeLabel(existing.scope)}`
                       : "Not scheduled"}
                   </p>
@@ -263,19 +268,21 @@ export function RoutinesPage() {
                   data-testid={`schedule-editor-${entry.kind}`}
                 >
                   <label
-                    htmlFor={`hour-${entry.kind}`}
+                    htmlFor={`recurrence-${entry.kind}`}
                     className="mb-1 block text-xs font-semibold uppercase tracking-[0.05em] text-text-3"
                   >
-                    Daily time (local)
+                    How often
                   </label>
                   <select
-                    id={`hour-${entry.kind}`}
-                    value={draftHour}
-                    onChange={(e) => setDraftHour(Number(e.target.value))}
+                    id={`recurrence-${entry.kind}`}
+                    value={encodeRecurrence(draftRecurrence)}
+                    onChange={(e) =>
+                      setDraftRecurrence(decodeRecurrenceKey(e.target.value))
+                    }
                     className="mb-3 w-full max-w-xs rounded-[10px] border border-border bg-page px-3 py-2 text-sm"
                   >
-                    {hourOptions.map((opt) => (
-                      <option key={opt.hourUtc} value={opt.hourUtc}>
+                    {recurrenceChoices.map((opt) => (
+                      <option key={opt.key} value={opt.key}>
                         {opt.label}
                       </option>
                     ))}

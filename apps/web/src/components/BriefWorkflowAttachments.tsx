@@ -12,6 +12,8 @@ import { useWorkflowsCatalog } from "../hooks/use-workflows-catalog";
 import { usePreferenceSettings } from "../hooks/use-preference-settings";
 import { formatUtcHourLocal } from "../lib/schedule-time";
 
+const DAILY_INTERVAL_MINUTES = 1440;
+
 export interface BriefWorkflowAttachmentsProps {
   readonly tenantId: string | null;
 }
@@ -65,7 +67,10 @@ function AttachedRow({
           {label}
         </span>
         <span className="text-xs text-text-3">
-          Runs alongside your brief · {formatUtcHourLocal(schedule.hourUtc)}
+          Runs alongside your brief ·{" "}
+          {formatUtcHourLocal(
+            Math.floor(schedule.recurrence.anchorMinuteUtc / 60),
+          )}
         </span>
       </div>
       <ConfirmButton
@@ -163,7 +168,10 @@ export function BriefWorkflowAttachments({
     createSchedule
       .mutateAsync({
         kind: selectedKind,
-        hourUtc: briefHourUtc,
+        recurrence: {
+          intervalMinutes: DAILY_INTERVAL_MINUTES,
+          anchorMinuteUtc: briefHourUtc * 60,
+        },
         ...(Object.keys(payload).length > 0 ? { payload } : {}),
       })
       .then(() => {

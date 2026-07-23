@@ -5,9 +5,17 @@ import { cleanup, render, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import React from "react";
 
-const getOwnerSchedules = mock(async () => [] as Array<Record<string, unknown>>);
+const getOwnerSchedules = mock(
+  async () => [] as Array<Record<string, unknown>>,
+);
 const updateOwnerSchedule = mock(
-  async (_id: string, _body: { enabled?: boolean; hourUtc?: number }) => ({}),
+  async (
+    _id: string,
+    _body: {
+      enabled?: boolean;
+      recurrence?: { intervalMinutes: number; anchorMinuteUtc: number };
+    },
+  ) => ({}),
 );
 
 mock.module("../../lib/hub-api", () => ({
@@ -56,10 +64,9 @@ describe("OwnerSchedules", () => {
       {
         id: "sch_1",
         workflowKind: "deck",
-        hourUtc: 14,
+        recurrence: { intervalMinutes: 1440, anchorMinuteUtc: 14 * 60 },
         enabled: true,
         scope: "tenant",
-        lastFiredDayUtc: null,
         lastRunId: null,
         nextFireAt: "2026-07-22T14:00:00.000Z",
         createdAt: "2026-07-01T00:00:00.000Z",

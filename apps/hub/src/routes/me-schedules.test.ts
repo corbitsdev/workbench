@@ -27,6 +27,7 @@ let runnableKinds = [
   { kind: "deck" },
   { kind: "last30days-research" },
   { kind: "multi-gate" },
+  { kind: "granola-call" },
 ];
 mock.module("../lib/workflow-run-gate", () => ({
   isRunnableKind: async (_db: unknown, _tenantId: string, kind: string) =>
@@ -47,6 +48,7 @@ const gateInfos = new Map<
 >([
   ["heartbeat", { requiresIntake: false, humanGateCount: 0 }],
   ["deck", { requiresIntake: false, humanGateCount: 0 }],
+  ["granola-call", { requiresIntake: false, humanGateCount: 0 }],
   ["last30days-research", { requiresIntake: true, humanGateCount: 1 }],
   [
     "multi-gate",
@@ -61,6 +63,9 @@ mock.module("../lib/workflow-catalog", () => ({
   loadWorkflowGateInfos: async () => gateInfos,
 }));
 
+const DAILY_9 = { intervalMinutes: 1440, anchorMinuteUtc: 9 * 60 };
+const DAILY_7 = { intervalMinutes: 1440, anchorMinuteUtc: 7 * 60 };
+
 // Store spy. Each call is captured so a test asserts the owner principal the
 // route scoped the operation to — the cross-member isolation guarantee.
 type StoreCall = { fn: string; args: Record<string, unknown> };
@@ -68,7 +73,8 @@ const storeCalls: StoreCall[] = [];
 type OwnerRow = {
   id: string;
   workflowKind: string;
-  hourUtc: number;
+  intervalMinutes: number;
+  anchorMinuteUtc: number;
   enabled: boolean;
   triggerPayload: Record<string, unknown>;
   createdAt: Date;
@@ -83,13 +89,15 @@ mock.module("../lib/scheduled-triggers", () => ({
   toApiSchedule: (r: OwnerRow) => ({
     id: r.id,
     workflowKind: r.workflowKind,
-    hourUtc: r.hourUtc,
+    recurrence: {
+      intervalMinutes: r.intervalMinutes,
+      anchorMinuteUtc: r.anchorMinuteUtc,
+    },
     enabled: r.enabled,
     scope: r.scope ?? "personal",
     ownerMemberPrincipalId: r.ownerMemberPrincipalId ?? "principal-a",
     triggerPayload: r.triggerPayload,
     createdAt: r.createdAt.toISOString(),
-    lastFiredDayUtc: null,
     lastRunId: null,
     recentFires: [],
     nextFireAt: r.enabled ? "2026-01-02T13:00:00.000Z" : null,
@@ -102,13 +110,15 @@ mock.module("../lib/scheduled-triggers", () => ({
     rows.map((r) => ({
       id: r.id,
       workflowKind: r.workflowKind,
-      hourUtc: r.hourUtc,
+      recurrence: {
+        intervalMinutes: r.intervalMinutes,
+        anchorMinuteUtc: r.anchorMinuteUtc,
+      },
       enabled: r.enabled,
       scope: r.scope ?? "personal",
       ownerMemberPrincipalId: r.ownerMemberPrincipalId ?? "principal-a",
       triggerPayload: r.triggerPayload,
       createdAt: r.createdAt.toISOString(),
-      lastFiredDayUtc: null,
       lastRunId: null,
       recentFires: [],
       nextFireAt: r.enabled ? "2026-01-02T13:00:00.000Z" : null,
@@ -128,10 +138,15 @@ mock.module("../lib/scheduled-triggers", () => ({
   createOwnerSchedule: async (_db: unknown, args: Record<string, unknown>) => {
     storeCalls.push({ fn: "create", args });
     if (createThrows) throw createThrows;
+    const recurrence = args["recurrence"] as {
+      intervalMinutes: number;
+      anchorMinuteUtc: number;
+    };
     return {
       id: "sch-new",
       workflowKind: args["kind"],
-      hourUtc: args["hourUtc"],
+      intervalMinutes: recurrence.intervalMinutes,
+      anchorMinuteUtc: recurrence.anchorMinuteUtc,
       enabled: true,
       scope: args["scope"] ?? "personal",
       ownerMemberPrincipalId: args["ownerPrincipalId"],
@@ -145,7 +160,8 @@ mock.module("../lib/scheduled-triggers", () => ({
       return {
         id: updateResult.id,
         workflowKind: updateResult.workflowKind,
-        hourUtc: updateResult.hourUtc,
+        intervalMinutes: updateResult.intervalMinutes,
+        anchorMinuteUtc: updateResult.anchorMinuteUtc,
         enabled: updateResult.enabled,
         scope: updateResult.scope ?? "personal",
         ownerMemberPrincipalId:
@@ -225,7 +241,8 @@ describe("GET /me/schedules", () => {
       {
         id: "sch-1",
         workflowKind: "heartbeat",
-        hourUtc: 13,
+        intervalMinutes: 1440,
+        anchorMinuteUtc: 13 * 60,
         enabled: true,
         triggerPayload: { reason: "scheduled-heartbeat" },
         createdAt: new Date("2026-01-01T00:00:00.000Z"),
@@ -240,11 +257,10 @@ describe("GET /me/schedules", () => {
     expect(body.items[0]).toMatchObject({
       id: "sch-1",
       workflowKind: "heartbeat",
-      hourUtc: 13,
+      recurrence: { intervalMinutes: 1440, anchorMinuteUtc: 13 * 60 },
       enabled: true,
       triggerPayload: { reason: "scheduled-heartbeat" },
       createdAt: "2026-01-01T00:00:00.000Z",
-      lastFiredDayUtc: null,
     });
     expect(body.items[0].nextFireAt).toMatch(/^\d{4}-\d{2}-\d{2}T/);
     expect(storeCalls[0]).toMatchObject({
@@ -296,7 +312,7 @@ describe("POST /me/schedules attach gate (CL-3508/CL-3509)", () => {
         user: "user-a",
         body: JSON.stringify({
           kind: "last30days-research",
-          hourUtc: 9,
+          recurrence: DAILY_9,
           payload: {},
         }),
       }),
@@ -317,7 +333,7 @@ describe("POST /me/schedules attach gate (CL-3508/CL-3509)", () => {
         user: "user-a",
         body: JSON.stringify({
           kind: "last30days-research",
-          hourUtc: 9,
+          recurrence: DAILY_9,
           payload: { topic: "AI agents for GTM" },
         }),
       }),
@@ -347,7 +363,7 @@ describe("POST /me/schedules attach gate (CL-3508/CL-3509)", () => {
         user: "user-a",
         body: JSON.stringify({
           kind: "blocked-multi",
-          hourUtc: 9,
+          recurrence: DAILY_9,
           payload: { topic: "x" },
         }),
       }),
@@ -368,7 +384,7 @@ describe("POST /me/schedules attach gate (CL-3508/CL-3509)", () => {
         user: "user-a",
         body: JSON.stringify({
           kind: "multi-gate",
-          hourUtc: 9,
+          recurrence: DAILY_9,
           payload: { topic: "x" },
         }),
       }),
@@ -387,7 +403,7 @@ describe("POST /me/schedules attach gate (CL-3508/CL-3509)", () => {
       req("/me/schedules", {
         method: "POST",
         user: "user-a",
-        body: JSON.stringify({ kind: "deck", hourUtc: 9 }),
+        body: JSON.stringify({ kind: "deck", recurrence: DAILY_9 }),
       }),
     );
     expect(res.status).toBe(400);
@@ -404,7 +420,7 @@ describe("POST /me/schedules attach gate (CL-3508/CL-3509)", () => {
       req("/me/schedules", {
         method: "POST",
         user: "user-a",
-        body: JSON.stringify({ kind: "ghost", hourUtc: 9 }),
+        body: JSON.stringify({ kind: "ghost", recurrence: DAILY_9 }),
       }),
     );
     runnableKinds = runnableKinds.filter((k) => k.kind !== "ghost");
@@ -423,7 +439,7 @@ describe("POST /me/schedules", () => {
         user: "user-a",
         body: JSON.stringify({
           kind: "heartbeat",
-          hourUtc: 9,
+          recurrence: DAILY_9,
           payload: { x: 1 },
         }),
       }),
@@ -434,7 +450,7 @@ describe("POST /me/schedules", () => {
       tenantId: "tenant-root",
       ownerPrincipalId: "principal-a",
       kind: "heartbeat",
-      hourUtc: 9,
+      recurrence: DAILY_9,
       scope: "personal",
       payload: {
         x: 1,
@@ -442,6 +458,47 @@ describe("POST /me/schedules", () => {
         userRefId: "user-a",
       },
     });
+  });
+
+  it("creates a sub-daily (every-5-minutes) schedule for a non-heartbeat kind", async () => {
+    storeCalls.length = 0;
+    createThrows = null;
+    const res = await mountApp().fetch(
+      req("/me/schedules", {
+        method: "POST",
+        user: "user-a",
+        body: JSON.stringify({
+          kind: "granola-call",
+          recurrence: { intervalMinutes: 5, anchorMinuteUtc: 0 },
+          payload: { x: 1 },
+        }),
+      }),
+    );
+    expect(res.status).toBe(201);
+    const create = storeCalls.find((c) => c.fn === "create");
+    expect(create?.args).toMatchObject({
+      recurrence: { intervalMinutes: 5, anchorMinuteUtc: 0 },
+    });
+  });
+
+  it("rejects a non-daily recurrence for heartbeat (createdAfter math assumes daily)", async () => {
+    storeCalls.length = 0;
+    const res = await mountApp().fetch(
+      req("/me/schedules", {
+        method: "POST",
+        user: "user-a",
+        body: JSON.stringify({
+          kind: "heartbeat",
+          recurrence: { intervalMinutes: 5, anchorMinuteUtc: 0 },
+          payload: { reason: "scheduled-heartbeat" },
+        }),
+      }),
+    );
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({
+      error: 'workflow "heartbeat" only supports a daily schedule',
+    });
+    expect(storeCalls.some((c) => c.fn === "create")).toBe(false);
   });
 
   it("creates an Everyone (tenant) schedule when scope is allowed (CL-4108)", async () => {
@@ -453,7 +510,7 @@ describe("POST /me/schedules", () => {
         user: "user-a",
         body: JSON.stringify({
           kind: "last30days-research",
-          hourUtc: 9,
+          recurrence: DAILY_9,
           scope: "tenant",
           payload: { topic: "AI agents for GTM" },
         }),
@@ -478,7 +535,7 @@ describe("POST /me/schedules", () => {
         user: "user-a",
         body: JSON.stringify({
           kind: "heartbeat",
-          hourUtc: 7,
+          recurrence: DAILY_7,
           scope: "tenant",
           payload: { reason: "scheduled-heartbeat" },
         }),
@@ -500,7 +557,7 @@ describe("POST /me/schedules", () => {
         user: "user-a",
         body: JSON.stringify({
           kind: "last30days-research",
-          hourUtc: 9,
+          recurrence: DAILY_9,
           scope: "tenant",
           payload: { topic: "AI agents for GTM" },
         }),
@@ -521,7 +578,7 @@ describe("POST /me/schedules", () => {
         user: "user-a",
         body: JSON.stringify({
           kind: "heartbeat",
-          hourUtc: 7,
+          recurrence: DAILY_7,
           payload: {
             reason: "scheduled-heartbeat",
             userAddress: "usr_user-b@workbench.example",
@@ -547,7 +604,7 @@ describe("POST /me/schedules", () => {
         user: "user-a",
         body: JSON.stringify({
           kind: "heartbeat",
-          hourUtc: 9,
+          recurrence: DAILY_9,
           payload: { blob: "x".repeat(9000) },
         }),
       }),
@@ -556,13 +613,32 @@ describe("POST /me/schedules", () => {
     expect(storeCalls.some((c) => c.fn === "create")).toBe(false);
   });
 
-  it("rejects an out-of-range hour without touching the store", async () => {
+  it("rejects a non-positive interval without touching the store", async () => {
     storeCalls.length = 0;
     const res = await mountApp().fetch(
       req("/me/schedules", {
         method: "POST",
         user: "user-a",
-        body: JSON.stringify({ kind: "heartbeat", hourUtc: 25 }),
+        body: JSON.stringify({
+          kind: "heartbeat",
+          recurrence: { intervalMinutes: 0, anchorMinuteUtc: 0 },
+        }),
+      }),
+    );
+    expect(res.status).toBe(400);
+    expect(storeCalls.some((c) => c.fn === "create")).toBe(false);
+  });
+
+  it("rejects an out-of-range anchor without touching the store", async () => {
+    storeCalls.length = 0;
+    const res = await mountApp().fetch(
+      req("/me/schedules", {
+        method: "POST",
+        user: "user-a",
+        body: JSON.stringify({
+          kind: "heartbeat",
+          recurrence: { intervalMinutes: 60, anchorMinuteUtc: 1440 },
+        }),
       }),
     );
     expect(res.status).toBe(400);
@@ -574,7 +650,7 @@ describe("POST /me/schedules", () => {
       req("/me/schedules", {
         method: "POST",
         user: "user-a",
-        body: JSON.stringify({ kind: "not-a-workflow", hourUtc: 9 }),
+        body: JSON.stringify({ kind: "not-a-workflow", recurrence: DAILY_9 }),
       }),
     );
     expect(res.status).toBe(400);
@@ -586,7 +662,7 @@ describe("POST /me/schedules", () => {
       req("/me/schedules", {
         method: "POST",
         user: "user-none",
-        body: JSON.stringify({ kind: "heartbeat", hourUtc: 9 }),
+        body: JSON.stringify({ kind: "heartbeat", recurrence: DAILY_9 }),
       }),
     );
     expect(res.status).toBe(403);
@@ -601,7 +677,7 @@ describe("POST /me/schedules", () => {
       req("/me/schedules", {
         method: "POST",
         user: "user-a",
-        body: JSON.stringify({ kind: "heartbeat", hourUtc: 9 }),
+        body: JSON.stringify({ kind: "heartbeat", recurrence: DAILY_9 }),
       }),
     );
     expect(res.status).toBe(409);
@@ -640,7 +716,8 @@ describe("PATCH /me/schedules/:id", () => {
     updateResult = {
       id: SCHED_ID,
       workflowKind: "heartbeat",
-      hourUtc: 7,
+      intervalMinutes: 1440,
+      anchorMinuteUtc: 7 * 60,
       enabled: false,
       triggerPayload: {},
       createdAt: new Date("2026-01-01T00:00:00.000Z"),
@@ -649,7 +726,7 @@ describe("PATCH /me/schedules/:id", () => {
       req(`/me/schedules/${SCHED_ID}`, {
         method: "PATCH",
         user: "user-a",
-        body: JSON.stringify({ enabled: false, hourUtc: 7 }),
+        body: JSON.stringify({ enabled: false, recurrence: DAILY_7 }),
       }),
     );
     expect(res.status).toBe(200);
@@ -659,8 +736,62 @@ describe("PATCH /me/schedules/:id", () => {
       ownerPrincipalId: "principal-a",
       id: SCHED_ID,
       enabled: false,
-      hourUtc: 7,
+      recurrence: DAILY_7,
     });
+  });
+
+  it("updates to a sub-daily recurrence for a non-heartbeat kind", async () => {
+    storeCalls.length = 0;
+    updateResult = {
+      id: SCHED_ID,
+      workflowKind: "granola-call",
+      intervalMinutes: 5,
+      anchorMinuteUtc: 0,
+      enabled: true,
+      triggerPayload: {},
+      createdAt: new Date("2026-01-01T00:00:00.000Z"),
+    };
+    const res = await mountApp().fetch(
+      req(`/me/schedules/${SCHED_ID}`, {
+        method: "PATCH",
+        user: "user-a",
+        body: JSON.stringify({
+          recurrence: { intervalMinutes: 5, anchorMinuteUtc: 0 },
+        }),
+      }),
+    );
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      recurrence: { intervalMinutes: number; anchorMinuteUtc: number };
+    };
+    expect(body.recurrence).toEqual({ intervalMinutes: 5, anchorMinuteUtc: 0 });
+  });
+
+  it("rejects retargeting an existing heartbeat schedule to a non-daily recurrence", async () => {
+    storeCalls.length = 0;
+    updateResult = {
+      id: SCHED_ID,
+      workflowKind: "heartbeat",
+      intervalMinutes: 1440,
+      anchorMinuteUtc: 13 * 60,
+      enabled: true,
+      triggerPayload: { reason: "scheduled-heartbeat" },
+      createdAt: new Date("2026-01-01T00:00:00.000Z"),
+    };
+    const res = await mountApp().fetch(
+      req(`/me/schedules/${SCHED_ID}`, {
+        method: "PATCH",
+        user: "user-a",
+        body: JSON.stringify({
+          recurrence: { intervalMinutes: 30, anchorMinuteUtc: 0 },
+        }),
+      }),
+    );
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({
+      error: 'workflow "heartbeat" only supports a daily schedule',
+    });
+    expect(storeCalls.some((c) => c.fn === "update")).toBe(false);
   });
 
   it("404s when no schedule matches the caller (missing or another member's)", async () => {
@@ -680,7 +811,8 @@ describe("PATCH /me/schedules/:id", () => {
     updateResult = {
       id: SCHED_ID,
       workflowKind: "no-gate",
-      hourUtc: 13,
+      intervalMinutes: 1440,
+      anchorMinuteUtc: 13 * 60,
       enabled: true,
       scope: "personal",
       ownerMemberPrincipalId: "principal-a",

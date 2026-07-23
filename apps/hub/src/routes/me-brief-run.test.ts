@@ -22,24 +22,24 @@ let scheduleRowsByPrincipal: Record<
   string,
   {
     workflowKind: string;
-    hourUtc: number;
-    lastFiredDayUtc: number | null;
+    intervalMinutes: number;
+    anchorMinuteUtc: number;
     triggerPayload: Record<string, unknown>;
   }[]
 > = {
   "principal-a": [
     {
       workflowKind: HEARTBEAT_KIND,
-      hourUtc: 13,
-      lastFiredDayUtc: null,
+      intervalMinutes: 1440,
+      anchorMinuteUtc: 13 * 60,
       triggerPayload: { reason: "scheduled-heartbeat" },
     },
   ],
   "principal-b": [
     {
       workflowKind: HEARTBEAT_KIND,
-      hourUtc: 9,
-      lastFiredDayUtc: null,
+      intervalMinutes: 1440,
+      anchorMinuteUtc: 9 * 60,
       triggerPayload: { reason: "scheduled-heartbeat" },
     },
   ],
@@ -216,8 +216,8 @@ describe("POST /me/brief-run", () => {
     scheduleRowsByPrincipal["principal-a"] = [
       {
         workflowKind: HEARTBEAT_KIND,
-        hourUtc: 13,
-        lastFiredDayUtc: null,
+        intervalMinutes: 1440,
+        anchorMinuteUtc: 13 * 60,
         triggerPayload: { reason: "scheduled-heartbeat" },
       },
     ];

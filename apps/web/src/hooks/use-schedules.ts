@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type {
   CreateScheduledTriggerBody,
+  ScheduleRecurrence,
   ScheduledTrigger,
 } from "@workbench/shared";
 import {
@@ -35,7 +36,7 @@ export function useCreateSchedule() {
 type UpdateVars = {
   id: string;
   enabled?: boolean;
-  hourUtc?: number;
+  recurrence?: ScheduleRecurrence;
   payload?: Record<string, unknown>;
 };
 
@@ -50,7 +51,7 @@ export function useUpdateSchedule() {
     { previous: ScheduledTrigger[] | undefined }
   >({
     mutationFn: ({ id, ...patch }) => updateMeSchedule(id, patch),
-    onMutate: async ({ id, enabled, hourUtc, payload }) => {
+    onMutate: async ({ id, enabled, recurrence, payload }) => {
       await queryClient.cancelQueries({ queryKey: SCHEDULES_KEY });
       const previous =
         queryClient.getQueryData<ScheduledTrigger[]>(SCHEDULES_KEY);
@@ -62,7 +63,7 @@ export function useUpdateSchedule() {
               ? {
                   ...s,
                   ...(enabled !== undefined ? { enabled } : {}),
-                  ...(hourUtc !== undefined ? { hourUtc } : {}),
+                  ...(recurrence !== undefined ? { recurrence } : {}),
                   ...(payload !== undefined ? { triggerPayload: payload } : {}),
                 }
               : s,

@@ -89,13 +89,12 @@ function makeFetch(
         const created = {
           id: `sch_${schedules.length + 1}`,
           workflowKind: body.kind,
-          hourUtc: body.hourUtc,
+          recurrence: body.recurrence,
           enabled: true,
           scope: "personal",
           ownerMemberPrincipalId: "member-1",
           triggerPayload: {},
           createdAt: "2026-01-01T00:00:00.000Z",
-          lastFiredDayUtc: null,
           lastRunId: null,
           recentFires: [],
           nextFireAt: "2026-01-02T13:00:00.000Z",
@@ -180,7 +179,7 @@ describe("BriefWorkflowAttachments", () => {
     await waitFor(() =>
       expect(created).toEqual({
         kind: "last30days-research",
-        hourUtc: 13,
+        recurrence: { intervalMinutes: 1440, anchorMinuteUtc: 13 * 60 },
         payload: { topic: "AI agents for GTM" },
       }),
     );
@@ -191,13 +190,12 @@ describe("BriefWorkflowAttachments", () => {
       {
         id: "sch_1",
         workflowKind: "last30days-research",
-        hourUtc: 13,
+        recurrence: { intervalMinutes: 1440, anchorMinuteUtc: 13 * 60 },
         enabled: true,
         scope: "personal",
         ownerMemberPrincipalId: "member-1",
         triggerPayload: {},
         createdAt: "2026-01-01T00:00:00.000Z",
-        lastFiredDayUtc: null,
         lastRunId: null,
         recentFires: [],
         nextFireAt: "2026-01-02T13:00:00.000Z",

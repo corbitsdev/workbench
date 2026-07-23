@@ -5,7 +5,11 @@ import {
   resolveEnabledBriefSources,
 } from "@workbench/shared";
 import { createGranolaTools } from "@workbench/tools-granola";
-import { createScheduler, type ScheduledTriggerRow } from "./scheduler";
+import {
+  createScheduler,
+  windowIndexFor,
+  type ScheduledTriggerRow,
+} from "./scheduler";
 import { enrichHeartbeatTriggerPayload } from "../lib/heartbeat-trigger-payload";
 
 // Exercises the real seam a live heartbeat fire drives end to end: scheduler
@@ -24,8 +28,13 @@ function makeRow(
     id: "sch-1",
     tenantId: "tenant-1",
     workflowKind: HEARTBEAT_KIND,
-    hourUtc: 9,
-    lastFiredDayUtc: null,
+    intervalMinutes: 1440,
+    anchorMinuteUtc: 9 * 60,
+    // A schedule that has never truly fired is stamped at creation to the
+    // window it was created in (see scheduled-triggers.ts), not left at some
+    // sentinel — model that here as "created yesterday's window", the
+    // realistic shape a schedule reaching its first-ever fire actually has.
+    lastFiredWindowIndex: windowIndexFor(AT_9, 1440, 9 * 60) - 1,
     ownerMemberPrincipalId: "principal-1",
     triggerPayload: { reason: "scheduled-heartbeat" },
     ...overrides,
@@ -51,15 +60,19 @@ function fireAndCapturePayload(
         HEARTBEAT_KIND,
         enabledSources,
         fire.nowMs,
-        fire.lastFiredDayUtc,
-        fire.hourUtc,
+        fire.lastFiredWindowIndex,
+        Math.floor(fire.anchorMinuteUtc / 60),
         "scheduled",
         {
           userAddress: "usr_principal-1@workbench.example",
           userRefId: "principal-1",
         },
       );
-      return { deploymentId: "dep-1", accepted: true, runId: "run-brief-skip-test" };
+      return {
+        deploymentId: "dep-1",
+        accepted: true,
+        runId: "run-brief-skip-test",
+      };
     },
   });
 

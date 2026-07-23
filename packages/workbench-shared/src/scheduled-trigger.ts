@@ -17,10 +17,48 @@ export const SCHEDULE_SCOPES = [
   "tenant",
 ] as const satisfies readonly ScheduleScope[];
 
-// Routine triggers that fire a workflow run on a daily cadence.
-// The hub scheduler loads enabled rows each tick and starts a run for any whose
-// target UTC hour has arrived and has not already fired today. These schemas are
-// the API boundary between the hub routes and the web client.
+// Routine triggers that fire a workflow run on a recurring cadence. A
+// recurrence is `intervalMinutes` (how often, minute granularity) plus
+// `anchorMinuteUtc` (minute-of-UTC-day phase, 0-1439) that fixes the wall-clock
+// alignment of the cadence. The hub scheduler evaluates a durable
+// `lastFiredWindowIndex` = floor((nowMinuteUtc - anchorMinuteUtc) / intervalMinutes)
+// each tick and fires whenever the window index advances past the last one it
+// fired in — this subsumes the old daily-at-hour model (intervalMinutes=1440,
+// anchorMinuteUtc=hourUtc*60) and adds genuine sub-daily cadences (e.g. every 5
+// minutes). These schemas are the API boundary between the hub routes and the
+// web client.
+export const ScheduleRecurrenceSchema = type({
+  intervalMinutes: "1 <= number.integer <= 10080",
+  anchorMinuteUtc: "0 <= number.integer < 1440",
+});
+export type ScheduleRecurrence = typeof ScheduleRecurrenceSchema.infer;
+
+// Minutes in a day — the interval a daily-at-hour recurrence recurs on.
+export const DAILY_INTERVAL_MINUTES = 1440;
+
+/**
+ * Recurrence constraint per workflow kind. Heartbeat's fire-time enrichment
+ * (apps/hub/src/lib/heartbeat-trigger-payload.ts, wired in
+ * apps/hub/src/index.ts) reads `lastFiredWindowIndex` as a UTC-DAY index and
+ * multiplies it by milliseconds-per-day to compute `createdAfter` — that
+ * arithmetic is only correct when heartbeat's recurrence is daily
+ * (`intervalMinutes=1440`). Before recurrence existed this was structurally
+ * guaranteed (heartbeat only ever had `hourUtc`); now that any routine-eligible
+ * kind, heartbeat included, can be created/updated with an arbitrary
+ * recurrence, the create/update routes MUST reject a non-daily interval for
+ * heartbeat — otherwise a member setting their morning brief to hourly
+ * silently sends `createdAfter` thousands of days in the future and the brief
+ * stops surfacing anything, forever, with no error.
+ */
+export function isRecurrenceAllowedForKind(
+  kind: string,
+  recurrence: ScheduleRecurrence,
+): boolean {
+  if (kind === HEARTBEAT_WORKFLOW_KIND) {
+    return recurrence.intervalMinutes === DAILY_INTERVAL_MINUTES;
+  }
+  return true;
+}
 
 /** One scheduler fire surfaced in the owner's schedule history (CL-3526). */
 export const ScheduledTriggerFireSchema = type({
@@ -36,7 +74,7 @@ export type ScheduledTriggerFire = typeof ScheduledTriggerFireSchema.infer;
 export const ScheduledTriggerSchema = type({
   id: "string",
   workflowKind: "string",
-  hourUtc: "number.integer",
+  recurrence: ScheduleRecurrenceSchema,
   enabled: "boolean",
   /** personal = Just for me; tenant = Everyone (CL-4108). */
   scope: ScheduleScopeSchema,
@@ -48,10 +86,9 @@ export const ScheduledTriggerSchema = type({
   ownerMemberPrincipalId: "string",
   triggerPayload: { "[string]": "unknown" },
   createdAt: "string",
-  lastFiredDayUtc: "number.integer | null",
   /** Most recent run id started by the scheduler; null before the first successful start. */
   lastRunId: "string | null",
-  /** Newest-first recent fires (bounded server-side). */
+  /** Newest-first recent fires (bounded server-side); the head entry is "last fired". */
   recentFires: ScheduledTriggerFireSchema.array(),
   /** ISO-8601 instant of the next fire when enabled; null when paused. */
   nextFireAt: "string | null",
@@ -67,11 +104,11 @@ export const ScheduledTriggerListResponseSchema = type({
 export type ScheduledTriggerListResponse =
   typeof ScheduledTriggerListResponseSchema.infer;
 
-// Create body: which workflow, at which UTC hour, with which trigger payload,
-// and (CL-4108) which scope — default personal when omitted.
+// Create body: which workflow, at which recurrence, with which trigger
+// payload, and (CL-4108) which scope — default personal when omitted.
 export const CreateScheduledTriggerBodySchema = type({
   kind: "string > 0",
-  hourUtc: "0 <= number.integer <= 23",
+  recurrence: ScheduleRecurrenceSchema,
   "payload?": { "[string]": "unknown" },
   "scope?": ScheduleScopeSchema,
 });
@@ -107,13 +144,13 @@ export const HeartbeatRunTriggerPayloadSchema = type({
 export type HeartbeatRunTriggerPayload =
   typeof HeartbeatRunTriggerPayloadSchema.infer;
 
-// Update body: toggle enablement, move the fire hour, and/or replace the
+// Update body: toggle enablement, move the recurrence, and/or replace the
 // stored intake payload (CL-3861 edit path). At least one field is required;
 // an empty patch is a no-op the route rejects. Scope is immutable after create
 // (delete + re-attach to change).
 export const UpdateScheduledTriggerBodySchema = type({
   "enabled?": "boolean",
-  "hourUtc?": "0 <= number.integer <= 23",
+  "recurrence?": ScheduleRecurrenceSchema,
   "payload?": { "[string]": "unknown" },
 });
 export type UpdateScheduledTriggerBody =
