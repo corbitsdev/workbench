@@ -158,25 +158,9 @@
         }
       },
       "merge-sources": {
-        "kind": "step",
+        "kind": "action",
         "id": "merge-sources",
-        "agent": {
-          "id": "heartbeat-merge-sources",
-          "systemPrompt": "",
-          "toolFactories": [],
-          "capabilities": [
-            "@workbench/tools-last30days/core:heartbeat_merge_brief_sources"
-          ],
-          "inference": {
-            "sources": []
-          },
-          "description": "Deterministic tool call: @workbench/tools-last30days/core:heartbeat_merge_brief_sources",
-          "tags": {
-            "workbench.stepKind": "deterministic-tool",
-            "workbench.tool": "@workbench/tools-last30days/core:heartbeat_merge_brief_sources",
-            "workbench.title": "Merge brief sources"
-          }
-        },
+        "handler": "@workbench/tools-last30days/core:heartbeat_merge_brief_sources",
         "drainBehavior": "cancel",
         "input": {
           "project": {
@@ -187,6 +171,11 @@
             "intake-granola",
             "intake-linear",
             "intake-vercel"
+          ]
+        },
+        "effect": {
+          "requires": [
+            "@workbench/tools-last30days/core:heartbeat_merge_brief_sources"
           ]
         },
         "after": [
@@ -228,51 +217,28 @@
         ]
       },
       "title": {
-        "kind": "step",
+        "kind": "action",
         "id": "title",
-        "agent": {
-          "id": "heartbeat-title",
-          "systemPrompt": "",
-          "toolFactories": [],
-          "capabilities": [
-            "@workbench/tools-last30days/core:heartbeat_format_brief_title"
-          ],
-          "inference": {
-            "sources": []
-          },
-          "description": "Deterministic tool call: @workbench/tools-last30days/core:heartbeat_format_brief_title",
-          "tags": {
-            "workbench.stepKind": "deterministic-tool",
-            "workbench.tool": "@workbench/tools-last30days/core:heartbeat_format_brief_title",
-            "workbench.argMap": "{\"userDisplayName\":{\"from\":\"userDisplayName\"}}",
-            "workbench.title": "Name the brief"
-          }
-        },
+        "handler": "@workbench/tools-last30days/core:heartbeat_format_brief_title",
         "drainBehavior": "cancel",
         "input": {
-          "from": "trigger.payload"
+          "project": {
+            "from": "trigger.payload"
+          },
+          "fields": [
+            "userDisplayName"
+          ]
+        },
+        "effect": {
+          "requires": [
+            "@workbench/tools-last30days/core:heartbeat_format_brief_title"
+          ]
         }
       },
       "document": {
-        "kind": "step",
+        "kind": "action",
         "id": "document",
-        "agent": {
-          "id": "heartbeat-document",
-          "systemPrompt": "",
-          "toolFactories": [],
-          "capabilities": [
-            "@workbench/tools-last30days/core:heartbeat_format_brief_document"
-          ],
-          "inference": {
-            "sources": []
-          },
-          "description": "Deterministic tool call: @workbench/tools-last30days/core:heartbeat_format_brief_document",
-          "tags": {
-            "workbench.stepKind": "deterministic-tool",
-            "workbench.tool": "@workbench/tools-last30days/core:heartbeat_format_brief_document",
-            "workbench.title": "Compose the brief document"
-          }
-        },
+        "handler": "@workbench/tools-last30days/core:heartbeat_format_brief_document",
         "drainBehavior": "cancel",
         "input": {
           "merge": [
@@ -284,73 +250,88 @@
             }
           ]
         },
+        "effect": {
+          "requires": [
+            "@workbench/tools-last30days/core:heartbeat_format_brief_document"
+          ]
+        },
         "after": [
           "title",
           "brief"
         ]
       },
       "persist": {
-        "kind": "step",
+        "kind": "action",
         "id": "persist",
-        "agent": {
-          "id": "heartbeat-persist",
-          "systemPrompt": "",
-          "toolFactories": [],
-          "capabilities": [
-            "@workbench/tools-artifact/artifact:write_artifact"
-          ],
-          "inference": {
-            "sources": []
-          },
-          "description": "Deterministic tool call: @workbench/tools-artifact/artifact:write_artifact",
-          "tags": {
-            "workbench.stepKind": "deterministic-tool",
-            "workbench.tool": "@workbench/tools-artifact/artifact:write_artifact",
-            "workbench.argMap": "{\"title\":{\"from\":\"title\"},\"body\":{\"from\":\"body\"},\"kind\":{\"literal\":\"morning-brief\"},\"jobLabel\":{\"literal\":\"Morning Brief\"}}",
-            "workbench.title": "Save the brief"
-          }
-        },
+        "handler": "@workbench/tools-artifact/artifact:write_artifact",
         "drainBehavior": "cancel",
         "input": {
-          "from": "steps.document.output.content"
+          "merge": [
+            {
+              "project": {
+                "from": "steps.document.output.content"
+              },
+              "fields": [
+                "title",
+                "body"
+              ]
+            },
+            {
+              "literal": {
+                "kind": "morning-brief",
+                "jobLabel": "Morning Brief"
+              }
+            }
+          ]
+        },
+        "effect": {
+          "requires": [
+            "@workbench/tools-artifact/artifact:write_artifact"
+          ]
         },
         "after": [
           "document"
         ]
       },
       "notify-prep": {
-        "kind": "step",
+        "kind": "action",
         "id": "notify-prep",
-        "agent": {
-          "id": "heartbeat-notify-prep",
-          "systemPrompt": "",
-          "toolFactories": [],
-          "capabilities": [
-            "@workbench/tools-last30days/core:heartbeat_format_brief_notify"
-          ],
-          "inference": {
-            "sources": []
-          },
-          "description": "Deterministic tool call: @workbench/tools-last30days/core:heartbeat_format_brief_notify",
-          "tags": {
-            "workbench.stepKind": "deterministic-tool",
-            "workbench.tool": "@workbench/tools-last30days/core:heartbeat_format_brief_notify",
-            "workbench.argMap": "{\"userAddress\":{\"from\":\"userAddress\"},\"title\":{\"from\":\"title\"},\"body\":{\"from\":\"body\"},\"artifactId\":{\"from\":\"artifactId\"},\"runId\":{\"from\":\"runId\"},\"workflowLabel\":{\"literal\":\"Morning brief\"}}",
-            "workbench.title": "Prepare the notify mail"
-          }
-        },
+        "handler": "@workbench/tools-last30days/core:heartbeat_format_brief_notify",
         "drainBehavior": "cancel",
         "input": {
           "merge": [
             {
-              "from": "trigger.payload"
+              "project": {
+                "merge": [
+                  {
+                    "from": "trigger.payload"
+                  },
+                  {
+                    "from": "steps.document.output.content"
+                  },
+                  {
+                    "from": "steps.persist.output.content"
+                  }
+                ]
+              },
+              "fields": [
+                "userAddress",
+                "title",
+                "body",
+                "artifactId",
+                "runId"
+              ]
             },
             {
-              "from": "steps.document.output.content"
-            },
-            {
-              "from": "steps.persist.output.content"
+              "literal": {
+                "workflowLabel": "Morning brief"
+              }
             }
+          ]
+        },
+        "effect": {
+          "requires": [
+            "@workbench/tools-last30days/core:heartbeat_format_brief_notify"
           ]
         },
         "after": [
@@ -359,28 +340,17 @@
         ]
       },
       "notify": {
-        "kind": "step",
+        "kind": "action",
         "id": "notify",
-        "agent": {
-          "id": "heartbeat-notify",
-          "systemPrompt": "",
-          "toolFactories": [],
-          "capabilities": [
-            "mail_send"
-          ],
-          "inference": {
-            "sources": []
-          },
-          "description": "Deterministic tool call: mail_send",
-          "tags": {
-            "workbench.stepKind": "deterministic-tool",
-            "workbench.tool": "mail_send",
-            "workbench.title": "Send the brief"
-          }
-        },
+        "handler": "mail_send",
         "drainBehavior": "cancel",
         "input": {
           "from": "steps.notify-prep.output.content"
+        },
+        "effect": {
+          "requires": [
+            "mail_send"
+          ]
         },
         "after": [
           "notify-prep"

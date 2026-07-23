@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { runLocal } from "@intx/workflow/runlocal";
 import type { StepInvoker } from "@intx/workflow/runtime";
 import { evaluateSelector } from "@intx/workflow/runtime";
+import type { ActionHandler } from "@intx/workflow";
 import { mergeHeartbeatBriefSources } from "@workbench/shared";
 import {
   DETERMINISTIC_TOOL_KIND,
@@ -12,7 +13,16 @@ import {
 } from "@workbench/agents";
 import { WIRED_BRIEF_SOURCES } from "@workbench/shared";
 
-import { workflow, heartbeatIntakeStepKey } from "./index";
+import {
+  workflow,
+  heartbeatIntakeStepKey,
+  HEARTBEAT_FORMAT_BRIEF_TITLE_HANDLER,
+  HEARTBEAT_MERGE_BRIEF_SOURCES_HANDLER,
+  HEARTBEAT_FORMAT_BRIEF_DOCUMENT_HANDLER,
+  WRITE_ARTIFACT_HANDLER,
+  HEARTBEAT_FORMAT_BRIEF_NOTIFY_HANDLER,
+  MAIL_SEND_HANDLER,
+} from "./index";
 
 // ---------------------------------------------------------------------------
 // Test helpers
@@ -30,11 +40,41 @@ function makeRecordingInvoker(outputs: Record<string, unknown> = {}): {
   return { invoker, ran };
 }
 
+/**
+ * Records each action dispatch by its handler ref and returns a canned
+ * output, mirroring `makeRecordingInvoker` for the `step` primitive but for
+ * native `action` primitives (no agent, no step-tool tags — dispatched via
+ * `runLocal`'s `actionResolver`, not `invokeStep`).
+ */
+function makeRecordingActionResolver(outputs: Record<string, unknown> = {}): {
+  resolver: (ref: string) => ActionHandler;
+  ran: { handler: string; input: unknown }[];
+} {
+  const ran: { handler: string; input: unknown }[] = [];
+  const resolver = (ref: string): ActionHandler => {
+    return async (input) => {
+      ran.push({ handler: ref, input });
+      return outputs[ref] ?? null;
+    };
+  };
+  return { resolver, ran };
+}
+
 function stepPrimitive(id: string) {
   const primitive = workflow.steps[id];
   if (primitive === undefined || primitive.kind !== "step") {
     throw new Error(
       `expected step primitive for step id "${id}", got ${primitive?.kind ?? "undefined"}`,
+    );
+  }
+  return primitive;
+}
+
+function actionPrimitive(id: string) {
+  const primitive = workflow.steps[id];
+  if (primitive === undefined || primitive.kind !== "action") {
+    throw new Error(
+      `expected action primitive for step id "${id}", got ${primitive?.kind ?? "undefined"}`,
     );
   }
   return primitive;
@@ -119,6 +159,7 @@ const TRIGGER_PAYLOAD = {
   userAddress: "usr_abc123@workbench.local",
   userRefId: "usr_abc123",
   userDisplayName: "Jordan Lee",
+  enabledSources: ["attio", "granola", "linear", "vercel"],
   createdAfter: "2026-07-04T00:00:00Z",
   runId: "run-heartbeat-1",
 };
@@ -127,11 +168,11 @@ describe("heartbeat native workflow", () => {
   // -------------------------------------------------------------------------
   // Gate-free (load-bearing): no awaitSignal anywhere
   // -------------------------------------------------------------------------
-  test("has no awaitSignal steps — every step is a plain step or map", () => {
+  test("has no awaitSignal steps — every step is a plain step or native action", () => {
     const kinds = Object.values(workflow.steps).map((s) => s.kind);
     expect(kinds.length).toBe(7 + WIRED_BRIEF_SOURCES.length);
     for (const kind of kinds) {
-      expect(kind === "step" || kind === "map").toBe(true);
+      expect(kind === "step" || kind === "action").toBe(true);
       expect(kind).not.toBe("awaitSignal");
     }
   });
@@ -168,17 +209,135 @@ describe("heartbeat native workflow", () => {
     ]);
   });
 
-  test("title is a deterministic call to heartbeat_format_brief_title with no inference source", () => {
-    const title = stepPrimitive("title");
-    expect(title.agent.tags?.[STEP_KIND_TAG]).toBe(DETERMINISTIC_TOOL_KIND);
-    expect(title.agent.tags?.[STEP_TOOL_TAG]).toContain(
-      "heartbeat_format_brief_title",
-    );
-    expect(title.agent.inference.sources).toEqual([]);
-    expect(title.input).toEqual({ from: "trigger.payload" });
-    expect(argMapOf("title")).toEqual({
-      userDisplayName: { from: "userDisplayName" },
+  // -------------------------------------------------------------------------
+  // Native action steps
+  // -------------------------------------------------------------------------
+  test("title is a native action calling heartbeat_format_brief_title, tolerating an absent userDisplayName", () => {
+    const title = actionPrimitive("title");
+    expect(title.handler).toContain("heartbeat_format_brief_title");
+    expect(title.effect?.requires).toEqual([title.handler]);
+    expect(title.input).toEqual({
+      project: { from: "trigger.payload" },
+      fields: ["userDisplayName"],
     });
+    // Bug fix: a `project` selector assigns `source[field]` unconditionally
+    // (no presence check), so a trigger payload missing `userDisplayName`
+    // entirely (an agent principal, or an identity-lookup miss) still
+    // evaluates — it never throws the way the old non-optional argMap did.
+    const evaluated = evaluateSelector(title.input!, {
+      trigger: { payload: { reason: "scheduled-heartbeat" } },
+      steps: {},
+    }) as Record<string, unknown>;
+    expect(evaluated).toEqual({ userDisplayName: undefined });
+  });
+
+  test("merge-sources is a native action projecting every intake step into heartbeat_merge_brief_sources", () => {
+    const intakeStepIds = WIRED_BRIEF_SOURCES.map((s) =>
+      heartbeatIntakeStepKey(s.key),
+    );
+    const mergeSources = actionPrimitive("merge-sources");
+    expect(mergeSources.handler).toContain("heartbeat_merge_brief_sources");
+    expect(mergeSources.effect?.requires).toEqual([mergeSources.handler]);
+    expect(mergeSources.input).toEqual({
+      project: { from: "steps" },
+      fields: intakeStepIds,
+    });
+    expect(mergeSources.after).toEqual(intakeStepIds);
+  });
+
+  test("document is a native action merging title.output.content and brief.output", () => {
+    const document = actionPrimitive("document");
+    expect(document.handler).toContain("heartbeat_format_brief_document");
+    expect(document.effect?.requires).toEqual([document.handler]);
+    expect(document.input).toEqual({
+      merge: [
+        { from: "steps.title.output.content" },
+        { from: "steps.brief.output" },
+      ],
+    });
+    expect(document.after).toEqual(["title", "brief"]);
+  });
+
+  test("persist is a native action writing a stable morning-brief artifact, never 'report'", () => {
+    const persist = actionPrimitive("persist");
+    expect(persist.handler).toContain("write_artifact");
+    expect(persist.effect?.requires).toEqual([persist.handler]);
+    expect(persist.input).toEqual({
+      merge: [
+        {
+          project: { from: "steps.document.output.content" },
+          fields: ["title", "body"],
+        },
+        {
+          literal: { kind: "morning-brief", jobLabel: "Morning Brief" },
+        },
+      ],
+    });
+    expect(persist.after).toEqual(["document"]);
+  });
+
+  test("notify-prep is a native action building mail_send's exact argument shape", () => {
+    const notifyPrep = actionPrimitive("notify-prep");
+    expect(notifyPrep.handler).toContain("heartbeat_format_brief_notify");
+    expect(notifyPrep.effect?.requires).toEqual([notifyPrep.handler]);
+    expect(notifyPrep.input).toEqual({
+      merge: [
+        {
+          project: {
+            merge: [
+              { from: "trigger.payload" },
+              { from: "steps.document.output.content" },
+              { from: "steps.persist.output.content" },
+            ],
+          },
+          fields: ["userAddress", "title", "body", "artifactId", "runId"],
+        },
+        { literal: { workflowLabel: "Morning brief" } },
+      ],
+    });
+    expect(notifyPrep.after).toEqual(["document", "persist"]);
+  });
+
+  test("notify-prep input resolves against real merged step outputs", () => {
+    const notifyPrep = actionPrimitive("notify-prep");
+    const evaluated = evaluateSelector(notifyPrep.input!, {
+      trigger: { payload: TRIGGER_PAYLOAD },
+      steps: {
+        document: {
+          output: {
+            content: {
+              title: "Jordan Lee's Morning Brief - 04/07/26",
+              body: "# Morning brief\n\nAll clear today.",
+            },
+          },
+        },
+        persist: {
+          output: {
+            content: {
+              artifactId: "art_1",
+              version: 1,
+              title: "Jordan Lee's Morning Brief - 04/07/26",
+            },
+          },
+        },
+      },
+    }) as Record<string, unknown>;
+    expect(evaluated).toEqual({
+      userAddress: TRIGGER_PAYLOAD.userAddress,
+      title: "Jordan Lee's Morning Brief - 04/07/26",
+      body: "# Morning brief\n\nAll clear today.",
+      artifactId: "art_1",
+      runId: TRIGGER_PAYLOAD.runId,
+      workflowLabel: "Morning brief",
+    });
+  });
+
+  test("notify is a native action passing notify-prep's output through verbatim", () => {
+    const notify = actionPrimitive("notify");
+    expect(notify.handler).toContain("mail_send");
+    expect(notify.effect?.requires).toEqual([notify.handler]);
+    expect(notify.input).toEqual({ from: "steps.notify-prep.output.content" });
+    expect(notify.after).toEqual(["notify-prep"]);
   });
 
   test("each generated intake step is a deterministic call to its source's tool, nonFatal, with no inference source", () => {
@@ -200,7 +359,7 @@ describe("heartbeat native workflow", () => {
   });
 
   // Load-bearing: today's catalog generates one nonFatal intake step per
-  // wired source, with brief depending on all of them.
+  // wired source, with merge-sources depending on all of them.
   test("today's catalog generates one intake step per wired source", () => {
     expect(WIRED_BRIEF_SOURCES.map((s) => s.key).sort()).toEqual([
       "attio",
@@ -212,24 +371,9 @@ describe("heartbeat native workflow", () => {
     expect(intake.agent.id).toBe("heartbeat-intake-granola");
     expect(intake.agent.tags?.[STEP_TOOL_TAG]).toContain("granola_list_notes");
     expect(intake.agent.tags?.[STEP_NONFATAL_TAG]).toBe("true");
-    expect(stepPrimitive("brief").after).toEqual(["merge-sources"]);
-    expect(stepPrimitive("merge-sources").after).toEqual(
+    expect(actionPrimitive("merge-sources").after).toEqual(
       WIRED_BRIEF_SOURCES.map((s) => heartbeatIntakeStepKey(s.key)),
     );
-  });
-
-  test("notify is a deterministic mail_send step with no inference source", () => {
-    const notify = stepPrimitive("notify");
-    expect(notify.agent.tags?.[STEP_KIND_TAG]).toBe(DETERMINISTIC_TOOL_KIND);
-    expect(notify.agent.tags?.[STEP_TOOL_TAG]).toContain("mail_send");
-    expect(notify.agent.inference.sources).toEqual([]);
-  });
-
-  test("persist is a deterministic write_artifact step with no inference source", () => {
-    const persist = stepPrimitive("persist");
-    expect(persist.agent.tags?.[STEP_KIND_TAG]).toBe(DETERMINISTIC_TOOL_KIND);
-    expect(persist.agent.tags?.[STEP_TOOL_TAG]).toContain("write_artifact");
-    expect(persist.agent.inference.sources).toEqual([]);
   });
 
   // -------------------------------------------------------------------------
@@ -260,18 +404,18 @@ describe("heartbeat native workflow", () => {
     }
   });
 
-  test("merge-sources projects every intake step into heartbeat_merge_brief_sources", () => {
-    const intakeStepIds = WIRED_BRIEF_SOURCES.map((s) =>
-      heartbeatIntakeStepKey(s.key),
+  // Both argMap fields are non-optional, which is only safe because
+  // `enrichHeartbeatTriggerPayload` (apps/hub/src/lib/heartbeat-trigger-payload.ts)
+  // stamps both unconditionally on every heartbeat fire — proves the argMap
+  // actually resolves against the real enriched trigger payload shape, not
+  // just that the static tag looks right.
+  test("intake argMap resolves enabledSources/createdAfter from a real enriched trigger payload", () => {
+    const args = resolveArgMap(
+      argMapOf(heartbeatIntakeStepKey("granola")),
+      TRIGGER_PAYLOAD,
     );
-    const mergeSources = stepPrimitive("merge-sources");
-    expect(mergeSources.agent.tags?.[STEP_TOOL_TAG]).toContain(
-      "heartbeat_merge_brief_sources",
-    );
-    expect(mergeSources.input).toEqual({
-      project: { from: "steps" },
-      fields: intakeStepIds,
-    });
+    expect(args.enabledSources).toEqual(TRIGGER_PAYLOAD.enabledSources);
+    expect(args.createdAfter).toBe(TRIGGER_PAYLOAD.createdAfter);
   });
 
   test("brief merges the trigger payload and merged sources content", () => {
@@ -346,86 +490,12 @@ describe("heartbeat native workflow", () => {
   });
 
   // -------------------------------------------------------------------------
-  // Document composition — the one place the agent's `reply` field is read
-  // -------------------------------------------------------------------------
-  test("document merges title.output.content and brief.output with no argMap", () => {
-    const document = stepPrimitive("document");
-    expect(document.agent.tags?.[STEP_KIND_TAG]).toBe(DETERMINISTIC_TOOL_KIND);
-    expect(document.agent.tags?.[STEP_TOOL_TAG]).toContain(
-      "heartbeat_format_brief_document",
-    );
-    expect(document.agent.tags?.[STEP_ARGMAP_TAG]).toBeUndefined();
-    expect(document.input).toEqual({
-      merge: [
-        { from: "steps.title.output.content" },
-        { from: "steps.brief.output" },
-      ],
-    });
-    expect(document.after).toEqual(["title", "brief"]);
-  });
-
-  // -------------------------------------------------------------------------
-  // Mail addressing
-  // -------------------------------------------------------------------------
-  test("notify-prep argMap builds mail_send's exact argument shape from the document + persisted artifact", () => {
-    expect(argMapOf("notify-prep")).toEqual({
-      userAddress: { from: "userAddress" },
-      title: { from: "title" },
-      body: { from: "body" },
-      artifactId: { from: "artifactId" },
-      runId: { from: "runId" },
-      workflowLabel: { literal: "Morning brief" },
-    });
-    expect(stepPrimitive("notify-prep").after).toEqual(["document", "persist"]);
-  });
-
-  test("notify-prep argMap resolves artifactId from write_artifact's content object directly", () => {
-    // write_artifact's step output is { content: { artifactId, version, title } }
-    // — a real object, not a stringified envelope — so a top-level
-    // { from: "artifactId" } sees it directly with no JSON unwrap.
-    const notifyPrepInput = {
-      ...TRIGGER_PAYLOAD,
-      title: "Jordan Lee's Morning Brief - 04/07/26",
-      body: "# Morning brief\n\nAll clear today.",
-      artifactId: "art_1",
-    };
-    const args = resolveArgMap(argMapOf("notify-prep"), notifyPrepInput);
-    expect(args.artifactId).toBe("art_1");
-    expect(args.userAddress).toBe(TRIGGER_PAYLOAD.userAddress);
-    expect(args.runId).toBe(TRIGGER_PAYLOAD.runId);
-    expect(args.workflowLabel).toBe("Morning brief");
-  });
-
-  test("notify is a pure passthrough of notify-prep's output — no argMap", () => {
-    const notify = stepPrimitive("notify");
-    expect(notify.agent.tags?.[STEP_ARGMAP_TAG]).toBeUndefined();
-    expect(notify.input).toEqual({ from: "steps.notify-prep.output.content" });
-    expect(notify.after).toEqual(["notify-prep"]);
-  });
-
-  // -------------------------------------------------------------------------
-  // Artifact persistence argMap
-  // -------------------------------------------------------------------------
-  test("persist argMap saves the brief body as a stable morning-brief artifact, never 'report'", () => {
-    expect(argMapOf("persist")).toEqual({
-      title: { from: "title" },
-      body: { from: "body" },
-      kind: { literal: "morning-brief" },
-      jobLabel: { literal: "Morning Brief" },
-    });
-    expect(stepPrimitive("persist").input).toEqual({
-      from: "steps.document.output.content",
-    });
-    expect(stepPrimitive("persist").after).toEqual(["document"]);
-  });
-
-  // -------------------------------------------------------------------------
   // Full run — completes with ZERO signals (proves gate-free / unattended)
   // -------------------------------------------------------------------------
   test("runs intake → brief → persist → notify to completion with no human input", async () => {
     const briefReply =
       "# Morning brief\n\n## What happened\n- Discovery call with Acme.";
-    const { invoker, ran } = makeRecordingInvoker({
+    const { invoker, ran: stepRan } = makeRecordingInvoker({
       "heartbeat-intake-granola": {
         notes: [{ id: "note_1", title: "Acme call", summary: "Discovery" }],
       },
@@ -434,7 +504,10 @@ describe("heartbeat native workflow", () => {
         attioActivity: { newCompanies: [], openTasks: [] },
       },
       "heartbeat-intake-vercel": { deployments: [] },
-      "heartbeat-merge-sources": {
+      "heartbeat-brief": { reply: briefReply },
+    });
+    const { resolver, ran: actionRan } = makeRecordingActionResolver({
+      [HEARTBEAT_MERGE_BRIEF_SOURCES_HANDLER]: {
         content: {
           sources: {
             granola: {
@@ -450,24 +523,23 @@ describe("heartbeat native workflow", () => {
           },
         },
       },
-      "heartbeat-brief": { reply: briefReply },
-      "heartbeat-title": {
+      [HEARTBEAT_FORMAT_BRIEF_TITLE_HANDLER]: {
         content: { title: "Jordan Lee's Morning Brief - 04/07/26" },
       },
-      "heartbeat-document": {
+      [HEARTBEAT_FORMAT_BRIEF_DOCUMENT_HANDLER]: {
         content: {
           title: "Jordan Lee's Morning Brief - 04/07/26",
           body: briefReply,
         },
       },
-      "heartbeat-persist": {
+      [WRITE_ARTIFACT_HANDLER]: {
         content: {
           artifactId: "art_1",
           version: 1,
           title: "Jordan Lee's Morning Brief - 04/07/26",
         },
       },
-      "heartbeat-notify-prep": {
+      [HEARTBEAT_FORMAT_BRIEF_NOTIFY_HANDLER]: {
         content: {
           to: TRIGGER_PAYLOAD.userAddress,
           subject: "Jordan Lee's Morning Brief - 04/07/26",
@@ -482,11 +554,12 @@ describe("heartbeat native workflow", () => {
           ],
         },
       },
-      "heartbeat-notify": { messageId: "mail_1" },
+      [MAIL_SEND_HANDLER]: { messageId: "mail_1" },
     });
 
     const run = runLocal(workflow, {
       invokeStep: invoker,
+      actionResolver: resolver,
       triggerPayload: TRIGGER_PAYLOAD,
     });
 
@@ -494,21 +567,24 @@ describe("heartbeat native workflow", () => {
 
     expect(result.terminalStatus).toBe("completed");
 
-    const ranIds = ran.map((r) => r.id);
-    expect(ranIds).toContain("heartbeat-intake-granola");
-    expect(ranIds).toContain("heartbeat-intake-linear");
-    expect(ranIds).toContain("heartbeat-intake-attio");
-    expect(ranIds).toContain("heartbeat-intake-vercel");
-    expect(ranIds).toContain("heartbeat-merge-sources");
-    expect(ranIds).toContain("heartbeat-brief");
-    expect(ranIds).toContain("heartbeat-title");
-    expect(ranIds).toContain("heartbeat-document");
-    expect(ranIds).toContain("heartbeat-persist");
-    expect(ranIds).toContain("heartbeat-notify-prep");
-    expect(ranIds).toContain("heartbeat-notify");
-    const persistIdx = ranIds.indexOf("heartbeat-persist");
-    const notifyPrepIdx = ranIds.indexOf("heartbeat-notify-prep");
-    const notifyIdx = ranIds.indexOf("heartbeat-notify");
+    const ranStepIds = stepRan.map((r) => r.id);
+    const ranHandlers = actionRan.map((r) => r.handler);
+    expect(ranStepIds).toContain("heartbeat-intake-granola");
+    expect(ranStepIds).toContain("heartbeat-intake-linear");
+    expect(ranStepIds).toContain("heartbeat-intake-attio");
+    expect(ranStepIds).toContain("heartbeat-intake-vercel");
+    expect(ranStepIds).toContain("heartbeat-brief");
+    expect(ranHandlers).toContain(HEARTBEAT_MERGE_BRIEF_SOURCES_HANDLER);
+    expect(ranHandlers).toContain(HEARTBEAT_FORMAT_BRIEF_TITLE_HANDLER);
+    expect(ranHandlers).toContain(HEARTBEAT_FORMAT_BRIEF_DOCUMENT_HANDLER);
+    expect(ranHandlers).toContain(WRITE_ARTIFACT_HANDLER);
+    expect(ranHandlers).toContain(HEARTBEAT_FORMAT_BRIEF_NOTIFY_HANDLER);
+    expect(ranHandlers).toContain(MAIL_SEND_HANDLER);
+    const persistIdx = ranHandlers.indexOf(WRITE_ARTIFACT_HANDLER);
+    const notifyPrepIdx = ranHandlers.indexOf(
+      HEARTBEAT_FORMAT_BRIEF_NOTIFY_HANDLER,
+    );
+    const notifyIdx = ranHandlers.indexOf(MAIL_SEND_HANDLER);
     expect(persistIdx).toBeGreaterThanOrEqual(0);
     expect(notifyPrepIdx).toBeGreaterThan(persistIdx);
     expect(notifyIdx).toBeGreaterThan(notifyPrepIdx);
@@ -520,14 +596,17 @@ describe("heartbeat native workflow", () => {
   // -------------------------------------------------------------------------
   test("mail_send receives the firing user's usr_ address and the artifact persists the brief", async () => {
     const briefReply = "# Morning brief\n\nAll clear today.";
-    const { invoker, ran } = makeRecordingInvoker({
+    const { invoker } = makeRecordingInvoker({
       "heartbeat-intake-granola": { notes: [] },
       "heartbeat-intake-linear": { issues: [] },
       "heartbeat-intake-attio": {
         attioActivity: { newCompanies: [], openTasks: [] },
       },
       "heartbeat-intake-vercel": { deployments: [] },
-      "heartbeat-merge-sources": {
+      "heartbeat-brief": { reply: briefReply },
+    });
+    const { resolver, ran } = makeRecordingActionResolver({
+      [HEARTBEAT_MERGE_BRIEF_SOURCES_HANDLER]: {
         content: {
           sources: {
             granola: { notes: [] },
@@ -539,24 +618,23 @@ describe("heartbeat native workflow", () => {
           },
         },
       },
-      "heartbeat-brief": { reply: briefReply },
-      "heartbeat-title": {
+      [HEARTBEAT_FORMAT_BRIEF_TITLE_HANDLER]: {
         content: { title: "Jordan Lee's Morning Brief - 04/07/26" },
       },
-      "heartbeat-document": {
+      [HEARTBEAT_FORMAT_BRIEF_DOCUMENT_HANDLER]: {
         content: {
           title: "Jordan Lee's Morning Brief - 04/07/26",
           body: briefReply,
         },
       },
-      "heartbeat-persist": {
+      [WRITE_ARTIFACT_HANDLER]: {
         content: {
           artifactId: "art_1",
           version: 1,
           title: "Jordan Lee's Morning Brief - 04/07/26",
         },
       },
-      "heartbeat-notify-prep": {
+      [HEARTBEAT_FORMAT_BRIEF_NOTIFY_HANDLER]: {
         content: {
           to: TRIGGER_PAYLOAD.userAddress,
           subject: "Jordan Lee's Morning Brief - 04/07/26",
@@ -571,38 +649,31 @@ describe("heartbeat native workflow", () => {
           ],
         },
       },
-      "heartbeat-notify": { messageId: "mail_1" },
+      [MAIL_SEND_HANDLER]: { messageId: "mail_1" },
     });
 
     const run = runLocal(workflow, {
       invokeStep: invoker,
+      actionResolver: resolver,
       triggerPayload: TRIGGER_PAYLOAD,
     });
     const result = await run.complete;
     expect(result.terminalStatus).toBe("completed");
 
-    // Pin the persist → notify-prep handoff on the recorded merge input, not
-    // only the static argMap tag: notify-prep must see write_artifact's
-    // content object directly (no JSON envelope).
-    const notifyPrepInput = ran.find((r) => r.id === "heartbeat-notify-prep")
-      ?.input as Record<string, unknown> | undefined;
+    const notifyPrepInput = ran.find(
+      (r) => r.handler === HEARTBEAT_FORMAT_BRIEF_NOTIFY_HANDLER,
+    )?.input as Record<string, unknown> | undefined;
     if (notifyPrepInput === undefined)
       throw new Error("notify-prep step did not run");
-    const notifyPrepArgs = resolveArgMap(
-      argMapOf("notify-prep"),
-      notifyPrepInput,
-    );
-    expect(notifyPrepArgs.artifactId).toBe("art_1");
-    expect(notifyPrepArgs.userAddress).toBe(TRIGGER_PAYLOAD.userAddress);
-    expect(notifyPrepArgs.runId).toBe(TRIGGER_PAYLOAD.runId);
-    expect(notifyPrepArgs.workflowLabel).toBe("Morning brief");
+    expect(notifyPrepInput.artifactId).toBe("art_1");
+    expect(notifyPrepInput.userAddress).toBe(TRIGGER_PAYLOAD.userAddress);
+    expect(notifyPrepInput.runId).toBe(TRIGGER_PAYLOAD.runId);
+    expect(notifyPrepInput.workflowLabel).toBe("Morning brief");
 
-    const notifyInput = ran.find((r) => r.id === "heartbeat-notify")?.input as
-      | Record<string, unknown>
-      | undefined;
+    const notifyInput = ran.find((r) => r.handler === MAIL_SEND_HANDLER)
+      ?.input as Record<string, unknown> | undefined;
     if (notifyInput === undefined) throw new Error("notify step did not run");
 
-    // notify has no argMap — its recorded input IS the mail_send arguments.
     expect(notifyInput.to).toBe(TRIGGER_PAYLOAD.userAddress);
     expect(String(notifyInput.to).startsWith("usr_")).toBe(true);
     expect(notifyInput.subject).toBe("Jordan Lee's Morning Brief - 04/07/26");
@@ -616,13 +687,12 @@ describe("heartbeat native workflow", () => {
       },
     ]);
 
-    const persistInput = ran.find((r) => r.id === "heartbeat-persist")
+    const persistInput = ran.find((r) => r.handler === WRITE_ARTIFACT_HANDLER)
       ?.input as Record<string, unknown> | undefined;
     if (persistInput === undefined) throw new Error("persist step did not run");
 
-    const artifactArgs = resolveArgMap(argMapOf("persist"), persistInput);
-    expect(artifactArgs.body).toBe(briefReply);
-    expect(artifactArgs.kind).toBe("morning-brief");
-    expect(artifactArgs.title).toBe("Jordan Lee's Morning Brief - 04/07/26");
+    expect(persistInput.body).toBe(briefReply);
+    expect(persistInput.kind).toBe("morning-brief");
+    expect(persistInput.title).toBe("Jordan Lee's Morning Brief - 04/07/26");
   });
 });
