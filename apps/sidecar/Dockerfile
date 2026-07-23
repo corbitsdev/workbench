@@ -80,6 +80,7 @@ COPY packages/transcript/package.json packages/transcript/
 COPY packages/ui/package.json packages/ui/
 COPY packages/tasks/package.json packages/tasks/
 COPY packages/workbench-shared/package.json packages/workbench-shared/
+COPY packages/workflows-ui/package.json packages/workflows-ui/
 COPY packages/workflow-host/package.json packages/workflow-host/
 COPY workflows/ab-compare-quality/package.json workflows/ab-compare-quality/
 COPY workflows/ab-compare-speed/package.json workflows/ab-compare-speed/

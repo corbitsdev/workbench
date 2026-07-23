@@ -34,7 +34,7 @@ export interface DisplayFlowStep {
 
 type Primitive = WorkflowDefinition["steps"][string];
 
-function humanize(raw: string): string {
+export function humanize(raw: string): string {
   const spaced = raw
     .replace(/[_-]+/g, " ")
     .replace(/([a-z0-9])([A-Z])/g, "$1 $2")

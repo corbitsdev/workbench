@@ -41,6 +41,7 @@ export {
 export {
   classifyWorkflowSteps,
   countHumanGates,
+  humanize,
   type FlowStepClass,
   type ClassifiedFlowStep,
   type DisplayFlowStep,

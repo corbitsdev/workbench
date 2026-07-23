@@ -1560,6 +1560,17 @@
         "typescript": "^5.9.0",
       },
     },
+    "packages/workflows-ui": {
+      "name": "@workbench/workflows-ui",
+      "dependencies": {
+        "@workbench/agents": "workspace:*",
+        "arktype": "catalog:",
+      },
+      "devDependencies": {
+        "@types/bun": "latest",
+        "typescript": "^5.9.0",
+      },
+    },
     "workflows/ab-compare-quality": {
       "name": "@workbench/workflow-ab-compare-quality",
       "version": "0.1.0",
@@ -2984,6 +2995,8 @@
     "@workbench/workflow-smoke-test": ["@workbench/workflow-smoke-test@workspace:workflows/smoke-test"],
 
     "@workbench/workflow-sumble-account-intel": ["@workbench/workflow-sumble-account-intel@workspace:workflows/sumble-account-intel"],
+
+    "@workbench/workflows-ui": ["@workbench/workflows-ui@workspace:packages/workflows-ui"],
 
     "abort-controller": ["abort-controller@3.0.0", "", { "dependencies": { "event-target-shim": "^5.0.0" } }, "sha512-h8lQ8tacZYnR3vNQTgibj+tODHI5/+l06Au2Pcriv/Gmet0eaj4TwWH41sO9wnHDiQsEj19q0drzdWdeAHtweg=="],
 
