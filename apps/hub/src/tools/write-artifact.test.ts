@@ -1,5 +1,4 @@
 import { describe, expect, it, mock } from "bun:test";
-import type { StringToolHandler } from "@intx/agent";
 import { createWriteArtifactTool } from "./write-artifact";
 
 const SIGNAL = new AbortController().signal;
@@ -114,17 +113,71 @@ function makeMockDb(
   return db;
 }
 
+// write_artifact is a structured (kind: "full") tool: its result carries
+// `{ artifactId, version, title }` directly on `content`, not JSON-encoded.
+// This adapter keeps the tests' existing (args, signal) call shape while
+// returning the raw content object instead of a JSON string.
 function getStringHandler(
   context: Parameters<typeof createWriteArtifactTool>[0],
-): StringToolHandler {
+): (
+  args: Record<string, unknown>,
+  signal: AbortSignal,
+) => Promise<Record<string, unknown>> {
   const tools = createWriteArtifactTool(context);
   const tool = tools[0];
   if (!tool) throw new Error("No tool created");
-  if (tool.kind !== "string") throw new Error("Expected string tool");
-  return tool.handler;
+  if (tool.kind !== "full") throw new Error("Expected structured tool");
+  const handler = tool.handler;
+  return async (args, signal) => {
+    const result = await handler(
+      { id: "test-call", name: "write_artifact", arguments: args },
+      signal,
+    );
+    if (result.isError === true) {
+      throw new Error(
+        typeof result.content === "string"
+          ? result.content
+          : JSON.stringify(result.content),
+      );
+    }
+    if (typeof result.content !== "object" || result.content === null) {
+      throw new Error("Expected structured content on write_artifact result");
+    }
+    return result.content;
+  };
 }
 
 describe("write_artifact tool", () => {
+  it("structured output: a downstream deterministic step reads artifactId off content with no JSON.parse", async () => {
+    const db = makeMockDb({});
+    const tools = createWriteArtifactTool({
+      db,
+      tenantId: "tnt-1",
+      principalId: "prn-1",
+    });
+    const tool = tools[0];
+    if (!tool) throw new Error("No tool created");
+    expect(tool.kind).toBe("full");
+    if (tool.kind !== "full") return;
+
+    const result = await tool.handler(
+      {
+        id: "det-step-1",
+        name: "write_artifact",
+        arguments: { title: "Brief", body: "Body", kind: "report" },
+      },
+      SIGNAL,
+    );
+
+    // The deterministic step harness's argMap `{ from: 'artifactId' }` reads a
+    // top-level field straight off `result.content` — no `fromJson`/JSON.parse
+    // indirection required, unlike the retired stringTool encoding.
+    expect(typeof result.content).toBe("object");
+    const content = result.content as Record<string, unknown>;
+    expect(content.artifactId).toBe("art-new-1");
+    expect(content.version).toBe(1);
+  });
+
   it("tenantId: artifact insert includes tenantId from context", async () => {
     const artifactInserts: InsertedArtifact[] = [];
     const db = makeMockDb({ captureArtifactInserts: artifactInserts });
@@ -178,7 +231,7 @@ describe("write_artifact tool", () => {
       principalId: "prn-1",
     });
 
-    const resultJson = await handler(
+    const result = await handler(
       {
         title: "My Report",
         body: "Report body text",
@@ -194,7 +247,6 @@ describe("write_artifact tool", () => {
       SIGNAL,
     );
 
-    const result = JSON.parse(resultJson);
     expect(result.artifactId).toBe("art-new-1");
     expect(result.version).toBe(1);
     expect(result.title).toBe("My Report");
@@ -263,7 +315,7 @@ describe("write_artifact tool", () => {
       principalId: "prn-1",
     });
 
-    const result1Json = await handler(
+    const r1 = await handler(
       {
         title: "My Report",
         body: "Version one body",
@@ -273,7 +325,7 @@ describe("write_artifact tool", () => {
       SIGNAL,
     );
 
-    const result2Json = await handler(
+    const r2 = await handler(
       {
         title: "My Report",
         body: "Version two body",
@@ -282,9 +334,6 @@ describe("write_artifact tool", () => {
       },
       SIGNAL,
     );
-
-    const r1 = JSON.parse(result1Json);
-    const r2 = JSON.parse(result2Json);
 
     expect(r1.version).toBe(1);
     expect(r2.version).toBe(2);
@@ -605,7 +654,7 @@ describe("write_artifact tool", () => {
     expect(artifactInserts).toHaveLength(1);
     expect(artifactInserts[0]?.title).toBe("Wrapped");
     expect(artifactInserts[0]?.content).toBe("body");
-    expect(JSON.parse(raw as string).title).toBe("Wrapped");
+    expect(raw.title).toBe("Wrapped");
   });
 
   it("advertises sourceRef in the tool schema", async () => {
@@ -685,7 +734,7 @@ describe("write_artifact tool", () => {
       principalId: "prn-1",
     });
 
-    const raw = await handler(
+    const result = await handler(
       {
         title: "Call notes",
         body: "Updated body",
@@ -696,7 +745,6 @@ describe("write_artifact tool", () => {
       SIGNAL,
     );
 
-    const result = JSON.parse(raw as string);
     expect(result.artifactId).toBe("art-existing-src");
     expect(result.version).toBe(2);
     // No second artifact row — only a version bump + content update.

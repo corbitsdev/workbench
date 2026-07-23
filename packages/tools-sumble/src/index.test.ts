@@ -151,7 +151,9 @@ describe("v9 argument-to-body mapping", () => {
     const stub = makeFetchStub({ teams: [] });
     const result = await runTool(stub, "sumble_list_teams", {});
     expect(result.isError).toBe(true);
-    expect(result.content).toContain("requires organizationId or organizationSlug");
+    expect(result.content).toContain(
+      "requires organizationId or organizationSlug",
+    );
     expect(stub.mock.calls).toHaveLength(0);
   });
 
@@ -190,7 +192,9 @@ describe("v9 argument-to-body mapping", () => {
 
   it("find_technologies sends query string to POST /technologies/find", async () => {
     const stub = makeFetchStub({ technologies: [] });
-    await runTool(stub, "sumble_find_technologies", { terms: ["python", "ml"] });
+    await runTool(stub, "sumble_find_technologies", {
+      terms: ["python", "ml"],
+    });
     expect(bodyOf(stub)).toEqual({ query: "python ml" });
   });
 
@@ -279,6 +283,36 @@ describe("response parsing", () => {
       people: [{ name: "Ada", email: "ada@acme.com" }],
       count: 1,
     });
+  });
+
+  it("get_organization_list returns the list resource as STRUCTURED content — a downstream deterministic step (prospect-engine's extract-list-org-ids) reads its fields with no JSON.parse", async () => {
+    const stub = makeFetchStub({
+      id: 7,
+      name: "Engine - Growth",
+      organization_ids: [10, 20, 30],
+    });
+    const result = await runTool(stub, "sumble_get_organization_list", {
+      listId: 7,
+    });
+    expect(result.isError).toBeUndefined();
+    expect(typeof result.content).toBe("object");
+    expect(result.content).toEqual({
+      id: 7,
+      name: "Engine - Growth",
+      organization_ids: [10, 20, 30],
+    });
+  });
+
+  it("add_organization_list_organizations returns the API response as STRUCTURED content", async () => {
+    const stub = makeFetchStub({ id: 7, organization_ids: [10, 20] });
+    const result = await runTool(
+      stub,
+      "sumble_add_organization_list_organizations",
+      { listId: 7, organizationIds: [10, 20] },
+    );
+    expect(result.isError).toBeUndefined();
+    expect(typeof result.content).toBe("object");
+    expect(result.content).toEqual({ id: 7, organization_ids: [10, 20] });
   });
 });
 

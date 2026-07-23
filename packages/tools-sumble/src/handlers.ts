@@ -19,6 +19,7 @@ import {
   flattenPersonRow,
   flattenTeamRow,
   assertNoUngatedPeopleSelectSpend,
+  isRecord,
   jsonResult,
   parseArgs,
   parseResponse,
@@ -78,18 +79,18 @@ const TechStackArgs = type({
   limit: "1<=number<=200?",
 });
 
-function assertOrganizationIdOrSlug(parsed: {
-  organizationId?: number;
-  organizationSlug?: string;
-}, toolLabel: string): void {
+function assertOrganizationIdOrSlug(
+  parsed: {
+    organizationId?: number;
+    organizationSlug?: string;
+  },
+  toolLabel: string,
+): void {
   const hasId = parsed.organizationId !== undefined;
   const hasSlug =
-    parsed.organizationSlug !== undefined &&
-    parsed.organizationSlug.length > 0;
+    parsed.organizationSlug !== undefined && parsed.organizationSlug.length > 0;
   if (!hasId && !hasSlug) {
-    throw new Error(
-      `${toolLabel} requires organizationId or organizationSlug`,
-    );
+    throw new Error(`${toolLabel} requires organizationId or organizationSlug`);
   }
 }
 
@@ -345,8 +346,7 @@ export async function searchPeople(
   }
 
   const revealEmail = parsed.revealEmail === true;
-  const emailLookup =
-    parsed.email !== undefined && parsed.email.length > 0;
+  const emailLookup = parsed.email !== undefined && parsed.email.length > 0;
   const needsEmailSpendConfirm = revealEmail || emailLookup;
   if (needsEmailSpendConfirm && parsed.confirmEmailRevealSpend !== true) {
     const limit = parsed.limit ?? 1;
@@ -734,18 +734,22 @@ export async function getOrganizationList(
   config: SumbleToolsConfig,
   args: Record<string, unknown>,
   signal: AbortSignal,
-): Promise<string> {
+): Promise<Record<string, unknown>> {
   const parsed = parseArgs(ListIdArgs, args);
   const query =
     args.includeDeleted === true ? { include_deleted: "true" } : undefined;
-  return jsonResult(
-    await sumbleGet(
-      config,
-      `/organization-lists/${parsed.listId}`,
-      signal,
-      query,
-    ),
+  const response = await sumbleGet(
+    config,
+    `/organization-lists/${parsed.listId}`,
+    signal,
+    query,
   );
+  if (!isRecord(response)) {
+    throw new Error(
+      "sumble_get_organization_list: unexpected non-object response from Sumble",
+    );
+  }
+  return response;
 }
 
 export async function createOrganizationList(
@@ -784,16 +788,20 @@ export async function addOrganizationListOrganizations(
   config: SumbleToolsConfig,
   args: Record<string, unknown>,
   signal: AbortSignal,
-): Promise<string> {
+): Promise<Record<string, unknown>> {
   const parsed = parseArgs(AddOrganizationsArgs, args);
-  return jsonResult(
-    await sumblePost(
-      config,
-      `/organization-lists/${parsed.listId}/organizations`,
-      { organization_ids: parsed.organizationIds },
-      signal,
-    ),
+  const response = await sumblePost(
+    config,
+    `/organization-lists/${parsed.listId}/organizations`,
+    { organization_ids: parsed.organizationIds },
+    signal,
   );
+  if (!isRecord(response)) {
+    throw new Error(
+      "sumble_add_organization_list_organizations: unexpected non-object response from Sumble",
+    );
+  }
+  return response;
 }
 
 export async function setOrganizationListSignals(

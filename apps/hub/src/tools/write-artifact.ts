@@ -62,125 +62,127 @@ export async function writeArtifactDeduped(params: {
       ? sourceRef.trim()
       : undefined;
 
-  return db.transaction(async (tx) => {
-    // Prefer sourceRef when present — it's the stronger, tenant-scoped
-    // idempotency key (same unique index the Granola pipeline uses). Fall
-    // back to the historical principal+title+kind lookup otherwise.
-    const existingRows =
-      normalizedSourceRef !== undefined
-        ? await tx
-            .select({ id: artifact.id })
-            .from(artifact)
-            .where(
-              and(
-                eq(artifact.tenantId, tenantId),
-                eq(artifact.sourceRef, normalizedSourceRef),
-              ),
-            )
-            .limit(1)
-            .for("update")
-        : await tx
-            .select({ id: artifact.id })
-            .from(artifact)
-            .where(
-              and(
-                eq(artifact.principalId, principalId),
-                eq(artifact.title, title),
-                eq(artifact.kind, kind),
-              ),
-            )
-            .limit(1)
-            .for("update");
+  return db
+    .transaction(async (tx) => {
+      // Prefer sourceRef when present — it's the stronger, tenant-scoped
+      // idempotency key (same unique index the Granola pipeline uses). Fall
+      // back to the historical principal+title+kind lookup otherwise.
+      const existingRows =
+        normalizedSourceRef !== undefined
+          ? await tx
+              .select({ id: artifact.id })
+              .from(artifact)
+              .where(
+                and(
+                  eq(artifact.tenantId, tenantId),
+                  eq(artifact.sourceRef, normalizedSourceRef),
+                ),
+              )
+              .limit(1)
+              .for("update")
+          : await tx
+              .select({ id: artifact.id })
+              .from(artifact)
+              .where(
+                and(
+                  eq(artifact.principalId, principalId),
+                  eq(artifact.title, title),
+                  eq(artifact.kind, kind),
+                ),
+              )
+              .limit(1)
+              .for("update");
 
-    const existingId =
-      existingRows.length > 0 ? existingRows[0]?.id : undefined;
-    const now = new Date();
-    let artifactId: string;
+      const existingId =
+        existingRows.length > 0 ? existingRows[0]?.id : undefined;
+      const now = new Date();
+      let artifactId: string;
 
-    if (existingId !== undefined) {
-      artifactId = existingId;
-    } else {
-      const [created] = await tx
-        .insert(artifact)
-        .values({
-          tenantId,
-          principalId,
-          ...(ownerPrincipalId !== undefined
-            ? { ownerPrincipalId: ownerPrincipalId ?? null }
-            : {}),
-          ...(normalizedSourceRef !== undefined
-            ? { sourceRef: normalizedSourceRef }
-            : {}),
-          kind,
-          title,
-          content: body,
-          source,
-          status: "draft",
-          version: 1,
-          createdAt: now,
-          updatedAt: now,
-        })
-        .returning({ id: artifact.id });
+      if (existingId !== undefined) {
+        artifactId = existingId;
+      } else {
+        const [created] = await tx
+          .insert(artifact)
+          .values({
+            tenantId,
+            principalId,
+            ...(ownerPrincipalId !== undefined
+              ? { ownerPrincipalId: ownerPrincipalId ?? null }
+              : {}),
+            ...(normalizedSourceRef !== undefined
+              ? { sourceRef: normalizedSourceRef }
+              : {}),
+            kind,
+            title,
+            content: body,
+            source,
+            status: "draft",
+            version: 1,
+            createdAt: now,
+            updatedAt: now,
+          })
+          .returning({ id: artifact.id });
 
-      if (!created) {
-        throw new Error("Failed to create artifact row");
+        if (!created) {
+          throw new Error("Failed to create artifact row");
+        }
+        artifactId = created.id;
       }
-      artifactId = created.id;
-    }
 
-    const maxVersionResult = await tx
-      .select({ maxVersion: max(artifactVersion.version) })
-      .from(artifactVersion)
-      .where(eq(artifactVersion.artifactId, artifactId));
+      const maxVersionResult = await tx
+        .select({ maxVersion: max(artifactVersion.version) })
+        .from(artifactVersion)
+        .where(eq(artifactVersion.artifactId, artifactId));
 
-    const nextVersion = (maxVersionResult[0]?.maxVersion ?? 0) + 1;
+      const nextVersion = (maxVersionResult[0]?.maxVersion ?? 0) + 1;
 
-    await tx.insert(artifactVersion).values({
-      artifactId,
-      version: nextVersion,
-      title,
-      content: body,
-      authorId: principalId,
-      createdAt: new Date(),
+      await tx.insert(artifactVersion).values({
+        artifactId,
+        version: nextVersion,
+        title,
+        content: body,
+        authorId: principalId,
+        createdAt: new Date(),
+      });
+
+      if (existingId !== undefined) {
+        await tx
+          .update(artifact)
+          .set({
+            content: body,
+            source,
+            version: nextVersion,
+            updatedAt: now,
+            // skill-draft re-authoring reopens an approved/rejected row so
+            // approve can run again on the new content.
+            ...(kind === "skill-draft" ? { status: "draft" as const } : {}),
+            ...(ownerPrincipalId !== undefined
+              ? { ownerPrincipalId: ownerPrincipalId ?? null }
+              : {}),
+          })
+          .where(eq(artifact.id, artifactId));
+      }
+
+      return { artifactId, version: nextVersion };
+    })
+    .then(async (result) => {
+      // After the product write commits: enqueue knowledge capture as a work
+      // unit when the outbox flag is on. Failures never roll back the write.
+      try {
+        await maybeEnqueueKnowledgeCaptureAfterArtifactWrite({
+          tenantId,
+          artifactId: result.artifactId,
+          version: result.version,
+        });
+      } catch (cause) {
+        // Fail-soft: capture must never block product writes.
+        log.error("write-artifact: knowledge capture enqueue failed", {
+          artifactId: result.artifactId,
+          error: cause,
+        });
+      }
+      return result;
     });
-
-    if (existingId !== undefined) {
-      await tx
-        .update(artifact)
-        .set({
-          content: body,
-          source,
-          version: nextVersion,
-          updatedAt: now,
-          // skill-draft re-authoring reopens an approved/rejected row so
-          // approve can run again on the new content.
-          ...(kind === "skill-draft" ? { status: "draft" as const } : {}),
-          ...(ownerPrincipalId !== undefined
-            ? { ownerPrincipalId: ownerPrincipalId ?? null }
-            : {}),
-        })
-        .where(eq(artifact.id, artifactId));
-    }
-
-    return { artifactId, version: nextVersion };
-  }).then(async (result) => {
-    // After the product write commits: enqueue knowledge capture as a work
-    // unit when the outbox flag is on. Failures never roll back the write.
-    try {
-      await maybeEnqueueKnowledgeCaptureAfterArtifactWrite({
-        tenantId,
-        artifactId: result.artifactId,
-        version: result.version,
-      });
-    } catch (cause) {
-      // Fail-soft: capture must never block product writes.
-      log.error("write-artifact: knowledge capture enqueue failed", {
-        artifactId: result.artifactId,
-        error: cause,
-      });
-    }
-    return result;
-  });
 }
 
 export function createWriteArtifactTool(
@@ -188,9 +190,18 @@ export function createWriteArtifactTool(
 ): AgentTool[] {
   return [
     {
-      kind: "string",
+      // Structured (not stringTool): deterministic workflow steps downstream
+      // of write_artifact (heartbeat's mail-refs step, prospect-engine's
+      // digest step) need artifactId off this tool's result. A stringified
+      // `{ content: "<json>" }` envelope buried it behind a JSON parse the
+      // step harness had to special-case (`fromJson`). `content` carries the
+      // { artifactId, version, title } object directly; the reactor still
+      // stringifies non-string tool content before it reaches the model
+      // (`turns.ts`), so model-facing callers see the same JSON text as before.
+      kind: "full",
       definition: WRITE_ARTIFACT_DEFINITION,
-      handler: async (rawArgs, _signal) => {
+      handler: async (call, _signal) => {
+        const rawArgs = call.arguments;
         const args = unwrapArgsEnvelope(rawArgs, ["title", "body", "kind"]);
         const title = requireString(args, "title");
         const body = requireString(args, "body");
@@ -271,11 +282,14 @@ export function createWriteArtifactTool(
           ...(sourceRef !== undefined ? { sourceRef } : {}),
         });
 
-        return JSON.stringify({
-          artifactId: result.artifactId,
-          version: result.version,
-          title,
-        });
+        return {
+          callId: call.id,
+          content: {
+            artifactId: result.artifactId,
+            version: result.version,
+            title,
+          },
+        };
       },
     },
   ];
