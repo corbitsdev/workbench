@@ -1375,7 +1375,11 @@ export function createOwnerRouter(
       if (parsed instanceof type.errors) {
         return c.json({ error: parsed.summary }, 400);
       }
-      if (parsed.enabled === undefined && parsed.recurrence === undefined) {
+      if (
+        parsed.enabled === undefined &&
+        parsed.recurrence === undefined &&
+        parsed.name === undefined
+      ) {
         return c.json({ error: "no fields to update" }, 400);
       }
       const updated = await updateTenantScopedSchedule(db, {
@@ -1385,6 +1389,7 @@ export function createOwnerRouter(
         ...(parsed.recurrence !== undefined
           ? { recurrence: parsed.recurrence }
           : {}),
+        ...(parsed.name !== undefined ? { name: parsed.name } : {}),
       });
       if (!updated) {
         return c.json({ error: "Schedule not found" }, 404);

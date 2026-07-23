@@ -28,6 +28,7 @@ function dbRow(
     tenantId: "tenant-root",
     ownerMemberPrincipalId: "principal-1",
     workflowKind: "heartbeat",
+    name: "heartbeat",
     intervalMinutes: 1440,
     anchorMinuteUtc: 13 * 60,
     scope: "personal",
@@ -49,6 +50,7 @@ describe("toApiSchedule", () => {
     ).toEqual({
       id: "sch-1",
       workflowKind: "heartbeat",
+      name: "heartbeat",
       recurrence: { intervalMinutes: 1440, anchorMinuteUtc: 9 * 60 },
       enabled: false,
       scope: "personal",
@@ -313,6 +315,7 @@ describe("createOwnerSchedule", () => {
         tenantId: "tenant-root",
         ownerPrincipalId: "principal-1",
         kind: "heartbeat",
+        name: "heartbeat",
         recurrence: { intervalMinutes: 1440, anchorMinuteUtc: 13 * 60 },
         payload: {},
       }),
@@ -333,6 +336,7 @@ describe("createOwnerSchedule", () => {
       tenantId: "tenant-root",
       ownerPrincipalId: "principal-1",
       kind: "granola-call",
+      name: "granola-call",
       recurrence: { intervalMinutes: 5, anchorMinuteUtc: 0 },
       payload: {},
     });
@@ -354,6 +358,7 @@ describe("createOwnerSchedule", () => {
       tenantId: "tenant-root",
       ownerPrincipalId: "principal-1",
       kind: "granola-call",
+      name: "granola-call",
       recurrence: { intervalMinutes: 5, anchorMinuteUtc: 0 },
       payload: {},
       now: () => fixedNow,
@@ -363,6 +368,73 @@ describe("createOwnerSchedule", () => {
     // And that stamp really does block an immediate fire at the moment of
     // creation — the property this exists for.
     expect(shouldFire(fixedNow, stamped as number, 5, 0)).toBe(false);
+  });
+
+  it("defaults the name to the bare kind when the caller supplies none and no schedule of that kind exists yet", async () => {
+    let values: { name?: string } | undefined;
+    const db = {
+      select: () => ({
+        from: () => ({ where: async () => [{ n: 0 }] }),
+      }),
+      insert: () => ({
+        values: (v: unknown) => {
+          values = v as { name?: string };
+          return { returning: async () => [dbRow()] };
+        },
+      }),
+    } as unknown as HubDb;
+    await createOwnerSchedule(db, {
+      tenantId: "tenant-root",
+      ownerPrincipalId: "principal-1",
+      kind: "heartbeat",
+      recurrence: { intervalMinutes: 1440, anchorMinuteUtc: 13 * 60 },
+      payload: {},
+    });
+    expect(values?.name).toBe("heartbeat");
+  });
+
+  it("numbers the default name when the owner already has schedules of that kind", async () => {
+    let values: { name?: string } | undefined;
+    const db = {
+      select: () => ({
+        from: () => ({ where: async () => [{ n: 2 }] }),
+      }),
+      insert: () => ({
+        values: (v: unknown) => {
+          values = v as { name?: string };
+          return { returning: async () => [dbRow()] };
+        },
+      }),
+    } as unknown as HubDb;
+    await createOwnerSchedule(db, {
+      tenantId: "tenant-root",
+      ownerPrincipalId: "principal-1",
+      kind: "heartbeat",
+      recurrence: { intervalMinutes: 1440, anchorMinuteUtc: 13 * 60 },
+      payload: {},
+    });
+    expect(values?.name).toBe("heartbeat 3");
+  });
+
+  it("uses the caller-supplied name verbatim when given", async () => {
+    let values: { name?: string } | undefined;
+    const db = {
+      insert: () => ({
+        values: (v: unknown) => {
+          values = v as { name?: string };
+          return { returning: async () => [dbRow()] };
+        },
+      }),
+    } as unknown as HubDb;
+    await createOwnerSchedule(db, {
+      tenantId: "tenant-root",
+      ownerPrincipalId: "principal-1",
+      kind: "heartbeat",
+      name: "Weekend digest",
+      recurrence: { intervalMinutes: 1440, anchorMinuteUtc: 13 * 60 },
+      payload: {},
+    });
+    expect(values?.name).toBe("Weekend digest");
   });
 });
 
@@ -391,6 +463,7 @@ describe("ensureOwnerSchedule", () => {
       tenantId: "tenant-root",
       ownerPrincipalId: "principal-1",
       kind: "heartbeat",
+      name: "Morning brief",
       recurrence: { intervalMinutes: 1440, anchorMinuteUtc: 13 * 60 },
       payload: { reason: "scheduled-heartbeat" },
       now: () => fixedNow,
@@ -401,6 +474,7 @@ describe("ensureOwnerSchedule", () => {
       tenantId: "tenant-root",
       ownerMemberPrincipalId: "principal-1",
       workflowKind: "heartbeat",
+      name: "Morning brief",
       intervalMinutes: 1440,
       anchorMinuteUtc: 13 * 60,
       lastFiredWindowIndex: windowIndexFor(fixedNow, 1440, 13 * 60),
@@ -409,7 +483,7 @@ describe("ensureOwnerSchedule", () => {
     });
   });
 
-  it("skips insert when a personal schedule already exists", async () => {
+  it("skips insert when a personal schedule of that kind AND name already exists", async () => {
     let inserted = false;
     const db = {
       query: {
@@ -427,11 +501,42 @@ describe("ensureOwnerSchedule", () => {
       tenantId: "tenant-root",
       ownerPrincipalId: "principal-1",
       kind: "heartbeat",
+      name: "Morning brief",
       recurrence: { intervalMinutes: 1440, anchorMinuteUtc: 13 * 60 },
       payload: { reason: "scheduled-heartbeat" },
     });
 
     expect(inserted).toBe(false);
+  });
+
+  it("still inserts the default-named schedule even when the owner has a differently-named schedule of the same kind", async () => {
+    let insertedName: string | undefined;
+    const db = {
+      query: {
+        scheduledTrigger: {
+          // Simulates the (tenant, owner, kind, scope, name) filter finding
+          // no row: the owner has a "heartbeat" kind schedule, but named
+          // something the member picked themselves, not the seeder's default.
+          findFirst: async () => undefined,
+        },
+      },
+      insert: () => ({
+        values: async (v: { name: string }) => {
+          insertedName = v.name;
+        },
+      }),
+    } as unknown as HubDb;
+
+    await ensureOwnerSchedule(db, {
+      tenantId: "tenant-root",
+      ownerPrincipalId: "principal-1",
+      kind: "heartbeat",
+      name: "Morning brief",
+      recurrence: { intervalMinutes: 1440, anchorMinuteUtc: 13 * 60 },
+      payload: { reason: "scheduled-heartbeat" },
+    });
+
+    expect(insertedName).toBe("Morning brief");
   });
 });
 

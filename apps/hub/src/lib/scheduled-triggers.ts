@@ -1,5 +1,6 @@
-import { and, desc, eq, inArray, or } from "drizzle-orm";
+import { and, count, desc, eq, inArray, or } from "drizzle-orm";
 import {
+  defaultScheduleName,
   nextFireAt,
   type ScheduleRecurrence,
   type ScheduleScope,
@@ -61,6 +62,7 @@ export function toApiSchedule(
   return {
     id: row.id,
     workflowKind: row.workflowKind,
+    name: row.name,
     recurrence: {
       intervalMinutes: row.intervalMinutes,
       anchorMinuteUtc: row.anchorMinuteUtc,
@@ -276,6 +278,35 @@ function currentWindowIndex(
   );
 }
 
+// How many schedules of `kind` already exist in the given scope — used only
+// to number a default name (e.g. "heartbeat", then "heartbeat 2"). Personal
+// scope counts per (tenant, owner, kind); tenant scope counts per (tenant, kind).
+async function countExistingSchedulesForKind(
+  db: HubDb,
+  args: {
+    tenantId: string;
+    kind: string;
+    scope: ScheduleScope;
+    ownerPrincipalId: string;
+  },
+): Promise<number> {
+  const conditions = [
+    eq(scheduledTrigger.tenantId, args.tenantId),
+    eq(scheduledTrigger.workflowKind, args.kind),
+    eq(scheduledTrigger.scope, args.scope),
+  ];
+  if (args.scope === "personal") {
+    conditions.push(
+      eq(scheduledTrigger.ownerMemberPrincipalId, args.ownerPrincipalId),
+    );
+  }
+  const [row] = await db
+    .select({ n: count() })
+    .from(scheduledTrigger)
+    .where(and(...conditions));
+  return row?.n ?? 0;
+}
+
 export async function createOwnerSchedule(
   db: HubDb,
   args: {
@@ -285,17 +316,31 @@ export async function createOwnerSchedule(
     recurrence: ScheduleRecurrence;
     payload: Record<string, unknown>;
     scope?: ScheduleScope;
+    /** Caller-supplied label; falls back to a numbered default (CL-4268). */
+    name?: string;
     now?: () => number;
   },
 ): Promise<ScheduledTriggerRow> {
   const scope = args.scope ?? "personal";
   const now = args.now ?? Date.now;
+  const name =
+    args.name ??
+    defaultScheduleName(
+      args.kind,
+      await countExistingSchedulesForKind(db, {
+        tenantId: args.tenantId,
+        kind: args.kind,
+        scope,
+        ownerPrincipalId: args.ownerPrincipalId,
+      }),
+    );
   const [inserted] = await db
     .insert(scheduledTrigger)
     .values({
       tenantId: args.tenantId,
       ownerMemberPrincipalId: args.ownerPrincipalId,
       workflowKind: args.kind,
+      name,
       intervalMinutes: args.recurrence.intervalMinutes,
       anchorMinuteUtc: args.recurrence.anchorMinuteUtc,
       lastFiredWindowIndex: currentWindowIndex(args.recurrence, now),
@@ -337,6 +382,8 @@ export async function updateOwnerSchedule(
     recurrence?: ScheduleRecurrence;
     /** Replace the stored intake/trigger payload (CL-3861 edit path). */
     triggerPayload?: Record<string, unknown>;
+    /** Rename the schedule (CL-4268). */
+    name?: string;
     now?: () => number;
   },
 ): Promise<ScheduledTriggerRow | null> {
@@ -346,8 +393,10 @@ export async function updateOwnerSchedule(
     anchorMinuteUtc?: number;
     lastFiredWindowIndex?: number;
     triggerPayload?: Record<string, unknown>;
+    name?: string;
   } = {};
   if (args.enabled !== undefined) patch.enabled = args.enabled;
+  if (args.name !== undefined) patch.name = args.name;
   if (args.recurrence !== undefined) {
     patch.intervalMinutes = args.recurrence.intervalMinutes;
     patch.anchorMinuteUtc = args.recurrence.anchorMinuteUtc;
@@ -397,16 +446,22 @@ export async function deleteOwnerSchedule(
   return deleted.length > 0;
 }
 
-// Idempotent boot seed: ensure a *personal* schedule of `kind` exists for the
-// owner. Does NOT overwrite an existing row, so a member's later customization
-// of hour or payload survives reboots. Uses select-then-insert so partial unique
-// indexes (CL-4108) do not need ON CONFLICT target gymnastics.
+// Idempotent boot seed: ensure a *personal* schedule of `kind` named `name`
+// exists for the owner. Does NOT overwrite an existing row, so a member's
+// later customization of hour or payload survives reboots. Matches on
+// (tenant, owner, kind, scope=personal, name) rather than just (tenant, owner,
+// kind) — since CL-4268 dropped the (tenant, owner, kind) uniqueness, a member
+// can hold several personal schedules of the same kind, and this must
+// re-ensure only the ONE the boot seeder is responsible for (identified by its
+// fixed default name), never mistake a member's differently-named extra
+// schedule of the same kind for "already seeded".
 export async function ensureOwnerSchedule(
   db: HubDb,
   args: {
     tenantId: string;
     ownerPrincipalId: string;
     kind: string;
+    name: string;
     recurrence: ScheduleRecurrence;
     payload: Record<string, unknown>;
     now?: () => number;
@@ -418,6 +473,7 @@ export async function ensureOwnerSchedule(
       eq(scheduledTrigger.ownerMemberPrincipalId, args.ownerPrincipalId),
       eq(scheduledTrigger.workflowKind, args.kind),
       eq(scheduledTrigger.scope, "personal"),
+      eq(scheduledTrigger.name, args.name),
     ),
     columns: { id: true },
   });
@@ -427,6 +483,7 @@ export async function ensureOwnerSchedule(
       tenantId: args.tenantId,
       ownerMemberPrincipalId: args.ownerPrincipalId,
       workflowKind: args.kind,
+      name: args.name,
       intervalMinutes: args.recurrence.intervalMinutes,
       anchorMinuteUtc: args.recurrence.anchorMinuteUtc,
       lastFiredWindowIndex: currentWindowIndex(
@@ -437,7 +494,8 @@ export async function ensureOwnerSchedule(
       scope: "personal",
     });
   } catch (err) {
-    // Concurrent boot seeds can race the unique index; treat as already present.
+    // Concurrent boot seeds can race the (tenant, owner, kind, name) unique
+    // index; treat as already present.
     if (
       typeof err === "object" &&
       err !== null &&
@@ -503,6 +561,7 @@ export async function updateTenantScopedSchedule(
     id: string;
     enabled?: boolean;
     recurrence?: ScheduleRecurrence;
+    name?: string;
     now?: () => number;
   },
 ): Promise<ScheduledTriggerRow | null> {
@@ -511,8 +570,10 @@ export async function updateTenantScopedSchedule(
     intervalMinutes?: number;
     anchorMinuteUtc?: number;
     lastFiredWindowIndex?: number;
+    name?: string;
   } = {};
   if (args.enabled !== undefined) patch.enabled = args.enabled;
+  if (args.name !== undefined) patch.name = args.name;
   if (args.recurrence !== undefined) {
     patch.intervalMinutes = args.recurrence.intervalMinutes;
     patch.anchorMinuteUtc = args.recurrence.anchorMinuteUtc;

@@ -892,7 +892,10 @@ export type PrincipalMailboxRow = typeof principalMailbox.$inferSelect;
 // anchor_minute_utc=hour*60`. The hub scheduler loads enabled rows each tick and
 // fires whenever `floor((nowMinuteUtc - anchor_minute_utc) / interval_minutes)`
 // advances past `last_fired_window_index`.
-// Unique per scope (CL-4108): personal → (tenant, owner, kind); tenant → (tenant, kind).
+// A member (or tenant, for Everyone schedules) may hold several schedules of the
+// same workflow kind — e.g. a routine every morning for you and weekly for the
+// workspace. There is deliberately no uniqueness on (tenant, owner, kind) /
+// (tenant, kind) anymore (CL-4268); `name` is what distinguishes them.
 export const scheduledTrigger = pgTable(
   "scheduled_trigger",
   {
@@ -900,6 +903,11 @@ export const scheduledTrigger = pgTable(
     tenantId: text("tenant_id").notNull(),
     ownerMemberPrincipalId: text("owner_member_principal_id").notNull(),
     workflowKind: text("workflow_kind").notNull(),
+    // User-facing label distinguishing this schedule from any other schedule
+    // of the same workflow kind (CL-4268). Defaults to the workflow kind at
+    // create time when the caller doesn't supply one — never gates creation
+    // on inventing a label.
+    name: text("name").notNull(),
     intervalMinutes: integer("interval_minutes").notNull(),
     anchorMinuteUtc: integer("anchor_minute_utc").notNull(),
     // personal = Just for me; tenant = Everyone (CL-4108).
@@ -936,16 +944,23 @@ export const scheduledTrigger = pgTable(
       "scheduled_trigger_anchor_check",
       sql`${t.anchorMinuteUtc} >= 0 AND ${t.anchorMinuteUtc} < 1440`,
     ),
-    // Partial uniques (CL-4108): personal is per owner+kind; tenant is per tenant+kind.
-    scheduledTriggerPersonalOwnerKindUniq: uniqueIndex(
-      "scheduled_trigger_personal_owner_kind_uniq",
+    scheduledTriggerNameCheck: check(
+      "scheduled_trigger_name_check",
+      sql`length(${t.name}) > 0`,
+    ),
+    // Uniqueness moved from (tenant, owner/tenant, kind) to include `name`
+    // (CL-4268): several differently-named schedules of the same kind are now
+    // allowed, but the boot-time heartbeat seeder still needs a race-safe
+    // target for its idempotent ensure-schedule upsert.
+    scheduledTriggerPersonalOwnerKindNameUniq: uniqueIndex(
+      "scheduled_trigger_personal_owner_kind_name_uniq",
     )
-      .on(t.tenantId, t.ownerMemberPrincipalId, t.workflowKind)
+      .on(t.tenantId, t.ownerMemberPrincipalId, t.workflowKind, t.name)
       .where(sql`${t.scope} = 'personal'`),
-    scheduledTriggerTenantKindUniq: uniqueIndex(
-      "scheduled_trigger_tenant_kind_uniq",
+    scheduledTriggerTenantKindNameUniq: uniqueIndex(
+      "scheduled_trigger_tenant_kind_name_uniq",
     )
-      .on(t.tenantId, t.workflowKind)
+      .on(t.tenantId, t.workflowKind, t.name)
       .where(sql`${t.scope} = 'tenant'`),
   }),
 );

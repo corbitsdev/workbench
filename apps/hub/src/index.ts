@@ -180,6 +180,7 @@ import { createNativeApprovalEnricher } from "./lib/native-approval-enrich";
 import { createFeedbackRouter } from "./routes/feedback";
 import {
   DAILY_INTERVAL_MINUTES,
+  DEFAULT_HEARTBEAT_SCHEDULE_NAME,
   type MemberPreferences,
 } from "@workbench/shared";
 import { createMePreferencesRouter } from "./routes/me-preferences";
@@ -2197,6 +2198,7 @@ void seedHeartbeatSchedules({
       tenantId: rootTenantId,
       ownerPrincipalId: args.ownerPrincipalId,
       kind: args.kind,
+      name: DEFAULT_HEARTBEAT_SCHEDULE_NAME,
       recurrence: {
         intervalMinutes: DAILY_INTERVAL_MINUTES,
         anchorMinuteUtc: args.hourUtc * 60,

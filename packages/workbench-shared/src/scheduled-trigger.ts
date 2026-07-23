@@ -7,6 +7,14 @@ import { type } from "arktype";
 // from workflows/heartbeat.
 export const HEARTBEAT_WORKFLOW_KIND = "heartbeat";
 
+// The name stamped on the boot-seeded default heartbeat schedule (CL-4268).
+// The seeder's idempotency check matches on (tenant, owner, kind, scope,
+// name) so a member who later creates a SECOND, differently-named heartbeat
+// schedule does not stop the seeder from (re-)ensuring their default one —
+// and so the seeder never "adopts" a member's custom-named heartbeat
+// schedule as if it were the boot-seeded default.
+export const DEFAULT_HEARTBEAT_SCHEDULE_NAME = "Morning brief";
+
 // Schedule scope (CL-4108 / CL-4111): personal = Just for me; tenant = Everyone.
 // Team ≡ Tenant in product language — there is no third "team" scope.
 export const ScheduleScopeSchema = type("'personal' | 'tenant'");
@@ -70,10 +78,39 @@ export const ScheduledTriggerFireSchema = type({
 });
 export type ScheduledTriggerFire = typeof ScheduledTriggerFireSchema.infer;
 
+// Max length for a caller-supplied schedule name (CL-4268). Generous enough
+// for a descriptive label, bounded so the schedule list stays scannable.
+// Kept in sync by hand with the literal `100` in CreateScheduledTriggerBodySchema
+// / UpdateScheduledTriggerBodySchema below — arktype's string-length range
+// syntax only accepts a literal bound, not a referenced constant.
+export const SCHEDULE_NAME_MAX_LENGTH = 100;
+
+/**
+ * The default schedule name when the caller doesn't supply one (CL-4268):
+ * the workflow kind itself, numbered when it collides with an existing
+ * schedule of the same kind in the same scope so several schedules of one
+ * workflow stay distinguishable at a glance (e.g. "heartbeat", "heartbeat 2").
+ */
+export function defaultScheduleName(
+  kind: string,
+  existingCountForKind: number,
+): string {
+  return existingCountForKind === 0
+    ? kind
+    : `${kind} ${existingCountForKind + 1}`;
+}
+
 // A schedule as returned to its owner (and, for tenant scope, to tenant members).
 export const ScheduledTriggerSchema = type({
   id: "string",
   workflowKind: "string",
+  /**
+   * User-facing label distinguishing this schedule from any other schedule of
+   * the same workflow kind (CL-4268) — several schedules of one workflow are
+   * now allowed (e.g. a routine every morning for you and weekly for the
+   * workspace). Defaults to the workflow kind when not supplied at create.
+   */
+  name: "string > 0",
   recurrence: ScheduleRecurrenceSchema,
   enabled: "boolean",
   /** personal = Just for me; tenant = Everyone (CL-4108). */
@@ -111,6 +148,8 @@ export const CreateScheduledTriggerBodySchema = type({
   recurrence: ScheduleRecurrenceSchema,
   "payload?": { "[string]": "unknown" },
   "scope?": ScheduleScopeSchema,
+  /** Omit to default to the workflow kind (CL-4268). */
+  "name?": "0 < string <= 100",
 });
 export type CreateScheduledTriggerBody =
   typeof CreateScheduledTriggerBodySchema.infer;
@@ -152,6 +191,7 @@ export const UpdateScheduledTriggerBodySchema = type({
   "enabled?": "boolean",
   "recurrence?": ScheduleRecurrenceSchema,
   "payload?": { "[string]": "unknown" },
+  "name?": "0 < string <= 100",
 });
 export type UpdateScheduledTriggerBody =
   typeof UpdateScheduledTriggerBodySchema.infer;

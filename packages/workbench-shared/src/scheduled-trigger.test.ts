@@ -3,6 +3,7 @@ import { type } from "arktype";
 import {
   CreateScheduledTriggerBodySchema,
   DAILY_INTERVAL_MINUTES,
+  defaultScheduleName,
   HEARTBEAT_WORKFLOW_KIND,
   HeartbeatTriggerPayloadSchema,
   isRecurrenceAllowedForKind,
@@ -113,10 +114,11 @@ describe("CreateScheduledTriggerBodySchema", () => {
 });
 
 describe("ScheduledTriggerSchema", () => {
-  it("requires scope and ownerMemberPrincipalId", () => {
+  it("requires scope, ownerMemberPrincipalId, and a non-empty name", () => {
     const ok = ScheduledTriggerSchema({
       id: "sch-1",
       workflowKind: "heartbeat",
+      name: "Morning brief",
       recurrence: { intervalMinutes: 1440, anchorMinuteUtc: 13 * 60 },
       enabled: true,
       scope: "personal",
@@ -128,6 +130,64 @@ describe("ScheduledTriggerSchema", () => {
       nextFireAt: null,
     });
     expect(ok).not.toBeInstanceOf(type.errors);
+  });
+
+  it("rejects an empty name", () => {
+    const invalid = ScheduledTriggerSchema({
+      id: "sch-1",
+      workflowKind: "heartbeat",
+      name: "",
+      recurrence: { intervalMinutes: 1440, anchorMinuteUtc: 13 * 60 },
+      enabled: true,
+      scope: "personal",
+      ownerMemberPrincipalId: "prn-1",
+      triggerPayload: {},
+      createdAt: "2026-01-02T00:00:00.000Z",
+      lastRunId: null,
+      recentFires: [],
+      nextFireAt: null,
+    });
+    expect(invalid).toBeInstanceOf(type.errors);
+  });
+});
+
+describe("CreateScheduledTriggerBodySchema name", () => {
+  it("accepts an omitted name", () => {
+    const body = CreateScheduledTriggerBodySchema({
+      kind: "morning-brief",
+      recurrence: { intervalMinutes: 1440, anchorMinuteUtc: 9 * 60 },
+    });
+    expect(body).not.toBeInstanceOf(type.errors);
+  });
+
+  it("accepts a caller-supplied name", () => {
+    const body = CreateScheduledTriggerBodySchema({
+      kind: "morning-brief",
+      recurrence: { intervalMinutes: 1440, anchorMinuteUtc: 9 * 60 },
+      name: "Client research — Acme",
+    });
+    expect(body).not.toBeInstanceOf(type.errors);
+  });
+
+  it("rejects an empty name", () => {
+    expect(
+      CreateScheduledTriggerBodySchema({
+        kind: "morning-brief",
+        recurrence: { intervalMinutes: 1440, anchorMinuteUtc: 9 * 60 },
+        name: "",
+      }),
+    ).toBeInstanceOf(type.errors);
+  });
+});
+
+describe("defaultScheduleName", () => {
+  it("uses the bare kind for the first schedule of that kind", () => {
+    expect(defaultScheduleName("heartbeat", 0)).toBe("heartbeat");
+  });
+
+  it("numbers subsequent schedules of the same kind", () => {
+    expect(defaultScheduleName("heartbeat", 1)).toBe("heartbeat 2");
+    expect(defaultScheduleName("heartbeat", 2)).toBe("heartbeat 3");
   });
 });
 

@@ -460,6 +460,25 @@ describe("POST /me/schedules", () => {
     });
   });
 
+  it("forwards a caller-supplied name to the store", async () => {
+    storeCalls.length = 0;
+    createThrows = null;
+    const res = await mountApp().fetch(
+      req("/me/schedules", {
+        method: "POST",
+        user: "user-a",
+        body: JSON.stringify({
+          kind: "heartbeat",
+          recurrence: DAILY_9,
+          name: "Weekend digest",
+        }),
+      }),
+    );
+    expect(res.status).toBe(201);
+    const create = storeCalls.find((c) => c.fn === "create");
+    expect(create?.args).toMatchObject({ name: "Weekend digest" });
+  });
+
   it("creates a sub-daily (every-5-minutes) schedule for a non-heartbeat kind", async () => {
     storeCalls.length = 0;
     createThrows = null;
@@ -668,7 +687,7 @@ describe("POST /me/schedules", () => {
     expect(res.status).toBe(403);
   });
 
-  it("409s with a distinct message on a duplicate (tenant, owner, kind) schedule", async () => {
+  it("409s with a distinct message on a duplicate (tenant, owner, kind, name) schedule", async () => {
     createThrows = Object.assign(
       new Error("duplicate key value violates unique constraint"),
       { code: "23505" },
@@ -682,7 +701,7 @@ describe("POST /me/schedules", () => {
     );
     expect(res.status).toBe(409);
     expect(await res.json()).toEqual({
-      error: "You already have a schedule for this workflow.",
+      error: "You already have a schedule with this name for this workflow.",
     });
     createThrows = null;
   });

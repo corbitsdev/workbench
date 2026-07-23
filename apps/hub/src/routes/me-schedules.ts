@@ -168,7 +168,8 @@ export function createMeSchedulesRouter(
           content: { "application/json": { schema: resolver(ErrorResponse) } },
         },
         409: {
-          description: "Caller already has a schedule for this workflow kind",
+          description:
+            "Caller already has a schedule with this name for this workflow kind",
           content: { "application/json": { schema: resolver(ErrorResponse) } },
         },
       },
@@ -291,6 +292,7 @@ export function createMeSchedulesRouter(
           recurrence: body.recurrence,
           payload,
           scope,
+          ...(body.name !== undefined ? { name: body.name } : {}),
         });
         return c.json(toApiSchedule(created), 201);
       } catch (err) {
@@ -299,8 +301,8 @@ export function createMeSchedulesRouter(
             {
               error:
                 scope === "tenant"
-                  ? "This workspace already has an Everyone schedule for this workflow."
-                  : "You already have a schedule for this workflow.",
+                  ? "This workspace already has an Everyone schedule with this name for this workflow."
+                  : "You already have a schedule with this name for this workflow.",
             },
             409,
           );
@@ -341,6 +343,11 @@ export function createMeSchedulesRouter(
           description: "Caller has no provisioned membership yet",
           content: { "application/json": { schema: resolver(ErrorResponse) } },
         },
+        409: {
+          description:
+            "Caller already has a different schedule with this name for this workflow kind",
+          content: { "application/json": { schema: resolver(ErrorResponse) } },
+        },
       },
     }),
     async (c) => {
@@ -357,7 +364,8 @@ export function createMeSchedulesRouter(
       if (
         body.enabled === undefined &&
         body.recurrence === undefined &&
-        body.payload === undefined
+        body.payload === undefined &&
+        body.name === undefined
       ) {
         return c.json({ error: "no fields to update" }, 400);
       }
@@ -370,7 +378,11 @@ export function createMeSchedulesRouter(
       // Fetched once and reused for both the recurrence guard and the payload
       // fencing below — both need to know the schedule's kind/current state.
       let existing: Awaited<ReturnType<typeof getOwnerSchedule>> | undefined;
-      if (body.recurrence !== undefined || body.payload !== undefined) {
+      if (
+        body.recurrence !== undefined ||
+        body.payload !== undefined ||
+        body.name !== undefined
+      ) {
         existing = await getOwnerSchedule(db, {
           tenantId: member.tenantId,
           ownerPrincipalId: member.principalId,
@@ -443,18 +455,32 @@ export function createMeSchedulesRouter(
         }
       }
 
-      const updated = await updateOwnerSchedule(db, {
-        tenantId: member.tenantId,
-        ownerPrincipalId: member.principalId,
-        id,
-        ...(body.enabled !== undefined ? { enabled: body.enabled } : {}),
-        ...(body.recurrence !== undefined
-          ? { recurrence: body.recurrence }
-          : {}),
-        ...(triggerPayload !== undefined ? { triggerPayload } : {}),
-      });
-      if (!updated) return c.json({ error: "schedule not found" }, 404);
-      return c.json(toApiSchedule(updated));
+      try {
+        const updated = await updateOwnerSchedule(db, {
+          tenantId: member.tenantId,
+          ownerPrincipalId: member.principalId,
+          id,
+          ...(body.enabled !== undefined ? { enabled: body.enabled } : {}),
+          ...(body.recurrence !== undefined
+            ? { recurrence: body.recurrence }
+            : {}),
+          ...(triggerPayload !== undefined ? { triggerPayload } : {}),
+          ...(body.name !== undefined ? { name: body.name } : {}),
+        });
+        if (!updated) return c.json({ error: "schedule not found" }, 404);
+        return c.json(toApiSchedule(updated));
+      } catch (err) {
+        if (isUniqueViolation(err)) {
+          return c.json(
+            {
+              error:
+                "You already have a schedule with this name for this workflow.",
+            },
+            409,
+          );
+        }
+        throw err;
+      }
     },
   );
 
