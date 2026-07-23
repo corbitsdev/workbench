@@ -260,10 +260,12 @@ export function createHubToolsRouter(
           500,
         );
       }
-      if (tool.kind !== "string") {
+      if (tool.kind !== "string" && tool.kind !== "full") {
         return c.json(
           {
-            error: `Tool ${toolName} uses unsupported handler kind: ${tool.kind}`,
+            error: `Tool ${toolName} uses unsupported handler kind: ${String(
+              (tool as { kind: unknown }).kind,
+            )}`,
           },
           500,
         );
@@ -275,6 +277,46 @@ export function createHubToolsRouter(
       const controller = new AbortController();
       try {
         c.req.raw.signal.addEventListener("abort", () => controller.abort());
+        if (tool.kind === "full") {
+          // Structured tools (e.g. write_artifact) return a full ToolResult.
+          // The RPC contract to the sidecar is string-typed
+          // (defineHubBackedToolPackage pins `result: "string"`), so flatten
+          // non-string content to JSON text — the same stringification the
+          // reactor applies before structured tool content reaches the model.
+          const full = await tool.handler(
+            { id: crypto.randomUUID(), name: toolName, arguments: args },
+            controller.signal,
+          );
+          if (full.pendingMarker !== undefined) {
+            // Async-tool contract (pendingMarker) has no delivery path over
+            // this synchronous rail — fail loudly rather than dropping it.
+            return c.json(
+              {
+                error: `Tool ${toolName} returned a pendingMarker, which the hub-backed rail cannot deliver`,
+              },
+              500,
+            );
+          }
+          const flattened =
+            typeof full.content === "string"
+              ? full.content
+              : JSON.stringify(full.content);
+          if (full.isError === true) {
+            const escalation = loopGuard.recordFailure(
+              sessionId,
+              toolName,
+              args,
+              new Error(flattened),
+            );
+            const result =
+              escalation === undefined
+                ? flattened
+                : `${flattened}\n\n${escalation}`;
+            return c.json({ result, isError: true });
+          }
+          loopGuard.recordSuccess(sessionId);
+          return c.json({ result: flattened, isError: false });
+        }
         const result = await tool.handler(args, controller.signal);
         loopGuard.recordSuccess(sessionId);
         return c.json({ result, isError: false });
