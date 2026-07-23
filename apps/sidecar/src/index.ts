@@ -11,7 +11,7 @@ import {
 import { createSidecarOrchestrator, type HubLink } from "@workbench/hub-agent";
 import type { InferenceEvent } from "@intx/types/runtime";
 import { hexEncode, type SignalKind } from "@intx/types";
-import { createAgentRepoStore } from "@intx/hub-sessions";
+import { createAgentRepoStore } from "@workbench/hub-sessions";
 import { buildWorkbenchAdapterRegistry } from "./gemini-thought-signature-patch";
 import {
   readAdapterManifest,

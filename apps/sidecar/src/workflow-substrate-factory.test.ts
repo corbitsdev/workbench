@@ -37,7 +37,7 @@ import {
   parseAdapterManifest,
   parseStepInferenceSources,
 } from "./workflow-substrate-factory";
-import type { Principal, RepoId, RepoStore } from "@intx/hub-sessions";
+import type { Principal, RepoId, RepoStore } from "@workbench/hub-sessions";
 import { type StepToolContext } from "./step-tool-harness";
 import {
   createDurableConversationRegistry,

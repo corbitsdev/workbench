@@ -1,7 +1,7 @@
 import { and, eq, inArray, isNull, lt } from "drizzle-orm";
 import { deriveDeploymentAddress } from "@intx/workflow-deploy";
 import { getLogger } from "@intx/log";
-import type { SidecarRouter } from "@intx/hub-sessions";
+import type { SidecarRouter } from "@workbench/hub-sessions";
 import type { HubDb } from "../db";
 import { workflowRunRecord, workflowRunStep } from "../db/schema";
 import { failRunIfStillRunning } from "../workflow-executor/run-store";

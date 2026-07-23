@@ -7,7 +7,7 @@ import path from "node:path";
 import git from "isomorphic-git";
 
 import type { InferenceSource } from "@intx/types/runtime";
-import type { RepoId, RepoStore } from "@intx/hub-sessions";
+import type { RepoId, RepoStore } from "@workbench/hub-sessions";
 
 import {
   createDeploymentAddressRegistry,

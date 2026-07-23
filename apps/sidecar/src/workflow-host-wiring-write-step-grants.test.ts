@@ -17,7 +17,7 @@
 //       address could race a straggler's commit into a step repo).
 
 import { describe, test, expect } from "bun:test";
-import type { RepoId } from "@intx/hub-sessions";
+import type { RepoId } from "@workbench/hub-sessions";
 
 import {
   writeStepGrants,

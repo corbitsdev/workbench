@@ -31,7 +31,7 @@ import type {
   Principal,
   RepoId,
   RepoStore as SubstrateRepoStore,
-} from "@intx/hub-sessions/substrate";
+} from "@workbench/hub-sessions/substrate";
 import type { BlobSubstrate } from "@intx/workflow";
 
 import {

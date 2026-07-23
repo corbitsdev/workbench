@@ -10,14 +10,14 @@ import {
   createRepoStore,
   workflowRunKindHandler,
   WORKFLOW_RUN_GITIGNORE_PATH,
-} from "@intx/hub-sessions";
+} from "@workbench/hub-sessions";
 import type {
   AuthorizeFn,
   KindHandler,
   Principal,
   RepoId,
   ValidatePushResult,
-} from "@intx/hub-sessions";
+} from "@workbench/hub-sessions";
 
 import { createWorkflowRunEffectLedger } from "./effect-ledger";
 

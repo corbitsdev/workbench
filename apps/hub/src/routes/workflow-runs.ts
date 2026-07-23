@@ -3,14 +3,14 @@ import { type } from "arktype";
 import { Hono } from "hono";
 import { describeRoute, resolver } from "hono-openapi";
 import { streamSSE } from "hono/streaming";
-import { subscribeKind } from "@intx/hub-sessions";
+import { subscribeKind } from "@workbench/hub-sessions";
 import type {
   Principal,
   RepoId,
   RepoStore,
   SessionService,
   SidecarRouter,
-} from "@intx/hub-sessions";
+} from "@workbench/hub-sessions";
 import { createWorkflowRunBlobSubstrate } from "@intx/workflow-host";
 import type { CryptoProvider } from "@intx/types/runtime";
 import { getLogger } from "@intx/log";
@@ -102,6 +102,23 @@ export function deriveWorkflowRunRepoId(args: {
   deploymentDomain: string;
 }): string {
   return deriveDeploymentAddress(args).replaceAll(/[^a-zA-Z0-9_-]/g, "-");
+}
+
+// WORKBENCH-LOCAL (CL-4231): shared helper for the three route handlers
+// below that need a `workflow-run` `repoId`. Annotated with the closed
+// literal kind (not the widened `RepoId` from `@workbench/hub-sessions`)
+// because this repoId is passed to `createWorkflowRunBlobSubstrate`
+// (upstream `@intx/workflow-host`, untouched), which still expects the
+// closed wire `RepoId` shape. This kind is always the hardcoded
+// `"workflow-run"` literal, never derived from the registered kind set,
+// so it is genuinely safe — unlike the `resolveAttachment` cast in
+// `session-service.ts`, which derives its kind from a DB row and does
+// need a runtime guard.
+function workflowRunRepoId(args: {
+  deploymentId: string;
+  deploymentDomain: string;
+}): { kind: "workflow-run"; id: string } {
+  return { kind: "workflow-run", id: deriveWorkflowRunRepoId(args) };
 }
 
 const log = getLogger(["api", "workflow-runs"]);
@@ -351,13 +368,10 @@ export function createWorkflowRunsRouter(deps: {
       if (!owned)
         return c.json({ error: "Workflow deployment not found" }, 404);
 
-      const repoId: RepoId = {
-        kind: "workflow-run",
-        id: deriveWorkflowRunRepoId({
-          deploymentId,
-          deploymentDomain: deps.deploymentDomain,
-        }),
-      };
+      const repoId = workflowRunRepoId({
+        deploymentId,
+        deploymentDomain: deps.deploymentDomain,
+      });
 
       return streamSSE(c, async (stream) => {
         const abort = new AbortController();
@@ -475,13 +489,10 @@ export function createWorkflowRunsRouter(deps: {
       if (!owned)
         return c.json({ error: "Workflow deployment not found" }, 404);
 
-      const repoId: RepoId = {
-        kind: "workflow-run",
-        id: deriveWorkflowRunRepoId({
-          deploymentId,
-          deploymentDomain: deps.deploymentDomain,
-        }),
-      };
+      const repoId = workflowRunRepoId({
+        deploymentId,
+        deploymentDomain: deps.deploymentDomain,
+      });
 
       // Replay the run's append-only event log to find the StepCompleted for the
       // requested step. A bounded log that drains without yielding the step means
@@ -605,13 +616,10 @@ export function createWorkflowRunsRouter(deps: {
       if (!owned)
         return c.json({ error: "Workflow deployment not found" }, 404);
 
-      const repoId: RepoId = {
-        kind: "workflow-run",
-        id: deriveWorkflowRunRepoId({
-          deploymentId,
-          deploymentDomain: deps.deploymentDomain,
-        }),
-      };
+      const repoId = workflowRunRepoId({
+        deploymentId,
+        deploymentDomain: deps.deploymentDomain,
+      });
 
       let steps: { stepId: string; outputRef: string; runId: string }[];
       let runId: string | null;

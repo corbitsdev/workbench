@@ -26,6 +26,7 @@ COPY packages/analytics/package.json packages/analytics/
 COPY packages/pricing/package.json packages/pricing/
 COPY packages/event-collector/package.json packages/event-collector/
 COPY packages/hub-agent/package.json packages/hub-agent/
+COPY packages/hub-sessions/package.json packages/hub-sessions/
 COPY packages/inference/package.json packages/inference/
 COPY packages/storage-isogit/package.json packages/storage-isogit/
 COPY packages/last30days-core/package.json packages/last30days-core/
@@ -105,6 +106,7 @@ COPY packages/pricing/ packages/pricing/
 COPY packages/catalog/ packages/catalog/
 COPY packages/event-collector/ packages/event-collector/
 COPY packages/hub-agent/ packages/hub-agent/
+COPY packages/hub-sessions/ packages/hub-sessions/
 COPY packages/storage-isogit/ packages/storage-isogit/
 COPY packages/blocks/ packages/blocks/
 COPY packages/chat/ packages/chat/

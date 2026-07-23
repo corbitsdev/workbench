@@ -105,7 +105,7 @@ mock.module("../services/catalog-provider-seed", () => ({
     };
   },
   // Records the credential ids the DELETE handler asks to unbind; returns 0 so
-  // the route skips the source re-push (keeps @intx/hub-sessions out of the
+  // the route skips the source re-push (keeps @workbench/hub-sessions out of the
   // unit test — the real cascade is covered by the integration test).
   clearCatalogProvidersForCredentials: async (
     _tx: unknown,
@@ -1418,10 +1418,12 @@ describe("owner schedules routes", () => {
     updatedAt: new Date("2026-03-01T00:00:00.000Z"),
   };
 
-  function schedulesDb(opts: {
-    rows?: (typeof tenantRow)[];
-    updateReturn?: typeof tenantRow | null;
-  } = {}) {
+  function schedulesDb(
+    opts: {
+      rows?: (typeof tenantRow)[];
+      updateReturn?: typeof tenantRow | null;
+    } = {},
+  ) {
     const rows = opts.rows ?? [tenantRow];
     const db = {
       query: {

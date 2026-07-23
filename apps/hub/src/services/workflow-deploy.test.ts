@@ -10,7 +10,7 @@ import {
 import type { WorkflowDefinition } from "@intx/workflow";
 import type { HarnessConfig, InferenceSource } from "@intx/types/runtime";
 import type { DirectorRegistry } from "@intx/agent";
-import type { AgentRepoStore, SidecarRouter } from "@intx/hub-sessions";
+import type { AgentRepoStore, SidecarRouter } from "@workbench/hub-sessions";
 import type { HubDb } from "../db";
 import { evaluateGrants } from "@intx/authz";
 import type { GrantRule } from "@intx/authz";

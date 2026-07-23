@@ -41,7 +41,7 @@ import {
   type AgentRepoStore,
   type DeployContent,
   type SidecarRouter,
-} from "@intx/hub-sessions";
+} from "@workbench/hub-sessions";
 import {
   assembleWorkflowDeployConfig,
   collectDeclaredStepModels,

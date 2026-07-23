@@ -11,13 +11,19 @@ export default defineConfig(
   // `packages/workflow-host` is a verbatim vendor of `@intx/workflow-host`
   // (WORKBENCH-LOCAL CL-2535 edits aside); lint it as vendored upstream code,
   // same as `interchange/**`, so its own eslint-disable directives don't trip
-  // our differing rule set.
+  // our differing rule set. `packages/hub-sessions` (CL-4231) is the same
+  // case: a vendored copy of `@intx/hub-sessions` whose test files carry
+  // upstream's own `eslint-disable` conventions (e.g. targeted
+  // `no-unsafe-type-assertion` suppressions in mock fixtures), which this
+  // repo's stricter/differing rule set reports as "unused" even though they
+  // are load-bearing against upstream's own lint config.
   globalIgnores([
     "**/dist/**",
     "tmp/**",
     "interchange/**",
     "temporary/**",
     "packages/workflow-host/**",
+    "packages/hub-sessions/**",
   ]),
   {
     linterOptions: {

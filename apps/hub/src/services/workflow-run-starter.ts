@@ -3,7 +3,7 @@ import { and, desc, eq, inArray, isNotNull, isNull } from "drizzle-orm";
 import { getAncestorChain } from "@intx/db";
 import { getLogger } from "@intx/log";
 import { deriveDeploymentAddress } from "@intx/workflow-deploy";
-import type { SessionService } from "@intx/hub-sessions";
+import type { SessionService } from "@workbench/hub-sessions";
 import type { CryptoProvider } from "@intx/types/runtime";
 import type { HubDb } from "../db";
 import { workflowRun } from "../db/schema";

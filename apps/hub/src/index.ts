@@ -18,9 +18,9 @@ import {
   WORKSPACE_BUILTINS_REGISTRY,
   type SidecarLookups,
   type WsHandle,
-} from "@intx/hub-sessions";
+} from "@workbench/hub-sessions";
 // Per-agent serialized event-collector registry (CL-1656). Drop-in for
-// @intx/hub-sessions' createEventCollectorRegistry; serializes onEvent per
+// @workbench/hub-sessions' createEventCollectorRegistry; serializes onEvent per
 // agent so a turn row commits before its parts, fixing the FK race that
 // dropped thinking/reply parts.
 import { createEventCollectorRegistry } from "@workbench/event-collector";
@@ -507,7 +507,70 @@ const repoStore = wrapRepoStoreWithProjection(
 );
 // ─── Skill asset substrate ─────────────────────────────────────────
 
-const assetService = createAssetService({ db, repoStore: repoStore.repoStore });
+const assetService = createAssetService({
+  db,
+  repoStore: repoStore.repoStore,
+  // WORKBENCH-LOCAL (CL-4231): validate createAsset/row-mapping against
+  // the repo store's actual registered kind set (built-ins today; a
+  // future caller-registered custom kind, e.g. CL-4215's `skill-draft`,
+  // becomes usable here with no further wiring change) instead of the
+  // asset service's own default.
+  registeredKinds: repoStore.registeredKinds,
+});
+
+// WORKBENCH-LOCAL (CL-4231): `@intx/hub-api`'s `createApp` (submodule, not
+// edited) types its `assetService` config field against the UPSTREAM
+// `@intx/hub-sessions`'s `AssetService`, whose `Asset.kind` is the closed
+// five-value `RepoKind`. Our vendored `@workbench/hub-sessions`
+// `AssetService` is structurally identical except `kind` is the widened
+// kind-seam type (`./repo-store/types.ts`), so it is not directly
+// assignable to hub-api's narrower one.
+//
+// Rather than casting the whole service object through `unknown` (which
+// would silence type errors on every field, not just `kind` — e.g. a
+// future required method `createApp` gains at the next pin bump would
+// compile here and fail only at runtime), this adapter is a real object
+// literal typed against the upstream interface. Every method it does NOT
+// override is forwarded untouched and re-checked structurally by
+// TypeScript on every field except `kind`; only the two methods that
+// actually return a `kind` (`createAsset`, `listAgentAssets`) get the
+// single-line `kind` cast the divergence actually requires. If
+// `createApp`'s `AssetService` interface ever grows a method this
+// adapter doesn't forward, this object literal fails to typecheck
+// immediately, unlike a blanket `as unknown as` cast.
+type UpstreamAssetService = NonNullable<
+  Parameters<typeof createApp>[0]["assetService"]
+>;
+type UpstreamAsset = Awaited<ReturnType<UpstreamAssetService["createAsset"]>>;
+type UpstreamRepoKind = UpstreamAsset["kind"];
+
+function narrowToUpstreamKind(kind: string): UpstreamRepoKind {
+  // Runtime values are still one of the five built-ins plus whatever
+  // kind this hub actually registers; hub-api only ever reads `kind`
+  // off an `Asset` (never constructs one), so this narrowing cast is
+  // sound for every value that reaches it today. It documents the
+  // open-seam-vs-closed-consumer boundary the ticket anticipated,
+  // localized to exactly the field that diverges.
+  return kind as UpstreamRepoKind;
+}
+
+const assetServiceForHubApi: UpstreamAssetService = {
+  async createAsset(params) {
+    const asset = await assetService.createAsset(params);
+    return { ...asset, kind: narrowToUpstreamKind(asset.kind) };
+  },
+  populateAsset: (params) => assetService.populateAsset(params),
+  attachAsset: (params) => assetService.attachAsset(params),
+  async listAgentAssets(agentId) {
+    const rows = await assetService.listAgentAssets(agentId);
+    return rows.map((row) => ({
+      ...row,
+      asset: { ...row.asset, kind: narrowToUpstreamKind(row.asset.kind) },
+    }));
+  },
+  readAssetBlob: (params) => assetService.readAssetBlob(params),
+  listAssetBlobs: (params) => assetService.listAssetBlobs(params),
+};
 
 // ─── Hub services ──────────────────────────────────────────────────
 
@@ -920,7 +983,9 @@ const hubApp = createApp({
   sessionService,
   eventCollectors,
   grantStore,
-  assetService,
+  // WORKBENCH-LOCAL (CL-4231): `assetServiceForHubApi` narrows only the
+  // point of actual divergence — see its definition below.
+  assetService: assetServiceForHubApi,
   repoStore: repoStore.repoStore,
   maxTarballBytes: 10 * 1024 * 1024,
   sidecarWsHandler: upgradeWebSocket((_c) => {

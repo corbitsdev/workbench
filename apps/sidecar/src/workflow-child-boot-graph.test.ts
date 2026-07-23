@@ -25,7 +25,7 @@ function findRepoRoot(startDir: string): string {
 // the sidecar orchestrator (`@workbench/hub-agent`) into that graph: the child
 // never executes either, the database dependency is a layering violation, and
 // importing the orchestrator that spawns the child is a backwards dependency.
-// The db-free substrate is reachable via `@intx/hub-sessions/substrate` and
+// The db-free substrate is reachable via `@workbench/hub-sessions/substrate` and
 // the path helpers via `@workbench/hub-agent/paths`; the package barrels are not.
 //
 // This walks the child's VALUE-import graph and fails if any forbidden module
@@ -88,7 +88,7 @@ function binaryEntrypoints(): string[] {
 /**
  * Returns the package reason if a value-import specifier is forbidden in the
  * child boot graph, or null otherwise. `@intx/db` / `drizzle-orm` are banned
- * entirely; the `@intx/hub-sessions` and `@workbench/hub-agent` *barrels* are banned
+ * entirely; the `@workbench/hub-sessions` and `@workbench/hub-agent` *barrels* are banned
  * (their `/substrate` and `/paths` subpaths are the supported db-free doors).
  */
 function forbiddenReason(spec: string): string | null {
@@ -98,8 +98,8 @@ function forbiddenReason(spec: string): string | null {
   if (spec === "drizzle-orm" || spec.startsWith("drizzle-orm/")) {
     return "database ORM";
   }
-  if (spec === "@intx/hub-sessions") {
-    return "control-plane barrel; import @intx/hub-sessions/substrate instead";
+  if (spec === "@workbench/hub-sessions") {
+    return "control-plane barrel; import @workbench/hub-sessions/substrate instead";
   }
   if (spec === "@workbench/hub-agent") {
     return "sidecar orchestrator barrel; import @workbench/hub-agent/paths instead";
@@ -195,7 +195,7 @@ describe("workflow-child boot graph", () => {
       throw new Error(
         `The workflow-child boot graph reached forbidden modules:\n${detail}\n\n` +
           "The spawned child must not evaluate the control-plane database or the " +
-          "sidecar orchestrator at boot. Use @intx/hub-sessions/substrate for the " +
+          "sidecar orchestrator at boot. Use @workbench/hub-sessions/substrate for the " +
           "db-free repo/substrate symbols and @workbench/hub-agent/paths for the deploy-tree " +
           "and address helpers.",
       );

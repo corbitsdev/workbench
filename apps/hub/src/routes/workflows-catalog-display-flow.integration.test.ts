@@ -77,7 +77,7 @@ mock.module("../lib/tenant-provisioning", () => ({
 const { Hono } = await import("hono");
 const { createWorkflowsCatalogRouter } = await import("./workflows-catalog");
 import type { HubDb } from "../db";
-import type { AgentRepoStore } from "@intx/hub-sessions";
+import type { AgentRepoStore } from "@workbench/hub-sessions";
 
 type Entry = {
   kind: string;

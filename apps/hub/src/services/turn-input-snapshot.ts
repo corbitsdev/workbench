@@ -3,7 +3,7 @@ import git from "isomorphic-git";
 import { getLogger } from "@intx/log";
 import type { ConversationTurn, ContentBlock } from "@intx/types/runtime";
 import { IsogitStore } from "@workbench/storage-isogit";
-import type { AgentRepoStore, RepoId } from "@intx/hub-sessions";
+import type { AgentRepoStore, RepoId } from "@workbench/hub-sessions";
 import type { MomentTurnInputMessage } from "@workbench/timeline";
 
 const log = getLogger(["hub", "turn-input-snapshot"]);

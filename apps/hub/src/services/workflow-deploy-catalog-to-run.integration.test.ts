@@ -7,7 +7,7 @@ import { deriveDeploymentAddress } from "@intx/workflow-deploy";
 import { defineWorkflow } from "@intx/workflow";
 import type { WorkflowDefinition } from "@intx/workflow";
 import type { HarnessConfig, InferenceSource } from "@intx/types/runtime";
-import type { AgentRepoStore, SidecarRouter } from "@intx/hub-sessions";
+import type { AgentRepoStore, SidecarRouter } from "@workbench/hub-sessions";
 import type { HubDb } from "../db";
 import { createWorkbenchDirectorRegistry, agentStep } from "@workbench/agents";
 

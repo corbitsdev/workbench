@@ -11,7 +11,7 @@ import {
 } from "@workbench/timeline";
 import { type } from "arktype";
 import { sql } from "drizzle-orm";
-import type { AgentRepoStore } from "@intx/hub-sessions";
+import type { AgentRepoStore } from "@workbench/hub-sessions";
 
 import type { HubDb } from "../db";
 import { resolveTimelinePrincipalIds } from "./principal-activity";

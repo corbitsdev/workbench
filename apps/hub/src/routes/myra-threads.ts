@@ -2,7 +2,7 @@ import { Hono } from "hono";
 import { describeRoute, resolver } from "hono-openapi";
 import { type } from "arktype";
 import type { DB } from "@intx/db";
-import type { SessionService } from "@intx/hub-sessions";
+import type { SessionService } from "@workbench/hub-sessions";
 import type { AnalyticsSubscriber } from "@workbench/analytics";
 import { requestBodySchema } from "../lib/openapi";
 import type { HubDb } from "../db";

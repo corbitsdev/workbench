@@ -10,7 +10,7 @@ import type {
   SessionService,
   SidecarRouter,
   EventCollectorRegistry,
-} from "@intx/hub-sessions";
+} from "@workbench/hub-sessions";
 import type { GrantStore } from "@intx/types/authz";
 import { matchPattern } from "@intx/authz";
 import { AGENT_TEMPLATES } from "@workbench/agents";

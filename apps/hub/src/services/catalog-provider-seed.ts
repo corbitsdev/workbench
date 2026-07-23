@@ -5,7 +5,7 @@ import { schema as intxSchema } from "@intx/db";
 import {
   pushSourceUpdatesSubtree,
   type SidecarRouter,
-} from "@intx/hub-sessions";
+} from "@workbench/hub-sessions";
 import { FULL_CATALOG } from "@workbench/catalog";
 import type { HubDb } from "../db";
 

@@ -3,7 +3,7 @@ import { getLogger } from "@intx/log";
 import { type } from "arktype";
 import { Hono } from "hono";
 import { describeRoute, resolver } from "hono-openapi";
-import type { AgentRepoStore } from "@intx/hub-sessions";
+import type { AgentRepoStore } from "@workbench/hub-sessions";
 import {
   classifyWorkflowSteps,
   countHumanGates,

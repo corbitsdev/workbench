@@ -20,7 +20,7 @@ import {
   type SidecarAuthenticator,
   type SidecarRouter,
   type WsHandle,
-} from "@intx/hub-sessions";
+} from "@workbench/hub-sessions";
 import { createInMemoryTransport } from "@intx/mail-memory";
 import { base64Encode, hexEncode } from "@intx/types";
 import type {

@@ -3,7 +3,7 @@ import { type } from "arktype";
 import { deriveDeploymentAddress } from "@intx/workflow-deploy";
 import { schema as intxSchema } from "@intx/db";
 import { getLogger } from "@intx/log";
-import type { SidecarRouter } from "@intx/hub-sessions";
+import type { SidecarRouter } from "@workbench/hub-sessions";
 import type { HubDb } from "../db";
 import { workflowRun, workflowRunRecord } from "../db/schema";
 import {

@@ -2,7 +2,7 @@ import { describe, expect, it } from "bun:test";
 import { mock } from "bun:test";
 import { deriveDeploymentAddress } from "@intx/workflow-deploy";
 import * as intxDb from "@intx/db";
-import type { SessionService } from "@intx/hub-sessions";
+import type { SessionService } from "@workbench/hub-sessions";
 import type { HubDb } from "../db";
 import { isUuid } from "../lib/uuid";
 

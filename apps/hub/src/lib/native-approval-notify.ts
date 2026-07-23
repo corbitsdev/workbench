@@ -1,7 +1,7 @@
 import { eq } from "drizzle-orm";
 import { schema as intxSchema } from "@intx/db";
 import { getLogger } from "@intx/log";
-import type { SidecarLookups } from "@intx/hub-sessions";
+import type { SidecarLookups } from "@workbench/hub-sessions";
 import type { HubDb } from "../db";
 import type { ApprovalsEventBus } from "./approvals-events";
 import type { NativeApprovalEnricher } from "./native-approval-enrich";

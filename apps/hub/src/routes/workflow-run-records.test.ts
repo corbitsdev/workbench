@@ -1,7 +1,7 @@
 import { describe, expect, mock, test } from "bun:test";
 import { Hono } from "hono";
 import type { CryptoProvider } from "@intx/types/runtime";
-import type { SessionService, SidecarRouter } from "@intx/hub-sessions";
+import type { SessionService, SidecarRouter } from "@workbench/hub-sessions";
 import type { HubDb } from "../db";
 import type { RunState } from "../workflow-executor/run-store";
 

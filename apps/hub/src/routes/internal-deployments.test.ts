@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import type { WorkflowDefinition } from "@intx/workflow";
-import type { AgentRepoStore } from "@intx/hub-sessions";
+import type { AgentRepoStore } from "@workbench/hub-sessions";
 import { LiveDeploymentsResponse } from "@workbench/tool-credentials";
 import { type } from "arktype";
 import { createInternalDeploymentsRouter } from "./internal-deployments";

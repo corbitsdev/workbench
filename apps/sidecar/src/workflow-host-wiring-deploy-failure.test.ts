@@ -19,7 +19,7 @@ import { dirname, join as pathJoin } from "node:path";
 import { describe, test, expect } from "bun:test";
 import { createInMemoryTransport } from "@intx/mail-memory";
 import { createEd25519Crypto, generateKeyPair } from "@intx/crypto";
-import type { RepoId, RepoStore } from "@intx/hub-sessions";
+import type { RepoId, RepoStore } from "@workbench/hub-sessions";
 import type { AgentDeployFrame } from "@intx/types/sidecar";
 import type { SubprocessSpawner } from "@workbench/workflow-host";
 

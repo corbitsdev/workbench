@@ -82,7 +82,7 @@ import {
   type RepoId,
   type RepoStore,
   type WorkflowRunWorkflowProcessPrincipal,
-} from "@intx/hub-sessions/substrate";
+} from "@workbench/hub-sessions/substrate";
 import {
   adaptHostScheduler,
   createProxyWorkflowRunRepoStore,

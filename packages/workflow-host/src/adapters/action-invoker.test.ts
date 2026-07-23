@@ -12,7 +12,7 @@ import {
   type Principal,
   type RepoId,
   type ValidatePushResult,
-} from "@intx/hub-sessions";
+} from "@workbench/hub-sessions";
 import type { EffectLedger, WorkflowAuthorizeFn } from "@intx/workflow";
 
 import {

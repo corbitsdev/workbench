@@ -26,8 +26,8 @@
   },
   "devDependencies": {
     "@intx/crypto": "workspace:*",
-    "@intx/hub-sessions": "workspace:*",
     "@types/bun": "1.3.9",
+    "@workbench/hub-sessions": "workspace:*",
     "hono": "catalog:",
     "typescript": "^5.9.0"
   }

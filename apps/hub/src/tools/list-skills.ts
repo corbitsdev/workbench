@@ -2,7 +2,7 @@ import type { AgentTool } from "@intx/agent";
 import { schema as intxSchema } from "@intx/db";
 import type { DB } from "@intx/db";
 import { getLogger } from "@intx/log";
-import type { RepoStore } from "@intx/hub-sessions";
+import type { RepoStore } from "@workbench/hub-sessions";
 import {
   DRAFT_SKILL_DEFINITION,
   LIST_SKILL_DRAFTS_DEFINITION,

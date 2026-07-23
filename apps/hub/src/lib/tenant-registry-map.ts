@@ -1,5 +1,5 @@
 import { AssetRegistrySource, type RegistrySource } from "@intx/tool-packaging";
-import type { AssetService } from "@intx/hub-sessions";
+import type { AssetService } from "@workbench/hub-sessions";
 
 /** A tenant-visible package-registry asset row: the minimum the map needs. */
 export interface RegistryAssetRow {

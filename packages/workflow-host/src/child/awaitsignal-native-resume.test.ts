@@ -24,12 +24,12 @@ import type {
   Principal,
   RepoId,
   RepoStore,
-} from "@intx/hub-sessions";
+} from "@workbench/hub-sessions";
 import {
   createRepoStore,
   workflowRunKindHandler,
   WORKFLOW_RUN_GITIGNORE_PATH,
-} from "@intx/hub-sessions";
+} from "@workbench/hub-sessions";
 import type { WorkflowEvent } from "@intx/workflow";
 
 import { createWorkflowRunRepoStore } from "../adapters/repo-store";

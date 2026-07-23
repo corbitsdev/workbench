@@ -16,7 +16,7 @@ import {
   type RepoId,
   type RepoStore,
   type ValidatePushResult,
-} from "@intx/hub-sessions";
+} from "@workbench/hub-sessions";
 
 import { schema } from "../db";
 import type { HubDb } from "../db";

@@ -10,7 +10,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
-import type { RepoId } from "@intx/hub-sessions";
+import type { RepoId } from "@workbench/hub-sessions";
 import { createDefaultDirectorRegistry } from "@intx/agent";
 import { createBuiltinRegistry } from "@intx/inference/providers";
 import type { Agent, AgentDefinition, BaseEnv } from "@intx/agent";

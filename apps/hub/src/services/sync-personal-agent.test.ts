@@ -1,6 +1,6 @@
 import { describe, expect, it, mock, beforeEach } from "bun:test";
 import type { GrantStore } from "@intx/types/authz";
-import type { SidecarRouter } from "@intx/hub-sessions";
+import type { SidecarRouter } from "@workbench/hub-sessions";
 
 // ── Boundary mocks ──────────────────────────────────────────────────
 // The personal-agent sync orchestrates provisioning + grant reconcile. We mock

@@ -7,7 +7,7 @@ import { schema as intxSchema } from "@intx/db";
 import {
   pushSourceUpdatesSubtree,
   type SidecarRouter,
-} from "@intx/hub-sessions";
+} from "@workbench/hub-sessions";
 import { generateId } from "@intx/hub-common";
 import { and, eq, inArray, isNotNull, isNull } from "drizzle-orm";
 import {

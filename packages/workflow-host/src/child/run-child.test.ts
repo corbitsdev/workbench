@@ -11,12 +11,12 @@ import type {
   Principal,
   RepoId,
   RepoStore,
-} from "@intx/hub-sessions";
+} from "@workbench/hub-sessions";
 import {
   createRepoStore,
   workflowRunKindHandler,
   WORKFLOW_RUN_GITIGNORE_PATH,
-} from "@intx/hub-sessions";
+} from "@workbench/hub-sessions";
 import {
   assembleMessage,
   assembleSignedContent,
@@ -27,7 +27,10 @@ import {
   createWorkflowStepInvoker,
   type StepEnvBase,
 } from "../adapters/step-invoker";
-import { createActionHandlerRegistry, createLoopFnRegistry } from "../adapters/action-invoker";
+import {
+  createActionHandlerRegistry,
+  createLoopFnRegistry,
+} from "../adapters/action-invoker";
 
 import { createDefaultDirectorRegistry } from "@intx/agent";
 

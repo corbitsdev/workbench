@@ -15,7 +15,7 @@ import { PGlite } from "@electric-sql/pglite";
 import { drizzle } from "drizzle-orm/pglite";
 import { pushSchema } from "drizzle-kit/api";
 import { createIsogitStore } from "@workbench/storage-isogit";
-import type { AgentRepoStore } from "@intx/hub-sessions";
+import type { AgentRepoStore } from "@workbench/hub-sessions";
 import type { ConversationTurn } from "@intx/types/runtime";
 import git from "isomorphic-git";
 

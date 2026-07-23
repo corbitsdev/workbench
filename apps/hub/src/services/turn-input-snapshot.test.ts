@@ -5,7 +5,7 @@ import path from "node:path";
 import git from "isomorphic-git";
 import { createIsogitStore } from "@workbench/storage-isogit";
 import type { ConversationTurn } from "@intx/types/runtime";
-import type { AgentRepoStore } from "@intx/hub-sessions";
+import type { AgentRepoStore } from "@workbench/hub-sessions";
 
 import { readTurnInputSnapshot } from "./turn-input-snapshot";
 

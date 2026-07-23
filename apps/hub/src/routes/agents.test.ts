@@ -1,8 +1,8 @@
 import { beforeEach, describe, expect, it, mock } from "bun:test";
 import * as intxDbReal from "@intx/db";
 import type { DB } from "@intx/db";
-import type { SessionService, SidecarRouter } from "@intx/hub-sessions";
-import { SessionLaunchError } from "@intx/hub-sessions";
+import type { SessionService, SidecarRouter } from "@workbench/hub-sessions";
+import { SessionLaunchError } from "@workbench/hub-sessions";
 import type { GrantStore } from "@intx/types/authz";
 
 const TEST_API_KEY = "sk-test-key";
@@ -140,7 +140,7 @@ const mockEventCollectors = {
   getAccumulatedText: mock(() => undefined),
   getCurrentTurnId: mock(() => undefined),
   getLastTurnId: mock(() => undefined),
-} as unknown as import("@intx/hub-sessions").EventCollectorRegistry;
+} as unknown as import("@workbench/hub-sessions").EventCollectorRegistry;
 
 function buildApp(
   db: ReturnType<typeof makeMockDb>,
@@ -1049,8 +1049,9 @@ describe("relaunchInstanceIfNeeded", () => {
     );
 
     expect(sessionService.deployInstanceAtHead).toHaveBeenCalledTimes(1);
-    const launchArg = (sessionService.deployInstanceAtHead as ReturnType<typeof mock>)
-      .mock.calls[0]![0] as {
+    const launchArg = (
+      sessionService.deployInstanceAtHead as ReturnType<typeof mock>
+    ).mock.calls[0]![0] as {
       config: { sources: { apiKey: string }[] };
     };
     expect(launchArg.config.sources[0]?.apiKey).toBe(TEST_API_KEY);
@@ -2050,7 +2051,9 @@ describe("launchAgentSession", () => {
       Promise.resolve([{ id: "src-1", apiKey: TEST_API_KEY }]);
     const createCollector = mock(() => {});
     const eventCollectors = { ...mockEventCollectors, create: createCollector };
-    const deployInstanceAtHead = mock(() => Promise.resolve({ publicKey: "pk" }));
+    const deployInstanceAtHead = mock(() =>
+      Promise.resolve({ publicKey: "pk" }),
+    );
     const sessionService = { ...mockSessionService, deployInstanceAtHead };
 
     const result = await launchAgentSession(
@@ -2125,10 +2128,12 @@ describe("launchAgentSession", () => {
     const insertMock = mock(() => ({ values: mock(() => Promise.resolve()) }));
     db.insert = insertMock;
     let launchedSessionId: string | undefined;
-    const deployInstanceAtHead = mock((cfg: { config: { sessionId: string } }) => {
-      launchedSessionId = cfg.config.sessionId;
-      return Promise.resolve({ publicKey: "pk" });
-    });
+    const deployInstanceAtHead = mock(
+      (cfg: { config: { sessionId: string } }) => {
+        launchedSessionId = cfg.config.sessionId;
+        return Promise.resolve({ publicKey: "pk" });
+      },
+    );
     const sessionService = { ...mockSessionService, deployInstanceAtHead };
 
     const result = await launchAgentSession(
@@ -2153,10 +2158,12 @@ describe("launchAgentSession", () => {
       Promise.resolve({ id: "ses-ended", status: "ended" }),
     );
     let launchedSessionId: string | undefined;
-    const deployInstanceAtHead = mock((cfg: { config: { sessionId: string } }) => {
-      launchedSessionId = cfg.config.sessionId;
-      return Promise.resolve({ publicKey: "pk" });
-    });
+    const deployInstanceAtHead = mock(
+      (cfg: { config: { sessionId: string } }) => {
+        launchedSessionId = cfg.config.sessionId;
+        return Promise.resolve({ publicKey: "pk" });
+      },
+    );
     const sessionService = { ...mockSessionService, deployInstanceAtHead };
 
     const result = await launchAgentSession(
@@ -2282,7 +2289,9 @@ describe("relaunchInstanceIfNeeded — early returns", () => {
   it("no-ops when the instance does not exist", async () => {
     const db = makeMockDb();
     db.query.agentInstance.findFirst = mock(() => Promise.resolve(undefined));
-    const deployInstanceAtHead = mock(() => Promise.resolve({ publicKey: "pk" }));
+    const deployInstanceAtHead = mock(() =>
+      Promise.resolve({ publicKey: "pk" }),
+    );
     await relaunchInstanceIfNeeded(
       db as never,
       { ...mockSessionService, deployInstanceAtHead } as never,
@@ -2304,7 +2313,9 @@ describe("relaunchInstanceIfNeeded — early returns", () => {
         address: "ins-1@tenant-1.localhost",
       }),
     );
-    const deployInstanceAtHead = mock(() => Promise.resolve({ publicKey: "pk" }));
+    const deployInstanceAtHead = mock(() =>
+      Promise.resolve({ publicKey: "pk" }),
+    );
     await relaunchInstanceIfNeeded(
       db as never,
       { ...mockSessionService, deployInstanceAtHead } as never,
@@ -2326,7 +2337,9 @@ describe("relaunchInstanceIfNeeded — early returns", () => {
         address: "ins-1@tenant-1.localhost",
       }),
     );
-    const deployInstanceAtHead = mock(() => Promise.resolve({ publicKey: "pk" }));
+    const deployInstanceAtHead = mock(() =>
+      Promise.resolve({ publicKey: "pk" }),
+    );
     await relaunchInstanceIfNeeded(
       db as never,
       { ...mockSessionService, deployInstanceAtHead } as never,
@@ -2354,7 +2367,9 @@ describe("relaunchInstanceIfNeeded — early returns", () => {
     db.query.agentSession.findFirst = mock(() =>
       Promise.resolve({ id: "ses-1", status: "active" }),
     );
-    const deployInstanceAtHead = mock(() => Promise.resolve({ publicKey: "pk" }));
+    const deployInstanceAtHead = mock(() =>
+      Promise.resolve({ publicKey: "pk" }),
+    );
     await relaunchInstanceIfNeeded(
       db as never,
       { ...mockSessionService, deployInstanceAtHead } as never,
@@ -2382,7 +2397,9 @@ describe("relaunchInstanceIfNeeded — early returns", () => {
     db.query.agentSession.findFirst = mock(() =>
       Promise.resolve({ id: "ses-ending", status: "ending" }),
     );
-    const deployInstanceAtHead = mock(() => Promise.resolve({ publicKey: "pk" }));
+    const deployInstanceAtHead = mock(() =>
+      Promise.resolve({ publicKey: "pk" }),
+    );
     await relaunchInstanceIfNeeded(
       db as never,
       { ...mockSessionService, deployInstanceAtHead } as never,
@@ -2430,7 +2447,9 @@ describe("relaunchInstanceIfNeeded — early returns", () => {
     );
     sourcesImpl = () =>
       Promise.resolve([{ id: "src-1", apiKey: TEST_API_KEY }]);
-    const deployInstanceAtHead = mock(() => Promise.resolve({ publicKey: "pk" }));
+    const deployInstanceAtHead = mock(() =>
+      Promise.resolve({ publicKey: "pk" }),
+    );
     await relaunchInstanceIfNeeded(
       db as never,
       { ...mockSessionService, deployInstanceAtHead } as never,
@@ -2456,7 +2475,9 @@ describe("relaunchInstanceIfNeeded — early returns", () => {
     db.query.tenant.findFirst = mock(() =>
       Promise.resolve({ id: "tenant-1", domain: null }),
     );
-    const deployInstanceAtHead = mock(() => Promise.resolve({ publicKey: "pk" }));
+    const deployInstanceAtHead = mock(() =>
+      Promise.resolve({ publicKey: "pk" }),
+    );
     await relaunchInstanceIfNeeded(
       db as never,
       { ...mockSessionService, deployInstanceAtHead } as never,
@@ -2486,7 +2507,9 @@ describe("relaunchInstanceIfNeeded — early returns", () => {
     db.query.agent.findFirst = mock(() =>
       Promise.resolve({ id: "agt-1", systemPrompt: null }),
     );
-    const deployInstanceAtHead = mock(() => Promise.resolve({ publicKey: "pk" }));
+    const deployInstanceAtHead = mock(() =>
+      Promise.resolve({ publicKey: "pk" }),
+    );
     await relaunchInstanceIfNeeded(
       db as never,
       { ...mockSessionService, deployInstanceAtHead } as never,

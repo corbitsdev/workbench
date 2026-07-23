@@ -3,7 +3,7 @@ import {
   type RepoId,
   type RepoStore,
   type WorkflowRunEvent,
-} from "@intx/hub-sessions";
+} from "@workbench/hub-sessions";
 import { resumeFromLog, type WorkflowEvent } from "@intx/workflow";
 import { deriveDeploymentAddress } from "@intx/workflow-deploy";
 

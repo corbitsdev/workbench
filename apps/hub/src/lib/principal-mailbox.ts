@@ -1,6 +1,6 @@
 import { and, eq, isNull } from "drizzle-orm";
 import { agentInstance, principal, tenant } from "@intx/db/schema";
-import type { SidecarLookups } from "@intx/hub-sessions";
+import type { SidecarLookups } from "@workbench/hub-sessions";
 import { getLogger } from "@intx/log";
 import { splitMailAddress, USER_ADDRESS_PREFIX } from "@workbench/hub-agent";
 import { principalMailbox } from "../db/schema";

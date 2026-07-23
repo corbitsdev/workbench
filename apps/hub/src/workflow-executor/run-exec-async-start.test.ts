@@ -1,6 +1,6 @@
 import { describe, expect, mock, test } from "bun:test";
 import type { CryptoProvider } from "@intx/types/runtime";
-import type { SessionService } from "@intx/hub-sessions";
+import type { SessionService } from "@workbench/hub-sessions";
 import type { HubDb } from "../db";
 import { isUuid } from "../lib/uuid";
 import type { RunState } from "./run-store";

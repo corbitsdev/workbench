@@ -3,7 +3,7 @@
 // The runtime body sees the runtime-env shape: `read(runId)`,
 // `append(runId, event)`, `subscribe(runId, opts)`. This adapter
 // translates each call into operations against the workflow-run
-// substrate (`@intx/hub-sessions` RepoStore plus the workflow-run kind
+// substrate (`@workbench/hub-sessions` RepoStore plus the workflow-run kind
 // handler) for a single deployment's workflow-run repo.
 //
 // On-disk envelope shape: every event blob committed under
@@ -33,12 +33,12 @@ import type {
   Principal,
   RepoId,
   RepoStore as SubstrateRepoStore,
-} from "@intx/hub-sessions/substrate";
+} from "@workbench/hub-sessions/substrate";
 import {
   subscribeKind,
   WORKFLOW_RUN_EVENTS_FILE,
   splitCombinedEventLog,
-} from "@intx/hub-sessions/substrate";
+} from "@workbench/hub-sessions/substrate";
 import type { RepoStore, WorkflowEvent } from "@intx/workflow";
 
 /**

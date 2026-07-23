@@ -78,7 +78,7 @@ mock.module("../lib/workflow-catalog", () => ({
 import { Hono } from "hono";
 import { createWorkflowsCatalogRouter } from "./workflows-catalog";
 import type { HubDb } from "../db";
-import type { AgentRepoStore } from "@intx/hub-sessions";
+import type { AgentRepoStore } from "@workbench/hub-sessions";
 
 function app() {
   const parent = new Hono<{ Variables: { userId: string } }>();

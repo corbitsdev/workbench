@@ -26,7 +26,7 @@ import type {
   RepoId,
   RepoStore,
   WorkflowRunSupervisorPrincipal,
-} from "@intx/hub-sessions";
+} from "@workbench/hub-sessions";
 import type { HubLink } from "@workbench/hub-agent";
 
 import {
@@ -227,7 +227,14 @@ export function createWorkflowRunPackClient(
       );
       await hubLink.pushWorkflowRunPack({
         agentAddress,
-        repoId,
+        // WORKBENCH-LOCAL (CL-4231): `pushWorkflowRunPack`'s `repoId` is
+        // typed against the WIRE `RepoId` (`@intx/types/sidecar`, closed
+        // five-kind enum) — correctly unwidened, since pack-push frames
+        // validate against that closed shape on the wire. This module only
+        // ever constructs `repoId` with `kind: "workflow-run"` (see the
+        // literal above), so the cast documents a boundary that already
+        // holds structurally, not a re-narrowing of anything unsafe.
+        repoId: repoId as unknown as { kind: "workflow-run"; id: string },
         pack,
         ref,
         commitSha,

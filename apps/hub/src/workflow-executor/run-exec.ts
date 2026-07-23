@@ -6,7 +6,7 @@ import type {
   RepoStore,
   SessionService,
   SidecarRouter,
-} from "@intx/hub-sessions";
+} from "@workbench/hub-sessions";
 import type { CryptoProvider } from "@intx/types/runtime";
 import type { HubDb } from "../db";
 import { isWorkflowRunDeniedForTenant } from "../lib/workflow-run-gate";

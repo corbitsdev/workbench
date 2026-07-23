@@ -15,7 +15,7 @@ import type {
   EventCollectorRegistry,
   SidecarRouter,
   RepoStore,
-} from "@intx/hub-sessions";
+} from "@workbench/hub-sessions";
 import type { CryptoProvider } from "@intx/types/runtime";
 import type { AnalyticsSubscriber } from "@workbench/analytics";
 import type {

@@ -42,13 +42,13 @@ import type {
   Principal,
   RepoId,
   RepoStore,
-} from "@intx/hub-sessions/substrate";
+} from "@workbench/hub-sessions/substrate";
 import {
   requireEventSeq,
   subscribeKind,
   WORKFLOW_RUN_EVENTS_DIR,
   WORKFLOW_RUN_RUNS_PREFIX,
-} from "@intx/hub-sessions/substrate";
+} from "@workbench/hub-sessions/substrate";
 
 /**
  * Substrate-shape envelope for the workflow-event blob committed to

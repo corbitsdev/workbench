@@ -1,7 +1,7 @@
 import { eq } from "drizzle-orm";
 import { principal, tenant } from "@intx/db/schema";
 import { getLogger } from "@intx/log";
-import type { RepoStore } from "@intx/hub-sessions";
+import type { RepoStore } from "@workbench/hub-sessions";
 import { deriveUserMailAddress } from "@workbench/hub-agent";
 import {
   deepLink,

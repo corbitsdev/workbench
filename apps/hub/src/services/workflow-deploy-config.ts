@@ -3,7 +3,7 @@ import { resolveModelSources, createGrantStore } from "@intx/db";
 import type { ModelRequirement } from "@intx/types";
 import type { GrantRule } from "@intx/authz";
 import type { HarnessConfig, InferenceSource } from "@intx/types/runtime";
-import type { DeployContent } from "@intx/hub-sessions";
+import type { DeployContent } from "@workbench/hub-sessions";
 import type { WorkflowDefinition } from "@intx/workflow";
 import { LLM_DEFAULT_MODEL } from "@workbench/agents";
 import type { HubDb } from "../db";

@@ -19,7 +19,7 @@ import {
   isDefaultMyraThreadLabel,
   myraThreadTitleFromFirstMessage,
 } from "@workbench/shared";
-import type { SessionService } from "@intx/hub-sessions";
+import type { SessionService } from "@workbench/hub-sessions";
 import { runTrackedOneShot } from "./tracked-one-shot";
 import { memberAgentInstance } from "../db/schema";
 import type { HubDb } from "../db";

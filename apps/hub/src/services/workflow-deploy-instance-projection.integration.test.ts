@@ -16,7 +16,7 @@ import {
   deriveDeploymentAddress,
   deriveWorkflowRunRepoId,
 } from "@intx/workflow-deploy";
-import { createHubSessionLookups } from "@intx/hub-sessions";
+import { createHubSessionLookups } from "@workbench/hub-sessions";
 
 import { schema } from "../db";
 import type { HubDb } from "../db";

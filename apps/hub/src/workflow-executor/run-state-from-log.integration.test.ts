@@ -15,7 +15,7 @@ import {
   type RepoId,
   type RepoStore,
   type ValidatePushResult,
-} from "@intx/hub-sessions";
+} from "@workbench/hub-sessions";
 import { awaitSignal, defineWorkflow, step } from "@intx/workflow";
 import { defineAgent } from "@intx/agent";
 import { deterministicToolStep, STEP_KIND_TAG } from "@workbench/agents";

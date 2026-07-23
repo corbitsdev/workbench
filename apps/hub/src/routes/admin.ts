@@ -3,7 +3,7 @@ import { Hono } from "hono";
 import { describeRoute, resolver } from "hono-openapi";
 import { type GrantStore } from "@intx/authz";
 import { getLogger } from "@intx/log";
-import type { AssetService } from "@intx/hub-sessions";
+import type { AssetService } from "@workbench/hub-sessions";
 import {
   AuditListResponse,
   DefinitionDetailResponse,

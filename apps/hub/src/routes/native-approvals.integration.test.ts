@@ -25,7 +25,7 @@ import type {
   EventCollectorRegistry,
   SessionService,
   SidecarRouter,
-} from "@intx/hub-sessions";
+} from "@workbench/hub-sessions";
 import type { Handler } from "hono";
 
 import { schema } from "../db";

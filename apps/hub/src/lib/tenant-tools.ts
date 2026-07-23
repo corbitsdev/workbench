@@ -4,7 +4,7 @@ import { createClosureResolver } from "@intx/tool-packaging";
 import {
   WORKSPACE_BUILTINS_REGISTRY,
   type AssetService,
-} from "@intx/hub-sessions";
+} from "@workbench/hub-sessions";
 import { toolPackagesForCapabilities } from "@workbench/agents";
 import type { HubDb } from "../db";
 import { buildTenantRegistryMap } from "./tenant-registry-map";

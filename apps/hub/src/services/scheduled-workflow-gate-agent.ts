@@ -6,7 +6,7 @@ import { getLogger } from "@intx/log";
 import type {
   EventCollectorRegistry,
   SessionService,
-} from "@intx/hub-sessions";
+} from "@workbench/hub-sessions";
 import type { GrantStore } from "@intx/types/authz";
 import type { CryptoProvider } from "@intx/types/runtime";
 import type { TurnFinalized } from "@workbench/event-collector";
@@ -34,11 +34,14 @@ import {
 } from "../workflow-executor/run-store";
 import { launchAgentSession } from "./agent-provisioning";
 import { resolveMyraDefinition, teardownThreadRows } from "./myra-threads";
-import type { RepoStore } from "@intx/hub-sessions";
+import type { RepoStore } from "@workbench/hub-sessions";
 
 const log = getLogger(["services", "scheduled-workflow-gate-agent"]);
 
-export { SCHEDULED_GATE_TEMPLATE_KEY, postIntakeGatesForScheduledDrive } from "./scheduled-gate-targets";
+export {
+  SCHEDULED_GATE_TEMPLATE_KEY,
+  postIntakeGatesForScheduledDrive,
+} from "./scheduled-gate-targets";
 
 const DEFAULT_TURN_TIMEOUT_MS = 120_000;
 const DEFAULT_MAX_TURNS = 4;
@@ -46,7 +49,10 @@ const MAX_QUEUE = 32;
 const MAX_SESSIONS_PER_HOUR = 40;
 const SESSION_WINDOW_MS = 60 * 60 * 1000;
 
-const SCHEDULED_GATE_TOOL_NAMES = ["workflow_list_runs", "workflow_signal"] as const;
+const SCHEDULED_GATE_TOOL_NAMES = [
+  "workflow_list_runs",
+  "workflow_signal",
+] as const;
 
 const SCHEDULED_GATE_SYSTEM_PROMPT = `You are completing a scheduled (unattended) workflow run for the run owner.
 The run is parked on a workflow gate. Your only job is to resolve that gate.
@@ -115,10 +121,7 @@ export function createScheduledWorkflowGateAgent(
     deps.describePendingGatesFn ?? describePendingGates;
   const queue: QueueItem[] = [];
   const inFlight = new Set<string>();
-  const pendingTurns = new Map<
-    string,
-    (turn: TurnFinalized | null) => void
-  >();
+  const pendingTurns = new Map<string, (turn: TurnFinalized | null) => void>();
   let processing = false;
   let drainWaiters: Array<() => void> = [];
 

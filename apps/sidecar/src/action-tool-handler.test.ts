@@ -25,7 +25,7 @@ import {
   test,
 } from "bun:test";
 import type { EffectContext, StepInvokeRequest } from "@intx/workflow";
-import type { RepoId, RepoStore } from "@intx/hub-sessions/substrate";
+import type { RepoId, RepoStore } from "@workbench/hub-sessions/substrate";
 import type { StepToolContext } from "./step-tool-harness";
 import { isStepToolInfrastructureFault } from "./step-tool-harness";
 import { createActionToolHandlerRegistry } from "./action-tool-handler";

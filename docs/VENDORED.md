@@ -5,10 +5,11 @@ code into our tree so we can change behavior the upstream packages don't expose 
 seam for — without editing the `interchange/` submodule. Every divergence from the
 upstream original is tagged with a `// WORKBENCH-LOCAL (CL-XXXX)` comment.
 
-**Audit handle:** `git grep "WORKBENCH-LOCAL (CL-" -- apps/sidecar packages/workflow-host packages/inference packages/storage-isogit packages/hub-agent`
+**Audit handle:** `git grep "WORKBENCH-LOCAL (CL-" -- apps/sidecar packages/workflow-host packages/inference packages/storage-isogit packages/hub-agent packages/hub-sessions`
 lists every divergence in one pass (`packages/hub-agent` now carries several tagged
 blocks — CL-2405, CL-3104, CL-3340, CL-3779, CL-3826 — so it belongs in the handle
-too; a prior version of this line omitted it). Run it before and after an interchange pin
+too; a prior version of this line omitted it; `packages/hub-sessions` was added at
+CL-4231 for the kind-seam edits). Run it before and after an interchange pin
 bump and confirm no block disappeared. The re-sync process (diff each vendored
 file against the new upstream, re-apply upstream changes _while preserving every
 `WORKBENCH-LOCAL` block_) is documented in `AGENTS.md` → "Dockerfile Maintenance"
@@ -443,6 +444,115 @@ assistantLoopInterruptMessage(...)}` through the same
   awaited `handlePackDone` pack-apply stalls ALL inbound frames on the serial
   queue, not just pong) is tracked in CL-3781 and deferred. Guarded by
   `src/ws/hub-link-heartbeat.test.ts`.
+
+### `packages/hub-sessions` → `@workbench/hub-sessions`
+
+- **Added:** 2026-07-22 (CL-4231)
+- **Vendors:** `@intx/hub-sessions` (copy of
+  `interchange/packages/hub-sessions`, ~26 non-test source files, ~14,200
+  lines). Not a verbatim vendor — see the three edits below.
+- **Imported by:** `apps/hub` and `apps/sidecar` (repointed from
+  `@intx/hub-sessions`). `packages/hub-agent`, `packages/tools-dispatch`,
+  and `packages/workflow-host` keep their existing `@intx/hub-sessions`
+  devDependency for types/tests — repoint them only if they also need the
+  kind seam.
+- **Why vendored:** asset kinds were closed upstream — three gates, all
+  inside this package, blocked adding a kind (`skill-draft` for CL-4215's
+  artifacts-as-an-asset-kind work, or any future kind) from Workbench.
+  Vendoring turns the fix into local edits with no submodule change and no
+  interchange pin bump.
+- **WORKBENCH-LOCAL change (CL-4231) — the kind seam, three edits:**
+  1. **`src/repo-store/types.ts`:** `RepoKind` is re-declared locally as
+     `IntxRepoKind | (string & {})` (a widened literal union, not a bare
+     `string`, so the five named kinds keep editor autocomplete) instead of
+     being re-exported from `@intx/types/sidecar`, whose `RepoKind` stays
+     the closed five-value enum — wire-level pack frames still validate
+     against that closed shape; this widening is a local-typing seam for
+     the hub-side `RepoStore`/`AssetService` surface only. `RepoId` is
+     re-derived locally against the widened kind.
+  2. **`src/agent-repo.ts`:** `createAgentRepoStore` gained an optional
+     `handlers: Readonly<Record<string, RegisteredKindHandler>>` config
+     field (`RegisteredKindHandler = { handler: KindHandler; authorize:
+AuthorizeFn }`, bundling the content-validation and access-control
+     halves the old code split between the hardcoded `handlers` literal
+     passed to `createRepoStore` and a hardcoded `authorize` switch).
+     Caller entries are MERGED with the five built-ins
+     (agent-state/skill/package-registry/workflow/workflow-run); a caller
+     kind colliding with a built-in name throws at construction instead of
+     silently shadowing it. The authorize dispatch is now a lookup into the
+     merged map instead of the exhaustive switch. `AgentRepoStore` gained
+     `registeredKinds: ReadonlySet<RepoKind>` — the merged key set — so
+     downstream validation has a real registry to check, not another
+     hardcoded list.
+  3. **`src/asset-service.ts`:** `createAssetService` gained an optional
+     `registeredKinds: ReadonlySet<RepoKind>` dep, defaulting to the new
+     exported `DEFAULT_REGISTERED_KINDS` (the five built-ins) when omitted
+     — every existing caller and test passes none, so behavior for the
+     five kinds is unchanged. `createAsset`'s hardcoded three-kind
+     allowlist (`"skill" | "package-registry" | "workflow"`) and
+     `rowToAsset`'s exhaustive switch-and-throw are both replaced with
+     membership checks against `registeredKinds`, minus a fixed
+     `ASSET_SERVICE_MANAGED_ELSEWHERE = {agent-state, workflow-run}`
+     exclusion (those two kinds keep their own owning subsystem — the
+     agent lifecycle and the workflow supervisor — regardless of
+     registration). An unregistered kind still throws
+     `AssetServiceError("unsupported_kind", ...)`; any registered kind,
+     built-in or caller-added, passes. This is deliberately a registry
+     check, not a widen-to-`string` — an unregistered typo must still fail
+     loudly.
+  - A registered custom-kind handler supplies a real `directoryPrefix` and
+    `validatePush`, so an asset created against it gets actual git-backed
+    content (a genesis commit under its own on-disk root, validated on
+    every push) rather than an identity-only DB row — the point of the
+    seam, not an incidental side effect. Guarded end-to-end by the "custom
+    kind" describe blocks in `src/asset-service.test.ts` and
+    `src/agent-repo.test.ts`.
+  - **`rowToAsset`'s exhaustiveness check is now RUNTIME-only — deliberate,
+    not an oversight.** Before this widening, `rowToAsset`'s switch over
+    `row.kind` ended in a `const _exhaustive: never = row.kind` default
+    branch: TypeScript itself failed the build if upstream ever added a
+    sixth built-in `RepoKind` value without a corresponding case here.
+    Widening `RepoKind` to `IntxRepoKind | (string & {})` (edit 1 above)
+    necessarily widens that `never` to `string & {}`, so the compile-time
+    guarantee is gone — the switch's default branch is now a runtime
+    `AssetServiceError`/throw reached only if execution actually hits an
+    unhandled kind, not a build-time check. **Risk:** if interchange adds a
+    sixth built-in `RepoKind` value upstream, a re-sync of this vendored
+    package will no longer fail `bun run typecheck` to flag the gap — it
+    will only surface at runtime, the first time a row of the new kind is
+    read. Re-verify `rowToAsset`'s case list by hand against
+    `interchange/packages/types/src/sidecar.ts`'s `RepoKind` enum on every
+    pin bump; do not rely on the compiler to catch drift here anymore.
+  - **RETIREMENT CONDITION:** this vendored package is an interim measure,
+    not a permanent fork. The same kind-seam change (widen `RepoKind`,
+    thread a caller-supplied handler map through `createAgentRepoStore`,
+    validate `createAsset`/`rowToAsset` against the registered set instead
+    of a hardcoded allowlist) is being taken upstream to
+    `faremeter/interchange` separately. **Retirement:** once that lands
+    upstream and reaches this repo's interchange pin, retire
+    `@workbench/hub-sessions`, repoint `apps/hub` and `apps/sidecar` back
+    at `@intx/hub-sessions`, and delete `packages/hub-sessions/`; a literal
+    upstream copy at that point would silently re-close the kind seam this
+    vendor exists to keep open, so do not let this package linger past the
+    upstream landing with a green build masking the redundancy.
+  - **Other drift:** `src/agent-repo.ts` and its tests import
+    `@workbench/storage-isogit` in place of `@intx/storage-isogit` — the
+    same substitution `packages/hub-agent` and `packages/workflow-host`
+    already make (see their entries above), since the hub reads/writes
+    agent-state and workflow-run repos through the vendored
+    storage-isogit's `store.ts` and every repo reader/writer on the hub
+    side must stay on the same storage implementation.
+  - **Re-sync rule:** re-copy `src/` from
+    `interchange/packages/hub-sessions/src` on every pin bump, then
+    re-apply the three edits above (`repo-store/types.ts`, `agent-repo.ts`,
+    `asset-service.ts`) plus the storage-isogit import substitution — a
+    literal upstream copy silently re-closes the kind seam with a green
+    build.
+  - **Audit:** `git grep "WORKBENCH-LOCAL (CL-4231)" packages/hub-sessions/`
+  - **Lint:** the package is `eslint`-exempt (`eslint.config.ts` `globalIgnores`,
+    same as `packages/workflow-host` and `interchange/**`) — its test files
+    carry upstream's own `eslint-disable` conventions, which this repo's
+    differing rule set flags as unused.
 
 ---
 

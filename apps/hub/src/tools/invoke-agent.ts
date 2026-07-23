@@ -8,7 +8,7 @@ import type {
   SessionService,
   EventCollectorRegistry,
   SidecarRouter,
-} from "@intx/hub-sessions";
+} from "@workbench/hub-sessions";
 import type { CryptoProvider } from "@intx/types/runtime";
 import { INVOKE_AGENT_DEFINITION } from "@workbench/tools-agents";
 import {

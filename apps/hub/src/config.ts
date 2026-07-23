@@ -1,5 +1,5 @@
 import { type } from "arktype";
-import { WORKSPACE_BUILTINS_REGISTRY } from "@intx/hub-sessions";
+import { WORKSPACE_BUILTINS_REGISTRY } from "@workbench/hub-sessions";
 import { getLogger } from "@intx/log";
 import { HEARTBEAT_WORKFLOW_KIND } from "@workbench/shared";
 

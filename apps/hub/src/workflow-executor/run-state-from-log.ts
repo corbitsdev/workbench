@@ -6,7 +6,7 @@ import {
   type RepoId,
   type RepoStore,
   type WorkflowRunEvent,
-} from "@intx/hub-sessions";
+} from "@workbench/hub-sessions";
 import { resumeFromLog, type WorkflowEvent } from "@intx/workflow";
 import type { AgentDefinition, BaseEnv } from "@intx/agent";
 import type { WorkflowDefinition } from "@intx/workflow";

@@ -19,7 +19,7 @@ const createAssetSpy =
   >();
 const readBlobSpy = mock<(...args: unknown[]) => Promise<Uint8Array>>();
 
-mock.module("@intx/hub-sessions", () => ({
+mock.module("@workbench/hub-sessions", () => ({
   AssetServiceError: class AssetServiceError extends Error {
     readonly reason: string;
     constructor(reason: string, message: string) {
@@ -254,9 +254,9 @@ describe("publishEmbeddedToolPackages", () => {
       assetId: "ast_stray",
       filename: "pkg.tgz",
     });
-    expect(
-      Array.from((strayCall?.[0] as { bytes: Uint8Array }).bytes),
-    ).toEqual([1, 2, 3, 4]);
+    expect(Array.from((strayCall?.[0] as { bytes: Uint8Array }).bytes)).toEqual(
+      [1, 2, 3, 4],
+    );
 
     const canonCall = putTarballSpy.mock.calls.find(
       (c) => (c[0] as { assetId: string }).assetId === "ast_canon",

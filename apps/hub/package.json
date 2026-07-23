@@ -30,7 +30,7 @@
     "@intx/db": "workspace:*",
     "@intx/hub-api": "workspace:*",
     "@intx/hub-common": "workspace:*",
-    "@intx/hub-sessions": "workspace:*",
+    "@workbench/hub-sessions": "workspace:*",
     "@intx/inference": "workspace:*",
     "@intx/log": "workspace:*",
     "@intx/mime": "workspace:*",

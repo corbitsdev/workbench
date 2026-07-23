@@ -58,11 +58,11 @@ import type {
   Principal,
   RepoId,
   RepoStore as SubstrateRepoStore,
-} from "@intx/hub-sessions/substrate";
+} from "@workbench/hub-sessions/substrate";
 import {
   readProcessingEntry,
   workflowDefinitionEnvelopeSchema,
-} from "@intx/hub-sessions/substrate";
+} from "@workbench/hub-sessions/substrate";
 import {
   extractPartByPath,
   parseHeaderSection,
@@ -531,7 +531,6 @@ export async function runWorkflowChild(
   const loopFns = opts.bindings.loopFns ?? createLoopFnRegistry({});
 
   const drainController = createWorkflowHostDrainController({ definition });
-
 
   // Warm-agent cache (design §3b). Built only when the deployment is a
   // warm candidate (the single-step long-lived agent the deploy

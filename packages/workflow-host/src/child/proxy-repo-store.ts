@@ -33,7 +33,7 @@ import type {
   RepoId,
   RepoStore,
   WriteResult,
-} from "@intx/hub-sessions/substrate";
+} from "@workbench/hub-sessions/substrate";
 
 import type { ChildSubstrateWriteBridge } from "./substrate-write-bridge";
 

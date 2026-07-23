@@ -76,7 +76,7 @@ import {
   type RepoStore,
   type SidecarRouter,
   type ValidatePushResult,
-} from "@intx/hub-sessions";
+} from "@workbench/hub-sessions";
 import {
   createWorkbenchDirectorRegistry,
   agentStep,

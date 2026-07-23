@@ -41,7 +41,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { type } from "arktype";
 import type { ActionHandler, StepInvokeRequest } from "@intx/workflow";
-import type { RepoId, RepoStore } from "@intx/hub-sessions/substrate";
+import type { RepoId, RepoStore } from "@workbench/hub-sessions/substrate";
 import type { AgentDefinition, BaseEnv } from "@intx/agent";
 import { getLogger } from "@intx/log";
 
