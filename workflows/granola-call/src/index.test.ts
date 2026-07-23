@@ -1,10 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import {
-  DETERMINISTIC_TOOL_KIND,
-  STEP_KIND_TAG,
-  STEP_TOOL_TAG,
-} from "@workbench/agents";
-import { workflow, kind, label, description } from "./index";
+import { workflow, kind, label, description, INTAKE_FIELDS } from "./index";
 import { DISPLAY_STEPS } from "./display-steps";
 
 function stepPrimitive(id: string) {
@@ -24,93 +19,58 @@ describe("granola-call workflow", () => {
     expect(description.length).toBeGreaterThan(20);
   });
 
-  test("defineWorkflow succeeds with expected steps", () => {
-    // Interchange WorkflowDefinition uses `id` (deployment kind is the package export).
+  test("defineWorkflow succeeds with exactly the discover/digest/persist steps", () => {
     expect(workflow.id).toBe("granola-call");
     const stepIds = Object.keys(workflow.steps);
-    expect(stepIds).toEqual(
-      expect.arrayContaining([
-        "fetch",
-        "normalize",
-        "classify",
-        "build-prompt",
-        "analyze",
-        "parse",
-        "prepare",
-        "persist-pain",
-        "persist-summary",
-        "persist-brief",
-        "create-tasks",
-        "fanout",
-        "emit",
-      ]),
-    );
-    expect(stepIds).toHaveLength(13);
+    expect(stepIds.sort()).toEqual(["digest", "discover", "persist"]);
   });
 
-  test("exactly one native reasoning step (analyze) — no Workbench dispatch tag", () => {
-    const steps = Object.keys(workflow.steps).map((id) => stepPrimitive(id));
-    const reasoningSteps = steps.filter(
-      (step) => step.agent.tags?.[STEP_KIND_TAG] !== DETERMINISTIC_TOOL_KIND,
-    );
-    expect(reasoningSteps.map((s) => s.agent.id)).toEqual([
-      "granola-call-analyze",
-    ]);
-    expect(
-      stepPrimitive("analyze").agent.tags?.[STEP_KIND_TAG],
-    ).toBeUndefined();
+  test("trigger is manual — no noteId, no signal gate; maxCalls is the only intake field", () => {
+    expect(workflow.triggers).toEqual([{ type: "manual" }]);
+    expect(INTAKE_FIELDS).toHaveLength(1);
+    expect(INTAKE_FIELDS[0].name).toBe("maxCalls");
+    expect(INTAKE_FIELDS[0].required).toBe(false);
   });
 
-  test("deterministic tool tags for pure + hub tools", () => {
-    const toolFor = (stepId: string): string | undefined =>
-      stepPrimitive(stepId).agent.tags?.[STEP_TOOL_TAG];
+  test("discover reads maxCalls (renamed to the tool's `limit` arg) and never throws when absent", () => {
+    const discover = stepPrimitive("discover");
+    expect(discover.agent.tags?.["workbench.tool"]).toContain(
+      "granola_list_notes",
+    );
+    const argMapTag = discover.agent.tags?.["workbench.argMap"];
+    expect(argMapTag).toBeDefined();
+    const argMap = JSON.parse(argMapTag as string) as Record<string, unknown>;
+    expect(argMap.limit).toEqual({ from: "maxCalls", optional: true });
+    // A run with genuinely no input (trigger.payload === {}) must not throw:
+    // every argMap field here is `optional`, so an absent value is OMITTED
+    // from the tool call, not a hard failure.
+    for (const value of Object.values(argMap)) {
+      expect((value as { optional?: boolean }).optional).toBe(true);
+    }
+  });
 
-    // Canonical tool names may be package-qualified; match short name.
-    expect(toolFor("fetch")).toContain("granola_get_note");
-    expect(toolFor("normalize")).toContain("granola_normalize_note");
-    expect(toolFor("classify")).toContain("granola_classify_call");
-    expect(toolFor("build-prompt")).toContain("granola_build_analysis_prompt");
-    expect(toolFor("parse")).toContain("granola_parse_analysis");
-    expect(toolFor("prepare")).toContain("granola_prepare_artifacts");
-    expect(toolFor("persist-pain")).toContain("write_artifact");
-    expect(toolFor("persist-summary")).toContain("write_artifact");
-    expect(toolFor("persist-brief")).toContain("write_artifact");
-    expect(toolFor("create-tasks")).toContain("granola_create_tasks");
-    expect(toolFor("fanout")).toContain("granola_fanout_call");
-    expect(toolFor("emit")).toContain("granola_emit_run_outputs");
+  test("digest is a native reasoning step (no Workbench dispatch tag) fed by discover", () => {
+    const digest = stepPrimitive("digest");
+    expect(digest.agent.tags?.["workbench.stepKind"]).toBeUndefined();
+    expect(digest.after).toEqual(expect.arrayContaining(["discover"]));
+  });
+
+  test("persist saves the digest under a stable sourceRef (idempotent — a quiet run does not duplicate)", () => {
+    const persist = stepPrimitive("persist");
+    expect(persist.agent.tags?.["workbench.tool"]).toContain("write_artifact");
+    const argMapTag = persist.agent.tags?.["workbench.argMap"];
+    expect(argMapTag).toBeDefined();
+    const argMap = JSON.parse(argMapTag as string) as Record<string, unknown>;
+    expect(argMap.sourceRef).toEqual({ literal: "granola-call-digest" });
+    expect(argMap.body).toEqual({ from: "content" });
+    expect(persist.after).toEqual(expect.arrayContaining(["digest"]));
   });
 
   test("display steps cover the flow", () => {
-    expect(DISPLAY_STEPS.length).toBeGreaterThanOrEqual(10);
-    expect(DISPLAY_STEPS.map((s) => s.key)).toContain("analyze");
-  });
-
-  test("create-tasks runs after artifact persist so links can reference artifacts", () => {
-    const createTasks = stepPrimitive("create-tasks");
-    expect(createTasks.after).toEqual(
-      expect.arrayContaining([
-        "prepare",
-        "persist-pain",
-        "persist-summary",
-        "persist-brief",
-      ]),
-    );
-  });
-
-  test("classify does not mark tenantDomain optional (never skips the step)", () => {
-    // Missing tenantDomain must still invoke granola_classify_call; the tool
-    // itself returns classification "unknown" when domain is empty.
-    const classify = stepPrimitive("classify");
-    // The step is wired to merge normalize + trigger payload; optional fields
-    // would cause reshapeWithArgMap to skip the call entirely.
-    expect(classify.after).toEqual(expect.arrayContaining(["normalize"]));
-    expect(classify.agent.tags?.[STEP_TOOL_TAG]).toContain(
-      "granola_classify_call",
-    );
-  });
-
-  test("analyze is wired after build-prompt (not raw normalize envelope)", () => {
-    const analyze = stepPrimitive("analyze");
-    expect(analyze.after).toEqual(expect.arrayContaining(["build-prompt"]));
+    expect(DISPLAY_STEPS.map((s) => s.key)).toEqual([
+      "discover",
+      "digest",
+      "persist",
+    ]);
   });
 });
