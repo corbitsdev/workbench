@@ -88,8 +88,8 @@ const catalog: WorkflowCatalog = {
       stepCount: 2,
       pauseCount: 1,
       steps: [
-        { id: "s1", title: "Load Transcript", kind: "auto" },
-        { id: "s2", title: "Approve Draft", kind: "human" },
+        { id: "s1", title: "Load Transcript", kind: "auto", stepIds: ["s1"] },
+        { id: "s2", title: "Approve Draft", kind: "human", stepIds: ["s2"] },
       ],
       attachable: false,
       allowedScopes: ["personal"] as const,
@@ -101,7 +101,9 @@ const catalog: WorkflowCatalog = {
       isFavorite: false,
       stepCount: 1,
       pauseCount: 0,
-      steps: [{ id: "a", title: "Ingest Content", kind: "auto" }],
+      steps: [
+        { id: "a", title: "Ingest Content", kind: "auto", stepIds: ["a"] },
+      ],
       attachable: false,
       allowedScopes: ["personal"] as const,
       defaultScope: "personal" as const,
@@ -112,7 +114,9 @@ const catalog: WorkflowCatalog = {
       isFavorite: false,
       stepCount: 1,
       pauseCount: 0,
-      steps: [{ id: "b", title: "Compile Brief", kind: "auto" }],
+      steps: [
+        { id: "b", title: "Compile Brief", kind: "auto", stepIds: ["b"] },
+      ],
       attachable: true,
       allowedScopes: ["personal"] as const,
       defaultScope: "personal" as const,

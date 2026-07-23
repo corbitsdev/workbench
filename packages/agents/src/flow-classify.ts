@@ -11,6 +11,13 @@ export interface ClassifiedFlowStep {
   id: string;
   title: string;
   kind: FlowStepClass;
+  // The runtime step ids this entry represents, in run order. A single-step
+  // entry (the per-stepOrder fallback) carries its own id; a declared
+  // DISPLAY_STEPS group carries every runtime id it clusters. The client's run
+  // pane keys off THIS, never `id` alone — `id` is the group's synthetic key
+  // (e.g. "gather"), not a runtime step id, so it never matches a RunState
+  // step directly for a grouped flow (CL-4285 follow-up).
+  stepIds: string[];
 }
 
 // A workflow author's declaration of one user-facing step in the display flow:
@@ -116,6 +123,7 @@ function projectDisplayFlow(
       id: group.key,
       title: group.label,
       kind: aggregateKind(kinds),
+      stepIds: [...group.stepIds],
     };
   });
 }
@@ -141,6 +149,7 @@ export function classifyWorkflowSteps(
       id,
       title: titleForPrimitive(id, primitive),
       kind: classifyPrimitive(primitive),
+      stepIds: [id],
     });
   }
   return steps;

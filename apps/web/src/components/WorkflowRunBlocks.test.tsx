@@ -106,6 +106,7 @@ describe("WorkflowRunBlocks", () => {
         stepOutputs={{}}
         terminal={false}
         interrupted={false}
+        catalogSteps={undefined}
         onRespond={() => undefined}
         onClose={() => undefined}
       />,
@@ -114,6 +115,268 @@ describe("WorkflowRunBlocks", () => {
     // Both steps render as timeline entries.
     screen.getByText("intake");
     screen.getByText("select");
+  });
+
+  it("renders the FULL workflow-definition step sequence immediately, even when only the first two of eight steps have materialized in the log (CL-4285)", () => {
+    const log: LogRunState = {
+      runId: "wfr_full",
+      phase: "running",
+      lastSeq: 1,
+      steps: [
+        {
+          stepId: "intake",
+          phase: "completed",
+          stepType: "inline",
+          currentAttempt: 1,
+        },
+        {
+          stepId: "select",
+          phase: "in-flight",
+          stepType: "human",
+          currentAttempt: 1,
+        },
+      ],
+    };
+    const catalogSteps = [
+      {
+        id: "intake",
+        title: "Intake",
+        kind: "auto" as const,
+        stepIds: ["intake"],
+      },
+      {
+        id: "select",
+        title: "Select",
+        kind: "human" as const,
+        stepIds: ["select"],
+      },
+      {
+        id: "fetch",
+        title: "Fetch",
+        kind: "auto" as const,
+        stepIds: ["fetch"],
+      },
+      {
+        id: "context",
+        title: "Context",
+        kind: "human" as const,
+        stepIds: ["context"],
+      },
+      {
+        id: "analyze",
+        title: "Analyze",
+        kind: "agent" as const,
+        stepIds: ["analyze"],
+      },
+      {
+        id: "review",
+        title: "Review",
+        kind: "human" as const,
+        stepIds: ["review"],
+      },
+      {
+        id: "generate",
+        title: "Generate",
+        kind: "agent" as const,
+        stepIds: ["generate"],
+      },
+      {
+        id: "persist",
+        title: "Persist",
+        kind: "auto" as const,
+        stepIds: ["persist"],
+      },
+    ];
+
+    render(
+      <WorkflowRunBlocks
+        runId="wfr_full"
+        kind="pain-point-collateral"
+        state={makeState(log, "running")}
+        logState={log}
+        stepOutputs={{}}
+        terminal={false}
+        interrupted={false}
+        catalogSteps={catalogSteps}
+        onRespond={() => undefined}
+        onClose={() => undefined}
+      />,
+    );
+
+    // The header reads against the DEFINITION's full step count — never
+    // truncated to however many steps have merely started in the log.
+    screen.getByText(/step 2 of 8/i);
+
+    // Every step in the definition is visible up front, including the six that
+    // have not started yet — never blank, never omitted.
+    for (const label of [
+      "Intake",
+      "Select",
+      "Fetch",
+      "Context",
+      "Analyze",
+      "Review",
+      "Generate",
+      "Persist",
+    ]) {
+      screen.getByText(label);
+    }
+  });
+
+  // Models a grouped DISPLAY_STEPS kind with no bespoke Panel (e.g.
+  // prospect-engine): each catalog entry's `id` is a SYNTHETIC group key
+  // ("prelude", "discover"), never itself a runtime step id — the group's
+  // real runtime ids live in `stepIds`. Regression guard for CL-4285: reading
+  // a step's phase off `[catalogStep.id]` instead of `catalogStep.stepIds`
+  // means `getStepPhase` never matches anything in `RunState.steps`, so the
+  // active index freezes at 0 for the entire run.
+  const GROUPED_CATALOG_STEPS = [
+    {
+      id: "prelude",
+      title: "Load budget and exclusion lists",
+      kind: "auto" as const,
+      stepIds: ["initBudget", "readLedger"],
+    },
+    {
+      // Deliberately NOT "discover" — the group's synthetic key must differ
+      // from its underlying runtime step id, or a buggy `[catalogStep.id]`
+      // mapping would coincidentally still match this one group and hide the
+      // regression (the id/stepId collision that let this slip through
+      // review once already).
+      id: "candidates",
+      title: "Discover candidates",
+      kind: "agent" as const,
+      stepIds: ["discover"],
+    },
+    {
+      id: "deliver",
+      title: "Deliver",
+      kind: "auto" as const,
+      stepIds: ["mail", "notify"],
+    },
+  ];
+
+  it("advances the active display step as a grouped kind's underlying runtime steps complete (CL-4285)", () => {
+    const early: LogRunState = {
+      runId: "wfr_group_1",
+      phase: "running",
+      lastSeq: 1,
+      steps: [
+        {
+          stepId: "initBudget",
+          phase: "in-flight",
+          stepType: "deterministic",
+          currentAttempt: 1,
+        },
+      ],
+    };
+    const { unmount } = render(
+      <WorkflowRunBlocks
+        runId="wfr_group_1"
+        kind="prospect-engine"
+        state={makeState(early, "running")}
+        logState={early}
+        stepOutputs={{}}
+        terminal={false}
+        interrupted={false}
+        catalogSteps={GROUPED_CATALOG_STEPS}
+        onRespond={() => undefined}
+        onClose={() => undefined}
+      />,
+    );
+    screen.getByText(/step 1 of 3/i);
+    unmount();
+
+    // The prelude group's runtime steps have both completed and the group's
+    // NEXT runtime step ("discover") is now in-flight — the active display
+    // step must advance to the second group, not stay frozen on the first.
+    const later: LogRunState = {
+      runId: "wfr_group_1",
+      phase: "running",
+      lastSeq: 3,
+      steps: [
+        {
+          stepId: "initBudget",
+          phase: "completed",
+          stepType: "deterministic",
+          currentAttempt: 1,
+        },
+        {
+          stepId: "readLedger",
+          phase: "completed",
+          stepType: "deterministic",
+          currentAttempt: 1,
+        },
+        {
+          stepId: "discover",
+          phase: "in-flight",
+          stepType: "agent",
+          currentAttempt: 1,
+        },
+      ],
+    };
+    render(
+      <WorkflowRunBlocks
+        runId="wfr_group_1"
+        kind="prospect-engine"
+        state={makeState(later, "running")}
+        logState={later}
+        stepOutputs={{}}
+        terminal={false}
+        interrupted={false}
+        catalogSteps={GROUPED_CATALOG_STEPS}
+        onRespond={() => undefined}
+        onClose={() => undefined}
+      />,
+    );
+    screen.getByText(/step 2 of 3/i);
+    expect(screen.queryByText(/step 1 of 3/i)).toBeNull();
+  });
+
+  it("renders a grouped display step as failed when one of its underlying runtime steps fails (CL-4285)", () => {
+    const log: LogRunState = {
+      runId: "wfr_group_2",
+      phase: "failed",
+      lastSeq: 3,
+      steps: [
+        {
+          stepId: "initBudget",
+          phase: "completed",
+          stepType: "deterministic",
+          currentAttempt: 1,
+        },
+        {
+          stepId: "readLedger",
+          phase: "completed",
+          stepType: "deterministic",
+          currentAttempt: 1,
+        },
+        {
+          stepId: "discover",
+          phase: "failed",
+          stepType: "agent",
+          currentAttempt: 1,
+          lastError: { message: "boom" },
+        },
+      ],
+    };
+    render(
+      <WorkflowRunBlocks
+        runId="wfr_group_2"
+        kind="prospect-engine"
+        state={makeState(log, "failed")}
+        logState={log}
+        stepOutputs={{}}
+        terminal={true}
+        interrupted={false}
+        catalogSteps={GROUPED_CATALOG_STEPS}
+        onRespond={() => undefined}
+        onClose={() => undefined}
+      />,
+    );
+    // The failing group ("Discover candidates" — the SECOND group) must read
+    // as the active/failed step, never the frozen first group.
+    screen.getByText(/step 2 of 3/i);
   });
 
   it("renders the sanitized failure message and never the raw step error (CL-2660)", () => {
@@ -142,6 +405,7 @@ describe("WorkflowRunBlocks", () => {
         stepOutputs={{}}
         terminal={true}
         interrupted={false}
+        catalogSteps={undefined}
         onRespond={() => undefined}
         onClose={() => undefined}
       />,
@@ -179,6 +443,7 @@ describe("WorkflowRunBlocks", () => {
         stepOutputs={{}}
         terminal={false}
         interrupted={false}
+        catalogSteps={undefined}
         onRespond={onRespond}
         onClose={() => undefined}
       />,
@@ -209,6 +474,7 @@ describe("WorkflowRunBlocks", () => {
         stepOutputs={{}}
         terminal={true}
         interrupted={false}
+        catalogSteps={undefined}
         onRespond={() => undefined}
         onClose={onClose}
       />,
@@ -233,6 +499,7 @@ describe("WorkflowRunBlocks", () => {
         stepOutputs={{}}
         terminal={true}
         interrupted={true}
+        catalogSteps={undefined}
         onRespond={() => undefined}
         onClose={() => undefined}
       />,
@@ -260,6 +527,7 @@ describe("WorkflowRunBlocks", () => {
         stepOutputs={{}}
         terminal={false}
         interrupted={false}
+        catalogSteps={undefined}
         onRespond={() => undefined}
         onClose={() => undefined}
       />,

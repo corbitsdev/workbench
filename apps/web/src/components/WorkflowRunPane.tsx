@@ -24,6 +24,7 @@ import { ErrorBoundary } from "./ErrorBoundary";
 import { loadWorkflowUI } from "../lib/workflow-ui";
 import { resolveResumePayload } from "../lib/resume-payload";
 import { usePublishActiveContext } from "../lib/active-context-store";
+import { useWorkflowsCatalog } from "../hooks/use-workflows-catalog";
 import {
   isRecordTerminal,
   reconcileRunState,
@@ -102,6 +103,10 @@ function WorkflowRunPaneInner({
   const { data: credentials } = useWorkflowCredentials(tenantId);
   const { data: skills } = useSkillLibrary(tenantId);
   const { data: deployments } = useWorkflowDeployments(tenantId);
+  // Warm from the Workflows page in the common case (5-minute staleTime) — the
+  // run pane's full step sequence comes from here, not the run's own log, so it
+  // is populated even before the run has materialized its first step (CL-4285).
+  const { data: catalog } = useWorkflowsCatalog(tenantId);
   const signalInFlightRef = useRef(false);
   // The specific gate we submitted: stepId + signalName at click. Clears when
   // THAT step is no longer awaiting that signal (or the run goes terminal) —
@@ -119,6 +124,15 @@ function WorkflowRunPaneInner({
 
   const kind = record?.kind ?? null;
   const recordDeploymentId = record?.deploymentId ?? null;
+
+  // The full ordered step sequence for this run's kind — the same classified
+  // list the Workflows catalog card renders (CL-4285). Undefined while the
+  // catalog hasn't loaded yet or the kind isn't found in it (e.g. a run whose
+  // kind was since disabled).
+  const catalogSteps = useMemo(
+    () => catalog?.entries.find((e) => e.kind === kind)?.steps,
+    [catalog, kind],
+  );
 
   // Resolve the exact deployment that produced this run so the badge shows the
   // version that actually ran — not the newest deployment of the kind, which
@@ -486,6 +500,7 @@ function WorkflowRunPaneInner({
               stepOutputs={stepOutputs}
               terminal={terminal}
               interrupted={interrupted}
+              catalogSteps={catalogSteps}
               onRespond={onBlockRespond}
               onClose={onClose}
             />

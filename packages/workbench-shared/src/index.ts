@@ -466,6 +466,11 @@ export const WorkflowFlowStepSchema = type({
   id: "string",
   title: "string",
   kind: "'auto'|'agent'|'human'",
+  // The runtime step ids this entry represents, in run order (CL-4285). `id`
+  // is a synthetic group key for a declared display-flow group (e.g.
+  // "gather") — never assume it is itself a runtime step id. A run pane must
+  // match a step's phase against `stepIds`, not `id`.
+  stepIds: "string[]",
 });
 export type WorkflowFlowStep = typeof WorkflowFlowStepSchema.infer;
 

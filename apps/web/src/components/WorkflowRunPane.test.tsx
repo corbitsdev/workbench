@@ -119,6 +119,13 @@ mock.module("../hooks/use-workflow", () => ({
   useWorkflowDeployments: () => ({ data: deployments }),
 }));
 
+// No test in this file exercises the catalog-driven full step sequence (that
+// lives in WorkflowRunBlocks.test.tsx); stub it out so the pane doesn't fire a
+// real network request in every render here.
+mock.module("../hooks/use-workflows-catalog", () => ({
+  useWorkflowsCatalog: () => ({ data: undefined }),
+}));
+
 mock.module("../hooks/use-skills", () => ({
   useSkillLibrary: () => ({
     data: [
@@ -198,9 +205,7 @@ describe("WorkflowRunPane", () => {
     render(<WorkflowRunPane deploymentId="wfr_1" onClose={() => undefined} />, {
       wrapper,
     });
-    await waitFor(() =>
-      screen.getByText("Couldn't stop this run. Try again."),
-    );
+    await waitFor(() => screen.getByText("Couldn't stop this run. Try again."));
     // Stop stays available so the user can retry.
     expect(screen.getByTestId("run-pane-stop")).toBeTruthy();
   });

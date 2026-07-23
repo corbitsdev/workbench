@@ -110,7 +110,7 @@ type Entry = {
   isFavorite: boolean;
   stepCount: number;
   pauseCount: number;
-  steps: { id: string; title: string; kind: string }[];
+  steps: { id: string; title: string; kind: string; stepIds: string[] }[];
   attachable?: boolean;
 };
 
@@ -136,8 +136,13 @@ describe("GET /workflows", () => {
       pauseCount: 1,
     });
     expect(alpha.steps).toEqual([
-      { id: "gather", title: "Gather", kind: "auto" },
-      { id: "approve", title: "Approve Draft", kind: "human" },
+      { id: "gather", title: "Gather", kind: "auto", stepIds: ["gather"] },
+      {
+        id: "approve",
+        title: "Approve Draft",
+        kind: "human",
+        stepIds: ["approve"],
+      },
     ]);
   });
 
