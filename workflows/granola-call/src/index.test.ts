@@ -62,7 +62,10 @@ describe("granola-call workflow", () => {
     expect(argMapTag).toBeDefined();
     const argMap = JSON.parse(argMapTag as string) as Record<string, unknown>;
     expect(argMap.sourceRef).toEqual({ literal: "granola-call-digest" });
-    expect(argMap.body).toEqual({ from: "content" });
+    // `reply` is the field the step invoker's agent-step output actually
+    // carries ({ reply, turn }); pinning `content` here previously froze in
+    // the field-that-never-exists bug.
+    expect(argMap.body).toEqual({ from: "reply" });
     expect(persist.after).toEqual(expect.arrayContaining(["digest"]));
   });
 

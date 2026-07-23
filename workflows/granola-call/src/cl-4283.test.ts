@@ -45,9 +45,20 @@ function reshape(argMapJson: string, input: unknown): Record<string, unknown> {
       args[argName] = spec.literal;
       continue;
     }
-    const value = record[spec.from];
-    const absent = value === undefined || value === null || value === "";
-    if (absent && spec.optional === true) continue;
+    const present = spec.from in record;
+    const value = present ? record[spec.from] : undefined;
+    const absentOrEmpty = !present || value === "";
+    if (absentOrEmpty && spec.optional === true) continue;
+    if (!present) {
+      // Mirrors the sidecar harness's required-field contract: a required
+      // `from` absent on the evaluated input THROWS ("field is absent on the
+      // evaluated step input"). The earlier lenient re-implementation mapped
+      // it to `undefined` and let a persist argMap reading a field the agent
+      // step never emits pass green while production failed.
+      throw new Error(
+        `reshape: tool arg "${argName}" maps from input field "${spec.from}", but that field is absent on the evaluated step input`,
+      );
+    }
     args[argName] = value;
   }
   return args;
@@ -81,9 +92,13 @@ function buildInvokeStep(granolaRunner: ReturnType<typeof createToolRunner>) {
   return async (req: StepInvokeRequest): Promise<{ output: unknown }> => {
     const tag = req.agent.tags?.[STEP_TOOL_TAG];
     if (tag === undefined) {
-      // Reasoning step: digest. Its reply is read as plain markdown by the
-      // real `persist` step's `body: { from: "content" }` — any text works.
-      return { output: { content: "stub digest reply" } };
+      // Reasoning step: digest. Mirror the REAL step invoker's output shape
+      // (`{ reply, turn }` — workflow-host step-invoker `stepResultFromSend`),
+      // not a shape invented for the test: the production `persist` step
+      // failed with "field absent" precisely because this stub used to
+      // return `{ content }` and green-lit an argMap the runtime never
+      // satisfies.
+      return { output: { reply: "stub digest reply", turn: {} } };
     }
     const name = tag.slice(tag.lastIndexOf(":") + 1);
     const argMapJson = req.agent.tags?.[STEP_ARGMAP_TAG];

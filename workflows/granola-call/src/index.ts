@@ -62,11 +62,12 @@ No preamble. No tool calls. Markdown body only.`;
 //    optional: true }` — omitted entirely when absent, so the tool's own
 //    default (10) applies exactly when `maxCalls` is unset).
 //
-// 2. `persist` — the digest agent's reply is exposed to selectors as
-//    `{ content: "<markdown>" }`; `write_artifact` requires `title`/`body`/
-//    `kind` fields. Same rename gap: nothing reads `content` and writes it
-//    under `body`. Same documented limitation `pain-point-collateral`'s
-//    `persist` step already carries for the identical reason.
+// 2. `persist` — the digest agent step's output is the step invoker's
+//    `{ reply, turn }` (workflow-host `stepResultFromSend`; the same field
+//    every sibling workflow reads — exa-topic-watch, firecrawl-url-watch,
+//    github-topic-watch, gamma-presentation-creator). `write_artifact`
+//    requires `title`/`body`/`kind` fields. Same rename gap: nothing reads
+//    `reply` and writes it under `body` except `argMap`.
 //
 // Dedup / "already processed" (per direct instruction: reuse an existing
 // shape rather than invent one). Heartbeat's reference shape is a fire-time
@@ -139,7 +140,7 @@ export const workflow = defineWorkflow({
       input: { from: "steps.digest.output" },
       argMap: {
         title: { literal: "Granola calls — digest" },
-        body: { from: "content" },
+        body: { from: "reply" },
         kind: { literal: "research" },
         // Stable sourceRef: write_artifact dedupes by (tenantId, sourceRef),
         // so a run over an unchanged note set overwrites the same rolling
