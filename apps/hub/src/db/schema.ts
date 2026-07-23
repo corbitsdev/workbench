@@ -991,6 +991,30 @@ export const workflowTrigger = pgTable("workflow_trigger", {
 
 export type WorkflowTriggerRow = typeof workflowTrigger.$inferSelect;
 
+// Idempotency ledger for the generic provider-webhook receiver (CL-4269).
+// Providers that sign inbound deliveries (Linear today; GitHub/Slack/Attio
+// register the same way) retry on timeout/non-200 and resend the SAME
+// delivery id for retries of one logical event, so `(provider, delivery_id)`
+// is the natural dedup key. `id` is `"<provider>:<deliveryId>"` -- not a
+// generated id -- so a redelivery collides on the primary key and the
+// insert's own conflict IS the dedupe mechanism, not an application-level
+// lookup-then-insert race. `tenant_key` is the provider-native identifier the
+// adapter resolved the tenant from (Linear: `organizationId`), kept for audit
+// even though the row is already scoped to the resolved `tenant_id`.
+export const providerWebhookDelivery = pgTable("provider_webhook_delivery", {
+  id: text("id").primaryKey(),
+  provider: text("provider").notNull(),
+  deliveryId: text("delivery_id").notNull(),
+  tenantId: text("tenant_id").notNull(),
+  tenantKey: text("tenant_key").notNull(),
+  action: text("action").notNull(),
+  entityType: text("entity_type").notNull(),
+  receivedAt: timestamp("received_at").notNull().defaultNow(),
+});
+
+export type ProviderWebhookDeliveryRow =
+  typeof providerWebhookDelivery.$inferSelect;
+
 // Durable poll cursor for inbox intake (CL-3628): one row per scope key
 // (`member:<memberPrincipalId>:<sourceKey>` or `workspace:<tenantId>:<sourceKey>`,
 // the same keys `inbox-intake.ts` already used for its in-process

@@ -192,6 +192,9 @@ import { createMeSchedulesRouter } from "./routes/me-schedules";
 import { createMeWebhookTriggersRouter } from "./routes/me-webhook-triggers";
 import { createWebhookTriggerFireRouter } from "./routes/webhook-trigger-fire";
 import { createLinearWebhookRouter } from "./routes/webhooks-linear";
+import { createProviderWebhookRouter } from "./routes/webhooks-provider-triggers";
+import { createProviderWebhookRegistry } from "./lib/provider-webhooks";
+import { linearWebhookAdapter } from "./lib/provider-webhook-adapters/linear";
 import { createAttioWebhookRouter } from "./routes/webhooks-attio";
 import { createSlackWebhookRouter } from "./routes/webhooks-slack";
 import { deriveUserMailAddress } from "@workbench/hub-agent";
@@ -1765,6 +1768,23 @@ const runStarter = createWorkflowRunStarter({
 // the per-trigger secret. Mounted directly on the parent app, outside the v1
 // session-auth wall.
 app.route("/", createWebhookTriggerFireRouter({ db, runStarter }));
+
+// Public provider-webhook receiver (CL-4269): one signed-delivery surface
+// for every registered provider adapter, distinct from the CL-3585 inbox
+// receiver below (which is Linear-only, single global env secret). Each
+// adapter's secret is resolved per request from the owner-set
+// `<provider>-webhook` tool credential (Owner -> Capabilities), not a
+// boot-time env check, so it can be configured/rotated without a redeploy.
+// Adding the next provider (GitHub, Slack, Attio) means registering another
+// adapter here, not another route.
+app.route(
+  "/",
+  createProviderWebhookRouter({
+    db,
+    rootTenantId,
+    registry: createProviderWebhookRegistry([linearWebhookAdapter]),
+  }),
+);
 
 // Public Linear webhook receiver (CL-3585): additive low-latency intake
 // alongside the poller. Mounted only when a signing secret is configured; the

@@ -12,6 +12,7 @@ import { generateId } from "@intx/hub-common";
 import { and, eq, inArray, isNotNull, isNull } from "drizzle-orm";
 import {
   CREDENTIAL_PROVIDER_CATALOG,
+  type CredentialProviderCatalogEntry,
   DEMOS_RESOURCE,
   DEMOS_VIEW_ACTION,
   FEATURE_GRANT_CATALOG,
@@ -142,6 +143,26 @@ function extractBaseURL(metadata: unknown): string | undefined {
     return undefined;
   }
   return parsed.baseURL;
+}
+
+// A catalog entry's secondary field (owner-supplied, alongside the secret)
+// is stored under `secondaryField.metadataKey`, defaulting to "baseURL" for
+// every entry predating CL-4269 (inference gateways with a configurable
+// endpoint). `linear-webhook` is the first entry to use a different key
+// (`organizationId`) -- the wire response field stays named `baseURL`
+// regardless (the owner UI renders `secondaryField.label`, not the field
+// name, so this is invisible to the caller).
+function metadataKeyFor(entry: CredentialProviderCatalogEntry): string {
+  return entry.secondaryField?.metadataKey ?? "baseURL";
+}
+
+function extractMetadataString(
+  metadata: unknown,
+  key: string,
+): string | undefined {
+  if (typeof metadata !== "object" || metadata === null) return undefined;
+  const value = (metadata as Record<string, unknown>)[key];
+  return typeof value === "string" ? value : undefined;
 }
 
 /**
@@ -971,7 +992,9 @@ export function createOwnerRouter(
         const updatedAt = providerId
           ? (credentialByProviderId.get(providerId) ?? null)
           : null;
-        const baseURL = prov ? extractBaseURL(prov.metadata) : undefined;
+        const baseURL = prov
+          ? extractMetadataString(prov.metadata, metadataKeyFor(entry))
+          : undefined;
         return {
           providerName: entry.providerName,
           label: entry.label,
