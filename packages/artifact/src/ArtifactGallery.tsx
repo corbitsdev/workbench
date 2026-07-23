@@ -11,8 +11,11 @@
 //   - ArtifactGallery: the results grid/table + load-more.
 
 import { useMemo, useState } from "react";
-import { ChevronDown, FileStack } from "lucide-react";
+import { ChevronDown, FileStack, Plus } from "lucide-react";
 import {
+  AppPageChromeRow,
+  Button,
+  LibrarySearchInput,
   Menu,
   MenuContent,
   MenuItem,
@@ -227,139 +230,125 @@ export function ArtifactGalleryToolbar({
           </svg>
         </button>
       )}
-      <h1 className="shrink-0 text-[15px] font-bold tracking-[-0.02em] text-text">
-        Artifacts
-      </h1>
-      <span className="shrink-0 rounded-[7px] bg-surface-2 px-[9px] py-[3px] font-mono text-[11px] text-text-3">
-        {hasMore ? `${itemCount}+` : itemCount} items
-      </span>
-      {owners && owners.length > 1 && onOwnerFilterChange && (
-        <Menu>
-          <MenuTrigger className="flex h-[30px] items-center gap-1.5 rounded-[9px] border border-border bg-transparent px-[11px] text-[12.5px] text-text outline-none focus:border-border-strong data-[state=open]:border-border-strong">
-            {owners.find((o) => o.id === ownerPrincipalId)?.name ??
-              "All owners"}
-            <ChevronDown size={14} className="text-text-3" />
-          </MenuTrigger>
-          <MenuContent align="end">
-            <MenuItem onSelect={() => onOwnerFilterChange(undefined)}>
-              All owners
-            </MenuItem>
-            {owners.map((o) => (
-              <MenuItem key={o.id} onSelect={() => onOwnerFilterChange(o.id)}>
-                {o.name}
-              </MenuItem>
-            ))}
-          </MenuContent>
-        </Menu>
-      )}
-      {onCreatorKindFilterChange && (
-        <Menu>
-          <MenuTrigger className="flex h-[30px] items-center gap-1.5 rounded-[9px] border border-border bg-transparent px-[11px] text-[12.5px] text-text outline-none focus:border-border-strong data-[state=open]:border-border-strong">
-            {creatorKind ? CREATOR_KIND_LABELS[creatorKind] : "All creators"}
-            <ChevronDown size={14} className="text-text-3" />
-          </MenuTrigger>
-          <MenuContent align="end">
-            <MenuItem onSelect={() => onCreatorKindFilterChange(undefined)}>
-              All creators
-            </MenuItem>
-            <MenuItem onSelect={() => onCreatorKindFilterChange("user")}>
-              {CREATOR_KIND_LABELS.user}
-            </MenuItem>
-            <MenuItem onSelect={() => onCreatorKindFilterChange("agent")}>
-              {CREATOR_KIND_LABELS.agent}
-            </MenuItem>
-          </MenuContent>
-        </Menu>
-      )}
-      {onKindFilterChange && distinctKinds.length > 0 && (
-        <Menu>
-          <MenuTrigger className="flex h-[30px] items-center gap-1.5 rounded-[9px] border border-border bg-transparent px-[11px] text-[12.5px] text-text outline-none focus:border-border-strong data-[state=open]:border-border-strong">
-            {kindFilter ? visualForKind(kindFilter).label : "All types"}
-            <ChevronDown size={14} className="text-text-3" />
-          </MenuTrigger>
-          <MenuContent align="end">
-            <MenuItem onSelect={() => onKindFilterChange(undefined)}>
-              All types
-            </MenuItem>
-            {distinctKinds.map((k) => (
-              <MenuItem key={k} onSelect={() => onKindFilterChange(k)}>
-                {visualForKind(k).label}
-              </MenuItem>
-            ))}
-          </MenuContent>
-        </Menu>
-      )}
-      <input
-        type="search"
-        placeholder="Search artifacts"
-        value={query}
-        onChange={(e) => onQueryChange?.(e.target.value)}
-        className="h-[30px] w-[160px] rounded-[9px] border border-border bg-transparent px-[11px] text-[12.5px] text-text placeholder:text-text-3 focus:border-border-strong focus:outline-none"
-      />
-      <button
-        type="button"
-        onClick={handleSortToggle}
-        aria-label={
-          sort === "newest" ? "Sort oldest first" : "Sort newest first"
-        }
-        className="flex items-center gap-[7px] rounded-[9px] border border-border px-[11px] py-[6px] text-[12.5px] font-semibold text-text-2 transition-colors hover:border-border-strong hover:bg-[var(--row-hover)]"
+      <AppPageChromeRow
+        title="Artifacts"
+        count={hasMore ? `${itemCount}+` : itemCount}
       >
-        <svg
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="2"
-          className="h-3.5 w-3.5"
-        >
-          <path d="M3 6h18M6 12h12M10 18h4" />
-        </svg>
-        {sort === "newest" ? "Newest" : "Oldest"}
-      </button>
-      {onAdvancedFilterChange && (
+        <LibrarySearchInput
+          label="Search artifacts"
+          placeholder="Search artifacts"
+          value={query}
+          onChange={(next) => onQueryChange?.(next)}
+        />
+        {owners && owners.length > 1 && onOwnerFilterChange && (
+          <Menu>
+            <MenuTrigger className="flex h-[30px] items-center gap-1.5 rounded-[9px] border border-border bg-transparent px-[11px] text-[12.5px] text-text outline-none focus:border-border-strong data-[state=open]:border-border-strong">
+              {owners.find((o) => o.id === ownerPrincipalId)?.name ??
+                "All owners"}
+              <ChevronDown size={14} className="text-text-3" />
+            </MenuTrigger>
+            <MenuContent align="end">
+              <MenuItem onSelect={() => onOwnerFilterChange(undefined)}>
+                All owners
+              </MenuItem>
+              {owners.map((o) => (
+                <MenuItem key={o.id} onSelect={() => onOwnerFilterChange(o.id)}>
+                  {o.name}
+                </MenuItem>
+              ))}
+            </MenuContent>
+          </Menu>
+        )}
+        {onCreatorKindFilterChange && (
+          <Menu>
+            <MenuTrigger className="flex h-[30px] items-center gap-1.5 rounded-[9px] border border-border bg-transparent px-[11px] text-[12.5px] text-text outline-none focus:border-border-strong data-[state=open]:border-border-strong">
+              {creatorKind ? CREATOR_KIND_LABELS[creatorKind] : "All creators"}
+              <ChevronDown size={14} className="text-text-3" />
+            </MenuTrigger>
+            <MenuContent align="end">
+              <MenuItem onSelect={() => onCreatorKindFilterChange(undefined)}>
+                All creators
+              </MenuItem>
+              <MenuItem onSelect={() => onCreatorKindFilterChange("user")}>
+                {CREATOR_KIND_LABELS.user}
+              </MenuItem>
+              <MenuItem onSelect={() => onCreatorKindFilterChange("agent")}>
+                {CREATOR_KIND_LABELS.agent}
+              </MenuItem>
+            </MenuContent>
+          </Menu>
+        )}
+        {onKindFilterChange && distinctKinds.length > 0 && (
+          <Menu>
+            <MenuTrigger className="flex h-[30px] items-center gap-1.5 rounded-[9px] border border-border bg-transparent px-[11px] text-[12.5px] text-text outline-none focus:border-border-strong data-[state=open]:border-border-strong">
+              {kindFilter ? visualForKind(kindFilter).label : "All types"}
+              <ChevronDown size={14} className="text-text-3" />
+            </MenuTrigger>
+            <MenuContent align="end">
+              <MenuItem onSelect={() => onKindFilterChange(undefined)}>
+                All types
+              </MenuItem>
+              {distinctKinds.map((k) => (
+                <MenuItem key={k} onSelect={() => onKindFilterChange(k)}>
+                  {visualForKind(k).label}
+                </MenuItem>
+              ))}
+            </MenuContent>
+          </Menu>
+        )}
         <button
           type="button"
-          onClick={() => setFiltersOpen((v) => !v)}
-          aria-expanded={filtersOpen}
-          aria-label="Toggle filters"
-          className={`flex items-center gap-[7px] rounded-[9px] border px-[11px] py-[6px] text-[12.5px] font-semibold transition-colors hover:border-border-strong hover:bg-[var(--row-hover)] ${
-            hasActiveAdvancedFilter
-              ? "border-border-strong text-text"
-              : "border-border text-text-2"
-          }`}
+          onClick={handleSortToggle}
+          aria-label={
+            sort === "newest" ? "Sort oldest first" : "Sort newest first"
+          }
+          className="flex items-center gap-[7px] rounded-[9px] border border-border px-[11px] py-[6px] text-[12.5px] font-semibold text-text-2 transition-colors hover:border-border-strong hover:bg-[var(--row-hover)]"
         >
           <svg
             viewBox="0 0 24 24"
             fill="none"
             stroke="currentColor"
             strokeWidth="2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
             className="h-3.5 w-3.5"
           >
-            <path d="M3 5h18l-7 8v6l-4-2v-4z" />
+            <path d="M3 6h18M6 12h12M10 18h4" />
           </svg>
-          Filters
+          {sort === "newest" ? "Newest" : "Oldest"}
         </button>
-      )}
-      {onViewModeChange && (
-        <ViewToggle mode={viewMode} onChange={onViewModeChange} />
-      )}
-      <button
-        type="button"
-        onClick={onNew}
-        className="flex items-center gap-[7px] rounded-[9px] border border-charcoal bg-charcoal px-[11px] py-[6px] text-[12.5px] font-semibold text-cream transition-colors"
-      >
-        <svg
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="2"
-          className="h-3.5 w-3.5"
-        >
-          <path d="M12 5v14M5 12h14" />
-        </svg>
-        Add
-      </button>
+        {onAdvancedFilterChange && (
+          <button
+            type="button"
+            onClick={() => setFiltersOpen((v) => !v)}
+            aria-expanded={filtersOpen}
+            aria-label="Toggle filters"
+            className={`flex items-center gap-[7px] rounded-[9px] border px-[11px] py-[6px] text-[12.5px] font-semibold transition-colors hover:border-border-strong hover:bg-[var(--row-hover)] ${
+              hasActiveAdvancedFilter
+                ? "border-border-strong text-text"
+                : "border-border text-text-2"
+            }`}
+          >
+            <svg
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              className="h-3.5 w-3.5"
+            >
+              <path d="M3 5h18l-7 8v6l-4-2v-4z" />
+            </svg>
+            Filters
+          </button>
+        )}
+        {onViewModeChange && (
+          <ViewToggle mode={viewMode} onChange={onViewModeChange} />
+        )}
+        <Button type="button" variant="library" size="library" onClick={onNew}>
+          <Plus size={14} className="text-orange" />
+          Add artifact
+        </Button>
+      </AppPageChromeRow>
       {onAdvancedFilterChange && filtersOpen && (
         <div className="flex w-full flex-wrap items-end gap-[14px] border-t border-border pt-[10px]">
           <label className="flex flex-col gap-[5px] text-[11.5px] font-semibold text-text-3">

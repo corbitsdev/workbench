@@ -15,8 +15,20 @@ function renderAt(path: string) {
             element={<div data-testid="view">Artifacts view</div>}
           />
           <Route
+            path="artifacts/:id"
+            element={<div data-testid="view">Artifact detail</div>}
+          />
+          <Route
             path="skills"
             element={<div data-testid="view">Skills view</div>}
+          />
+          <Route
+            path="skills/new"
+            element={<div data-testid="view">New skill</div>}
+          />
+          <Route
+            path="skills/:id"
+            element={<div data-testid="view">Skill detail</div>}
           />
           <Route
             path="agents"
@@ -49,6 +61,40 @@ describe("LibraryLayout", () => {
         .getByRole("link", { name: "Artifacts" })
         .getAttribute("aria-current"),
     ).toBeNull();
+  });
+
+  it("hides the tab strip on a detail route, leaving the detail view as the only content", () => {
+    renderAt("/library/artifacts/art-1");
+    expect(
+      screen.queryByRole("navigation", { name: "Library sections" }),
+    ).toBeNull();
+    expect(screen.queryByRole("link", { name: "Artifacts" })).toBeNull();
+    expect(screen.getByTestId("view").textContent).toBe("Artifact detail");
+  });
+
+  it("hides the tab strip on the skill-detail and new-skill routes", () => {
+    renderAt("/library/skills/skill-1");
+    expect(
+      screen.queryByRole("navigation", { name: "Library sections" }),
+    ).toBeNull();
+
+    cleanup();
+    renderAt("/library/skills/new");
+    expect(
+      screen.queryByRole("navigation", { name: "Library sections" }),
+    ).toBeNull();
+  });
+
+  it("shows the tab strip on the three collection routes", () => {
+    for (const path of [
+      "/library/artifacts",
+      "/library/skills",
+      "/library/agents",
+    ]) {
+      renderAt(path);
+      screen.getByRole("navigation", { name: "Library sections" });
+      cleanup();
+    }
   });
 
   it("keeps each tab pointed at its own deep-linkable route", () => {

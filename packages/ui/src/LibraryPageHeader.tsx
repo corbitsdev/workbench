@@ -1,4 +1,4 @@
-import { type ReactNode } from "react";
+import { type ReactNode, useRef, useState } from "react";
 import { AppPageChromeRow } from "./AppPageChromeRow";
 import { cn } from "./utils";
 
@@ -51,14 +51,25 @@ interface LibrarySearchInputProps {
 
 const searchVariantClassName: Record<SearchVariant, string> = {
   bordered:
-    "rounded-input border border-border bg-transparent focus:border-border-strong",
+    "rounded-input border border-border bg-surface focus:border-border-strong",
   ghost:
     "rounded-sm border border-transparent bg-transparent focus:border-border focus:bg-surface",
 };
 
+const SEARCH_COLLAPSED_WIDTH = "180px";
+const SEARCH_EXPANDED_WIDTH = "340px";
+
 /**
  * Consistent search box for library headers. Controlled — the page owns the
  * query state and any filtering derived from it.
+ *
+ * Reserves a fixed-width slot in the header's flex flow at all times (so
+ * neighboring controls never shift), but the input itself is positioned
+ * `absolute` inside that slot and grows leftward — over the header's own
+ * flexible spacer, never over another control — while focused or holding a
+ * value. It collapses back to the reserved width on blur once empty. Escape
+ * clears an active query first, then relinquishes focus once already empty,
+ * so it never traps keyboard focus.
  */
 export function LibrarySearchInput({
   label,
@@ -68,18 +79,43 @@ export function LibrarySearchInput({
   variant = "bordered",
   className,
 }: LibrarySearchInputProps) {
+  const [focused, setFocused] = useState(false);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const expanded = focused || value.length > 0;
+
   return (
-    <input
-      type="search"
-      aria-label={label}
-      placeholder={placeholder ?? label}
-      value={value}
-      onChange={(e) => onChange(e.target.value)}
-      className={cn(
-        "h-[34px] w-[180px] px-[11px] text-[12.5px] text-text placeholder:text-text-3 focus:outline-none",
-        searchVariantClassName[variant],
-        className,
-      )}
-    />
+    <div
+      className="relative h-[34px] shrink-0"
+      style={{ width: SEARCH_COLLAPSED_WIDTH }}
+    >
+      <input
+        ref={inputRef}
+        type="search"
+        aria-label={label}
+        placeholder={placeholder ?? label}
+        value={value}
+        onFocus={() => setFocused(true)}
+        onBlur={() => setFocused(false)}
+        onChange={(e) => onChange(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key !== "Escape") return;
+          if (value.length > 0) {
+            e.stopPropagation();
+            onChange("");
+          } else {
+            inputRef.current?.blur();
+          }
+        }}
+        className={cn(
+          "absolute right-0 top-0 h-[34px] px-[11px] text-[12.5px] text-text placeholder:text-text-3 transition-[width] duration-150 ease-out focus:outline-none",
+          expanded ? "z-20" : "z-10",
+          searchVariantClassName[variant],
+          className,
+        )}
+        style={{
+          width: expanded ? SEARCH_EXPANDED_WIDTH : SEARCH_COLLAPSED_WIDTH,
+        }}
+      />
+    </div>
   );
 }

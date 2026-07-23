@@ -6,7 +6,7 @@ type TitleSize = "sm" | "lg";
 export interface AppPageChromeRowProps {
   title: string;
   titleSize?: TitleSize;
-  count?: number;
+  count?: number | string;
   subtitle?: string;
   children?: ReactNode;
   className?: string;

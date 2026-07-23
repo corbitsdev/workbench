@@ -195,6 +195,14 @@ describe("AgentsPage", () => {
     expect(getByLabelText("Search agents")).toBeTruthy();
   });
 
+  it("reserves the Add-action slot even though Agents has no add action", async () => {
+    const { getByRole } = renderPage();
+    await waitFor(() => expect(document.body.textContent).toContain("Oat"));
+    const placeholder = getByRole("button", { name: "Add" });
+    expect(placeholder.className).toContain("invisible");
+    expect(placeholder.getAttribute("tabIndex")).toBe("-1");
+  });
+
   it("filters definitions by name or description", async () => {
     const { getByLabelText, queryByText } = renderPage();
     await waitFor(() => expect(document.body.textContent).toContain("Oat"));
@@ -213,9 +221,9 @@ describe("AgentsPage", () => {
     expect(
       filterAgentDefinitions(templates, "personal").map((t) => t.name),
     ).toEqual(["Myra"]);
-    expect(filterAgentDefinitions(templates, "shared").map((t) => t.name)).toEqual([
-      "Oat",
-    ]);
+    expect(
+      filterAgentDefinitions(templates, "shared").map((t) => t.name),
+    ).toEqual(["Oat"]);
     expect(filterAgentDefinitions(templates, "zzzz")).toEqual([]);
     expect(filterAgentDefinitions(templates, "  ").map((t) => t.name)).toEqual([
       "Oat",

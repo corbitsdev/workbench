@@ -21,6 +21,11 @@ describe("AppPageChromeRow", () => {
     expect(screen.queryByText(/items/)).toBeNull();
   });
 
+  it("renders a string count verbatim (e.g. a '+' suffix for an unknown total)", () => {
+    render(<AppPageChromeRow title="Artifacts" count="12+" />);
+    expect(screen.getByText("12+ items")).toBeTruthy();
+  });
+
   it("wraps trailing controls for narrow top bars", () => {
     render(<AppPageChromeRow title="Skills" />);
     const heading = screen.getByRole("heading", { level: 1 });

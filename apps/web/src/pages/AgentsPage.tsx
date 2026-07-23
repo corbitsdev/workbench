@@ -1,9 +1,8 @@
 import {
   AppPageChromeRow,
   Badge,
+  Button,
   CATALOG_GLYPH_FILLS,
-  CATALOG_GLYPH_KINDS,
-  CatalogGlyph,
   catalogCardClassName,
   cn,
   DataTable,
@@ -16,7 +15,7 @@ import {
   type BadgeTone,
   type DataTableColumn,
 } from "@workbench/ui";
-import { Bot, Check, Copy } from "lucide-react";
+import { Bot, Check, Copy, Plus } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useSetPageChrome } from "../lib/page-chrome";
@@ -150,20 +149,43 @@ function cardCornerLabel(instances: AgentInstanceItem[]): string {
   return `${instances.length} deployed`;
 }
 
-function AgentCard({ item, index }: { item: AgentCardItem; index: number }) {
-  const hash = hashString(item.id);
-  const glyph = CATALOG_GLYPH_KINDS[hash % CATALOG_GLYPH_KINDS.length];
-  const fill = CATALOG_GLYPH_FILLS[hash % CATALOG_GLYPH_FILLS.length];
+/** Up to two initials from an agent's name, for the generated avatar mark. */
+function agentInitials(name: string): string {
+  const words = name.trim().split(/\s+/).filter(Boolean);
+  if (words.length === 0) return "?";
+  if (words.length === 1) return words[0].slice(0, 2).toUpperCase();
+  return (words[0][0] + words[1][0]).toUpperCase();
+}
 
+/**
+ * Deterministic, local avatar mark derived from the agent's name — no
+ * external avatar service, no network call. Same name always produces the
+ * same fill + initials, so an agent's mark is stable across renders and
+ * across the definition/instance split.
+ */
+function AgentAvatar({ name }: { name: string }) {
+  const hash = hashString(name);
+  const fill = CATALOG_GLYPH_FILLS[hash % CATALOG_GLYPH_FILLS.length];
+  return (
+    <div
+      className={`grid h-[112px] place-items-center overflow-hidden ${fill}`}
+      aria-hidden
+    >
+      <span className="text-[32px] font-bold tracking-[-0.02em] text-white/90">
+        {agentInitials(name)}
+      </span>
+    </div>
+  );
+}
+
+function AgentCard({ item, index }: { item: AgentCardItem; index: number }) {
   return (
     <div className={cn(catalogCardClassName, "cursor-default")}>
       <span className="absolute left-[10px] top-[10px] z-[2] rounded-full bg-[rgba(0,0,0,0.32)] px-2 py-[3px] text-[10px] font-bold uppercase tracking-[0.03em] text-white backdrop-blur-[6px]">
         {cardCornerLabel(item.instances)}
       </span>
-      <div
-        className={`relative grid h-[112px] place-items-center overflow-hidden ${fill}`}
-      >
-        <CatalogGlyph kind={glyph} />
+      <div className="relative">
+        <AgentAvatar name={item.name} />
         <span className="absolute bottom-[10px] right-3 font-mono text-[13px] font-bold text-[rgba(255,255,255,0.85)]">
           A{index.toString().padStart(2, "0")}
         </span>
@@ -296,9 +318,7 @@ export function AgentsPage() {
       header: "Tools",
       render: (d) => (
         <span className="line-clamp-1 text-text-3">
-          {d.tools === null || d.tools.length === 0
-            ? "—"
-            : d.tools.join(", ")}
+          {d.tools === null || d.tools.length === 0 ? "—" : d.tools.join(", ")}
         </span>
       ),
     },
@@ -352,6 +372,20 @@ export function AgentsPage() {
           onChange={setQuery}
         />
         <ViewToggle mode={viewMode} onChange={setViewMode} />
+        {/* Agents has no add action — this invisible placeholder still
+            occupies the same box as Artifacts'/Skills' Add button so the
+            header's trailing edge lands in the same place on every Library
+            view, rather than the row collapsing and shifting. */}
+        <Button
+          type="button"
+          variant="library"
+          size="library"
+          className="invisible"
+          tabIndex={-1}
+        >
+          <Plus size={14} />
+          Add
+        </Button>
       </AppPageChromeRow>
     ),
     [totalVisible, query, viewMode, setViewMode],
