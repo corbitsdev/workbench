@@ -9,6 +9,7 @@ import {
   waitFor,
 } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { MemoryRouter } from "react-router";
 
 const getWorkflowsCatalog = mock(async () => ({
   entries: [
@@ -73,21 +74,23 @@ const getWorkflowsCatalog = mock(async () => ({
   ],
 }));
 
-const listMeSchedules = mock(async () => [
-  {
-    id: "sched-1",
-    workflowKind: "heartbeat",
-    recurrence: { intervalMinutes: 1440, anchorMinuteUtc: 14 * 60 },
-    enabled: true,
-    scope: "personal" as const,
-    ownerMemberPrincipalId: "p1",
-    triggerPayload: { reason: "scheduled-heartbeat" },
-    createdAt: new Date().toISOString(),
-    lastRunId: null,
-    recentFires: [],
-    nextFireAt: null,
-  },
-]);
+const baseHeartbeatSchedule = {
+  id: "sched-1",
+  workflowKind: "heartbeat",
+  recurrence: { intervalMinutes: 1440, anchorMinuteUtc: 14 * 60 },
+  enabled: true,
+  scope: "personal" as const,
+  ownerMemberPrincipalId: "p1",
+  triggerPayload: { reason: "scheduled-heartbeat" },
+  createdAt: new Date().toISOString(),
+  lastRunId: null as string | null,
+  recentFires: [] as { runId: string; firedAt: string; status: string }[],
+  nextFireAt: null as string | null,
+};
+
+let heartbeatSchedule = baseHeartbeatSchedule;
+
+const listMeSchedules = mock(async () => [heartbeatSchedule]);
 
 const createMeSchedule = mock(async (body: unknown) => body);
 const updateMeSchedule = mock(async (_id: string, patch: unknown) => patch);
@@ -109,7 +112,9 @@ function renderPage() {
   });
   return render(
     <QueryClientProvider client={client}>
-      <RoutinesPage />
+      <MemoryRouter>
+        <RoutinesPage />
+      </MemoryRouter>
     </QueryClientProvider>,
   );
 }
@@ -130,6 +135,7 @@ afterEach(() => {
   cleanup();
   createMeSchedule.mockClear();
   updateMeSchedule.mockClear();
+  heartbeatSchedule = baseHeartbeatSchedule;
 });
 
 describe("RoutinesPage (CL-3862 + CL-4263 flow)", () => {
@@ -144,8 +150,58 @@ describe("RoutinesPage (CL-3862 + CL-4263 flow)", () => {
     });
     expect(screen.getByText("Morning brief")).toBeTruthy();
     expect(screen.queryByText("Manual")).toBeNull();
-    expect(screen.getByText(/Scheduled/)).toBeTruthy();
+    expect(screen.getByText("Active")).toBeTruthy();
     expect(screen.getAllByText("Not scheduled").length).toBeGreaterThan(0);
+  });
+
+  it("expands a row to show the editor and collapses it again without losing the row", async () => {
+    renderPage();
+    await waitFor(() => screen.getByTestId("schedule-last30days-research"));
+    expect(
+      screen.queryByTestId("schedule-editor-last30days-research"),
+    ).toBeNull();
+
+    fireEvent.click(screen.getByLabelText("Expand Last 30 Days Research"));
+    await waitFor(() =>
+      screen.getByTestId("schedule-editor-last30days-research"),
+    );
+
+    fireEvent.click(screen.getByLabelText("Collapse Last 30 Days Research"));
+    await waitFor(() => {
+      expect(
+        screen.queryByTestId("schedule-editor-last30days-research"),
+      ).toBeNull();
+    });
+    expect(screen.getByTestId("routine-row-last30days-research")).toBeTruthy();
+  });
+
+  it("shows an honest empty run-history state for a schedule that has never fired", async () => {
+    renderPage();
+    await waitFor(() => screen.getByTestId("edit-schedule-heartbeat"));
+    fireEvent.click(screen.getByTestId("edit-schedule-heartbeat"));
+    await waitFor(() => screen.getByTestId("run-history-heartbeat"));
+    expect(screen.getByText(/hasn.t triggered this routine yet/)).toBeTruthy();
+  });
+
+  it("surfaces recent fires and links to the run when one exists", async () => {
+    heartbeatSchedule = {
+      ...baseHeartbeatSchedule,
+      lastRunId: "run-123",
+      recentFires: [
+        {
+          runId: "run-123",
+          firedAt: "2026-07-20T14:00:00.000Z",
+          status: "completed",
+        },
+      ],
+    };
+    renderPage();
+    await waitFor(() => screen.getByTestId("edit-schedule-heartbeat"));
+    fireEvent.click(screen.getByTestId("edit-schedule-heartbeat"));
+    await waitFor(() => screen.getByTestId("run-history-heartbeat"));
+    expect(screen.getByText("Completed")).toBeTruthy();
+    const runLink = screen.getByRole("link", { name: /Jul/ });
+    expect(runLink.getAttribute("href")).toContain("run-123");
   });
 
   it("creates a research schedule with form payload via multi-step flow", async () => {

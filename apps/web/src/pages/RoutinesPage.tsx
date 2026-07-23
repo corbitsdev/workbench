@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
   HEARTBEAT_WORKFLOW_KIND,
@@ -8,8 +8,10 @@ import {
   type ScheduleScope,
   type WorkflowCatalogEntry,
 } from "@workbench/shared";
-import { LibraryPageHeader } from "@workbench/ui";
+import { AppPageChromeRow, Badge } from "@workbench/ui";
+import { Link } from "react-router";
 import { getWorkflowsCatalog } from "../lib/hub-api";
+import { useSetPageChrome } from "../lib/page-chrome";
 import {
   useCreateSchedule,
   useDeleteSchedule,
@@ -20,17 +22,88 @@ import { scheduleFieldsComplete } from "../components/ScheduleFieldForm";
 import { ScheduleFlow } from "../components/ScheduleFlow";
 import {
   defaultRecurrence,
+  formatLastFiredAt,
+  formatNextFire,
   formatRecurrence,
   scheduleScopeLabel,
 } from "../lib/schedule-time";
+import { scheduleRunDeepLink } from "../lib/schedule-run-link";
+import { statusLabel } from "../lib/workflow-run-status";
+
+/** Recent fires for one routine, newest first, each linking to its run when
+ * the run record is still resolvable. Only rendered for an already-scheduled
+ * routine — a routine that has never been scheduled has no history to show. */
+function RunHistory({ existing }: { existing: ScheduledTrigger }) {
+  return (
+    <div
+      className="mt-4 border-t border-border pt-4"
+      data-testid={`run-history-${existing.workflowKind}`}
+    >
+      <div className="mb-2 flex items-center justify-between text-xs">
+        <h3 className="font-semibold uppercase tracking-[0.05em] text-text-3">
+          Run history
+        </h3>
+        <span className="text-text-3">
+          Next: {formatNextFire(existing.nextFireAt, existing.enabled)}
+        </span>
+      </div>
+      {existing.recentFires.length === 0 ? (
+        <p className="text-sm text-text-3">
+          Not yet fired — the scheduler hasn&rsquo;t triggered this routine
+          yet.
+        </p>
+      ) : (
+        <ul className="flex flex-col gap-1.5">
+          {existing.recentFires.map((fire) => (
+            <li
+              key={`${fire.runId}-${fire.firedAt}`}
+              className="flex items-center justify-between gap-3 text-sm"
+            >
+              {fire.status === "unknown" ? (
+                <span className="text-text-3">
+                  {formatLastFiredAt(fire.firedAt)}
+                </span>
+              ) : (
+                <Link
+                  to={scheduleRunDeepLink(fire.status, fire.runId)}
+                  className="font-medium text-text-2 underline-offset-2 hover:underline"
+                >
+                  {formatLastFiredAt(fire.firedAt)}
+                </Link>
+              )}
+              <span className="shrink-0 text-xs text-text-3">
+                {statusLabel(fire.status)}
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
 
 /**
- * Routines home (CL-3862, renamed from Automations in CL-4211): lists
- * schedulable workflows with schedule status and manage-in-place create/edit
- * using schema-driven field forms (CL-3861) and the multi-step schedule walk
- * (CL-4263). Morning brief (heartbeat) uses product naming from the catalog label.
+ * Routines home (CL-3862, renamed from Automations in CL-4211): a scannable
+ * list of schedulable workflows — cadence, scope, and status legible without
+ * opening a row — where opening a row expands the multi-step schedule
+ * create/edit walk (CL-4263's `ScheduleFlow`, Open → Recurrence → Inputs →
+ * Availability) and run history in place (CL-4267). Morning brief
+ * (heartbeat) uses product naming from the catalog label.
  */
 export function RoutinesPage() {
+  const chrome = useMemo(
+    () => (
+      <AppPageChromeRow
+        title="Routines"
+        titleSize="sm"
+        subtitle="Workflows on a recurring cadence"
+        className="[&_h1]:text-[20px] [&_h1]:tracking-[-0.01em]"
+      />
+    ),
+    [],
+  );
+  useSetPageChrome(chrome);
+
   const catalogQuery = useQuery({
     queryKey: ["workflow-catalog"],
     queryFn: () => getWorkflowsCatalog(),
@@ -68,6 +141,14 @@ export function RoutinesPage() {
   const [draftValues, setDraftValues] = useState<Record<string, unknown>>({});
   const [error, setError] = useState<string | null>(null);
 
+  const rowRefs = useRef<Map<string, HTMLLIElement>>(new Map());
+
+  useEffect(() => {
+    if (expandedKind === null) return;
+    const node = rowRefs.current.get(expandedKind);
+    node?.scrollIntoView({ block: "nearest" });
+  }, [expandedKind]);
+
   const openEditor = (
     entry: WorkflowCatalogEntry,
     existing?: ScheduledTrigger,
@@ -89,6 +170,17 @@ export function RoutinesPage() {
   const closeEditor = () => {
     setExpandedKind(null);
     setError(null);
+  };
+
+  const toggleEditor = (
+    entry: WorkflowCatalogEntry,
+    existing?: ScheduledTrigger,
+  ) => {
+    if (expandedKind === entry.kind) {
+      closeEditor();
+    } else {
+      openEditor(entry, existing);
+    }
   };
 
   const fieldsFor = (entry: WorkflowCatalogEntry): ScheduleFieldMetadata[] =>
@@ -153,132 +245,169 @@ export function RoutinesPage() {
   const busy = createSchedule.isPending || updateSchedule.isPending;
 
   return (
-    <div className="mx-auto max-w-3xl px-4 py-8" data-testid="routines-page">
-      <LibraryPageHeader title="Routines" />
-      <p className="mt-2 text-sm text-text-2">
-        Workflows you can put on a cadence. Status and manage in place — no
-        separate settings hop.
-      </p>
+    <div className="h-full overflow-y-auto" data-testid="routines-page">
+      <div className="mx-auto max-w-3xl px-4 py-8">
+        {loading ? (
+          <p className="text-sm text-text-3">Loading routines…</p>
+        ) : null}
+        {loadError ? (
+          <p className="text-sm text-danger" role="alert">
+            {loadError instanceof Error
+              ? loadError.message
+              : "Could not load routines."}
+          </p>
+        ) : null}
 
-      {loading ? (
-        <p className="mt-6 text-sm text-text-3">Loading routines…</p>
-      ) : null}
-      {loadError ? (
-        <p className="mt-6 text-sm text-danger" role="alert">
-          {loadError instanceof Error
-            ? loadError.message
-            : "Could not load routines."}
-        </p>
-      ) : null}
+        {!loading && !loadError && schedulable.length === 0 ? (
+          <p className="text-sm text-text-3">
+            No schedulable workflows are available in this workspace yet.
+          </p>
+        ) : null}
 
-      {!loading && !loadError && schedulable.length === 0 ? (
-        <p className="mt-6 text-sm text-text-3">
-          No schedulable workflows are available in this workspace yet.
-        </p>
-      ) : null}
+        {!loading && !loadError && schedulable.length > 0 ? (
+          <ul className="flex flex-col divide-y divide-border rounded-xl border border-border bg-surface">
+            {schedulable.map((entry) => {
+              const existing = scheduleByKind.get(entry.kind);
+              const expanded = expandedKind === entry.kind;
+              const fields = fieldsFor(entry);
+              const productLabel =
+                entry.kind === HEARTBEAT_WORKFLOW_KIND
+                  ? entry.label || "Morning brief"
+                  : entry.label;
 
-      <ul className="mt-6 flex flex-col gap-3">
-        {schedulable.map((entry) => {
-          const existing = scheduleByKind.get(entry.kind);
-          const expanded = expandedKind === entry.kind;
-          const fields = fieldsFor(entry);
-          const productLabel =
-            entry.kind === HEARTBEAT_WORKFLOW_KIND
-              ? entry.label || "Morning brief"
-              : entry.label;
-
-          return (
-            <li
-              key={entry.kind}
-              className="rounded-xl border border-border bg-surface p-4"
-              data-testid={`routine-row-${entry.kind}`}
-            >
-              <div className="flex flex-wrap items-start justify-between gap-3">
-                <div className="min-w-0 flex-1">
-                  <h2 className="text-base font-semibold text-text">
-                    {productLabel}
-                  </h2>
-                  {entry.description ? (
-                    <p className="mt-1 text-sm text-text-2">
-                      {entry.description}
-                    </p>
-                  ) : null}
-                  <p className="mt-2 text-xs text-text-3">
-                    {existing
-                      ? existing.enabled
-                        ? `Scheduled · ${formatRecurrence(existing.recurrence)} · ${scheduleScopeLabel(existing.scope)}`
-                        : `Paused · ${scheduleScopeLabel(existing.scope)}`
-                      : "Not scheduled"}
-                  </p>
-                </div>
-                <div className="flex flex-wrap items-center gap-2">
-                  {existing ? (
-                    <>
-                      <button
-                        type="button"
-                        className="rounded-[10px] border border-border px-3 py-1.5 text-sm font-medium text-text-2 hover:bg-page"
-                        onClick={() =>
-                          updateSchedule.mutate({
-                            id: existing.id,
-                            enabled: !existing.enabled,
-                          })
-                        }
-                      >
-                        {existing.enabled ? "Pause" : "Resume"}
-                      </button>
-                      <button
-                        type="button"
-                        className="rounded-[10px] border border-border px-3 py-1.5 text-sm font-medium text-text-2 hover:bg-page"
-                        onClick={() => openEditor(entry, existing)}
-                        data-testid={`edit-schedule-${entry.kind}`}
-                      >
-                        Edit
-                      </button>
-                      <button
-                        type="button"
-                        className="rounded-[10px] border border-border px-3 py-1.5 text-sm font-medium text-danger hover:bg-page"
-                        onClick={() =>
-                          deleteSchedule.mutate({ id: existing.id })
-                        }
-                      >
-                        Remove
-                      </button>
-                    </>
-                  ) : (
+              return (
+                <li
+                  key={entry.kind}
+                  ref={(node) => {
+                    if (node) rowRefs.current.set(entry.kind, node);
+                    else rowRefs.current.delete(entry.kind);
+                  }}
+                  data-testid={`routine-row-${entry.kind}`}
+                >
+                  <div className="flex flex-wrap items-center gap-3 px-4 py-3">
                     <button
                       type="button"
-                      className="rounded-[10px] bg-orange px-3 py-1.5 text-sm font-semibold text-white hover:opacity-90"
-                      onClick={() => openEditor(entry)}
-                      data-testid={`schedule-${entry.kind}`}
+                      aria-expanded={expanded}
+                      aria-label={
+                        expanded
+                          ? `Collapse ${productLabel}`
+                          : `Expand ${productLabel}`
+                      }
+                      onClick={() => toggleEditor(entry, existing)}
+                      className="flex h-6 w-6 shrink-0 items-center justify-center rounded-[6px] text-text-3 hover:bg-page hover:text-text"
                     >
-                      Schedule
+                      <span
+                        aria-hidden="true"
+                        className={`inline-block transition-transform ${expanded ? "rotate-90" : ""}`}
+                      >
+                        ›
+                      </span>
                     </button>
-                  )}
-                </div>
-              </div>
 
-              {expanded ? (
-                <ScheduleFlow
-                  entry={entry}
-                  productLabel={productLabel}
-                  existing={existing ?? null}
-                  recurrence={draftRecurrence}
-                  onRecurrenceChange={setDraftRecurrence}
-                  scope={draftScope}
-                  onScopeChange={setDraftScope}
-                  fieldValues={draftValues}
-                  onFieldValuesChange={setDraftValues}
-                  fields={fields}
-                  error={error}
-                  busy={busy}
-                  onCancel={closeEditor}
-                  onSave={() => save(entry, existing)}
-                />
-              ) : null}
-            </li>
-          );
-        })}
-      </ul>
+                    <div className="min-w-0 flex-1">
+                      <h2 className="truncate text-sm font-semibold text-text">
+                        {productLabel}
+                      </h2>
+                      {entry.description ? (
+                        <p className="truncate text-xs text-text-3">
+                          {entry.description}
+                        </p>
+                      ) : null}
+                    </div>
+
+                    <div className="w-32 shrink-0 text-xs text-text-2">
+                      {existing ? formatRecurrence(existing.recurrence) : "—"}
+                    </div>
+
+                    <div className="w-24 shrink-0 text-xs text-text-2">
+                      {existing ? scheduleScopeLabel(existing.scope) : "—"}
+                    </div>
+
+                    <div className="w-24 shrink-0">
+                      {existing ? (
+                        <Badge
+                          tone={existing.enabled ? "positive" : "neutral"}
+                        >
+                          {existing.enabled ? "Active" : "Paused"}
+                        </Badge>
+                      ) : (
+                        <Badge tone="neutral">Not scheduled</Badge>
+                      )}
+                    </div>
+
+                    <div className="flex shrink-0 flex-wrap items-center gap-2">
+                      {existing ? (
+                        <>
+                          <button
+                            type="button"
+                            className="rounded-[10px] border border-border px-3 py-1.5 text-sm font-medium text-text-2 hover:bg-page"
+                            onClick={() =>
+                              updateSchedule.mutate({
+                                id: existing.id,
+                                enabled: !existing.enabled,
+                              })
+                            }
+                          >
+                            {existing.enabled ? "Pause" : "Resume"}
+                          </button>
+                          <button
+                            type="button"
+                            className="rounded-[10px] border border-border px-3 py-1.5 text-sm font-medium text-text-2 hover:bg-page"
+                            onClick={() => toggleEditor(entry, existing)}
+                            data-testid={`edit-schedule-${entry.kind}`}
+                          >
+                            Edit
+                          </button>
+                          <button
+                            type="button"
+                            className="rounded-[10px] border border-border px-3 py-1.5 text-sm font-medium text-danger hover:bg-page"
+                            onClick={() =>
+                              deleteSchedule.mutate({ id: existing.id })
+                            }
+                          >
+                            Remove
+                          </button>
+                        </>
+                      ) : (
+                        <button
+                          type="button"
+                          className="rounded-[10px] bg-orange px-3 py-1.5 text-sm font-semibold text-white hover:opacity-90"
+                          onClick={() => toggleEditor(entry)}
+                          data-testid={`schedule-${entry.kind}`}
+                        >
+                          Schedule
+                        </button>
+                      )}
+                    </div>
+                  </div>
+
+                  {expanded ? (
+                    <>
+                      <ScheduleFlow
+                        entry={entry}
+                        productLabel={productLabel}
+                        existing={existing ?? null}
+                        recurrence={draftRecurrence}
+                        onRecurrenceChange={setDraftRecurrence}
+                        scope={draftScope}
+                        onScopeChange={setDraftScope}
+                        fieldValues={draftValues}
+                        onFieldValuesChange={setDraftValues}
+                        fields={fields}
+                        error={error}
+                        busy={busy}
+                        onCancel={closeEditor}
+                        onSave={() => save(entry, existing)}
+                      />
+                      {existing ? <RunHistory existing={existing} /> : null}
+                    </>
+                  ) : null}
+                </li>
+              );
+            })}
+          </ul>
+        ) : null}
+      </div>
     </div>
   );
 }
