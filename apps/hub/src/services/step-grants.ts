@@ -113,22 +113,31 @@ export function declaredCapabilityNames(
   definition: WorkflowDefinition,
 ): string[] {
   const names = new Set<string>();
+  type PrimitiveRecord = {
+    agent?: { capabilities?: readonly string[] };
+    effect?: { requires?: readonly string[] };
+    body?: WorkflowDefinition;
+    step?: PrimitiveRecord;
+  };
+  const visitPrimitive = (record: PrimitiveRecord): void => {
+    for (const capability of record.agent?.capabilities ?? []) {
+      names.add(capability);
+    }
+    for (const required of record.effect?.requires ?? []) {
+      names.add(required);
+    }
+    // A MapPrimitive carries its agent on the INNER step (`step.agent`), not
+    // at the primitive's top level — mirror interchange's `extractAgent`,
+    // which special-cases kind "map" the same way. Missing this dropped every
+    // map-only tool package from the frame grants.
+    if (record.step !== undefined) visitPrimitive(record.step);
+    if (record.body !== undefined) visit(record.body);
+  };
   const visit = (def: WorkflowDefinition | undefined): void => {
     const steps = def?.steps ?? {};
     for (const primitive of Object.values(steps)) {
       if (primitive === undefined || primitive === null) continue;
-      const record = primitive as {
-        agent?: { capabilities?: readonly string[] };
-        effect?: { requires?: readonly string[] };
-        body?: WorkflowDefinition;
-      };
-      for (const capability of record.agent?.capabilities ?? []) {
-        names.add(capability);
-      }
-      for (const required of record.effect?.requires ?? []) {
-        names.add(required);
-      }
-      if (record.body !== undefined) visit(record.body);
+      visitPrimitive(primitive as PrimitiveRecord);
     }
   };
   visit(definition);

@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { evaluateGrants } from "@intx/authz";
-import { action, defineWorkflow } from "@intx/workflow";
+import { action, defineWorkflow, map } from "@intx/workflow";
+import { deterministicToolStep } from "@workbench/agents";
 import { assembleWorkflowDeployConfig } from "./workflow-deploy-config";
 import { frameGrantRules } from "./step-grants";
 
@@ -47,6 +48,39 @@ describe("frameGrantRules", () => {
       "invoke",
     );
     expect(sibling.effect).toBe("allow");
+  });
+});
+
+describe("frameGrantRules over map primitives", () => {
+  // Regression pin: a MapPrimitive carries its agent at `step.agent`, not at
+  // the primitive's top level, and has no `body`. The first defensive
+  // collector read only `agent`/`effect`/`body`, so a workflow whose ONLY
+  // tool-bearing step is a map (pain-point-collateral's persist,
+  // reddit-opportunity-scanner's collect/persist) contributed NOTHING to the
+  // frame grants — reproducing the exact "not authorized (null)" class the
+  // frame-grants fix shipped to close.
+  test("a workflow whose only tool-bearing step is a map still grants that tool", async () => {
+    const definition = defineWorkflow({
+      id: "map-grants-test",
+      trigger: { type: "manual" },
+      steps: {
+        persist: map({
+          over: { from: "trigger.payload" },
+          step: deterministicToolStep({
+            id: "map-grants-persist",
+            tool: "artifact_create",
+            input: { from: "item" },
+          }),
+        }),
+      },
+    });
+    const rules = frameGrantRules(definition);
+    const granted = await evaluateGrants(
+      rules,
+      "tool:@workbench/tools-artifact/artifact:artifact_create",
+      "invoke",
+    );
+    expect(granted.effect).toBe("allow");
   });
 });
 
