@@ -12,7 +12,11 @@ import {
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import React from "react";
 import { ActiveContextProvider } from "../lib/active-context-store";
-import { PageChromeProvider, usePageChromeSlot } from "../lib/page-chrome";
+import {
+  PageChromeProvider,
+  usePageChromeSlot,
+  useSetPageChrome,
+} from "../lib/page-chrome";
 import type { WorkflowPanelProps } from "@workbench/ui";
 import * as workflowHooks from "../hooks/use-workflow";
 import type { LogRunState, RunRecord } from "../lib/run-state-adapter";
@@ -144,6 +148,14 @@ function ChromeSlotProbe() {
   return <div data-testid="chrome-slot">{usePageChromeSlot()}</div>;
 }
 
+// Stands in for a host page (e.g. WorkflowsPage) that publishes its own
+// stable chrome node unconditionally, the way `useSetPageChrome(chrome)`
+// (default `enabled: true`) is used at the page level.
+function HostChromePublisher() {
+  useSetPageChrome(<div>Host Chrome</div>);
+  return null;
+}
+
 function wrapper({ children }: { children: React.ReactNode }) {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } },
@@ -217,6 +229,51 @@ describe("WorkflowRunPane", () => {
     });
     await waitFor(() => screen.getByTestId("chrome-slot"));
     expect(screen.queryByTestId("run-pane-stop")).toBeNull();
+  });
+
+  it("does not clear a host page's chrome when embedded (CL-4420)", async () => {
+    // Regression: an embedded pane used to call useSetPageChrome(record ? runChrome
+    // : null) unconditionally, so once `record` loaded it clobbered whatever the
+    // host page (e.g. WorkflowsPage) had already published with `null` — and
+    // since the host's own chrome node is memoized (stable identity), its effect
+    // never re-fired to restore it, so the title stayed blank. The fix passes
+    // `!embedded` as `useSetPageChrome`'s `enabled` arg so an embedded pane never
+    // touches the shared chrome slot at all.
+    record = makeRecord({ status: "running" });
+    render(
+      <>
+        <HostChromePublisher />
+        <WorkflowRunPane
+          deploymentId="wfr_1"
+          onClose={() => undefined}
+          embedded
+        />
+      </>,
+      { wrapper },
+    );
+    // Give the pane's effects (including its own chrome effect) a chance to run.
+    // Embedded mode always skips the kind's own Panel (`Panel = embedded ?
+    // undefined : uiModule?.Panel`), so this lands on the generic
+    // WorkflowRunBlocks fallback, not the custom Panel.
+    await waitFor(() => screen.getByText("Waiting for run activity…"));
+    expect(screen.getByTestId("chrome-slot").textContent).toBe("Host Chrome");
+  });
+
+  it("publishes its own chrome (Stop control) when NOT embedded, confirming the gate is real", async () => {
+    record = makeRecord({ status: "running" });
+    render(
+      <>
+        <HostChromePublisher />
+        <WorkflowRunPane deploymentId="wfr_1" onClose={() => undefined} />
+      </>,
+      { wrapper },
+    );
+    await waitFor(() => screen.getByTestId("run-pane-stop"));
+    // Non-embedded pane DOES own the chrome slot, overwriting the host's node —
+    // proves the assertion above is exercising a real conditional, not a tautology.
+    expect(screen.getByTestId("chrome-slot").textContent).not.toBe(
+      "Host Chrome",
+    );
   });
 
   it("renders the workflow kind own Panel when its module exports one", async () => {

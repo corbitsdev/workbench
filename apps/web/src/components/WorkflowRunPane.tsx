@@ -349,7 +349,7 @@ function WorkflowRunPaneInner({
       runId,
     ],
   );
-  useSetPageChrome(embedded ? null : record ? runChrome : null);
+  useSetPageChrome(record ? runChrome : null, !embedded);
 
   // Index says failed but the log is still non-terminal — the run was killed
   // externally (redeploy/abort), not a genuine step failure. Drives the

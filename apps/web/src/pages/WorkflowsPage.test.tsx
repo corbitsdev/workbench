@@ -11,7 +11,11 @@ import {
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import React from "react";
 import { createMemoryRouter, RouterProvider } from "react-router";
-import { PageChromeProvider, usePageChromeSlot } from "../lib/page-chrome";
+import {
+  PageChromeProvider,
+  usePageChromeSlot,
+  useSetPageChrome,
+} from "../lib/page-chrome";
 
 let activeTenantId: string | null = "ten-1";
 
@@ -157,6 +161,15 @@ mock.module("./workflows/ConnectedScheduleInspector", () => ({
   ),
 }));
 
+// Mirrors the real WorkflowRunPane's page-chrome contract (CL-4420: it
+// publishes chrome via `useSetPageChrome(node, !embedded)` so an embedded
+// pane never touches the host's chrome slot). This mock exists to keep this
+// file's WorkflowsPage-level integration light — it does not itself prove the
+// production fix, since it hardcodes the same `!embedded` gate rather than
+// importing WorkflowRunPane.tsx's logic. That proof (the pane's own
+// conditional actually reverting the host's chrome when the `enabled` gate is
+// removed) lives in WorkflowRunPane.test.tsx's "does not clear a host page's
+// chrome when embedded (CL-4420)" test, which renders the REAL component.
 mock.module("../components/WorkflowRunPane", () => ({
   WorkflowRunPane: ({
     deploymentId,
@@ -164,14 +177,20 @@ mock.module("../components/WorkflowRunPane", () => ({
   }: {
     deploymentId: string;
     embedded?: boolean;
-  }) => (
-    <div
-      data-testid="live-run-inspector-pane"
-      data-embedded={embedded ? "true" : "false"}
-    >
-      Run {deploymentId}
-    </div>
-  ),
+  }) => {
+    useSetPageChrome(
+      <div data-testid="run-pane-chrome">Run chrome {deploymentId}</div>,
+      !embedded,
+    );
+    return (
+      <div
+        data-testid="live-run-inspector-pane"
+        data-embedded={embedded ? "true" : "false"}
+      >
+        Run {deploymentId}
+      </div>
+    );
+  },
 }));
 
 const { WorkflowsPage } = await import("./WorkflowsPage");
@@ -256,6 +275,62 @@ describe("WorkflowsPage", () => {
     const button = screen.getByTestId("new-workflow-button");
     expect(button.className).toContain("flex");
     expect(button.className).toContain("items-center");
+  });
+
+  it("always publishes the Workflows page-chrome title, across list/new/schedule/run states (CL-4420)", async () => {
+    // Regression: the top-bar title used to disappear once a run's embedded
+    // WorkflowRunPane cleared the shared chrome slot (see WorkflowRunPane's
+    // useSetPageChrome(record ? runChrome : null, !embedded) and
+    // page-chrome.test.tsx for the mechanism-level test). Assert the actual
+    // chrome value WorkflowsPage publishes, not just rendered DOM text, since
+    // the AppTopBar chrome slot is what a real regression would blank out.
+    //
+    // The `?run=` case below is the one that actually exercises the fix: the
+    // mocked WorkflowRunPane (above) mirrors the real component's
+    // `useSetPageChrome(node, !embedded)` call, and WorkflowsPage always
+    // mounts it with `embedded`. Before the fix this branch published `null`
+    // unconditionally and clobbered "Workflows" — see WorkflowRunPane.test.tsx
+    // for the same assertion against the REAL component (the mock here only
+    // proves the WorkflowsPage-level wiring, not the pane's own logic).
+    renderWorkflowsPage();
+    await waitFor(() => {
+      expect(screen.getByRole("table", { name: "Workflows" })).toBeTruthy();
+    });
+    await waitFor(() => {
+      const slot = screen.getByTestId("chrome-slot");
+      expect(slot.textContent).toContain("Workflows");
+    });
+    cleanup();
+
+    renderWorkflowsPage("/workflows?new=1");
+    await waitFor(() => {
+      expect(screen.getByTestId("new-workflow-picker")).toBeTruthy();
+    });
+    await waitFor(() => {
+      const slot = screen.getByTestId("chrome-slot");
+      expect(slot.textContent).toContain("Workflows");
+    });
+    cleanup();
+
+    renderWorkflowsPage("/workflows?schedule=sched-1");
+    await waitFor(() => {
+      expect(screen.getByTestId("schedule-inspector-connected")).toBeTruthy();
+    });
+    await waitFor(() => {
+      const slot = screen.getByTestId("chrome-slot");
+      expect(slot.textContent).toContain("Workflows");
+    });
+    cleanup();
+
+    renderWorkflowsPage("/workflows?run=run-live-1");
+    await waitFor(() => {
+      expect(screen.getByTestId("live-run-inspector-pane")).toBeTruthy();
+    });
+    await waitFor(() => {
+      const slot = screen.getByTestId("chrome-slot");
+      expect(slot.textContent).toContain("Workflows");
+    });
+    expect(screen.queryByTestId("run-pane-chrome")).toBeNull();
   });
 
   it("selects a schedule from ?schedule= and shows schedule inspector", async () => {

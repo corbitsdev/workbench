@@ -81,13 +81,28 @@ export function usePageChromeLeadingSlot(): ReactNode | null {
   return useContext(PageChromeValuesCtx)?.leadingChrome ?? null;
 }
 
-/** Mount page-specific actions in the global app header (not inside the pane). */
-export function useSetPageChrome(node: ReactNode | null): void {
+/**
+ * Mount page-specific actions in the global app header (not inside the pane).
+ *
+ * `enabled` (default `true`) lets a component that is sometimes embedded
+ * inline inside another page's layout — rather than owning the route's
+ * top-bar chrome — opt out entirely. Pass `enabled: false` in that case
+ * (e.g. `useSetPageChrome(node, !embedded)`) instead of publishing `null`:
+ * publishing `null` still runs the effect and overwrites whatever chrome the
+ * host page published, and since the host page's own chrome node is
+ * typically memoized (stable identity), its effect won't re-fire to restore
+ * it — the `null` sticks (CL-4420).
+ */
+export function useSetPageChrome(
+  node: ReactNode | null,
+  enabled: boolean = true,
+): void {
   const setChrome = useContext(PageChromeSettersCtx)?.setChrome;
   useEffect(() => {
+    if (!enabled) return;
     setChrome?.(node);
     return () => setChrome?.(null);
-  }, [node, setChrome]);
+  }, [node, setChrome, enabled]);
 }
 
 /** Mount page-specific leading nav in the global app header left area. */
