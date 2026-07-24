@@ -45,10 +45,12 @@ mock.module("../../lib/active-workbench-context", () => ({
 
 // useStartWorkflow goes through the generic `api` helper; stub the whole hook
 // module so we don't need a full hub HTTP stack.
-const startMutateAsync = mock(async (vars: { kind: string; input: unknown }) => {
-  const res = await startApi(vars);
-  return res;
-});
+const startMutateAsync = mock(
+  async (vars: { kind: string; input: unknown }) => {
+    const res = await startApi(vars);
+    return res;
+  },
+);
 
 mock.module("../../hooks/use-workflow", () => ({
   useStartWorkflow: () => ({
@@ -196,7 +198,9 @@ describe("ConnectedScheduleInspector", () => {
   it("enters edit mode via ScheduleFlow and saves recurrence", async () => {
     renderInspector();
     fireEvent.click(screen.getByTestId("schedule-edit"));
-    expect(screen.getByTestId("connected-schedule-inspector-edit")).toBeTruthy();
+    expect(
+      screen.getByTestId("connected-schedule-inspector-edit"),
+    ).toBeTruthy();
     expect(
       screen.getByTestId("schedule-editor-last30days-research"),
     ).toBeTruthy();
@@ -233,5 +237,57 @@ describe("ConnectedScheduleInspector", () => {
     expect(screen.getByTestId("pause-resume-schedule").textContent).toMatch(
       /Resume/i,
     );
+  });
+
+  it("renders scope as plain read-only metadata, not an input, in view mode", () => {
+    renderInspector();
+    const panel = screen.getByTestId("connected-schedule-inspector");
+    expect(screen.getAllByText("Just me").length).toBeGreaterThan(0);
+    // View mode is entirely read-only — nothing should render as an <input>
+    // (that's reserved for the Edit flow), so Scope can't look editable.
+    expect(panel.querySelectorAll("input").length).toBe(0);
+  });
+
+  it("edits the schedule name through an input under Edit and saves it", async () => {
+    renderInspector();
+    fireEvent.click(screen.getByTestId("schedule-edit"));
+
+    const nameInput = screen.getByTestId(
+      "schedule-name-input-last30days-research",
+    ) as HTMLInputElement;
+    expect(nameInput.value).toBe("Weekly research");
+
+    fireEvent.change(nameInput, { target: { value: "My custom label" } });
+    fireEvent.click(screen.getByTestId("schedule-flow-primary"));
+
+    await waitFor(() => {
+      expect(updateMeSchedule).toHaveBeenCalled();
+    });
+    const [id, patch] = updateMeSchedule.mock.calls[0] as [
+      string,
+      { name?: string },
+    ];
+    expect(id).toBe("sched-1");
+    expect(patch.name).toBe("My custom label");
+  });
+
+  it("clearing the name field resets it to the workflow kind default", async () => {
+    renderInspector();
+    fireEvent.click(screen.getByTestId("schedule-edit"));
+
+    const nameInput = screen.getByTestId(
+      "schedule-name-input-last30days-research",
+    ) as HTMLInputElement;
+    fireEvent.change(nameInput, { target: { value: "  " } });
+    fireEvent.click(screen.getByTestId("schedule-flow-primary"));
+
+    await waitFor(() => {
+      expect(updateMeSchedule).toHaveBeenCalled();
+    });
+    const [, patch] = updateMeSchedule.mock.calls[0] as [
+      string,
+      { name?: string },
+    ];
+    expect(patch.name).toBe("last30days-research");
   });
 });

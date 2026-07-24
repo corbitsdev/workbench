@@ -160,23 +160,32 @@ export function ScheduleInspectorView({
           mono
           {...(next || last
             ? {
-                sub: [next ? `Next ${next}` : null, last ? `last ${last}` : null]
+                sub: [
+                  next ? `Next ${next}` : null,
+                  last ? `last ${last}` : null,
+                ]
                   .filter(Boolean)
                   .join(" · "),
               }
             : {})}
         />
-        <ReadBlock
-          label="Name"
-          value={name?.trim() ? name : "—"}
-          sub="Optional label · not the workflow kind"
-        />
-        <ReadBlock
-          label="Scope"
-          value={scope === "tenant" ? "Everyone" : "Just me"}
-          sub="Fixed at create — remove & recreate to change"
-        />
       </div>
+      {/* Name and scope are read-only here (edit the name under Edit; scope
+          is fixed at create) — plain metadata rows, not editable-looking
+          field cards. */}
+      <InspectorPanelTitle>Details</InspectorPanelTitle>
+      <InspectorKv
+        rows={[
+          {
+            label: "Name",
+            value: name?.trim() ? name : "Default (workflow name)",
+          },
+          {
+            label: "Scope",
+            value: scope === "tenant" ? "Everyone" : "Just me",
+          },
+        ]}
+      />
       {recentRuns}
       {(kindSlug || scheduleId || last) && (
         <>

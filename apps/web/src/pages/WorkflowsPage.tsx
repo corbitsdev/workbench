@@ -368,6 +368,7 @@ export function WorkflowsPage() {
     }
     return (
       <InspectorShell
+        className="h-full"
         empty={
           <InspectorEmpty
             title="Select a workflow"
@@ -473,8 +474,8 @@ export function WorkflowsPage() {
         ) : null}
       </div>
 
-      <div className="grid min-h-0 flex-1 grid-cols-1 lg:grid-cols-[minmax(0,1fr)_minmax(300px,380px)]">
-        <div className="min-h-0 overflow-hidden">
+      <div className="grid min-h-0 flex-1 grid-cols-1 grid-rows-[minmax(0,1fr)] lg:grid-cols-[minmax(0,1fr)_minmax(300px,380px)]">
+        <div className="flex min-h-0 flex-col overflow-hidden">
           {loading ? (
             <div className="px-4 py-10 text-center text-[13px] text-text-3">
               Loading workflows…
@@ -485,6 +486,7 @@ export function WorkflowsPage() {
             </div>
           ) : (
             <WorkflowsList
+              className="h-full"
               live={filteredLive}
               scheduled={filteredScheduled}
               selectedId={selectedId}
@@ -525,7 +527,7 @@ export function WorkflowsPage() {
             />
           )}
         </div>
-        <div className="hidden min-h-0 overflow-hidden border-l border-border lg:block">
+        <div className="hidden min-h-0 flex-col overflow-hidden border-l border-border lg:flex">
           {inspector}
         </div>
       </div>

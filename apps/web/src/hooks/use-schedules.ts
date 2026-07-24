@@ -38,6 +38,7 @@ type UpdateVars = {
   enabled?: boolean;
   recurrence?: ScheduleRecurrence;
   payload?: Record<string, unknown>;
+  name?: string;
 };
 
 // Toggling enablement (or moving the hour / payload) applies optimistically so
@@ -51,7 +52,7 @@ export function useUpdateSchedule() {
     { previous: ScheduledTrigger[] | undefined }
   >({
     mutationFn: ({ id, ...patch }) => updateMeSchedule(id, patch),
-    onMutate: async ({ id, enabled, recurrence, payload }) => {
+    onMutate: async ({ id, enabled, recurrence, payload, name }) => {
       await queryClient.cancelQueries({ queryKey: SCHEDULES_KEY });
       const previous =
         queryClient.getQueryData<ScheduledTrigger[]>(SCHEDULES_KEY);
@@ -65,6 +66,7 @@ export function useUpdateSchedule() {
                   ...(enabled !== undefined ? { enabled } : {}),
                   ...(recurrence !== undefined ? { recurrence } : {}),
                   ...(payload !== undefined ? { triggerPayload: payload } : {}),
+                  ...(name !== undefined ? { name } : {}),
                 }
               : s,
           ),

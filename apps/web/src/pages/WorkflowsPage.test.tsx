@@ -333,6 +333,20 @@ describe("WorkflowsPage", () => {
     expect(screen.queryByTestId("run-pane-chrome")).toBeNull();
   });
 
+  it("bounds the split-panel row so the list and inspector scroll independently", async () => {
+    renderWorkflowsPage();
+    await waitFor(() => {
+      expect(screen.getByRole("table", { name: "Workflows" })).toBeTruthy();
+    });
+    const table = screen.getByRole("table", { name: "Workflows" });
+    const splitPanel = table.closest(".grid");
+    expect(splitPanel).not.toBeNull();
+    // A bounded row track (not the default content-sized "auto") is what
+    // lets the inner min-h-0/overflow-auto panels actually clip and scroll
+    // on their own instead of growing the whole page (CL-4421).
+    expect(splitPanel!.className).toContain("grid-rows-[minmax(0,1fr)]");
+  });
+
   it("selects a schedule from ?schedule= and shows schedule inspector", async () => {
     renderWorkflowsPage("/workflows?schedule=sched-1");
     await waitFor(() => {

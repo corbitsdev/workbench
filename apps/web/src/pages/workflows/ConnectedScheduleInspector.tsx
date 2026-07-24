@@ -213,6 +213,9 @@ function ConnectedScheduleInspectorBody({
   const [draftRecurrence, setDraftRecurrence] = useState<ScheduleRecurrence>(
     schedule.recurrence,
   );
+  const [draftName, setDraftName] = useState<string>(
+    schedule.name !== schedule.workflowKind ? schedule.name : "",
+  );
   const [draftValues, setDraftValues] = useState<Record<string, unknown>>(
     () => {
       const initial: Record<string, unknown> = {};
@@ -296,10 +299,12 @@ function ConnectedScheduleInspectorBody({
       return;
     }
     const formPayload = buildScheduleTriggerPayload(fields, draftValues);
+    const trimmedName = draftName.trim();
     try {
       await updateSchedule.mutateAsync({
         id: schedule.id,
         recurrence: draftRecurrence,
+        name: trimmedName ? trimmedName : schedule.workflowKind,
         ...(fields.length > 0
           ? {
               payload: {
@@ -342,9 +347,14 @@ function ConnectedScheduleInspectorBody({
           fields={fields}
           error={error}
           busy={updateSchedule.isPending}
+          name={draftName}
+          onNameChange={setDraftName}
           onCancel={() => {
             setError(null);
             setDraftRecurrence(schedule.recurrence);
+            setDraftName(
+              schedule.name !== schedule.workflowKind ? schedule.name : "",
+            );
             setEditing(false);
           }}
           onSave={handleSave}
@@ -382,6 +392,7 @@ function ConnectedScheduleInspectorBody({
       data-testid="connected-schedule-inspector"
     >
       <ScheduleInspectorView
+        className="h-full"
         enabled={schedule.enabled}
         scope={schedule.scope}
         title={productLabel}
@@ -398,6 +409,9 @@ function ConnectedScheduleInspectorBody({
         onEdit={() => {
           setError(null);
           setDraftRecurrence(schedule.recurrence);
+          setDraftName(
+            schedule.name !== schedule.workflowKind ? schedule.name : "",
+          );
           setEditing(true);
         }}
         onRunNow={handleRunNow}

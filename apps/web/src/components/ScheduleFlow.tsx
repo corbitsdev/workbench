@@ -47,6 +47,12 @@ export type ScheduleFlowProps = {
    * page header) pass `false` to avoid rendering it twice.
    */
   showHeader?: boolean;
+  /**
+   * Optional custom label for the schedule (CL-4422). Omit to hide the
+   * control entirely — only callers that want the label editable pass this.
+   */
+  name?: string;
+  onNameChange?: (next: string) => void;
 };
 
 /**
@@ -79,6 +85,8 @@ export function ScheduleFlow({
   onCancel,
   onSave,
   showHeader = true,
+  name,
+  onNameChange,
 }: ScheduleFlowProps) {
   const isEdit = existing != null;
   const canChooseScope = !isEdit && entry.allowedScopes.length > 1;
@@ -121,9 +129,7 @@ export function ScheduleFlow({
       <div className="mb-4">
         {showHeader ? (
           <>
-            <h3 className="text-sm font-semibold text-text">
-              {productLabel}
-            </h3>
+            <h3 className="text-sm font-semibold text-text">{productLabel}</h3>
             {entry.description ? (
               <p className="mt-1 text-sm text-text-2">{entry.description}</p>
             ) : null}
@@ -142,6 +148,31 @@ export function ScheduleFlow({
           </p>
         ) : null}
       </div>
+
+      {onNameChange ? (
+        <div className="mb-4">
+          <label
+            htmlFor={`schedule-name-${entry.kind}`}
+            className="mb-1 block text-xs font-semibold uppercase tracking-[0.05em] text-text-3"
+          >
+            Name (optional)
+          </label>
+          <input
+            id={`schedule-name-${entry.kind}`}
+            type="text"
+            value={name ?? ""}
+            onChange={(e) => onNameChange(e.target.value)}
+            placeholder={productLabel}
+            maxLength={100}
+            className="w-full max-w-xs rounded-[10px] border border-border bg-page px-3 py-2 text-sm"
+            data-testid={`schedule-name-input-${entry.kind}`}
+          />
+          <p className="mt-2 text-xs text-text-3">
+            A label to tell this schedule apart from others — not the workflow
+            kind. Leave blank to use the default.
+          </p>
+        </div>
+      ) : null}
 
       <div className="mb-4">
         <label
