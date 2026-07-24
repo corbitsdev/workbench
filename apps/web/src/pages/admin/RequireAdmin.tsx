@@ -17,7 +17,7 @@ export function RequireAdmin({ children }: { children: ReactNode }) {
 
   if (meQuery.isLoading) {
     return (
-      <PagePanel>
+      <PagePanel surface="surface">
         <div className="space-y-3 p-6">
           <Skeleton className="h-8 w-48" />
           <Skeleton className="h-64 w-full" />
@@ -27,7 +27,7 @@ export function RequireAdmin({ children }: { children: ReactNode }) {
   }
   if (meQuery.isError || !meQuery.data?.isAdmin) {
     return (
-      <PagePanel>
+      <PagePanel surface="surface">
         <div className="mx-auto max-w-md p-10 text-center">
           <h1 className="text-lg font-semibold text-text">Admin only</h1>
           <p className="mt-2 text-sm text-text-2">

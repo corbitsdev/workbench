@@ -65,7 +65,7 @@ export function OwnerLayout() {
 
   if (meQuery.isLoading) {
     return (
-      <PagePanel>
+      <PagePanel surface="surface">
         <div className="space-y-3 p-6">
           <Skeleton className="h-8 w-48" />
           <Skeleton className="h-64 w-full" />
@@ -76,7 +76,7 @@ export function OwnerLayout() {
 
   if (meQuery.isError) {
     return (
-      <PagePanel>
+      <PagePanel surface="surface">
         <div className="p-6 text-sm text-text-2">
           Could not load your account. Check your connection and try again.
         </div>
@@ -86,7 +86,7 @@ export function OwnerLayout() {
 
   if (!meQuery.data?.isOwner) {
     return (
-      <PagePanel>
+      <PagePanel surface="surface">
         <div className="mx-auto max-w-md p-10 text-center">
           <h1 className="text-lg font-semibold text-text">Owner only</h1>
           <p className="mt-2 text-sm text-text-2">
@@ -99,7 +99,7 @@ export function OwnerLayout() {
   }
 
   return (
-    <PagePanel scroll={false}>
+    <PagePanel scroll={false} surface="surface">
       <p className="border-b border-border px-6 py-3 text-sm text-text-2">
         Underlying setup, features, models, and credentials for this workbench.
       </p>
