@@ -198,7 +198,9 @@ describe("ArtifactDetailPage", () => {
     const view = renderAt("art-1");
     const header = view.getByTestId("artifact-detail-header");
     expect(header.textContent).toContain("v3");
-    expect(header.textContent).toContain("One pager");
+    expect(view.getByTestId("artifact-detail-kind").textContent).toBe(
+      "One-Pager",
+    );
     expect(header.textContent).toContain("January 1, 2026");
   });
 

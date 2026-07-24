@@ -90,7 +90,12 @@ function ArtifactSummaryHeader({
       <h1 className="text-lg font-semibold leading-snug text-text">{title}</h1>
       <div className="flex flex-wrap items-center gap-2 text-sm">
         {kindLabel && (
-          <span className="font-medium text-text">{kindLabel}</span>
+          <span
+            className="font-medium text-text"
+            data-testid="artifact-detail-kind"
+          >
+            {kindLabel}
+          </span>
         )}
         <span className="text-text-3">v{version}</span>
         <span className="text-text-3">{formatArtifactDate(createdAt)}</span>
