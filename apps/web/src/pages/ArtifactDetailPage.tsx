@@ -24,7 +24,9 @@ import { buildApiUrl } from "../lib/api";
 import { clientOptions } from "../lib/client-options";
 import ArtifactBody, {
   ArtifactUploadPresenceSchema,
+  getResearchReportActionsProps,
 } from "../components/ArtifactBody";
+import { ReportActions } from "../components/ResearchBody";
 import { ErrorBoundary } from "../components/ErrorBoundary";
 import { resolveKindLabel } from "../lib/resolve-kind-label";
 import { useActiveWorkbench } from "../lib/active-workbench-context";
@@ -158,11 +160,19 @@ export function ArtifactDetailPage() {
       (artifact.kind === "gamma_presentation" &&
         hasUploadSource(artifact.source));
     const gammaUrl = resolveGammaUrl(artifact.kind, artifact.content);
+    const researchActionsProps = getResearchReportActionsProps(artifact);
     return (
       <div
         data-testid="artifact-detail-chrome-actions"
         className="flex flex-row flex-wrap items-center justify-end gap-1"
       >
+        {researchActionsProps && (
+          <ReportActions
+            markdown={researchActionsProps.markdown}
+            brief={researchActionsProps.brief}
+            variant="chrome"
+          />
+        )}
         {canDownload && (
           <a
             href={buildApiUrl(`/artifacts/${artifact.id}/download`)}

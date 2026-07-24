@@ -14,11 +14,14 @@ import { CsvTable, CsvTooLarge } from "./CsvTable";
 import { EmptyContentNotice, PreviewFallback } from "./ArtifactContentNotice";
 import GammaPresentationBody from "./GammaPresentationBody";
 import PresentationBody from "./PresentationBody";
-import ResearchBody, { parseResearchBrief } from "./ResearchBody";
+import ResearchBody, {
+  parseResearchBrief,
+  type ResearchBrief,
+} from "./ResearchBody";
 import { buildApiUrl, buildSameOriginApiUrl } from "../lib/api";
 import { useArtifactCsvPreview } from "../hooks/use-artifact-csv-preview";
 
-interface ArtifactBodyArtifact {
+export interface ArtifactBodyArtifact {
   content: string;
   kind: string;
   source?: unknown;
@@ -50,6 +53,22 @@ function extractBrief(source: unknown): unknown {
     return (source as Record<string, unknown>).brief;
   }
   return undefined;
+}
+
+// Lets a host page (the artifact detail page's top action bar) render the
+// research report's export actions itself, so ResearchBody's `detail` layout
+// doesn't need to duplicate them inline. Returns null when the artifact isn't
+// a research report with a parseable brief and a non-empty prose body — the
+// same conditions ResearchBody uses to decide whether export actions apply.
+export function getResearchReportActionsProps(
+  artifact: Pick<ArtifactBodyArtifact, "kind" | "content" | "source">,
+): { markdown: string; brief: ResearchBrief } | null {
+  if (artifact.kind !== "research") return null;
+  const brief = parseResearchBrief(extractBrief(artifact.source));
+  if (brief === null) return null;
+  const markdown = artifact.content.trim();
+  if (markdown === "") return null;
+  return { markdown, brief };
 }
 
 function EmailBody({
@@ -522,9 +541,7 @@ export default function ArtifactBody({
           />
         );
       if (isImageUpload(artifact.source)) {
-        return (
-          <ImageBody artifactId={artifact.id} filename={uploadFilename} />
-        );
+        return <ImageBody artifactId={artifact.id} filename={uploadFilename} />;
       }
       if (isCsvUpload(artifact.source, uploadFilename)) {
         return (

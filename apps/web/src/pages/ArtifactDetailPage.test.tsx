@@ -68,9 +68,19 @@ mock.module("@workbench/client/react", () => ({
     isError: false,
   }),
 }));
+let researchActionsResult: {
+  markdown: string;
+  brief: {
+    topic: string;
+    stats: { sourceCount: number; itemCount: number };
+    citations: unknown[];
+  };
+} | null = null;
+
 mock.module("../components/ArtifactBody", () => ({
   default: (props: { artifact: { title: string } }) =>
     React.createElement("div", { "data-testid": "body" }, props.artifact.title),
+  getResearchReportActionsProps: () => researchActionsResult,
 }));
 
 import { ArtifactDetailPage } from "./ArtifactDetailPage";
@@ -159,6 +169,7 @@ beforeEach(() => {
   meResult = { isAdmin: true };
   archiveMutate.mockClear();
   openWithMessage.mockClear();
+  researchActionsResult = null;
 });
 afterEach(() => cleanup());
 
@@ -171,9 +182,7 @@ describe("ArtifactDetailPage", () => {
     // visible ON the page, not only on the gallery card — the body content
     // frequently opens with prose, not a heading, leaving the page unnamed.
     // This reverses the earlier "no redundant title header" decision.
-    expect(
-      view.getByRole("heading", { name: "Acme One-Pager" }),
-    ).toBeDefined();
+    expect(view.getByRole("heading", { name: "Acme One-Pager" })).toBeDefined();
     const leading = view.getByTestId("page-chrome-leading");
     expect(
       within(leading).getByRole("link", { name: "Back to Artifacts" }),
@@ -206,6 +215,51 @@ describe("ArtifactDetailPage", () => {
     // Archive is gated on the async getMe permission query, so wait for it.
     await view.findByRole("button", { name: /archive/i });
     expect(chrome.textContent).toContain("Archive");
+  });
+
+  it("surfaces the research report's Copy markdown and Download .md actions in the top-bar chrome, not the body", () => {
+    artifactResult = {
+      data: {
+        id: "art-research",
+        kind: "research",
+        title: "AI Coding Agents",
+        version: 1,
+        ownerPrincipalId: null,
+        createdAt: "2026-01-01T00:00:00.000Z",
+        sessionId: null,
+        sessionName: null,
+        sessionStatus: null,
+        parentId: null,
+      },
+      isLoading: false,
+      isError: false,
+    };
+    researchActionsResult = {
+      markdown: "## Synthesis\n\nBody markdown.",
+      brief: {
+        topic: "AI Coding Agents",
+        stats: { sourceCount: 5, itemCount: 20 },
+        citations: [],
+      },
+    };
+    const view = renderAt("art-research");
+    const chrome = view.getByTestId("page-chrome");
+    expect(
+      within(chrome).getByRole("button", { name: "Copy markdown" }),
+    ).toBeDefined();
+    expect(
+      within(chrome).getByRole("button", { name: "Download .md" }),
+    ).toBeDefined();
+    // The mocked ArtifactBody stub only renders the artifact title, standing
+    // in for the real body — asserting the actions are absent from it proves
+    // they live solely in the chrome bar, not duplicated inline.
+    const body = view.getByTestId("body");
+    expect(
+      within(body).queryByRole("button", { name: "Copy markdown" }),
+    ).toBeNull();
+    expect(
+      within(body).queryByRole("button", { name: "Download .md" }),
+    ).toBeNull();
   });
 
   it("surfaces a Download action above the fold for a downloadable file artifact", async () => {

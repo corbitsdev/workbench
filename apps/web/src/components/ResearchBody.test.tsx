@@ -381,6 +381,36 @@ describe("ResearchBody", () => {
       throw new Error("Citation source must be a plain label, not a link");
   });
 
+  it("omits the topic heading and inline export actions in the detail layout (host page renders them)", () => {
+    render(
+      React.createElement(ResearchBody, {
+        brief: FIXTURE_BRIEF,
+        body: FIXTURE_REPORT,
+        layout: "detail",
+      }),
+    );
+    expect(
+      screen.queryByRole("heading", { name: "AI Infrastructure Trends" }),
+    ).toBeNull();
+    expect(screen.queryByRole("button", { name: "Copy markdown" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Download .md" })).toBeNull();
+    // Stats line stays — it is genuinely-new metadata, not a duplicated title.
+    screen.getByText(/12 sources · 47 items · May 15 – Jun 15, 2026/);
+  });
+
+  it("omits the topic heading in the detail layout when there is no prose report", () => {
+    render(
+      React.createElement(ResearchBody, {
+        brief: FIXTURE_BRIEF,
+        layout: "detail",
+      }),
+    );
+    expect(
+      screen.queryByRole("heading", { name: "AI Infrastructure Trends" }),
+    ).toBeNull();
+    screen.getByText(/12 sources · 47 items/);
+  });
+
   it("skips best takes block when list is empty", () => {
     const briefWithoutTakes: ResearchBrief = {
       ...FIXTURE_BRIEF,
