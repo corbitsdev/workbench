@@ -11,10 +11,11 @@ watchPatterns = ["apps/hub/**", "apps/sidecar/**", "packages/**", "scripts/**", 
 
 [deploy]
 # CL-4432: drain skill-draft artifact rows onto skill-draft assets BEFORE
-# db-setup runs migration 0079 (drops artifact.status). Fail-closed by `&&` —
-# if the drain script errors or throws on a row it can't migrate, db-setup
-# never runs, so the column is never dropped out from under undrained data.
-preDeployCommand = "bun run apps/hub/bin/migrate-skill-drafts-to-assets.ts --yes && bun run scripts/db-setup.ts && bun run apps/hub/bin/seed-startup.ts"
+# db-setup runs migration 0079 (drops artifact.status). Railway does not run
+# preDeployCommand through a shell — an `&&` chain here silently ran only the
+# first script in production (db-setup skipped, work_unit missing). The single
+# entry point owns the ordering and fails closed on any step.
+preDeployCommand = "bun run scripts/pre-deploy.ts"
 startCommand = "bun run apps/hub/src/index.ts"
 healthcheckPath = "/health"
 # The hub binds Bun.serve only after blocking boot work (seedGlobalTenant,
