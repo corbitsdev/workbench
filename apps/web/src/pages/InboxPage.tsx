@@ -59,6 +59,43 @@ const INBOX_VIEWS: { id: MailboxInboxView; label: string }[] = [
   { id: "trash", label: "Trash" },
 ];
 
+/** Client-side kind facet (CL-4331). Temporary debt: list API has no kind /
+ * messageKey; classify from hub terminal-run subject prefixes only. Prefer a
+ * stable write-path class later — do not expand subject heuristics. */
+const INBOX_KIND_FILTERS = [
+  { id: "all", label: "All" },
+  { id: "results", label: "Mail" },
+  { id: "system", label: "Run notices" },
+] as const;
+
+type InboxKindFilter = (typeof INBOX_KIND_FILTERS)[number]["id"];
+
+/** Matches hub terminal-run subjects only (`Workflow run completed|failed: …`). */
+const SYSTEM_RUN_SUBJECT = /^Workflow run (?:completed|failed):\s/i;
+
+export function isSystemWorkflowMail(message: {
+  subject?: string | undefined;
+}): boolean {
+  const subject = message.subject?.trim() ?? "";
+  return SYSTEM_RUN_SUBJECT.test(subject);
+}
+
+export function parseInboxKindFilter(
+  raw: string | null,
+): InboxKindFilter | null {
+  if (raw === "system" || raw === "results" || raw === "all") return raw;
+  return null;
+}
+
+export function filterMessagesByKind(
+  messages: MailboxMessage[],
+  kind: InboxKindFilter,
+): MailboxMessage[] {
+  if (kind === "all") return messages;
+  if (kind === "system") return messages.filter(isSystemWorkflowMail);
+  return messages.filter((m) => !isSystemWorkflowMail(m));
+}
+
 /** Shared compact control sizing for inbox rail tabs, bulk actions, and load-more. */
 const inboxCompactControlClass =
   "inline-flex h-8 shrink-0 items-center justify-center rounded-lg px-3 text-xs font-medium transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-orange disabled:cursor-not-allowed disabled:opacity-50";
@@ -70,6 +107,7 @@ export function InboxPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const selectedTaskId = searchParams.get("task");
   const inboxView = parseMailboxView(searchParams.get("view")) ?? "all";
+  const kindFilter = parseInboxKindFilter(searchParams.get("kind")) ?? "all";
   const navigate = useNavigate();
   const reduceMotion = useReducedMotion();
   const { activeTenantId, activeWorkbench } = useActiveWorkbench();
@@ -106,7 +144,10 @@ export function InboxPage() {
   const itemAction = useMailboxItemAction();
   const markReadMutate = markRead.mutate;
 
-  const messages = data ?? [];
+  const messages = useMemo(
+    () => filterMessagesByKind(data ?? [], kindFilter),
+    [data, kindFilter],
+  );
   const taskList = tasks.data;
   const runList = runs.data;
   const nowItems = useMemo(
@@ -164,7 +205,7 @@ export function InboxPage() {
 
   useEffect(() => {
     setSelectedIds(new Set());
-  }, [inboxView]);
+  }, [inboxView, kindFilter]);
 
   const reportInboxActionError = (err: unknown) => {
     if (err instanceof ApiError) {
@@ -186,7 +227,7 @@ export function InboxPage() {
     itemAction
       .mutateAsync({ id, action })
       .then(() => {
-        if (messageId === id) navigate(inboxPath(inboxView));
+        if (messageId === id) navigate(inboxPath(inboxView, kindFilter));
       })
       .catch(reportInboxActionError);
   };
@@ -200,7 +241,7 @@ export function InboxPage() {
       .then(() => {
         setSelectedIds(new Set());
         if (messageId && ids.includes(messageId)) {
-          navigate(inboxPath(inboxView));
+          navigate(inboxPath(inboxView, kindFilter));
         }
       })
       .catch(reportInboxActionError);
@@ -233,6 +274,21 @@ export function InboxPage() {
     setSearchParams(params, { replace: true });
   };
 
+  const changeKindFilter = (next: InboxKindFilter) => {
+    const params = new URLSearchParams(searchParams);
+    if (next === "all") params.delete("kind");
+    else params.set("kind", next);
+    setSearchParams(params, { replace: true });
+  };
+
+  const allVisibleSelected =
+    messages.length > 0 && messages.every((m) => selectedIds.has(m.id));
+  const someVisibleSelected = messages.some((m) => selectedIds.has(m.id));
+
+  const toggleSelectAllVisible = (checked: boolean) => {
+    setSelectedIds(checked ? new Set(messages.map((m) => m.id)) : new Set());
+  };
+
   // Single-column mobile: the list is the landing view; the main pane shows
   // either the reading pane (a message is open) or the activity feed (the
   // "Activity" toggle). Exactly one of the two panes is visible below `md`.
@@ -253,9 +309,15 @@ export function InboxPage() {
       >
         <InboxRailHeader
           view={inboxView}
+          kindFilter={kindFilter}
           selectedCount={selectedIds.size}
+          allVisibleSelected={allVisibleSelected}
+          someVisibleSelected={someVisibleSelected}
+          hasVisibleMessages={messages.length > 0}
           bulkBusy={bulkAction.isPending}
           onChangeView={changeView}
+          onChangeKindFilter={changeKindFilter}
+          onToggleSelectAll={toggleSelectAllVisible}
           onClearSelection={() => setSelectedIds(new Set())}
           onBulk={runBulk}
         />
@@ -273,8 +335,11 @@ export function InboxPage() {
             isError={isError}
             reduceMotion={reduceMotion ?? false}
             view={inboxView}
+            kindFilter={kindFilter}
             onRetry={() => refetch()}
-            onOpen={(id) => navigate(inboxMessagePath(inboxView, id))}
+            onOpen={(id) =>
+              navigate(inboxMessagePath(inboxView, id, kindFilter))
+            }
             onRowAction={runRowAction}
             onToggleSelect={(id) => {
               setSelectedIds((prev) => {
@@ -284,6 +349,7 @@ export function InboxPage() {
                 return next;
               });
             }}
+            onClearKindFilter={() => changeKindFilter("all")}
           />
         </div>
       </aside>
@@ -310,7 +376,7 @@ export function InboxPage() {
                 // mobile, even when the message was opened from the Activity
                 // pane — a stale "activity" tab would otherwise hide the list.
                 setMobileTab("messages");
-                navigate(inboxPath(inboxView));
+                navigate(inboxPath(inboxView, kindFilter));
               }}
               onMarkUnread={() => {
                 if (!messageId) return;
@@ -322,7 +388,7 @@ export function InboxPage() {
                 setInboxActionError(null);
                 itemAction
                   .mutateAsync({ id: messageId, action: "trash" })
-                  .then(() => navigate(inboxPath("trash")))
+                  .then(() => navigate(inboxPath("trash", kindFilter)))
                   .catch(reportInboxActionError);
               }}
               onArchive={() => {
@@ -330,7 +396,7 @@ export function InboxPage() {
                 setInboxActionError(null);
                 itemAction
                   .mutateAsync({ id: messageId, action: "archive" })
-                  .then(() => navigate(inboxPath("archived")))
+                  .then(() => navigate(inboxPath("archived", kindFilter)))
                   .catch(reportInboxActionError);
               }}
               onRestore={() => {
@@ -338,7 +404,7 @@ export function InboxPage() {
                 setInboxActionError(null);
                 itemAction
                   .mutateAsync({ id: messageId, action: "restore" })
-                  .then(() => navigate(inboxPath("all")))
+                  .then(() => navigate(inboxPath("all", kindFilter)))
                   .catch(reportInboxActionError);
               }}
             />
@@ -420,13 +486,27 @@ function describeMissingTaskNotice(input: {
   return "That task is no longer in your feed.";
 }
 
-function inboxPath(view: MailboxInboxView): string {
-  return view === "all" ? "/inbox" : `/inbox?view=${view}`;
+function inboxPath(
+  view: MailboxInboxView,
+  kind: InboxKindFilter = "all",
+): string {
+  const params = new URLSearchParams();
+  if (view !== "all") params.set("view", view);
+  if (kind !== "all") params.set("kind", kind);
+  const qs = params.toString();
+  return qs ? `/inbox?${qs}` : "/inbox";
 }
 
-function inboxMessagePath(view: MailboxInboxView, id: string): string {
-  const base = `/inbox/${id}`;
-  return view === "all" ? base : `${base}?view=${view}`;
+function inboxMessagePath(
+  view: MailboxInboxView,
+  id: string,
+  kind: InboxKindFilter = "all",
+): string {
+  const params = new URLSearchParams();
+  if (view !== "all") params.set("view", view);
+  if (kind !== "all") params.set("kind", kind);
+  const qs = params.toString();
+  return qs ? `/inbox/${id}?${qs}` : `/inbox/${id}`;
 }
 
 interface MessageListProps {
@@ -437,10 +517,12 @@ interface MessageListProps {
   isError: boolean;
   reduceMotion: boolean;
   view: MailboxInboxView;
+  kindFilter: InboxKindFilter;
   onRetry: () => void;
   onOpen: (id: string) => void;
   onRowAction: (id: string, action: "archive" | "trash" | "restore") => void;
   onToggleSelect: (id: string) => void;
+  onClearKindFilter: () => void;
 }
 
 function MessageList({
@@ -451,10 +533,12 @@ function MessageList({
   isError,
   reduceMotion,
   view,
+  kindFilter,
   onRetry,
   onOpen,
   onRowAction,
   onToggleSelect,
+  onClearKindFilter,
 }: MessageListProps) {
   if (isLoading) {
     return (
@@ -482,7 +566,13 @@ function MessageList({
   }
 
   if (messages.length === 0) {
-    return <RailEmptyState view={view} />;
+    return (
+      <RailEmptyState
+        view={view}
+        kindFilter={kindFilter}
+        onClearKindFilter={onClearKindFilter}
+      />
+    );
   }
 
   return (
@@ -862,7 +952,41 @@ function LoadMoreControl({ hasMore, loading, onClick }: LoadMoreControlProps) {
   );
 }
 
-function RailEmptyState({ view }: { view: MailboxInboxView }) {
+function RailEmptyState({
+  view,
+  kindFilter,
+  onClearKindFilter,
+}: {
+  view: MailboxInboxView;
+  kindFilter: InboxKindFilter;
+  onClearKindFilter: () => void;
+}) {
+  if (kindFilter !== "all") {
+    const body =
+      kindFilter === "system"
+        ? "No run notices in the messages loaded here. Older mail may still be further down the full inbox."
+        : "No other mail in the messages loaded here. Run notices are hidden for this filter.";
+    return (
+      <div className="flex flex-col items-center gap-3 px-6 py-12 text-center">
+        <span className="grid h-11 w-11 place-items-center rounded-full bg-page text-text-3">
+          <InboxIcon size={20} aria-hidden="true" />
+        </span>
+        <div>
+          <p className="text-sm font-medium text-text">Nothing in this filter</p>
+          <p className="mt-1 text-xs text-text-3">{body}</p>
+        </div>
+        <Button
+          type="button"
+          variant="secondary"
+          size="sm"
+          className="h-8 text-xs"
+          onClick={onClearKindFilter}
+        >
+          Show all kinds
+        </Button>
+      </div>
+    );
+  }
   const copy =
     view === "trash"
       ? { title: "Trash is empty", body: "Deleted messages appear here." }
@@ -896,63 +1020,114 @@ function RailEmptyState({ view }: { view: MailboxInboxView }) {
 // The rail's top bar. With nothing selected it is the folder tabs
 // (All/Unread/Archived/Trash); the moment messages are checked, the bulk
 // actions take over the same row rather than pushing in a second bar.
+// Kind facet stays visible so the active filter is never hidden mid-bulk.
 function InboxRailHeader({
   view,
+  kindFilter,
   selectedCount,
+  allVisibleSelected,
+  someVisibleSelected,
+  hasVisibleMessages,
   bulkBusy,
   onChangeView,
+  onChangeKindFilter,
+  onToggleSelectAll,
   onClearSelection,
   onBulk,
 }: {
   view: MailboxInboxView;
+  kindFilter: InboxKindFilter;
   selectedCount: number;
+  allVisibleSelected: boolean;
+  someVisibleSelected: boolean;
+  hasVisibleMessages: boolean;
   bulkBusy: boolean;
   onChangeView: (view: MailboxInboxView) => void;
+  onChangeKindFilter: (kind: InboxKindFilter) => void;
+  onToggleSelectAll: (checked: boolean) => void;
   onClearSelection: () => void;
   onBulk: (action: MailboxBulkAction) => void;
 }) {
   const reduceMotion = useReducedMotion();
   return (
-    <div className="flex min-h-[45px] flex-wrap items-center gap-x-2 gap-y-1 border-b border-border px-2 py-1.5">
-      <AnimatePresence mode="wait" initial={false}>
-        <motion.div
-          key={selectedCount > 0 ? "bulk" : "tabs"}
-          initial={reduceMotion ? false : { opacity: 0 }}
-          animate={{ opacity: 1 }}
-          exit={reduceMotion ? undefined : { opacity: 0 }}
-          transition={{ duration: 0.15, ease: "easeOut" }}
-          className="flex flex-wrap items-center gap-x-2 gap-y-1"
-        >
-          {selectedCount > 0 ? (
-            <InboxBulkActions
-              count={selectedCount}
-              view={view}
-              busy={bulkBusy}
-              onClear={onClearSelection}
-              onBulk={onBulk}
+    <div className="flex min-h-[45px] flex-col gap-1 border-b border-border px-2 py-1.5">
+      <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+        {hasVisibleMessages ? (
+          <label className="flex h-10 min-w-10 shrink-0 cursor-pointer items-center justify-center gap-1.5 px-1 text-xs text-text-3">
+            <input
+              type="checkbox"
+              className="h-3.5 w-3.5 rounded border-border accent-orange"
+              checked={allVisibleSelected}
+              ref={(el) => {
+                if (el) {
+                  el.indeterminate = someVisibleSelected && !allVisibleSelected;
+                }
+              }}
+              disabled={bulkBusy}
+              onChange={(e) => onToggleSelectAll(e.target.checked)}
+              aria-label="Select all visible messages"
             />
-          ) : (
-            <nav aria-label="Inbox views" className="flex gap-1">
-              {INBOX_VIEWS.map((tab) => (
-                <button
-                  key={tab.id}
-                  type="button"
-                  onClick={() => onChangeView(tab.id)}
-                  aria-current={view === tab.id ? "page" : undefined}
-                  className={cn(
-                    inboxCompactControlClass,
-                    view === tab.id
-                      ? "bg-page text-text"
-                      : "text-text-3 hover:bg-page hover:text-text-2",
-                  )}
-                >
-                  {tab.label}
-                </button>
-              ))}
-            </nav>
-          )}
-        </motion.div>
-      </AnimatePresence>
+            <span className="sr-only">Select all visible</span>
+          </label>
+        ) : null}
+        <AnimatePresence mode="wait" initial={false}>
+          <motion.div
+            key={selectedCount > 0 ? "bulk" : "tabs"}
+            initial={reduceMotion ? false : { opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={reduceMotion ? undefined : { opacity: 0 }}
+            transition={{ duration: 0.15, ease: "easeOut" }}
+            className="flex min-w-0 flex-1 flex-wrap items-center gap-x-2 gap-y-1"
+          >
+            {selectedCount > 0 ? (
+              <InboxBulkActions
+                count={selectedCount}
+                view={view}
+                busy={bulkBusy}
+                onClear={onClearSelection}
+                onBulk={onBulk}
+              />
+            ) : (
+              <nav aria-label="Inbox views" className="flex gap-1">
+                {INBOX_VIEWS.map((tab) => (
+                  <button
+                    key={tab.id}
+                    type="button"
+                    onClick={() => onChangeView(tab.id)}
+                    aria-pressed={view === tab.id}
+                    className={cn(
+                      inboxCompactControlClass,
+                      view === tab.id
+                        ? "bg-page text-text"
+                        : "text-text-3 hover:bg-page hover:text-text-2",
+                    )}
+                  >
+                    {tab.label}
+                  </button>
+                ))}
+              </nav>
+            )}
+          </motion.div>
+        </AnimatePresence>
+      </div>
+      <nav aria-label="Message kind" className="flex gap-1 pb-0.5">
+        {INBOX_KIND_FILTERS.map((tab) => (
+          <button
+            key={tab.id}
+            type="button"
+            onClick={() => onChangeKindFilter(tab.id)}
+            aria-pressed={kindFilter === tab.id}
+            className={cn(
+              "inline-flex h-8 shrink-0 items-center justify-center rounded-lg px-2.5 text-xs font-medium transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-orange",
+              kindFilter === tab.id
+                ? "bg-page text-text"
+                : "text-text-3 hover:bg-page/70 hover:text-text-2",
+            )}
+          >
+            {tab.label}
+          </button>
+        ))}
+      </nav>
     </div>
   );
 }

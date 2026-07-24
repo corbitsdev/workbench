@@ -72,6 +72,7 @@ let fetchNextMailboxCalls = 0;
 let fetchNextTasksCalls = 0;
 const markReadIds: string[] = [];
 const itemActionCalls: { id: string; action: string }[] = [];
+const bulkActionCalls: { action: string; ids: string[] }[] = [];
 const detailQueryIds: (string | null)[] = [];
 const taskLookupIds: (string | null)[] = [];
 
@@ -123,7 +124,10 @@ mock.module("../hooks/use-mailbox", () => ({
     return null;
   },
   useMailboxBulkAction: () => ({
-    mutateAsync: async () => undefined,
+    mutateAsync: async (input: { action: string; ids: string[] }) => {
+      bulkActionCalls.push(input);
+      return undefined;
+    },
     isPending: false,
   }),
   useMailboxItemAction: () => ({
@@ -260,6 +264,7 @@ afterEach(() => {
   fetchNextTasksCalls = 0;
   markReadIds.length = 0;
   itemActionCalls.length = 0;
+  bulkActionCalls.length = 0;
   detailQueryIds.length = 0;
   taskLookupIds.length = 0;
 });
@@ -1021,5 +1026,99 @@ describe("InboxPage load-more control", () => {
     mailboxPaging = { hasNextPage: true, isFetchingNextPage: false };
     renderInbox("/inbox/msg-1");
     expect(screen.queryByRole("button", { name: /show older/i })).toBeNull();
+  });
+});
+
+describe("InboxPage kind filter + select all (CL-4331)", () => {
+  it("selects every loaded message via the select-all control", () => {
+    mailbox = {
+      data: [
+        makeMessage({ id: "msg-1", subject: "One" }),
+        makeMessage({ id: "msg-2", subject: "Two" }),
+      ],
+      isLoading: false,
+      isError: false,
+    };
+    renderInbox();
+    fireEvent.click(
+      screen.getByRole("checkbox", { name: /select all visible messages/i }),
+    );
+    screen.getByText("2 selected");
+    const rowChecks = screen.getAllByRole("checkbox", {
+      name: /select message from/i,
+    });
+    expect(rowChecks).toHaveLength(2);
+    for (const box of rowChecks) {
+      expect((box as HTMLInputElement).checked).toBe(true);
+    }
+  });
+
+  it("filters system workflow-run notices via ?kind=system", () => {
+    mailbox = {
+      data: [
+        makeMessage({
+          id: "msg-sys",
+          subject: "Workflow run completed: granola-call",
+        }),
+        makeMessage({ id: "msg-real", subject: "Deck ready for Acme" }),
+      ],
+      isLoading: false,
+      isError: false,
+    };
+    renderInbox("/inbox?kind=system");
+    const list = screen.getByRole("list", { name: "Messages" });
+    within(list).getByText("Workflow run completed: granola-call");
+    expect(within(list).queryByText("Deck ready for Acme")).toBeNull();
+  });
+
+  it("hides system run notices when filtering to results", () => {
+    mailbox = {
+      data: [
+        makeMessage({
+          id: "msg-sys",
+          subject: "Workflow run completed: granola-call",
+        }),
+        makeMessage({ id: "msg-real", subject: "Deck ready for Acme" }),
+      ],
+      isLoading: false,
+      isError: false,
+    };
+    renderInbox("/inbox?kind=results");
+    const list = screen.getByRole("list", { name: "Messages" });
+    within(list).getByText("Deck ready for Acme");
+    expect(
+      within(list).queryByText("Workflow run completed: granola-call"),
+    ).toBeNull();
+  });
+
+  it("writes kind into the URL when the kind facet is clicked", () => {
+    mailbox = {
+      data: [makeMessage({ id: "msg-1", subject: "One" })],
+      isLoading: false,
+      isError: false,
+    };
+    const router = renderInbox();
+    const kindNav = screen.getByRole("navigation", { name: "Message kind" });
+    fireEvent.click(within(kindNav).getByRole("button", { name: "Run notices" }));
+    expect(router.state.location.search).toContain("kind=system");
+  });
+
+  it("bulk-archives every message selected via select-all", () => {
+    mailbox = {
+      data: [
+        makeMessage({ id: "msg-1", subject: "One" }),
+        makeMessage({ id: "msg-2", subject: "Two" }),
+      ],
+      isLoading: false,
+      isError: false,
+    };
+    renderInbox();
+    fireEvent.click(
+      screen.getByRole("checkbox", { name: /select all visible messages/i }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: /^archive$/i }));
+    expect(bulkActionCalls).toEqual([
+      { action: "archive", ids: ["msg-1", "msg-2"] },
+    ]);
   });
 });
