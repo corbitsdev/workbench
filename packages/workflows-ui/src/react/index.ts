@@ -1,11 +1,6 @@
 export { cn } from "./cn";
 
-export {
-  PulseDot,
-  StatusChip,
-  ScopePill,
-  FilterChip,
-} from "./primitives";
+export { PulseDot, StatusChip, ScopePill, FilterChip } from "./primitives";
 
 export {
   WorkflowListHead,
@@ -33,11 +28,7 @@ export {
   livePhaseLabel,
 } from "./LiveRunInspector";
 
-export {
-  ReadBlock,
-  ScheduleInspectorView,
-  ScheduleInspectorEdit,
-} from "./ScheduleInspector";
+export { ReadBlock, ScheduleInspectorView } from "./ScheduleInspector";
 
 export { KindPickerCard, KindPickerShell } from "./KindPicker";
 
