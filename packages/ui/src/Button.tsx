@@ -15,9 +15,9 @@ const buttonVariants = cva(
           "rounded-input border border-border bg-transparent text-text hover:bg-surface",
       },
       size: {
-        sm: "px-3 py-1.5 text-sm",
-        md: "px-4 py-2 text-base",
-        lg: "px-6 py-3 text-lg",
+        sm: "flex items-center gap-[7px] px-3 py-1.5 text-sm",
+        md: "flex items-center gap-[7px] px-4 py-2 text-base",
+        lg: "flex items-center gap-[7px] px-6 py-3 text-lg",
         library:
           "flex items-center gap-[7px] px-[13px] py-[7px] text-[12.5px] font-semibold",
       },

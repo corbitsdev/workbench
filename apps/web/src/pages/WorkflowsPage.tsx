@@ -504,7 +504,12 @@ export function WorkflowsPage() {
                   scopeFilter === "all" &&
                   statusFilter === "all" &&
                   kindFilter === "all" ? (
-                    <Button type="button" size="sm" onClick={openCreate}>
+                    <Button
+                      type="button"
+                      size="sm"
+                      data-testid="new-workflow-empty-state-button"
+                      onClick={openCreate}
+                    >
                       <Plus className="h-3.5 w-3.5" aria-hidden="true" />
                       New Workflow
                     </Button>

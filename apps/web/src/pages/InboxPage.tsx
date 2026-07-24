@@ -1301,7 +1301,7 @@ function InboxMessageActions({
             disabled={busy}
             onClick={onArchive}
           >
-            <Archive size={14} className="mr-1 inline" aria-hidden />
+            <Archive size={14} aria-hidden />
             Archive
           </Button>
           <Button
@@ -1311,7 +1311,7 @@ function InboxMessageActions({
             disabled={busy}
             onClick={onTrash}
           >
-            <Trash2 size={14} className="mr-1 inline" aria-hidden />
+            <Trash2 size={14} aria-hidden />
             Trash
           </Button>
         </>

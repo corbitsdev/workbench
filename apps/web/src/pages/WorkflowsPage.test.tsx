@@ -246,6 +246,18 @@ describe("WorkflowsPage", () => {
     expect(screen.getByText("Select a workflow")).toBeTruthy();
   });
 
+  it("lays out the New Workflow action as a horizontal row, not a stacked column", async () => {
+    renderWorkflowsPage();
+    await waitFor(() => {
+      expect(screen.getByRole("table", { name: "Workflows" })).toBeTruthy();
+    });
+    // This guarantee now comes from the shared Button `size="sm"` variant
+    // (packages/ui/src/Button.tsx), not a per-call-site className override.
+    const button = screen.getByTestId("new-workflow-button");
+    expect(button.className).toContain("flex");
+    expect(button.className).toContain("items-center");
+  });
+
   it("selects a schedule from ?schedule= and shows schedule inspector", async () => {
     renderWorkflowsPage("/workflows?schedule=sched-1");
     await waitFor(() => {
