@@ -338,14 +338,20 @@ describe("InboxPage", () => {
     );
   });
 
-  it("explains what fills the inbox and links to the morning brief settings", () => {
+  it("shows a compact empty Now strip with a morning-brief settings link", () => {
     mailbox = { data: [], isLoading: false, isError: false };
     renderInbox();
-    screen.getByText(
-      /morning brief.*workflow approvals.*task updates.*mail from your agents/i,
-    );
+    // Compact Now status (not the multi-line hero). Queue still owns the
+    // longer “caught up” empty voice.
+    screen.getByText("Clear");
+    screen.getByText("You're all caught up");
+    expect(
+      screen.queryByText(
+        /morning brief.*workflow approvals.*task updates.*mail from your agents/i,
+      ),
+    ).toBeNull();
     const settingsLink = screen.getByRole("link", {
-      name: /set up your morning brief/i,
+      name: /set up morning brief/i,
     }) as HTMLAnchorElement;
     expect(settingsLink.getAttribute("href")).toBe("/settings#morning-brief");
   });
@@ -874,7 +880,7 @@ describe("InboxPage Now feed", () => {
       isError: false,
     };
     renderInbox();
-    screen.getByText("You're all caught up");
+    screen.getByText("Clear");
     expect(screen.queryByRole("list", { name: "Now" })).toBeNull();
   });
 
@@ -906,6 +912,8 @@ describe("InboxPage Now feed", () => {
     runsState = { data: undefined, isLoading: true, isError: false };
     renderInbox();
     expect(screen.queryByText("You're all caught up")).toBeNull();
+    expect(screen.queryByText("Clear")).toBeNull();
+    screen.getByText("Loading what needs you…");
   });
 
   it("deep-links a linkless task card into the inbox task highlight", () => {
@@ -1266,6 +1274,45 @@ describe("Hybrid Focus shell (CL-4397)", () => {
       current: true,
     });
     expect(selected.textContent).toContain("Morning brief");
+  });
+
+  it("collapses the Now card grid while a message is open", () => {
+    mailbox = {
+      data: [makeMessage({ id: "msg-1", subject: "Morning brief" })],
+      isLoading: false,
+      isError: false,
+    };
+    detail = {
+      data: {
+        ...makeMessage({ id: "msg-1", subject: "Morning brief" }),
+        body: "Brief body.",
+      },
+      isLoading: false,
+      isError: false,
+    };
+    renderInbox("/inbox/msg-1");
+    // Expanded count label becomes a compact summary; card list is tucked.
+    screen.getByText("1 thing needs you");
+    expect(screen.queryByRole("list", { name: "Now" })).toBeNull();
+    screen.getByText("Brief body.");
+    // Focus reading layout: queue pin ~33%, detail flexes into the rest.
+    const rail = screen.getByRole("list", { name: "Messages" }).closest("aside");
+    expect(rail?.className).toContain("md:w-[min(34%,420px)]");
+    expect(rail?.className).not.toContain("md:w-full");
+  });
+
+  it("gives the command queue full desktop width when nothing is open", () => {
+    mailbox = {
+      data: [makeMessage({ id: "msg-1", subject: "Morning brief" })],
+      isLoading: false,
+      isError: false,
+    };
+    renderInbox();
+    const rail = screen.getByRole("list", { name: "Messages" }).closest("aside");
+    expect(rail?.className).toContain("md:w-full");
+    expect(rail?.className).not.toContain("md:w-[min(34%,420px)]");
+    // Detail stays in the tree but is zero-width / inert for a11y.
+    expect(screen.queryByText("Brief body.")).toBeNull();
   });
 
   it("shows Recommended guidance and primary action on the detail drawer", () => {

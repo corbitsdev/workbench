@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { Settings } from "lucide-react";
@@ -83,8 +83,6 @@ export function filterMessagesByKind(
 /** Shared compact control sizing for inbox rail tabs, bulk actions, and load-more. */
 const inboxCompactControlClass =
   "inline-flex h-8 shrink-0 items-center justify-center rounded-lg px-3 text-xs font-medium transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-orange disabled:cursor-not-allowed disabled:opacity-50";
-
-const inboxMainPaneClass = "mx-auto max-w-[720px] px-6 py-5";
 
 export function InboxPage() {
   const { messageId } = useParams<{ messageId?: string }>();
@@ -275,10 +273,23 @@ export function InboxPage() {
     setSelectedIds(checked ? new Set(messages.map((m) => m.id)) : new Set());
   };
 
-  // Single-column mobile: queue is landing; open message swaps to the drawer.
+  // Mobile: queue is landing; open message swaps to the drawer.
+  // Desktop: queue is full-width until a row opens, then eases to ~33% so
+  // the detail pane owns the rest (and Now collapses).
   const hasOpenMessage = Boolean(messageId);
   const listHiddenOnMobile = hasOpenMessage;
   const mainHiddenOnMobile = !hasOpenMessage;
+  const paneMotionClass = reduceMotion
+    ? "transition-none"
+    : "transition-[width,flex-grow,opacity] duration-300 ease-[var(--ease)]";
+  const detailPaneRef = useRef<HTMLElement>(null);
+
+  // Hand focus into the detail region when a message opens so AT/keyboard
+  // users do not stay on a Now card that just became inert.
+  useEffect(() => {
+    if (!messageId) return;
+    detailPaneRef.current?.focus({ preventScroll: true });
+  }, [messageId]);
 
   return (
     <div className="relative flex h-full min-h-0 flex-col overflow-hidden">
@@ -287,6 +298,8 @@ export function InboxPage() {
         ready={nowReady}
         selectedMailId={messageId ?? null}
         selectedTaskId={selectedTaskId}
+        collapsed={hasOpenMessage}
+        reduceMotion={reduceMotion ?? false}
       />
       {selectedTaskNotice ? (
         <p className="shrink-0 border-b border-border bg-page px-4 py-2 text-xs text-text-3">
@@ -297,7 +310,13 @@ export function InboxPage() {
       <div className="flex min-h-0 flex-1 flex-col overflow-hidden md:flex-row">
         <aside
           className={cn(
-            "flex min-h-0 flex-1 flex-col border-b border-border bg-surface md:min-w-[320px] md:w-[min(52%,560px)] md:flex-none md:shrink-0 md:border-b-0 md:border-r",
+            "flex min-h-0 flex-col border-b border-border bg-surface md:border-b-0",
+            paneMotionClass,
+            // Closed: full-width queue (no trailing border). Open: ~⅓ rail +
+            // divider against the detail pane.
+            hasOpenMessage
+              ? "flex-1 md:min-w-[280px] md:w-[min(34%,420px)] md:flex-none md:shrink-0 md:border-r"
+              : "min-h-0 flex-1 md:w-full",
             listHiddenOnMobile && "max-md:hidden",
           )}
         >
@@ -380,8 +399,17 @@ export function InboxPage() {
         </aside>
 
         <section
+          ref={detailPaneRef}
+          tabIndex={-1}
+          aria-hidden={!hasOpenMessage}
           className={cn(
-            "min-w-0 flex-1 overflow-y-auto bg-page",
+            "min-w-0 bg-page outline-none",
+            paneMotionClass,
+            // Stay in the flex tree so width/opacity can ease. Closed: zero
+            // width + no hit testing. Open: grow into the majority of the page.
+            hasOpenMessage
+              ? "flex-1 overflow-y-auto opacity-100"
+              : "pointer-events-none w-0 flex-none overflow-hidden opacity-0",
             mainHiddenOnMobile && "max-md:hidden",
           )}
         >
@@ -429,15 +457,7 @@ export function InboxPage() {
                     .catch(reportInboxActionError);
                 }}
               />
-            ) : (
-              <div className={cn(inboxMainPaneClass, "py-10")}>
-                <p className="text-sm font-medium text-text">Detail</p>
-                <p className="mt-1 max-w-md text-xs leading-relaxed text-text-3">
-                  Pick a row from the command queue, or open a Now card above
-                  for the biggest decisions.
-                </p>
-              </div>
-            )}
+            ) : null}
           </ErrorBoundary>
         </section>
       </div>
