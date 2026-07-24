@@ -3,7 +3,10 @@ import "../test-setup";
 import { afterEach, describe, expect, it } from "bun:test";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import React from "react";
-import ResearchBody, { buildSourcesSection } from "./ResearchBody";
+import ResearchBody, {
+  buildSourcesSection,
+  stripEmbeddedSourcesSection,
+} from "./ResearchBody";
 import ArtifactBody from "./ArtifactBody";
 import type { ResearchBrief } from "./ResearchBody";
 
@@ -99,6 +102,22 @@ const FIXTURE_REPORT = `## Synthesis
 What we found about AI Infrastructure Trends: inference cost is collapsing while GPU supply eases.
 
 **Key pattern:** serving optimizations are the dominant story this cycle.
+
+*Research by last30days via GTM Workbench*`;
+
+// Simulates a pre-fix / legacy persisted report where the LLM baked its own
+// "## Sources" section into the body, duplicating the app-rendered Citations
+// section built from brief.citations.
+const FIXTURE_REPORT_WITH_EMBEDDED_SOURCES = `## Synthesis
+
+What we found about AI Infrastructure Trends: inference cost is collapsing while GPU supply eases.
+
+**Key pattern:** serving optimizations are the dominant story this cycle.
+
+## Sources
+
+1. [vLLM 0.5 cuts inference cost by 40%](https://example.com/story-1) — hn
+2. [TSMC expands capacity for AI chip orders](https://example.com/story-3) — web
 
 *Research by last30days via GTM Workbench*`;
 
@@ -290,6 +309,127 @@ describe("ResearchBody", () => {
       throw new Error(
         "Expected clusters to render directly when there is no prose report",
       );
+    }
+  });
+
+  // CL-4338: the collapsible section holding the Citations list must be open
+  // by default — "seeing where the data came from" should not require a click.
+  it("renders the sources/citations disclosure expanded by default", () => {
+    render(
+      React.createElement(ResearchBody, {
+        brief: FIXTURE_BRIEF,
+        body: FIXTURE_REPORT,
+      }),
+    );
+    const citationsHeading = screen.getByText("Citations");
+    const details = citationsHeading.closest("details");
+    if (details === null) {
+      throw new Error("Expected Citations to be inside a details element");
+    }
+    if (!(details as HTMLDetailsElement).open) {
+      throw new Error(
+        "Expected the sources/citations details to be open by default",
+      );
+    }
+  });
+
+  // CL-4338: when a prose report is present, exactly one citations/sources
+  // section must render — the app-rendered structured one. A second "## Sources"
+  // heading baked into the persisted body markdown (the historical bug, and
+  // still possible on already-persisted artifacts predating the prompt fix)
+  // must be stripped at render time rather than relying on prompt compliance.
+  it("renders exactly one citations/sources section even when the persisted report body has its own embedded Sources section", () => {
+    render(
+      React.createElement(ResearchBody, {
+        brief: FIXTURE_BRIEF,
+        body: FIXTURE_REPORT_WITH_EMBEDDED_SOURCES,
+      }),
+    );
+    const matches = screen.getAllByText(/^(Citations|Sources)$/);
+    if (matches.length !== 1) {
+      throw new Error(
+        `Expected exactly one citations/sources section heading, found ${matches.length}`,
+      );
+    }
+    // The embedded section's own body content must be gone too, not just its
+    // heading — only the app-rendered CitationsSection entries should remain.
+    if (
+      screen.queryByText(
+        /1\. \[vLLM 0\.5 cuts inference cost by 40%\]\(https:\/\/example\.com\/story-1\)/,
+      ) !== null
+    ) {
+      throw new Error(
+        "Expected the embedded Sources list markup to be stripped, not just hidden",
+      );
+    }
+    // The surrounding prose (before the embedded Sources heading) must survive the strip.
+    screen.getByText(/inference cost is collapsing/);
+    // CL-4338 regression: the embedded Sources section is the LAST section in
+    // real persisted artifacts, with a trailing attribution footer after it.
+    // A greedy strip that deletes through end-of-document would silently eat
+    // this footer too — it must survive.
+    screen.getByText(/Research by last30days via GTM Workbench/);
+  });
+
+  // CL-4338: stripEmbeddedSourcesSection must find a precise boundary — the
+  // embedded section's own list content, not everything after the heading.
+  it("stripEmbeddedSourcesSection removes only the embedded section, preserving a trailing footer", () => {
+    const stripped = stripEmbeddedSourcesSection(
+      FIXTURE_REPORT_WITH_EMBEDDED_SOURCES,
+    );
+    expect(stripped).not.toContain("## Sources");
+    expect(stripped).not.toContain("1. [vLLM 0.5 cuts inference cost by 40%]");
+    expect(stripped).not.toContain(
+      "2. [TSMC expands capacity for AI chip orders]",
+    );
+    expect(stripped).toContain("*Research by last30days via GTM Workbench*");
+    expect(stripped).toContain("inference cost is collapsing");
+  });
+
+  it("stripEmbeddedSourcesSection passes a report with no embedded sources heading through unchanged", () => {
+    expect(stripEmbeddedSourcesSection(FIXTURE_REPORT)).toBe(FIXTURE_REPORT);
+  });
+
+  it("copies markdown with the embedded Sources section stripped so export matches the deduped display", async () => {
+    let copied = "";
+    const originalClipboard = navigator.clipboard;
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: {
+        writeText: (text: string) => {
+          copied = text;
+          return Promise.resolve();
+        },
+      },
+    });
+
+    try {
+      render(
+        React.createElement(ResearchBody, {
+          brief: FIXTURE_BRIEF,
+          body: FIXTURE_REPORT_WITH_EMBEDDED_SOURCES,
+        }),
+      );
+      fireEvent.click(screen.getByRole("button", { name: "Copy markdown" }));
+
+      // Exactly one "## Sources" heading in the export: the app-built one —
+      // the embedded heading from the persisted body must not survive.
+      const sourcesOccurrences = copied.split("## Sources").length - 1;
+      expect(sourcesOccurrences).toBe(1);
+      // The footer must survive the strip in the export too, and must appear
+      // BEFORE the app-built Sources section (it was stripped from where it
+      // trailed the embedded section, then buildSourcesSection appended fresh).
+      const footerIndex = copied.indexOf(
+        "*Research by last30days via GTM Workbench*",
+      );
+      const sourcesIndex = copied.indexOf("## Sources");
+      expect(footerIndex).toBeGreaterThan(-1);
+      expect(footerIndex).toBeLessThan(sourcesIndex);
+    } finally {
+      Object.defineProperty(navigator, "clipboard", {
+        configurable: true,
+        value: originalClipboard,
+      });
     }
   });
 
