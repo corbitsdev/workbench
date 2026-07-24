@@ -57,6 +57,8 @@ describe("OwnerSchedules", () => {
       expect(document.body.textContent).toContain("Everyone");
     });
     expect(document.body.textContent).toContain("No Everyone schedules yet");
+    expect(document.body.textContent).toContain("Workflows");
+    expect(document.body.textContent).not.toContain("Routines");
   });
 
   it("lists a tenant schedule with pause control", async () => {

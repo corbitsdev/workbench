@@ -41,9 +41,9 @@ export const TOUR_STEPS: readonly TourStep[] = [
   },
   {
     id: "schedule",
-    route: "/routines",
+    route: "/workflows",
     title: "Schedule a workflow",
-    body: "Routines puts any workflow on a daily cadence. Set one up once and the results arrive in your Inbox on schedule.",
+    body: "Workflows puts any workflow on a daily cadence. Set one up once and the results arrive in your Inbox on schedule.",
     placement: "bottom",
   },
   {

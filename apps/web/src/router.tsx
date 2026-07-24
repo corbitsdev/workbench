@@ -27,8 +27,6 @@ import { ChatsListPage } from "./pages/ChatsListPage";
 import { ArtifactsPage } from "./pages/ArtifactsPage";
 import { ArtifactDetailPage } from "./pages/ArtifactDetailPage";
 import { WorkflowsPage } from "./pages/WorkflowsPage";
-import { RoutinesPage } from "./pages/RoutinesPage";
-import { RoutineDetailPage } from "./pages/RoutineDetailPage";
 import { InboxPage } from "./pages/InboxPage";
 import Settings from "./pages/Settings";
 import SettingsLayout from "./pages/SettingsLayout";
@@ -70,6 +68,35 @@ import {
 function RedirectToAdminTool() {
   const { name } = useParams();
   return <Navigate to={`/settings/admin/tools/${name ?? ""}`} replace />;
+}
+
+// Routines folded into the unified Workflows surface: list and schedule
+// detail deep links resolve there so bookmarks keep working.
+function RedirectRoutinesToWorkflows() {
+  const location = useLocation();
+  return (
+    <Navigate
+      to={{
+        pathname: "/workflows",
+        search: location.search,
+        hash: location.hash,
+      }}
+      replace
+    />
+  );
+}
+
+function RedirectRoutineDetailToWorkflows() {
+  const { id } = useParams();
+  return (
+    <Navigate
+      to={{
+        pathname: "/workflows",
+        search: `?schedule=${encodeURIComponent(id ?? "")}`,
+      }}
+      replace
+    />
+  );
 }
 
 // Library (CL-4256): Artifacts, Skills, and Agents are one top-level nav
@@ -429,11 +456,17 @@ export const router = createBrowserRouter([
           },
           { path: "/workflows", element: <WorkflowsPage /> },
           { path: "/workflows/:workflowId", element: <WorkflowsPage /> },
-          { path: "/routines", element: <RoutinesPage /> },
-          { path: "/routines/:id", element: <RoutineDetailPage /> },
+          {
+            path: "/routines",
+            element: <RedirectRoutinesToWorkflows />,
+          },
+          {
+            path: "/routines/:id",
+            element: <RedirectRoutineDetailToWorkflows />,
+          },
           {
             path: "/automations",
-            element: <Navigate to="/routines" replace />,
+            element: <Navigate to="/workflows" replace />,
           },
           {
             path: "/settings",

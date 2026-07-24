@@ -48,6 +48,12 @@ interface WorkflowRunPaneProps {
   deploymentId: string;
   tenantId?: string | null;
   onClose: () => void;
+  /**
+   * Hosted inside the unified Workflows list inspector. Skips page chrome and
+   * per-kind Panel modules so the surface matches dock blocks + GateBlock/StepList
+   * substrate instead of a full stage-set takeover.
+   */
+  embedded?: boolean;
 }
 
 // Selects the run's own custom Panel when its workflow package ships one, and
@@ -59,6 +65,7 @@ export function WorkflowRunPane({
   deploymentId,
   tenantId,
   onClose,
+  embedded = false,
 }: WorkflowRunPaneProps) {
   // Guard an empty id so no record query fires against a missing runId.
   if (!deploymentId) {
@@ -74,6 +81,7 @@ export function WorkflowRunPane({
       deploymentId={deploymentId}
       tenantId={tenantId}
       onClose={onClose}
+      embedded={embedded}
     />
   );
 }
@@ -83,6 +91,7 @@ function WorkflowRunPaneInner({
   deploymentId,
   tenantId,
   onClose,
+  embedded = false,
 }: WorkflowRunPaneProps) {
   const runId = deploymentId;
   const reduceMotion = useReducedMotion();
@@ -153,7 +162,7 @@ function WorkflowRunPaneInner({
   const { data: uiModule, isPending: uiModulePending } = useQuery({
     queryKey: ["workflow-ui-module", kind],
     queryFn: () => loadWorkflowUI(kind as string),
-    enabled: kind !== null,
+    enabled: kind !== null && !embedded,
     staleTime: 5 * 60_000,
   });
 
@@ -258,7 +267,7 @@ function WorkflowRunPaneInner({
       : undefined,
   );
 
-  const Panel = uiModule?.Panel;
+  const Panel = embedded ? undefined : uiModule?.Panel;
 
   const terminal = record ? isRecordTerminal(record.status) : false;
   const stopping = stopRun.isPending;
@@ -340,7 +349,7 @@ function WorkflowRunPaneInner({
       runId,
     ],
   );
-  useSetPageChrome(record ? runChrome : null);
+  useSetPageChrome(embedded ? null : record ? runChrome : null);
 
   // Index says failed but the log is still non-terminal — the run was killed
   // externally (redeploy/abort), not a genuine step failure. Drives the
@@ -473,7 +482,9 @@ function WorkflowRunPaneInner({
     // goes Starting → Panel directly, WITHOUT a flash of the generic blocks
     // shell in between. Shares the "starting" key with the provisioning frame so
     // the spinner node persists (no remount) — only the label changes.
-    if (uiModulePending) {
+    // Embedded inspector always uses shared blocks (dock parity), so skip the
+    // module-loading wait entirely.
+    if (!embedded && uiModulePending) {
       return {
         key: "starting",
         node: (

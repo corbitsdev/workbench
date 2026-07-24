@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { AppPageChromeRow } from "@workbench/ui";
 import { useSetPageChrome } from "../lib/page-chrome";
-import { useLocation } from "react-router";
+import { Link, useLocation } from "react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   SettingsPage,
@@ -42,7 +42,6 @@ import { MyraStylePanel } from "../components/MyraStylePanel";
 import { MyraPinnedSkillsPanel } from "../components/MyraPinnedSkillsPanel";
 import { MyraToolsPanel } from "../components/MyraToolsPanel";
 import { MyraInferenceDialsPanel } from "../components/MyraInferenceDialsPanel";
-import { MySchedules } from "../components/MySchedules";
 import { MORNING_BRIEF_ANCHOR_ID } from "./settings-section-nav";
 import { useMyraVoiceInput } from "../hooks/use-myra-voice-input";
 import { isFeatureEnabled, useMeFeatures } from "../hooks/use-me-features";
@@ -360,9 +359,15 @@ export default function Settings() {
           <SettingsGroup
             id="schedules"
             title="Schedules"
-            description="Workflows you've put on a daily cadence — pause, retime, or remove them here."
+            description="Scheduled and live workflows live on the Workflows page — pause, retime, create, and inspect them there."
           >
-            <MySchedules tenantId={activeTenantId} embedded />
+            <Link
+              to="/workflows"
+              data-testid="settings-open-workflows"
+              className="inline-flex items-center gap-1 text-[13px] font-medium text-orange underline-offset-2 hover:underline"
+            >
+              Open Workflows →
+            </Link>
           </SettingsGroup>
         )}
 

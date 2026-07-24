@@ -216,10 +216,10 @@ function PreviewPanel({
         </button>
         {entry.attachable && (
           <Link
-            to="/routines"
+            to="/workflows?new=1"
             className="text-[13px] font-medium text-text-2 underline-offset-2 hover:text-text hover:underline"
           >
-            Schedule in Routines →
+            Schedule in Workflows →
           </Link>
         )}
       </div>

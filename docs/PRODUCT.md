@@ -64,26 +64,33 @@ Granola, simply matched as a call participant). See
   shown as disabled) — it does not just stop running. Re-enabling it restores
   each member's prior on/off choice rather than resetting everyone to off.
 
-## Routines
+## Workflows (scheduled + live)
 
-Two ways work can start without a user opening the app:
+One member surface — **Workflows** — for operational work:
 
-- **Scheduled triggers** — a durable, per-user schedule (daily, UTC-hour
-  cadence) that fires a workflow run. Users manage their own schedules from a
-  dedicated page. One heartbeat schedule is seeded automatically per Myra
-  instance so Myra can check in on a cadence even if the user never sets up a
-  schedule themselves. The **owner turns routines on or off** from the
-  Capabilities page — scheduling, triage, and task sync are each a toggle,
-  disabled by default, with no deploy needed to flip them. When the owner has
-  a capability off, the matching member controls **disappear from settings**
-  (morning brief time and schedules for scheduling; triage create for triage;
-  auto-send tasks for task sync) rather than showing as disabled grey knobs.
-  Re-enabling a capability restores each member's prior preference values.
+- **Live runs** — in-flight and needs-you jobs appear in the list; open a row for
+  the right-hand live inspector (shared step/gate blocks with the chat dock).
+  Deep links use `/workflows/:runId`.
+- **Scheduled triggers** — durable per-user (and Everyone) schedules on a daily
+  UTC-hour cadence. Manage them from the same Workflows list (inspector + New
+  Workflow). One heartbeat schedule is seeded automatically per Myra instance so
+  Myra can check in even if the user never sets up a schedule themselves. The
+  **owner turns scheduling-related capabilities on or off** from the Capabilities
+  page — scheduling, triage, and task sync are each a toggle, disabled by default,
+  with no deploy needed to flip them. When the owner has a capability off, the
+  matching member controls **disappear from settings** (morning brief time and
+  schedules for scheduling; triage create for triage; auto-send tasks for task
+  sync) rather than showing as disabled grey knobs. Re-enabling a capability
+  restores each member's prior preference values. Owner **Schedules** remains the
+  control plane for Everyone-scope schedules.
 - **Webhook triggers** — a user can mint a webhook that starts a workflow run
   when an external system posts to it. The public endpoint is secret-authenticated
   and rate-limited per source IP to prevent abuse; a failed or unauthorized
   request returns a generic not-found rather than revealing which triggers
   exist.
+
+Legacy `/routines` and `/routines/:id` URLs redirect into Workflows. There is no
+separate Routines navigation item.
 
 Users shape their own morning brief: when it arrives (their brief hour), which
 sources feed it (per-source toggles — Granola calls today, more as

@@ -1,9 +1,17 @@
 /// <reference types="bun" />
 import "../test-setup";
 import { afterEach, describe, expect, it, mock } from "bun:test";
-import { cleanup, render, screen } from "@testing-library/react";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import React from "react";
 import { createMemoryRouter, RouterProvider } from "react-router";
+import { PageChromeProvider, usePageChromeSlot } from "../lib/page-chrome";
 
 let activeTenantId: string | null = "ten-1";
 
@@ -17,114 +25,315 @@ mock.module("../lib/active-workbench-context", () => ({
   }),
 }));
 
-let lastPaneTenantId: string | null | undefined;
+const getWorkflowsCatalog = mock(async () => ({
+  entries: [
+    {
+      kind: "heartbeat",
+      label: "Morning brief",
+      description: "Daily brief",
+      isFavorite: false,
+      stepCount: 1,
+      pauseCount: 0,
+      steps: [],
+      attachable: true,
+      allowedScopes: ["personal"] as ("personal" | "tenant")[],
+      defaultScope: "personal" as const,
+      intakeFields: [],
+    },
+    {
+      kind: "last30days-research",
+      label: "Last 30 Days Research",
+      description: "Research topic",
+      isFavorite: false,
+      stepCount: 1,
+      pauseCount: 0,
+      steps: [],
+      attachable: true,
+      allowedScopes: ["personal"] as ("personal" | "tenant")[],
+      defaultScope: "personal" as const,
+      intakeFields: [],
+    },
+  ],
+}));
+
+const listMeSchedules = mock(async () => [
+  {
+    id: "sched-1",
+    workflowKind: "heartbeat",
+    name: "Morning",
+    recurrence: { intervalMinutes: 1440, anchorMinuteUtc: 14 * 60 },
+    enabled: true,
+    scope: "personal" as const,
+    ownerMemberPrincipalId: "p1",
+    triggerPayload: {},
+    createdAt: new Date().toISOString(),
+    lastRunId: null,
+    recentFires: [],
+    nextFireAt: "2099-01-05T14:00:00.000Z",
+  },
+  {
+    id: "sched-2",
+    workflowKind: "last30days-research",
+    name: "last30days-research",
+    recurrence: { intervalMinutes: 10080, anchorMinuteUtc: 9 * 60 },
+    enabled: false,
+    scope: "tenant" as const,
+    ownerMemberPrincipalId: "p1",
+    triggerPayload: {},
+    createdAt: new Date().toISOString(),
+    lastRunId: null,
+    recentFires: [],
+    nextFireAt: null,
+  },
+]);
+
+const createMeSchedule = mock(async () => ({
+  id: "sched-new",
+  workflowKind: "heartbeat",
+  name: "Morning brief",
+  recurrence: { intervalMinutes: 1440, anchorMinuteUtc: 14 * 60 },
+  enabled: true,
+  scope: "personal" as const,
+  ownerMemberPrincipalId: "p1",
+  triggerPayload: {},
+  createdAt: new Date().toISOString(),
+  lastRunId: null,
+  recentFires: [],
+  nextFireAt: "2099-01-06T14:00:00.000Z",
+}));
+
+mock.module("../lib/hub-api", () => ({
+  getWorkflowsCatalog,
+  listMeSchedules,
+  createMeSchedule,
+  updateMeSchedule: mock(async () => ({})),
+  deleteMeSchedule: mock(async () => undefined),
+  patchMePreferences: mock(async () => ({ preferences: {} })),
+}));
+
+const runs = [
+  {
+    runId: "run-live-1",
+    kind: "heartbeat",
+    status: "running",
+    createdAt: new Date(Date.now() - 62_000).toISOString(),
+  },
+  {
+    runId: "run-await-1",
+    kind: "last30days-research",
+    status: "awaiting",
+    createdAt: new Date(Date.now() - 120_000).toISOString(),
+  },
+  {
+    runId: "run-done-1",
+    kind: "heartbeat",
+    status: "completed",
+    createdAt: new Date(Date.now() - 3600_000).toISOString(),
+  },
+];
+
+mock.module("../hooks/use-workflow", () => ({
+  useWorkflowRuns: () => ({
+    data: runs,
+    isPending: false,
+    isError: false,
+    isLoading: false,
+  }),
+  useStartWorkflow: () => ({
+    mutateAsync: mock(async () => ({ runId: "run-new" })),
+    isPending: false,
+  }),
+}));
+
+mock.module("./workflows/ConnectedScheduleInspector", () => ({
+  ConnectedScheduleInspector: ({
+    schedule,
+  }: {
+    schedule: { id: string; name: string };
+  }) => (
+    <div data-testid="schedule-inspector-connected">
+      Schedule {schedule.id}
+    </div>
+  ),
+}));
+
 mock.module("../components/WorkflowRunPane", () => ({
-  WorkflowRunPane: (props: {
+  WorkflowRunPane: ({
+    deploymentId,
+    embedded,
+  }: {
     deploymentId: string;
-    tenantId?: string | null;
-  }) => {
-    lastPaneTenantId = props.tenantId;
-    return React.createElement(
-      "div",
-      { "data-testid": "run-pane" },
-      props.deploymentId,
-    );
-  },
+    embedded?: boolean;
+  }) => (
+    <div
+      data-testid="live-run-inspector-pane"
+      data-embedded={embedded ? "true" : "false"}
+    >
+      Run {deploymentId}
+    </div>
+  ),
 }));
 
-mock.module("../components/ErrorBoundary", () => ({
-  ErrorBoundary: ({ children }: { children: React.ReactNode }) =>
-    React.createElement(React.Fragment, null, children),
-}));
+const { WorkflowsPage } = await import("./WorkflowsPage");
 
-// Stub the catalog surface: capture its props so tests can assert the page
-// wires the tenant and the started-run navigation into it.
-let lastCatalogSurfaceProps: {
-  tenantId: string | null;
-  onWorkflowStarted: (runId: string) => void;
-} | null = null;
-mock.module("../components/ActiveWorkflowRuns", () => ({
-  ActiveWorkflowRuns: () => null,
-}));
-
-mock.module("../components/WorkflowCatalog", () => ({
-  WorkflowCatalog: (props: {
-    tenantId: string | null;
-    onWorkflowStarted: (runId: string) => void;
-  }) => {
-    lastCatalogSurfaceProps = props;
-    return React.createElement(
-      "div",
-      { "data-testid": "workflow-catalog-surface" },
-      "catalog surface",
-    );
-  },
-}));
-
-const { WorkflowsPage } = require("./WorkflowsPage");
+function ChromeSlotProbe() {
+  return <div data-testid="chrome-slot">{usePageChromeSlot()}</div>;
+}
 
 afterEach(() => {
   cleanup();
   activeTenantId = "ten-1";
-  lastPaneTenantId = undefined;
-  lastCatalogSurfaceProps = null;
+  getWorkflowsCatalog.mockClear();
+  listMeSchedules.mockClear();
+  createMeSchedule.mockClear();
 });
 
 function renderWorkflowsPage(initialPath = "/workflows") {
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
+  // ChromeSlotProbe is a sibling of the page under PageChromeProvider (same
+  // pattern as RoutinesPage.test) so published chrome is visible to assertions.
   const router = createMemoryRouter(
     [
-      { path: "/workflows", element: React.createElement(WorkflowsPage) },
+      {
+        path: "/workflows",
+        element: <WorkflowsPage />,
+      },
       {
         path: "/workflows/:workflowId",
-        element: React.createElement(WorkflowsPage),
+        element: <WorkflowsPage />,
       },
     ],
     { initialEntries: [initialPath] },
   );
-  const view = render(React.createElement(RouterProvider, { router }));
+  const view = render(
+    <QueryClientProvider client={client}>
+      <PageChromeProvider>
+        <ChromeSlotProbe />
+        <RouterProvider router={router} />
+      </PageChromeProvider>
+    </QueryClientProvider>,
+  );
   return { router, ...view };
 }
 
 describe("WorkflowsPage", () => {
-  it("renders the catalog surface wired to the active tenant", () => {
-    activeTenantId = "ten-42";
+  it("renders Live and Scheduled sections from real data", async () => {
     renderWorkflowsPage();
-    screen.getByTestId("workflow-catalog-surface");
-    expect(lastCatalogSurfaceProps?.tenantId).toBe("ten-42");
+    await waitFor(() => {
+      expect(screen.getByRole("table", { name: "Workflows" })).toBeTruthy();
+    });
+    expect(screen.getByText(/Live ·/)).toBeTruthy();
+    expect(screen.getByText(/Scheduled ·/)).toBeTruthy();
+    expect(screen.getAllByText("Morning brief").length).toBeGreaterThanOrEqual(
+      1,
+    );
+    expect(
+      screen.getAllByText("Last 30 Days Research").length,
+    ).toBeGreaterThanOrEqual(1);
   });
 
-  it("does not render run history, filters, or a New-run button", () => {
+  it("shows New Workflow CTA and empty inspector until selection", async () => {
     renderWorkflowsPage();
-    expect(screen.queryByLabelText("Search runs")).toBeNull();
-    expect(screen.queryByRole("button", { name: /new run/i })).toBeNull();
-    expect(screen.queryByRole("button", { name: "Failed" })).toBeNull();
+    await waitFor(() => {
+      expect(screen.getByRole("table", { name: "Workflows" })).toBeTruthy();
+    });
+    await waitFor(() => {
+      expect(screen.getByTestId("new-workflow-button")).toBeTruthy();
+    });
+    expect(screen.getByText("Select a workflow")).toBeTruthy();
   });
 
-  it("points to Routines instead of embedding its own schedules list", () => {
+  it("selects a schedule from ?schedule= and shows schedule inspector", async () => {
+    renderWorkflowsPage("/workflows?schedule=sched-1");
+    await waitFor(() => {
+      expect(screen.getByTestId("schedule-inspector-connected")).toBeTruthy();
+    });
+    expect(screen.getByText("Schedule sched-1")).toBeTruthy();
+  });
+
+  it("selects a live run from path and shows live inspector", async () => {
+    renderWorkflowsPage("/workflows/run-live-1");
+    await waitFor(() => {
+      expect(screen.getByTestId("live-run-inspector")).toBeTruthy();
+    });
+    // List stays mounted — path opens inspector, not a full-page takeover.
+    expect(screen.getByRole("table", { name: "Workflows" })).toBeTruthy();
+    const pane = screen.getByTestId("live-run-inspector-pane");
+    expect(pane).toBeTruthy();
+    expect(pane.getAttribute("data-embedded")).toBe("true");
+    expect(screen.getByText("Run run-live-1")).toBeTruthy();
+  });
+
+  it("selects a live run from ?run= query the same way", async () => {
+    renderWorkflowsPage("/workflows?run=run-live-1");
+    await waitFor(() => {
+      expect(screen.getByTestId("live-run-inspector")).toBeTruthy();
+    });
+    expect(screen.getByRole("table", { name: "Workflows" })).toBeTruthy();
+    expect(screen.getByText("Run run-live-1")).toBeTruthy();
+  });
+
+  it("filters to Needs you live rows", async () => {
     renderWorkflowsPage();
-    const link = screen.getByRole("link", { name: "Routines" });
-    expect(link.getAttribute("href")).toBe("/routines");
+    await waitFor(() => {
+      expect(screen.getByText(/Live ·/)).toBeTruthy();
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Needs you" }));
+    await waitFor(() => {
+      expect(screen.queryByText(/Scheduled ·/)).toBeNull();
+    });
+    expect(screen.getAllByText("Needs you").length).toBeGreaterThanOrEqual(1);
   });
 
-  it("navigates to the interactive run detail when a run is started", () => {
-    const { router } = renderWorkflowsPage();
-    lastCatalogSurfaceProps?.onWorkflowStarted("run-new");
-    expect(router.state.location.pathname).toBe("/workflows/run-new");
-  });
-
-  it("opens the run pane on a /workflows/:workflowId deep link, scoped to the tenant", () => {
-    activeTenantId = "ten-7";
-    renderWorkflowsPage("/workflows/run-1");
-    expect(screen.getByTestId("run-pane").textContent).toBe("run-1");
-    expect(lastPaneTenantId).toBe("ten-7");
-    // The catalog is not mounted while a run is open.
+  it("does not render the old catalog surface or Routines link", async () => {
+    renderWorkflowsPage();
+    await waitFor(() => {
+      expect(screen.getByRole("table", { name: "Workflows" })).toBeTruthy();
+    });
     expect(screen.queryByTestId("workflow-catalog-surface")).toBeNull();
+    expect(screen.queryByRole("link", { name: "Routines" })).toBeNull();
   });
 
-  it("returns to the catalog when the run pane is closed", async () => {
-    const { router } = renderWorkflowsPage("/workflows/run-1");
-    // WorkflowRunPane is stubbed, so drive the close by navigating as it would.
-    await router.navigate("/workflows");
-    await screen.findByTestId("workflow-catalog-surface");
+  it("opens the kind picker via ?new=1 with already-on badges", async () => {
+    renderWorkflowsPage("/workflows?new=1");
+    await waitFor(() => {
+      expect(screen.getByTestId("new-workflow-picker")).toBeTruthy();
+    });
+    expect(screen.getByText("Morning brief")).toBeTruthy();
+    expect(screen.getByText("Last 30 Days Research")).toBeTruthy();
+    expect(screen.getByText(/Mine 1/)).toBeTruthy();
+    expect(screen.getByText(/Everyone 1/)).toBeTruthy();
+  });
+
+  it("selects a kind and shows the create form", async () => {
+    renderWorkflowsPage("/workflows?new=1");
+    await waitFor(() => {
+      expect(screen.getByTestId("new-workflow-picker")).toBeTruthy();
+    });
+    fireEvent.click(screen.getByText("Morning brief"));
+    await waitFor(() => {
+      expect(screen.getByTestId("new-workflow-create-heartbeat")).toBeTruthy();
+    });
+    expect(screen.getByTestId("schedule-flow-primary")).toBeTruthy();
+    expect(screen.getByText("Summary")).toBeTruthy();
+  });
+
+  it("creates a schedule and selects it on the list", async () => {
+    const { router } = renderWorkflowsPage(
+      "/workflows?new=1&kind=heartbeat",
+    );
+    await waitFor(() => {
+      expect(screen.getByTestId("new-workflow-create-heartbeat")).toBeTruthy();
+    });
+    fireEvent.click(screen.getByTestId("schedule-flow-primary"));
+    await waitFor(() => {
+      expect(createMeSchedule).toHaveBeenCalled();
+    });
+    await waitFor(() => {
+      expect(router.state.location.search).toContain("schedule=sched-new");
+    });
+    expect(router.state.location.search).not.toContain("new=");
   });
 });

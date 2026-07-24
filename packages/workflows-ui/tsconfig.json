@@ -11,11 +11,9 @@
     "skipLibCheck": true,
     "declaration": true,
     "declarationMap": true,
-    "customConditions": [
-      "intx-src"
-    ]
+    "jsx": "react-jsx",
+    "lib": ["ESNext", "DOM"],
+    "customConditions": ["intx-src"]
   },
-  "include": [
-    "src/**/*"
-  ]
+  "include": ["src/**/*"]
 }

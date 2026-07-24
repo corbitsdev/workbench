@@ -86,13 +86,13 @@ function RunHistory({ existing }: { existing: ScheduledTrigger }) {
 }
 
 /**
- * Detail/edit page for a single schedule (CL-4277). Schedules are unique on
- * (tenant, owner, kind, name), so several schedules of one workflow kind can
- * exist at once — this page addresses exactly one of them by its own id
- * (never by kind), matching the id-keyed row on `/routines` that links here.
- * No dedicated single-schedule endpoint exists; the schedule is derived from
- * the already-loaded `useMeSchedules()` list, same as the list page, so a
- * cold deep link to this URL still resolves once that query settles.
+ * @deprecated Not routed. Member `/routines/:id` redirects to
+ * `/workflows?schedule=:id`. Kept for historical unit tests only — use
+ * `ConnectedScheduleInspector` on `WorkflowsPage` for the live surface.
+ *
+ * Former schedule detail: id-keyed edit (`ScheduleFlow`) + run history for one
+ * schedule (never by kind). No dedicated single-schedule endpoint exists; the
+ * schedule is derived from `useMeSchedules()`.
  */
 export function RoutineDetailPage() {
   const { id } = useParams<{ id: string }>();

@@ -11,7 +11,6 @@ import {
   FlaskConical,
   ChevronDown,
   ExternalLink,
-  Zap,
   type LucideIcon,
 } from "lucide-react";
 import { NavLink, Link, useNavigate } from "react-router";
@@ -33,7 +32,6 @@ const NAV_ITEMS = [
   { to: "/chats", label: "Threads", icon: Home, end: false },
   { to: "/library", label: "Library", icon: Files, end: false },
   { to: "/workflows", label: "Workflows", icon: Workflow, end: false },
-  { to: "/routines", label: "Routines", icon: Zap, end: false },
   { to: "/insights", label: "Insights", icon: BarChart2, end: false },
 ] as const;
 

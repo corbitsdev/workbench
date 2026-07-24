@@ -123,6 +123,17 @@ describe("AppSidebar", () => {
     ).toBe("/settings");
   });
 
+  it("does not show a Routines nav item (schedules live under Workflows)", () => {
+    renderSidebar();
+    expect(screen.queryByRole("link", { name: /^routines$/i })).toBeNull();
+    expect(document.querySelector('a[href="/routines"]')).toBeNull();
+    expect(
+      (
+        screen.getByRole("link", { name: /^workflows$/i }) as HTMLAnchorElement
+      ).getAttribute("href"),
+    ).toBe("/workflows");
+  });
+
   it("lists Inbox first in the primary nav", () => {
     renderSidebar();
     const nav = screen.getByRole("navigation", { name: /main navigation/i });

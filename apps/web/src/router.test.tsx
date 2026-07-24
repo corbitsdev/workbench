@@ -10,7 +10,7 @@ import {
   type RouteObject,
 } from "react-router";
 import { render, screen, waitFor } from "@testing-library/react";
-import { router } from "./router";
+import { NAV_COMMANDS, router } from "./router";
 import { InboxPage } from "./pages/InboxPage";
 import SettingsLayout from "./pages/SettingsLayout";
 import LibraryLayout from "./pages/LibraryLayout";
@@ -311,5 +311,43 @@ describe("router", () => {
       "/settings/agents",
     );
     expect(landed).toBe("/library/agents");
+  });
+
+  it("keeps redirect-only entries for the former Routines paths", () => {
+    for (const path of ["/routines", "/routines/sched_1", "/automations"]) {
+      const matched = matchRoutes(router.routes, path);
+      expect(matched, `no route matches legacy path ${path}`).not.toBeNull();
+    }
+  });
+
+  it("actually redirects /routines to /workflows", async () => {
+    const landed = await landedAt("/routines", "/workflows", "/routines");
+    expect(landed).toBe("/workflows");
+  });
+
+  it("actually redirects /routines/:id to /workflows?schedule=:id", async () => {
+    const landed = await landedAt(
+      "/routines/:id",
+      "/workflows",
+      "/routines/sched_1",
+    );
+    expect(landed).toBe("/workflows?schedule=sched_1");
+  });
+
+  it("actually redirects /automations to /workflows", async () => {
+    const landed = await landedAt(
+      "/automations",
+      "/workflows",
+      "/automations",
+    );
+    expect(landed).toBe("/workflows");
+  });
+
+  it("exposes Workflows (not Routines) as the member navigation command", () => {
+    const titles = NAV_COMMANDS.map((c) => c.title);
+    expect(titles).toContain("Workflows");
+    expect(titles).not.toContain("Routines");
+    const workflows = NAV_COMMANDS.find((c) => c.id === "nav:workflows");
+    expect(workflows?.to).toBe("/workflows");
   });
 });

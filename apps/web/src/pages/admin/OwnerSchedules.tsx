@@ -25,9 +25,9 @@ const RECURRENCE_UNIT_OPTIONS: { value: RecurrenceUnit; label: string }[] = [
 ];
 
 /**
- * Owner → Schedules (CL-4113). Control-plane list of **Everyone**
+ * Owner → Schedules. Control-plane list of **Everyone**
  * (tenant-scoped) schedules for the root workbench tenant — kind, cadence,
- * last/next fire, pause. Personal schedules stay under member Routines.
+ * last/next fire, pause. Personal schedules stay under member Workflows.
  *
  * Labels use `workflowKind` (owner workflow catalog has no display names).
  */
@@ -73,10 +73,10 @@ export function OwnerSchedules() {
   return (
     <div className="space-y-4">
       <p className="text-sm text-text-2">
-        Workspace routines scheduled for{" "}
+        Workspace workflows scheduled for{" "}
         <span className="font-medium text-text">Everyone</span> — one run per
         fire for the whole workbench, not once per member. Personal schedules
-        live under each member&rsquo;s Routines list.
+        live under each member&rsquo;s Workflows list.
       </p>
       {error && (
         <p className="text-sm text-red-500" role="status">
@@ -85,8 +85,8 @@ export function OwnerSchedules() {
       )}
       {items.length === 0 ? (
         <p className="p-3 text-sm text-text-2">
-          No Everyone schedules yet. Members create them from the workflow
-          catalog with scope &ldquo;Everyone.&rdquo;
+          No Everyone schedules yet. Members create them from Workflows with
+          scope &ldquo;Everyone.&rdquo;
         </p>
       ) : (
         <div className={adminTableCard}>

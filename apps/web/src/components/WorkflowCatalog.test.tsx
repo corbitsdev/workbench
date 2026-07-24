@@ -241,13 +241,13 @@ describe("WorkflowCatalog", () => {
     resolveStart?.();
   });
 
-  it("points an attachable workflow at Routines instead of a schedule popover", () => {
+  it("points an attachable workflow at Workflows instead of a schedule popover", () => {
     renderCatalog(onWorkflowStarted);
     // The first (favorited) entry, "pain", is not attachable — no pointer.
-    expect(screen.queryByText("Schedule in Routines →")).toBeNull();
+    expect(screen.queryByText("Schedule in Workflows →")).toBeNull();
     fireEvent.click(screen.getByText("Morning Brief"));
-    const link = screen.getByRole("link", { name: "Schedule in Routines →" });
-    expect(link.getAttribute("href")).toBe("/routines");
+    const link = screen.getByRole("link", { name: "Schedule in Workflows →" });
+    expect(link.getAttribute("href")).toBe("/workflows?new=1");
   });
 
   it("collects required inline inputs and blocks start until they are filled", async () => {

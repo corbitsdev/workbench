@@ -23,16 +23,12 @@ import {
 } from "../lib/schedule-time";
 
 /**
- * Routines home (CL-3862, renamed from Automations in CL-4211): a list of the
- * member's actual schedules — one row per schedule, not per catalog kind
- * (CL-4277), since schedules are unique on (tenant, owner, kind, name) and a
- * single kind can have several. Clicking a row navigates to that schedule's
- * own detail page (`/routines/:id`, `RoutineDetailPage`), which owns editing
- * (`ScheduleFlow`) and run history — this list page only creates. "+ New
- * Routine" opens a kind picker (matching the "+ New thread" / "+ Add skill"
- * pattern on ChatsListPage/SkillsLibrary) that drops into the same
- * `ScheduleFlow` inline; picking a kind that already has a schedule creates
- * an additional one, which is how a kind gets a second schedule.
+ * @deprecated Not routed. Member `/routines` redirects to `/workflows`.
+ * Kept for historical unit tests only — use `WorkflowsPage` /
+ * `ConnectedNewWorkflow` for the live surface.
+ *
+ * Former Routines home: schedule-driven rows (one per schedule, not per catalog
+ * kind). Detail lived at `/routines/:id` (`RoutineDetailPage`).
  */
 export function RoutinesPage() {
   const navigate = useNavigate();

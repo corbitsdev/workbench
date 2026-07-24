@@ -30,6 +30,7 @@
     "@workbench/tools-granola": "workspace:*",
     "@workbench/transcript": "workspace:*",
     "@workbench/ui": "workspace:*",
+    "@workbench/workflows-ui": "workspace:*",
     "@workbench/analytics": "workspace:*",
     "@workbench/ab-compare-presets": "workspace:*",
     "@workbench/workflow-attio-task-agent": "workspace:*",

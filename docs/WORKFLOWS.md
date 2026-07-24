@@ -257,22 +257,23 @@ false-positive while work is queued. A periodic reconciler
 a code constant unless tests pass `timeoutMs`) if intake or Myra drive never
 clears the gate.
 
-### Routines product allowlist (CL-4204, renamed from Automations in CL-4211)
+### Schedule product allowlist (formerly Routines allowlist)
 
 **Structural attachability** (above) answers “can this kind finish unattended?” —
 it is a hard server gate and stays. **Product eligibility** answers “should
-Routines / Owner schedules offer this kind?” and is a separate opt-in list.
+Workflows / Owner schedules offer this kind?” and is a separate opt-in list.
 
 - Source of truth: `ROUTINE_ELIGIBLE_KINDS` / `isRoutineEligibleKind` in
   `packages/workbench-shared/src/routine-eligible.ts` (exported from
-  `@workbench/shared`).
+  `@workbench/shared`). Symbol names keep the historical “routine” prefix;
+  member chrome says Workflows.
 - v1 kinds: `heartbeat`, `prospect-engine`, `last30days-research`.
 - Both gates apply at catalog (`attachable` = structural **and** product) and at
   `POST /me/schedules` (400 with a product-specific message when structural-ok
   but not allowlisted).
 - One-offs (smoke-test, gamma, deck builders, etc.) and mid-run human-gate kinds
   (e.g. competitor-analysis) stay off the list. Granola call processing is a
-  work-unit / short-interval path, not a daily Routines schedule.
+  work-unit / short-interval path, not a daily Workflows schedule.
 
 ### Workflows surface as UIBlocks in chat
 

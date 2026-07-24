@@ -300,9 +300,15 @@ export function MySchedules({ tenantId, embedded = false }: MySchedulesProps) {
             My schedules
           </h2>
           <p className="text-[12px] text-text-3">
-            Daily routines you own.{" "}
+            Scheduled workflows you own.{" "}
             <span className="text-text-2">Everyone</span> schedules run once for
-            the workspace and fan outcomes into inboxes — not once per person.
+            the workspace and fan outcomes into inboxes — not once per person.{" "}
+            <Link
+              to="/workflows"
+              className="font-medium text-orange underline-offset-2 hover:underline"
+            >
+              Open Workflows →
+            </Link>
           </p>
         </div>
       )}
