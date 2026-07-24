@@ -555,6 +555,55 @@ describe("InboxPage", () => {
     expect(markReadIds).toEqual([]);
   });
 
+  // CL-4423 regression: opening a message that is NOT in the paginated,
+  // kind-filtered `messages` list (e.g. a Now card, a deep link, or anything
+  // beyond page 1) must still fire mark-read, falling back to the detail
+  // fetch's own copy of the message the same way `headerSource` does.
+  // Against the pre-fix `listRow`-only derivation this fails: `listRow` is
+  // null for an id absent from `mailbox`, so `unreadSelectedId` never
+  // resolves and the mutation never fires.
+  it("marks read a message that is unread but not present in the loaded mailbox page (CL-4423)", () => {
+    mailbox = {
+      data: [makeMessage({ id: "msg-other", subject: "Unrelated" })],
+      isLoading: false,
+      isError: false,
+    };
+    detail = {
+      data: {
+        ...makeMessage({
+          id: "msg-far",
+          subject: "Beyond page 1",
+          read: false,
+        }),
+        body: "This message only exists via the detail fetch.",
+      },
+      isLoading: false,
+      isError: false,
+    };
+    renderInbox("/inbox/msg-far");
+    screen.getByRole("heading", { name: "Beyond page 1" });
+    expect([...new Set(markReadIds)]).toEqual(["msg-far"]);
+  });
+
+  it("does not re-mark an already-read message reached only through the detail fetch", () => {
+    mailbox = {
+      data: [makeMessage({ id: "msg-other", subject: "Unrelated" })],
+      isLoading: false,
+      isError: false,
+    };
+    detail = {
+      data: {
+        ...makeMessage({ id: "msg-far", subject: "Beyond page 1", read: true }),
+        body: "Already read.",
+      },
+      isLoading: false,
+      isError: false,
+    };
+    renderInbox("/inbox/msg-far");
+    screen.getByRole("heading", { name: "Beyond page 1" });
+    expect(markReadIds).toEqual([]);
+  });
+
   it("renders the pane for a message beyond the loaded mailbox pages, from the detail fetch alone", () => {
     mailbox = {
       data: [makeMessage({ id: "msg-1", subject: "Morning brief" })],
@@ -1296,7 +1345,9 @@ describe("Hybrid Focus shell (CL-4397)", () => {
     expect(screen.queryByRole("list", { name: "Now" })).toBeNull();
     screen.getByText("Brief body.");
     // Focus reading layout: queue pin ~33%, detail flexes into the rest.
-    const rail = screen.getByRole("list", { name: "Messages" }).closest("aside");
+    const rail = screen
+      .getByRole("list", { name: "Messages" })
+      .closest("aside");
     expect(rail?.className).toContain("md:w-[min(34%,420px)]");
     expect(rail?.className).not.toContain("md:w-full");
   });
@@ -1308,11 +1359,80 @@ describe("Hybrid Focus shell (CL-4397)", () => {
       isError: false,
     };
     renderInbox();
-    const rail = screen.getByRole("list", { name: "Messages" }).closest("aside");
+    const rail = screen
+      .getByRole("list", { name: "Messages" })
+      .closest("aside");
     expect(rail?.className).toContain("md:w-full");
     expect(rail?.className).not.toContain("md:w-[min(34%,420px)]");
     // Detail stays in the tree but is zero-width / inert for a11y.
     expect(screen.queryByText("Brief body.")).toBeNull();
+  });
+
+  // CL-4423 Fix 2: marking the open item read invalidates the "unread" query.
+  // When that refetch drops the item (it's no longer unread), the open row
+  // must not vanish out from under the drawer — it stays pinned, still
+  // selected, until the user opens something else.
+  it("keeps the open item visible and selected in the unread rail after it's marked read", () => {
+    mailbox = {
+      data: [
+        makeMessage({ id: "msg-1", subject: "Morning brief", read: false }),
+      ],
+      isLoading: false,
+      isError: false,
+    };
+    detail = {
+      data: {
+        ...makeMessage({ id: "msg-1", subject: "Morning brief", read: false }),
+        body: "Brief body.",
+      },
+      isLoading: false,
+      isError: false,
+    };
+    renderInbox("/inbox/msg-1?view=unread");
+    const rail = screen.getByRole("list", { name: "Messages" });
+    within(rail).getByText("Morning brief");
+    expect([...new Set(markReadIds)]).toEqual(["msg-1"]);
+
+    // Simulate the "unread" query's post-invalidate refetch dropping the
+    // now-read item, then force a re-render off the fresh mailbox state.
+    mailbox = { data: [], isLoading: false, isError: false };
+    fireEvent.click(
+      screen.getByRole("checkbox", { name: /select all visible messages/i }),
+    );
+
+    const railAfter = screen.getByRole("list", { name: "Messages" });
+    within(railAfter).getByText("Morning brief");
+    const selectedRow = within(railAfter).getByRole("button", {
+      current: true,
+    });
+    expect(selectedRow.textContent).toContain("Morning brief");
+  });
+
+  it("drops the pinned unread item once the user navigates away from it", () => {
+    mailbox = {
+      data: [
+        makeMessage({ id: "msg-1", subject: "Morning brief", read: false }),
+      ],
+      isLoading: false,
+      isError: false,
+    };
+    detail = {
+      data: {
+        ...makeMessage({ id: "msg-1", subject: "Morning brief", read: false }),
+        body: "Brief body.",
+      },
+      isLoading: false,
+      isError: false,
+    };
+    const router = renderInbox("/inbox/msg-1?view=unread");
+    screen.getByRole("heading", { name: "Morning brief" });
+
+    mailbox = { data: [], isLoading: false, isError: false };
+    fireEvent.click(screen.getByRole("button", { name: /back to inbox/i }));
+    expect(router.state.location.pathname).toBe("/inbox");
+
+    expect(screen.queryByRole("heading", { name: "Morning brief" })).toBeNull();
+    screen.getByText("No unread messages");
   });
 
   it("shows Recommended guidance and primary action on the detail drawer", () => {

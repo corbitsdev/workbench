@@ -168,6 +168,39 @@ export function InboxPage() {
   // still opens: `useMailboxMessage` fetches its full detail directly by id.
   // The loaded row (when present) still drives the rail's highlight.
   const listRow = messages.find((m) => m.id === messageId) ?? null;
+
+  // Marking the open item read invalidates the "unread" query, which then
+  // refetches without it — yanking the row out from under the open drawer.
+  // Pin the last-seen row for the currently open message while it's still
+  // open so it stays visible (forced to `read: true`, since it's only
+  // missing here because the mark-read mutation succeeded); it drops away
+  // the moment the user opens something else or leaves the unread view, so
+  // read items still leave the unread rail on the next navigation as before.
+  const [pinnedUnreadRow, setPinnedUnreadRow] = useState<MailboxMessage | null>(
+    null,
+  );
+  useEffect(() => {
+    if (inboxView !== "unread" || !messageId) {
+      setPinnedUnreadRow(null);
+      return;
+    }
+    if (listRow) setPinnedUnreadRow(listRow);
+  }, [inboxView, messageId, listRow]);
+  const queueMessages = useMemo(() => {
+    if (
+      inboxView !== "unread" ||
+      !pinnedUnreadRow ||
+      pinnedUnreadRow.id !== messageId ||
+      messages.some((m) => m.id === pinnedUnreadRow.id)
+    ) {
+      return messages;
+    }
+    return [{ ...pinnedUnreadRow, read: true }, ...messages];
+  }, [messages, inboxView, pinnedUnreadRow, messageId]);
+  const queueSelectedId = queueMessages.some((m) => m.id === messageId)
+    ? (messageId ?? null)
+    : null;
+
   const detail = useMailboxMessage(messageId ?? null);
   // Header fields (subject/from/date) prefer the loaded list row, falling
   // back to the detail fetch's own copy of those fields for a message that
@@ -175,12 +208,17 @@ export function InboxPage() {
   const headerSource: MailboxMessage | MailboxMessageDetail | null =
     listRow ?? detail.data ?? null;
 
-  // Reading a message clears its unread state. Driving this from the loaded
-  // list row (not the click handler) marks read on a deep-link open too, and
-  // deriving a null-when-read id makes it idempotent — an already-read
-  // message never re-fires the mutation. A message beyond the loaded pages
-  // isn't marked read here; it will be the next time its page loads.
-  const unreadSelectedId = listRow && !listRow.read ? listRow.id : null;
+  // Reading a message clears its unread state. This must fire for ANY opened
+  // message — not only one present in the paginated, kind-filtered list — so
+  // it falls back to the detail fetch's own copy, the same fallback
+  // `headerSource` already uses. Without it, Now cards, deep links, and
+  // anything beyond page 1 open and render fine (the drawer reads
+  // `detail.data` directly) but never get marked read, since `listRow` alone
+  // is null for those (CL-4423). Deriving a null-when-read id keeps this
+  // idempotent — an already-read message never re-fires the mutation.
+  const markReadSource = listRow ?? detail.data ?? null;
+  const unreadSelectedId =
+    markReadSource && !markReadSource.read ? markReadSource.id : null;
   useEffect(() => {
     if (unreadSelectedId !== null) {
       markReadMutate(unreadSelectedId);
@@ -266,11 +304,14 @@ export function InboxPage() {
   };
 
   const allVisibleSelected =
-    messages.length > 0 && messages.every((m) => selectedIds.has(m.id));
-  const someVisibleSelected = messages.some((m) => selectedIds.has(m.id));
+    queueMessages.length > 0 &&
+    queueMessages.every((m) => selectedIds.has(m.id));
+  const someVisibleSelected = queueMessages.some((m) => selectedIds.has(m.id));
 
   const toggleSelectAllVisible = (checked: boolean) => {
-    setSelectedIds(checked ? new Set(messages.map((m) => m.id)) : new Set());
+    setSelectedIds(
+      checked ? new Set(queueMessages.map((m) => m.id)) : new Set(),
+    );
   };
 
   // Mobile: queue is landing; open message swaps to the drawer.
@@ -326,7 +367,7 @@ export function InboxPage() {
             selectedCount={selectedIds.size}
             allVisibleSelected={allVisibleSelected}
             someVisibleSelected={someVisibleSelected}
-            hasVisibleMessages={messages.length > 0}
+            hasVisibleMessages={queueMessages.length > 0}
             bulkBusy={bulkAction.isPending}
             onChangeView={changeView}
             onChangeKindFilter={changeKindFilter}
@@ -344,8 +385,8 @@ export function InboxPage() {
               Command queue
             </p>
             <CommandQueue
-              messages={messages}
-              selectedId={listRow?.id ?? null}
+              messages={queueMessages}
+              selectedId={queueSelectedId}
               selectedIds={selectedIds}
               isLoading={isLoading}
               isError={isError}
