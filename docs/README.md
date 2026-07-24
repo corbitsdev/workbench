@@ -13,6 +13,7 @@ here rather than duplicated — duplicated detail drifts.
 | Asking what the product *is* (identity, category)      | [`POSITIONING.md`](POSITIONING.md) — horizontal identity; GTM is the first workflow pack, not the identity                   |
 | Designing a change                                     | [`ARCHITECTURE.md`](ARCHITECTURE.md) — system design, the generic workflow-run + artifact model, Interchange boundary        |
 | Understanding how a workflow runs                      | [`WORKFLOWS.md`](WORKFLOWS.md) — the execution model, divergences from Interchange + why, the vendored surface, convergence  |
+| Authoring a workflow package                          | [`WORKFLOW_AUTHORING.md`](WORKFLOW_AUTHORING.md) — portable Interchange core vs Workbench side policy; result-mail contract |
 | Implementing in the hub/sidecar                        | [`IMPLEMENTATION.md`](IMPLEMENTATION.md) — technical details and conventions                                                 |
 | Calling or extending the HTTP API                      | [`API.md`](API.md)                                                                                                           |
 | Insights / usage analytics                             | [`ANALYTICS.md`](ANALYTICS.md)                                                                                               |
