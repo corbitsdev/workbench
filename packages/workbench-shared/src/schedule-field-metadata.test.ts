@@ -2,6 +2,7 @@ import { describe, expect, it } from "bun:test";
 import { type } from "arktype";
 import {
   ScheduleFieldMetadataSchema,
+  buildScheduleTriggerPayload,
   fallbackScheduleFields,
   scheduleFieldInputHint,
   scheduleFieldsMatchIntakeSchema,
@@ -100,5 +101,44 @@ describe("scheduleFieldsMatchIntakeSchema", () => {
         new Set(["topic"]),
       ),
     ).toBe(false);
+  });
+});
+
+describe("buildScheduleTriggerPayload", () => {
+  const fields: ScheduleFieldMetadata[] = [
+    { name: "topic", label: "Topic" },
+    { name: "region", label: "Region", fromProfile: "homeRegion" },
+    { name: "notes", label: "Notes" },
+  ];
+
+  it("keeps fields with real values", () => {
+    expect(
+      buildScheduleTriggerPayload(fields, {
+        topic: "GTM",
+        region: "us-east",
+        notes: "hello",
+      }),
+    ).toEqual({ topic: "GTM", notes: "hello" });
+  });
+
+  it("drops fromProfile fields regardless of draft value", () => {
+    const payload = buildScheduleTriggerPayload(fields, {
+      topic: "GTM",
+      region: "us-east",
+    });
+    expect(payload).not.toHaveProperty("region");
+  });
+
+  it("drops undefined, null, and blank-string values", () => {
+    expect(
+      buildScheduleTriggerPayload(fields, {
+        topic: undefined,
+        notes: "   ",
+      }),
+    ).toEqual({});
+  });
+
+  it("returns an empty object when there are no fields", () => {
+    expect(buildScheduleTriggerPayload([], { topic: "GTM" })).toEqual({});
   });
 });

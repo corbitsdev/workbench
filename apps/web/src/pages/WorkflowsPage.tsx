@@ -169,7 +169,8 @@ export function WorkflowsPage() {
     return liveItems.filter((item) => {
       if (scopeFilter !== "all" && item.scope !== scopeFilter) return false;
       if (statusFilter === "active" || statusFilter === "paused") return false;
-      if (statusFilter === "live" && item.statusTone === "awaiting") return false;
+      if (statusFilter === "live" && item.statusTone === "awaiting")
+        return false;
       if (statusFilter === "needs_you" && item.statusTone !== "awaiting")
         return false;
       if (kindFilter !== "all") {
@@ -185,7 +186,8 @@ export function WorkflowsPage() {
       if (scopeFilter !== "all" && item.scope !== scopeFilter) return false;
       if (statusFilter === "live" || statusFilter === "needs_you") return false;
       if (statusFilter === "active" && item.statusTone !== "done") return false;
-      if (statusFilter === "paused" && item.statusTone !== "paused") return false;
+      if (statusFilter === "paused" && item.statusTone !== "paused")
+        return false;
       if (kindFilter !== "all") {
         const schedule = (schedulesQuery.data ?? []).find(
           (s) => s.id === item.id,
@@ -273,6 +275,15 @@ export function WorkflowsPage() {
     setSearchParams({ schedule: scheduleId }, { replace: true });
   };
 
+  const onNewWorkflowRunStarted = (runId: string) => {
+    const next = new URLSearchParams(searchParams);
+    next.delete("new");
+    next.delete("kind");
+    next.delete("schedule");
+    next.set("run", runId);
+    setSearchParams(next, { replace: true });
+  };
+
   const liveCount = liveItems.length;
   const chrome = useMemo(
     () => (
@@ -310,6 +321,7 @@ export function WorkflowsPage() {
           selectedKind={createKindParam}
           onSelectKind={setCreateKind}
           onCreated={onCreated}
+          onRunStarted={onNewWorkflowRunStarted}
           onCancel={cancelCreate}
         />
       </div>
@@ -492,11 +504,7 @@ export function WorkflowsPage() {
                   scopeFilter === "all" &&
                   statusFilter === "all" &&
                   kindFilter === "all" ? (
-                    <Button
-                      type="button"
-                      size="sm"
-                      onClick={openCreate}
-                    >
+                    <Button type="button" size="sm" onClick={openCreate}>
                       <Plus className="h-3.5 w-3.5" aria-hidden="true" />
                       New Workflow
                     </Button>

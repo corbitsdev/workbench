@@ -1,6 +1,13 @@
-import { useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import {
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import { Link } from "react-router";
 import {
+  buildScheduleTriggerPayload,
   HEARTBEAT_WORKFLOW_KIND,
   type ScheduleFieldMetadata,
   type ScheduleRecurrence,
@@ -99,10 +106,7 @@ function toCatalogEntry(
 
 function RecentFires({ schedule }: { schedule: ScheduledTrigger }) {
   return (
-    <div
-      className="mt-1"
-      data-testid={`schedule-run-history-${schedule.id}`}
-    >
+    <div className="mt-1" data-testid={`schedule-run-history-${schedule.id}`}>
       <InspectorPanelTitle>Recent runs</InspectorPanelTitle>
       {schedule.recentFires.length === 0 ? (
         <p className="text-[12.5px] text-text-3">
@@ -180,9 +184,7 @@ export function ConnectedScheduleInspector(
 ) {
   // Remount on schedule id change so edit drafts always initialize from the
   // schedule the selection now points at.
-  return (
-    <ConnectedScheduleInspectorBody key={props.schedule.id} {...props} />
-  );
+  return <ConnectedScheduleInspectorBody key={props.schedule.id} {...props} />;
 }
 
 function ConnectedScheduleInspectorBody({
@@ -247,9 +249,7 @@ function ConnectedScheduleInspectorBody({
       .mutateAsync({ id: schedule.id, enabled: !schedule.enabled })
       .catch((err: unknown) => {
         setError(
-          err instanceof Error
-            ? err.message
-            : "Could not update the schedule.",
+          err instanceof Error ? err.message : "Could not update the schedule.",
         );
       });
   };
@@ -284,9 +284,7 @@ function ConnectedScheduleInspectorBody({
       })
       .catch((err: unknown) => {
         setError(
-          err instanceof Error
-            ? err.message
-            : "Could not start the workflow.",
+          err instanceof Error ? err.message : "Could not start the workflow.",
         );
       });
   };
@@ -297,14 +295,7 @@ function ConnectedScheduleInspectorBody({
       setError("Fill in the required fields.");
       return;
     }
-    const formPayload: Record<string, unknown> = {};
-    for (const field of fields) {
-      if (field.fromProfile) continue;
-      const v = draftValues[field.name];
-      if (v === undefined || v === null) continue;
-      if (typeof v === "string" && v.trim() === "") continue;
-      formPayload[field.name] = v;
-    }
+    const formPayload = buildScheduleTriggerPayload(fields, draftValues);
     try {
       await updateSchedule.mutateAsync({
         id: schedule.id,

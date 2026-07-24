@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useNavigate } from "react-router";
 import {
+  buildScheduleTriggerPayload,
   HEARTBEAT_WORKFLOW_KIND,
   type ScheduleFieldMetadata,
   type ScheduleRecurrence,
@@ -95,14 +96,7 @@ export function RoutinesPage() {
       setError("Fill in the required fields.");
       return;
     }
-    const formPayload: Record<string, unknown> = {};
-    for (const field of fields) {
-      if (field.fromProfile) continue;
-      const v = draftValues[field.name];
-      if (v === undefined || v === null) continue;
-      if (typeof v === "string" && v.trim() === "") continue;
-      formPayload[field.name] = v;
-    }
+    const formPayload = buildScheduleTriggerPayload(fields, draftValues);
     try {
       await createSchedule.mutateAsync({
         kind: entry.kind,
@@ -192,8 +186,7 @@ export function RoutinesPage() {
               ))}
               {schedulable.length === 0 ? (
                 <li className="text-sm text-text-3">
-                  No schedulable workflows are available in this workspace
-                  yet.
+                  No schedulable workflows are available in this workspace yet.
                 </li>
               ) : null}
             </ul>

@@ -132,6 +132,8 @@ const runs = [
   },
 ];
 
+const startWorkflowMutateAsync = mock(async () => ({ runId: "run-new" }));
+
 mock.module("../hooks/use-workflow", () => ({
   useWorkflowRuns: () => ({
     data: runs,
@@ -140,7 +142,7 @@ mock.module("../hooks/use-workflow", () => ({
     isLoading: false,
   }),
   useStartWorkflow: () => ({
-    mutateAsync: mock(async () => ({ runId: "run-new" })),
+    mutateAsync: startWorkflowMutateAsync,
     isPending: false,
   }),
 }));
@@ -151,9 +153,7 @@ mock.module("./workflows/ConnectedScheduleInspector", () => ({
   }: {
     schedule: { id: string; name: string };
   }) => (
-    <div data-testid="schedule-inspector-connected">
-      Schedule {schedule.id}
-    </div>
+    <div data-testid="schedule-inspector-connected">Schedule {schedule.id}</div>
   ),
 }));
 
@@ -186,6 +186,7 @@ afterEach(() => {
   getWorkflowsCatalog.mockClear();
   listMeSchedules.mockClear();
   createMeSchedule.mockClear();
+  startWorkflowMutateAsync.mockClear();
 });
 
 function renderWorkflowsPage(initialPath = "/workflows") {
@@ -307,7 +308,7 @@ describe("WorkflowsPage", () => {
     expect(screen.getByText(/Everyone 1/)).toBeTruthy();
   });
 
-  it("selects a kind and shows the create form", async () => {
+  it("selects a kind and shows the create form defaulted to run-once", async () => {
     renderWorkflowsPage("/workflows?new=1");
     await waitFor(() => {
       expect(screen.getByTestId("new-workflow-picker")).toBeTruthy();
@@ -316,16 +317,40 @@ describe("WorkflowsPage", () => {
     await waitFor(() => {
       expect(screen.getByTestId("new-workflow-create-heartbeat")).toBeTruthy();
     });
-    expect(screen.getByTestId("schedule-flow-primary")).toBeTruthy();
+    expect(screen.getByTestId("run-once-primary")).toBeTruthy();
     expect(screen.getByText("Summary")).toBeTruthy();
+
+    fireEvent.click(screen.getByTestId("run-mode-schedule"));
+    await waitFor(() => {
+      expect(screen.getByTestId("schedule-flow-primary")).toBeTruthy();
+    });
   });
 
-  it("creates a schedule and selects it on the list", async () => {
-    const { router } = renderWorkflowsPage(
-      "/workflows?new=1&kind=heartbeat",
-    );
+  it("runs a workflow once and navigates to the run", async () => {
+    const { router } = renderWorkflowsPage("/workflows?new=1&kind=heartbeat");
+    await waitFor(() => {
+      expect(screen.getByTestId("run-once-primary")).toBeTruthy();
+    });
+    fireEvent.click(screen.getByTestId("run-once-primary"));
+    await waitFor(() => {
+      expect(router.state.location.search).toContain("run=run-new");
+    });
+    expect(router.state.location.search).not.toContain("new=");
+    expect(createMeSchedule).not.toHaveBeenCalled();
+    expect(startWorkflowMutateAsync).toHaveBeenCalledWith({
+      kind: "heartbeat",
+      input: {},
+    });
+  });
+
+  it("switches to schedule mode and creates a schedule", async () => {
+    const { router } = renderWorkflowsPage("/workflows?new=1&kind=heartbeat");
     await waitFor(() => {
       expect(screen.getByTestId("new-workflow-create-heartbeat")).toBeTruthy();
+    });
+    fireEvent.click(screen.getByTestId("run-mode-schedule"));
+    await waitFor(() => {
+      expect(screen.getByTestId("schedule-flow-primary")).toBeTruthy();
     });
     fireEvent.click(screen.getByTestId("schedule-flow-primary"));
     await waitFor(() => {

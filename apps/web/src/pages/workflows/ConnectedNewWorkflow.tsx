@@ -6,7 +6,10 @@ import type {
   ScheduledTrigger,
   WorkflowCatalogEntry,
 } from "@workbench/shared";
-import { HEARTBEAT_WORKFLOW_KIND } from "@workbench/shared";
+import {
+  buildScheduleTriggerPayload,
+  HEARTBEAT_WORKFLOW_KIND,
+} from "@workbench/shared";
 import {
   CreateScheduleFormLayout,
   CreateScheduleSummary,
@@ -15,12 +18,21 @@ import {
 } from "@workbench/workflows-ui/react";
 import { scheduleFieldsComplete } from "../../components/ScheduleFieldForm";
 import { ScheduleFlow } from "../../components/ScheduleFlow";
+import { RunOnceFlow } from "../../components/RunOnceFlow";
 import { useCreateSchedule } from "../../hooks/use-schedules";
+import { useStartWorkflow } from "../../hooks/use-workflow";
+import { useActiveWorkbench } from "../../lib/active-workbench-context";
 import {
   defaultRecurrence,
   formatRecurrence,
   scheduleScopeLabel,
 } from "../../lib/schedule-time";
+
+// Create-flow run mode (CL-4335): "once" starts a single immediate run via
+// the same POST /workflow-exec/:kind/start path the catalog's "Start" and a
+// schedule's "Run now" controls already use — no recurrence is persisted.
+// "schedule" is the pre-existing recurring-schedule create path.
+export type CreateRunMode = "once" | "schedule";
 
 export type ConnectedNewWorkflowProps = {
   catalogEntries: readonly WorkflowCatalogEntry[];
@@ -29,6 +41,7 @@ export type ConnectedNewWorkflowProps = {
   selectedKind: string | null;
   onSelectKind: (kind: string | null) => void;
   onCreated: (scheduleId: string) => void;
+  onRunStarted: (runId: string) => void;
   onCancel: () => void;
 };
 
@@ -47,9 +60,63 @@ function alreadyOnLabel(personal: number, tenant: number): string | undefined {
   return parts.join(" · ");
 }
 
+function RunModeSelector({
+  mode,
+  onChange,
+}: {
+  mode: CreateRunMode;
+  onChange: (mode: CreateRunMode) => void;
+}) {
+  const options: { value: CreateRunMode; label: string; hint: string }[] = [
+    {
+      value: "once",
+      label: "Run once",
+      hint: "A single run, right now",
+    },
+    {
+      value: "schedule",
+      label: "Schedule",
+      hint: "Repeats on a cadence",
+    },
+  ];
+  return (
+    <fieldset
+      className="mb-4"
+      role="radiogroup"
+      aria-label="Run mode"
+      data-testid="run-mode-selector"
+    >
+      <legend className="mb-1.5 text-xs font-semibold uppercase tracking-[0.05em] text-text-3">
+        How should this run
+      </legend>
+      <div className="flex flex-col gap-1.5 sm:flex-row sm:gap-2">
+        {options.map((opt) => (
+          <button
+            key={opt.value}
+            type="button"
+            role="radio"
+            aria-checked={mode === opt.value}
+            data-testid={`run-mode-${opt.value}`}
+            onClick={() => onChange(opt.value)}
+            className={`flex-1 rounded-[10px] border px-3.5 py-2 text-left text-sm transition-colors ${
+              mode === opt.value
+                ? "border-orange bg-orange/10 text-text"
+                : "border-border text-text-2 hover:border-border-strong"
+            }`}
+          >
+            <span className="block font-semibold">{opt.label}</span>
+            <span className="mt-0.5 block text-xs text-text-3">{opt.hint}</span>
+          </button>
+        ))}
+      </div>
+    </fieldset>
+  );
+}
+
 /**
  * Full-main create path for unified Workflows: kind picker with already-on
- * badges, then two-column create form (ScheduleFlow + sticky summary).
+ * badges, then a mode selector (Run once / Schedule, CL-4335) followed by
+ * the two-column create form (RunOnceFlow or ScheduleFlow + sticky summary).
  */
 export function ConnectedNewWorkflow({
   catalogEntries,
@@ -57,9 +124,12 @@ export function ConnectedNewWorkflow({
   selectedKind,
   onSelectKind,
   onCreated,
+  onRunStarted,
   onCancel,
 }: ConnectedNewWorkflowProps) {
   const createSchedule = useCreateSchedule();
+  const { activeTenantId } = useActiveWorkbench();
+  const startWorkflow = useStartWorkflow(activeTenantId);
 
   const schedulable = useMemo(() => {
     return catalogEntries
@@ -106,6 +176,7 @@ export function ConnectedNewWorkflow({
     [schedulable, selectedKind],
   );
 
+  const [mode, setMode] = useState<CreateRunMode>("once");
   const [draftRecurrence, setDraftRecurrence] =
     useState<ScheduleRecurrence>(defaultRecurrence());
   const [draftScope, setDraftScope] = useState<ScheduleScope>("personal");
@@ -116,6 +187,7 @@ export function ConnectedNewWorkflow({
   useEffect(() => {
     if (!entry) return;
     setError(null);
+    setMode("once");
     setDraftRecurrence(defaultRecurrence());
     setDraftScope(entry.defaultScope);
     setDraftValues({});
@@ -125,21 +197,14 @@ export function ConnectedNewWorkflow({
   const fieldsFor = (e: WorkflowCatalogEntry): ScheduleFieldMetadata[] =>
     (e.intakeFields ?? []) as ScheduleFieldMetadata[];
 
-  const save = async (e: WorkflowCatalogEntry) => {
+  const saveSchedule = async (e: WorkflowCatalogEntry) => {
     setError(null);
     const fields = fieldsFor(e);
     if (!scheduleFieldsComplete(fields, draftValues)) {
       setError("Fill in the required fields.");
       return;
     }
-    const formPayload: Record<string, unknown> = {};
-    for (const field of fields) {
-      if (field.fromProfile) continue;
-      const v = draftValues[field.name];
-      if (v === undefined || v === null) continue;
-      if (typeof v === "string" && v.trim() === "") continue;
-      formPayload[field.name] = v;
-    }
+    const formPayload = buildScheduleTriggerPayload(fields, draftValues);
     try {
       const created = await createSchedule.mutateAsync({
         kind: e.kind,
@@ -155,6 +220,25 @@ export function ConnectedNewWorkflow({
     }
   };
 
+  const runOnce = async (e: WorkflowCatalogEntry) => {
+    setError(null);
+    const fields = fieldsFor(e);
+    if (!scheduleFieldsComplete(fields, draftValues)) {
+      setError("Fill in the required fields.");
+      return;
+    }
+    const formPayload = buildScheduleTriggerPayload(fields, draftValues);
+    try {
+      const started = await startWorkflow.mutateAsync({
+        kind: e.kind,
+        input: formPayload,
+      });
+      onRunStarted(started.runId);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not start the run.");
+    }
+  };
+
   if (!entry) {
     return (
       <div
@@ -167,8 +251,8 @@ export function ConnectedNewWorkflow({
               New Workflow
             </h2>
             <p className="mt-1 text-[13px] text-text-3">
-              Choose a workflow to put on a cadence. You can create another
-              schedule for a kind that is already on.
+              Choose a workflow to run once or put on a cadence. You can create
+              another run for a kind that is already on.
             </p>
           </div>
           <button
@@ -195,7 +279,8 @@ export function ConnectedNewWorkflow({
 
   const label = productLabel(entry);
   const fields = fieldsFor(entry);
-  const busy = createSchedule.isPending;
+  const busy =
+    mode === "once" ? startWorkflow.isPending : createSchedule.isPending;
 
   return (
     <div
@@ -229,31 +314,56 @@ export function ConnectedNewWorkflow({
       <CreateScheduleFormLayout
         form={
           <div key={formKey} className="min-w-0">
-            <ScheduleFlow
-              entry={entry}
-              productLabel={label}
-              existing={null}
-              recurrence={draftRecurrence}
-              onRecurrenceChange={setDraftRecurrence}
-              scope={draftScope}
-              onScopeChange={setDraftScope}
-              fieldValues={draftValues}
-              onFieldValuesChange={setDraftValues}
-              fields={fields}
-              error={error}
-              busy={busy}
-              onCancel={onCancel}
-              onSave={() => save(entry)}
-            />
+            <RunModeSelector mode={mode} onChange={setMode} />
+            {mode === "once" ? (
+              <RunOnceFlow
+                entry={entry}
+                productLabel={label}
+                fieldValues={draftValues}
+                onFieldValuesChange={setDraftValues}
+                fields={fields}
+                error={error}
+                busy={busy}
+                onCancel={onCancel}
+                onSave={() => runOnce(entry)}
+              />
+            ) : (
+              <ScheduleFlow
+                entry={entry}
+                productLabel={label}
+                existing={null}
+                recurrence={draftRecurrence}
+                onRecurrenceChange={setDraftRecurrence}
+                scope={draftScope}
+                onScopeChange={setDraftScope}
+                fieldValues={draftValues}
+                onFieldValuesChange={setDraftValues}
+                fields={fields}
+                error={error}
+                busy={busy}
+                onCancel={onCancel}
+                onSave={() => saveSchedule(entry)}
+              />
+            )}
           </div>
         }
         summary={
           <CreateScheduleSummary
-            rows={[
-              { label: "Kind", value: label },
-              { label: "Cadence", value: formatRecurrence(draftRecurrence) },
-              { label: "Scope", value: scheduleScopeLabel(draftScope) },
-            ]}
+            rows={
+              mode === "once"
+                ? [
+                    { label: "Kind", value: label },
+                    { label: "Runs", value: "Once, right now" },
+                  ]
+                : [
+                    { label: "Kind", value: label },
+                    {
+                      label: "Cadence",
+                      value: formatRecurrence(draftRecurrence),
+                    },
+                    { label: "Scope", value: scheduleScopeLabel(draftScope) },
+                  ]
+            }
           />
         }
       />

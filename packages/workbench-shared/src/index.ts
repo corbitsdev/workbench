@@ -588,6 +588,28 @@ export function scheduleFieldsMatchIntakeSchema(
   return metadata.every((f) => intakeFieldNames.has(f.name));
 }
 
+/**
+ * Build a trigger/run payload from draft form values: drops `fromProfile`
+ * fields (fire-time merge supplies those), and drops undefined/null/blank
+ * values so the payload only carries what the member actually filled in.
+ * Shared by the create, edit, and run-once flows so all three send the same
+ * shape to the hub.
+ */
+export function buildScheduleTriggerPayload(
+  fields: readonly ScheduleFieldMetadata[],
+  values: Record<string, unknown>,
+): Record<string, unknown> {
+  const payload: Record<string, unknown> = {};
+  for (const field of fields) {
+    if (field.fromProfile) continue;
+    const v = values[field.name];
+    if (v === undefined || v === null) continue;
+    if (typeof v === "string" && v.trim() === "") continue;
+    payload[field.name] = v;
+  }
+  return payload;
+}
+
 export const WorkflowCatalogEntrySchema = type({
   kind: "string",
   label: "string",

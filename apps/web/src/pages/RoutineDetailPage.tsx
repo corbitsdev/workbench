@@ -3,6 +3,7 @@ import { Link, useNavigate, useParams } from "react-router";
 import { useQuery } from "@tanstack/react-query";
 import { ArrowLeft } from "lucide-react";
 import {
+  buildScheduleTriggerPayload,
   HEARTBEAT_WORKFLOW_KIND,
   type ScheduleFieldMetadata,
   type ScheduleRecurrence,
@@ -52,8 +53,7 @@ function RunHistory({ existing }: { existing: ScheduledTrigger }) {
       </div>
       {existing.recentFires.length === 0 ? (
         <p className="text-sm text-text-3">
-          Not yet fired — the scheduler hasn&rsquo;t triggered this routine
-          yet.
+          Not yet fired — the scheduler hasn&rsquo;t triggered this routine yet.
         </p>
       ) : (
         <ul className="flex flex-col gap-1.5">
@@ -218,14 +218,7 @@ function RoutineEditor({
       setError("Fill in the required fields.");
       return;
     }
-    const formPayload: Record<string, unknown> = {};
-    for (const field of fields) {
-      if (field.fromProfile) continue;
-      const v = draftValues[field.name];
-      if (v === undefined || v === null) continue;
-      if (typeof v === "string" && v.trim() === "") continue;
-      formPayload[field.name] = v;
-    }
+    const formPayload = buildScheduleTriggerPayload(fields, draftValues);
     try {
       await updateSchedule.mutateAsync({
         id: existing.id,
