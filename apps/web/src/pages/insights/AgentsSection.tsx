@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Link } from "react-router";
 import type { RosterInstance } from "@workbench/client";
-import { Badge } from "@workbench/ui";
+import { Badge, PulsingRing } from "@workbench/ui";
 
 import type { ActivityOverview } from "../../lib/hub-api";
 import { useTenantRoster } from "../../hooks/use-tenant-roster";
@@ -86,16 +86,28 @@ function InstanceRow({
   metrics: InstanceMetrics | undefined;
 }) {
   const { name, badgeLabel } = displayForInstance(instance);
+  const tone = instanceStatusTone(instance.status);
   return (
     <Link
       to={actorHref(instance.principalId)}
       className="flex items-center gap-3 rounded-[12px] border border-border bg-surface px-4 py-3 outline-none transition-[background-color] hover:bg-row-hover focus-visible:ring-1 focus-visible:ring-accent"
       data-testid="agent-instance-row"
     >
-      <span
-        className={`inline-flex shrink-0 items-center rounded-sm px-1.5 py-0.5 font-mono text-[9.5px] uppercase tracking-[0.05em] ${statusToneClass(instanceStatusTone(instance.status))}`}
-      >
-        {instance.status}
+      <span className="inline-flex shrink-0 items-center gap-1.5">
+        {tone === "positive" && (
+          <span
+            className="relative inline-flex h-1.5 w-1.5 shrink-0"
+            data-testid="agent-live-pulse"
+          >
+            <PulsingRing colorClassName="bg-green/60" />
+            <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-green" />
+          </span>
+        )}
+        <span
+          className={`inline-flex items-center rounded-sm px-1.5 py-0.5 font-mono text-[9.5px] uppercase tracking-[0.05em] ${statusToneClass(tone)}`}
+        >
+          {instance.status}
+        </span>
       </span>
       <span className="min-w-0 flex-1 truncate text-[13px] font-semibold text-text">
         {name}

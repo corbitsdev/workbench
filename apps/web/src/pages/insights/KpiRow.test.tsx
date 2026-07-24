@@ -139,4 +139,40 @@ describe("KpiRow", () => {
 
     expect(visited).toEqual(["usage-cost"]);
   });
+
+  it("pulses the active-executions sub-value when there are active runs", () => {
+    render(
+      <KpiRow
+        data={minimalOverview}
+        activePeople={4}
+        costTotal={42.5}
+        costTokens={185}
+        costUnavailable={false}
+        onNavigateTab={() => {}}
+      />,
+    );
+
+    expect(screen.getByTestId("kpi-active-pulse")).toBeDefined();
+  });
+
+  it("never pulses the active-executions sub-value when there are no active runs", () => {
+    const noActiveRuns = {
+      ...minimalOverview,
+      workflowRuns: { ...minimalOverview.workflowRuns, activeExecutions: 0 },
+    } as ActivityOverview;
+
+    render(
+      <KpiRow
+        data={noActiveRuns}
+        activePeople={4}
+        costTotal={42.5}
+        costTokens={185}
+        costUnavailable={false}
+        onNavigateTab={() => {}}
+      />,
+    );
+
+    expect(screen.queryByTestId("kpi-active-pulse")).toBeNull();
+    expect(screen.getByText("0 active")).toBeDefined();
+  });
 });

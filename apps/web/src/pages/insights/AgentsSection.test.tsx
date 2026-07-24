@@ -231,4 +231,28 @@ describe("AgentsSection", () => {
     renderSection();
     await screen.findByText("No agent instances in this workbench yet.");
   });
+
+  it("pulses the status chip for a running (positive-tone) instance", async () => {
+    rosterResult = {
+      instances: [instance({ instanceId: "ins_live", status: "running" })],
+      runs: [],
+    };
+    renderSection();
+
+    await screen.findByTestId("agent-instance-row");
+    const pulse = screen.getByTestId("agent-live-pulse");
+    expect(pulse.querySelector(".bg-green")).not.toBeNull();
+    expect(pulse.querySelector(".bg-blue")).toBeNull();
+  });
+
+  it("never pulses the status chip for a non-positive-tone instance", async () => {
+    rosterResult = {
+      instances: [instance({ instanceId: "ins_ended", status: "ended" })],
+      runs: [],
+    };
+    renderSection();
+
+    await screen.findByTestId("agent-instance-row");
+    expect(screen.queryByTestId("agent-live-pulse")).toBeNull();
+  });
 });

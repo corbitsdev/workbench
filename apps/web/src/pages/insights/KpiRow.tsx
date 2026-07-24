@@ -1,4 +1,9 @@
-import { DashboardSection, StatGrid, StatGridItem } from "@workbench/ui";
+import {
+  DashboardSection,
+  PulsingRing,
+  StatGrid,
+  StatGridItem,
+} from "@workbench/ui";
 import { computeDelta } from "./metrics";
 import { formatDollars, formatNumber } from "./stats";
 import type { ActivityOverview } from "../../lib/hub-api";
@@ -106,7 +111,20 @@ export function KpiRow({
           <StatGridItem
             label="Workflow runs"
             value={formatNumber(data.workflowRuns.executionsStartedInRange)}
-            sub={`${formatNumber(data.workflowRuns.activeExecutions)} active`}
+            sub={
+              <span className="inline-flex items-center gap-1.5">
+                {data.workflowRuns.activeExecutions > 0 && (
+                  <span
+                    className="relative inline-flex h-1.5 w-1.5 shrink-0"
+                    data-testid="kpi-active-pulse"
+                  >
+                    <PulsingRing colorClassName="bg-blue/60" />
+                    <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-blue" />
+                  </span>
+                )}
+                {`${formatNumber(data.workflowRuns.activeExecutions)} active`}
+              </span>
+            }
             emphasis
           />
         </KpiTile>
