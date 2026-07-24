@@ -171,7 +171,18 @@ Once configured, every push to `staging` (or `main`) deploys the affected servic
 5. Attach persistent volumes (hub → `/data`, sidecar → `/data`)
 6. Deploy
 
-The hub's `railway.toml` runs `bun run scripts/db-setup.ts` as a pre-deploy command, which applies pending migrations before the hub starts.
+The hub's `railway.toml` runs `bun run scripts/db-setup.ts` as a pre-deploy command, which applies pending migrations before the hub starts. Migrations are **not** manually gated — they run automatically at the start of every deploy, in filename order. This makes the ordering below load-bearing: get it wrong and the data loss happens automatically, before anyone can intervene.
+
+### Migration ordering / one-time data migrations
+
+Two migrations are irreversible one-shot cutovers, not safe to let run unattended on a fresh or first-time-catching-up environment (this matters most for production's first application of them):
+
+- **`apps/hub/migrations/0079_drop_artifact_status.sql`** unconditionally drops `artifact.status`. Any in-flight `skill-draft` artifact row (`status = 'draft'`) has its review state destroyed unless it was already moved onto a `skill-draft` asset first. Run `apps/hub/bin/migrate-skill-drafts-to-assets.ts` **before** the deploy that applies 0079:
+  ```bash
+  bun --env-file=.env.staging apps/hub/bin/migrate-skill-drafts-to-assets.ts [--dry-run] [--yes]
+  ```
+  This script cannot be folded into the SQL migration itself — creating a `skill-draft` asset requires writing git-backed content, which is outside a plain migration's reach. Because migrations auto-apply on deploy with no manual gate, this means: run the script against the target environment first, confirm 0 pending rows remain (or that the migration ran clean), and only then ship the deploy containing 0079. If a deploy reaches 0079 before the script has run, any pending skill-draft review state on that environment is unrecoverably lost.
+- **`apps/hub/migrations/0076_granola_call_to_work_unit.sql` → `0077_drop_granola_call_job.sql`** is a paired cutover: 0076 copies open (`pending`/`processing`/`dead`) `granola_call_job` rows into `work_unit` and marks the originals `done`; 0077 then drops the `granola_call_job` table outright. Because both run automatically in the same deploy pass (filename order), verify — before that deploy ships — that 0076's copy logic covers every row shape actually present on the target environment; there is no re-run once 0077 has dropped the table.
 
 ### Other providers
 
