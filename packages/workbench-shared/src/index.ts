@@ -11,6 +11,7 @@ export * from "./gtm-scripts-briefs";
 export * from "./governance";
 export * from "./last30days";
 export * from "./mailbox";
+export * from "./mailbox-focus";
 export * from "./mentions";
 export * from "./now-feed";
 export * from "./reddit-opportunity-scanner";
