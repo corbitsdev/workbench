@@ -24,10 +24,12 @@ mock.module("../../lib/active-workbench-context", () => ({
   }),
 }));
 
+const startWorkflowState = { isPending: false };
+
 mock.module("../../hooks/use-workflow", () => ({
   useStartWorkflow: () => ({
     mutateAsync: mock(async () => ({ runId: "run-1" })),
-    isPending: false,
+    isPending: startWorkflowState.isPending,
     variables: undefined,
   }),
 }));
@@ -95,6 +97,7 @@ function renderCreate() {
 afterEach(() => {
   cleanup();
   createMutateAsync.mockClear();
+  startWorkflowState.isPending = false;
 });
 
 describe("ConnectedNewWorkflow kind picker", () => {
@@ -130,5 +133,36 @@ describe("ConnectedNewWorkflow create form", () => {
     expect(
       screen.getByTestId(`run-once-editor-${catalogEntry.kind}`),
     ).toBeTruthy();
+  });
+
+  it("reflects the selected mode via aria-pressed on the toggle buttons", () => {
+    renderCreate();
+
+    const onceButton = screen.getByTestId("run-mode-once");
+    const scheduleButton = screen.getByTestId("run-mode-schedule");
+
+    expect(onceButton.getAttribute("aria-pressed")).toBe("true");
+    expect(scheduleButton.getAttribute("aria-pressed")).toBe("false");
+  });
+
+  it("disables the run-mode toggle buttons while a submit is in flight", () => {
+    startWorkflowState.isPending = true;
+    renderCreate();
+
+    const onceButton = screen.getByTestId("run-mode-once");
+    const scheduleButton = screen.getByTestId("run-mode-schedule");
+
+    expect(onceButton.hasAttribute("disabled")).toBe(true);
+    expect(scheduleButton.hasAttribute("disabled")).toBe(true);
+  });
+
+  it("leaves the run-mode toggle buttons enabled when no submit is in flight", () => {
+    renderCreate();
+
+    const onceButton = screen.getByTestId("run-mode-once");
+    const scheduleButton = screen.getByTestId("run-mode-schedule");
+
+    expect(onceButton.hasAttribute("disabled")).toBe(false);
+    expect(scheduleButton.hasAttribute("disabled")).toBe(false);
   });
 });

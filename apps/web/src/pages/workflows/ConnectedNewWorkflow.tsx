@@ -63,9 +63,11 @@ function alreadyOnLabel(personal: number, tenant: number): string | undefined {
 function RunModeSelector({
   mode,
   onChange,
+  disabled,
 }: {
   mode: CreateRunMode;
   onChange: (mode: CreateRunMode) => void;
+  disabled: boolean;
 }) {
   const options: { value: CreateRunMode; label: string; hint: string }[] = [
     {
@@ -82,7 +84,7 @@ function RunModeSelector({
   return (
     <fieldset
       className="mb-4"
-      role="radiogroup"
+      role="group"
       aria-label="Run mode"
       data-testid="run-mode-selector"
     >
@@ -94,11 +96,11 @@ function RunModeSelector({
           <button
             key={opt.value}
             type="button"
-            role="radio"
-            aria-checked={mode === opt.value}
+            aria-pressed={mode === opt.value}
+            disabled={disabled}
             data-testid={`run-mode-${opt.value}`}
             onClick={() => onChange(opt.value)}
-            className={`flex-1 rounded-[10px] border px-3.5 py-2 text-left text-sm transition-colors ${
+            className={`flex-1 rounded-[10px] border px-3.5 py-2 text-left text-sm transition-colors disabled:cursor-not-allowed disabled:opacity-60 ${
               mode === opt.value
                 ? "border-orange bg-orange/10 text-text"
                 : "border-border text-text-2 hover:border-border-strong"
@@ -317,7 +319,7 @@ export function ConnectedNewWorkflow({
         <CreateScheduleFormLayout
           form={
             <div key={formKey} className="min-w-0">
-              <RunModeSelector mode={mode} onChange={setMode} />
+              <RunModeSelector mode={mode} onChange={setMode} disabled={busy} />
               {mode === "once" ? (
                 <RunOnceFlow
                   entry={entry}
