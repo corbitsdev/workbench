@@ -2,10 +2,14 @@ import { describe, expect, it } from "bun:test";
 import type { WorkflowDefinition } from "@intx/workflow";
 import {
   DETERMINISTIC_TOOL_KIND,
-  INLINE_INFERENCE_KIND,
   STEP_KIND_TAG,
   STEP_TITLE_TAG,
 } from "./deterministic-step";
+
+// The retired `inline-inference` tag value, kept as a literal (not an export —
+// the authoring kind is deleted) so historical workflow definitions that still
+// carry it on disk classify correctly when read back.
+const LEGACY_INLINE_INFERENCE_TAG = "inline-inference";
 import { classifyWorkflowSteps, countHumanGates } from "./flow-classify";
 
 function stepAgent(tag?: string, title?: string) {
@@ -29,7 +33,7 @@ function makeDefinition(): WorkflowDefinition {
       synthesize_brief: {
         kind: "step",
         id: "synthesize_brief",
-        ...stepAgent(INLINE_INFERENCE_KIND),
+        ...stepAgent(),
       },
       reviewDraft: {
         kind: "awaitSignal",
@@ -49,10 +53,25 @@ describe("classifyWorkflowSteps", () => {
   it("classifies steps in stepOrder with the right kinds and titles", () => {
     const steps = classifyWorkflowSteps(makeDefinition());
     expect(steps).toEqual([
-      { id: "fetch_sources", title: "Fetch Sources", kind: "auto" },
-      { id: "synthesize_brief", title: "Synthesize Brief", kind: "agent" },
-      { id: "reviewDraft", title: "Review Draft", kind: "human" },
-      { id: "publish", title: "Publish", kind: "auto" },
+      {
+        id: "fetch_sources",
+        title: "Fetch Sources",
+        kind: "auto",
+        stepIds: ["fetch_sources"],
+      },
+      {
+        id: "synthesize_brief",
+        title: "Synthesize Brief",
+        kind: "agent",
+        stepIds: ["synthesize_brief"],
+      },
+      {
+        id: "reviewDraft",
+        title: "Review Draft",
+        kind: "human",
+        stepIds: ["reviewDraft"],
+      },
+      { id: "publish", title: "Publish", kind: "auto", stepIds: ["publish"] },
     ]);
   });
 
@@ -104,7 +123,7 @@ describe("classifyWorkflowSteps", () => {
     expect(classifyWorkflowSteps(def)[0]!.kind).toBe("agent");
   });
 
-  it("classifies a map by its inner step's tag", () => {
+  it("classifies a historical inline-inference-tagged step as a reasoning agent step", () => {
     const def = {
       id: "wf",
       triggers: [],
@@ -116,7 +135,7 @@ describe("classifyWorkflowSteps", () => {
           step: {
             kind: "step",
             id: "inner",
-            ...stepAgent(INLINE_INFERENCE_KIND),
+            ...stepAgent(LEGACY_INLINE_INFERENCE_TAG),
           },
         },
       },
@@ -138,8 +157,18 @@ describe("classifyWorkflowSteps", () => {
       { key: "approve", label: "Approve", stepIds: ["reviewDraft", "publish"] },
     ]);
     expect(steps).toEqual([
-      { id: "gather", title: "Gather", kind: "agent" },
-      { id: "approve", title: "Approve", kind: "human" },
+      {
+        id: "gather",
+        title: "Gather",
+        kind: "agent",
+        stepIds: ["fetch_sources", "synthesize_brief"],
+      },
+      {
+        id: "approve",
+        title: "Approve",
+        kind: "human",
+        stepIds: ["reviewDraft", "publish"],
+      },
     ]);
   });
 
@@ -150,12 +179,31 @@ describe("classifyWorkflowSteps", () => {
     expect(autoOnly!.kind).toBe("auto");
   });
 
+  it("carries every runtime step id in the group through to stepIds, not just the group's synthetic key (CL-4285)", () => {
+    const [group] = classifyWorkflowSteps(makeDefinition(), [
+      {
+        key: "gather",
+        label: "Gather",
+        stepIds: ["fetch_sources", "synthesize_brief"],
+      },
+    ]);
+    expect(group!.id).toBe("gather");
+    expect(group!.stepIds).toEqual(["fetch_sources", "synthesize_brief"]);
+  });
+
   it("tolerates a declared stepId that is not a real step", () => {
     const [group] = classifyWorkflowSteps(makeDefinition(), [
       { key: "g", label: "G", stepIds: ["fetch_sources", "ghost"] },
     ]);
-    // The missing id is skipped; the group still classifies from its real steps.
-    expect(group).toEqual({ id: "g", title: "G", kind: "auto" });
+    // The missing id is skipped for CLASSIFICATION, but stepIds keeps every
+    // declared id verbatim — the ghost is harmless downstream (no RunState
+    // step will ever match it).
+    expect(group).toEqual({
+      id: "g",
+      title: "G",
+      kind: "auto",
+      stepIds: ["fetch_sources", "ghost"],
+    });
   });
 
   it("falls back to the per-step projection for an empty display flow", () => {

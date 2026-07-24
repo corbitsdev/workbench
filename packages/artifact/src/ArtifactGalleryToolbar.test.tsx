@@ -20,7 +20,6 @@ const artifact: ArtifactWithSession = {
   kind: "email",
   title: "Sales automation ROI",
   content: "body",
-  status: "approved",
   version: 1,
   ownerPrincipalId: null,
   archivedAt: null,
@@ -93,7 +92,7 @@ describe("ArtifactGalleryToolbar", () => {
     render(
       React.createElement(ArtifactGalleryToolbar, { artifacts: [], onNew }),
     );
-    fireEvent.click(screen.getByRole("button", { name: "Add" }));
+    fireEvent.click(screen.getByRole("button", { name: "Add artifact" }));
     expect(onNew).toHaveBeenCalledTimes(1);
   });
 

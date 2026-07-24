@@ -1,9 +1,26 @@
-import { awaitSignal, defineWorkflow, map } from "@intx/workflow";
-import { deterministicToolStep, inlineInferenceStep } from "@workbench/agents";
+import { action, awaitSignal, defineWorkflow, map } from "@intx/workflow";
+import {
+  canonicalizeStepToolName,
+  deterministicToolStep,
+  agentStep,
+} from "@workbench/agents";
 import {
   buildCollateralGenerationSystemPrompt,
   buildExtractionSystemPrompt,
 } from "./prompts";
+
+// Native `action` handler refs — the tool's canonical (factory-prefixed) name,
+// resolved via the same build-time-checked lookup `deterministicToolStep`
+// uses, so a typo'd or manifest-drifted tool name fails the build instead of
+// deploying a step nothing can dispatch.
+export const GRANOLA_LIST_NOTES_HANDLER = canonicalizeStepToolName(
+  "pain-point-collateral-intake",
+  "granola_list_notes",
+);
+export const GRANOLA_GET_NOTE_HANDLER = canonicalizeStepToolName(
+  "pain-point-collateral-fetch",
+  "granola_get_note",
+);
 
 // -------------------------------------------------------------------------
 // Agent definitions
@@ -11,10 +28,10 @@ import {
 
 // `analyze` and `generate` are pure single-turn reasoning steps: each returns
 // strict JSON and never calls a tool (the deterministic `persist` step does the
-// artifact creation). Both run as inline-inference steps (CL-2251): the sidecar
-// runs them in-process with a bare `createAgent` and the hub deploys no per-step
-// session for them. See the `analyze` and `generate` steps below — there are no
-// longer analyze/generate defineAgents.
+// artifact creation). Both are native `agentStep`s — a plain `step({ agent })`
+// the hub deploys no per-step session for (no step class launches one). See
+// the `analyze` and `generate` steps below — there are no longer
+// analyze/generate defineAgents.
 
 // -------------------------------------------------------------------------
 // Workflow metadata
@@ -34,15 +51,15 @@ export { DISPLAY_STEPS } from "./display-steps";
 // Workflow definition — 8-step guided flow
 //
 // Step graph:
-//   intake       deterministicToolStep  granola_list_notes → {}
+//   intake       action                 granola_list_notes → {} (native primitive)
 //   select       awaitSignal            note-selection      → {noteId}
-//   fetch        deterministicToolStep  granola_get_note    input from steps.select.output
+//   fetch        action                 granola_get_note    input from steps.select.output (native primitive)
 //   context      awaitSignal            context             → {context: string}
-//   analyze      inlineInferenceStep    input merge fetch+context outputs
+//   analyze      agentStep    input merge fetch+context outputs
 //   ppSelection  awaitSignal            pain-point-selection → {selectedIds: string[]}
 //   fmtSelection awaitSignal            format-selection    → {items: Array<{format,painPointId,...}>}
 //   generate     map over fmtSelection.output.items (max 9: 3 pain points × 3 formats)
-//     └ inlineInferenceStep input from trigger.payload only (item carries all LLM-needed data)
+//     └ agentStep input from trigger.payload only (item carries all LLM-needed data)
 //   review       awaitSignal            review              → {decisions: Array<{format,title,content}>}
 //                                       (panel sends ONLY approved pieces)
 //   persist      map over review.output.decisions
@@ -61,7 +78,7 @@ export { DISPLAY_STEPS } from "./display-steps";
 //   per entry unconditionally.
 // -------------------------------------------------------------------------
 
-const generateStep = inlineInferenceStep({
+const generateStep = agentStep({
   id: "pain-point-collateral-generate",
   title: "Draft each piece",
   systemPrompt: buildCollateralGenerationSystemPrompt(),
@@ -71,6 +88,23 @@ const generateStep = inlineInferenceStep({
   input: { from: "trigger.payload" },
 });
 
+// NOT migrated to a native `action` — two independent blockers, either one
+// sufficient on its own:
+//   1. Field rename: `artifact_create` requires `kind`, but the map item
+//      carries the same value under `format`. The native selector vocabulary
+//      (`from` / `project` / `merge` / `literal`) can only pick fields
+//      through, never rename one — `project` keeps the source field's own
+//      name, and there is no selector shape that writes a value under a
+//      different key. Composing `title`/`content` (pass through unrenamed)
+//      with `kind` (renamed from `format`) into one object is therefore not
+//      expressible as a single `input` selector.
+//   2. `MapPrimitive.step` is typed `StepPrimitive` (see
+//      `@intx/workflow`'s `primitives.ts`), not `Primitive` — an `action`
+//      cannot be a map's inner step at all. Independently, the deploy-time
+//      capability walk's `extractAgent` only reads `primitive.step.agent` for
+//      a `map` node (see `interchange/packages/workflow-deploy/src/
+//      capability-walk.ts`); it never inspects an inner step's `effect`, so
+//      even a same-shape action inside a map would pin no tool package.
 const persistStep = deterministicToolStep({
   id: "pain-point-collateral-persist",
   title: "Save the collateral",
@@ -89,23 +123,25 @@ export const workflow = defineWorkflow({
   id: kind,
   trigger: { type: "manual" },
   steps: {
-    // 1. Fetch the Granola note list
-    intake: deterministicToolStep({
-      id: "pain-point-collateral-intake",
-      title: "List your call notes",
-      tool: "granola_list_notes",
+    // 1. Fetch the Granola note list. Native `action`: the tool takes no
+    // required args, so `input: { literal: {} }` is the whole call — no
+    // reshape needed.
+    intake: action({
+      handler: GRANOLA_LIST_NOTES_HANDLER,
       input: { literal: {} },
+      effect: { requires: [GRANOLA_LIST_NOTES_HANDLER] },
     }),
 
     // 2. Human selects a note
     select: awaitSignal({ name: "note-selection", after: ["intake"] }),
 
-    // 3. Fetch selected note transcript
-    fetch: deterministicToolStep({
-      id: "pain-point-collateral-fetch",
-      title: "Load the chosen note",
-      tool: "granola_get_note",
+    // 3. Fetch selected note transcript. Native `action`: `select`'s signal
+    // payload is already shaped `{ noteId }`, matching `granola_get_note`'s
+    // sole arg — passed through verbatim, no reshape needed.
+    fetch: action({
+      handler: GRANOLA_GET_NOTE_HANDLER,
       input: { from: "steps.select.output" },
+      effect: { requires: [GRANOLA_GET_NOTE_HANDLER] },
       after: ["select"],
     }),
 
@@ -114,7 +150,7 @@ export const workflow = defineWorkflow({
 
     // 5. LLM extracts pain points (input = fetched transcript + user context merged).
     //    Inline single-turn inference (CL-2251): no tools, so no per-step session.
-    analyze: inlineInferenceStep({
+    analyze: agentStep({
       id: "pain-point-collateral-analyze",
       title: "Find the pain points",
       systemPrompt: buildExtractionSystemPrompt(),

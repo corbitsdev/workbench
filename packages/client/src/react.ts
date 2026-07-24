@@ -15,7 +15,6 @@ import {
 } from "@tanstack/react-query";
 import type {
   Artifact,
-  ArtifactStatus,
   ArtifactWithSession,
   WorkflowSummary,
 } from "@workbench/shared";
@@ -81,7 +80,6 @@ export interface UseArtifactsParams {
   query?: string;
   sort?: "newest" | "oldest";
   kind?: string;
-  status?: ArtifactStatus;
   ownerPrincipalId?: string;
   creatorKind?: "user" | "agent";
   createdAfter?: string;
@@ -101,7 +99,6 @@ export function artifactsListQueryKey(
     params.query ?? "",
     params.sort ?? "newest",
     params.kind ?? "",
-    params.status ?? "",
     params.ownerPrincipalId ?? "",
     params.creatorKind ?? "",
     params.createdAfter ?? "",
@@ -126,7 +123,6 @@ function listArtifactsParams(
   if (params.query !== undefined) out.query = params.query;
   if (params.sort !== undefined) out.sort = params.sort;
   if (params.kind !== undefined) out.kind = params.kind;
-  if (params.status !== undefined) out.status = params.status;
   if (params.ownerPrincipalId !== undefined) {
     out.ownerPrincipalId = params.ownerPrincipalId;
   }

@@ -48,10 +48,10 @@ describe("buildLincolnSystemPrompt", () => {
     expect(prompt).toContain("sellerCompany");
   });
 
-  it("includes the memory section instructing state/memory.md usage", () => {
+  it("includes the memory section, honest about having no durable memory tool", () => {
     const prompt = buildLincolnSystemPrompt("Lincoln");
     expect(prompt).toContain("<memory>");
-    expect(prompt).toContain("state/memory.md");
+    expect(prompt).toContain("do not have a durable cross-session memory tool");
   });
 
   it("includes the firecrawl section for contextUrl scraping", () => {
@@ -61,10 +61,23 @@ describe("buildLincolnSystemPrompt", () => {
     expect(prompt).toContain("firecrawl");
   });
 
-  it("includes the output section with write_file and artifact_link_file instructions", () => {
+  it("includes the output section, gated on artifact_link_file, not a file-write tool", () => {
     const prompt = buildLincolnSystemPrompt("Lincoln");
     expect(prompt).toContain("<output>");
-    expect(prompt).toContain("write_file");
     expect(prompt).toContain("artifact_link_file");
+  });
+
+  it("does not instruct any retired posix runner tool", () => {
+    const prompt = buildLincolnSystemPrompt("Lincoln");
+    for (const retired of [
+      "read_file",
+      "write_file",
+      "edit_file",
+      "search_files",
+      "run_shell",
+      "grep",
+    ]) {
+      expect(prompt).not.toContain(retired);
+    }
   });
 });

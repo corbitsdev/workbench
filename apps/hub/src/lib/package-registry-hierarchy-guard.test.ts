@@ -1,5 +1,5 @@
 import { describe, expect, it, mock } from "bun:test";
-import { AssetServiceError, type AssetService } from "@intx/hub-sessions";
+import { AssetServiceError, type AssetService } from "@workbench/hub-sessions";
 import type { HubDb } from "../db";
 
 const validateTarballPackageJSON = mock(
@@ -23,7 +23,7 @@ const validateTarballPackageJSON = mock(
   },
 );
 
-mock.module("@intx/hub-sessions", () => ({
+mock.module("@workbench/hub-sessions", () => ({
   AssetServiceError,
   validateTarballPackageJSON,
 }));

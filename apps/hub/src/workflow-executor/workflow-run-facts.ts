@@ -1,6 +1,6 @@
 import { and, eq, inArray } from "drizzle-orm";
 import { getLogger } from "@intx/log";
-import type { AgentRepoStore, RepoId } from "@intx/hub-sessions";
+import type { AgentRepoStore, RepoId } from "@workbench/hub-sessions";
 import {
   upsertWorkflowRunFacts,
   type WorkflowFactOutcome,

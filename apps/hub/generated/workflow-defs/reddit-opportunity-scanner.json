@@ -122,9 +122,8 @@
           "inference": {
             "sources": []
           },
-          "description": "Inline single-turn inference: reddit-opp-analyze",
+          "description": "Reasoning step: reddit-opp-analyze",
           "tags": {
-            "workbench.stepKind": "inline-inference",
             "workbench.title": "Recommend subreddits & keywords"
           }
         },
@@ -208,9 +207,8 @@
               }
             ]
           },
-          "description": "Inline single-turn inference: reddit-opp-curate",
+          "description": "Reasoning step: reddit-opp-curate",
           "tags": {
-            "workbench.stepKind": "inline-inference",
             "workbench.title": "Rank the opportunities"
           }
         },

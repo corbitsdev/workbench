@@ -35,13 +35,13 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
-import type { Principal, RepoId, RepoStore } from "@intx/hub-sessions";
+import type { Principal, RepoId, RepoStore } from "@workbench/hub-sessions";
 import type {
   ConnectorThreadState,
   ConversationTurn,
   PendingOperation,
 } from "@intx/types/runtime";
-import { WORKFLOW_RUN_AGENT_STATE_PREFIX } from "@intx/hub-sessions";
+import { WORKFLOW_RUN_AGENT_STATE_PREFIX } from "@workbench/hub-sessions";
 
 // Stateful in-memory ContextStore so the production writer's reads
 // (`load()`) reflect its writes (`writeTurns`/`writeMetadata`/

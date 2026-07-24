@@ -54,14 +54,14 @@ describe("ThreadSwitcher", () => {
     );
     fireEvent.click(screen.getByRole("button", { expanded: false }));
     screen.getByRole("option", { name: /beta/i });
-    fireEvent.change(screen.getByPlaceholderText("Search chats"), {
+    fireEvent.change(screen.getByPlaceholderText("Search threads"), {
       target: { value: "alph" },
     });
     expect(screen.queryByRole("option", { name: /beta/i })).toBeNull();
     screen.getByRole("option", { name: /alpha/i });
   });
 
-  it("fires onNew from the New chat action", () => {
+  it("fires onNew from the New thread action", () => {
     let created = 0;
     render(
       React.createElement(ThreadSwitcher, {
@@ -74,7 +74,7 @@ describe("ThreadSwitcher", () => {
       }),
     );
     fireEvent.click(screen.getByRole("button", { expanded: false }));
-    fireEvent.click(screen.getByRole("button", { name: /new chat/i }));
+    fireEvent.click(screen.getByRole("button", { name: /new thread/i }));
     expect(created).toBe(1);
   });
 });

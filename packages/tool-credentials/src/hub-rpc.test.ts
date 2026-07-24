@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import type { BaseEnv } from "@intx/agent";
 import type { ToolDefinition } from "@intx/types/runtime";
+import { TOOL_ERROR_RECOVERY_GUIDANCE } from "@workbench/shared";
 import { HUB_RPC_ENV_KEY, getHubRpc } from "./index";
 import { defineHubBackedToolPackage } from "./factory";
 
@@ -110,5 +111,76 @@ describe("defineHubBackedToolPackage", () => {
       definitions,
     });
     expect(() => factory({} as BaseEnv)).toThrow(/hub-RPC/);
+  });
+
+  test("appends the recovery guidance to a hub-reported tool error", async () => {
+    globalThis.fetch = (async () =>
+      new Response(
+        JSON.stringify({ result: "boom: invalid args", isError: true }),
+        { headers: { "content-type": "application/json" } },
+      )) as unknown as typeof fetch;
+    const factory = defineHubBackedToolPackage({
+      id: "@workbench/tools-artifact/artifact",
+      definitions,
+    });
+    const result = await factory(envWith()).run(
+      { id: "c1", name: "artifact_create", arguments: {} },
+      AbortSignal.timeout(1000),
+    );
+    expect(result.isError).toBe(true);
+    expect(String(result.content)).toContain(TOOL_ERROR_RECOVERY_GUIDANCE);
+  });
+
+  test("does not append the recovery guidance to a successful result", async () => {
+    globalThis.fetch = (async () =>
+      new Response(JSON.stringify({ result: "ok", isError: false }), {
+        headers: { "content-type": "application/json" },
+      })) as unknown as typeof fetch;
+    const factory = defineHubBackedToolPackage({
+      id: "@workbench/tools-artifact/artifact",
+      definitions,
+    });
+    const result = await factory(envWith()).run(
+      { id: "c1", name: "artifact_create", arguments: {} },
+      AbortSignal.timeout(1000),
+    );
+    expect(result.isError).toBe(false);
+    expect(String(result.content)).not.toContain(TOOL_ERROR_RECOVERY_GUIDANCE);
+  });
+
+  test("appends the guidance exactly once even when it already flowed through a wrapping seam", async () => {
+    const alreadyGuided = `boom: invalid args\n\n${TOOL_ERROR_RECOVERY_GUIDANCE}`;
+    globalThis.fetch = (async () =>
+      new Response(JSON.stringify({ result: alreadyGuided, isError: true }), {
+        headers: { "content-type": "application/json" },
+      })) as unknown as typeof fetch;
+    const factory = defineHubBackedToolPackage({
+      id: "@workbench/tools-artifact/artifact",
+      definitions,
+    });
+    const result = await factory(envWith()).run(
+      { id: "c1", name: "artifact_create", arguments: {} },
+      AbortSignal.timeout(1000),
+    );
+    const occurrences =
+      String(result.content).split(TOOL_ERROR_RECOVERY_GUIDANCE).length - 1;
+    expect(occurrences).toBe(1);
+  });
+
+  test("appends the guidance exactly once on a non-ok hub response", async () => {
+    globalThis.fetch = (async () =>
+      new Response("nope", { status: 422 })) as unknown as typeof fetch;
+    const factory = defineHubBackedToolPackage({
+      id: "@workbench/tools-artifact/artifact",
+      definitions,
+    });
+    const result = await factory(envWith()).run(
+      { id: "c1", name: "artifact_create", arguments: {} },
+      AbortSignal.timeout(1000),
+    );
+    expect(result.isError).toBe(true);
+    const occurrences =
+      String(result.content).split(TOOL_ERROR_RECOVERY_GUIDANCE).length - 1;
+    expect(occurrences).toBe(1);
   });
 });

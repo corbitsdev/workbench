@@ -9,9 +9,9 @@
       "types": "./src/ui.tsx",
       "default": "./src/ui.tsx"
     },
-    "./blocks": {
-      "types": "./src/blocks.ts",
-      "default": "./src/blocks.ts"
+    "./browser": {
+      "types": "./src/step-ui-hints.ts",
+      "default": "./src/step-ui-hints.ts"
     }
   },
   "scripts": {

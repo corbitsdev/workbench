@@ -10,7 +10,6 @@ import { type } from "arktype";
 
 export type {
   Artifact,
-  ArtifactStatus,
   ArtifactVersion,
   ArtifactWithSession,
   ArtifactWithVersions,
@@ -43,7 +42,6 @@ export const GalleryArtifactSchema = ArtifactVisualSchema.and({
    * muted unknown state (chip omitted). Defaults to "origin" when absent.
    */
   "provenanceTone?": "'free'|'origin'|'unknown'",
-  status: "'draft'|'approved'|'rejected'",
   "previewExcerpt?": "string",
   "thumbnailUrl?": "string",
   "thumbnailAlt?": "string",

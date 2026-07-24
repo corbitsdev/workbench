@@ -29,8 +29,8 @@ import type {
   RepoId,
   RepoStore,
   SubscribeKindEntry,
-} from "@intx/hub-sessions/substrate";
-import { subscribeKind } from "@intx/hub-sessions/substrate";
+} from "@workbench/hub-sessions/substrate";
+import { subscribeKind } from "@workbench/hub-sessions/substrate";
 import type { RunState, SignalChannel } from "@intx/workflow";
 
 /**

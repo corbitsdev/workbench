@@ -4,21 +4,42 @@ import { cleanup, render, screen } from "@testing-library/react";
 import React from "react";
 import HorizontalStepper from "./HorizontalStepper";
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  mockReducedMotion.current = false;
+});
 import { buildSteps } from "./workflow-steps";
 import { type WorkflowStepName } from "./workflow-step-types";
 
-// framer-motion is not compatible with Happy DOM; replace motion.div with a plain div
+// framer-motion is not compatible with Happy DOM; replace motion.div/span with
+// plain elements. `mockReducedMotion` is mutated per-test so we can assert
+// both the animated and the reduced-motion static fallback from one mock.
+const mockReducedMotion = { current: false };
+const MOTION_ONLY = new Set([
+  "initial",
+  "animate",
+  "exit",
+  "transition",
+  "variants",
+]);
+function motionMock(tag: string) {
+  return ({
+    children,
+    ...rest
+  }: {
+    children?: React.ReactNode;
+    [key: string]: unknown;
+  }) => {
+    const domProps: Record<string, unknown> = {};
+    for (const [key, value] of Object.entries(rest)) {
+      if (!MOTION_ONLY.has(key)) domProps[key] = value;
+    }
+    return React.createElement(tag, domProps, children);
+  };
+}
 mock.module("framer-motion", () => ({
-  motion: {
-    div: ({
-      children,
-      className,
-    }: {
-      children: React.ReactNode;
-      className?: string;
-    }) => React.createElement("div", { className }, children),
-  },
+  motion: { div: motionMock("div"), span: motionMock("span") },
+  useReducedMotion: () => mockReducedMotion.current,
 }));
 
 const LABELS: Record<WorkflowStepName, string> = {
@@ -47,5 +68,40 @@ describe("HorizontalStepper", () => {
   it("renders all checkmarks when the workflow is done", () => {
     render(<HorizontalStepper steps={buildSteps("approve", LABELS, true)} />);
     expect(screen.getAllByText("✓").length).toBe(4);
+  });
+
+  it("only fills the connecting rail behind a phase that has actually completed", () => {
+    // At "generate": intake + analyze are completed, generate is current —
+    // only the first two rail segments should read as filled.
+    const { container } = render(
+      <HorizontalStepper steps={buildSteps("generate", LABELS)} />,
+    );
+    const segments = container.querySelectorAll(".bg-border-strong > div");
+    expect(segments.length).toBe(3);
+    expect(segments[0]?.getAttribute("data-filled")).toBe("true");
+    expect(segments[1]?.getAttribute("data-filled")).toBe("true");
+    // The segment right after the current step must not be pre-filled — the
+    // highlight never runs ahead of real progress.
+    expect(segments[2]?.getAttribute("data-filled")).toBe("false");
+  });
+
+  it('marks the current step with aria-current="step"', () => {
+    const { container } = render(
+      <HorizontalStepper steps={buildSteps("generate", LABELS)} />,
+    );
+    const current = container.querySelector('[aria-current="step"]');
+    expect(current).not.toBeNull();
+    expect(current?.textContent).toContain("Generate collateral");
+  });
+
+  it("renders the static fallback with no pulsing ring when reduced motion is preferred", () => {
+    mockReducedMotion.current = true;
+    const { container } = render(
+      <HorizontalStepper steps={buildSteps("generate", LABELS)} />,
+    );
+    // The current step still renders, but without the infinite-repeat
+    // pulsing-ring element (PulsingRing returns null under reduced motion).
+    expect(screen.getByText("3")).toBeDefined();
+    expect(container.querySelector(".bg-blue\\/30")).toBeNull();
   });
 });

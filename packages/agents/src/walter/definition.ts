@@ -1,5 +1,5 @@
 import type { CredentialRequirement, GrantRequirement } from "@intx/types";
-import { canonicalizeToolNames } from "../tool-names";
+import { canonicalizeAgentCapabilityNames } from "../tool-names";
 import { buildWalterSystemPrompt } from "./prompt";
 import type { AgentDeployDescriptor } from "../deploy-descriptor";
 import { LLM_CREDENTIAL_NAME } from "../constants";
@@ -22,13 +22,7 @@ export const WALTER_DEPLOY_PROMPT: string = buildWalterSystemPrompt("Walter", {
 });
 
 export const WALTER_CAPABILITIES = {
-  tools: canonicalizeToolNames([
-    "read_file",
-    "write_file",
-    "edit_file",
-    "search_files",
-    "artifact_link_file",
-  ]),
+  tools: canonicalizeAgentCapabilityNames("Walter", ["artifact_link_file"]),
 } as const;
 
 export const WALTER_MODEL_CONFIG = {

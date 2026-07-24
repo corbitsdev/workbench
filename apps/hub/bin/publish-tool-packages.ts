@@ -9,7 +9,7 @@ import { parseArgs } from "node:util";
 import { type, type Type } from "arktype";
 
 import { AssetResponse, AssetWithOriginResponse } from "@intx/types";
-import { WORKSPACE_BUILTINS_REGISTRY } from "@intx/hub-sessions";
+import { WORKSPACE_BUILTINS_REGISTRY } from "@workbench/hub-sessions";
 
 import { resolveTargetTenant } from "./_lib";
 

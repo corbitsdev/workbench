@@ -14,9 +14,10 @@ import {
   SkippedSource,
 } from "@workbench/last30days-core";
 import {
+  formatHeartbeatBriefDocument,
   formatHeartbeatBriefTitle,
   mergeHeartbeatBriefSources,
-  morningBriefMailRefs,
+  morningBriefNotifyMail,
 } from "@workbench/shared";
 
 export const LAST30DAYS_CORE_EXTRACT_DEFINITION: ToolDefinition = {
@@ -72,6 +73,72 @@ export const LAST30DAYS_WORKFLOW_BRIEF_DEFINITION: ToolDefinition = {
   },
 };
 
+export const LAST30DAYS_FORMAT_REPORT_DOCUMENT_DEFINITION: ToolDefinition = {
+  name: "last30days_format_report_document",
+  description:
+    "Internal workflow helper. Pairs the intake topic with the writer agent's reply into the { title, body } shape write_artifact expects, so the persist step never reshapes the agent's reply field.",
+  inputSchema: {
+    type: "object",
+    properties: {
+      topic: {
+        type: "string",
+        description:
+          "The research topic from intake, used as the artifact title.",
+      },
+      reply: {
+        type: "string",
+        description: "The writer agent's synthesized report text.",
+      },
+    },
+    required: ["topic", "reply"],
+  },
+};
+
+export const COMPETITOR_ANALYSIS_FORMAT_REPORT_DOCUMENT_DEFINITION: ToolDefinition =
+  {
+    name: "competitor_analysis_format_report_document",
+    description:
+      "Internal workflow helper. Pairs the researched company's URL with the synthesize agent's reply into the { title, body } shape write_artifact expects, so the persist step never reshapes the agent's reply field.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        companyUrl: {
+          type: "string",
+          description:
+            "The researched company's URL, used as the artifact title.",
+        },
+        reply: {
+          type: "string",
+          description: "The synthesize agent's competitor report text.",
+        },
+      },
+      required: ["companyUrl", "reply"],
+    },
+  };
+
+export const SUMBLE_ACCOUNT_INTEL_FORMAT_REPORT_DOCUMENT_DEFINITION: ToolDefinition =
+  {
+    name: "sumble_account_intel_format_report_document",
+    description:
+      "Internal workflow helper. Pairs the researched account's organization domain with the synthesize agent's reply into the { title, body } shape write_artifact expects, so the persist step never reshapes the agent's reply field.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        organizationDomain: {
+          type: "string",
+          description:
+            "The researched account's organization domain, used as the artifact title.",
+        },
+        reply: {
+          type: "string",
+          description:
+            "The synthesize agent's account intelligence brief text.",
+        },
+      },
+      required: ["organizationDomain", "reply"],
+    },
+  };
+
 export const LAST30DAYS_GROUND_QUERIES_DEFINITION: ToolDefinition = {
   name: "last30days_ground_queries",
   description:
@@ -102,13 +169,25 @@ export const HEARTBEAT_MERGE_BRIEF_SOURCES_DEFINITION: ToolDefinition = {
   },
 };
 
-export const HEARTBEAT_FORMAT_BRIEF_MAIL_REFS_DEFINITION: ToolDefinition = {
-  name: "heartbeat_format_brief_mail_refs",
+export const HEARTBEAT_FORMAT_BRIEF_NOTIFY_DEFINITION: ToolDefinition = {
+  name: "heartbeat_format_brief_notify",
   description:
-    "Internal heartbeat workflow helper. Build mailbox refs for the morning-brief notify mail after persist.",
+    "Internal heartbeat workflow helper. Builds the morning-brief notify mail's exact mail_send argument shape ({ to, subject, content, refs }) from the firing user's address, the composed brief document, and the persisted artifact id, so the notify step reads this tool's output verbatim.",
   inputSchema: {
     type: "object",
     properties: {
+      userAddress: {
+        type: "string",
+        description: "The firing user's usr_ mail address.",
+      },
+      title: {
+        type: "string",
+        description: "The brief's display title (mail subject).",
+      },
+      body: {
+        type: "string",
+        description: "The brief's body (mail content).",
+      },
       artifactId: {
         type: "string",
         description: "Persisted morning-brief artifact id from write_artifact.",
@@ -120,10 +199,32 @@ export const HEARTBEAT_FORMAT_BRIEF_MAIL_REFS_DEFINITION: ToolDefinition = {
       },
       workflowLabel: {
         type: "string",
-        description: "Display label for the workflow_run ref (defaults to Company Heartbeat).",
+        description:
+          "Display label for the workflow_run ref (defaults to Company Heartbeat).",
       },
     },
-    required: ["artifactId", "runId"],
+    required: ["userAddress", "title", "body", "artifactId", "runId"],
+  },
+};
+
+export const HEARTBEAT_FORMAT_BRIEF_DOCUMENT_DEFINITION: ToolDefinition = {
+  name: "heartbeat_format_brief_document",
+  description:
+    "Internal heartbeat workflow helper. Pairs the title step's title with the brief agent's reply into the { title, body } shape write_artifact and the notify-mail step expect, so neither downstream step reshapes the agent's reply field.",
+  inputSchema: {
+    type: "object",
+    properties: {
+      title: {
+        type: "string",
+        description:
+          "The brief's display title from heartbeat_format_brief_title.",
+      },
+      reply: {
+        type: "string",
+        description: "The brief agent's synthesized reply text.",
+      },
+    },
+    required: ["title", "reply"],
   },
 };
 
@@ -245,6 +346,83 @@ function createReportTool(): AgentTool {
       return JSON.stringify(
         buildReport(rawItems, { topic, days, topK, nowIso }),
       );
+    },
+  };
+}
+
+function createFormatReportDocumentTool(): AgentTool {
+  return {
+    kind: "full",
+    definition: LAST30DAYS_FORMAT_REPORT_DOCUMENT_DEFINITION,
+    handler: async (call) => {
+      const args = coerceArgsObject(call.arguments);
+      const topic = args.topic;
+      const reply = args.reply;
+      if (typeof topic !== "string" || topic.trim().length === 0) {
+        return { callId: call.id, isError: true, content: "topic is required" };
+      }
+      if (typeof reply !== "string" || reply.trim().length === 0) {
+        return { callId: call.id, isError: true, content: "reply is required" };
+      }
+      return {
+        callId: call.id,
+        content: { title: topic.trim(), body: reply },
+      };
+    },
+  };
+}
+
+function createCompetitorAnalysisFormatReportDocumentTool(): AgentTool {
+  return {
+    kind: "full",
+    definition: COMPETITOR_ANALYSIS_FORMAT_REPORT_DOCUMENT_DEFINITION,
+    handler: async (call) => {
+      const args = coerceArgsObject(call.arguments);
+      const companyUrl = args.companyUrl;
+      const reply = args.reply;
+      if (typeof companyUrl !== "string" || companyUrl.trim().length === 0) {
+        return {
+          callId: call.id,
+          isError: true,
+          content: "companyUrl is required",
+        };
+      }
+      if (typeof reply !== "string" || reply.trim().length === 0) {
+        return { callId: call.id, isError: true, content: "reply is required" };
+      }
+      return {
+        callId: call.id,
+        content: { title: companyUrl.trim(), body: reply },
+      };
+    },
+  };
+}
+
+function createSumbleAccountIntelFormatReportDocumentTool(): AgentTool {
+  return {
+    kind: "full",
+    definition: SUMBLE_ACCOUNT_INTEL_FORMAT_REPORT_DOCUMENT_DEFINITION,
+    handler: async (call) => {
+      const args = coerceArgsObject(call.arguments);
+      const organizationDomain = args.organizationDomain;
+      const reply = args.reply;
+      if (
+        typeof organizationDomain !== "string" ||
+        organizationDomain.trim().length === 0
+      ) {
+        return {
+          callId: call.id,
+          isError: true,
+          content: "organizationDomain is required",
+        };
+      }
+      if (typeof reply !== "string" || reply.trim().length === 0) {
+        return { callId: call.id, isError: true, content: "reply is required" };
+      }
+      return {
+        callId: call.id,
+        content: { title: organizationDomain.trim(), body: reply },
+      };
     },
   };
 }
@@ -449,6 +627,20 @@ function parseGroundedQueries(
 
 // Returns object `content` (not a JSON string) so each source step can select
 // its tailored query by field: `steps.groundQueries.output.content.<source>`.
+// Nests each source's flat query string under a `query` key (CL-4232) so a
+// downstream source step's plain `{ from: "steps.<ground|entity>Queries
+// .output.content.<sourceKey>" }` selector yields `{ query: "..." }` — the
+// tool's own argument name — directly, with no per-source argMap rename.
+function nestQueryMap(
+  flat: Record<string, string>,
+): Record<string, { query: string }> {
+  const nested: Record<string, { query: string }> = {};
+  for (const [key, query] of Object.entries(flat)) {
+    nested[key] = { query };
+  }
+  return nested;
+}
+
 function createGroundQueriesTool(): AgentTool {
   return {
     kind: "full",
@@ -465,7 +657,7 @@ function createGroundQueriesTool(): AgentTool {
       );
       return {
         callId: call.id,
-        content: parseGroundedQueries(args.reply, baseQuery),
+        content: nestQueryMap(parseGroundedQueries(args.reply, baseQuery)),
       };
     },
   };
@@ -576,7 +768,7 @@ function createEntityQueriesTool(): AgentTool {
       );
       return {
         callId: call.id,
-        content: parseEntityQueries(args.reply, baseQuery),
+        content: nestQueryMap(parseEntityQueries(args.reply, baseQuery)),
       };
     },
   };
@@ -675,35 +867,69 @@ function createValidateTool(): AgentTool {
   };
 }
 
-function createHeartbeatFormatBriefMailRefsTool(): AgentTool {
+function createHeartbeatFormatBriefNotifyTool(): AgentTool {
   return {
     kind: "full",
-    definition: HEARTBEAT_FORMAT_BRIEF_MAIL_REFS_DEFINITION,
+    definition: HEARTBEAT_FORMAT_BRIEF_NOTIFY_DEFINITION,
     handler: async (call) => {
       const args = coerceArgsObject(call.arguments);
+      const userAddress = args.userAddress;
+      const title = args.title;
+      const body = args.body;
       const artifactId = args.artifactId;
       const runId = args.runId;
       const workflowLabel =
-        typeof args.workflowLabel === "string"
-          ? args.workflowLabel
-          : undefined;
-      if (typeof artifactId !== "string" || artifactId.trim().length === 0) {
-        return {
-          callId: call.id,
-          isError: true,
-          content: "artifactId is required",
-        };
-      }
-      if (typeof runId !== "string" || runId.trim().length === 0) {
-        return {
-          callId: call.id,
-          isError: true,
-          content: "runId is required",
-        };
+        typeof args.workflowLabel === "string" ? args.workflowLabel : undefined;
+      for (const [name, value] of [
+        ["userAddress", userAddress],
+        ["title", title],
+        ["body", body],
+        ["artifactId", artifactId],
+        ["runId", runId],
+      ] as const) {
+        if (typeof value !== "string" || value.trim().length === 0) {
+          return {
+            callId: call.id,
+            isError: true,
+            content: `${name} is required`,
+          };
+        }
       }
       try {
-        const refs = morningBriefMailRefs(artifactId, runId, workflowLabel);
-        return { callId: call.id, content: { refs } };
+        const content = morningBriefNotifyMail({
+          userAddress: userAddress as string,
+          title: title as string,
+          body: body as string,
+          artifactId: artifactId as string,
+          runId: runId as string,
+          ...(workflowLabel !== undefined ? { workflowLabel } : {}),
+        });
+        return { callId: call.id, content };
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        return { callId: call.id, isError: true, content: message };
+      }
+    },
+  };
+}
+
+function createHeartbeatFormatBriefDocumentTool(): AgentTool {
+  return {
+    kind: "full",
+    definition: HEARTBEAT_FORMAT_BRIEF_DOCUMENT_DEFINITION,
+    handler: async (call) => {
+      const args = coerceArgsObject(call.arguments);
+      const title = args.title;
+      const reply = args.reply;
+      if (typeof title !== "string" || title.trim().length === 0) {
+        return { callId: call.id, isError: true, content: "title is required" };
+      }
+      if (typeof reply !== "string" || reply.trim().length === 0) {
+        return { callId: call.id, isError: true, content: "reply is required" };
+      }
+      try {
+        const content = formatHeartbeatBriefDocument(title, reply);
+        return { callId: call.id, content };
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
         return { callId: call.id, isError: true, content: message };
@@ -745,6 +971,7 @@ export function createLast30daysTools(): AgentTool[] {
   return [
     createExtractTool(),
     createReportTool(),
+    createFormatReportDocumentTool(),
     createGroundQueriesTool(),
     createEntityQueriesTool(),
     createCollectTool(),
@@ -752,6 +979,9 @@ export function createLast30daysTools(): AgentTool[] {
     createValidateTool(),
     createHeartbeatMergeBriefSourcesTool(),
     createHeartbeatFormatBriefTitleTool(),
-    createHeartbeatFormatBriefMailRefsTool(),
+    createHeartbeatFormatBriefDocumentTool(),
+    createHeartbeatFormatBriefNotifyTool(),
+    createCompetitorAnalysisFormatReportDocumentTool(),
+    createSumbleAccountIntelFormatReportDocumentTool(),
   ];
 }

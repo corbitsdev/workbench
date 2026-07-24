@@ -6,7 +6,7 @@ import { getLogger } from "@intx/log";
 import type {
   EventCollectorRegistry,
   SessionService,
-} from "@intx/hub-sessions";
+} from "@workbench/hub-sessions";
 import type { GrantStore } from "@intx/types/authz";
 import type { CryptoProvider } from "@intx/types/runtime";
 import type { TurnFinalized } from "@workbench/event-collector";
@@ -34,11 +34,22 @@ import {
 } from "../workflow-executor/run-store";
 import { launchAgentSession } from "./agent-provisioning";
 import { resolveMyraDefinition, teardownThreadRows } from "./myra-threads";
-import type { RepoStore } from "@intx/hub-sessions";
+import type { RepoStore } from "@workbench/hub-sessions";
 
+// NOT WIRED (CL-4289): nothing in production calls `maybeEnqueue` — the only
+// production hook on the running -> awaiting transition is `deliverGateMail`
+// (see gate-mail.ts / apps/hub/src/index.ts), which now mails the owner for
+// every genuinely-unattended gate instead. This module is exercised only by
+// its own tests. Keep it (rather than delete) as the built-but-inert shape for
+// an opt-in unattended auto-driver; do not describe it elsewhere as something
+// that runs today, and do not wire it without also bounding it against any
+// external side effect (it must never auto-approve one).
 const log = getLogger(["services", "scheduled-workflow-gate-agent"]);
 
-export { SCHEDULED_GATE_TEMPLATE_KEY, postIntakeGatesForScheduledDrive } from "./scheduled-gate-targets";
+export {
+  SCHEDULED_GATE_TEMPLATE_KEY,
+  postIntakeGatesForScheduledDrive,
+} from "./scheduled-gate-targets";
 
 const DEFAULT_TURN_TIMEOUT_MS = 120_000;
 const DEFAULT_MAX_TURNS = 4;
@@ -46,7 +57,10 @@ const MAX_QUEUE = 32;
 const MAX_SESSIONS_PER_HOUR = 40;
 const SESSION_WINDOW_MS = 60 * 60 * 1000;
 
-const SCHEDULED_GATE_TOOL_NAMES = ["workflow_list_runs", "workflow_signal"] as const;
+const SCHEDULED_GATE_TOOL_NAMES = [
+  "workflow_list_runs",
+  "workflow_signal",
+] as const;
 
 const SCHEDULED_GATE_SYSTEM_PROMPT = `You are completing a scheduled (unattended) workflow run for the run owner.
 The run is parked on a workflow gate. Your only job is to resolve that gate.
@@ -115,10 +129,7 @@ export function createScheduledWorkflowGateAgent(
     deps.describePendingGatesFn ?? describePendingGates;
   const queue: QueueItem[] = [];
   const inFlight = new Set<string>();
-  const pendingTurns = new Map<
-    string,
-    (turn: TurnFinalized | null) => void
-  >();
+  const pendingTurns = new Map<string, (turn: TurnFinalized | null) => void>();
   let processing = false;
   let drainWaiters: Array<() => void> = [];
 

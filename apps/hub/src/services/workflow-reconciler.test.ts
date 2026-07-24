@@ -1,6 +1,6 @@
 import { describe, expect, it, mock } from "bun:test";
 import { schema as intxSchema } from "@intx/db";
-import type { SidecarRouter } from "@intx/hub-sessions";
+import type { SidecarRouter } from "@workbench/hub-sessions";
 import type { HubDb } from "../db";
 import type { EnsureDeploymentRoutableFn } from "../routes/workflow-runs";
 import { workflowRunRecord } from "../db/schema";

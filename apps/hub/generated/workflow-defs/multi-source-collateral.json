@@ -1,0 +1,455 @@
+{
+  "kind": "multi-source-collateral",
+  "version": "0.1.0",
+  "label": "Multi-Source Collateral",
+  "description": "Choose mixed sources (artifacts, Granola notes, Linear tickets, free text), pick content types, generate pieces, swipe review with optional feedback regenerate, and save approved artifacts.",
+  "displayFlow": [
+    {
+      "key": "sources",
+      "label": "Sources",
+      "stepIds": [
+        "list-artifacts",
+        "list-notes",
+        "list-issues",
+        "sources"
+      ]
+    },
+    {
+      "key": "options",
+      "label": "Content",
+      "stepIds": [
+        "fetch-artifacts",
+        "fetch-notes",
+        "fetch-issues",
+        "options"
+      ],
+      "activityLabel": "Loading sources"
+    },
+    {
+      "key": "review",
+      "label": "Review",
+      "stepIds": [
+        "generate",
+        "review",
+        "regenerateGate",
+        "regenerate",
+        "review-final"
+      ],
+      "activityLabel": "Generating collateral"
+    },
+    {
+      "key": "done",
+      "label": "Done",
+      "stepIds": [
+        "persist",
+        "persist-after-regen"
+      ],
+      "activityLabel": "Saving to workbench"
+    }
+  ],
+  "requiresIntake": false,
+  "humanGateCount": 4,
+  "definition": {
+    "id": "multi-source-collateral",
+    "triggers": [
+      {
+        "type": "manual"
+      }
+    ],
+    "steps": {
+      "list-artifacts": {
+        "kind": "step",
+        "id": "list-artifacts",
+        "agent": {
+          "id": "multi-source-collateral-list-artifacts",
+          "systemPrompt": "",
+          "toolFactories": [],
+          "capabilities": [
+            "@workbench/tools-artifact/artifact:artifact_list"
+          ],
+          "inference": {
+            "sources": []
+          },
+          "description": "Deterministic tool call: @workbench/tools-artifact/artifact:artifact_list",
+          "tags": {
+            "workbench.stepKind": "deterministic-tool",
+            "workbench.tool": "@workbench/tools-artifact/artifact:artifact_list",
+            "workbench.title": "List artifacts"
+          }
+        },
+        "drainBehavior": "cancel",
+        "input": {
+          "literal": {
+            "limit": 50
+          }
+        }
+      },
+      "list-notes": {
+        "kind": "step",
+        "id": "list-notes",
+        "agent": {
+          "id": "multi-source-collateral-list-notes",
+          "systemPrompt": "",
+          "toolFactories": [],
+          "capabilities": [
+            "@workbench/tools-granola/granola:granola_list_notes"
+          ],
+          "inference": {
+            "sources": []
+          },
+          "description": "Deterministic tool call: @workbench/tools-granola/granola:granola_list_notes",
+          "tags": {
+            "workbench.stepKind": "deterministic-tool",
+            "workbench.tool": "@workbench/tools-granola/granola:granola_list_notes",
+            "workbench.title": "List call notes"
+          }
+        },
+        "drainBehavior": "cancel",
+        "input": {
+          "literal": {
+            "limit": 30
+          }
+        }
+      },
+      "list-issues": {
+        "kind": "step",
+        "id": "list-issues",
+        "agent": {
+          "id": "multi-source-collateral-list-issues",
+          "systemPrompt": "",
+          "toolFactories": [],
+          "capabilities": [
+            "@workbench/tools-linear/linear:linear_list_issues"
+          ],
+          "inference": {
+            "sources": []
+          },
+          "description": "Deterministic tool call: @workbench/tools-linear/linear:linear_list_issues",
+          "tags": {
+            "workbench.stepKind": "deterministic-tool",
+            "workbench.tool": "@workbench/tools-linear/linear:linear_list_issues",
+            "workbench.nonFatal": "true",
+            "workbench.title": "List Linear issues"
+          }
+        },
+        "drainBehavior": "cancel",
+        "input": {
+          "literal": {
+            "first": 50
+          }
+        }
+      },
+      "sources": {
+        "kind": "awaitSignal",
+        "id": "sources",
+        "name": "sources",
+        "drainBehavior": "wait",
+        "after": [
+          "list-artifacts",
+          "list-notes",
+          "list-issues"
+        ]
+      },
+      "fetch-artifacts": {
+        "kind": "map",
+        "id": "fetch-artifacts",
+        "over": {
+          "from": "steps.sources.output.artifactItems"
+        },
+        "step": {
+          "kind": "step",
+          "id": "",
+          "agent": {
+            "id": "multi-source-collateral-fetch-artifact",
+            "systemPrompt": "",
+            "toolFactories": [],
+            "capabilities": [
+              "@workbench/tools-artifact/artifact:artifact_read"
+            ],
+            "inference": {
+              "sources": []
+            },
+            "description": "Deterministic tool call: @workbench/tools-artifact/artifact:artifact_read",
+            "tags": {
+              "workbench.stepKind": "deterministic-tool",
+              "workbench.tool": "@workbench/tools-artifact/artifact:artifact_read",
+              "workbench.argMap": "{\"artifactId\":{\"from\":\"artifactId\"}}",
+              "workbench.title": "Load artifact"
+            }
+          },
+          "drainBehavior": "cancel",
+          "input": {
+            "from": "trigger.payload"
+          }
+        },
+        "after": [
+          "sources"
+        ]
+      },
+      "fetch-notes": {
+        "kind": "map",
+        "id": "fetch-notes",
+        "over": {
+          "from": "steps.sources.output.noteItems"
+        },
+        "step": {
+          "kind": "step",
+          "id": "",
+          "agent": {
+            "id": "multi-source-collateral-fetch-note",
+            "systemPrompt": "",
+            "toolFactories": [],
+            "capabilities": [
+              "@workbench/tools-granola/granola:granola_get_note"
+            ],
+            "inference": {
+              "sources": []
+            },
+            "description": "Deterministic tool call: @workbench/tools-granola/granola:granola_get_note",
+            "tags": {
+              "workbench.stepKind": "deterministic-tool",
+              "workbench.tool": "@workbench/tools-granola/granola:granola_get_note",
+              "workbench.argMap": "{\"noteId\":{\"from\":\"noteId\"}}",
+              "workbench.title": "Load call note"
+            }
+          },
+          "drainBehavior": "cancel",
+          "input": {
+            "from": "trigger.payload"
+          }
+        },
+        "after": [
+          "sources"
+        ]
+      },
+      "fetch-issues": {
+        "kind": "map",
+        "id": "fetch-issues",
+        "over": {
+          "from": "steps.sources.output.issueItems"
+        },
+        "step": {
+          "kind": "step",
+          "id": "",
+          "agent": {
+            "id": "multi-source-collateral-fetch-issue",
+            "systemPrompt": "",
+            "toolFactories": [],
+            "capabilities": [
+              "@workbench/tools-linear/linear:linear_get_issue"
+            ],
+            "inference": {
+              "sources": []
+            },
+            "description": "Deterministic tool call: @workbench/tools-linear/linear:linear_get_issue",
+            "tags": {
+              "workbench.stepKind": "deterministic-tool",
+              "workbench.tool": "@workbench/tools-linear/linear:linear_get_issue",
+              "workbench.argMap": "{\"id\":{\"from\":\"id\"}}",
+              "workbench.title": "Load Linear issue"
+            }
+          },
+          "drainBehavior": "cancel",
+          "input": {
+            "from": "trigger.payload"
+          }
+        },
+        "after": [
+          "sources"
+        ]
+      },
+      "options": {
+        "kind": "awaitSignal",
+        "id": "options",
+        "name": "options",
+        "drainBehavior": "wait",
+        "after": [
+          "fetch-artifacts",
+          "fetch-notes",
+          "fetch-issues"
+        ]
+      },
+      "generate": {
+        "kind": "map",
+        "id": "generate",
+        "over": {
+          "from": "steps.options.output.items"
+        },
+        "step": {
+          "kind": "step",
+          "id": "",
+          "agent": {
+            "id": "multi-source-collateral-generate",
+            "systemPrompt": "Treat Corbits, Corbits.dev, Interchange, and Faremeter as canonical Corbits names; spell them exactly. When source material contains a clear speech-to-text or spelling variant, use the canonical spelling in your output. Do not replace an ambiguous term unless surrounding context identifies it.\n\nYou draft GTM collateral from mixed source material (artifacts, call notes, Linear tickets, free text).\nRead the contentType (or format) field. Find the matching <format-name> block and apply its role, structure, and style.\nHonor optional audience, tone, goal, and titleHint fields when present.\nHonor optional systemPrompt field as extra per-piece authoring instructions.\nWhen regenerating, apply feedback against previousContent.\n\n<format-name>\nlinkedin-post\n</format-name>\n<role>\nYou write a short LinkedIn post a founder or GTM lead would publish.\n</role>\n<structure>\n<item>\nHook in the first two lines.\n</item>\n<item>\nOne clear insight grounded in the sources.\n</item>\n<item>\nClose with a reflective question, not a hard CTA.\n</item>\n<item>\nTarget 120–220 words.\n</item>\n</structure>\n<style>\n<item>\nNo buzzwords: no synergy, leverage, unlock, streamline, game-changing, best-in-class.\n</item>\n<item>\nNo em dashes. No superlatives. No hollow adjectives.\n</item>\n<item>\nSentence case. Vary sentence length. Write how a person talks.\n</item>\n<item>\nGround every claim in the provided source context.\n</item>\n<item>\nThis is a PUBLIC artifact: strip and generalise customer-identifying details (names, companies, emails, domains).\n</item>\n</style>\n\n<format-name>\nlinkedin-article\n</format-name>\n<role>\nYou write a LinkedIn long-form article (not a short post).\n</role>\n<structure>\n<item>\nOpening narrative hook.\n</item>\n<item>\n2–4 sections with ## headers developing the argument.\n</item>\n<item>\nConcrete examples from source themes (generalised).\n</item>\n<item>\nClose with a practical takeaway.\n</item>\n<item>\nTarget 600–1000 words.\n</item>\n</structure>\n<style>\n<item>\nNo buzzwords: no synergy, leverage, unlock, streamline, game-changing, best-in-class.\n</item>\n<item>\nNo em dashes. No superlatives. No hollow adjectives.\n</item>\n<item>\nSentence case. Vary sentence length. Write how a person talks.\n</item>\n<item>\nGround every claim in the provided source context.\n</item>\n<item>\nThis is a PUBLIC artifact: strip and generalise customer-identifying details (names, companies, emails, domains).\n</item>\n</style>\n\n<format-name>\ntwitter-post\n</format-name>\n<role>\nYou write a single sharp Twitter/X post (not a thread).\n</role>\n<structure>\n<item>\nOne idea, punchy and specific.\n</item>\n<item>\nUnder 280 characters when possible; hard cap 500.\n</item>\n<item>\nNo hashtag spam. No emoji pile-on.\n</item>\n</structure>\n<style>\n<item>\nNo buzzwords: no synergy, leverage, unlock, streamline, game-changing, best-in-class.\n</item>\n<item>\nNo em dashes. No superlatives. No hollow adjectives.\n</item>\n<item>\nSentence case. Vary sentence length. Write how a person talks.\n</item>\n<item>\nGround every claim in the provided source context.\n</item>\n<item>\nThis is a PUBLIC artifact: strip and generalise customer-identifying details (names, companies, emails, domains).\n</item>\n</style>\n\n<format-name>\ntwitter-article\n</format-name>\n<role>\nYou write a long-form X/Twitter article style piece.\n</role>\n<structure>\n<item>\nStrong title line then multi-section body.\n</item>\n<item>\nScannable paragraphs and short sections.\n</item>\n<item>\nTarget 400–800 words.\n</item>\n</structure>\n<style>\n<item>\nNo buzzwords: no synergy, leverage, unlock, streamline, game-changing, best-in-class.\n</item>\n<item>\nNo em dashes. No superlatives. No hollow adjectives.\n</item>\n<item>\nSentence case. Vary sentence length. Write how a person talks.\n</item>\n<item>\nGround every claim in the provided source context.\n</item>\n<item>\nThis is a PUBLIC artifact: strip and generalise customer-identifying details (names, companies, emails, domains).\n</item>\n</style>\n\n<format-name>\nblog-short\n</format-name>\n<role>\nYou write a short blog post (~400–600 words).\n</role>\n<structure>\n<item>\nHook, problem, insight, takeaway.\n</item>\n<item>\nUse ## headers sparingly.\n</item>\n<item>\nConversational, specific, paste-ready markdown.\n</item>\n</structure>\n<style>\n<item>\nNo buzzwords: no synergy, leverage, unlock, streamline, game-changing, best-in-class.\n</item>\n<item>\nNo em dashes. No superlatives. No hollow adjectives.\n</item>\n<item>\nSentence case. Vary sentence length. Write how a person talks.\n</item>\n<item>\nGround every claim in the provided source context.\n</item>\n<item>\nThis is a PUBLIC artifact: strip and generalise customer-identifying details (names, companies, emails, domains).\n</item>\n</style>\n\n<format-name>\nblog-mid\n</format-name>\n<role>\nYou write a mid-length blog post (~800–1200 words).\n</role>\n<structure>\n<item>\nNarrative arc with clear sections.\n</item>\n<item>\nExamples and practical advice.\n</item>\n<item>\nMarkdown headers and clean paragraph breaks.\n</item>\n</structure>\n<style>\n<item>\nNo buzzwords: no synergy, leverage, unlock, streamline, game-changing, best-in-class.\n</item>\n<item>\nNo em dashes. No superlatives. No hollow adjectives.\n</item>\n<item>\nSentence case. Vary sentence length. Write how a person talks.\n</item>\n<item>\nGround every claim in the provided source context.\n</item>\n<item>\nThis is a PUBLIC artifact: strip and generalise customer-identifying details (names, companies, emails, domains).\n</item>\n</style>\n\n<format-name>\nblog-long\n</format-name>\n<role>\nYou write a long-form blog post (~1500–2200 words).\n</role>\n<structure>\n<item>\nDeep dive: context, problem, analysis, recommendations.\n</item>\n<item>\nMultiple ## sections; optional ### subsections.\n</item>\n<item>\nStill paste-ready and human, not academic.\n</item>\n</structure>\n<style>\n<item>\nNo buzzwords: no synergy, leverage, unlock, streamline, game-changing, best-in-class.\n</item>\n<item>\nNo em dashes. No superlatives. No hollow adjectives.\n</item>\n<item>\nSentence case. Vary sentence length. Write how a person talks.\n</item>\n<item>\nGround every claim in the provided source context.\n</item>\n<item>\nThis is a PUBLIC artifact: strip and generalise customer-identifying details (names, companies, emails, domains).\n</item>\n</style>\n\n<output format=\"json\" fences=\"false\">\nThe input is a JSON object. Fields include: contentType (or format), sourceContext, optional audience/tone/goal/titleHint, optional systemPrompt override notes, and for regenerate: previousContent + feedback.\nIf systemPrompt is present and non-empty, treat it as additional authoring instructions for this piece (it supplements, does not replace, the format guidance).\nIf feedback and previousContent are present, revise the previous draft to address the feedback while keeping the same content type.\nReturn strict JSON only — no markdown fences, no preamble. Match this exact shape:\n<field name=\"format\">\nContent type id (same as input contentType or format).\n</field>\n<field name=\"title\">\nShort artifact title (plain text).\n</field>\n<field name=\"content\">\nPaste-ready body. Escape newlines as \\n within the JSON string.\n</field>\nNever echo instruction tags or prompt scaffolding into the content.\n</output>",
+            "toolFactories": [],
+            "capabilities": [],
+            "inference": {
+              "sources": []
+            },
+            "description": "Reasoning step: multi-source-collateral-generate",
+            "tags": {
+              "workbench.title": "Draft each piece"
+            }
+          },
+          "drainBehavior": "cancel",
+          "input": {
+            "from": "trigger.payload"
+          }
+        },
+        "after": [
+          "options"
+        ]
+      },
+      "review": {
+        "kind": "awaitSignal",
+        "id": "review",
+        "name": "review",
+        "drainBehavior": "wait",
+        "after": [
+          "generate"
+        ]
+      },
+      "regenerateGate": {
+        "kind": "gate",
+        "id": "regenerateGate",
+        "when": {
+          "from": "steps.review.output.shouldRegenerate"
+        },
+        "then": "regenerate",
+        "else": "persist",
+        "after": [
+          "review"
+        ]
+      },
+      "regenerate": {
+        "kind": "map",
+        "id": "regenerate",
+        "over": {
+          "from": "steps.review.output.regenerateItems"
+        },
+        "step": {
+          "kind": "step",
+          "id": "",
+          "agent": {
+            "id": "multi-source-collateral-regenerate",
+            "systemPrompt": "Treat Corbits, Corbits.dev, Interchange, and Faremeter as canonical Corbits names; spell them exactly. When source material contains a clear speech-to-text or spelling variant, use the canonical spelling in your output. Do not replace an ambiguous term unless surrounding context identifies it.\n\nYou draft GTM collateral from mixed source material (artifacts, call notes, Linear tickets, free text).\nRead the contentType (or format) field. Find the matching <format-name> block and apply its role, structure, and style.\nHonor optional audience, tone, goal, and titleHint fields when present.\nHonor optional systemPrompt field as extra per-piece authoring instructions.\nWhen regenerating, apply feedback against previousContent.\n\n<format-name>\nlinkedin-post\n</format-name>\n<role>\nYou write a short LinkedIn post a founder or GTM lead would publish.\n</role>\n<structure>\n<item>\nHook in the first two lines.\n</item>\n<item>\nOne clear insight grounded in the sources.\n</item>\n<item>\nClose with a reflective question, not a hard CTA.\n</item>\n<item>\nTarget 120–220 words.\n</item>\n</structure>\n<style>\n<item>\nNo buzzwords: no synergy, leverage, unlock, streamline, game-changing, best-in-class.\n</item>\n<item>\nNo em dashes. No superlatives. No hollow adjectives.\n</item>\n<item>\nSentence case. Vary sentence length. Write how a person talks.\n</item>\n<item>\nGround every claim in the provided source context.\n</item>\n<item>\nThis is a PUBLIC artifact: strip and generalise customer-identifying details (names, companies, emails, domains).\n</item>\n</style>\n\n<format-name>\nlinkedin-article\n</format-name>\n<role>\nYou write a LinkedIn long-form article (not a short post).\n</role>\n<structure>\n<item>\nOpening narrative hook.\n</item>\n<item>\n2–4 sections with ## headers developing the argument.\n</item>\n<item>\nConcrete examples from source themes (generalised).\n</item>\n<item>\nClose with a practical takeaway.\n</item>\n<item>\nTarget 600–1000 words.\n</item>\n</structure>\n<style>\n<item>\nNo buzzwords: no synergy, leverage, unlock, streamline, game-changing, best-in-class.\n</item>\n<item>\nNo em dashes. No superlatives. No hollow adjectives.\n</item>\n<item>\nSentence case. Vary sentence length. Write how a person talks.\n</item>\n<item>\nGround every claim in the provided source context.\n</item>\n<item>\nThis is a PUBLIC artifact: strip and generalise customer-identifying details (names, companies, emails, domains).\n</item>\n</style>\n\n<format-name>\ntwitter-post\n</format-name>\n<role>\nYou write a single sharp Twitter/X post (not a thread).\n</role>\n<structure>\n<item>\nOne idea, punchy and specific.\n</item>\n<item>\nUnder 280 characters when possible; hard cap 500.\n</item>\n<item>\nNo hashtag spam. No emoji pile-on.\n</item>\n</structure>\n<style>\n<item>\nNo buzzwords: no synergy, leverage, unlock, streamline, game-changing, best-in-class.\n</item>\n<item>\nNo em dashes. No superlatives. No hollow adjectives.\n</item>\n<item>\nSentence case. Vary sentence length. Write how a person talks.\n</item>\n<item>\nGround every claim in the provided source context.\n</item>\n<item>\nThis is a PUBLIC artifact: strip and generalise customer-identifying details (names, companies, emails, domains).\n</item>\n</style>\n\n<format-name>\ntwitter-article\n</format-name>\n<role>\nYou write a long-form X/Twitter article style piece.\n</role>\n<structure>\n<item>\nStrong title line then multi-section body.\n</item>\n<item>\nScannable paragraphs and short sections.\n</item>\n<item>\nTarget 400–800 words.\n</item>\n</structure>\n<style>\n<item>\nNo buzzwords: no synergy, leverage, unlock, streamline, game-changing, best-in-class.\n</item>\n<item>\nNo em dashes. No superlatives. No hollow adjectives.\n</item>\n<item>\nSentence case. Vary sentence length. Write how a person talks.\n</item>\n<item>\nGround every claim in the provided source context.\n</item>\n<item>\nThis is a PUBLIC artifact: strip and generalise customer-identifying details (names, companies, emails, domains).\n</item>\n</style>\n\n<format-name>\nblog-short\n</format-name>\n<role>\nYou write a short blog post (~400–600 words).\n</role>\n<structure>\n<item>\nHook, problem, insight, takeaway.\n</item>\n<item>\nUse ## headers sparingly.\n</item>\n<item>\nConversational, specific, paste-ready markdown.\n</item>\n</structure>\n<style>\n<item>\nNo buzzwords: no synergy, leverage, unlock, streamline, game-changing, best-in-class.\n</item>\n<item>\nNo em dashes. No superlatives. No hollow adjectives.\n</item>\n<item>\nSentence case. Vary sentence length. Write how a person talks.\n</item>\n<item>\nGround every claim in the provided source context.\n</item>\n<item>\nThis is a PUBLIC artifact: strip and generalise customer-identifying details (names, companies, emails, domains).\n</item>\n</style>\n\n<format-name>\nblog-mid\n</format-name>\n<role>\nYou write a mid-length blog post (~800–1200 words).\n</role>\n<structure>\n<item>\nNarrative arc with clear sections.\n</item>\n<item>\nExamples and practical advice.\n</item>\n<item>\nMarkdown headers and clean paragraph breaks.\n</item>\n</structure>\n<style>\n<item>\nNo buzzwords: no synergy, leverage, unlock, streamline, game-changing, best-in-class.\n</item>\n<item>\nNo em dashes. No superlatives. No hollow adjectives.\n</item>\n<item>\nSentence case. Vary sentence length. Write how a person talks.\n</item>\n<item>\nGround every claim in the provided source context.\n</item>\n<item>\nThis is a PUBLIC artifact: strip and generalise customer-identifying details (names, companies, emails, domains).\n</item>\n</style>\n\n<format-name>\nblog-long\n</format-name>\n<role>\nYou write a long-form blog post (~1500–2200 words).\n</role>\n<structure>\n<item>\nDeep dive: context, problem, analysis, recommendations.\n</item>\n<item>\nMultiple ## sections; optional ### subsections.\n</item>\n<item>\nStill paste-ready and human, not academic.\n</item>\n</structure>\n<style>\n<item>\nNo buzzwords: no synergy, leverage, unlock, streamline, game-changing, best-in-class.\n</item>\n<item>\nNo em dashes. No superlatives. No hollow adjectives.\n</item>\n<item>\nSentence case. Vary sentence length. Write how a person talks.\n</item>\n<item>\nGround every claim in the provided source context.\n</item>\n<item>\nThis is a PUBLIC artifact: strip and generalise customer-identifying details (names, companies, emails, domains).\n</item>\n</style>\n\n<output format=\"json\" fences=\"false\">\nThe input is a JSON object. Fields include: contentType (or format), sourceContext, optional audience/tone/goal/titleHint, optional systemPrompt override notes, and for regenerate: previousContent + feedback.\nIf systemPrompt is present and non-empty, treat it as additional authoring instructions for this piece (it supplements, does not replace, the format guidance).\nIf feedback and previousContent are present, revise the previous draft to address the feedback while keeping the same content type.\nReturn strict JSON only — no markdown fences, no preamble. Match this exact shape:\n<field name=\"format\">\nContent type id (same as input contentType or format).\n</field>\n<field name=\"title\">\nShort artifact title (plain text).\n</field>\n<field name=\"content\">\nPaste-ready body. Escape newlines as \\n within the JSON string.\n</field>\nNever echo instruction tags or prompt scaffolding into the content.\n</output>",
+            "toolFactories": [],
+            "capabilities": [],
+            "inference": {
+              "sources": []
+            },
+            "description": "Reasoning step: multi-source-collateral-regenerate",
+            "tags": {
+              "workbench.title": "Revise with feedback"
+            }
+          },
+          "drainBehavior": "cancel",
+          "input": {
+            "from": "trigger.payload"
+          }
+        },
+        "after": [
+          "regenerateGate"
+        ]
+      },
+      "review-final": {
+        "kind": "awaitSignal",
+        "id": "review-final",
+        "name": "review-final",
+        "drainBehavior": "wait",
+        "after": [
+          "regenerate"
+        ]
+      },
+      "persist-after-regen": {
+        "kind": "map",
+        "id": "persist-after-regen",
+        "over": {
+          "from": "steps.review-final.output.approvedPieces"
+        },
+        "step": {
+          "kind": "step",
+          "id": "",
+          "agent": {
+            "id": "multi-source-collateral-persist-after-regen",
+            "systemPrompt": "",
+            "toolFactories": [],
+            "capabilities": [
+              "@workbench/tools-artifact/artifact:artifact_create"
+            ],
+            "inference": {
+              "sources": []
+            },
+            "description": "Deterministic tool call: @workbench/tools-artifact/artifact:artifact_create",
+            "tags": {
+              "workbench.stepKind": "deterministic-tool",
+              "workbench.tool": "@workbench/tools-artifact/artifact:artifact_create",
+              "workbench.argMap": "{\"title\":{\"from\":\"title\"},\"kind\":{\"from\":\"format\"},\"content\":{\"from\":\"content\"}}",
+              "workbench.title": "Save the collateral"
+            }
+          },
+          "drainBehavior": "cancel",
+          "input": {
+            "from": "trigger.payload"
+          }
+        },
+        "after": [
+          "review-final"
+        ]
+      },
+      "persist": {
+        "kind": "map",
+        "id": "persist",
+        "over": {
+          "from": "steps.review.output.approvedPieces"
+        },
+        "step": {
+          "kind": "step",
+          "id": "",
+          "agent": {
+            "id": "multi-source-collateral-persist",
+            "systemPrompt": "",
+            "toolFactories": [],
+            "capabilities": [
+              "@workbench/tools-artifact/artifact:artifact_create"
+            ],
+            "inference": {
+              "sources": []
+            },
+            "description": "Deterministic tool call: @workbench/tools-artifact/artifact:artifact_create",
+            "tags": {
+              "workbench.stepKind": "deterministic-tool",
+              "workbench.tool": "@workbench/tools-artifact/artifact:artifact_create",
+              "workbench.argMap": "{\"title\":{\"from\":\"title\"},\"kind\":{\"from\":\"format\"},\"content\":{\"from\":\"content\"}}",
+              "workbench.title": "Save the collateral"
+            }
+          },
+          "drainBehavior": "cancel",
+          "input": {
+            "from": "trigger.payload"
+          }
+        },
+        "after": [
+          "regenerateGate"
+        ]
+      }
+    },
+    "stepOrder": [
+      "list-artifacts",
+      "list-notes",
+      "list-issues",
+      "sources",
+      "fetch-artifacts",
+      "fetch-notes",
+      "fetch-issues",
+      "options",
+      "generate",
+      "review",
+      "regenerateGate",
+      "regenerate",
+      "review-final",
+      "persist-after-regen",
+      "persist"
+    ]
+  }
+}

@@ -17,8 +17,6 @@ import { resolveArtifactClipboardText } from "./linkedin-clipboard";
 import { ArtifactMeta } from "./ArtifactMeta";
 import { ArtifactDetailShell } from "./ArtifactDetailShell";
 import { visualForKind } from "./artifact-visuals";
-import { labelForArtifactStatus } from "./artifact-preview-family";
-import { shouldShowArtifactStatusBadge } from "./artifact-status-badge";
 
 export interface ArtifactModalAction {
   label: string;
@@ -166,9 +164,6 @@ export function ArtifactModal({
                     </div>
                     <div className="mt-0.5 font-mono text-[11px] text-text-3">
                       v{artifact.version}
-                      {shouldShowArtifactStatusBadge(artifact.status)
-                        ? ` · ${labelForArtifactStatus(artifact.status)}`
-                        : null}
                     </div>
                   </div>
                   <button

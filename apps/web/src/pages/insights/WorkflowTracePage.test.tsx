@@ -63,6 +63,7 @@ const TOKEN_COUNTS = {
 
 let apiError: Error | null = null;
 let logStateResponse: unknown = LOG_STATE;
+let recordResponse: typeof RECORD = RECORD;
 let tokensResponse: {
   runId: string;
   available: boolean;
@@ -78,7 +79,7 @@ mock.module("../../lib/api", () => ({
     if (path.includes("/tokens")) return Promise.resolve(tokensResponse);
     if (path.includes("/records/")) {
       const runId = path.split("/records/")[1]?.split("/")[0] ?? "run-1";
-      return Promise.resolve({ ...RECORD, runId });
+      return Promise.resolve({ ...recordResponse, runId });
     }
     return Promise.reject(new Error(`unexpected path ${path}`));
   },
@@ -126,6 +127,7 @@ function renderTrace(runId = "run-1") {
 beforeEach(() => {
   apiError = null;
   logStateResponse = LOG_STATE;
+  recordResponse = RECORD;
   tokensResponse = { runId: "run-1", available: false };
 });
 
@@ -181,6 +183,47 @@ describe("WorkflowTracePage", () => {
     // completed intake ran 2s; only steps with both timestamps show a duration.
     const durations = screen.getAllByTestId("trace-step-duration");
     expect(durations.map((d) => d.textContent)).toContain("2.0s");
+  });
+
+  it("shows Stopped (not Failed) in the status pill for a user-stopped run", async () => {
+    recordResponse = {
+      runId: "run-1",
+      kind: "reddit_scanner",
+      status: "stopped",
+      deploymentId: "dep-1",
+    };
+    logStateResponse = {
+      ...LOG_STATE,
+      phase: "cancelled",
+      steps: [
+        {
+          stepId: "intake",
+          phase: "completed",
+          stepType: "deterministic",
+          currentAttempt: 1,
+          startedAt: "2026-07-01T10:00:00.000Z",
+          endedAt: "2026-07-01T10:00:02.000Z",
+          outputRef: `inline:${JSON.stringify(INTAKE_OUTPUT)}`,
+        },
+        {
+          stepId: "curate",
+          phase: "cancelled",
+          stepType: "agent",
+          currentAttempt: 1,
+          startedAt: "2026-07-01T10:00:02.000Z",
+          endedAt: "2026-07-01T10:00:05.000Z",
+        },
+      ],
+    };
+    renderTrace();
+    await waitFor(() => {
+      expect(screen.getByTestId("trace-status-pill").textContent).toMatch(
+        /Stopped/i,
+      );
+    });
+    expect(screen.getByTestId("trace-status-pill").textContent).not.toMatch(
+      /Failed/i,
+    );
   });
 
   it("shows per-step token counts on the timeline when the tokens API returns step rows", async () => {
@@ -351,6 +394,38 @@ describe("WorkflowTracePage", () => {
       expect(screen.getAllByTestId("trace-step").length).toBe(1);
     });
     expect(screen.queryByTestId("trace-step-live-issue")).toBeNull();
+  });
+
+  it("marks the in-flight step aria-current and leaves other steps unmarked", async () => {
+    logStateResponse = {
+      runId: "run-1",
+      phase: "running",
+      lastSeq: 2,
+      steps: [
+        {
+          stepId: "intake",
+          phase: "completed",
+          stepType: "deterministic",
+          currentAttempt: 1,
+          startedAt: "2026-07-01T10:00:00.000Z",
+          endedAt: "2026-07-01T10:00:02.000Z",
+        },
+        {
+          stepId: "draft",
+          phase: "in-flight",
+          stepType: "agent",
+          currentAttempt: 1,
+          startedAt: "2026-07-01T10:00:02.000Z",
+        },
+      ],
+    };
+    renderTrace();
+    await waitFor(() => {
+      expect(screen.getAllByTestId("trace-step").length).toBe(2);
+    });
+    const rows = screen.getAllByTestId("trace-step");
+    expect(rows[0]?.getAttribute("aria-current")).toBeNull();
+    expect(rows[1]?.getAttribute("aria-current")).toBe("step");
   });
 
   it("shows a live elapsed indicator for an in-flight step with startedAt", async () => {

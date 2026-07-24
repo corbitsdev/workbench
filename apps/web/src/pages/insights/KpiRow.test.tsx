@@ -139,4 +139,43 @@ describe("KpiRow", () => {
 
     expect(visited).toEqual(["usage-cost"]);
   });
+
+  it("pulses the active-executions sub-value via the shared StatusDot (CL-4394 ring)", () => {
+    render(
+      <KpiRow
+        data={minimalOverview}
+        activePeople={4}
+        costTotal={42.5}
+        costTokens={185}
+        costUnavailable={false}
+        onNavigateTab={() => {}}
+      />,
+    );
+
+    const pulse = screen.getByTestId("kpi-active-pulse");
+    // StatusDot's pulsing PulsingRing overlay is `${color}/60` — a raw
+    // hand-rolled composition would not carry this specific class.
+    expect(pulse.querySelector(".bg-blue\\/60")).not.toBeNull();
+  });
+
+  it("never pulses the active-executions sub-value when there are no active runs", () => {
+    const noActiveRuns = {
+      ...minimalOverview,
+      workflowRuns: { ...minimalOverview.workflowRuns, activeExecutions: 0 },
+    } as ActivityOverview;
+
+    render(
+      <KpiRow
+        data={noActiveRuns}
+        activePeople={4}
+        costTotal={42.5}
+        costTokens={185}
+        costUnavailable={false}
+        onNavigateTab={() => {}}
+      />,
+    );
+
+    expect(screen.queryByTestId("kpi-active-pulse")).toBeNull();
+    expect(screen.getByText("0 active")).toBeDefined();
+  });
 });

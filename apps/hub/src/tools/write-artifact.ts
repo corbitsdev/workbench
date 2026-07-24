@@ -7,6 +7,7 @@ import { WRITE_ARTIFACT_DEFINITION } from "@workbench/tools-artifact";
 import { and, eq, max } from "drizzle-orm";
 import { artifact, artifactVersion } from "../db/schema";
 import type { ContextToolEntry } from "../lib/tool-registry";
+import { maybeEnqueueKnowledgeCaptureAfterArtifactWrite } from "../services/knowledge-capture-hook";
 
 const log = getLogger(["tools", "write-artifact"]);
 
@@ -36,8 +37,19 @@ export async function writeArtifactDeduped(params: {
   body: string;
   kind: string;
   source: Record<string, unknown>;
-  /** Human owner principal (e.g. Myra's member). Stamped for skill-drafts. */
+  /** Human owner principal (e.g. Myra's member), when a caller needs one stamped. */
   ownerPrincipalId?: string | null;
+  /**
+   * Optional stable origin key (unique per tenant via
+   * `artifact_tenant_source_ref_uniq`). When set, dedupe is by
+   * (tenantId, sourceRef) instead of (principalId, title, kind).
+   */
+  sourceRef?: string;
+  /** Optional lineage parent (an existing artifact's id). Stamped on create
+   * and overwritten on re-write WHEN SUPPLIED; a re-write that omits it
+   * leaves any existing parentId untouched (there is deliberately no
+   * un-parenting path through this tool). */
+  parentId?: string;
 }): Promise<{ artifactId: string; version: number }> {
   const {
     db,
@@ -48,90 +60,133 @@ export async function writeArtifactDeduped(params: {
     kind,
     source,
     ownerPrincipalId,
+    sourceRef,
+    parentId,
   } = params;
-  return db.transaction(async (tx) => {
-    const existingRows = await tx
-      .select({ id: artifact.id })
-      .from(artifact)
-      .where(
-        and(
-          eq(artifact.principalId, principalId),
-          eq(artifact.title, title),
-          eq(artifact.kind, kind),
-        ),
-      )
-      .limit(1)
-      .for("update");
+  const normalizedSourceRef =
+    typeof sourceRef === "string" && sourceRef.trim().length > 0
+      ? sourceRef.trim()
+      : undefined;
 
-    const existingId =
-      existingRows.length > 0 ? existingRows[0]?.id : undefined;
-    const now = new Date();
-    let artifactId: string;
+  return db
+    .transaction(async (tx) => {
+      // Prefer sourceRef when present — it's the stronger, tenant-scoped
+      // idempotency key (same unique index the Granola pipeline uses). Fall
+      // back to the historical principal+title+kind lookup otherwise.
+      const existingRows =
+        normalizedSourceRef !== undefined
+          ? await tx
+              .select({ id: artifact.id })
+              .from(artifact)
+              .where(
+                and(
+                  eq(artifact.tenantId, tenantId),
+                  eq(artifact.sourceRef, normalizedSourceRef),
+                ),
+              )
+              .limit(1)
+              .for("update")
+          : await tx
+              .select({ id: artifact.id })
+              .from(artifact)
+              .where(
+                and(
+                  eq(artifact.principalId, principalId),
+                  eq(artifact.title, title),
+                  eq(artifact.kind, kind),
+                ),
+              )
+              .limit(1)
+              .for("update");
 
-    if (existingId !== undefined) {
-      artifactId = existingId;
-    } else {
-      const [created] = await tx
-        .insert(artifact)
-        .values({
-          tenantId,
-          principalId,
-          ...(ownerPrincipalId !== undefined
-            ? { ownerPrincipalId: ownerPrincipalId ?? null }
-            : {}),
-          kind,
-          title,
-          content: body,
-          source,
-          status: "draft",
-          version: 1,
-          createdAt: now,
-          updatedAt: now,
-        })
-        .returning({ id: artifact.id });
+      const existingId =
+        existingRows.length > 0 ? existingRows[0]?.id : undefined;
+      const now = new Date();
+      let artifactId: string;
 
-      if (!created) {
-        throw new Error("Failed to create artifact row");
+      if (existingId !== undefined) {
+        artifactId = existingId;
+      } else {
+        const [created] = await tx
+          .insert(artifact)
+          .values({
+            tenantId,
+            principalId,
+            ...(ownerPrincipalId !== undefined
+              ? { ownerPrincipalId: ownerPrincipalId ?? null }
+              : {}),
+            ...(normalizedSourceRef !== undefined
+              ? { sourceRef: normalizedSourceRef }
+              : {}),
+            ...(parentId !== undefined ? { parentId } : {}),
+            kind,
+            title,
+            content: body,
+            source,
+            version: 1,
+            createdAt: now,
+            updatedAt: now,
+          })
+          .returning({ id: artifact.id });
+
+        if (!created) {
+          throw new Error("Failed to create artifact row");
+        }
+        artifactId = created.id;
       }
-      artifactId = created.id;
-    }
 
-    const maxVersionResult = await tx
-      .select({ maxVersion: max(artifactVersion.version) })
-      .from(artifactVersion)
-      .where(eq(artifactVersion.artifactId, artifactId));
+      const maxVersionResult = await tx
+        .select({ maxVersion: max(artifactVersion.version) })
+        .from(artifactVersion)
+        .where(eq(artifactVersion.artifactId, artifactId));
 
-    const nextVersion = (maxVersionResult[0]?.maxVersion ?? 0) + 1;
+      const nextVersion = (maxVersionResult[0]?.maxVersion ?? 0) + 1;
 
-    await tx.insert(artifactVersion).values({
-      artifactId,
-      version: nextVersion,
-      title,
-      content: body,
-      authorId: principalId,
-      createdAt: new Date(),
+      await tx.insert(artifactVersion).values({
+        artifactId,
+        version: nextVersion,
+        title,
+        content: body,
+        authorId: principalId,
+        createdAt: new Date(),
+      });
+
+      if (existingId !== undefined) {
+        await tx
+          .update(artifact)
+          .set({
+            content: body,
+            source,
+            version: nextVersion,
+            updatedAt: now,
+            ...(parentId !== undefined ? { parentId } : {}),
+            ...(ownerPrincipalId !== undefined
+              ? { ownerPrincipalId: ownerPrincipalId ?? null }
+              : {}),
+          })
+          .where(eq(artifact.id, artifactId));
+      }
+
+      return { artifactId, version: nextVersion };
+    })
+    .then(async (result) => {
+      // After the product write commits: enqueue knowledge capture as a work
+      // unit when the outbox flag is on. Failures never roll back the write.
+      try {
+        await maybeEnqueueKnowledgeCaptureAfterArtifactWrite({
+          tenantId,
+          artifactId: result.artifactId,
+          version: result.version,
+        });
+      } catch (cause) {
+        // Fail-soft: capture must never block product writes.
+        log.error("write-artifact: knowledge capture enqueue failed", {
+          artifactId: result.artifactId,
+          error: cause,
+        });
+      }
+      return result;
     });
-
-    if (existingId !== undefined) {
-      await tx
-        .update(artifact)
-        .set({
-          content: body,
-          source,
-          version: nextVersion,
-          updatedAt: now,
-          // skill-draft re-authoring reopens an approved/rejected row so
-          // approve can run again on the new content.
-          ...(kind === "skill-draft" ? { status: "draft" as const } : {}),
-          ...(ownerPrincipalId !== undefined
-            ? { ownerPrincipalId: ownerPrincipalId ?? null }
-            : {}),
-        })
-        .where(eq(artifact.id, artifactId));
-    }
-
-    return { artifactId, version: nextVersion };
-  });
 }
 
 export function createWriteArtifactTool(
@@ -139,11 +194,27 @@ export function createWriteArtifactTool(
 ): AgentTool[] {
   return [
     {
-      kind: "string",
+      // Structured (not stringTool): deterministic workflow steps downstream
+      // of write_artifact (heartbeat's mail-refs step, prospect-engine's
+      // digest step) need artifactId off this tool's result. A stringified
+      // `{ content: "<json>" }` envelope buried it behind a JSON parse the
+      // step harness had to special-case (`fromJson`). `content` carries the
+      // { artifactId, version, title } object directly; the reactor still
+      // stringifies non-string tool content before it reaches the model
+      // (`turns.ts`), so model-facing callers see the same JSON text as before.
+      kind: "full",
       definition: WRITE_ARTIFACT_DEFINITION,
-      handler: async (rawArgs, _signal) => {
+      handler: async (call, _signal) => {
+        const rawArgs = call.arguments;
         const args = unwrapArgsEnvelope(rawArgs, ["title", "body", "kind"]);
-        const title = requireString(args, "title");
+        const bareTitle = requireString(args, "title");
+        // Server-side title prefixing for callers that derive `title` from
+        // upstream data but cannot concatenate strings (workflow argMaps).
+        // The prefix is prepended verbatim — it carries its own separator.
+        const title =
+          typeof args.titlePrefix === "string" && args.titlePrefix.trim() !== ""
+            ? `${args.titlePrefix}${bareTitle}`
+            : bareTitle;
         const body = requireString(args, "body");
         const kind = requireString(args, "kind");
         if (kind === "skill-draft") {
@@ -206,6 +277,81 @@ export function createWriteArtifactTool(
           source.jobLabel = args.jobLabel.trim();
         }
 
+        // Server-side sourceRef composition for the same argMap-shaped
+        // callers: `<sourceRefPrefix>-<sourceRefKey>`. An explicit sourceRef
+        // wins; half a pair is a caller bug and fails loudly rather than
+        // silently writing an unprefixed (colliding) ref.
+        const refPrefix =
+          typeof args.sourceRefPrefix === "string" &&
+          args.sourceRefPrefix.trim() !== ""
+            ? args.sourceRefPrefix.trim()
+            : undefined;
+        const refKey =
+          typeof args.sourceRefKey === "string" &&
+          args.sourceRefKey.trim() !== ""
+            ? args.sourceRefKey.trim()
+            : undefined;
+        const explicitRef =
+          typeof args.sourceRef === "string" && args.sourceRef.trim().length > 0
+            ? args.sourceRef.trim()
+            : undefined;
+        // Per the tool schema, the pair is ignored entirely when an explicit
+        // sourceRef is set — so the half-pair check only applies when the
+        // pair is actually the ref source.
+        if (
+          explicitRef === undefined &&
+          (refPrefix === undefined) !== (refKey === undefined)
+        ) {
+          throw new Error(
+            "write_artifact: sourceRefPrefix and sourceRefKey must be provided together",
+          );
+        }
+        const sourceRef =
+          explicitRef ??
+          (refPrefix !== undefined && refKey !== undefined
+            ? `${refPrefix}-${refKey}`
+            : undefined);
+
+        // Artifact-chain lineage: the parent pair composes the PARENT
+        // artifact's sourceRef, resolved to its id and stamped as parentId.
+        // Best-effort by design — a missing parent (e.g. an upstream
+        // artifact deleted between steps) must never fail the write; the
+        // lineage is presentation, the content is the product.
+        const parentPrefix =
+          typeof args.parentSourceRefPrefix === "string" &&
+          args.parentSourceRefPrefix.trim() !== ""
+            ? args.parentSourceRefPrefix.trim()
+            : undefined;
+        const parentKey =
+          typeof args.parentSourceRefKey === "string" &&
+          args.parentSourceRefKey.trim() !== ""
+            ? args.parentSourceRefKey.trim()
+            : undefined;
+        if ((parentPrefix === undefined) !== (parentKey === undefined)) {
+          throw new Error(
+            "write_artifact: parentSourceRefPrefix and parentSourceRefKey must be provided together",
+          );
+        }
+        let parentId: string | undefined;
+        if (parentPrefix !== undefined && parentKey !== undefined) {
+          const parentRef = `${parentPrefix}-${parentKey}`;
+          const parent = await context.db.query.artifact.findFirst({
+            where: and(
+              eq(artifact.tenantId, context.tenantId),
+              eq(artifact.sourceRef, parentRef),
+            ),
+            columns: { id: true },
+          });
+          if (parent !== undefined) {
+            parentId = parent.id;
+          } else {
+            log.warn(
+              "write_artifact: parent sourceRef resolved to no artifact; writing without lineage",
+              { title, parentRef },
+            );
+          }
+        }
+
         const result = await writeArtifactDeduped({
           db: context.db,
           tenantId: context.tenantId,
@@ -214,13 +360,18 @@ export function createWriteArtifactTool(
           body,
           kind,
           source,
+          ...(sourceRef !== undefined ? { sourceRef } : {}),
+          ...(parentId !== undefined ? { parentId } : {}),
         });
 
-        return JSON.stringify({
-          artifactId: result.artifactId,
-          version: result.version,
-          title,
-        });
+        return {
+          callId: call.id,
+          content: {
+            artifactId: result.artifactId,
+            version: result.version,
+            title,
+          },
+        };
       },
     },
   ];

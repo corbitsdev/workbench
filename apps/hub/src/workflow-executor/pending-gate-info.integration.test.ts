@@ -13,7 +13,7 @@ import {
   type RepoId,
   type RepoStore,
   type ValidatePushResult,
-} from "@intx/hub-sessions";
+} from "@workbench/hub-sessions";
 
 import { describePendingGates } from "./pending-gate-info";
 import { deriveWorkflowRunRepoId } from "../routes/workflow-runs";

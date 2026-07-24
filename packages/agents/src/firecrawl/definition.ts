@@ -1,5 +1,5 @@
 import type { GrantRequirement, CredentialRequirement } from "@intx/types";
-import { canonicalizeToolNames } from "../tool-names";
+import { canonicalizeAgentCapabilityNames } from "../tool-names";
 import { buildFirecrawlSystemPrompt } from "./prompt";
 import type { AgentDeployDescriptor } from "../deploy-descriptor";
 import { LLM_CREDENTIAL_NAME } from "../constants";
@@ -33,7 +33,7 @@ export const FIRECRAWL_DEPLOY_PROMPT: string = buildFirecrawlSystemPrompt(
 );
 
 export const FIRECRAWL_CAPABILITIES = {
-  tools: canonicalizeToolNames([
+  tools: canonicalizeAgentCapabilityNames("Freddy", [
     "firecrawl_scrape",
     "firecrawl_search",
     "firecrawl_map",

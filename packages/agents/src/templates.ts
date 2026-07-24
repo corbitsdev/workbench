@@ -157,6 +157,7 @@ const FABLE_TOOL_PACKAGES: ToolPackagePin[] = [
   { name: "@workbench/tools-bluesky", version: "^0.1.0" },
   { name: "@workbench/tools-scrapecreators", version: "^0.1.0" },
   { name: "@workbench/tools-artifact", version: "^0.1.0" },
+  { name: "@workbench/tools-corbits-knowledge-engine", version: "^0.1.0" },
 ];
 
 // The canonical variants ARE the hand-written `myra` / `myra-triage` entries

@@ -148,6 +148,21 @@ function optionalPositiveInteger(
   return Math.min(value, max);
 }
 
+// Routine/intake fields deliver numbers as TEXT (a text input's "10"), while
+// JSON callers send real numbers. Coerce a purely-numeric string limit to a
+// number BEFORE schema validation so both spellings work; anything
+// non-numeric still fails the schema loudly. Returns a shallow copy — never
+// mutates the caller's args.
+function coerceNumericLimit(
+  rawArgs: Record<string, unknown>,
+): Record<string, unknown> {
+  const limit = rawArgs.limit;
+  if (typeof limit !== "string" || !/^\d+$/.test(limit.trim())) {
+    return rawArgs;
+  }
+  return { ...rawArgs, limit: Number.parseInt(limit.trim(), 10) };
+}
+
 // Deliberately does NOT check apiKey here: the empty-key case is a per-call
 // fail-loud check in each handler below, not a construction-time concern —
 // nothing ever constructs this tool with an empty key (the hub tool registry
@@ -452,7 +467,7 @@ async function listNotes(
   rawArgs: Record<string, unknown>,
   signal: AbortSignal,
 ): Promise<GranolaListResponse> {
-  const args = ListNotesArgs(rawArgs);
+  const args = ListNotesArgs(coerceNumericLimit(rawArgs));
   if (args instanceof type.errors) {
     throw new Error(`granola_list_notes: ${args.summary}`);
   }
@@ -525,7 +540,7 @@ async function listFolders(
   rawArgs: Record<string, unknown>,
   signal: AbortSignal,
 ): Promise<GranolaFolderListResponse> {
-  const args = ListFoldersArgs(rawArgs);
+  const args = ListFoldersArgs(coerceNumericLimit(rawArgs));
   if (args instanceof type.errors) {
     throw new Error(`granola_list_folders: ${args.summary}`);
   }
@@ -724,3 +739,18 @@ export const GRANOLA_HUB_TOOLS = {
       }),
   },
 };
+
+export {
+  createGranolaWorkflowTools,
+  GRANOLA_WORKFLOW_HUB_TOOLS,
+  GRANOLA_NORMALIZE_NOTE_DEFINITION,
+  GRANOLA_CLASSIFY_CALL_DEFINITION,
+  GRANOLA_PARSE_ANALYSIS_DEFINITION,
+  GRANOLA_PREPARE_ARTIFACTS_DEFINITION,
+  GRANOLA_EMIT_RUN_OUTPUTS_DEFINITION,
+} from "./workflow-tools";
+
+export {
+  GRANOLA_SPAWN_CALL_RUNS_DEFINITION,
+  GRANOLA_HUB_BACKED_DEFINITIONS,
+} from "./hub-tools";

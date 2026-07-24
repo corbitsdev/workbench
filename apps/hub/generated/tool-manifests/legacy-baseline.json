@@ -245,7 +245,7 @@
     {
       "pin": "@workbench/tools-artifact",
       "package": "artifacts",
-      "summary": "Advanced artifact tools — chunked reads, lookup by title, linking.",
+      "summary": "Artifact tools beyond the basics: read large artifacts in chunks, look up an artifact by title, and link a file or presentation to one.",
       "tags": [
         "artifact",
         "deliverable",
@@ -442,7 +442,7 @@
     {
       "pin": "@workbench/tools-sumble",
       "package": "sumble",
-      "summary": "Sumble v9 — full Public API: organizations, teams, people, jobs, signals, lookups, saved lists, support, and intelligence briefs.",
+      "summary": "Sumble account intelligence — look up organizations, teams, people, jobs, and buying signals; build intelligence briefs and manage saved lists.",
       "tags": [
         "sumble",
         "account",

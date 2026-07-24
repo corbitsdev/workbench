@@ -34,7 +34,6 @@ import {
   isNull,
   like,
   lte,
-  ne,
   or,
   sql,
   type AnyColumn,
@@ -145,7 +144,6 @@ export type ActivityOverview = {
   artifacts: {
     total: number;
     createdInRange: number;
-    byStatus: ActivityCountRow[];
     byKind: ActivityCountRow[];
   };
   workflowRuns: {
@@ -324,7 +322,7 @@ function toDateStr(value: Date): string {
   return value.toISOString().slice(0, 10);
 }
 
-/** Created-at dates of non-rejected artifacts in range (for the metrics spine). */
+/** Created-at dates of artifacts in range (for the metrics spine). */
 export async function fetchArtifactCreatedDates(
   db: DB["db"],
   tenantId: string,
@@ -336,7 +334,6 @@ export async function fetchArtifactCreatedDates(
     .where(
       and(
         eq(artifact.tenantId, tenantId),
-        ne(artifact.status, "rejected"),
         createdInRange(artifact.createdAt, range),
       ),
     );
@@ -991,15 +988,11 @@ export async function getActivityOverview(args: {
   const bucket = args.bucket ?? "day";
   const priceCatalog = args.priceCatalog ?? null;
 
-  const tenantArtifacts = and(
-    eq(artifact.tenantId, tenantId),
-    ne(artifact.status, "rejected"),
-  );
+  const tenantArtifacts = eq(artifact.tenantId, tenantId);
 
   const [
     artifactTotalRow,
     artifactInRangeRow,
-    artifactByStatus,
     artifactByKind,
     artifactCreatedDates,
   ] = await Promise.all([
@@ -1008,11 +1001,6 @@ export async function getActivityOverview(args: {
       .select({ count: count() })
       .from(artifact)
       .where(and(tenantArtifacts, createdInRange(artifact.createdAt, range))),
-    db
-      .select({ key: artifact.status, count: count() })
-      .from(artifact)
-      .where(tenantArtifacts)
-      .groupBy(artifact.status),
     db
       .select({ key: artifact.kind, count: count() })
       .from(artifact)
@@ -1160,10 +1148,6 @@ export async function getActivityOverview(args: {
     artifacts: {
       total: Number(artifactTotalRow[0]?.count ?? 0),
       createdInRange: Number(artifactInRangeRow[0]?.count ?? 0),
-      byStatus: artifactByStatus.map((r) => ({
-        key: r.key,
-        count: Number(r.count),
-      })),
       byKind: artifactByKind.map((r) => ({
         key: r.key,
         count: Number(r.count),

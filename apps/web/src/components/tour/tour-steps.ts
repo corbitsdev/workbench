@@ -42,9 +42,8 @@ export const TOUR_STEPS: readonly TourStep[] = [
   {
     id: "schedule",
     route: "/workflows",
-    targetSelector: '[data-tour="workflow-schedule"]',
     title: "Schedule a workflow",
-    body: "Any workflow in the catalog can run on a schedule. Set one up once and the results arrive in your Inbox on cadence.",
+    body: "Workflows puts any workflow on a daily cadence. Set one up once and the results arrive in your Inbox on schedule.",
     placement: "bottom",
   },
   {

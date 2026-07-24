@@ -20,7 +20,7 @@ import path from "node:path";
 
 import { generateKeyPair } from "@intx/crypto";
 import { hexEncode } from "@intx/types";
-import type { RepoId, RepoStore } from "@intx/hub-sessions";
+import type { RepoId, RepoStore } from "@workbench/hub-sessions";
 
 import {
   createWorkflowSupervisor,

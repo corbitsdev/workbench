@@ -1,9 +1,8 @@
 import {
   AppPageChromeRow,
   Badge,
+  Button,
   CATALOG_GLYPH_FILLS,
-  CATALOG_GLYPH_KINDS,
-  CatalogGlyph,
   catalogCardClassName,
   cn,
   DataTable,
@@ -16,7 +15,7 @@ import {
   type BadgeTone,
   type DataTableColumn,
 } from "@workbench/ui";
-import { Bot, Check, Copy } from "lucide-react";
+import { Bot, Check, Copy, Plus } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useSetPageChrome } from "../lib/page-chrome";
@@ -150,34 +149,78 @@ function cardCornerLabel(instances: AgentInstanceItem[]): string {
   return `${instances.length} deployed`;
 }
 
-function AgentCard({ item, index }: { item: AgentCardItem; index: number }) {
-  const hash = hashString(item.id);
-  const glyph = CATALOG_GLYPH_KINDS[hash % CATALOG_GLYPH_KINDS.length];
+const MAX_CARD_TOOLS = 4;
+const MAX_CARD_INSTANCES = 2;
+
+/** Cap a list to `max` entries, reporting how many were left off. */
+function capList<T>(items: T[], max: number): { shown: T[]; extra: number } {
+  if (items.length <= max) return { shown: items, extra: 0 };
+  return { shown: items.slice(0, max), extra: items.length - max };
+}
+
+/** Up to two initials from an agent's name, for the generated avatar mark. */
+function agentInitials(name: string): string {
+  const words = name.trim().split(/\s+/).filter(Boolean);
+  if (words.length === 0) return "?";
+  if (words.length === 1) return words[0].slice(0, 2).toUpperCase();
+  return (words[0][0] + words[1][0]).toUpperCase();
+}
+
+/**
+ * Deterministic, local avatar mark derived from the agent's name — no
+ * external avatar service, no network call. Same name always produces the
+ * same fill + initials, so an agent's mark is stable across renders and
+ * across the definition/instance split.
+ */
+function AgentAvatar({ name }: { name: string }) {
+  const hash = hashString(name);
   const fill = CATALOG_GLYPH_FILLS[hash % CATALOG_GLYPH_FILLS.length];
+  return (
+    <div
+      className={`grid h-[112px] place-items-center overflow-hidden ${fill}`}
+      aria-hidden
+    >
+      <span className="text-[32px] font-bold tracking-[-0.02em] text-white/90">
+        {agentInitials(name)}
+      </span>
+    </div>
+  );
+}
+
+function AgentCard({ item, index }: { item: AgentCardItem; index: number }) {
+  const tools = item.tools ?? [];
+  const { shown: shownTools, extra: extraTools } = capList(
+    tools,
+    MAX_CARD_TOOLS,
+  );
+  const { shown: shownInstances, extra: extraInstances } = capList(
+    item.instances,
+    MAX_CARD_INSTANCES,
+  );
 
   return (
     <div className={cn(catalogCardClassName, "cursor-default")}>
+      {/* Deploy status is shown once, here — the tool/instance list below
+          never repeats a "Not deployed" chip. */}
       <span className="absolute left-[10px] top-[10px] z-[2] rounded-full bg-[rgba(0,0,0,0.32)] px-2 py-[3px] text-[10px] font-bold uppercase tracking-[0.03em] text-white backdrop-blur-[6px]">
         {cardCornerLabel(item.instances)}
       </span>
-      <div
-        className={`relative grid h-[112px] place-items-center overflow-hidden ${fill}`}
-      >
-        <CatalogGlyph kind={glyph} />
+      <div className="relative">
+        <AgentAvatar name={item.name} />
         <span className="absolute bottom-[10px] right-3 font-mono text-[13px] font-bold text-[rgba(255,255,255,0.85)]">
           A{index.toString().padStart(2, "0")}
         </span>
       </div>
-      <div className="border-t border-border bg-surface px-[13px] py-[11px]">
+      <div className="flex min-h-[164px] flex-col border-t border-border bg-surface px-[13px] py-[11px]">
         <div className="truncate text-[13.5px] font-semibold text-text">
           {item.name}
         </div>
         <p className="mt-0.5 line-clamp-2 text-pretty text-[11px] text-text-3">
           {item.description === null ? "No description" : item.description}
         </p>
-        {item.tools !== null && item.tools.length > 0 && (
+        {tools.length > 0 && (
           <div className="mt-1.5 flex flex-wrap gap-1">
-            {item.tools.map((tool) => (
+            {shownTools.map((tool) => (
               <span
                 key={tool}
                 className="rounded-full bg-surface-2 px-1.5 py-[2px] text-[9.5px] text-text-3"
@@ -185,17 +228,25 @@ function AgentCard({ item, index }: { item: AgentCardItem; index: number }) {
                 {tool}
               </span>
             ))}
+            {extraTools > 0 && (
+              <span className="rounded-full bg-surface-2 px-1.5 py-[2px] text-[9.5px] font-medium text-text-3">
+                +{extraTools} more
+              </span>
+            )}
           </div>
         )}
-        <div className="mt-1.5 flex flex-col gap-1.5">
-          {item.instances.length === 0 ? (
-            <Badge tone="neutral">Not deployed</Badge>
-          ) : (
-            item.instances.map((instance) => (
+        {item.instances.length > 0 && (
+          <div className="mt-1.5 flex flex-col gap-1.5">
+            {shownInstances.map((instance) => (
               <InstanceRow key={instance.id} instance={instance} />
-            ))
-          )}
-        </div>
+            ))}
+            {extraInstances > 0 && (
+              <span className="text-[10px] text-text-3">
+                +{extraInstances} more
+              </span>
+            )}
+          </div>
+        )}
       </div>
     </div>
   );
@@ -294,13 +345,14 @@ export function AgentsPage() {
     {
       key: "tools",
       header: "Tools",
-      render: (d) => (
-        <span className="line-clamp-1 text-text-3">
-          {d.tools === null || d.tools.length === 0
-            ? "—"
-            : d.tools.join(", ")}
-        </span>
-      ),
+      render: (d) => {
+        if (d.tools === null || d.tools.length === 0) {
+          return <span className="line-clamp-1 text-text-3">—</span>;
+        }
+        return (
+          <span className="line-clamp-1 text-text-3">{d.tools.join(", ")}</span>
+        );
+      },
     },
     {
       key: "status",
@@ -352,6 +404,20 @@ export function AgentsPage() {
           onChange={setQuery}
         />
         <ViewToggle mode={viewMode} onChange={setViewMode} />
+        {/* Agents has no add action — this invisible placeholder still
+            occupies the same box as Artifacts'/Skills' Add button so the
+            header's trailing edge lands in the same place on every Library
+            view, rather than the row collapsing and shifting. */}
+        <Button
+          type="button"
+          variant="library"
+          size="library"
+          className="invisible"
+          tabIndex={-1}
+        >
+          <Plus size={14} />
+          Add
+        </Button>
       </AppPageChromeRow>
     ),
     [totalVisible, query, viewMode, setViewMode],

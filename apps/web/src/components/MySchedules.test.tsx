@@ -8,7 +8,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
 import { deepLinkPath } from "@workbench/shared";
 import { MemoryRouter } from "react-router";
-import { formatLastFired } from "../lib/schedule-time";
+import { formatLastFiredAt } from "../lib/schedule-time";
 import { MySchedules } from "./MySchedules";
 
 const originalFetch = globalThis.fetch;
@@ -22,14 +22,27 @@ function jsonResponse(body: unknown, status = 200): Response {
   } as unknown as Response;
 }
 
-const schedule = {
+const schedule: {
+  id: string;
+  workflowKind: string;
+  recurrence: { intervalMinutes: number; anchorMinuteUtc: number };
+  enabled: boolean;
+  scope: "personal" | "tenant";
+  ownerMemberPrincipalId: string;
+  triggerPayload: Record<string, unknown>;
+  createdAt: string;
+  lastRunId: string | null;
+  recentFires: Array<{ runId: string; firedAt: string; status: string }>;
+  nextFireAt: string | null;
+} = {
   id: "sch_1",
   workflowKind: "morning-brief",
-  hourUtc: 13,
+  recurrence: { intervalMinutes: 1440, anchorMinuteUtc: 13 * 60 },
   enabled: true,
+  scope: "personal",
+  ownerMemberPrincipalId: "prn_1",
   triggerPayload: {},
   createdAt: "2026-01-01T00:00:00.000Z",
-  lastFiredDayUtc: null,
   lastRunId: null,
   recentFires: [],
   nextFireAt: "2026-01-02T13:00:00.000Z",
@@ -45,6 +58,8 @@ const catalog = {
       pauseCount: 0,
       steps: [],
       attachable: true,
+      allowedScopes: ["personal", "tenant"] as const,
+      defaultScope: "personal" as const,
     },
   ],
 };
@@ -115,6 +130,7 @@ describe("MySchedules", () => {
     globalThis.fetch = makeFetch([schedule]) as unknown as typeof fetch;
     renderList();
     await screen.findByText("Morning Brief");
+    expect(screen.getByText(/Just me/)).toBeTruthy();
   });
 
   it("pauses a schedule via PATCH when the switch is toggled", async () => {
@@ -142,7 +158,6 @@ describe("MySchedules", () => {
     globalThis.fetch = makeFetch([
       {
         ...schedule,
-        lastFiredDayUtc: 20_000,
         lastRunId: "run-abc",
         recentFires: [
           {
@@ -154,25 +169,28 @@ describe("MySchedules", () => {
       },
     ]) as unknown as typeof fetch;
     renderList();
-    const lastFiredLabel = formatLastFired(20_000);
-    const lastFired = await screen.findByRole("link", {
+    const lastFiredLabel = formatLastFiredAt("2026-01-02T13:00:00.000Z");
+    // The "Last fired" label and the recent-fires list both link the same
+    // run when there's only one fire — both are expected to render.
+    const lastFiredLinks = await screen.findAllByRole("link", {
       name: lastFiredLabel,
     });
-    expect(lastFired.getAttribute("href")).toBe(
-      deepLinkPath("workflow_trace", "run-abc"),
-    );
+    expect(lastFiredLinks.length).toBeGreaterThanOrEqual(1);
+    for (const link of lastFiredLinks) {
+      expect(link.getAttribute("href")).toBe(
+        deepLinkPath("workflow_trace", "run-abc"),
+      );
+    }
   });
 
   it("shows last-fired and next-fire status from hub nextFireAt", async () => {
-    globalThis.fetch = makeFetch([
-      { ...schedule, lastFiredDayUtc: null },
-    ]) as unknown as typeof fetch;
+    globalThis.fetch = makeFetch([schedule]) as unknown as typeof fetch;
     renderList();
     await screen.findByText("Morning Brief");
     expect(screen.getByText(/Last fired: Not yet fired/)).toBeTruthy();
   });
 
-  it("changes the fire hour via PATCH when a new hour is selected", async () => {
+  it("changes the cadence to a sub-hourly interval via PATCH (CL-4278)", async () => {
     let patch: { url: string; body: unknown } | null = null;
     globalThis.fetch = makeFetch([schedule], (url, init) => {
       if (init.method === "PATCH")
@@ -181,13 +199,27 @@ describe("MySchedules", () => {
     const user = userEvent.setup();
     renderList();
 
-    const select = await screen.findByLabelText(
-      "Change fire time for Morning Brief",
+    const unitSelect = await screen.findByLabelText(
+      "Change interval unit for Morning Brief",
     );
-    await user.selectOptions(select, "9");
+    await user.selectOptions(unitSelect, "minutes");
     await waitFor(() => expect(patch).not.toBeNull());
     expect(patch!.url).toContain("/me/schedules/sch_1");
-    expect(patch!.body).toEqual({ hourUtc: 9 });
+    expect(
+      (patch!.body as { recurrence: { intervalMinutes: number } }).recurrence
+        .intervalMinutes,
+    ).toBe(1);
+
+    patch = null;
+    const amountInput = screen.getByLabelText(
+      "Change interval amount for Morning Brief",
+    );
+    await user.clear(amountInput);
+    await user.type(amountInput, "5");
+    await waitFor(() => expect(patch).not.toBeNull());
+    expect(patch!.body).toEqual({
+      recurrence: { intervalMinutes: 5, anchorMinuteUtc: 13 * 60 },
+    });
   });
 
   it("removes a schedule via DELETE after confirmation", async () => {

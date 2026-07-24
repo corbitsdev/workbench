@@ -3,10 +3,10 @@ import { and, desc, eq, inArray, isNotNull, isNull } from "drizzle-orm";
 import { getAncestorChain } from "@intx/db";
 import { getLogger } from "@intx/log";
 import { deriveDeploymentAddress } from "@intx/workflow-deploy";
-import type { SessionService } from "@intx/hub-sessions";
+import type { SessionService } from "@workbench/hub-sessions";
 import type { CryptoProvider } from "@intx/types/runtime";
 import type { HubDb } from "../db";
-import { workflowRun } from "../db/schema";
+import { WORKFLOW_CATALOG_ACTIVE_STATUS, workflowRun } from "../db/schema";
 import type { ProvisionRunDeploymentFn } from "../routes/workflow-runs";
 import type { ReclaimDeploymentFn } from "./workflow-deploy";
 import { slidingWindowLimiter } from "../lib/sliding-window";
@@ -15,6 +15,7 @@ import {
   enrichTriggerPayloadForStart,
   type TriggerPayloadEnrichmentDeps,
 } from "../workflow-executor/trigger-payload-enrichment-registry";
+import { validateTriggerPayloadForStart } from "../workflow-executor/trigger-payload-validation-registry";
 import {
   failRunIfStillProvisioning,
   insertRunRecord,
@@ -72,13 +73,17 @@ export type StartRunInput = {
   // redundant getAncestorChain round-trip. When omitted, the starter walks it.
   chain?: string[];
   // The scheduler's real fire-time window (its schedule row's last-fire day +
-  // hour) — the only caller with a genuine "since-last-fire" window to offer.
-  // Forwarded into the trigger-payload enrichment registry's `ctx` so the
-  // heartbeat enricher computes the real incremental lookback
-  // (`computeHeartbeatCreatedAfter`) instead of defaulting to the flat 7-day
-  // `manual-refresh` window every other source uses. Only meaningful with
-  // `source: "scheduler"`.
-  heartbeatFire?: { lastFiredDayUtc: number | null; hourUtc: number };
+  // anchor minute-of-day, both UTC) — the only caller with a genuine
+  // "since-last-fire" window to offer. Forwarded into the trigger-payload
+  // enrichment registry's `ctx` so the heartbeat enricher computes the real
+  // incremental lookback (`computeHeartbeatCreatedAfter`) instead of
+  // defaulting to the flat 7-day `manual-refresh` window every other source
+  // uses. Only meaningful with `source: "scheduler"`. Carries minute
+  // precision (CL-4278) — heartbeat's recurrence is daily-only
+  // (`isRecurrenceAllowedForKind`) but the anchor itself can still be any
+  // minute of the day, and truncating it to the hour here would silently
+  // shift the lookback against what the member actually set.
+  heartbeatFire?: { lastFiredDayUtc: number | null; anchorMinuteUtc: number };
 };
 
 export type StartRunResult =
@@ -87,6 +92,7 @@ export type StartRunResult =
       ok: false;
       reason:
         | "not_found"
+        | "invalid_input"
         | "provision_failed"
         | "attach_failed"
         | "delivery_failed"
@@ -176,16 +182,17 @@ export function createWorkflowRunStarter(deps: {
       precomputedChain ?? (await getAncestorChain(deps.db, tenantId));
 
     // Resolve a published kind definition for metadata (tenant, principal,
-    // kind). Require status `deployed` and a non-null catalog deploymentId —
-    // both are set by publish. Catalog resolveDeployment historically filtered
-    // only on deploymentId (for reuse); we keep status as the publish marker
-    // and still require deploymentId so half-published rows cannot start.
-    // The catalog deploymentId is NOT reused for the run — fresh provision
-    // below mints a per-run deploy.
+    // kind). Require the catalog-active status and a non-null catalog
+    // deploymentId — both set by publish (`workflow_run` catalog rows carry
+    // `running`, never the agent-instance `deployed`; filtering on `deployed`
+    // here matched zero rows and made every kind unresolvable).
+    // Requiring deploymentId keeps half-published rows from starting. The
+    // catalog deploymentId is NOT reused for the run — fresh provision below
+    // mints a per-run deploy.
     const candidates = await deps.db.query.workflowRun.findMany({
       where: and(
         eq(workflowRun.kind, kind),
-        eq(workflowRun.status, "deployed"),
+        eq(workflowRun.status, WORKFLOW_CATALOG_ACTIVE_STATUS),
         isNotNull(workflowRun.deploymentId),
         inArray(workflowRun.tenantId, chain),
         isNull(workflowRun.deletedAt),
@@ -233,13 +240,30 @@ export function createWorkflowRunStarter(deps: {
         ...(source === "scheduler"
           ? {
               lastFiredDayUtc: heartbeatFire?.lastFiredDayUtc ?? null,
-              hourUtc: heartbeatFire?.hourUtc ?? 0,
+              anchorMinuteUtc: heartbeatFire?.anchorMinuteUtc ?? 0,
               lookback: "scheduled" as const,
             }
           : {}),
       },
       input,
     );
+
+    // Fail fast, before any deployment is provisioned, when a kind's declared
+    // required inputs are still missing after enrichment — never let a run
+    // start and die several steps in on an opaque "field is absent" argMap
+    // failure (the schedule/webhook/manual analog of run-exec.ts's own check).
+    const validation = validateTriggerPayloadForStart(
+      definition.kind,
+      enrichedInput,
+    );
+    if (!validation.ok) {
+      return {
+        ok: false,
+        reason: "invalid_input",
+        message: validation.message,
+      };
+    }
+
     const triggerPayload = { ...enrichedInput, runId };
 
     // Durable-first: run row exists (provisioning, no deployment yet) before

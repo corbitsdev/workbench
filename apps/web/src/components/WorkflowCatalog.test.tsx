@@ -10,6 +10,7 @@ import {
   within,
 } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { MemoryRouter } from "react-router";
 import type { WorkflowCatalog } from "@workbench/shared";
 
 let catalogResult: {
@@ -71,7 +72,9 @@ function wrapper({ children }: { children: React.ReactNode }) {
     defaultOptions: { queries: { retry: false } },
   });
   return (
-    <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+    <QueryClientProvider client={queryClient}>
+      <MemoryRouter>{children}</MemoryRouter>
+    </QueryClientProvider>
   );
 }
 
@@ -85,10 +88,12 @@ const catalog: WorkflowCatalog = {
       stepCount: 2,
       pauseCount: 1,
       steps: [
-        { id: "s1", title: "Load Transcript", kind: "auto" },
-        { id: "s2", title: "Approve Draft", kind: "human" },
+        { id: "s1", title: "Load Transcript", kind: "auto", stepIds: ["s1"] },
+        { id: "s2", title: "Approve Draft", kind: "human", stepIds: ["s2"] },
       ],
       attachable: false,
+      allowedScopes: ["personal"] as const,
+      defaultScope: "personal" as const,
     },
     {
       kind: "gamma",
@@ -96,8 +101,50 @@ const catalog: WorkflowCatalog = {
       isFavorite: false,
       stepCount: 1,
       pauseCount: 0,
-      steps: [{ id: "a", title: "Ingest Content", kind: "auto" }],
+      steps: [
+        { id: "a", title: "Ingest Content", kind: "auto", stepIds: ["a"] },
+      ],
       attachable: false,
+      allowedScopes: ["personal"] as const,
+      defaultScope: "personal" as const,
+    },
+    {
+      kind: "heartbeat",
+      label: "Morning Brief",
+      isFavorite: false,
+      stepCount: 1,
+      pauseCount: 0,
+      steps: [
+        { id: "b", title: "Compile Brief", kind: "auto", stepIds: ["b"] },
+      ],
+      attachable: true,
+      allowedScopes: ["personal"] as const,
+      defaultScope: "personal" as const,
+    },
+    {
+      kind: "prospect-engine",
+      label: "Prospect Engine",
+      isFavorite: false,
+      stepCount: 1,
+      pauseCount: 0,
+      steps: [{ id: "c", title: "Discover", kind: "auto", stepIds: ["c"] }],
+      attachable: true,
+      intakeFields: [
+        {
+          name: "growthEngineListId",
+          label: "Engine - Growth Sumble list id",
+          inputHint: "text",
+          required: true,
+        },
+        {
+          name: "slackChannelId",
+          label: "Slack channel id (optional)",
+          inputHint: "text",
+          required: false,
+        },
+      ],
+      allowedScopes: ["personal"] as const,
+      defaultScope: "personal" as const,
     },
   ],
 };
@@ -192,6 +239,70 @@ describe("WorkflowCatalog", () => {
     screen.getByText("Finishing an update — retrying…");
     expect(screen.queryByText("no capacity")).toBeNull();
     resolveStart?.();
+  });
+
+  it("points an attachable workflow at Workflows instead of a schedule popover", () => {
+    renderCatalog(onWorkflowStarted);
+    // The first (favorited) entry, "pain", is not attachable — no pointer.
+    expect(screen.queryByText("Schedule in Workflows →")).toBeNull();
+    fireEvent.click(screen.getByText("Morning Brief"));
+    const link = screen.getByRole("link", { name: "Schedule in Workflows →" });
+    expect(link.getAttribute("href")).toBe("/workflows?new=1");
+  });
+
+  it("collects required inline inputs and blocks start until they are filled", async () => {
+    renderCatalog(onWorkflowStarted);
+    fireEvent.click(screen.getByText("Prospect Engine"));
+
+    const startButton = screen.getByRole("button", {
+      name: /start run/i,
+    }) as HTMLButtonElement;
+    expect(startButton.disabled).toBe(true);
+
+    fireEvent.change(screen.getByLabelText(/Engine - Growth Sumble list id/i), {
+      target: { value: "80089" },
+    });
+    expect(startButton.disabled).toBe(false);
+
+    fireEvent.click(startButton);
+    await waitFor(() =>
+      expect(onWorkflowStarted).toHaveBeenCalledWith("started-prospect-engine"),
+    );
+    expect(lastStartVars).toMatchObject({
+      kind: "prospect-engine",
+      input: { growthEngineListId: "80089" },
+    });
+  });
+
+  it("starts an inline run without the optional Slack channel filled in", async () => {
+    renderCatalog(onWorkflowStarted);
+    fireEvent.click(screen.getByText("Prospect Engine"));
+    fireEvent.change(screen.getByLabelText(/Engine - Growth Sumble list id/i), {
+      target: { value: "80089" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /start run/i }));
+    await waitFor(() =>
+      expect(onWorkflowStarted).toHaveBeenCalledWith("started-prospect-engine"),
+    );
+    const input = lastStartVars?.input as Record<string, unknown>;
+    expect(input.slackChannelId).toBeUndefined();
+  });
+
+  it("resets inline input values when switching to a different workflow", () => {
+    renderCatalog(onWorkflowStarted);
+    fireEvent.click(screen.getByText("Prospect Engine"));
+    fireEvent.change(screen.getByLabelText(/Engine - Growth Sumble list id/i), {
+      target: { value: "80089" },
+    });
+    fireEvent.click(screen.getByText("Gamma Presentation Creator"));
+    fireEvent.click(screen.getByText("Prospect Engine"));
+    expect(
+      (
+        screen.getByLabelText(
+          /Engine - Growth Sumble list id/i,
+        ) as HTMLInputElement
+      ).value,
+    ).toBe("");
   });
 
   it("shows loading, error, and empty states", () => {

@@ -235,18 +235,19 @@ describe("attio-task-agent blocks — real log→state→blocks seam", () => {
     expect(confirm.options[0]?.payload).toEqual({
       confirm: true,
       taskId: "task_1",
+      idempotencyKey: "task_1",
       parentObject: "companies",
       parentRecordId: "rec_1",
     });
-    // A REQUIRED note prompt-box gates the destructive write.
-    expect(confirm.promptBox?.payloadKey).toBe("note");
+    // A REQUIRED content prompt-box gates the destructive write.
+    expect(confirm.promptBox?.payloadKey).toBe("content");
     expect(confirm.promptBox?.required).toBe(true);
 
     if (skip?.kind !== "choice") throw new Error("expected a skip choice");
     expect(skip.options[0]?.payload).toEqual({ confirm: false });
 
-    // The confirm payload with the folded note validates at the boundary; the
-    // SAME payload without the note (an empty prompt-box) is REJECTED — the
+    // The confirm payload with the folded content validates at the boundary;
+    // the SAME payload without it (an empty prompt-box) is REJECTED — the
     // destructive write cannot fire on an unconfirmed/empty submit.
     const confirmPayload = confirm.options[0]?.payload as Record<
       string,
@@ -255,7 +256,7 @@ describe("attio-task-agent blocks — real log→state→blocks seam", () => {
     expect(
       SyncApprovalPayloadSchema({
         ...confirmPayload,
-        note: "Pilot done.",
+        content: "Pilot done.",
       }) instanceof type.errors,
     ).toBe(false);
     expect(

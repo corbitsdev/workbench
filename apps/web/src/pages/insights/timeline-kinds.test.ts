@@ -39,9 +39,11 @@ describe("timelineEntryTone", () => {
     ).toBe("neutral");
   });
 
-  test("workflow_run and upload are neutral, never the orange action tone", () => {
+  test("workflow_run, upload, and compaction are neutral, never the orange action tone", () => {
     expect(KIND_META.workflow_run.tone).toBe("neutral");
     expect(KIND_META.upload.tone).toBe("neutral");
+    expect(KIND_META.compaction.tone).toBe("neutral");
+    expect(KIND_META.compaction.label).toBe("Compaction");
   });
 
   test("a non-grant kind uses its static KIND_META tone", () => {

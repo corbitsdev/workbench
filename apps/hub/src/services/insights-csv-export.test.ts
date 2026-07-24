@@ -15,7 +15,6 @@ function minimalOverview(
     artifacts: {
       total: 0,
       createdInRange: 0,
-      byStatus: [],
       byKind: [],
     },
     workflowRuns: {

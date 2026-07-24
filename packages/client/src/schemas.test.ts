@@ -22,7 +22,6 @@ const validArtifact = {
   kind: "link",
   title: "Docs",
   content: "https://example.com",
-  status: "draft",
   version: 1,
   ownerPrincipalId: "prn-1",
   archivedAt: null,

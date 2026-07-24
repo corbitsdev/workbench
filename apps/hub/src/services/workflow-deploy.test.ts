@@ -10,16 +10,17 @@ import {
 import type { WorkflowDefinition } from "@intx/workflow";
 import type { HarnessConfig, InferenceSource } from "@intx/types/runtime";
 import type { DirectorRegistry } from "@intx/agent";
-import type { AgentRepoStore, SidecarRouter } from "@intx/hub-sessions";
+import type { AgentRepoStore, SidecarRouter } from "@workbench/hub-sessions";
 import type { HubDb } from "../db";
 import { evaluateGrants } from "@intx/authz";
+import { toolPackagesForCapabilities } from "@workbench/agents";
 import type { GrantRule } from "@intx/authz";
-import { defineWorkflow, map, step } from "@intx/workflow";
+import { createEffectContext, defineWorkflow, map, step } from "@intx/workflow";
 import { defineAgent } from "@intx/agent";
 import {
   createWorkbenchDirectorRegistry,
   deterministicToolStep,
-  inlineInferenceStep,
+  agentStep,
 } from "@workbench/agents";
 
 // readWorkflowDefinition reads its cache TTL from getConfig(); apps/hub tests do
@@ -36,9 +37,10 @@ mock.module("../config", () => ({
 import {
   buildStepGrantRules,
   buildSupervisorDeployFrame,
+  capabilityNames,
+  stepGrantCapabilityNames,
   collectDeterministicToolStepIds,
   collectGrants,
-  collectInlineStepIds,
   createWorkflowDeployService,
   createWorkflowRepoWriter,
   readWorkflowDefinition,
@@ -411,17 +413,71 @@ describe("ensureDeploymentInstanceActive", () => {
   });
 });
 
+describe("stepGrantCapabilityNames", () => {
+  // The grant surface a deploy authorizes is the FULL canonical tool surface
+  // of the staged packages, not the hand-collected union of per-step declared
+  // names. The declared-name union stranded three workflows in one day, all
+  // with the same runtime denial and nothing at deploy time to catch it:
+  // granola-call's digest calling granola_get_note ("No matching grants"),
+  // last30days' ground-queries action ("effect
+  // @workbench/tools-last30days/core:last30days_ground_queries was not
+  // authorized (null)"), and heartbeat's brief-title action (same, for
+  // heartbeat_format_brief_title). Declaring one tool from a package stages
+  // the whole package's definitions in front of the model — entitlement to
+  // call must match entitlement to see.
+  test("declaring one granola tool grants the package's whole canonical surface", () => {
+    const declared = ["@workbench/tools-granola/granola:granola_list_notes"];
+    const names = stepGrantCapabilityNames(
+      declared,
+      toolPackagesForCapabilities(declared),
+    );
+    expect(names).toContain(
+      "@workbench/tools-granola/granola:granola_get_note",
+    );
+    expect(names).toContain(
+      "@workbench/tools-granola/granola:granola_list_notes",
+    );
+  });
+
+  test("declared names survive expansion even when no package backs them (local-runner tools)", () => {
+    const names = stepGrantCapabilityNames(["send_mail"], []);
+    expect(names).toContain("send_mail");
+  });
+
+  test("the expanded surface authorizes an action effect no step declared, through the real evaluator", async () => {
+    // The exact production check that failed: EffectContext.perform
+    // authorizes `effect:<canonical>` for a name the workflow's steps never
+    // listed. Expansion from the staged package must satisfy it.
+    const declared = [
+      "@workbench/tools-last30days/core:last30days_ground_queries",
+    ];
+    const names = stepGrantCapabilityNames(
+      declared,
+      toolPackagesForCapabilities(declared),
+    );
+    const rules = buildStepGrantRules(names);
+    const granted = await evaluateGrants(
+      rules,
+      "effect:@workbench/tools-last30days/core:heartbeat_format_brief_title",
+      "invoke",
+    );
+    expect(granted.effect).toBe("allow");
+  });
+});
+
 describe("buildStepGrantRules", () => {
-  test("emits one tool:<name>/invoke allow rule per de-duplicated capability", () => {
+  test("emits a tool:<name> AND an effect:<name>/invoke allow rule per de-duplicated capability", () => {
     const rules = buildStepGrantRules([
       "granola_list_notes",
       "gamma_generate",
       "granola_list_notes",
     ]);
-    expect(rules).toHaveLength(2);
-    expect(rules.map((r) => r.resource)).toEqual([
-      "tool:granola_list_notes",
+    expect(rules).toHaveLength(4);
+    expect(rules.map((r) => r.resource).sort()).toEqual([
+      "effect:gamma_generate",
+      "effect:granola_list_notes",
       "tool:gamma_generate",
+      "tool:granola_list_notes",
     ]);
     expect(
       rules.every((r) => r.action === "invoke" && r.effect === "allow"),
@@ -442,6 +498,56 @@ describe("buildStepGrantRules", () => {
       "invoke",
     );
     expect(ungranted.effect).not.toBe("allow");
+  });
+
+  test("also grants effect:<name>/invoke — the resource a native action step's EffectContext.perform authorizes (createEffectContext) — so an action step is not authorized against a tool:-only grants file", async () => {
+    // Regression test for the pain-point-collateral `intake`/`fetch` action
+    // steps failing every dispatch: `EffectContext.perform` (interchange's
+    // `createEffectContext`) authorizes `effect:<capability>`, not
+    // `tool:<capability>`. Before this fix, `buildStepGrantRules` emitted
+    // only `tool:` rules, so this check always found zero matching grant and
+    // threw "action effect ... was not authorized (null)" regardless of
+    // credentials or tool pinning.
+    const rules = buildStepGrantRules(["granola_list_notes"]);
+    const granted = await evaluateGrants(
+      rules,
+      "effect:granola_list_notes",
+      "invoke",
+    );
+    expect(granted.effect).toBe("allow");
+  });
+
+  test("end-to-end through the REAL @intx/workflow EffectContext: a step's persisted grants file authorizes its own action's effect call", async () => {
+    // Drives the exact seam that was broken: interchange's own
+    // `createEffectContext` (not a test double) evaluating an authorize
+    // function backed by the grants `buildStepGrantRules` writes to
+    // `state/grants.json`. Before this fix, `perform` threw here with
+    // "action effect ... was not authorized (null)" even though the tool
+    // was pinned and its credential was configured — proving the failure
+    // was a pure authorization-resource mismatch, not a credential or
+    // pinning defect.
+    const rules = buildStepGrantRules(["granola_list_notes"]);
+    const authorize: Parameters<typeof createEffectContext>[0]["authorize"] =
+      async (resource, action) => {
+        const decision = await evaluateGrants(rules, resource, action);
+        return { effect: decision.effect, matchingGrants: [], resolvedBy: null };
+      };
+    const ctx = createEffectContext({
+      authorize,
+      effects: {
+        lookup: async () => undefined,
+        record: async () => {},
+      },
+      requires: ["granola_list_notes"],
+      authzContext: { runId: "run_1", stepId: "intake" },
+      input: {},
+    });
+    const output = await ctx.perform({
+      effectId: "tool-call",
+      capability: "granola_list_notes",
+      run: async () => ({ notes: [], hasMore: false }),
+    });
+    expect(output).toEqual({ notes: [], hasMore: false });
   });
 });
 
@@ -510,6 +616,42 @@ describe("collectGrants", () => {
   });
 });
 
+describe("capabilityNames", () => {
+  test("folds an action step's effect: grants in alongside an agent step's capability: grants", () => {
+    // An `action` step carries no `toolFactories`/`capabilities` of its own —
+    // `capability-walk.ts` emits `effect:<cap>` for it instead, from the
+    // primitive's `effect.requires`. Without also folding `effect:` here, a
+    // deployment whose steps are actions would resolve zero tool packages
+    // and ship with none of its tools loaded — the incident this fix
+    // prevents.
+    const walk: CapabilityWalkResult = {
+      perStep: new Map([
+        ["agent-step", { grants: ["capability:granola_list_notes"] }],
+        [
+          "action-step",
+          { grants: ["effect:@workbench/tools-gamma/gamma:create_deck"] },
+        ],
+      ]),
+      unresolvedDirectors: [],
+    };
+    expect(capabilityNames(walk).sort()).toEqual([
+      "@workbench/tools-gamma/gamma:create_deck",
+      "granola_list_notes",
+    ]);
+  });
+
+  test("dedups a capability name declared by both an agent step and an action step", () => {
+    const walk: CapabilityWalkResult = {
+      perStep: new Map([
+        ["a", { grants: ["capability:exa_search"] }],
+        ["b", { grants: ["effect:exa_search"] }],
+      ]),
+      unresolvedDirectors: [],
+    };
+    expect(capabilityNames(walk)).toEqual(["exa_search"]);
+  });
+});
+
 const TENANT_SOURCE: InferenceSource = {
   id: "openai-compatible:m",
   provider: "openai-compatible",
@@ -518,11 +660,19 @@ const TENANT_SOURCE: InferenceSource = {
   model: "m",
 };
 
+// Step agents carry the walk-required surfaces (toolFactories/capabilities)
+// exactly as persisted workflow.json does — buildSupervisorDeployFrame now
+// derives real frame grants from the definition, so a fixture stripped below
+// the envelope shape crashes the capability walk instead of testing anything.
+const BARE_STEP = {
+  kind: "step",
+  agent: { id: "a", toolFactories: [], capabilities: [] },
+};
 const VALID_DEFINITION = {
   id: "pain-point-collateral",
   triggers: [{ type: "manual" }],
   stepOrder: ["intake", "analyze"],
-  steps: { intake: { kind: "step" }, analyze: { kind: "step" } },
+  steps: { intake: BARE_STEP, analyze: BARE_STEP },
 } as unknown as WorkflowDefinition;
 
 describe("buildSupervisorDeployFrame", () => {
@@ -578,10 +728,13 @@ describe("buildSupervisorDeployFrame", () => {
       triggers: [{ type: "manual" }],
       stepOrder: ["intake", "write"],
       steps: {
-        intake: { kind: "step" },
+        intake: BARE_STEP,
         write: {
           kind: "step",
           agent: {
+            id: "w",
+            toolFactories: [],
+            capabilities: [],
             inference: {
               sources: [
                 { provider: "openai-compatible", model: "writer-model" },
@@ -616,6 +769,9 @@ describe("buildSupervisorDeployFrame", () => {
         write: {
           kind: "step",
           agent: {
+            id: "w",
+            toolFactories: [],
+            capabilities: [],
             inference: {
               sources: [
                 { provider: "openai-compatible", model: "absent-model" },
@@ -824,60 +980,6 @@ describe("readWorkflowDefinition", () => {
   });
 });
 
-describe("collectInlineStepIds", () => {
-  test("collects only steps whose agent carries the inline-inference marker tag", () => {
-    const inlineAgent = defineAgent({
-      id: "analyze",
-      description: "inline",
-      systemPrompt: "reason",
-      tools: [],
-      capabilities: [],
-      inference: { sources: [] },
-      tags: { "workbench.stepKind": "inline-inference" },
-    });
-    const deployedAgent = defineAgent({
-      id: "draft",
-      description: "deployed reasoning",
-      systemPrompt: "reason",
-      tools: [],
-      capabilities: [],
-      inference: { sources: [{ provider: "openai-compatible", model: "m" }] },
-    });
-    const wf = defineWorkflow({
-      id: "wf",
-      trigger: { type: "manual" },
-      steps: {
-        analyze: inlineInferenceStep({ id: "analyze", systemPrompt: "reason" }),
-        draft: step({ agent: deployedAgent, after: ["analyze"] }),
-      },
-    });
-
-    const inline = collectInlineStepIds(wf);
-    expect([...inline]).toEqual(["analyze"]);
-    expect(inline.has("draft")).toBe(false);
-
-    // Sanity: the marker comes from the tag, not the id.
-    expect(inlineAgent.tags?.["workbench.stepKind"]).toBe("inline-inference");
-  });
-
-  test("finds an inline step nested inside a map primitive", () => {
-    const wf = defineWorkflow({
-      id: "wf",
-      trigger: { type: "manual" },
-      steps: {
-        fan: map({
-          over: { literal: [] },
-          step: inlineInferenceStep({
-            id: "fan-inner",
-            systemPrompt: "reason",
-          }),
-        }),
-      },
-    });
-    expect([...collectInlineStepIds(wf)]).toEqual(["fan"]);
-  });
-});
-
 describe("collectDeterministicToolStepIds", () => {
   test("collects only steps whose agent carries the deterministic-tool marker tag", () => {
     const deployedAgent = defineAgent({
@@ -896,7 +998,7 @@ describe("collectDeterministicToolStepIds", () => {
           id: "fetch",
           tool: "granola_list_notes",
         }),
-        analyze: inlineInferenceStep({
+        analyze: agentStep({
           id: "analyze",
           systemPrompt: "reason",
           after: ["fetch"],
@@ -1008,7 +1110,12 @@ describe("deployWorkflow inline-step partition (CL-2251)", () => {
     const repoStore = { repoStore: { writeTree } } as unknown as AgentRepoStore;
 
     const insertedRows: {
-      table: "agent" | "agentInstance" | "asset" | "workflowDeployment" | "grant";
+      table:
+        | "agent"
+        | "agentInstance"
+        | "asset"
+        | "workflowDeployment"
+        | "grant";
       rows: { id: string }[];
     }[] = [];
     const db = {
@@ -1138,7 +1245,7 @@ describe("deployWorkflow deterministic-tool partition (CL-2252)", () => {
           id: "fetch",
           tool: "granola_list_notes",
         }),
-        analyze: inlineInferenceStep({
+        analyze: agentStep({
           id: "analyze",
           systemPrompt: "extract pain points",
           after: ["fetch"],
@@ -1162,7 +1269,12 @@ describe("deployWorkflow deterministic-tool partition (CL-2252)", () => {
     const repoStore = { repoStore: { writeTree } } as unknown as AgentRepoStore;
 
     const insertedRows: {
-      table: "agent" | "agentInstance" | "asset" | "workflowDeployment" | "grant";
+      table:
+        | "agent"
+        | "agentInstance"
+        | "asset"
+        | "workflowDeployment"
+        | "grant";
       rows: { id: string }[];
     }[] = [];
     const db = {
@@ -1205,16 +1317,17 @@ describe("deployWorkflow deterministic-tool partition (CL-2252)", () => {
 
     // No per-step launch happens at all now: the deploy service wires a no-op
     // launch hook (the in-process session runtime is retired), so no step —
-    // deterministic, inline, or fully-deployed reasoning — launches a session.
+    // deterministic or fully-deployed reasoning — launches a session.
 
     // 0 agent-state repos for the deterministic tool step (no grants.json);
-    // the deployed reasoning step still gets one (execution reads it).
+    // both reasoning steps (`analyze`, a native `agentStep`, and `draft`, a
+    // hand-built `defineAgent`+`step`) get one — execution reads it.
     const agentStateIds = writeTreeRepoIds
       .filter((r) => r.kind === "agent-state")
       .map((r) => r.id);
     expect(agentStateIds).toContain("ses_det-draft");
+    expect(agentStateIds).toContain("ses_det-analyze");
     expect(agentStateIds).not.toContain("ses_det-fetch");
-    expect(agentStateIds).not.toContain("ses_det-analyze");
 
     // Every step keeps BOTH rows uniformly: interchange's pack phase records
     // a session_asset row per staged attachment with a hard FK to
@@ -1229,7 +1342,7 @@ describe("deployWorkflow deterministic-tool partition (CL-2252)", () => {
     expect(agentRowIds).toContain("ins_ses_det-fetch");
     expect(instanceRowIds).toContain("ins_ses_det-fetch");
 
-    // Deployed reasoning step and inline step keep both rows too.
+    // Both reasoning steps keep both rows too.
     expect(agentRowIds).toContain("ins_ses_det-draft");
     expect(instanceRowIds).toContain("ins_ses_det-draft");
     expect(agentRowIds).toContain("ins_ses_det-analyze");
@@ -1250,13 +1363,14 @@ describe("deployWorkflow deterministic-tool partition (CL-2252)", () => {
   });
 });
 
-// Regression for the catalog-inference fix: an all-inline workflow declares
-// `sources:[]` on every step, so the capability walk emits NO
-// `inference.source:*` grant. Before the fix, `pickStepInferenceSource` rejected
-// the deploy's catalog-resolved `defaultSource` as unapproved and the deploy
+// Regression for the catalog-inference fix: a workflow whose steps declare NO
+// preferred model (`sources:[]` on every step, e.g. every `agentStep` built
+// with no `model` opt) emits NO `inference.source:*` grant from the
+// capability walk. Before the fix, `pickStepInferenceSource` rejected the
+// deploy's catalog-resolved `defaultSource` as unapproved and the deploy
 // threw "step ... has no approved inference source". The deploy now seeds
-// `operatorApprovals` from the resolved chain, so the all-inline deploy
-// succeeds. Exercises the real orchestrator across its seams.
+// `operatorApprovals` from the resolved chain, so the deploy succeeds.
+// Exercises the real orchestrator across its seams.
 describe("deployWorkflow approves the catalog inference chain", () => {
   const HEAD: InferenceSource = {
     id: "off_head",
@@ -1343,18 +1457,18 @@ describe("deployWorkflow approves the catalog inference chain", () => {
     });
   }
 
-  test("deploys an all-inline workflow whose steps declare no inference source", async () => {
+  test("deploys a workflow whose steps declare no preferred inference source", async () => {
     const deploymentId = "ses_allinline";
     const deploymentDomain = "deploy.example.com";
     const workflow = defineWorkflow({
       id: "all-inline",
       trigger: { type: "manual" },
       steps: {
-        analyze: inlineInferenceStep({
+        analyze: agentStep({
           id: "analyze",
           systemPrompt: "extract pain points",
         }),
-        summarize: inlineInferenceStep({
+        summarize: agentStep({
           id: "summarize",
           systemPrompt: "summarize",
           after: ["analyze"],
@@ -1405,7 +1519,7 @@ describe("deployWorkflow approves the catalog inference chain", () => {
       id: "no-stager",
       trigger: { type: "manual" },
       steps: {
-        analyze: inlineInferenceStep({
+        analyze: agentStep({
           id: "analyze",
           systemPrompt: "extract pain points",
         }),
@@ -1662,7 +1776,7 @@ describe("persistCatalog (hub-only publish)", () => {
       id: "pain-point-collateral",
       trigger: { type: "manual" },
       steps: {
-        analyze: inlineInferenceStep({
+        analyze: agentStep({
           id: "analyze",
           systemPrompt: "extract pain points",
         }),
@@ -1685,7 +1799,12 @@ describe("persistCatalog (hub-only publish)", () => {
     const repoStore = { repoStore: { writeTree } } as unknown as AgentRepoStore;
 
     const insertedRows: {
-      table: "agent" | "agentInstance" | "asset" | "workflowDeployment" | "grant";
+      table:
+        | "agent"
+        | "agentInstance"
+        | "asset"
+        | "workflowDeployment"
+        | "grant";
       rows: { id: string }[];
     }[] = [];
     const db = {

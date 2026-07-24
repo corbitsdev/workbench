@@ -5,14 +5,17 @@ import path from "node:path";
 
 import { generateKeyPair } from "@intx/crypto";
 import type { KeyPair } from "@intx/types/runtime";
-import { createRepoStore, workflowRunKindHandler } from "@intx/hub-sessions";
+import {
+  createRepoStore,
+  workflowRunKindHandler,
+} from "@workbench/hub-sessions";
 import type {
   AuthorizeFn,
   KindHandler,
   Principal,
   RepoId,
   ValidatePushResult,
-} from "@intx/hub-sessions";
+} from "@workbench/hub-sessions";
 
 import { createWorkflowHostScheduler } from "./scheduler";
 

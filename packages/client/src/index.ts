@@ -141,7 +141,6 @@ export const ListArtifactsParamsSchema = type({
   "query?": "string",
   "sort?": "'newest' | 'oldest'",
   "kind?": "string",
-  "status?": "'draft' | 'approved' | 'rejected'",
   "ownerPrincipalId?": "string",
   "creatorKind?": "'user' | 'agent'",
   /** Date-only `yyyy-mm-dd` or ISO timestamp; only artifacts created at/after this are returned. */
@@ -414,7 +413,6 @@ export async function listArtifacts(
   if (params.query) qs.set("query", params.query);
   if (params.sort) qs.set("sort", params.sort);
   if (params.kind) qs.set("kind", params.kind);
-  if (params.status) qs.set("status", params.status);
   if (params.ownerPrincipalId)
     qs.set("ownerPrincipalId", params.ownerPrincipalId);
   if (params.creatorKind) qs.set("creatorKind", params.creatorKind);

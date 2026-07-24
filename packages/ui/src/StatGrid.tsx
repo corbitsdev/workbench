@@ -18,11 +18,7 @@ export interface StatGridProps {
   className?: string;
 }
 
-export function StatGrid({
-  children,
-  columns = 4,
-  className,
-}: StatGridProps) {
+export function StatGrid({ children, columns = 4, className }: StatGridProps) {
   return (
     <div
       className={cn("grid gap-3", COLUMN_CLASS[columns], className)}
@@ -42,7 +38,7 @@ function statValueClass(accent?: boolean, danger?: boolean): string {
 export interface StatGridItemProps {
   label: string;
   value: string;
-  sub?: string;
+  sub?: ReactNode;
   /** Orange action tone — reserve for genuine action/positive emphasis. */
   accent?: boolean;
   /** Semantic danger (red) — failure counts, not the action accent. */

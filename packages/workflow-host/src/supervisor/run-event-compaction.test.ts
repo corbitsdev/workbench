@@ -10,12 +10,12 @@ import {
   createWorkflowRunReader,
   workflowRunKindHandler,
   WORKFLOW_RUN_GITIGNORE_PATH,
-} from "@intx/hub-sessions";
+} from "@workbench/hub-sessions";
 import type {
   AuthorizeFn,
   RepoId,
   WorkflowRunSupervisorPrincipal,
-} from "@intx/hub-sessions";
+} from "@workbench/hub-sessions";
 
 import { compactRunEvents } from "./run-event-compaction";
 

@@ -3,7 +3,7 @@
 // The run-page panel (`ui.tsx`) and the dock block builder (`blocks.ts`) both
 // decode the SAME log-derived step outputs. The Sumble `resolve` and
 // `search_people` tools emit STRUCTURED object content (`{ content: {...} }`),
-// while the synthesis step emits an inline-inference reply (`{ reply: string }`
+// while the synthesis step emits an agentStep reply (`{ reply: string }`
 // carrying strict JSON). Extracting the parsers here keeps the two surfaces in
 // lockstep.
 

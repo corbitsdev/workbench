@@ -150,7 +150,14 @@ Forks: replace the Railway host in root `vercel.json` `/api` + `/sidecar` rewrit
 
 ### Railway (reference deployment)
 
-Each service is a separate Railway service in the same project, all using the **repo root** as the Docker build context.
+Each service is a separate Railway service in the same project, all using the **repo root** as the Docker build context. This is a shared monorepo (one Bun workspace): every service depends on the shared lockfile, `packages/*`, and the vendored `interchange/packages/*`, so the build context cannot be scoped to a single app folder.
+
+Two consequences follow from that:
+
+- **Root Directory must stay `/`.** A per-service root directory would scope the Docker build to one app folder and break the workspace install.
+- **The `railway.toml` does not follow the Root Directory** (per Railway's monorepo docs) — set each service's Config-as-Code path to its absolute repo-root path (below).
+
+Once configured, every push to `staging` (or `main`) deploys the affected services automatically — each service's `watchPatterns` decides which ones rebuild.
 
 1. Create a new Railway project
 2. Add a new service → "GitHub Repo" → select your fork
@@ -164,7 +171,12 @@ Each service is a separate Railway service in the same project, all using the **
 5. Attach persistent volumes (hub → `/data`, sidecar → `/data`)
 6. Deploy
 
-The hub's `railway.toml` runs `bun run scripts/db-setup.ts` as a pre-deploy command, which applies pending migrations before the hub starts.
+The hub's `railway.toml` runs `bun run scripts/db-setup.ts` as a pre-deploy command, which applies pending migrations before the hub starts. Migrations are **not** manually gated — they run automatically at the start of every deploy, in filename order. This makes the ordering below load-bearing: get it wrong and the data loss happens automatically, before anyone can intervene.
+
+### Migration ordering / one-time data migrations
+
+- **`artifact.status` drain-then-drop (CL-4432).** `apps/hub/bin/migrate-skill-drafts-to-assets.ts` reads `artifact` rows via raw SQL against the physical `status` column (the Drizzle `artifact` model no longer maps it), so it genuinely sees `kind='skill-draft' AND status='draft'` rows regardless of ORM shape. It runs automatically as the first step of the hub's `preDeployCommand` in `apps/hub/railway.toml`, chained with `&&` before `bun run scripts/db-setup.ts`: **drain, then migrate, then drop.** If the drain script throws on any row (e.g. an upsert failure, or a row missing `tenantId`/`ownerPrincipalId`), it exits non-zero and the `&&` chain aborts — `db-setup.ts` never runs, so migration `0079_drop_artifact_status.sql` never applies, and the column is never dropped out from under undrained data. The script guards on `information_schema.columns`: once `status` is actually gone (already true on staging; true on prod once this deploy's drain + 0079 have run), it logs "already absent" and exits 0 — safe to run on every deploy. `approved`/`rejected` rows are intentionally left alone (their content already lives elsewhere or is a historical tombstone under existence-as-state) and are not migrated; only `status='draft'` rows are drained.
+- **`apps/hub/migrations/0076_granola_call_to_work_unit.sql` → `0077_drop_granola_call_job.sql`** is a paired cutover: 0076 copies open (`pending`/`processing`/`dead`) `granola_call_job` rows into `work_unit` and marks the originals `done`; 0077 then drops the `granola_call_job` table outright. Because both run automatically in the same deploy pass (filename order), verify — before that deploy ships — that 0076's copy logic covers every row shape actually present on the target environment; there is no re-run once 0077 has dropped the table.
 
 ### Other providers
 

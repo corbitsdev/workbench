@@ -105,9 +105,9 @@ describe("ChatsListPage", () => {
     renderPage();
     const chrome = screen.getByTestId("chrome-slot");
     expect(
-      within(chrome).getByRole("heading", { name: /chats/i }),
+      within(chrome).getByRole("heading", { name: /threads/i }),
     ).toBeDefined();
-    expect(screen.getAllByRole("heading", { name: /chats/i }).length).toBe(1);
+    expect(screen.getAllByRole("heading", { name: /threads/i }).length).toBe(1);
   });
 
   it("lists each chat as a clickable row", () => {
@@ -200,7 +200,7 @@ describe("ChatsListPage", () => {
 
   it("filters by the search query", () => {
     renderPage();
-    fireEvent.change(screen.getByPlaceholderText(/search chats/i), {
+    fireEvent.change(screen.getByPlaceholderText(/search threads/i), {
       target: { value: "pricing" },
     });
     expect(
@@ -211,10 +211,10 @@ describe("ChatsListPage", () => {
 
   it("shows a no-results message when nothing matches", () => {
     renderPage();
-    fireEvent.change(screen.getByPlaceholderText(/search chats/i), {
+    fireEvent.change(screen.getByPlaceholderText(/search threads/i), {
       target: { value: "zzz" },
     });
-    expect(screen.getByText(/no chats match/i)).not.toBeNull();
+    expect(screen.getByText(/no threads match/i)).not.toBeNull();
   });
 
   it("renders skeleton rows while loading and no thread rows", () => {
@@ -225,8 +225,8 @@ describe("ChatsListPage", () => {
       refetch: () => {},
     };
     renderPage();
-    expect(screen.queryByText(/loading chats/i)).toBeNull();
-    expect(screen.queryByRole("button", { name: /new chat/i })).toBeNull();
+    expect(screen.queryByText(/loading threads/i)).toBeNull();
+    expect(screen.queryByRole("button", { name: /new thread/i })).toBeNull();
   });
 
   it("shows a legible error state with a retry action", () => {
@@ -237,11 +237,11 @@ describe("ChatsListPage", () => {
       refetch: () => {},
     };
     renderPage();
-    expect(screen.getByText(/could not load chats/i)).not.toBeNull();
+    expect(screen.getByText(/could not load threads/i)).not.toBeNull();
     expect(screen.getByRole("button", { name: /try again/i })).not.toBeNull();
   });
 
-  it("shows an empty state and creates a chat", () => {
+  it("shows an empty state and creates a thread", () => {
     threadsResult = {
       data: { threads: [], total: 0 },
       isLoading: false,
@@ -249,18 +249,18 @@ describe("ChatsListPage", () => {
       refetch: () => {},
     };
     renderPage();
-    expect(screen.getByText(/no chats yet/i)).not.toBeNull();
-    fireEvent.click(screen.getByRole("button", { name: /new chat/i }));
+    expect(screen.getByText(/no threads yet/i)).not.toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: /new thread/i }));
     expect(createMutate).toHaveBeenCalledTimes(1);
   });
 
-  it("shows a legible message when new-chat creation fails", () => {
+  it("shows a legible message when new-thread creation fails", () => {
     mutateOutcome = "error";
     renderPage();
-    expect(screen.queryByText(/could not start a new chat/i)).toBeNull();
-    fireEvent.click(screen.getByRole("button", { name: /new chat/i }));
+    expect(screen.queryByText(/could not start a new thread/i)).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: /new thread/i }));
     expect(
-      screen.queryByText(/could not start a new chat\. try again\./i),
+      screen.queryByText(/could not start a new thread\. try again\./i),
     ).not.toBeNull();
   });
 });

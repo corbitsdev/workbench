@@ -19,7 +19,7 @@ import type { GrantRule } from "@intx/types/authz";
 // the push at the @intx boundary and record which tenant subtree it targeted —
 // the DB writes below stay real.
 const pushCalls: string[] = [];
-mock.module("@intx/hub-sessions", () => ({
+mock.module("@workbench/hub-sessions", () => ({
   pushSourceUpdatesSubtree: async (
     _db: unknown,
     _router: unknown,
@@ -169,7 +169,12 @@ describe("reconcileProviderCatalog over real Postgres", () => {
     // priority-2 direct source; see packages/catalog/src/offerings.ts).
     expect(offeringRow?.priority).toBe(2);
 
-    const resolution = await resolveModelSources(db, TENANT, [{ model: "kimi-k3" }], CREATOR_GRANTS);
+    const resolution = await resolveModelSources(
+      db,
+      TENANT,
+      [{ model: "kimi-k3" }],
+      CREATOR_GRANTS,
+    );
     expect(resolution.ok).toBe(true);
     if (resolution.ok) {
       expect(resolution.sources[0]?.model).toBe("kimi-k3");
@@ -251,7 +256,12 @@ describe("reconcileProviderCatalog over real Postgres", () => {
     expect(providerRow?.baseURL).toBe(BASE_URL);
 
     // With the credential rebound, the model now resolves against a real secret.
-    const resolution = await resolveModelSources(db, TENANT, [{ model: "kimi-k3" }], CREATOR_GRANTS);
+    const resolution = await resolveModelSources(
+      db,
+      TENANT,
+      [{ model: "kimi-k3" }],
+      CREATOR_GRANTS,
+    );
     expect(resolution.ok).toBe(true);
     expect(pushCalls).toContain(TENANT);
   });

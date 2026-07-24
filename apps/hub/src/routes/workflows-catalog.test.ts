@@ -58,10 +58,46 @@ mock.module("../lib/tenant-provisioning", () => ({
     Promise.resolve({ tenantId: "t-root", principalId: "p1" }),
 }));
 
+// Gate shape per kind (CL-3508 + product allowlist CL-4204). Unattended kinds
+// are structurally attachable; attachable on the wire also requires product
+// eligibility (heartbeat / prospect-engine / last30days-research only).
+let gateInfos = new Map<
+  string,
+  { requiresIntake: boolean; humanGateCount: number }
+>([
+  ["heartbeat", { requiresIntake: false, humanGateCount: 0 }],
+  ["deck", { requiresIntake: false, humanGateCount: 0 }],
+  ["last30days-research", { requiresIntake: true, humanGateCount: 1 }],
+  ["granola-call", { requiresIntake: false, humanGateCount: 0 }],
+  ["github-topic-watch", { requiresIntake: true, humanGateCount: 1 }],
+]);
+// Entry-step required trigger fields per kind (CL-4204 derivation). Intake-
+// gated kinds (github-topic-watch) have no direct trigger read, so their
+// entry requires nothing here regardless of intake fields.
+let entryTriggerFields = new Map<string, string[]>([
+  ["heartbeat", ["enabledSources", "createdAfter"]],
+  ["deck", ["missingField"]],
+  ["granola-call", ["noteId"]],
+  ["github-topic-watch", []],
+]);
+mock.module("../lib/workflow-catalog", () => ({
+  loadWorkflowDisplayFlows: async () => new Map(),
+  loadWorkflowGateInfos: async () => gateInfos,
+  loadWorkflowIntakeFields: async () => new Map(),
+  loadWorkflowEntryTriggerFields: async () => entryTriggerFields,
+}));
+
+// Kinds with a registered trigger-payload enricher (heartbeat only, here) —
+// deck and granola-call have no enricher and no intake field covering their
+// required trigger fields, so they are NOT routine-eligible.
+mock.module("../workflow-executor/trigger-payload-enrichment-registry", () => ({
+  ENRICHED_TRIGGER_KINDS: new Set(["heartbeat"]),
+}));
+
 import { Hono } from "hono";
 import { createWorkflowsCatalogRouter } from "./workflows-catalog";
 import type { HubDb } from "../db";
-import type { AgentRepoStore } from "@intx/hub-sessions";
+import type { AgentRepoStore } from "@workbench/hub-sessions";
 
 function app() {
   const parent = new Hono<{ Variables: { userId: string } }>();
@@ -91,7 +127,8 @@ type Entry = {
   isFavorite: boolean;
   stepCount: number;
   pauseCount: number;
-  steps: { id: string; title: string; kind: string }[];
+  steps: { id: string; title: string; kind: string; stepIds: string[] }[];
+  attachable?: boolean;
 };
 
 describe("GET /workflows", () => {
@@ -116,8 +153,13 @@ describe("GET /workflows", () => {
       pauseCount: 1,
     });
     expect(alpha.steps).toEqual([
-      { id: "gather", title: "Gather", kind: "auto" },
-      { id: "approve", title: "Approve Draft", kind: "human" },
+      { id: "gather", title: "Gather", kind: "auto", stepIds: ["gather"] },
+      {
+        id: "approve",
+        title: "Approve Draft",
+        kind: "human",
+        stepIds: ["approve"],
+      },
     ]);
   });
 
@@ -171,5 +213,39 @@ describe("GET /workflows", () => {
     userContext = { context: null, forbidden: false };
     const res = await get();
     expect(res.status).toBe(403);
+  });
+
+  it("marks attachable only when structural AND derived routine-eligible (CL-4204)", async () => {
+    userContext = {
+      context: { tenantId: "t1", principalId: "p1" },
+      forbidden: false,
+    };
+    favorites = [];
+    kinds = [
+      { kind: "heartbeat", label: "Heartbeat" },
+      { kind: "deck", label: "Deck" },
+      { kind: "alpha", label: "Alpha" },
+      { kind: "granola-call", label: "Granola Call Processing" },
+      { kind: "github-topic-watch", label: "GitHub topic watch" },
+    ];
+
+    const body = (await (await get()).json()) as { entries: Entry[] };
+    const byKind = Object.fromEntries(body.entries.map((e) => [e.kind, e]));
+    // Structurally attachable, and its required trigger fields are covered
+    // by the registered heartbeat enricher.
+    expect(byKind["heartbeat"]!.attachable).toBe(true);
+    // Structurally attachable, but its required trigger field is neither a
+    // declared intake field nor enriched.
+    expect(byKind["deck"]!.attachable).toBe(false);
+    // No gate info → not attachable
+    expect(byKind["alpha"]!.attachable).toBe(false);
+    // Gate-free (zero human gates), but its entry step requires `noteId`
+    // straight off the trigger payload with no intake field and no
+    // registered enricher — the derived rule correctly excludes it (this is
+    // the granola-call correctness fix, CL-4204).
+    expect(byKind["granola-call"]!.attachable).toBe(false);
+    // Intake-only — the entry gate is `awaitSignal`, not a direct trigger
+    // read, so it requires nothing beyond the auto-delivered stored intake.
+    expect(byKind["github-topic-watch"]!.attachable).toBe(true);
   });
 });

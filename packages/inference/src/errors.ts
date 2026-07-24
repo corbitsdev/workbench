@@ -28,6 +28,19 @@ export function classifyHTTPError(
     if (isContextOverflowMessage(message)) {
       return { category: "context_overflow", message, statusCode, raw };
     }
+    // WORKBENCH-LOCAL (CL-4177): OpenCode Zen sends rate limits as HTTP 400
+    // with the reason in the body instead of HTTP 429. Without this check
+    // the error falls through to `fatal`, which the reactor never fails
+    // over on, so a transient throttle ends the turn instead of retrying.
+    if (isRateLimitMessage(message)) {
+      return {
+        category: "quota_exhausted",
+        message,
+        statusCode,
+        ...(retryAfterMs !== undefined ? { retryAfterMs } : {}),
+        raw,
+      };
+    }
     return { category: "fatal", message, statusCode, raw };
   }
 
@@ -103,6 +116,16 @@ function isContextOverflowMessage(message: string): boolean {
     lower.includes("too many tokens") ||
     lower.includes("maximum context") ||
     lower.includes("input is too long")
+  );
+}
+
+// WORKBENCH-LOCAL (CL-4177): see the 400 branch above for why this exists.
+function isRateLimitMessage(message: string): boolean {
+  const lower = message.toLowerCase();
+  return (
+    lower.includes("rate limit") ||
+    lower.includes("rate-limit") ||
+    lower.includes("too many requests")
   );
 }
 

@@ -568,10 +568,11 @@ describe("POST /skills/drafts/:draftId/approve", () => {
       unknown,
       unknown,
       unknown,
+      unknown,
       Record<string, unknown>,
     ][];
     // opts carry authenticated user identity, never a synthetic default
-    expect(calls[0]?.[4]).toMatchObject({
+    expect(calls[0]?.[5]).toMatchObject({
       scope: "private",
       ownerUserId: "user-1",
       ownerName: "Test User",

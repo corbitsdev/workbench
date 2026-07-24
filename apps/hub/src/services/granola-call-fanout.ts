@@ -14,7 +14,7 @@ import type {
   CallAnalysis,
   CallClassification,
   GranolaCall,
-} from "./granola-call-pipeline";
+} from "@workbench/shared";
 
 const log = getLogger(["services", "granola-call-fanout"]);
 
@@ -60,7 +60,7 @@ interface Member {
 }
 
 /** Root-tenant members that run Myra (the delivery population). */
-async function listMyraMembers(
+export async function listMyraMembers(
   db: HubDb,
   rootTenantId: string,
 ): Promise<Member[]> {

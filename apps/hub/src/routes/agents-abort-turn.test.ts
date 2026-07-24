@@ -4,7 +4,7 @@ import type {
   SessionService,
   SidecarRouter,
   EventCollectorRegistry,
-} from "@intx/hub-sessions";
+} from "@workbench/hub-sessions";
 import type { GrantStore } from "@intx/types/authz";
 
 mock.module("../config", () => ({

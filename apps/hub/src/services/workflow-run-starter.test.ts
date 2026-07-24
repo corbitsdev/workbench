@@ -2,8 +2,11 @@ import { describe, expect, it } from "bun:test";
 import { mock } from "bun:test";
 import { deriveDeploymentAddress } from "@intx/workflow-deploy";
 import * as intxDb from "@intx/db";
-import type { SessionService } from "@intx/hub-sessions";
+import type { SessionService } from "@workbench/hub-sessions";
+import type { SQL } from "drizzle-orm";
+import { PgDialect } from "drizzle-orm/pg-core";
 import type { HubDb } from "../db";
+import { WORKFLOW_CATALOG_ACTIVE_STATUS } from "../db/schema";
 import { isUuid } from "../lib/uuid";
 
 // getAncestorChain walks the tenant table via the db; the run-starter imports it
@@ -38,6 +41,8 @@ type TestDb = HubDb & {
   inserted: Record<string, unknown>[];
   failUpdateCalls: number;
   deploymentIdSets: string[];
+  /** The `where` the starter passed to the catalog findMany, for seam pins. */
+  catalogWhere: SQL | undefined;
 };
 
 function makeDb(candidates: Candidate[], options: MakeDbOptions = {}): TestDb {
@@ -45,10 +50,14 @@ function makeDb(candidates: Candidate[], options: MakeDbOptions = {}): TestDb {
   let failUpdateCalls = 0;
   const deploymentIdSets: string[] = [];
   const failFlipRows = options.failFlipRows ?? [{ id: "flipped" }];
+  let catalogWhere: SQL | undefined;
   return {
     query: {
       workflowRun: {
-        findMany: async () => candidates,
+        findMany: async (args?: { where?: SQL }) => {
+          catalogWhere = args?.where;
+          return candidates;
+        },
       },
       // Read by the heartbeat trigger-payload enricher (resolveEnabledBriefSources)
       // for the dedicated "generic-workflow has no enricher, heartbeat does" test
@@ -95,6 +104,9 @@ function makeDb(candidates: Candidate[], options: MakeDbOptions = {}): TestDb {
     get failUpdateCalls() {
       return failUpdateCalls;
     },
+    get catalogWhere() {
+      return catalogWhere;
+    },
   } as unknown as TestDb;
 }
 
@@ -111,7 +123,11 @@ function candidate(overrides: Partial<Candidate>): Candidate {
     kind: "generic-workflow",
     tenantId: "t-root",
     principalId: "principal-1",
-    status: "deployed",
+    // Must mirror what publish actually inserts (`workflow_run` catalog rows
+    // carry the catalog-active status, not the agent-instance `deployed`) —
+    // a fixture using a status production never writes hid the resolver
+    // filtering on the wrong vocabulary and matching zero rows in staging.
+    status: WORKFLOW_CATALOG_ACTIVE_STATUS,
     createdAt: new Date("2026-01-01T00:00:00Z"),
     deletedAt: null,
     ...overrides,
@@ -221,6 +237,30 @@ describe("createWorkflowRunStarter", () => {
     expect(db.inserted[0]?.status).toBe("provisioning");
     expect(db.deploymentIdSets).toEqual(["dep-run-1"]);
     expect(sent[0]?.messageId).toBe(db.inserted[0]?.id);
+  });
+
+  it("queries the catalog with the status publish writes, not the agent-instance vocabulary", async () => {
+    // The mock findMany does not evaluate `where`, so the fixture alone cannot
+    // catch a wrong status filter. Pin the emitted query instead: render the
+    // starter's `where` to SQL and assert its bound params use the shared
+    // catalog-active status. This is the seam that broke in production — the
+    // resolver filtered on `deployed`, a status no `workflow_run` writer ever
+    // stamps, and every kind became unresolvable while this suite stayed green.
+    chainRef = ["t-root"];
+    const db = makeDb([candidate({})]);
+    const starter = createWorkflowRunStarter(starterDeps({ db }));
+
+    const result = await starter.startRun({
+      kind: "generic-workflow",
+      tenantId: "t-root",
+      input: {},
+    });
+
+    expect(result.ok).toBe(true);
+    expect(db.catalogWhere).toBeDefined();
+    const { params } = new PgDialect().sqlToQuery(db.catalogWhere!.getSQL());
+    expect(params).toContain(WORKFLOW_CATALOG_ACTIVE_STATUS);
+    expect(params).not.toContain("deployed");
   });
 
   it("returns not_found when no candidate is deployed for the kind", async () => {
@@ -701,8 +741,8 @@ describe("createWorkflowRunStarter", () => {
   // defeating computeHeartbeatCreatedAfter's "day 2+ never re-briefs since
   // yesterday" contract and duplicating call coverage forever. `startRun`'s
   // `heartbeatFire` field is how the scheduler forwards its real
-  // lastFiredDayUtc/hourUtc through to the registry; this drives that path
-  // through the REAL starter (not a re-implementation) and asserts the
+  // lastFiredDayUtc/anchorMinuteUtc through to the registry; this drives that
+  // path through the REAL starter (not a re-implementation) and asserts the
   // delivered createdAfter is the incremental since-yesterday window, not the
   // 7-day fallback.
   it("a scheduler-sourced heartbeat run gets the incremental since-last-fire createdAfter, not the 7-day manual-refresh fallback", async () => {
@@ -735,7 +775,7 @@ describe("createWorkflowRunStarter", () => {
       input: { reason: "scheduled-heartbeat" },
       creatorPrincipalId: "prn-owner",
       source: "scheduler",
-      heartbeatFire: { lastFiredDayUtc: yesterday, hourUtc: 9 },
+      heartbeatFire: { lastFiredDayUtc: yesterday, anchorMinuteUtc: 9 * 60 },
     });
 
     expect(result.ok).toBe(true);
@@ -752,6 +792,62 @@ describe("createWorkflowRunStarter", () => {
     expect(delivered.createdAfter).not.toBe(sevenDayFallback);
   });
 
+  // CL-4278 (review fix #1): a heartbeat "starting at" of e.g. 08:15 must
+  // survive as a real 15-minute offset all the way to the delivered
+  // createdAfter — the anchor used to be truncated to the hour
+  // (`Math.floor(anchorMinuteUtc / 60)`) at the scheduler → startRun seam,
+  // silently shifting the incremental lookback by up to 59 minutes against
+  // what the member actually set.
+  it("forwards a heartbeat anchor's real minute, not just its hour, into the incremental lookback", async () => {
+    chainRef = ["t-root"];
+    const sent: Record<string, unknown>[] = [];
+    const sessionService = {
+      sendUserMessage: async (a: Record<string, unknown>) => {
+        sent.push(a);
+      },
+    } as unknown as SessionService;
+    const nowMs = Date.UTC(2026, 0, 9, 13, 0, 0);
+    const today = Math.floor(nowMs / 86_400_000);
+    const yesterday = today - 1;
+    const anchorMinuteUtc = 8 * 60 + 15; // 08:15 UTC
+
+    const starter = createWorkflowRunStarter(
+      starterDeps({
+        db: makeDb([candidate({ deploymentId: "dep-1", kind: "heartbeat" })]),
+        sessionService,
+        resolveUserIdentity: async (principalId: string) => ({
+          userAddress: `usr_${principalId}@${DOMAIN}`,
+          userRefId: principalId,
+        }),
+        now: () => nowMs,
+      }),
+    );
+
+    const result = await starter.startRun({
+      kind: "heartbeat",
+      tenantId: "t-root",
+      input: { reason: "scheduled-heartbeat" },
+      creatorPrincipalId: "prn-owner",
+      source: "scheduler",
+      heartbeatFire: { lastFiredDayUtc: yesterday, anchorMinuteUtc },
+    });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error("unreachable");
+    const delivered = JSON.parse(sent[0]?.content as string) as Record<
+      string,
+      unknown
+    >;
+    const hourTruncatedWindow = new Date(
+      yesterday * 86_400_000 + 8 * 3_600_000,
+    ).toISOString();
+    const minutePreciseWindow = new Date(
+      yesterday * 86_400_000 + 8 * 3_600_000 + 15 * 60_000,
+    ).toISOString();
+    expect(delivered.createdAfter).toBe(minutePreciseWindow);
+    expect(delivered.createdAfter).not.toBe(hourTruncatedWindow);
+  });
+
   it("marks scheduler-sourced starts with triggerSource=scheduler on the run row", async () => {
     chainRef = ["t-root"];
     const db = makeDb([candidate({ deploymentId: "dep-1" })]);
@@ -765,5 +861,118 @@ describe("createWorkflowRunStarter", () => {
     });
 
     expect(db.inserted[0]?.triggerSource).toBe("scheduler");
+  });
+
+  // Real staging failure: prospect-engine had no intake declaration, so a run
+  // with no list ids sailed past start and died several steps in at the first
+  // Sumble step dereferencing an absent `enterpriseEngineListId`. Required
+  // inputs must fail the run BEFORE any deployment is provisioned, naming
+  // exactly what is missing. Slack is NOT a required input (CL-4288) — the
+  // digest always mails to the user's inbox regardless of Slack config.
+  it("rejects a prospect-engine run missing its required Sumble list ids", async () => {
+    chainRef = ["t-root"];
+    let provisioned = false;
+    const starter = createWorkflowRunStarter(
+      starterDeps({
+        db: makeDb([
+          candidate({ deploymentId: "dep-1", kind: "prospect-engine" }),
+        ]),
+        provisionRunDeployment: async () => {
+          provisioned = true;
+          return { deploymentId: "dep-run-1" };
+        },
+      }),
+    );
+
+    const result = await starter.startRun({
+      kind: "prospect-engine",
+      tenantId: "t-root",
+      input: { reason: "manual-prospect-engine" },
+    });
+
+    expect(result.ok).toBe(false);
+    if (result.ok) throw new Error("expected invalid_input");
+    expect(result.reason).toBe("invalid_input");
+    expect(result.message).not.toContain("Slack channel id");
+    expect(result.message).toContain("Engine - Growth Sumble list id");
+    expect(result.message).toContain("Engine - Enterprise Sumble list id");
+    expect(provisioned).toBe(false);
+  });
+
+  it("starts a prospect-engine run once both Engine list ids are present, with no Slack channel", async () => {
+    chainRef = ["t-root"];
+    const sent: Record<string, unknown>[] = [];
+    const sessionService = {
+      sendUserMessage: async (a: Record<string, unknown>) => {
+        sent.push(a);
+      },
+    } as unknown as SessionService;
+
+    const starter = createWorkflowRunStarter(
+      starterDeps({
+        db: makeDb([
+          candidate({ deploymentId: "dep-1", kind: "prospect-engine" }),
+        ]),
+        sessionService,
+      }),
+    );
+
+    const result = await starter.startRun({
+      kind: "prospect-engine",
+      tenantId: "t-root",
+      input: {
+        growthEngineListId: "80089",
+        enterpriseEngineListId: "80090",
+      },
+    });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error("expected ok result");
+    const delivered = JSON.parse(sent[0]?.content as string) as Record<
+      string,
+      unknown
+    >;
+    expect(delivered.growthEngineListId).toBe(80089);
+    expect(delivered.enterpriseEngineListId).toBe(80090);
+    expect(delivered.slackChannelId).toBeUndefined();
+  });
+
+  it("starts a prospect-engine run with a Slack channel present alongside both Engine list ids", async () => {
+    chainRef = ["t-root"];
+    const sent: Record<string, unknown>[] = [];
+    const sessionService = {
+      sendUserMessage: async (a: Record<string, unknown>) => {
+        sent.push(a);
+      },
+    } as unknown as SessionService;
+
+    const starter = createWorkflowRunStarter(
+      starterDeps({
+        db: makeDb([
+          candidate({ deploymentId: "dep-1", kind: "prospect-engine" }),
+        ]),
+        sessionService,
+      }),
+    );
+
+    const result = await starter.startRun({
+      kind: "prospect-engine",
+      tenantId: "t-root",
+      input: {
+        slackChannelId: "C0123456789",
+        growthEngineListId: "80089",
+        enterpriseEngineListId: "80090",
+      },
+    });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error("expected ok result");
+    const delivered = JSON.parse(sent[0]?.content as string) as Record<
+      string,
+      unknown
+    >;
+    expect(delivered.slackChannelId).toBe("C0123456789");
+    expect(delivered.growthEngineListId).toBe(80089);
+    expect(delivered.enterpriseEngineListId).toBe(80090);
   });
 });

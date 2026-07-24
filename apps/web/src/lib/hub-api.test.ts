@@ -11,6 +11,8 @@ import {
   getMyPrincipals,
   getAnalyticsSummary,
   getOutputFeedback,
+  getOwnerWorkUnitHealth,
+  getOwnerDeadWorkUnits,
   launchInstanceSession,
   listAgentInstances,
   listAgentTemplates,
@@ -553,6 +555,56 @@ describe("hub-api network helpers", () => {
 
     await expect(getOutputFeedback("inst-1")).rejects.toThrow(
       /Malformed feedback response/,
+    );
+  });
+
+  it("getOwnerWorkUnitHealth parses a well-formed health payload", async () => {
+    const health = {
+      byStatus: { pending: 2, dead: 1 },
+      oldestPendingAgeMs: 1500,
+      deadCount: 1,
+      agedLeasedCount: 0,
+    };
+    installFetch(() => ({ body: health }));
+
+    await expect(getOwnerWorkUnitHealth()).resolves.toEqual(health);
+  });
+
+  it("getOwnerWorkUnitHealth rejects a malformed health payload", async () => {
+    installFetch(() => ({
+      body: { byStatus: { pending: 2 }, deadCount: "nope" },
+    }));
+
+    await expect(getOwnerWorkUnitHealth()).rejects.toThrow(
+      /Malformed \/owner\/work-units\/health response/,
+    );
+  });
+
+  it("getOwnerDeadWorkUnits parses the items envelope", async () => {
+    const items = [
+      {
+        id: "wu_1",
+        tenantId: "t1",
+        kind: "granola_call",
+        idempotencyKey: "key-1",
+        status: "dead",
+        attempts: 3,
+        lastError: "boom",
+        updatedAt: "2026-07-20T00:00:00.000Z",
+      },
+    ];
+    installFetch(() => ({ body: { items } }));
+
+    await expect(getOwnerDeadWorkUnits()).resolves.toEqual(items);
+  });
+
+  it("getOwnerDeadWorkUnits rejects a malformed items envelope", async () => {
+    installFetch(() => ({
+      body: { items: [{ id: "wu_1", status: "dead" }] },
+    }));
+
+    await expect(getOwnerDeadWorkUnits()).rejects.toThrow(
+      /Malformed \/owner\/work-units\/dead response/,
     );
   });
 

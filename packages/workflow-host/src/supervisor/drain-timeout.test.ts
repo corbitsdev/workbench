@@ -24,7 +24,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
-import type { RepoId, RepoStore } from "@intx/hub-sessions";
+import type { RepoId, RepoStore } from "@workbench/hub-sessions";
 import type {
   SignedPayload,
   TerminalEventSource,

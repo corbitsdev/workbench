@@ -144,7 +144,10 @@ describe("reddit-opportunity-scanner blocks (CL-2769)", () => {
     expect(list.rows.length).toBe(2);
   });
 
-  test("selection gate defers to the run page when no opportunities were curated", () => {
+  test("selection gate: an honest empty state when curate succeeded but found nothing (CL-4284)", () => {
+    // The curate step COMPLETED — it just found zero opportunities. That's not
+    // "unavailable here, go to the run page" (there's nothing more to see there
+    // either); it's a genuine empty result.
     const blocks = buildRedditOpportunityScannerBlocks(
       baseInput({
         steps: [
@@ -159,7 +162,59 @@ describe("reddit-opportunity-scanner blocks (CL-2769)", () => {
       }),
     );
     expect(blocks.some((b) => b.kind === "reviewList")).toBe(false);
-    expect(blocks.some((b) => b.kind === "link")).toBe(true);
+    expect(blocks.some((b) => b.kind === "link")).toBe(false);
+    const text = blocks.find((b) => b.kind === "text");
+    expect(text?.kind === "text" && text.text).toBe(
+      "No opportunities were found on Reddit for this scan.",
+    );
+  });
+
+  test("selection gate: run-page link when curate hasn't produced readable output yet", () => {
+    const blocks = buildRedditOpportunityScannerBlocks(
+      baseInput({
+        steps: [
+          { stepId: "curate", phase: "in-flight" },
+          {
+            stepId: "selection",
+            phase: "awaiting-signal",
+            awaitingSignalName: SELECTION_SIGNAL,
+          },
+        ],
+        stepOutputs: {},
+      }),
+    );
+    expect(blocks.some((b) => b.kind === "reviewList")).toBe(false);
+    const link = blocks.find((b) => b.kind === "link");
+    expect(link?.kind === "link" && link.url).toBe("/workflows/run_1");
+  });
+
+  test("selection gate: an error naming curate when it FAILED, with a CLASSIFIED detail, never a run-page link (CL-4284)", () => {
+    const blocks = buildRedditOpportunityScannerBlocks(
+      baseInput({
+        steps: [
+          {
+            stepId: "curate",
+            phase: "failed",
+            lastError: { message: "fetch failed: reddit_subreddit_search" },
+          },
+          {
+            stepId: "selection",
+            phase: "awaiting-signal",
+            awaitingSignalName: SELECTION_SIGNAL,
+          },
+        ],
+        stepOutputs: {},
+      }),
+    );
+    expect(blocks.some((b) => b.kind === "reviewList")).toBe(false);
+    expect(blocks.some((b) => b.kind === "link")).toBe(false);
+    const error = blocks.find((b) => b.kind === "error");
+    if (error?.kind !== "error") throw new Error("expected an error block");
+    expect(error.message).toContain("curate");
+    expect(error.detail).toBe(
+      "A service this workflow depends on couldn't be reached. Try running it again in a moment.",
+    );
+    expect(error.detail).not.toContain("reddit_subreddit_search");
   });
 
   test("opportunityContent synthesizes a non-empty brief when curate emitted none", () => {

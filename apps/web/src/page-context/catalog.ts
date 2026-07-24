@@ -41,14 +41,21 @@ export const PAGE_CONTEXT_CATALOG: readonly PageContextEntry[] = [
       "Full-page Myra chat for one thread: the main conversation surface with transcript, composer, attachments, workflow gate cards, and action requests. The user is focused on a single ongoing dialogue with Myra.",
   },
   {
-    id: "artifacts-list",
-    match: (p) => p === "/artifacts",
+    id: "library",
+    match: (p) => p === "/library",
     context:
-      "Artifacts library: versioned documents and files the team shares. Users browse, search, filter, and open artifacts. Saving creates new versions; artifacts can be handed to Myra by id from other surfaces.",
+      "Library home: the top-level entry for Artifacts, Skills, and Agents — one place with three browsable views. Redirects into Artifacts by default.",
+  },
+  {
+    id: "artifacts-list",
+    match: (p) => p === "/library/artifacts",
+    context:
+      "Artifacts library: versioned documents and files the team shares, one view inside Library alongside Skills and Agents. Users browse, search, filter, and open artifacts. Saving creates new versions; artifacts can be handed to Myra by id from other surfaces.",
   },
   {
     id: "artifact-detail",
-    match: (p) => matchPrefix(p, "/artifacts/") && p !== "/artifacts",
+    match: (p) =>
+      matchPrefix(p, "/library/artifacts/") && p !== "/library/artifacts",
     context:
       "Artifact detail: one shared document or file with version history, preview, and actions such as open in Myra or copy links. The user is editing or reviewing a specific artifact, not the whole library.",
   },
@@ -69,13 +76,13 @@ export const PAGE_CONTEXT_CATALOG: readonly PageContextEntry[] = [
   },
   {
     id: "skills-library",
-    match: (p) => p === "/skills",
+    match: (p) => p === "/library/skills",
     context:
-      "Skills library: approved reusable procedures Myra and other agents can load. Users browse published skills and open one to read or refine. Pending drafts live under Skills → Pending drafts after Myra drafts a skill.",
+      "Skills library: approved reusable procedures Myra and other agents can load, one view inside Library alongside Artifacts and Agents. Users browse published skills and open one to read or refine. Pending drafts live under Skills → Pending drafts after Myra drafts a skill.",
   },
   {
     id: "skills-new",
-    match: (p) => p === "/skills/new",
+    match: (p) => p === "/library/skills/new",
     context:
       "Create skill: authoring flow for a new reusable procedure before it enters the pending-drafts queue. The user is writing skill instructions and metadata for later approval into the library.",
   },
@@ -83,16 +90,21 @@ export const PAGE_CONTEXT_CATALOG: readonly PageContextEntry[] = [
     id: "skill-detail",
     match: (p) => {
       const parts = segmentPath(p);
-      return parts[0] === "skills" && parts.length === 2 && parts[1] !== "new";
+      return (
+        parts[0] === "library" &&
+        parts[1] === "skills" &&
+        parts.length === 3 &&
+        parts[2] !== "new"
+      );
     },
     context:
       "Skill detail: one published or draft skill with its procedure text and metadata. Users review how agents should run this play and may edit if they have access.",
   },
   {
     id: "agents-list",
-    match: (p) => p === "/agents",
+    match: (p) => p === "/library/agents",
     context:
-      "Agents: read-only list of the agent instances this member has deployed — name, description, status, and mail address. Creating or editing agents is not yet available from this page.",
+      "Agents: read-only list of the agent instances this member has deployed — name, description, status, and mail address, one view inside Library alongside Artifacts and Skills. Creating or editing agents is not yet available from this page.",
   },
   {
     id: "admin-tool-detail",
@@ -212,7 +224,7 @@ export const PAGE_CONTEXT_CATALOG: readonly PageContextEntry[] = [
     id: "insights-runs",
     match: (p) => p === "/insights/runs",
     context:
-      "Workflow run history: searchable list of workflow executions with status, timing, and links to traces. Used to debug failures and audit automation.",
+      "Workflow run history: searchable list of workflow executions with status, timing, and links to traces. Used to debug failures and audit routine runs.",
   },
   {
     id: "insights-actor",

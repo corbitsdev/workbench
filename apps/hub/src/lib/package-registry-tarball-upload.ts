@@ -5,7 +5,7 @@ import {
   asTarballEntry,
   type Principal,
   type RepoStore,
-} from "@intx/hub-sessions";
+} from "@workbench/hub-sessions";
 
 const HUB_PRINCIPAL: Principal = { kind: "hub" };
 

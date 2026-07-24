@@ -5,7 +5,7 @@ import {
   AssetServiceError,
   type AssetService,
   validateTarballPackageJSON,
-} from "@intx/hub-sessions";
+} from "@workbench/hub-sessions";
 import type { HubDb } from "../db";
 import { integrityFromTarballBytes } from "./tool-packages-embedded";
 

@@ -5,7 +5,7 @@ import { and, eq, isNull } from "drizzle-orm";
 import { schema as intxSchema, getAncestorChain } from "@intx/db";
 import { getLogger } from "@intx/log";
 import type { WorkflowDefinition } from "@intx/workflow";
-import type { AgentRepoStore } from "@intx/hub-sessions";
+import type { AgentRepoStore } from "@workbench/hub-sessions";
 import type { WorkflowAutopublishMap } from "../config";
 import { workflowRun } from "../db/schema";
 import {

@@ -1,17 +1,21 @@
 import { describe, expect, test } from "bun:test";
 import { defineAgent } from "@intx/agent";
 import { awaitSignal, defineWorkflow, step } from "@intx/workflow";
+import type { ActionHandler } from "@intx/workflow";
 import { runLocal } from "@intx/workflow/runlocal";
 import type { StepInvoker } from "@intx/workflow/runtime";
 import {
   DETERMINISTIC_TOOL_KIND,
-  INLINE_INFERENCE_KIND,
   STEP_ARGMAP_TAG,
   STEP_KIND_TAG,
   STEP_TOOL_TAG,
 } from "@workbench/agents";
 
-import { workflow } from "./index";
+import {
+  workflow,
+  GRANOLA_GET_NOTE_HANDLER,
+  GRANOLA_LIST_NOTES_HANDLER,
+} from "./index";
 
 // ---------------------------------------------------------------------------
 // Test helpers
@@ -29,11 +33,41 @@ function makeRecordingInvoker(outputs: Record<string, unknown> = {}): {
   return { invoker, ran };
 }
 
+/**
+ * Records each action dispatch by its handler ref and returns a canned
+ * output, mirroring `makeRecordingInvoker` for the `step` primitive but for
+ * native `action` primitives (no agent, no step-tool tags — dispatched via
+ * `runLocal`'s `actionResolver`, not `invokeStep`).
+ */
+function makeRecordingActionResolver(outputs: Record<string, unknown> = {}): {
+  resolver: (ref: string) => ActionHandler;
+  ran: { handler: string; input: unknown }[];
+} {
+  const ran: { handler: string; input: unknown }[] = [];
+  const resolver = (ref: string): ActionHandler => {
+    return async (input) => {
+      ran.push({ handler: ref, input });
+      return outputs[ref] ?? null;
+    };
+  };
+  return { resolver, ran };
+}
+
 function stepPrimitive(id: string) {
   const primitive = workflow.steps[id];
   if (primitive === undefined || primitive.kind !== "step") {
     throw new Error(
       `expected step primitive for step id "${id}", got ${primitive?.kind ?? "undefined"}`,
+    );
+  }
+  return primitive;
+}
+
+function actionPrimitive(id: string) {
+  const primitive = workflow.steps[id];
+  if (primitive === undefined || primitive.kind !== "action") {
+    throw new Error(
+      `expected action primitive for step id "${id}", got ${primitive?.kind ?? "undefined"}`,
     );
   }
   return primitive;
@@ -69,20 +103,25 @@ describe("pain-point-collateral native workflow", () => {
     });
 
     const { invoker, ran } = makeRecordingInvoker({
-      "pain-point-collateral-intake": {
-        notes: [{ id: "note_1", title: "Acme call" }],
-      },
-      "pain-point-collateral-fetch": {
-        id: "note_1",
-        title: "Acme call",
-        summary: "Discovery",
-      },
       "pain-point-collateral-analyze": AGENT_REPLY(analyzeReply),
       "pain-point-collateral-generate": AGENT_REPLY(generateReply),
       "pain-point-collateral-persist": { artifactId: "art_1" },
     });
+    const { resolver, ran: actionsRan } = makeRecordingActionResolver({
+      [GRANOLA_LIST_NOTES_HANDLER]: {
+        notes: [{ id: "note_1", title: "Acme call" }],
+      },
+      [GRANOLA_GET_NOTE_HANDLER]: {
+        id: "note_1",
+        title: "Acme call",
+        summary: "Discovery",
+      },
+    });
 
-    const run = runLocal(workflow, { invokeStep: invoker });
+    const run = runLocal(workflow, {
+      invokeStep: invoker,
+      actionResolver: resolver,
+    });
 
     await run.signal("note-selection", { noteId: "note_1" });
     await run.signal("context", { context: "Focus on onboarding" });
@@ -109,37 +148,43 @@ describe("pain-point-collateral native workflow", () => {
 
     expect(result.terminalStatus).toBe("completed");
 
-    // Deterministic steps + inference steps (generate runs once per format item)
+    // Deterministic actions + inference steps (generate runs once per format item)
+    const actionRefs = actionsRan.map((r) => r.handler);
+    expect(actionRefs).toContain(GRANOLA_LIST_NOTES_HANDLER);
+    expect(actionRefs).toContain(GRANOLA_GET_NOTE_HANDLER);
     const ranIds = ran.map((r) => r.id);
-    expect(ranIds).toContain("pain-point-collateral-intake");
-    expect(ranIds).toContain("pain-point-collateral-fetch");
     expect(ranIds).toContain("pain-point-collateral-analyze");
     expect(ranIds).toContain("pain-point-collateral-generate");
     expect(ranIds).toContain("pain-point-collateral-persist");
   });
 
   // -------------------------------------------------------------------------
-  // Deterministic step structure
+  // Native action structure
   // -------------------------------------------------------------------------
-  test("intake and fetch are deterministic tool steps, not inference steps", () => {
-    const intake = stepPrimitive("intake");
-    const fetch = stepPrimitive("fetch");
+  test("intake and fetch are native action primitives — no Workbench dispatch tags, no agent", () => {
+    const intake = actionPrimitive("intake");
+    const fetch = actionPrimitive("fetch");
 
-    expect(intake.agent.tags?.[STEP_KIND_TAG]).toBe(DETERMINISTIC_TOOL_KIND);
-    expect(intake.agent.tags?.[STEP_TOOL_TAG]).toContain("granola_list_notes");
-    expect(intake.agent.inference.sources).toEqual([]);
+    expect(intake.handler).toBe(GRANOLA_LIST_NOTES_HANDLER);
+    expect(intake.input).toEqual({ literal: {} });
+    expect(intake.effect).toEqual({ requires: [GRANOLA_LIST_NOTES_HANDLER] });
 
-    expect(fetch.agent.tags?.[STEP_KIND_TAG]).toBe(DETERMINISTIC_TOOL_KIND);
-    expect(fetch.agent.tags?.[STEP_TOOL_TAG]).toContain("granola_get_note");
-    expect(fetch.agent.inference.sources).toEqual([]);
+    expect(fetch.handler).toBe(GRANOLA_GET_NOTE_HANDLER);
+    expect(fetch.input).toEqual({ from: "steps.select.output" });
+    expect(fetch.effect).toEqual({ requires: [GRANOLA_GET_NOTE_HANDLER] });
+
+    // No `agent` field at all on an action primitive — confirms there is
+    // nothing left for a Workbench-specific step-kind/argMap tag to hang off.
+    expect("agent" in intake).toBe(false);
+    expect("agent" in fetch).toBe(false);
   });
 
-  test("analyze is an inline-inference step (no per-step session) with a real prompt", () => {
+  test("analyze is a native reasoning step (agentStep) with a real prompt and no dispatch tag", () => {
     const analyze = stepPrimitive("analyze");
-    // Inline single-turn inference (CL-2251): marker tag set, no deterministic
-    // tool tag, real reasoning prompt, and no source declared on the definition
-    // (the source is pinned at deploy time / resolved by the sidecar).
-    expect(analyze.agent.tags?.[STEP_KIND_TAG]).toBe(INLINE_INFERENCE_KIND);
+    // No Workbench dispatch tag at all: no deterministic tool tag, real
+    // reasoning prompt, and no source declared on the definition (the source
+    // is pinned at deploy time / resolved by the sidecar).
+    expect(analyze.agent.tags?.[STEP_KIND_TAG]).toBeUndefined();
     expect(analyze.agent.tags?.[STEP_TOOL_TAG]).toBeUndefined();
     expect(analyze.agent.systemPrompt.length).toBeGreaterThan(0);
     expect(analyze.agent.capabilities).toEqual([]);
@@ -149,8 +194,8 @@ describe("pain-point-collateral native workflow", () => {
   // -------------------------------------------------------------------------
   // Selector wiring
   // -------------------------------------------------------------------------
-  test("fetch step input reads from the note-selection signal output", () => {
-    expect(stepPrimitive("fetch").input).toEqual({
+  test("fetch action input reads from the note-selection signal output", () => {
+    expect(actionPrimitive("fetch").input).toEqual({
       from: "steps.select.output",
     });
   });
@@ -202,18 +247,22 @@ describe("pain-point-collateral native workflow", () => {
   // Signal ordering — workflow blocks until each awaitSignal
   // -------------------------------------------------------------------------
   test("workflow is blocked at context signal after fetch completes", async () => {
-    const { invoker, ran } = makeRecordingInvoker({
-      "pain-point-collateral-intake": { notes: [] },
-      "pain-point-collateral-fetch": { id: "note_1", title: "x", summary: "" },
+    const { invoker, ran } = makeRecordingInvoker({});
+    const { resolver, ran: actionsRan } = makeRecordingActionResolver({
+      [GRANOLA_LIST_NOTES_HANDLER]: { notes: [] },
+      [GRANOLA_GET_NOTE_HANDLER]: { id: "note_1", title: "x", summary: "" },
     });
-    const run = runLocal(workflow, { invokeStep: invoker });
+    const run = runLocal(workflow, {
+      invokeStep: invoker,
+      actionResolver: resolver,
+    });
 
     await run.signal("note-selection", { noteId: "note_1" });
 
     // Poll for fetch to complete
     await new Promise<void>((resolve) => {
       const interval = setInterval(() => {
-        if (ran.some((r) => r.id === "pain-point-collateral-fetch")) {
+        if (actionsRan.some((r) => r.handler === GRANOLA_GET_NOTE_HANDLER)) {
           clearInterval(interval);
           resolve();
         }
@@ -236,15 +285,20 @@ describe("pain-point-collateral native workflow", () => {
 
   test("workflow is blocked at pain-point-selection after analyze completes", async () => {
     const { invoker, ran } = makeRecordingInvoker({
-      "pain-point-collateral-intake": { notes: [] },
-      "pain-point-collateral-fetch": { id: "note_1", title: "x" },
       "pain-point-collateral-analyze": AGENT_REPLY(
         JSON.stringify({
           painPoints: [{ id: "pp1", title: "T", detail: "D" }],
         }),
       ),
     });
-    const run = runLocal(workflow, { invokeStep: invoker });
+    const { resolver } = makeRecordingActionResolver({
+      [GRANOLA_LIST_NOTES_HANDLER]: { notes: [] },
+      [GRANOLA_GET_NOTE_HANDLER]: { id: "note_1", title: "x" },
+    });
+    const run = runLocal(workflow, {
+      invokeStep: invoker,
+      actionResolver: resolver,
+    });
 
     await run.signal("note-selection", { noteId: "note_1" });
     await run.signal("context", { context: "" });

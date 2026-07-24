@@ -26,11 +26,14 @@ function jsonResponse(body: unknown, status = 200): Response {
 const scheduleOn = {
   id: "sch_1",
   workflowKind: "morning-brief",
-  hourUtc: 13,
+  recurrence: { intervalMinutes: 1440, anchorMinuteUtc: 13 * 60 },
   enabled: true,
+  scope: "personal" as const,
+  ownerMemberPrincipalId: "prn_1",
   triggerPayload: {},
   createdAt: "2026-01-01T00:00:00.000Z",
-  lastFiredDayUtc: null,
+  lastRunId: null,
+  recentFires: [],
   nextFireAt: "2026-01-02T13:00:00.000Z",
 };
 
@@ -131,10 +134,16 @@ describe("useCreateSchedule", () => {
       wrapper: wrapper(client),
     });
 
-    result.current.mutate({ kind: "morning-brief", hourUtc: 13 });
+    result.current.mutate({
+      kind: "morning-brief",
+      recurrence: { intervalMinutes: 1440, anchorMinuteUtc: 13 * 60 },
+    });
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
 
     expect(captured.url).toContain("/me/schedules");
-    expect(captured.body).toEqual({ kind: "morning-brief", hourUtc: 13 });
+    expect(captured.body).toEqual({
+      kind: "morning-brief",
+      recurrence: { intervalMinutes: 1440, anchorMinuteUtc: 13 * 60 },
+    });
   });
 });

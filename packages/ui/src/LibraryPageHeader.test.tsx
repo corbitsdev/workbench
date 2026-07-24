@@ -105,4 +105,79 @@ describe("LibrarySearchInput", () => {
     expect(input.className).toContain("rounded-input");
     expect(input.className).not.toContain("rounded-[9px]");
   });
+
+  it("expands on focus and collapses on blur once empty", () => {
+    render(
+      <LibrarySearchInput label="Search tools" value="" onChange={() => {}} />,
+    );
+    const input = screen.getByLabelText("Search tools") as HTMLInputElement;
+    expect(input.style.width).toBe("180px");
+    fireEvent.focus(input);
+    expect(input.style.width).toBe("340px");
+    fireEvent.blur(input);
+    expect(input.style.width).toBe("180px");
+  });
+
+  it("stays expanded on blur while it holds a value", () => {
+    render(
+      <LibrarySearchInput
+        label="Search tools"
+        value="linear"
+        onChange={() => {}}
+      />,
+    );
+    const input = screen.getByLabelText("Search tools") as HTMLInputElement;
+    expect(input.style.width).toBe("340px");
+    fireEvent.blur(input);
+    expect(input.style.width).toBe("340px");
+  });
+
+  it("does not shift its reserved slot width in the flow when it expands", () => {
+    render(
+      <LibrarySearchInput label="Search tools" value="" onChange={() => {}} />,
+    );
+    const input = screen.getByLabelText("Search tools") as HTMLInputElement;
+    const slot = input.parentElement as HTMLElement;
+    expect(slot.style.width).toBe("180px");
+    fireEvent.focus(input);
+    expect(slot.style.width).toBe("180px");
+    expect(input.className).toContain("absolute");
+  });
+
+  it("Escape clears an active query before it relinquishes focus", () => {
+    let value = "roi";
+    const onChange = (v: string) => {
+      value = v;
+    };
+    const { rerender } = render(
+      <LibrarySearchInput
+        label="Search tools"
+        value={value}
+        onChange={onChange}
+      />,
+    );
+    const input = screen.getByLabelText("Search tools") as HTMLInputElement;
+    input.focus();
+    fireEvent.keyDown(input, { key: "Escape" });
+    expect(value).toBe("");
+    rerender(
+      <LibrarySearchInput
+        label="Search tools"
+        value={value}
+        onChange={onChange}
+      />,
+    );
+    expect(document.activeElement).toBe(input);
+  });
+
+  it("Escape blurs the input once it is already empty", () => {
+    render(
+      <LibrarySearchInput label="Search tools" value="" onChange={() => {}} />,
+    );
+    const input = screen.getByLabelText("Search tools") as HTMLInputElement;
+    input.focus();
+    expect(document.activeElement).toBe(input);
+    fireEvent.keyDown(input, { key: "Escape" });
+    expect(document.activeElement).not.toBe(input);
+  });
 });

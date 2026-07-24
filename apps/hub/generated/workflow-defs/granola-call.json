@@ -1,0 +1,112 @@
+{
+  "kind": "granola-call",
+  "version": "0.1.0",
+  "label": "Granola Call Processing",
+  "description": "Automatic Granola call processing: on every run, discover recent calls and start one process-granola-call run per call that has no call-notes artifact yet. Bounded by maxCalls (default 10). Idempotent — already-processed calls are skipped, so a quiet run spawns nothing.",
+  "displayFlow": [
+    {
+      "key": "discover",
+      "label": "Discover recent calls",
+      "stepIds": [
+        "discover"
+      ]
+    },
+    {
+      "key": "spawn",
+      "label": "Start per-call processing",
+      "stepIds": [
+        "spawn"
+      ],
+      "activityLabel": "Starting per-call processing"
+    }
+  ],
+  "requiresIntake": false,
+  "humanGateCount": 0,
+  "intakeFields": [
+    {
+      "name": "maxCalls",
+      "label": "Max calls per run",
+      "inputHint": "text",
+      "required": false,
+      "help": "How many recent Granola calls to look at each run (a number). Defaults to 10.",
+      "placeholder": "10",
+      "order": 0
+    }
+  ],
+  "definition": {
+    "id": "granola-call",
+    "triggers": [
+      {
+        "type": "manual"
+      }
+    ],
+    "steps": {
+      "discover": {
+        "kind": "step",
+        "id": "discover",
+        "agent": {
+          "id": "granola-call-discover",
+          "systemPrompt": "",
+          "toolFactories": [],
+          "capabilities": [
+            "@workbench/tools-granola/granola:granola_list_notes"
+          ],
+          "inference": {
+            "sources": []
+          },
+          "description": "Deterministic tool call: @workbench/tools-granola/granola:granola_list_notes",
+          "tags": {
+            "workbench.stepKind": "deterministic-tool",
+            "workbench.tool": "@workbench/tools-granola/granola:granola_list_notes",
+            "workbench.argMap": "{\"limit\":{\"from\":\"maxCalls\",\"optional\":true},\"createdAfter\":{\"from\":\"createdAfter\",\"optional\":true},\"createdBefore\":{\"from\":\"createdBefore\",\"optional\":true},\"folderId\":{\"from\":\"folderId\",\"optional\":true}}",
+            "workbench.title": "Discover recent calls"
+          }
+        },
+        "drainBehavior": "cancel",
+        "input": {
+          "from": "trigger.payload"
+        }
+      },
+      "spawn": {
+        "kind": "step",
+        "id": "spawn",
+        "agent": {
+          "id": "granola-call-spawn",
+          "systemPrompt": "",
+          "toolFactories": [],
+          "capabilities": [
+            "@workbench/tools-granola/hub:granola_spawn_call_runs"
+          ],
+          "inference": {
+            "sources": []
+          },
+          "description": "Deterministic tool call: @workbench/tools-granola/hub:granola_spawn_call_runs",
+          "tags": {
+            "workbench.stepKind": "deterministic-tool",
+            "workbench.tool": "@workbench/tools-granola/hub:granola_spawn_call_runs",
+            "workbench.argMap": "{\"content\":{\"from\":\"content\"},\"maxCalls\":{\"from\":\"maxCalls\",\"optional\":true}}",
+            "workbench.title": "Start per-call processing"
+          }
+        },
+        "drainBehavior": "cancel",
+        "input": {
+          "merge": [
+            {
+              "from": "steps.discover.output"
+            },
+            {
+              "from": "trigger.payload"
+            }
+          ]
+        },
+        "after": [
+          "discover"
+        ]
+      }
+    },
+    "stepOrder": [
+      "discover",
+      "spawn"
+    ]
+  }
+}

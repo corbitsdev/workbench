@@ -4,7 +4,10 @@ import {
   enrichHeartbeatTriggerPayload,
   type HeartbeatMemberIdentity,
 } from "../lib/heartbeat-trigger-payload";
-import { resolveEnabledBriefSources } from "@workbench/shared";
+import {
+  enrichProspectEngineTriggerPayload,
+  resolveEnabledBriefSources,
+} from "@workbench/shared";
 
 export type TriggerPayloadEnrichmentDeps = {
   db: HubDb;
@@ -24,14 +27,17 @@ export type TriggerPayloadEnrichmentDeps = {
  * start door except the scheduler defaults to `"manual-refresh"` (a full
  * 7-day lookback): the scheduler is the only caller with a real
  * "since-last-fire" window to offer, so it is the only one that passes
- * `lastFiredDayUtc`/`hourUtc`/`"scheduled"` explicitly.
+ * `lastFiredDayUtc`/`anchorMinuteUtc`/`"scheduled"` explicitly.
  */
 export type TriggerPayloadEnrichmentCtx = {
   kind: string;
   tenantId: string;
   principalId: string;
   lastFiredDayUtc?: number | null;
-  hourUtc?: number;
+  /** Minute-of-UTC-day the schedule anchors on (CL-4278) — minute precision,
+   * not truncated to the hour, so the enricher's since-last-fire lookback
+   * matches the actual anchor a member set (e.g. 08:15, not 08:00). */
+  anchorMinuteUtc?: number;
   lookback?: "scheduled" | "manual-refresh";
 };
 
@@ -63,12 +69,36 @@ const TRIGGER_PAYLOAD_ENRICHERS: Record<string, TriggerPayloadEnricher> = {
       resolveEnabledBriefSources(prefs),
       (deps.now ?? Date.now)(),
       ctx.lastFiredDayUtc ?? null,
-      ctx.hourUtc ?? 0,
+      ctx.anchorMinuteUtc ?? 0,
       ctx.lookback ?? "manual-refresh",
       identity,
     );
   },
+  // Overnight prospect engine (CL-3497): stamp ET runDate + artifact title,
+  // resolve mail identity, coerce Engine list ids from schedule strings to
+  // integers Sumble write tools accept.
+  "prospect-engine": async (deps, ctx, input) => {
+    const identity = await deps.resolveUserIdentity(ctx.principalId);
+    return enrichProspectEngineTriggerPayload(
+      input,
+      (deps.now ?? Date.now)(),
+      {
+        userAddress: identity.userAddress,
+        userRefId: identity.userRefId,
+      },
+      ctx.lookback ?? "manual-refresh",
+    );
+  },
 };
+
+/**
+ * Kinds with a registered trigger-payload enricher (CL-4204 routine
+ * eligibility derivation): these kinds may rely on the enricher to supply
+ * entry-step trigger fields that are not collected as schedule intake.
+ */
+export const ENRICHED_TRIGGER_KINDS: ReadonlySet<string> = new Set(
+  Object.keys(TRIGGER_PAYLOAD_ENRICHERS),
+);
 
 /**
  * Apply the registered trigger-payload enrichment for `ctx.kind`, if any.

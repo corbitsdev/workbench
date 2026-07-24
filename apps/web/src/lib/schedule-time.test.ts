@@ -1,57 +1,129 @@
 /// <reference types="bun" />
 import { describe, expect, it } from "bun:test";
 import {
-  formatLastFired,
+  amountUnitFromInterval,
+  anchorToLocalTimeInputValue,
+  defaultRecurrence,
+  formatLastFiredAt,
   formatNextFire,
+  formatRecurrence,
   formatUtcHourLocal,
-  localHourToUtc,
-  localMinutesOfDay,
-  utcHourOptions,
+  intervalFromAmountUnit,
+  localTimeInputValueToAnchor,
+  onlyDailyAllowedForKind,
 } from "./schedule-time";
 
-describe("schedule-time", () => {
-  it("offers all 24 UTC hours exactly once", () => {
-    const options = utcHourOptions();
-    expect(options).toHaveLength(24);
-    const hours = new Set(options.map((o) => o.hourUtc));
-    expect(hours.size).toBe(24);
-    for (let h = 0; h < 24; h++) expect(hours.has(h)).toBe(true);
+describe("amountUnitFromInterval / intervalFromAmountUnit", () => {
+  it("round-trips a sub-hourly interval (CL-4278)", () => {
+    const { amount, unit } = amountUnitFromInterval(5);
+    expect(amount).toBe(5);
+    expect(unit).toBe("minutes");
+    expect(intervalFromAmountUnit(amount, unit)).toBe(5);
   });
 
-  it("orders options by the local clock, not by UTC", () => {
-    const options = utcHourOptions();
-    const minutes = options.map((o) => localMinutesOfDay(o.hourUtc));
-    const sorted = [...minutes].sort((a, b) => a - b);
-    expect(minutes).toEqual(sorted);
+  it("decomposes a daily interval to 1 day, not 1440 minutes", () => {
+    expect(amountUnitFromInterval(1440)).toEqual({ amount: 1, unit: "days" });
   });
 
-  it("labels every option with a clock time", () => {
-    for (const { label } of utcHourOptions()) {
-      expect(label).toMatch(/\d/);
-      expect(label).toContain(":00");
-    }
+  it("decomposes a weekly interval to 1 week", () => {
+    expect(amountUnitFromInterval(10080)).toEqual({
+      amount: 1,
+      unit: "weeks",
+    });
   });
 
-  it("round-trips a local hour through UTC back to the same local minute", () => {
-    const utc = localHourToUtc(8);
-    expect(utc).toBeGreaterThanOrEqual(0);
-    expect(utc).toBeLessThanOrEqual(23);
-    // 8:00 local is 8 * 60 minutes past local midnight. Half-hour zones can't
-    // round-trip through an integer UTC hour, so only assert on whole-hour zones.
-    if (new Date().getTimezoneOffset() % 60 === 0) {
-      expect(localMinutesOfDay(utc)).toBe(8 * 60);
-    }
+  it("decomposes an hours-multiple interval to hours, not minutes", () => {
+    expect(amountUnitFromInterval(180)).toEqual({ amount: 3, unit: "hours" });
   });
 
+  it("falls back to minutes for an interval with no clean larger unit", () => {
+    expect(amountUnitFromInterval(7)).toEqual({ amount: 7, unit: "minutes" });
+  });
+
+  it("clamps a recomposed interval to the schema's 1..10080 bounds", () => {
+    expect(intervalFromAmountUnit(0, "minutes")).toBe(1);
+    expect(intervalFromAmountUnit(999, "weeks")).toBe(10080);
+  });
+});
+
+describe("anchorToLocalTimeInputValue / localTimeInputValueToAnchor", () => {
+  it("round-trips a local time-of-day value", () => {
+    const value = "08:15";
+    const anchor = localTimeInputValueToAnchor(value);
+    expect(anchorToLocalTimeInputValue(anchor)).toBe(value);
+  });
+});
+
+describe("formatRecurrence", () => {
+  it("renders a sub-hourly cadence correctly (CL-4278)", () => {
+    const label = formatRecurrence({
+      intervalMinutes: 5,
+      anchorMinuteUtc: 0,
+    });
+    expect(label).toContain("Every 5 minutes");
+    expect(label).toContain("starting at");
+  });
+
+  it("renders a daily cadence in plain language", () => {
+    const label = formatRecurrence({
+      intervalMinutes: 1440,
+      anchorMinuteUtc: 0,
+    });
+    expect(label).toContain("Once a day");
+    expect(label).toContain("starting at");
+  });
+
+  it("renders a weekly cadence in plain language", () => {
+    const label = formatRecurrence({
+      intervalMinutes: 10080,
+      anchorMinuteUtc: 0,
+    });
+    expect(label).toContain("Once a week");
+  });
+
+  it("renders a multi-unit cadence with pluralized units", () => {
+    const label = formatRecurrence({
+      intervalMinutes: 180,
+      anchorMinuteUtc: 0,
+    });
+    expect(label).toContain("Every 3 hours");
+  });
+});
+
+describe("onlyDailyAllowedForKind", () => {
+  it("locks heartbeat to a daily-only cadence", () => {
+    expect(onlyDailyAllowedForKind("heartbeat")).toBe(true);
+  });
+
+  it("leaves other kinds free to pick any interval", () => {
+    expect(onlyDailyAllowedForKind("gamma")).toBe(false);
+  });
+});
+
+describe("defaultRecurrence", () => {
+  it("defaults to a daily cadence at the current local hour", () => {
+    const recurrence = defaultRecurrence();
+    expect(recurrence.intervalMinutes).toBe(1440);
+    expect(recurrence.anchorMinuteUtc % 60).toBe(0);
+  });
+});
+
+describe("formatUtcHourLocal", () => {
   it("formats a UTC hour as a local wall-clock time", () => {
-    expect(formatUtcHourLocal(localHourToUtc(0))).toContain("12:00");
+    expect(formatUtcHourLocal(0)).toMatch(/\d/);
   });
+});
 
+describe("formatLastFiredAt", () => {
   it("reports never-fired schedules distinctly from fired ones", () => {
-    expect(formatLastFired(null)).toBe("Not yet fired");
-    expect(formatLastFired(0)).not.toBe("Not yet fired");
+    expect(formatLastFiredAt(null)).toBe("Not yet fired");
+    expect(formatLastFiredAt("2026-01-05T14:00:00.000Z")).not.toBe(
+      "Not yet fired",
+    );
   });
+});
 
+describe("formatNextFire", () => {
   it("reports paused schedules as paused regardless of hub nextFireAt", () => {
     expect(formatNextFire("2026-01-05T14:00:00.000Z", false)).toBe("Paused");
     expect(formatNextFire(null, true)).toBe("Paused");

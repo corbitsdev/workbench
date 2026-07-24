@@ -9,7 +9,7 @@ import {
 } from "../lib/myra-variants";
 
 const TOOLS_NOTE =
-  "Tool choices apply the next time Myra starts — new threads, future inbox automation runs, and existing threads after they next wake.";
+  "Tool choices apply the next time Myra starts — new threads, future inbox routine runs, and existing threads after they next wake.";
 
 interface MyraToolsPanelProps {
   readonly tenantId: string | null;

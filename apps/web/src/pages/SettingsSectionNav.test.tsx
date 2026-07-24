@@ -43,14 +43,14 @@ afterEach(() => {
 });
 
 describe("SettingsSectionNav management group visibility", () => {
-  it("shows no management group (and no group headings) for a plain member", async () => {
+  it("shows no admin/owner management group for a plain member", async () => {
     meFlags = { isAdmin: false, isOwner: false };
     renderNav();
     await waitFor(() => screen.getByText("Your agent"));
     expect(screen.queryByText("Users & agents")).toBeNull();
     expect(screen.queryByText("Workbench management")).toBeNull();
     expect(screen.queryByText("Management")).toBeNull();
-    expect(screen.queryByText("Personal")).toBeNull();
+    expect(screen.getByText("Personal")).toBeTruthy();
   });
 
   it("shows only Users & agents for an admin who is not an owner", async () => {

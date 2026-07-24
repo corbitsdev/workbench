@@ -29,6 +29,8 @@ const catalog = {
       pauseCount: 0,
       steps: [],
       attachable: true,
+      allowedScopes: ["personal"] as const,
+      defaultScope: "personal" as const,
     },
     {
       kind: "last30days-research",
@@ -38,6 +40,8 @@ const catalog = {
       pauseCount: 0,
       steps: [],
       attachable: true,
+      allowedScopes: ["personal", "tenant"] as const,
+      defaultScope: "personal" as const,
       intakeFields: [
         { kind: "text", name: "topic", label: "Topic", required: true },
         { kind: "textarea", name: "focus", label: "Focus (optional)" },
@@ -51,6 +55,8 @@ const catalog = {
       pauseCount: 3,
       steps: [],
       attachable: false,
+      allowedScopes: ["personal"] as const,
+      defaultScope: "personal" as const,
     },
   ],
 };
@@ -62,7 +68,7 @@ const preferenceSettings = [
     default: 13,
     label: "Morning brief time",
     description: "",
-    category: "Automations",
+    category: "Routines",
     value: 13,
   },
 ];
@@ -83,11 +89,14 @@ function makeFetch(
         const created = {
           id: `sch_${schedules.length + 1}`,
           workflowKind: body.kind,
-          hourUtc: body.hourUtc,
+          recurrence: body.recurrence,
           enabled: true,
+          scope: "personal",
+          ownerMemberPrincipalId: "member-1",
           triggerPayload: {},
           createdAt: "2026-01-01T00:00:00.000Z",
-          lastFiredDayUtc: null,
+          lastRunId: null,
+          recentFires: [],
           nextFireAt: "2026-01-02T13:00:00.000Z",
         };
         schedules = [...schedules, created];
@@ -170,7 +179,7 @@ describe("BriefWorkflowAttachments", () => {
     await waitFor(() =>
       expect(created).toEqual({
         kind: "last30days-research",
-        hourUtc: 13,
+        recurrence: { intervalMinutes: 1440, anchorMinuteUtc: 13 * 60 },
         payload: { topic: "AI agents for GTM" },
       }),
     );
@@ -181,11 +190,14 @@ describe("BriefWorkflowAttachments", () => {
       {
         id: "sch_1",
         workflowKind: "last30days-research",
-        hourUtc: 13,
+        recurrence: { intervalMinutes: 1440, anchorMinuteUtc: 13 * 60 },
         enabled: true,
+        scope: "personal",
+        ownerMemberPrincipalId: "member-1",
         triggerPayload: {},
         createdAt: "2026-01-01T00:00:00.000Z",
-        lastFiredDayUtc: null,
+        lastRunId: null,
+        recentFires: [],
         nextFireAt: "2026-01-02T13:00:00.000Z",
       },
     ]) as unknown as typeof fetch;

@@ -17,7 +17,7 @@
   "dependencies": {
     "@intx/agent": "workspace:*",
     "@intx/crypto": "workspace:*",
-    "@intx/hub-sessions": "workspace:*",
+    "@workbench/hub-sessions": "workspace:*",
     "@intx/inference": "workspace:*",
     "@intx/log": "workspace:*",
     "@intx/mail-memory": "workspace:*",

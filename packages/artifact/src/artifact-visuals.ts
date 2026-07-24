@@ -196,6 +196,35 @@ const KIND_VISUALS: Record<string, ArtifactVisual> = {
     experimentalFill: "bg-cream",
     experimentalSpan: "row-span-4",
   },
+  // Legacy combined Granola call artifact (pre-CL-3647 single-kind path).
+  "granola-call": {
+    label: "Call",
+    fill: "bg-orange",
+    span: "row-span-3",
+    experimentalFill: "bg-orange/85",
+    experimentalSpan: "row-span-3",
+  },
+  "granola-call-pain-points": {
+    label: "Call Pain Points",
+    fill: "bg-orange",
+    span: "row-span-3",
+    experimentalFill: "bg-orange/85",
+    experimentalSpan: "row-span-3",
+  },
+  "granola-call-summary": {
+    label: "Call Summary",
+    fill: "bg-charcoal",
+    span: "row-span-3",
+    experimentalFill: "bg-charcoal/90",
+    experimentalSpan: "row-span-3",
+  },
+  "granola-call-brief": {
+    label: "Call Brief",
+    fill: "bg-charcoal",
+    span: "row-span-4",
+    experimentalFill: "bg-charcoal/90",
+    experimentalSpan: "row-span-4",
+  },
   web: {
     label: "Web page",
     fill: "bg-blue",
@@ -218,11 +247,17 @@ const KIND_VISUALS: Record<string, ArtifactVisual> = {
     experimentalSpan: "row-span-3",
   },
   // The workflow's persisted `research` kind, the generic `report` kind, and
-  // the heartbeat's stable `morning-brief` kind (CL-3503) share one tile
-  // treatment.
+  // the heartbeat's stable `morning-brief` kind (CL-3503) and the prospect
+  // engine's nightly report (CL-3497) share one tile treatment.
   research: REPORT_VISUAL,
   report: REPORT_VISUAL,
   "morning-brief": REPORT_VISUAL,
+  // Overnight prospect engine nightly list (CL-3497). Ledger kind intentionally
+  // omitted so it stays out of the gallery vocabulary (de-emphasized).
+  "prospect-engine-report": {
+    ...REPORT_VISUAL,
+    label: "Prospect list",
+  },
 };
 
 const FALLBACK_VISUAL: ArtifactVisual = {
@@ -239,7 +274,9 @@ const FALLBACK_VISUAL: ArtifactVisual = {
  * the vocabulary other surfaces (e.g. apps/web's detail-page label) should
  * defer to, rather than each maintaining its own kind → label table.
  */
-export function explicitVisualForKind(kind: string): ArtifactVisual | undefined {
+export function explicitVisualForKind(
+  kind: string,
+): ArtifactVisual | undefined {
   if (isLinkedInPostArtifactKind(kind)) {
     return LINKEDIN_POST_VISUAL;
   }
@@ -255,16 +292,6 @@ export const KNOWN_ARTIFACT_KINDS: readonly string[] = [
 
 export function visualForKind(kind: string): ArtifactVisual {
   return explicitVisualForKind(kind) ?? FALLBACK_VISUAL;
-}
-
-const STATUS_LABELS: Record<string, string> = {
-  draft: "Draft",
-  approved: "Approved",
-  rejected: "Rejected",
-};
-
-export function labelForStatus(status: string): string {
-  return STATUS_LABELS[status] ?? status;
 }
 
 const RELATIVE_TIME = new Intl.RelativeTimeFormat("en", { numeric: "auto" });
@@ -422,7 +449,6 @@ export function toGalleryArtifact(
     time: formatRelativeTime(artifact.updatedAt),
     provenance: provenance.label,
     provenanceTone: provenance.tone,
-    status: artifact.status,
     ...(excerpt.length > 0 ? { previewExcerpt: excerpt } : {}),
     ...(options.thumbnailUrl !== undefined
       ? { thumbnailUrl: options.thumbnailUrl }

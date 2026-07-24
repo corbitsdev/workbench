@@ -258,22 +258,66 @@ export type ClarificationPayload = typeof ClarificationPayloadSchema.infer;
 // (CL-2684): a SKIP is `{ confirm: false }` and nothing else is needed; a
 // CONFIRM (`confirm: true`) REQUIRES the full write locators — the record the
 // note attaches to (`parentObject` + `parentRecordId`), the `taskId` to
-// complete, and a non-empty `note` — so a confirm with any locator or the note
+// complete (duplicated as `idempotencyKey`, attio_create_note's retry-dedupe
+// key), and a non-empty `content` — so a confirm with any locator or the note
 // missing is rejected at the /resume boundary rather than reaching
 // attio_create_note / attio_update_task and writing nothing (or the wrong
-// thing). The run-page panel assembles the locators from prior step state and
-// gates the note; the dock's block path carries the same locators in the
-// confirm option's payload and gates the note with a required prompt-box.
+// thing). The run-page panel and the dock's block path both assemble these
+// field names directly — they are attio_create_note / attio_update_task's own
+// arguments, so the write-back steps read this payload with no argMap.
+//
+// TRANSITIONAL third branch (CL-4232): the pre-rename shape (`note`, no
+// `idempotencyKey`) a run parked at this gate before the content/idempotencyKey
+// rename deployed may still submit — the dock/panel assembled that payload
+// into the client's already-rendered block *before* the deploy, so it is
+// submitted *after* the deploy with the old field names. Accepted here and
+// folded to the canonical shape by `normalizeSyncApprovalPayload` at the
+// /resume boundary (apps/hub/src/workflow-executor/resume-payload-registry.ts)
+// before it reaches the write-back steps. DELETE this branch (and the
+// normalizer) once no attio-task-agent run can still be parked at sync-approval
+// from before that deploy.
 export const SyncApprovalPayloadSchema = type({
   confirm: "false",
-}).or({
-  confirm: "true",
-  taskId: "string > 0",
-  parentObject: "string > 0",
-  parentRecordId: "string > 0",
-  note: "string >= 1",
-});
+})
+  .or({
+    confirm: "true",
+    taskId: "string > 0",
+    idempotencyKey: "string > 0",
+    parentObject: "string > 0",
+    parentRecordId: "string > 0",
+    content: "string >= 1",
+  })
+  .or({
+    confirm: "true",
+    taskId: "string > 0",
+    parentObject: "string > 0",
+    parentRecordId: "string > 0",
+    note: "string >= 1",
+  });
 export type SyncApprovalPayload = typeof SyncApprovalPayloadSchema.infer;
+
+/**
+ * Fold a validated `SyncApprovalPayload` to the canonical write-back shape.
+ * A confirm already carrying `content` (the current client shape) passes
+ * through untouched; the transitional legacy shape (`note`, no
+ * `idempotencyKey`) maps `note` -> `content` and derives `idempotencyKey`
+ * from `taskId`, the same way the current client does. See the TRANSITIONAL
+ * comment on `SyncApprovalPayloadSchema` for the deletion condition.
+ */
+export function normalizeSyncApprovalPayload(
+  payload: SyncApprovalPayload,
+): SyncApprovalPayload {
+  if (payload.confirm === false) return payload;
+  if ("content" in payload) return payload;
+  return {
+    confirm: true,
+    taskId: payload.taskId,
+    idempotencyKey: payload.taskId,
+    parentObject: payload.parentObject,
+    parentRecordId: payload.parentRecordId,
+    content: payload.note,
+  };
+}
 
 // The planner's unit of work — a NON-DESTRUCTIVE action the executor performs
 // (produces an output/draft with no external side effect). `type` names the

@@ -10,6 +10,7 @@ import {
 } from "@intx/agent";
 import type { ToolDefinition, ToolResult } from "@intx/types/runtime";
 import { type } from "arktype";
+import { withToolErrorRecoveryGuidance } from "@workbench/shared";
 import {
   HUB_RPC_ENV_KEY,
   type ToolCredential,
@@ -18,7 +19,17 @@ import {
   toolCredentialEnvKey,
 } from "./index";
 
-const HubToolRunResponse = type({ result: "string", isError: "boolean" });
+// Additive wire shape: `result` is always the text form (old clients only
+// know this field); `structuredResult`, when present, is a kind-full tool's
+// content verbatim (e.g. write_artifact's { artifactId, version, title }) —
+// downstream step selectors consume it as an object, so updated clients
+// prefer it. Validated, never cast: the object arm mirrors ToolResult's own
+// `string | Record<string, unknown>` content contract.
+const HubToolRunResponse = type({
+  result: "string",
+  isError: "boolean",
+  "structuredResult?": "Record<string, unknown>",
+});
 
 /** Whether a tool only reads external state (`read`) or mutates it (`write`). */
 export type ToolSideEffect = "read" | "write";
@@ -119,7 +130,9 @@ export function defineHubBackedToolPackage(opts: {
               const text = await res.text();
               return {
                 callId: call.id,
-                content: `hub tool ${call.name} failed: ${String(res.status)} ${text}`,
+                content: withToolErrorRecoveryGuidance(
+                  `hub tool ${call.name} failed: ${String(res.status)} ${text}`,
+                ),
                 isError: true,
               };
             }
@@ -127,19 +140,33 @@ export function defineHubBackedToolPackage(opts: {
             if (parsed instanceof type.errors) {
               return {
                 callId: call.id,
-                content: `invalid hub-tool response: ${parsed.summary}`,
+                content: withToolErrorRecoveryGuidance(
+                  `invalid hub-tool response: ${parsed.summary}`,
+                ),
+                isError: true,
+              };
+            }
+            if (parsed.isError) {
+              return {
+                callId: call.id,
+                content: withToolErrorRecoveryGuidance(parsed.result),
                 isError: true,
               };
             }
             return {
               callId: call.id,
-              content: parsed.result,
-              isError: parsed.isError,
+              // Prefer the structured form when the hub sent one — objects
+              // stay objects so step outputs keep the contract kind-full
+              // tools promise; fall back to the text form otherwise.
+              content: parsed.structuredResult ?? parsed.result,
+              isError: false,
             };
           } catch (err) {
             return {
               callId: call.id,
-              content: err instanceof Error ? err.message : String(err),
+              content: withToolErrorRecoveryGuidance(
+                err instanceof Error ? err.message : String(err),
+              ),
               isError: true,
             };
           }

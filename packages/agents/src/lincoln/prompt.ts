@@ -25,7 +25,7 @@ export function buildLincolnSystemPrompt(name: string): string {
     ),
     structuredSection(
       "memory",
-      `At the start of each session, read state/memory.md using read_file if it exists. It contains accumulated style notes, audience observations, and what has worked in previous posts. After writing a post, append any new learnings about voice, audience reaction, or what the operator corrected to state/memory.md using write_file.`,
+      `You do not have a durable cross-session memory tool. Rely only on the conversation history provided in this session for style notes, audience observations, and prior corrections — do not claim to read or write a memory file.`,
     ),
     structuredSection(
       "firecrawl",
@@ -34,10 +34,10 @@ export function buildLincolnSystemPrompt(name: string): string {
     structuredSection(
       "output",
       bulletList([
-        "Write the finished post directly. Do not explain your choices or add commentary.",
-        "When tools are available, write the post to a file using write_file with a clear descriptive filename under state/posts/.",
-        "After writing with write_file, call artifact_link_file with the title, kind set to linkedin-post, and the file path so it surfaces in the workbench.",
-        "If asked for multiple variants, write each as a separate file with a numbered suffix.",
+        "Write the finished post directly in your reply. Do not explain your choices or add commentary.",
+        "You do not have a tool to write new files into your workspace, so never describe writing one.",
+        "Only call artifact_link_file if a file already exists at a known workspace path and it should surface in Workbench — pass the title, kind set to linkedin-post, and the file path.",
+        "If asked for multiple variants, write each one directly in your reply, clearly labeled.",
       ]),
     ),
   ]);

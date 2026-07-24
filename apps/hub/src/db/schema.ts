@@ -31,7 +31,6 @@ const bytea = customType<{ data: Buffer; driverData: Buffer }>({
   },
 });
 
-export const artifactStatus = ["draft", "approved", "rejected"] as const;
 export const transcriptSource = ["paste", "granola", "artifact"] as const;
 
 export const transcript = pgTable("transcript", {
@@ -221,6 +220,15 @@ export type UploadRow = typeof upload.$inferSelect;
 // can share it without a route↔lib import cycle.
 export const MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
 
+// The status a live catalog/deployment row carries in `workflow_run`. This
+// table's status vocabulary is `running` (published, active) / `stopped` /
+// `superseded` / `deleted` — NOT the agent-instance vocabulary (`deployed`) and
+// NOT `workflowRunStateStatus` below, which belongs to `workflow_run_record`.
+// Publish inserts with this constant and the shared run starter resolves with
+// it; a mismatch between those two sites made every kind unresolvable at
+// fire time, so both must reference this single definition.
+export const WORKFLOW_CATALOG_ACTIVE_STATUS = "running";
+
 export const workflowRun = pgTable("workflow_run", {
   id: uuid("id").primaryKey().defaultRandom(),
   // Native-deploy index column (M6.8): the @intx/workflow-deploy deploymentId
@@ -354,6 +362,19 @@ export const workflowRunStep = pgTable(
     phase: text("phase", { enum: workflowRunStepPhases }).notNull(),
     // The native StepState.currentAttempt (1-based once a step has started).
     attempts: integer("attempts").notNull().default(0),
+    // The native StepState.lastError.message when phase is `failed` (CL-3509
+    // follow-up: dead-parked-run reconciler). Lets the reconciler name the
+    // step that actually failed and why without re-reading the run's git
+    // event log at sweep time.
+    errorMessage: text("error_message"),
+    // The most recent `StepFailed.retriesExhausted` (CL-3509 follow-up). A
+    // `failed` phase is a re-entrancy marker between retry attempts, NOT a
+    // terminal verdict — the runtime commits `StepFailed` on every attempt,
+    // including ones it is about to retry after backoff. The dead-parked-run
+    // reconciler must require this `true` before settling a run: a step still
+    // retrying must never trigger it. Defaults `false` so a pre-migration
+    // failed row never satisfies that join by default.
+    retriesExhausted: boolean("retries_exhausted").notNull().default(false),
     startedAt: timestamp("started_at"),
     endedAt: timestamp("ended_at"),
     createdAt: timestamp("created_at").notNull().defaultNow(),
@@ -392,17 +413,21 @@ export const artifact = pgTable(
     title: text("title").notNull(),
     content: text("content").notNull(),
     source: jsonb("source").$type<Record<string, unknown>>(),
-    status: text("status", { enum: artifactStatus }).notNull().default("draft"),
     version: integer("version").notNull().default(1),
     // Soft-archive (CL-3156): null = visible, a timestamp = hidden from default
-    // listings. Reversible; distinct from `status` so archiving never clobbers a
-    // draft/approved/rejected state.
+    // listings. Reversible; independent of any per-kind review state (skill
+    // drafts now live as `skill-draft` assets — see @workbench/hub-sessions —
+    // whose existence, not a status column, is the review state).
     archivedAt: timestamp("archived_at"),
     // Idempotency backstop for a source that can race a duplicate insert past
-    // an app-level existence check (CL-3577 review fix B — the Granola call
-    // pipeline sets `granola:call:<noteId>`). Null for every artifact created
-    // through the artifact_* tools / write_artifact; the partial unique index
-    // only constrains rows that opt in by setting this column.
+    // an app-level existence check (CL-3577 review fix B; extended to a
+    // per-artifact-kind key and made the primary dedupe mechanism for Granola
+    // call processing under CL-4213 — see granola-call-artifacts.ts). The
+    // Granola pipeline sets `granola:call:<noteId>:<kind>`, one per typed
+    // artifact (pain points / summary / brief). Null for every artifact
+    // created through the artifact_* tools / write_artifact without a
+    // sourceRef; the partial unique index only constrains rows that opt in by
+    // setting this column.
     sourceRef: text("source_ref"),
     createdAt: timestamp("created_at").notNull().defaultNow(),
     updatedAt: timestamp("updated_at")
@@ -882,12 +907,17 @@ export const principalMailbox = pgTable(
 
 export type PrincipalMailboxRow = typeof principalMailbox.$inferSelect;
 
-// Automation triggers: durable per-member schedules that fire a
-// workflow run on a daily UTC-hour cadence. The hub scheduler loads enabled
-// rows each tick and starts a run for any whose target hour has arrived and has
-// not fired today (tracked by `last_fired_day_utc`, the integer UTC day index
-// floor(ms / 86_400_000)). Only `hour_utc` is honored today. Unique per
-// (tenant, owner, kind) so the boot heartbeat seeder is idempotent.
+// Routine triggers: durable per-member schedules that fire a workflow run on
+// a recurring cadence (CL-4212). A recurrence is `interval_minutes` (how often)
+// plus `anchor_minute_utc` (minute-of-UTC-day phase, 0-1439) that fixes wall-clock
+// alignment; the daily-at-hour model is `interval_minutes=1440,
+// anchor_minute_utc=hour*60`. The hub scheduler loads enabled rows each tick and
+// fires whenever `floor((nowMinuteUtc - anchor_minute_utc) / interval_minutes)`
+// advances past `last_fired_window_index`.
+// A member (or tenant, for Everyone schedules) may hold several schedules of the
+// same workflow kind — e.g. a routine every morning for you and weekly for the
+// workspace. There is deliberately no uniqueness on (tenant, owner, kind) /
+// (tenant, kind) anymore (CL-4268); `name` is what distinguishes them.
 export const scheduledTrigger = pgTable(
   "scheduled_trigger",
   {
@@ -895,13 +925,26 @@ export const scheduledTrigger = pgTable(
     tenantId: text("tenant_id").notNull(),
     ownerMemberPrincipalId: text("owner_member_principal_id").notNull(),
     workflowKind: text("workflow_kind").notNull(),
-    hourUtc: integer("hour_utc").notNull(),
+    // User-facing label distinguishing this schedule from any other schedule
+    // of the same workflow kind (CL-4268). Defaults to the workflow kind at
+    // create time when the caller doesn't supply one — never gates creation
+    // on inventing a label.
+    name: text("name").notNull(),
+    intervalMinutes: integer("interval_minutes").notNull(),
+    anchorMinuteUtc: integer("anchor_minute_utc").notNull(),
+    // personal = Just for me; tenant = Everyone (CL-4108).
+    scope: text("scope").notNull().default("personal"),
     triggerPayload: jsonb("trigger_payload")
       .$type<Record<string, unknown>>()
       .notNull()
       .default({}),
     enabled: boolean("enabled").notNull().default(true),
-    lastFiredDayUtc: integer("last_fired_day_utc"),
+    // NOT NULL: every write path (createOwnerSchedule, ensureOwnerSchedule,
+    // updateOwnerSchedule, updateTenantScopedSchedule, and migration 0080's
+    // backfill for never-fired legacy rows) stamps a real window index — see
+    // scheduler.ts shouldFire for why "no last-fired window" must never be
+    // representable as an ambiguous NULL.
+    lastFiredWindowIndex: integer("last_fired_window_index").notNull(),
     // Most recent run id the scheduler started for this schedule (CL-3526).
     lastRunId: text("last_run_id"),
     createdAt: timestamp("created_at").notNull().defaultNow(),
@@ -911,9 +954,36 @@ export const scheduledTrigger = pgTable(
       .$onUpdate(() => new Date()),
   },
   (t) => ({
-    scheduledTriggerOwnerKindUniq: unique(
-      "scheduled_trigger_owner_kind_uniq",
-    ).on(t.tenantId, t.ownerMemberPrincipalId, t.workflowKind),
+    scheduledTriggerScopeCheck: check(
+      "scheduled_trigger_scope_check",
+      sql`${t.scope} IN ('personal', 'tenant')`,
+    ),
+    scheduledTriggerIntervalCheck: check(
+      "scheduled_trigger_interval_check",
+      sql`${t.intervalMinutes} >= 1`,
+    ),
+    scheduledTriggerAnchorCheck: check(
+      "scheduled_trigger_anchor_check",
+      sql`${t.anchorMinuteUtc} >= 0 AND ${t.anchorMinuteUtc} < 1440`,
+    ),
+    scheduledTriggerNameCheck: check(
+      "scheduled_trigger_name_check",
+      sql`length(${t.name}) > 0`,
+    ),
+    // Uniqueness moved from (tenant, owner/tenant, kind) to include `name`
+    // (CL-4268): several differently-named schedules of the same kind are now
+    // allowed, but the boot-time heartbeat seeder still needs a race-safe
+    // target for its idempotent ensure-schedule upsert.
+    scheduledTriggerPersonalOwnerKindNameUniq: uniqueIndex(
+      "scheduled_trigger_personal_owner_kind_name_uniq",
+    )
+      .on(t.tenantId, t.ownerMemberPrincipalId, t.workflowKind, t.name)
+      .where(sql`${t.scope} = 'personal'`),
+    scheduledTriggerTenantKindNameUniq: uniqueIndex(
+      "scheduled_trigger_tenant_kind_name_uniq",
+    )
+      .on(t.tenantId, t.workflowKind, t.name)
+      .where(sql`${t.scope} = 'tenant'`),
   }),
 );
 
@@ -958,6 +1028,30 @@ export const workflowTrigger = pgTable("workflow_trigger", {
 
 export type WorkflowTriggerRow = typeof workflowTrigger.$inferSelect;
 
+// Idempotency ledger for the generic provider-webhook receiver (CL-4269).
+// Providers that sign inbound deliveries (Linear today; GitHub/Slack/Attio
+// register the same way) retry on timeout/non-200 and resend the SAME
+// delivery id for retries of one logical event, so `(provider, delivery_id)`
+// is the natural dedup key. `id` is `"<provider>:<deliveryId>"` -- not a
+// generated id -- so a redelivery collides on the primary key and the
+// insert's own conflict IS the dedupe mechanism, not an application-level
+// lookup-then-insert race. `tenant_key` is the provider-native identifier the
+// adapter resolved the tenant from (Linear: `organizationId`), kept for audit
+// even though the row is already scoped to the resolved `tenant_id`.
+export const providerWebhookDelivery = pgTable("provider_webhook_delivery", {
+  id: text("id").primaryKey(),
+  provider: text("provider").notNull(),
+  deliveryId: text("delivery_id").notNull(),
+  tenantId: text("tenant_id").notNull(),
+  tenantKey: text("tenant_key").notNull(),
+  action: text("action").notNull(),
+  entityType: text("entity_type").notNull(),
+  receivedAt: timestamp("received_at").notNull().defaultNow(),
+});
+
+export type ProviderWebhookDeliveryRow =
+  typeof providerWebhookDelivery.$inferSelect;
+
 // Durable poll cursor for inbox intake (CL-3628): one row per scope key
 // (`member:<memberPrincipalId>:<sourceKey>` or `workspace:<tenantId>:<sourceKey>`,
 // the same keys `inbox-intake.ts` already used for its in-process
@@ -978,34 +1072,41 @@ export const inboxIntakeCursor = pgTable("inbox_intake_cursor", {
 
 export type InboxIntakeCursorRow = typeof inboxIntakeCursor.$inferSelect;
 
-// A queued Granola call: enqueued by the workspace intake tick (cheap,
-// LLM-free) and drained off-tick by the job runner, which does the transcript
-// fetch + reasoning turn + artifact persistence (CL-3627). One row per
-// (tenant, note); the unique constraint is both the enqueue-dedupe backstop
-// (a re-listed note within the same tick window upserts onto its existing row
-// rather than creating a second job) and the durable retry/backoff state —
-// `nextAttemptAt` gates the runner's claim query, `attempts` grows the
-// backoff, and `status = 'dead'` after the attempt ceiling stops a
-// permanently-broken note from being retried forever (logged loudly, not
-// silently dropped).
-export const granolaCallJobStatuses = [
-  "pending",
-  "processing",
-  "done",
-  "dead",
-] as const;
+// Durable background work unit (WQ.1–WQ.2). Product tasks are never leased;
+// workers claim work_unit rows with FOR UPDATE SKIP LOCKED + lease_until.
+//
+// The `granola_call` kind (and the `granola-call-job-queue` facade + off-tick
+// runner that claimed it) was removed in CL-4213: Granola note processing
+// dedupes on artifact `sourceRef` instead (granola-call-artifacts.ts), so it
+// needs no lease/claim machinery of its own. This table stays — and so does
+// its claiming machinery — because `knowledge_capture`
+// (knowledge-capture-outbox.ts / knowledge-capture-hook.ts) and
+// `agent_task_turn` (agent-task-auto-pickup.ts) are both still live
+// consumers with no natural output key to dedupe on the way Granola's
+// artifacts do.
+export const workUnitStatuses = ["pending", "leased", "done", "dead"] as const;
 
-export const granolaCallJob = pgTable(
-  "granola_call_job",
+export const workUnitKinds = ["knowledge_capture", "agent_task_turn"] as const;
+
+export const workUnit = pgTable(
+  "work_unit",
   {
     id: uuid("id").primaryKey().defaultRandom(),
     tenantId: text("tenant_id").notNull(),
-    noteId: text("note_id").notNull(),
-    status: text("status", { enum: granolaCallJobStatuses })
+    kind: text("kind").notNull(),
+    idempotencyKey: text("idempotency_key").notNull(),
+    status: text("status", { enum: workUnitStatuses })
       .notNull()
       .default("pending"),
+    payload: jsonb("payload")
+      .$type<Record<string, unknown>>()
+      .notNull()
+      .default({}),
     attempts: integer("attempts").notNull().default(0),
+    maxAttempts: integer("max_attempts").notNull().default(8),
     nextAttemptAt: timestamp("next_attempt_at").notNull().defaultNow(),
+    leaseOwner: text("lease_owner"),
+    leaseUntil: timestamp("lease_until"),
     lastError: text("last_error"),
     createdAt: timestamp("created_at").notNull().defaultNow(),
     updatedAt: timestamp("updated_at")
@@ -1014,16 +1115,36 @@ export const granolaCallJob = pgTable(
       .$onUpdate(() => new Date()),
   },
   (t) => ({
-    granolaCallJobTenantNoteUniq: unique(
-      "granola_call_job_tenant_note_uniq",
-    ).on(t.tenantId, t.noteId),
-    granolaCallJobStatusNextAttemptIdx: index(
-      "granola_call_job_status_next_attempt_idx",
-    ).on(t.status, t.nextAttemptAt),
+    workUnitTenantKindKeyUniq: unique("work_unit_tenant_kind_key_uniq").on(
+      t.tenantId,
+      t.kind,
+      t.idempotencyKey,
+    ),
+    workUnitClaimIdx: index("work_unit_claim_idx").on(
+      t.status,
+      t.nextAttemptAt,
+      t.leaseUntil,
+    ),
+    workUnitKindStatusIdx: index("work_unit_kind_status_idx").on(
+      t.kind,
+      t.status,
+    ),
+    workUnitStatusCheck: check(
+      "work_unit_status_check",
+      sql`${t.status} IN ('pending', 'leased', 'done', 'dead')`,
+    ),
+    workUnitAttemptsNonneg: check(
+      "work_unit_attempts_nonneg",
+      sql`${t.attempts} >= 0`,
+    ),
+    workUnitMaxAttemptsPos: check(
+      "work_unit_max_attempts_pos",
+      sql`${t.maxAttempts} > 0`,
+    ),
   }),
 );
 
-export type GranolaCallJobRow = typeof granolaCallJob.$inferSelect;
+export type WorkUnitRow = typeof workUnit.$inferSelect;
 
 export {
   analyticsEvent,

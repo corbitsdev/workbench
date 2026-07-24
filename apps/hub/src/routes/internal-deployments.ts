@@ -8,7 +8,7 @@ import {
   deriveStepAddress,
   deriveStepAgentId,
 } from "@intx/workflow-deploy";
-import type { AgentRepoStore } from "@intx/hub-sessions";
+import type { AgentRepoStore } from "@workbench/hub-sessions";
 import { schema as intxSchema } from "@intx/db";
 import { LiveDeploymentsResponse } from "@workbench/tool-credentials";
 import type { HubDb } from "../db";

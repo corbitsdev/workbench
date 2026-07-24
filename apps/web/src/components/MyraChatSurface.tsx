@@ -93,7 +93,7 @@ export function ExpandedChatOverlay({
         <motion.div
           role="dialog"
           aria-modal="true"
-          aria-label="Expanded chat"
+          aria-label="Expanded thread"
           initial={{ opacity: 0, scale: 0.98 }}
           animate={{ opacity: 1, scale: 1 }}
           exit={{ opacity: 0, scale: 0.98 }}

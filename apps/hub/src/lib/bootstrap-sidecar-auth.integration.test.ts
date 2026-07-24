@@ -11,7 +11,7 @@ import { drizzle } from "drizzle-orm/pglite";
 import { pushSchema } from "drizzle-kit/api";
 import { sha256 } from "@intx/crypto";
 import { hexEncode } from "@intx/types";
-import { createSidecarTokenAuthenticator } from "@intx/hub-sessions";
+import { createSidecarTokenAuthenticator } from "@workbench/hub-sessions";
 
 import { schema } from "../db";
 import type { HubDb } from "../db";

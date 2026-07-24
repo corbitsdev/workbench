@@ -10,7 +10,16 @@ export interface CredentialProviderCatalogEntry {
   kind: "inference" | "tool";
   defaultMetadata?: Record<string, unknown>;
   secretLabel?: string;
-  secondaryField?: { label: string; placeholder: string; required?: boolean };
+  secondaryField?: {
+    label: string;
+    placeholder: string;
+    required?: boolean;
+    /** Provider-`metadata` key the value is stored under. Defaults to
+     * `"baseURL"` — the only key the owner-credentials route wrote before
+     * CL-4269 gave a second entry (`linear-webhook`) a differently-named
+     * secondary field (`organizationId`). */
+    metadataKey?: string;
+  };
   platforms?: readonly string[];
   briefSource?: {
     description: string;
@@ -116,6 +125,27 @@ const TOOL_OAUTH_APP_CREDENTIAL_ENTRIES: CredentialProviderCatalogEntry[] = [
       label: "Client ID",
       placeholder: "OAuth application client ID",
       required: true,
+    },
+  },
+  // Not an outbound tool credential -- this is the secret Linear signs
+  // INBOUND webhook deliveries with, resolved per request by the generic
+  // provider-webhook receiver's `<provider>-webhook` naming convention (see
+  // apps/hub/src/lib/provider-webhooks.ts and
+  // apps/hub/src/lib/provider-webhook-adapters/linear.ts). Modeled in this
+  // same catalog because it needs the identical owner-facing set/replace/
+  // clear UI as any other tool credential (CL-4269). Every future provider
+  // adapter with a signing secret gets the same shape: `<provider>-webhook`.
+  {
+    providerName: "linear-webhook",
+    providerPlugin: "linear",
+    label: "Linear webhook",
+    kind: "tool",
+    secretLabel: "Signing secret",
+    secondaryField: {
+      label: "Linear organization ID",
+      placeholder: "Workspace organizationId from the webhook payload",
+      required: true,
+      metadataKey: "organizationId",
     },
   },
 ];

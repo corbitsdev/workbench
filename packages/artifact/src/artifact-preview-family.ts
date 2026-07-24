@@ -1,7 +1,6 @@
 // Maps artifact kinds to one of eight gallery/detail preview families (CL-3515).
 // Families drive card chrome, icons, and excerpt shaping — not storage shape.
 
-import type { ArtifactStatus } from "@workbench/shared";
 import { parseComparisonResult } from "@workbench/ui";
 import {
   isLinkedInPostArtifactKind,
@@ -67,22 +66,6 @@ export function artifactPreviewFamily(kind: string): ArtifactPreviewFamily {
   if (WEB_KINDS.has(kind)) return "web";
   if (DOCUMENT_KINDS.has(kind)) return "document";
   return "document";
-}
-
-/** Short, human-readable status for gallery chips. */
-export function labelForArtifactStatus(
-  status: ArtifactStatus | string,
-): string {
-  switch (status) {
-    case "draft":
-      return "Draft";
-    case "approved":
-      return "Approved";
-    case "rejected":
-      return "Rejected";
-    default:
-      return typeof status === "string" && status.length > 0 ? status : "Draft";
-  }
 }
 
 const EXCERPT_MAX = 120;

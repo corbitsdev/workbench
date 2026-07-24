@@ -1,5 +1,5 @@
 import { Link } from "react-router";
-import { toHumanLabel } from "@workbench/ui";
+import { StatusDot, toHumanLabel } from "@workbench/ui";
 import { useWorkflowRuns, type WorkflowRun } from "../hooks/use-workflow";
 import { isRecordTerminal, type RunRecord } from "../lib/run-state-adapter";
 import {
@@ -36,10 +36,7 @@ export function ActiveWorkflowRuns({ tenantId }: { tenantId?: string | null }) {
             to={`/workflows/${run.runId}`}
             className="group flex items-center gap-2.5 rounded-[9px] px-2.5 py-2 transition-colors hover:bg-row-hover focus:outline-none focus-visible:ring-2 focus-visible:ring-border-strong"
           >
-            <span
-              aria-hidden="true"
-              className="h-1.5 w-1.5 shrink-0 animate-pulse rounded-full bg-blue"
-            />
+            <StatusDot colorClassName="bg-blue" pulsing size="xs" />
             <span className="flex min-w-0 flex-1 items-center justify-between gap-2">
               <span className="truncate text-[13px] font-medium text-text">
                 {toHumanLabel(run.kind)}

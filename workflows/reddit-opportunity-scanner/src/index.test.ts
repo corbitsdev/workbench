@@ -3,7 +3,6 @@ import type { StepInvoker } from "@intx/workflow/runtime";
 import { runLocal } from "@intx/workflow/runlocal";
 import {
   DETERMINISTIC_TOOL_KIND,
-  INLINE_INFERENCE_KIND,
   LLM_WRITER_MODEL,
   STEP_ARGMAP_TAG,
   STEP_KIND_TAG,
@@ -229,9 +228,9 @@ describe("reddit-opportunity-scanner native workflow", () => {
     expect(JSON.parse(argMap)).toEqual({ url: { from: "inputUrl" } });
   });
 
-  test("analyze is an inline-inference step with a real prompt and no tools", () => {
+  test("analyze is a native reasoning step (agentStep) with a real prompt and no tools", () => {
     const analyze = stepPrimitive("analyze");
-    expect(analyze.agent.tags?.[STEP_KIND_TAG]).toBe(INLINE_INFERENCE_KIND);
+    expect(analyze.agent.tags?.[STEP_KIND_TAG]).toBeUndefined();
     expect(analyze.agent.tags?.[STEP_TOOL_TAG]).toBeUndefined();
     expect(analyze.agent.systemPrompt.length).toBeGreaterThan(0);
     expect(analyze.agent.capabilities).toEqual([]);
@@ -265,9 +264,9 @@ describe("reddit-opportunity-scanner native workflow", () => {
     });
   });
 
-  test("curate is an inline-inference step over collected Reddit evidence", () => {
+  test("curate is a native reasoning step (agentStep) over collected Reddit evidence", () => {
     const curate = stepPrimitive("curate");
-    expect(curate.agent.tags?.[STEP_KIND_TAG]).toBe(INLINE_INFERENCE_KIND);
+    expect(curate.agent.tags?.[STEP_KIND_TAG]).toBeUndefined();
     expect(curate.agent.tags?.[STEP_TOOL_TAG]).toBeUndefined();
     expect(curate.agent.systemPrompt.length).toBeGreaterThan(0);
     expect(curate.agent.capabilities).toEqual([]);

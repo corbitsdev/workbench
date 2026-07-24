@@ -3,7 +3,7 @@ import { getLogger } from "@intx/log";
 import { type } from "arktype";
 import { Hono } from "hono";
 import { describeRoute, resolver } from "hono-openapi";
-import type { AgentRepoStore } from "@intx/hub-sessions";
+import type { AgentRepoStore } from "@workbench/hub-sessions";
 import {
   classifyWorkflowSteps,
   countHumanGates,
@@ -11,7 +11,9 @@ import {
   type DisplayFlowStep,
 } from "@workbench/agents";
 import {
+  isRoutineEligibleKind,
   orderCatalogEntries,
+  scheduleScopesForKind,
   WorkflowCatalogSchema,
   type WorkflowCatalogEntry,
 } from "@workbench/shared";
@@ -25,11 +27,13 @@ import { readWorkflowDefinition } from "../services/workflow-deploy";
 import { readMemberPreferences } from "../lib/member-preferences";
 import {
   loadWorkflowDisplayFlows,
+  loadWorkflowEntryTriggerFields,
   loadWorkflowGateInfos,
   loadWorkflowIntakeFields,
 } from "../lib/workflow-catalog";
 import { isKindStructurallyAttachable } from "../lib/workflow-gate-info";
 import { getRootTenantId, lookupMember } from "../lib/tenant-provisioning";
+import { ENRICHED_TRIGGER_KINDS } from "../workflow-executor/trigger-payload-enrichment-registry";
 
 const log = getLogger("workflows-catalog");
 
@@ -144,10 +148,13 @@ export function createWorkflowsCatalogRouter(deps: {
       const displayFlows = await loadWorkflowDisplayFlows();
       // Gate shape + intake form per kind (CL-3508/CL-3509): whether the kind is
       // attachable to a brief schedule, and the intake fields the attach UI
-      // collects for a requiresIntake kind. Both read from the committed embedded
-      // catalog alongside the display flows.
+      // collects. Intake fields ship whenever the embedded def declares them —
+      // including gate-free unattended kinds (prospect-engine) that still need
+      // Slack channel + Engine list ids at schedule-attach time. `requiresIntake`
+      // only describes awaitSignal gates; do not gate the form on it.
       const gateInfos = await loadWorkflowGateInfos();
       const intakeFieldsByKind = await loadWorkflowIntakeFields();
+      const entryTriggerFieldsByKind = await loadWorkflowEntryTriggerFields();
 
       const entries: WorkflowCatalogEntry[] = [];
       for (const entry of kinds) {
@@ -157,13 +164,19 @@ export function createWorkflowsCatalogRouter(deps: {
           displayFlows.get(entry.kind),
         );
         const gateInfo = gateInfos.get(entry.kind);
+        const intakeFields = intakeFieldsByKind.get(entry.kind);
+        // attachable = structural gate shape AND derived routine eligibility
+        // (CL-4204): every trigger field the entry step requires is either a
+        // declared intake field or supplied by a registered enricher.
         const attachable =
           gateInfo !== undefined &&
-          isKindStructurallyAttachable(gateInfo, entry.kind);
-        const intakeFields =
-          gateInfo?.requiresIntake === true
-            ? intakeFieldsByKind.get(entry.kind)
-            : undefined;
+          isKindStructurallyAttachable(gateInfo, entry.kind) &&
+          isRoutineEligibleKind(
+            entryTriggerFieldsByKind.get(entry.kind) ?? [],
+            new Set((intakeFields ?? []).map((f) => f.name)),
+            ENRICHED_TRIGGER_KINDS.has(entry.kind),
+          );
+        const scopes = scheduleScopesForKind(entry.kind, attachable);
         entries.push({
           kind: entry.kind,
           label: entry.label ?? humanizeKind(entry.kind),
@@ -178,6 +191,8 @@ export function createWorkflowsCatalogRouter(deps: {
           ...(intakeFields !== undefined && intakeFields.length > 0
             ? { intakeFields }
             : {}),
+          allowedScopes: scopes.allowedScopes,
+          defaultScope: scopes.defaultScope,
         });
       }
 

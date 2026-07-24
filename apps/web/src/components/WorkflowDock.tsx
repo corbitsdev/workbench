@@ -16,13 +16,14 @@ import { buildDockBlocks } from "../lib/dock-block-builders";
 import { resolveResumePayload } from "../lib/resume-payload";
 import { stepOutputsFromLog } from "../lib/run-state-adapter";
 import { WorkflowStartingIndicator } from "./WorkflowStartingIndicator";
-import { cn, failedRunError } from "@workbench/ui";
+import { cn, failedRunError, StatusDot } from "@workbench/ui";
 import {
   isRecordTerminal,
   reconcileRunState,
   runStateFromLog,
   useConversationWorkflowRuns,
   useResumeConversationGate,
+  useStopWorkflowRun,
   useWorkflowRunState,
   type ConversationWorkflowRun,
 } from "../hooks/use-workflow";
@@ -38,54 +39,77 @@ const ATTENTION_ORDER: Record<RunStatus, number> = {
   provisioning: 1,
   failed: 2,
   completed: 3,
+  stopped: 4,
 };
 
 // State is the only color in this surface: blue running, amber needs-you,
 // green done, red failed (design tokens from @workbench/ui styles.css).
 const STATUS_META: Record<
   RunStatus,
-  { label: string; dot: string; stripe: string; chip: string }
+  {
+    label: string;
+    dotColor: string;
+    dotPulsing: boolean;
+    stripe: string;
+    chip: string;
+  }
 > = {
   awaiting: {
     label: "Needs you",
-    dot: "bg-orange",
+    dotColor: "bg-orange",
+    dotPulsing: false,
     stripe: "border-l-orange",
     chip: "text-orange",
   },
   // The actively-working state carries live motion too (CL-2755, emil) so a
   // running run never reads deader than a pre-flight `provisioning` one.
+  // The motion is the shared PulsingRing primitive (CL-4394) via StatusDot,
+  // not Tailwind's `animate-pulse`.
   running: {
     label: "Running",
-    dot: "bg-blue animate-pulse motion-reduce:animate-none",
+    dotColor: "bg-blue",
+    dotPulsing: true,
     stripe: "border-l-blue",
     chip: "text-blue",
   },
-  // CL-2755: the run's deployment is still cold-starting. `animate-pulse` on the
-  // dot gives the collapsed rail visible motion so a starting run never reads as
-  // frozen.
+  // CL-2755: the run's deployment is still cold-starting. The pulsing ring
+  // gives the collapsed rail visible motion so a starting run never reads as
+  // frozen — PulsingRing returns null under reduced motion; it's StatusDot's
+  // always-rendered base dot that provides the static fallback.
   provisioning: {
     label: "Starting",
-    dot: "bg-blue animate-pulse motion-reduce:animate-none",
+    dotColor: "bg-blue",
+    dotPulsing: true,
     stripe: "border-l-blue",
     chip: "text-blue",
   },
   completed: {
     label: "Done",
-    dot: "bg-green",
+    dotColor: "bg-green",
+    dotPulsing: false,
     stripe: "border-l-green",
     chip: "text-green",
   },
   failed: {
     label: "Failed",
-    dot: "bg-red",
+    dotColor: "bg-red",
+    dotPulsing: false,
     stripe: "border-l-red",
     chip: "text-red",
+  },
+  stopped: {
+    label: "Stopped",
+    dotColor: "bg-text-3",
+    dotPulsing: false,
+    stripe: "border-l-border",
+    chip: "text-text-3",
   },
 };
 
 function fallbackPhase(status: RunStatus): DockRunPhase {
   if (status === "completed") return "completed";
   if (status === "failed") return "failed";
+  if (status === "stopped") return "cancelled";
   // `provisioning` (CL-2755) has no log yet — treat it as the live `running`
   // phase for the dock-block fallback; the card body renders a Starting state.
   return "running";
@@ -182,6 +206,7 @@ function stateCountSummary(runs: readonly ConversationWorkflowRun[]): string {
     "running",
     "failed",
     "completed",
+    "stopped",
   ];
   const parts: string[] = [];
   for (const status of order) {
@@ -206,8 +231,13 @@ function WorkflowDockCard({
     isError,
   } = useWorkflowRunState(run.runId, tenantId);
   const resumeGate = useResumeConversationGate(tenantId);
+  const stopRun = useStopWorkflowRun(tenantId);
   // Finished runs collapse to their one-line summary by default.
   const [open, setOpen] = useState(() => !isRecordTerminal(run.status));
+  // Two-tap confirm for Stop (same pattern as Insights Archive).
+  const [confirmingStop, setConfirmingStop] = useState(false);
+  const stopping = stopRun.isPending && stopRun.variables === run.runId;
+  const canStop = !isRecordTerminal(run.status);
 
   // A gate choice block carries its `awaitSignal` name (CL-2681); selecting it
   // resumes THIS run with that signal + the option value as payload. The
@@ -255,11 +285,15 @@ function WorkflowDockCard({
       buildDockBlocks(run.kind, {
         runId: run.runId,
         phase,
+        surface: "dock",
         steps: (log?.steps ?? []).map((step) => ({
           stepId: step.stepId,
           phase: step.phase,
           ...(step.awaitingSignalName !== undefined
             ? { awaitingSignalName: step.awaitingSignalName }
+            : {}),
+          ...(step.lastError !== undefined
+            ? { lastError: step.lastError }
             : {}),
         })),
         stepOutputs: log !== undefined ? stepOutputsFromLog(log) : {},
@@ -284,6 +318,9 @@ function WorkflowDockCard({
   return (
     <div
       data-testid="workflow-dock-card"
+      onMouseLeave={() => {
+        if (!stopping) setConfirmingStop(false);
+      }}
       className={cn(
         "rounded-lg border border-border border-l-2 bg-surface-2",
         meta.stripe,
@@ -300,9 +337,10 @@ function WorkflowDockCard({
             FOCUS_RING,
           )}
         >
-          <span
-            className={cn("h-2 w-2 shrink-0 rounded-full", meta.dot)}
-            aria-hidden
+          <StatusDot
+            colorClassName={meta.dotColor}
+            pulsing={meta.dotPulsing}
+            className="shrink-0"
           />
           <span className="min-w-0 flex-1">
             <span className="block truncate text-sm font-medium text-text">
@@ -324,20 +362,77 @@ function WorkflowDockCard({
         >
           Open
         </Link>
-        {run.status === "failed" && onDismiss !== undefined && (
-          <button
-            type="button"
-            aria-label={`Dismiss ${run.kind}`}
-            onClick={() => onDismiss(run.runId)}
-            className={cn(
-              "shrink-0 rounded-md px-1.5 py-0.5 text-xs text-text-3 hover:bg-row-hover hover:text-text",
-              FOCUS_RING,
-            )}
-          >
-            Dismiss
-          </button>
-        )}
+        {canStop &&
+          (confirmingStop ? (
+            <div className="flex shrink-0 items-center gap-1">
+              <button
+                type="button"
+                data-testid="dock-stop-confirm"
+                disabled={stopping}
+                onClick={() => {
+                  stopRun.mutate(run.runId);
+                }}
+                aria-label={`Confirm: stop ${run.kind} run`}
+                className={cn(
+                  "rounded-md bg-red-500 px-2 py-0.5 text-xs font-medium text-white hover:bg-red-600 disabled:opacity-50",
+                  FOCUS_RING,
+                )}
+              >
+                {stopping ? "Stopping…" : "Confirm stop"}
+              </button>
+              <button
+                type="button"
+                disabled={stopping}
+                onClick={() => setConfirmingStop(false)}
+                aria-label={`Cancel stopping ${run.kind} run`}
+                className={cn(
+                  "rounded-md px-1.5 py-0.5 text-xs text-text-3 hover:bg-row-hover hover:text-text",
+                  FOCUS_RING,
+                )}
+              >
+                Cancel
+              </button>
+            </div>
+          ) : (
+            <button
+              type="button"
+              data-testid="dock-stop"
+              disabled={stopping}
+              onClick={() => setConfirmingStop(true)}
+              title="Stop this run — leaves it in history as Stopped"
+              aria-label={`Stop ${run.kind} run`}
+              className={cn(
+                "shrink-0 rounded-md px-1.5 py-0.5 text-xs text-text-3 hover:bg-row-hover hover:text-text disabled:opacity-50",
+                FOCUS_RING,
+              )}
+            >
+              Stop
+            </button>
+          ))}
+        {(run.status === "failed" || run.status === "stopped") &&
+          onDismiss !== undefined && (
+            <button
+              type="button"
+              aria-label={`Dismiss ${run.kind}`}
+              onClick={() => onDismiss(run.runId)}
+              className={cn(
+                "shrink-0 rounded-md px-1.5 py-0.5 text-xs text-text-3 hover:bg-row-hover hover:text-text",
+                FOCUS_RING,
+              )}
+            >
+              Dismiss
+            </button>
+          )}
       </div>
+      {stopRun.isError && (
+        <p
+          role="alert"
+          data-testid="dock-stop-error"
+          className="px-3 pb-2 text-xs text-red-500"
+        >
+          Couldn't stop this run. Try again.
+        </p>
+      )}
       {open && (
         <div
           role="status"
@@ -408,13 +503,16 @@ export function WorkflowDock({
   const [sawActive, setSawActive] = useState(false);
 
   // Failed runs count as needing attention: hiding a failure on reload would
-  // bury it. Only a conversation whose runs are all completed loads dock-less.
-  // A dismissed failed run no longer counts — the user has acknowledged it.
+  // bury it. Only a conversation whose runs are all completed or user-stopped
+  // loads dock-less. A dismissed failed/stopped run no longer counts — the user
+  // has acknowledged it.
   const visibleRuns = useMemo(
     () => (runs ?? []).filter((run) => !dismissed.includes(run.runId)),
     [runs, dismissed],
   );
-  const hasActive = visibleRuns.some((run) => run.status !== "completed");
+  const hasActive = visibleRuns.some(
+    (run) => run.status !== "completed" && run.status !== "stopped",
+  );
   useEffect(() => {
     if (hasActive) setSawActive(true);
   }, [hasActive]);
@@ -479,11 +577,11 @@ export function WorkflowDock({
               key={run.runId}
               data-testid="dock-rail-dot"
               title={`${run.kind}: ${STATUS_META[run.status].label}`}
-              className={cn(
-                "h-2 w-2 rounded-full",
-                STATUS_META[run.status].dot,
-              )}
             >
+              <StatusDot
+                colorClassName={STATUS_META[run.status].dotColor}
+                pulsing={STATUS_META[run.status].dotPulsing}
+              />
               <span className="sr-only">
                 {`${run.kind}: ${STATUS_META[run.status].label}`}
               </span>
@@ -563,11 +661,11 @@ export function WorkflowDock({
               key={run.runId}
               data-testid="dock-rail-dot"
               title={`${run.kind}: ${STATUS_META[run.status].label}`}
-              className={cn(
-                "h-2 w-2 rounded-full",
-                STATUS_META[run.status].dot,
-              )}
             >
+              <StatusDot
+                colorClassName={STATUS_META[run.status].dotColor}
+                pulsing={STATUS_META[run.status].dotPulsing}
+              />
               <span className="sr-only">
                 {`${run.kind}: ${STATUS_META[run.status].label}`}
               </span>

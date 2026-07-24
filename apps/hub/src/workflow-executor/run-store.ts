@@ -32,6 +32,12 @@ export interface RunStepProjectionInput {
   attempts: number;
   startedAt?: string;
   endedAt?: string;
+  errorMessage?: string;
+  // The most recent `StepFailed.retriesExhausted` (CL-3509 follow-up). Absent
+  // means "not yet failed" and is persisted as `false`, the same as an
+  // explicit `false` — a step that has never failed must never satisfy the
+  // dead-parked-run reconciler's join either.
+  retriesExhausted?: boolean;
 }
 
 // The thin run INDEX shape (CL-2669). A run's authoritative per-step and run
@@ -335,6 +341,8 @@ export async function upsertRunSteps(
         attempts: s.attempts,
         startedAt: s.startedAt !== undefined ? new Date(s.startedAt) : null,
         endedAt: s.endedAt !== undefined ? new Date(s.endedAt) : null,
+        errorMessage: s.errorMessage ?? null,
+        retriesExhausted: s.retriesExhausted ?? false,
       })),
     )
     .onConflictDoUpdate({
@@ -344,6 +352,8 @@ export async function upsertRunSteps(
         attempts: sql`excluded.attempts`,
         startedAt: sql`excluded.started_at`,
         endedAt: sql`excluded.ended_at`,
+        errorMessage: sql`excluded.error_message`,
+        retriesExhausted: sql`excluded.retries_exhausted`,
       },
     });
 }
@@ -354,6 +364,38 @@ export interface RunStepProjectionRow {
   attempts: number;
   startedAt: Date | null;
   endedAt: Date | null;
+}
+
+export interface FailedRunStep {
+  stepId: string;
+  errorMessage: string | null;
+}
+
+// Read the PERMANENTLY-failed (retries exhausted) per-step projection rows
+// for a run (dead-parked-run reconciler). `phase = 'failed'` alone is a
+// re-entrancy marker the native runtime revisits between retry attempts, not
+// a terminal verdict — `retries_exhausted = true` is the only durable signal
+// that a step will never run again. Reuses the same `workflow_run_step`
+// projection every other per-step reader uses — no git-log replay at sweep
+// time.
+export async function listExhaustedFailedRunSteps(
+  db: HubDb,
+  runId: string,
+): Promise<FailedRunStep[]> {
+  return db
+    .select({
+      stepId: workflowRunStep.stepId,
+      errorMessage: workflowRunStep.errorMessage,
+    })
+    .from(workflowRunStep)
+    .where(
+      and(
+        eq(workflowRunStep.runId, runId),
+        eq(workflowRunStep.phase, "failed"),
+        eq(workflowRunStep.retriesExhausted, true),
+      ),
+    )
+    .orderBy(workflowRunStep.stepId);
 }
 
 // Read a single run's per-step projection rows (CL-2727), ordered by start time

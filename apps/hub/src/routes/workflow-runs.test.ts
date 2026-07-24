@@ -4,7 +4,7 @@ import type {
   RepoStore,
   SessionService,
   SidecarRouter,
-} from "@intx/hub-sessions";
+} from "@workbench/hub-sessions";
 
 // Mock the user-context resolver: the routes call getRequestedUserContext(db,
 // userId, tenantId) and gate on its result. forbidden=true → 403; a non-null
@@ -33,7 +33,7 @@ mock.module("@intx/db", () => ({
 
 // subscribeKind yields the run's on-disk event entries. The endpoint replays
 // from seq 0 to find the StepCompleted for the requested step. We mock it at
-// the @intx/hub-sessions boundary with a crafted async generator.
+// the @workbench/hub-sessions boundary with a crafted async generator.
 type FakeEntry = { seq: number; runId: string; event: Record<string, unknown> };
 let subscribeKindEntries: FakeEntry[] = [];
 let subscribeKindThrows: Error | null = null;
@@ -55,8 +55,8 @@ let resolveRefImpl: (ref: string) => Promise<unknown> = (ref) =>
 const subscribeCapture: { repoId: { kind: string; id: string } | null } = {
   repoId: null,
 };
-const intxHubSessionsReal = await import("@intx/hub-sessions");
-mock.module("@intx/hub-sessions", () => ({
+const intxHubSessionsReal = await import("@workbench/hub-sessions");
+mock.module("@workbench/hub-sessions", () => ({
   ...intxHubSessionsReal,
   subscribeKind: async function* (
     _store: unknown,

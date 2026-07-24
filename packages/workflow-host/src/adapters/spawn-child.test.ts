@@ -11,8 +11,8 @@ import {
   workflowRunKindHandler,
   WORKFLOW_JSON_PATH,
   WORKFLOW_RUN_GITIGNORE_PATH,
-} from "@intx/hub-sessions";
-import type { AuthorizeFn, Principal, RepoId } from "@intx/hub-sessions";
+} from "@workbench/hub-sessions";
+import type { AuthorizeFn, Principal, RepoId } from "@workbench/hub-sessions";
 import type { WorkflowDefinition, WorkflowEvent } from "@intx/workflow";
 
 import { createWorkflowRunRepoStore } from "./repo-store";

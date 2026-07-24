@@ -24,6 +24,7 @@ import { ErrorBoundary } from "./ErrorBoundary";
 import { loadWorkflowUI } from "../lib/workflow-ui";
 import { resolveResumePayload } from "../lib/resume-payload";
 import { usePublishActiveContext } from "../lib/active-context-store";
+import { useWorkflowsCatalog } from "../hooks/use-workflows-catalog";
 import {
   isRecordTerminal,
   reconcileRunState,
@@ -31,6 +32,7 @@ import {
   runStateFromRecord,
   runWasInterrupted,
   useResumeWorkflow,
+  useStopWorkflowRun,
   useWorkflowCredentials,
   useWorkflowDeployments,
   useWorkflowRecord,
@@ -46,6 +48,12 @@ interface WorkflowRunPaneProps {
   deploymentId: string;
   tenantId?: string | null;
   onClose: () => void;
+  /**
+   * Hosted inside the unified Workflows list inspector. Skips page chrome and
+   * per-kind Panel modules so the surface matches dock blocks + GateBlock/StepList
+   * substrate instead of a full stage-set takeover.
+   */
+  embedded?: boolean;
 }
 
 // Selects the run's own custom Panel when its workflow package ships one, and
@@ -57,6 +65,7 @@ export function WorkflowRunPane({
   deploymentId,
   tenantId,
   onClose,
+  embedded = false,
 }: WorkflowRunPaneProps) {
   // Guard an empty id so no record query fires against a missing runId.
   if (!deploymentId) {
@@ -72,6 +81,7 @@ export function WorkflowRunPane({
       deploymentId={deploymentId}
       tenantId={tenantId}
       onClose={onClose}
+      embedded={embedded}
     />
   );
 }
@@ -81,6 +91,7 @@ function WorkflowRunPaneInner({
   deploymentId,
   tenantId,
   onClose,
+  embedded = false,
 }: WorkflowRunPaneProps) {
   const runId = deploymentId;
   const reduceMotion = useReducedMotion();
@@ -97,9 +108,14 @@ function WorkflowRunPaneInner({
   // record's deploymentId, which 404s under per-run deployments (CL-2582).
   const { data: stepOutputsData } = useWorkflowStepOutputs(runId, tenantId);
   const resume = useResumeWorkflow(runId, tenantId);
+  const stopRun = useStopWorkflowRun(tenantId);
   const { data: credentials } = useWorkflowCredentials(tenantId);
   const { data: skills } = useSkillLibrary(tenantId);
   const { data: deployments } = useWorkflowDeployments(tenantId);
+  // Warm from the Workflows page in the common case (5-minute staleTime) — the
+  // run pane's full step sequence comes from here, not the run's own log, so it
+  // is populated even before the run has materialized its first step (CL-4285).
+  const { data: catalog } = useWorkflowsCatalog(tenantId);
   const signalInFlightRef = useRef(false);
   // The specific gate we submitted: stepId + signalName at click. Clears when
   // THAT step is no longer awaiting that signal (or the run goes terminal) —
@@ -113,9 +129,19 @@ function WorkflowRunPaneInner({
   // True while a resume is auto-retrying through the deploy window (CL-2707), so
   // the pane shows an honest transient banner instead of flashing an error.
   const [redeploying, setRedeploying] = useState(false);
+  const [confirmingStop, setConfirmingStop] = useState(false);
 
   const kind = record?.kind ?? null;
   const recordDeploymentId = record?.deploymentId ?? null;
+
+  // The full ordered step sequence for this run's kind — the same classified
+  // list the Workflows catalog card renders (CL-4285). Undefined while the
+  // catalog hasn't loaded yet or the kind isn't found in it (e.g. a run whose
+  // kind was since disabled).
+  const catalogSteps = useMemo(
+    () => catalog?.entries.find((e) => e.kind === kind)?.steps,
+    [catalog, kind],
+  );
 
   // Resolve the exact deployment that produced this run so the badge shows the
   // version that actually ran — not the newest deployment of the kind, which
@@ -136,7 +162,7 @@ function WorkflowRunPaneInner({
   const { data: uiModule, isPending: uiModulePending } = useQuery({
     queryKey: ["workflow-ui-module", kind],
     queryFn: () => loadWorkflowUI(kind as string),
-    enabled: kind !== null,
+    enabled: kind !== null && !embedded,
     staleTime: 5 * 60_000,
   });
 
@@ -241,11 +267,18 @@ function WorkflowRunPaneInner({
       : undefined,
   );
 
-  const Panel = uiModule?.Panel;
+  const Panel = embedded ? undefined : uiModule?.Panel;
 
+  const terminal = record ? isRecordTerminal(record.status) : false;
+  const stopping = stopRun.isPending;
   const runChrome = useMemo(
     () => (
-      <div className="flex min-w-0 flex-1 flex-wrap items-center justify-end gap-3">
+      <div
+        className="flex min-w-0 flex-1 flex-wrap items-center justify-end gap-3"
+        onMouseLeave={() => {
+          if (!stopping) setConfirmingStop(false);
+        }}
+      >
         {deploymentMeta ? (
           <WorkflowMetaBadge
             version={deploymentMeta.version}
@@ -253,16 +286,71 @@ function WorkflowRunPaneInner({
             deployedAt={deploymentMeta.deployedAt}
           />
         ) : null}
+        {record &&
+          !terminal &&
+          (confirmingStop ? (
+            <div className="flex items-center gap-1">
+              <Button
+                variant="ghost"
+                size="sm"
+                disabled={stopping}
+                data-testid="run-pane-stop-confirm"
+                onClick={() => {
+                  stopRun.mutate(runId);
+                }}
+                aria-label="Confirm: stop this run"
+              >
+                {stopping ? "Stopping…" : "Confirm stop"}
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                disabled={stopping}
+                onClick={() => setConfirmingStop(false)}
+                aria-label="Cancel stop"
+              >
+                Cancel
+              </Button>
+            </div>
+          ) : (
+            <Button
+              variant="ghost"
+              size="sm"
+              disabled={stopping}
+              data-testid="run-pane-stop"
+              onClick={() => setConfirmingStop(true)}
+              title="Stop this run — leaves it in history as Stopped"
+              aria-label="Stop this run"
+            >
+              Stop
+            </Button>
+          ))}
+        {record && !terminal && stopRun.isError && (
+          <span role="alert" className="text-xs text-red-500">
+            Couldn't stop this run. Try again.
+          </span>
+        )}
         <Button variant="ghost" size="sm" onClick={onClose}>
           Close
         </Button>
       </div>
     ),
-    [deploymentMeta, onClose],
+    [
+      deploymentMeta,
+      onClose,
+      record,
+      terminal,
+      confirmingStop,
+      stopping,
+      stopRun.isError,
+      // Depend on mutate only — the full mutation object is a new identity each
+      // render and would re-publish chrome every frame (see ArtifactDetailPage).
+      stopRun.mutate,
+      runId,
+    ],
   );
-  useSetPageChrome(record ? runChrome : null);
+  useSetPageChrome(record ? runChrome : null, !embedded);
 
-  const terminal = record ? isRecordTerminal(record.status) : false;
   // Index says failed but the log is still non-terminal — the run was killed
   // externally (redeploy/abort), not a genuine step failure. Drives the
   // interrupted-vs-failed copy in the generic blocks fallback.
@@ -394,7 +482,9 @@ function WorkflowRunPaneInner({
     // goes Starting → Panel directly, WITHOUT a flash of the generic blocks
     // shell in between. Shares the "starting" key with the provisioning frame so
     // the spinner node persists (no remount) — only the label changes.
-    if (uiModulePending) {
+    // Embedded inspector always uses shared blocks (dock parity), so skip the
+    // module-loading wait entirely.
+    if (!embedded && uiModulePending) {
       return {
         key: "starting",
         node: (
@@ -421,6 +511,7 @@ function WorkflowRunPaneInner({
               stepOutputs={stepOutputs}
               terminal={terminal}
               interrupted={interrupted}
+              catalogSteps={catalogSteps}
               onRespond={onBlockRespond}
               onClose={onClose}
             />

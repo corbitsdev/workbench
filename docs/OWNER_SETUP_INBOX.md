@@ -8,7 +8,7 @@ a running hub with the admin CLI available (`bun run admin` /
 Everything here is **off by default at every level** — a source only reaches
 a member's inbox once the tenant feature grant, the owner toggle, and (for
 member-scope sources) the member's own preference are all on, and a
-credential resolves. See `IMPLEMENTATION.md` § Mailbox, automations, and
+credential resolves. See `IMPLEMENTATION.md` § Mailbox, routines, and
 tasks → Inbox intake, and `API.md` § Inbox sources — webhooks, for the code
 paths this guide operates.
 

@@ -43,14 +43,26 @@ describe("timeline source registry", () => {
     }
   });
 
-  test("only tool_call carries a client-supplied timestamp, and it is flagged with a note", () => {
+  test("tool_call and compaction carry client-supplied timestamps, each flagged with a note", () => {
     const clientSupplied = timelineSources.filter(
       (s) => s.timestamp.clientSupplied,
     );
-    expect(clientSupplied.map((s) => s.kind)).toEqual(["tool_call"]);
+    expect(clientSupplied.map((s) => s.kind).sort()).toEqual([
+      "compaction",
+      "tool_call",
+    ]);
     for (const source of clientSupplied) {
       expect(source.timestamp.note ?? "").not.toBe("");
     }
+  });
+
+  test("compaction projects before→after turn counts from metadata", () => {
+    const compaction = timelineSources.find((s) => s.kind === "compaction");
+    expect(compaction).toBeDefined();
+    expect(compaction?.table).toBe("analytics_event");
+    expect(compaction?.filterSql).toContain("event_type = 'compaction'");
+    expect(compaction?.summarySql).toContain("turnsIn");
+    expect(compaction?.summarySql).toContain("turnsOut");
   });
 
   test("every summary projection is a static expression with no bound params", () => {

@@ -10,10 +10,7 @@ import {
   type MyraPreferencesUpdate,
   type MyraVariant,
 } from "../lib/myra-variants";
-import {
-  isFeatureEnabled,
-  useMeFeatures,
-} from "../hooks/use-me-features";
+import { isFeatureEnabled, useMeFeatures } from "../hooks/use-me-features";
 
 type Surface = "chat" | "triage";
 
@@ -34,13 +31,13 @@ const GROUPS: readonly GroupConfig[] = [
   {
     key: "triage",
     kind: "triage",
-    title: "Inbox automation",
-    description: "Which Myra runs your inbox automation.",
+    title: "Inbox routine",
+    description: "Which Myra runs your inbox routines.",
   },
 ];
 
 const APPLIES_NOTE =
-  "Your choice applies to new threads and future inbox automation runs. Existing threads and runs keep the Myra they were created with.";
+  "Your choice applies to new threads and future inbox routine runs. Existing threads and runs keep the Myra they were created with.";
 
 function costNote(variant: MyraVariant): string | null {
   if (variant.costTier === "premium") {

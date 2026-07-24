@@ -1,6 +1,6 @@
 import { describe, expect, mock, test } from "bun:test";
 import type { CryptoProvider } from "@intx/types/runtime";
-import type { SessionService } from "@intx/hub-sessions";
+import type { SessionService } from "@workbench/hub-sessions";
 import type { HubDb } from "../db";
 import { isUuid } from "../lib/uuid";
 import type { RunState } from "./run-store";
@@ -449,5 +449,90 @@ describe("startWorkflowRun trigger-payload enrichment for a registered kind", ()
     await expect(attempt).rejects.toThrow("principal not found: prn-ghost");
     // No run row was seeded behind the failed identity resolution.
     expect(rows.size).toBe(0);
+  });
+});
+
+// Real staging failure: prospect-engine had no intake declaration, so a run
+// started with no list ids sailed past start and died several steps in at the
+// first Sumble step dereferencing an absent `enterpriseEngineListId`. This is
+// the `workflow_start` tool / generic `/workflow-exec/:kind/start` route path
+// (run-exec.ts) — the sibling of workflow-run-starter.test.ts's coverage of the
+// legacy `/workflow-runs/:kind/start` route and the scheduler.
+describe("startWorkflowRun required-input validation (prospect-engine)", () => {
+  const PROSPECT_ENGINE_DEFINITION = {
+    kind: "prospect-engine",
+    tenantId: "tn-1",
+    deploymentId: "ses_dep_pe",
+    principalId: "prn-deployer",
+    createdAt: new Date(),
+  };
+
+  function makeProspectEngineDb(): HubDb {
+    // biome-ignore lint/suspicious/noExplicitAny: structural test mock
+    const db: any = {
+      query: {
+        workflowRun: { findMany: async () => [PROSPECT_ENGINE_DEFINITION] },
+        role: { findMany: async () => [] },
+      },
+    };
+    return db as HubDb;
+  }
+
+  test("fails at start, before any deployment is provisioned, naming every missing required field", async () => {
+    reset();
+    let provisionCalled = false;
+    const provision = async () => {
+      provisionCalled = true;
+      return { deploymentId: "ses_run_pe" };
+    };
+
+    const result = await startWorkflowRun(
+      { ...baseDeps(provision), db: makeProspectEngineDb() },
+      {
+        kind: "prospect-engine",
+        chain: ["tn-1"],
+        principalId: "prn-1",
+        input: {},
+        originConversationId: null,
+      },
+    );
+
+    expect(result.ok).toBe(false);
+    if (result.ok) throw new Error("expected a 400 validation failure");
+    expect(result.status).toBe(400);
+    expect(result.error).not.toContain("Slack channel id");
+    expect(result.error).toContain("Engine - Growth Sumble list id");
+    expect(result.error).toContain("Engine - Enterprise Sumble list id");
+    expect(provisionCalled).toBe(false);
+    // No run row was seeded behind a validation failure.
+    expect(rows.size).toBe(0);
+  });
+
+  test("proceeds once Slack channel and both Engine list ids are present", async () => {
+    reset();
+    const result = await startWorkflowRun(
+      { ...baseDeps(provisionOk), db: makeProspectEngineDb() },
+      {
+        kind: "prospect-engine",
+        chain: ["tn-1"],
+        principalId: "prn-1",
+        input: {
+          slackChannelId: "C0123456789",
+          growthEngineListId: "80089",
+          enterpriseEngineListId: "80090",
+        },
+        originConversationId: null,
+      },
+    );
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error("unreachable");
+    await result.backgroundTask;
+    const delivered = insertedInputs.get(result.state.runId) as Record<
+      string,
+      unknown
+    >;
+    expect(delivered.growthEngineListId).toBe(80089);
+    expect(delivered.enterpriseEngineListId).toBe(80090);
   });
 });

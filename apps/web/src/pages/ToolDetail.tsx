@@ -87,7 +87,6 @@ export function ToolDetail() {
             variant="ghost"
             size="sm"
             onClick={() => navigate("/tools")}
-            className="gap-1.5"
           >
             <ArrowLeft size={14} aria-hidden />
             Tools

@@ -7,6 +7,7 @@ import { createCorrelationRegistry } from "./correlation";
 import { createReactor } from "./reactor";
 import { createDefaultDependencies } from "./providers";
 import { createDefaultDirector } from "./default-director";
+import { classifyHTTPError } from "./errors";
 import { assertWellFormedToolSequence } from "./turns";
 import { createInboundMessage } from "@intx/mime";
 
@@ -4951,6 +4952,57 @@ describe("createReactor — transform chain ordering and compact action", () => 
     expect(flatRecords.some((r) => r.strategy === "tail-only")).toBe(true);
   });
 
+  // WORKBENCH-LOCAL (CL-3837): successful compaction must surface on the
+  // custom.* channel so analytics can map it; a failed (unknown) compact
+  // must not emit the event.
+  test("successful compact emits custom.compaction with before/after shape", async () => {
+    const recording = makeRecordingContextStore();
+    const compactor = truncatingCompactor("tail-only");
+
+    let messages = 0;
+    const director: ReactorDirector = {
+      async decide(event, _state, caps) {
+        if (event.type === "message.received") {
+          messages++;
+          if (messages === 1) {
+            return caps.compact("tail-only", "explicit-test");
+          }
+          return caps.done();
+        }
+        return caps.done();
+      },
+    };
+
+    const { reactor, events, waitFor } = createDirectReactor({
+      contextStore: recording.store,
+      director,
+      compactors: { "tail-only": compactor },
+    });
+
+    reactor.start();
+    reactor.deliver(makeInboundMessage());
+    setTimeout(() => reactor.deliver(makeInboundMessage()), 30);
+    await waitFor("reactor.done");
+
+    const compaction = events.find((e) => e.type === "custom.compaction");
+    expect(compaction).toBeDefined();
+    if (compaction === undefined || compaction.type !== "custom.compaction") {
+      throw new Error("expected custom.compaction event");
+    }
+    expect(compaction.data.compactor).toBe("tail-only");
+    expect(compaction.data.reason).toBe("explicit-test");
+    expect(typeof compaction.data.turnsIn).toBe("number");
+    expect(typeof compaction.data.turnsOut).toBe("number");
+    expect(compaction.data.turnsOut).toBe(1);
+    expect(compaction.data.turnsIn).toBeGreaterThanOrEqual(
+      compaction.data.turnsOut as number,
+    );
+    expect(compaction.data.decisions).toEqual({
+      kept: 1,
+      dropped: expect.any(Number),
+    });
+  });
+
   test("compact for an unknown name emits a fatal error and shuts down", async () => {
     const recording = makeRecordingContextStore();
     const { reactor, events, waitFor } = createDirectReactor({
@@ -5550,6 +5602,29 @@ describe("createReactor — source failover", () => {
     expect(getEvent(events, "inference.error").data.error.category).toBe(
       "context_overflow",
     );
+  });
+
+  test("an OpenCode-Zen-style 400 rate limit retries then fails over, not aborts", async () => {
+    const rateLimitedAs400 = classifyHTTPError(
+      400,
+      "Error from provider: rate limit exceeded, please try again later",
+      undefined,
+      1,
+    );
+    const { reactor, events, waitFor, attemptedSourceIds } = multiSourceReactor(
+      {
+        sourceIds: ["s0", "s1"],
+        resultFor: (id) => (id === "s0" ? rateLimitedAs400 : "done"),
+      },
+    );
+    reactor.start();
+    reactor.deliver(makeInboundMessage());
+    await waitFor("reactor.done");
+
+    // Before the fix this classified as `fatal`, which aborts the cycle
+    // immediately and never reaches s1.
+    expect(attemptedSourceIds).toEqual(["s0", "s0", "s1"]);
+    expect(getEvent(events, "inference.done").data.source.sourceId).toBe("s1");
   });
 
   test("surfaces the last error when every source is exhausted", async () => {

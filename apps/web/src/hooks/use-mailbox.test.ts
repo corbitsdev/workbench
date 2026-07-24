@@ -32,6 +32,7 @@ const {
   mailboxQueryKey,
   MAILBOX_POLL_MS,
   MAILBOX_PAGE_LIMIT,
+  MAILBOX_UNREAD_COUNT_KEY,
   useMailbox,
   useMailboxMessage,
   useMarkMailboxRead,
@@ -288,5 +289,46 @@ describe("useMarkMailboxRead across pages", () => {
       mailboxHook.result.current.data?.find((m: MailboxMessage) => m.id === "1")
         ?.read,
     ).toBe(false);
+  });
+
+  it("still persists the read POST when the unread-count and message-detail caches are populated (drawer open)", async () => {
+    // Regression for the onMutate crash: getQueriesData({queryKey:["mailbox"]})
+    // prefix-matches every "mailbox"-scoped entry, not just infinite-query list
+    // pages. With the drawer open, the cache also holds a plain unread-count
+    // number under MAILBOX_UNREAD_COUNT_KEY and a message-detail object under
+    // ["mailbox","message",id] — neither has a `.pages` array. Before the fix,
+    // mapping those through patchMailboxPages threw a TypeError inside
+    // onMutate, which (in TanStack Query v5) aborts the mutation before
+    // mutationFn ever runs, so the read POST never fired.
+    const client = new QueryClient({
+      defaultOptions: {
+        queries: { retry: false },
+        mutations: { retry: false },
+      },
+    });
+    client.setQueryData(MAILBOX_UNREAD_COUNT_KEY, 3);
+    client.setQueryData(["mailbox", "message", "m-1"], {
+      ...msg({ id: "m-1" }),
+      body: "Full body text",
+    });
+
+    const markHook = renderHook(() => useMarkMailboxRead(), {
+      wrapper: wrapper(client),
+    });
+
+    apiResponses.push({ id: "m-1", read: true });
+
+    let thrown: unknown;
+    try {
+      await markHook.result.current.mutateAsync("m-1");
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeUndefined();
+    expect(apiCalls).toEqual([
+      { method: "POST", path: "/me/inbox/m-1/read" },
+    ]);
+    expect(client.getQueryData<number>(MAILBOX_UNREAD_COUNT_KEY)).toBe(3);
   });
 });

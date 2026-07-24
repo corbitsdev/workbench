@@ -4,7 +4,7 @@ import type {
   RepoStore,
   SessionService,
   SidecarRouter,
-} from "@intx/hub-sessions";
+} from "@workbench/hub-sessions";
 import type { CryptoProvider } from "@intx/types/runtime";
 import {
   WORKFLOW_LIST_KINDS_DEFINITION,

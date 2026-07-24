@@ -3,11 +3,12 @@ import { resolveModelSources, createGrantStore } from "@intx/db";
 import type { ModelRequirement } from "@intx/types";
 import type { GrantRule } from "@intx/authz";
 import type { HarnessConfig, InferenceSource } from "@intx/types/runtime";
-import type { DeployContent } from "@intx/hub-sessions";
+import type { DeployContent } from "@workbench/hub-sessions";
 import type { WorkflowDefinition } from "@intx/workflow";
 import { LLM_DEFAULT_MODEL } from "@workbench/agents";
 import type { HubDb } from "../db";
 import { getCachedCatalogSources } from "./workflow-model-source-cache";
+import { frameGrantRules } from "./step-grants";
 
 export type WorkflowDeployConfig = {
   deploymentId: string;
@@ -16,7 +17,7 @@ export type WorkflowDeployConfig = {
 };
 
 // The distinct non-default models a workflow's steps declare as a preferred
-// inference source (via `inlineInferenceStep({ model })`). The deploy resolves
+// inference source (via `agentStep({ model })`). The deploy resolves
 // these into `config.sources` IN ADDITION to the default chain so a step that
 // prefers one can pin it. Driving the extra-model set off the definition keeps
 // the per-step model a property of the workflow that declares it — the generic
@@ -39,7 +40,7 @@ export function collectDeclaredStepModels(
 }
 
 // The per-step output-token ceiling a step declares on its preferred inference
-// source (via `inlineInferenceStep({ model, maxTokens })`, carried as
+// source (via `agentStep({ model, maxTokens })`, carried as
 // `parameters.maxTokens`). Keyed by model so the deploy can lift it onto the
 // matching resolved `InferenceSource.defaults.maxTokens` — the source-level knob
 // the runtime merges into each call. Without this a heavy writer step runs on the
@@ -221,6 +222,7 @@ export function assembleWorkflowDeployConfig(args: {
   principalId: string;
   deploymentDomain: string;
   sources: InferenceSource[];
+  definition: WorkflowDefinition;
 }): WorkflowDeployConfig {
   const [head] = args.sources;
   if (head === undefined) {
@@ -238,7 +240,14 @@ export function assembleWorkflowDeployConfig(args: {
       agentAddress: `${args.deploymentId}@${args.deploymentDomain}`,
       systemPrompt: "",
       tools: [],
-      grants: [],
+      // The frame's grants are what the sidecar writes into EVERY step's
+      // state/grants.json at spawn and what the workflow child's authorize
+      // (agent-step tool calls AND native action EffectContext.perform)
+      // actually evaluates. This shipped `[]` for every deployment — so every
+      // action effect check failed "not authorized (null)" no matter what
+      // the hub-side per-step grant files carried. Derive the real surface
+      // from the definition (see step-grants.ts).
+      grants: frameGrantRules(args.definition),
       sources: args.sources,
       defaultSource: head.id,
     },
@@ -273,5 +282,6 @@ export async function resolveWorkflowDeployConfig(args: {
     principalId: args.principalId,
     deploymentDomain: args.deploymentDomain,
     sources,
+    definition: args.definition,
   });
 }

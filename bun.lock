@@ -31,7 +31,6 @@
         "@intx/db": "workspace:*",
         "@intx/hub-api": "workspace:*",
         "@intx/hub-common": "workspace:*",
-        "@intx/hub-sessions": "workspace:*",
         "@intx/inference": "workspace:*",
         "@intx/log": "workspace:*",
         "@intx/mime": "workspace:*",
@@ -48,6 +47,7 @@
         "@workbench/catalog": "workspace:*",
         "@workbench/event-collector": "workspace:*",
         "@workbench/hub-agent": "workspace:*",
+        "@workbench/hub-sessions": "workspace:*",
         "@workbench/last30days-core": "workspace:*",
         "@workbench/myra": "workspace:*",
         "@workbench/openapi-arktype": "workspace:*",
@@ -66,6 +66,7 @@
         "@workbench/tools-attio": "workspace:*",
         "@workbench/tools-bluesky": "workspace:*",
         "@workbench/tools-catalog": "workspace:*",
+        "@workbench/tools-corbits-knowledge-engine": "workspace:*",
         "@workbench/tools-dispatch": "workspace:*",
         "@workbench/tools-exa": "workspace:*",
         "@workbench/tools-fileparser": "workspace:*",
@@ -78,6 +79,7 @@
         "@workbench/tools-linear": "workspace:*",
         "@workbench/tools-notion": "workspace:*",
         "@workbench/tools-polymarket": "workspace:*",
+        "@workbench/tools-prospect-engine": "workspace:*",
         "@workbench/tools-reddit": "workspace:*",
         "@workbench/tools-scrapecreators": "workspace:*",
         "@workbench/tools-skills": "workspace:*",
@@ -112,7 +114,6 @@
         "@intx/authz": "workspace:*",
         "@intx/crypto": "workspace:*",
         "@intx/harness": "workspace:*",
-        "@intx/hub-sessions": "workspace:*",
         "@intx/inference": "workspace:*",
         "@intx/log": "workspace:*",
         "@intx/mail-memory": "workspace:*",
@@ -125,6 +126,7 @@
         "@workbench/agents": "workspace:*",
         "@workbench/context-repair": "workspace:*",
         "@workbench/hub-agent": "workspace:*",
+        "@workbench/hub-sessions": "workspace:*",
         "@workbench/myra": "workspace:*",
         "@workbench/prompts": "workspace:*",
         "@workbench/sentry": "workspace:*",
@@ -163,12 +165,16 @@
         "@workbench/transcript": "workspace:*",
         "@workbench/ui": "workspace:*",
         "@workbench/workflow-attio-task-agent": "workspace:*",
+        "@workbench/workflow-competitor-analysis": "workspace:*",
         "@workbench/workflow-gamma-presentation-creator": "workspace:*",
+        "@workbench/workflow-gtm-scripts-briefs": "workspace:*",
         "@workbench/workflow-heartbeat": "workspace:*",
         "@workbench/workflow-last30days-research": "workspace:*",
+        "@workbench/workflow-multi-source-collateral": "workspace:*",
         "@workbench/workflow-pain-point-collateral": "workspace:*",
         "@workbench/workflow-reddit-opportunity-scanner": "workspace:*",
         "@workbench/workflow-sumble-account-intel": "workspace:*",
+        "@workbench/workflows-ui": "workspace:*",
         "arktype": "^2.2.0",
         "better-auth": "^1.1.43",
         "class-variance-authority": "^0.7.1",
@@ -685,10 +691,12 @@
         "@testing-library/user-event": "^14.6.1",
         "@types/bun": "latest",
         "@types/react": "^19.0.0",
+        "framer-motion": "^12.0.0",
         "react": "^19.0.0",
         "typescript": "^5.9.0",
       },
       "peerDependencies": {
+        "framer-motion": "*",
         "react": "*",
       },
     },
@@ -790,9 +798,35 @@
       },
       "devDependencies": {
         "@intx/crypto": "workspace:*",
-        "@intx/hub-sessions": "workspace:*",
         "@types/bun": "1.3.9",
+        "@workbench/hub-sessions": "workspace:*",
         "hono": "catalog:",
+        "typescript": "^5.9.0",
+      },
+    },
+    "packages/hub-sessions": {
+      "name": "@workbench/hub-sessions",
+      "version": "0.1.0",
+      "dependencies": {
+        "@intx/agent": "workspace:*",
+        "@intx/crypto": "workspace:*",
+        "@intx/db": "workspace:*",
+        "@intx/hub-common": "workspace:*",
+        "@intx/log": "workspace:*",
+        "@intx/mime": "workspace:*",
+        "@intx/pack-transport": "workspace:*",
+        "@intx/tool-packaging": "workspace:*",
+        "@intx/types": "workspace:*",
+        "@intx/workflow": "workspace:*",
+        "@intx/workflow-deploy": "workspace:*",
+        "@workbench/storage-isogit": "workspace:*",
+        "arktype": "catalog:",
+        "drizzle-orm": "catalog:",
+        "isomorphic-git": "catalog:",
+        "tar": "catalog:",
+      },
+      "devDependencies": {
+        "@types/bun": "1.3.9",
         "typescript": "^5.9.0",
       },
     },
@@ -960,6 +994,7 @@
       "dependencies": {
         "@intx/agent": "workspace:*",
         "@intx/types": "workspace:*",
+        "@workbench/shared": "workspace:*",
         "arktype": "catalog:",
       },
       "devDependencies": {
@@ -1065,10 +1100,26 @@
         "typescript": "^5.9.0",
       },
     },
+    "packages/tools-corbits-knowledge-engine": {
+      "name": "@workbench/tools-corbits-knowledge-engine",
+      "version": "0.1.0",
+      "dependencies": {
+        "@workbench/tool-credentials": "workspace:*",
+        "@workbench/tool-manifest": "workspace:*",
+        "arktype": "catalog:",
+      },
+      "devDependencies": {
+        "@intx/agent": "workspace:*",
+        "@intx/types": "workspace:*",
+        "@types/bun": "latest",
+        "typescript": "^5.9.0",
+      },
+    },
     "packages/tools-dispatch": {
       "name": "@workbench/tools-dispatch",
       "version": "0.1.0",
       "dependencies": {
+        "@workbench/hub-sessions": "workspace:*",
         "@workbench/tool-credentials": "workspace:*",
         "@workbench/tool-manifest": "workspace:*",
         "arktype": "catalog:",
@@ -1078,7 +1129,6 @@
         "@intx/crypto": "workspace:*",
         "@intx/db": "workspace:*",
         "@intx/hub-common": "workspace:*",
-        "@intx/hub-sessions": "workspace:*",
         "@intx/log": "workspace:*",
         "@intx/types": "workspace:*",
         "@types/bun": "latest",
@@ -1164,6 +1214,7 @@
       "name": "@workbench/tools-granola",
       "version": "0.1.0",
       "dependencies": {
+        "@workbench/shared": "workspace:*",
         "@workbench/tool-credentials": "workspace:*",
         "@workbench/tool-manifest": "workspace:*",
         "arktype": "catalog:",
@@ -1268,6 +1319,21 @@
       "version": "0.1.0",
       "dependencies": {
         "@workbench/last30days-core": "workspace:*",
+        "@workbench/tool-manifest": "workspace:*",
+        "arktype": "catalog:",
+      },
+      "devDependencies": {
+        "@intx/agent": "workspace:*",
+        "@intx/types": "workspace:*",
+        "@types/bun": "latest",
+        "typescript": "^5.9.0",
+      },
+    },
+    "packages/tools-prospect-engine": {
+      "name": "@workbench/tools-prospect-engine",
+      "version": "0.1.0",
+      "dependencies": {
+        "@workbench/shared": "workspace:*",
         "@workbench/tool-manifest": "workspace:*",
         "arktype": "catalog:",
       },
@@ -1482,7 +1548,6 @@
       "dependencies": {
         "@intx/agent": "workspace:*",
         "@intx/crypto": "workspace:*",
-        "@intx/hub-sessions": "workspace:*",
         "@intx/inference": "workspace:*",
         "@intx/log": "workspace:*",
         "@intx/mail-memory": "workspace:*",
@@ -1490,11 +1555,33 @@
         "@intx/storage-isogit": "workspace:*",
         "@intx/types": "workspace:*",
         "@intx/workflow": "workspace:*",
+        "@workbench/hub-sessions": "workspace:*",
         "arktype": "catalog:",
       },
       "devDependencies": {
         "@types/bun": "latest",
         "typescript": "^5.9.0",
+      },
+    },
+    "packages/workflows-ui": {
+      "name": "@workbench/workflows-ui",
+      "dependencies": {
+        "@workbench/agents": "workspace:*",
+        "arktype": "catalog:",
+      },
+      "devDependencies": {
+        "@happy-dom/global-registrator": "^20.9.0",
+        "@testing-library/react": "^16.3.2",
+        "@types/bun": "latest",
+        "@types/react": "^19.0.0",
+        "@types/react-dom": "^19.0.0",
+        "react": "^19.0.0",
+        "react-dom": "^19.0.0",
+        "typescript": "^5.9.0",
+      },
+      "peerDependencies": {
+        "react": "*",
+        "react-dom": "*",
       },
     },
     "workflows/ab-compare-quality": {
@@ -1554,6 +1641,60 @@
         "react": "*",
       },
     },
+    "workflows/competitor-analysis": {
+      "name": "@workbench/workflow-competitor-analysis",
+      "version": "0.1.0",
+      "dependencies": {
+        "@intx/agent": "workspace:*",
+        "@intx/workflow": "workspace:*",
+        "@workbench/agents": "workspace:*",
+        "@workbench/blocks": "workspace:*",
+        "@workbench/shared": "workspace:*",
+        "@workbench/ui": "workspace:*",
+        "arktype": "catalog:",
+        "react": "^19.0.0",
+      },
+      "devDependencies": {
+        "@testing-library/react": "^16.3.2",
+        "@types/bun": "latest",
+        "@types/react": "^19.0.0",
+        "@workbench/test-utils": "workspace:*",
+        "typescript": "catalog:",
+      },
+      "peerDependencies": {
+        "react": "*",
+      },
+    },
+    "workflows/exa-topic-watch": {
+      "name": "@workbench/workflow-exa-topic-watch",
+      "version": "0.1.0",
+      "dependencies": {
+        "@intx/agent": "workspace:*",
+        "@intx/workflow": "workspace:*",
+        "@workbench/agents": "workspace:*",
+        "@workbench/shared": "workspace:*",
+        "arktype": "catalog:",
+      },
+      "devDependencies": {
+        "@types/bun": "latest",
+        "typescript": "catalog:",
+      },
+    },
+    "workflows/firecrawl-url-watch": {
+      "name": "@workbench/workflow-firecrawl-url-watch",
+      "version": "0.1.0",
+      "dependencies": {
+        "@intx/agent": "workspace:*",
+        "@intx/workflow": "workspace:*",
+        "@workbench/agents": "workspace:*",
+        "@workbench/shared": "workspace:*",
+        "arktype": "catalog:",
+      },
+      "devDependencies": {
+        "@types/bun": "latest",
+        "typescript": "catalog:",
+      },
+    },
     "workflows/gamma-presentation-creator": {
       "name": "@workbench/workflow-gamma-presentation-creator",
       "version": "0.1.0",
@@ -1578,6 +1719,52 @@
       },
       "peerDependencies": {
         "react": "*",
+      },
+    },
+    "workflows/github-topic-watch": {
+      "name": "@workbench/workflow-github-topic-watch",
+      "version": "0.1.0",
+      "dependencies": {
+        "@intx/agent": "workspace:*",
+        "@intx/workflow": "workspace:*",
+        "@workbench/agents": "workspace:*",
+        "@workbench/shared": "workspace:*",
+        "arktype": "catalog:",
+      },
+      "devDependencies": {
+        "@types/bun": "latest",
+        "typescript": "catalog:",
+      },
+    },
+    "workflows/granola-call": {
+      "name": "@workbench/workflow-granola-call",
+      "version": "0.1.0",
+      "dependencies": {
+        "@intx/agent": "workspace:*",
+        "@intx/workflow": "workspace:*",
+        "@workbench/agents": "workspace:*",
+        "@workbench/shared": "workspace:*",
+        "@workbench/ui": "workspace:*",
+        "arktype": "catalog:",
+      },
+      "devDependencies": {
+        "@types/bun": "latest",
+        "typescript": "catalog:",
+      },
+    },
+    "workflows/gtm-scripts-briefs": {
+      "name": "@workbench/workflow-gtm-scripts-briefs",
+      "version": "0.1.0",
+      "dependencies": {
+        "@intx/workflow": "workspace:*",
+        "@workbench/agents": "workspace:*",
+        "@workbench/blocks": "workspace:*",
+        "@workbench/workflow-last30days-research": "workspace:*",
+      },
+      "devDependencies": {
+        "@types/bun": "latest",
+        "@workbench/test-utils": "workspace:*",
+        "typescript": "catalog:",
       },
     },
     "workflows/heartbeat": {
@@ -1627,8 +1814,8 @@
         "react": "^19.0.0",
       },
     },
-    "workflows/pain-point-collateral": {
-      "name": "@workbench/workflow-pain-point-collateral",
+    "workflows/multi-source-collateral": {
+      "name": "@workbench/workflow-multi-source-collateral",
       "version": "0.1.0",
       "dependencies": {
         "@intx/agent": "workspace:*",
@@ -1651,6 +1838,63 @@
       },
       "peerDependencies": {
         "react": "*",
+      },
+    },
+    "workflows/pain-point-collateral": {
+      "name": "@workbench/workflow-pain-point-collateral",
+      "version": "0.1.0",
+      "dependencies": {
+        "@intx/agent": "workspace:*",
+        "@intx/workflow": "workspace:*",
+        "@workbench/agents": "workspace:*",
+        "@workbench/blocks": "workspace:*",
+        "@workbench/prompts": "workspace:*",
+        "@workbench/shared": "workspace:*",
+        "@workbench/ui": "workspace:*",
+        "arktype": "catalog:",
+        "react": "^19.0.0",
+      },
+      "devDependencies": {
+        "@testing-library/react": "^16.3.2",
+        "@testing-library/user-event": "^14.6.1",
+        "@types/bun": "latest",
+        "@types/react": "^19.0.0",
+        "@workbench/test-utils": "workspace:*",
+        "@workbench/tools-granola": "workspace:*",
+        "typescript": "catalog:",
+      },
+      "peerDependencies": {
+        "react": "*",
+      },
+    },
+    "workflows/process-granola-call": {
+      "name": "@workbench/workflow-process-granola-call",
+      "version": "0.1.0",
+      "dependencies": {
+        "@intx/agent": "workspace:*",
+        "@intx/workflow": "workspace:*",
+        "@workbench/agents": "workspace:*",
+        "@workbench/shared": "workspace:*",
+        "@workbench/ui": "workspace:*",
+        "arktype": "catalog:",
+      },
+      "devDependencies": {
+        "@types/bun": "latest",
+        "typescript": "catalog:",
+      },
+    },
+    "workflows/prospect-engine": {
+      "name": "@workbench/workflow-prospect-engine",
+      "version": "0.1.0",
+      "dependencies": {
+        "@intx/agent": "workspace:*",
+        "@intx/workflow": "workspace:*",
+        "@workbench/agents": "workspace:*",
+        "@workbench/shared": "workspace:*",
+      },
+      "devDependencies": {
+        "@types/bun": "latest",
+        "typescript": "catalog:",
       },
     },
     "workflows/reddit-opportunity-scanner": {
@@ -1676,6 +1920,21 @@
       },
       "peerDependencies": {
         "react": "^19.0.0",
+      },
+    },
+    "workflows/reddit-opportunity-watch": {
+      "name": "@workbench/workflow-reddit-opportunity-watch",
+      "version": "0.1.0",
+      "dependencies": {
+        "@intx/agent": "workspace:*",
+        "@intx/workflow": "workspace:*",
+        "@workbench/agents": "workspace:*",
+        "@workbench/shared": "workspace:*",
+        "arktype": "catalog:",
+      },
+      "devDependencies": {
+        "@types/bun": "latest",
+        "typescript": "catalog:",
       },
     },
     "workflows/smoke-test": {
@@ -2606,6 +2865,8 @@
 
     "@workbench/hub-agent": ["@workbench/hub-agent@workspace:packages/hub-agent"],
 
+    "@workbench/hub-sessions": ["@workbench/hub-sessions@workspace:packages/hub-sessions"],
+
     "@workbench/inference": ["@workbench/inference@workspace:packages/inference"],
 
     "@workbench/last30days-core": ["@workbench/last30days-core@workspace:packages/last30days-core"],
@@ -2650,6 +2911,8 @@
 
     "@workbench/tools-catalog": ["@workbench/tools-catalog@workspace:packages/tools-catalog"],
 
+    "@workbench/tools-corbits-knowledge-engine": ["@workbench/tools-corbits-knowledge-engine@workspace:packages/tools-corbits-knowledge-engine"],
+
     "@workbench/tools-dispatch": ["@workbench/tools-dispatch@workspace:packages/tools-dispatch"],
 
     "@workbench/tools-exa": ["@workbench/tools-exa@workspace:packages/tools-exa"],
@@ -2675,6 +2938,8 @@
     "@workbench/tools-notion": ["@workbench/tools-notion@workspace:packages/tools-notion"],
 
     "@workbench/tools-polymarket": ["@workbench/tools-polymarket@workspace:packages/tools-polymarket"],
+
+    "@workbench/tools-prospect-engine": ["@workbench/tools-prospect-engine@workspace:packages/tools-prospect-engine"],
 
     "@workbench/tools-reddit": ["@workbench/tools-reddit@workspace:packages/tools-reddit"],
 
@@ -2708,7 +2973,19 @@
 
     "@workbench/workflow-attio-task-agent": ["@workbench/workflow-attio-task-agent@workspace:workflows/attio-task-agent"],
 
+    "@workbench/workflow-competitor-analysis": ["@workbench/workflow-competitor-analysis@workspace:workflows/competitor-analysis"],
+
+    "@workbench/workflow-exa-topic-watch": ["@workbench/workflow-exa-topic-watch@workspace:workflows/exa-topic-watch"],
+
+    "@workbench/workflow-firecrawl-url-watch": ["@workbench/workflow-firecrawl-url-watch@workspace:workflows/firecrawl-url-watch"],
+
     "@workbench/workflow-gamma-presentation-creator": ["@workbench/workflow-gamma-presentation-creator@workspace:workflows/gamma-presentation-creator"],
+
+    "@workbench/workflow-github-topic-watch": ["@workbench/workflow-github-topic-watch@workspace:workflows/github-topic-watch"],
+
+    "@workbench/workflow-granola-call": ["@workbench/workflow-granola-call@workspace:workflows/granola-call"],
+
+    "@workbench/workflow-gtm-scripts-briefs": ["@workbench/workflow-gtm-scripts-briefs@workspace:workflows/gtm-scripts-briefs"],
 
     "@workbench/workflow-heartbeat": ["@workbench/workflow-heartbeat@workspace:workflows/heartbeat"],
 
@@ -2716,13 +2993,23 @@
 
     "@workbench/workflow-last30days-research": ["@workbench/workflow-last30days-research@workspace:workflows/last30days-research"],
 
+    "@workbench/workflow-multi-source-collateral": ["@workbench/workflow-multi-source-collateral@workspace:workflows/multi-source-collateral"],
+
     "@workbench/workflow-pain-point-collateral": ["@workbench/workflow-pain-point-collateral@workspace:workflows/pain-point-collateral"],
 
+    "@workbench/workflow-process-granola-call": ["@workbench/workflow-process-granola-call@workspace:workflows/process-granola-call"],
+
+    "@workbench/workflow-prospect-engine": ["@workbench/workflow-prospect-engine@workspace:workflows/prospect-engine"],
+
     "@workbench/workflow-reddit-opportunity-scanner": ["@workbench/workflow-reddit-opportunity-scanner@workspace:workflows/reddit-opportunity-scanner"],
+
+    "@workbench/workflow-reddit-opportunity-watch": ["@workbench/workflow-reddit-opportunity-watch@workspace:workflows/reddit-opportunity-watch"],
 
     "@workbench/workflow-smoke-test": ["@workbench/workflow-smoke-test@workspace:workflows/smoke-test"],
 
     "@workbench/workflow-sumble-account-intel": ["@workbench/workflow-sumble-account-intel@workspace:workflows/sumble-account-intel"],
+
+    "@workbench/workflows-ui": ["@workbench/workflows-ui@workspace:packages/workflows-ui"],
 
     "abort-controller": ["abort-controller@3.0.0", "", { "dependencies": { "event-target-shim": "^5.0.0" } }, "sha512-h8lQ8tacZYnR3vNQTgibj+tODHI5/+l06Au2Pcriv/Gmet0eaj4TwWH41sO9wnHDiQsEj19q0drzdWdeAHtweg=="],
 

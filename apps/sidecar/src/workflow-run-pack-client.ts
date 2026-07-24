@@ -26,7 +26,7 @@ import type {
   RepoId,
   RepoStore,
   WorkflowRunSupervisorPrincipal,
-} from "@intx/hub-sessions";
+} from "@workbench/hub-sessions";
 import type { HubLink } from "@workbench/hub-agent";
 
 import {
@@ -227,7 +227,14 @@ export function createWorkflowRunPackClient(
       );
       await hubLink.pushWorkflowRunPack({
         agentAddress,
-        repoId,
+        // WORKBENCH-LOCAL (CL-4231): `pushWorkflowRunPack`'s `repoId` is
+        // typed against the WIRE `RepoId` (`@intx/types/sidecar`, closed
+        // five-kind enum) — correctly unwidened, since pack-push frames
+        // validate against that closed shape on the wire. This module only
+        // ever constructs `repoId` with `kind: "workflow-run"` (see the
+        // literal above), so the cast documents a boundary that already
+        // holds structurally, not a re-narrowing of anything unsafe.
+        repoId: repoId as unknown as { kind: "workflow-run"; id: string },
         pack,
         ref,
         commitSha,
@@ -242,6 +249,50 @@ export function createWorkflowRunPackClient(
       substrate.commitPackedTip(repoId, ref, commitSha);
       lastAckedSha.set(ackKey(repoId, ref), commitSha);
     },
+  };
+}
+
+// WORKBENCH-LOCAL (CL-4184): a workflow-run repo commits to TWO refs, each
+// pushed through its own independent pack-push slot (keyed by `(repoId,
+// ref)` — see `slotKey` above): `refs/heads/main` carries the run event log
+// (`writeTreePreservingPrefix`) and `refs/heads/events` carries the
+// claim-check inbox/processing/consumed subtree (`writeTreeDelta`, via
+// interchange's `enqueueInbox` / `dequeueToProcessing` / `markConsumed` /
+// `replayProcessingToInbox` in `workflow-run-kind.ts`). `refs/heads/events`
+// is NOT exported by interchange — this literal is duck-typed from its
+// private `claimCheckCommitRef()` and MUST be re-verified on every pin bump.
+export const WORKFLOW_RUN_MAIN_REF = "refs/heads/main";
+export const WORKFLOW_RUN_CLAIM_CHECK_REF = "refs/heads/events";
+
+/**
+ * WORKBENCH-LOCAL (CL-4184): the CL-2340 teardown drain barrier
+ * (`teardownDeployment` in `workflow-host-wiring.ts`) awaits this before
+ * reclaiming the deployment's local repo directory, so that no un-acked
+ * pack push races the directory deletion. Draining only `refs/heads/main`
+ * (the pre-CL-4184 behavior) left `refs/heads/events` un-drained: an
+ * in-flight or failed-and-latched push on the claim-check ref could lose
+ * the last `markConsumed` commit, so a cold relaunch rehydrates the
+ * claim-check subtree from a stale hub copy where the just-answered mail
+ * still sits in `processing/`. The next spawn's `replayProcessingToInbox`
+ * then re-admits it to `inbox/` and the dispatch loop genuinely
+ * re-dispatches it — a duplicate assistant reply for an already-completed
+ * turn, with no `workflow_run_record` row (the replay bypasses the hub's
+ * `/start` seeding). Draining BOTH refs closes that window: teardown can no
+ * longer proceed to reclaim the repo dir while the claim-check ref still has
+ * an outstanding push.
+ */
+export function createWorkflowRunPushDrain(
+  store: Pick<WorkflowRunPackPushingRepoStore, "flushWorkflowRunPushes">,
+): (deploymentId: string) => Promise<void> {
+  return async (deploymentId: string): Promise<void> => {
+    const repoId: RepoId = { kind: "workflow-run", id: deploymentId };
+    const results = await Promise.allSettled([
+      store.flushWorkflowRunPushes(repoId, WORKFLOW_RUN_MAIN_REF),
+      store.flushWorkflowRunPushes(repoId, WORKFLOW_RUN_CLAIM_CHECK_REF),
+    ]);
+    for (const result of results) {
+      if (result.status === "rejected") throw result.reason;
+    }
   };
 }
 

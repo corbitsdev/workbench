@@ -57,7 +57,7 @@ export const ARTIFACT_READ_DEFINITION: ArtifactToolDefinition = {
   name: "artifact_read",
   sideEffect: "read",
   description:
-    "Read a Workbench artifact by id. Returns its title, kind, status, current version, and content. Pass version to read a specific past version. When the content is too large to return at once, the result includes a 'continuation' field with instructions to read the rest with artifact_read_chunk.",
+    "Read a Workbench artifact by id. Returns its title, kind, current version, and content. Pass version to read a specific past version. When the content is too large to return at once, the result includes a 'continuation' field with instructions to read the rest with artifact_read_chunk.",
   inputSchema: {
     type: "object",
     properties: {
@@ -214,15 +214,11 @@ export const ARTIFACT_LIST_DEFINITION: ArtifactToolDefinition = {
   name: "artifact_list",
   sideEffect: "read",
   description:
-    "List Workbench artifacts in this workbench, most recently updated first. Returns id, title, kind, status, version, and updatedAt for each. Optionally filter by kind or status.",
+    "List Workbench artifacts in this workbench, most recently updated first. Returns id, title, kind, version, and updatedAt for each. Optionally filter by kind.",
   inputSchema: {
     type: "object",
     properties: {
       kind: { type: "string", description: "Optional kind filter." },
-      status: {
-        type: "string",
-        description: "Optional status filter: draft, approved, or rejected.",
-      },
       limit: {
         type: "number",
         description:
@@ -271,6 +267,36 @@ export const WRITE_ARTIFACT_DEFINITION: ArtifactToolDefinition = {
         type: "string",
         description:
           "Optional display name for the gallery tile of a session-less workflow artifact (e.g. the producing workflow's name). Stored under source.jobLabel.",
+      },
+      sourceRef: {
+        type: "string",
+        description:
+          "Optional stable origin key (e.g. granola:call:<noteId>). When set, re-writes with the same tenant+sourceRef return the existing artifactId instead of creating a second row.",
+      },
+      sourceRefPrefix: {
+        type: "string",
+        description:
+          "Optional sourceRef namespace, joined server-side as `<sourceRefPrefix>-<sourceRefKey>`. For callers (e.g. workflow argMaps) that carry an item key but cannot concatenate strings. Requires sourceRefKey; ignored when sourceRef is set explicitly.",
+      },
+      sourceRefKey: {
+        type: "string",
+        description:
+          "Optional per-item key joined with sourceRefPrefix into the artifact's sourceRef. Requires sourceRefPrefix.",
+      },
+      titlePrefix: {
+        type: "string",
+        description:
+          "Optional prefix prepended verbatim to title (include any separator, e.g. 'Transcript — '). For callers that derive title from upstream data but cannot concatenate strings.",
+      },
+      parentSourceRefPrefix: {
+        type: "string",
+        description:
+          "Optional lineage: composes the PARENT artifact's sourceRef as `<parentSourceRefPrefix>-<parentSourceRefKey>`, resolved to that artifact's id and stamped as this artifact's parent. Best-effort — a missing parent never fails the write. Requires parentSourceRefKey.",
+      },
+      parentSourceRefKey: {
+        type: "string",
+        description:
+          "Optional per-item key joined with parentSourceRefPrefix into the parent's sourceRef. Requires parentSourceRefPrefix.",
       },
     },
     required: ["title", "body", "kind"],

@@ -60,7 +60,6 @@ const ARTIFACT_ROW = {
   title: "My Upload",
   content: "",
   source: { upload: { id: "up-1" } },
-  status: "draft" as const,
   version: 1,
   createdAt: new Date("2026-06-20T00:00:00.000Z"),
   updatedAt: new Date("2026-06-20T00:00:00.000Z"),

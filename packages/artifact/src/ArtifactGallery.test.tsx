@@ -16,7 +16,6 @@ const artifact: ArtifactWithSession = {
   kind: "email",
   title: "Sales automation ROI",
   content: "body",
-  status: "approved",
   version: 1,
   ownerPrincipalId: null,
   archivedAt: null,
@@ -64,9 +63,8 @@ describe("ArtifactGallery", () => {
   it("still renders the other tiles when one artifact fails gallery mapping", () => {
     const corrupt = {
       ...artifact,
-      id: "a-2",
+      id: 123,
       title: "Corrupt artifact",
-      status: "bogus",
     } as unknown as ArtifactWithSession;
     render(
       React.createElement(ArtifactGallery, { artifacts: [corrupt, artifact] }),
@@ -78,9 +76,8 @@ describe("ArtifactGallery", () => {
   it("skips a corrupt artifact in rows view too", () => {
     const corrupt = {
       ...artifact,
-      id: "a-2",
+      id: 123,
       title: "Corrupt artifact",
-      status: "bogus",
     } as unknown as ArtifactWithSession;
     render(
       React.createElement(ArtifactGallery, {
@@ -95,7 +92,7 @@ describe("ArtifactGallery", () => {
   it("shows the empty state, not a table, when every artifact fails mapping", () => {
     const corrupt = {
       ...artifact,
-      status: "bogus",
+      id: 123,
     } as unknown as ArtifactWithSession;
     render(
       React.createElement(ArtifactGallery, {

@@ -1,0 +1,11 @@
+-- CL-4213: Granola call processing dedupes on artifact sourceRef instead of a
+-- work_unit-backed queue. The granola-call-job-queue facade and its off-tick
+-- runner are removed; `granola_call` is no longer an app-recognized
+-- work_unit kind. Every artifact this kind's rows were tracking already
+-- carries the correct `sourceRef` (`granola:call:<noteId>:<kind>`, in place
+-- since the granola-call workflow's introduction, CL-3647) — no artifact
+-- backfill is needed, only removing the now-orphaned queue rows so ops
+-- tooling doesn't keep counting a kind nothing claims anymore. `kind` is
+-- plain text with no DB check constraint (see 0074), so this is a pure data
+-- cleanup, not a schema change.
+DELETE FROM "work_unit" WHERE "kind" = 'granola_call';

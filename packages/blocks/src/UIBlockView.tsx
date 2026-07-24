@@ -1,6 +1,12 @@
 import { useCallback, useLayoutEffect, useRef, useState } from "react";
-import { cn, ComparisonView, Markdown } from "@workbench/ui";
-import { CardBlock, ListBlock, PreviewBlock, isSafeLinkHref } from "./display-blocks";
+import { motion, useReducedMotion } from "framer-motion";
+import { cn, ComparisonView, Markdown, PulsingRing } from "@workbench/ui";
+import {
+  CardBlock,
+  ListBlock,
+  PreviewBlock,
+  isSafeLinkHref,
+} from "./display-blocks";
 import {
   MAX_UI_BLOCK_NEST_DEPTH,
   type FormField,
@@ -406,42 +412,67 @@ function effectiveStepState(
   return step.state;
 }
 
+// Screen-reader-only status word for each step state. Visually the state is
+// carried by the rail/indicator + motion, not a right-aligned word — the flat
+// checklist read as a debug view (CL-4394). The word survives for a11y and is
+// queryable by text-based tests even though it renders visually hidden.
 const STEP_STATE_LABEL: Record<ProgressStepState, string> = {
-  done: "done",
-  running: "running",
-  awaiting: "awaiting input",
-  pending: "pending",
-  failed: "failed",
+  done: "Done",
+  running: "In progress",
+  awaiting: "Needs your input",
+  pending: "Up next",
+  failed: "Failed",
 };
+
+// The rail segment BELOW a step is "filled" once that step is done — it
+// visually connects to the step below only when this step's own work has
+// actually landed, so the flowing highlight never runs ahead of real progress.
+function railSegmentFilled(state: ProgressStepState): boolean {
+  return state === "done";
+}
 
 function StepIndicator({
   state,
   index,
+  reduceMotion,
 }: {
   state: ProgressStepState;
   index: number;
+  reduceMotion: boolean;
 }) {
   const base =
-    "flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[10px] font-semibold";
+    "relative flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-sm font-semibold";
   if (state === "done") {
-    return <span className={cn(base, "bg-green text-white")}>✓</span>;
+    return (
+      <motion.span
+        className={cn(base, "bg-green text-white")}
+        initial={reduceMotion ? false : { scale: 0.4, opacity: 0 }}
+        animate={{ scale: 1, opacity: 1 }}
+        transition={{ type: "spring", duration: 0.4, bounce: 0.15 }}
+      >
+        ✓
+      </motion.span>
+    );
   }
   if (state === "failed") {
     return <span className={cn(base, "bg-red text-white")}>!</span>;
   }
   if (state === "running") {
     return (
-      <span className={cn(base, "border-2 border-border")} aria-hidden>
-        <span className="h-2.5 w-2.5 animate-spin rounded-full border-2 border-border border-t-blue motion-reduce:animate-none" />
+      <span className={cn(base, "border-2 border-blue")} aria-hidden>
+        <PulsingRing colorClassName="bg-blue/25" reduceMotion={reduceMotion} />
+        <span className="h-2 w-2 rounded-full bg-blue" />
       </span>
     );
   }
   if (state === "awaiting") {
     // Passive status, not a CTA: awaiting steps use the neutral Summit Blue
     // status token, never the orange ACTION token (CL-2683). The choice BUTTON
-    // stays orange — that is the actionable affordance.
+    // stays orange — that is the actionable affordance. Filled (not hollow)
+    // and static so it reads distinct from the pulsing hollow "running" ring
+    // at 24px (CL-4394).
     return (
-      <span className={cn(base, "border-2 border-blue text-blue")}>
+      <span className={cn(base, "bg-blue-soft text-blue-deep")}>
         {index + 1}
       </span>
     );
@@ -458,27 +489,71 @@ function ProgressBlock({
 }: {
   block: Extract<UIBlock, { kind: "progress" }>;
 }) {
+  const reduceMotion = useReducedMotion() === true;
+  const total = block.steps.length;
+  const doneCount = block.steps.filter(
+    (_, index) => effectiveStepState(block.steps, index) === "done",
+  ).length;
+
   return (
-    <Surface className="px-3 py-2.5">
-      {block.title !== undefined && (
-        <div className="pb-2 text-sm font-medium text-text-2">
-          {block.title}
+    <Surface className="px-3 py-3">
+      {(block.title !== undefined || total > 1) && (
+        <div className="flex items-baseline justify-between gap-2 pb-3">
+          {block.title !== undefined && (
+            <span className="text-sm font-medium text-text-2">
+              {block.title}
+            </span>
+          )}
+          {total > 1 && (
+            <span className="shrink-0 text-sm text-text-3">
+              {doneCount} of {total}
+            </span>
+          )}
         </div>
       )}
-      <ol className="space-y-2" aria-live="polite">
+      <ol className="relative" aria-live="polite">
         {block.steps.map((step, index) => {
           const state = effectiveStepState(block.steps, index);
+          const isLast = index === block.steps.length - 1;
           return (
-            <li
+            <motion.li
               key={index}
+              layout={reduceMotion ? false : "position"}
               data-state={state}
-              className={cn(
-                "flex items-center gap-2.5",
-                state === "pending" && "opacity-50",
-              )}
+              aria-current={state === "running" ? "step" : undefined}
+              className={cn("flex gap-3", state === "pending" && "opacity-45")}
             >
-              <StepIndicator state={state} index={index} />
-              <span className="min-w-0 flex-1">
+              {/* Icon column stretches (flex default align-items) to match the
+                  label column's height, including the label column's own
+                  bottom padding — that padding IS the visual gap to the next
+                  step, so the rail (filling the icon column below the
+                  indicator) reaches all the way into it. A percentage height
+                  on the rail itself would not work here: percentage heights
+                  only resolve against an ancestor with a definite (non-auto)
+                  height, which this auto-sized row never has. */}
+              <div className="flex flex-col items-center">
+                <StepIndicator
+                  state={state}
+                  index={index}
+                  reduceMotion={reduceMotion}
+                />
+                {!isLast && (
+                  <span
+                    data-rail="true"
+                    className={cn(
+                      "mt-1 w-0.5 flex-1 rounded-full transition-colors duration-300",
+                      railSegmentFilled(state) ? "bg-green" : "bg-border",
+                    )}
+                    aria-hidden
+                  />
+                )}
+              </div>
+              <span
+                className={cn(
+                  "min-w-0 flex-1 pt-0.5",
+                  isLast ? "pb-0" : "pb-5",
+                )}
+              >
                 <span
                   className={cn(
                     "block truncate text-sm",
@@ -494,11 +569,9 @@ function ProgressBlock({
                     {step.meta}
                   </span>
                 )}
+                <span className="sr-only">{STEP_STATE_LABEL[state]}</span>
               </span>
-              <span className="shrink-0 text-xs text-text-3">
-                {STEP_STATE_LABEL[state]}
-              </span>
-            </li>
+            </motion.li>
           );
         })}
       </ol>

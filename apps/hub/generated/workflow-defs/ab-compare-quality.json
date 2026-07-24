@@ -100,11 +100,8 @@
               }
             ]
           },
-          "description": "Inline single-turn inference: exec0",
+          "description": "Reasoning step: exec0",
           "tags": {
-            "workbench.stepKind": "inline-inference",
-            "workbench.nonFatal": "true",
-            "workbench.inlineRetryMaxAttempts": "3",
             "workbench.title": "Variant 1"
           }
         },
@@ -137,11 +134,8 @@
               }
             ]
           },
-          "description": "Inline single-turn inference: exec1",
+          "description": "Reasoning step: exec1",
           "tags": {
-            "workbench.stepKind": "inline-inference",
-            "workbench.nonFatal": "true",
-            "workbench.inlineRetryMaxAttempts": "3",
             "workbench.title": "Variant 2"
           }
         },
@@ -174,11 +168,8 @@
               }
             ]
           },
-          "description": "Inline single-turn inference: exec2",
+          "description": "Reasoning step: exec2",
           "tags": {
-            "workbench.stepKind": "inline-inference",
-            "workbench.nonFatal": "true",
-            "workbench.inlineRetryMaxAttempts": "3",
             "workbench.title": "Variant 3"
           }
         },
@@ -211,11 +202,8 @@
               }
             ]
           },
-          "description": "Inline single-turn inference: exec3",
+          "description": "Reasoning step: exec3",
           "tags": {
-            "workbench.stepKind": "inline-inference",
-            "workbench.nonFatal": "true",
-            "workbench.inlineRetryMaxAttempts": "3",
             "workbench.title": "Variant 4"
           }
         },

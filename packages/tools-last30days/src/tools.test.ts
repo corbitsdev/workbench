@@ -282,7 +282,7 @@ function groundQueriesTool() {
 
 async function runGround(
   args: Record<string, unknown>,
-): Promise<Record<string, string>> {
+): Promise<Record<string, { query: string }>> {
   const handler = groundQueriesTool();
   const result = await handler(
     { id: "c1", name: "x", arguments: args },
@@ -291,7 +291,7 @@ async function runGround(
   if (typeof result.content === "string") {
     throw new Error("expected object content, got a string");
   }
-  return result.content as Record<string, string>;
+  return result.content as Record<string, { query: string }>;
 }
 
 const SOURCE_KEYS = [
@@ -316,10 +316,10 @@ describe("last30days_ground_queries", () => {
       polymarket: "market framing",
     });
     const content = await runGround({ topic: "a topic", query: "base", reply });
-    expect(content.github).toBe("org/repo");
-    expect(content.youtube).toBe("video title phrasing");
+    expect(content.github?.query).toBe("org/repo");
+    expect(content.youtube?.query).toBe("video title phrasing");
     for (const key of SOURCE_KEYS) {
-      expect(content[key]?.length ?? 0).toBeGreaterThan(0);
+      expect(content[key]?.query.length ?? 0).toBeGreaterThan(0);
     }
   });
 
@@ -330,7 +330,7 @@ describe("last30days_ground_queries", () => {
       reply: "sorry, no JSON here",
     });
     for (const key of SOURCE_KEYS) {
-      expect(content[key]).toBe("the base query");
+      expect(content[key]?.query).toBe("the base query");
     }
   });
 
@@ -340,19 +340,31 @@ describe("last30days_ground_queries", () => {
       query: "base",
       reply: JSON.stringify({ github: "org/repo", reddit: "  " }),
     });
-    expect(content.github).toBe("org/repo");
+    expect(content.github?.query).toBe("org/repo");
     // blank value is ignored → fallback
-    expect(content.reddit).toBe("base");
-    expect(content.web).toBe("base");
+    expect(content.reddit?.query).toBe("base");
+    expect(content.web?.query).toBe("base");
   });
 
   test("falls back to the topic when no focus query is given", async () => {
     const content = await runGround({ topic: "the topic", reply: "{}" });
-    expect(content.hackernews).toBe("the topic");
+    expect(content.hackernews?.query).toBe("the topic");
   });
 
   test("throws when neither query nor topic is present", async () => {
     await expect(runGround({ reply: "{}" })).rejects.toThrow(/query or topic/);
+  });
+
+  // CL-4232: each source's query is nested under a `query` key so a plain
+  // `{ from: "steps.groundQueries.output.content.<key>" }` selector yields
+  // `{ query: "..." }` — the exa_search/etc. argument name — verbatim.
+  test("nests each source's query under a query key for selector-only wiring", async () => {
+    const content = await runGround({
+      topic: "a topic",
+      query: "base",
+      reply: JSON.stringify({ web: "web query" }),
+    });
+    expect(content.web).toEqual({ query: "web query" });
   });
 });
 
@@ -371,14 +383,14 @@ describe("last30days_ground_queries — block-form intake fidelity (CL-2765)", (
       reply: "not json",
     });
     for (const key of SOURCE_KEYS) {
-      expect(content[key]).toBe("enterprise procurement risks");
+      expect(content[key]?.query).toBe("enterprise procurement risks");
     }
   });
 
   test("a { topic } form payload with no focus grounds on the topic", async () => {
     const content = await runGround({ topic: "AI coding agents", reply: "{}" });
     for (const key of SOURCE_KEYS) {
-      expect(content[key]).toBe("AI coding agents");
+      expect(content[key]?.query).toBe("AI coding agents");
     }
   });
 });
@@ -454,7 +466,7 @@ describe("last30days_collect (CL-2503)", () => {
 describe("last30days_entity_queries (CL-2503)", () => {
   async function runEntity(
     args: Record<string, unknown>,
-  ): Promise<Record<string, string>> {
+  ): Promise<Record<string, { query: string }>> {
     const handler = fullTool("last30days_entity_queries");
     const result = await handler(
       { id: "c", name: "x", arguments: args },
@@ -463,7 +475,7 @@ describe("last30days_entity_queries (CL-2503)", () => {
     if (typeof result.content === "string") {
       throw new Error("expected object content");
     }
-    return result.content as Record<string, string>;
+    return result.content as Record<string, { query: string }>;
   }
 
   test("parses an entity reply into the round-2 per-source query map", async () => {
@@ -474,8 +486,8 @@ describe("last30days_entity_queries (CL-2503)", () => {
       youtube: "Coverd credit card review",
     });
     const content = await runEntity({ topic: "Neobank Launches", reply });
-    expect(content.web).toBe("Coverd Telcoin Plasma One");
-    expect(content.youtube).toBe("Coverd credit card review");
+    expect(content.web?.query).toBe("Coverd Telcoin Plasma One");
+    expect(content.youtube?.query).toBe("Coverd credit card review");
   });
 
   test("a malformed reply falls every round-2 source back to the base query", async () => {
@@ -484,8 +496,18 @@ describe("last30days_entity_queries (CL-2503)", () => {
       reply: "no json",
     });
     for (const key of ["web", "reddit", "x", "youtube"]) {
-      expect(content[key]).toBe("the base topic");
+      expect(content[key]?.query).toBe("the base topic");
     }
+  });
+
+  // CL-4232: nested under `query` so the round-2 source step's plain path
+  // selector matches exa_search/etc.'s argument name directly.
+  test("nests each source's query under a query key", async () => {
+    const content = await runEntity({
+      topic: "the base topic",
+      reply: JSON.stringify({ web: "narrowed web query" }),
+    });
+    expect(content.web).toEqual({ query: "narrowed web query" });
   });
 });
 
@@ -545,14 +567,20 @@ describe("heartbeat_merge_brief_sources (CL-3485)", () => {
   });
 });
 
-describe("heartbeat_format_brief_mail_refs (CL-3521)", () => {
-  test("returns artifact and workflow_run refs for persist + trigger runId", async () => {
-    const handler = fullTool("heartbeat_format_brief_mail_refs");
+describe("heartbeat_format_brief_notify (CL-4232)", () => {
+  test("returns the mail_send argument shape verbatim (to/subject/content/refs)", async () => {
+    const handler = fullTool("heartbeat_format_brief_notify");
     const result = await handler(
       {
-        id: "refs",
-        name: "heartbeat_format_brief_mail_refs",
-        arguments: { artifactId: "art_abc", runId: "run_heartbeat-1" },
+        id: "notify",
+        name: "heartbeat_format_brief_notify",
+        arguments: {
+          userAddress: "usr_abc@workbench.local",
+          title: "Jordan Lee's Morning Brief - 04/07/26",
+          body: "# Morning brief\n\nAll clear.",
+          artifactId: "art_abc",
+          runId: "run_heartbeat-1",
+        },
       },
       SIGNAL,
     );
@@ -560,6 +588,9 @@ describe("heartbeat_format_brief_mail_refs (CL-3521)", () => {
       throw new Error("expected object content");
     }
     expect(result.content).toEqual({
+      to: "usr_abc@workbench.local",
+      subject: "Jordan Lee's Morning Brief - 04/07/26",
+      content: "# Morning brief\n\nAll clear.",
       refs: [
         { kind: "artifact", ref: "art_abc", label: "Open brief" },
         {
@@ -572,17 +603,60 @@ describe("heartbeat_format_brief_mail_refs (CL-3521)", () => {
   });
 
   test("returns isError when runId is missing", async () => {
-    const handler = fullTool("heartbeat_format_brief_mail_refs");
+    const handler = fullTool("heartbeat_format_brief_notify");
     const result = await handler(
       {
-        id: "refs",
-        name: "heartbeat_format_brief_mail_refs",
-        arguments: { artifactId: "art_abc" },
+        id: "notify",
+        name: "heartbeat_format_brief_notify",
+        arguments: {
+          userAddress: "usr_abc@workbench.local",
+          title: "t",
+          body: "b",
+          artifactId: "art_abc",
+        },
       },
       SIGNAL,
     );
     expect(result.isError).toBe(true);
     expect(result.content).toBe("runId is required");
+  });
+});
+
+describe("heartbeat_format_brief_document (CL-4232)", () => {
+  test("pairs title and reply into a title/body document", async () => {
+    const handler = fullTool("heartbeat_format_brief_document");
+    const result = await handler(
+      {
+        id: "document",
+        name: "heartbeat_format_brief_document",
+        arguments: {
+          title: "Jordan Lee's Morning Brief - 04/07/26",
+          reply: "# Morning brief\n\nAll clear.",
+        },
+      },
+      SIGNAL,
+    );
+    if (typeof result.content === "string") {
+      throw new Error("expected object content");
+    }
+    expect(result.content).toEqual({
+      title: "Jordan Lee's Morning Brief - 04/07/26",
+      body: "# Morning brief\n\nAll clear.",
+    });
+  });
+
+  test("returns isError when reply is missing", async () => {
+    const handler = fullTool("heartbeat_format_brief_document");
+    const result = await handler(
+      {
+        id: "document",
+        name: "heartbeat_format_brief_document",
+        arguments: { title: "t" },
+      },
+      SIGNAL,
+    );
+    expect(result.isError).toBe(true);
+    expect(result.content).toBe("reply is required");
   });
 });
 
@@ -617,6 +691,110 @@ describe("heartbeat_format_brief_title (CL-3502)", () => {
     }
     const content = result.content as { title: string };
     expect(content.title).toMatch(/^Your Morning Brief - \d{2}\/\d{2}\/\d{2}$/);
+  });
+});
+
+describe("competitor_analysis_format_report_document (CL-4232)", () => {
+  test("pairs companyUrl and reply into a title/body document", async () => {
+    const handler = fullTool("competitor_analysis_format_report_document");
+    const result = await handler(
+      {
+        id: "document",
+        name: "competitor_analysis_format_report_document",
+        arguments: {
+          companyUrl: "https://acme.com",
+          reply: "## Competitor report\n\nAcme has three main rivals.",
+        },
+      },
+      SIGNAL,
+    );
+    if (typeof result.content === "string") {
+      throw new Error("expected object content");
+    }
+    expect(result.content).toEqual({
+      title: "https://acme.com",
+      body: "## Competitor report\n\nAcme has three main rivals.",
+    });
+  });
+
+  test("returns isError when reply is missing", async () => {
+    const handler = fullTool("competitor_analysis_format_report_document");
+    const result = await handler(
+      {
+        id: "document",
+        name: "competitor_analysis_format_report_document",
+        arguments: { companyUrl: "https://acme.com" },
+      },
+      SIGNAL,
+    );
+    expect(result.isError).toBe(true);
+    expect(result.content).toBe("reply is required");
+  });
+
+  test("returns isError when companyUrl is missing", async () => {
+    const handler = fullTool("competitor_analysis_format_report_document");
+    const result = await handler(
+      {
+        id: "document",
+        name: "competitor_analysis_format_report_document",
+        arguments: { reply: "body" },
+      },
+      SIGNAL,
+    );
+    expect(result.isError).toBe(true);
+    expect(result.content).toBe("companyUrl is required");
+  });
+});
+
+describe("sumble_account_intel_format_report_document (CL-4232)", () => {
+  test("pairs organizationDomain and reply into a title/body document", async () => {
+    const handler = fullTool("sumble_account_intel_format_report_document");
+    const result = await handler(
+      {
+        id: "document",
+        name: "sumble_account_intel_format_report_document",
+        arguments: {
+          organizationDomain: "acme.com",
+          reply: "## Account brief\n\nAcme is worth a look.",
+        },
+      },
+      SIGNAL,
+    );
+    if (typeof result.content === "string") {
+      throw new Error("expected object content");
+    }
+    expect(result.content).toEqual({
+      title: "acme.com",
+      body: "## Account brief\n\nAcme is worth a look.",
+    });
+  });
+
+  test("returns isError when reply is missing", async () => {
+    const handler = fullTool("sumble_account_intel_format_report_document");
+    const result = await handler(
+      {
+        id: "document",
+        name: "sumble_account_intel_format_report_document",
+        arguments: { organizationDomain: "acme.com" },
+      },
+      SIGNAL,
+    );
+    expect(result.isError).toBe(true);
+    expect(result.content).toBe("reply is required");
+  });
+
+  test("returns isError when organizationDomain is missing", async () => {
+    const handler = fullTool("sumble_account_intel_format_report_document");
+    const result = await handler(
+      {
+        id: "document",
+        name: "sumble_account_intel_format_report_document",
+        arguments: { reply: "body" },
+      },
+      SIGNAL,
+    );
+    expect(result.isError).toBe(true);
+    expect(result.content).toBe("organizationDomain is required");
   });
 });
 

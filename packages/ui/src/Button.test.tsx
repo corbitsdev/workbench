@@ -33,6 +33,15 @@ describe("buttonVariants", () => {
     expect(classes).toContain("bg-transparent");
   });
 
+  it("lays out sm/md/lg sizes as a horizontal flex row so icon+label never stack", () => {
+    expect(buttonVariants({ size: "sm" })).toContain("flex");
+    expect(buttonVariants({ size: "sm" })).toContain("items-center");
+    expect(buttonVariants({ size: "md" })).toContain("flex");
+    expect(buttonVariants({ size: "md" })).toContain("items-center");
+    expect(buttonVariants({ size: "lg" })).toContain("flex");
+    expect(buttonVariants({ size: "lg" })).toContain("items-center");
+  });
+
   it("includes press feedback and a keyboard focus ring on every variant", () => {
     expect(buttonVariants({})).toContain("active:scale-[0.97]");
     expect(buttonVariants({})).toContain("focus-visible:ring-2");
@@ -68,5 +77,17 @@ describe("Button", () => {
     expect((screen.getByRole("button") as HTMLButtonElement).disabled).toBe(
       true,
     );
+  });
+
+  it("renders an icon and label on one row at size=sm without a per-call-site override", () => {
+    render(
+      <Button size="sm">
+        <svg data-testid="icon" aria-hidden="true" />
+        Label
+      </Button>,
+    );
+    const button = screen.getByRole("button");
+    expect(button.className).toContain("flex");
+    expect(button.className).toContain("items-center");
   });
 });

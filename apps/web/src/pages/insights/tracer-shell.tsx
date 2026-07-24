@@ -80,7 +80,7 @@ export function CopyId({ id }: { id: string }) {
           timer.current = setTimeout(() => setCopied(false), 1200);
         });
       }}
-      className="ml-1 inline-flex h-4 w-4 items-center justify-center rounded-[3px] text-text-3 transition hover:text-text focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent active:scale-[0.95]"
+      className="ml-1 inline-flex h-4 w-4 items-center justify-center rounded-[3px] text-text-3 transition hover:text-text focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent active:scale-[0.97]"
     >
       {copied ? (
         <Check className="h-3 w-3 text-green" />

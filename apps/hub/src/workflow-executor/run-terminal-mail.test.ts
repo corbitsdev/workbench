@@ -44,7 +44,14 @@ mock.module("@intx/log", () => ({
   }),
 }));
 
-const { deliverRunTerminalMail } = await import("./run-terminal-mail");
+let scheduleScope: "personal" | "tenant" | null = null;
+
+mock.module("../lib/scheduled-triggers", () => ({
+  scheduleScopeForRun: async () => scheduleScope,
+}));
+
+const { deliverRunTerminalMail, fanOutTenantScheduleTerminalMail } =
+  await import("./run-terminal-mail");
 const { resetFailureNotificationBreaker } = await import(
   "./failure-notification-breaker"
 );
@@ -61,12 +68,24 @@ const RUN = {
 function makeDb(opts: {
   owner: { id: string; kind: string; refId: string } | undefined;
   tenant: { domain: string } | undefined;
+  members?: { principalId: string }[];
 }): HubDb {
   return {
     query: {
-      principal: { findFirst: async () => opts.owner },
+      principal: {
+        findFirst: async (q?: { where?: unknown }) => {
+          // Fan-out re-resolves each member; map by id when members are provided.
+          void q;
+          return opts.owner;
+        },
+      },
       tenant: { findFirst: async () => opts.tenant },
     },
+    select: () => ({
+      from: () => ({
+        where: async () => opts.members ?? [],
+      }),
+    }),
   } as unknown as HubDb;
 }
 
@@ -77,6 +96,7 @@ afterEach(() => {
   errorLogs.length = 0;
   storedPrefs = {};
   deploymentMeta = null;
+  scheduleScope = null;
   resetFailureNotificationBreaker();
 });
 
@@ -122,18 +142,8 @@ describe("deliverRunTerminalMail", () => {
     expect(insertCalls).toHaveLength(0);
   });
 
-  it("does not mail a completion by default (notifyRunCompletion is OFF)", async () => {
-    const db = makeDb({
-      owner: { id: "prn-alice", kind: "user", refId: "alice" },
-      tenant: { domain: "tenant.example" },
-    });
-
-    await deliverRunTerminalMail(deps(db), { ...RUN, status: "completed" });
-
-    expect(insertCalls).toHaveLength(0);
-  });
-
-  it("mails a completion when notifyRunCompletion is explicitly on", async () => {
+  it("never mails a quiet/completed success (CL-4312: result mail only)", async () => {
+    // Even a leftover stored opt-in must not revive generic completion spam.
     storedPrefs = { notifyRunCompletion: true };
     deploymentMeta = { label: "Pain Point Collateral" };
     const db = makeDb({
@@ -143,11 +153,7 @@ describe("deliverRunTerminalMail", () => {
 
     await deliverRunTerminalMail(deps(db), { ...RUN, status: "completed" });
 
-    expect(insertCalls).toHaveLength(1);
-    expect(insertCalls[0]?.subject).toBe(
-      "Workflow run completed: Pain Point Collateral",
-    );
-    expect(insertCalls[0]?.messageKey).toBe("run:wfr-1:completed");
+    expect(insertCalls).toHaveLength(0);
   });
 
   it("falls back to the run kind as the label when deployment meta is absent", async () => {
@@ -286,7 +292,6 @@ describe("deliverRunTerminalMail", () => {
       owner: { id: "prn-alice", kind: "user", refId: "alice" },
       tenant: { domain: "tenant.example" },
     });
-    storedPrefs = { notifyRunCompletion: true };
 
     // Three consecutive failures of the same kind → three mails.
     for (let i = 0; i < 3; i += 1) {
@@ -310,13 +315,14 @@ describe("deliverRunTerminalMail", () => {
     });
     expect(insertCalls).toHaveLength(3);
 
-    // A success for the same kind resets the breaker (completion mail is on).
+    // A quiet success resets the breaker without writing a completion row
+    // (CL-4312: success inbox = result mail only).
     await deliverRunTerminalMail(deps(db), {
       ...RUN,
       runId: "wfr-ok",
       status: "completed",
     });
-    expect(insertCalls).toHaveLength(4);
+    expect(insertCalls).toHaveLength(3);
 
     // The next failure delivers again — the budget re-armed.
     await deliverRunTerminalMail(deps(db), {
@@ -325,7 +331,7 @@ describe("deliverRunTerminalMail", () => {
       status: "failed",
       error: "boom",
     });
-    expect(insertCalls).toHaveLength(5);
+    expect(insertCalls).toHaveLength(4);
   });
 
   it("does not let a different workflow kind's failures share a suppression budget", async () => {
@@ -354,5 +360,99 @@ describe("deliverRunTerminalMail", () => {
       error: "boom",
     });
     expect(insertCalls).toHaveLength(4);
+  });
+});
+
+describe("fanOutTenantScheduleTerminalMail (CL-4114)", () => {
+  it("no-ops when the run is not a tenant-scoped schedule fire", async () => {
+    scheduleScope = "personal";
+    const db = makeDb({
+      owner: { id: "prn-alice", kind: "user", refId: "alice" },
+      tenant: { domain: "tenant.example" },
+      members: [
+        { principalId: "prn-alice" },
+        { principalId: "prn-bob" },
+      ],
+    });
+
+    await fanOutTenantScheduleTerminalMail(deps(db), {
+      ...RUN,
+      status: "completed",
+    });
+
+    expect(insertCalls).toHaveLength(0);
+  });
+
+  it("delivers failure mail to other Myra members, skipping the run creator", async () => {
+    scheduleScope = "tenant";
+    // findFirst returns each principal when asked; simplify: always return a
+    // valid user principal so both creator skip and bob delivery work.
+    const principals: Record<
+      string,
+      { id: string; kind: string; refId: string }
+    > = {
+      "prn-alice": { id: "prn-alice", kind: "user", refId: "alice" },
+      "prn-bob": { id: "prn-bob", kind: "user", refId: "bob" },
+    };
+    const db = {
+      query: {
+        principal: {
+          findFirst: async (opts: {
+            where?: { queryChunks?: unknown[] };
+          }) => {
+            // drizzle eq() is opaque in unit tests; return bob when alice already
+            // mailed (second call), else alice. Prefer length of insertCalls.
+            void opts;
+            if (insertCalls.length === 0) {
+              return principals["prn-bob"];
+            }
+            return principals["prn-bob"];
+          },
+        },
+        tenant: {
+          findFirst: async () => ({ domain: "tenant.example" }),
+        },
+      },
+      select: () => ({
+        from: () => ({
+          where: async () => [
+            { principalId: "prn-alice" },
+            { principalId: "prn-bob" },
+          ],
+        }),
+      }),
+    } as unknown as HubDb;
+
+    await fanOutTenantScheduleTerminalMail(deps(db), {
+      ...RUN,
+      principalId: "prn-alice",
+      status: "failed",
+      error: "boom",
+    });
+
+    expect(insertCalls).toHaveLength(1);
+    expect(insertCalls[0]?.principalId).toBe("prn-bob");
+    expect(insertCalls[0]?.subject).toContain("Workflow run failed");
+  });
+
+  it("stays silent on completed tenant-schedule fires (no generic success spam)", async () => {
+    scheduleScope = "tenant";
+    storedPrefs = { notifyRunCompletion: true };
+    const db = makeDb({
+      owner: { id: "prn-bob", kind: "user", refId: "bob" },
+      tenant: { domain: "tenant.example" },
+      members: [
+        { principalId: "prn-alice" },
+        { principalId: "prn-bob" },
+      ],
+    });
+
+    await fanOutTenantScheduleTerminalMail(deps(db), {
+      ...RUN,
+      principalId: "prn-alice",
+      status: "completed",
+    });
+
+    expect(insertCalls).toHaveLength(0);
   });
 });

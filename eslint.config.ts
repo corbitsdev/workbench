@@ -11,13 +11,19 @@ export default defineConfig(
   // `packages/workflow-host` is a verbatim vendor of `@intx/workflow-host`
   // (WORKBENCH-LOCAL CL-2535 edits aside); lint it as vendored upstream code,
   // same as `interchange/**`, so its own eslint-disable directives don't trip
-  // our differing rule set.
+  // our differing rule set. `packages/hub-sessions` (CL-4231) is the same
+  // case: a vendored copy of `@intx/hub-sessions` whose test files carry
+  // upstream's own `eslint-disable` conventions (e.g. targeted
+  // `no-unsafe-type-assertion` suppressions in mock fixtures), which this
+  // repo's stricter/differing rule set reports as "unused" even though they
+  // are load-bearing against upstream's own lint config.
   globalIgnores([
     "**/dist/**",
     "tmp/**",
     "interchange/**",
     "temporary/**",
     "packages/workflow-host/**",
+    "packages/hub-sessions/**",
   ]),
   {
     linterOptions: {
@@ -91,6 +97,32 @@ export default defineConfig(
       "packages/openapi-arktype/src/cli.ts",
     ],
     rules: { "no-console": 0 },
+  },
+  {
+    // `apps/web` is a browser bundle; a bare `@workbench/workflow-*` import
+    // pulls in that package's main entry, which builds the workflow
+    // definition at module load time (`defineWorkflow`/`agentStep`/
+    // `deterministicToolStep`), which constructs agents via `@intx/agent` —
+    // a server-only package the browser can only see through a stub that
+    // throws on every call. That crashed the deployed bundle on load when a
+    // workflow package's `STEP_UI_HINTS` was imported from its main entry
+    // instead of a browser-safe subpath. Subpath imports (`/ui`, `/blocks`,
+    // `/browser`) are unaffected — the glob's `*` does not cross `/`.
+    files: ["apps/web/**/*.ts", "apps/web/**/*.tsx"],
+    rules: {
+      "no-restricted-imports": [
+        "error",
+        {
+          patterns: [
+            {
+              regex: "^@workbench/workflow-[^/]+$",
+              message:
+                "Do not import a workflow package's main entry into apps/web — it constructs agents at module load time and crashes the browser bundle. Import a browser-safe subpath instead (e.g. '@workbench/workflow-<name>/ui', '/blocks', or '/browser').",
+            },
+          ],
+        },
+      ],
+    },
   },
   {
     // Workflow run panels must route screen + stepper state through the shared

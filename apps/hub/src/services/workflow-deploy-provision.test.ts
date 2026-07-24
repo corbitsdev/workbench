@@ -7,12 +7,12 @@ import { deriveDeploymentAddress } from "@intx/workflow-deploy";
 import { defineWorkflow } from "@intx/workflow";
 import type { WorkflowDefinition } from "@intx/workflow";
 import type { HarnessConfig, InferenceSource } from "@intx/types/runtime";
-import type { AgentRepoStore, SidecarRouter } from "@intx/hub-sessions";
+import type { AgentRepoStore, SidecarRouter } from "@workbench/hub-sessions";
 import type { HubDb } from "../db";
 import {
   createWorkbenchDirectorRegistry,
   deterministicToolStep,
-  inlineInferenceStep,
+  agentStep,
 } from "@workbench/agents";
 import { workflowRun } from "../db/schema";
 
@@ -153,13 +153,13 @@ describe("provisionRunDeployment (per-run deployment, CL-2582)", () => {
     const deploymentDomain = "deploy.example.com";
     const dir = await mkdtemp(join(tmpdir(), "wf-provision-"));
 
-    // A single inline-inference step keeps the deploy to just the supervisor —
-    // no deployed step sessions, no per-step agent-state repos.
+    // A single native reasoning step (agentStep) — no per-step session launch
+    // either way (CL-2782 no-op'd that for every step class).
     const workflow = defineWorkflow({
       id: "k1",
       trigger: { type: "manual" },
       steps: {
-        analyze: inlineInferenceStep({
+        analyze: agentStep({
           id: "analyze",
           systemPrompt: "extract pain points",
         }),
@@ -256,7 +256,7 @@ describe("provisionRunDeployment (per-run deployment, CL-2582)", () => {
       id: "k1",
       trigger: { type: "manual" },
       steps: {
-        analyze: inlineInferenceStep({ id: "analyze", systemPrompt: "x" }),
+        analyze: agentStep({ id: "analyze", systemPrompt: "x" }),
       },
     });
     await writeFile(
@@ -337,7 +337,7 @@ describe("provisionRunDeployment (per-run deployment, CL-2582)", () => {
       id: "k1",
       trigger: { type: "manual" },
       steps: {
-        analyze: inlineInferenceStep({
+        analyze: agentStep({
           id: "analyze",
           systemPrompt: "extract pain points",
         }),

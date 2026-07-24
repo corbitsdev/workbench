@@ -922,6 +922,7 @@ export function createReactor(config: ReactorConfig): Reactor {
       state: stateManager.snapshot(),
       trigger: `director:${reason}`,
     };
+    const turnsIn = stateManager.getTurns().length;
     const result = await compactor.apply(stateManager.getTurns(), ctx);
 
     stateManager.replaceTurns(result.output);
@@ -929,6 +930,35 @@ export function createReactor(config: ReactorConfig): Reactor {
     await persistBlobs(result.blobs);
     manifestBuffer.push(result.record);
     cycleCompactorName = compactor.name;
+
+    // WORKBENCH-LOCAL (CL-3837): emit compaction completion on the sanctioned
+    // `custom.*` inference-event channel so analytics can attribute the real
+    // before/after shape (and, when present, summarization usage carried on
+    // TransformRecord.parameters). Only the reactor knows whether the compactor
+    // actually ran — the director-driven emit seam is the wrong caller because
+    // the director would have to predict a compaction. Nested summarize
+    // inference (when the compactor itself calls the model) uses a private
+    // seq and does not reach analytics, so token cost is counted once here on
+    // the custom.compaction fact — never double-counted with inference_done.
+    // Retirement: drop once upstream emits a first-class compaction event
+    // from the reactor path.
+    const params = result.record.parameters;
+    emit({
+      type: "custom.compaction",
+      seq: nextSeq(),
+      data: {
+        compactor: compactor.name,
+        reason,
+        turnsIn,
+        turnsOut: result.output.length,
+        decisions: result.record.decisions,
+        ...(params.usage !== undefined ? { usage: params.usage } : {}),
+        ...(params.source !== undefined ? { source: params.source } : {}),
+        ...(params.summaryChars !== undefined
+          ? { summaryChars: params.summaryChars }
+          : {}),
+      },
+    });
 
     logger.info`Compaction by ${compactor.name} reduced history (reason: ${reason})`;
   }

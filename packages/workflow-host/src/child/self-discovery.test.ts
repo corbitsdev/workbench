@@ -14,7 +14,7 @@ import type { WorkflowEvent } from "@intx/workflow";
 import type {
   RepoId,
   RepoStore as SubstrateRepoStore,
-} from "@intx/hub-sessions/substrate";
+} from "@workbench/hub-sessions/substrate";
 import type { RepoStore as RuntimeRepoStore } from "@intx/workflow";
 
 import { discoverInFlightRuns } from "./self-discovery";

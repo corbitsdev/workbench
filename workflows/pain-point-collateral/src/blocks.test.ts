@@ -17,7 +17,7 @@ function toolEnvelope(value: unknown): { content: string } {
   return { content: JSON.stringify(value) };
 }
 
-// An inline-inference step's output is { reply: JSON-string }.
+// An agentStep's output is { reply: JSON-string }.
 function reply(value: unknown): { reply: string } {
   return { reply: JSON.stringify(value) };
 }
@@ -25,11 +25,13 @@ function reply(value: unknown): { reply: string } {
 function gateInput(
   signalName: string,
   stepOutputs: Record<string, unknown> = {},
+  extraSteps: PainPointCollateralBlockInput["steps"] = [],
 ): PainPointCollateralBlockInput {
   return {
     runId: "run_1",
     phase: "running",
     steps: [
+      ...extraSteps,
       {
         stepId: signalName,
         phase: "awaiting-signal",
@@ -70,6 +72,62 @@ describe("pain-point-collateral dock blocks (CL-2775)", () => {
     expect(blocks.some((b) => b.kind === "choice")).toBe(false);
     const link = blocks.find((b) => b.kind === "link");
     expect(link?.kind === "link" && link.url).toBe("/workflows/run_1");
+  });
+
+  test("note-selection: an error naming intake when it FAILED, with a CLASSIFIED detail, not a run-page link (CL-4284)", () => {
+    const blocks = buildPainPointCollateralBlocks(
+      gateInput(NOTE_SELECTION_SIGNAL, {}, [
+        {
+          stepId: "intake",
+          phase: "failed",
+          lastError: { message: "Granola API error: 401 Unauthorized" },
+        },
+      ]),
+    );
+    expect(blocks.some((b) => b.kind === "choice")).toBe(false);
+    expect(blocks.some((b) => b.kind === "link")).toBe(false);
+    const error = blocks.find((b) => b.kind === "error");
+    if (error?.kind !== "error") throw new Error("expected an error block");
+    expect(error.message).toContain("intake");
+    // Classified, plain-language — never the raw provider string.
+    expect(error.detail).toBe(
+      "Granola declined the request (401). Check the connected Granola credential's access and try again.",
+    );
+    expect(error.detail).not.toContain("API error: 401");
+  });
+
+  test("note-selection: an honest empty state when intake succeeded with zero notes (CL-4284)", () => {
+    const blocks = buildPainPointCollateralBlocks(
+      gateInput(
+        NOTE_SELECTION_SIGNAL,
+        { intake: toolEnvelope({ notes: [] }) },
+        [{ stepId: "intake", phase: "completed" }],
+      ),
+    );
+    expect(blocks.some((b) => b.kind === "choice")).toBe(false);
+    expect(blocks.some((b) => b.kind === "link")).toBe(false);
+    const text = blocks.find((b) => b.kind === "text");
+    expect(text?.kind === "text" && text.text).toBe(
+      "No Granola notes were found for this call.",
+    );
+  });
+
+  test("note-selection: no run-page link when already on the run page (CL-4284)", () => {
+    const blocks = buildPainPointCollateralBlocks({
+      runId: "run_1",
+      phase: "running",
+      surface: "run-page",
+      steps: [
+        {
+          stepId: NOTE_SELECTION_SIGNAL,
+          phase: "awaiting-signal",
+          awaitingSignalName: NOTE_SELECTION_SIGNAL,
+        },
+      ],
+      stepOutputs: {},
+    });
+    expect(blocks.some((b) => b.kind === "link")).toBe(false);
+    expect(blocks.some((b) => b.kind === "text")).toBe(true);
   });
 
   test("context: a form with a single OPTIONAL context textarea", () => {

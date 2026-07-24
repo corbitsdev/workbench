@@ -9,7 +9,6 @@ import {
   pollGeneration,
   requiredString,
   resolveConfig,
-  stringTool,
   toDeckResult,
   WORKSPACE_SHARING_OPTIONS,
   type GammaDeckResult,
@@ -137,11 +136,24 @@ export const TEMPLATE_DEFINITIONS: ToolDefinition[] = [
 // gamma_list_templates is excluded from this factory — it is its own
 // hub-backed factory (`gammaTemplates` in interchange-tools.ts) that reads
 // from the tenant DB rather than requiring Gamma API credentials.
+//
+// Structured (not stringTool): the presentation-creator workflow's persist
+// step is a deterministic consumer of this tool's output (gammaUrl, gammaId,
+// exportUrl), and a stringified `{ content: "<json>" }` envelope buried those
+// fields behind a JSON parse. `content` carries the `GammaDeckResult` object
+// directly — the model still receives readable JSON text (the reactor
+// stringifies non-string tool content before it reaches the model, per
+// `turns.ts`), so this is not a model-facing regression.
 export function createTemplateTools(config: GammaToolsConfig): AgentTool[] {
   const resolved = resolveConfig(config);
   return [
-    stringTool(GAMMA_CREATE_FROM_TEMPLATE_DEFINITION, (args, signal) =>
-      createFromTemplate(resolved, args, signal),
-    ),
+    {
+      kind: "full",
+      definition: GAMMA_CREATE_FROM_TEMPLATE_DEFINITION,
+      handler: async (call, signal) => {
+        const deck = await createFromTemplate(resolved, call.arguments, signal);
+        return { callId: call.id, content: deck };
+      },
+    },
   ];
 }

@@ -1,0 +1,276 @@
+{
+  "kind": "process-granola-call",
+  "version": "0.1.0",
+  "label": "Process Granola Call",
+  "description": "Process one Granola call end to end: fetch the transcript, save it as a raw artifact, extract working notes with a large-context model, then verify and publish the final call notes. Spawned per call by the granola-call parent; safe to re-run — every artifact upserts in place.",
+  "displayFlow": [
+    {
+      "key": "fetch",
+      "label": "Fetch the transcript",
+      "stepIds": [
+        "fetch"
+      ]
+    },
+    {
+      "key": "transcript",
+      "label": "Save the raw transcript",
+      "stepIds": [
+        "transcript"
+      ]
+    },
+    {
+      "key": "extract",
+      "label": "Extract working notes",
+      "stepIds": [
+        "extract",
+        "processed"
+      ],
+      "activityLabel": "Extracting working notes"
+    },
+    {
+      "key": "finalize",
+      "label": "Verify and write call notes",
+      "stepIds": [
+        "finalize",
+        "persist"
+      ],
+      "activityLabel": "Writing the call notes"
+    }
+  ],
+  "requiresIntake": false,
+  "humanGateCount": 0,
+  "intakeFields": [
+    {
+      "name": "noteId",
+      "label": "Granola note id",
+      "inputHint": "text",
+      "required": true,
+      "help": "The Granola note (call) this run processes.",
+      "placeholder": "note_...",
+      "order": 0
+    }
+  ],
+  "definition": {
+    "id": "process-granola-call",
+    "triggers": [
+      {
+        "type": "manual"
+      }
+    ],
+    "steps": {
+      "fetch": {
+        "kind": "step",
+        "id": "fetch",
+        "agent": {
+          "id": "process-granola-fetch",
+          "systemPrompt": "",
+          "toolFactories": [],
+          "capabilities": [
+            "@workbench/tools-granola/granola:granola_get_note"
+          ],
+          "inference": {
+            "sources": []
+          },
+          "description": "Deterministic tool call: @workbench/tools-granola/granola:granola_get_note",
+          "tags": {
+            "workbench.stepKind": "deterministic-tool",
+            "workbench.tool": "@workbench/tools-granola/granola:granola_get_note",
+            "workbench.argMap": "{\"noteId\":{\"from\":\"noteId\"}}",
+            "workbench.title": "Fetch the transcript"
+          }
+        },
+        "drainBehavior": "cancel",
+        "input": {
+          "from": "trigger.payload"
+        }
+      },
+      "transcript": {
+        "kind": "step",
+        "id": "transcript",
+        "agent": {
+          "id": "process-granola-transcript",
+          "systemPrompt": "",
+          "toolFactories": [],
+          "capabilities": [
+            "@workbench/tools-artifact/artifact:write_artifact"
+          ],
+          "inference": {
+            "sources": []
+          },
+          "description": "Deterministic tool call: @workbench/tools-artifact/artifact:write_artifact",
+          "tags": {
+            "workbench.stepKind": "deterministic-tool",
+            "workbench.tool": "@workbench/tools-artifact/artifact:write_artifact",
+            "workbench.argMap": "{\"title\":{\"fromJson\":\"content\",\"field\":\"title\"},\"titlePrefix\":{\"literal\":\"Transcript — \"},\"body\":{\"from\":\"content\"},\"kind\":{\"literal\":\"research\"},\"sourceRefPrefix\":{\"literal\":\"granola-transcript\"},\"sourceRefKey\":{\"from\":\"noteId\"},\"jobLabel\":{\"literal\":\"Process Granola Call\"}}",
+            "workbench.title": "Save the raw transcript"
+          }
+        },
+        "drainBehavior": "cancel",
+        "input": {
+          "merge": [
+            {
+              "from": "steps.fetch.output"
+            },
+            {
+              "from": "trigger.payload"
+            }
+          ]
+        },
+        "after": [
+          "fetch"
+        ]
+      },
+      "extract": {
+        "kind": "step",
+        "id": "extract",
+        "agent": {
+          "id": "process-granola-extract",
+          "systemPrompt": "Treat Corbits, Corbits.dev, Interchange, and Faremeter as canonical Corbits names; spell them exactly. When source material contains a clear speech-to-text or spelling variant, use the canonical spelling in your output. Do not replace an ambiguous term unless surrounding context identifies it.\n\nYou extract working notes from one Granola call transcript.\n\nYou receive the raw granola_get_note result (JSON: the full note, including its transcript). Read the whole transcript.\n\nOutput a raw markdown working document with exactly these sections:\n## Participants\nWho was on the call (names and, when stated, roles/companies).\n## Summary\nOne or two plain paragraphs of what the call covered.\n## Pain points\n## Decisions\n## Action items\nEach of the last three: a short bullet list grounded in the transcript. Write \"None noted\" when the transcript shows none. Quote or closely paraphrase the transcript — do not invent.\n\nThis is a working document for a later verification pass, not a polished deliverable. No preamble. Markdown only.",
+          "toolFactories": [],
+          "capabilities": [],
+          "inference": {
+            "sources": []
+          },
+          "description": "Reasoning step: process-granola-extract",
+          "tags": {
+            "workbench.title": "Extract working notes"
+          }
+        },
+        "drainBehavior": "cancel",
+        "input": {
+          "from": "steps.fetch.output"
+        },
+        "after": [
+          "fetch"
+        ]
+      },
+      "processed": {
+        "kind": "step",
+        "id": "processed",
+        "agent": {
+          "id": "process-granola-processed",
+          "systemPrompt": "",
+          "toolFactories": [],
+          "capabilities": [
+            "@workbench/tools-artifact/artifact:write_artifact"
+          ],
+          "inference": {
+            "sources": []
+          },
+          "description": "Deterministic tool call: @workbench/tools-artifact/artifact:write_artifact",
+          "tags": {
+            "workbench.stepKind": "deterministic-tool",
+            "workbench.tool": "@workbench/tools-artifact/artifact:write_artifact",
+            "workbench.argMap": "{\"title\":{\"fromJson\":\"content\",\"field\":\"title\"},\"titlePrefix\":{\"literal\":\"Working notes — \"},\"body\":{\"from\":\"reply\"},\"kind\":{\"literal\":\"research\"},\"sourceRefPrefix\":{\"literal\":\"granola-processed\"},\"sourceRefKey\":{\"from\":\"noteId\"},\"parentSourceRefPrefix\":{\"literal\":\"granola-transcript\"},\"parentSourceRefKey\":{\"from\":\"noteId\"},\"jobLabel\":{\"literal\":\"Process Granola Call\"}}",
+            "workbench.title": "Save the working notes"
+          }
+        },
+        "drainBehavior": "cancel",
+        "input": {
+          "merge": [
+            {
+              "from": "steps.fetch.output"
+            },
+            {
+              "from": "steps.extract.output"
+            },
+            {
+              "from": "trigger.payload"
+            }
+          ]
+        },
+        "after": [
+          "extract",
+          "transcript"
+        ]
+      },
+      "finalize": {
+        "kind": "step",
+        "id": "finalize",
+        "agent": {
+          "id": "process-granola-finalize",
+          "systemPrompt": "Treat Corbits, Corbits.dev, Interchange, and Faremeter as canonical Corbits names; spell them exactly. When source material contains a clear speech-to-text or spelling variant, use the canonical spelling in your output. Do not replace an ambiguous term unless surrounding context identifies it.\n\nYou produce the final call-notes document for one Granola call.\n\nYou receive (JSON fields):\n- \"content\": the raw granola_get_note result — the full note with its transcript. Ground truth.\n- \"reply\": a working document extracted from that transcript (sections: Participants, Summary, Pain points, Decisions, Action items).\n\nVerify the working document against the transcript: fix anything unsupported, misattributed, or missing. Then output the final markdown document with the same five sections, polished and accurate. Keep claims grounded in the transcript; when the transcript is ambiguous, say so rather than guessing.\n\nYour reply is saved verbatim as the final call-notes artifact. No preamble. Markdown only.",
+          "toolFactories": [],
+          "capabilities": [],
+          "inference": {
+            "sources": [
+              {
+                "provider": "openai-compatible",
+                "model": "kimi-k2.6",
+                "parameters": {
+                  "maxTokens": 16384
+                }
+              }
+            ]
+          },
+          "description": "Reasoning step: process-granola-finalize",
+          "tags": {
+            "workbench.title": "Verify and write call notes"
+          }
+        },
+        "drainBehavior": "cancel",
+        "input": {
+          "merge": [
+            {
+              "from": "steps.fetch.output"
+            },
+            {
+              "from": "steps.extract.output"
+            }
+          ]
+        },
+        "after": [
+          "extract"
+        ]
+      },
+      "persist": {
+        "kind": "step",
+        "id": "persist",
+        "agent": {
+          "id": "process-granola-persist",
+          "systemPrompt": "",
+          "toolFactories": [],
+          "capabilities": [
+            "@workbench/tools-artifact/artifact:write_artifact"
+          ],
+          "inference": {
+            "sources": []
+          },
+          "description": "Deterministic tool call: @workbench/tools-artifact/artifact:write_artifact",
+          "tags": {
+            "workbench.stepKind": "deterministic-tool",
+            "workbench.tool": "@workbench/tools-artifact/artifact:write_artifact",
+            "workbench.argMap": "{\"title\":{\"fromJson\":\"content\",\"field\":\"title\"},\"body\":{\"from\":\"reply\"},\"kind\":{\"literal\":\"research\"},\"sourceRefPrefix\":{\"literal\":\"granola-call-note\"},\"sourceRefKey\":{\"from\":\"noteId\"},\"parentSourceRefPrefix\":{\"literal\":\"granola-processed\"},\"parentSourceRefKey\":{\"from\":\"noteId\"},\"jobLabel\":{\"literal\":\"Process Granola Call\"}}",
+            "workbench.title": "Save the call notes"
+          }
+        },
+        "drainBehavior": "cancel",
+        "input": {
+          "merge": [
+            {
+              "from": "steps.fetch.output"
+            },
+            {
+              "from": "steps.finalize.output"
+            },
+            {
+              "from": "trigger.payload"
+            }
+          ]
+        },
+        "after": [
+          "finalize",
+          "processed"
+        ]
+      }
+    },
+    "stepOrder": [
+      "fetch",
+      "transcript",
+      "extract",
+      "processed",
+      "finalize",
+      "persist"
+    ]
+  }
+}

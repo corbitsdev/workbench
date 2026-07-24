@@ -11,12 +11,12 @@ import type {
   Principal,
   RepoId,
   RepoStore,
-} from "@intx/hub-sessions";
+} from "@workbench/hub-sessions";
 import {
   createRepoStore,
   workflowRunKindHandler,
   WORKFLOW_RUN_GITIGNORE_PATH,
-} from "@intx/hub-sessions";
+} from "@workbench/hub-sessions";
 import {
   assembleMessage,
   assembleSignedContent,
@@ -27,7 +27,13 @@ import {
   createWorkflowStepInvoker,
   type StepEnvBase,
 } from "../adapters/step-invoker";
+import {
+  createActionHandlerRegistry,
+  createLoopFnRegistry,
+} from "../adapters/action-invoker";
+
 import { createDefaultDirectorRegistry } from "@intx/agent";
+
 import { noopAuditStore } from "@intx/agent/testing";
 import type { Agent, SendResult } from "@intx/agent";
 import type {
@@ -798,6 +804,357 @@ describe("runWorkflowChild", () => {
     const result = await runPromise;
     expect(result.triggeredRunIds).toEqual(["run-1"]);
     expect(cleaned).toEqual([]);
+  });
+
+  test("drives a registered action handler to RunCompleted (CL-4102)", async () => {
+    const baseDir = await makeTempDir("child-action-ok-");
+    const supervisorKeyPair = await generateKeyPair();
+    const childKeyPair = await generateKeyPair();
+    const channelId = generateChannelId();
+    const hmacKey = generateHmacKey();
+    await seedWorkflowDefinition(
+      baseDir,
+      { kind: "workflow", id: "workflow-asset" },
+      {
+        steps: {
+          act: {
+            kind: "action",
+            id: "act",
+            handler: "test.echo",
+            drainBehavior: "cancel",
+            input: { from: "trigger.payload" },
+          },
+        },
+        stepOrder: ["act"],
+      },
+    );
+    await seedProcessingEntry(
+      baseDir,
+      { kind: "workflow-run", id: "deployment-x" },
+      {
+        address: "deployment-x@example.com",
+        messageId: "msg-1",
+        receivedAt: 1,
+        text: "action body",
+      },
+    );
+
+    const supervisorToChild = createMemoryNdjsonStream();
+    const childToSupervisor = createMemoryNdjsonStream();
+    const eventStream = createMemoryFrameStream();
+    const env = parseSpawnTimeEnv(
+      makeSpawnEnv({
+        channelId,
+        hmacKeyHex: hexEncode(hmacKey),
+        hostPubKeyHex: hexEncode(supervisorKeyPair.publicKey),
+      }),
+    );
+
+    let handlerCalls = 0;
+    const bindings: RunWorkflowChildBindings = {
+      ...buildBindings({ baseDir, childKeyPair }),
+      resolveActionHandler: createActionHandlerRegistry({
+        "test.echo": async (input) => {
+          handlerCalls += 1;
+          return { echoed: input };
+        },
+      }),
+    };
+
+    const supervisorSender = createControlChannelSender({
+      privateKeySeed: supervisorKeyPair.privateKey,
+      channelId,
+      writer: supervisorToChild.writer,
+    });
+
+    const runPromise = runWorkflowChild({
+      env,
+      controlReader: supervisorToChild.reader,
+      controlWriter: childToSupervisor.writer,
+      eventWriter: eventStream.writer,
+      bindings,
+    });
+
+    const recvIter = receiveControlChannel({
+      publicKey: { bootstrapFromReady: true },
+      channelId,
+      reader: childToSupervisor.reader,
+      onCrash: (reason) => {
+        throw new Error(`unexpected control channel crash: ${reason}`);
+      },
+    });
+
+    await supervisorSender.send({
+      type: "trigger.fire",
+      data: { runId: "run-1", messageId: "msg-1", receivedAt: 1 },
+    });
+
+    let terminalKind: string | null = null;
+    for await (const payload of recvIter) {
+      if (payload.type === "terminal.event" && payload.data.runId === "run-1") {
+        terminalKind = payload.data.kind;
+        break;
+      }
+    }
+    expect(terminalKind).toBe("RunCompleted");
+    expect(handlerCalls).toBe(1);
+
+    await supervisorSender.send({
+      type: "shutdown",
+      data: { reason: "test done" },
+    });
+    supervisorToChild.close();
+    const result = await runPromise;
+    expect(result.triggeredRunIds).toEqual(["run-1"]);
+  });
+
+  test("fails closed when an action fires with no registered handler (CL-4102)", async () => {
+    const baseDir = await makeTempDir("child-action-fail-");
+    const supervisorKeyPair = await generateKeyPair();
+    const childKeyPair = await generateKeyPair();
+    const channelId = generateChannelId();
+    const hmacKey = generateHmacKey();
+    await seedWorkflowDefinition(
+      baseDir,
+      { kind: "workflow", id: "workflow-asset" },
+      {
+        steps: {
+          act: {
+            kind: "action",
+            id: "act",
+            handler: "missing.handler",
+            drainBehavior: "cancel",
+          },
+        },
+        stepOrder: ["act"],
+      },
+    );
+    await seedProcessingEntry(
+      baseDir,
+      { kind: "workflow-run", id: "deployment-x" },
+      {
+        address: "deployment-x@example.com",
+        messageId: "msg-1",
+        receivedAt: 1,
+        text: "action body",
+      },
+    );
+
+    const supervisorToChild = createMemoryNdjsonStream();
+    const childToSupervisor = createMemoryNdjsonStream();
+    const eventStream = createMemoryFrameStream();
+    const env = parseSpawnTimeEnv(
+      makeSpawnEnv({
+        channelId,
+        hmacKeyHex: hexEncode(hmacKey),
+        hostPubKeyHex: hexEncode(supervisorKeyPair.publicKey),
+      }),
+    );
+
+    // No resolveActionHandler — production default is fail-closed.
+    const bindings = buildBindings({ baseDir, childKeyPair });
+    const supervisorSender = createControlChannelSender({
+      privateKeySeed: supervisorKeyPair.privateKey,
+      channelId,
+      writer: supervisorToChild.writer,
+    });
+
+    const runPromise = runWorkflowChild({
+      env,
+      controlReader: supervisorToChild.reader,
+      controlWriter: childToSupervisor.writer,
+      eventWriter: eventStream.writer,
+      bindings,
+    });
+
+    const recvIter = receiveControlChannel({
+      publicKey: { bootstrapFromReady: true },
+      channelId,
+      reader: childToSupervisor.reader,
+      onCrash: (reason) => {
+        throw new Error(`unexpected control channel crash: ${reason}`);
+      },
+    });
+
+    await supervisorSender.send({
+      type: "trigger.fire",
+      data: { runId: "run-1", messageId: "msg-1", receivedAt: 1 },
+    });
+
+    let terminalKind: string | null = null;
+    for await (const payload of recvIter) {
+      if (payload.type === "terminal.event" && payload.data.runId === "run-1") {
+        terminalKind = payload.data.kind;
+        break;
+      }
+    }
+    // Fail-closed: unregistered handler must not complete the run.
+    expect(terminalKind).toBe("RunFailed");
+
+    await supervisorSender.send({
+      type: "shutdown",
+      data: { reason: "test done" },
+    });
+    supervisorToChild.close();
+    await runPromise;
+  });
+
+  test("drives a registered loop to converge (CL-4102)", async () => {
+    const baseDir = await makeTempDir("child-loop-ok-");
+    const supervisorKeyPair = await generateKeyPair();
+    const childKeyPair = await generateKeyPair();
+    const channelId = generateChannelId();
+    const hmacKey = generateHmacKey();
+    // Loop body: one action that echoes its numeric input. Parent: loop
+    // until count >= 2, then consolidate; escalate is the exhaust path.
+    await seedWorkflowDefinition(
+      baseDir,
+      { kind: "workflow", id: "workflow-asset" },
+      {
+        steps: {
+          rework: {
+            kind: "loop",
+            id: "rework",
+            body: {
+              id: "body",
+              triggers: [],
+              steps: {
+                count: {
+                  kind: "action",
+                  id: "count",
+                  handler: "echo",
+                  drainBehavior: "cancel",
+                  input: { from: "trigger.payload" },
+                },
+              },
+              stepOrder: ["count"],
+            },
+            while: "cont",
+            carry: "next",
+            input: { literal: 0 },
+            maxIterations: 5,
+            onExhausted: "escalate",
+            drainBehavior: "cancel",
+          },
+          consolidate: {
+            kind: "action",
+            id: "consolidate",
+            handler: "consolidate",
+            drainBehavior: "cancel",
+            after: ["rework"],
+          },
+          escalate: {
+            kind: "action",
+            id: "escalate",
+            handler: "escalate",
+            drainBehavior: "cancel",
+            after: ["rework"],
+          },
+        },
+        stepOrder: ["rework", "consolidate", "escalate"],
+      },
+    );
+    await seedProcessingEntry(
+      baseDir,
+      { kind: "workflow-run", id: "deployment-x" },
+      {
+        address: "deployment-x@example.com",
+        messageId: "msg-1",
+        receivedAt: 1,
+        text: "loop body",
+      },
+    );
+
+    const supervisorToChild = createMemoryNdjsonStream();
+    const childToSupervisor = createMemoryNdjsonStream();
+    const eventStream = createMemoryFrameStream();
+    const env = parseSpawnTimeEnv(
+      makeSpawnEnv({
+        channelId,
+        hmacKeyHex: hexEncode(hmacKey),
+        hostPubKeyHex: hexEncode(supervisorKeyPair.publicKey),
+      }),
+    );
+
+    let consolidateCalls = 0;
+    let escalateCalls = 0;
+    const bindings: RunWorkflowChildBindings = {
+      ...buildBindings({ baseDir, childKeyPair }),
+      resolveActionHandler: createActionHandlerRegistry({
+        echo: async (input) => input,
+        consolidate: async () => {
+          consolidateCalls += 1;
+          return "consolidated";
+        },
+        escalate: async () => {
+          escalateCalls += 1;
+          return "escalated";
+        },
+      }),
+      loopFns: createLoopFnRegistry({
+        // Continue while the echoed count is below 2 (0 -> 1 -> 2 converges).
+        cont: (childOutput) => {
+          if (
+            typeof childOutput === "object" &&
+            childOutput !== null &&
+            "count" in childOutput &&
+            typeof (childOutput as { count: unknown }).count === "number"
+          ) {
+            return (childOutput as { count: number }).count < 2;
+          }
+          return false;
+        },
+        next: (_childOutput, currentInput) =>
+          typeof currentInput === "number" ? currentInput + 1 : 0,
+      }),
+    };
+
+    const supervisorSender = createControlChannelSender({
+      privateKeySeed: supervisorKeyPair.privateKey,
+      channelId,
+      writer: supervisorToChild.writer,
+    });
+
+    const runPromise = runWorkflowChild({
+      env,
+      controlReader: supervisorToChild.reader,
+      controlWriter: childToSupervisor.writer,
+      eventWriter: eventStream.writer,
+      bindings,
+    });
+
+    const recvIter = receiveControlChannel({
+      publicKey: { bootstrapFromReady: true },
+      channelId,
+      reader: childToSupervisor.reader,
+      onCrash: (reason) => {
+        throw new Error(`unexpected control channel crash: ${reason}`);
+      },
+    });
+
+    await supervisorSender.send({
+      type: "trigger.fire",
+      data: { runId: "run-1", messageId: "msg-1", receivedAt: 1 },
+    });
+
+    let terminalKind: string | null = null;
+    for await (const payload of recvIter) {
+      if (payload.type === "terminal.event" && payload.data.runId === "run-1") {
+        terminalKind = payload.data.kind;
+        break;
+      }
+    }
+    expect(terminalKind).toBe("RunCompleted");
+    expect(consolidateCalls).toBe(1);
+    expect(escalateCalls).toBe(0);
+
+    await supervisorSender.send({
+      type: "shutdown",
+      data: { reason: "test done" },
+    });
+    supervisorToChild.close();
+    const result = await runPromise;
+    expect(result.triggeredRunIds).toEqual(["run-1"]);
   });
 
   test("self-discovery resumes non-terminal runs and skips terminal ones", async () => {

@@ -1,4 +1,5 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { Link } from "react-router";
 import { Workflow } from "lucide-react";
 import { RichEmptyState } from "@workbench/ui";
 import type { WorkflowCatalogEntry } from "@workbench/shared";
@@ -7,8 +8,8 @@ import {
   useToggleWorkflowFavorite,
   useWorkflowsCatalog,
 } from "../hooks/use-workflows-catalog";
+import { ScheduleFieldForm, scheduleFieldsComplete } from "./ScheduleFieldForm";
 import { WorkflowFlowPreview } from "./WorkflowFlowPreview";
-import { SchedulePopover } from "./SchedulePopover";
 
 export interface WorkflowCatalogProps {
   tenantId: string | null;
@@ -136,6 +137,8 @@ function PreviewPanel({
   startPending,
   error,
   redeploying,
+  inputValues,
+  onInputChange,
   onStart,
 }: {
   entry: WorkflowCatalogEntry;
@@ -143,8 +146,15 @@ function PreviewPanel({
   startPending: boolean;
   error: string | null;
   redeploying: boolean;
+  inputValues: Record<string, unknown>;
+  onInputChange: (next: Record<string, unknown>) => void;
   onStart: () => void;
 }) {
+  const intakeFields = entry.intakeFields ?? [];
+  const canStart =
+    intakeFields.length === 0 ||
+    scheduleFieldsComplete(intakeFields, inputValues);
+
   return (
     <div className="flex flex-col gap-5 rounded-[16px] border border-border bg-surface p-6">
       <div className="flex flex-col gap-1">
@@ -169,6 +179,21 @@ function PreviewPanel({
 
       <WorkflowFlowPreview steps={entry.steps} animationKey={entry.kind} />
 
+      {intakeFields.length > 0 && (
+        <div className="flex flex-col gap-2 border-t border-border pt-4">
+          <h4 className="text-[12px] font-bold uppercase tracking-[0.05em] text-text-3">
+            Run inputs
+          </h4>
+          <ScheduleFieldForm
+            fields={intakeFields}
+            values={inputValues}
+            onChange={onInputChange}
+            disabled={startPending}
+            idPrefix={`catalog-field-${entry.kind}`}
+          />
+        </div>
+      )}
+
       {redeploying && (
         <div className="rounded-lg border border-border bg-surface px-3 py-2 text-[13px] text-text-2">
           Finishing an update — retrying…
@@ -183,13 +208,20 @@ function PreviewPanel({
       <div className="flex items-center gap-4 border-t border-border pt-4">
         <button
           type="button"
-          disabled={startPending}
+          disabled={startPending || !canStart}
           onClick={onStart}
           className="inline-flex items-center gap-2 rounded-[10px] bg-accent px-5 py-2.5 text-[14px] font-bold text-white shadow-[0_4px_14px_rgba(191,107,32,0.32)] transition-transform hover:bg-accent-deep active:scale-[0.97] focus:outline-none focus-visible:ring-2 focus-visible:ring-border-strong disabled:opacity-50 motion-reduce:active:scale-100 motion-reduce:transition-none"
         >
           {starting ? "Starting…" : "Start run"}
         </button>
-        <SchedulePopover kind={entry.kind} label={entry.label} />
+        {entry.attachable && (
+          <Link
+            to="/workflows?new=1"
+            className="text-[13px] font-medium text-text-2 underline-offset-2 hover:text-text hover:underline"
+          >
+            Schedule in Workflows →
+          </Link>
+        )}
       </div>
     </div>
   );
@@ -210,6 +242,7 @@ export function WorkflowCatalog({
   const [selectedKind, setSelectedKind] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [redeploying, setRedeploying] = useState(false);
+  const [inputValues, setInputValues] = useState<Record<string, unknown>>({});
 
   const entries = useMemo(() => data?.entries ?? [], [data]);
   const favorites = entries.filter((e) => e.isFavorite);
@@ -219,6 +252,14 @@ export function WorkflowCatalog({
   // exists, otherwise the first entry — no navigation prop drives it.
   const selected =
     entries.find((e) => e.kind === selectedKind) ?? entries[0] ?? null;
+
+  // Inline run-input values are per-workflow — reset them whenever the
+  // selected kind changes so a previous workflow's answers never leak into
+  // the next one's start payload.
+  useEffect(() => {
+    setInputValues({});
+    setError(null);
+  }, [selected?.kind]);
 
   const startingKind = startWorkflow.isPending
     ? (startWorkflow.variables?.kind ?? null)
@@ -231,7 +272,7 @@ export function WorkflowCatalog({
     startWorkflow
       .mutateAsync({
         kind: selected.kind,
-        input: {},
+        input: inputValues,
         onRedeploying: () => setRedeploying(true),
       })
       .then((res) => onWorkflowStarted(res.runId))
@@ -300,6 +341,8 @@ export function WorkflowCatalog({
             startPending={startWorkflow.isPending}
             error={error}
             redeploying={redeploying}
+            inputValues={inputValues}
+            onInputChange={setInputValues}
             onStart={handleStart}
           />
         </div>

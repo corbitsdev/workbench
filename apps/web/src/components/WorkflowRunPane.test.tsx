@@ -12,7 +12,11 @@ import {
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import React from "react";
 import { ActiveContextProvider } from "../lib/active-context-store";
-import { PageChromeProvider, usePageChromeSlot } from "../lib/page-chrome";
+import {
+  PageChromeProvider,
+  usePageChromeSlot,
+  useSetPageChrome,
+} from "../lib/page-chrome";
 import type { WorkflowPanelProps } from "@workbench/ui";
 import * as workflowHooks from "../hooks/use-workflow";
 import type { LogRunState, RunRecord } from "../lib/run-state-adapter";
@@ -94,6 +98,8 @@ const resumeMutateAsync = mock(
     onRedeploying?: () => void;
   }): Promise<undefined> => undefined,
 );
+const stopMutate = mock((_runId: string) => undefined);
+let stopIsError = false;
 
 mock.module("../hooks/use-workflow", () => ({
   ...workflowHooks,
@@ -107,8 +113,21 @@ mock.module("../hooks/use-workflow", () => ({
     mutateAsync: resumeMutateAsync,
     isPending: false,
   }),
+  useStopWorkflowRun: () => ({
+    mutate: stopMutate,
+    isPending: false,
+    isError: stopIsError,
+    variables: undefined,
+  }),
   useWorkflowCredentials: () => ({ data: [] }),
   useWorkflowDeployments: () => ({ data: deployments }),
+}));
+
+// No test in this file exercises the catalog-driven full step sequence (that
+// lives in WorkflowRunBlocks.test.tsx); stub it out so the pane doesn't fire a
+// real network request in every render here.
+mock.module("../hooks/use-workflows-catalog", () => ({
+  useWorkflowsCatalog: () => ({ data: undefined }),
 }));
 
 mock.module("../hooks/use-skills", () => ({
@@ -126,9 +145,15 @@ mock.module("../hooks/use-skills", () => ({
 import { WorkflowRunPane } from "./WorkflowRunPane";
 
 function ChromeSlotProbe() {
-  return (
-    <div data-testid="chrome-slot">{usePageChromeSlot()}</div>
-  );
+  return <div data-testid="chrome-slot">{usePageChromeSlot()}</div>;
+}
+
+// Stands in for a host page (e.g. WorkflowsPage) that publishes its own
+// stable chrome node unconditionally, the way `useSetPageChrome(chrome)`
+// (default `enabled: true`) is used at the page level.
+function HostChromePublisher() {
+  useSetPageChrome(<div>Host Chrome</div>);
+  return null;
 }
 
 function wrapper({ children }: { children: React.ReactNode }) {
@@ -169,7 +194,86 @@ describe("WorkflowRunPane", () => {
     stepOutputsRequestedId = undefined;
     resumeMutateAsync.mockReset();
     resumeMutateAsync.mockImplementation(async () => undefined);
+    stopMutate.mockReset();
+    stopIsError = false;
     resolveSlowPanel = null;
+  });
+
+  it("shows Stop in chrome for live runs and two-step confirms (CL-3687)", async () => {
+    record = makeRecord({ status: "running" });
+    render(<WorkflowRunPane deploymentId="wfr_1" onClose={() => undefined} />, {
+      wrapper,
+    });
+    await waitFor(() => screen.getByTestId("run-pane-stop"));
+    fireEvent.click(screen.getByTestId("run-pane-stop"));
+    expect(stopMutate).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByTestId("run-pane-stop-confirm"));
+    expect(stopMutate).toHaveBeenCalledWith("wfr_1");
+  });
+
+  it("surfaces a legible error when the stop request fails (CL-3687)", async () => {
+    record = makeRecord({ status: "running" });
+    stopIsError = true;
+    render(<WorkflowRunPane deploymentId="wfr_1" onClose={() => undefined} />, {
+      wrapper,
+    });
+    await waitFor(() => screen.getByText("Couldn't stop this run. Try again."));
+    // Stop stays available so the user can retry.
+    expect(screen.getByTestId("run-pane-stop")).toBeTruthy();
+  });
+
+  it("hides Stop in chrome for terminal runs (CL-3687)", async () => {
+    record = makeRecord({ status: "stopped" });
+    render(<WorkflowRunPane deploymentId="wfr_1" onClose={() => undefined} />, {
+      wrapper,
+    });
+    await waitFor(() => screen.getByTestId("chrome-slot"));
+    expect(screen.queryByTestId("run-pane-stop")).toBeNull();
+  });
+
+  it("does not clear a host page's chrome when embedded (CL-4420)", async () => {
+    // Regression: an embedded pane used to call useSetPageChrome(record ? runChrome
+    // : null) unconditionally, so once `record` loaded it clobbered whatever the
+    // host page (e.g. WorkflowsPage) had already published with `null` — and
+    // since the host's own chrome node is memoized (stable identity), its effect
+    // never re-fired to restore it, so the title stayed blank. The fix passes
+    // `!embedded` as `useSetPageChrome`'s `enabled` arg so an embedded pane never
+    // touches the shared chrome slot at all.
+    record = makeRecord({ status: "running" });
+    render(
+      <>
+        <HostChromePublisher />
+        <WorkflowRunPane
+          deploymentId="wfr_1"
+          onClose={() => undefined}
+          embedded
+        />
+      </>,
+      { wrapper },
+    );
+    // Give the pane's effects (including its own chrome effect) a chance to run.
+    // Embedded mode always skips the kind's own Panel (`Panel = embedded ?
+    // undefined : uiModule?.Panel`), so this lands on the generic
+    // WorkflowRunBlocks fallback, not the custom Panel.
+    await waitFor(() => screen.getByText("Waiting for run activity…"));
+    expect(screen.getByTestId("chrome-slot").textContent).toBe("Host Chrome");
+  });
+
+  it("publishes its own chrome (Stop control) when NOT embedded, confirming the gate is real", async () => {
+    record = makeRecord({ status: "running" });
+    render(
+      <>
+        <HostChromePublisher />
+        <WorkflowRunPane deploymentId="wfr_1" onClose={() => undefined} />
+      </>,
+      { wrapper },
+    );
+    await waitFor(() => screen.getByTestId("run-pane-stop"));
+    // Non-embedded pane DOES own the chrome slot, overwriting the host's node —
+    // proves the assertion above is exercising a real conditional, not a tautology.
+    expect(screen.getByTestId("chrome-slot").textContent).not.toBe(
+      "Host Chrome",
+    );
   });
 
   it("renders the workflow kind own Panel when its module exports one", async () => {
@@ -956,8 +1060,9 @@ describe("WorkflowRunPane", () => {
     const indicator = await waitFor(() =>
       screen.getByTestId("workflow-starting-indicator"),
     );
-    // Motion is the hard requirement — an animated spinner must be present.
-    expect(container.querySelector(".animate-spin")).not.toBeNull();
+    // Motion is the hard requirement — the shared PulsingRing overlay (CL-4394,
+    // via StatusDot) must be present, matching the dock's "starting" dot.
+    expect(container.querySelector(".bg-blue\\/60")).not.toBeNull();
     // CL-2786: honest present-progress copy from the shared runStartLabel.
     expect(indicator.textContent).toContain("Preparing your workflow…");
     // The workflow's own panel is NOT rendered while provisioning.

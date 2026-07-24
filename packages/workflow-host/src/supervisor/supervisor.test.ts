@@ -8,7 +8,7 @@ import { type } from "arktype";
 import { generateKeyPair } from "@intx/crypto";
 import { hexDecode, hexEncode } from "@intx/types";
 import type { InferenceSource } from "@intx/types/runtime";
-import type { RepoId, RepoStore } from "@intx/hub-sessions";
+import type { RepoId, RepoStore } from "@workbench/hub-sessions";
 
 import {
   createWorkflowSupervisor,

@@ -1,9 +1,11 @@
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { principal, tenant } from "@intx/db/schema";
 import { getLogger } from "@intx/log";
 import { deriveUserMailAddress } from "@workbench/hub-agent";
 import { deepLinkPath } from "@workbench/shared";
 import type { HubDb } from "../db";
+import { memberAgentInstance } from "../db/schema";
+import { scheduleScopeForRun } from "../lib/scheduled-triggers";
 import { readMemberPreferences } from "../lib/member-preferences";
 import { writeMailboxMessage } from "../lib/mailbox-write";
 import type { MailboxEventBus } from "../lib/mailbox-events";
@@ -103,30 +105,21 @@ function composeFailureBody(args: {
   return lines.join("\r\n");
 }
 
-function composeCompletionBody(args: {
-  label: string;
-  runId: string;
-  deepLinkPath: string;
-}): string {
-  const lines = [
-    `The "${args.label}" workflow run completed.`,
-    "",
-    `Run: ${args.runId}`,
-    `Workflow: ${args.label}`,
-    "",
-    `View the run: ${args.deepLinkPath}`,
-  ];
-  return lines.join("\r\n");
-}
-
 /**
- * Deliver a "your workflow run finished" mailbox item to the run creator when
- * a run reaches a terminal status (CL-3517). Gated per-member by the
- * `notifyRunFailure` (default ON) / `notifyRunCompletion` (default OFF)
- * preferences, resolved for the run's `principalId`. Resolves the owner
- * strictly (must be a human `user` principal in the run's tenant, else logs at
- * error and skips — never guesses), and writes one deduplicated mailbox item
- * keyed `run:<runId>:<status>`. Best-effort by contract: the caller fires this
+ * Deliver terminal-run mailbox mail for a run that just became terminal
+ * (CL-3517, CL-4312).
+ *
+ * **Success is never generic.** A quiet/completed run does not write the
+ * inbox. Success reaches the inbox only via result-specific mail (workflow
+ * `mail_send`, granola fan-out, heartbeat notify, etc.). This path still
+ * resets the failure-notification breaker on completion so a later failure
+ * re-arms, but it never composes "Workflow run completed" rows.
+ *
+ * **Failure still mails** (plain language + deep link), gated per-member by
+ * `notifyRunFailure` (default ON). Resolves the owner strictly (must be a
+ * human `user` principal in the run's tenant, else logs at error and skips —
+ * never guesses), and writes one deduplicated mailbox item keyed
+ * `run:<runId>:failed`. Best-effort by contract: the caller fires this
  * fire-and-forget so a failure never blocks pack receipt or run execution.
  */
 export async function deliverRunTerminalMail(
@@ -171,32 +164,27 @@ export async function deliverRunTerminalMail(
   }
 
   // Repeat-failure suppression is keyed on the workflow kind, and a SUCCESS for
-  // that key resets it — so reset on any completion regardless of whether the
-  // owner has completion mail enabled (it is OFF by default).
+  // that key resets it — even though we never mail generic completions
+  // (CL-4312: success inbox = result mail only).
   const breakerKey = failureNotificationKey(
     run.tenantId,
     run.kind,
     run.principalId,
   );
-  if (run.status === "completed") noteSuccessNotification(breakerKey);
+  if (run.status === "completed") {
+    noteSuccessNotification(breakerKey);
+    return;
+  }
 
   const prefs = await readMemberPreferences(
     deps.db,
     run.tenantId,
     run.principalId,
   );
-  const notifyEnabled =
-    run.status === "failed"
-      ? prefs.notifyRunFailure !== false
-      : prefs.notifyRunCompletion === true;
-  if (!notifyEnabled) return;
+  if (prefs.notifyRunFailure === false) return;
 
-  let pausedNotice = false;
-  if (run.status === "failed") {
-    const decision = noteFailureNotification(breakerKey);
-    if (!decision.deliver) return;
-    pausedNotice = decision.pausedNotice;
-  }
+  const decision = noteFailureNotification(breakerKey);
+  if (!decision.deliver) return;
 
   const meta =
     run.deploymentId !== null
@@ -213,26 +201,6 @@ export async function deliverRunTerminalMail(
   // mail's link — see the `workflow_trace` case in `deep-link.ts`.
   const runDeepLinkPath = deepLinkPath("workflow_trace", run.runId);
 
-  const subject =
-    run.status === "failed"
-      ? `Workflow run failed: ${label}`
-      : `Workflow run completed: ${label}`;
-  const body =
-    run.status === "failed"
-      ? composeFailureBody({
-          label,
-          runId: run.runId,
-          error: run.error,
-          failedSteps: run.failedSteps,
-          deepLinkPath: runDeepLinkPath,
-          paused: pausedNotice,
-        })
-      : composeCompletionBody({
-          label,
-          runId: run.runId,
-          deepLinkPath: runDeepLinkPath,
-        });
-
   await writeMailboxMessage(
     deps.db,
     {
@@ -240,10 +208,54 @@ export async function deliverRunTerminalMail(
       principalId: owner.id,
       address: recipientAddress,
       fromAddress: senderAddress,
-      subject,
-      body,
+      subject: `Workflow run failed: ${label}`,
+      body: composeFailureBody({
+        label,
+        runId: run.runId,
+        error: run.error,
+        failedSteps: run.failedSteps,
+        deepLinkPath: runDeepLinkPath,
+        paused: decision.pausedNotice,
+      }),
       messageKey: runTerminalMailMessageKey(run.runId, run.status),
     },
     deps.mailboxEventBus,
   );
+}
+
+/**
+ * Subscribe fan-out for tenant-scoped (Everyone) schedule fires (CL-4114).
+ * One run already finished under the schedule creator; deliver the same terminal
+ * **failure** mail to every other Myra-provisioned member in the tenant, each
+ * gated by their own `notifyRunFailure` pref (CL-4312: completed runs are
+ * silent here — success is result-mail only). Creator is skipped — they already
+ * received mail via `deliverRunTerminalMail`. Personal schedules and
+ * non-schedule runs are no-ops.
+ */
+export async function fanOutTenantScheduleTerminalMail(
+  deps: DeliverRunTerminalMailDeps,
+  run: TerminalRunContext,
+): Promise<void> {
+  if (run.status === "failed" && run.error === "cancelled") return;
+
+  const scope = await scheduleScopeForRun(deps.db, run.runId);
+  if (scope !== "tenant") return;
+
+  const members = await deps.db
+    .select({ principalId: memberAgentInstance.memberPrincipalId })
+    .from(memberAgentInstance)
+    .where(
+      and(
+        eq(memberAgentInstance.tenantId, run.tenantId),
+        eq(memberAgentInstance.templateKey, "myra"),
+      ),
+    );
+
+  for (const member of members) {
+    if (member.principalId === run.principalId) continue;
+    await deliverRunTerminalMail(deps, {
+      ...run,
+      principalId: member.principalId,
+    });
+  }
 }

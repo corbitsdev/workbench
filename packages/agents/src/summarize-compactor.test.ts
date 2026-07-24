@@ -348,6 +348,36 @@ describe("createSummarizeCompactor", () => {
 
     expect(result.output).toEqual(turns);
   });
+
+  // CL-3837: summarization cost + shape must ride TransformRecord.parameters so
+  // the reactor can emit custom.compaction without reconciling two seq spaces.
+  test("puts summarization usage, source, and summaryChars on TransformRecord.parameters", async () => {
+    runInferenceCalls = [];
+    runInferenceBehavior = "succeed";
+    const compactor = createSummarizeCompactor({ source: SOURCE, deps: DEPS });
+
+    const result = await compactor.apply(buildLongConversation(), {
+      state: {} as never,
+      trigger: "test-trigger",
+    });
+
+    expect(result.record.parameters.usage).toEqual({
+      input: 10,
+      output: 10,
+      cacheRead: 0,
+      cacheWrite: 0,
+      thinking: 0,
+    });
+    expect(result.record.parameters.source).toEqual({
+      sourceId: "s",
+      provider: "p",
+      model: SOURCE.model,
+    });
+    // "Summary of prior conversation:\nFAKE SUMMARY TEXT"
+    expect(result.record.parameters.summaryChars).toBe(
+      "Summary of prior conversation:\nFAKE SUMMARY TEXT".length,
+    );
+  });
 });
 
 describe("resolveCompactorSource", () => {

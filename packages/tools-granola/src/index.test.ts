@@ -371,6 +371,49 @@ describe("createGranolaTools", () => {
     ]);
   });
 
+  // Routine/intake fields deliver numbers as TEXT: a scheduled granola-call
+  // run's trigger payload carries maxCalls "10" (string), which the discover
+  // argMap forwards verbatim as `limit`. The tool must coerce a numeric
+  // string instead of failing the whole run with "limit must be a number
+  // (was a string)" — the production failure this pins.
+  it("accepts a numeric-string limit (routine text intake) and still rejects garbage", async () => {
+    const fetcher = mock(async (input: string) => {
+      expect(new URL(String(input)).searchParams.get("page_size")).toBe("3");
+      return new Response(
+        JSON.stringify({ notes: [], hasMore: false }),
+        { status: 200 },
+      );
+    });
+    const runner = createToolRunner(
+      createGranolaTools({
+        apiKey: "tenant-api-key",
+        baseUrl: "https://public-api.granola.ai/v1",
+        fetcher,
+      }),
+    );
+
+    const ok = await runner.run(
+      {
+        id: "call_s",
+        name: "granola_list_notes",
+        arguments: { limit: "3" },
+      },
+      new AbortController().signal,
+    );
+    expect(ok.isError).toBeUndefined();
+
+    const bad = await runner.run(
+      {
+        id: "call_b",
+        name: "granola_list_notes",
+        arguments: { limit: "lots" },
+      },
+      new AbortController().signal,
+    );
+    expect(bad.isError).toBe(true);
+    expect(String(bad.content)).toContain("limit");
+  });
+
   it("lists notes using the page_size query parameter", async () => {
     const fetcher = mock(async (input: string, init: RequestInit) => {
       expect(String(input)).toBe(

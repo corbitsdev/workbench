@@ -6,6 +6,11 @@ import {
   PERSONAL_AGENT_PROMPT_VERSION,
 } from "./prompt";
 import {
+  buildPersonalAgentSystemPromptV2,
+  PERSONAL_AGENT_PROMPT_VERSION_V2,
+} from "./prompts/v2";
+import type { MyraPromptGeneration } from "./prompts";
+import {
   PERSONAL_AGENT_BASE_TOOLS,
   PERSONAL_AGENT_CREDENTIAL_REQUIREMENTS,
   PERSONAL_AGENT_DEPLOY_PROMPT,
@@ -68,6 +73,13 @@ export type MyraVariant = {
   promptFormat: PromptFormat;
   /** The system prompt baked into the seeded definition for this variant. */
   deployPrompt: string;
+  /**
+   * The prompt generation this variant's prompt is built from. Launch-time
+   * rebuilds (`composePersonalAgentPromptForInstance`) MUST dispatch on this —
+   * rebuilding with a hardcoded generation silently reverts the variant's
+   * prompt at every real launch.
+   */
+  promptGeneration: MyraPromptGeneration;
   /**
    * The authorized toolset (grant list) for this variant's definition. Chat
    * variants carry the full base toolset; triage variants carry the mailbox
@@ -135,6 +147,7 @@ export const MYRA_VARIANTS: readonly MyraVariant[] = [
     costTier: "standard",
     credentialRequirements: PERSONAL_AGENT_CREDENTIAL_REQUIREMENTS,
     promptFormat: promptFormatForProvider("openai-compatible"),
+    promptGeneration: "v1",
     deployPrompt: PERSONAL_AGENT_DEPLOY_PROMPT,
     toolPolicy: PERSONAL_AGENT_BASE_TOOLS,
     seedName: PERSONAL_AGENT_NAME,
@@ -154,6 +167,7 @@ export const MYRA_VARIANTS: readonly MyraVariant[] = [
     costTier: "standard",
     credentialRequirements: PERSONAL_AGENT_CREDENTIAL_REQUIREMENTS,
     promptFormat: promptFormatForProvider("openai-compatible"),
+    promptGeneration: "v1",
     deployPrompt: chatDeployPrompt(
       "openai-compatible",
       DEEPSEEK_MODEL_CONFIG.defaultModel,
@@ -176,6 +190,7 @@ export const MYRA_VARIANTS: readonly MyraVariant[] = [
     costTier: "premium",
     credentialRequirements: ANTHROPIC_CREDENTIAL_REQUIREMENTS,
     promptFormat: promptFormatForProvider("anthropic"),
+    promptGeneration: "v1",
     deployPrompt: chatDeployPrompt("anthropic", OPUS_MODEL_CONFIG.defaultModel),
     toolPolicy: PERSONAL_AGENT_BASE_TOOLS,
     seedName: "Myra (Opus)",
@@ -195,6 +210,7 @@ export const MYRA_VARIANTS: readonly MyraVariant[] = [
     costTier: "premium",
     credentialRequirements: PERSONAL_AGENT_CREDENTIAL_REQUIREMENTS,
     promptFormat: promptFormatForProvider("openai-compatible"),
+    promptGeneration: "v1",
     deployPrompt: chatDeployPrompt(
       "openai-compatible",
       KIMI_K3_MODEL_CONFIG.defaultModel,
@@ -202,6 +218,30 @@ export const MYRA_VARIANTS: readonly MyraVariant[] = [
     toolPolicy: PERSONAL_AGENT_BASE_TOOLS,
     seedName: "Myra (Kimi K3)",
     templateKey: "myra-chat-kimi-k3",
+    isDefault: false,
+  },
+  {
+    id: "myra-v2-kimi-k2-6",
+    versionId: `myra-v2-kimi-k2-6@${PERSONAL_AGENT_PROMPT_VERSION_V2}`,
+    kind: "chat",
+    displayName: "Myra v2 (Kimi K2)",
+    description:
+      "Myra on the v2 prompt generation — adds an outcome-first reporting contract, a finish-before-yielding rule, and failure reporting. Same Kimi K2 model as the default.",
+    model: PERSONAL_AGENT_MODEL_CONFIG.defaultModel,
+    modelConfig: PERSONAL_AGENT_MODEL_CONFIG,
+    provider: "openai-compatible",
+    costTier: "standard",
+    credentialRequirements: PERSONAL_AGENT_CREDENTIAL_REQUIREMENTS,
+    promptFormat: promptFormatForProvider("openai-compatible"),
+    promptGeneration: "v2",
+    deployPrompt: buildPersonalAgentSystemPromptV2(
+      PERSONAL_AGENT_NAME,
+      promptFormatForProvider("openai-compatible"),
+      { model: PERSONAL_AGENT_MODEL_CONFIG.defaultModel },
+    ),
+    toolPolicy: PERSONAL_AGENT_BASE_TOOLS,
+    seedName: "Myra v2 (Kimi K2)",
+    templateKey: "myra-chat-v2-kimi-k2-6",
     isDefault: false,
   },
   {
@@ -217,6 +257,7 @@ export const MYRA_VARIANTS: readonly MyraVariant[] = [
     costTier: "standard",
     credentialRequirements: PERSONAL_AGENT_CREDENTIAL_REQUIREMENTS,
     promptFormat: promptFormatForProvider("openai-compatible"),
+    promptGeneration: "v1",
     deployPrompt: PERSONAL_AGENT_TRIAGE_DEPLOY_PROMPT,
     toolPolicy: MAILBOX_PERSONA_TOOLS,
     seedName: PERSONAL_AGENT_TRIAGE_NAME,
@@ -236,6 +277,7 @@ export const MYRA_VARIANTS: readonly MyraVariant[] = [
     costTier: "standard",
     credentialRequirements: PERSONAL_AGENT_CREDENTIAL_REQUIREMENTS,
     promptFormat: promptFormatForProvider("openai-compatible"),
+    promptGeneration: "v1",
     deployPrompt: chatDeployPrompt(
       "openai-compatible",
       PERSONAL_AGENT_MODEL_CONFIG.defaultModel,
@@ -258,6 +300,7 @@ export const MYRA_VARIANTS: readonly MyraVariant[] = [
     costTier: "premium",
     credentialRequirements: ANTHROPIC_CREDENTIAL_REQUIREMENTS,
     promptFormat: promptFormatForProvider("anthropic"),
+    promptGeneration: "v1",
     deployPrompt: chatDeployPrompt("anthropic", OPUS_MODEL_CONFIG.defaultModel),
     toolPolicy: MAILBOX_PERSONA_TOOLS,
     seedName: "Myra Triage (Opus)",
@@ -317,6 +360,17 @@ export function isMyraVariantId(id: string, kind?: MyraVariantKind): boolean {
  * only Myra instances, independent of the "personal" template-kind marker
  * that gates operator-identity personalization.
  */
+/**
+ * The full variant a seeded template key belongs to, or `null` for non-Myra
+ * templates. Launch-time prompt rebuilds use this to recover the variant's
+ * prompt generation and model from the instance's stored template key.
+ */
+export function myraVariantForTemplateKey(
+  templateKey: string,
+): MyraVariant | null {
+  return MYRA_VARIANTS.find((v) => v.templateKey === templateKey) ?? null;
+}
+
 export function myraSurfaceForTemplateKey(
   templateKey: string,
 ): MyraVariantKind | null {

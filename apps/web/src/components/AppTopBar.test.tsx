@@ -85,7 +85,7 @@ describe("AppTopBar", () => {
               React.createElement(PageLeadingSetter, {
                 node: React.createElement(
                   "a",
-                  { href: "/artifacts" },
+                  { href: "/library/artifacts" },
                   "Back to Artifacts",
                 ),
               }),
@@ -140,9 +140,7 @@ describe("AppTopBar", () => {
         ),
       }),
     );
-    const header = withChrome.container.querySelector(
-      "header",
-    ) as HTMLElement;
+    const header = withChrome.container.querySelector("header") as HTMLElement;
     expect(withChrome.container.querySelectorAll("header").length).toBe(1);
     // A second, bordered row (the prior two-row layout) always carried a
     // border-t divider between it and the top row — its absence means the

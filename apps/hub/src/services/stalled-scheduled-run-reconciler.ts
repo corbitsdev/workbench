@@ -1,9 +1,25 @@
-import { and, eq, isNull, lt } from "drizzle-orm";
+import { and, eq, exists, isNull, lt } from "drizzle-orm";
 import { getLogger } from "@intx/log";
 import type { HubDb } from "../db";
-import { workflowRunRecord } from "../db/schema";
+import { workflowRunRecord, workflowRunStep } from "../db/schema";
+import type { MailboxEventBus } from "../lib/mailbox-events";
+import {
+  failRunIfStillAwaiting,
+  listExhaustedFailedRunSteps,
+} from "../workflow-executor/run-store";
+import { deliverRunTerminalMail } from "../workflow-executor/run-terminal-mail";
 
 const log = getLogger(["services", "stalled-scheduled-run-reconciler"]);
+
+// CL-4289: when either sweep below fails a run, the owner must be told —
+// otherwise a run they were legitimately waiting on (and, for the stalled
+// sweep, had already been mailed a gate notice about) silently disappears.
+// Optional so existing callers/tests that only assert the DB flip are
+// unaffected; production wiring passes it (see index.ts).
+export type StalledScheduledRunMailDeps = {
+  deploymentDomain: string;
+  mailboxEventBus?: MailboxEventBus;
+};
 
 // How long a scheduler-fired run may sit parked at an awaitSignal gate before it
 // is failed. Scheduled runs have no human in the loop: the `intake` gate is
@@ -14,9 +30,59 @@ const log = getLogger(["services", "stalled-scheduled-run-reconciler"]);
 // stuck on a gate the agent cannot resolve. The window is generous enough for a
 // slow Myra turn + queue, short enough that a wedged scheduled run does not
 // linger in the Now feed indefinitely.
+//
+// CL-4289: the clock runs from the run's last DB touch (park time), not from
+// when the owner was mailed about the open gate — the two are close in
+// practice (gate mail fires on the same running -> awaiting transition that
+// starts this clock) but are not the same instant, so the deadline named in
+// the mail can be slightly optimistic. Acceptable: the gap is at most the
+// time between the transition and the fire-and-forget mail send, which is
+// seconds, not minutes.
 export const DEFAULT_STALLED_SCHEDULED_RUN_TIMEOUT_MS = 60 * 60 * 1000;
 
 export const DEFAULT_STALLED_SCHEDULED_RUN_SWEEP_INTERVAL_MS = 5 * 60 * 1000;
+
+function stalledScheduledRunTimeoutMinutes(timeoutMs: number): number {
+  return Math.round(timeoutMs / 60_000);
+}
+
+async function notifyStalledRunFailure(
+  db: HubDb,
+  mailDeps: StalledScheduledRunMailDeps,
+  run: {
+    id: string;
+    kind: string;
+    tenantId: string;
+    principalId: string;
+    deploymentId: string | null;
+  },
+  error: string,
+): Promise<void> {
+  await deliverRunTerminalMail(
+    {
+      db,
+      deploymentDomain: mailDeps.deploymentDomain,
+      ...(mailDeps.mailboxEventBus !== undefined
+        ? { mailboxEventBus: mailDeps.mailboxEventBus }
+        : {}),
+    },
+    {
+      runId: run.id,
+      kind: run.kind,
+      tenantId: run.tenantId,
+      principalId: run.principalId,
+      deploymentId: run.deploymentId,
+      status: "failed",
+      error,
+      failedSteps: [],
+    },
+  ).catch((err: unknown) => {
+    log.error("stalled-run reconciler: terminal mail failed", {
+      runId: run.id,
+      error: err instanceof Error ? err : new Error(String(err)),
+    });
+  });
+}
 
 // Fail scheduler-sourced runs parked at an awaitSignal gate past the timeout.
 // STRICTLY scoped to `triggerSource = 'scheduler'` runs: an interactive run
@@ -28,14 +94,24 @@ export const DEFAULT_STALLED_SCHEDULED_RUN_SWEEP_INTERVAL_MS = 5 * 60 * 1000;
 // and never aborts the batch.
 export async function failStalledScheduledRuns(
   db: HubDb,
-  opts?: { timeoutMs?: number; now?: () => number },
+  opts?: {
+    timeoutMs?: number;
+    now?: () => number;
+    mailDeps?: StalledScheduledRunMailDeps;
+  },
 ): Promise<number> {
   const timeoutMs = opts?.timeoutMs ?? DEFAULT_STALLED_SCHEDULED_RUN_TIMEOUT_MS;
   const nowMs = (opts?.now ?? Date.now)();
   const cutoff = new Date(nowMs - timeoutMs);
 
   const stalled = await db
-    .select({ id: workflowRunRecord.id, kind: workflowRunRecord.kind })
+    .select({
+      id: workflowRunRecord.id,
+      kind: workflowRunRecord.kind,
+      tenantId: workflowRunRecord.tenantId,
+      principalId: workflowRunRecord.principalId,
+      deploymentId: workflowRunRecord.deploymentId,
+    })
     .from(workflowRunRecord)
     .where(
       and(
@@ -59,6 +135,19 @@ export async function failStalledScheduledRuns(
           ),
         );
       failed += 1;
+      if (opts?.mailDeps) {
+        // Awaited (unlike the pack-receipt gate/terminal mail hooks): this
+        // sweep runs on a low-frequency timer, not a hot pack-receipt path, so
+        // there is no latency budget to protect. Awaiting means the batch
+        // reliably notifies before the tick completes rather than racing the
+        // next sweep or process exit.
+        await notifyStalledRunFailure(
+          db,
+          opts.mailDeps,
+          run,
+          `This run was parked waiting on a gate and did not resolve within ${stalledScheduledRunTimeoutMinutes(timeoutMs)} minutes.`,
+        );
+      }
     } catch (err) {
       log.warn("failStalledScheduledRuns: failed to mark run failed", {
         runId: run.id,
@@ -76,13 +165,136 @@ export async function failStalledScheduledRuns(
   return failed;
 }
 
-// Register the periodic stalled-scheduled-run sweep. Owns a reentrancy guard (a
-// slow sweep must not overlap the next) and returns an unsubscribe that clears
-// the timer; the timer is `unref`'d so it never keeps the process alive.
+// Fail runs that are DEAD-parked: `awaiting` at a gate while at least one
+// sibling step has PERMANENTLY failed (its retry policy exhausted). This is
+// the general-purpose counterpart to `failStalledScheduledRuns` above — it
+// applies to EVERY run, not only scheduler-fired ones, and fires immediately
+// (no timeout window) because the state is unambiguous the moment it is
+// observed.
+//
+// Root cause (CL-3509 follow-up): `@intx/workflow`'s `areDepsResolved` only
+// checks that a dependency is TERMINAL, and `failed` is terminal — so a step
+// downstream of a permanently-failed dependency is scheduled anyway. When
+// that dependent is an `awaitSignal` gate, it parks; the run's own "am I
+// done" check requires every step terminal, and a parked gate never reaches
+// one, so the run sits `awaiting` forever alongside its dead step. Nothing a
+// human supplies to that gate can revive the run — the failed dependency's
+// output will never exist — so this is settled as `failed` immediately, not
+// after a timeout.
+//
+// IMPORTANT — this join is NOT dependency-aware: it does not verify the
+// parked gate is actually downstream of the exhausted-failed step, only that
+// BOTH exist somewhere in the same run (two independent DAG branches is a
+// supported pattern). It is intentionally conservative in the direction that
+// matters: `retries_exhausted = true` is a genuinely terminal fact for that
+// step (no future event can ever move it again — see the column comment), so
+// once true, that step contributes nothing further to the run's eventual
+// completion; a HUMAN parked on any independent gate in the same run cannot
+// unstick it either, because the run's own completion requires every step
+// (including the dead one) to reach terminal, which the dead step never will
+// on its own. A precise dependency check (b) would be a strictly tighter
+// version of this rule, not a different one — worth doing as a follow-up, not
+// required for correctness here.
+//
+// STRICTLY requires `retries_exhausted = true` on the failed step — `phase =
+// 'failed'` ALONE is a re-entrancy marker the runtime revisits between retry
+// attempts (see `workflowRunStep.retriesExhausted` column comment), not a
+// terminal verdict. A step still backing off before a retry that would have
+// succeeded must NEVER trigger this sweep. And a run legitimately parked at a
+// gate with no failed step at all is never touched (the same condition a
+// human is correctly waiting on indefinitely).
+//
+// CAS'd via `failRunIfStillAwaiting` (the same primitive the operator abort
+// path shares), so a run that has since cleared the gate on its own between
+// the read and the write is left alone — idempotent and safe to run on every
+// tick.
+//
+// CL-4289: on settling a run failed here, the owner is mailed too — naming the
+// step that actually died (from `listExhaustedFailedRunSteps`) rather than the
+// generic "parked past timeout" copy the stalled-scheduler sweep uses, since a
+// dead dependency and a run nobody ever answered are different failures and
+// the owner should be able to tell which one happened.
+// Returns the number of runs failed. Best-effort per row.
+export async function failDeadParkedRuns(
+  db: HubDb,
+  opts?: { mailDeps?: StalledScheduledRunMailDeps },
+): Promise<number> {
+  const parked = await db
+    .select({
+      id: workflowRunRecord.id,
+      kind: workflowRunRecord.kind,
+      tenantId: workflowRunRecord.tenantId,
+      principalId: workflowRunRecord.principalId,
+      deploymentId: workflowRunRecord.deploymentId,
+    })
+    .from(workflowRunRecord)
+    .where(
+      and(
+        eq(workflowRunRecord.status, "awaiting"),
+        isNull(workflowRunRecord.deletedAt),
+        exists(
+          db
+            .select({ one: workflowRunStep.id })
+            .from(workflowRunStep)
+            .where(
+              and(
+                eq(workflowRunStep.runId, workflowRunRecord.id),
+                eq(workflowRunStep.phase, "failed"),
+                eq(workflowRunStep.retriesExhausted, true),
+              ),
+            ),
+        ),
+      ),
+    );
+
+  let failed = 0;
+  for (const run of parked) {
+    try {
+      const flipped = await failRunIfStillAwaiting(db, run.id);
+      if (!flipped) continue;
+      const failedSteps = await listExhaustedFailedRunSteps(db, run.id);
+      log.error("dead-parked workflow run settled as failed", {
+        runId: run.id,
+        kind: run.kind,
+        failedSteps,
+      });
+      failed += 1;
+      if (opts?.mailDeps) {
+        const detail =
+          failedSteps.length > 0
+            ? failedSteps
+                .map((s) => `${s.stepId}${s.errorMessage ? ` (${s.errorMessage})` : ""}`)
+                .join("; ")
+            : "a dependency step";
+        await notifyStalledRunFailure(
+          db,
+          opts.mailDeps,
+          run,
+          `This run cannot complete: ${detail} permanently failed, and a step it was waiting on depends on that step's output.`,
+        );
+      }
+    } catch (err) {
+      log.warn("failDeadParkedRuns: failed to settle run", {
+        runId: run.id,
+        kind: run.kind,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
+  return failed;
+}
+
+// Register the periodic health sweep for parked runs. Owns a reentrancy guard
+// (a slow sweep must not overlap the next) and returns an unsubscribe that
+// clears the timer; the timer is `unref`'d so it never keeps the process
+// alive. Runs BOTH sweeps on the same tick/rail: the scheduler-only stalled
+// check (timeout-gated) and the general dead-parked-run check (fires
+// immediately, every run) — one failing sweep never blocks the other.
 export function registerStalledScheduledRunReconciler(deps: {
   db: HubDb;
   timeoutMs?: number;
   intervalMs?: number;
+  mailDeps?: StalledScheduledRunMailDeps;
 }): () => void {
   const intervalMs =
     deps.intervalMs ?? DEFAULT_STALLED_SCHEDULED_RUN_SWEEP_INTERVAL_MS;
@@ -90,17 +302,25 @@ export function registerStalledScheduledRunReconciler(deps: {
   const timer = setInterval(() => {
     if (sweeping) return;
     sweeping = true;
-    void failStalledScheduledRuns(deps.db, {
-      ...(deps.timeoutMs !== undefined ? { timeoutMs: deps.timeoutMs } : {}),
-    })
-      .catch((err) => {
+    void Promise.allSettled([
+      failStalledScheduledRuns(deps.db, {
+        ...(deps.timeoutMs !== undefined ? { timeoutMs: deps.timeoutMs } : {}),
+        ...(deps.mailDeps !== undefined ? { mailDeps: deps.mailDeps } : {}),
+      }).catch((err) => {
         log.error("stalled scheduled run sweep tick failed", {
           error: err instanceof Error ? err : new Error(String(err)),
         });
-      })
-      .finally(() => {
-        sweeping = false;
-      });
+      }),
+      failDeadParkedRuns(deps.db, {
+        ...(deps.mailDeps !== undefined ? { mailDeps: deps.mailDeps } : {}),
+      }).catch((err) => {
+        log.error("dead-parked run sweep tick failed", {
+          error: err instanceof Error ? err : new Error(String(err)),
+        });
+      }),
+    ]).finally(() => {
+      sweeping = false;
+    });
   }, intervalMs);
   if (typeof timer.unref === "function") timer.unref();
   return () => clearInterval(timer);

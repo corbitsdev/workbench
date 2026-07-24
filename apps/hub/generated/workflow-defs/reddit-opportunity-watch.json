@@ -1,0 +1,210 @@
+{
+  "kind": "reddit-opportunity-watch",
+  "version": "0.1.0",
+  "label": "Reddit opportunity watch",
+  "description": "On a schedule, search a subreddit for opportunity posts and save a short unattended digest — no mid-run review gates.",
+  "requiresIntake": true,
+  "humanGateCount": 1,
+  "intakeFields": [
+    {
+      "name": "subreddit",
+      "label": "Subreddit",
+      "inputHint": "text",
+      "required": true,
+      "help": "Subreddit name without the r/ prefix.",
+      "placeholder": "devops",
+      "order": 0
+    },
+    {
+      "name": "query",
+      "label": "Search query",
+      "inputHint": "text",
+      "required": true,
+      "help": "What to search for inside that subreddit.",
+      "placeholder": "hiring OR looking for tools",
+      "order": 1
+    },
+    {
+      "name": "timeframe",
+      "label": "Timeframe",
+      "inputHint": "select",
+      "required": false,
+      "help": "Reddit search window (default week).",
+      "order": 2,
+      "options": [
+        {
+          "value": "day",
+          "label": "Day"
+        },
+        {
+          "value": "week",
+          "label": "Week"
+        },
+        {
+          "value": "month",
+          "label": "Month"
+        },
+        {
+          "value": "year",
+          "label": "Year"
+        },
+        {
+          "value": "all",
+          "label": "All"
+        }
+      ]
+    }
+  ],
+  "definition": {
+    "id": "reddit-opportunity-watch",
+    "triggers": [
+      {
+        "type": "manual"
+      }
+    ],
+    "steps": {
+      "intake": {
+        "kind": "awaitSignal",
+        "id": "intake",
+        "name": "intake",
+        "drainBehavior": "wait"
+      },
+      "fetch": {
+        "kind": "step",
+        "id": "fetch",
+        "agent": {
+          "id": "reddit-opportunity-watch-fetch",
+          "systemPrompt": "",
+          "toolFactories": [],
+          "capabilities": [
+            "@workbench/tools-reddit/reddit:reddit_subreddit_search"
+          ],
+          "inference": {
+            "sources": []
+          },
+          "description": "Deterministic tool call: @workbench/tools-reddit/reddit:reddit_subreddit_search",
+          "tags": {
+            "workbench.stepKind": "deterministic-tool",
+            "workbench.tool": "@workbench/tools-reddit/reddit:reddit_subreddit_search",
+            "workbench.argMap": "{\"subreddit\":{\"from\":\"subreddit\"},\"query\":{\"from\":\"query\"},\"timeframe\":{\"from\":\"timeframe\"},\"sort\":{\"literal\":\"relevance\"}}",
+            "workbench.title": "Search the subreddit"
+          }
+        },
+        "drainBehavior": "cancel",
+        "input": {
+          "from": "steps.intake.output"
+        },
+        "after": [
+          "intake"
+        ]
+      },
+      "digest": {
+        "kind": "step",
+        "id": "digest",
+        "agent": {
+          "id": "reddit-opportunity-watch-digest",
+          "systemPrompt": "Treat Corbits, Corbits.dev, Interchange, and Faremeter as canonical Corbits names; spell them exactly. When source material contains a clear speech-to-text or spelling variant, use the canonical spelling in your output. Do not replace an ambiguous term unless surrounding context identifies it.\n\nYou write short unattended Reddit opportunity digests for a scheduled watch.\n\nYou receive subreddit, query, optional timeframe, and raw reddit_subreddit_search results (JSON research items with url, title, engagement, sometimes topComments).\n\nWrite a concise markdown digest:\n1. One-line headline of the opportunity landscape\n2. Top posts (3–8) with why each is an opportunity (pain, buying signal, question to answer)\n3. Suggested angles for outreach or content (2–4 bullets)\n\nNo mid-run selection — pick the best yourself. No preamble. No tool calls. Markdown body only.",
+          "toolFactories": [],
+          "capabilities": [],
+          "inference": {
+            "sources": []
+          },
+          "description": "Reasoning step: reddit-opportunity-watch-digest",
+          "tags": {
+            "workbench.title": "Write the opportunity digest"
+          }
+        },
+        "drainBehavior": "cancel",
+        "input": {
+          "merge": [
+            {
+              "from": "steps.intake.output"
+            },
+            {
+              "from": "steps.fetch.output"
+            }
+          ]
+        },
+        "after": [
+          "fetch"
+        ]
+      },
+      "document": {
+        "kind": "step",
+        "id": "document",
+        "agent": {
+          "id": "reddit-opportunity-watch-document",
+          "systemPrompt": "",
+          "toolFactories": [],
+          "capabilities": [
+            "@workbench/tools-last30days/core:last30days_format_report_document"
+          ],
+          "inference": {
+            "sources": []
+          },
+          "description": "Deterministic tool call: @workbench/tools-last30days/core:last30days_format_report_document",
+          "tags": {
+            "workbench.stepKind": "deterministic-tool",
+            "workbench.tool": "@workbench/tools-last30days/core:last30days_format_report_document",
+            "workbench.argMap": "{\"topic\":{\"from\":\"query\"},\"reply\":{\"from\":\"reply\"}}",
+            "workbench.title": "Compose the digest document"
+          }
+        },
+        "drainBehavior": "cancel",
+        "input": {
+          "merge": [
+            {
+              "from": "steps.intake.output"
+            },
+            {
+              "from": "steps.digest.output"
+            }
+          ]
+        },
+        "after": [
+          "digest"
+        ]
+      },
+      "persist": {
+        "kind": "step",
+        "id": "persist",
+        "agent": {
+          "id": "reddit-opportunity-watch-persist",
+          "systemPrompt": "",
+          "toolFactories": [],
+          "capabilities": [
+            "@workbench/tools-artifact/artifact:write_artifact"
+          ],
+          "inference": {
+            "sources": []
+          },
+          "description": "Deterministic tool call: @workbench/tools-artifact/artifact:write_artifact",
+          "tags": {
+            "workbench.stepKind": "deterministic-tool",
+            "workbench.tool": "@workbench/tools-artifact/artifact:write_artifact",
+            "workbench.argMap": "{\"title\":{\"from\":\"title\"},\"body\":{\"from\":\"body\"},\"kind\":{\"literal\":\"research\"},\"jobLabel\":{\"literal\":\"Reddit opportunity watch\"}}",
+            "workbench.title": "Save digest artifact"
+          }
+        },
+        "drainBehavior": "cancel",
+        "input": {
+          "merge": [
+            {
+              "from": "steps.document.output.content"
+            }
+          ]
+        },
+        "after": [
+          "document"
+        ]
+      }
+    },
+    "stepOrder": [
+      "intake",
+      "fetch",
+      "digest",
+      "document",
+      "persist"
+    ]
+  }
+}

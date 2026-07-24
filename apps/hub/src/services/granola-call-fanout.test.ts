@@ -29,7 +29,7 @@ const { createGranolaCallFanout, matchParticipantsToMembers } = await import(
 );
 import { schema } from "../db";
 import type { HubDb } from "../db";
-import type { CallAnalysis } from "./granola-call-pipeline";
+import type { CallAnalysis } from "@workbench/shared";
 
 const ROOT = "ten-root";
 const DOMAIN = "corbits.io";

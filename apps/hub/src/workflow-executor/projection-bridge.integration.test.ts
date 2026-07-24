@@ -5,7 +5,7 @@ import path from "node:path";
 
 import { PGlite } from "@electric-sql/pglite";
 import { drizzle } from "drizzle-orm/pglite";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { generateKeyPair } from "@intx/crypto";
 import type { KeyPair } from "@intx/types/runtime";
 import {
@@ -16,11 +16,11 @@ import {
   type RepoId,
   type RepoStore,
   type ValidatePushResult,
-} from "@intx/hub-sessions";
+} from "@workbench/hub-sessions";
 
 import { schema } from "../db";
 import type { HubDb } from "../db";
-import { workflowRunRecord } from "../db/schema";
+import { workflowRunRecord, workflowRunStep } from "../db/schema";
 import { insertRunRecord, listRunSteps, loadRunRecord } from "./run-store";
 import {
   projectWorkflowRunRepo,
@@ -28,6 +28,7 @@ import {
   type OnNewlyAwaitingFn,
   type OnRunTerminalFn,
 } from "./projection-bridge";
+import { failDeadParkedRuns } from "../services/stalled-scheduled-run-reconciler";
 import { createRunLivenessSweep } from "../services/run-liveness-sweep";
 
 // Integration coverage for the on-disk -> DB projection seam
@@ -97,6 +98,8 @@ const WORKFLOW_RUN_STEP_DDL = `
     step_id text NOT NULL,
     phase text NOT NULL,
     attempts integer NOT NULL DEFAULT 0,
+    error_message text,
+    retries_exhausted boolean NOT NULL DEFAULT false,
     started_at timestamp,
     ended_at timestamp,
     created_at timestamp NOT NULL DEFAULT now(),
@@ -375,6 +378,125 @@ describe("projectWorkflowRunRepo — on-disk -> DB seam", () => {
     const gate = byId.get("gate");
     expect(gate?.phase).toBe("awaiting-signal");
     expect(gate?.endedAt).toBeNull();
+  });
+
+  // FALSE-POSITIVE REGRESSION (review of #1248): `phase = 'failed'` is a
+  // RE-ENTRANCY MARKER the native runtime revisits between retry attempts, not
+  // a terminal verdict — `StepFailed` commits BEFORE `TimerSet`/`AttemptScheduled`
+  // land, so a real pack can arrive containing only the `StepFailed(retriesExhausted:
+  // false)` event for a step that is about to retry. This drives THAT exact real
+  // event sequence (not a hand-seeded `phase='failed'` row) through the actual
+  // on-disk log → `projectWorkflowRunRepo` → DB seam, on a run with an
+  // INDEPENDENT branch legitimately parked at a human gate — the concrete kill
+  // scenario from the review — and asserts `failDeadParkedRuns` does NOT settle
+  // it. MUST fail against the pre-fix join (`phase = 'failed'` alone, no
+  // `retries_exhausted` check).
+  test("a step still retrying (retriesExhausted: false) does not trigger the dead-parked-run sweep, even with an independent branch legitimately parked at a gate", async () => {
+    const runId = "wfr-retry-in-progress";
+    await seedRun(runId);
+    await commitEvent(runId, 1, {
+      type: "RunStarted",
+      at: "2026-02-01T00:00:00.000Z",
+    });
+    await commitEvent(runId, 2, {
+      type: "StepStarted",
+      stepId: "enrich",
+      at: "2026-02-01T00:00:01.000Z",
+      attempt: 1,
+    });
+    await commitEvent(runId, 3, {
+      type: "StepStarted",
+      stepId: "review-gate",
+      at: "2026-02-01T00:00:01.000Z",
+      attempt: 1,
+    });
+    // The real runtime commits StepFailed on its own, then TimerSet +
+    // AttemptScheduled follow only afterward (interchange/packages/workflow/src
+    // /runtime/run.ts) -- a pack landing right here, before those retry-scheduling
+    // events commit, is the exact race the review flagged.
+    await commitEvent(runId, 4, {
+      type: "StepFailed",
+      stepId: "enrich",
+      at: "2026-02-01T00:00:02.000Z",
+      attempt: 1,
+      error: { message: "enrichment API returned 500" },
+      retriesExhausted: false,
+    });
+    // The independent branch legitimately parks at a human gate AFTER the
+    // sibling failure -- exactly the ordering `areDepsResolved` bug reproduces.
+    await commitEvent(runId, 5, {
+      type: "SignalAwaited",
+      stepId: "review-gate",
+      at: "2026-02-01T00:00:03.000Z",
+      signalName: "approval",
+    });
+
+    await projectWorkflowRunRepo(repoStore, db, REPO_ID);
+
+    // Prove the projection really does land the transient state the fix must
+    // guard against: phase 'failed', retries NOT exhausted.
+    const steps = await listRunSteps(db, runId);
+    const enrich = steps.find((s) => s.stepId === "enrich");
+    expect(enrich?.phase).toBe("failed");
+    const [rawEnrich] = await db
+      .select({ retriesExhausted: workflowRunStep.retriesExhausted })
+      .from(workflowRunStep)
+      .where(
+        and(
+          eq(workflowRunStep.runId, runId),
+          eq(workflowRunStep.stepId, "enrich"),
+        ),
+      );
+    expect(rawEnrich?.retriesExhausted).toBe(false);
+    expect((await loadRunRecord(db, runId))?.status).toBe("awaiting");
+
+    const settled = await failDeadParkedRuns(db);
+
+    expect(settled).toBe(0);
+    expect((await loadRunRecord(db, runId))?.status).toBe("awaiting");
+  });
+
+  test("once a step's retries are genuinely exhausted, the dead-parked-run sweep settles the run", async () => {
+    const runId = "wfr-retry-exhausted";
+    await seedRun(runId);
+    await commitEvent(runId, 1, {
+      type: "RunStarted",
+      at: "2026-02-01T00:00:00.000Z",
+    });
+    await commitEvent(runId, 2, {
+      type: "StepStarted",
+      stepId: "enrich",
+      at: "2026-02-01T00:00:01.000Z",
+      attempt: 1,
+    });
+    await commitEvent(runId, 3, {
+      type: "StepStarted",
+      stepId: "review-gate",
+      at: "2026-02-01T00:00:01.000Z",
+      attempt: 1,
+    });
+    await commitEvent(runId, 4, {
+      type: "StepFailed",
+      stepId: "enrich",
+      at: "2026-02-01T00:00:02.000Z",
+      attempt: 3,
+      error: { message: "enrichment API returned 500 (final attempt)" },
+      retriesExhausted: true,
+    });
+    await commitEvent(runId, 5, {
+      type: "SignalAwaited",
+      stepId: "review-gate",
+      at: "2026-02-01T00:00:03.000Z",
+      signalName: "approval",
+    });
+
+    await projectWorkflowRunRepo(repoStore, db, REPO_ID);
+    expect((await loadRunRecord(db, runId))?.status).toBe("awaiting");
+
+    const settled = await failDeadParkedRuns(db);
+
+    expect(settled).toBe(1);
+    expect((await loadRunRecord(db, runId))?.status).toBe("failed");
   });
 
   // CL-2727 SWEEP → PACK RESURRECTION: the liveness sweep's terminal write is

@@ -68,9 +68,19 @@ mock.module("@workbench/client/react", () => ({
     isError: false,
   }),
 }));
+let researchActionsResult: {
+  markdown: string;
+  brief: {
+    topic: string;
+    stats: { sourceCount: number; itemCount: number };
+    citations: unknown[];
+  };
+} | null = null;
+
 mock.module("../components/ArtifactBody", () => ({
   default: (props: { artifact: { title: string } }) =>
     React.createElement("div", { "data-testid": "body" }, props.artifact.title),
+  getResearchReportActionsProps: () => researchActionsResult,
 }));
 
 import { ArtifactDetailPage } from "./ArtifactDetailPage";
@@ -113,7 +123,7 @@ function renderAt(id: string): RenderResult {
         { client },
         React.createElement(
           MemoryRouter,
-          { initialEntries: [`/artifacts/${id}`] },
+          { initialEntries: [`/library/artifacts/${id}`] },
           React.createElement(LocationProbe),
           React.createElement(ChromeSlot),
           React.createElement(LeadingSlot),
@@ -121,11 +131,11 @@ function renderAt(id: string): RenderResult {
             Routes,
             null,
             React.createElement(Route, {
-              path: "/artifacts/:artifactId",
+              path: "/library/artifacts/:artifactId",
               element: React.createElement(ArtifactDetailPage),
             }),
             React.createElement(Route, {
-              path: "/artifacts",
+              path: "/library/artifacts",
               element: React.createElement(
                 "div",
                 { "data-testid": "gallery-redirect" },
@@ -146,7 +156,6 @@ beforeEach(() => {
       kind: "one-pager",
       title: "Acme One-Pager",
       version: 3,
-      status: "approved",
       ownerPrincipalId: null,
       createdAt: "2026-01-01T00:00:00.000Z",
       sessionId: null,
@@ -160,17 +169,20 @@ beforeEach(() => {
   meResult = { isAdmin: true };
   archiveMutate.mockClear();
   openWithMessage.mockClear();
+  researchActionsResult = null;
 });
 afterEach(() => cleanup());
 
 describe("ArtifactDetailPage", () => {
-  it("renders the artifact full-page without a redundant title header", () => {
+  it("renders the artifact full-page with the title as the page heading", () => {
     const view = renderAt("art-1");
     expect(view.getByTestId("body").textContent).toBe("Acme One-Pager");
     expect(view.getByTestId("artifact-detail-shell")).toBeDefined();
-    // Wayfinding lives in the top bar (Back to Artifacts); the detail shell must
-    // not repeat the title as a secondary <h1> header band.
-    expect(view.queryByRole("heading", { name: "Acme One-Pager" })).toBeNull();
+    // Per direct product direction (2026-07-23): the artifact title must be
+    // visible ON the page, not only on the gallery card — the body content
+    // frequently opens with prose, not a heading, leaving the page unnamed.
+    // This reverses the earlier "no redundant title header" decision.
+    expect(view.getByRole("heading", { name: "Acme One-Pager" })).toBeDefined();
     const leading = view.getByTestId("page-chrome-leading");
     expect(
       within(leading).getByRole("link", { name: "Back to Artifacts" }),
@@ -179,40 +191,17 @@ describe("ArtifactDetailPage", () => {
       within(leading)
         .getByRole("link", { name: "Back to Artifacts" })
         .getAttribute("href"),
-    ).toBe("/artifacts");
+    ).toBe("/library/artifacts");
   });
 
-  it("shows the kind, status, version, and date in the page header", () => {
+  it("shows the kind, version, and date in the page header", () => {
     const view = renderAt("art-1");
     const header = view.getByTestId("artifact-detail-header");
     expect(header.textContent).toContain("v3");
-    expect(header.textContent).toContain("Approved");
-    expect(header.textContent).toContain("One pager");
+    expect(view.getByTestId("artifact-detail-kind").textContent).toBe(
+      "One-Pager",
+    );
     expect(header.textContent).toContain("January 1, 2026");
-  });
-
-  it("does not show a Draft badge when the artifact status is draft", () => {
-    artifactResult = {
-      data: {
-        id: "art-draft",
-        kind: "one-pager",
-        title: "Acme One-Pager",
-        version: 1,
-        status: "draft",
-        ownerPrincipalId: null,
-        createdAt: "2026-01-01T00:00:00.000Z",
-        sessionId: null,
-        sessionName: null,
-        sessionStatus: null,
-        parentId: null,
-      },
-      isLoading: false,
-      isError: false,
-    };
-    const view = renderAt("art-draft");
-    const header = view.getByTestId("artifact-detail-header");
-    expect(header.textContent).not.toContain("Draft");
-    expect(within(header).queryByText("Draft", { exact: true })).toBeNull();
   });
 
   it("collapses the metadata rail entirely when the artifact has no session or lineage provenance", () => {
@@ -228,6 +217,51 @@ describe("ArtifactDetailPage", () => {
     // Archive is gated on the async getMe permission query, so wait for it.
     await view.findByRole("button", { name: /archive/i });
     expect(chrome.textContent).toContain("Archive");
+  });
+
+  it("surfaces the research report's Copy markdown and Download .md actions in the top-bar chrome, not the body", () => {
+    artifactResult = {
+      data: {
+        id: "art-research",
+        kind: "research",
+        title: "AI Coding Agents",
+        version: 1,
+        ownerPrincipalId: null,
+        createdAt: "2026-01-01T00:00:00.000Z",
+        sessionId: null,
+        sessionName: null,
+        sessionStatus: null,
+        parentId: null,
+      },
+      isLoading: false,
+      isError: false,
+    };
+    researchActionsResult = {
+      markdown: "## Synthesis\n\nBody markdown.",
+      brief: {
+        topic: "AI Coding Agents",
+        stats: { sourceCount: 5, itemCount: 20 },
+        citations: [],
+      },
+    };
+    const view = renderAt("art-research");
+    const chrome = view.getByTestId("page-chrome");
+    expect(
+      within(chrome).getByRole("button", { name: "Copy markdown" }),
+    ).toBeDefined();
+    expect(
+      within(chrome).getByRole("button", { name: "Download .md" }),
+    ).toBeDefined();
+    // The mocked ArtifactBody stub only renders the artifact title, standing
+    // in for the real body — asserting the actions are absent from it proves
+    // they live solely in the chrome bar, not duplicated inline.
+    const body = view.getByTestId("body");
+    expect(
+      within(body).queryByRole("button", { name: "Copy markdown" }),
+    ).toBeNull();
+    expect(
+      within(body).queryByRole("button", { name: "Download .md" }),
+    ).toBeNull();
   });
 
   it("surfaces a Download action above the fold for a downloadable file artifact", async () => {
@@ -434,7 +468,7 @@ describe("ArtifactDetailPage", () => {
         view.getByRole("button", { name: /derived from a previous version/i }),
       );
       expect(view.getByTestId("location-path").textContent).toBe(
-        "/artifacts/art-1",
+        "/library/artifacts/art-1",
       );
     });
   });

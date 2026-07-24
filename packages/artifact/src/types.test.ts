@@ -17,7 +17,6 @@ describe("ArtifactWithVersions type export (CL-1552)", () => {
       kind: "email",
       title: "Test",
       content: "Body",
-      status: "draft",
       version: 1,
       ownerPrincipalId: null,
       archivedAt: null,
@@ -37,7 +36,6 @@ describe("ArtifactWithVersions type export (CL-1552)", () => {
       kind: "email",
       title: "Test",
       content: "Body",
-      status: "draft",
       version: 2,
       ownerPrincipalId: null,
       archivedAt: null,
@@ -100,7 +98,6 @@ describe("GalleryArtifactSchema", () => {
     from: "Acme Corp",
     time: "2 days ago",
     provenance: "Workflow",
-    status: "draft" as const,
   };
 
   it("accepts a fully valid GalleryArtifact", () => {
@@ -138,7 +135,6 @@ describe("parseGalleryArtifact", () => {
       from: "Startup",
       time: "just now",
       provenance: "Agent",
-      status: "approved",
     });
     expect(artifact.id).toBe("a-2");
   });

@@ -102,6 +102,30 @@ function tools() {
   return createSkillTools({
     db: fakeDb(),
     repoStore: repoStore(),
+    // None of these tests exercise the draft tools (skill_draft,
+    // list_skill_drafts, load_skill_draft) — only the read-side skill
+    // library seam (list_skills, search_skills, load_skill) — so a stub
+    // that would throw if actually invoked is enough.
+    assetService: {
+      createAsset: () => {
+        throw new Error("assetService not exercised by this test");
+      },
+      populateAsset: () => {
+        throw new Error("assetService not exercised by this test");
+      },
+      attachAsset: () => {
+        throw new Error("assetService not exercised by this test");
+      },
+      listAgentAssets: () => {
+        throw new Error("assetService not exercised by this test");
+      },
+      readAssetBlob: () => {
+        throw new Error("assetService not exercised by this test");
+      },
+      listAssetBlobs: () => {
+        throw new Error("assetService not exercised by this test");
+      },
+    } as never,
     tenantId: "ten_child",
     principalId: "prn_1",
   });

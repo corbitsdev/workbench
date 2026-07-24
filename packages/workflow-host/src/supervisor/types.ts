@@ -19,7 +19,7 @@ import type {
   RepoStore as SubstrateRepoStore,
   ReplayProcessingToInboxOpts,
   ReplayProcessingToInboxResult,
-} from "@intx/hub-sessions/substrate";
+} from "@workbench/hub-sessions/substrate";
 import type { SignalKind } from "@intx/types";
 import type { OutboundMessage, SendReceipt } from "@intx/types/runtime";
 import type { RunCancelled, RunCompleted, RunFailed } from "@intx/workflow";
@@ -217,7 +217,7 @@ export type DeriveMailAuditRef = (
  * and dispatch loop reach into. Production wires this against the
  * concrete `enqueueInbox` / `dequeueToProcessing` / `markConsumed`
  * / `replayProcessingToInbox` functions exported from
- * `@intx/hub-sessions`; tests inject a deterministic in-memory
+ * `@workbench/hub-sessions`; tests inject a deterministic in-memory
  * stub so the supervisor's dispatch loop is observable without a
  * real git substrate.
  *
@@ -327,7 +327,7 @@ export interface WorkflowSupervisorBindings {
    * Workflow-run repo identity for the deployment. The supervisor
    * commits its own CancelRequested / drain events here.
    */
-  workflowRunRepoId: import("@intx/hub-sessions").RepoId;
+  workflowRunRepoId: import("@workbench/hub-sessions").RepoId;
   /** Workflow-run repo ref the supervisor commits events to. */
   workflowRunRef: string;
   /** Deployment id baked into the supervisor's principal claims. */
@@ -462,7 +462,7 @@ export interface WorkflowSupervisorBindings {
   deriveMailAuditRef?: DeriveMailAuditRef;
   /**
    * Inbox claim-check primitives the dispatch loop reaches into.
-   * Production wires this against `@intx/hub-sessions`'s concrete
+   * Production wires this against `@workbench/hub-sessions`'s concrete
    * `enqueueInbox` / `dequeueToProcessing` / `markConsumed` /
    * `replayProcessingToInbox`; tests inject a deterministic
    * in-memory stub so the dispatch loop is observable without a

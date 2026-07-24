@@ -6,7 +6,7 @@ import {
   type SidecarAuthenticator,
   type SidecarRouter,
   type WsHandle,
-} from "@intx/hub-sessions";
+} from "@workbench/hub-sessions";
 import { createInMemoryTransport } from "@intx/mail-memory";
 import { generateKeyPair, signEd25519, verifySSHSignature } from "@intx/crypto";
 import { base64Encode, hexEncode } from "@intx/types";

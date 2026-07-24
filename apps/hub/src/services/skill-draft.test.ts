@@ -1,610 +1,563 @@
-import { beforeEach, describe, expect, it, mock } from "bun:test";
+import { afterEach, beforeEach, describe, expect, it, mock } from "bun:test";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import { generateKeyPair } from "@intx/crypto";
+import { schema as intxSchema } from "@intx/db";
+import {
+  createAgentRepoStore,
+  createAssetService,
+  skillDraftAuthorize,
+  skillDraftKindHandler,
+} from "@workbench/hub-sessions";
+import type { HubDb } from "../db";
+import { skillAccess as skillAccessTable } from "../db/schema";
 
-const resolveOwnerMemberPrincipalId = mock(
-  async (): Promise<string | null> => "prn_owner",
-);
-mock.module("../lib/artifact-tools", () => ({
-  resolveOwnerMemberPrincipalId,
+// Integration test over the REAL seams: a real on-disk git-backed
+// `AgentRepoStore` (with the `skill-draft` kind registered exactly as
+// `apps/hub/src/index.ts` registers it) and a real `AssetService` built on
+// top of it. Only the Postgres layer is faked — a small in-memory table
+// keyed by the real drizzle column objects (via reference identity, not by
+// parsing SQL), so `eq`/`and`/`inArray` conditions from the real
+// skill-library code evaluate genuinely against it. This is deliberately
+// NOT a hand-canned "return this" mock: the two required tests (the
+// concurrency race and the failed-publish retry) depend on the fake
+// actually mutating shared state the way Postgres would, or they would
+// prove nothing.
+const ancestorTenantIds = ["ten_a"];
+const realDb = await import("@intx/db");
+mock.module("@intx/db", () => ({
+  ...realDb,
+  getAncestorChain: async () => ancestorTenantIds,
+}));
+
+// The fake db below evaluates conditions structurally by tagged shape
+// (`{kind: "eq", ...}`), not by parsing real drizzle SQL objects. Mocking
+// `eq`/`and`/`inArray` at the drizzle-orm module boundary means the real
+// skill-library code's real query calls produce exactly those tags, so the
+// fake db's filtering is genuine, not canned. `asc`/`desc` pass through as
+// no-ops — the fake ignores ORDER BY and always returns the full row set.
+const realDrizzle = await import("drizzle-orm");
+mock.module("drizzle-orm", () => ({
+  ...realDrizzle,
+  eq: (col: unknown, val: unknown) => ({ kind: "eq", col, val }),
+  and: (...clauses: unknown[]) => ({ kind: "and", clauses }),
+  inArray: (col: unknown, vals: unknown[]) => ({ kind: "inArray", col, vals }),
+  asc: (col: unknown) => col,
+  desc: (col: unknown) => col,
 }));
 
 const {
   approveSkillDraft,
-  canActOnSkillDraft,
+  createSkill,
   discardSkillDraft,
+  getOwnedSkillDraftItem,
   listSkillDrafts,
+  upsertSkillDraft,
 } = await import("./skill-library");
 
-const VIEWER = {
-  tenantId: "ten_a",
-  principalId: "prn_owner",
-  userId: "usr_1",
+type AssetRow = {
+  id: string;
+  tenantId: string;
+  kind: string;
+  name: string;
+  displayName: string | null;
+  creatorPrincipalId: string | null;
+  createdAt: Date;
+  updatedAt: Date;
 };
 
-function makeDraft(overrides: Record<string, unknown> = {}) {
-  return {
-    id: "art_draft_1",
-    tenantId: "ten_a",
-    principalId: "prn_myra",
-    ownerPrincipalId: "prn_owner",
-    kind: "skill-draft",
-    title: "my-skill",
-    content: "---\nname: my-skill\n---\n# Hello",
-    source: { origin: "skill-draft", description: "does a thing" },
-    status: "draft" as "draft" | "approved" | "rejected",
-    version: 1,
-    createdAt: new Date("2026-01-01T00:00:00Z"),
-    updatedAt: new Date("2026-01-02T00:00:00Z"),
-    ...overrides,
-  };
+type SkillAccessRow = {
+  assetId: string;
+  scope: string;
+  ownerUserId: string | null;
+  ownerPrincipalId: string | null;
+  description: string | null;
+};
+
+const assetColKey = new Map<unknown, keyof AssetRow>([
+  [intxSchema.asset.id, "id"],
+  [intxSchema.asset.tenantId, "tenantId"],
+  [intxSchema.asset.kind, "kind"],
+  [intxSchema.asset.name, "name"],
+  [intxSchema.asset.displayName, "displayName"],
+  [intxSchema.asset.creatorPrincipalId, "creatorPrincipalId"],
+  [intxSchema.asset.createdAt, "createdAt"],
+  [intxSchema.asset.updatedAt, "updatedAt"],
+]);
+
+const skillAccessColKey = new Map<unknown, keyof SkillAccessRow>([
+  [skillAccessTable.assetId, "assetId"],
+  [skillAccessTable.scope, "scope"],
+  [skillAccessTable.ownerUserId, "ownerUserId"],
+  [skillAccessTable.ownerPrincipalId, "ownerPrincipalId"],
+  [skillAccessTable.description, "description"],
+]);
+
+const userColKey = new Map<unknown, string>([[intxSchema.user.name, "userName"]]);
+
+function keyFor(col: unknown): string {
+  const assetKey = assetColKey.get(col);
+  if (assetKey !== undefined) return assetKey;
+  const accessKey = skillAccessColKey.get(col);
+  if (accessKey !== undefined) return accessKey;
+  const userKey = userColKey.get(col);
+  if (userKey !== undefined) return userKey;
+  throw new Error("fake db: unmapped column in test query");
 }
 
-/**
- * Minimal db mock for skill-draft service paths.
- * select chain: .select().from().where().limit(1) OR .orderBy(...)
- * update chain: .update().set().where().returning()
- */
-function makeDb(opts: {
-  drafts?: ReturnType<typeof makeDraft>[];
-  /** Rows returned by listSkills-shaped selects (leftJoin present). */
-  skills?: {
-    id: string;
-    name: string;
-    displayName: string | null;
-    tenantId: string;
-    creatorPrincipalId: string | null;
-    createdAt: Date;
-    updatedAt: Date;
-    scope: string | null;
-    ownerUserId: string | null;
-    ownerName: string | null;
-  }[];
-  updateResult?: ReturnType<typeof makeDraft> | null;
-  captureUpdates?: Record<string, unknown>[];
-}) {
-  const drafts = opts.drafts ?? [];
-  const skills = opts.skills ?? [];
-  const captureUpdates = opts.captureUpdates ?? [];
+type Cond =
+  | { kind: "eq"; col: unknown; val: unknown }
+  | { kind: "and"; clauses: Cond[] }
+  | { kind: "inArray"; col: unknown; vals: unknown[] };
 
-  return {
-    // getAncestorChain stops when parentId is missing → chain = [tenantId]
+function evalCond(cond: Cond, row: Record<string, unknown>): boolean {
+  if (cond.kind === "eq") return row[keyFor(cond.col)] === cond.val;
+  if (cond.kind === "and") return cond.clauses.every((c) => evalCond(c, row));
+  if (cond.kind === "inArray") {
+    const vals = cond.vals;
+    return vals.includes(row[keyFor(cond.col)]);
+  }
+  throw new Error("fake db: unsupported condition");
+}
+
+class UniqueViolation extends Error {
+  readonly code = "23505";
+  constructor(constraint: string) {
+    super(`duplicate key value violates unique constraint "${constraint}"`);
+  }
+}
+
+function makeFakeDb() {
+  const assets: AssetRow[] = [];
+  const skillAccessRows: SkillAccessRow[] = [];
+
+  function projectRows(
+    cols: Record<string, unknown> | undefined,
+    base: unknown,
+    joins: unknown[],
+    cond: Cond | undefined,
+  ): Record<string, unknown>[] {
+    if (base !== intxSchema.asset) {
+      throw new Error("fake db: only queries FROM asset are supported");
+    }
+    const results: Record<string, unknown>[] = [];
+    for (const assetRow of assets) {
+      const flat: Record<string, unknown> = { ...assetRow };
+      if (joins.includes(skillAccessTable)) {
+        const access = skillAccessRows.find((a) => a.assetId === assetRow.id);
+        if (access) Object.assign(flat, access);
+      }
+      if (joins.includes(intxSchema.user)) {
+        flat.userName = null;
+      }
+      if (cond && !evalCond(cond, flat)) continue;
+      // `select()` with no argument (as opposed to `select({...})`) selects
+      // the whole base row — used by `listSkillDrafts`/`getOwnedSkillDraftItem`.
+      if (cols === undefined) {
+        results.push(assetRow);
+        continue;
+      }
+      const projected: Record<string, unknown> = {};
+      for (const [key, col] of Object.entries(cols)) {
+        const value = flat[keyFor(col)];
+        projected[key] = value === undefined ? null : value;
+      }
+      results.push(projected);
+    }
+    return results;
+  }
+
+  function deleteAsset(cond: Cond): AssetRow[] {
+    const removed: AssetRow[] = [];
+    for (let i = assets.length - 1; i >= 0; i -= 1) {
+      const row = assets[i];
+      if (row !== undefined && evalCond(cond, row)) {
+        removed.push(row);
+        assets.splice(i, 1);
+      }
+    }
+    return removed;
+  }
+
+  function deleteSkillAccess(cond: Cond): SkillAccessRow[] {
+    const removed: SkillAccessRow[] = [];
+    for (let i = skillAccessRows.length - 1; i >= 0; i -= 1) {
+      const row = skillAccessRows[i];
+      if (row !== undefined && evalCond(cond, row)) {
+        removed.push(row);
+        skillAccessRows.splice(i, 1);
+      }
+    }
+    return removed;
+  }
+
+  const db = {
     query: {
-      tenant: {
-        findFirst: async () => ({ parentId: null }),
+      asset: {
+        findFirst: (args: { where: Cond }) => {
+          const row = assets.find((a) => evalCond(args.where, a));
+          return Promise.resolve(row);
+        },
       },
     },
-    select: () => {
-      // Per-select state: leftJoin marks a skill-library listSkills path.
-      let joined = false;
+    select(cols?: Record<string, unknown>) {
+      let base: unknown;
+      const joins: unknown[] = [];
+      let cond: Cond | undefined;
       const chain = {
-        from: () => chain,
-        leftJoin: () => {
-          joined = true;
+        from(table: unknown) {
+          base = table;
           return chain;
         },
-        where: () => chain,
-        orderBy: async () => (joined ? skills : drafts),
-        limit: async (_n: number) => {
-          if (joined) return skills.slice(0, 1);
-          return drafts.slice(0, 1);
+        leftJoin(table: unknown) {
+          joins.push(table);
+          return chain;
         },
+        where(condition: Cond) {
+          cond = condition;
+          return chain;
+        },
+        limit: (n: number) =>
+          Promise.resolve(projectRows(cols, base, joins, cond).slice(0, n)),
+        orderBy: (..._order: unknown[]) =>
+          Promise.resolve(projectRows(cols, base, joins, cond)),
       };
       return chain;
     },
-    insert: () => ({
-      values: async () => undefined,
-    }),
-    delete: () => ({
-      where: async () => undefined,
-    }),
-    update: () => ({
-      set: (values: Record<string, unknown>) => {
-        captureUpdates.push(values);
-        return {
-          where: () => ({
-            returning: async () => {
-              if (opts.updateResult === null) return [];
-              return [
-                opts.updateResult ?? {
-                  ...drafts[0],
-                  ...values,
-                  updatedAt: new Date(),
-                },
-              ];
+    insert(table: unknown) {
+      return {
+        values(row: Record<string, unknown>) {
+          function insertReturning(): Promise<unknown[]> {
+            if (table === intxSchema.asset) {
+              const assetRow = row as unknown as AssetRow;
+              if (
+                assets.some(
+                  (a) =>
+                    a.tenantId === assetRow.tenantId &&
+                    a.kind === assetRow.kind &&
+                    a.name === assetRow.name,
+                )
+              ) {
+                return Promise.reject(
+                  new UniqueViolation("asset_tenant_kind_name"),
+                );
+              }
+              assets.push(assetRow);
+              return Promise.resolve([assetRow]);
+            }
+            if (table === skillAccessTable) {
+              skillAccessRows.push(row as unknown as SkillAccessRow);
+              return Promise.resolve([row]);
+            }
+            throw new Error("fake db: unexpected insert table");
+          }
+          // Callers use this both ways: `.values(row).returning()` and a
+          // bare awaited `.values(row)` (createSkill's skillAccess insert).
+          // Return a real Promise so both forms work, with `.returning()`
+          // attached as an extra method on it.
+          const inserted = insertReturning();
+          const withReturning = inserted.then(() => undefined) as Promise<void> & {
+            returning: () => Promise<unknown[]>;
+          };
+          withReturning.returning = () => inserted;
+          return withReturning;
+        },
+      };
+    },
+    update(table: unknown) {
+      return {
+        set(values: Record<string, unknown>) {
+          return {
+            where: (cond: Cond) => {
+              if (table !== skillAccessTable) {
+                throw new Error("fake db: unexpected update table");
+              }
+              for (const row of skillAccessRows) {
+                if (evalCond(cond, row)) Object.assign(row, values);
+              }
+              return Promise.resolve(undefined);
             },
-          }),
-        };
-      },
-    }),
-  } as never;
+          };
+        },
+      };
+    },
+    delete(table: unknown) {
+      return {
+        where: (cond: Cond) => {
+          let deleted: Promise<AssetRow[]>;
+          if (table === intxSchema.asset) {
+            deleted = Promise.resolve(deleteAsset(cond));
+          } else if (table === skillAccessTable) {
+            deleted = Promise.resolve(deleteSkillAccess(cond)) as unknown as Promise<
+              AssetRow[]
+            >;
+          } else {
+            throw new Error("fake db: unexpected delete table");
+          }
+          // Callers use this two ways: `.where(...).returning()` (the
+          // claiming delete) and a bare awaited/`.catch`-chained
+          // `.where(...)` (best-effort cleanup on a failure path). Return a
+          // real Promise so both forms work, with `.returning()` attached
+          // as an extra method on it.
+          const withReturning = deleted.then(() => undefined) as Promise<void> & {
+            returning: () => Promise<AssetRow[]>;
+          };
+          withReturning.returning = () => deleted;
+          return withReturning;
+        },
+      };
+    },
+  } as unknown as HubDb;
+
+  return { db, assets, skillAccessRows };
 }
 
-beforeEach(() => {
-  resolveOwnerMemberPrincipalId.mockClear();
-  resolveOwnerMemberPrincipalId.mockImplementation(async () => "prn_owner");
-});
-
-describe("canActOnSkillDraft", () => {
-  it("allows the stamped owner principal", async () => {
-    const allowed = await canActOnSkillDraft(
-      {} as never,
-      makeDraft({ ownerPrincipalId: "prn_owner" }),
-      VIEWER,
-    );
-    expect(allowed).toBe(true);
+async function makeRepoStore(dataDir: string) {
+  const signingKey = await generateKeyPair();
+  return createAgentRepoStore({
+    dataDir,
+    signingKey,
+    handlers: {
+      "skill-draft": {
+        handler: skillDraftKindHandler,
+        authorize: skillDraftAuthorize,
+      },
+    },
   });
+}
 
-  it("denies a different principal when owner is stamped", async () => {
-    const allowed = await canActOnSkillDraft(
-      {} as never,
-      makeDraft({ ownerPrincipalId: "prn_other" }),
-      VIEWER,
-    );
-    expect(allowed).toBe(false);
-    expect(resolveOwnerMemberPrincipalId).not.toHaveBeenCalled();
-  });
+const TENANT_ID = "ten_a";
+const OWNER_PRINCIPAL_ID = "prn_owner";
+const OWNER_USER_ID = "usr_owner";
+const OWNER_NAME = "Owner Name";
+const VIEWER = { tenantId: TENANT_ID, principalId: OWNER_PRINCIPAL_ID };
 
-  it("legacy unstamped: allows direct principal match", async () => {
-    const allowed = await canActOnSkillDraft(
-      {} as never,
-      makeDraft({
-        ownerPrincipalId: null,
-        principalId: "prn_owner",
-      }),
-      VIEWER,
-    );
-    expect(allowed).toBe(true);
-  });
+let dataDir: string;
+let fakeDb: ReturnType<typeof makeFakeDb>;
+let repoStore: Awaited<ReturnType<typeof makeRepoStore>>;
+let assetService: ReturnType<typeof createAssetService>;
 
-  it("legacy unstamped: resolves agent owner and allows match", async () => {
-    resolveOwnerMemberPrincipalId.mockImplementation(async () => "prn_owner");
-    const allowed = await canActOnSkillDraft(
-      {} as never,
-      makeDraft({
-        ownerPrincipalId: null,
-        principalId: "prn_myra",
-      }),
-      VIEWER,
-    );
-    expect(allowed).toBe(true);
-    expect(resolveOwnerMemberPrincipalId).toHaveBeenCalled();
-  });
-
-  it("legacy unstamped: denies when resolved owner differs", async () => {
-    resolveOwnerMemberPrincipalId.mockImplementation(async () => "prn_other");
-    const allowed = await canActOnSkillDraft(
-      {} as never,
-      makeDraft({
-        ownerPrincipalId: null,
-        principalId: "prn_myra",
-      }),
-      VIEWER,
-    );
-    expect(allowed).toBe(false);
+beforeEach(async () => {
+  dataDir = fs.mkdtempSync(path.join(os.tmpdir(), "skill-draft-test-"));
+  fakeDb = makeFakeDb();
+  repoStore = await makeRepoStore(dataDir);
+  assetService = createAssetService({
+    db: fakeDb.db,
+    repoStore: repoStore.repoStore,
+    registeredKinds: repoStore.registeredKinds,
   });
 });
 
-describe("listSkillDrafts", () => {
-  it("returns only draft rows for the caller as SkillDraftItems", async () => {
-    const draft = makeDraft();
-    const db = makeDb({ drafts: [draft] });
-    const items = await listSkillDrafts(db, VIEWER);
-    expect(items).toEqual([
+afterEach(() => {
+  fs.rmSync(dataDir, { recursive: true, force: true });
+});
+
+async function seedSkill(name: string): Promise<string> {
+  const skill = await createSkill(assetService, fakeDb.db, VIEWER, {
+    name,
+    description: "seed skill",
+    files: [{ path: "SKILL.md", content: Buffer.from(`# ${name}`) }],
+    scope: "tenant",
+    ownerUserId: OWNER_USER_ID,
+    ownerName: OWNER_NAME,
+  });
+  return skill.id;
+}
+
+async function createDraft(
+  title: string,
+  existingSkillId: string | null,
+): Promise<string> {
+  const result = await upsertSkillDraft(
+    assetService,
+    fakeDb.db,
+    repoStore.repoStore,
+    {
+      tenantId: TENANT_ID,
+      ownerPrincipalId: OWNER_PRINCIPAL_ID,
+      title,
+      body: `# ${title}\ncontent`,
+      description: "does a thing",
+      files: undefined,
+      existingSkillId,
+    },
+  );
+  return result.draftId;
+}
+
+describe("upsertSkillDraft / listSkillDrafts / getOwnedSkillDraftItem", () => {
+  it("creates a draft, then updates the same draft on re-authoring", async () => {
+    const draftId = await createDraft("my-skill", null);
+    const listed = await listSkillDrafts(fakeDb.db, repoStore.repoStore, VIEWER);
+    expect(listed).toHaveLength(1);
+    expect(listed[0]?.id).toBe(draftId);
+    expect(listed[0]?.content).toBe("# my-skill\ncontent");
+
+    const secondResult = await upsertSkillDraft(
+      assetService,
+      fakeDb.db,
+      repoStore.repoStore,
       {
-        id: "art_draft_1",
+        tenantId: TENANT_ID,
+        ownerPrincipalId: OWNER_PRINCIPAL_ID,
         title: "my-skill",
-        content: draft.content,
-        description: "does a thing",
-        existingSkillId: null,
-        files: [],
-        status: "draft",
-        updatedAt: "2026-01-02T00:00:00.000Z",
-        createdAt: "2026-01-01T00:00:00.000Z",
+        body: "# my-skill\nupdated content",
+        description: "does a thing, updated",
+        files: undefined,
+        existingSkillId: undefined,
       },
-    ]);
-  });
+    );
+    expect(secondResult.draftId).toBe(draftId);
 
-  it("surfaces support files (excluding SKILL.md) on list items", async () => {
-    const draft = makeDraft({
-      source: {
-        origin: "skill-draft",
-        description: "with files",
-        files: [
-          { path: "SKILL.md", content: "ignored-dup" },
-          { path: "helpers/foo.ts", content: "export const x = 1" },
-        ],
-      },
-    });
-    const items = await listSkillDrafts(makeDb({ drafts: [draft] }), VIEWER);
-    expect(items[0]?.files).toEqual([
-      { path: "helpers/foo.ts", content: "export const x = 1" },
-    ]);
+    const item = await getOwnedSkillDraftItem(
+      fakeDb.db,
+      repoStore.repoStore,
+      VIEWER,
+      draftId,
+    );
+    expect(item.content).toBe("# my-skill\nupdated content");
+    expect(item.description).toBe("does a thing, updated");
   });
 });
 
 describe("discardSkillDraft", () => {
-  it("rejects when draft is not owned (404)", async () => {
-    const db = makeDb({
-      drafts: [makeDraft({ ownerPrincipalId: "prn_other" })],
-    });
+  it("deletes the draft asset and its git repo", async () => {
+    const draftId = await createDraft("throwaway", null);
+    const result = await discardSkillDraft(
+      fakeDb.db,
+      repoStore.repoStore,
+      VIEWER,
+      draftId,
+    );
+    expect(result.draftId).toBe(draftId);
+    expect(fakeDb.assets.some((a) => a.id === draftId)).toBe(false);
+
     await expect(
-      discardSkillDraft(db, VIEWER, "art_draft_1"),
-    ).rejects.toMatchObject({
-      message: "Draft not found",
-      status: 404,
-    });
+      getOwnedSkillDraftItem(fakeDb.db, repoStore.repoStore, VIEWER, draftId),
+    ).rejects.toThrow(`Skill draft not found: ${draftId}`);
   });
 
-  it("rejects when already discarded (400)", async () => {
-    const db = makeDb({
-      drafts: [makeDraft({ status: "rejected" })],
-    });
+  it("404s when the draft never existed", async () => {
     await expect(
-      discardSkillDraft(db, VIEWER, "art_draft_1"),
-    ).rejects.toMatchObject({
-      message: "Draft is not in draft status",
-      status: 400,
-    });
-  });
-
-  it("sets status rejected for owned draft", async () => {
-    const updates: Record<string, unknown>[] = [];
-    const draft = makeDraft();
-    const db = makeDb({
-      drafts: [draft],
-      updateResult: { ...draft, status: "rejected" },
-      captureUpdates: updates,
-    });
-    const result = await discardSkillDraft(db, VIEWER, "art_draft_1");
-    expect(result.status).toBe("rejected");
-    expect(updates[0]?.status).toBe("rejected");
+      discardSkillDraft(fakeDb.db, repoStore.repoStore, VIEWER, "nope"),
+    ).rejects.toThrow("Skill draft not found: nope");
   });
 });
 
 describe("approveSkillDraft", () => {
-  const OWNER_OPTS = {
-    scope: "tenant" as const,
-    ownerUserId: "usr_1",
-    ownerName: "Ada",
-  };
+  it("publishes an update to the linked skill and deletes the draft", async () => {
+    const skillId = await seedSkill("my-skill");
+    const draftId = await createDraft("my-skill", skillId);
 
-  it("404 when draft is in another tenant", async () => {
-    // load filters by tenantId in where; empty select = not found
-    const db = makeDb({ drafts: [] });
-    await expect(
-      approveSkillDraft({} as never, db, VIEWER, "art_draft_1", OWNER_OPTS),
-    ).rejects.toMatchObject({ message: "Draft not found", status: 404 });
-  });
-
-  it("404 when draft is owned by another principal", async () => {
-    const db = makeDb({
-      drafts: [makeDraft({ ownerPrincipalId: "prn_other" })],
-    });
-    await expect(
-      approveSkillDraft({} as never, db, VIEWER, "art_draft_1", OWNER_OPTS),
-    ).rejects.toMatchObject({ message: "Draft not found", status: 404 });
-  });
-
-  it("400 when draft is already approved", async () => {
-    const db = makeDb({
-      drafts: [makeDraft({ status: "approved" })],
-    });
-    await expect(
-      approveSkillDraft({} as never, db, VIEWER, "art_draft_1", OWNER_OPTS),
-    ).rejects.toMatchObject({
-      message: "Draft is not in draft status",
-      status: 400,
-    });
-  });
-
-  it("400 when owner identity is missing", async () => {
-    const db = makeDb({ drafts: [makeDraft()] });
-    await expect(
-      approveSkillDraft({} as never, db, VIEWER, "art_draft_1", {
-        scope: "tenant",
-        ownerUserId: "  ",
-        ownerName: "Ada",
-      }),
-    ).rejects.toMatchObject({
-      message: "Owner identity is required to approve a draft",
-      status: 400,
-    });
-  });
-
-  it("400 when source.files is malformed", async () => {
-    const db = makeDb({
-      drafts: [
-        makeDraft({
-          source: { origin: "skill-draft", files: "not-an-array" },
-        }),
-      ],
-    });
-    await expect(
-      approveSkillDraft({} as never, db, VIEWER, "art_draft_1", OWNER_OPTS),
-    ).rejects.toMatchObject({ status: 400 });
-  });
-
-  it("CAS-claims then reopens draft when createSkill fails", async () => {
-    const updates: Record<string, unknown>[] = [];
-    const db = makeDb({ drafts: [makeDraft()], captureUpdates: updates });
-    const assetService = {
-      createAsset: async () => {
-        throw new Error("CREATE_SKILL_REACHED");
-      },
-    };
-    await expect(
-      approveSkillDraft(
-        assetService as never,
-        db,
-        VIEWER,
-        "art_draft_1",
-        OWNER_OPTS,
-      ),
-    ).rejects.toThrow("CREATE_SKILL_REACHED");
-    // claim (approved) then compensating reopen (draft)
-    expect(updates.map((u) => u.status)).toEqual(["approved", "draft"]);
-  });
-
-  it("409 when CAS claim loses the race", async () => {
-    const db = makeDb({
-      drafts: [makeDraft()],
-      updateResult: null,
-    });
-    await expect(
-      approveSkillDraft({} as never, db, VIEWER, "art_draft_1", OWNER_OPTS),
-    ).rejects.toMatchObject({
-      message: "Draft is no longer pending",
-      status: 409,
-    });
-  });
-
-  it("reaches updateSkill for owned draft with existingSkillId", async () => {
-    const now = new Date();
-    const db = makeDb({
-      drafts: [
-        makeDraft({
-          title: "my-skill",
-          source: {
-            origin: "skill-draft",
-            existingSkillId: "skl_existing",
-          },
-        }),
-      ],
-      // getSkillAsset + loadManageableSkill both select+limit on joined skill rows
-      skills: [
-        {
-          id: "skl_existing",
-          name: "my-skill",
-          displayName: "my-skill",
-          tenantId: "ten_a",
-          creatorPrincipalId: "prn_owner",
-          createdAt: now,
-          updatedAt: now,
-          scope: "tenant",
-          ownerUserId: "usr_1",
-          ownerName: "Owner",
-        },
-      ],
-    });
-    // updateSkill fails later without full assetService — create must not run.
-    await expect(
-      approveSkillDraft(
-        {
-          createAsset: async () => {
-            throw new Error("CREATE_SHOULD_NOT_RUN");
-          },
-        } as never,
-        db,
-        VIEWER,
-        "art_draft_1",
-        OWNER_OPTS,
-      ),
-    ).rejects.not.toThrow("CREATE_SHOULD_NOT_RUN");
-  });
-
-  it("400 when existingSkillId points at a skill that does not match the draft title", async () => {
-    const now = new Date();
-    const db = makeDb({
-      drafts: [
-        makeDraft({
-          title: "my-skill",
-          source: {
-            origin: "skill-draft",
-            existingSkillId: "skl_other",
-          },
-        }),
-      ],
-      skills: [
-        {
-          id: "skl_other",
-          name: "unrelated-skill",
-          displayName: "Unrelated Skill",
-          tenantId: "ten_a",
-          creatorPrincipalId: "prn_owner",
-          createdAt: now,
-          updatedAt: now,
-          scope: "tenant",
-          ownerUserId: "usr_1",
-          ownerName: "Owner",
-        },
-      ],
-    });
-    await expect(
-      approveSkillDraft({} as never, db, VIEWER, "art_draft_1", OWNER_OPTS),
-    ).rejects.toMatchObject({
-      status: 400,
-      message: expect.stringContaining("does not match skill"),
-    });
-  });
-
-  it("stamps existingSkillId on the draft after a successful create", async () => {
-    const updates: Record<string, unknown>[] = [];
-    const db = makeDb({ drafts: [makeDraft()], captureUpdates: updates });
-    const now = new Date();
-    const assetService = {
-      createAsset: async () => ({
-        id: "skl_new",
-        name: "my-skill",
-        displayName: "my-skill",
-        tenantId: "ten_a",
-        createdAt: now,
-        updatedAt: now,
-      }),
-      populateAsset: async () => undefined,
-    };
     const result = await approveSkillDraft(
-      assetService as never,
-      db,
+      assetService,
+      fakeDb.db,
+      repoStore.repoStore,
       VIEWER,
-      "art_draft_1",
-      OWNER_OPTS,
+      draftId,
+      { scope: "tenant", ownerUserId: OWNER_USER_ID, ownerName: OWNER_NAME },
     );
-    expect(result.skill.id).toBe("skl_new");
-    // claim (status) then source stamp with the new skill id
-    const sourceStamp = updates.find(
-      (u) =>
-        u.source !== undefined &&
-        typeof u.source === "object" &&
-        u.source !== null &&
-        "existingSkillId" in (u.source as object),
-    );
-    expect(sourceStamp?.source).toMatchObject({
-      origin: "skill-draft",
-      existingSkillId: "skl_new",
-    });
+
+    expect(result.skill.id).toBe(skillId);
+    expect(fakeDb.assets.some((a) => a.id === draftId)).toBe(false);
   });
 
-  it("approve resolves by display title slug when existingSkillId is missing", async () => {
-    const now = new Date();
-    const db = makeDb({
-      drafts: [
-        makeDraft({
-          title: "Company Research",
-          source: { origin: "skill-draft" },
-        }),
-      ],
-      skills: [
-        {
-          id: "skl_by_name",
-          name: "company-research",
-          displayName: "Company Research",
-          tenantId: "ten_a",
-          creatorPrincipalId: "prn_owner",
-          createdAt: now,
-          updatedAt: now,
-          scope: "tenant",
-          ownerUserId: "usr_1",
-          ownerName: "Owner",
-        },
-      ],
-    });
-    // updateSkill loads manageable skill via select+limit → returns skills[0]
-    // then fails later without full assetService — past resolve is enough:
-    // createAsset must NOT run.
-    await expect(
+  // Required by CL-4215: a racing approve and discard on the same draft must
+  // resolve to exactly one winner, never both and never neither. The claim
+  // is a conditional `DELETE ... RETURNING` on the draft asset row — the
+  // fake db's `deleteAsset` mutates the shared `assets` array synchronously,
+  // so this genuinely exercises the same single-winner guarantee Postgres'
+  // row-level MVCC gives the real claim.
+  it("concurrency: exactly one of a racing approve and discard wins", async () => {
+    const skillId = await seedSkill("race-skill");
+    const draftId = await createDraft("race-skill", skillId);
+
+    const [approveOutcome, discardOutcome] = await Promise.allSettled([
       approveSkillDraft(
-        {
-          createAsset: async () => {
-            throw new Error("CREATE_SHOULD_NOT_RUN");
-          },
-        } as never,
-        db,
+        assetService,
+        fakeDb.db,
+        repoStore.repoStore,
         VIEWER,
-        "art_draft_1",
-        OWNER_OPTS,
+        draftId,
+        { scope: "tenant", ownerUserId: OWNER_USER_ID, ownerName: OWNER_NAME },
       ),
-    ).rejects.not.toThrow("CREATE_SHOULD_NOT_RUN");
+      discardSkillDraft(fakeDb.db, repoStore.repoStore, VIEWER, draftId),
+    ]);
+
+    const outcomes = [approveOutcome, discardOutcome];
+    const fulfilled = outcomes.filter((o) => o.status === "fulfilled");
+    const rejected = outcomes.filter((o) => o.status === "rejected");
+    expect(fulfilled).toHaveLength(1);
+    expect(rejected).toHaveLength(1);
+    const rejectedOutcome = rejected[0];
+    if (rejectedOutcome !== undefined && rejectedOutcome.status === "rejected") {
+      expect(String(rejectedOutcome.reason)).toContain("no longer pending");
+    }
+    // The draft asset is gone regardless of which side won.
+    expect(fakeDb.assets.some((a) => a.id === draftId)).toBe(false);
   });
 
-  it("approve falls back to update when create hits name 409", async () => {
-    const { SkillLibraryError } = await import("./skill-library");
-    const now = new Date();
-    const db = makeDb({
-      drafts: [makeDraft({ title: "my-skill" })],
-      // First listSkills (pre-create resolve) empty; second (409 fallback) hits skill
-      skills: [
-        {
-          id: "skl_409",
-          name: "my-skill",
-          displayName: "my-skill",
-          tenantId: "ten_a",
-          creatorPrincipalId: "prn_owner",
-          createdAt: now,
-          updatedAt: now,
-          scope: "tenant",
-          ownerUserId: "usr_1",
-          ownerName: "Owner",
-        },
-      ],
-    });
-    // Pre-create resolve will find skl_409 via listSkills — so we never hit create.
-    // To force 409 path, use a title that doesn't match skills until after create fails
-    // is hard with static skills. Instead: empty skills would skip resolve; create
-    // throws 409; fallback resolve still empty → rethrows 409. Test that path:
-    const emptyDb = makeDb({
-      drafts: [makeDraft({ title: "orphan-skill" })],
-      skills: [],
-    });
-    await expect(
-      approveSkillDraft(
-        {
-          createAsset: async () => {
-            throw new SkillLibraryError(
-              "A skill named that already exists",
-              409,
-            );
-          },
-        } as never,
-        emptyDb,
-        VIEWER,
-        "art_draft_1",
-        OWNER_OPTS,
-      ),
-    ).rejects.toMatchObject({ status: 409 });
+  // Required by CL-4215: a failed publish must never leave the draft
+  // "stuck approved" with no skill — existence is the only state, so a
+  // failure must leave the draft existing again (pending), and a retry on
+  // the reinstated draft must succeed.
+  it("failed publish: draft is reinstated as pending, and retry succeeds", async () => {
+    const skillId = await seedSkill("flaky-skill");
+    const draftId = await createDraft("flaky-skill", skillId);
 
-    // With a matching skill present, resolve-before-create takes update path.
-    await expect(
-      approveSkillDraft(
-        {
-          createAsset: async () => {
-            throw new Error("CREATE_SHOULD_NOT_RUN");
-          },
-        } as never,
-        db,
-        VIEWER,
-        "art_draft_1",
-        OWNER_OPTS,
-      ),
-    ).rejects.not.toThrow("CREATE_SHOULD_NOT_RUN");
-  });
-
-  it("skips duplicate SKILL.md entries in source.files", async () => {
-    const db = makeDb({
-      drafts: [
-        makeDraft({
-          source: {
-            origin: "skill-draft",
-            files: [
-              { path: "SKILL.md", content: "should-be-skipped" },
-              { path: "helper.ts", content: "export {}" },
-            ],
-          },
-        }),
-      ],
-    });
-    // If SKILL.md weren't skipped, buildSkillBundle would throw on duplicate path.
-    const assetService = {
-      createAsset: async () => {
-        throw new Error("CREATE_SKILL_REACHED");
-      },
+    const originalPopulateAsset = assetService.populateAsset.bind(assetService);
+    let callCount = 0;
+    assetService.populateAsset = (
+      params: Parameters<typeof originalPopulateAsset>[0],
+    ) => {
+      callCount += 1;
+      if (callCount === 1) {
+        return Promise.reject(new Error("simulated publish failure"));
+      }
+      return originalPopulateAsset(params);
     };
+
     await expect(
       approveSkillDraft(
-        assetService as never,
-        db,
+        assetService,
+        fakeDb.db,
+        repoStore.repoStore,
         VIEWER,
-        "art_draft_1",
-        OWNER_OPTS,
+        draftId,
+        { scope: "tenant", ownerUserId: OWNER_USER_ID, ownerName: OWNER_NAME },
       ),
-    ).rejects.toThrow("CREATE_SKILL_REACHED");
+    ).rejects.toThrow("simulated publish failure");
+
+    // The original draft id is gone (claimed), but a fresh draft asset for
+    // the same name exists and is listable — pending, not stuck.
+    const listedAfterFailure = await listSkillDrafts(
+      fakeDb.db,
+      repoStore.repoStore,
+      VIEWER,
+    );
+    expect(listedAfterFailure).toHaveLength(1);
+    const reinstatedRow = listedAfterFailure[0];
+    expect(reinstatedRow).toBeDefined();
+    const reinstatedId = reinstatedRow?.id as string;
+    expect(reinstatedId).not.toBe(draftId);
+    expect(reinstatedRow?.content).toBe("# flaky-skill\ncontent");
+
+    const retryResult = await approveSkillDraft(
+      assetService,
+      fakeDb.db,
+      repoStore.repoStore,
+      VIEWER,
+      reinstatedId,
+      { scope: "tenant", ownerUserId: OWNER_USER_ID, ownerName: OWNER_NAME },
+    );
+    expect(retryResult.skill.id).toBe(skillId);
+
+    const listedAfterRetry = await listSkillDrafts(
+      fakeDb.db,
+      repoStore.repoStore,
+      VIEWER,
+    );
+    expect(listedAfterRetry).toHaveLength(0);
   });
 });

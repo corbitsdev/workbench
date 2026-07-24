@@ -1,6 +1,6 @@
 import { describe, expect, it, mock, beforeEach } from "bun:test";
 import type { AgentTemplate } from "@workbench/agents";
-import type { SidecarRouter } from "@intx/hub-sessions";
+import type { SidecarRouter } from "@workbench/hub-sessions";
 import type { GrantRule } from "@intx/types/authz";
 
 mock.module("../config", () => ({

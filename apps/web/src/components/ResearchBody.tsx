@@ -155,6 +155,53 @@ function CitationsSection({
   );
 }
 
+const EMBEDDED_SOURCES_HEADING_RE =
+  /^(#{1,6})\s*(Sources|Citations|References)\s*$/i;
+const HEADING_RE = /^(#{1,6})\s+/;
+const SECTION_LIST_LINE_RE = /^(-|\*|\d+\.)\s+|^\[/;
+
+// The app renders the single, deduped Citations section from brief.citations
+// (see CitationsSection above); a model-authored "## Sources" / "## Citations"
+// / "## References" section baked into the persisted report body would
+// duplicate it. The writer prompt already forbids emitting one (defense in
+// depth), but this render-time strip is the real invariant: it also fixes
+// already-persisted reports that predate the prompt fix, with no migration.
+//
+// The section is bounded on both sides: it ends at the next heading of equal
+// or shallower level (a following section), OR at the first line after the
+// heading that is neither blank nor a list/citation/link line (a trailing
+// footer paragraph, e.g. the "*Research by ... via GTM Workbench*" attribution
+// line, is not part of the sources list and must survive the strip).
+export function stripEmbeddedSourcesSection(markdown: string): string {
+  const lines = markdown.split("\n");
+  const headingIndex = lines.findIndex((line) =>
+    EMBEDDED_SOURCES_HEADING_RE.test(line.trim()),
+  );
+  if (headingIndex === -1) return markdown;
+
+  const match = lines[headingIndex].trim().match(EMBEDDED_SOURCES_HEADING_RE);
+  const level = match ? match[1].length : 2;
+
+  let endIndex = lines.length;
+  for (let i = headingIndex + 1; i < lines.length; i++) {
+    const trimmed = lines[i].trim();
+    const headingMatch = trimmed.match(HEADING_RE);
+    if (headingMatch && headingMatch[1].length <= level) {
+      endIndex = i;
+      break;
+    }
+    if (trimmed === "") continue;
+    if (!SECTION_LIST_LINE_RE.test(trimmed)) {
+      endIndex = i;
+      break;
+    }
+  }
+
+  return [...lines.slice(0, headingIndex), ...lines.slice(endIndex)]
+    .join("\n")
+    .trimEnd();
+}
+
 function slugify(value: string): string {
   return (
     value
@@ -175,12 +222,17 @@ export function buildSourcesSection(brief: ResearchBrief): string {
   return `\n\n## Sources\n\n${lines.join("\n")}`;
 }
 
-function ReportActions({
+export function ReportActions({
   markdown,
   brief,
+  variant = "inline",
 }: {
   markdown: string;
   brief: ResearchBrief;
+  // "chrome" matches the compact text-button styling of the top action bar
+  // (Chat about this / Archive) when rendered there instead of inline in the
+  // body.
+  variant?: "inline" | "chrome";
 }) {
   const [copied, setCopied] = useState(false);
   const resetTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -191,7 +243,8 @@ function ReportActions({
     };
   }, []);
 
-  const fullMarkdown = markdown + buildSourcesSection(brief);
+  const fullMarkdown =
+    stripEmbeddedSourcesSection(markdown) + buildSourcesSection(brief);
 
   const copy = () => {
     navigator.clipboard
@@ -215,6 +268,21 @@ function ReportActions({
     anchor.remove();
     URL.revokeObjectURL(url);
   };
+
+  if (variant === "chrome") {
+    const chromeButtonClass =
+      "inline-flex items-center gap-1.5 text-xs font-medium text-text-2 hover:text-text";
+    return (
+      <div className="flex items-center gap-1">
+        <button type="button" onClick={copy} className={chromeButtonClass}>
+          {copied ? "Copied" : "Copy markdown"}
+        </button>
+        <button type="button" onClick={download} className={chromeButtonClass}>
+          Download .md
+        </button>
+      </div>
+    );
+  }
 
   const buttonBase =
     "inline-flex items-center justify-center min-h-10 rounded-md px-4 py-2 text-[13px] font-medium transition-transform active:scale-[0.97]";
@@ -275,13 +343,17 @@ export default function ResearchBody({
   const report = body?.trim() ?? "";
 
   // No prose report persisted (older artifacts): fall back to the structured view.
+  // In the detail layout, the page header already shows the artifact title —
+  // rendering it again here would duplicate it.
   if (report === "") {
     return (
       <div className="space-y-6">
         <div className="space-y-1.5">
-          <h1 className="text-base font-semibold text-text leading-snug">
-            {brief.topic}
-          </h1>
+          {layout !== "detail" && (
+            <h1 className="text-base font-semibold text-text leading-snug">
+              {brief.topic}
+            </h1>
+          )}
           <StatsLine stats={brief.stats} />
           {brief.leadInsight && (
             <p className="text-sm text-text-2 leading-relaxed">
@@ -298,17 +370,23 @@ export default function ResearchBody({
     <div className="space-y-7">
       <div className="flex items-start justify-between gap-4 pb-5 border-b border-border">
         <div className="space-y-2">
-          <h1 className="text-2xl font-semibold text-text leading-tight text-balance">
-            {brief.topic}
-          </h1>
+          {layout !== "detail" && (
+            <h1 className="text-2xl font-semibold text-text leading-tight text-balance">
+              {brief.topic}
+            </h1>
+          )}
           <StatsLine stats={brief.stats} />
         </div>
-        <ReportActions markdown={report} brief={brief} />
+        {layout !== "detail" && (
+          <ReportActions markdown={report} brief={brief} />
+        )}
       </div>
 
-      <Markdown className={proseClass}>{report}</Markdown>
+      <Markdown className={proseClass}>
+        {stripEmbeddedSourcesSection(report)}
+      </Markdown>
 
-      <details className="group border-t border-border pt-4">
+      <details open className="group border-t border-border pt-4">
         <summary className="flex items-center gap-2 cursor-pointer list-none text-sm font-semibold text-text-2 hover:text-text [&::-webkit-details-marker]:hidden">
           <svg
             className="size-3.5 shrink-0 transition-transform group-open:rotate-90"

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { AppPageChromeRow } from "@workbench/ui";
 import { useSetPageChrome } from "../lib/page-chrome";
-import { useLocation } from "react-router";
+import { Link, useLocation } from "react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   SettingsPage,
@@ -37,11 +37,11 @@ import { WhatsNewSection } from "../components/whats-new/WhatsNewSection";
 import { MemberConnectionsPanel } from "../components/MemberConnectionsPanel";
 import { AutoApprovedToolsPanel } from "../components/AutoApprovedToolsPanel";
 import { MyraDefaultsPanel } from "../components/MyraDefaultsPanel";
+import { MyraInstructionsPanel } from "../components/MyraInstructionsPanel";
 import { MyraStylePanel } from "../components/MyraStylePanel";
 import { MyraPinnedSkillsPanel } from "../components/MyraPinnedSkillsPanel";
 import { MyraToolsPanel } from "../components/MyraToolsPanel";
 import { MyraInferenceDialsPanel } from "../components/MyraInferenceDialsPanel";
-import { MySchedules } from "../components/MySchedules";
 import { MORNING_BRIEF_ANCHOR_ID } from "./settings-section-nav";
 import { useMyraVoiceInput } from "../hooks/use-myra-voice-input";
 import { isFeatureEnabled, useMeFeatures } from "../hooks/use-me-features";
@@ -105,7 +105,7 @@ function buildSections(
                 label: "Voice input in Myra",
                 kind: "toggle" as const,
                 description:
-                  "Show the microphone control in the Myra composer to dictate messages.",
+                  "Show the microphone control in the Myra composer to dictate messages. Uses the browser speech service (Chrome/Edge work best; Brave may block it).",
               },
             ]
           : []),
@@ -278,15 +278,23 @@ export default function Settings() {
         <SettingsGroup
           id="myra-defaults"
           title="Myra defaults"
-          description="Pick which Myra definition powers your chat and inbox automation."
+          description="Pick which Myra definition powers your chat and inbox routines."
         >
           <MyraDefaultsPanel tenantId={activeTenantId} />
         </SettingsGroup>
 
         <SettingsGroup
+          id="myra-instructions"
+          title="Standing instructions"
+          description="Guidance Myra follows on every reply — set once globally, and optionally override it for chat or inbox routines."
+        >
+          <MyraInstructionsPanel tenantId={activeTenantId} />
+        </SettingsGroup>
+
+        <SettingsGroup
           id="myra-style"
           title="Personality & style"
-          description="Shape how Myra talks and works. Personality, emoji use, and UI type apply everywhere; artifact, tool, and skill usage can differ between chat and inbox automation."
+          description="Shape how Myra talks and works. Personality, emoji use, and UI type apply everywhere; artifact, tool, and skill usage can differ between chat and inbox routines."
         >
           <MyraStylePanel tenantId={activeTenantId} />
         </SettingsGroup>
@@ -325,7 +333,7 @@ export default function Settings() {
           }
         >
           <div id={MORNING_BRIEF_ANCHOR_ID} className="scroll-mt-4">
-            <PreferencesPanel categories={["Automations"]} />
+            <PreferencesPanel categories={["Routines"]} />
           </div>
           <PreferencesPanel categories={["Inbox", "Notifications"]} />
           <ConnectedToInboxPanel />
@@ -351,9 +359,15 @@ export default function Settings() {
           <SettingsGroup
             id="schedules"
             title="Schedules"
-            description="Workflows you've put on a daily cadence — pause, retime, or remove them here."
+            description="Scheduled and live workflows live on the Workflows page — pause, retime, create, and inspect them there."
           >
-            <MySchedules tenantId={activeTenantId} embedded />
+            <Link
+              to="/workflows"
+              data-testid="settings-open-workflows"
+              className="inline-flex items-center gap-1 text-[13px] font-medium text-orange underline-offset-2 hover:underline"
+            >
+              Open Workflows →
+            </Link>
           </SettingsGroup>
         )}
 

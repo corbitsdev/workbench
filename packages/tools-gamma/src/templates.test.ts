@@ -24,6 +24,23 @@ function makeFetcher(
 
 const baseConfig = { apiKey: "test-key" };
 
+// Structured (kind: "full") tool: invoke via a synthetic ToolCall and read
+// fields straight off `result.content` — no JSON.parse indirection.
+function callTool(
+  tools: ReturnType<typeof createTemplateTools>,
+  args: Record<string, unknown>,
+  signal: AbortSignal,
+) {
+  const tool = tools.find(
+    (t) => t.definition.name === "gamma_create_from_template",
+  );
+  if (!tool || tool.kind !== "full") throw new Error("tool not found");
+  return tool.handler(
+    { id: "test-call", name: "gamma_create_from_template", arguments: args },
+    signal,
+  );
+}
+
 describe("GammaTemplateSchema", () => {
   it("accepts a template with a description and rejects a systemPrompt-only shape", () => {
     const ok = GammaTemplateSchema({
@@ -61,10 +78,18 @@ describe("createTemplateTools", () => {
     expect(names).not.toContain("gamma_list_templates");
     expect(names).toContain(GAMMA_CREATE_FROM_TEMPLATE_DEFINITION.name);
   });
+
+  it("is a structured (kind: full) tool, not a stringTool", () => {
+    const tools = createTemplateTools(baseConfig);
+    const tool = tools.find(
+      (t) => t.definition.name === "gamma_create_from_template",
+    );
+    expect(tool?.kind).toBe("full");
+  });
 });
 
 describe("gamma_create_from_template", () => {
-  it("polls until completed and returns gammaUrl and gammaId", async () => {
+  it("polls until completed and returns gammaUrl and gammaId directly on content — no JSON.parse required", async () => {
     const tools = createTemplateTools({
       ...baseConfig,
       fetcher: makeFetcher([
@@ -83,19 +108,15 @@ describe("gamma_create_from_template", () => {
         },
       ]),
     });
-    const tool = tools.find(
-      (t) => t.definition.name === "gamma_create_from_template",
-    );
-    if (!tool || tool.kind !== "string") throw new Error("tool not found");
-
-    // Override sleep to make polling instant in tests
-    const result = await tool.handler(
+    const result = await callTool(
+      tools,
       { gammaId: "g_template", prompt: "Build a sales deck for Acme Corp" },
       new AbortController().signal,
     );
-    const parsed = JSON.parse(result) as Record<string, unknown>;
-    expect(parsed["gammaUrl"]).toBe("https://gamma.app/deck/abc");
-    expect(parsed["gammaId"]).toBe("g_abc");
+    const content = result.content as Record<string, unknown>;
+    expect(typeof result.content).toBe("object");
+    expect(content["gammaUrl"]).toBe("https://gamma.app/deck/abc");
+    expect(content["gammaId"]).toBe("g_abc");
   });
 
   it("throws when gammaId is missing", async () => {
@@ -103,12 +124,8 @@ describe("gamma_create_from_template", () => {
       ...baseConfig,
       fetcher: makeFetcher([{ status: 200, body: {} }]),
     });
-    const tool = tools.find(
-      (t) => t.definition.name === "gamma_create_from_template",
-    );
-    if (!tool || tool.kind !== "string") throw new Error("tool not found");
     await expect(
-      tool.handler({ prompt: "Make a deck" }, new AbortController().signal),
+      callTool(tools, { prompt: "Make a deck" }, new AbortController().signal),
     ).rejects.toThrow("gammaId is required");
   });
 
@@ -117,12 +134,8 @@ describe("gamma_create_from_template", () => {
       ...baseConfig,
       fetcher: makeFetcher([{ status: 200, body: {} }]),
     });
-    const tool = tools.find(
-      (t) => t.definition.name === "gamma_create_from_template",
-    );
-    if (!tool || tool.kind !== "string") throw new Error("tool not found");
     await expect(
-      tool.handler({ gammaId: "g_template" }, new AbortController().signal),
+      callTool(tools, { gammaId: "g_template" }, new AbortController().signal),
     ).rejects.toThrow("prompt is required");
   });
 
@@ -134,12 +147,9 @@ describe("gamma_create_from_template", () => {
         { status: 200, body: { status: "failed" } },
       ]),
     });
-    const tool = tools.find(
-      (t) => t.definition.name === "gamma_create_from_template",
-    );
-    if (!tool || tool.kind !== "string") throw new Error("tool not found");
     await expect(
-      tool.handler(
+      callTool(
+        tools,
         { gammaId: "g_template", prompt: "Make a deck" },
         new AbortController().signal,
       ),
@@ -154,12 +164,9 @@ describe("gamma_create_from_template", () => {
         { status: 200, body: { status: "completed", gammaId: "g_abc" } },
       ]),
     });
-    const tool = tools.find(
-      (t) => t.definition.name === "gamma_create_from_template",
-    );
-    if (!tool || tool.kind !== "string") throw new Error("tool not found");
     await expect(
-      tool.handler(
+      callTool(
+        tools,
         { gammaId: "g_t", prompt: "Make a deck" },
         new AbortController().signal,
       ),
@@ -173,12 +180,9 @@ describe("gamma_create_from_template", () => {
         { status: 500, body: { error: "Internal Server Error" } },
       ]),
     });
-    const tool = tools.find(
-      (t) => t.definition.name === "gamma_create_from_template",
-    );
-    if (!tool || tool.kind !== "string") throw new Error("tool not found");
     await expect(
-      tool.handler(
+      callTool(
+        tools,
         { gammaId: "g_t", prompt: "Make a deck" },
         new AbortController().signal,
       ),
@@ -205,11 +209,8 @@ describe("gamma_create_from_template", () => {
       );
     };
     const tools = createTemplateTools({ ...baseConfig, fetcher });
-    const tool = tools.find(
-      (t) => t.definition.name === "gamma_create_from_template",
-    );
-    if (!tool || tool.kind !== "string") throw new Error("tool not found");
-    await tool.handler(
+    await callTool(
+      tools,
       {
         gammaId: "g_t",
         prompt: "Make a deck",
@@ -225,6 +226,7 @@ describe("gamma_create_from_template", () => {
     expect(body["themeId"]).toBe("theme-42");
     expect(body["title"]).toBe("Q3 Deck");
   });
+
   it("shares the generated deck with the workspace and via link (sharingOptions)", async () => {
     const capturedBodies: string[] = [];
     const fetcher: GammaFetch = async (_input, init) => {
@@ -245,11 +247,8 @@ describe("gamma_create_from_template", () => {
       );
     };
     const tools = createTemplateTools({ ...baseConfig, fetcher });
-    const tool = tools.find(
-      (t) => t.definition.name === "gamma_create_from_template",
-    );
-    if (!tool || tool.kind !== "string") throw new Error("tool not found");
-    await tool.handler(
+    await callTool(
+      tools,
       { gammaId: "g_t", prompt: "Make a deck" },
       new AbortController().signal,
     );
@@ -262,6 +261,7 @@ describe("gamma_create_from_template", () => {
       externalAccess: "view",
     });
   });
+
   it("requests a pdf export via exportAs and returns the exportUrl from the completed generation", async () => {
     const capturedBodies: string[] = [];
     const fetcher: GammaFetch = async (_input, init) => {
@@ -283,11 +283,8 @@ describe("gamma_create_from_template", () => {
       );
     };
     const tools = createTemplateTools({ ...baseConfig, fetcher });
-    const tool = tools.find(
-      (t) => t.definition.name === "gamma_create_from_template",
-    );
-    if (!tool || tool.kind !== "string") throw new Error("tool not found");
-    const result = await tool.handler(
+    const result = await callTool(
+      tools,
       { gammaId: "g_t", prompt: "Make a deck" },
       new AbortController().signal,
     );
@@ -296,8 +293,8 @@ describe("gamma_create_from_template", () => {
       unknown
     >;
     expect(body["exportAs"]).toBe("pdf");
-    const parsed = JSON.parse(result) as Record<string, unknown>;
-    expect(parsed["exportUrl"]).toBe("https://exports.gamma.app/deck.pdf");
+    const content = result.content as Record<string, unknown>;
+    expect(content["exportUrl"]).toBe("https://exports.gamma.app/deck.pdf");
   });
 
   it("always surfaces an exportUrl key (empty) so the persist argMap resolves when Gamma returns no export link", async () => {
@@ -315,17 +312,14 @@ describe("gamma_create_from_template", () => {
         },
       ]),
     });
-    const tool = tools.find(
-      (t) => t.definition.name === "gamma_create_from_template",
-    );
-    if (!tool || tool.kind !== "string") throw new Error("tool not found");
-    const result = await tool.handler(
+    const result = await callTool(
+      tools,
       { gammaId: "g_t", prompt: "Make a deck" },
       new AbortController().signal,
     );
-    const parsed = JSON.parse(result) as Record<string, unknown>;
-    expect("exportUrl" in parsed).toBe(true);
-    expect(parsed["exportUrl"]).toBe("");
+    const content = result.content as Record<string, unknown>;
+    expect("exportUrl" in content).toBe(true);
+    expect(content["exportUrl"]).toBe("");
   });
 
   it("emits both gammaUrl and url aliases so a consumer keyed on either resolves", async () => {
@@ -343,17 +337,14 @@ describe("gamma_create_from_template", () => {
         },
       ]),
     });
-    const tool = tools.find(
-      (t) => t.definition.name === "gamma_create_from_template",
-    );
-    if (!tool || tool.kind !== "string") throw new Error("tool not found");
-    const result = await tool.handler(
+    const result = await callTool(
+      tools,
       { gammaId: "g_t", prompt: "Make a deck" },
       new AbortController().signal,
     );
-    const parsed = JSON.parse(result) as Record<string, unknown>;
-    expect(parsed["gammaUrl"]).toBe("https://gamma.app/docs/alias");
-    expect(parsed["url"]).toBe("https://gamma.app/docs/alias");
+    const content = result.content as Record<string, unknown>;
+    expect(content["gammaUrl"]).toBe("https://gamma.app/docs/alias");
+    expect(content["url"]).toBe("https://gamma.app/docs/alias");
   });
 
   it("normalizes a completed generation whose deck URL arrives under `url` into gammaUrl", async () => {
@@ -371,17 +362,14 @@ describe("gamma_create_from_template", () => {
         },
       ]),
     });
-    const tool = tools.find(
-      (t) => t.definition.name === "gamma_create_from_template",
-    );
-    if (!tool || tool.kind !== "string") throw new Error("tool not found");
-    const result = await tool.handler(
+    const result = await callTool(
+      tools,
       { gammaId: "g_t", prompt: "Make a deck" },
       new AbortController().signal,
     );
-    const parsed = JSON.parse(result) as Record<string, unknown>;
-    expect(parsed["gammaUrl"]).toBe("https://gamma.app/docs/urlkey");
-    expect(parsed["url"]).toBe("https://gamma.app/docs/urlkey");
+    const content = result.content as Record<string, unknown>;
+    expect(content["gammaUrl"]).toBe("https://gamma.app/docs/urlkey");
+    expect(content["url"]).toBe("https://gamma.app/docs/urlkey");
   });
 
   it("throws when the completed generation has an empty gammaUrl rather than persisting a blank deck link", async () => {
@@ -395,12 +383,9 @@ describe("gamma_create_from_template", () => {
         },
       ]),
     });
-    const tool = tools.find(
-      (t) => t.definition.name === "gamma_create_from_template",
-    );
-    if (!tool || tool.kind !== "string") throw new Error("tool not found");
     await expect(
-      tool.handler(
+      callTool(
+        tools,
         { gammaId: "g_t", prompt: "Make a deck" },
         new AbortController().signal,
       ),
@@ -415,12 +400,9 @@ describe("gamma_create_from_template", () => {
         { status: 200, body: { status: "processing" } },
       ]),
     });
-    const tool = tools.find(
-      (t) => t.definition.name === "gamma_create_from_template",
-    );
-    if (!tool || tool.kind !== "string") throw new Error("tool not found");
     await expect(
-      tool.handler(
+      callTool(
+        tools,
         { gammaId: "g_t", prompt: "Make a deck" },
         new AbortController().signal,
       ),

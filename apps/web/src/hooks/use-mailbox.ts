@@ -128,12 +128,22 @@ export function isMessageNotFound(error: unknown): boolean {
   return error instanceof ApiError && error.status === 404;
 }
 
+function isMailboxInfiniteData(
+  value: unknown,
+): value is InfiniteData<MailboxPage> {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    Array.isArray((value as { pages?: unknown }).pages)
+  );
+}
+
 function patchMailboxPages(
   previous: InfiniteData<MailboxPage> | undefined,
   ids: Set<string>,
   patch: (message: MailboxMessage) => MailboxMessage | null,
 ): InfiniteData<MailboxPage> | undefined {
-  if (!previous) return previous;
+  if (!isMailboxInfiniteData(previous)) return previous;
   return {
     ...previous,
     pages: previous.pages.map((page) => ({
@@ -161,13 +171,15 @@ export function useMarkMailboxRead() {
     },
     onMutate: async (id: string) => {
       await queryClient.cancelQueries({ queryKey: ["mailbox"] });
-      const snapshots = queryClient.getQueriesData<InfiniteData<MailboxPage>>({
+      // getQueriesData does prefix matching on the query key, so this also
+      // returns non-list entries cached under "mailbox" (the unread-count
+      // number, individual message-detail objects). Only list-page entries
+      // have a `.pages` array; skip anything else rather than assuming shape.
+      const snapshots = queryClient.getQueriesData<unknown>({
         queryKey: ["mailbox"],
       });
       for (const [key, previous] of snapshots) {
-        if (!Array.isArray(key) || key[0] !== "mailbox" || typeof key[1] !== "string") {
-          continue;
-        }
+        if (!isMailboxInfiniteData(previous)) continue;
         queryClient.setQueryData(
           key,
           patchMailboxPages(previous, new Set([id]), (message) => ({

@@ -24,11 +24,13 @@ export const SETTINGS_SECTIONS: readonly SettingsSectionLink[] = [
 export const MORNING_BRIEF_ANCHOR_ID = "morning-brief";
 
 /**
- * A management group in the settings side-nav: a role-gated link to a routed
- * sub-area (the former standalone /admin or /owner surfaces), not an in-page
- * anchor. `role` matches the boolean flag on `/me` (`isAdmin`/`isOwner`) that
- * gates visibility — the same flags `RequireAdmin`/`AdminLayout`/`OwnerLayout`
- * already check, so this list adds no new permission logic.
+ * A management group in the settings side-nav: a link to a routed sub-area
+ * (the former standalone /admin or /owner surfaces), not an in-page anchor.
+ * `role` gates visibility, matching the boolean flag on `/me`
+ * (`isAdmin`/`isOwner`) that already gates `RequireAdmin`/`AdminLayout`/
+ * `OwnerLayout`, so this list adds no new permission logic. Skills and Agents
+ * are not management groups — they live under the top-level Library nav
+ * entry (CL-4256), not Settings.
  */
 export interface SettingsManagementGroup {
   readonly id: string;

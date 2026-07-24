@@ -131,16 +131,77 @@ export class StepToolNotRegisteredError extends Error {
 }
 
 /**
- * Throw a clear, named {@link StepToolNotRegisteredError} when a step's declared
- * tool is absent from the tools that actually loaded for the step.
+ * A step declared a tool whose owning tool-package factory materialized but
+ * threw `ToolCredentialMissingError` at construction time — the tenant has no
+ * credential configured for the provider the tool requires. Distinct from
+ * {@link StepToolNotRegisteredError}: the tool WAS pinned and its package DID
+ * resolve, it was dropped for a missing tenant credential, so "not pinned" is
+ * false and misleading. Named + carries the provider so the run-failure detail
+ * tells an operator exactly which credential to configure.
+ */
+export class StepToolCredentialMissingError extends Error {
+  readonly toolName: string;
+  readonly providerName: string;
+  constructor(toolName: string, providerName: string) {
+    super(
+      `tool "${toolName}" requires a credential for provider "${providerName}" ` +
+        `that is not configured for this tenant; configure a "${providerName}" ` +
+        `credential before this step can run`,
+    );
+    this.name = "StepToolCredentialMissingError";
+    this.toolName = toolName;
+    this.providerName = providerName;
+  }
+}
+
+/**
+ * A tool-package factory `buildStepTools` skipped because it threw
+ * `ToolCredentialMissingError` — recorded so a later `assertStepToolAvailable`
+ * call can tell a genuinely-unpinned tool apart from one dropped for a
+ * missing credential. `factoryId` is the loader's canonical factory id (the
+ * prefix of every `<factoryId>:<name>` tool the factory would have defined).
+ */
+export interface CredentialSkippedFactory {
+  readonly factoryId: string;
+  readonly providerName: string;
+}
+
+/**
+ * Throw a clear, named error when a step's declared tool is absent from the
+ * tools that actually loaded for the step. When the tool's owning factory was
+ * skipped for a missing tenant credential (`credentialSkips`), throws the
+ * credential-specific {@link StepToolCredentialMissingError} instead of the
+ * generic, misleading "not pinned" {@link StepToolNotRegisteredError}.
  */
 export function assertStepToolAvailable(
   toolName: string,
   available: ReadonlySet<string>,
+  credentialSkips: readonly CredentialSkippedFactory[] = [],
 ): void {
-  if (!available.has(toolName)) {
-    throw new StepToolNotRegisteredError(toolName, [...available]);
+  if (available.has(toolName)) return;
+  const skip = credentialSkips.find((s) =>
+    toolName.startsWith(`${s.factoryId}:`),
+  );
+  if (skip !== undefined) {
+    throw new StepToolCredentialMissingError(toolName, skip.providerName);
   }
+  throw new StepToolNotRegisteredError(toolName, [...available]);
+}
+
+/**
+ * Faults that indicate the step's tool infrastructure itself is broken or
+ * misconfigured — the tool was never pinned, its credential is missing, or
+ * its loaded closure is corrupt — as opposed to the tool running and failing
+ * on its own terms (a data/execution fault). Infrastructure faults must never
+ * be absorbed by a `nonFatal` degrade: swallowing them reports a run as
+ * COMPLETED when it never actually attempted the work.
+ */
+export function isStepToolInfrastructureFault(error: unknown): boolean {
+  return (
+    error instanceof StepToolNotRegisteredError ||
+    error instanceof StepToolCredentialMissingError ||
+    error instanceof StepToolFactoryAbsentError
+  );
 }
 
 /**
@@ -293,6 +354,13 @@ async function buildStepTools(args: {
    * the dispatch allow-list only when the member is granted them.
    */
   packageToolNames: Set<string>;
+  /**
+   * Factories dropped because their tenant-scoped credential is missing —
+   * threaded to `assertStepToolAvailable` so a deterministic step's dispatch
+   * failure names the missing credential instead of reporting the tool as
+   * unpinned.
+   */
+  credentialSkips: CredentialSkippedFactory[];
   disposers: (() => Promise<void>)[];
 }> {
   const { ctx } = args;
@@ -378,6 +446,7 @@ async function buildStepTools(args: {
   const disposers: (() => Promise<void>)[] = [];
   const loadedToolNames = new Set<string>();
   const packageToolNames = new Set<string>();
+  const credentialSkips: CredentialSkippedFactory[] = [];
   for (const pkg of loadedPackages) {
     for (const factory of pkg.factories) {
       assertLoadedFactory(factory, pkg.name, ctx.stepAddress);
@@ -390,14 +459,23 @@ async function buildStepTools(args: {
         // in this process — `instanceof` can miss across bundles. `err.name`
         // survives bundling, so match on it instead.
         if (err instanceof Error && err.name === "ToolCredentialMissingError") {
-          logger.info(
+          const providerName = (err as { providerName?: string }).providerName;
+          // A missing tenant credential silently dropped this package from
+          // the step's runner: a later dispatch to one of its tools must fail
+          // with a credential-specific error, not the misleading "not
+          // pinned" StepToolNotRegisteredError, so log at error — this is an
+          // actionable operator-facing fault, not routine info.
+          logger.error(
             "Tool package {id} skipped for {address}: no credential configured for provider {providerName}",
             {
               id: factory.id,
               address: ctx.stepAddress,
-              providerName: (err as { providerName?: string }).providerName,
+              providerName,
             },
           );
+          if (providerName !== undefined) {
+            credentialSkips.push({ factoryId: factory.id, providerName });
+          }
           continue;
         }
         logger.warn(
@@ -489,6 +567,7 @@ async function buildStepTools(args: {
     runner: merged,
     loadedToolNames,
     packageToolNames,
+    credentialSkips,
     disposers,
   };
 }
@@ -564,14 +643,21 @@ export function prepareWarmAgentPrompt(
  * this same alias form, so `load_tools`/`search_tools` need it to recognize a
  * successfully-loaded, credentialed, granted package tool (CL-3929).
  *
- * Scoped to the WARM single-step agent path only: `buildStepTools`'s
- * definitions/`packageToolNames` stay canonical, because `buildStepTools` is
- * also used by `runDeterministicToolStep`, which dispatches by the canonical
- * colon-form name a deterministic workflow step declares
- * (`deterministicToolStep`'s `STEP_TOOL_TAG`) — aliasing there would throw
- * `StepToolNotRegisteredError` on every deterministic package-tool step.
- * Local mail tools are already unprefixed (not in `packageToolNames`) and
- * pass through unchanged here; warm advertisement strips them separately.
+ * WORKBENCH-LOCAL: applied to every MODEL-FACING agent this factory builds —
+ * both the warm single-step agent and a genuine multi-step workflow step.
+ * Every reasoning step hands its tool definitions to a provider exactly like
+ * a warm agent does, so an over-length or symbol-bearing canonical name
+ * (`@`, `/`, `:`) blows the same 64-char/charset provider limit there. Only
+ * `buildStepTools`'s OWN return value (its `definitions`/`packageToolNames`,
+ * consumed directly by `runDeterministicToolStep`) stays canonical — that
+ * dispatches by the colon-form name a deterministic workflow step declares
+ * (`deterministicToolStep`'s `STEP_TOOL_TAG`), and aliasing there would throw
+ * `StepToolNotRegisteredError` on every deterministic package-tool step. The
+ * alias projection happens only on the copy handed to `createAgent` in
+ * `createStepAgentFactory`, so both consumers of `buildStepTools` keep their
+ * own contract. Local mail tools are already unprefixed (not in
+ * `packageToolNames`) and pass through unchanged here; warm advertisement
+ * strips them separately.
  *
  * Two distinct canonical names that happen to collide on the same alias
  * (a package/tool-name combination degenerate enough to produce the same
@@ -646,6 +732,11 @@ function stripMailFromWarmAdvertisement(runner: DefinedRunner): DefinedRunner {
  * director ref to pin on the step def, and the dynamic-tools env slot the
  * director reads. When the definition declares its own `director` it is
  * respected verbatim; otherwise the marker-driven `selectDirectorId` chooses.
+ *
+ * WORKBENCH-LOCAL: `args.runner`/`args.packageToolNames` are expected
+ * ALREADY LLM-safe-aliased — `createStepAgentFactory` now applies
+ * `applyLlmSafeAliases` once, ahead of the warm/multi-step branch, so both
+ * paths present the same alias form to the model without double-aliasing.
  */
 async function resolveWarmAgentHarness(args: {
   def: { systemPrompt: string; director?: DirectorRef };
@@ -663,15 +754,10 @@ async function resolveWarmAgentHarness(args: {
   dynamicEnv: Record<string, unknown>;
 }> {
   const { def, storeDir, address } = args;
-  const aliased = applyLlmSafeAliases(
-    args.runner,
-    args.packageToolNames,
-    address,
-  );
   // Mail may still sit on the underlying runner for det bookkeeping, but warm
   // never advertises `mail_*` names (or any free local inject) to the model.
-  const runner = stripMailFromWarmAdvertisement(aliased.runner);
-  const packageToolNames = aliased.packageToolNames;
+  const runner = stripMailFromWarmAdvertisement(args.runner);
+  const packageToolNames = args.packageToolNames;
   const dynamicToolConfig = resolveDynamicToolConfig(def.systemPrompt);
   const isTriageSession = isTriageSessionPrompt(def.systemPrompt);
   const isInvokeSession = isInvokeSessionPrompt(def.systemPrompt);
@@ -816,9 +902,11 @@ function verbatimToolArguments(
 
 /**
  * Result of reshaping a step's evaluated input into tool arguments per its
- * `argMap`. A `skip` result means an OPTIONAL `{ from }` field was absent (or
+ * `argMap`. A `skip` result means a `skipStepIfAbsent` field was absent (or
  * an empty string) on the evaluated input — the caller must not invoke the
- * tool at all, and must not treat this as an error.
+ * tool at all, and must not treat this as an error. An absent/empty
+ * `optional` field is NOT a skip: it is simply omitted from
+ * `toolArguments`, and the tool call still proceeds.
  */
 export type ArgMapReshapeResult =
   | { skip: true; reason: string }
@@ -828,18 +916,23 @@ export type ArgMapReshapeResult =
  * Reshape the evaluated step input into tool arguments per the step's
  * `argMap`. The argMap JSON is parsed + validated through arktype at this
  * trust boundary. For each `[argName, spec]`: `{ from }` pulls a top-level
- * field off the evaluated input. Non-optional `{ from }`: absence is a
- * missing key on the evaluated step input and fails loud, naming it — an
- * empty string is a real value and passes through unchanged. Optional
- * `{ from, optional: true }`: an absent key OR an empty-string value returns
- * a skip result instead of throwing. `{ literal }` supplies the constant.
- * `{ fromJson, field }` reads `fromJson` off the input, JSON-parses it when
- * it is a string (an already-object value is tolerated), then applies the
- * same presence/optional rules to `field` on the parsed object — for a
- * deterministic step consuming another deterministic tool's `stringTool`
- * output (encoded as `{ content: "<json>" }`).
+ * field off the evaluated input. Non-optional, non-skip `{ from }`: absence
+ * is a missing key on the evaluated step input and fails loud, naming it —
+ * an empty string is a real value and passes through unchanged. Optional
+ * `{ from, optional: true }`: an absent key OR an empty-string value OMITS
+ * `argName` from the returned `toolArguments` — the tool is still called,
+ * just without that one argument. `{ from, skipStepIfAbsent: true }`: an
+ * absent key OR an empty-string value skips the tool call entirely — for the
+ * rare argMap whose field is the tool's own only required argument, where
+ * there is no sensible "call without it". `{ literal }` supplies the
+ * constant. `{ fromJson, field }` reads `fromJson` off the input,
+ * JSON-parses it when it is a string (an already-object value is
+ * tolerated), then applies the same presence/optional/skipStepIfAbsent
+ * rules to `field` on the parsed object — for a deterministic step
+ * consuming another deterministic tool's `stringTool` output (encoded as
+ * `{ content: "<json>" }`).
  */
-function reshapeWithArgMap(
+export function reshapeWithArgMap(
   toolName: string,
   input: unknown,
   argMapJson: string,
@@ -865,6 +958,78 @@ function reshapeWithArgMap(
       : undefined;
   const toolArguments: Record<string, unknown> = {};
   for (const [argName, spec] of Object.entries(argMap)) {
+    if ("object" in spec) {
+      const objectArgument: Record<string, unknown> = {};
+      for (const [fieldName, fieldSpec] of Object.entries(spec.object)) {
+        if ("literal" in fieldSpec) {
+          objectArgument[fieldName] = fieldSpec.literal;
+          continue;
+        }
+        if ("fromJson" in fieldSpec) {
+          const envelope =
+            inputRecord !== undefined && fieldSpec.fromJson in inputRecord
+              ? inputRecord[fieldSpec.fromJson]
+              : undefined;
+          let parsed: unknown = undefined;
+          if (typeof envelope === "string") {
+            try {
+              parsed = JSON.parse(envelope);
+            } catch {
+              parsed = undefined;
+            }
+          } else if (envelope !== null && typeof envelope === "object") {
+            parsed = envelope;
+          }
+          const parsedRecord =
+            parsed !== null &&
+            typeof parsed === "object" &&
+            !Array.isArray(parsed)
+              ? (parsed as Record<string, unknown>)
+              : undefined;
+          const present =
+            parsedRecord !== undefined && fieldSpec.field in parsedRecord;
+          const value = present ? parsedRecord[fieldSpec.field] : undefined;
+          const isAbsentOrEmpty = !present || value === "";
+          if (isAbsentOrEmpty && fieldSpec.skipStepIfAbsent === true) {
+            return {
+              skip: true,
+              reason: `object field "${fieldName}" is absent or empty and skipStepIfAbsent is set`,
+            };
+          }
+          if (isAbsentOrEmpty && fieldSpec.optional === true) {
+            continue;
+          }
+          if (!present) {
+            throw new Error(
+              `step-tool-harness: deterministic step "${toolName}" argMap maps object field "${fieldName}" from JSON field "${fieldSpec.field}" of input field "${fieldSpec.fromJson}", but that field is absent on the evaluated step input`,
+            );
+          }
+          objectArgument[fieldName] = value;
+          continue;
+        }
+        const present =
+          inputRecord !== undefined && fieldSpec.from in inputRecord;
+        const value = present ? inputRecord[fieldSpec.from] : undefined;
+        const isAbsentOrEmpty = !present || value === "";
+        if (isAbsentOrEmpty && fieldSpec.skipStepIfAbsent === true) {
+          return {
+            skip: true,
+            reason: `object field "${fieldName}" is absent or empty and skipStepIfAbsent is set`,
+          };
+        }
+        if (isAbsentOrEmpty && fieldSpec.optional === true) {
+          continue;
+        }
+        if (!present) {
+          throw new Error(
+            `step-tool-harness: deterministic step "${toolName}" argMap maps object field "${fieldName}" from input field "${fieldSpec.from}", but that field is absent on the evaluated step input`,
+          );
+        }
+        objectArgument[fieldName] = value;
+      }
+      toolArguments[argName] = objectArgument;
+      continue;
+    }
     if ("literal" in spec) {
       toolArguments[argName] = spec.literal;
       continue;
@@ -891,16 +1056,15 @@ function reshapeWithArgMap(
       const fieldPresent =
         parsedRecord !== undefined && spec.field in parsedRecord;
       const fieldValue = fieldPresent ? parsedRecord[spec.field] : undefined;
-      if (spec.optional === true) {
-        const isEmptyString =
-          typeof fieldValue === "string" && fieldValue === "";
-        if (!fieldPresent || isEmptyString) {
-          return {
-            skip: true,
-            reason: `deterministic step "${toolName}" argMap maps tool arg "${argName}" from optional JSON field "${spec.field}" of "${spec.fromJson}", which is absent or empty on the evaluated step input`,
-          };
-        }
-        toolArguments[argName] = fieldValue;
+      const isEmptyString = typeof fieldValue === "string" && fieldValue === "";
+      const isAbsentOrEmpty = !fieldPresent || isEmptyString;
+      if (isAbsentOrEmpty && spec.skipStepIfAbsent === true) {
+        return {
+          skip: true,
+          reason: `deterministic step "${toolName}" argMap maps tool arg "${argName}" from JSON field "${spec.field}" of "${spec.fromJson}", which is absent or empty on the evaluated step input and skipStepIfAbsent is set`,
+        };
+      }
+      if (isAbsentOrEmpty && spec.optional === true) {
         continue;
       }
       if (!fieldPresent) {
@@ -913,15 +1077,15 @@ function reshapeWithArgMap(
     }
     const present = inputRecord !== undefined && spec.from in inputRecord;
     const rawValue = present ? inputRecord[spec.from] : undefined;
-    if (spec.optional === true) {
-      const isEmptyString = typeof rawValue === "string" && rawValue === "";
-      if (!present || isEmptyString) {
-        return {
-          skip: true,
-          reason: `deterministic step "${toolName}" argMap maps tool arg "${argName}" from optional input field "${spec.from}", which is absent or empty on the evaluated step input`,
-        };
-      }
-      toolArguments[argName] = rawValue;
+    const isEmptyString = typeof rawValue === "string" && rawValue === "";
+    const isAbsentOrEmpty = !present || isEmptyString;
+    if (isAbsentOrEmpty && spec.skipStepIfAbsent === true) {
+      return {
+        skip: true,
+        reason: `deterministic step "${toolName}" argMap maps tool arg "${argName}" from input field "${spec.from}", which is absent or empty on the evaluated step input and skipStepIfAbsent is set`,
+      };
+    }
+    if (isAbsentOrEmpty && spec.optional === true) {
       continue;
     }
     if (!present) {
@@ -954,6 +1118,61 @@ function toolResultErrorMessage(output: unknown): string | undefined {
     return JSON.stringify(content);
   }
   return "deterministic tool step returned an error envelope";
+}
+
+/**
+ * Eagerly validate that `toolName` resolves against a step's pinned tool
+ * packages + tenant credentials — load the packages, resolve credentials,
+ * assert the tool is present, then dispose immediately without invoking it.
+ * Throws the same `isStepToolInfrastructureFault` family
+ * `runDeterministicToolStep` raises (`StepToolNotRegisteredError` /
+ * `StepToolCredentialMissingError` / `StepToolFactoryAbsentError`).
+ *
+ * Used by the action-handler registry (`action-tool-handler.ts`) to fail an
+ * unresolvable action `handler` ref AT DEPLOYMENT ESTABLISH — a missing tool
+ * package or an unconfigured tenant credential surfaces immediately, in
+ * front of whoever is watching the deploy, instead of silently succeeding
+ * until the action is first dispatched deep into an unattended run.
+ */
+export async function assertStepToolResolvable(args: {
+  env: Omit<BaseEnv, "authorize">;
+  toolName: string;
+}): Promise<void> {
+  const ctx = readStepToolContext(
+    args.env as unknown as Record<string, unknown>,
+  );
+  const stepEnv: BaseEnv = {
+    ...args.env,
+    authorize: async () => ({
+      effect: null,
+      matchingGrants: [],
+      resolvedBy: null,
+    }),
+  };
+  const { runner, disposers, credentialSkips } = await buildStepTools({
+    ctx,
+    env: stepEnv,
+    workdir: args.env.workdir,
+  });
+  try {
+    const available = new Set(runner.definitions.map((d) => d.name));
+    assertStepToolAvailable(args.toolName, available, credentialSkips);
+  } finally {
+    for (const dispose of disposers) {
+      try {
+        await dispose();
+      } catch (err) {
+        logger.warn(
+          "assertStepToolResolvable: disposer failed for {tool} at {address}: {msg}",
+          {
+            tool: args.toolName,
+            address: ctx.stepAddress,
+            msg: err instanceof Error ? err.message : String(err),
+          },
+        );
+      }
+    }
+  }
 }
 
 export async function runDeterministicToolStep(args: {
@@ -989,7 +1208,7 @@ export async function runDeterministicToolStep(args: {
     }),
   };
 
-  const { runner, disposers } = await buildStepTools({
+  const { runner, disposers, credentialSkips } = await buildStepTools({
     ctx,
     env: stepEnv,
     workdir: args.env.workdir,
@@ -997,7 +1216,7 @@ export async function runDeterministicToolStep(args: {
 
   try {
     const available = new Set(runner.definitions.map((d) => d.name));
-    assertStepToolAvailable(args.toolName, available);
+    assertStepToolAvailable(args.toolName, available, credentialSkips);
     let toolArguments: Record<string, unknown>;
     if (args.argMapJson !== undefined) {
       const reshaped = reshapeWithArgMap(
@@ -1035,7 +1254,16 @@ export async function runDeterministicToolStep(args: {
           "Deterministic step tool {tool} returned isError for {address}: {msg}",
           { tool: args.toolName, address: ctx.stepAddress, msg: toolError },
         );
-        return { output: result };
+        // A genuine tool-execution failure (the tool ran and reported its
+        // own error) is exactly what `nonFatal` is for. Mark the envelope so
+        // the run surface can tell a degraded step apart from a clean
+        // completion instead of reporting it as indistinguishable success.
+        return {
+          output: {
+            ...(result as Record<string, unknown>),
+            degraded: true,
+          },
+        };
       }
       if (!args.signal.aborted) {
         logger.error("Deterministic step tool {tool} failed for {address}", {
@@ -1052,7 +1280,18 @@ export async function runDeterministicToolStep(args: {
     // cancel/timeout), the throw is the cancellation, not a source failure —
     // rethrow it so the runtime propagates the cancel instead of letting the
     // run march on into brief/write/persist.
-    if (args.nonFatal !== true || args.signal.aborted) {
+    //
+    // A degrade must also never mask an infrastructure fault: a tool that was
+    // never pinned, a package dropped for a missing credential, or a corrupt
+    // tool closure means the step never actually ran the work it was meant
+    // to. `nonFatal` exists to absorb a genuine tool-execution/data failure —
+    // the tool ran and reported its own error — not to paper over broken
+    // tool infrastructure as a clean completion.
+    if (
+      args.nonFatal !== true ||
+      args.signal.aborted ||
+      isStepToolInfrastructureFault(cause)
+    ) {
       // Log WITH the Error so the child's Sentry sink captures the stack via
       // captureException — the on-disk StepFailed event keeps only the message.
       // Skip on cancellation (signal aborted): teardown is not a fault.
@@ -1074,6 +1313,7 @@ export async function runDeterministicToolStep(args: {
       output: {
         content: `${args.toolName} step failed: ${reason}`,
         isError: true,
+        degraded: true,
       },
     };
   } finally {
@@ -1161,6 +1401,20 @@ export function createStepAgentFactory(opts: StepAgentFactoryOpts = {}) {
         tenantId: ctx.tenantId,
       });
 
+    // WORKBENCH-LOCAL: project every package tool's canonical
+    // `<factoryId>:<name>` definition to its LLM-safe alias BEFORE the
+    // warm/multi-step branch below — this is the one place `createAgent`
+    // (the model-facing consumer) is built for either kind of step agent, so
+    // both get the same provider-safe tool names and the same canonical
+    // dispatch translation. `buildStepTools`'s own return value stays
+    // canonical for `runDeterministicToolStep`'s separate, unaliased
+    // dispatch contract (see `applyLlmSafeAliases`'s docstring).
+    const aliased = applyLlmSafeAliases(
+      baseRunner,
+      packageToolNames,
+      ctx.stepAddress,
+    );
+
     // WORKBENCH-LOCAL: single-step (warm agent) vs multi-step (workflow step)
     // director + dynamic-tools split. Upstream's single-step-workflow launch
     // path (the runtime-retirement pin bump) routes Myra/Oat/triage/gate
@@ -1172,7 +1426,7 @@ export function createStepAgentFactory(opts: StepAgentFactoryOpts = {}) {
     // (`selectDirectorId` / `def.director`) and, for the personal agent, the
     // dynamic tool catalog + persisted exposure. `warmKeep` is threaded from
     // `env.spawn.warmKeep`.
-    let runner = baseRunner;
+    let runner = aliased.runner;
     let director: DirectorRef | undefined = {
       id: WORKFLOW_STEP_BUDGET_DIRECTOR_ID,
       config: {},
@@ -1186,8 +1440,8 @@ export function createStepAgentFactory(opts: StepAgentFactoryOpts = {}) {
     if (opts.warmKeep === true) {
       const resolved = await resolveWarmAgentHarness({
         def,
-        runner: baseRunner,
-        packageToolNames,
+        runner: aliased.runner,
+        packageToolNames: aliased.packageToolNames,
         authorize,
         storeDir,
         address: ctx.stepAddress,

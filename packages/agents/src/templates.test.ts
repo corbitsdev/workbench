@@ -26,6 +26,7 @@ describe("AGENT_TEMPLATES", () => {
       "myra-chat-deepseek-v4-flash",
       "myra-chat-kimi-k3",
       "myra-chat-opus-4-8",
+      "myra-chat-v2-kimi-k2-6",
       "myra-triage",
       "myra-triage-kimi-k2-6",
       "myra-triage-opus-4-8",

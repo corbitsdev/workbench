@@ -2,7 +2,7 @@
 //
 // The run-page panel (`ui.tsx`) and the dock block builder (`blocks.ts`) both
 // decode the SAME log-derived step outputs — a Granola tool result envelope
-// (`{ content: string }`), an inline-inference reply (`{ reply: string }`), and
+// (`{ content: string }`), an agentStep reply (`{ reply: string }`), and
 // the generate map's array of replies. Extracting the parsers here keeps the two
 // surfaces in lockstep: a shape change is made once, and both the panel and the
 // blocks read the identical decoded values.

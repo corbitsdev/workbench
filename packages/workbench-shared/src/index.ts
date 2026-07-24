@@ -7,24 +7,33 @@ export * from "./active-context";
 export * from "./attio-task-agent";
 export * from "./ab-compare";
 export * from "./gamma-presentation";
+export * from "./gtm-scripts-briefs";
 export * from "./governance";
 export * from "./last30days";
 export * from "./mailbox";
+export * from "./mailbox-focus";
 export * from "./mentions";
 export * from "./now-feed";
 export * from "./reddit-opportunity-scanner";
 export * from "./scheduled-trigger";
 export * from "./schedule-next-fire";
+export * from "./routine-eligible";
 export * from "./webhook-trigger";
 export * from "./tasks";
 export * from "./task-links";
 export * from "./pain-point-collateral";
+export * from "./multi-source-collateral";
+export * from "./granola-call";
 export * from "./sumble-account-intel";
+export * from "./competitor-analysis";
+export * from "./prospect-engine";
+
 export * from "./web-site";
 export * from "./preferences-registry";
 export * from "./heartbeat-brief-merge";
 export * from "./heartbeat-brief-title";
 export * from "./heartbeat-brief-mail-refs";
+export * from "./heartbeat-brief-document";
 export * from "./mailbox-refs-header";
 export * from "./changelog";
 export * from "./deep-link";
@@ -42,6 +51,10 @@ export {
   TOOL_LOOP_BLOCK_THRESHOLD,
   type ToolLoopGuard,
 } from "./tool-loop-guard";
+export {
+  TOOL_ERROR_RECOVERY_GUIDANCE,
+  withToolErrorRecoveryGuidance,
+} from "./tool-error-recovery";
 
 export type Severity = "low" | "medium" | "high" | "critical";
 
@@ -71,8 +84,6 @@ export type ArtifactKind =
   | "presentation"
   | "gamma_presentation"
   | "skill-draft";
-
-export type ArtifactStatus = "draft" | "approved" | "rejected";
 
 // Structured content stored in a `gamma_presentation` artifact. The DB `content`
 // column holds the JSON serialization of this shape; hub writes it, web parses it
@@ -129,7 +140,6 @@ export const Artifact = type({
   kind: "string",
   title: "string",
   content: "string",
-  status: "'draft' | 'approved' | 'rejected'",
   version: "number",
   ownerPrincipalId: "string | null",
   archivedAt: "string | null",
@@ -457,6 +467,11 @@ export const WorkflowFlowStepSchema = type({
   id: "string",
   title: "string",
   kind: "'auto'|'agent'|'human'",
+  // The runtime step ids this entry represents, in run order (CL-4285). `id`
+  // is a synthetic group key for a declared display-flow group (e.g.
+  // "gather") — never assume it is itself a runtime step id. A run pane must
+  // match a step's phase against `stepIds`, not `id`.
+  stepIds: "string[]",
 });
 export type WorkflowFlowStep = typeof WorkflowFlowStepSchema.infer;
 
@@ -464,16 +479,137 @@ export type WorkflowFlowStep = typeof WorkflowFlowStepSchema.infer;
 // needs to render its row and its step-flow preview without a further call:
 // the member's favorite state, the classified step DAG, and the pause count.
 // A workflow's first-intake form field, as surfaced to the attach UI so it can
-// collect the intake payload a scheduled run is pre-filled with (CL-3509). A
-// minimal subset of the block `FormField` surface (text / textarea only).
-export const WorkflowIntakeFieldSchema = type({
+// A workflow's first-intake form field, as surfaced to the attach UI so it can
+// collect the intake payload a scheduled run is pre-filled with (CL-3509) and
+// enriched for schema-driven schedule forms (CL-3860). Input kinds cover the
+// form renderer; `fromProfile` marks fire-time profile-supplied fields.
+// `string-array` supports multi-value verticals (prospect-engine schedule intake).
+export const ScheduleFieldInputKindSchema = type(
+  "'text' | 'textarea' | 'url' | 'select' | 'boolean' | 'string-array'",
+);
+export type ScheduleFieldInputKind = typeof ScheduleFieldInputKindSchema.infer;
+
+export const ScheduleFieldOptionSchema = type({
+  value: "string",
+  label: "string > 0",
+});
+export type ScheduleFieldOption = typeof ScheduleFieldOptionSchema.infer;
+
+export const ScheduleFieldMetadataSchema = type({
   name: "string > 0",
   label: "string > 0",
-  kind: "'text' | 'textarea'",
+  /** Input control kind. Legacy packages may still use `kind` as the key. */
+  "inputHint?": ScheduleFieldInputKindSchema,
+  /**
+   * Legacy alias for `inputHint` (CL-3509 INTAKE_FIELDS). Prefer `inputHint`.
+   * When both are set, `inputHint` wins.
+   */
+  "kind?": ScheduleFieldInputKindSchema,
+
   "required?": "boolean",
   "placeholder?": "string",
+  "help?": "string",
+  /** Sort key ascending; missing order sorts after numbered fields (stable by name). */
+  "order?": "number.integer",
+  /** Select options when inputHint/kind is `select`. */
+  "options?": ScheduleFieldOptionSchema.array(),
+  /**
+   * Key naming a live options source the hub resolves at render time (CL-4279),
+   * e.g. a Sumble org list a workflow author cannot enumerate statically.
+   * Mutually intended with `inputHint: "select"`; the hub's
+   * `GET /schedule-field-options/:sourceId` route resolves this key to
+   * `ScheduleFieldOption[]` — never Sumble- or provider-specific here, so any
+   * future live-sourced field reuses the same mechanism.
+   */
+  "optionsSource?": "string > 0",
+  /**
+   * When set, fire-time merge supplies this value from the member profile; the
+   * form renders the field read-only with a "from your profile" chip.
+   */
+  "fromProfile?": "string > 0",
 });
-export type WorkflowIntakeField = typeof WorkflowIntakeFieldSchema.infer;
+export type ScheduleFieldMetadata = typeof ScheduleFieldMetadataSchema.infer;
+
+/** Response body for the live schedule-field-options resolver route (CL-4279). */
+export const ScheduleFieldOptionsResponseSchema = type({
+  options: ScheduleFieldOptionSchema.array(),
+});
+export type ScheduleFieldOptionsResponse =
+  typeof ScheduleFieldOptionsResponseSchema.infer;
+
+/** @deprecated Prefer ScheduleFieldMetadataSchema — same shape, CL-3509 name. */
+export const WorkflowIntakeFieldSchema = ScheduleFieldMetadataSchema;
+export type WorkflowIntakeField = ScheduleFieldMetadata;
+
+/** Resolve the effective input control for a field. */
+export function scheduleFieldInputHint(
+  field: ScheduleFieldMetadata,
+): ScheduleFieldInputKind {
+  return field.inputHint ?? field.kind ?? "text";
+}
+
+/**
+ * Sort fields for form rendering: explicit `order` ascending, then name.
+ * Pure — does not mutate the input array.
+ */
+export function sortScheduleFields(
+  fields: readonly ScheduleFieldMetadata[],
+): ScheduleFieldMetadata[] {
+  return [...fields].sort((a, b) => {
+    const ao = a.order ?? Number.MAX_SAFE_INTEGER;
+    const bo = b.order ?? Number.MAX_SAFE_INTEGER;
+    if (ao !== bo) return ao - bo;
+    return a.name.localeCompare(b.name);
+  });
+}
+
+/**
+ * Fallback field list when a kind has intake schema names but no metadata
+ * export: field name as label, text input. Metadata enriches, never gates.
+ */
+export function fallbackScheduleFields(
+  fieldNames: readonly string[],
+): ScheduleFieldMetadata[] {
+  return fieldNames.map((name, i) => ({
+    name,
+    label: name,
+    inputHint: "text" as const,
+    order: i,
+  }));
+}
+
+/**
+ * True when every metadata field name is in the intake schema name set (catches
+ * drift between scheduleFields and the arktype intake schema).
+ */
+export function scheduleFieldsMatchIntakeSchema(
+  metadata: readonly ScheduleFieldMetadata[],
+  intakeFieldNames: ReadonlySet<string>,
+): boolean {
+  return metadata.every((f) => intakeFieldNames.has(f.name));
+}
+
+/**
+ * Build a trigger/run payload from draft form values: drops `fromProfile`
+ * fields (fire-time merge supplies those), and drops undefined/null/blank
+ * values so the payload only carries what the member actually filled in.
+ * Shared by the create, edit, and run-once flows so all three send the same
+ * shape to the hub.
+ */
+export function buildScheduleTriggerPayload(
+  fields: readonly ScheduleFieldMetadata[],
+  values: Record<string, unknown>,
+): Record<string, unknown> {
+  const payload: Record<string, unknown> = {};
+  for (const field of fields) {
+    if (field.fromProfile) continue;
+    const v = values[field.name];
+    if (v === undefined || v === null) continue;
+    if (typeof v === "string" && v.trim() === "") continue;
+    payload[field.name] = v;
+  }
+  return payload;
+}
 
 export const WorkflowCatalogEntrySchema = type({
   kind: "string",
@@ -491,6 +627,10 @@ export const WorkflowCatalogEntrySchema = type({
   // The intake fields the attach UI collects for a requiresIntake kind (CL-3509);
   // absent for kinds that need no intake.
   "intakeFields?": WorkflowIntakeFieldSchema.array(),
+  // Schedule scopes this kind accepts (CL-4110). Always present; non-attachable
+  // kinds still report personal-only so the client never special-cases absence.
+  allowedScopes: "('personal' | 'tenant')[]",
+  defaultScope: "'personal' | 'tenant'",
 });
 export type WorkflowCatalogEntry = typeof WorkflowCatalogEntrySchema.infer;
 

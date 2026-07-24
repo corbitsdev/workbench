@@ -6,7 +6,7 @@ import {
   type SidecarAuthenticator,
   type SidecarRouter,
   type WsHandle,
-} from "@intx/hub-sessions";
+} from "@workbench/hub-sessions";
 
 const acceptAnySidecar: SidecarAuthenticator = async ({ sidecarId }) => ({
   kind: "sidecar",
@@ -222,10 +222,7 @@ describe("hub-link heartbeat", () => {
       await waitFor(() =>
         env.router.getConnectedSidecars().includes("sc-heartbeat"),
       );
-      await env.router.sendAgentDeploy(
-        "agent-1@test.interchange",
-        TEST_CONFIG,
-      );
+      await env.router.sendAgentDeploy("agent-1@test.interchange", TEST_CONFIG);
 
       // Let a few real ping/pong round trips establish a fresh lastPongAt.
       await new Promise((r) => setTimeout(r, PING_INTERVAL_MS * 3));

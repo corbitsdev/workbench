@@ -16,7 +16,7 @@ const navItems: PaletteResultItem[] = [
     id: "nav:artifacts",
     category: "navigation",
     title: "Artifacts",
-    to: "/artifacts",
+    to: "/library/artifacts",
   },
 ];
 

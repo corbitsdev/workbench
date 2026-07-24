@@ -18,7 +18,12 @@ export {
   type EvalTrace,
   type EvalConstraintResult,
 } from "./case";
-export { V1_EVAL_CASES, evalCaseById } from "./fixtures";
+export {
+  V1_EVAL_CASES,
+  JUDGMENT_EVAL_CASES,
+  ALL_EVAL_CASES,
+  evalCaseById,
+} from "./fixtures";
 export {
   EVAL_PLATFORM_TOOLS,
   DEFAULT_EVAL_ADVERTISED_TOOL_NAMES,

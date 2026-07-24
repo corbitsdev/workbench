@@ -205,7 +205,13 @@ export async function searchTenant(
       .where(
         and(
           eq(artifact.tenantId, params.tenantId),
-          ne(artifact.status, "rejected"),
+          // skill-draft is private authoring scratch, never a search result —
+          // matches the gallery (routes/artifacts.ts hideSkillDraftWhere) and
+          // artifact_list. This used to also be gated by `status != rejected`
+          // (CL-4215 removed artifact.status); rejected only ever applied to
+          // skill-draft rows, so excluding the kind entirely is a superset of
+          // the old behavior, not a narrowing.
+          ne(artifact.kind, "skill-draft"),
           isNull(artifact.archivedAt),
           ilike(artifact.title, like),
         ),

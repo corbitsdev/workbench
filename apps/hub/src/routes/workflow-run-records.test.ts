@@ -1,7 +1,7 @@
 import { describe, expect, mock, test } from "bun:test";
 import { Hono } from "hono";
 import type { CryptoProvider } from "@intx/types/runtime";
-import type { SessionService, SidecarRouter } from "@intx/hub-sessions";
+import type { SessionService, SidecarRouter } from "@workbench/hub-sessions";
 import type { HubDb } from "../db";
 import type { RunState } from "../workflow-executor/run-store";
 
@@ -88,9 +88,19 @@ mock.module("../workflow-executor/run-store", () => ({
   setPendingSignal: async (
     _db: unknown,
     runId: string,
-    signal: { signalId: string; signalName: string },
+    signal: { signalId: string; signalName: string; payload: unknown },
   ) => {
     signalOps.push(`persist:${runId}:${signal.signalName}`);
+    // Recorded separately from `sentSignals` (the DISPATCHED payload,
+    // captured at the sidecarRouter boundary below) so a test can assert the
+    // PERSISTED payload distinctly — the two call sites can drift (that gap
+    // is exactly what let an un-normalized legacy sync-approval payload reach
+    // attio_create_note via one write path but not the other).
+    persistedSignals.push({
+      runId,
+      signalName: signal.signalName,
+      payload: signal.payload,
+    });
   },
   loadDeploymentMeta: async (_db: unknown, deploymentId: string) => {
     const found = deploymentMetas.get(deploymentId);
@@ -273,6 +283,14 @@ const sentSignals: {
 // Ordered trace of pending-signal persistence vs. signal dispatch: resume
 // must make the accepted signal durable BEFORE the fire-and-forget send.
 const signalOps: string[] = [];
+// The PERSISTED payload (workflow_run.pending_signal), captured separately
+// from `sentSignals` (the DISPATCHED payload) — see the comment on the
+// setPendingSignal mock above for why these must not share a variable.
+const persistedSignals: {
+  runId: string;
+  signalName: string;
+  payload: unknown;
+}[] = [];
 const ensureCalls: { deploymentId: string; creatorPrincipalId: string }[] = [];
 const provisionCalls: {
   kind: string;
@@ -301,6 +319,7 @@ function resetCaptures(): void {
   sentMessages.length = 0;
   sentSignals.length = 0;
   signalOps.length = 0;
+  persistedSignals.length = 0;
   ensureCalls.length = 0;
   provisionCalls.length = 0;
   reclaimCalls.length = 0;
@@ -758,6 +777,72 @@ describe("workflow runs on the sidecar (records router)", () => {
     expect(r.status).toBe(200);
     expect(sentSignals).toHaveLength(1);
     expect(sentSignals[0]?.signalName).toBe("sync-approval");
+  });
+
+  // TRANSITIONAL (CL-4232): a run parked at sync-approval before the
+  // content/idempotencyKey rename may still submit the pre-rename shape
+  // (`note`, no `idempotencyKey`) — the /resume boundary must accept it AND
+  // normalize it to the canonical shape before dispatch, since writeNote /
+  // writeComplete now read the sync-approval payload directly (no argMap).
+  test("resume accepts a legacy attio sync-approval payload (note, no idempotencyKey) and dispatches the canonical write-back arguments", async () => {
+    resetCaptures();
+    const a = app();
+    const runId = await parkedAttioRun(a);
+
+    const r = await post(a, `/workflow-exec/records/${runId}/resume`, {
+      signalName: "sync-approval",
+      payload: {
+        confirm: true,
+        taskId: "task_1",
+        parentObject: "companies",
+        parentRecordId: "rec_1",
+        note: "Pilot kicked off.",
+      },
+    });
+
+    expect(r.status).toBe(200);
+    expect(sentSignals).toHaveLength(1);
+    expect(sentSignals[0]?.signalName).toBe("sync-approval");
+    const canonical = {
+      confirm: true,
+      taskId: "task_1",
+      idempotencyKey: "task_1",
+      parentObject: "companies",
+      parentRecordId: "rec_1",
+      content: "Pilot kicked off.",
+    };
+    // Same arguments a fresh (canonical-shaped) client submission would
+    // produce — write_artifact-equivalent fidelity for attio_create_note /
+    // attio_update_task, which read this payload with no argMap. Assert
+    // BOTH the dispatched AND the durably-persisted payload — these are two
+    // independent writes (pendingSignal + sendSignalDeliver) that must not
+    // drift from each other.
+    expect(sentSignals[0]?.payload).toEqual(canonical);
+    expect(persistedSignals).toHaveLength(1);
+    expect(persistedSignals[0]?.payload).toEqual(canonical);
+  });
+
+  test("resume dispatches AND persists a canonical attio sync-approval payload unchanged", async () => {
+    resetCaptures();
+    const a = app();
+    const runId = await parkedAttioRun(a);
+
+    const canonical = {
+      confirm: true,
+      taskId: "task_1",
+      idempotencyKey: "task_1",
+      parentObject: "companies",
+      parentRecordId: "rec_1",
+      content: "Pilot kicked off.",
+    };
+    const r = await post(a, `/workflow-exec/records/${runId}/resume`, {
+      signalName: "sync-approval",
+      payload: canonical,
+    });
+
+    expect(r.status).toBe(200);
+    expect(sentSignals[0]?.payload).toEqual(canonical);
+    expect(persistedSignals[0]?.payload).toEqual(canonical);
   });
 
   test("resume does not validate an unregistered signal on a registered kind", async () => {

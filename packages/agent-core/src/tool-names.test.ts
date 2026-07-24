@@ -1,8 +1,11 @@
 /// <reference types="bun" />
 import { describe, expect, it } from "bun:test";
 import {
+  canonicalizeAgentCapabilityNames,
+  canonicalizeStepToolName,
   canonicalizeToolNames,
   expandToolAliasGrants,
+  LOCAL_RUNNER_TOOL_NAMES,
   providersForToolPackages,
   toLlmToolName,
   toolPackagesForCapabilities,
@@ -119,6 +122,14 @@ describe("canonicalizeToolNames (CL-2145)", () => {
     ).toEqual(["mail_search", "read_file", "run_shell"]);
   });
 
+  it("prefixes a prospect-engine tool with its factory id (regression: build order must not bake a bare name)", () => {
+    expect(
+      canonicalizeToolNames(["prospect_engine_extract_list_org_ids"]),
+    ).toEqual([
+      "@workbench/tools-prospect-engine/core:prospect_engine_extract_list_org_ids",
+    ]);
+  });
+
   it("passes through names with no known package (no false prefixing)", () => {
     expect(canonicalizeToolNames(["granola_search"])).toEqual([
       "granola_search",
@@ -134,6 +145,119 @@ describe("canonicalizeToolNames (CL-2145)", () => {
     const runtimeResource =
       "tool:@workbench/tools-granola/granola:granola_list_notes";
     expect(seededResource).toBe(runtimeResource);
+  });
+});
+
+describe("canonicalizeStepToolName (fail-closed on unresolvable step tool)", () => {
+  it("prefixes a real package tool exactly like canonicalizeToolNames", () => {
+    expect(canonicalizeStepToolName("render", "granola_list_notes")).toBe(
+      "@workbench/tools-granola/granola:granola_list_notes",
+    );
+  });
+
+  it("passes through the explicit local-runner names unchanged", () => {
+    expect(canonicalizeStepToolName("notify", "mail_send")).toBe("mail_send");
+    expect(canonicalizeStepToolName("notify", "mail_reply")).toBe("mail_reply");
+    expect(canonicalizeStepToolName("check", "mail_search")).toBe(
+      "mail_search",
+    );
+    expect(canonicalizeStepToolName("check", "mail_read")).toBe("mail_read");
+    expect(canonicalizeStepToolName("check", "mail_wait")).toBe("mail_wait");
+  });
+
+  it("throws, naming the step and the unresolvable tool, for a typo'd/retired name", () => {
+    expect(() =>
+      canonicalizeStepToolName(
+        "extractOrgIds",
+        "prospect_engine_extract_list_org_id",
+      ),
+    ).toThrow(/extractOrgIds/);
+    expect(() =>
+      canonicalizeStepToolName(
+        "extractOrgIds",
+        "prospect_engine_extract_list_org_id",
+      ),
+    ).toThrow(/prospect_engine_extract_list_org_id/);
+  });
+
+  it("throws for a retired posix local-runner name (no longer served by the sidecar)", () => {
+    expect(() => canonicalizeStepToolName("readStep", "read_file")).toThrow(
+      /read_file/,
+    );
+  });
+
+  it("does not include the retired posix names in the explicit local-runner set", () => {
+    expect(LOCAL_RUNNER_TOOL_NAMES.has("read_file")).toBe(false);
+    expect(LOCAL_RUNNER_TOOL_NAMES.has("run_shell")).toBe(false);
+    expect(LOCAL_RUNNER_TOOL_NAMES.has("mail_send")).toBe(true);
+  });
+
+  it("includes all five interchange mail tools, not just the write pair", () => {
+    expect([...LOCAL_RUNNER_TOOL_NAMES].sort()).toEqual([
+      "mail_read",
+      "mail_reply",
+      "mail_search",
+      "mail_send",
+      "mail_wait",
+    ]);
+  });
+});
+
+describe("canonicalizeAgentCapabilityNames (fail-closed on unresolvable agent capability)", () => {
+  it("prefixes a real package tool exactly like canonicalizeToolNames", () => {
+    expect(
+      canonicalizeAgentCapabilityNames("Oat", ["granola_list_notes"]),
+    ).toEqual(["@workbench/tools-granola/granola:granola_list_notes"]);
+  });
+
+  it("passes through explicit local-runner (mail) names unchanged", () => {
+    expect(canonicalizeAgentCapabilityNames("Myra", ["mail_send"])).toEqual([
+      "mail_send",
+    ]);
+  });
+
+  it("passes through a caller-declared native tool name unchanged", () => {
+    expect(
+      canonicalizeAgentCapabilityNames(
+        "Myra",
+        ["search_tools", "load_tools"],
+        new Set(["search_tools", "load_tools"]),
+      ),
+    ).toEqual(["search_tools", "load_tools"]);
+  });
+
+  it("throws, naming the agent and the unresolvable capability, for a typo'd/retired name", () => {
+    expect(() =>
+      canonicalizeAgentCapabilityNames("Freddie", ["granola_search"]),
+    ).toThrow(/Freddie/);
+    expect(() =>
+      canonicalizeAgentCapabilityNames("Freddie", ["granola_search"]),
+    ).toThrow(/granola_search/);
+  });
+
+  it("throws for a retired posix local-runner name (no longer served by the sidecar)", () => {
+    expect(() =>
+      canonicalizeAgentCapabilityNames("Walter", ["read_file"]),
+    ).toThrow(/read_file/);
+  });
+
+  it("does not accept a native name unless the caller declares it", () => {
+    expect(() =>
+      canonicalizeAgentCapabilityNames("Myra", ["search_tools"]),
+    ).toThrow(/search_tools/);
+  });
+
+  // Resolution here is purely name-based (does a package/local-runner/native
+  // name exist?), never runtime-credential-based (does a tenant have a key
+  // for it?). A real tool with no tenant credential yet must still resolve —
+  // apps/sidecar/src/step-tool-harness.ts's buildStepTools is what skips
+  // credential-less packages for agents at runtime, deliberately downstream
+  // of this build-time guard. This pins that separation so a future refactor
+  // does not fold credential availability into name resolution.
+  it("resolves a real tool with a credentialed provider regardless of credential availability", () => {
+    expect(
+      canonicalizeAgentCapabilityNames("Freddy", ["firecrawl_scrape"]),
+    ).toEqual(["@workbench/tools-firecrawl/firecrawl:firecrawl_scrape"]);
   });
 });
 

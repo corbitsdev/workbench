@@ -31,6 +31,7 @@ COPY packages/analytics/package.json packages/analytics/
 COPY packages/pricing/package.json packages/pricing/
 COPY packages/event-collector/package.json packages/event-collector/
 COPY packages/hub-agent/package.json packages/hub-agent/
+COPY packages/hub-sessions/package.json packages/hub-sessions/
 COPY packages/inference/package.json packages/inference/
 COPY packages/storage-isogit/package.json packages/storage-isogit/
 COPY packages/last30days-core/package.json packages/last30days-core/
@@ -49,6 +50,7 @@ COPY packages/tools-dispatch/package.json packages/tools-dispatch/
 COPY packages/tools-exa/package.json packages/tools-exa/
 COPY packages/tools-fileparser/package.json packages/tools-fileparser/
 COPY packages/tools-firecrawl/package.json packages/tools-firecrawl/
+COPY packages/tools-corbits-knowledge-engine/package.json packages/tools-corbits-knowledge-engine/
 COPY packages/tools-gamma/package.json packages/tools-gamma/
 COPY packages/tools-linear/package.json packages/tools-linear/
 COPY packages/tools-vercel/package.json packages/tools-vercel/
@@ -67,7 +69,9 @@ COPY packages/tools-scrapecreators/package.json packages/tools-scrapecreators/
 COPY packages/tools-skills/package.json packages/tools-skills/
 COPY packages/tools-slack/package.json packages/tools-slack/
 COPY packages/tools-sumble/package.json packages/tools-sumble/
+COPY packages/tools-prospect-engine/package.json packages/tools-prospect-engine/
 COPY packages/tools-workflows/package.json packages/tools-workflows/
+
 COPY packages/tools-x/package.json packages/tools-x/
 COPY packages/tools-youtube/package.json packages/tools-youtube/
 COPY packages/test-utils/package.json packages/test-utils/
@@ -76,18 +80,30 @@ COPY packages/transcript/package.json packages/transcript/
 COPY packages/ui/package.json packages/ui/
 COPY packages/tasks/package.json packages/tasks/
 COPY packages/workbench-shared/package.json packages/workbench-shared/
+COPY packages/workflows-ui/package.json packages/workflows-ui/
 COPY packages/workflow-host/package.json packages/workflow-host/
 COPY workflows/ab-compare-quality/package.json workflows/ab-compare-quality/
 COPY workflows/ab-compare-speed/package.json workflows/ab-compare-speed/
 COPY workflows/ab-compare-standard/package.json workflows/ab-compare-standard/
 COPY workflows/attio-task-agent/package.json workflows/attio-task-agent/
 COPY workflows/gamma-presentation-creator/package.json workflows/gamma-presentation-creator/
+COPY workflows/granola-call/package.json workflows/granola-call/
+COPY workflows/process-granola-call/package.json workflows/process-granola-call/
+COPY workflows/gtm-scripts-briefs/package.json workflows/gtm-scripts-briefs/
 COPY workflows/heartbeat/package.json workflows/heartbeat/
 COPY workflows/last30days-research/package.json workflows/last30days-research/
 COPY workflows/pain-point-collateral/package.json workflows/pain-point-collateral/
+COPY workflows/multi-source-collateral/package.json workflows/multi-source-collateral/
 COPY workflows/reddit-opportunity-scanner/package.json workflows/reddit-opportunity-scanner/
 COPY workflows/smoke-test/package.json workflows/smoke-test/
 COPY workflows/sumble-account-intel/package.json workflows/sumble-account-intel/
+COPY workflows/prospect-engine/package.json workflows/prospect-engine/
+COPY workflows/competitor-analysis/package.json workflows/competitor-analysis/
+COPY workflows/github-topic-watch/package.json workflows/github-topic-watch/
+COPY workflows/exa-topic-watch/package.json workflows/exa-topic-watch/
+COPY workflows/firecrawl-url-watch/package.json workflows/firecrawl-url-watch/
+COPY workflows/reddit-opportunity-watch/package.json workflows/reddit-opportunity-watch/
+
 RUN bun install --frozen-lockfile
 
 # Full source for the sidecar's runtime closure ONLY. Tool packages reach the
@@ -103,6 +119,7 @@ COPY packages/tools-catalog/ packages/tools-catalog/
 COPY packages/catalog/ packages/catalog/
 COPY packages/context-repair/ packages/context-repair/
 COPY packages/hub-agent/ packages/hub-agent/
+COPY packages/hub-sessions/ packages/hub-sessions/
 COPY packages/storage-isogit/ packages/storage-isogit/
 COPY packages/workflow-host/ packages/workflow-host/
 COPY packages/prompts/ packages/prompts/

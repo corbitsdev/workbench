@@ -69,6 +69,15 @@ describe("visualForKind", () => {
     expect(visualForKind("gamma_presentation").label).toBe("Presentation");
   });
 
+  it("labels Granola call artifact kinds (legacy + typed, CL-3647)", () => {
+    expect(visualForKind("granola-call").label).toBe("Call");
+    expect(visualForKind("granola-call-pain-points").label).toBe(
+      "Call Pain Points",
+    );
+    expect(visualForKind("granola-call-summary").label).toBe("Call Summary");
+    expect(visualForKind("granola-call-brief").label).toBe("Call Brief");
+  });
+
   it("labels a CSV export 'CSV', not 'Document'", () => {
     expect(visualForKind("csv-export").label).toBe("CSV");
   });
@@ -90,7 +99,6 @@ describe("toGalleryArtifact", () => {
     kind: "email",
     title: "Title",
     content: "body",
-    status: "approved",
     version: 1,
     ownerPrincipalId: null,
     archivedAt: null,
@@ -266,7 +274,7 @@ describe("toGalleryArtifact", () => {
   it("returns undefined from tryToGalleryArtifact for an artifact that fails the gallery schema", () => {
     const corrupt = {
       ...base,
-      status: "bogus",
+      id: 123,
     } as unknown as ArtifactWithSession;
     expect(tryToGalleryArtifact(corrupt)).toBeUndefined();
   });

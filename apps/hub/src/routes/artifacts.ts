@@ -24,7 +24,6 @@ import { schema as intxSchema } from "@intx/db";
 import type { HubDb } from "../db";
 import {
   artifact,
-  artifactStatus,
   artifactVersion,
   MAX_UPLOAD_BYTES,
   upload,
@@ -33,7 +32,6 @@ import { requestBodySchema } from "../lib/openapi";
 import { getRequestedUserContext } from "../lib/user-context";
 import { isAdmin } from "../lib/admin-grant";
 import { resolveOwnerMemberPrincipalId } from "../lib/artifact-tools";
-import { canActOnSkillDraft } from "../services/skill-library";
 import { attachArtifactSessionEnrichment } from "../lib/artifact-session-enrichment";
 import { artifactOrigins, type ArtifactSource } from "@workbench/shared";
 import { uploadArtifactKind } from "../lib/upload-artifact-kind";
@@ -211,7 +209,6 @@ function serializeArtifact(a: ArtifactRow) {
     title: a.title,
     content: a.content,
     source: normalizeSource(a.source ?? null),
-    status: a.status,
     version: a.version,
     ownerPrincipalId: a.ownerPrincipalId ?? null,
     archivedAt: a.archivedAt?.toISOString() ?? null,
@@ -436,7 +433,6 @@ export function createArtifactsRouter(
       .replace(/[%_\\]/g, "\\$&");
     const sortParam = c.req.query("sort");
     const kindParam = c.req.query("kind");
-    const statusParam = c.req.query("status");
     const ownerPrincipalIdParam = c.req.query("ownerPrincipalId");
     const creatorKindParam = c.req.query("creatorKind");
     const createdAfterParam = c.req.query("createdAfter");
@@ -465,18 +461,6 @@ export function createArtifactsRouter(
       if (DATE_ONLY.test(createdBeforeParam)) {
         createdBefore.setUTCHours(23, 59, 59, 999);
       }
-    }
-
-    type ArtifactStatusValue = (typeof artifactStatus)[number];
-    const isArtifactStatus = (value: string): value is ArtifactStatusValue =>
-      (artifactStatus as readonly string[]).includes(value);
-
-    let statusFilter: ArtifactStatusValue | undefined;
-    if (statusParam !== undefined) {
-      if (!isArtifactStatus(statusParam)) {
-        return c.json({ error: "Invalid status filter" }, 400);
-      }
-      statusFilter = statusParam;
     }
 
     const creatorKindValues = ["user", "agent"] as const;
@@ -520,9 +504,6 @@ export function createArtifactsRouter(
           ilike(artifact.content, `%${searchQuery}%`),
         )
       : undefined;
-    // Hide rejected by default; an explicit status filter overrides that.
-    const hideRejectedWhere =
-      statusFilter === undefined ? ne(artifact.status, "rejected") : undefined;
     // Archived artifacts (CL-3156) are hidden from default views; `?archived=true`
     // opts into the Archived view, which shows only archived artifacts.
     const showArchived = c.req.query("archived") === "true";
@@ -533,9 +514,6 @@ export function createArtifactsRouter(
     // an explicit kind=skill-draft filter is supplied (review surface is
     // GET /skills/drafts, not the artifacts gallery).
     const hideSkillDraftWhere = ne(artifact.kind, "skill-draft");
-    const statusWhere = statusFilter
-      ? eq(artifact.status, statusFilter)
-      : undefined;
     const kindWhere = kindParam ? eq(artifact.kind, kindParam) : undefined;
     const ownerWhere = ownerPrincipalIdParam
       ? eq(artifact.ownerPrincipalId, ownerPrincipalIdParam)
@@ -602,10 +580,8 @@ export function createArtifactsRouter(
 
     const whereConditions = [
       tenantWhere,
-      hideRejectedWhere,
       archivedWhere,
       hideSkillDraftWhere,
-      statusWhere,
       kindWhere,
       ownerWhere,
       creatorKindWhere,
@@ -674,13 +650,6 @@ export function createArtifactsRouter(
     }
     if (!userContext || art.tenantId !== userContext.tenantId) {
       return c.json({ error: "Forbidden" }, 403);
-    }
-
-    // skill-draft is owner-gated: only the human who can act on the draft may
-    // deep-link it. Everyone else gets a 404 (same as missing).
-    if (art.kind === "skill-draft") {
-      const allowed = await canActOnSkillDraft(db, art, userContext);
-      if (!allowed) return c.json({ error: "Artifact not found" }, 404);
     }
 
     const row = {
@@ -797,7 +766,6 @@ export function createArtifactsRouter(
             title,
             content,
             source,
-            status: "draft",
             version: 1,
             createdAt: now,
             updatedAt: now,
@@ -998,7 +966,6 @@ export function createArtifactsRouter(
               title: file.name,
               content: "",
               source,
-              status: "draft",
               version: 1,
               createdAt: now,
               updatedAt: now,

@@ -14,10 +14,7 @@ import {
   ActiveContextProvider,
   useActiveContext,
 } from "../lib/active-context-store";
-import {
-  PageChromeProvider,
-  usePageChromeSlot,
-} from "../lib/page-chrome";
+import { PageChromeProvider, usePageChromeSlot } from "../lib/page-chrome";
 
 type ThreadItem = {
   id: string;
@@ -261,7 +258,7 @@ describe("ChatThreadPage", () => {
       refetch: () => {},
     };
     renderAt("/chats/t1");
-    screen.getByText(/loading your chats/i);
+    screen.getByText(/loading your threads/i);
   });
 
   it("renders the chat surface without an in-panel thread switcher or header band, and passes the Myra thread id as the dock's conversationId (conversationId == Myra thread id contract)", () => {
@@ -286,17 +283,17 @@ describe("ChatThreadPage", () => {
     renderAt("/chats/t1");
     const chrome = screen.getByTestId("page-chrome");
     expect(
-      within(chrome).getByRole("button", { name: "Chat details" }),
+      within(chrome).getByRole("button", { name: "Thread details" }),
     ).toBeDefined();
     expect(screen.queryByTestId("header-right")).toBeNull();
   });
 
   it("shows a not-found state for an unknown thread id", () => {
     renderAt("/chats/unknown");
-    screen.getByText(/this chat couldn't be found/i);
+    screen.getByText(/this thread couldn't be found/i);
     expect(
       screen
-        .getByRole("link", { name: /back to all chats/i })
+        .getByRole("link", { name: /back to all threads/i })
         .getAttribute("href"),
     ).toBe("/chats");
     expect(screen.queryByTestId("surface")).toBeNull();
@@ -310,7 +307,7 @@ describe("ChatThreadPage", () => {
       refetch: () => {},
     };
     renderAt("/chats");
-    const button = screen.getByRole("button", { name: /start a chat/i });
+    const button = screen.getByRole("button", { name: /start a thread/i });
     fireEvent.click(button);
     expect(createMutate).toHaveBeenCalledTimes(1);
   });
@@ -356,7 +353,7 @@ describe("ChatThreadPage", () => {
     };
     renderAt("/chats/t1");
     expect(screen.queryByRole("dialog")).toBeNull();
-    fireEvent.click(screen.getByRole("button", { name: "Chat details" }));
+    fireEvent.click(screen.getByRole("button", { name: "Thread details" }));
     const dialog = screen.getByRole("dialog");
     expect(dialog.textContent).toContain("First");
     expect(dialog.textContent).toContain("i1");
@@ -376,7 +373,7 @@ describe("ChatThreadPage", () => {
 
   it("omits agent name, mail address, and status from the dialog when the instance isn't in the loaded roster", () => {
     renderAt("/chats/t1");
-    fireEvent.click(screen.getByRole("button", { name: "Chat details" }));
+    fireEvent.click(screen.getByRole("button", { name: "Thread details" }));
     const dialog = screen.getByRole("dialog");
     expect(dialog.textContent).toContain("i1");
     expect(screen.queryByText("Agent")).toBeNull();
@@ -385,7 +382,7 @@ describe("ChatThreadPage", () => {
     expect(screen.queryByRole("link", { name: "Open trace" })).toBeNull();
   });
 
-  it("publishes 'New chat' instead of the raw default label ('Chat N') for a brand-new thread", () => {
+  it("publishes 'New thread' instead of the raw default label ('Chat N') for a brand-new thread", () => {
     threadsResult = {
       data: {
         threads: [
@@ -404,7 +401,9 @@ describe("ChatThreadPage", () => {
       refetch: () => {},
     };
     renderAt("/chats/t1");
-    expect(screen.getByTestId("published-label").textContent).toBe("New chat");
+    expect(screen.getByTestId("published-label").textContent).toBe(
+      "New thread",
+    );
   });
 
   it("re-syncs the published title when the thread's label changes (no stale title across renders)", () => {
@@ -426,7 +425,9 @@ describe("ChatThreadPage", () => {
       refetch: () => {},
     };
     const { rerender } = renderAt("/chats/t1");
-    expect(screen.getByTestId("published-label").textContent).toBe("New chat");
+    expect(screen.getByTestId("published-label").textContent).toBe(
+      "New thread",
+    );
 
     threadsResult = {
       data: {

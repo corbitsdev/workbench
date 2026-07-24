@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, mock } from "bun:test";
 import * as intxDbReal from "@intx/db";
-import type { SessionService } from "@intx/hub-sessions";
+import type { SessionService } from "@workbench/hub-sessions";
 import type { GrantStore } from "@intx/types/authz";
 
 const TEST_API_KEY = "sk-test-key";
@@ -64,7 +64,7 @@ const mockEventCollectors = {
   getAccumulatedText: mock(() => undefined),
   getCurrentTurnId: mock(() => undefined),
   getLastTurnId: mock(() => undefined),
-} as unknown as import("@intx/hub-sessions").EventCollectorRegistry;
+} as unknown as import("@workbench/hub-sessions").EventCollectorRegistry;
 
 // biome-ignore lint/suspicious/noExplicitAny: test mock
 function makeSelectChain(rows: any[] = []) {
@@ -261,7 +261,9 @@ describe("launchAgentSession failure cleanup", () => {
 
   it("warns when the persisted grant count is far below the expected floor", async () => {
     const { db } = makeMockDb({ bound: true });
-    const deployInstanceAtHead = mock(() => Promise.resolve({ publicKey: "pk" }));
+    const deployInstanceAtHead = mock(() =>
+      Promise.resolve({ publicKey: "pk" }),
+    );
     const sessionService = {
       deployInstanceAtHead,
       sendUserMessage: mock(() => Promise.reject(new Error("not implemented"))),
@@ -293,7 +295,9 @@ describe("launchAgentSession failure cleanup", () => {
 
   it("does not warn when the persisted grant count matches the expected floor", async () => {
     const { db } = makeMockDb({ bound: true });
-    const deployInstanceAtHead = mock(() => Promise.resolve({ publicKey: "pk" }));
+    const deployInstanceAtHead = mock(() =>
+      Promise.resolve({ publicKey: "pk" }),
+    );
     const sessionService = {
       deployInstanceAtHead,
       sendUserMessage: mock(() => Promise.reject(new Error("not implemented"))),

@@ -39,7 +39,7 @@ const GROUPS: readonly {
   {
     key: "triage",
     kind: "triage",
-    title: "Inbox automation",
+    title: "Inbox routine",
     creativeField: "creativeTriage",
     thinkingField: "thinkingTriage",
   },

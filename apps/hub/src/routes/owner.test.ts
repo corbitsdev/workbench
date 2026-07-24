@@ -105,7 +105,7 @@ mock.module("../services/catalog-provider-seed", () => ({
     };
   },
   // Records the credential ids the DELETE handler asks to unbind; returns 0 so
-  // the route skips the source re-push (keeps @intx/hub-sessions out of the
+  // the route skips the source re-push (keeps @workbench/hub-sessions out of the
   // unit test — the real cascade is covered by the integration test).
   clearCatalogProvidersForCredentials: async (
     _tx: unknown,
@@ -168,7 +168,16 @@ function grantStoreFor(): GrantStore {
   } as unknown as GrantStore;
 }
 
-function buildApp(db: unknown = {}) {
+function buildApp(
+  db: unknown = {},
+  workUnitQueue?: {
+    health: () => Promise<unknown>;
+    listDead: (args: unknown) => Promise<unknown[]>;
+    listAgedLeased: (args: unknown) => Promise<unknown[]>;
+    retryDead: (id: string) => Promise<boolean>;
+    discardDead: (id: string) => Promise<boolean>;
+  },
+) {
   const app = new Hono<{
     Variables: { userId: string; ownerPrincipalId: string };
   }>();
@@ -185,6 +194,7 @@ function buildApp(db: unknown = {}) {
       rootTenantId: "ten_root",
       showDemos: ownerRouterShowDemos,
       featureEnvOverrides: ownerRouterFeatureEnvOverrides,
+      ...(workUnitQueue ? { workUnitQueue: workUnitQueue as never } : {}),
     }),
   );
   return app;
@@ -1386,5 +1396,228 @@ describe("owner member role delegation", () => {
     });
     expect(res.status).toBe(404);
     expect(assignRole).not.toHaveBeenCalled();
+  });
+});
+
+// CL-4113: Everyone (tenant-scoped) schedules control plane.
+describe("owner schedules routes", () => {
+  const scheduleId = "11111111-1111-4111-8111-111111111111";
+  const missingId = "22222222-2222-4222-8222-222222222222";
+  const tenantRow = {
+    id: scheduleId,
+    tenantId: "ten_root",
+    ownerMemberPrincipalId: "prn_creator",
+    workflowKind: "deck",
+    intervalMinutes: 1440,
+    anchorMinuteUtc: 14 * 60,
+    scope: "tenant" as const,
+    triggerPayload: {},
+    enabled: true,
+    lastFiredWindowIndex: 20000,
+    lastRunId: "run_abc",
+    createdAt: new Date("2026-03-01T00:00:00.000Z"),
+    updatedAt: new Date("2026-03-01T00:00:00.000Z"),
+  };
+
+  function schedulesDb(
+    opts: {
+      rows?: (typeof tenantRow)[];
+      updateReturn?: typeof tenantRow | null;
+    } = {},
+  ) {
+    const rows = opts.rows ?? [tenantRow];
+    const db = {
+      query: {
+        scheduledTrigger: {
+          findMany: async () => rows,
+        },
+      },
+      update: () => ({
+        set: (vals: object) => ({
+          where: () => ({
+            returning: async () =>
+              opts.updateReturn === null
+                ? []
+                : [opts.updateReturn ?? { ...tenantRow, ...vals }],
+          }),
+        }),
+      }),
+    };
+    return db;
+  }
+
+  it("denies a plain member with 403", async () => {
+    callerPrincipalId = "prn_member";
+    const res = await buildApp(schedulesDb()).request("/owner/schedules");
+    expect(res.status).toBe(403);
+  });
+
+  it("lists tenant-scoped schedules for an owner", async () => {
+    callerPrincipalId = "prn_owner";
+    const res = await buildApp(schedulesDb()).request("/owner/schedules");
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      items: Array<{ id: string; scope: string; workflowKind: string }>;
+    };
+    expect(body.items).toHaveLength(1);
+    expect(body.items[0]?.id).toBe(scheduleId);
+    expect(body.items[0]?.scope).toBe("tenant");
+    expect(body.items[0]?.workflowKind).toBe("deck");
+  });
+
+  it("pauses a tenant schedule", async () => {
+    callerPrincipalId = "prn_owner";
+    const res = await buildApp(
+      schedulesDb({ updateReturn: { ...tenantRow, enabled: false } }),
+    ).request(`/owner/schedules/${scheduleId}`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ enabled: false }),
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { id: string; enabled: boolean };
+    expect(body.id).toBe(scheduleId);
+    expect(body.enabled).toBe(false);
+  });
+
+  it("retargets a tenant schedule's recurrence", async () => {
+    callerPrincipalId = "prn_owner";
+    const res = await buildApp(
+      schedulesDb({
+        updateReturn: { ...tenantRow, intervalMinutes: 30, anchorMinuteUtc: 0 },
+      }),
+    ).request(`/owner/schedules/${scheduleId}`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        recurrence: { intervalMinutes: 30, anchorMinuteUtc: 0 },
+      }),
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      recurrence: { intervalMinutes: number; anchorMinuteUtc: number };
+    };
+    expect(body.recurrence).toEqual({
+      intervalMinutes: 30,
+      anchorMinuteUtc: 0,
+    });
+  });
+
+  it("404s when the schedule is not tenant-scoped or missing", async () => {
+    callerPrincipalId = "prn_owner";
+    const res = await buildApp(schedulesDb({ updateReturn: null })).request(
+      `/owner/schedules/${missingId}`,
+      {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ enabled: false }),
+      },
+    );
+    expect(res.status).toBe(404);
+  });
+
+  it("400s on empty patch body", async () => {
+    callerPrincipalId = "prn_owner";
+    const res = await buildApp(schedulesDb()).request(
+      `/owner/schedules/${scheduleId}`,
+      {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({}),
+      },
+    );
+    expect(res.status).toBe(400);
+  });
+
+  it("400s on a non-UUID schedule id", async () => {
+    callerPrincipalId = "prn_owner";
+    const res = await buildApp(schedulesDb()).request(
+      "/owner/schedules/not-a-uuid",
+      {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ enabled: false }),
+      },
+    );
+    expect(res.status).toBe(400);
+  });
+});
+
+describe("owner work unit ops routes (WQ.6)", () => {
+  function mockQueue() {
+    return {
+      health: mock(async () => ({
+        byStatus: { pending: 1, dead: 2 },
+        byKindStatus: [],
+        oldestPendingAgeMs: 1000,
+        deadCount: 2,
+        agedLeasedCount: 0,
+      })),
+      listDead: mock(async () => [
+        {
+          id: "11111111-1111-4111-8111-111111111111",
+          tenantId: "ten_root",
+          kind: "knowledge_capture",
+          idempotencyKey: "k1",
+          status: "dead",
+          attempts: 8,
+          maxAttempts: 8,
+          lastError: "boom",
+          updatedAt: new Date("2026-01-01T00:00:00Z"),
+          createdAt: new Date("2026-01-01T00:00:00Z"),
+        },
+      ]),
+      listAgedLeased: mock(async () => []),
+      retryDead: mock(async () => true),
+      discardDead: mock(async () => true),
+    };
+  }
+
+  it("denies a plain member with 403", async () => {
+    callerPrincipalId = "prn_member";
+    const res = await buildApp({}, mockQueue()).request(
+      "/owner/work-units/health",
+    );
+    expect(res.status).toBe(403);
+  });
+
+  it("returns 503 when queue is not configured", async () => {
+    callerPrincipalId = "prn_owner";
+    const res = await buildApp().request("/owner/work-units/health");
+    expect(res.status).toBe(503);
+  });
+
+  it("returns health for an owner", async () => {
+    callerPrincipalId = "prn_owner";
+    const q = mockQueue();
+    const res = await buildApp({}, q).request("/owner/work-units/health");
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { deadCount: number };
+    expect(body.deadCount).toBe(2);
+    expect(q.health).toHaveBeenCalled();
+  });
+
+  it("lists dead units and retries/discards by id", async () => {
+    callerPrincipalId = "prn_owner";
+    const q = mockQueue();
+    const id = "11111111-1111-4111-8111-111111111111";
+    const list = await buildApp({}, q).request("/owner/work-units/dead");
+    expect(list.status).toBe(200);
+    const body = (await list.json()) as { items: { id: string }[] };
+    expect(body.items[0]?.id).toBe(id);
+
+    const retry = await buildApp({}, q).request(
+      `/owner/work-units/${id}/retry`,
+      { method: "POST" },
+    );
+    expect(retry.status).toBe(200);
+    expect(q.retryDead).toHaveBeenCalledWith(id);
+
+    const discard = await buildApp({}, q).request(
+      `/owner/work-units/${id}/discard`,
+      { method: "POST" },
+    );
+    expect(discard.status).toBe(200);
+    expect(q.discardDead).toHaveBeenCalledWith(id);
   });
 });

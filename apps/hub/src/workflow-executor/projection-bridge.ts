@@ -1,13 +1,13 @@
 import { type } from "arktype";
 import { eq } from "drizzle-orm";
 import { getLogger } from "@intx/log";
-import { subscribeKind } from "@intx/hub-sessions";
+import { subscribeKind } from "@workbench/hub-sessions";
 import type {
   AgentRepoStore,
   Principal,
   RepoId,
   RepoStore,
-} from "@intx/hub-sessions";
+} from "@workbench/hub-sessions";
 import type { HubDb } from "../db";
 import { workflowRun } from "../db/schema";
 import {
@@ -760,5 +760,6 @@ export function wrapRepoStoreWithProjection(
     get repoStore() {
       return base.repoStore;
     },
+    registeredKinds: base.registeredKinds,
   };
 }

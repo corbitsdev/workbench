@@ -6,9 +6,9 @@ import type { WorkflowFlowStep } from "@workbench/shared";
 import { WorkflowFlowPreview } from "./WorkflowFlowPreview";
 
 const steps: WorkflowFlowStep[] = [
-  { id: "s1", title: "Gather Sources", kind: "auto" },
-  { id: "s2", title: "Synthesize Brief", kind: "agent" },
-  { id: "s3", title: "Review Draft", kind: "human" },
+  { id: "s1", title: "Gather Sources", kind: "auto", stepIds: ["s1"] },
+  { id: "s2", title: "Synthesize Brief", kind: "agent", stepIds: ["s2"] },
+  { id: "s3", title: "Review Draft", kind: "human", stepIds: ["s3"] },
 ];
 
 afterEach(cleanup);

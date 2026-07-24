@@ -16,11 +16,13 @@ import {
   createSidecarRouter,
   createSidecarTokenAuthenticator,
   WORKSPACE_BUILTINS_REGISTRY,
+  skillDraftKindHandler,
+  skillDraftAuthorize,
   type SidecarLookups,
   type WsHandle,
-} from "@intx/hub-sessions";
+} from "@workbench/hub-sessions";
 // Per-agent serialized event-collector registry (CL-1656). Drop-in for
-// @intx/hub-sessions' createEventCollectorRegistry; serializes onEvent per
+// @workbench/hub-sessions' createEventCollectorRegistry; serializes onEvent per
 // agent so a turn row commits before its parts, fixing the FK race that
 // dropped thinking/reply parts.
 import { createEventCollectorRegistry } from "@workbench/event-collector";
@@ -67,7 +69,10 @@ import {
   type ReclaimRunDeploymentFn,
 } from "./workflow-executor/projection-bridge";
 import { projectWorkflowRunFacts } from "./workflow-executor/workflow-run-facts";
-import { deliverRunTerminalMail } from "./workflow-executor/run-terminal-mail";
+import {
+  deliverRunTerminalMail,
+  fanOutTenantScheduleTerminalMail,
+} from "./workflow-executor/run-terminal-mail";
 import { deliverPendingGateMail } from "./workflow-executor/gate-mail";
 import { createWorkflowAnalyticsRouter } from "./routes/workflow-analytics";
 import {
@@ -92,7 +97,7 @@ import { getIdentityAccounts } from "./lib/member-identity";
 import { seedHeartbeatSchedules } from "./services/scheduled-trigger-seeder";
 import {
   ensureOwnerSchedule,
-  listEnabledSchedules,
+  listAllEnabledSchedules,
   markScheduleFired,
   recordScheduleRunStarted,
 } from "./lib/scheduled-triggers";
@@ -115,6 +120,10 @@ import { createSkillsRouter } from "./routes/skills";
 import { createToolsRouter } from "./routes/tools";
 import { createAdminRouter } from "./routes/admin";
 import { createOwnerRouter } from "./routes/owner";
+import { createWorkUnitQueue } from "./services/work-unit-queue";
+import { createWorkUnitWorker } from "./services/work-unit-worker";
+import { bindKnowledgeCaptureWorkUnitQueue } from "./services/knowledge-capture-hook";
+import { createDefaultAgentTaskTurnRunner } from "./services/agent-task-auto-pickup";
 import { isDemosEnabledByGrant, resolveDemoLinks } from "./lib/demos-gate";
 import { isFeatureEnabledForTenantCached } from "./lib/feature-grants";
 import { isWorkspaceInboxSourceEnabledForTenant } from "./lib/workspace-inbox-source-gate";
@@ -134,14 +143,9 @@ import {
 import { createMembersRouter } from "./routes/members";
 import { createMyraThreadsRouter } from "./routes/myra-threads";
 import { createInvokedSubagentsRouter } from "./routes/invoked-subagents";
-import {
-  recordMyraThreadActivity,
-  resolveMyraDefinition,
-} from "./services/myra-threads";
+import { recordMyraThreadActivity } from "./services/myra-threads";
 import { createGranolaCallFanout } from "./services/granola-call-fanout";
-import { createGranolaCallPipeline } from "./services/granola-call-pipeline";
-import { createGranolaCallJobQueue } from "./services/granola-call-job-queue";
-import { createGranolaCallJobRunner } from "./services/granola-call-job-runner";
+import { setGranolaCallToolDeps } from "./tools/granola-call-tools";
 import { createGranolaWorkspaceInboxSource } from "./services/inbox-sources/granola-workspace";
 import { INBOX_SOURCE_REGISTRY } from "./services/inbox-source-registry";
 import {
@@ -165,6 +169,7 @@ import { createPrincipalAnalyticsRouter } from "./routes/principal-analytics";
 import { createTenantRosterRouter } from "./routes/tenant-roster";
 import { createMyraVariantsRouter } from "./routes/myra-variants";
 import { createGammaTemplatesRouter } from "./routes/gamma-templates";
+import { createScheduleFieldOptionsRouter } from "./routes/schedule-field-options";
 import { createApprovalNotificationsRouter } from "./routes/approval-notifications";
 import { createNativeApprovalsRouter } from "./routes/native-approvals";
 import { createApprovalsEventBus } from "./lib/approvals-events";
@@ -174,7 +179,11 @@ import {
 } from "./lib/native-approval-notify";
 import { createNativeApprovalEnricher } from "./lib/native-approval-enrich";
 import { createFeedbackRouter } from "./routes/feedback";
-import type { MemberPreferences } from "@workbench/shared";
+import {
+  DAILY_INTERVAL_MINUTES,
+  DEFAULT_HEARTBEAT_SCHEDULE_NAME,
+  type MemberPreferences,
+} from "@workbench/shared";
 import { createMePreferencesRouter } from "./routes/me-preferences";
 import { createMeFeaturesRouter } from "./routes/me-features";
 import { createMeConnectionsRouter } from "./routes/me-connections";
@@ -185,6 +194,9 @@ import { createMeSchedulesRouter } from "./routes/me-schedules";
 import { createMeWebhookTriggersRouter } from "./routes/me-webhook-triggers";
 import { createWebhookTriggerFireRouter } from "./routes/webhook-trigger-fire";
 import { createLinearWebhookRouter } from "./routes/webhooks-linear";
+import { createProviderWebhookRouter } from "./routes/webhooks-provider-triggers";
+import { createProviderWebhookRegistry } from "./lib/provider-webhooks";
+import { linearWebhookAdapter } from "./lib/provider-webhook-adapters/linear";
 import { createAttioWebhookRouter } from "./routes/webhooks-attio";
 import { createSlackWebhookRouter } from "./routes/webhooks-slack";
 import { deriveUserMailAddress } from "@workbench/hub-agent";
@@ -424,6 +436,18 @@ const repoStore = wrapRepoStoreWithProjection(
     // Retention is fixed to keep-history: the hub is the long-term archive
     // of an agent's state graph (see the HUB_AGENT_GC_* notes in config.ts).
     gc: { ...hub.agentGc, retention: "keep-history" },
+    // CL-4215: registers `skill-draft` as a real asset kind (its own
+    // directoryPrefix + validatePush) via the CL-4231 kind seam, so skill
+    // drafts get git-backed content instead of an `artifact` row with a
+    // status column. Existence is the review state: a draft asset with no
+    // matching `skill` asset is pending; the skill asset's existence is
+    // approval. See skill-library.ts.
+    handlers: {
+      "skill-draft": {
+        handler: skillDraftKindHandler,
+        authorize: skillDraftAuthorize,
+      },
+    },
   }),
   {
     db,
@@ -476,29 +500,100 @@ const repoStore = wrapRepoStoreWithProjection(
         });
       });
     },
-    // Deliver a "your run finished" mailbox item to the run creator when a
-    // run reaches a terminal status. Fire-and-forget; the deliverer owns its
-    // errors and must never block pack receipt.
+    // Terminal-run mail: failures only (CL-4312). Quiet/completed success is
+    // silent here — success reaches the inbox via result-specific mail.
+    // Fire-and-forget; the deliverer owns its errors and must never block pack
+    // receipt.
     deliverRunMail: (args) => {
-      void deliverRunTerminalMail(
-        {
-          db,
-          deploymentDomain: config.rootTenant.domain,
-          mailboxEventBus,
-        },
-        args,
-      ).catch((err: unknown) => {
+      const mailDeps = {
+        db,
+        deploymentDomain: config.rootTenant.domain,
+        mailboxEventBus,
+      };
+      void deliverRunTerminalMail(mailDeps, args).catch((err: unknown) => {
         log.error("workflow run terminal mail delivery failed", {
           runId: args.runId,
           error: err instanceof Error ? err : new Error(String(err)),
         });
       });
+      // Everyone schedules: one run, many inboxes (CL-4114).
+      void fanOutTenantScheduleTerminalMail(mailDeps, args).catch(
+        (err: unknown) => {
+          log.error("tenant schedule terminal mail fan-out failed", {
+            runId: args.runId,
+            error: err instanceof Error ? err : new Error(String(err)),
+          });
+        },
+      );
     },
   },
 );
 // ─── Skill asset substrate ─────────────────────────────────────────
 
-const assetService = createAssetService({ db, repoStore: repoStore.repoStore });
+const assetService = createAssetService({
+  db,
+  repoStore: repoStore.repoStore,
+  // WORKBENCH-LOCAL (CL-4231): validate createAsset/row-mapping against
+  // the repo store's actual registered kind set (built-ins today; a
+  // future caller-registered custom kind, e.g. CL-4215's `skill-draft`,
+  // becomes usable here with no further wiring change) instead of the
+  // asset service's own default.
+  registeredKinds: repoStore.registeredKinds,
+});
+
+// WORKBENCH-LOCAL (CL-4231): `@intx/hub-api`'s `createApp` (submodule, not
+// edited) types its `assetService` config field against the UPSTREAM
+// `@intx/hub-sessions`'s `AssetService`, whose `Asset.kind` is the closed
+// five-value `RepoKind`. Our vendored `@workbench/hub-sessions`
+// `AssetService` is structurally identical except `kind` is the widened
+// kind-seam type (`./repo-store/types.ts`), so it is not directly
+// assignable to hub-api's narrower one.
+//
+// Rather than casting the whole service object through `unknown` (which
+// would silence type errors on every field, not just `kind` — e.g. a
+// future required method `createApp` gains at the next pin bump would
+// compile here and fail only at runtime), this adapter is a real object
+// literal typed against the upstream interface. Every method it does NOT
+// override is forwarded untouched and re-checked structurally by
+// TypeScript on every field except `kind`; only the two methods that
+// actually return a `kind` (`createAsset`, `listAgentAssets`) get the
+// single-line `kind` cast the divergence actually requires. If
+// `createApp`'s `AssetService` interface ever grows a method this
+// adapter doesn't forward, this object literal fails to typecheck
+// immediately, unlike a blanket `as unknown as` cast.
+type UpstreamAssetService = NonNullable<
+  Parameters<typeof createApp>[0]["assetService"]
+>;
+type UpstreamAsset = Awaited<ReturnType<UpstreamAssetService["createAsset"]>>;
+type UpstreamRepoKind = UpstreamAsset["kind"];
+
+function narrowToUpstreamKind(kind: string): UpstreamRepoKind {
+  // Runtime values are still one of the five built-ins plus whatever
+  // kind this hub actually registers; hub-api only ever reads `kind`
+  // off an `Asset` (never constructs one), so this narrowing cast is
+  // sound for every value that reaches it today. It documents the
+  // open-seam-vs-closed-consumer boundary the ticket anticipated,
+  // localized to exactly the field that diverges.
+  return kind as UpstreamRepoKind;
+}
+
+const assetServiceForHubApi: UpstreamAssetService = {
+  async createAsset(params) {
+    const asset = await assetService.createAsset(params);
+    return { ...asset, kind: narrowToUpstreamKind(asset.kind) };
+  },
+  populateAsset: (params) => assetService.populateAsset(params),
+  attachAsset: (params) => assetService.attachAsset(params),
+  async listAgentAssets(agentId) {
+    const rows = await assetService.listAgentAssets(agentId);
+    return rows.map((row) => ({
+      ...row,
+      asset: { ...row.asset, kind: narrowToUpstreamKind(row.asset.kind) },
+    }));
+  },
+  readAssetBlob: (params) => assetService.readAssetBlob(params),
+  listAssetBlobs: (params) => assetService.listAssetBlobs(params),
+};
 
 // ─── Hub services ──────────────────────────────────────────────────
 
@@ -547,6 +642,18 @@ function isWorkflowRunBootstrapRace(message: string): boolean {
 // so a connected client is notified the instant any of those write a row —
 // never mail content, only {type:"mailbox", id}.
 const mailboxEventBus = createMailboxEventBus();
+
+// Granola-call workflow hub tools (create_tasks + fanout) need the fanout
+// service; ContextToolEntry cannot supply grantStore/mailboxEventBus, so we
+// inject the fully-wired instance once at boot.
+const granolaCallFanout = createGranolaCallFanout({
+  db,
+  grantStore,
+  rootTenantId,
+  rootTenantDomain: config.rootTenant.domain,
+  mailboxEventBus,
+});
+setGranolaCallToolDeps({ fanout: granolaCallFanout });
 
 // Late-bound: constructed below once sessionService exists. The persist hook
 // and the turn-finalized fan-out both fire only after boot completes, so the
@@ -899,7 +1006,9 @@ const hubApp = createApp({
   sessionService,
   eventCollectors,
   grantStore,
-  assetService,
+  // WORKBENCH-LOCAL (CL-4231): `assetServiceForHubApi` narrows only the
+  // point of actual divergence — see its definition below.
+  assetService: assetServiceForHubApi,
   repoStore: repoStore.repoStore,
   maxTarballBytes: 10 * 1024 * 1024,
   sidecarWsHandler: upgradeWebSocket((_c) => {
@@ -1493,6 +1602,7 @@ v1.route("/", createArtifactsRouter(db, grantStore));
 v1.route("/", createFileParseRouter(db, analyticsSubscriber));
 v1.route("/", createMailAttachmentsRouter(db));
 v1.route("/", createGammaTemplatesRouter(db));
+v1.route("/", createScheduleFieldOptionsRouter(db));
 
 v1.route("/", createApprovalNotificationsRouter(db, approvalsEventBus));
 v1.route("/", createFeedbackRouter(db));
@@ -1569,6 +1679,12 @@ v1.route(
   "/",
   createAdminRouter({ db, grantStore, assetService, rootTenantId }),
 );
+
+// Durable work-unit queue (WQ.2–WQ.6). Bound early so owner routes + product
+// write hooks can enqueue/ops against the same instance the worker drains.
+const workUnitQueue = createWorkUnitQueue(db);
+bindKnowledgeCaptureWorkUnitQueue(workUnitQueue);
+
 v1.route(
   "/",
   createOwnerRouter({
@@ -1584,6 +1700,7 @@ v1.route(
       "voice-input": false,
       "native-approvals": false,
     },
+    workUnitQueue,
   }),
 );
 // Built before the runs router so the run-start/signal handlers and the
@@ -1655,6 +1772,23 @@ const runStarter = createWorkflowRunStarter({
 // the per-trigger secret. Mounted directly on the parent app, outside the v1
 // session-auth wall.
 app.route("/", createWebhookTriggerFireRouter({ db, runStarter }));
+
+// Public provider-webhook receiver (CL-4269): one signed-delivery surface
+// for every registered provider adapter, distinct from the CL-3585 inbox
+// receiver below (which is Linear-only, single global env secret). Each
+// adapter's secret is resolved per request from the owner-set
+// `<provider>-webhook` tool credential (Owner -> Capabilities), not a
+// boot-time env check, so it can be configured/rotated without a redeploy.
+// Adding the next provider (GitHub, Slack, Attio) means registering another
+// adapter here, not another route.
+app.route(
+  "/",
+  createProviderWebhookRouter({
+    db,
+    rootTenantId,
+    registry: createProviderWebhookRegistry([linearWebhookAdapter]),
+  }),
+);
 
 // Public Linear webhook receiver (CL-3585): additive low-latency intake
 // alongside the poller. Mounted only when a signing secret is configured; the
@@ -1846,13 +1980,28 @@ const stopAwaitingSupervisorPrewarm = registerAwaitingSupervisorPrewarm({
   reconciler: workflowReconciler,
   intervalMs: config.awaitingSupervisorPrewarmIntervalMs,
 });
-// CL-3509: fail scheduler-fired runs parked at a gate past the timeout. A
-// scheduled run has no human to answer a gate — its `intake` is auto-delivered —
-// so one still `awaiting` long after its last log advance is wedged and is failed
-// legibly instead of lingering in the Now feed. Interactive runs are untouched.
+// CL-3509 (+ dead-parked-run follow-up): two sweeps on one rail. (1) fail
+// scheduler-fired runs parked at a gate past the timeout — a scheduled run has
+// no human to answer a gate, so one still `awaiting` long after its last log
+// advance is wedged. (2) fail ANY run that is `awaiting` a gate while a
+// sibling step has PERMANENTLY failed (retries exhausted) — `@intx/workflow`'s
+// `areDepsResolved` only checks that a dependency is terminal, so a
+// permanently-failed dependency still lets its dependent gate get scheduled
+// and park; nothing a human supplies to that gate can revive the run, so it
+// is settled immediately, not after a timeout. A step still retrying (`failed`
+// is a re-entrancy marker between attempts, not terminal — see
+// `workflowRunStep.retriesExhausted`) never triggers this, and a run
+// legitimately parked at a gate with no permanently-failed step (interactive
+// or otherwise) is never touched by either sweep.
 const stopStalledScheduledRunReconciler = registerStalledScheduledRunReconciler(
   {
     db,
+    // CL-4289: the owner was mailed when the run parked on a gate; if it still
+    // times out, they must be told it was failed, not left to wonder.
+    mailDeps: {
+      deploymentDomain: config.rootTenant.domain,
+      mailboxEventBus,
+    },
   },
 );
 // CL-2248: fail orphaned in-flight runs FIRST, on the pre-reconcile routable
@@ -1876,7 +2025,7 @@ void workflowReconciler
     });
   });
 
-// Automation scheduler: fire durable scheduled_trigger rows on a
+// Routine scheduler: fire durable scheduled_trigger rows on a
 // daily UTC-hour cadence by calling the run-start service directly (no HTTP
 // self-call). Single-replica assumption — like the disconnect reconciler, N
 // replicas would fire N runs/schedule/day; a DB-backed fire-lock is the
@@ -1904,7 +2053,7 @@ const scheduler = createScheduler({
       "scheduler",
       config.scheduler.enabled,
     ),
-  listSchedules: () => listEnabledSchedules(db, rootTenantId),
+  listSchedules: () => listAllEnabledSchedules(db),
   markFired: (id, dayUtc) => markScheduleFired(db, id, dayUtc),
   recordRunStarted: (args) => recordScheduleRunStarted(db, args),
   startWorkflowRun: async (fire) => {
@@ -1913,9 +2062,16 @@ const scheduler = createScheduler({
     // runStarter.startRun now — the one shared application point every start
     // door funnels through (trigger-payload-enrichment-registry.ts). This
     // closure's only job is forwarding the schedule's real fire-time window
-    // (lastFiredDayUtc/hourUtc) so the registry's heartbeat enricher computes
-    // the real "since yesterday" createdAfter instead of the flat 7-day
-    // fallback every other (non-scheduler) start door gets.
+    // so the registry's heartbeat enricher computes the real "since
+    // yesterday" createdAfter instead of the flat 7-day fallback every other
+    // (non-scheduler) start door gets. Heartbeat is always a daily
+    // (intervalMinutes=1440) cadence, and for that cadence the window index
+    // IS the UTC day index (see scheduler.test.ts), so `lastFiredWindowIndex`
+    // maps directly onto the enricher's day-granularity `lastFiredDayUtc`.
+    // `anchorMinuteUtc` is forwarded at its real minute precision (CL-4278) —
+    // it used to be truncated to `Math.floor(.../60)` here, silently
+    // discarding up to 59 minutes of the member's chosen "starting at" time
+    // and skewing the enricher's since-last-fire lookback by the same amount.
     const result = await runStarter.startRun({
       kind: fire.kind,
       tenantId: fire.tenantId,
@@ -1923,8 +2079,8 @@ const scheduler = createScheduler({
       creatorPrincipalId: fire.creatorPrincipalId,
       source: "scheduler",
       heartbeatFire: {
-        lastFiredDayUtc: fire.lastFiredDayUtc,
-        hourUtc: fire.hourUtc,
+        lastFiredDayUtc: fire.lastFiredWindowIndex,
+        anchorMinuteUtc: fire.anchorMinuteUtc,
       },
     });
     if (!result.ok) {
@@ -1995,43 +2151,23 @@ const listInboxMembers = async () => {
   }));
 };
 
-const granolaFanout = createGranolaCallFanout({
+const workUnitWorker = createWorkUnitWorker({
   db,
-  grantStore,
-  rootTenantId,
-  rootTenantDomain: config.rootTenant.domain,
-  mailboxEventBus,
+  queue: workUnitQueue,
+  scanAgentAutoPickup: true,
+  agentTaskTurnRunner: createDefaultAgentTaskTurnRunner(db),
 });
-const granolaPipeline = createGranolaCallPipeline({
-  db,
-  rootTenantDomain: config.rootTenant.domain,
-  resolveInferenceSource: async (tenantId) => {
-    const def = await resolveMyraDefinition(db, tenantId);
-    if (!def) return null;
-    const res = await resolveInstanceSourcesFromDefinition(
-      db,
-      tenantId,
-      def,
-      null,
-    );
-    return res.ok ? (res.sources[0] ?? null) : null;
-  },
-  fanout: granolaFanout,
-});
-const granolaCallJobQueue = createGranolaCallJobQueue(db);
-const granolaCallJobRunner = createGranolaCallJobRunner({
-  db,
-  queue: granolaCallJobQueue,
-  pipeline: granolaPipeline,
-});
-granolaCallJobRunner.start();
+workUnitWorker.start();
 
 const inboxIntake = createInboxIntake({
   db,
   grantStore,
   registry: [
     ...INBOX_SOURCE_REGISTRY,
-    createGranolaWorkspaceInboxSource({ queue: granolaCallJobQueue }),
+    createGranolaWorkspaceInboxSource({
+      db,
+      startRun: (args) => runStarter.startRun(args),
+    }),
   ],
   listMembers: listInboxMembers,
   mailboxEventBus,
@@ -2077,12 +2213,18 @@ void seedHeartbeatSchedules({
   hourUtc: config.scheduler.heartbeatHourUtc,
   listMyraTargets,
   resolveUserIdentity,
+  // Heartbeat stays a daily-at-hour cadence; the DAILY_INTERVAL_MINUTES
+  // recurrence is the schedule model's general representation of that.
   ensureSchedule: (args) =>
     ensureOwnerSchedule(db, {
       tenantId: rootTenantId,
       ownerPrincipalId: args.ownerPrincipalId,
       kind: args.kind,
-      hourUtc: args.hourUtc,
+      name: DEFAULT_HEARTBEAT_SCHEDULE_NAME,
+      recurrence: {
+        intervalMinutes: DAILY_INTERVAL_MINUTES,
+        anchorMinuteUtc: args.hourUtc * 60,
+      },
       payload: args.payload,
     }),
 }).catch((err) => {
@@ -2210,6 +2352,7 @@ app.route(
     sidecarRouter,
     analytics: analyticsSubscriber,
     repoStore: repoStore.repoStore,
+    assetService,
     buildToolDefinitions,
     // Workflow-run tools (CL-2678) share the /workflow-exec routes' pre-bound
     // start/resume wiring.
@@ -2276,6 +2419,7 @@ for (const signal of ["SIGTERM", "SIGINT"]) {
       stopWedgeSweepReconciler();
       stopAwaitingSupervisorPrewarm();
       stopStalledScheduledRunReconciler();
+      workUnitWorker.stop();
       log.info("Closing sidecar connections", {
         count: sidecarConnections.size(),
       });

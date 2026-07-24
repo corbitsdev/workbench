@@ -1,7 +1,7 @@
 import { Hono } from "hono";
 import { type } from "arktype";
 import { describeRoute, resolver } from "hono-openapi";
-import type { AssetService } from "@intx/hub-sessions";
+import type { AssetService } from "@workbench/hub-sessions";
 import type { HubDb } from "../db";
 import { getRequestedUserContext } from "../lib/user-context";
 import {

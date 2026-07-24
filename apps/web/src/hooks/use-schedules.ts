@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type {
   CreateScheduledTriggerBody,
+  ScheduleRecurrence,
   ScheduledTrigger,
 } from "@workbench/shared";
 import {
@@ -12,7 +13,7 @@ import {
 
 const SCHEDULES_KEY = ["me-schedules"] as const;
 
-// The caller's own automation schedules. Server-derived identity means these are
+// The caller's own routine schedules. Server-derived identity means these are
 // never tenant-keyed — they belong to the authenticated member.
 export function useMeSchedules(options?: { enabled?: boolean }) {
   return useQuery<ScheduledTrigger[]>({
@@ -32,10 +33,16 @@ export function useCreateSchedule() {
   });
 }
 
-type UpdateVars = { id: string; enabled?: boolean; hourUtc?: number };
+type UpdateVars = {
+  id: string;
+  enabled?: boolean;
+  recurrence?: ScheduleRecurrence;
+  payload?: Record<string, unknown>;
+  name?: string;
+};
 
-// Toggling enablement (or moving the hour) applies optimistically so the switch
-// responds instantly, and rolls the cache back to its prior value on failure.
+// Toggling enablement (or moving the hour / payload) applies optimistically so
+// the switch responds instantly, and rolls the cache back on failure.
 export function useUpdateSchedule() {
   const queryClient = useQueryClient();
   return useMutation<
@@ -45,7 +52,7 @@ export function useUpdateSchedule() {
     { previous: ScheduledTrigger[] | undefined }
   >({
     mutationFn: ({ id, ...patch }) => updateMeSchedule(id, patch),
-    onMutate: async ({ id, enabled, hourUtc }) => {
+    onMutate: async ({ id, enabled, recurrence, payload, name }) => {
       await queryClient.cancelQueries({ queryKey: SCHEDULES_KEY });
       const previous =
         queryClient.getQueryData<ScheduledTrigger[]>(SCHEDULES_KEY);
@@ -57,7 +64,9 @@ export function useUpdateSchedule() {
               ? {
                   ...s,
                   ...(enabled !== undefined ? { enabled } : {}),
-                  ...(hourUtc !== undefined ? { hourUtc } : {}),
+                  ...(recurrence !== undefined ? { recurrence } : {}),
+                  ...(payload !== undefined ? { triggerPayload: payload } : {}),
+                  ...(name !== undefined ? { name } : {}),
                 }
               : s,
           ),

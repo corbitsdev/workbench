@@ -3,25 +3,35 @@ import { Hono } from "hono";
 import { describeRoute, resolver } from "hono-openapi";
 import {
   CreateScheduledTriggerBodySchema,
+  isRecurrenceAllowedForKind,
+  isRoutineEligibleKind,
   ScheduledTriggerListResponseSchema,
   ScheduledTriggerSchema,
   UpdateScheduledTriggerBodySchema,
+  scheduleScopesForKind,
 } from "@workbench/shared";
 import { resolveCallerMember } from "../lib/tenant-provisioning";
 import { isRunnableKind } from "../lib/workflow-run-gate";
-import { loadWorkflowGateInfos } from "../lib/workflow-catalog";
+import {
+  loadWorkflowEntryTriggerFields,
+  loadWorkflowGateInfos,
+  loadWorkflowIntakeFields,
+} from "../lib/workflow-catalog";
 import { isKindStructurallyAttachable } from "../lib/workflow-gate-info";
 import { INTAKE_SIGNAL_NAME } from "../lib/scheduled-intake";
+import { ENRICHED_TRIGGER_KINDS } from "../workflow-executor/trigger-payload-enrichment-registry";
 import { validateResumePayload } from "../workflow-executor/resume-payload-registry";
 import { UuidParam } from "../lib/uuid";
 import {
   createOwnerSchedule,
   deleteOwnerSchedule,
+  getOwnerSchedule,
   listOwnerSchedules,
   toApiSchedule,
   toApiSchedulesForOwner,
   updateOwnerSchedule,
 } from "../lib/scheduled-triggers";
+
 import { ErrorResponse, requestBodySchema } from "../lib/openapi";
 import { clampLimit, decodeCursor, MAX_PAGE_LIMIT } from "../lib/keyset";
 import type { HubDb } from "../db";
@@ -51,9 +61,10 @@ export type ResolveUserIdentity = (
   memberPrincipalId: string,
 ) => Promise<{ userAddress: string; userRefId: string }>;
 
-// Owner-scoped CRUD over the caller's automation triggers. Every read and write
-// is scoped to the caller's own member principal, so a member can never see or
-// mutate another member's schedule. Unblocks the scheduling UI.
+// Owner-scoped CRUD over the caller's routine triggers. List includes the
+// caller's personal schedules plus tenant-scoped (Everyone) schedules in their
+// tenant (CL-4108). Mutates remain owner-principal-scoped so a member can never
+// rewrite another member's schedule.
 export function createMeSchedulesRouter(
   db: HubDb,
   resolveUserIdentity: ResolveUserIdentity,
@@ -64,7 +75,7 @@ export function createMeSchedulesRouter(
     "/me/schedules",
     describeRoute({
       tags: ["Me"],
-      summary: "List the caller's automation schedules",
+      summary: "List the caller's routine schedules",
       parameters: [
         {
           name: "limit",
@@ -138,7 +149,7 @@ export function createMeSchedulesRouter(
     "/me/schedules",
     describeRoute({
       tags: ["Me"],
-      summary: "Create an automation schedule for the caller",
+      summary: "Create a routine schedule for the caller",
       requestBody: {
         content: {
           "application/json": {
@@ -162,7 +173,8 @@ export function createMeSchedulesRouter(
           content: { "application/json": { schema: resolver(ErrorResponse) } },
         },
         409: {
-          description: "Caller already has a schedule for this workflow kind",
+          description:
+            "Caller already has a schedule with this name for this workflow kind",
           content: { "application/json": { schema: resolver(ErrorResponse) } },
         },
       },
@@ -184,6 +196,18 @@ export function createMeSchedulesRouter(
         return c.json({ error: `unknown workflow kind "${body.kind}"` }, 400);
       }
 
+      // Heartbeat's fire-time createdAfter math assumes a daily cadence
+      // (see isRecurrenceAllowedForKind) — reject any other interval before
+      // it ever reaches storage.
+      if (!isRecurrenceAllowedForKind(body.kind, body.recurrence)) {
+        return c.json(
+          {
+            error: `workflow "${body.kind}" only supports a daily schedule`,
+          },
+          400,
+        );
+      }
+
       // Attach gate (CL-3508/CL-3509/CL-3528): schedules fire unattended. Kinds
       // with only `intake` (auto-delivered from stored payload), no gates, or
       // multi-gate shapes opted in via `allowsScheduledPostIntakeDrive` / allowlist
@@ -203,13 +227,53 @@ export function createMeSchedulesRouter(
         );
       }
 
+      // Derived routine eligibility (CL-4204): structural attachability is
+      // necessary but not sufficient — the entry step's required trigger
+      // fields must also be satisfiable unattended (declared intake field or
+      // a registered trigger-payload enricher for the kind).
+      const [entryTriggerFieldsByKind, intakeFieldsByKind] = await Promise.all([
+        loadWorkflowEntryTriggerFields(),
+        loadWorkflowIntakeFields(),
+      ]);
+      const intakeFieldNames = new Set(
+        (intakeFieldsByKind.get(body.kind) ?? []).map((f) => f.name),
+      );
+      if (
+        !isRoutineEligibleKind(
+          entryTriggerFieldsByKind.get(body.kind) ?? [],
+          intakeFieldNames,
+          ENRICHED_TRIGGER_KINDS.has(body.kind),
+        )
+      ) {
+        return c.json(
+          {
+            error: `workflow "${body.kind}" is not available for Routines schedules`,
+          },
+          400,
+        );
+      }
+
+      const scopePolicy = scheduleScopesForKind(body.kind, true);
+      const scope = body.scope ?? scopePolicy.defaultScope;
+      if (!scopePolicy.allowedScopes.includes(scope)) {
+        return c.json(
+          {
+            error: `workflow "${body.kind}" does not allow schedule scope "${scope}"`,
+          },
+          400,
+        );
+      }
+
       const clientPayload = Object.fromEntries(
         Object.entries(body.payload ?? {}).filter(
           ([key]) => !RESERVED_PAYLOAD_KEYS.has(key),
         ),
       );
 
-      if (gateInfo.requiresIntake) {
+      // Validate schedule trigger payload when a schema is registered for the
+      // kind's intake signal — not only when requiresIntake. Gate-free workflows
+      // (e.g. prospect-engine) still need Slack + Engine list ids at attach time.
+      {
         const check = validateResumePayload(
           body.kind,
           INTAKE_SIGNAL_NAME,
@@ -217,7 +281,9 @@ export function createMeSchedulesRouter(
         );
         if (!check.ok) {
           return c.json(
-            { error: `invalid intake for "${body.kind}": ${check.error}` },
+            {
+              error: `invalid schedule payload for "${body.kind}": ${check.error}`,
+            },
             400,
           );
         }
@@ -243,14 +309,21 @@ export function createMeSchedulesRouter(
           tenantId: member.tenantId,
           ownerPrincipalId: member.principalId,
           kind: body.kind,
-          hourUtc: body.hourUtc,
+          recurrence: body.recurrence,
           payload,
+          scope,
+          ...(body.name !== undefined ? { name: body.name } : {}),
         });
         return c.json(toApiSchedule(created), 201);
       } catch (err) {
         if (isUniqueViolation(err)) {
           return c.json(
-            { error: "You already have a schedule for this workflow." },
+            {
+              error:
+                scope === "tenant"
+                  ? "This workspace already has an Everyone schedule with this name for this workflow."
+                  : "You already have a schedule with this name for this workflow.",
+            },
             409,
           );
         }
@@ -290,6 +363,11 @@ export function createMeSchedulesRouter(
           description: "Caller has no provisioned membership yet",
           content: { "application/json": { schema: resolver(ErrorResponse) } },
         },
+        409: {
+          description:
+            "Caller already has a different schedule with this name for this workflow kind",
+          content: { "application/json": { schema: resolver(ErrorResponse) } },
+        },
       },
     }),
     async (c) => {
@@ -303,7 +381,12 @@ export function createMeSchedulesRouter(
       if (body instanceof type.errors) {
         return c.json({ error: body.summary }, 400);
       }
-      if (body.enabled === undefined && body.hourUtc === undefined) {
+      if (
+        body.enabled === undefined &&
+        body.recurrence === undefined &&
+        body.payload === undefined &&
+        body.name === undefined
+      ) {
         return c.json({ error: "no fields to update" }, 400);
       }
 
@@ -312,15 +395,112 @@ export function createMeSchedulesRouter(
         return c.json({ error: "No provisioned membership" }, 403);
       }
 
-      const updated = await updateOwnerSchedule(db, {
-        tenantId: member.tenantId,
-        ownerPrincipalId: member.principalId,
-        id,
-        ...(body.enabled !== undefined ? { enabled: body.enabled } : {}),
-        ...(body.hourUtc !== undefined ? { hourUtc: body.hourUtc } : {}),
-      });
-      if (!updated) return c.json({ error: "schedule not found" }, 404);
-      return c.json(toApiSchedule(updated));
+      // Fetched once and reused for both the recurrence guard and the payload
+      // fencing below — both need to know the schedule's kind/current state.
+      let existing: Awaited<ReturnType<typeof getOwnerSchedule>> | undefined;
+      if (
+        body.recurrence !== undefined ||
+        body.payload !== undefined ||
+        body.name !== undefined
+      ) {
+        existing = await getOwnerSchedule(db, {
+          tenantId: member.tenantId,
+          ownerPrincipalId: member.principalId,
+          id,
+        });
+        if (!existing) return c.json({ error: "schedule not found" }, 404);
+      }
+
+      if (
+        body.recurrence !== undefined &&
+        existing &&
+        !isRecurrenceAllowedForKind(existing.workflowKind, body.recurrence)
+      ) {
+        return c.json(
+          {
+            error: `workflow "${existing.workflowKind}" only supports a daily schedule`,
+          },
+          400,
+        );
+      }
+
+      let triggerPayload: Record<string, unknown> | undefined;
+      if (body.payload !== undefined && existing) {
+        // Same identity fencing as create: strip reserved keys, re-inject the
+        // caller's address, validate intake when the kind requires it (CL-3861).
+        const clientPayload = Object.fromEntries(
+          Object.entries(body.payload).filter(
+            ([key]) => !RESERVED_PAYLOAD_KEYS.has(key),
+          ),
+        );
+        const gateInfos = await loadWorkflowGateInfos();
+        const gateInfo = gateInfos.get(existing.workflowKind);
+        if (gateInfo?.requiresIntake) {
+          const check = validateResumePayload(
+            existing.workflowKind,
+            INTAKE_SIGNAL_NAME,
+            clientPayload,
+          );
+          if (!check.ok) {
+            return c.json(
+              {
+                error: `invalid intake for "${existing.workflowKind}": ${check.error}`,
+              },
+              400,
+            );
+          }
+        }
+        const identity = await resolveUserIdentity(member.principalId);
+        // Merge form fields over the stored payload so server-owned / non-form
+        // keys (e.g. heartbeat `reason`) survive hour-only or partial updates.
+        const previous = Object.fromEntries(
+          Object.entries(existing.triggerPayload ?? {}).filter(
+            ([key]) => !RESERVED_PAYLOAD_KEYS.has(key),
+          ),
+        );
+        triggerPayload = {
+          ...previous,
+          ...clientPayload,
+          userAddress: identity.userAddress,
+          userRefId: identity.userRefId,
+        };
+        const payloadBytes = new TextEncoder().encode(
+          JSON.stringify(triggerPayload),
+        ).byteLength;
+        if (payloadBytes > MAX_PAYLOAD_BYTES) {
+          return c.json(
+            { error: `payload exceeds ${MAX_PAYLOAD_BYTES} bytes` },
+            400,
+          );
+        }
+      }
+
+      try {
+        const updated = await updateOwnerSchedule(db, {
+          tenantId: member.tenantId,
+          ownerPrincipalId: member.principalId,
+          id,
+          ...(body.enabled !== undefined ? { enabled: body.enabled } : {}),
+          ...(body.recurrence !== undefined
+            ? { recurrence: body.recurrence }
+            : {}),
+          ...(triggerPayload !== undefined ? { triggerPayload } : {}),
+          ...(body.name !== undefined ? { name: body.name } : {}),
+        });
+        if (!updated) return c.json({ error: "schedule not found" }, 404);
+        return c.json(toApiSchedule(updated));
+      } catch (err) {
+        if (isUniqueViolation(err)) {
+          return c.json(
+            {
+              error:
+                "You already have a schedule with this name for this workflow.",
+            },
+            409,
+          );
+        }
+        throw err;
+      }
     },
   );
 

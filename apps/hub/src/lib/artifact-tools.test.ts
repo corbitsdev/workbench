@@ -269,7 +269,6 @@ describe("artifact_link_file handler", () => {
 
     const inserted = artifactInsertValues[0];
     expect(inserted?.content).toBe("summary");
-    expect(inserted?.status).toBe("draft");
     expect(inserted?.version).toBe(1);
     expect(inserted?.source).toEqual({
       origin: "agent",
@@ -404,7 +403,6 @@ describe("artifact_read handler", () => {
           id: "art_1",
           title: "Current",
           kind: "note",
-          status: "draft",
           version: 3,
           content: "latest body",
         },
@@ -418,7 +416,6 @@ describe("artifact_read handler", () => {
       artifactId: "art_1",
       title: "Current",
       kind: "note",
-      status: "draft",
       version: 3,
       content: "latest body",
     });
@@ -431,7 +428,6 @@ describe("artifact_read handler", () => {
           id: "art_1",
           title: "Current",
           kind: "note",
-          status: "draft",
           version: 3,
         },
       ],
@@ -447,7 +443,6 @@ describe("artifact_read handler", () => {
       artifactId: "art_1",
       title: "First",
       kind: "note",
-      status: "draft",
       version: 1,
       content: "original body",
     });
@@ -468,7 +463,6 @@ describe("artifact_read handler", () => {
           id: "art_1",
           title: "Current",
           kind: "note",
-          status: "draft",
           version: 3,
         },
       ],
@@ -493,7 +487,6 @@ describe("artifact_read handler", () => {
           id: "art_cross",
           title: "Cross-tenant artifact",
           kind: "document",
-          status: "draft",
           version: 1,
           content: "body",
         },
@@ -533,7 +526,6 @@ describe("artifact_read handler", () => {
           id: "art_small",
           title: "Small",
           kind: "note",
-          status: "draft",
           version: 1,
           content: body,
         },
@@ -548,7 +540,6 @@ describe("artifact_read handler", () => {
       artifactId: "art_small",
       title: "Small",
       kind: "note",
-      status: "draft",
       version: 1,
       content: body,
     });
@@ -564,7 +555,6 @@ describe("artifact_read handler", () => {
           id: "art_big",
           title: "Big",
           kind: "note",
-          status: "draft",
           version: 1,
           content: body,
         },
@@ -591,7 +581,6 @@ describe("artifact_read_chunk handler", () => {
       id: "art_big",
       title: "Big",
       kind: "note",
-      status: "draft",
       version: 1,
       content,
     },
@@ -697,7 +686,6 @@ describe("artifact_read_chunk handler", () => {
           id: "art_site",
           title: "Site",
           kind: "web_site",
-          status: "draft",
           version: 1,
           content: siteJson,
         },
@@ -718,7 +706,6 @@ describe("artifact_read_chunk envelope with sibling params", () => {
         id: "art_1",
         title: "N",
         kind: "note",
-        status: "draft",
         version: 1,
         content: "0123456789",
       },
@@ -753,7 +740,6 @@ describe("artifact_write handler", () => {
             id: "art_1",
             title: "Old",
             kind: "note",
-            status: "draft",
             version: 2,
             content: "old",
           },
@@ -785,7 +771,6 @@ describe("artifact_write handler", () => {
           id: "art_1",
           title: "Old",
           kind: "note",
-          status: "draft",
           version: 1,
           content: "hidden",
           archivedAt: new Date("2026-06-01T00:00:00.000Z"),
@@ -811,7 +796,6 @@ describe("artifact_write handler", () => {
           id: "art_1",
           title: "Old",
           kind: "note",
-          status: "draft",
           version: 1,
           content: "keep",
         },
@@ -832,7 +816,6 @@ describe("artifact_write handler", () => {
           id: "art_1",
           title: "Old",
           kind: "note",
-          status: "draft",
           version: 2,
           content: "old",
         },
@@ -867,7 +850,6 @@ describe("artifact_write handler", () => {
           id: "art_1",
           title: "Old",
           kind: "note",
-          status: "draft",
           version: 1,
           content: "x",
         },
@@ -893,7 +875,6 @@ describe("artifact_write handler", () => {
           id: "art_1",
           title: "Old",
           kind: "note",
-          status: "draft",
           version: 1,
           content: "keep",
         },
@@ -925,7 +906,6 @@ describe("artifact_list handler", () => {
         id: "art_2",
         title: "B",
         kind: "note",
-        status: "draft",
         version: 1,
         updatedAt: "t2",
       },
@@ -933,7 +913,6 @@ describe("artifact_list handler", () => {
         id: "art_1",
         title: "A",
         kind: "doc",
-        status: "approved",
         version: 4,
         updatedAt: "t1",
       },
@@ -958,16 +937,6 @@ describe("artifact_list handler", () => {
     const notFinite = makeQueryContext([[]]);
     await handlerFor(notFinite.context, "artifact_list")({ limit: Number.NaN });
     expect(notFinite.calls.limitArg).toBe(20);
-  });
-
-  it("accepts a valid status filter and rejects an unknown one", async () => {
-    const ok = makeQueryContext([[]]);
-    await handlerFor(ok.context, "artifact_list")({ status: "approved" });
-
-    const bad = makeQueryContext([[]]);
-    await expect(
-      handlerFor(bad.context, "artifact_list")({ status: "archived" }),
-    ).rejects.toThrow(/status must be one of/);
   });
 
   it("filters out archived artifacts (CL-3156)", async () => {
@@ -1030,7 +999,6 @@ describe("artifact_link_presentation handler", () => {
             id: "art_1",
             kind: "presentation",
             title: "Old Deck",
-            status: "draft",
             version: 1,
             content: "https://gamma.app/docs/old",
           },
@@ -1063,7 +1031,6 @@ describe("artifact_link_presentation handler", () => {
           id: "art_1",
           kind: "document",
           title: "A Doc",
-          status: "draft",
           version: 1,
           content: "some text",
         },
@@ -1184,7 +1151,6 @@ describe("artifact_link_gamma_presentation handler", () => {
           id: "art_1",
           kind: "gamma_presentation",
           title: "Old",
-          status: "draft",
           version: 1,
           content: "{}",
         },
@@ -1215,7 +1181,6 @@ describe("artifact_link_gamma_presentation handler", () => {
           id: "art_1",
           kind: "presentation",
           title: "Legacy",
-          status: "draft",
           version: 1,
           content: "https://gamma.app/docs/old",
         },
@@ -1349,7 +1314,6 @@ describe("artifact_link_gamma_presentation handler", () => {
           id: "art_1",
           kind: "gamma_presentation",
           title: "Old",
-          status: "draft",
           version: 1,
           content: "{}",
           source: {
@@ -1434,7 +1398,6 @@ describe("artifact_link_gamma_presentation handler", () => {
           id: "art_1",
           kind: "gamma_presentation",
           title: "Old",
-          status: "draft",
           version: 1,
           content: "{}",
           source: {
@@ -1472,7 +1435,6 @@ describe("artifact_link_gamma_presentation handler", () => {
           id: "art_1",
           kind: "gamma_presentation",
           title: "Old",
-          status: "draft",
           version: 1,
           content: "{}",
           source: {
@@ -1501,7 +1463,6 @@ describe("artifact_link_gamma_presentation handler", () => {
           id: "art_1",
           kind: "gamma_presentation",
           title: "Old",
-          status: "draft",
           version: 1,
           content: "{}",
           source: { origin: "agent", type: "inline" },

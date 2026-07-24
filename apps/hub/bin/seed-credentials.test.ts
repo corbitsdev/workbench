@@ -164,6 +164,45 @@ describe("seed-credentials buildEntries", () => {
     expect(entries.find((e) => e.providerName === "vercel")).toBeUndefined();
   });
 
+  it("includes corbits-knowledge-engine entry with token baseURL when both KNOWLEDGE_ENGINE_TOKEN and KNOWLEDGE_ENGINE_URL are set", () => {
+    process.env["KNOWLEDGE_ENGINE_TOKEN"] = "ke_test123";
+    process.env["KNOWLEDGE_ENGINE_URL"] = "https://knowledge-engine.internal";
+
+    const entries = buildEntries();
+
+    const knowledgeEngine = entries.find(
+      (e) => e.providerName === "corbits-knowledge-engine",
+    );
+    expect(knowledgeEngine).toBeDefined();
+    expect(knowledgeEngine?.secret).toBe("ke_test123");
+    expect(knowledgeEngine?.providerPlugin).toBe("corbits-knowledge-engine");
+    expect(knowledgeEngine?.kind).toBe("tool");
+    expect(knowledgeEngine?.metadata?.["baseURL"]).toBe(
+      "https://knowledge-engine.internal",
+    );
+  });
+
+  it("omits corbits-knowledge-engine entry when KNOWLEDGE_ENGINE_TOKEN is not set", () => {
+    delete process.env["KNOWLEDGE_ENGINE_TOKEN"];
+
+    const entries = buildEntries();
+
+    expect(
+      entries.find((e) => e.providerName === "corbits-knowledge-engine"),
+    ).toBeUndefined();
+  });
+
+  it("omits corbits-knowledge-engine entry when KNOWLEDGE_ENGINE_TOKEN is set but KNOWLEDGE_ENGINE_URL is missing", () => {
+    process.env["KNOWLEDGE_ENGINE_TOKEN"] = "ke_test123";
+    delete process.env["KNOWLEDGE_ENGINE_URL"];
+
+    const entries = buildEntries();
+
+    expect(
+      entries.find((e) => e.providerName === "corbits-knowledge-engine"),
+    ).toBeUndefined();
+  });
+
   it("includes anthropic provider metadata when ANTHROPIC_API_KEY is set", () => {
     process.env["ANTHROPIC_API_KEY"] = "sk-ant-test123";
 
@@ -446,6 +485,8 @@ describe("seed-credentials buildEntries", () => {
     process.env["GRANOLA_API_KEY"] = "k";
     process.env["EXA_API_KEY"] = "k";
     process.env["FIRECRAWL_API_KEY"] = "k";
+    process.env["KNOWLEDGE_ENGINE_TOKEN"] = "k";
+    process.env["KNOWLEDGE_ENGINE_URL"] = "https://knowledge-engine.internal";
     process.env["GAMMA_API_KEY"] = "k";
     process.env["GITHUB_API_KEY"] = "k";
     process.env["LINEAR_API_KEY"] = "k";

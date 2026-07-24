@@ -45,6 +45,9 @@ type PutCall = { method: string; body: unknown };
 const EMPTY_PREFERENCES = {
   chat: null,
   triage: null,
+  instructionsGlobal: null,
+  instructionsChat: null,
+  instructionsTriage: null,
   personality: null,
   emojiUse: null,
   uiType: null,
@@ -55,6 +58,13 @@ const EMPTY_PREFERENCES = {
   skillUsageChat: null,
   skillUsageTriage: null,
   pinnedSkillIds: [],
+  disabledCatalogPackages: [],
+  disabledToolNames: [],
+  toolCatalog: [],
+  creativeChat: null,
+  thinkingChat: null,
+  creativeTriage: null,
+  thinkingTriage: null,
 };
 
 let preferences: Record<string, string | null | string[]>;
@@ -130,7 +140,7 @@ describe("MyraStylePanel", () => {
     );
     expect(document.body.textContent).toContain("Artifact usage");
     expect(document.body.textContent).toContain("Chat");
-    expect(document.body.textContent).toContain("Inbox automation");
+    expect(document.body.textContent).toContain("Inbox routine");
     expect(document.querySelectorAll('[role="radiogroup"]').length).toBe(3);
   });
 
@@ -229,7 +239,7 @@ describe("MyraStylePanel", () => {
     expect(errors.length).toBe(1);
     const subGroup = errors[0]?.parentElement;
     expect(subGroup?.textContent).toContain("Chat");
-    expect(subGroup?.textContent).not.toContain("Inbox automation");
+    expect(subGroup?.textContent).not.toContain("Inbox routine");
   });
 
   it("clears a surface's error after that field next saves successfully", async () => {

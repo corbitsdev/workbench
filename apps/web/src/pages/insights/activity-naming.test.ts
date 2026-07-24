@@ -94,6 +94,18 @@ describe("describeActivityEntry", () => {
     expect(d.headline).toBe("Ran Granola search");
   });
 
+  test("compaction reads as a context boundary with before→after turns", () => {
+    const d = describeActivityEntry(
+      entry({
+        kind: "compaction",
+        sourceTable: "analytics_event",
+        summary: "20→5",
+      }),
+    );
+    expect(d.headline).toBe("Context compacted");
+    expect(d.detail).toBe("20 → 5 turns");
+  });
+
   test("other kinds keep their label and raw summary", () => {
     const d = describeActivityEntry(
       entry({

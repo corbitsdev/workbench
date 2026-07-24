@@ -10,9 +10,13 @@ import { BLUESKY_HUB_TOOLS } from "@workbench/tools-bluesky";
 import { EXA_HUB_TOOLS } from "@workbench/tools-exa";
 import { LINEAR_HUB_TOOLS } from "@workbench/tools-linear";
 import { NOTION_HUB_TOOLS } from "@workbench/tools-notion";
+import { KNOWLEDGE_ENGINE_HUB_TOOLS } from "@workbench/tools-corbits-knowledge-engine";
 import { FIRECRAWL_HUB_TOOLS } from "@workbench/tools-firecrawl";
 import { GAMMA_HUB_TOOLS } from "@workbench/tools-gamma";
-import { GRANOLA_HUB_TOOLS } from "@workbench/tools-granola";
+import {
+  GRANOLA_HUB_TOOLS,
+  GRANOLA_WORKFLOW_HUB_TOOLS,
+} from "@workbench/tools-granola";
 import { HACKERNEWS_HUB_TOOLS } from "@workbench/tools-hackernews";
 import { GITHUB_HUB_TOOLS } from "@workbench/tools-github";
 import { POLYMARKET_HUB_TOOLS } from "@workbench/tools-polymarket";
@@ -36,14 +40,17 @@ import { SKILLS_HUB_TOOLS } from "../tools/list-skills";
 import { GAMMA_TEMPLATES_HUB_TOOLS } from "../tools/gamma-templates";
 import { AB_COMPARE_HUB_TOOLS } from "../tools/ab-compare-tools";
 import { LAST30DAYS_CORE_HUB_TOOLS } from "../tools/last30days-core-tools";
+import { PROSPECT_ENGINE_HUB_TOOLS } from "../tools/prospect-engine-tools";
 import { TASK_HUB_TOOLS } from "../tools/task-tools";
 import { VERCEL_DEPLOY_ARTIFACT_HUB_TOOLS } from "../tools/vercel-deploy-artifact";
+import { GRANOLA_CALL_HUB_TOOLS } from "../tools/granola-call-tools";
 import type {
   SessionService,
   EventCollectorRegistry,
   SidecarRouter,
   RepoStore,
-} from "@intx/hub-sessions";
+  AssetService,
+} from "@workbench/hub-sessions";
 import type { CryptoProvider } from "@intx/types/runtime";
 import type {
   EnsureDeploymentRoutableFn,
@@ -68,12 +75,14 @@ export const KNOWN_TOOLS: Record<string, ToolEntry> = {
   ...FIRECRAWL_HUB_TOOLS,
   ...LINEAR_HUB_TOOLS,
   ...NOTION_HUB_TOOLS,
+  ...KNOWLEDGE_ENGINE_HUB_TOOLS,
   // GAMMA_HUB_TOOLS carries only the credential tools that call the Gamma API;
   // gamma_list_templates executes via HUB_BACKED_TOOLS and is listed here (like
   // every other hub-backed tool) so the Tools gallery and search still show it.
   ...GAMMA_HUB_TOOLS,
   ...GAMMA_TEMPLATES_HUB_TOOLS,
   ...GRANOLA_HUB_TOOLS,
+  ...GRANOLA_WORKFLOW_HUB_TOOLS,
   ...HACKERNEWS_HUB_TOOLS,
   ...GITHUB_HUB_TOOLS,
   ...POLYMARKET_HUB_TOOLS,
@@ -87,6 +96,7 @@ export const KNOWN_TOOLS: Record<string, ToolEntry> = {
   ...YOUTUBE_HUB_TOOLS,
   ...AB_COMPARE_HUB_TOOLS,
   ...LAST30DAYS_CORE_HUB_TOOLS,
+  ...PROSPECT_ENGINE_HUB_TOOLS,
   // Hub-backed (permanent; need hub db/services)
   ...ARTIFACT_HUB_TOOLS,
   ...FILEPARSER_HUB_TOOLS,
@@ -101,6 +111,7 @@ export const KNOWN_TOOLS: Record<string, ToolEntry> = {
   ...WRITE_ARTIFACT_HUB_TOOLS,
   ...WORKFLOWS_HUB_TOOLS,
   ...TASK_HUB_TOOLS,
+  ...GRANOLA_CALL_HUB_TOOLS,
 };
 
 export type CredentialToolEntry = {
@@ -126,6 +137,7 @@ export type ContextToolEntry = {
     // CL-2801) so its tokens land in analytics_event attributed to the caller.
     analytics?: AnalyticsSubscriber;
     repoStore?: RepoStore;
+    assetService?: AssetService;
     buildToolDefinitions?: (names: string[]) => ToolDefinition[];
     // Workflow-exec wiring for the workflow-run tools (CL-2678); pre-bound in
     // index.ts alongside the /workflow-exec routes so both rails share the

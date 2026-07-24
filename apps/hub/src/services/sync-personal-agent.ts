@@ -1,7 +1,7 @@
 import { and, eq } from "drizzle-orm";
 import { schema as intxSchema } from "@intx/db";
 import type { GrantStore } from "@intx/types/authz";
-import type { SidecarRouter } from "@intx/hub-sessions";
+import type { SidecarRouter } from "@workbench/hub-sessions";
 import { getLogger } from "@intx/log";
 import { schema, type HubDb } from "../db";
 import {

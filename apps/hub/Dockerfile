@@ -26,6 +26,7 @@ COPY packages/analytics/package.json packages/analytics/
 COPY packages/pricing/package.json packages/pricing/
 COPY packages/event-collector/package.json packages/event-collector/
 COPY packages/hub-agent/package.json packages/hub-agent/
+COPY packages/hub-sessions/package.json packages/hub-sessions/
 COPY packages/inference/package.json packages/inference/
 COPY packages/storage-isogit/package.json packages/storage-isogit/
 COPY packages/last30days-core/package.json packages/last30days-core/
@@ -44,6 +45,7 @@ COPY packages/tools-dispatch/package.json packages/tools-dispatch/
 COPY packages/tools-exa/package.json packages/tools-exa/
 COPY packages/tools-fileparser/package.json packages/tools-fileparser/
 COPY packages/tools-firecrawl/package.json packages/tools-firecrawl/
+COPY packages/tools-corbits-knowledge-engine/package.json packages/tools-corbits-knowledge-engine/
 COPY packages/tools-gamma/package.json packages/tools-gamma/
 COPY packages/tools-linear/package.json packages/tools-linear/
 COPY packages/tools-notion/package.json packages/tools-notion/
@@ -56,6 +58,7 @@ COPY packages/tools-github/package.json packages/tools-github/
 COPY packages/tools-granola/package.json packages/tools-granola/
 COPY packages/tools-hackernews/package.json packages/tools-hackernews/
 COPY packages/tools-last30days/package.json packages/tools-last30days/
+COPY packages/tools-prospect-engine/package.json packages/tools-prospect-engine/
 COPY packages/tools-polymarket/package.json packages/tools-polymarket/
 COPY packages/tools-reddit/package.json packages/tools-reddit/
 COPY packages/tools-scrapecreators/package.json packages/tools-scrapecreators/
@@ -71,18 +74,29 @@ COPY packages/transcript/package.json packages/transcript/
 COPY packages/ui/package.json packages/ui/
 COPY packages/tasks/package.json packages/tasks/
 COPY packages/workbench-shared/package.json packages/workbench-shared/
+COPY packages/workflows-ui/package.json packages/workflows-ui/
 COPY packages/workflow-host/package.json packages/workflow-host/
 COPY workflows/ab-compare-quality/package.json workflows/ab-compare-quality/
 COPY workflows/ab-compare-speed/package.json workflows/ab-compare-speed/
 COPY workflows/ab-compare-standard/package.json workflows/ab-compare-standard/
 COPY workflows/attio-task-agent/package.json workflows/attio-task-agent/
+COPY workflows/exa-topic-watch/package.json workflows/exa-topic-watch/
 COPY workflows/gamma-presentation-creator/package.json workflows/gamma-presentation-creator/
+COPY workflows/github-topic-watch/package.json workflows/github-topic-watch/
+COPY workflows/granola-call/package.json workflows/granola-call/
+COPY workflows/process-granola-call/package.json workflows/process-granola-call/
+COPY workflows/gtm-scripts-briefs/package.json workflows/gtm-scripts-briefs/
 COPY workflows/heartbeat/package.json workflows/heartbeat/
 COPY workflows/last30days-research/package.json workflows/last30days-research/
 COPY workflows/pain-point-collateral/package.json workflows/pain-point-collateral/
+COPY workflows/multi-source-collateral/package.json workflows/multi-source-collateral/
 COPY workflows/reddit-opportunity-scanner/package.json workflows/reddit-opportunity-scanner/
+COPY workflows/reddit-opportunity-watch/package.json workflows/reddit-opportunity-watch/
+COPY workflows/prospect-engine/package.json workflows/prospect-engine/
 COPY workflows/smoke-test/package.json workflows/smoke-test/
 COPY workflows/sumble-account-intel/package.json workflows/sumble-account-intel/
+COPY workflows/competitor-analysis/package.json workflows/competitor-analysis/
+COPY workflows/firecrawl-url-watch/package.json workflows/firecrawl-url-watch/
 RUN bun install --frozen-lockfile
 
 COPY interchange/ interchange/
@@ -98,6 +112,7 @@ COPY packages/pricing/ packages/pricing/
 COPY packages/catalog/ packages/catalog/
 COPY packages/event-collector/ packages/event-collector/
 COPY packages/hub-agent/ packages/hub-agent/
+COPY packages/hub-sessions/ packages/hub-sessions/
 COPY packages/storage-isogit/ packages/storage-isogit/
 COPY packages/blocks/ packages/blocks/
 COPY packages/chat/ packages/chat/
@@ -114,6 +129,7 @@ COPY packages/tools-dispatch/ packages/tools-dispatch/
 COPY packages/tools-exa/ packages/tools-exa/
 COPY packages/tools-fileparser/ packages/tools-fileparser/
 COPY packages/tools-firecrawl/ packages/tools-firecrawl/
+COPY packages/tools-corbits-knowledge-engine/ packages/tools-corbits-knowledge-engine/
 COPY packages/tools-gamma/ packages/tools-gamma/
 COPY packages/tools-linear/ packages/tools-linear/
 COPY packages/tools-notion/ packages/tools-notion/
@@ -126,6 +142,7 @@ COPY packages/tools-github/ packages/tools-github/
 COPY packages/tools-granola/ packages/tools-granola/
 COPY packages/tools-hackernews/ packages/tools-hackernews/
 COPY packages/tools-last30days/ packages/tools-last30days/
+COPY packages/tools-prospect-engine/ packages/tools-prospect-engine/
 COPY packages/tools-polymarket/ packages/tools-polymarket/
 COPY packages/tools-reddit/ packages/tools-reddit/
 COPY packages/tools-scrapecreators/ packages/tools-scrapecreators/
@@ -142,8 +159,15 @@ COPY workflows/ workflows/
 
 # Hub image does not run `apps/hub` package `build` on Railway. Rebuild embedded
 # workflow defs and tool tarballs from sources in this commit (CL-2593, CL-3626).
-RUN bun run --cwd apps/hub build:workflow-defs && \
-    bun run --cwd apps/hub build:tool-manifests && \
+# Tool manifests MUST be rebuilt before workflow defs: `build:workflow-defs`
+# canonicalizes step tool names against the committed tool-manifest index, so
+# stamping defs before the index is regenerated bakes in a bare (unprefixed)
+# name for any tool added since the last manifest regen. The drift check runs
+# between the two so a stale committed index fails the image build instead of
+# silently shipping a broken def.
+RUN bun run --cwd apps/hub build:tool-manifests && \
+    bun run --cwd apps/hub check:tool-manifest-drift && \
+    bun run --cwd apps/hub build:workflow-defs && \
     bun run --cwd apps/hub build:tool-packages
 
 EXPOSE 4000

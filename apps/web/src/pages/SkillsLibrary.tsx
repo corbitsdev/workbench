@@ -140,7 +140,7 @@ export function SkillsLibrary() {
     approveDraft
       .mutateAsync({ draftId: draft.id, scope, tenantId })
       .then((result) => {
-        navigate(`/skills/${result.skill.id}`);
+        navigate(`/library/skills/${result.skill.id}`);
       })
       .catch((err: unknown) => {
         setActionError(
@@ -203,7 +203,7 @@ export function SkillsLibrary() {
           type="button"
           variant="library"
           size="library"
-          onClick={() => navigate("/skills/new")}
+          onClick={() => navigate("/library/skills/new")}
         >
           <Plus size={14} className="text-orange" />
           Add skill
@@ -412,7 +412,7 @@ export function SkillsLibrary() {
                   No skills yet.{" "}
                   <button
                     type="button"
-                    onClick={() => navigate("/skills/new")}
+                    onClick={() => navigate("/library/skills/new")}
                     className="text-orange hover:underline"
                   >
                     Add your first skill
@@ -429,7 +429,7 @@ export function SkillsLibrary() {
               caption="Skills"
               rows={filteredLibrary}
               getRowKey={(s) => s.id}
-              onRowClick={(s) => navigate(`/skills/${s.id}`)}
+              onRowClick={(s) => navigate(`/library/skills/${s.id}`)}
               columns={skillRowColumns}
             />
           ) : (
@@ -440,7 +440,7 @@ export function SkillsLibrary() {
                   skill={skill}
                   accessLabel={accessLabel(skill)}
                   index={i + 1}
-                  onSelect={() => navigate(`/skills/${skill.id}`)}
+                  onSelect={() => navigate(`/library/skills/${skill.id}`)}
                 />
               ))}
             </div>

@@ -25,9 +25,13 @@ import type { GrantRule } from "@intx/authz";
 import {
   toolPackagesForCapabilities,
   DETERMINISTIC_TOOL_KIND,
-  INLINE_INFERENCE_KIND,
   STEP_KIND_TAG,
 } from "@workbench/agents";
+import {
+  buildStepGrantRules,
+  capabilityNames,
+  stepGrantCapabilityNames,
+} from "./step-grants";
 import { getConfig } from "../config";
 import type { HubDb } from "../db";
 import type { WorkflowDefinition } from "@intx/workflow";
@@ -42,7 +46,7 @@ import {
   type AgentRepoStore,
   type DeployContent,
   type SidecarRouter,
-} from "@intx/hub-sessions";
+} from "@workbench/hub-sessions";
 import {
   assembleWorkflowDeployConfig,
   collectDeclaredStepModels,
@@ -220,12 +224,9 @@ export function createWorkflowDeployService(deps: {
       params.toolPackagePins ??
       toolPackagesForCapabilities(capabilityNames(walk));
 
-    // Partition every step into one of three classes by its CL-2251
+    // Partition every step into one of two classes by its CL-2251
     // `STEP_KIND_TAG`:
     //
-    //   inline-inference (CL-2251) — a no-tool single-turn reasoning turn the
-    //     sidecar runs in-process with a bare `createAgent`. NO `agent` row,
-    //     NO `agent_instance` row, NO grants file, NO launchSession.
     //   deterministic-tool (CL-2252) — a tool/API call the sidecar runs
     //     against a deny-all `authorize` directly (no reactor, no session).
     //     The tool manifest/credentials endpoints gate on its `agent` row, so
@@ -238,22 +239,25 @@ export function createWorkflowDeployService(deps: {
     //     workflow.json, the grants from `state/grants.json`, the tools from
     //     the on-disk deploy tree the per-step stager writes, and the
     //     credentials via the hub credential rail gated on the `agent` row.
+    //     `agentStep` (`@workbench/agents`) is the standard author helper for
+    //     this class; the retired `inline-inference` third class (a no-tool
+    //     single-turn reasoning turn dispatched through a bare `createAgent`)
+    //     is gone — no in-repo workflow can construct one anymore, so this
+    //     partition only ever sees the two classes above.
     //
     // The orchestrator calls its per-step `launchSession` hook once per step.
     // In a production provision that hook is the on-disk tool stager
     // (`stageWorkflowStep`), which stages each step's pinned tool closure into
     // the deploy tree the sidecar materializes from disk; the catalog-publish
     // path passes a no-op instead (it touches no sidecar). Skipping the
-    // inline/deterministic agent-state repos is the session-per-step RAM
+    // deterministic step's agent-state repo is the session-per-step RAM
     // saving carried over from the retired in-process runtime.
-    const inlineStepIds = collectInlineStepIds(params.workflow);
     const deterministicStepIds = collectDeterministicToolStepIds(
       params.workflow,
     );
     const allStepIds = [...walk.perStep.keys()];
     const deployedStepIds = allStepIds.filter(
-      (stepId) =>
-        !inlineStepIds.has(stepId) && !deterministicStepIds.has(stepId),
+      (stepId) => !deterministicStepIds.has(stepId),
     );
     // The orchestrator's per-step hook stages each step's tool tree on disk in
     // a production provision so the sidecar materializes the step's tools from
@@ -270,7 +274,13 @@ export function createWorkflowDeployService(deps: {
     // staged step now gets the full row pair; the rows are inert for steps
     // that never use them. The hub's tool-credential + manifest gate also
     // authorizes deterministic/deployed steps by this row's pins.
-    const stepCapabilityNames = capabilityNames(walk);
+    // Grants + agent-row capabilities cover the FULL canonical surface of the
+    // staged packages (see stepGrantCapabilityNames) — package staging itself
+    // still derives from the declared names above.
+    const stepCapabilityNames = stepGrantCapabilityNames(
+      capabilityNames(walk),
+      toolPackagePins,
+    );
     await writeStepAgentRows({
       db,
       deploymentId: params.deploymentId,
@@ -285,10 +295,9 @@ export function createWorkflowDeployService(deps: {
     // repo so both interchange's supervisor (credentialsSnapshot assembly)
     // and our sidecar's `readStepGrants` see real grants. Without this the
     // step agent's grant set is empty and every `tool:<name>`/`invoke` is
-    // denied. Inline steps declare no tools, and deterministic tool steps run
-    // against a hardcoded deny-all `authorize` that never consults
-    // `grants.json` (CL-2252), so neither gets a grants file (nor an
-    // agent-state repo to hold one).
+    // denied. Deterministic tool steps run against a hardcoded deny-all
+    // `authorize` that never consults `grants.json` (CL-2252), so they get no
+    // grants file (nor an agent-state repo to hold one).
     await writeStepGrantFiles({
       repoStore: deps.repoStore,
       deploymentId: params.deploymentId,
@@ -303,8 +312,8 @@ export function createWorkflowDeployService(deps: {
     // provision at phase "pack". Deploy acks no longer read these rows
     // (dep_-prefixed workflow addresses resolve against the
     // `workflow_deployment` projection), and CL-2705 per-step usage
-    // attribution still joins them for reasoning steps; rows for inline /
-    // deterministic steps are inert beyond the FK.
+    // attribution still joins them for reasoning steps; rows for deterministic
+    // steps are inert beyond the FK.
     //
     // Both `agent_instance` writers (step + supervisor) are gated on the
     // supervisor frame: a catalog publish spawns no supervisor and runs no
@@ -687,6 +696,7 @@ export function buildSupervisorDeployFrame(args: {
     principalId: args.creatorPrincipalId,
     deploymentDomain: args.deploymentDomain,
     sources: args.sources,
+    definition: args.definition,
   });
   const deploymentConfig: HarnessConfig = {
     ...config,
@@ -1314,27 +1324,46 @@ export async function ensureDeploymentInstanceActive(args: {
     });
 }
 
+// The resource-string prefix a native `action` step's `EffectContext.perform`
+// authorizes against (`interchange/packages/workflow/src/runtime/
+// effect-context.ts`'s `createEffectContext`: `authorize(\`effect:${capability}\`,
+// "invoke", ...)`). Distinct from `TOOL_GRANT_RESOURCE_PREFIX` — an agent-step
+// tool call authorizes `tool:<name>`, an action step's effect authorizes
+// `effect:<name>`, and the two checks are never interchangeable.
+const EFFECT_GRANT_RESOURCE_PREFIX = "effect:";
+
 // Build the on-disk `GrantRule` set that authorizes a step agent to invoke
-// each of its tools. This is the runtime grammar `@intx/authz`'s
+// each of its tools AND, for a native `action` step, to perform each of its
+// declared effects. This is the runtime grammar `@intx/authz`'s
 // `evaluateGrants` matches (NOT a DB `grant` row) — it mirrors
 // `buildToolGrantRows` but emits the `GrantRule` shape the sidecar evaluates
-// off `state/grants.json`. One allow rule per de-duplicated tool name.
-export function buildStepGrantRules(
-  capabilityNames: readonly string[],
-): GrantRule[] {
-  const unique = [...new Set(capabilityNames)];
-  return unique.map((name) => ({
-    id: generateId("grant"),
-    resource: `${TOOL_GRANT_RESOURCE_PREFIX}${name}`,
-    action: "invoke",
-    effect: "allow" as const,
-    origin: "system" as const,
-    conditions: null,
-    expiresAt: null,
-    roleId: null,
-    principalId: null,
-  }));
-}
+// off `state/grants.json`.
+//
+// `capabilityNames` (from `capabilityNames(walk)`) folds an agent step's
+// `capability:<name>` grants together with an action step's `effect:<name>`
+// grants into one flat, indistinguishable name set — so a name in this list
+// may belong to either kind of step, or both. Emitting BOTH a `tool:<name>`
+// and an `effect:<name>` allow rule for every name is therefore required, not
+// redundant: an action step's `EffectContext.perform` authorizes
+// `effect:<capability>` (see `createEffectContext`), which a `tool:`-only
+// grants file never satisfies — every native `action` step's first tool call
+// throws "action effect ... was not authorized (null)" without this, since
+// the step's own `state/grants.json` carried no matching resource for that
+// check, regardless of tool pinning or credential configuration. An
+// agent-step tool call authorizes `tool:<name>` and never reads the
+// `effect:` rule, so the extra rule is inert for that class of step.
+// The capability-name set a deploy authorizes its step agents for: the
+// declared per-step names UNIONED with the full canonical tool surface of the
+// staged packages. Declaring one tool from a package stages the whole
+// package's definitions in front of every step's model — so entitlement to
+// call must match entitlement to see, or an undeclared name fails only at
+// runtime ("No matching grants" for an agent-step tool call, "action effect
+// ... was not authorized (null)" for a native action's EffectContext) with
+// nothing at deploy time to catch it. Declared names are kept in the union
+// verbatim for the local-runner tools no package backs (mail_*).
+export { stepGrantCapabilityNames } from "./step-grants";
+
+export { buildStepGrantRules } from "./step-grants";
 
 // Persist each step's grants snapshot to its agent-state repo. Every step's
 // agent gets the same union capability set the deploy resolved, expressed as
@@ -1392,23 +1421,6 @@ function extractStepAgent(
   if (primitive.kind === "step") return primitive.agent;
   if (primitive.kind === "map") return primitive.step.agent;
   return null;
-}
-
-// The step ids whose agent carries the inline-inference marker tag (CL-2251).
-// These steps are NOT deployed as per-step sessions: the hub skips their
-// agent/instance/grants writers and no-ops their `launchSession`.
-export function collectInlineStepIds(
-  workflow: WorkflowDefinition,
-): Set<string> {
-  const inline = new Set<string>();
-  for (const stepId of workflow.stepOrder) {
-    const primitive = workflow.steps[stepId];
-    const agent = extractStepAgent(primitive);
-    if (agent?.tags?.[STEP_KIND_TAG] === INLINE_INFERENCE_KIND) {
-      inline.add(stepId);
-    }
-  }
-  return inline;
 }
 
 // The step ids whose agent carries the deterministic-tool marker tag (CL-2252).
@@ -1480,16 +1492,15 @@ export function collectGrants(walk: CapabilityWalkResult): ReadonlySet<string> {
   return grants;
 }
 
-// The tool capability names the walk surfaced across all steps (the `capability:`
-// grants, stripped of their prefix), used to resolve the deploy's tool packages.
-export function capabilityNames(walk: CapabilityWalkResult): string[] {
-  const names = new Set<string>();
-  for (const { grants } of walk.perStep.values()) {
-    for (const grant of grants) {
-      if (grant.startsWith("capability:")) {
-        names.add(grant.slice("capability:".length));
-      }
-    }
-  }
-  return [...names];
-}
+// The tool capability names the walk surfaced across all steps, used to
+// resolve the deploy's tool packages. Two grant shapes carry a tool
+// capability name: `capability:<name>` (an agent's `AgentDefinition.capabilities`)
+// and `effect:<name>` (a native `action` step's `effect.requires` — actions
+// carry no `toolFactories`/`capabilities` of their own, so an action's tool
+// package is pinned ONLY if its `effect.requires` entries are, BY HOST
+// CONVENTION, the same tool-capability-name vocabulary `capability:` grants
+// use — bare tool short name or canonical `<factoryId>:<name>` —
+// `toolPackagesForCapabilities` below resolves both the same way. This is
+// the mechanism that pins a tool package into a deployment whose steps are
+// actions: there is no separate action-specific pinning path.
+export { capabilityNames } from "./step-grants";

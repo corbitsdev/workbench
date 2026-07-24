@@ -11,7 +11,7 @@ import { type } from "arktype";
 import { Hono, type Env } from "hono";
 import { describeRoute, resolver } from "hono-openapi";
 
-import type { AgentRepoStore } from "@intx/hub-sessions";
+import type { AgentRepoStore } from "@workbench/hub-sessions";
 import type { HubDb } from "../db";
 import { getMomentDetail } from "../services/moment-detail";
 import { getPrincipalActivityPage } from "../services/principal-activity";

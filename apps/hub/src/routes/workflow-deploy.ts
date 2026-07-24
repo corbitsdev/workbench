@@ -5,13 +5,13 @@ import { describeRoute, resolver } from "hono-openapi";
 import { schema as intxSchema, getAncestorChain } from "@intx/db";
 import { authorize } from "@intx/authz";
 import type { GrantStore } from "@intx/authz";
-import type { SessionService } from "@intx/hub-sessions";
+import type { SessionService } from "@workbench/hub-sessions";
 import type { WorkflowDefinition } from "@intx/workflow";
-import { workflowDefinitionEnvelopeSchema } from "@intx/hub-sessions";
+import { workflowDefinitionEnvelopeSchema } from "@workbench/hub-sessions";
 import { deriveDeploymentAddress } from "@intx/workflow-deploy";
 import { getLogger } from "@intx/log";
 import type { HubDb } from "../db";
-import { workflowRun } from "../db/schema";
+import { WORKFLOW_CATALOG_ACTIVE_STATUS, workflowRun } from "../db/schema";
 import { getRequestedUserContext } from "../lib/user-context";
 import { ensureMember } from "../lib/tenant-provisioning";
 import type { WorkflowDeployService } from "../services/workflow-deploy";
@@ -344,7 +344,7 @@ export async function publishWorkflowDefinition(
     tenantId: targetTenantId,
     principalId: owner.id,
     kind: definition.id,
-    status: "running",
+    status: WORKFLOW_CATALOG_ACTIVE_STATUS,
     ...(deployMeta !== null ? { meta: deployMeta } : {}),
   });
 

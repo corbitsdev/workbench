@@ -20,7 +20,7 @@ import {
   type RepoId,
   type RepoStore,
   type WorkflowRunSupervisorPrincipal,
-} from "@intx/hub-sessions";
+} from "@workbench/hub-sessions";
 import type {
   AgentKeyStore,
   AssistantLoopGuard,

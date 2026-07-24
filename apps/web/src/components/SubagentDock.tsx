@@ -6,7 +6,7 @@ import {
   ChevronsRight,
   ChevronUp,
 } from "lucide-react";
-import { cn } from "@workbench/ui";
+import { cn, StatusDot } from "@workbench/ui";
 import {
   invokedSubagentDockStatus,
   useConversationInvokedSubagents,
@@ -22,17 +22,27 @@ const ATTENTION_ORDER: Record<InvokedSubagentDockStatus, number> = {
 
 const STATUS_META: Record<
   InvokedSubagentDockStatus,
-  { label: string; dot: string; stripe: string; chip: string }
+  {
+    label: string;
+    dotColor: string;
+    dotPulsing: boolean;
+    stripe: string;
+    chip: string;
+  }
 > = {
+  // The pulsing ring is the shared PulsingRing primitive (CL-4394) via
+  // StatusDot, not Tailwind's `animate-pulse`.
   running: {
     label: "Running",
-    dot: "bg-blue animate-pulse motion-reduce:animate-none",
+    dotColor: "bg-blue",
+    dotPulsing: true,
     stripe: "border-l-blue",
     chip: "text-blue",
   },
   completed: {
     label: "Done",
-    dot: "bg-green",
+    dotColor: "bg-green",
+    dotPulsing: false,
     stripe: "border-l-green",
     chip: "text-green",
   },
@@ -226,8 +236,11 @@ export function SubagentDock({
                 key={row.mappingId}
                 data-testid="subagent-dock-rail-dot"
                 title={`${row.agentName}: ${STATUS_META[status].label}`}
-                className={cn("h-2 w-2 rounded-full", STATUS_META[status].dot)}
               >
+                <StatusDot
+                  colorClassName={STATUS_META[status].dotColor}
+                  pulsing={STATUS_META[status].dotPulsing}
+                />
                 <span className="sr-only">
                   {`${row.agentName}: ${STATUS_META[status].label}`}
                 </span>
@@ -269,7 +282,7 @@ export function SubagentDock({
           ))}
           {sorted.length > MAX_DOCK_CARDS && (
             <Link
-              to="/agents"
+              to="/library/agents"
               className={cn(
                 "block rounded-md px-2 py-1.5 text-xs text-text-2 hover:bg-row-hover hover:text-text",
                 FOCUS_RING,
@@ -312,8 +325,11 @@ export function SubagentDock({
                 key={row.mappingId}
                 data-testid="subagent-dock-rail-dot"
                 title={`${row.agentName}: ${STATUS_META[status].label}`}
-                className={cn("h-2 w-2 rounded-full", STATUS_META[status].dot)}
               >
+                <StatusDot
+                  colorClassName={STATUS_META[status].dotColor}
+                  pulsing={STATUS_META[status].dotPulsing}
+                />
                 <span className="sr-only">
                   {`${row.agentName}: ${STATUS_META[status].label}`}
                 </span>
@@ -350,7 +366,7 @@ export function SubagentDock({
         ))}
         {sorted.length > MAX_DOCK_CARDS && (
           <Link
-            to="/agents"
+            to="/library/agents"
             className={cn(
               "block rounded-md px-2 py-1.5 text-xs text-text-2 hover:bg-row-hover hover:text-text",
               FOCUS_RING,

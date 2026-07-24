@@ -14,10 +14,9 @@ import { createHubToolsRouter } from "./hub-tools";
 // without mocking @intx/db.
 function chainableSelect(rows: unknown[]): unknown {
   const chain: Record<string, unknown> = {};
-  for (const method of ["from", "where", "orderBy", "innerJoin", "for"]) {
+  for (const method of ["from", "where", "orderBy", "innerJoin", "for", "limit"]) {
     chain[method] = () => chain;
   }
-  chain.limit = async () => rows;
   // gamma_list_templates awaits the chain directly after `.orderBy()`, so the
   // fake is also thenable, resolving to the same rows.
   chain.then = (resolve: (value: unknown[]) => void) => resolve(rows);
@@ -145,6 +144,58 @@ describe("POST /hub-tools/run", () => {
         description: "Quarterly sales deck",
       },
     ]);
+  });
+
+  // write_artifact is a structured (kind: "full") tool — the shape every
+  // workflow persist step reaches through this rail. The route must execute
+  // full handlers and return their structured content INTACT: downstream
+  // selectors consume the step output's `content` as an object (heartbeat's
+  // notify-prep merges persist.output.content), so flattening to a JSON
+  // string breaks every such consumer with "merge selector requires each
+  // operand to be an object" — the production failure this pins.
+  test("executes a kind-full tool (write_artifact), returning structured content intact", async () => {
+    const insertChain = () => ({
+      values: (row: Record<string, unknown>) => {
+        const p: Record<string, unknown> = {
+          returning: async () => [{ id: "art-1", ...row }],
+          then: (resolve: (v: unknown) => void) => resolve(undefined),
+        };
+        return p;
+      },
+    });
+    const db = fakeDb({
+      toolNames: ["@workbench/tools-artifact/artifact:write_artifact"],
+    }) as unknown as Record<string, unknown>;
+    const tx = {
+      select: () => chainableSelect([]),
+      insert: insertChain,
+      update: () => ({ set: () => ({ where: async () => undefined }) }),
+    };
+    db.transaction = async (fn: (t: unknown) => Promise<unknown>) => fn(tx);
+    const router = createHubToolsRouter(
+      db as Parameters<typeof createHubToolsRouter>[0],
+      "sidecar-token",
+    );
+    const res = await post(router, {
+      ...baseCall,
+      toolName: "write_artifact",
+      args: { title: "Digest", body: "hello", kind: "research" },
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      result: string;
+      structuredResult?: unknown;
+      isError: boolean;
+    };
+    expect(body.isError).toBe(false);
+    // Additive wire shape: `result` keeps the text form for stale clients;
+    // `structuredResult` carries the object verbatim for updated ones.
+    expect(body.structuredResult).toEqual({
+      artifactId: "art-1",
+      version: 1,
+      title: "Digest",
+    });
+    expect(JSON.parse(body.result)).toEqual(body.structuredResult);
   });
 
   test("rejects a tool not in the agent capabilities with 403", async () => {

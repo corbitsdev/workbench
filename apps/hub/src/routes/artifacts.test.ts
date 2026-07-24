@@ -75,7 +75,6 @@ function makeDb(opts: {
                 ownerPrincipalId: values.ownerPrincipalId ?? null,
                 sessionId: null,
                 version: 1,
-                status: "draft",
                 createdAt: new Date("2026-06-26T00:00:00.000Z"),
                 updatedAt: new Date("2026-06-26T00:00:00.000Z"),
                 ...values,
@@ -129,7 +128,6 @@ const ROW = {
   title: "My Artifact",
   content: "hello",
   source: null,
-  status: "draft" as const,
   version: 1,
   createdAt: new Date("2026-06-20T00:00:00.000Z"),
   updatedAt: new Date("2026-06-20T00:00:00.000Z"),
@@ -211,16 +209,6 @@ describe("GET /artifacts", () => {
     const app = appWith(makeDb({}));
     const res = await app.request("/artifacts?tenantId=other");
     expect(res.status).toBe(403);
-  });
-
-  it("400s on an invalid status filter", async () => {
-    contextImpl = () => ({
-      context: { tenantId: "tn-1", principalId: "prn-1" },
-      forbidden: false,
-    });
-    const app = appWith(makeDb({}));
-    const res = await app.request("/artifacts?status=bogus");
-    expect(res.status).toBe(400);
   });
 
   it("400s on an invalid createdAfter filter", async () => {

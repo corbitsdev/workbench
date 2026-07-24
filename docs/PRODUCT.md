@@ -64,26 +64,33 @@ Granola, simply matched as a call participant). See
   shown as disabled) — it does not just stop running. Re-enabling it restores
   each member's prior on/off choice rather than resetting everyone to off.
 
-## Automations
+## Workflows (scheduled + live)
 
-Two ways work can start without a user opening the app:
+One member surface — **Workflows** — for operational work:
 
-- **Scheduled triggers** — a durable, per-user schedule (daily, UTC-hour
-  cadence) that fires a workflow run. Users manage their own schedules from a
-  dedicated page. One heartbeat schedule is seeded automatically per Myra
-  instance so Myra can check in on a cadence even if the user never sets up a
-  schedule themselves. The **owner turns automations on or off** from the
-  Capabilities page — scheduling, triage, and task sync are each a toggle,
-  disabled by default, with no deploy needed to flip them. When the owner has
-  a capability off, the matching member controls **disappear from settings**
-  (morning brief time and schedules for scheduling; triage create for triage;
-  auto-send tasks for task sync) rather than showing as disabled grey knobs.
-  Re-enabling a capability restores each member's prior preference values.
+- **Live runs** — in-flight and needs-you jobs appear in the list; open a row for
+  the right-hand live inspector (shared step/gate blocks with the chat dock).
+  Deep links use `/workflows/:runId`.
+- **Scheduled triggers** — durable per-user (and Everyone) schedules on a daily
+  UTC-hour cadence. Manage them from the same Workflows list (inspector + New
+  Workflow). One heartbeat schedule is seeded automatically per Myra instance so
+  Myra can check in even if the user never sets up a schedule themselves. The
+  **owner turns scheduling-related capabilities on or off** from the Capabilities
+  page — scheduling, triage, and task sync are each a toggle, disabled by default,
+  with no deploy needed to flip them. When the owner has a capability off, the
+  matching member controls **disappear from settings** (morning brief time and
+  schedules for scheduling; triage create for triage; auto-send tasks for task
+  sync) rather than showing as disabled grey knobs. Re-enabling a capability
+  restores each member's prior preference values. Owner **Schedules** remains the
+  control plane for Everyone-scope schedules.
 - **Webhook triggers** — a user can mint a webhook that starts a workflow run
   when an external system posts to it. The public endpoint is secret-authenticated
   and rate-limited per source IP to prevent abuse; a failed or unauthorized
   request returns a generic not-found rather than revealing which triggers
   exist.
+
+Legacy `/routines` and `/routines/:id` URLs redirect into Workflows. There is no
+separate Routines navigation item.
 
 Users shape their own morning brief: when it arrives (their brief hour), which
 sources feed it (per-source toggles — Granola calls today, more as
@@ -125,7 +132,6 @@ Every user gets a personal AI agent named **Myra**. Myra acts as a Chief of Staf
 
 **Model defaults.** Members pick which Myra model to use for chat and for inbox triage from Settings. The picker only lists models the workspace can actually launch — a model appears when **any** of its catalog offerings has a credential (Bifrost, OpenCode Zen, native provider, etc.). A previously saved choice whose model is no longer launchable falls back to the catalog default among the remaining options (or the first still-launchable option) rather than surfacing a dead selection — both in Settings and when a new chat thread or triage wake binds a model.
 
-
 **Multi-thread chat.** The app's home surface is the Inbox (see below), but Myra chat remains the default way to work with the assistant directly. A user can run **multiple parallel Myra chats** ("threads") — each thread is a separate, full Myra (its own tools, skills, and history), not a saved transcript. Myra's durable **memory is shared across all of a user's threads**, not per-thread: what she learns in one chat (the standing brief on the person, durable facts, contacts) is available in the others. The widened left sidebar lists every thread with **+ New Chat**, and threads can be renamed or deleted. The app remembers the last-active thread, so reopening the app (or the docked quick-chat available on non-chat pages) lands the user back where they were. Workflow run history lives on its own **Workflows** page.
 
 **Document understanding.** A user can attach an image or a **document (PDF)** to a Myra message. Images Myra reads directly. Documents she reads through a dedicated **File Parser** — the uploaded file is turned into text and handed to Myra — so she understands PDFs **regardless of her own chat model**, which cannot read documents natively. The attached document appears as a chip on the message. Myra can also read a document a user or workflow saved earlier as an artifact.
@@ -162,10 +168,11 @@ Selecting a result navigates straight to it. Navigation commands are matched on 
 
 ## Workflows Currently Shipped
 
-Each workflow is a deployed pipeline (`collateral-generation`, `gamma-presentation-creator`, `resource-enrichment`, `reddit-opportunity-scanner`, `blind-ab-comparison`). Examples:
+Each workflow is a deployed pipeline (`collateral-generation`, `gamma-presentation-creator`, `resource-enrichment`, `reddit-opportunity-scanner`, `sumble-account-intel`, `competitor-analysis`, `blind-ab-comparison`). Examples:
 
 - **Collateral Generation** — call documents into case studies, one-pagers, and email drafts.
 - **SEO / Resource Enrichment** — a product-catalog spreadsheet into row-by-row option variants; the user picks the best per field in a review gate and exports the chosen copy as a CSV.
+- **Competitor Analysis** — company website URL in; Firecrawl scrape + Exa discovery; structured competitor shortlist report with evidence, human-approved before save.
 
 ## Skill Library
 

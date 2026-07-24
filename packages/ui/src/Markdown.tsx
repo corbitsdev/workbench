@@ -116,7 +116,7 @@ const components: Components = {
   // the content to guess inline-vs-block (newlines in an inline span would fool
   // that), and keeps the hast `node` prop off the DOM.
   code: ({ children }) => (
-    <code className="rounded-sm border border-border bg-surface-2 px-1.5 py-0.5 font-mono text-[0.85em] text-text">
+    <code className="rounded-sm border border-border bg-surface-2 px-1.5 py-0.5 font-mono text-[0.85em] text-text [overflow-wrap:anywhere]">
       {children}
     </code>
   ),
@@ -178,7 +178,9 @@ export function Markdown({
         // The `wb-markdown` hook lets styles.css reach the footnote citation
         // markers and section, which the component map can't key on. Streamdown
         // trims its own first/last block margins, so no edge-trim is needed here.
-        "wb-markdown break-words text-[15px] leading-7 text-text-2",
+        // `overflow-wrap: anywhere` (not `break-word`) so unbroken tokens also
+        // shrink the min-content width of ancestor flex columns (CL-4120).
+        "wb-markdown [overflow-wrap:anywhere] text-[15px] leading-7 text-text-2",
         className,
       )}
     >

@@ -19,6 +19,8 @@ function entry(
     pauseCount: 0,
     steps: [],
     attachable: false,
+    allowedScopes: ["personal"],
+    defaultScope: "personal",
   };
 }
 
@@ -74,9 +76,11 @@ describe("WorkflowCatalogEntrySchema", () => {
       stepCount: 2,
       pauseCount: 1,
       attachable: true,
+      allowedScopes: ["personal", "tenant"],
+      defaultScope: "personal",
       steps: [
-        { id: "s1", title: "Fetch", kind: "auto" },
-        { id: "s2", title: "Approve", kind: "human" },
+        { id: "s1", title: "Fetch", kind: "auto", stepIds: ["s1"] },
+        { id: "s2", title: "Approve", kind: "human", stepIds: ["s2"] },
       ],
     });
     expect(parsed instanceof type.errors).toBe(false);

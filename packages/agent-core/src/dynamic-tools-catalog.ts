@@ -55,6 +55,23 @@ export const MYRA_PLATFORM_BARE_TOOL_NAMES: string[] = [
  * To give Myra a new integration: add its package here. To keep a capability
  * workflow-only (Gamma, last30days): leave its package out — never pinned,
  * never granted, never advertised.
+ *
+ * Catalog description style bar (CL-4137): myraCatalog.summary (declared per
+ * package in each tools-star/src/tool-manifest.ts) and the per-tool manifest
+ * descriptions it merges into search_tools keywords are Myra's decision
+ * surface, matched on by search_tools/search_skills, not prose written for a
+ * human reader. Every one should: state the one job the tool does, not its
+ * category; name concrete trigger conditions or inputs, not vague scope
+ * ("various things", "handles X"); avoid marketing prose (no "powerful",
+ * "easily", "seamless", "robust", "comprehensive", see CATALOG_BANNED_PHRASES
+ * in the tool-manifest package); and stay concise, one sentence and at most
+ * two for myraCatalog.summary, a third only as a disambiguation exception.
+ * Per-tool descriptions may run longer when they double as real
+ * parameter/usage guidance for the model, so they are not length-capped
+ * mechanically. assertCatalogDescriptionStyle (also in the tool-manifest
+ * package) enforces what a lint rule can check: non-empty, the summary
+ * length ceiling, and the banned-phrase list. Stating the one job and naming
+ * concrete triggers stay a human review bar at PR time.
  */
 type CatalogPackage = {
   /** The `@scope/package` pin name (one published tarball). */

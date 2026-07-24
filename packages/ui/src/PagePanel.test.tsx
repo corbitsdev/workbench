@@ -49,6 +49,18 @@ describe("PagePanel", () => {
     expect(panel?.className).toContain("w-full");
   });
 
+  it("fills with bg-bg by default and bg-surface when nested in a surface that already has its own background", () => {
+    const defaultPanel = render(<PagePanel>x</PagePanel>);
+    const defaultSection = defaultPanel.container.querySelector("section");
+    expect(defaultSection?.className).toContain("bg-bg");
+    expect(defaultSection?.className).not.toContain("bg-surface");
+
+    const nested = render(<PagePanel surface="surface">x</PagePanel>);
+    const nestedSection = nested.container.querySelector("section");
+    expect(nestedSection?.className).toContain("bg-surface");
+    expect(nestedSection?.className).not.toContain("bg-bg");
+  });
+
   it("drops the border in fitContent so a shortened panel leaves no floating edge", () => {
     const { container } = render(
       <PagePanel scroll={false} flat fitContent>

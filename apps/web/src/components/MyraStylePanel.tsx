@@ -48,7 +48,7 @@ function fieldsForAxis(
 }
 
 const APPLIES_NOTE =
-  "Style choices apply the next time a Myra starts — new threads, future inbox automation runs, and existing threads after they next wake.";
+  "Style choices apply the next time a Myra starts — new threads, future inbox routine runs, and existing threads after they next wake.";
 
 interface MutationVars {
   readonly field: FieldKey;
@@ -281,7 +281,7 @@ export function MyraStylePanel({ tenantId }: MyraStylePanelProps) {
                 {(
                   [
                     ["chat", "Chat", fields.chat],
-                    ["triage", "Inbox automation", fields.triage],
+                    ["triage", "Inbox routine", fields.triage],
                   ] as const
                 ).map(([surface, surfaceLabel, field]) => {
                   const surfaceLabelId = `${labelId}-${surface}`;

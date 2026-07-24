@@ -34,7 +34,7 @@ import type {
   Principal,
   RepoId,
   RepoStore,
-} from "@intx/hub-sessions/substrate";
+} from "@workbench/hub-sessions/substrate";
 
 /**
  * Path inside each step's `agent-state` repo that carries the step's

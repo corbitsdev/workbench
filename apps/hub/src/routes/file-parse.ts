@@ -287,7 +287,6 @@ export function createFileParseRouter(
           title: parsed.filename,
           content,
           source,
-          status: "draft",
           version: 1,
           createdAt: now,
           updatedAt: now,

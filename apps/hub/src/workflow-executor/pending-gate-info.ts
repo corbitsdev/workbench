@@ -1,5 +1,5 @@
 import { getLogger } from "@intx/log";
-import type { RepoStore } from "@intx/hub-sessions";
+import type { RepoStore } from "@workbench/hub-sessions";
 
 import { getAwaitingSignalNames } from "./run-awaiting-signals";
 import { describeResumePayload } from "./resume-payload-registry";

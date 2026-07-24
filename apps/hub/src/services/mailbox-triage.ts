@@ -7,7 +7,7 @@ import { extractAttachments } from "@intx/mime";
 import type {
   SessionService,
   EventCollectorRegistry,
-} from "@intx/hub-sessions";
+} from "@workbench/hub-sessions";
 import type { GrantStore } from "@intx/types/authz";
 import type { CryptoProvider, MessageAttachment } from "@intx/types/runtime";
 import type { TurnFinalized } from "@workbench/event-collector";

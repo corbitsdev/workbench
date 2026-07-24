@@ -130,8 +130,10 @@ Narrative prose that explains the theme, names the specific entities (products, 
 ## What's still open / contested
 The genuine uncertainties and disagreements the evidence leaves unresolved.
 
-## Sources
-A deduped, dated, linked list of the concrete items that backed the report — one per line as "- [label](url) (date)".
+Do NOT append a "## Sources" / "## Citations" / "## References" section. The
+app renders one deduped, linked sources list from brief.citations separately;
+adding your own here would duplicate it. End the document after "What's still
+open / contested".
 
 ## Grounding
 - Use ONLY the brief; invent nothing (no claim, number, quote, citation, or date the brief does not contain)

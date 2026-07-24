@@ -157,8 +157,11 @@ export const SUMBLE_TOOL_SPECS: SumbleToolSpec[] = [
     run: handlers.listOrganizationLists,
   },
   {
+    // Consumed by prospect-engine's deterministic list-read steps
+    // (sumble_get_organization_list); structured so the downstream
+    // extract-list-org-ids step reads fields off `content` directly.
     definition: definitions.SUMBLE_GET_ORGANIZATION_LIST_DEFINITION,
-    kind: "string",
+    kind: "structured",
     sideEffect: "read",
     run: handlers.getOrganizationList,
   },
@@ -169,9 +172,12 @@ export const SUMBLE_TOOL_SPECS: SumbleToolSpec[] = [
     run: handlers.createOrganizationList,
   },
   {
+    // Consumed by prospect-engine's deterministic list-write steps
+    // (sumble_add_organization_list_organizations); structured for the
+    // same reason as sumble_get_organization_list above.
     definition:
       definitions.SUMBLE_ADD_ORGANIZATION_LIST_ORGANIZATIONS_DEFINITION,
-    kind: "string",
+    kind: "structured",
     sideEffect: "write",
     run: handlers.addOrganizationListOrganizations,
   },

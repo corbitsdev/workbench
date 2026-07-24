@@ -62,7 +62,6 @@ function renderTour() {
           <div data-tour="myra-chat" />
           <div data-tour="nav-inbox" />
           <div data-tour="notifications-bell" />
-          <div data-tour="workflow-schedule" />
           <div data-tour="preference-agentAutonomy" />
           <LaunchButton />
         </OnboardingTourProvider>

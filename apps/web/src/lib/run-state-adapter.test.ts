@@ -6,15 +6,17 @@ import {
   isStatusTerminal,
   reconcileRunState,
   runStateFromLog,
+  runStateFromRecord,
   stepOutputsFromLog,
   type LogRunState,
   type RunRecord,
 } from "./run-state-adapter";
 
 describe("isRecordTerminal", () => {
-  it("treats only completed/failed as terminal, not awaiting", () => {
+  it("treats completed, failed, and stopped as terminal; not awaiting", () => {
     expect(isRecordTerminal("completed")).toBe(true);
     expect(isRecordTerminal("failed")).toBe(true);
+    expect(isRecordTerminal("stopped")).toBe(true);
     expect(isRecordTerminal("awaiting")).toBe(false);
     expect(isRecordTerminal("running")).toBe(false);
   });
@@ -25,6 +27,7 @@ describe("isStatusTerminal", () => {
     for (const status of [
       "completed",
       "failed",
+      "stopped",
       "awaiting",
       "running",
       "provisioning",
@@ -35,6 +38,30 @@ describe("isStatusTerminal", () => {
 
   it("treats an unrecognized status string as not terminal", () => {
     expect(isStatusTerminal("some-future-status")).toBe(false);
+  });
+
+  it("treats stopped as terminal so polling and live streams settle", () => {
+    expect(isStatusTerminal("stopped")).toBe(true);
+  });
+});
+
+describe("runStateFromRecord / reconcileRunState — stopped maps to cancelled", () => {
+  it("maps index stopped to a cancelled run phase", () => {
+    const state = runStateFromRecord({
+      runId: "wfr_1",
+      kind: "brief",
+      status: "stopped",
+    });
+    expect(state.phase).toBe("cancelled");
+  });
+
+  it("surfaces index stopped over a still-live log phase", () => {
+    const log = runStateFromLog(logState({ phase: "running" }));
+    const reconciled = reconcileRunState(
+      { runId: "wfr_1", kind: "brief", status: "stopped" },
+      log,
+    );
+    expect(reconciled.phase).toBe("cancelled");
   });
 });
 

@@ -134,8 +134,8 @@ import type {
   Principal,
   RepoId,
   RepoStore,
-} from "@intx/hub-sessions/substrate";
-import { WORKFLOW_RUN_AGENT_STATE_PREFIX } from "@intx/hub-sessions/substrate";
+} from "@workbench/hub-sessions/substrate";
+import { WORKFLOW_RUN_AGENT_STATE_PREFIX } from "@workbench/hub-sessions/substrate";
 import {
   ConnectorThreadState,
   TokenUsage,

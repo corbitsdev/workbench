@@ -85,28 +85,26 @@ describe("scheduler multi-gate success path (CL-3528)", () => {
     );
     let capturedRunId: string | undefined;
 
-    const driveGate = mock(async (args: {
-      runId: string;
-      signalName: string;
-      kind: string;
-    }) => {
-      expect(args.signalName).toBe("confirm");
-      expect(args.kind).toBe(KIND);
-      await setPendingSignal(db, args.runId, {
-        signalId: randomUUID(),
-        signalName: "confirm",
-        payload: {},
-        receivedAt: new Date().toISOString(),
-      });
-      pendingGates = [];
-      const endedAt = new Date().toISOString();
-      await applyRunProjection(db, args.runId, {
-        status: "completed",
-        endedAt,
-        clearPendingSignal: true,
-      });
-      return { ok: true as const };
-    });
+    const driveGate = mock(
+      async (args: { runId: string; signalName: string; kind: string }) => {
+        expect(args.signalName).toBe("confirm");
+        expect(args.kind).toBe(KIND);
+        await setPendingSignal(db, args.runId, {
+          signalId: randomUUID(),
+          signalName: "confirm",
+          payload: {},
+          receivedAt: new Date().toISOString(),
+        });
+        pendingGates = [];
+        const endedAt = new Date().toISOString();
+        await applyRunProjection(db, args.runId, {
+          status: "completed",
+          endedAt,
+          clearPendingSignal: true,
+        });
+        return { ok: true as const };
+      },
+    );
 
     const agent = createScheduledWorkflowGateAgent({
       db,
@@ -127,8 +125,9 @@ describe("scheduler multi-gate success path (CL-3528)", () => {
           id: "sch-multi",
           tenantId: "ten-1",
           workflowKind: KIND,
-          hourUtc: 9,
-          lastFiredDayUtc: null,
+          intervalMinutes: 1440,
+          anchorMinuteUtc: 9 * 60,
+          lastFiredWindowIndex: Number.MIN_SAFE_INTEGER,
           ownerMemberPrincipalId: "pri-owner",
           triggerPayload: {
             note: "nightly unattended run",

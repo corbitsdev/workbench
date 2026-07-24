@@ -6,7 +6,7 @@ import type {
   RepoStore,
   SessionService,
   SidecarRouter,
-} from "@intx/hub-sessions";
+} from "@workbench/hub-sessions";
 import type { CryptoProvider } from "@intx/types/runtime";
 import type { HubDb } from "../db";
 import { isWorkflowRunDeniedForTenant } from "../lib/workflow-run-gate";
@@ -25,6 +25,7 @@ import {
   enrichTriggerPayloadForStart,
   type TriggerPayloadEnrichmentDeps,
 } from "./trigger-payload-enrichment-registry";
+import { validateTriggerPayloadForStart } from "./trigger-payload-validation-registry";
 import {
   failRunIfStillProvisioning,
   insertRunRecord,
@@ -294,6 +295,15 @@ export async function startWorkflowRun(
     },
     inputObject,
   );
+
+  // Fail fast, before any deployment is provisioned, when a kind's declared
+  // required inputs are still missing after enrichment — never let a run start
+  // and die several steps in on an opaque "field is absent" argMap failure.
+  const validation = validateTriggerPayloadForStart(opts.kind, enrichedInput);
+  if (!validation.ok) {
+    return { ok: false, status: 400, error: validation.message };
+  }
+
   const triggerPayload = { ...enrichedInput, runId };
 
   // Durable-first: the run row exists (status `provisioning`, no deployment yet)
@@ -622,13 +632,36 @@ export async function acceptGateSignal(
   );
   if (gateConflict) return gateConflict;
 
+  // Validate the gate payload at this trust boundary too (same registry
+  // `resumeWorkflowRun` uses) — this route is reachable independently (the
+  // deployment-authorized signal route, e.g. from the admin CLI), and the
+  // write-back steps it can trigger now read the payload directly with no
+  // argMap, so an unvalidated/un-normalized payload here would write a
+  // malformed tool call as surely as an unvalidated /resume would.
+  const payloadCheck = validateResumePayload(
+    opts.kind,
+    opts.signalName,
+    opts.payload ?? {},
+  );
+  if (!payloadCheck.ok) {
+    return {
+      ok: false,
+      status: 400,
+      error: `invalid gate signal payload: ${payloadCheck.error}`,
+    };
+  }
+  const resolvedPayload =
+    "payload" in payloadCheck && payloadCheck.payload !== undefined
+      ? payloadCheck.payload
+      : (opts.payload ?? {});
+
   // Durable-before-dispatch (same contract as resumeWorkflowRun): the
   // reconciler re-delivers from this record until the run log proves receipt.
   const signalId = randomUUID();
   await setPendingSignal(deps.db, state.runId, {
     signalId,
     signalName: opts.signalName,
-    payload: opts.payload ?? {},
+    payload: resolvedPayload,
     receivedAt: new Date().toISOString(),
   });
   await deps.ensureDeploymentRoutable({
@@ -645,7 +678,7 @@ export async function acceptGateSignal(
     runId: state.runId,
     signalName: opts.signalName,
     signalId,
-    payload: opts.payload ?? {},
+    payload: resolvedPayload,
   });
   await markGateMailReadBestEffort(deps.db, state.runId, opts.signalName);
   return { ok: true, state };
@@ -676,7 +709,10 @@ export async function resumeWorkflowRun(
   if (gate) return { ok: false, ...gate };
 
   // Validate the gate payload at the trust boundary for workflows/signals
-  // that register a schema; unregistered ones pass through untouched.
+  // that register a schema; unregistered ones pass through untouched. A
+  // registered schema may also normalize the payload (e.g. a transitional
+  // legacy shape folded to the current one) — `resolvedPayload` is what
+  // actually gets persisted/dispatched below, never the raw `opts.payload`.
   const payloadCheck = validateResumePayload(
     state.kind,
     opts.signalName,
@@ -689,6 +725,10 @@ export async function resumeWorkflowRun(
       error: `invalid resume payload: ${payloadCheck.error}`,
     };
   }
+  const resolvedPayload =
+    "payload" in payloadCheck && payloadCheck.payload !== undefined
+      ? payloadCheck.payload
+      : (opts.payload ?? {});
 
   if (state.deploymentId === undefined) {
     return { ok: false, status: 400, error: "run has no deployment to signal" };
@@ -731,7 +771,7 @@ export async function resumeWorkflowRun(
     await setPendingSignal(deps.db, state.runId, {
       signalId,
       signalName: opts.signalName,
-      payload: opts.payload ?? {},
+      payload: resolvedPayload,
       receivedAt: new Date().toISOString(),
     });
     await deps.ensureDeploymentRoutable({
@@ -748,7 +788,7 @@ export async function resumeWorkflowRun(
       runId: state.runId,
       signalName: opts.signalName,
       signalId,
-      payload: opts.payload ?? {},
+      payload: resolvedPayload,
     });
   } catch (err) {
     log.error("workflow resume signal failed", {

@@ -13,7 +13,6 @@ const artifact: ArtifactWithSession = {
   kind: "email",
   title: "Outreach email",
   content: "Hello there",
-  status: "approved",
   version: 2,
   ownerPrincipalId: null,
   archivedAt: null,
@@ -40,16 +39,15 @@ describe("ArtifactModal", () => {
     expect(screen.queryByRole("dialog")).toBeNull();
   });
 
-  it("does not show Draft in the subtitle when status is draft", () => {
+  it("shows only the version in the subtitle", () => {
     render(
       React.createElement(ArtifactModal, {
         open: true,
-        artifact: { ...artifact, status: "draft" },
+        artifact,
         onClose: () => {},
       }),
     );
     expect(screen.getByText(/^v2$/)).not.toBeNull();
-    expect(screen.queryByText(/Draft/)).toBeNull();
   });
 
   it("renders the artifact content when open", () => {

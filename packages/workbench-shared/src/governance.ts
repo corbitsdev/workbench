@@ -795,7 +795,7 @@ export interface FeatureCatalogEntry {
 export const FEATURE_GRANT_CATALOG: readonly FeatureCatalogEntry[] = [
   {
     name: "scheduler",
-    label: "Automation scheduler",
+    label: "Routine scheduler",
     description:
       "Fires durable scheduled triggers (e.g. daily Myra heartbeats) on their configured UTC hour.",
   },

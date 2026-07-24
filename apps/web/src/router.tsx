@@ -30,6 +30,7 @@ import { WorkflowsPage } from "./pages/WorkflowsPage";
 import { InboxPage } from "./pages/InboxPage";
 import Settings from "./pages/Settings";
 import SettingsLayout from "./pages/SettingsLayout";
+import LibraryLayout from "./pages/LibraryLayout";
 import { SkillsLibrary } from "./pages/SkillsLibrary";
 import { AgentsPage } from "./pages/AgentsPage";
 import { SkillsNew } from "./pages/SkillsNew";
@@ -53,6 +54,8 @@ import { OwnerCatalog } from "./pages/admin/OwnerCatalog";
 import { OwnerGammaTemplates } from "./pages/admin/OwnerGammaTemplates";
 import { OwnerCapabilities } from "./pages/admin/OwnerCapabilities";
 import { OwnerWorkflows } from "./pages/admin/OwnerWorkflows";
+import { OwnerSchedules } from "./pages/admin/OwnerSchedules";
+import { OwnerWorkUnits } from "./pages/admin/OwnerWorkUnits";
 import { OwnerMembers } from "./pages/admin/OwnerMembers";
 import { OwnerDemos } from "./pages/admin/OwnerDemos";
 import {
@@ -65,6 +68,131 @@ import {
 function RedirectToAdminTool() {
   const { name } = useParams();
   return <Navigate to={`/settings/admin/tools/${name ?? ""}`} replace />;
+}
+
+// Routines folded into the unified Workflows surface: list and schedule
+// detail deep links resolve there so bookmarks keep working.
+function RedirectRoutinesToWorkflows() {
+  const location = useLocation();
+  return (
+    <Navigate
+      to={{
+        pathname: "/workflows",
+        search: location.search,
+        hash: location.hash,
+      }}
+      replace
+    />
+  );
+}
+
+function RedirectRoutineDetailToWorkflows() {
+  const { id } = useParams();
+  return (
+    <Navigate
+      to={{
+        pathname: "/workflows",
+        search: `?schedule=${encodeURIComponent(id ?? "")}`,
+      }}
+      replace
+    />
+  );
+}
+
+// Library (CL-4256): Artifacts, Skills, and Agents are one top-level nav
+// entry — same tier as Workflows and Routines — reading as one place with
+// three views (browse, search, open) rather than three pages sharing a URL
+// prefix. This supersedes CL-4247, which had briefly promoted Skills and
+// Agents to top-level Settings pages: architecture review rejected that
+// (Settings means "configure the app"; these are working surfaces), so both
+// the CL-4247 /settings/skills, /settings/skills/new, /settings/skills/:id,
+// /settings/agents paths AND the original top-level /skills, /skills/new,
+// /skills/:id, /agents, /artifacts, /artifacts/:id paths now redirect here,
+// preserving id, query string, and hash.
+function RedirectSkillsToLibrary() {
+  const location = useLocation();
+  return (
+    <Navigate
+      to={{
+        pathname: "/library/skills",
+        search: location.search,
+        hash: location.hash,
+      }}
+      replace
+    />
+  );
+}
+
+function RedirectSkillsNewToLibrary() {
+  const location = useLocation();
+  return (
+    <Navigate
+      to={{
+        pathname: "/library/skills/new",
+        search: location.search,
+        hash: location.hash,
+      }}
+      replace
+    />
+  );
+}
+
+function RedirectSkillDetailToLibrary() {
+  const { id } = useParams();
+  const location = useLocation();
+  return (
+    <Navigate
+      to={{
+        pathname: `/library/skills/${id ?? ""}`,
+        search: location.search,
+        hash: location.hash,
+      }}
+      replace
+    />
+  );
+}
+
+function RedirectAgentsToLibrary() {
+  const location = useLocation();
+  return (
+    <Navigate
+      to={{
+        pathname: "/library/agents",
+        search: location.search,
+        hash: location.hash,
+      }}
+      replace
+    />
+  );
+}
+
+function RedirectArtifactsToLibrary() {
+  const location = useLocation();
+  return (
+    <Navigate
+      to={{
+        pathname: "/library/artifacts",
+        search: location.search,
+        hash: location.hash,
+      }}
+      replace
+    />
+  );
+}
+
+function RedirectArtifactDetailToLibrary() {
+  const { artifactId } = useParams();
+  const location = useLocation();
+  return (
+    <Navigate
+      to={{
+        pathname: `/library/artifacts/${artifactId ?? ""}`,
+        search: location.search,
+        hash: location.hash,
+      }}
+      replace
+    />
+  );
 }
 
 // The standalone /admin and /owner surfaces (CL-3763) moved under /settings as
@@ -109,9 +237,9 @@ export const NAV_COMMANDS: PaletteResultItem[] = [
   {
     id: "nav:chats",
     category: "navigation",
-    title: "Chats",
+    title: "Threads",
     to: "/chats",
-    keywords: ["conversations", "myra", "messages"],
+    keywords: ["conversations", "myra", "messages", "chats"],
   },
   {
     id: "nav:inbox",
@@ -121,10 +249,17 @@ export const NAV_COMMANDS: PaletteResultItem[] = [
     keywords: ["mail", "mailbox", "messages", "email", "notifications"],
   },
   {
+    id: "nav:library",
+    category: "navigation",
+    title: "Library",
+    to: "/library",
+    keywords: ["artifacts", "skills", "agents", "collateral", "documents"],
+  },
+  {
     id: "nav:artifacts",
     category: "navigation",
     title: "Artifacts",
-    to: "/artifacts",
+    to: "/library/artifacts",
     keywords: ["collateral", "outputs", "documents", "library"],
   },
   {
@@ -138,7 +273,7 @@ export const NAV_COMMANDS: PaletteResultItem[] = [
     id: "nav:skills",
     category: "navigation",
     title: "Skills",
-    to: "/skills",
+    to: "/library/skills",
     keywords: ["playbooks", "prompts", "library"],
   },
   {
@@ -177,8 +312,8 @@ export const NAV_COMMANDS: PaletteResultItem[] = [
     id: "nav:agents",
     category: "navigation",
     title: "Agents",
-    to: "/agents",
-    keywords: ["agents", "instances", "myra", "oat"],
+    to: "/library/agents",
+    keywords: ["agents", "instances", "myra", "oat", "library"],
   },
   {
     id: "nav:insights",
@@ -296,14 +431,43 @@ export const router = createBrowserRouter([
           { path: "/dashboard", element: <Navigate to="/" replace /> },
           { path: "/inbox", element: <InboxPage /> },
           { path: "/inbox/:messageId", element: <InboxPage /> },
-          { path: "/artifacts", element: <ArtifactsPage /> },
-          { path: "/artifacts/:artifactId", element: <ArtifactDetailPage /> },
+          {
+            path: "/library",
+            element: <LibraryLayout />,
+            children: [
+              {
+                index: true,
+                element: <Navigate to="/library/artifacts" replace />,
+              },
+              { path: "artifacts", element: <ArtifactsPage /> },
+              {
+                path: "artifacts/:artifactId",
+                element: <ArtifactDetailPage />,
+              },
+              { path: "skills", element: <SkillsLibrary /> },
+              { path: "skills/new", element: <SkillsNew /> },
+              { path: "skills/:id", element: <SkillDetail /> },
+              { path: "agents", element: <AgentsPage /> },
+            ],
+          },
           {
             path: "/workbenches/:slug",
-            element: <Navigate to="/artifacts" replace />,
+            element: <Navigate to="/library/artifacts" replace />,
           },
           { path: "/workflows", element: <WorkflowsPage /> },
           { path: "/workflows/:workflowId", element: <WorkflowsPage /> },
+          {
+            path: "/routines",
+            element: <RedirectRoutinesToWorkflows />,
+          },
+          {
+            path: "/routines/:id",
+            element: <RedirectRoutineDetailToWorkflows />,
+          },
+          {
+            path: "/automations",
+            element: <Navigate to="/workflows" replace />,
+          },
           {
             path: "/settings",
             element: <SettingsLayout />,
@@ -358,6 +522,8 @@ export const router = createBrowserRouter([
                     element: <OwnerGammaTemplates />,
                   },
                   { path: "workflows", element: <OwnerWorkflows /> },
+                  { path: "schedules", element: <OwnerSchedules /> },
+                  { path: "work-units", element: <OwnerWorkUnits /> },
                   { path: "demos", element: <OwnerDemos /> },
                   { path: "members", element: <OwnerMembers /> },
                   // Legacy owner sub-routes → their new homes, still under
@@ -385,10 +551,38 @@ export const router = createBrowserRouter([
           },
           { path: "/connections", element: <RedirectLegacyConnections /> },
           { path: "/settings/tools/:id", element: <SettingsToolDetail /> },
-          { path: "/skills", element: <SkillsLibrary /> },
-          { path: "/skills/new", element: <SkillsNew /> },
-          { path: "/skills/:id", element: <SkillDetail /> },
-          { path: "/agents", element: <AgentsPage /> },
+          // Artifacts, Skills, and Agents (CL-4256) moved under the Library
+          // top-level nav entry. Every earlier home for these three redirects
+          // here, preserving id, query string, and hash: the original
+          // top-level /artifacts and /artifacts/:id paths, the original
+          // top-level /skills and /agents paths, and the CL-4247
+          // /settings/skills and /settings/agents paths that briefly
+          // superseded them.
+          { path: "/artifacts", element: <RedirectArtifactsToLibrary /> },
+          {
+            path: "/artifacts/:artifactId",
+            element: <RedirectArtifactDetailToLibrary />,
+          },
+          { path: "/skills", element: <RedirectSkillsToLibrary /> },
+          { path: "/skills/new", element: <RedirectSkillsNewToLibrary /> },
+          { path: "/skills/:id", element: <RedirectSkillDetailToLibrary /> },
+          { path: "/agents", element: <RedirectAgentsToLibrary /> },
+          {
+            path: "/settings/skills",
+            element: <RedirectSkillsToLibrary />,
+          },
+          {
+            path: "/settings/skills/new",
+            element: <RedirectSkillsNewToLibrary />,
+          },
+          {
+            path: "/settings/skills/:id",
+            element: <RedirectSkillDetailToLibrary />,
+          },
+          {
+            path: "/settings/agents",
+            element: <RedirectAgentsToLibrary />,
+          },
           // Tools moved under Admin (CL-2719), then under Settings (CL-3763).
           // Old paths redirect.
           {

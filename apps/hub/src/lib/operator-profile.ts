@@ -5,6 +5,8 @@ import { AGENT_TEMPLATES } from "@workbench/agents";
 import { promptFormatForProvider } from "@workbench/prompts";
 import {
   buildPersonalAgentSystemPrompt,
+  buildPersonalAgentSystemPromptV2,
+  myraVariantForTemplateKey,
   OperatorProfileSchema,
   PERSONAL_AGENT_NAME,
   type MemberInstructions,
@@ -49,6 +51,14 @@ export function personalAgentPromptForLaunch(opts: {
   provider: string;
   operator?: OperatorProfile;
   instructions?: MemberInstructions;
+  /**
+   * The instance's bound prompt generation and model (from its variant).
+   * Rebuilding with a hardcoded generation would silently revert a v2
+   * instance to the v1 prompt at every launch (CL-4121). Absent (non-variant
+   * personal templates) falls back to the v1 builder, the pre-generations
+   * behavior.
+   */
+  generation?: { key: "v1" | "v2"; model: string };
 }): string {
   const format = promptFormatForProvider(opts.provider);
   const options = {
@@ -57,6 +67,12 @@ export function personalAgentPromptForLaunch(opts: {
       ? { instructions: opts.instructions }
       : {}),
   };
+  if (opts.generation?.key === "v2") {
+    return buildPersonalAgentSystemPromptV2(PERSONAL_AGENT_NAME, format, {
+      ...options,
+      model: opts.generation.model,
+    });
+  }
   return buildPersonalAgentSystemPrompt(PERSONAL_AGENT_NAME, format, options);
 }
 
@@ -150,9 +166,18 @@ export async function composePersonalAgentPromptForInstance(
     opts.tenantId,
     mapping.memberPrincipalId,
   );
+  const variant = myraVariantForTemplateKey(mapping.templateKey);
   return personalAgentPromptForLaunch({
     provider: opts.provider,
     ...(operator !== null ? { operator } : {}),
     ...(instructions !== undefined ? { instructions } : {}),
+    ...(variant !== null
+      ? {
+          generation: {
+            key: variant.promptGeneration,
+            model: variant.model,
+          },
+        }
+      : {}),
   });
 }

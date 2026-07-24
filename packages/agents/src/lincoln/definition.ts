@@ -1,5 +1,5 @@
 import type { CredentialRequirement, GrantRequirement } from "@intx/types";
-import { canonicalizeToolNames } from "../tool-names";
+import { canonicalizeAgentCapabilityNames } from "../tool-names";
 import { buildLincolnSystemPrompt } from "./prompt";
 import type { AgentDeployDescriptor } from "../deploy-descriptor";
 import { LLM_CREDENTIAL_NAME } from "../constants";
@@ -21,10 +21,7 @@ export const LINCOLN_DEPLOY_PROMPT: string =
   buildLincolnSystemPrompt("Lincoln");
 
 export const LINCOLN_CAPABILITIES = {
-  tools: canonicalizeToolNames([
-    "read_file",
-    "write_file",
-    "edit_file",
+  tools: canonicalizeAgentCapabilityNames("Lincoln", [
     "artifact_link_file",
     "firecrawl_scrape",
     "firecrawl_search",

@@ -62,7 +62,6 @@ type DraftItem = {
   description: string | null;
   existingSkillId: string | null;
   files: { path: string; content: string }[];
-  status: "draft" | "approved" | "rejected";
   updatedAt: string;
   createdAt: string;
 };
@@ -71,16 +70,27 @@ const draftsByOwner = new Map<string, DraftItem[]>();
 const draftByOwnerAndId = new Map<string, DraftItem>();
 
 const listSkillDrafts = mock(
-  async (_db: unknown, ctx: { principalId: string }) =>
+  async (_db: unknown, _repoStore: unknown, ctx: { principalId: string }) =>
     draftsByOwner.get(ctx.principalId) ?? [],
 );
 const getOwnedSkillDraftItem = mock(
-  async (_db: unknown, ctx: { principalId: string }, draftId: string) => {
+  async (
+    _db: unknown,
+    _repoStore: unknown,
+    ctx: { principalId: string },
+    draftId: string,
+  ) => {
     const draft = draftByOwnerAndId.get(`${ctx.principalId}:${draftId}`);
     if (!draft) throw new Error(`Skill draft not found: ${draftId}`);
     return draft;
   },
 );
+
+const capturedDraftWrites: any[] = [];
+const upsertSkillDraft = mock(async (_assetService: unknown, _db: unknown, _repoStore: unknown, input: any) => {
+  capturedDraftWrites.push(input);
+  return { draftId: "asset-draft-1" };
+});
 
 mock.module("../services/skill-library", () => ({
   listSkills,
@@ -90,6 +100,7 @@ mock.module("../services/skill-library", () => ({
   toAssetName,
   listSkillDrafts,
   getOwnedSkillDraftItem,
+  upsertSkillDraft,
 }));
 
 const resolveOwnerMemberPrincipalId = mock(
@@ -99,14 +110,6 @@ mock.module("../lib/artifact-tools", () => ({
   resolveOwnerMemberPrincipalId,
 }));
 
-const capturedDraftWrites: any[] = [];
-mock.module("./write-artifact", () => ({
-  writeArtifactDeduped: mock(async (params: any) => {
-    capturedDraftWrites.push(params);
-    return { artifactId: "art-draft-1", version: 3 };
-  }),
-}));
-
 const { createSkillTools } = await import("./list-skills");
 
 const principals = new Map<
@@ -114,32 +117,19 @@ const principals = new Map<
   { id: string; tenantId: string; refId: string } | null
 >();
 
-const priorDraftSources = new Map<string, Record<string, unknown>>();
-
 function fakeDb() {
-  const selectChain = {
-    from: () => selectChain,
-    where: () => selectChain,
-    limit: async () => {
-      // Prior-stamp lookup for skill_draft; keyed by principal in tests as prn_1
-      const source = priorDraftSources.get("prn_1");
-      return source ? [{ source }] : [];
+  return createFakeDrizzleQuery({
+    findFirst: {
+      principal: async () => principals.get("prn_1") ?? null,
     },
-  };
-  return {
-    ...createFakeDrizzleQuery({
-      findFirst: {
-        principal: async () => principals.get("prn_1") ?? null,
-      },
-    }),
-    select: () => selectChain,
-  } as never;
+  }) as never;
 }
 
 function tools(principalId = "prn_1") {
   return createSkillTools({
     db: fakeDb(),
     repoStore: {} as never,
+    assetService: {} as never,
     tenantId: "ten_1",
     principalId,
   });
@@ -156,7 +146,6 @@ beforeEach(() => {
   visibleByUser.clear();
   assetByIdForUser.clear();
   filesByAsset.clear();
-  priorDraftSources.clear();
   draftsByOwner.clear();
   draftByOwnerAndId.clear();
   principals.clear();
@@ -168,21 +157,22 @@ beforeEach(() => {
   getSkillContent.mockClear();
   listSkillDrafts.mockClear();
   getOwnedSkillDraftItem.mockClear();
+  upsertSkillDraft.mockClear();
+  capturedDraftWrites.length = 0;
 });
 
 function draftFixture(over: Partial<DraftItem> = {}): DraftItem {
-  return {
+  const base: DraftItem = {
     id: "art_d1",
     title: "Deck Builder",
     content: "# Deck Builder\nBuild a deck.",
     description: "Turns notes into a deck",
     existingSkillId: null,
     files: [],
-    status: "draft",
     updatedAt: "2026-07-01T00:00:00.000Z",
     createdAt: "2026-07-01T00:00:00.000Z",
-    ...over,
   };
+  return Object.assign(base, over);
 }
 
 describe("list_skill_drafts", () => {
@@ -210,10 +200,11 @@ describe("list_skill_drafts", () => {
       ],
     });
     // Authorized against the resolved OWNER member principal, not the agent id.
-    expect(listSkillDrafts).toHaveBeenCalledWith(expect.anything(), {
-      tenantId: "ten_1",
-      principalId: "prn_owner_1",
-    });
+    expect(listSkillDrafts).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.anything(),
+      { tenantId: "ten_1", principalId: "prn_owner_1" },
+    );
   });
 
   test("fails closed to an empty list when there is no owning member principal", async () => {
@@ -251,6 +242,7 @@ describe("load_skill_draft", () => {
       files: [{ path: "examples/sample.md", content: "# sample" }],
     });
     expect(getOwnedSkillDraftItem).toHaveBeenCalledWith(
+      expect.anything(),
       expect.anything(),
       { tenantId: "ten_1", principalId: "prn_owner_1" },
       "art_d1",
@@ -450,28 +442,23 @@ describe("load_skill", () => {
 });
 
 describe("skill_draft", () => {
-  test("parses name+body, writes as kind=skill-draft, returns {draftId, version}", async () => {
-    capturedDraftWrites.length = 0;
+  test("parses name+body, upserts via the skill-library asset path, returns {draftId}", async () => {
     const resultJson = await tool("skill_draft").handler(
       { name: "my-skill", body: "export const run = () => {};" },
       new AbortController().signal,
     );
     const result = JSON.parse(resultJson);
-    expect(result).toEqual({ draftId: "art-draft-1", version: 3 });
+    expect(result).toEqual({ draftId: "asset-draft-1" });
     expect(capturedDraftWrites).toHaveLength(1);
     expect(capturedDraftWrites[0]).toMatchObject({
       tenantId: "ten_1",
-      principalId: "prn_1",
       ownerPrincipalId: "prn_owner_1",
       title: "my-skill",
       body: "export const run = () => {};",
-      kind: "skill-draft",
     });
-    expect(capturedDraftWrites[0].source).toEqual({ origin: "skill-draft" });
   });
 
   test("fails closed when agent has no owning member principal", async () => {
-    capturedDraftWrites.length = 0;
     resolveOwnerMemberPrincipalId.mockImplementation(async () => null);
     await expect(
       tool("skill_draft").handler(
@@ -482,8 +469,7 @@ describe("skill_draft", () => {
     expect(capturedDraftWrites).toHaveLength(0);
   });
 
-  test("includes optional description, files, existingSkillId in source", async () => {
-    capturedDraftWrites.length = 0;
+  test("passes optional description, files, existingSkillId through to the upsert", async () => {
     await tool("skill_draft").handler(
       {
         name: "revise-me",
@@ -494,8 +480,7 @@ describe("skill_draft", () => {
       },
       new AbortController().signal,
     );
-    expect(capturedDraftWrites[0]?.source).toEqual({
-      origin: "skill-draft",
+    expect(capturedDraftWrites[0]).toMatchObject({
       description: "does x",
       files: [{ path: "util.ts", content: "export {}" }],
       existingSkillId: "skl_abc",
@@ -503,7 +488,6 @@ describe("skill_draft", () => {
   });
 
   test("auto-resolves existingSkillId from a library skill with the same name", async () => {
-    capturedDraftWrites.length = 0;
     visibleByUser.set("usr_1", [
       { id: "skl_match", name: "my-skill", displayName: "My Skill" },
     ]);
@@ -513,14 +497,12 @@ describe("skill_draft", () => {
     );
     const result = JSON.parse(resultJson);
     expect(result.existingSkillId).toBe("skl_match");
-    expect(capturedDraftWrites[0]?.source).toMatchObject({
-      origin: "skill-draft",
+    expect(capturedDraftWrites[0]).toMatchObject({
       existingSkillId: "skl_match",
     });
   });
 
   test("auto-resolves via toAssetName when draft title is display-ish", async () => {
-    capturedDraftWrites.length = 0;
     visibleByUser.set("usr_1", [
       {
         id: "skl_display",
@@ -533,24 +515,8 @@ describe("skill_draft", () => {
       new AbortController().signal,
     );
     expect(JSON.parse(resultJson).existingSkillId).toBe("skl_display");
-    expect(capturedDraftWrites[0]?.source).toMatchObject({
+    expect(capturedDraftWrites[0]).toMatchObject({
       existingSkillId: "skl_display",
-    });
-  });
-
-  test("preserves existingSkillId from a prior draft of the same title", async () => {
-    capturedDraftWrites.length = 0;
-    priorDraftSources.set("prn_1", {
-      origin: "skill-draft",
-      existingSkillId: "skl_prior",
-    });
-    const resultJson = await tool("skill_draft").handler(
-      { name: "my-skill", body: "v2 body" },
-      new AbortController().signal,
-    );
-    expect(JSON.parse(resultJson).existingSkillId).toBe("skl_prior");
-    expect(capturedDraftWrites[0]?.source).toMatchObject({
-      existingSkillId: "skl_prior",
     });
   });
 

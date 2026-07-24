@@ -9,12 +9,27 @@ import {
   useUpdateSchedule,
 } from "../hooks/use-schedules";
 import { useWorkflowsCatalog } from "../hooks/use-workflows-catalog";
+import { RecurrenceAmountInput } from "./RecurrenceAmountInput";
 import {
-  formatLastFired,
+  amountUnitFromInterval,
+  anchorToLocalTimeInputValue,
+  formatLastFiredAt,
   formatNextFire,
-  utcHourOptions,
+  formatRecurrence,
+  intervalFromAmountUnit,
+  localTimeInputValueToAnchor,
+  onlyDailyAllowedForKind,
+  scheduleScopeLabel,
+  type RecurrenceUnit,
 } from "../lib/schedule-time";
 import { scheduleRunDeepLink } from "../lib/schedule-run-link";
+
+const RECURRENCE_UNIT_OPTIONS: { value: RecurrenceUnit; label: string }[] = [
+  { value: "minutes", label: "minutes" },
+  { value: "hours", label: "hours" },
+  { value: "days", label: "days" },
+  { value: "weeks", label: "weeks" },
+];
 
 export interface MySchedulesProps {
   tenantId: string | null;
@@ -59,39 +74,81 @@ function EnabledToggle({
   );
 }
 
-function HourSelect({
-  hourUtc,
+function RecurrenceSelect({
+  recurrence,
   disabled,
   label,
+  kind,
   onChange,
 }: {
-  hourUtc: number;
+  recurrence: ScheduledTrigger["recurrence"];
   disabled: boolean;
   label: string;
-  onChange: (hourUtc: number) => void;
+  kind: string;
+  onChange: (recurrence: ScheduledTrigger["recurrence"]) => void;
 }) {
-  const options = useMemo(() => utcHourOptions(), []);
+  const dailyOnly = onlyDailyAllowedForKind(kind);
+  const { amount, unit } = amountUnitFromInterval(recurrence.intervalMinutes);
+
+  const updateInterval = (nextAmount: number, nextUnit: RecurrenceUnit) => {
+    onChange({
+      ...recurrence,
+      intervalMinutes: intervalFromAmountUnit(nextAmount, nextUnit),
+    });
+  };
+
   return (
-    <select
-      aria-label={`Change fire time for ${label}`}
-      value={hourUtc}
-      disabled={disabled}
-      onChange={(e) => onChange(Number(e.target.value))}
-      className="rounded-[8px] border border-border bg-surface-2 px-2 py-1 text-xs text-text focus:outline-none focus-visible:ring-2 focus-visible:ring-border-strong disabled:opacity-50"
-    >
-      {options.map((o) => (
-        <option key={o.hourUtc} value={o.hourUtc}>
-          {o.label} ({o.hourUtc}:00 UTC)
-        </option>
-      ))}
-    </select>
+    <div className="flex flex-col gap-1">
+      {dailyOnly ? (
+        <span className="text-xs text-text-3">Once a day</span>
+      ) : (
+        <div className="flex items-start gap-1">
+          <span className="mt-1 text-xs text-text-3">Every</span>
+          <RecurrenceAmountInput
+            ariaLabel={`Change interval amount for ${label}`}
+            amount={amount}
+            disabled={disabled}
+            onCommit={(nextAmount) => updateInterval(nextAmount, unit)}
+            className="w-14 rounded-[8px] border border-border bg-surface-2 px-2 py-1 text-xs text-text disabled:opacity-50"
+          />
+          <select
+            aria-label={`Change interval unit for ${label}`}
+            value={unit}
+            disabled={disabled}
+            onChange={(e) =>
+              updateInterval(amount, e.target.value as RecurrenceUnit)
+            }
+            className="rounded-[8px] border border-border bg-surface-2 px-2 py-1 text-xs text-text disabled:opacity-50"
+          >
+            {RECURRENCE_UNIT_OPTIONS.map((o) => (
+              <option key={o.value} value={o.value}>
+                {o.label}
+              </option>
+            ))}
+          </select>
+        </div>
+      )}
+      <input
+        type="time"
+        aria-label={`Change starting time for ${label}`}
+        value={anchorToLocalTimeInputValue(recurrence.anchorMinuteUtc)}
+        disabled={disabled}
+        onChange={(e) =>
+          onChange({
+            ...recurrence,
+            anchorMinuteUtc: localTimeInputValueToAnchor(e.target.value),
+          })
+        }
+        className="rounded-[8px] border border-border bg-surface-2 px-2 py-1 text-xs text-text disabled:opacity-50"
+      />
+      <span className="text-[11px] text-text-3">
+        {formatRecurrence(recurrence)}
+      </span>
+    </div>
   );
 }
 
-function runStatusFor(
-  schedule: ScheduledTrigger,
-  runId: string,
-): string {
+function runStatusFor(schedule: ScheduledTrigger, runId: string): string {
   return (
     schedule.recentFires.find((f) => f.runId === runId)?.status ?? "running"
   );
@@ -121,8 +178,10 @@ function ScheduleRow({
     });
   };
 
-  const handleHourChange = (hourUtc: number) => {
-    updateSchedule.mutateAsync({ id: schedule.id, hourUtc }).catch(() => {
+  const handleRecurrenceChange = (
+    recurrence: ScheduledTrigger["recurrence"],
+  ) => {
+    updateSchedule.mutateAsync({ id: schedule.id, recurrence }).catch(() => {
       /* optimistic update rolled back in the hook */
     });
   };
@@ -155,6 +214,9 @@ function ScheduleRow({
       <div className="flex min-w-0 flex-1 flex-col gap-0.5">
         <span className="truncate text-sm font-semibold text-text">
           {label}
+          <span className="ml-1.5 font-normal text-text-3">
+            · {scheduleScopeLabel(schedule.scope)}
+          </span>
         </span>
         <span className="text-xs text-text-3">
           Last fired:{" "}
@@ -166,10 +228,10 @@ function ScheduleRow({
               )}
               className="font-medium text-text-2 underline-offset-2 hover:underline"
             >
-              {formatLastFired(schedule.lastFiredDayUtc)}
+              {formatLastFiredAt(schedule.recentFires[0]?.firedAt ?? null)}
             </Link>
           ) : (
-            formatLastFired(schedule.lastFiredDayUtc)
+            formatLastFiredAt(schedule.recentFires[0]?.firedAt ?? null)
           )}{" "}
           · Next: {formatNextFire(schedule.nextFireAt, schedule.enabled)}
         </span>
@@ -194,11 +256,11 @@ function ScheduleRow({
           </ul>
         )}
       </div>
-      <HourSelect
-        hourUtc={schedule.hourUtc}
+      <RecurrenceSelect
+        recurrence={schedule.recurrence}
         disabled={updateSchedule.isPending}
         label={label}
-        onChange={handleHourChange}
+        onChange={handleRecurrenceChange}
       />
       <ConfirmButton
         variant="ghost"
@@ -213,7 +275,7 @@ function ScheduleRow({
   );
 }
 
-// The member's automation schedules: one row per scheduled workflow with an
+// The member's routine schedules: one row per scheduled workflow with an
 // enable/pause switch and a confirm-guarded remove. Workflow labels are resolved
 // against the same catalog the schedules were created from.
 export function MySchedules({ tenantId, embedded = false }: MySchedulesProps) {
@@ -230,9 +292,7 @@ export function MySchedules({ tenantId, embedded = false }: MySchedulesProps) {
 
   return (
     <section
-      className={
-        embedded ? "flex flex-col gap-4" : "mt-10 flex flex-col gap-4"
-      }
+      className={embedded ? "flex flex-col gap-4" : "mt-10 flex flex-col gap-4"}
     >
       {!embedded && (
         <div className="flex flex-col gap-1">
@@ -240,7 +300,15 @@ export function MySchedules({ tenantId, embedded = false }: MySchedulesProps) {
             My schedules
           </h2>
           <p className="text-[12px] text-text-3">
-            Workflows you&rsquo;ve put on a daily cadence.
+            Scheduled workflows you own.{" "}
+            <span className="text-text-2">Everyone</span> schedules run once for
+            the workspace and fan outcomes into inboxes — not once per person.{" "}
+            <Link
+              to="/workflows"
+              className="font-medium text-orange underline-offset-2 hover:underline"
+            >
+              Open Workflows →
+            </Link>
           </p>
         </div>
       )}

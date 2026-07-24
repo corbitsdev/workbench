@@ -290,7 +290,7 @@ export interface DeployRouter {
  * WORKBENCH-LOCAL (CL-3104): well-known `agent.undeploy` reason the hub's
  * workflow reconciler sends to hibernate a gate-parked (awaiting) run's
  * deployment. The undeploy frame (`@intx/types/sidecar`) carries only
- * `{ agentAddress, reason }` and the hub-side sender (`@intx/hub-sessions`
+ * `{ agentAddress, reason }` and the hub-side sender (`@workbench/hub-sessions`
  * `sendAgentUndeploy`) exposes only those two fields, so the hibernate
  * flavor rides the reason string — the one hub→sidecar teardown seam that
  * crosses interchange unmodified.

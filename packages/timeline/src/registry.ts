@@ -75,6 +75,24 @@ export const timelineSources: readonly TimelineSourceDescriptor[] = [
     summarySql: "coalesce(src.metadata ->> 'toolName', src.tool_call_id)",
   },
   {
+    kind: "compaction",
+    table: "analytics_event",
+    idColumn: "id",
+    timestamp: {
+      column: "occurred_at",
+      meaning: "event-occurred",
+      clientSupplied: true,
+      note: "occurred_at is carried on the sidecar-emitted event, not stamped by the hub; created_at is the hub receipt time.",
+    },
+    tenantScope: { column: "tenant_id" },
+    principalScope: { column: "principal_id" },
+    filterSql: "src.event_type = 'compaction'",
+    // Raw before→after turn counts from the compaction event metadata
+    // (CL-3839). '?' stands in when a count was not recorded.
+    summarySql:
+      "coalesce(src.metadata ->> 'turnsIn', '?') || '→' || coalesce(src.metadata ->> 'turnsOut', '?')",
+  },
+  {
     kind: "workflow_run",
     table: "workflow_run_record",
     idColumn: "id",

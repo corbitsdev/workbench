@@ -11,7 +11,7 @@ import {
 import { createSidecarOrchestrator, type HubLink } from "@workbench/hub-agent";
 import type { InferenceEvent } from "@intx/types/runtime";
 import { hexEncode, type SignalKind } from "@intx/types";
-import { createAgentRepoStore } from "@intx/hub-sessions";
+import { createAgentRepoStore } from "@workbench/hub-sessions";
 import { buildWorkbenchAdapterRegistry } from "./gemini-thought-signature-patch";
 import {
   readAdapterManifest,
@@ -39,6 +39,7 @@ import {
   createMultistepSourcesRouter,
   createWorkflowRunPackClient,
   createWorkflowRunPackPushingRepoStore,
+  createWorkflowRunPushDrain,
 } from "./workflow-run-pack-client";
 
 // The workflow-run failure path logs at `warning`, not `error`, so these
@@ -377,11 +378,15 @@ const orchestrator = createSidecarOrchestrator({
       registerDeployment: ({ deploymentId, agentAddress }) => {
         deploymentAddressRegistry.record(deploymentId, agentAddress);
       },
-      drainWorkflowRunPushes: (deploymentId) =>
-        wrappedRepoStore.flushWorkflowRunPushes(
-          { kind: "workflow-run", id: deploymentId },
-          "refs/heads/main",
-        ),
+      // WORKBENCH-LOCAL (CL-4184): drain BOTH refs a workflow-run repo
+      // commits to (the run-event log on `refs/heads/main` and the
+      // claim-check inbox/processing/consumed subtree on
+      // `refs/heads/events`) before teardown reclaims the local repo dir.
+      // Draining only `refs/heads/main` left a `markConsumed` commit on
+      // `refs/heads/events` un-drained, so a cold relaunch could rehydrate a
+      // stale claim-check state and re-dispatch an already-answered mail-run.
+      // See `createWorkflowRunPushDrain` for the full mechanism.
+      drainWorkflowRunPushes: createWorkflowRunPushDrain(wrappedRepoStore),
       unregisterDeployment: ({ deploymentId }) => {
         // The pack client's per-deployment cursor lifecycle converged upstream
         // (commitPackedTip advances only on ack, resets only on a fresh

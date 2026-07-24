@@ -143,9 +143,12 @@ export const FilePartSchema = type({
 /** A file — lifted from either a `ChatAttachment` or a `ChatImage`. */
 export type FilePart = typeof FilePartSchema.infer;
 
-export const PartSchema = TextPartSchema.or(ReasoningPartSchema)
-  .or(ToolPartSchema)
-  .or(FilePartSchema);
+export const PartSchema = type.or(
+  TextPartSchema,
+  ReasoningPartSchema,
+  ToolPartSchema,
+  FilePartSchema,
+);
 /** One entry in a message's ordered `parts` array. */
 export type Part = typeof PartSchema.infer;
 

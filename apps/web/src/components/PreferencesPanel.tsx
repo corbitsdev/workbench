@@ -235,7 +235,7 @@ interface SectionProps {
   ) => void;
   readonly reduceMotion: boolean;
   readonly index: number;
-  /** When false, morning-brief extras under Automations are omitted (CL-3823). */
+  /** When false, morning-brief extras under Routines are omitted (CL-3823). */
   readonly schedulerEnabled: boolean;
 }
 
@@ -276,7 +276,7 @@ function PreferenceSection({
           />
         ))}
       </div>
-      {category === "Automations" && schedulerEnabled && (
+      {category === "Routines" && schedulerEnabled && (
         <>
           <BriefSourcesToggles />
           <BriefWorkflowAttachments tenantId={activeTenantId} />
@@ -387,8 +387,8 @@ export function PreferencesPanel({ categories }: PreferencesPanelProps = {}) {
     .filter((group) => {
       if (group.items.length > 0) return true;
       if (group.category === "Inbox") return true;
-      // Keep Automations only when morning-brief extras will render.
-      if (group.category === "Automations" && schedulerEnabled) return true;
+      // Keep Routines only when morning-brief extras will render.
+      if (group.category === "Routines" && schedulerEnabled) return true;
       return false;
     });
 

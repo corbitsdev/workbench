@@ -1,18 +1,23 @@
 const MS_PER_HOUR = 3_600_000;
+const MS_PER_MINUTE = 60_000;
 const MS_PER_DAY = 86_400_000;
 const CREATED_AFTER_FALLBACK_MS = 24 * MS_PER_HOUR;
 const CREATED_AFTER_MAX_LOOKBACK_MS = 7 * MS_PER_DAY;
 
 // Derives the heartbeat brief's `createdAfter` cutoff at fire time. Prefers
-// the schedule's own last-fire instant (day + hour, both UTC) so day 2+ never
-// re-briefs a call already covered by yesterday's fire. Falls back to now
-// minus 24h when the schedule has never fired. Clamps the lookback to 7 days
-// so a schedule that was paused for a while does not dump a week of stale
-// calls into a single brief.
+// the schedule's own last-fire instant (day UTC + anchor minute-of-day UTC)
+// so day 2+ never re-briefs a call already covered by yesterday's fire. Takes
+// the anchor at MINUTE precision (CL-4278) — heartbeat's recurrence editor
+// lets a member set e.g. 08:15, and truncating that to the hour here would
+// silently shift the lookback window by up to 59 minutes against what the
+// member actually set and what the schedule actually fires at. Falls back to
+// now minus 24h when the schedule has never fired. Clamps the lookback to 7
+// days so a schedule that was paused for a while does not dump a week of
+// stale calls into a single brief.
 export function computeHeartbeatCreatedAfter(
   nowMs: number,
   lastFiredDayUtc: number | null,
-  hourUtc: number,
+  anchorMinuteUtc: number,
 ): string {
   const maxLookbackMs = nowMs - CREATED_AFTER_MAX_LOOKBACK_MS;
   if (lastFiredDayUtc === null) {
@@ -20,7 +25,8 @@ export function computeHeartbeatCreatedAfter(
       Math.max(nowMs - CREATED_AFTER_FALLBACK_MS, maxLookbackMs),
     ).toISOString();
   }
-  const lastFiredMs = lastFiredDayUtc * MS_PER_DAY + hourUtc * MS_PER_HOUR;
+  const lastFiredMs =
+    lastFiredDayUtc * MS_PER_DAY + anchorMinuteUtc * MS_PER_MINUTE;
   return new Date(Math.max(lastFiredMs, maxLookbackMs)).toISOString();
 }
 
@@ -58,7 +64,7 @@ export function enrichHeartbeatTriggerPayload(
   enabledSources: string[],
   nowMs: number,
   lastFiredDayUtc: number | null,
-  hourUtc: number,
+  anchorMinuteUtc: number,
   lookback: HeartbeatEnrichmentLookback = "scheduled",
   memberIdentity: HeartbeatMemberIdentity,
 ): Record<string, unknown> {
@@ -66,7 +72,7 @@ export function enrichHeartbeatTriggerPayload(
   const createdAfter =
     lookback === "manual-refresh"
       ? computeManualBriefCreatedAfter(nowMs)
-      : computeHeartbeatCreatedAfter(nowMs, lastFiredDayUtc, hourUtc);
+      : computeHeartbeatCreatedAfter(nowMs, lastFiredDayUtc, anchorMinuteUtc);
   return {
     ...triggerPayload,
     userAddress: memberIdentity.userAddress,

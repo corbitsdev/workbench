@@ -16,7 +16,7 @@ import {
   type SidecarAuthenticator,
   type SidecarRouter,
   type WsHandle,
-} from "@intx/hub-sessions";
+} from "@workbench/hub-sessions";
 
 const acceptAnySidecar: SidecarAuthenticator = async ({ sidecarId }) => ({
   kind: "sidecar",

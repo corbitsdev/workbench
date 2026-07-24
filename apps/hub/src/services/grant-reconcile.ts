@@ -2,7 +2,7 @@ import { and, eq } from "drizzle-orm";
 import { schema as intxSchema } from "@intx/db";
 import type { DB } from "@intx/db";
 import { getLogger } from "@intx/log";
-import type { SidecarRouter } from "@intx/hub-sessions";
+import type { SidecarRouter } from "@workbench/hub-sessions";
 import type { GrantStore } from "@intx/types/authz";
 import { type AgentTemplate, toLlmToolName } from "@workbench/agents";
 import { memberAgentInstance } from "../db/schema";

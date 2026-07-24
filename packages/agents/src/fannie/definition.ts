@@ -1,5 +1,5 @@
 import { CredentialRequirement, GrantRequirement } from "@intx/types";
-import { canonicalizeToolNames } from "../tool-names";
+import { canonicalizeAgentCapabilityNames } from "../tool-names";
 import { FREDDIE_DEPLOY_PROMPT as FABLE_BASE_PROMPT } from "../freddie/prompt";
 import { WORKBENCH_AGENT_GUIDANCE } from "../freddie/workbench-guidance";
 import type { AgentDeployDescriptor } from "../deploy-descriptor";
@@ -29,10 +29,11 @@ export const FANNIE_CREDENTIAL_PROVIDER_NAMES = [
   "github",
   "scrapecreators",
   "bluesky",
+  "corbits-knowledge-engine",
 ] as const;
 
 export const FANNIE_CAPABILITIES = {
-  tools: canonicalizeToolNames([
+  tools: canonicalizeAgentCapabilityNames("Fannie", [
     "firecrawl_scrape",
     "firecrawl_search",
     "firecrawl_map",
@@ -46,15 +47,9 @@ export const FANNIE_CAPABILITIES = {
     "firecrawl_parse",
     "firecrawl_credit_usage",
     "firecrawl_token_usage",
-    "granola_search",
+    "granola_list_notes",
     "hackernews_search",
     "github_activity",
-    "read_file",
-    "write_file",
-    "edit_file",
-    "search_files",
-    "run_shell",
-    "grep",
     "write_artifact",
     "artifact_create",
     "bluesky_search",
@@ -62,6 +57,8 @@ export const FANNIE_CAPABILITIES = {
     "scrapecreators_instagram",
     "scrapecreators_threads",
     "scrapecreators_pinterest",
+    "search_company_knowledge",
+    "capture_to_knowledge",
   ]),
 } as const;
 

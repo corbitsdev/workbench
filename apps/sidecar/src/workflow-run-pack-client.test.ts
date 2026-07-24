@@ -7,7 +7,7 @@ import path from "node:path";
 import git from "isomorphic-git";
 
 import type { InferenceSource } from "@intx/types/runtime";
-import type { RepoId, RepoStore } from "@intx/hub-sessions";
+import type { RepoId, RepoStore } from "@workbench/hub-sessions";
 
 import {
   createDeploymentAddressRegistry,
@@ -17,6 +17,7 @@ import {
   createMultistepSourcesRouter,
   createWorkflowRunPackClient,
   createWorkflowRunPackPushingRepoStore,
+  createWorkflowRunPushDrain,
   WorkflowRunPackTooLargeError,
 } from "./workflow-run-pack-client";
 
@@ -698,6 +699,48 @@ describe("createWorkflowRunPackPushingRepoStore", () => {
     facade.notifyAddressRoutable("agent-clean@example.com");
     await facade.flushWorkflowRunPushes(repoId, "refs/heads/main");
     expect(pushCount).toBe(1);
+  });
+});
+
+// CL-4184: a reaped chat's cold relaunch must not re-execute the last
+// already-answered mail-run. The teardown drain barrier only closes that
+// window if it drains BOTH refs a workflow-run repo commits to — the run
+// event log (`refs/heads/main`) AND the claim-check subtree
+// (`refs/heads/events`) that `markConsumed` writes to. Draining only `main`
+// (the pre-fix behavior) can leave an un-acked `markConsumed` commit on
+// `events` stranded when the local repo dir is reclaimed at teardown, so a
+// cold relaunch rehydrates a stale claim-check state where the last mail is
+// still "processing" and gets genuinely re-dispatched.
+describe("createWorkflowRunPushDrain", () => {
+  test("drains both the run-event ref and the claim-check ref before teardown reclaims the repo", async () => {
+    const flushedRefs: { repoId: RepoId; ref: string }[] = [];
+    const drain = createWorkflowRunPushDrain({
+      flushWorkflowRunPushes: async (repoId, ref) => {
+        flushedRefs.push({ repoId, ref });
+      },
+    });
+
+    await drain("deploy-1");
+
+    const refs = flushedRefs
+      .filter((entry) => entry.repoId.id === "deploy-1")
+      .map((entry) => entry.ref)
+      .sort();
+    expect(refs).toEqual(["refs/heads/events", "refs/heads/main"]);
+  });
+
+  test("surfaces a failure on either ref rather than silently proceeding to teardown", async () => {
+    const drain = createWorkflowRunPushDrain({
+      flushWorkflowRunPushes: async (_repoId, ref) => {
+        if (ref === "refs/heads/events") {
+          throw new Error("claim-check push still un-acked");
+        }
+      },
+    });
+
+    await expect(drain("deploy-2")).rejects.toThrow(
+      "claim-check push still un-acked",
+    );
   });
 });
 

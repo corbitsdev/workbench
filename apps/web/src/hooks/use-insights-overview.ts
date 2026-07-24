@@ -29,6 +29,11 @@ export function useInsightsOverview() {
 
   const dates = resolveRange(preset, customRange);
 
+  // workflowRuns.activeExecutions from this query drives the KpiRow live
+  // pulse (CL-4417). A shorter staleTime + a foreground-only poll keeps that
+  // count near-real-time so a just-ended run stops pulsing within seconds
+  // rather than riding out a stale cache (CL-4419); it pauses in background
+  // tabs (refetchIntervalInBackground: false) to avoid hammering the hub.
   const overviewQuery = useQuery({
     queryKey: [
       "activity-overview",
@@ -38,7 +43,9 @@ export function useInsightsOverview() {
     ],
     queryFn: () => getActivityOverview(activeTenantId!, dates),
     enabled: !!activeTenantId,
-    staleTime: 5 * 60_000,
+    staleTime: 30_000,
+    refetchInterval: 30_000,
+    refetchIntervalInBackground: false,
   });
 
   const showSummaryLoading =

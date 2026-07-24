@@ -1,7 +1,7 @@
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { type } from "arktype";
-import { workflowDefinitionEnvelopeSchema } from "@intx/hub-sessions";
+import { workflowDefinitionEnvelopeSchema } from "@workbench/hub-sessions";
 import { EmbeddedIntakeFieldSchema } from "./workflow-gate-info";
 
 // A workflow definition serialized at build time (CL-2593) and committed under

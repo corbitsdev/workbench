@@ -3,8 +3,16 @@ import { type } from "arktype";
 import { hubFetch } from "./hub-api";
 
 /**
+ * Mirrors MYRA_INSTRUCTIONS_MAX_LENGTH in
+ * apps/hub/src/services/myra-variant-preferences.ts — the hub is the source
+ * of truth and enforces this at the API boundary; this bound lets the web
+ * client validate the same shape before it round-trips.
+ */
+export const MYRA_INSTRUCTIONS_MAX_LENGTH = 4000;
+
+/**
  * The two Myra surfaces a member can pick a definition for: interactive chat
- * threads and unattended inbox-triage automation runs.
+ * threads and unattended inbox-triage routine runs.
  */
 export const MyraVariantSchema = type({
   id: "string",
@@ -32,6 +40,9 @@ export type MyraVariantsResponse = typeof MyraVariantsResponseSchema.infer;
 export const MyraPreferencesSchema = type({
   chat: "string | null",
   triage: "string | null",
+  instructionsGlobal: "string | null",
+  instructionsChat: "string | null",
+  instructionsTriage: "string | null",
   personality: "string | null",
   emojiUse: "string | null",
   uiType: "string | null",
@@ -59,6 +70,9 @@ export type MyraPreferences = typeof MyraPreferencesSchema.infer;
 export const MyraPreferencesUpdateSchema = type({
   "chat?": "string | null",
   "triage?": "string | null",
+  "instructionsGlobal?": `string <= ${MYRA_INSTRUCTIONS_MAX_LENGTH} | null`,
+  "instructionsChat?": `string <= ${MYRA_INSTRUCTIONS_MAX_LENGTH} | null`,
+  "instructionsTriage?": `string <= ${MYRA_INSTRUCTIONS_MAX_LENGTH} | null`,
   "personality?": "string | null",
   "emojiUse?": "string | null",
   "uiType?": "string | null",

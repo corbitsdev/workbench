@@ -3,7 +3,7 @@ import { deepLink, deepLinkPath } from "./deep-link";
 
 describe("deepLinkPath", () => {
   test("artifact", () => {
-    expect(deepLinkPath("artifact", "art-1")).toBe("/artifacts/art-1");
+    expect(deepLinkPath("artifact", "art-1")).toBe("/library/artifacts/art-1");
   });
 
   test("workflow_run resolves to the /workflows destination", () => {

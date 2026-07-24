@@ -342,6 +342,137 @@ export async function getOwnerWorkflows(): Promise<OwnerWorkflows> {
   return parsed;
 }
 
+/** Everyone (tenant-scoped) schedules for the root workbench (owner-guarded, CL-4113). */
+export async function getOwnerSchedules(): Promise<ScheduledTrigger[]> {
+  const raw = await hubFetch<unknown>("GET", "v1/owner/schedules");
+  const parsed = ScheduledTriggerListResponseSchema(raw);
+  if (parsed instanceof type.errors) {
+    throw new Error(`Malformed /owner/schedules response: ${parsed.summary}`);
+  }
+  return parsed.items;
+}
+
+/** Pause or retarget an Everyone schedule (owner-guarded, CL-4113). */
+export async function updateOwnerSchedule(
+  id: string,
+  body: UpdateScheduledTriggerBody,
+): Promise<ScheduledTrigger> {
+  return parseSchedule(
+    await hubFetch<unknown>(
+      "PATCH",
+      `v1/owner/schedules/${encodeURIComponent(id)}`,
+      body,
+    ),
+  );
+}
+
+export const WorkUnitHealthSchema = type({
+  byStatus: { "[string]": "number" },
+  "byKindStatus?": type({
+    kind: "string",
+    status: "string",
+    count: "number",
+  }).array(),
+  oldestPendingAgeMs: "number | null",
+  deadCount: "number",
+  agedLeasedCount: "number",
+});
+export type WorkUnitHealth = typeof WorkUnitHealthSchema.infer;
+
+export const OwnerWorkUnitRowSchema = type({
+  id: "string",
+  tenantId: "string",
+  kind: "string",
+  idempotencyKey: "string",
+  status: "string",
+  attempts: "number",
+  "maxAttempts?": "number",
+  lastError: "string | null",
+  "leaseOwner?": "string | null",
+  "leaseUntil?": "string | null",
+  updatedAt: "string",
+  "createdAt?": "string",
+});
+export type OwnerWorkUnitRow = typeof OwnerWorkUnitRowSchema.infer;
+
+const OwnerWorkUnitListResponseSchema = type({
+  items: OwnerWorkUnitRowSchema.array(),
+});
+
+/** Work-unit queue health (owner-guarded, WQ.6). */
+export async function getOwnerWorkUnitHealth(): Promise<WorkUnitHealth> {
+  const raw = await hubFetch<unknown>("GET", "v1/owner/work-units/health");
+  const parsed = WorkUnitHealthSchema(raw);
+  if (parsed instanceof type.errors) {
+    throw new Error(
+      `Malformed /owner/work-units/health response: ${parsed.summary}`,
+    );
+  }
+  return parsed;
+}
+
+/** Dead-lettered work units (owner-guarded, WQ.6). */
+export async function getOwnerDeadWorkUnits(): Promise<OwnerWorkUnitRow[]> {
+  const raw = await hubFetch<unknown>("GET", "v1/owner/work-units/dead");
+  const parsed = OwnerWorkUnitListResponseSchema(raw);
+  if (parsed instanceof type.errors) {
+    throw new Error(
+      `Malformed /owner/work-units/dead response: ${parsed.summary}`,
+    );
+  }
+  return parsed.items;
+}
+
+/** Aged leased work units (owner-guarded, WQ.6). */
+export async function getOwnerAgedLeasedWorkUnits(): Promise<
+  OwnerWorkUnitRow[]
+> {
+  const raw = await hubFetch<unknown>("GET", "v1/owner/work-units/aged-leased");
+  const parsed = OwnerWorkUnitListResponseSchema(raw);
+  if (parsed instanceof type.errors) {
+    throw new Error(
+      `Malformed /owner/work-units/aged-leased response: ${parsed.summary}`,
+    );
+  }
+  return parsed.items;
+}
+
+const OwnerWorkUnitOpResultSchema = type({
+  ok: "boolean",
+  id: "string",
+});
+export type OwnerWorkUnitOpResult = typeof OwnerWorkUnitOpResultSchema.infer;
+
+/** Retry a dead work unit (owner-guarded, WQ.6). */
+export async function retryOwnerWorkUnit(
+  id: string,
+): Promise<OwnerWorkUnitOpResult> {
+  const raw = await hubFetch<unknown>(
+    "POST",
+    `v1/owner/work-units/${encodeURIComponent(id)}/retry`,
+  );
+  const parsed = OwnerWorkUnitOpResultSchema(raw);
+  if (parsed instanceof type.errors) {
+    throw new Error(`Malformed work-unit retry response: ${parsed.summary}`);
+  }
+  return parsed;
+}
+
+/** Discard a dead work unit without requeue (owner-guarded, WQ.6). */
+export async function discardOwnerWorkUnit(
+  id: string,
+): Promise<OwnerWorkUnitOpResult> {
+  const raw = await hubFetch<unknown>(
+    "POST",
+    `v1/owner/work-units/${encodeURIComponent(id)}/discard`,
+  );
+  const parsed = OwnerWorkUnitOpResultSchema(raw);
+  if (parsed instanceof type.errors) {
+    throw new Error(`Malformed work-unit discard response: ${parsed.summary}`);
+  }
+  return parsed;
+}
+
 /** Tenant members with their owner-role status (owner-guarded, CL-3634). */
 export async function getOwnerMembers(): Promise<OwnerMembersState> {
   const raw = await hubFetch<unknown>("GET", "v1/owner/members");
@@ -472,7 +603,7 @@ export async function getWorkflowsCatalog(
   return parsed;
 }
 
-/** The caller's own automation schedules, parsed at the boundary. Reads the
+/** The caller's own routine schedules, parsed at the boundary. Reads the
  * first page of the keyset-paginated list; nextCursor is ignored for now. */
 export async function listMeSchedules(): Promise<ScheduledTrigger[]> {
   const raw = await hubFetch<unknown>("GET", "v1/me/schedules");
@@ -1179,7 +1310,6 @@ export const ActivityOverviewSchema = type({
   artifacts: {
     total: "number",
     createdInRange: "number",
-    byStatus: ActivityCountRowSchema.array(),
     byKind: ActivityCountRowSchema.array(),
   },
   workflowRuns: {

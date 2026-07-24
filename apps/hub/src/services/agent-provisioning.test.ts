@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, mock } from "bun:test";
 import * as intxDbReal from "@intx/db";
-import type { SessionService, SidecarRouter } from "@intx/hub-sessions";
-import { SessionLaunchError } from "@intx/hub-sessions";
+import type { SessionService, SidecarRouter } from "@workbench/hub-sessions";
+import { SessionLaunchError } from "@workbench/hub-sessions";
 import type { GrantStore } from "@intx/types/authz";
 
 const TEST_API_KEY = "sk-test-key";
@@ -106,7 +106,7 @@ const mockEventCollectors = {
   getAccumulatedText: mock(() => undefined),
   getCurrentTurnId: mock(() => undefined),
   getLastTurnId: mock(() => undefined),
-} as unknown as import("@intx/hub-sessions").EventCollectorRegistry;
+} as unknown as import("@workbench/hub-sessions").EventCollectorRegistry;
 
 function makeSidecarRouter(routable: string[] = []): SidecarRouter {
   return {

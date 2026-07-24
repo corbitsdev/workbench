@@ -1,5 +1,5 @@
 import { manifestFromHubToolEntries } from "@workbench/tool-manifest";
-import { GRANOLA_HUB_TOOLS } from "./index";
+import { GRANOLA_HUB_TOOLS, GRANOLA_WORKFLOW_HUB_TOOLS } from "./index";
 
 export const toolManifestFile = {
   factories: [
@@ -16,6 +16,35 @@ export const toolManifestFile = {
       credentialCatalog: {
         label: "Granola",
       },
+    }),
+    manifestFromHubToolEntries({
+      factoryId: "@workbench/tools-granola/workflow",
+      packageName: "@workbench/tools-granola",
+      providerName: null,
+      entries: GRANOLA_WORKFLOW_HUB_TOOLS,
+      myraCatalog: null,
+      credentialCatalog: null,
+    }),
+    manifestFromHubToolEntries({
+      factoryId: "@workbench/tools-granola/hub",
+      packageName: "@workbench/tools-granola",
+      providerName: null,
+      entries: {
+        granola_spawn_call_runs: { sideEffect: "write" },
+      },
+      myraCatalog: null,
+      credentialCatalog: null,
+    }),
+    manifestFromHubToolEntries({
+      factoryId: "@workbench/tools-granola/call",
+      packageName: "@workbench/tools-granola",
+      providerName: null,
+      entries: {
+        granola_create_tasks: { sideEffect: "write" },
+        granola_fanout_call: { sideEffect: "write" },
+      },
+      myraCatalog: null,
+      credentialCatalog: null,
     }),
   ],
 };

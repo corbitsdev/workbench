@@ -22,7 +22,7 @@ export interface AbPresetVariant {
   /** Catalog canonical model name, resolved at deploy. */
   model: string;
   /**
-   * Optional inference plugin pin, passed through to `inlineInferenceStep`.
+   * Optional inference plugin pin, passed through to `agentStep`.
    * Only needed when a model carries more than one catalog offering (e.g. a
    * gateway offering AND a native-provider offering) — pinning forces the
    * step onto the opencode-zen gateway offering instead of leaving the

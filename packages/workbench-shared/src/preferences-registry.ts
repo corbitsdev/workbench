@@ -19,14 +19,14 @@ import {
 
 export const PREFERENCE_CATEGORIES = [
   "Agent",
-  "Automations",
+  "Routines",
   "Notifications",
   "Inbox",
   "General",
 ] as const;
 
 export const PreferenceCategorySchema = type(
-  "'Agent' | 'Automations' | 'Notifications' | 'Inbox' | 'General'",
+  "'Agent' | 'Routines' | 'Notifications' | 'Inbox' | 'General'",
 );
 export type PreferenceCategory = typeof PreferenceCategorySchema.infer;
 
@@ -44,16 +44,15 @@ export type PreferenceOption = typeof PreferenceOptionSchema.infer;
  * it verbatim so the web settings surface can gate rendering without
  * re-deriving the registry client-side.
  */
-export const AvailabilitySignalSchema = type({
-  kind: "'workflow-deployed'",
-  workflowKind: "string",
-})
-  .or({ kind: "'capability'", provider: "string" })
-  .or({ kind: "'credential-connected'", provider: "string" })
-  .or({
+export const AvailabilitySignalSchema = type.or(
+  { kind: "'workflow-deployed'", workflowKind: "string" },
+  { kind: "'capability'", provider: "string" },
+  { kind: "'credential-connected'", provider: "string" },
+  {
     kind: "'feature-enabled'",
     feature: "'scheduler' | 'triage' | 'tasks-reconciler'",
-  });
+  },
+);
 export type AvailabilitySignal = typeof AvailabilitySignalSchema.infer;
 
 /**
@@ -96,7 +95,7 @@ const PREFERENCE_REGISTRY_BASE: readonly PreferenceEntry[] = [
     default: 13,
     label: "Morning brief time",
     description: "When your morning brief arrives.",
-    category: "Automations",
+    category: "Routines",
     // Owner feature grant is the product kill switch (CL-3823). Heartbeat
     // deploy is still required for the brief to run; that is enforced at
     // schedule/run time, not by double-gating this control.
@@ -155,15 +154,11 @@ const PREFERENCE_REGISTRY_BASE: readonly PreferenceEntry[] = [
     description: "Notify me in my inbox when a workflow run I started fails.",
     category: "Notifications",
   },
-  {
-    key: "notifyRunCompletion",
-    type: "boolean",
-    default: false,
-    label: "Workflow run completions",
-    description:
-      "Notify me in my inbox when a workflow run I started completes successfully.",
-    category: "Notifications",
-  },
+  // CL-4312: generic hub terminal-success mail is not a product surface.
+  // Success reaches the inbox only via result-specific mail (workflow
+  // mail_send, granola fan-out, heartbeat notify, etc.). The former
+  // `notifyRunCompletion` toggle is removed so quiet discoverer ticks cannot
+  // flood the inbox even for members who had previously opted in.
   // Tasks toggles from the task design spike. Triage's own task creation
   // defaults ON so prepare-only members keep getting the tasks it already
   // prepares today; the other two default OFF because they are additive
@@ -177,7 +172,7 @@ const PREFERENCE_REGISTRY_BASE: readonly PreferenceEntry[] = [
     label: "Triage may create tasks",
     description:
       "Let Myra's inbox triage leave a task behind for an actionable message.",
-    category: "Automations",
+    category: "Routines",
     availableWhen: { kind: "feature-enabled", feature: "triage" },
   },
   // Gated on the owner feature grant for the task reconciler (CL-3823). The
@@ -191,7 +186,7 @@ const PREFERENCE_REGISTRY_BASE: readonly PreferenceEntry[] = [
     label: "Auto-send tasks to CRM",
     description:
       "Push new tasks to your connected CRM/tracker automatically instead of sending them on request.",
-    category: "Automations",
+    category: "Routines",
     availableWhen: { kind: "feature-enabled", feature: "tasks-reconciler" },
   },
   {
@@ -379,7 +374,7 @@ const BRIEF_SOURCE_ENTRIES: readonly PreferenceEntry[] =
     default: source.defaultEnabled,
     label: source.label,
     description: source.description,
-    category: "Automations",
+    category: "Routines",
   }));
 
 const INBOX_SOURCE_ENTRIES: readonly PreferenceEntry[] =

@@ -5,6 +5,7 @@ export const timelineEntryKinds = [
   "message",
   "inference_turn",
   "tool_call",
+  "compaction",
   "workflow_run",
   "artifact",
   "artifact_version",
@@ -26,17 +27,20 @@ const base = {
 
 // One variant per kind: the UI switches on `kind`; the SQL never invents
 // display strings — `summary` is always a raw data projection.
-export const TimelineEntrySchema = type({ kind: "'session'", ...base })
-  .or({ kind: "'message'", ...base })
-  .or({ kind: "'inference_turn'", ...base })
-  .or({ kind: "'tool_call'", ...base })
-  .or({ kind: "'workflow_run'", ...base })
-  .or({ kind: "'artifact'", ...base })
-  .or({ kind: "'artifact_version'", ...base })
-  .or({ kind: "'upload'", ...base })
-  .or({ kind: "'memory'", ...base })
-  .or({ kind: "'output_feedback'", ...base })
-  .or({ kind: "'grant'", ...base })
-  .or({ kind: "'credential'", ...base });
+export const TimelineEntrySchema = type.or(
+  { kind: "'session'", ...base },
+  { kind: "'message'", ...base },
+  { kind: "'inference_turn'", ...base },
+  { kind: "'tool_call'", ...base },
+  { kind: "'compaction'", ...base },
+  { kind: "'workflow_run'", ...base },
+  { kind: "'artifact'", ...base },
+  { kind: "'artifact_version'", ...base },
+  { kind: "'upload'", ...base },
+  { kind: "'memory'", ...base },
+  { kind: "'output_feedback'", ...base },
+  { kind: "'grant'", ...base },
+  { kind: "'credential'", ...base },
+);
 
 export type TimelineEntry = typeof TimelineEntrySchema.infer;

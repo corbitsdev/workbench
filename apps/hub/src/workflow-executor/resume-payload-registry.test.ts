@@ -103,7 +103,7 @@ describe("validateResumePayload", () => {
       validateResumePayload("attio-task-agent", "sync-approval", {
         confirm: false,
       }),
-    ).toEqual({ ok: true });
+    ).toEqual({ ok: true, payload: { confirm: false } });
   });
 
   test("rejects an attio sync-approval payload with a non-boolean confirm", () => {
@@ -113,16 +113,79 @@ describe("validateResumePayload", () => {
     expect(result.ok).toBe(false);
   });
 
-  test("accepts a fully-specified sync-approval confirm (locators + note)", () => {
-    expect(
-      validateResumePayload("attio-task-agent", "sync-approval", {
+  test("accepts the canonical sync-approval confirm (locators + content + idempotencyKey) unchanged", () => {
+    const result = validateResumePayload("attio-task-agent", "sync-approval", {
+      confirm: true,
+      taskId: "task_1",
+      idempotencyKey: "task_1",
+      parentObject: "companies",
+      parentRecordId: "rec_1",
+      content: "Pilot kicked off.",
+    });
+    expect(result).toEqual({
+      ok: true,
+      payload: {
         confirm: true,
         taskId: "task_1",
+        idempotencyKey: "task_1",
         parentObject: "companies",
         parentRecordId: "rec_1",
-        note: "Pilot kicked off.",
-      }),
-    ).toEqual({ ok: true });
+        content: "Pilot kicked off.",
+      },
+    });
+  });
+
+  // TRANSITIONAL (CL-4232): a run parked at sync-approval before the
+  // content/idempotencyKey rename may still submit the pre-rename shape
+  // (`note`, no `idempotencyKey`) — accepted and normalized to the canonical
+  // shape so the write-back steps (which read this payload directly, no
+  // argMap) get the same arguments as a fresh submission would. See the
+  // TRANSITIONAL comment on SyncApprovalPayloadSchema for the deletion
+  // condition.
+  test("accepts a legacy sync-approval confirm (locators + note) and normalizes it to the canonical shape", () => {
+    const result = validateResumePayload("attio-task-agent", "sync-approval", {
+      confirm: true,
+      taskId: "task_1",
+      parentObject: "companies",
+      parentRecordId: "rec_1",
+      note: "Pilot kicked off.",
+    });
+    expect(result).toEqual({
+      ok: true,
+      payload: {
+        confirm: true,
+        taskId: "task_1",
+        idempotencyKey: "task_1",
+        parentObject: "companies",
+        parentRecordId: "rec_1",
+        content: "Pilot kicked off.",
+      },
+    });
+  });
+
+  test("legacy and canonical sync-approval confirms normalize to the SAME write-back arguments", () => {
+    const legacy = validateResumePayload("attio-task-agent", "sync-approval", {
+      confirm: true,
+      taskId: "task_1",
+      parentObject: "companies",
+      parentRecordId: "rec_1",
+      note: "Pilot kicked off.",
+    });
+    const canonical = validateResumePayload(
+      "attio-task-agent",
+      "sync-approval",
+      {
+        confirm: true,
+        taskId: "task_1",
+        idempotencyKey: "task_1",
+        parentObject: "companies",
+        parentRecordId: "rec_1",
+        content: "Pilot kicked off.",
+      },
+    );
+    expect(legacy.ok && legacy.payload).toEqual(
+      canonical.ok ? canonical.payload : undefined,
+    );
   });
 
   test("rejects a sync-approval confirm that is missing the write locators (CL-2684)", () => {
@@ -481,6 +544,108 @@ describe("validateResumePayload", () => {
       validateResumePayload("pain-point-collateral", "review", {
         approvedPieces: [],
         decisions: [],
+      }),
+    ).toEqual({ ok: true });
+  });
+
+  test("accepts a complete research-backed scripts-and-briefs intake", () => {
+    expect(
+      validateResumePayload("gtm-scripts-briefs", "intake", {
+        topic: "AI agent launches for revenue teams",
+        days: 30,
+        audience: "VP Sales",
+        objective: "Start informed sales conversations.",
+      }),
+    ).toEqual({ ok: true });
+  });
+
+  test("rejects a scripts-and-briefs intake without a viable research query", () => {
+    expect(
+      validateResumePayload("gtm-scripts-briefs", "intake", {
+        topic: "",
+        days: 0,
+      }).ok,
+    ).toBe(false);
+  });
+
+  test("accepts multi-source-collateral sources with mixed picks (CL-4034)", () => {
+    expect(
+      validateResumePayload("multi-source-collateral", "sources", {
+        artifactItems: [{ artifactId: "art_1" }],
+        noteItems: [],
+        issueItems: [{ id: "CL-1" }],
+        text: "extra brief",
+      }),
+    ).toEqual({ ok: true });
+  });
+
+  test("rejects multi-source-collateral sources with nothing selected", () => {
+    const result = validateResumePayload("multi-source-collateral", "sources", {
+      artifactItems: [],
+      noteItems: [],
+      issueItems: [],
+      text: "   ",
+    });
+    expect(result.ok).toBe(false);
+  });
+
+  test("accepts multi-source-collateral options with generate items", () => {
+    expect(
+      validateResumePayload("multi-source-collateral", "options", {
+        items: [
+          {
+            contentType: "linkedin-post",
+            sourceContext: "Call notes…",
+            systemPrompt: "Write short.",
+            tone: "direct",
+          },
+        ],
+      }),
+    ).toEqual({ ok: true });
+  });
+
+  test("rejects multi-source-collateral options with empty items", () => {
+    expect(
+      validateResumePayload("multi-source-collateral", "options", {
+        items: [],
+      }).ok,
+    ).toBe(false);
+  });
+
+  test("accepts multi-source-collateral review with regenerate path", () => {
+    expect(
+      validateResumePayload("multi-source-collateral", "review", {
+        approvedPieces: [{ format: "blog-short", title: "T", content: "Body" }],
+        shouldRegenerate: true,
+        regenerateItems: [
+          {
+            contentType: "linkedin-post",
+            sourceContext: "ctx",
+            systemPrompt: "p",
+            previousContent: "old",
+            feedback: "make punchier",
+          },
+        ],
+      }),
+    ).toEqual({ ok: true });
+  });
+
+  test("rejects multi-source-collateral review shouldRegenerate without items", () => {
+    expect(
+      validateResumePayload("multi-source-collateral", "review", {
+        approvedPieces: [],
+        shouldRegenerate: true,
+        regenerateItems: [],
+      }).ok,
+    ).toBe(false);
+  });
+
+  test("accepts multi-source-collateral review-final", () => {
+    expect(
+      validateResumePayload("multi-source-collateral", "review-final", {
+        approvedPieces: [
+          { format: "twitter-post", title: "X", content: "post body" },
+        ],
       }),
     ).toEqual({ ok: true });
   });

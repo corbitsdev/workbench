@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Link } from "react-router";
 import type { RosterInstance } from "@workbench/client";
-import { Badge } from "@workbench/ui";
+import { Badge, PulsingRing } from "@workbench/ui";
 
 import type { ActivityOverview } from "../../lib/hub-api";
 import { useTenantRoster } from "../../hooks/use-tenant-roster";
@@ -40,7 +40,7 @@ type InstanceMetrics = {
 
 type InstanceDisplay = {
   name: string;
-  badgeLabel: "Chat" | "Inbox automation" | null;
+  badgeLabel: "Chat" | "Inbox routine" | null;
 };
 
 /** Shown when an instance has no usable title/subject yet. */
@@ -50,7 +50,7 @@ function fallbackTitle(instance: RosterInstance): string {
 
 /**
  * Names one Myra instance for the roster row (CL-3770): a chat thread reads
- * "Myra — <thread title>", a triage/automation instance reads
+ * "Myra — <thread title>", a triage/routine instance reads
  * "Myra — <mail subject>" (the hub stores that as "Triage: <subject>" in the
  * same label column — CL-2737's mailbox-triage.ts), and any other agent kind
  * keeps its existing definition name with no badge.
@@ -64,7 +64,7 @@ export function displayForInstance(instance: RosterInstance): InstanceDisplay {
   if (surface === "triage") {
     const subject = instance.label?.replace(TRIAGE_LABEL_PREFIX, "").trim();
     const title = subject || fallbackTitle(instance);
-    return { name: `Myra — ${title}`, badgeLabel: "Inbox automation" };
+    return { name: `Myra — ${title}`, badgeLabel: "Inbox routine" };
   }
   return { name: instance.name, badgeLabel: null };
 }
@@ -86,16 +86,28 @@ function InstanceRow({
   metrics: InstanceMetrics | undefined;
 }) {
   const { name, badgeLabel } = displayForInstance(instance);
+  const tone = instanceStatusTone(instance.status);
   return (
     <Link
       to={actorHref(instance.principalId)}
       className="flex items-center gap-3 rounded-[12px] border border-border bg-surface px-4 py-3 outline-none transition-[background-color] hover:bg-row-hover focus-visible:ring-1 focus-visible:ring-accent"
       data-testid="agent-instance-row"
     >
-      <span
-        className={`inline-flex shrink-0 items-center rounded-sm px-1.5 py-0.5 font-mono text-[9.5px] uppercase tracking-[0.05em] ${statusToneClass(instanceStatusTone(instance.status))}`}
-      >
-        {instance.status}
+      <span className="inline-flex shrink-0 items-center gap-1.5">
+        {tone === "positive" && (
+          <span
+            className="relative inline-flex h-1.5 w-1.5 shrink-0"
+            data-testid="agent-live-pulse"
+          >
+            <PulsingRing colorClassName="bg-green/60" />
+            <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-green" />
+          </span>
+        )}
+        <span
+          className={`inline-flex items-center rounded-sm px-1.5 py-0.5 font-mono text-[9.5px] uppercase tracking-[0.05em] ${statusToneClass(tone)}`}
+        >
+          {instance.status}
+        </span>
       </span>
       <span className="min-w-0 flex-1 truncate text-[13px] font-semibold text-text">
         {name}

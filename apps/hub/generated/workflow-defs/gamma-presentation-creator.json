@@ -119,7 +119,7 @@
           "tags": {
             "workbench.stepKind": "deterministic-tool",
             "workbench.tool": "@workbench/tools-artifact/artifact:artifact_read",
-            "workbench.argMap": "{\"artifactId\":{\"from\":\"artifactId\",\"optional\":true}}",
+            "workbench.argMap": "{\"artifactId\":{\"from\":\"artifactId\",\"skipStepIfAbsent\":true}}",
             "workbench.nonFatal": "true",
             "workbench.title": "Load the chosen artifact"
           }
@@ -149,7 +149,7 @@
           "tags": {
             "workbench.stepKind": "deterministic-tool",
             "workbench.tool": "@workbench/tools-granola/granola:granola_get_note",
-            "workbench.argMap": "{\"noteId\":{\"from\":\"noteId\",\"optional\":true}}",
+            "workbench.argMap": "{\"noteId\":{\"from\":\"noteId\",\"skipStepIfAbsent\":true}}",
             "workbench.nonFatal": "true",
             "workbench.title": "Load the chosen note"
           }
@@ -173,9 +173,8 @@
           "inference": {
             "sources": []
           },
-          "description": "Inline single-turn inference: presentation-generate",
+          "description": "Reasoning step: presentation-generate",
           "tags": {
-            "workbench.stepKind": "inline-inference",
             "workbench.title": "Draft the deck"
           }
         },
@@ -250,9 +249,8 @@
               }
             ]
           },
-          "description": "Inline single-turn inference: presentation-describe",
+          "description": "Reasoning step: presentation-describe",
           "tags": {
-            "workbench.stepKind": "inline-inference",
             "workbench.title": "Summarize the deck"
           }
         },

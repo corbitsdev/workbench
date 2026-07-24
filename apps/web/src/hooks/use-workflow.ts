@@ -45,7 +45,7 @@ export type WorkflowMeta = typeof workflowMetaSchema.infer;
 export const runRecordSchema = type({
   runId: "string",
   kind: "string",
-  status: "'provisioning'|'running'|'awaiting'|'completed'|'failed'",
+  status: "'provisioning'|'running'|'awaiting'|'completed'|'failed'|'stopped'",
   "deploymentId?": "string",
   // The run's deploy-time version meta, joined on the hub from the run's own
   // deployment so the version badge does not depend on the grant-filtered
@@ -144,7 +144,7 @@ export function useWorkflowRuns(
 export const conversationRunSchema = type({
   runId: "string",
   kind: "string",
-  status: "'provisioning'|'running'|'awaiting'|'completed'|'failed'",
+  status: "'provisioning'|'running'|'awaiting'|'completed'|'failed'|'stopped'",
   createdAt: "string",
   originConversationId: "string|null",
 });
@@ -688,6 +688,37 @@ export function useArchiveWorkflowRun(tenantId?: string | null) {
     },
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ["workflow-runs"] });
+    },
+  });
+}
+
+// Stop a run without soft-deleting it (CL-3687 / CL-3688). The hub marks the
+// index `stopped` and tears the deployment down; the row stays in history.
+// Invalidate every surface that still treats the run as live so it leaves the
+// dock, active strip, and pane chrome immediately.
+export function useStopWorkflowRun(tenantId?: string | null) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (runId: string) => {
+      await api<{ stopped: true }>(
+        "POST",
+        withTenant(
+          `/workflow-exec/records/${encodeURIComponent(runId)}/stop`,
+          tenantId,
+        ),
+      );
+    },
+    onSuccess: (_data, runId) => {
+      void queryClient.invalidateQueries({ queryKey: ["workflow-runs"] });
+      void queryClient.invalidateQueries({
+        queryKey: ["conversation-workflow-runs"],
+      });
+      void queryClient.invalidateQueries({
+        queryKey: ["workflow-record", runId, tenantId ?? null],
+      });
+      void queryClient.invalidateQueries({
+        queryKey: workflowRunStateQueryKey(runId, tenantId),
+      });
     },
   });
 }

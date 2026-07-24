@@ -39,7 +39,7 @@ const {
   getAvailableToolDetail,
   resolveToolVersions,
 } = await import("./tenant-tools");
-const { WORKSPACE_BUILTINS_REGISTRY } = await import("@intx/hub-sessions");
+const { WORKSPACE_BUILTINS_REGISTRY } = await import("@workbench/hub-sessions");
 
 const db = {} as unknown as Parameters<typeof listAvailableToolSummaries>[0];
 

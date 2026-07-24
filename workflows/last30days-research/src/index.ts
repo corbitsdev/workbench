@@ -1,10 +1,12 @@
-import { awaitSignal, defineWorkflow } from "@intx/workflow";
-import type { StepPrimitive } from "@intx/workflow";
+import { action, awaitSignal, defineWorkflow } from "@intx/workflow";
+import type { Primitive, StepPrimitive } from "@intx/workflow";
 import {
   deterministicToolStep,
-  inlineInferenceStep,
+  agentStep,
+  canonicalizeStepToolName,
   LLM_WRITER_MODEL,
 } from "@workbench/agents";
+import { INTAKE_SIGNAL, STEP_UI_HINTS } from "./step-ui-hints";
 import {
   buildCurateSystemPrompt,
   buildEntityExtractSystemPrompt,
@@ -36,36 +38,75 @@ export const kind = "last30days-research";
 // browser-safe module.
 export { DISPLAY_STEPS } from "./display-steps";
 
-// The first-intake form descriptor (CL-3509): the fields the attach UI collects
-// when this workflow is scheduled, so a scheduled run's `intake` gate is
-// pre-filled and auto-delivered without a human. Mirrors the `intakeForm` block
-// (topic required, focus optional); the stored payload validates against
+// The first-intake form descriptor (CL-3509 / CL-3860): schedule field metadata
+// the attach UI and Routines form collect so a scheduled run's `intake` gate
+// is pre-filled and auto-delivered without a human. Mirrors the intake form
+// (topic required, focus optional); payload validates against
 // Last30daysIntakePayloadSchema at the /resume boundary.
 export const INTAKE_FIELDS = [
   {
     kind: "text",
+    inputHint: "text",
     name: "topic",
     label: "Topic",
     placeholder: "e.g. AI coding agents for GTM teams",
     required: true,
+    help: "What should each scheduled run research?",
+    order: 0,
   },
   {
     kind: "textarea",
+    inputHint: "textarea",
     name: "focus",
     label: "Focus (optional)",
     placeholder: "Narrow the query or angle",
+    help: "Optional angle or constraints for the brief.",
+    order: 1,
   },
 ] as const;
+
+// Native `action` handler refs — the tool's canonical (factory-prefixed) name,
+// resolved via the same build-time-checked lookup `deterministicToolStep`
+// uses, so a typo'd or manifest-drifted tool name fails the build instead of
+// deploying a step nothing can dispatch. Each of these steps is fatal-only
+// (no best-effort degrade needed) and its `argMap` was always an identity
+// passthrough or a literal, so a plain `action` + native selector expresses it
+// exactly with no reshape step in between.
+export const GROUND_QUERIES_HANDLER = canonicalizeStepToolName(
+  "last30days-ground-queries",
+  "last30days_ground_queries",
+);
+export const ENTITY_QUERIES_HANDLER = canonicalizeStepToolName(
+  "last30days-entity-queries",
+  "last30days_entity_queries",
+);
+export const COLLECT_HANDLER = canonicalizeStepToolName(
+  "last30days-collect",
+  "last30days_collect",
+);
+export const WORKFLOW_BRIEF_HANDLER = canonicalizeStepToolName(
+  "last30days-build-brief",
+  "last30days_workflow_brief",
+);
+export const FORMAT_REPORT_DOCUMENT_HANDLER = canonicalizeStepToolName(
+  "last30days-document",
+  "last30days_format_report_document",
+);
+export const WRITE_ARTIFACT_HANDLER = canonicalizeStepToolName(
+  "last30days-persist-artifact",
+  "write_artifact",
+);
 
 // Each source pulls its query from the grounding step's per-source map rather
 // than the raw topic, so e.g. github_activity gets repo/org names and
 // youtube_search gets video-title phrasing instead of all sources searching the
 // same string. `last30days_ground_queries` guarantees every key is a non-empty
-// string (falling back to the base query), so a thin grounding reply never
-// blanks a source.
-const groundedQueriesInput = {
-  from: "steps.groundQueries.output.content",
-} as const;
+// string (falling back to the base query) nested under `{ query }` (CL-4232),
+// so a plain per-source path selector already yields the tool's own argument
+// name — no per-source rename.
+function groundedQueryInput(sourceKey: string) {
+  return { from: `steps.groundQueries.output.content.${sourceKey}` } as const;
+}
 
 // A source fetch is best-effort: a dead search API (rate-limit/auth/network)
 // must degrade to a recorded skip in the brief, never fail the run. `nonFatal`
@@ -76,10 +117,16 @@ const groundedQueriesInput = {
 // being retried. Acceptable here: not killing the run dominates, and the
 // chronic failures (e.g. bluesky) are permanent, not transient.
 //
-// `sourceKey` selects this source's tailored query off the grounded-queries map;
-// `limit` raises the per-source result count off each tool's small default
-// toward its cap so the candidate pool is deep enough to survive date-filtering
-// and the relevance floor.
+// This is one of the two step shapes in this workflow that stays a
+// `deterministicToolStep` rather than a native `action`: the native `action`
+// primitive has no `nonFatal` concept (a thrown tool error inside an action's
+// `ctx.perform` always propagates and fails the run — see
+// `apps/sidecar/src/action-tool-handler.ts`), so best-effort degrade is only
+// expressible through the Workbench dispatch-tag mechanism. The `argMap` shim
+// itself is still gone: `input` composes the tool's exact args directly via
+// `merge`+`literal` (the per-source path selector already yields `{ query }`,
+// the tool's own argument name — see `groundedQueryInput`/`entityQueryInput`),
+// so there is no separate reshape step left to drift from the evaluated input.
 function sourceStep(opts: {
   id: string;
   tool: string;
@@ -92,10 +139,11 @@ function sourceStep(opts: {
     id: opts.id,
     tool: opts.tool,
     title: opts.title,
-    input: groundedQueriesInput,
-    argMap: {
-      query: { from: opts.sourceKey },
-      limit: { literal: opts.limit },
+    input: {
+      merge: [
+        groundedQueryInput(opts.sourceKey),
+        { literal: { limit: opts.limit } },
+      ],
     },
     after: opts.after,
     nonFatal: true,
@@ -208,9 +256,9 @@ function buildSourceSteps(firstAfter: string): Record<string, StepPrimitive> {
 // each key is a non-empty string (base-query fallback). Serial like round 1
 // (the CL-2314 single-writer constraint): chained off `firstAfter` and each
 // predecessor, and starting only after the entire round-1 chain has drained.
-const entityQueriesInput = {
-  from: "steps.entityQueries.output.content",
-} as const;
+function entityQueryInput(mapKey: string) {
+  return { from: `steps.entityQueries.output.content.${mapKey}` } as const;
+}
 
 const ROUND2_SOURCES = [
   {
@@ -261,10 +309,11 @@ function buildEntityRoundSteps(
       id: `last30days-fetch-${source.id}`,
       tool: source.tool,
       title: source.title,
-      input: entityQueriesInput,
-      argMap: {
-        query: { from: source.mapKey },
-        limit: { literal: source.limit },
+      input: {
+        merge: [
+          entityQueryInput(source.mapKey),
+          { literal: { limit: source.limit } },
+        ],
       },
       after: [previous],
       nonFatal: true,
@@ -274,19 +323,17 @@ function buildEntityRoundSteps(
   return steps;
 }
 
-export const workflow = defineWorkflow({
-  id: kind,
-  trigger: { type: "manual" },
-  steps: {
-    intake: awaitSignal({ name: "intake" }),
-
+// Shared research substrate for workflows that need a current, grounded story.
+// It intentionally stops at `brief`: callers own their final artifact-writing step.
+export function buildResearchSteps(): Record<string, Primitive> {
+  return {
     // Genuine-reasoning grounding (W1.1): turns the topic + focus into one search
     // query tailored to each platform. Robust to a degraded or malformed grounding
     // REPLY — `groundQueries` backfills any missing/blank source with the
     // untailored base query. It is NOT, however, best-effort against an inference
     // OUTAGE: like `rerank`/`write`, an inline step cannot carry `nonFatal`, so a
     // failed grounding turn fails the run (a one-call dependency, same as those).
-    ground: inlineInferenceStep({
+    ground: agentStep({
       id: "last30days-ground",
       title: "Ground the topic",
       systemPrompt: buildGroundingSystemPrompt(),
@@ -294,19 +341,22 @@ export const workflow = defineWorkflow({
       after: ["intake"],
     }),
 
-    // Parse the grounding reply into a per-source query map addressable by field
-    // (`steps.groundQueries.output.content.<source>`). Returns object content so
-    // each source step can select its own query.
-    groundQueries: deterministicToolStep({
-      id: "last30days-ground-queries",
-      title: "Draft per-source queries",
-      tool: "last30days_ground_queries",
+    // Parse the grounding reply into a per-source query map addressable by
+    // field (`steps.groundQueries.output.content.<source>`). Native `action`:
+    // fatal-only (a malformed reply still degrades gracefully inside the tool;
+    // a THROWN tool error here — e.g. a bad merged input shape — should fail
+    // the run), and the tool's `additionalProperties: true` schema already
+    // reads straight off the merged `{ topic, focus, reply }` input with no
+    // reshape, so there was never an argMap to carry forward.
+    groundQueries: action({
+      handler: GROUND_QUERIES_HANDLER,
       input: {
         merge: [
           { from: "steps.intake.output" },
           { from: "steps.ground.output" },
         ],
       },
+      effect: { requires: [GROUND_QUERIES_HANDLER] },
       after: ["ground"],
     }),
 
@@ -318,7 +368,7 @@ export const workflow = defineWorkflow({
     // names the concrete launches/entities that surfaced, emitting an entity-focused
     // follow-up query per platform so round 2 chases them deeper. Best-effort — the
     // parse tool falls back to the base query if the reply is malformed.
-    entities: inlineInferenceStep({
+    entities: agentStep({
       id: "last30days-entities",
       title: "Extract key entities",
       systemPrompt: buildEntityExtractSystemPrompt(),
@@ -327,17 +377,17 @@ export const workflow = defineWorkflow({
     }),
 
     // Parse the entity reply into a round-2 per-source query map addressable by
-    // field (`steps.entityQueries.output.content.<source>`).
-    entityQueries: deterministicToolStep({
-      id: "last30days-entity-queries",
-      title: "Draft entity queries",
-      tool: "last30days_entity_queries",
+    // field (`steps.entityQueries.output.content.<source>`). Native `action`,
+    // same reasoning as `groundQueries`.
+    entityQueries: action({
+      handler: ENTITY_QUERIES_HANDLER,
       input: {
         merge: [
           { from: "steps.intake.output" },
           { from: "steps.entities.output" },
         ],
       },
+      effect: { requires: [ENTITY_QUERIES_HANDLER] },
       after: ["entities"],
     }),
 
@@ -347,12 +397,13 @@ export const workflow = defineWorkflow({
     ...buildEntityRoundSteps("entityQueries"),
 
     // Collect both rounds into one clean candidate pool (date-filtered, deduped,
-    // structural-junk-filtered) for the curate step to judge.
-    collect: deterministicToolStep({
-      id: "last30days-collect",
-      title: "Collect & dedupe results",
-      tool: "last30days_collect",
+    // structural-junk-filtered) for the curate step to judge. Native `action`:
+    // the tool reads the whole `steps` map itself (`additionalProperties: true`),
+    // so `input: { from: "steps" }` was already the entire call, argMap-free.
+    collect: action({
+      handler: COLLECT_HANDLER,
       input: { from: "steps" },
+      effect: { requires: [COLLECT_HANDLER] },
       after: [LAST_ROUND2_ID],
     }),
 
@@ -361,7 +412,7 @@ export const workflow = defineWorkflow({
     // survivors into 3-6 named themes, and select 3-5 verbatim community quotes.
     // Runs on the heavier writer model. Best-effort — the brief tool falls back to
     // the deterministic buildReport pipeline if the curate JSON is missing or junk.
-    curate: inlineInferenceStep({
+    curate: agentStep({
       id: "last30days-curate",
       title: "Curate themes & quotes",
       systemPrompt: buildCurateSystemPrompt(),
@@ -372,21 +423,33 @@ export const workflow = defineWorkflow({
     }),
 
     // Assemble the structured brief: from the curate JSON when usable, else the
-    // deterministic fallback over the collected pool.
-    brief: deterministicToolStep({
-      id: "last30days-build-brief",
-      title: "Assemble the brief",
-      tool: "last30days_workflow_brief",
+    // deterministic fallback over the collected pool. Native `action`, same
+    // whole-`steps`-map read as `collect`.
+    brief: action({
+      handler: WORKFLOW_BRIEF_HANDLER,
       input: { from: "steps" },
+      effect: { requires: [WORKFLOW_BRIEF_HANDLER] },
       after: ["curate"],
     }),
+  };
+}
 
-    // The synthesis turn runs on a heavier model (LLM_WRITER_MODEL) than the
-    // research/grounding steps: long-form, grounded report writing benefits from
-    // the deeper model, while grounding/rerank stay on the fast default. Falls
-    // back to the default when the tenant catalog does not carry the writer model
-    // (resolveWorkflowDeploySource resolves it optionally).
-    write: inlineInferenceStep({
+// Re-exported so server-side consumers of the main entry (the workflow
+// catalog, the pipeline) keep working unchanged. Browser consumers must
+// import these from the `./browser` subpath instead (see package.json
+// exports) — importing this main entry pulls in `defineWorkflow` and
+// `@workbench/agents`, both of which construct agents at module load time
+// and crash in the browser.
+export { INTAKE_SIGNAL, STEP_UI_HINTS };
+
+export const workflow = defineWorkflow({
+  id: kind,
+  trigger: { type: "manual" },
+  steps: {
+    intake: awaitSignal({ name: INTAKE_SIGNAL }),
+    ...buildResearchSteps(),
+
+    write: agentStep({
       id: "last30days-write-report",
       title: "Write the report",
       systemPrompt: buildWriterSystemPrompt(),
@@ -401,25 +464,44 @@ export const workflow = defineWorkflow({
       after: ["brief"],
     }),
 
-    persist: deterministicToolStep({
-      id: "last30days-persist-artifact",
-      title: "Save the research artifact",
-      tool: "write_artifact",
+    // Pairs the intake topic with the writer agent's reply into { title, body }
+    // (CL-4232) — the one place the agent's `reply` output field is read, so
+    // persist never reshapes it. Native `action`: the tool reads `topic`/`reply`
+    // straight off the merged input (both already top-level, unrenamed), so
+    // this never carried an argMap.
+    document: action({
+      handler: FORMAT_REPORT_DOCUMENT_HANDLER,
       input: {
         merge: [
           { from: "steps.intake.output" },
-          { from: "steps.brief.output" },
           { from: "steps.write.output" },
         ],
       },
-      argMap: {
-        title: { from: "topic" },
-        body: { from: "reply" },
-        kind: { literal: "research" },
-        content: { from: "content" },
-        jobLabel: { literal: "Last 30 days research" },
-      },
+      effect: { requires: [FORMAT_REPORT_DOCUMENT_HANDLER] },
       after: ["write"],
+    }),
+
+    // Persist the artifact. Native `action`, fatal-only (a persist failure must
+    // fail the run). The former `argMap` here was NOT a rename shim — every
+    // field (`title`, `body`, `content`) already carried its write_artifact
+    // argument name straight off the merge of `document.output.content`
+    // (`{ title, body }`) and `brief.output` (`{ content: "<report JSON>" }`,
+    // read by the hub's write_artifact handler to populate the artifact's rich
+    // brief + citations — CL-2640 confirmed this field is load-bearing, not
+    // dead). `kind`/`jobLabel` were constants. So the merge selector plus one
+    // `{ literal }` for the two constants expresses the exact same call with no
+    // reshape step at all.
+    persist: action({
+      handler: WRITE_ARTIFACT_HANDLER,
+      input: {
+        merge: [
+          { from: "steps.document.output.content" },
+          { from: "steps.brief.output" },
+          { literal: { kind: "research", jobLabel: "Last 30 days research" } },
+        ],
+      },
+      effect: { requires: [WRITE_ARTIFACT_HANDLER] },
+      after: ["document"],
     }),
   },
 });

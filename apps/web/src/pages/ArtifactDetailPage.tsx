@@ -9,25 +9,14 @@ import {
 } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { type } from "arktype";
-import {
-  Badge,
-  type BadgeTone,
-  buttonVariants,
-  Button,
-  cn,
-  ConfirmButton,
-} from "@workbench/ui";
+import { buttonVariants, Button, cn, ConfirmButton } from "@workbench/ui";
 import {
   ArtifactDetailShell,
   ArtifactMeta,
   formatArtifactDate,
-  shouldShowArtifactStatusBadge,
   visualForKind,
 } from "@workbench/artifact";
-import {
-  GammaPresentationContentSchema,
-  type ArtifactStatus,
-} from "@workbench/shared";
+import { GammaPresentationContentSchema } from "@workbench/shared";
 import { useArchiveArtifact, useArtifact } from "@workbench/client/react";
 
 import { getMe } from "../lib/hub-api";
@@ -35,7 +24,9 @@ import { buildApiUrl } from "../lib/api";
 import { clientOptions } from "../lib/client-options";
 import ArtifactBody, {
   ArtifactUploadPresenceSchema,
+  getResearchReportActionsProps,
 } from "../components/ArtifactBody";
+import { ReportActions } from "../components/ResearchBody";
 import { ErrorBoundary } from "../components/ErrorBoundary";
 import { resolveKindLabel } from "../lib/resolve-kind-label";
 import { useActiveWorkbench } from "../lib/active-workbench-context";
@@ -43,23 +34,6 @@ import { useChatLauncher } from "../lib/chat-launcher-context";
 import { buildArtifactMessage } from "../lib/artifact-chat-message";
 import { usePublishActiveContext } from "../lib/active-context-store";
 import { useSetPageChrome, useSetPageChromeLeading } from "../lib/page-chrome";
-
-function artifactStatusLabel(status: ArtifactStatus): string {
-  switch (status) {
-    case "approved":
-      return "Approved";
-    case "rejected":
-      return "Rejected";
-    default:
-      return "Draft";
-  }
-}
-
-const STATUS_TONE: Record<ArtifactStatus, BadgeTone> = {
-  draft: "neutral",
-  approved: "positive",
-  rejected: "danger",
-};
 
 // Kinds whose content is a downloadable file served by the download route
 // (uploaded binaries and CSV exports). gamma_presentation is handled
@@ -101,24 +75,31 @@ function resolveGammaUrl(kind: string, content: string): string | null {
 }
 
 function ArtifactSummaryHeader({
+  title,
   kindLabel,
-  status,
   version,
   createdAt,
 }: {
+  title: string;
   kindLabel: string | undefined;
-  status: ArtifactStatus;
   version: number;
   createdAt: string;
 }) {
   return (
-    <div className="flex flex-wrap items-center gap-2 text-sm">
-      {kindLabel && <span className="font-medium text-text">{kindLabel}</span>}
-      {shouldShowArtifactStatusBadge(status) ? (
-        <Badge tone={STATUS_TONE[status]}>{artifactStatusLabel(status)}</Badge>
-      ) : null}
-      <span className="text-text-3">v{version}</span>
-      <span className="text-text-3">{formatArtifactDate(createdAt)}</span>
+    <div className="flex flex-col gap-1">
+      <h1 className="text-lg font-semibold leading-snug text-text">{title}</h1>
+      <div className="flex flex-wrap items-center gap-2 text-sm">
+        {kindLabel && (
+          <span
+            className="font-medium text-text"
+            data-testid="artifact-detail-kind"
+          >
+            {kindLabel}
+          </span>
+        )}
+        <span className="text-text-3">v{version}</span>
+        <span className="text-text-3">{formatArtifactDate(createdAt)}</span>
+      </div>
     </div>
   );
 }
@@ -184,11 +165,19 @@ export function ArtifactDetailPage() {
       (artifact.kind === "gamma_presentation" &&
         hasUploadSource(artifact.source));
     const gammaUrl = resolveGammaUrl(artifact.kind, artifact.content);
+    const researchActionsProps = getResearchReportActionsProps(artifact);
     return (
       <div
         data-testid="artifact-detail-chrome-actions"
         className="flex flex-row flex-wrap items-center justify-end gap-1"
       >
+        {researchActionsProps && (
+          <ReportActions
+            markdown={researchActionsProps.markdown}
+            brief={researchActionsProps.brief}
+            variant="chrome"
+          />
+        )}
         {canDownload && (
           <a
             href={buildApiUrl(`/artifacts/${artifact.id}/download`)}
@@ -244,7 +233,7 @@ export function ArtifactDetailPage() {
               onConfirm={() =>
                 archiveMutation.mutate(
                   { artifactId: artifact.id, tenantId: activeTenantId },
-                  { onSuccess: () => navigate("/artifacts") },
+                  { onSuccess: () => navigate("/library/artifacts") },
                 )
               }
               className={ARTIFACT_DETAIL_CHROME_ACTION_CLASS}
@@ -277,7 +266,7 @@ export function ArtifactDetailPage() {
     if (artifact === undefined) return null;
     return (
       <Link
-        to="/artifacts"
+        to="/library/artifacts"
         className="inline-flex items-center gap-1.5 text-sm text-text-2 transition-colors hover:text-text"
       >
         <ArrowLeft size={14} aria-hidden />
@@ -296,7 +285,7 @@ export function ArtifactDetailPage() {
       <CenteredNotice>
         <div className="flex flex-col items-center gap-2">
           <span>This artifact couldn't be found.</span>
-          <Link to="/artifacts" className="text-orange underline">
+          <Link to="/library/artifacts" className="text-orange underline">
             Back to Artifacts
           </Link>
         </div>
@@ -309,7 +298,7 @@ export function ArtifactDetailPage() {
   }
 
   function handleOpenParent(parentId: string) {
-    navigate(`/artifacts/${parentId}`);
+    navigate(`/library/artifacts/${parentId}`);
   }
 
   const kindLabel = resolveKindLabel(artifact.kind);
@@ -331,8 +320,8 @@ export function ArtifactDetailPage() {
       accentClass={accent}
       header={
         <ArtifactSummaryHeader
+          title={artifact.title}
           kindLabel={kindLabel}
-          status={artifact.status}
           version={artifact.version}
           createdAt={artifact.createdAt}
         />

@@ -19,6 +19,15 @@ interface PagePanelProps {
    */
   fitContent?: boolean;
   className?: string;
+  /**
+   * Fill token for the outer bleed and the panel itself. Defaults to `"bg"`
+   * (the page-level fill used by top-level routes hosted directly under the
+   * app shell's `bg-page` main). Pass `"surface"` when the panel is nested
+   * inside a surface that already supplies its own background — e.g. the
+   * Settings shell, which is already framed on `bg-page` — otherwise the
+   * panel's `bg-bg` fill reads as a stray grey card instead of blending in.
+   */
+  surface?: "bg" | "surface";
 }
 
 /**
@@ -32,6 +41,7 @@ export function PagePanel({
   flat = false,
   fitContent = false,
   className,
+  surface = "bg",
 }: PagePanelProps) {
   const sizing = fitContent
     ? "w-full max-h-full self-start"
@@ -40,11 +50,13 @@ export function PagePanel({
   if (scroll) {
     overflow = fitContent ? "overflow-y-auto" : "min-h-full overflow-y-auto";
   }
+  const fill = surface === "surface" ? "bg-surface" : "bg-bg";
   return (
-    <div className="flex h-full overflow-hidden bg-bg">
+    <div className={cn("flex h-full overflow-hidden", fill)}>
       <section
         className={cn(
-          "flex flex-col bg-bg",
+          "flex flex-col",
+          fill,
           sizing,
           overflow,
           !flat && "shadow-[var(--shadow)]",

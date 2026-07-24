@@ -72,6 +72,7 @@ let fetchNextMailboxCalls = 0;
 let fetchNextTasksCalls = 0;
 const markReadIds: string[] = [];
 const itemActionCalls: { id: string; action: string }[] = [];
+const bulkActionCalls: { action: string; ids: string[] }[] = [];
 const detailQueryIds: (string | null)[] = [];
 const taskLookupIds: (string | null)[] = [];
 
@@ -108,6 +109,20 @@ mock.module("../lib/active-workbench-context", () => ({
   useActiveWorkbench: () => ({ activeTenantId: null }),
 }));
 
+mock.module("../hooks/use-me-features", () => ({
+  useMeFeatures: () => ({
+    data: {
+      features: [{ name: "scheduler", enabled: true }],
+    },
+    isLoading: false,
+    isError: false,
+  }),
+  isFeatureEnabled: (
+    data: { features: { name: string; enabled: boolean }[] } | undefined,
+    name: string,
+  ) => data?.features.some((f) => f.name === name && f.enabled) ?? false,
+}));
+
 mock.module("../hooks/use-mailbox", () => ({
   MAILBOX_POLL_MS: 30_000,
   parseMailboxView: (raw: string | null) => {
@@ -123,7 +138,10 @@ mock.module("../hooks/use-mailbox", () => ({
     return null;
   },
   useMailboxBulkAction: () => ({
-    mutateAsync: async () => undefined,
+    mutateAsync: async (input: { action: string; ids: string[] }) => {
+      bulkActionCalls.push(input);
+      return undefined;
+    },
     isPending: false,
   }),
   useMailboxItemAction: () => ({
@@ -175,6 +193,24 @@ mock.module("../hooks/use-mailbox", () => ({
 }));
 
 const { InboxPage } = require("./InboxPage");
+const { PageChromeProvider, usePageChromeSlot } = require("../lib/page-chrome");
+
+function ChromeSlotProbe() {
+  return React.createElement(
+    "div",
+    { "data-testid": "chrome-slot" },
+    usePageChromeSlot(),
+  );
+}
+
+function InboxWithChrome() {
+  return React.createElement(
+    React.Fragment,
+    null,
+    React.createElement(ChromeSlotProbe),
+    React.createElement(InboxPage),
+  );
+}
 
 function makeMessage(over: Partial<MailboxMessage>): MailboxMessage {
   return {
@@ -218,11 +254,18 @@ function makeRun(over: Partial<NowRun>): NowRun {
 function renderInbox(initialPath = "/inbox") {
   const router = createMemoryRouter(
     [
-      { path: "/inbox", element: React.createElement(InboxPage) },
-      { path: "/inbox/:messageId", element: React.createElement(InboxPage) },
+      { path: "/inbox", element: React.createElement(InboxWithChrome) },
+      {
+        path: "/inbox/:messageId",
+        element: React.createElement(InboxWithChrome),
+      },
       {
         path: "/workflows/:workflowId",
         element: React.createElement("div", null, "Workflow run surface"),
+      },
+      {
+        path: "/settings",
+        element: React.createElement("div", null, "Settings"),
       },
     ],
     { initialEntries: [initialPath] },
@@ -234,7 +277,11 @@ function renderInbox(initialPath = "/inbox") {
     React.createElement(
       QueryClientProvider,
       { client: queryClient },
-      React.createElement(RouterProvider, { router }),
+      React.createElement(
+        PageChromeProvider,
+        null,
+        React.createElement(RouterProvider, { router }),
+      ),
     ),
   );
   return router;
@@ -260,6 +307,7 @@ afterEach(() => {
   fetchNextTasksCalls = 0;
   markReadIds.length = 0;
   itemActionCalls.length = 0;
+  bulkActionCalls.length = 0;
   detailQueryIds.length = 0;
   taskLookupIds.length = 0;
 });
@@ -290,14 +338,20 @@ describe("InboxPage", () => {
     );
   });
 
-  it("explains what fills the inbox and links to the morning brief settings", () => {
+  it("shows a compact empty Now strip with a morning-brief settings link", () => {
     mailbox = { data: [], isLoading: false, isError: false };
     renderInbox();
-    screen.getByText(
-      /morning brief.*workflow approvals.*task updates.*mail from your agents/i,
-    );
+    // Compact Now status (not the multi-line hero). Queue still owns the
+    // longer “caught up” empty voice.
+    screen.getByText("Clear");
+    screen.getByText("You're all caught up");
+    expect(
+      screen.queryByText(
+        /morning brief.*workflow approvals.*task updates.*mail from your agents/i,
+      ),
+    ).toBeNull();
     const settingsLink = screen.getByRole("link", {
-      name: /set up your morning brief/i,
+      name: /set up morning brief/i,
     }) as HTMLAnchorElement;
     expect(settingsLink.getAttribute("href")).toBe("/settings#morning-brief");
   });
@@ -501,6 +555,55 @@ describe("InboxPage", () => {
     expect(markReadIds).toEqual([]);
   });
 
+  // CL-4423 regression: opening a message that is NOT in the paginated,
+  // kind-filtered `messages` list (e.g. a Now card, a deep link, or anything
+  // beyond page 1) must still fire mark-read, falling back to the detail
+  // fetch's own copy of the message the same way `headerSource` does.
+  // Against the pre-fix `listRow`-only derivation this fails: `listRow` is
+  // null for an id absent from `mailbox`, so `unreadSelectedId` never
+  // resolves and the mutation never fires.
+  it("marks read a message that is unread but not present in the loaded mailbox page (CL-4423)", () => {
+    mailbox = {
+      data: [makeMessage({ id: "msg-other", subject: "Unrelated" })],
+      isLoading: false,
+      isError: false,
+    };
+    detail = {
+      data: {
+        ...makeMessage({
+          id: "msg-far",
+          subject: "Beyond page 1",
+          read: false,
+        }),
+        body: "This message only exists via the detail fetch.",
+      },
+      isLoading: false,
+      isError: false,
+    };
+    renderInbox("/inbox/msg-far");
+    screen.getByRole("heading", { name: "Beyond page 1" });
+    expect([...new Set(markReadIds)]).toEqual(["msg-far"]);
+  });
+
+  it("does not re-mark an already-read message reached only through the detail fetch", () => {
+    mailbox = {
+      data: [makeMessage({ id: "msg-other", subject: "Unrelated" })],
+      isLoading: false,
+      isError: false,
+    };
+    detail = {
+      data: {
+        ...makeMessage({ id: "msg-far", subject: "Beyond page 1", read: true }),
+        body: "Already read.",
+      },
+      isLoading: false,
+      isError: false,
+    };
+    renderInbox("/inbox/msg-far");
+    screen.getByRole("heading", { name: "Beyond page 1" });
+    expect(markReadIds).toEqual([]);
+  });
+
   it("renders the pane for a message beyond the loaded mailbox pages, from the detail fetch alone", () => {
     mailbox = {
       data: [makeMessage({ id: "msg-1", subject: "Morning brief" })],
@@ -605,29 +708,41 @@ describe("InboxPage layout controls", () => {
     within(restored).getByRole("button", { name: "All" });
   });
 
-  it("offers a mobile Messages/Activity switch that toggles the active section", () => {
+  it("shows the command queue label and denser priority chips", () => {
     mailbox = {
-      data: [makeMessage({ id: "msg-1", subject: "One" })],
+      data: [
+        makeMessage({ id: "msg-1", subject: "Morning brief", read: true }),
+      ],
       isLoading: false,
       isError: false,
     };
     renderInbox();
-    const section = screen.getByRole("navigation", { name: "Inbox section" });
-    const messagesTab = within(section).getByRole("button", {
-      name: "Messages",
-    });
-    const activityTab = within(section).getByRole("button", {
-      name: "Activity",
-    });
-    expect(messagesTab.getAttribute("aria-current")).toBe("page");
-    expect(activityTab.getAttribute("aria-current")).toBeNull();
-
-    fireEvent.click(activityTab);
-    expect(activityTab.getAttribute("aria-current")).toBe("page");
-    expect(messagesTab.getAttribute("aria-current")).toBeNull();
+    screen.getByText("Command queue");
+    // Briefs band as MED (actionable next) so the label never collides with the "Now" strip.
+    screen.getByText("MED");
+    screen.getByRole("list", { name: "Messages" });
   });
 
-  it("returns to the message list, not the Activity pane, when backing out of a message opened from Activity", () => {
+  it("shows HIGH/MED/LOW priority even when the row is unread", () => {
+    mailbox = {
+      data: [
+        makeMessage({
+          id: "msg-1",
+          subject: "Deck ready",
+          read: false,
+          refs: [{ kind: "artifact", ref: "art-1" }],
+        }),
+      ],
+      isLoading: false,
+      isError: false,
+    };
+    renderInbox();
+    screen.getByText("HIGH");
+    expect(screen.queryByText("UNREAD")).toBeNull();
+    expect(screen.queryByText("NOW")).toBeNull();
+  });
+
+  it("returns to the message list when backing out of an open message", () => {
     mailbox = {
       data: [makeMessage({ id: "msg-1", subject: "Morning brief" })],
       isLoading: false,
@@ -638,11 +753,7 @@ describe("InboxPage layout controls", () => {
       isLoading: false,
       isError: false,
     };
-    renderInbox();
-    const section = screen.getByRole("navigation", { name: "Inbox section" });
-    fireEvent.click(within(section).getByRole("button", { name: "Activity" }));
-    const feed = screen.getByRole("list", { name: "Now" });
-    fireEvent.click(within(feed).getByText("Morning brief"));
+    renderInbox("/inbox/msg-1");
     fireEvent.click(screen.getByRole("button", { name: /back to inbox/i }));
     const rail = screen.getByRole("list", { name: "Messages" });
     expect(rail.closest("aside")?.className).not.toContain("max-md:hidden");
@@ -695,7 +806,7 @@ describe("InboxPage layout controls", () => {
     expect(itemActionCalls).toEqual([{ id: "msg-1", action: "restore" }]);
   });
 
-  it("hides the mobile section switch while a message is open", () => {
+  it("hides the folder rail when a message is open on mobile", () => {
     mailbox = {
       data: [makeMessage({ id: "msg-1", subject: "One" })],
       isLoading: false,
@@ -707,9 +818,10 @@ describe("InboxPage layout controls", () => {
       isError: false,
     };
     renderInbox("/inbox/msg-1");
-    expect(
-      screen.queryByRole("navigation", { name: "Inbox section" }),
-    ).toBeNull();
+    const rail = screen
+      .getByRole("list", { name: "Messages" })
+      .closest("aside");
+    expect(rail?.className).toContain("max-md:hidden");
   });
 });
 
@@ -719,19 +831,19 @@ describe("InboxPage Now feed", () => {
     tasksState = { data: [], isLoading: false, isError: false };
     mailbox = { data: [], isLoading: false, isError: false };
     nowMailbox = {
-      data: [makeMessage({ id: "msg-active", subject: "Still in Now" })],
+      data: [makeMessage({ id: "msg-active", subject: "Morning brief" })],
       isLoading: false,
       isError: false,
     };
     renderInbox("/inbox?view=trash");
     const feed = screen.getByRole("list", { name: "Now" });
-    within(feed).getByText("Still in Now");
+    within(feed).getByText("Morning brief");
     expect(
-      screen.queryByText("Still in Now", { selector: "aside *" }),
+      screen.queryByText("Morning brief", { selector: "aside *" }),
     ).toBeNull();
   });
 
-  it("orders awaiting gates before unread mail before open tasks", () => {
+  it("orders Now cards by attention rank: gate, task, then brief", () => {
     runsState = {
       data: [makeRun({ runId: "run-1", kind: "call-to-collateral" })],
       isLoading: false,
@@ -752,8 +864,8 @@ describe("InboxPage Now feed", () => {
     const rows = within(feed).getAllByRole("listitem");
     expect(rows).toHaveLength(3);
     within(rows[0]!).getByText("call-to-collateral");
-    within(rows[1]!).getByText("Morning brief");
-    within(rows[2]!).getByText("Call Acme back");
+    within(rows[1]!).getByText("Call Acme back");
+    within(rows[2]!).getByText("Morning brief");
   });
 
   it("deep-links a gate row to the run's respond surface", () => {
@@ -817,7 +929,7 @@ describe("InboxPage Now feed", () => {
       isError: false,
     };
     renderInbox();
-    screen.getByText("You're all caught up");
+    screen.getByText("Clear");
     expect(screen.queryByRole("list", { name: "Now" })).toBeNull();
   });
 
@@ -849,9 +961,11 @@ describe("InboxPage Now feed", () => {
     runsState = { data: undefined, isLoading: true, isError: false };
     renderInbox();
     expect(screen.queryByText("You're all caught up")).toBeNull();
+    expect(screen.queryByText("Clear")).toBeNull();
+    screen.getByText("Loading what needs you…");
   });
 
-  it("renders a linkless task row as non-interactive, not a self-link", () => {
+  it("deep-links a linkless task card into the inbox task highlight", () => {
     mailbox = { data: [], isLoading: false, isError: false };
     tasksState = {
       data: [makeTask({ id: "task-2", title: "Draft the recap" })],
@@ -861,10 +975,12 @@ describe("InboxPage Now feed", () => {
     const router = renderInbox();
     const feed = screen.getByRole("list", { name: "Now" });
     const title = within(feed).getByText("Draft the recap");
-    expect(title.closest("a")).toBeNull();
+    const anchor = title.closest("a");
+    expect(anchor).not.toBeNull();
+    expect(anchor?.getAttribute("href")).toBe("/inbox?task=task-2");
     fireEvent.click(title);
     expect(router.state.location.pathname).toBe("/inbox");
-    expect(router.state.location.search).toBe("");
+    expect(router.state.location.search).toBe("?task=task-2");
   });
 
   it("highlights the now-feed row matching ?task=<id>", () => {
@@ -1012,7 +1128,7 @@ describe("InboxPage load-more control", () => {
     screen.getByRole("button", { name: /loading/i });
   });
 
-  it("hides the control behind the reading pane when a message is selected", () => {
+  it("keeps load-more available under the queue while a message is open", () => {
     mailbox = {
       data: [makeMessage({ id: "msg-1", subject: "Morning brief" })],
       isLoading: false,
@@ -1020,6 +1136,337 @@ describe("InboxPage load-more control", () => {
     };
     mailboxPaging = { hasNextPage: true, isFetchingNextPage: false };
     renderInbox("/inbox/msg-1");
-    expect(screen.queryByRole("button", { name: /show older/i })).toBeNull();
+    screen.getByRole("button", { name: /show older/i });
+  });
+});
+
+describe("InboxPage kind filter + select all (CL-4331)", () => {
+  it("selects every loaded message via the select-all control", () => {
+    mailbox = {
+      data: [
+        makeMessage({ id: "msg-1", subject: "One" }),
+        makeMessage({ id: "msg-2", subject: "Two" }),
+      ],
+      isLoading: false,
+      isError: false,
+    };
+    renderInbox();
+    fireEvent.click(
+      screen.getByRole("checkbox", { name: /select all visible messages/i }),
+    );
+    screen.getByText("2 selected");
+    const rowChecks = screen.getAllByRole("checkbox", {
+      name: /select message from/i,
+    });
+    expect(rowChecks).toHaveLength(2);
+    for (const box of rowChecks) {
+      expect((box as HTMLInputElement).checked).toBe(true);
+    }
+  });
+
+  it("filters system workflow-run notices via ?kind=system", () => {
+    mailbox = {
+      data: [
+        makeMessage({
+          id: "msg-sys",
+          subject: "Workflow run completed: granola-call",
+        }),
+        makeMessage({ id: "msg-real", subject: "Deck ready for Acme" }),
+      ],
+      isLoading: false,
+      isError: false,
+    };
+    renderInbox("/inbox?kind=system");
+    const list = screen.getByRole("list", { name: "Messages" });
+    within(list).getByText("Workflow run completed: granola-call");
+    expect(within(list).queryByText("Deck ready for Acme")).toBeNull();
+  });
+
+  it("hides system run notices when filtering to results", () => {
+    mailbox = {
+      data: [
+        makeMessage({
+          id: "msg-sys",
+          subject: "Workflow run completed: granola-call",
+        }),
+        makeMessage({ id: "msg-real", subject: "Deck ready for Acme" }),
+      ],
+      isLoading: false,
+      isError: false,
+    };
+    renderInbox("/inbox?kind=results");
+    const list = screen.getByRole("list", { name: "Messages" });
+    within(list).getByText("Deck ready for Acme");
+    expect(
+      within(list).queryByText("Workflow run completed: granola-call"),
+    ).toBeNull();
+  });
+
+  it("writes kind into the URL when the kind facet is clicked", () => {
+    mailbox = {
+      data: [makeMessage({ id: "msg-1", subject: "One" })],
+      isLoading: false,
+      isError: false,
+    };
+    const router = renderInbox();
+    const kindNav = screen.getByRole("navigation", { name: "Message kind" });
+    fireEvent.click(
+      within(kindNav).getByRole("button", { name: "Run notices" }),
+    );
+    expect(router.state.location.search).toContain("kind=system");
+  });
+
+  it("bulk-archives every message selected via select-all", () => {
+    mailbox = {
+      data: [
+        makeMessage({ id: "msg-1", subject: "One" }),
+        makeMessage({ id: "msg-2", subject: "Two" }),
+      ],
+      isLoading: false,
+      isError: false,
+    };
+    renderInbox();
+    fireEvent.click(
+      screen.getByRole("checkbox", { name: /select all visible messages/i }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: /^archive$/i }));
+    expect(bulkActionCalls).toEqual([
+      { action: "archive", ids: ["msg-1", "msg-2"] },
+    ]);
+  });
+});
+
+describe("Hybrid Focus shell (CL-4397)", () => {
+  it("hard-caps Now cards at three when the feed has more pin-eligible items", () => {
+    runsState = {
+      data: [makeRun({ runId: "run-1", kind: "call-to-collateral" })],
+      isLoading: false,
+      isError: false,
+    };
+    mailbox = {
+      data: [
+        makeMessage({
+          id: "msg-fail",
+          subject: "Workflow run failed: x",
+          date: "2026-07-11T11:00:00.000Z",
+        }),
+        makeMessage({
+          id: "msg-art",
+          subject: "Deck ready",
+          date: "2026-07-11T10:00:00.000Z",
+          refs: [{ kind: "artifact", ref: "art-1" }],
+        }),
+        makeMessage({
+          id: "msg-brief",
+          subject: "Morning brief",
+          date: "2026-07-11T09:00:00.000Z",
+        }),
+      ],
+      isLoading: false,
+      isError: false,
+    };
+    tasksState = {
+      data: [makeTask({ id: "task-1", title: "Call Acme back" })],
+      isLoading: false,
+      isError: false,
+    };
+    renderInbox();
+    const feed = screen.getByRole("list", { name: "Now" });
+    expect(within(feed).getAllByRole("listitem")).toHaveLength(3);
+    within(feed).getByText("call-to-collateral");
+    within(feed).getByText("Workflow run failed: x");
+    within(feed).getByText("Deck ready");
+    expect(within(feed).queryByText("Call Acme back")).toBeNull();
+    expect(within(feed).queryByText("Morning brief")).toBeNull();
+  });
+
+  it("never pins quiet system success mail into Now cards", () => {
+    mailbox = {
+      data: [
+        makeMessage({
+          id: "msg-noise",
+          subject: "Workflow run completed: granola-call",
+        }),
+        makeMessage({ id: "msg-brief", subject: "Morning brief" }),
+      ],
+      isLoading: false,
+      isError: false,
+    };
+    renderInbox();
+    const feed = screen.getByRole("list", { name: "Now" });
+    within(feed).getByText("Morning brief");
+    expect(
+      within(feed).queryByText("Workflow run completed: granola-call"),
+    ).toBeNull();
+  });
+
+  it("selects the matching command-queue row when a Now mail card is opened", () => {
+    mailbox = {
+      data: [makeMessage({ id: "msg-1", subject: "Morning brief" })],
+      isLoading: false,
+      isError: false,
+    };
+    detail = {
+      data: {
+        ...makeMessage({ id: "msg-1", subject: "Morning brief" }),
+        body: "Brief body.",
+      },
+      isLoading: false,
+      isError: false,
+    };
+    const router = renderInbox();
+    const feed = screen.getByRole("list", { name: "Now" });
+    fireEvent.click(within(feed).getByText("Morning brief"));
+    expect(router.state.location.pathname).toBe("/inbox/msg-1");
+    const rail = screen.getByRole("list", { name: "Messages" });
+    const selected = within(rail).getByRole("button", {
+      current: true,
+    });
+    expect(selected.textContent).toContain("Morning brief");
+  });
+
+  it("collapses the Now card grid while a message is open", () => {
+    mailbox = {
+      data: [makeMessage({ id: "msg-1", subject: "Morning brief" })],
+      isLoading: false,
+      isError: false,
+    };
+    detail = {
+      data: {
+        ...makeMessage({ id: "msg-1", subject: "Morning brief" }),
+        body: "Brief body.",
+      },
+      isLoading: false,
+      isError: false,
+    };
+    renderInbox("/inbox/msg-1");
+    // Expanded count label becomes a compact summary; card list is tucked.
+    screen.getByText("1 thing needs you");
+    expect(screen.queryByRole("list", { name: "Now" })).toBeNull();
+    screen.getByText("Brief body.");
+    // Focus reading layout: queue pin ~33%, detail flexes into the rest.
+    const rail = screen
+      .getByRole("list", { name: "Messages" })
+      .closest("aside");
+    expect(rail?.className).toContain("md:w-[min(34%,420px)]");
+    expect(rail?.className).not.toContain("md:w-full");
+  });
+
+  it("gives the command queue full desktop width when nothing is open", () => {
+    mailbox = {
+      data: [makeMessage({ id: "msg-1", subject: "Morning brief" })],
+      isLoading: false,
+      isError: false,
+    };
+    renderInbox();
+    const rail = screen
+      .getByRole("list", { name: "Messages" })
+      .closest("aside");
+    expect(rail?.className).toContain("md:w-full");
+    expect(rail?.className).not.toContain("md:w-[min(34%,420px)]");
+    // Detail stays in the tree but is zero-width / inert for a11y.
+    expect(screen.queryByText("Brief body.")).toBeNull();
+  });
+
+  // CL-4423 Fix 2: marking the open item read invalidates the "unread" query.
+  // When that refetch drops the item (it's no longer unread), the open row
+  // must not vanish out from under the drawer — it stays pinned, still
+  // selected, until the user opens something else.
+  it("keeps the open item visible and selected in the unread rail after it's marked read", () => {
+    mailbox = {
+      data: [
+        makeMessage({ id: "msg-1", subject: "Morning brief", read: false }),
+      ],
+      isLoading: false,
+      isError: false,
+    };
+    detail = {
+      data: {
+        ...makeMessage({ id: "msg-1", subject: "Morning brief", read: false }),
+        body: "Brief body.",
+      },
+      isLoading: false,
+      isError: false,
+    };
+    renderInbox("/inbox/msg-1?view=unread");
+    const rail = screen.getByRole("list", { name: "Messages" });
+    within(rail).getByText("Morning brief");
+    expect([...new Set(markReadIds)]).toEqual(["msg-1"]);
+
+    // Simulate the "unread" query's post-invalidate refetch dropping the
+    // now-read item, then force a re-render off the fresh mailbox state.
+    mailbox = { data: [], isLoading: false, isError: false };
+    fireEvent.click(
+      screen.getByRole("checkbox", { name: /select all visible messages/i }),
+    );
+
+    const railAfter = screen.getByRole("list", { name: "Messages" });
+    within(railAfter).getByText("Morning brief");
+    const selectedRow = within(railAfter).getByRole("button", {
+      current: true,
+    });
+    expect(selectedRow.textContent).toContain("Morning brief");
+  });
+
+  it("drops the pinned unread item once the user navigates away from it", () => {
+    mailbox = {
+      data: [
+        makeMessage({ id: "msg-1", subject: "Morning brief", read: false }),
+      ],
+      isLoading: false,
+      isError: false,
+    };
+    detail = {
+      data: {
+        ...makeMessage({ id: "msg-1", subject: "Morning brief", read: false }),
+        body: "Brief body.",
+      },
+      isLoading: false,
+      isError: false,
+    };
+    const router = renderInbox("/inbox/msg-1?view=unread");
+    screen.getByRole("heading", { name: "Morning brief" });
+
+    mailbox = { data: [], isLoading: false, isError: false };
+    fireEvent.click(screen.getByRole("button", { name: /back to inbox/i }));
+    expect(router.state.location.pathname).toBe("/inbox");
+
+    expect(screen.queryByRole("heading", { name: "Morning brief" })).toBeNull();
+    screen.getByText("No unread messages");
+  });
+
+  it("shows Recommended guidance and primary action on the detail drawer", () => {
+    mailbox = {
+      data: [
+        makeMessage({
+          id: "msg-art",
+          subject: "Deck ready",
+          snippet: "Review before publish",
+          refs: [{ kind: "artifact", ref: "art-1", label: "Open deck" }],
+        }),
+      ],
+      isLoading: false,
+      isError: false,
+    };
+    detail = {
+      data: {
+        ...makeMessage({
+          id: "msg-art",
+          subject: "Deck ready",
+          snippet: "Review before publish",
+          refs: [{ kind: "artifact", ref: "art-1", label: "Open deck" }],
+        }),
+        body: "Artifact body.",
+      },
+      isLoading: false,
+      isError: false,
+    };
+    renderInbox("/inbox/msg-art");
+    screen.getByText("Recommended");
+    screen.getByText(/Open the artifact, skim for publish readiness/);
+    screen.getByRole("link", { name: "Open artifact" });
+    expect(
+      screen.getAllByRole("button", { name: "Archive" }).length,
+    ).toBeGreaterThanOrEqual(1);
   });
 });

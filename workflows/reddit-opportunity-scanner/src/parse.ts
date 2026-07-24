@@ -6,7 +6,7 @@ import { type } from "arktype";
 // schemas and derivations — a block-driven run and a panel-driven run can never
 // disagree on what the model produced.
 
-// Agent / inline-inference step output: the sidecar wraps the reply in
+// Agent / agentStep output: the sidecar wraps the reply in
 // { reply, turn }. We JSON.parse(reply) to get structured data.
 export const AgentStepOutput = type({ reply: "string", "turn?": "unknown" });
 

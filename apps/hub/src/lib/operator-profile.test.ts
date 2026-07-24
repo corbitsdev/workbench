@@ -172,4 +172,42 @@ describe("composePersonalAgentPromptForInstance", () => {
     const prompt = await composePersonalAgentPromptForInstance(db, OPTS);
     expect(prompt).not.toContain("## Member-instructions");
   });
+
+  describe("CL-4121: prompt-generation dispatch at launch", () => {
+    const V2_MAPPING = {
+      templateKey: "myra-chat-v2-kimi-k2-6",
+      memberPrincipalId: "prn_member",
+    };
+
+    it("rebuilds a v2 instance with the v2 prompt, not v1 (the v2 marker survives launch)", async () => {
+      const db = fakeDb([[V2_MAPPING], [USER_PRINCIPAL], [USER_ROW]]);
+      const prompt = await composePersonalAgentPromptForInstance(db, OPTS);
+      expect(prompt).not.toBeNull();
+      expect(prompt).toContain("## Reporting");
+      expect(prompt).toContain("## Operator");
+      expect(prompt).toContain(
+        "You run on the kimi-k2.6 model, served through the Corbits platform.",
+      );
+    });
+
+    it("keeps rebuilding v1 instances with the v1 prompt", async () => {
+      const db = fakeDb([[PERSONAL_MAPPING], [USER_PRINCIPAL], [USER_ROW]]);
+      const prompt = await composePersonalAgentPromptForInstance(db, OPTS);
+      expect(prompt).not.toContain("## Reporting");
+      expect(prompt).toContain("Teammate mail is external and hard to undo");
+    });
+
+    it("carries member instructions into the v2 rebuild", async () => {
+      const db = fakeDb([[V2_MAPPING], [USER_PRINCIPAL], [USER_ROW]], {
+        chatVariantId: null,
+        triageVariantId: null,
+        instructionsGlobal: "Be terse.",
+        instructionsChat: null,
+        instructionsTriage: null,
+      });
+      const prompt = await composePersonalAgentPromptForInstance(db, OPTS);
+      expect(prompt).toContain("## Reporting");
+      expect(prompt).toContain("Be terse.");
+    });
+  });
 });

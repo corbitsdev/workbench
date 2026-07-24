@@ -2,7 +2,7 @@ import { awaitSignal, defineWorkflow } from "@intx/workflow";
 import type { Primitive } from "@intx/workflow";
 import {
   deterministicToolStep,
-  inlineInferenceStep,
+  agentStep,
   LLM_DEFAULT_MODEL,
 } from "@workbench/agents";
 import {
@@ -45,16 +45,20 @@ const setupSteps: Record<string, Primitive> = {
     name: "intake",
     after: ["list-artifacts", "list-notes"],
   }),
-  // `artifactId`/`noteId` are OPTIONAL argMap fields: a text-source intake
-  // carries neither, so the harness skips the tool call (no throw, no error
-  // log) instead of degrading through the nonFatal isError path.
+  // `artifactId`/`noteId` are the SOLE argMap field of these steps and each
+  // is also the underlying tool's only required argument (artifact_read /
+  // granola_get_note both require it) — there is no sensible "call the tool
+  // without it", so these use `skipStepIfAbsent` rather than `optional`: a
+  // text-source intake carries neither, so the harness skips the tool call
+  // entirely (no throw, no error log) instead of degrading through the
+  // nonFatal isError path.
   "fetch-artifact": deterministicToolStep({
     id: "presentation-fetch-artifact",
     title: "Load the chosen artifact",
     tool: "artifact_read",
     after: ["intake"],
     input: { from: "steps.intake.output" },
-    argMap: { artifactId: { from: "artifactId", optional: true } },
+    argMap: { artifactId: { from: "artifactId", skipStepIfAbsent: true } },
     nonFatal: true,
   }),
   "fetch-note": deterministicToolStep({
@@ -63,10 +67,10 @@ const setupSteps: Record<string, Primitive> = {
     tool: "granola_get_note",
     after: ["intake"],
     input: { from: "steps.intake.output" },
-    argMap: { noteId: { from: "noteId", optional: true } },
+    argMap: { noteId: { from: "noteId", skipStepIfAbsent: true } },
     nonFatal: true,
   }),
-  generate: inlineInferenceStep({
+  generate: agentStep({
     id: "presentation-generate",
     title: "Draft the deck",
     systemPrompt: PRESENTATION_GENERATE_SYSTEM_PROMPT,
@@ -92,7 +96,7 @@ const setupSteps: Record<string, Primitive> = {
     },
     argMap: { gammaId: { from: "gammaId" }, prompt: { from: "reply" } },
   }),
-  describe: inlineInferenceStep({
+  describe: agentStep({
     id: "presentation-describe",
     title: "Summarize the deck",
     systemPrompt: PRESENTATION_DESCRIBE_SYSTEM_PROMPT,

@@ -27,17 +27,21 @@ let runnableKinds = [
   { kind: "deck" },
   { kind: "last30days-research" },
   { kind: "multi-gate" },
+  { kind: "granola-call" },
+  { kind: "unattended-eligible" },
 ];
 mock.module("../lib/workflow-run-gate", () => ({
   isRunnableKind: async (_db: unknown, _tenantId: string, kind: string) =>
     runnableKinds.some((k) => k.kind === kind),
 }));
 
-// Attach gate (CL-3508/CL-3509/CL-3528): the route reads gate shapes from the
-// embedded catalog. "deck"/"heartbeat" are unattended; "last30days-research" is
-// intake-only; "multi-gate" has intake plus a post-intake human gate and is
-// attachable only when allowsScheduledPostIntakeDrive is set (CL-3528). A kind absent from
-// this map is treated as not-attachable. The real intake payload validation
+// Attach gate (CL-3508/CL-3509/CL-3528) + derived routine eligibility
+// (CL-4204): the route reads gate shapes from the embedded catalog.
+// "deck"/"heartbeat"/"granola-call"/"unattended-eligible" are unattended;
+// "last30days-research" is intake-only; "multi-gate" has intake plus a
+// post-intake human gate and is structurally attachable only when
+// allowsScheduledPostIntakeDrive is set (CL-3528). A kind absent from this
+// map is treated as not-attachable. The real intake payload validation
 // (resume-payload-registry) is NOT mocked — last30days requires a non-empty topic.
 const gateInfos = new Map<
   string,
@@ -45,6 +49,8 @@ const gateInfos = new Map<
 >([
   ["heartbeat", { requiresIntake: false, humanGateCount: 0 }],
   ["deck", { requiresIntake: false, humanGateCount: 0 }],
+  ["granola-call", { requiresIntake: false, humanGateCount: 0 }],
+  ["unattended-eligible", { requiresIntake: false, humanGateCount: 0 }],
   ["last30days-research", { requiresIntake: true, humanGateCount: 1 }],
   [
     "multi-gate",
@@ -55,9 +61,35 @@ const gateInfos = new Map<
     },
   ],
 ]);
+// Entry-step required trigger fields per kind (CL-4204 derivation). "deck"
+// requires a field that is neither a declared intake field nor enriched, so
+// it fails eligibility on the correctness rule alone (not a bare allowlist
+// miss). "granola-call" requires `noteId` off the raw trigger payload with
+// no intake field and no registered enricher — the real-world bug this
+// derivation exists to catch. "unattended-eligible" and "heartbeat" require
+// nothing beyond what a registered enricher supplies (heartbeat) or require
+// nothing at all.
+const entryTriggerFieldsByKind = new Map<string, string[]>([
+  ["heartbeat", ["enabledSources", "createdAfter"]],
+  ["deck", ["missingField"]],
+  ["granola-call", ["noteId"]],
+  ["multi-gate", ["missingField"]],
+  ["unattended-eligible", []],
+]);
+const intakeFieldsByKind = new Map<string, { name: string }[]>([
+  ["last30days-research", [{ name: "topic" }, { name: "focus" }]],
+]);
 mock.module("../lib/workflow-catalog", () => ({
   loadWorkflowGateInfos: async () => gateInfos,
+  loadWorkflowEntryTriggerFields: async () => entryTriggerFieldsByKind,
+  loadWorkflowIntakeFields: async () => intakeFieldsByKind,
 }));
+mock.module("../workflow-executor/trigger-payload-enrichment-registry", () => ({
+  ENRICHED_TRIGGER_KINDS: new Set(["heartbeat"]),
+}));
+
+const DAILY_9 = { intervalMinutes: 1440, anchorMinuteUtc: 9 * 60 };
+const DAILY_7 = { intervalMinutes: 1440, anchorMinuteUtc: 7 * 60 };
 
 // Store spy. Each call is captured so a test asserts the owner principal the
 // route scoped the operation to — the cross-member isolation guarantee.
@@ -66,10 +98,13 @@ const storeCalls: StoreCall[] = [];
 type OwnerRow = {
   id: string;
   workflowKind: string;
-  hourUtc: number;
+  intervalMinutes: number;
+  anchorMinuteUtc: number;
   enabled: boolean;
   triggerPayload: Record<string, unknown>;
   createdAt: Date;
+  scope?: string;
+  ownerMemberPrincipalId?: string;
 };
 let ownerRows: OwnerRow[] = [];
 let updateResult: OwnerRow | null = null;
@@ -79,11 +114,15 @@ mock.module("../lib/scheduled-triggers", () => ({
   toApiSchedule: (r: OwnerRow) => ({
     id: r.id,
     workflowKind: r.workflowKind,
-    hourUtc: r.hourUtc,
+    recurrence: {
+      intervalMinutes: r.intervalMinutes,
+      anchorMinuteUtc: r.anchorMinuteUtc,
+    },
     enabled: r.enabled,
+    scope: r.scope ?? "personal",
+    ownerMemberPrincipalId: r.ownerMemberPrincipalId ?? "principal-a",
     triggerPayload: r.triggerPayload,
     createdAt: r.createdAt.toISOString(),
-    lastFiredDayUtc: null,
     lastRunId: null,
     recentFires: [],
     nextFireAt: r.enabled ? "2026-01-02T13:00:00.000Z" : null,
@@ -96,11 +135,15 @@ mock.module("../lib/scheduled-triggers", () => ({
     rows.map((r) => ({
       id: r.id,
       workflowKind: r.workflowKind,
-      hourUtc: r.hourUtc,
+      recurrence: {
+        intervalMinutes: r.intervalMinutes,
+        anchorMinuteUtc: r.anchorMinuteUtc,
+      },
       enabled: r.enabled,
+      scope: r.scope ?? "personal",
+      ownerMemberPrincipalId: r.ownerMemberPrincipalId ?? "principal-a",
       triggerPayload: r.triggerPayload,
       createdAt: r.createdAt.toISOString(),
-      lastFiredDayUtc: null,
       lastRunId: null,
       recentFires: [],
       nextFireAt: r.enabled ? "2026-01-02T13:00:00.000Z" : null,
@@ -120,19 +163,45 @@ mock.module("../lib/scheduled-triggers", () => ({
   createOwnerSchedule: async (_db: unknown, args: Record<string, unknown>) => {
     storeCalls.push({ fn: "create", args });
     if (createThrows) throw createThrows;
+    const recurrence = args["recurrence"] as {
+      intervalMinutes: number;
+      anchorMinuteUtc: number;
+    };
     return {
       id: "sch-new",
       workflowKind: args["kind"],
-      hourUtc: args["hourUtc"],
+      intervalMinutes: recurrence.intervalMinutes,
+      anchorMinuteUtc: recurrence.anchorMinuteUtc,
       enabled: true,
+      scope: args["scope"] ?? "personal",
+      ownerMemberPrincipalId: args["ownerPrincipalId"],
       triggerPayload: args["payload"],
       createdAt: new Date("2026-01-01T00:00:00.000Z"),
     };
+  },
+  getOwnerSchedule: async (_db: unknown, args: Record<string, unknown>) => {
+    storeCalls.push({ fn: "get", args });
+    if (updateResult && updateResult.id === args["id"]) {
+      return {
+        id: updateResult.id,
+        workflowKind: updateResult.workflowKind,
+        intervalMinutes: updateResult.intervalMinutes,
+        anchorMinuteUtc: updateResult.anchorMinuteUtc,
+        enabled: updateResult.enabled,
+        scope: updateResult.scope ?? "personal",
+        ownerMemberPrincipalId:
+          updateResult.ownerMemberPrincipalId ?? "principal-a",
+        triggerPayload: updateResult.triggerPayload,
+        createdAt: updateResult.createdAt,
+      };
+    }
+    return null;
   },
   updateOwnerSchedule: async (_db: unknown, args: Record<string, unknown>) => {
     storeCalls.push({ fn: "update", args });
     return updateResult;
   },
+
   deleteOwnerSchedule: async (_db: unknown, args: Record<string, unknown>) => {
     storeCalls.push({ fn: "delete", args });
     return deleteResult;
@@ -197,7 +266,8 @@ describe("GET /me/schedules", () => {
       {
         id: "sch-1",
         workflowKind: "heartbeat",
-        hourUtc: 13,
+        intervalMinutes: 1440,
+        anchorMinuteUtc: 13 * 60,
         enabled: true,
         triggerPayload: { reason: "scheduled-heartbeat" },
         createdAt: new Date("2026-01-01T00:00:00.000Z"),
@@ -212,11 +282,10 @@ describe("GET /me/schedules", () => {
     expect(body.items[0]).toMatchObject({
       id: "sch-1",
       workflowKind: "heartbeat",
-      hourUtc: 13,
+      recurrence: { intervalMinutes: 1440, anchorMinuteUtc: 13 * 60 },
       enabled: true,
       triggerPayload: { reason: "scheduled-heartbeat" },
       createdAt: "2026-01-01T00:00:00.000Z",
-      lastFiredDayUtc: null,
     });
     expect(body.items[0].nextFireAt).toMatch(/^\d{4}-\d{2}-\d{2}T/);
     expect(storeCalls[0]).toMatchObject({
@@ -268,14 +337,14 @@ describe("POST /me/schedules attach gate (CL-3508/CL-3509)", () => {
         user: "user-a",
         body: JSON.stringify({
           kind: "last30days-research",
-          hourUtc: 9,
+          recurrence: DAILY_9,
           payload: {},
         }),
       }),
     );
     expect(res.status).toBe(400);
     expect(await res.json()).toMatchObject({
-      error: expect.stringContaining("invalid intake"),
+      error: expect.stringContaining("invalid schedule payload"),
     });
     expect(storeCalls.some((c) => c.fn === "create")).toBe(false);
   });
@@ -289,7 +358,7 @@ describe("POST /me/schedules attach gate (CL-3508/CL-3509)", () => {
         user: "user-a",
         body: JSON.stringify({
           kind: "last30days-research",
-          hourUtc: 9,
+          recurrence: DAILY_9,
           payload: { topic: "AI agents for GTM" },
         }),
       }),
@@ -319,7 +388,7 @@ describe("POST /me/schedules attach gate (CL-3508/CL-3509)", () => {
         user: "user-a",
         body: JSON.stringify({
           kind: "blocked-multi",
-          hourUtc: 9,
+          recurrence: DAILY_9,
           payload: { topic: "x" },
         }),
       }),
@@ -330,31 +399,62 @@ describe("POST /me/schedules attach gate (CL-3508/CL-3509)", () => {
     expect(storeCalls.find((c) => c.fn === "create")).toBeUndefined();
   });
 
-  it("stores a schedule for an intake-first multi-gate kind when catalog allows drive (CL-3528)", async () => {
+  it("rejects a multi-gate kind that is structurally attachable but has an unsatisfiable required trigger field (CL-4204)", async () => {
+    // multi-gate has allowsScheduledPostIntakeDrive so structural attach passes;
+    // its entry step still requires a trigger field no intake field or
+    // enricher supplies.
     storeCalls.length = 0;
-    createThrows = null;
     const res = await mountApp().fetch(
       req("/me/schedules", {
         method: "POST",
         user: "user-a",
         body: JSON.stringify({
           kind: "multi-gate",
-          hourUtc: 9,
+          recurrence: DAILY_9,
           payload: { topic: "x" },
         }),
       }),
     );
-    expect(res.status).toBe(201);
-    const create = storeCalls.find((c) => c.fn === "create");
-    expect(create?.args).toMatchObject({
-      kind: "multi-gate",
-      hourUtc: 9,
-      payload: {
-        topic: "x",
-        userAddress: "usr_user-a@workbench.example",
-        userRefId: "user-a",
-      },
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({
+      error: 'workflow "multi-gate" is not available for Routines schedules',
     });
+    expect(storeCalls.find((c) => c.fn === "create")).toBeUndefined();
+  });
+
+  it("rejects a structurally attachable kind whose required trigger field is neither declared intake nor enriched (CL-4204)", async () => {
+    // deck is unattended (structurally attachable) but its entry step needs
+    // `missingField` straight from the trigger payload, which no intake field
+    // or enricher supplies.
+    storeCalls.length = 0;
+    const res = await mountApp().fetch(
+      req("/me/schedules", {
+        method: "POST",
+        user: "user-a",
+        body: JSON.stringify({ kind: "deck", recurrence: DAILY_9 }),
+      }),
+    );
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({
+      error: 'workflow "deck" is not available for Routines schedules',
+    });
+    expect(storeCalls.some((c) => c.fn === "create")).toBe(false);
+  });
+
+  it("rejects granola-call: it reads noteId off the raw trigger payload with no intake field and no enricher (CL-4204)", async () => {
+    storeCalls.length = 0;
+    const res = await mountApp().fetch(
+      req("/me/schedules", {
+        method: "POST",
+        user: "user-a",
+        body: JSON.stringify({ kind: "granola-call", recurrence: DAILY_9 }),
+      }),
+    );
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({
+      error: 'workflow "granola-call" is not available for Routines schedules',
+    });
+    expect(storeCalls.some((c) => c.fn === "create")).toBe(false);
   });
 
   it("rejects a runnable kind that has no embedded gate info", async () => {
@@ -364,7 +464,7 @@ describe("POST /me/schedules attach gate (CL-3508/CL-3509)", () => {
       req("/me/schedules", {
         method: "POST",
         user: "user-a",
-        body: JSON.stringify({ kind: "ghost", hourUtc: 9 }),
+        body: JSON.stringify({ kind: "ghost", recurrence: DAILY_9 }),
       }),
     );
     runnableKinds = runnableKinds.filter((k) => k.kind !== "ghost");
@@ -381,7 +481,11 @@ describe("POST /me/schedules", () => {
       req("/me/schedules", {
         method: "POST",
         user: "user-a",
-        body: JSON.stringify({ kind: "deck", hourUtc: 9, payload: { x: 1 } }),
+        body: JSON.stringify({
+          kind: "heartbeat",
+          recurrence: DAILY_9,
+          payload: { x: 1 },
+        }),
       }),
     );
     expect(res.status).toBe(201);
@@ -389,13 +493,143 @@ describe("POST /me/schedules", () => {
     expect(create?.args).toEqual({
       tenantId: "tenant-root",
       ownerPrincipalId: "principal-a",
-      kind: "deck",
-      hourUtc: 9,
+      kind: "heartbeat",
+      recurrence: DAILY_9,
+      scope: "personal",
       payload: {
         x: 1,
         userAddress: "usr_user-a@workbench.example",
         userRefId: "user-a",
       },
+    });
+  });
+
+  it("forwards a caller-supplied name to the store", async () => {
+    storeCalls.length = 0;
+    createThrows = null;
+    const res = await mountApp().fetch(
+      req("/me/schedules", {
+        method: "POST",
+        user: "user-a",
+        body: JSON.stringify({
+          kind: "heartbeat",
+          recurrence: DAILY_9,
+          name: "Weekend digest",
+        }),
+      }),
+    );
+    expect(res.status).toBe(201);
+    const create = storeCalls.find((c) => c.fn === "create");
+    expect(create?.args).toMatchObject({ name: "Weekend digest" });
+  });
+
+  it("creates a sub-daily (every-5-minutes) schedule for a non-heartbeat kind", async () => {
+    storeCalls.length = 0;
+    createThrows = null;
+    const res = await mountApp().fetch(
+      req("/me/schedules", {
+        method: "POST",
+        user: "user-a",
+        body: JSON.stringify({
+          kind: "unattended-eligible",
+          recurrence: { intervalMinutes: 5, anchorMinuteUtc: 0 },
+          payload: { x: 1 },
+        }),
+      }),
+    );
+    expect(res.status).toBe(201);
+    const create = storeCalls.find((c) => c.fn === "create");
+    expect(create?.args).toMatchObject({
+      recurrence: { intervalMinutes: 5, anchorMinuteUtc: 0 },
+    });
+  });
+
+  it("rejects a non-daily recurrence for heartbeat (createdAfter math assumes daily)", async () => {
+    storeCalls.length = 0;
+    const res = await mountApp().fetch(
+      req("/me/schedules", {
+        method: "POST",
+        user: "user-a",
+        body: JSON.stringify({
+          kind: "heartbeat",
+          recurrence: { intervalMinutes: 5, anchorMinuteUtc: 0 },
+          payload: { reason: "scheduled-heartbeat" },
+        }),
+      }),
+    );
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({
+      error: 'workflow "heartbeat" only supports a daily schedule',
+    });
+    expect(storeCalls.some((c) => c.fn === "create")).toBe(false);
+  });
+
+  it("creates an Everyone (tenant) schedule when scope is allowed (CL-4108)", async () => {
+    storeCalls.length = 0;
+    createThrows = null;
+    const res = await mountApp().fetch(
+      req("/me/schedules", {
+        method: "POST",
+        user: "user-a",
+        body: JSON.stringify({
+          kind: "last30days-research",
+          recurrence: DAILY_9,
+          scope: "tenant",
+          payload: { topic: "AI agents for GTM" },
+        }),
+      }),
+    );
+    expect(res.status).toBe(201);
+    const create = storeCalls.find((c) => c.fn === "create");
+    expect(create?.args).toMatchObject({
+      kind: "last30days-research",
+      scope: "tenant",
+      ownerPrincipalId: "principal-a",
+    });
+    const body = (await res.json()) as { scope: string };
+    expect(body.scope).toBe("tenant");
+  });
+
+  it("rejects tenant scope for heartbeat (personal-only, CL-4110)", async () => {
+    storeCalls.length = 0;
+    const res = await mountApp().fetch(
+      req("/me/schedules", {
+        method: "POST",
+        user: "user-a",
+        body: JSON.stringify({
+          kind: "heartbeat",
+          recurrence: DAILY_7,
+          scope: "tenant",
+          payload: { reason: "scheduled-heartbeat" },
+        }),
+      }),
+    );
+    expect(res.status).toBe(400);
+    expect(await res.json()).toMatchObject({
+      error: expect.stringContaining('does not allow schedule scope "tenant"'),
+    });
+    expect(storeCalls.some((c) => c.fn === "create")).toBe(false);
+  });
+
+  it("409s with a tenant-scope message when an Everyone schedule already exists", async () => {
+    storeCalls.length = 0;
+    createThrows = Object.assign(new Error("duplicate"), { code: "23505" });
+    const res = await mountApp().fetch(
+      req("/me/schedules", {
+        method: "POST",
+        user: "user-a",
+        body: JSON.stringify({
+          kind: "last30days-research",
+          recurrence: DAILY_9,
+          scope: "tenant",
+          payload: { topic: "AI agents for GTM" },
+        }),
+      }),
+    );
+    createThrows = null;
+    expect(res.status).toBe(409);
+    expect(await res.json()).toMatchObject({
+      error: expect.stringContaining("Everyone schedule"),
     });
   });
 
@@ -407,7 +641,7 @@ describe("POST /me/schedules", () => {
         user: "user-a",
         body: JSON.stringify({
           kind: "heartbeat",
-          hourUtc: 7,
+          recurrence: DAILY_7,
           payload: {
             reason: "scheduled-heartbeat",
             userAddress: "usr_user-b@workbench.example",
@@ -432,8 +666,8 @@ describe("POST /me/schedules", () => {
         method: "POST",
         user: "user-a",
         body: JSON.stringify({
-          kind: "deck",
-          hourUtc: 9,
+          kind: "heartbeat",
+          recurrence: DAILY_9,
           payload: { blob: "x".repeat(9000) },
         }),
       }),
@@ -442,13 +676,32 @@ describe("POST /me/schedules", () => {
     expect(storeCalls.some((c) => c.fn === "create")).toBe(false);
   });
 
-  it("rejects an out-of-range hour without touching the store", async () => {
+  it("rejects a non-positive interval without touching the store", async () => {
     storeCalls.length = 0;
     const res = await mountApp().fetch(
       req("/me/schedules", {
         method: "POST",
         user: "user-a",
-        body: JSON.stringify({ kind: "deck", hourUtc: 25 }),
+        body: JSON.stringify({
+          kind: "heartbeat",
+          recurrence: { intervalMinutes: 0, anchorMinuteUtc: 0 },
+        }),
+      }),
+    );
+    expect(res.status).toBe(400);
+    expect(storeCalls.some((c) => c.fn === "create")).toBe(false);
+  });
+
+  it("rejects an out-of-range anchor without touching the store", async () => {
+    storeCalls.length = 0;
+    const res = await mountApp().fetch(
+      req("/me/schedules", {
+        method: "POST",
+        user: "user-a",
+        body: JSON.stringify({
+          kind: "heartbeat",
+          recurrence: { intervalMinutes: 60, anchorMinuteUtc: 1440 },
+        }),
       }),
     );
     expect(res.status).toBe(400);
@@ -460,7 +713,7 @@ describe("POST /me/schedules", () => {
       req("/me/schedules", {
         method: "POST",
         user: "user-a",
-        body: JSON.stringify({ kind: "not-a-workflow", hourUtc: 9 }),
+        body: JSON.stringify({ kind: "not-a-workflow", recurrence: DAILY_9 }),
       }),
     );
     expect(res.status).toBe(400);
@@ -472,13 +725,13 @@ describe("POST /me/schedules", () => {
       req("/me/schedules", {
         method: "POST",
         user: "user-none",
-        body: JSON.stringify({ kind: "deck", hourUtc: 9 }),
+        body: JSON.stringify({ kind: "heartbeat", recurrence: DAILY_9 }),
       }),
     );
     expect(res.status).toBe(403);
   });
 
-  it("409s with a distinct message on a duplicate (tenant, owner, kind) schedule", async () => {
+  it("409s with a distinct message on a duplicate (tenant, owner, kind, name) schedule", async () => {
     createThrows = Object.assign(
       new Error("duplicate key value violates unique constraint"),
       { code: "23505" },
@@ -487,12 +740,12 @@ describe("POST /me/schedules", () => {
       req("/me/schedules", {
         method: "POST",
         user: "user-a",
-        body: JSON.stringify({ kind: "deck", hourUtc: 9 }),
+        body: JSON.stringify({ kind: "heartbeat", recurrence: DAILY_9 }),
       }),
     );
     expect(res.status).toBe(409);
     expect(await res.json()).toEqual({
-      error: "You already have a schedule for this workflow.",
+      error: "You already have a schedule with this name for this workflow.",
     });
     createThrows = null;
   });
@@ -526,7 +779,8 @@ describe("PATCH /me/schedules/:id", () => {
     updateResult = {
       id: SCHED_ID,
       workflowKind: "heartbeat",
-      hourUtc: 7,
+      intervalMinutes: 1440,
+      anchorMinuteUtc: 7 * 60,
       enabled: false,
       triggerPayload: {},
       createdAt: new Date("2026-01-01T00:00:00.000Z"),
@@ -535,7 +789,7 @@ describe("PATCH /me/schedules/:id", () => {
       req(`/me/schedules/${SCHED_ID}`, {
         method: "PATCH",
         user: "user-a",
-        body: JSON.stringify({ enabled: false, hourUtc: 7 }),
+        body: JSON.stringify({ enabled: false, recurrence: DAILY_7 }),
       }),
     );
     expect(res.status).toBe(200);
@@ -545,8 +799,62 @@ describe("PATCH /me/schedules/:id", () => {
       ownerPrincipalId: "principal-a",
       id: SCHED_ID,
       enabled: false,
-      hourUtc: 7,
+      recurrence: DAILY_7,
     });
+  });
+
+  it("updates to a sub-daily recurrence for a non-heartbeat kind", async () => {
+    storeCalls.length = 0;
+    updateResult = {
+      id: SCHED_ID,
+      workflowKind: "granola-call",
+      intervalMinutes: 5,
+      anchorMinuteUtc: 0,
+      enabled: true,
+      triggerPayload: {},
+      createdAt: new Date("2026-01-01T00:00:00.000Z"),
+    };
+    const res = await mountApp().fetch(
+      req(`/me/schedules/${SCHED_ID}`, {
+        method: "PATCH",
+        user: "user-a",
+        body: JSON.stringify({
+          recurrence: { intervalMinutes: 5, anchorMinuteUtc: 0 },
+        }),
+      }),
+    );
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      recurrence: { intervalMinutes: number; anchorMinuteUtc: number };
+    };
+    expect(body.recurrence).toEqual({ intervalMinutes: 5, anchorMinuteUtc: 0 });
+  });
+
+  it("rejects retargeting an existing heartbeat schedule to a non-daily recurrence", async () => {
+    storeCalls.length = 0;
+    updateResult = {
+      id: SCHED_ID,
+      workflowKind: "heartbeat",
+      intervalMinutes: 1440,
+      anchorMinuteUtc: 13 * 60,
+      enabled: true,
+      triggerPayload: { reason: "scheduled-heartbeat" },
+      createdAt: new Date("2026-01-01T00:00:00.000Z"),
+    };
+    const res = await mountApp().fetch(
+      req(`/me/schedules/${SCHED_ID}`, {
+        method: "PATCH",
+        user: "user-a",
+        body: JSON.stringify({
+          recurrence: { intervalMinutes: 30, anchorMinuteUtc: 0 },
+        }),
+      }),
+    );
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({
+      error: 'workflow "heartbeat" only supports a daily schedule',
+    });
+    expect(storeCalls.some((c) => c.fn === "update")).toBe(false);
   });
 
   it("404s when no schedule matches the caller (missing or another member's)", async () => {
@@ -559,6 +867,42 @@ describe("PATCH /me/schedules/:id", () => {
       }),
     );
     expect(res.status).toBe(404);
+  });
+
+  it("fences identity on payload update (strips client userAddress, re-injects caller's)", async () => {
+    storeCalls.length = 0;
+    updateResult = {
+      id: SCHED_ID,
+      workflowKind: "no-gate",
+      intervalMinutes: 1440,
+      anchorMinuteUtc: 13 * 60,
+      enabled: true,
+      scope: "personal",
+      ownerMemberPrincipalId: "principal-a",
+      triggerPayload: { topic: "old", reason: "scheduled-heartbeat" },
+      createdAt: new Date("2026-01-01T00:00:00.000Z"),
+    };
+    const res = await mountApp().fetch(
+      req(`/me/schedules/${SCHED_ID}`, {
+        method: "PATCH",
+        user: "user-a",
+        body: JSON.stringify({
+          payload: {
+            topic: "new-topic",
+            userAddress: "usr_attacker@evil.example",
+            userRefId: "attacker",
+          },
+        }),
+      }),
+    );
+    expect(res.status).toBe(200);
+    const update = storeCalls.find((c) => c.fn === "update");
+    expect(update?.args["triggerPayload"]).toEqual({
+      topic: "new-topic",
+      reason: "scheduled-heartbeat",
+      userAddress: "usr_user-a@workbench.example",
+      userRefId: "user-a",
+    });
   });
 });
 

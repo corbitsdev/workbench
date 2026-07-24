@@ -15,6 +15,7 @@ import { WorkflowDock } from "./WorkflowDock";
 type ApiCall = { method: string; path: string; body?: unknown };
 
 let apiCalls: ApiCall[] = [];
+let failStopRuns = false;
 let records: unknown = [];
 let statesByRunId: Record<string, unknown> = {};
 
@@ -39,12 +40,23 @@ async function fakeApi(
       status: "running",
     };
   }
+  const stopMatch = /\/workflow-exec\/records\/([^/]+)\/stop/.exec(path);
+  if (stopMatch?.[1] !== undefined) {
+    if (failStopRuns) throw new Error("stop failed");
+    return { stopped: true };
+  }
   throw new Error(`unexpected api call: ${method} ${path}`);
 }
 
 function listRow(
   runId: string,
-  status: "provisioning" | "running" | "awaiting" | "completed" | "failed",
+  status:
+    | "provisioning"
+    | "running"
+    | "awaiting"
+    | "completed"
+    | "failed"
+    | "stopped",
   kind = "ab-compare-quality",
 ) {
   return {
@@ -95,6 +107,7 @@ function renderDock(conversationId: string | null = "conv-1") {
 
 beforeEach(() => {
   apiCalls = [];
+  failStopRuns = false;
   records = [];
   statesByRunId = {};
   localStorage.clear();
@@ -224,6 +237,40 @@ describe("WorkflowDock", () => {
 
     fireEvent.click(screen.getByLabelText("Expand workflows: 1 running"));
     await waitFor(() => screen.getByTestId("workflow-dock-card"));
+  });
+
+  it("gives a running rail dot the shared PulsingRing motion, and a completed one no motion (CL-4416)", async () => {
+    records = [
+      listRow("run_running", "running"),
+      listRow("run_done", "completed"),
+    ];
+    statesByRunId["run_running"] = logState("run_running", "running", [
+      { stepId: "draft", phase: "in-flight" },
+    ]);
+    renderDock();
+    await waitFor(() => screen.getAllByTestId("workflow-dock-card"));
+
+    fireEvent.click(screen.getByLabelText("Collapse workflow dock"));
+    const dots = screen.getAllByTestId("dock-rail-dot");
+    const runningDot = dots.find((d) =>
+      d.textContent?.includes("ab-compare-quality: Running"),
+    );
+    const doneDot = dots.find((d) => d.textContent?.includes(": Done"));
+    // PulsingRing (CL-4394) renders its own animated overlay span colored
+    // `${color}/60`; a raw `animate-pulse` dot would not have this element.
+    expect(runningDot?.querySelector(".bg-blue\\/60")).not.toBeNull();
+    expect(doneDot?.querySelector(".bg-green\\/60")).toBeNull();
+  });
+
+  it("gives a provisioning rail dot the same live PulsingRing motion as running, never a frozen dot (CL-2755)", async () => {
+    records = [listRow("run_starting", "provisioning", "smoke-test")];
+    renderDock();
+    await waitFor(() => screen.getByTestId("workflow-dock-card"));
+
+    fireEvent.click(screen.getByLabelText("Collapse workflow dock"));
+    const dot = screen.getByTestId("dock-rail-dot");
+    expect(dot.textContent).toContain("smoke-test: Starting");
+    expect(dot.querySelector(".bg-blue\\/60")).not.toBeNull();
   });
 
   it("persists the collapsed state per conversation across remounts", async () => {
@@ -380,6 +427,52 @@ describe("WorkflowDock", () => {
     expect(screen.queryByRole("button", { name: "Continue" })).toBeNull();
   });
 
+  it("renders the run-page link (surface 'dock') for a gate whose producing step's output isn't readable here yet (CL-4284)", async () => {
+    records = [listRow("run_notes", "awaiting", "pain-point-collateral")];
+    statesByRunId["run_notes"] = logState("run_notes", "running", [
+      { stepId: "intake", phase: "in-flight" },
+      {
+        stepId: "note-selection",
+        phase: "awaiting-signal",
+        awaitingSignalName: "note-selection",
+      },
+    ]);
+    renderDock();
+    await waitFor(() => screen.getByTestId("workflow-dock-card"));
+    screen.getByText("Open the run to pick a transcript");
+  });
+
+  it("names the failed step with a CLASSIFIED detail instead of a run-page link when its producing step FAILED (CL-4284)", async () => {
+    records = [
+      listRow("run_notes_failed", "awaiting", "pain-point-collateral"),
+    ];
+    statesByRunId["run_notes_failed"] = logState(
+      "run_notes_failed",
+      "running",
+      [
+        {
+          stepId: "intake",
+          phase: "failed",
+          lastError: { message: "Granola API error: 401 Unauthorized" },
+        },
+        {
+          stepId: "note-selection",
+          phase: "awaiting-signal",
+          awaitingSignalName: "note-selection",
+        },
+      ],
+    );
+    renderDock();
+    await waitFor(() => screen.getByTestId("workflow-dock-card"));
+    expect(screen.queryByText("Open the run to pick a transcript")).toBeNull();
+    screen.getByText(/"intake" failed, so this step can't continue\./);
+    // Classified, plain-language detail — never the raw provider error string.
+    screen.getByText(
+      "Granola declined the request (401). Check the connected Granola credential's access and try again.",
+    );
+    expect(screen.queryByText(/API error: 401/)).toBeNull();
+  });
+
   it("links each card to the full run page", async () => {
     records = [listRow("run_running", "running")];
     statesByRunId["run_running"] = logState("run_running", "running", [
@@ -402,12 +495,77 @@ describe("WorkflowDock", () => {
     const card = await waitFor(() => screen.getByTestId("workflow-dock-card"));
     // The status chip reads Starting.
     expect(card.textContent).toContain("Starting");
-    // Motion is present (animated spinner) — the run never looks frozen.
+    // Motion is present (shared PulsingRing dot) — the run never looks frozen.
     await waitFor(() =>
       expect(screen.getByTestId("workflow-starting-indicator")).toBeTruthy(),
     );
-    expect(container.querySelector(".animate-spin")).not.toBeNull();
+    expect(container.querySelector(".bg-blue\\/60")).not.toBeNull();
     // The frozen "waiting" copy is NOT shown for a provisioning run.
     expect(screen.queryByText("Waiting for the first step…")).toBeNull();
+  });
+
+  it("shows Stop on non-terminal cards and hides it on terminal ones (CL-3687)", async () => {
+    records = [
+      listRow("run_live", "running"),
+      listRow("run_done", "completed"),
+      listRow("run_stopped", "stopped"),
+    ];
+    statesByRunId["run_live"] = logState("run_live", "running", [
+      { stepId: "draft", phase: "in-flight" },
+    ]);
+    statesByRunId["run_done"] = logState("run_done", "completed", [
+      { stepId: "draft", phase: "completed" },
+    ]);
+    statesByRunId["run_stopped"] = logState("run_stopped", "cancelled", [
+      { stepId: "draft", phase: "cancelled" },
+    ]);
+    renderDock();
+    await waitFor(() =>
+      expect(screen.getAllByTestId("workflow-dock-card").length).toBe(3),
+    );
+    // One Stop control for the live run only.
+    expect(screen.getAllByTestId("dock-stop")).toHaveLength(1);
+    expect(screen.getByLabelText("Stop ab-compare-quality run")).toBeTruthy();
+  });
+
+  it("two-step confirm POSTs stop and does not fire on the first click (CL-3687)", async () => {
+    records = [listRow("run_live", "running")];
+    statesByRunId["run_live"] = logState("run_live", "running", [
+      { stepId: "draft", phase: "in-flight" },
+    ]);
+    renderDock();
+    await waitFor(() => screen.getByTestId("dock-stop"));
+
+    fireEvent.click(screen.getByTestId("dock-stop"));
+    expect(apiCalls.some((c) => c.path.includes("/stop"))).toBe(false);
+
+    fireEvent.click(screen.getByTestId("dock-stop-confirm"));
+    await waitFor(() =>
+      expect(
+        apiCalls.some(
+          (c) =>
+            c.method === "POST" &&
+            c.path.includes("/workflow-exec/records/run_live/stop"),
+        ),
+      ).toBe(true),
+    );
+  });
+
+  it("surfaces a legible error when the stop request fails (CL-3687)", async () => {
+    failStopRuns = true;
+    records = [listRow("run_live", "running")];
+    statesByRunId["run_live"] = logState("run_live", "running", [
+      { stepId: "draft", phase: "in-flight" },
+    ]);
+    renderDock();
+    await waitFor(() => screen.getByTestId("dock-stop"));
+
+    fireEvent.click(screen.getByTestId("dock-stop"));
+    fireEvent.click(screen.getByTestId("dock-stop-confirm"));
+
+    await waitFor(() => screen.getByTestId("dock-stop-error"));
+    expect(screen.getByText("Couldn't stop this run. Try again.")).toBeTruthy();
+    // Confirm stays available so the user can retry the stop.
+    expect(screen.getByTestId("dock-stop-confirm")).toBeTruthy();
   });
 });

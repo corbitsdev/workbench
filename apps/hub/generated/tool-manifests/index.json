@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-07-18T22:30:21.952Z",
+  "generatedAt": "2026-07-23T17:20:03.228Z",
   "factories": [
     {
       "factoryId": "@workbench/tools-ab-compare/compose",
@@ -15,7 +15,7 @@
       },
       "descriptions": {
         "ab_preset_quorum": "Internal A/B-preset workflow helper. Fail the run before the human decision when fewer than the required number of variants produced an answer, so a doomed comparison never reaches the winner-pick gate.",
-        "ab_preset_compose": "Internal A/B-preset workflow helper. Fold the fixed variant metadata, each variant's inline-step output, and the human ranking into one structured comparison artifact payload."
+        "ab_preset_compose": "Internal A/B-preset workflow helper. Fold the fixed variant metadata, each variant's step output, and the human ranking into one structured comparison artifact payload."
       },
       "myraCatalog": null,
       "credentialCatalog": null
@@ -89,20 +89,20 @@
       "descriptions": {
         "artifact_link_file": "Create a Workbench artifact row linked to a file in the agent workspace. Call this after writing the file with write_file.",
         "artifact_create": "Create a new Workbench artifact with inline content. Use this to save a document, note, draft, or other written output directly. Returns the artifact id and version. Revise it later with artifact_write.",
-        "artifact_read": "Read a Workbench artifact by id. Returns its title, kind, status, current version, and content. Pass version to read a specific past version. When the content is too large to return at once, the result includes a 'continuation' field with instructions to read the rest with artifact_read_chunk.",
+        "artifact_read": "Read a Workbench artifact by id. Returns its title, kind, current version, and content. Pass version to read a specific past version. When the content is too large to return at once, the result includes a 'continuation' field with instructions to read the rest with artifact_read_chunk.",
         "artifact_read_chunk": "Read one bounded chunk of a Workbench artifact's content by character range. Use this to read a large artifact whose content did not fit in a single artifact_read: pass the offset named in the prior result's 'continuation' field, and keep calling with each new offset until the result has no 'continuation' field, which means you have reached the end. Not supported for kind=web_site — use artifact_read (summary or path) instead.",
         "artifact_write": "Revise an existing Workbench artifact, saving the change as a new version. Provide content and/or title; omitted fields keep their current value. Returns the new version number.",
         "artifact_link_presentation": "Save a Gamma presentation as a Workbench artifact. Pass the Gamma URL as 'url', a 'title', and optionally an existing 'artifactId' to create a new version instead of a new artifact. Returns { artifactId, version, url }.",
         "artifact_link_gamma_presentation": "Save a Gamma deck as a Workbench artifact of kind gamma_presentation. Pass the Gamma URL as 'url', a 'title', a short 'description' of the deck, and the 'gammaId'. Optionally pass an existing 'artifactId' to create a new version. Returns { artifactId, version, url }.",
         "artifact_find_by_title": "Find a Workbench artifact by exact title and optional kind. Returns { artifactId, version } if found, null if not found.",
-        "artifact_list": "List Workbench artifacts in this workbench, most recently updated first. Returns id, title, kind, status, version, and updatedAt for each. Optionally filter by kind or status.",
+        "artifact_list": "List Workbench artifacts in this workbench, most recently updated first. Returns id, title, kind, version, and updatedAt for each. Optionally filter by kind.",
         "write_artifact": "Create or update a Workbench artifact with body text and optional citations. Returns artifactId, version, and title.",
         "memory_load": "Load your durable memory — the standing brief on the person you work for, durable facts and decisions, and contacts. Returns the full memory text (empty when nothing is stored yet). Call this when a task needs the context it holds, not on every turn.",
         "memory_save": "Save your durable memory, replacing the stored text with what you pass. Load it first, edit the whole text, then save the full result — saving overwrites, it does not append. Keep it organized under headings. Update only when you learn something durable, never for a greeting or simple reply."
       },
       "myraCatalog": {
         "catalogPackage": "artifacts",
-        "summary": "Advanced artifact tools — chunked reads, lookup by title, linking.",
+        "summary": "Artifact tools beyond the basics: read large artifacts in chunks, look up an artifact by title, and link a file or presentation to one.",
         "tags": [
           "artifact",
           "deliverable",
@@ -154,7 +154,7 @@
         "attio_update_task": "Update an Attio task — set its completion state (`isCompleted`) and/or `deadlineAt`. WRITES to Attio: use only after explicit human approval.",
         "attio_create_note": "Create a note on an Attio record (e.g. attach approved outreach copy to a company). WRITES to Attio: use only after explicit human approval. Pass `idempotencyKey` to make the write safe to retry — a matching prior note is returned instead of creating a duplicate.",
         "attio_create_record": "Create a record for an Attio object (e.g. add a new company or person). Pass `object` (the slug) and `values` (attribute map). WRITES to Attio: use only after explicit human approval. Pass `matchingAttribute` to make the write safe to retry — a record matching that attribute is updated instead of creating a duplicate. Returns the created (or matched) record with its `id` and `values`.",
-        "attio_recent_activity": "Compact snapshot of recent Attio CRM activity: companies created since createdAfter and currently open tasks. Read-only."
+        "attio_recent_activity": "Compact snapshot of recent Attio CRM activity: newCompanies (created since createdAfter), recentlyTouchedCompanies (older companies with a recent interaction), newTasks (created since createdAfter), completedTasks (completed since createdAfter), and longOpenTasks (oldest still-open tasks). Read-only."
       },
       "myraCatalog": {
         "catalogPackage": "attio",
@@ -201,6 +201,43 @@
         "secondaryField": {
           "label": "Handle",
           "placeholder": "you.bsky.social",
+          "required": true
+        }
+      }
+    },
+    {
+      "factoryId": "@workbench/tools-corbits-knowledge-engine/corbits-knowledge-engine",
+      "packageName": "@workbench/tools-corbits-knowledge-engine",
+      "providerName": "corbits-knowledge-engine",
+      "bareToolNames": [
+        "capture_to_knowledge",
+        "search_company_knowledge"
+      ],
+      "sideEffects": {
+        "search_company_knowledge": "read",
+        "capture_to_knowledge": "write"
+      },
+      "descriptions": {
+        "search_company_knowledge": "Search the team's shared knowledge base (call notes, docs, and other captured evidence) for passages relevant to a query. Returns ranked hits, each with a title, a snippet of the matching passage, a relevance score, and a documentId you can cite or use to fetch the source further.",
+        "capture_to_knowledge": "Capture a piece of evidence (a note, an excerpt, a finding) into the team's shared knowledge base so it becomes searchable via search_company_knowledge. Provide either `text` (captured as a single chunk) or `chunks` (pre-split passages, in order). Returns the resulting document's id, version id, chunk count, and ingest status."
+      },
+      "myraCatalog": {
+        "catalogPackage": "corbits-knowledge-engine",
+        "summary": "Corbits Knowledge Engine — search and capture the team's shared knowledge base.",
+        "tags": [
+          "knowledge",
+          "search",
+          "capture",
+          "memory",
+          "evidence"
+        ]
+      },
+      "credentialCatalog": {
+        "label": "Corbits Knowledge Engine",
+        "secretLabel": "Service token",
+        "secondaryField": {
+          "label": "Engine URL",
+          "placeholder": "https://knowledge-engine.internal",
           "required": true
         }
       }
@@ -467,6 +504,21 @@
       }
     },
     {
+      "factoryId": "@workbench/tools-granola/call",
+      "packageName": "@workbench/tools-granola",
+      "providerName": null,
+      "bareToolNames": [
+        "granola_create_tasks",
+        "granola_fanout_call"
+      ],
+      "sideEffects": {
+        "granola_create_tasks": "write",
+        "granola_fanout_call": "write"
+      },
+      "myraCatalog": null,
+      "credentialCatalog": null
+    },
+    {
       "factoryId": "@workbench/tools-granola/granola",
       "packageName": "@workbench/tools-granola",
       "providerName": "granola",
@@ -481,7 +533,7 @@
         "granola_list_folders": "read"
       },
       "descriptions": {
-        "granola_list_notes": "List recent Granola notes for the configured workbench. Use this to find calls before fetching a full transcript.",
+        "granola_list_notes": "List recent Granola notes for the configured workbench. Use this to find calls before fetching a full transcript. Brief-shaped calls (enabledSources set with createdAfter) query both created_after and updated_after, paginate up to 5 pages per query at page_size 30, merge by note id sorted by created_at desc, and tag notes created before the cutoff but updated after it with `updatedOnly: true` (a revised earlier meeting, not a new one).",
         "granola_get_note": "Fetch a single Granola note, including its transcript, by note ID.",
         "granola_list_folders": "List Granola folders (Spaces) for the configured workbench, sorted alphabetically. Use this to discover folder IDs for filtering notes with granola_list_notes."
       },
@@ -499,6 +551,50 @@
       "credentialCatalog": {
         "label": "Granola"
       }
+    },
+    {
+      "factoryId": "@workbench/tools-granola/hub",
+      "packageName": "@workbench/tools-granola",
+      "providerName": null,
+      "bareToolNames": [
+        "granola_spawn_call_runs"
+      ],
+      "sideEffects": {
+        "granola_spawn_call_runs": "write"
+      },
+      "myraCatalog": null,
+      "credentialCatalog": null
+    },
+    {
+      "factoryId": "@workbench/tools-granola/workflow",
+      "packageName": "@workbench/tools-granola",
+      "providerName": null,
+      "bareToolNames": [
+        "granola_build_analysis_prompt",
+        "granola_classify_call",
+        "granola_emit_run_outputs",
+        "granola_normalize_note",
+        "granola_parse_analysis",
+        "granola_prepare_artifacts"
+      ],
+      "sideEffects": {
+        "granola_normalize_note": "read",
+        "granola_classify_call": "read",
+        "granola_build_analysis_prompt": "read",
+        "granola_parse_analysis": "read",
+        "granola_prepare_artifacts": "read",
+        "granola_emit_run_outputs": "read"
+      },
+      "descriptions": {
+        "granola_normalize_note": "Normalize a raw Granola note (API shape or JSON string) into a typed GranolaCall for downstream workflow steps.",
+        "granola_classify_call": "Classify a Granola call as internal, external, or unknown from participants + tenant domain. Missing domain → unknown (never skips).",
+        "granola_build_analysis_prompt": "Build the user message for the call-analysis agent from a normalized GranolaCall (transcript + context).",
+        "granola_parse_analysis": "Parse an LLM call-analysis reply into validated CallAnalysis JSON (fences stripped).",
+        "granola_prepare_artifacts": "Build the three typed Granola call artifact payloads (pain points, summary, brief), each already shaped as write_artifact's arguments ({ title, kind, body, sourceRef }).",
+        "granola_emit_run_outputs": "Assemble the granola-call workflow terminal output: noteId, classification, artifactsByKind."
+      },
+      "myraCatalog": null,
+      "credentialCatalog": null
     },
     {
       "factoryId": "@workbench/tools-hackernews/hackernews",
@@ -531,28 +627,36 @@
       "packageName": "@workbench/tools-last30days",
       "providerName": null,
       "bareToolNames": [
-        "heartbeat_format_brief_mail_refs",
+        "competitor_analysis_format_report_document",
+        "heartbeat_format_brief_document",
+        "heartbeat_format_brief_notify",
         "heartbeat_format_brief_title",
         "heartbeat_merge_brief_sources",
         "last30days_collect",
         "last30days_core_extract",
         "last30days_core_report",
         "last30days_entity_queries",
+        "last30days_format_report_document",
         "last30days_ground_queries",
         "last30days_validate",
-        "last30days_workflow_brief"
+        "last30days_workflow_brief",
+        "sumble_account_intel_format_report_document"
       ],
       "sideEffects": {
         "last30days_core_extract": "read",
         "last30days_core_report": "read",
+        "last30days_format_report_document": "read",
         "last30days_ground_queries": "read",
         "last30days_entity_queries": "read",
         "last30days_collect": "read",
         "last30days_validate": "read",
         "last30days_workflow_brief": "read",
         "heartbeat_merge_brief_sources": "read",
-        "heartbeat_format_brief_mail_refs": "read",
-        "heartbeat_format_brief_title": "read"
+        "heartbeat_format_brief_document": "read",
+        "heartbeat_format_brief_notify": "read",
+        "heartbeat_format_brief_title": "read",
+        "competitor_analysis_format_report_document": "read",
+        "sumble_account_intel_format_report_document": "read"
       },
       "myraCatalog": null,
       "credentialCatalog": null
@@ -650,7 +754,7 @@
         "linear_list_integrations": "read"
       },
       "descriptions": {
-        "linear_list_issues": "List Linear issues across the workspace. Read-only. Scope with team, state, assignee, project, cycle, label, priority, or query; supports cursor pagination and orderBy (createdAt|updatedAt). Brief heartbeat calls may pass enabledSources.",
+        "linear_list_issues": "List Linear issues across the workspace. Read-only. Scope with team, state, assignee, project, cycle, label, priority, or query; supports cursor pagination and orderBy (createdAt|updatedAt). Brief heartbeat calls may pass enabledSources; brief-shaped results are bucketed into newIssues/completedIssues/updatedIssues and default orderBy to updatedAt when a cutoff is present.",
         "linear_get_issue": "Get a Linear issue by UUID or identifier (e.g. \"ENG-123\"). Optional includeRelations returns this issue's outbound relation edges only (blocks, related, duplicate); inverse edges such as blocked-by require querying the related issue.",
         "linear_create_issue": "Create a Linear issue (write, approval-gated). Requires teamId and title.",
         "linear_update_issue": "Update an existing Linear issue (write). Pass id plus fields to change.",
@@ -775,6 +879,39 @@
           "predictions"
         ]
       },
+      "credentialCatalog": null
+    },
+    {
+      "factoryId": "@workbench/tools-prospect-engine/core",
+      "packageName": "@workbench/tools-prospect-engine",
+      "providerName": null,
+      "bareToolNames": [
+        "prospect_engine_charge_credits",
+        "prospect_engine_dedupe_candidates",
+        "prospect_engine_extract_list_org_ids",
+        "prospect_engine_format_mail_refs",
+        "prospect_engine_format_report",
+        "prospect_engine_format_slack_digest",
+        "prospect_engine_init_budget",
+        "prospect_engine_merge_ledger",
+        "prospect_engine_parse_ledger",
+        "prospect_engine_qualify",
+        "prospect_engine_serialize_ledger"
+      ],
+      "sideEffects": {
+        "prospect_engine_init_budget": "read",
+        "prospect_engine_charge_credits": "read",
+        "prospect_engine_parse_ledger": "read",
+        "prospect_engine_merge_ledger": "read",
+        "prospect_engine_dedupe_candidates": "read",
+        "prospect_engine_qualify": "read",
+        "prospect_engine_format_report": "read",
+        "prospect_engine_format_slack_digest": "read",
+        "prospect_engine_format_mail_refs": "read",
+        "prospect_engine_serialize_ledger": "read",
+        "prospect_engine_extract_list_org_ids": "read"
+      },
+      "myraCatalog": null,
       "credentialCatalog": null
     },
     {
@@ -1050,7 +1187,7 @@
       },
       "myraCatalog": {
         "catalogPackage": "sumble",
-        "summary": "Sumble v9 — full Public API: organizations, teams, people, jobs, signals, lookups, saved lists, support, and intelligence briefs.",
+        "summary": "Sumble account intelligence — look up organizations, teams, people, jobs, and buying signals; build intelligence briefs and manage saved lists.",
         "tags": [
           "sumble",
           "account",
@@ -1095,7 +1232,7 @@
       },
       "descriptions": {
         "vercel_list_projects": "List Vercel projects visible to the configured token. Read-only. Optionally pass teamId and limit.",
-        "vercel_list_deployments": "List recent Vercel deployments visible to the configured token. Read-only. Optionally scope by projectId and teamId.",
+        "vercel_list_deployments": "List recent Vercel deployments visible to the configured token. Read-only. Optionally scope by projectId, teamId, target (e.g. production), or state (comma-separable, e.g. ERROR,CANCELED). createdAfter must be a parseable date and bounds the window (since/until). Brief-shaped calls (enabledSources set) return compact deployments plus `truncated: true` when the API has more matching deployments than the page returned.",
         "vercel_deploy_static_file": "Deploy one static HTML file to a public Vercel URL. This is an irreversible write action that publishes content the user can see. It pauses for explicit human approval before it runs, so call it directly when the user asks to deploy — do not ask for approval separately. Defaults to a preview deployment; only request target \"production\" when the user asks to deploy to production."
       },
       "myraCatalog": {

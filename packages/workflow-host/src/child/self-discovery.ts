@@ -18,7 +18,7 @@
 import type {
   RepoId,
   RepoStore as SubstrateRepoStore,
-} from "@intx/hub-sessions/substrate";
+} from "@workbench/hub-sessions/substrate";
 import {
   isTerminalRunPhase,
   resumeFromLog,

@@ -8,7 +8,7 @@ import {
   AssetServiceError,
   type AssetService,
   type RepoStore,
-} from "@intx/hub-sessions";
+} from "@workbench/hub-sessions";
 import type { HubDb } from "../db";
 import {
   assertNoCrossAssetPackageRegistryCollisions,
@@ -68,7 +68,9 @@ async function loadEmbeddedManifest(
         `embedded tool package manifest is not valid JSON at ${manifestPath}`,
       );
     }
-    log.error("embedded tool package manifest is not valid JSON; skipping autopublish");
+    log.error(
+      "embedded tool package manifest is not valid JSON; skipping autopublish",
+    );
     return [];
   }
   const parsed = EmbeddedToolPackageManifestSchema(json);

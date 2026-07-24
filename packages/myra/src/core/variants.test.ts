@@ -19,6 +19,7 @@ import {
   PERSONAL_AGENT_TRIAGE_NAME,
 } from "./definition";
 import { PERSONAL_AGENT_PROMPT_VERSION } from "./prompt";
+import { MYRA_PROMPT_GENERATIONS } from "./prompts";
 import { MAILBOX_PERSONA_TOOLS } from "../personas/mailbox";
 
 // A version-stable fragment of the single base prompt's role section. Present
@@ -27,10 +28,15 @@ import { MAILBOX_PERSONA_TOOLS } from "../personas/mailbox";
 const BASE_PROMPT_MARKER = "Chief of Staff to the one person you work for";
 
 describe("Myra variant catalog", () => {
-  test("every variant prompt derives from the single versioned base", () => {
+  test("every variant prompt derives from a versioned prompt generation", () => {
+    const generationVersions: string[] = Object.values(
+      MYRA_PROMPT_GENERATIONS,
+    ).map((g) => g.promptVersion);
     for (const variant of MYRA_VARIANTS) {
       expect(variant.deployPrompt).toContain(BASE_PROMPT_MARKER);
-      expect(variant.versionId).toContain(PERSONAL_AGENT_PROMPT_VERSION);
+      const suffix = variant.versionId.slice(variant.id.length + 1);
+      expect(variant.versionId.startsWith(`${variant.id}@`)).toBe(true);
+      expect(generationVersions).toContain(suffix);
     }
   });
 

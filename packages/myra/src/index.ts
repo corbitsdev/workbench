@@ -10,6 +10,15 @@ export {
   type MemberInstructions,
 } from "./core/prompt";
 export {
+  buildPersonalAgentSystemPromptV2,
+  type PersonalAgentPromptOptionsV2,
+  PERSONAL_AGENT_PROMPT_VERSION_V2,
+} from "./core/prompts/v2";
+export {
+  MYRA_PROMPT_GENERATIONS,
+  type MyraPromptGeneration,
+} from "./core/prompts";
+export {
   buildPersonalAgentGrantRequirements,
   PERSONAL_AGENT_CREDENTIAL_REQUIREMENTS,
   PERSONAL_AGENT_DEPLOY_PROMPT,
@@ -32,6 +41,7 @@ export {
   defaultMyraVariant,
   resolveMyraVariant,
   myraSurfaceForTemplateKey,
+  myraVariantForTemplateKey,
   type MyraVariant,
   type MyraVariantProvider,
   type MyraVariantCostTier,

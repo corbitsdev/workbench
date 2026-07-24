@@ -132,6 +132,25 @@ bun run test      # bun test
 
 All four steps must pass. Pre-existing failures must be identified explicitly — never skip a failing step.
 
+## Testing & coverage
+
+Run the suite across every workspace:
+
+```bash
+bun run test            # all @workbench/* workspaces
+bun run test:coverage   # same, but each workspace emits coverage/lcov.info
+bun run coverage:report # merge the lcov reports into one monorepo number
+bun run coverage        # test:coverage + coverage:report in one shot
+```
+
+**80% merged line coverage is the enforced hard floor** — this matches `AGENTS.md` and is the value `coverage:report` actually enforces (`COVERAGE_THRESHOLD=80`). `coverage:report` merges every workspace's `coverage/lcov.info` and exits non-zero until the aggregate clears 80%. 80% is the floor, not the goal: every change should leave coverage equal or higher. 98.5% remains the aspirational ramp target tracked in the "Test coverage to 98.5%" Linear project, but it is not the CI gate.
+
+Notes on how the number is computed (`scripts/coverage-merge.ts`):
+
+- **Line coverage only.** Bun instruments lines and functions but emits no per-function records in lcov, so functions cannot be unioned across runs. Line coverage is the reported metric. (Branch coverage is not available in Bun at all.)
+- **Union by file.** A workspace's lcov includes every file it imports — `interchange/` and other `@workbench/*` packages included. The merge resolves each path, drops `interchange/`, `node_modules/`, and test files, and unions line hits per file so each instrumented line counts once and is "covered" if any test run hit it.
+- **Untested files are invisible until a test imports them.** Bun only instruments files loaded during a run, so a source file no test touches is absent from the denominator rather than counted as 0%. As the ramp tickets add tests, those files enter the denominator and the aggregate moves.
+
 ## Project Structure
 
 ```

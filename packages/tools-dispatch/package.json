@@ -15,6 +15,7 @@
     "test:coverage": "BUN_OPTIONS=--conditions=intx-src bun test --isolate --coverage --coverage-reporter=lcov --coverage-reporter=text src"
   },
   "dependencies": {
+    "@workbench/hub-sessions": "workspace:*",
     "@workbench/tool-credentials": "workspace:*",
     "arktype": "catalog:",
     "@workbench/tool-manifest": "workspace:*"
@@ -24,7 +25,6 @@
     "@intx/crypto": "workspace:*",
     "@intx/db": "workspace:*",
     "@intx/hub-common": "workspace:*",
-    "@intx/hub-sessions": "workspace:*",
     "@intx/log": "workspace:*",
     "@intx/types": "workspace:*",
     "@types/bun": "latest",

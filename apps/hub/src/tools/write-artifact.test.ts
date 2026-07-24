@@ -1,5 +1,4 @@
 import { describe, expect, it, mock } from "bun:test";
-import type { StringToolHandler } from "@intx/agent";
 import { createWriteArtifactTool } from "./write-artifact";
 
 const SIGNAL = new AbortController().signal;
@@ -20,6 +19,8 @@ type InsertedArtifact = {
   title: string;
   content: string;
   status: string;
+  sourceRef?: string;
+  parentId?: string;
   source: {
     origin: string;
     citations: unknown[];
@@ -43,6 +44,8 @@ function makeMockDb(
     captureVersionInserts?: InsertedVersion[];
     captureArtifactInserts?: InsertedArtifact[];
     captureArtifactUpdates?: Record<string, unknown>[];
+    /** sourceRef → artifact id rows the parent-lineage lookup can resolve. */
+    parentsBySourceRef?: Record<string, string>;
   } = {},
 ) {
   const {
@@ -51,12 +54,40 @@ function makeMockDb(
     captureVersionInserts = [],
     captureArtifactInserts = [],
     captureArtifactUpdates = [],
+    parentsBySourceRef = {},
   } = opts;
 
   let selectCallCount = 0;
 
   // biome-ignore lint/suspicious/noExplicitAny: test mock
   const db: any = {};
+
+  // Parent-lineage lookup: db.query.artifact.findFirst by (tenantId,
+  // sourceRef). The fake walks the opaque drizzle condition for string
+  // leaves and matches them against the registered parent sourceRefs.
+  db.query = {
+    artifact: {
+      findFirst: async (findOpts: { where: unknown }) => {
+        const strings: string[] = [];
+        const seen = new Set<object>();
+        const walk = (value: unknown): void => {
+          if (typeof value === "string") {
+            strings.push(value);
+            return;
+          }
+          if (value === null || typeof value !== "object") return;
+          if (seen.has(value)) return;
+          seen.add(value);
+          for (const child of Object.values(value)) walk(child);
+        };
+        walk(findOpts.where);
+        for (const [sourceRef, id] of Object.entries(parentsBySourceRef)) {
+          if (strings.includes(sourceRef)) return { id };
+        }
+        return undefined;
+      },
+    },
+  };
 
   db.transaction = mock(
     async <T>(fn: (tx: typeof db) => Promise<T>): Promise<T> => {
@@ -113,17 +144,215 @@ function makeMockDb(
   return db;
 }
 
+// write_artifact is a structured (kind: "full") tool: its result carries
+// `{ artifactId, version, title }` directly on `content`, not JSON-encoded.
+// This adapter keeps the tests' existing (args, signal) call shape while
+// returning the raw content object instead of a JSON string.
 function getStringHandler(
   context: Parameters<typeof createWriteArtifactTool>[0],
-): StringToolHandler {
+): (
+  args: Record<string, unknown>,
+  signal: AbortSignal,
+) => Promise<Record<string, unknown>> {
   const tools = createWriteArtifactTool(context);
   const tool = tools[0];
   if (!tool) throw new Error("No tool created");
-  if (tool.kind !== "string") throw new Error("Expected string tool");
-  return tool.handler;
+  if (tool.kind !== "full") throw new Error("Expected structured tool");
+  const handler = tool.handler;
+  return async (args, signal) => {
+    const result = await handler(
+      { id: "test-call", name: "write_artifact", arguments: args },
+      signal,
+    );
+    if (result.isError === true) {
+      throw new Error(
+        typeof result.content === "string"
+          ? result.content
+          : JSON.stringify(result.content),
+      );
+    }
+    if (typeof result.content !== "object" || result.content === null) {
+      throw new Error("Expected structured content on write_artifact result");
+    }
+    return result.content;
+  };
 }
 
 describe("write_artifact tool", () => {
+  it("structured output: a downstream deterministic step reads artifactId off content with no JSON.parse", async () => {
+    const db = makeMockDb({});
+    const tools = createWriteArtifactTool({
+      db,
+      tenantId: "tnt-1",
+      principalId: "prn-1",
+    });
+    const tool = tools[0];
+    if (!tool) throw new Error("No tool created");
+    expect(tool.kind).toBe("full");
+    if (tool.kind !== "full") return;
+
+    const result = await tool.handler(
+      {
+        id: "det-step-1",
+        name: "write_artifact",
+        arguments: { title: "Brief", body: "Body", kind: "report" },
+      },
+      SIGNAL,
+    );
+
+    // The deterministic step harness's argMap `{ from: 'artifactId' }` reads a
+    // top-level field straight off `result.content` — no `fromJson`/JSON.parse
+    // indirection required, unlike the retired stringTool encoding.
+    expect(typeof result.content).toBe("object");
+    const content = result.content as Record<string, unknown>;
+    expect(content.artifactId).toBe("art-new-1");
+    expect(content.version).toBe(1);
+  });
+
+  // Server-side composition for argMap-shaped callers (workflow steps carry
+  // an item key but cannot concatenate strings): sourceRef from
+  // `<sourceRefPrefix>-<sourceRefKey>`, title from `<titlePrefix><title>`.
+  it("composes sourceRef from sourceRefPrefix + sourceRefKey and prepends titlePrefix", async () => {
+    const inserts: InsertedArtifact[] = [];
+    const db = makeMockDb({ captureArtifactInserts: inserts });
+    const handler = getStringHandler({ db, tenantId: "t", principalId: "p" });
+
+    await handler(
+      {
+        title: "Engineering Sync",
+        titlePrefix: "Transcript — ",
+        body: "Body",
+        kind: "document",
+        sourceRefPrefix: "granola-transcript",
+        sourceRefKey: "note_123",
+      },
+      SIGNAL,
+    );
+
+    expect(inserts[0]?.sourceRef).toBe("granola-transcript-note_123");
+    expect(inserts[0]?.title).toBe("Transcript — Engineering Sync");
+  });
+
+  it("an explicit sourceRef wins over the prefix/key pair", async () => {
+    const inserts: InsertedArtifact[] = [];
+    const db = makeMockDb({ captureArtifactInserts: inserts });
+    const handler = getStringHandler({ db, tenantId: "t", principalId: "p" });
+
+    await handler(
+      {
+        title: "T",
+        body: "B",
+        kind: "document",
+        sourceRef: "explicit-ref",
+        sourceRefPrefix: "granola-transcript",
+        sourceRefKey: "note_123",
+      },
+      SIGNAL,
+    );
+
+    expect(inserts[0]?.sourceRef).toBe("explicit-ref");
+  });
+
+  it("a stray half-pair alongside an explicit sourceRef is ignored, per the schema", async () => {
+    const inserts: InsertedArtifact[] = [];
+    const db = makeMockDb({ captureArtifactInserts: inserts });
+    const handler = getStringHandler({ db, tenantId: "t", principalId: "p" });
+
+    await handler(
+      {
+        title: "T",
+        body: "B",
+        kind: "document",
+        sourceRef: "explicit-ref",
+        sourceRefPrefix: "granola-transcript",
+      },
+      SIGNAL,
+    );
+
+    expect(inserts[0]?.sourceRef).toBe("explicit-ref");
+  });
+
+  it("half a prefix/key pair fails loudly instead of writing an unprefixed ref", async () => {
+    const db = makeMockDb({});
+    const handler = getStringHandler({ db, tenantId: "t", principalId: "p" });
+
+    await expect(
+      handler(
+        {
+          title: "T",
+          body: "B",
+          kind: "document",
+          sourceRefPrefix: "granola-transcript",
+        },
+        SIGNAL,
+      ),
+    ).rejects.toThrow("must be provided together");
+  });
+
+  // Artifact-chain lineage: parentSourceRefPrefix + parentSourceRefKey
+  // compose the PARENT's sourceRef, resolved to its artifact id and stamped
+  // as parentId — so a per-item chain (transcript → working notes → call
+  // notes) renders as a linked family instead of unrelated cards.
+  it("resolves parentSourceRefPrefix/Key to the parent artifact and stamps parentId", async () => {
+    const inserts: InsertedArtifact[] = [];
+    const db = makeMockDb({
+      captureArtifactInserts: inserts,
+      parentsBySourceRef: { "granola-transcript-note_1": "art-parent-1" },
+    });
+    const handler = getStringHandler({ db, tenantId: "t", principalId: "p" });
+
+    await handler(
+      {
+        title: "Working notes",
+        body: "B",
+        kind: "research",
+        sourceRefPrefix: "granola-processed",
+        sourceRefKey: "note_1",
+        parentSourceRefPrefix: "granola-transcript",
+        parentSourceRefKey: "note_1",
+      },
+      SIGNAL,
+    );
+
+    expect(inserts[0]?.parentId).toBe("art-parent-1");
+  });
+
+  it("a missing parent is best-effort: the artifact still writes, without lineage", async () => {
+    const inserts: InsertedArtifact[] = [];
+    const db = makeMockDb({ captureArtifactInserts: inserts });
+    const handler = getStringHandler({ db, tenantId: "t", principalId: "p" });
+
+    await handler(
+      {
+        title: "Working notes",
+        body: "B",
+        kind: "research",
+        parentSourceRefPrefix: "granola-transcript",
+        parentSourceRefKey: "note_missing",
+      },
+      SIGNAL,
+    );
+
+    expect(inserts).toHaveLength(1);
+    expect(inserts[0]?.parentId).toBeUndefined();
+  });
+
+  it("half a parent prefix/key pair fails loudly", async () => {
+    const db = makeMockDb({});
+    const handler = getStringHandler({ db, tenantId: "t", principalId: "p" });
+    await expect(
+      handler(
+        {
+          title: "T",
+          body: "B",
+          kind: "research",
+          parentSourceRefKey: "note_1",
+        },
+        SIGNAL,
+      ),
+    ).rejects.toThrow("must be provided together");
+  });
+
   it("tenantId: artifact insert includes tenantId from context", async () => {
     const artifactInserts: InsertedArtifact[] = [];
     const db = makeMockDb({ captureArtifactInserts: artifactInserts });
@@ -177,7 +406,7 @@ describe("write_artifact tool", () => {
       principalId: "prn-1",
     });
 
-    const resultJson = await handler(
+    const result = await handler(
       {
         title: "My Report",
         body: "Report body text",
@@ -193,7 +422,6 @@ describe("write_artifact tool", () => {
       SIGNAL,
     );
 
-    const result = JSON.parse(resultJson);
     expect(result.artifactId).toBe("art-new-1");
     expect(result.version).toBe(1);
     expect(result.title).toBe("My Report");
@@ -262,7 +490,7 @@ describe("write_artifact tool", () => {
       principalId: "prn-1",
     });
 
-    const result1Json = await handler(
+    const r1 = await handler(
       {
         title: "My Report",
         body: "Version one body",
@@ -272,7 +500,7 @@ describe("write_artifact tool", () => {
       SIGNAL,
     );
 
-    const result2Json = await handler(
+    const r2 = await handler(
       {
         title: "My Report",
         body: "Version two body",
@@ -281,9 +509,6 @@ describe("write_artifact tool", () => {
       },
       SIGNAL,
     );
-
-    const r1 = JSON.parse(result1Json);
-    const r2 = JSON.parse(result2Json);
 
     expect(r1.version).toBe(1);
     expect(r2.version).toBe(2);
@@ -604,6 +829,130 @@ describe("write_artifact tool", () => {
     expect(artifactInserts).toHaveLength(1);
     expect(artifactInserts[0]?.title).toBe("Wrapped");
     expect(artifactInserts[0]?.content).toBe("body");
-    expect(JSON.parse(raw as string).title).toBe("Wrapped");
+    expect(raw.title).toBe("Wrapped");
+  });
+
+  it("advertises sourceRef in the tool schema", async () => {
+    const { WRITE_ARTIFACT_DEFINITION } = await import(
+      "@workbench/tools-artifact"
+    );
+    expect(WRITE_ARTIFACT_DEFINITION.inputSchema.properties).toHaveProperty(
+      "sourceRef",
+    );
+  });
+
+  it("stamps sourceRef on insert when provided", async () => {
+    const artifactInserts: InsertedArtifact[] = [];
+    const db = makeMockDb({ captureArtifactInserts: artifactInserts });
+    const handler = getStringHandler({
+      db,
+      tenantId: "tnt-1",
+      principalId: "prn-1",
+    });
+
+    await handler(
+      {
+        title: "Call notes",
+        body: "Body",
+        kind: "granola-call",
+        sourceRef: "granola:call:note-42",
+        citations: [],
+      },
+      SIGNAL,
+    );
+
+    expect(artifactInserts).toHaveLength(1);
+    expect(artifactInserts[0]?.sourceRef).toBe("granola:call:note-42");
+  });
+
+  it("omits sourceRef on insert when absent or blank", async () => {
+    const insertsA: InsertedArtifact[] = [];
+    await getStringHandler({
+      db: makeMockDb({ captureArtifactInserts: insertsA }),
+      tenantId: "t",
+      principalId: "p",
+    })({ title: "T", body: "B", kind: "report", citations: [] }, SIGNAL);
+    expect(insertsA[0]?.sourceRef).toBeUndefined();
+
+    const insertsB: InsertedArtifact[] = [];
+    await getStringHandler({
+      db: makeMockDb({ captureArtifactInserts: insertsB }),
+      tenantId: "t",
+      principalId: "p",
+    })(
+      {
+        title: "T",
+        body: "B",
+        kind: "report",
+        sourceRef: "   ",
+        citations: [],
+      },
+      SIGNAL,
+    );
+    expect(insertsB[0]?.sourceRef).toBeUndefined();
+  });
+
+  it("re-write with same sourceRef returns existing id and does not insert a second row", async () => {
+    const artifactInserts: InsertedArtifact[] = [];
+    const versionInserts: InsertedVersion[] = [];
+    const updates: Record<string, unknown>[] = [];
+    const db = makeMockDb({
+      existingArtifactId: "art-existing-src",
+      prevMaxVersion: 1,
+      captureArtifactInserts: artifactInserts,
+      captureVersionInserts: versionInserts,
+      captureArtifactUpdates: updates,
+    });
+    const handler = getStringHandler({
+      db,
+      tenantId: "tnt-1",
+      principalId: "prn-1",
+    });
+
+    const result = await handler(
+      {
+        title: "Call notes",
+        body: "Updated body",
+        kind: "granola-call",
+        sourceRef: "granola:call:note-42",
+        citations: [],
+      },
+      SIGNAL,
+    );
+
+    expect(result.artifactId).toBe("art-existing-src");
+    expect(result.version).toBe(2);
+    // No second artifact row — only a version bump + content update.
+    expect(artifactInserts).toHaveLength(0);
+    expect(versionInserts).toHaveLength(1);
+    expect(versionInserts[0]?.content).toBe("Updated body");
+    expect(updates).toHaveLength(1);
+    expect(updates[0]?.content).toBe("Updated body");
+  });
+
+  it("writeArtifactDeduped dedupes by sourceRef over title+kind", async () => {
+    const inserts: InsertedArtifact[] = [];
+    const updates: Record<string, unknown>[] = [];
+    const db = makeMockDb({
+      existingArtifactId: "art-by-source-ref",
+      prevMaxVersion: 3,
+      captureArtifactInserts: inserts,
+      captureArtifactUpdates: updates,
+    });
+    const { writeArtifactDeduped } = await import("./write-artifact");
+    const result = await writeArtifactDeduped({
+      db: db as never,
+      tenantId: "tnt-1",
+      principalId: "prn-other",
+      title: "Different title",
+      body: "new content",
+      kind: "granola-call",
+      source: { origin: "workflow" },
+      sourceRef: "granola:call:note-99",
+    });
+    expect(result.artifactId).toBe("art-by-source-ref");
+    expect(result.version).toBe(4);
+    expect(inserts).toHaveLength(0);
+    expect(updates).toHaveLength(1);
   });
 });

@@ -16,7 +16,7 @@ const SETTINGS: PreferenceSetting[] = [
     default: 13,
     label: "Morning brief time",
     description: "When your morning brief arrives.",
-    category: "Automations",
+    category: "Routines",
     value: 13,
   },
   {
@@ -43,7 +43,7 @@ const SETTINGS: PreferenceSetting[] = [
     default: true,
     label: "Triage may create tasks",
     description: "Let Myra's inbox triage leave a task behind.",
-    category: "Automations",
+    category: "Routines",
     value: true,
   },
 ];

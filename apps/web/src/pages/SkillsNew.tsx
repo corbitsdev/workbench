@@ -40,7 +40,7 @@ export function SkillsNew() {
         text: text.trim(),
       },
       {
-        onSuccess: () => navigate("/skills"),
+        onSuccess: () => navigate("/library/skills"),
         onError: (err) =>
           setError(err instanceof Error ? err.message : "Failed to save skill"),
       },
@@ -67,7 +67,7 @@ export function SkillsNew() {
         })),
       },
       {
-        onSuccess: () => navigate("/skills"),
+        onSuccess: () => navigate("/library/skills"),
         onError: (err) =>
           setError(err instanceof Error ? err.message : "Failed to save skill"),
       },
@@ -84,7 +84,7 @@ export function SkillsNew() {
           </div>
           <button
             type="button"
-            onClick={() => navigate("/skills")}
+            onClick={() => navigate("/library/skills")}
             className="text-[12px] text-text-3 hover:text-text"
           >
             Cancel

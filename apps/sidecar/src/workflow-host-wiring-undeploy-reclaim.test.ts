@@ -21,7 +21,7 @@ import path from "node:path";
 
 import { createEd25519Crypto, generateKeyPair } from "@intx/crypto";
 import { createInMemoryTransport } from "@intx/mail-memory";
-import type { RepoId, RepoStore } from "@intx/hub-sessions";
+import type { RepoId, RepoStore } from "@workbench/hub-sessions";
 import {
   createControlChannelSender,
   type FrameReader,

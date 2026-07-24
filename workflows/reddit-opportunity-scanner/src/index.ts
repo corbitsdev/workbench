@@ -1,7 +1,7 @@
 import { awaitSignal, defineWorkflow, map } from "@intx/workflow";
 import {
   deterministicToolStep,
-  inlineInferenceStep,
+  agentStep,
   LLM_WRITER_MODEL,
 } from "@workbench/agents";
 import { buildAnalyzeSystemPrompt, buildCurateSystemPrompt } from "./prompts";
@@ -94,7 +94,7 @@ export const workflow = defineWorkflow({
 
     // 3. Infer business profile + keyword/subreddit recommendations.
     //    Pure reasoning over the scraped content + intake hints — no tool.
-    analyze: inlineInferenceStep({
+    analyze: agentStep({
       id: "reddit-opp-analyze",
       title: "Recommend subreddits & keywords",
       systemPrompt: buildAnalyzeSystemPrompt(),
@@ -122,7 +122,7 @@ export const workflow = defineWorkflow({
     //    Narrow the input to just the approved plan + collected results — the
     //    full scrape markdown and analyze blob are dead weight in the curate
     //    context (token cost + distraction), and the prompt only reads these two.
-    curate: inlineInferenceStep({
+    curate: agentStep({
       id: "reddit-opp-curate",
       title: "Rank the opportunities",
       systemPrompt: buildCurateSystemPrompt(),

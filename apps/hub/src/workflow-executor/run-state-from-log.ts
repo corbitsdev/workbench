@@ -6,17 +6,21 @@ import {
   type RepoId,
   type RepoStore,
   type WorkflowRunEvent,
-} from "@intx/hub-sessions";
+} from "@workbench/hub-sessions";
 import { resumeFromLog, type WorkflowEvent } from "@intx/workflow";
 import type { AgentDefinition, BaseEnv } from "@intx/agent";
 import type { WorkflowDefinition } from "@intx/workflow";
-import {
-  DETERMINISTIC_TOOL_KIND,
-  INLINE_INFERENCE_KIND,
-  STEP_KIND_TAG,
-} from "@workbench/agents";
+import { DETERMINISTIC_TOOL_KIND, STEP_KIND_TAG } from "@workbench/agents";
 import { readWorkflowDefinition } from "../services/workflow-deploy";
 import { deriveWorkflowRunRepoId } from "../routes/workflow-runs";
+
+// The retired `inline-inference` authoring kind's tag value. `inlineInferenceStep`
+// and its `INLINE_INFERENCE_KIND` export are deleted — no NEW workflow definition
+// can ever carry this tag — but historical run definitions committed to disk
+// before the retirement still do, and this fold must keep classifying them
+// correctly when a completed run's log is replayed. Kept as a literal, not an
+// import, so it survives the authoring surface's deletion.
+const LEGACY_INLINE_INFERENCE_TAG = "inline-inference";
 
 // Read a workflow run's authoritative state directly from its native git event
 // log (CL-2669 Phase 1a). Where the projection bridge folds the log into a
@@ -53,6 +57,12 @@ export const LogStepStateSchema = type({
   currentAttempt: "number",
   "outputRef?": "string",
   "lastError?": { message: "string" },
+  // Whether the most recent `StepFailed` for this step exhausted its retry
+  // policy (CL-3509 dead-parked-run follow-up). `phase === "failed"` alone is
+  // a re-entrancy marker between attempts, not a terminal verdict — this is
+  // the field that distinguishes "permanently dead" from "backing off before
+  // the next attempt". Present only once the step has failed at least once.
+  "retriesExhausted?": "boolean",
   "awaitingSignalName?": "string",
   "startedAt?": "string",
   "endedAt?": "string",
@@ -115,7 +125,7 @@ export function classifyStepKinds(
     }
     const tag = agent.tags?.[STEP_KIND_TAG];
     if (tag === DETERMINISTIC_TOOL_KIND) kinds.set(stepId, "deterministic");
-    else if (tag === INLINE_INFERENCE_KIND) kinds.set(stepId, "inline");
+    else if (tag === LEGACY_INLINE_INFERENCE_TAG) kinds.set(stepId, "inline");
     else kinds.set(stepId, "agent");
   }
   return kinds;
@@ -136,6 +146,19 @@ interface StepTiming {
   endedAt?: string;
   awaitedAt?: string;
   gateWaitMs?: number;
+  // The most recent `StepFailed.retriesExhausted` observed for this step
+  // (CL-3509 dead-parked-run follow-up). The native RunState's `failed` phase
+  // is a RE-ENTRANCY MARKER, not a terminal verdict: the runtime commits
+  // `StepFailed` on every attempt, including one it is about to retry after a
+  // backoff (`TimerSet`/`AttemptScheduled` follow in the SAME commit only when
+  // `retriesExhausted` is false). Reading `phase === "failed"` alone cannot
+  // distinguish "this step is permanently dead" from "this step is between
+  // attempts" — only this flag can. Latest-wins is correct: once exhausted, no
+  // further `StepFailed` for this step is possible (phase never leaves
+  // `failed`); while retrying, each new `StepFailed` overwrites the previous
+  // attempt's (always `false`) value, and a step that eventually succeeds
+  // moves phase away from `failed` entirely, making the stale value moot.
+  retriesExhausted?: boolean;
 }
 
 // Derive run + per-step wall-clock timing from each event's `EventBase.at`.
@@ -191,10 +214,19 @@ function deriveTiming(events: readonly WorkflowRunEvent[]): {
         break;
       }
       case "StepCompleted":
-      case "StepFailed":
       case "CancelPropagated": {
         const id = stepId(body);
         if (id !== undefined) ensure(id).endedAt = ts;
+        break;
+      }
+      case "StepFailed": {
+        const id = stepId(body);
+        if (id === undefined) break;
+        ensure(id).endedAt = ts;
+        const exhausted = body["retriesExhausted"];
+        if (typeof exhausted === "boolean") {
+          ensure(id).retriesExhausted = exhausted;
+        }
         break;
       }
       case "SignalAwaited": {
@@ -263,6 +295,8 @@ export interface NativeRunStepProjection {
   attempts: number;
   startedAt?: string;
   endedAt?: string;
+  errorMessage?: string;
+  retriesExhausted?: boolean;
 }
 
 export interface NativeRunStateProjection {
@@ -298,6 +332,12 @@ export async function projectRunStateFromLog(
       attempts: step.currentAttempt,
       ...(t?.startedAt !== undefined ? { startedAt: t.startedAt } : {}),
       ...(t?.endedAt !== undefined ? { endedAt: t.endedAt } : {}),
+      ...(step.lastError !== undefined
+        ? { errorMessage: step.lastError.message }
+        : {}),
+      ...(t?.retriesExhausted !== undefined
+        ? { retriesExhausted: t.retriesExhausted }
+        : {}),
     });
   }
 
@@ -377,6 +417,9 @@ export async function getWorkflowRunStateForRepo(
       ...(t?.startedAt !== undefined ? { startedAt: t.startedAt } : {}),
       ...(t?.endedAt !== undefined ? { endedAt: t.endedAt } : {}),
       ...(t?.gateWaitMs !== undefined ? { gateWaitMs: t.gateWaitMs } : {}),
+      ...(t?.retriesExhausted !== undefined
+        ? { retriesExhausted: t.retriesExhausted }
+        : {}),
     });
   }
 

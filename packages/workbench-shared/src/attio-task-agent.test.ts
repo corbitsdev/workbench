@@ -211,13 +211,14 @@ describe("ArtifactReviewSchema", () => {
 });
 
 describe("SyncApprovalPayloadSchema", () => {
-  it("accepts a confirm payload with record locators and note", () => {
+  it("accepts a confirm payload with record locators and content", () => {
     const out = SyncApprovalPayloadSchema({
       confirm: true,
       taskId: "task_1",
+      idempotencyKey: "task_1",
       parentObject: "companies",
       parentRecordId: "rec_1",
-      note: "Attached outreach",
+      content: "Attached outreach",
     });
     expect(out instanceof type.errors).toBe(false);
   });
@@ -242,9 +243,10 @@ describe("SyncApprovalPayloadSchema", () => {
       SyncApprovalPayloadSchema({
         confirm: true,
         taskId: "task_1",
+        idempotencyKey: "task_1",
         parentObject: "companies",
         parentRecordId: "rec_1",
-        note: "",
+        content: "",
       }) instanceof type.errors,
     ).toBe(true);
   });

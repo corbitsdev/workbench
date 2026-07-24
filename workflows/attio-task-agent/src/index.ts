@@ -1,4 +1,5 @@
 import {
+  action,
   awaitSignal,
   defineWorkflow,
   gate,
@@ -12,9 +13,10 @@ import {
   LLM_DEFAULT_MODEL,
   LLM_PROVIDER,
   LLM_WRITER_MODEL,
+  canonicalizeStepToolName,
   canonicalizeToolNames,
   deterministicToolStep,
-  inlineInferenceStep,
+  agentStep,
   STEP_TITLE_TAG,
   withCorbitsVocabulary,
 } from "@workbench/agents";
@@ -24,6 +26,31 @@ import {
   buildReviewSystemPrompt,
   buildSuggestSystemPrompt,
 } from "./prompts";
+
+// Native `action` handler refs — the tool's canonical (factory-prefixed) name,
+// resolved via the same build-time-checked lookup `deterministicToolStep`
+// uses, so a typo'd or manifest-drifted tool name fails the build instead of
+// deploying a step nothing can dispatch.
+export const LIST_WORKSPACE_MEMBERS_HANDLER = canonicalizeStepToolName(
+  "attio-task-agent-list-members",
+  "attio_list_workspace_members",
+);
+export const LIST_TASKS_HANDLER = canonicalizeStepToolName(
+  "attio-task-agent-list-tasks",
+  "attio_list_tasks",
+);
+export const GET_TASK_HANDLER = canonicalizeStepToolName(
+  "attio-task-agent-fetch-task",
+  "attio_get_task",
+);
+export const CREATE_NOTE_HANDLER = canonicalizeStepToolName(
+  "attio-task-agent-write-note",
+  "attio_create_note",
+);
+export const UPDATE_TASK_HANDLER = canonicalizeStepToolName(
+  "attio-task-agent-write-complete",
+  "attio_update_task",
+);
 
 export const label = "Attio Task Agent";
 export const description =
@@ -79,22 +106,27 @@ const analyzeAgent = defineAgent({
 // -------------------------------------------------------------------------
 // Workflow graph
 //
-//   listMembers   deterministicToolStep  attio_list_workspace_members
+//   listMembers   action                 attio_list_workspace_members (native primitive)
 //   selectMember  awaitSignal            member-selection    → {assignee}
-//   listTasks     deterministicToolStep  attio_list_tasks    scoped to assignee
+//   listTasks     action                 attio_list_tasks    scoped to assignee (native primitive)
 //   selectTask    awaitSignal            task-selection      → {taskId}
-//   fetchTask     deterministicToolStep  attio_get_task      from selectTask
+//   fetchTask     action                 attio_get_task      from selectTask (native primitive)
 //   analyze       step({agent})   PLANNER: ReAct read-only  → AttioAnalyzeDecision (draftActions[] + proposedTaskUpdate?)
 //   clarify       awaitSignal            clarification       → {answers?}
-//   execute       inlineInferenceStep  EXECUTOR: performs every draftAction → {outputs:[{type,title,content,brief}]}
-//   reviewArtifacts inlineInferenceStep  REVIEWER: validates outputs vs briefs → {overall, items:[{type,verdict,notes}]}
+//   execute       agentStep  EXECUTOR: performs every draftAction → {outputs:[{type,title,content,brief}]}
+//   reviewArtifacts agentStep  REVIEWER: validates outputs vs briefs → {overall, items:[{type,verdict,notes}]}
 //   review        awaitSignal            review              → {approvedPieces:[{type,title,content}]}
-//   persist       map artifact_create    over approvedPieces
-//   suggest       inlineInferenceStep    merge fetch+analyze → completion summary + follow-ups
+//   persist       map artifact_create    over approvedPieces (deterministicToolStep — see note below)
+//   suggest       agentStep    merge fetch+analyze → completion summary + follow-ups
 //   approveSync   awaitSignal            sync-approval       → {confirm,taskId,parentObject,parentRecordId,note}
 //   syncGate      gate on confirm        → writeNote | skipWriteBack
-//   writeNote     deterministicToolStep  attio_create_note   FATAL (loud on real Attio errors)
-//   writeComplete deterministicToolStep  attio_update_task   FATAL, after writeNote
+//   writeNote     action                 attio_create_note   FATAL (loud on real Attio errors), native primitive
+//   writeComplete action                 attio_update_task   FATAL, after writeNote, native primitive
+//
+// persist stays a deterministicToolStep (not a native `action`) for the same
+// reason documented in pain-point-collateral: `MapPrimitive.step` is typed
+// `StepPrimitive`, not `Primitive` — an `action` cannot be a map's inner step
+// at all.
 //
 // The pipeline is planner → executor → reviewer → human: the agent decides and
 // performs the plan; the human no longer hand-picks actions. Destructive Attio
@@ -143,7 +175,7 @@ const persistStep = deterministicToolStep({
 // their envelope keys (reply / content / answers) don't collide, so the merge is
 // lossless. `review` reads only `execute.output` — each produced item echoes its
 // brief, so the reviewer judges against the exact instruction with no join.
-const executeStep = inlineInferenceStep({
+const executeStep = agentStep({
   id: "attio-task-agent-execute",
   title: "Do the work",
   systemPrompt: buildExecutorSystemPrompt(),
@@ -159,7 +191,7 @@ const executeStep = inlineInferenceStep({
   after: ["clarify"],
 });
 
-const reviewStep = inlineInferenceStep({
+const reviewStep = agentStep({
   id: "attio-task-agent-review-artifacts",
   title: "Check the drafts",
   systemPrompt: buildReviewSystemPrompt(),
@@ -179,15 +211,13 @@ export const workflow = defineWorkflow({
     //    The UI defaults to the member saved on the account (MemberPreferences
     //    .attioMemberId) and auto-submits when present, so returning users skip
     //    it; it stays switchable to work another member's tasks.
-    listMembers: deterministicToolStep({
-      id: "attio-task-agent-list-members",
-      title: "List workspace members",
-      tool: "attio_list_workspace_members",
-      // First step with no `input` selector: the sidecar supervisor otherwise
-      // hands it the run's (string) trigger payload as tool args, which the
-      // step-tool-harness rejects. attio_list_workspace_members takes no args,
-      // so pin the arguments to {} with an empty argMap (CL-2658).
-      argMap: {},
+    // Native `action`: the tool takes no required args, so `input: { literal: {} }`
+    // is the whole call — no reshape needed (mirrors pain-point-collateral's
+    // `intake` step and replaces the old empty-argMap workaround, CL-2658).
+    listMembers: action({
+      handler: LIST_WORKSPACE_MEMBERS_HANDLER,
+      input: { literal: {} },
+      effect: { requires: [LIST_WORKSPACE_MEMBERS_HANDLER] },
     }),
 
     selectMember: awaitSignal({
@@ -195,27 +225,31 @@ export const workflow = defineWorkflow({
       after: ["listMembers"],
     }),
 
-    // 1. List the selected member's open tasks.
-    listTasks: deterministicToolStep({
-      id: "attio-task-agent-list-tasks",
-      title: "List open tasks",
-      tool: "attio_list_tasks",
-      input: { from: "steps.selectMember.output" },
-      argMap: {
-        assignee: { from: "assignee" },
-        isCompleted: { literal: false },
+    // 1. List the selected member's open tasks. `attio_list_tasks` takes
+    // `assignee` (present on the signal payload verbatim) and `isCompleted`
+    // (a workflow-authored constant); merge the signal output with a literal
+    // to compose the tool's args in one selector — no rename needed, since
+    // the selector vocabulary can only pick/merge fields, never rename one.
+    listTasks: action({
+      handler: LIST_TASKS_HANDLER,
+      input: {
+        merge: [
+          { from: "steps.selectMember.output" },
+          { literal: { isCompleted: false } },
+        ],
       },
+      effect: { requires: [LIST_TASKS_HANDLER] },
       after: ["selectMember"],
     }),
 
     selectTask: awaitSignal({ name: "task-selection", after: ["listTasks"] }),
 
-    fetchTask: deterministicToolStep({
-      id: "attio-task-agent-fetch-task",
-      title: "Load the task",
-      tool: "attio_get_task",
+    // `selectTask`'s signal payload is already shaped `{ taskId }`, matching
+    // `attio_get_task`'s sole required arg — passed through verbatim.
+    fetchTask: action({
+      handler: GET_TASK_HANDLER,
       input: { from: "steps.selectTask.output" },
-      argMap: { taskId: { from: "taskId" } },
+      effect: { requires: [GET_TASK_HANDLER] },
       after: ["selectTask"],
     }),
 
@@ -249,7 +283,7 @@ export const workflow = defineWorkflow({
       after: ["review"],
     }),
 
-    suggest: inlineInferenceStep({
+    suggest: agentStep({
       id: "attio-task-agent-suggest",
       title: "Suggest follow-ups",
       systemPrompt: buildSuggestSystemPrompt(),
@@ -278,31 +312,35 @@ export const workflow = defineWorkflow({
       after: ["approveSync"],
     }),
 
-    writeNote: deterministicToolStep({
-      id: "attio-task-agent-write-note",
-      title: "Post the note to Attio",
-      tool: "attio_create_note",
+    // The panel emits parentObject/parentRecordId/content/idempotencyKey
+    // directly (idempotencyKey duplicates taskId so a re-run of the SAME
+    // task after a mid-write-back failure dedupes instead of creating a
+    // second note) — the signal payload already is attio_create_note's
+    // arguments verbatim, no reshape needed.
+    writeNote: action({
+      handler: CREATE_NOTE_HANDLER,
       input: { from: "steps.approveSync.output" },
-      argMap: {
-        parentObject: { from: "parentObject" },
-        parentRecordId: { from: "parentRecordId" },
-        content: { from: "note" },
-        // Key the note by the task id so a re-run of the SAME task after a
-        // mid-write-back failure dedupes instead of creating a second note.
-        idempotencyKey: { from: "taskId" },
-      },
+      effect: { requires: [CREATE_NOTE_HANDLER] },
       after: ["syncGate"],
     }),
 
-    writeComplete: deterministicToolStep({
-      id: "attio-task-agent-write-complete",
-      title: "Mark the task complete",
-      tool: "attio_update_task",
-      input: { from: "steps.approveSync.output" },
-      argMap: {
-        taskId: { from: "taskId" },
-        isCompleted: { literal: true },
+    // `attio_update_task` only reads `taskId`/`isCompleted`/`deadlineAt`; the
+    // extra approveSync fields (confirm/parentObject/parentRecordId/content)
+    // are harmless passengers but `project` keeps the call's args to exactly
+    // what the tool expects — `taskId` picked from the signal payload, merged
+    // with the workflow-authored `isCompleted: true` constant.
+    writeComplete: action({
+      handler: UPDATE_TASK_HANDLER,
+      input: {
+        merge: [
+          {
+            project: { from: "steps.approveSync.output" },
+            fields: ["taskId"],
+          },
+          { literal: { isCompleted: true } },
+        ],
       },
+      effect: { requires: [UPDATE_TASK_HANDLER] },
       after: ["writeNote"],
     }),
 

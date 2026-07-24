@@ -15,7 +15,8 @@ import type {
   EventCollectorRegistry,
   SidecarRouter,
   RepoStore,
-} from "@intx/hub-sessions";
+  AssetService,
+} from "@workbench/hub-sessions";
 import type { CryptoProvider } from "@intx/types/runtime";
 import type { AnalyticsSubscriber } from "@workbench/analytics";
 import type {
@@ -61,6 +62,7 @@ export function createHubToolsRouter(
     sidecarRouter: SidecarRouter;
     analytics: AnalyticsSubscriber;
     repoStore: RepoStore;
+    assetService: AssetService;
     buildToolDefinitions: typeof buildToolDefinitions;
     // Workflow-exec wiring for the workflow-run tools (CL-2678).
     cryptoProvider?: CryptoProvider;
@@ -258,10 +260,12 @@ export function createHubToolsRouter(
           500,
         );
       }
-      if (tool.kind !== "string") {
+      if (tool.kind !== "string" && tool.kind !== "full") {
         return c.json(
           {
-            error: `Tool ${toolName} uses unsupported handler kind: ${tool.kind}`,
+            error: `Tool ${toolName} uses unsupported handler kind: ${String(
+              (tool as { kind: unknown }).kind,
+            )}`,
           },
           500,
         );
@@ -273,6 +277,59 @@ export function createHubToolsRouter(
       const controller = new AbortController();
       try {
         c.req.raw.signal.addEventListener("abort", () => controller.abort());
+        if (tool.kind === "full") {
+          // Structured tools (e.g. write_artifact) return a full ToolResult.
+          // Their content crosses the rail INTACT via `structuredResult` —
+          // downstream selectors consume the step output's `content` as an
+          // object (heartbeat's notify-prep merges persist.output.content),
+          // so flattening alone breaks every such consumer. Error content is
+          // still coerced to text for the loop guard + recovery guidance.
+          const full = await tool.handler(
+            { id: crypto.randomUUID(), name: toolName, arguments: args },
+            controller.signal,
+          );
+          if (full.pendingMarker !== undefined) {
+            // Async-tool contract (pendingMarker) has no delivery path over
+            // this synchronous rail — fail loudly rather than dropping it.
+            return c.json(
+              {
+                error: `Tool ${toolName} returned a pendingMarker, which the hub-backed rail cannot deliver`,
+              },
+              500,
+            );
+          }
+          if (full.isError === true) {
+            const message =
+              typeof full.content === "string"
+                ? full.content
+                : JSON.stringify(full.content);
+            const escalation = loopGuard.recordFailure(
+              sessionId,
+              toolName,
+              args,
+              new Error(message),
+            );
+            const result =
+              escalation === undefined
+                ? message
+                : `${message}\n\n${escalation}`;
+            return c.json({ result, isError: true });
+          }
+          loopGuard.recordSuccess(sessionId);
+          // Additive wire shape for rollout safety: `result` stays the
+          // flattened string old clients validate against; updated clients
+          // prefer `structuredResult` (the object verbatim). A stale tarball
+          // client mid-skew keeps working on the string; a new client
+          // against an old hub falls back to the string.
+          if (typeof full.content === "string") {
+            return c.json({ result: full.content, isError: false });
+          }
+          return c.json({
+            result: JSON.stringify(full.content),
+            structuredResult: full.content,
+            isError: false,
+          });
+        }
         const result = await tool.handler(args, controller.signal);
         loopGuard.recordSuccess(sessionId);
         return c.json({ result, isError: false });

@@ -3,12 +3,21 @@ import {
   AbPresetConfigPayloadSchema,
   AbDecisionPayloadSchema,
   ClarificationPayloadSchema,
+  CompetitorAnalysisIntakePayloadSchema,
+  CompetitorAnalysisReviewPayloadSchema,
   Last30daysIntakePayloadSchema,
   MemberSelectionPayloadSchema,
   RedditIntakePayloadSchema,
   RedditReviewPayloadSchema,
   RedditSelectionPayloadSchema,
   GammaIntakePayloadSchema,
+  GtmScriptsBriefsIntakePayloadSchema,
+  MultiSourceOptionsPayloadSchema,
+  MultiSourceReviewFinalPayloadSchema,
+  MultiSourceReviewPayloadSchema,
+  MultiSourceSourcesPayloadSchema,
+  multiSourceSourcesHasAtLeastOne,
+  normalizeSyncApprovalPayload,
   PainPointContextPayloadSchema,
   PainPointFormatSelectionPayloadSchema,
   PainPointNoteSelectionPayloadSchema,
@@ -16,6 +25,7 @@ import {
   PainPointSelectionPayloadSchema,
   SumbleIntakePayloadSchema,
   SumbleReviewPayloadSchema,
+  ProspectEngineIntakePayloadSchema,
   SyncApprovalPayloadSchema,
   TaskSelectionPayloadSchema,
 } from "@workbench/shared";
@@ -69,6 +79,11 @@ const RESUME_PAYLOAD_SCHEMAS: Record<string, Record<string, Type>> = {
   // reads both. There is no preview/round gate; the run generates once and
   // persists.
   "gamma-presentation-creator": GAMMA_SIGNALS,
+  // gtm-scripts-briefs (CL-4031): retrieval and grounding require a non-empty
+  // topic and positive research window before the writer can select a story.
+  "gtm-scripts-briefs": {
+    intake: GtmScriptsBriefsIntakePayloadSchema,
+  },
   // last30days-research (CL-2765): the one `intake` gate REQUIRES a non-empty
   // topic — every source query and the report title derive from it, so a
   // topic-less intake is rejected here rather than grounding the scan on nothing.
@@ -103,6 +118,16 @@ const RESUME_PAYLOAD_SCHEMAS: Record<string, Record<string, Type>> = {
     "format-selection": PainPointFormatSelectionPayloadSchema,
     review: PainPointReviewPayloadSchema,
   },
+  // multi-source-collateral (CL-4034): multi-select sources → options items →
+  // review (good/bad + optional one-pass regenerate) → review-final when regenerating.
+  // Sources also require at least one of artifacts/notes/issues/text (see
+  // validateResumePayload cross-field check).
+  "multi-source-collateral": {
+    sources: MultiSourceSourcesPayloadSchema,
+    options: MultiSourceOptionsPayloadSchema,
+    review: MultiSourceReviewPayloadSchema,
+    "review-final": MultiSourceReviewFinalPayloadSchema,
+  },
   // sumble-account-intel (CL-3424): the intake gate REQUIRES a non-empty
   // organization domain/slug — every Sumble lookup keys off it, so a blank
   // intake is rejected at the /resume boundary rather than resolving nothing.
@@ -111,6 +136,20 @@ const RESUME_PAYLOAD_SCHEMAS: Record<string, Record<string, Type>> = {
   "sumble-account-intel": {
     intake: SumbleIntakePayloadSchema,
     review: SumbleReviewPayloadSchema,
+  },
+  // competitor-analysis (CL-4029): the intake gate REQUIRES an http(s) company
+  // URL — the scrape step fetches it, so a blank/non-URL intake is rejected at
+  // the /resume boundary rather than failing deep in the crawl. The review gate
+  // carries the approval decision before the report is persisted. The block form
+  // and the run-page panel POST the same shapes.
+  "competitor-analysis": {
+    intake: CompetitorAnalysisIntakePayloadSchema,
+    review: CompetitorAnalysisReviewPayloadSchema,
+  },
+  // prospect-engine (CL-3497): schedule/attach intake for list ids + Slack +
+  // optional verticals. Fire-time enrichment builds the full trigger payload.
+  "prospect-engine": {
+    intake: ProspectEngineIntakePayloadSchema,
   },
   // Multi-gate scheduler integration fixture (CL-3528): intake then a post-intake
   // confirm gate with an empty payload — exercises scheduled Myra gate-drive.
@@ -121,7 +160,7 @@ const RESUME_PAYLOAD_SCHEMAS: Record<string, Record<string, Type>> = {
 };
 
 export type ResumePayloadValidation =
-  | { ok: true }
+  | { ok: true; payload?: unknown }
   | { ok: false; error: string };
 
 /**
@@ -129,6 +168,12 @@ export type ResumePayloadValidation =
  * workflow kind + signal name. Returns `{ ok: true }` when there is no
  * registered schema (pass-through) or the payload matches; `{ ok: false }` with
  * an error summary on a registered-but-mismatched payload.
+ *
+ * A registered schema may also NORMALIZE the payload (e.g. folding a
+ * transitional legacy shape to the current one) — when it does, `payload`
+ * carries the normalized value the caller should dispatch instead of the raw
+ * submitted one. Every other kind/signal leaves `payload` unset and the
+ * caller keeps using the raw payload it received (pass-through, unchanged).
  */
 export function validateResumePayload(
   kind: string,
@@ -140,6 +185,31 @@ export function validateResumePayload(
   const out = schema(payload);
   if (out instanceof type.errors) {
     return { ok: false, error: out.summary };
+  }
+  if (
+    kind === "multi-source-collateral" &&
+    signalName === "sources" &&
+    !multiSourceSourcesHasAtLeastOne(out)
+  ) {
+    return {
+      ok: false,
+      error:
+        "sources requires at least one artifact, note, Linear issue, or non-empty text",
+    };
+  }
+  if (
+    kind === "multi-source-collateral" &&
+    signalName === "review" &&
+    out.shouldRegenerate === true &&
+    out.regenerateItems.length === 0
+  ) {
+    return {
+      ok: false,
+      error: "shouldRegenerate requires at least one regenerateItems entry",
+    };
+  }
+  if (kind === "attio-task-agent" && signalName === "sync-approval") {
+    return { ok: true, payload: normalizeSyncApprovalPayload(out) };
   }
   return { ok: true };
 }

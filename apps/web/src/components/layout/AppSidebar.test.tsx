@@ -113,11 +113,6 @@ describe("AppSidebar", () => {
     ).toBe("/workflows");
     expect(
       (
-        screen.getByRole("link", { name: /skills/i }) as HTMLAnchorElement
-      ).getAttribute("href"),
-    ).toBe("/skills");
-    expect(
-      (
         screen.getByRole("link", { name: /insights/i }) as HTMLAnchorElement
       ).getAttribute("href"),
     ).toBe("/insights");
@@ -126,6 +121,17 @@ describe("AppSidebar", () => {
         screen.getByRole("link", { name: /settings/i }) as HTMLAnchorElement
       ).getAttribute("href"),
     ).toBe("/settings");
+  });
+
+  it("does not show a Routines nav item (schedules live under Workflows)", () => {
+    renderSidebar();
+    expect(screen.queryByRole("link", { name: /^routines$/i })).toBeNull();
+    expect(document.querySelector('a[href="/routines"]')).toBeNull();
+    expect(
+      (
+        screen.getByRole("link", { name: /^workflows$/i }) as HTMLAnchorElement
+      ).getAttribute("href"),
+    ).toBe("/workflows");
   });
 
   it("lists Inbox first in the primary nav", () => {
@@ -137,9 +143,9 @@ describe("AppSidebar", () => {
     expect(labels[0]).toBe("Inbox");
   });
 
-  it("renders the New Chat action and the thread list", () => {
+  it("renders the New Thread action and the thread list", () => {
     renderSidebar();
-    const newChat = screen.getByRole("button", { name: /new chat/i });
+    const newChat = screen.getByRole("button", { name: /new thread/i });
     expect((newChat as HTMLButtonElement).disabled).toBe(false);
     expect(screen.getByText("First chat").textContent).toBe("First chat");
   });
@@ -165,28 +171,25 @@ describe("AppSidebar", () => {
     expect(closed).toBe(1);
   });
 
-  it("renders the Demos section from the /me payload, linking out to each demo", async () => {
+  it("renders the Demos section collapsed by default, with links still available", async () => {
     sidebarDemoLinks = DEMO_FIXTURE;
     renderSidebar();
-    const cases = [
-      { name: /deal scout/i, href: "https://deal-scout-abklabs.vercel.app/" },
-      {
-        name: /notion spike/i,
-        href: "https://app-notion-spike.up.railway.app/",
-      },
-      {
-        name: /workbench \(staging\)/i,
-        href: "https://workbench-ui-git-staging-abklabs.vercel.app/",
-      },
-    ];
-    for (const { name, href } of cases) {
-      const link = (await screen.findByRole("link", {
-        name,
-      })) as HTMLAnchorElement;
-      expect(link.getAttribute("href")).toBe(href);
-      expect(link.getAttribute("target")).toBe("_blank");
-      expect(link.getAttribute("rel")).toBe("noopener noreferrer");
-    }
+    const summary = await screen.findByText("Demos");
+    const details = summary.closest("details");
+    expect(details).not.toBeNull();
+    // Default is collapsed: no `open` attribute so demos don't steal
+    // vertical space from the chat list on first paint.
+    expect(details!.hasAttribute("open")).toBe(false);
+    // Opening the section reveals the demo links.
+    details!.setAttribute("open", "");
+    const link = (await screen.findByRole("link", {
+      name: /deal scout/i,
+    })) as HTMLAnchorElement;
+    expect(link.getAttribute("href")).toBe(
+      "https://deal-scout-abklabs.vercel.app/",
+    );
+    expect(link.getAttribute("target")).toBe("_blank");
+    expect(link.getAttribute("rel")).toBe("noopener noreferrer");
   });
 
   it("hides the Demos section entirely when the payload carries no demo links", async () => {
@@ -268,7 +271,7 @@ describe("AppSidebar", () => {
     sidebarPendingApprovals = new Set(["ins_alpha"]);
     renderSidebar();
     expect(screen.getAllByTestId("inbox-approval-dot")).toHaveLength(1);
-    const chatsLink = screen.getByRole("link", { name: /^chats$/i });
+    const chatsLink = screen.getByRole("link", { name: /^threads$/i });
     expect(
       chatsLink.querySelector('[data-testid="inbox-approval-dot"]'),
     ).toBeNull();

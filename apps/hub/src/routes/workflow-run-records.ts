@@ -6,8 +6,8 @@ import { Hono } from "hono";
 import type { Context } from "hono";
 import { streamSSE } from "hono/streaming";
 import { describeRoute, resolver } from "hono-openapi";
-import { subscribeKind } from "@intx/hub-sessions";
-import type { Principal, RepoId } from "@intx/hub-sessions";
+import { subscribeKind } from "@workbench/hub-sessions";
+import type { Principal, RepoId } from "@workbench/hub-sessions";
 import { requestBodySchema } from "../lib/openapi";
 import type { HubDb } from "../db";
 import { getRequestedUserContext } from "../lib/user-context";
@@ -36,7 +36,7 @@ import type {
   AgentRepoStore,
   SessionService,
   SidecarRouter,
-} from "@intx/hub-sessions";
+} from "@workbench/hub-sessions";
 import {
   getWorkflowRunState,
   LogRunStateSchema,

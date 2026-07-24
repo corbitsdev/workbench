@@ -31,13 +31,17 @@ import type {
   Principal,
   RepoId,
   RepoStore as SubstrateRepoStore,
-} from "@intx/hub-sessions/substrate";
+} from "@workbench/hub-sessions/substrate";
 import type { BlobSubstrate } from "@intx/workflow";
 
+import {
+  isErrnoNotFound,
+  readRunBlob,
+  writeRunBlob,
+  type RunBlobStoreOpts,
+} from "./run-blobs";
+
 const ONE_MIB = 1024 * 1024;
-const SHA256_PREFIX_BYTES = 32;
-const RUNS_PREFIX = "runs";
-const BLOBS_DIR = "blobs";
 const INLINE_PREFIX = "inline:";
 const BLOB_PREFIX = "blob:";
 
@@ -92,6 +96,7 @@ export function createWorkflowRunBlobSubstrate(
   opts: WorkflowRunBlobSubstrateOpts,
 ): BlobSubstrate {
   const inlineMax = opts.inlineMaxBytes ?? ONE_MIB;
+  const store: RunBlobStoreOpts = opts;
   return {
     ephemeral: false,
     async recordOutput(stepId, attempt, value) {
@@ -110,7 +115,15 @@ export function createWorkflowRunBlobSubstrate(
       }
       const bytes = new TextEncoder().encode(encoded);
       const key = await sha256Hex(bytes);
-      await writeBlob(opts, key, bytes);
+      // Content-addressed by sha256: a re-recorded value with the same
+      // bytes lands at the same path. Identical-byte overwrite is
+      // accepted by the kind handler's append-only compare.
+      await writeRunBlob(
+        store,
+        key,
+        bytes,
+        `record blob ${key} for run ${opts.runId}`,
+      );
       return { ref: `${BLOB_PREFIX}${key}` };
     },
     async resolveRef(ref) {
@@ -119,16 +132,23 @@ export function createWorkflowRunBlobSubstrate(
       }
       if (ref.startsWith(BLOB_PREFIX)) {
         const key = ref.slice(BLOB_PREFIX.length);
-        const bytes = await readBlob(opts, key);
+        let bytes: Uint8Array;
+        try {
+          bytes = await readRunBlob(store, key);
+        } catch (cause) {
+          if (isErrnoNotFound(cause)) {
+            throw new Error(
+              `workflow-runtime: blob ${key} for run ${opts.runId} not found on disk`,
+              { cause },
+            );
+          }
+          throw cause;
+        }
         return JSON.parse(new TextDecoder().decode(bytes));
       }
       throw new Error(`unrecognized ref ${ref}`);
     },
   };
-}
-
-function blobsPrefixFor(runId: string): string {
-  return `${RUNS_PREFIX}/${runId}/${BLOBS_DIR}/`;
 }
 
 async function sha256Hex(bytes: Uint8Array): Promise<string> {
@@ -137,78 +157,5 @@ async function sha256Hex(bytes: Uint8Array): Promise<string> {
     // eslint-disable-next-line @typescript-eslint/no-unsafe-type-assertion -- ArrayBuffer-backed at the call site; Web Crypto's BufferSource type rejects Uint8Array<ArrayBufferLike> under TS 5.9 (microsoft/TypeScript#62240)
     bytes as Uint8Array<ArrayBuffer>,
   );
-  const hex = hexEncode(new Uint8Array(digest));
-  // A SHA-256 hex string is always 64 chars, so this is unreachable
-  // today; kept as a cheap invariant pinning the on-disk blob-key
-  // shape should the digest width ever change.
-  if (hex.length !== SHA256_PREFIX_BYTES * 2) {
-    throw new Error(
-      `unexpected sha256 hex length ${String(hex.length)}; expected ${String(SHA256_PREFIX_BYTES * 2)}`,
-    );
-  }
-  return hex;
-}
-
-async function writeBlob(
-  opts: WorkflowRunBlobSubstrateOpts,
-  key: string,
-  bytes: Uint8Array,
-): Promise<void> {
-  const prefix = blobsPrefixFor(opts.runId);
-  try {
-    await opts.substrate.writeTreePreservingPrefix(
-      opts.principal,
-      opts.repoId,
-      opts.ref,
-      {
-        preservePrefix: prefix,
-        merge: async (existing) => {
-          const files: Record<string, string | Uint8Array> = {};
-          for (const [k, v] of existing) files[k] = v;
-          // Content-addressed by sha256: a re-recorded value with the
-          // same bytes lands at the same path. Overwriting the entry
-          // with identical bytes is harmless because the workflow-run
-          // kind handler's append-only checks compare prior-vs-
-          // prospective bytes and accept matches.
-          files[`${prefix}${key}`] = bytes;
-          return files;
-        },
-        message: `record blob ${key} for run ${opts.runId}`,
-      },
-    );
-  } catch (cause) {
-    const message = cause instanceof Error ? cause.message : String(cause);
-    if (message.startsWith("path_violation: ")) {
-      const reason = message.slice("path_violation: ".length);
-      throw new Error(reason, { cause });
-    }
-    throw cause;
-  }
-}
-
-async function readBlob(
-  opts: WorkflowRunBlobSubstrateOpts,
-  key: string,
-): Promise<Uint8Array> {
-  const fs = await import("node:fs/promises");
-  const path = await import("node:path");
-  const dir = opts.substrate.getRepoDir(opts.repoId);
-  const blobPath = path.join(dir, RUNS_PREFIX, opts.runId, BLOBS_DIR, key);
-  try {
-    return await fs.readFile(blobPath);
-  } catch (cause) {
-    if (isErrnoNotFound(cause)) {
-      throw new Error(
-        `workflow-runtime: blob ${key} for run ${opts.runId} not found on disk`,
-        { cause },
-      );
-    }
-    throw cause;
-  }
-}
-
-function isErrnoNotFound(cause: unknown): boolean {
-  if (cause === null || typeof cause !== "object") return false;
-  const code = (cause as { code?: unknown }).code;
-  return code === "ENOENT";
+  return hexEncode(new Uint8Array(digest));
 }

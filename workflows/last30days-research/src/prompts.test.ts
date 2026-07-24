@@ -9,13 +9,19 @@ import {
 describe("buildWriterSystemPrompt (Larry structure, CL-2503)", () => {
   const prompt = buildWriterSystemPrompt();
 
-  test("encodes the Larry report skeleton: title, TL;DR, themes, contested, dated sources", () => {
+  test("encodes the Larry report skeleton: title, TL;DR, themes, contested", () => {
     expect(prompt).toContain("What People Actually Said (Last 30 Days)");
     expect(prompt).toContain("**TL;DR**");
     expect(prompt).toContain("What's still open / contested");
-    expect(prompt).toContain("## Sources");
-    // The source list must be dated, per Larry's "(date)" trailing format.
-    expect(prompt).toContain("(date)");
+  });
+
+  // CL-4338: the app renders a single deduped/linked sources section from
+  // brief.citations. If the writer prompt also tells the model to emit its
+  // own "## Sources" heading, the persisted body carries a second, duplicate
+  // section alongside the app-rendered one.
+  test("forbids the model from emitting its own Sources/Citations section", () => {
+    expect(prompt).not.toContain("## Sources\nA deduped");
+    expect(prompt.toLowerCase()).toContain('do not append a "## sources"');
   });
 
   test("builds one section per theme/cluster and scales depth to the evidence", () => {

@@ -19,6 +19,7 @@ import { createInMemoryTransport } from "@intx/mail-memory";
 import { createIsogitStore } from "@workbench/storage-isogit";
 
 import {
+  reshapeWithArgMap,
   runDeterministicToolStep,
   STEP_TOOL_CONTEXT_KEY,
   type StepToolContext,
@@ -245,6 +246,9 @@ describe("runDeterministicToolStep", () => {
     expect(typeof output.content).toBe("string");
     expect(output.content as string).toContain("mail_send");
     expect(output.content as string).toContain("requires an object");
+    // A degraded non-fatal step must be distinguishable from a clean
+    // completion at the run level (CL-4196).
+    expect(output.degraded).toBe(true);
   });
 
   test("nonFatal does NOT mask cancellation: an aborted signal rethrows instead of degrading", async () => {
@@ -267,21 +271,22 @@ describe("runDeterministicToolStep", () => {
     ).rejects.toThrow(/requires an object/);
   });
 
-  test("nonFatal degrade also covers an unpinned tool (misconfiguration is logged + skipped, not fatal)", async () => {
+  // CL-4196: an unpinned tool is a tool-infrastructure fault (the tool was
+  // never pinned/loaded at all), not a genuine tool-execution failure —
+  // `nonFatal` must NOT absorb it, or the run reports COMPLETED while never
+  // having attempted the step's actual work.
+  test("nonFatal does NOT degrade an unpinned tool: it rethrows StepToolNotRegisteredError", async () => {
     stubHubFetch();
     const { env } = await makeEnv();
-    const result = await runDeterministicToolStep({
-      env: env as never,
-      toolName: "gamma_create_from_template",
-      input: {},
-      nonFatal: true,
-      signal: new AbortController().signal,
-    });
-    const output = result.output as Record<string, unknown>;
-    expect(output.isError).toBe(true);
-    expect(output.content as string).toContain(
-      "is not registered/available for this deployment",
-    );
+    await expect(
+      runDeterministicToolStep({
+        env: env as never,
+        toolName: "gamma_create_from_template",
+        input: {},
+        nonFatal: true,
+        signal: new AbortController().signal,
+      }),
+    ).rejects.toThrow(/is not registered\/available for this deployment/);
   });
 
   test("mail_send delivers through the substrate-injected transport", async () => {
@@ -346,6 +351,9 @@ describe("runDeterministicToolStep", () => {
     expect(output.isError).toBe(true);
     const content = output.content as Record<string, unknown>;
     expect(content.error).toMatch(/send_failed/);
+    // A degraded non-fatal step must be distinguishable from a clean
+    // completion at the run level (CL-4196).
+    expect(output.degraded).toBe(true);
   });
 
   test("mail_send stays unavailable when no transport is injected", async () => {
@@ -398,39 +406,46 @@ describe("runDeterministicToolStep", () => {
     expect(tr.isError).not.toBe(true);
   });
 
-  test("an optional argMap field absent from the input skips the tool call without throwing", async () => {
+  test("an optional argMap field absent from the input is OMITTED, not a step skip: the tool is still called", async () => {
     stubHubFetch();
     const { env } = await makeMailEnv();
-    const result = await runDeterministicToolStep({
-      env: env as never,
-      toolName: "mail_send",
-      input: { to: "usr_x@tenant.example" },
-      argMapJson: JSON.stringify({
-        content: { from: "reply", optional: true },
-        to: { from: "to" },
+    // `to` is optional in this argMap, but mail_send's own runtime arg schema
+    // REQUIRES `to` (@intx/tools-mail `SendArgs`), so omitting it still calls
+    // the tool (no `skipped: true`) and the tool's own validation rejects the
+    // call — proving the harness omitted the argument and dispatched for
+    // real rather than silently skipping the step.
+    await expect(
+      runDeterministicToolStep({
+        env: env as never,
+        toolName: "mail_send",
+        input: { content: "deck rendered" },
+        argMapJson: JSON.stringify({
+          to: { from: "recipient", optional: true },
+          content: { from: "content" },
+        }),
+        signal: new AbortController().signal,
       }),
-      signal: new AbortController().signal,
-    });
-    expect(result.output).toEqual({ skipped: true });
+    ).rejects.toThrow();
   });
 
-  test("an optional argMap field that is an empty string on the input also skips", async () => {
+  test("an optional argMap field that is an empty string on the input is also omitted, not skipped", async () => {
     stubHubFetch();
     const { env } = await makeMailEnv();
-    const result = await runDeterministicToolStep({
-      env: env as never,
-      toolName: "mail_send",
-      input: { to: "usr_x@tenant.example", reply: "" },
-      argMapJson: JSON.stringify({
-        content: { from: "reply", optional: true },
-        to: { from: "to" },
+    await expect(
+      runDeterministicToolStep({
+        env: env as never,
+        toolName: "mail_send",
+        input: { recipient: "", content: "deck rendered" },
+        argMapJson: JSON.stringify({
+          to: { from: "recipient", optional: true },
+          content: { from: "content" },
+        }),
+        signal: new AbortController().signal,
       }),
-      signal: new AbortController().signal,
-    });
-    expect(result.output).toEqual({ skipped: true });
+    ).rejects.toThrow();
   });
 
-  test("an optional argMap field present with a real value is used, not skipped", async () => {
+  test("an optional argMap field present with a real value is used", async () => {
     stubHubFetch();
     const { env } = await makeMailEnv();
     const result = await runDeterministicToolStep({
@@ -439,6 +454,79 @@ describe("runDeterministicToolStep", () => {
       input: { to: "usr_x@tenant.example", reply: "real content" },
       argMapJson: JSON.stringify({
         content: { from: "reply", optional: true },
+        to: { from: "to" },
+      }),
+      signal: new AbortController().signal,
+    });
+    const tr = result.output as Record<string, unknown>;
+    expect(tr).toHaveProperty("callId");
+    expect(tr.isError).not.toBe(true);
+  });
+
+  test("an absent optional argMap field that maps to a genuinely optional tool argument is omitted and the tool completes normally with real output", async () => {
+    stubHubFetch();
+    const { env } = await makeMailEnv();
+    // `subject` is genuinely optional on mail_send (only `to`/`content` are
+    // required). Omitting it from the reshaped arguments must still invoke
+    // mail_send and complete the step normally — proving `optional: true`
+    // means "omit this argument", not "skip the whole tool call".
+    const result = await runDeterministicToolStep({
+      env: env as never,
+      toolName: "mail_send",
+      input: { to: "usr_x@tenant.example", content: "deck rendered" },
+      argMapJson: JSON.stringify({
+        to: { from: "to" },
+        content: { from: "content" },
+        subject: { from: "subject", optional: true },
+      }),
+      signal: new AbortController().signal,
+    });
+    const tr = result.output as Record<string, unknown>;
+    expect(tr).toHaveProperty("callId");
+    expect(tr.isError).not.toBe(true);
+  });
+
+  test("a skipStepIfAbsent argMap field absent from the input skips the tool call without throwing", async () => {
+    stubHubFetch();
+    const { env } = await makeMailEnv();
+    const result = await runDeterministicToolStep({
+      env: env as never,
+      toolName: "mail_send",
+      input: { to: "usr_x@tenant.example" },
+      argMapJson: JSON.stringify({
+        content: { from: "reply", skipStepIfAbsent: true },
+        to: { from: "to" },
+      }),
+      signal: new AbortController().signal,
+    });
+    expect(result.output).toEqual({ skipped: true });
+  });
+
+  test("a skipStepIfAbsent argMap field that is an empty string on the input also skips", async () => {
+    stubHubFetch();
+    const { env } = await makeMailEnv();
+    const result = await runDeterministicToolStep({
+      env: env as never,
+      toolName: "mail_send",
+      input: { to: "usr_x@tenant.example", reply: "" },
+      argMapJson: JSON.stringify({
+        content: { from: "reply", skipStepIfAbsent: true },
+        to: { from: "to" },
+      }),
+      signal: new AbortController().signal,
+    });
+    expect(result.output).toEqual({ skipped: true });
+  });
+
+  test("a skipStepIfAbsent argMap field present with a real value is used, not skipped", async () => {
+    stubHubFetch();
+    const { env } = await makeMailEnv();
+    const result = await runDeterministicToolStep({
+      env: env as never,
+      toolName: "mail_send",
+      input: { to: "usr_x@tenant.example", reply: "real content" },
+      argMapJson: JSON.stringify({
+        content: { from: "reply", skipStepIfAbsent: true },
         to: { from: "to" },
       }),
       signal: new AbortController().signal,
@@ -492,7 +580,82 @@ describe("runDeterministicToolStep", () => {
     ).rejects.toThrow(/JSON field "gammaUrl" of input field "content"/);
   });
 
-  test("an optional fromJson field absent from the parsed envelope skips without throwing", async () => {
+  test("an optional fromJson field absent from the parsed envelope is omitted, not a step skip: the tool is still called", async () => {
+    stubHubFetch();
+    const { env } = await makeMailEnv();
+    // `to` (mail_send's required recipient) is mapped optional here via
+    // fromJson, so an absent envelope field is omitted rather than skipping
+    // the step — the tool call still runs and mail_send's own required-`to`
+    // validation fails it, proving the harness dispatched for real.
+    await expect(
+      runDeterministicToolStep({
+        env: env as never,
+        toolName: "mail_send",
+        input: {
+          content: "deck rendered",
+          meta: JSON.stringify({ gammaUrl: "https://x" }),
+        },
+        argMapJson: JSON.stringify({
+          to: {
+            fromJson: "meta",
+            field: "recipient",
+            optional: true,
+          },
+          content: { from: "content" },
+        }),
+        signal: new AbortController().signal,
+      }),
+    ).rejects.toThrow();
+  });
+
+  test("an optional fromJson field that is an empty string in the parsed envelope is also omitted, not skipped", async () => {
+    stubHubFetch();
+    const { env } = await makeMailEnv();
+    await expect(
+      runDeterministicToolStep({
+        env: env as never,
+        toolName: "mail_send",
+        input: {
+          content: "deck rendered",
+          meta: JSON.stringify({ gammaUrl: "https://x", recipient: "" }),
+        },
+        argMapJson: JSON.stringify({
+          to: {
+            fromJson: "meta",
+            field: "recipient",
+            optional: true,
+          },
+          content: { from: "content" },
+        }),
+        signal: new AbortController().signal,
+      }),
+    ).rejects.toThrow();
+  });
+
+  test("an absent optional fromJson field that maps to a genuinely optional tool argument is omitted and the tool completes normally with real output", async () => {
+    stubHubFetch();
+    const { env } = await makeMailEnv();
+    const result = await runDeterministicToolStep({
+      env: env as never,
+      toolName: "mail_send",
+      input: {
+        to: "usr_x@tenant.example",
+        content: "deck rendered",
+        meta: JSON.stringify({ gammaUrl: "https://x" }),
+      },
+      argMapJson: JSON.stringify({
+        to: { from: "to" },
+        content: { from: "content" },
+        subject: { fromJson: "meta", field: "subject", optional: true },
+      }),
+      signal: new AbortController().signal,
+    });
+    const tr = result.output as Record<string, unknown>;
+    expect(tr).toHaveProperty("callId");
+    expect(tr.isError).not.toBe(true);
+  });
+
+  test("a skipStepIfAbsent fromJson field absent from the parsed envelope skips without throwing", async () => {
     stubHubFetch();
     const { env } = await makeMailEnv();
     const result = await runDeterministicToolStep({
@@ -503,7 +666,11 @@ describe("runDeterministicToolStep", () => {
         content: JSON.stringify({ gammaUrl: "https://x" }),
       },
       argMapJson: JSON.stringify({
-        content: { fromJson: "content", field: "exportUrl", optional: true },
+        content: {
+          fromJson: "content",
+          field: "exportUrl",
+          skipStepIfAbsent: true,
+        },
         to: { from: "to" },
       }),
       signal: new AbortController().signal,
@@ -511,7 +678,7 @@ describe("runDeterministicToolStep", () => {
     expect(result.output).toEqual({ skipped: true });
   });
 
-  test("an optional fromJson field that is an empty string in the parsed envelope also skips", async () => {
+  test("a skipStepIfAbsent fromJson field that is an empty string in the parsed envelope also skips", async () => {
     stubHubFetch();
     const { env } = await makeMailEnv();
     const result = await runDeterministicToolStep({
@@ -522,7 +689,11 @@ describe("runDeterministicToolStep", () => {
         content: JSON.stringify({ gammaUrl: "https://x", exportUrl: "" }),
       },
       argMapJson: JSON.stringify({
-        content: { fromJson: "content", field: "exportUrl", optional: true },
+        content: {
+          fromJson: "content",
+          field: "exportUrl",
+          skipStepIfAbsent: true,
+        },
         to: { from: "to" },
       }),
       signal: new AbortController().signal,
@@ -570,5 +741,110 @@ describe("runDeterministicToolStep", () => {
     const tr = result.output as Record<string, unknown>;
     expect(tr).toHaveProperty("callId");
     expect(tr.isError).not.toBe(true);
+  });
+});
+
+// Nested `object` argMap fields (e.g. gtm-scripts-briefs' `data: { object: {
+// audience, objective, ... } }`) hit the same optional/skipStepIfAbsent
+// contract as top-level fields. Exercised directly against
+// `reshapeWithArgMap` (a pure function) rather than through a real tool
+// runner, since no tool available to this suite's stubbed deploy tree takes
+// a nested object argument.
+describe("reshapeWithArgMap (nested object fields)", () => {
+  test("an absent optional nested field is omitted from the object argument, and the step is NOT skipped", () => {
+    const result = reshapeWithArgMap(
+      "write_artifact",
+      { topic: "AI agents", days: 30 },
+      JSON.stringify({
+        title: { from: "topic" },
+        data: {
+          object: {
+            topic: { from: "topic" },
+            days: { from: "days" },
+            audience: { from: "audience", optional: true },
+            objective: { from: "objective", optional: true },
+          },
+        },
+      }),
+    );
+    if (result.skip) {
+      throw new Error(
+        `expected the whole step NOT to skip; got skip: ${result.reason}`,
+      );
+    }
+    expect(result.toolArguments).toEqual({
+      title: "AI agents",
+      data: { topic: "AI agents", days: 30 },
+    });
+  });
+
+  test("a present optional nested field is included in the object argument", () => {
+    const result = reshapeWithArgMap(
+      "write_artifact",
+      { topic: "AI agents", days: 30, audience: "founders" },
+      JSON.stringify({
+        title: { from: "topic" },
+        data: {
+          object: {
+            topic: { from: "topic" },
+            audience: { from: "audience", optional: true },
+          },
+        },
+      }),
+    );
+    if (result.skip) throw new Error("expected no skip");
+    expect(result.toolArguments).toEqual({
+      title: "AI agents",
+      data: { topic: "AI agents", audience: "founders" },
+    });
+  });
+
+  test("a nested skipStepIfAbsent field absent from the input skips the whole step", () => {
+    const result = reshapeWithArgMap(
+      "artifact_read",
+      {},
+      JSON.stringify({
+        wrapper: {
+          object: {
+            artifactId: { from: "artifactId", skipStepIfAbsent: true },
+          },
+        },
+      }),
+    );
+    expect(result).toEqual({
+      skip: true,
+      reason:
+        'object field "artifactId" is absent or empty and skipStepIfAbsent is set',
+    });
+  });
+
+  test("a nested non-optional field absent from the input throws, naming the field", () => {
+    expect(() =>
+      reshapeWithArgMap(
+        "write_artifact",
+        { topic: "AI agents" },
+        JSON.stringify({
+          data: {
+            object: { topic: { from: "topic" }, days: { from: "days" } },
+          },
+        }),
+      ),
+    ).toThrow(/object field "days" from input field "days"/);
+  });
+
+  test("a nested optional fromJson field absent on the parsed envelope is omitted, not a step skip", () => {
+    const result = reshapeWithArgMap(
+      "write_artifact",
+      { meta: JSON.stringify({ gammaUrl: "https://x" }) },
+      JSON.stringify({
+        data: {
+          object: {
+            pdfUrl: { fromJson: "meta", field: "exportUrl", optional: true },
+          },
+        },
+      }),
+    );
+    if (result.skip) throw new Error("expected no skip");
+    expect(result.toolArguments).toEqual({ data: {} });
   });
 });

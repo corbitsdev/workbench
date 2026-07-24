@@ -217,7 +217,7 @@ export function ToolsLibrary() {
   useSetPageChrome(pageChrome);
 
   return (
-    <PagePanel>
+    <PagePanel surface="surface">
       <div className="flex-1 px-4 pb-10 pt-1.5 sm:px-7">
         {toolsQuery.isLoading && (
           <div className="py-10 text-[13px] text-text-3">Loading tools…</div>

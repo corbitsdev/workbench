@@ -95,7 +95,7 @@ const WRITER_DEF = {
 
 // A definition whose `write` step declares the writer model AND a per-step
 // maxTokens ceiling on its preferred source's parameters (what
-// inlineInferenceStep({ model, maxTokens }) emits). Drives the lift onto
+// agentStep({ model, maxTokens }) emits). Drives the lift onto
 // InferenceSource.defaults.maxTokens.
 const WRITER_DEF_MAXTOKENS = {
   id: "wf",

@@ -3,6 +3,7 @@ import { type } from "arktype";
 import { PgDialect } from "drizzle-orm/pg-core";
 
 import {
+  buildCompactionDetailQuery,
   buildRunDetailQuery,
   buildToolCallDetailQuery,
   buildTurnDetailQuery,
@@ -24,6 +25,7 @@ describe("isDetailEnrichedKind", () => {
     for (const kind of detailEnrichedKinds) {
       expect(isDetailEnrichedKind(kind)).toBe(true);
     }
+    expect(detailEnrichedKinds).toContain("compaction");
     expect(isDetailEnrichedKind("grant")).toBe(false);
     expect(isDetailEnrichedKind("session")).toBe(false);
   });
@@ -83,6 +85,23 @@ describe("buildRunDetailQuery", () => {
   });
 });
 
+describe("buildCompactionDetailQuery", () => {
+  test("reads turns, decisions, reason, and token sum from analytics_event", () => {
+    const { sql, params } = render(buildCompactionDetailQuery(scope));
+    expect(sql).toContain("from analytics_event ae");
+    expect(sql).toContain("event_type = 'compaction'");
+    expect(sql).toContain("metadata ->> 'turnsIn'");
+    expect(sql).toContain("metadata ->> 'turnsOut'");
+    expect(sql).toContain("metadata -> 'decisions' ->> 'kept'");
+    expect(sql).toContain("metadata -> 'decisions' ->> 'dropped'");
+    expect(sql).toContain("metadata -> 'decisions' ->> 'summarized'");
+    expect(sql).toContain("metadata ->> 'reason'");
+    expect(sql).toContain("total_tokens");
+    expect(sql).toContain("coalesce(ae.input_tokens, 0)");
+    expect(params).toEqual(["m1", "ten", "prn_a", "prn_b"]);
+  });
+});
+
 describe("MomentDetailSchema", () => {
   test("accepts a tool-call detail and rejects a wrong-typed isError", () => {
     const ok = MomentDetailSchema({
@@ -107,6 +126,24 @@ describe("MomentDetailSchema", () => {
 
   test("accepts a bare base for a non-enriched kind", () => {
     const ok = MomentDetailSchema({ kind: "session", id: "ses_1" });
+    expect(ok instanceof type.errors).toBe(false);
+  });
+
+  test("accepts a compaction detail with before/after turns and cost", () => {
+    const ok = MomentDetailSchema({
+      kind: "compaction",
+      id: "ae_1",
+      compaction: {
+        turnsIn: 20,
+        turnsOut: 5,
+        summaryChars: 512,
+        kept: 4,
+        dropped: 16,
+        summarized: 1,
+        reason: "context-overflow",
+        tokens: 938,
+      },
+    });
     expect(ok instanceof type.errors).toBe(false);
   });
 

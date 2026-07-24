@@ -1,7 +1,7 @@
 import { and, eq, inArray, ne } from "drizzle-orm";
 import { schema as intxSchema } from "@intx/db";
 import type { DB } from "@intx/db";
-import type { SessionService, SidecarRouter } from "@intx/hub-sessions";
+import type { SessionService, SidecarRouter } from "@workbench/hub-sessions";
 import { isWorkflowDerivedAddress } from "@intx/workflow-deploy";
 import { getLogger } from "@intx/log";
 import { isReapableAgentInstance } from "@workbench/agents";

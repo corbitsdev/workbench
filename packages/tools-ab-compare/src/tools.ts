@@ -9,21 +9,31 @@ type AbCompareToolDefinition = ToolDefinition & { sideEffect: ToolSideEffect };
 // A/B-preset workflow helpers (deterministic — no inference, no credentials).
 //
 // The curated preset workflows fix N models at definition time and run each as
-// its own `exec<i>` inline step (a `map` would collapse every variant onto one
-// pinned source). The definition threads the fixed variant metadata in as a
-// literal `__presetVariants` (blind `label` + real `model`), so these helpers
-// read each `exec<i>` output rather than a `config`/`execute`-map tree.
+// its own `exec<i>` step (a `map` would collapse every variant onto one pinned
+// source). The definition threads the fixed variant metadata in as a literal
+// `__presetVariants` (blind `label` + real `model`), so these helpers read
+// each `exec<i>` output rather than a `config`/`execute`-map tree.
+//
+// A variant step's failure (after its retries exhaust) fails the whole run —
+// there is no degrade-to-skip. The engine still runs a failed step's
+// dependents (its DAG readiness is "terminal", not "succeeded"), so these
+// tools can still see a failed variant show up as a missing `output`, exactly
+// like `readPresetVariantOutput` already treats it. Whatever these tools
+// decide, the run's terminalStatus is already doomed to "failed" once any
+// variant permanently fails — so the value here is failing FAST, before the
+// human is shown a decision gate that will be reported failed regardless.
 //
 // Two tools:
 //   - `ab_preset_quorum`  — run after all variants, BEFORE the human decision:
-//     throws (fails the run) if fewer than `AB_PRESET_QUORUM` variants produced
-//     an answer, so the human is never shown a pick that cannot stand.
+//     throws (fails the run, redundantly with any already-failed variant) if
+//     fewer than `AB_PRESET_QUORUM` variants produced a non-empty answer —
+//     whether from a hard failure or a model that "succeeded" empty.
 //   - `ab_preset_compose` — run after the decision: folds the fixed variant
 //     metadata, each variant's output, and the human ranking into the one
 //     `ComparisonResult` the renderer reads back.
 // ---------------------------------------------------------------------------
 
-/** Minimum variants that must produce an answer for the comparison to stand. */
+/** Minimum variants that must produce a non-empty answer for the comparison to stand. */
 export const AB_PRESET_QUORUM = 2;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -129,10 +139,11 @@ function readPresetVariantMeta(
   return metas;
 }
 
-// Each variant ran as `exec<i>`; its output is `{ reply, isError?, error? }`. A
-// non-fatal skip carries `isError: true` and an empty reply. An empty reply with
-// no error is also treated as a non-answer (it cannot be compared or ranked) —
-// a legitimately-empty completion is rare and would contribute nothing anyway.
+// Each variant ran as `exec<i>` (a native reasoning step); a successful step's
+// output is `{ reply, turn }`. A permanently failed step (retries exhausted)
+// still reaches here — the engine runs a failed step's dependents — but
+// carries no `output`, so it reads as an empty non-answer below, same as a
+// legitimately-empty completion (rare, but contributes nothing either way).
 function readPresetVariantOutput(
   args: Record<string, unknown>,
   index: number,
@@ -140,9 +151,8 @@ function readPresetVariantOutput(
   const step = args[`exec${index}`];
   const output = isRecord(step) ? step.output : undefined;
   if (!isRecord(output)) return { content: "", failed: true };
-  const failed = output.isError === true;
   const content = readString(output.reply) ?? "";
-  return { content, failed: failed || content.length === 0 };
+  return { content, failed: content.length === 0 };
 }
 
 // The fixed variants folded with each exec output, plus the survivor count. The
@@ -190,7 +200,7 @@ export const AB_PRESET_COMPOSE_DEFINITION: AbCompareToolDefinition = {
   name: "ab_preset_compose",
   sideEffect: "read",
   description:
-    "Internal A/B-preset workflow helper. Fold the fixed variant metadata, each variant's inline-step output, and the human ranking into one structured comparison artifact payload.",
+    "Internal A/B-preset workflow helper. Fold the fixed variant metadata, each variant's step output, and the human ranking into one structured comparison artifact payload.",
   inputSchema: { type: "object", additionalProperties: true },
 };
 

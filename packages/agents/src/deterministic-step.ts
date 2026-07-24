@@ -2,7 +2,7 @@ import { type } from "arktype";
 import { defineAgent } from "@intx/agent";
 import { step } from "@intx/workflow";
 import type { StepPrimitive, Selector, RetryPolicy } from "@intx/workflow";
-import { canonicalizeToolNames } from "./tool-names";
+import { canonicalizeStepToolName } from "./tool-names";
 import { LLM_PROVIDER } from "./constants";
 import { withCorbitsVocabulary } from "./corbits-vocabulary";
 
@@ -23,17 +23,6 @@ export const DETERMINISTIC_TOOL_KIND = "deterministic-tool";
 export const STEP_TITLE_TAG = "workbench.title";
 
 /**
- * Marker the sidecar's step invoker reads to dispatch a step as an
- * in-process single-turn inference (CL-2251) instead of a full deployed
- * session. An inline-inference step is a pure reasoning turn: it carries a
- * real systemPrompt but no tools/capabilities, so the supervisor needs no
- * per-step agent-state repo, DB rows, or grants file, and the hub skips
- * `launchSession` for it. The sidecar runs it with a bare `createAgent`
- * against the step's pinned `InferenceSource` and a deny-all `authorize`.
- */
-export const INLINE_INFERENCE_KIND = "inline-inference";
-
-/**
  * Tag carrying the JSON-serialized `argMap` (a controlled producer/consumer
  * pair: `deterministicToolStep` writes it, the sidecar's
  * `runDeterministicToolStep` reads + re-validates it). Tags are
@@ -52,16 +41,6 @@ export const STEP_ARGMAP_TAG = "workbench.argMap";
 export const STEP_NONFATAL_TAG = "workbench.nonFatal";
 
 /**
- * The retry policy's `maxAttempts`, stringified, set when an inline step declares
- * both `retry` and `nonFatal`. The engine's `RetryPolicy` re-invokes the step on
- * a throw, but a `nonFatal` runner that returns an `isError` output on the first
- * failure never throws — so retry would never fire. The runner reads this tag
- * plus `AuthorizeContext.attempt` to degrade to the non-fatal skip only on the
- * LAST attempt, throwing (and letting the engine retry) on earlier ones.
- */
-export const STEP_INLINE_RETRY_MAX_TAG = "workbench.inlineRetryMaxAttempts";
-
-/**
  * Per-tool-argument reshape spec. Maps a TOOL argument name to one of:
  * - `{ from: 'fieldName' }` — a top-level field on the evaluated step input.
  * - `{ literal: value }` — a JSON-serializable constant.
@@ -72,16 +51,43 @@ export const STEP_INLINE_RETRY_MAX_TAG = "workbench.inlineRetryMaxAttempts";
  *   step's output: `stringTool` tools encode their result as
  *   `{ content: "<json>" }`, so the fields are only reachable after parsing.
  *
- * `optional` (on `from` and `fromJson`) treats an absent-or-empty value as a
- * skip of the whole tool call rather than a throw. Must be JSON-serializable:
- * the workflow definition is JSON-deployed, so no functions.
+ * `optional` (on `from` and `fromJson`) treats an absent-or-empty value as
+ * "this ARGUMENT may legitimately be missing" — the field is OMITTED from
+ * the tool call arguments, and the tool still runs (and the step still
+ * completes with real output). It never skips the whole step: an absent
+ * optional argument that the tool schema itself requires still surfaces as a
+ * tool-call failure, exactly as calling the tool by hand without that
+ * argument would.
+ *
+ * `skipStepIfAbsent` (on `from` and `fromJson`) is the rarer case: an
+ * absent-or-empty value means the deterministic tool call must not run AT
+ * ALL for this step (e.g. a single-argument argMap whose sole field is the
+ * tool's only required argument, so there is no sensible "omit and call
+ * anyway"). Use this only when the step is genuinely conditional on the
+ * field's presence, not as a synonym for `optional`.
+ *
+ * Must be JSON-serializable: the workflow definition is JSON-deployed, so no
+ * functions.
  */
-export const ArgMapSpec = type({
+const ArgMapValue = type({
   from: "string",
   "optional?": "boolean",
+  "skipStepIfAbsent?": "boolean",
 })
   .or({ literal: "unknown" })
-  .or({ fromJson: "string", field: "string", "optional?": "boolean" });
+  .or({
+    fromJson: "string",
+    field: "string",
+    "optional?": "boolean",
+    "skipStepIfAbsent?": "boolean",
+  });
+
+// Compose a structured tool argument from the evaluated input without requiring
+// a workflow-specific transform step. Template values use the same selectors as
+// top-level arguments, while optional values are omitted from the object.
+export const ArgMapSpec = ArgMapValue.or({
+  object: { "[string]": ArgMapValue },
+});
 export type ArgMapSpec = typeof ArgMapSpec.infer;
 
 export const ArgMap = type({ "[string]": ArgMapSpec });
@@ -103,12 +109,15 @@ export interface DeterministicToolStepOpts {
    * Each key is a TOOL argument name; the value pulls a top-level field off
    * the evaluated input (`{ from }`) or supplies a constant (`{ literal }`).
    * When absent, the evaluated input is passed verbatim as the tool args.
-   * A `{ from }` spec may set `optional: true` to mean "this field may
+   * A `{ from }` spec may set `optional: true` to mean "this ARGUMENT may
    * legitimately be absent (or an empty string) on the evaluated input" —
    * e.g. an intake field that only exists for one run source. The sidecar's
-   * `reshapeWithArgMap` treats an absent/empty OPTIONAL field as a skip
-   * (no tool call, no throw) rather than the loud failure a non-optional
-   * `{ from }` still raises for a missing field.
+   * `reshapeWithArgMap` OMITS an absent/empty optional field from the tool
+   * call rather than the loud failure a non-optional `{ from }` still raises
+   * for a missing field — the tool still runs and the step still completes
+   * with real output. Use `skipStepIfAbsent: true` instead, on the rare field
+   * whose absence means the whole tool call must not run (e.g. the sole field
+   * of an argMap that is the tool's only required argument).
    */
   argMap?: ArgMap;
   /** Step ids this step depends on. */
@@ -138,12 +147,7 @@ export interface DeterministicToolStepOpts {
 export function deterministicToolStep(
   opts: DeterministicToolStepOpts,
 ): StepPrimitive {
-  const [canonicalTool] = canonicalizeToolNames([opts.tool]);
-  if (canonicalTool === undefined) {
-    throw new Error(
-      `deterministicToolStep: tool name "${opts.tool}" canonicalized to nothing`,
-    );
-  }
+  const canonicalTool = canonicalizeStepToolName(opts.id, opts.tool);
   const agent = defineAgent({
     id: opts.id,
     description: `Deterministic tool call: ${canonicalTool}`,
@@ -168,11 +172,10 @@ export function deterministicToolStep(
   });
 }
 
-export interface InlineInferenceStepOpts {
+export interface AgentStepOpts {
   /**
    * Unique step-agent id. Distinct per step, mirroring the existing
-   * agents' id convention. Inline steps persist no per-step rows, but the
-   * id still names the step's placeholder agent in the deployed definition.
+   * agents' id convention.
    */
   id: string;
   /** The agent's real system prompt — the single-turn reasoning instruction. */
@@ -182,45 +185,26 @@ export interface InlineInferenceStepOpts {
   /** Step ids this step depends on. */
   after?: readonly string[];
   /**
-   * Optional per-step model preference. When set, the step's placeholder agent
-   * declares this `(LLM_PROVIDER, model)` as its preferred inference source, so
-   * the deploy orchestrator's `pickStepInferenceSource` pins that model for this
-   * step instead of the deploy default — provided the workflow deploy resolved
-   * the model into `config.sources` (see `resolveWorkflowDeploySource`). Absent,
-   * the step uses the deploy's default model. Use to route a heavier synthesis
-   * step (e.g. `LLM_WRITER_MODEL`) while the rest stay on `LLM_DEFAULT_MODEL`.
+   * Optional per-step model preference. When set, the step's agent declares
+   * this `(provider, model)` as its preferred inference source, so the deploy
+   * orchestrator's `pickStepInferenceSource` pins that model for this step
+   * instead of the deploy default. Absent, the step uses the deploy's default
+   * model.
    */
   model?: string;
   /**
    * Optional inference-provider plugin for the declared `model` (e.g. `anthropic`,
    * `openai`, `google-genai`). Defaults to `LLM_PROVIDER` ("openai-compatible").
-   * The declared `(provider, model)` is what the deploy's source resolution pins,
-   * so a step can run on a native-provider model (Opus via `anthropic`) rather
-   * than only the openai-compatible gateway. Ignored when `model` is absent.
+   * Ignored when `model` is absent.
    */
   provider?: string;
-  /**
-   * When true, a failure of this step degrades to a recorded skip (via
-   * `STEP_NONFATAL_TAG`) instead of failing the whole run — the same contract
-   * `deterministicToolStep({ nonFatal })` provides. Used by the A/B preset
-   * workflows so one dead variant does not kill the comparison; a downstream
-   * quorum step decides whether enough variants succeeded.
-   */
-  nonFatal?: boolean;
-  /**
-   * Optional retry policy for transient failures, passed through to the
-   * underlying `step`. Auto-retries the same pinned source (no cross-provider
-   * failover — that is not wired in the workflow path).
-   */
+  /** Optional retry policy for transient failures, passed through to `step`. */
   retry?: RetryPolicy;
   /**
    * Optional per-step output-token ceiling. Carried on the step's preferred
    * inference source as `parameters.maxTokens`; the workflow deploy lifts it
-   * onto the resolved `InferenceSource.defaults.maxTokens` so the step's model
-   * turn runs with this ceiling instead of the source's small/unset default —
-   * the cause of clean `finish_reason:"length"` truncation on long writers.
-   * Only meaningful alongside `model`: with no `model` the step declares no
-   * preferred source, so there is nothing to carry the ceiling and it is ignored.
+   * onto the resolved `InferenceSource.defaults.maxTokens`. Only meaningful
+   * alongside `model`.
    */
   maxTokens?: number;
   /**
@@ -231,34 +215,21 @@ export interface InlineInferenceStepOpts {
 }
 
 /**
- * Declare a workflow step as an inline single-turn inference (CL-2251): a
- * pure reasoning turn the sidecar runs in-process with a bare `createAgent`,
- * WITHOUT a deployed per-step session. The placeholder agent keeps a real
- * systemPrompt (this is genuine reasoning) but declares no tools/capabilities
- * and no inference source in the definition — the source is pinned at deploy
- * time and resolved by the sidecar from its per-step `STEP_INFERENCE_SOURCES`
- * table, exactly as a deployed step would. The marker tag tells the hub to
- * skip the per-step agent/instance/grants writers and no-op `launchSession`
- * for this step, and tells the sidecar's step invoker to dispatch it through
- * the bare-inference branch instead of building a tool-capable harness.
- *
- * Only valid for no-tool reasoning steps. A step that invokes a tool must use
- * a deployed `step({ agent })` (tool-capable harness) or `deterministicToolStep`.
+ * Declare a workflow step as a native reasoning-with-tools step: a plain
+ * `step({ agent })` built from `defineAgent`. This is the "deployed" step
+ * class every workflow step now runs as — the sidecar's default inference
+ * invoker dispatches it directly, with no Workbench-specific dispatch tag
+ * and no bespoke sidecar branch to interpret. The only tag it carries is the
+ * cross-cutting `STEP_TITLE_TAG`, shared with every step class, which names
+ * the step in the catalog/run-UI preview.
  */
-export function inlineInferenceStep(
-  opts: InlineInferenceStepOpts,
-): StepPrimitive {
+export function agentStep(opts: AgentStepOpts): StepPrimitive {
   const agent = defineAgent({
     id: opts.id,
-    description: `Inline single-turn inference: ${opts.id}`,
+    description: `Reasoning step: ${opts.id}`,
     systemPrompt: withCorbitsVocabulary(opts.systemPrompt),
     tools: [],
     capabilities: [],
-    // A declared preferred source makes the capability walk emit the
-    // `inference.source:<provider>:<model>` grant and the orchestrator's
-    // pickStepInferenceSource pin that model for the step; with none declared the
-    // step falls back to the deploy defaultSource. The sidecar still resolves the
-    // concrete pinned source from STEP_INFERENCE_SOURCES at runtime either way.
     inference:
       opts.model !== undefined
         ? {
@@ -273,14 +244,9 @@ export function inlineInferenceStep(
             ],
           }
         : { sources: [] },
-    tags: {
-      [STEP_KIND_TAG]: INLINE_INFERENCE_KIND,
-      ...(opts.nonFatal === true ? { [STEP_NONFATAL_TAG]: "true" } : {}),
-      ...(opts.retry !== undefined
-        ? { [STEP_INLINE_RETRY_MAX_TAG]: String(opts.retry.maxAttempts) }
-        : {}),
-      ...(opts.title !== undefined ? { [STEP_TITLE_TAG]: opts.title } : {}),
-    },
+    ...(opts.title !== undefined
+      ? { tags: { [STEP_TITLE_TAG]: opts.title } }
+      : {}),
   });
   return step({
     agent,

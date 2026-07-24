@@ -17,8 +17,8 @@ import type {
   SessionService,
   SidecarRouter,
   EventCollectorRegistry,
-} from "@intx/hub-sessions";
-import { SessionLaunchError } from "@intx/hub-sessions";
+} from "@workbench/hub-sessions";
+import { SessionLaunchError } from "@workbench/hub-sessions";
 import type { GrantStore } from "@intx/types/authz";
 import {
   appendPageContextToPrompt,
@@ -1064,7 +1064,7 @@ export const DEFAULT_WEDGE_SWEEP_INTERVAL_MS = 30_000;
 // triggered and passive: it fires only when a `sidecar.disconnect` event is
 // observed and only marks the session ended — nothing re-registers the address.
 // There is no `sidecar.connect` counterpart on the router (verified against
-// @intx/hub-sessions), so a sidecar that fully restarts leaves instances with
+// @workbench/hub-sessions), so a sidecar that fully restarts leaves instances with
 // `agent_session.status = 'active'` but no routable address, and mail 502s until
 // fixed by hand. This periodic sweep supplies the missing relaunch half from any
 // cause (missed disconnect event, hub restart, etc.).

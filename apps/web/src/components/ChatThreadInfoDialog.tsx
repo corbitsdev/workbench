@@ -214,7 +214,7 @@ export function ChatThreadInfoDialog({
             </Link>
           )}
           <Link
-            to="/agents"
+            to="/library/agents"
             onClick={onClose}
             className="text-xs font-medium text-orange transition-colors hover:text-orange-deep"
           >

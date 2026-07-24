@@ -367,8 +367,36 @@ describe("UIBlockView", () => {
     };
     const { container } = render(<UIBlockView block={block} />);
     const indicator = container.querySelector('[data-state="awaiting"] span');
-    expect(indicator?.className).toContain("border-blue");
-    expect(indicator?.className).not.toContain("border-orange");
+    expect(indicator?.className).toContain("blue");
+    expect(indicator?.className).not.toContain("orange");
+  });
+
+  it("gives awaiting a visually distinct treatment from running (filled vs pulsing-hollow)", () => {
+    // Each rendered alone (a trailing non-pending step promotes an earlier
+    // step to "done" — CL-2654), so the two states are compared independently.
+    const runningBlock: UIBlock = {
+      kind: "progress",
+      steps: [{ state: "running", label: "Working" }],
+    };
+    const awaitingBlock: UIBlock = {
+      kind: "progress",
+      steps: [{ state: "awaiting", label: "Decide" }],
+    };
+    const { container: runningContainer } = render(
+      <UIBlockView block={runningBlock} />,
+    );
+    const { container: awaitingContainer } = render(
+      <UIBlockView block={awaitingBlock} />,
+    );
+    const running = runningContainer.querySelector(
+      '[data-state="running"] span',
+    );
+    const awaiting = awaitingContainer.querySelector(
+      '[data-state="awaiting"] span',
+    );
+    expect(running?.className).toContain("border-blue");
+    expect(awaiting?.className).not.toContain("border-blue");
+    expect(awaiting?.className).toContain("bg-blue-soft");
   });
 
   it("omits payload from the response when the option has none", () => {
@@ -492,9 +520,38 @@ describe("UIBlockView", () => {
     expect(items[2]?.getAttribute("data-state")).toBe("pending");
     expect(screen.getByText("Fetch calls")).not.toBeNull();
     expect(screen.getByText("step 2 of 5")).not.toBeNull();
-    expect(screen.getByText("done")).not.toBeNull();
-    expect(screen.getByText("running")).not.toBeNull();
-    expect(screen.getByText("pending")).not.toBeNull();
+    expect(screen.getByText("Done")).not.toBeNull();
+    expect(screen.getByText("In progress")).not.toBeNull();
+    expect(screen.getByText("Up next")).not.toBeNull();
+  });
+
+  it("shows a done-of-total count that reflects only steps actually landed", () => {
+    const block: UIBlock = {
+      kind: "progress",
+      steps: [
+        { label: "Fetch", state: "done" },
+        { label: "Draft", state: "running" },
+        { label: "Publish", state: "pending" },
+      ],
+    };
+    render(<UIBlockView block={block} />);
+    expect(screen.getByText("1 of 3")).not.toBeNull();
+  });
+
+  it("fills the connecting rail below a step only once that step is done", () => {
+    const block: UIBlock = {
+      kind: "progress",
+      steps: [
+        { label: "Fetch", state: "done" },
+        { label: "Draft", state: "running" },
+        { label: "Publish", state: "pending" },
+      ],
+    };
+    render(<UIBlockView block={block} />);
+    const items = screen.getAllByRole("listitem");
+    const railFor = (item: Element) => item.querySelector('[data-rail="true"]');
+    expect(railFor(items[0] as Element)?.className).toContain("bg-green");
+    expect(railFor(items[1] as Element)?.className).toContain("bg-border");
   });
 
   it("renders an awaiting step as awaiting input", () => {
@@ -509,7 +566,7 @@ describe("UIBlockView", () => {
     render(<UIBlockView block={block} />);
     const items = screen.getAllByRole("listitem");
     expect(items[1]?.getAttribute("data-state")).toBe("awaiting");
-    expect(screen.getByText("awaiting input")).not.toBeNull();
+    expect(screen.getByText("Needs your input")).not.toBeNull();
   });
 
   it("renders a failed step with its failure state", () => {
@@ -523,7 +580,7 @@ describe("UIBlockView", () => {
     render(<UIBlockView block={block} />);
     const items = screen.getAllByRole("listitem");
     expect(items[1]?.getAttribute("data-state")).toBe("failed");
-    expect(screen.getByText("failed")).not.toBeNull();
+    expect(screen.getByText("Failed")).not.toBeNull();
   });
 
   it("treats a stale non-terminal step as done once a later step has started", () => {

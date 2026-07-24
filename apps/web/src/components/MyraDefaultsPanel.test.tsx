@@ -48,6 +48,9 @@ const variants = [
 type PutCall = { method: string; body: unknown };
 
 const EMPTY_STYLE_AXES = {
+  instructionsGlobal: null,
+  instructionsChat: null,
+  instructionsTriage: null,
   personality: null,
   emojiUse: null,
   uiType: null,
@@ -152,7 +155,7 @@ describe("MyraDefaultsPanel", () => {
     await waitFor(() =>
       expect(document.body.textContent).toContain("Myra chat"),
     );
-    expect(document.body.textContent).toContain("Inbox automation");
+    expect(document.body.textContent).toContain("Inbox routine");
 
     expect(document.body.textContent).toContain("Myra Standard");
     expect(document.body.textContent).toContain("claude-sonnet");
@@ -216,7 +219,7 @@ describe("MyraDefaultsPanel", () => {
     expect(putCalls[0]?.body).toEqual({ chat: null });
   });
 
-  it("hides the inbox-automation group when the triage feature is off", async () => {
+  it("hides the inbox-routine group when the triage feature is off", async () => {
     globalThis.fetch = mock((url: string, _init?: RequestInit) => {
       const u = String(url);
       if (u.includes("/myra/variants")) {
@@ -243,7 +246,7 @@ describe("MyraDefaultsPanel", () => {
     await waitFor(() =>
       expect(document.body.textContent).toContain("Myra chat"),
     );
-    expect(document.body.textContent).not.toContain("Inbox automation");
+    expect(document.body.textContent).not.toContain("Inbox routine");
     expect(document.body.textContent).not.toContain("Triage Fast");
     expect(document.body.textContent).toContain("Myra Standard");
   });

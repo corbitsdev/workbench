@@ -3,28 +3,13 @@
 
 import type { GalleryArtifact } from "./types";
 import { ArtifactCardPreview } from "./ArtifactCardPreview";
-import {
-  artifactPreviewFamily,
-  labelForArtifactStatus,
-} from "./artifact-preview-family";
-import { shouldShowArtifactStatusBadge } from "./artifact-status-badge";
+import { artifactPreviewFamily } from "./artifact-preview-family";
 
 interface ArtifactCardProps {
   artifact: GalleryArtifact;
   /** Invoked when the card is activated (click / Enter / Space). */
   onOpen?: ((artifact: GalleryArtifact) => void) | undefined;
   experimental?: boolean | undefined;
-}
-
-function statusChipClass(status: GalleryArtifact["status"]): string {
-  switch (status) {
-    case "approved":
-      return "border border-green/40 bg-green/10 text-green";
-    case "rejected":
-      return "border border-red/40 bg-red/10 text-red";
-    default:
-      return "bg-surface-2 text-text-3";
-  }
 }
 
 export function ArtifactCard({
@@ -61,15 +46,6 @@ export function ArtifactCard({
       className={`group relative flex cursor-pointer flex-col overflow-hidden rounded-lg border border-border bg-surface focus:outline-none focus-visible:ring-2 focus-visible:ring-orange ${cardMotion} ${span}`}
       data-preview-family={family}
     >
-      {experimental && shouldShowArtifactStatusBadge(artifact.status) ? (
-        <div className="absolute inset-x-[10px] top-[10px] z-[2] flex justify-end">
-          <span
-            className={`shrink-0 rounded-full px-2 py-[3px] text-[10px] font-semibold tracking-[0.02em] backdrop-blur-[6px] ${statusChipClass(artifact.status)}`}
-          >
-            {labelForArtifactStatus(artifact.status)}
-          </span>
-        </div>
-      ) : null}
       {artifact.creatorInitials ? (
         <div
           className="absolute left-[10px] top-[10px] z-[2] flex h-5 w-5 items-center justify-center rounded-full bg-[rgba(18,18,18,0.72)] text-[9px] font-bold uppercase tracking-[0.02em] text-white backdrop-blur-[6px]"
@@ -103,13 +79,6 @@ export function ArtifactCard({
           <div className="min-w-0 flex-1 truncate text-[13.5px] font-semibold text-text">
             {artifact.title}
           </div>
-          {!experimental && shouldShowArtifactStatusBadge(artifact.status) ? (
-            <span
-              className={`shrink-0 rounded-sm px-1.5 py-0.5 text-[10px] font-medium ${statusChipClass(artifact.status)}`}
-            >
-              {labelForArtifactStatus(artifact.status)}
-            </span>
-          ) : null}
         </div>
         {(artifact.from ?? artifact.time) ? (
           <div className="mt-0.5 flex items-center gap-[7px] font-mono text-[11px] text-text-3">

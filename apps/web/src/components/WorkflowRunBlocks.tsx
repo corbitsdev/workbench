@@ -7,7 +7,17 @@ import {
   type UIBlock,
   type UIResponse,
 } from "@workbench/blocks";
-import { Button, failedRunError, toHumanLabel } from "@workbench/ui";
+import {
+  activeDisplayStepIndex,
+  Button,
+  buildRunStepperSteps,
+  failedRunError,
+  HorizontalStepper,
+  Skeleton,
+  toHumanLabel,
+  type DisplayStep,
+} from "@workbench/ui";
+import type { WorkflowFlowStep } from "@workbench/shared";
 import { buildDockBlocks } from "../lib/dock-block-builders";
 import type { RunPhase, RunState, StepState } from "@intx/workflow";
 import type { LogRunState } from "../lib/run-state-adapter";
@@ -82,6 +92,15 @@ interface WorkflowRunBlocksProps {
   // Index says failed but the log is still non-terminal: the run was killed
   // externally (redeploy/abort), not a genuine step failure — the copy differs.
   interrupted: boolean;
+  // The workflow's full, ordered step sequence from its DEFINITION (the same
+  // classified list the Workflows catalog card preview renders), keyed by kind.
+  // Undefined only while the catalog is still loading — the run pane's catalog
+  // query is warm from the Workflows page in the common case, so this is present
+  // from the first paint. Driving the stepper off this instead of the run's own
+  // materialized log steps is what keeps "Step 2 of 8" honest when the run has
+  // only reached its second step — the log alone only ever knows about steps
+  // that have already started (CL-4285).
+  catalogSteps: readonly WorkflowFlowStep[] | undefined;
   onRespond: (response: UIResponse) => void | Promise<void>;
   onClose: () => void;
 }
@@ -100,6 +119,7 @@ export function WorkflowRunBlocks({
   stepOutputs,
   terminal,
   interrupted,
+  catalogSteps,
   onRespond,
   onClose,
 }: WorkflowRunBlocksProps) {
@@ -109,6 +129,28 @@ export function WorkflowRunBlocks({
   const activeIndex = activeStep
     ? steps.findIndex((s) => s.stepId === activeStep.stepId) + 1
     : null;
+
+  // The full display sequence, one DisplayStep per catalog entry. `s.id` is
+  // only the entry's display key — for a declared DISPLAY_STEPS group (e.g.
+  // "gather") it is a SYNTHETIC label, never itself a runtime step id, so a
+  // step's phase must be read from `s.stepIds` (the real runtime ids the group
+  // clusters), not `[s.id]` — otherwise a grouped, Panel-less kind (e.g.
+  // prospect-engine) would never match any RunState step and the active index
+  // would freeze at 0 for the whole run (CL-4285 follow-up). Absent only
+  // during the catalog's initial load.
+  const fullSteps: DisplayStep[] | null = useMemo(() => {
+    if (catalogSteps === undefined || catalogSteps.length === 0) return null;
+    return catalogSteps.map((s) => ({
+      key: s.id,
+      label: s.title,
+      stepIds: s.stepIds,
+    }));
+  }, [catalogSteps]);
+
+  const fullStepperSteps = useMemo(
+    () => (fullSteps ? buildRunStepperSteps(state, fullSteps) : null),
+    [fullSteps, state],
+  );
 
   const phase: DockRunPhase = DockRunPhaseSchema.allows(state.phase)
     ? state.phase
@@ -120,11 +162,15 @@ export function WorkflowRunBlocks({
       buildDockBlocks(kind, {
         runId,
         phase,
+        surface: "run-page",
         steps: (logState?.steps ?? []).map((step) => ({
           stepId: step.stepId,
           phase: step.phase,
           ...(step.awaitingSignalName !== undefined
             ? { awaitingSignalName: step.awaitingSignalName }
+            : {}),
+          ...(step.lastError !== undefined
+            ? { lastError: step.lastError }
             : {}),
         })),
         stepOutputs,
@@ -135,10 +181,18 @@ export function WorkflowRunBlocks({
     [kind, runId, phase, logState, stepOutputs, sanitizedError],
   );
 
+  // The full sequence, when known, is the authoritative count and label — never
+  // "Step 2 of 2" on an 8-step workflow just because only two steps have
+  // materialized in the log so far.
+  const fullActiveIdx = fullSteps
+    ? activeDisplayStepIndex(state, fullSteps)
+    : null;
   const headerSubtitle =
-    activeStep && activeIndex !== null
-      ? `Step ${String(activeIndex)} of ${String(steps.length)} · ${toHumanLabel(activeStep.stepId)}`
-      : toHumanLabel(kind);
+    fullSteps && fullActiveIdx !== null
+      ? `Step ${String(fullActiveIdx + 1)} of ${String(fullSteps.length)} · ${fullSteps[fullActiveIdx]?.label ?? ""}`
+      : activeStep && activeIndex !== null
+        ? `Step ${String(activeIndex)} of ${String(steps.length)} · ${toHumanLabel(activeStep.stepId)}`
+        : toHumanLabel(kind);
 
   // A run parked on a gate reports phase `running` (RunPhase has no `awaiting`
   // member), so surface the HITL "needs you" cue in amber — matching the dock's
@@ -161,6 +215,11 @@ export function WorkflowRunBlocks({
 
   return (
     <div className="flex h-full flex-col overflow-hidden border border-border bg-bg">
+      {fullStepperSteps && (
+        <div className="shrink-0 overflow-x-auto">
+          <HorizontalStepper steps={fullStepperSteps} />
+        </div>
+      )}
       <div
         role="status"
         aria-live="polite"
@@ -206,7 +265,11 @@ export function WorkflowRunBlocks({
         )}
 
         {blocks.length === 0 && !terminal && (
-          <p className="text-[13px] text-text-3">Waiting for run activity…</p>
+          <div className="space-y-2">
+            <p className="text-[13px] text-text-3">Waiting for run activity…</p>
+            <Skeleton className="h-4 w-3/4" />
+            <Skeleton className="h-4 w-1/2" />
+          </div>
         )}
       </div>
     </div>
