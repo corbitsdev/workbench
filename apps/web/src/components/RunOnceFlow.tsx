@@ -14,6 +14,12 @@ export type RunOnceFlowProps = {
   busy?: boolean;
   onCancel: () => void;
   onSave: () => void | Promise<void>;
+  /**
+   * Whether to render the workflow name/description header. Callers that
+   * already show the kind's title above this panel (e.g. the create-flow
+   * page header) pass `false` to avoid rendering it twice.
+   */
+  showHeader?: boolean;
 };
 
 /**
@@ -34,6 +40,7 @@ export function RunOnceFlow({
   busy = false,
   onCancel,
   onSave,
+  showHeader = true,
 }: RunOnceFlowProps) {
   const hasInputFields = fields.length > 0;
 
@@ -43,15 +50,21 @@ export function RunOnceFlow({
 
   return (
     <div
-      className="mt-4 border-t border-border pt-4"
+      className={showHeader ? "mt-4 border-t border-border pt-4" : "mt-3"}
       data-testid={`run-once-editor-${entry.kind}`}
     >
       <div className="mb-4">
-        <h3 className="text-sm font-semibold text-text">{productLabel}</h3>
-        {entry.description ? (
-          <p className="mt-1 text-sm text-text-2">{entry.description}</p>
+        {showHeader ? (
+          <>
+            <h3 className="text-sm font-semibold text-text">
+              {productLabel}
+            </h3>
+            {entry.description ? (
+              <p className="mt-1 text-sm text-text-2">{entry.description}</p>
+            ) : null}
+          </>
         ) : null}
-        <p className="mt-1 text-xs text-text-3">
+        <p className={`${showHeader ? "mt-1 " : ""}text-xs text-text-3`}>
           Runs once, right now, with the inputs below. It won&rsquo;t repeat or
           be saved as a schedule.
         </p>

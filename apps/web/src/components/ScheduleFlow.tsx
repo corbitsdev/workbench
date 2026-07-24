@@ -41,6 +41,12 @@ export type ScheduleFlowProps = {
   busy?: boolean;
   onCancel: () => void;
   onSave: () => void | Promise<void>;
+  /**
+   * Whether to render the workflow name/description header. Callers that
+   * already show the kind's title above this panel (e.g. the create-flow
+   * page header) pass `false` to avoid rendering it twice.
+   */
+  showHeader?: boolean;
 };
 
 /**
@@ -72,6 +78,7 @@ export function ScheduleFlow({
   busy = false,
   onCancel,
   onSave,
+  showHeader = true,
 }: ScheduleFlowProps) {
   const isEdit = existing != null;
   const canChooseScope = !isEdit && entry.allowedScopes.length > 1;
@@ -108,15 +115,21 @@ export function ScheduleFlow({
 
   return (
     <div
-      className="mt-4 border-t border-border pt-4"
+      className={showHeader ? "mt-4 border-t border-border pt-4" : "mt-3"}
       data-testid={`schedule-editor-${entry.kind}`}
     >
       <div className="mb-4">
-        <h3 className="text-sm font-semibold text-text">{productLabel}</h3>
-        {entry.description ? (
-          <p className="mt-1 text-sm text-text-2">{entry.description}</p>
+        {showHeader ? (
+          <>
+            <h3 className="text-sm font-semibold text-text">
+              {productLabel}
+            </h3>
+            {entry.description ? (
+              <p className="mt-1 text-sm text-text-2">{entry.description}</p>
+            ) : null}
+          </>
         ) : null}
-        <p className="mt-1 text-xs text-text-3">
+        <p className={`${showHeader ? "mt-1 " : ""}text-xs text-text-3`}>
           {isEdit ? "Editing schedule" : "New schedule"} ·{" "}
           {scheduleScopeLabel(isEdit ? existing.scope : entry.defaultScope)}
           {canChooseScope ? " (you can change who it runs for later)" : null}

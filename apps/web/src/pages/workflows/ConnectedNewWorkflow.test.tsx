@@ -14,6 +14,24 @@ mock.module("../../hooks/use-schedules", () => ({
   }),
 }));
 
+mock.module("../../lib/active-workbench-context", () => ({
+  useActiveWorkbench: () => ({
+    workbenches: [],
+    loading: false,
+    activeWorkbench: null,
+    activeTenantId: "ten-1",
+    setActiveWorkbench: () => {},
+  }),
+}));
+
+mock.module("../../hooks/use-workflow", () => ({
+  useStartWorkflow: () => ({
+    mutateAsync: mock(async () => ({ runId: "run-1" })),
+    isPending: false,
+    variables: undefined,
+  }),
+}));
+
 const { ConnectedNewWorkflow } = await import("./ConnectedNewWorkflow");
 
 const catalogEntries: WorkflowCatalogEntry[] = [
@@ -32,6 +50,8 @@ const catalogEntries: WorkflowCatalogEntry[] = [
   },
 ];
 
+const catalogEntry = catalogEntries[0]!;
+
 const schedules: ScheduledTrigger[] = [];
 
 function renderPicker() {
@@ -46,6 +66,26 @@ function renderPicker() {
         selectedKind={null}
         onSelectKind={() => {}}
         onCreated={() => {}}
+        onRunStarted={() => {}}
+        onCancel={() => {}}
+      />
+    </QueryClientProvider>,
+  );
+}
+
+function renderCreate() {
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+  });
+  return render(
+    <QueryClientProvider client={client}>
+      <ConnectedNewWorkflow
+        catalogEntries={[catalogEntry]}
+        schedules={[]}
+        selectedKind={catalogEntry.kind}
+        onSelectKind={() => {}}
+        onCreated={() => {}}
+        onRunStarted={() => {}}
         onCancel={() => {}}
       />
     </QueryClientProvider>,
@@ -63,5 +103,32 @@ describe("ConnectedNewWorkflow kind picker", () => {
     expect(screen.getByTestId("new-workflow-picker")).toBeTruthy();
     expect(screen.getByText("Last 30 Days Research")).toBeTruthy();
     expect(screen.queryByText("Schedulable")).toBeNull();
+  });
+});
+
+describe("ConnectedNewWorkflow create form", () => {
+  it("renders the workflow title and description as a single heading, not duplicated", () => {
+    renderCreate();
+
+    // The page header is the only heading-level rendering of the title; the
+    // summary card's "Kind" row separately echoes the label as data, which
+    // is expected. The former bug rendered a second <h3> title + description
+    // block inside the form body (RunOnceFlow/ScheduleFlow) — assert that's
+    // gone by checking there is exactly one heading with this text.
+    expect(
+      screen.getAllByRole("heading", { name: catalogEntry.label }),
+    ).toHaveLength(1);
+    expect(
+      screen.getAllByText(catalogEntry.description as string),
+    ).toHaveLength(1);
+  });
+
+  it("shows the mode selector and Run once flow immediately below the header", () => {
+    renderCreate();
+
+    expect(screen.getByTestId("run-mode-selector")).toBeTruthy();
+    expect(
+      screen.getByTestId(`run-once-editor-${catalogEntry.kind}`),
+    ).toBeTruthy();
   });
 });

@@ -287,86 +287,95 @@ export function ConnectedNewWorkflow({
       className="flex h-full min-h-0 flex-col overflow-auto px-4 py-6 sm:px-6"
       data-testid={`new-workflow-create-${entry.kind}`}
     >
-      <div className="mb-4 flex items-start justify-between gap-3">
-        <div>
+      <div className="mx-auto flex w-full max-w-[900px] flex-1 flex-col">
+        <div className="mb-3 flex items-start justify-between gap-3">
+          <div>
+            <button
+              type="button"
+              className="mb-1 text-[12px] text-text-3 underline-offset-2 hover:text-text hover:underline"
+              onClick={() => onSelectKind(null)}
+              data-testid="new-workflow-back-to-kinds"
+            >
+              ← All workflows
+            </button>
+            <h2 className="text-[15px] font-semibold text-text">{label}</h2>
+            {entry.description ? (
+              <p className="mt-1 text-[13px] text-text-3">
+                {entry.description}
+              </p>
+            ) : null}
+          </div>
           <button
             type="button"
-            className="mb-1 text-[12px] text-text-3 underline-offset-2 hover:text-text hover:underline"
-            onClick={() => onSelectKind(null)}
-            data-testid="new-workflow-back-to-kinds"
+            className="shrink-0 text-[12px] text-text-3 underline-offset-2 hover:text-text hover:underline"
+            onClick={onCancel}
           >
-            ← All workflows
+            Cancel
           </button>
-          <h2 className="text-[15px] font-semibold text-text">{label}</h2>
-          {entry.description ? (
-            <p className="mt-1 text-[13px] text-text-3">{entry.description}</p>
-          ) : null}
         </div>
-        <button
-          type="button"
-          className="shrink-0 text-[12px] text-text-3 underline-offset-2 hover:text-text hover:underline"
-          onClick={onCancel}
-        >
-          Cancel
-        </button>
-      </div>
 
-      <CreateScheduleFormLayout
-        form={
-          <div key={formKey} className="min-w-0">
-            <RunModeSelector mode={mode} onChange={setMode} />
-            {mode === "once" ? (
-              <RunOnceFlow
-                entry={entry}
-                productLabel={label}
-                fieldValues={draftValues}
-                onFieldValuesChange={setDraftValues}
-                fields={fields}
-                error={error}
-                busy={busy}
-                onCancel={onCancel}
-                onSave={() => runOnce(entry)}
-              />
-            ) : (
-              <ScheduleFlow
-                entry={entry}
-                productLabel={label}
-                existing={null}
-                recurrence={draftRecurrence}
-                onRecurrenceChange={setDraftRecurrence}
-                scope={draftScope}
-                onScopeChange={setDraftScope}
-                fieldValues={draftValues}
-                onFieldValuesChange={setDraftValues}
-                fields={fields}
-                error={error}
-                busy={busy}
-                onCancel={onCancel}
-                onSave={() => saveSchedule(entry)}
-              />
-            )}
-          </div>
-        }
-        summary={
-          <CreateScheduleSummary
-            rows={
-              mode === "once"
-                ? [
-                    { label: "Kind", value: label },
-                    { label: "Runs", value: "Once, right now" },
-                  ]
-                : [
-                    { label: "Kind", value: label },
-                    {
-                      label: "Cadence",
-                      value: formatRecurrence(draftRecurrence),
-                    },
-                    { label: "Scope", value: scheduleScopeLabel(draftScope) },
-                  ]
-            }
-          />
-        }
-      />
+        <CreateScheduleFormLayout
+          form={
+            <div key={formKey} className="min-w-0">
+              <RunModeSelector mode={mode} onChange={setMode} />
+              {mode === "once" ? (
+                <RunOnceFlow
+                  entry={entry}
+                  productLabel={label}
+                  fieldValues={draftValues}
+                  onFieldValuesChange={setDraftValues}
+                  fields={fields}
+                  error={error}
+                  busy={busy}
+                  onCancel={onCancel}
+                  onSave={() => runOnce(entry)}
+                  showHeader={false}
+                />
+              ) : (
+                <ScheduleFlow
+                  entry={entry}
+                  productLabel={label}
+                  existing={null}
+                  recurrence={draftRecurrence}
+                  onRecurrenceChange={setDraftRecurrence}
+                  scope={draftScope}
+                  onScopeChange={setDraftScope}
+                  fieldValues={draftValues}
+                  onFieldValuesChange={setDraftValues}
+                  fields={fields}
+                  error={error}
+                  busy={busy}
+                  onCancel={onCancel}
+                  onSave={() => saveSchedule(entry)}
+                  showHeader={false}
+                />
+              )}
+            </div>
+          }
+          summary={
+            <CreateScheduleSummary
+              rows={
+                mode === "once"
+                  ? [
+                      { label: "Kind", value: label },
+                      { label: "Runs", value: "Once, right now" },
+                    ]
+                  : [
+                      { label: "Kind", value: label },
+                      {
+                        label: "Cadence",
+                        value: formatRecurrence(draftRecurrence),
+                      },
+                      {
+                        label: "Scope",
+                        value: scheduleScopeLabel(draftScope),
+                      },
+                    ]
+              }
+            />
+          }
+        />
+      </div>
     </div>
   );
 }
