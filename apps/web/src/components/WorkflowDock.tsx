@@ -16,7 +16,7 @@ import { buildDockBlocks } from "../lib/dock-block-builders";
 import { resolveResumePayload } from "../lib/resume-payload";
 import { stepOutputsFromLog } from "../lib/run-state-adapter";
 import { WorkflowStartingIndicator } from "./WorkflowStartingIndicator";
-import { cn, failedRunError } from "@workbench/ui";
+import { cn, failedRunError, StatusDot } from "@workbench/ui";
 import {
   isRecordTerminal,
   reconcileRunState,
@@ -46,46 +46,61 @@ const ATTENTION_ORDER: Record<RunStatus, number> = {
 // green done, red failed (design tokens from @workbench/ui styles.css).
 const STATUS_META: Record<
   RunStatus,
-  { label: string; dot: string; stripe: string; chip: string }
+  {
+    label: string;
+    dotColor: string;
+    dotPulsing: boolean;
+    stripe: string;
+    chip: string;
+  }
 > = {
   awaiting: {
     label: "Needs you",
-    dot: "bg-orange",
+    dotColor: "bg-orange",
+    dotPulsing: false,
     stripe: "border-l-orange",
     chip: "text-orange",
   },
   // The actively-working state carries live motion too (CL-2755, emil) so a
   // running run never reads deader than a pre-flight `provisioning` one.
+  // The motion is the shared PulsingRing primitive (CL-4394) via StatusDot,
+  // not Tailwind's `animate-pulse`.
   running: {
     label: "Running",
-    dot: "bg-blue animate-pulse motion-reduce:animate-none",
+    dotColor: "bg-blue",
+    dotPulsing: true,
     stripe: "border-l-blue",
     chip: "text-blue",
   },
-  // CL-2755: the run's deployment is still cold-starting. `animate-pulse` on the
-  // dot gives the collapsed rail visible motion so a starting run never reads as
-  // frozen.
+  // CL-2755: the run's deployment is still cold-starting. The pulsing ring
+  // gives the collapsed rail visible motion so a starting run never reads as
+  // frozen — PulsingRing returns null under reduced motion; it's StatusDot's
+  // always-rendered base dot that provides the static fallback.
   provisioning: {
     label: "Starting",
-    dot: "bg-blue animate-pulse motion-reduce:animate-none",
+    dotColor: "bg-blue",
+    dotPulsing: true,
     stripe: "border-l-blue",
     chip: "text-blue",
   },
   completed: {
     label: "Done",
-    dot: "bg-green",
+    dotColor: "bg-green",
+    dotPulsing: false,
     stripe: "border-l-green",
     chip: "text-green",
   },
   failed: {
     label: "Failed",
-    dot: "bg-red",
+    dotColor: "bg-red",
+    dotPulsing: false,
     stripe: "border-l-red",
     chip: "text-red",
   },
   stopped: {
     label: "Stopped",
-    dot: "bg-text-3",
+    dotColor: "bg-text-3",
+    dotPulsing: false,
     stripe: "border-l-border",
     chip: "text-text-3",
   },
@@ -322,9 +337,10 @@ function WorkflowDockCard({
             FOCUS_RING,
           )}
         >
-          <span
-            className={cn("h-2 w-2 shrink-0 rounded-full", meta.dot)}
-            aria-hidden
+          <StatusDot
+            colorClassName={meta.dotColor}
+            pulsing={meta.dotPulsing}
+            className="shrink-0"
           />
           <span className="min-w-0 flex-1">
             <span className="block truncate text-sm font-medium text-text">
@@ -561,11 +577,11 @@ export function WorkflowDock({
               key={run.runId}
               data-testid="dock-rail-dot"
               title={`${run.kind}: ${STATUS_META[run.status].label}`}
-              className={cn(
-                "h-2 w-2 rounded-full",
-                STATUS_META[run.status].dot,
-              )}
             >
+              <StatusDot
+                colorClassName={STATUS_META[run.status].dotColor}
+                pulsing={STATUS_META[run.status].dotPulsing}
+              />
               <span className="sr-only">
                 {`${run.kind}: ${STATUS_META[run.status].label}`}
               </span>
@@ -645,11 +661,11 @@ export function WorkflowDock({
               key={run.runId}
               data-testid="dock-rail-dot"
               title={`${run.kind}: ${STATUS_META[run.status].label}`}
-              className={cn(
-                "h-2 w-2 rounded-full",
-                STATUS_META[run.status].dot,
-              )}
             >
+              <StatusDot
+                colorClassName={STATUS_META[run.status].dotColor}
+                pulsing={STATUS_META[run.status].dotPulsing}
+              />
               <span className="sr-only">
                 {`${run.kind}: ${STATUS_META[run.status].label}`}
               </span>

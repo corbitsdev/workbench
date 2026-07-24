@@ -239,6 +239,40 @@ describe("WorkflowDock", () => {
     await waitFor(() => screen.getByTestId("workflow-dock-card"));
   });
 
+  it("gives a running rail dot the shared PulsingRing motion, and a completed one no motion (CL-4416)", async () => {
+    records = [
+      listRow("run_running", "running"),
+      listRow("run_done", "completed"),
+    ];
+    statesByRunId["run_running"] = logState("run_running", "running", [
+      { stepId: "draft", phase: "in-flight" },
+    ]);
+    renderDock();
+    await waitFor(() => screen.getAllByTestId("workflow-dock-card"));
+
+    fireEvent.click(screen.getByLabelText("Collapse workflow dock"));
+    const dots = screen.getAllByTestId("dock-rail-dot");
+    const runningDot = dots.find((d) =>
+      d.textContent?.includes("ab-compare-quality: Running"),
+    );
+    const doneDot = dots.find((d) => d.textContent?.includes(": Done"));
+    // PulsingRing (CL-4394) renders its own animated overlay span colored
+    // `${color}/60`; a raw `animate-pulse` dot would not have this element.
+    expect(runningDot?.querySelector(".bg-blue\\/60")).not.toBeNull();
+    expect(doneDot?.querySelector(".bg-green\\/60")).toBeNull();
+  });
+
+  it("gives a provisioning rail dot the same live PulsingRing motion as running, never a frozen dot (CL-2755)", async () => {
+    records = [listRow("run_starting", "provisioning", "smoke-test")];
+    renderDock();
+    await waitFor(() => screen.getByTestId("workflow-dock-card"));
+
+    fireEvent.click(screen.getByLabelText("Collapse workflow dock"));
+    const dot = screen.getByTestId("dock-rail-dot");
+    expect(dot.textContent).toContain("smoke-test: Starting");
+    expect(dot.querySelector(".bg-blue\\/60")).not.toBeNull();
+  });
+
   it("persists the collapsed state per conversation across remounts", async () => {
     records = [listRow("run_running", "running")];
     statesByRunId["run_running"] = logState("run_running", "running", [

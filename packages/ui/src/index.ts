@@ -194,6 +194,7 @@ export { CategoryBarChart, type CategoryDatum } from "./CategoryBarChart";
 export { useResizableRail, type ResizableRail } from "./use-resizable-rail";
 export { default as HorizontalStepper } from "./HorizontalStepper";
 export { default as PulsingRing } from "./PulsingRing";
+export { default as StatusDot } from "./StatusDot";
 export {
   default as ProgressChecklist,
   type ProgressChecklistProps,
