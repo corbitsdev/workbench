@@ -86,7 +86,7 @@ function NewChatButton({
       variant="primary"
       onClick={onClick}
       disabled={pending}
-      className="flex items-center gap-[7px] px-[14px] py-[7px] text-[12.5px]"
+      className="px-[14px] py-[7px] text-[12.5px]"
     >
       <Plus size={16} />
       {pending ? "Creating…" : "New thread"}

@@ -269,7 +269,6 @@ export function SkillDetail() {
             variant="ghost"
             size="sm"
             onClick={() => navigate("/library/skills")}
-            className="gap-1.5"
           >
             <ArrowLeft className="h-4 w-4" aria-hidden />
             Skills
