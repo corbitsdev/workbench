@@ -257,6 +257,12 @@ false-positive while work is queued. A periodic reconciler
 a code constant unless tests pass `timeoutMs`) if intake or Myra drive never
 clears the gate.
 
+**Inbox contract for unattended runs (CL-4312).** Hub terminal mail is
+**failure-only** (`deliverRunTerminalMail`). Quiet success (including discoverer
+parents that spawn nothing) does not write the inbox. Success reaches the inbox
+only via result-specific mail — workflow `mail_send`, granola fan-out, heartbeat
+notify, etc. Failure mail stays plain-language with breaker suppression.
+
 ### Schedule product allowlist (formerly Routines allowlist)
 
 **Structural attachability** (above) answers “can this kind finish unattended?” —

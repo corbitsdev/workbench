@@ -500,9 +500,10 @@ const repoStore = wrapRepoStoreWithProjection(
         });
       });
     },
-    // Deliver a "your run finished" mailbox item to the run creator when a
-    // run reaches a terminal status. Fire-and-forget; the deliverer owns its
-    // errors and must never block pack receipt.
+    // Terminal-run mail: failures only (CL-4312). Quiet/completed success is
+    // silent here — success reaches the inbox via result-specific mail.
+    // Fire-and-forget; the deliverer owns its errors and must never block pack
+    // receipt.
     deliverRunMail: (args) => {
       const mailDeps = {
         db,

@@ -154,15 +154,11 @@ const PREFERENCE_REGISTRY_BASE: readonly PreferenceEntry[] = [
     description: "Notify me in my inbox when a workflow run I started fails.",
     category: "Notifications",
   },
-  {
-    key: "notifyRunCompletion",
-    type: "boolean",
-    default: false,
-    label: "Workflow run completions",
-    description:
-      "Notify me in my inbox when a workflow run I started completes successfully.",
-    category: "Notifications",
-  },
+  // CL-4312: generic hub terminal-success mail is not a product surface.
+  // Success reaches the inbox only via result-specific mail (workflow
+  // mail_send, granola fan-out, heartbeat notify, etc.). The former
+  // `notifyRunCompletion` toggle is removed so quiet discoverer ticks cannot
+  // flood the inbox even for members who had previously opted in.
   // Tasks toggles from the task design spike. Triage's own task creation
   // defaults ON so prepare-only members keep getting the tasks it already
   // prepares today; the other two default OFF because they are additive

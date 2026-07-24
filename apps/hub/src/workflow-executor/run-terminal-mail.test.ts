@@ -142,18 +142,8 @@ describe("deliverRunTerminalMail", () => {
     expect(insertCalls).toHaveLength(0);
   });
 
-  it("does not mail a completion by default (notifyRunCompletion is OFF)", async () => {
-    const db = makeDb({
-      owner: { id: "prn-alice", kind: "user", refId: "alice" },
-      tenant: { domain: "tenant.example" },
-    });
-
-    await deliverRunTerminalMail(deps(db), { ...RUN, status: "completed" });
-
-    expect(insertCalls).toHaveLength(0);
-  });
-
-  it("mails a completion when notifyRunCompletion is explicitly on", async () => {
+  it("never mails a quiet/completed success (CL-4312: result mail only)", async () => {
+    // Even a leftover stored opt-in must not revive generic completion spam.
     storedPrefs = { notifyRunCompletion: true };
     deploymentMeta = { label: "Pain Point Collateral" };
     const db = makeDb({
@@ -163,11 +153,7 @@ describe("deliverRunTerminalMail", () => {
 
     await deliverRunTerminalMail(deps(db), { ...RUN, status: "completed" });
 
-    expect(insertCalls).toHaveLength(1);
-    expect(insertCalls[0]?.subject).toBe(
-      "Workflow run completed: Pain Point Collateral",
-    );
-    expect(insertCalls[0]?.messageKey).toBe("run:wfr-1:completed");
+    expect(insertCalls).toHaveLength(0);
   });
 
   it("falls back to the run kind as the label when deployment meta is absent", async () => {
@@ -306,7 +292,6 @@ describe("deliverRunTerminalMail", () => {
       owner: { id: "prn-alice", kind: "user", refId: "alice" },
       tenant: { domain: "tenant.example" },
     });
-    storedPrefs = { notifyRunCompletion: true };
 
     // Three consecutive failures of the same kind → three mails.
     for (let i = 0; i < 3; i += 1) {
@@ -330,13 +315,14 @@ describe("deliverRunTerminalMail", () => {
     });
     expect(insertCalls).toHaveLength(3);
 
-    // A success for the same kind resets the breaker (completion mail is on).
+    // A quiet success resets the breaker without writing a completion row
+    // (CL-4312: success inbox = result mail only).
     await deliverRunTerminalMail(deps(db), {
       ...RUN,
       runId: "wfr-ok",
       status: "completed",
     });
-    expect(insertCalls).toHaveLength(4);
+    expect(insertCalls).toHaveLength(3);
 
     // The next failure delivers again — the budget re-armed.
     await deliverRunTerminalMail(deps(db), {
@@ -345,7 +331,7 @@ describe("deliverRunTerminalMail", () => {
       status: "failed",
       error: "boom",
     });
-    expect(insertCalls).toHaveLength(5);
+    expect(insertCalls).toHaveLength(4);
   });
 
   it("does not let a different workflow kind's failures share a suppression budget", async () => {
@@ -397,9 +383,8 @@ describe("fanOutTenantScheduleTerminalMail (CL-4114)", () => {
     expect(insertCalls).toHaveLength(0);
   });
 
-  it("delivers to other Myra members, skipping the run creator", async () => {
+  it("delivers failure mail to other Myra members, skipping the run creator", async () => {
     scheduleScope = "tenant";
-    storedPrefs = { notifyRunCompletion: true };
     // findFirst returns each principal when asked; simplify: always return a
     // valid user principal so both creator skip and bob delivery work.
     const principals: Record<
@@ -441,10 +426,33 @@ describe("fanOutTenantScheduleTerminalMail (CL-4114)", () => {
     await fanOutTenantScheduleTerminalMail(deps(db), {
       ...RUN,
       principalId: "prn-alice",
-      status: "completed",
+      status: "failed",
+      error: "boom",
     });
 
     expect(insertCalls).toHaveLength(1);
     expect(insertCalls[0]?.principalId).toBe("prn-bob");
+    expect(insertCalls[0]?.subject).toContain("Workflow run failed");
+  });
+
+  it("stays silent on completed tenant-schedule fires (no generic success spam)", async () => {
+    scheduleScope = "tenant";
+    storedPrefs = { notifyRunCompletion: true };
+    const db = makeDb({
+      owner: { id: "prn-bob", kind: "user", refId: "bob" },
+      tenant: { domain: "tenant.example" },
+      members: [
+        { principalId: "prn-alice" },
+        { principalId: "prn-bob" },
+      ],
+    });
+
+    await fanOutTenantScheduleTerminalMail(deps(db), {
+      ...RUN,
+      principalId: "prn-alice",
+      status: "completed",
+    });
+
+    expect(insertCalls).toHaveLength(0);
   });
 });
