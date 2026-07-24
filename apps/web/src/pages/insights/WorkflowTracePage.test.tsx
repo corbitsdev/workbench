@@ -396,6 +396,38 @@ describe("WorkflowTracePage", () => {
     expect(screen.queryByTestId("trace-step-live-issue")).toBeNull();
   });
 
+  it("marks the in-flight step aria-current and leaves other steps unmarked", async () => {
+    logStateResponse = {
+      runId: "run-1",
+      phase: "running",
+      lastSeq: 2,
+      steps: [
+        {
+          stepId: "intake",
+          phase: "completed",
+          stepType: "deterministic",
+          currentAttempt: 1,
+          startedAt: "2026-07-01T10:00:00.000Z",
+          endedAt: "2026-07-01T10:00:02.000Z",
+        },
+        {
+          stepId: "draft",
+          phase: "in-flight",
+          stepType: "agent",
+          currentAttempt: 1,
+          startedAt: "2026-07-01T10:00:02.000Z",
+        },
+      ],
+    };
+    renderTrace();
+    await waitFor(() => {
+      expect(screen.getAllByTestId("trace-step").length).toBe(2);
+    });
+    const rows = screen.getAllByTestId("trace-step");
+    expect(rows[0]?.getAttribute("aria-current")).toBeNull();
+    expect(rows[1]?.getAttribute("aria-current")).toBe("step");
+  });
+
   it("shows a live elapsed indicator for an in-flight step with startedAt", async () => {
     logStateResponse = {
       runId: "run-1",

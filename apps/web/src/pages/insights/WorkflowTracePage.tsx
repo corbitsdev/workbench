@@ -128,6 +128,7 @@ function TraceStepMoment({
       variants={STEP_ITEM}
       data-testid="trace-step"
       data-phase={step.phase}
+      aria-current={step.phase === "in-flight" ? "step" : undefined}
       className={`rounded border bg-surface shadow-[var(--shadow-card)] ${
         isSelected ? "border-accent/50 ring-1 ring-accent/30" : "border-border"
       }`}
