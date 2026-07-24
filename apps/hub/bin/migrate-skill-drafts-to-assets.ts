@@ -7,14 +7,14 @@
  *
  *   bun --env-file=.env.staging apps/hub/bin/migrate-skill-drafts-to-assets.ts [--dry-run] [--yes]
  *
- * Must run BEFORE migration 0079_drop_artifact_status.sql is applied — that
- * migration drops `artifact.status`, and this script still reads it to skip
- * rows that are not `status = 'draft'` (an `approved` or `rejected` row
- * under the old model has no equivalent under existence-as-state: an
- * `approved` row's content already lives on its linked `skill` asset, and a
- * `rejected` row is the old model's now-abolished tombstone — both are
- * left as artifact rows for this run and are dropped, not migrated, when
- * their `status` column disappears in 0079).
+ * NOTE: this script is currently a NO-OP. The Drizzle `artifact` model in
+ * `apps/hub/src/db/schema.ts` no longer maps the `status` column, so the
+ * `row.status === "draft"` filter below is always false regardless of what
+ * is actually in the database — zero rows are ever migrated. The migration
+ * that used to depend on this script (dropping `artifact.status`) has been
+ * deferred out of the release; see DEPLOY.md. Do not treat this script's
+ * "0 pending" output as a data-safety confirmation until it is fixed to
+ * read `status` via raw SQL.
  *
  * Requires DATABASE_URL, HUB_DATA_DIR, HUB_SIGNING_KEYS.
  */
