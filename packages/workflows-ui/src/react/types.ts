@@ -70,8 +70,10 @@ export interface KindPickerItem {
   id: string;
   label: string;
   description: string;
-  category: string;
-  categoryLabel: string;
+  /** Optional grouping key; omit when every item shares one category (nothing to distinguish). */
+  category?: string;
+  /** Optional grouping label shown on the card; omit along with `category`. */
+  categoryLabel?: string;
   /** Already scheduled / installed badge. */
   alreadyOn?: boolean;
   /** Optional badge text when already on (e.g. "Mine 1 · Everyone 1"). */

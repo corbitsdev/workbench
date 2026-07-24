@@ -23,9 +23,7 @@ export function KindPickerCard({
       className={cn(
         "flex w-full flex-col gap-1 rounded-[12px] border px-3.5 py-3 text-left transition-colors",
         "hover:bg-row-hover focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent",
-        selected
-          ? "border-accent/40 bg-sel"
-          : "border-border bg-surface",
+        selected ? "border-accent/40 bg-sel" : "border-border bg-surface",
         className,
       )}
     >
@@ -40,9 +38,14 @@ export function KindPickerCard({
       <p className="text-[12.5px] leading-snug text-text-3">
         {item.description}
       </p>
-      <span className="mt-1 text-[10.5px] font-bold uppercase tracking-[0.05em] text-text-3">
-        {item.categoryLabel}
-      </span>
+      {item.categoryLabel ? (
+        <span
+          data-testid="kind-picker-category-label"
+          className="mt-1 text-[10.5px] font-bold uppercase tracking-[0.05em] text-text-3"
+        >
+          {item.categoryLabel}
+        </span>
+      ) : null}
     </button>
   );
 }
@@ -106,11 +109,11 @@ export function KindPickerShell({
       ) : null}
       <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-auto">
         {items.length === 0
-          ? empty ?? (
+          ? (empty ?? (
               <p className="py-8 text-center text-[13px] text-text-3">
                 No workflow kinds match.
               </p>
-            )
+            ))
           : items.map((item) => (
               <KindPickerCard
                 key={item.id}

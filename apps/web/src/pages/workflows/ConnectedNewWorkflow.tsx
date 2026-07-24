@@ -39,10 +39,7 @@ function productLabel(entry: WorkflowCatalogEntry): string {
   return entry.label;
 }
 
-function alreadyOnLabel(
-  personal: number,
-  tenant: number,
-): string | undefined {
+function alreadyOnLabel(personal: number, tenant: number): string | undefined {
   if (personal === 0 && tenant === 0) return undefined;
   const parts: string[] = [];
   if (personal > 0) parts.push(`Mine ${personal}`);
@@ -97,8 +94,6 @@ export function ConnectedNewWorkflow({
         id: entry.kind,
         label: productLabel(entry),
         description: entry.description ?? "",
-        category: "schedulable",
-        categoryLabel: "Schedulable",
         alreadyOn: Boolean(badge),
         ...(badge ? { alreadyOnLabel: badge } : {}),
         kindSlug: entry.kind,
@@ -168,7 +163,9 @@ export function ConnectedNewWorkflow({
       >
         <div className="mb-4 flex items-start justify-between gap-3">
           <div>
-            <h2 className="text-[15px] font-semibold text-text">New Workflow</h2>
+            <h2 className="text-[15px] font-semibold text-text">
+              New Workflow
+            </h2>
             <p className="mt-1 text-[13px] text-text-3">
               Choose a workflow to put on a cadence. You can create another
               schedule for a kind that is already on.
