@@ -10,8 +10,8 @@ const dialect = new PgDialect();
 const scope = { tenantId: "ten_test", principalIds: ["prn_test"] };
 
 describe("timeline source registry", () => {
-  test("registers all 13 sources, one per kind, kinds unique", () => {
-    expect(timelineSources).toHaveLength(13);
+  test("registers all 12 sources, one per kind, kinds unique", () => {
+    expect(timelineSources).toHaveLength(12);
     const kinds = timelineSources.map((s) => s.kind);
     expect(new Set(kinds).size).toBe(kinds.length);
     expect([...kinds].sort()).toEqual([...timelineEntryKinds].sort());
