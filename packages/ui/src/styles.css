@@ -57,6 +57,7 @@
   --color-border: var(--border);
   --color-border-strong: var(--border-strong);
   --color-row-hover: var(--row-hover);
+  --color-sel: var(--sel);
 
   --color-sidebar: var(--sidebar);
   --color-sidebar-foreground: var(--sidebar-foreground);
@@ -126,6 +127,7 @@
   --border: rgba(228, 213, 188, 0.1);
   --border-strong: rgba(228, 213, 188, 0.22);
   --row-hover: rgba(228, 213, 188, 0.05);
+  --sel: rgba(191, 107, 32, 0.14);
   --shadow: 0 2px 6px rgba(0, 0, 0, 0.4), 0 22px 60px rgba(0, 0, 0, 0.6);
   /* Flat in-flow card elevation — a subtle lift, not the modal/popover --shadow. */
   --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.4);
@@ -155,6 +157,7 @@ html[data-theme="corbits-dark"] {
   --border: rgba(228, 213, 188, 0.1);
   --border-strong: rgba(228, 213, 188, 0.22);
   --row-hover: rgba(228, 213, 188, 0.05);
+  --sel: rgba(191, 107, 32, 0.14);
   --shadow: 0 2px 6px rgba(0, 0, 0, 0.4), 0 22px 60px rgba(0, 0, 0, 0.6);
   /* Flat in-flow card elevation — a subtle lift, not the modal/popover --shadow. */
   --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.4);
@@ -182,6 +185,7 @@ html[data-theme="corbits-light"] {
   --border: rgba(43, 38, 39, 0.1);
   --border-strong: rgba(43, 38, 39, 0.22);
   --row-hover: rgba(43, 38, 39, 0.05);
+  --sel: rgba(233, 132, 40, 0.1);
   --shadow: 0 2px 6px rgba(43, 38, 39, 0.05), 0 18px 50px rgba(43, 38, 39, 0.1);
   --shadow-card: 0 1px 2px rgba(43, 38, 39, 0.06);
   --accent: #e98428;
@@ -208,6 +212,7 @@ html[data-theme="tkww"] {
   --border: #dce5da;
   --border-strong: #c4d4c0;
   --row-hover: rgba(21, 36, 26, 0.04);
+  --sel: rgba(46, 125, 80, 0.1);
   --shadow: 0 2px 6px rgba(21, 36, 26, 0.06), 0 18px 50px rgba(21, 36, 26, 0.1);
   --shadow-card: 0 1px 2px rgba(21, 36, 26, 0.07);
   --accent: #2e7d50;
@@ -234,6 +239,7 @@ html[data-theme="notion"] {
   --border: #e3e2e0;
   --border-strong: #cbc9c3;
   --row-hover: rgba(55, 53, 47, 0.04);
+  --sel: rgba(55, 53, 47, 0.08);
   --shadow: 0 2px 6px rgba(55, 53, 47, 0.05), 0 18px 50px rgba(55, 53, 47, 0.1);
   --shadow-card: 0 1px 2px rgba(55, 53, 47, 0.05);
   --accent: #000000;

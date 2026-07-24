@@ -174,6 +174,7 @@
         "@workbench/workflow-pain-point-collateral": "workspace:*",
         "@workbench/workflow-reddit-opportunity-scanner": "workspace:*",
         "@workbench/workflow-sumble-account-intel": "workspace:*",
+        "@workbench/workflows-ui": "workspace:*",
         "arktype": "^2.2.0",
         "better-auth": "^1.1.43",
         "class-variance-authority": "^0.7.1",
@@ -1567,8 +1568,18 @@
         "arktype": "catalog:",
       },
       "devDependencies": {
+        "@happy-dom/global-registrator": "^20.9.0",
+        "@testing-library/react": "^16.3.2",
         "@types/bun": "latest",
+        "@types/react": "^19.0.0",
+        "@types/react-dom": "^19.0.0",
+        "react": "^19.0.0",
+        "react-dom": "^19.0.0",
         "typescript": "^5.9.0",
+      },
+      "peerDependencies": {
+        "react": "*",
+        "react-dom": "*",
       },
     },
     "workflows/ab-compare-quality": {

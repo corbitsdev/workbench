@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Link, useNavigate, useParams, useSearchParams } from "react-router";
+import { useNavigate, useParams, useSearchParams, Link } from "react-router";
 import type { ScheduledTrigger, WorkflowCatalogEntry } from "@workbench/shared";
 import { AppPageChromeRow, Button } from "@workbench/ui";
 import { toHumanLabel } from "@workbench/ui";
@@ -10,7 +10,6 @@ import {
   InspectorEmpty,
   InspectorShell,
   WorkflowsList,
-  type LiveRunPhase,
   type WorkflowListItem,
   type WorkflowScope,
   type WorkflowStatusTone,
@@ -20,11 +19,7 @@ import { useActiveWorkbench } from "../lib/active-workbench-context";
 import { getWorkflowsCatalog } from "../lib/hub-api";
 import { useSetPageChrome } from "../lib/page-chrome";
 import { isStatusTerminal } from "../lib/run-state-adapter";
-import {
-  formatLastFiredAt,
-  formatNextFire,
-  formatRecurrence,
-} from "../lib/schedule-time";
+import { formatNextFire, formatRecurrence } from "../lib/schedule-time";
 import { formatRunWhen, statusLabel } from "../lib/workflow-run-status";
 import { useMeSchedules } from "../hooks/use-schedules";
 import { useWorkflowRuns, type WorkflowRun } from "../hooks/use-workflow";
@@ -33,14 +28,6 @@ import { ConnectedNewWorkflow } from "./workflows/ConnectedNewWorkflow";
 
 type ScopeFilter = "all" | WorkflowScope;
 type StatusFilter = "all" | "active" | "paused" | "live" | "needs_you";
-
-function runToPhase(status: string): LiveRunPhase {
-  if (status === "awaiting") return "awaiting";
-  if (status === "completed") return "completed";
-  if (status === "failed") return "failed";
-  if (status === "stopped" || status === "cancelled") return "cancelled";
-  return "running";
-}
 
 function runToTone(status: string): WorkflowStatusTone {
   if (status === "awaiting") return "awaiting";
@@ -51,7 +38,13 @@ function runToTone(status: string): WorkflowStatusTone {
 }
 
 function scheduleToTone(enabled: boolean): WorkflowStatusTone {
-  return enabled ? "active" : "paused";
+  // Active schedules are steady (green / done), not live-running — no pulse.
+  return enabled ? "done" : "paused";
+}
+
+function listStatusLabel(status: string): string {
+  if (status === "awaiting") return "Needs you";
+  return statusLabel(status);
 }
 
 function formatElapsed(iso: string): string {
@@ -64,6 +57,12 @@ function formatElapsed(iso: string): string {
   const hr = Math.floor(min / 60);
   const remMin = min % 60;
   return remMin > 0 ? `${hr}h ${remMin}m` : `${hr}h`;
+}
+
+function isNextSoon(nextFireAtIso: string | null, enabled: boolean): boolean {
+  if (!enabled || nextFireAtIso === null) return false;
+  const ms = new Date(nextFireAtIso).getTime() - Date.now();
+  return Number.isFinite(ms) && ms >= 0 && ms <= 3 * 60 * 60 * 1000;
 }
 
 function matchesQuery(
@@ -79,20 +78,17 @@ function toLiveItem(
   run: WorkflowRun,
   labelFor: (kind: string) => string,
 ): WorkflowListItem {
-  const phase = runToPhase(run.status);
+  const needsYou = run.status === "awaiting";
   return {
     id: run.runId,
-    kind: "run",
+    itemKind: "run",
     title: labelFor(run.kind),
-    subtitle: statusLabel(run.status),
-    statusTone: runToTone(run.status),
-    statusLabel: statusLabel(run.status),
+    when: formatRunWhen(run.createdAt),
     scope: "personal",
-    meta: [
-      { text: formatRunWhen(run.createdAt) },
-      { text: formatElapsed(run.createdAt), mono: true },
-    ],
-    pulse: phase === "running" || phase === "awaiting",
+    statusTone: runToTone(run.status),
+    statusLabel: listStatusLabel(run.status),
+    nextOrElapsed: formatElapsed(run.createdAt),
+    needsYou,
   };
 }
 
@@ -102,22 +98,17 @@ function toScheduledItem(
 ): WorkflowListItem {
   return {
     id: schedule.id,
-    kind: "schedule",
+    itemKind: "schedule",
     title: labelFor(schedule.workflowKind),
-    subtitle:
-      schedule.name !== schedule.workflowKind ? schedule.name : undefined,
+    ...(schedule.name !== schedule.workflowKind
+      ? { subtitle: schedule.name }
+      : {}),
+    when: formatRecurrence(schedule.recurrence),
+    scope: schedule.scope,
     statusTone: scheduleToTone(schedule.enabled),
     statusLabel: schedule.enabled ? "Active" : "Paused",
-    scope: schedule.scope,
-    meta: [
-      { text: formatRecurrence(schedule.recurrence), mono: true },
-      {
-        text: `Next ${formatNextFire(schedule.nextFireAt, schedule.enabled)}`,
-      },
-      {
-        text: `Last ${formatLastFiredAt(schedule.recentFires[0]?.firedAt ?? null)}`,
-      },
-    ],
+    nextOrElapsed: formatNextFire(schedule.nextFireAt, schedule.enabled),
+    nextSoon: isNextSoon(schedule.nextFireAt, schedule.enabled),
   };
 }
 
@@ -193,7 +184,7 @@ export function WorkflowsPage() {
     return scheduledItems.filter((item) => {
       if (scopeFilter !== "all" && item.scope !== scopeFilter) return false;
       if (statusFilter === "live" || statusFilter === "needs_you") return false;
-      if (statusFilter === "active" && item.statusTone !== "active") return false;
+      if (statusFilter === "active" && item.statusTone !== "done") return false;
       if (statusFilter === "paused" && item.statusTone !== "paused") return false;
       if (kindFilter !== "all") {
         const schedule = (schedulesQuery.data ?? []).find(
@@ -237,7 +228,7 @@ export function WorkflowsPage() {
     next.delete("schedule");
     next.delete("new");
     next.delete("kind");
-    if (item.kind === "run") next.set("run", item.id);
+    if (item.itemKind === "run") next.set("run", item.id);
     else next.set("schedule", item.id);
     if (routeRunId) {
       navigate({ pathname: "/workflows", search: `?${next.toString()}` });
