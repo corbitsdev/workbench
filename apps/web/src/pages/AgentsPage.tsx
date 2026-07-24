@@ -149,6 +149,15 @@ function cardCornerLabel(instances: AgentInstanceItem[]): string {
   return `${instances.length} deployed`;
 }
 
+const MAX_CARD_TOOLS = 4;
+const MAX_CARD_INSTANCES = 2;
+
+/** Cap a list to `max` entries, reporting how many were left off. */
+function capList<T>(items: T[], max: number): { shown: T[]; extra: number } {
+  if (items.length <= max) return { shown: items, extra: 0 };
+  return { shown: items.slice(0, max), extra: items.length - max };
+}
+
 /** Up to two initials from an agent's name, for the generated avatar mark. */
 function agentInitials(name: string): string {
   const words = name.trim().split(/\s+/).filter(Boolean);
@@ -179,8 +188,20 @@ function AgentAvatar({ name }: { name: string }) {
 }
 
 function AgentCard({ item, index }: { item: AgentCardItem; index: number }) {
+  const tools = item.tools ?? [];
+  const { shown: shownTools, extra: extraTools } = capList(
+    tools,
+    MAX_CARD_TOOLS,
+  );
+  const { shown: shownInstances, extra: extraInstances } = capList(
+    item.instances,
+    MAX_CARD_INSTANCES,
+  );
+
   return (
     <div className={cn(catalogCardClassName, "cursor-default")}>
+      {/* Deploy status is shown once, here — the tool/instance list below
+          never repeats a "Not deployed" chip. */}
       <span className="absolute left-[10px] top-[10px] z-[2] rounded-full bg-[rgba(0,0,0,0.32)] px-2 py-[3px] text-[10px] font-bold uppercase tracking-[0.03em] text-white backdrop-blur-[6px]">
         {cardCornerLabel(item.instances)}
       </span>
@@ -190,16 +211,16 @@ function AgentCard({ item, index }: { item: AgentCardItem; index: number }) {
           A{index.toString().padStart(2, "0")}
         </span>
       </div>
-      <div className="border-t border-border bg-surface px-[13px] py-[11px]">
+      <div className="flex min-h-[164px] flex-col border-t border-border bg-surface px-[13px] py-[11px]">
         <div className="truncate text-[13.5px] font-semibold text-text">
           {item.name}
         </div>
         <p className="mt-0.5 line-clamp-2 text-pretty text-[11px] text-text-3">
           {item.description === null ? "No description" : item.description}
         </p>
-        {item.tools !== null && item.tools.length > 0 && (
+        {tools.length > 0 && (
           <div className="mt-1.5 flex flex-wrap gap-1">
-            {item.tools.map((tool) => (
+            {shownTools.map((tool) => (
               <span
                 key={tool}
                 className="rounded-full bg-surface-2 px-1.5 py-[2px] text-[9.5px] text-text-3"
@@ -207,17 +228,25 @@ function AgentCard({ item, index }: { item: AgentCardItem; index: number }) {
                 {tool}
               </span>
             ))}
+            {extraTools > 0 && (
+              <span className="rounded-full bg-surface-2 px-1.5 py-[2px] text-[9.5px] font-medium text-text-3">
+                +{extraTools} more
+              </span>
+            )}
           </div>
         )}
-        <div className="mt-1.5 flex flex-col gap-1.5">
-          {item.instances.length === 0 ? (
-            <Badge tone="neutral">Not deployed</Badge>
-          ) : (
-            item.instances.map((instance) => (
+        {item.instances.length > 0 && (
+          <div className="mt-1.5 flex flex-col gap-1.5">
+            {shownInstances.map((instance) => (
               <InstanceRow key={instance.id} instance={instance} />
-            ))
-          )}
-        </div>
+            ))}
+            {extraInstances > 0 && (
+              <span className="text-[10px] text-text-3">
+                +{extraInstances} more
+              </span>
+            )}
+          </div>
+        )}
       </div>
     </div>
   );
@@ -316,11 +345,14 @@ export function AgentsPage() {
     {
       key: "tools",
       header: "Tools",
-      render: (d) => (
-        <span className="line-clamp-1 text-text-3">
-          {d.tools === null || d.tools.length === 0 ? "—" : d.tools.join(", ")}
-        </span>
-      ),
+      render: (d) => {
+        if (d.tools === null || d.tools.length === 0) {
+          return <span className="line-clamp-1 text-text-3">—</span>;
+        }
+        return (
+          <span className="line-clamp-1 text-text-3">{d.tools.join(", ")}</span>
+        );
+      },
     },
     {
       key: "status",

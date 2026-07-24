@@ -279,6 +279,122 @@ describe("AgentsPage", () => {
     });
   });
 
+  it("renders every tool in the row/table view - the only surface showing an agent's full tool list", async () => {
+    const heavyTools = [
+      "firecrawl-scrape",
+      "firecrawl-crawl",
+      "firecrawl-search",
+      "firecrawl-map",
+      "firecrawl-extract",
+      "firecrawl-batch",
+      "firecrawl-status",
+      "firecrawl-cancel",
+    ];
+    fetchImpl = (url) => {
+      if (String(url).includes("/agents/templates")) {
+        return Promise.resolve(
+          jsonResponse({
+            data: [
+              {
+                key: "research",
+                name: "Research Agent",
+                description: "Heavy tool surface",
+                tools: heavyTools,
+              },
+            ],
+          }),
+        );
+      }
+      if (String(url).includes("/agents")) {
+        return Promise.resolve(jsonResponse({ data: [] }));
+      }
+      return Promise.resolve(jsonResponse({}));
+    };
+
+    const { getByRole } = renderPage();
+    await waitFor(() =>
+      expect(document.body.textContent).toContain("Research Agent"),
+    );
+
+    fireEvent.click(getByRole("button", { name: "Rows view" }));
+    await waitFor(() => {
+      expect(document.body.querySelector("table")).toBeTruthy();
+    });
+
+    // There is no agent-detail route in the app - the row/table view is the
+    // only surface that must show an agent's complete tool list, so it must
+    // never be capped the way the card summary is.
+    for (const tool of heavyTools) {
+      expect(document.body.textContent).toContain(tool);
+    }
+    expect(document.body.textContent).not.toMatch(/\+\d+ more/);
+
+    // Restore grid view so the persisted view-mode preference doesn't leak
+    // into later tests in this file.
+    fireEvent.click(getByRole("button", { name: "Grid view" }));
+    await waitFor(() => {
+      expect(document.body.querySelector("table")).toBeNull();
+    });
+  });
+
+  it("caps a heavy-tool agent's tool chips on the card instead of rendering all of them", async () => {
+    const heavyTools = [
+      "firecrawl-scrape",
+      "firecrawl-crawl",
+      "firecrawl-search",
+      "firecrawl-map",
+      "firecrawl-extract",
+      "firecrawl-batch",
+      "firecrawl-status",
+    ];
+    fetchImpl = (url) => {
+      if (String(url).includes("/agents/templates")) {
+        return Promise.resolve(
+          jsonResponse({
+            data: [
+              {
+                key: "research",
+                name: "Research Agent",
+                description: "Heavy tool surface",
+                tools: heavyTools,
+              },
+            ],
+          }),
+        );
+      }
+      if (String(url).includes("/agents")) {
+        return Promise.resolve(jsonResponse({ data: [] }));
+      }
+      return Promise.resolve(jsonResponse({}));
+    };
+
+    renderPage();
+
+    await waitFor(() =>
+      expect(document.body.textContent).toContain("Research Agent"),
+    );
+    // Only the first 4 tools render as chips; the rest collapse into a
+    // single "+N more" summary instead of inflating the card.
+    expect(document.body.textContent).toContain("firecrawl-scrape");
+    expect(document.body.textContent).toContain("firecrawl-map");
+    expect(document.body.textContent).not.toContain("firecrawl-extract");
+    expect(document.body.textContent).not.toContain("firecrawl-batch");
+    expect(document.body.textContent).not.toContain("firecrawl-status");
+    expect(document.body.textContent).toContain("+3 more");
+  });
+
+  it("shows deploy status once on the card - no duplicate 'Not deployed' chip beside the tool list", async () => {
+    renderPage();
+    await waitFor(() => expect(document.body.textContent).toContain("Myra"));
+
+    const notDeployedMatches = (document.body.textContent ?? "").match(
+      /Not deployed/g,
+    );
+    // Two definitions (Oat, Myra) are both undeployed - one "Not deployed"
+    // per card (the corner banner), never a second copy in the body.
+    expect(notDeployedMatches).toEqual(["Not deployed", "Not deployed"]);
+  });
+
   it("shows all instances when a definition has more than one deployed", async () => {
     fetchImpl = (url) => {
       if (String(url).includes("/agents/templates")) {
