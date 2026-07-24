@@ -1,8 +1,8 @@
 import {
   DashboardSection,
-  PulsingRing,
   StatGrid,
   StatGridItem,
+  StatusDot,
 } from "@workbench/ui";
 import { computeDelta } from "./metrics";
 import { formatDollars, formatNumber } from "./stats";
@@ -25,7 +25,7 @@ function KpiTile({
     <button
       type="button"
       onClick={() => onNavigate(tab)}
-      className="rounded-[10px] text-left outline-none transition-[transform] focus-visible:ring-1 focus-visible:ring-accent active:scale-[0.98]"
+      className="rounded-[10px] text-left outline-none transition-[transform] focus-visible:ring-1 focus-visible:ring-accent active:scale-[0.97]"
       aria-label={`View ${label} on the ${tab} tab`}
     >
       {children}
@@ -114,12 +114,8 @@ export function KpiRow({
             sub={
               <span className="inline-flex items-center gap-1.5">
                 {data.workflowRuns.activeExecutions > 0 && (
-                  <span
-                    className="relative inline-flex h-1.5 w-1.5 shrink-0"
-                    data-testid="kpi-active-pulse"
-                  >
-                    <PulsingRing colorClassName="bg-blue/60" />
-                    <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-blue" />
+                  <span data-testid="kpi-active-pulse">
+                    <StatusDot colorClassName="bg-blue" pulsing size="xs" />
                   </span>
                 )}
                 {`${formatNumber(data.workflowRuns.activeExecutions)} active`}

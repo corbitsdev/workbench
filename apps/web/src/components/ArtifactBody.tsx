@@ -425,7 +425,7 @@ function WebBody({ html }: { html: string }) {
           ref={triggerRef}
           type="button"
           onClick={() => setIsFullscreen(true)}
-          className="rounded border border-border px-3 py-1.5 text-xs text-text-2 transition-colors hover:bg-surface-2 hover:text-text active:scale-[0.98]"
+          className="rounded border border-border px-3 py-1.5 text-xs text-text-2 transition-colors hover:bg-surface-2 hover:text-text active:scale-[0.97]"
         >
           Open full screen &rarr;
         </button>
@@ -445,7 +445,7 @@ function WebBody({ html }: { html: string }) {
             <button
               type="button"
               onClick={() => setIsFullscreen(false)}
-              className="rounded border border-border px-3 py-1.5 text-sm text-text-2 transition-colors hover:bg-surface-2 hover:text-text active:scale-[0.98]"
+              className="rounded border border-border px-3 py-1.5 text-sm text-text-2 transition-colors hover:bg-surface-2 hover:text-text active:scale-[0.97]"
             >
               Close
             </button>

@@ -1,11 +1,13 @@
-import { cn } from "@workbench/ui";
+import { StatusDot } from "@workbench/ui";
 
 // CL-2755: the live "Starting…" state for a run whose per-run deployment is still
 // cold-starting (`provisioning`). This is a HARD product requirement — a
 // provisioning run must never look frozen — so the indicator always carries
-// visible motion (an animated spinner; the animated dots are a secondary cue).
-// `motion-reduce:animate-none` respects the OS reduced-motion preference; the
-// dots remain as a non-animated fallback there.
+// visible motion. The motion is the shared PulsingRing primitive (CL-4394)
+// via StatusDot, matching the "starting" vocabulary used by WorkflowDock,
+// SubagentDock, and ActiveWorkflowRuns (blue, pulsing) instead of a
+// hand-rolled spinner/animate-pulse pair. StatusDot's base dot is always
+// rendered, so the indicator carries a static fallback under reduced motion.
 interface WorkflowStartingIndicatorProps {
   // "pane" fills a run pane/console; "compact" fits inside a dock card row.
   variant?: "pane" | "compact";
@@ -17,7 +19,7 @@ export function WorkflowStartingIndicator({
   label = "Starting…",
 }: WorkflowStartingIndicatorProps) {
   const compact = variant === "compact";
-  const spinnerSize = compact ? "h-3 w-3" : "h-5 w-5";
+  const dotSize: "xs" | "sm" = compact ? "xs" : "sm";
   const container = compact
     ? "flex items-center gap-2"
     : "flex h-full flex-col items-center justify-center gap-3 border border-border bg-bg";
@@ -30,21 +32,10 @@ export function WorkflowStartingIndicator({
       data-testid="workflow-starting-indicator"
       className={container}
     >
-      <span
-        data-testid="workflow-starting-spinner"
-        aria-hidden
-        className={cn(
-          "shrink-0 animate-spin rounded-full border-2 border-border border-t-blue motion-reduce:animate-none",
-          spinnerSize,
-        )}
-      />
-      <p className={textSize}>
-        {label}
-        <span className="animate-pulse motion-reduce:animate-none" aria-hidden>
-          {" "}
-          ·
-        </span>
-      </p>
+      <span data-testid="workflow-starting-spinner">
+        <StatusDot colorClassName="bg-blue" pulsing size={dotSize} />
+      </span>
+      <p className={textSize}>{label}</p>
       <span className="sr-only">Workflow run is starting</span>
     </div>
   );

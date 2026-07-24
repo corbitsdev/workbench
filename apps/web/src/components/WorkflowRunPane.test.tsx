@@ -1060,8 +1060,9 @@ describe("WorkflowRunPane", () => {
     const indicator = await waitFor(() =>
       screen.getByTestId("workflow-starting-indicator"),
     );
-    // Motion is the hard requirement — an animated spinner must be present.
-    expect(container.querySelector(".animate-spin")).not.toBeNull();
+    // Motion is the hard requirement — the shared PulsingRing overlay (CL-4394,
+    // via StatusDot) must be present, matching the dock's "starting" dot.
+    expect(container.querySelector(".bg-blue\\/60")).not.toBeNull();
     // CL-2786: honest present-progress copy from the shared runStartLabel.
     expect(indicator.textContent).toContain("Preparing your workflow…");
     // The workflow's own panel is NOT rendered while provisioning.

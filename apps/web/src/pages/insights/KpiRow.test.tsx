@@ -140,7 +140,7 @@ describe("KpiRow", () => {
     expect(visited).toEqual(["usage-cost"]);
   });
 
-  it("pulses the active-executions sub-value when there are active runs", () => {
+  it("pulses the active-executions sub-value via the shared StatusDot (CL-4394 ring)", () => {
     render(
       <KpiRow
         data={minimalOverview}
@@ -152,7 +152,10 @@ describe("KpiRow", () => {
       />,
     );
 
-    expect(screen.getByTestId("kpi-active-pulse")).toBeDefined();
+    const pulse = screen.getByTestId("kpi-active-pulse");
+    // StatusDot's pulsing PulsingRing overlay is `${color}/60` — a raw
+    // hand-rolled composition would not carry this specific class.
+    expect(pulse.querySelector(".bg-blue\\/60")).not.toBeNull();
   });
 
   it("never pulses the active-executions sub-value when there are no active runs", () => {

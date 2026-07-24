@@ -495,11 +495,11 @@ describe("WorkflowDock", () => {
     const card = await waitFor(() => screen.getByTestId("workflow-dock-card"));
     // The status chip reads Starting.
     expect(card.textContent).toContain("Starting");
-    // Motion is present (animated spinner) — the run never looks frozen.
+    // Motion is present (shared PulsingRing dot) — the run never looks frozen.
     await waitFor(() =>
       expect(screen.getByTestId("workflow-starting-indicator")).toBeTruthy(),
     );
-    expect(container.querySelector(".animate-spin")).not.toBeNull();
+    expect(container.querySelector(".bg-blue\\/60")).not.toBeNull();
     // The frozen "waiting" copy is NOT shown for a provisioning run.
     expect(screen.queryByText("Waiting for the first step…")).toBeNull();
   });

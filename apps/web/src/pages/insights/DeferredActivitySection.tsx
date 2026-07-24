@@ -33,7 +33,7 @@ export function DeferredActivitySection({ tenantId }: { tenantId: string }) {
         type="button"
         data-testid="reveal-tenant-activity"
         onClick={() => setRevealed(true)}
-        className="flex items-center justify-center gap-2 rounded-[12px] border border-dashed border-border bg-surface px-4 py-5 text-[13px] font-medium text-text-2 transition-colors hover:bg-row-hover hover:text-text focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent active:scale-[0.99]"
+        className="flex items-center justify-center gap-2 rounded-[12px] border border-dashed border-border bg-surface px-4 py-5 text-[13px] font-medium text-text-2 transition-colors hover:bg-row-hover hover:text-text focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent active:scale-[0.97]"
       >
         <Activity className="h-4 w-4 shrink-0 text-text-3" />
         Show activity feed

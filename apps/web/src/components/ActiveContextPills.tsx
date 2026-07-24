@@ -52,7 +52,7 @@ export function ActiveContextPills({
               type="button"
               onClick={() => onRemove(ref)}
               aria-label={`Remove ${KIND_LABEL[ref.kind]} ${label}`}
-              className="relative grid h-5 w-5 shrink-0 place-items-center rounded text-text-3 transition-colors after:absolute after:-inset-2 after:content-[''] hover:bg-row-hover hover:text-text active:scale-90"
+              className="relative grid h-5 w-5 shrink-0 place-items-center rounded text-text-3 transition-colors after:absolute after:-inset-2 after:content-[''] hover:bg-row-hover hover:text-text active:scale-[0.97]"
             >
               <X size={11} aria-hidden />
             </button>
