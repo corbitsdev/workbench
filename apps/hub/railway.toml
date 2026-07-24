@@ -10,7 +10,11 @@ dockerfilePath = "apps/hub/Dockerfile"
 watchPatterns = ["apps/hub/**", "apps/sidecar/**", "packages/**", "scripts/**", "workflows/**", "package.json", "bun.lock"]
 
 [deploy]
-preDeployCommand = "bun run scripts/db-setup.ts && bun run apps/hub/bin/seed-startup.ts"
+# CL-4432: drain skill-draft artifact rows onto skill-draft assets BEFORE
+# db-setup runs migration 0079 (drops artifact.status). Fail-closed by `&&` —
+# if the drain script errors or throws on a row it can't migrate, db-setup
+# never runs, so the column is never dropped out from under undrained data.
+preDeployCommand = "bun run apps/hub/bin/migrate-skill-drafts-to-assets.ts --yes && bun run scripts/db-setup.ts && bun run apps/hub/bin/seed-startup.ts"
 startCommand = "bun run apps/hub/src/index.ts"
 healthcheckPath = "/health"
 # The hub binds Bun.serve only after blocking boot work (seedGlobalTenant,
