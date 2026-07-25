@@ -133,17 +133,6 @@ export function deriveToolCredentialCatalogEntries(
   );
 }
 
-export function deriveToolPackageSpecs(
-  factories: readonly ToolFactoryManifest[],
-): { name: string; packageDir: string }[] {
-  const names = new Set<string>();
-  for (const manifest of factories) names.add(manifest.packageName);
-  return [...names].sort().map((name) => ({
-    name,
-    packageDir: `packages/${name.replace("@workbench/", "")}`,
-  }));
-}
-
 /**
  * Real per-tool manifest descriptions grouped by package name, merged across a
  * package's factories. Feeds the catalog's `search_tools` keyword corpus so

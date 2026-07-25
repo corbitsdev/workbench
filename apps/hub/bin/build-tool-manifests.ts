@@ -1,10 +1,4 @@
-import {
-  existsSync,
-  mkdirSync,
-  readdirSync,
-  readFileSync,
-  writeFileSync,
-} from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { type } from "arktype";
@@ -16,6 +10,7 @@ import {
   type ToolFactoryManifest,
   type ToolManifestIndex,
 } from "@workbench/tool-manifest";
+import { discoverToolPackageDirs as discoverToolPackageRelativeDirs } from "@workbench/tool-manifest/discover";
 
 function repoRoot(): string {
   const binDir = dirname(fileURLToPath(import.meta.url));
@@ -37,27 +32,9 @@ export function toolManifestIndexPath(): string {
   );
 }
 
-function packageHasManifest(packageJsonPath: string): boolean {
-  try {
-    const raw = JSON.parse(readFileSync(packageJsonPath, "utf8")) as unknown;
-    const interchange = (raw as { interchange?: { manifest?: string } })
-      .interchange;
-    return typeof interchange?.manifest === "string";
-  } catch {
-    return false;
-  }
-}
-
-export function discoverToolPackageDirs(): string[] {
-  const packagesDir = toolManifestPackagesDir();
-  return readdirSync(packagesDir, { withFileTypes: true })
-    .filter((e) => e.isDirectory() && e.name.startsWith("tools-"))
-    .map((e) => join(packagesDir, e.name))
-    .filter((dir) => {
-      const pkgJson = join(dir, "package.json");
-      return existsSync(pkgJson) && packageHasManifest(pkgJson);
-    })
-    .sort();
+/** Absolute directories of every workspace member that declares `interchange.manifest`. */
+export function discoverToolPackageDirs(root: string = repoRoot()): string[] {
+  return discoverToolPackageRelativeDirs(root).map((rel) => join(root, rel));
 }
 
 async function loadPackageManifest(
@@ -99,10 +76,10 @@ async function loadPackageManifest(
   return fileParsed.factories;
 }
 
-export async function collectToolFactoryManifests(): Promise<
-  ToolFactoryManifest[]
-> {
-  const dirs = discoverToolPackageDirs();
+export async function collectToolFactoryManifests(
+  root: string = repoRoot(),
+): Promise<ToolFactoryManifest[]> {
+  const dirs = discoverToolPackageDirs(root);
   const factories: ToolFactoryManifest[] = [];
   for (const dir of dirs) {
     const loaded = await loadPackageManifest(dir);

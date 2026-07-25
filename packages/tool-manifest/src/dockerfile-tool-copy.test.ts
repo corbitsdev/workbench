@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
+import { discoverToolPackageDirs } from "./discover";
 import {
   dockerfileDirectoryCopyLines,
   dockerfileHubSourceCopyLines,
@@ -34,7 +35,7 @@ function sorted(lines: string[]): string[] {
 }
 
 describe("Dockerfile tool COPY blocks vs committed manifests", () => {
-  const dirs = toolPackageDirsForDockerfiles();
+  const dirs = toolPackageDirsForDockerfiles(discoverToolPackageDirs(repoRoot()));
   const expectedManifest = dockerfileManifestCopyLines(dirs);
   const expectedHubSource = dockerfileHubSourceCopyLines(dirs);
 
@@ -74,5 +75,68 @@ describe("Dockerfile tool COPY blocks vs committed manifests", () => {
       expected.includes(line),
     );
     expect(sorted(actual)).toEqual(sorted(expected));
+  });
+});
+
+// No `workflows/*` tool package is committed yet, so the two real-Dockerfile
+// suites above never exercise that path. These feed a synthetic
+// workflows-sourced tool package directly into the generators to prove the
+// COPY-line invariant holds for that group too (CL-4463) — not just
+// `packages/tools-*`. Without this, a workflow-shipped tool's hub-image
+// coverage would depend entirely on the wholesale `COPY workflows/
+// workflows/` line staying unnarrowed, with nothing to catch it silently
+// stopping.
+describe("dockerfileHubSourceCopyLines covers workflows/* tool packages", () => {
+  test("emits an explicit full-source COPY line for a workflows/* tool package, same as packages/tools-*", () => {
+    const lines = dockerfileHubSourceCopyLines([
+      "packages/tools-artifact",
+      "workflows/fixture-workflow",
+    ]);
+    expect(sorted(lines)).toEqual([
+      "COPY packages/tools-artifact/ packages/tools-artifact/",
+      "COPY workflows/fixture-workflow/ workflows/fixture-workflow/",
+    ]);
+  });
+
+  test("still excludes the hand-maintained hub-source exclusion list and non-tool extra dirs", () => {
+    const lines = dockerfileHubSourceCopyLines([
+      "packages/tools-interchange-contract",
+      "packages/tool-manifest",
+      "workflows/fixture-workflow",
+    ]);
+    expect(lines).toEqual([
+      "COPY workflows/fixture-workflow/ workflows/fixture-workflow/",
+    ]);
+  });
+});
+
+describe("dockerfileManifestCopyLines covers workflows/* tool packages", () => {
+  test("emits a package.json COPY line for a workflows/* dir the same as packages/*", () => {
+    const lines = dockerfileManifestCopyLines([
+      "packages/tools-artifact",
+      "workflows/fixture-workflow",
+    ]);
+    expect(sorted(lines)).toEqual([
+      "COPY packages/tools-artifact/package.json packages/tools-artifact/",
+      "COPY workflows/fixture-workflow/package.json workflows/fixture-workflow/",
+    ]);
+  });
+});
+
+describe("toolPackageDirsForDockerfiles merges discovered dirs with the fixed extras", () => {
+  test("keeps a discovered workflows/* dir alongside packages/tools-* and the extra dirs", () => {
+    const dirs = toolPackageDirsForDockerfiles([
+      "workflows/fixture-workflow",
+      "packages/tools-artifact",
+    ]);
+    expect(dirs).toEqual(
+      [
+        "packages/tool-manifest",
+        "packages/tools-artifact",
+        "packages/tools-catalog",
+        "packages/tools-interchange-contract",
+        "workflows/fixture-workflow",
+      ].sort(),
+    );
   });
 });

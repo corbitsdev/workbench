@@ -15,6 +15,10 @@
     "./committed-index": {
       "types": "./src/committed-index.ts",
       "default": "./src/committed-index.ts"
+    },
+    "./discover": {
+      "types": "./src/discover.ts",
+      "default": "./src/discover.ts"
     }
   },
   "scripts": {

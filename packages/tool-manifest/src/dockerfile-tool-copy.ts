@@ -1,6 +1,3 @@
-import { loadCommittedToolManifestFactories } from "./committed-index";
-import { deriveToolPackageSpecs } from "./derive";
-
 export const DOCKERFILE_TOOL_MANIFEST_EXTRA_DIRS = [
   "packages/tool-manifest",
   "packages/tools-catalog",
@@ -26,11 +23,20 @@ const HUB_SOURCE_EXCLUDED_TOOL_DIRS = new Set([
   "packages/tools-interchange-contract",
 ]);
 
-export function toolPackageDirsForDockerfiles(): string[] {
-  const fromManifests = deriveToolPackageSpecs(
-    loadCommittedToolManifestFactories(),
-  ).map((spec) => spec.packageDir);
-  return [...fromManifests, ...DOCKERFILE_TOOL_MANIFEST_EXTRA_DIRS].sort();
+/**
+ * Discovery is build-time-only (see `@workbench/tool-manifest/discover`) and
+ * cannot be called from here — this package is reachable from the web app's
+ * browser bundle (`@workbench/agents/browser`), and Vite shims `node:fs` to
+ * an empty module (see `packages/agents/src/browser-node-free.test.ts`).
+ * Callers discover the real directories and pass them in.
+ */
+export function toolPackageDirsForDockerfiles(
+  discoveredToolPackageDirs: readonly string[],
+): string[] {
+  return [
+    ...discoveredToolPackageDirs,
+    ...DOCKERFILE_TOOL_MANIFEST_EXTRA_DIRS,
+  ].sort();
 }
 
 export function dockerfileManifestCopyLines(
@@ -39,15 +45,23 @@ export function dockerfileManifestCopyLines(
   return packageDirs.map((dir) => `COPY ${dir}/package.json ${dir}/`);
 }
 
+// `packages/tools-*` and `workflows/*` are both valid tool-source homes
+// (CL-4463) — a workflow package must get an explicit full-source COPY line
+// exactly like a `packages/tools-*` one does, so this stays correct even if
+// the wholesale `COPY workflows/ workflows/` line in apps/hub/Dockerfile is
+// ever narrowed to per-package lines for build-cache reasons.
+function isHubToolSourceDir(dir: string): boolean {
+  return (
+    (dir.startsWith("packages/tools-") || dir.startsWith("workflows/")) &&
+    !HUB_SOURCE_EXCLUDED_TOOL_DIRS.has(dir)
+  );
+}
+
 export function dockerfileHubSourceCopyLines(
   packageDirs: readonly string[],
 ): string[] {
   return packageDirs
-    .filter(
-      (dir) =>
-        dir.startsWith("packages/tools-") &&
-        !HUB_SOURCE_EXCLUDED_TOOL_DIRS.has(dir),
-    )
+    .filter(isHubToolSourceDir)
     .sort()
     .map((dir) => `COPY ${dir}/ ${dir}/`);
 }
