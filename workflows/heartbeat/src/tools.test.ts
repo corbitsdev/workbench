@@ -13,7 +13,7 @@ function fullTool(name: string) {
   return tool.handler;
 }
 
-describe("heartbeat_format_brief_notify (CL-4232)", () => {
+describe("heartbeat_format_brief_notify", () => {
   test("returns the mail_send argument shape verbatim (to/subject/content/refs)", async () => {
     const handler = fullTool("heartbeat_format_brief_notify");
     const result = await handler(
@@ -68,7 +68,7 @@ describe("heartbeat_format_brief_notify (CL-4232)", () => {
   });
 });
 
-describe("heartbeat_format_brief_document (CL-4232)", () => {
+describe("heartbeat_format_brief_document", () => {
   test("pairs title and reply into a title/body document", async () => {
     const handler = fullTool("heartbeat_format_brief_document");
     const result = await handler(
@@ -106,7 +106,7 @@ describe("heartbeat_format_brief_document (CL-4232)", () => {
   });
 });
 
-describe("heartbeat_format_brief_title (CL-3502)", () => {
+describe("heartbeat_format_brief_title", () => {
   test("returns a possessive title built from userDisplayName", async () => {
     const handler = fullTool("heartbeat_format_brief_title");
     const result = await handler(

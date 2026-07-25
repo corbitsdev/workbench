@@ -14,7 +14,7 @@ function fullTool(name: string) {
   return tool.handler;
 }
 
-describe("competitor_analysis_format_report_document (CL-4232)", () => {
+describe("competitor_analysis_format_report_document", () => {
   test("pairs url and reply into a title/body document", async () => {
     const handler = fullTool("competitor_analysis_format_report_document");
     const result = await handler(

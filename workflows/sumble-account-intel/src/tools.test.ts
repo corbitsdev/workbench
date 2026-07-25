@@ -95,7 +95,7 @@ function fullTool(name: string, env: Record<string, unknown> = ENV_WITH_XAI) {
   return tool.handler;
 }
 
-describe("sumble_account_intel_format_report_document (CL-4232)", () => {
+describe("sumble_account_intel_format_report_document", () => {
   test("pairs organizationDomain and reply into a title/body document", async () => {
     const handler = fullTool("sumble_account_intel_format_report_document");
     const result = await handler(
