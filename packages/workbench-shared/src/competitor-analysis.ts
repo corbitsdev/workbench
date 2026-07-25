@@ -9,8 +9,14 @@ import { type } from "arktype";
 // intake: company URL is REQUIRED and must be http(s) — the scrape step fetches
 // it, so a blank or non-URL value would fail the crawl deep in the run. Optional
 // companyName and focusNotes refine the profile and discovery prompts.
+//
+// Named `url` (not `companyUrl`): the scrape step is a native `action` calling
+// the shared `firecrawl_scrape` tool, whose arg is `url`; native selectors
+// cannot rename a key, so the intake field name must equal it verbatim
+// (CL-4454). `competitor_analysis_format_report_document` — this workflow's
+// sole caller — was renamed to match rather than the reverse.
 export const CompetitorAnalysisIntakePayloadSchema = type({
-  companyUrl: /^https?:\/\/.+/iu,
+  url: /^https?:\/\/.+/iu,
   "companyName?": "string",
   "focusNotes?": "string",
 });
