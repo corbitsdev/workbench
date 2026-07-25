@@ -67,11 +67,15 @@ function isManifestToolCopyCandidate(line: string): boolean {
 function isHubSourceToolCopyCandidate(line: string): boolean {
   const copy = explicitMemberCopy(line);
   if (copy === null || copy.kind !== "source") return false;
-  return copy.dir.startsWith("packages/tools-") || copy.dir.startsWith("workflows/");
+  return (
+    copy.dir.startsWith("packages/tools-") || copy.dir.startsWith("workflows/")
+  );
 }
 
 describe("Dockerfile tool COPY blocks vs committed manifests", () => {
-  const dirs = toolPackageDirsForDockerfiles(discoverToolPackageDirs(repoRoot()));
+  const dirs = toolPackageDirsForDockerfiles(
+    discoverToolPackageDirs(repoRoot()),
+  );
   const expectedManifest = dockerfileManifestCopyLines(dirs);
   const expectedHubSource = dockerfileHubSourceCopyLines(dirs);
 
@@ -138,7 +142,7 @@ describe("Dockerfile tool COPY blocks vs committed manifests", () => {
 // No `workflows/*` tool package is committed yet, so the two real-Dockerfile
 // suites above never exercise that path. These feed a synthetic
 // workflows-sourced tool package directly into the generators to prove the
-// COPY-line invariant holds for that group too (CL-4463) — not just
+// COPY-line invariant holds for that group too — not just
 // `packages/tools-*`. Without this, a workflow-shipped tool's hub-image
 // coverage would depend entirely on the wholesale `COPY workflows/
 // workflows/` line staying unnarrowed, with nothing to catch it silently
@@ -212,7 +216,9 @@ describe("diffDockerfileToolCopyLines reports leftover COPY lines", () => {
       "COPY workflows/renamed-away-workflow/ workflows/renamed-away-workflow/",
     ].join("\n");
     const allCopyLines = extractDockerfileLines(dockerfileText, ALL_COPY_LINES);
-    const expected = dockerfileHubSourceCopyLines(["workflows/exa-topic-watch"]);
+    const expected = dockerfileHubSourceCopyLines([
+      "workflows/exa-topic-watch",
+    ]);
 
     const diff = diffDockerfileToolCopyLines(
       allCopyLines,
@@ -249,7 +255,9 @@ describe("diffDockerfileToolCopyLines reports leftover COPY lines", () => {
       "COPY workflows/ workflows/",
     ].join("\n");
     const allCopyLines = extractDockerfileLines(dockerfileText, ALL_COPY_LINES);
-    const expected = dockerfileHubSourceCopyLines(["workflows/exa-topic-watch"]);
+    const expected = dockerfileHubSourceCopyLines([
+      "workflows/exa-topic-watch",
+    ]);
 
     const diff = diffDockerfileToolCopyLines(
       allCopyLines,

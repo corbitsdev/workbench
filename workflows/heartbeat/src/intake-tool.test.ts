@@ -20,7 +20,7 @@ function handlerOf(tool: ReturnType<typeof createHeartbeatIntakeSourceTool>) {
   return tool.handler;
 }
 
-describe("heartbeat_intake_source (CL-4464)", () => {
+describe("heartbeat_intake_source", () => {
   test("declares one env key per wired provider (granola, linear, attio, vercel)", () => {
     expect(HEARTBEAT_INTAKE_SOURCE_PROVIDERS).toEqual([
       "attio",
@@ -42,7 +42,7 @@ describe("heartbeat_intake_source (CL-4464)", () => {
     ]);
   });
 
-  // Load-bearing (CL-4464): a native `action` step's dispatched tool has no
+  // Load-bearing: a native `action` step's dispatched tool has no
   // `nonFatal` escape — `runDeterministicToolStep`
   // (apps/sidecar/src/step-tool-harness.ts) throws whenever the outer
   // `ToolResult.isError` is `true`, which would fail the whole unattended

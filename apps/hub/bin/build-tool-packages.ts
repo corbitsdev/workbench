@@ -51,7 +51,7 @@ function packageNameFromDisk(packageDir: string): string {
 /**
  * Derived by walking the real checkout — build-time-only, so there is no
  * repo-relative-path data persisted anywhere; the discovery walk that finds
- * a tool package is the same one that reports where it lives (CL-4463).
+ * a tool package is the same one that reports where it lives.
  */
 export const TOOL_PACKAGES: ToolPackageSpec[] = discoverToolPackageDirs(
   REPO_ROOT,

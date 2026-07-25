@@ -1,6 +1,6 @@
 // Tolerant sumble bridges for prospect-engine's former `nonFatal` list
-// steps (pipeline / growthList / enterpriseList / addGrowth / addEnterprise —
-// CL-4464). Split into its own npm package (rather than living inside
+// steps (pipeline / growthList / enterpriseList / addGrowth / addEnterprise).
+// Split into its own npm package (rather than living inside
 // `@workbench/tools-prospect-engine`) because the tool-manifest system pins
 // exactly one credential provider per npm package
 // (`packages/tool-manifest/src/derive.ts`'s `derivePackageProviders` throws
@@ -57,7 +57,7 @@ function envRecord(env: unknown): Record<string, unknown> {
 
 // `tolerant`/`invokeAgentTool`/`findAgentTool` are the shared dispatch
 // mechanics from `@workbench/tool-credentials/tolerance-envelope-dispatch`
-// (Finding 2, CL-4464 follow-up) — this file, the slack bridge package, and
+// (Finding 2 follow-up) — this file, the slack bridge package, and
 // `tools-prospect-engine`'s own `tolerant-bridges.ts` each carried a
 // byte-identical local copy before this consolidation.
 
@@ -86,7 +86,7 @@ function extractListId(input: unknown): string | undefined {
 
 /**
  * Build the real `sumble_get_organization_list` tool LAZILY, inside the
- * handler — never at factory-construction time (CL-4454 correctness fix).
+ * handler — never at factory-construction time (a correctness fix).
  * `getToolCredential` throws `ToolCredentialMissingError` the instant the
  * tenant has no `sumble` credential configured; if that throw happened here
  * (as it originally did, eagerly in `factory`), the sidecar's
@@ -168,7 +168,7 @@ export const PROSPECT_ENGINE_ADD_ORG_LIST_TOLERANT_DEFINITION: ToolDefinition =
   };
 
 /**
- * Same lazy-construction fix as `buildReadOrgListTool` above (CL-4454): the
+ * Same lazy-construction fix as `buildReadOrgListTool` above: the
  * credential is resolved inside `tolerant`'s try/catch, not at
  * factory-construction time, so a missing `sumble` credential degrades this
  * bridge's own tool instead of dropping the whole package.

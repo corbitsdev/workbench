@@ -1,7 +1,7 @@
 import type { AgentTool } from "@intx/agent";
 import type { ToolDefinition } from "@intx/types/runtime";
 
-// Workflow-owned shaping tools (CL-4454): native `action` selectors
+// Workflow-owned shaping tools: native `action` selectors
 // (`from`/`project`/`merge`/`literal`) can select and combine fields but
 // cannot rename one, so wherever this workflow's own agent-step output field
 // names differ from a downstream tool's argument names, a small private tool

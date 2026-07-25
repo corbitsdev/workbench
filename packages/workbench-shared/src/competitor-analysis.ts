@@ -13,7 +13,7 @@ import { type } from "arktype";
 // Named `url` (not `companyUrl`): the scrape step is a native `action` calling
 // the shared `firecrawl_scrape` tool, whose arg is `url`; native selectors
 // cannot rename a key, so the intake field name must equal it verbatim
-// (CL-4454). `competitor_analysis_format_report_document` — this workflow's
+// `competitor_analysis_format_report_document` — this workflow's
 // sole caller — was renamed to match rather than the reverse.
 export const CompetitorAnalysisIntakePayloadSchema = type({
   url: /^https?:\/\/.+/iu,

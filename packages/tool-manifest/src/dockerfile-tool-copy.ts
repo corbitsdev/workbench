@@ -46,7 +46,7 @@ export function dockerfileManifestCopyLines(
 }
 
 // `packages/tools-*` and `workflows/*` are both valid tool-source homes
-// (CL-4463) — a workflow package must get an explicit full-source COPY line
+// — a workflow package must get an explicit full-source COPY line
 // exactly like a `packages/tools-*` one does, so this stays correct even if
 // the wholesale `COPY workflows/ workflows/` line in apps/hub/Dockerfile is
 // ever narrowed to per-package lines for build-cache reasons.

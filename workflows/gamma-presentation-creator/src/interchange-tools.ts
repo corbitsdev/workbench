@@ -1,6 +1,6 @@
 // Native `interchange.tools` entry for @workbench/tools-gamma-presentation-creator.
 // The `core` factory is stateless (pure field renames) and touches no env
-// keys. The `fetch` factory (CL-4464) wraps `artifact_read`/`granola_get_note`
+// keys. The `fetch` factory wraps `artifact_read`/`granola_get_note`
 // so this workflow can tolerate a missing/failed source in-process; it
 // declares the same env keys those underlying packages require.
 

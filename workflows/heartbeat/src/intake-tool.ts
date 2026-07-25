@@ -1,4 +1,4 @@
-// Best-effort, in-process intake wrapper (CL-4464).
+// Best-effort, in-process intake wrapper.
 //
 // `ActionPrimitive` has no `nonFatal` field (@intx/workflow's primitives.ts).
 // Action dispatch runs through the same `runDeterministicToolStep`
@@ -43,7 +43,10 @@ import {
   toolCredentialEnvKey,
   ToolCredentialMissingError,
 } from "@workbench/tool-credentials";
-import { WIRED_BRIEF_SOURCES, toleranceFailureContent } from "@workbench/shared";
+import {
+  WIRED_BRIEF_SOURCES,
+  toleranceFailureContent,
+} from "@workbench/shared";
 import { createGranolaTools } from "@workbench/tools-granola";
 import { createLinearToolByName } from "@workbench/tools-linear";
 import { createAttioTools } from "@workbench/tools-attio";

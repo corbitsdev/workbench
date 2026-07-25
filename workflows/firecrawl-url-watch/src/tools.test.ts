@@ -14,7 +14,7 @@ function fullTool(name: string) {
   return tool.handler;
 }
 
-describe("firecrawl_url_watch_format_document (CL-4454)", () => {
+describe("firecrawl_url_watch_format_document", () => {
   test("pairs url and reply into a title/body document", async () => {
     const handler = fullTool("firecrawl_url_watch_format_document");
     const result = await handler(

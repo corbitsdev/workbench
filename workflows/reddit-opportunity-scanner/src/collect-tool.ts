@@ -4,13 +4,13 @@ import { defineCredentialedToolPackage } from "@workbench/tool-credentials/facto
 import { withToleranceEnvelope } from "@workbench/tool-credentials/tolerance-envelope-dispatch";
 import { REDDIT_HUB_TOOLS } from "@workbench/tools-reddit";
 
-// Workflow-owned tolerant wrapper (CL-4464): one dead subreddit search must
+// Workflow-owned tolerant wrapper: one dead subreddit search must
 // degrade to a skip, not throw and poison the whole curate pool (the
 // last30days brief-poison class). `collect` is a `map`'s inner step
 // (`MapPrimitive.step` is typed `StepPrimitive`, not the `Primitive` union —
 // interchange/packages/workflow/src/definition/primitives.ts — so a native
 // `action` cannot host it at all; see index.ts). The tolerance still moves
-// into a wrapper TOOL exactly as the other two CL-4464 cases: this wrapper
+// into a wrapper TOOL exactly as the other two tolerant-wrapper cases: this wrapper
 // calls the real `reddit_subreddit_search` in-process, over the same
 // credentialed rail, and returns a completed non-error envelope on failure.
 // `collect` therefore stays a `deterministicToolStep` (a plain `StepPrimitive`
@@ -47,7 +47,7 @@ const collectSearchInner = defineCredentialedToolPackage({
 function createCollectSearchTool(env: BaseEnv): AgentTool {
   // `collectSearchInner(env)` is constructed PER CALL, inside the handler —
   // not eagerly at factory-build time — for the same reason the gamma/msc
-  // CL-4464 wrappers defer it: `defineCredentialedToolPackage`'s factory
+  // tolerant wrappers defer it: `defineCredentialedToolPackage`'s factory
   // throws `ToolCredentialMissingError` the instant it is invoked with no
   // `scrapecreators` credential in env, and that throw must land inside OUR
   // catch, not bubble up through `createCollectSearchTool` itself.

@@ -1,5 +1,5 @@
 // Tolerant bridge tools for prospect-engine's readLedger and mail steps
-// (CL-4464; the pipeline/growthList/enterpriseList/addGrowth/addEnterprise
+// (the pipeline/growthList/enterpriseList/addGrowth/addEnterprise
 // sumble bridges live in `@workbench/tools-prospect-engine-sumble-bridge`,
 // and the notify slack bridge in
 // `@workbench/tools-prospect-engine-slack-bridge` — split into their own npm
@@ -67,7 +67,7 @@ function envRecord(env: unknown): Record<string, unknown> {
 // `@workbench/tool-credentials/tolerance-envelope-dispatch`) converts any
 // thrown error or `isError: true` result into a normal (non-error)
 // `ToolResult` whose content carries the shared `{ isError: true, error }`
-// tolerance envelope — see Finding 2, CL-4464 follow-up: this was previously
+// tolerance envelope — see Finding 2 follow-up: this was previously
 // a byte-identical local copy in this file and in both prospect-engine
 // bridge packages.
 
@@ -89,7 +89,7 @@ export const PROSPECT_ENGINE_READ_LEDGER_TOLERANT_DEFINITION: ToolDefinition = {
  * Minimal re-implementation of `defineHubBackedToolPackage`'s HTTP forward
  * (`packages/tool-credentials/src/factory.ts`) for a single named tool —
  * this workflow's own tolerant copy, deliberately duplicated rather than
- * shared, per CL-4464.
+ * shared.
  */
 async function forwardHubTool(args: {
   env: Record<string, unknown>;

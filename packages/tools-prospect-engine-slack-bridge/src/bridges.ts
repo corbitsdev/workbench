@@ -1,5 +1,5 @@
 // Tolerant slack bridge for prospect-engine's former `nonFatal` Slack digest
-// step (`notify` — CL-4464). Split into its own npm package (rather than
+// step (`notify`). Split into its own npm package (rather than
 // living inside `@workbench/tools-prospect-engine`) because the tool-
 // manifest system pins exactly one credential provider per npm package
 // (`packages/tool-manifest/src/derive.ts`'s `derivePackageProviders` throws
@@ -44,7 +44,7 @@ function envRecord(env: unknown): Record<string, unknown> {
 
 // `tolerant`/`invokeAgentTool`/`findAgentTool` are the shared dispatch
 // mechanics from `@workbench/tool-credentials/tolerance-envelope-dispatch`
-// (Finding 2, CL-4464 follow-up) — this file, the sumble bridge package, and
+// (Finding 2 follow-up) — this file, the sumble bridge package, and
 // `tools-prospect-engine`'s own `tolerant-bridges.ts` each carried a
 // byte-identical local copy before this consolidation.
 
@@ -64,7 +64,7 @@ export const PROSPECT_ENGINE_POST_SLACK_TOLERANT_DEFINITION: ToolDefinition = {
 
 /**
  * Build the real `slack_post_message` tool LAZILY, inside the handler —
- * never at factory-construction time (CL-4454 correctness fix). Resolving
+ * never at factory-construction time (a correctness fix). Resolving
  * the `slack` credential here, inside `tolerant`'s try/catch, means a tenant
  * with no Slack credential configured degrades this bridge's own call
  * instead of the sidecar dropping the whole package and hard-failing the

@@ -74,7 +74,7 @@ export const HEARTBEAT_INTAKE_SOURCE_HANDLER = canonicalizeStepToolName(
 //   notify            action  mail_send   verbatim from notify-prep (native primitive)
 //
 // The intake steps are native `action` steps calling `heartbeat_intake_source`
-// (`./intake-tool.ts`, CL-4464) rather than the underlying per-source tool
+// (`./intake-tool.ts`) rather than the underlying per-source tool
 // (`granola_list_notes` etc.) directly — `ActionPrimitive` has no `nonFatal`
 // field at all (`@intx/workflow`'s `primitives.ts`) and a thrown tool error in
 // an action's handler propagates through `ctx.perform`

@@ -14,7 +14,7 @@ function fullTool(name: string) {
   return tool.handler;
 }
 
-describe("github_topic_watch_format_activity_query (CL-4454)", () => {
+describe("github_topic_watch_format_activity_query", () => {
   test("renames topic to query and stamps a fixed 7-day lookback", async () => {
     const handler = fullTool("github_topic_watch_format_activity_query");
     const result = await handler(

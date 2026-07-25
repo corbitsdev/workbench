@@ -1254,10 +1254,10 @@ export async function runDeterministicToolStep(args: {
     }
     return { output: result };
   } catch (cause) {
-    // No `nonFatal` degrade exists on this path anymore (CL-4464 replaced
-    // every best-effort deterministic step with a workflow-owned tolerance-
-    // envelope wrapper — see `@workbench/tool-credentials/tolerance-
-    // envelope-dispatch`). Every failure here rethrows: a genuine
+    // No `nonFatal` degrade exists on this path anymore — tolerant wrapper
+    // tools replaced every best-effort deterministic step with a workflow-
+    // owned tolerance-envelope wrapper (see
+    // `@workbench/tool-credentials/tolerance-envelope-dispatch`). Every failure here rethrows: a genuine
     // tool-execution error, a run cancel/timeout (signal aborted), or an
     // infrastructure fault (`isStepToolInfrastructureFault` — unpinned tool,
     // missing credential, corrupt closure) all propagate identically. Log

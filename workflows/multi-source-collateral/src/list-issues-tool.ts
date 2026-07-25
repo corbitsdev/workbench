@@ -4,7 +4,7 @@ import { defineCredentialedToolPackage } from "@workbench/tool-credentials/facto
 import { withToleranceEnvelope } from "@workbench/tool-credentials/tolerance-envelope-dispatch";
 import { LINEAR_HUB_TOOLS } from "@workbench/tools-linear";
 
-// Workflow-owned tolerant wrapper (CL-4464): Linear may be unconfigured for a
+// Workflow-owned tolerant wrapper: Linear may be unconfigured for a
 // tenant — expected, not exceptional, here (this step just keeps Linear off
 // the multi-source chooser when it is unset). Native `action` has no
 // error-swallow equivalent to the sidecar-wide `nonFatal` tag, so the catch

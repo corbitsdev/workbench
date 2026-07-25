@@ -2,7 +2,7 @@
 //
 // The format/document/notify tools are stateless (pure functions from
 // @workbench/shared) and need no credential. `heartbeat_intake_source`
-// (CL-4464) is not stateless — it resolves a wired brief source's own
+// is not stateless — it resolves a wired brief source's own
 // tool credential in-process, so the factory declares every wired
 // provider's env key as `requires` (see intake-tool.ts) and forwards `env`.
 

@@ -544,7 +544,7 @@ describe("heartbeat native workflow", () => {
   });
 
   // -------------------------------------------------------------------------
-  // CL-4464 — a failing source degrades the brief, never the run
+  // A failing source degrades the brief, never the run
   // -------------------------------------------------------------------------
   test("one source's intake action returning a degraded envelope still completes the run", async () => {
     const briefReply = "# Morning brief\n\nMostly clear.";
@@ -557,7 +557,7 @@ describe("heartbeat native workflow", () => {
       vercel_list_deployments: { deployments: [] },
     };
     const { resolver, ran: actionRan } = makeRecordingActionResolver({
-      // `heartbeat_intake_source`'s real contract (CL-4464): the outer
+      // `heartbeat_intake_source`'s real contract: the outer
       // `ToolResult.isError` is ALWAYS false — `runDeterministicToolStep`
       // (apps/sidecar/src/step-tool-harness.ts) is used for native `action`
       // dispatch too and throws whenever the outer `isError` is true, and

@@ -8,7 +8,7 @@ const SLACK_ENV = {
   },
 };
 
-describe("prospectEngineSlackBridge (CL-4464)", () => {
+describe("prospectEngineSlackBridge", () => {
   afterEach(() => {
     mock.restore();
   });

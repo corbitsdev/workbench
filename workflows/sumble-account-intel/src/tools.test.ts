@@ -330,7 +330,7 @@ describe("sumble_account_intel_enrich_contacts — folds the former map, toleran
     expect(result.content).toEqual({ people: [] });
   });
 
-  test("a tenant with no xai credential configured at all degrades every contact instead of failing the run or dropping the tool package (CL-4454)", async () => {
+  test("a tenant with no xai credential configured at all degrades every contact instead of failing the run or dropping the tool package", async () => {
     // Regression guard for the eager-construction trap: `xai` used to be
     // resolved eagerly in interchange-tools.ts's factory, so a tenant with
     // no xAI credential threw `ToolCredentialMissingError` while

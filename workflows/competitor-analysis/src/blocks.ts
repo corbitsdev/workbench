@@ -42,7 +42,7 @@ function runPageLink(
 function intakeForm(signalName: string): UIBlock {
   // Named `url` (not `companyUrl`): must equal the shared `firecrawl_scrape`
   // tool's arg verbatim — native `action` selectors cannot rename a key
-  // (CL-4454). See CompetitorAnalysisIntakePayloadSchema.
+  // See CompetitorAnalysisIntakePayloadSchema.
   const companyUrl: FormField = {
     kind: "text",
     name: "url",

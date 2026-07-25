@@ -119,7 +119,7 @@ const mapRevealAgent = defineAgent({
 // Native `action` handler refs — the tool's canonical (factory-prefixed)
 // name, resolved via the same build-time-checked lookup `deterministicToolStep`
 // uses, so a typo'd or manifest-drifted tool name fails the build instead of
-// deploying a step nothing can dispatch (CL-4454).
+// deploying a step nothing can dispatch.
 export const INIT_BUDGET_HANDLER = canonicalizeStepToolName(
   "prospect-engine-init-budget",
   "prospect_engine_init_budget",
@@ -173,7 +173,7 @@ export const WRITE_ARTIFACT_LEDGER_HANDLER = canonicalizeStepToolName(
   "write_artifact",
 );
 
-// Tolerant-bridge handler refs (CL-4464) — each wraps a shared tool
+// Tolerant-bridge handler refs — each wraps a shared tool
 // in-process and never throws (see `tools-prospect-engine/tolerant-bridges.ts`),
 // so the steps below convert from `deterministicToolStep({ nonFatal: true })`
 // to plain native `action` primitives without losing best-effort degrade
@@ -241,7 +241,7 @@ export const workflow = defineWorkflow({
       after: ["initBudget"],
     }),
 
-    // Native `action`, tolerant by construction (CL-4464): the
+    // Native `action`, tolerant by construction: the
     // `prospect_engine_read_ledger_tolerant` bridge wraps artifact_read
     // in-process and never throws. When findLedger returned no artifact yet
     // (cold start), the bridge itself returns `{ skipped: true }` rather
@@ -268,7 +268,7 @@ export const workflow = defineWorkflow({
       after: ["initBudget", "readLedger"],
     }),
 
-    // Native `action`, tolerant by construction (CL-4464): the
+    // Native `action`, tolerant by construction: the
     // `prospect_engine_read_organization_list_tolerant` bridge wraps
     // sumble_get_organization_list in-process and never throws — a failed
     // read degrades to an `{ isError, error }` envelope that
@@ -332,7 +332,7 @@ export const workflow = defineWorkflow({
     // JSON.parse a string field — the discover agent's reply is a JSON
     // string with a `candidates` array, which the legacy argMap unwrapped
     // via `fromJson`. This shaping step is the one place that reply is
-    // parsed (CL-4454); dedupe below reads a plain `candidates` array.
+    // parsed; dedupe below reads a plain `candidates` array.
     extractDiscoverCandidates: action({
       handler: EXTRACT_CANDIDATES_FROM_REPLY_HANDLER,
       input: { from: "steps.discover.output" },
@@ -369,7 +369,7 @@ export const workflow = defineWorkflow({
     }),
 
     // Same reply→candidates unwrap the score agent's JSON reply needs
-    // (CL-4454) — reuses the discover-side shaping tool; both agents emit
+    // reuses the discover-side shaping tool; both agents emit
     // the identical `{"candidates": [...]}` reply contract.
     extractScoreCandidates: action({
       handler: EXTRACT_CANDIDATES_FROM_REPLY_HANDLER,
@@ -398,7 +398,7 @@ export const workflow = defineWorkflow({
     }),
 
     // The map/reveal agent's JSON reply needs the same fromJson-only unwrap
-    // (CL-4454) — tolerant here (see the tool's definition comment), since a
+    // tolerant here (see the tool's definition comment), since a
     // thin/failed map must still deliver the qualified shortlist.
     extractMapRevealOverlay: action({
       handler: EXTRACT_MAP_REVEAL_OVERLAY_HANDLER,
@@ -409,7 +409,7 @@ export const workflow = defineWorkflow({
 
     // Qualify already emits its shortlist aliased as `baseAccounts` (in
     // addition to `accounts`) so this merge never collides on the map
-    // overlay's own `accounts` key (CL-4454) — no reshape step needed here.
+    // overlay's own `accounts` key — no reshape step needed here.
     formatReport: action({
       handler: FORMAT_REPORT_HANDLER,
       input: {
@@ -426,7 +426,7 @@ export const workflow = defineWorkflow({
 
     // Trigger payload's report title field is named `title` at the source
     // (this workflow's own intake — @workbench/shared's
-    // ProspectEngineTriggerPayloadSchema, CL-4454) precisely so it lands on
+    // ProspectEngineTriggerPayloadSchema) precisely so it lands on
     // write_artifact's `title` arg unrenamed; formatReport already emits
     // `body` verbatim. No reshape needed.
     persist: action({
@@ -454,7 +454,7 @@ export const workflow = defineWorkflow({
     // write_artifact's result carries { artifactId, version, title } as a
     // plain object already (never a stringified JSON envelope), so
     // `artifactId` is a straight top-level field once merged — no reshape
-    // needed (CL-4454).
+    // needed.
     formatDigest: action({
       handler: FORMAT_SLACK_DIGEST_HANDLER,
       input: {
@@ -481,7 +481,7 @@ export const workflow = defineWorkflow({
       after: ["parseLedger", "formatReport"],
     }),
 
-    // mergeLedger emits `body` directly (single caller, CL-4454) so
+    // mergeLedger emits `body` directly (single caller) so
     // write_artifact — shared across every workflow, its arg name is never
     // renamed — sees `body` unrenamed.
     saveLedger: action({
@@ -502,7 +502,7 @@ export const workflow = defineWorkflow({
       after: ["mergeLedger"],
     }),
 
-    // Native `action`, tolerant by construction (CL-4464): the
+    // Native `action`, tolerant by construction: the
     // `prospect_engine_add_organization_list_tolerant` bridge wraps
     // sumble_add_organization_list_organizations in-process and never
     // throws — it reads its own lane's listId/organizationIds pair out of
@@ -535,7 +535,7 @@ export const workflow = defineWorkflow({
       after: ["formatReport"],
     }),
 
-    // Native `action`, tolerant by construction (CL-4464):
+    // Native `action`, tolerant by construction:
     // `prospect_engine_format_mail_refs` (this workflow's own tool) now
     // returns `{ isError: true, error }` content instead of an `isError`
     // envelope on a missing artifactId/runId or a thrown builder error —
@@ -553,7 +553,7 @@ export const workflow = defineWorkflow({
       after: ["persist"],
     }),
 
-    // Native `action`, tolerant by construction (CL-4464): the
+    // Native `action`, tolerant by construction: the
     // `prospect_engine_send_mail_tolerant` bridge wraps mail_send in-process
     // and never throws — it remaps the merged userAddress/title/text/refs
     // fields to mail_send's to/subject/content/refs args itself (no rename
@@ -573,7 +573,7 @@ export const workflow = defineWorkflow({
 
     // Slack is one delivery destination among several, not a prerequisite —
     // the digest already reached the user's inbox via `mail` above. Native
-    // `action`, tolerant by construction (CL-4464): the
+    // `action`, tolerant by construction: the
     // `prospect_engine_post_slack_tolerant` bridge wraps slack_post_message
     // in-process, skips entirely when no channel is configured, and never
     // throws on a genuine Slack failure.

@@ -26,7 +26,7 @@ function fakeStringTool(handler: AgentTool["handler"]): AgentTool {
   };
 }
 
-describe("wrapSafeStringTool (CL-4464)", () => {
+describe("wrapSafeStringTool", () => {
   test("a thrown handler error degrades to a SUCCESSFUL result whose string body is a JSON { isError: true, error } envelope", async () => {
     // This is the exact contract `runDeterministicToolStep` requires: it
     // throws and fails the run whenever the dispatched tool's OUTER
@@ -84,7 +84,7 @@ describe("wrapSafeStringTool (CL-4464)", () => {
   });
 });
 
-describe("createLazySafeCredentialedTool (CL-4454)", () => {
+describe("createLazySafeCredentialedTool", () => {
   test("a missing tenant credential degrades to a completed { isError: true } envelope, never a throw", async () => {
     // Regression guard for the eager-construction trap: this tool must be
     // buildable with NO credential in env (factory construction always
@@ -136,7 +136,7 @@ describe("createLazySafeCredentialedTool (CL-4454)", () => {
   });
 });
 
-describe("createSafeKeylessTools (CL-4464)", () => {
+describe("createSafeKeylessTools", () => {
   test("builds both keyless wrappers without a credential", () => {
     const tools = createSafeKeylessTools();
     const names = tools.map((t) => t.definition.name).sort();

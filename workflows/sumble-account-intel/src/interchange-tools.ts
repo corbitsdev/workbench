@@ -10,7 +10,7 @@
 // credential requirement is satisfied exactly as @workbench/tools-sumble's
 // own factory would be — no separate pin of that package is needed.
 //
-// `xai` is deliberately NOT resolved here (CL-4454 correctness fix): it
+// `xai` is deliberately NOT resolved here (a correctness fix): it
 // backs only the best-effort `enrich-contacts` facet inside tools.ts, which
 // resolves it lazily inside its own handler and degrades per-contact when
 // missing. Resolving `xai` eagerly in this factory — as the original wiring

@@ -14,7 +14,7 @@ function fullTool(name: string) {
   return tool.handler;
 }
 
-describe("reddit_opportunity_watch_format_digest_document (CL-4454)", () => {
+describe("reddit_opportunity_watch_format_digest_document", () => {
   test("pairs query and reply into a title/body document", async () => {
     const handler = fullTool("reddit_opportunity_watch_format_digest_document");
     const result = await handler(

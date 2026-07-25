@@ -63,11 +63,11 @@ describe("prospect-engine workflow package", () => {
     expect(json).toContain("prospect_engine_init_budget");
     expect(json).toContain("prospect_engine_parse_ledger");
     expect(json).toContain("artifact_find_by_title");
-    // readLedger is a tolerant bridge (CL-4464) — it wraps artifact_read
+    // readLedger is a tolerant bridge — it wraps artifact_read
     // in-process rather than declaring it as the step's own handler.
     expect(json).toContain("prospect_engine_read_ledger_tolerant");
     expect(json).toContain(String(PROSPECT_ENGINE_PIPELINE_LIST_ID));
-    // pipeline/growthList/enterpriseList are tolerant bridges (CL-4464)
+    // pipeline/growthList/enterpriseList are tolerant bridges
     // wrapping sumble_get_organization_list in-process.
     expect(json).toContain("prospect_engine_read_organization_list_tolerant");
     expect(json).toContain("prospect_engine_extract_list_org_ids");
@@ -76,18 +76,18 @@ describe("prospect-engine workflow package", () => {
   test("delivery path writes artifacts, lists, slack, mail (not memory_save)", () => {
     const json = JSON.stringify(workflow);
     expect(json).toContain("write_artifact");
-    // addGrowth/addEnterprise are tolerant bridges (CL-4464) wrapping
+    // addGrowth/addEnterprise are tolerant bridges wrapping
     // sumble_add_organization_list_organizations in-process.
     expect(json).toContain("prospect_engine_add_organization_list_tolerant");
     expect(json).not.toContain("memory_save");
     expect(json).not.toContain("memory_load");
-    // notify/mail are tolerant bridges (CL-4464) wrapping
+    // notify/mail are tolerant bridges wrapping
     // slack_post_message/mail_send in-process.
     expect(json).toContain("prospect_engine_post_slack_tolerant");
     expect(json).toContain("prospect_engine_send_mail_tolerant");
     expect(json).toContain("prospect_engine_format_slack_digest");
     expect(json).toContain("prospect_engine_format_report");
-    // saveLedger migrated to native `action` (CL-4454) — its step key is the
+    // saveLedger migrated to native `action` — its step key is the
     // stable identity now, not a descriptive deterministicToolStep id tag.
     expect(json).toContain('"saveLedger"');
   });
@@ -130,7 +130,7 @@ describe("prospect-engine workflow package", () => {
     expect(slackField?.required).toBe(false);
   });
 
-  // CL-4464: notify is a native `action` now — `ActionPrimitive` has no
+  // notify is a native `action` now — `ActionPrimitive` has no
   // error-swallow, so the "skip when no channel configured" and "never fail
   // the run on a genuine Slack failure" behaviors both moved INSIDE the
   // `prospect_engine_post_slack_tolerant` bridge tool (tested at the tool

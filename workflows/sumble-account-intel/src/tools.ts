@@ -357,7 +357,7 @@ const ENRICH_CONTACTS_X_SEARCH_LIMIT = 5;
 
 /**
  * `xai` is resolved LAZILY, inside the handler, never at factory-construction
- * time (CL-4454 correctness fix). enrich-contacts is documented best-effort —
+ * time (a correctness fix). enrich-contacts is documented best-effort —
  * "a dead xAI call for one contact never fails the run or the other
  * contacts' results" — but the ORIGINAL wiring resolved the `xai` credential
  * eagerly in `interchange-tools.ts`'s factory, so a tenant with no xAI

@@ -1,6 +1,6 @@
 import { type } from "arktype";
 
-// The tolerance envelope (CL-4464 follow-up).
+// The tolerance envelope.
 //
 // A native `action` step has no `nonFatal` escape (`ActionPrimitive` carries
 // no such flag, and `runDeterministicToolStep` in

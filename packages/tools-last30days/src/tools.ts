@@ -275,7 +275,7 @@ function truncateDetail(detail: string): string {
  *
  * - The legacy `nonFatal`-degraded shape: the outer `output.isError` is a
  *   plain-text `true`, not JSON.
- * - The CL-4464 native-`action` shape: every source now dispatches through a
+ * - The native-`action` shape: every source now dispatches through a
  *   `last30days_safe_*` wrapper tool (`workflows/last30days-research/src/
  *   tools.ts`) that never lets its OWN `ToolResult.isError` come back true —
  *   `runDeterministicToolStep` would throw and fail the run if it did. A

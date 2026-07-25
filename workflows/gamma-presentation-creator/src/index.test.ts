@@ -408,7 +408,7 @@ describe("artifact → gamma deck workflow (single-shot)", () => {
     });
   });
 
-  test("fetch-artifact/fetch-note are native actions dispatching the tolerant wrapper tools (CL-4464)", () => {
+  test("fetch-artifact/fetch-note are native actions dispatching the tolerant wrapper tools", () => {
     const fetchArtifact = actionPrimitive("fetch-artifact");
     expect(fetchArtifact.handler).toBe(FETCH_ARTIFACT_HANDLER);
     expect(fetchArtifact.input).toEqual({ from: "steps.intake.output" });

@@ -19,7 +19,7 @@ export {
 } from "./prompts";
 
 // Native `action` handler refs for the two root list steps that are not a
-// map's inner step (CL-4454) — the tool's canonical (factory-prefixed) name,
+// map's inner step — the tool's canonical (factory-prefixed) name,
 // resolved via the same build-time-checked lookup `deterministicToolStep`
 // uses, so a typo'd or manifest-drifted tool name fails the build instead of
 // deploying a step nothing can dispatch.
@@ -73,7 +73,7 @@ const regenerateStep = agentStep({
 // workflow-deploy/src/capability-walk.ts`) only reads `primitive.step.agent`
 // for a `map` node, never an inner step's `effect`, so even a same-shape
 // action inside a map would pin no tool package. This is the same structural
-// blocker `pain-point-collateral`'s `persist` step documents (CL-4454).
+// blocker `pain-point-collateral`'s `persist` step documents.
 const persistStep = deterministicToolStep({
   id: "multi-source-collateral-persist",
   title: "Save the collateral",
@@ -134,7 +134,7 @@ export const workflow = defineWorkflow({
   steps: {
     // Native `action`: artifact_list's arktype schema is { kind?, limit? },
     // so a literal { limit: 50 } is the exact argument object verbatim — no
-    // reshape needed (CL-4454).
+    // reshape needed.
     "list-artifacts": action({
       handler: ARTIFACT_LIST_HANDLER,
       input: { literal: { limit: 50 } },
@@ -143,7 +143,7 @@ export const workflow = defineWorkflow({
 
     // Native `action`: granola_list_notes takes limit/cursor/date filters, all
     // optional, so a literal { limit: 30 } is the exact argument object
-    // verbatim — no reshape needed (CL-4454).
+    // verbatim — no reshape needed.
     "list-notes": action({
       handler: GRANOLA_LIST_NOTES_HANDLER,
       input: { literal: { limit: 30 } },
@@ -151,8 +151,8 @@ export const workflow = defineWorkflow({
     }),
 
     // Linear may be unconfigured; that must not fail the multi-source
-    // chooser. Native `action` (CL-4454) has no `nonFatal` error-swallow, so
-    // the tolerance moves into the wrapper tool itself (CL-4464,
+    // chooser. Native `action` has no `nonFatal` error-swallow, so
+    // the tolerance moves into the wrapper tool itself (see
     // `list-issues-tool.ts`): it calls `linear_list_issues` in-process and
     // returns a completed envelope on failure instead of throwing.
     "list-issues": action({

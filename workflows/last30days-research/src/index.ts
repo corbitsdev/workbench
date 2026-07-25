@@ -96,7 +96,7 @@ export const WRITE_ARTIFACT_HANDLER = canonicalizeStepToolName(
   "write_artifact",
 );
 
-// The workflow's own "safe" source-tool wrappers (CL-4464): one per distinct
+// The workflow's own "safe" source-tool wrappers: one per distinct
 // underlying source tool, each calling the real tool's handler in-process and
 // degrading a thrown error to a `{ isError: true, error }` JSON envelope
 // instead of propagating (see `./tools.ts`). This is what lets every source
@@ -204,8 +204,8 @@ function groundedQueryInput(sourceKey: string) {
 // this ran as a `deterministicToolStep` carrying the `nonFatal` dispatch tag,
 // because the native `action` primitive has no error-swallow of its own (a
 // thrown tool error inside an action's `ctx.perform` always propagates and
-// fails the run — see `apps/sidecar/src/action-tool-handler.ts`). CL-4464
-// moves the tolerance INSIDE a tool this workflow owns instead: each source
+// fails the run — see `apps/sidecar/src/action-tool-handler.ts`). The
+// tolerance moves INSIDE a tool this workflow owns instead: each source
 // dispatches its own `last30days_safe_*` wrapper (`./tools.ts`), which calls
 // the real source tool in-process and turns a thrown error into a
 // successful result carrying a `{ isError: true, error }` JSON body, so the
@@ -386,9 +386,7 @@ if (lastRound2 === undefined) {
 }
 const LAST_ROUND2_ID = lastRound2.id;
 
-function buildEntityRoundSteps(
-  firstAfter: string,
-): Record<string, Primitive> {
+function buildEntityRoundSteps(firstAfter: string): Record<string, Primitive> {
   const steps: Record<string, Primitive> = {};
   let previous = firstAfter;
   for (const source of ROUND2_SOURCES) {

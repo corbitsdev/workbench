@@ -2,7 +2,11 @@ import { describe, expect, test } from "bun:test";
 import type { ActionHandler } from "@intx/workflow";
 import type { StepInvoker } from "@intx/workflow/runtime";
 import { runLocal } from "@intx/workflow/runlocal";
-import { STEP_KIND_TAG, STEP_TOOL_TAG, LLM_WRITER_MODEL } from "@workbench/agents";
+import {
+  STEP_KIND_TAG,
+  STEP_TOOL_TAG,
+  LLM_WRITER_MODEL,
+} from "@workbench/agents";
 
 import {
   workflow,
@@ -259,7 +263,7 @@ describe("last30days-research native workflow", () => {
     }
   });
 
-  test("every source step is a native action — no nonFatal tag exists to carry (CL-4464)", () => {
+  test("every source step is a native action — no nonFatal tag exists to carry", () => {
     // The `nonFatal` degrade lived on `deterministicToolStep`'s agent tags; a
     // native `action` primitive has no `agent` at all, so there is nothing to
     // tag. Tolerance now lives inside the safe wrapper tool itself (`./tools.ts`).

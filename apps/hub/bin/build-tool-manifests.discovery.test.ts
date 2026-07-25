@@ -9,7 +9,7 @@ import {
 
 // Discovery must select on the presence of `interchange.tools` in a workspace
 // member's package.json, across both `packages/*` and `workflows/*` — not on
-// a `tools-` name prefix (CL-4463). These fixtures build a throwaway repo
+// a `tools-` name prefix. These fixtures build a throwaway repo
 // root so the real filesystem-walk/import code path is exercised end to end,
 // without touching the committed manifest tree.
 

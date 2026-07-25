@@ -3,8 +3,8 @@ import { join } from "node:path";
 
 // Build-time-only filesystem walk: which workspace groups may ship tool
 // packages. `packages/*` for shared workbench packages, `workflows/*` so a
-// workflow package can ship its own tools alongside its definition
-// (CL-4463). `apps/*` are thin hosts per AGENTS.md and never own tool
+// workflow package can ship its own tools alongside its definition.
+// `apps/*` are thin hosts per AGENTS.md and never own tool
 // source; `interchange/` is upstream and out of scope.
 //
 // This module touches `node:fs`/`node:path` and is deliberately NOT

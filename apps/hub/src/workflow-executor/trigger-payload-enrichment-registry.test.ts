@@ -69,7 +69,7 @@ describe("enrichTriggerPayloadForStart", () => {
     expect(result.enabledSources).not.toEqual(["some-stale-caller-value"]);
   });
 
-  // TRANSITIONAL (CL-4454): granola-call has no HITL gate, so a schedule
+  // TRANSITIONAL: granola-call has no HITL gate, so a schedule
   // saved before its ONE intake field was renamed `maxCalls` -> `limit` may
   // still hold the old key. See the granola-call entry's comment in
   // trigger-payload-enrichment-registry.ts for the deletion condition.

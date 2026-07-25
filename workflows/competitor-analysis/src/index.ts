@@ -37,7 +37,7 @@ const SYNTHESIZE_MAX_TOKENS = 8192;
 // Native `action` handler refs — the tool's canonical (factory-prefixed) name,
 // resolved via the same build-time-checked lookup `deterministicToolStep`
 // used, so a typo'd or manifest-drifted tool name fails the build instead of
-// deploying a step nothing can dispatch (CL-4454).
+// deploying a step nothing can dispatch.
 export const FIRECRAWL_SCRAPE_HANDLER = canonicalizeStepToolName(
   "competitor-analysis-scrape",
   "firecrawl_scrape",
@@ -81,7 +81,7 @@ export const workflow = defineWorkflow({
 
     // 2. Scrape the company site — load-bearing for the subject profile.
     // Native `action`: intake's `url` field already equals firecrawl_scrape's
-    // arg name (renamed at the source, CL-4454 — firecrawl_scrape is shared by
+    // arg name (renamed at the source — firecrawl_scrape is shared by
     // other workflows/agents, so the rename lives in this workflow's own
     // intake schema, not the tool). Passed verbatim: the tool's arktype
     // schema ignores the other intake fields.
@@ -140,7 +140,7 @@ export const workflow = defineWorkflow({
     // output field is read, so persist never reshapes it. Native `action`:
     // the tool reads `url`/`reply` straight off the merged input (both
     // already top-level, unrenamed — the tool's sole caller, so its arg was
-    // renamed `companyUrl` → `url` to match intake, CL-4454), so this never
+    // renamed `companyUrl` → `url` to match intake), so this never
     // needs a reshape step.
     document: action({
       handler: FORMAT_REPORT_DOCUMENT_HANDLER,
@@ -157,7 +157,7 @@ export const workflow = defineWorkflow({
     // 8. Persist the report as a research artifact. document already emits
     // write_artifact's title/body verbatim; `kind`/`jobLabel` were always
     // constants, expressed here as one `literal` merge entry — no reshape
-    // step (CL-4454).
+    // step.
     packageArtifact: action({
       handler: WRITE_ARTIFACT_HANDLER,
       input: {

@@ -423,7 +423,7 @@ describe("stepGrantCapabilityNames", () => {
   // @workbench/tools-last30days/core:last30days_ground_queries was not
   // authorized (null)"), and heartbeat's brief-title action (same, for
   // heartbeat_format_brief_title — since moved to its own
-  // @workbench/tools-heartbeat package, CL-4465). Declaring one tool from a
+  // @workbench/tools-heartbeat package). Declaring one tool from a
   // package stages the whole package's definitions in front of the model —
   // entitlement to call must match entitlement to see.
   test("declaring one granola tool grants the package's whole canonical surface", () => {
@@ -528,11 +528,12 @@ describe("buildStepGrantRules", () => {
     // was a pure authorization-resource mismatch, not a credential or
     // pinning defect.
     const rules = buildStepGrantRules(["granola_list_notes"]);
-    const authorize: Parameters<typeof createEffectContext>[0]["authorize"] =
-      async (resource, action) => {
-        const decision = await evaluateGrants(rules, resource, action);
-        return { effect: decision.effect, matchingGrants: [], resolvedBy: null };
-      };
+    const authorize: Parameters<
+      typeof createEffectContext
+    >[0]["authorize"] = async (resource, action) => {
+      const decision = await evaluateGrants(rules, resource, action);
+      return { effect: decision.effect, matchingGrants: [], resolvedBy: null };
+    };
     const ctx = createEffectContext({
       authorize,
       effects: {

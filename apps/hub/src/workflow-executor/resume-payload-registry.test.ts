@@ -350,7 +350,7 @@ describe("validateResumePayload", () => {
     ).toBe(false);
   });
 
-  // TRANSITIONAL (CL-4454): a schedule or parked run created before
+  // TRANSITIONAL: a schedule or parked run created before
   // reddit-opportunity-scanner's intake field was renamed `inputUrl` ->
   // `url` may still hold the old key. See the LEGACY_FIELD_RENAMES comment
   // in resume-payload-registry.ts for the deletion condition.
@@ -470,7 +470,7 @@ describe("validateResumePayload", () => {
     ).toBe(false);
   });
 
-  // TRANSITIONAL (CL-4454): a schedule or parked run created before
+  // TRANSITIONAL: a schedule or parked run created before
   // competitor-analysis's intake field was renamed `companyUrl` -> `url` may
   // still hold the old key. See the LEGACY_FIELD_RENAMES comment in
   // resume-payload-registry.ts for the deletion condition.

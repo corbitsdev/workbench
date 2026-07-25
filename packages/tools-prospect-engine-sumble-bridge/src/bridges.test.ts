@@ -9,7 +9,7 @@ const SUMBLE_ENV = {
   },
 };
 
-describe("prospectEngineSumbleListBridge (CL-4464)", () => {
+describe("prospectEngineSumbleListBridge", () => {
   afterEach(() => {
     mock.restore();
   });
@@ -88,7 +88,7 @@ describe("prospectEngineSumbleListBridge (CL-4464)", () => {
   });
 });
 
-describe("prospectEngineSumbleAddBridge (CL-4464)", () => {
+describe("prospectEngineSumbleAddBridge", () => {
   afterEach(() => {
     mock.restore();
   });

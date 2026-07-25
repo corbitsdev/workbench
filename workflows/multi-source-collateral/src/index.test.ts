@@ -69,7 +69,7 @@ describe("multi-source-collateral package", () => {
     expect(workflow.id).toBe(kind);
   });
 
-  test("list-issues is a native action dispatching the tolerant wrapper tool (CL-4464)", () => {
+  test("list-issues is a native action dispatching the tolerant wrapper tool", () => {
     const primitive = workflow.steps["list-issues"];
     if (primitive === undefined || primitive.kind !== "action") {
       throw new Error(

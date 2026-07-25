@@ -57,7 +57,7 @@ export const PERSIST_ARG_MAP = {
   content: { from: "content" },
 } as const;
 
-// `nonFatal` is retired here (CL-4464): the tolerance moves into the wrapper
+// `nonFatal` is retired here: the tolerance moves into the wrapper
 // tool itself (`collect-tool.ts`), which calls the real
 // `reddit_subreddit_search` in-process and returns a completed non-error
 // envelope on a failed search instead of throwing. `collect` stays a
@@ -89,7 +89,7 @@ const persistStep = deterministicToolStep({
 // (interchange/packages/workflow/src/definition/primitives.ts) and its
 // runtime (`runMap` in runtime/run.ts) invokes exclusively via `invokeStep`;
 // there is no code path to dispatch an `ActionPrimitive` per map iteration.
-// CL-4464 considered folding the per-search iteration into one looping
+// This migration considered folding the per-search iteration into one looping
 // action (as `granola_spawn_call_runs` does), which would sidestep this
 // typing gap entirely — but `steps.collect.output` today is a bare array
 // (map's `runMap` return value, one entry per approved search) that
@@ -102,7 +102,7 @@ const persistStep = deterministicToolStep({
 // separately-resumable `StepStarted`/`StepCompleted` pair per search). That
 // is a material behavior change, not just a mechanical migration, so it was
 // not made here; `collect` keeps its map + deterministicToolStep shape and
-// only the `nonFatal` tag retires (CL-4464), moved into `collect-tool.ts`.
+// only the `nonFatal` tag retires, moved into `collect-tool.ts`.
 export const FIRECRAWL_SCRAPE_HANDLER = canonicalizeStepToolName(
   "reddit-opp-scrape",
   "firecrawl_scrape",

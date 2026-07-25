@@ -8,7 +8,7 @@ import { withToleranceEnvelope } from "@workbench/tool-credentials/tolerance-env
 import { ARTIFACT_READ_DEFINITION } from "@workbench/tools-artifact";
 import { GRANOLA_HUB_TOOLS } from "@workbench/tools-granola";
 
-// Workflow-owned tolerant wrappers (CL-4464): `artifact_read` and
+// Workflow-owned tolerant wrappers: `artifact_read` and
 // `granola_get_note` are genuinely fatal elsewhere (multi-source-collateral's
 // fetch steps, process-granola-call) — only THIS workflow tolerates a failed
 // fetch, because sourceless generation is a supported mode here

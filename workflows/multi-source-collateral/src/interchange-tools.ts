@@ -1,5 +1,5 @@
 // Native `interchange.tools` entry for @workbench/tools-multi-source-collateral
-// (CL-4464). Wraps `linear_list_issues` so the source-listing step can
+// Wraps `linear_list_issues` so the source-listing step can
 // tolerate an unconfigured or failing Linear provider in-process, instead of
 // the retired sidecar-wide `nonFatal` tag (no equivalent on native `action`).
 // Declares the same tool-credential env key the wrapped package itself

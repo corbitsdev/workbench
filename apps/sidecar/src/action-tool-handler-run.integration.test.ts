@@ -1,4 +1,4 @@
-// Proves the CL-4454 migration contract end to end: a native `action` step's
+// Proves the native `action` migration contract end to end: a native `action` step's
 // `input` selector output flows through `@intx/workflow`'s REAL `runLocal` +
 // action primitive, into the production `createActionToolHandlerRegistry`
 // (`action-tool-handler.ts`), through `runDeterministicToolStep`
@@ -260,7 +260,7 @@ async function buildRegistry(): Promise<
   });
 }
 
-describe("action -> real tool dispatch, end to end (CL-4454 migration contract)", () => {
+describe("action -> real tool dispatch, end to end (native action migration contract)", () => {
   beforeAll(async () => {
     // Bun.build resolves `@intx/agent` by walking UP from the entrypoint
     // looking for node_modules, so the fixture source must live somewhere

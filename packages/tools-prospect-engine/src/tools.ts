@@ -225,7 +225,7 @@ export const PROSPECT_ENGINE_EXTRACT_LIST_ORG_IDS_DEFINITION: ToolDefinition = {
 
 // A native `action` selector (`from`/`project`/`merge`/`literal`) can read a
 // dot path or rename nothing — it cannot JSON.parse an agent's `reply` string
-// and pull a nested field out of it (CL-4454, prospect-engine has no native
+// and pull a nested field out of it (prospect-engine has no native
 // equivalent of deterministicToolStep's `fromJson` argMap). Both
 // `prospect_engine_dedupe_candidates` and `prospect_engine_qualify` need the
 // discover/score agents' `{"candidates": [...]}` JSON reply unwrapped into a
@@ -522,7 +522,7 @@ function createMergeLedgerTool(): AgentTool {
           ledger: merged,
           // write_artifact (a tool shared across every workflow) always
           // names its arg `body`; emit it directly rather than aliasing a
-          // separately-named `content` field (CL-4454, single caller).
+          // separately-named `content` field (single caller).
           body: serialized,
         });
       } catch (err) {
@@ -584,7 +584,7 @@ function createQualifyTool(): AgentTool {
         // Alias so format_report's native `action` step can read the
         // qualified shortlist as `baseAccounts` directly — the map/reveal
         // overlay also emits an `accounts` field, and a flat merge of both
-        // steps' outputs would collide on that key (CL-4454). Single
+        // steps' outputs would collide on that key. Single
         // caller (this workflow), so aliasing here beats a reshape step.
         baseAccounts: qualified,
         growthOrganizationIds: qualified
@@ -727,7 +727,7 @@ function createFormatSlackDigestTool(): AgentTool {
   };
 }
 
-// Tolerant by construction (CL-4464): mailRefs is a best-effort deep-link
+// Tolerant by construction: mailRefs is a best-effort deep-link
 // builder ahead of a native `action` step (`ActionPrimitive` has no
 // error-swallow), so a missing artifactId/runId or a thrown builder error
 // never becomes an `isError` `ToolResult` — it returns `{ isError: true,

@@ -6,11 +6,11 @@
 // SAME tenant credential resolves the SAME way. A sixth, keyless factory
 // bundles the two public-API sources (`hackernews_search`, `polymarket_odds`)
 // that need no credential at all. See `./tools.ts` for why these wrappers
-// exist (CL-4464: replacing `nonFatal` deterministic steps with native
+// exist (replacing `nonFatal` deterministic steps with native
 // `action` primitives).
 //
 // Each credentialed factory is built with `defineTool` directly, NOT
-// `defineCredentialedToolPackage` (CL-4454 fix): the credential is resolved
+// `defineCredentialedToolPackage` (a fix): the credential is resolved
 // lazily inside the handler via `createLazySafeCredentialedTool`, so factory
 // construction always succeeds and a missing tenant credential degrades to
 // the wrapper's own `{ isError: true, error }` envelope instead of the

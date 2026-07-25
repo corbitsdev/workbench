@@ -1,4 +1,4 @@
-// Shared dispatch mechanics for the CL-4464 tolerance-envelope wrappers
+// Shared dispatch mechanics for the tolerance-envelope wrappers
 // (Finding 2 in the greybeard review of PR #1310). `tolerant()`,
 // `invokeAgentTool()`, and `findAgentTool()` were byte-identical (or
 // near-identical) across `@workbench/tools-prospect-engine-sumble-bridge`,

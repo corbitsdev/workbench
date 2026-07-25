@@ -20,7 +20,7 @@ const HUB_RPC_ENV = {
   },
 };
 
-describe("prospectEngineLedgerBridge (CL-4464)", () => {
+describe("prospectEngineLedgerBridge", () => {
   const originalFetch = globalThis.fetch;
 
   afterEach(() => {
@@ -111,7 +111,7 @@ describe("prospectEngineLedgerBridge (CL-4464)", () => {
   });
 });
 
-describe("prospectEngineMailBridge (CL-4464)", () => {
+describe("prospectEngineMailBridge", () => {
   test("no transport configured degrades to a successful envelope with an error, never throwing", async () => {
     const runner = prospectEngineMailBridge({} as never);
     const result = await runner.run(

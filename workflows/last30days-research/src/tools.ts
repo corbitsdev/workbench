@@ -13,7 +13,7 @@ import { YOUTUBE_HUB_TOOLS } from "@workbench/tools-youtube";
 import { createHackerNewsTools } from "@workbench/tools-hackernews";
 import { createPolymarketTools } from "@workbench/tools-polymarket";
 
-// Workflow-owned "safe" source tools (CL-4464): each of the 13 last30days
+// Workflow-owned "safe" source tools: each of the 13 last30days
 // source-fetch steps was a best-effort `deterministicToolStep` carrying the
 // `nonFatal` dispatch tag, because the native `action` primitive has no
 // error-swallow — a thrown tool error inside an action's `ctx.perform` always
@@ -231,7 +231,7 @@ export const SAFE_POLYMARKET_ODDS_DEFINITION: ToolDefinition = {
 
 /**
  * Build a safe-source tool whose credential is resolved LAZILY, inside the
- * handler, never at factory-construction time (CL-4454 correctness fix).
+ * handler, never at factory-construction time (a correctness fix).
  * `getToolCredential` throws `ToolCredentialMissingError` the instant a
  * tenant has not configured the provider; if that throw happened while
  * building the tool package itself (as `defineCredentialedToolPackage` does

@@ -1,4 +1,4 @@
-// CL-4454: proves the real selector engine resolves each native `action`
+// Proves the real selector engine resolves each native `action`
 // step's `input` straight to the exact call shape its tool schema expects —
 // no argMap, no reshape layer. Unlike index.test.ts (which asserts on the
 // *definition* shapes), this exercises the real `evaluateSelector` resolver
@@ -19,7 +19,7 @@ function actionInput(id: string) {
   return primitive.input;
 }
 
-describe("CL-4454 competitor-analysis native action selector resolution", () => {
+describe("competitor-analysis native action selector resolution", () => {
   test("scrape's input resolves intake's `url` verbatim as firecrawl_scrape's arg", () => {
     const resolved = evaluateSelector(actionInput("scrape"), {
       trigger: { payload: {} },

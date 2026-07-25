@@ -2,7 +2,10 @@ import {
   heartbeatIntakeStepKey,
   WIRED_BRIEF_SOURCES,
 } from "./preferences-registry";
-import { parseToleranceEnvelope, toleranceFailureContent } from "./tolerance-envelope";
+import {
+  parseToleranceEnvelope,
+  toleranceFailureContent,
+} from "./tolerance-envelope";
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -12,7 +15,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
  * Parse one intake step's stored tool envelope into source-shaped JSON for
  * the brief. Two wire shapes reach here: the legacy `nonFatal`-degraded
  * shape (a plain-text outer `isError: true`, handled below before delegating
- * to the shared tolerance-envelope parser), and the CL-4464 native-action
+ * to the shared tolerance-envelope parser), and the native-action
  * shape every real `heartbeat_intake_source` step now produces — outer
  * `isError` always false, a failure nested in `content` as `{ isError: true,
  * error }` (`@workbench/shared`'s `parseToleranceEnvelope`).

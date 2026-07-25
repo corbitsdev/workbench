@@ -51,7 +51,7 @@ is a fresh run rather than an in-run refine.
 Steps declare their tools as serializable `capabilities`, never inline tool
 factories — the definition is pushed as JSON.
 
-### Native `action` steps (CL-4454)
+### Native `action` steps
 
 Every deterministic tool step except the two source readers now runs as a
 native `@intx/workflow` `action` rather than the workbench-local

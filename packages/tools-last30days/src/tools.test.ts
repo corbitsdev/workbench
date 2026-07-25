@@ -180,7 +180,7 @@ describe("last30days_workflow_brief resilience", () => {
     expect(report.skippedSources?.map((s) => s.source)).toContain("x");
   });
 
-  test("a CL-4464 safe-wrapper envelope (successful ToolResult, JSON { isError: true, error } body) is recorded as a source error, not silently dropped", async () => {
+  test("a safe-wrapper envelope (successful ToolResult, JSON { isError: true, error } body) is recorded as a source error, not silently dropped", async () => {
     // Every last30days source now dispatches through a `last30days_safe_*`
     // wrapper tool (workflows/last30days-research/src/tools.ts) that never
     // lets its own ToolResult.isError come back true — the native `action`

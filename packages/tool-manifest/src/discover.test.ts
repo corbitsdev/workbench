@@ -9,7 +9,7 @@ import { discoverToolPackageDirs } from "./discover";
 // import it directly) and `dockerfile-tool-copy.ts` (which cannot import
 // `apps/hub/bin` and instead has the discovered dirs passed in). It selects
 // on `interchange.manifest` presence, not a `tools-` name prefix, and covers
-// both `packages/*` and `workflows/*` (CL-4463).
+// both `packages/*` and `workflows/*`.
 
 function writeCandidate(
   root: string,

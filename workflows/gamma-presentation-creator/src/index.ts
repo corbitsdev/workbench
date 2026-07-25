@@ -23,7 +23,7 @@ export { DISPLAY_STEPS } from "./display-steps";
 // Native `action` handler refs — the tool's canonical (factory-prefixed) name,
 // resolved via the same build-time-checked lookup `deterministicToolStep`
 // uses, so a typo'd or manifest-drifted tool name fails the build instead of
-// deploying a step nothing can dispatch (CL-4454).
+// deploying a step nothing can dispatch.
 export const ARTIFACT_LIST_HANDLER = canonicalizeStepToolName(
   "presentation-list-artifacts",
   "artifact_list",
@@ -83,9 +83,9 @@ const setupSteps: Record<string, Primitive> = {
     after: ["list-artifacts", "list-notes"],
   }),
   // `artifactId`/`noteId` are each optional on the intake payload — a
-  // text-source intake carries neither. Native `action` (CL-4454) has no
+  // text-source intake carries neither. Native `action` has no
   // argMap/skipStepIfAbsent and no nonFatal error-swallow, so both concerns
-  // move into the wrapper tool itself (`fetch-tools.ts`, CL-4464): missing id
+  // move into the wrapper tool itself (`fetch-tools.ts`): missing id
   // -> `{ skipped: true }` without calling the underlying tool; a failed
   // fetch -> a completed `{ isError: true, error }` envelope instead of a
   // thrown step failure. Sourceless generation is a supported mode

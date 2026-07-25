@@ -159,7 +159,7 @@ const RESUME_PAYLOAD_SCHEMAS: Record<string, Record<string, Type>> = {
   },
 };
 
-// CL-4454 field-rename compatibility shim. CL-4454 renamed several intake
+// Field-rename compatibility shim. A prior migration renamed several intake
 // field names so a workflow's native `action` steps could pass
 // `trigger.payload` straight through with no per-step reshape (native
 // selectors cannot rename a key — see the comments on
@@ -176,7 +176,7 @@ const RESUME_PAYLOAD_SCHEMAS: Record<string, Record<string, Type>> = {
 // unaffected respectively — see trigger-payload-enrichment-registry.ts and
 // the comment on ProspectEngineTriggerPayloadSchema.)
 // DELETE this table (and the call to `applyLegacyFieldRenames` below) once
-// no persisted schedule or parked run can predate CL-4454.
+// no persisted schedule or parked run can predate the field-rename deploy.
 const LEGACY_FIELD_RENAMES: Record<
   string,
   Record<string, Record<string, string>>

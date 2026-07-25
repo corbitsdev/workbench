@@ -1372,9 +1372,9 @@ export function createSidecarStepInvoker(args: {
       const env = await buildEnv(req);
       const argMapJson = tags?.[STEP_ARGMAP_TAG];
       // WORKBENCH-LOCAL (CL-2401): dispatches a deterministic tool call
-      // instead of a reasoning turn. CL-4464 removed the `nonFatal` degrade
-      // (`workbench.nonFatal` tag) this factory used to also read here — no
-      // caller sets it anymore; every best-effort step now owns its own
+      // instead of a reasoning turn. The `nonFatal` degrade
+      // (`workbench.nonFatal` tag) this factory used to also read here has
+      // been removed — no caller sets it anymore; every best-effort step now owns its own
       // tolerance-envelope wrapper (`@workbench/tool-credentials/tolerance-
       // envelope-dispatch`) instead.
       return runDeterministicToolStep({

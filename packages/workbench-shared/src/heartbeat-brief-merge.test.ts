@@ -23,7 +23,7 @@ describe("parseBriefSourceToolEnvelope", () => {
     expect(parsed).toEqual({ isError: true, error: "403 forbidden" });
   });
 
-  // CL-4464: `heartbeat_intake_source` (the native-action intake wrapper)
+  // `heartbeat_intake_source` (the native-action intake wrapper)
   // never sets the outer `isError` — `ActionPrimitive` has no `nonFatal`
   // escape, so a source failure is carried inside `content` as
   // `{ isError: true, error }` instead of a thrown/outer-isError tool result.
@@ -97,7 +97,7 @@ describe("mergeHeartbeatBriefSources", () => {
     });
   });
 
-  // CL-4464: proves the real `heartbeat_intake_source` output contract
+  // Proves the real `heartbeat_intake_source` output contract
   // (outer isError always false, failure nested in content) still degrades
   // that one source to a "not available" note, keeping every other source
   // intact, rather than silently treating the failure as an empty success.

@@ -73,7 +73,7 @@ export type ProspectEngineLane = typeof ProspectEngineLaneSchema.infer;
  * server-stamped — never trusted from the schedule row alone. `title` (the
  * persisted report/mail title) is named to match `write_artifact`'s `title`
  * arg directly — the workflow's own intake field, renamed at the source so
- * the native `action` persist step needs no reshape (CL-4454).
+ * the native `action` persist step needs no reshape.
  */
 export const ProspectEngineTriggerPayloadSchema = type({
   reason: "string > 0",

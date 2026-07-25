@@ -74,7 +74,7 @@ const TRIGGER_PAYLOAD_ENRICHERS: Record<string, TriggerPayloadEnricher> = {
       identity,
     );
   },
-  // CL-4454 compatibility shim: granola-call has no HITL gate at all — its
+  // Compatibility shim: granola-call has no HITL gate at all — its
   // trigger.payload rides straight into its `action` steps, so a schedule
   // saved before the workflow's ONE intake field was renamed `maxCalls` ->
   // `limit` (to match `granola_list_notes`'s own `limit` arg — see
@@ -83,7 +83,7 @@ const TRIGGER_PAYLOAD_ENRICHERS: Record<string, TriggerPayloadEnricher> = {
   // This is the one point every start door funnels through (see this file's
   // module doc comment), so it is the correct place to fold the old key.
   // DELETE this entry once no persisted granola-call schedule can predate
-  // CL-4454.
+  // the field-rename deploy.
   "granola-call": async (_deps, _ctx, input) => {
     if (!("maxCalls" in input)) return input;
     const next = { ...input };
