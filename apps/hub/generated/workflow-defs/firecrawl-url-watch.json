@@ -99,7 +99,7 @@
       "document": {
         "kind": "action",
         "id": "document",
-        "handler": "@workbench/tools-last30days/core:firecrawl_url_watch_format_document",
+        "handler": "@workbench/tools-firecrawl-url-watch/core:firecrawl_url_watch_format_document",
         "drainBehavior": "cancel",
         "input": {
           "merge": [
@@ -113,7 +113,7 @@
         },
         "effect": {
           "requires": [
-            "@workbench/tools-last30days/core:firecrawl_url_watch_format_document"
+            "@workbench/tools-firecrawl-url-watch/core:firecrawl_url_watch_format_document"
           ]
         },
         "after": [

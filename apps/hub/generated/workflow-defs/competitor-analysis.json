@@ -195,7 +195,7 @@
       "document": {
         "kind": "action",
         "id": "document",
-        "handler": "@workbench/tools-last30days/core:competitor_analysis_format_report_document",
+        "handler": "@workbench/tools-competitor-analysis/core:competitor_analysis_format_report_document",
         "drainBehavior": "cancel",
         "input": {
           "merge": [
@@ -209,7 +209,7 @@
         },
         "effect": {
           "requires": [
-            "@workbench/tools-last30days/core:competitor_analysis_format_report_document"
+            "@workbench/tools-competitor-analysis/core:competitor_analysis_format_report_document"
           ]
         },
         "after": [

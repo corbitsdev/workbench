@@ -342,7 +342,7 @@
       "document": {
         "kind": "action",
         "id": "document",
-        "handler": "@workbench/tools-last30days/core:sumble_account_intel_format_report_document",
+        "handler": "@workbench/tools-sumble-account-intel/core:sumble_account_intel_format_report_document",
         "drainBehavior": "cancel",
         "input": {
           "merge": [
@@ -356,7 +356,7 @@
         },
         "effect": {
           "requires": [
-            "@workbench/tools-last30days/core:sumble_account_intel_format_report_document"
+            "@workbench/tools-sumble-account-intel/core:sumble_account_intel_format_report_document"
           ]
         },
         "after": [

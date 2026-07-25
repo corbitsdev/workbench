@@ -219,7 +219,7 @@
       "title": {
         "kind": "action",
         "id": "title",
-        "handler": "@workbench/tools-last30days/core:heartbeat_format_brief_title",
+        "handler": "@workbench/tools-heartbeat/core:heartbeat_format_brief_title",
         "drainBehavior": "cancel",
         "input": {
           "project": {
@@ -231,14 +231,14 @@
         },
         "effect": {
           "requires": [
-            "@workbench/tools-last30days/core:heartbeat_format_brief_title"
+            "@workbench/tools-heartbeat/core:heartbeat_format_brief_title"
           ]
         }
       },
       "document": {
         "kind": "action",
         "id": "document",
-        "handler": "@workbench/tools-last30days/core:heartbeat_format_brief_document",
+        "handler": "@workbench/tools-heartbeat/core:heartbeat_format_brief_document",
         "drainBehavior": "cancel",
         "input": {
           "merge": [
@@ -252,7 +252,7 @@
         },
         "effect": {
           "requires": [
-            "@workbench/tools-last30days/core:heartbeat_format_brief_document"
+            "@workbench/tools-heartbeat/core:heartbeat_format_brief_document"
           ]
         },
         "after": [
@@ -296,7 +296,7 @@
       "notify-prep": {
         "kind": "action",
         "id": "notify-prep",
-        "handler": "@workbench/tools-last30days/core:heartbeat_format_brief_notify",
+        "handler": "@workbench/tools-heartbeat/core:heartbeat_format_brief_notify",
         "drainBehavior": "cancel",
         "input": {
           "merge": [
@@ -331,7 +331,7 @@
         },
         "effect": {
           "requires": [
-            "@workbench/tools-last30days/core:heartbeat_format_brief_notify"
+            "@workbench/tools-heartbeat/core:heartbeat_format_brief_notify"
           ]
         },
         "after": [
