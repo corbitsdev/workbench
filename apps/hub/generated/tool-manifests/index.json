@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-07-25T14:59:24.449Z",
+  "generatedAt": "2026-07-25T15:22:20.296Z",
   "factories": [
     {
       "factoryId": "@workbench/tools-ab-compare/compose",
@@ -484,6 +484,21 @@
       ],
       "sideEffects": {
         "gamma_list_templates": "read"
+      },
+      "myraCatalog": null,
+      "credentialCatalog": null
+    },
+    {
+      "factoryId": "@workbench/tools-gamma-presentation-creator/core",
+      "packageName": "@workbench/tools-gamma-presentation-creator",
+      "providerName": null,
+      "bareToolNames": [
+        "gamma_presentation_creator_prepare_persist",
+        "gamma_presentation_creator_prepare_render"
+      ],
+      "sideEffects": {
+        "gamma_presentation_creator_prepare_render": "read",
+        "gamma_presentation_creator_prepare_persist": "read"
       },
       "myraCatalog": null,
       "credentialCatalog": null
