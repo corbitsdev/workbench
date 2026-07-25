@@ -3,7 +3,6 @@ import { action, defineWorkflow, step } from "@intx/workflow";
 import {
   canonicalizeStepToolName,
   canonicalizeToolNames,
-  deterministicToolStep,
   agentStep,
   LLM_CREDENTIAL_NAME,
   LLM_DEFAULT_MODEL,
@@ -174,11 +173,41 @@ export const WRITE_ARTIFACT_LEDGER_HANDLER = canonicalizeStepToolName(
   "write_artifact",
 );
 
+// Tolerant-bridge handler refs (CL-4464) — each wraps a shared tool
+// in-process and never throws (see `tools-prospect-engine/tolerant-bridges.ts`),
+// so the steps below convert from `deterministicToolStep({ nonFatal: true })`
+// to plain native `action` primitives without losing best-effort degrade
+// behavior.
+export const READ_LEDGER_TOLERANT_HANDLER = canonicalizeStepToolName(
+  "prospect-engine-read-ledger-tolerant",
+  "prospect_engine_read_ledger_tolerant",
+);
+export const READ_ORG_LIST_TOLERANT_HANDLER = canonicalizeStepToolName(
+  "prospect-engine-read-organization-list-tolerant",
+  "prospect_engine_read_organization_list_tolerant",
+);
+export const ADD_ORG_LIST_TOLERANT_HANDLER = canonicalizeStepToolName(
+  "prospect-engine-add-organization-list-tolerant",
+  "prospect_engine_add_organization_list_tolerant",
+);
+export const FORMAT_MAIL_REFS_HANDLER = canonicalizeStepToolName(
+  "prospect-engine-format-mail-refs",
+  "prospect_engine_format_mail_refs",
+);
+export const SEND_MAIL_TOLERANT_HANDLER = canonicalizeStepToolName(
+  "prospect-engine-send-mail-tolerant",
+  "prospect_engine_send_mail_tolerant",
+);
+export const POST_SLACK_TOLERANT_HANDLER = canonicalizeStepToolName(
+  "prospect-engine-post-slack-tolerant",
+  "prospect_engine_post_slack_tolerant",
+);
+
 // ---------------------------------------------------------------------------
 // Graph (gate-free / unattended)
 //
-//   initBudget → findLedger → readLedger? → parseLedger
-//   pipeline / growthList / enterpriseList (nonFatal)
+//   initBudget → findLedger → readLedger (tolerant) → parseLedger
+//   pipeline / growthList / enterpriseList (tolerant)
 //   extract list org ids (avoids content-key collisions on merge)
 //   discover (agent) → dedupe → score → qualify → mapReveal
 //   formatReport → persist → formatDigest (after persist for artifact deep link)
@@ -212,29 +241,21 @@ export const workflow = defineWorkflow({
       after: ["initBudget"],
     }),
 
-    readLedger: deterministicToolStep({
-      id: "prospect-engine-read-ledger",
-      title: "Read seen-accounts ledger body",
-      tool: "artifact_read",
+    // Native `action`, tolerant by construction (CL-4464): the
+    // `prospect_engine_read_ledger_tolerant` bridge wraps artifact_read
+    // in-process and never throws. When findLedger returned no artifact yet
+    // (cold start), the bridge itself returns `{ skipped: true }` rather
+    // than dispatching artifact_read at all — parseLedger tolerates a
+    // missing body either way.
+    readLedger: action({
+      handler: READ_LEDGER_TOLERANT_HANDLER,
       input: { from: "steps.findLedger.output" },
-      argMap: {
-        // artifactId is the sole argMap field and artifact_read's only
-        // required argument, so there is no sensible "call it without an
-        // id" — skipStepIfAbsent: when find returns null (no ledger yet),
-        // skip this step entirely rather than fail the night. parseLedger
-        // tolerates missing body.
-        artifactId: {
-          fromJson: "content",
-          field: "artifactId",
-          skipStepIfAbsent: true,
-        },
-      },
+      effect: { requires: [READ_LEDGER_TOLERANT_HANDLER] },
       after: ["findLedger"],
-      nonFatal: true,
     }),
-    // No argMap on the legacy version either: cold-start nights (and nonFatal
-    // artifact_read isError envelopes) omit `content`; the tool returns an
-    // empty ledger instead of failing the run. Native `action`, verbatim.
+    // Cold-start nights (and a degraded readLedger `{ isError, error }`
+    // envelope) both omit a usable `content`; the tool returns an empty
+    // ledger instead of failing the run.
     parseLedger: action({
       handler: PARSE_LEDGER_HANDLER,
       input: {
@@ -247,40 +268,30 @@ export const workflow = defineWorkflow({
       after: ["initBudget", "readLedger"],
     }),
 
-    pipeline: deterministicToolStep({
-      id: "prospect-engine-read-pipeline-list",
-      title: "Read Attio Active Pipeline exclusions",
-      tool: "sumble_get_organization_list",
-      input: { from: "trigger.payload" },
-      argMap: {
-        listId: { literal: PROSPECT_ENGINE_PIPELINE_LIST_ID },
-      },
+    // Native `action`, tolerant by construction (CL-4464): the
+    // `prospect_engine_read_organization_list_tolerant` bridge wraps
+    // sumble_get_organization_list in-process and never throws — a failed
+    // read degrades to an `{ isError, error }` envelope that
+    // extractListOrgs/dedupe read as an empty org-id list.
+    pipeline: action({
+      handler: READ_ORG_LIST_TOLERANT_HANDLER,
+      input: { literal: PROSPECT_ENGINE_PIPELINE_LIST_ID },
+      effect: { requires: [READ_ORG_LIST_TOLERANT_HANDLER] },
       after: ["parseLedger"],
-      nonFatal: true,
     }),
 
-    growthList: deterministicToolStep({
-      id: "prospect-engine-read-growth-list",
-      title: "Read Engine - Growth list",
-      tool: "sumble_get_organization_list",
-      input: { from: "trigger.payload" },
-      argMap: {
-        listId: { from: "growthEngineListId" },
-      },
+    growthList: action({
+      handler: READ_ORG_LIST_TOLERANT_HANDLER,
+      input: { from: "trigger.payload.growthEngineListId" },
+      effect: { requires: [READ_ORG_LIST_TOLERANT_HANDLER] },
       after: ["parseLedger"],
-      nonFatal: true,
     }),
 
-    enterpriseList: deterministicToolStep({
-      id: "prospect-engine-read-enterprise-list",
-      title: "Read Engine - Enterprise list",
-      tool: "sumble_get_organization_list",
-      input: { from: "trigger.payload" },
-      argMap: {
-        listId: { from: "enterpriseEngineListId" },
-      },
+    enterpriseList: action({
+      handler: READ_ORG_LIST_TOLERANT_HANDLER,
+      input: { from: "trigger.payload.enterpriseEngineListId" },
+      effect: { requires: [READ_ORG_LIST_TOLERANT_HANDLER] },
       after: ["parseLedger"],
-      nonFatal: true,
     }),
 
     // One extract step — project list steps like heartbeat_merge_brief_sources.
@@ -491,62 +502,64 @@ export const workflow = defineWorkflow({
       after: ["mergeLedger"],
     }),
 
-    addGrowth: deterministicToolStep({
-      id: "prospect-engine-add-growth-organizations",
-      title: "Add qualified orgs to Engine - Growth",
-      tool: "sumble_add_organization_list_organizations",
+    // Native `action`, tolerant by construction (CL-4464): the
+    // `prospect_engine_add_organization_list_tolerant` bridge wraps
+    // sumble_add_organization_list_organizations in-process and never
+    // throws — it reads its own lane's listId/organizationIds pair out of
+    // the merged trigger payload + formatReport output itself (no rename
+    // selector exists in the native `action` DSL), so this write being one
+    // of several nightly outputs never blocks persist/saveLedger/notify.
+    addGrowth: action({
+      handler: ADD_ORG_LIST_TOLERANT_HANDLER,
       input: {
         merge: [
           { from: "trigger.payload" },
           { from: "steps.formatReport.output.content" },
+          { literal: { lane: "growth" } },
         ],
       },
-      argMap: {
-        listId: { from: "growthEngineListId" },
-        organizationIds: { from: "growthOrganizationIds" },
-      },
+      effect: { requires: [ADD_ORG_LIST_TOLERANT_HANDLER] },
       after: ["formatReport"],
-      nonFatal: true,
     }),
 
-    addEnterprise: deterministicToolStep({
-      id: "prospect-engine-add-enterprise-organizations",
-      title: "Add qualified orgs to Engine - Enterprise",
-      tool: "sumble_add_organization_list_organizations",
+    addEnterprise: action({
+      handler: ADD_ORG_LIST_TOLERANT_HANDLER,
       input: {
         merge: [
           { from: "trigger.payload" },
           { from: "steps.formatReport.output.content" },
+          { literal: { lane: "enterprise" } },
         ],
       },
-      argMap: {
-        listId: { from: "enterpriseEngineListId" },
-        organizationIds: { from: "enterpriseOrganizationIds" },
-      },
+      effect: { requires: [ADD_ORG_LIST_TOLERANT_HANDLER] },
       after: ["formatReport"],
-      nonFatal: true,
     }),
 
-    mailRefs: deterministicToolStep({
-      id: "prospect-engine-format-mail-refs",
-      title: "Build mail deep links",
-      tool: "prospect_engine_format_mail_refs",
+    // Native `action`, tolerant by construction (CL-4464):
+    // `prospect_engine_format_mail_refs` (this workflow's own tool) now
+    // returns `{ isError: true, error }` content instead of an `isError`
+    // envelope on a missing artifactId/runId or a thrown builder error —
+    // `mail` below tolerates an absent `refs` field either way.
+    mailRefs: action({
+      handler: FORMAT_MAIL_REFS_HANDLER,
       input: {
-        merge: [{ from: "trigger.payload" }, { from: "steps.persist.output" }],
+        merge: [
+          { from: "trigger.payload" },
+          { from: "steps.persist.output.content" },
+          { literal: { workflowLabel: label } },
+        ],
       },
-      argMap: {
-        artifactId: { fromJson: "content", field: "artifactId" },
-        runId: { from: "runId" },
-        workflowLabel: { literal: label },
-      },
+      effect: { requires: [FORMAT_MAIL_REFS_HANDLER] },
       after: ["persist"],
-      nonFatal: true,
     }),
 
-    mail: deterministicToolStep({
-      id: "prospect-engine-mail-digest",
-      title: "Mail the prospect list",
-      tool: "mail_send",
+    // Native `action`, tolerant by construction (CL-4464): the
+    // `prospect_engine_send_mail_tolerant` bridge wraps mail_send in-process
+    // and never throws — it remaps the merged userAddress/title/text/refs
+    // fields to mail_send's to/subject/content/refs args itself (no rename
+    // selector exists in the native `action` DSL).
+    mail: action({
+      handler: SEND_MAIL_TOLERANT_HANDLER,
       input: {
         merge: [
           { from: "trigger.payload" },
@@ -554,34 +567,25 @@ export const workflow = defineWorkflow({
           { from: "steps.mailRefs.output.content" },
         ],
       },
-      argMap: {
-        to: { from: "userAddress" },
-        subject: { from: "title" },
-        content: { from: "text" },
-        refs: { from: "refs" },
-      },
+      effect: { requires: [SEND_MAIL_TOLERANT_HANDLER] },
       after: ["formatDigest", "mailRefs"],
-      nonFatal: true,
     }),
 
     // Slack is one delivery destination among several, not a prerequisite —
-    // the digest already reached the user's inbox via `mail` above. Skip this
-    // step entirely when no channel is configured (skipStepIfAbsent), and
-    // nonFatal as a safety net so a Slack failure never blocks the run.
-    notify: deterministicToolStep({
-      id: "prospect-engine-post-slack-digest",
-      title: "Post the Slack digest",
-      tool: "slack_post_message",
+    // the digest already reached the user's inbox via `mail` above. Native
+    // `action`, tolerant by construction (CL-4464): the
+    // `prospect_engine_post_slack_tolerant` bridge wraps slack_post_message
+    // in-process, skips entirely when no channel is configured, and never
+    // throws on a genuine Slack failure.
+    notify: action({
+      handler: POST_SLACK_TOLERANT_HANDLER,
       input: {
         merge: [
           { from: "trigger.payload" },
           { from: "steps.formatDigest.output.content" },
         ],
       },
-      argMap: {
-        channel: { from: "slackChannelId", skipStepIfAbsent: true },
-        text: { from: "text" },
-      },
+      effect: { requires: [POST_SLACK_TOLERANT_HANDLER] },
       after: [
         "persist",
         "saveLedger",
@@ -590,7 +594,6 @@ export const workflow = defineWorkflow({
         "formatDigest",
         "mail",
       ],
-      nonFatal: true,
     }),
   },
 });

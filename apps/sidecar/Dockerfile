@@ -70,6 +70,8 @@ COPY packages/tools-skills/package.json packages/tools-skills/
 COPY packages/tools-slack/package.json packages/tools-slack/
 COPY packages/tools-sumble/package.json packages/tools-sumble/
 COPY packages/tools-prospect-engine/package.json packages/tools-prospect-engine/
+COPY packages/tools-prospect-engine-slack-bridge/package.json packages/tools-prospect-engine-slack-bridge/
+COPY packages/tools-prospect-engine-sumble-bridge/package.json packages/tools-prospect-engine-sumble-bridge/
 COPY packages/tools-workflows/package.json packages/tools-workflows/
 
 COPY packages/tools-x/package.json packages/tools-x/

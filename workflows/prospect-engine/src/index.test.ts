@@ -63,20 +63,28 @@ describe("prospect-engine workflow package", () => {
     expect(json).toContain("prospect_engine_init_budget");
     expect(json).toContain("prospect_engine_parse_ledger");
     expect(json).toContain("artifact_find_by_title");
-    expect(json).toContain("artifact_read");
+    // readLedger is a tolerant bridge (CL-4464) — it wraps artifact_read
+    // in-process rather than declaring it as the step's own handler.
+    expect(json).toContain("prospect_engine_read_ledger_tolerant");
     expect(json).toContain(String(PROSPECT_ENGINE_PIPELINE_LIST_ID));
-    expect(json).toContain("sumble_get_organization_list");
+    // pipeline/growthList/enterpriseList are tolerant bridges (CL-4464)
+    // wrapping sumble_get_organization_list in-process.
+    expect(json).toContain("prospect_engine_read_organization_list_tolerant");
     expect(json).toContain("prospect_engine_extract_list_org_ids");
   });
 
   test("delivery path writes artifacts, lists, slack, mail (not memory_save)", () => {
     const json = JSON.stringify(workflow);
     expect(json).toContain("write_artifact");
-    expect(json).toContain("sumble_add_organization_list_organizations");
+    // addGrowth/addEnterprise are tolerant bridges (CL-4464) wrapping
+    // sumble_add_organization_list_organizations in-process.
+    expect(json).toContain("prospect_engine_add_organization_list_tolerant");
     expect(json).not.toContain("memory_save");
     expect(json).not.toContain("memory_load");
-    expect(json).toContain("slack_post_message");
-    expect(json).toContain("mail_send");
+    // notify/mail are tolerant bridges (CL-4464) wrapping
+    // slack_post_message/mail_send in-process.
+    expect(json).toContain("prospect_engine_post_slack_tolerant");
+    expect(json).toContain("prospect_engine_send_mail_tolerant");
     expect(json).toContain("prospect_engine_format_slack_digest");
     expect(json).toContain("prospect_engine_format_report");
     // saveLedger migrated to native `action` (CL-4454) — its step key is the
@@ -122,32 +130,30 @@ describe("prospect-engine workflow package", () => {
     expect(slackField?.required).toBe(false);
   });
 
-  test("Slack post step is skipped (not fatal) when no channel is configured", () => {
+  // CL-4464: notify is a native `action` now — `ActionPrimitive` has no
+  // error-swallow, so the "skip when no channel configured" and "never fail
+  // the run on a genuine Slack failure" behaviors both moved INSIDE the
+  // `prospect_engine_post_slack_tolerant` bridge tool (tested at the tool
+  // package level in `tools-prospect-engine-slack-bridge`), not onto a
+  // `deterministicToolStep` argMap/tag. This test asserts the step wiring:
+  // the bridge is declared as notify's handler and effect requirement.
+  test("Slack post step wraps the tolerant bridge, not slack_post_message directly", () => {
     const steps = workflow.steps as unknown as Record<
       string,
-      { agent?: { tags?: Record<string, string> } }
+      { handler?: string; effect?: { requires?: string[] } }
     >;
-    const tags = steps.notify?.agent?.tags ?? {};
-    expect(tags["workbench.tool"]).toBe(
-      "@workbench/tools-slack/slack:slack_post_message",
+    expect(steps.notify?.handler).toContain(
+      "prospect_engine_post_slack_tolerant",
     );
-    expect(tags["workbench.nonFatal"]).toBe("true");
-    const argMap = JSON.parse(tags["workbench.argMap"] ?? "{}") as {
-      channel?: { skipStepIfAbsent?: boolean };
-    };
-    expect(argMap.channel?.skipStepIfAbsent).toBe(true);
+    expect(steps.notify?.effect?.requires).toContain(steps.notify?.handler);
   });
 
-  test("mail step delivers the digest to the user's inbox unconditionally", () => {
+  test("mail step wraps the tolerant bridge, not mail_send directly", () => {
     const steps = workflow.steps as unknown as Record<
       string,
-      { agent?: { tags?: Record<string, string> } }
+      { handler?: string; effect?: { requires?: string[] } }
     >;
-    const tags = steps.mail?.agent?.tags ?? {};
-    expect(tags["workbench.tool"]).toBe("mail_send");
-    const argMap = JSON.parse(tags["workbench.argMap"] ?? "{}") as {
-      to?: { from?: string };
-    };
-    expect(argMap.to?.from).toBe("userAddress");
+    expect(steps.mail?.handler).toContain("prospect_engine_send_mail_tolerant");
+    expect(steps.mail?.effect?.requires).toContain(steps.mail?.handler);
   });
 });

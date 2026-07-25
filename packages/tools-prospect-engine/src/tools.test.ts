@@ -361,6 +361,33 @@ describe("prospect-engine tools", () => {
     expect((refs.content as { refs: unknown[] }).refs).toHaveLength(2);
   });
 
+  // CL-4464: mailRefs is now a native `action` step — `ActionPrimitive` has
+  // no error-swallow, so a missing artifactId/runId must degrade to a
+  // successful outer envelope carrying { isError: true, error } in content,
+  // never an `isError: true` ToolResult (that would throw unconditionally
+  // on the action dispatch path — `step-tool-harness.ts`).
+  test("mail refs tolerates a missing artifactId without setting the outer isError", async () => {
+    const refs = await call("prospect_engine_format_mail_refs", {
+      runId: "run_1",
+    });
+    expect(refs.isError).toBeUndefined();
+    expect(refs.content).toMatchObject({
+      isError: true,
+      error: expect.stringContaining("artifactId"),
+    });
+  });
+
+  test("mail refs tolerates a missing runId without setting the outer isError", async () => {
+    const refs = await call("prospect_engine_format_mail_refs", {
+      artifactId: "art_1",
+    });
+    expect(refs.isError).toBeUndefined();
+    expect(refs.content).toMatchObject({
+      isError: true,
+      error: expect.stringContaining("runId"),
+    });
+  });
+
   test("merge ledger serializes for write_artifact body", async () => {
     const merged = await call("prospect_engine_merge_ledger", {
       ledger: emptyProspectEngineLedger(),
