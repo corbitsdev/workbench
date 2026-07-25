@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-07-25T15:44:49.263Z",
+  "generatedAt": "2026-07-25T16:14:01.505Z",
   "factories": [
     {
       "factoryId": "@workbench/tools-ab-compare/compose",
@@ -530,6 +530,21 @@
       "credentialCatalog": null
     },
     {
+      "factoryId": "@workbench/tools-gamma-presentation-creator/fetch",
+      "packageName": "@workbench/tools-gamma-presentation-creator",
+      "providerName": null,
+      "bareToolNames": [
+        "gamma_presentation_creator_fetch_artifact",
+        "gamma_presentation_creator_fetch_note"
+      ],
+      "sideEffects": {
+        "gamma_presentation_creator_fetch_artifact": "read",
+        "gamma_presentation_creator_fetch_note": "read"
+      },
+      "myraCatalog": null,
+      "credentialCatalog": null
+    },
+    {
       "factoryId": "@workbench/tools-github/github",
       "packageName": "@workbench/tools-github",
       "providerName": "github",
@@ -901,6 +916,19 @@
       }
     },
     {
+      "factoryId": "@workbench/tools-multi-source-collateral/list-issues",
+      "packageName": "@workbench/tools-multi-source-collateral",
+      "providerName": null,
+      "bareToolNames": [
+        "multi_source_collateral_list_issues"
+      ],
+      "sideEffects": {
+        "multi_source_collateral_list_issues": "read"
+      },
+      "myraCatalog": null,
+      "credentialCatalog": null
+    },
+    {
       "factoryId": "@workbench/tools-notion/notion",
       "packageName": "@workbench/tools-notion",
       "providerName": "notion",
@@ -1054,6 +1082,19 @@
           "Pinterest"
         ]
       }
+    },
+    {
+      "factoryId": "@workbench/tools-reddit-opportunity-scanner/collect",
+      "packageName": "@workbench/tools-reddit-opportunity-scanner",
+      "providerName": null,
+      "bareToolNames": [
+        "reddit_opportunity_scanner_collect_search"
+      ],
+      "sideEffects": {
+        "reddit_opportunity_scanner_collect_search": "read"
+      },
+      "myraCatalog": null,
+      "credentialCatalog": null
     },
     {
       "factoryId": "@workbench/tools-reddit-opportunity-watch/core",

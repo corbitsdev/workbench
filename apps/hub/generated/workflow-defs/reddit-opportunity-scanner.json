@@ -153,17 +153,16 @@
             "systemPrompt": "",
             "toolFactories": [],
             "capabilities": [
-              "@workbench/tools-reddit/reddit:reddit_subreddit_search"
+              "@workbench/tools-reddit-opportunity-scanner/collect:reddit_opportunity_scanner_collect_search"
             ],
             "inference": {
               "sources": []
             },
-            "description": "Deterministic tool call: @workbench/tools-reddit/reddit:reddit_subreddit_search",
+            "description": "Deterministic tool call: @workbench/tools-reddit-opportunity-scanner/collect:reddit_opportunity_scanner_collect_search",
             "tags": {
               "workbench.stepKind": "deterministic-tool",
-              "workbench.tool": "@workbench/tools-reddit/reddit:reddit_subreddit_search",
+              "workbench.tool": "@workbench/tools-reddit-opportunity-scanner/collect:reddit_opportunity_scanner_collect_search",
               "workbench.argMap": "{\"subreddit\":{\"from\":\"subreddit\"},\"query\":{\"from\":\"query\"},\"sort\":{\"from\":\"sort\"},\"timeframe\":{\"from\":\"timeframe\"},\"limit\":{\"from\":\"limit\"}}",
-              "workbench.nonFatal": "true",
               "workbench.title": "Search each subreddit"
             }
           },

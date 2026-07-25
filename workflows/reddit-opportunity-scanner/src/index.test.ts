@@ -284,17 +284,19 @@ describe("reddit-opportunity-scanner native workflow", () => {
     });
   });
 
-  test("collect is a deterministic reddit_subreddit_search map over approved searches", () => {
+  test("collect is a deterministic map over approved searches, dispatching the tolerant wrapper tool (CL-4464)", () => {
     const collect = mapPrimitive("collect");
     expect(collect.over).toEqual({ from: "steps.review.output.searches" });
     const inner = collect.step;
     expect(inner.agent.tags?.[STEP_KIND_TAG]).toBe(DETERMINISTIC_TOOL_KIND);
     expect(inner.agent.tags?.[STEP_TOOL_TAG]).toContain(
-      "reddit_subreddit_search",
+      "reddit_opportunity_scanner_collect_search",
     );
     // Load-bearing: one dead subreddit search must degrade to a skip, not throw
     // and poison the whole curate pool (the last30days brief-poison class, CL-2362).
-    expect(inner.agent.tags?.[STEP_NONFATAL_TAG]).toBe("true");
+    // The tolerance now lives in the wrapper tool itself, so the step no
+    // longer needs the retired `nonFatal` tag.
+    expect(inner.agent.tags?.[STEP_NONFATAL_TAG]).toBeUndefined();
     expect(inner.agent.inference.sources).toEqual([]);
     const argMap = inner.agent.tags?.[STEP_ARGMAP_TAG];
     if (argMap === undefined)

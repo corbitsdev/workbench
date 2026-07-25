@@ -155,7 +155,9 @@ COPY packages/tools-youtube/ packages/tools-youtube/
 COPY workflows/exa-topic-watch/ workflows/exa-topic-watch/
 COPY workflows/gamma-presentation-creator/ workflows/gamma-presentation-creator/
 COPY workflows/gtm-scripts-briefs/ workflows/gtm-scripts-briefs/
+COPY workflows/multi-source-collateral/ workflows/multi-source-collateral/
 COPY workflows/process-granola-call/ workflows/process-granola-call/
+COPY workflows/reddit-opportunity-scanner/ workflows/reddit-opportunity-scanner/
 COPY packages/ui/ packages/ui/
 COPY packages/tasks/ packages/tasks/
 COPY packages/workbench-shared/ packages/workbench-shared/
