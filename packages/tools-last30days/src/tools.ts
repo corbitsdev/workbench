@@ -268,9 +268,19 @@ function truncateDetail(detail: string): string {
 
 /**
  * A source step's result is an `{ output: { content, isError? } }` envelope.
- * A failed source (rate-limit/auth/network) arrives as a plain-text `isError`
- * envelope, not JSON — so parsing must degrade to a recorded skip, never throw.
- * One failed source must not poison the brief for the others.
+ * A failed source (rate-limit/auth/network) can arrive two ways:
+ *
+ * - The legacy `nonFatal`-degraded shape: the outer `output.isError` is a
+ *   plain-text `true`, not JSON.
+ * - The CL-4464 native-`action` shape: every source now dispatches through a
+ *   `last30days_safe_*` wrapper tool (`workflows/last30days-research/src/
+ *   tools.ts`) that never lets its OWN `ToolResult.isError` come back true —
+ *   `runDeterministicToolStep` would throw and fail the run if it did. A
+ *   wrapped failure instead arrives as a SUCCESSFUL string result whose JSON
+ *   `content` carries the error as data: `{ isError: true, error }`.
+ *
+ * Both must degrade to a recorded skip, never throw — one failed source must
+ * not poison the brief for the others.
  */
 function parseSourceStep(step: unknown): SourceParse {
   const output = isRecord(step) ? step.output : undefined;
@@ -295,6 +305,13 @@ function parseSourceStep(step: unknown): SourceParse {
   } catch (cause) {
     const reason = cause instanceof Error ? cause.message : String(cause);
     return { ok: false, reason: `non-JSON content: ${reason}` };
+  }
+  if (isRecord(parsed) && parsed.isError === true) {
+    const detail =
+      typeof parsed.error === "string" && parsed.error.trim().length > 0
+        ? truncateDetail(parsed.error)
+        : "tool reported an error";
+    return { ok: false, reason: `source errored: ${detail}` };
   }
   return { ok: true, items: collectItems(parsed) };
 }

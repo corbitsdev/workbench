@@ -180,6 +180,45 @@ describe("last30days_workflow_brief resilience", () => {
     expect(report.skippedSources?.map((s) => s.source)).toContain("x");
   });
 
+  test("a CL-4464 safe-wrapper envelope (successful ToolResult, JSON { isError: true, error } body) is recorded as a source error, not silently dropped", async () => {
+    // Every last30days source now dispatches through a `last30days_safe_*`
+    // wrapper tool (workflows/last30days-research/src/tools.ts) that never
+    // lets its own ToolResult.isError come back true — the native `action`
+    // primitive has no nonFatal escape, so a true outer isError would fail
+    // the whole run. A wrapped failure instead arrives as a SUCCESSFUL
+    // string result whose JSON content carries `{ isError: true, error }`.
+    // `validItemsEnvelope()`'s hardcoded `publishedAt` is a fixed past date
+    // that the 30-day window will eventually age out (a pre-existing test
+    // debt this change does not fix — see the several already-failing date-
+    // drift tests in this file), so this test dates its own good item off
+    // `Date.now()` instead of relying on that helper for the "not poisoned"
+    // half of the assertion.
+    const freshItem = {
+      url: "https://a.com",
+      title: "Alpha post about AI coding agents",
+      publishedAt: new Date().toISOString(),
+      source: "hn",
+      engagement: { upvotes: 200, comments: 40 },
+    };
+    const report = await runBrief({
+      intake: { output: { topic: "AI Coding Agents", days: 30 } },
+      hackernews: { output: { content: JSON.stringify([freshItem]) } },
+      x: {
+        output: {
+          content: JSON.stringify({
+            isError: true,
+            error: "xAI API error: 429 Too Many Requests",
+          }),
+          isError: false,
+        },
+      },
+    });
+    expect(report.items.length).toBeGreaterThan(0);
+    const xSkip = report.skippedSources?.find((s) => s.source === "x");
+    if (!xSkip) throw new Error("expected x to be recorded as skipped");
+    expect(xSkip.reason).toContain("xAI API error: 429 Too Many Requests");
+  });
+
   test("a non-JSON content envelope is skipped, not thrown", async () => {
     const report = await runBrief({
       intake: { output: { topic: "AI Coding Agents", days: 30 } },
