@@ -18,8 +18,6 @@
     "@intx/agent": "workspace:*",
     "@intx/types": "workspace:*",
     "@intx/workflow": "workspace:*",
-    "@workbench/agents": "workspace:*",
-    "@workbench/shared": "workspace:*",
     "@workbench/tool-manifest": "workspace:*",
     "arktype": "catalog:"
   },
