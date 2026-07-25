@@ -11,6 +11,10 @@
     "./factory": {
       "types": "./src/factory.ts",
       "default": "./src/factory.ts"
+    },
+    "./tolerance-envelope-dispatch": {
+      "types": "./src/tolerance-envelope-dispatch.ts",
+      "default": "./src/tolerance-envelope-dispatch.ts"
     }
   },
   "scripts": {

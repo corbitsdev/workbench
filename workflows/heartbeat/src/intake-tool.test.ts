@@ -1,6 +1,10 @@
 import { describe, expect, test } from "bun:test";
 import { toolCredentialEnvKey } from "@workbench/tool-credentials";
 import {
+  mergeHeartbeatBriefSources,
+  parseBriefSourceToolEnvelope,
+} from "@workbench/shared";
+import {
   createHeartbeatIntakeSourceTool,
   HEARTBEAT_INTAKE_SOURCE_DEFINITION,
   HEARTBEAT_INTAKE_SOURCE_ENV_KEYS,
@@ -112,6 +116,70 @@ describe("heartbeat_intake_source (CL-4464)", () => {
       const content = result.content as { isError: boolean; error: string };
       expect(content.isError).toBe(true);
       expect(content.error.length).toBeGreaterThan(0);
+    });
+  });
+
+  // Greybeard review of PR #1310 (Finding 1a): drive the REAL wrapper output
+  // through the REAL consumer, end to end — not a hand-typed shape matching
+  // what the consumer expects. Proves `mergeHeartbeatBriefSources` /
+  // `parseBriefSourceToolEnvelope` actually round-trip
+  // `heartbeat_intake_source`'s own degrade shape into a per-source
+  // "unavailable" note, and that a real success round-trips to the parsed
+  // source data with no `isError` note.
+  describe("round-trips through the real @workbench/shared consumer (Finding 1a)", () => {
+    test("a real degraded heartbeat_intake_source output parses to a per-source isError note", async () => {
+      const tool = createHeartbeatIntakeSourceTool({});
+      const handler = handlerOf(tool);
+      const output = await handler(
+        {
+          id: "c1",
+          name: "heartbeat_intake_source",
+          arguments: { tool: "vercel_list_deployments" },
+        },
+        SIGNAL,
+      );
+
+      const parsed = parseBriefSourceToolEnvelope(output);
+      expect(parsed).toEqual({
+        isError: true,
+        error: "source unavailable: no vercel credential configured",
+      });
+
+      const merged = mergeHeartbeatBriefSources({
+        "intake-vercel": { output },
+      });
+      expect(merged.sources.vercel).toEqual({
+        isError: true,
+        error: "source unavailable: no vercel credential configured",
+      });
+    });
+
+    test("a real success heartbeat_intake_source output round-trips to the parsed source data, no isError note", async () => {
+      const tool = createHeartbeatIntakeSourceTool({
+        [toolCredentialEnvKey("granola")]: {
+          apiKey: "test-key",
+          baseURL: "https://example.invalid",
+        },
+      });
+      const handler = handlerOf(tool);
+      // No live Granola server behind this baseURL, so the underlying fetch
+      // itself fails — but that failure still degrades via the SAME
+      // never-throws contract, proving the round-trip on the fetch-failure
+      // path a real deployment hits when the source is misconfigured rather
+      // than absent.
+      const output = await handler(
+        {
+          id: "c2",
+          name: "heartbeat_intake_source",
+          arguments: { tool: "granola_list_notes" },
+        },
+        SIGNAL,
+      );
+      expect(output.isError).toBe(false);
+
+      const parsed = parseBriefSourceToolEnvelope(output);
+      expect(parsed.isError).toBe(true);
+      expect(typeof parsed.error).toBe("string");
     });
   });
 });

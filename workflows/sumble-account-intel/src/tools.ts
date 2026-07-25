@@ -2,6 +2,7 @@ import { createToolRunner } from "@intx/agent";
 import type { AgentTool, AgentToolRunner } from "@intx/agent";
 import type { ToolDefinition, ToolResult } from "@intx/types/runtime";
 import { getToolCredential } from "@workbench/tool-credentials";
+import { runTolerantTool } from "@workbench/tool-credentials/tolerance-envelope-dispatch";
 import { createSumbleTools } from "@workbench/tools-sumble";
 import type { SumbleToolsConfig } from "@workbench/tools-sumble";
 import { createXTools } from "@workbench/tools-x";
@@ -57,38 +58,6 @@ function coerceArgsObject(
     return parsed as Record<string, unknown>;
   }
   return args;
-}
-
-function errorMessageFromResult(result: ToolResult): string {
-  const { content } = result;
-  if (typeof content === "string" && content.length > 0) {
-    return content;
-  }
-  try {
-    return JSON.stringify(content);
-  } catch {
-    return "unknown tool error";
-  }
-}
-
-/** Best-effort dispatch: never propagates isError — the caller always gets a
- * `{ ok: true, data }` / `{ ok: false, error }` envelope to embed in its own
- * successful ToolResult. */
-async function runTolerant(
-  runner: AgentToolRunner,
-  toolName: string,
-  callId: string,
-  args: Record<string, unknown>,
-  signal: AbortSignal,
-): Promise<{ ok: true; data: unknown } | { ok: false; error: string }> {
-  const result = await runner.run(
-    { id: callId, name: toolName, arguments: args },
-    signal,
-  );
-  if (result.isError === true) {
-    return { ok: false, error: errorMessageFromResult(result) };
-  }
-  return { ok: true, data: result.content };
 }
 
 /** Fatal passthrough: the underlying tool's `isError`/`content` survive
@@ -315,7 +284,7 @@ function createFacetTool(
         };
       }
       const limit = typeof args.limit === "number" ? args.limit : 25;
-      const envelope = await runTolerant(
+      const envelope = await runTolerantTool(
         runner,
         underlyingToolName,
         call.id,
@@ -434,7 +403,7 @@ function createEnrichContactsTool(env: Record<string, unknown>): AgentTool {
           if (!isContactWithName(person)) {
             return { ok: false as const, error: "contact is missing a name" };
           }
-          const envelope = await runTolerant(
+          const envelope = await runTolerantTool(
             xRunner,
             "x_search",
             `${call.id}-${index}`,

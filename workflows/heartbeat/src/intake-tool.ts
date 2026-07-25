@@ -43,7 +43,7 @@ import {
   toolCredentialEnvKey,
   ToolCredentialMissingError,
 } from "@workbench/tool-credentials";
-import { WIRED_BRIEF_SOURCES } from "@workbench/shared";
+import { WIRED_BRIEF_SOURCES, toleranceFailureContent } from "@workbench/shared";
 import { createGranolaTools } from "@workbench/tools-granola";
 import { createLinearToolByName } from "@workbench/tools-linear";
 import { createAttioTools } from "@workbench/tools-attio";
@@ -116,7 +116,7 @@ export const HEARTBEAT_INTAKE_SOURCE_DEFINITION: ToolDefinition = {
 };
 
 function degraded(callId: string, error: string): ToolResult {
-  return { callId, isError: false, content: { isError: true, error } };
+  return { callId, isError: false, content: toleranceFailureContent(error) };
 }
 
 function resultContent(callId: string, content: unknown): ToolResult {
