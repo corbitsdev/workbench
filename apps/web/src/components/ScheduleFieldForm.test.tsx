@@ -91,6 +91,40 @@ describe("ScheduleFieldForm (CL-3861)", () => {
   });
 });
 
+describe("ScheduleFieldForm number bounds and defaults (CL-4538)", () => {
+  const daysField: ScheduleFieldMetadata = {
+    name: "days",
+    label: "Research window (days)",
+    inputHint: "number",
+    required: true,
+    defaultValue: 30,
+    min: 1,
+    step: 1,
+    order: 0,
+  };
+
+  it("renders the declared defaultValue as a real initial value, not a placeholder", () => {
+    renderWithQuery(
+      <ScheduleFieldForm fields={[daysField]} values={{}} onChange={() => {}} />,
+    );
+    const input = screen.getByLabelText(/Research window/) as HTMLInputElement;
+    expect(input.value).toBe("30");
+  });
+
+  it("submits the default when the member never touches the field", () => {
+    expect(scheduleFieldsComplete([daysField], {})).toBe(true);
+  });
+
+  it("renders the declared min and step on the numeric input", () => {
+    renderWithQuery(
+      <ScheduleFieldForm fields={[daysField]} values={{}} onChange={() => {}} />,
+    );
+    const input = screen.getByLabelText(/Research window/) as HTMLInputElement;
+    expect(input.min).toBe("1");
+    expect(input.step).toBe("1");
+  });
+});
+
 describe("ScheduleFieldForm option-backed field (CL-4279)", () => {
   const optionField: ScheduleFieldMetadata = {
     name: "growthEngineListId",
