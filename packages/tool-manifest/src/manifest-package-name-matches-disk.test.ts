@@ -1,4 +1,4 @@
-// CL-4454: a tool package's manifest declares `packageName` by hand
+// a tool package's manifest declares `packageName` by hand
 // (`manifestFromHubToolEntries({ packageName: ... })`); nothing enforced
 // that it actually equals the owning package's real `package.json#name` on
 // disk — the name `build-tool-packages.ts` tarballs. Every affected workflow
@@ -24,7 +24,7 @@ function repoRoot(): string {
 const root = repoRoot();
 const relativeDirs = discoverToolPackageDirs(root);
 
-describe("tool package manifest packageName matches package.json#name on disk (CL-4454)", () => {
+describe("tool package manifest packageName matches package.json#name on disk", () => {
   it("discovered at least one tool package", () => {
     expect(relativeDirs.length).toBeGreaterThan(0);
   });

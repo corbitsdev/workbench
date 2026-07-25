@@ -1,5 +1,5 @@
 /// <reference types="bun" />
-// CL-4454: `toolPackagesForCapabilities` derives a deploy's toolPackagePins
+// `toolPackagesForCapabilities` derives a deploy's toolPackagePins
 // from a factory id (`@scope/pkg-name/segment` -> `@scope/pkg-name`), but
 // nothing enforced that the derived name is a package that was ever actually
 // published. A workflow package's real npm name
@@ -35,7 +35,7 @@ function loadPublishedToolPackageNames(): Set<string> {
   return new Set(raw.map((entry) => entry.name));
 }
 
-describe("toolPackagesForCapabilities pins resolve to published tarballs (CL-4454)", () => {
+describe("toolPackagesForCapabilities pins resolve to published tarballs", () => {
   const publishedNames = loadPublishedToolPackageNames();
 
   it("has at least one published tool package to check against", () => {
