@@ -19,19 +19,19 @@ function readDockerfile(relativePath: string): string {
   return readFileSync(join(repoRoot(), relativePath), "utf8");
 }
 
-const TOOL_MANIFEST_COPY_PREDICATE = (line: string): boolean =>
-  line.includes("/package.json packages/") &&
-  (line.includes("packages/tools-") ||
-    line.includes("packages/tool-manifest/") ||
-    line.includes("packages/tools-interchange-contract/"));
-
-const HUB_TOOL_SOURCE_PREDICATE = (line: string): boolean =>
-  line.includes("packages/tools-") &&
-  !line.includes("package.json") &&
-  line.endsWith("/");
-
 function sorted(lines: string[]): string[] {
   return [...lines].sort();
+}
+
+// Membership against the generator's own output, rather than a hand-rolled
+// string predicate — a predicate re-deriving "which dirs are tool packages"
+// (e.g. matching on `packages/tools-`) goes stale the moment a tool package
+// lives somewhere else, as `workflows/*` did for CL-4463: every `workflows/*`
+// package.json COPY line matched the naive predicate, not just the ones that
+// actually ship a tool manifest.
+function membershipPredicate(expected: readonly string[]): (line: string) => boolean {
+  const expectedSet = new Set(expected);
+  return (line: string): boolean => expectedSet.has(line);
 }
 
 describe("Dockerfile tool COPY blocks vs committed manifests", () => {
@@ -41,7 +41,10 @@ describe("Dockerfile tool COPY blocks vs committed manifests", () => {
 
   test("hub manifest COPY lines match derived tool packages", () => {
     const hub = readDockerfile("apps/hub/Dockerfile");
-    const actual = extractDockerfileLines(hub, TOOL_MANIFEST_COPY_PREDICATE);
+    const actual = extractDockerfileLines(
+      hub,
+      membershipPredicate(expectedManifest),
+    );
     expect(sorted(actual)).toEqual(sorted(expectedManifest));
   });
 
@@ -49,20 +52,26 @@ describe("Dockerfile tool COPY blocks vs committed manifests", () => {
     const sidecar = readDockerfile("apps/sidecar/Dockerfile");
     const actual = extractDockerfileLines(
       sidecar,
-      TOOL_MANIFEST_COPY_PREDICATE,
+      membershipPredicate(expectedManifest),
     );
     expect(sorted(actual)).toEqual(sorted(expectedManifest));
   });
 
   test("web manifest COPY lines match derived tool packages", () => {
     const web = readDockerfile("apps/web/Dockerfile");
-    const actual = extractDockerfileLines(web, TOOL_MANIFEST_COPY_PREDICATE);
+    const actual = extractDockerfileLines(
+      web,
+      membershipPredicate(expectedManifest),
+    );
     expect(sorted(actual)).toEqual(sorted(expectedManifest));
   });
 
   test("hub full-source COPY lines match derived @workbench/tools-* packages", () => {
     const hub = readDockerfile("apps/hub/Dockerfile");
-    const actual = extractDockerfileLines(hub, HUB_TOOL_SOURCE_PREDICATE);
+    const actual = extractDockerfileLines(
+      hub,
+      membershipPredicate(expectedHubSource),
+    );
     expect(sorted(actual)).toEqual(sorted(expectedHubSource));
   });
 
