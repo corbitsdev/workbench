@@ -16,6 +16,9 @@ export const toolManifestFile = {
         heartbeat_format_brief_notify: {
           sideEffect: "read",
         },
+        heartbeat_intake_source: {
+          sideEffect: "read",
+        },
       },
       myraCatalog: null,
       credentialCatalog: null,
