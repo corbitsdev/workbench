@@ -682,6 +682,7 @@
     "packages/blocks": {
       "name": "@workbench/blocks",
       "dependencies": {
+        "@workbench/shared": "workspace:*",
         "@workbench/ui": "workspace:*",
         "arktype": "catalog:",
       },

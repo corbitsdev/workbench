@@ -59,3 +59,4 @@ export {
   type GateDataStatus,
   type GateFallbackInput,
 } from "./gate-fallback";
+export { blocksFromStepUI, type StepUIRunInput } from "./step-ui";

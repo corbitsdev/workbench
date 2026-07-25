@@ -26,17 +26,14 @@ import { type } from "arktype";
 /** What kind of gate a step plays, for host-side classification (e.g. picking
  * a form-vs-choice default, or grouping steps in a run-page timeline). Purely
  * descriptive — the derivation does not branch behavior on it beyond that. */
-export const StepUIRoleSchema = type(
-  "'intake'|'review'|'persist'|'display'",
-);
+export const StepUIRoleSchema = type("'intake'|'review'|'persist'|'display'");
 export type StepUIRole = typeof StepUIRoleSchema.infer;
 
 export const StepUIInputFieldOptionSchema = type({
   value: "string",
   label: "string",
 });
-export type StepUIInputFieldOption =
-  typeof StepUIInputFieldOptionSchema.infer;
+export type StepUIInputFieldOption = typeof StepUIInputFieldOptionSchema.infer;
 
 /**
  * One field of a step's `input` form. Mirrors the leaf-field subset of
@@ -51,6 +48,7 @@ export const StepUIInputFieldSchema = type({
   "placeholder?": "string",
   "required?": "boolean",
   "options?": StepUIInputFieldOptionSchema.array(),
+  "defaultValue?": "string | number",
 });
 export type StepUIInputField = typeof StepUIInputFieldSchema.infer;
 
@@ -64,6 +62,11 @@ export type StepUIOutput = typeof StepUIOutputSchema.infer;
 export const StepUIEntrySchema = type({
   "role?": StepUIRoleSchema,
   "title?": "string",
+  // A gate's prompt/submitLabel default to `title` when unset; set them
+  // explicitly when the gate's copy needs to differ from its progress label
+  // (e.g. a longer question than the short label shown in the run timeline).
+  "prompt?": "string",
+  "submitLabel?": "string",
   "input?": StepUIInputFieldSchema.array(),
   "output?": StepUIOutputSchema,
 });
