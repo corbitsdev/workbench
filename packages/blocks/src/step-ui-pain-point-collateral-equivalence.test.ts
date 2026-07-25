@@ -482,7 +482,7 @@ describe("STEP_UI equivalence: pain-point-collateral (hard workflow)", () => {
       stepOutputs: { intake: noteChoice("unused", NOTES) },
     };
     const actual = blocksFromStepUI(PAIN_POINT_COLLATERAL_STEP_UI, dynamicRun);
-    expect(actual[1]).toEqual(expected[1]);
+    expect(actual).toEqual(expected);
   });
 
   test("note-selection gate, no notes (ok, empty): the empty-state text block", () => {
@@ -519,7 +519,7 @@ describe("STEP_UI equivalence: pain-point-collateral (hard workflow)", () => {
       },
     };
     const actual = blocksFromStepUI(PAIN_POINT_COLLATERAL_STEP_UI, dynamicRun);
-    expect(actual[1]).toEqual(expected[1]);
+    expect(actual).toEqual(expected);
     expect(actual.find((b) => b.kind === "text")).toBeDefined();
   });
 
@@ -561,7 +561,7 @@ describe("STEP_UI equivalence: pain-point-collateral (hard workflow)", () => {
       },
     };
     const actual = blocksFromStepUI(PAIN_POINT_COLLATERAL_STEP_UI, dynamicRun);
-    expect(actual[1]).toEqual(expected[1]);
+    expect(actual).toEqual(expected);
     expect(actual.find((b) => b.kind === "error")).toBeDefined();
   });
 
@@ -580,7 +580,7 @@ describe("STEP_UI equivalence: pain-point-collateral (hard workflow)", () => {
     };
     const expected = referenceBuildPainPointCollateralBlocks(run);
     const actual = blocksFromStepUI(PAIN_POINT_COLLATERAL_STEP_UI, run);
-    expect(actual[1]).toEqual(expected[1]);
+    expect(actual).toEqual(expected);
   });
 
   test("pain-point-selection gate, real data: dynamic multiSelect form from the analyze step's output", () => {
@@ -608,7 +608,7 @@ describe("STEP_UI equivalence: pain-point-collateral (hard workflow)", () => {
       stepOutputs: { analyze: painPointForm("unused", PAIN_POINTS) },
     };
     const actual = blocksFromStepUI(PAIN_POINT_COLLATERAL_STEP_UI, dynamicRun);
-    expect(actual[1]).toEqual(expected[1]);
+    expect(actual).toEqual(expected);
   });
 
   test("format-selection gate: static redirect gate, fixed copy, no data dependency", () => {
@@ -660,9 +660,7 @@ describe("STEP_UI equivalence: pain-point-collateral (hard workflow)", () => {
       stepOutputs: { generate: reviewList("unused", PIECES) },
     };
     const actual = blocksFromStepUI(PAIN_POINT_COLLATERAL_STEP_UI, dynamicRun);
-    // See the format-selection test above for why this compares gate blocks
-    // only, not the full array (progress-label casing intentionally diverges).
-    expect(actual[1]).toEqual(expected[1]);
+    expect(actual).toEqual(expected);
     const gateBlock = actual.find((b) => b.kind === "reviewList");
     expect(gateBlock).toBeDefined();
     if (gateBlock?.kind === "reviewList") {
