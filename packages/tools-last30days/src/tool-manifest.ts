@@ -49,6 +49,9 @@ export const toolManifestFile = {
         sumble_account_intel_format_report_document: {
           sideEffect: "read",
         },
+        firecrawl_url_watch_format_document: {
+          sideEffect: "read",
+        },
       },
       myraCatalog: null,
       credentialCatalog: null,
