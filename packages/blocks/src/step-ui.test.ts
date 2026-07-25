@@ -25,7 +25,7 @@ describe("blocksFromStepUI - progress", () => {
       kind: "progress",
       steps: [
         { state: "done", label: "Sources" },
-        { state: "running", label: "write copy" },
+        { state: "running", label: "Write copy" },
       ],
     });
   });
@@ -62,7 +62,7 @@ describe("blocksFromStepUI - gate", () => {
     });
   });
 
-  test("falls back to the generic choice gate when the step has no STEP_UI entry", () => {
+  test("falls back to a run-page redirect (never a gate-resolving action) when the step has no STEP_UI entry", () => {
     const run: StepUIRunInput = {
       runId: "run_1",
       phase: "running",
@@ -76,10 +76,153 @@ describe("blocksFromStepUI - gate", () => {
     };
     const blocks = blocksFromStepUI({}, run);
     expect(blocks[1]).toEqual({
+      kind: "link",
+      url: "/workflows/run_1",
+      title: "Continue on the run page",
+      description:
+        "This run needs input the dock cannot collect yet. Continue on the run page.",
+    });
+  });
+
+  test("never resolves an unrecognized gate with an action that submits an empty payload", () => {
+    const run: StepUIRunInput = {
+      runId: "run_1",
+      phase: "running",
+      steps: [
+        step({
+          stepId: "intake",
+          phase: "awaiting-signal",
+          awaitingSignalName: "intake",
+        }),
+      ],
+    };
+    const blocks = blocksFromStepUI({}, run);
+    const gateResolvingKinds = new Set(["form", "choice", "multiSelect", "reviewList"]);
+    for (const block of blocks) {
+      expect(gateResolvingKinds.has(block.kind)).toBe(false);
+    }
+  });
+
+  test("a gateFromOutput entry whose source output isn't a usable block yet falls back to the redirect, not a choice with an empty payload", () => {
+    const stepUI: StepUI = {
+      select: { gateFromOutput: true, gateSourceStep: "intake" },
+    };
+    const run: StepUIRunInput = {
+      runId: "run_1",
+      phase: "running",
+      steps: [
+        step({ stepId: "intake", phase: "in-flight" }),
+        step({
+          stepId: "select",
+          phase: "awaiting-signal",
+          awaitingSignalName: "note-selection",
+        }),
+      ],
+      stepOutputs: {},
+    };
+    const blocks = blocksFromStepUI(stepUI, run);
+    expect(blocks[1]).toEqual({
+      kind: "link",
+      url: "/workflows/run_1",
+      title: "Continue on the run page",
+      description:
+        "This run needs input the dock cannot collect yet. Continue on the run page.",
+    });
+  });
+
+  test("a gateFromOutput entry renders the workflow-emitted block and stamps the live signalName", () => {
+    const stepUI: StepUI = {
+      select: { gateFromOutput: true, gateSourceStep: "intake" },
+    };
+    const run: StepUIRunInput = {
+      runId: "run_1",
+      phase: "running",
+      steps: [
+        step({ stepId: "intake", phase: "completed" }),
+        step({
+          stepId: "select",
+          phase: "awaiting-signal",
+          awaitingSignalName: "note-selection",
+        }),
+      ],
+      stepOutputs: {
+        intake: {
+          kind: "choice",
+          prompt: "Pick a note",
+          options: [{ id: "n1", label: "Note 1" }],
+        },
+      },
+    };
+    const blocks = blocksFromStepUI(stepUI, run);
+    expect(blocks[1]).toEqual({
       kind: "choice",
-      prompt: "This run is waiting for your input.",
-      signalName: "intake",
-      options: [{ id: "continue", label: "Continue", value: "" }],
+      prompt: "Pick a note",
+      signalName: "note-selection",
+      options: [{ id: "n1", label: "Note 1" }],
+    });
+  });
+
+  test("a static entry.gate declares a fixed choice with no data dependency", () => {
+    const stepUI: StepUI = {
+      approve: {
+        gate: {
+          kind: "choice",
+          options: [
+            { id: "yes", label: "Approve" },
+            { id: "no", label: "Reject" },
+          ],
+        },
+      },
+    };
+    const run: StepUIRunInput = {
+      runId: "run_1",
+      phase: "running",
+      steps: [
+        step({
+          stepId: "approve",
+          phase: "awaiting-signal",
+          awaitingSignalName: "approve",
+        }),
+      ],
+    };
+    const blocks = blocksFromStepUI(stepUI, run);
+    expect(blocks[1]).toEqual({
+      kind: "choice",
+      signalName: "approve",
+      options: [
+        { id: "yes", label: "Approve" },
+        { id: "no", label: "Reject" },
+      ],
+    });
+  });
+
+  test("a static entry.gate redirect kind renders the fixed run-page copy", () => {
+    const stepUI: StepUI = {
+      fmtSelection: {
+        gate: {
+          kind: "redirect",
+          title: "Choose formats on the run page",
+          description: "Pick formats there.",
+        },
+      },
+    };
+    const run: StepUIRunInput = {
+      runId: "run_1",
+      phase: "running",
+      steps: [
+        step({
+          stepId: "fmtSelection",
+          phase: "awaiting-signal",
+          awaitingSignalName: "format-selection",
+        }),
+      ],
+    };
+    const blocks = blocksFromStepUI(stepUI, run);
+    expect(blocks[1]).toEqual({
+      kind: "link",
+      url: "/workflows/run_1",
+      title: "Choose formats on the run page",
+      description: "Pick formats there.",
     });
   });
 

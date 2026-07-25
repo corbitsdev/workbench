@@ -48,11 +48,6 @@ export {
   type DockSurface,
 } from "./run-dock-blocks";
 export {
-  blocksFromStepUIHints,
-  type GateUIHint,
-  type StepUIHints,
-} from "./step-ui-hints";
-export {
   gateFallbackBlock,
   runPageLink,
   runPageRedirectBlock,

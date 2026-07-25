@@ -1853,8 +1853,8 @@
       "dependencies": {
         "@intx/workflow": "workspace:*",
         "@workbench/agents": "workspace:*",
-        "@workbench/blocks": "workspace:*",
         "@workbench/last30days-core": "workspace:*",
+        "@workbench/shared": "workspace:*",
         "@workbench/tool-credentials": "workspace:*",
         "@workbench/tool-manifest": "workspace:*",
         "@workbench/tools-exa": "workspace:*",

@@ -1,15 +1,15 @@
 import {
-  blocksFromStepUIHints,
+  blocksFromStepUI,
   dockRunBlocks,
   type DockRunInput,
-  type StepUIHints,
   type UIBlock,
 } from "@workbench/blocks";
+import type { StepUI } from "@workbench/shared";
 import { buildAbPresetBlocks } from "@workbench/ab-compare-presets/blocks";
 import { buildAttioTaskAgentBlocks } from "@workbench/workflow-attio-task-agent/blocks";
 import { buildGammaBlocks } from "@workbench/workflow-gamma-presentation-creator/blocks";
 import { buildGtmScriptsBriefsBlocks } from "@workbench/workflow-gtm-scripts-briefs/blocks";
-import { STEP_UI_HINTS as last30daysStepUIHints } from "@workbench/workflow-last30days-research/browser";
+import { STEP_UI as last30daysStepUI } from "@workbench/workflow-last30days-research/browser";
 import { buildPainPointCollateralBlocks } from "@workbench/workflow-pain-point-collateral/blocks";
 import { buildMultiSourceCollateralBlocks } from "@workbench/workflow-multi-source-collateral/blocks";
 import { buildRedditOpportunityScannerBlocks } from "@workbench/workflow-reddit-opportunity-scanner/blocks";
@@ -43,13 +43,14 @@ const builders: Record<string, DockBlockBuilder> = {
   "competitor-analysis": buildCompetitorAnalysisBlocks,
 };
 
-// Per-kind declarative step -> component mappings (CL-3923). A workflow on
-// this path declares which block renders each `awaitSignal` gate as data
-// (`StepUIHints`, colocated with its step definitions) instead of writing a
-// bespoke `DockBlockBuilder` function above — `blocksFromStepUIHints` is the
-// one generic resolver every hint-driven workflow shares.
-const stepUIHints: Record<string, StepUIHints> = {
-  "last30days-research": last30daysStepUIHints,
+// Per-kind declarative step -> component mappings. A workflow on this path
+// declares which block renders each step (progress titles, static/dynamic
+// gates, completed-step outputs) as data (`STEP_UI`, colocated with its step
+// definitions) instead of writing a bespoke `DockBlockBuilder` function above
+// — `blocksFromStepUI` is the one generic resolver every STEP_UI-driven
+// workflow shares.
+const stepUIMaps: Record<string, StepUI> = {
+  "last30days-research": last30daysStepUI,
 };
 
 export function buildDockBlocks(
@@ -58,7 +59,7 @@ export function buildDockBlocks(
 ): UIBlock[] {
   const builder = builders[kind];
   if (builder !== undefined) return builder(input);
-  const hints = stepUIHints[kind];
-  if (hints !== undefined) return blocksFromStepUIHints(hints, input);
+  const stepUI = stepUIMaps[kind];
+  if (stepUI !== undefined) return blocksFromStepUI(stepUI, input);
   return dockRunBlocks(input);
 }
