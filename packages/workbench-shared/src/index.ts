@@ -486,8 +486,12 @@ export type WorkflowFlowStep = typeof WorkflowFlowStepSchema.infer;
 // enriched for schema-driven schedule forms (CL-3860). Input kinds cover the
 // form renderer; `fromProfile` marks fire-time profile-supplied fields.
 // `string-array` supports multi-value verticals (prospect-engine schedule intake).
+// `number` (CL-4538) renders a numeric input and submits a real JS number —
+// required for an intake field whose resume-payload schema requires `number`
+// (e.g. gtm-scripts-briefs' `days`), which a `text` hint's string value would
+// fail at the /resume boundary.
 export const ScheduleFieldInputKindSchema = type(
-  "'text' | 'textarea' | 'url' | 'select' | 'boolean' | 'string-array'",
+  "'text' | 'textarea' | 'url' | 'select' | 'boolean' | 'string-array' | 'number'",
 );
 export type ScheduleFieldInputKind = typeof ScheduleFieldInputKindSchema.infer;
 

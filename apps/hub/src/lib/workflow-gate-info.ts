@@ -9,9 +9,9 @@ export const EmbeddedIntakeFieldSchema = type({
   name: "string > 0",
   label: "string > 0",
   "inputHint?":
-    "'text' | 'textarea' | 'url' | 'select' | 'boolean' | 'string-array'",
+    "'text' | 'textarea' | 'url' | 'select' | 'boolean' | 'string-array' | 'number'",
   "kind?":
-    "'text' | 'textarea' | 'url' | 'select' | 'boolean' | 'string-array'",
+    "'text' | 'textarea' | 'url' | 'select' | 'boolean' | 'string-array' | 'number'",
 
   "required?": "boolean",
   "placeholder?": "string",

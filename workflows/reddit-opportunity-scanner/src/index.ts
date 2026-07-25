@@ -28,6 +28,15 @@ export const kind = "reddit-opportunity-scanner";
 // browser-safe module.
 export { DISPLAY_STEPS } from "./display-steps";
 
+// Schedule-field metadata (CL-4538): re-exported so `build-workflow-defs`
+// (which reads a workflow module's `INTAKE_FIELDS` export) populates the
+// embedded def's `intakeFields` from the SAME list `./blocks.ts`'s intake
+// form renders — without this the Routines/attach form has nothing to
+// render and the /resume boundary rejects the empty payload it collects.
+// Sourced from `./intake-fields` (not `./blocks`) so this server-side entry
+// never gains a runtime edge onto `@workbench/blocks`.
+export { INTAKE_FIELDS } from "./intake-fields";
+
 // -------------------------------------------------------------------------
 // Workflow definition — guided Reddit research flow (CL-2513)
 //

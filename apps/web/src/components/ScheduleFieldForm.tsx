@@ -193,6 +193,22 @@ export function ScheduleFieldForm({
                 }
                 className="w-full rounded-[10px] border border-border bg-page px-3 py-2 text-sm text-text placeholder:text-text-3 focus:outline-none focus-visible:ring-2 focus-visible:ring-border-strong disabled:opacity-60"
               />
+            ) : hint === "number" ? (
+              <input
+                id={fieldId}
+                name={field.name}
+                type="number"
+                value={str}
+                placeholder={field.placeholder}
+                required={field.required}
+                disabled={disabled || fromProfile}
+                readOnly={fromProfile}
+                onChange={(e) => {
+                  const next = e.target.value;
+                  setValue(field.name, next === "" ? undefined : Number(next));
+                }}
+                className="w-full rounded-[10px] border border-border bg-page px-3 py-2 text-sm text-text placeholder:text-text-3 focus:outline-none focus-visible:ring-2 focus-visible:ring-border-strong disabled:opacity-60"
+              />
             ) : hint === "boolean" ? (
               <label className="inline-flex items-center gap-2 text-sm text-text">
                 <input

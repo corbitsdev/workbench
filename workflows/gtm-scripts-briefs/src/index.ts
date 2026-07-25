@@ -6,6 +6,7 @@ import {
 } from "@workbench/agents";
 import { buildResearchSteps } from "@workbench/workflow-last30days-research";
 import { buildScriptsBriefsSystemPrompt } from "./prompts";
+import { INTAKE_FIELDS, INTAKE_SIGNAL, STEP_UI } from "./step-ui";
 
 const WRITER_MAX_TOKENS = 16384;
 
@@ -34,11 +35,19 @@ export const WRITE_ARTIFACT_HANDLER = canonicalizeStepToolName(
 // package for the server catalog classifier and run panel.
 export { DISPLAY_STEPS } from "./display-steps";
 
+// Re-exported so server-side consumers (the workflow catalog, the deploy
+// build) see the same declarations the dock and the schedule/attach UI use.
+// `INTAKE_FIELDS` (CL-4538) is the schedule-field metadata `build-workflow-defs`
+// reads via this module's `INTAKE_FIELDS` export to populate the embedded
+// def's `intakeFields` — without it the Routines/attach form has nothing to
+// render and the /resume boundary rejects the empty payload it collects.
+export { INTAKE_FIELDS, INTAKE_SIGNAL, STEP_UI };
+
 export const workflow = defineWorkflow({
   id: kind,
   trigger: { type: "manual" },
   steps: {
-    intake: awaitSignal({ name: "intake" }),
+    intake: awaitSignal({ name: INTAKE_SIGNAL }),
 
     // Reuse the proven current-story retrieval, grounding, and curation sequence.
     ...buildResearchSteps(),

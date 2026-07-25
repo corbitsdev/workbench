@@ -55,6 +55,38 @@
   ],
   "requiresIntake": true,
   "humanGateCount": 1,
+  "intakeFields": [
+    {
+      "name": "topic",
+      "label": "Topic",
+      "inputHint": "text",
+      "required": true,
+      "placeholder": "e.g. Recent AI agent launches for revenue teams",
+      "order": 0
+    },
+    {
+      "name": "days",
+      "label": "Research window (days)",
+      "inputHint": "number",
+      "required": true,
+      "placeholder": "30",
+      "order": 1
+    },
+    {
+      "name": "audience",
+      "label": "Audience (optional)",
+      "inputHint": "text",
+      "placeholder": "e.g. VP Sales at mid-market SaaS companies",
+      "order": 2
+    },
+    {
+      "name": "objective",
+      "label": "Objective (optional)",
+      "inputHint": "textarea",
+      "placeholder": "What should the artifact help the audience understand or do?",
+      "order": 3
+    }
+  ],
   "definition": {
     "id": "gtm-scripts-briefs",
     "triggers": [

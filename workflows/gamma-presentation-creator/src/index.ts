@@ -20,6 +20,15 @@ export const kind = "gamma-presentation-creator";
 // browser-safe module.
 export { DISPLAY_STEPS } from "./display-steps";
 
+// Schedule-field metadata (CL-4538): re-exported so `build-workflow-defs`
+// (which reads a workflow module's `INTAKE_FIELDS` export) populates the
+// embedded def's `intakeFields` — without it the Routines/attach form has
+// nothing to render for a payload that requires `deckTitle`/`gammaId`, and
+// the /resume boundary rejects the empty payload it collects. See
+// `./intake-fields.ts` for why this declares plain text rather than the
+// dock's live template picker.
+export { INTAKE_FIELDS } from "./intake-fields";
+
 // Native `action` handler refs — the tool's canonical (factory-prefixed) name,
 // resolved via the same build-time-checked lookup `deterministicToolStep`
 // uses, so a typo'd or manifest-drifted tool name fails the build instead of

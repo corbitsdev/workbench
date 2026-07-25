@@ -19,6 +19,7 @@ import {
   type UIBlock,
 } from "@workbench/blocks";
 import { parseCompetitorReport } from "./parse";
+import { INTAKE_FORM_FIELDS } from "./intake-fields";
 
 export const INTAKE_SIGNAL = "intake";
 export const REVIEW_SIGNAL = "review";
@@ -27,6 +28,30 @@ export interface CompetitorAnalysisBlockInput extends DockRunInput {
   /** Decoded step outputs keyed by stepId, as `stepOutputsFromLog` produces. */
   stepOutputs: Record<string, unknown>;
 }
+
+// The dock's intake fields (CL-4538) — the SAME list `./intake-fields.ts`
+// derives the schedule/attach `INTAKE_FIELDS` from, so the two surfaces can
+// never disagree about which fields exist or which are required. Converted
+// to `FormField` here (rather than in `./intake-fields.ts`) so that
+// dependency-free module never needs a runtime edge onto `@workbench/blocks`.
+const INTAKE_BLOCK_FIELDS: readonly FormField[] = INTAKE_FORM_FIELDS.map(
+  (field): FormField => {
+    if (field.kind !== "text" && field.kind !== "textarea") {
+      throw new Error(
+        `competitor-analysis intake field "${field.name}" has unsupported kind "${field.kind}"`,
+      );
+    }
+    return {
+      kind: field.kind,
+      name: field.name,
+      ...(field.label !== undefined ? { label: field.label } : {}),
+      ...(field.placeholder !== undefined
+        ? { placeholder: field.placeholder }
+        : {}),
+      ...(field.required !== undefined ? { required: field.required } : {}),
+    };
+  },
+);
 
 function runPageLink(
   runId: string,
@@ -37,37 +62,13 @@ function runPageLink(
 }
 
 function intakeForm(signalName: string): UIBlock {
-  // Named `url` (not `companyUrl`): must equal the shared `firecrawl_scrape`
-  // tool's arg verbatim — native `action` selectors cannot rename a key
-  // See CompetitorAnalysisIntakePayloadSchema.
-  const companyUrl: FormField = {
-    kind: "text",
-    name: "url",
-    label: "Company website URL",
-    placeholder: "https://acme.com",
-    required: true,
-  };
-  const companyName: FormField = {
-    kind: "text",
-    name: "companyName",
-    label: "Company name (optional)",
-    placeholder: "Acme",
-    required: false,
-  };
-  const focusNotes: FormField = {
-    kind: "textarea",
-    name: "focusNotes",
-    label: "Focus notes (optional)",
-    placeholder: "e.g. mid-market CRM, EU region, product-led motion",
-    required: false,
-  };
   return {
     kind: "form",
     prompt:
       "Enter the company to research. We scrape their site, search for alternatives, and draft a competitor shortlist for you to review.",
     signalName,
     submitLabel: "Find competitors",
-    fields: [companyUrl, companyName, focusNotes],
+    fields: [...INTAKE_BLOCK_FIELDS],
   };
 }
 

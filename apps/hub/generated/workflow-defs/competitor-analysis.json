@@ -42,6 +42,30 @@
   ],
   "requiresIntake": true,
   "humanGateCount": 2,
+  "intakeFields": [
+    {
+      "name": "url",
+      "label": "Company website URL",
+      "inputHint": "text",
+      "required": true,
+      "placeholder": "https://acme.com",
+      "order": 0
+    },
+    {
+      "name": "companyName",
+      "label": "Company name (optional)",
+      "inputHint": "text",
+      "placeholder": "Acme",
+      "order": 1
+    },
+    {
+      "name": "focusNotes",
+      "label": "Focus notes (optional)",
+      "inputHint": "textarea",
+      "placeholder": "e.g. mid-market CRM, EU region, product-led motion",
+      "order": 2
+    }
+  ],
   "definition": {
     "id": "competitor-analysis",
     "triggers": [

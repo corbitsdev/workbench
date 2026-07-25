@@ -284,11 +284,17 @@ describe("STEP_UI equivalence: gtm-scripts-briefs", () => {
   });
 });
 
-describe("drift guard: the copied reference builder vs the live file", () => {
-  test("workflows/gtm-scripts-briefs/src/blocks.ts still matches the literals transcribed above", () => {
+describe("drift guard: the copied reference builder vs the live step-ui declaration", () => {
+  // gtm-scripts-briefs migrated onto `blocksFromStepUI` (CL-4538): `blocks.ts`
+  // is now a thin wrapper delegating to this package's generic derivation, and
+  // the actual field declarations live in the workflow's own
+  // `src/step-ui.ts` (the single source of truth also consumed by the
+  // definition's `INTAKE_FIELDS` export). The guard now reads THAT file
+  // instead of a hand-built `blocks.ts`.
+  test("workflows/gtm-scripts-briefs/src/step-ui.ts still matches the literals transcribed above", () => {
     const live = readFileSync(
       new URL(
-        "../../../workflows/gtm-scripts-briefs/src/blocks.ts",
+        "../../../workflows/gtm-scripts-briefs/src/step-ui.ts",
         import.meta.url,
       ),
       "utf-8",
@@ -301,12 +307,8 @@ describe("drift guard: the copied reference builder vs the live file", () => {
     expect(live).toContain(
       "What should the artifact help the audience understand or do?",
     );
-    expect(live).toContain(
-      "This run needs input the dock cannot collect yet. Continue on the run page.",
-    );
-    // If any of the above ever fails, re-copy the live file's
-    // `buildGtmScriptsBriefsBlocks`/`INTAKE_FIELDS` into
-    // `referenceBuildGtmScriptsBriefsBlocks`/`INTAKE_FIELDS` above before
-    // trusting this equivalence proof again.
+    // If any of the above ever fails, re-copy the live file's `STEP_UI` into
+    // `GTM_SCRIPTS_BRIEFS_STEP_UI` above before trusting this equivalence
+    // proof again.
   });
 });
