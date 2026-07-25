@@ -117,11 +117,10 @@ export const workflow = defineWorkflow({
     // field (also consumed as-is by reddit_subreddit_search) without
     // touching that shared, multi-caller formatter. Rather than renaming a
     // shared tool's arg, this workflow ships its own tiny formatter —
-    // reddit_opportunity_watch_format_digest_document (packaged alongside
-    // the other last30days-family workflow helpers in
-    // @workbench/tools-last30days) — that already takes `query` verbatim,
-    // so intake's `query` and digest's `reply` merge straight through with
-    // no rename.
+    // reddit_opportunity_watch_format_digest_document (shipped in this
+    // workflow's own `@workbench/tools-reddit-opportunity-watch` package) —
+    // that already takes `query` verbatim, so intake's `query` and digest's
+    // `reply` merge straight through with no rename.
     document: action({
       handler: FORMAT_DIGEST_DOCUMENT_HANDLER,
       input: {

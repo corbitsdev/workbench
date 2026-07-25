@@ -422,9 +422,10 @@ describe("stepGrantCapabilityNames", () => {
   // last30days' ground-queries action ("effect
   // @workbench/tools-last30days/core:last30days_ground_queries was not
   // authorized (null)"), and heartbeat's brief-title action (same, for
-  // heartbeat_format_brief_title). Declaring one tool from a package stages
-  // the whole package's definitions in front of the model — entitlement to
-  // call must match entitlement to see.
+  // heartbeat_format_brief_title — since moved to its own
+  // @workbench/tools-heartbeat package, CL-4465). Declaring one tool from a
+  // package stages the whole package's definitions in front of the model —
+  // entitlement to call must match entitlement to see.
   test("declaring one granola tool grants the package's whole canonical surface", () => {
     const declared = ["@workbench/tools-granola/granola:granola_list_notes"];
     const names = stepGrantCapabilityNames(
@@ -458,7 +459,7 @@ describe("stepGrantCapabilityNames", () => {
     const rules = buildStepGrantRules(names);
     const granted = await evaluateGrants(
       rules,
-      "effect:@workbench/tools-last30days/core:heartbeat_format_brief_title",
+      "effect:@workbench/tools-last30days/core:last30days_collect",
       "invoke",
     );
     expect(granted.effect).toBe("allow");

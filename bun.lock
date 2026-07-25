@@ -1646,10 +1646,12 @@
       "version": "0.1.0",
       "dependencies": {
         "@intx/agent": "workspace:*",
+        "@intx/types": "workspace:*",
         "@intx/workflow": "workspace:*",
         "@workbench/agents": "workspace:*",
         "@workbench/blocks": "workspace:*",
         "@workbench/shared": "workspace:*",
+        "@workbench/tool-manifest": "workspace:*",
         "@workbench/ui": "workspace:*",
         "arktype": "catalog:",
         "react": "^19.0.0",
@@ -1687,9 +1689,11 @@
       "version": "0.1.0",
       "dependencies": {
         "@intx/agent": "workspace:*",
+        "@intx/types": "workspace:*",
         "@intx/workflow": "workspace:*",
         "@workbench/agents": "workspace:*",
         "@workbench/shared": "workspace:*",
+        "@workbench/tool-manifest": "workspace:*",
         "arktype": "catalog:",
       },
       "devDependencies": {
@@ -1730,9 +1734,11 @@
       "version": "0.1.0",
       "dependencies": {
         "@intx/agent": "workspace:*",
+        "@intx/types": "workspace:*",
         "@intx/workflow": "workspace:*",
         "@workbench/agents": "workspace:*",
         "@workbench/shared": "workspace:*",
+        "@workbench/tool-manifest": "workspace:*",
         "arktype": "catalog:",
       },
       "devDependencies": {
@@ -1779,9 +1785,11 @@
       "version": "0.1.0",
       "dependencies": {
         "@intx/agent": "workspace:*",
+        "@intx/types": "workspace:*",
         "@intx/workflow": "workspace:*",
         "@workbench/agents": "workspace:*",
         "@workbench/shared": "workspace:*",
+        "@workbench/tool-manifest": "workspace:*",
         "@workbench/ui": "workspace:*",
         "arktype": "catalog:",
         "react": "^19.0.0",
@@ -1936,9 +1944,11 @@
       "version": "0.1.0",
       "dependencies": {
         "@intx/agent": "workspace:*",
+        "@intx/types": "workspace:*",
         "@intx/workflow": "workspace:*",
         "@workbench/agents": "workspace:*",
         "@workbench/shared": "workspace:*",
+        "@workbench/tool-manifest": "workspace:*",
         "arktype": "catalog:",
       },
       "devDependencies": {
@@ -1965,10 +1975,12 @@
       "version": "0.1.0",
       "dependencies": {
         "@intx/agent": "workspace:*",
+        "@intx/types": "workspace:*",
         "@intx/workflow": "workspace:*",
         "@workbench/agents": "workspace:*",
         "@workbench/blocks": "workspace:*",
         "@workbench/shared": "workspace:*",
+        "@workbench/tool-manifest": "workspace:*",
         "@workbench/ui": "workspace:*",
         "arktype": "catalog:",
         "react": "^19.0.0",

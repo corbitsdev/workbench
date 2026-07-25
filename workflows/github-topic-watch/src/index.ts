@@ -79,9 +79,11 @@ export const workflow = defineWorkflow({
     // `packages/agents/src/freddie/definition.ts`), so it fails the
     // single-caller check required before renaming a shared tool's arg.
     //
-    // The fix is a workflow-owned shaping tool (mirrors heartbeat's own
-    // tools in `packages/tools-last30days`): `format-query` renames
-    // `topic` → `query` and stamps the fixed 7-day lookback, so `fetch`'s
+    // The fix is a workflow-owned shaping tool (shipped in this workflow's
+    // own `@workbench/tools-github-topic-watch` package, mirroring
+    // exa-topic-watch/firecrawl-url-watch/reddit-opportunity-watch's own
+    // tools): `format-query` renames `topic` → `query` and stamps the fixed
+    // 7-day lookback, so `fetch`'s
     // native action selector reads `steps.format-query.output.content`
     // verbatim — no argMap anywhere in this workflow.
     "format-query": action({

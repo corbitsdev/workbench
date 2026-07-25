@@ -91,7 +91,7 @@ describe("firecrawl-url-watch", () => {
     const document = actionPrimitive("document");
     expect(document.handler).toBe(FORMAT_DOCUMENT_HANDLER);
     expect(FORMAT_DOCUMENT_HANDLER).toBe(
-      "@workbench/tools-last30days/core:firecrawl_url_watch_format_document",
+      "@workbench/tools-firecrawl-url-watch/core:firecrawl_url_watch_format_document",
     );
     expect(document.input).toEqual({
       merge: [{ from: "steps.intake.output" }, { from: "steps.digest.output" }],
