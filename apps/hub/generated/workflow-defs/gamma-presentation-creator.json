@@ -44,53 +44,36 @@
     ],
     "steps": {
       "list-artifacts": {
-        "kind": "step",
+        "kind": "action",
         "id": "list-artifacts",
-        "agent": {
-          "id": "presentation-list-artifacts",
-          "systemPrompt": "",
-          "toolFactories": [],
-          "capabilities": [
-            "@workbench/tools-artifact/artifact:artifact_list"
-          ],
-          "inference": {
-            "sources": []
-          },
-          "description": "Deterministic tool call: @workbench/tools-artifact/artifact:artifact_list",
-          "tags": {
-            "workbench.stepKind": "deterministic-tool",
-            "workbench.tool": "@workbench/tools-artifact/artifact:artifact_list",
-            "workbench.argMap": "{\"limit\":{\"literal\":50}}",
-            "workbench.title": "List your artifacts"
-          }
-        },
+        "handler": "@workbench/tools-artifact/artifact:artifact_list",
         "drainBehavior": "cancel",
         "input": {
-          "from": "trigger.payload"
+          "literal": {
+            "limit": 50
+          }
+        },
+        "effect": {
+          "requires": [
+            "@workbench/tools-artifact/artifact:artifact_list"
+          ]
         }
       },
       "list-notes": {
-        "kind": "step",
+        "kind": "action",
         "id": "list-notes",
-        "agent": {
-          "id": "presentation-list-notes",
-          "systemPrompt": "",
-          "toolFactories": [],
-          "capabilities": [
-            "@workbench/tools-granola/granola:granola_list_notes"
-          ],
-          "inference": {
-            "sources": []
-          },
-          "description": "Deterministic tool call: @workbench/tools-granola/granola:granola_list_notes",
-          "tags": {
-            "workbench.stepKind": "deterministic-tool",
-            "workbench.tool": "@workbench/tools-granola/granola:granola_list_notes",
-            "workbench.argMap": "{\"limit\":{\"literal\":30}}",
-            "workbench.title": "List your call notes"
+        "handler": "@workbench/tools-granola/granola:granola_list_notes",
+        "drainBehavior": "cancel",
+        "input": {
+          "literal": {
+            "limit": 30
           }
         },
-        "drainBehavior": "cancel"
+        "effect": {
+          "requires": [
+            "@workbench/tools-granola/granola:granola_list_notes"
+          ]
+        }
       },
       "intake": {
         "kind": "awaitSignal",
@@ -197,27 +180,10 @@
           "fetch-note"
         ]
       },
-      "render": {
-        "kind": "step",
-        "id": "render",
-        "agent": {
-          "id": "presentation-render",
-          "systemPrompt": "",
-          "toolFactories": [],
-          "capabilities": [
-            "@workbench/tools-gamma/gamma:gamma_create_from_template"
-          ],
-          "inference": {
-            "sources": []
-          },
-          "description": "Deterministic tool call: @workbench/tools-gamma/gamma:gamma_create_from_template",
-          "tags": {
-            "workbench.stepKind": "deterministic-tool",
-            "workbench.tool": "@workbench/tools-gamma/gamma:gamma_create_from_template",
-            "workbench.argMap": "{\"gammaId\":{\"from\":\"gammaId\"},\"prompt\":{\"from\":\"reply\"}}",
-            "workbench.title": "Build the deck in Gamma"
-          }
-        },
+      "prepare-render": {
+        "kind": "action",
+        "id": "prepare-render",
+        "handler": "@workbench/tools-gamma-presentation-creator/core:gamma_presentation_creator_prepare_render",
         "drainBehavior": "cancel",
         "input": {
           "merge": [
@@ -229,8 +195,30 @@
             }
           ]
         },
+        "effect": {
+          "requires": [
+            "@workbench/tools-gamma-presentation-creator/core:gamma_presentation_creator_prepare_render"
+          ]
+        },
         "after": [
           "generate"
+        ]
+      },
+      "render": {
+        "kind": "action",
+        "id": "render",
+        "handler": "@workbench/tools-gamma/gamma:gamma_create_from_template",
+        "drainBehavior": "cancel",
+        "input": {
+          "from": "steps.prepare-render.output.content"
+        },
+        "effect": {
+          "requires": [
+            "@workbench/tools-gamma/gamma:gamma_create_from_template"
+          ]
+        },
+        "after": [
+          "prepare-render"
         ]
       },
       "describe": {
@@ -262,27 +250,10 @@
           "generate"
         ]
       },
-      "persist": {
-        "kind": "step",
-        "id": "persist",
-        "agent": {
-          "id": "presentation-persist",
-          "systemPrompt": "",
-          "toolFactories": [],
-          "capabilities": [
-            "@workbench/tools-artifact/artifact:artifact_link_gamma_presentation"
-          ],
-          "inference": {
-            "sources": []
-          },
-          "description": "Deterministic tool call: @workbench/tools-artifact/artifact:artifact_link_gamma_presentation",
-          "tags": {
-            "workbench.stepKind": "deterministic-tool",
-            "workbench.tool": "@workbench/tools-artifact/artifact:artifact_link_gamma_presentation",
-            "workbench.argMap": "{\"title\":{\"from\":\"deckTitle\"},\"description\":{\"from\":\"reply\"},\"url\":{\"fromJson\":\"content\",\"field\":\"gammaUrl\"},\"gammaId\":{\"fromJson\":\"content\",\"field\":\"gammaId\"},\"pdfUrl\":{\"fromJson\":\"content\",\"field\":\"exportUrl\"}}",
-            "workbench.title": "Save the deck"
-          }
-        },
+      "prepare-persist": {
+        "kind": "action",
+        "id": "prepare-persist",
+        "handler": "@workbench/tools-gamma-presentation-creator/core:gamma_presentation_creator_prepare_persist",
         "drainBehavior": "cancel",
         "input": {
           "merge": [
@@ -290,16 +261,38 @@
               "from": "steps.intake.output"
             },
             {
-              "from": "steps.render.output"
+              "from": "steps.render.output.content"
             },
             {
               "from": "steps.describe.output"
             }
           ]
         },
+        "effect": {
+          "requires": [
+            "@workbench/tools-gamma-presentation-creator/core:gamma_presentation_creator_prepare_persist"
+          ]
+        },
         "after": [
           "render",
           "describe"
+        ]
+      },
+      "persist": {
+        "kind": "action",
+        "id": "persist",
+        "handler": "@workbench/tools-artifact/artifact:artifact_link_gamma_presentation",
+        "drainBehavior": "cancel",
+        "input": {
+          "from": "steps.prepare-persist.output.content"
+        },
+        "effect": {
+          "requires": [
+            "@workbench/tools-artifact/artifact:artifact_link_gamma_presentation"
+          ]
+        },
+        "after": [
+          "prepare-persist"
         ]
       }
     },
@@ -310,8 +303,10 @@
       "fetch-artifact",
       "fetch-note",
       "generate",
+      "prepare-render",
       "render",
       "describe",
+      "prepare-persist",
       "persist"
     ]
   }
