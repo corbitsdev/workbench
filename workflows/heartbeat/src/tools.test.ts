@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { createHeartbeatTools } from "./tools";
 import { toolManifestFile } from "./tool-manifest";
+import { HEARTBEAT_INTAKE_SOURCE_DEFINITION } from "./intake-tool";
 
 const SIGNAL = new AbortController().signal;
 
@@ -141,9 +142,15 @@ describe("heartbeat_format_brief_title (CL-3502)", () => {
 
 describe("tool-manifest completeness", () => {
   test("every registered tool name is declared in the hand-authored manifest", () => {
-    const runtimeNames = createHeartbeatTools()
-      .map((tool) => tool.definition.name)
-      .sort();
+    // heartbeat_intake_source is built by interchange-tools.ts's factory
+    // (it needs the resolved `env`, unlike createHeartbeatTools's stateless
+    // tools), so it is not in createHeartbeatTools()'s runtime array — add
+    // its definition name explicitly so this test still covers the full
+    // factory's tool surface against the manifest.
+    const runtimeNames = [
+      ...createHeartbeatTools().map((tool) => tool.definition.name),
+      HEARTBEAT_INTAKE_SOURCE_DEFINITION.name,
+    ].sort();
     const factory = toolManifestFile.factories[0];
     if (!factory) {
       throw new Error("expected the heartbeat manifest to declare a factory");
