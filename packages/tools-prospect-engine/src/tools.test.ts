@@ -369,22 +369,23 @@ describe("prospect-engine tools", () => {
       creditsUsed: 50,
     });
     const content = merged.content as {
-      content: string;
+      body: string;
       ledger: { accounts: unknown[] };
     };
     expect(content.ledger.accounts).toHaveLength(1);
-    expect(JSON.parse(content.content).accounts).toHaveLength(1);
+    expect(JSON.parse(content.body).accounts).toHaveLength(1);
   });
 
-  test("merge ledger aliases content as body for write_artifact", async () => {
+  test("merge ledger emits body for write_artifact", async () => {
     const merged = await call("prospect_engine_merge_ledger", {
       ledger: emptyProspectEngineLedger(),
       runDate: "2026-07-20",
       accounts: [],
       creditsUsed: 0,
     });
-    const content = merged.content as { content: string; body: string };
-    expect(content.body).toBe(content.content);
+    const content = merged.content as { body: string };
+    expect(typeof content.body).toBe("string");
+    expect(JSON.parse(content.body)).toHaveProperty("accounts");
   });
 
   test("qualify aliases the shortlist as baseAccounts", async () => {

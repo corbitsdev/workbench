@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { runLocal } from "@intx/workflow/runlocal";
-import type { ActionHandler, StepInvoker } from "@intx/workflow/runtime";
+import type { ActionHandler } from "@intx/workflow/runlocal";
+import type { StepInvoker } from "@intx/workflow/runtime";
 import {
   DETERMINISTIC_TOOL_KIND,
   STEP_KIND_TAG,

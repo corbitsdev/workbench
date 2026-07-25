@@ -1,7 +1,8 @@
 /// <reference types="bun" />
 import { describe, expect, test } from "bun:test";
-import type { ActionHandler, StepInvoker } from "@intx/workflow/runtime";
+import type { StepInvoker } from "@intx/workflow/runtime";
 import { runLocal } from "@intx/workflow/runlocal";
+import type { ActionHandler } from "@intx/workflow/runlocal";
 import {
   FIRECRAWL_SCRAPE_HANDLER,
   FORMAT_DOCUMENT_HANDLER,

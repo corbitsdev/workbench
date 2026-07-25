@@ -517,11 +517,9 @@ function createMergeLedgerTool(): AgentTool {
         const serialized = JSON.stringify(merged);
         return ok(call.id, {
           ledger: merged,
-          content: serialized,
-          // Alias for save_ledger's native `action` step: write_artifact (a
-          // tool shared across every workflow) always names its arg `body`,
-          // so the rename lives here, at this single caller, rather than on
-          // the shared tool (CL-4454).
+          // write_artifact (a tool shared across every workflow) always
+          // names its arg `body`; emit it directly rather than aliasing a
+          // separately-named `content` field (CL-4454, single caller).
           body: serialized,
         });
       } catch (err) {

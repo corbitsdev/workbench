@@ -470,14 +470,14 @@ export const workflow = defineWorkflow({
       after: ["parseLedger", "formatReport"],
     }),
 
-    // mergeLedger emits `body` as an alias of its serialized `content` field
-    // (single caller, CL-4454) precisely so write_artifact — shared across
-    // every workflow, its arg name is never renamed — sees `body` unrenamed.
+    // mergeLedger emits `body` directly (single caller, CL-4454) so
+    // write_artifact — shared across every workflow, its arg name is never
+    // renamed — sees `body` unrenamed.
     saveLedger: action({
       handler: WRITE_ARTIFACT_LEDGER_HANDLER,
       input: {
         merge: [
-          { from: "steps.mergeLedger.output.content" },
+          { from: "steps.mergeLedger.output.body" },
           {
             literal: {
               title: PROSPECT_ENGINE_LEDGER_ARTIFACT_TITLE,
