@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-07-25T14:59:24.449Z",
+  "generatedAt": "2026-07-25T15:21:15.168Z",
   "factories": [
     {
       "factoryId": "@workbench/tools-ab-compare/compose",
@@ -204,6 +204,19 @@
           "required": true
         }
       }
+    },
+    {
+      "factoryId": "@workbench/tools-competitor-analysis/core",
+      "packageName": "@workbench/tools-competitor-analysis",
+      "providerName": null,
+      "bareToolNames": [
+        "competitor_analysis_format_report_document"
+      ],
+      "sideEffects": {
+        "competitor_analysis_format_report_document": "read"
+      },
+      "myraCatalog": null,
+      "credentialCatalog": null
     },
     {
       "factoryId": "@workbench/tools-corbits-knowledge-engine/corbits-knowledge-engine",
@@ -452,6 +465,19 @@
       }
     },
     {
+      "factoryId": "@workbench/tools-firecrawl-url-watch/core",
+      "packageName": "@workbench/tools-firecrawl-url-watch",
+      "providerName": null,
+      "bareToolNames": [
+        "firecrawl_url_watch_format_document"
+      ],
+      "sideEffects": {
+        "firecrawl_url_watch_format_document": "read"
+      },
+      "myraCatalog": null,
+      "credentialCatalog": null
+    },
+    {
       "factoryId": "@workbench/tools-gamma/gamma",
       "packageName": "@workbench/tools-gamma",
       "providerName": "gamma",
@@ -515,6 +541,19 @@
       "credentialCatalog": {
         "label": "GitHub"
       }
+    },
+    {
+      "factoryId": "@workbench/tools-github-topic-watch/core",
+      "packageName": "@workbench/tools-github-topic-watch",
+      "providerName": null,
+      "bareToolNames": [
+        "github_topic_watch_format_activity_query"
+      ],
+      "sideEffects": {
+        "github_topic_watch_format_activity_query": "read"
+      },
+      "myraCatalog": null,
+      "credentialCatalog": null
     },
     {
       "factoryId": "@workbench/tools-granola/call",
@@ -636,16 +675,27 @@
       "credentialCatalog": null
     },
     {
+      "factoryId": "@workbench/tools-heartbeat/core",
+      "packageName": "@workbench/tools-heartbeat",
+      "providerName": null,
+      "bareToolNames": [
+        "heartbeat_format_brief_document",
+        "heartbeat_format_brief_notify",
+        "heartbeat_format_brief_title"
+      ],
+      "sideEffects": {
+        "heartbeat_format_brief_title": "read",
+        "heartbeat_format_brief_document": "read",
+        "heartbeat_format_brief_notify": "read"
+      },
+      "myraCatalog": null,
+      "credentialCatalog": null
+    },
+    {
       "factoryId": "@workbench/tools-last30days/core",
       "packageName": "@workbench/tools-last30days",
       "providerName": null,
       "bareToolNames": [
-        "competitor_analysis_format_report_document",
-        "firecrawl_url_watch_format_document",
-        "github_topic_watch_format_activity_query",
-        "heartbeat_format_brief_document",
-        "heartbeat_format_brief_notify",
-        "heartbeat_format_brief_title",
         "heartbeat_merge_brief_sources",
         "last30days_collect",
         "last30days_core_extract",
@@ -654,9 +704,7 @@
         "last30days_format_report_document",
         "last30days_ground_queries",
         "last30days_validate",
-        "last30days_workflow_brief",
-        "reddit_opportunity_watch_format_digest_document",
-        "sumble_account_intel_format_report_document"
+        "last30days_workflow_brief"
       ],
       "sideEffects": {
         "last30days_core_extract": "read",
@@ -667,15 +715,7 @@
         "last30days_collect": "read",
         "last30days_validate": "read",
         "last30days_workflow_brief": "read",
-        "heartbeat_merge_brief_sources": "read",
-        "heartbeat_format_brief_document": "read",
-        "heartbeat_format_brief_notify": "read",
-        "heartbeat_format_brief_title": "read",
-        "competitor_analysis_format_report_document": "read",
-        "sumble_account_intel_format_report_document": "read",
-        "firecrawl_url_watch_format_document": "read",
-        "github_topic_watch_format_activity_query": "read",
-        "reddit_opportunity_watch_format_digest_document": "read"
+        "heartbeat_merge_brief_sources": "read"
       },
       "myraCatalog": null,
       "credentialCatalog": null
@@ -971,6 +1011,19 @@
       }
     },
     {
+      "factoryId": "@workbench/tools-reddit-opportunity-watch/core",
+      "packageName": "@workbench/tools-reddit-opportunity-watch",
+      "providerName": null,
+      "bareToolNames": [
+        "reddit_opportunity_watch_format_digest_document"
+      ],
+      "sideEffects": {
+        "reddit_opportunity_watch_format_digest_document": "read"
+      },
+      "myraCatalog": null,
+      "credentialCatalog": null
+    },
+    {
       "factoryId": "@workbench/tools-scrapecreators/scrapecreators",
       "packageName": "@workbench/tools-scrapecreators",
       "providerName": "scrapecreators",
@@ -1221,6 +1274,19 @@
       "credentialCatalog": {
         "label": "Sumble"
       }
+    },
+    {
+      "factoryId": "@workbench/tools-sumble-account-intel/core",
+      "packageName": "@workbench/tools-sumble-account-intel",
+      "providerName": null,
+      "bareToolNames": [
+        "sumble_account_intel_format_report_document"
+      ],
+      "sideEffects": {
+        "sumble_account_intel_format_report_document": "read"
+      },
+      "myraCatalog": null,
+      "credentialCatalog": null
     },
     {
       "factoryId": "@workbench/tools-vercel/deploy-artifact",
