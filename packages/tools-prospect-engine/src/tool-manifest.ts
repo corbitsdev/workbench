@@ -18,6 +18,8 @@ export const toolManifestFile = {
         prospect_engine_format_mail_refs: { sideEffect: "read" },
         prospect_engine_serialize_ledger: { sideEffect: "read" },
         prospect_engine_extract_list_org_ids: { sideEffect: "read" },
+        prospect_engine_extract_candidates_from_reply: { sideEffect: "read" },
+        prospect_engine_extract_map_reveal_overlay: { sideEffect: "read" },
       },
     }),
   ],

@@ -9,10 +9,7 @@ import {
   createProspectEngineTools,
 } from "./tools";
 
-function tool(
-  name: string,
-  store = createInMemoryProspectEngineBudgetStore(),
-) {
+function tool(name: string, store = createInMemoryProspectEngineBudgetStore()) {
   const t = createProspectEngineTools({ budgetStore: store }).find(
     (x) => x.definition.name === name,
   );
@@ -132,11 +129,7 @@ describe("prospect-engine tools", () => {
 
   test("wall-clock stop is hard on charge", async () => {
     const store = createInMemoryProspectEngineBudgetStore();
-    const init = await call(
-      "prospect_engine_init_budget",
-      { nowMs: 0 },
-      store,
-    );
+    const init = await call("prospect_engine_init_budget", { nowMs: 0 }, store);
     const { budgetId } = init.content as { budgetId: string };
     const late = await call(
       "prospect_engine_charge_credits",
@@ -184,8 +177,9 @@ describe("prospect-engine tools", () => {
   test("parse ledger cold-start returns empty ledger without content", async () => {
     const empty = await call("prospect_engine_parse_ledger", {});
     expect(empty.isError).toBeUndefined();
-    expect((empty.content as { ledger: { accounts: unknown[] } }).ledger.accounts)
-      .toEqual([]);
+    expect(
+      (empty.content as { ledger: { accounts: unknown[] } }).ledger.accounts,
+    ).toEqual([]);
 
     const errEnvelope = await call("prospect_engine_parse_ledger", {
       content: { isError: true, content: "not found" },
@@ -380,5 +374,99 @@ describe("prospect-engine tools", () => {
     };
     expect(content.ledger.accounts).toHaveLength(1);
     expect(JSON.parse(content.content).accounts).toHaveLength(1);
+  });
+
+  test("merge ledger aliases content as body for write_artifact", async () => {
+    const merged = await call("prospect_engine_merge_ledger", {
+      ledger: emptyProspectEngineLedger(),
+      runDate: "2026-07-20",
+      accounts: [],
+      creditsUsed: 0,
+    });
+    const content = merged.content as { content: string; body: string };
+    expect(content.body).toBe(content.content);
+  });
+
+  test("qualify aliases the shortlist as baseAccounts", async () => {
+    const qualified = await call("prospect_engine_qualify", {
+      candidates: [{ organizationId: 1, score: 80, lane: "growth" }],
+    });
+    const content = qualified.content as {
+      accounts: unknown[];
+      baseAccounts: unknown[];
+    };
+    expect(content.baseAccounts).toEqual(content.accounts);
+  });
+
+  test("extract candidates from reply parses a discover/score JSON reply", async () => {
+    const result = await call("prospect_engine_extract_candidates_from_reply", {
+      reply: JSON.stringify({
+        candidates: [{ organizationId: 7, name: "Delta" }],
+        notes: "ignored",
+      }),
+    });
+    expect(result.isError).toBeUndefined();
+    expect(
+      (result.content as { candidates: { organizationId: number }[] })
+        .candidates,
+    ).toEqual([{ organizationId: 7, name: "Delta" }]);
+  });
+
+  test("extract candidates from reply fails loud on missing/invalid reply", async () => {
+    const missing = await call(
+      "prospect_engine_extract_candidates_from_reply",
+      {},
+    );
+    expect(missing.isError).toBe(true);
+
+    const badJson = await call(
+      "prospect_engine_extract_candidates_from_reply",
+      {
+        reply: "not json",
+      },
+    );
+    expect(badJson.isError).toBe(true);
+
+    const noField = await call(
+      "prospect_engine_extract_candidates_from_reply",
+      {
+        reply: JSON.stringify({ notes: "no candidates key" }),
+      },
+    );
+    expect(noField.isError).toBe(true);
+  });
+
+  test("extract map reveal overlay parses accounts/creditsCharged/stopReason", async () => {
+    const result = await call("prospect_engine_extract_map_reveal_overlay", {
+      reply: JSON.stringify({
+        accounts: [{ organizationId: 1, contacts: [] }],
+        creditsCharged: 30,
+        stopReason: null,
+      }),
+    });
+    expect(result.isError).toBeUndefined();
+    const content = result.content as {
+      accounts: unknown[];
+      creditsUsed?: number;
+      stopReason?: string;
+    };
+    expect(content.accounts).toHaveLength(1);
+    expect(content.creditsUsed).toBe(30);
+    expect(content.stopReason).toBeUndefined();
+  });
+
+  test("extract map reveal overlay is tolerant of a missing or bad reply (thin/failed map)", async () => {
+    const missing = await call(
+      "prospect_engine_extract_map_reveal_overlay",
+      {},
+    );
+    expect(missing.isError).toBeUndefined();
+    expect(missing.content).toEqual({});
+
+    const badJson = await call("prospect_engine_extract_map_reveal_overlay", {
+      reply: "not json",
+    });
+    expect(badJson.isError).toBeUndefined();
+    expect(badJson.content).toEqual({});
   });
 });
