@@ -69,56 +69,6 @@ describe("enrichTriggerPayloadForStart", () => {
     expect(result.enabledSources).not.toEqual(["some-stale-caller-value"]);
   });
 
-  // TRANSITIONAL: granola-call has no HITL gate, so a schedule
-  // saved before its ONE intake field was renamed `maxCalls` -> `limit` may
-  // still hold the old key. See the granola-call entry's comment in
-  // trigger-payload-enrichment-registry.ts for the deletion condition.
-  test("normalizes a legacy granola-call maxCalls into the canonical limit field", async () => {
-    const result = await enrichTriggerPayloadForStart(
-      {
-        db: makeDb(undefined) as HubDb,
-        resolveUserIdentity: async () => ({
-          userAddress: "usr_1@d",
-          userRefId: "1",
-        }),
-      },
-      { kind: "granola-call", tenantId: "tn-1", principalId: "prn-1" },
-      { maxCalls: 5 },
-    );
-    expect(result).toEqual({ limit: 5 });
-  });
-
-  test("prefers a new-shape limit over a legacy maxCalls when both are present", async () => {
-    const result = await enrichTriggerPayloadForStart(
-      {
-        db: makeDb(undefined) as HubDb,
-        resolveUserIdentity: async () => ({
-          userAddress: "usr_1@d",
-          userRefId: "1",
-        }),
-      },
-      { kind: "granola-call", tenantId: "tn-1", principalId: "prn-1" },
-      { maxCalls: 5, limit: 20 },
-    );
-    expect(result).toEqual({ limit: 20 });
-  });
-
-  test("a new-shape granola-call trigger payload (limit only) is unaffected by the legacy shim", async () => {
-    const input = { limit: 8 };
-    const result = await enrichTriggerPayloadForStart(
-      {
-        db: makeDb(undefined) as HubDb,
-        resolveUserIdentity: async () => ({
-          userAddress: "usr_1@d",
-          userRefId: "1",
-        }),
-      },
-      { kind: "granola-call", tenantId: "tn-1", principalId: "prn-1" },
-      input,
-    );
-    expect(result).toBe(input);
-  });
-
   // resolveUserIdentity (apps/hub/src/index.ts) throws when the principal row
   // is missing — a fail-loud invariant, not a fallback. A registered enricher
   // must let that throw propagate rather than catching it and proceeding with

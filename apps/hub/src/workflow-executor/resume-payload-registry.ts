@@ -159,62 +159,6 @@ const RESUME_PAYLOAD_SCHEMAS: Record<string, Record<string, Type>> = {
   },
 };
 
-// Field-rename compatibility shim. A prior migration renamed several intake
-// field names so a workflow's native `action` steps could pass
-// `trigger.payload` straight through with no per-step reshape (native
-// selectors cannot rename a key — see the comments on
-// `CompetitorAnalysisIntakePayloadSchema` / `RedditIntakePayloadSchema` in
-// `@workbench/shared`). A schedule or a parked run created before that
-// deploy can still hold the OLD key; this table folds it to the new one
-// before schema validation runs, so a stored payload from before the rename
-// still resumes correctly instead of the old key silently going missing.
-// Covers:
-//   - competitor-analysis / intake: companyUrl -> url
-//   - reddit-opportunity-scanner / intake: inputUrl -> url
-// (granola-call's maxCalls -> limit and prospect-engine's artifactTitle ->
-// title are handled at the trigger-payload-enrichment boundary /
-// unaffected respectively — see trigger-payload-enrichment-registry.ts and
-// the comment on ProspectEngineTriggerPayloadSchema.)
-// DELETE this table (and the call to `applyLegacyFieldRenames` below) once
-// no persisted schedule or parked run can predate the field-rename deploy.
-const LEGACY_FIELD_RENAMES: Record<
-  string,
-  Record<string, Record<string, string>>
-> = {
-  "competitor-analysis": { intake: { companyUrl: "url" } },
-  "reddit-opportunity-scanner": { intake: { inputUrl: "url" } },
-};
-
-function applyLegacyFieldRenames(
-  kind: string,
-  signalName: string,
-  payload: unknown,
-): unknown {
-  const renames = LEGACY_FIELD_RENAMES[kind]?.[signalName];
-  if (
-    renames === undefined ||
-    payload === null ||
-    typeof payload !== "object" ||
-    Array.isArray(payload)
-  ) {
-    return payload;
-  }
-  const next: Record<string, unknown> = {
-    ...(payload as Record<string, unknown>),
-  };
-  let changed = false;
-  for (const [oldKey, newKey] of Object.entries(renames)) {
-    if (oldKey in next) {
-      if (!(newKey in next)) {
-        next[newKey] = next[oldKey];
-      }
-      delete next[oldKey];
-      changed = true;
-    }
-  }
-  return changed ? next : payload;
-}
-
 export type ResumePayloadValidation =
   | { ok: true; payload?: unknown }
   | { ok: false; error: string };
@@ -238,13 +182,9 @@ export function validateResumePayload(
 ): ResumePayloadValidation {
   const schema = RESUME_PAYLOAD_SCHEMAS[kind]?.[signalName];
   if (schema === undefined) return { ok: true };
-  const renamed = applyLegacyFieldRenames(kind, signalName, payload);
-  const out = schema(renamed);
+  const out = schema(payload);
   if (out instanceof type.errors) {
     return { ok: false, error: out.summary };
-  }
-  if (renamed !== payload) {
-    return { ok: true, payload: out };
   }
   if (
     kind === "multi-source-collateral" &&
