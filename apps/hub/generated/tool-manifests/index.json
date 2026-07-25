@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-07-25T14:36:11.072Z",
+  "generatedAt": "2026-07-25T14:59:24.449Z",
   "factories": [
     {
       "factoryId": "@workbench/tools-ab-compare/compose",
@@ -287,6 +287,19 @@
       "credentialCatalog": {
         "label": "Exa"
       }
+    },
+    {
+      "factoryId": "@workbench/tools-exa-topic-watch/core",
+      "packageName": "@workbench/tools-exa-topic-watch",
+      "providerName": null,
+      "bareToolNames": [
+        "exa_topic_watch_prepare_search"
+      ],
+      "sideEffects": {
+        "exa_topic_watch_prepare_search": "read"
+      },
+      "myraCatalog": null,
+      "credentialCatalog": null
     },
     {
       "factoryId": "@workbench/tools-fileparser/fileparser",
@@ -628,6 +641,8 @@
       "providerName": null,
       "bareToolNames": [
         "competitor_analysis_format_report_document",
+        "firecrawl_url_watch_format_document",
+        "github_topic_watch_format_activity_query",
         "heartbeat_format_brief_document",
         "heartbeat_format_brief_notify",
         "heartbeat_format_brief_title",
@@ -640,6 +655,7 @@
         "last30days_ground_queries",
         "last30days_validate",
         "last30days_workflow_brief",
+        "reddit_opportunity_watch_format_digest_document",
         "sumble_account_intel_format_report_document"
       ],
       "sideEffects": {
@@ -656,7 +672,10 @@
         "heartbeat_format_brief_notify": "read",
         "heartbeat_format_brief_title": "read",
         "competitor_analysis_format_report_document": "read",
-        "sumble_account_intel_format_report_document": "read"
+        "sumble_account_intel_format_report_document": "read",
+        "firecrawl_url_watch_format_document": "read",
+        "github_topic_watch_format_activity_query": "read",
+        "reddit_opportunity_watch_format_digest_document": "read"
       },
       "myraCatalog": null,
       "credentialCatalog": null
