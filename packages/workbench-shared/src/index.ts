@@ -28,6 +28,7 @@ export * from "./sumble-account-intel";
 export * from "./competitor-analysis";
 export * from "./prospect-engine";
 export * from "./tolerance-envelope";
+export * from "./step-ui";
 
 export * from "./web-site";
 export * from "./preferences-registry";
