@@ -1,5 +1,5 @@
-import { awaitSignal, defineWorkflow } from "@intx/workflow";
-import { agentStep, deterministicToolStep } from "@workbench/agents";
+import { action, awaitSignal, defineWorkflow } from "@intx/workflow";
+import { agentStep, canonicalizeStepToolName } from "@workbench/agents";
 
 export const label = "Reddit opportunity watch";
 export const description =
@@ -46,6 +46,22 @@ export const INTAKE_FIELDS = [
   },
 ] as const;
 
+// Native `action` handler refs — same build-time-checked lookup
+// `deterministicToolStep` uses, so a typo'd or manifest-drifted tool name
+// fails the build instead of deploying a step nothing can dispatch.
+export const REDDIT_SUBREDDIT_SEARCH_HANDLER = canonicalizeStepToolName(
+  "reddit-opportunity-watch-fetch",
+  "reddit_subreddit_search",
+);
+export const WRITE_ARTIFACT_HANDLER = canonicalizeStepToolName(
+  "reddit-opportunity-watch-persist",
+  "write_artifact",
+);
+export const FORMAT_DIGEST_DOCUMENT_HANDLER = canonicalizeStepToolName(
+  "reddit-opportunity-watch-document",
+  "reddit_opportunity_watch_format_digest_document",
+);
+
 const DIGEST_SYSTEM_PROMPT = `You write short unattended Reddit opportunity digests for a scheduled watch.
 
 You receive subreddit, query, optional timeframe, and raw reddit_subreddit_search results (JSON research items with url, title, engagement, sometimes topComments).
@@ -63,17 +79,21 @@ export const workflow = defineWorkflow({
     // Unattended: schedule/Routines supply intake; no mid-run HITL after this.
     intake: awaitSignal({ name: "intake" }),
 
-    fetch: deterministicToolStep({
-      id: "reddit-opportunity-watch-fetch",
-      title: "Search the subreddit",
-      tool: "reddit_subreddit_search",
-      input: { from: "steps.intake.output" },
-      argMap: {
-        subreddit: { from: "subreddit" },
-        query: { from: "query" },
-        timeframe: { from: "timeframe" },
-        sort: { literal: "relevance" },
+    // Native action: reddit_subreddit_search's args (subreddit, query,
+    // timeframe, sort, limit) already equal the intake field names except
+    // `sort`, which this workflow always fixes to "relevance" — merged in as
+    // a literal rather than renamed, since reddit_subreddit_search is a
+    // shared tool (also called by reddit-opportunity-scanner) and no rename
+    // is needed here anyway.
+    fetch: action({
+      handler: REDDIT_SUBREDDIT_SEARCH_HANDLER,
+      input: {
+        merge: [
+          { from: "steps.intake.output" },
+          { literal: { sort: "relevance" } },
+        ],
       },
+      effect: { requires: [REDDIT_SUBREDDIT_SEARCH_HANDLER] },
       after: ["intake"],
     }),
 
@@ -92,37 +112,41 @@ export const workflow = defineWorkflow({
       after: ["fetch"],
     }),
 
-    document: deterministicToolStep({
-      id: "reddit-opportunity-watch-document",
-      title: "Compose the digest document",
-      tool: "last30days_format_report_document",
+    // Native action: last30days_format_report_document takes `topic`, which
+    // no native selector can rename from this workflow's intake `query`
+    // field (also consumed as-is by reddit_subreddit_search) without
+    // touching that shared, multi-caller formatter. Rather than renaming a
+    // shared tool's arg, this workflow ships its own tiny formatter —
+    // reddit_opportunity_watch_format_digest_document (packaged alongside
+    // the other last30days-family workflow helpers in
+    // @workbench/tools-last30days) — that already takes `query` verbatim,
+    // so intake's `query` and digest's `reply` merge straight through with
+    // no rename.
+    document: action({
+      handler: FORMAT_DIGEST_DOCUMENT_HANDLER,
       input: {
         merge: [
           { from: "steps.intake.output" },
           { from: "steps.digest.output" },
         ],
       },
-      argMap: {
-        // Title the artifact with the search query (topic-shaped for the helper).
-        topic: { from: "query" },
-        reply: { from: "reply" },
-      },
+      effect: { requires: [FORMAT_DIGEST_DOCUMENT_HANDLER] },
       after: ["digest"],
     }),
 
-    persist: deterministicToolStep({
-      id: "reddit-opportunity-watch-persist",
-      title: "Save digest artifact",
-      tool: "write_artifact",
+    // Native action: reddit_opportunity_watch_format_digest_document already
+    // emits { title, body } (write_artifact's own arg names) under `content`
+    // — no rename needed. `kind`/`jobLabel` are fixed literals merged
+    // alongside.
+    persist: action({
+      handler: WRITE_ARTIFACT_HANDLER,
       input: {
-        merge: [{ from: "steps.document.output.content" }],
+        merge: [
+          { from: "steps.document.output.content" },
+          { literal: { kind: "research", jobLabel: label } },
+        ],
       },
-      argMap: {
-        title: { from: "title" },
-        body: { from: "body" },
-        kind: { literal: "research" },
-        jobLabel: { literal: label },
-      },
+      effect: { requires: [WRITE_ARTIFACT_HANDLER] },
       after: ["document"],
     }),
   },

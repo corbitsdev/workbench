@@ -22,6 +22,7 @@ import {
   SUMBLE_ACCOUNT_INTEL_FORMAT_REPORT_DOCUMENT_DEFINITION,
   FIRECRAWL_URL_WATCH_FORMAT_DOCUMENT_DEFINITION,
   GITHUB_TOPIC_WATCH_FORMAT_ACTIVITY_QUERY_DEFINITION,
+  REDDIT_OPPORTUNITY_WATCH_FORMAT_DIGEST_DOCUMENT_DEFINITION,
   createLast30daysTools,
 } from "@workbench/tools-last30days";
 import type { ContextToolEntry } from "../lib/tool-registry";
@@ -117,5 +118,12 @@ export const LAST30DAYS_CORE_HUB_TOOLS: Record<string, ContextToolEntry> = {
     sideEffect: "read",
     definition: GITHUB_TOPIC_WATCH_FORMAT_ACTIVITY_QUERY_DEFINITION,
     createTools: toolByName("github_topic_watch_format_activity_query"),
+  },
+  reddit_opportunity_watch_format_digest_document: {
+    sideEffect: "read",
+    definition: REDDIT_OPPORTUNITY_WATCH_FORMAT_DIGEST_DOCUMENT_DEFINITION,
+    createTools: toolByName(
+      "reddit_opportunity_watch_format_digest_document",
+    ),
   },
 };
