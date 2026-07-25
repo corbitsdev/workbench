@@ -141,30 +141,17 @@
         ]
       },
       "readLedger": {
-        "kind": "step",
+        "kind": "action",
         "id": "readLedger",
-        "agent": {
-          "id": "prospect-engine-read-ledger",
-          "systemPrompt": "",
-          "toolFactories": [],
-          "capabilities": [
-            "@workbench/tools-artifact/artifact:artifact_read"
-          ],
-          "inference": {
-            "sources": []
-          },
-          "description": "Deterministic tool call: @workbench/tools-artifact/artifact:artifact_read",
-          "tags": {
-            "workbench.stepKind": "deterministic-tool",
-            "workbench.tool": "@workbench/tools-artifact/artifact:artifact_read",
-            "workbench.argMap": "{\"artifactId\":{\"fromJson\":\"content\",\"field\":\"artifactId\",\"skipStepIfAbsent\":true}}",
-            "workbench.nonFatal": "true",
-            "workbench.title": "Read seen-accounts ledger body"
-          }
-        },
+        "handler": "@workbench/tools-prospect-engine/ledger-bridge:prospect_engine_read_ledger_tolerant",
         "drainBehavior": "cancel",
         "input": {
           "from": "steps.findLedger.output"
+        },
+        "effect": {
+          "requires": [
+            "@workbench/tools-prospect-engine/ledger-bridge:prospect_engine_read_ledger_tolerant"
+          ]
         },
         "after": [
           "findLedger"
@@ -196,90 +183,51 @@
         ]
       },
       "pipeline": {
-        "kind": "step",
+        "kind": "action",
         "id": "pipeline",
-        "agent": {
-          "id": "prospect-engine-read-pipeline-list",
-          "systemPrompt": "",
-          "toolFactories": [],
-          "capabilities": [
-            "@workbench/tools-sumble/sumble:sumble_get_organization_list"
-          ],
-          "inference": {
-            "sources": []
-          },
-          "description": "Deterministic tool call: @workbench/tools-sumble/sumble:sumble_get_organization_list",
-          "tags": {
-            "workbench.stepKind": "deterministic-tool",
-            "workbench.tool": "@workbench/tools-sumble/sumble:sumble_get_organization_list",
-            "workbench.argMap": "{\"listId\":{\"literal\":80088}}",
-            "workbench.nonFatal": "true",
-            "workbench.title": "Read Attio Active Pipeline exclusions"
-          }
-        },
+        "handler": "@workbench/tools-prospect-engine-sumble-bridge/list:prospect_engine_read_organization_list_tolerant",
         "drainBehavior": "cancel",
         "input": {
-          "from": "trigger.payload"
+          "literal": 80088
+        },
+        "effect": {
+          "requires": [
+            "@workbench/tools-prospect-engine-sumble-bridge/list:prospect_engine_read_organization_list_tolerant"
+          ]
         },
         "after": [
           "parseLedger"
         ]
       },
       "growthList": {
-        "kind": "step",
+        "kind": "action",
         "id": "growthList",
-        "agent": {
-          "id": "prospect-engine-read-growth-list",
-          "systemPrompt": "",
-          "toolFactories": [],
-          "capabilities": [
-            "@workbench/tools-sumble/sumble:sumble_get_organization_list"
-          ],
-          "inference": {
-            "sources": []
-          },
-          "description": "Deterministic tool call: @workbench/tools-sumble/sumble:sumble_get_organization_list",
-          "tags": {
-            "workbench.stepKind": "deterministic-tool",
-            "workbench.tool": "@workbench/tools-sumble/sumble:sumble_get_organization_list",
-            "workbench.argMap": "{\"listId\":{\"from\":\"growthEngineListId\"}}",
-            "workbench.nonFatal": "true",
-            "workbench.title": "Read Engine - Growth list"
-          }
-        },
+        "handler": "@workbench/tools-prospect-engine-sumble-bridge/list:prospect_engine_read_organization_list_tolerant",
         "drainBehavior": "cancel",
         "input": {
-          "from": "trigger.payload"
+          "from": "trigger.payload.growthEngineListId"
+        },
+        "effect": {
+          "requires": [
+            "@workbench/tools-prospect-engine-sumble-bridge/list:prospect_engine_read_organization_list_tolerant"
+          ]
         },
         "after": [
           "parseLedger"
         ]
       },
       "enterpriseList": {
-        "kind": "step",
+        "kind": "action",
         "id": "enterpriseList",
-        "agent": {
-          "id": "prospect-engine-read-enterprise-list",
-          "systemPrompt": "",
-          "toolFactories": [],
-          "capabilities": [
-            "@workbench/tools-sumble/sumble:sumble_get_organization_list"
-          ],
-          "inference": {
-            "sources": []
-          },
-          "description": "Deterministic tool call: @workbench/tools-sumble/sumble:sumble_get_organization_list",
-          "tags": {
-            "workbench.stepKind": "deterministic-tool",
-            "workbench.tool": "@workbench/tools-sumble/sumble:sumble_get_organization_list",
-            "workbench.argMap": "{\"listId\":{\"from\":\"enterpriseEngineListId\"}}",
-            "workbench.nonFatal": "true",
-            "workbench.title": "Read Engine - Enterprise list"
-          }
-        },
+        "handler": "@workbench/tools-prospect-engine-sumble-bridge/list:prospect_engine_read_organization_list_tolerant",
         "drainBehavior": "cancel",
         "input": {
-          "from": "trigger.payload"
+          "from": "trigger.payload.enterpriseEngineListId"
+        },
+        "effect": {
+          "requires": [
+            "@workbench/tools-prospect-engine-sumble-bridge/list:prospect_engine_read_organization_list_tolerant"
+          ]
         },
         "after": [
           "parseLedger"
@@ -703,27 +651,9 @@
         ]
       },
       "addGrowth": {
-        "kind": "step",
+        "kind": "action",
         "id": "addGrowth",
-        "agent": {
-          "id": "prospect-engine-add-growth-organizations",
-          "systemPrompt": "",
-          "toolFactories": [],
-          "capabilities": [
-            "@workbench/tools-sumble/sumble:sumble_add_organization_list_organizations"
-          ],
-          "inference": {
-            "sources": []
-          },
-          "description": "Deterministic tool call: @workbench/tools-sumble/sumble:sumble_add_organization_list_organizations",
-          "tags": {
-            "workbench.stepKind": "deterministic-tool",
-            "workbench.tool": "@workbench/tools-sumble/sumble:sumble_add_organization_list_organizations",
-            "workbench.argMap": "{\"listId\":{\"from\":\"growthEngineListId\"},\"organizationIds\":{\"from\":\"growthOrganizationIds\"}}",
-            "workbench.nonFatal": "true",
-            "workbench.title": "Add qualified orgs to Engine - Growth"
-          }
-        },
+        "handler": "@workbench/tools-prospect-engine-sumble-bridge/add:prospect_engine_add_organization_list_tolerant",
         "drainBehavior": "cancel",
         "input": {
           "merge": [
@@ -732,7 +662,17 @@
             },
             {
               "from": "steps.formatReport.output.content"
+            },
+            {
+              "literal": {
+                "lane": "growth"
+              }
             }
+          ]
+        },
+        "effect": {
+          "requires": [
+            "@workbench/tools-prospect-engine-sumble-bridge/add:prospect_engine_add_organization_list_tolerant"
           ]
         },
         "after": [
@@ -740,27 +680,9 @@
         ]
       },
       "addEnterprise": {
-        "kind": "step",
+        "kind": "action",
         "id": "addEnterprise",
-        "agent": {
-          "id": "prospect-engine-add-enterprise-organizations",
-          "systemPrompt": "",
-          "toolFactories": [],
-          "capabilities": [
-            "@workbench/tools-sumble/sumble:sumble_add_organization_list_organizations"
-          ],
-          "inference": {
-            "sources": []
-          },
-          "description": "Deterministic tool call: @workbench/tools-sumble/sumble:sumble_add_organization_list_organizations",
-          "tags": {
-            "workbench.stepKind": "deterministic-tool",
-            "workbench.tool": "@workbench/tools-sumble/sumble:sumble_add_organization_list_organizations",
-            "workbench.argMap": "{\"listId\":{\"from\":\"enterpriseEngineListId\"},\"organizationIds\":{\"from\":\"enterpriseOrganizationIds\"}}",
-            "workbench.nonFatal": "true",
-            "workbench.title": "Add qualified orgs to Engine - Enterprise"
-          }
-        },
+        "handler": "@workbench/tools-prospect-engine-sumble-bridge/add:prospect_engine_add_organization_list_tolerant",
         "drainBehavior": "cancel",
         "input": {
           "merge": [
@@ -769,7 +691,17 @@
             },
             {
               "from": "steps.formatReport.output.content"
+            },
+            {
+              "literal": {
+                "lane": "enterprise"
+              }
             }
+          ]
+        },
+        "effect": {
+          "requires": [
+            "@workbench/tools-prospect-engine-sumble-bridge/add:prospect_engine_add_organization_list_tolerant"
           ]
         },
         "after": [
@@ -777,27 +709,9 @@
         ]
       },
       "mailRefs": {
-        "kind": "step",
+        "kind": "action",
         "id": "mailRefs",
-        "agent": {
-          "id": "prospect-engine-format-mail-refs",
-          "systemPrompt": "",
-          "toolFactories": [],
-          "capabilities": [
-            "@workbench/tools-prospect-engine/core:prospect_engine_format_mail_refs"
-          ],
-          "inference": {
-            "sources": []
-          },
-          "description": "Deterministic tool call: @workbench/tools-prospect-engine/core:prospect_engine_format_mail_refs",
-          "tags": {
-            "workbench.stepKind": "deterministic-tool",
-            "workbench.tool": "@workbench/tools-prospect-engine/core:prospect_engine_format_mail_refs",
-            "workbench.argMap": "{\"artifactId\":{\"fromJson\":\"content\",\"field\":\"artifactId\"},\"runId\":{\"from\":\"runId\"},\"workflowLabel\":{\"literal\":\"Prospect engine\"}}",
-            "workbench.nonFatal": "true",
-            "workbench.title": "Build mail deep links"
-          }
-        },
+        "handler": "@workbench/tools-prospect-engine/core:prospect_engine_format_mail_refs",
         "drainBehavior": "cancel",
         "input": {
           "merge": [
@@ -805,8 +719,18 @@
               "from": "trigger.payload"
             },
             {
-              "from": "steps.persist.output"
+              "from": "steps.persist.output.content"
+            },
+            {
+              "literal": {
+                "workflowLabel": "Prospect engine"
+              }
             }
+          ]
+        },
+        "effect": {
+          "requires": [
+            "@workbench/tools-prospect-engine/core:prospect_engine_format_mail_refs"
           ]
         },
         "after": [
@@ -814,27 +738,9 @@
         ]
       },
       "mail": {
-        "kind": "step",
+        "kind": "action",
         "id": "mail",
-        "agent": {
-          "id": "prospect-engine-mail-digest",
-          "systemPrompt": "",
-          "toolFactories": [],
-          "capabilities": [
-            "mail_send"
-          ],
-          "inference": {
-            "sources": []
-          },
-          "description": "Deterministic tool call: mail_send",
-          "tags": {
-            "workbench.stepKind": "deterministic-tool",
-            "workbench.tool": "mail_send",
-            "workbench.argMap": "{\"to\":{\"from\":\"userAddress\"},\"subject\":{\"from\":\"title\"},\"content\":{\"from\":\"text\"},\"refs\":{\"from\":\"refs\"}}",
-            "workbench.nonFatal": "true",
-            "workbench.title": "Mail the prospect list"
-          }
-        },
+        "handler": "@workbench/tools-prospect-engine/mail-bridge:prospect_engine_send_mail_tolerant",
         "drainBehavior": "cancel",
         "input": {
           "merge": [
@@ -849,33 +755,20 @@
             }
           ]
         },
+        "effect": {
+          "requires": [
+            "@workbench/tools-prospect-engine/mail-bridge:prospect_engine_send_mail_tolerant"
+          ]
+        },
         "after": [
           "formatDigest",
           "mailRefs"
         ]
       },
       "notify": {
-        "kind": "step",
+        "kind": "action",
         "id": "notify",
-        "agent": {
-          "id": "prospect-engine-post-slack-digest",
-          "systemPrompt": "",
-          "toolFactories": [],
-          "capabilities": [
-            "@workbench/tools-slack/slack:slack_post_message"
-          ],
-          "inference": {
-            "sources": []
-          },
-          "description": "Deterministic tool call: @workbench/tools-slack/slack:slack_post_message",
-          "tags": {
-            "workbench.stepKind": "deterministic-tool",
-            "workbench.tool": "@workbench/tools-slack/slack:slack_post_message",
-            "workbench.argMap": "{\"channel\":{\"from\":\"slackChannelId\",\"skipStepIfAbsent\":true},\"text\":{\"from\":\"text\"}}",
-            "workbench.nonFatal": "true",
-            "workbench.title": "Post the Slack digest"
-          }
-        },
+        "handler": "@workbench/tools-prospect-engine-slack-bridge/post:prospect_engine_post_slack_tolerant",
         "drainBehavior": "cancel",
         "input": {
           "merge": [
@@ -885,6 +778,11 @@
             {
               "from": "steps.formatDigest.output.content"
             }
+          ]
+        },
+        "effect": {
+          "requires": [
+            "@workbench/tools-prospect-engine-slack-bridge/post:prospect_engine_post_slack_tolerant"
           ]
         },
         "after": [

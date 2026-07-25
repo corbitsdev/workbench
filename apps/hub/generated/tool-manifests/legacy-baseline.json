@@ -111,6 +111,10 @@
       "gamma_presentation_creator_prepare_persist",
       "gamma_presentation_creator_prepare_render"
     ],
+    "@workbench/tools-gamma-presentation-creator/fetch": [
+      "gamma_presentation_creator_fetch_artifact",
+      "gamma_presentation_creator_fetch_note"
+    ],
     "@workbench/tools-github/github": [
       "github_activity"
     ],
@@ -146,7 +150,8 @@
     "@workbench/tools-heartbeat/core": [
       "heartbeat_format_brief_document",
       "heartbeat_format_brief_notify",
-      "heartbeat_format_brief_title"
+      "heartbeat_format_brief_title",
+      "heartbeat_intake_source"
     ],
     "@workbench/tools-last30days/core": [
       "heartbeat_merge_brief_sources",
@@ -203,6 +208,9 @@
       "linear_search",
       "linear_update_issue"
     ],
+    "@workbench/tools-multi-source-collateral/list-issues": [
+      "multi_source_collateral_list_issues"
+    ],
     "@workbench/tools-notion/notion": [
       "notion_create_page",
       "notion_get_database",
@@ -232,9 +240,27 @@
       "prospect_engine_qualify",
       "prospect_engine_serialize_ledger"
     ],
+    "@workbench/tools-prospect-engine/ledger-bridge": [
+      "prospect_engine_read_ledger_tolerant"
+    ],
+    "@workbench/tools-prospect-engine/mail-bridge": [
+      "prospect_engine_send_mail_tolerant"
+    ],
+    "@workbench/tools-prospect-engine-slack-bridge/post": [
+      "prospect_engine_post_slack_tolerant"
+    ],
+    "@workbench/tools-prospect-engine-sumble-bridge/add": [
+      "prospect_engine_add_organization_list_tolerant"
+    ],
+    "@workbench/tools-prospect-engine-sumble-bridge/list": [
+      "prospect_engine_read_organization_list_tolerant"
+    ],
     "@workbench/tools-reddit/reddit": [
       "reddit_search",
       "reddit_subreddit_search"
+    ],
+    "@workbench/tools-reddit-opportunity-scanner/collect": [
+      "reddit_opportunity_scanner_collect_search"
     ],
     "@workbench/tools-reddit-opportunity-watch/core": [
       "reddit_opportunity_watch_format_digest_document"
@@ -294,7 +320,13 @@
       "sumble_set_organization_list_signals"
     ],
     "@workbench/tools-sumble-account-intel/core": [
-      "sumble_account_intel_format_report_document"
+      "sumble_account_intel_enrich_contacts",
+      "sumble_account_intel_format_report_document",
+      "sumble_account_intel_list_jobs",
+      "sumble_account_intel_list_teams",
+      "sumble_account_intel_resolve_organization",
+      "sumble_account_intel_search_people",
+      "sumble_account_intel_search_signals"
     ],
     "@workbench/tools-vercel/deploy-artifact": [
       "vercel_deploy_artifact"
@@ -315,6 +347,25 @@
     ],
     "@workbench/tools-youtube/youtube": [
       "youtube_search"
+    ],
+    "@workbench/workflow-last30days-research/exa-safe": [
+      "last30days_safe_exa_search"
+    ],
+    "@workbench/workflow-last30days-research/github-safe": [
+      "last30days_safe_github_activity"
+    ],
+    "@workbench/workflow-last30days-research/keyless-safe": [
+      "last30days_safe_hackernews_search",
+      "last30days_safe_polymarket_odds"
+    ],
+    "@workbench/workflow-last30days-research/reddit-safe": [
+      "last30days_safe_reddit_search"
+    ],
+    "@workbench/workflow-last30days-research/x-safe": [
+      "last30days_safe_x_search"
+    ],
+    "@workbench/workflow-last30days-research/youtube-safe": [
+      "last30days_safe_youtube_search"
     ]
   },
   "packageProviders": {
@@ -328,6 +379,8 @@
     "@workbench/tools-granola": "granola",
     "@workbench/tools-linear": "linear",
     "@workbench/tools-notion": "notion",
+    "@workbench/tools-prospect-engine-slack-bridge": "slack",
+    "@workbench/tools-prospect-engine-sumble-bridge": "sumble",
     "@workbench/tools-reddit": "scrapecreators",
     "@workbench/tools-scrapecreators": "scrapecreators",
     "@workbench/tools-slack": "slack",
@@ -645,11 +698,15 @@
     "@workbench/tools-heartbeat",
     "@workbench/tools-last30days",
     "@workbench/tools-linear",
+    "@workbench/tools-multi-source-collateral",
     "@workbench/tools-notion",
     "@workbench/tools-polymarket",
     "@workbench/tools-process-granola-call",
     "@workbench/tools-prospect-engine",
+    "@workbench/tools-prospect-engine-slack-bridge",
+    "@workbench/tools-prospect-engine-sumble-bridge",
     "@workbench/tools-reddit",
+    "@workbench/tools-reddit-opportunity-scanner",
     "@workbench/tools-reddit-opportunity-watch",
     "@workbench/tools-scrapecreators",
     "@workbench/tools-skills",
@@ -659,6 +716,7 @@
     "@workbench/tools-vercel",
     "@workbench/tools-workflows",
     "@workbench/tools-x",
-    "@workbench/tools-youtube"
+    "@workbench/tools-youtube",
+    "@workbench/workflow-last30days-research"
   ]
 }

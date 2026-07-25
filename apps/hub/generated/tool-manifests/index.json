@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-07-25T16:02:33.261Z",
+  "generatedAt": "2026-07-25T16:35:19.850Z",
   "factories": [
     {
       "factoryId": "@workbench/tools-ab-compare/compose",
@@ -530,6 +530,21 @@
       "credentialCatalog": null
     },
     {
+      "factoryId": "@workbench/tools-gamma-presentation-creator/fetch",
+      "packageName": "@workbench/tools-gamma-presentation-creator",
+      "providerName": null,
+      "bareToolNames": [
+        "gamma_presentation_creator_fetch_artifact",
+        "gamma_presentation_creator_fetch_note"
+      ],
+      "sideEffects": {
+        "gamma_presentation_creator_fetch_artifact": "read",
+        "gamma_presentation_creator_fetch_note": "read"
+      },
+      "myraCatalog": null,
+      "credentialCatalog": null
+    },
+    {
       "factoryId": "@workbench/tools-github/github",
       "packageName": "@workbench/tools-github",
       "providerName": "github",
@@ -709,12 +724,14 @@
       "bareToolNames": [
         "heartbeat_format_brief_document",
         "heartbeat_format_brief_notify",
-        "heartbeat_format_brief_title"
+        "heartbeat_format_brief_title",
+        "heartbeat_intake_source"
       ],
       "sideEffects": {
         "heartbeat_format_brief_title": "read",
         "heartbeat_format_brief_document": "read",
-        "heartbeat_format_brief_notify": "read"
+        "heartbeat_format_brief_notify": "read",
+        "heartbeat_intake_source": "read"
       },
       "myraCatalog": null,
       "credentialCatalog": null
@@ -901,6 +918,19 @@
       }
     },
     {
+      "factoryId": "@workbench/tools-multi-source-collateral/list-issues",
+      "packageName": "@workbench/tools-multi-source-collateral",
+      "providerName": null,
+      "bareToolNames": [
+        "multi_source_collateral_list_issues"
+      ],
+      "sideEffects": {
+        "multi_source_collateral_list_issues": "read"
+      },
+      "myraCatalog": null,
+      "credentialCatalog": null
+    },
+    {
       "factoryId": "@workbench/tools-notion/notion",
       "packageName": "@workbench/tools-notion",
       "providerName": "notion",
@@ -1019,6 +1049,71 @@
       "credentialCatalog": null
     },
     {
+      "factoryId": "@workbench/tools-prospect-engine/ledger-bridge",
+      "packageName": "@workbench/tools-prospect-engine",
+      "providerName": null,
+      "bareToolNames": [
+        "prospect_engine_read_ledger_tolerant"
+      ],
+      "sideEffects": {
+        "prospect_engine_read_ledger_tolerant": "read"
+      },
+      "myraCatalog": null,
+      "credentialCatalog": null
+    },
+    {
+      "factoryId": "@workbench/tools-prospect-engine/mail-bridge",
+      "packageName": "@workbench/tools-prospect-engine",
+      "providerName": null,
+      "bareToolNames": [
+        "prospect_engine_send_mail_tolerant"
+      ],
+      "sideEffects": {
+        "prospect_engine_send_mail_tolerant": "write"
+      },
+      "myraCatalog": null,
+      "credentialCatalog": null
+    },
+    {
+      "factoryId": "@workbench/tools-prospect-engine-slack-bridge/post",
+      "packageName": "@workbench/tools-prospect-engine-slack-bridge",
+      "providerName": "slack",
+      "bareToolNames": [
+        "prospect_engine_post_slack_tolerant"
+      ],
+      "sideEffects": {
+        "prospect_engine_post_slack_tolerant": "write"
+      },
+      "myraCatalog": null,
+      "credentialCatalog": null
+    },
+    {
+      "factoryId": "@workbench/tools-prospect-engine-sumble-bridge/add",
+      "packageName": "@workbench/tools-prospect-engine-sumble-bridge",
+      "providerName": "sumble",
+      "bareToolNames": [
+        "prospect_engine_add_organization_list_tolerant"
+      ],
+      "sideEffects": {
+        "prospect_engine_add_organization_list_tolerant": "write"
+      },
+      "myraCatalog": null,
+      "credentialCatalog": null
+    },
+    {
+      "factoryId": "@workbench/tools-prospect-engine-sumble-bridge/list",
+      "packageName": "@workbench/tools-prospect-engine-sumble-bridge",
+      "providerName": "sumble",
+      "bareToolNames": [
+        "prospect_engine_read_organization_list_tolerant"
+      ],
+      "sideEffects": {
+        "prospect_engine_read_organization_list_tolerant": "read"
+      },
+      "myraCatalog": null,
+      "credentialCatalog": null
+    },
+    {
       "factoryId": "@workbench/tools-reddit/reddit",
       "packageName": "@workbench/tools-reddit",
       "providerName": "scrapecreators",
@@ -1054,6 +1149,19 @@
           "Pinterest"
         ]
       }
+    },
+    {
+      "factoryId": "@workbench/tools-reddit-opportunity-scanner/collect",
+      "packageName": "@workbench/tools-reddit-opportunity-scanner",
+      "providerName": null,
+      "bareToolNames": [
+        "reddit_opportunity_scanner_collect_search"
+      ],
+      "sideEffects": {
+        "reddit_opportunity_scanner_collect_search": "read"
+      },
+      "myraCatalog": null,
+      "credentialCatalog": null
     },
     {
       "factoryId": "@workbench/tools-reddit-opportunity-watch/core",
