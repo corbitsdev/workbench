@@ -1,12 +1,20 @@
 import { describe, expect, test } from "bun:test";
-import { workflow, kind, label, description, INTAKE_FIELDS } from "./index";
+import {
+  workflow,
+  kind,
+  label,
+  description,
+  INTAKE_FIELDS,
+  GRANOLA_LIST_NOTES_HANDLER,
+  GRANOLA_SPAWN_CALL_RUNS_HANDLER,
+} from "./index";
 import { DISPLAY_STEPS } from "./display-steps";
 
-function stepPrimitive(id: string) {
+function actionPrimitive(id: string) {
   const primitive = workflow.steps[id];
-  if (primitive === undefined || primitive.kind !== "step") {
+  if (primitive === undefined || primitive.kind !== "action") {
     throw new Error(
-      `expected step primitive for step id "${id}", got ${primitive?.kind ?? "undefined"}`,
+      `expected action primitive for step id "${id}", got ${primitive?.kind ?? "undefined"}`,
     );
   }
   return primitive;
@@ -24,52 +32,50 @@ describe("granola-call workflow", () => {
     expect(Object.keys(workflow.steps).sort()).toEqual(["discover", "spawn"]);
   });
 
-  test("trigger is manual — maxCalls is the only intake field", () => {
+  test("trigger is manual — limit is the only intake field, named to match the tool args verbatim", () => {
     expect(workflow.triggers).toEqual([{ type: "manual" }]);
     expect(INTAKE_FIELDS).toHaveLength(1);
-    expect(INTAKE_FIELDS[0].name).toBe("maxCalls");
+    expect(INTAKE_FIELDS[0].name).toBe("limit");
     expect(INTAKE_FIELDS[0].required).toBe(false);
   });
 
-  test("discover reads maxCalls (renamed to the tool's `limit` arg) and never throws when absent", () => {
-    const discover = stepPrimitive("discover");
-    expect(discover.agent.tags?.["workbench.tool"]).toBe(
+  test("discover is a native action calling granola_list_notes with trigger.payload passed through verbatim", () => {
+    const discover = actionPrimitive("discover");
+    expect(discover.handler).toBe(GRANOLA_LIST_NOTES_HANDLER);
+    expect(GRANOLA_LIST_NOTES_HANDLER).toBe(
       "@workbench/tools-granola/granola:granola_list_notes",
     );
-    const argMapTag = discover.agent.tags?.["workbench.argMap"];
-    expect(argMapTag).toBeDefined();
-    const argMap = JSON.parse(argMapTag as string) as Record<string, unknown>;
-    expect(argMap.limit).toEqual({ from: "maxCalls", optional: true });
-    // A run with genuinely no input (trigger.payload === {}) must not throw:
-    // every argMap field here is `optional`, so an absent value is OMITTED
-    // from the tool call, not a hard failure.
-    for (const value of Object.values(argMap)) {
-      expect((value as { optional?: boolean }).optional).toBe(true);
-    }
+    // No argMap/reshape anywhere on the primitive — the input selector IS
+    // the tool call arguments.
+    expect(discover.input).toEqual({ from: "trigger.payload" });
+    expect(discover.effect).toEqual({
+      requires: [GRANOLA_LIST_NOTES_HANDLER],
+    });
   });
 
-  test("spawn forwards discover's list content and the optional maxCalls cap", () => {
-    const spawn = stepPrimitive("spawn");
-    expect(spawn.agent.tags?.["workbench.tool"]).toBe(
+  test("spawn is a native action merging discover's content with trigger.payload's limit", () => {
+    const spawn = actionPrimitive("spawn");
+    expect(spawn.handler).toBe(GRANOLA_SPAWN_CALL_RUNS_HANDLER);
+    expect(GRANOLA_SPAWN_CALL_RUNS_HANDLER).toBe(
       "@workbench/tools-granola/hub:granola_spawn_call_runs",
     );
     expect(spawn.after).toEqual(["discover"]);
-    const argMap = JSON.parse(
-      spawn.agent.tags?.["workbench.argMap"] as string,
-    ) as Record<string, unknown>;
-    // `content` is the discover ToolResult's JSON — REQUIRED: a missing
-    // field must fail the step loudly, never spawn zero children silently.
-    expect(argMap.content).toEqual({ from: "content" });
-    expect(argMap.maxCalls).toEqual({ from: "maxCalls", optional: true });
+    expect(spawn.input).toEqual({
+      merge: [
+        { from: "steps.discover.output" },
+        { from: "trigger.payload" },
+      ],
+    });
+    expect(spawn.effect).toEqual({
+      requires: [GRANOLA_SPAWN_CALL_RUNS_HANDLER],
+    });
   });
 
-  test("every step is deterministic — the parent runs no inference", () => {
+  test("every step is a native action — no agent, no inference, in the parent", () => {
     for (const stepId of Object.keys(workflow.steps)) {
-      const step = stepPrimitive(stepId);
-      expect(step.agent.tags?.["workbench.stepKind"]).toBe(
-        "deterministic-tool",
-      );
-      expect(step.agent.inference).toEqual({ sources: [] });
+      const step = workflow.steps[stepId];
+      expect(step?.kind).toBe("action");
+      expect((step as { agent?: unknown }).agent).toBeUndefined();
     }
   });
 
