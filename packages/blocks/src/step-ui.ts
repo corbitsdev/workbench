@@ -1,5 +1,5 @@
 /**
- * The generic `STEP_UI` derivation (CL-4515).
+ * The generic `STEP_UI` derivation —
  *
  * `STEP_UI` (see `@workbench/shared`'s `step-ui.ts`) is a workflow's optional,
  * declarative step -> UI map, colocated with its native `defineWorkflow(...)`.

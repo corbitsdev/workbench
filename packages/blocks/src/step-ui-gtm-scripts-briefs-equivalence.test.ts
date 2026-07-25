@@ -1,11 +1,11 @@
 /**
- * CL-4515 equivalence proof: `blocksFromStepUI` (this package) must reproduce
+ * Equivalence proof: `blocksFromStepUI` (this package) must reproduce
  * `gtm-scripts-briefs`' hand-written `blocks.ts` builder over the same run
  * state, using an equivalent `STEP_UI` map instead of bespoke code. That is
  * the deliverable that makes the workflow's later `blocks.ts` deletion safe.
  *
- * This slice is deliberately host-side only (see CL-4515) and must not touch
- * `workflows/*` — an in-flight PR (CL-4454) touches the same workflow
+ * This slice is deliberately host-side only and must not touch
+ * `workflows/*` — an in-flight PR touches the same workflow
  * packages. `referenceBuildGtmScriptsBriefsBlocks` below is copied VERBATIM
  * from `workflows/gtm-scripts-briefs/src/blocks.ts` (not imported) so this
  * test proves equivalence without adding a dependency edge from

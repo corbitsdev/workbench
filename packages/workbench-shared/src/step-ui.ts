@@ -1,8 +1,8 @@
 /**
- * The `STEP_UI` contract (CL-4515).
+ * The `STEP_UI` contract —
  *
  * A workflow package's native definition (`defineWorkflow`, steps, `awaitSignal`
- * gates) carries zero UI metadata — that is exactly the boundary CL-4454
+ * gates) carries zero UI metadata — that is exactly the boundary the native-action migration
  * restores. `STEP_UI` is the one optional, sibling export a workflow may add
  * next to `workflow` to steer how the host renders its dock UI, without
  * putting rendering hints on any native primitive (`StepPrimitive`,
