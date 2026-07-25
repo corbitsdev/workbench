@@ -221,25 +221,9 @@
         ]
       },
       "quorum": {
-        "kind": "step",
+        "kind": "action",
         "id": "quorum",
-        "agent": {
-          "id": "quorum",
-          "systemPrompt": "",
-          "toolFactories": [],
-          "capabilities": [
-            "@workbench/tools-ab-compare/compose:ab_preset_quorum"
-          ],
-          "inference": {
-            "sources": []
-          },
-          "description": "Deterministic tool call: @workbench/tools-ab-compare/compose:ab_preset_quorum",
-          "tags": {
-            "workbench.stepKind": "deterministic-tool",
-            "workbench.tool": "@workbench/tools-ab-compare/compose:ab_preset_quorum",
-            "workbench.title": "Check enough models answered"
-          }
-        },
+        "handler": "@workbench/tools-ab-compare/compose:ab_preset_quorum",
         "drainBehavior": "cancel",
         "input": {
           "merge": [
@@ -268,6 +252,11 @@
                 ]
               }
             }
+          ]
+        },
+        "effect": {
+          "requires": [
+            "@workbench/tools-ab-compare/compose:ab_preset_quorum"
           ]
         },
         "after": [
@@ -287,25 +276,9 @@
         ]
       },
       "compose": {
-        "kind": "step",
+        "kind": "action",
         "id": "compose",
-        "agent": {
-          "id": "compose",
-          "systemPrompt": "",
-          "toolFactories": [],
-          "capabilities": [
-            "@workbench/tools-ab-compare/compose:ab_preset_compose"
-          ],
-          "inference": {
-            "sources": []
-          },
-          "description": "Deterministic tool call: @workbench/tools-ab-compare/compose:ab_preset_compose",
-          "tags": {
-            "workbench.stepKind": "deterministic-tool",
-            "workbench.tool": "@workbench/tools-ab-compare/compose:ab_preset_compose",
-            "workbench.title": "Compile the comparison"
-          }
-        },
+        "handler": "@workbench/tools-ab-compare/compose:ab_preset_compose",
         "drainBehavior": "cancel",
         "input": {
           "merge": [
@@ -336,34 +309,42 @@
             }
           ]
         },
+        "effect": {
+          "requires": [
+            "@workbench/tools-ab-compare/compose:ab_preset_compose"
+          ]
+        },
         "after": [
           "decision"
         ]
       },
       "persist": {
-        "kind": "step",
+        "kind": "action",
         "id": "persist",
-        "agent": {
-          "id": "persist",
-          "systemPrompt": "",
-          "toolFactories": [],
-          "capabilities": [
-            "@workbench/tools-artifact/artifact:artifact_create"
-          ],
-          "inference": {
-            "sources": []
-          },
-          "description": "Deterministic tool call: @workbench/tools-artifact/artifact:artifact_create",
-          "tags": {
-            "workbench.stepKind": "deterministic-tool",
-            "workbench.tool": "@workbench/tools-artifact/artifact:artifact_create",
-            "workbench.argMap": "{\"content\":{\"from\":\"content\"},\"title\":{\"literal\":\"A/B Compare - Speed Results\"},\"kind\":{\"literal\":\"ab-comparison\"}}",
-            "workbench.title": "Save the comparison"
-          }
-        },
+        "handler": "@workbench/tools-artifact/artifact:artifact_create",
         "drainBehavior": "cancel",
         "input": {
-          "from": "steps.compose.output"
+          "merge": [
+            {
+              "project": {
+                "from": "steps.compose.output"
+              },
+              "fields": [
+                "content"
+              ]
+            },
+            {
+              "literal": {
+                "title": "A/B Compare - Speed Results",
+                "kind": "ab-comparison"
+              }
+            }
+          ]
+        },
+        "effect": {
+          "requires": [
+            "@workbench/tools-artifact/artifact:artifact_create"
+          ]
         },
         "after": [
           "compose"
