@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-07-25T15:22:20.296Z",
+  "generatedAt": "2026-07-25T15:24:27.864Z",
   "factories": [
     {
       "factoryId": "@workbench/tools-ab-compare/compose",
@@ -489,21 +489,6 @@
       "credentialCatalog": null
     },
     {
-      "factoryId": "@workbench/tools-gamma-presentation-creator/core",
-      "packageName": "@workbench/tools-gamma-presentation-creator",
-      "providerName": null,
-      "bareToolNames": [
-        "gamma_presentation_creator_prepare_persist",
-        "gamma_presentation_creator_prepare_render"
-      ],
-      "sideEffects": {
-        "gamma_presentation_creator_prepare_render": "read",
-        "gamma_presentation_creator_prepare_persist": "read"
-      },
-      "myraCatalog": null,
-      "credentialCatalog": null
-    },
-    {
       "factoryId": "@workbench/tools-github/github",
       "packageName": "@workbench/tools-github",
       "providerName": "github",
@@ -922,7 +907,9 @@
       "bareToolNames": [
         "prospect_engine_charge_credits",
         "prospect_engine_dedupe_candidates",
+        "prospect_engine_extract_candidates_from_reply",
         "prospect_engine_extract_list_org_ids",
+        "prospect_engine_extract_map_reveal_overlay",
         "prospect_engine_format_mail_refs",
         "prospect_engine_format_report",
         "prospect_engine_format_slack_digest",
@@ -943,7 +930,9 @@
         "prospect_engine_format_slack_digest": "read",
         "prospect_engine_format_mail_refs": "read",
         "prospect_engine_serialize_ledger": "read",
-        "prospect_engine_extract_list_org_ids": "read"
+        "prospect_engine_extract_list_org_ids": "read",
+        "prospect_engine_extract_candidates_from_reply": "read",
+        "prospect_engine_extract_map_reveal_overlay": "read"
       },
       "myraCatalog": null,
       "credentialCatalog": null

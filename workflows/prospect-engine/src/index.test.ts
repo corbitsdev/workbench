@@ -79,7 +79,9 @@ describe("prospect-engine workflow package", () => {
     expect(json).toContain("mail_send");
     expect(json).toContain("prospect_engine_format_slack_digest");
     expect(json).toContain("prospect_engine_format_report");
-    expect(json).toContain("prospect-engine-save-ledger-artifact");
+    // saveLedger migrated to native `action` (CL-4454) — its step key is the
+    // stable identity now, not a descriptive deterministicToolStep id tag.
+    expect(json).toContain('"saveLedger"');
   });
 
   test("discover agent forbids write tools", () => {

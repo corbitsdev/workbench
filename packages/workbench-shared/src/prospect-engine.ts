@@ -69,15 +69,18 @@ export type ProspectEngineLane = typeof ProspectEngineLaneSchema.infer;
 /**
  * Schedule / hub trigger payload after fire-time enrichment. List ids and
  * Slack channel are operator config (CL-3703 / CL-3717) until tenant constants
- * ship. `userAddress`/`userRefId`/`runDate`/`artifactTitle`/`runId` are
- * server-stamped — never trusted from the schedule row alone.
+ * ship. `userAddress`/`userRefId`/`runDate`/`title`/`runId` are
+ * server-stamped — never trusted from the schedule row alone. `title` (the
+ * persisted report/mail title) is named to match `write_artifact`'s `title`
+ * arg directly — the workflow's own intake field, renamed at the source so
+ * the native `action` persist step needs no reshape (CL-4454).
  */
 export const ProspectEngineTriggerPayloadSchema = type({
   reason: "string > 0",
   userAddress: "string > 0",
   userRefId: "string > 0",
   runDate: "string > 0",
-  artifactTitle: "string > 0",
+  title: "string > 0",
   "slackChannelId?": "string > 0",
   growthEngineListId: "number.integer > 0",
   enterpriseEngineListId: "number.integer > 0",
@@ -211,7 +214,7 @@ export function enrichProspectEngineTriggerPayload(
     userAddress: memberIdentity.userAddress,
     userRefId: memberIdentity.userRefId,
     runDate,
-    artifactTitle: `Prospect engine — ${runDate}`,
+    title: `Prospect engine — ${runDate}`,
   };
   delete enriched.slackChannelId;
   if (slackChannelId !== undefined) enriched.slackChannelId = slackChannelId;
