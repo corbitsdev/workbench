@@ -30,7 +30,10 @@
     "@workbench/agents": "workspace:*",
     "@workbench/blocks": "workspace:*",
     "@workbench/shared": "workspace:*",
+    "@workbench/tool-credentials": "workspace:*",
     "@workbench/tool-manifest": "workspace:*",
+    "@workbench/tools-artifact": "workspace:*",
+    "@workbench/tools-granola": "workspace:*",
     "@workbench/ui": "workspace:*",
     "arktype": "catalog:",
     "react": "^19.0.0"

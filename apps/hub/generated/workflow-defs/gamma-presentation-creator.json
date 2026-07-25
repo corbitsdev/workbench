@@ -86,60 +86,34 @@
         ]
       },
       "fetch-artifact": {
-        "kind": "step",
+        "kind": "action",
         "id": "fetch-artifact",
-        "agent": {
-          "id": "presentation-fetch-artifact",
-          "systemPrompt": "",
-          "toolFactories": [],
-          "capabilities": [
-            "@workbench/tools-artifact/artifact:artifact_read"
-          ],
-          "inference": {
-            "sources": []
-          },
-          "description": "Deterministic tool call: @workbench/tools-artifact/artifact:artifact_read",
-          "tags": {
-            "workbench.stepKind": "deterministic-tool",
-            "workbench.tool": "@workbench/tools-artifact/artifact:artifact_read",
-            "workbench.argMap": "{\"artifactId\":{\"from\":\"artifactId\",\"skipStepIfAbsent\":true}}",
-            "workbench.nonFatal": "true",
-            "workbench.title": "Load the chosen artifact"
-          }
-        },
+        "handler": "@workbench/tools-gamma-presentation-creator/fetch:gamma_presentation_creator_fetch_artifact",
         "drainBehavior": "cancel",
         "input": {
           "from": "steps.intake.output"
+        },
+        "effect": {
+          "requires": [
+            "@workbench/tools-gamma-presentation-creator/fetch:gamma_presentation_creator_fetch_artifact"
+          ]
         },
         "after": [
           "intake"
         ]
       },
       "fetch-note": {
-        "kind": "step",
+        "kind": "action",
         "id": "fetch-note",
-        "agent": {
-          "id": "presentation-fetch-note",
-          "systemPrompt": "",
-          "toolFactories": [],
-          "capabilities": [
-            "@workbench/tools-granola/granola:granola_get_note"
-          ],
-          "inference": {
-            "sources": []
-          },
-          "description": "Deterministic tool call: @workbench/tools-granola/granola:granola_get_note",
-          "tags": {
-            "workbench.stepKind": "deterministic-tool",
-            "workbench.tool": "@workbench/tools-granola/granola:granola_get_note",
-            "workbench.argMap": "{\"noteId\":{\"from\":\"noteId\",\"skipStepIfAbsent\":true}}",
-            "workbench.nonFatal": "true",
-            "workbench.title": "Load the chosen note"
-          }
-        },
+        "handler": "@workbench/tools-gamma-presentation-creator/fetch:gamma_presentation_creator_fetch_note",
         "drainBehavior": "cancel",
         "input": {
           "from": "steps.intake.output"
+        },
+        "effect": {
+          "requires": [
+            "@workbench/tools-gamma-presentation-creator/fetch:gamma_presentation_creator_fetch_note"
+          ]
         },
         "after": [
           "intake"
