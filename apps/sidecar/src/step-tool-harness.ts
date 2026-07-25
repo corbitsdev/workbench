@@ -192,9 +192,10 @@ export function assertStepToolAvailable(
  * Faults that indicate the step's tool infrastructure itself is broken or
  * misconfigured — the tool was never pinned, its credential is missing, or
  * its loaded closure is corrupt — as opposed to the tool running and failing
- * on its own terms (a data/execution fault). Infrastructure faults must never
- * be absorbed by a `nonFatal` degrade: swallowing them reports a run as
- * COMPLETED when it never actually attempted the work.
+ * on its own terms (a data/execution fault). A caller that only wants to
+ * degrade genuine tool-execution failures (e.g. a wrapper's own tolerance
+ * envelope) must not treat one of these as such: an infrastructure fault
+ * means the step never actually attempted the work.
  */
 export function isStepToolInfrastructureFault(error: unknown): boolean {
   return (
@@ -1181,13 +1182,6 @@ export async function runDeterministicToolStep(args: {
   input: unknown;
   /** Raw JSON of the step's `workbench.argMap` tag, if present. */
   argMapJson?: string;
-  /**
-   * When true (the step's `workbench.nonFatal` tag is set), a thrown tool error
-   * or a tool result with `isError: true` is logged and degraded to completed
-   * output instead of propagating — so one best-effort source cannot fail the
-   * whole run.
-   */
-  nonFatal?: boolean;
   signal: AbortSignal;
 }): Promise<{ output: unknown }> {
   const ctx = readStepToolContext(
@@ -1249,22 +1243,6 @@ export async function runDeterministicToolStep(args: {
     );
     const toolError = toolResultErrorMessage(result);
     if (toolError !== undefined) {
-      if (args.nonFatal === true && !args.signal.aborted) {
-        logger.error(
-          "Deterministic step tool {tool} returned isError for {address}: {msg}",
-          { tool: args.toolName, address: ctx.stepAddress, msg: toolError },
-        );
-        // A genuine tool-execution failure (the tool ran and reported its
-        // own error) is exactly what `nonFatal` is for. Mark the envelope so
-        // the run surface can tell a degraded step apart from a clean
-        // completion instead of reporting it as indistinguishable success.
-        return {
-          output: {
-            ...(result as Record<string, unknown>),
-            degraded: true,
-          },
-        };
-      }
       if (!args.signal.aborted) {
         logger.error("Deterministic step tool {tool} failed for {address}", {
           tool: args.toolName,
@@ -1276,46 +1254,25 @@ export async function runDeterministicToolStep(args: {
     }
     return { output: result };
   } catch (cause) {
-    // A degrade must never mask cancellation: if the step's signal aborted (run
-    // cancel/timeout), the throw is the cancellation, not a source failure —
-    // rethrow it so the runtime propagates the cancel instead of letting the
-    // run march on into brief/write/persist.
-    //
-    // A degrade must also never mask an infrastructure fault: a tool that was
-    // never pinned, a package dropped for a missing credential, or a corrupt
-    // tool closure means the step never actually ran the work it was meant
-    // to. `nonFatal` exists to absorb a genuine tool-execution/data failure —
-    // the tool ran and reported its own error — not to paper over broken
-    // tool infrastructure as a clean completion.
-    if (
-      args.nonFatal !== true ||
-      args.signal.aborted ||
-      isStepToolInfrastructureFault(cause)
-    ) {
-      // Log WITH the Error so the child's Sentry sink captures the stack via
-      // captureException — the on-disk StepFailed event keeps only the message.
-      // Skip on cancellation (signal aborted): teardown is not a fault.
-      if (!args.signal.aborted) {
-        logger.error("Deterministic step tool {tool} failed for {address}", {
-          tool: args.toolName,
-          address: ctx.stepAddress,
-          error: cause instanceof Error ? cause : new Error(String(cause)),
-        });
-      }
-      throw cause;
+    // No `nonFatal` degrade exists on this path anymore (CL-4464 replaced
+    // every best-effort deterministic step with a workflow-owned tolerance-
+    // envelope wrapper — see `@workbench/tool-credentials/tolerance-
+    // envelope-dispatch`). Every failure here rethrows: a genuine
+    // tool-execution error, a run cancel/timeout (signal aborted), or an
+    // infrastructure fault (`isStepToolInfrastructureFault` — unpinned tool,
+    // missing credential, corrupt closure) all propagate identically. Log
+    // WITH the Error so the child's Sentry sink captures the stack via
+    // captureException — the on-disk StepFailed event keeps only the
+    // message. Skip logging on cancellation (signal aborted): teardown is
+    // not a fault.
+    if (!args.signal.aborted) {
+      logger.error("Deterministic step tool {tool} failed for {address}", {
+        tool: args.toolName,
+        address: ctx.stepAddress,
+        error: cause instanceof Error ? cause : new Error(String(cause)),
+      });
     }
-    const reason = cause instanceof Error ? cause.message : String(cause);
-    logger.error(
-      "Deterministic step tool {tool} failed; degraded to a non-fatal skip for {address}: {msg}",
-      { tool: args.toolName, address: ctx.stepAddress, msg: reason },
-    );
-    return {
-      output: {
-        content: `${args.toolName} step failed: ${reason}`,
-        isError: true,
-        degraded: true,
-      },
-    };
+    throw cause;
   } finally {
     for (const dispose of disposers) {
       try {

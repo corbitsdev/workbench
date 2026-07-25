@@ -7,7 +7,6 @@ import {
   LLM_WRITER_MODEL,
   STEP_ARGMAP_TAG,
   STEP_KIND_TAG,
-  STEP_NONFATAL_TAG,
   STEP_TOOL_TAG,
 } from "@workbench/agents";
 
@@ -294,9 +293,9 @@ describe("reddit-opportunity-scanner native workflow", () => {
     );
     // Load-bearing: one dead subreddit search must degrade to a skip, not throw
     // and poison the whole curate pool (the last30days brief-poison class, CL-2362).
-    // The tolerance now lives in the wrapper tool itself, so the step no
-    // longer needs the retired `nonFatal` tag.
-    expect(inner.agent.tags?.[STEP_NONFATAL_TAG]).toBeUndefined();
+    // The tolerance lives in the wrapper tool itself (collect-tool.ts); the
+    // `nonFatal` tag/option is retired entirely (CL-4464 follow-up) — no
+    // deterministic step anywhere still needs it.
     expect(inner.agent.inference.sources).toEqual([]);
     const argMap = inner.agent.tags?.[STEP_ARGMAP_TAG];
     if (argMap === undefined)

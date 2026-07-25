@@ -226,69 +226,6 @@ describe("runDeterministicToolStep", () => {
     expect(tr.isError).not.toBe(true);
   });
 
-  test("nonFatal: a throwing step degrades to an isError envelope instead of rejecting", async () => {
-    stubHubFetch();
-    const { env } = await makeMailEnv();
-    // A non-object input throws in `verbatimToolArguments` (a real step failure).
-    // Without nonFatal it rejects (asserted above); with nonFatal the harness
-    // must swallow the throw and return a completed isError envelope so the run
-    // is not failed by one best-effort source. The original reason is preserved
-    // in `content` so the brief can record it in skippedSources with the why.
-    const result = await runDeterministicToolStep({
-      env: env as never,
-      toolName: "mail_send",
-      input: "not-an-object",
-      nonFatal: true,
-      signal: new AbortController().signal,
-    });
-    const output = result.output as Record<string, unknown>;
-    expect(output.isError).toBe(true);
-    expect(typeof output.content).toBe("string");
-    expect(output.content as string).toContain("mail_send");
-    expect(output.content as string).toContain("requires an object");
-    // A degraded non-fatal step must be distinguishable from a clean
-    // completion at the run level (CL-4196).
-    expect(output.degraded).toBe(true);
-  });
-
-  test("nonFatal does NOT mask cancellation: an aborted signal rethrows instead of degrading", async () => {
-    stubHubFetch();
-    const { env } = await makeMailEnv();
-    // Run cancel/timeout aborts the step's signal. The throw is the
-    // cancellation, not a source failure — degrading it to a completed
-    // isError step would let the run march on past the cancel. The harness
-    // must rethrow even when nonFatal is set.
-    const controller = new AbortController();
-    controller.abort();
-    await expect(
-      runDeterministicToolStep({
-        env: env as never,
-        toolName: "mail_send",
-        input: "not-an-object",
-        nonFatal: true,
-        signal: controller.signal,
-      }),
-    ).rejects.toThrow(/requires an object/);
-  });
-
-  // CL-4196: an unpinned tool is a tool-infrastructure fault (the tool was
-  // never pinned/loaded at all), not a genuine tool-execution failure —
-  // `nonFatal` must NOT absorb it, or the run reports COMPLETED while never
-  // having attempted the step's actual work.
-  test("nonFatal does NOT degrade an unpinned tool: it rethrows StepToolNotRegisteredError", async () => {
-    stubHubFetch();
-    const { env } = await makeEnv();
-    await expect(
-      runDeterministicToolStep({
-        env: env as never,
-        toolName: "gamma_create_from_template",
-        input: {},
-        nonFatal: true,
-        signal: new AbortController().signal,
-      }),
-    ).rejects.toThrow(/is not registered\/available for this deployment/);
-  });
-
   test("mail_send delivers through the substrate-injected transport", async () => {
     stubHubFetch();
     const { env } = await makeEnv();
@@ -334,26 +271,6 @@ describe("runDeterministicToolStep", () => {
         signal: new AbortController().signal,
       }),
     ).rejects.toThrow(/send_failed/);
-  });
-
-  test("nonFatal: mail_send isError envelope degrades to completed output", async () => {
-    stubHubFetch();
-    const { env, mailInput } = await mailSendUnregisteredSenderFixture();
-
-    const result = await runDeterministicToolStep({
-      env: env as never,
-      toolName: "mail_send",
-      input: mailInput,
-      nonFatal: true,
-      signal: new AbortController().signal,
-    });
-    const output = result.output as Record<string, unknown>;
-    expect(output.isError).toBe(true);
-    const content = output.content as Record<string, unknown>;
-    expect(content.error).toMatch(/send_failed/);
-    // A degraded non-fatal step must be distinguishable from a clean
-    // completion at the run level (CL-4196).
-    expect(output.degraded).toBe(true);
   });
 
   test("mail_send stays unavailable when no transport is injected", async () => {
