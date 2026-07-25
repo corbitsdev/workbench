@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-07-25T15:56:30.895Z",
+  "generatedAt": "2026-07-25T16:02:33.261Z",
   "factories": [
     {
       "factoryId": "@workbench/tools-ab-compare/compose",
@@ -1478,6 +1478,86 @@
       "credentialCatalog": {
         "label": "YouTube"
       }
+    },
+    {
+      "factoryId": "@workbench/workflow-last30days-research/exa-safe",
+      "packageName": "@workbench/workflow-last30days-research",
+      "providerName": null,
+      "bareToolNames": [
+        "last30days_safe_exa_search"
+      ],
+      "sideEffects": {
+        "last30days_safe_exa_search": "read"
+      },
+      "myraCatalog": null,
+      "credentialCatalog": null
+    },
+    {
+      "factoryId": "@workbench/workflow-last30days-research/github-safe",
+      "packageName": "@workbench/workflow-last30days-research",
+      "providerName": null,
+      "bareToolNames": [
+        "last30days_safe_github_activity"
+      ],
+      "sideEffects": {
+        "last30days_safe_github_activity": "read"
+      },
+      "myraCatalog": null,
+      "credentialCatalog": null
+    },
+    {
+      "factoryId": "@workbench/workflow-last30days-research/keyless-safe",
+      "packageName": "@workbench/workflow-last30days-research",
+      "providerName": null,
+      "bareToolNames": [
+        "last30days_safe_hackernews_search",
+        "last30days_safe_polymarket_odds"
+      ],
+      "sideEffects": {
+        "last30days_safe_hackernews_search": "read",
+        "last30days_safe_polymarket_odds": "read"
+      },
+      "myraCatalog": null,
+      "credentialCatalog": null
+    },
+    {
+      "factoryId": "@workbench/workflow-last30days-research/reddit-safe",
+      "packageName": "@workbench/workflow-last30days-research",
+      "providerName": null,
+      "bareToolNames": [
+        "last30days_safe_reddit_search"
+      ],
+      "sideEffects": {
+        "last30days_safe_reddit_search": "read"
+      },
+      "myraCatalog": null,
+      "credentialCatalog": null
+    },
+    {
+      "factoryId": "@workbench/workflow-last30days-research/x-safe",
+      "packageName": "@workbench/workflow-last30days-research",
+      "providerName": null,
+      "bareToolNames": [
+        "last30days_safe_x_search"
+      ],
+      "sideEffects": {
+        "last30days_safe_x_search": "read"
+      },
+      "myraCatalog": null,
+      "credentialCatalog": null
+    },
+    {
+      "factoryId": "@workbench/workflow-last30days-research/youtube-safe",
+      "packageName": "@workbench/workflow-last30days-research",
+      "providerName": null,
+      "bareToolNames": [
+        "last30days_safe_youtube_search"
+      ],
+      "sideEffects": {
+        "last30days_safe_youtube_search": "read"
+      },
+      "myraCatalog": null,
+      "credentialCatalog": null
     }
   ]
 }

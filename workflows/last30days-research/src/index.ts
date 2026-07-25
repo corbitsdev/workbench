@@ -1,7 +1,6 @@
 import { action, awaitSignal, defineWorkflow } from "@intx/workflow";
-import type { Primitive, StepPrimitive } from "@intx/workflow";
+import type { Primitive } from "@intx/workflow";
 import {
-  deterministicToolStep,
   agentStep,
   canonicalizeStepToolName,
   LLM_WRITER_MODEL,
@@ -97,6 +96,98 @@ export const WRITE_ARTIFACT_HANDLER = canonicalizeStepToolName(
   "write_artifact",
 );
 
+// The workflow's own "safe" source-tool wrappers (CL-4464): one per distinct
+// underlying source tool, each calling the real tool's handler in-process and
+// degrading a thrown error to a `{ isError: true, error }` JSON envelope
+// instead of propagating (see `./tools.ts`). This is what lets every source
+// step below become a plain native `action` — no `nonFatal` dispatch tag is
+// needed because the wrapper's own `ToolResult.isError` never comes back
+// true, so `runDeterministicToolStep` never throws for it.
+export const SAFE_EXA_SEARCH_HANDLER = canonicalizeStepToolName(
+  "last30days-fetch-exa",
+  "last30days_safe_exa_search",
+);
+export const SAFE_HACKERNEWS_SEARCH_HANDLER = canonicalizeStepToolName(
+  "last30days-fetch-hackernews",
+  "last30days_safe_hackernews_search",
+);
+export const SAFE_GITHUB_ACTIVITY_HANDLER = canonicalizeStepToolName(
+  "last30days-fetch-github",
+  "last30days_safe_github_activity",
+);
+export const SAFE_REDDIT_SEARCH_HANDLER = canonicalizeStepToolName(
+  "last30days-fetch-reddit",
+  "last30days_safe_reddit_search",
+);
+export const SAFE_X_SEARCH_HANDLER = canonicalizeStepToolName(
+  "last30days-fetch-x",
+  "last30days_safe_x_search",
+);
+export const SAFE_YOUTUBE_SEARCH_HANDLER = canonicalizeStepToolName(
+  "last30days-fetch-youtube",
+  "last30days_safe_youtube_search",
+);
+export const SAFE_POLYMARKET_ODDS_HANDLER = canonicalizeStepToolName(
+  "last30days-fetch-polymarket",
+  "last30days_safe_polymarket_odds",
+);
+
+// Maps each source's original (unwrapped) tool name to its safe wrapper's
+// canonical handler ref, so `sourceStep`/`buildEntityRoundSteps` below share
+// one lookup instead of a per-source if/else.
+const SAFE_SOURCE_HANDLERS: Record<string, string> = {
+  exa_search: SAFE_EXA_SEARCH_HANDLER,
+  hackernews_search: SAFE_HACKERNEWS_SEARCH_HANDLER,
+  github_activity: SAFE_GITHUB_ACTIVITY_HANDLER,
+  reddit_search: SAFE_REDDIT_SEARCH_HANDLER,
+  x_search: SAFE_X_SEARCH_HANDLER,
+  youtube_search: SAFE_YOUTUBE_SEARCH_HANDLER,
+  polymarket_odds: SAFE_POLYMARKET_ODDS_HANDLER,
+};
+
+function safeSourceHandler(tool: string): string {
+  const handler = SAFE_SOURCE_HANDLERS[tool];
+  if (handler === undefined) {
+    throw new Error(
+      `last30days workflow: no safe wrapper handler registered for source tool "${tool}"`,
+    );
+  }
+  return handler;
+}
+
+// The real underlying tool's own canonical name, per source. Every wrapped
+// action step declares BOTH its safe handler AND this sibling name in
+// `effect.requires` — not to ever dispatch it (the wrapper calls the real
+// tool's handler in-process, never through the runtime's own dispatch), but
+// so the deploy's capability walk also pins the sibling package (e.g.
+// `@workbench/tools-exa`). That sibling's OWN manifest legitimately declares
+// the credential provider (`exa`/`github`/`scrapecreators`/`xai`/`youtube`)
+// this workflow's wrapper package's manifest cannot claim for itself (see the
+// `providerName: null` note in `./tool-manifest.ts`) — pinning it is what
+// puts the provider into the step's credential-route allow-list. Keyless
+// sources (hackernews/polymarket) need no sibling pin.
+const UNDERLYING_SOURCE_TOOL_HANDLERS: Record<string, string> = {
+  exa_search: canonicalizeStepToolName("last30days-fetch-exa", "exa_search"),
+  github_activity: canonicalizeStepToolName(
+    "last30days-fetch-github",
+    "github_activity",
+  ),
+  reddit_search: canonicalizeStepToolName(
+    "last30days-fetch-reddit",
+    "reddit_search",
+  ),
+  x_search: canonicalizeStepToolName("last30days-fetch-x", "x_search"),
+  youtube_search: canonicalizeStepToolName(
+    "last30days-fetch-youtube",
+    "youtube_search",
+  ),
+};
+
+function sourceEffectRequires(tool: string, handler: string): string[] {
+  const sibling = UNDERLYING_SOURCE_TOOL_HANDLERS[tool];
+  return sibling === undefined ? [handler] : [handler, sibling];
+}
+
 // Each source pulls its query from the grounding step's per-source map rather
 // than the raw topic, so e.g. github_activity gets repo/org names and
 // youtube_search gets video-title phrasing instead of all sources searching the
@@ -109,24 +200,21 @@ function groundedQueryInput(sourceKey: string) {
 }
 
 // A source fetch is best-effort: a dead search API (rate-limit/auth/network)
-// must degrade to a recorded skip in the brief, never fail the run. `nonFatal`
-// makes the sidecar log the reason and return an isError envelope rather than
-// throwing, so the source step completes and `brief` still runs (CL-2401).
-// Tradeoff: a degraded step is "completed", so the runtime's tool-step retry
-// no longer fires — a transient blip degrades on first failure instead of
-// being retried. Acceptable here: not killing the run dominates, and the
-// chronic failures (e.g. bluesky) are permanent, not transient.
-//
-// This is one of the two step shapes in this workflow that stays a
-// `deterministicToolStep` rather than a native `action`: the native `action`
-// primitive has no `nonFatal` concept (a thrown tool error inside an action's
-// `ctx.perform` always propagates and fails the run — see
-// `apps/sidecar/src/action-tool-handler.ts`), so best-effort degrade is only
-// expressible through the Workbench dispatch-tag mechanism. The `argMap` shim
-// itself is still gone: `input` composes the tool's exact args directly via
-// `merge`+`literal` (the per-source path selector already yields `{ query }`,
-// the tool's own argument name — see `groundedQueryInput`/`entityQueryInput`),
-// so there is no separate reshape step left to drift from the evaluated input.
+// must degrade to a recorded skip in the brief, never fail the run. Formerly
+// this ran as a `deterministicToolStep` carrying the `nonFatal` dispatch tag,
+// because the native `action` primitive has no error-swallow of its own (a
+// thrown tool error inside an action's `ctx.perform` always propagates and
+// fails the run — see `apps/sidecar/src/action-tool-handler.ts`). CL-4464
+// moves the tolerance INSIDE a tool this workflow owns instead: each source
+// dispatches its own `last30days_safe_*` wrapper (`./tools.ts`), which calls
+// the real source tool in-process and turns a thrown error into a
+// successful result carrying a `{ isError: true, error }` JSON body, so the
+// wrapped step is a plain native `action` and never needs `nonFatal`. The
+// `argMap` shim is still gone: `input` composes the tool's exact args
+// directly via `merge`+`literal` (the per-source path selector already
+// yields `{ query }`, the tool's own argument name — see
+// `groundedQueryInput`/`entityQueryInput`), so there is no separate reshape
+// step left to drift from the evaluated input.
 function sourceStep(opts: {
   id: string;
   tool: string;
@@ -135,18 +223,17 @@ function sourceStep(opts: {
   after: readonly string[];
   title: string;
 }) {
-  return deterministicToolStep({
-    id: opts.id,
-    tool: opts.tool,
-    title: opts.title,
+  const handler = safeSourceHandler(opts.tool);
+  return action({
+    handler,
     input: {
       merge: [
         groundedQueryInput(opts.sourceKey),
         { literal: { limit: opts.limit } },
       ],
     },
+    effect: { requires: sourceEffectRequires(opts.tool, handler) },
     after: opts.after,
-    nonFatal: true,
   });
 }
 
@@ -231,8 +318,8 @@ const LAST_SOURCE_KEY = lastSource.key;
 // Build the serial source chain: the first source depends on `firstAfter`, each
 // subsequent one on its predecessor, so no two source bodies are in flight at
 // once (the CL-2314 single-writer constraint above).
-function buildSourceSteps(firstAfter: string): Record<string, StepPrimitive> {
-  const steps: Record<string, StepPrimitive> = {};
+function buildSourceSteps(firstAfter: string): Record<string, Primitive> {
+  const steps: Record<string, Primitive> = {};
   let previous = firstAfter;
   for (const source of SOURCES) {
     steps[source.key] = sourceStep({
@@ -301,22 +388,21 @@ const LAST_ROUND2_ID = lastRound2.id;
 
 function buildEntityRoundSteps(
   firstAfter: string,
-): Record<string, StepPrimitive> {
-  const steps: Record<string, StepPrimitive> = {};
+): Record<string, Primitive> {
+  const steps: Record<string, Primitive> = {};
   let previous = firstAfter;
   for (const source of ROUND2_SOURCES) {
-    steps[source.id] = deterministicToolStep({
-      id: `last30days-fetch-${source.id}`,
-      tool: source.tool,
-      title: source.title,
+    const handler = safeSourceHandler(source.tool);
+    steps[source.id] = action({
+      handler,
       input: {
         merge: [
           entityQueryInput(source.mapKey),
           { literal: { limit: source.limit } },
         ],
       },
+      effect: { requires: sourceEffectRequires(source.tool, handler) },
       after: [previous],
-      nonFatal: true,
     });
     previous = source.id;
   }

@@ -170,6 +170,7 @@ COPY workflows/exa-topic-watch/ workflows/exa-topic-watch/
 COPY workflows/firecrawl-url-watch/ workflows/firecrawl-url-watch/
 COPY workflows/github-topic-watch/ workflows/github-topic-watch/
 COPY workflows/heartbeat/ workflows/heartbeat/
+COPY workflows/last30days-research/ workflows/last30days-research/
 COPY workflows/reddit-opportunity-watch/ workflows/reddit-opportunity-watch/
 COPY workflows/sumble-account-intel/ workflows/sumble-account-intel/
 COPY workflows/ workflows/
