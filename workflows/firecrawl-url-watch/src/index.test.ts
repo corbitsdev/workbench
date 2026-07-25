@@ -94,10 +94,7 @@ describe("firecrawl-url-watch", () => {
       "@workbench/tools-last30days/core:firecrawl_url_watch_format_document",
     );
     expect(document.input).toEqual({
-      merge: [
-        { from: "steps.intake.output" },
-        { from: "steps.digest.output" },
-      ],
+      merge: [{ from: "steps.intake.output" }, { from: "steps.digest.output" }],
     });
     expect(document.after).toEqual(["digest"]);
     expect(document.effect).toEqual({ requires: [FORMAT_DOCUMENT_HANDLER] });
