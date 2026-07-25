@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-07-25T15:20:53.450Z",
+  "generatedAt": "2026-07-25T15:22:20.296Z",
   "factories": [
     {
       "factoryId": "@workbench/tools-ab-compare/compose",
@@ -489,6 +489,21 @@
       "credentialCatalog": null
     },
     {
+      "factoryId": "@workbench/tools-gamma-presentation-creator/core",
+      "packageName": "@workbench/tools-gamma-presentation-creator",
+      "providerName": null,
+      "bareToolNames": [
+        "gamma_presentation_creator_prepare_persist",
+        "gamma_presentation_creator_prepare_render"
+      ],
+      "sideEffects": {
+        "gamma_presentation_creator_prepare_render": "read",
+        "gamma_presentation_creator_prepare_persist": "read"
+      },
+      "myraCatalog": null,
+      "credentialCatalog": null
+    },
+    {
       "factoryId": "@workbench/tools-github/github",
       "packageName": "@workbench/tools-github",
       "providerName": "github",
@@ -898,19 +913,6 @@
           "predictions"
         ]
       },
-      "credentialCatalog": null
-    },
-    {
-      "factoryId": "@workbench/tools-process-granola-call/core",
-      "packageName": "@workbench/tools-process-granola-call",
-      "providerName": null,
-      "bareToolNames": [
-        "process_granola_prepare_document"
-      ],
-      "sideEffects": {
-        "process_granola_prepare_document": "read"
-      },
-      "myraCatalog": null,
       "credentialCatalog": null
     },
     {

@@ -1,6 +1,7 @@
-import { awaitSignal, defineWorkflow } from "@intx/workflow";
+import { action, awaitSignal, defineWorkflow } from "@intx/workflow";
 import type { Primitive } from "@intx/workflow";
 import {
+  canonicalizeStepToolName,
   deterministicToolStep,
   agentStep,
   LLM_DEFAULT_MODEL,
@@ -20,26 +21,55 @@ export const kind = "gamma-presentation-creator";
 // browser-safe module.
 export { DISPLAY_STEPS } from "./display-steps";
 
+// Native `action` handler refs — the tool's canonical (factory-prefixed) name,
+// resolved via the same build-time-checked lookup `deterministicToolStep`
+// uses, so a typo'd or manifest-drifted tool name fails the build instead of
+// deploying a step nothing can dispatch (CL-4454).
+export const ARTIFACT_LIST_HANDLER = canonicalizeStepToolName(
+  "presentation-list-artifacts",
+  "artifact_list",
+);
+export const GRANOLA_LIST_NOTES_HANDLER = canonicalizeStepToolName(
+  "presentation-list-notes",
+  "granola_list_notes",
+);
+export const PREPARE_RENDER_HANDLER = canonicalizeStepToolName(
+  "presentation-prepare-render",
+  "gamma_presentation_creator_prepare_render",
+);
+export const GAMMA_CREATE_FROM_TEMPLATE_HANDLER = canonicalizeStepToolName(
+  "presentation-render",
+  "gamma_create_from_template",
+);
+export const PREPARE_PERSIST_HANDLER = canonicalizeStepToolName(
+  "presentation-prepare-persist",
+  "gamma_presentation_creator_prepare_persist",
+);
+export const ARTIFACT_LINK_GAMMA_PRESENTATION_HANDLER =
+  canonicalizeStepToolName(
+    "presentation-persist",
+    "artifact_link_gamma_presentation",
+  );
+
 const setupSteps: Record<string, Primitive> = {
-  // Root steps receive the run's initial input; the argMap replaces that input
-  // with an explicit `{ limit }` (a bare `input` would be passed verbatim and a
-  // string run-input fails the step-tool harness). The most recent are
-  // preloaded so the intake panel can paginate + search client-side — the DAG
-  // is acyclic/fire-once, so there is no "next page" round-trip. Each limit is
-  // the tool's own ceiling: artifact_list allows 50, granola_list_notes clamps
-  // to 30 (a higher literal would be silently truncated — see the panel's cap
-  // note). The panel warns the user when a list is at its ceiling.
-  "list-artifacts": deterministicToolStep({
-    id: "presentation-list-artifacts",
-    title: "List your artifacts",
-    tool: "artifact_list",
-    argMap: { limit: { literal: 50 } },
+  // Root steps receive the run's initial input, which native `action` ignores
+  // in favor of a `literal` selector (a bare `from` would pass the run input
+  // verbatim and a string run-input fails the step-tool harness). The most
+  // recent are preloaded so the intake panel can paginate + search
+  // client-side — the DAG is acyclic/fire-once, so there is no "next page"
+  // round-trip. Each limit is the tool's own ceiling: artifact_list allows 50,
+  // granola_list_notes clamps to 30 (a higher literal would be silently
+  // truncated — see the panel's cap note). The panel warns the user when a
+  // list is at its ceiling.
+  "list-artifacts": action({
+    handler: ARTIFACT_LIST_HANDLER,
+    input: { literal: { limit: 50 } },
+    effect: { requires: [ARTIFACT_LIST_HANDLER] },
   }),
-  "list-notes": deterministicToolStep({
-    id: "presentation-list-notes",
-    title: "List your call notes",
-    tool: "granola_list_notes",
-    argMap: { limit: { literal: 30 } },
+  "list-notes": action({
+    handler: GRANOLA_LIST_NOTES_HANDLER,
+    input: { literal: { limit: 30 } },
+    effect: { requires: [GRANOLA_LIST_NOTES_HANDLER] },
   }),
   intake: awaitSignal({
     name: "intake",
@@ -83,18 +113,30 @@ const setupSteps: Record<string, Primitive> = {
       ],
     },
   }),
-  render: deterministicToolStep({
-    id: "presentation-render",
-    title: "Build the deck in Gamma",
-    tool: "gamma_create_from_template",
-    after: ["generate"],
+  // `generate`'s draft rides on the agent-step convention `reply` field;
+  // `gamma_create_from_template`'s argument is `prompt` — a rename no native
+  // selector can express (and the tool's own arg name is left alone: it
+  // documents the Gamma domain concept, not this workflow's plumbing). The
+  // private `prepare-render` shaping tool (`./tools.ts`) does the rename.
+  "prepare-render": action({
+    handler: PREPARE_RENDER_HANDLER,
     input: {
       merge: [
         { from: "steps.intake.output" },
         { from: "steps.generate.output" },
       ],
     },
-    argMap: { gammaId: { from: "gammaId" }, prompt: { from: "reply" } },
+    effect: { requires: [PREPARE_RENDER_HANDLER] },
+    after: ["generate"],
+  }),
+  // Native `action`: `prepare-render`'s output already carries
+  // gamma_create_from_template's own argument names, so this step is a pure
+  // passthrough.
+  render: action({
+    handler: GAMMA_CREATE_FROM_TEMPLATE_HANDLER,
+    input: { from: "steps.prepare-render.output.content" },
+    effect: { requires: [GAMMA_CREATE_FROM_TEMPLATE_HANDLER] },
+    after: ["prepare-render"],
   }),
   describe: agentStep({
     id: "presentation-describe",
@@ -104,32 +146,32 @@ const setupSteps: Record<string, Primitive> = {
     after: ["generate"],
     input: { from: "steps.generate.output" },
   }),
-  persist: deterministicToolStep({
-    id: "presentation-persist",
-    title: "Save the deck",
-    tool: "artifact_link_gamma_presentation",
-    after: ["render", "describe"],
+  // gamma_create_from_template is a "full" tool: its deck result lands at
+  // `render.output.content` as an object (never a stringified envelope), and
+  // `url`/`gammaId` on it already match `artifact_link_gamma_presentation`'s
+  // own argument names verbatim — merging render's content AFTER intake's
+  // output lets the NEW deck's gammaId win over the template id that also
+  // rides on the intake payload, the same override order the old argMap
+  // relied on. Only `deckTitle` → `title`, the describe agent's `reply` →
+  // `description`, and `exportUrl` → `pdfUrl` are renames, done by the
+  // private `prepare-persist` shaping tool.
+  "prepare-persist": action({
+    handler: PREPARE_PERSIST_HANDLER,
     input: {
       merge: [
         { from: "steps.intake.output" },
-        { from: "steps.render.output" },
+        { from: "steps.render.output.content" },
         { from: "steps.describe.output" },
       ],
     },
-    // render is a stringTool step: its deck result is encoded as
-    // { content: "<json>" }, so the deck fields (gammaUrl, gammaId, exportUrl)
-    // are read via `fromJson` out of `content` — including the NEW deck's
-    // gammaId, not the template id that also rides on the intake payload.
-    // exportUrl is always present (empty when Gamma returns no export link);
-    // an empty value passes through and the persist handler treats it as
-    // "no PDF". title/description come from the intake and describe outputs.
-    argMap: {
-      title: { from: "deckTitle" },
-      description: { from: "reply" },
-      url: { fromJson: "content", field: "gammaUrl" },
-      gammaId: { fromJson: "content", field: "gammaId" },
-      pdfUrl: { fromJson: "content", field: "exportUrl" },
-    },
+    effect: { requires: [PREPARE_PERSIST_HANDLER] },
+    after: ["render", "describe"],
+  }),
+  persist: action({
+    handler: ARTIFACT_LINK_GAMMA_PRESENTATION_HANDLER,
+    input: { from: "steps.prepare-persist.output.content" },
+    effect: { requires: [ARTIFACT_LINK_GAMMA_PRESENTATION_HANDLER] },
+    after: ["prepare-persist"],
   }),
 };
 
