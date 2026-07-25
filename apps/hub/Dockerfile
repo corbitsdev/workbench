@@ -153,6 +153,7 @@ COPY packages/tools-workflows/ packages/tools-workflows/
 COPY packages/tools-x/ packages/tools-x/
 COPY packages/tools-youtube/ packages/tools-youtube/
 COPY workflows/exa-topic-watch/ workflows/exa-topic-watch/
+COPY workflows/gtm-scripts-briefs/ workflows/gtm-scripts-briefs/
 COPY packages/ui/ packages/ui/
 COPY packages/tasks/ packages/tasks/
 COPY packages/workbench-shared/ packages/workbench-shared/
