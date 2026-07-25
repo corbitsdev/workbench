@@ -192,7 +192,7 @@ function ChipInput({
 // ── Screen: Intake (website URL + optional hints) ───────────────────────────────
 
 export type IntakePayload = {
-  inputUrl: string;
+  url: string;
   brandName?: string;
   targetGeography?: string;
   icpHints?: string;
@@ -247,7 +247,7 @@ function IntakeScreen({
           const geo = optional(targetGeography);
           const icp = optional(icpHints);
           onSubmit({
-            inputUrl: inputUrl.trim(),
+            url: inputUrl.trim(),
             ...(brand !== undefined ? { brandName: brand } : {}),
             ...(geo !== undefined ? { targetGeography: geo } : {}),
             ...(icp !== undefined ? { icpHints: icp } : {}),

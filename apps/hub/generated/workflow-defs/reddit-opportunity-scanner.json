@@ -83,29 +83,17 @@
         "drainBehavior": "wait"
       },
       "scrape": {
-        "kind": "step",
+        "kind": "action",
         "id": "scrape",
-        "agent": {
-          "id": "reddit-opp-scrape",
-          "systemPrompt": "",
-          "toolFactories": [],
-          "capabilities": [
-            "@workbench/tools-firecrawl/firecrawl:firecrawl_scrape"
-          ],
-          "inference": {
-            "sources": []
-          },
-          "description": "Deterministic tool call: @workbench/tools-firecrawl/firecrawl:firecrawl_scrape",
-          "tags": {
-            "workbench.stepKind": "deterministic-tool",
-            "workbench.tool": "@workbench/tools-firecrawl/firecrawl:firecrawl_scrape",
-            "workbench.argMap": "{\"url\":{\"from\":\"inputUrl\"}}",
-            "workbench.title": "Scan the website"
-          }
-        },
+        "handler": "@workbench/tools-firecrawl/firecrawl:firecrawl_scrape",
         "drainBehavior": "cancel",
         "input": {
           "from": "steps.intake.output"
+        },
+        "effect": {
+          "requires": [
+            "@workbench/tools-firecrawl/firecrawl:firecrawl_scrape"
+          ]
         },
         "after": [
           "intake"

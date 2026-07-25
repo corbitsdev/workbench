@@ -31,34 +31,43 @@
         "name": "intake",
         "drainBehavior": "wait"
       },
-      "fetch": {
-        "kind": "step",
-        "id": "fetch",
-        "agent": {
-          "id": "github-topic-watch-fetch",
-          "systemPrompt": "",
-          "toolFactories": [],
-          "capabilities": [
-            "@workbench/tools-github/github:github_activity"
-          ],
-          "inference": {
-            "sources": []
-          },
-          "description": "Deterministic tool call: @workbench/tools-github/github:github_activity",
-          "tags": {
-            "workbench.stepKind": "deterministic-tool",
-            "workbench.tool": "@workbench/tools-github/github:github_activity",
-            "workbench.argMap": "{\"query\":{\"from\":\"topic\"},\"days\":{\"literal\":7}}",
-            "workbench.nonFatal": "true",
-            "workbench.title": "Search GitHub activity"
-          }
-        },
+      "format-query": {
+        "kind": "action",
+        "id": "format-query",
+        "handler": "@workbench/tools-last30days/core:github_topic_watch_format_activity_query",
         "drainBehavior": "cancel",
         "input": {
-          "from": "steps.intake.output"
+          "project": {
+            "from": "steps.intake.output"
+          },
+          "fields": [
+            "topic"
+          ]
+        },
+        "effect": {
+          "requires": [
+            "@workbench/tools-last30days/core:github_topic_watch_format_activity_query"
+          ]
         },
         "after": [
           "intake"
+        ]
+      },
+      "fetch": {
+        "kind": "action",
+        "id": "fetch",
+        "handler": "@workbench/tools-github/github:github_activity",
+        "drainBehavior": "cancel",
+        "input": {
+          "from": "steps.format-query.output.content"
+        },
+        "effect": {
+          "requires": [
+            "@workbench/tools-github/github:github_activity"
+          ]
+        },
+        "after": [
+          "format-query"
         ]
       },
       "digest": {
@@ -93,26 +102,9 @@
         ]
       },
       "document": {
-        "kind": "step",
+        "kind": "action",
         "id": "document",
-        "agent": {
-          "id": "github-topic-watch-document",
-          "systemPrompt": "",
-          "toolFactories": [],
-          "capabilities": [
-            "@workbench/tools-last30days/core:last30days_format_report_document"
-          ],
-          "inference": {
-            "sources": []
-          },
-          "description": "Deterministic tool call: @workbench/tools-last30days/core:last30days_format_report_document",
-          "tags": {
-            "workbench.stepKind": "deterministic-tool",
-            "workbench.tool": "@workbench/tools-last30days/core:last30days_format_report_document",
-            "workbench.argMap": "{\"topic\":{\"from\":\"topic\"},\"reply\":{\"from\":\"reply\"}}",
-            "workbench.title": "Compose the digest document"
-          }
-        },
+        "handler": "@workbench/tools-last30days/core:last30days_format_report_document",
         "drainBehavior": "cancel",
         "input": {
           "merge": [
@@ -124,37 +116,36 @@
             }
           ]
         },
+        "effect": {
+          "requires": [
+            "@workbench/tools-last30days/core:last30days_format_report_document"
+          ]
+        },
         "after": [
           "digest"
         ]
       },
       "persist": {
-        "kind": "step",
+        "kind": "action",
         "id": "persist",
-        "agent": {
-          "id": "github-topic-watch-persist",
-          "systemPrompt": "",
-          "toolFactories": [],
-          "capabilities": [
-            "@workbench/tools-artifact/artifact:write_artifact"
-          ],
-          "inference": {
-            "sources": []
-          },
-          "description": "Deterministic tool call: @workbench/tools-artifact/artifact:write_artifact",
-          "tags": {
-            "workbench.stepKind": "deterministic-tool",
-            "workbench.tool": "@workbench/tools-artifact/artifact:write_artifact",
-            "workbench.argMap": "{\"title\":{\"from\":\"title\"},\"body\":{\"from\":\"body\"},\"kind\":{\"literal\":\"research\"},\"jobLabel\":{\"literal\":\"GitHub topic watch\"}}",
-            "workbench.title": "Save digest artifact"
-          }
-        },
+        "handler": "@workbench/tools-artifact/artifact:write_artifact",
         "drainBehavior": "cancel",
         "input": {
           "merge": [
             {
               "from": "steps.document.output.content"
+            },
+            {
+              "literal": {
+                "kind": "research",
+                "jobLabel": "GitHub topic watch"
+              }
             }
+          ]
+        },
+        "effect": {
+          "requires": [
+            "@workbench/tools-artifact/artifact:write_artifact"
           ]
         },
         "after": [
@@ -164,6 +155,7 @@
     },
     "stepOrder": [
       "intake",
+      "format-query",
       "fetch",
       "digest",
       "document",

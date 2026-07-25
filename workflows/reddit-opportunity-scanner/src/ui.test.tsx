@@ -140,7 +140,7 @@ describe("reddit-opportunity-scanner Panel", () => {
     expect(onSignal).toHaveBeenCalledTimes(1);
     expect(onSignal.mock.calls[0]).toEqual([
       "intake",
-      { inputUrl: "https://example.com", brandName: "Acme" },
+      { url: "https://example.com", brandName: "Acme" },
     ]);
   });
 
