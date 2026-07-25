@@ -1,13 +1,27 @@
 /// <reference types="bun" />
 import { describe, expect, test } from "bun:test";
+import type { ActionHandler } from "@intx/workflow/runlocal";
 import type { StepInvoker } from "@intx/workflow/runtime";
 import { runLocal } from "@intx/workflow/runlocal";
 import {
-  DETERMINISTIC_TOOL_KIND,
-  STEP_KIND_TAG,
-  STEP_TOOL_TAG,
-} from "@workbench/agents";
-import { INTAKE_FIELDS, kind, label, workflow } from "./index";
+  FORMAT_DIGEST_DOCUMENT_HANDLER,
+  INTAKE_FIELDS,
+  kind,
+  label,
+  REDDIT_SUBREDDIT_SEARCH_HANDLER,
+  WRITE_ARTIFACT_HANDLER,
+  workflow,
+} from "./index";
+
+function actionPrimitive(id: string) {
+  const primitive = workflow.steps[id];
+  if (primitive === undefined || primitive.kind !== "action") {
+    throw new Error(
+      `expected action primitive for step id "${id}", got ${primitive?.kind ?? "undefined"}`,
+    );
+  }
+  return primitive;
+}
 
 function makeRecordingInvoker(outputs: Record<string, unknown> = {}): {
   invoker: StepInvoker;
@@ -21,6 +35,22 @@ function makeRecordingInvoker(outputs: Record<string, unknown> = {}): {
   return { invoker, ran };
 }
 
+function makeActionResolver(
+  outputs: Record<string, unknown>,
+): {
+  resolver: (ref: string) => ActionHandler;
+  ran: { ref: string; input: unknown }[];
+} {
+  const ran: { ref: string; input: unknown }[] = [];
+  const resolver = (ref: string): ActionHandler => {
+    return async (input): Promise<unknown> => {
+      ran.push({ ref, input });
+      return outputs[ref] ?? null;
+    };
+  };
+  return { resolver, ran };
+}
+
 describe("reddit-opportunity-watch", () => {
   test("exports kind, label, and schedule intake fields", () => {
     expect(kind).toBe("reddit-opportunity-watch");
@@ -32,28 +62,82 @@ describe("reddit-opportunity-watch", () => {
     ]);
   });
 
-  test("gates on intake, fetches via reddit_subreddit_search, digests, formats, persists", async () => {
-    // Ensure digest input merges whole step outputs (objects), not array content.
-    expect(
-      (workflow.steps.digest as { input?: unknown }).input,
-    ).toEqual({
+  test("fetch is a native action calling reddit_subreddit_search, merging intake with a fixed sort literal", () => {
+    const fetchStep = actionPrimitive("fetch");
+    expect(fetchStep.handler).toBe(REDDIT_SUBREDDIT_SEARCH_HANDLER);
+    expect(REDDIT_SUBREDDIT_SEARCH_HANDLER).toBe(
+      "@workbench/tools-reddit/reddit:reddit_subreddit_search",
+    );
+    expect(fetchStep.input).toEqual({
       merge: [
         { from: "steps.intake.output" },
-        { from: "steps.fetch.output" },
+        { literal: { sort: "relevance" } },
       ],
     });
+    expect(fetchStep.effect).toEqual({
+      requires: [REDDIT_SUBREDDIT_SEARCH_HANDLER],
+    });
+  });
 
-    const { invoker, ran } = makeRecordingInvoker({
-      "reddit-opportunity-watch-fetch": {
+  test("persist is a native action calling write_artifact, merging document's { title, body } with fixed kind/jobLabel literals", () => {
+    const persistStep = actionPrimitive("persist");
+    expect(persistStep.handler).toBe(WRITE_ARTIFACT_HANDLER);
+    expect(WRITE_ARTIFACT_HANDLER).toBe(
+      "@workbench/tools-artifact/artifact:write_artifact",
+    );
+    expect(persistStep.input).toEqual({
+      merge: [
+        { from: "steps.document.output.content" },
+        { literal: { kind: "research", jobLabel: label } },
+      ],
+    });
+    expect(persistStep.effect).toEqual({
+      requires: [WRITE_ARTIFACT_HANDLER],
+    });
+  });
+
+  test("document is a native action calling reddit_opportunity_watch_format_digest_document, merging intake's query with digest's reply", () => {
+    // reddit_opportunity_watch_format_digest_document is this workflow's own
+    // tool (packaged in @workbench/tools-last30days alongside the other
+    // last30days-family workflow helpers) — it takes `query` verbatim, so
+    // intake's `query` (also consumed as-is by reddit_subreddit_search) and
+    // digest's `reply` merge straight through with no rename, and the
+    // shared, multi-caller last30days_format_report_document (which takes
+    // `topic`) is left untouched.
+    const documentStep = actionPrimitive("document");
+    expect(documentStep.handler).toBe(FORMAT_DIGEST_DOCUMENT_HANDLER);
+    expect(FORMAT_DIGEST_DOCUMENT_HANDLER).toBe(
+      "@workbench/tools-last30days/core:reddit_opportunity_watch_format_digest_document",
+    );
+    expect(documentStep.input).toEqual({
+      merge: [
+        { from: "steps.intake.output" },
+        { from: "steps.digest.output" },
+      ],
+    });
+    expect(documentStep.effect).toEqual({
+      requires: [FORMAT_DIGEST_DOCUMENT_HANDLER],
+    });
+  });
+
+  test("gates on intake, fetches via reddit_subreddit_search, digests, formats, persists (real runtime)", async () => {
+    const { invoker, ran: stepRan } = makeRecordingInvoker({
+      "reddit-opportunity-watch-digest": { reply: "Digest body" },
+    });
+    const { resolver, ran: actionRan } = makeActionResolver({
+      [REDDIT_SUBREDDIT_SEARCH_HANDLER]: {
         content: [{ url: "https://reddit.com/r/x", title: "post" }],
       },
-      "reddit-opportunity-watch-digest": { reply: "Digest body" },
-      "reddit-opportunity-watch-document": {
+      [FORMAT_DIGEST_DOCUMENT_HANDLER]: {
         content: { title: "devops hiring", body: "Digest body" },
       },
-      "reddit-opportunity-watch-persist": { artifactId: "art_1" },
+      [WRITE_ARTIFACT_HANDLER]: { artifactId: "art_1" },
     });
-    const run = runLocal(workflow, { invokeStep: invoker });
+
+    const run = runLocal(workflow, {
+      invokeStep: invoker,
+      actionResolver: resolver,
+    });
     await run.signal("intake", {
       subreddit: "devops",
       query: "devops hiring",
@@ -62,19 +146,35 @@ describe("reddit-opportunity-watch", () => {
     const result = await run.complete;
     expect(result.terminalStatus).toBe("completed");
 
-    expect(ran.map((r) => r.id)).toEqual([
-      "reddit-opportunity-watch-fetch",
-      "reddit-opportunity-watch-digest",
-      "reddit-opportunity-watch-document",
-      "reddit-opportunity-watch-persist",
-    ]);
+    // fetch (action) ran first with the merged sort literal...
+    expect(actionRan[0]?.ref).toBe(REDDIT_SUBREDDIT_SEARCH_HANDLER);
+    expect(actionRan[0]?.input).toEqual({
+      subreddit: "devops",
+      query: "devops hiring",
+      timeframe: "week",
+      sort: "relevance",
+    });
 
-    const fetchStep = workflow.steps.fetch as {
-      agent: { tags?: Record<string, string> };
-    };
-    expect(fetchStep.agent.tags?.[STEP_KIND_TAG]).toBe(DETERMINISTIC_TOOL_KIND);
-    expect(fetchStep.agent.tags?.[STEP_TOOL_TAG]).toContain(
-      "reddit_subreddit_search",
-    );
+    // ...then digest ran as the sole agent step...
+    expect(stepRan.map((r) => r.id)).toEqual(["reddit-opportunity-watch-digest"]);
+
+    // ...then document (action) ran, merging intake's query with digest's reply...
+    expect(actionRan[1]?.ref).toBe(FORMAT_DIGEST_DOCUMENT_HANDLER);
+    expect(actionRan[1]?.input).toEqual({
+      subreddit: "devops",
+      query: "devops hiring",
+      timeframe: "week",
+      reply: "Digest body",
+    });
+
+    // ...then persist (action) ran last, with document's { title, body }
+    // verbatim plus the fixed kind/jobLabel literals — no reshape step.
+    expect(actionRan[2]?.ref).toBe(WRITE_ARTIFACT_HANDLER);
+    expect(actionRan[2]?.input).toEqual({
+      title: "devops hiring",
+      body: "Digest body",
+      kind: "research",
+      jobLabel: label,
+    });
   });
 });

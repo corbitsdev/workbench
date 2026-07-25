@@ -798,6 +798,58 @@ describe("sumble_account_intel_format_report_document (CL-4232)", () => {
   });
 });
 
+describe("reddit_opportunity_watch_format_digest_document (CL-4454)", () => {
+  test("pairs query and reply into a title/body document", async () => {
+    const handler = fullTool("reddit_opportunity_watch_format_digest_document");
+    const result = await handler(
+      {
+        id: "document",
+        name: "reddit_opportunity_watch_format_digest_document",
+        arguments: {
+          query: "devops hiring",
+          reply: "## Digest\n\nThree threads look like opportunities.",
+        },
+      },
+      SIGNAL,
+    );
+    if (typeof result.content === "string") {
+      throw new Error("expected object content");
+    }
+    expect(result.content).toEqual({
+      title: "devops hiring",
+      body: "## Digest\n\nThree threads look like opportunities.",
+    });
+  });
+
+  test("returns isError when reply is missing", async () => {
+    const handler = fullTool("reddit_opportunity_watch_format_digest_document");
+    const result = await handler(
+      {
+        id: "document",
+        name: "reddit_opportunity_watch_format_digest_document",
+        arguments: { query: "devops hiring" },
+      },
+      SIGNAL,
+    );
+    expect(result.isError).toBe(true);
+    expect(result.content).toBe("reply is required");
+  });
+
+  test("returns isError when query is missing", async () => {
+    const handler = fullTool("reddit_opportunity_watch_format_digest_document");
+    const result = await handler(
+      {
+        id: "document",
+        name: "reddit_opportunity_watch_format_digest_document",
+        arguments: { reply: "body" },
+      },
+      SIGNAL,
+    );
+    expect(result.isError).toBe(true);
+    expect(result.content).toBe("query is required");
+  });
+});
+
 describe("tool-manifest completeness", () => {
   test("every registered tool name is declared in the hand-authored manifest", () => {
     const runtimeNames = createLast30daysTools()

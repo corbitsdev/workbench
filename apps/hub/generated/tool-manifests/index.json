@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-07-23T17:20:03.228Z",
+  "generatedAt": "2026-07-25T14:05:50.811Z",
   "factories": [
     {
       "factoryId": "@workbench/tools-ab-compare/compose",
@@ -640,6 +640,7 @@
         "last30days_ground_queries",
         "last30days_validate",
         "last30days_workflow_brief",
+        "reddit_opportunity_watch_format_digest_document",
         "sumble_account_intel_format_report_document"
       ],
       "sideEffects": {
@@ -656,7 +657,8 @@
         "heartbeat_format_brief_notify": "read",
         "heartbeat_format_brief_title": "read",
         "competitor_analysis_format_report_document": "read",
-        "sumble_account_intel_format_report_document": "read"
+        "sumble_account_intel_format_report_document": "read",
+        "reddit_opportunity_watch_format_digest_document": "read"
       },
       "myraCatalog": null,
       "credentialCatalog": null

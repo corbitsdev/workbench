@@ -49,6 +49,9 @@ export const toolManifestFile = {
         sumble_account_intel_format_report_document: {
           sideEffect: "read",
         },
+        reddit_opportunity_watch_format_digest_document: {
+          sideEffect: "read",
+        },
       },
       myraCatalog: null,
       credentialCatalog: null,
