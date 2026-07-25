@@ -1,31 +1,33 @@
-import { action, awaitSignal, defineWorkflow } from "@intx/workflow";
-import { agentStep, canonicalizeStepToolName } from "@workbench/agents";
+import { action, awaitSignal, defineWorkflow, step } from "@intx/workflow";
+import { defineAgent } from "@intx/agent";
 
 export const label = "Web topic watch";
 export const description =
   "On a schedule, search the web for a topic and save a short digest artifact.";
 export const kind = "exa-topic-watch";
 
-// Native `action` handler refs — the tool's canonical (factory-prefixed) name,
-// resolved via the same build-time-checked lookup `deterministicToolStep`
-// uses, so a typo'd or manifest-drifted tool name fails the build instead of
-// deploying a step nothing can dispatch.
-export const FORMAT_REPORT_DOCUMENT_HANDLER = canonicalizeStepToolName(
-  "exa-topic-watch-document",
-  "last30days_format_report_document",
-);
-export const WRITE_ARTIFACT_HANDLER = canonicalizeStepToolName(
-  "exa-topic-watch-persist",
-  "write_artifact",
-);
-export const PREPARE_SEARCH_HANDLER = canonicalizeStepToolName(
-  "exa-topic-watch-prepare-search",
-  "exa_topic_watch_prepare_search",
-);
-export const EXA_SEARCH_HANDLER = canonicalizeStepToolName(
-  "exa-topic-watch-fetch",
-  "exa_search",
-);
+// Tag shared with every step class, naming the step in the catalog/run-UI
+// preview in place of the humanized step-map key.
+const STEP_TITLE_TAG = "workbench.title";
+
+// Corbits terminology guidance every reasoning step's system prompt carries,
+// so the digest agent spells Corbits/Corbits.dev/Interchange/Faremeter
+// consistently regardless of how the source material spelled them.
+const CORBITS_VOCABULARY =
+  "Treat Corbits, Corbits.dev, Interchange, and Faremeter as canonical Corbits names; spell them exactly. When source material contains a clear speech-to-text or spelling variant, use the canonical spelling in your output. Do not replace an ambiguous term unless surrounding context identifies it.";
+
+// Handler refs — the tool's canonical (factory-prefixed) runtime name. Each
+// literal is checked against the committed tool manifest by a repo-level test
+// (`packages/tool-manifest/src/resolvable-handlers.test.ts`), so a typo'd or
+// manifest-drifted handler string still fails the build rather than deploying
+// a step nothing can dispatch.
+export const FORMAT_REPORT_DOCUMENT_HANDLER =
+  "@workbench/tools-last30days/core:last30days_format_report_document";
+export const WRITE_ARTIFACT_HANDLER =
+  "@workbench/tools-artifact/artifact:write_artifact";
+export const PREPARE_SEARCH_HANDLER =
+  "@workbench/workflow-exa-topic-watch/core:exa_topic_watch_prepare_search";
+export const EXA_SEARCH_HANDLER = "@workbench/tools-exa/exa:exa_search";
 
 /**
  * Schedule-field metadata for Routines (CL-4259). Single required topic query.
@@ -94,10 +96,20 @@ export const workflow = defineWorkflow({
       after: ["prepare-search"],
     }),
 
-    digest: agentStep({
-      id: "exa-topic-watch-digest",
-      title: "Write the digest",
-      systemPrompt: DIGEST_SYSTEM_PROMPT,
+    // Native `step({ agent })`: a plain reasoning-with-tools step built from
+    // `defineAgent`, mirroring what `@workbench/agents`' `agentStep` sugar
+    // wraps — no per-step model preference here, so the step uses the
+    // deploy's default model.
+    digest: step({
+      agent: defineAgent({
+        id: "exa-topic-watch-digest",
+        description: "Reasoning step: exa-topic-watch-digest",
+        systemPrompt: [CORBITS_VOCABULARY, DIGEST_SYSTEM_PROMPT].join("\n\n"),
+        tools: [],
+        capabilities: [],
+        inference: { sources: [] },
+        tags: { [STEP_TITLE_TAG]: "Write the digest" },
+      }),
       // Merge objects only (arrays fail merge selectors). Fetch tool envelope is
       // { content: ResearchItem[] }; agent sees { topic, content }.
       input: {
