@@ -32,7 +32,7 @@ export const MULTI_SOURCE_COLLATERAL_LIST_ISSUES_DEFINITION: ToolDefinition = {
 };
 
 const listIssuesInner = defineCredentialedToolPackage({
-  id: "@workbench/tools-multi-source-collateral/list-issues-inner",
+  id: "@workbench/workflow-multi-source-collateral/list-issues-inner",
   provider: "linear",
   entries: { linear_list_issues: LINEAR_HUB_TOOLS.linear_list_issues },
 });

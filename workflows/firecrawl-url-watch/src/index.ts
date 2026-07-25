@@ -108,7 +108,7 @@ export const workflow = defineWorkflow({
     // native selectors cannot rename a field). Rather than alias that
     // shared, 5-caller tool for one workflow's naming, this workflow ships
     // its own tool — `firecrawl_url_watch_format_document` (shipped in this
-    // workflow's own `@workbench/tools-firecrawl-url-watch` package) — whose
+    // workflow's own `@workbench/workflow-firecrawl-url-watch` package) — whose
     // schema takes `url` verbatim, so the same intake output merges into
     // both `fetch` and `document` unchanged.
     document: action({

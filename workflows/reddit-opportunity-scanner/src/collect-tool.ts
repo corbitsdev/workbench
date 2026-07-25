@@ -37,7 +37,7 @@ export const REDDIT_OPPORTUNITY_SCANNER_COLLECT_SEARCH_DEFINITION: ToolDefinitio
   };
 
 const collectSearchInner = defineCredentialedToolPackage({
-  id: "@workbench/tools-reddit-opportunity-scanner/collect-search-inner",
+  id: "@workbench/workflow-reddit-opportunity-scanner/collect-search-inner",
   provider: "scrapecreators",
   entries: {
     reddit_subreddit_search: REDDIT_HUB_TOOLS.reddit_subreddit_search,

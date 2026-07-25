@@ -93,7 +93,7 @@ describe("process-granola-call workflow", () => {
 
   test("prepare-* actions shape write_artifact's title/body/sourceRefKey via the workflow-owned tool", () => {
     expect(PREPARE_DOCUMENT_HANDLER).toBe(
-      "@workbench/tools-process-granola-call/core:process_granola_prepare_document",
+      "@workbench/workflow-process-granola-call/core:process_granola_prepare_document",
     );
 
     const prepareTranscript = actionPrimitive("prepare-transcript");

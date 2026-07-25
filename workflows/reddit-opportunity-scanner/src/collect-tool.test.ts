@@ -108,7 +108,8 @@ describe("tool-manifest", () => {
   it("registers the collect wrapper tool under its own factory", () => {
     const factory = toolManifestFile.factories.find(
       (f) =>
-        f.factoryId === "@workbench/tools-reddit-opportunity-scanner/collect",
+        f.factoryId ===
+        "@workbench/workflow-reddit-opportunity-scanner/collect",
     );
     expect(factory?.bareToolNames).toEqual([
       REDDIT_OPPORTUNITY_SCANNER_COLLECT_SEARCH_DEFINITION.name,

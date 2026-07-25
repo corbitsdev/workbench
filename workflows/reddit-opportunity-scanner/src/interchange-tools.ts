@@ -1,4 +1,4 @@
-// Native `interchange.tools` entry for @workbench/tools-reddit-opportunity-scanner
+// Native `interchange.tools` entry for @workbench/workflow-reddit-opportunity-scanner
 // Wraps `reddit_subreddit_search` so `collect`'s per-search map
 // iteration can tolerate one dead subreddit search without poisoning the
 // whole curate pool. Declares the same tool-credential env key the wrapped
@@ -12,7 +12,7 @@ import {
 } from "./collect-tool";
 
 export const redditOpportunityScannerCollect = defineTool({
-  id: "@workbench/tools-reddit-opportunity-scanner/collect",
+  id: "@workbench/workflow-reddit-opportunity-scanner/collect",
   requires: COLLECT_TOOL_REQUIRES,
   factory: (env) =>
     createToolRunner(createRedditOpportunityScannerCollectTools(env)),

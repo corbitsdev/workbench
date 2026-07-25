@@ -3,8 +3,8 @@ import { manifestFromHubToolEntries } from "@workbench/tool-manifest";
 export const toolManifestFile = {
   factories: [
     manifestFromHubToolEntries({
-      factoryId: "@workbench/tools-competitor-analysis/core",
-      packageName: "@workbench/tools-competitor-analysis",
+      factoryId: "@workbench/workflow-competitor-analysis/core",
+      packageName: "@workbench/workflow-competitor-analysis",
       providerName: null,
       entries: {
         competitor_analysis_format_report_document: {

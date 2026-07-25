@@ -66,7 +66,8 @@ describe("tool-manifest", () => {
   it("registers the list-issues wrapper tool under its own factory", () => {
     const factory = toolManifestFile.factories.find(
       (f) =>
-        f.factoryId === "@workbench/tools-multi-source-collateral/list-issues",
+        f.factoryId ===
+        "@workbench/workflow-multi-source-collateral/list-issues",
     );
     expect(factory?.bareToolNames).toEqual([
       MULTI_SOURCE_COLLATERAL_LIST_ISSUES_DEFINITION.name,

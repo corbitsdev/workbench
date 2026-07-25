@@ -129,7 +129,7 @@
       "document": {
         "kind": "action",
         "id": "document",
-        "handler": "@workbench/tools-reddit-opportunity-watch/core:reddit_opportunity_watch_format_digest_document",
+        "handler": "@workbench/workflow-reddit-opportunity-watch/core:reddit_opportunity_watch_format_digest_document",
         "drainBehavior": "cancel",
         "input": {
           "merge": [
@@ -143,7 +143,7 @@
         },
         "effect": {
           "requires": [
-            "@workbench/tools-reddit-opportunity-watch/core:reddit_opportunity_watch_format_digest_document"
+            "@workbench/workflow-reddit-opportunity-watch/core:reddit_opportunity_watch_format_digest_document"
           ]
         },
         "after": [

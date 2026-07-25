@@ -4,8 +4,8 @@ import { REDDIT_OPPORTUNITY_SCANNER_COLLECT_SEARCH_DEFINITION } from "./collect-
 export const toolManifestFile = {
   factories: [
     manifestFromHubToolEntries({
-      factoryId: "@workbench/tools-reddit-opportunity-scanner/collect",
-      packageName: "@workbench/tools-reddit-opportunity-scanner",
+      factoryId: "@workbench/workflow-reddit-opportunity-scanner/collect",
+      packageName: "@workbench/workflow-reddit-opportunity-scanner",
       providerName: null,
       entries: {
         [REDDIT_OPPORTUNITY_SCANNER_COLLECT_SEARCH_DEFINITION.name]: {

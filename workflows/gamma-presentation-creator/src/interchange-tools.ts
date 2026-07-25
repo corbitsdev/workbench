@@ -1,4 +1,4 @@
-// Native `interchange.tools` entry for @workbench/tools-gamma-presentation-creator.
+// Native `interchange.tools` entry for @workbench/workflow-gamma-presentation-creator.
 // The `core` factory is stateless (pure field renames) and touches no env
 // keys. The `fetch` factory wraps `artifact_read`/`granola_get_note`
 // so this workflow can tolerate a missing/failed source in-process; it
@@ -12,12 +12,12 @@ import {
 } from "./fetch-tools";
 
 export const gammaPresentationCreator = defineTool({
-  id: "@workbench/tools-gamma-presentation-creator/core",
+  id: "@workbench/workflow-gamma-presentation-creator/core",
   factory: () => createToolRunner(createGammaPresentationCreatorTools()),
 });
 
 export const gammaPresentationCreatorFetch = defineTool({
-  id: "@workbench/tools-gamma-presentation-creator/fetch",
+  id: "@workbench/workflow-gamma-presentation-creator/fetch",
   requires: FETCH_TOOLS_REQUIRES,
   factory: (env) =>
     createToolRunner(createGammaPresentationCreatorFetchTools(env)),

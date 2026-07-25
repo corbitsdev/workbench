@@ -52,7 +52,7 @@
       "intake-attio": {
         "kind": "action",
         "id": "intake-attio",
-        "handler": "@workbench/tools-heartbeat/core:heartbeat_intake_source",
+        "handler": "@workbench/workflow-heartbeat/core:heartbeat_intake_source",
         "drainBehavior": "cancel",
         "input": {
           "merge": [
@@ -74,14 +74,14 @@
         },
         "effect": {
           "requires": [
-            "@workbench/tools-heartbeat/core:heartbeat_intake_source"
+            "@workbench/workflow-heartbeat/core:heartbeat_intake_source"
           ]
         }
       },
       "intake-granola": {
         "kind": "action",
         "id": "intake-granola",
-        "handler": "@workbench/tools-heartbeat/core:heartbeat_intake_source",
+        "handler": "@workbench/workflow-heartbeat/core:heartbeat_intake_source",
         "drainBehavior": "cancel",
         "input": {
           "merge": [
@@ -103,14 +103,14 @@
         },
         "effect": {
           "requires": [
-            "@workbench/tools-heartbeat/core:heartbeat_intake_source"
+            "@workbench/workflow-heartbeat/core:heartbeat_intake_source"
           ]
         }
       },
       "intake-linear": {
         "kind": "action",
         "id": "intake-linear",
-        "handler": "@workbench/tools-heartbeat/core:heartbeat_intake_source",
+        "handler": "@workbench/workflow-heartbeat/core:heartbeat_intake_source",
         "drainBehavior": "cancel",
         "input": {
           "merge": [
@@ -132,14 +132,14 @@
         },
         "effect": {
           "requires": [
-            "@workbench/tools-heartbeat/core:heartbeat_intake_source"
+            "@workbench/workflow-heartbeat/core:heartbeat_intake_source"
           ]
         }
       },
       "intake-vercel": {
         "kind": "action",
         "id": "intake-vercel",
-        "handler": "@workbench/tools-heartbeat/core:heartbeat_intake_source",
+        "handler": "@workbench/workflow-heartbeat/core:heartbeat_intake_source",
         "drainBehavior": "cancel",
         "input": {
           "merge": [
@@ -161,7 +161,7 @@
         },
         "effect": {
           "requires": [
-            "@workbench/tools-heartbeat/core:heartbeat_intake_source"
+            "@workbench/workflow-heartbeat/core:heartbeat_intake_source"
           ]
         }
       },
@@ -227,7 +227,7 @@
       "title": {
         "kind": "action",
         "id": "title",
-        "handler": "@workbench/tools-heartbeat/core:heartbeat_format_brief_title",
+        "handler": "@workbench/workflow-heartbeat/core:heartbeat_format_brief_title",
         "drainBehavior": "cancel",
         "input": {
           "project": {
@@ -239,14 +239,14 @@
         },
         "effect": {
           "requires": [
-            "@workbench/tools-heartbeat/core:heartbeat_format_brief_title"
+            "@workbench/workflow-heartbeat/core:heartbeat_format_brief_title"
           ]
         }
       },
       "document": {
         "kind": "action",
         "id": "document",
-        "handler": "@workbench/tools-heartbeat/core:heartbeat_format_brief_document",
+        "handler": "@workbench/workflow-heartbeat/core:heartbeat_format_brief_document",
         "drainBehavior": "cancel",
         "input": {
           "merge": [
@@ -260,7 +260,7 @@
         },
         "effect": {
           "requires": [
-            "@workbench/tools-heartbeat/core:heartbeat_format_brief_document"
+            "@workbench/workflow-heartbeat/core:heartbeat_format_brief_document"
           ]
         },
         "after": [
@@ -304,7 +304,7 @@
       "notify-prep": {
         "kind": "action",
         "id": "notify-prep",
-        "handler": "@workbench/tools-heartbeat/core:heartbeat_format_brief_notify",
+        "handler": "@workbench/workflow-heartbeat/core:heartbeat_format_brief_notify",
         "drainBehavior": "cancel",
         "input": {
           "merge": [
@@ -339,7 +339,7 @@
         },
         "effect": {
           "requires": [
-            "@workbench/tools-heartbeat/core:heartbeat_format_brief_notify"
+            "@workbench/workflow-heartbeat/core:heartbeat_format_brief_notify"
           ]
         },
         "after": [

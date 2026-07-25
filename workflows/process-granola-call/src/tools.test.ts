@@ -169,7 +169,7 @@ describe("tool-manifest", () => {
   it("registers process_granola_prepare_document under the process-granola-call factory", () => {
     const factory = toolManifestFile.factories[0];
     expect(factory?.factoryId).toBe(
-      "@workbench/tools-process-granola-call/core",
+      "@workbench/workflow-process-granola-call/core",
     );
     expect(factory?.bareToolNames).toEqual([
       "process_granola_prepare_document",

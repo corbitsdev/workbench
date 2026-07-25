@@ -73,7 +73,7 @@ describe("gtm-scripts-briefs workflow", () => {
     const persistPrepare = actionPrimitive("persist-prepare");
     expect(persistPrepare.handler).toBe(PREPARE_PERSIST_HANDLER);
     expect(PREPARE_PERSIST_HANDLER).toBe(
-      "@workbench/tools-gtm-scripts-briefs/core:gtm_scripts_briefs_prepare_persist",
+      "@workbench/workflow-gtm-scripts-briefs/core:gtm_scripts_briefs_prepare_persist",
     );
     expect(persistPrepare.input).toEqual({
       merge: [

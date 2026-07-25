@@ -91,7 +91,7 @@ describe("exa_topic_watch_prepare_search", () => {
 describe("tool-manifest", () => {
   it("registers exa_topic_watch_prepare_search under the exa-topic-watch factory", () => {
     const factory = toolManifestFile.factories[0];
-    expect(factory?.factoryId).toBe("@workbench/tools-exa-topic-watch/core");
+    expect(factory?.factoryId).toBe("@workbench/workflow-exa-topic-watch/core");
     expect(factory?.bareToolNames).toEqual(["exa_topic_watch_prepare_search"]);
   });
 });

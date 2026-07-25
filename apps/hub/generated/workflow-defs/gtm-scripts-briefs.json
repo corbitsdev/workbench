@@ -622,7 +622,7 @@
       "persist-prepare": {
         "kind": "action",
         "id": "persist-prepare",
-        "handler": "@workbench/tools-gtm-scripts-briefs/core:gtm_scripts_briefs_prepare_persist",
+        "handler": "@workbench/workflow-gtm-scripts-briefs/core:gtm_scripts_briefs_prepare_persist",
         "drainBehavior": "cancel",
         "input": {
           "merge": [
@@ -643,7 +643,7 @@
         },
         "effect": {
           "requires": [
-            "@workbench/tools-gtm-scripts-briefs/core:gtm_scripts_briefs_prepare_persist"
+            "@workbench/workflow-gtm-scripts-briefs/core:gtm_scripts_briefs_prepare_persist"
           ]
         },
         "after": [

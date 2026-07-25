@@ -34,7 +34,7 @@
       "format-query": {
         "kind": "action",
         "id": "format-query",
-        "handler": "@workbench/tools-github-topic-watch/core:github_topic_watch_format_activity_query",
+        "handler": "@workbench/workflow-github-topic-watch/core:github_topic_watch_format_activity_query",
         "drainBehavior": "cancel",
         "input": {
           "project": {
@@ -46,7 +46,7 @@
         },
         "effect": {
           "requires": [
-            "@workbench/tools-github-topic-watch/core:github_topic_watch_format_activity_query"
+            "@workbench/workflow-github-topic-watch/core:github_topic_watch_format_activity_query"
           ]
         },
         "after": [

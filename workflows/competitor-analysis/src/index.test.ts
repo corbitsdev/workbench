@@ -111,7 +111,7 @@ describe("competitor-analysis workflow structure", () => {
     const document = actionPrimitive("document");
     expect(document.handler).toBe(FORMAT_REPORT_DOCUMENT_HANDLER);
     expect(FORMAT_REPORT_DOCUMENT_HANDLER).toBe(
-      "@workbench/tools-competitor-analysis/core:competitor_analysis_format_report_document",
+      "@workbench/workflow-competitor-analysis/core:competitor_analysis_format_report_document",
     );
     expect(document.input).toEqual({
       merge: [

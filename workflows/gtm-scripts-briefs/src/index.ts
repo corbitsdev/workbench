@@ -63,7 +63,7 @@ export const workflow = defineWorkflow({
     // and the writer's `reply`. Native selectors merge whole objects but
     // cannot build a nested object from mixed literal-and-dynamic per-key
     // values, so `gtm_scripts_briefs_prepare_persist`
-    // (`@workbench/tools-gtm-scripts-briefs`) — a workflow-owned shaping
+    // (`@workbench/workflow-gtm-scripts-briefs`) — a workflow-owned shaping
     // tool mirroring exa-topic-watch's `exa_topic_watch_prepare_search` —
     // does that one reshape, keeping the workflow self-contained.
     "persist-prepare": action({

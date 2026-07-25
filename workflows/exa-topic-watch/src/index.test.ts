@@ -59,7 +59,7 @@ describe("exa-topic-watch", () => {
     const prepareSearch = actionPrimitive("prepare-search");
     expect(prepareSearch.handler).toBe(PREPARE_SEARCH_HANDLER);
     expect(PREPARE_SEARCH_HANDLER).toBe(
-      "@workbench/tools-exa-topic-watch/core:exa_topic_watch_prepare_search",
+      "@workbench/workflow-exa-topic-watch/core:exa_topic_watch_prepare_search",
     );
     expect(prepareSearch.input).toEqual({
       project: { from: "steps.intake.output" },
@@ -89,10 +89,7 @@ describe("exa-topic-watch", () => {
       "@workbench/tools-last30days/core:last30days_format_report_document",
     );
     expect(document.input).toEqual({
-      merge: [
-        { from: "steps.intake.output" },
-        { from: "steps.digest.output" },
-      ],
+      merge: [{ from: "steps.intake.output" }, { from: "steps.digest.output" }],
     });
     expect(document.effect).toEqual({
       requires: [FORMAT_REPORT_DOCUMENT_HANDLER],

@@ -3,8 +3,8 @@ import { manifestFromHubToolEntries } from "@workbench/tool-manifest";
 export const toolManifestFile = {
   factories: [
     manifestFromHubToolEntries({
-      factoryId: "@workbench/tools-github-topic-watch/core",
-      packageName: "@workbench/tools-github-topic-watch",
+      factoryId: "@workbench/workflow-github-topic-watch/core",
+      packageName: "@workbench/workflow-github-topic-watch",
       providerName: null,
       entries: {
         github_topic_watch_format_activity_query: {

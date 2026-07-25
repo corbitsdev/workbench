@@ -33,7 +33,7 @@
       "prepare-search": {
         "kind": "action",
         "id": "prepare-search",
-        "handler": "@workbench/tools-exa-topic-watch/core:exa_topic_watch_prepare_search",
+        "handler": "@workbench/workflow-exa-topic-watch/core:exa_topic_watch_prepare_search",
         "drainBehavior": "cancel",
         "input": {
           "project": {
@@ -45,7 +45,7 @@
         },
         "effect": {
           "requires": [
-            "@workbench/tools-exa-topic-watch/core:exa_topic_watch_prepare_search"
+            "@workbench/workflow-exa-topic-watch/core:exa_topic_watch_prepare_search"
           ]
         },
         "after": [

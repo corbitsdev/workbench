@@ -160,7 +160,7 @@ describe("tool-manifest", () => {
   it("registers both shaping tools under the gamma-presentation-creator factory", () => {
     const factory = toolManifestFile.factories[0];
     expect(factory?.factoryId).toBe(
-      "@workbench/tools-gamma-presentation-creator/core",
+      "@workbench/workflow-gamma-presentation-creator/core",
     );
     expect(factory?.bareToolNames).toEqual([
       "gamma_presentation_creator_prepare_persist",

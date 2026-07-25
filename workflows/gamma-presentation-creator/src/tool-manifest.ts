@@ -3,8 +3,8 @@ import { manifestFromHubToolEntries } from "@workbench/tool-manifest";
 export const toolManifestFile = {
   factories: [
     manifestFromHubToolEntries({
-      factoryId: "@workbench/tools-gamma-presentation-creator/core",
-      packageName: "@workbench/tools-gamma-presentation-creator",
+      factoryId: "@workbench/workflow-gamma-presentation-creator/core",
+      packageName: "@workbench/workflow-gamma-presentation-creator",
       providerName: null,
       entries: {
         gamma_presentation_creator_prepare_render: {
@@ -18,8 +18,8 @@ export const toolManifestFile = {
       credentialCatalog: null,
     }),
     manifestFromHubToolEntries({
-      factoryId: "@workbench/tools-gamma-presentation-creator/fetch",
-      packageName: "@workbench/tools-gamma-presentation-creator",
+      factoryId: "@workbench/workflow-gamma-presentation-creator/fetch",
+      packageName: "@workbench/workflow-gamma-presentation-creator",
       providerName: null,
       entries: {
         gamma_presentation_creator_fetch_artifact: {

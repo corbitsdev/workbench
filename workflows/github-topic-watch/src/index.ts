@@ -80,7 +80,7 @@ export const workflow = defineWorkflow({
     // single-caller check required before renaming a shared tool's arg.
     //
     // The fix is a workflow-owned shaping tool (shipped in this workflow's
-    // own `@workbench/tools-github-topic-watch` package, mirroring
+    // own `@workbench/workflow-github-topic-watch` package, mirroring
     // exa-topic-watch/firecrawl-url-watch/reddit-opportunity-watch's own
     // tools): `format-query` renames `topic` → `query` and stamps the fixed
     // 7-day lookback, so `fetch`'s

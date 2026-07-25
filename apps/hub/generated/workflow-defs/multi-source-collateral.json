@@ -92,7 +92,7 @@
       "list-issues": {
         "kind": "action",
         "id": "list-issues",
-        "handler": "@workbench/tools-multi-source-collateral/list-issues:multi_source_collateral_list_issues",
+        "handler": "@workbench/workflow-multi-source-collateral/list-issues:multi_source_collateral_list_issues",
         "drainBehavior": "cancel",
         "input": {
           "literal": {
@@ -101,7 +101,7 @@
         },
         "effect": {
           "requires": [
-            "@workbench/tools-multi-source-collateral/list-issues:multi_source_collateral_list_issues"
+            "@workbench/workflow-multi-source-collateral/list-issues:multi_source_collateral_list_issues"
           ]
         }
       },

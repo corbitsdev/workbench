@@ -91,7 +91,7 @@ export const PREPARE_DOCUMENT_HANDLER = canonicalizeStepToolName(
 // noteId duplicated under both `sourceRefKey` and `parentSourceRefKey`. None
 // of that is selector-expressible, so a `prepare-*` action ahead of each
 // write shapes it via this workflow's own `process_granola_prepare_document`
-// tool (@workbench/tools-process-granola-call); the write_artifact action
+// tool (@workbench/workflow-process-granola-call); the write_artifact action
 // itself then only merges that shaped output with the step's constant
 // literals (titlePrefix/kind/sourceRefPrefix/parentSourceRefPrefix/jobLabel).
 // -------------------------------------------------------------------------

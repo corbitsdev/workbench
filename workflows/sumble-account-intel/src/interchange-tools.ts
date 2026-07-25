@@ -1,4 +1,4 @@
-// Native `interchange.tools` entry for @workbench/tools-sumble-account-intel.
+// Native `interchange.tools` entry for @workbench/workflow-sumble-account-intel.
 //
 // Declares the `sumble` tool credential as a `requires` env key — this
 // factory calls @workbench/tools-sumble's exported factory function
@@ -28,7 +28,7 @@ import {
 import { createSumbleAccountIntelTools } from "./tools";
 
 export const sumbleAccountIntel = defineTool({
-  id: "@workbench/tools-sumble-account-intel/core",
+  id: "@workbench/workflow-sumble-account-intel/core",
   requires: [toolCredentialEnvKey("sumble"), toolCredentialEnvKey("xai")],
   factory: (env) => {
     const record = env as unknown as Record<string, unknown>;

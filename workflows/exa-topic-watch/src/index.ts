@@ -71,7 +71,7 @@ export const workflow = defineWorkflow({
     // rename or duplicate one under a second key, so there is no selector
     // that produces both `query` and `topic` from one `steps.intake.output`
     // object. Rather than alias either shared, multi-caller tool,
-    // `exa_topic_watch_prepare_search` (`@workbench/tools-exa-topic-watch`)
+    // `exa_topic_watch_prepare_search` (`@workbench/workflow-exa-topic-watch`)
     // is a workflow-owned shaping tool — mirroring heartbeat's private
     // `heartbeat_*` tools — that does exactly this one rename, keeping the
     // workflow self-contained.

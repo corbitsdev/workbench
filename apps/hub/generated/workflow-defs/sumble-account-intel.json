@@ -85,14 +85,14 @@
       "resolve": {
         "kind": "action",
         "id": "resolve",
-        "handler": "@workbench/tools-sumble-account-intel/core:sumble_account_intel_resolve_organization",
+        "handler": "@workbench/workflow-sumble-account-intel/core:sumble_account_intel_resolve_organization",
         "drainBehavior": "cancel",
         "input": {
           "from": "steps.intake.output"
         },
         "effect": {
           "requires": [
-            "@workbench/tools-sumble-account-intel/core:sumble_account_intel_resolve_organization"
+            "@workbench/workflow-sumble-account-intel/core:sumble_account_intel_resolve_organization"
           ]
         },
         "after": [
@@ -102,7 +102,7 @@
       "teams": {
         "kind": "action",
         "id": "teams",
-        "handler": "@workbench/tools-sumble-account-intel/core:sumble_account_intel_list_teams",
+        "handler": "@workbench/workflow-sumble-account-intel/core:sumble_account_intel_list_teams",
         "drainBehavior": "cancel",
         "input": {
           "merge": [
@@ -123,7 +123,7 @@
         },
         "effect": {
           "requires": [
-            "@workbench/tools-sumble-account-intel/core:sumble_account_intel_list_teams"
+            "@workbench/workflow-sumble-account-intel/core:sumble_account_intel_list_teams"
           ]
         },
         "after": [
@@ -133,7 +133,7 @@
       "jobs": {
         "kind": "action",
         "id": "jobs",
-        "handler": "@workbench/tools-sumble-account-intel/core:sumble_account_intel_list_jobs",
+        "handler": "@workbench/workflow-sumble-account-intel/core:sumble_account_intel_list_jobs",
         "drainBehavior": "cancel",
         "input": {
           "merge": [
@@ -154,7 +154,7 @@
         },
         "effect": {
           "requires": [
-            "@workbench/tools-sumble-account-intel/core:sumble_account_intel_list_jobs"
+            "@workbench/workflow-sumble-account-intel/core:sumble_account_intel_list_jobs"
           ]
         },
         "after": [
@@ -195,7 +195,7 @@
       "contacts": {
         "kind": "action",
         "id": "contacts",
-        "handler": "@workbench/tools-sumble-account-intel/core:sumble_account_intel_search_people",
+        "handler": "@workbench/workflow-sumble-account-intel/core:sumble_account_intel_search_people",
         "drainBehavior": "cancel",
         "input": {
           "merge": [
@@ -216,7 +216,7 @@
         },
         "effect": {
           "requires": [
-            "@workbench/tools-sumble-account-intel/core:sumble_account_intel_search_people"
+            "@workbench/workflow-sumble-account-intel/core:sumble_account_intel_search_people"
           ]
         },
         "after": [
@@ -226,7 +226,7 @@
       "signals": {
         "kind": "action",
         "id": "signals",
-        "handler": "@workbench/tools-sumble-account-intel/core:sumble_account_intel_search_signals",
+        "handler": "@workbench/workflow-sumble-account-intel/core:sumble_account_intel_search_signals",
         "drainBehavior": "cancel",
         "input": {
           "merge": [
@@ -247,7 +247,7 @@
         },
         "effect": {
           "requires": [
-            "@workbench/tools-sumble-account-intel/core:sumble_account_intel_search_signals"
+            "@workbench/workflow-sumble-account-intel/core:sumble_account_intel_search_signals"
           ]
         },
         "after": [
@@ -257,14 +257,14 @@
       "enrichSocial": {
         "kind": "action",
         "id": "enrichSocial",
-        "handler": "@workbench/tools-sumble-account-intel/core:sumble_account_intel_enrich_contacts",
+        "handler": "@workbench/workflow-sumble-account-intel/core:sumble_account_intel_enrich_contacts",
         "drainBehavior": "cancel",
         "input": {
           "from": "steps.contacts.output.content"
         },
         "effect": {
           "requires": [
-            "@workbench/tools-sumble-account-intel/core:sumble_account_intel_enrich_contacts"
+            "@workbench/workflow-sumble-account-intel/core:sumble_account_intel_enrich_contacts"
           ]
         },
         "after": [
@@ -315,7 +315,7 @@
       "document": {
         "kind": "action",
         "id": "document",
-        "handler": "@workbench/tools-sumble-account-intel/core:sumble_account_intel_format_report_document",
+        "handler": "@workbench/workflow-sumble-account-intel/core:sumble_account_intel_format_report_document",
         "drainBehavior": "cancel",
         "input": {
           "merge": [
@@ -329,7 +329,7 @@
         },
         "effect": {
           "requires": [
-            "@workbench/tools-sumble-account-intel/core:sumble_account_intel_format_report_document"
+            "@workbench/workflow-sumble-account-intel/core:sumble_account_intel_format_report_document"
           ]
         },
         "after": [

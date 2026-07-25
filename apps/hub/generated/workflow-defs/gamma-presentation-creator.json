@@ -88,14 +88,14 @@
       "fetch-artifact": {
         "kind": "action",
         "id": "fetch-artifact",
-        "handler": "@workbench/tools-gamma-presentation-creator/fetch:gamma_presentation_creator_fetch_artifact",
+        "handler": "@workbench/workflow-gamma-presentation-creator/fetch:gamma_presentation_creator_fetch_artifact",
         "drainBehavior": "cancel",
         "input": {
           "from": "steps.intake.output"
         },
         "effect": {
           "requires": [
-            "@workbench/tools-gamma-presentation-creator/fetch:gamma_presentation_creator_fetch_artifact"
+            "@workbench/workflow-gamma-presentation-creator/fetch:gamma_presentation_creator_fetch_artifact"
           ]
         },
         "after": [
@@ -105,14 +105,14 @@
       "fetch-note": {
         "kind": "action",
         "id": "fetch-note",
-        "handler": "@workbench/tools-gamma-presentation-creator/fetch:gamma_presentation_creator_fetch_note",
+        "handler": "@workbench/workflow-gamma-presentation-creator/fetch:gamma_presentation_creator_fetch_note",
         "drainBehavior": "cancel",
         "input": {
           "from": "steps.intake.output"
         },
         "effect": {
           "requires": [
-            "@workbench/tools-gamma-presentation-creator/fetch:gamma_presentation_creator_fetch_note"
+            "@workbench/workflow-gamma-presentation-creator/fetch:gamma_presentation_creator_fetch_note"
           ]
         },
         "after": [
@@ -157,7 +157,7 @@
       "prepare-render": {
         "kind": "action",
         "id": "prepare-render",
-        "handler": "@workbench/tools-gamma-presentation-creator/core:gamma_presentation_creator_prepare_render",
+        "handler": "@workbench/workflow-gamma-presentation-creator/core:gamma_presentation_creator_prepare_render",
         "drainBehavior": "cancel",
         "input": {
           "merge": [
@@ -171,7 +171,7 @@
         },
         "effect": {
           "requires": [
-            "@workbench/tools-gamma-presentation-creator/core:gamma_presentation_creator_prepare_render"
+            "@workbench/workflow-gamma-presentation-creator/core:gamma_presentation_creator_prepare_render"
           ]
         },
         "after": [
@@ -227,7 +227,7 @@
       "prepare-persist": {
         "kind": "action",
         "id": "prepare-persist",
-        "handler": "@workbench/tools-gamma-presentation-creator/core:gamma_presentation_creator_prepare_persist",
+        "handler": "@workbench/workflow-gamma-presentation-creator/core:gamma_presentation_creator_prepare_persist",
         "drainBehavior": "cancel",
         "input": {
           "merge": [
@@ -244,7 +244,7 @@
         },
         "effect": {
           "requires": [
-            "@workbench/tools-gamma-presentation-creator/core:gamma_presentation_creator_prepare_persist"
+            "@workbench/workflow-gamma-presentation-creator/core:gamma_presentation_creator_prepare_persist"
           ]
         },
         "after": [

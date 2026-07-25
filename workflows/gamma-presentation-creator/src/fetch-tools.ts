@@ -72,12 +72,12 @@ export const PRESENTATION_FETCH_NOTE_DEFINITION: ToolDefinition = {
 };
 
 const artifactReadInner = defineHubBackedToolPackage({
-  id: "@workbench/tools-gamma-presentation-creator/artifact-read-inner",
+  id: "@workbench/workflow-gamma-presentation-creator/artifact-read-inner",
   definitions: [ARTIFACT_READ_DEFINITION],
 });
 
 const granolaGetNoteInner = defineCredentialedToolPackage({
-  id: "@workbench/tools-gamma-presentation-creator/granola-get-note-inner",
+  id: "@workbench/workflow-gamma-presentation-creator/granola-get-note-inner",
   provider: "granola",
   entries: { granola_get_note: GRANOLA_HUB_TOOLS.granola_get_note },
 });

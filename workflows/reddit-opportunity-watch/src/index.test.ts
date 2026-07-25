@@ -35,9 +35,7 @@ function makeRecordingInvoker(outputs: Record<string, unknown> = {}): {
   return { invoker, ran };
 }
 
-function makeActionResolver(
-  outputs: Record<string, unknown>,
-): {
+function makeActionResolver(outputs: Record<string, unknown>): {
   resolver: (ref: string) => ActionHandler;
   ran: { ref: string; input: unknown }[];
 } {
@@ -98,7 +96,7 @@ describe("reddit-opportunity-watch", () => {
 
   test("document is a native action calling reddit_opportunity_watch_format_digest_document, merging intake's query with digest's reply", () => {
     // reddit_opportunity_watch_format_digest_document is this workflow's own
-    // tool (packaged in @workbench/tools-reddit-opportunity-watch, shipped
+    // tool (packaged in @workbench/workflow-reddit-opportunity-watch, shipped
     // alongside this workflow definition) — it takes `query` verbatim, so
     // intake's `query` (also consumed as-is by reddit_subreddit_search) and
     // digest's `reply` merge straight through with no rename, and the
@@ -107,13 +105,10 @@ describe("reddit-opportunity-watch", () => {
     const documentStep = actionPrimitive("document");
     expect(documentStep.handler).toBe(FORMAT_DIGEST_DOCUMENT_HANDLER);
     expect(FORMAT_DIGEST_DOCUMENT_HANDLER).toBe(
-      "@workbench/tools-reddit-opportunity-watch/core:reddit_opportunity_watch_format_digest_document",
+      "@workbench/workflow-reddit-opportunity-watch/core:reddit_opportunity_watch_format_digest_document",
     );
     expect(documentStep.input).toEqual({
-      merge: [
-        { from: "steps.intake.output" },
-        { from: "steps.digest.output" },
-      ],
+      merge: [{ from: "steps.intake.output" }, { from: "steps.digest.output" }],
     });
     expect(documentStep.effect).toEqual({
       requires: [FORMAT_DIGEST_DOCUMENT_HANDLER],
@@ -156,7 +151,9 @@ describe("reddit-opportunity-watch", () => {
     });
 
     // ...then digest ran as the sole agent step...
-    expect(stepRan.map((r) => r.id)).toEqual(["reddit-opportunity-watch-digest"]);
+    expect(stepRan.map((r) => r.id)).toEqual([
+      "reddit-opportunity-watch-digest",
+    ]);
 
     // ...then document (action) ran, merging intake's query with digest's reply...
     expect(actionRan[1]?.ref).toBe(FORMAT_DIGEST_DOCUMENT_HANDLER);

@@ -78,7 +78,7 @@
       "prepare-transcript": {
         "kind": "action",
         "id": "prepare-transcript",
-        "handler": "@workbench/tools-process-granola-call/core:process_granola_prepare_document",
+        "handler": "@workbench/workflow-process-granola-call/core:process_granola_prepare_document",
         "drainBehavior": "cancel",
         "input": {
           "merge": [
@@ -92,7 +92,7 @@
         },
         "effect": {
           "requires": [
-            "@workbench/tools-process-granola-call/core:process_granola_prepare_document"
+            "@workbench/workflow-process-granola-call/core:process_granola_prepare_document"
           ]
         },
         "after": [
@@ -155,7 +155,7 @@
       "prepare-processed": {
         "kind": "action",
         "id": "prepare-processed",
-        "handler": "@workbench/tools-process-granola-call/core:process_granola_prepare_document",
+        "handler": "@workbench/workflow-process-granola-call/core:process_granola_prepare_document",
         "drainBehavior": "cancel",
         "input": {
           "merge": [
@@ -177,7 +177,7 @@
         },
         "effect": {
           "requires": [
-            "@workbench/tools-process-granola-call/core:process_granola_prepare_document"
+            "@workbench/workflow-process-granola-call/core:process_granola_prepare_document"
           ]
         },
         "after": [
@@ -258,7 +258,7 @@
       "prepare-persist": {
         "kind": "action",
         "id": "prepare-persist",
-        "handler": "@workbench/tools-process-granola-call/core:process_granola_prepare_document",
+        "handler": "@workbench/workflow-process-granola-call/core:process_granola_prepare_document",
         "drainBehavior": "cancel",
         "input": {
           "merge": [
@@ -280,7 +280,7 @@
         },
         "effect": {
           "requires": [
-            "@workbench/tools-process-granola-call/core:process_granola_prepare_document"
+            "@workbench/workflow-process-granola-call/core:process_granola_prepare_document"
           ]
         },
         "after": [

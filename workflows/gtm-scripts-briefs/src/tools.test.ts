@@ -163,7 +163,9 @@ describe("gtm_scripts_briefs_prepare_persist", () => {
 describe("tool-manifest", () => {
   it("registers gtm_scripts_briefs_prepare_persist under the gtm-scripts-briefs factory", () => {
     const factory = toolManifestFile.factories[0];
-    expect(factory?.factoryId).toBe("@workbench/tools-gtm-scripts-briefs/core");
+    expect(factory?.factoryId).toBe(
+      "@workbench/workflow-gtm-scripts-briefs/core",
+    );
     expect(factory?.bareToolNames).toEqual([
       "gtm_scripts_briefs_prepare_persist",
     ]);

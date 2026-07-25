@@ -1,4 +1,4 @@
-// Native `interchange.tools` entry for @workbench/tools-multi-source-collateral
+// Native `interchange.tools` entry for @workbench/workflow-multi-source-collateral
 // Wraps `linear_list_issues` so the source-listing step can
 // tolerate an unconfigured or failing Linear provider in-process, instead of
 // the retired sidecar-wide `nonFatal` tag (no equivalent on native `action`).
@@ -13,7 +13,7 @@ import {
 } from "./list-issues-tool";
 
 export const multiSourceCollateralListIssues = defineTool({
-  id: "@workbench/tools-multi-source-collateral/list-issues",
+  id: "@workbench/workflow-multi-source-collateral/list-issues",
   requires: LIST_ISSUES_TOOL_REQUIRES,
   factory: (env) =>
     createToolRunner(createMultiSourceCollateralListIssuesTools(env)),

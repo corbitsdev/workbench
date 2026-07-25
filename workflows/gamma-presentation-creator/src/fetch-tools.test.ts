@@ -181,7 +181,7 @@ describe("tool-manifest", () => {
   it("registers both fetch wrapper tools under their own factory", () => {
     const factory = toolManifestFile.factories.find(
       (f) =>
-        f.factoryId === "@workbench/tools-gamma-presentation-creator/fetch",
+        f.factoryId === "@workbench/workflow-gamma-presentation-creator/fetch",
     );
     expect(factory?.bareToolNames).toEqual([
       PRESENTATION_FETCH_ARTIFACT_DEFINITION.name,

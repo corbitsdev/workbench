@@ -118,7 +118,7 @@ export const workflow = defineWorkflow({
     // touching that shared, multi-caller formatter. Rather than renaming a
     // shared tool's arg, this workflow ships its own tiny formatter —
     // reddit_opportunity_watch_format_digest_document (shipped in this
-    // workflow's own `@workbench/tools-reddit-opportunity-watch` package) —
+    // workflow's own `@workbench/workflow-reddit-opportunity-watch` package) —
     // that already takes `query` verbatim, so intake's `query` and digest's
     // `reply` merge straight through with no rename.
     document: action({
