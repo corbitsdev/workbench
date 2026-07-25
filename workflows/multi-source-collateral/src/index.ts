@@ -1,5 +1,9 @@
-import { awaitSignal, defineWorkflow, gate, map } from "@intx/workflow";
-import { deterministicToolStep, agentStep } from "@workbench/agents";
+import { action, awaitSignal, defineWorkflow, gate, map } from "@intx/workflow";
+import {
+  canonicalizeStepToolName,
+  deterministicToolStep,
+  agentStep,
+} from "@workbench/agents";
 import { buildGenerationSystemPrompt } from "./prompts";
 
 export const label = "Multi-Source Collateral";
@@ -13,6 +17,20 @@ export {
   MAX_CONTENT_TYPES,
   defaultPromptForType,
 } from "./prompts";
+
+// Native `action` handler refs for the two root list steps that are not a
+// map's inner step (CL-4454) — the tool's canonical (factory-prefixed) name,
+// resolved via the same build-time-checked lookup `deterministicToolStep`
+// uses, so a typo'd or manifest-drifted tool name fails the build instead of
+// deploying a step nothing can dispatch.
+export const ARTIFACT_LIST_HANDLER = canonicalizeStepToolName(
+  "multi-source-collateral-list-artifacts",
+  "artifact_list",
+);
+export const GRANOLA_LIST_NOTES_HANDLER = canonicalizeStepToolName(
+  "multi-source-collateral-list-notes",
+  "granola_list_notes",
+);
 
 // ---------------------------------------------------------------------------
 // Step graph
@@ -42,6 +60,16 @@ const regenerateStep = agentStep({
   input: { from: "trigger.payload" },
 });
 
+// NOT migrated to native `action` — all five steps below (persist,
+// persist-after-regen, fetch-artifact, fetch-note, fetch-issue) are each used
+// as a `map`'s inner `step`. `MapPrimitive.step` is typed `StepPrimitive` (see
+// `interchange/packages/workflow/src/definition/primitives.ts`), not
+// `Primitive` — an `action` cannot be a map's inner step at all; independently
+// the deploy-time capability walk's `extractAgent` (`interchange/packages/
+// workflow-deploy/src/capability-walk.ts`) only reads `primitive.step.agent`
+// for a `map` node, never an inner step's `effect`, so even a same-shape
+// action inside a map would pin no tool package. This is the same structural
+// blocker `pain-point-collateral`'s `persist` step documents (CL-4454).
 const persistStep = deterministicToolStep({
   id: "multi-source-collateral-persist",
   title: "Save the collateral",
@@ -100,21 +128,31 @@ export const workflow = defineWorkflow({
   id: kind,
   trigger: { type: "manual" },
   steps: {
-    "list-artifacts": deterministicToolStep({
-      id: "multi-source-collateral-list-artifacts",
-      title: "List artifacts",
-      tool: "artifact_list",
+    // Native `action`: artifact_list's arktype schema is { kind?, limit? },
+    // so a literal { limit: 50 } is the exact argument object verbatim — no
+    // reshape needed (CL-4454).
+    "list-artifacts": action({
+      handler: ARTIFACT_LIST_HANDLER,
       input: { literal: { limit: 50 } },
+      effect: { requires: [ARTIFACT_LIST_HANDLER] },
     }),
 
-    "list-notes": deterministicToolStep({
-      id: "multi-source-collateral-list-notes",
-      title: "List call notes",
-      tool: "granola_list_notes",
+    // Native `action`: granola_list_notes takes limit/cursor/date filters, all
+    // optional, so a literal { limit: 30 } is the exact argument object
+    // verbatim — no reshape needed (CL-4454).
+    "list-notes": action({
+      handler: GRANOLA_LIST_NOTES_HANDLER,
       input: { literal: { limit: 30 } },
+      effect: { requires: [GRANOLA_LIST_NOTES_HANDLER] },
     }),
 
-    // Linear may be unconfigured; nonFatal keeps the multi-source chooser usable.
+    // Linear may be unconfigured; nonFatal keeps the multi-source chooser
+    // usable. NOT migrated to native `action` — native has no error-swallow
+    // equivalent to `nonFatal` (the runtime propagates any thrown action
+    // error straight to `RunFailed`), and Linear being unconfigured is an
+    // expected, not exceptional, case here. Tracked as a separate ticket
+    // (CL-4454 follow-up) once/if the runtime grows a per-action
+    // catch-and-continue.
     "list-issues": deterministicToolStep({
       id: "multi-source-collateral-list-issues",
       title: "List Linear issues",
