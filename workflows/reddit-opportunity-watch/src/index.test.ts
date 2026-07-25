@@ -98,8 +98,8 @@ describe("reddit-opportunity-watch", () => {
 
   test("document is a native action calling reddit_opportunity_watch_format_digest_document, merging intake's query with digest's reply", () => {
     // reddit_opportunity_watch_format_digest_document is this workflow's own
-    // tool (packaged in @workbench/tools-last30days alongside the other
-    // last30days-family workflow helpers) — it takes `query` verbatim, so
+    // tool (packaged in @workbench/tools-reddit-opportunity-watch, shipped
+    // alongside this workflow definition) — it takes `query` verbatim, so
     // intake's `query` (also consumed as-is by reddit_subreddit_search) and
     // digest's `reply` merge straight through with no rename, and the
     // shared, multi-caller last30days_format_report_document (which takes
@@ -107,7 +107,7 @@ describe("reddit-opportunity-watch", () => {
     const documentStep = actionPrimitive("document");
     expect(documentStep.handler).toBe(FORMAT_DIGEST_DOCUMENT_HANDLER);
     expect(FORMAT_DIGEST_DOCUMENT_HANDLER).toBe(
-      "@workbench/tools-last30days/core:reddit_opportunity_watch_format_digest_document",
+      "@workbench/tools-reddit-opportunity-watch/core:reddit_opportunity_watch_format_digest_document",
     );
     expect(documentStep.input).toEqual({
       merge: [
