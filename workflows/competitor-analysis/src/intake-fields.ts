@@ -44,5 +44,12 @@ export const INTAKE_FIELDS = INTAKE_FORM_FIELDS.map((field, index) => ({
   ...(field.placeholder !== undefined
     ? { placeholder: field.placeholder }
     : {}),
+  ...(field.help !== undefined ? { help: field.help } : {}),
+  ...(field.defaultValue !== undefined
+    ? { defaultValue: field.defaultValue }
+    : {}),
+  ...(field.min !== undefined ? { min: field.min } : {}),
+  ...(field.max !== undefined ? { max: field.max } : {}),
+  ...(field.step !== undefined ? { step: field.step } : {}),
   order: index,
 }));

@@ -70,6 +70,9 @@
       "inputHint": "number",
       "required": true,
       "placeholder": "30",
+      "defaultValue": 30,
+      "min": 1,
+      "step": 1,
       "order": 1
     },
     {

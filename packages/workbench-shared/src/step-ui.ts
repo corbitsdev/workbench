@@ -87,9 +87,20 @@ export const StepUIInputFieldSchema = type({
   name: "string",
   "label?": "string",
   "placeholder?": "string",
+  // Extra guidance shown below the label (e.g. where to find an opaque
+  // pasted id) — kept OUT of `placeholder`, which must model the value's
+  // shape, not carry instructions (CL-4538). Only the schedule-form surface
+  // renders this today; the live dock's `form` block has no help slot yet.
+  "help?": "string",
   "required?": "boolean",
   "options?": StepUIInputFieldOptionSchema.array(),
   "defaultValue?": "string | number",
+  // Bounds a `number`-kind field enforces on the rendered input (CL-4538) —
+  // e.g. a research-window `days` field must not accept 0 or a negative
+  // count. Ignored by every other kind.
+  "min?": "number",
+  "max?": "number",
+  "step?": "number",
 });
 export type StepUIInputField = typeof StepUIInputFieldSchema.infer;
 

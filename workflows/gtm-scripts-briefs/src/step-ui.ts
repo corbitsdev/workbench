@@ -26,6 +26,12 @@ const INTAKE_FORM_FIELDS: readonly StepUIInputField[] = [
     placeholder: "30",
     required: true,
     defaultValue: 30,
+    // Floor at 1: `GtmScriptsBriefsIntakePayloadSchema`'s `ResearchDays` only
+    // accepts a positive integer, and the writing step's prompt treats `days`
+    // as "the research window" — 0 or a negative count is meaningless input,
+    // not an edge case worth accepting and failing later at /resume.
+    min: 1,
+    step: 1,
   },
   {
     kind: "text",
@@ -69,5 +75,12 @@ export const INTAKE_FIELDS = INTAKE_FORM_FIELDS.map((field, index) => ({
   ...(field.placeholder !== undefined
     ? { placeholder: field.placeholder }
     : {}),
+  ...(field.help !== undefined ? { help: field.help } : {}),
+  ...(field.defaultValue !== undefined
+    ? { defaultValue: field.defaultValue }
+    : {}),
+  ...(field.min !== undefined ? { min: field.min } : {}),
+  ...(field.max !== undefined ? { max: field.max } : {}),
+  ...(field.step !== undefined ? { step: field.step } : {}),
   order: index,
 }));

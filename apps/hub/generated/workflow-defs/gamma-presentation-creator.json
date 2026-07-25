@@ -49,7 +49,8 @@
       "label": "Gamma template id",
       "inputHint": "text",
       "required": true,
-      "placeholder": "Find this on the Gamma Templates admin page",
+      "placeholder": "e.g. abc123XYZ",
+      "help": "Find this on the Gamma Templates admin page.",
       "order": 1
     }
   ],

@@ -137,6 +137,9 @@ export type FormField =
       placeholder?: string;
       required?: boolean;
       defaultValue?: number;
+      min?: number;
+      max?: number;
+      step?: number;
     }
   | {
       kind: "select";

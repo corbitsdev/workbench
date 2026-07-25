@@ -25,7 +25,8 @@ export const INTAKE_FORM_FIELDS: readonly StepUIInputField[] = [
     kind: "text",
     name: "gammaId",
     label: "Gamma template id",
-    placeholder: "Find this on the Gamma Templates admin page",
+    placeholder: "e.g. abc123XYZ",
+    help: "Find this on the Gamma Templates admin page.",
     required: true,
   },
 ];
@@ -38,5 +39,12 @@ export const INTAKE_FIELDS = INTAKE_FORM_FIELDS.map((field, index) => ({
   ...(field.placeholder !== undefined
     ? { placeholder: field.placeholder }
     : {}),
+  ...(field.help !== undefined ? { help: field.help } : {}),
+  ...(field.defaultValue !== undefined
+    ? { defaultValue: field.defaultValue }
+    : {}),
+  ...(field.min !== undefined ? { min: field.min } : {}),
+  ...(field.max !== undefined ? { max: field.max } : {}),
+  ...(field.step !== undefined ? { step: field.step } : {}),
   order: index,
 }));
