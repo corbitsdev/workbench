@@ -2,16 +2,12 @@ import { describe, expect, test } from "bun:test";
 import { runLocal } from "@intx/workflow/runlocal";
 import type { ActionHandler } from "@intx/workflow/runlocal";
 import type { StepInvoker } from "@intx/workflow/runtime";
-import {
-  DETERMINISTIC_TOOL_KIND,
-  STEP_KIND_TAG,
-  STEP_NONFATAL_TAG,
-  STEP_TOOL_TAG,
-} from "@workbench/agents";
+import { STEP_KIND_TAG, STEP_TOOL_TAG } from "@workbench/agents";
 
 import {
   ARTIFACT_LIST_HANDLER,
   GRANOLA_LIST_NOTES_HANDLER,
+  LIST_ISSUES_HANDLER,
   kind,
   label,
   workflow,
@@ -35,16 +31,6 @@ function makeRecordingInvoker(outputs: Record<string, unknown> = {}): {
     return { output: outputs[agent.id] ?? null };
   };
   return { invoker, ran };
-}
-
-function stepPrimitive(id: string) {
-  const primitive = workflow.steps[id];
-  if (primitive === undefined || primitive.kind !== "step") {
-    throw new Error(
-      `expected step for "${id}", got ${primitive?.kind ?? "undefined"}`,
-    );
-  }
-  return primitive;
 }
 
 function makeActionResolver(outputs: Record<string, unknown> = {}): {
@@ -83,11 +69,16 @@ describe("multi-source-collateral package", () => {
     expect(workflow.id).toBe(kind);
   });
 
-  test("list-issues is nonFatal so missing Linear does not fail the run", () => {
-    const prim = stepPrimitive("list-issues");
-    expect(prim.agent.tags?.[STEP_TOOL_TAG]).toContain("linear_list_issues");
-    expect(prim.agent.tags?.[STEP_KIND_TAG]).toBe(DETERMINISTIC_TOOL_KIND);
-    expect(prim.agent.tags?.[STEP_NONFATAL_TAG]).toBe("true");
+  test("list-issues is a native action dispatching the tolerant wrapper tool (CL-4464)", () => {
+    const primitive = workflow.steps["list-issues"];
+    if (primitive === undefined || primitive.kind !== "action") {
+      throw new Error(
+        `expected action for "list-issues", got ${primitive?.kind ?? "undefined"}`,
+      );
+    }
+    expect(primitive.handler).toBe(LIST_ISSUES_HANDLER);
+    expect(primitive.input).toEqual({ literal: { first: 50 } });
+    expect(primitive.effect).toEqual({ requires: [LIST_ISSUES_HANDLER] });
   });
 
   test("list-artifacts is a native action calling artifact_list with a literal limit", () => {
@@ -133,9 +124,6 @@ describe("multi-source-collateral package", () => {
       content: "Body copy",
     });
     const { invoker, ran } = makeRecordingInvoker({
-      "multi-source-collateral-list-issues": {
-        issues: [{ id: "i1", identifier: "CL-1", title: "Ticket" }],
-      },
       "multi-source-collateral-fetch-artifact": {
         title: "Brief",
         content: "Artifact body",
@@ -155,6 +143,9 @@ describe("multi-source-collateral package", () => {
     const { resolver: actionResolver } = makeActionResolver({
       [ARTIFACT_LIST_HANDLER]: { artifacts: [{ id: "a1", title: "Brief" }] },
       [GRANOLA_LIST_NOTES_HANDLER]: { notes: [{ id: "n1", title: "Call" }] },
+      [LIST_ISSUES_HANDLER]: {
+        issues: [{ id: "i1", identifier: "CL-1", title: "Ticket" }],
+      },
     });
 
     const run = runLocal(workflow, { invokeStep: invoker, actionResolver });
@@ -210,7 +201,6 @@ describe("multi-source-collateral package", () => {
       content: "Revised draft",
     });
     const { invoker, ran } = makeRecordingInvoker({
-      "multi-source-collateral-list-issues": { issues: [] },
       "multi-source-collateral-generate": AGENT_REPLY(draft),
       "multi-source-collateral-regenerate": AGENT_REPLY(revised),
       "multi-source-collateral-persist-after-regen": { artifactId: "art_2" },
@@ -218,6 +208,7 @@ describe("multi-source-collateral package", () => {
     const { resolver: actionResolver } = makeActionResolver({
       [ARTIFACT_LIST_HANDLER]: { artifacts: [] },
       [GRANOLA_LIST_NOTES_HANDLER]: { notes: [] },
+      [LIST_ISSUES_HANDLER]: { issues: [] },
     });
 
     const run = runLocal(workflow, { invokeStep: invoker, actionResolver });

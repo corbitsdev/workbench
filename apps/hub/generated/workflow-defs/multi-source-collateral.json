@@ -90,31 +90,19 @@
         }
       },
       "list-issues": {
-        "kind": "step",
+        "kind": "action",
         "id": "list-issues",
-        "agent": {
-          "id": "multi-source-collateral-list-issues",
-          "systemPrompt": "",
-          "toolFactories": [],
-          "capabilities": [
-            "@workbench/tools-linear/linear:linear_list_issues"
-          ],
-          "inference": {
-            "sources": []
-          },
-          "description": "Deterministic tool call: @workbench/tools-linear/linear:linear_list_issues",
-          "tags": {
-            "workbench.stepKind": "deterministic-tool",
-            "workbench.tool": "@workbench/tools-linear/linear:linear_list_issues",
-            "workbench.nonFatal": "true",
-            "workbench.title": "List Linear issues"
-          }
-        },
+        "handler": "@workbench/tools-multi-source-collateral/list-issues:multi_source_collateral_list_issues",
         "drainBehavior": "cancel",
         "input": {
           "literal": {
             "first": 50
           }
+        },
+        "effect": {
+          "requires": [
+            "@workbench/tools-multi-source-collateral/list-issues:multi_source_collateral_list_issues"
+          ]
         }
       },
       "sources": {
