@@ -155,6 +155,19 @@ COPY packages/tools-youtube/ packages/tools-youtube/
 COPY packages/ui/ packages/ui/
 COPY packages/tasks/ packages/tasks/
 COPY packages/workbench-shared/ packages/workbench-shared/
+# Explicit per-package full-source lines for workflow-shipped tool packages
+# (CL-4463/CL-4465) — kept alongside the wholesale `COPY workflows/
+# workflows/` below (which already covers this) so the tool-manifest
+# Dockerfile-drift test (packages/tool-manifest/src/dockerfile-tool-copy.
+# test.ts) can assert this coverage explicitly per package, the same way it
+# does for `packages/tools-*`.
+COPY workflows/competitor-analysis/ workflows/competitor-analysis/
+COPY workflows/exa-topic-watch/ workflows/exa-topic-watch/
+COPY workflows/firecrawl-url-watch/ workflows/firecrawl-url-watch/
+COPY workflows/github-topic-watch/ workflows/github-topic-watch/
+COPY workflows/heartbeat/ workflows/heartbeat/
+COPY workflows/reddit-opportunity-watch/ workflows/reddit-opportunity-watch/
+COPY workflows/sumble-account-intel/ workflows/sumble-account-intel/
 COPY workflows/ workflows/
 
 # Hub image does not run `apps/hub` package `build` on Railway. Rebuild embedded

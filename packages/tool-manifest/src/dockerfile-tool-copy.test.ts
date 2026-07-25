@@ -19,25 +19,30 @@ function readDockerfile(relativePath: string): string {
   return readFileSync(join(repoRoot(), relativePath), "utf8");
 }
 
-const TOOL_MANIFEST_COPY_PREDICATE = (line: string): boolean =>
-  line.includes("/package.json packages/") &&
-  (line.includes("packages/tools-") ||
-    line.includes("packages/tool-manifest/") ||
-    line.includes("packages/tools-interchange-contract/"));
-
-const HUB_TOOL_SOURCE_PREDICATE = (line: string): boolean =>
-  line.includes("packages/tools-") &&
-  !line.includes("package.json") &&
-  line.endsWith("/");
-
 function sorted(lines: string[]): string[] {
   return [...lines].sort();
+}
+
+// `workflows/*` is a valid tool-source home alongside `packages/tools-*`
+// (CL-4463/CL-4465 — several workflows now ship their own private tools),
+// but MOST `workflows/*` package.json COPY lines belong to workflows that
+// ship no tools at all (every workspace member gets one, per the
+// `--frozen-lockfile` manifest-copy rule) — so a prefix/regex predicate over
+// `workflows/` can't tell a tool-shipping workflow's COPY line from any
+// other's. Matching directly against the derived `expected*` line sets (the
+// same pattern the "sidecar ships tool-manifest package" test below already
+// uses) ties the predicate to the actual discovered tool packages instead.
+function lineSetPredicate(expected: readonly string[]) {
+  const expectedSet = new Set(expected);
+  return (line: string): boolean => expectedSet.has(line);
 }
 
 describe("Dockerfile tool COPY blocks vs committed manifests", () => {
   const dirs = toolPackageDirsForDockerfiles(discoverToolPackageDirs(repoRoot()));
   const expectedManifest = dockerfileManifestCopyLines(dirs);
   const expectedHubSource = dockerfileHubSourceCopyLines(dirs);
+  const TOOL_MANIFEST_COPY_PREDICATE = lineSetPredicate(expectedManifest);
+  const HUB_TOOL_SOURCE_PREDICATE = lineSetPredicate(expectedHubSource);
 
   test("hub manifest COPY lines match derived tool packages", () => {
     const hub = readDockerfile("apps/hub/Dockerfile");
@@ -78,11 +83,15 @@ describe("Dockerfile tool COPY blocks vs committed manifests", () => {
   });
 });
 
-// No `workflows/*` tool package is committed yet, so the two real-Dockerfile
-// suites above never exercise that path. These feed a synthetic
-// workflows-sourced tool package directly into the generators to prove the
-// COPY-line invariant holds for that group too (CL-4463) — not just
-// `packages/tools-*`. Without this, a workflow-shipped tool's hub-image
+// Several `workflows/*` tool packages are committed now (exa-topic-watch,
+// competitor-analysis, firecrawl-url-watch, github-topic-watch, heartbeat,
+// reddit-opportunity-watch, sumble-account-intel — CL-4463/CL-4465), and the
+// two real-Dockerfile suites above already exercise that path via their
+// predicates. These synthetic-fixture tests additionally pin the generator
+// FUNCTIONS directly, independent of what happens to be committed, so the
+// COPY-line invariant for `workflows/*` (CL-4463) — not just
+// `packages/tools-*` — stays covered even if every real workflow tool
+// package were removed. Without this, a workflow-shipped tool's hub-image
 // coverage would depend entirely on the wholesale `COPY workflows/
 // workflows/` line staying unnarrowed, with nothing to catch it silently
 // stopping.
