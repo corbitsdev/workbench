@@ -31,5 +31,9 @@ export const DISPLAY_STEPS: DisplayFlowStep[] = [
   { key: "intake", label: "Topic", stepIds: ["intake"] },
   { key: "research", label: "Research", stepIds: [...RESEARCH_STEP_IDS] },
   { key: "write", label: "Script & Brief", stepIds: ["write"] },
-  { key: "done", label: "Done", stepIds: ["persist"] },
+  {
+    key: "done",
+    label: "Done",
+    stepIds: ["persist-prepare", "persist"],
+  },
 ];
