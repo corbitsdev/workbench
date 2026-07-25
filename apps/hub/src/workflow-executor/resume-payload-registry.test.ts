@@ -350,6 +350,52 @@ describe("validateResumePayload", () => {
     ).toBe(false);
   });
 
+  // TRANSITIONAL (CL-4454): a schedule or parked run created before
+  // reddit-opportunity-scanner's intake field was renamed `inputUrl` ->
+  // `url` may still hold the old key. See the LEGACY_FIELD_RENAMES comment
+  // in resume-payload-registry.ts for the deletion condition.
+  test("accepts a legacy reddit intake (inputUrl) and normalizes it to the canonical url field", () => {
+    const result = validateResumePayload(
+      "reddit-opportunity-scanner",
+      "intake",
+      {
+        inputUrl: "https://example.com",
+        brandName: "Acme",
+      },
+    );
+    expect(result).toEqual({
+      ok: true,
+      payload: { url: "https://example.com", brandName: "Acme" },
+    });
+  });
+
+  test("prefers the new url field over a legacy inputUrl when both are present", () => {
+    const result = validateResumePayload(
+      "reddit-opportunity-scanner",
+      "intake",
+      {
+        inputUrl: "https://stale.example.com",
+        url: "https://current.example.com",
+      },
+    );
+    expect(result).toEqual({
+      ok: true,
+      payload: { url: "https://current.example.com" },
+    });
+  });
+
+  test("a new-shape reddit intake (url only) is unaffected by the legacy shim", () => {
+    // No legacy key present, so the shim is a no-op and validation falls back
+    // to plain pass-through (payload unset) — same as any other registered
+    // kind/signal with no normalization applied.
+    expect(
+      validateResumePayload("reddit-opportunity-scanner", "intake", {
+        url: "https://example.com",
+        brandName: "Acme",
+      }),
+    ).toEqual({ ok: true });
+  });
+
   test("accepts a reddit review payload with keywords, subreddits, and searches", () => {
     expect(
       validateResumePayload(
@@ -402,6 +448,60 @@ describe("validateResumePayload", () => {
         },
       ).ok,
     ).toBe(false);
+  });
+
+  // -------------------------------------------------------------------------
+  // competitor-analysis (CL-4029)
+  // -------------------------------------------------------------------------
+  test("accepts a competitor-analysis intake with an http(s) url and optional fields", () => {
+    expect(
+      validateResumePayload("competitor-analysis", "intake", {
+        url: "https://example.com",
+        companyName: "Acme",
+      }),
+    ).toEqual({ ok: true });
+  });
+
+  test("rejects a competitor-analysis intake with a non-URL url", () => {
+    expect(
+      validateResumePayload("competitor-analysis", "intake", {
+        url: "not a url",
+      }).ok,
+    ).toBe(false);
+  });
+
+  // TRANSITIONAL (CL-4454): a schedule or parked run created before
+  // competitor-analysis's intake field was renamed `companyUrl` -> `url` may
+  // still hold the old key. See the LEGACY_FIELD_RENAMES comment in
+  // resume-payload-registry.ts for the deletion condition.
+  test("accepts a legacy competitor-analysis intake (companyUrl) and normalizes it to the canonical url field", () => {
+    const result = validateResumePayload("competitor-analysis", "intake", {
+      companyUrl: "https://example.com",
+      companyName: "Acme",
+    });
+    expect(result).toEqual({
+      ok: true,
+      payload: { url: "https://example.com", companyName: "Acme" },
+    });
+  });
+
+  test("prefers the new url field over a legacy companyUrl when both are present", () => {
+    const result = validateResumePayload("competitor-analysis", "intake", {
+      companyUrl: "https://stale.example.com",
+      url: "https://current.example.com",
+    });
+    expect(result).toEqual({
+      ok: true,
+      payload: { url: "https://current.example.com" },
+    });
+  });
+
+  test("a new-shape competitor-analysis intake (url only) is unaffected by the legacy shim", () => {
+    expect(
+      validateResumePayload("competitor-analysis", "intake", {
+        url: "https://example.com",
+      }),
+    ).toEqual({ ok: true });
   });
 
   // -------------------------------------------------------------------------

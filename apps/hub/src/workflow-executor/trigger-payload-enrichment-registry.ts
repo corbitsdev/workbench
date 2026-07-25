@@ -74,6 +74,25 @@ const TRIGGER_PAYLOAD_ENRICHERS: Record<string, TriggerPayloadEnricher> = {
       identity,
     );
   },
+  // CL-4454 compatibility shim: granola-call has no HITL gate at all — its
+  // trigger.payload rides straight into its `action` steps, so a schedule
+  // saved before the workflow's ONE intake field was renamed `maxCalls` ->
+  // `limit` (to match `granola_list_notes`'s own `limit` arg — see
+  // `workflows/granola-call/src/index.ts`) would otherwise replay the old
+  // key forever, silently dropping the cap (the tool only reads `limit`).
+  // This is the one point every start door funnels through (see this file's
+  // module doc comment), so it is the correct place to fold the old key.
+  // DELETE this entry once no persisted granola-call schedule can predate
+  // CL-4454.
+  "granola-call": async (_deps, _ctx, input) => {
+    if (!("maxCalls" in input)) return input;
+    const next = { ...input };
+    if (!("limit" in next)) {
+      next.limit = next.maxCalls;
+    }
+    delete next.maxCalls;
+    return next;
+  },
   // Overnight prospect engine (CL-3497): stamp ET runDate + artifact title,
   // resolve mail identity, coerce Engine list ids from schedule strings to
   // integers Sumble write tools accept.
