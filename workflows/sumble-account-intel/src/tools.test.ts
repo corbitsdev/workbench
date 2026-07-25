@@ -77,11 +77,16 @@ const SIGNAL = new AbortController().signal;
 
 const CONFIG = {
   sumble: { apiKey: "sumble-key" },
-  x: { apiKey: "x-key" },
 };
 
-function fullTool(name: string) {
-  const tool = createSumbleAccountIntelTools(CONFIG).find(
+const ENV_WITH_XAI: Record<string, unknown> = {
+  "workbench.cred.xai": { apiKey: "x-key", baseURL: "https://x.example" },
+};
+
+const ENV_WITHOUT_XAI: Record<string, unknown> = {};
+
+function fullTool(name: string, env: Record<string, unknown> = ENV_WITH_XAI) {
+  const tool = createSumbleAccountIntelTools(CONFIG, env).find(
     (t) => t.definition.name === name,
   );
   if (!tool || tool.kind !== "full") {
@@ -320,11 +325,64 @@ describe("sumble_account_intel_enrich_contacts — folds the former map, toleran
     expect(result.isError).toBe(false);
     expect(result.content).toEqual({ people: [] });
   });
+
+  test("a tenant with no xai credential configured at all degrades every contact instead of failing the run or dropping the tool package (CL-4454)", async () => {
+    // Regression guard for the eager-construction trap: `xai` used to be
+    // resolved eagerly in interchange-tools.ts's factory, so a tenant with
+    // no xAI credential threw `ToolCredentialMissingError` while
+    // CONSTRUCTING the whole sumble-account-intel package — not just this
+    // tool. Resolving it lazily here means the package still builds, this
+    // handler still completes, and only the contacts themselves report the
+    // missing credential.
+    const handler = fullTool(
+      "sumble_account_intel_enrich_contacts",
+      ENV_WITHOUT_XAI,
+    );
+    const result = await handler(
+      {
+        id: "e",
+        name: "sumble_account_intel_enrich_contacts",
+        arguments: {
+          people: [{ name: "Ada Lovelace" }, { name: "Grace Hopper" }],
+        },
+      },
+      SIGNAL,
+    );
+    expect(result.isError).toBe(false);
+    if (typeof result.content === "string") {
+      throw new Error("expected object content");
+    }
+    const { people } = result.content as {
+      people: { ok: boolean; error: string }[];
+    };
+    expect(people).toHaveLength(2);
+    for (const person of people) {
+      expect(person.ok).toBe(false);
+      expect(person.error).toContain("xai");
+    }
+  });
+
+  test("a missing xai credential does not prevent the sumble-backed tools from being registered and working", async () => {
+    const handler = fullTool(
+      "sumble_account_intel_resolve_organization",
+      ENV_WITHOUT_XAI,
+    );
+    const result = await handler(
+      {
+        id: "r",
+        name: "sumble_account_intel_resolve_organization",
+        arguments: { organizationDomain: "acme.com" },
+      },
+      SIGNAL,
+    );
+    expect(result.isError).toBeUndefined();
+    expect(result.content).toEqual({ slug: "acme" });
+  });
 });
 
 describe("tool-manifest completeness", () => {
   test("every registered tool name is declared in the hand-authored manifest", () => {
-    const runtimeNames = createSumbleAccountIntelTools(CONFIG)
+    const runtimeNames = createSumbleAccountIntelTools(CONFIG, ENV_WITH_XAI)
       .map((tool) => tool.definition.name)
       .sort();
     const factory = toolManifestFile.factories[0];

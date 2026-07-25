@@ -1,10 +1,10 @@
 import { createToolRunner } from "@intx/agent";
 import type { AgentTool, AgentToolRunner } from "@intx/agent";
 import type { ToolDefinition, ToolResult } from "@intx/types/runtime";
+import { getToolCredential } from "@workbench/tool-credentials";
 import { createSumbleTools } from "@workbench/tools-sumble";
 import type { SumbleToolsConfig } from "@workbench/tools-sumble";
 import { createXTools } from "@workbench/tools-x";
-import type { XToolsConfig } from "@workbench/tools-x";
 
 // This workflow's own tool package inlines wrappers around @workbench/tools-sumble
 // and @workbench/tools-x rather than pinning those packages directly, so it can
@@ -40,7 +40,6 @@ import type { XToolsConfig } from "@workbench/tools-x";
 // `isError`, by passing the underlying tool's own field through unmodified.
 export type SumbleAccountIntelToolsConfig = {
   sumble: SumbleToolsConfig;
-  x: XToolsConfig;
 };
 
 function coerceArgsObject(
@@ -387,20 +386,56 @@ function isContactWithName(
 
 const ENRICH_CONTACTS_X_SEARCH_LIMIT = 5;
 
-function createEnrichContactsTool(x: AgentToolRunner): AgentTool {
+/**
+ * `xai` is resolved LAZILY, inside the handler, never at factory-construction
+ * time (CL-4454 correctness fix). enrich-contacts is documented best-effort —
+ * "a dead xAI call for one contact never fails the run or the other
+ * contacts' results" — but the ORIGINAL wiring resolved the `xai` credential
+ * eagerly in `interchange-tools.ts`'s factory, so a tenant with no xAI
+ * credential configured at all threw `ToolCredentialMissingError` while
+ * building the whole tool package — dropping not just enrich-contacts but
+ * also the genuinely-required `resolve`/`search_people`/facet tools sharing
+ * this factory. Resolving `xai` here instead means a missing credential
+ * degrades every contact's envelope, exactly like a dead call would, while
+ * leaving the rest of the package (and the `sumble` credential it needs)
+ * unaffected.
+ */
+function createEnrichContactsTool(env: Record<string, unknown>): AgentTool {
   return {
     kind: "full",
     definition: SUMBLE_ACCOUNT_INTEL_ENRICH_CONTACTS_DEFINITION,
     handler: async (call, signal) => {
       const args = coerceArgsObject(call.arguments);
       const people = Array.isArray(args.people) ? args.people : [];
+      let xRunner: AgentToolRunner;
+      try {
+        const credential = getToolCredential(env, "xai");
+        xRunner = createToolRunner(
+          createXTools({
+            apiKey: credential.apiKey,
+            baseURL: credential.baseURL,
+          }),
+        );
+      } catch (err) {
+        const error = err instanceof Error ? err.message : String(err);
+        const results = people.map((person: unknown) => ({
+          ok: false as const,
+          error,
+          name: isContactWithName(person) ? person.name : undefined,
+        }));
+        return {
+          callId: call.id,
+          isError: false,
+          content: { people: results },
+        };
+      }
       const results = await Promise.all(
         people.map(async (person: unknown, index: number) => {
           if (!isContactWithName(person)) {
             return { ok: false as const, error: "contact is missing a name" };
           }
           const envelope = await runTolerant(
-            x,
+            xRunner,
             "x_search",
             `${call.id}-${index}`,
             { query: person.name, limit: ENRICH_CONTACTS_X_SEARCH_LIMIT },
@@ -414,12 +449,14 @@ function createEnrichContactsTool(x: AgentToolRunner): AgentTool {
   };
 }
 
-/** Workflow-owned tools private to sumble-account-intel. */
+/** Workflow-owned tools private to sumble-account-intel. `env` is the
+ * sidecar-injected factory env, forwarded so enrich-contacts can resolve its
+ * `xai` credential lazily inside its own handler (see above). */
 export function createSumbleAccountIntelTools(
   config: SumbleAccountIntelToolsConfig,
+  env: Record<string, unknown>,
 ): AgentTool[] {
   const sumbleRunner = createToolRunner(createSumbleTools(config.sumble));
-  const xRunner = createToolRunner(createXTools(config.x));
   return [
     createSumbleAccountIntelFormatReportDocumentTool(),
     createResolveOrganizationTool(sumbleRunner),
@@ -439,6 +476,6 @@ export function createSumbleAccountIntelTools(
       "sumble_search_signals",
       sumbleRunner,
     ),
-    createEnrichContactsTool(xRunner),
+    createEnrichContactsTool(env),
   ];
 }

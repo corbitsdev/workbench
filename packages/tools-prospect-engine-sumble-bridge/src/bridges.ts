@@ -135,19 +135,36 @@ function extractListId(input: unknown): string | undefined {
   return undefined;
 }
 
+/**
+ * Build the real `sumble_get_organization_list` tool LAZILY, inside the
+ * handler — never at factory-construction time (CL-4454 correctness fix).
+ * `getToolCredential` throws `ToolCredentialMissingError` the instant the
+ * tenant has no `sumble` credential configured; if that throw happened here
+ * (as it originally did, eagerly in `factory`), the sidecar's
+ * `buildStepTools` would silently drop this whole bridge package and the
+ * step would hard-fail with `StepToolCredentialMissingError` — strictly
+ * worse than the `nonFatal` degrade this migration replaces. Resolving the
+ * credential inside `tolerant`'s try/catch instead means a missing
+ * credential degrades to the same `{ isError: true, error }` envelope as
+ * any other bridge failure.
+ */
+function buildReadOrgListTool(env: Record<string, unknown>): AgentTool {
+  const credential = getToolCredential(env, "sumble");
+  const entry = SUMBLE_HUB_TOOLS.sumble_get_organization_list;
+  if (entry === undefined) {
+    throw new Error(
+      "prospect-engine sumble-list-bridge: sumble_get_organization_list is not registered in SUMBLE_HUB_TOOLS",
+    );
+  }
+  const tools = entry.createTools(credential);
+  return findAgentTool(tools, "sumble_get_organization_list");
+}
+
 export const prospectEngineSumbleListBridge: AnnotatedToolFactory = defineTool({
   id: "@workbench/tools-prospect-engine-sumble-bridge/list",
   requires: [toolCredentialEnvKey("sumble")],
   factory: (env) => {
-    const credential = getToolCredential(envRecord(env), "sumble");
-    const entry = SUMBLE_HUB_TOOLS.sumble_get_organization_list;
-    if (entry === undefined) {
-      throw new Error(
-        "prospect-engine sumble-list-bridge: sumble_get_organization_list is not registered in SUMBLE_HUB_TOOLS",
-      );
-    }
-    const tools = entry.createTools(credential);
-    const readTool = findAgentTool(tools, "sumble_get_organization_list");
+    const record = envRecord(env);
     return createToolRunner([
       {
         kind: "full",
@@ -163,7 +180,7 @@ export const prospectEngineSumbleListBridge: AnnotatedToolFactory = defineTool({
           }
           return tolerant(call.id, () =>
             invokeAgentTool(
-              readTool,
+              buildReadOrgListTool(record),
               {
                 id: call.id,
                 name: "sumble_get_organization_list",
@@ -197,22 +214,29 @@ export const PROSPECT_ENGINE_ADD_ORG_LIST_TOLERANT_DEFINITION: ToolDefinition =
     },
   };
 
+/**
+ * Same lazy-construction fix as `buildReadOrgListTool` above (CL-4454): the
+ * credential is resolved inside `tolerant`'s try/catch, not at
+ * factory-construction time, so a missing `sumble` credential degrades this
+ * bridge's own tool instead of dropping the whole package.
+ */
+function buildAddOrgListTool(env: Record<string, unknown>): AgentTool {
+  const credential = getToolCredential(env, "sumble");
+  const entry = SUMBLE_HUB_TOOLS.sumble_add_organization_list_organizations;
+  if (entry === undefined) {
+    throw new Error(
+      "prospect-engine sumble-add-bridge: sumble_add_organization_list_organizations is not registered in SUMBLE_HUB_TOOLS",
+    );
+  }
+  const tools = entry.createTools(credential);
+  return findAgentTool(tools, "sumble_add_organization_list_organizations");
+}
+
 export const prospectEngineSumbleAddBridge: AnnotatedToolFactory = defineTool({
   id: "@workbench/tools-prospect-engine-sumble-bridge/add",
   requires: [toolCredentialEnvKey("sumble")],
   factory: (env) => {
-    const credential = getToolCredential(envRecord(env), "sumble");
-    const entry = SUMBLE_HUB_TOOLS.sumble_add_organization_list_organizations;
-    if (entry === undefined) {
-      throw new Error(
-        "prospect-engine sumble-add-bridge: sumble_add_organization_list_organizations is not registered in SUMBLE_HUB_TOOLS",
-      );
-    }
-    const tools = entry.createTools(credential);
-    const addTool = findAgentTool(
-      tools,
-      "sumble_add_organization_list_organizations",
-    );
+    const record = envRecord(env);
     return createToolRunner([
       {
         kind: "full",
@@ -237,7 +261,7 @@ export const prospectEngineSumbleAddBridge: AnnotatedToolFactory = defineTool({
           }
           return tolerant(call.id, () =>
             invokeAgentTool(
-              addTool,
+              buildAddOrgListTool(record),
               {
                 id: call.id,
                 name: "sumble_add_organization_list_organizations",

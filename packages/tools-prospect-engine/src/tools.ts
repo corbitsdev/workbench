@@ -295,9 +295,12 @@ function parseCandidates(raw: unknown): ProspectEngineCandidate[] {
   for (const item of raw) {
     const v = ProspectEngineCandidateSchema(item);
     if (!(v instanceof type.errors)) {
+      const sanitizedContacts = sanitizeProspectEngineContacts(v.contacts);
       out.push({
         ...v,
-        contacts: sanitizeProspectEngineContacts(v.contacts),
+        ...(sanitizedContacts !== undefined
+          ? { contacts: sanitizedContacts }
+          : {}),
       });
       continue;
     }

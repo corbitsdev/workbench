@@ -8,15 +8,23 @@
 // that need no credential at all. See `./tools.ts` for why these wrappers
 // exist (CL-4464: replacing `nonFatal` deterministic steps with native
 // `action` primitives).
+//
+// Each credentialed factory is built with `defineTool` directly, NOT
+// `defineCredentialedToolPackage` (CL-4454 fix): the credential is resolved
+// lazily inside the handler via `createLazySafeCredentialedTool`, so factory
+// construction always succeeds and a missing tenant credential degrades to
+// the wrapper's own `{ isError: true, error }` envelope instead of the
+// sidecar silently dropping the whole package and hard-failing the step.
 
 import { createToolRunner, defineTool } from "@intx/agent";
-import { defineCredentialedToolPackage } from "@workbench/tool-credentials/factory";
+import { toolCredentialEnvKey } from "@workbench/tool-credentials";
 import {
   SAFE_EXA_SEARCH_DEFINITION,
   SAFE_GITHUB_ACTIVITY_DEFINITION,
   SAFE_REDDIT_SEARCH_DEFINITION,
   SAFE_X_SEARCH_DEFINITION,
   SAFE_YOUTUBE_SEARCH_DEFINITION,
+  createLazySafeCredentialedTool,
   createSafeExaTools,
   createSafeGitHubTools,
   createSafeKeylessTools,
@@ -25,59 +33,69 @@ import {
   createSafeYouTubeTools,
 } from "./tools";
 
-export const last30daysSafeExa = defineCredentialedToolPackage({
+export const last30daysSafeExa = defineTool({
   id: "@workbench/workflow-last30days-research/exa-safe",
-  provider: "exa",
-  entries: {
-    [SAFE_EXA_SEARCH_DEFINITION.name]: {
-      sideEffect: "read",
-      createTools: createSafeExaTools,
-    },
-  },
+  requires: [toolCredentialEnvKey("exa")],
+  factory: (env) =>
+    createToolRunner([
+      createLazySafeCredentialedTool({
+        provider: "exa",
+        definition: SAFE_EXA_SEARCH_DEFINITION,
+        buildSafeTools: createSafeExaTools,
+      })(env as unknown as Record<string, unknown>),
+    ]),
 });
 
-export const last30daysSafeGithub = defineCredentialedToolPackage({
+export const last30daysSafeGithub = defineTool({
   id: "@workbench/workflow-last30days-research/github-safe",
-  provider: "github",
-  entries: {
-    [SAFE_GITHUB_ACTIVITY_DEFINITION.name]: {
-      sideEffect: "read",
-      createTools: createSafeGitHubTools,
-    },
-  },
+  requires: [toolCredentialEnvKey("github")],
+  factory: (env) =>
+    createToolRunner([
+      createLazySafeCredentialedTool({
+        provider: "github",
+        definition: SAFE_GITHUB_ACTIVITY_DEFINITION,
+        buildSafeTools: createSafeGitHubTools,
+      })(env as unknown as Record<string, unknown>),
+    ]),
 });
 
-export const last30daysSafeReddit = defineCredentialedToolPackage({
+export const last30daysSafeReddit = defineTool({
   id: "@workbench/workflow-last30days-research/reddit-safe",
-  provider: "scrapecreators",
-  entries: {
-    [SAFE_REDDIT_SEARCH_DEFINITION.name]: {
-      sideEffect: "read",
-      createTools: createSafeRedditTools,
-    },
-  },
+  requires: [toolCredentialEnvKey("scrapecreators")],
+  factory: (env) =>
+    createToolRunner([
+      createLazySafeCredentialedTool({
+        provider: "scrapecreators",
+        definition: SAFE_REDDIT_SEARCH_DEFINITION,
+        buildSafeTools: createSafeRedditTools,
+      })(env as unknown as Record<string, unknown>),
+    ]),
 });
 
-export const last30daysSafeX = defineCredentialedToolPackage({
+export const last30daysSafeX = defineTool({
   id: "@workbench/workflow-last30days-research/x-safe",
-  provider: "xai",
-  entries: {
-    [SAFE_X_SEARCH_DEFINITION.name]: {
-      sideEffect: "read",
-      createTools: createSafeXTools,
-    },
-  },
+  requires: [toolCredentialEnvKey("xai")],
+  factory: (env) =>
+    createToolRunner([
+      createLazySafeCredentialedTool({
+        provider: "xai",
+        definition: SAFE_X_SEARCH_DEFINITION,
+        buildSafeTools: createSafeXTools,
+      })(env as unknown as Record<string, unknown>),
+    ]),
 });
 
-export const last30daysSafeYoutube = defineCredentialedToolPackage({
+export const last30daysSafeYoutube = defineTool({
   id: "@workbench/workflow-last30days-research/youtube-safe",
-  provider: "youtube",
-  entries: {
-    [SAFE_YOUTUBE_SEARCH_DEFINITION.name]: {
-      sideEffect: "read",
-      createTools: createSafeYouTubeTools,
-    },
-  },
+  requires: [toolCredentialEnvKey("youtube")],
+  factory: (env) =>
+    createToolRunner([
+      createLazySafeCredentialedTool({
+        provider: "youtube",
+        definition: SAFE_YOUTUBE_SEARCH_DEFINITION,
+        buildSafeTools: createSafeYouTubeTools,
+      })(env as unknown as Record<string, unknown>),
+    ]),
 });
 
 export const last30daysSafeKeyless = defineTool({

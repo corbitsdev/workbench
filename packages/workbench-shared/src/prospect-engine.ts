@@ -652,6 +652,26 @@ export function sanitizeProspectEngineContacts(
 }
 
 /**
+ * Drop every key whose value is `undefined`, then cast to
+ * `ProspectEngineCandidate`. `exactOptionalPropertyTypes` forbids assigning
+ * `undefined` to an optional field explicitly, so a reshape built from `??`
+ * fallbacks (which can still land on `undefined` when both sides are
+ * missing) must be filtered before it is returned as a typed value — the
+ * cast is sound because the filtered object always satisfies the shape
+ * (every required field is set from `b`, a validated `ProspectEngineCandidate`),
+ * it just isn't expressible in the type system as a generic transform.
+ */
+function definedFieldsOnly(
+  obj: Record<string, unknown>,
+): ProspectEngineCandidate {
+  const out: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(obj)) {
+    if (value !== undefined) out[key] = value;
+  }
+  return out as ProspectEngineCandidate;
+}
+
+/**
  * Merge map/reveal enrichments onto the qualified shortlist.
  * Base order and membership win so delivery never depends solely on the
  * map agent emitting a complete accounts array. Overlay-only orgs are dropped.
@@ -664,15 +684,22 @@ export function mergeProspectEngineShortlist(
   return base.map((b) => {
     const o = overById.get(b.organizationId);
     if (!o) {
+      const sanitizedContacts = sanitizeProspectEngineContacts(b.contacts);
       return {
         ...b,
-        contacts: sanitizeProspectEngineContacts(b.contacts),
+        ...(sanitizedContacts !== undefined
+          ? { contacts: sanitizedContacts }
+          : {}),
       };
     }
     const contacts =
       sanitizeProspectEngineContacts(o.contacts) ??
       sanitizeProspectEngineContacts(b.contacts);
-    return {
+    // `exactOptionalPropertyTypes` forbids assigning an explicit `undefined`
+    // to an optional field — the `??` fallbacks below can still leave one
+    // undefined (both sides missing), so the merged object is filtered
+    // through `definedFieldsOnly` rather than spread directly.
+    return definedFieldsOnly({
       ...b,
       ...o,
       organizationId: b.organizationId,
@@ -688,7 +715,7 @@ export function mergeProspectEngineShortlist(
       evidence: o.evidence ?? b.evidence,
       industry: o.industry ?? b.industry,
       ...(contacts !== undefined ? { contacts } : {}),
-    };
+    });
   });
 }
 

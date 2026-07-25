@@ -108,13 +108,25 @@ export const PROSPECT_ENGINE_POST_SLACK_TOLERANT_DEFINITION: ToolDefinition = {
   },
 };
 
+/**
+ * Build the real `slack_post_message` tool LAZILY, inside the handler —
+ * never at factory-construction time (CL-4454 correctness fix). Resolving
+ * the `slack` credential here, inside `tolerant`'s try/catch, means a tenant
+ * with no Slack credential configured degrades this bridge's own call
+ * instead of the sidecar dropping the whole package and hard-failing the
+ * step with `StepToolCredentialMissingError`.
+ */
+function buildPostSlackTool(env: Record<string, unknown>): AgentTool {
+  const credential = getToolCredential(env, "slack");
+  const tools = SLACK_HUB_TOOLS.slack_post_message.createTools(credential);
+  return findAgentTool(tools, "slack_post_message");
+}
+
 export const prospectEngineSlackBridge: AnnotatedToolFactory = defineTool({
   id: "@workbench/tools-prospect-engine-slack-bridge/post",
   requires: [toolCredentialEnvKey("slack")],
   factory: (env) => {
-    const credential = getToolCredential(envRecord(env), "slack");
-    const tools = SLACK_HUB_TOOLS.slack_post_message.createTools(credential);
-    const postTool = findAgentTool(tools, "slack_post_message");
+    const record = envRecord(env);
     return createToolRunner([
       {
         kind: "full",
@@ -134,7 +146,7 @@ export const prospectEngineSlackBridge: AnnotatedToolFactory = defineTool({
           }
           return tolerant(call.id, () =>
             invokeAgentTool(
-              postTool,
+              buildPostSlackTool(record),
               {
                 id: call.id,
                 name: "slack_post_message",

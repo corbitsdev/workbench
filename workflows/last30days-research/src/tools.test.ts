@@ -1,8 +1,10 @@
 import { describe, expect, test } from "bun:test";
 import type { AgentTool } from "@intx/agent";
 import {
+  createLazySafeCredentialedTool,
   createSafeKeylessTools,
   wrapSafeStringTool,
+  SAFE_EXA_SEARCH_DEFINITION,
   SAFE_HACKERNEWS_SEARCH_DEFINITION,
   SAFE_POLYMARKET_ODDS_DEFINITION,
 } from "./tools";
@@ -68,7 +70,7 @@ describe("wrapSafeStringTool (CL-4464)", () => {
     );
   });
 
-  test("refuses to wrap a kind:\"full\" tool (only kind:\"string\" source tools are supported)", () => {
+  test('refuses to wrap a kind:"full" tool (only kind:"string" source tools are supported)', () => {
     const fullTool: AgentTool = {
       kind: "full",
       definition: {
@@ -79,6 +81,58 @@ describe("wrapSafeStringTool (CL-4464)", () => {
       handler: async (call) => ({ callId: call.id, content: "x" }),
     };
     expect(() => wrapSafeStringTool(fullTool, "safe", "d")).toThrow();
+  });
+});
+
+describe("createLazySafeCredentialedTool (CL-4454)", () => {
+  test("a missing tenant credential degrades to a completed { isError: true } envelope, never a throw", async () => {
+    // Regression guard for the eager-construction trap: this tool must be
+    // buildable with NO credential in env (factory construction always
+    // succeeds), and calling its handler with the credential still absent
+    // must resolve to the wrapper's own error envelope rather than
+    // rejecting/throwing (a throw here would surface as
+    // StepToolCredentialMissingError, strictly worse than the nonFatal
+    // behavior this migration replaces).
+    const buildSafeTools = () => {
+      throw new Error("buildSafeTools must not be called with no credential");
+    };
+    const factory = createLazySafeCredentialedTool({
+      provider: "exa",
+      definition: SAFE_EXA_SEARCH_DEFINITION,
+      buildSafeTools,
+    });
+
+    // No `workbench.cred.exa` key in env — the tenant has not configured Exa.
+    const tool = factory({});
+    if (tool.kind !== "string") throw new Error("expected string tool");
+
+    const result = await tool.handler({ query: "q" }, SIGNAL);
+    expect(typeof result).toBe("string");
+    const parsed = JSON.parse(result) as { isError: boolean; error: string };
+    expect(parsed.isError).toBe(true);
+    expect(parsed.error).toContain("exa");
+  });
+
+  test("a configured credential is resolved lazily and the underlying safe tool's result passes through", async () => {
+    const payload = JSON.stringify([{ url: "https://example.com" }]);
+    const safeTool: AgentTool = {
+      kind: "string",
+      definition: SAFE_EXA_SEARCH_DEFINITION,
+      handler: async () => payload,
+    };
+    const factory = createLazySafeCredentialedTool({
+      provider: "exa",
+      definition: SAFE_EXA_SEARCH_DEFINITION,
+      buildSafeTools: () => [safeTool],
+    });
+
+    const tool = factory({
+      "workbench.cred.exa": { apiKey: "k", baseURL: "https://exa.example" },
+    });
+    if (tool.kind !== "string") throw new Error("expected string tool");
+
+    const result = await tool.handler({ query: "q" }, SIGNAL);
+    expect(result).toBe(payload);
   });
 });
 

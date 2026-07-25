@@ -1,5 +1,9 @@
 import type { AgentTool } from "@intx/agent";
 import type { ToolDefinition } from "@intx/types/runtime";
+import {
+  type ToolCredential,
+  getToolCredential,
+} from "@workbench/tool-credentials";
 import { EXA_HUB_TOOLS } from "@workbench/tools-exa";
 import { GITHUB_HUB_TOOLS } from "@workbench/tools-github";
 import { REDDIT_HUB_TOOLS } from "@workbench/tools-reddit";
@@ -176,10 +180,7 @@ export function createSafeXTools(config: {
   apiKey: string;
   baseURL: string;
 }): AgentTool[] {
-  const tool = firstTool(
-    X_HUB_TOOLS.x_search.createTools(config),
-    "x_search",
-  );
+  const tool = firstTool(X_HUB_TOOLS.x_search.createTools(config), "x_search");
   return [
     wrapSafeStringTool(
       tool,
@@ -227,6 +228,49 @@ export const SAFE_POLYMARKET_ODDS_DEFINITION: ToolDefinition = {
   name: "last30days_safe_polymarket_odds",
   description: `${POLYMARKET_ODDS_DEFINITION.description} Internal last30days-research wrapper: a fetch failure degrades to a JSON { isError: true, error } body instead of failing the step.`,
 };
+
+/**
+ * Build a safe-source tool whose credential is resolved LAZILY, inside the
+ * handler, never at factory-construction time (CL-4454 correctness fix).
+ * `getToolCredential` throws `ToolCredentialMissingError` the instant a
+ * tenant has not configured the provider; if that throw happened while
+ * building the tool package itself (as `defineCredentialedToolPackage` does
+ * by calling it eagerly in its `factory`), the sidecar's `buildStepTools`
+ * silently drops the whole package and the step then hard-fails with
+ * `StepToolCredentialMissingError` — exactly the "worse than nonFatal"
+ * regression this migration must not introduce. Resolving the credential
+ * inside the handler instead means factory construction always succeeds,
+ * and a missing credential degrades to the same `{ isError: true, error }`
+ * envelope as any other source failure.
+ */
+export function createLazySafeCredentialedTool(opts: {
+  provider: string;
+  definition: ToolDefinition;
+  buildSafeTools: (config: ToolCredential) => AgentTool[];
+}): (env: Record<string, unknown>) => AgentTool {
+  return (env) => ({
+    kind: "string",
+    definition: opts.definition,
+    handler: async (
+      args: Record<string, unknown>,
+      signal: AbortSignal,
+    ): Promise<string> => {
+      let config: ToolCredential;
+      try {
+        config = getToolCredential(env, opts.provider);
+      } catch (err) {
+        return safeErrorEnvelope(err);
+      }
+      const tool = firstTool(opts.buildSafeTools(config), opts.definition.name);
+      if (tool.kind !== "string") {
+        throw new Error(
+          `last30days safe-source wrapper: "${opts.definition.name}" is not a kind:"string" tool`,
+        );
+      }
+      return tool.handler(args, signal);
+    },
+  });
+}
 
 // Keyless sources need no credential resolution, so both wrappers are built
 // eagerly (no per-call config) and returned together as one factory's tools.
