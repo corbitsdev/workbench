@@ -1,6 +1,7 @@
 import { defineAgent } from "@intx/agent";
-import { defineWorkflow, step } from "@intx/workflow";
+import { action, defineWorkflow, step } from "@intx/workflow";
 import {
+  canonicalizeStepToolName,
   canonicalizeToolNames,
   deterministicToolStep,
   agentStep,
@@ -116,6 +117,63 @@ const mapRevealAgent = defineAgent({
   },
 });
 
+// Native `action` handler refs — the tool's canonical (factory-prefixed)
+// name, resolved via the same build-time-checked lookup `deterministicToolStep`
+// uses, so a typo'd or manifest-drifted tool name fails the build instead of
+// deploying a step nothing can dispatch (CL-4454).
+export const INIT_BUDGET_HANDLER = canonicalizeStepToolName(
+  "prospect-engine-init-budget",
+  "prospect_engine_init_budget",
+);
+export const FIND_LEDGER_HANDLER = canonicalizeStepToolName(
+  "prospect-engine-find-ledger",
+  "artifact_find_by_title",
+);
+export const PARSE_LEDGER_HANDLER = canonicalizeStepToolName(
+  "prospect-engine-parse-ledger",
+  "prospect_engine_parse_ledger",
+);
+export const EXTRACT_LIST_ORG_IDS_HANDLER = canonicalizeStepToolName(
+  "prospect-engine-extract-list-org-ids",
+  "prospect_engine_extract_list_org_ids",
+);
+export const EXTRACT_CANDIDATES_FROM_REPLY_HANDLER = canonicalizeStepToolName(
+  "prospect-engine-extract-candidates",
+  "prospect_engine_extract_candidates_from_reply",
+);
+export const DEDUPE_CANDIDATES_HANDLER = canonicalizeStepToolName(
+  "prospect-engine-dedupe-candidates",
+  "prospect_engine_dedupe_candidates",
+);
+export const QUALIFY_HANDLER = canonicalizeStepToolName(
+  "prospect-engine-qualify",
+  "prospect_engine_qualify",
+);
+export const EXTRACT_MAP_REVEAL_OVERLAY_HANDLER = canonicalizeStepToolName(
+  "prospect-engine-extract-map-overlay",
+  "prospect_engine_extract_map_reveal_overlay",
+);
+export const FORMAT_REPORT_HANDLER = canonicalizeStepToolName(
+  "prospect-engine-format-report",
+  "prospect_engine_format_report",
+);
+export const WRITE_ARTIFACT_REPORT_HANDLER = canonicalizeStepToolName(
+  "prospect-engine-save-nightly-report",
+  "write_artifact",
+);
+export const FORMAT_SLACK_DIGEST_HANDLER = canonicalizeStepToolName(
+  "prospect-engine-format-slack-digest",
+  "prospect_engine_format_slack_digest",
+);
+export const MERGE_LEDGER_HANDLER = canonicalizeStepToolName(
+  "prospect-engine-merge-ledger",
+  "prospect_engine_merge_ledger",
+);
+export const WRITE_ARTIFACT_LEDGER_HANDLER = canonicalizeStepToolName(
+  "prospect-engine-save-ledger-artifact",
+  "write_artifact",
+);
+
 // ---------------------------------------------------------------------------
 // Graph (gate-free / unattended)
 //
@@ -132,27 +190,25 @@ export const workflow = defineWorkflow({
   id: kind,
   trigger: { type: "manual" },
   steps: {
-    initBudget: deterministicToolStep({
-      id: "prospect-engine-init-budget",
-      title: "Initialize credit budget",
-      tool: "prospect_engine_init_budget",
-      input: { from: "trigger.payload" },
-      argMap: {},
+    initBudget: action({
+      handler: INIT_BUDGET_HANDLER,
+      input: { literal: {} },
+      effect: { requires: [INIT_BUDGET_HANDLER] },
     }),
 
     // Durable ledger is a per-owner artifact (principalId + title + kind),
     // not global memory_save — avoids clobbering Myra/operator memory.
     // Cold start: find returns JSON null → readLedger skips (optional
     // artifactId) → parseLedger still runs and emits empty ledger.
-    findLedger: deterministicToolStep({
-      id: "prospect-engine-find-ledger",
-      title: "Locate seen-accounts ledger artifact",
-      tool: "artifact_find_by_title",
-      input: { from: "trigger.payload" },
-      argMap: {
-        title: { literal: PROSPECT_ENGINE_LEDGER_ARTIFACT_TITLE },
-        kind: { literal: PROSPECT_ENGINE_ARTIFACT_KIND_LEDGER },
+    findLedger: action({
+      handler: FIND_LEDGER_HANDLER,
+      input: {
+        literal: {
+          title: PROSPECT_ENGINE_LEDGER_ARTIFACT_TITLE,
+          kind: PROSPECT_ENGINE_ARTIFACT_KIND_LEDGER,
+        },
       },
+      effect: { requires: [FIND_LEDGER_HANDLER] },
       after: ["initBudget"],
     }),
 
@@ -176,19 +232,18 @@ export const workflow = defineWorkflow({
       after: ["findLedger"],
       nonFatal: true,
     }),
-    parseLedger: deterministicToolStep({
-      id: "prospect-engine-parse-ledger",
-      title: "Parse seen-accounts ledger",
-      tool: "prospect_engine_parse_ledger",
-      // Always run after the read attempt. No argMap: cold-start nights (and
-      // nonFatal artifact_read isError envelopes) omit `content`; the parse
-      // tool returns an empty ledger instead of failing the run.
+    // No argMap on the legacy version either: cold-start nights (and nonFatal
+    // artifact_read isError envelopes) omit `content`; the tool returns an
+    // empty ledger instead of failing the run. Native `action`, verbatim.
+    parseLedger: action({
+      handler: PARSE_LEDGER_HANDLER,
       input: {
         merge: [
           { from: "steps.initBudget.output.content" },
           { from: "steps.readLedger.output" },
         ],
       },
+      effect: { requires: [PARSE_LEDGER_HANDLER] },
       after: ["initBudget", "readLedger"],
     }),
 
@@ -230,14 +285,13 @@ export const workflow = defineWorkflow({
 
     // One extract step — project list steps like heartbeat_merge_brief_sources.
     // Fatal when registered: empty list reads still produce [] org ids.
-    extractListOrgs: deterministicToolStep({
-      id: "prospect-engine-extract-list-org-ids",
-      title: "Extract exclusion list org ids",
-      tool: "prospect_engine_extract_list_org_ids",
+    extractListOrgs: action({
+      handler: EXTRACT_LIST_ORG_IDS_HANDLER,
       input: {
         project: { from: "steps" },
         fields: ["pipeline", "growthList", "enterpriseList"],
       },
+      effect: { requires: [EXTRACT_LIST_ORG_IDS_HANDLER] },
       after: ["pipeline", "growthList", "enterpriseList"],
     }),
 
@@ -263,27 +317,29 @@ export const workflow = defineWorkflow({
       ],
     }),
 
-    dedupe: deterministicToolStep({
-      id: "prospect-engine-dedupe-candidates",
-      title: "Dedupe candidates",
-      tool: "prospect_engine_dedupe_candidates",
+    // Native `action` selectors can read/rename/merge paths but cannot
+    // JSON.parse a string field — the discover agent's reply is a JSON
+    // string with a `candidates` array, which the legacy argMap unwrapped
+    // via `fromJson`. This shaping step is the one place that reply is
+    // parsed (CL-4454); dedupe below reads a plain `candidates` array.
+    extractDiscoverCandidates: action({
+      handler: EXTRACT_CANDIDATES_FROM_REPLY_HANDLER,
+      input: { from: "steps.discover.output" },
+      effect: { requires: [EXTRACT_CANDIDATES_FROM_REPLY_HANDLER] },
+      after: ["discover"],
+    }),
+
+    dedupe: action({
+      handler: DEDUPE_CANDIDATES_HANDLER,
       input: {
         merge: [
-          { from: "steps.discover.output" },
+          { from: "steps.extractDiscoverCandidates.output.content" },
           { from: "steps.parseLedger.output.content" },
           { from: "steps.extractListOrgs.output.content" },
         ],
       },
-      argMap: {
-        candidates: { fromJson: "reply", field: "candidates" },
-        ledger: { from: "ledger" },
-        // Defaults to [] when a list read failed nonFatally and extract saw
-        // error envelopes (extractOrganizationIds returns []).
-        pipelineOrgIds: { from: "pipelineOrgIds" },
-        growthOrgIds: { from: "growthOrgIds" },
-        enterpriseOrgIds: { from: "enterpriseOrgIds" },
-      },
-      after: ["discover", "parseLedger", "extractListOrgs"],
+      effect: { requires: [DEDUPE_CANDIDATES_HANDLER] },
+      after: ["extractDiscoverCandidates", "parseLedger", "extractListOrgs"],
     }),
 
     score: agentStep({
@@ -301,15 +357,21 @@ export const workflow = defineWorkflow({
       after: ["dedupe"],
     }),
 
-    qualify: deterministicToolStep({
-      id: "prospect-engine-qualify",
-      title: "Qualify shortlist",
-      tool: "prospect_engine_qualify",
+    // Same reply→candidates unwrap the score agent's JSON reply needs
+    // (CL-4454) — reuses the discover-side shaping tool; both agents emit
+    // the identical `{"candidates": [...]}` reply contract.
+    extractScoreCandidates: action({
+      handler: EXTRACT_CANDIDATES_FROM_REPLY_HANDLER,
       input: { from: "steps.score.output" },
-      argMap: {
-        candidates: { fromJson: "reply", field: "candidates" },
-      },
+      effect: { requires: [EXTRACT_CANDIDATES_FROM_REPLY_HANDLER] },
       after: ["score"],
+    }),
+
+    qualify: action({
+      handler: QUALIFY_HANDLER,
+      input: { from: "steps.extractScoreCandidates.output.content" },
+      effect: { requires: [QUALIFY_HANDLER] },
+      after: ["extractScoreCandidates"],
     }),
 
     mapReveal: step({
@@ -324,58 +386,53 @@ export const workflow = defineWorkflow({
       after: ["qualify", "initBudget"],
     }),
 
-    formatReport: deterministicToolStep({
-      id: "prospect-engine-format-report",
-      title: "Format nightly report",
-      tool: "prospect_engine_format_report",
+    // The map/reveal agent's JSON reply needs the same fromJson-only unwrap
+    // (CL-4454) — tolerant here (see the tool's definition comment), since a
+    // thin/failed map must still deliver the qualified shortlist.
+    extractMapRevealOverlay: action({
+      handler: EXTRACT_MAP_REVEAL_OVERLAY_HANDLER,
+      input: { from: "steps.mapReveal.output" },
+      effect: { requires: [EXTRACT_MAP_REVEAL_OVERLAY_HANDLER] },
+      after: ["mapReveal"],
+    }),
+
+    // Qualify already emits its shortlist aliased as `baseAccounts` (in
+    // addition to `accounts`) so this merge never collides on the map
+    // overlay's own `accounts` key (CL-4454) — no reshape step needed here.
+    formatReport: action({
+      handler: FORMAT_REPORT_HANDLER,
       input: {
         merge: [
           { from: "trigger.payload" },
-          { from: "steps.mapReveal.output" },
+          { from: "steps.extractMapRevealOverlay.output.content" },
           { from: "steps.qualify.output.content" },
           { from: "steps.initBudget.output.content" },
         ],
       },
-      argMap: {
-        runDate: { from: "runDate" },
-        // Qualified shortlist is the membership/order authority.
-        baseAccounts: { from: "accounts" },
-        // Map/reveal overlay (contacts/emails). Optional so a thin/failed map
-        // still delivers the qualified shortlist via baseAccounts merge.
-        accounts: {
-          fromJson: "reply",
-          field: "accounts",
-          optional: true,
-        },
-        // Durable budget id — format_report reads used credits from the store.
-        budgetId: { from: "budgetId", optional: true },
-        // Fallback if budget store miss (agent-reported charges).
-        creditsUsed: {
-          fromJson: "reply",
-          field: "creditsCharged",
-          optional: true,
-        },
-        stopReason: { fromJson: "reply", field: "stopReason", optional: true },
-      },
-      after: ["mapReveal", "qualify", "initBudget"],
+      effect: { requires: [FORMAT_REPORT_HANDLER] },
+      after: ["extractMapRevealOverlay", "qualify", "initBudget"],
     }),
 
-    persist: deterministicToolStep({
-      id: "prospect-engine-save-nightly-report",
-      title: "Save the nightly prospect report",
-      tool: "write_artifact",
+    // Trigger payload's report title field is named `title` at the source
+    // (this workflow's own intake — @workbench/shared's
+    // ProspectEngineTriggerPayloadSchema, CL-4454) precisely so it lands on
+    // write_artifact's `title` arg unrenamed; formatReport already emits
+    // `body` verbatim. No reshape needed.
+    persist: action({
+      handler: WRITE_ARTIFACT_REPORT_HANDLER,
       input: {
         merge: [
           { from: "trigger.payload" },
           { from: "steps.formatReport.output.content" },
+          {
+            literal: {
+              kind: PROSPECT_ENGINE_ARTIFACT_KIND_REPORT,
+              jobLabel: label,
+            },
+          },
         ],
       },
-      argMap: {
-        title: { from: "artifactTitle" },
-        body: { from: "body" },
-        kind: { literal: PROSPECT_ENGINE_ARTIFACT_KIND_REPORT },
-        jobLabel: { literal: label },
-      },
+      effect: { requires: [WRITE_ARTIFACT_REPORT_HANDLER] },
       after: ["formatReport"],
     }),
 
@@ -383,32 +440,25 @@ export const workflow = defineWorkflow({
     // Read accounts/credits/stopReason from formatReport (always present) —
     // never re-parse map reply or optional trigger fields (optional argMap
     // keys skip the whole step when absent).
-    formatDigest: deterministicToolStep({
-      id: "prospect-engine-format-slack-digest",
-      title: "Format Slack digest",
-      tool: "prospect_engine_format_slack_digest",
+    // write_artifact's result carries { artifactId, version, title } as a
+    // plain object already (never a stringified JSON envelope), so
+    // `artifactId` is a straight top-level field once merged — no reshape
+    // needed (CL-4454).
+    formatDigest: action({
+      handler: FORMAT_SLACK_DIGEST_HANDLER,
       input: {
         merge: [
           { from: "trigger.payload" },
           { from: "steps.formatReport.output.content" },
-          { from: "steps.persist.output" },
+          { from: "steps.persist.output.content" },
         ],
       },
-      argMap: {
-        runDate: { from: "runDate" },
-        accounts: { from: "accounts" },
-        creditsUsed: { from: "creditsUsed" },
-        stopReason: { from: "stopReason" },
-        artifactId: { fromJson: "content", field: "artifactId" },
-        runId: { from: "runId" },
-      },
+      effect: { requires: [FORMAT_SLACK_DIGEST_HANDLER] },
       after: ["formatReport", "persist"],
     }),
 
-    mergeLedger: deterministicToolStep({
-      id: "prospect-engine-merge-ledger",
-      title: "Merge tonight into ledger",
-      tool: "prospect_engine_merge_ledger",
+    mergeLedger: action({
+      handler: MERGE_LEDGER_HANDLER,
       input: {
         merge: [
           { from: "trigger.payload" },
@@ -416,29 +466,28 @@ export const workflow = defineWorkflow({
           { from: "steps.formatReport.output.content" },
         ],
       },
-      argMap: {
-        ledger: { from: "ledger" },
-        runDate: { from: "runDate" },
-        accounts: { from: "accounts" },
-        creditsUsed: { from: "creditsUsed" },
-        stopReason: { from: "stopReason" },
-      },
+      effect: { requires: [MERGE_LEDGER_HANDLER] },
       after: ["parseLedger", "formatReport"],
     }),
 
-    saveLedger: deterministicToolStep({
-      id: "prospect-engine-save-ledger-artifact",
-      title: "Save the prospect ledger artifact",
-      tool: "write_artifact",
+    // mergeLedger emits `body` as an alias of its serialized `content` field
+    // (single caller, CL-4454) precisely so write_artifact — shared across
+    // every workflow, its arg name is never renamed — sees `body` unrenamed.
+    saveLedger: action({
+      handler: WRITE_ARTIFACT_LEDGER_HANDLER,
       input: {
-        merge: [{ from: "steps.mergeLedger.output.content" }],
+        merge: [
+          { from: "steps.mergeLedger.output.content" },
+          {
+            literal: {
+              title: PROSPECT_ENGINE_LEDGER_ARTIFACT_TITLE,
+              kind: PROSPECT_ENGINE_ARTIFACT_KIND_LEDGER,
+              jobLabel: label,
+            },
+          },
+        ],
       },
-      argMap: {
-        title: { literal: PROSPECT_ENGINE_LEDGER_ARTIFACT_TITLE },
-        body: { from: "content" },
-        kind: { literal: PROSPECT_ENGINE_ARTIFACT_KIND_LEDGER },
-        jobLabel: { literal: label },
-      },
+      effect: { requires: [WRITE_ARTIFACT_LEDGER_HANDLER] },
       after: ["mergeLedger"],
     }),
 
@@ -507,7 +556,7 @@ export const workflow = defineWorkflow({
       },
       argMap: {
         to: { from: "userAddress" },
-        subject: { from: "artifactTitle" },
+        subject: { from: "title" },
         content: { from: "text" },
         refs: { from: "refs" },
       },
