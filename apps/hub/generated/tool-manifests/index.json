@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-07-25T15:44:49.263Z",
+  "generatedAt": "2026-07-25T15:56:30.895Z",
   "factories": [
     {
       "factoryId": "@workbench/tools-ab-compare/compose",
@@ -1325,10 +1325,22 @@
       "packageName": "@workbench/tools-sumble-account-intel",
       "providerName": null,
       "bareToolNames": [
-        "sumble_account_intel_format_report_document"
+        "sumble_account_intel_enrich_contacts",
+        "sumble_account_intel_format_report_document",
+        "sumble_account_intel_list_jobs",
+        "sumble_account_intel_list_teams",
+        "sumble_account_intel_resolve_organization",
+        "sumble_account_intel_search_people",
+        "sumble_account_intel_search_signals"
       ],
       "sideEffects": {
-        "sumble_account_intel_format_report_document": "read"
+        "sumble_account_intel_format_report_document": "read",
+        "sumble_account_intel_resolve_organization": "read",
+        "sumble_account_intel_search_people": "read",
+        "sumble_account_intel_list_teams": "read",
+        "sumble_account_intel_list_jobs": "read",
+        "sumble_account_intel_search_signals": "read",
+        "sumble_account_intel_enrich_contacts": "read"
       },
       "myraCatalog": null,
       "credentialCatalog": null

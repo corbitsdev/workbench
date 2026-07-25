@@ -83,89 +83,79 @@
         "drainBehavior": "wait"
       },
       "resolve": {
-        "kind": "step",
+        "kind": "action",
         "id": "resolve",
-        "agent": {
-          "id": "sumble-account-intel-resolve",
-          "systemPrompt": "",
-          "toolFactories": [],
-          "capabilities": [
-            "@workbench/tools-sumble/sumble:sumble_resolve_organization"
-          ],
-          "inference": {
-            "sources": []
-          },
-          "description": "Deterministic tool call: @workbench/tools-sumble/sumble:sumble_resolve_organization",
-          "tags": {
-            "workbench.stepKind": "deterministic-tool",
-            "workbench.tool": "@workbench/tools-sumble/sumble:sumble_resolve_organization",
-            "workbench.argMap": "{\"identifier\":{\"from\":\"organizationDomain\"}}",
-            "workbench.title": "Resolve the organization"
-          }
-        },
+        "handler": "@workbench/tools-sumble-account-intel/core:sumble_account_intel_resolve_organization",
         "drainBehavior": "cancel",
         "input": {
           "from": "steps.intake.output"
+        },
+        "effect": {
+          "requires": [
+            "@workbench/tools-sumble-account-intel/core:sumble_account_intel_resolve_organization"
+          ]
         },
         "after": [
           "intake"
         ]
       },
       "teams": {
-        "kind": "step",
+        "kind": "action",
         "id": "teams",
-        "agent": {
-          "id": "sumble-account-intel-teams",
-          "systemPrompt": "",
-          "toolFactories": [],
-          "capabilities": [
-            "@workbench/tools-sumble/sumble:sumble_list_teams"
-          ],
-          "inference": {
-            "sources": []
-          },
-          "description": "Deterministic tool call: @workbench/tools-sumble/sumble:sumble_list_teams",
-          "tags": {
-            "workbench.stepKind": "deterministic-tool",
-            "workbench.tool": "@workbench/tools-sumble/sumble:sumble_list_teams",
-            "workbench.argMap": "{\"organizationSlug\":{\"from\":\"slug\"},\"limit\":{\"literal\":25}}",
-            "workbench.nonFatal": "true",
-            "workbench.title": "List the teams"
-          }
-        },
+        "handler": "@workbench/tools-sumble-account-intel/core:sumble_account_intel_list_teams",
         "drainBehavior": "cancel",
         "input": {
-          "from": "steps.resolve.output.content"
+          "merge": [
+            {
+              "project": {
+                "from": "steps.resolve.output.content"
+              },
+              "fields": [
+                "slug"
+              ]
+            },
+            {
+              "literal": {
+                "limit": 25
+              }
+            }
+          ]
+        },
+        "effect": {
+          "requires": [
+            "@workbench/tools-sumble-account-intel/core:sumble_account_intel_list_teams"
+          ]
         },
         "after": [
           "resolve"
         ]
       },
       "jobs": {
-        "kind": "step",
+        "kind": "action",
         "id": "jobs",
-        "agent": {
-          "id": "sumble-account-intel-jobs",
-          "systemPrompt": "",
-          "toolFactories": [],
-          "capabilities": [
-            "@workbench/tools-sumble/sumble:sumble_list_jobs"
-          ],
-          "inference": {
-            "sources": []
-          },
-          "description": "Deterministic tool call: @workbench/tools-sumble/sumble:sumble_list_jobs",
-          "tags": {
-            "workbench.stepKind": "deterministic-tool",
-            "workbench.tool": "@workbench/tools-sumble/sumble:sumble_list_jobs",
-            "workbench.argMap": "{\"organizationSlug\":{\"from\":\"slug\"},\"limit\":{\"literal\":25}}",
-            "workbench.nonFatal": "true",
-            "workbench.title": "List the open jobs"
-          }
-        },
+        "handler": "@workbench/tools-sumble-account-intel/core:sumble_account_intel_list_jobs",
         "drainBehavior": "cancel",
         "input": {
-          "from": "steps.resolve.output.content"
+          "merge": [
+            {
+              "project": {
+                "from": "steps.resolve.output.content"
+              },
+              "fields": [
+                "slug"
+              ]
+            },
+            {
+              "literal": {
+                "limit": 25
+              }
+            }
+          ]
+        },
+        "effect": {
+          "requires": [
+            "@workbench/tools-sumble-account-intel/core:sumble_account_intel_list_jobs"
+          ]
         },
         "after": [
           "teams"
@@ -203,96 +193,79 @@
         ]
       },
       "contacts": {
-        "kind": "step",
+        "kind": "action",
         "id": "contacts",
-        "agent": {
-          "id": "sumble-account-intel-contacts",
-          "systemPrompt": "",
-          "toolFactories": [],
-          "capabilities": [
-            "@workbench/tools-sumble/sumble:sumble_search_people"
-          ],
-          "inference": {
-            "sources": []
-          },
-          "description": "Deterministic tool call: @workbench/tools-sumble/sumble:sumble_search_people",
-          "tags": {
-            "workbench.stepKind": "deterministic-tool",
-            "workbench.tool": "@workbench/tools-sumble/sumble:sumble_search_people",
-            "workbench.argMap": "{\"organizationSlug\":{\"from\":\"slug\"},\"limit\":{\"literal\":10}}",
-            "workbench.title": "Find the contacts"
-          }
-        },
+        "handler": "@workbench/tools-sumble-account-intel/core:sumble_account_intel_search_people",
         "drainBehavior": "cancel",
         "input": {
-          "from": "steps.resolve.output.content"
+          "merge": [
+            {
+              "project": {
+                "from": "steps.resolve.output.content"
+              },
+              "fields": [
+                "slug"
+              ]
+            },
+            {
+              "literal": {
+                "limit": 10
+              }
+            }
+          ]
+        },
+        "effect": {
+          "requires": [
+            "@workbench/tools-sumble-account-intel/core:sumble_account_intel_search_people"
+          ]
         },
         "after": [
           "techStack"
         ]
       },
       "signals": {
-        "kind": "step",
+        "kind": "action",
         "id": "signals",
-        "agent": {
-          "id": "sumble-account-intel-signals",
-          "systemPrompt": "",
-          "toolFactories": [],
-          "capabilities": [
-            "@workbench/tools-sumble/sumble:sumble_search_signals"
-          ],
-          "inference": {
-            "sources": []
-          },
-          "description": "Deterministic tool call: @workbench/tools-sumble/sumble:sumble_search_signals",
-          "tags": {
-            "workbench.stepKind": "deterministic-tool",
-            "workbench.tool": "@workbench/tools-sumble/sumble:sumble_search_signals",
-            "workbench.argMap": "{\"organizationSlug\":{\"from\":\"slug\"},\"limit\":{\"literal\":25}}",
-            "workbench.nonFatal": "true",
-            "workbench.title": "Scan the buying signals"
-          }
-        },
+        "handler": "@workbench/tools-sumble-account-intel/core:sumble_account_intel_search_signals",
         "drainBehavior": "cancel",
         "input": {
-          "from": "steps.resolve.output.content"
+          "merge": [
+            {
+              "project": {
+                "from": "steps.resolve.output.content"
+              },
+              "fields": [
+                "slug"
+              ]
+            },
+            {
+              "literal": {
+                "limit": 25
+              }
+            }
+          ]
+        },
+        "effect": {
+          "requires": [
+            "@workbench/tools-sumble-account-intel/core:sumble_account_intel_search_signals"
+          ]
         },
         "after": [
           "contacts"
         ]
       },
       "enrichSocial": {
-        "kind": "map",
+        "kind": "action",
         "id": "enrichSocial",
-        "over": {
-          "from": "steps.contacts.output.content.people"
+        "handler": "@workbench/tools-sumble-account-intel/core:sumble_account_intel_enrich_contacts",
+        "drainBehavior": "cancel",
+        "input": {
+          "from": "steps.contacts.output.content"
         },
-        "step": {
-          "kind": "step",
-          "id": "",
-          "agent": {
-            "id": "sumble-account-intel-enrich-social",
-            "systemPrompt": "",
-            "toolFactories": [],
-            "capabilities": [
-              "@workbench/tools-x/x:x_search"
-            ],
-            "inference": {
-              "sources": []
-            },
-            "description": "Deterministic tool call: @workbench/tools-x/x:x_search",
-            "tags": {
-              "workbench.stepKind": "deterministic-tool",
-              "workbench.tool": "@workbench/tools-x/x:x_search",
-              "workbench.argMap": "{\"query\":{\"from\":\"name\"},\"limit\":{\"literal\":5}}",
-              "workbench.nonFatal": "true",
-              "workbench.title": "Find the contact on X"
-            }
-          },
-          "drainBehavior": "cancel",
-          "input": {
-            "from": "trigger.payload"
-          }
+        "effect": {
+          "requires": [
+            "@workbench/tools-sumble-account-intel/core:sumble_account_intel_enrich_contacts"
+          ]
         },
         "after": [
           "signals"
