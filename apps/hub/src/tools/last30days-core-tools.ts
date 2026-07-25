@@ -21,6 +21,7 @@ import {
   COMPETITOR_ANALYSIS_FORMAT_REPORT_DOCUMENT_DEFINITION,
   SUMBLE_ACCOUNT_INTEL_FORMAT_REPORT_DOCUMENT_DEFINITION,
   FIRECRAWL_URL_WATCH_FORMAT_DOCUMENT_DEFINITION,
+  GITHUB_TOPIC_WATCH_FORMAT_ACTIVITY_QUERY_DEFINITION,
   createLast30daysTools,
 } from "@workbench/tools-last30days";
 import type { ContextToolEntry } from "../lib/tool-registry";
@@ -111,5 +112,10 @@ export const LAST30DAYS_CORE_HUB_TOOLS: Record<string, ContextToolEntry> = {
     sideEffect: "read",
     definition: FIRECRAWL_URL_WATCH_FORMAT_DOCUMENT_DEFINITION,
     createTools: toolByName("firecrawl_url_watch_format_document"),
+  },
+  github_topic_watch_format_activity_query: {
+    sideEffect: "read",
+    definition: GITHUB_TOPIC_WATCH_FORMAT_ACTIVITY_QUERY_DEFINITION,
+    createTools: toolByName("github_topic_watch_format_activity_query"),
   },
 };

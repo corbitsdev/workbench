@@ -52,6 +52,9 @@ export const toolManifestFile = {
         firecrawl_url_watch_format_document: {
           sideEffect: "read",
         },
+        github_topic_watch_format_activity_query: {
+          sideEffect: "read",
+        },
       },
       myraCatalog: null,
       credentialCatalog: null,
