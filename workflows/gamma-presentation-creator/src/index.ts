@@ -2,7 +2,6 @@ import { action, awaitSignal, defineWorkflow } from "@intx/workflow";
 import type { Primitive } from "@intx/workflow";
 import {
   canonicalizeStepToolName,
-  deterministicToolStep,
   agentStep,
   LLM_DEFAULT_MODEL,
 } from "@workbench/agents";
@@ -45,6 +44,14 @@ export const PREPARE_PERSIST_HANDLER = canonicalizeStepToolName(
   "presentation-prepare-persist",
   "gamma_presentation_creator_prepare_persist",
 );
+export const FETCH_ARTIFACT_HANDLER = canonicalizeStepToolName(
+  "presentation-fetch-artifact",
+  "gamma_presentation_creator_fetch_artifact",
+);
+export const FETCH_NOTE_HANDLER = canonicalizeStepToolName(
+  "presentation-fetch-note",
+  "gamma_presentation_creator_fetch_note",
+);
 export const ARTIFACT_LINK_GAMMA_PRESENTATION_HANDLER =
   canonicalizeStepToolName(
     "presentation-persist",
@@ -75,30 +82,26 @@ const setupSteps: Record<string, Primitive> = {
     name: "intake",
     after: ["list-artifacts", "list-notes"],
   }),
-  // `artifactId`/`noteId` are the SOLE argMap field of these steps and each
-  // is also the underlying tool's only required argument (artifact_read /
-  // granola_get_note both require it) — there is no sensible "call the tool
-  // without it", so these use `skipStepIfAbsent` rather than `optional`: a
-  // text-source intake carries neither, so the harness skips the tool call
-  // entirely (no throw, no error log) instead of degrading through the
-  // nonFatal isError path.
-  "fetch-artifact": deterministicToolStep({
-    id: "presentation-fetch-artifact",
-    title: "Load the chosen artifact",
-    tool: "artifact_read",
+  // `artifactId`/`noteId` are each optional on the intake payload — a
+  // text-source intake carries neither. Native `action` (CL-4454) has no
+  // argMap/skipStepIfAbsent and no nonFatal error-swallow, so both concerns
+  // move into the wrapper tool itself (`fetch-tools.ts`, CL-4464): missing id
+  // -> `{ skipped: true }` without calling the underlying tool; a failed
+  // fetch -> a completed `{ isError: true, error }` envelope instead of a
+  // thrown step failure. Sourceless generation is a supported mode
+  // (`GammaIntakePayloadSchema` makes all three source fields optional), so
+  // neither step may fail the run.
+  "fetch-artifact": action({
+    handler: FETCH_ARTIFACT_HANDLER,
     after: ["intake"],
     input: { from: "steps.intake.output" },
-    argMap: { artifactId: { from: "artifactId", skipStepIfAbsent: true } },
-    nonFatal: true,
+    effect: { requires: [FETCH_ARTIFACT_HANDLER] },
   }),
-  "fetch-note": deterministicToolStep({
-    id: "presentation-fetch-note",
-    title: "Load the chosen note",
-    tool: "granola_get_note",
+  "fetch-note": action({
+    handler: FETCH_NOTE_HANDLER,
     after: ["intake"],
     input: { from: "steps.intake.output" },
-    argMap: { noteId: { from: "noteId", skipStepIfAbsent: true } },
-    nonFatal: true,
+    effect: { requires: [FETCH_NOTE_HANDLER] },
   }),
   generate: agentStep({
     id: "presentation-generate",

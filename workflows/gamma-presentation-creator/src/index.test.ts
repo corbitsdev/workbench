@@ -2,17 +2,13 @@ import { describe, expect, test } from "bun:test";
 import type { ActionHandler } from "@intx/workflow/runlocal";
 import type { StepInvoker } from "@intx/workflow/runtime";
 import { runLocal } from "@intx/workflow/runlocal";
-import {
-  STEP_KIND_TAG,
-  STEP_TOOL_TAG,
-  STEP_ARGMAP_TAG,
-  STEP_NONFATAL_TAG,
-  DETERMINISTIC_TOOL_KIND,
-} from "@workbench/agents";
+import { STEP_KIND_TAG } from "@workbench/agents";
 
 import {
   ARTIFACT_LINK_GAMMA_PRESENTATION_HANDLER,
   ARTIFACT_LIST_HANDLER,
+  FETCH_ARTIFACT_HANDLER,
+  FETCH_NOTE_HANDLER,
   GAMMA_CREATE_FROM_TEMPLATE_HANDLER,
   GRANOLA_LIST_NOTES_HANDLER,
   PREPARE_PERSIST_HANDLER,
@@ -132,8 +128,6 @@ describe("gamma-presentation-creator native action wiring", () => {
 describe("artifact → gamma deck workflow (single-shot)", () => {
   test("intake drives the whole run to persist with no further gate", async () => {
     const { invoker, ran } = makeRecordingInvoker({
-      "presentation-fetch-artifact": {},
-      "presentation-fetch-note": {},
       "presentation-generate": { reply: "SLIDE 1: v1" },
       "presentation-describe": { reply: "A deck about v1" },
     });
@@ -142,6 +136,8 @@ describe("artifact → gamma deck workflow (single-shot)", () => {
       {
         [ARTIFACT_LIST_HANDLER]: { content: { artifacts: [] } },
         [GRANOLA_LIST_NOTES_HANDLER]: { content: { notes: [] } },
+        [FETCH_ARTIFACT_HANDLER]: { content: { skipped: true } },
+        [FETCH_NOTE_HANDLER]: { content: { skipped: true } },
         [PREPARE_RENDER_HANDLER]: {
           content: { gammaId: "tmpl_1", prompt: "SLIDE 1: v1" },
         },
@@ -186,6 +182,8 @@ describe("artifact → gamma deck workflow (single-shot)", () => {
     expect(refs).toEqual([
       ARTIFACT_LIST_HANDLER,
       GRANOLA_LIST_NOTES_HANDLER,
+      FETCH_ARTIFACT_HANDLER,
+      FETCH_NOTE_HANDLER,
       PREPARE_RENDER_HANDLER,
       GAMMA_CREATE_FROM_TEMPLATE_HANDLER,
       PREPARE_PERSIST_HANDLER,
@@ -194,9 +192,7 @@ describe("artifact → gamma deck workflow (single-shot)", () => {
   });
 
   test("both readers run and each receives its intake id", async () => {
-    const { invoker, ran } = makeRecordingInvoker({
-      "presentation-fetch-artifact": {},
-      "presentation-fetch-note": {},
+    const { invoker } = makeRecordingInvoker({
       "presentation-generate": { reply: "SLIDE 1: v1" },
       "presentation-describe": { reply: "A deck about v1" },
     });
@@ -205,6 +201,8 @@ describe("artifact → gamma deck workflow (single-shot)", () => {
       {
         [ARTIFACT_LIST_HANDLER]: { content: { artifacts: [] } },
         [GRANOLA_LIST_NOTES_HANDLER]: { content: { notes: [] } },
+        [FETCH_ARTIFACT_HANDLER]: { content: { skipped: true } },
+        [FETCH_NOTE_HANDLER]: { content: { skipped: true } },
         [PREPARE_RENDER_HANDLER]: {
           content: { gammaId: "t", prompt: "SLIDE 1: v1" },
         },
@@ -240,18 +238,16 @@ describe("artifact → gamma deck workflow (single-shot)", () => {
     });
     await run.complete;
 
-    const artifactRead = ran.find(
-      (r) => r.id === "presentation-fetch-artifact",
+    const artifactRead = actionCalls.find(
+      (c) => c.ref === FETCH_ARTIFACT_HANDLER,
     );
-    const noteRead = ran.find((r) => r.id === "presentation-fetch-note");
+    const noteRead = actionCalls.find((c) => c.ref === FETCH_NOTE_HANDLER);
     expect(artifactRead?.input).toMatchObject({ artifactId: "art_42" });
     expect(noteRead?.input).toMatchObject({ noteId: "note_7" });
   });
 
   test("pasted text reaches the generate step", async () => {
     const { invoker, ran } = makeRecordingInvoker({
-      "presentation-fetch-artifact": {},
-      "presentation-fetch-note": {},
       "presentation-generate": { reply: "SLIDE 1: v1" },
       "presentation-describe": { reply: "A deck about v1" },
     });
@@ -260,6 +256,8 @@ describe("artifact → gamma deck workflow (single-shot)", () => {
       {
         [ARTIFACT_LIST_HANDLER]: { content: { artifacts: [] } },
         [GRANOLA_LIST_NOTES_HANDLER]: { content: { notes: [] } },
+        [FETCH_ARTIFACT_HANDLER]: { content: { skipped: true } },
+        [FETCH_NOTE_HANDLER]: { content: { skipped: true } },
         [PREPARE_RENDER_HANDLER]: {
           content: { gammaId: "tmpl_1", prompt: "SLIDE 1: v1" },
         },
@@ -300,8 +298,6 @@ describe("artifact → gamma deck workflow (single-shot)", () => {
 
   test("prepare-render receives the template gammaId and the draft reply", async () => {
     const { invoker } = makeRecordingInvoker({
-      "presentation-fetch-artifact": {},
-      "presentation-fetch-note": {},
       "presentation-generate": { reply: "SLIDE 1: v1" },
       "presentation-describe": { reply: "A deck about v1" },
     });
@@ -310,6 +306,8 @@ describe("artifact → gamma deck workflow (single-shot)", () => {
       {
         [ARTIFACT_LIST_HANDLER]: { content: { artifacts: [] } },
         [GRANOLA_LIST_NOTES_HANDLER]: { content: { notes: [] } },
+        [FETCH_ARTIFACT_HANDLER]: { content: { skipped: true } },
+        [FETCH_NOTE_HANDLER]: { content: { skipped: true } },
         [PREPARE_RENDER_HANDLER]: {
           content: { gammaId: "tmpl_77", prompt: "SLIDE 1: v1" },
         },
@@ -354,8 +352,6 @@ describe("artifact → gamma deck workflow (single-shot)", () => {
 
   test("prepare-persist receives the rendered deck url, the description, and the NEW gammaId (not the template id)", async () => {
     const { invoker } = makeRecordingInvoker({
-      "presentation-fetch-artifact": {},
-      "presentation-fetch-note": {},
       "presentation-generate": { reply: "SLIDE 1: v1" },
       "presentation-describe": { reply: "A deck about v1" },
     });
@@ -364,6 +360,8 @@ describe("artifact → gamma deck workflow (single-shot)", () => {
       {
         [ARTIFACT_LIST_HANDLER]: { content: { artifacts: [] } },
         [GRANOLA_LIST_NOTES_HANDLER]: { content: { notes: [] } },
+        [FETCH_ARTIFACT_HANDLER]: { content: { skipped: true } },
+        [FETCH_NOTE_HANDLER]: { content: { skipped: true } },
         [PREPARE_RENDER_HANDLER]: {
           content: { gammaId: "tmpl_1", prompt: "SLIDE 1: v1" },
         },
@@ -410,31 +408,80 @@ describe("artifact → gamma deck workflow (single-shot)", () => {
     });
   });
 
-  test("the readers are deterministic, non-fatal, and skip the whole step when the intake id is absent", () => {
-    // artifactId/noteId are each the sole argMap field and the underlying
-    // tool's only required argument, so there is no sensible "call without
-    // it" — these use skipStepIfAbsent, not optional (which would omit the
-    // argument and call the tool anyway). This gap is genuine: native
-    // `action` has no error-swallow / conditional-skip equivalent, so these
-    // two steps stay on `deterministicToolStep` (CL-4454).
-    for (const [key, tool, arg] of [
-      ["fetch-artifact", "artifact_read", "artifactId"],
-      ["fetch-note", "granola_get_note", "noteId"],
-    ] as const) {
-      const reader = workflow.steps[key];
-      if (reader === undefined || reader.kind !== "step") {
-        throw new Error(`expected a step primitive for ${key}`);
-      }
-      expect(reader.agent.tags?.[STEP_KIND_TAG]).toBe(DETERMINISTIC_TOOL_KIND);
-      expect(reader.agent.tags?.[STEP_TOOL_TAG]).toContain(tool);
-      expect(reader.agent.tags?.[STEP_NONFATAL_TAG]).toBe("true");
-      expect(JSON.parse(reader.agent.tags?.[STEP_ARGMAP_TAG] ?? "{}")).toEqual({
-        [arg]: { from: arg, skipStepIfAbsent: true },
-      });
-    }
+  test("fetch-artifact/fetch-note are native actions dispatching the tolerant wrapper tools (CL-4464)", () => {
+    const fetchArtifact = actionPrimitive("fetch-artifact");
+    expect(fetchArtifact.handler).toBe(FETCH_ARTIFACT_HANDLER);
+    expect(fetchArtifact.input).toEqual({ from: "steps.intake.output" });
+    expect(fetchArtifact.effect).toEqual({
+      requires: [FETCH_ARTIFACT_HANDLER],
+    });
+    expect(fetchArtifact.after).toEqual(["intake"]);
+
+    const fetchNote = actionPrimitive("fetch-note");
+    expect(fetchNote.handler).toBe(FETCH_NOTE_HANDLER);
+    expect(fetchNote.input).toEqual({ from: "steps.intake.output" });
+    expect(fetchNote.effect).toEqual({ requires: [FETCH_NOTE_HANDLER] });
+    expect(fetchNote.after).toEqual(["intake"]);
   });
 
-  test("generate/describe stay inline agent steps; list/render/persist are native actions", () => {
+  test("a failed fetch-artifact/fetch-note does not fail the run — the wrapper tool absorbs it", async () => {
+    const { invoker } = makeRecordingInvoker({
+      "presentation-generate": { reply: "SLIDE 1: v1" },
+      "presentation-describe": { reply: "A deck about v1" },
+    });
+    const actionCalls: Record<string, unknown>[] = [];
+    const actionResolver = makeActionResolver(
+      {
+        [ARTIFACT_LIST_HANDLER]: { content: { artifacts: [] } },
+        [GRANOLA_LIST_NOTES_HANDLER]: { content: { notes: [] } },
+        // Simulates the wrapper tool's own catch: a completed envelope
+        // carrying the failure, never a thrown action error.
+        [FETCH_ARTIFACT_HANDLER]: {
+          content: { isError: true, error: "artifact not found" },
+        },
+        [FETCH_NOTE_HANDLER]: { content: { skipped: true } },
+        [PREPARE_RENDER_HANDLER]: {
+          content: { gammaId: "tmpl_1", prompt: "SLIDE 1: v1" },
+        },
+        [GAMMA_CREATE_FROM_TEMPLATE_HANDLER]: {
+          content: {
+            gammaUrl: "https://gamma.app/docs/1",
+            url: "https://gamma.app/docs/1",
+            gammaId: "deck_1",
+            exportUrl: "",
+          },
+        },
+        [PREPARE_PERSIST_HANDLER]: {
+          content: {
+            title: "Q3 Deck",
+            description: "A deck about v1",
+            url: "https://gamma.app/docs/1",
+            gammaId: "deck_1",
+            pdfUrl: "",
+          },
+        },
+        [ARTIFACT_LINK_GAMMA_PRESENTATION_HANDLER]: { artifactId: "art_new" },
+      },
+      actionCalls,
+    );
+    const run = runLocal(workflow, { invokeStep: invoker, actionResolver });
+
+    await run.signal("intake", {
+      artifactId: "art_missing",
+      deckTitle: "Q3 Deck",
+      gammaId: "tmpl_1",
+      goal: "Close",
+    });
+
+    const result = await run.complete;
+    expect(result.terminalStatus).toBe("completed");
+    const persistCall = actionCalls.find(
+      (c) => c.ref === ARTIFACT_LINK_GAMMA_PRESENTATION_HANDLER,
+    );
+    expect(persistCall).toBeDefined();
+  });
+
+  test("generate/describe stay inline agent steps; list/fetch/render/persist are native actions", () => {
     const generate = workflow.steps["generate"];
     if (generate === undefined || generate.kind !== "step") {
       throw new Error("expected a step primitive for generate");
@@ -453,6 +500,8 @@ describe("artifact → gamma deck workflow (single-shot)", () => {
     for (const id of [
       "list-artifacts",
       "list-notes",
+      "fetch-artifact",
+      "fetch-note",
       "prepare-render",
       "render",
       "prepare-persist",

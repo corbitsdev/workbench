@@ -31,6 +31,10 @@ export const GRANOLA_LIST_NOTES_HANDLER = canonicalizeStepToolName(
   "multi-source-collateral-list-notes",
   "granola_list_notes",
 );
+export const LIST_ISSUES_HANDLER = canonicalizeStepToolName(
+  "multi-source-collateral-list-issues",
+  "multi_source_collateral_list_issues",
+);
 
 // ---------------------------------------------------------------------------
 // Step graph
@@ -146,19 +150,15 @@ export const workflow = defineWorkflow({
       effect: { requires: [GRANOLA_LIST_NOTES_HANDLER] },
     }),
 
-    // Linear may be unconfigured; nonFatal keeps the multi-source chooser
-    // usable. NOT migrated to native `action` — native has no error-swallow
-    // equivalent to `nonFatal` (the runtime propagates any thrown action
-    // error straight to `RunFailed`), and Linear being unconfigured is an
-    // expected, not exceptional, case here. Tracked as a separate ticket
-    // (CL-4454 follow-up) once/if the runtime grows a per-action
-    // catch-and-continue.
-    "list-issues": deterministicToolStep({
-      id: "multi-source-collateral-list-issues",
-      title: "List Linear issues",
-      tool: "linear_list_issues",
+    // Linear may be unconfigured; that must not fail the multi-source
+    // chooser. Native `action` (CL-4454) has no `nonFatal` error-swallow, so
+    // the tolerance moves into the wrapper tool itself (CL-4464,
+    // `list-issues-tool.ts`): it calls `linear_list_issues` in-process and
+    // returns a completed envelope on failure instead of throwing.
+    "list-issues": action({
+      handler: LIST_ISSUES_HANDLER,
       input: { literal: { first: 50 } },
-      nonFatal: true,
+      effect: { requires: [LIST_ISSUES_HANDLER] },
     }),
 
     sources: awaitSignal({

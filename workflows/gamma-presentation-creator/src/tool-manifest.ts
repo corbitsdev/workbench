@@ -17,5 +17,20 @@ export const toolManifestFile = {
       myraCatalog: null,
       credentialCatalog: null,
     }),
+    manifestFromHubToolEntries({
+      factoryId: "@workbench/tools-gamma-presentation-creator/fetch",
+      packageName: "@workbench/tools-gamma-presentation-creator",
+      providerName: null,
+      entries: {
+        gamma_presentation_creator_fetch_artifact: {
+          sideEffect: "read",
+        },
+        gamma_presentation_creator_fetch_note: {
+          sideEffect: "read",
+        },
+      },
+      myraCatalog: null,
+      credentialCatalog: null,
+    }),
   ],
 };

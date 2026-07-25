@@ -29,6 +29,9 @@
     "@workbench/blocks": "workspace:*",
     "@workbench/prompts": "workspace:*",
     "@workbench/shared": "workspace:*",
+    "@workbench/tool-credentials": "workspace:*",
+    "@workbench/tool-manifest": "workspace:*",
+    "@workbench/tools-linear": "workspace:*",
     "@workbench/ui": "workspace:*",
     "arktype": "catalog:",
     "react": "^19.0.0"
@@ -43,5 +46,9 @@
   },
   "peerDependencies": {
     "react": "*"
+  },
+  "interchange": {
+    "tools": "./dist/interchange-tools.js",
+    "manifest": "./src/tool-manifest.ts"
   }
 }
