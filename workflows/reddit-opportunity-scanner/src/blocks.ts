@@ -9,7 +9,10 @@
  *
  * Gates:
  *   1. intake — a `form` collecting the website URL (required) + optional brand
- *      / geography / ICP hints. Emitted verbatim as `{ inputUrl, ... }`; the
+ *      / geography / ICP hints. Emitted verbatim as `{ url, ... }` (renamed
+ *      from `inputUrl` so the native `scrape` action's `firecrawl_scrape`
+ *      call can pass it straight through — native selectors cannot rename a
+ *      key); the
  *      URL validation the panel enforced client-side is enforced server-side at
  *      the /resume boundary (RedditIntakePayloadSchema).
  *   2. recommendation-review — a pre-seeded `form` (CL-2773). The analyze step's
@@ -66,9 +69,9 @@ function humanizeStepId(stepId: string): string {
 }
 
 function intakeForm(signalName: string): UIBlock {
-  const inputUrl: FormField = {
+  const url: FormField = {
     kind: "text",
-    name: "inputUrl",
+    name: "url",
     label: "Website URL",
     placeholder: "https://example.com",
     required: true,
@@ -97,7 +100,7 @@ function intakeForm(signalName: string): UIBlock {
       "Enter the website to scan. We crawl it, infer keywords and subreddits, and let you review them before searching Reddit.",
     signalName,
     submitLabel: "Analyze site",
-    fields: [inputUrl, brandName, targetGeography, icpHints],
+    fields: [url, brandName, targetGeography, icpHints],
   };
 }
 

@@ -30,33 +30,43 @@
         "name": "intake",
         "drainBehavior": "wait"
       },
-      "fetch": {
-        "kind": "step",
-        "id": "fetch",
-        "agent": {
-          "id": "exa-topic-watch-fetch",
-          "systemPrompt": "",
-          "toolFactories": [],
-          "capabilities": [
-            "@workbench/tools-exa/exa:exa_search"
-          ],
-          "inference": {
-            "sources": []
-          },
-          "description": "Deterministic tool call: @workbench/tools-exa/exa:exa_search",
-          "tags": {
-            "workbench.stepKind": "deterministic-tool",
-            "workbench.tool": "@workbench/tools-exa/exa:exa_search",
-            "workbench.argMap": "{\"query\":{\"from\":\"topic\"}}",
-            "workbench.title": "Search the web"
-          }
-        },
+      "prepare-search": {
+        "kind": "action",
+        "id": "prepare-search",
+        "handler": "@workbench/tools-exa-topic-watch/core:exa_topic_watch_prepare_search",
         "drainBehavior": "cancel",
         "input": {
-          "from": "steps.intake.output"
+          "project": {
+            "from": "steps.intake.output"
+          },
+          "fields": [
+            "topic"
+          ]
+        },
+        "effect": {
+          "requires": [
+            "@workbench/tools-exa-topic-watch/core:exa_topic_watch_prepare_search"
+          ]
         },
         "after": [
           "intake"
+        ]
+      },
+      "fetch": {
+        "kind": "action",
+        "id": "fetch",
+        "handler": "@workbench/tools-exa/exa:exa_search",
+        "drainBehavior": "cancel",
+        "input": {
+          "from": "steps.prepare-search.output.content"
+        },
+        "effect": {
+          "requires": [
+            "@workbench/tools-exa/exa:exa_search"
+          ]
+        },
+        "after": [
+          "prepare-search"
         ]
       },
       "digest": {
@@ -91,26 +101,9 @@
         ]
       },
       "document": {
-        "kind": "step",
+        "kind": "action",
         "id": "document",
-        "agent": {
-          "id": "exa-topic-watch-document",
-          "systemPrompt": "",
-          "toolFactories": [],
-          "capabilities": [
-            "@workbench/tools-last30days/core:last30days_format_report_document"
-          ],
-          "inference": {
-            "sources": []
-          },
-          "description": "Deterministic tool call: @workbench/tools-last30days/core:last30days_format_report_document",
-          "tags": {
-            "workbench.stepKind": "deterministic-tool",
-            "workbench.tool": "@workbench/tools-last30days/core:last30days_format_report_document",
-            "workbench.argMap": "{\"topic\":{\"from\":\"topic\"},\"reply\":{\"from\":\"reply\"}}",
-            "workbench.title": "Compose the digest document"
-          }
-        },
+        "handler": "@workbench/tools-last30days/core:last30days_format_report_document",
         "drainBehavior": "cancel",
         "input": {
           "merge": [
@@ -122,37 +115,42 @@
             }
           ]
         },
+        "effect": {
+          "requires": [
+            "@workbench/tools-last30days/core:last30days_format_report_document"
+          ]
+        },
         "after": [
           "digest"
         ]
       },
       "persist": {
-        "kind": "step",
+        "kind": "action",
         "id": "persist",
-        "agent": {
-          "id": "exa-topic-watch-persist",
-          "systemPrompt": "",
-          "toolFactories": [],
-          "capabilities": [
-            "@workbench/tools-artifact/artifact:write_artifact"
-          ],
-          "inference": {
-            "sources": []
-          },
-          "description": "Deterministic tool call: @workbench/tools-artifact/artifact:write_artifact",
-          "tags": {
-            "workbench.stepKind": "deterministic-tool",
-            "workbench.tool": "@workbench/tools-artifact/artifact:write_artifact",
-            "workbench.argMap": "{\"title\":{\"from\":\"title\"},\"body\":{\"from\":\"body\"},\"kind\":{\"literal\":\"research\"},\"jobLabel\":{\"literal\":\"Web topic watch\"}}",
-            "workbench.title": "Save digest artifact"
-          }
-        },
+        "handler": "@workbench/tools-artifact/artifact:write_artifact",
         "drainBehavior": "cancel",
         "input": {
           "merge": [
             {
-              "from": "steps.document.output.content"
+              "project": {
+                "from": "steps.document.output.content"
+              },
+              "fields": [
+                "title",
+                "body"
+              ]
+            },
+            {
+              "literal": {
+                "kind": "research",
+                "jobLabel": "Web topic watch"
+              }
             }
+          ]
+        },
+        "effect": {
+          "requires": [
+            "@workbench/tools-artifact/artifact:write_artifact"
           ]
         },
         "after": [
@@ -162,6 +160,7 @@
     },
     "stepOrder": [
       "intake",
+      "prepare-search",
       "fetch",
       "digest",
       "document",

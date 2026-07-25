@@ -334,18 +334,18 @@ describe("validateResumePayload", () => {
   test("accepts a reddit intake with an http(s) URL and optional hints", () => {
     expect(
       validateResumePayload("reddit-opportunity-scanner", "intake", {
-        inputUrl: "https://example.com",
+        url: "https://example.com",
         brandName: "Acme",
       }),
     ).toEqual({ ok: true });
   });
 
-  test("rejects a reddit intake with a non-URL inputUrl (CL-2769)", () => {
-    // The scrape step fetches inputUrl; the panel enforced the http(s) shape
+  test("rejects a reddit intake with a non-URL url (CL-2769)", () => {
+    // The scrape action fetches url; the panel enforced the http(s) shape
     // client-side, and the boundary enforces it for the block form too.
     expect(
       validateResumePayload("reddit-opportunity-scanner", "intake", {
-        inputUrl: "not a url",
+        url: "not a url",
       }).ok,
     ).toBe(false);
   });

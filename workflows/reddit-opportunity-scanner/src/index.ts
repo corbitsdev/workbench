@@ -1,7 +1,8 @@
-import { awaitSignal, defineWorkflow, map } from "@intx/workflow";
+import { action, awaitSignal, defineWorkflow, map } from "@intx/workflow";
 import {
   deterministicToolStep,
   agentStep,
+  canonicalizeStepToolName,
   LLM_WRITER_MODEL,
 } from "@workbench/agents";
 import { buildAnalyzeSystemPrompt, buildCurateSystemPrompt } from "./prompts";
@@ -75,6 +76,19 @@ const persistStep = deterministicToolStep({
   argMap: PERSIST_ARG_MAP,
 });
 
+// Native `action` handler ref for the one step this migration can move:
+// `scrape`. `collect` and `persist` stay on `deterministicToolStep` — not by
+// choice but because `map`'s `step` is typed `StepPrimitive` only
+// (interchange/packages/workflow/src/definition/primitives.ts) and its
+// runtime (`runMap` in runtime/run.ts) invokes exclusively via `invokeStep`;
+// there is no code path to dispatch an `ActionPrimitive` per map iteration.
+// `collect` additionally carries `nonFatal: true`, which native `action` has
+// no equivalent for (separate ticket).
+export const FIRECRAWL_SCRAPE_HANDLER = canonicalizeStepToolName(
+  "reddit-opp-scrape",
+  "firecrawl_scrape",
+);
+
 export const workflow = defineWorkflow({
   id: kind,
   trigger: { type: "manual" },
@@ -82,13 +96,14 @@ export const workflow = defineWorkflow({
     // 1. Human supplies the website URL + optional brand / geography / ICP hints.
     intake: awaitSignal({ name: "intake" }),
 
-    // 2. Scrape the site deterministically (was a firecrawl_scrape tool call).
-    scrape: deterministicToolStep({
-      id: "reddit-opp-scrape",
-      title: "Scan the website",
-      tool: "firecrawl_scrape",
+    // 2. Scrape the site. Native action: `firecrawl_scrape`'s schema
+    //    declares `url` verbatim, so intake's own `url` field (renamed from
+    //    the pre-migration `inputUrl` to match the tool arg — native
+    //    selectors cannot rename a key) passes through unchanged.
+    scrape: action({
+      handler: FIRECRAWL_SCRAPE_HANDLER,
       input: { from: "steps.intake.output" },
-      argMap: { url: { from: "inputUrl" } },
+      effect: { requires: [FIRECRAWL_SCRAPE_HANDLER] },
       after: ["intake"],
     }),
 
