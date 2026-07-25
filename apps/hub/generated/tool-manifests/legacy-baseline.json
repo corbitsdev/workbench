@@ -42,6 +42,9 @@
     "@workbench/tools-bluesky/bluesky": [
       "bluesky_search"
     ],
+    "@workbench/tools-competitor-analysis/core": [
+      "competitor_analysis_format_report_document"
+    ],
     "@workbench/tools-corbits-knowledge-engine/corbits-knowledge-engine": [
       "capture_to_knowledge",
       "search_company_knowledge"
@@ -93,6 +96,9 @@
       "firecrawl_search",
       "firecrawl_token_usage"
     ],
+    "@workbench/tools-firecrawl-url-watch/core": [
+      "firecrawl_url_watch_format_document"
+    ],
     "@workbench/tools-gamma/gamma": [
       "gamma_create_from_template",
       "gamma_duplicate_presentation",
@@ -101,8 +107,15 @@
     "@workbench/tools-gamma/gamma-templates": [
       "gamma_list_templates"
     ],
+    "@workbench/tools-gamma-presentation-creator/core": [
+      "gamma_presentation_creator_prepare_persist",
+      "gamma_presentation_creator_prepare_render"
+    ],
     "@workbench/tools-github/github": [
       "github_activity"
+    ],
+    "@workbench/tools-github-topic-watch/core": [
+      "github_topic_watch_format_activity_query"
     ],
     "@workbench/tools-granola/call": [
       "granola_create_tasks",
@@ -130,13 +143,12 @@
     "@workbench/tools-hackernews/hackernews": [
       "hackernews_search"
     ],
-    "@workbench/tools-last30days/core": [
-      "competitor_analysis_format_report_document",
-      "firecrawl_url_watch_format_document",
-      "github_topic_watch_format_activity_query",
+    "@workbench/tools-heartbeat/core": [
       "heartbeat_format_brief_document",
       "heartbeat_format_brief_notify",
-      "heartbeat_format_brief_title",
+      "heartbeat_format_brief_title"
+    ],
+    "@workbench/tools-last30days/core": [
       "heartbeat_merge_brief_sources",
       "last30days_collect",
       "last30days_core_extract",
@@ -145,9 +157,7 @@
       "last30days_format_report_document",
       "last30days_ground_queries",
       "last30days_validate",
-      "last30days_workflow_brief",
-      "reddit_opportunity_watch_format_digest_document",
-      "sumble_account_intel_format_report_document"
+      "last30days_workflow_brief"
     ],
     "@workbench/tools-linear/linear": [
       "linear_archive_issue",
@@ -204,10 +214,15 @@
     "@workbench/tools-polymarket/polymarket": [
       "polymarket_odds"
     ],
+    "@workbench/tools-process-granola-call/core": [
+      "process_granola_prepare_document"
+    ],
     "@workbench/tools-prospect-engine/core": [
       "prospect_engine_charge_credits",
       "prospect_engine_dedupe_candidates",
+      "prospect_engine_extract_candidates_from_reply",
       "prospect_engine_extract_list_org_ids",
+      "prospect_engine_extract_map_reveal_overlay",
       "prospect_engine_format_mail_refs",
       "prospect_engine_format_report",
       "prospect_engine_format_slack_digest",
@@ -220,6 +235,9 @@
     "@workbench/tools-reddit/reddit": [
       "reddit_search",
       "reddit_subreddit_search"
+    ],
+    "@workbench/tools-reddit-opportunity-watch/core": [
+      "reddit_opportunity_watch_format_digest_document"
     ],
     "@workbench/tools-scrapecreators/scrapecreators": [
       "scrapecreators_instagram",
@@ -274,6 +292,9 @@
       "sumble_search_signals",
       "sumble_set_organization_list_deleted",
       "sumble_set_organization_list_signals"
+    ],
+    "@workbench/tools-sumble-account-intel/core": [
+      "sumble_account_intel_format_report_document"
     ],
     "@workbench/tools-vercel/deploy-artifact": [
       "vercel_deploy_artifact"
@@ -606,27 +627,35 @@
     "@workbench/tools-artifact",
     "@workbench/tools-attio",
     "@workbench/tools-bluesky",
+    "@workbench/tools-competitor-analysis",
     "@workbench/tools-corbits-knowledge-engine",
     "@workbench/tools-dispatch",
     "@workbench/tools-exa",
     "@workbench/tools-exa-topic-watch",
     "@workbench/tools-fileparser",
     "@workbench/tools-firecrawl",
+    "@workbench/tools-firecrawl-url-watch",
     "@workbench/tools-gamma",
+    "@workbench/tools-gamma-presentation-creator",
     "@workbench/tools-github",
+    "@workbench/tools-github-topic-watch",
     "@workbench/tools-granola",
     "@workbench/tools-gtm-scripts-briefs",
     "@workbench/tools-hackernews",
+    "@workbench/tools-heartbeat",
     "@workbench/tools-last30days",
     "@workbench/tools-linear",
     "@workbench/tools-notion",
     "@workbench/tools-polymarket",
+    "@workbench/tools-process-granola-call",
     "@workbench/tools-prospect-engine",
     "@workbench/tools-reddit",
+    "@workbench/tools-reddit-opportunity-watch",
     "@workbench/tools-scrapecreators",
     "@workbench/tools-skills",
     "@workbench/tools-slack",
     "@workbench/tools-sumble",
+    "@workbench/tools-sumble-account-intel",
     "@workbench/tools-vercel",
     "@workbench/tools-workflows",
     "@workbench/tools-x",
