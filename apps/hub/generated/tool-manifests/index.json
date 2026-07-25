@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-07-23T17:20:03.228Z",
+  "generatedAt": "2026-07-25T14:08:59.818Z",
   "factories": [
     {
       "factoryId": "@workbench/tools-ab-compare/compose",
@@ -287,6 +287,19 @@
       "credentialCatalog": {
         "label": "Exa"
       }
+    },
+    {
+      "factoryId": "@workbench/tools-exa-topic-watch/core",
+      "packageName": "@workbench/tools-exa-topic-watch",
+      "providerName": null,
+      "bareToolNames": [
+        "exa_topic_watch_prepare_search"
+      ],
+      "sideEffects": {
+        "exa_topic_watch_prepare_search": "read"
+      },
+      "myraCatalog": null,
+      "credentialCatalog": null
     },
     {
       "factoryId": "@workbench/tools-fileparser/fileparser",
