@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-07-25T14:59:24.449Z",
+  "generatedAt": "2026-07-25T15:20:40.639Z",
   "factories": [
     {
       "factoryId": "@workbench/tools-ab-compare/compose",
@@ -605,6 +605,19 @@
         "granola_parse_analysis": "Parse an LLM call-analysis reply into validated CallAnalysis JSON (fences stripped).",
         "granola_prepare_artifacts": "Build the three typed Granola call artifact payloads (pain points, summary, brief), each already shaped as write_artifact's arguments ({ title, kind, body, sourceRef }).",
         "granola_emit_run_outputs": "Assemble the granola-call workflow terminal output: noteId, classification, artifactsByKind."
+      },
+      "myraCatalog": null,
+      "credentialCatalog": null
+    },
+    {
+      "factoryId": "@workbench/tools-gtm-scripts-briefs/core",
+      "packageName": "@workbench/tools-gtm-scripts-briefs",
+      "providerName": null,
+      "bareToolNames": [
+        "gtm_scripts_briefs_prepare_persist"
+      ],
+      "sideEffects": {
+        "gtm_scripts_briefs_prepare_persist": "read"
       },
       "myraCatalog": null,
       "credentialCatalog": null
