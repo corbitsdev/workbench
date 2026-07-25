@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-07-25T14:59:24.449Z",
+  "generatedAt": "2026-07-25T15:20:53.450Z",
   "factories": [
     {
       "factoryId": "@workbench/tools-ab-compare/compose",
@@ -898,6 +898,19 @@
           "predictions"
         ]
       },
+      "credentialCatalog": null
+    },
+    {
+      "factoryId": "@workbench/tools-process-granola-call/core",
+      "packageName": "@workbench/tools-process-granola-call",
+      "providerName": null,
+      "bareToolNames": [
+        "process_granola_prepare_document"
+      ],
+      "sideEffects": {
+        "process_granola_prepare_document": "read"
+      },
+      "myraCatalog": null,
       "credentialCatalog": null
     },
     {
