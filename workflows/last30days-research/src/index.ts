@@ -5,7 +5,7 @@ import {
   canonicalizeStepToolName,
   LLM_WRITER_MODEL,
 } from "@workbench/agents";
-import { INTAKE_SIGNAL, STEP_UI_HINTS } from "./step-ui-hints";
+import { INTAKE_SIGNAL, STEP_UI } from "./step-ui";
 import {
   buildCurateSystemPrompt,
   buildEntityExtractSystemPrompt,
@@ -524,7 +524,7 @@ export function buildResearchSteps(): Record<string, Primitive> {
 // exports) — importing this main entry pulls in `defineWorkflow` and
 // `@workbench/agents`, both of which construct agents at module load time
 // and crash in the browser.
-export { INTAKE_SIGNAL, STEP_UI_HINTS };
+export { INTAKE_SIGNAL, STEP_UI };
 
 export const workflow = defineWorkflow({
   id: kind,

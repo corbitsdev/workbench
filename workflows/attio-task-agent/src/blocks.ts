@@ -35,6 +35,7 @@
  */
 import {
   gateFallbackBlock,
+  humanizeStepId,
   pendingGateForRun,
   progressStateForStepPhase,
   runPageRedirectBlock,
@@ -63,10 +64,6 @@ export interface AttioTaskAgentBlockInput extends DockRunInput {
    * (the value is the step's output, NOT wrapped in `{ output }`).
    */
   stepOutputs: Record<string, unknown>;
-}
-
-function humanizeStepId(stepId: string): string {
-  return stepId.replace(/[-_]+/gu, " ").trim();
 }
 
 // The step that PRODUCES a gate's options is a distinct earlier step (e.g.

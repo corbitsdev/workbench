@@ -28,7 +28,7 @@ describe("gateFallbackBlock (CL-4284)", () => {
     });
     expect(block.kind).toBe("error");
     if (block.kind !== "error") throw new Error("expected an error block");
-    expect(block.message).toContain("intake");
+    expect(block.message).toContain("Intake");
     expect(block.detail).toBe(
       classifyRunError("Granola API error: 502 Bad Gateway").userMessage,
     );

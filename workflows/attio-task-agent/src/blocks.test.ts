@@ -75,7 +75,7 @@ describe("attio member-selection gate fallback (CL-4284)", () => {
     expect(blocks.some((b) => b.kind === "link")).toBe(false);
     const error = blocks.find((b) => b.kind === "error");
     if (error?.kind !== "error") throw new Error("expected an error block");
-    expect(error.message).toContain("listMembers");
+    expect(error.message).toContain("ListMembers");
     expect(error.detail).toBe(
       "Attio declined the request (403). Check the connected Attio credential's access and try again.",
     );

@@ -6,6 +6,7 @@
  * plus a run-page link at each pending gate.
  */
 import {
+  humanizeStepId,
   pendingGateForRun,
   progressStateForStepPhase,
   type DockRunInput,
@@ -38,10 +39,6 @@ const PROGRESS_STEP_IDS = [
 
 export interface MultiSourceCollateralBlockInput extends DockRunInput {
   stepOutputs: Record<string, unknown>;
-}
-
-function humanizeStepId(stepId: string): string {
-  return stepId.replace(/[-_]+/gu, " ").trim();
 }
 
 function runPageLink(

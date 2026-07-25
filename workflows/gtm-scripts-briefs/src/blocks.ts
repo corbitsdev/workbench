@@ -1,4 +1,5 @@
 import {
+  humanizeStepId,
   pendingGateForRun,
   progressStateForStepPhase,
   type DockRunInput,
@@ -42,10 +43,6 @@ const INTAKE_FIELDS: FormField[] = [
     placeholder: "What should the artifact help the audience understand or do?",
   },
 ];
-
-function humanizeStepId(stepId: string): string {
-  return stepId.replace(/[-_]+/gu, " ").trim();
-}
 
 function intakeForm(signalName: string): UIBlock {
   return {

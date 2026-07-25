@@ -20,6 +20,7 @@
  * schema in @workbench/shared (SumbleIntakePayloadSchema / SumbleReviewPayloadSchema).
  */
 import {
+  humanizeStepId,
   pendingGateForRun,
   progressStateForStepPhase,
   type DockRunInput,
@@ -35,10 +36,6 @@ export const REVIEW_SIGNAL = "review";
 export interface SumbleAccountIntelBlockInput extends DockRunInput {
   /** Decoded step outputs keyed by stepId, as `stepOutputsFromLog` produces. */
   stepOutputs: Record<string, unknown>;
-}
-
-function humanizeStepId(stepId: string): string {
-  return stepId.replace(/[-_]+/gu, " ").trim();
 }
 
 function runPageLink(

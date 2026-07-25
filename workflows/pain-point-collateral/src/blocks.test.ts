@@ -88,7 +88,7 @@ describe("pain-point-collateral dock blocks (CL-2775)", () => {
     expect(blocks.some((b) => b.kind === "link")).toBe(false);
     const error = blocks.find((b) => b.kind === "error");
     if (error?.kind !== "error") throw new Error("expected an error block");
-    expect(error.message).toContain("intake");
+    expect(error.message).toContain("Intake");
     // Classified, plain-language — never the raw provider string.
     expect(error.detail).toBe(
       "Granola declined the request (401). Check the connected Granola credential's access and try again.",

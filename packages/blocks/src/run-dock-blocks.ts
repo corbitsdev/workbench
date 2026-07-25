@@ -7,6 +7,7 @@
  * and a link block on completion pointing at the run's full page.
  */
 import { type } from "arktype";
+import { humanizeStepId } from "@workbench/shared";
 import { pendingGateForRun } from "./conversation-gates";
 import type { ProgressStep, ProgressStepState, UIBlock } from "./ui-block";
 
@@ -68,10 +69,6 @@ export function progressStateForStepPhase(
   phase: DockStepPhase,
 ): ProgressStepState {
   return STEP_PHASE_TO_PROGRESS[phase];
-}
-
-function humanizeStepId(stepId: string): string {
-  return stepId.replace(/[-_]+/gu, " ").trim();
 }
 
 export function dockRunBlocks(run: DockRunInput): UIBlock[] {

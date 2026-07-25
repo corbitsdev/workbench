@@ -210,7 +210,7 @@ describe("reddit-opportunity-scanner blocks (CL-2769)", () => {
     expect(blocks.some((b) => b.kind === "link")).toBe(false);
     const error = blocks.find((b) => b.kind === "error");
     if (error?.kind !== "error") throw new Error("expected an error block");
-    expect(error.message).toContain("curate");
+    expect(error.message).toContain("Curate");
     expect(error.detail).toBe(
       "A service this workflow depends on couldn't be reached. Try running it again in a moment.",
     );
