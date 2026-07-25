@@ -1334,8 +1334,40 @@
       "version": "0.1.0",
       "dependencies": {
         "@workbench/shared": "workspace:*",
+        "@workbench/tool-credentials": "workspace:*",
         "@workbench/tool-manifest": "workspace:*",
         "arktype": "catalog:",
+      },
+      "devDependencies": {
+        "@intx/agent": "workspace:*",
+        "@intx/tools-mail": "workspace:*",
+        "@intx/types": "workspace:*",
+        "@types/bun": "latest",
+        "typescript": "^5.9.0",
+      },
+    },
+    "packages/tools-prospect-engine-slack-bridge": {
+      "name": "@workbench/tools-prospect-engine-slack-bridge",
+      "version": "0.1.0",
+      "dependencies": {
+        "@workbench/tool-credentials": "workspace:*",
+        "@workbench/tool-manifest": "workspace:*",
+        "@workbench/tools-slack": "workspace:*",
+      },
+      "devDependencies": {
+        "@intx/agent": "workspace:*",
+        "@intx/types": "workspace:*",
+        "@types/bun": "latest",
+        "typescript": "^5.9.0",
+      },
+    },
+    "packages/tools-prospect-engine-sumble-bridge": {
+      "name": "@workbench/tools-prospect-engine-sumble-bridge",
+      "version": "0.1.0",
+      "dependencies": {
+        "@workbench/tool-credentials": "workspace:*",
+        "@workbench/tool-manifest": "workspace:*",
+        "@workbench/tools-sumble": "workspace:*",
       },
       "devDependencies": {
         "@intx/agent": "workspace:*",
@@ -2961,6 +2993,10 @@
     "@workbench/tools-polymarket": ["@workbench/tools-polymarket@workspace:packages/tools-polymarket"],
 
     "@workbench/tools-prospect-engine": ["@workbench/tools-prospect-engine@workspace:packages/tools-prospect-engine"],
+
+    "@workbench/tools-prospect-engine-slack-bridge": ["@workbench/tools-prospect-engine-slack-bridge@workspace:packages/tools-prospect-engine-slack-bridge"],
+
+    "@workbench/tools-prospect-engine-sumble-bridge": ["@workbench/tools-prospect-engine-sumble-bridge@workspace:packages/tools-prospect-engine-sumble-bridge"],
 
     "@workbench/tools-reddit": ["@workbench/tools-reddit@workspace:packages/tools-reddit"],
 

@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-07-25T15:44:49.263Z",
+  "generatedAt": "2026-07-25T16:14:17.689Z",
   "factories": [
     {
       "factoryId": "@workbench/tools-ab-compare/compose",
@@ -1014,6 +1014,71 @@
         "prospect_engine_extract_list_org_ids": "read",
         "prospect_engine_extract_candidates_from_reply": "read",
         "prospect_engine_extract_map_reveal_overlay": "read"
+      },
+      "myraCatalog": null,
+      "credentialCatalog": null
+    },
+    {
+      "factoryId": "@workbench/tools-prospect-engine/ledger-bridge",
+      "packageName": "@workbench/tools-prospect-engine",
+      "providerName": null,
+      "bareToolNames": [
+        "prospect_engine_read_ledger_tolerant"
+      ],
+      "sideEffects": {
+        "prospect_engine_read_ledger_tolerant": "read"
+      },
+      "myraCatalog": null,
+      "credentialCatalog": null
+    },
+    {
+      "factoryId": "@workbench/tools-prospect-engine/mail-bridge",
+      "packageName": "@workbench/tools-prospect-engine",
+      "providerName": null,
+      "bareToolNames": [
+        "prospect_engine_send_mail_tolerant"
+      ],
+      "sideEffects": {
+        "prospect_engine_send_mail_tolerant": "write"
+      },
+      "myraCatalog": null,
+      "credentialCatalog": null
+    },
+    {
+      "factoryId": "@workbench/tools-prospect-engine-slack-bridge/post",
+      "packageName": "@workbench/tools-prospect-engine-slack-bridge",
+      "providerName": "slack",
+      "bareToolNames": [
+        "prospect_engine_post_slack_tolerant"
+      ],
+      "sideEffects": {
+        "prospect_engine_post_slack_tolerant": "write"
+      },
+      "myraCatalog": null,
+      "credentialCatalog": null
+    },
+    {
+      "factoryId": "@workbench/tools-prospect-engine-sumble-bridge/add",
+      "packageName": "@workbench/tools-prospect-engine-sumble-bridge",
+      "providerName": "sumble",
+      "bareToolNames": [
+        "prospect_engine_add_organization_list_tolerant"
+      ],
+      "sideEffects": {
+        "prospect_engine_add_organization_list_tolerant": "write"
+      },
+      "myraCatalog": null,
+      "credentialCatalog": null
+    },
+    {
+      "factoryId": "@workbench/tools-prospect-engine-sumble-bridge/list",
+      "packageName": "@workbench/tools-prospect-engine-sumble-bridge",
+      "providerName": "sumble",
+      "bareToolNames": [
+        "prospect_engine_read_organization_list_tolerant"
+      ],
+      "sideEffects": {
+        "prospect_engine_read_organization_list_tolerant": "read"
       },
       "myraCatalog": null,
       "credentialCatalog": null

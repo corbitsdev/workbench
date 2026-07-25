@@ -724,6 +724,12 @@ function createFormatSlackDigestTool(): AgentTool {
   };
 }
 
+// Tolerant by construction (CL-4464): mailRefs is a best-effort deep-link
+// builder ahead of a native `action` step (`ActionPrimitive` has no
+// error-swallow), so a missing artifactId/runId or a thrown builder error
+// never becomes an `isError` `ToolResult` — it returns `{ isError: true,
+// error }` as ordinary content instead. `mail`'s downstream argMap-free
+// merge already tolerates an absent `refs` field.
 function createFormatMailRefsTool(): AgentTool {
   return {
     kind: "full",
@@ -733,10 +739,10 @@ function createFormatMailRefsTool(): AgentTool {
       const artifactId = args.artifactId;
       const runId = args.runId;
       if (typeof artifactId !== "string" || artifactId.trim().length === 0) {
-        return fail(call.id, "artifactId is required");
+        return ok(call.id, { isError: true, error: "artifactId is required" });
       }
       if (typeof runId !== "string" || runId.trim().length === 0) {
-        return fail(call.id, "runId is required");
+        return ok(call.id, { isError: true, error: "runId is required" });
       }
       try {
         const refs =
@@ -745,7 +751,10 @@ function createFormatMailRefsTool(): AgentTool {
             : prospectEngineMailRefs(artifactId, runId);
         return ok(call.id, { refs });
       } catch (err) {
-        return fail(call.id, err instanceof Error ? err.message : String(err));
+        return ok(call.id, {
+          isError: true,
+          error: err instanceof Error ? err.message : String(err),
+        });
       }
     },
   };

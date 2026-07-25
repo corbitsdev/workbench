@@ -59,6 +59,8 @@ COPY packages/tools-granola/package.json packages/tools-granola/
 COPY packages/tools-hackernews/package.json packages/tools-hackernews/
 COPY packages/tools-last30days/package.json packages/tools-last30days/
 COPY packages/tools-prospect-engine/package.json packages/tools-prospect-engine/
+COPY packages/tools-prospect-engine-slack-bridge/package.json packages/tools-prospect-engine-slack-bridge/
+COPY packages/tools-prospect-engine-sumble-bridge/package.json packages/tools-prospect-engine-sumble-bridge/
 COPY packages/tools-polymarket/package.json packages/tools-polymarket/
 COPY packages/tools-reddit/package.json packages/tools-reddit/
 COPY packages/tools-scrapecreators/package.json packages/tools-scrapecreators/
@@ -143,6 +145,8 @@ COPY packages/tools-granola/ packages/tools-granola/
 COPY packages/tools-hackernews/ packages/tools-hackernews/
 COPY packages/tools-last30days/ packages/tools-last30days/
 COPY packages/tools-prospect-engine/ packages/tools-prospect-engine/
+COPY packages/tools-prospect-engine-slack-bridge/ packages/tools-prospect-engine-slack-bridge/
+COPY packages/tools-prospect-engine-sumble-bridge/ packages/tools-prospect-engine-sumble-bridge/
 COPY packages/tools-polymarket/ packages/tools-polymarket/
 COPY packages/tools-reddit/ packages/tools-reddit/
 COPY packages/tools-scrapecreators/ packages/tools-scrapecreators/
