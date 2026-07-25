@@ -13,7 +13,10 @@ import {
   ResearchItem,
   SkippedSource,
 } from "@workbench/last30days-core";
-import { mergeHeartbeatBriefSources } from "@workbench/shared";
+import {
+  isToleranceEnvelopeFailure,
+  mergeHeartbeatBriefSources,
+} from "@workbench/shared";
 
 export const LAST30DAYS_CORE_EXTRACT_DEFINITION: ToolDefinition = {
   name: "last30days_core_extract",
@@ -306,9 +309,9 @@ function parseSourceStep(step: unknown): SourceParse {
     const reason = cause instanceof Error ? cause.message : String(cause);
     return { ok: false, reason: `non-JSON content: ${reason}` };
   }
-  if (isRecord(parsed) && parsed.isError === true) {
+  if (isToleranceEnvelopeFailure(parsed)) {
     const detail =
-      typeof parsed.error === "string" && parsed.error.trim().length > 0
+      parsed.error.trim().length > 0
         ? truncateDetail(parsed.error)
         : "tool reported an error";
     return { ok: false, reason: `source errored: ${detail}` };

@@ -73,7 +73,7 @@ describe("gamma_presentation_creator_fetch_artifact", () => {
         },
         SIGNAL,
       );
-      expect(result.isError).toBeUndefined();
+      expect(result.isError).toBe(false);
       expect(result.content).toMatchObject({ isError: true });
     } finally {
       globalThis.fetch = originalFetch;
@@ -100,7 +100,7 @@ describe("gamma_presentation_creator_fetch_artifact", () => {
         },
         SIGNAL,
       );
-      expect(result.isError).toBeUndefined();
+      expect(result.isError).toBe(false);
       expect(result.content).toEqual("hello artifact");
     } finally {
       globalThis.fetch = originalFetch;
@@ -143,7 +143,7 @@ describe("gamma_presentation_creator_fetch_note", () => {
         },
         SIGNAL,
       );
-      expect(result.isError).toBeUndefined();
+      expect(result.isError).toBe(false);
       expect(result.content).toMatchObject({ isError: true });
     } finally {
       globalThis.fetch = originalFetch;
@@ -172,7 +172,7 @@ describe("gamma_presentation_creator_fetch_note", () => {
       },
       SIGNAL,
     );
-    expect(result.isError).toBeUndefined();
+    expect(result.isError).toBe(false);
     expect(result.content).toMatchObject({ isError: true });
   });
 });

@@ -1,9 +1,10 @@
 import type { AgentTool, BaseEnv } from "@intx/agent";
-import type { ToolDefinition, ToolResult } from "@intx/types/runtime";
+import type { ToolDefinition } from "@intx/types/runtime";
 import {
   defineCredentialedToolPackage,
   defineHubBackedToolPackage,
 } from "@workbench/tool-credentials/factory";
+import { withToleranceEnvelope } from "@workbench/tool-credentials/tolerance-envelope-dispatch";
 import { ARTIFACT_READ_DEFINITION } from "@workbench/tools-artifact";
 import { GRANOLA_HUB_TOOLS } from "@workbench/tools-granola";
 
@@ -38,16 +39,6 @@ function coerceArgsObject(
     return parsed as Record<string, unknown>;
   }
   return args;
-}
-
-function toErrorMessage(result: ToolResult): string {
-  const content = result.content;
-  if (typeof content === "string") return content;
-  if (typeof content === "object" && content !== null) {
-    const record = content as Record<string, unknown>;
-    if (typeof record.error === "string") return record.error;
-  }
-  return JSON.stringify(content);
 }
 
 export const PRESENTATION_FETCH_ARTIFACT_DEFINITION: ToolDefinition = {
@@ -102,17 +93,12 @@ function createFetchArtifactTool(env: BaseEnv): AgentTool {
       if (typeof artifactId !== "string" || artifactId.trim().length === 0) {
         return { callId: call.id, content: { skipped: true } };
       }
-      const result = await inner.run(
-        { id: call.id, name: "artifact_read", arguments: { artifactId } },
-        signal,
+      return withToleranceEnvelope(call.id, () =>
+        inner.run(
+          { id: call.id, name: "artifact_read", arguments: { artifactId } },
+          signal,
+        ),
       );
-      if (result.isError === true) {
-        return {
-          callId: call.id,
-          content: { isError: true, error: toErrorMessage(result) },
-        };
-      }
-      return { callId: call.id, content: result.content };
     },
   };
 }
@@ -137,28 +123,13 @@ function createFetchNoteTool(env: BaseEnv): AgentTool {
       if (typeof noteId !== "string" || noteId.trim().length === 0) {
         return { callId: call.id, content: { skipped: true } };
       }
-      try {
+      return withToleranceEnvelope(call.id, () => {
         const inner = granolaGetNoteInner(env);
-        const result = await inner.run(
+        return inner.run(
           { id: call.id, name: "granola_get_note", arguments: { noteId } },
           signal,
         );
-        if (result.isError === true) {
-          return {
-            callId: call.id,
-            content: { isError: true, error: toErrorMessage(result) },
-          };
-        }
-        return { callId: call.id, content: result.content };
-      } catch (cause) {
-        return {
-          callId: call.id,
-          content: {
-            isError: true,
-            error: cause instanceof Error ? cause.message : String(cause),
-          },
-        };
-      }
+      });
     },
   };
 }

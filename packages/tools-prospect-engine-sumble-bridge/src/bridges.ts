@@ -34,11 +34,17 @@ import {
   createToolRunner,
   defineTool,
 } from "@intx/agent";
-import type { ToolCall, ToolDefinition, ToolResult } from "@intx/types/runtime";
+import type { ToolCall, ToolDefinition } from "@intx/types/runtime";
 import {
   getToolCredential,
   toolCredentialEnvKey,
 } from "@workbench/tool-credentials";
+import {
+  findAgentTool,
+  invokeAgentTool,
+  toleranceFailureContent,
+  withToleranceEnvelope as tolerant,
+} from "@workbench/tool-credentials/tolerance-envelope-dispatch";
 import { SUMBLE_HUB_TOOLS } from "@workbench/tools-sumble";
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -49,68 +55,11 @@ function envRecord(env: unknown): Record<string, unknown> {
   return env as Record<string, unknown>;
 }
 
-/**
- * Run `dispatch`, converting any thrown error or `isError: true` result into
- * a normal (non-error) `ToolResult` whose content carries `{ isError, error
- * }`. The step therefore always completes; downstream steps read
- * `content.isError` to detect a degraded source.
- */
-async function tolerant(
-  callId: string,
-  dispatch: () => Promise<ToolResult>,
-): Promise<ToolResult> {
-  try {
-    const result = await dispatch();
-    if (result.isError) {
-      return {
-        callId,
-        isError: false,
-        content: {
-          isError: true,
-          error:
-            typeof result.content === "string"
-              ? result.content
-              : JSON.stringify(result.content),
-        },
-      };
-    }
-    return { callId, isError: false, content: result.content };
-  } catch (err) {
-    return {
-      callId,
-      isError: false,
-      content: {
-        isError: true,
-        error: err instanceof Error ? err.message : String(err),
-      },
-    };
-  }
-}
-
-async function invokeAgentTool(
-  tool: AgentTool,
-  call: ToolCall,
-  signal: AbortSignal,
-): Promise<ToolResult> {
-  if (tool.kind === "full") {
-    return tool.handler(call, signal);
-  }
-  const content = await tool.handler(
-    (call.arguments ?? {}) as Record<string, unknown>,
-    signal,
-  );
-  return { callId: call.id, isError: false, content };
-}
-
-function findAgentTool(tools: AgentTool[], name: string): AgentTool {
-  const found = tools.find((t) => t.definition.name === name);
-  if (found === undefined) {
-    throw new Error(
-      `prospect-engine sumble bridge: underlying tool "${name}" not constructed`,
-    );
-  }
-  return found;
-}
+// `tolerant`/`invokeAgentTool`/`findAgentTool` are the shared dispatch
+// mechanics from `@workbench/tool-credentials/tolerance-envelope-dispatch`
+// (Finding 2, CL-4464 follow-up) — this file, the slack bridge package, and
+// `tools-prospect-engine`'s own `tolerant-bridges.ts` each carried a
+// byte-identical local copy before this consolidation.
 
 // ---------------------------------------------------------------------------
 // sumble_get_organization_list bridge (pipeline, growthList, enterpriseList)
@@ -157,7 +106,11 @@ function buildReadOrgListTool(env: Record<string, unknown>): AgentTool {
     );
   }
   const tools = entry.createTools(credential);
-  return findAgentTool(tools, "sumble_get_organization_list");
+  return findAgentTool(
+    tools,
+    "sumble_get_organization_list",
+    "prospect-engine sumble-list-bridge",
+  );
 }
 
 export const prospectEngineSumbleListBridge: AnnotatedToolFactory = defineTool({
@@ -175,7 +128,7 @@ export const prospectEngineSumbleListBridge: AnnotatedToolFactory = defineTool({
             return {
               callId: call.id,
               isError: false,
-              content: { isError: true, error: "listId is required" },
+              content: toleranceFailureContent("listId is required"),
             };
           }
           return tolerant(call.id, () =>
@@ -229,7 +182,11 @@ function buildAddOrgListTool(env: Record<string, unknown>): AgentTool {
     );
   }
   const tools = entry.createTools(credential);
-  return findAgentTool(tools, "sumble_add_organization_list_organizations");
+  return findAgentTool(
+    tools,
+    "sumble_add_organization_list_organizations",
+    "prospect-engine sumble-add-bridge",
+  );
 }
 
 export const prospectEngineSumbleAddBridge: AnnotatedToolFactory = defineTool({
@@ -256,7 +213,7 @@ export const prospectEngineSumbleAddBridge: AnnotatedToolFactory = defineTool({
             return {
               callId: call.id,
               isError: false,
-              content: { isError: true, error: "listId is required" },
+              content: toleranceFailureContent("listId is required"),
             };
           }
           return tolerant(call.id, () =>

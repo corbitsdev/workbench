@@ -36,7 +36,7 @@ describe("reddit_opportunity_scanner_collect_search", () => {
       },
       SIGNAL,
     );
-    expect(result.isError).toBeUndefined();
+    expect(result.isError).toBe(false);
     expect(result.content).toMatchObject({ isError: true });
   });
 
@@ -63,7 +63,7 @@ describe("reddit_opportunity_scanner_collect_search", () => {
         },
         SIGNAL,
       );
-      expect(result.isError).toBeUndefined();
+      expect(result.isError).toBe(false);
       expect(result.content).toMatchObject({ isError: true });
     } finally {
       globalThis.fetch = originalFetch;
@@ -95,7 +95,7 @@ describe("reddit_opportunity_scanner_collect_search", () => {
         },
         SIGNAL,
       );
-      expect(result.isError).toBeUndefined();
+      expect(result.isError).toBe(false);
       expect(typeof result.content).toBe("string");
       expect(JSON.parse(result.content as string)).toEqual([]);
     } finally {

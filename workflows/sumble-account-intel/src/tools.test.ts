@@ -302,10 +302,14 @@ describe("sumble_account_intel_enrich_contacts — folds the former map, toleran
       throw new Error("expected object content");
     }
     const { people } = result.content as { people: unknown[] };
+    // `runTolerantTool` (`@workbench/tool-credentials/tolerance-envelope-
+    // dispatch`) parses a successful `kind: "string"` tool's JSON-string
+    // content into real data via the shared `parseToleranceEnvelope` — this
+    // wrapper no longer hands the caller a still-JSON-encoded string.
     expect(people).toEqual([
       {
         ok: true,
-        data: JSON.stringify([{ title: "a post" }]),
+        data: [{ title: "a post" }],
         name: "Ada Lovelace",
       },
       { ok: false, error: "xai exploded", name: "Fails Contact" },

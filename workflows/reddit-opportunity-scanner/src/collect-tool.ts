@@ -1,6 +1,7 @@
 import type { AgentTool, BaseEnv } from "@intx/agent";
-import type { ToolDefinition, ToolResult } from "@intx/types/runtime";
+import type { ToolDefinition } from "@intx/types/runtime";
 import { defineCredentialedToolPackage } from "@workbench/tool-credentials/factory";
+import { withToleranceEnvelope } from "@workbench/tool-credentials/tolerance-envelope-dispatch";
 import { REDDIT_HUB_TOOLS } from "@workbench/tools-reddit";
 
 // Workflow-owned tolerant wrapper (CL-4464): one dead subreddit search must
@@ -16,16 +17,6 @@ import { REDDIT_HUB_TOOLS } from "@workbench/tools-reddit";
 // map inner step is unaffected by the action/map typing gap), but the
 // `nonFatal` tag is no longer needed: the wrapper never lets the underlying
 // throw reach the step-tool harness.
-
-function toErrorMessage(result: ToolResult): string {
-  const content = result.content;
-  if (typeof content === "string") return content;
-  if (typeof content === "object" && content !== null) {
-    const record = content as Record<string, unknown>;
-    if (typeof record.error === "string") return record.error;
-  }
-  return JSON.stringify(content);
-}
 
 export const REDDIT_OPPORTUNITY_SCANNER_COLLECT_SEARCH_DEFINITION: ToolDefinition =
   {
@@ -68,28 +59,13 @@ function createCollectSearchTool(env: BaseEnv): AgentTool {
         typeof call.arguments === "object" && call.arguments !== null
           ? call.arguments
           : {};
-      try {
+      return withToleranceEnvelope(call.id, () => {
         const inner = collectSearchInner(env);
-        const result = await inner.run(
+        return inner.run(
           { id: call.id, name: "reddit_subreddit_search", arguments: args },
           signal,
         );
-        if (result.isError === true) {
-          return {
-            callId: call.id,
-            content: { isError: true, error: toErrorMessage(result) },
-          };
-        }
-        return { callId: call.id, content: result.content };
-      } catch (cause) {
-        return {
-          callId: call.id,
-          content: {
-            isError: true,
-            error: cause instanceof Error ? cause.message : String(cause),
-          },
-        };
-      }
+      });
     },
   };
 }

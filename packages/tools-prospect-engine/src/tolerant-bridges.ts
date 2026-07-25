@@ -49,6 +49,7 @@ import { createRuntimeCapabilities } from "@intx/types/runtime-capabilities";
 import type { MessageTransport } from "@intx/types/runtime";
 import { createMailTools } from "@intx/tools-mail";
 import { HUB_RPC_ENV_KEY, getHubRpc } from "@workbench/tool-credentials";
+import { withToleranceEnvelope as tolerant } from "@workbench/tool-credentials/tolerance-envelope-dispatch";
 
 // ---------------------------------------------------------------------------
 // Shared helpers
@@ -62,45 +63,13 @@ function envRecord(env: unknown): Record<string, unknown> {
   return env as Record<string, unknown>;
 }
 
-/**
- * Run `dispatch`, converting any thrown error or `isError: true` result into
- * a normal (non-error) `ToolResult` whose content carries `{ isError, error
- * }` — the tolerant envelope the task calls for. The step therefore always
- * completes; downstream steps read `content.isError` to detect a degraded
- * source, mirroring the legacy `nonFatal` degrade shape's
- * `{ ...result, degraded: true }`.
- */
-async function tolerant(
-  callId: string,
-  dispatch: () => Promise<ToolResult>,
-): Promise<ToolResult> {
-  try {
-    const result = await dispatch();
-    if (result.isError) {
-      return {
-        callId,
-        isError: false,
-        content: {
-          isError: true,
-          error:
-            typeof result.content === "string"
-              ? result.content
-              : JSON.stringify(result.content),
-        },
-      };
-    }
-    return { callId, isError: false, content: result.content };
-  } catch (err) {
-    return {
-      callId,
-      isError: false,
-      content: {
-        isError: true,
-        error: err instanceof Error ? err.message : String(err),
-      },
-    };
-  }
-}
+// `tolerant` (`withToleranceEnvelope` from
+// `@workbench/tool-credentials/tolerance-envelope-dispatch`) converts any
+// thrown error or `isError: true` result into a normal (non-error)
+// `ToolResult` whose content carries the shared `{ isError: true, error }`
+// tolerance envelope — see Finding 2, CL-4464 follow-up: this was previously
+// a byte-identical local copy in this file and in both prospect-engine
+// bridge packages.
 
 // ---------------------------------------------------------------------------
 // artifact_read bridge (readLedger)

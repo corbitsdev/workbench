@@ -31,7 +31,7 @@ describe("multi_source_collateral_list_issues", () => {
       { id: "call_1", name: tool.definition.name, arguments: { first: 50 } },
       SIGNAL,
     );
-    expect(result.isError).toBeUndefined();
+    expect(result.isError).toBe(false);
     expect(result.content).toMatchObject({ isError: true });
   });
 
@@ -54,7 +54,7 @@ describe("multi_source_collateral_list_issues", () => {
         { id: "call_2", name: tool.definition.name, arguments: { first: 50 } },
         SIGNAL,
       );
-      expect(result.isError).toBeUndefined();
+      expect(result.isError).toBe(false);
       expect(result.content).toMatchObject({ isError: true });
     } finally {
       globalThis.fetch = originalFetch;

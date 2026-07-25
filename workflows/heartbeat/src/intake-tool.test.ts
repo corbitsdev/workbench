@@ -154,19 +154,11 @@ describe("heartbeat_intake_source (CL-4464)", () => {
       });
     });
 
-    test("a real success heartbeat_intake_source output round-trips to the parsed source data, no isError note", async () => {
+    test("a real malformed-credential heartbeat_intake_source output round-trips to an isError note without a network call", async () => {
       const tool = createHeartbeatIntakeSourceTool({
-        [toolCredentialEnvKey("granola")]: {
-          apiKey: "test-key",
-          baseURL: "https://example.invalid",
-        },
+        [toolCredentialEnvKey("granola")]: { apiKey: 42 },
       });
       const handler = handlerOf(tool);
-      // No live Granola server behind this baseURL, so the underlying fetch
-      // itself fails — but that failure still degrades via the SAME
-      // never-throws contract, proving the round-trip on the fetch-failure
-      // path a real deployment hits when the source is misconfigured rather
-      // than absent.
       const output = await handler(
         {
           id: "c2",
@@ -180,6 +172,7 @@ describe("heartbeat_intake_source (CL-4464)", () => {
       const parsed = parseBriefSourceToolEnvelope(output);
       expect(parsed.isError).toBe(true);
       expect(typeof parsed.error).toBe("string");
+      expect((parsed.error as string).length).toBeGreaterThan(0);
     });
   });
 });

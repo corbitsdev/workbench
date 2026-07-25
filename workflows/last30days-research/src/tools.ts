@@ -4,6 +4,7 @@ import {
   type ToolCredential,
   getToolCredential,
 } from "@workbench/tool-credentials";
+import { toleranceFailureContent } from "@workbench/tool-credentials/tolerance-envelope-dispatch";
 import { EXA_HUB_TOOLS } from "@workbench/tools-exa";
 import { GITHUB_HUB_TOOLS } from "@workbench/tools-github";
 import { REDDIT_HUB_TOOLS } from "@workbench/tools-reddit";
@@ -41,10 +42,9 @@ import { createPolymarketTools } from "@workbench/tools-polymarket";
 // thirteen steps into fewer steps, only fewer underlying tool definitions.
 
 function safeErrorEnvelope(err: unknown): string {
-  return JSON.stringify({
-    isError: true,
-    error: err instanceof Error ? err.message : String(err),
-  });
+  return JSON.stringify(
+    toleranceFailureContent(err instanceof Error ? err.message : String(err)),
+  );
 }
 
 /**

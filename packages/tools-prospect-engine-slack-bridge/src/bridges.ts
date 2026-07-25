@@ -26,73 +26,27 @@ import {
   createToolRunner,
   defineTool,
 } from "@intx/agent";
-import type { ToolCall, ToolDefinition, ToolResult } from "@intx/types/runtime";
+import type { ToolCall, ToolDefinition } from "@intx/types/runtime";
 import {
   getToolCredential,
   toolCredentialEnvKey,
 } from "@workbench/tool-credentials";
+import {
+  findAgentTool,
+  invokeAgentTool,
+  withToleranceEnvelope as tolerant,
+} from "@workbench/tool-credentials/tolerance-envelope-dispatch";
 import { SLACK_HUB_TOOLS } from "@workbench/tools-slack";
 
 function envRecord(env: unknown): Record<string, unknown> {
   return env as Record<string, unknown>;
 }
 
-async function tolerant(
-  callId: string,
-  dispatch: () => Promise<ToolResult>,
-): Promise<ToolResult> {
-  try {
-    const result = await dispatch();
-    if (result.isError) {
-      return {
-        callId,
-        isError: false,
-        content: {
-          isError: true,
-          error:
-            typeof result.content === "string"
-              ? result.content
-              : JSON.stringify(result.content),
-        },
-      };
-    }
-    return { callId, isError: false, content: result.content };
-  } catch (err) {
-    return {
-      callId,
-      isError: false,
-      content: {
-        isError: true,
-        error: err instanceof Error ? err.message : String(err),
-      },
-    };
-  }
-}
-
-async function invokeAgentTool(
-  tool: AgentTool,
-  call: ToolCall,
-  signal: AbortSignal,
-): Promise<ToolResult> {
-  if (tool.kind === "full") {
-    return tool.handler(call, signal);
-  }
-  const content = await tool.handler(
-    (call.arguments ?? {}) as Record<string, unknown>,
-    signal,
-  );
-  return { callId: call.id, isError: false, content };
-}
-
-function findAgentTool(tools: AgentTool[], name: string): AgentTool {
-  const found = tools.find((t) => t.definition.name === name);
-  if (found === undefined) {
-    throw new Error(
-      `prospect-engine slack bridge: underlying tool "${name}" not constructed`,
-    );
-  }
-  return found;
-}
+// `tolerant`/`invokeAgentTool`/`findAgentTool` are the shared dispatch
+// mechanics from `@workbench/tool-credentials/tolerance-envelope-dispatch`
+// (Finding 2, CL-4464 follow-up) — this file, the sumble bridge package, and
+// `tools-prospect-engine`'s own `tolerant-bridges.ts` each carried a
+// byte-identical local copy before this consolidation.
 
 export const PROSPECT_ENGINE_POST_SLACK_TOLERANT_DEFINITION: ToolDefinition = {
   name: "prospect_engine_post_slack_tolerant",
@@ -119,7 +73,11 @@ export const PROSPECT_ENGINE_POST_SLACK_TOLERANT_DEFINITION: ToolDefinition = {
 function buildPostSlackTool(env: Record<string, unknown>): AgentTool {
   const credential = getToolCredential(env, "slack");
   const tools = SLACK_HUB_TOOLS.slack_post_message.createTools(credential);
-  return findAgentTool(tools, "slack_post_message");
+  return findAgentTool(
+    tools,
+    "slack_post_message",
+    "prospect-engine slack bridge",
+  );
 }
 
 export const prospectEngineSlackBridge: AnnotatedToolFactory = defineTool({
