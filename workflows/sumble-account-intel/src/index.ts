@@ -1,7 +1,6 @@
-import { action, awaitSignal, defineWorkflow, map } from "@intx/workflow";
+import { action, awaitSignal, defineWorkflow } from "@intx/workflow";
 import {
   canonicalizeStepToolName,
-  deterministicToolStep,
   agentStep,
   LLM_WRITER_MODEL,
 } from "@workbench/agents";
@@ -67,31 +66,35 @@ export const PACKAGE_ARTIFACT_HANDLER = canonicalizeStepToolName(
   "write_artifact",
 );
 
-// One X search per contact enriches the LinkedIn-only people Sumble returns with
-// an X handle. Best-effort: a dead xAI call for one contact must not fail the run.
-//
-// NOT migrated to a native `action` — two independent blockers, either one
-// sufficient on its own (mirrors pain-point-collateral's `persistStep`):
-//   1. Field rename: `x_search` requires `query`, but the map item (a Sumble
-//      contact) carries the same value under `name`. The native selector
-//      vocabulary (`from`/`project`/`merge`/`literal`) can only pick fields
-//      through, never rename one.
-//   2. `MapPrimitive.step` is typed `StepPrimitive`, not `Primitive` — an
-//      `action` cannot be a map's inner step at all (see
-//      `interchange/packages/workflow/src/definition/primitives.ts`).
-const enrichSocialStep = deterministicToolStep({
-  id: "sumble-account-intel-enrich-social",
-  title: "Find the contact on X",
-  tool: "x_search",
-  // The map passes each contact object as `trigger.payload`; the argMap pulls the
-  // contact's name as the X query and caps the result set.
-  input: { from: "trigger.payload" },
-  argMap: {
-    query: { from: "name" },
-    limit: { literal: 5 },
-  },
-  nonFatal: true,
-});
+// Native `action` handler refs for this workflow's own tolerant/renamed
+// wrappers (see tools.ts) around the underlying Sumble + X tools. Each
+// wrapper names its own input fields to match the field the upstream step
+// already exposes (`organizationDomain`, `slug`, `people`), so no step here
+// needs the argMap escape hatch at all.
+export const RESOLVE_ORGANIZATION_HANDLER = canonicalizeStepToolName(
+  "sumble-account-intel-resolve",
+  "sumble_account_intel_resolve_organization",
+);
+export const SEARCH_PEOPLE_HANDLER = canonicalizeStepToolName(
+  "sumble-account-intel-contacts",
+  "sumble_account_intel_search_people",
+);
+export const LIST_TEAMS_HANDLER = canonicalizeStepToolName(
+  "sumble-account-intel-teams",
+  "sumble_account_intel_list_teams",
+);
+export const LIST_JOBS_HANDLER = canonicalizeStepToolName(
+  "sumble-account-intel-jobs",
+  "sumble_account_intel_list_jobs",
+);
+export const SEARCH_SIGNALS_HANDLER = canonicalizeStepToolName(
+  "sumble-account-intel-signals",
+  "sumble_account_intel_search_signals",
+);
+export const ENRICH_CONTACTS_HANDLER = canonicalizeStepToolName(
+  "sumble-account-intel-enrich-social",
+  "sumble_account_intel_enrich_contacts",
+);
 
 export const workflow = defineWorkflow({
   id: kind,
@@ -101,59 +104,54 @@ export const workflow = defineWorkflow({
     intake: awaitSignal({ name: "intake" }),
 
     // 2. Resolve the account to a Sumble organization (domain or slug).
-    //
-    // NOT migrated to a native `action` — `sumble_resolve_organization`'s only
-    // matching argument is `identifier`, but the intake field carries the
-    // value under `organizationDomain` (the required, user-facing trigger
-    // field declared above, matching `SumbleIntakePayloadSchema` in
-    // `@workbench/shared`). The native selector vocabulary can pick a field
-    // through unrenamed but has no rename shape, so this reshape needs the
-    // argMap escape hatch.
-    resolve: deterministicToolStep({
-      id: "sumble-account-intel-resolve",
-      title: "Resolve the organization",
-      tool: "sumble_resolve_organization",
+    // Native `action`, fatal: the workflow-owned wrapper's own arg is named
+    // `organizationDomain` (the intake field's own name), so `input` passes
+    // the whole intake output through verbatim — no rename, no argMap. The
+    // wrapper still calls the underlying `sumble_resolve_organization` with
+    // `identifier`, but that rename now happens in TypeScript inside the
+    // tool, not in the step's selector.
+    resolve: action({
+      handler: RESOLVE_ORGANIZATION_HANDLER,
       input: { from: "steps.intake.output" },
-      // One intake field carries a domain OR a slug; the tool classifies it by
-      // shape and routes it to the right Sumble org-ref field.
-      argMap: {
-        identifier: { from: "organizationDomain" },
-      },
+      effect: { requires: [RESOLVE_ORGANIZATION_HANDLER] },
       after: ["intake"],
     }),
 
     // 3. List the org's teams (org shape, part 1). Downstream steps read the
     //    RESOLVED org record (structured content), keyed on its slug.
     //
-    // NOT migrated to a native `action` — `sumble_list_teams` requires
-    // `organizationSlug`, but the resolved org's own field is `slug`; no
-    // selector shape can rename it (same blocker as `resolve`).
-    teams: deterministicToolStep({
-      id: "sumble-account-intel-teams",
-      title: "List the teams",
-      tool: "sumble_list_teams",
-      input: { from: "steps.resolve.output.content" },
-      argMap: {
-        organizationSlug: { from: "slug" },
-        limit: { literal: 25 },
+    // Native `action`, best-effort: the wrapper's own arg is named `slug`
+    // (matching the resolved org's own field, no rename needed at the step
+    // level) and never propagates a tool failure as `isError` — see tools.ts.
+    teams: action({
+      handler: LIST_TEAMS_HANDLER,
+      input: {
+        merge: [
+          {
+            project: { from: "steps.resolve.output.content" },
+            fields: ["slug"],
+          },
+          { literal: { limit: 25 } },
+        ],
       },
+      effect: { requires: [LIST_TEAMS_HANDLER] },
       after: ["resolve"],
-      nonFatal: true,
     }),
 
-    // 4. List the org's open jobs (org shape, part 2). Same rename blocker as
-    // `teams` — `sumble_list_jobs` also requires `organizationSlug`.
-    jobs: deterministicToolStep({
-      id: "sumble-account-intel-jobs",
-      title: "List the open jobs",
-      tool: "sumble_list_jobs",
-      input: { from: "steps.resolve.output.content" },
-      argMap: {
-        organizationSlug: { from: "slug" },
-        limit: { literal: 25 },
+    // 4. List the org's open jobs (org shape, part 2). Same shape as `teams`.
+    jobs: action({
+      handler: LIST_JOBS_HANDLER,
+      input: {
+        merge: [
+          {
+            project: { from: "steps.resolve.output.content" },
+            fields: ["slug"],
+          },
+          { literal: { limit: 25 } },
+        ],
       },
+      effect: { requires: [LIST_JOBS_HANDLER] },
       after: ["teams"],
-      nonFatal: true,
     }),
 
     // 5. Pull the org's technology stack (keyed on the resolved slug). Native
@@ -178,41 +176,58 @@ export const workflow = defineWorkflow({
       after: ["jobs"],
     }),
 
-    // 6. Find people at the org. Load-bearing (the enrichment map iterates this
-    //    step's structured `people` array) — NOT non-fatal, so a failed people
-    //    lookup stops the run rather than feeding the map a non-array. Same
-    //    organizationSlug-from-slug rename blocker as `teams`/`jobs`.
-    contacts: deterministicToolStep({
-      id: "sumble-account-intel-contacts",
-      title: "Find the contacts",
-      tool: "sumble_search_people",
-      input: { from: "steps.resolve.output.content" },
-      argMap: {
-        organizationSlug: { from: "slug" },
-        limit: { literal: 10 },
+    // 6. Find people at the org. Load-bearing (the enrichment step iterates
+    //    this step's structured `people` array) — the wrapper passes the
+    //    underlying tool's `isError` straight through (see tools.ts), so a
+    //    failed lookup still fails the run rather than feeding the
+    //    enrichment step a non-array.
+    contacts: action({
+      handler: SEARCH_PEOPLE_HANDLER,
+      input: {
+        merge: [
+          {
+            project: { from: "steps.resolve.output.content" },
+            fields: ["slug"],
+          },
+          { literal: { limit: 10 } },
+        ],
       },
+      effect: { requires: [SEARCH_PEOPLE_HANDLER] },
       after: ["techStack"],
     }),
 
-    // 7. Pull buying/intent signals for the org. Same rename blocker.
-    signals: deterministicToolStep({
-      id: "sumble-account-intel-signals",
-      title: "Scan the buying signals",
-      tool: "sumble_search_signals",
-      input: { from: "steps.resolve.output.content" },
-      argMap: {
-        organizationSlug: { from: "slug" },
-        limit: { literal: 25 },
+    // 7. Pull buying/intent signals for the org. Same best-effort shape as
+    // `teams`/`jobs`.
+    signals: action({
+      handler: SEARCH_SIGNALS_HANDLER,
+      input: {
+        merge: [
+          {
+            project: { from: "steps.resolve.output.content" },
+            fields: ["slug"],
+          },
+          { literal: { limit: 25 } },
+        ],
       },
+      effect: { requires: [SEARCH_SIGNALS_HANDLER] },
       after: ["contacts"],
-      nonFatal: true,
     }),
 
     // 8. Enrich each contact with an X search (Sumble gives LinkedIn only).
-    //    Iterates the structured `people` array the contacts step exposes.
-    enrichSocial: map({
-      over: { from: "steps.contacts.output.content.people" },
-      step: enrichSocialStep,
+    // Native `action`: the former `map` over a per-contact `x_search` step
+    // is gone — `sumble_account_intel_enrich_contacts` iterates the
+    // `people` array INTERNALLY (mirroring `granola_spawn_call_runs`'s
+    // in-tool fan-out), because `MapPrimitive.step` is typed `StepPrimitive`
+    // (not the `Primitive` union `action` belongs to) and the deploy
+    // capability walk only reads `primitive.step.agent` for a map node — an
+    // `action` cannot be a map's inner step at all. Folding the loop into
+    // the tool also drops the `x_search`-vs-contact `query`/`name` rename:
+    // the wrapper's own input field is `people`, matching the contacts
+    // step's own structured content shape verbatim.
+    enrichSocial: action({
+      handler: ENRICH_CONTACTS_HANDLER,
+      input: { from: "steps.contacts.output.content" },
+      effect: { requires: [ENRICH_CONTACTS_HANDLER] },
       after: ["signals"],
     }),
 

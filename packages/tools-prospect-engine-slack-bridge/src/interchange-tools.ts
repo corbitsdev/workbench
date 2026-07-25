@@ -1,0 +1,1 @@
+export { prospectEngineSlackBridge } from "./bridges";

@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-07-23T17:20:03.228Z",
+  "generatedAt": "2026-07-25T18:37:18.137Z",
   "factories": [
     {
       "factoryId": "@workbench/tools-ab-compare/compose",
@@ -627,10 +627,6 @@
       "packageName": "@workbench/tools-last30days",
       "providerName": null,
       "bareToolNames": [
-        "competitor_analysis_format_report_document",
-        "heartbeat_format_brief_document",
-        "heartbeat_format_brief_notify",
-        "heartbeat_format_brief_title",
         "heartbeat_merge_brief_sources",
         "last30days_collect",
         "last30days_core_extract",
@@ -639,8 +635,7 @@
         "last30days_format_report_document",
         "last30days_ground_queries",
         "last30days_validate",
-        "last30days_workflow_brief",
-        "sumble_account_intel_format_report_document"
+        "last30days_workflow_brief"
       ],
       "sideEffects": {
         "last30days_core_extract": "read",
@@ -651,12 +646,7 @@
         "last30days_collect": "read",
         "last30days_validate": "read",
         "last30days_workflow_brief": "read",
-        "heartbeat_merge_brief_sources": "read",
-        "heartbeat_format_brief_document": "read",
-        "heartbeat_format_brief_notify": "read",
-        "heartbeat_format_brief_title": "read",
-        "competitor_analysis_format_report_document": "read",
-        "sumble_account_intel_format_report_document": "read"
+        "heartbeat_merge_brief_sources": "read"
       },
       "myraCatalog": null,
       "credentialCatalog": null
@@ -888,7 +878,9 @@
       "bareToolNames": [
         "prospect_engine_charge_credits",
         "prospect_engine_dedupe_candidates",
+        "prospect_engine_extract_candidates_from_reply",
         "prospect_engine_extract_list_org_ids",
+        "prospect_engine_extract_map_reveal_overlay",
         "prospect_engine_format_mail_refs",
         "prospect_engine_format_report",
         "prospect_engine_format_slack_digest",
@@ -909,7 +901,74 @@
         "prospect_engine_format_slack_digest": "read",
         "prospect_engine_format_mail_refs": "read",
         "prospect_engine_serialize_ledger": "read",
-        "prospect_engine_extract_list_org_ids": "read"
+        "prospect_engine_extract_list_org_ids": "read",
+        "prospect_engine_extract_candidates_from_reply": "read",
+        "prospect_engine_extract_map_reveal_overlay": "read"
+      },
+      "myraCatalog": null,
+      "credentialCatalog": null
+    },
+    {
+      "factoryId": "@workbench/tools-prospect-engine/ledger-bridge",
+      "packageName": "@workbench/tools-prospect-engine",
+      "providerName": null,
+      "bareToolNames": [
+        "prospect_engine_read_ledger_tolerant"
+      ],
+      "sideEffects": {
+        "prospect_engine_read_ledger_tolerant": "read"
+      },
+      "myraCatalog": null,
+      "credentialCatalog": null
+    },
+    {
+      "factoryId": "@workbench/tools-prospect-engine/mail-bridge",
+      "packageName": "@workbench/tools-prospect-engine",
+      "providerName": null,
+      "bareToolNames": [
+        "prospect_engine_send_mail_tolerant"
+      ],
+      "sideEffects": {
+        "prospect_engine_send_mail_tolerant": "write"
+      },
+      "myraCatalog": null,
+      "credentialCatalog": null
+    },
+    {
+      "factoryId": "@workbench/tools-prospect-engine-slack-bridge/post",
+      "packageName": "@workbench/tools-prospect-engine-slack-bridge",
+      "providerName": "slack",
+      "bareToolNames": [
+        "prospect_engine_post_slack_tolerant"
+      ],
+      "sideEffects": {
+        "prospect_engine_post_slack_tolerant": "write"
+      },
+      "myraCatalog": null,
+      "credentialCatalog": null
+    },
+    {
+      "factoryId": "@workbench/tools-prospect-engine-sumble-bridge/add",
+      "packageName": "@workbench/tools-prospect-engine-sumble-bridge",
+      "providerName": "sumble",
+      "bareToolNames": [
+        "prospect_engine_add_organization_list_tolerant"
+      ],
+      "sideEffects": {
+        "prospect_engine_add_organization_list_tolerant": "write"
+      },
+      "myraCatalog": null,
+      "credentialCatalog": null
+    },
+    {
+      "factoryId": "@workbench/tools-prospect-engine-sumble-bridge/list",
+      "packageName": "@workbench/tools-prospect-engine-sumble-bridge",
+      "providerName": "sumble",
+      "bareToolNames": [
+        "prospect_engine_read_organization_list_tolerant"
+      ],
+      "sideEffects": {
+        "prospect_engine_read_organization_list_tolerant": "read"
       },
       "myraCatalog": null,
       "credentialCatalog": null
@@ -1336,6 +1395,277 @@
       "credentialCatalog": {
         "label": "YouTube"
       }
+    },
+    {
+      "factoryId": "@workbench/workflow-competitor-analysis/core",
+      "packageName": "@workbench/workflow-competitor-analysis",
+      "providerName": null,
+      "bareToolNames": [
+        "competitor_analysis_format_report_document"
+      ],
+      "sideEffects": {
+        "competitor_analysis_format_report_document": "read"
+      },
+      "myraCatalog": null,
+      "credentialCatalog": null
+    },
+    {
+      "factoryId": "@workbench/workflow-exa-topic-watch/core",
+      "packageName": "@workbench/workflow-exa-topic-watch",
+      "providerName": null,
+      "bareToolNames": [
+        "exa_topic_watch_prepare_search"
+      ],
+      "sideEffects": {
+        "exa_topic_watch_prepare_search": "read"
+      },
+      "myraCatalog": null,
+      "credentialCatalog": null
+    },
+    {
+      "factoryId": "@workbench/workflow-firecrawl-url-watch/core",
+      "packageName": "@workbench/workflow-firecrawl-url-watch",
+      "providerName": null,
+      "bareToolNames": [
+        "firecrawl_url_watch_format_document"
+      ],
+      "sideEffects": {
+        "firecrawl_url_watch_format_document": "read"
+      },
+      "myraCatalog": null,
+      "credentialCatalog": null
+    },
+    {
+      "factoryId": "@workbench/workflow-gamma-presentation-creator/core",
+      "packageName": "@workbench/workflow-gamma-presentation-creator",
+      "providerName": null,
+      "bareToolNames": [
+        "gamma_presentation_creator_prepare_persist",
+        "gamma_presentation_creator_prepare_render"
+      ],
+      "sideEffects": {
+        "gamma_presentation_creator_prepare_render": "read",
+        "gamma_presentation_creator_prepare_persist": "read"
+      },
+      "myraCatalog": null,
+      "credentialCatalog": null
+    },
+    {
+      "factoryId": "@workbench/workflow-gamma-presentation-creator/fetch",
+      "packageName": "@workbench/workflow-gamma-presentation-creator",
+      "providerName": null,
+      "bareToolNames": [
+        "gamma_presentation_creator_fetch_artifact",
+        "gamma_presentation_creator_fetch_note"
+      ],
+      "sideEffects": {
+        "gamma_presentation_creator_fetch_artifact": "read",
+        "gamma_presentation_creator_fetch_note": "read"
+      },
+      "myraCatalog": null,
+      "credentialCatalog": null
+    },
+    {
+      "factoryId": "@workbench/workflow-github-topic-watch/core",
+      "packageName": "@workbench/workflow-github-topic-watch",
+      "providerName": null,
+      "bareToolNames": [
+        "github_topic_watch_format_activity_query"
+      ],
+      "sideEffects": {
+        "github_topic_watch_format_activity_query": "read"
+      },
+      "myraCatalog": null,
+      "credentialCatalog": null
+    },
+    {
+      "factoryId": "@workbench/workflow-gtm-scripts-briefs/core",
+      "packageName": "@workbench/workflow-gtm-scripts-briefs",
+      "providerName": null,
+      "bareToolNames": [
+        "gtm_scripts_briefs_prepare_persist"
+      ],
+      "sideEffects": {
+        "gtm_scripts_briefs_prepare_persist": "read"
+      },
+      "myraCatalog": null,
+      "credentialCatalog": null
+    },
+    {
+      "factoryId": "@workbench/workflow-heartbeat/core",
+      "packageName": "@workbench/workflow-heartbeat",
+      "providerName": null,
+      "bareToolNames": [
+        "heartbeat_format_brief_document",
+        "heartbeat_format_brief_notify",
+        "heartbeat_format_brief_title",
+        "heartbeat_intake_source"
+      ],
+      "sideEffects": {
+        "heartbeat_format_brief_title": "read",
+        "heartbeat_format_brief_document": "read",
+        "heartbeat_format_brief_notify": "read",
+        "heartbeat_intake_source": "read"
+      },
+      "myraCatalog": null,
+      "credentialCatalog": null
+    },
+    {
+      "factoryId": "@workbench/workflow-last30days-research/exa-safe",
+      "packageName": "@workbench/workflow-last30days-research",
+      "providerName": null,
+      "bareToolNames": [
+        "last30days_safe_exa_search"
+      ],
+      "sideEffects": {
+        "last30days_safe_exa_search": "read"
+      },
+      "myraCatalog": null,
+      "credentialCatalog": null
+    },
+    {
+      "factoryId": "@workbench/workflow-last30days-research/github-safe",
+      "packageName": "@workbench/workflow-last30days-research",
+      "providerName": null,
+      "bareToolNames": [
+        "last30days_safe_github_activity"
+      ],
+      "sideEffects": {
+        "last30days_safe_github_activity": "read"
+      },
+      "myraCatalog": null,
+      "credentialCatalog": null
+    },
+    {
+      "factoryId": "@workbench/workflow-last30days-research/keyless-safe",
+      "packageName": "@workbench/workflow-last30days-research",
+      "providerName": null,
+      "bareToolNames": [
+        "last30days_safe_hackernews_search",
+        "last30days_safe_polymarket_odds"
+      ],
+      "sideEffects": {
+        "last30days_safe_hackernews_search": "read",
+        "last30days_safe_polymarket_odds": "read"
+      },
+      "myraCatalog": null,
+      "credentialCatalog": null
+    },
+    {
+      "factoryId": "@workbench/workflow-last30days-research/reddit-safe",
+      "packageName": "@workbench/workflow-last30days-research",
+      "providerName": null,
+      "bareToolNames": [
+        "last30days_safe_reddit_search"
+      ],
+      "sideEffects": {
+        "last30days_safe_reddit_search": "read"
+      },
+      "myraCatalog": null,
+      "credentialCatalog": null
+    },
+    {
+      "factoryId": "@workbench/workflow-last30days-research/x-safe",
+      "packageName": "@workbench/workflow-last30days-research",
+      "providerName": null,
+      "bareToolNames": [
+        "last30days_safe_x_search"
+      ],
+      "sideEffects": {
+        "last30days_safe_x_search": "read"
+      },
+      "myraCatalog": null,
+      "credentialCatalog": null
+    },
+    {
+      "factoryId": "@workbench/workflow-last30days-research/youtube-safe",
+      "packageName": "@workbench/workflow-last30days-research",
+      "providerName": null,
+      "bareToolNames": [
+        "last30days_safe_youtube_search"
+      ],
+      "sideEffects": {
+        "last30days_safe_youtube_search": "read"
+      },
+      "myraCatalog": null,
+      "credentialCatalog": null
+    },
+    {
+      "factoryId": "@workbench/workflow-multi-source-collateral/list-issues",
+      "packageName": "@workbench/workflow-multi-source-collateral",
+      "providerName": null,
+      "bareToolNames": [
+        "multi_source_collateral_list_issues"
+      ],
+      "sideEffects": {
+        "multi_source_collateral_list_issues": "read"
+      },
+      "myraCatalog": null,
+      "credentialCatalog": null
+    },
+    {
+      "factoryId": "@workbench/workflow-process-granola-call/core",
+      "packageName": "@workbench/workflow-process-granola-call",
+      "providerName": null,
+      "bareToolNames": [
+        "process_granola_prepare_document"
+      ],
+      "sideEffects": {
+        "process_granola_prepare_document": "read"
+      },
+      "myraCatalog": null,
+      "credentialCatalog": null
+    },
+    {
+      "factoryId": "@workbench/workflow-reddit-opportunity-scanner/collect",
+      "packageName": "@workbench/workflow-reddit-opportunity-scanner",
+      "providerName": null,
+      "bareToolNames": [
+        "reddit_opportunity_scanner_collect_search"
+      ],
+      "sideEffects": {
+        "reddit_opportunity_scanner_collect_search": "read"
+      },
+      "myraCatalog": null,
+      "credentialCatalog": null
+    },
+    {
+      "factoryId": "@workbench/workflow-reddit-opportunity-watch/core",
+      "packageName": "@workbench/workflow-reddit-opportunity-watch",
+      "providerName": null,
+      "bareToolNames": [
+        "reddit_opportunity_watch_format_digest_document"
+      ],
+      "sideEffects": {
+        "reddit_opportunity_watch_format_digest_document": "read"
+      },
+      "myraCatalog": null,
+      "credentialCatalog": null
+    },
+    {
+      "factoryId": "@workbench/workflow-sumble-account-intel/core",
+      "packageName": "@workbench/workflow-sumble-account-intel",
+      "providerName": null,
+      "bareToolNames": [
+        "sumble_account_intel_enrich_contacts",
+        "sumble_account_intel_format_report_document",
+        "sumble_account_intel_list_jobs",
+        "sumble_account_intel_list_teams",
+        "sumble_account_intel_resolve_organization",
+        "sumble_account_intel_search_people",
+        "sumble_account_intel_search_signals"
+      ],
+      "sideEffects": {
+        "sumble_account_intel_format_report_document": "read",
+        "sumble_account_intel_resolve_organization": "read",
+        "sumble_account_intel_search_people": "read",
+        "sumble_account_intel_list_teams": "read",
+        "sumble_account_intel_list_jobs": "read",
+        "sumble_account_intel_search_signals": "read",
+        "sumble_account_intel_enrich_contacts": "read"
+      },
+      "myraCatalog": null,
+      "credentialCatalog": null
     }
   ]
 }

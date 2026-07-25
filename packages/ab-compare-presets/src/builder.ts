@@ -1,12 +1,29 @@
-import { awaitSignal, defineWorkflow } from "@intx/workflow";
+import { action, awaitSignal, defineWorkflow } from "@intx/workflow";
 import type { Primitive, RetryPolicy } from "@intx/workflow";
-import { deterministicToolStep, agentStep } from "@workbench/agents";
+import { agentStep, canonicalizeStepToolName } from "@workbench/agents";
 import { AB_PRESET_EXECUTE_SYSTEM_PROMPT } from "./prompt";
 import type { AbPresetConfig } from "./presets";
 
 // The persisted artifact kind — shared with the other A/B workflows so the
 // renderer routes every comparison through one ComparisonView.
 export const ARTIFACT_KIND = "ab-comparison";
+
+// Native `action` handler refs. `canonicalizeStepToolName`'s first argument is
+// only folded into its build-time error message (it does not affect the
+// resolved handler name), so one shared id per tool is fine even though the
+// builder emits three preset workflows off this one module.
+export const QUORUM_HANDLER = canonicalizeStepToolName(
+  "ab-compare-quorum",
+  "ab_preset_quorum",
+);
+export const COMPOSE_HANDLER = canonicalizeStepToolName(
+  "ab-compare-compose",
+  "ab_preset_compose",
+);
+export const ARTIFACT_CREATE_HANDLER = canonicalizeStepToolName(
+  "ab-compare-persist",
+  "artifact_create",
+);
 
 // Each variant retries transient failures on its pinned source. Once retries
 // are exhausted the step fails, which fails the whole run — a variant no
@@ -90,34 +107,49 @@ export function buildAbPresetWorkflow(config: AbPresetConfig): BuiltAbPreset {
   // this step decides — the value here is failing fast on the shortfall
   // instead of letting the human pick from a decision gate that will be
   // reported failed either way.
-  steps.quorum = deterministicToolStep({
-    id: "quorum",
-    title: "Check enough models answered",
-    tool: "ab_preset_quorum",
+  //
+  // Native `action`: the tool reads the raw `steps` map keyed by step id
+  // (`args[exec<i>].output`, `args.config`, ...) plus the fixed variant
+  // metadata under `__presetVariants` — this `merge` produces exactly that
+  // shape verbatim, so no argMap reshape is needed.
+  steps.quorum = action({
+    handler: QUORUM_HANDLER,
     input: { merge: [{ from: "steps" }, variantsLiteral] },
+    effect: { requires: [QUORUM_HANDLER] },
     after: execIds,
   });
 
   steps.decision = awaitSignal({ name: "ab-decision", after: ["quorum"] });
 
-  steps.compose = deterministicToolStep({
-    id: "compose",
-    title: "Compile the comparison",
-    tool: "ab_preset_compose",
+  steps.compose = action({
+    handler: COMPOSE_HANDLER,
     input: { merge: [{ from: "steps" }, variantsLiteral] },
+    effect: { requires: [COMPOSE_HANDLER] },
     after: ["decision"],
   });
 
-  steps.persist = deterministicToolStep({
-    id: "persist",
-    title: "Save the comparison",
-    tool: "artifact_create",
-    input: { from: "steps.compose.output" },
-    argMap: {
-      content: { from: "content" },
-      title: { literal: `${config.label} Results` },
-      kind: { literal: ARTIFACT_KIND },
+  // Native `action`: `artifact_create`'s own argument names are `title`,
+  // `kind`, `content`. `compose`'s output is `{ content: "<json>" }` (the
+  // stringTool envelope), so `project` picks `content` verbatim under its own
+  // name and `title`/`kind` are the two fixed constants — the former argMap
+  // was doing exactly this reshape, expressible with plain selectors.
+  steps.persist = action({
+    handler: ARTIFACT_CREATE_HANDLER,
+    input: {
+      merge: [
+        {
+          project: { from: "steps.compose.output" },
+          fields: ["content"],
+        },
+        {
+          literal: {
+            title: `${config.label} Results`,
+            kind: ARTIFACT_KIND,
+          },
+        },
+      ],
     },
+    effect: { requires: [ARTIFACT_CREATE_HANDLER] },
     after: ["compose"],
   });
 

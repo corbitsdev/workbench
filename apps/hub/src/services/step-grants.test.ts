@@ -12,9 +12,15 @@ import { frameGrantRules } from "./step-grants";
 // the sidecar writes into every step's state/grants.json, i.e. the set the
 // workflow child's authorize/EffectContext actually evaluates. The hub-side
 // per-step grant files were a dead path for actions.
-const EFFECT_NAME = "@workbench/tools-last30days/core:last30days_ground_queries";
+const EFFECT_NAME =
+  "@workbench/tools-last30days/core:last30days_ground_queries";
+// A sibling tool staged by the SAME factory (@workbench/tools-last30days/core)
+// as EFFECT_NAME — heartbeat_format_brief_title moved to its own
+// @workbench/tools-heartbeat package, so last30days_collect is now
+// the co-located fixture proving the whole package's surface stages, not just
+// declared names.
 const SIBLING_EFFECT_NAME =
-  "@workbench/tools-last30days/core:heartbeat_format_brief_title";
+  "@workbench/tools-last30days/core:last30days_collect";
 
 function actionDefinition() {
   return defineWorkflow({

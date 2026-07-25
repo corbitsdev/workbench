@@ -20,9 +20,16 @@
   },
   "dependencies": {
     "@intx/agent": "workspace:*",
+    "@intx/types": "workspace:*",
     "@intx/workflow": "workspace:*",
     "@workbench/agents": "workspace:*",
     "@workbench/shared": "workspace:*",
+    "@workbench/tool-credentials": "workspace:*",
+    "@workbench/tool-manifest": "workspace:*",
+    "@workbench/tools-attio": "workspace:*",
+    "@workbench/tools-granola": "workspace:*",
+    "@workbench/tools-linear": "workspace:*",
+    "@workbench/tools-vercel": "workspace:*",
     "@workbench/ui": "workspace:*",
     "arktype": "catalog:",
     "react": "^19.0.0"
@@ -37,5 +44,9 @@
   },
   "peerDependencies": {
     "react": "*"
+  },
+  "interchange": {
+    "tools": "./dist/interchange-tools.js",
+    "manifest": "./src/tool-manifest.ts"
   }
 }

@@ -14,10 +14,8 @@ import {
   SkippedSource,
 } from "@workbench/last30days-core";
 import {
-  formatHeartbeatBriefDocument,
-  formatHeartbeatBriefTitle,
+  isToleranceEnvelopeFailure,
   mergeHeartbeatBriefSources,
-  morningBriefNotifyMail,
 } from "@workbench/shared";
 
 export const LAST30DAYS_CORE_EXTRACT_DEFINITION: ToolDefinition = {
@@ -94,51 +92,6 @@ export const LAST30DAYS_FORMAT_REPORT_DOCUMENT_DEFINITION: ToolDefinition = {
   },
 };
 
-export const COMPETITOR_ANALYSIS_FORMAT_REPORT_DOCUMENT_DEFINITION: ToolDefinition =
-  {
-    name: "competitor_analysis_format_report_document",
-    description:
-      "Internal workflow helper. Pairs the researched company's URL with the synthesize agent's reply into the { title, body } shape write_artifact expects, so the persist step never reshapes the agent's reply field.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        companyUrl: {
-          type: "string",
-          description:
-            "The researched company's URL, used as the artifact title.",
-        },
-        reply: {
-          type: "string",
-          description: "The synthesize agent's competitor report text.",
-        },
-      },
-      required: ["companyUrl", "reply"],
-    },
-  };
-
-export const SUMBLE_ACCOUNT_INTEL_FORMAT_REPORT_DOCUMENT_DEFINITION: ToolDefinition =
-  {
-    name: "sumble_account_intel_format_report_document",
-    description:
-      "Internal workflow helper. Pairs the researched account's organization domain with the synthesize agent's reply into the { title, body } shape write_artifact expects, so the persist step never reshapes the agent's reply field.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        organizationDomain: {
-          type: "string",
-          description:
-            "The researched account's organization domain, used as the artifact title.",
-        },
-        reply: {
-          type: "string",
-          description:
-            "The synthesize agent's account intelligence brief text.",
-        },
-      },
-      required: ["organizationDomain", "reply"],
-    },
-  };
-
 export const LAST30DAYS_GROUND_QUERIES_DEFINITION: ToolDefinition = {
   name: "last30days_ground_queries",
   description:
@@ -166,80 +119,6 @@ export const HEARTBEAT_MERGE_BRIEF_SOURCES_DEFINITION: ToolDefinition = {
   inputSchema: {
     type: "object",
     additionalProperties: true,
-  },
-};
-
-export const HEARTBEAT_FORMAT_BRIEF_NOTIFY_DEFINITION: ToolDefinition = {
-  name: "heartbeat_format_brief_notify",
-  description:
-    "Internal heartbeat workflow helper. Builds the morning-brief notify mail's exact mail_send argument shape ({ to, subject, content, refs }) from the firing user's address, the composed brief document, and the persisted artifact id, so the notify step reads this tool's output verbatim.",
-  inputSchema: {
-    type: "object",
-    properties: {
-      userAddress: {
-        type: "string",
-        description: "The firing user's usr_ mail address.",
-      },
-      title: {
-        type: "string",
-        description: "The brief's display title (mail subject).",
-      },
-      body: {
-        type: "string",
-        description: "The brief's body (mail content).",
-      },
-      artifactId: {
-        type: "string",
-        description: "Persisted morning-brief artifact id from write_artifact.",
-      },
-      runId: {
-        type: "string",
-        description:
-          "Workflow run id from the hub trigger payload (same as mail messageId).",
-      },
-      workflowLabel: {
-        type: "string",
-        description:
-          "Display label for the workflow_run ref (defaults to Company Heartbeat).",
-      },
-    },
-    required: ["userAddress", "title", "body", "artifactId", "runId"],
-  },
-};
-
-export const HEARTBEAT_FORMAT_BRIEF_DOCUMENT_DEFINITION: ToolDefinition = {
-  name: "heartbeat_format_brief_document",
-  description:
-    "Internal heartbeat workflow helper. Pairs the title step's title with the brief agent's reply into the { title, body } shape write_artifact and the notify-mail step expect, so neither downstream step reshapes the agent's reply field.",
-  inputSchema: {
-    type: "object",
-    properties: {
-      title: {
-        type: "string",
-        description:
-          "The brief's display title from heartbeat_format_brief_title.",
-      },
-      reply: {
-        type: "string",
-        description: "The brief agent's synthesized reply text.",
-      },
-    },
-    required: ["title", "reply"],
-  },
-};
-
-export const HEARTBEAT_FORMAT_BRIEF_TITLE_DEFINITION: ToolDefinition = {
-  name: "heartbeat_format_brief_title",
-  description:
-    'Internal heartbeat workflow helper. Formats the morning brief\'s display name as "<User>\'s Morning Brief - DD/MM/YY" (falls back to "Your Morning Brief - DD/MM/YY" when no display name is known), for use as both the notify mail subject and the persisted artifact title.',
-  inputSchema: {
-    type: "object",
-    properties: {
-      userDisplayName: {
-        type: "string",
-        description: "The firing user's display name, if known.",
-      },
-    },
   },
 };
 
@@ -372,61 +251,6 @@ function createFormatReportDocumentTool(): AgentTool {
   };
 }
 
-function createCompetitorAnalysisFormatReportDocumentTool(): AgentTool {
-  return {
-    kind: "full",
-    definition: COMPETITOR_ANALYSIS_FORMAT_REPORT_DOCUMENT_DEFINITION,
-    handler: async (call) => {
-      const args = coerceArgsObject(call.arguments);
-      const companyUrl = args.companyUrl;
-      const reply = args.reply;
-      if (typeof companyUrl !== "string" || companyUrl.trim().length === 0) {
-        return {
-          callId: call.id,
-          isError: true,
-          content: "companyUrl is required",
-        };
-      }
-      if (typeof reply !== "string" || reply.trim().length === 0) {
-        return { callId: call.id, isError: true, content: "reply is required" };
-      }
-      return {
-        callId: call.id,
-        content: { title: companyUrl.trim(), body: reply },
-      };
-    },
-  };
-}
-
-function createSumbleAccountIntelFormatReportDocumentTool(): AgentTool {
-  return {
-    kind: "full",
-    definition: SUMBLE_ACCOUNT_INTEL_FORMAT_REPORT_DOCUMENT_DEFINITION,
-    handler: async (call) => {
-      const args = coerceArgsObject(call.arguments);
-      const organizationDomain = args.organizationDomain;
-      const reply = args.reply;
-      if (
-        typeof organizationDomain !== "string" ||
-        organizationDomain.trim().length === 0
-      ) {
-        return {
-          callId: call.id,
-          isError: true,
-          content: "organizationDomain is required",
-        };
-      }
-      if (typeof reply !== "string" || reply.trim().length === 0) {
-        return { callId: call.id, isError: true, content: "reply is required" };
-      }
-      return {
-        callId: call.id,
-        content: { title: organizationDomain.trim(), body: reply },
-      };
-    },
-  };
-}
-
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
@@ -447,9 +271,19 @@ function truncateDetail(detail: string): string {
 
 /**
  * A source step's result is an `{ output: { content, isError? } }` envelope.
- * A failed source (rate-limit/auth/network) arrives as a plain-text `isError`
- * envelope, not JSON — so parsing must degrade to a recorded skip, never throw.
- * One failed source must not poison the brief for the others.
+ * A failed source (rate-limit/auth/network) can arrive two ways:
+ *
+ * - The legacy `nonFatal`-degraded shape: the outer `output.isError` is a
+ *   plain-text `true`, not JSON.
+ * - The native-`action` shape: every source now dispatches through a
+ *   `last30days_safe_*` wrapper tool (`workflows/last30days-research/src/
+ *   tools.ts`) that never lets its OWN `ToolResult.isError` come back true —
+ *   `runDeterministicToolStep` would throw and fail the run if it did. A
+ *   wrapped failure instead arrives as a SUCCESSFUL string result whose JSON
+ *   `content` carries the error as data: `{ isError: true, error }`.
+ *
+ * Both must degrade to a recorded skip, never throw — one failed source must
+ * not poison the brief for the others.
  */
 function parseSourceStep(step: unknown): SourceParse {
   const output = isRecord(step) ? step.output : undefined;
@@ -474,6 +308,13 @@ function parseSourceStep(step: unknown): SourceParse {
   } catch (cause) {
     const reason = cause instanceof Error ? cause.message : String(cause);
     return { ok: false, reason: `non-JSON content: ${reason}` };
+  }
+  if (isToleranceEnvelopeFailure(parsed)) {
+    const detail =
+      parsed.error.trim().length > 0
+        ? truncateDetail(parsed.error)
+        : "tool reported an error";
+    return { ok: false, reason: `source errored: ${detail}` };
   }
   return { ok: true, items: collectItems(parsed) };
 }
@@ -867,93 +708,6 @@ function createValidateTool(): AgentTool {
   };
 }
 
-function createHeartbeatFormatBriefNotifyTool(): AgentTool {
-  return {
-    kind: "full",
-    definition: HEARTBEAT_FORMAT_BRIEF_NOTIFY_DEFINITION,
-    handler: async (call) => {
-      const args = coerceArgsObject(call.arguments);
-      const userAddress = args.userAddress;
-      const title = args.title;
-      const body = args.body;
-      const artifactId = args.artifactId;
-      const runId = args.runId;
-      const workflowLabel =
-        typeof args.workflowLabel === "string" ? args.workflowLabel : undefined;
-      for (const [name, value] of [
-        ["userAddress", userAddress],
-        ["title", title],
-        ["body", body],
-        ["artifactId", artifactId],
-        ["runId", runId],
-      ] as const) {
-        if (typeof value !== "string" || value.trim().length === 0) {
-          return {
-            callId: call.id,
-            isError: true,
-            content: `${name} is required`,
-          };
-        }
-      }
-      try {
-        const content = morningBriefNotifyMail({
-          userAddress: userAddress as string,
-          title: title as string,
-          body: body as string,
-          artifactId: artifactId as string,
-          runId: runId as string,
-          ...(workflowLabel !== undefined ? { workflowLabel } : {}),
-        });
-        return { callId: call.id, content };
-      } catch (err) {
-        const message = err instanceof Error ? err.message : String(err);
-        return { callId: call.id, isError: true, content: message };
-      }
-    },
-  };
-}
-
-function createHeartbeatFormatBriefDocumentTool(): AgentTool {
-  return {
-    kind: "full",
-    definition: HEARTBEAT_FORMAT_BRIEF_DOCUMENT_DEFINITION,
-    handler: async (call) => {
-      const args = coerceArgsObject(call.arguments);
-      const title = args.title;
-      const reply = args.reply;
-      if (typeof title !== "string" || title.trim().length === 0) {
-        return { callId: call.id, isError: true, content: "title is required" };
-      }
-      if (typeof reply !== "string" || reply.trim().length === 0) {
-        return { callId: call.id, isError: true, content: "reply is required" };
-      }
-      try {
-        const content = formatHeartbeatBriefDocument(title, reply);
-        return { callId: call.id, content };
-      } catch (err) {
-        const message = err instanceof Error ? err.message : String(err);
-        return { callId: call.id, isError: true, content: message };
-      }
-    },
-  };
-}
-
-function createHeartbeatFormatBriefTitleTool(): AgentTool {
-  return {
-    kind: "full",
-    definition: HEARTBEAT_FORMAT_BRIEF_TITLE_DEFINITION,
-    handler: async (call) => {
-      const args = coerceArgsObject(call.arguments);
-      const userDisplayName =
-        typeof args.userDisplayName === "string"
-          ? args.userDisplayName
-          : undefined;
-      const title = formatHeartbeatBriefTitle(userDisplayName, Date.now());
-      return { callId: call.id, content: { title } };
-    },
-  };
-}
-
 function createHeartbeatMergeBriefSourcesTool(): AgentTool {
   return {
     kind: "full",
@@ -978,10 +732,5 @@ export function createLast30daysTools(): AgentTool[] {
     createWorkflowBriefTool(),
     createValidateTool(),
     createHeartbeatMergeBriefSourcesTool(),
-    createHeartbeatFormatBriefTitleTool(),
-    createHeartbeatFormatBriefDocumentTool(),
-    createHeartbeatFormatBriefNotifyTool(),
-    createCompetitorAnalysisFormatReportDocumentTool(),
-    createSumbleAccountIntelFormatReportDocumentTool(),
   ];
 }

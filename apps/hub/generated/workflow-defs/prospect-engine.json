@@ -29,8 +29,10 @@
       "key": "filter",
       "label": "Dedupe and score",
       "stepIds": [
+        "extractDiscoverCandidates",
         "dedupe",
         "score",
+        "extractScoreCandidates",
         "qualify"
       ]
     },
@@ -45,6 +47,7 @@
       "key": "package",
       "label": "Package report",
       "stepIds": [
+        "extractMapRevealOverlay",
         "formatReport",
         "persist",
         "formatDigest"
@@ -104,110 +107,60 @@
     ],
     "steps": {
       "initBudget": {
-        "kind": "step",
+        "kind": "action",
         "id": "initBudget",
-        "agent": {
-          "id": "prospect-engine-init-budget",
-          "systemPrompt": "",
-          "toolFactories": [],
-          "capabilities": [
-            "@workbench/tools-prospect-engine/core:prospect_engine_init_budget"
-          ],
-          "inference": {
-            "sources": []
-          },
-          "description": "Deterministic tool call: @workbench/tools-prospect-engine/core:prospect_engine_init_budget",
-          "tags": {
-            "workbench.stepKind": "deterministic-tool",
-            "workbench.tool": "@workbench/tools-prospect-engine/core:prospect_engine_init_budget",
-            "workbench.argMap": "{}",
-            "workbench.title": "Initialize credit budget"
-          }
-        },
+        "handler": "@workbench/tools-prospect-engine/core:prospect_engine_init_budget",
         "drainBehavior": "cancel",
         "input": {
-          "from": "trigger.payload"
+          "literal": {}
+        },
+        "effect": {
+          "requires": [
+            "@workbench/tools-prospect-engine/core:prospect_engine_init_budget"
+          ]
         }
       },
       "findLedger": {
-        "kind": "step",
+        "kind": "action",
         "id": "findLedger",
-        "agent": {
-          "id": "prospect-engine-find-ledger",
-          "systemPrompt": "",
-          "toolFactories": [],
-          "capabilities": [
-            "@workbench/tools-artifact/artifact:artifact_find_by_title"
-          ],
-          "inference": {
-            "sources": []
-          },
-          "description": "Deterministic tool call: @workbench/tools-artifact/artifact:artifact_find_by_title",
-          "tags": {
-            "workbench.stepKind": "deterministic-tool",
-            "workbench.tool": "@workbench/tools-artifact/artifact:artifact_find_by_title",
-            "workbench.argMap": "{\"title\":{\"literal\":\"Prospect engine — seen-accounts ledger\"},\"kind\":{\"literal\":\"prospect-engine-ledger\"}}",
-            "workbench.title": "Locate seen-accounts ledger artifact"
-          }
-        },
+        "handler": "@workbench/tools-artifact/artifact:artifact_find_by_title",
         "drainBehavior": "cancel",
         "input": {
-          "from": "trigger.payload"
+          "literal": {
+            "title": "Prospect engine — seen-accounts ledger",
+            "kind": "prospect-engine-ledger"
+          }
+        },
+        "effect": {
+          "requires": [
+            "@workbench/tools-artifact/artifact:artifact_find_by_title"
+          ]
         },
         "after": [
           "initBudget"
         ]
       },
       "readLedger": {
-        "kind": "step",
+        "kind": "action",
         "id": "readLedger",
-        "agent": {
-          "id": "prospect-engine-read-ledger",
-          "systemPrompt": "",
-          "toolFactories": [],
-          "capabilities": [
-            "@workbench/tools-artifact/artifact:artifact_read"
-          ],
-          "inference": {
-            "sources": []
-          },
-          "description": "Deterministic tool call: @workbench/tools-artifact/artifact:artifact_read",
-          "tags": {
-            "workbench.stepKind": "deterministic-tool",
-            "workbench.tool": "@workbench/tools-artifact/artifact:artifact_read",
-            "workbench.argMap": "{\"artifactId\":{\"fromJson\":\"content\",\"field\":\"artifactId\",\"skipStepIfAbsent\":true}}",
-            "workbench.nonFatal": "true",
-            "workbench.title": "Read seen-accounts ledger body"
-          }
-        },
+        "handler": "@workbench/tools-prospect-engine/ledger-bridge:prospect_engine_read_ledger_tolerant",
         "drainBehavior": "cancel",
         "input": {
           "from": "steps.findLedger.output"
+        },
+        "effect": {
+          "requires": [
+            "@workbench/tools-prospect-engine/ledger-bridge:prospect_engine_read_ledger_tolerant"
+          ]
         },
         "after": [
           "findLedger"
         ]
       },
       "parseLedger": {
-        "kind": "step",
+        "kind": "action",
         "id": "parseLedger",
-        "agent": {
-          "id": "prospect-engine-parse-ledger",
-          "systemPrompt": "",
-          "toolFactories": [],
-          "capabilities": [
-            "@workbench/tools-prospect-engine/core:prospect_engine_parse_ledger"
-          ],
-          "inference": {
-            "sources": []
-          },
-          "description": "Deterministic tool call: @workbench/tools-prospect-engine/core:prospect_engine_parse_ledger",
-          "tags": {
-            "workbench.stepKind": "deterministic-tool",
-            "workbench.tool": "@workbench/tools-prospect-engine/core:prospect_engine_parse_ledger",
-            "workbench.title": "Parse seen-accounts ledger"
-          }
-        },
+        "handler": "@workbench/tools-prospect-engine/core:prospect_engine_parse_ledger",
         "drainBehavior": "cancel",
         "input": {
           "merge": [
@@ -219,121 +172,71 @@
             }
           ]
         },
+        "effect": {
+          "requires": [
+            "@workbench/tools-prospect-engine/core:prospect_engine_parse_ledger"
+          ]
+        },
         "after": [
           "initBudget",
           "readLedger"
         ]
       },
       "pipeline": {
-        "kind": "step",
+        "kind": "action",
         "id": "pipeline",
-        "agent": {
-          "id": "prospect-engine-read-pipeline-list",
-          "systemPrompt": "",
-          "toolFactories": [],
-          "capabilities": [
-            "@workbench/tools-sumble/sumble:sumble_get_organization_list"
-          ],
-          "inference": {
-            "sources": []
-          },
-          "description": "Deterministic tool call: @workbench/tools-sumble/sumble:sumble_get_organization_list",
-          "tags": {
-            "workbench.stepKind": "deterministic-tool",
-            "workbench.tool": "@workbench/tools-sumble/sumble:sumble_get_organization_list",
-            "workbench.argMap": "{\"listId\":{\"literal\":80088}}",
-            "workbench.nonFatal": "true",
-            "workbench.title": "Read Attio Active Pipeline exclusions"
-          }
-        },
+        "handler": "@workbench/tools-prospect-engine-sumble-bridge/list:prospect_engine_read_organization_list_tolerant",
         "drainBehavior": "cancel",
         "input": {
-          "from": "trigger.payload"
+          "literal": 80088
+        },
+        "effect": {
+          "requires": [
+            "@workbench/tools-prospect-engine-sumble-bridge/list:prospect_engine_read_organization_list_tolerant"
+          ]
         },
         "after": [
           "parseLedger"
         ]
       },
       "growthList": {
-        "kind": "step",
+        "kind": "action",
         "id": "growthList",
-        "agent": {
-          "id": "prospect-engine-read-growth-list",
-          "systemPrompt": "",
-          "toolFactories": [],
-          "capabilities": [
-            "@workbench/tools-sumble/sumble:sumble_get_organization_list"
-          ],
-          "inference": {
-            "sources": []
-          },
-          "description": "Deterministic tool call: @workbench/tools-sumble/sumble:sumble_get_organization_list",
-          "tags": {
-            "workbench.stepKind": "deterministic-tool",
-            "workbench.tool": "@workbench/tools-sumble/sumble:sumble_get_organization_list",
-            "workbench.argMap": "{\"listId\":{\"from\":\"growthEngineListId\"}}",
-            "workbench.nonFatal": "true",
-            "workbench.title": "Read Engine - Growth list"
-          }
-        },
+        "handler": "@workbench/tools-prospect-engine-sumble-bridge/list:prospect_engine_read_organization_list_tolerant",
         "drainBehavior": "cancel",
         "input": {
-          "from": "trigger.payload"
+          "from": "trigger.payload.growthEngineListId"
+        },
+        "effect": {
+          "requires": [
+            "@workbench/tools-prospect-engine-sumble-bridge/list:prospect_engine_read_organization_list_tolerant"
+          ]
         },
         "after": [
           "parseLedger"
         ]
       },
       "enterpriseList": {
-        "kind": "step",
+        "kind": "action",
         "id": "enterpriseList",
-        "agent": {
-          "id": "prospect-engine-read-enterprise-list",
-          "systemPrompt": "",
-          "toolFactories": [],
-          "capabilities": [
-            "@workbench/tools-sumble/sumble:sumble_get_organization_list"
-          ],
-          "inference": {
-            "sources": []
-          },
-          "description": "Deterministic tool call: @workbench/tools-sumble/sumble:sumble_get_organization_list",
-          "tags": {
-            "workbench.stepKind": "deterministic-tool",
-            "workbench.tool": "@workbench/tools-sumble/sumble:sumble_get_organization_list",
-            "workbench.argMap": "{\"listId\":{\"from\":\"enterpriseEngineListId\"}}",
-            "workbench.nonFatal": "true",
-            "workbench.title": "Read Engine - Enterprise list"
-          }
-        },
+        "handler": "@workbench/tools-prospect-engine-sumble-bridge/list:prospect_engine_read_organization_list_tolerant",
         "drainBehavior": "cancel",
         "input": {
-          "from": "trigger.payload"
+          "from": "trigger.payload.enterpriseEngineListId"
+        },
+        "effect": {
+          "requires": [
+            "@workbench/tools-prospect-engine-sumble-bridge/list:prospect_engine_read_organization_list_tolerant"
+          ]
         },
         "after": [
           "parseLedger"
         ]
       },
       "extractListOrgs": {
-        "kind": "step",
+        "kind": "action",
         "id": "extractListOrgs",
-        "agent": {
-          "id": "prospect-engine-extract-list-org-ids",
-          "systemPrompt": "",
-          "toolFactories": [],
-          "capabilities": [
-            "@workbench/tools-prospect-engine/core:prospect_engine_extract_list_org_ids"
-          ],
-          "inference": {
-            "sources": []
-          },
-          "description": "Deterministic tool call: @workbench/tools-prospect-engine/core:prospect_engine_extract_list_org_ids",
-          "tags": {
-            "workbench.stepKind": "deterministic-tool",
-            "workbench.tool": "@workbench/tools-prospect-engine/core:prospect_engine_extract_list_org_ids",
-            "workbench.title": "Extract exclusion list org ids"
-          }
-        },
+        "handler": "@workbench/tools-prospect-engine/core:prospect_engine_extract_list_org_ids",
         "drainBehavior": "cancel",
         "input": {
           "project": {
@@ -343,6 +246,11 @@
             "pipeline",
             "growthList",
             "enterpriseList"
+          ]
+        },
+        "effect": {
+          "requires": [
+            "@workbench/tools-prospect-engine/core:prospect_engine_extract_list_org_ids"
           ]
         },
         "after": [
@@ -414,32 +322,32 @@
           "extractListOrgs"
         ]
       },
-      "dedupe": {
-        "kind": "step",
-        "id": "dedupe",
-        "agent": {
-          "id": "prospect-engine-dedupe-candidates",
-          "systemPrompt": "",
-          "toolFactories": [],
-          "capabilities": [
-            "@workbench/tools-prospect-engine/core:prospect_engine_dedupe_candidates"
-          ],
-          "inference": {
-            "sources": []
-          },
-          "description": "Deterministic tool call: @workbench/tools-prospect-engine/core:prospect_engine_dedupe_candidates",
-          "tags": {
-            "workbench.stepKind": "deterministic-tool",
-            "workbench.tool": "@workbench/tools-prospect-engine/core:prospect_engine_dedupe_candidates",
-            "workbench.argMap": "{\"candidates\":{\"fromJson\":\"reply\",\"field\":\"candidates\"},\"ledger\":{\"from\":\"ledger\"},\"pipelineOrgIds\":{\"from\":\"pipelineOrgIds\"},\"growthOrgIds\":{\"from\":\"growthOrgIds\"},\"enterpriseOrgIds\":{\"from\":\"enterpriseOrgIds\"}}",
-            "workbench.title": "Dedupe candidates"
-          }
+      "extractDiscoverCandidates": {
+        "kind": "action",
+        "id": "extractDiscoverCandidates",
+        "handler": "@workbench/tools-prospect-engine/core:prospect_engine_extract_candidates_from_reply",
+        "drainBehavior": "cancel",
+        "input": {
+          "from": "steps.discover.output"
         },
+        "effect": {
+          "requires": [
+            "@workbench/tools-prospect-engine/core:prospect_engine_extract_candidates_from_reply"
+          ]
+        },
+        "after": [
+          "discover"
+        ]
+      },
+      "dedupe": {
+        "kind": "action",
+        "id": "dedupe",
+        "handler": "@workbench/tools-prospect-engine/core:prospect_engine_dedupe_candidates",
         "drainBehavior": "cancel",
         "input": {
           "merge": [
             {
-              "from": "steps.discover.output"
+              "from": "steps.extractDiscoverCandidates.output.content"
             },
             {
               "from": "steps.parseLedger.output.content"
@@ -449,8 +357,13 @@
             }
           ]
         },
+        "effect": {
+          "requires": [
+            "@workbench/tools-prospect-engine/core:prospect_engine_dedupe_candidates"
+          ]
+        },
         "after": [
-          "discover",
+          "extractDiscoverCandidates",
           "parseLedger",
           "extractListOrgs"
         ]
@@ -494,33 +407,38 @@
           "dedupe"
         ]
       },
-      "qualify": {
-        "kind": "step",
-        "id": "qualify",
-        "agent": {
-          "id": "prospect-engine-qualify",
-          "systemPrompt": "",
-          "toolFactories": [],
-          "capabilities": [
-            "@workbench/tools-prospect-engine/core:prospect_engine_qualify"
-          ],
-          "inference": {
-            "sources": []
-          },
-          "description": "Deterministic tool call: @workbench/tools-prospect-engine/core:prospect_engine_qualify",
-          "tags": {
-            "workbench.stepKind": "deterministic-tool",
-            "workbench.tool": "@workbench/tools-prospect-engine/core:prospect_engine_qualify",
-            "workbench.argMap": "{\"candidates\":{\"fromJson\":\"reply\",\"field\":\"candidates\"}}",
-            "workbench.title": "Qualify shortlist"
-          }
-        },
+      "extractScoreCandidates": {
+        "kind": "action",
+        "id": "extractScoreCandidates",
+        "handler": "@workbench/tools-prospect-engine/core:prospect_engine_extract_candidates_from_reply",
         "drainBehavior": "cancel",
         "input": {
           "from": "steps.score.output"
         },
+        "effect": {
+          "requires": [
+            "@workbench/tools-prospect-engine/core:prospect_engine_extract_candidates_from_reply"
+          ]
+        },
         "after": [
           "score"
+        ]
+      },
+      "qualify": {
+        "kind": "action",
+        "id": "qualify",
+        "handler": "@workbench/tools-prospect-engine/core:prospect_engine_qualify",
+        "drainBehavior": "cancel",
+        "input": {
+          "from": "steps.extractScoreCandidates.output.content"
+        },
+        "effect": {
+          "requires": [
+            "@workbench/tools-prospect-engine/core:prospect_engine_qualify"
+          ]
+        },
+        "after": [
+          "extractScoreCandidates"
         ]
       },
       "mapReveal": {
@@ -569,27 +487,27 @@
           "initBudget"
         ]
       },
-      "formatReport": {
-        "kind": "step",
-        "id": "formatReport",
-        "agent": {
-          "id": "prospect-engine-format-report",
-          "systemPrompt": "",
-          "toolFactories": [],
-          "capabilities": [
-            "@workbench/tools-prospect-engine/core:prospect_engine_format_report"
-          ],
-          "inference": {
-            "sources": []
-          },
-          "description": "Deterministic tool call: @workbench/tools-prospect-engine/core:prospect_engine_format_report",
-          "tags": {
-            "workbench.stepKind": "deterministic-tool",
-            "workbench.tool": "@workbench/tools-prospect-engine/core:prospect_engine_format_report",
-            "workbench.argMap": "{\"runDate\":{\"from\":\"runDate\"},\"baseAccounts\":{\"from\":\"accounts\"},\"accounts\":{\"fromJson\":\"reply\",\"field\":\"accounts\",\"optional\":true},\"budgetId\":{\"from\":\"budgetId\",\"optional\":true},\"creditsUsed\":{\"fromJson\":\"reply\",\"field\":\"creditsCharged\",\"optional\":true},\"stopReason\":{\"fromJson\":\"reply\",\"field\":\"stopReason\",\"optional\":true}}",
-            "workbench.title": "Format nightly report"
-          }
+      "extractMapRevealOverlay": {
+        "kind": "action",
+        "id": "extractMapRevealOverlay",
+        "handler": "@workbench/tools-prospect-engine/core:prospect_engine_extract_map_reveal_overlay",
+        "drainBehavior": "cancel",
+        "input": {
+          "from": "steps.mapReveal.output"
         },
+        "effect": {
+          "requires": [
+            "@workbench/tools-prospect-engine/core:prospect_engine_extract_map_reveal_overlay"
+          ]
+        },
+        "after": [
+          "mapReveal"
+        ]
+      },
+      "formatReport": {
+        "kind": "action",
+        "id": "formatReport",
+        "handler": "@workbench/tools-prospect-engine/core:prospect_engine_format_report",
         "drainBehavior": "cancel",
         "input": {
           "merge": [
@@ -597,7 +515,7 @@
               "from": "trigger.payload"
             },
             {
-              "from": "steps.mapReveal.output"
+              "from": "steps.extractMapRevealOverlay.output.content"
             },
             {
               "from": "steps.qualify.output.content"
@@ -607,33 +525,21 @@
             }
           ]
         },
+        "effect": {
+          "requires": [
+            "@workbench/tools-prospect-engine/core:prospect_engine_format_report"
+          ]
+        },
         "after": [
-          "mapReveal",
+          "extractMapRevealOverlay",
           "qualify",
           "initBudget"
         ]
       },
       "persist": {
-        "kind": "step",
+        "kind": "action",
         "id": "persist",
-        "agent": {
-          "id": "prospect-engine-save-nightly-report",
-          "systemPrompt": "",
-          "toolFactories": [],
-          "capabilities": [
-            "@workbench/tools-artifact/artifact:write_artifact"
-          ],
-          "inference": {
-            "sources": []
-          },
-          "description": "Deterministic tool call: @workbench/tools-artifact/artifact:write_artifact",
-          "tags": {
-            "workbench.stepKind": "deterministic-tool",
-            "workbench.tool": "@workbench/tools-artifact/artifact:write_artifact",
-            "workbench.argMap": "{\"title\":{\"from\":\"artifactTitle\"},\"body\":{\"from\":\"body\"},\"kind\":{\"literal\":\"prospect-engine-report\"},\"jobLabel\":{\"literal\":\"Prospect engine\"}}",
-            "workbench.title": "Save the nightly prospect report"
-          }
-        },
+        "handler": "@workbench/tools-artifact/artifact:write_artifact",
         "drainBehavior": "cancel",
         "input": {
           "merge": [
@@ -642,7 +548,18 @@
             },
             {
               "from": "steps.formatReport.output.content"
+            },
+            {
+              "literal": {
+                "kind": "prospect-engine-report",
+                "jobLabel": "Prospect engine"
+              }
             }
+          ]
+        },
+        "effect": {
+          "requires": [
+            "@workbench/tools-artifact/artifact:write_artifact"
           ]
         },
         "after": [
@@ -650,26 +567,9 @@
         ]
       },
       "formatDigest": {
-        "kind": "step",
+        "kind": "action",
         "id": "formatDigest",
-        "agent": {
-          "id": "prospect-engine-format-slack-digest",
-          "systemPrompt": "",
-          "toolFactories": [],
-          "capabilities": [
-            "@workbench/tools-prospect-engine/core:prospect_engine_format_slack_digest"
-          ],
-          "inference": {
-            "sources": []
-          },
-          "description": "Deterministic tool call: @workbench/tools-prospect-engine/core:prospect_engine_format_slack_digest",
-          "tags": {
-            "workbench.stepKind": "deterministic-tool",
-            "workbench.tool": "@workbench/tools-prospect-engine/core:prospect_engine_format_slack_digest",
-            "workbench.argMap": "{\"runDate\":{\"from\":\"runDate\"},\"accounts\":{\"from\":\"accounts\"},\"creditsUsed\":{\"from\":\"creditsUsed\"},\"stopReason\":{\"from\":\"stopReason\"},\"artifactId\":{\"fromJson\":\"content\",\"field\":\"artifactId\"},\"runId\":{\"from\":\"runId\"}}",
-            "workbench.title": "Format Slack digest"
-          }
-        },
+        "handler": "@workbench/tools-prospect-engine/core:prospect_engine_format_slack_digest",
         "drainBehavior": "cancel",
         "input": {
           "merge": [
@@ -680,8 +580,13 @@
               "from": "steps.formatReport.output.content"
             },
             {
-              "from": "steps.persist.output"
+              "from": "steps.persist.output.content"
             }
+          ]
+        },
+        "effect": {
+          "requires": [
+            "@workbench/tools-prospect-engine/core:prospect_engine_format_slack_digest"
           ]
         },
         "after": [
@@ -690,26 +595,9 @@
         ]
       },
       "mergeLedger": {
-        "kind": "step",
+        "kind": "action",
         "id": "mergeLedger",
-        "agent": {
-          "id": "prospect-engine-merge-ledger",
-          "systemPrompt": "",
-          "toolFactories": [],
-          "capabilities": [
-            "@workbench/tools-prospect-engine/core:prospect_engine_merge_ledger"
-          ],
-          "inference": {
-            "sources": []
-          },
-          "description": "Deterministic tool call: @workbench/tools-prospect-engine/core:prospect_engine_merge_ledger",
-          "tags": {
-            "workbench.stepKind": "deterministic-tool",
-            "workbench.tool": "@workbench/tools-prospect-engine/core:prospect_engine_merge_ledger",
-            "workbench.argMap": "{\"ledger\":{\"from\":\"ledger\"},\"runDate\":{\"from\":\"runDate\"},\"accounts\":{\"from\":\"accounts\"},\"creditsUsed\":{\"from\":\"creditsUsed\"},\"stopReason\":{\"from\":\"stopReason\"}}",
-            "workbench.title": "Merge tonight into ledger"
-          }
-        },
+        "handler": "@workbench/tools-prospect-engine/core:prospect_engine_merge_ledger",
         "drainBehavior": "cancel",
         "input": {
           "merge": [
@@ -724,38 +612,38 @@
             }
           ]
         },
+        "effect": {
+          "requires": [
+            "@workbench/tools-prospect-engine/core:prospect_engine_merge_ledger"
+          ]
+        },
         "after": [
           "parseLedger",
           "formatReport"
         ]
       },
       "saveLedger": {
-        "kind": "step",
+        "kind": "action",
         "id": "saveLedger",
-        "agent": {
-          "id": "prospect-engine-save-ledger-artifact",
-          "systemPrompt": "",
-          "toolFactories": [],
-          "capabilities": [
-            "@workbench/tools-artifact/artifact:write_artifact"
-          ],
-          "inference": {
-            "sources": []
-          },
-          "description": "Deterministic tool call: @workbench/tools-artifact/artifact:write_artifact",
-          "tags": {
-            "workbench.stepKind": "deterministic-tool",
-            "workbench.tool": "@workbench/tools-artifact/artifact:write_artifact",
-            "workbench.argMap": "{\"title\":{\"literal\":\"Prospect engine — seen-accounts ledger\"},\"body\":{\"from\":\"content\"},\"kind\":{\"literal\":\"prospect-engine-ledger\"},\"jobLabel\":{\"literal\":\"Prospect engine\"}}",
-            "workbench.title": "Save the prospect ledger artifact"
-          }
-        },
+        "handler": "@workbench/tools-artifact/artifact:write_artifact",
         "drainBehavior": "cancel",
         "input": {
           "merge": [
             {
-              "from": "steps.mergeLedger.output.content"
+              "from": "steps.mergeLedger.output.body"
+            },
+            {
+              "literal": {
+                "title": "Prospect engine — seen-accounts ledger",
+                "kind": "prospect-engine-ledger",
+                "jobLabel": "Prospect engine"
+              }
             }
+          ]
+        },
+        "effect": {
+          "requires": [
+            "@workbench/tools-artifact/artifact:write_artifact"
           ]
         },
         "after": [
@@ -763,27 +651,9 @@
         ]
       },
       "addGrowth": {
-        "kind": "step",
+        "kind": "action",
         "id": "addGrowth",
-        "agent": {
-          "id": "prospect-engine-add-growth-organizations",
-          "systemPrompt": "",
-          "toolFactories": [],
-          "capabilities": [
-            "@workbench/tools-sumble/sumble:sumble_add_organization_list_organizations"
-          ],
-          "inference": {
-            "sources": []
-          },
-          "description": "Deterministic tool call: @workbench/tools-sumble/sumble:sumble_add_organization_list_organizations",
-          "tags": {
-            "workbench.stepKind": "deterministic-tool",
-            "workbench.tool": "@workbench/tools-sumble/sumble:sumble_add_organization_list_organizations",
-            "workbench.argMap": "{\"listId\":{\"from\":\"growthEngineListId\"},\"organizationIds\":{\"from\":\"growthOrganizationIds\"}}",
-            "workbench.nonFatal": "true",
-            "workbench.title": "Add qualified orgs to Engine - Growth"
-          }
-        },
+        "handler": "@workbench/tools-prospect-engine-sumble-bridge/add:prospect_engine_add_organization_list_tolerant",
         "drainBehavior": "cancel",
         "input": {
           "merge": [
@@ -792,7 +662,17 @@
             },
             {
               "from": "steps.formatReport.output.content"
+            },
+            {
+              "literal": {
+                "lane": "growth"
+              }
             }
+          ]
+        },
+        "effect": {
+          "requires": [
+            "@workbench/tools-prospect-engine-sumble-bridge/add:prospect_engine_add_organization_list_tolerant"
           ]
         },
         "after": [
@@ -800,27 +680,9 @@
         ]
       },
       "addEnterprise": {
-        "kind": "step",
+        "kind": "action",
         "id": "addEnterprise",
-        "agent": {
-          "id": "prospect-engine-add-enterprise-organizations",
-          "systemPrompt": "",
-          "toolFactories": [],
-          "capabilities": [
-            "@workbench/tools-sumble/sumble:sumble_add_organization_list_organizations"
-          ],
-          "inference": {
-            "sources": []
-          },
-          "description": "Deterministic tool call: @workbench/tools-sumble/sumble:sumble_add_organization_list_organizations",
-          "tags": {
-            "workbench.stepKind": "deterministic-tool",
-            "workbench.tool": "@workbench/tools-sumble/sumble:sumble_add_organization_list_organizations",
-            "workbench.argMap": "{\"listId\":{\"from\":\"enterpriseEngineListId\"},\"organizationIds\":{\"from\":\"enterpriseOrganizationIds\"}}",
-            "workbench.nonFatal": "true",
-            "workbench.title": "Add qualified orgs to Engine - Enterprise"
-          }
-        },
+        "handler": "@workbench/tools-prospect-engine-sumble-bridge/add:prospect_engine_add_organization_list_tolerant",
         "drainBehavior": "cancel",
         "input": {
           "merge": [
@@ -829,7 +691,17 @@
             },
             {
               "from": "steps.formatReport.output.content"
+            },
+            {
+              "literal": {
+                "lane": "enterprise"
+              }
             }
+          ]
+        },
+        "effect": {
+          "requires": [
+            "@workbench/tools-prospect-engine-sumble-bridge/add:prospect_engine_add_organization_list_tolerant"
           ]
         },
         "after": [
@@ -837,27 +709,9 @@
         ]
       },
       "mailRefs": {
-        "kind": "step",
+        "kind": "action",
         "id": "mailRefs",
-        "agent": {
-          "id": "prospect-engine-format-mail-refs",
-          "systemPrompt": "",
-          "toolFactories": [],
-          "capabilities": [
-            "@workbench/tools-prospect-engine/core:prospect_engine_format_mail_refs"
-          ],
-          "inference": {
-            "sources": []
-          },
-          "description": "Deterministic tool call: @workbench/tools-prospect-engine/core:prospect_engine_format_mail_refs",
-          "tags": {
-            "workbench.stepKind": "deterministic-tool",
-            "workbench.tool": "@workbench/tools-prospect-engine/core:prospect_engine_format_mail_refs",
-            "workbench.argMap": "{\"artifactId\":{\"fromJson\":\"content\",\"field\":\"artifactId\"},\"runId\":{\"from\":\"runId\"},\"workflowLabel\":{\"literal\":\"Prospect engine\"}}",
-            "workbench.nonFatal": "true",
-            "workbench.title": "Build mail deep links"
-          }
-        },
+        "handler": "@workbench/tools-prospect-engine/core:prospect_engine_format_mail_refs",
         "drainBehavior": "cancel",
         "input": {
           "merge": [
@@ -865,8 +719,18 @@
               "from": "trigger.payload"
             },
             {
-              "from": "steps.persist.output"
+              "from": "steps.persist.output.content"
+            },
+            {
+              "literal": {
+                "workflowLabel": "Prospect engine"
+              }
             }
+          ]
+        },
+        "effect": {
+          "requires": [
+            "@workbench/tools-prospect-engine/core:prospect_engine_format_mail_refs"
           ]
         },
         "after": [
@@ -874,27 +738,9 @@
         ]
       },
       "mail": {
-        "kind": "step",
+        "kind": "action",
         "id": "mail",
-        "agent": {
-          "id": "prospect-engine-mail-digest",
-          "systemPrompt": "",
-          "toolFactories": [],
-          "capabilities": [
-            "mail_send"
-          ],
-          "inference": {
-            "sources": []
-          },
-          "description": "Deterministic tool call: mail_send",
-          "tags": {
-            "workbench.stepKind": "deterministic-tool",
-            "workbench.tool": "mail_send",
-            "workbench.argMap": "{\"to\":{\"from\":\"userAddress\"},\"subject\":{\"from\":\"artifactTitle\"},\"content\":{\"from\":\"text\"},\"refs\":{\"from\":\"refs\"}}",
-            "workbench.nonFatal": "true",
-            "workbench.title": "Mail the prospect list"
-          }
-        },
+        "handler": "@workbench/tools-prospect-engine/mail-bridge:prospect_engine_send_mail_tolerant",
         "drainBehavior": "cancel",
         "input": {
           "merge": [
@@ -909,33 +755,20 @@
             }
           ]
         },
+        "effect": {
+          "requires": [
+            "@workbench/tools-prospect-engine/mail-bridge:prospect_engine_send_mail_tolerant"
+          ]
+        },
         "after": [
           "formatDigest",
           "mailRefs"
         ]
       },
       "notify": {
-        "kind": "step",
+        "kind": "action",
         "id": "notify",
-        "agent": {
-          "id": "prospect-engine-post-slack-digest",
-          "systemPrompt": "",
-          "toolFactories": [],
-          "capabilities": [
-            "@workbench/tools-slack/slack:slack_post_message"
-          ],
-          "inference": {
-            "sources": []
-          },
-          "description": "Deterministic tool call: @workbench/tools-slack/slack:slack_post_message",
-          "tags": {
-            "workbench.stepKind": "deterministic-tool",
-            "workbench.tool": "@workbench/tools-slack/slack:slack_post_message",
-            "workbench.argMap": "{\"channel\":{\"from\":\"slackChannelId\",\"skipStepIfAbsent\":true},\"text\":{\"from\":\"text\"}}",
-            "workbench.nonFatal": "true",
-            "workbench.title": "Post the Slack digest"
-          }
-        },
+        "handler": "@workbench/tools-prospect-engine-slack-bridge/post:prospect_engine_post_slack_tolerant",
         "drainBehavior": "cancel",
         "input": {
           "merge": [
@@ -945,6 +778,11 @@
             {
               "from": "steps.formatDigest.output.content"
             }
+          ]
+        },
+        "effect": {
+          "requires": [
+            "@workbench/tools-prospect-engine-slack-bridge/post:prospect_engine_post_slack_tolerant"
           ]
         },
         "after": [
@@ -967,10 +805,13 @@
       "enterpriseList",
       "extractListOrgs",
       "discover",
+      "extractDiscoverCandidates",
       "dedupe",
       "score",
+      "extractScoreCandidates",
       "qualify",
       "mapReveal",
+      "extractMapRevealOverlay",
       "formatReport",
       "persist",
       "formatDigest",

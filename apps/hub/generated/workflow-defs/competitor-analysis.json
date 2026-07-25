@@ -57,29 +57,17 @@
         "drainBehavior": "wait"
       },
       "scrape": {
-        "kind": "step",
+        "kind": "action",
         "id": "scrape",
-        "agent": {
-          "id": "competitor-analysis-scrape",
-          "systemPrompt": "",
-          "toolFactories": [],
-          "capabilities": [
-            "@workbench/tools-firecrawl/firecrawl:firecrawl_scrape"
-          ],
-          "inference": {
-            "sources": []
-          },
-          "description": "Deterministic tool call: @workbench/tools-firecrawl/firecrawl:firecrawl_scrape",
-          "tags": {
-            "workbench.stepKind": "deterministic-tool",
-            "workbench.tool": "@workbench/tools-firecrawl/firecrawl:firecrawl_scrape",
-            "workbench.argMap": "{\"url\":{\"from\":\"companyUrl\"}}",
-            "workbench.title": "Scan the company website"
-          }
-        },
+        "handler": "@workbench/tools-firecrawl/firecrawl:firecrawl_scrape",
         "drainBehavior": "cancel",
         "input": {
           "from": "steps.intake.output"
+        },
+        "effect": {
+          "requires": [
+            "@workbench/tools-firecrawl/firecrawl:firecrawl_scrape"
+          ]
         },
         "after": [
           "intake"
@@ -90,7 +78,7 @@
         "id": "profile",
         "agent": {
           "id": "competitor-analysis-profile",
-          "systemPrompt": "Treat Corbits, Corbits.dev, Interchange, and Faremeter as canonical Corbits names; spell them exactly. When source material contains a clear speech-to-text or spelling variant, use the canonical spelling in your output. Do not replace an ambiguous term unless surrounding context identifies it.\n\nYou are a competitive-intelligence analyst defining a company from its own website.\n\nYou receive:\n- The Firecrawl scrape of the company site (markdown / page content).\n- The operator intake (companyUrl, optional companyName, optional focusNotes).\n\nYour job is to produce a subject profile that later discovery can search against. Ground every claim in the scrape or intake. If the scrape is thin, say so and keep fields short rather than inventing product lines or ICPs.\n\nReturn STRICT JSON only. No markdown fences, no preamble, no trailing text. Match this exact shape:\n{\n  \"companyName\": \"<best name from scrape or intake>\",\n  \"website\": \"<canonical site URL>\",\n  \"category\": \"<one-line market category>\",\n  \"thesis\": \"<2-4 sentences: what they sell, to whom, and why it matters>\",\n  \"icp\": \"<primary buyer / customer type, or empty string if unknown>\",\n  \"positioning\": \"<one-line positioning headline, or empty string>\",\n  \"discoveryQueries\": [\"<3-5 search queries that would surface alternatives and peers>\"]\n}\n\ndiscoveryQueries rules:\n- Include at least one query naming the category + \"competitors\" or \"alternatives\".\n- Include at least one query that pairs the company name with \"vs\" or \"alternative\".\n- Prefer queries that would hit review sites, comparison pages, and G2/Capterra-style lists when relevant.\n- Do not include queries that only restate the company's own marketing.",
+          "systemPrompt": "Treat Corbits, Corbits.dev, Interchange, and Faremeter as canonical Corbits names; spell them exactly. When source material contains a clear speech-to-text or spelling variant, use the canonical spelling in your output. Do not replace an ambiguous term unless surrounding context identifies it.\n\nYou are a competitive-intelligence analyst defining a company from its own website.\n\nYou receive:\n- The Firecrawl scrape of the company site (markdown / page content).\n- The operator intake (url, optional companyName, optional focusNotes).\n\nYour job is to produce a subject profile that later discovery can search against. Ground every claim in the scrape or intake. If the scrape is thin, say so and keep fields short rather than inventing product lines or ICPs.\n\nReturn STRICT JSON only. No markdown fences, no preamble, no trailing text. Match this exact shape:\n{\n  \"companyName\": \"<best name from scrape or intake>\",\n  \"website\": \"<canonical site URL>\",\n  \"category\": \"<one-line market category>\",\n  \"thesis\": \"<2-4 sentences: what they sell, to whom, and why it matters>\",\n  \"icp\": \"<primary buyer / customer type, or empty string if unknown>\",\n  \"positioning\": \"<one-line positioning headline, or empty string>\",\n  \"discoveryQueries\": [\"<3-5 search queries that would surface alternatives and peers>\"]\n}\n\ndiscoveryQueries rules:\n- Include at least one query naming the category + \"competitors\" or \"alternatives\".\n- Include at least one query that pairs the company name with \"vs\" or \"alternative\".\n- Prefer queries that would hit review sites, comparison pages, and G2/Capterra-style lists when relevant.\n- Do not include queries that only restate the company's own marketing.",
           "toolFactories": [],
           "capabilities": [],
           "inference": {
@@ -205,25 +193,9 @@
         ]
       },
       "document": {
-        "kind": "step",
+        "kind": "action",
         "id": "document",
-        "agent": {
-          "id": "competitor-analysis-document",
-          "systemPrompt": "",
-          "toolFactories": [],
-          "capabilities": [
-            "@workbench/tools-last30days/core:competitor_analysis_format_report_document"
-          ],
-          "inference": {
-            "sources": []
-          },
-          "description": "Deterministic tool call: @workbench/tools-last30days/core:competitor_analysis_format_report_document",
-          "tags": {
-            "workbench.stepKind": "deterministic-tool",
-            "workbench.tool": "@workbench/tools-last30days/core:competitor_analysis_format_report_document",
-            "workbench.title": "Compose the report document"
-          }
-        },
+        "handler": "@workbench/workflow-competitor-analysis/core:competitor_analysis_format_report_document",
         "drainBehavior": "cancel",
         "input": {
           "merge": [
@@ -235,31 +207,19 @@
             }
           ]
         },
+        "effect": {
+          "requires": [
+            "@workbench/workflow-competitor-analysis/core:competitor_analysis_format_report_document"
+          ]
+        },
         "after": [
           "synthesize"
         ]
       },
       "packageArtifact": {
-        "kind": "step",
+        "kind": "action",
         "id": "packageArtifact",
-        "agent": {
-          "id": "competitor-analysis-package",
-          "systemPrompt": "",
-          "toolFactories": [],
-          "capabilities": [
-            "@workbench/tools-artifact/artifact:write_artifact"
-          ],
-          "inference": {
-            "sources": []
-          },
-          "description": "Deterministic tool call: @workbench/tools-artifact/artifact:write_artifact",
-          "tags": {
-            "workbench.stepKind": "deterministic-tool",
-            "workbench.tool": "@workbench/tools-artifact/artifact:write_artifact",
-            "workbench.argMap": "{\"title\":{\"from\":\"title\"},\"body\":{\"from\":\"body\"},\"kind\":{\"literal\":\"research\"},\"jobLabel\":{\"literal\":\"Competitor analysis\"}}",
-            "workbench.title": "Save the competitor report"
-          }
-        },
+        "handler": "@workbench/tools-artifact/artifact:write_artifact",
         "drainBehavior": "cancel",
         "input": {
           "merge": [
@@ -268,7 +228,18 @@
             },
             {
               "from": "steps.review.output"
+            },
+            {
+              "literal": {
+                "kind": "research",
+                "jobLabel": "Competitor analysis"
+              }
             }
+          ]
+        },
+        "effect": {
+          "requires": [
+            "@workbench/tools-artifact/artifact:write_artifact"
           ]
         },
         "after": [

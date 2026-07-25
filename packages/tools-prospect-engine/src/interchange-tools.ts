@@ -5,3 +5,8 @@ export const prospectEngine = defineTool({
   id: "@workbench/tools-prospect-engine/core",
   factory: () => createToolRunner(createProspectEngineTools()),
 });
+
+export {
+  prospectEngineLedgerBridge,
+  prospectEngineMailBridge,
+} from "./tolerant-bridges";

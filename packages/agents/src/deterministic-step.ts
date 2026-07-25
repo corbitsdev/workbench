@@ -31,16 +31,6 @@ export const STEP_TITLE_TAG = "workbench.title";
 export const STEP_ARGMAP_TAG = "workbench.argMap";
 
 /**
- * Marker the sidecar's `runDeterministicToolStep` reads to treat a thrown tool
- * error as non-fatal: instead of propagating the throw (which lands the step in
- * the `failed` phase and flips the whole run to `RunFailed`), the harness logs
- * the reason and returns a completed `isError` envelope. Used for best-effort
- * research sources where one dead source must not kill the run — the failure is
- * still surfaced (logged with the why, and recorded by the consumer as a skip).
- */
-export const STEP_NONFATAL_TAG = "workbench.nonFatal";
-
-/**
  * Per-tool-argument reshape spec. Maps a TOOL argument name to one of:
  * - `{ from: 'fieldName' }` — a top-level field on the evaluated step input.
  * - `{ literal: value }` — a JSON-serializable constant.
@@ -123,13 +113,6 @@ export interface DeterministicToolStepOpts {
   /** Step ids this step depends on. */
   after?: readonly string[];
   /**
-   * When true, a thrown tool error does not fail the step (and so cannot fail
-   * the run): the sidecar logs the reason and returns a completed `isError`
-   * envelope. For best-effort sources only — never for a step whose output the
-   * run genuinely depends on.
-   */
-  nonFatal?: boolean;
-  /**
    * Optional short human title shown in the catalog preview instead of the
    * humanized step id (e.g. "Search Hacker News" for a `hackernews` step).
    */
@@ -161,7 +144,6 @@ export function deterministicToolStep(
       ...(opts.argMap !== undefined
         ? { [STEP_ARGMAP_TAG]: JSON.stringify(opts.argMap) }
         : {}),
-      ...(opts.nonFatal === true ? { [STEP_NONFATAL_TAG]: "true" } : {}),
       ...(opts.title !== undefined ? { [STEP_TITLE_TAG]: opts.title } : {}),
     },
   });

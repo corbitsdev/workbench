@@ -1,0 +1,32 @@
+{
+  "name": "@workbench/tools-prospect-engine-sumble-bridge",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./src/index.ts"
+    }
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "BUN_OPTIONS=--conditions=intx-src bun test src",
+    "test:coverage": "BUN_OPTIONS=--conditions=intx-src bun test --coverage --coverage-reporter=lcov --coverage-reporter=text src"
+  },
+  "dependencies": {
+    "@workbench/tool-credentials": "workspace:*",
+    "@workbench/tool-manifest": "workspace:*",
+    "@workbench/tools-sumble": "workspace:*"
+  },
+  "devDependencies": {
+    "@intx/agent": "workspace:*",
+    "@intx/types": "workspace:*",
+    "@types/bun": "latest",
+    "typescript": "^5.9.0"
+  },
+  "interchange": {
+    "tools": "./dist/interchange-tools.js",
+    "manifest": "./src/tool-manifest.ts"
+  }
+}

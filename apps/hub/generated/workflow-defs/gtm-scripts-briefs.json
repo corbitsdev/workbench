@@ -48,6 +48,7 @@
       "key": "done",
       "label": "Done",
       "stepIds": [
+        "persist-prepare",
         "persist"
       ]
     }
@@ -117,26 +118,9 @@
         ]
       },
       "web": {
-        "kind": "step",
+        "kind": "action",
         "id": "web",
-        "agent": {
-          "id": "last30days-fetch-web",
-          "systemPrompt": "",
-          "toolFactories": [],
-          "capabilities": [
-            "@workbench/tools-exa/exa:exa_search"
-          ],
-          "inference": {
-            "sources": []
-          },
-          "description": "Deterministic tool call: @workbench/tools-exa/exa:exa_search",
-          "tags": {
-            "workbench.stepKind": "deterministic-tool",
-            "workbench.tool": "@workbench/tools-exa/exa:exa_search",
-            "workbench.nonFatal": "true",
-            "workbench.title": "Search the web"
-          }
-        },
+        "handler": "@workbench/workflow-last30days-research/exa-safe:last30days_safe_exa_search",
         "drainBehavior": "cancel",
         "input": {
           "merge": [
@@ -150,31 +134,20 @@
             }
           ]
         },
+        "effect": {
+          "requires": [
+            "@workbench/workflow-last30days-research/exa-safe:last30days_safe_exa_search",
+            "@workbench/tools-exa/exa:exa_search"
+          ]
+        },
         "after": [
           "groundQueries"
         ]
       },
       "webB": {
-        "kind": "step",
+        "kind": "action",
         "id": "webB",
-        "agent": {
-          "id": "last30days-fetch-webB",
-          "systemPrompt": "",
-          "toolFactories": [],
-          "capabilities": [
-            "@workbench/tools-exa/exa:exa_search"
-          ],
-          "inference": {
-            "sources": []
-          },
-          "description": "Deterministic tool call: @workbench/tools-exa/exa:exa_search",
-          "tags": {
-            "workbench.stepKind": "deterministic-tool",
-            "workbench.tool": "@workbench/tools-exa/exa:exa_search",
-            "workbench.nonFatal": "true",
-            "workbench.title": "Search the web again"
-          }
-        },
+        "handler": "@workbench/workflow-last30days-research/exa-safe:last30days_safe_exa_search",
         "drainBehavior": "cancel",
         "input": {
           "merge": [
@@ -188,31 +161,20 @@
             }
           ]
         },
+        "effect": {
+          "requires": [
+            "@workbench/workflow-last30days-research/exa-safe:last30days_safe_exa_search",
+            "@workbench/tools-exa/exa:exa_search"
+          ]
+        },
         "after": [
           "web"
         ]
       },
       "webC": {
-        "kind": "step",
+        "kind": "action",
         "id": "webC",
-        "agent": {
-          "id": "last30days-fetch-webC",
-          "systemPrompt": "",
-          "toolFactories": [],
-          "capabilities": [
-            "@workbench/tools-exa/exa:exa_search"
-          ],
-          "inference": {
-            "sources": []
-          },
-          "description": "Deterministic tool call: @workbench/tools-exa/exa:exa_search",
-          "tags": {
-            "workbench.stepKind": "deterministic-tool",
-            "workbench.tool": "@workbench/tools-exa/exa:exa_search",
-            "workbench.nonFatal": "true",
-            "workbench.title": "Search the web once more"
-          }
-        },
+        "handler": "@workbench/workflow-last30days-research/exa-safe:last30days_safe_exa_search",
         "drainBehavior": "cancel",
         "input": {
           "merge": [
@@ -226,31 +188,20 @@
             }
           ]
         },
+        "effect": {
+          "requires": [
+            "@workbench/workflow-last30days-research/exa-safe:last30days_safe_exa_search",
+            "@workbench/tools-exa/exa:exa_search"
+          ]
+        },
         "after": [
           "webB"
         ]
       },
       "hackernews": {
-        "kind": "step",
+        "kind": "action",
         "id": "hackernews",
-        "agent": {
-          "id": "last30days-fetch-hackernews",
-          "systemPrompt": "",
-          "toolFactories": [],
-          "capabilities": [
-            "@workbench/tools-hackernews/hackernews:hackernews_search"
-          ],
-          "inference": {
-            "sources": []
-          },
-          "description": "Deterministic tool call: @workbench/tools-hackernews/hackernews:hackernews_search",
-          "tags": {
-            "workbench.stepKind": "deterministic-tool",
-            "workbench.tool": "@workbench/tools-hackernews/hackernews:hackernews_search",
-            "workbench.nonFatal": "true",
-            "workbench.title": "Search Hacker News"
-          }
-        },
+        "handler": "@workbench/workflow-last30days-research/keyless-safe:last30days_safe_hackernews_search",
         "drainBehavior": "cancel",
         "input": {
           "merge": [
@@ -264,31 +215,19 @@
             }
           ]
         },
+        "effect": {
+          "requires": [
+            "@workbench/workflow-last30days-research/keyless-safe:last30days_safe_hackernews_search"
+          ]
+        },
         "after": [
           "webC"
         ]
       },
       "github": {
-        "kind": "step",
+        "kind": "action",
         "id": "github",
-        "agent": {
-          "id": "last30days-fetch-github",
-          "systemPrompt": "",
-          "toolFactories": [],
-          "capabilities": [
-            "@workbench/tools-github/github:github_activity"
-          ],
-          "inference": {
-            "sources": []
-          },
-          "description": "Deterministic tool call: @workbench/tools-github/github:github_activity",
-          "tags": {
-            "workbench.stepKind": "deterministic-tool",
-            "workbench.tool": "@workbench/tools-github/github:github_activity",
-            "workbench.nonFatal": "true",
-            "workbench.title": "Scan GitHub activity"
-          }
-        },
+        "handler": "@workbench/workflow-last30days-research/github-safe:last30days_safe_github_activity",
         "drainBehavior": "cancel",
         "input": {
           "merge": [
@@ -302,31 +241,20 @@
             }
           ]
         },
+        "effect": {
+          "requires": [
+            "@workbench/workflow-last30days-research/github-safe:last30days_safe_github_activity",
+            "@workbench/tools-github/github:github_activity"
+          ]
+        },
         "after": [
           "hackernews"
         ]
       },
       "reddit": {
-        "kind": "step",
+        "kind": "action",
         "id": "reddit",
-        "agent": {
-          "id": "last30days-fetch-reddit",
-          "systemPrompt": "",
-          "toolFactories": [],
-          "capabilities": [
-            "@workbench/tools-reddit/reddit:reddit_search"
-          ],
-          "inference": {
-            "sources": []
-          },
-          "description": "Deterministic tool call: @workbench/tools-reddit/reddit:reddit_search",
-          "tags": {
-            "workbench.stepKind": "deterministic-tool",
-            "workbench.tool": "@workbench/tools-reddit/reddit:reddit_search",
-            "workbench.nonFatal": "true",
-            "workbench.title": "Search Reddit"
-          }
-        },
+        "handler": "@workbench/workflow-last30days-research/reddit-safe:last30days_safe_reddit_search",
         "drainBehavior": "cancel",
         "input": {
           "merge": [
@@ -340,31 +268,20 @@
             }
           ]
         },
+        "effect": {
+          "requires": [
+            "@workbench/workflow-last30days-research/reddit-safe:last30days_safe_reddit_search",
+            "@workbench/tools-reddit/reddit:reddit_search"
+          ]
+        },
         "after": [
           "github"
         ]
       },
       "x": {
-        "kind": "step",
+        "kind": "action",
         "id": "x",
-        "agent": {
-          "id": "last30days-fetch-x",
-          "systemPrompt": "",
-          "toolFactories": [],
-          "capabilities": [
-            "@workbench/tools-x/x:x_search"
-          ],
-          "inference": {
-            "sources": []
-          },
-          "description": "Deterministic tool call: @workbench/tools-x/x:x_search",
-          "tags": {
-            "workbench.stepKind": "deterministic-tool",
-            "workbench.tool": "@workbench/tools-x/x:x_search",
-            "workbench.nonFatal": "true",
-            "workbench.title": "Search X"
-          }
-        },
+        "handler": "@workbench/workflow-last30days-research/x-safe:last30days_safe_x_search",
         "drainBehavior": "cancel",
         "input": {
           "merge": [
@@ -378,31 +295,20 @@
             }
           ]
         },
+        "effect": {
+          "requires": [
+            "@workbench/workflow-last30days-research/x-safe:last30days_safe_x_search",
+            "@workbench/tools-x/x:x_search"
+          ]
+        },
         "after": [
           "reddit"
         ]
       },
       "youtube": {
-        "kind": "step",
+        "kind": "action",
         "id": "youtube",
-        "agent": {
-          "id": "last30days-fetch-youtube",
-          "systemPrompt": "",
-          "toolFactories": [],
-          "capabilities": [
-            "@workbench/tools-youtube/youtube:youtube_search"
-          ],
-          "inference": {
-            "sources": []
-          },
-          "description": "Deterministic tool call: @workbench/tools-youtube/youtube:youtube_search",
-          "tags": {
-            "workbench.stepKind": "deterministic-tool",
-            "workbench.tool": "@workbench/tools-youtube/youtube:youtube_search",
-            "workbench.nonFatal": "true",
-            "workbench.title": "Search YouTube"
-          }
-        },
+        "handler": "@workbench/workflow-last30days-research/youtube-safe:last30days_safe_youtube_search",
         "drainBehavior": "cancel",
         "input": {
           "merge": [
@@ -416,31 +322,20 @@
             }
           ]
         },
+        "effect": {
+          "requires": [
+            "@workbench/workflow-last30days-research/youtube-safe:last30days_safe_youtube_search",
+            "@workbench/tools-youtube/youtube:youtube_search"
+          ]
+        },
         "after": [
           "x"
         ]
       },
       "polymarket": {
-        "kind": "step",
+        "kind": "action",
         "id": "polymarket",
-        "agent": {
-          "id": "last30days-fetch-polymarket",
-          "systemPrompt": "",
-          "toolFactories": [],
-          "capabilities": [
-            "@workbench/tools-polymarket/polymarket:polymarket_odds"
-          ],
-          "inference": {
-            "sources": []
-          },
-          "description": "Deterministic tool call: @workbench/tools-polymarket/polymarket:polymarket_odds",
-          "tags": {
-            "workbench.stepKind": "deterministic-tool",
-            "workbench.tool": "@workbench/tools-polymarket/polymarket:polymarket_odds",
-            "workbench.nonFatal": "true",
-            "workbench.title": "Check Polymarket odds"
-          }
-        },
+        "handler": "@workbench/workflow-last30days-research/keyless-safe:last30days_safe_polymarket_odds",
         "drainBehavior": "cancel",
         "input": {
           "merge": [
@@ -452,6 +347,11 @@
                 "limit": 15
               }
             }
+          ]
+        },
+        "effect": {
+          "requires": [
+            "@workbench/workflow-last30days-research/keyless-safe:last30days_safe_polymarket_odds"
           ]
         },
         "after": [
@@ -507,26 +407,9 @@
         ]
       },
       "web2": {
-        "kind": "step",
+        "kind": "action",
         "id": "web2",
-        "agent": {
-          "id": "last30days-fetch-web2",
-          "systemPrompt": "",
-          "toolFactories": [],
-          "capabilities": [
-            "@workbench/tools-exa/exa:exa_search"
-          ],
-          "inference": {
-            "sources": []
-          },
-          "description": "Deterministic tool call: @workbench/tools-exa/exa:exa_search",
-          "tags": {
-            "workbench.stepKind": "deterministic-tool",
-            "workbench.tool": "@workbench/tools-exa/exa:exa_search",
-            "workbench.nonFatal": "true",
-            "workbench.title": "Dig deeper on the web"
-          }
-        },
+        "handler": "@workbench/workflow-last30days-research/exa-safe:last30days_safe_exa_search",
         "drainBehavior": "cancel",
         "input": {
           "merge": [
@@ -540,31 +423,20 @@
             }
           ]
         },
+        "effect": {
+          "requires": [
+            "@workbench/workflow-last30days-research/exa-safe:last30days_safe_exa_search",
+            "@workbench/tools-exa/exa:exa_search"
+          ]
+        },
         "after": [
           "entityQueries"
         ]
       },
       "reddit2": {
-        "kind": "step",
+        "kind": "action",
         "id": "reddit2",
-        "agent": {
-          "id": "last30days-fetch-reddit2",
-          "systemPrompt": "",
-          "toolFactories": [],
-          "capabilities": [
-            "@workbench/tools-reddit/reddit:reddit_search"
-          ],
-          "inference": {
-            "sources": []
-          },
-          "description": "Deterministic tool call: @workbench/tools-reddit/reddit:reddit_search",
-          "tags": {
-            "workbench.stepKind": "deterministic-tool",
-            "workbench.tool": "@workbench/tools-reddit/reddit:reddit_search",
-            "workbench.nonFatal": "true",
-            "workbench.title": "Dig deeper on Reddit"
-          }
-        },
+        "handler": "@workbench/workflow-last30days-research/reddit-safe:last30days_safe_reddit_search",
         "drainBehavior": "cancel",
         "input": {
           "merge": [
@@ -578,31 +450,20 @@
             }
           ]
         },
+        "effect": {
+          "requires": [
+            "@workbench/workflow-last30days-research/reddit-safe:last30days_safe_reddit_search",
+            "@workbench/tools-reddit/reddit:reddit_search"
+          ]
+        },
         "after": [
           "web2"
         ]
       },
       "x2": {
-        "kind": "step",
+        "kind": "action",
         "id": "x2",
-        "agent": {
-          "id": "last30days-fetch-x2",
-          "systemPrompt": "",
-          "toolFactories": [],
-          "capabilities": [
-            "@workbench/tools-x/x:x_search"
-          ],
-          "inference": {
-            "sources": []
-          },
-          "description": "Deterministic tool call: @workbench/tools-x/x:x_search",
-          "tags": {
-            "workbench.stepKind": "deterministic-tool",
-            "workbench.tool": "@workbench/tools-x/x:x_search",
-            "workbench.nonFatal": "true",
-            "workbench.title": "Dig deeper on X"
-          }
-        },
+        "handler": "@workbench/workflow-last30days-research/x-safe:last30days_safe_x_search",
         "drainBehavior": "cancel",
         "input": {
           "merge": [
@@ -616,31 +477,20 @@
             }
           ]
         },
+        "effect": {
+          "requires": [
+            "@workbench/workflow-last30days-research/x-safe:last30days_safe_x_search",
+            "@workbench/tools-x/x:x_search"
+          ]
+        },
         "after": [
           "reddit2"
         ]
       },
       "youtube2": {
-        "kind": "step",
+        "kind": "action",
         "id": "youtube2",
-        "agent": {
-          "id": "last30days-fetch-youtube2",
-          "systemPrompt": "",
-          "toolFactories": [],
-          "capabilities": [
-            "@workbench/tools-youtube/youtube:youtube_search"
-          ],
-          "inference": {
-            "sources": []
-          },
-          "description": "Deterministic tool call: @workbench/tools-youtube/youtube:youtube_search",
-          "tags": {
-            "workbench.stepKind": "deterministic-tool",
-            "workbench.tool": "@workbench/tools-youtube/youtube:youtube_search",
-            "workbench.nonFatal": "true",
-            "workbench.title": "Dig deeper on YouTube"
-          }
-        },
+        "handler": "@workbench/workflow-last30days-research/youtube-safe:last30days_safe_youtube_search",
         "drainBehavior": "cancel",
         "input": {
           "merge": [
@@ -652,6 +502,12 @@
                 "limit": 12
               }
             }
+          ]
+        },
+        "effect": {
+          "requires": [
+            "@workbench/workflow-last30days-research/youtube-safe:last30days_safe_youtube_search",
+            "@workbench/tools-youtube/youtube:youtube_search"
           ]
         },
         "after": [
@@ -763,27 +619,10 @@
           "brief"
         ]
       },
-      "persist": {
-        "kind": "step",
-        "id": "persist",
-        "agent": {
-          "id": "gtm-scripts-briefs-persist-artifact",
-          "systemPrompt": "",
-          "toolFactories": [],
-          "capabilities": [
-            "@workbench/tools-artifact/artifact:write_artifact"
-          ],
-          "inference": {
-            "sources": []
-          },
-          "description": "Deterministic tool call: @workbench/tools-artifact/artifact:write_artifact",
-          "tags": {
-            "workbench.stepKind": "deterministic-tool",
-            "workbench.tool": "@workbench/tools-artifact/artifact:write_artifact",
-            "workbench.argMap": "{\"title\":{\"from\":\"topic\"},\"body\":{\"from\":\"reply\"},\"kind\":{\"literal\":\"long-form-script-package\"},\"data\":{\"object\":{\"workflowKind\":{\"literal\":\"gtm-scripts-briefs\"},\"topic\":{\"from\":\"topic\"},\"days\":{\"from\":\"days\"},\"audience\":{\"from\":\"audience\",\"optional\":true},\"objective\":{\"from\":\"objective\",\"optional\":true},\"artifactKind\":{\"literal\":\"long-form-script-package\"}}},\"jobLabel\":{\"literal\":\"GTM scripts and briefs\"}}",
-            "workbench.title": "Save the deliverable"
-          }
-        },
+      "persist-prepare": {
+        "kind": "action",
+        "id": "persist-prepare",
+        "handler": "@workbench/workflow-gtm-scripts-briefs/core:gtm_scripts_briefs_prepare_persist",
         "drainBehavior": "cancel",
         "input": {
           "merge": [
@@ -791,15 +630,41 @@
               "from": "steps.intake.output"
             },
             {
-              "from": "steps.brief.output"
+              "from": "steps.write.output"
             },
             {
-              "from": "steps.write.output"
+              "literal": {
+                "workflowKind": "gtm-scripts-briefs",
+                "artifactKind": "long-form-script-package",
+                "jobLabel": "GTM scripts and briefs"
+              }
             }
+          ]
+        },
+        "effect": {
+          "requires": [
+            "@workbench/workflow-gtm-scripts-briefs/core:gtm_scripts_briefs_prepare_persist"
           ]
         },
         "after": [
           "write"
+        ]
+      },
+      "persist": {
+        "kind": "action",
+        "id": "persist",
+        "handler": "@workbench/tools-artifact/artifact:write_artifact",
+        "drainBehavior": "cancel",
+        "input": {
+          "from": "steps.persist-prepare.output.content"
+        },
+        "effect": {
+          "requires": [
+            "@workbench/tools-artifact/artifact:write_artifact"
+          ]
+        },
+        "after": [
+          "persist-prepare"
         ]
       }
     },
@@ -826,6 +691,7 @@
       "curate",
       "brief",
       "write",
+      "persist-prepare",
       "persist"
     ]
   }

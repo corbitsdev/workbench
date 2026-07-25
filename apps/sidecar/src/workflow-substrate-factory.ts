@@ -45,7 +45,6 @@ import {
   STEP_KIND_TAG,
   STEP_TOOL_TAG,
   STEP_ARGMAP_TAG,
-  STEP_NONFATAL_TAG,
   DETERMINISTIC_TOOL_KIND,
 } from "@workbench/agents";
 import { createActionToolHandlerRegistry } from "./action-tool-handler";
@@ -1372,16 +1371,17 @@ export function createSidecarStepInvoker(args: {
     ) {
       const env = await buildEnv(req);
       const argMapJson = tags?.[STEP_ARGMAP_TAG];
-      // WORKBENCH-LOCAL (CL-2401): a step tagged non-fatal degrades a thrown
-      // tool error to a completed isError envelope so one dead best-effort
-      // source can't flip the whole run to RunFailed.
-      const nonFatal = tags?.[STEP_NONFATAL_TAG] === "true";
+      // WORKBENCH-LOCAL (CL-2401): dispatches a deterministic tool call
+      // instead of a reasoning turn. The `nonFatal` degrade
+      // (`workbench.nonFatal` tag) this factory used to also read here has
+      // been removed — no caller sets it anymore; every best-effort step now owns its own
+      // tolerance-envelope wrapper (`@workbench/tool-credentials/tolerance-
+      // envelope-dispatch`) instead.
       return runDeterministicToolStep({
         env,
         toolName,
         input: req.input,
         ...(argMapJson !== undefined ? { argMapJson } : {}),
-        ...(nonFatal ? { nonFatal } : {}),
         signal: req.signal,
       });
     }

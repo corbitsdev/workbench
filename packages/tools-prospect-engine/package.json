@@ -16,11 +16,13 @@
   },
   "dependencies": {
     "@workbench/shared": "workspace:*",
+    "@workbench/tool-credentials": "workspace:*",
     "@workbench/tool-manifest": "workspace:*",
     "arktype": "catalog:"
   },
   "devDependencies": {
     "@intx/agent": "workspace:*",
+    "@intx/tools-mail": "workspace:*",
     "@intx/types": "workspace:*",
     "@types/bun": "latest",
     "typescript": "^5.9.0"

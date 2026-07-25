@@ -2,12 +2,24 @@ import {
   heartbeatIntakeStepKey,
   WIRED_BRIEF_SOURCES,
 } from "./preferences-registry";
+import {
+  parseToleranceEnvelope,
+  toleranceFailureContent,
+} from "./tolerance-envelope";
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-/** Parse one intake step's stored tool envelope into source-shaped JSON for the brief. */
+/**
+ * Parse one intake step's stored tool envelope into source-shaped JSON for
+ * the brief. Two wire shapes reach here: the legacy `nonFatal`-degraded
+ * shape (a plain-text outer `isError: true`, handled below before delegating
+ * to the shared tolerance-envelope parser), and the native-action
+ * shape every real `heartbeat_intake_source` step now produces — outer
+ * `isError` always false, a failure nested in `content` as `{ isError: true,
+ * error }` (`@workbench/shared`'s `parseToleranceEnvelope`).
+ */
 export function parseBriefSourceToolEnvelope(
   stepOutput: unknown,
 ): Record<string, unknown> {
@@ -17,32 +29,24 @@ export function parseBriefSourceToolEnvelope(
   if (stepOutput.isError === true) {
     const raw = stepOutput.content;
     if (typeof raw === "string" && raw.length > 0) {
-      return { isError: true, error: raw };
+      return toleranceFailureContent(raw);
     }
     if (isRecord(raw) && typeof raw.error === "string") {
-      return { isError: true, error: raw.error };
+      return toleranceFailureContent(raw.error);
     }
-    return { isError: true, error: "source unavailable" };
+    return toleranceFailureContent("source unavailable");
   }
-  const content = stepOutput.content;
-  if (typeof content === "string") {
-    if (content.length === 0) {
-      return {};
-    }
-    try {
-      const parsed: unknown = JSON.parse(content);
-      if (isRecord(parsed)) {
-        return parsed;
-      }
-      return { isError: true, error: "non-object JSON in tool content" };
-    } catch {
-      return { isError: true, error: "invalid JSON in tool content" };
-    }
+  const parsed = parseToleranceEnvelope(stepOutput.content);
+  if (!parsed.ok) {
+    return toleranceFailureContent(parsed.error);
   }
-  if (isRecord(content)) {
-    return content;
+  if (parsed.data === undefined) {
+    return {};
   }
-  return {};
+  if (isRecord(parsed.data)) {
+    return parsed.data;
+  }
+  return toleranceFailureContent("non-object JSON in tool content");
 }
 
 /**

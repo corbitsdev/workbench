@@ -11,10 +11,13 @@ export const PROSPECT_ENGINE_FAILURE_WATCH_STEP_IDS = [
   "enterpriseList",
   "extractListOrgs",
   "discover",
+  "extractDiscoverCandidates",
   "dedupe",
   "score",
+  "extractScoreCandidates",
   "qualify",
   "mapReveal",
+  "extractMapRevealOverlay",
   "formatReport",
   "persist",
   "formatDigest",
@@ -51,7 +54,13 @@ export const DISPLAY_STEPS: DisplayFlowStep[] = [
   {
     key: "filter",
     label: "Dedupe and score",
-    stepIds: ["dedupe", "score", "qualify"],
+    stepIds: [
+      "extractDiscoverCandidates",
+      "dedupe",
+      "score",
+      "extractScoreCandidates",
+      "qualify",
+    ],
   },
   {
     key: "map",
@@ -61,7 +70,12 @@ export const DISPLAY_STEPS: DisplayFlowStep[] = [
   {
     key: "package",
     label: "Package report",
-    stepIds: ["formatReport", "persist", "formatDigest"],
+    stepIds: [
+      "extractMapRevealOverlay",
+      "formatReport",
+      "persist",
+      "formatDigest",
+    ],
   },
   {
     key: "deliver",

@@ -12,7 +12,7 @@ export function buildProfileSystemPrompt(): string {
 
 You receive:
 - The Firecrawl scrape of the company site (markdown / page content).
-- The operator intake (companyUrl, optional companyName, optional focusNotes).
+- The operator intake (url, optional companyName, optional focusNotes).
 
 Your job is to produce a subject profile that later discovery can search against. Ground every claim in the scrape or intake. If the scrape is thin, say so and keep fields short rather than inventing product lines or ICPs.
 

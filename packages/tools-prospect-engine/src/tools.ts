@@ -151,7 +151,8 @@ export const PROSPECT_ENGINE_FORMAT_REPORT_DEFINITION: ToolDefinition = {
       accounts: {
         type: "array",
         items: { type: "object" },
-        description: "Map/reveal overlay or full shortlist when baseAccounts omitted.",
+        description:
+          "Map/reveal overlay or full shortlist when baseAccounts omitted.",
       },
       budgetId: {
         type: "string",
@@ -222,6 +223,51 @@ export const PROSPECT_ENGINE_EXTRACT_LIST_ORG_IDS_DEFINITION: ToolDefinition = {
   },
 };
 
+// A native `action` selector (`from`/`project`/`merge`/`literal`) can read a
+// dot path or rename nothing — it cannot JSON.parse an agent's `reply` string
+// and pull a nested field out of it (prospect-engine has no native
+// equivalent of deterministicToolStep's `fromJson` argMap). Both
+// `prospect_engine_dedupe_candidates` and `prospect_engine_qualify` need the
+// discover/score agents' `{"candidates": [...]}` JSON reply unwrapped into a
+// plain `candidates` array before they ever run; this is the one shaping tool
+// that does it, reused by both call sites, single caller (this workflow).
+export const PROSPECT_ENGINE_EXTRACT_CANDIDATES_FROM_REPLY_DEFINITION: ToolDefinition =
+  {
+    name: "prospect_engine_extract_candidates_from_reply",
+    description:
+      "Parse an agent's JSON reply (discover or score) and extract its candidates array. Fatal (throws) when the reply is absent or unparseable — dedupe/qualify cannot run without a shortlist.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        reply: {
+          type: "string",
+          description:
+            "Raw agent reply, expected to be JSON with a candidates array.",
+        },
+      },
+      required: ["reply"],
+    },
+  };
+
+// Mirrors the `accounts` / `creditsCharged` / `stopReason` unwrap the map/
+// reveal agent's JSON reply needs before `prospect_engine_format_report`
+// reads it — but tolerant, not fatal: the original deterministicToolStep
+// argMap marked all three `optional: true` (a thin/failed map still delivers
+// the qualified shortlist via `baseAccounts`), so an absent or unparseable
+// reply here returns `{}` rather than throwing.
+export const PROSPECT_ENGINE_EXTRACT_MAP_REVEAL_OVERLAY_DEFINITION: ToolDefinition =
+  {
+    name: "prospect_engine_extract_map_reveal_overlay",
+    description:
+      "Parse the map/reveal agent's JSON reply into { accounts?, creditsUsed?, stopReason? }. Tolerant: an absent or unparseable reply returns {} so format_report still runs off baseAccounts alone.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        reply: { type: "string" },
+      },
+    },
+  };
+
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
@@ -249,9 +295,12 @@ function parseCandidates(raw: unknown): ProspectEngineCandidate[] {
   for (const item of raw) {
     const v = ProspectEngineCandidateSchema(item);
     if (!(v instanceof type.errors)) {
+      const sanitizedContacts = sanitizeProspectEngineContacts(v.contacts);
       out.push({
         ...v,
-        contacts: sanitizeProspectEngineContacts(v.contacts),
+        ...(sanitizedContacts !== undefined
+          ? { contacts: sanitizedContacts }
+          : {}),
       });
       continue;
     }
@@ -468,7 +517,14 @@ function createMergeLedgerTool(): AgentTool {
           mergeInput.remainingBalance = args.remainingBalance;
         }
         const merged = mergeProspectEngineLedger(mergeInput);
-        return ok(call.id, { ledger: merged, content: JSON.stringify(merged) });
+        const serialized = JSON.stringify(merged);
+        return ok(call.id, {
+          ledger: merged,
+          // write_artifact (a tool shared across every workflow) always
+          // names its arg `body`; emit it directly rather than aliasing a
+          // separately-named `content` field (single caller).
+          body: serialized,
+        });
       } catch (err) {
         return fail(call.id, err instanceof Error ? err.message : String(err));
       }
@@ -525,6 +581,12 @@ function createQualifyTool(): AgentTool {
       const qualified = qualifyProspects(candidates, minScore, maxKeep);
       return ok(call.id, {
         accounts: qualified,
+        // Alias so format_report's native `action` step can read the
+        // qualified shortlist as `baseAccounts` directly — the map/reveal
+        // overlay also emits an `accounts` field, and a flat merge of both
+        // steps' outputs would collide on that key. Single
+        // caller (this workflow), so aliasing here beats a reshape step.
+        baseAccounts: qualified,
         growthOrganizationIds: qualified
           .filter((a) => a.lane === "growth")
           .map((a) => a.organizationId),
@@ -554,9 +616,7 @@ function createFormatReportTool(store: ProspectEngineBudgetStore): AgentTool {
           ? parseCandidates(args.baseAccounts)
           : parseCandidates(args.accounts);
       const overlay =
-        args.baseAccounts !== undefined
-          ? parseCandidates(args.accounts)
-          : [];
+        args.baseAccounts !== undefined ? parseCandidates(args.accounts) : [];
       const accounts =
         args.baseAccounts !== undefined
           ? mergeProspectEngineShortlist(baseAccounts, overlay)
@@ -667,6 +727,12 @@ function createFormatSlackDigestTool(): AgentTool {
   };
 }
 
+// Tolerant by construction: mailRefs is a best-effort deep-link
+// builder ahead of a native `action` step (`ActionPrimitive` has no
+// error-swallow), so a missing artifactId/runId or a thrown builder error
+// never becomes an `isError` `ToolResult` — it returns `{ isError: true,
+// error }` as ordinary content instead. `mail`'s downstream argMap-free
+// merge already tolerates an absent `refs` field.
 function createFormatMailRefsTool(): AgentTool {
   return {
     kind: "full",
@@ -676,10 +742,10 @@ function createFormatMailRefsTool(): AgentTool {
       const artifactId = args.artifactId;
       const runId = args.runId;
       if (typeof artifactId !== "string" || artifactId.trim().length === 0) {
-        return fail(call.id, "artifactId is required");
+        return ok(call.id, { isError: true, error: "artifactId is required" });
       }
       if (typeof runId !== "string" || runId.trim().length === 0) {
-        return fail(call.id, "runId is required");
+        return ok(call.id, { isError: true, error: "runId is required" });
       }
       try {
         const refs =
@@ -688,7 +754,10 @@ function createFormatMailRefsTool(): AgentTool {
             : prospectEngineMailRefs(artifactId, runId);
         return ok(call.id, { refs });
       } catch (err) {
-        return fail(call.id, err instanceof Error ? err.message : String(err));
+        return ok(call.id, {
+          isError: true,
+          error: err instanceof Error ? err.message : String(err),
+        });
       }
     },
   };
@@ -736,6 +805,69 @@ function createExtractListOrgIdsTool(): AgentTool {
   };
 }
 
+function createExtractCandidatesFromReplyTool(): AgentTool {
+  return {
+    kind: "full",
+    definition: PROSPECT_ENGINE_EXTRACT_CANDIDATES_FROM_REPLY_DEFINITION,
+    handler: async (call) => {
+      const args = coerceArgsObject(call.arguments);
+      const reply = args.reply;
+      if (typeof reply !== "string" || reply.trim().length === 0) {
+        return fail(call.id, "reply is required");
+      }
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(reply);
+      } catch (err) {
+        return fail(
+          call.id,
+          `reply is not valid JSON: ${err instanceof Error ? err.message : String(err)}`,
+        );
+      }
+      if (!isRecord(parsed) || !Array.isArray(parsed.candidates)) {
+        return fail(call.id, "reply JSON has no candidates array");
+      }
+      return ok(call.id, { candidates: parsed.candidates });
+    },
+  };
+}
+
+function createExtractMapRevealOverlayTool(): AgentTool {
+  return {
+    kind: "full",
+    definition: PROSPECT_ENGINE_EXTRACT_MAP_REVEAL_OVERLAY_DEFINITION,
+    handler: async (call) => {
+      const args = coerceArgsObject(call.arguments);
+      const reply = args.reply;
+      if (typeof reply !== "string" || reply.trim().length === 0) {
+        return ok(call.id, {});
+      }
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(reply);
+      } catch {
+        return ok(call.id, {});
+      }
+      if (!isRecord(parsed)) {
+        return ok(call.id, {});
+      }
+      const overlay: {
+        accounts?: unknown;
+        creditsUsed?: number;
+        stopReason?: string;
+      } = {};
+      if (Array.isArray(parsed.accounts)) overlay.accounts = parsed.accounts;
+      if (typeof parsed.creditsCharged === "number") {
+        overlay.creditsUsed = parsed.creditsCharged;
+      }
+      if (typeof parsed.stopReason === "string") {
+        overlay.stopReason = parsed.stopReason;
+      }
+      return ok(call.id, overlay);
+    },
+  };
+}
+
 /** Prospect-engine hub tools. Budget store is process-local so charges accumulate across steps. */
 export function createProspectEngineTools(
   opts?: CreateProspectEngineToolsOpts,
@@ -753,5 +885,7 @@ export function createProspectEngineTools(
     createFormatMailRefsTool(),
     createSerializeLedgerTool(),
     createExtractListOrgIdsTool(),
+    createExtractCandidatesFromReplyTool(),
+    createExtractMapRevealOverlayTool(),
   ];
 }

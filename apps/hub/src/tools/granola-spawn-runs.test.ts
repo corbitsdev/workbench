@@ -148,11 +148,11 @@ describe("granola_spawn_call_runs", () => {
     expect(startCalls).toHaveLength(0);
   });
 
-  it("caps considered notes at maxCalls, accepting text or numeric values", async () => {
+  it("caps considered notes at limit, accepting text or numeric values", async () => {
     const handler = spawnHandler(makeContext([]));
     const asText = JSON.parse(
       await handler(
-        { content: listContent(["a", "b", "c"]), maxCalls: "2" },
+        { content: listContent(["a", "b", "c"]), limit: "2" },
         SIGNAL,
       ),
     ) as { considered: number };
@@ -161,7 +161,7 @@ describe("granola_spawn_call_runs", () => {
     startCalls.length = 0;
     const asNumber = JSON.parse(
       await handler(
-        { content: listContent(["a", "b", "c"]), maxCalls: 1 },
+        { content: listContent(["a", "b", "c"]), limit: 1 },
         SIGNAL,
       ),
     ) as { considered: number };

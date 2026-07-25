@@ -1,8 +1,8 @@
 import { defineAgent } from "@intx/agent";
-import { awaitSignal, defineWorkflow, step } from "@intx/workflow";
+import { action, awaitSignal, defineWorkflow, step } from "@intx/workflow";
 import {
+  canonicalizeStepToolName,
   canonicalizeToolNames,
-  deterministicToolStep,
   agentStep,
   LLM_CREDENTIAL_NAME,
   LLM_WRITER_MODEL,
@@ -34,6 +34,23 @@ export { DISPLAY_STEPS } from "./display-steps";
 // the writer source can truncate mid-object with finish_reason:"length".
 const SYNTHESIZE_MAX_TOKENS = 8192;
 
+// Native `action` handler refs — the tool's canonical (factory-prefixed) name,
+// resolved via the same build-time-checked lookup `deterministicToolStep`
+// used, so a typo'd or manifest-drifted tool name fails the build instead of
+// deploying a step nothing can dispatch.
+export const FIRECRAWL_SCRAPE_HANDLER = canonicalizeStepToolName(
+  "competitor-analysis-scrape",
+  "firecrawl_scrape",
+);
+export const FORMAT_REPORT_DOCUMENT_HANDLER = canonicalizeStepToolName(
+  "competitor-analysis-document",
+  "competitor_analysis_format_report_document",
+);
+export const WRITE_ARTIFACT_HANDLER = canonicalizeStepToolName(
+  "competitor-analysis-package",
+  "write_artifact",
+);
+
 // Tool-using discovery agent: runs Exa searches (and optional Firecrawl scrapes)
 // against the profile's discoveryQueries, then emits a grounded competitor list.
 // Capabilities only — never inline tool factories (definition is pushed as JSON).
@@ -63,12 +80,15 @@ export const workflow = defineWorkflow({
     intake: awaitSignal({ name: "intake" }),
 
     // 2. Scrape the company site — load-bearing for the subject profile.
-    scrape: deterministicToolStep({
-      id: "competitor-analysis-scrape",
-      title: "Scan the company website",
-      tool: "firecrawl_scrape",
+    // Native `action`: intake's `url` field already equals firecrawl_scrape's
+    // arg name (renamed at the source — firecrawl_scrape is shared by
+    // other workflows/agents, so the rename lives in this workflow's own
+    // intake schema, not the tool). Passed verbatim: the tool's arktype
+    // schema ignores the other intake fields.
+    scrape: action({
+      handler: FIRECRAWL_SCRAPE_HANDLER,
       input: { from: "steps.intake.output" },
-      argMap: { url: { from: "companyUrl" } },
+      effect: { requires: [FIRECRAWL_SCRAPE_HANDLER] },
       after: ["intake"],
     }),
 
@@ -117,38 +137,37 @@ export const workflow = defineWorkflow({
 
     // 7. Pairs the researched company's URL with the synthesize agent's reply
     // into { title, body } (CL-4232) — the one place the agent's `reply`
-    // output field is read, so persist never reshapes it.
-    document: deterministicToolStep({
-      id: "competitor-analysis-document",
-      title: "Compose the report document",
-      tool: "competitor_analysis_format_report_document",
+    // output field is read, so persist never reshapes it. Native `action`:
+    // the tool reads `url`/`reply` straight off the merged input (both
+    // already top-level, unrenamed — the tool's sole caller, so its arg was
+    // renamed `companyUrl` → `url` to match intake), so this never
+    // needs a reshape step.
+    document: action({
+      handler: FORMAT_REPORT_DOCUMENT_HANDLER,
       input: {
         merge: [
           { from: "steps.intake.output" },
           { from: "steps.synthesize.output" },
         ],
       },
+      effect: { requires: [FORMAT_REPORT_DOCUMENT_HANDLER] },
       after: ["synthesize"],
     }),
 
     // 8. Persist the report as a research artifact. document already emits
-    // write_artifact's title/body verbatim, so only the two literals remain.
-    packageArtifact: deterministicToolStep({
-      id: "competitor-analysis-package",
-      title: "Save the competitor report",
-      tool: "write_artifact",
+    // write_artifact's title/body verbatim; `kind`/`jobLabel` were always
+    // constants, expressed here as one `literal` merge entry — no reshape
+    // step.
+    packageArtifact: action({
+      handler: WRITE_ARTIFACT_HANDLER,
       input: {
         merge: [
           { from: "steps.document.output.content" },
           { from: "steps.review.output" },
+          { literal: { kind: "research", jobLabel: "Competitor analysis" } },
         ],
       },
-      argMap: {
-        title: { from: "title" },
-        body: { from: "body" },
-        kind: { literal: "research" },
-        jobLabel: { literal: "Competitor analysis" },
-      },
+      effect: { requires: [WRITE_ARTIFACT_HANDLER] },
       after: ["document", "review"],
     }),
   },

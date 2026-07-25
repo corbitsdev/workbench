@@ -2,18 +2,17 @@ import { describe, expect, test } from "bun:test";
 import { runLocal } from "@intx/workflow/runlocal";
 import type { ActionHandler } from "@intx/workflow";
 import type { StepInvoker } from "@intx/workflow/runtime";
-import {
-  DETERMINISTIC_TOOL_KIND,
-  STEP_ARGMAP_TAG,
-  STEP_KIND_TAG,
-  STEP_NONFATAL_TAG,
-  STEP_TOOL_TAG,
-} from "@workbench/agents";
 
 import {
   workflow,
   DOCUMENT_HANDLER,
+  ENRICH_CONTACTS_HANDLER,
+  LIST_JOBS_HANDLER,
+  LIST_TEAMS_HANDLER,
   PACKAGE_ARTIFACT_HANDLER,
+  RESOLVE_ORGANIZATION_HANDLER,
+  SEARCH_PEOPLE_HANDLER,
+  SEARCH_SIGNALS_HANDLER,
   TECH_STACK_HANDLER,
 } from "./index";
 
@@ -49,16 +48,6 @@ function makeRecordingActionResolver(outputs: Record<string, unknown> = {}): {
   return { resolver, ran };
 }
 
-function stepPrimitive(id: string) {
-  const primitive = workflow.steps[id];
-  if (primitive === undefined || primitive.kind !== "step") {
-    throw new Error(
-      `expected step primitive for "${id}", got ${primitive?.kind ?? "undefined"}`,
-    );
-  }
-  return primitive;
-}
-
 function actionPrimitive(id: string) {
   const primitive = workflow.steps[id];
   if (primitive === undefined || primitive.kind !== "action") {
@@ -69,17 +58,24 @@ function actionPrimitive(id: string) {
   return primitive;
 }
 
-function mapPrimitive(id: string) {
+function stepPrimitive(id: string) {
   const primitive = workflow.steps[id];
-  if (primitive === undefined || primitive.kind !== "map") {
+  if (primitive === undefined || primitive.kind !== "step") {
     throw new Error(
-      `expected map primitive for "${id}", got ${primitive?.kind ?? "undefined"}`,
+      `expected step primitive for "${id}", got ${primitive?.kind ?? "undefined"}`,
     );
   }
   return primitive;
 }
 
 const AGENT_REPLY = (reply: string): { reply: string } => ({ reply });
+
+const SLUG_PROJECTION = (limit: number) => ({
+  merge: [
+    { project: { from: "steps.resolve.output.content" }, fields: ["slug"] },
+    { literal: { limit } },
+  ],
+});
 
 describe("sumble-account-intel workflow structure", () => {
   test("declares the expected step keys in order", () => {
@@ -111,104 +107,68 @@ describe("sumble-account-intel workflow structure", () => {
     expect(review.name).toBe("review");
   });
 
-  test("deterministic steps reference the expected Sumble tool names", () => {
-    const expected: Record<string, string> = {
-      resolve: "sumble_resolve_organization",
-      teams: "sumble_list_teams",
-      jobs: "sumble_list_jobs",
-      contacts: "sumble_search_people",
-      signals: "sumble_search_signals",
-    };
-    for (const [stepId, tool] of Object.entries(expected)) {
-      const step = stepPrimitive(stepId);
-      expect(step.agent.tags?.[STEP_KIND_TAG]).toBe(DETERMINISTIC_TOOL_KIND);
-      expect(step.agent.tags?.[STEP_TOOL_TAG]).toContain(tool);
-      expect(step.agent.inference.sources).toEqual([]);
-    }
-  });
-
-  test("resolve routes the single intake identifier through the tool's classifier", () => {
-    const argMap = stepPrimitive("resolve").agent.tags?.[STEP_ARGMAP_TAG];
-    if (argMap === undefined)
-      throw new Error("expected argMap on resolve step");
-    // A single field routed to `identifier` — NOT dual domain+slug (which sent a
-    // slug as the wrong ref field). The tool classifies domain vs slug by shape.
-    expect(JSON.parse(argMap)).toEqual({
-      identifier: { from: "organizationDomain" },
+  test("resolve is a native action reading the whole intake output verbatim (no rename needed — the wrapper's own field is organizationDomain)", () => {
+    const resolve = actionPrimitive("resolve");
+    expect(resolve.handler).toBe(RESOLVE_ORGANIZATION_HANDLER);
+    expect(resolve.input).toEqual({ from: "steps.intake.output" });
+    expect(resolve.effect).toEqual({
+      requires: [RESOLVE_ORGANIZATION_HANDLER],
     });
+    expect("agent" in resolve).toBe(false);
   });
 
-  test("downstream Sumble steps read the resolved org's structured content", () => {
-    for (const stepId of ["teams", "jobs", "contacts", "signals"]) {
-      expect(stepPrimitive(stepId).input).toEqual({
-        from: "steps.resolve.output.content",
-      });
+  test("teams/jobs/signals/contacts are native actions projecting the resolved org's slug (no rename needed)", () => {
+    expect(actionPrimitive("teams").handler).toBe(LIST_TEAMS_HANDLER);
+    expect(actionPrimitive("teams").input).toEqual(SLUG_PROJECTION(25));
+    expect(actionPrimitive("teams").effect).toEqual({
+      requires: [LIST_TEAMS_HANDLER],
+    });
+
+    expect(actionPrimitive("jobs").handler).toBe(LIST_JOBS_HANDLER);
+    expect(actionPrimitive("jobs").input).toEqual(SLUG_PROJECTION(25));
+    expect(actionPrimitive("jobs").effect).toEqual({
+      requires: [LIST_JOBS_HANDLER],
+    });
+
+    expect(actionPrimitive("signals").handler).toBe(SEARCH_SIGNALS_HANDLER);
+    expect(actionPrimitive("signals").input).toEqual(SLUG_PROJECTION(25));
+    expect(actionPrimitive("signals").effect).toEqual({
+      requires: [SEARCH_SIGNALS_HANDLER],
+    });
+
+    expect(actionPrimitive("contacts").handler).toBe(SEARCH_PEOPLE_HANDLER);
+    expect(actionPrimitive("contacts").input).toEqual(SLUG_PROJECTION(10));
+    expect(actionPrimitive("contacts").effect).toEqual({
+      requires: [SEARCH_PEOPLE_HANDLER],
+    });
+
+    for (const id of ["teams", "jobs", "signals", "contacts"]) {
+      expect("agent" in actionPrimitive(id)).toBe(false);
     }
   });
 
   test("techStack is a native action reading the resolved org's slug directly (no rename needed)", () => {
     const techStack = actionPrimitive("techStack");
     expect(techStack.handler).toBe(TECH_STACK_HANDLER);
-    expect(techStack.input).toEqual({
-      merge: [
-        {
-          project: { from: "steps.resolve.output.content" },
-          fields: ["slug"],
-        },
-        { literal: { limit: 25 } },
-      ],
-    });
+    expect(techStack.input).toEqual(SLUG_PROJECTION(25));
     expect(techStack.effect).toEqual({ requires: [TECH_STACK_HANDLER] });
     expect("agent" in techStack).toBe(false);
   });
 
-  test("the bounded Sumble steps cap per-call cost with limit 25", () => {
-    for (const stepId of ["teams", "jobs", "signals"]) {
-      const argMap = stepPrimitive(stepId).agent.tags?.[STEP_ARGMAP_TAG];
-      if (argMap === undefined)
-        throw new Error(`expected argMap on ${stepId} step`);
-      expect(JSON.parse(argMap).limit).toEqual({ literal: 25 });
+  test("enrichSocial is a native action folding the former map — no map primitive remains", () => {
+    const enrich = actionPrimitive("enrichSocial");
+    expect(enrich.handler).toBe(ENRICH_CONTACTS_HANDLER);
+    expect(enrich.input).toEqual({ from: "steps.contacts.output.content" });
+    expect(enrich.effect).toEqual({ requires: [ENRICH_CONTACTS_HANDLER] });
+    expect("agent" in enrich).toBe(false);
+    // No step in this workflow is a `map` primitive anymore.
+    for (const primitive of Object.values(workflow.steps)) {
+      expect(primitive.kind).not.toBe("map");
     }
-  });
-
-  test("the best-effort Sumble steps are marked non-fatal", () => {
-    for (const stepId of ["teams", "jobs", "signals"]) {
-      expect(stepPrimitive(stepId).agent.tags?.[STEP_NONFATAL_TAG]).toBe(
-        "true",
-      );
-    }
-    // resolve and contacts are load-bearing (the run and the enrichment map
-    // depend on their structured output) — NOT non-fatal.
-    for (const stepId of ["resolve", "contacts"]) {
-      expect(
-        stepPrimitive(stepId).agent.tags?.[STEP_NONFATAL_TAG],
-      ).toBeUndefined();
-    }
-  });
-
-  test("enrichSocial is a map over the contacts people array running a non-fatal x_search", () => {
-    const enrich = mapPrimitive("enrichSocial");
-    expect(enrich.over).toEqual({
-      from: "steps.contacts.output.content.people",
-    });
-    const inner = enrich.step;
-    expect(inner.agent.tags?.[STEP_KIND_TAG]).toBe(DETERMINISTIC_TOOL_KIND);
-    expect(inner.agent.tags?.[STEP_TOOL_TAG]).toContain("x_search");
-    expect(inner.agent.tags?.[STEP_NONFATAL_TAG]).toBe("true");
-    expect(inner.input).toEqual({ from: "trigger.payload" });
-    const argMap = inner.agent.tags?.[STEP_ARGMAP_TAG];
-    if (argMap === undefined)
-      throw new Error("expected argMap on x_search step");
-    expect(JSON.parse(argMap)).toEqual({
-      query: { from: "name" },
-      limit: { literal: 5 },
-    });
   });
 
   test("synthesize is a native reasoning step (agentStep) with a real prompt and no tools", () => {
     const synth = stepPrimitive("synthesize");
-    expect(synth.agent.tags?.[STEP_KIND_TAG]).toBeUndefined();
-    expect(synth.agent.tags?.[STEP_TOOL_TAG]).toBeUndefined();
     expect(synth.agent.systemPrompt.length).toBeGreaterThan(0);
     expect(synth.input).toEqual({ from: "steps" });
   });
@@ -241,13 +201,13 @@ describe("sumble-account-intel workflow structure", () => {
   });
 
   test("step `after` dependencies chain as specified", () => {
-    expect(stepPrimitive("resolve").after).toEqual(["intake"]);
-    expect(stepPrimitive("teams").after).toEqual(["resolve"]);
-    expect(stepPrimitive("jobs").after).toEqual(["teams"]);
+    expect(actionPrimitive("resolve").after).toEqual(["intake"]);
+    expect(actionPrimitive("teams").after).toEqual(["resolve"]);
+    expect(actionPrimitive("jobs").after).toEqual(["teams"]);
     expect(actionPrimitive("techStack").after).toEqual(["jobs"]);
-    expect(stepPrimitive("contacts").after).toEqual(["techStack"]);
-    expect(stepPrimitive("signals").after).toEqual(["contacts"]);
-    expect(mapPrimitive("enrichSocial").after).toEqual(["signals"]);
+    expect(actionPrimitive("contacts").after).toEqual(["techStack"]);
+    expect(actionPrimitive("signals").after).toEqual(["contacts"]);
+    expect(actionPrimitive("enrichSocial").after).toEqual(["signals"]);
     expect(stepPrimitive("synthesize").after).toEqual(["enrichSocial"]);
     const review = workflow.steps.review;
     if (!review || review.kind !== "awaitSignal")
@@ -262,20 +222,8 @@ describe("sumble-account-intel workflow structure", () => {
 });
 
 describe("sumble-account-intel workflow execution", () => {
-  test("runs the full flow intake → research → enrichSocial map → synthesize → review → packageArtifact", async () => {
+  test("runs the full flow intake → research (all native actions) → synthesize → review → packageArtifact", async () => {
     const { invoker, ran } = makeRecordingInvoker({
-      // The REAL shapes the fixed tools produce: resolve exposes the matched org
-      // record as structured content; search_people exposes { people, count }.
-      "sumble-account-intel-resolve": {
-        content: { slug: "acme", url: "acme.com" },
-      },
-      "sumble-account-intel-contacts": {
-        content: {
-          people: [{ name: "Ada Lovelace" }, { name: "Alan Turing" }],
-          count: 2,
-        },
-      },
-      "sumble-account-intel-enrich-social": { content: "[]" },
       "sumble-account-intel-synthesize": AGENT_REPLY(
         JSON.stringify({
           title: "Acme — account brief",
@@ -286,7 +234,24 @@ describe("sumble-account-intel workflow execution", () => {
       ),
     });
     const { resolver, ran: actionsRan } = makeRecordingActionResolver({
+      [RESOLVE_ORGANIZATION_HANDLER]: {
+        content: { slug: "acme", url: "acme.com" },
+      },
+      [LIST_TEAMS_HANDLER]: { content: { ok: true, data: { teams: [] } } },
+      [LIST_JOBS_HANDLER]: { content: { ok: true, data: { jobs: [] } } },
+      [SEARCH_PEOPLE_HANDLER]: {
+        content: {
+          people: [{ name: "Ada Lovelace" }, { name: "Alan Turing" }],
+          count: 2,
+        },
+      },
       [TECH_STACK_HANDLER]: { content: "{}" },
+      [SEARCH_SIGNALS_HANDLER]: {
+        content: { ok: true, data: { signals: [] } },
+      },
+      [ENRICH_CONTACTS_HANDLER]: {
+        content: { people: [{ ok: true, data: "[]", name: "Ada Lovelace" }] },
+      },
       [DOCUMENT_HANDLER]: {
         content: { title: "acme.com", body: "## Account summary" },
       },
@@ -305,26 +270,67 @@ describe("sumble-account-intel workflow execution", () => {
 
     expect(result.terminalStatus).toBe("completed");
 
-    const ranIds = ran.map((r) => r.id);
-    expect(ranIds).toContain("sumble-account-intel-resolve");
-    expect(ranIds).toContain("sumble-account-intel-contacts");
-    // The map ran once per contact in the contacts output content array.
-    expect(
-      ran.filter((r) => r.id === "sumble-account-intel-enrich-social"),
-    ).toHaveLength(2);
-    expect(ranIds).toContain("sumble-account-intel-synthesize");
     const actionRefs = actionsRan.map((r) => r.handler);
+    expect(actionRefs).toContain(RESOLVE_ORGANIZATION_HANDLER);
+    expect(actionRefs).toContain(LIST_TEAMS_HANDLER);
+    expect(actionRefs).toContain(LIST_JOBS_HANDLER);
+    expect(actionRefs).toContain(SEARCH_PEOPLE_HANDLER);
+    expect(actionRefs).toContain(SEARCH_SIGNALS_HANDLER);
+    expect(actionRefs).toContain(ENRICH_CONTACTS_HANDLER);
     expect(actionRefs).toContain(TECH_STACK_HANDLER);
     expect(actionRefs).toContain(DOCUMENT_HANDLER);
     expect(actionRefs).toContain(PACKAGE_ARTIFACT_HANDLER);
+    const ranIds = ran.map((r) => r.id);
+    expect(ranIds).toContain("sumble-account-intel-synthesize");
+  });
+
+  test("a degraded (ok:false) facet output does not stop synthesize from running — the run still completes", async () => {
+    const { invoker, ran } = makeRecordingInvoker({
+      "sumble-account-intel-synthesize": AGENT_REPLY(
+        JSON.stringify({
+          title: "t",
+          content: "c",
+          contactsCsv: "name,title,email,x_handle",
+          slackDraft: "s",
+        }),
+      ),
+    });
+    const { resolver } = makeRecordingActionResolver({
+      [RESOLVE_ORGANIZATION_HANDLER]: { content: { slug: "acme" } },
+      // teams/jobs/signals all report a degraded facet — none of this
+      // throws or sets an outer isError, so the action dispatch never fails
+      // the step (see tools.test.ts for the wrapper-level proof).
+      [LIST_TEAMS_HANDLER]: {
+        content: { ok: false, error: "teams exploded" },
+      },
+      [LIST_JOBS_HANDLER]: { content: { ok: false, error: "jobs exploded" } },
+      [SEARCH_SIGNALS_HANDLER]: {
+        content: { ok: false, error: "signals exploded" },
+      },
+      [SEARCH_PEOPLE_HANDLER]: { content: { people: [], count: 0 } },
+      [TECH_STACK_HANDLER]: { content: "{}" },
+      [ENRICH_CONTACTS_HANDLER]: { content: { people: [] } },
+      [DOCUMENT_HANDLER]: { content: { title: "acme.com", body: "c" } },
+      [PACKAGE_ARTIFACT_HANDLER]: {
+        content: JSON.stringify({ artifactId: "art_1" }),
+      },
+    });
+    const run = runLocal(workflow, {
+      invokeStep: invoker,
+      actionResolver: resolver,
+    });
+    await run.signal("intake", { organizationDomain: "acme.com" });
+    await run.signal("review", { approved: true });
+    const result = await run.complete;
+
+    expect(result.terminalStatus).toBe("completed");
+    expect(ran.some((r) => r.id === "sumble-account-intel-synthesize")).toBe(
+      true,
+    );
   });
 
   test("blocks at the review gate until the review signal arrives", async () => {
     const { invoker, ran } = makeRecordingInvoker({
-      "sumble-account-intel-resolve": {
-        content: { slug: "acme" },
-      },
-      "sumble-account-intel-contacts": { content: { people: [], count: 0 } },
       "sumble-account-intel-synthesize": AGENT_REPLY(
         JSON.stringify({
           title: "t",
@@ -335,10 +341,14 @@ describe("sumble-account-intel workflow execution", () => {
       ),
     });
     const { resolver, ran: actionsRan } = makeRecordingActionResolver({
+      [RESOLVE_ORGANIZATION_HANDLER]: { content: { slug: "acme" } },
+      [LIST_TEAMS_HANDLER]: { content: { ok: true, data: {} } },
+      [LIST_JOBS_HANDLER]: { content: { ok: true, data: {} } },
+      [SEARCH_SIGNALS_HANDLER]: { content: { ok: true, data: {} } },
+      [SEARCH_PEOPLE_HANDLER]: { content: { people: [], count: 0 } },
       [TECH_STACK_HANDLER]: { content: "{}" },
-      [DOCUMENT_HANDLER]: {
-        content: { title: "acme.com", body: "c" },
-      },
+      [ENRICH_CONTACTS_HANDLER]: { content: { people: [] } },
+      [DOCUMENT_HANDLER]: { content: { title: "acme.com", body: "c" } },
     });
     const run = runLocal(workflow, {
       invokeStep: invoker,

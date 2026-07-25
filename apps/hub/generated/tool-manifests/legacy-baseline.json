@@ -7,8 +7,10 @@
     "@workbench/tools-agents/agents": [
       "identity_get",
       "identity_set",
+      "invoke_agent",
       "list_agents",
-      "list_principals"
+      "list_principals",
+      "search_agents"
     ],
     "@workbench/tools-artifact/artifact": [
       "artifact_create",
@@ -40,12 +42,22 @@
     "@workbench/tools-bluesky/bluesky": [
       "bluesky_search"
     ],
+    "@workbench/workflow-competitor-analysis/core": [
+      "competitor_analysis_format_report_document"
+    ],
+    "@workbench/tools-corbits-knowledge-engine/corbits-knowledge-engine": [
+      "capture_to_knowledge",
+      "search_company_knowledge"
+    ],
     "@workbench/tools-dispatch/dispatch": [
       "dispatch_agent"
     ],
     "@workbench/tools-exa/exa": [
       "exa_search",
       "web_search"
+    ],
+    "@workbench/workflow-exa-topic-watch/core": [
+      "exa_topic_watch_prepare_search"
     ],
     "@workbench/tools-fileparser/fileparser": [
       "parse_file"
@@ -84,6 +96,9 @@
       "firecrawl_search",
       "firecrawl_token_usage"
     ],
+    "@workbench/workflow-firecrawl-url-watch/core": [
+      "firecrawl_url_watch_format_document"
+    ],
     "@workbench/tools-gamma/gamma": [
       "gamma_create_from_template",
       "gamma_duplicate_presentation",
@@ -92,16 +107,51 @@
     "@workbench/tools-gamma/gamma-templates": [
       "gamma_list_templates"
     ],
+    "@workbench/workflow-gamma-presentation-creator/core": [
+      "gamma_presentation_creator_prepare_persist",
+      "gamma_presentation_creator_prepare_render"
+    ],
+    "@workbench/workflow-gamma-presentation-creator/fetch": [
+      "gamma_presentation_creator_fetch_artifact",
+      "gamma_presentation_creator_fetch_note"
+    ],
     "@workbench/tools-github/github": [
       "github_activity"
+    ],
+    "@workbench/workflow-github-topic-watch/core": [
+      "github_topic_watch_format_activity_query"
+    ],
+    "@workbench/tools-granola/call": [
+      "granola_create_tasks",
+      "granola_fanout_call"
     ],
     "@workbench/tools-granola/granola": [
       "granola_get_note",
       "granola_list_folders",
       "granola_list_notes"
     ],
+    "@workbench/tools-granola/hub": [
+      "granola_spawn_call_runs"
+    ],
+    "@workbench/tools-granola/workflow": [
+      "granola_build_analysis_prompt",
+      "granola_classify_call",
+      "granola_emit_run_outputs",
+      "granola_normalize_note",
+      "granola_parse_analysis",
+      "granola_prepare_artifacts"
+    ],
+    "@workbench/workflow-gtm-scripts-briefs/core": [
+      "gtm_scripts_briefs_prepare_persist"
+    ],
     "@workbench/tools-hackernews/hackernews": [
       "hackernews_search"
+    ],
+    "@workbench/workflow-heartbeat/core": [
+      "heartbeat_format_brief_document",
+      "heartbeat_format_brief_notify",
+      "heartbeat_format_brief_title",
+      "heartbeat_intake_source"
     ],
     "@workbench/tools-last30days/core": [
       "heartbeat_merge_brief_sources",
@@ -109,16 +159,57 @@
       "last30days_core_extract",
       "last30days_core_report",
       "last30days_entity_queries",
+      "last30days_format_report_document",
       "last30days_ground_queries",
       "last30days_validate",
       "last30days_workflow_brief"
     ],
     "@workbench/tools-linear/linear": [
+      "linear_archive_issue",
+      "linear_create_attachment_from_upload",
       "linear_create_issue",
+      "linear_create_issue_label",
+      "linear_delete_issue",
+      "linear_delete_webhook",
+      "linear_get_attachment",
+      "linear_get_document",
       "linear_get_issue",
+      "linear_get_issue_status",
+      "linear_get_project",
+      "linear_get_team",
+      "linear_get_user",
+      "linear_link_issues",
+      "linear_list_comments",
+      "linear_list_cycles",
+      "linear_list_dashboards",
+      "linear_list_documents",
+      "linear_list_initiative_labels",
+      "linear_list_initiatives",
+      "linear_list_integrations",
+      "linear_list_issue_labels",
+      "linear_list_issue_statuses",
       "linear_list_issues",
+      "linear_list_milestones",
+      "linear_list_project_labels",
+      "linear_list_projects",
+      "linear_list_releases",
       "linear_list_teams",
-      "linear_list_users"
+      "linear_list_users",
+      "linear_list_views",
+      "linear_list_webhooks",
+      "linear_prepare_attachment_upload",
+      "linear_save_comment",
+      "linear_save_document",
+      "linear_save_initiative",
+      "linear_save_milestone",
+      "linear_save_project",
+      "linear_save_release",
+      "linear_save_webhook",
+      "linear_search",
+      "linear_update_issue"
+    ],
+    "@workbench/workflow-multi-source-collateral/list-issues": [
+      "multi_source_collateral_list_issues"
     ],
     "@workbench/tools-notion/notion": [
       "notion_create_page",
@@ -131,9 +222,48 @@
     "@workbench/tools-polymarket/polymarket": [
       "polymarket_odds"
     ],
+    "@workbench/workflow-process-granola-call/core": [
+      "process_granola_prepare_document"
+    ],
+    "@workbench/tools-prospect-engine/core": [
+      "prospect_engine_charge_credits",
+      "prospect_engine_dedupe_candidates",
+      "prospect_engine_extract_candidates_from_reply",
+      "prospect_engine_extract_list_org_ids",
+      "prospect_engine_extract_map_reveal_overlay",
+      "prospect_engine_format_mail_refs",
+      "prospect_engine_format_report",
+      "prospect_engine_format_slack_digest",
+      "prospect_engine_init_budget",
+      "prospect_engine_merge_ledger",
+      "prospect_engine_parse_ledger",
+      "prospect_engine_qualify",
+      "prospect_engine_serialize_ledger"
+    ],
+    "@workbench/tools-prospect-engine/ledger-bridge": [
+      "prospect_engine_read_ledger_tolerant"
+    ],
+    "@workbench/tools-prospect-engine/mail-bridge": [
+      "prospect_engine_send_mail_tolerant"
+    ],
+    "@workbench/tools-prospect-engine-slack-bridge/post": [
+      "prospect_engine_post_slack_tolerant"
+    ],
+    "@workbench/tools-prospect-engine-sumble-bridge/add": [
+      "prospect_engine_add_organization_list_tolerant"
+    ],
+    "@workbench/tools-prospect-engine-sumble-bridge/list": [
+      "prospect_engine_read_organization_list_tolerant"
+    ],
     "@workbench/tools-reddit/reddit": [
       "reddit_search",
       "reddit_subreddit_search"
+    ],
+    "@workbench/workflow-reddit-opportunity-scanner/collect": [
+      "reddit_opportunity_scanner_collect_search"
+    ],
+    "@workbench/workflow-reddit-opportunity-watch/core": [
+      "reddit_opportunity_watch_format_digest_document"
     ],
     "@workbench/tools-scrapecreators/scrapecreators": [
       "scrapecreators_instagram",
@@ -189,6 +319,15 @@
       "sumble_set_organization_list_deleted",
       "sumble_set_organization_list_signals"
     ],
+    "@workbench/workflow-sumble-account-intel/core": [
+      "sumble_account_intel_enrich_contacts",
+      "sumble_account_intel_format_report_document",
+      "sumble_account_intel_list_jobs",
+      "sumble_account_intel_list_teams",
+      "sumble_account_intel_resolve_organization",
+      "sumble_account_intel_search_people",
+      "sumble_account_intel_search_signals"
+    ],
     "@workbench/tools-vercel/deploy-artifact": [
       "vercel_deploy_artifact"
     ],
@@ -208,11 +347,31 @@
     ],
     "@workbench/tools-youtube/youtube": [
       "youtube_search"
+    ],
+    "@workbench/workflow-last30days-research/exa-safe": [
+      "last30days_safe_exa_search"
+    ],
+    "@workbench/workflow-last30days-research/github-safe": [
+      "last30days_safe_github_activity"
+    ],
+    "@workbench/workflow-last30days-research/keyless-safe": [
+      "last30days_safe_hackernews_search",
+      "last30days_safe_polymarket_odds"
+    ],
+    "@workbench/workflow-last30days-research/reddit-safe": [
+      "last30days_safe_reddit_search"
+    ],
+    "@workbench/workflow-last30days-research/x-safe": [
+      "last30days_safe_x_search"
+    ],
+    "@workbench/workflow-last30days-research/youtube-safe": [
+      "last30days_safe_youtube_search"
     ]
   },
   "packageProviders": {
     "@workbench/tools-attio": "attio",
     "@workbench/tools-bluesky": "bluesky",
+    "@workbench/tools-corbits-knowledge-engine": "corbits-knowledge-engine",
     "@workbench/tools-exa": "exa",
     "@workbench/tools-firecrawl": "firecrawl",
     "@workbench/tools-gamma": "gamma",
@@ -220,6 +379,8 @@
     "@workbench/tools-granola": "granola",
     "@workbench/tools-linear": "linear",
     "@workbench/tools-notion": "notion",
+    "@workbench/tools-prospect-engine-slack-bridge": "slack",
+    "@workbench/tools-prospect-engine-sumble-bridge": "sumble",
     "@workbench/tools-reddit": "scrapecreators",
     "@workbench/tools-scrapecreators": "scrapecreators",
     "@workbench/tools-slack": "slack",
@@ -276,6 +437,18 @@
         "bluesky",
         "social",
         "posts"
+      ]
+    },
+    {
+      "pin": "@workbench/tools-corbits-knowledge-engine",
+      "package": "corbits-knowledge-engine",
+      "summary": "Corbits Knowledge Engine — search and capture the team's shared knowledge base.",
+      "tags": [
+        "knowledge",
+        "search",
+        "capture",
+        "memory",
+        "evidence"
       ]
     },
     {
@@ -507,6 +680,7 @@
     "@workbench/tools-artifact",
     "@workbench/tools-attio",
     "@workbench/tools-bluesky",
+    "@workbench/tools-corbits-knowledge-engine",
     "@workbench/tools-dispatch",
     "@workbench/tools-exa",
     "@workbench/tools-fileparser",
@@ -519,6 +693,9 @@
     "@workbench/tools-linear",
     "@workbench/tools-notion",
     "@workbench/tools-polymarket",
+    "@workbench/tools-prospect-engine",
+    "@workbench/tools-prospect-engine-slack-bridge",
+    "@workbench/tools-prospect-engine-sumble-bridge",
     "@workbench/tools-reddit",
     "@workbench/tools-scrapecreators",
     "@workbench/tools-skills",
@@ -527,6 +704,19 @@
     "@workbench/tools-vercel",
     "@workbench/tools-workflows",
     "@workbench/tools-x",
-    "@workbench/tools-youtube"
+    "@workbench/tools-youtube",
+    "@workbench/workflow-competitor-analysis",
+    "@workbench/workflow-exa-topic-watch",
+    "@workbench/workflow-firecrawl-url-watch",
+    "@workbench/workflow-gamma-presentation-creator",
+    "@workbench/workflow-github-topic-watch",
+    "@workbench/workflow-gtm-scripts-briefs",
+    "@workbench/workflow-heartbeat",
+    "@workbench/workflow-last30days-research",
+    "@workbench/workflow-multi-source-collateral",
+    "@workbench/workflow-process-granola-call",
+    "@workbench/workflow-reddit-opportunity-scanner",
+    "@workbench/workflow-reddit-opportunity-watch",
+    "@workbench/workflow-sumble-account-intel"
   ]
 }

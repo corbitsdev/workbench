@@ -15,6 +15,7 @@
       "key": "transcript",
       "label": "Save the raw transcript",
       "stepIds": [
+        "prepare-transcript",
         "transcript"
       ]
     },
@@ -23,6 +24,7 @@
       "label": "Extract working notes",
       "stepIds": [
         "extract",
+        "prepare-processed",
         "processed"
       ],
       "activityLabel": "Extracting working notes"
@@ -32,6 +34,7 @@
       "label": "Verify and write call notes",
       "stepIds": [
         "finalize",
+        "prepare-persist",
         "persist"
       ],
       "activityLabel": "Writing the call notes"
@@ -59,52 +62,23 @@
     ],
     "steps": {
       "fetch": {
-        "kind": "step",
+        "kind": "action",
         "id": "fetch",
-        "agent": {
-          "id": "process-granola-fetch",
-          "systemPrompt": "",
-          "toolFactories": [],
-          "capabilities": [
-            "@workbench/tools-granola/granola:granola_get_note"
-          ],
-          "inference": {
-            "sources": []
-          },
-          "description": "Deterministic tool call: @workbench/tools-granola/granola:granola_get_note",
-          "tags": {
-            "workbench.stepKind": "deterministic-tool",
-            "workbench.tool": "@workbench/tools-granola/granola:granola_get_note",
-            "workbench.argMap": "{\"noteId\":{\"from\":\"noteId\"}}",
-            "workbench.title": "Fetch the transcript"
-          }
-        },
+        "handler": "@workbench/tools-granola/granola:granola_get_note",
         "drainBehavior": "cancel",
         "input": {
           "from": "trigger.payload"
+        },
+        "effect": {
+          "requires": [
+            "@workbench/tools-granola/granola:granola_get_note"
+          ]
         }
       },
-      "transcript": {
-        "kind": "step",
-        "id": "transcript",
-        "agent": {
-          "id": "process-granola-transcript",
-          "systemPrompt": "",
-          "toolFactories": [],
-          "capabilities": [
-            "@workbench/tools-artifact/artifact:write_artifact"
-          ],
-          "inference": {
-            "sources": []
-          },
-          "description": "Deterministic tool call: @workbench/tools-artifact/artifact:write_artifact",
-          "tags": {
-            "workbench.stepKind": "deterministic-tool",
-            "workbench.tool": "@workbench/tools-artifact/artifact:write_artifact",
-            "workbench.argMap": "{\"title\":{\"fromJson\":\"content\",\"field\":\"title\"},\"titlePrefix\":{\"literal\":\"Transcript — \"},\"body\":{\"from\":\"content\"},\"kind\":{\"literal\":\"research\"},\"sourceRefPrefix\":{\"literal\":\"granola-transcript\"},\"sourceRefKey\":{\"from\":\"noteId\"},\"jobLabel\":{\"literal\":\"Process Granola Call\"}}",
-            "workbench.title": "Save the raw transcript"
-          }
-        },
+      "prepare-transcript": {
+        "kind": "action",
+        "id": "prepare-transcript",
+        "handler": "@workbench/workflow-process-granola-call/core:process_granola_prepare_document",
         "drainBehavior": "cancel",
         "input": {
           "merge": [
@@ -116,8 +90,42 @@
             }
           ]
         },
+        "effect": {
+          "requires": [
+            "@workbench/workflow-process-granola-call/core:process_granola_prepare_document"
+          ]
+        },
         "after": [
           "fetch"
+        ]
+      },
+      "transcript": {
+        "kind": "action",
+        "id": "transcript",
+        "handler": "@workbench/tools-artifact/artifact:write_artifact",
+        "drainBehavior": "cancel",
+        "input": {
+          "merge": [
+            {
+              "from": "steps.prepare-transcript.output.content"
+            },
+            {
+              "literal": {
+                "titlePrefix": "Transcript — ",
+                "kind": "research",
+                "sourceRefPrefix": "granola-transcript",
+                "jobLabel": "Process Granola Call"
+              }
+            }
+          ]
+        },
+        "effect": {
+          "requires": [
+            "@workbench/tools-artifact/artifact:write_artifact"
+          ]
+        },
+        "after": [
+          "prepare-transcript"
         ]
       },
       "extract": {
@@ -144,27 +152,10 @@
           "fetch"
         ]
       },
-      "processed": {
-        "kind": "step",
-        "id": "processed",
-        "agent": {
-          "id": "process-granola-processed",
-          "systemPrompt": "",
-          "toolFactories": [],
-          "capabilities": [
-            "@workbench/tools-artifact/artifact:write_artifact"
-          ],
-          "inference": {
-            "sources": []
-          },
-          "description": "Deterministic tool call: @workbench/tools-artifact/artifact:write_artifact",
-          "tags": {
-            "workbench.stepKind": "deterministic-tool",
-            "workbench.tool": "@workbench/tools-artifact/artifact:write_artifact",
-            "workbench.argMap": "{\"title\":{\"fromJson\":\"content\",\"field\":\"title\"},\"titlePrefix\":{\"literal\":\"Working notes — \"},\"body\":{\"from\":\"reply\"},\"kind\":{\"literal\":\"research\"},\"sourceRefPrefix\":{\"literal\":\"granola-processed\"},\"sourceRefKey\":{\"from\":\"noteId\"},\"parentSourceRefPrefix\":{\"literal\":\"granola-transcript\"},\"parentSourceRefKey\":{\"from\":\"noteId\"},\"jobLabel\":{\"literal\":\"Process Granola Call\"}}",
-            "workbench.title": "Save the working notes"
-          }
-        },
+      "prepare-processed": {
+        "kind": "action",
+        "id": "prepare-processed",
+        "handler": "@workbench/workflow-process-granola-call/core:process_granola_prepare_document",
         "drainBehavior": "cancel",
         "input": {
           "merge": [
@@ -176,11 +167,52 @@
             },
             {
               "from": "trigger.payload"
+            },
+            {
+              "literal": {
+                "includeParent": true
+              }
             }
           ]
         },
+        "effect": {
+          "requires": [
+            "@workbench/workflow-process-granola-call/core:process_granola_prepare_document"
+          ]
+        },
         "after": [
-          "extract",
+          "fetch",
+          "extract"
+        ]
+      },
+      "processed": {
+        "kind": "action",
+        "id": "processed",
+        "handler": "@workbench/tools-artifact/artifact:write_artifact",
+        "drainBehavior": "cancel",
+        "input": {
+          "merge": [
+            {
+              "from": "steps.prepare-processed.output.content"
+            },
+            {
+              "literal": {
+                "titlePrefix": "Working notes — ",
+                "kind": "research",
+                "sourceRefPrefix": "granola-processed",
+                "parentSourceRefPrefix": "granola-transcript",
+                "jobLabel": "Process Granola Call"
+              }
+            }
+          ]
+        },
+        "effect": {
+          "requires": [
+            "@workbench/tools-artifact/artifact:write_artifact"
+          ]
+        },
+        "after": [
+          "prepare-processed",
           "transcript"
         ]
       },
@@ -223,27 +255,10 @@
           "extract"
         ]
       },
-      "persist": {
-        "kind": "step",
-        "id": "persist",
-        "agent": {
-          "id": "process-granola-persist",
-          "systemPrompt": "",
-          "toolFactories": [],
-          "capabilities": [
-            "@workbench/tools-artifact/artifact:write_artifact"
-          ],
-          "inference": {
-            "sources": []
-          },
-          "description": "Deterministic tool call: @workbench/tools-artifact/artifact:write_artifact",
-          "tags": {
-            "workbench.stepKind": "deterministic-tool",
-            "workbench.tool": "@workbench/tools-artifact/artifact:write_artifact",
-            "workbench.argMap": "{\"title\":{\"fromJson\":\"content\",\"field\":\"title\"},\"body\":{\"from\":\"reply\"},\"kind\":{\"literal\":\"research\"},\"sourceRefPrefix\":{\"literal\":\"granola-call-note\"},\"sourceRefKey\":{\"from\":\"noteId\"},\"parentSourceRefPrefix\":{\"literal\":\"granola-processed\"},\"parentSourceRefKey\":{\"from\":\"noteId\"},\"jobLabel\":{\"literal\":\"Process Granola Call\"}}",
-            "workbench.title": "Save the call notes"
-          }
-        },
+      "prepare-persist": {
+        "kind": "action",
+        "id": "prepare-persist",
+        "handler": "@workbench/workflow-process-granola-call/core:process_granola_prepare_document",
         "drainBehavior": "cancel",
         "input": {
           "merge": [
@@ -255,21 +270,64 @@
             },
             {
               "from": "trigger.payload"
+            },
+            {
+              "literal": {
+                "includeParent": true
+              }
             }
           ]
         },
+        "effect": {
+          "requires": [
+            "@workbench/workflow-process-granola-call/core:process_granola_prepare_document"
+          ]
+        },
         "after": [
-          "finalize",
+          "fetch",
+          "finalize"
+        ]
+      },
+      "persist": {
+        "kind": "action",
+        "id": "persist",
+        "handler": "@workbench/tools-artifact/artifact:write_artifact",
+        "drainBehavior": "cancel",
+        "input": {
+          "merge": [
+            {
+              "from": "steps.prepare-persist.output.content"
+            },
+            {
+              "literal": {
+                "kind": "research",
+                "sourceRefPrefix": "granola-call-note",
+                "parentSourceRefPrefix": "granola-processed",
+                "jobLabel": "Process Granola Call"
+              }
+            }
+          ]
+        },
+        "effect": {
+          "requires": [
+            "@workbench/tools-artifact/artifact:write_artifact"
+          ]
+        },
+        "after": [
+          "prepare-persist",
           "processed"
         ]
       }
     },
     "stepOrder": [
       "fetch",
+      "prepare-transcript",
       "transcript",
       "extract",
+      "prepare-processed",
       "processed",
       "finalize",
+      "prepare-persist",
       "persist"
     ]
   }

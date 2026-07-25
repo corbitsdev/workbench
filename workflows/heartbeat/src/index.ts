@@ -1,12 +1,7 @@
 import { action, defineWorkflow } from "@intx/workflow";
-import type { StepPrimitive } from "@intx/workflow";
+import type { ActionPrimitive } from "@intx/workflow";
+import { canonicalizeStepToolName, agentStep } from "@workbench/agents";
 import {
-  canonicalizeStepToolName,
-  deterministicToolStep,
-  agentStep,
-} from "@workbench/agents";
-import {
-  HEARTBEAT_BRIEF_SOURCE_FETCH_ARG_MAP,
   heartbeatIntakeStepKey,
   morningBriefArtifactKind,
   WIRED_BRIEF_SOURCES,
@@ -51,13 +46,19 @@ export const MAIL_SEND_HANDLER = canonicalizeStepToolName(
   "heartbeat-notify",
   "mail_send",
 );
+export const HEARTBEAT_INTAKE_SOURCE_HANDLER = canonicalizeStepToolName(
+  "heartbeat-intake-source",
+  "heartbeat_intake_source",
+);
 
 // -------------------------------------------------------------------------
 // Workflow definition — gate-free, unattended
 //
 // Step graph (no awaitSignal anywhere):
-//   intake-<source>  deterministicToolStep  one per WIRED_BRIEF_SOURCES entry,
-//                     concurrent, input = trigger.payload, nonFatal: true
+//   intake-<source>  action  heartbeat_intake_source
+//                     one per WIRED_BRIEF_SOURCES entry, concurrent,
+//                     input = trigger.payload projected to
+//                     { tool, enabledSources, createdAfter } (native primitive)
 //   merge-sources     action  heartbeat_merge_brief_sources
 //                      project every intake step → { sources: { … } } (native primitive)
 //   brief             agentStep    default model
@@ -72,22 +73,29 @@ export const MAIL_SEND_HANDLER = canonicalizeStepToolName(
 //                      builds mail_send's exact { to, subject, content, refs }
 //   notify            action  mail_send   verbatim from notify-prep (native primitive)
 //
-// The intake steps stay on `deterministicToolStep`, not native `action`: they
-// are the one place `nonFatal` matters (a missing/rejected source credential
-// must degrade the brief to a "not available" note, never fail the whole
-// unattended run — see prompts.ts), and `ActionPrimitive` has no `nonFatal`
-// field at all (`@intx/workflow`'s `primitives.ts`) — a thrown tool error in
-// an action's handler propagates through `ctx.perform` and fails the run.
-// There is no selector-level way to express "catch and continue" either, so
-// this is a genuine capability gap, not a preference; fixing it means adding
-// nonFatal support to `ActionPrimitive`/the sidecar's action-handler binding
-// (`apps/sidecar/src/action-tool-handler.ts`), out of this workflow's scope.
+// The intake steps are native `action` steps calling `heartbeat_intake_source`
+// (`./intake-tool.ts`) rather than the underlying per-source tool
+// (`granola_list_notes` etc.) directly — `ActionPrimitive` has no `nonFatal`
+// field at all (`@intx/workflow`'s `primitives.ts`) and a thrown tool error in
+// an action's handler propagates through `ctx.perform`
+// (`apps/sidecar/src/action-tool-handler.ts`) and fails the run, so a missing/
+// rejected source credential or a source-side error must never reach that
+// layer as a throw. `heartbeat_intake_source` moves the tolerance INSIDE a
+// heartbeat-owned tool instead: it resolves the named source's own credential
+// and dispatches through `createToolRunner`, whose documented contract is
+// "must not throw" (`interchange/packages/agent/src/tool.ts`) — a missing
+// credential or source-side failure comes back as a completed `isError`
+// envelope, exactly the shape `mergeHeartbeatBriefSources` (`@workbench/shared`)
+// already parses per source, so the brief still degrades to a "not available"
+// note (see prompts.ts) with no `nonFatal` needed anywhere in this workflow.
 //
 // The intake steps are generated from `WIRED_BRIEF_SOURCES`
 // (`@workbench/shared`'s projection of `CREDENTIAL_PROVIDER_CATALOG` entries
-// tagged `briefSource.tool`) — adding a source is tagging its catalog entry,
-// never editing this file. The generated graph is one concurrent intake per
-// `WIRED_BRIEF_SOURCES` entry, then merge-sources → brief (see `index.test.ts`).
+// tagged `briefSource.tool`) — adding a source is tagging its catalog entry
+// and registering its `create*Tools` builder in `intake-tool.ts`'s
+// `SOURCE_TOOL_BUILDERS`, never editing this file. The generated graph is one
+// concurrent intake per `WIRED_BRIEF_SOURCES` entry, then merge-sources →
+// brief (see `index.test.ts`).
 //
 // v0 reasons over the note summaries each source's list returns (no
 // per-note transcript fan-out): a `map` over `steps.intake-granola.output.notes`
@@ -100,30 +108,28 @@ export const MAIL_SEND_HANDLER = canonicalizeStepToolName(
 // breaks the sidecar launch ("Source provider <x> is not registered").
 // -------------------------------------------------------------------------
 
-function heartbeatIntakeAgentId(sourceKey: string): string {
-  return `heartbeat-${heartbeatIntakeStepKey(sourceKey)}`;
-}
-
-const intakeStepEntries: [string, StepPrimitive][] = WIRED_BRIEF_SOURCES.map(
+const intakeStepEntries: [string, ActionPrimitive][] = WIRED_BRIEF_SOURCES.map(
   (source) => [
     heartbeatIntakeStepKey(source.key),
-    // Pull the source's recent data. Input is the full hub trigger payload
-    // (mail identity + brief knobs); argMap narrows to BriefSourceFetchInput
-    // so tools never depend on ignoring extra fields. nonFatal: a missing/
-    // rejected credential, or the source being disabled, must degrade the
-    // brief to a "not available" note (see prompts.ts) rather than fail the
-    // whole unattended run. `enabledSources`/`createdAfter` are both stamped
-    // unconditionally by `enrichHeartbeatTriggerPayload`
-    // (`apps/hub/src/lib/heartbeat-trigger-payload.ts`) on every heartbeat
-    // start, so the non-optional `{ from }` mappings below are safe — they
-    // are never absent on a real fire.
-    deterministicToolStep({
-      id: heartbeatIntakeAgentId(source.key),
-      title: `Pull ${source.label}`,
-      tool: source.tool,
-      input: { from: "trigger.payload" },
-      argMap: HEARTBEAT_BRIEF_SOURCE_FETCH_ARG_MAP,
-      nonFatal: true,
+    // Pull the source's recent data via the best-effort wrapper
+    // (`heartbeat_intake_source`, `./intake-tool.ts`), never the source's own
+    // tool directly — see the step-graph comment above for why. `enabledSources`
+    // /`createdAfter` are both stamped unconditionally by
+    // `enrichHeartbeatTriggerPayload` (`apps/hub/src/lib/heartbeat-trigger-payload.ts`)
+    // on every heartbeat start, so projecting them straight off
+    // `trigger.payload` is safe — they are never absent on a real fire.
+    action({
+      handler: HEARTBEAT_INTAKE_SOURCE_HANDLER,
+      input: {
+        merge: [
+          {
+            project: { from: "trigger.payload" },
+            fields: ["enabledSources", "createdAfter"],
+          },
+          { literal: { tool: source.tool } },
+        ],
+      },
+      effect: { requires: [HEARTBEAT_INTAKE_SOURCE_HANDLER] },
     }),
   ],
 );

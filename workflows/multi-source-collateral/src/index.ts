@@ -1,5 +1,9 @@
-import { awaitSignal, defineWorkflow, gate, map } from "@intx/workflow";
-import { deterministicToolStep, agentStep } from "@workbench/agents";
+import { action, awaitSignal, defineWorkflow, gate, map } from "@intx/workflow";
+import {
+  canonicalizeStepToolName,
+  deterministicToolStep,
+  agentStep,
+} from "@workbench/agents";
 import { buildGenerationSystemPrompt } from "./prompts";
 
 export const label = "Multi-Source Collateral";
@@ -13,6 +17,24 @@ export {
   MAX_CONTENT_TYPES,
   defaultPromptForType,
 } from "./prompts";
+
+// Native `action` handler refs for the two root list steps that are not a
+// map's inner step — the tool's canonical (factory-prefixed) name,
+// resolved via the same build-time-checked lookup `deterministicToolStep`
+// uses, so a typo'd or manifest-drifted tool name fails the build instead of
+// deploying a step nothing can dispatch.
+export const ARTIFACT_LIST_HANDLER = canonicalizeStepToolName(
+  "multi-source-collateral-list-artifacts",
+  "artifact_list",
+);
+export const GRANOLA_LIST_NOTES_HANDLER = canonicalizeStepToolName(
+  "multi-source-collateral-list-notes",
+  "granola_list_notes",
+);
+export const LIST_ISSUES_HANDLER = canonicalizeStepToolName(
+  "multi-source-collateral-list-issues",
+  "multi_source_collateral_list_issues",
+);
 
 // ---------------------------------------------------------------------------
 // Step graph
@@ -42,6 +64,16 @@ const regenerateStep = agentStep({
   input: { from: "trigger.payload" },
 });
 
+// NOT migrated to native `action` — all five steps below (persist,
+// persist-after-regen, fetch-artifact, fetch-note, fetch-issue) are each used
+// as a `map`'s inner `step`. `MapPrimitive.step` is typed `StepPrimitive` (see
+// `interchange/packages/workflow/src/definition/primitives.ts`), not
+// `Primitive` — an `action` cannot be a map's inner step at all; independently
+// the deploy-time capability walk's `extractAgent` (`interchange/packages/
+// workflow-deploy/src/capability-walk.ts`) only reads `primitive.step.agent`
+// for a `map` node, never an inner step's `effect`, so even a same-shape
+// action inside a map would pin no tool package. This is the same structural
+// blocker `pain-point-collateral`'s `persist` step documents.
 const persistStep = deterministicToolStep({
   id: "multi-source-collateral-persist",
   title: "Save the collateral",
@@ -100,27 +132,33 @@ export const workflow = defineWorkflow({
   id: kind,
   trigger: { type: "manual" },
   steps: {
-    "list-artifacts": deterministicToolStep({
-      id: "multi-source-collateral-list-artifacts",
-      title: "List artifacts",
-      tool: "artifact_list",
+    // Native `action`: artifact_list's arktype schema is { kind?, limit? },
+    // so a literal { limit: 50 } is the exact argument object verbatim — no
+    // reshape needed.
+    "list-artifacts": action({
+      handler: ARTIFACT_LIST_HANDLER,
       input: { literal: { limit: 50 } },
+      effect: { requires: [ARTIFACT_LIST_HANDLER] },
     }),
 
-    "list-notes": deterministicToolStep({
-      id: "multi-source-collateral-list-notes",
-      title: "List call notes",
-      tool: "granola_list_notes",
+    // Native `action`: granola_list_notes takes limit/cursor/date filters, all
+    // optional, so a literal { limit: 30 } is the exact argument object
+    // verbatim — no reshape needed.
+    "list-notes": action({
+      handler: GRANOLA_LIST_NOTES_HANDLER,
       input: { literal: { limit: 30 } },
+      effect: { requires: [GRANOLA_LIST_NOTES_HANDLER] },
     }),
 
-    // Linear may be unconfigured; nonFatal keeps the multi-source chooser usable.
-    "list-issues": deterministicToolStep({
-      id: "multi-source-collateral-list-issues",
-      title: "List Linear issues",
-      tool: "linear_list_issues",
+    // Linear may be unconfigured; that must not fail the multi-source
+    // chooser. Native `action` has no `nonFatal` error-swallow, so
+    // the tolerance moves into the wrapper tool itself (see
+    // `list-issues-tool.ts`): it calls `linear_list_issues` in-process and
+    // returns a completed envelope on failure instead of throwing.
+    "list-issues": action({
+      handler: LIST_ISSUES_HANDLER,
       input: { literal: { first: 50 } },
-      nonFatal: true,
+      effect: { requires: [LIST_ISSUES_HANDLER] },
     }),
 
     sources: awaitSignal({

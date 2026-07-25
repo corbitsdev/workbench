@@ -8,7 +8,6 @@ import {
   STEP_TOOL_TAG,
   STEP_TITLE_TAG,
   STEP_ARGMAP_TAG,
-  STEP_NONFATAL_TAG,
   DETERMINISTIC_TOOL_KIND,
   ArgMap,
 } from "./deterministic-step";
@@ -71,23 +70,6 @@ describe("deterministicToolStep", () => {
     });
     expect(primitive.agent.tags?.[STEP_TOOL_TAG]).toBe("mail_send");
     expect(primitive.agent.capabilities).toEqual(["mail_send"]);
-  });
-
-  test("omits the non-fatal tag by default (a failing step fails the run)", () => {
-    const primitive = deterministicToolStep({
-      id: "render",
-      tool: "gamma_create_from_template",
-    });
-    expect(primitive.agent.tags?.[STEP_NONFATAL_TAG]).toBeUndefined();
-  });
-
-  test("marks the non-fatal tag when nonFatal is set so a throw degrades to a skip", () => {
-    const primitive = deterministicToolStep({
-      id: "render",
-      tool: "gamma_create_from_template",
-      nonFatal: true,
-    });
-    expect(primitive.agent.tags?.[STEP_NONFATAL_TAG]).toBe("true");
   });
 
   test("omits the argMap tag when no argMap is supplied", () => {
@@ -233,7 +215,6 @@ describe("agentStep", () => {
     });
     expect(primitive.kind).toBe("step");
     expect(primitive.agent.tags?.[STEP_KIND_TAG]).toBeUndefined();
-    expect(primitive.agent.tags?.[STEP_NONFATAL_TAG]).toBeUndefined();
   });
 
   test("adds canonical Corbits terminology without replacing the supplied prompt", () => {

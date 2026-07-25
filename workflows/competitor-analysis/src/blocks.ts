@@ -2,7 +2,7 @@
  * The competitor-analysis workflow's own dock blocks.
  *
  * Gate → block:
- *   intake  → form   (required companyUrl + optional companyName / focusNotes)
+ *   intake  → form   (required url + optional companyName / focusNotes)
  *   review  → choice (Approve / Reject; each option carries `{ approved }`).
  *             When the report is decodable it is shown as a markdown preview.
  *
@@ -40,9 +40,12 @@ function runPageLink(
 }
 
 function intakeForm(signalName: string): UIBlock {
+  // Named `url` (not `companyUrl`): must equal the shared `firecrawl_scrape`
+  // tool's arg verbatim — native `action` selectors cannot rename a key
+  // See CompetitorAnalysisIntakePayloadSchema.
   const companyUrl: FormField = {
     kind: "text",
-    name: "companyUrl",
+    name: "url",
     label: "Company website URL",
     placeholder: "https://acme.com",
     required: true,

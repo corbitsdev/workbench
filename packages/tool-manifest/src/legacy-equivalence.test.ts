@@ -8,7 +8,6 @@ import {
   derivePackageProviders,
   derivePackageTools,
   deriveToolCredentialCatalogEntries,
-  deriveToolPackageSpecs,
 } from "./derive";
 
 function repoRoot(): string {
@@ -111,9 +110,7 @@ describe("tool manifest index vs CL-3447 legacy baseline", () => {
   });
 
   test("TOOL_PACKAGES names match legacy baseline package list", () => {
-    const derived = deriveToolPackageSpecs(factories)
-      .map((s) => s.name)
-      .sort();
+    const derived = [...new Set(factories.map((f) => f.packageName))].sort();
     expect(derived).toEqual(legacy.toolPackageNames);
   });
 });

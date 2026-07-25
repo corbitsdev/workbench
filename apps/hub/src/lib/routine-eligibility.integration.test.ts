@@ -42,9 +42,16 @@ async function attachableKinds(): Promise<Set<string>> {
 }
 
 describe("derived routine eligibility against the real embedded catalog", () => {
-  it("excludes granola-call: it reads a required noteId off the trigger payload with no intake field and no registered enricher", async () => {
+  // granola-call used to be excluded here: its entry step carried a
+  // `workbench.argMap` tag, and the eligibility derivation read every `from`
+  // in that tag as a required trigger field — including ones the producer had
+  // marked `optional: true`. Migrating the workflow to the native `action`
+  // primitive removed the tag entirely, so the derivation now correctly finds
+  // no required trigger fields and the kind is schedulable, which is what its
+  // author intended (every one of its tool args is optional).
+  it("includes granola-call: its native action entry step requires no trigger fields", async () => {
     const kinds = await attachableKinds();
-    expect(kinds.has("granola-call")).toBe(false);
+    expect(kinds.has("granola-call")).toBe(true);
   });
 
   it("includes heartbeat and prospect-engine via their registered trigger-payload enrichers", async () => {

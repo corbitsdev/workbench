@@ -5,9 +5,6 @@ import { runLocal } from "@intx/workflow/runlocal";
 import {
   STEP_KIND_TAG,
   STEP_TOOL_TAG,
-  STEP_ARGMAP_TAG,
-  STEP_NONFATAL_TAG,
-  DETERMINISTIC_TOOL_KIND,
   LLM_WRITER_MODEL,
 } from "@workbench/agents";
 
@@ -19,8 +16,29 @@ import {
   WORKFLOW_BRIEF_HANDLER,
   FORMAT_REPORT_DOCUMENT_HANDLER,
   WRITE_ARTIFACT_HANDLER,
+  SAFE_EXA_SEARCH_HANDLER,
+  SAFE_HACKERNEWS_SEARCH_HANDLER,
+  SAFE_GITHUB_ACTIVITY_HANDLER,
+  SAFE_REDDIT_SEARCH_HANDLER,
+  SAFE_X_SEARCH_HANDLER,
+  SAFE_YOUTUBE_SEARCH_HANDLER,
+  SAFE_POLYMARKET_ODDS_HANDLER,
 } from "./index";
 import { buildGroundingSystemPrompt } from "./prompts";
+
+// Every round-1 source's safe wrapper handler, by source key — the single
+// lookup the tests below share instead of a per-source if/else.
+const SAFE_HANDLER_BY_SOURCE: Record<string, string> = {
+  web: SAFE_EXA_SEARCH_HANDLER,
+  webB: SAFE_EXA_SEARCH_HANDLER,
+  webC: SAFE_EXA_SEARCH_HANDLER,
+  hackernews: SAFE_HACKERNEWS_SEARCH_HANDLER,
+  github: SAFE_GITHUB_ACTIVITY_HANDLER,
+  reddit: SAFE_REDDIT_SEARCH_HANDLER,
+  x: SAFE_X_SEARCH_HANDLER,
+  youtube: SAFE_YOUTUBE_SEARCH_HANDLER,
+  polymarket: SAFE_POLYMARKET_ODDS_HANDLER,
+};
 
 // Bluesky is disabled (CL-2401): its search API fails on every run, and a
 // failed source step flips the whole run to RunFailed. It stays out of the
@@ -112,6 +130,16 @@ describe("last30days-research native workflow", () => {
           polymarket: { query: "q" },
         },
       },
+      // Every wrapped source dispatches through its safe handler now — the
+      // canned output stands in for the wrapper's own JSON-string success
+      // envelope (an array of items), never the raw underlying tool.
+      [SAFE_EXA_SEARCH_HANDLER]: { content: "[]", isError: false },
+      [SAFE_HACKERNEWS_SEARCH_HANDLER]: { content: "[]", isError: false },
+      [SAFE_GITHUB_ACTIVITY_HANDLER]: { content: "[]", isError: false },
+      [SAFE_REDDIT_SEARCH_HANDLER]: { content: "[]", isError: false },
+      [SAFE_X_SEARCH_HANDLER]: { content: "[]", isError: false },
+      [SAFE_YOUTUBE_SEARCH_HANDLER]: { content: "[]", isError: false },
+      [SAFE_POLYMARKET_ODDS_HANDLER]: { content: "[]", isError: false },
       [ENTITY_QUERIES_HANDLER]: {
         content: {
           web: { query: "q" },
@@ -151,16 +179,20 @@ describe("last30days-research native workflow", () => {
     // Grounding runs before any source so each fan-out gets a tailored query.
     expect(ranIds).toContain("last30days-ground");
     expect(actionRefs).toContain(GROUND_QUERIES_HANDLER);
-    for (const source of SOURCE_STEP_IDS) {
-      expect(ranIds).toContain(`last30days-fetch-${source}`);
-    }
+    // Every round-1 source now dispatches through its safe wrapper handler
+    // (a native `action`, not a recorded step-agent invocation).
+    expect(actionRefs).toContain(SAFE_EXA_SEARCH_HANDLER);
+    expect(actionRefs).toContain(SAFE_HACKERNEWS_SEARCH_HANDLER);
+    expect(actionRefs).toContain(SAFE_GITHUB_ACTIVITY_HANDLER);
+    expect(actionRefs).toContain(SAFE_REDDIT_SEARCH_HANDLER);
+    expect(actionRefs).toContain(SAFE_X_SEARCH_HANDLER);
+    expect(actionRefs).toContain(SAFE_YOUTUBE_SEARCH_HANDLER);
+    expect(actionRefs).toContain(SAFE_POLYMARKET_ODDS_HANDLER);
     // Entity-chasing round 2 (CL-2503): extract entities, re-query, then collect
-    // + curate before the brief.
+    // + curate before the brief. Round-2 web/reddit/x/youtube share the SAME
+    // safe handler as round 1 (one wrapper tool, multiple action steps).
     expect(ranIds).toContain("last30days-entities");
     expect(actionRefs).toContain(ENTITY_QUERIES_HANDLER);
-    for (const id of ["web2", "reddit2", "x2", "youtube2"] as const) {
-      expect(ranIds).toContain(`last30days-fetch-${id}`);
-    }
     expect(actionRefs).toContain(COLLECT_HANDLER);
     expect(ranIds).toContain("last30days-curate");
     expect(actionRefs).toContain(WORKFLOW_BRIEF_HANDLER);
@@ -178,7 +210,7 @@ describe("last30days-research native workflow", () => {
     expect(actionRefs.at(-1)).toBe(WRITE_ARTIFACT_HANDLER);
   });
 
-  test("sources are deterministic tool steps chained serially after grounding", () => {
+  test("sources are native actions chained serially after grounding, dispatching their safe wrapper handler", () => {
     // Serial chain (CL-2314 mitigation): groundQueries -> hackernews -> github ->
     // ... -> youtube -> polymarket. The chain is load-bearing — a parallel fan-out
     // races the retry scheduler on the run event log's single-writer seq guard.
@@ -199,8 +231,12 @@ describe("last30days-research native workflow", () => {
       polymarket: "youtube",
     };
     for (const source of SOURCE_STEP_IDS) {
-      const step = stepPrimitive(source);
-      expect(step.agent.tags?.[STEP_KIND_TAG]).toBe(DETERMINISTIC_TOOL_KIND);
+      const step = actionPrimitive(source);
+      const expectedHandler = SAFE_HANDLER_BY_SOURCE[source];
+      if (expectedHandler === undefined) {
+        throw new Error(`no safe handler mapped for test source "${source}"`);
+      }
+      expect(step.handler).toBe(expectedHandler);
       expect(step.after).toEqual([expectedPredecessor[source]]);
     }
   });
@@ -212,12 +248,11 @@ describe("last30days-research native workflow", () => {
     // source added to the chain but missed in the prompt.
     const groundingPrompt = buildGroundingSystemPrompt();
     for (const source of SOURCE_STEP_IDS) {
-      const step = stepPrimitive(source);
+      const step = actionPrimitive(source);
       // The former per-tool `argMap` (query: { from: "query" }) was a pure
       // identity passthrough — it is gone entirely now. `input` composes the
       // exact tool args directly: the per-source path already yields
       // `{ query }` (CL-4232), merged with the literal `limit`.
-      expect(step.agent.tags?.[STEP_ARGMAP_TAG]).toBeUndefined();
       expect(step.input).toEqual({
         merge: [
           { from: `steps.groundQueries.output.content.${source}` },
@@ -228,10 +263,13 @@ describe("last30days-research native workflow", () => {
     }
   });
 
-  test("every source step is non-fatal so a dead source degrades to a skip, not a RunFailed", () => {
+  test("every source step is a native action — no nonFatal tag exists to carry", () => {
+    // The `nonFatal` degrade lived on `deterministicToolStep`'s agent tags; a
+    // native `action` primitive has no `agent` at all, so there is nothing to
+    // tag. Tolerance now lives inside the safe wrapper tool itself (`./tools.ts`).
     for (const source of SOURCE_STEP_IDS) {
-      const step = stepPrimitive(source);
-      expect(step.agent.tags?.[STEP_NONFATAL_TAG]).toBe("true");
+      const step = actionPrimitive(source);
+      expect("agent" in step).toBe(false);
     }
   });
 
@@ -314,13 +352,21 @@ describe("last30days-research native workflow", () => {
       x2: "x",
       youtube2: "youtube",
     };
+    const round2SafeHandler: Record<string, string> = {
+      web2: SAFE_EXA_SEARCH_HANDLER,
+      reddit2: SAFE_REDDIT_SEARCH_HANDLER,
+      x2: SAFE_X_SEARCH_HANDLER,
+      youtube2: SAFE_YOUTUBE_SEARCH_HANDLER,
+    };
     for (const [id, predecessor] of Object.entries(round2Predecessor)) {
-      const step = stepPrimitive(id);
-      expect(step.agent.tags?.[STEP_KIND_TAG]).toBe(DETERMINISTIC_TOOL_KIND);
-      expect(step.agent.tags?.[STEP_NONFATAL_TAG]).toBe("true");
+      const step = actionPrimitive(id);
+      const expectedHandler = round2SafeHandler[id];
+      if (expectedHandler === undefined) {
+        throw new Error(`no safe handler mapped for test round-2 id "${id}"`);
+      }
+      expect(step.handler).toBe(expectedHandler);
       expect(step.after).toEqual([predecessor]);
       // No argMap left — the input selector already composes the exact call.
-      expect(step.agent.tags?.[STEP_ARGMAP_TAG]).toBeUndefined();
       expect(step.input).toEqual({
         merge: [
           {

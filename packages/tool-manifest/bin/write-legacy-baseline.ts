@@ -5,7 +5,6 @@ import {
   deriveMyraCatalogPackages,
   derivePackageProviders,
   derivePackageTools,
-  deriveToolPackageSpecs,
 } from "../src/derive";
 
 const root = join(import.meta.dir, "..", "..", "..");
@@ -14,9 +13,7 @@ const out = {
   packageTools: derivePackageTools(factories),
   packageProviders: derivePackageProviders(factories),
   myraCatalog: deriveMyraCatalogPackages(factories),
-  toolPackageNames: deriveToolPackageSpecs(factories)
-    .map((s) => s.name)
-    .sort(),
+  toolPackageNames: [...new Set(factories.map((f) => f.packageName))].sort(),
 };
 writeFileSync(
   join(root, "apps/hub/generated/tool-manifests/legacy-baseline.json"),

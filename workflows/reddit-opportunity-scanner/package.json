@@ -27,13 +27,15 @@
     "@intx/workflow": "workspace:*",
     "@workbench/agents": "workspace:*",
     "@workbench/blocks": "workspace:*",
+    "@workbench/tool-credentials": "workspace:*",
+    "@workbench/tool-manifest": "workspace:*",
+    "@workbench/tools-reddit": "workspace:*",
     "@workbench/ui": "workspace:*",
     "arktype": "catalog:",
     "react": "^19.0.0"
   },
   "devDependencies": {
     "@workbench/shared": "workspace:*",
-    "@workbench/tools-reddit": "workspace:*",
     "@workbench/test-utils": "workspace:*",
     "@testing-library/react": "^16.3.2",
     "@types/bun": "latest",
@@ -42,5 +44,9 @@
   },
   "peerDependencies": {
     "react": "^19.0.0"
+  },
+  "interchange": {
+    "tools": "./dist/interchange-tools.js",
+    "manifest": "./src/tool-manifest.ts"
   }
 }

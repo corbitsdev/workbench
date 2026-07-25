@@ -157,7 +157,20 @@ function coerceNumericLimit(
   rawArgs: Record<string, unknown>,
 ): Record<string, unknown> {
   const limit = rawArgs.limit;
-  if (typeof limit !== "string" || !/^\d+$/.test(limit.trim())) {
+  if (typeof limit !== "string") {
+    return rawArgs;
+  }
+  // A native workflow selector passes an intake field through verbatim (no
+  // per-arg reshape can distinguish "the field was never filled in" from "the
+  // field was filled in with the empty string"), so an unset optional text
+  // intake reaches here as `limit: ""` rather than an absent key. Treat it the
+  // same as absent: drop it and let the tool's own default apply, instead of
+  // failing `ListNotesArgs`'s `"limit?": "number"` check on an empty string.
+  if (limit.trim() === "") {
+    const { limit: _drop, ...rest } = rawArgs;
+    return rest;
+  }
+  if (!/^\d+$/.test(limit.trim())) {
     return rawArgs;
   }
   return { ...rawArgs, limit: Number.parseInt(limit.trim(), 10) };
