@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-07-25T15:24:27.864Z",
+  "generatedAt": "2026-07-25T15:20:40.639Z",
   "factories": [
     {
       "factoryId": "@workbench/tools-ab-compare/compose",
@@ -610,6 +610,19 @@
       "credentialCatalog": null
     },
     {
+      "factoryId": "@workbench/tools-gtm-scripts-briefs/core",
+      "packageName": "@workbench/tools-gtm-scripts-briefs",
+      "providerName": null,
+      "bareToolNames": [
+        "gtm_scripts_briefs_prepare_persist"
+      ],
+      "sideEffects": {
+        "gtm_scripts_briefs_prepare_persist": "read"
+      },
+      "myraCatalog": null,
+      "credentialCatalog": null
+    },
+    {
       "factoryId": "@workbench/tools-hackernews/hackernews",
       "packageName": "@workbench/tools-hackernews",
       "providerName": null,
@@ -907,9 +920,7 @@
       "bareToolNames": [
         "prospect_engine_charge_credits",
         "prospect_engine_dedupe_candidates",
-        "prospect_engine_extract_candidates_from_reply",
         "prospect_engine_extract_list_org_ids",
-        "prospect_engine_extract_map_reveal_overlay",
         "prospect_engine_format_mail_refs",
         "prospect_engine_format_report",
         "prospect_engine_format_slack_digest",
@@ -930,9 +941,7 @@
         "prospect_engine_format_slack_digest": "read",
         "prospect_engine_format_mail_refs": "read",
         "prospect_engine_serialize_ledger": "read",
-        "prospect_engine_extract_list_org_ids": "read",
-        "prospect_engine_extract_candidates_from_reply": "read",
-        "prospect_engine_extract_map_reveal_overlay": "read"
+        "prospect_engine_extract_list_org_ids": "read"
       },
       "myraCatalog": null,
       "credentialCatalog": null

@@ -1,11 +1,23 @@
 import { describe, expect, test } from "bun:test";
+import { LLM_WRITER_MODEL, STEP_KIND_TAG } from "@workbench/agents";
+import { WORKFLOW_BRIEF_HANDLER } from "@workbench/workflow-last30days-research";
 import {
-  LLM_WRITER_MODEL,
-  STEP_ARGMAP_TAG,
-  STEP_KIND_TAG,
-  STEP_TOOL_TAG,
-} from "@workbench/agents";
-import { DISPLAY_STEPS, kind, workflow } from "./index";
+  DISPLAY_STEPS,
+  kind,
+  PREPARE_PERSIST_HANDLER,
+  workflow,
+  WRITE_ARTIFACT_HANDLER,
+} from "./index";
+
+function actionPrimitive(id: string) {
+  const primitive = workflow.steps[id];
+  if (primitive === undefined || primitive.kind !== "action") {
+    throw new Error(
+      `expected action primitive for step id "${id}", got ${primitive?.kind ?? "undefined"}`,
+    );
+  }
+  return primitive;
+}
 
 describe("gtm-scripts-briefs workflow", () => {
   test("collects intake, reuses grounded research, then writes and persists", () => {
@@ -37,16 +49,12 @@ describe("gtm-scripts-briefs workflow", () => {
       "curate",
       "brief",
       "write",
+      "persist-prepare",
       "persist",
     ]);
 
-    const brief = workflow.steps.brief;
-    if (brief === undefined || brief.kind !== "step") {
-      throw new Error("expected a grounded story brief");
-    }
-    expect(brief.agent.tags?.[STEP_TOOL_TAG]).toContain(
-      "last30days_workflow_brief",
-    );
+    const brief = actionPrimitive("brief");
+    expect(brief.handler).toBe(WORKFLOW_BRIEF_HANDLER);
     expect(brief.after).toEqual(["curate"]);
   });
 
@@ -62,28 +70,36 @@ describe("gtm-scripts-briefs workflow", () => {
     });
     expect(write.after).toEqual(["brief"]);
 
-    const persist = workflow.steps.persist;
-    if (persist === undefined || persist.kind !== "step") {
-      throw new Error("expected a persist step");
-    }
-    expect(persist.agent.tags?.[STEP_TOOL_TAG]).toContain("write_artifact");
-    expect(persist.after).toEqual(["write"]);
-    expect(JSON.parse(persist.agent.tags?.[STEP_ARGMAP_TAG] ?? "{}")).toEqual({
-      title: { from: "topic" },
-      body: { from: "reply" },
-      kind: { literal: "long-form-script-package" },
-      data: {
-        object: {
-          workflowKind: { literal: kind },
-          topic: { from: "topic" },
-          days: { from: "days" },
-          audience: { from: "audience", optional: true },
-          objective: { from: "objective", optional: true },
-          artifactKind: { literal: "long-form-script-package" },
+    const persistPrepare = actionPrimitive("persist-prepare");
+    expect(persistPrepare.handler).toBe(PREPARE_PERSIST_HANDLER);
+    expect(PREPARE_PERSIST_HANDLER).toBe(
+      "@workbench/tools-gtm-scripts-briefs/core:gtm_scripts_briefs_prepare_persist",
+    );
+    expect(persistPrepare.input).toEqual({
+      merge: [
+        { from: "steps.intake.output" },
+        { from: "steps.write.output" },
+        {
+          literal: {
+            workflowKind: kind,
+            artifactKind: "long-form-script-package",
+            jobLabel: "GTM scripts and briefs",
+          },
         },
-      },
-      jobLabel: { literal: "GTM scripts and briefs" },
+      ],
     });
+    expect(persistPrepare.effect).toEqual({
+      requires: [PREPARE_PERSIST_HANDLER],
+    });
+    expect(persistPrepare.after).toEqual(["write"]);
+
+    const persist = actionPrimitive("persist");
+    expect(persist.handler).toBe(WRITE_ARTIFACT_HANDLER);
+    expect(persist.input).toEqual({
+      from: "steps.persist-prepare.output.content",
+    });
+    expect(persist.effect).toEqual({ requires: [WRITE_ARTIFACT_HANDLER] });
+    expect(persist.after).toEqual(["persist-prepare"]);
   });
 
   test("keeps the workflow identity stable", () => {

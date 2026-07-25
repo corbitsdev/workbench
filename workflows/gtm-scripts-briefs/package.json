@@ -15,14 +15,21 @@
     "test": "bun test --preload ./src/test-setup.ts --isolate src"
   },
   "dependencies": {
+    "@intx/agent": "workspace:*",
+    "@intx/types": "workspace:*",
     "@intx/workflow": "workspace:*",
     "@workbench/agents": "workspace:*",
     "@workbench/blocks": "workspace:*",
+    "@workbench/tool-manifest": "workspace:*",
     "@workbench/workflow-last30days-research": "workspace:*"
   },
   "devDependencies": {
     "@workbench/test-utils": "workspace:*",
     "@types/bun": "latest",
     "typescript": "catalog:"
+  },
+  "interchange": {
+    "tools": "./dist/interchange-tools.js",
+    "manifest": "./src/tool-manifest.ts"
   }
 }
