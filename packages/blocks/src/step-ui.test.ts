@@ -97,7 +97,12 @@ describe("blocksFromStepUI - gate", () => {
       ],
     };
     const blocks = blocksFromStepUI({}, run);
-    const gateResolvingKinds = new Set(["form", "choice", "multiSelect", "reviewList"]);
+    const gateResolvingKinds = new Set([
+      "form",
+      "choice",
+      "multiSelect",
+      "reviewList",
+    ]);
     for (const block of blocks) {
       expect(gateResolvingKinds.has(block.kind)).toBe(false);
     }

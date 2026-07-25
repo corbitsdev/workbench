@@ -86,7 +86,10 @@ type Decoded<T> =
 
 function decodeToolEnvelope(
   raw: unknown,
-): { status: "pending" } | { status: "malformed" } | { status: "ok"; value: unknown } {
+):
+  | { status: "pending" }
+  | { status: "malformed" }
+  | { status: "ok"; value: unknown } {
   const envelope = ToolResultEnvelope(raw);
   if (envelope instanceof type.errors) return { status: "pending" };
   try {
@@ -137,7 +140,10 @@ function extractFirstJsonValue(text: string): string | null {
 
 function parseAgentJson(
   reply: string,
-): { status: "pending" } | { status: "malformed" } | { status: "ok"; value: unknown } {
+):
+  | { status: "pending" }
+  | { status: "malformed" }
+  | { status: "ok"; value: unknown } {
   const trimmed = reply.trim();
   if (trimmed === "") return { status: "pending" };
   const unfenced = stripCodeFence(trimmed);
@@ -442,7 +448,11 @@ const NOTES: GranolaNote[] = [
 
 const PAIN_POINTS: PainPoint[] = [
   { id: "pp_1", title: "Slow onboarding", detail: "Takes 6 weeks" },
-  { id: "pp_2", title: "Fragile integrations", detail: "Breaks on API changes" },
+  {
+    id: "pp_2",
+    title: "Fragile integrations",
+    detail: "Breaks on API changes",
+  },
 ];
 
 const PIECES: GeneratedPiece[] = [

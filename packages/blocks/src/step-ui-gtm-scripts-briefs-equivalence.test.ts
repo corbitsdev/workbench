@@ -208,7 +208,10 @@ describe("STEP_UI equivalence: gtm-scripts-briefs", () => {
     // relationship explicitly instead of dropping the label check entirely.
     const expectedProgress = expected[0];
     const actualProgress = actual[0];
-    if (expectedProgress?.kind !== "progress" || actualProgress?.kind !== "progress") {
+    if (
+      expectedProgress?.kind !== "progress" ||
+      actualProgress?.kind !== "progress"
+    ) {
       throw new Error("expected both to be progress blocks");
     }
     expect(actualProgress.steps.map((s) => s.state)).toEqual(
@@ -325,9 +328,7 @@ describe("drift guard: the copied reference builder vs the live file", () => {
       "What current GTM story should we research and turn into a deliverable?",
     );
     expect(live).toContain("Research and create deliverable");
-    expect(live).toContain(
-      "e.g. Recent AI agent launches for revenue teams",
-    );
+    expect(live).toContain("e.g. Recent AI agent launches for revenue teams");
     expect(live).toContain(
       "What should the artifact help the audience understand or do?",
     );
