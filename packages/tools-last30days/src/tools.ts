@@ -139,6 +139,26 @@ export const SUMBLE_ACCOUNT_INTEL_FORMAT_REPORT_DOCUMENT_DEFINITION: ToolDefinit
     },
   };
 
+export const FIRECRAWL_URL_WATCH_FORMAT_DOCUMENT_DEFINITION: ToolDefinition = {
+  name: "firecrawl_url_watch_format_document",
+  description:
+    "Internal workflow helper. Pairs the watched URL with the digest agent's reply into the { title, body } shape write_artifact expects, so the persist step never reshapes the agent's reply field.",
+  inputSchema: {
+    type: "object",
+    properties: {
+      url: {
+        type: "string",
+        description: "The watched URL from intake, used as the artifact title.",
+      },
+      reply: {
+        type: "string",
+        description: "The digest agent's synthesized digest text.",
+      },
+    },
+    required: ["url", "reply"],
+  },
+};
+
 export const LAST30DAYS_GROUND_QUERIES_DEFINITION: ToolDefinition = {
   name: "last30days_ground_queries",
   description:
@@ -386,6 +406,28 @@ function createCompetitorAnalysisFormatReportDocumentTool(): AgentTool {
           isError: true,
           content: "url is required",
         };
+      }
+      if (typeof reply !== "string" || reply.trim().length === 0) {
+        return { callId: call.id, isError: true, content: "reply is required" };
+      }
+      return {
+        callId: call.id,
+        content: { title: url.trim(), body: reply },
+      };
+    },
+  };
+}
+
+function createFirecrawlUrlWatchFormatDocumentTool(): AgentTool {
+  return {
+    kind: "full",
+    definition: FIRECRAWL_URL_WATCH_FORMAT_DOCUMENT_DEFINITION,
+    handler: async (call) => {
+      const args = coerceArgsObject(call.arguments);
+      const url = args.url;
+      const reply = args.reply;
+      if (typeof url !== "string" || url.trim().length === 0) {
+        return { callId: call.id, isError: true, content: "url is required" };
       }
       if (typeof reply !== "string" || reply.trim().length === 0) {
         return { callId: call.id, isError: true, content: "reply is required" };
@@ -983,5 +1025,6 @@ export function createLast30daysTools(): AgentTool[] {
     createHeartbeatFormatBriefNotifyTool(),
     createCompetitorAnalysisFormatReportDocumentTool(),
     createSumbleAccountIntelFormatReportDocumentTool(),
+    createFirecrawlUrlWatchFormatDocumentTool(),
   ];
 }

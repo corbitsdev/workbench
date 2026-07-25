@@ -1,5 +1,5 @@
-import { awaitSignal, defineWorkflow } from "@intx/workflow";
-import { agentStep, deterministicToolStep } from "@workbench/agents";
+import { action, awaitSignal, defineWorkflow } from "@intx/workflow";
+import { agentStep, canonicalizeStepToolName } from "@workbench/agents";
 
 export const label = "Website URL watch";
 export const description =
@@ -44,6 +44,23 @@ Write a concise markdown digest:
 
 No preamble. No tool calls. Markdown body only.`;
 
+// Native `action` handler refs — the tool's canonical (factory-prefixed) name,
+// resolved via the same build-time-checked lookup `deterministicToolStep`
+// uses, so a typo'd or manifest-drifted tool name fails the build instead of
+// deploying a step nothing can dispatch.
+export const FIRECRAWL_SCRAPE_HANDLER = canonicalizeStepToolName(
+  "firecrawl-url-watch-fetch",
+  "firecrawl_scrape",
+);
+export const WRITE_ARTIFACT_HANDLER = canonicalizeStepToolName(
+  "firecrawl-url-watch-persist",
+  "write_artifact",
+);
+export const FORMAT_DOCUMENT_HANDLER = canonicalizeStepToolName(
+  "firecrawl-url-watch-document",
+  "firecrawl_url_watch_format_document",
+);
+
 export const workflow = defineWorkflow({
   id: kind,
   steps: {
@@ -54,15 +71,19 @@ export const workflow = defineWorkflow({
     // fields (`url`, `focus`) — see `@workbench/shared`'s `isRoutineEligibleKind`.
     intake: awaitSignal({ name: "intake" }),
 
-    fetch: deterministicToolStep({
-      id: "firecrawl-url-watch-fetch",
-      title: "Scrape the URL",
-      tool: "firecrawl_scrape",
-      input: { from: "steps.intake.output" },
-      argMap: {
-        url: { from: "url" },
-        onlyMainContent: { literal: true },
+    // Native action: `firecrawl_scrape`'s arktype schema already declares
+    // `url` (required) and `onlyMainContent` (optional boolean) verbatim, so
+    // intake's own `url` field plus a literal `onlyMainContent: true` is the
+    // exact argument object — no reshape needed.
+    fetch: action({
+      handler: FIRECRAWL_SCRAPE_HANDLER,
+      input: {
+        merge: [
+          { from: "steps.intake.output" },
+          { literal: { onlyMainContent: true } },
+        ],
       },
+      effect: { requires: [FIRECRAWL_SCRAPE_HANDLER] },
       after: ["intake"],
     }),
 
@@ -81,36 +102,40 @@ export const workflow = defineWorkflow({
       after: ["fetch"],
     }),
 
-    document: deterministicToolStep({
-      id: "firecrawl-url-watch-document",
-      title: "Compose the digest document",
-      tool: "last30days_format_report_document",
+    // Native action: `last30days_format_report_document` requires its
+    // title-arg spelled `topic`, which this workflow cannot supply without
+    // renaming the SAME intake value `fetch` already consumes as `url` (and
+    // native selectors cannot rename a field). Rather than alias that
+    // shared, 5-caller tool for one workflow's naming, this workflow ships
+    // its own tool — `firecrawl_url_watch_format_document` (packages/
+    // tools-last30days) — whose schema takes `url` verbatim, so the same
+    // intake output merges into both `fetch` and `document` unchanged.
+    document: action({
+      handler: FORMAT_DOCUMENT_HANDLER,
       input: {
         merge: [
           { from: "steps.intake.output" },
           { from: "steps.digest.output" },
         ],
       },
-      argMap: {
-        topic: { from: "url" },
-        reply: { from: "reply" },
-      },
+      effect: { requires: [FORMAT_DOCUMENT_HANDLER] },
       after: ["digest"],
     }),
 
-    persist: deterministicToolStep({
-      id: "firecrawl-url-watch-persist",
-      title: "Save digest artifact",
-      tool: "write_artifact",
+    // Native action: `document`'s handler (format_report_document) already
+    // returns `{ content: { title, body } }` with field names matching
+    // `write_artifact`'s schema (`title`, `body`) verbatim, so merging that
+    // content with a literal `{ kind, jobLabel }` object is the exact
+    // argument shape — no reshape needed.
+    persist: action({
+      handler: WRITE_ARTIFACT_HANDLER,
       input: {
-        merge: [{ from: "steps.document.output.content" }],
+        merge: [
+          { from: "steps.document.output.content" },
+          { literal: { kind: "research", jobLabel: label } },
+        ],
       },
-      argMap: {
-        title: { from: "title" },
-        body: { from: "body" },
-        kind: { literal: "research" },
-        jobLabel: { literal: label },
-      },
+      effect: { requires: [WRITE_ARTIFACT_HANDLER] },
       after: ["document"],
     }),
   },

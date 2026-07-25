@@ -746,6 +746,58 @@ describe("competitor_analysis_format_report_document (CL-4232)", () => {
   });
 });
 
+describe("firecrawl_url_watch_format_document (CL-4454)", () => {
+  test("pairs url and reply into a title/body document", async () => {
+    const handler = fullTool("firecrawl_url_watch_format_document");
+    const result = await handler(
+      {
+        id: "document",
+        name: "firecrawl_url_watch_format_document",
+        arguments: {
+          url: "https://example.com/pricing",
+          reply: "## Digest\n\nPricing page looks unchanged.",
+        },
+      },
+      SIGNAL,
+    );
+    if (typeof result.content === "string") {
+      throw new Error("expected object content");
+    }
+    expect(result.content).toEqual({
+      title: "https://example.com/pricing",
+      body: "## Digest\n\nPricing page looks unchanged.",
+    });
+  });
+
+  test("returns isError when reply is missing", async () => {
+    const handler = fullTool("firecrawl_url_watch_format_document");
+    const result = await handler(
+      {
+        id: "document",
+        name: "firecrawl_url_watch_format_document",
+        arguments: { url: "https://example.com/pricing" },
+      },
+      SIGNAL,
+    );
+    expect(result.isError).toBe(true);
+    expect(result.content).toBe("reply is required");
+  });
+
+  test("returns isError when url is missing", async () => {
+    const handler = fullTool("firecrawl_url_watch_format_document");
+    const result = await handler(
+      {
+        id: "document",
+        name: "firecrawl_url_watch_format_document",
+        arguments: { reply: "body" },
+      },
+      SIGNAL,
+    );
+    expect(result.isError).toBe(true);
+    expect(result.content).toBe("url is required");
+  });
+});
+
 describe("sumble_account_intel_format_report_document (CL-4232)", () => {
   test("pairs organizationDomain and reply into a title/body document", async () => {
     const handler = fullTool("sumble_account_intel_format_report_document");
