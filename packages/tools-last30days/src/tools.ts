@@ -243,6 +243,23 @@ export const HEARTBEAT_FORMAT_BRIEF_TITLE_DEFINITION: ToolDefinition = {
   },
 };
 
+export const GITHUB_TOPIC_WATCH_FORMAT_ACTIVITY_QUERY_DEFINITION: ToolDefinition =
+  {
+    name: "github_topic_watch_format_activity_query",
+    description:
+      "Internal github-topic-watch workflow helper. Renames the intake `topic` field to github_activity's `query` argument and stamps a fixed 7-day lookback, so the fetch step's input matches github_activity's argument names exactly (native action selectors are same-key-only and cannot rename).",
+    inputSchema: {
+      type: "object",
+      properties: {
+        topic: {
+          type: "string",
+          description: "The watch topic from intake.",
+        },
+      },
+      required: ["topic"],
+    },
+  };
+
 export const LAST30DAYS_ENTITY_QUERIES_DEFINITION: ToolDefinition = {
   name: "last30days_entity_queries",
   description:
@@ -954,6 +971,24 @@ function createHeartbeatFormatBriefTitleTool(): AgentTool {
   };
 }
 
+function createGithubTopicWatchFormatActivityQueryTool(): AgentTool {
+  return {
+    kind: "full",
+    definition: GITHUB_TOPIC_WATCH_FORMAT_ACTIVITY_QUERY_DEFINITION,
+    handler: async (call) => {
+      const args = coerceArgsObject(call.arguments);
+      const topic = args.topic;
+      if (typeof topic !== "string" || topic.trim().length === 0) {
+        return { callId: call.id, isError: true, content: "topic is required" };
+      }
+      return {
+        callId: call.id,
+        content: { query: topic.trim(), days: 7 },
+      };
+    },
+  };
+}
+
 function createHeartbeatMergeBriefSourcesTool(): AgentTool {
   return {
     kind: "full",
@@ -983,5 +1018,6 @@ export function createLast30daysTools(): AgentTool[] {
     createHeartbeatFormatBriefNotifyTool(),
     createCompetitorAnalysisFormatReportDocumentTool(),
     createSumbleAccountIntelFormatReportDocumentTool(),
+    createGithubTopicWatchFormatActivityQueryTool(),
   ];
 }

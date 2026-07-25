@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-07-23T17:20:03.228Z",
+  "generatedAt": "2026-07-25T14:08:19.416Z",
   "factories": [
     {
       "factoryId": "@workbench/tools-ab-compare/compose",
@@ -628,6 +628,7 @@
       "providerName": null,
       "bareToolNames": [
         "competitor_analysis_format_report_document",
+        "github_topic_watch_format_activity_query",
         "heartbeat_format_brief_document",
         "heartbeat_format_brief_notify",
         "heartbeat_format_brief_title",
@@ -656,7 +657,8 @@
         "heartbeat_format_brief_notify": "read",
         "heartbeat_format_brief_title": "read",
         "competitor_analysis_format_report_document": "read",
-        "sumble_account_intel_format_report_document": "read"
+        "sumble_account_intel_format_report_document": "read",
+        "github_topic_watch_format_activity_query": "read"
       },
       "myraCatalog": null,
       "credentialCatalog": null

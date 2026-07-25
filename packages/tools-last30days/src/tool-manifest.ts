@@ -49,6 +49,9 @@ export const toolManifestFile = {
         sumble_account_intel_format_report_document: {
           sideEffect: "read",
         },
+        github_topic_watch_format_activity_query: {
+          sideEffect: "read",
+        },
       },
       myraCatalog: null,
       credentialCatalog: null,
