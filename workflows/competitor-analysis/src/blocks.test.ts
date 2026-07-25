@@ -43,18 +43,18 @@ const REPORT = {
 };
 
 describe("competitor-analysis dock blocks", () => {
-  test("intake: form with required companyUrl and optional name/focus", () => {
+  test("intake: form with required url and optional name/focus", () => {
     const blocks = buildCompetitorAnalysisBlocks(gateInput(INTAKE_SIGNAL));
     const form = blocks.find((b) => b.kind === "form");
     if (form?.kind !== "form") throw new Error("expected a form block");
     expect(form.signalName).toBe(INTAKE_SIGNAL);
     expect(form.fields.map((f) => f.name)).toEqual([
-      "companyUrl",
+      "url",
       "companyName",
       "focusNotes",
     ]);
     const url = form.fields[0];
-    if (url?.kind !== "text") throw new Error("expected companyUrl text field");
+    if (url?.kind !== "text") throw new Error("expected url text field");
     expect(url.required).toBe(true);
   });
 

@@ -695,14 +695,14 @@ describe("heartbeat_format_brief_title (CL-3502)", () => {
 });
 
 describe("competitor_analysis_format_report_document (CL-4232)", () => {
-  test("pairs companyUrl and reply into a title/body document", async () => {
+  test("pairs url and reply into a title/body document", async () => {
     const handler = fullTool("competitor_analysis_format_report_document");
     const result = await handler(
       {
         id: "document",
         name: "competitor_analysis_format_report_document",
         arguments: {
-          companyUrl: "https://acme.com",
+          url: "https://acme.com",
           reply: "## Competitor report\n\nAcme has three main rivals.",
         },
       },
@@ -723,7 +723,7 @@ describe("competitor_analysis_format_report_document (CL-4232)", () => {
       {
         id: "document",
         name: "competitor_analysis_format_report_document",
-        arguments: { companyUrl: "https://acme.com" },
+        arguments: { url: "https://acme.com" },
       },
       SIGNAL,
     );
@@ -731,7 +731,7 @@ describe("competitor_analysis_format_report_document (CL-4232)", () => {
     expect(result.content).toBe("reply is required");
   });
 
-  test("returns isError when companyUrl is missing", async () => {
+  test("returns isError when url is missing", async () => {
     const handler = fullTool("competitor_analysis_format_report_document");
     const result = await handler(
       {
@@ -742,7 +742,7 @@ describe("competitor_analysis_format_report_document (CL-4232)", () => {
       SIGNAL,
     );
     expect(result.isError).toBe(true);
-    expect(result.content).toBe("companyUrl is required");
+    expect(result.content).toBe("url is required");
   });
 });
 

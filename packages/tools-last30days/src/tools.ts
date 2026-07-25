@@ -102,7 +102,7 @@ export const COMPETITOR_ANALYSIS_FORMAT_REPORT_DOCUMENT_DEFINITION: ToolDefiniti
     inputSchema: {
       type: "object",
       properties: {
-        companyUrl: {
+        url: {
           type: "string",
           description:
             "The researched company's URL, used as the artifact title.",
@@ -112,7 +112,7 @@ export const COMPETITOR_ANALYSIS_FORMAT_REPORT_DOCUMENT_DEFINITION: ToolDefiniti
           description: "The synthesize agent's competitor report text.",
         },
       },
-      required: ["companyUrl", "reply"],
+      required: ["url", "reply"],
     },
   };
 
@@ -378,13 +378,13 @@ function createCompetitorAnalysisFormatReportDocumentTool(): AgentTool {
     definition: COMPETITOR_ANALYSIS_FORMAT_REPORT_DOCUMENT_DEFINITION,
     handler: async (call) => {
       const args = coerceArgsObject(call.arguments);
-      const companyUrl = args.companyUrl;
+      const url = args.url;
       const reply = args.reply;
-      if (typeof companyUrl !== "string" || companyUrl.trim().length === 0) {
+      if (typeof url !== "string" || url.trim().length === 0) {
         return {
           callId: call.id,
           isError: true,
-          content: "companyUrl is required",
+          content: "url is required",
         };
       }
       if (typeof reply !== "string" || reply.trim().length === 0) {
@@ -392,7 +392,7 @@ function createCompetitorAnalysisFormatReportDocumentTool(): AgentTool {
       }
       return {
         callId: call.id,
-        content: { title: companyUrl.trim(), body: reply },
+        content: { title: url.trim(), body: reply },
       };
     },
   };

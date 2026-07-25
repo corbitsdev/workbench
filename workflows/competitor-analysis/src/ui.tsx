@@ -110,7 +110,7 @@ function CompanyIntake({
   connected: boolean;
   signalPending: boolean;
   onSubmit: (payload: {
-    companyUrl: string;
+    url: string;
     companyName?: string;
     focusNotes?: string;
   }) => void;
@@ -144,10 +144,10 @@ function CompanyIntake({
           e.preventDefault();
           if (!canSubmit) return;
           const payload: {
-            companyUrl: string;
+            url: string;
             companyName?: string;
             focusNotes?: string;
-          } = { companyUrl: companyUrl.trim() };
+          } = { url: companyUrl.trim() };
           const name = companyName.trim();
           const notes = focusNotes.trim();
           if (name.length > 0) payload.companyName = name;
