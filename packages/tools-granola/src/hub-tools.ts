@@ -17,10 +17,10 @@ export const GRANOLA_SPAWN_CALL_RUNS_DEFINITION: ToolDefinition = {
         description:
           "The raw granola_list_notes result (JSON text: { notes: [...] }).",
       },
-      maxCalls: {
+      limit: {
         type: "string",
         description:
-          "Optional cap on how many notes to consider (a number as text). Defaults to 10.",
+          "Optional cap on how many notes to consider (a number as text). Defaults to 10. Named `limit` (not `maxCalls`) so the same trigger field name reaches both this tool and granola_list_notes's own `limit` argument with no per-workflow rename.",
       },
     },
     required: ["content"],
