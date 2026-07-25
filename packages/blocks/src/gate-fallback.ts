@@ -22,13 +22,10 @@
  * to render raw, so it goes through the same `classifyRunError` the run-level
  * error already uses (`failedRunError`) before it reaches `detail`.
  */
+import { humanizeStepId } from "@workbench/shared";
 import { classifyRunError } from "@workbench/ui";
 import type { DockRunStep, DockSurface } from "./run-dock-blocks";
 import type { UIBlock } from "./ui-block";
-
-function humanizeStepId(stepId: string): string {
-  return stepId.replace(/[-_]+/gu, " ").trim();
-}
 
 /** Plain run-page link block — the dock's only escape hatch for a case its
  * primitives can't (yet) collect. */

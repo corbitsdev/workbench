@@ -37,10 +37,10 @@ describe("dockRunBlocks", () => {
     const progress = blocks[0];
     if (progress?.kind !== "progress") throw new Error("expected progress");
     expect(progress.steps).toEqual([
-      { state: "done", label: "fetch sources" },
-      { state: "running", label: "draft" },
-      { state: "awaiting", label: "review gate" },
-      { state: "failed", label: "publish" },
+      { state: "done", label: "Fetch sources" },
+      { state: "running", label: "Draft" },
+      { state: "awaiting", label: "Review gate" },
+      { state: "failed", label: "Publish" },
     ]);
   });
 

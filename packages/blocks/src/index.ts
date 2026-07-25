@@ -55,3 +55,4 @@ export {
   type GateFallbackInput,
 } from "./gate-fallback";
 export { blocksFromStepUI, type StepUIRunInput } from "./step-ui";
+export { humanizeStepId } from "@workbench/shared";

@@ -24,12 +24,13 @@
  * usable block yet, renders the generic run-page-redirect fallback — NEVER a
  * single-button `choice` that would resolve the gate with an empty payload.
  */
-import type {
-  StepUI,
-  StepUIEntry,
-  StepUIGate,
-  StepUIGateOption,
-  StepUIInputField,
+import {
+  humanizeStepId,
+  type StepUI,
+  type StepUIEntry,
+  type StepUIGate,
+  type StepUIGateOption,
+  type StepUIInputField,
 } from "@workbench/shared";
 import { pendingGateForRun } from "./conversation-gates";
 import { runPageRedirectBlock } from "./gate-fallback";
@@ -46,14 +47,6 @@ import type {
 export interface StepUIRunInput extends DockRunInput {
   /** Decoded per-step outputs, keyed by step id, for `output`-declared steps. */
   stepOutputs?: Record<string, unknown>;
-}
-
-/** Sentence case, matching house copy style (see `references/writing-mechanics.md`):
- * "fetch-artifact" -> "Fetch artifact", never "fetch artifact". */
-function humanizeStepId(stepId: string): string {
-  const words = stepId.replace(/[-_]+/gu, " ").trim();
-  if (words.length === 0) return words;
-  return words.charAt(0).toUpperCase() + words.slice(1);
 }
 
 function toFormFieldOption(option: {

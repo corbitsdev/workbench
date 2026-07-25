@@ -33,7 +33,7 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, test } from "bun:test";
 import { type } from "arktype";
-import type { StepUI } from "@workbench/shared";
+import { humanizeStepId, type StepUI } from "@workbench/shared";
 import { blocksFromStepUI } from "./step-ui";
 import { gateFallbackBlock, runPageRedirectBlock } from "./gate-fallback";
 import { pendingGateForRun } from "./conversation-gates";
@@ -195,10 +195,6 @@ const MAX_PAIN_POINTS = 3;
 
 interface PainPointCollateralBlockInput extends DockRunInput {
   stepOutputs: Record<string, unknown>;
-}
-
-function humanizeStepId(stepId: string): string {
-  return stepId.replace(/[-_]+/gu, " ").trim();
 }
 
 function noteChoice(signalName: string, notes: GranolaNote[]): UIBlock {
@@ -630,12 +626,11 @@ describe("STEP_UI equivalence: pain-point-collateral (hard workflow)", () => {
     };
     const expected = referenceBuildPainPointCollateralBlocks(run);
     const actual = blocksFromStepUI(PAIN_POINT_COLLATERAL_STEP_UI, run);
-    // Compares the GATE block only, not the full array: an untitled step's
-    // progress label now renders sentence-cased (Finding 4's fix, applied
-    // only to `STEP_UI`'s copy) while the hand-written reference builder's
-    // own `humanizeStepId` is untouched — a documented, intentional
-    // divergence, not a bug in the equivalence.
-    expect(actual[1]).toEqual(expected[1]);
+    // Full-array equality: both sides now share the one sentence-case
+    // `humanizeStepId` (`@workbench/shared`), so there is no longer a casing
+    // divergence between STEP_UI's derivation and the hand-written reference
+    // builder to work around.
+    expect(actual).toEqual(expected);
   });
 
   test("review gate: reviewList read from an EARLIER step's output while the gate itself is PENDING", () => {

@@ -18,7 +18,7 @@
  */
 import { readFileSync } from "node:fs";
 import { describe, expect, test } from "bun:test";
-import type { StepUI } from "@workbench/shared";
+import { humanizeStepId, type StepUI } from "@workbench/shared";
 import { blocksFromStepUI } from "./step-ui";
 import type { DockRunInput, FormField, StepUIRunInput, UIBlock } from ".";
 import { pendingGateForRun } from "./conversation-gates";
@@ -60,10 +60,6 @@ const INTAKE_FIELDS: FormField[] = [
     placeholder: "What should the artifact help the audience understand or do?",
   },
 ];
-
-function humanizeStepId(stepId: string): string {
-  return stepId.replace(/[-_]+/gu, " ").trim();
-}
 
 function intakeForm(signalName: string): UIBlock {
   return {
@@ -181,11 +177,10 @@ describe("STEP_UI equivalence: gtm-scripts-briefs", () => {
     };
     const expected = referenceBuildGtmScriptsBriefsBlocks(run);
     const actual = blocksFromStepUI(GTM_SCRIPTS_BRIEFS_STEP_UI, run);
-    // Compares the GATE block only: the progress block's untitled-step label
-    // now renders sentence-cased (Finding 4's fix, applied only to `STEP_UI`'s
-    // copy of `humanizeStepId`) while the hand-written reference builder's own
-    // copy is untouched — a documented, intentional divergence, not a bug.
-    expect(actual[1]).toEqual(expected[1]);
+    // Full-array equality: both sides now share the one sentence-case
+    // `humanizeStepId` (`@workbench/shared`), so there is no longer a casing
+    // divergence to work around.
+    expect(actual).toEqual(expected);
   });
 
   test("mid-run, no gate: progress blocks match across every step phase", () => {
@@ -203,27 +198,7 @@ describe("STEP_UI equivalence: gtm-scripts-briefs", () => {
     };
     const expected = referenceBuildGtmScriptsBriefsBlocks(run);
     const actual = blocksFromStepUI(GTM_SCRIPTS_BRIEFS_STEP_UI, run);
-    // Same states, in the same order; labels intentionally diverge in
-    // casing only (see the intake gate test above) — assert the sentence-case
-    // relationship explicitly instead of dropping the label check entirely.
-    const expectedProgress = expected[0];
-    const actualProgress = actual[0];
-    if (
-      expectedProgress?.kind !== "progress" ||
-      actualProgress?.kind !== "progress"
-    ) {
-      throw new Error("expected both to be progress blocks");
-    }
-    expect(actualProgress.steps.map((s) => s.state)).toEqual(
-      expectedProgress.steps.map((s) => s.state),
-    );
-    expect(actualProgress.steps.map((s) => s.label)).toEqual(
-      expectedProgress.steps.map((s) =>
-        s.label !== undefined
-          ? s.label.charAt(0).toUpperCase() + s.label.slice(1)
-          : s.label,
-      ),
-    );
+    expect(actual).toEqual(expected);
   });
 
   test("completed run: link block matches", () => {
@@ -239,9 +214,7 @@ describe("STEP_UI equivalence: gtm-scripts-briefs", () => {
     };
     const expected = referenceBuildGtmScriptsBriefsBlocks(run);
     const actual = blocksFromStepUI(GTM_SCRIPTS_BRIEFS_STEP_UI, run);
-    // The link block only — see the intake gate test above for why the
-    // progress block's label casing is compared separately.
-    expect(actual[1]).toEqual(expected[1]);
+    expect(actual).toEqual(expected);
   });
 
   test("failed run: error block matches", () => {
@@ -257,9 +230,7 @@ describe("STEP_UI equivalence: gtm-scripts-briefs", () => {
     };
     const expected = referenceBuildGtmScriptsBriefsBlocks(run);
     const actual = blocksFromStepUI(GTM_SCRIPTS_BRIEFS_STEP_UI, run);
-    // The error block only — see the intake gate test above for why the
-    // progress block's label casing is compared separately.
-    expect(actual[1]).toEqual(expected[1]);
+    expect(actual).toEqual(expected);
   });
 
   test("un-hinted gate (no STEP_UI entry): derivation's fallback now matches the hand-written link fallback", () => {
@@ -282,9 +253,7 @@ describe("STEP_UI equivalence: gtm-scripts-briefs", () => {
     };
     const expected = referenceBuildGtmScriptsBriefsBlocks(run);
     const actual = blocksFromStepUI({}, run);
-    // The link block only — see the intake gate test above for why the
-    // progress block's label casing is compared separately.
-    expect(actual[1]).toEqual(expected[1]);
+    expect(actual).toEqual(expected);
     expect(expected[1]).toEqual({
       kind: "link",
       url: "/workflows/run_1",

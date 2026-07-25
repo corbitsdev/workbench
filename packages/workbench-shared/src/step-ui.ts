@@ -46,6 +46,24 @@
  */
 import { type } from "arktype";
 
+/**
+ * Sentence-cases a step id for display, matching house copy style (see
+ * `references/writing-mechanics.md`): "fetch-artifact" -> "Fetch artifact",
+ * never "fetch artifact". The single shared implementation — every dock-block
+ * builder (`@workbench/blocks`' generic derivation, `dockRunBlocks`,
+ * `gate-fallback`, and every migrated workflow's own `blocks.ts`) must call
+ * this rather than pasting its own copy; that duplication is exactly what let
+ * the generic `STEP_UI` derivation's casing drift from every hand-written
+ * builder's. Lives here rather than `@workbench/blocks` because it is needed
+ * by workflow packages too, and must stay importable without dragging in
+ * `@workbench/blocks`' React/framer-motion peer deps.
+ */
+export function humanizeStepId(stepId: string): string {
+  const words = stepId.replace(/[-_]+/gu, " ").trim();
+  if (words.length === 0) return words;
+  return words.charAt(0).toUpperCase() + words.slice(1);
+}
+
 /** What kind of gate a step plays, for host-side classification (e.g. picking
  * a form-vs-choice default, or grouping steps in a run-page timeline). Purely
  * descriptive — the derivation does not branch behavior on it beyond that. */
@@ -145,6 +163,26 @@ export const StepUIEntrySchema = type({
   // fallback-shaped kinds through unchanged. This is how a data-driven gate
   // (options-from-notes, computed defaults, per-record review rows) is
   // expressed without any per-workflow `blocks.ts` builder.
+  //
+  // CONTRACT, easy to miss when migrating a workflow: setting `gateFromOutput`
+  // on a gate changes the OUTPUT SCHEMA of its source step (`gateSourceStep`,
+  // or the gating step itself when omitted) from whatever raw domain shape the
+  // tool used to return (e.g. `{ notes: [...] }`) to a `UIBlock`-shaped value
+  // (`{ kind: "choice", ... }` / `{ kind: "reviewList", ... }` / etc.) —
+  // `@workbench/blocks`' `dynamicGateBlock` requires
+  // `run.stepOutputs[sourceStepId]` to already satisfy `isUIBlock`, and treats
+  // anything else as "not resolvable yet," falling back to the generic
+  // run-page redirect. That is a real relocation of a step's output shape, not
+  // just an additive change — anything that read the source step's RAW output
+  // before this migration breaks silently (it now sees UI-shaped JSON).
+  //
+  // Open question this leaves for the FIRST migration that hits it: if a
+  // DOWNSTREAM step also needs the raw domain data from that source step (not
+  // just its UI rendering), this contract does not solve that for you. Either
+  // unwrap the `UIBlock` back to the domain shape in that downstream step, or
+  // keep a separate step that still emits the raw data alongside the
+  // UI-shaping one. No mechanism for this exists yet — decide deliberately
+  // rather than discovering it at runtime.
   "gateFromOutput?": "boolean",
   // Which step's decoded output supplies the gate block when `gateFromOutput`
   // is set. Defaults to the gating step's own id when omitted — set this when
@@ -181,6 +219,41 @@ export function assertStepUIKeysMatchStepIds(
   if (unknownKeys.length > 0) {
     throw new Error(
       `STEP_UI declares entries for unknown step id(s): ${unknownKeys.join(", ")}. Every STEP_UI key must match a real step id in the workflow definition.`,
+    );
+  }
+}
+
+/**
+ * Build-time guard, the other direction from `assertStepUIKeysMatchStepIds`:
+ * every GATE step (an `awaitSignal` primitive — a user-facing moment the run
+ * parks on until a human resumes it) must have a `STEP_UI` entry.
+ *
+ * A non-gate step with no entry is fine and expected: `blocksFromStepUI` falls
+ * back to a humanized progress-row label, which is a reasonable default for an
+ * internal step nobody needs to author copy for. A GATE with no entry is a
+ * different failure mode — it silently falls through to
+ * `genericGateFallback`'s "This run needs input the dock cannot collect yet"
+ * run-page redirect, which is a real UX degradation for a moment the workflow
+ * author meant a human to act on, and it degrades with no build-time signal:
+ * the run still "works," it just ships worse copy nobody wrote or reviewed.
+ * That silent-degradation risk (not general completeness) is why gates alone
+ * are enforced here and every other step is deliberately left optional.
+ *
+ * Call this from the workflow package's own test suite alongside
+ * `assertStepUIKeysMatchStepIds`, passing the gate step ids computed from
+ * `workflow.steps` (steps whose primitive `kind` is `"awaitSignal"`) — the
+ * same place that already has both `STEP_UI` and the real step definitions in
+ * scope, and the same place with the correct env/test setup already wired for
+ * importing that workflow's own module.
+ */
+export function assertGateStepsHaveStepUIEntry(
+  stepUI: StepUI,
+  gateStepIds: readonly string[],
+): void {
+  const missing = gateStepIds.filter((stepId) => stepUI[stepId] === undefined);
+  if (missing.length > 0) {
+    throw new Error(
+      `STEP_UI is missing entries for gate step id(s): ${missing.join(", ")}. Every awaitSignal (gate) step needs a STEP_UI entry — without one it silently falls back to the generic run-page redirect instead of the copy its author intended.`,
     );
   }
 }

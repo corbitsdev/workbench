@@ -36,6 +36,7 @@
  */
 import {
   gateFallbackBlock,
+  humanizeStepId,
   pendingGateForRun,
   progressStateForStepPhase,
   runPageRedirectBlock,
@@ -62,10 +63,6 @@ export const SELECTION_SIGNAL = "opportunity-selection";
 export interface RedditOpportunityScannerBlockInput extends DockRunInput {
   /** Decoded step outputs keyed by stepId, as `stepOutputsFromLog` produces. */
   stepOutputs: Record<string, unknown>;
-}
-
-function humanizeStepId(stepId: string): string {
-  return stepId.replace(/[-_]+/gu, " ").trim();
 }
 
 function intakeForm(signalName: string): UIBlock {
