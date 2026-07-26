@@ -31,7 +31,7 @@ export function buildCurateSystemPrompt(): string {
 
 Input: an object with two fields:
 - review.output: the approved plan — businessContext, keywords, subreddits, competitors, and searches
-- collect.output: one Reddit result list per approved search; each item may include title, url, author, publishedAt, engagement, and topComments
+- collect.output.content.results: an array, one entry per approved search, in the same order as review.output.searches. Each entry is either that search's Reddit result list (items may include title, url, author, publishedAt, engagement, and topComments), or a failed-search marker shaped like { isError: true, error } — a search that returned this marker found nothing; skip it, do not treat it as evidence
 
 Judge hard. Most Reddit search results are noise.
 

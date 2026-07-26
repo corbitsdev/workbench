@@ -20,7 +20,6 @@ import {
 } from "@workbench/hub-sessions";
 import { awaitSignal, defineWorkflow, step } from "@intx/workflow";
 import { defineAgent } from "@intx/agent";
-import { deterministicToolStep } from "@workbench/agents";
 import {
   getWorkflowAnalytics,
   getWorkflowRunBreakdown,
@@ -95,6 +94,21 @@ const scoreAgent = defineAgent({
   inference: { sources: [] },
 });
 
+// A historical deterministic-tool-tagged step. `deterministicToolStep` (the
+// authoring helper) is deleted — no NEW workflow definition can carry this
+// tag — but `classifyStepKinds` still classifies it as "deterministic" when
+// reading an old run's committed workflow.json, so this fixture builds the
+// tagged agent directly to keep exercising that classification.
+const fetchAgent = defineAgent({
+  id: "fetch-agent",
+  description: "Historical deterministic tool step",
+  systemPrompt: "",
+  tools: [],
+  capabilities: ["fetch_tool"],
+  inference: { sources: [] },
+  tags: { "workbench.stepKind": "deterministic-tool" },
+});
+
 // A three-step workflow: a deterministic fetch (retried), a human gate, and a
 // reasoning agent step — so the projected step facts carry a real stepKind for
 // each classification.
@@ -102,7 +116,7 @@ const DEFINITION = defineWorkflow({
   id: KIND,
   triggers: [{ type: "manual" }],
   steps: {
-    fetch: deterministicToolStep({ id: "fetch-agent", tool: "fetch_tool" }),
+    fetch: step({ agent: fetchAgent }),
     approve: awaitSignal({ name: "approval" }),
     score: step({ agent: scoreAgent }),
   },

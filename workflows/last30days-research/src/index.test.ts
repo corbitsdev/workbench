@@ -2,11 +2,7 @@ import { describe, expect, test } from "bun:test";
 import type { ActionHandler } from "@intx/workflow";
 import type { StepInvoker } from "@intx/workflow/runtime";
 import { runLocal } from "@intx/workflow/runlocal";
-import {
-  STEP_KIND_TAG,
-  STEP_TOOL_TAG,
-  LLM_WRITER_MODEL,
-} from "@workbench/agents";
+import { LLM_WRITER_MODEL } from "@workbench/agents";
 
 import {
   workflow,
@@ -25,6 +21,13 @@ import {
   SAFE_POLYMARKET_ODDS_HANDLER,
 } from "./index";
 import { buildGroundingSystemPrompt } from "./prompts";
+
+// The retired `deterministic-tool` authoring kind's tags. Kept as literals
+// (not an import from `@workbench/agents`, which no longer exports them) —
+// this test only asserts the tags are ABSENT from every native step, proving
+// no step regresses onto the deleted mechanism.
+const STEP_KIND_TAG = "workbench.stepKind";
+const STEP_TOOL_TAG = "workbench.tool";
 
 // Every round-1 source's safe wrapper handler, by source key — the single
 // lookup the tests below share instead of a per-source if/else.

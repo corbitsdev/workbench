@@ -24,10 +24,14 @@
   },
   "dependencies": {
     "@intx/agent": "workspace:*",
+    "@intx/types": "workspace:*",
     "@intx/workflow": "workspace:*",
     "@workbench/agents": "workspace:*",
     "@workbench/blocks": "workspace:*",
     "@workbench/shared": "workspace:*",
+    "@workbench/tool-credentials": "workspace:*",
+    "@workbench/tool-manifest": "workspace:*",
+    "@workbench/tools-artifact": "workspace:*",
     "@workbench/ui": "workspace:*",
     "arktype": "catalog:"
   },
@@ -38,5 +42,9 @@
   },
   "peerDependencies": {
     "react": "*"
+  },
+  "interchange": {
+    "tools": "./dist/interchange-tools.js",
+    "manifest": "./src/tool-manifest.ts"
   }
 }

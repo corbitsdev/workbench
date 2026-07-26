@@ -10,10 +10,21 @@ import {
   COLLECT_TOOL_REQUIRES,
   createRedditOpportunityScannerCollectTools,
 } from "./collect-tool";
+import {
+  PERSIST_TOOL_REQUIRES,
+  createRedditOpportunityScannerPersistTools,
+} from "./persist-tool";
 
 export const redditOpportunityScannerCollect = defineTool({
   id: "@workbench/workflow-reddit-opportunity-scanner/collect",
   requires: COLLECT_TOOL_REQUIRES,
   factory: (env) =>
     createToolRunner(createRedditOpportunityScannerCollectTools(env)),
+});
+
+export const redditOpportunityScannerPersist = defineTool({
+  id: "@workbench/workflow-reddit-opportunity-scanner/persist",
+  requires: PERSIST_TOOL_REQUIRES,
+  factory: (env) =>
+    createToolRunner(createRedditOpportunityScannerPersistTools(env)),
 });

@@ -18,7 +18,15 @@ import {
 } from "@workbench/hub-sessions";
 import { awaitSignal, defineWorkflow, step } from "@intx/workflow";
 import { defineAgent } from "@intx/agent";
-import { deterministicToolStep, STEP_KIND_TAG } from "@workbench/agents";
+
+// The retired `deterministic-tool` authoring kind's tag + value. Kept as
+// literals (not an import from `@workbench/agents`, which no longer exports
+// them) for the same reason `"inline-inference"` below is a literal: a
+// completed run's committed workflow.json from before the retirement can
+// still carry this tag, and `classifyStepKinds` must keep reading it
+// correctly.
+const LEGACY_STEP_KIND_TAG = "workbench.stepKind";
+const LEGACY_DETERMINISTIC_TOOL_KIND = "deterministic-tool";
 
 // readWorkflowDefinition (reached via run-state-from-log) reads its cache TTL
 // from getConfig(); apps/hub tests do not preload test-setup/loadConfig, so stub
@@ -317,7 +325,7 @@ describe("getWorkflowRunState — native log fold across layouts", () => {
 });
 
 describe("classifyStepKinds — step-type classification from the definition", () => {
-  test("classifies human, agent, and deterministic steps", () => {
+  test("classifies human, agent, and historical deterministic-tool-tagged steps", () => {
     const reasoningAgent = defineAgent({
       id: "reasoner",
       description: "A genuine reasoning agent",
@@ -327,16 +335,27 @@ describe("classifyStepKinds — step-type classification from the definition", (
       inference: { sources: [] },
     });
 
+    // `deterministicToolStep` (the authoring helper) is deleted; a completed
+    // run's committed workflow.json from before the retirement can still
+    // carry this literal tag value, and this fold must keep reading it
+    // correctly rather than misclassifying old history.
+    const crunchAgent = defineAgent({
+      id: "crunch-agent",
+      description: "Historical deterministic tool step",
+      systemPrompt: "",
+      tools: [],
+      capabilities: ["some_tool"],
+      inference: { sources: [] },
+      tags: { [LEGACY_STEP_KIND_TAG]: LEGACY_DETERMINISTIC_TOOL_KIND },
+    });
+
     const definition = defineWorkflow({
       id: "classify-wf",
       triggers: [{ type: "manual" }],
       steps: {
         gate: awaitSignal({ name: "approval" }),
         brains: step({ agent: reasoningAgent }),
-        crunch: deterministicToolStep({
-          id: "crunch-agent",
-          tool: "some_tool",
-        }),
+        crunch: step({ agent: crunchAgent }),
       },
     });
 
@@ -358,7 +377,7 @@ describe("classifyStepKinds — step-type classification from the definition", (
       tools: [],
       capabilities: [],
       inference: { sources: [] },
-      tags: { [STEP_KIND_TAG]: "inline-inference" },
+      tags: { [LEGACY_STEP_KIND_TAG]: "inline-inference" },
     });
 
     const definition = defineWorkflow({

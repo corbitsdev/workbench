@@ -2,12 +2,15 @@ import { describe, expect, test } from "bun:test";
 import { runLocal } from "@intx/workflow/runlocal";
 import type { ActionHandler } from "@intx/workflow/runlocal";
 import type { StepInvoker } from "@intx/workflow/runtime";
-import { STEP_KIND_TAG, STEP_TOOL_TAG } from "@workbench/agents";
 
 import {
   ARTIFACT_LIST_HANDLER,
+  FETCH_ARTIFACTS_HANDLER,
+  FETCH_ISSUES_HANDLER,
+  FETCH_NOTES_HANDLER,
   GRANOLA_LIST_NOTES_HANDLER,
   LIST_ISSUES_HANDLER,
+  PERSIST_PIECES_HANDLER,
   kind,
   label,
   workflow,
@@ -20,6 +23,12 @@ import {
   parseIssueList,
   parseNoteList,
 } from "./parse";
+
+// The retired `deterministic-tool` authoring kind's tag. Kept as a literal
+// (not an import from `@workbench/agents`, which no longer exports it) —
+// this test only asserts the tag is ABSENT from every native step, proving
+// no step regresses onto the deleted mechanism.
+const STEP_KIND_TAG = "workbench.stepKind";
 
 function makeRecordingInvoker(outputs: Record<string, unknown> = {}): {
   invoker: StepInvoker;
@@ -112,9 +121,35 @@ describe("multi-source-collateral package", () => {
     expect(m.step.agent.tags?.[STEP_KIND_TAG]).toBeUndefined();
   });
 
-  test("persist map targets artifact_create", () => {
-    const m = mapPrimitive("persist");
-    expect(m.step.agent.tags?.[STEP_TOOL_TAG]).toContain("artifact_create");
+  test("persist and persist-after-regen are native actions dispatching the same batch-persist handler", () => {
+    for (const id of ["persist", "persist-after-regen"]) {
+      const primitive = workflow.steps[id];
+      if (primitive === undefined || primitive.kind !== "action") {
+        throw new Error(
+          `expected action for "${id}", got ${primitive?.kind ?? "undefined"}`,
+        );
+      }
+      expect(primitive.handler).toBe(PERSIST_PIECES_HANDLER);
+      expect(primitive.effect).toEqual({ requires: [PERSIST_PIECES_HANDLER] });
+    }
+  });
+
+  test("fetch-artifacts/notes/issues are native actions dispatching their own batch-fetch handler", () => {
+    const cases: [string, string][] = [
+      ["fetch-artifacts", FETCH_ARTIFACTS_HANDLER],
+      ["fetch-notes", FETCH_NOTES_HANDLER],
+      ["fetch-issues", FETCH_ISSUES_HANDLER],
+    ];
+    for (const [id, handler] of cases) {
+      const primitive = workflow.steps[id];
+      if (primitive === undefined || primitive.kind !== "action") {
+        throw new Error(
+          `expected action for "${id}", got ${primitive?.kind ?? "undefined"}`,
+        );
+      }
+      expect(primitive.handler).toBe(handler);
+      expect(primitive.effect).toEqual({ requires: [handler] });
+    }
   });
 
   test("happy path without regenerate: sources → options → generate → review → persist", async () => {
@@ -124,28 +159,30 @@ describe("multi-source-collateral package", () => {
       content: "Body copy",
     });
     const { invoker, ran } = makeRecordingInvoker({
-      "multi-source-collateral-fetch-artifact": {
-        title: "Brief",
-        content: "Artifact body",
-      },
-      "multi-source-collateral-fetch-note": {
-        title: "Call",
-        transcript: "We talked about onboarding.",
-      },
-      "multi-source-collateral-fetch-issue": {
-        identifier: "CL-1",
-        title: "Ticket",
-        description: "Ship collateral",
-      },
       "multi-source-collateral-generate": AGENT_REPLY(draft),
-      "multi-source-collateral-persist": { artifactId: "art_out" },
     });
-    const { resolver: actionResolver } = makeActionResolver({
+    const { resolver: actionResolver, ran: actionsRan } = makeActionResolver({
       [ARTIFACT_LIST_HANDLER]: { artifacts: [{ id: "a1", title: "Brief" }] },
       [GRANOLA_LIST_NOTES_HANDLER]: { notes: [{ id: "n1", title: "Call" }] },
       [LIST_ISSUES_HANDLER]: {
         issues: [{ id: "i1", identifier: "CL-1", title: "Ticket" }],
       },
+      [FETCH_ARTIFACTS_HANDLER]: {
+        results: [{ title: "Brief", content: "Artifact body" }],
+      },
+      [FETCH_NOTES_HANDLER]: {
+        results: [{ title: "Call", transcript: "We talked about onboarding." }],
+      },
+      [FETCH_ISSUES_HANDLER]: {
+        results: [
+          {
+            identifier: "CL-1",
+            title: "Ticket",
+            description: "Ship collateral",
+          },
+        ],
+      },
+      [PERSIST_PIECES_HANDLER]: { results: [{ artifactId: "art_out" }] },
     });
 
     const run = runLocal(workflow, { invokeStep: invoker, actionResolver });
@@ -183,7 +220,7 @@ describe("multi-source-collateral package", () => {
     const result = await run.complete;
     expect(result.terminalStatus).toBe("completed");
     expect(ran.map((r) => r.id)).toContain("multi-source-collateral-generate");
-    expect(ran.map((r) => r.id)).toContain("multi-source-collateral-persist");
+    expect(actionsRan.map((r) => r.ref)).toContain(PERSIST_PIECES_HANDLER);
     expect(ran.map((r) => r.id)).not.toContain(
       "multi-source-collateral-regenerate",
     );
@@ -203,12 +240,15 @@ describe("multi-source-collateral package", () => {
     const { invoker, ran } = makeRecordingInvoker({
       "multi-source-collateral-generate": AGENT_REPLY(draft),
       "multi-source-collateral-regenerate": AGENT_REPLY(revised),
-      "multi-source-collateral-persist-after-regen": { artifactId: "art_2" },
     });
-    const { resolver: actionResolver } = makeActionResolver({
+    const { resolver: actionResolver, ran: actionsRan } = makeActionResolver({
       [ARTIFACT_LIST_HANDLER]: { artifacts: [] },
       [GRANOLA_LIST_NOTES_HANDLER]: { notes: [] },
       [LIST_ISSUES_HANDLER]: { issues: [] },
+      [FETCH_ARTIFACTS_HANDLER]: { results: [] },
+      [FETCH_NOTES_HANDLER]: { results: [] },
+      [FETCH_ISSUES_HANDLER]: { results: [] },
+      [PERSIST_PIECES_HANDLER]: { results: [{ artifactId: "art_2" }] },
     });
 
     const run = runLocal(workflow, { invokeStep: invoker, actionResolver });
@@ -259,12 +299,20 @@ describe("multi-source-collateral package", () => {
     expect(ran.map((r) => r.id)).toContain(
       "multi-source-collateral-regenerate",
     );
-    expect(ran.map((r) => r.id)).toContain(
-      "multi-source-collateral-persist-after-regen",
-    );
-    expect(ran.map((r) => r.id)).not.toContain(
-      "multi-source-collateral-persist",
-    );
+    // Both `persist` and `persist-after-regen` dispatch the SAME handler; the
+    // gate is what proves only one of the two steps ran — exactly one
+    // dispatch of the shared persist handler on this branch.
+    expect(
+      actionsRan.filter((r) => r.ref === PERSIST_PIECES_HANDLER),
+    ).toHaveLength(1);
+    const persistAfterRegen = workflow.steps["persist-after-regen"];
+    if (
+      persistAfterRegen === undefined ||
+      persistAfterRegen.kind !== "action"
+    ) {
+      throw new Error("expected action for persist-after-regen");
+    }
+    expect(persistAfterRegen.after).toContain("review-final");
   });
 });
 

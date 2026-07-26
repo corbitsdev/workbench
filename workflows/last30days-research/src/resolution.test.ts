@@ -28,9 +28,10 @@ import {
 //     all `kind:"full"` or `kind:"string"` tools) is the tool's return
 //     verbatim — `action`'s `ctx.perform` returns `result.output` unwrapped
 //     (interchange tool.ts:349-353, sidecar action-tool-handler.ts).
-//   - the deterministic (`deterministicToolStep`) harness returns the same
-//     `{ callId, content }` shape for the still-shimmed best-effort source
-//     steps.
+//   - the `runDeterministicToolStep` harness (shared by every action-
+//     dispatched step, the retired `deterministicToolStep`'s former path)
+//     returns the same `{ callId, content }` shape for the still-shimmed
+//     best-effort source steps.
 //   - an inline inference step stores `{ reply, turn }`
 //     (workflow-substrate-factory.ts:1118).
 //   - an awaitSignal step stores the signal payload verbatim (run.ts runAwaitSignal).

@@ -3,7 +3,6 @@ import {
   awaitSignal,
   defineWorkflow,
   gate,
-  map,
   sleep,
   step,
 } from "@intx/workflow";
@@ -15,7 +14,6 @@ import {
   LLM_WRITER_MODEL,
   canonicalizeStepToolName,
   canonicalizeToolNames,
-  deterministicToolStep,
   agentStep,
   STEP_TITLE_TAG,
   withCorbitsVocabulary,
@@ -28,8 +26,8 @@ import {
 } from "./prompts";
 
 // Native `action` handler refs — the tool's canonical (factory-prefixed) name,
-// resolved via the same build-time-checked lookup `deterministicToolStep`
-// uses, so a typo'd or manifest-drifted tool name fails the build instead of
+// resolved via `canonicalizeStepToolName`'s build-time-checked lookup, so
+// a typo'd or manifest-drifted tool name fails the build instead of
 // deploying a step nothing can dispatch.
 export const LIST_WORKSPACE_MEMBERS_HANDLER = canonicalizeStepToolName(
   "attio-task-agent-list-members",
@@ -50,6 +48,10 @@ export const CREATE_NOTE_HANDLER = canonicalizeStepToolName(
 export const UPDATE_TASK_HANDLER = canonicalizeStepToolName(
   "attio-task-agent-write-complete",
   "attio_update_task",
+);
+export const PERSIST_PIECES_HANDLER = canonicalizeStepToolName(
+  "attio-task-agent-persist",
+  "attio_task_agent_persist_pieces",
 );
 
 export const label = "Attio Task Agent";
@@ -116,17 +118,24 @@ const analyzeAgent = defineAgent({
 //   execute       agentStep  EXECUTOR: performs every draftAction → {outputs:[{type,title,content,brief}]}
 //   reviewArtifacts agentStep  REVIEWER: validates outputs vs briefs → {overall, items:[{type,verdict,notes}]}
 //   review        awaitSignal            review              → {approvedPieces:[{type,title,content}]}
-//   persist       map artifact_create    over approvedPieces (deterministicToolStep — see note below)
+//   persist       action  artifact_create batch tool  over approvedPieces (native primitive, see note below)
 //   suggest       agentStep    merge fetch+analyze → completion summary + follow-ups
 //   approveSync   awaitSignal            sync-approval       → {confirm,taskId,parentObject,parentRecordId,note}
 //   syncGate      gate on confirm        → writeNote | skipWriteBack
 //   writeNote     action                 attio_create_note   FATAL (loud on real Attio errors), native primitive
 //   writeComplete action                 attio_update_task   FATAL, after writeNote, native primitive
 //
-// persist stays a deterministicToolStep (not a native `action`) for the same
-// reason documented in pain-point-collateral: `MapPrimitive.step` is typed
-// `StepPrimitive`, not `Primitive` — an `action` cannot be a map's inner step
-// at all.
+// persist folds into one native `action` dispatching a workflow-owned batch
+// tool (`persist-tool.ts`) that loops over `approvedPieces` in-process — the
+// pattern `granola_spawn_call_runs` established. Not a mechanical migration
+// of the old `deterministicToolStep` map inner step: `MapPrimitive.step` is
+// typed `StepPrimitive`, not `Primitive`, so an `action` could never host it
+// directly; the fold sidesteps that entirely by moving the iteration into
+// the tool. Fatal by design (unchanged): any failed save fails the run, and
+// folding N per-item steps into one action means a crash mid-save re-runs
+// the WHOLE batch on resume instead of resuming after the already-saved
+// pieces — a real checkpointing change, acceptable given an approved batch
+// is small.
 //
 // The pipeline is planner → executor → reviewer → human: the agent decides and
 // performs the plan; the human no longer hand-picks actions. Destructive Attio
@@ -142,24 +151,6 @@ const analyzeAgent = defineAgent({
 // as its idempotencyKey, so re-running the same task dedupes the note instead of
 // creating a duplicate.
 // -------------------------------------------------------------------------
-
-const persistStep = deterministicToolStep({
-  id: "attio-task-agent-persist",
-  title: "Save each piece",
-  tool: "artifact_create",
-  input: { from: "trigger.payload" },
-  // The artifact `kind` is the planner's action `type`. This is INTENTIONALLY
-  // free-form (CL-2664): the action registry is open, so a new action type
-  // persists as its own artifact kind with no schema change. The artifact table's
-  // kind column is a plain string; unknown types are surfaced (not blocked) — the
-  // Review panel labels an unrecognized type "(new type)" so a hallucinated kind
-  // is visible to the human before they save it, rather than silently rejected.
-  argMap: {
-    title: { from: "title" },
-    kind: { from: "type" },
-    content: { from: "content" },
-  },
-});
 
 // Execution + review, as two agent steps (CL-2664).
 //
@@ -277,9 +268,10 @@ export const workflow = defineWorkflow({
 
     review: awaitSignal({ name: "review", after: ["reviewArtifacts"] }),
 
-    persist: map({
-      over: { from: "steps.review.output.approvedPieces" },
-      step: persistStep,
+    persist: action({
+      handler: PERSIST_PIECES_HANDLER,
+      input: { from: "steps.review.output" },
+      effect: { requires: [PERSIST_PIECES_HANDLER] },
       after: ["review"],
     }),
 

@@ -19,8 +19,8 @@ export { DISPLAY_STEPS } from "./display-steps";
 const MORNING_BRIEF_ARTIFACT_KIND = morningBriefArtifactKind();
 
 // Native `action` handler refs — the tool's canonical (factory-prefixed) name,
-// resolved via the same build-time-checked lookup `deterministicToolStep`
-// uses, so a typo'd or manifest-drifted tool name fails the build instead of
+// resolved via `canonicalizeStepToolName`'s build-time-checked lookup, so
+// a typo'd or manifest-drifted tool name fails the build instead of
 // deploying a step nothing can dispatch.
 export const HEARTBEAT_FORMAT_BRIEF_TITLE_HANDLER = canonicalizeStepToolName(
   "heartbeat-title",

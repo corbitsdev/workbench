@@ -239,7 +239,7 @@ export const BRIEF_SOURCE_CATALOG: readonly {
 /**
  * The subset of `BRIEF_SOURCE_CATALOG` with a wired fetch tool — what the
  * heartbeat workflow (`workflows/heartbeat/src/index.ts`) generates one
- * intake `deterministicToolStep` per entry from. Exported so the workflow
+ * native `action` intake step per entry from. Exported so the workflow
  * and its tests share the same derivation rather than re-filtering the
  * catalog inline.
  */

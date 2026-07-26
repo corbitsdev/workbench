@@ -1,9 +1,17 @@
 import type { WorkflowDefinition } from "@intx/workflow";
-import {
-  STEP_KIND_TAG,
-  STEP_TITLE_TAG,
-  DETERMINISTIC_TOOL_KIND,
-} from "./deterministic-step";
+import { STEP_TITLE_TAG } from "./deterministic-step";
+
+// The retired `deterministic-tool` authoring kind's tag + value.
+// `deterministicToolStep` and its `STEP_KIND_TAG`/`DETERMINISTIC_TOOL_KIND`
+// exports are deleted — no NEW workflow definition can ever carry this tag,
+// since every tool/API call now folds into a native `action` (which this
+// classifier's `default: return "auto"` branch already covers) — but a
+// historical run's committed workflow.json from before the retirement can
+// still carry it, and the run/catalog preview must keep classifying that
+// step as "auto" rather than misreading it as a reasoning agent. Kept as
+// literals, not an import, so they survive the authoring surface's deletion.
+const LEGACY_STEP_KIND_TAG = "workbench.stepKind";
+const LEGACY_DETERMINISTIC_TOOL_KIND = "deterministic-tool";
 
 export type FlowStepClass = "auto" | "agent" | "human";
 
@@ -47,15 +55,18 @@ export function humanize(raw: string): string {
 }
 
 // A `step` primitive is deterministic or reasoning purely by its authoring tag:
-// deterministicToolStep writes "deterministic-tool"; every reasoning step
-// (agentStep's native `step({ agent })`) carries no deterministic tag and
-// classifies as "agent" by default. A historical run's definition may still
-// carry the retired `inline-inference` tag value on disk; that also has no
-// deterministic tag, so it classifies as "agent" here too.
+// the retired `deterministicToolStep` wrote "deterministic-tool" — no NEW
+// definition can carry it, but a historical run's committed workflow.json
+// still might; every reasoning step (agentStep's native `step({ agent })`)
+// carries no deterministic tag and classifies as "agent" by default. A
+// historical run's definition may still carry the retired `inline-inference`
+// tag value on disk; that also has no deterministic tag, so it classifies as
+// "agent" here too.
 function classifyStepByTag(
   tags: Record<string, string> | undefined,
 ): FlowStepClass {
-  if (tags?.[STEP_KIND_TAG] === DETERMINISTIC_TOOL_KIND) return "auto";
+  if (tags?.[LEGACY_STEP_KIND_TAG] === LEGACY_DETERMINISTIC_TOOL_KIND)
+    return "auto";
   return "agent";
 }
 

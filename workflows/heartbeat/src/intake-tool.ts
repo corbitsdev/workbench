@@ -1,11 +1,11 @@
 // Best-effort, in-process intake wrapper.
 //
 // `ActionPrimitive` has no `nonFatal` field (@intx/workflow's primitives.ts).
-// Action dispatch runs through the same `runDeterministicToolStep`
-// (apps/sidecar/src/step-tool-harness.ts) deterministicToolStep uses, and that
-// function THROWS whenever the dispatched tool's outer `ToolResult.isError`
-// is `true` — `nonFatal` is the only escape, and `ActionOpts` has no such
-// field, so a native action's dispatched tool must never set the outer
+// Action dispatch runs through `runDeterministicToolStep`
+// (apps/sidecar/src/step-tool-harness.ts), and that function THROWS whenever
+// the dispatched tool's outer `ToolResult.isError` is `true` — `nonFatal` is
+// the only escape, and `ActionOpts` has no such field, so a native action's
+// dispatched tool must never set the outer
 // `isError`, not even by throwing (the sidecar's tool runner converts a
 // thrown handler error into `isError: true` — see `createToolRunner`,
 // interchange/packages/agent/src/tool.ts — which would hit the same throw).

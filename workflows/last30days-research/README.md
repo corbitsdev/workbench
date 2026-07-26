@@ -12,23 +12,23 @@ Steps:
    step.
 2. **ground** — `agentStep` that turns the topic + focus into one search
    query tailored to each platform (HN/GitHub/web/Reddit/X/YouTube/Polymarket).
-3. **groundQueries** — `deterministicToolStep` (`last30days_ground_queries`) that
+3. **groundQueries** — native `action` (`last30days_ground_queries`) that
    parses the grounding reply into a per-source query map (object `content`,
    addressable as `steps.groundQueries.output.content.<source>`). Every key is
    guaranteed a non-empty string, falling back to the base query, so a thin or
    malformed grounding reply never blanks a source.
-4. **sources** — one `deterministicToolStep` per source (`hackernews_search`,
+4. **sources** — one native `action` per source (`hackernews_search`,
    `github_activity`, `exa_search`, `reddit_search`, `x_search`, `youtube_search`,
    `polymarket_odds`), each reading its own tailored query and a per-source
    `limit` sized toward the tool's cap (HN 30, github 25, exa 25, reddit 40, x 20,
    youtube 20, polymarket 25) to deepen the candidate pool.
 5. **rerank** — `agentStep` relevance judge (W1.2); its JSON reply feeds
    the brief, which applies the scores before ranking.
-6. **brief** — `deterministicToolStep` (`last30days_workflow_brief`) that folds the
+6. **brief** — native `action` (`last30days_workflow_brief`) that folds the
    source outputs into a `buildReport` brief.
 7. **write** — `agentStep` that writes the long-form, grounded report
    from the brief.
-8. **persist** — `deterministicToolStep` (`write_artifact`) storing the brief +
+8. **persist** — native `action` (`write_artifact`) storing the brief +
    prose as a `research` artifact.
 
 ### Serial source chain (CL-2314)
@@ -46,11 +46,15 @@ the chain until the auth path is fixed.
 
 ### Non-fatal sources (CL-2401)
 
-Each fetch step carries `deterministicToolStep`'s `nonFatal` flag, so a thrown
-source error (rate-limit/auth/network) is logged and degraded by the sidecar to a
-completed `isError` envelope rather than failing the step — the brief records it in
-`skippedSources`. `nonFatal` is for best-effort sources only; `ground`/
-`groundQueries`, `brief`, `write`, and `persist` stay fatal.
+Each fetch step's `action` dispatches a workflow-owned tolerant wrapper tool
+(the `SAFE_*_HANDLER`s in `index.ts`, backed by `tools.ts`), so a thrown source
+error (rate-limit/auth/network) is caught by the wrapper and returned as a
+completed, non-error `ToolResult` carrying an `{ isError: true, error }`
+envelope inside `content` — the brief records it in `skippedSources`. Native
+`action`s have no `nonFatal` escape of their own (`runDeterministicToolStep`
+throws on any outer `ToolResult.isError`), so the tolerance lives in the
+wrapper tool instead. Best-effort sources only; `ground`/`groundQueries`,
+`brief`, `write`, and `persist` stay fatal.
 
 ### Per-step models (CL-2496)
 

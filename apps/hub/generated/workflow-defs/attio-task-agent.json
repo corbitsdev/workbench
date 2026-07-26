@@ -274,36 +274,17 @@
         ]
       },
       "persist": {
-        "kind": "map",
+        "kind": "action",
         "id": "persist",
-        "over": {
-          "from": "steps.review.output.approvedPieces"
+        "handler": "@workbench/workflow-attio-task-agent/persist:attio_task_agent_persist_pieces",
+        "drainBehavior": "cancel",
+        "input": {
+          "from": "steps.review.output"
         },
-        "step": {
-          "kind": "step",
-          "id": "",
-          "agent": {
-            "id": "attio-task-agent-persist",
-            "systemPrompt": "",
-            "toolFactories": [],
-            "capabilities": [
-              "@workbench/tools-artifact/artifact:artifact_create"
-            ],
-            "inference": {
-              "sources": []
-            },
-            "description": "Deterministic tool call: @workbench/tools-artifact/artifact:artifact_create",
-            "tags": {
-              "workbench.stepKind": "deterministic-tool",
-              "workbench.tool": "@workbench/tools-artifact/artifact:artifact_create",
-              "workbench.argMap": "{\"title\":{\"from\":\"title\"},\"kind\":{\"from\":\"type\"},\"content\":{\"from\":\"content\"}}",
-              "workbench.title": "Save each piece"
-            }
-          },
-          "drainBehavior": "cancel",
-          "input": {
-            "from": "trigger.payload"
-          }
+        "effect": {
+          "requires": [
+            "@workbench/workflow-attio-task-agent/persist:attio_task_agent_persist_pieces"
+          ]
         },
         "after": [
           "review"

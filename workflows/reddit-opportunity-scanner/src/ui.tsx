@@ -36,7 +36,7 @@ const SELECTION_SIGNAL = "opportunity-selection";
 
 // ── Output schemas ──────────────────────────────────────────────────────────────
 
-// deterministicToolStep output: { callId: string, content: "<JSON>" }
+// A tool-dispatching action's ToolResult output: { callId: string, content: "<JSON>" }
 const ToolResultEnvelope = type({ callId: "string", content: "string" });
 
 const PersistContent = type({

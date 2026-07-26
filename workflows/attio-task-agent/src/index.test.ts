@@ -3,20 +3,22 @@ import { runLocal } from "@intx/workflow/runlocal";
 import type { ActionHandler } from "@intx/workflow";
 import type { StepInvoker } from "@intx/workflow/runtime";
 import {
-  STEP_ARGMAP_TAG,
-  STEP_KIND_TAG,
-  STEP_TOOL_TAG,
-} from "@workbench/agents";
-import {
   CREATE_NOTE_HANDLER,
   description,
   GET_TASK_HANDLER,
   label,
   LIST_TASKS_HANDLER,
   LIST_WORKSPACE_MEMBERS_HANDLER,
+  PERSIST_PIECES_HANDLER,
   UPDATE_TASK_HANDLER,
   workflow,
 } from "./index";
+
+// The retired `deterministic-tool` authoring kind's tag. Kept as a literal
+// (not an import from `@workbench/agents`, which no longer exports it) —
+// this test only asserts the tag is ABSENT from every native step, proving
+// no step regresses onto the deleted mechanism.
+const STEP_KIND_TAG = "workbench.stepKind";
 
 function makeRecordingInvoker(outputs: Record<string, unknown> = {}): {
   invoker: StepInvoker;
@@ -70,16 +72,6 @@ function actionPrimitive(id: string) {
   return primitive;
 }
 
-function mapPrimitive(id: string) {
-  const primitive = workflow.steps[id];
-  if (primitive === undefined || primitive.kind !== "map") {
-    throw new Error(
-      `expected map primitive for "${id}", got ${primitive?.kind ?? "undefined"}`,
-    );
-  }
-  return primitive;
-}
-
 function awaitSignalPrimitive(id: string) {
   const primitive = workflow.steps[id];
   if (primitive === undefined || primitive.kind !== "awaitSignal") {
@@ -122,7 +114,6 @@ describe("attio-task-agent native workflow", () => {
         overall: "Send-ready.",
         items: [{ type: "cold-email", verdict: "pass", notes: "Good." }],
       },
-      "attio-task-agent-persist": { artifactId: "art_1" },
       "attio-task-agent-suggest": "Sent the draft. Next: schedule a follow-up.",
     });
     const { resolver, ran: actionsRan } = makeRecordingActionResolver({
@@ -138,6 +129,7 @@ describe("attio-task-agent native workflow", () => {
         task: { id: { task_id: "task_1" } },
         linkedRecords: [{ object: "companies", recordId: "rec_1" }],
       },
+      [PERSIST_PIECES_HANDLER]: { results: [{ artifactId: "art_1" }] },
       [CREATE_NOTE_HANDLER]: { id: { note_id: "note_1" } },
       [UPDATE_TASK_HANDLER]: { id: { task_id: "task_1" } },
     });
@@ -172,12 +164,12 @@ describe("attio-task-agent native workflow", () => {
     expect(ranIds).toContain("attio-task-agent-analyze");
     expect(ranIds).toContain("attio-task-agent-execute");
     expect(ranIds).toContain("attio-task-agent-review-artifacts");
-    expect(ranIds).toContain("attio-task-agent-persist");
 
     const actionRefs = actionsRan.map((r) => r.handler);
     expect(actionRefs).toContain(LIST_WORKSPACE_MEMBERS_HANDLER);
     expect(actionRefs).toContain(LIST_TASKS_HANDLER);
     expect(actionRefs).toContain(GET_TASK_HANDLER);
+    expect(actionRefs).toContain(PERSIST_PIECES_HANDLER);
     expect(actionRefs).toContain(CREATE_NOTE_HANDLER);
     expect(actionRefs).toContain(UPDATE_TASK_HANDLER);
 
@@ -284,20 +276,11 @@ describe("attio-task-agent native workflow", () => {
     expect(s.agent.inference.sources).toEqual([]);
   });
 
-  test("persist maps artifact_create over the approved pieces, keying artifact kind off the action type", () => {
-    const persist = mapPrimitive("persist");
-    expect(persist.over).toEqual({
-      from: "steps.review.output.approvedPieces",
-    });
-    const inner = persist.step;
-    expect(inner.agent.tags?.[STEP_TOOL_TAG]).toContain("artifact_create");
-    const argMap = inner.agent.tags?.[STEP_ARGMAP_TAG];
-    if (argMap === undefined) throw new Error("expected argMap on persist");
-    expect(JSON.parse(argMap)).toEqual({
-      title: { from: "title" },
-      kind: { from: "type" },
-      content: { from: "content" },
-    });
+  test("persist is a native action dispatching the batch persist-pieces handler over review.output", () => {
+    const persist = actionPrimitive("persist");
+    expect(persist.handler).toBe(PERSIST_PIECES_HANDLER);
+    expect(persist.input).toEqual({ from: "steps.review.output" });
+    expect(persist.effect).toEqual({ requires: [PERSIST_PIECES_HANDLER] });
   });
 
   test("destructive write-back stays gated on an explicit confirm flag, as native FATAL action primitives", () => {
@@ -347,7 +330,6 @@ describe("attio-task-agent native workflow", () => {
         overall: "ok",
         items: [{ type: "cold-email", verdict: "pass", notes: "" }],
       },
-      "attio-task-agent-persist": { artifactId: "a" },
       "attio-task-agent-suggest": "done",
     });
     const { resolver, ran: actionsRan } = makeRecordingActionResolver({

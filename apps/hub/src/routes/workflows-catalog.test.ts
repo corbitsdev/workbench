@@ -1,6 +1,13 @@
 import { describe, expect, it } from "bun:test";
 import { mock } from "bun:test";
-import { DETERMINISTIC_TOOL_KIND, STEP_KIND_TAG } from "@workbench/agents";
+
+// The retired `deterministic-tool` authoring kind's tag + value. Kept as
+// literals (not an import from `@workbench/agents`, which no longer exports
+// them) for the same reason a historical run's committed workflow.json can
+// still carry this tag — this fixture stands in for that shape so the
+// catalog's "auto" step classification stays covered.
+const STEP_KIND_TAG = "workbench.stepKind";
+const DETERMINISTIC_TOOL_KIND = "deterministic-tool";
 
 let userContext: {
   context: { tenantId: string; principalId: string } | null;

@@ -21,12 +21,7 @@ import { and, eq, inArray, isNull } from "drizzle-orm";
 import { generateId } from "@intx/hub-common";
 import { getLogger } from "@intx/log";
 import { type } from "arktype";
-import type { GrantRule } from "@intx/authz";
-import {
-  toolPackagesForCapabilities,
-  DETERMINISTIC_TOOL_KIND,
-  STEP_KIND_TAG,
-} from "@workbench/agents";
+import { toolPackagesForCapabilities } from "@workbench/agents";
 import {
   buildStepGrantRules,
   capabilityNames,
@@ -35,7 +30,6 @@ import {
 import { getConfig } from "../config";
 import type { HubDb } from "../db";
 import type { WorkflowDefinition } from "@intx/workflow";
-import type { AgentDefinition, BaseEnv } from "@intx/agent";
 
 type WorkflowPrimitive = WorkflowDefinition["steps"][string];
 import type { HarnessConfig, InferenceSource } from "@intx/types/runtime";
@@ -79,7 +73,6 @@ const STEP_GRANTS_PATH = "state/grants.json";
 // The resource-string prefix + action the step-agent reactor evaluates each
 // tool call against (`evaluateGrants("tool:<name>", "invoke", ...)`), mirroring
 // the DB-row grammar in `apps/hub/src/lib/tool-grants.ts`.
-const TOOL_GRANT_RESOURCE_PREFIX = "tool:";
 
 export type DeployWorkflowParams = {
   workflow: WorkflowDefinition;
@@ -224,46 +217,25 @@ export function createWorkflowDeployService(deps: {
       params.toolPackagePins ??
       toolPackagesForCapabilities(capabilityNames(walk));
 
-    // Partition every step into one of two classes by its CL-2251
-    // `STEP_KIND_TAG`:
-    //
-    //   deterministic-tool (CL-2252) — a tool/API call the sidecar runs
-    //     against a deny-all `authorize` directly (no reactor, no session).
-    //     The tool manifest/credentials endpoints gate on its `agent` row, so
-    //     we KEEP `writeStepAgentRows` for it — but it needs NO instance row,
-    //     NO grants file (the deny-all path never reads `grants.json`), and NO
-    //     launchSession.
-    //   deployed (reasoning with tools) — an `agent` row, an
-    //     `agent_instance` row, and a `state/grants.json`. Execution reads its
-    //     inputs from these hub-written artifacts: the agent def from
-    //     workflow.json, the grants from `state/grants.json`, the tools from
-    //     the on-disk deploy tree the per-step stager writes, and the
-    //     credentials via the hub credential rail gated on the `agent` row.
-    //     `agentStep` (`@workbench/agents`) is the standard author helper for
-    //     this class; the retired `inline-inference` third class (a no-tool
-    //     single-turn reasoning turn dispatched through a bare `createAgent`)
-    //     is gone — no in-repo workflow can construct one anymore, so this
-    //     partition only ever sees the two classes above.
+    // Every step is the same class now: an `agent` row, an `agent_instance`
+    // row, and a `state/grants.json`. Execution reads its inputs from these
+    // hub-written artifacts: the agent def from workflow.json, the grants
+    // from `state/grants.json`, the tools from the on-disk deploy tree the
+    // per-step stager writes, and the credentials via the hub credential
+    // rail gated on the `agent` row. `agentStep`/native `action` (both from
+    // `@workbench/agents`/`@intx/workflow`) are the standard author shapes;
+    // the retired `deterministic-tool` class (a tool/API call dispatched
+    // against a hardcoded deny-all `authorize`, no grants file, no instance
+    // row) and the `inline-inference` class before it are both gone — no
+    // in-repo workflow can construct either anymore, so every staged step
+    // uniformly gets the full row set below.
     //
     // The orchestrator calls its per-step `launchSession` hook once per step.
     // In a production provision that hook is the on-disk tool stager
     // (`stageWorkflowStep`), which stages each step's pinned tool closure into
     // the deploy tree the sidecar materializes from disk; the catalog-publish
-    // path passes a no-op instead (it touches no sidecar). Skipping the
-    // deterministic step's agent-state repo is the session-per-step RAM
-    // saving carried over from the retired in-process runtime.
-    const deterministicStepIds = collectDeterministicToolStepIds(
-      params.workflow,
-    );
+    // path passes a no-op instead (it touches no sidecar).
     const allStepIds = [...walk.perStep.keys()];
-    const deployedStepIds = allStepIds.filter(
-      (stepId) => !deterministicStepIds.has(stepId),
-    );
-    // The orchestrator's per-step hook stages each step's tool tree on disk in
-    // a production provision so the sidecar materializes the step's tools from
-    // the deploy tree; the deploy also rebuilds each step from the other
-    // hub-written artifacts (workflow.json, `state/grants.json`, the `agent`
-    // row + the credential/grants hub rails) at execution time.
 
     // Persist `agent` rows UNIFORMLY for every step. Interchange's per-step
     // staging fires for every stepOrder entry and its pack phase records a
@@ -272,8 +244,7 @@ export function createWorkflowDeployService(deps: {
     // old inline/deterministic partitions repeatedly broke against those
     // upstream invariants (ack resolution, session_asset FK), so every
     // staged step now gets the full row pair; the rows are inert for steps
-    // that never use them. The hub's tool-credential + manifest gate also
-    // authorizes deterministic/deployed steps by this row's pins.
+    // that never use them.
     // Grants + agent-row capabilities cover the FULL canonical surface of the
     // staged packages (see stepGrantCapabilityNames) — package staging itself
     // still derives from the declared names above.
@@ -291,17 +262,14 @@ export function createWorkflowDeployService(deps: {
       capabilityNames: stepCapabilityNames,
     });
 
-    // Write each deployed step's `state/grants.json` into its agent-state
-    // repo so both interchange's supervisor (credentialsSnapshot assembly)
-    // and our sidecar's `readStepGrants` see real grants. Without this the
-    // step agent's grant set is empty and every `tool:<name>`/`invoke` is
-    // denied. Deterministic tool steps run against a hardcoded deny-all
-    // `authorize` that never consults `grants.json` (CL-2252), so they get no
-    // grants file (nor an agent-state repo to hold one).
+    // Write every step's `state/grants.json` into its agent-state repo so
+    // both interchange's supervisor (credentialsSnapshot assembly) and our
+    // sidecar's `readStepGrants` see real grants. Without this the step
+    // agent's grant set is empty and every `tool:<name>`/`invoke` is denied.
     await writeStepGrantFiles({
       repoStore: deps.repoStore,
       deploymentId: params.deploymentId,
-      stepIds: deployedStepIds,
+      stepIds: allStepIds,
       capabilityNames: stepCapabilityNames,
     });
 
@@ -1327,10 +1295,9 @@ export async function ensureDeploymentInstanceActive(args: {
 // The resource-string prefix a native `action` step's `EffectContext.perform`
 // authorizes against (`interchange/packages/workflow/src/runtime/
 // effect-context.ts`'s `createEffectContext`: `authorize(\`effect:${capability}\`,
-// "invoke", ...)`). Distinct from `TOOL_GRANT_RESOURCE_PREFIX` — an agent-step
-// tool call authorizes `tool:<name>`, an action step's effect authorizes
-// `effect:<name>`, and the two checks are never interchangeable.
-const EFFECT_GRANT_RESOURCE_PREFIX = "effect:";
+// "invoke", ...)`). Distinct from the tool-call prefix (`tool:<name>`) —
+// an agent-step tool call authorizes `tool:<name>`, an action step's effect
+// authorizes `effect:<name>`, and the two checks are never interchangeable.
 
 // Build the on-disk `GrantRule` set that authorizes a step agent to invoke
 // each of its tools AND, for a native `action` step, to perform each of its
@@ -1409,37 +1376,6 @@ export function createWorkflowRepoWriter(
       );
     },
   };
-}
-
-// Project a workflow primitive to its agent definition when it carries one.
-// Mirrors interchange's `extractAgent` (capability-walk.ts): `step` and `map`
-// are the agent-carrying shapes; every other primitive has no agent.
-function extractStepAgent(
-  primitive: WorkflowPrimitive | undefined,
-): AgentDefinition<BaseEnv> | null {
-  if (primitive === undefined) return null;
-  if (primitive.kind === "step") return primitive.agent;
-  if (primitive.kind === "map") return primitive.step.agent;
-  return null;
-}
-
-// The step ids whose agent carries the deterministic-tool marker tag (CL-2252).
-// These steps run a tool/API call against a hardcoded deny-all `authorize` with
-// no reactor and no session: the hub keeps their `agent` row (the tool
-// manifest/credentials endpoints gate on it) but skips their instance row and
-// grants file and no-ops their `launchSession`.
-export function collectDeterministicToolStepIds(
-  workflow: WorkflowDefinition,
-): Set<string> {
-  const deterministic = new Set<string>();
-  for (const stepId of workflow.stepOrder) {
-    const primitive = workflow.steps[stepId];
-    const agent = extractStepAgent(primitive);
-    if (agent?.tags?.[STEP_KIND_TAG] === DETERMINISTIC_TOOL_KIND) {
-      deterministic.add(stepId);
-    }
-  }
-  return deterministic;
 }
 
 // The orchestrator requires a per-step `launchSession` hook, but upstream

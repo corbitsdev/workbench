@@ -19,9 +19,9 @@ const ARTIFACT_KIND = "long-form-script-package";
 const JOB_LABEL = "GTM scripts and briefs";
 
 // Native `action` handler refs — the tool's canonical (factory-prefixed)
-// name, resolved via the same build-time-checked lookup
-// `deterministicToolStep` uses, so a typo'd or manifest-drifted tool name
-// fails the build instead of deploying a step nothing can dispatch.
+// name, resolved via `canonicalizeStepToolName`'s build-time-checked
+// lookup, so a typo'd or manifest-drifted tool name fails the build instead
+// of deploying a step nothing can dispatch.
 export const PREPARE_PERSIST_HANDLER = canonicalizeStepToolName(
   "gtm-scripts-briefs-prepare-persist",
   "gtm_scripts_briefs_prepare_persist",

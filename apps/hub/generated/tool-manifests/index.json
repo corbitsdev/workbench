@@ -1,5 +1,5 @@
 {
-  "generatedAt": "a4e1343a4613c04a66e1352a53110100a261d6f2d394adb4bd6d4230ffaa144c",
+  "generatedAt": "ef5e56daf3c0fe738fa0d31ea40dade2385edc94c318021320d0e28e4b8312c4",
   "factories": [
     {
       "factoryId": "@workbench/tools-ab-compare/compose",
@@ -1397,6 +1397,19 @@
       }
     },
     {
+      "factoryId": "@workbench/workflow-attio-task-agent/persist",
+      "packageName": "@workbench/workflow-attio-task-agent",
+      "providerName": null,
+      "bareToolNames": [
+        "attio_task_agent_persist_pieces"
+      ],
+      "sideEffects": {
+        "attio_task_agent_persist_pieces": "write"
+      },
+      "myraCatalog": null,
+      "credentialCatalog": null
+    },
+    {
       "factoryId": "@workbench/workflow-competitor-analysis/core",
       "packageName": "@workbench/workflow-competitor-analysis",
       "providerName": null,
@@ -1591,6 +1604,23 @@
       "credentialCatalog": null
     },
     {
+      "factoryId": "@workbench/workflow-multi-source-collateral/fetch",
+      "packageName": "@workbench/workflow-multi-source-collateral",
+      "providerName": null,
+      "bareToolNames": [
+        "multi_source_collateral_fetch_artifacts",
+        "multi_source_collateral_fetch_issues",
+        "multi_source_collateral_fetch_notes"
+      ],
+      "sideEffects": {
+        "multi_source_collateral_fetch_artifacts": "read",
+        "multi_source_collateral_fetch_notes": "read",
+        "multi_source_collateral_fetch_issues": "read"
+      },
+      "myraCatalog": null,
+      "credentialCatalog": null
+    },
+    {
       "factoryId": "@workbench/workflow-multi-source-collateral/list-issues",
       "packageName": "@workbench/workflow-multi-source-collateral",
       "providerName": null,
@@ -1599,6 +1629,32 @@
       ],
       "sideEffects": {
         "multi_source_collateral_list_issues": "read"
+      },
+      "myraCatalog": null,
+      "credentialCatalog": null
+    },
+    {
+      "factoryId": "@workbench/workflow-multi-source-collateral/persist",
+      "packageName": "@workbench/workflow-multi-source-collateral",
+      "providerName": null,
+      "bareToolNames": [
+        "multi_source_collateral_persist_pieces"
+      ],
+      "sideEffects": {
+        "multi_source_collateral_persist_pieces": "write"
+      },
+      "myraCatalog": null,
+      "credentialCatalog": null
+    },
+    {
+      "factoryId": "@workbench/workflow-pain-point-collateral/persist",
+      "packageName": "@workbench/workflow-pain-point-collateral",
+      "providerName": null,
+      "bareToolNames": [
+        "pain_point_collateral_persist_pieces"
+      ],
+      "sideEffects": {
+        "pain_point_collateral_persist_pieces": "write"
       },
       "myraCatalog": null,
       "credentialCatalog": null
@@ -1621,10 +1677,23 @@
       "packageName": "@workbench/workflow-reddit-opportunity-scanner",
       "providerName": null,
       "bareToolNames": [
-        "reddit_opportunity_scanner_collect_search"
+        "reddit_opportunity_scanner_collect_searches"
       ],
       "sideEffects": {
-        "reddit_opportunity_scanner_collect_search": "read"
+        "reddit_opportunity_scanner_collect_searches": "read"
+      },
+      "myraCatalog": null,
+      "credentialCatalog": null
+    },
+    {
+      "factoryId": "@workbench/workflow-reddit-opportunity-scanner/persist",
+      "packageName": "@workbench/workflow-reddit-opportunity-scanner",
+      "providerName": null,
+      "bareToolNames": [
+        "reddit_opportunity_scanner_persist_items"
+      ],
+      "sideEffects": {
+        "reddit_opportunity_scanner_persist_items": "write"
       },
       "myraCatalog": null,
       "credentialCatalog": null

@@ -2,15 +2,21 @@ import { describe, expect, test } from "bun:test";
 import type { StepInvoker } from "@intx/workflow/runtime";
 import { runLocal } from "@intx/workflow/runlocal";
 import type { ActionHandler } from "@intx/workflow/runlocal";
-import {
-  DETERMINISTIC_TOOL_KIND,
-  LLM_WRITER_MODEL,
-  STEP_ARGMAP_TAG,
-  STEP_KIND_TAG,
-  STEP_TOOL_TAG,
-} from "@workbench/agents";
+import { LLM_WRITER_MODEL } from "@workbench/agents";
 
-import { FIRECRAWL_SCRAPE_HANDLER, workflow } from "./index";
+// The retired `deterministic-tool` authoring kind's tags. Kept as literals
+// (not an import from `@workbench/agents`, which no longer exports them) —
+// this test only asserts the tags are ABSENT from every native step, proving
+// no step regresses onto the deleted mechanism.
+const STEP_KIND_TAG = "workbench.stepKind";
+const STEP_TOOL_TAG = "workbench.tool";
+
+import {
+  COLLECT_SEARCHES_HANDLER,
+  FIRECRAWL_SCRAPE_HANDLER,
+  PERSIST_ITEMS_HANDLER,
+  workflow,
+} from "./index";
 
 function makeRecordingInvoker(outputs: Record<string, unknown> = {}): {
   invoker: StepInvoker;
@@ -56,16 +62,6 @@ function makeActionResolver(outputs: Record<string, unknown> = {}): {
     };
   };
   return { resolver, ran };
-}
-
-function mapPrimitive(id: string) {
-  const primitive = workflow.steps[id];
-  if (primitive === undefined || primitive.kind !== "map") {
-    throw new Error(
-      `expected map primitive for "${id}", got ${primitive?.kind ?? "undefined"}`,
-    );
-  }
-  return primitive;
 }
 
 function awaitSignalPrimitive(id: string) {
@@ -141,12 +137,12 @@ describe("reddit-opportunity-scanner native workflow", () => {
 
     const { invoker, ran } = makeRecordingInvoker({
       "reddit-opp-analyze": AGENT_REPLY(analyzeReply),
-      "reddit-opp-collect-search": { content: "[]" },
       "reddit-opp-curate": AGENT_REPLY(curateReply),
-      "reddit-opp-persist-item": { artifactId: "art_1" },
     });
     const { resolver, ran: actionRan } = makeActionResolver({
       [FIRECRAWL_SCRAPE_HANDLER]: { content: '{"markdown":"site text"}' },
+      [COLLECT_SEARCHES_HANDLER]: { results: ["[]"] },
+      [PERSIST_ITEMS_HANDLER]: { results: [{ artifactId: "art_1" }] },
     });
 
     const run = runLocal(workflow, {
@@ -162,16 +158,15 @@ describe("reddit-opportunity-scanner native workflow", () => {
 
     expect(result.terminalStatus).toBe("completed");
 
-    expect(actionRan.map((r) => r.ref)).toEqual([FIRECRAWL_SCRAPE_HANDLER]);
-    const ranIds = ran.map((r) => r.id);
-    // Ordered chain: scrape (native action) → analyze → collect → curate →
-    // persist (one per selected item).
-    expect(ranIds).toEqual([
-      "reddit-opp-analyze",
-      "reddit-opp-collect-search",
-      "reddit-opp-curate",
-      "reddit-opp-persist-item",
+    // Ordered chain: scrape → collect (both native actions, in effect order)
+    // → persist (native action, batch over all selected items).
+    expect(actionRan.map((r) => r.ref)).toEqual([
+      FIRECRAWL_SCRAPE_HANDLER,
+      COLLECT_SEARCHES_HANDLER,
+      PERSIST_ITEMS_HANDLER,
     ]);
+    const ranIds = ran.map((r) => r.id);
+    expect(ranIds).toEqual(["reddit-opp-analyze", "reddit-opp-curate"]);
 
     const signalNames = result.events
       .filter((e) => e.kind === "SignalReceived")
@@ -181,14 +176,14 @@ describe("reddit-opportunity-scanner native workflow", () => {
     expect(signalNames).toContain("opportunity-selection");
   });
 
-  test("collect step receives each approved search as input", async () => {
-    const { invoker, ran } = makeRecordingInvoker({
+  test("collect action receives the full review output (including searches) as input", async () => {
+    const { invoker } = makeRecordingInvoker({
       "reddit-opp-analyze": AGENT_REPLY("{}"),
-      "reddit-opp-collect-search": { content: "[]" },
       "reddit-opp-curate": AGENT_REPLY(JSON.stringify({ opportunities: [] })),
     });
-    const { resolver } = makeActionResolver({
+    const { resolver, ran: actionRan } = makeActionResolver({
       [FIRECRAWL_SCRAPE_HANDLER]: { content: "{}" },
+      [COLLECT_SEARCHES_HANDLER]: { results: ["[]"] },
     });
     const run = runLocal(workflow, {
       invokeStep: invoker,
@@ -200,18 +195,20 @@ describe("reddit-opportunity-scanner native workflow", () => {
     await run.signal("opportunity-selection", { selected: [] });
     await run.complete;
 
-    const collectRun = ran.find((r) => r.id === "reddit-opp-collect-search");
-    expect(collectRun?.input).toEqual(REVIEW_PAYLOAD.searches[0]);
+    const collectRun = actionRan.find(
+      (r) => r.ref === COLLECT_SEARCHES_HANDLER,
+    );
+    expect(collectRun?.input).toEqual(REVIEW_PAYLOAD);
   });
 
   test("intake gates the run before scrape", async () => {
     const { invoker } = makeRecordingInvoker({
       "reddit-opp-analyze": AGENT_REPLY("{}"),
-      "reddit-opp-collect-search": { content: "[]" },
       "reddit-opp-curate": AGENT_REPLY(JSON.stringify({ opportunities: [] })),
     });
     const { resolver, ran: actionRan } = makeActionResolver({
       [FIRECRAWL_SCRAPE_HANDLER]: { content: "{}" },
+      [COLLECT_SEARCHES_HANDLER]: { results: ["[]"] },
     });
     const run = runLocal(workflow, {
       invokeStep: invoker,
@@ -234,11 +231,11 @@ describe("reddit-opportunity-scanner native workflow", () => {
   test("review gates the run before collect", async () => {
     const { invoker, ran } = makeRecordingInvoker({
       "reddit-opp-analyze": AGENT_REPLY("{}"),
-      "reddit-opp-collect-search": { content: "[]" },
       "reddit-opp-curate": AGENT_REPLY(JSON.stringify({ opportunities: [] })),
     });
-    const { resolver } = makeActionResolver({
+    const { resolver, ran: actionRan } = makeActionResolver({
       [FIRECRAWL_SCRAPE_HANDLER]: { content: "{}" },
+      [COLLECT_SEARCHES_HANDLER]: { results: ["[]"] },
     });
     const run = runLocal(workflow, {
       invokeStep: invoker,
@@ -256,7 +253,9 @@ describe("reddit-opportunity-scanner native workflow", () => {
         }
       }, 5);
     });
-    expect(ran.some((r) => r.id === "reddit-opp-collect-search")).toBe(false);
+    expect(actionRan.some((r) => r.ref === COLLECT_SEARCHES_HANDLER)).toBe(
+      false,
+    );
 
     await run.signal("recommendation-review", REVIEW_PAYLOAD);
     await run.signal("opportunity-selection", { selected: [] });
@@ -283,30 +282,11 @@ describe("reddit-opportunity-scanner native workflow", () => {
     });
   });
 
-  test("collect is a deterministic map over approved searches, dispatching the tolerant wrapper tool", () => {
-    const collect = mapPrimitive("collect");
-    expect(collect.over).toEqual({ from: "steps.review.output.searches" });
-    const inner = collect.step;
-    expect(inner.agent.tags?.[STEP_KIND_TAG]).toBe(DETERMINISTIC_TOOL_KIND);
-    expect(inner.agent.tags?.[STEP_TOOL_TAG]).toContain(
-      "reddit_opportunity_scanner_collect_search",
-    );
-    // Load-bearing: one dead subreddit search must degrade to a skip, not throw
-    // and poison the whole curate pool (the last30days brief-poison class, CL-2362).
-    // The tolerance lives in the wrapper tool itself (collect-tool.ts); the
-    // `nonFatal` tag/option is retired entirely — no
-    // deterministic step anywhere still needs it.
-    expect(inner.agent.inference.sources).toEqual([]);
-    const argMap = inner.agent.tags?.[STEP_ARGMAP_TAG];
-    if (argMap === undefined)
-      throw new Error("expected argMap on collect inner step");
-    expect(JSON.parse(argMap)).toEqual({
-      subreddit: { from: "subreddit" },
-      query: { from: "query" },
-      sort: { from: "sort" },
-      timeframe: { from: "timeframe" },
-      limit: { from: "limit" },
-    });
+  test("collect is a native action dispatching the batch collect-searches handler over review.output", () => {
+    const collect = actionPrimitive("collect");
+    expect(collect.handler).toBe(COLLECT_SEARCHES_HANDLER);
+    expect(collect.input).toEqual({ from: "steps.review.output" });
+    expect(collect.effect).toEqual({ requires: [COLLECT_SEARCHES_HANDLER] });
   });
 
   test("curate is a native reasoning step (agentStep) over collected Reddit evidence", () => {
@@ -340,20 +320,10 @@ describe("reddit-opportunity-scanner native workflow", () => {
     expect(selection.after).toContain("curate");
   });
 
-  test("persist is a map of deterministic artifact_create steps over selected", () => {
-    const persist = mapPrimitive("persist");
-    expect(persist.over).toEqual({ from: "steps.selection.output.selected" });
-    const inner = persist.step;
-    expect(inner.agent.tags?.[STEP_KIND_TAG]).toBe(DETERMINISTIC_TOOL_KIND);
-    expect(inner.agent.tags?.[STEP_TOOL_TAG]).toContain("artifact_create");
-    expect(inner.agent.inference.sources).toEqual([]);
-    const argMap = inner.agent.tags?.[STEP_ARGMAP_TAG];
-    if (argMap === undefined)
-      throw new Error("expected argMap on persist inner step");
-    expect(JSON.parse(argMap)).toEqual({
-      title: { from: "title" },
-      kind: { literal: "reddit-opportunity-scan" },
-      content: { from: "content" },
-    });
+  test("persist is a native action dispatching the batch persist-items handler over selection.output", () => {
+    const persist = actionPrimitive("persist");
+    expect(persist.handler).toBe(PERSIST_ITEMS_HANDLER);
+    expect(persist.input).toEqual({ from: "steps.selection.output" });
+    expect(persist.effect).toEqual({ requires: [PERSIST_ITEMS_HANDLER] });
   });
 });

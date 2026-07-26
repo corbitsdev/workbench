@@ -1,9 +1,29 @@
 import { describe, expect, test } from "bun:test";
 import { evaluateGrants } from "@intx/authz";
-import { action, defineWorkflow, map } from "@intx/workflow";
-import { deterministicToolStep } from "@workbench/agents";
+import { defineAgent } from "@intx/agent";
+import { action, defineWorkflow, map, step } from "@intx/workflow";
+import type { StepPrimitive } from "@intx/workflow";
 import { assembleWorkflowDeployConfig } from "./workflow-deploy-config";
 import { frameGrantRules } from "./step-grants";
+
+// A minimal StepPrimitive whose agent declares one tool capability and no
+// inference sources — the shape a map's inner step needs (`MapPrimitive.step`
+// is typed `StepPrimitive`, not the broader `Primitive` union, so a map body
+// can never be a native `action`). Built directly here rather than through a
+// retired `deterministicToolStep` helper: this test exercises `frameGrantRules`
+// reading a map's inner `step.agent.capabilities`, not any dispatch mechanism.
+function toolCapabilityStep(id: string, tool: string): StepPrimitive {
+  return step({
+    agent: defineAgent({
+      id,
+      description: `test fixture: ${tool}`,
+      systemPrompt: "",
+      tools: [],
+      capabilities: [tool],
+      inference: { sources: [] },
+    }),
+  });
+}
 
 // The production failure this pins: heartbeat/last30days action steps threw
 // "action effect @workbench/tools-last30days/core:<name> was not authorized
@@ -72,11 +92,10 @@ describe("frameGrantRules over map primitives", () => {
       steps: {
         persist: map({
           over: { from: "trigger.payload" },
-          step: deterministicToolStep({
-            id: "map-grants-persist",
-            tool: "artifact_create",
-            input: { from: "item" },
-          }),
+          step: toolCapabilityStep(
+            "map-grants-persist",
+            "@workbench/tools-artifact/artifact:artifact_create",
+          ),
         }),
       },
     });

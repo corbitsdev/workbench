@@ -53,12 +53,15 @@ factories — the definition is pushed as JSON.
 
 ### Native `action` steps
 
-Every deterministic tool step except the two source readers now runs as a
-native `@intx/workflow` `action` rather than the workbench-local
-`deterministicToolStep`/`workbench.argMap` path. `fetch-artifact` and
-`fetch-note` stay on `deterministicToolStep`: they are `nonFatal` (an
-unresolved source degrades to "not available" rather than failing the run),
-and `ActionPrimitive` has no non-fatal / error-swallow equivalent.
+Every tool-calling step, including the two source readers, runs as a native
+`@intx/workflow` `action`. `fetch-artifact` and `fetch-note` dispatch
+workflow-owned tolerant wrapper tools (`fetch-tools.ts`) instead of the
+retired workbench-local `deterministicToolStep`'s `nonFatal` tag: an
+unresolved source degrades to "not available" (a `{ skipped: true }` content
+envelope) rather than failing the run, because `ActionPrimitive` has no
+non-fatal / error-swallow field of its own — `runDeterministicToolStep`
+throws on any outer `ToolResult.isError`, so the tolerance has to live inside
+the wrapper tool's `content` instead.
 
 Native selectors (`from`/`project`/`merge`/`literal`) cannot rename a field,
 so wherever an upstream field name didn't already match the downstream tool's

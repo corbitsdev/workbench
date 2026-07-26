@@ -4,35 +4,71 @@ import { defineCredentialedToolPackage } from "@workbench/tool-credentials/facto
 import { withToleranceEnvelope } from "@workbench/tool-credentials/tolerance-envelope-dispatch";
 import { REDDIT_HUB_TOOLS } from "@workbench/tools-reddit";
 
-// Workflow-owned tolerant wrapper: one dead subreddit search must
-// degrade to a skip, not throw and poison the whole curate pool (the
-// last30days brief-poison class). `collect` is a `map`'s inner step
-// (`MapPrimitive.step` is typed `StepPrimitive`, not the `Primitive` union —
-// interchange/packages/workflow/src/definition/primitives.ts — so a native
-// `action` cannot host it at all; see index.ts). The tolerance still moves
-// into a wrapper TOOL exactly as the other two tolerant-wrapper cases: this wrapper
-// calls the real `reddit_subreddit_search` in-process, over the same
-// credentialed rail, and returns a completed non-error envelope on failure.
-// `collect` therefore stays a `deterministicToolStep` (a plain `StepPrimitive`
-// map inner step is unaffected by the action/map typing gap), but the
-// `nonFatal` tag is no longer needed: the wrapper never lets the underlying
-// throw reach the step-tool harness.
+// Workflow-owned batch collect tool: `collect` was a `map` whose inner step
+// was a single-search `deterministicToolStep`
+// (`reddit_opportunity_scanner_collect_search`). `MapPrimitive.step` is typed
+// `StepPrimitive`, not the `Primitive` union
+// (`interchange/packages/workflow/src/definition/primitives.ts`), so a native
+// `action` cannot host a map's inner step. Folded onto the same pattern
+// `persist-tool.ts` and `granola_spawn_call_runs` established: the tool loops
+// over the approved searches in plain TypeScript, so `collect` becomes one
+// native `action`.
+//
+// Per-search tolerance is preserved, but moves from "one wrapper call per
+// map iteration" to "one wrapper call per loop iteration inside this tool":
+// one dead subreddit search must still degrade to a skip, not poison the
+// whole curate pool (the last30days brief-poison class). Each search's
+// result is independently passed through `withToleranceEnvelope`, so a
+// per-search failure lands INSIDE `content.results[i]` as a tolerance-
+// envelope object — the outer `ToolResult.isError` stays `false`
+// unconditionally, because `runDeterministicToolStep` throws on an outer
+// error and a native `action` has no escape from that throw.
+//
+// This DOES change `steps.collect.output`'s shape: from a bare array (one
+// entry per search, `runMap`'s per-iteration return value) to
+// `{ results: [...] }` under the action's single `ToolResult.content` —
+// documented at the call site in index.ts and in `curate`'s prompt
+// (`prompts.ts`). It also collapses N per-search checkpoints (map's
+// `runStep` commits a separately-resumable `StepStarted`/`StepCompleted`
+// pair per search) into 1 checkpoint for the whole batch — a crash
+// mid-collect now re-runs every search on resume instead of resuming after
+// the searches already completed. Acceptable: `reddit_subreddit_search`
+// calls are cheap and the panel already caps the approved search count.
 
-export const REDDIT_OPPORTUNITY_SCANNER_COLLECT_SEARCH_DEFINITION: ToolDefinition =
+export const REDDIT_OPPORTUNITY_SCANNER_COLLECT_SEARCHES_DEFINITION: ToolDefinition =
   {
-    name: "reddit_opportunity_scanner_collect_search",
+    name: "reddit_opportunity_scanner_collect_searches",
     description:
-      "Internal reddit-opportunity-scanner workflow helper. Searches one approved subreddit query, tolerating a failed search (one dead source must not poison the whole curate pool) instead of failing the run.",
+      "Internal reddit-opportunity-scanner workflow helper. Searches every approved subreddit query, tolerating a failed search (one dead source must not poison the whole curate pool) instead of failing the run.",
     inputSchema: {
       type: "object",
       properties: {
-        subreddit: { type: "string", description: "The subreddit name." },
-        query: { type: "string", description: "The search query string." },
-        sort: { type: "string", description: "Sort order." },
-        timeframe: { type: "string", description: "Time filter." },
-        limit: { type: "number", description: "Maximum number of results." },
+        searches: {
+          type: "array",
+          description: "The approved searches to run, in order.",
+          items: {
+            type: "object",
+            properties: {
+              subreddit: {
+                type: "string",
+                description: "The subreddit name.",
+              },
+              query: {
+                type: "string",
+                description: "The search query string.",
+              },
+              sort: { type: "string", description: "Sort order." },
+              timeframe: { type: "string", description: "Time filter." },
+              limit: {
+                type: "number",
+                description: "Maximum number of results.",
+              },
+            },
+            required: ["subreddit", "query"],
+          },
+        },
       },
-      required: ["subreddit", "query"],
+      required: ["searches"],
     },
   };
 
@@ -44,28 +80,56 @@ const collectSearchInner = defineCredentialedToolPackage({
   },
 });
 
-function createCollectSearchTool(env: BaseEnv): AgentTool {
-  // `collectSearchInner(env)` is constructed PER CALL, inside the handler —
-  // not eagerly at factory-build time — for the same reason the gamma/msc
-  // tolerant wrappers defer it: `defineCredentialedToolPackage`'s factory
-  // throws `ToolCredentialMissingError` the instant it is invoked with no
-  // `scrapecreators` credential in env, and that throw must land inside OUR
-  // catch, not bubble up through `createCollectSearchTool` itself.
+async function runOneSearch(
+  env: BaseEnv,
+  item: unknown,
+  callId: string,
+  signal: AbortSignal,
+): Promise<unknown> {
+  // `collectSearchInner(env)` is constructed PER SEARCH, inside this
+  // dispatch — not once for the whole batch — for the same reason the
+  // gamma/msc tolerant wrappers defer it: `defineCredentialedToolPackage`'s
+  // factory throws `ToolCredentialMissingError` the instant it is invoked
+  // with no `scrapecreators` credential in env, and that throw must land
+  // inside `withToleranceEnvelope`'s per-search catch, not bubble up through
+  // the batch handler and fail every other search too.
+  const wrapped = await withToleranceEnvelope(callId, async () => {
+    if (typeof item !== "object" || item === null) {
+      throw new Error("each search must be an object");
+    }
+    const rec = item as Record<string, unknown>;
+    if (typeof rec.subreddit !== "string" || typeof rec.query !== "string") {
+      throw new Error(
+        'each search requires string "subreddit" and "query" fields',
+      );
+    }
+    const inner = collectSearchInner(env);
+    return inner.run(
+      { id: callId, name: "reddit_subreddit_search", arguments: rec },
+      signal,
+    );
+  });
+  return wrapped.content;
+}
+
+function createCollectSearchesTool(env: BaseEnv): AgentTool {
   return {
     kind: "full",
-    definition: REDDIT_OPPORTUNITY_SCANNER_COLLECT_SEARCH_DEFINITION,
+    definition: REDDIT_OPPORTUNITY_SCANNER_COLLECT_SEARCHES_DEFINITION,
     handler: async (call, signal) => {
       const args =
         typeof call.arguments === "object" && call.arguments !== null
-          ? call.arguments
+          ? (call.arguments as Record<string, unknown>)
           : {};
-      return withToleranceEnvelope(call.id, () => {
-        const inner = collectSearchInner(env);
-        return inner.run(
-          { id: call.id, name: "reddit_subreddit_search", arguments: args },
-          signal,
-        );
-      });
+      const searches = args.searches;
+      if (!Array.isArray(searches)) {
+        throw new Error("searches must be an array");
+      }
+      const results: unknown[] = [];
+      for (const item of searches) {
+        results.push(await runOneSearch(env, item, call.id, signal));
+      }
+      return { callId: call.id, isError: false, content: { results } };
     },
   };
 }
@@ -73,7 +137,7 @@ function createCollectSearchTool(env: BaseEnv): AgentTool {
 export function createRedditOpportunityScannerCollectTools(
   env: BaseEnv,
 ): AgentTool[] {
-  return [createCollectSearchTool(env)];
+  return [createCollectSearchesTool(env)];
 }
 
 /** Env keys this wrapper needs injected — same key the wrapped credentialed

@@ -4,7 +4,6 @@ import type { StepInvoker } from "@intx/workflow/runtime";
 import { evaluateSelector } from "@intx/workflow/runtime";
 import type { ActionHandler } from "@intx/workflow";
 import { mergeHeartbeatBriefSources } from "@workbench/shared";
-import { STEP_KIND_TAG, STEP_TOOL_TAG } from "@workbench/agents";
 import { WIRED_BRIEF_SOURCES } from "@workbench/shared";
 
 import {
@@ -18,6 +17,13 @@ import {
   MAIL_SEND_HANDLER,
   HEARTBEAT_INTAKE_SOURCE_HANDLER,
 } from "./index";
+
+// The retired `deterministic-tool` authoring kind's tags. Kept as literals
+// (not an import from `@workbench/agents`, which no longer exports them) —
+// this test only asserts the tags are ABSENT from every native step, proving
+// no step regresses onto the deleted mechanism.
+const STEP_KIND_TAG = "workbench.stepKind";
+const STEP_TOOL_TAG = "workbench.tool";
 
 // ---------------------------------------------------------------------------
 // Test helpers

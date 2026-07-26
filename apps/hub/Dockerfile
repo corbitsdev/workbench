@@ -170,12 +170,14 @@ COPY packages/workbench-shared/ packages/workbench-shared/
 # already covers this) so the tool-manifest Dockerfile-drift test
 # (packages/tool-manifest/src/dockerfile-tool-copy.test.ts) can assert this
 # coverage explicitly per package, the same way it does for `packages/tools-*`.
+COPY workflows/attio-task-agent/ workflows/attio-task-agent/
 COPY workflows/competitor-analysis/ workflows/competitor-analysis/
 COPY workflows/exa-topic-watch/ workflows/exa-topic-watch/
 COPY workflows/firecrawl-url-watch/ workflows/firecrawl-url-watch/
 COPY workflows/github-topic-watch/ workflows/github-topic-watch/
 COPY workflows/heartbeat/ workflows/heartbeat/
 COPY workflows/last30days-research/ workflows/last30days-research/
+COPY workflows/pain-point-collateral/ workflows/pain-point-collateral/
 COPY workflows/reddit-opportunity-watch/ workflows/reddit-opportunity-watch/
 COPY workflows/sumble-account-intel/ workflows/sumble-account-intel/
 COPY workflows/ workflows/

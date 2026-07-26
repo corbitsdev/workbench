@@ -11,10 +11,32 @@ import {
   createMultiSourceCollateralListIssuesTools,
   LIST_ISSUES_TOOL_REQUIRES,
 } from "./list-issues-tool";
+import {
+  createMultiSourceCollateralFetchTools,
+  FETCH_TOOLS_REQUIRES,
+} from "./fetch-tools";
+import {
+  createMultiSourceCollateralPersistTools,
+  PERSIST_TOOLS_REQUIRES,
+} from "./persist-tools";
 
 export const multiSourceCollateralListIssues = defineTool({
   id: "@workbench/workflow-multi-source-collateral/list-issues",
   requires: LIST_ISSUES_TOOL_REQUIRES,
   factory: (env) =>
     createToolRunner(createMultiSourceCollateralListIssuesTools(env)),
+});
+
+export const multiSourceCollateralFetch = defineTool({
+  id: "@workbench/workflow-multi-source-collateral/fetch",
+  requires: FETCH_TOOLS_REQUIRES,
+  factory: (env) =>
+    createToolRunner(createMultiSourceCollateralFetchTools(env)),
+});
+
+export const multiSourceCollateralPersist = defineTool({
+  id: "@workbench/workflow-multi-source-collateral/persist",
+  requires: PERSIST_TOOLS_REQUIRES,
+  factory: (env) =>
+    createToolRunner(createMultiSourceCollateralPersistTools(env)),
 });

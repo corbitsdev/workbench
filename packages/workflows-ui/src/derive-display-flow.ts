@@ -1,10 +1,17 @@
 import { type } from "arktype";
-import {
-  STEP_KIND_TAG,
-  DETERMINISTIC_TOOL_KIND,
-  STEP_TITLE_TAG,
-} from "@workbench/agents";
+import { STEP_TITLE_TAG } from "@workbench/agents";
 import { humanize } from "@workbench/agents";
+
+// The retired `deterministic-tool` authoring kind's tag + value.
+// `deterministicToolStep` and its `STEP_KIND_TAG`/`DETERMINISTIC_TOOL_KIND`
+// exports are deleted from `@workbench/agents` — every tool/API call now
+// folds into a native `action` (its own distinct "action" character below) —
+// but a historical run's committed workflow.json from before the retirement
+// can still carry this tag, and this preview must keep reading it correctly.
+// Kept as literals, not an import, so they survive the authoring surface's
+// deletion.
+const LEGACY_STEP_KIND_TAG = "workbench.stepKind";
+const LEGACY_DETERMINISTIC_TOOL_KIND = "deterministic-tool";
 import {
   PersistedPrimitiveSchema,
   PersistedWorkflowDefFileSchema,
@@ -30,21 +37,21 @@ import {
  *     `@workbench/ui`'s `workflow-run-state.tsx` (`stepIds`/`key`/`label`/
  *     `activityLabel`) — the overlay group shape should become the single
  *     canonical `DISPLAY_STEPS` type all three modules consume.
- *   - `classifyStepByTag` there and `characterOf` here both branch on
- *     `STEP_KIND_TAG` === `DETERMINISTIC_TOOL_KIND`; this module's version
- *     just distinguishes more primitive kinds than "auto".
+ *   - `classifyStepByTag` there and `characterOf` here both branch on the
+ *     legacy `workbench.stepKind` === `deterministic-tool` tag; this module's
+ *     version just distinguishes more primitive kinds than "auto".
  */
 function characterOf(primitive: PersistedPrimitive): DisplayStepCharacter {
   switch (primitive.kind) {
     case "step": {
       const tags = primitive.agent?.tags;
-      return tags?.[STEP_KIND_TAG] === DETERMINISTIC_TOOL_KIND
+      return tags?.[LEGACY_STEP_KIND_TAG] === LEGACY_DETERMINISTIC_TOOL_KIND
         ? "deterministic"
         : "reasoning";
     }
     case "map": {
       const tags = primitive.step?.agent?.tags;
-      return tags?.[STEP_KIND_TAG] === DETERMINISTIC_TOOL_KIND
+      return tags?.[LEGACY_STEP_KIND_TAG] === LEGACY_DETERMINISTIC_TOOL_KIND
         ? "deterministic"
         : "reasoning";
     }
@@ -96,7 +103,9 @@ export function deriveDisplayFlow(definition: unknown): DisplayFlow {
 function parsePrimitive(stepId: string, raw: unknown): PersistedPrimitive {
   const parsed = PersistedPrimitiveSchema(raw);
   if (parsed instanceof type.errors) {
-    throw new Error(`step ${stepId} is not a valid primitive: ${parsed.summary}`);
+    throw new Error(
+      `step ${stepId} is not a valid primitive: ${parsed.summary}`,
+    );
   }
   return parsed;
 }

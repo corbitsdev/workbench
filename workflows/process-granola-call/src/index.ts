@@ -52,8 +52,8 @@ Verify the working document against the transcript: fix anything unsupported, mi
 Your reply is saved verbatim as the final call-notes artifact. No preamble. Markdown only.`;
 
 // Native `action` handler refs — the tool's canonical (factory-prefixed) name,
-// resolved via the same build-time-checked lookup `deterministicToolStep`
-// used, so a typo'd or manifest-drifted tool name fails the build instead of
+// resolved via `canonicalizeStepToolName`'s build-time-checked lookup, so
+// a typo'd or manifest-drifted tool name fails the build instead of
 // deploying a step nothing can dispatch.
 export const GRANOLA_GET_NOTE_HANDLER = canonicalizeStepToolName(
   "process-granola-fetch",

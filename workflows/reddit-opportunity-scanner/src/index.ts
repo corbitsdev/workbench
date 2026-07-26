@@ -1,6 +1,5 @@
-import { action, awaitSignal, defineWorkflow, map } from "@intx/workflow";
+import { action, awaitSignal, defineWorkflow } from "@intx/workflow";
 import {
-  deterministicToolStep,
   agentStep,
   canonicalizeStepToolName,
   LLM_WRITER_MODEL,
@@ -47,74 +46,26 @@ export { INTAKE_FIELDS } from "./intake-fields";
 // (review) and before saving (selection).
 // -------------------------------------------------------------------------
 
-// The collect step's per-row tool-arg mapping — exported so the fidelity
-// integration test asserts against the REAL field names (a typo here fails the
-// map trap the test guards, not a hand-rolled copy).
-export const COLLECT_ARG_MAP = {
-  subreddit: { from: "subreddit" },
-  query: { from: "query" },
-  sort: { from: "sort" },
-  timeframe: { from: "timeframe" },
-  limit: { from: "limit" },
-} as const;
-
-// The persist step's per-opportunity tool-arg mapping — exported for the same
-// reason: the fidelity test reads `title`/`content` from here, not a copy.
-export const PERSIST_ARG_MAP = {
-  title: { from: "title" },
-  kind: { literal: "reddit-opportunity-scan" },
-  content: { from: "content" },
-} as const;
-
-// `nonFatal` is retired here: the tolerance moves into the wrapper
-// tool itself (`collect-tool.ts`), which calls the real
-// `reddit_subreddit_search` in-process and returns a completed non-error
-// envelope on a failed search instead of throwing. `collect` stays a
-// `deterministicToolStep` map inner step — not a migration gap, a
-// structural one: `map`'s `step` is typed `StepPrimitive` only
-// (interchange/packages/workflow/src/definition/primitives.ts), so a native
-// `action` cannot host it regardless of nonFatal.
-const collectStep = deterministicToolStep({
-  id: "reddit-opp-collect-search",
-  title: "Search each subreddit",
-  tool: "reddit_opportunity_scanner_collect_search",
-  // map passes each approved search as trigger.payload.
-  input: { from: "trigger.payload" },
-  argMap: COLLECT_ARG_MAP,
-});
-
-const persistStep = deterministicToolStep({
-  id: "reddit-opp-persist-item",
-  title: "Save each opportunity",
-  tool: "artifact_create",
-  // map passes each selected opportunity as trigger.payload.
-  input: { from: "trigger.payload" },
-  argMap: PERSIST_ARG_MAP,
-});
-
-// Native `action` handler ref for the one step this migration can move:
-// `scrape`. `collect` and `persist` stay on `deterministicToolStep` — not by
-// choice but because `map`'s `step` is typed `StepPrimitive` only
-// (interchange/packages/workflow/src/definition/primitives.ts) and its
-// runtime (`runMap` in runtime/run.ts) invokes exclusively via `invokeStep`;
-// there is no code path to dispatch an `ActionPrimitive` per map iteration.
-// This migration considered folding the per-search iteration into one looping
-// action (as `granola_spawn_call_runs` does), which would sidestep this
-// typing gap entirely — but `steps.collect.output` today is a bare array
-// (map's `runMap` return value, one entry per approved search) that
-// `curate`'s system prompt documents verbatim ("collect.output: one Reddit
-// result list per approved search"), and a folded single-tool-call action
-// would instead expose `steps.collect.output` as one wrapped `ToolResult`
-// (`{ callId, content, isError }`) around that array — a real shape change
-// to what the curate step's context sees, plus coarser per-search
-// checkpointing (map's `runStep` per iteration already commits a
-// separately-resumable `StepStarted`/`StepCompleted` pair per search). That
-// is a material behavior change, not just a mechanical migration, so it was
-// not made here; `collect` keeps its map + deterministicToolStep shape and
-// only the `nonFatal` tag retires, moved into `collect-tool.ts`.
+// Native `action` handler refs. `collect` folds the same way `persist` did:
+// the tool loops over the approved searches in plain TypeScript
+// (`collect-tool.ts`), so `map`'s `StepPrimitive`-only typing gap
+// (interchange/packages/workflow/src/definition/primitives.ts) no longer
+// applies — there is no map left to hit it. This DOES change
+// `steps.collect.output`'s shape (bare array → `{ results: [...] }` under
+// one `ToolResult.content`, see collect-tool.ts) and collapses N per-search
+// checkpoints into 1; `curate`'s system prompt (`prompts.ts`) documents the
+// new shape.
 export const FIRECRAWL_SCRAPE_HANDLER = canonicalizeStepToolName(
   "reddit-opp-scrape",
   "firecrawl_scrape",
+);
+export const COLLECT_SEARCHES_HANDLER = canonicalizeStepToolName(
+  "reddit-opp-collect",
+  "reddit_opportunity_scanner_collect_searches",
+);
+export const PERSIST_ITEMS_HANDLER = canonicalizeStepToolName(
+  "reddit-opp-persist",
+  "reddit_opportunity_scanner_persist_items",
 );
 
 export const workflow = defineWorkflow({
@@ -154,10 +105,16 @@ export const workflow = defineWorkflow({
     //    ({subreddit, query, sort, timeframe, limit}) for deterministic collection.
     review: awaitSignal({ name: "recommendation-review", after: ["analyze"] }),
 
-    // 5. Deterministically fetch Reddit evidence for each approved search.
-    collect: map({
-      over: { from: "steps.review.output.searches" },
-      step: collectStep,
+    // 5. Deterministically fetch Reddit evidence for every approved search.
+    // Folded from a `map` of single-search `deterministicToolStep`s into one
+    // native `action`: `reddit_opportunity_scanner_collect_searches` loops
+    // over `review.output.searches` in-process (see `collect-tool.ts`),
+    // tolerating a per-search failure inside `content.results[i]` instead of
+    // failing the run.
+    collect: action({
+      handler: COLLECT_SEARCHES_HANDLER,
+      input: { from: "steps.review.output" },
+      effect: { requires: [COLLECT_SEARCHES_HANDLER] },
       after: ["review"],
     }),
 
@@ -183,10 +140,19 @@ export const workflow = defineWorkflow({
       after: ["curate"],
     }),
 
-    // 8. One artifact per selected opportunity, saved deterministically.
-    persist: map({
-      over: { from: "steps.selection.output.selected" },
-      step: persistStep,
+    // 8. Folded from a `map` of single-opportunity `deterministicToolStep`s
+    // into one native `action`: `reddit_opportunity_scanner_persist_items`
+    // loops over `selected` in-process (see `persist-tool.ts`). Fatal by
+    // design (unchanged from the old map): any failed save fails the run.
+    // Folding N per-item steps into one action means a crash mid-save now
+    // re-runs the WHOLE batch on resume instead of resuming after the
+    // already-saved opportunities — a real checkpointing change from the
+    // old per-item map, acceptable given a selected batch is small (the
+    // panel caps at 12 opportunities).
+    persist: action({
+      handler: PERSIST_ITEMS_HANDLER,
+      input: { from: "steps.selection.output" },
+      effect: { requires: [PERSIST_ITEMS_HANDLER] },
       after: ["selection"],
     }),
   },

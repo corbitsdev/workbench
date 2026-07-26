@@ -1,5 +1,4 @@
 import { describe, expect, test } from "bun:test";
-import { STEP_KIND_TAG, STEP_TOOL_TAG } from "@workbench/agents";
 
 import {
   kind,
@@ -9,6 +8,13 @@ import {
   FORMAT_REPORT_DOCUMENT_HANDLER,
   WRITE_ARTIFACT_HANDLER,
 } from "./index";
+
+// The retired `deterministic-tool` authoring kind's tags. Kept as literals
+// (not an import from `@workbench/agents`, which no longer exports them) —
+// this test only asserts the tags are ABSENT from every native step, proving
+// no step regresses onto the deleted mechanism.
+const STEP_KIND_TAG = "workbench.stepKind";
+const STEP_TOOL_TAG = "workbench.tool";
 
 function stepPrimitive(id: string) {
   const primitive = workflow.steps[id];

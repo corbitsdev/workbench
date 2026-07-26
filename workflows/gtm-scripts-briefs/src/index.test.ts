@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { LLM_WRITER_MODEL, STEP_KIND_TAG } from "@workbench/agents";
+import { LLM_WRITER_MODEL } from "@workbench/agents";
 import { WORKFLOW_BRIEF_HANDLER } from "@workbench/workflow-last30days-research";
 import {
   DISPLAY_STEPS,
@@ -8,6 +8,12 @@ import {
   workflow,
   WRITE_ARTIFACT_HANDLER,
 } from "./index";
+
+// The retired `deterministic-tool` authoring kind's tag. Kept as a literal
+// (not an import from `@workbench/agents`, which no longer exports it) —
+// this test only asserts the tag is ABSENT from every native step, proving
+// no step regresses onto the deleted mechanism.
+const STEP_KIND_TAG = "workbench.stepKind";
 
 function actionPrimitive(id: string) {
   const primitive = workflow.steps[id];

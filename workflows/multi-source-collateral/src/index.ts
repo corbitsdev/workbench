@@ -1,9 +1,5 @@
 import { action, awaitSignal, defineWorkflow, gate, map } from "@intx/workflow";
-import {
-  canonicalizeStepToolName,
-  deterministicToolStep,
-  agentStep,
-} from "@workbench/agents";
+import { canonicalizeStepToolName, agentStep } from "@workbench/agents";
 import { buildGenerationSystemPrompt } from "./prompts";
 
 export const label = "Multi-Source Collateral";
@@ -20,8 +16,8 @@ export {
 
 // Native `action` handler refs for the two root list steps that are not a
 // map's inner step — the tool's canonical (factory-prefixed) name,
-// resolved via the same build-time-checked lookup `deterministicToolStep`
-// uses, so a typo'd or manifest-drifted tool name fails the build instead of
+// resolved via `canonicalizeStepToolName`'s build-time-checked lookup, so
+// a typo'd or manifest-drifted tool name fails the build instead of
 // deploying a step nothing can dispatch.
 export const ARTIFACT_LIST_HANDLER = canonicalizeStepToolName(
   "multi-source-collateral-list-artifacts",
@@ -35,13 +31,29 @@ export const LIST_ISSUES_HANDLER = canonicalizeStepToolName(
   "multi-source-collateral-list-issues",
   "multi_source_collateral_list_issues",
 );
+export const FETCH_ARTIFACTS_HANDLER = canonicalizeStepToolName(
+  "multi-source-collateral-fetch-artifacts",
+  "multi_source_collateral_fetch_artifacts",
+);
+export const FETCH_NOTES_HANDLER = canonicalizeStepToolName(
+  "multi-source-collateral-fetch-notes",
+  "multi_source_collateral_fetch_notes",
+);
+export const FETCH_ISSUES_HANDLER = canonicalizeStepToolName(
+  "multi-source-collateral-fetch-issues",
+  "multi_source_collateral_fetch_issues",
+);
+export const PERSIST_PIECES_HANDLER = canonicalizeStepToolName(
+  "multi-source-collateral-persist",
+  "multi_source_collateral_persist_pieces",
+);
 
 // ---------------------------------------------------------------------------
 // Step graph
 //
 // list-artifacts | list-notes | list-issues  (parallel roots)
 //   → sources awaitSignal
-// fetch-artifacts | fetch-notes | fetch-issues  (maps; empty arrays are no-ops)
+// fetch-artifacts | fetch-notes | fetch-issues  (actions; empty arrays are no-ops)
 //   → options awaitSignal  { items: generate payloads }
 // generate map
 //   → review awaitSignal  { approvedPieces, shouldRegenerate, regenerateItems }
@@ -62,70 +74,6 @@ const regenerateStep = agentStep({
   title: "Revise with feedback",
   systemPrompt: buildGenerationSystemPrompt(),
   input: { from: "trigger.payload" },
-});
-
-// NOT migrated to native `action` — all five steps below (persist,
-// persist-after-regen, fetch-artifact, fetch-note, fetch-issue) are each used
-// as a `map`'s inner `step`. `MapPrimitive.step` is typed `StepPrimitive` (see
-// `interchange/packages/workflow/src/definition/primitives.ts`), not
-// `Primitive` — an `action` cannot be a map's inner step at all; independently
-// the deploy-time capability walk's `extractAgent` (`interchange/packages/
-// workflow-deploy/src/capability-walk.ts`) only reads `primitive.step.agent`
-// for a `map` node, never an inner step's `effect`, so even a same-shape
-// action inside a map would pin no tool package. This is the same structural
-// blocker `pain-point-collateral`'s `persist` step documents.
-const persistStep = deterministicToolStep({
-  id: "multi-source-collateral-persist",
-  title: "Save the collateral",
-  tool: "artifact_create",
-  input: { from: "trigger.payload" },
-  argMap: {
-    title: { from: "title" },
-    kind: { from: "format" },
-    content: { from: "content" },
-  },
-});
-
-const persistAfterRegenStep = deterministicToolStep({
-  id: "multi-source-collateral-persist-after-regen",
-  title: "Save the collateral",
-  tool: "artifact_create",
-  input: { from: "trigger.payload" },
-  argMap: {
-    title: { from: "title" },
-    kind: { from: "format" },
-    content: { from: "content" },
-  },
-});
-
-const fetchArtifactStep = deterministicToolStep({
-  id: "multi-source-collateral-fetch-artifact",
-  title: "Load artifact",
-  tool: "artifact_read",
-  input: { from: "trigger.payload" },
-  argMap: {
-    artifactId: { from: "artifactId" },
-  },
-});
-
-const fetchNoteStep = deterministicToolStep({
-  id: "multi-source-collateral-fetch-note",
-  title: "Load call note",
-  tool: "granola_get_note",
-  input: { from: "trigger.payload" },
-  argMap: {
-    noteId: { from: "noteId" },
-  },
-});
-
-const fetchIssueStep = deterministicToolStep({
-  id: "multi-source-collateral-fetch-issue",
-  title: "Load Linear issue",
-  tool: "linear_get_issue",
-  input: { from: "trigger.payload" },
-  argMap: {
-    id: { from: "id" },
-  },
 });
 
 export const workflow = defineWorkflow({
@@ -166,21 +114,36 @@ export const workflow = defineWorkflow({
       after: ["list-artifacts", "list-notes", "list-issues"],
     }),
 
-    "fetch-artifacts": map({
-      over: { from: "steps.sources.output.artifactItems" },
-      step: fetchArtifactStep,
+    // Folded from a `map` of single-item `deterministicToolStep`s into one
+    // native `action` per source type: `multi_source_collateral_fetch_*`
+    // loops over its own items array in-process (see `fetch-tools.ts`),
+    // since a map's inner step can't be a native `action` at all. Each
+    // action's whole input is `steps.sources.output` (which carries
+    // `artifactItems`/`noteItems`/`issueItems`/`text`); each tool reads only
+    // the one array field it owns. Fatal by design (unchanged from the old
+    // map): any failed fetch fails the run. One consequence of folding N
+    // per-item steps into one action: a crash mid-fetch now re-runs the
+    // WHOLE batch on resume instead of resuming after the already-fetched
+    // items — acceptable here since a fetch batch is small and fast, but a
+    // real behavior change from the old per-item map checkpointing.
+    "fetch-artifacts": action({
+      handler: FETCH_ARTIFACTS_HANDLER,
+      input: { from: "steps.sources.output" },
+      effect: { requires: [FETCH_ARTIFACTS_HANDLER] },
       after: ["sources"],
     }),
 
-    "fetch-notes": map({
-      over: { from: "steps.sources.output.noteItems" },
-      step: fetchNoteStep,
+    "fetch-notes": action({
+      handler: FETCH_NOTES_HANDLER,
+      input: { from: "steps.sources.output" },
+      effect: { requires: [FETCH_NOTES_HANDLER] },
       after: ["sources"],
     }),
 
-    "fetch-issues": map({
-      over: { from: "steps.sources.output.issueItems" },
-      step: fetchIssueStep,
+    "fetch-issues": action({
+      handler: FETCH_ISSUES_HANDLER,
+      input: { from: "steps.sources.output" },
+      effect: { requires: [FETCH_ISSUES_HANDLER] },
       after: ["sources"],
     }),
 
@@ -216,15 +179,27 @@ export const workflow = defineWorkflow({
       after: ["regenerate"],
     }),
 
-    "persist-after-regen": map({
-      over: { from: "steps.review-final.output.approvedPieces" },
-      step: persistAfterRegenStep,
+    // Folded from a `map` of single-piece `deterministicToolStep`s into one
+    // native `action`: `multi_source_collateral_persist_pieces` loops over
+    // `approvedPieces` in-process (see `persist-tools.ts`). Both `persist`
+    // and `persist-after-regen` dispatch the SAME handler — they differ
+    // only in which gate's output feeds them. Fatal by design (unchanged):
+    // any failed save fails the run. Folding N per-item steps into one
+    // action means a crash mid-save now re-runs the WHOLE batch on resume
+    // instead of resuming after the already-saved pieces — a real
+    // checkpointing change from the old per-item map, acceptable given a
+    // review-approved batch is small.
+    "persist-after-regen": action({
+      handler: PERSIST_PIECES_HANDLER,
+      input: { from: "steps.review-final.output" },
+      effect: { requires: [PERSIST_PIECES_HANDLER] },
       after: ["review-final"],
     }),
 
-    persist: map({
-      over: { from: "steps.review.output.approvedPieces" },
-      step: persistStep,
+    persist: action({
+      handler: PERSIST_PIECES_HANDLER,
+      input: { from: "steps.review.output" },
+      effect: { requires: [PERSIST_PIECES_HANDLER] },
       after: ["regenerateGate"],
     }),
   },

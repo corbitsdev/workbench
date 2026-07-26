@@ -1410,6 +1410,17 @@ export const COMMITTED_TOOL_MANIFEST_INDEX: unknown = {
       },
     },
     {
+      factoryId: "@workbench/workflow-attio-task-agent/persist",
+      packageName: "@workbench/workflow-attio-task-agent",
+      providerName: null,
+      bareToolNames: ["attio_task_agent_persist_pieces"],
+      sideEffects: {
+        attio_task_agent_persist_pieces: "write",
+      },
+      myraCatalog: null,
+      credentialCatalog: null,
+    },
+    {
       factoryId: "@workbench/workflow-competitor-analysis/core",
       packageName: "@workbench/workflow-competitor-analysis",
       providerName: null,
@@ -1584,12 +1595,51 @@ export const COMMITTED_TOOL_MANIFEST_INDEX: unknown = {
       credentialCatalog: null,
     },
     {
+      factoryId: "@workbench/workflow-multi-source-collateral/fetch",
+      packageName: "@workbench/workflow-multi-source-collateral",
+      providerName: null,
+      bareToolNames: [
+        "multi_source_collateral_fetch_artifacts",
+        "multi_source_collateral_fetch_issues",
+        "multi_source_collateral_fetch_notes",
+      ],
+      sideEffects: {
+        multi_source_collateral_fetch_artifacts: "read",
+        multi_source_collateral_fetch_notes: "read",
+        multi_source_collateral_fetch_issues: "read",
+      },
+      myraCatalog: null,
+      credentialCatalog: null,
+    },
+    {
       factoryId: "@workbench/workflow-multi-source-collateral/list-issues",
       packageName: "@workbench/workflow-multi-source-collateral",
       providerName: null,
       bareToolNames: ["multi_source_collateral_list_issues"],
       sideEffects: {
         multi_source_collateral_list_issues: "read",
+      },
+      myraCatalog: null,
+      credentialCatalog: null,
+    },
+    {
+      factoryId: "@workbench/workflow-multi-source-collateral/persist",
+      packageName: "@workbench/workflow-multi-source-collateral",
+      providerName: null,
+      bareToolNames: ["multi_source_collateral_persist_pieces"],
+      sideEffects: {
+        multi_source_collateral_persist_pieces: "write",
+      },
+      myraCatalog: null,
+      credentialCatalog: null,
+    },
+    {
+      factoryId: "@workbench/workflow-pain-point-collateral/persist",
+      packageName: "@workbench/workflow-pain-point-collateral",
+      providerName: null,
+      bareToolNames: ["pain_point_collateral_persist_pieces"],
+      sideEffects: {
+        pain_point_collateral_persist_pieces: "write",
       },
       myraCatalog: null,
       credentialCatalog: null,
@@ -1609,9 +1659,20 @@ export const COMMITTED_TOOL_MANIFEST_INDEX: unknown = {
       factoryId: "@workbench/workflow-reddit-opportunity-scanner/collect",
       packageName: "@workbench/workflow-reddit-opportunity-scanner",
       providerName: null,
-      bareToolNames: ["reddit_opportunity_scanner_collect_search"],
+      bareToolNames: ["reddit_opportunity_scanner_collect_searches"],
       sideEffects: {
-        reddit_opportunity_scanner_collect_search: "read",
+        reddit_opportunity_scanner_collect_searches: "read",
+      },
+      myraCatalog: null,
+      credentialCatalog: null,
+    },
+    {
+      factoryId: "@workbench/workflow-reddit-opportunity-scanner/persist",
+      packageName: "@workbench/workflow-reddit-opportunity-scanner",
+      providerName: null,
+      bareToolNames: ["reddit_opportunity_scanner_persist_items"],
+      sideEffects: {
+        reddit_opportunity_scanner_persist_items: "write",
       },
       myraCatalog: null,
       credentialCatalog: null,

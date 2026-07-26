@@ -10,7 +10,6 @@ import {
 import { resumeFromLog, type WorkflowEvent } from "@intx/workflow";
 import type { AgentDefinition, BaseEnv } from "@intx/agent";
 import type { WorkflowDefinition } from "@intx/workflow";
-import { DETERMINISTIC_TOOL_KIND, STEP_KIND_TAG } from "@workbench/agents";
 import { readWorkflowDefinition } from "../services/workflow-deploy";
 import { deriveWorkflowRunRepoId } from "../routes/workflow-runs";
 
@@ -21,6 +20,17 @@ import { deriveWorkflowRunRepoId } from "../routes/workflow-runs";
 // correctly when a completed run's log is replayed. Kept as a literal, not an
 // import, so it survives the authoring surface's deletion.
 const LEGACY_INLINE_INFERENCE_TAG = "inline-inference";
+
+// The retired `deterministic-tool` authoring kind's tag + value.
+// `deterministicToolStep` and its `STEP_KIND_TAG`/`DETERMINISTIC_TOOL_KIND`
+// exports are deleted from `@workbench/agents` — every workflow now folds its
+// tool/API calls into a native `action` or a workflow-owned batch tool — but
+// historical run definitions committed to disk before the retirement still
+// carry this tag, and this fold must keep classifying them correctly when a
+// completed run's log is replayed. Kept as literals, not an import, for the
+// same reason as `LEGACY_INLINE_INFERENCE_TAG` above.
+const LEGACY_STEP_KIND_TAG = "workbench.stepKind";
+const LEGACY_DETERMINISTIC_TOOL_KIND = "deterministic-tool";
 
 // Read a workflow run's authoritative state directly from its native git event
 // log (CL-2669 Phase 1a). Where the projection bridge folds the log into a
@@ -123,8 +133,9 @@ export function classifyStepKinds(
       kinds.set(stepId, "other");
       continue;
     }
-    const tag = agent.tags?.[STEP_KIND_TAG];
-    if (tag === DETERMINISTIC_TOOL_KIND) kinds.set(stepId, "deterministic");
+    const tag = agent.tags?.[LEGACY_STEP_KIND_TAG];
+    if (tag === LEGACY_DETERMINISTIC_TOOL_KIND)
+      kinds.set(stepId, "deterministic");
     else if (tag === LEGACY_INLINE_INFERENCE_TAG) kinds.set(stepId, "inline");
     else kinds.set(stepId, "agent");
   }

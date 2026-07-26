@@ -2,7 +2,6 @@ import { describe, expect, test } from "bun:test";
 import type { ActionHandler } from "@intx/workflow/runlocal";
 import type { StepInvoker } from "@intx/workflow/runtime";
 import { runLocal } from "@intx/workflow/runlocal";
-import { STEP_KIND_TAG } from "@workbench/agents";
 
 import {
   ARTIFACT_LINK_GAMMA_PRESENTATION_HANDLER,
@@ -15,6 +14,12 @@ import {
   PREPARE_RENDER_HANDLER,
   workflow,
 } from "./index";
+
+// The retired `deterministic-tool` authoring kind's tag. Kept as a literal
+// (not an import from `@workbench/agents`, which no longer exports it) —
+// this test only asserts the tag is ABSENT from every native step, proving
+// no step regresses onto the deleted mechanism.
+const STEP_KIND_TAG = "workbench.stepKind";
 
 function actionPrimitive(id: string) {
   const primitive = workflow.steps[id];

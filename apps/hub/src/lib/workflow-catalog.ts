@@ -7,7 +7,6 @@ import {
   embeddedWorkflowDefsDir,
 } from "./workflow-defs-embedded";
 import {
-  deriveEntryStepRequiredTriggerFields,
   type EmbeddedIntakeField,
   type WorkflowGateInfo,
 } from "./workflow-gate-info";
@@ -132,16 +131,29 @@ export async function loadWorkflowGateInfos(
 }
 
 // The trigger-payload fields each kind's entry step requires directly (CL-4204
-// routine eligibility derivation), read from the committed embedded catalog's
-// `definition`. Used alongside declared intake fields and the trigger-payload-
-// enricher registry to decide whether a kind can actually run unattended from
-// a schedule's stored intake — see `@workbench/shared`'s `isRoutineEligibleKind`.
+// routine eligibility derivation), used alongside declared intake fields and
+// the trigger-payload-enricher registry to decide whether a kind can
+// actually run unattended from a schedule's stored intake — see
+// `@workbench/shared`'s `isRoutineEligibleKind`.
+//
+// This used to derive the set from an entry step's `workbench.argMap` tag
+// (stamped by the retired `deterministicToolStep`) — e.g. `granola-call`'s
+// old entry step required `noteId`, which was neither a declared intake
+// field nor enricher-supplied, correctly failing eligibility. Every entry
+// step is now either an `awaitSignal` gate (whose inputs are the declared
+// intake fields, handled separately) or a native `action`/reasoning step
+// that reads its input from a selector, not a per-argument trigger-field
+// map — no committed definition can carry `workbench.argMap` anymore, so
+// this always returns an empty list. `granola-call`'s entry step, for
+// example, now reads `noteId` off its own selector, not off a derived
+// required-field list — see `routine-eligibility.integration.test.ts`'s
+// before/after attachable-kinds parity check.
 export async function loadWorkflowEntryTriggerFields(
   defsDir: string = embeddedWorkflowDefsDir(),
 ): Promise<Map<string, string[]>> {
   const fields = new Map<string, string[]>();
   for (const def of await readEmbeddedDefs(defsDir)) {
-    fields.set(def.kind, deriveEntryStepRequiredTriggerFields(def.definition));
+    fields.set(def.kind, []);
   }
   return fields;
 }

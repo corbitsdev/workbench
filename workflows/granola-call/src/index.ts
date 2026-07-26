@@ -9,9 +9,9 @@ export const kind = "granola-call";
 export { DISPLAY_STEPS } from "./display-steps";
 
 // Native `action` handler refs — the tool's canonical (factory-prefixed)
-// name, resolved via the same build-time-checked lookup
-// `deterministicToolStep` uses, so a typo'd or manifest-drifted tool name
-// fails the build instead of deploying a step nothing can dispatch.
+// name, resolved via `canonicalizeStepToolName`'s build-time-checked
+// lookup, so a typo'd or manifest-drifted tool name fails the build instead
+// of deploying a step nothing can dispatch.
 export const GRANOLA_LIST_NOTES_HANDLER = canonicalizeStepToolName(
   "granola-call-discover",
   "granola_list_notes",
@@ -97,10 +97,7 @@ export const workflow = defineWorkflow({
       // `merge` win on overlap — trigger.payload has no `content` key, so
       // there is none here.
       input: {
-        merge: [
-          { from: "steps.discover.output" },
-          { from: "trigger.payload" },
-        ],
+        merge: [{ from: "steps.discover.output" }, { from: "trigger.payload" }],
       },
       effect: { requires: [GRANOLA_SPAWN_CALL_RUNS_HANDLER] },
       after: ["discover"],
