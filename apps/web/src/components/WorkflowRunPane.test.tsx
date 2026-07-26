@@ -259,6 +259,39 @@ describe("WorkflowRunPane", () => {
     expect(screen.getByTestId("chrome-slot").textContent).toBe("Host Chrome");
   });
 
+  it("still offers Stop inline when embedded, even parked on a gate (CL-4570)", async () => {
+    // Embedded mode (WorkflowsPage's list inspector) never publishes page
+    // chrome, so a run parked on a gate there had no way to stop it — the gate
+    // form was the only affordance. Stop must render inline instead.
+    record = makeRecord({ status: "awaiting" });
+    render(
+      <WorkflowRunPane
+        deploymentId="wfr_1"
+        onClose={() => undefined}
+        embedded
+      />,
+      { wrapper },
+    );
+    await waitFor(() => screen.getByTestId("run-pane-stop"));
+    fireEvent.click(screen.getByTestId("run-pane-stop"));
+    fireEvent.click(screen.getByTestId("run-pane-stop-confirm"));
+    expect(stopMutate).toHaveBeenCalledWith("wfr_1");
+  });
+
+  it("hides the embedded inline Stop bar for terminal runs (CL-4570)", async () => {
+    record = makeRecord({ status: "completed" });
+    render(
+      <WorkflowRunPane
+        deploymentId="wfr_1"
+        onClose={() => undefined}
+        embedded
+      />,
+      { wrapper },
+    );
+    await waitFor(() => screen.getByTestId("chrome-slot"));
+    expect(screen.queryByTestId("run-pane-stop")).toBeNull();
+  });
+
   it("publishes its own chrome (Stop control) when NOT embedded, confirming the gate is real", async () => {
     record = makeRecord({ status: "running" });
     render(

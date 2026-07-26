@@ -271,14 +271,66 @@ function WorkflowRunPaneInner({
 
   const terminal = record ? isRecordTerminal(record.status) : false;
   const stopping = stopRun.isPending;
+  // Stop control shared by the page-chrome header (standalone pane) and the
+  // embedded inline bar (WorkflowsPage list inspector, CL-4570) — the chrome
+  // is never mounted when `embedded`, so a run parked on a gate there had no
+  // way to stop it; the gate form was the only affordance.
+  const stopControl = (
+    <div
+      className="flex items-center gap-3"
+      onMouseLeave={() => {
+        if (!stopping) setConfirmingStop(false);
+      }}
+    >
+      {record &&
+        !terminal &&
+        (confirmingStop ? (
+          <div className="flex items-center gap-1">
+            <Button
+              variant="ghost"
+              size="sm"
+              disabled={stopping}
+              data-testid="run-pane-stop-confirm"
+              onClick={() => {
+                stopRun.mutate(runId);
+              }}
+              aria-label="Confirm: stop this run"
+            >
+              {stopping ? "Stopping…" : "Confirm stop"}
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              disabled={stopping}
+              onClick={() => setConfirmingStop(false)}
+              aria-label="Cancel stop"
+            >
+              Cancel
+            </Button>
+          </div>
+        ) : (
+          <Button
+            variant="ghost"
+            size="sm"
+            disabled={stopping}
+            data-testid="run-pane-stop"
+            onClick={() => setConfirmingStop(true)}
+            title="Stop this run — leaves it in history as Stopped"
+            aria-label="Stop this run"
+          >
+            Stop
+          </Button>
+        ))}
+      {record && !terminal && stopRun.isError && (
+        <span role="alert" className="text-xs text-red-500">
+          Couldn't stop this run. Try again.
+        </span>
+      )}
+    </div>
+  );
   const runChrome = useMemo(
     () => (
-      <div
-        className="flex min-w-0 flex-1 flex-wrap items-center justify-end gap-3"
-        onMouseLeave={() => {
-          if (!stopping) setConfirmingStop(false);
-        }}
-      >
+      <div className="flex min-w-0 flex-1 flex-wrap items-center justify-end gap-3">
         {deploymentMeta ? (
           <WorkflowMetaBadge
             version={deploymentMeta.version}
@@ -286,68 +338,13 @@ function WorkflowRunPaneInner({
             deployedAt={deploymentMeta.deployedAt}
           />
         ) : null}
-        {record &&
-          !terminal &&
-          (confirmingStop ? (
-            <div className="flex items-center gap-1">
-              <Button
-                variant="ghost"
-                size="sm"
-                disabled={stopping}
-                data-testid="run-pane-stop-confirm"
-                onClick={() => {
-                  stopRun.mutate(runId);
-                }}
-                aria-label="Confirm: stop this run"
-              >
-                {stopping ? "Stopping…" : "Confirm stop"}
-              </Button>
-              <Button
-                variant="ghost"
-                size="sm"
-                disabled={stopping}
-                onClick={() => setConfirmingStop(false)}
-                aria-label="Cancel stop"
-              >
-                Cancel
-              </Button>
-            </div>
-          ) : (
-            <Button
-              variant="ghost"
-              size="sm"
-              disabled={stopping}
-              data-testid="run-pane-stop"
-              onClick={() => setConfirmingStop(true)}
-              title="Stop this run — leaves it in history as Stopped"
-              aria-label="Stop this run"
-            >
-              Stop
-            </Button>
-          ))}
-        {record && !terminal && stopRun.isError && (
-          <span role="alert" className="text-xs text-red-500">
-            Couldn't stop this run. Try again.
-          </span>
-        )}
+        {stopControl}
         <Button variant="ghost" size="sm" onClick={onClose}>
           Close
         </Button>
       </div>
     ),
-    [
-      deploymentMeta,
-      onClose,
-      record,
-      terminal,
-      confirmingStop,
-      stopping,
-      stopRun.isError,
-      // Depend on mutate only — the full mutation object is a new identity each
-      // render and would re-publish chrome every frame (see ArtifactDetailPage).
-      stopRun.mutate,
-      runId,
-    ],
+    [deploymentMeta, onClose, stopControl],
   );
   useSetPageChrome(record ? runChrome : null, !embedded);
 
@@ -573,18 +570,27 @@ function WorkflowRunPaneInner({
   // "Loading run…" → first streamed frame no longer hard-cuts a full layout
   // swap. Reduced motion collapses it to an instant show.
   return (
-    <AnimatePresence mode="wait" initial={false}>
-      <motion.div
-        key={view.key}
-        className="h-full"
-        initial={reduceMotion ? false : { opacity: 0 }}
-        animate={{ opacity: 1 }}
-        exit={reduceMotion ? { opacity: 1 } : { opacity: 0 }}
-        transition={{ duration: reduceMotion ? 0 : 0.2, ease: "easeOut" }}
-      >
-        {view.node}
-      </motion.div>
-    </AnimatePresence>
+    <div className="flex h-full min-h-0 flex-col">
+      {embedded && record && !terminal && (
+        <div className="flex shrink-0 items-center justify-end gap-3 border-b border-border px-3 py-2">
+          {stopControl}
+        </div>
+      )}
+      <div className="min-h-0 flex-1">
+        <AnimatePresence mode="wait" initial={false}>
+          <motion.div
+            key={view.key}
+            className="h-full"
+            initial={reduceMotion ? false : { opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={reduceMotion ? { opacity: 1 } : { opacity: 0 }}
+            transition={{ duration: reduceMotion ? 0 : 0.2, ease: "easeOut" }}
+          >
+            {view.node}
+          </motion.div>
+        </AnimatePresence>
+      </div>
+    </div>
   );
 }
 
