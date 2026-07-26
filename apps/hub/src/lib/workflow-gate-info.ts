@@ -36,25 +36,13 @@ export const WorkflowGateInfoSchema = type({
 });
 export type WorkflowGateInfo = typeof WorkflowGateInfoSchema.infer;
 
-// Kinds explicitly cleared to be attachable to a schedule despite having
-// post-intake human gates (CL-3528). Historically named for an unattended
-// Myra auto-drive path; that driver is NOT wired into production (CL-4289 —
-// see scheduled-workflow-gate-agent.ts), so today these post-intake gates
-// simply deliver gate mail to the owner like any other gate, same as every
-// other allowlisted kind reaching `allowsScheduledPostIntakeDrive`.
-export const SCHEDULED_POST_INTAKE_DRIVE_KIND_ALLOWLIST = new Set([
-  "scheduler-multi-gate-test",
-]);
-
-/** Whether a kind's post-intake human gates may be attached to a schedule at all. */
-export function kindAllowsScheduledPostIntakeDrive(
-  kind: string,
-  info: WorkflowGateInfo,
-): boolean {
-  if (!info.requiresIntake || info.humanGateCount <= 1) return false;
-  if (SCHEDULED_POST_INTAKE_DRIVE_KIND_ALLOWLIST.has(kind)) return true;
-  return info.allowsScheduledPostIntakeDrive === true;
-}
+// Every workflow is schedulable (CL-4514) — there is no structural or
+// eligibility gate on schedule attachment anymore. `requiresIntake` below
+// survives ONLY as a delivery detail: it tells the scheduler and the
+// `/me/schedules` PATCH validator whether a kind's entry gate is named
+// `intake`, i.e. whether a stored trigger payload should be auto-delivered to
+// it / re-validated against its registered intake schema. It is never
+// consulted to decide whether a kind CAN be scheduled.
 
 // Derive a workflow's gate shape from its serialized definition's `steps`.
 // `requiresIntake` is true when the definition has an `awaitSignal` gate named
@@ -101,6 +89,15 @@ type RawTriggerStep = {
  * and fails eligibility. A step with no arg map (nothing read from the
  * trigger beyond identity/reserved keys, e.g. `prospect-engine`'s
  * `initBudget`) returns no required fields.
+ *
+ * KNOWN GAP: this only inspects a `kind: "step"` entry carrying the
+ * `workbench.argMap` tag stamped by `deterministicToolStep`. A native
+ * `action`-kind entry step whose selector reads a required field straight off
+ * `trigger.payload` is invisible here and returns `[]` uncritically — the
+ * authoring-time check this feeds (see `routine-eligibility.integration.test.ts`)
+ * cannot yet catch that shape. Closing this gap by walking the entry step's
+ * `input` selector is tracked on a separate branch; do not weaken or remove
+ * the existing coverage while landing that.
  */
 export function deriveEntryStepRequiredTriggerFields(
   definition: unknown,
@@ -130,21 +127,4 @@ export function deriveEntryStepRequiredTriggerFields(
     if (typeof from === "string") fields.push(from);
   }
   return fields;
-}
-
-// Whether a kind can be attached to a schedule at all (structural), ignoring
-// whether intake input has actually been supplied. Fully-unattended workflows (no
-// gates) always qualify. Intake-only workflows qualify: the scheduler pre-fills and
-// auto-delivers intake (CL-3509). Workflows with additional post-intake human
-// gates qualify only when explicitly allowlisted or flagged in the embedded
-// catalog (CL-3528 security). Workflows whose first human gate is not `intake`
-// are excluded.
-export function isKindStructurallyAttachable(
-  info: WorkflowGateInfo,
-  kind: string,
-): boolean {
-  if (info.humanGateCount === 0) return true;
-  if (!info.requiresIntake) return false;
-  if (info.humanGateCount === 1) return true;
-  return kindAllowsScheduledPostIntakeDrive(kind, info);
 }

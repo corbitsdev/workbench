@@ -52,22 +52,6 @@ mock.module("../workflow-executor/run-terminal-mail", () => ({
   deliverRunTerminalMail: mock(async () => undefined),
 }));
 
-mock.module("../lib/workflow-catalog", () => ({
-  loadWorkflowGateInfos: mock(
-    async () =>
-      new Map([
-        [
-          "allowed-multi",
-          {
-            requiresIntake: true,
-            humanGateCount: 2,
-            allowsScheduledPostIntakeDrive: true,
-          },
-        ],
-      ]),
-  ),
-}));
-
 const { createScheduledWorkflowGateAgent } = await import(
   "./scheduled-workflow-gate-agent"
 );

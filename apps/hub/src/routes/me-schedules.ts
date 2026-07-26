@@ -4,7 +4,6 @@ import { describeRoute, resolver } from "hono-openapi";
 import {
   CreateScheduledTriggerBodySchema,
   isRecurrenceAllowedForKind,
-  isRoutineEligibleKind,
   ScheduledTriggerListResponseSchema,
   ScheduledTriggerSchema,
   UpdateScheduledTriggerBodySchema,
@@ -12,14 +11,8 @@ import {
 } from "@workbench/shared";
 import { resolveCallerMember } from "../lib/tenant-provisioning";
 import { isRunnableKind } from "../lib/workflow-run-gate";
-import {
-  loadWorkflowEntryTriggerFields,
-  loadWorkflowGateInfos,
-  loadWorkflowIntakeFields,
-} from "../lib/workflow-catalog";
-import { isKindStructurallyAttachable } from "../lib/workflow-gate-info";
+import { loadWorkflowGateInfos } from "../lib/workflow-catalog";
 import { INTAKE_SIGNAL_NAME } from "../lib/scheduled-intake";
-import { ENRICHED_TRIGGER_KINDS } from "../workflow-executor/trigger-payload-enrichment-registry";
 import { validateResumePayload } from "../workflow-executor/resume-payload-registry";
 import { UuidParam } from "../lib/uuid";
 import {
@@ -208,51 +201,10 @@ export function createMeSchedulesRouter(
         );
       }
 
-      // Attach gate (CL-3508/CL-3509/CL-3528): schedules fire unattended. Kinds
-      // with only `intake` (auto-delivered from stored payload), no gates, or
-      // multi-gate shapes opted in via `allowsScheduledPostIntakeDrive` / allowlist
-      // pass `isKindStructurallyAttachable`. Others are rejected. RequiresIntake
-      // kinds must carry a valid stored intake payload.
-      const gateInfos = await loadWorkflowGateInfos();
-      const gateInfo = gateInfos.get(body.kind);
-      if (
-        gateInfo === undefined ||
-        !isKindStructurallyAttachable(gateInfo, body.kind)
-      ) {
-        return c.json(
-          {
-            error: `workflow "${body.kind}" cannot be scheduled: it needs input this schedule can't supply`,
-          },
-          400,
-        );
-      }
-
-      // Derived routine eligibility (CL-4204): structural attachability is
-      // necessary but not sufficient — the entry step's required trigger
-      // fields must also be satisfiable unattended (declared intake field or
-      // a registered trigger-payload enricher for the kind).
-      const [entryTriggerFieldsByKind, intakeFieldsByKind] = await Promise.all([
-        loadWorkflowEntryTriggerFields(),
-        loadWorkflowIntakeFields(),
-      ]);
-      const intakeFieldNames = new Set(
-        (intakeFieldsByKind.get(body.kind) ?? []).map((f) => f.name),
-      );
-      if (
-        !isRoutineEligibleKind(
-          entryTriggerFieldsByKind.get(body.kind) ?? [],
-          intakeFieldNames,
-          ENRICHED_TRIGGER_KINDS.has(body.kind),
-        )
-      ) {
-        return c.json(
-          {
-            error: `workflow "${body.kind}" is not available for Routines schedules`,
-          },
-          400,
-        );
-      }
-
+      // Every runnable kind is schedulable (CL-4514) — the scheduler renders
+      // whatever intake fields the definition declares; a kind declaring none
+      // is still schedulable and fires with an empty payload, either running
+      // or failing loudly on its own resume-payload schema below.
       const scopePolicy = scheduleScopesForKind(body.kind, true);
       const scope = body.scope ?? scopePolicy.defaultScope;
       if (!scopePolicy.allowedScopes.includes(scope)) {

@@ -45,10 +45,6 @@ const DDL = `
   );
 `;
 
-const GATE_INFOS = new Map([
-  [KIND, { requiresIntake: true, humanGateCount: 2 }],
-]);
-
 let pendingGates: Array<{ signalName: string }> = [];
 
 const describePendingGatesMock = mock(
@@ -57,10 +53,6 @@ const describePendingGatesMock = mock(
 
 mock.module("../workflow-executor/pending-gate-info", () => ({
   describePendingGates: describePendingGatesMock,
-}));
-
-mock.module("../lib/workflow-catalog", () => ({
-  loadWorkflowGateInfos: mock(async () => GATE_INFOS),
 }));
 
 let client: PGlite;
@@ -151,8 +143,9 @@ describe("scheduler multi-gate success path (CL-3528)", () => {
           triggerSource: "scheduler",
         });
 
-        const gateInfo = GATE_INFOS.get(fire.kind);
-        if (gateInfo?.requiresIntake === true) {
+        // scheduler-multi-gate-test's entry gate is named `intake` (delivery
+        // detail, not an eligibility gate — see workflow-gate-info.ts).
+        if (fire.kind === KIND) {
           const intake = extractStoredIntake(fire.triggerPayload);
           const queued = await queueScheduledIntakeSignal(db, {
             runId,

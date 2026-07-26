@@ -54,23 +54,6 @@ mock.module("../workflow-executor/run-terminal-mail", () => ({
   deliverRunTerminalMail: deliverRunTerminalMailMock,
 }));
 
-mock.module("../lib/workflow-catalog", () => ({
-  loadWorkflowGateInfos: mock(
-    async () =>
-      new Map([
-        ["gamma", { requiresIntake: true, humanGateCount: 2 }],
-        [
-          "allowed-multi",
-          {
-            requiresIntake: true,
-            humanGateCount: 2,
-            allowsScheduledPostIntakeDrive: true,
-          },
-        ],
-      ]),
-  ),
-}));
-
 const { createScheduledWorkflowGateAgent } = await import(
   "./scheduled-workflow-gate-agent"
 );
@@ -92,7 +75,7 @@ beforeEach(() => {
 });
 
 describe("scheduled gate maybeEnqueue", () => {
-  it("fails the run when post-intake gates are open but the kind is not opted in", async () => {
+  it("drives post-intake gates for any multi-gate kind — no eligibility check gates it (CL-4514)", async () => {
     const agent = createScheduledWorkflowGateAgent({
       db: { query: {} } as never,
       sessionService: {} as never,
@@ -105,17 +88,15 @@ describe("scheduled gate maybeEnqueue", () => {
     });
 
     await agent.maybeEnqueue({ runId: "run-1", ...BASE, kind: "gamma" });
+    await agent.waitForDrain();
 
-    expect(happyDriveGateMock).not.toHaveBeenCalled();
-    expect(failRunIfStillAwaitingMock).toHaveBeenCalledWith(
-      expect.anything(),
-      "run-1",
-    );
-    expect(deliverRunTerminalMailMock).toHaveBeenCalled();
-    const terminalArgs = deliverRunTerminalMailMock.mock.calls[0]![1] as {
-      error: string;
-    };
-    expect(terminalArgs.error).toContain("not opted in");
+    expect(happyDriveGateMock).toHaveBeenCalledTimes(1);
+    expect(happyDriveGateMock.mock.calls[0]![0]).toMatchObject({
+      runId: "run-1",
+      kind: "gamma",
+      signalName: "confirm",
+    });
+    expect(failRunIfStillAwaitingMock).not.toHaveBeenCalled();
   });
 
   it("calls driveGate for post-intake gates on an allowed scheduler run", async () => {
@@ -141,9 +122,7 @@ describe("scheduled gate maybeEnqueue", () => {
     });
   });
 
-  it(
-    "fails the run when the drive queue is full",
-    async () => {
+  it("fails the run when the drive queue is full", async () => {
     const agent = createScheduledWorkflowGateAgent({
       db: { query: {} } as never,
       sessionService: {} as never,
@@ -179,7 +158,5 @@ describe("scheduled gate maybeEnqueue", () => {
       releaseBlockedDrive?.();
       await Bun.sleep(5);
     }
-  },
-    20_000,
-  );
+  }, 20_000);
 });

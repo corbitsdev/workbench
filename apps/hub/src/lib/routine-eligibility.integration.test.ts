@@ -3,77 +3,87 @@ import { isRoutineEligibleKind } from "@workbench/shared";
 import {
   loadWorkflowCatalogKinds,
   loadWorkflowEntryTriggerFields,
-  loadWorkflowGateInfos,
   loadWorkflowIntakeFields,
 } from "./workflow-catalog";
-import { isKindStructurallyAttachable } from "./workflow-gate-info";
 import { ENRICHED_TRIGGER_KINDS } from "../workflow-executor/trigger-payload-enrichment-registry";
 import { requiredIntakeSchemaKeys } from "../workflow-executor/resume-payload-registry";
 
-// Real end-to-end exercise of the derived routine-eligibility rule (CL-4204)
-// against the actual committed embedded catalog (apps/hub/generated/workflow-defs)
-// and the actual trigger-payload-enrichment registry — no mocks. This is the
-// seam the unit tests (workflow-gate-info.test.ts, routine-eligible.test.ts)
-// cannot see: whether the real defs' entry steps actually have their required
-// trigger fields covered by the real declared intake fields or the real
-// registered enrichers.
-async function attachableKinds(): Promise<Set<string>> {
-  const [gateInfos, entryTriggerFieldsByKind, intakeFieldsByKind] =
-    await Promise.all([
-      loadWorkflowGateInfos(),
+// Real end-to-end exercise against the actual committed embedded catalog
+// (apps/hub/generated/workflow-defs) and the actual trigger-payload-
+// enrichment registry — no mocks. Every deployed workflow is schedulable
+// (CL-4514): there is no runtime attachability or eligibility GATE anymore —
+// the scheduler renders whatever intake fields a definition declares and
+// fires with an empty payload when it declares none. What replaces the
+// runtime gate is THIS build-time CHECK: a kind whose entry step needs a
+// trigger-payload field nobody can supply unattended must fail the build,
+// not fail silently at fire time (the bug class this whole line of work
+// started from — `granola-call` reading a required `noteId` straight off the
+// trigger payload with no intake field and no registered enricher, so every
+// scheduled fire died on step one).
+describe("every deployed workflow kind is schedulable (CL-4514)", () => {
+  it("lists every real committed workflow kind with no exclusions", async () => {
+    const kinds = await loadWorkflowCatalogKinds();
+    // A hard-coded floor, not a ceiling: catches an accidental narrowing of
+    // the embedded catalog loader without hand-maintaining the full kind list
+    // here (that list belongs to the committed generated/workflow-defs dir).
+    expect(kinds.size).toBeGreaterThanOrEqual(21);
+    // Previously-excluded kinds (structurally unattachable multi-gate shapes,
+    // kinds failing the old CL-4204 derived-eligibility rule) are ordinary
+    // members of this set now — there is no second, narrower "attachable"
+    // set to compute.
+    expect(kinds.has("attio-task-agent")).toBe(true);
+    expect(kinds.has("granola-call")).toBe(true);
+  });
+});
+
+// KNOWN GAP (tracked on a separate branch, land together): the entry-step
+// trigger-field derivation below only inspects a `kind: "step"` entry
+// carrying the `workbench.argMap` tag stamped by `deterministicToolStep` —
+// see the docstring on `deriveEntryStepRequiredTriggerFields`
+// (workflow-gate-info.ts). A native `action`-kind entry step whose selector
+// reads a required field straight off `trigger.payload` is invisible to this
+// derivation and returns `[]` uncritically, so it would trivially "pass" the
+// check below even if genuinely unschedulable. Closing that gap requires
+// walking the entry step's `input` selector directly; do not remove or
+// weaken the assertions below while that lands — extend them instead.
+describe("declared intake fields + enrichers cover every entry step's required trigger fields", () => {
+  it("every deployed kind satisfies isRoutineEligibleKind against the real embedded catalog", async () => {
+    const [entryTriggerFieldsByKind, intakeFieldsByKind] = await Promise.all([
       loadWorkflowEntryTriggerFields(),
       loadWorkflowIntakeFields(),
     ]);
-  const kinds = new Set<string>();
-  for (const [kind, gateInfo] of gateInfos) {
-    if (!isKindStructurallyAttachable(gateInfo, kind)) continue;
-    const intakeNames = new Set(
-      (intakeFieldsByKind.get(kind) ?? []).map((f) => f.name),
-    );
-    if (
-      isRoutineEligibleKind(
-        entryTriggerFieldsByKind.get(kind) ?? [],
+    const kinds = await loadWorkflowCatalogKinds();
+    const failures: string[] = [];
+    for (const kind of kinds) {
+      const requiredFields = entryTriggerFieldsByKind.get(kind) ?? [];
+      const intakeNames = new Set(
+        (intakeFieldsByKind.get(kind) ?? []).map((f) => f.name),
+      );
+      const eligible = isRoutineEligibleKind(
+        requiredFields,
         intakeNames,
         ENRICHED_TRIGGER_KINDS.has(kind),
-      )
-    ) {
-      kinds.add(kind);
+      );
+      if (!eligible) {
+        const uncovered = requiredFields.filter(
+          (f) => !intakeNames.has(f) && !ENRICHED_TRIGGER_KINDS.has(kind),
+        );
+        failures.push(
+          `${kind}: uncovered trigger fields ${uncovered.join(", ")}`,
+        );
+      }
     }
-  }
-  return kinds;
-}
+    expect(failures).toEqual([]);
+  });
 
-describe("derived routine eligibility against the real embedded catalog", () => {
-  // granola-call used to be excluded here: its entry step carried a
-  // `workbench.argMap` tag, and the eligibility derivation read every `from`
-  // in that tag as a required trigger field — including ones the producer had
-  // marked `optional: true`. Migrating the workflow to the native `action`
-  // primitive removed the tag entirely, so the derivation now correctly finds
-  // no required trigger fields and the kind is schedulable, which is what its
-  // author intended (every one of its tool args is optional).
   it("includes granola-call: its native action entry step requires no trigger fields", async () => {
-    const kinds = await attachableKinds();
-    expect(kinds.has("granola-call")).toBe(true);
+    const entryTriggerFieldsByKind = await loadWorkflowEntryTriggerFields();
+    expect(entryTriggerFieldsByKind.get("granola-call") ?? []).toEqual([]);
   });
 
-  it("includes heartbeat and prospect-engine via their registered trigger-payload enrichers", async () => {
-    const kinds = await attachableKinds();
-    expect(kinds.has("heartbeat")).toBe(true);
-    expect(kinds.has("prospect-engine")).toBe(true);
-  });
-
-  it("includes intake-declared research/watch kinds", async () => {
-    const kinds = await attachableKinds();
-    expect(kinds.has("last30days-research")).toBe(true);
-    expect(kinds.has("exa-topic-watch")).toBe(true);
-    expect(kinds.has("firecrawl-url-watch")).toBe(true);
-    expect(kinds.has("github-topic-watch")).toBe(true);
-    expect(kinds.has("reddit-opportunity-watch")).toBe(true);
-  });
-
-  it("still excludes a structurally-unattachable multi-gate kind (unaffected by this derivation)", async () => {
-    const kinds = await attachableKinds();
-    expect(kinds.has("attio-task-agent")).toBe(false);
+  it("heartbeat and prospect-engine rely on their registered trigger-payload enrichers", () => {
+    expect(ENRICHED_TRIGGER_KINDS.has("heartbeat")).toBe(true);
+    expect(ENRICHED_TRIGGER_KINDS.has("prospect-engine")).toBe(true);
   });
 });
 
@@ -81,12 +91,10 @@ describe("derived routine eligibility against the real embedded catalog", () => 
 // private `blocks.ts` builder, never on the workflow definition — the schedule/
 // attach form (which reads a definition's exported `INTAKE_FIELDS`) rendered no
 // inputs at all, then the `/resume` boundary rejected the hollow payload for
-// missing `topic`/`days`. This checks EVERY real committed workflow kind
-// (deliberately not narrowed to today's schedule-attachable subset — a kind
-// that is not attachable today is still the same authoring defect once
-// attachability gating changes), so a future workflow that registers an
-// `intake` resume-payload schema without declaring matching intake fields
-// fails here instead of shipping the same silent-empty-form bug.
+// missing `topic`/`days`. This checks EVERY real committed workflow kind, so a
+// future workflow that registers an `intake` resume-payload schema without
+// declaring matching intake fields fails here instead of shipping the same
+// silent-empty-form bug.
 describe("declared intake fields cover the registered intake resume-payload schema", () => {
   it("every kind with a registered `intake` schema declares every field that schema requires", async () => {
     const [kinds, intakeFieldsByKind] = await Promise.all([
