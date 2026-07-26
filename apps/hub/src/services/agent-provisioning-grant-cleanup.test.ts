@@ -17,6 +17,7 @@ mock.module("../config", () => ({
   // A module in the launch import graph resolves the credential-encryption key
   // at load; the partial config mock must provide it or the file fails to load.
   requireCredentialEncryptionKey: () => Buffer.alloc(32),
+  enabledUserOAuthInferenceProviders: () => [],
 }));
 
 mock.module("@intx/db", () => ({

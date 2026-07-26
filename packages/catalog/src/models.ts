@@ -41,6 +41,12 @@ const ALL_MODELS: CatalogModelSpec[] = [
   { canonicalName: "glm-5.2", contextWindow: 1_000_000 },
   // opencode-zen / xAI models
   { canonicalName: "grok-4.5", contextWindow: 500_000 },
+  // xAI Grok user-OAuth models (CLI chat proxy; not on models.dev)
+  { canonicalName: "grok-composer-2.5-fast", contextWindow: 256_000 },
+  // ChatGPT / Codex user-OAuth models (backend-api; not on models.dev)
+  { canonicalName: "gpt-5.6-sol", contextWindow: 400_000 },
+  { canonicalName: "gpt-5.6-terra", contextWindow: 400_000 },
+  { canonicalName: "gpt-5.6-luna", contextWindow: 400_000 },
   // near-ai models (absent from models.dev — conservative hand-set windows)
   {
     canonicalName: "deepseek-ai/DeepSeek-V4-Flash",

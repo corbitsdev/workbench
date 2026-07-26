@@ -45,12 +45,30 @@ describe("OAuth provider catalog (CL-3356 #2)", () => {
   test("every OAuth provider's app-credential provider is in CREDENTIAL_PROVIDER_CATALOG", () => {
     // A missing entry must fail a test, not surface as a broken Owner UI (the
     // owner sets the app client id/secret on that catalog row). Mirrors the
-    // "surfaces every seeded tool credential" seed-credentials test.
+    // "surfaces every seeded tool credential" seed-credentials test. Public-
+    // client providers (Grok / Codex) have no owner app credential.
     const catalogNames = new Set(
       CREDENTIAL_PROVIDER_CATALOG.map((e) => e.providerName),
     );
     for (const entry of OAUTH_PROVIDER_CATALOG) {
+      if (!entry.appCredentialProviderName) {
+        expect(entry.publicClientId).toBeDefined();
+        continue;
+      }
       expect(catalogNames.has(entry.appCredentialProviderName)).toBe(true);
+    }
+  });
+
+  test("public-client inference providers use PKCE without a client secret", () => {
+    for (const name of ["xai-grok", "chatgpt-codex"] as const) {
+      const entry = findOAuthProviderConfig(name);
+      expect(entry).toBeDefined();
+      expect(entry!.publicClientId).toBeTruthy();
+      expect(entry!.clientSecretRequired).toBe(false);
+      expect(entry!.usePkce).toBe(true);
+      expect(entry!.hasRefresh).toBe(true);
+      expect(entry!.inference?.plugin).toBeTruthy();
+      expect(entry!.inference?.models.length).toBeGreaterThan(0);
     }
   });
 
@@ -72,26 +90,44 @@ describe("OAuth provider catalog (CL-3356 #2)", () => {
 });
 
 describe("guided owner setup metadata (CL-3356 follow-on)", () => {
-  test("every provider carries setup metadata with a documented https register URL", () => {
-    for (const entry of OAUTH_PROVIDER_CATALOG) {
-      expect(entry.setup.registerUrl.startsWith("https://")).toBe(true);
-      expect(() => new URL(entry.setup.registerUrl)).not.toThrow();
+  // The guided panel is only reachable from an app-credential row, so setup
+  // metadata belongs to — and is asserted only for — owner-app providers.
+  const ownerAppEntries = OAUTH_PROVIDER_CATALOG.filter(
+    (entry) => entry.appCredentialProviderName !== undefined,
+  );
+
+  test("every owner-app provider carries setup metadata with a documented https register URL", () => {
+    expect(ownerAppEntries.length).toBeGreaterThan(0);
+    for (const entry of ownerAppEntries) {
+      expect(entry.setup?.registerUrl.startsWith("https://")).toBe(true);
+      expect(() => new URL(entry.setup!.registerUrl)).not.toThrow();
     }
   });
 
   test("the callback path matches the provider's callback route", () => {
-    for (const entry of OAUTH_PROVIDER_CATALOG) {
-      expect(entry.setup.callbackPath).toBe(
+    for (const entry of ownerAppEntries) {
+      expect(entry.setup?.callbackPath).toBe(
         `/oauth/callback/${entry.providerName}`,
       );
     }
   });
 
   test("steps are a non-empty ordered list and field hints are present", () => {
-    for (const entry of OAUTH_PROVIDER_CATALOG) {
-      expect(entry.setup.steps.length).toBeGreaterThan(0);
-      expect(entry.setup.fieldHints.clientId.length).toBeGreaterThan(0);
-      expect(entry.setup.fieldHints.clientSecret.length).toBeGreaterThan(0);
+    for (const entry of ownerAppEntries) {
+      expect(entry.setup!.steps.length).toBeGreaterThan(0);
+      expect(entry.setup!.fieldHints.clientId.length).toBeGreaterThan(0);
+      expect(entry.setup!.fieldHints.clientSecret.length).toBeGreaterThan(0);
+    }
+  });
+
+  test("public-client inference providers carry no unreachable setup text", () => {
+    const publicClientEntries = OAUTH_PROVIDER_CATALOG.filter(
+      (entry) => entry.publicClientId !== undefined,
+    );
+    expect(publicClientEntries.length).toBeGreaterThan(0);
+    for (const entry of publicClientEntries) {
+      expect(entry.appCredentialProviderName).toBeUndefined();
+      expect(entry.setup).toBeUndefined();
     }
   });
 

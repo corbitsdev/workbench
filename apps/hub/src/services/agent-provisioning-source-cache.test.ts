@@ -44,6 +44,8 @@ mock.module("../config", () => ({
     },
     workflowDeploy: { modelSourceCacheTtlMs: 45_000 },
   }),
+  enabledUserOAuthInferenceProviders: () => [],
+  requireCredentialEncryptionKey: () => Buffer.alloc(32),
 }));
 
 const { resolveInstanceSourcesCached } = await import("./agent-provisioning");

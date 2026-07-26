@@ -5,11 +5,15 @@ import {
   ConnectionAuthorizeResponse,
   findOAuthProviderConfig,
   inboxCapabilityPreferenceKey,
+  isOAuthProviderAvailable,
   MemberConnectionsResponse,
   OAUTH_PROVIDER_CATALOG,
   type MemberConnectionState,
 } from "@workbench/shared";
-import { requireOAuthStateSecret } from "../config";
+import {
+  enabledUserOAuthInferenceProviders,
+  requireOAuthStateSecret,
+} from "../config";
 import type { HubDb } from "../db";
 import {
   isCapabilityAllowedForPrincipal,
@@ -20,7 +24,7 @@ import {
   beginConnect,
   deleteMemberConnection,
   findMemberConnection,
-  resolveOwnerOAuthClient,
+  resolveOAuthClientForProvider,
 } from "../lib/oauth-flow";
 import type { PendingAuthorizationStore } from "../lib/oauth-flow";
 import { ErrorResponse } from "../lib/openapi";
@@ -75,8 +79,14 @@ export function createMeConnectionsRouter(
         member.principalId,
       );
 
+      const enabledInference = enabledUserOAuthInferenceProviders();
       const connections: MemberConnectionState[] = [];
       for (const cfg of OAUTH_PROVIDER_CATALOG) {
+        // Deployment gate before the per-principal gate: a user-self-OAuth
+        // inference provider this environment has not enabled is not a
+        // connection the member can have, so it is not listed at all.
+        if (!isOAuthProviderAvailable(cfg, enabledInference)) continue;
+
         // Per-principal, fail-closed: a provider the caller is not granted
         // (owner-hidden via member-role deny, or a per-principal deny) is
         // omitted from the caller's surface entirely.
@@ -99,7 +109,7 @@ export function createMeConnectionsRouter(
           redirectUriBase,
           cfg.providerName,
         );
-        const clientConfig = await resolveOwnerOAuthClient(
+        const clientConfig = await resolveOAuthClientForProvider(
           db,
           member.tenantId,
           cfg,
@@ -154,6 +164,13 @@ export function createMeConnectionsRouter(
       const providerName = c.req.param("provider");
       const cfg = findOAuthProviderConfig(providerName);
       if (!cfg) return c.json({ error: "Unknown provider" }, 404);
+      // A provider hidden from the listing must also be unreachable by a
+      // hand-rolled POST — the gate is enforced, not just rendered.
+      if (
+        !isOAuthProviderAvailable(cfg, enabledUserOAuthInferenceProviders())
+      ) {
+        return c.json({ error: "Unknown provider" }, 404);
+      }
 
       const member = await resolveCallerMember(db, userId);
       if (!member) return c.json({ error: "No provisioned membership" }, 403);
@@ -184,7 +201,7 @@ export function createMeConnectionsRouter(
         redirectUriBase,
         providerName,
       );
-      const clientConfig = await resolveOwnerOAuthClient(
+      const clientConfig = await resolveOAuthClientForProvider(
         db,
         member.tenantId,
         cfg,

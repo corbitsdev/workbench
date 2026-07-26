@@ -204,13 +204,37 @@ export const OAuthProviderConfigSchema = type({
   hasRefresh: "boolean",
   /** The `CREDENTIAL_PROVIDER_CATALOG` providerName under which the OWNER sets
    * this provider's OAuth *app* client_id + client_secret on the Capabilities
-   * page. The flow resolves that tenant credential (source: tenant) at connect
-   * time — the app secret is owner-managed, NOT an env var. */
-  appCredentialProviderName: "string",
+   * page. Omitted for public-client consumer providers (Grok / Codex) that use
+   * `publicClientId` instead. */
+  "appCredentialProviderName?": "string",
+  /** Public OAuth client id for consumer / CLI-style providers (PKCE only; no
+   * per-tenant client secret). When set, Connect works without an owner-set
+   * OAuth app credential. */
+  "publicClientId?": "string",
+  /** Extra query params appended to the authorize URL (Codex simplified flow). */
+  "authorizeExtraParams?": {
+    "[string]": "string",
+  },
+  /** When true (default for owner-app providers), token exchange includes
+   * `client_secret`. Public clients set false and omit the secret. */
+  "clientSecretRequired?": "boolean",
+  /** When present, this connectable provider can also back user-self-OAuth
+   * inference: launch injects InferenceSources from the member's oauth_token
+   * rather than a tenant model_provider credential. */
+  "inference?": {
+    plugin: "string",
+    baseURL: "string",
+    models: "string[]",
+    refreshSkewMs: "number",
+  },
   /** Semi-guided owner setup metadata for the Capabilities page. Drives the
    * guided panel that tells the owner exactly what to register where, so they
-   * are not guessing what to paste. Pure, read-only domain data. */
-  setup: {
+   * are not guessing what to paste. Pure, read-only domain data. Present ONLY
+   * for owner-app providers: the panel is reached through
+   * `findOAuthProviderByAppCredential`, keyed on `appCredentialProviderName`,
+   * so a public-client entry (which has no app credential) could never render
+   * it. Omitted there rather than carrying text no surface can show. */
+  "setup?": {
     /** The provider's OFFICIAL OAuth-app creation / developer docs page (opened
      * in a new tab). A documented URL, never a guessed deep link. */
     registerUrl: "string",
@@ -231,7 +255,8 @@ export type OAuthProviderConfig = typeof OAuthProviderConfigSchema.infer;
 
 /** The v1 connectable-provider catalog. GitHub is intentionally absent — it is
  * a GitHub App (installation + PR-review inbox source), scoped to CL-3356 #8,
- * not this OAuth-user-token engine. */
+ * not this OAuth-user-token engine. xAI/Grok and ChatGPT/Codex are public-client
+ * user-self-OAuth inference providers (CL-4275 / CL-4276). */
 export const OAUTH_PROVIDER_CATALOG: readonly OAuthProviderConfig[] = [
   {
     providerName: "linear",
@@ -292,6 +317,73 @@ export const OAUTH_PROVIDER_CATALOG: readonly OAuthProviderConfig[] = [
       },
     },
   },
+  {
+    providerName: "xai-grok",
+    label: "xAI / Grok",
+    authorizationUrl: "https://auth.x.ai/oauth2/authorize",
+    tokenUrl: "https://auth.x.ai/oauth2/token",
+    scopes: [
+      "openid",
+      "profile",
+      "email",
+      "offline_access",
+      "grok-cli:access",
+      "api:access",
+    ],
+    scopeDescriptions: {
+      openid: "Verify your xAI identity",
+      profile: "Read your xAI profile",
+      email: "Read your xAI account email",
+      offline_access: "Refresh tokens so Workbench stays connected",
+      "grok-cli:access": "Use Grok via the CLI chat proxy for inference",
+      "api:access": "Access xAI API surfaces allowed for this client",
+    },
+    usePkce: true,
+    hasRefresh: true,
+    publicClientId: "b1a00492-073a-47ea-816f-4c329264a828",
+    clientSecretRequired: false,
+    inference: {
+      plugin: "grok-responses",
+      baseURL: "https://cli-chat-proxy.grok.com/v1",
+      models: ["grok-4.5", "grok-composer-2.5-fast"],
+      refreshSkewMs: 5 * 60 * 1000,
+    },
+  },
+  {
+    providerName: "chatgpt-codex",
+    label: "ChatGPT / Codex",
+    authorizationUrl: "https://auth.openai.com/oauth/authorize",
+    tokenUrl: "https://auth.openai.com/oauth/token",
+    scopes: ["openid", "profile", "email", "offline_access"],
+    scopeDescriptions: {
+      openid: "Verify your ChatGPT identity",
+      profile: "Read your ChatGPT profile",
+      email: "Read your ChatGPT account email",
+      offline_access: "Refresh tokens so Workbench stays connected",
+    },
+    usePkce: true,
+    hasRefresh: true,
+    publicClientId: "app_EMoamEEZ73f0CkXaXp7hrann",
+    clientSecretRequired: false,
+    authorizeExtraParams: {
+      codex_cli_simplified_flow: "true",
+      id_token_add_organizations: "true",
+      originator: "codex_cli_rs",
+    },
+    inference: {
+      plugin: "codex-responses",
+      baseURL: "https://chatgpt.com/backend-api",
+      models: [
+        "gpt-5.5",
+        "gpt-5.6-sol",
+        "gpt-5.6-terra",
+        "gpt-5.6-luna",
+        "gpt-5.4",
+        "gpt-5.4-mini",
+      ],
+      refreshSkewMs: 60_000,
+    },
+  },
 ] as const;
 
 export function findOAuthProviderConfig(
@@ -303,12 +395,48 @@ export function findOAuthProviderConfig(
 /** Find the connectable provider whose OAuth *app* credential is set under
  * `appCredentialProviderName` (e.g. "linear-oauth-app" → the Linear config).
  * The owner Capabilities page uses this to render the guided setup panel on the
- * app-credential row. */
+ * app-credential row. Public-client providers have no app credential. */
+/** An owner-app catalog entry: the two fields the guided setup panel needs are
+ * guaranteed present, so the panel takes this type and needs no null handling. */
+export type OAuthOwnerAppProviderConfig = OAuthProviderConfig & {
+  appCredentialProviderName: string;
+  setup: NonNullable<OAuthProviderConfig["setup"]>;
+};
+
 export function findOAuthProviderByAppCredential(
   appCredentialProviderName: string,
-): OAuthProviderConfig | undefined {
+): OAuthOwnerAppProviderConfig | undefined {
   return OAUTH_PROVIDER_CATALOG.find(
-    (p) => p.appCredentialProviderName === appCredentialProviderName,
+    (p): p is OAuthOwnerAppProviderConfig =>
+      p.appCredentialProviderName === appCredentialProviderName &&
+      p.setup !== undefined,
+  );
+}
+
+/**
+ * Whether a connectable provider is available in this deployment. Ordinary
+ * owner-app providers always are — the owner registering the app IS the opt-in.
+ * User-self-OAuth *inference* providers ride a vendor CLI's public client, so
+ * they additionally require the environment to name them in its allowlist
+ * (`USER_OAUTH_INFERENCE_PROVIDERS`); an environment whose hub origin the
+ * vendor client does not accept must not show a Connect button that dead-ends.
+ */
+export function isOAuthProviderAvailable(
+  config: OAuthProviderConfig,
+  enabledInferenceProviders: readonly string[],
+): boolean {
+  if (config.inference === undefined) return true;
+  return enabledInferenceProviders.includes(config.providerName);
+}
+
+/** Connectable providers that also inject user-OAuth inference sources. */
+export function inferenceOAuthProviders(): readonly OAuthProviderConfig[] {
+  return OAUTH_PROVIDER_CATALOG.filter(
+    (
+      p,
+    ): p is OAuthProviderConfig & {
+      inference: NonNullable<OAuthProviderConfig["inference"]>;
+    } => p.inference !== undefined,
   );
 }
 

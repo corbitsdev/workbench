@@ -32,11 +32,12 @@ const { provider, oauthClient, credential } = intxSchema;
 export type FetchLike = typeof fetch;
 
 /** The resolved OAuth *app* client for a provider: the owner-set client_id +
- * client_secret plus the hub-derived redirect URI. Obtained via
- * `resolveOwnerOAuthClient` (a tenant credential the owner set on the
- * Capabilities page) — never an env var. */
+ * client_secret (or empty secret for public clients) plus the hub-derived
+ * redirect URI. Obtained via `resolveOAuthClientForProvider` — never an env
+ * var for owner-app providers. */
 export interface OAuthClientConfig {
   clientId: string;
+  /** Empty string for public clients (PKCE only; token exchange omits secret). */
   clientSecret: string;
   redirectUri: string;
 }
@@ -46,29 +47,27 @@ export interface OAuthClientConfig {
 // row's `metadata.baseURL` slot, the existing two-value owner-credential
 // mechanism) on the Capabilities page under `appCredentialProviderName`. Returns
 // null when the owner has not registered the app yet — the caller fails loudly
-// (never stubs a client).
+// (never stubs a client). Public-client providers have no app credential.
 export async function resolveOwnerOAuthClient(
   db: HubDb,
   tenantId: string,
   providerConfig: OAuthProviderConfig,
   redirectUri: string,
 ): Promise<OAuthClientConfig | null> {
+  const appName = providerConfig.appCredentialProviderName;
+  if (!appName) return null;
   const cred = await resolveCredentialRequirement(
     db,
     tenantId,
     {
-      providerName: providerConfig.appCredentialProviderName,
+      providerName: appName,
       source: "tenant",
     },
     null,
     null,
   );
   if (!cred) return null;
-  const providerRow = await resolveProviderByName(
-    db,
-    tenantId,
-    providerConfig.appCredentialProviderName,
-  );
+  const providerRow = await resolveProviderByName(db, tenantId, appName);
   const meta = (providerRow?.metadata ?? {}) as Record<string, unknown>;
   const clientId = typeof meta["baseURL"] === "string" ? meta["baseURL"] : "";
   if (!clientId) return null;
@@ -77,6 +76,30 @@ export async function resolveOwnerOAuthClient(
     clientSecret: decryptToolCredentialSecret(cred.secret),
     redirectUri,
   };
+}
+
+/**
+ * Resolve the OAuth client used for Connect: public-client catalog entries
+ * (Grok / Codex) win immediately; otherwise the owner-set app credential.
+ * Returns null only when neither is available.
+ */
+export async function resolveOAuthClientForProvider(
+  db: HubDb,
+  tenantId: string,
+  providerConfig: OAuthProviderConfig,
+  redirectUri: string,
+): Promise<OAuthClientConfig | null> {
+  if (
+    typeof providerConfig.publicClientId === "string" &&
+    providerConfig.publicClientId.length > 0
+  ) {
+    return {
+      clientId: providerConfig.publicClientId,
+      clientSecret: "",
+      redirectUri,
+    };
+  }
+  return resolveOwnerOAuthClient(db, tenantId, providerConfig, redirectUri);
 }
 
 // ─── PKCE ──────────────────────────────────────────────────────────
@@ -167,6 +190,13 @@ export function beginConnect(args: BeginConnectArgs): { redirectUrl: string } {
     url.searchParams.set("code_challenge_method", "S256");
   }
 
+  const extra = args.providerConfig.authorizeExtraParams;
+  if (extra) {
+    for (const [key, value] of Object.entries(extra)) {
+      url.searchParams.set(key, value);
+    }
+  }
+
   return { redirectUrl: url.toString() };
 }
 
@@ -178,6 +208,7 @@ const OAuthTokenResponseSchema = type({
   "expires_in?": "number",
   "scope?": "string",
   "token_type?": "string",
+  "id_token?": "string",
 });
 export type OAuthTokenResponse = typeof OAuthTokenResponseSchema.infer;
 
@@ -189,16 +220,67 @@ export interface ExchangeArgs {
   fetchImpl: FetchLike;
 }
 
+function appendClientAuth(
+  body: URLSearchParams,
+  clientConfig: OAuthClientConfig,
+  providerConfig: OAuthProviderConfig,
+): void {
+  body.set("client_id", clientConfig.clientId);
+  // Public clients (clientSecretRequired: false) omit client_secret when empty
+  // — token servers reject an empty secret as invalid. Owner-app providers always
+  // send client_secret (legacy Linear/Attio exchange shape).
+  if (providerConfig.clientSecretRequired === false) {
+    if (clientConfig.clientSecret.length > 0) {
+      body.set("client_secret", clientConfig.clientSecret);
+    }
+    return;
+  }
+  body.set("client_secret", clientConfig.clientSecret);
+}
+
+/** Cap on the provider-controlled error text copied into an Error message. */
+const TOKEN_ERROR_DETAIL_MAX = 256;
+
+// Token-endpoint error bodies are provider-controlled and unbounded, and can
+// echo back request material (a code, a refresh token). Since these messages
+// are now logged, reduce the body to the RFC 6749 `error` / `error_description`
+// fields when it is JSON, fall back to bounded raw text when it is not, and
+// scrub anything token-shaped either way.
+export function summarizeTokenErrorBody(body: string): string {
+  let summary = body;
+  try {
+    const parsed: unknown = JSON.parse(body);
+    if (typeof parsed === "object" && parsed !== null) {
+      const rec = parsed as Record<string, unknown>;
+      const code = typeof rec["error"] === "string" ? rec["error"] : "";
+      const description =
+        typeof rec["error_description"] === "string"
+          ? rec["error_description"]
+          : "";
+      summary = [code, description].filter((p) => p.length > 0).join(": ");
+      if (summary.length === 0) summary = "<no error field in JSON body>";
+    }
+  } catch {
+    // Not JSON — fall through to the bounded raw text.
+  }
+  summary = summary
+    .replace(/\p{C}+/gu, " ")
+    .replace(/\b[A-Za-z0-9_-]{40,}\b/g, "[redacted]")
+    .trim();
+  return summary.length > TOKEN_ERROR_DETAIL_MAX
+    ? `${summary.slice(0, TOKEN_ERROR_DETAIL_MAX)}…`
+    : summary;
+}
+
 export async function exchangeCodeForToken(
   args: ExchangeArgs,
 ): Promise<OAuthTokenResponse> {
   const body = new URLSearchParams({
     grant_type: "authorization_code",
     code: args.code,
-    client_id: args.clientConfig.clientId,
-    client_secret: args.clientConfig.clientSecret,
     redirect_uri: args.clientConfig.redirectUri,
   });
+  appendClientAuth(body, args.clientConfig, args.providerConfig);
   if (args.verifier) body.set("code_verifier", args.verifier);
 
   const res = await args.fetchImpl(args.providerConfig.tokenUrl, {
@@ -210,7 +292,7 @@ export async function exchangeCodeForToken(
     body: body.toString(),
   });
   if (!res.ok) {
-    const detail = await res.text().catch(() => "");
+    const detail = summarizeTokenErrorBody(await res.text().catch(() => ""));
     throw new Error(
       `OAuth token exchange failed for ${args.providerConfig.providerName}: ${res.status} ${detail}`,
     );
@@ -223,6 +305,75 @@ export async function exchangeCodeForToken(
     );
   }
   return parsed;
+}
+
+export interface RefreshTokenArgs {
+  providerConfig: OAuthProviderConfig;
+  clientConfig: OAuthClientConfig;
+  refreshToken: string;
+  fetchImpl: FetchLike;
+}
+
+/** Refresh an access token. Used by user-OAuth inference before launch. */
+export async function refreshOAuthToken(
+  args: RefreshTokenArgs,
+): Promise<OAuthTokenResponse> {
+  const body = new URLSearchParams({
+    grant_type: "refresh_token",
+    refresh_token: args.refreshToken,
+  });
+  appendClientAuth(body, args.clientConfig, args.providerConfig);
+
+  const res = await args.fetchImpl(args.providerConfig.tokenUrl, {
+    method: "POST",
+    headers: {
+      "content-type": "application/x-www-form-urlencoded",
+      accept: "application/json",
+    },
+    body: body.toString(),
+  });
+  if (!res.ok) {
+    const detail = summarizeTokenErrorBody(await res.text().catch(() => ""));
+    throw new Error(
+      `OAuth token refresh failed for ${args.providerConfig.providerName}: ${res.status} ${detail}`,
+    );
+  }
+  const json = (await res.json()) as unknown;
+  const parsed = OAuthTokenResponseSchema(json);
+  if (parsed instanceof type.errors) {
+    throw new Error(
+      `OAuth refresh response for ${args.providerConfig.providerName} did not match the expected shape: ${parsed.summary}`,
+    );
+  }
+  return parsed;
+}
+
+/**
+ * Extract ChatGPT account id from a Codex id_token JWT payload (unverified —
+ * the token was just issued by the auth server over TLS; we only need the claim
+ * for the `chatgpt-account-id` header on inference).
+ */
+export function accountIdFromIdToken(idToken: string): string | null {
+  const parts = idToken.split(".");
+  if (parts.length < 2) return null;
+  try {
+    const payload = JSON.parse(
+      Buffer.from(parts[1]!, "base64url").toString("utf8"),
+    ) as Record<string, unknown>;
+    const orgs = payload["https://api.openai.com/auth"];
+    if (orgs && typeof orgs === "object" && orgs !== null) {
+      const accountId = (orgs as Record<string, unknown>)["chatgpt_account_id"];
+      if (typeof accountId === "string" && accountId.length > 0)
+        return accountId;
+    }
+    // Fallback claim shapes observed in some token variants.
+    if (typeof payload["chatgpt_account_id"] === "string") {
+      return payload["chatgpt_account_id"] as string;
+    }
+  } catch {
+    return null;
+  }
+  return null;
 }
 
 // ─── Provider / OAuth-client row resolution ────────────────────────
@@ -299,6 +450,8 @@ export interface InsertOAuthCredentialArgs {
   clientConfig: OAuthClientConfig;
   token: OAuthTokenResponse;
   now?: () => number;
+  /** Optional JSON metadata (e.g. Codex chatgpt_account_id). */
+  metadata?: Record<string, unknown> | null;
 }
 
 /** The credential name is deterministic per (provider, member) so a re-connect
@@ -348,6 +501,7 @@ export async function insertOAuthCredential(
   // second updates instead of throwing the unique(tenantId, name) violation the
   // prior findFirst→insert path raced on.
   const id = generateId("credential");
+  const metadata = args.metadata ?? null;
   const [row] = await args.db
     .insert(credential)
     .values({
@@ -363,6 +517,7 @@ export async function insertOAuthCredential(
       scopes,
       expiresAt,
       status: "active",
+      metadata,
     })
     .onConflictDoUpdate({
       target: [credential.tenantId, credential.name],
@@ -376,6 +531,7 @@ export async function insertOAuthCredential(
         scopes,
         expiresAt,
         status: "active",
+        metadata,
         updatedAt: new Date(now),
       },
     })
@@ -443,6 +599,15 @@ export async function completeConnect(
     fetchImpl: args.fetchImpl,
   });
 
+  let metadata: Record<string, unknown> | null = null;
+  if (
+    args.providerConfig.providerName === "chatgpt-codex" &&
+    typeof token.id_token === "string"
+  ) {
+    const accountId = accountIdFromIdToken(token.id_token);
+    if (accountId) metadata = { chatgptAccountId: accountId };
+  }
+
   const { credentialId } = await insertOAuthCredential({
     db: args.db,
     tenantId: payload.tenantId,
@@ -451,6 +616,7 @@ export async function completeConnect(
     clientConfig: args.clientConfig,
     token,
     now: () => now,
+    metadata,
   });
 
   return {

@@ -365,7 +365,7 @@ describe("owner-set OAuth app client (never env, never stubbed)", () => {
     await db.insert(intxSchema.provider).values({
       id: providerId,
       tenantId: TENANT,
-      name: FAKE.appCredentialProviderName,
+      name: FAKE.appCredentialProviderName!,
       plugin: "faketest",
       metadata: { baseURL: "owner-client-id" },
     });

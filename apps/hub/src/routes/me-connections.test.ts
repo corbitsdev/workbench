@@ -31,7 +31,7 @@ let configuredProviders: Set<string>;
 const deletedProviders: string[] = [];
 mock.module("../lib/oauth-flow", () => ({
   findMemberConnection: async () => null,
-  resolveOwnerOAuthClient: async (
+  resolveOAuthClientForProvider: async (
     _db: unknown,
     _tenantId: string,
     cfg: { providerName: string },
@@ -55,8 +55,10 @@ mock.module("../lib/tenant-provisioning", () => ({
   }),
 }));
 
+let enabledInferenceProviders: string[] = [];
 mock.module("../config", () => ({
   requireOAuthStateSecret: () => "test-state-secret",
+  enabledUserOAuthInferenceProviders: () => enabledInferenceProviders,
 }));
 
 const { createMeConnectionsRouter } = await import("./me-connections");
@@ -122,5 +124,57 @@ describe("DELETE /me/connections/:provider — disconnect (CL-3510)", () => {
     expect(res.status).toBe(404);
     expect(deletedProviders).toEqual([]);
     expect(revokeCalls).toEqual([]);
+  });
+});
+
+describe("user-OAuth inference providers are gated per deployment", () => {
+  beforeEach(() => {
+    allowedProviders = new Set([
+      "linear",
+      "attio",
+      "chatgpt-codex",
+      "xai-grok",
+    ]);
+    configuredProviders = new Set(["linear"]);
+    enabledInferenceProviders = [];
+  });
+
+  it("omits both from the listing when the environment enables neither", async () => {
+    const res = await buildApp().request("/me/connections");
+    const body = (await res.json()) as { connections: { provider: string }[] };
+    const providers = body.connections.map((c) => c.provider);
+    expect(providers).toContain("linear");
+    expect(providers).not.toContain("chatgpt-codex");
+    expect(providers).not.toContain("xai-grok");
+  });
+
+  it("lists only the provider the environment enabled", async () => {
+    enabledInferenceProviders = ["chatgpt-codex"];
+    const res = await buildApp().request("/me/connections");
+    const body = (await res.json()) as { connections: { provider: string }[] };
+    const providers = body.connections.map((c) => c.provider);
+    expect(providers).toContain("chatgpt-codex");
+    expect(providers).not.toContain("xai-grok");
+  });
+
+  it("404s an authorize for a provider the environment has not enabled", async () => {
+    const res = await buildApp().request(
+      "/me/connections/chatgpt-codex/authorize",
+      {
+        method: "POST",
+      },
+    );
+    expect(res.status).toBe(404);
+  });
+
+  it("does not 404 the authorize once the environment enables it", async () => {
+    enabledInferenceProviders = ["chatgpt-codex"];
+    const res = await buildApp().request(
+      "/me/connections/chatgpt-codex/authorize",
+      {
+        method: "POST",
+      },
+    );
+    expect(res.status).not.toBe(404);
   });
 });
