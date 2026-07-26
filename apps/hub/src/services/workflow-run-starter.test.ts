@@ -1,4 +1,4 @@
-import { describe, expect, it } from "bun:test";
+import { beforeEach, describe, expect, it } from "bun:test";
 import { mock } from "bun:test";
 import { deriveDeploymentAddress } from "@intx/workflow-deploy";
 import * as intxDb from "@intx/db";
@@ -16,6 +16,23 @@ let chainRef: string[] = [];
 mock.module("@intx/db", () => ({
   ...intxDb,
   getAncestorChain: async () => chainRef,
+}));
+
+// The owner-notification path a pre-record start failure must reuse. Mocked at
+// the module boundary so the tests assert the starter CALLS the existing
+// terminal-mail contract rather than re-implementing a parallel notifier.
+type TerminalMailCall = {
+  deps: Record<string, unknown>;
+  run: Record<string, unknown>;
+};
+const terminalMailCalls: TerminalMailCall[] = [];
+mock.module("../workflow-executor/run-terminal-mail", () => ({
+  deliverRunTerminalMail: async (
+    deps: Record<string, unknown>,
+    run: Record<string, unknown>,
+  ) => {
+    terminalMailCalls.push({ deps, run });
+  },
 }));
 
 const { createWorkflowRunStarter } = await import("./workflow-run-starter");
@@ -39,6 +56,8 @@ type MakeDbOptions = {
 
 type TestDb = HubDb & {
   inserted: Record<string, unknown>[];
+  /** Rows written through the per-step projection upsert (array-valued insert). */
+  stepRows: Record<string, unknown>[];
   failUpdateCalls: number;
   deploymentIdSets: string[];
   /** The `where` the starter passed to the catalog findMany, for seam pins. */
@@ -47,6 +66,7 @@ type TestDb = HubDb & {
 
 function makeDb(candidates: Candidate[], options: MakeDbOptions = {}): TestDb {
   const inserted: Record<string, unknown>[] = [];
+  const stepRows: Record<string, unknown>[] = [];
   let failUpdateCalls = 0;
   const deploymentIdSets: string[] = [];
   const failFlipRows = options.failFlipRows ?? [{ id: "flipped" }];
@@ -67,8 +87,20 @@ function makeDb(candidates: Candidate[], options: MakeDbOptions = {}): TestDb {
       },
     },
     insert: () => ({
-      values: async (row: Record<string, unknown>) => {
-        inserted.push(row);
+      // Run-record inserts pass one row and are awaited directly; the per-step
+      // projection upsert passes an array and chains onConflictDoUpdate.
+      values: (row: Record<string, unknown> | Record<string, unknown>[]) => {
+        if (Array.isArray(row)) stepRows.push(...row);
+        else inserted.push(row);
+        return {
+          onConflictDoUpdate: async () => {},
+          then(
+            onFulfilled?: (v: unknown) => unknown,
+            onRejected?: (e: unknown) => unknown,
+          ) {
+            return Promise.resolve(undefined).then(onFulfilled, onRejected);
+          },
+        };
       },
     }),
     update: () => ({
@@ -100,6 +132,7 @@ function makeDb(candidates: Candidate[], options: MakeDbOptions = {}): TestDb {
       },
     }),
     inserted,
+    stepRows,
     deploymentIdSets,
     get failUpdateCalls() {
       return failUpdateCalls;
@@ -974,5 +1007,171 @@ describe("createWorkflowRunStarter", () => {
     expect(delivered.slackChannelId).toBe("C0123456789");
     expect(delivered.growthEngineListId).toBe(80089);
     expect(delivered.enterpriseEngineListId).toBe(80090);
+  });
+});
+
+// CL-4586: a scheduled (or webhook) fire that dies BEFORE its run row exists —
+// an enricher throwing on a stale schedule row, a required input still missing
+// after enrichment — used to leave nothing behind at all: no run in the run
+// list, no inbox notice, only a hub log line the owner never sees. These pin
+// the durable-failure record + owner notification for that window.
+describe("createWorkflowRunStarter pre-record failures", () => {
+  beforeEach(() => {
+    terminalMailCalls.length = 0;
+  });
+
+  // The live daily-schedule failure mode: the schedule's owning principal (or
+  // the identity behind it) no longer resolves, so the kind's enricher throws
+  // with an actionable message instead of returning a payload.
+  const throwingIdentity = async () => {
+    throw new Error("Re-pick the recipients on the schedule");
+  };
+
+  it("records a terminal failed run carrying the enricher's message when an unattended fire's enrichment throws", async () => {
+    chainRef = ["t-root"];
+    const db = makeDb([candidate({ deploymentId: "dep-1", kind: "heartbeat" })]);
+    let provisioned = false;
+    const starter = createWorkflowRunStarter(
+      starterDeps({
+        db,
+        resolveUserIdentity: throwingIdentity as never,
+        provisionRunDeployment: async () => {
+          provisioned = true;
+          return { deploymentId: "dep-run-1" };
+        },
+      }),
+    );
+
+    const result = await starter.startRun({
+      kind: "heartbeat",
+      tenantId: "t-root",
+      input: { reason: "scheduled-heartbeat" },
+      creatorPrincipalId: "prn-owner",
+      source: "scheduler",
+    });
+
+    expect(result.ok).toBe(false);
+    if (result.ok) throw new Error("expected a failed start");
+    expect(result.reason).toBe("enrichment_failed");
+    expect(result.message).toContain("Re-pick the recipients on the schedule");
+    expect(provisioned).toBe(false);
+
+    // The run is visible in the run list, terminal, and attributed to the owner.
+    expect(db.inserted).toHaveLength(1);
+    expect(db.inserted[0]?.status).toBe("failed");
+    expect(db.inserted[0]?.deploymentId).toBeNull();
+    expect(db.inserted[0]?.principalId).toBe("prn-owner");
+    expect(db.inserted[0]?.triggerSource).toBe("scheduler");
+    expect(db.inserted[0]?.endedAt).toBeInstanceOf(Date);
+
+    // The WHY is durable, not only in the mail body.
+    expect(db.stepRows).toHaveLength(1);
+    expect(db.stepRows[0]?.runId).toBe(db.inserted[0]?.id);
+    expect(db.stepRows[0]?.phase).toBe("failed");
+    expect(db.stepRows[0]?.retriesExhausted).toBe(true);
+    expect(String(db.stepRows[0]?.errorMessage)).toContain(
+      "Re-pick the recipients on the schedule",
+    );
+  });
+
+  it("notifies the owner through the existing terminal-mail path when enrichment throws", async () => {
+    chainRef = ["t-root"];
+    const db = makeDb([candidate({ deploymentId: "dep-1", kind: "heartbeat" })]);
+    const starter = createWorkflowRunStarter(
+      starterDeps({ db, resolveUserIdentity: throwingIdentity as never }),
+    );
+
+    await starter.startRun({
+      kind: "heartbeat",
+      tenantId: "t-root",
+      input: { reason: "scheduled-heartbeat" },
+      creatorPrincipalId: "prn-owner",
+      source: "scheduler",
+    });
+
+    expect(terminalMailCalls).toHaveLength(1);
+    const call = terminalMailCalls[0];
+    expect(call?.deps.deploymentDomain).toBe(DOMAIN);
+    expect(call?.run).toMatchObject({
+      runId: db.inserted[0]?.id,
+      kind: "heartbeat",
+      tenantId: "t-root",
+      principalId: "prn-owner",
+      deploymentId: null,
+      status: "failed",
+    });
+    expect(String(call?.run.error)).toContain(
+      "Re-pick the recipients on the schedule",
+    );
+  });
+
+  // Not enricher-specific: the other pre-record exit (required inputs still
+  // missing after enrichment) must leave the same durable trace.
+  it("records the same terminal failed run when an unattended fire fails input validation", async () => {
+    chainRef = ["t-root"];
+    const db = makeDb([
+      candidate({ deploymentId: "dep-1", kind: "prospect-engine" }),
+    ]);
+    const starter = createWorkflowRunStarter(starterDeps({ db }));
+
+    const result = await starter.startRun({
+      kind: "prospect-engine",
+      tenantId: "t-root",
+      input: { reason: "scheduled" },
+      creatorPrincipalId: "prn-owner",
+      source: "scheduler",
+    });
+
+    expect(result.ok).toBe(false);
+    if (result.ok) throw new Error("expected a failed start");
+    expect(result.reason).toBe("invalid_input");
+    expect(db.inserted).toHaveLength(1);
+    expect(db.inserted[0]?.status).toBe("failed");
+    expect(terminalMailCalls).toHaveLength(1);
+    expect(String(terminalMailCalls[0]?.run.error)).toContain(
+      "Engine - Growth Sumble list id",
+    );
+  });
+
+  // A human-initiated start already gets the message in its HTTP response;
+  // writing a failed run row and mailing them about their own click is noise.
+  it("leaves no run row and sends no mail when an attended start's enrichment throws", async () => {
+    chainRef = ["t-root"];
+    const db = makeDb([candidate({ deploymentId: "dep-1", kind: "heartbeat" })]);
+    const starter = createWorkflowRunStarter(
+      starterDeps({ db, resolveUserIdentity: throwingIdentity as never }),
+    );
+
+    const result = await starter.startRun({
+      kind: "heartbeat",
+      tenantId: "t-root",
+      input: {},
+      source: "manual",
+    });
+
+    expect(result.ok).toBe(false);
+    if (result.ok) throw new Error("expected a failed start");
+    expect(result.message).toContain("Re-pick the recipients on the schedule");
+    expect(db.inserted).toHaveLength(0);
+    expect(terminalMailCalls).toHaveLength(0);
+  });
+
+  it("leaves a successful scheduled fire untouched: one provisioning row, no step row, no mail", async () => {
+    chainRef = ["t-root"];
+    const db = makeDb([candidate({ deploymentId: "dep-1" })]);
+    const starter = createWorkflowRunStarter(starterDeps({ db }));
+
+    const result = await starter.startRun({
+      kind: "generic-workflow",
+      tenantId: "t-root",
+      input: {},
+      source: "scheduler",
+    });
+
+    expect(result.ok).toBe(true);
+    expect(db.inserted).toHaveLength(1);
+    expect(db.inserted[0]?.status).toBe("provisioning");
+    expect(db.stepRows).toHaveLength(0);
+    expect(terminalMailCalls).toHaveLength(0);
   });
 });

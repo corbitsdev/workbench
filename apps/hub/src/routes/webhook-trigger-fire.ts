@@ -167,6 +167,11 @@ async function dispatchRun(
       tenantId: trigger.tenantId,
       creatorPrincipalId: trigger.ownerMemberPrincipalId,
       input: { reason: "webhook", triggerId: trigger.id, payload },
+      // Unattended, like the scheduler: the caller already has its 202 and
+      // never sees a start failure, so pre-record failures must be recorded
+      // and mailed rather than only logged (CL-4586). Budget behaviour is
+      // unchanged — only `scheduler` is exempt.
+      source: "webhook",
     });
     if (!result.ok) {
       log.error("webhook-triggered run start failed", {

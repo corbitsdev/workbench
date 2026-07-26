@@ -20,7 +20,10 @@ import {
   failRunIfStillProvisioning,
   insertRunRecord,
   setRunDeployment,
+  upsertRunSteps,
 } from "../workflow-executor/run-store";
+import { deliverRunTerminalMail } from "../workflow-executor/run-terminal-mail";
+import type { MailboxEventBus } from "../lib/mailbox-events";
 
 const log = getLogger(["services", "workflow-run-starter"]);
 
@@ -33,6 +36,11 @@ const log = getLogger(["services", "workflow-run-starter"]);
 // scheduled traffic and far below what a runaway trigger loop would produce.
 const WORKFLOW_MAX_STARTS_PER_HOUR_PER_TENANT = 60;
 const WORKFLOW_START_WINDOW_MS = 60 * 60 * 1000;
+
+// Step id for the synthetic per-step projection row that carries WHY a start
+// failed before the run ever reached the sidecar. Not a workflow step — no
+// definition declares it — so it can never collide with a real step id.
+const PRE_START_STEP_ID = "start";
 
 // Callable run-start: resolves a published workflow kind along the tenant
 // chain, provisions a FRESH per-run deployment (pins + stages step tool
@@ -93,6 +101,7 @@ export type StartRunResult =
       reason:
         | "not_found"
         | "invalid_input"
+        | "enrichment_failed"
         | "provision_failed"
         | "attach_failed"
         | "delivery_failed"
@@ -147,6 +156,9 @@ export function createWorkflowRunStarter(deps: {
   // Optional: tear down a provisioned deployment when start fails after the
   // deploy was minted (same contract as run-exec's abandoned-deployment reclaim).
   reclaimDeployment?: ReclaimDeploymentFn;
+  /** Live mailbox fan-out for the pre-record failure notice (CL-4586); the
+   * same bus every other mailbox writer publishes on. */
+  mailboxEventBus?: MailboxEventBus;
   /** Clock injection point for the per-tenant start-budget window in tests. */
   now?: () => number;
 }): WorkflowRunStarter {
@@ -155,6 +167,105 @@ export function createWorkflowRunStarter(deps: {
     WORKFLOW_START_WINDOW_MS,
     deps.now,
   );
+
+  // CL-4586: leave a durable, owner-visible trace for a start that dies BEFORE
+  // `insertRunRecord` — an enricher throwing on a stale schedule row, or a
+  // required input still missing after enrichment. Without this the fire
+  // produced nothing at all: no run in the run list, no inbox notice, only a
+  // hub log line that reaches operators via Sentry and never the owner, while
+  // the schedule's fired-marker had already advanced.
+  //
+  // The row is inserted ALREADY TERMINAL (`failed`, null deployment) rather
+  // than live-then-failed, deliberately: every reconciler that could touch it
+  // is scoped away from that shape — `failOrphanedRuns` selects
+  // provisioning/running/awaiting, `reconcileAll` / `reconcileAwaiting` require
+  // a non-null deploymentId, `reclaimOrphanedDeployments` requires a non-null
+  // deploymentId, and both stalled-run sweeps require `awaiting`. So a run that
+  // never reached the sidecar is inert to the deployment lifecycle, and there
+  // is no window in which it looks startable.
+  //
+  // The failure REASON has no column on the run index, so it is written to the
+  // per-step projection as the run's single `start` step — the same table the
+  // dead-parked-run reconciler already reads failure text from. That sweep
+  // requires `awaiting`, so this row can never trip it.
+  async function recordPreStartFailure(args: {
+    runId: string;
+    kind: string;
+    tenantId: string;
+    principalId: string;
+    input: Record<string, unknown>;
+    source: StartRunInput["source"];
+    message: string;
+  }): Promise<void> {
+    // A human-initiated start already receives this message in its HTTP
+    // response; writing a failed run row and mailing them about their own
+    // click would be noise. Only unattended fires — nobody is watching —
+    // need the durable record.
+    if (args.source !== "scheduler" && args.source !== "webhook") return;
+    const endedAt = new Date(deps.now ? deps.now() : Date.now());
+    try {
+      await insertRunRecord(deps.db, {
+        runId: args.runId,
+        deploymentId: null,
+        kind: args.kind,
+        tenantId: args.tenantId,
+        principalId: args.principalId,
+        input: args.input,
+        originConversationId: null,
+        status: "failed",
+        triggerSource: args.source,
+        endedAt,
+      });
+      await upsertRunSteps(deps.db, args.runId, [
+        {
+          stepId: PRE_START_STEP_ID,
+          phase: "failed",
+          attempts: 1,
+          startedAt: endedAt.toISOString(),
+          endedAt: endedAt.toISOString(),
+          errorMessage: args.message,
+          // The run never reached the sidecar; nothing will ever retry it.
+          retriesExhausted: true,
+        },
+      ]);
+    } catch (err) {
+      log.error("workflow run-start failure record write failed", {
+        kind: args.kind,
+        runId: args.runId,
+        error: err instanceof Error ? err : new Error(String(err)),
+      });
+      return;
+    }
+    // Same notification rail every other terminal failure uses, so the
+    // per-member `notifyRunFailure` preference and the repeat-failure breaker
+    // (a permanently-broken daily schedule mails at most
+    // MAX_CONSECUTIVE_FAILURE_MAILS times before pausing) apply unchanged.
+    await deliverRunTerminalMail(
+      {
+        db: deps.db,
+        deploymentDomain: deps.deploymentDomain,
+        ...(deps.mailboxEventBus !== undefined
+          ? { mailboxEventBus: deps.mailboxEventBus }
+          : {}),
+      },
+      {
+        runId: args.runId,
+        kind: args.kind,
+        tenantId: args.tenantId,
+        principalId: args.principalId,
+        deploymentId: null,
+        status: "failed",
+        error: args.message,
+        failedSteps: [],
+      },
+    ).catch((err: unknown) => {
+      log.error("workflow run-start failure mail failed", {
+        kind: args.kind,
+        runId: args.runId,
+        error: err instanceof Error ? err : new Error(String(err)),
+      });
+    });
+  }
 
   async function startRun({
     kind,
@@ -227,26 +338,56 @@ export function createWorkflowRunStarter(deps: {
 
     const runId = mintWorkflowRunId();
     const runPrincipalId = creatorPrincipalId ?? definition.principalId;
-    const enrichedInput = await enrichTriggerPayloadForStart(
-      {
-        db: deps.db,
-        resolveUserIdentity: deps.resolveUserIdentity,
-        ...(deps.now !== undefined ? { now: deps.now } : {}),
-      },
-      {
+    const failPreStart = async (
+      reason: "enrichment_failed" | "invalid_input",
+      message: string,
+    ): Promise<StartRunResult> => {
+      await recordPreStartFailure({
+        runId,
         kind: definition.kind,
         tenantId: definition.tenantId,
         principalId: runPrincipalId,
-        ...(source === "scheduler"
-          ? {
-              lastFiredDayUtc: heartbeatFire?.lastFiredDayUtc ?? null,
-              anchorMinuteUtc: heartbeatFire?.anchorMinuteUtc ?? 0,
-              lookback: "scheduled" as const,
-            }
-          : {}),
-      },
-      input,
-    );
+        input,
+        source,
+        message,
+      });
+      return { ok: false, reason, message };
+    };
+
+    let enrichedInput: Record<string, unknown>;
+    try {
+      enrichedInput = await enrichTriggerPayloadForStart(
+        {
+          db: deps.db,
+          resolveUserIdentity: deps.resolveUserIdentity,
+          ...(deps.now !== undefined ? { now: deps.now } : {}),
+        },
+        {
+          kind: definition.kind,
+          tenantId: definition.tenantId,
+          principalId: runPrincipalId,
+          ...(source === "scheduler"
+            ? {
+                lastFiredDayUtc: heartbeatFire?.lastFiredDayUtc ?? null,
+                anchorMinuteUtc: heartbeatFire?.anchorMinuteUtc ?? 0,
+                lookback: "scheduled" as const,
+              }
+            : {}),
+        },
+        input,
+      );
+    } catch (err) {
+      // An enricher throwing is a real, actionable product failure (a schedule
+      // whose recipients were deleted, a blank refId), not an internal fault —
+      // its message is written to the record and mailed verbatim.
+      const message = err instanceof Error ? err.message : String(err);
+      log.error("workflow run-start enrichment failed", {
+        kind,
+        runId,
+        error: err instanceof Error ? err : new Error(String(err)),
+      });
+      return failPreStart("enrichment_failed", message);
+    }
 
     // Fail fast, before any deployment is provisioned, when a kind's declared
     // required inputs are still missing after enrichment — never let a run
@@ -257,11 +398,7 @@ export function createWorkflowRunStarter(deps: {
       enrichedInput,
     );
     if (!validation.ok) {
-      return {
-        ok: false,
-        reason: "invalid_input",
-        message: validation.message,
-      };
+      return failPreStart("invalid_input", validation.message);
     }
 
     const triggerPayload = { ...enrichedInput, runId };

@@ -176,6 +176,10 @@ export async function insertRunRecord(
     // CL-3509: the trigger path that started the run ("scheduler" for an
     // attached-workflow schedule fire); omitted for interactive/manual starts.
     triggerSource?: string;
+    // CL-4586: run wall-clock end, for a run inserted ALREADY terminal (a start
+    // that died before the run could reach the sidecar, so no event log will
+    // ever fold an endedAt for it).
+    endedAt?: Date;
   },
 ): Promise<RunState> {
   const status = args.status ?? "running";
@@ -191,6 +195,7 @@ export async function insertRunRecord(
     ...(args.triggerSource !== undefined
       ? { triggerSource: args.triggerSource }
       : {}),
+    ...(args.endedAt !== undefined ? { endedAt: args.endedAt } : {}),
   });
   return {
     runId: args.runId,

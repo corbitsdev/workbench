@@ -1762,6 +1762,7 @@ const runStarter = createWorkflowRunStarter({
   cryptoProvider,
   resolveUserIdentity,
   reclaimDeployment,
+  mailboxEventBus,
 });
 
 // Public webhook firing surface: no session, authenticated only by

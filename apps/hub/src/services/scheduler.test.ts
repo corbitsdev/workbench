@@ -411,3 +411,44 @@ describe("createScheduler", () => {
     ]);
   });
 });
+
+// CL-4586: a schedule that can never start (its recipients were deleted, so
+// every fire's enrichment throws) must not become a retry storm. The fired
+// marker is persisted BEFORE the start attempt and is deliberately NOT rolled
+// back on failure — the durable failure record and owner notification the run
+// starter writes are what make the fire visible, not a re-fire. So the
+// per-window attempt budget is exactly one, failure or not.
+describe("createScheduler bounded re-fire on a permanently-failing schedule", () => {
+  it("attempts a permanently-failing schedule at most once per window, across many ticks", async () => {
+    let attempts = 0;
+    const marked: number[] = [];
+    const store = makeStore([row({ intervalMinutes: 5, anchorMinuteUtc: 0 })]);
+    const scheduler = createScheduler({
+      isTenantEnabled: async () => true,
+      ...store,
+      markFired: async (id, windowIndex) => {
+        marked.push(windowIndex);
+        await store.markFired(id, windowIndex);
+      },
+      startWorkflowRun: async () => {
+        attempts += 1;
+        throw new Error("run-start enrichment_failed: recipients are gone");
+      },
+    });
+
+    const t0 = Date.UTC(2026, 0, 2, 13, 0, 0);
+    // Five ticks inside one 5-minute window: the failure must not re-arm the row.
+    for (let i = 0; i < 5; i++) await scheduler.tick(t0 + i * 60_000);
+    expect(attempts).toBe(1);
+    expect(marked).toHaveLength(1);
+
+    // The next window gets exactly one further attempt — bounded, not unbounded.
+    await scheduler.tick(t0 + 5 * 60_000);
+    await scheduler.tick(t0 + 6 * 60_000);
+    expect(attempts).toBe(2);
+    expect(marked).toEqual([
+      windowIndexFor(t0, 5, 0),
+      windowIndexFor(t0 + 5 * 60_000, 5, 0),
+    ]);
+  });
+});
