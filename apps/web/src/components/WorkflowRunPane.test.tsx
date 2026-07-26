@@ -278,6 +278,23 @@ describe("WorkflowRunPane", () => {
     expect(stopMutate).toHaveBeenCalledWith("wfr_1");
   });
 
+  it("offers the embedded inline Stop bar while still provisioning (CL-4570, CL-4553)", async () => {
+    // A run can sit in `provisioning` for ~15s (CL-4553) before its deployment
+    // comes up — a state a user might also want out of. `provisioning` is not
+    // in the terminal set, so the same `!terminal` gate that shows Stop for
+    // `awaiting` must also show it here.
+    record = makeRecord({ status: "provisioning" });
+    render(
+      <WorkflowRunPane
+        deploymentId="wfr_1"
+        onClose={() => undefined}
+        embedded
+      />,
+      { wrapper },
+    );
+    await waitFor(() => screen.getByTestId("run-pane-stop"));
+  });
+
   it("hides the embedded inline Stop bar for terminal runs (CL-4570)", async () => {
     record = makeRecord({ status: "completed" });
     render(
