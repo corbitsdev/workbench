@@ -182,7 +182,7 @@
   {
     "name": "@workbench/workflow-attio-task-agent",
     "version": "0.1.0",
-    "integrity": "sha512-pZ7RweP4DhmNpPooohfRAmYWAtVqAFvtGKfgGOQRLjo8Ll6f14MPNp9YwKQEf9tK6nl+ZSr/CVsju7bbTK80CA==",
+    "integrity": "sha512-yxKbpcFmi/0mJAi0cI4Kmb7tPUcrVP13a3mFb1zUu/JXdBXCNYgUogi0pFw1m21jYO5XY4xzp/c/DuXAZAetwQ==",
     "tarballFilename": "@workbench-workflow-attio-task-agent-0.1.0.tgz"
   },
   {
@@ -242,7 +242,7 @@
   {
     "name": "@workbench/workflow-pain-point-collateral",
     "version": "0.1.0",
-    "integrity": "sha512-WifeSox82AJ+4AEY0L5d+RkM55mJPFJbaqvpol1iVLIIvazA9JcpyCll6/JwcKRpL82cyiFP6rkErYWCg5sHvg==",
+    "integrity": "sha512-oyP78JkdqNpmufYcYh3mDWtutw8DqXmBCr97wxoHSZgK+mcBk69koc3wTE5YvNxpcCNJch5lFfDqNJv9psqiUg==",
     "tarballFilename": "@workbench-workflow-pain-point-collateral-0.1.0.tgz"
   },
   {
@@ -254,7 +254,7 @@
   {
     "name": "@workbench/workflow-reddit-opportunity-scanner",
     "version": "0.1.0",
-    "integrity": "sha512-Ocd1lRofUaKRgYVE0y/bS9KHhFgKj+WfYqIFghXSKGfXG9adkL006y1+NEmlDkkFtE/4B1gNsEb00MX0U8hfzw==",
+    "integrity": "sha512-L7LZPDLJFYexu2HiKk1VU8nsKU4b7bLO1NPTTAodAOjYxS3map0RKfV37eZLU97mJHIGXfnt4sgEdvDYnK5JsA==",
     "tarballFilename": "@workbench-workflow-reddit-opportunity-scanner-0.1.0.tgz"
   },
   {
