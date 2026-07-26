@@ -1029,7 +1029,9 @@ describe("createWorkflowRunStarter pre-record failures", () => {
 
   it("records a terminal failed run carrying the enricher's message when an unattended fire's enrichment throws", async () => {
     chainRef = ["t-root"];
-    const db = makeDb([candidate({ deploymentId: "dep-1", kind: "heartbeat" })]);
+    const db = makeDb([
+      candidate({ deploymentId: "dep-1", kind: "heartbeat" }),
+    ]);
     let provisioned = false;
     const starter = createWorkflowRunStarter(
       starterDeps({
@@ -1076,7 +1078,9 @@ describe("createWorkflowRunStarter pre-record failures", () => {
 
   it("notifies the owner through the existing terminal-mail path when enrichment throws", async () => {
     chainRef = ["t-root"];
-    const db = makeDb([candidate({ deploymentId: "dep-1", kind: "heartbeat" })]);
+    const db = makeDb([
+      candidate({ deploymentId: "dep-1", kind: "heartbeat" }),
+    ]);
     const starter = createWorkflowRunStarter(
       starterDeps({ db, resolveUserIdentity: throwingIdentity as never }),
     );
@@ -1137,7 +1141,9 @@ describe("createWorkflowRunStarter pre-record failures", () => {
   // writing a failed run row and mailing them about their own click is noise.
   it("leaves no run row and sends no mail when an attended start's enrichment throws", async () => {
     chainRef = ["t-root"];
-    const db = makeDb([candidate({ deploymentId: "dep-1", kind: "heartbeat" })]);
+    const db = makeDb([
+      candidate({ deploymentId: "dep-1", kind: "heartbeat" }),
+    ]);
     const starter = createWorkflowRunStarter(
       starterDeps({ db, resolveUserIdentity: throwingIdentity as never }),
     );

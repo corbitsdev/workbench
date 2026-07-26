@@ -82,9 +82,7 @@ const { createAdminRouter } = await import("./admin");
 // a member holds none. The guard's isAdmin() -> authorize() runs for real, so
 // this exercises the route -> guard -> grant-evaluation seam end to end.
 function grantStoreFor(): GrantStore {
-  const collectGrants = async (
-    principalId: string,
-  ): Promise<GrantRule[]> => {
+  const collectGrants = async (principalId: string): Promise<GrantRule[]> => {
     if (principalId !== "prn_admin") return [];
     return [
       {

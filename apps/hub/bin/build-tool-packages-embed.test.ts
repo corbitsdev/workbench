@@ -58,10 +58,10 @@ describe("committed embedded tool packages are in sync with source", () => {
       integrity: string;
     }[];
     const tarballsDir = join(embeddedToolPackagesDir(), "tarballs");
-    const onDisk = (await readdir(tarballsDir)).filter((f) => f.endsWith(".tgz"));
-    expect(onDisk.sort()).toEqual(
-      rows.map((r) => r.tarballFilename).sort(),
+    const onDisk = (await readdir(tarballsDir)).filter((f) =>
+      f.endsWith(".tgz"),
     );
+    expect(onDisk.sort()).toEqual(rows.map((r) => r.tarballFilename).sort());
     for (const row of rows) {
       const bytes = await readFile(join(tarballsDir, row.tarballFilename));
       expect(integrityFromTarballBytes(bytes)).toBe(row.integrity);

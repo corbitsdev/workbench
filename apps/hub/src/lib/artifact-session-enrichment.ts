@@ -3,14 +3,13 @@ import type { ArtifactSource, SessionStatus } from "@workbench/shared";
 import type { HubDb } from "../db";
 import { workflowRun, workflowRunRecord } from "../db/schema";
 
-type WorkflowRunRecordStatus = (typeof workflowRunRecord.$inferSelect)["status"];
+type WorkflowRunRecordStatus =
+  (typeof workflowRunRecord.$inferSelect)["status"];
 import { loadWorkflowKindLabels } from "./workflow-kind-labels";
 import type { WorkflowMeta } from "./workflow-meta";
 
 /** Provenance session key stored on artifact `source` by workflow/agent writers. */
-export function sessionProvenanceKey(
-  source: ArtifactSource,
-): string | null {
+export function sessionProvenanceKey(source: ArtifactSource): string | null {
   const raw = (source as Record<string, unknown>).sessionId;
   return typeof raw === "string" && raw.length > 0 ? raw : null;
 }
@@ -97,10 +96,7 @@ export async function attachArtifactSessionEnrichment(
   const byDeploymentId = new Map<string, (typeof runRows)[number]>();
   for (const row of runRows) {
     if (!byRunId.has(row.id)) byRunId.set(row.id, row);
-    if (
-      row.deploymentId !== null &&
-      !byDeploymentId.has(row.deploymentId)
-    ) {
+    if (row.deploymentId !== null && !byDeploymentId.has(row.deploymentId)) {
       byDeploymentId.set(row.deploymentId, row);
     }
   }
@@ -141,10 +137,7 @@ export async function attachArtifactSessionEnrichment(
     const key = sessionProvenanceKey(row.source);
     if (key === null) continue;
 
-    const run =
-      byRunId.get(key) ??
-      byDeploymentId.get(key) ??
-      null;
+    const run = byRunId.get(key) ?? byDeploymentId.get(key) ?? null;
     if (run === null) continue;
 
     row.sessionId = run.id;

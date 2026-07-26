@@ -92,7 +92,12 @@ import {
   LINEAR_GET_TEAM_DEFINITION,
   LINEAR_LIST_TEAMS_DEFINITION,
 } from "./teams";
-import { getUser, listUsers, LINEAR_GET_USER_DEFINITION, LINEAR_LIST_USERS_DEFINITION } from "./users";
+import {
+  getUser,
+  listUsers,
+  LINEAR_GET_USER_DEFINITION,
+  LINEAR_LIST_USERS_DEFINITION,
+} from "./users";
 import { listViews, LINEAR_LIST_VIEWS_DEFINITION } from "./views";
 import {
   deleteWebhook,
@@ -110,7 +115,11 @@ export const LINEAR_HUB_TOOLS: Record<string, LinearHubToolEntry> = {
     listIssues,
     "read",
   ),
-  linear_get_issue: linearHubEntry(LINEAR_GET_ISSUE_DEFINITION, getIssue, "read"),
+  linear_get_issue: linearHubEntry(
+    LINEAR_GET_ISSUE_DEFINITION,
+    getIssue,
+    "read",
+  ),
   linear_create_issue: linearHubEntry(
     LINEAR_CREATE_ISSUE_DEFINITION,
     createIssue,

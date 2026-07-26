@@ -27,12 +27,14 @@ export const UI_BLOCK_KIND_INVENTORY: readonly UIBlockKindInventoryEntry[] = [
   {
     kind: "card",
     label: "Card",
-    useWhen: "Single entity summary — company, deal, person, or decision snapshot.",
+    useWhen:
+      "Single entity summary — company, deal, person, or decision snapshot.",
   },
   {
     kind: "list",
     label: "List",
-    useWhen: "Scannable bullets or numbered items with optional meta and badges.",
+    useWhen:
+      "Scannable bullets or numbered items with optional meta and badges.",
   },
   {
     kind: "table",
@@ -42,7 +44,8 @@ export const UI_BLOCK_KIND_INVENTORY: readonly UIBlockKindInventoryEntry[] = [
   {
     kind: "preview",
     label: "Preview",
-    useWhen: "Link or file preview with title, description, and optional thumbnail.",
+    useWhen:
+      "Link or file preview with title, description, and optional thumbnail.",
   },
   {
     kind: "link",

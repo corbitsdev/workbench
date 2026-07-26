@@ -1,4 +1,9 @@
-import type { AuthorizeFn, KindHandler, Principal, ValidatePushResult } from "./repo-store";
+import type {
+  AuthorizeFn,
+  KindHandler,
+  Principal,
+  ValidatePushResult,
+} from "./repo-store";
 
 // CL-4215: skill drafts are storage-only. They exist so a human/agent can
 // author a skill's content under git-backed review, and are read back by

@@ -51,10 +51,7 @@ mock.module("./agent-tools", () => ({
     }
     return {
       definitions: allDefinitions,
-      async run(
-        call: { id: string; name: string },
-        signal: AbortSignal,
-      ) {
+      async run(call: { id: string; name: string }, signal: AbortSignal) {
         const runner = toolToRunner.get(call.name);
         if (!runner) {
           return {
@@ -163,9 +160,11 @@ describe("warm single-step agent: LLM-safe alias collision is logged, not silent
     const storage = await createIsogitStore(storeDir, async (p: string) => p);
 
     let capturedDef:
-      | { toolFactories: readonly ((env: unknown) => {
-          definitions: { name: string }[];
-        })[] }
+      | {
+          toolFactories: readonly ((env: unknown) => {
+            definitions: { name: string }[];
+          })[];
+        }
       | undefined;
     const factory = createStepAgentFactory({
       warmKeep: true,

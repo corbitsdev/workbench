@@ -94,7 +94,9 @@ const skillAccessColKey = new Map<unknown, keyof SkillAccessRow>([
   [skillAccessTable.description, "description"],
 ]);
 
-const userColKey = new Map<unknown, string>([[intxSchema.user.name, "userName"]]);
+const userColKey = new Map<unknown, string>([
+  [intxSchema.user.name, "userName"],
+]);
 
 function keyFor(col: unknown): string {
   const assetKey = assetColKey.get(col);
@@ -257,7 +259,9 @@ function makeFakeDb() {
           // Return a real Promise so both forms work, with `.returning()`
           // attached as an extra method on it.
           const inserted = insertReturning();
-          const withReturning = inserted.then(() => undefined) as Promise<void> & {
+          const withReturning = inserted.then(
+            () => undefined,
+          ) as Promise<void> & {
             returning: () => Promise<unknown[]>;
           };
           withReturning.returning = () => inserted;
@@ -289,9 +293,9 @@ function makeFakeDb() {
           if (table === intxSchema.asset) {
             deleted = Promise.resolve(deleteAsset(cond));
           } else if (table === skillAccessTable) {
-            deleted = Promise.resolve(deleteSkillAccess(cond)) as unknown as Promise<
-              AssetRow[]
-            >;
+            deleted = Promise.resolve(
+              deleteSkillAccess(cond),
+            ) as unknown as Promise<AssetRow[]>;
           } else {
             throw new Error("fake db: unexpected delete table");
           }
@@ -300,7 +304,9 @@ function makeFakeDb() {
           // `.where(...)` (best-effort cleanup on a failure path). Return a
           // real Promise so both forms work, with `.returning()` attached
           // as an extra method on it.
-          const withReturning = deleted.then(() => undefined) as Promise<void> & {
+          const withReturning = deleted.then(
+            () => undefined,
+          ) as Promise<void> & {
             returning: () => Promise<AssetRow[]>;
           };
           withReturning.returning = () => deleted;
@@ -389,7 +395,11 @@ async function createDraft(
 describe("upsertSkillDraft / listSkillDrafts / getOwnedSkillDraftItem", () => {
   it("creates a draft, then updates the same draft on re-authoring", async () => {
     const draftId = await createDraft("my-skill", null);
-    const listed = await listSkillDrafts(fakeDb.db, repoStore.repoStore, VIEWER);
+    const listed = await listSkillDrafts(
+      fakeDb.db,
+      repoStore.repoStore,
+      VIEWER,
+    );
     expect(listed).toHaveLength(1);
     expect(listed[0]?.id).toBe(draftId);
     expect(listed[0]?.content).toBe("# my-skill\ncontent");
@@ -491,7 +501,10 @@ describe("approveSkillDraft", () => {
     expect(fulfilled).toHaveLength(1);
     expect(rejected).toHaveLength(1);
     const rejectedOutcome = rejected[0];
-    if (rejectedOutcome !== undefined && rejectedOutcome.status === "rejected") {
+    if (
+      rejectedOutcome !== undefined &&
+      rejectedOutcome.status === "rejected"
+    ) {
       expect(String(rejectedOutcome.reason)).toContain("no longer pending");
     }
     // The draft asset is gone regardless of which side won.

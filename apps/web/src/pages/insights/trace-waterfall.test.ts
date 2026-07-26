@@ -76,9 +76,9 @@ describe("buildTraceWaterfallLayout", () => {
         endedAt: "2026-07-01T10:00:05.000Z",
       }),
     ]);
-    expect(stepSpanMs(layout.rows[0]!.step.startedAt, layout.rows[0]!.step.endedAt)).toBe(
-      2000,
-    );
+    expect(
+      stepSpanMs(layout.rows[0]!.step.startedAt, layout.rows[0]!.step.endedAt),
+    ).toBe(2000);
     const first = waterfallBarStyle(layout, layout.rows[0]!);
     const second = waterfallBarStyle(layout, layout.rows[1]!);
     expect(first?.leftPercent).toBe(0);

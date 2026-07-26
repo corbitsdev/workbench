@@ -33,7 +33,11 @@ export async function listViews(
   signal: AbortSignal,
 ): Promise<unknown> {
   const args = parseArgs(ListViewsArgsSchema, rawArgs, "linear_list_views");
-  const pagination = resolveListPagination(args, DEFAULT_LIST_LIMIT, MAX_LIST_LIMIT);
+  const pagination = resolveListPagination(
+    args,
+    DEFAULT_LIST_LIMIT,
+    MAX_LIST_LIMIT,
+  );
   const data = await fetchLinearGraphQL(
     config,
     LIST_VIEWS_QUERY,

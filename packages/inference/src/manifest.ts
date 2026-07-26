@@ -58,7 +58,6 @@ export async function loadAdapterFactories(
       );
     }
 
-     
     factories[entry.provider] = exported as AdapterFactory;
   }
 

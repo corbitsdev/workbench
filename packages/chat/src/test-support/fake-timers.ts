@@ -64,7 +64,8 @@ export function installFakeTimers(): FakeTimers {
       const target = now + ms;
       while (true) {
         const nextAt = timers.reduce<number | null>(
-          (min, t) => (t.at <= target ? (min === null || t.at < min ? t.at : min) : min),
+          (min, t) =>
+            t.at <= target ? (min === null || t.at < min ? t.at : min) : min,
           null,
         );
         if (nextAt === null) {

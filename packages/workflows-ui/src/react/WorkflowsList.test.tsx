@@ -59,11 +59,7 @@ describe("WorkflowsList", () => {
   test("invokes onSelect when a row is clicked", () => {
     const onSelect = mock((_item: WorkflowListItem) => {});
     render(
-      <WorkflowsList
-        live={live}
-        scheduled={scheduled}
-        onSelect={onSelect}
-      />,
+      <WorkflowsList live={live} scheduled={scheduled} onSelect={onSelect} />,
     );
     fireEvent.click(screen.getByText("Granola digest"));
     expect(onSelect).toHaveBeenCalledTimes(1);
@@ -75,8 +71,6 @@ describe("WorkflowsList", () => {
 
   test("renders empty state when no rows", () => {
     render(<WorkflowsList live={[]} scheduled={[]} />);
-    expect(
-      screen.getByText("No workflows match these filters."),
-    ).toBeTruthy();
+    expect(screen.getByText("No workflows match these filters.")).toBeTruthy();
   });
 });

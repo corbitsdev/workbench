@@ -1,7 +1,4 @@
-import {
-  PAGE_CONTEXT_CATALOG,
-  PAGE_CONTEXT_FALLBACK,
-} from "./catalog";
+import { PAGE_CONTEXT_CATALOG, PAGE_CONTEXT_FALLBACK } from "./catalog";
 
 /**
  * Resolve maintained page context for a React Router pathname (no search/hash).

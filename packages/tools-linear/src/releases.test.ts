@@ -7,7 +7,9 @@ describe("linear_list_releases", () => {
   it("lists releases with default pagination", async () => {
     const nodes = [{ id: "r1", name: "v1.0", version: "1.0.0" }];
     const fetcher = makeFetchStub({ data: { releases: { nodes } } });
-    const runner = createToolRunner(createLinearTools({ apiKey: "k", fetcher }));
+    const runner = createToolRunner(
+      createLinearTools({ apiKey: "k", fetcher }),
+    );
 
     const result = await runner.run(
       { id: "c1", name: "linear_list_releases", arguments: {} },
@@ -22,7 +24,9 @@ describe("linear_list_releases", () => {
 
   it("forwards query and pipeline as ReleaseFilter", async () => {
     const fetcher = makeFetchStub({ data: { releases: { nodes: [] } } });
-    const runner = createToolRunner(createLinearTools({ apiKey: "k", fetcher }));
+    const runner = createToolRunner(
+      createLinearTools({ apiKey: "k", fetcher }),
+    );
 
     await runner.run(
       {
@@ -54,7 +58,9 @@ describe("linear_save_release", () => {
         },
       },
     });
-    const runner = createToolRunner(createLinearTools({ apiKey: "k", fetcher }));
+    const runner = createToolRunner(
+      createLinearTools({ apiKey: "k", fetcher }),
+    );
 
     await runner.run(
       {
@@ -91,7 +97,9 @@ describe("linear_save_release", () => {
         },
       },
     });
-    const runner = createToolRunner(createLinearTools({ apiKey: "k", fetcher }));
+    const runner = createToolRunner(
+      createLinearTools({ apiKey: "k", fetcher }),
+    );
 
     await runner.run(
       {

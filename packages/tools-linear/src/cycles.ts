@@ -55,7 +55,11 @@ export async function listCycles(
   signal: AbortSignal,
 ): Promise<unknown> {
   const args = parseArgs(ListCyclesArgsSchema, rawArgs, "linear_list_cycles");
-  const pagination = resolveListPagination(args, DEFAULT_LIST_LIMIT, MAX_LIST_LIMIT);
+  const pagination = resolveListPagination(
+    args,
+    DEFAULT_LIST_LIMIT,
+    MAX_LIST_LIMIT,
+  );
   const cycleType = optionalString(args.type);
   const filter = buildCycleFilter(cycleType);
   const resolvedTeamId = await resolveTeamId(config, args.team, signal);

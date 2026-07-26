@@ -62,13 +62,17 @@ describe("StatusDot", () => {
   });
 
   it("resolves the ring class to a pre-written literal for every mapped color, not a runtime-concatenated string", () => {
-    for (const color of ["bg-blue", "bg-green", "bg-orange", "bg-red", "bg-text-3"]) {
+    for (const color of [
+      "bg-blue",
+      "bg-green",
+      "bg-orange",
+      "bg-red",
+      "bg-text-3",
+    ]) {
       const { container } = render(
         <StatusDot colorClassName={color} pulsing />,
       );
-      expect(
-        container.querySelector(`.${color}\\/60`),
-      ).not.toBeNull();
+      expect(container.querySelector(`.${color}\\/60`)).not.toBeNull();
       cleanup();
     }
   });

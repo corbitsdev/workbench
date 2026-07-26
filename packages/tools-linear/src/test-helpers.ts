@@ -34,7 +34,9 @@ export function makeRoutingFetchStub(routes: QueryRoute[]): FetchStub {
       return Promise.resolve(
         new Response(
           JSON.stringify({
-            errors: [{ message: `Unstubbed GraphQL: ${body.query.slice(0, 120)}` }],
+            errors: [
+              { message: `Unstubbed GraphQL: ${body.query.slice(0, 120)}` },
+            ],
           }),
           { status: 200, headers: { "Content-Type": "application/json" } },
         ),
@@ -49,7 +51,10 @@ export function makeRoutingFetchStub(routes: QueryRoute[]): FetchStub {
   });
 }
 
-export function lastBody(fetcher: FetchStub, callIndex = 0): {
+export function lastBody(
+  fetcher: FetchStub,
+  callIndex = 0,
+): {
   query: string;
   variables: Record<string, unknown>;
 } {

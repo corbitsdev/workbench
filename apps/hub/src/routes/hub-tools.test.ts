@@ -14,7 +14,14 @@ import { createHubToolsRouter } from "./hub-tools";
 // without mocking @intx/db.
 function chainableSelect(rows: unknown[]): unknown {
   const chain: Record<string, unknown> = {};
-  for (const method of ["from", "where", "orderBy", "innerJoin", "for", "limit"]) {
+  for (const method of [
+    "from",
+    "where",
+    "orderBy",
+    "innerJoin",
+    "for",
+    "limit",
+  ]) {
     chain[method] = () => chain;
   }
   // gamma_list_templates awaits the chain directly after `.orderBy()`, so the

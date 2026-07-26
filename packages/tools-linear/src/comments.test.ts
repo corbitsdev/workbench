@@ -12,12 +12,25 @@ describe("linear_list_comments", () => {
   it("lists comments on an issue with pagination variables", async () => {
     const nodes = [{ id: "c1", body: "hi", user: { name: "Ada" } }];
     const fetcher = makeFetchStub({
-      data: { issue: { comments: { nodes, pageInfo: { endCursor: null, hasNextPage: false } } } },
+      data: {
+        issue: {
+          comments: {
+            nodes,
+            pageInfo: { endCursor: null, hasNextPage: false },
+          },
+        },
+      },
     });
-    const runner = createToolRunner(createLinearTools({ apiKey: "k", fetcher }));
+    const runner = createToolRunner(
+      createLinearTools({ apiKey: "k", fetcher }),
+    );
 
     const result = await runner.run(
-      { id: "1", name: "linear_list_comments", arguments: { issueId: "iss-1", first: 5 } },
+      {
+        id: "1",
+        name: "linear_list_comments",
+        arguments: { issueId: "iss-1", first: 5 },
+      },
       new AbortController().signal,
     );
 
@@ -30,10 +43,16 @@ describe("linear_list_comments", () => {
 
   it("errors when the issue is missing", async () => {
     const fetcher = makeFetchStub({ data: { issue: null } });
-    const runner = createToolRunner(createLinearTools({ apiKey: "k", fetcher }));
+    const runner = createToolRunner(
+      createLinearTools({ apiKey: "k", fetcher }),
+    );
 
     const result = await runner.run(
-      { id: "1", name: "linear_list_comments", arguments: { issueId: "missing" } },
+      {
+        id: "1",
+        name: "linear_list_comments",
+        arguments: { issueId: "missing" },
+      },
       new AbortController().signal,
     );
 
@@ -47,10 +66,14 @@ describe("linear_save_comment", () => {
     const fetcher = makeRoutingFetchStub([
       {
         includes: "commentCreate",
-        data: { commentCreate: { success: true, comment: { id: "c-new", body: "x" } } },
+        data: {
+          commentCreate: { success: true, comment: { id: "c-new", body: "x" } },
+        },
       },
     ]);
-    const runner = createToolRunner(createLinearTools({ apiKey: "k", fetcher }));
+    const runner = createToolRunner(
+      createLinearTools({ apiKey: "k", fetcher }),
+    );
 
     const result = await runner.run(
       {
@@ -77,10 +100,17 @@ describe("linear_save_comment", () => {
     const fetcher = makeRoutingFetchStub([
       {
         includes: "commentUpdate",
-        data: { commentUpdate: { success: true, comment: { id: "c-1", body: "edited" } } },
+        data: {
+          commentUpdate: {
+            success: true,
+            comment: { id: "c-1", body: "edited" },
+          },
+        },
       },
     ]);
-    const runner = createToolRunner(createLinearTools({ apiKey: "k", fetcher }));
+    const runner = createToolRunner(
+      createLinearTools({ apiKey: "k", fetcher }),
+    );
 
     await runner.run(
       {

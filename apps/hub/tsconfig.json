@@ -10,25 +10,13 @@
     "jsx": "react-jsx",
     "noEmit": true,
     "skipLibCheck": true,
-    "lib": [
-      "ESNext"
-    ],
-    "types": [
-      "bun"
-    ],
+    "lib": ["ESNext"],
+    "types": ["bun"],
     "paths": {
-      "@workbench/shared": [
-        "../../packages/workbench-shared/src/index.ts"
-      ],
-      "@intx/hub-client": [
-        "./src/intx-hub-client-server.ts"
-      ]
+      "@workbench/shared": ["../../packages/workbench-shared/src/index.ts"],
+      "@intx/hub-client": ["./src/intx-hub-client-server.ts"]
     },
-    "customConditions": [
-      "intx-src"
-    ]
+    "customConditions": ["intx-src"]
   },
-  "include": [
-    "src/**/*"
-  ]
+  "include": ["src/**/*"]
 }

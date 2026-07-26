@@ -6,16 +6,16 @@ Presentational building blocks for the unified **Workflows** member surface.
 
 Import from `@workbench/workflows-ui/react`:
 
-| Export | Role |
-| --- | --- |
-| `WorkflowsList` | Dense Live + Scheduled list with filters |
-| `InspectorShell` / `InspectorEmpty` | Right-rail chrome |
-| `ScheduleInspectorView` | Schedule overview + edit/history slots |
-| `LiveRunInspector` | Live phase chip + banner + step/gate slots |
-| `KindPickerShell` | New Workflow kind cards (Mine / Everyone badges) |
-| `CreateScheduleFormLayout` | Two-column create form + sticky summary |
-| `GateBlock` / `StepList` | Shared gate and step timeline primitives |
-| `StatusChip` / `ScopePill` / `FilterChip` | Dense list chrome |
+| Export                                    | Role                                             |
+| ----------------------------------------- | ------------------------------------------------ |
+| `WorkflowsList`                           | Dense Live + Scheduled list with filters         |
+| `InspectorShell` / `InspectorEmpty`       | Right-rail chrome                                |
+| `ScheduleInspectorView`                   | Schedule overview + edit/history slots           |
+| `LiveRunInspector`                        | Live phase chip + banner + step/gate slots       |
+| `KindPickerShell`                         | New Workflow kind cards (Mine / Everyone badges) |
+| `CreateScheduleFormLayout`                | Two-column create form + sticky summary          |
+| `GateBlock` / `StepList`                  | Shared gate and step timeline primitives         |
+| `StatusChip` / `ScopePill` / `FilterChip` | Dense list chrome                                |
 
 Apps own data fetching and mutations. `apps/web` hosts:
 

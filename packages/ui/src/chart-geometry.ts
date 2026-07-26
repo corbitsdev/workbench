@@ -96,8 +96,7 @@ export function layoutLinearStepCenters(
   const { count, span, crossCenter, nodeInset, axis = "horizontal" } = options;
   if (count <= 0) return [];
   const inner = Math.max(0, span - nodeInset * 2);
-  const step =
-    count > 1 ? inner / (count - 1) : 0;
+  const step = count > 1 ? inner / (count - 1) : 0;
   const along = (index: number) => round(nodeInset + index * step);
   return Array.from({ length: count }, (_, index) =>
     axis === "horizontal"

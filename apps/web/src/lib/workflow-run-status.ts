@@ -48,4 +48,3 @@ export function statusDotClass(status: string): string {
   if (status === "stopped" || status === "cancelled") return "bg-text-3";
   return "bg-blue";
 }
-

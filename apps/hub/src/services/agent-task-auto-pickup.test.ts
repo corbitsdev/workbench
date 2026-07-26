@@ -76,9 +76,7 @@ async function insertTask(args: {
 
 describe("agent task auto-pickup", () => {
   test("idempotency key never encodes a task-row lease", () => {
-    expect(agentTaskTurnIdempotencyKey("t1", "auto")).toBe(
-      "task:t1:turn:auto",
-    );
+    expect(agentTaskTurnIdempotencyKey("t1", "auto")).toBe("task:t1:turn:auto");
   });
 
   test("policy selects only open tasks with an assignee", async () => {

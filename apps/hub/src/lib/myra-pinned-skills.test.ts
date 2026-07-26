@@ -1,5 +1,8 @@
 import { describe, expect, it, mock } from "bun:test";
-import { MAX_PINNED_MYRA_SKILLS, renderPinnedSkillsSection } from "@workbench/myra";
+import {
+  MAX_PINNED_MYRA_SKILLS,
+  renderPinnedSkillsSection,
+} from "@workbench/myra";
 
 const listSkillsMock = mock(async () => [
   {

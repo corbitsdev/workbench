@@ -47,7 +47,9 @@ export function MemberConnectionsPanel() {
     next.delete("connected");
     next.delete("connect_error");
     setSearchParams(next, { replace: true });
-    void queryClient.invalidateQueries({ queryKey: MEMBER_CONNECTIONS_QUERY_KEY });
+    void queryClient.invalidateQueries({
+      queryKey: MEMBER_CONNECTIONS_QUERY_KEY,
+    });
   }
 
   return (
@@ -130,7 +132,9 @@ export function MemberConnectionsPanel() {
                   <Button
                     type="button"
                     variant={
-                      conn.connected && !conn.needsReconnect ? "ghost" : "primary"
+                      conn.connected && !conn.needsReconnect
+                        ? "ghost"
+                        : "primary"
                     }
                     size="sm"
                     disabled={!conn.configured || authorize.isPending}

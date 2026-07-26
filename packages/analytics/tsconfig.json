@@ -11,18 +11,9 @@
     "skipLibCheck": true,
     "declaration": true,
     "declarationMap": true,
-    "types": [
-      "bun"
-    ],
-    "lib": [
-      "ESNext",
-      "DOM"
-    ],
-    "customConditions": [
-      "intx-src"
-    ]
+    "types": ["bun"],
+    "lib": ["ESNext", "DOM"],
+    "customConditions": ["intx-src"]
   },
-  "include": [
-    "src/**/*"
-  ]
+  "include": ["src/**/*"]
 }

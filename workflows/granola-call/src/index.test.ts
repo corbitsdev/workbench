@@ -61,10 +61,7 @@ describe("granola-call workflow", () => {
     );
     expect(spawn.after).toEqual(["discover"]);
     expect(spawn.input).toEqual({
-      merge: [
-        { from: "steps.discover.output" },
-        { from: "trigger.payload" },
-      ],
+      merge: [{ from: "steps.discover.output" }, { from: "trigger.payload" }],
     });
     expect(spawn.effect).toEqual({
       requires: [GRANOLA_SPAWN_CALL_RUNS_HANDLER],

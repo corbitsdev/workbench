@@ -118,7 +118,11 @@ describe("ScheduleFieldForm number bounds and defaults (CL-4538)", () => {
 
   it("renders the declared defaultValue as a real initial value, not a placeholder", () => {
     renderWithQuery(
-      <ScheduleFieldForm fields={[daysField]} values={{}} onChange={() => {}} />,
+      <ScheduleFieldForm
+        fields={[daysField]}
+        values={{}}
+        onChange={() => {}}
+      />,
     );
     const input = screen.getByLabelText(/Research window/) as HTMLInputElement;
     expect(input.value).toBe("30");
@@ -130,7 +134,11 @@ describe("ScheduleFieldForm number bounds and defaults (CL-4538)", () => {
 
   it("renders the declared min and step on the numeric input", () => {
     renderWithQuery(
-      <ScheduleFieldForm fields={[daysField]} values={{}} onChange={() => {}} />,
+      <ScheduleFieldForm
+        fields={[daysField]}
+        values={{}}
+        onChange={() => {}}
+      />,
     );
     const input = screen.getByLabelText(/Research window/) as HTMLInputElement;
     expect(input.min).toBe("1");

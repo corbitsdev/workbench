@@ -5,3 +5,18 @@ temporary
 # Build-generated workflow defs (deterministic output of build:workflow-defs);
 # prettier would reformat arrays and fight the generator + drift test (CL-2593).
 apps/hub/generated
+# Agent worktree/scratch roots (also in .gitignore) — each can hold dozens of
+# full nested git worktrees (whole repo checkouts). Left unignored, a bare
+# `prettier --check .` recurses into every one of them and takes minutes
+# instead of seconds.
+.agent-state
+.claire
+.claude
+.intercode
+.pi
+.worktrees
+worktree
+worktrees
+tmp
+.tmp
+dispatch

@@ -63,8 +63,16 @@ export async function listWebhooks(
   rawArgs: Record<string, unknown>,
   signal: AbortSignal,
 ): Promise<unknown> {
-  const args = parseArgs(ListWebhooksArgsSchema, rawArgs, "linear_list_webhooks");
-  const pagination = resolveListPagination(args, DEFAULT_LIST_LIMIT, MAX_LIST_LIMIT);
+  const args = parseArgs(
+    ListWebhooksArgsSchema,
+    rawArgs,
+    "linear_list_webhooks",
+  );
+  const pagination = resolveListPagination(
+    args,
+    DEFAULT_LIST_LIMIT,
+    MAX_LIST_LIMIT,
+  );
   const data = await fetchLinearGraphQL(
     config,
     LIST_WEBHOOKS_QUERY,
@@ -107,7 +115,11 @@ export async function deleteWebhook(
   rawArgs: Record<string, unknown>,
   signal: AbortSignal,
 ): Promise<unknown> {
-  const args = parseArgs(DeleteWebhookArgsSchema, rawArgs, "linear_delete_webhook");
+  const args = parseArgs(
+    DeleteWebhookArgsSchema,
+    rawArgs,
+    "linear_delete_webhook",
+  );
   const data = await fetchLinearGraphQL(
     config,
     WEBHOOK_DELETE,

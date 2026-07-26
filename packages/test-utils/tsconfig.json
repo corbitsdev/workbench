@@ -10,15 +10,8 @@
     "noEmit": true,
     "skipLibCheck": true,
     "jsx": "react-jsx",
-    "lib": [
-      "ESNext",
-      "DOM"
-    ],
-    "customConditions": [
-      "intx-src"
-    ]
+    "lib": ["ESNext", "DOM"],
+    "customConditions": ["intx-src"]
   },
-  "include": [
-    "src/**/*"
-  ]
+  "include": ["src/**/*"]
 }

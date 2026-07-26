@@ -33,7 +33,9 @@ export function graphqlErrorMessage(errors: unknown): string {
   }
   const messages = errors
     .map((entry) =>
-      isRecord(entry) && typeof entry.message === "string" ? entry.message : null,
+      isRecord(entry) && typeof entry.message === "string"
+        ? entry.message
+        : null,
     )
     .filter((message): message is string => message !== null);
   return messages.length > 0 ? messages.join("; ") : "unknown error";
@@ -70,7 +72,9 @@ export async function fetchLinearGraphQL(
     throw new Error("Linear response is not a valid object");
   }
   if (payload.errors !== undefined) {
-    throw new Error(`Linear GraphQL error: ${graphqlErrorMessage(payload.errors)}`);
+    throw new Error(
+      `Linear GraphQL error: ${graphqlErrorMessage(payload.errors)}`,
+    );
   }
   if (!isRecord(payload.data)) {
     throw new Error("Linear response is missing data");

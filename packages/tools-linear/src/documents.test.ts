@@ -12,9 +12,13 @@ describe("linear_list_documents", () => {
   it("lists documents with optional title filter", async () => {
     const nodes = [{ id: "d1", title: "Spec", slug: "spec" }];
     const fetcher = makeFetchStub({
-      data: { documents: { nodes, pageInfo: { endCursor: null, hasNextPage: false } } },
+      data: {
+        documents: { nodes, pageInfo: { endCursor: null, hasNextPage: false } },
+      },
     });
-    const runner = createToolRunner(createLinearTools({ apiKey: "k", fetcher }));
+    const runner = createToolRunner(
+      createLinearTools({ apiKey: "k", fetcher }),
+    );
 
     await runner.run(
       { id: "1", name: "linear_list_documents", arguments: { query: "spec" } },
@@ -34,7 +38,9 @@ describe("linear_get_document", () => {
   it("gets document by id", async () => {
     const doc = { id: "d1", title: "T", content: "body" };
     const fetcher = makeFetchStub({ data: { document: doc } });
-    const runner = createToolRunner(createLinearTools({ apiKey: "k", fetcher }));
+    const runner = createToolRunner(
+      createLinearTools({ apiKey: "k", fetcher }),
+    );
 
     const result = await runner.run(
       { id: "1", name: "linear_get_document", arguments: { id: "d1" } },
@@ -53,7 +59,9 @@ describe("linear_save_document", () => {
         data: { documentCreate: { success: true, document: { id: "d-new" } } },
       },
     ]);
-    const runner = createToolRunner(createLinearTools({ apiKey: "k", fetcher }));
+    const runner = createToolRunner(
+      createLinearTools({ apiKey: "k", fetcher }),
+    );
 
     await runner.run(
       {
@@ -78,10 +86,16 @@ describe("linear_save_document", () => {
         data: { documentUpdate: { success: true, document: { id: "d1" } } },
       },
     ]);
-    const runner = createToolRunner(createLinearTools({ apiKey: "k", fetcher }));
+    const runner = createToolRunner(
+      createLinearTools({ apiKey: "k", fetcher }),
+    );
 
     await runner.run(
-      { id: "1", name: "linear_save_document", arguments: { id: "d1", title: "T2" } },
+      {
+        id: "1",
+        name: "linear_save_document",
+        arguments: { id: "d1", title: "T2" },
+      },
       new AbortController().signal,
     );
 

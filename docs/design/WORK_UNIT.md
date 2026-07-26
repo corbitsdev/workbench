@@ -5,15 +5,15 @@
 
 ## Two objects
 
-| | **Product task** | **Work unit** |
-|---|---|---|
-| Audience | Humans (and agents as collaborators) | Hub workers only |
-| Lifecycle | open → in_progress → done/cancelled (product UX) | pending → leased → done \| dead |
-| Ownership | Tenant + owner principal; assignees | Worker id (`lease_owner`) for the lease window only |
-| Concurrency | Multiplayer edits; no exclusive lock for “who is working” | Exactly-one worker via claim + lease |
-| Retry | Human or product policy | Automatic backoff → dead letter |
-| Side effects | Artifacts, mail, status, UI | Ingest, capture, agent turns — durable background work |
-| Lease | **Never** | `lease_until` + `lease_owner`; reclaim when expired |
+|              | **Product task**                                          | **Work unit**                                          |
+| ------------ | --------------------------------------------------------- | ------------------------------------------------------ |
+| Audience     | Humans (and agents as collaborators)                      | Hub workers only                                       |
+| Lifecycle    | open → in_progress → done/cancelled (product UX)          | pending → leased → done \| dead                        |
+| Ownership    | Tenant + owner principal; assignees                       | Worker id (`lease_owner`) for the lease window only    |
+| Concurrency  | Multiplayer edits; no exclusive lock for “who is working” | Exactly-one worker via claim + lease                   |
+| Retry        | Human or product policy                                   | Automatic backoff → dead letter                        |
+| Side effects | Artifacts, mail, status, UI                               | Ingest, capture, agent turns — durable background work |
+| Lease        | **Never**                                                 | `lease_until` + `lease_owner`; reclaim when expired    |
 
 **Non-goals**
 
@@ -27,21 +27,21 @@ Pattern inspiration: classic PG job queue with visibility timeout
 
 ## Work unit fields
 
-| Field | Role |
-|---|---|
-| `id` | UUID PK |
-| `tenant_id` | Tenant scope |
-| `kind` | `granola_call` \| `knowledge_capture` \| `agent_task_turn` (extensible) |
-| `idempotency_key` | Unique with `(tenant_id, kind)` — enqueue is safe to retry |
-| `status` | `pending` \| `leased` \| `done` \| `dead` |
-| `payload` | JSONB typed per kind |
-| `attempts` | Completed attempt count |
-| `max_attempts` | Default 8 |
-| `next_attempt_at` | Due time for pending / backoff |
-| `lease_owner` | Worker id holding the lease (null when not leased) |
-| `lease_until` | Visibility timeout; reclaim when `now() >= lease_until` |
-| `last_error` | Last fail message |
-| `created_at` / `updated_at` | Audit |
+| Field                       | Role                                                                    |
+| --------------------------- | ----------------------------------------------------------------------- |
+| `id`                        | UUID PK                                                                 |
+| `tenant_id`                 | Tenant scope                                                            |
+| `kind`                      | `granola_call` \| `knowledge_capture` \| `agent_task_turn` (extensible) |
+| `idempotency_key`           | Unique with `(tenant_id, kind)` — enqueue is safe to retry              |
+| `status`                    | `pending` \| `leased` \| `done` \| `dead`                               |
+| `payload`                   | JSONB typed per kind                                                    |
+| `attempts`                  | Completed attempt count                                                 |
+| `max_attempts`              | Default 8                                                               |
+| `next_attempt_at`           | Due time for pending / backoff                                          |
+| `lease_owner`               | Worker id holding the lease (null when not leased)                      |
+| `lease_until`               | Visibility timeout; reclaim when `now() >= lease_until`                 |
+| `last_error`                | Last fail message                                                       |
+| `created_at` / `updated_at` | Audit                                                                   |
 
 ## Claim / heartbeat / ack / fail
 
@@ -59,11 +59,11 @@ Workers use a **unique** `workerId` per process (pid + random suffix) so multi-r
 
 ## First three kinds
 
-| Kind | Idempotency key | Payload (sketch) | Producer | Consumer |
-|---|---|---|---|---|
-| `granola_call` | `note:{noteId}` | `{ noteId }` | Workspace list tick | Granola pipeline runner (via thin facade over work_unit) |
-| `knowledge_capture` | `artifact:{artifactId}:v{version}` or external ref | source ids + content hash | After product write commits | Capture adapt/plan/write |
-| `agent_task_turn` | `task:{taskId}:turn:{turnKey}` | task id, reason, policy version | Auto-pickup policy | Session launch / resume |
+| Kind                | Idempotency key                                    | Payload (sketch)                | Producer                    | Consumer                                                 |
+| ------------------- | -------------------------------------------------- | ------------------------------- | --------------------------- | -------------------------------------------------------- |
+| `granola_call`      | `note:{noteId}`                                    | `{ noteId }`                    | Workspace list tick         | Granola pipeline runner (via thin facade over work_unit) |
+| `knowledge_capture` | `artifact:{artifactId}:v{version}` or external ref | source ids + content hash       | After product write commits | Capture adapt/plan/write                                 |
+| `agent_task_turn`   | `task:{taskId}:turn:{turnKey}`                     | task id, reason, policy version | Auto-pickup policy          | Session launch / resume                                  |
 
 ## Product task rules (agent auto-pickup)
 

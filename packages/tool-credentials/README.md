@@ -9,7 +9,7 @@ A workflow step that must tolerate its tool failing (one of several sources,
 an unconfigured integration) wraps that tool rather than flagging the step:
 the native `action` primitive has no error-swallow, and the step harness
 throws on any outer `ToolResult.isError`. The tolerated failure therefore
-has to travel *inside* `content`.
+has to travel _inside_ `content`.
 
 Both halves of that pattern already exist — build on them:
 
@@ -24,7 +24,7 @@ Both halves of that pattern already exist — build on them:
 
 Two rules the compiler will not enforce:
 
-1. **Never set the outer `isError`.** A tolerated failure is a *successful*
+1. **Never set the outer `isError`.** A tolerated failure is a _successful_
    `ToolResult` whose `content` carries `{ isError: true, error }`. Setting
    the outer flag makes the harness throw and defeats the wrapper.
 2. **Construct the credentialed inner package lazily, inside the handler.**

@@ -133,6 +133,8 @@ bun run format && bun run lint && bun run typecheck && bun run test
 
 `bun run format` formats only changed files (staged + unstaged + untracked). Use `bun run format:all` to format the entire repo explicitly.
 
+`bun run lint` likewise checks only changed files (prettier + eslint on the changed subset). Use `bun run lint:all` for the full repo-wide gate (prettier, eslint, `lint:no-effect-fetch`, tool-manifest drift) — it is slow on a large tree and is not the day-to-day gate.
+
 `bun run typecheck` must pass with zero errors in `apps/`, `packages/`, `scripts/` before any commit. Errors inside `interchange/` are pre-existing upstream issues.
 
 ## Dockerfile Maintenance

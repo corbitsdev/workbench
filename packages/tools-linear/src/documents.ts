@@ -67,8 +67,16 @@ export async function listDocuments(
   rawArgs: Record<string, unknown>,
   signal: AbortSignal,
 ): Promise<unknown> {
-  const args = parseArgs(ListDocumentsArgsSchema, rawArgs, "linear_list_documents");
-  const pagination = resolveListPagination(args, DEFAULT_LIST_LIMIT, MAX_LIST_LIMIT);
+  const args = parseArgs(
+    ListDocumentsArgsSchema,
+    rawArgs,
+    "linear_list_documents",
+  );
+  const pagination = resolveListPagination(
+    args,
+    DEFAULT_LIST_LIMIT,
+    MAX_LIST_LIMIT,
+  );
   const query = optionalString(args.query);
   const project = optionalString(args.project);
   const team = optionalString(args.team);
@@ -111,7 +119,11 @@ export async function saveDocument(
   rawArgs: Record<string, unknown>,
   signal: AbortSignal,
 ): Promise<unknown> {
-  const args = parseArgs(SaveDocumentArgsSchema, rawArgs, "linear_save_document");
+  const args = parseArgs(
+    SaveDocumentArgsSchema,
+    rawArgs,
+    "linear_save_document",
+  );
   const input: Record<string, unknown> = { title: args.title };
   if (args.content !== undefined) input.content = args.content;
   if (args.project !== undefined) input.projectId = args.project;

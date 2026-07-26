@@ -29,9 +29,7 @@ describe("looksLikeMarkdown", () => {
 
 describe("stringifyTraceValue", () => {
   it("pretty-prints in formatted mode", () => {
-    expect(stringifyTraceValue({ a: 1 }, "formatted")).toBe(
-      '{\n  "a": 1\n}',
-    );
+    expect(stringifyTraceValue({ a: 1 }, "formatted")).toBe('{\n  "a": 1\n}');
   });
 
   it("compacts in raw mode", () => {

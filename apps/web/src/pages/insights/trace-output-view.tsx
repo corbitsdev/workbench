@@ -27,7 +27,10 @@ function JsonTreeNode({
   const [open, setOpen] = useState(depth < 2);
   if (value === null) {
     return (
-      <div className="font-mono text-[11px] text-text-3" style={{ paddingLeft: depth * 12 }}>
+      <div
+        className="font-mono text-[11px] text-text-3"
+        style={{ paddingLeft: depth * 12 }}
+      >
         {label !== null ? (
           <>
             <span className="text-text-2">{label}: </span>
@@ -43,7 +46,10 @@ function JsonTreeNode({
     const shown =
       typeof value === "string" ? JSON.stringify(value) : String(value);
     return (
-      <div className="font-mono text-[11px] text-text-2" style={{ paddingLeft: depth * 12 }}>
+      <div
+        className="font-mono text-[11px] text-text-2"
+        style={{ paddingLeft: depth * 12 }}
+      >
         {label !== null ? (
           <>
             <span className="text-text-3">{label}: </span>
@@ -79,7 +85,12 @@ function JsonTreeNode({
       {open ? (
         <div className="border-l border-border/60 pl-1">
           {entries.map(([key, child]) => (
-            <JsonTreeNode key={key} label={key} value={child} depth={depth + 1} />
+            <JsonTreeNode
+              key={key}
+              label={key}
+              value={child}
+              depth={depth + 1}
+            />
           ))}
         </div>
       ) : null}

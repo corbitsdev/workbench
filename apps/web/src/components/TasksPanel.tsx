@@ -167,12 +167,7 @@ export function TasksPanel({ tasks }: TasksPanelProps) {
         ),
       },
     ];
-  }, [
-    busy,
-    reportTaskActionError,
-    selectedIds,
-    updateStatus,
-  ]);
+  }, [busy, reportTaskActionError, selectedIds, updateStatus]);
 
   if (rows.length === 0) {
     return (

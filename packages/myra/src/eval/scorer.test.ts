@@ -99,8 +99,7 @@ describe("scoreTrace", () => {
     );
     expect(score.passed).toBe(false);
     expect(
-      score.constraints.find((x) => x.name === "forbidFalseCompletion")
-        ?.passed,
+      score.constraints.find((x) => x.name === "forbidFalseCompletion")?.passed,
     ).toBe(false);
   });
 

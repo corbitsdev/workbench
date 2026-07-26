@@ -12,9 +12,16 @@ describe("linear_list_issue_labels", () => {
   it("lists issue labels with team filter", async () => {
     const nodes = [{ id: "l1", name: "Bug" }];
     const fetcher = makeFetchStub({
-      data: { issueLabels: { nodes, pageInfo: { endCursor: null, hasNextPage: false } } },
+      data: {
+        issueLabels: {
+          nodes,
+          pageInfo: { endCursor: null, hasNextPage: false },
+        },
+      },
     });
-    const runner = createToolRunner(createLinearTools({ apiKey: "k", fetcher }));
+    const runner = createToolRunner(
+      createLinearTools({ apiKey: "k", fetcher }),
+    );
 
     const result = await runner.run(
       { id: "1", name: "linear_list_issue_labels", arguments: { team: "t1" } },
@@ -34,10 +41,17 @@ describe("linear_create_issue_label", () => {
     const fetcher = makeRoutingFetchStub([
       {
         includes: "issueLabelCreate",
-        data: { issueLabelCreate: { success: true, issueLabel: { id: "l1", name: "Bug" } } },
+        data: {
+          issueLabelCreate: {
+            success: true,
+            issueLabel: { id: "l1", name: "Bug" },
+          },
+        },
       },
     ]);
-    const runner = createToolRunner(createLinearTools({ apiKey: "k", fetcher }));
+    const runner = createToolRunner(
+      createLinearTools({ apiKey: "k", fetcher }),
+    );
 
     await runner.run(
       {
@@ -59,9 +73,16 @@ describe("linear_create_issue_label", () => {
 describe("linear_list_project_labels", () => {
   it("queries projectLabels", async () => {
     const fetcher = makeFetchStub({
-      data: { projectLabels: { nodes: [], pageInfo: { endCursor: null, hasNextPage: false } } },
+      data: {
+        projectLabels: {
+          nodes: [],
+          pageInfo: { endCursor: null, hasNextPage: false },
+        },
+      },
     });
-    const runner = createToolRunner(createLinearTools({ apiKey: "k", fetcher }));
+    const runner = createToolRunner(
+      createLinearTools({ apiKey: "k", fetcher }),
+    );
 
     await runner.run(
       { id: "1", name: "linear_list_project_labels", arguments: {} },
@@ -75,9 +96,16 @@ describe("linear_list_project_labels", () => {
 describe("linear_list_initiative_labels", () => {
   it("queries initiativeLabels", async () => {
     const fetcher = makeFetchStub({
-      data: { initiativeLabels: { nodes: [], pageInfo: { endCursor: null, hasNextPage: false } } },
+      data: {
+        initiativeLabels: {
+          nodes: [],
+          pageInfo: { endCursor: null, hasNextPage: false },
+        },
+      },
     });
-    const runner = createToolRunner(createLinearTools({ apiKey: "k", fetcher }));
+    const runner = createToolRunner(
+      createLinearTools({ apiKey: "k", fetcher }),
+    );
 
     await runner.run(
       { id: "1", name: "linear_list_initiative_labels", arguments: {} },

@@ -57,7 +57,9 @@ function applyTaskPatch(
 
 function rollbackTasks(
   queryClient: ReturnType<typeof useQueryClient>,
-  snapshots: [readonly unknown[], InfiniteData<TasksPage> | undefined][] | undefined,
+  snapshots:
+    | [readonly unknown[], InfiniteData<TasksPage> | undefined][]
+    | undefined,
 ) {
   for (const [key, previous] of snapshots ?? []) {
     queryClient.setQueryData(key, previous);
@@ -149,4 +151,3 @@ export function useBulkUpdateTaskStatus() {
     },
   });
 }
-

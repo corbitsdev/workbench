@@ -104,7 +104,10 @@ function graphSpan(count: number, spec: DensitySpec): number {
   );
 }
 
-function nodeOffset(index: number, spec: DensitySpec): { left: number; top: number } {
+function nodeOffset(
+  index: number,
+  spec: DensitySpec,
+): { left: number; top: number } {
   if (spec.axis === "horizontal") {
     return {
       left: spec.padding + index * (spec.nodeWidth + spec.gap),
@@ -188,9 +191,7 @@ export function StepGraph({
       };
     });
     const width =
-      spec.axis === "horizontal"
-        ? span
-        : spec.nodeWidth + spec.padding * 2;
+      spec.axis === "horizontal" ? span : spec.nodeWidth + spec.padding * 2;
     const height =
       spec.axis === "horizontal"
         ? spec.nodeHeight + spec.crossCenter + 24
@@ -243,14 +244,16 @@ export function StepGraph({
       </p>
       <div
         className={
-          density === "compact"
-            ? "overflow-x-auto pb-1"
-            : "overflow-y-auto"
+          density === "compact" ? "overflow-x-auto pb-1" : "overflow-y-auto"
         }
       >
         <div
           className="relative"
-          style={{ width: layout.width, height: layout.height, minWidth: "100%" }}
+          style={{
+            width: layout.width,
+            height: layout.height,
+            minWidth: "100%",
+          }}
         >
           <svg
             className="pointer-events-none absolute left-0 top-0 text-border-strong"
@@ -296,9 +299,7 @@ export function StepGraph({
                   strokeLinecap="round"
                   markerEnd={`url(#${labelId}-arrow)`}
                   initial={
-                    reduceMotion
-                      ? edgeMotion
-                      : { pathLength: 0, opacity: 0.4 }
+                    reduceMotion ? edgeMotion : { pathLength: 0, opacity: 0.4 }
                   }
                   animate={edgeMotion}
                   transition={

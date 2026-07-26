@@ -183,9 +183,9 @@ describe("isUIBlock", () => {
   });
 
   it("accepts card, list, and preview display blocks (CL-3547)", () => {
-    expect(
-      isUIBlock({ kind: "card", title: "Acme", body: "Follow up" }),
-    ).toBe(true);
+    expect(isUIBlock({ kind: "card", title: "Acme", body: "Follow up" })).toBe(
+      true,
+    );
     expect(
       isUIBlock({
         kind: "list",

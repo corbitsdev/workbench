@@ -40,7 +40,7 @@ function coerceContent(content: unknown): string | Record<string, unknown> {
   if (typeof content === "object" && content !== null) {
     // content is a non-null object — compatible with Record<string, unknown>
     // but TypeScript can't verify the index signature without a cast.
-     
+
     return content as Record<string, unknown>;
   }
   throw new Error(`Unexpected tool result content type: ${typeof content}`);

@@ -14,7 +14,12 @@ mock.module("framer-motion", () => ({
     }: {
       children?: React.ReactNode;
       className?: string;
-    }) => React.createElement("span", { className, "data-motion": "true" }, children),
+    }) =>
+      React.createElement(
+        "span",
+        { className, "data-motion": "true" },
+        children,
+      ),
   },
   useReducedMotion: () => reducedMotion,
   useSpring: (value: number) => {

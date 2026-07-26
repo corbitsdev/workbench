@@ -49,6 +49,8 @@ describe("useSkillLibrary tenant gating", () => {
       wrapper: wrapper(),
     });
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(apiCalls).toEqual([{ method: "GET", path: "/skills?tenantId=tnt_1" }]);
+    expect(apiCalls).toEqual([
+      { method: "GET", path: "/skills?tenantId=tnt_1" },
+    ]);
   });
 });

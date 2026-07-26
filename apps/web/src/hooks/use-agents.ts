@@ -80,7 +80,9 @@ export function useAgentTemplates() {
       const raw = await api<unknown>("GET", "/agents/templates");
       const parsed = AgentTemplatesResponseSchema(raw);
       if (parsed instanceof type.errors) {
-        throw new Error(`Unexpected agent templates response: ${parsed.summary}`);
+        throw new Error(
+          `Unexpected agent templates response: ${parsed.summary}`,
+        );
       }
       return parsed.data;
     },

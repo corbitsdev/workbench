@@ -135,9 +135,7 @@ describe("POST /api/v1/instances/:instanceId/mail-attachments", () => {
     const res = await app.request(
       makeRequest("http://localhost/api/v1/instances/ins-1/mail-attachments", {
         body: {
-          attachments: [
-            { artifactId: "a", name: "n", type: "t", size: 1 },
-          ],
+          attachments: [{ artifactId: "a", name: "n", type: "t", size: 1 }],
         },
       }),
     );
@@ -151,7 +149,12 @@ describe("POST /api/v1/instances/:instanceId/mail-attachments", () => {
         body: {
           mailId: "mail-1",
           attachments: [
-            { artifactId: "a-1", name: "n.pdf", type: "application/pdf", size: 1 },
+            {
+              artifactId: "a-1",
+              name: "n.pdf",
+              type: "application/pdf",
+              size: 1,
+            },
           ],
         },
       }),

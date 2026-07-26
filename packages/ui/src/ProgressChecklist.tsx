@@ -69,7 +69,11 @@ export default function ProgressChecklist({
                 <motion.div
                   className="w-2 h-2 rounded-full bg-blue"
                   animate={{ scale: [1, 0.5, 1] }}
-                  transition={{ repeat: Infinity, duration: 1.2, delay: i * 0.2 }}
+                  transition={{
+                    repeat: Infinity,
+                    duration: 1.2,
+                    delay: i * 0.2,
+                  }}
                 />
               )}
             </div>

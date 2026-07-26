@@ -61,7 +61,9 @@ export function CardBlock({
           </span>
         )}
       </div>
-      {body !== null && <div className="border-t border-border px-3 py-2.5">{body}</div>}
+      {body !== null && (
+        <div className="border-t border-border px-3 py-2.5">{body}</div>
+      )}
       {block.footer !== undefined && (
         <div className="border-t border-border px-3 py-2 text-xs text-text-3">
           {block.footer}
@@ -100,7 +102,9 @@ export function ListBlock({
   return (
     <Surface className="px-3 py-2.5">
       {block.title !== undefined && (
-        <div className="pb-2 text-sm font-medium text-text-2">{block.title}</div>
+        <div className="pb-2 text-sm font-medium text-text-2">
+          {block.title}
+        </div>
       )}
       <ListTag className={listClass}>
         {block.items.map((item, index) => (

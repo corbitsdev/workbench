@@ -14,7 +14,9 @@ describe("migration 0054_scheduled_trigger_fire_history", () => {
   });
 
   it("creates scheduled_trigger_fire with schedule FK and fired_at index", () => {
-    expect(sql).toContain('CREATE TABLE IF NOT EXISTS "scheduled_trigger_fire"');
+    expect(sql).toContain(
+      'CREATE TABLE IF NOT EXISTS "scheduled_trigger_fire"',
+    );
     expect(sql).toContain('"scheduled_trigger_id"');
     expect(sql).toContain('"run_id"');
     expect(sql).toContain("scheduled_trigger_fire_schedule_fired_idx");

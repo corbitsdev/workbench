@@ -24,6 +24,20 @@ export default defineConfig(
     "temporary/**",
     "packages/workflow-host/**",
     "packages/hub-sessions/**",
+    // Agent worktree/scratch roots (also in .prettierignore / .gitignore) —
+    // each can hold dozens of full nested git worktrees (whole repo
+    // checkouts). Left unignored, `eslint .` recurses into every one of
+    // them and takes minutes instead of seconds.
+    ".agent-state/**",
+    ".claire/**",
+    ".claude/**",
+    ".intercode/**",
+    ".pi/**",
+    ".worktrees/**",
+    "worktree/**",
+    "worktrees/**",
+    ".tmp/**",
+    "dispatch/**",
   ]),
   {
     linterOptions: {

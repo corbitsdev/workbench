@@ -137,7 +137,12 @@ describe("Myra display blocks (CL-3547)", () => {
     const block: UIBlock = {
       kind: "choice",
       options: [
-        { id: "a", label: "Approve", description: "Ship as-is", value: "approve" },
+        {
+          id: "a",
+          label: "Approve",
+          description: "Ship as-is",
+          value: "approve",
+        },
       ],
     };
     const onRespond = mock(() => Promise.resolve());

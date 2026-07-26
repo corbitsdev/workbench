@@ -7,7 +7,9 @@ describe("linear_list_initiatives", () => {
   it("lists initiatives with default first", async () => {
     const nodes = [{ id: "i1", name: "Platform", status: "Active" }];
     const fetcher = makeFetchStub({ data: { initiatives: { nodes } } });
-    const runner = createToolRunner(createLinearTools({ apiKey: "k", fetcher }));
+    const runner = createToolRunner(
+      createLinearTools({ apiKey: "k", fetcher }),
+    );
 
     const result = await runner.run(
       { id: "c1", name: "linear_list_initiatives", arguments: {} },
@@ -22,7 +24,9 @@ describe("linear_list_initiatives", () => {
 
   it("forwards query as InitiativeFilter", async () => {
     const fetcher = makeFetchStub({ data: { initiatives: { nodes: [] } } });
-    const runner = createToolRunner(createLinearTools({ apiKey: "k", fetcher }));
+    const runner = createToolRunner(
+      createLinearTools({ apiKey: "k", fetcher }),
+    );
 
     await runner.run(
       {
@@ -51,7 +55,9 @@ describe("linear_save_initiative", () => {
         },
       },
     });
-    const runner = createToolRunner(createLinearTools({ apiKey: "k", fetcher }));
+    const runner = createToolRunner(
+      createLinearTools({ apiKey: "k", fetcher }),
+    );
 
     await runner.run(
       {
@@ -78,7 +84,9 @@ describe("linear_save_initiative", () => {
         },
       },
     });
-    const runner = createToolRunner(createLinearTools({ apiKey: "k", fetcher }));
+    const runner = createToolRunner(
+      createLinearTools({ apiKey: "k", fetcher }),
+    );
 
     await runner.run(
       {

@@ -59,8 +59,16 @@ export async function listMilestones(
   rawArgs: Record<string, unknown>,
   signal: AbortSignal,
 ): Promise<unknown> {
-  const args = parseArgs(ListMilestonesArgsSchema, rawArgs, "linear_list_milestones");
-  const pagination = resolveListPagination(args, DEFAULT_LIST_LIMIT, MAX_LIST_LIMIT);
+  const args = parseArgs(
+    ListMilestonesArgsSchema,
+    rawArgs,
+    "linear_list_milestones",
+  );
+  const pagination = resolveListPagination(
+    args,
+    DEFAULT_LIST_LIMIT,
+    MAX_LIST_LIMIT,
+  );
   const data = await fetchLinearGraphQL(
     config,
     LIST_MILESTONES_QUERY,
@@ -78,7 +86,11 @@ export async function saveMilestone(
   rawArgs: Record<string, unknown>,
   signal: AbortSignal,
 ): Promise<unknown> {
-  const args = parseArgs(SaveMilestoneArgsSchema, rawArgs, "linear_save_milestone");
+  const args = parseArgs(
+    SaveMilestoneArgsSchema,
+    rawArgs,
+    "linear_save_milestone",
+  );
   const input: Record<string, unknown> = {
     name: args.name,
     projectId: args.project,

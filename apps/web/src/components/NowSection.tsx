@@ -16,10 +16,7 @@ import { formatRelativeTime } from "../lib/relative-time";
 import { createLogger } from "../lib/logger";
 import { TaskAssigneePicker } from "./TaskAssigneePicker";
 import { TaskSendToAdapter } from "./TaskSendToAdapter";
-import {
-  isFeatureEnabled,
-  useMeFeatures,
-} from "../hooks/use-me-features";
+import { isFeatureEnabled, useMeFeatures } from "../hooks/use-me-features";
 
 const nowSectionLog = createLogger("NowSection");
 

@@ -172,8 +172,7 @@ export function extractIssueText(raw: unknown): string {
   if (!obj) {
     return typeof inner === "string" ? inner : JSON.stringify(inner ?? "");
   }
-  const id =
-    stringField(obj, ["identifier", "id"]) ?? "issue";
+  const id = stringField(obj, ["identifier", "id"]) ?? "issue";
   const title = stringField(obj, ["title"]) ?? "";
   const description =
     stringField(obj, ["description", "body", "content"]) ?? "";
@@ -240,15 +239,18 @@ function tryParsePiece(raw: unknown): GeneratedPiece | null {
       /* fall through */
     }
   }
-  if (typeof obj.content === "string" && !("format" in obj) && !("title" in obj)) {
+  if (
+    typeof obj.content === "string" &&
+    !("format" in obj) &&
+    !("title" in obj)
+  ) {
     try {
       return tryParsePiece(JSON.parse(obj.content));
     } catch {
       /* fall through */
     }
   }
-  const format =
-    stringField(obj, ["format", "contentType"]) ?? "unknown";
+  const format = stringField(obj, ["format", "contentType"]) ?? "unknown";
   const title = stringField(obj, ["title"]) ?? "Untitled";
   const content = stringField(obj, ["content", "body"]) ?? "";
   if (!content) return null;

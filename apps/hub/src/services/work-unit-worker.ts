@@ -45,9 +45,7 @@ export type WorkUnitWorker = {
   runOnce(): Promise<void>;
 };
 
-export function createWorkUnitWorker(
-  deps: WorkUnitWorkerDeps,
-): WorkUnitWorker {
+export function createWorkUnitWorker(deps: WorkUnitWorkerDeps): WorkUnitWorker {
   let timer: ReturnType<typeof setInterval> | undefined;
   const tickIntervalMs = deps.tickIntervalMs ?? DEFAULT_TICK_MS;
   const batchSize = deps.batchSize ?? DEFAULT_BATCH;

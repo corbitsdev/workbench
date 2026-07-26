@@ -57,7 +57,11 @@ export async function listIssueStatuses(
     rawArgs,
     "linear_list_issue_statuses",
   );
-  const pagination = resolveListPagination(args, DEFAULT_LIST_LIMIT, MAX_LIST_LIMIT);
+  const pagination = resolveListPagination(
+    args,
+    DEFAULT_LIST_LIMIT,
+    MAX_LIST_LIMIT,
+  );
   const resolvedTeamId = await resolveTeamId(config, args.team, signal);
   const data = await fetchLinearGraphQL(
     config,
@@ -76,7 +80,11 @@ export async function getIssueStatus(
   rawArgs: Record<string, unknown>,
   signal: AbortSignal,
 ): Promise<unknown> {
-  const args = parseArgs(GetStatusArgsSchema, rawArgs, "linear_get_issue_status");
+  const args = parseArgs(
+    GetStatusArgsSchema,
+    rawArgs,
+    "linear_get_issue_status",
+  );
   const statusId = optionalString(args.id);
   if (statusId !== null) {
     const data = await fetchLinearGraphQL(

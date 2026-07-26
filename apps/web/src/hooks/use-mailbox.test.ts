@@ -326,9 +326,7 @@ describe("useMarkMailboxRead across pages", () => {
     }
 
     expect(thrown).toBeUndefined();
-    expect(apiCalls).toEqual([
-      { method: "POST", path: "/me/inbox/m-1/read" },
-    ]);
+    expect(apiCalls).toEqual([{ method: "POST", path: "/me/inbox/m-1/read" }]);
     expect(client.getQueryData<number>(MAILBOX_UNREAD_COUNT_KEY)).toBe(3);
   });
 });

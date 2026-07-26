@@ -87,13 +87,7 @@ export const TASK_CREATE_DEFINITION: ToolDefinition = {
           properties: {
             kind: {
               type: "string",
-              enum: [
-                "artifact",
-                "workflow_run",
-                "mail",
-                "conversation",
-                "url",
-              ],
+              enum: ["artifact", "workflow_run", "mail", "conversation", "url"],
               description: "Link target type.",
             },
             ref: {

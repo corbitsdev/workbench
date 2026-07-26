@@ -115,9 +115,7 @@ describe("GET /artifacts session enrichment", () => {
       ],
     );
 
-    const res = await app().request(
-      `/artifacts?tenantId=${TENANT}`,
-    );
+    const res = await app().request(`/artifacts?tenantId=${TENANT}`);
     expect(res.status).toBe(200);
     const body = (await res.json()) as {
       artifacts: Array<{

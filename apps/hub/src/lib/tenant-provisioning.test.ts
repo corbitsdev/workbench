@@ -379,7 +379,9 @@ describe("seedGlobalTenant", () => {
         tenant: { findFirst: tenantFind },
         principal: { findFirst: mock(() => Promise.resolve(undefined)) },
         role: { findFirst: mock(() => Promise.resolve(undefined)) },
-        grant: { findFirst: mock(() => Promise.resolve({ id: "grt_existing" })) },
+        grant: {
+          findFirst: mock(() => Promise.resolve({ id: "grt_existing" })),
+        },
         agent: { findFirst: mock(() => Promise.resolve(undefined)) },
         agentInstance: { findFirst: mock(() => Promise.resolve(undefined)) },
       },
@@ -675,7 +677,9 @@ describe("ensureSystemPrincipal", () => {
           findFirst: mock(() => Promise.resolve({ id: "prn_system" })),
         },
         role: { findFirst: mock(() => Promise.resolve(undefined)) },
-        grant: { findFirst: mock(() => Promise.resolve({ id: "grt_existing" })) },
+        grant: {
+          findFirst: mock(() => Promise.resolve({ id: "grt_existing" })),
+        },
         agent: { findFirst: mock(() => Promise.resolve(undefined)) },
         agentInstance: { findFirst: mock(() => Promise.resolve(undefined)) },
       },
@@ -699,7 +703,9 @@ describe("ensureSystemPrincipal", () => {
         tenant: { findFirst: mock(() => Promise.resolve(undefined)) },
         principal: { findFirst: mock(() => Promise.resolve(undefined)) },
         role: { findFirst: mock(() => Promise.resolve(undefined)) },
-        grant: { findFirst: mock(() => Promise.resolve({ id: "grt_existing" })) },
+        grant: {
+          findFirst: mock(() => Promise.resolve({ id: "grt_existing" })),
+        },
         agent: { findFirst: mock(() => Promise.resolve(undefined)) },
         agentInstance: { findFirst: mock(() => Promise.resolve(undefined)) },
       },
@@ -731,7 +737,9 @@ describe("ensureSystemPrincipal", () => {
           }),
         },
         role: { findFirst: mock(() => Promise.resolve(undefined)) },
-        grant: { findFirst: mock(() => Promise.resolve({ id: "grt_existing" })) },
+        grant: {
+          findFirst: mock(() => Promise.resolve({ id: "grt_existing" })),
+        },
         agent: { findFirst: mock(() => Promise.resolve(undefined)) },
         agentInstance: { findFirst: mock(() => Promise.resolve(undefined)) },
       },
@@ -795,7 +803,9 @@ describe("seedAgentTemplates", () => {
           findFirst: mock(() => Promise.resolve({ id: "prn_system" })),
         },
         role: { findFirst: mock(() => Promise.resolve(undefined)) },
-        grant: { findFirst: mock(() => Promise.resolve({ id: "grt_existing" })) },
+        grant: {
+          findFirst: mock(() => Promise.resolve({ id: "grt_existing" })),
+        },
         agent: {
           findFirst: mock(() =>
             Promise.resolve({ id: "agt_existing", name: "Myra" }),
@@ -834,7 +844,9 @@ describe("seedAgentTemplates", () => {
           findFirst: mock(() => Promise.resolve({ id: "prn_system" })),
         },
         role: { findFirst: mock(() => Promise.resolve(undefined)) },
-        grant: { findFirst: mock(() => Promise.resolve({ id: "grt_existing" })) },
+        grant: {
+          findFirst: mock(() => Promise.resolve({ id: "grt_existing" })),
+        },
         agent: { findFirst: mock(() => Promise.resolve(undefined)) },
         agentInstance: { findFirst: mock(() => Promise.resolve(undefined)) },
       },
@@ -879,7 +891,9 @@ describe("seedAgentTemplates", () => {
           findFirst: mock(() => Promise.resolve({ id: "prn_system" })),
         },
         role: { findFirst: mock(() => Promise.resolve(undefined)) },
-        grant: { findFirst: mock(() => Promise.resolve({ id: "grt_existing" })) },
+        grant: {
+          findFirst: mock(() => Promise.resolve({ id: "grt_existing" })),
+        },
         agent: {
           findFirst: mock(() =>
             Promise.resolve({
@@ -923,7 +937,9 @@ describe("seedAgentTemplates", () => {
           findFirst: mock(() => Promise.resolve({ id: "prn_system" })),
         },
         role: { findFirst: mock(() => Promise.resolve(undefined)) },
-        grant: { findFirst: mock(() => Promise.resolve({ id: "grt_existing" })) },
+        grant: {
+          findFirst: mock(() => Promise.resolve({ id: "grt_existing" })),
+        },
         agent: {
           findFirst: mock(() => Promise.resolve(undefined)),
           findMany: mock(() => Promise.resolve([])),
@@ -959,7 +975,9 @@ describe("seedAgentTemplates", () => {
           findFirst: mock(() => Promise.resolve({ id: "prn_system" })),
         },
         role: { findFirst: mock(() => Promise.resolve(undefined)) },
-        grant: { findFirst: mock(() => Promise.resolve({ id: "grt_existing" })) },
+        grant: {
+          findFirst: mock(() => Promise.resolve({ id: "grt_existing" })),
+        },
         agent: {
           findFirst: mock(() =>
             Promise.resolve({
@@ -1001,7 +1019,9 @@ describe("getEnabledTemplateKeys", () => {
         tenant: { findFirst: mock(() => Promise.resolve(tenantRow as never)) },
         principal: { findFirst: mock(() => Promise.resolve(undefined)) },
         role: { findFirst: mock(() => Promise.resolve(undefined)) },
-        grant: { findFirst: mock(() => Promise.resolve({ id: "grt_existing" })) },
+        grant: {
+          findFirst: mock(() => Promise.resolve({ id: "grt_existing" })),
+        },
         agent: { findFirst: mock(() => Promise.resolve(undefined)) },
         agentInstance: { findFirst: mock(() => Promise.resolve(undefined)) },
       },

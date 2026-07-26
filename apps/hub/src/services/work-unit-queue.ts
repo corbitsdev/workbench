@@ -57,19 +57,28 @@ export type WorkUnitHealth = {
 };
 
 export interface WorkUnitQueue {
-  enqueue(input: EnqueueWorkUnitInput): Promise<{ id: string; created: boolean }>;
+  enqueue(
+    input: EnqueueWorkUnitInput,
+  ): Promise<{ id: string; created: boolean }>;
   claimDue(args: {
     workerId: string;
     limit: number;
     leaseMs?: number;
     kinds?: string[];
   }): Promise<WorkUnitRow[]>;
-  heartbeat(unitId: string, workerId: string, leaseMs?: number): Promise<boolean>;
+  heartbeat(
+    unitId: string,
+    workerId: string,
+    leaseMs?: number,
+  ): Promise<boolean>;
   complete(unitId: string, workerId: string): Promise<void>;
   fail(unitId: string, workerId: string, error: string): Promise<void>;
   retryDead(unitId: string): Promise<boolean>;
   discardDead(unitId: string): Promise<boolean>;
-  listDead(args?: { limit?: number; tenantId?: string }): Promise<WorkUnitRow[]>;
+  listDead(args?: {
+    limit?: number;
+    tenantId?: string;
+  }): Promise<WorkUnitRow[]>;
   listAgedLeased(args?: {
     olderThanMs?: number;
     limit?: number;
@@ -91,11 +100,7 @@ export function createWorkUnitQueue(db: HubDb): WorkUnitQueue {
         maxAttempts: input.maxAttempts ?? DEFAULT_MAX_ATTEMPTS,
       })
       .onConflictDoNothing({
-        target: [
-          workUnit.tenantId,
-          workUnit.kind,
-          workUnit.idempotencyKey,
-        ],
+        target: [workUnit.tenantId, workUnit.kind, workUnit.idempotencyKey],
       })
       .returning({ id: workUnit.id });
 

@@ -84,16 +84,11 @@ export function useMyraReasoningExpanded(
     }
 
     const agentSlots = messages
-      .filter(
-        (m) => m.role === "agent" && (m.reasoning ?? "").trim() !== "",
-      )
+      .filter((m) => m.role === "agent" && (m.reasoning ?? "").trim() !== "")
       .map((m) => ({ id: m.id, feedbackId: m.feedbackId }));
 
     if (
-      migrateReasoningExpandedSlotKeys(
-        prevAgentSlotsRef.current,
-        agentSlots,
-      )
+      migrateReasoningExpandedSlotKeys(prevAgentSlotsRef.current, agentSlots)
     ) {
       migrated = true;
     }

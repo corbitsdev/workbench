@@ -101,9 +101,7 @@ describe("composeMyraStyleOverlaySectionForInstance", () => {
     });
     expect(result).not.toBeNull();
     expect(result).toContain("<personalization-style>");
-    expect(result).toContain(
-      "Create an artifact for any substantial output",
-    );
+    expect(result).toContain("Create an artifact for any substantial output");
     expect(result).not.toContain(
       "Do not create artifacts; deliver results in the reply.",
     );

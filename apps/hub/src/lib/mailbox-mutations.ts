@@ -129,9 +129,7 @@ export async function applyMailboxBulkAction(
       const updated = await db
         .update(principalMailbox)
         .set({ readAt: null })
-        .where(
-          scopedActiveInbound(scope, [inArray(principalMailbox.id, ids)]),
-        )
+        .where(scopedActiveInbound(scope, [inArray(principalMailbox.id, ids)]))
         .returning({ id: principalMailbox.id });
       return updated.map((row) => row.id);
     }

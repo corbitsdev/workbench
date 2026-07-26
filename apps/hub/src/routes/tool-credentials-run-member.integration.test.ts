@@ -2,7 +2,14 @@
  * CL-3525: workflow run creator principal threads into tool-credentials
  * resolution; member OAuth is scoped per run (heartbeat brief / linear).
  */
-import { afterAll, beforeAll, beforeEach, describe, expect, test } from "bun:test";
+import {
+  afterAll,
+  beforeAll,
+  beforeEach,
+  describe,
+  expect,
+  test,
+} from "bun:test";
 import { randomBytes } from "node:crypto";
 import { PGlite } from "@electric-sql/pglite";
 import { drizzle } from "drizzle-orm/pglite";
@@ -28,7 +35,9 @@ const STEP_AGENT_ID = `ins_${DEPLOYMENT_ID}-${STEP_ID}`;
 const SIDECAR_TOKEN = "sidecar-test-token";
 const ENC_KEY = randomBytes(32).toString("base64");
 
-const LINEAR_TOOL_PINS = [{ name: "@workbench/tools-linear", version: "^0.1.0" }];
+const LINEAR_TOOL_PINS = [
+  { name: "@workbench/tools-linear", version: "^0.1.0" },
+];
 
 const CLIENT_CONFIG = {
   clientId: "linear-client-id",
@@ -45,7 +54,9 @@ async function postCredentials(body: {
   agentId: string;
   providerNames: string[];
   workflowRunId?: string;
-}): Promise<{ credentials: Record<string, { apiKey: string; baseURL: string }> }> {
+}): Promise<{
+  credentials: Record<string, { apiKey: string; baseURL: string }>;
+}> {
   const res = await router.request("/tools/credentials", {
     method: "POST",
     headers: {
@@ -55,7 +66,9 @@ async function postCredentials(body: {
     body: JSON.stringify(body),
   });
   if (res.status !== 200) {
-    throw new Error(`credentials POST failed: ${res.status} ${await res.text()}`);
+    throw new Error(
+      `credentials POST failed: ${res.status} ${await res.text()}`,
+    );
   }
   return (await res.json()) as {
     credentials: Record<string, { apiKey: string; baseURL: string }>;
@@ -158,7 +171,9 @@ describe("POST /tools/credentials run-member isolation (CL-3525)", () => {
     });
 
     expect(body.credentials.linear?.apiKey).toBe("linear-oauth-member-a");
-    expect(body.credentials.linear?.apiKey).not.toBe("tenant-shared-linear-key");
+    expect(body.credentials.linear?.apiKey).not.toBe(
+      "tenant-shared-linear-key",
+    );
   });
 
   test("another member's run resolves that member's linear token only", async () => {
@@ -201,7 +216,9 @@ describe("POST /tools/credentials run-member isolation (CL-3525)", () => {
   });
 
   test("member-only linear OAuth when no tenant credential is configured", async () => {
-    await client.exec(`DELETE FROM credential WHERE id = 'cred-tenant-linear';`);
+    await client.exec(
+      `DELETE FROM credential WHERE id = 'cred-tenant-linear';`,
+    );
 
     const runId = "run-member-only";
     await db.insert(schema.workflowRunRecord).values({
@@ -257,7 +274,8 @@ describe("POST /tools/credentials run-member isolation (CL-3525)", () => {
   });
 
   test("provisioning run without deploymentId cannot bind member OAuth to mismatched agentId", async () => {
-    const mismatchedAgentId = "ins_ses_other-deployment-heartbeat-intake-linear";
+    const mismatchedAgentId =
+      "ins_ses_other-deployment-heartbeat-intake-linear";
     await db.insert(intxSchema.agent).values({
       id: mismatchedAgentId,
       tenantId: TENANT,

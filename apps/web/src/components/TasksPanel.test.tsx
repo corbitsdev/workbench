@@ -83,7 +83,10 @@ describe("TasksPanel", () => {
   it("bulk dismiss sends cancelled status for selected rows", async () => {
     render(
       React.createElement(TasksPanel, {
-        tasks: [makeTask({ id: "task-a" }), makeTask({ id: "task-b", title: "B" })],
+        tasks: [
+          makeTask({ id: "task-a" }),
+          makeTask({ id: "task-b", title: "B" }),
+        ],
       }),
     );
     const boxes = screen.getAllByRole("checkbox");

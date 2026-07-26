@@ -2,10 +2,10 @@
 
 Shared Framer Motion helpers aligned with design tokens in `src/styles.css`:
 
-| CSS variable | Export | Use |
-|--------------|--------|-----|
-| `--spring` | `SPRING_EASE`, `springTransition()` | Staggered reveals, spring settle |
-| `--ease` | `EASE_CURVE`, `easeTransition()` | Panels, popovers |
+| CSS variable | Export                              | Use                              |
+| ------------ | ----------------------------------- | -------------------------------- |
+| `--spring`   | `SPRING_EASE`, `springTransition()` | Staggered reveals, spring settle |
+| `--ease`     | `EASE_CURVE`, `easeTransition()`    | Panels, popovers                 |
 
 ## Reduced motion
 

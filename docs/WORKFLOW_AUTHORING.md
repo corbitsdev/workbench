@@ -59,15 +59,15 @@ fingerprint used for deploy idempotency.
 
 ## Required vs optional package exports
 
-| Export | Required? | Portable? | Role |
-| ------ | --------- | --------- | ---- |
-| `kind` | Yes | Yes (string) | Stable kind id; matches directory name |
-| `workflow` | Yes | **Yes — the DAG** | `defineWorkflow(...)` from `@intx/workflow` |
-| `label` | Optional | Workbench catalog only | Human title in launcher / mail subjects |
-| `description` | Optional | Workbench catalog only | Catalog blurb |
-| `DISPLAY_STEPS` | Optional | Workbench catalog / run stepper only | Grouped user-facing step flow |
-| `INTAKE_FIELDS` | Optional | Workbench attach / start form only | First-intake form schema (CL-3509) |
-| `ALLOWS_SCHEDULED_POST_INTAKE_DRIVE` | Optional | Workbench scheduler only | Opt-in for Myra-driven post-intake gates on schedules (CL-3528) |
+| Export                               | Required? | Portable?                            | Role                                                            |
+| ------------------------------------ | --------- | ------------------------------------ | --------------------------------------------------------------- |
+| `kind`                               | Yes       | Yes (string)                         | Stable kind id; matches directory name                          |
+| `workflow`                           | Yes       | **Yes — the DAG**                    | `defineWorkflow(...)` from `@intx/workflow`                     |
+| `label`                              | Optional  | Workbench catalog only               | Human title in launcher / mail subjects                         |
+| `description`                        | Optional  | Workbench catalog only               | Catalog blurb                                                   |
+| `DISPLAY_STEPS`                      | Optional  | Workbench catalog / run stepper only | Grouped user-facing step flow                                   |
+| `INTAKE_FIELDS`                      | Optional  | Workbench attach / start form only   | First-intake form schema (CL-3509)                              |
+| `ALLOWS_SCHEDULED_POST_INTAKE_DRIVE` | Optional  | Workbench scheduler only             | Opt-in for Myra-driven post-intake gates on schedules (CL-3528) |
 
 `loadWorkflow` (`apps/hub/bin/deploy-workflow.ts`) is the authoritative reader
 of these exports. Unknown exports are ignored; missing side exports are fine.
@@ -80,13 +80,13 @@ are irrelevant outside Workbench.
 
 ### Portable (Interchange-native) — prefer these for the DAG body
 
-| Primitive | Package | Notes |
-| --------- | ------- | ----- |
-| `defineWorkflow` | `@intx/workflow` | Definition root |
-| `step({ agent, input?, after? })` | `@intx/workflow` | Reasoning step with a real agent def |
+| Primitive                                      | Package          | Notes                                                                 |
+| ---------------------------------------------- | ---------------- | --------------------------------------------------------------------- |
+| `defineWorkflow`                               | `@intx/workflow` | Definition root                                                       |
+| `step({ agent, input?, after? })`              | `@intx/workflow` | Reasoning step with a real agent def                                  |
 | `action({ handler, input?, effect?, after? })` | `@intx/workflow` | Deterministic tool/handler call — **portable default** for tool steps |
-| `awaitSignal` | `@intx/workflow` | HITL gate |
-| `map` / other native combinators | `@intx/workflow` | Fan-out shapes supported by Interchange |
+| `awaitSignal`                                  | `@intx/workflow` | HITL gate                                                             |
+| `map` / other native combinators               | `@intx/workflow` | Fan-out shapes supported by Interchange                               |
 
 **Heartbeat is the reference composition** for result-shaped success:
 unattended graph → persist artifact → explicit `mail_send` via native
@@ -102,10 +102,10 @@ interprets. On a non-Workbench Interchange deploy that does not honor those
 tags, behavior differs (see tags table). Use them when the Workbench substrate
 capability is what you need; prefer native `action` when you do not.
 
-| Helper | Workbench-only tags / behavior | Prefer native when… |
-| ------ | ------------------------------ | ------------------- |
+| Helper                  | Workbench-only tags / behavior                                                                                                                                                      | Prefer native when…                                                                                                                                                                   |
+| ----------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `deterministicToolStep` | Tags: `workbench.stepKind=deterministic-tool`, `workbench.tool`, optional `workbench.argMap`, `workbench.nonFatal`, `workbench.title`. Sidecar runs the tool with **no inference**. | You can express the call as `action({ handler })` and do not need `nonFatal` / `argMap` reshape (ActionPrimitive has no `nonFatal` today — heartbeat intake steps document this gap). |
-| `agentStep` | Thin wrapper around `step` + default inference / model prefs used by Workbench packs | You already have a full `defineAgent` + `step({ agent })` and do not need the sugar |
+| `agentStep`             | Thin wrapper around `step` + default inference / model prefs used by Workbench packs                                                                                                | You already have a full `defineAgent` + `step({ agent })` and do not need the sugar                                                                                                   |
 
 **Title tag:** `workbench.title` is catalog UX only (human label in previews).
 It is not required for execution.
@@ -118,30 +118,30 @@ tag authors must set to get a quiet run.
 
 ### Workbench-only side exports (never part of DAG execution)
 
-| Export / field | Consumer | Portable deploy impact if omitted |
-| -------------- | -------- | --------------------------------- |
-| `label` / `description` | Catalog, deploy meta, terminal-mail subject fallback | None on the graph; generic kind string in UI |
-| `DISPLAY_STEPS` | Embedded `displayFlow`; catalog preview + run stepper grouping | UI falls back to derived / raw step keys |
-| `INTAKE_FIELDS` | Embedded `intakeFields`; schedule attach + start forms | No first-intake form; gates still work if declared in the DAG |
-| `ALLOWS_SCHEDULED_POST_INTAKE_DRIVE` | Scheduler attach policy | Kind stays off multi-gate schedule drive unless hub allowlisted |
+| Export / field                       | Consumer                                                       | Portable deploy impact if omitted                               |
+| ------------------------------------ | -------------------------------------------------------------- | --------------------------------------------------------------- |
+| `label` / `description`              | Catalog, deploy meta, terminal-mail subject fallback           | None on the graph; generic kind string in UI                    |
+| `DISPLAY_STEPS`                      | Embedded `displayFlow`; catalog preview + run stepper grouping | UI falls back to derived / raw step keys                        |
+| `INTAKE_FIELDS`                      | Embedded `intakeFields`; schedule attach + start forms         | No first-intake form; gates still work if declared in the DAG   |
+| `ALLOWS_SCHEDULED_POST_INTAKE_DRIVE` | Scheduler attach policy                                        | Kind stays off multi-gate schedule drive unless hub allowlisted |
 
 ### Hub-only policy (not package exports)
 
-| Mechanism | What it does | Authoring rule |
-| --------- | ------------ | -------------- |
-| `deliverRunTerminalMail` | Hub may fire **failure** mailbox rows on terminal failure (`apps/hub/src/workflow-executor/run-terminal-mail.ts`). Generic terminal-**success** mail is not a product surface (CL-4312). | **Do not rely on hub completion mail for product success.** Failure mail remains the hub breaker. |
-| `notifyRunFailure` member pref | Opt-out for failure rows (default on) | Leave failure to hub policy |
-| Product fan-outs (e.g. `granola_fanout_call`) | Domain-specific result delivery | Prefer these (or `mail_send`) for produced success |
+| Mechanism                                     | What it does                                                                                                                                                                             | Authoring rule                                                                                    |
+| --------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
+| `deliverRunTerminalMail`                      | Hub may fire **failure** mailbox rows on terminal failure (`apps/hub/src/workflow-executor/run-terminal-mail.ts`). Generic terminal-**success** mail is not a product surface (CL-4312). | **Do not rely on hub completion mail for product success.** Failure mail remains the hub breaker. |
+| `notifyRunFailure` member pref                | Opt-out for failure rows (default on)                                                                                                                                                    | Leave failure to hub policy                                                                       |
+| Product fan-outs (e.g. `granola_fanout_call`) | Domain-specific result delivery                                                                                                                                                          | Prefer these (or `mail_send`) for produced success                                                |
 
 ## Success notification policy (product default)
 
 **Inbox success = result mail only** (CL-4312).
 
-| Situation | What should reach the inbox |
-| --------- | --------------------------- |
-| Run produced something a human should see (brief, call notes, report, links) | Explicit **result mail** inside the workflow (`mail_send` / `action` handler) **or** a documented product fan-out tool |
-| Run completed with nothing produced (discoverer found zero work, all items already processed) | **Silence** — no success row |
-| Run failed | Hub **terminal-failure** mail (plain language + run link); failure breaker preserved |
+| Situation                                                                                     | What should reach the inbox                                                                                            |
+| --------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| Run produced something a human should see (brief, call notes, report, links)                  | Explicit **result mail** inside the workflow (`mail_send` / `action` handler) **or** a documented product fan-out tool |
+| Run completed with nothing produced (discoverer found zero work, all items already processed) | **Silence** — no success row                                                                                           |
+| Run failed                                                                                    | Hub **terminal-failure** mail (plain language + run link); failure breaker preserved                                   |
 
 ### Why not hub auto terminal-success mail
 
@@ -180,11 +180,11 @@ are the main source of quiet successful completions.
 Reference: `workflows/granola-call` (parent) + `workflows/process-granola-call`
 (per-item child).
 
-| Layer | Responsibility | Success mail? |
-| ----- | -------------- | ------------- |
-| Parent (`granola-call`) | List recent items; spawn children for unprocessed work; exit | **No** — including when `spawned.length === 0` ("quiet run") |
-| Child (`process-granola-call`) | Produce artifacts for one item | Result delivery via **product fan-out / explicit mail**, not parent completion |
-| Hub terminal-success | Not a product surface (CL-4312 removes generic completion mail) | Do not use; success = result mail only |
+| Layer                          | Responsibility                                                  | Success mail?                                                                  |
+| ------------------------------ | --------------------------------------------------------------- | ------------------------------------------------------------------------------ |
+| Parent (`granola-call`)        | List recent items; spawn children for unprocessed work; exit    | **No** — including when `spawned.length === 0` ("quiet run")                   |
+| Child (`process-granola-call`) | Produce artifacts for one item                                  | Result delivery via **product fan-out / explicit mail**, not parent completion |
+| Hub terminal-success           | Not a product surface (CL-4312 removes generic completion mail) | Do not use; success = result mail only                                         |
 
 When authoring a new discoverer:
 
@@ -225,13 +225,13 @@ work notifies through explicit result paths.
 
 ## Anti-patterns
 
-| Anti-pattern | Why |
-| ------------ | --- |
-| Mega `defineWorkbenchWorkflow({ dag, display, intake, terminalMail })` as the only API | Locks authoring to Workbench; fights portability |
-| Success notification only via hub terminal-success mail | Non-portable; spammy for quiet runs; weak content |
-| Required new `workbench.*` tag just to suppress success mail | Encodes product policy as a runtime tag; prefer default quiet + explicit result steps |
-| Putting catalog-only data inside step agents "so the runtime has it" | Side exports already serialize beside the def; keep the DAG clean |
-| Importing workflow packages from hub/web app code | Hub is definition-agnostic; use embedded JSON / APIs |
+| Anti-pattern                                                                           | Why                                                                                   |
+| -------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------- |
+| Mega `defineWorkbenchWorkflow({ dag, display, intake, terminalMail })` as the only API | Locks authoring to Workbench; fights portability                                      |
+| Success notification only via hub terminal-success mail                                | Non-portable; spammy for quiet runs; weak content                                     |
+| Required new `workbench.*` tag just to suppress success mail                           | Encodes product policy as a runtime tag; prefer default quiet + explicit result steps |
+| Putting catalog-only data inside step agents "so the runtime has it"                   | Side exports already serialize beside the def; keep the DAG clean                     |
+| Importing workflow packages from hub/web app code                                      | Hub is definition-agnostic; use embedded JSON / APIs                                  |
 
 ## Thin helpers (if you add one later)
 
@@ -250,12 +250,12 @@ repeated, error-prone boilerplate without narrowing the supported path.
 
 ## Where serialization picks side exports up
 
-| Stage | What runs |
-| ----- | --------- |
-| Author | Export `kind` + `workflow` (+ optional side exports) from `workflows/<kind>/` |
-| Build | `bun run build:workflow-defs` → `EmbeddedWorkflowDef` JSON |
-| Boot / push | Hub publishes `definition`; catalog stores label/display/intake siblings |
-| Run | Sidecar executes the graph only — side exports do not re-enter the child |
+| Stage       | What runs                                                                     |
+| ----------- | ----------------------------------------------------------------------------- |
+| Author      | Export `kind` + `workflow` (+ optional side exports) from `workflows/<kind>/` |
+| Build       | `bun run build:workflow-defs` → `EmbeddedWorkflowDef` JSON                    |
+| Boot / push | Hub publishes `definition`; catalog stores label/display/intake siblings      |
+| Run         | Sidecar executes the graph only — side exports do not re-enter the child      |
 
 Gate shape (`requiresIntake`, `humanGateCount`) is **derived from the
 definition** at build time (`deriveWorkflowGateInfo`), not a hand-written side

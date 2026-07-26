@@ -1,5 +1,8 @@
 import { describe, expect, it } from "bun:test";
-import { getAttachmentMediaCategory, getFileTypeLabel } from "./attachment-media";
+import {
+  getAttachmentMediaCategory,
+  getFileTypeLabel,
+} from "./attachment-media";
 
 describe("getAttachmentMediaCategory", () => {
   it("classifies an image MIME type", () => {

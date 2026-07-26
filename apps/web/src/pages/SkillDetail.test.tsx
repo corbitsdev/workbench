@@ -150,7 +150,9 @@ describe("SkillDetail", () => {
   it("toggles between rendered markdown and raw source", async () => {
     const user = userEvent.setup();
     renderPage();
-    await waitFor(() => expect(document.body.textContent).toContain("SKILL.md"));
+    await waitFor(() =>
+      expect(document.body.textContent).toContain("SKILL.md"),
+    );
 
     const toggle = [...document.querySelectorAll("button")].find(
       (b) => b.textContent?.trim() === "Source",

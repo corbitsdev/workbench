@@ -56,10 +56,19 @@ export async function listInitiatives(
   rawArgs: Record<string, unknown>,
   signal: AbortSignal,
 ): Promise<unknown> {
-  const args = parseArgs(ListInitiativesArgsSchema, rawArgs, "linear_list_initiatives");
-  const pagination = resolveListPagination(args, DEFAULT_LIST_LIMIT, MAX_LIST_LIMIT);
+  const args = parseArgs(
+    ListInitiativesArgsSchema,
+    rawArgs,
+    "linear_list_initiatives",
+  );
+  const pagination = resolveListPagination(
+    args,
+    DEFAULT_LIST_LIMIT,
+    MAX_LIST_LIMIT,
+  );
   const query = optionalString(args.query);
-  const filter = query !== null ? { name: { containsIgnoreCase: query } } : null;
+  const filter =
+    query !== null ? { name: { containsIgnoreCase: query } } : null;
   const data = await fetchLinearGraphQL(
     config,
     LIST_INITIATIVES_QUERY,
@@ -77,7 +86,11 @@ export async function saveInitiative(
   rawArgs: Record<string, unknown>,
   signal: AbortSignal,
 ): Promise<unknown> {
-  const args = parseArgs(SaveInitiativeArgsSchema, rawArgs, "linear_save_initiative");
+  const args = parseArgs(
+    SaveInitiativeArgsSchema,
+    rawArgs,
+    "linear_save_initiative",
+  );
   const input: Record<string, unknown> = { name: args.name };
   if (args.description !== undefined) input.description = args.description;
   if (args.status !== undefined) input.status = args.status;

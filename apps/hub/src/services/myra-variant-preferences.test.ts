@@ -395,7 +395,11 @@ describe("normalizePinnedSkillIds", () => {
 describe("validatePinnedSkillIdsPatch", () => {
   it("returns null when pinnedSkillIds is omitted", async () => {
     await expect(
-      validatePinnedSkillIdsPatch({} as HubDb, { tenantId: "tn", userId: "u" }, {}),
+      validatePinnedSkillIdsPatch(
+        {} as HubDb,
+        { tenantId: "tn", userId: "u" },
+        {},
+      ),
     ).resolves.toBeNull();
   });
 });

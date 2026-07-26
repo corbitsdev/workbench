@@ -24,9 +24,9 @@ describe("migration 0074_work_unit", () => {
   });
 
   it("declares every migration CHECK constraint in the Drizzle schema", () => {
-    const checkNames = [
-      ...sql.matchAll(/CONSTRAINT "(\w+)" CHECK/g),
-    ].map((m) => m[1]);
+    const checkNames = [...sql.matchAll(/CONSTRAINT "(\w+)" CHECK/g)].map(
+      (m) => m[1],
+    );
     expect(checkNames).toEqual([
       "work_unit_status_check",
       "work_unit_attempts_nonneg",

@@ -42,7 +42,10 @@ export function StatSparkline({
   const { points, coords } = sparklinePoints(values, width, height);
   if (coords.length === 0) {
     return (
-      <div className="text-[11px] text-text-3" data-testid="stat-sparkline-empty">
+      <div
+        className="text-[11px] text-text-3"
+        data-testid="stat-sparkline-empty"
+      >
         No data
       </div>
     );
@@ -84,7 +87,10 @@ export function StatSparklineZeroBaseline({
   const coords = seriesToCoords(values, width, height);
   if (coords.length === 0) {
     return (
-      <div className="text-[11px] text-text-3" data-testid="stat-sparkline-empty">
+      <div
+        className="text-[11px] text-text-3"
+        data-testid="stat-sparkline-empty"
+      >
         No data
       </div>
     );

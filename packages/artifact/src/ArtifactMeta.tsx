@@ -60,7 +60,8 @@ export function ArtifactMeta({
   if (kindLabel) summaryParts.push(<span>{kindLabel}</span>);
   if (version !== undefined) summaryParts.push(<span>{`v${version}`}</span>);
   if (statusLabel) summaryParts.push(<span>{statusLabel}</span>);
-  if (createdAt) summaryParts.push(<span>{formatArtifactDate(createdAt)}</span>);
+  if (createdAt)
+    summaryParts.push(<span>{formatArtifactDate(createdAt)}</span>);
 
   return (
     <div className={className}>

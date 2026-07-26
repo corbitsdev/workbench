@@ -15,10 +15,19 @@ describe("linear_list_cycles", () => {
       { includes: "TeamByName", data: { teams: { nodes: [{ id: "ENG" }] } } },
       {
         includes: "ListCycles",
-        data: { team: { cycles: { nodes, pageInfo: { endCursor: null, hasNextPage: false } } } },
+        data: {
+          team: {
+            cycles: {
+              nodes,
+              pageInfo: { endCursor: null, hasNextPage: false },
+            },
+          },
+        },
       },
     ]);
-    const runner = createToolRunner(createLinearTools({ apiKey: "k", fetcher }));
+    const runner = createToolRunner(
+      createLinearTools({ apiKey: "k", fetcher }),
+    );
 
     const result = await runner.run(
       {
@@ -41,7 +50,9 @@ describe("linear_list_cycles", () => {
       { includes: "TeamByName", data: { teams: { nodes: [{ id: "t1" }] } } },
       { includes: "ListCycles", data: { team: { cycles: { nodes: [] } } } },
     ]);
-    const runner = createToolRunner(createLinearTools({ apiKey: "k", fetcher }));
+    const runner = createToolRunner(
+      createLinearTools({ apiKey: "k", fetcher }),
+    );
 
     await runner.run(
       {
@@ -65,7 +76,9 @@ describe("linear_list_cycles", () => {
       { includes: "TeamByName", data: { teams: { nodes: [{ id: "t1" }] } } },
       { includes: "ListCycles", data: { team: { cycles: { nodes: [] } } } },
     ]);
-    const runner = createToolRunner(createLinearTools({ apiKey: "k", fetcher }));
+    const runner = createToolRunner(
+      createLinearTools({ apiKey: "k", fetcher }),
+    );
 
     await runner.run(
       {
@@ -85,7 +98,9 @@ describe("linear_list_cycles", () => {
       { includes: "TeamByName", data: { teams: { nodes: [{ id: "t1" }] } } },
       { includes: "ListCycles", data: { team: { cycles: { nodes: [] } } } },
     ]);
-    const runner = createToolRunner(createLinearTools({ apiKey: "k", fetcher }));
+    const runner = createToolRunner(
+      createLinearTools({ apiKey: "k", fetcher }),
+    );
 
     await runner.run(
       {
@@ -104,7 +119,9 @@ describe("linear_list_cycles", () => {
     const fetcher = makeRoutingFetchStub([
       { includes: "TeamByName", data: { teams: { nodes: [] } } },
     ]);
-    const runner = createToolRunner(createLinearTools({ apiKey: "k", fetcher }));
+    const runner = createToolRunner(
+      createLinearTools({ apiKey: "k", fetcher }),
+    );
 
     const result = await runner.run(
       {

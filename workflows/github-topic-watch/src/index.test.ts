@@ -106,10 +106,7 @@ describe("github-topic-watch", () => {
     const document = actionPrimitive("document");
     expect(document.handler).toBe(GITHUB_TOPIC_WATCH_DOCUMENT_HANDLER);
     expect(document.input).toEqual({
-      merge: [
-        { from: "steps.intake.output" },
-        { from: "steps.digest.output" },
-      ],
+      merge: [{ from: "steps.intake.output" }, { from: "steps.digest.output" }],
     });
     expect(document.effect).toEqual({
       requires: [GITHUB_TOPIC_WATCH_DOCUMENT_HANDLER],

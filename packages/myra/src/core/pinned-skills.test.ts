@@ -33,10 +33,14 @@ describe("pinned skills prompt index", () => {
   });
 
   it("skips triage when no entry is triage-relevant", () => {
-    const entries = [{ name: "Chat only", description: "myra-surface: chat-only" }];
+    const entries = [
+      { name: "Chat only", description: "myra-surface: chat-only" },
+    ];
     const flags = [isPinnedSkillTriageRelevant(entries[0]!.description)];
     expect(filterPinnedEntriesForSurface("triage", entries, flags)).toEqual([]);
-    expect(filterPinnedEntriesForSurface("chat", entries, flags)).toEqual(entries);
+    expect(filterPinnedEntriesForSurface("chat", entries, flags)).toEqual(
+      entries,
+    );
   });
 
   it("uses the first line for multi-line descriptions", () => {

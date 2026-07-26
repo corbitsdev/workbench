@@ -379,10 +379,9 @@ describe("createGranolaTools", () => {
   it("accepts a numeric-string limit (routine text intake) and still rejects garbage", async () => {
     const fetcher = mock(async (input: string) => {
       expect(new URL(String(input)).searchParams.get("page_size")).toBe("3");
-      return new Response(
-        JSON.stringify({ notes: [], hasMore: false }),
-        { status: 200 },
-      );
+      return new Response(JSON.stringify({ notes: [], hasMore: false }), {
+        status: 200,
+      });
     });
     const runner = createToolRunner(
       createGranolaTools({

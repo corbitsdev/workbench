@@ -36,7 +36,12 @@ describe("buildAttachmentRefMap", () => {
   it("groups refs by mailId as ChatAttachments keyed on artifactId", () => {
     const map = buildAttachmentRefMap(refs);
     expect(map.get("mail-1")).toEqual([
-      { blobId: "art-1", name: "report.pdf", type: "application/pdf", size: 100 },
+      {
+        blobId: "art-1",
+        name: "report.pdf",
+        type: "application/pdf",
+        size: 100,
+      },
       { blobId: "art-2", name: "pic.png", type: "image/png", size: 50 },
     ]);
     expect(map.get("mail-2")).toEqual([
@@ -69,7 +74,12 @@ describe("mergeAttachmentRefs", () => {
   it("attaches persisted refs to the bubble whose id matches the mailId", () => {
     const merged = mergeAttachmentRefs(messages, buildAttachmentRefMap(refs));
     expect(merged[0]!.attachments).toEqual([
-      { blobId: "art-1", name: "report.pdf", type: "application/pdf", size: 100 },
+      {
+        blobId: "art-1",
+        name: "report.pdf",
+        type: "application/pdf",
+        size: 100,
+      },
       { blobId: "art-2", name: "pic.png", type: "image/png", size: 50 },
     ]);
     expect(merged[1]!.attachments).toBeUndefined();

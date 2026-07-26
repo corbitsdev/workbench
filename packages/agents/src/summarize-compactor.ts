@@ -340,9 +340,10 @@ export function createSummarizeCompactor(
 
       const tail = retainedTail(turns);
       const output = [summaryTurn, ...tail];
-      const summaryChars = summaryTurn.content[0]?.type === "text"
-        ? summaryTurn.content[0].text.length
-        : 0;
+      const summaryChars =
+        summaryTurn.content[0]?.type === "text"
+          ? summaryTurn.content[0].text.length
+          : 0;
 
       return {
         output,

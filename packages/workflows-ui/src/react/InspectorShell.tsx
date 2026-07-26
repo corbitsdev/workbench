@@ -46,10 +46,7 @@ export function InspectorShell({
         </div>
       ) : null}
       <div
-        className={cn(
-          "min-h-0 flex-1 overflow-auto px-4 py-3",
-          bodyClassName,
-        )}
+        className={cn("min-h-0 flex-1 overflow-auto px-4 py-3", bodyClassName)}
       >
         {children}
       </div>
@@ -105,7 +102,9 @@ export function InspectorHeader({
         <p className="text-[12.5px] leading-snug text-text-3">{description}</p>
       ) : null}
       {actions ? (
-        <div className="mt-1 flex flex-wrap items-center gap-1.5">{actions}</div>
+        <div className="mt-1 flex flex-wrap items-center gap-1.5">
+          {actions}
+        </div>
       ) : null}
     </div>
   );

@@ -35,7 +35,10 @@ describe("buildDispatchAllowedToolNames", () => {
 
   it("admits loaded package tools granted via the catalog grant set", () => {
     const granted = ["mail_send"];
-    const loaded = new Set(["sumble__search_technologies", "linear__list_issues"]);
+    const loaded = new Set([
+      "sumble__search_technologies",
+      "linear__list_issues",
+    ]);
     const allowed = buildDispatchAllowedToolNames(
       granted,
       loaded,
@@ -51,7 +54,12 @@ describe("buildDispatchAllowedToolNames", () => {
   it("admits every loaded tool when the agent has no dynamic catalog", () => {
     const granted = ["mail_send"];
     const loaded = new Set(["granola__list_calls", "exa__search"]);
-    const allowed = buildDispatchAllowedToolNames(granted, loaded, [], undefined);
+    const allowed = buildDispatchAllowedToolNames(
+      granted,
+      loaded,
+      [],
+      undefined,
+    );
     expect(allowed.has("granola__list_calls")).toBe(true);
     expect(allowed.has("exa__search")).toBe(true);
     expect(allowed.has("mail_send")).toBe(true);

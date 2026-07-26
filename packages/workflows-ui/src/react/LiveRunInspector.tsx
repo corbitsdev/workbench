@@ -141,7 +141,9 @@ export function LiveRunInspector({
     runId !== undefined
       ? { label: "Run id", value: runId, mono: true as const }
       : null,
-  ].filter((r): r is { label: string; value: string; mono?: true } => r !== null);
+  ].filter(
+    (r): r is { label: string; value: string; mono?: true } => r !== null,
+  );
 
   return (
     <InspectorShell

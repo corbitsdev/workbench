@@ -70,9 +70,7 @@ describe("v2 precedence and mail-rule consolidation", () => {
   it("lists teammate notes in the irreversible confirm-first set exactly once", () => {
     const prompt = v2();
     expect(prompt).toContain("a note to a teammate");
-    expect(prompt).not.toContain(
-      "Teammate mail is external and hard to undo",
-    );
+    expect(prompt).not.toContain("Teammate mail is external and hard to undo");
   });
 });
 
@@ -99,9 +97,7 @@ describe("v2 failure reporting", () => {
 
 describe("v2 budget and hygiene", () => {
   it("stays within the 650-1050 word static budget", () => {
-    const words = wordCount(
-      stripPersonalAgentIdentityMarker(v2()),
-    );
+    const words = wordCount(stripPersonalAgentIdentityMarker(v2()));
     expect(words).toBeGreaterThanOrEqual(650);
     expect(words).toBeLessThanOrEqual(1050);
   });
