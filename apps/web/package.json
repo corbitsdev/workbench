@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@intx/hub-client": "workspace:*",
+    "@intx/types": "workspace:*",
     "@intx/workflow": "workspace:*",
     "@tanstack/react-query": "5.100.14",
     "@workbench/agents": "workspace:*",

@@ -939,7 +939,7 @@ export async function createSkill(
       tenantId: userContext.tenantId,
       kind: "skill",
       name: assetName,
-      displayName,
+      ...(displayName === undefined ? {} : { displayName }),
       creatorPrincipalId: userContext.principalId,
     });
   } catch (err) {

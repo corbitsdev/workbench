@@ -11,6 +11,23 @@ export type {
   AgentActivity,
 } from "../../../interchange/packages/hub-client/src/types";
 
+// transforms.ts is DOM-free (it imports only @intx/types and ./types), so the
+// shim can forward it verbatim. @workbench/agents reaches these through this
+// path mapping too — `paths` is compilation-global — so omitting them made
+// chat-messages.ts fail to resolve `turnToEvent` in this app only.
+export {
+  mailToEvent,
+  mailDeliveryToEvent,
+  turnToEvent,
+  parseFromHeader,
+  extractBodyText,
+  formatAddress,
+  isAgentAddress,
+  resolveAgentAddress,
+  resolveAgentRecipient,
+  type MailDeliveryData,
+} from "../../../interchange/packages/hub-client/src/transforms";
+
 export interface Transport {
   fetch<T>(method: string, path: string, body?: unknown): Promise<T>;
   subscribe(

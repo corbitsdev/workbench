@@ -2,7 +2,6 @@
 import "../test-setup";
 import { afterEach, describe, expect, it, mock } from "bun:test";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
-import React from "react";
 import { NativeApprovalCard } from "./NativeApprovalCard";
 import type { NativeApproval } from "../lib/approvals-api";
 import type { UnresolvedToolCall } from "../lib/unresolved-tool-call";

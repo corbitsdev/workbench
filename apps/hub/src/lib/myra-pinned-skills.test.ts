@@ -71,7 +71,7 @@ describe("resolvePinnedSkillIndexEntries", () => {
     expect(entries[0]?.name).toBe("Landing page");
     expect(entries[0]?.name).not.toBe("landing-page");
 
-    const section = renderPinnedSkillsSection(entries, "xml");
+    const section = renderPinnedSkillsSection(entries, { xml: true });
     expect(section).toContain("Landing page");
     expect(section).not.toContain("landing-page");
   });
@@ -103,6 +103,6 @@ describe("resolvePinnedSkillIndexEntries", () => {
 
 describe("renderPinnedSkillsSection", () => {
   it("renders nothing when entries are empty", () => {
-    expect(renderPinnedSkillsSection([], "xml")).toBeNull();
+    expect(renderPinnedSkillsSection([], { xml: true })).toBeNull();
   });
 });

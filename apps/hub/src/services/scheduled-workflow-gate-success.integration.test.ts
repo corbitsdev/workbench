@@ -164,10 +164,9 @@ describe("scheduler multi-gate success path (CL-3528)", () => {
 
         await applyRunProjection(db, runId, {
           status: "awaiting",
-          clearPendingSignal:
-            intakeSignalId !== undefined
-              ? { signalIds: [intakeSignalId] }
-              : undefined,
+          ...(intakeSignalId === undefined
+            ? {}
+            : { clearPendingSignal: { signalIds: [intakeSignalId] } }),
         });
         pendingGates = [{ signalName: "confirm" }];
         const beforeDrive = await loadRunRecord(db, runId);

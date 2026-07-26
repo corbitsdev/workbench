@@ -17,14 +17,17 @@ export function buildPersonalAgentGrantRequirements(
   return [];
 }
 
-export const PERSONAL_AGENT_CREDENTIAL_REQUIREMENTS: CredentialRequirementType[] =
-  [
-    {
-      providerName: "openai-compatible",
-      source: "tenant",
-      name: LLM_CREDENTIAL_NAME,
-    },
-  ];
+// A 1-tuple, not an array: `PERSONAL_AGENT_PROMPT_FORMAT` below reads element
+// 0 and there is exactly one requirement, so the length belongs in the type.
+export const PERSONAL_AGENT_CREDENTIAL_REQUIREMENTS: [
+  CredentialRequirementType,
+] = [
+  {
+    providerName: "openai-compatible",
+    source: "tenant",
+    name: LLM_CREDENTIAL_NAME,
+  },
+];
 
 /**
  * kimi-k2.6 is the default Myra chat model: stronger long-form reasoning over

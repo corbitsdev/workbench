@@ -23,18 +23,22 @@ function toolLabel(name: string): string {
  * reconcile. This is the undo surface for the durable trust grant (CL-3942) — no
  * standing auto-approval is left without a way to remove it.
  */
-export function AutoApprovedToolsPanel({ tenantId }: { tenantId: string }) {
+export function AutoApprovedToolsPanel({
+  tenantId,
+}: {
+  tenantId: string | null;
+}) {
   const queryClient = useQueryClient();
-  const enabled = tenantId !== "";
+  const enabled = tenantId !== null && tenantId !== "";
 
   const { data: tools = [], isLoading } = useQuery({
     queryKey: ["auto-approved-tools", tenantId],
     enabled,
-    queryFn: () => listAutoApprovedTools(tenantId),
+    queryFn: () => listAutoApprovedTools(tenantId ?? ""),
   });
 
   const revoke = useMutation({
-    mutationFn: (id: string) => revokeAutoApprovedTool(tenantId, id),
+    mutationFn: (id: string) => revokeAutoApprovedTool(tenantId ?? "", id),
     onSuccess: () =>
       queryClient.invalidateQueries({
         queryKey: ["auto-approved-tools", tenantId],

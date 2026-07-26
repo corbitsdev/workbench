@@ -1,6 +1,11 @@
 import { describe, expect, it, mock } from "bun:test";
 import { Hono } from "hono";
+import { type } from "arktype";
 import type { HubDb } from "../db";
+
+const SchedulesResponse = type({
+  items: type({ nextFireAt: "string" }, "[]"),
+});
 
 // Caller identity: userId -> membership. user-none has no membership.
 const memberByUser: Record<
@@ -246,7 +251,8 @@ describe("GET /me/schedules", () => {
       req("/me/schedules", { user: "user-a" }),
     );
     expect(res.status).toBe(200);
-    const body = await res.json();
+    const body = SchedulesResponse(await res.json());
+    if (body instanceof type.errors) throw new Error(body.summary);
     expect(body.items).toHaveLength(1);
     expect(body.items[0]).toMatchObject({
       id: "sch-1",
@@ -256,7 +262,7 @@ describe("GET /me/schedules", () => {
       triggerPayload: { reason: "scheduled-heartbeat" },
       createdAt: "2026-01-01T00:00:00.000Z",
     });
-    expect(body.items[0].nextFireAt).toMatch(/^\d{4}-\d{2}-\d{2}T/);
+    expect(body.items[0]!.nextFireAt).toMatch(/^\d{4}-\d{2}-\d{2}T/);
     expect(storeCalls[0]).toMatchObject({
       fn: "list",
       args: { tenantId: "tenant-root", ownerPrincipalId: "principal-a" },

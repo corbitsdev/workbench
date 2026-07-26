@@ -13,10 +13,10 @@ describe("V1_EVAL_CASES", () => {
   test("every case validates against EvalCaseSchema", () => {
     for (const c of V1_EVAL_CASES) {
       const parsed = EvalCaseSchema(c);
-      expect(parsed instanceof Error).toBe(false);
-      if (!(parsed instanceof Error)) {
-        expect(parsed.id).toBe(c.id);
-      }
+      // ArkErrors extends Array, not Error, so `instanceof Error` was always
+      // false and this assertion could not fail on a bad fixture.
+      if (parsed instanceof type.errors) throw new Error(parsed.summary);
+      expect(parsed.id).toBe(c.id);
     }
   });
 

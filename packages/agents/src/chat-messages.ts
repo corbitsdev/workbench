@@ -1,4 +1,6 @@
 import type { InstanceEvent } from "@intx/hub-client";
+
+type TurnEvent = Extract<InstanceEvent, { kind: "turn" }>;
 import { turnToEvent } from "@intx/hub-client";
 import type { InferenceTurnResponse } from "@intx/types";
 import type { ChatMessage, ChatImage, Part } from "@workbench/agent-core/parts";
@@ -69,10 +71,11 @@ export function mergeReconstructedTurns(
   events: readonly InstanceEvent[],
   reconstructed: readonly InstanceEvent[],
 ): InstanceEvent[] {
-  const existingTurnIds = new Set(
-    events.filter((e) => e.kind === "turn").map((e) => e.turnId),
+  const isTurn = (e: InstanceEvent): e is TurnEvent => e.kind === "turn";
+  const existingTurnIds = new Set(events.filter(isTurn).map((e) => e.turnId));
+  const toAdd = reconstructed.filter(
+    (e) => !isTurn(e) || !existingTurnIds.has(e.turnId),
   );
-  const toAdd = reconstructed.filter((e) => !existingTurnIds.has(e.turnId));
   if (toAdd.length === 0) return [...events];
   return [...events, ...toAdd].sort((a, b) =>
     a.timestamp < b.timestamp ? -1 : a.timestamp > b.timestamp ? 1 : 0,

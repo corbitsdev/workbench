@@ -82,9 +82,13 @@ export default function GammaPresentationBody({
   }
   if (!isHttps) return invalid();
 
+  // Bound outside renderBody: TS does not carry the `deck instanceof
+  // type.errors` narrowing into a hoisted function declaration.
+  const deckUrl = deck.url;
+
   function renderBody() {
     if (!showPdf || inlineUrl === undefined) {
-      return <PresentationBody url={deck.url} />;
+      return <PresentationBody url={deckUrl} />;
     }
     if (pdfLoadFailed) {
       return (

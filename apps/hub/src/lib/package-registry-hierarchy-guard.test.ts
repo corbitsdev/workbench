@@ -1,5 +1,5 @@
 import { describe, expect, it, mock } from "bun:test";
-import { AssetServiceError, type AssetService } from "@workbench/hub-sessions";
+import { AssetServiceError } from "@workbench/hub-sessions";
 import type { HubDb } from "../db";
 
 const validateTarballPackageJSON = mock(
@@ -32,6 +32,8 @@ const {
   PackageRegistryTarballInvalidError,
   assertNoCrossAssetPackageRegistryCollisions,
 } = await import("./package-registry-hierarchy-guard");
+type PackageRegistryAssetReader =
+  import("./package-registry-hierarchy-guard").PackageRegistryAssetReader;
 
 function makeDb(assets: { id: string; name: string }[]): HubDb {
   return {
@@ -46,7 +48,7 @@ function makeDb(assets: { id: string; name: string }[]): HubDb {
 function makeAssetService(handlers: {
   list: Record<string, string[]>;
   bytes: Record<string, Uint8Array>;
-}): AssetService {
+}): PackageRegistryAssetReader {
   return {
     listAssetBlobs: async ({ assetId }) => handlers.list[assetId] ?? [],
     readAssetBlob: async ({ assetId, path }) => {
@@ -57,7 +59,7 @@ function makeAssetService(handlers: {
       }
       return blob;
     },
-  } as unknown as AssetService;
+  };
 }
 
 describe("assertNoCrossAssetPackageRegistryCollisions", () => {
@@ -130,7 +132,7 @@ describe("assertNoCrossAssetPackageRegistryCollisions", () => {
         readAssetBlob: async () => {
           throw new AssetServiceError("not_found", "missing blob");
         },
-      } as unknown as AssetService,
+      },
       tenantId: "t1",
     });
   });

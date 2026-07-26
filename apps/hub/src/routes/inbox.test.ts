@@ -57,7 +57,9 @@ const getMailboxMessage = mock(
     _args: { tenantId: string; principalId: string; id: string },
   ) => detailResult,
 );
-const countUnreadActiveMailbox = mock(async () => 2);
+const countUnreadActiveMailbox = mock(
+  async (_db: unknown, _scope: { tenantId: string; principalId: string }) => 2,
+);
 const applyMailboxBulkAction = mock(
   async (
     _db: unknown,

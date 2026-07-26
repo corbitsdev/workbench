@@ -158,8 +158,12 @@ export function createToolCredentialsRouter(
       const memberPrincipalId = await resolveToolCredentialMemberPrincipal(db, {
         tenantId: parsed.tenantId,
         agentId: parsed.agentId,
-        workflowRunId: parsed.workflowRunId,
-        memberPrincipalId: parsed.memberPrincipalId,
+        ...(parsed.workflowRunId === undefined
+          ? {}
+          : { workflowRunId: parsed.workflowRunId }),
+        ...(parsed.memberPrincipalId === undefined
+          ? {}
+          : { memberPrincipalId: parsed.memberPrincipalId }),
       });
 
       const credentials: Record<string, ToolCredential> = {};

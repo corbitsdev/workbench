@@ -77,7 +77,7 @@ const EMPTY = {
 
 describe("readMyraVariantPreference", () => {
   it("returns nulls when no row exists", async () => {
-    const db = makeDb({ stored: undefined });
+    const db = makeDb({});
     expect(await readMyraVariantPreference(db, "tn", "prn")).toEqual(EMPTY);
   });
 

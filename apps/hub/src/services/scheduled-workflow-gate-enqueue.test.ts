@@ -1,4 +1,9 @@
 import { beforeEach, describe, expect, it, mock } from "bun:test";
+import type { ScheduledGateDriveArgs } from "./scheduled-workflow-gate-agent";
+import type {
+  DeliverRunTerminalMailDeps,
+  TerminalRunContext,
+} from "../workflow-executor/run-terminal-mail";
 
 mock.module("../config", () => ({
   getConfig: () => ({ featureGrantCacheTtlMs: 30_000 }),
@@ -23,17 +28,22 @@ mock.module("./myra-threads", () => ({
 }));
 
 const failRunIfStillAwaitingMock = mock(async () => true);
-const deliverRunTerminalMailMock = mock(async () => undefined);
+const deliverRunTerminalMailMock = mock(
+  async (_deps: DeliverRunTerminalMailDeps, _run: TerminalRunContext) =>
+    undefined,
+);
 
 let releaseBlockedDrive: (() => void) | undefined;
-const blockingDriveGateMock = mock(async () => {
+const blockingDriveGateMock = mock(async (_args: ScheduledGateDriveArgs) => {
   await new Promise<void>((resolve) => {
     releaseBlockedDrive = resolve;
   });
   return { ok: true as const };
 });
 
-const happyDriveGateMock = mock(async () => ({ ok: true as const }));
+const happyDriveGateMock = mock(async (_args: ScheduledGateDriveArgs) => ({
+  ok: true as const,
+}));
 
 mock.module("../workflow-executor/pending-gate-info", () => ({
   describePendingGates: mock(async () => [
@@ -146,10 +156,7 @@ describe("scheduled gate maybeEnqueue", () => {
 
     expect(failRunIfStillAwaitingMock).toHaveBeenCalled();
     expect(deliverRunTerminalMailMock).toHaveBeenCalled();
-    const terminalArgs = deliverRunTerminalMailMock.mock.calls[0]![1] as {
-      runId: string;
-      error: string;
-    };
+    const terminalArgs = deliverRunTerminalMailMock.mock.calls[0]![1];
     expect(terminalArgs.runId).toBe("run-overflow");
     expect(terminalArgs.error).toContain("queue full");
 

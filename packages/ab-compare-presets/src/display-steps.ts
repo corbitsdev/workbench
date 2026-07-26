@@ -10,13 +10,18 @@ export type AbPresetDisplayStep = {
 
 export const AB_PRESET_EXEC_STEP_ID = /^exec\d+$/u;
 
-export const AB_PRESET_STEP_LABELS: Record<string, string> = {
+const STEP_LABELS = {
   config: "Prompt",
   quorum: "Check models",
   decision: "Decision",
   compose: "Compile",
   persist: "Save",
-};
+} as const;
+
+// The same table under a `Record` type, for lookups keyed by an arbitrary
+// step id (`abPresetHumanizeStepLabel`). The literal-keyed `STEP_LABELS` is
+// what the display-step list reads, so those reads are not `string | undefined`.
+export const AB_PRESET_STEP_LABELS: Record<string, string> = STEP_LABELS;
 
 function execStepIds(count: number): string[] {
   return Array.from({ length: count }, (_, i) => `exec${i}`);
@@ -40,7 +45,7 @@ export function abPresetDisplaySteps(
 ): readonly AbPresetDisplayStep[] {
   const execIds = execStepIds(variantCount);
   return [
-    { key: "config", label: AB_PRESET_STEP_LABELS.config, stepIds: ["config"] },
+    { key: "config", label: STEP_LABELS.config, stepIds: ["config"] },
     ...execIds.map((id, index) => ({
       key: id,
       label: variantLabel(index),
@@ -48,22 +53,22 @@ export function abPresetDisplaySteps(
     })),
     {
       key: "quorum",
-      label: AB_PRESET_STEP_LABELS.quorum,
+      label: STEP_LABELS.quorum,
       stepIds: ["quorum"],
     },
     {
       key: "decision",
-      label: AB_PRESET_STEP_LABELS.decision,
+      label: STEP_LABELS.decision,
       stepIds: ["decision"],
     },
     {
       key: "compose",
-      label: AB_PRESET_STEP_LABELS.compose,
+      label: STEP_LABELS.compose,
       stepIds: ["compose"],
     },
     {
       key: "persist",
-      label: AB_PRESET_STEP_LABELS.persist,
+      label: STEP_LABELS.persist,
       stepIds: ["persist"],
     },
   ];

@@ -2,13 +2,7 @@ import { Skeleton } from "@workbench/ui";
 import type { TimelineEntry } from "@workbench/client";
 import { usePrincipalRoster } from "../../hooks/use-principal-roster";
 import { usePrincipalAnalytics } from "../../hooks/use-principal-analytics";
-import {
-  FacetCard,
-  FacetDesc,
-  GapBanner,
-  NodeGrid,
-  type TraceNode,
-} from "./tracer-shell";
+import { FacetCard, FacetDesc, NodeGrid, type TraceNode } from "./tracer-shell";
 import { humanizeToken } from "./activity-naming";
 import { entityLinkForEntry } from "./trace-links";
 import { Td, Th } from "./grants-facet";

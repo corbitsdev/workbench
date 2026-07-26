@@ -18,14 +18,20 @@ import {
  * three usage dials. This maps each catalog axis id to the preference
  * field(s) it reads and writes.
  */
-type FieldKey = keyof Omit<
-  MyraPreferences,
-  | "chat"
-  | "triage"
-  | "pinnedSkillIds"
-  | "toolCatalog"
-  | "disabledCatalogPackages"
-  | "disabledToolNames"
+// Named positively rather than as an Omit: the subtractive form silently
+// absorbed the numeric inference dials when they were added to
+// MyraPreferences, and this panel only ever renders string style axes.
+type FieldKey = Extract<
+  keyof MyraPreferences,
+  | "personality"
+  | "emojiUse"
+  | "uiType"
+  | "artifactUsageChat"
+  | "artifactUsageTriage"
+  | "toolUsageChat"
+  | "toolUsageTriage"
+  | "skillUsageChat"
+  | "skillUsageTriage"
 >;
 
 function fieldsForAxis(

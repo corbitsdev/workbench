@@ -20,7 +20,7 @@ function makeDb(opts: {
 
 describe("composeMyraStyleOverlaySectionForInstance", () => {
   it("returns null when the instance has no member mapping", async () => {
-    const db = makeDb({ mapping: undefined });
+    const db = makeDb({});
     const result = await composeMyraStyleOverlaySectionForInstance(db, {
       tenantId: "tn",
       instanceId: "inst_1",
@@ -44,7 +44,6 @@ describe("composeMyraStyleOverlaySectionForInstance", () => {
   it("returns null for a Myra chat instance with no stored style selection", async () => {
     const db = makeDb({
       mapping: { templateKey: "myra", memberPrincipalId: "prn" },
-      preferenceRow: undefined,
     });
     const result = await composeMyraStyleOverlaySectionForInstance(db, {
       tenantId: "tn",

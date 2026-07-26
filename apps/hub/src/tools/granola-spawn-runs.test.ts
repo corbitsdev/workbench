@@ -94,8 +94,9 @@ function makeContext(
 }
 
 function spawnHandler(context: ToolContext) {
-  const tools =
-    GRANOLA_SPAWN_HUB_TOOLS.granola_spawn_call_runs.createTools(context);
+  const entry = GRANOLA_SPAWN_HUB_TOOLS.granola_spawn_call_runs;
+  if (!entry) throw new Error("granola_spawn_call_runs is not registered");
+  const tools = entry.createTools(context);
   const tool = tools[0];
   if (!tool || tool.kind !== "string") throw new Error("expected string tool");
   return tool.handler;
@@ -176,7 +177,7 @@ describe("granola_spawn_call_runs", () => {
     const handler = spawnHandler(makeContext([]));
     const result = JSON.parse(
       await handler({ content: listContent(["bad", "good"]) }, SIGNAL),
-    ) as { spawned: unknown[]; failed: { noteId: string }[] };
+    ) as { spawned: unknown[]; failed: { noteId: string; error: string }[] };
 
     expect(result.spawned).toHaveLength(1);
     expect(result.failed).toEqual([{ noteId: "bad", error: "boom" }]);

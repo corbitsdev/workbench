@@ -219,8 +219,9 @@ describe("per-source lastPollAt cursor (CL-3577 review fix A)", () => {
           key: "linear",
           scope: "member",
           handle: async (ctx) => {
-            if (ctx.scope !== "member") return;
+            if (ctx.scope !== "member") return undefined;
             seenLastPollAt.push(ctx.lastPollAt);
+            return undefined;
           },
         },
       ],
@@ -247,10 +248,11 @@ describe("per-source lastPollAt cursor (CL-3577 review fix A)", () => {
           key: "linear",
           scope: "member",
           handle: async (ctx) => {
-            if (ctx.scope !== "member") return;
+            if (ctx.scope !== "member") return undefined;
             seenLastPollAt.push(ctx.lastPollAt);
             callCount += 1;
             if (callCount === 1) throw new Error("simulated poll failure");
+            return undefined;
           },
         },
       ],

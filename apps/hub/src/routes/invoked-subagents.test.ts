@@ -1,5 +1,9 @@
 import { describe, expect, it, mock, beforeEach } from "bun:test";
 import { Hono } from "hono";
+import { type } from "arktype";
+
+const SubagentsResponse = type({ subagents: "unknown[]" });
+const ErrorResponse = type({ error: "unknown" });
 
 const listInvokedSubagents = mock<(...args: unknown[]) => Promise<unknown>>(
   () => Promise.resolve([]),
@@ -85,7 +89,8 @@ describe("invoked-subagents router", () => {
 
     const res = await wrapWithAuth(buildRouter()).request("/invoked-subagents");
     expect(res.status).toBe(200);
-    const body = await res.json();
+    const body = SubagentsResponse(await res.json());
+    if (body instanceof type.errors) throw new Error(body.summary);
     expect(body.subagents).toHaveLength(1);
     expect(listInvokedSubagents).toHaveBeenCalledWith(expect.anything(), {
       tenantId: "tn-global",
@@ -110,7 +115,8 @@ describe("invoked-subagents router", () => {
     const res = await wrapWithAuth(buildRouter()).request("/invoked-subagents");
 
     expect(res.status).toBe(500);
-    const body = await res.json();
+    const body = ErrorResponse(await res.json());
+    if (body instanceof type.errors) throw new Error(body.summary);
     expect(typeof body.error).toBe("string");
   });
 
@@ -120,7 +126,8 @@ describe("invoked-subagents router", () => {
     const res = await wrapWithAuth(buildRouter()).request("/invoked-subagents");
 
     expect(res.status).toBe(500);
-    const body = await res.json();
+    const body = ErrorResponse(await res.json());
+    if (body instanceof type.errors) throw new Error(body.summary);
     expect(typeof body.error).toBe("string");
   });
 

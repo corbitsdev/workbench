@@ -7,7 +7,7 @@ import {
   type ScheduledTrigger,
   type ScheduledTriggerFire,
 } from "@workbench/shared";
-import type { HubDb } from "../db";
+import type { HubDb, HubTx } from "../db";
 import {
   scheduledTrigger,
   scheduledTriggerFire,
@@ -168,7 +168,7 @@ export async function recordScheduleRunStarted(
 }
 
 async function trimScheduleFireHistory(
-  db: HubDb,
+  db: HubDb | HubTx,
   scheduleId: string,
 ): Promise<void> {
   const rows = await db

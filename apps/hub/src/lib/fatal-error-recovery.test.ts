@@ -19,6 +19,7 @@ function makeTurn(
     errors: [],
     toolCalls: [],
     toolErrors: [],
+    reasoning: "",
     ...overrides,
   };
 }

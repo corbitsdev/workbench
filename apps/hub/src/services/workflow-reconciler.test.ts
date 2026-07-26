@@ -45,7 +45,9 @@ mock.module("../workflow-executor/run-store", () => ({
       runId,
       signalId: signal.signalId,
       receivedAt: signal.receivedAt,
-      redeliveries: signal.redeliveries,
+      ...(signal.redeliveries === undefined
+        ? {}
+        : { redeliveries: signal.redeliveries }),
     });
     return refreshResultRef;
   },

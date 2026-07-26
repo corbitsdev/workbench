@@ -242,6 +242,7 @@ async function deployEmbedded(
   kind: string,
 ): Promise<typeof EmbeddedWorkflowDefSchema.infer> {
   const embedded = loadEmbedded(kind);
+  const definition = embedded.definition as unknown as WorkflowDefinition;
   const deploymentId = "ses_gate_deploy";
 
   const sendAgentDeploy = mock(() =>
@@ -258,6 +259,7 @@ async function deployEmbedded(
     principalId: DEPLOY_PRINCIPAL,
     deploymentDomain: DEPLOYMENT_DOMAIN,
     sources: [TENANT_SOURCE],
+    definition,
   });
 
   const service = createWorkflowDeployService({
@@ -272,7 +274,7 @@ async function deployEmbedded(
   });
 
   await service.deployWorkflow({
-    workflow: embedded.definition as unknown as WorkflowDefinition,
+    workflow: definition,
     deploymentId,
     deploymentDomain: DEPLOYMENT_DOMAIN,
     tenantId: TENANT_ID,

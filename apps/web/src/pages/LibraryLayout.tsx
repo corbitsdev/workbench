@@ -7,7 +7,9 @@ const LIBRARY_TABS = [
   { to: "/library/agents", label: "Agents" },
 ] as const;
 
-const LIBRARY_LIST_PATHS = new Set(LIBRARY_TABS.map((tab) => tab.to));
+const LIBRARY_LIST_PATHS: ReadonlySet<string> = new Set(
+  LIBRARY_TABS.map((tab) => tab.to),
+);
 
 /**
  * Shared shell for the Library area (CL-4256): Artifacts, Skills, and Agents

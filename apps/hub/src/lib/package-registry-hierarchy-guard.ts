@@ -78,9 +78,15 @@ export function isMissingRegistryPathError(err: unknown): boolean {
  * compare) is tracked in CL-3783. Genuine tarball corruption still throws
  * (PackageRegistryTarballInvalidError).
  */
+/** Only the two read methods the collision scan actually calls. */
+export type PackageRegistryAssetReader = Pick<
+  AssetService,
+  "listAssetBlobs" | "readAssetBlob"
+>;
+
 export async function assertNoCrossAssetPackageRegistryCollisions(args: {
   db: HubDb;
-  assetService: AssetService;
+  assetService: PackageRegistryAssetReader;
   tenantId: string;
 }): Promise<PackageRegistryCrossAssetCollision[]> {
   const assets = await listPackageRegistryAssetsOnTenant(

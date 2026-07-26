@@ -113,7 +113,8 @@ describe("composeStyleOverlay", () => {
     const candid = getStyleAxis("personality")?.options.find(
       (o) => o.id === "candid",
     );
-    expect(overlay).toBe(candid?.snippet);
+    if (candid === undefined) throw new Error("no candid personality option");
+    expect(overlay).toBe(candid.snippet);
   });
 
   test("every axis set to a non-default option composes under 1200 chars", () => {

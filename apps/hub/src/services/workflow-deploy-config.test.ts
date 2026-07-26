@@ -281,6 +281,7 @@ describe("assembleWorkflowDeployConfig", () => {
       principalId: "p1",
       deploymentDomain: "deploy.example.com",
       sources: [HEAD, FAILOVER],
+      definition: PLAIN_DEF,
     });
     expect(deploymentId).toBe("ses_persisted");
     expect(config.agentId).toBe("ses_persisted");
@@ -297,6 +298,7 @@ describe("assembleWorkflowDeployConfig", () => {
         principalId: "p1",
         deploymentDomain: "deploy.example.com",
         sources: [],
+        definition: PLAIN_DEF,
       }),
     ).toThrow(/no inference sources/);
   });
