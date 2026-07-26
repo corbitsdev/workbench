@@ -13,7 +13,6 @@ export type WorkflowUIModule = {
 // `@intx/agent`). Vite code-splits each entry into its own chunk; only the
 // opened workflow loads. Add one entry per workflow package.
 const importers: Record<string, () => Promise<WorkflowUIModule>> = {
-  "attio-task-agent": () => import("@workbench/workflow-attio-task-agent/ui"),
   "gamma-presentation-creator": () =>
     import("@workbench/workflow-gamma-presentation-creator/ui"),
   heartbeat: () => import("@workbench/workflow-heartbeat/ui"),

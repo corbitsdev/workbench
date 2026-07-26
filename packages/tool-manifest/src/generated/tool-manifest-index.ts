@@ -1410,6 +1410,27 @@ export const COMMITTED_TOOL_MANIFEST_INDEX: unknown = {
       },
     },
     {
+      factoryId: "@workbench/workflow-attio-task-agent/core",
+      packageName: "@workbench/workflow-attio-task-agent",
+      providerName: null,
+      bareToolNames: [
+        "attio_task_agent_clarification_gate",
+        "attio_task_agent_member_selection_gate",
+        "attio_task_agent_review_gate",
+        "attio_task_agent_sync_approval_gate",
+        "attio_task_agent_task_selection_gate",
+      ],
+      sideEffects: {
+        attio_task_agent_member_selection_gate: "read",
+        attio_task_agent_task_selection_gate: "read",
+        attio_task_agent_clarification_gate: "read",
+        attio_task_agent_review_gate: "read",
+        attio_task_agent_sync_approval_gate: "read",
+      },
+      myraCatalog: null,
+      credentialCatalog: null,
+    },
+    {
       factoryId: "@workbench/workflow-attio-task-agent/persist",
       packageName: "@workbench/workflow-attio-task-agent",
       providerName: null,

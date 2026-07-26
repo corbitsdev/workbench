@@ -6,9 +6,9 @@ import {
 } from "@workbench/blocks";
 import type { StepUI } from "@workbench/shared";
 import { buildAbPresetBlocks } from "@workbench/ab-compare-presets/blocks";
-import { buildAttioTaskAgentBlocks } from "@workbench/workflow-attio-task-agent/blocks";
 import { buildGammaBlocks } from "@workbench/workflow-gamma-presentation-creator/blocks";
 import { buildGtmScriptsBriefsBlocks } from "@workbench/workflow-gtm-scripts-briefs/blocks";
+import { STEP_UI as attioTaskAgentStepUI } from "@workbench/workflow-attio-task-agent/browser";
 import { STEP_UI as last30daysStepUI } from "@workbench/workflow-last30days-research/browser";
 import { STEP_UI as sumbleAccountIntelStepUI } from "@workbench/workflow-sumble-account-intel/browser";
 import { buildPainPointCollateralBlocks } from "@workbench/workflow-pain-point-collateral/blocks";
@@ -33,7 +33,6 @@ const builders: Record<string, DockBlockBuilder> = {
   "ab-compare-quality": buildAbPresetBlocks,
   "ab-compare-speed": buildAbPresetBlocks,
   "ab-compare-standard": buildAbPresetBlocks,
-  "attio-task-agent": buildAttioTaskAgentBlocks,
   "gamma-presentation-creator": buildGammaBlocks,
   "gtm-scripts-briefs": buildGtmScriptsBriefsBlocks,
   "pain-point-collateral": buildPainPointCollateralBlocks,
@@ -49,6 +48,7 @@ const builders: Record<string, DockBlockBuilder> = {
 // — `blocksFromStepUI` is the one generic resolver every STEP_UI-driven
 // workflow shares.
 const stepUIMaps: Record<string, StepUI> = {
+  "attio-task-agent": attioTaskAgentStepUI,
   "last30days-research": last30daysStepUI,
   "sumble-account-intel": sumbleAccountIntelStepUI,
 };

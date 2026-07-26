@@ -1,5 +1,5 @@
 {
-  "generatedAt": "eead05fadba6aa9be983c9885856bb1f1b5e01c6c1d75ac6f8b4ac39c3f4cf18",
+  "generatedAt": "6b1864791d7fe6537099cac3eb0b0fd57ce5130934ddd1c0fca58bdc5a6db945",
   "factories": [
     {
       "factoryId": "@workbench/tools-ab-compare/compose",
@@ -1395,6 +1395,27 @@
       "credentialCatalog": {
         "label": "YouTube"
       }
+    },
+    {
+      "factoryId": "@workbench/workflow-attio-task-agent/core",
+      "packageName": "@workbench/workflow-attio-task-agent",
+      "providerName": null,
+      "bareToolNames": [
+        "attio_task_agent_clarification_gate",
+        "attio_task_agent_member_selection_gate",
+        "attio_task_agent_review_gate",
+        "attio_task_agent_sync_approval_gate",
+        "attio_task_agent_task_selection_gate"
+      ],
+      "sideEffects": {
+        "attio_task_agent_member_selection_gate": "read",
+        "attio_task_agent_task_selection_gate": "read",
+        "attio_task_agent_clarification_gate": "read",
+        "attio_task_agent_review_gate": "read",
+        "attio_task_agent_sync_approval_gate": "read"
+      },
+      "myraCatalog": null,
+      "credentialCatalog": null
     },
     {
       "factoryId": "@workbench/workflow-attio-task-agent/persist",
