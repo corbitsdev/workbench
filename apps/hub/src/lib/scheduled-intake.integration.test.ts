@@ -5,6 +5,7 @@ import { schema } from "../db";
 import type { HubDb } from "../db";
 import { insertRunRecord, loadRunRecord } from "../workflow-executor/run-store";
 import {
+  deliverStartIntakeSignal,
   extractStoredIntake,
   queueScheduledIntakeSignal,
 } from "./scheduled-intake";
@@ -120,6 +121,76 @@ describe("queueScheduledIntakeSignal", () => {
     });
     expect(queued).toBe(false);
     const state = await loadRunRecord(db, "run-3");
+    expect(state?.pendingSignal ?? null).toBeNull();
+  });
+});
+
+// deliverStartIntakeSignal (CL-4548): the shared post-start delivery both the
+// scheduler-fire handler and the manual "start now" door call. It layers a
+// gate-shape lookup on top of queueScheduledIntakeSignal so a caller need only
+// pass the raw trigger payload it just received — no manual requiresIntake
+// check. last30days-research is a real embedded kind whose only gate is named
+// `intake`, so its gate info is loaded from the actual committed catalog here,
+// not a mock.
+describe("deliverStartIntakeSignal", () => {
+  test("delivers a valid manual-start payload so the run does not park asking again", async () => {
+    await seedRun("run-4");
+    const delivered = await deliverStartIntakeSignal(db, {
+      runId: "run-4",
+      kind: "last30days-research",
+      triggerPayload: {
+        topic: "AI coding agents for GTM teams",
+        focus: "buyer objections",
+        userAddress: "usr_a",
+        userRefId: "a",
+      },
+    });
+    expect(delivered).toBe(true);
+    const state = await loadRunRecord(db, "run-4");
+    expect(state?.pendingSignal?.signalName).toBe("intake");
+    expect(state?.pendingSignal?.payload).toEqual({
+      topic: "AI coding agents for GTM teams",
+      focus: "buyer objections",
+    });
+  });
+
+  test("does not deliver an empty manual-start payload — the run parks and asks", async () => {
+    await seedRun("run-5");
+    const delivered = await deliverStartIntakeSignal(db, {
+      runId: "run-5",
+      kind: "last30days-research",
+      triggerPayload: { userAddress: "usr_a", userRefId: "a" },
+    });
+    expect(delivered).toBe(false);
+    const state = await loadRunRecord(db, "run-5");
+    expect(state?.pendingSignal ?? null).toBeNull();
+  });
+
+  test("does not deliver an incomplete manual-start payload missing a required intake field", async () => {
+    await seedRun("run-6");
+    // last30days-research requires `topic`; a payload with only `focus` is
+    // incomplete and must not satisfy the intake gate. Parking (rather than
+    // delivering and letting the run fail loudly) lets the user complete it —
+    // the same call validateResumePayload already makes for the scheduler path.
+    const delivered = await deliverStartIntakeSignal(db, {
+      runId: "run-6",
+      kind: "last30days-research",
+      triggerPayload: { focus: "buyer objections" },
+    });
+    expect(delivered).toBe(false);
+    const state = await loadRunRecord(db, "run-6");
+    expect(state?.pendingSignal ?? null).toBeNull();
+  });
+
+  test("does not deliver when the kind's entry gate is not named intake", async () => {
+    await seedRun("run-7");
+    const delivered = await deliverStartIntakeSignal(db, {
+      runId: "run-7",
+      kind: "deck",
+      triggerPayload: { topic: "AI coding agents for GTM teams" },
+    });
+    expect(delivered).toBe(false);
+    const state = await loadRunRecord(db, "run-7");
     expect(state?.pendingSignal ?? null).toBeNull();
   });
 });

@@ -31,12 +31,19 @@ mock.module("./pending-gate-info", () => ({
   describePendingGates: async () => pendingGates,
 }));
 
+// Suppression keys off "this run has an intake signal queued for delivery"
+// (CL-4548) — `record.pendingSignal.signalName === "intake"` — not off
+// `triggerSource`. Both fields are settable independently here so tests can
+// prove the keying is exactly that field, for either start door.
 let runTriggerSource: string | null | undefined = null;
+let runPendingSignal: { signalName: string } | null | undefined = null;
 
 mock.module("./run-store", () => ({
   loadDeploymentMeta: async () => deploymentMeta,
   loadRunRecord: async () =>
-    runTriggerSource === undefined ? null : { triggerSource: runTriggerSource },
+    runTriggerSource === undefined
+      ? null
+      : { triggerSource: runTriggerSource, pendingSignal: runPendingSignal },
   setPendingSignal: async () => undefined,
 }));
 
@@ -90,6 +97,7 @@ afterEach(() => {
   pendingGates = [];
   deploymentMeta = null;
   runTriggerSource = null;
+  runPendingSignal = null;
 });
 
 describe("deliverPendingGateMail", () => {
@@ -203,8 +211,9 @@ describe("deliverPendingGateMail", () => {
     expect(errorLogs[0]?.message).toContain("No tenant row");
   });
 
-  it("delivers gate mail for a mid-run (post-intake) gate on a scheduler-sourced run (CL-4289)", async () => {
+  it("delivers gate mail for a mid-run (post-intake) gate on a scheduler-sourced run whose intake already resolved (CL-4289)", async () => {
     runTriggerSource = "scheduler";
+    runPendingSignal = null; // intake's SignalReceived already folded and cleared it
     pendingGates = [{ signalName: "confirm" }];
     const db = makeDb({
       owner: { id: "prn-alice", kind: "user", refId: "alice" },
@@ -220,8 +229,9 @@ describe("deliverPendingGateMail", () => {
     expect(insertCalls[0]?.messageKey).toBe("gate:wfr-1:confirm");
   });
 
-  it("does not deliver gate mail for the entry intake gate on a scheduler-sourced run (auto-signaled, CL-4289)", async () => {
+  it("does not deliver gate mail for the entry intake gate while its auto-delivery signal is queued (CL-4289 + CL-4548)", async () => {
     runTriggerSource = "scheduler";
+    runPendingSignal = { signalName: "intake" };
     pendingGates = [{ signalName: "intake" }];
     const db = makeDb({
       owner: { id: "prn-alice", kind: "user", refId: "alice" },
@@ -238,8 +248,9 @@ describe("deliverPendingGateMail", () => {
     expect(warnLogs).toHaveLength(0);
   });
 
-  it("delivers mail only for the non-intake gate when both intake and a post-intake gate are open on a scheduler run (CL-4289)", async () => {
+  it("delivers mail only for the non-intake gate when both intake and a post-intake gate are open with intake queued (CL-4289)", async () => {
     runTriggerSource = "scheduler";
+    runPendingSignal = { signalName: "intake" };
     pendingGates = [{ signalName: "intake" }, { signalName: "confirm" }];
     const db = makeDb({
       owner: { id: "prn-alice", kind: "user", refId: "alice" },
@@ -257,6 +268,7 @@ describe("deliverPendingGateMail", () => {
 
   it("still delivers gate mail for an interactive (non-scheduler) run's gate (unchanged, CL-4289)", async () => {
     runTriggerSource = null;
+    runPendingSignal = null;
     pendingGates = [{ signalName: "approval" }];
     const db = makeDb({
       owner: { id: "prn-alice", kind: "user", refId: "alice" },
@@ -270,6 +282,47 @@ describe("deliverPendingGateMail", () => {
 
     expect(insertCalls).toHaveLength(1);
     expect(insertCalls[0]?.messageKey).toBe("gate:wfr-1:approval");
+  });
+
+  // CL-4548: suppression keys off the queued intake signal itself, not off
+  // `triggerSource` — a manual start with a supplied (and thus auto-delivered)
+  // intake payload must be suppressed exactly like a scheduled one, and a
+  // scheduled run with NO stored intake (never queued a signal) must still
+  // mail like any other unattended gate.
+  it("does not deliver intake gate mail for a MANUALLY-started run whose supplied intake is queued for delivery", async () => {
+    runTriggerSource = null; // manual start: never stamped "scheduler"
+    runPendingSignal = { signalName: "intake" };
+    pendingGates = [{ signalName: "intake" }];
+    const db = makeDb({
+      owner: { id: "prn-alice", kind: "user", refId: "alice" },
+      tenant: { domain: "tenant.example" },
+    });
+
+    await deliverPendingGateMail(deps(db), {
+      ...RUN,
+      principalId: "prn-alice",
+    });
+
+    expect(insertCalls).toHaveLength(0);
+    expect(warnLogs).toHaveLength(0);
+  });
+
+  it("still delivers intake gate mail for a SCHEDULED run that carried no stored intake (nothing was ever queued)", async () => {
+    runTriggerSource = "scheduler";
+    runPendingSignal = null; // deliverStartIntakeSignal returned false: empty stored intake
+    pendingGates = [{ signalName: "intake" }];
+    const db = makeDb({
+      owner: { id: "prn-alice", kind: "user", refId: "alice" },
+      tenant: { domain: "tenant.example" },
+    });
+
+    await deliverPendingGateMail(deps(db), {
+      ...RUN,
+      principalId: "prn-alice",
+    });
+
+    expect(insertCalls).toHaveLength(1);
+    expect(insertCalls[0]?.messageKey).toBe("gate:wfr-1:intake");
   });
 
   it("writes nothing when no open gate is readable from the log", async () => {

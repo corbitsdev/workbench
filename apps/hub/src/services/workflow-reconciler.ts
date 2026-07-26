@@ -520,18 +520,48 @@ export function createWorkflowReconciler(deps: {
         deploymentId: rec.deploymentId,
         deploymentDomain: deps.deploymentDomain,
       });
-      // Give the in-flight first delivery time to land and its
-      // SignalReceived to fold (which clears the record) before
-      // re-delivering; the timestamp is REFRESHED on each re-delivery so a
-      // slow pack pipeline gets one re-delivery per delay window, not one
+      const attempts = pending.redeliveries ?? 0;
+      // The backoff below guards RE-delivery only: give an in-flight delivery
+      // time to land and its SignalReceived to fold (which clears the record)
+      // before re-delivering; the timestamp is REFRESHED on each re-delivery
+      // so a slow pack pipeline gets one re-delivery per delay window, not one
       // per tick. Re-delivery reuses the SAME signalId, so a duplicate
       // reaching an already-satisfied gate is inert for that gate. The
       // same-name-future-gate FIFO hazard is bounded by PROJECTION LAG (the
       // clear only lands when the receipt folds), not by this delay — a run
-      // whose packs stall keeps receiving one duplicate per window until
-      // the fold catches up.
+      // whose packs stall keeps receiving one duplicate per window until the
+      // fold catches up.
+      //
+      // "Is this the genuine first delivery" is NOT the same question as
+      // "attempts === 0" — a row written by acceptGateSignal/resumeWorkflowRun
+      // (`dispatched: true`) already had `sendSignalDeliver` called
+      // synchronously by its writer, so even the reconciler's OWN first pass
+      // over that row (attempts still 0 from ITS counter) is a potential
+      // RE-delivery and must back off like any other. Only a QUEUED-ONLY row
+      // (`dispatched: false`, EXPLICITLY written by deliverStartIntakeSignal /
+      // queueScheduledIntakeSignal — CL-3509/CL-4548 — nothing has been sent
+      // yet) skips the wait: there is nothing to "give time to land," so
+      // waiting here only adds up to a full window of pure latency before an
+      // intake-gated run ever reaches the sidecar.
+      //
+      // `dispatched` ABSENT is treated as dispatched (backoff applies), NOT as
+      // queued — the inverse of what the key name alone suggests. This is
+      // deliberate: the queued-only path is new (CL-4548), so every row that
+      // could already exist in the database before it shipped was written by
+      // the always-dispatched acceptGateSignal/resumeWorkflowRun paths and
+      // will never carry this key. Defaulting absent to "queued" would
+      // misclassify every one of those pre-existing rows on deploy and skip
+      // their backoff — a real, if transient, duplicate-delivery risk with no
+      // migration to close it (the column is a plain jsonb, so no migration
+      // adds the key to old rows). Defaulting absent to "dispatched" instead
+      // means an old row gets exactly its pre-existing behavior, byte for
+      // byte, with nothing to migrate or backfill.
+      const isFirstGenuineDelivery =
+        attempts === 0 && pending.dispatched === false;
       const pendingForMs = now - Date.parse(pending.receivedAt);
-      if (pendingForMs < signalRedeliveryDelayMs) continue;
+      if (!isFirstGenuineDelivery && pendingForMs < signalRedeliveryDelayMs) {
+        continue;
+      }
       const deployPrincipal = deployPrincipalByKind.get(
         `${rec.kind} ${rec.tenantId}`,
       );
@@ -552,7 +582,6 @@ export function createWorkflowReconciler(deps: {
         );
         continue;
       }
-      const attempts = pending.redeliveries ?? 0;
       if (attempts >= maxSignalRedeliveries) {
         // The signal can never fold (e.g. the run's event log was lost after
         // a hub restart) — redelivering it again would just repeat forever.

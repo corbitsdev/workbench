@@ -20,6 +20,7 @@ import type { ReclaimDeploymentFn } from "../services/workflow-deploy";
 import { getAwaitingSignalNames } from "./run-awaiting-signals";
 import { isTerminalRunStatus } from "./run-status";
 import { validateResumePayload } from "./resume-payload-registry";
+import { deliverStartIntakeSignal } from "../lib/scheduled-intake";
 import { mintWorkflowRunId } from "./mint-workflow-run-id";
 import {
   enrichTriggerPayloadForStart,
@@ -524,7 +525,33 @@ async function runProvisionAndTrigger(
       "workflow run trigger send failed",
       err,
     );
+    return;
   }
+
+  // Auto-deliver the just-submitted trigger payload as the run's intake signal
+  // (CL-4548), mirroring the scheduler's post-start delivery
+  // (`index.ts` scheduler.startWorkflowRun) so a manually-started run of an
+  // intake-gated kind does not park on its entry gate and re-ask the human for
+  // the fields they just typed on the start page. Same shared helper, same
+  // guard: only kinds whose entry gate is named `intake`, and only a payload
+  // that validates against that kind's registered intake schema.
+  const inputRecord =
+    typeof opts.input === "object" &&
+    opts.input !== null &&
+    !Array.isArray(opts.input)
+      ? (opts.input as Record<string, unknown>)
+      : {};
+  await deliverStartIntakeSignal(deps.db, {
+    runId: opts.runId,
+    kind: opts.kind,
+    triggerPayload: inputRecord,
+  }).catch((err) => {
+    log.error("manual start: intake auto-delivery failed", {
+      runId: opts.runId,
+      kind: opts.kind,
+      error: err instanceof Error ? err : new Error(String(err)),
+    });
+  });
 }
 
 export type ResumeWorkflowRunDeps = {
@@ -657,12 +684,17 @@ export async function acceptGateSignal(
 
   // Durable-before-dispatch (same contract as resumeWorkflowRun): the
   // reconciler re-delivers from this record until the run log proves receipt.
+  // `dispatched: true` — this call sends the signal itself (below), so the
+  // reconciler's OWN first pass over this row is already a potential
+  // RE-delivery, not the genuine first send; it must apply its normal backoff
+  // even though this is attempt 0 from its own counter's point of view.
   const signalId = randomUUID();
   await setPendingSignal(deps.db, state.runId, {
     signalId,
     signalName: opts.signalName,
     payload: resolvedPayload,
     receivedAt: new Date().toISOString(),
+    dispatched: true,
   });
   await deps.ensureDeploymentRoutable({
     deploymentId: opts.deploymentId,
@@ -767,12 +799,16 @@ export async function resumeWorkflowRun(
     // FIRST, so a teardown racing the fire-and-forget delivery below cannot
     // lose it — the awaiting reconciler re-delivers from this record until
     // the run log proves receipt (the projection clears it by signalId).
+    // `dispatched: true` — see acceptGateSignal's identical comment: this call
+    // sends the signal itself below, so the reconciler must back off on its
+    // own first pass over this row too, not treat it as a fresh delivery.
     const signalId = randomUUID();
     await setPendingSignal(deps.db, state.runId, {
       signalId,
       signalName: opts.signalName,
       payload: resolvedPayload,
       receivedAt: new Date().toISOString(),
+      dispatched: true,
     });
     await deps.ensureDeploymentRoutable({
       deploymentId: state.deploymentId,
