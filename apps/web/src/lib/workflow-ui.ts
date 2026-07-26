@@ -17,8 +17,6 @@ const importers: Record<string, () => Promise<WorkflowUIModule>> = {
     import("@workbench/workflow-gamma-presentation-creator/ui"),
   "pain-point-collateral": () =>
     import("@workbench/workflow-pain-point-collateral/ui"),
-  "multi-source-collateral": () =>
-    import("@workbench/workflow-multi-source-collateral/ui"),
   "reddit-opportunity-scanner": () =>
     import("@workbench/workflow-reddit-opportunity-scanner/ui"),
 };

@@ -1,52 +1,25 @@
 import { manifestFromHubToolEntries } from "@workbench/tool-manifest";
-import { MULTI_SOURCE_COLLATERAL_LIST_ISSUES_DEFINITION } from "./list-issues-tool";
-import {
-  MULTI_SOURCE_COLLATERAL_FETCH_ARTIFACTS_DEFINITION,
-  MULTI_SOURCE_COLLATERAL_FETCH_NOTES_DEFINITION,
-  MULTI_SOURCE_COLLATERAL_FETCH_ISSUES_DEFINITION,
-} from "./fetch-tools";
-import { MULTI_SOURCE_COLLATERAL_PERSIST_PIECES_DEFINITION } from "./persist-tools";
 
 export const toolManifestFile = {
   factories: [
     manifestFromHubToolEntries({
-      factoryId: "@workbench/workflow-multi-source-collateral/list-issues",
+      factoryId: "@workbench/workflow-multi-source-collateral/core",
       packageName: "@workbench/workflow-multi-source-collateral",
       providerName: null,
       entries: {
-        [MULTI_SOURCE_COLLATERAL_LIST_ISSUES_DEFINITION.name]: {
+        multi_source_collateral_list_issues: { sideEffect: "read" },
+        multi_source_collateral_prepare_sources_gate: { sideEffect: "read" },
+        multi_source_collateral_fetch_sources: { sideEffect: "read" },
+        multi_source_collateral_prepare_options_gate: { sideEffect: "read" },
+        multi_source_collateral_build_generate_items: { sideEffect: "read" },
+        multi_source_collateral_prepare_review_gate: { sideEffect: "read" },
+        multi_source_collateral_prepare_review_final_gate: {
           sideEffect: "read",
         },
-      },
-      myraCatalog: null,
-      credentialCatalog: null,
-    }),
-    manifestFromHubToolEntries({
-      factoryId: "@workbench/workflow-multi-source-collateral/fetch",
-      packageName: "@workbench/workflow-multi-source-collateral",
-      providerName: null,
-      entries: {
-        [MULTI_SOURCE_COLLATERAL_FETCH_ARTIFACTS_DEFINITION.name]: {
+        multi_source_collateral_prepare_regenerate_items: {
           sideEffect: "read",
         },
-        [MULTI_SOURCE_COLLATERAL_FETCH_NOTES_DEFINITION.name]: {
-          sideEffect: "read",
-        },
-        [MULTI_SOURCE_COLLATERAL_FETCH_ISSUES_DEFINITION.name]: {
-          sideEffect: "read",
-        },
-      },
-      myraCatalog: null,
-      credentialCatalog: null,
-    }),
-    manifestFromHubToolEntries({
-      factoryId: "@workbench/workflow-multi-source-collateral/persist",
-      packageName: "@workbench/workflow-multi-source-collateral",
-      providerName: null,
-      entries: {
-        [MULTI_SOURCE_COLLATERAL_PERSIST_PIECES_DEFINITION.name]: {
-          sideEffect: "write",
-        },
+        multi_source_collateral_persist_pieces: { sideEffect: "write" },
       },
       myraCatalog: null,
       credentialCatalog: null,

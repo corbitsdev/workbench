@@ -1,9 +1,91 @@
-import {
-  buildStructuredSystemPrompt,
-  bulletList,
-  structuredSection,
-  xml,
-} from "@workbench/prompts";
+// System prompt builder for the multi-source-collateral generate/regenerate
+// steps. Formerly built with `@workbench/prompts`' structured-XML helpers;
+// this workflow was one of only two consumers of that package, so the small
+// subset it actually used (xml/structuredSection/bulletList/
+// buildStructuredSystemPrompt) is inlined below as local, duplication-is-fine
+// workflow-owned code rather than a shared dependency.
+
+type XmlValue =
+  | string
+  | number
+  | boolean
+  | null
+  | undefined
+  | XmlNode
+  | XmlValue[];
+
+type XmlNode = {
+  tag: string;
+  attrs?: Record<string, string | number | boolean | null | undefined>;
+  children?: XmlValue;
+};
+
+function escapeXml(value: string): string {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&apos;");
+}
+
+function renderAttrs(attrs: XmlNode["attrs"]): string {
+  if (!attrs) return "";
+  const rendered = Object.entries(attrs)
+    .filter(
+      (entry): entry is [string, string | number | boolean] =>
+        entry[1] !== null && entry[1] !== undefined,
+    )
+    .map(([key, value]) => `${key}="${escapeXml(String(value))}"`);
+  return rendered.length > 0 ? ` ${rendered.join(" ")}` : "";
+}
+
+function xml(
+  tag: string,
+  children?: XmlValue,
+  attrs?: XmlNode["attrs"],
+): XmlNode {
+  return {
+    tag,
+    ...(children !== undefined ? { children } : {}),
+    ...(attrs !== undefined ? { attrs } : {}),
+  };
+}
+
+function renderXml(value: XmlValue): string {
+  if (value === null || value === undefined) return "";
+  if (Array.isArray(value))
+    return value.map(renderXml).filter(Boolean).join("\n");
+  if (typeof value !== "object") return escapeXml(String(value));
+  const attrs = renderAttrs(value.attrs);
+  const body = renderXml(value.children);
+  if (!body) return `<${value.tag}${attrs} />`;
+  return `<${value.tag}${attrs}>\n${body}\n</${value.tag}>`;
+}
+
+type StructuredPromptSection = {
+  tag: string;
+  content: XmlValue;
+  attrs?: XmlNode["attrs"];
+};
+
+function structuredSection(
+  tag: string,
+  content: XmlValue,
+  attrs?: StructuredPromptSection["attrs"],
+): StructuredPromptSection {
+  return { tag, content, ...(attrs !== undefined ? { attrs } : {}) };
+}
+
+function buildStructuredSystemPrompt(
+  sections: StructuredPromptSection[],
+): string {
+  return renderXml(sections.map((s) => xml(s.tag, s.content, s.attrs)));
+}
+
+function bulletList(items: string[]): XmlValue[] {
+  return items.map((item) => xml("item", item));
+}
 
 /** Content types supported in v1. Cap selection at MAX_CONTENT_TYPES. */
 export const CONTENT_TYPES = [
@@ -95,7 +177,10 @@ function typeSections(contentType: ContentTypeId) {
       ];
     case "blog-short":
       return [
-        structuredSection("role", "You write a short blog post (~400–600 words)."),
+        structuredSection(
+          "role",
+          "You write a short blog post (~400–600 words).",
+        ),
         structuredSection(
           "structure",
           bulletList([
@@ -107,7 +192,10 @@ function typeSections(contentType: ContentTypeId) {
       ];
     case "blog-mid":
       return [
-        structuredSection("role", "You write a mid-length blog post (~800–1200 words)."),
+        structuredSection(
+          "role",
+          "You write a mid-length blog post (~800–1200 words).",
+        ),
         structuredSection(
           "structure",
           bulletList([
@@ -135,20 +223,11 @@ function typeSections(contentType: ContentTypeId) {
   }
 }
 
-/** Default system-prompt body for one content type (without shared output contract). */
 export function defaultPromptForType(contentType: ContentTypeId): string {
   return buildStructuredSystemPrompt([
     ...typeSections(contentType),
     structuredSection("style", bulletList(STYLE_RULES)),
   ]);
-}
-
-export function defaultPromptsByType(): Record<ContentTypeId, string> {
-  const out = {} as Record<ContentTypeId, string>;
-  for (const { id } of CONTENT_TYPES) {
-    out[id] = defaultPromptForType(id);
-  }
-  return out;
 }
 
 const OUTPUT_CONTRACT = buildStructuredSystemPrompt([

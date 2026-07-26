@@ -194,18 +194,7 @@ export function validateResumePayload(
     return {
       ok: false,
       error:
-        "sources requires at least one artifact, note, Linear issue, or non-empty text",
-    };
-  }
-  if (
-    kind === "multi-source-collateral" &&
-    signalName === "review" &&
-    out.shouldRegenerate === true &&
-    out.regenerateItems.length === 0
-  ) {
-    return {
-      ok: false,
-      error: "shouldRegenerate requires at least one regenerateItems entry",
+        "sources requires at least one selected artifact/note/issue, or non-empty free text",
     };
   }
   if (kind === "attio-task-agent" && signalName === "sync-approval") {

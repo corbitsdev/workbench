@@ -1,42 +1,29 @@
-// Native `interchange.tools` entry for @workbench/workflow-multi-source-collateral
-// Wraps `linear_list_issues` so the source-listing step can
-// tolerate an unconfigured or failing Linear provider in-process, instead of
-// the retired sidecar-wide `nonFatal` tag (no equivalent on native `action`).
-// Declares the same tool-credential env key the wrapped package itself
-// declares, so the hub still resolves + injects the `linear` credential when
-// one is configured.
+// Native `interchange.tools` entry for
+// @workbench/workflow-multi-source-collateral.
+//
+// This factory calls @workbench/tools-granola's and @workbench/tools-linear's
+// exported factory functions, plus @workbench/tools-artifact's hub-backed
+// definitions, directly in-process (see tools.ts) — mirroring
+// sumble-account-intel's pattern of declaring its own `requires` rather than
+// pinning those packages' own factories separately. `granola`/`linear` are
+// declared but resolved LAZILY inside their own tools.ts handlers: an
+// unconfigured tenant degrades only the facet that needs that provider
+// (fetch-sources for a selected note/issue, list-issues for the chooser),
+// never the whole tool package.
 
 import { createToolRunner, defineTool } from "@intx/agent";
 import {
-  createMultiSourceCollateralListIssuesTools,
-  LIST_ISSUES_TOOL_REQUIRES,
-} from "./list-issues-tool";
-import {
-  createMultiSourceCollateralFetchTools,
-  FETCH_TOOLS_REQUIRES,
-} from "./fetch-tools";
-import {
-  createMultiSourceCollateralPersistTools,
-  PERSIST_TOOLS_REQUIRES,
-} from "./persist-tools";
+  createMultiSourceCollateralTools,
+  MULTI_SOURCE_COLLATERAL_TOOLS_REQUIRES,
+} from "./tools";
 
-export const multiSourceCollateralListIssues = defineTool({
-  id: "@workbench/workflow-multi-source-collateral/list-issues",
-  requires: LIST_ISSUES_TOOL_REQUIRES,
+export const multiSourceCollateralCore = defineTool({
+  id: "@workbench/workflow-multi-source-collateral/core",
+  requires: MULTI_SOURCE_COLLATERAL_TOOLS_REQUIRES,
   factory: (env) =>
-    createToolRunner(createMultiSourceCollateralListIssuesTools(env)),
-});
-
-export const multiSourceCollateralFetch = defineTool({
-  id: "@workbench/workflow-multi-source-collateral/fetch",
-  requires: FETCH_TOOLS_REQUIRES,
-  factory: (env) =>
-    createToolRunner(createMultiSourceCollateralFetchTools(env)),
-});
-
-export const multiSourceCollateralPersist = defineTool({
-  id: "@workbench/workflow-multi-source-collateral/persist",
-  requires: PERSIST_TOOLS_REQUIRES,
-  factory: (env) =>
-    createToolRunner(createMultiSourceCollateralPersistTools(env)),
+    createToolRunner(
+      createMultiSourceCollateralTools(
+        env as unknown as Record<string, unknown>,
+      ),
+    ),
 });

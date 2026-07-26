@@ -12,8 +12,8 @@ import { STEP_UI as attioTaskAgentStepUI } from "@workbench/workflow-attio-task-
 import { STEP_UI as last30daysStepUI } from "@workbench/workflow-last30days-research/browser";
 import { STEP_UI as sumbleAccountIntelStepUI } from "@workbench/workflow-sumble-account-intel/browser";
 import { STEP_UI as competitorAnalysisStepUI } from "@workbench/workflow-competitor-analysis/browser";
+import { STEP_UI as multiSourceCollateralStepUI } from "@workbench/workflow-multi-source-collateral/browser";
 import { buildPainPointCollateralBlocks } from "@workbench/workflow-pain-point-collateral/blocks";
-import { buildMultiSourceCollateralBlocks } from "@workbench/workflow-multi-source-collateral/blocks";
 import { buildRedditOpportunityScannerBlocks } from "@workbench/workflow-reddit-opportunity-scanner/blocks";
 
 // Per-kind dock block builders (CL-2683). A migrated workflow supplies its own
@@ -35,7 +35,6 @@ const builders: Record<string, DockBlockBuilder> = {
   "ab-compare-standard": buildAbPresetBlocks,
   "gamma-presentation-creator": buildGammaBlocks,
   "pain-point-collateral": buildPainPointCollateralBlocks,
-  "multi-source-collateral": buildMultiSourceCollateralBlocks,
   "reddit-opportunity-scanner": buildRedditOpportunityScannerBlocks,
 };
 
@@ -51,6 +50,7 @@ const stepUIMaps: Record<string, StepUI> = {
   "last30days-research": last30daysStepUI,
   "sumble-account-intel": sumbleAccountIntelStepUI,
   "competitor-analysis": competitorAnalysisStepUI,
+  "multi-source-collateral": multiSourceCollateralStepUI,
 };
 
 export function buildDockBlocks(
