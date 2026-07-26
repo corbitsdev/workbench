@@ -8,8 +8,29 @@ afterEach(() => {
   cleanup();
   mockReducedMotion.current = false;
 });
-import { buildSteps } from "./workflow-steps";
-import { type WorkflowStepName } from "./workflow-step-types";
+import { type WorkflowStep } from "./workflow-step-types";
+
+type StepName = "intake" | "analyze" | "generate" | "approve";
+const STEP_ORDER: StepName[] = ["intake", "analyze", "generate", "approve"];
+
+function buildSteps(
+  currentStep: StepName,
+  labels: Record<StepName, string>,
+  isDone?: boolean,
+): WorkflowStep[] {
+  const currentIndex = STEP_ORDER.indexOf(currentStep);
+  return STEP_ORDER.map((name, index) => {
+    let status: WorkflowStep["status"];
+    if (isDone || index < currentIndex) {
+      status = "completed";
+    } else if (index === currentIndex) {
+      status = "current";
+    } else {
+      status = "pending";
+    }
+    return { number: index + 1, label: labels[name] ?? name, status };
+  });
+}
 
 // framer-motion is not compatible with Happy DOM; replace motion.div/span with
 // plain elements. `mockReducedMotion` is mutated per-test so we can assert
@@ -42,7 +63,7 @@ mock.module("framer-motion", () => ({
   useReducedMotion: () => mockReducedMotion.current,
 }));
 
-const LABELS: Record<WorkflowStepName, string> = {
+const LABELS: Record<StepName, string> = {
   intake: "Call source",
   analyze: "Agent review",
   generate: "Generate collateral",
