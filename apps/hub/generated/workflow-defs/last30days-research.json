@@ -100,10 +100,7 @@
           "inference": {
             "sources": []
           },
-          "description": "Reasoning step: last30days-ground",
-          "tags": {
-            "workbench.title": "Ground the topic"
-          }
+          "description": "Reasoning step: last30days-ground"
         },
         "drainBehavior": "cancel",
         "input": {
@@ -389,10 +386,7 @@
           "inference": {
             "sources": []
           },
-          "description": "Reasoning step: last30days-entities",
-          "tags": {
-            "workbench.title": "Extract key entities"
-          }
+          "description": "Reasoning step: last30days-entities"
         },
         "drainBehavior": "cancel",
         "input": {
@@ -570,10 +564,7 @@
               }
             ]
           },
-          "description": "Reasoning step: last30days-curate",
-          "tags": {
-            "workbench.title": "Curate themes & quotes"
-          }
+          "description": "Reasoning step: last30days-curate"
         },
         "drainBehavior": "cancel",
         "input": {
@@ -619,10 +610,7 @@
               }
             ]
           },
-          "description": "Reasoning step: last30days-write-report",
-          "tags": {
-            "workbench.title": "Write the report"
-          }
+          "description": "Reasoning step: last30days-write-report"
         },
         "drainBehavior": "cancel",
         "input": {

@@ -230,7 +230,7 @@
   {
     "name": "@workbench/workflow-last30days-research",
     "version": "0.1.0",
-    "integrity": "sha512-HwFZDdkYVni8Wai57L0yeHgLfl84jt80tRBhA7HJnUSmTz3xgF+qNHab3g8viIqRb0HRHRrRg1DY85b0ZHAJ/w==",
+    "integrity": "sha512-DyNtlvd5E3PNUzIIX+i+8pZufAGT6h/OpcaP6tcmxVnaoEPzcXfXO4PQgWXWRNgKkB1O2r1iaxA0MkBp8Feihw==",
     "tarballFilename": "@workbench-workflow-last30days-research-0.1.0.tgz"
   },
   {

@@ -1,11 +1,25 @@
-import type { DisplayStep } from "@workbench/ui";
+// A stepper entry backed by one or more runtime step ids, in run order.
+// Structurally mirrors `@workbench/ui`'s `DisplayStep` (and the server-safe
+// `DisplayFlowStep` `@workbench/agents`' catalog classifier reads) without
+// depending on either package — this workflow no longer has a custom client
+// panel to share the type with (the generic dock renders every step's
+// progress from this declaration plus `STEP_UI`), so a local, dependency-free
+// type is the whole contract.
+export type DisplayStep = {
+  key: string;
+  label: string;
+  stepIds: readonly string[];
+  /**
+   * Present-progress verb phrase shown on the live status line while this step
+   * is in-flight (e.g. "Saving to workbench"). Omit for human gates and intake
+   * steps — an unlabeled active step shows no line rather than a stepper noun.
+   */
+  activityLabel?: string;
+};
 
-// The single, browser-safe declaration of this workflow's user-facing step flow
-// (labels, grouping, order). Consumed by the client panel (ui.tsx) for the live
-// run stepper AND, via the index re-export, by the server catalog classifier
-// that powers the animated preview — so both surfaces stay in sync. This module
-// must stay free of server-only imports so the `/ui` browser chunk never pulls
-// @intx/agent.
+// The single declaration of this workflow's user-facing step flow (labels,
+// grouping, order), consumed by the server catalog classifier that powers the
+// animated preview.
 
 // Every runtime step of the multi-source research phase, in run order, terminal
 // (`brief`) last — clustered into one display step so the stepper shows a single

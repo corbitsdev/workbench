@@ -15,10 +15,16 @@ export const INTAKE_SIGNAL = "intake";
 // per-workflow builder.
 //
 // This module must stay free of server-only imports (`@intx/workflow`,
-// `@workbench/agents`, and anything that transitively touches `@intx/agent`)
-// so the browser can import it directly without pulling in the module that
-// constructs the workflow's agent steps at load time. Mirrors the same
-// discipline `display-steps.ts` already follows for `DISPLAY_STEPS`.
+// `@intx/agent`, and anything that transitively touches it) so the browser
+// can import it directly without pulling in the module that constructs the
+// workflow's agent steps at load time. Mirrors the same discipline
+// `display-steps.ts` already follows for `DISPLAY_STEPS`.
+//
+// `@workbench/shared` is a devDependency only here (CL-4540 dropped the
+// runtime dependency this package cutover requires) — the `StepUI` import is
+// type-only and erases at build, and the package's two build-time guard
+// functions (`assertStepUIKeysMatchStepIds`/`assertGateStepsHaveStepUIEntry`)
+// are called from this workflow's own test suite, never from production code.
 export const STEP_UI: StepUI = {
   [INTAKE_SIGNAL]: {
     role: "intake",

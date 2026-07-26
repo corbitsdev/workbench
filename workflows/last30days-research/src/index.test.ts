@@ -2,8 +2,6 @@ import { describe, expect, test } from "bun:test";
 import type { ActionHandler } from "@intx/workflow";
 import type { StepInvoker } from "@intx/workflow/runtime";
 import { runLocal } from "@intx/workflow/runlocal";
-import { LLM_WRITER_MODEL } from "@workbench/agents";
-
 import {
   workflow,
   GROUND_QUERIES_HANDLER,
@@ -22,12 +20,16 @@ import {
 } from "./index";
 import { buildGroundingSystemPrompt } from "./prompts";
 
-// The retired `deterministic-tool` authoring kind's tags. Kept as literals
-// (not an import from `@workbench/agents`, which no longer exports them) —
-// this test only asserts the tags are ABSENT from every native step, proving
-// no step regresses onto the deleted mechanism.
+// Mirrors `@workbench/agents`' `deterministic-step.ts` tag constants — this
+// workflow no longer depends on that package (CL-4540), but every step here
+// still asserts the ABSENCE of these tags (no step in the native cutover sets
+// them), so the literal tag strings only need to be stable, not imported.
 const STEP_KIND_TAG = "workbench.stepKind";
 const STEP_TOOL_TAG = "workbench.tool";
+
+// Mirrors `@workbench/agents`' `LLM_WRITER_MODEL` (the heavier writer-tier
+// model id) and `./index.ts`'s own locally-inlined copy of the same constant.
+const LLM_WRITER_MODEL = "kimi-k2.6";
 
 // Every round-1 source's safe wrapper handler, by source key — the single
 // lookup the tests below share instead of a per-source if/else.

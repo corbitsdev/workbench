@@ -22,8 +22,6 @@ const importers: Record<string, () => Promise<WorkflowUIModule>> = {
     import("@workbench/workflow-multi-source-collateral/ui"),
   "reddit-opportunity-scanner": () =>
     import("@workbench/workflow-reddit-opportunity-scanner/ui"),
-  "last30days-research": () =>
-    import("@workbench/workflow-last30days-research/ui"),
 };
 
 export async function loadWorkflowUI(

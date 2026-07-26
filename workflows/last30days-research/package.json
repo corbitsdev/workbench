@@ -5,10 +5,6 @@
   "main": "src/index.ts",
   "exports": {
     ".": "./src/index.ts",
-    "./ui": {
-      "types": "./src/ui.tsx",
-      "default": "./src/ui.tsx"
-    },
     "./browser": {
       "types": "./src/step-ui.ts",
       "default": "./src/step-ui.ts"
@@ -20,10 +16,8 @@
     "test:coverage": "bun test --preload ./src/test-setup.ts --isolate --coverage --coverage-reporter=lcov --coverage-reporter=text src"
   },
   "dependencies": {
+    "@intx/agent": "workspace:*",
     "@intx/workflow": "workspace:*",
-    "@workbench/agents": "workspace:*",
-    "@workbench/last30days-core": "workspace:*",
-    "@workbench/shared": "workspace:*",
     "@workbench/tool-credentials": "workspace:*",
     "@workbench/tool-manifest": "workspace:*",
     "@workbench/tools-exa": "workspace:*",
@@ -32,22 +26,15 @@
     "@workbench/tools-polymarket": "workspace:*",
     "@workbench/tools-reddit": "workspace:*",
     "@workbench/tools-x": "workspace:*",
-    "@workbench/tools-youtube": "workspace:*",
-    "@workbench/ui": "workspace:*",
-    "arktype": "catalog:",
-    "react": "^19.0.0"
+    "@workbench/tools-youtube": "workspace:*"
   },
   "devDependencies": {
+    "@workbench/last30days-core": "workspace:*",
+    "@workbench/shared": "workspace:*",
     "@workbench/test-utils": "workspace:*",
-    "@testing-library/react": "^16.3.2",
     "@types/bun": "latest",
-    "@types/react": "^19.0.0",
-    "@intx/agent": "workspace:*",
     "@intx/types": "workspace:*",
     "typescript": "catalog:"
-  },
-  "peerDependencies": {
-    "react": "^19.0.0"
   },
   "interchange": {
     "tools": "./dist/interchange-tools.js",
