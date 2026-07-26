@@ -5,6 +5,7 @@ import {
   ClarificationPayloadSchema,
   CompetitorAnalysisIntakePayloadSchema,
   CompetitorAnalysisReviewPayloadSchema,
+  DailyLinkedInIntakePayloadSchema,
   Last30daysIntakePayloadSchema,
   MemberSelectionPayloadSchema,
   RedditIntakePayloadSchema,
@@ -159,6 +160,13 @@ const RESUME_PAYLOAD_SCHEMAS: Record<string, Record<string, Type>> = {
   // story bucket for Daily LinkedIn to consume as truth.
   "scrape-for-stories": {
     intake: ScrapeForStoriesIntakePayloadSchema,
+  },
+  // daily-linkedin (CL-4033/CL-4429): the recipient list is picked at intake
+  // and stored on the schedule. At least one `{ refId, displayName }` pair is
+  // required — an empty list means nobody, not everybody, so without this a
+  // schedule could fire daily, draft for no one, and report success.
+  "daily-linkedin": {
+    intake: DailyLinkedInIntakePayloadSchema,
   },
   // Multi-gate scheduler integration fixture (CL-3528): intake then a post-intake
   // confirm gate with an empty payload — exercises scheduled Myra gate-drive.

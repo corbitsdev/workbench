@@ -49,6 +49,7 @@
         "@workbench/hub-agent": "workspace:*",
         "@workbench/hub-sessions": "workspace:*",
         "@workbench/last30days-core": "workspace:*",
+        "@workbench/linkedin": "workspace:*",
         "@workbench/myra": "workspace:*",
         "@workbench/openapi-arktype": "workspace:*",
         "@workbench/pricing": "workspace:*",
@@ -851,6 +852,17 @@
       "devDependencies": {
         "@types/bun": "latest",
         "typescript": "^5.9.0",
+      },
+    },
+    "packages/linkedin": {
+      "name": "@workbench/linkedin",
+      "version": "0.1.0",
+      "dependencies": {
+        "@workbench/shared": "workspace:*",
+      },
+      "devDependencies": {
+        "@types/bun": "latest",
+        "typescript": "catalog:",
       },
     },
     "packages/myra": {
@@ -1684,6 +1696,19 @@
       "devDependencies": {
         "@types/bun": "latest",
         "@workbench/shared": "workspace:*",
+        "typescript": "catalog:",
+      },
+    },
+    "workflows/daily-linkedin": {
+      "name": "@workbench/workflow-daily-linkedin",
+      "version": "0.1.0",
+      "dependencies": {
+        "@intx/agent": "workspace:*",
+        "@intx/workflow": "workspace:*",
+        "@workbench/linkedin": "workspace:*",
+      },
+      "devDependencies": {
+        "@types/bun": "latest",
         "typescript": "catalog:",
       },
     },
@@ -2909,6 +2934,8 @@
 
     "@workbench/last30days-core": ["@workbench/last30days-core@workspace:packages/last30days-core"],
 
+    "@workbench/linkedin": ["@workbench/linkedin@workspace:packages/linkedin"],
+
     "@workbench/myra": ["@workbench/myra@workspace:packages/myra"],
 
     "@workbench/openapi-arktype": ["@workbench/openapi-arktype@workspace:packages/openapi-arktype"],
@@ -3016,6 +3043,8 @@
     "@workbench/workflow-attio-task-agent": ["@workbench/workflow-attio-task-agent@workspace:workflows/attio-task-agent"],
 
     "@workbench/workflow-competitor-analysis": ["@workbench/workflow-competitor-analysis@workspace:workflows/competitor-analysis"],
+
+    "@workbench/workflow-daily-linkedin": ["@workbench/workflow-daily-linkedin@workspace:workflows/daily-linkedin"],
 
     "@workbench/workflow-exa-topic-watch": ["@workbench/workflow-exa-topic-watch@workspace:workflows/exa-topic-watch"],
 

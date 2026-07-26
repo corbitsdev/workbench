@@ -30,6 +30,7 @@ COPY packages/hub-sessions/package.json packages/hub-sessions/
 COPY packages/inference/package.json packages/inference/
 COPY packages/storage-isogit/package.json packages/storage-isogit/
 COPY packages/last30days-core/package.json packages/last30days-core/
+COPY packages/linkedin/package.json packages/linkedin/
 COPY packages/myra/package.json packages/myra/
 COPY packages/openapi-arktype/package.json packages/openapi-arktype/
 COPY packages/prompts/package.json packages/prompts/
@@ -98,6 +99,7 @@ COPY workflows/prospect-engine/package.json workflows/prospect-engine/
 COPY workflows/scrape-for-stories/package.json workflows/scrape-for-stories/
 COPY workflows/smoke-test/package.json workflows/smoke-test/
 COPY workflows/sumble-account-intel/package.json workflows/sumble-account-intel/
+COPY workflows/daily-linkedin/package.json workflows/daily-linkedin/
 COPY workflows/competitor-analysis/package.json workflows/competitor-analysis/
 COPY workflows/firecrawl-url-watch/package.json workflows/firecrawl-url-watch/
 RUN bun install --frozen-lockfile
@@ -120,6 +122,7 @@ COPY packages/storage-isogit/ packages/storage-isogit/
 COPY packages/blocks/ packages/blocks/
 COPY packages/chat/ packages/chat/
 COPY packages/last30days-core/ packages/last30days-core/
+COPY packages/linkedin/ packages/linkedin/
 COPY packages/prompts/ packages/prompts/
 COPY packages/sentry/ packages/sentry/
 COPY packages/timeline/ packages/timeline/

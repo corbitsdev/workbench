@@ -30,6 +30,7 @@ COPY packages/hub-sessions/package.json packages/hub-sessions/
 COPY packages/inference/package.json packages/inference/
 COPY packages/storage-isogit/package.json packages/storage-isogit/
 COPY packages/last30days-core/package.json packages/last30days-core/
+COPY packages/linkedin/package.json packages/linkedin/
 COPY packages/myra/package.json packages/myra/
 COPY packages/openapi-arktype/package.json packages/openapi-arktype/
 COPY packages/prompts/package.json packages/prompts/
@@ -85,6 +86,7 @@ COPY workflows/multi-source-collateral/package.json workflows/multi-source-colla
 COPY workflows/reddit-opportunity-scanner/package.json workflows/reddit-opportunity-scanner/
 COPY workflows/smoke-test/package.json workflows/smoke-test/
 COPY workflows/sumble-account-intel/package.json workflows/sumble-account-intel/
+COPY workflows/daily-linkedin/package.json workflows/daily-linkedin/
 COPY workflows/competitor-analysis/package.json workflows/competitor-analysis/
 COPY workflows/github-topic-watch/package.json workflows/github-topic-watch/
 COPY workflows/exa-topic-watch/package.json workflows/exa-topic-watch/

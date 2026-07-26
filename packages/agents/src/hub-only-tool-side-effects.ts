@@ -10,4 +10,6 @@ export const HUB_ONLY_TOOL_SIDE_EFFECTS: Record<string, ToolSideEffect> = {
   task_update: "write",
   granola_create_tasks: "write",
   granola_fanout_call: "write",
+  // Multi-recipient artifact + mailbox fan-out (generic; daily-linkedin uses it)
+  inbox_deliver_batch: "write",
 };

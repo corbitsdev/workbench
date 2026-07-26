@@ -286,7 +286,52 @@ Workflows / Owner schedules offer this kind?” and is a separate opt-in list.
   `github-topic-watch`, `reddit-opportunity-watch`, and `scrape-for-stories`
   (CL-4430 weekly story-bucket producer — writes artifact kind `story-bucket`
   under the fixed `sourceRef` `story-bucket-latest`, so each run updates one
-  shared row instead of stacking duplicates).
+  shared row instead of stacking duplicates), and `daily-linkedin` (CL-4033
+  story-bucket consumer — see below).
+- **An agent step's trigger-payload needs are invisible to every static check.**
+  A workflow whose post-intake step is an `agent` picks its tool arguments at run
+  time, so neither `deriveEntryStepRequiredTriggerFields` nor the native-`action`
+  selector walk in `routine-eligibility.integration.test.ts` can tell which
+  trigger fields it actually requires. The only cover for that shape is a
+  registered enricher in
+  `apps/hub/src/workflow-executor/trigger-payload-enrichment-registry.ts`.
+  `daily-linkedin` is the current example: its drafting agent hands
+  `userAddress` to `inbox_deliver_batch`, which requires it, and no schedule
+  field or step supplies it — the enricher stamps the firing member's mail
+  identity on every fire.
+- **People are picked at intake, not resolved at run time (CL-4429).** A
+  multi-person routine stores its recipients on the schedule as
+  `{ refId, displayName }` pairs and reads them from `trigger.payload`. There is
+  no roster-lookup tool: a workflow pack must never carry tenant principal ids,
+  and `refId` is the only stable identifier that survives being stored. The hub
+  turns each `refId` into a principal at delivery time
+  (`apps/hub/src/lib/tenant-member-routing.ts`) — that is routing, not
+  discovery.
+  The stored selection is a **snapshot**, and that tradeoff is accepted: a
+  departed member leaves a dead `refId` until the schedule is edited, and a new
+  teammate is not auto-included. What makes it safe is that the dead `refId` is
+  never silent — see the skip contract below.
+- **Fan-out belongs in one hub call, not on the LLM path.**
+  `inbox_deliver_batch` (`apps/hub/src/tools/inbox-deliver-batch.ts`) writes an
+  optional `sourceRef`-deduped artifact and one `messageKey`-idempotent mailbox
+  row per recipient in a single call, each addressed by `refId`. An agent
+  looping `write_artifact` + `mail_send` instead hits the mail-guard turn caps
+  and re-spams every inbox on a re-run. `daily-linkedin`'s agent therefore has
+  no `write_artifact` / `mail_send` capability at all.
+- **Three outcomes, three lists, and none of them throw.** The batch returns
+  `delivered` / `skipped` / `errors`. A `refId` that is no longer a member of the
+  tenant is **skipped with a reason**; a delivery that fails for any other cause
+  is recorded in `errors`; the rest of the batch proceeds either way, so one bad
+  recipient can never discard the deliveries that succeeded. The consuming
+  agent's prompt is required to report every skip and error by name — a person
+  whose drafts have quietly stopped is exactly what this is for.
+- **Never set a tool's outer `isError`.** `runDeterministicToolStep` throws
+  unconditionally when a dispatched tool's outer `ToolResult.isError` is true,
+  which kills the run. A tool that must tolerate failure returns a SUCCESSFUL
+  result whose `content` carries `{ isError: true, error }` — the shared
+  tolerance envelope in `packages/workbench-shared/src/tolerance-envelope.ts`.
+  `inbox_deliver_batch` does this even though it is agent-dispatched today, so
+  it stays safe if a future workflow dispatches it from a native `action`.
 - One-offs (smoke-test, gamma, deck builders, etc.) and mid-run human-gate kinds
   (e.g. competitor-analysis) are still schedulable, but only finish unattended
   if a person clears their gates. Granola call processing is a work-unit /

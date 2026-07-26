@@ -1,0 +1,26 @@
+{
+  "name": "@workbench/workflow-daily-linkedin",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./src/index.ts"
+    }
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "bun test --isolate src",
+    "test:coverage": "bun test --isolate --coverage --coverage-reporter=lcov --coverage-reporter=text src"
+  },
+  "dependencies": {
+    "@intx/agent": "workspace:*",
+    "@intx/workflow": "workspace:*",
+    "@workbench/linkedin": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "typescript": "catalog:"
+  }
+}

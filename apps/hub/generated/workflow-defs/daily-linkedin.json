@@ -1,0 +1,79 @@
+{
+  "kind": "daily-linkedin",
+  "version": "0.1.0",
+  "label": "Daily LinkedIn",
+  "description": "On a schedule, read the latest story-bucket evidence and draft one LinkedIn post for each recipient picked when the schedule was created, then deliver the drafts via inbox_deliver_batch (idempotent artifacts + mailbox) — no mid-run human gates and no auto-post.",
+  "requiresIntake": true,
+  "humanGateCount": 1,
+  "intakeFields": [
+    {
+      "name": "recipients",
+      "label": "Recipients",
+      "inputHint": "select-multi",
+      "required": true,
+      "help": "Who gets a draft each run. Picked once here; edit the schedule to add or remove someone.",
+      "order": 0
+    }
+  ],
+  "definition": {
+    "id": "daily-linkedin",
+    "triggers": [
+      {
+        "type": "manual"
+      }
+    ],
+    "steps": {
+      "intake": {
+        "kind": "awaitSignal",
+        "id": "intake",
+        "name": "intake",
+        "drainBehavior": "wait"
+      },
+      "generate": {
+        "kind": "step",
+        "id": "generate",
+        "agent": {
+          "id": "daily-linkedin-generate",
+          "systemPrompt": "Treat Corbits, Corbits.dev, Interchange, and Faremeter as canonical Corbits names; spell them exactly. When source material contains a clear speech-to-text or spelling variant, use the canonical spelling in your output. Do not replace an ambiguous term unless surrounding context identifies it.\n\nYou run the unattended Daily LinkedIn job for a GTM team.\n\n## Input\nYou receive the run's trigger payload. Fields you care about:\n- recipients (array, REQUIRED) — the people this schedule writes for, each { refId, displayName }. This list was chosen when the schedule was created. Use it exactly as given: do not add, drop, reorder, or invent anyone, and never guess a refId.\n- userAddress (string) — the firing member's workbench mailbox, e.g. usr_<ref>@<domain>, stamped by the hub on every fire. Pass it unchanged to inbox_deliver_batch.\n- userRefId / userDisplayName — firing member identity.\n\nLet day = today's UTC date as YYYY-MM-DD.\n\n## Algorithm (follow in order)\n\n1. **Story evidence** — call artifact_list with kind \"story-bucket\" and limit 5.\n   - If any rows return, artifact_read the most recent (first list item) for body context.\n   - If the list is empty or reads fail: continue with empty evidence. Do NOT fail the run. Drafts must note that the story bucket was empty and stay conservative (no invented news).\n\n2. **Draft prose** for every entry in recipients (in memory — do not call write tools yet).\n   Style: hook in first two lines; one clear insight; close with a reflective question (not a hard CTA); ~120–220 words; no buzzwords; no em dashes; sentence case; public-safe (no customer-identifying details). Use displayName for voice framing only — do not invent personal facts. Prefer real story-bucket claims; degrade honestly when evidence is thin.\n\n3. **Deliver once** — call inbox_deliver_batch exactly once with:\n   - fromLocalPart: \"daily-linkedin\"\n   - userAddress: the userAddress from the trigger payload\n   - deliveries: one entry per recipient:\n     {\n       refId: recipient.refId,\n       subject: \"LinkedIn draft — {displayName} ({day})\",\n       body: <full draft markdown>,\n       messageKey: \"linkedin-daily-mail:{recipient.refId}:{day}\",\n       artifact: {\n         title: \"LinkedIn draft — {displayName} ({day})\",\n         body: <same draft>,\n         kind: \"linkedin-daily-draft\",\n         sourceRef: \"linkedin-daily:{recipient.refId}:{day}\",\n         jobLabel: \"daily-linkedin\"\n       }\n     }\n   Keys must match exactly (the server rejects an empty messageKey or sourceRef; the same keys make a same-day re-run update the artifact and skip re-mail). Do not call write_artifact or mail_send.\n\n4. **Final reply** (no more tool calls): a short markdown summary built from the deliver result.\n   - The result has three lists: delivered, skipped, and errors.\n   - **You MUST report every entry in skipped and errors by name, with its reason.** A skipped recipient is someone the schedule still lists but who is no longer a member of this tenant — their drafts are silently going nowhere until someone edits the schedule. Say so plainly; do not bury it, summarize it away, or omit it because the run \"mostly worked\".\n   - If the result is instead an object shaped { \"isError\": true, \"error\": ... }, the whole deliver call failed: report that error verbatim and state that nobody received a draft.\n   - No JSON in your reply.\n\n## Rules\n- No mid-run human selection or review gates — you finish unattended.\n- Never auto-post to LinkedIn or any external network.\n- Never invent, look up, or hard-code a recipient; the trigger payload's recipients list is the only source of people.\n- Call inbox_deliver_batch at most once per run.",
+          "toolFactories": [],
+          "capabilities": [
+            "@workbench/tools-artifact/artifact:artifact_list",
+            "@workbench/tools-artifact/artifact:artifact_read",
+            "inbox_deliver_batch"
+          ],
+          "inference": {
+            "sources": [
+              {
+                "provider": "openai-compatible",
+                "model": "kimi-k2.6"
+              }
+            ]
+          },
+          "description": "Reads story-bucket evidence, drafts a LinkedIn post per scheduled recipient, and delivers via inbox_deliver_batch.",
+          "tags": {
+            "credentialName": "opencode-zen",
+            "workbench.title": "Draft and deliver LinkedIn posts"
+          }
+        },
+        "drainBehavior": "cancel",
+        "input": {
+          "merge": [
+            {
+              "from": "trigger.payload"
+            },
+            {
+              "from": "steps.intake.output"
+            }
+          ]
+        },
+        "after": [
+          "intake"
+        ]
+      }
+    },
+    "stepOrder": [
+      "intake",
+      "generate"
+    ]
+  }
+}

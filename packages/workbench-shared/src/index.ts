@@ -5,6 +5,8 @@ export * from "./gate-mail-copy";
 export * from "./myra-thread";
 export * from "./active-context";
 export * from "./attio-task-agent";
+export * from "./daily-linkedin";
+export * from "./selected-person";
 export * from "./ab-compare";
 export * from "./gamma-presentation";
 export * from "./gtm-scripts-briefs";

@@ -50,6 +50,7 @@
     "@workbench/event-collector": "workspace:*",
     "@workbench/hub-agent": "workspace:*",
     "@workbench/last30days-core": "workspace:*",
+    "@workbench/linkedin": "workspace:*",
     "@workbench/myra": "workspace:*",
     "@workbench/openapi-arktype": "workspace:*",
     "@workbench/prompts": "workspace:*",

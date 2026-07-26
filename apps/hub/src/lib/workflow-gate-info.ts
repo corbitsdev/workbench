@@ -2,9 +2,11 @@ import { type } from "arktype";
 
 // Serialized intake-field descriptor carried in the embedded workflow def so the
 // attach UI can render a workflow's first-intake form without importing workflow
-// code (CL-3509 + CL-3860 schedule field metadata). The input-kind union here is
-// a hand-duplicate of `ScheduleFieldInputKindSchema` in `@workbench/shared` —
-// keep them identical; `schedule-field-input-kind-parity.test.ts` enforces it.
+// code (CL-3509 + CL-3860 schedule field metadata). Includes string-array for
+// multi-value schedule fields (prospect-engine verticals) and select-multi for
+// option-backed roster subsets (CL-4429 / CL-4033). Kept in lockstep with
+// `ScheduleFieldInputKindSchema` in `@workbench/shared` — a hint accepted there
+// but not here fails def serialization at build time.
 export const EmbeddedIntakeFieldSchema = type({
   name: "string > 0",
   label: "string > 0",
@@ -90,14 +92,28 @@ type RawTriggerStep = {
  * trigger beyond identity/reserved keys, e.g. `prospect-engine`'s
  * `initBudget`) returns no required fields.
  *
- * KNOWN GAP: this only inspects a `kind: "step"` entry carrying the
- * `workbench.argMap` tag stamped by `deterministicToolStep`. A native
- * `action`-kind entry step whose selector reads a required field straight off
- * `trigger.payload` is invisible here and returns `[]` uncritically — the
- * authoring-time check this feeds (see `routine-eligibility.integration.test.ts`)
- * cannot yet catch that shape. Closing this gap by walking the entry step's
- * `input` selector is tracked on a separate branch; do not weaken or remove
- * the existing coverage while landing that.
+ * KNOWN GAP — what this function CANNOT see, and what covers each case now:
+ *
+ * 1. Native `action` entry steps. `deterministicToolStep` and its
+ *    `workbench.argMap` tag are retired, so no committed def carries that tag
+ *    and this function returns `[]` for every workflow today. The property it
+ *    used to enforce is now re-derived independently, from the raw selector
+ *    tree, by the "native action entry steps only require trigger fields the
+ *    schedule can supply" suite in `routine-eligibility.integration.test.ts`.
+ *    That is a BUILD-TIME check, not a reinstated runtime gate.
+ *
+ * 2. Agent (`kind: "step"`) steps — STILL UNCOVERED, and uncoverable by static
+ *    analysis. An agent chooses its tool arguments at run time from its system
+ *    prompt, so which `trigger.payload` fields its calls require is not encoded
+ *    in any selector or tag. `daily-linkedin` (CL-4033) is exactly this shape:
+ *    its drafting agent passes `userAddress` into `inbox_deliver_batch`, which
+ *    requires it, and nothing here or in the selector walk can tell. The only
+ *    real cover for that shape is a registered trigger-payload enricher for the
+ *    kind (`../workflow-executor/trigger-payload-enrichment-registry.ts`), which
+ *    daily-linkedin has and which `routine-eligibility.integration.test.ts`
+ *    asserts. A new agent-step workflow that reads a trigger field with no
+ *    enricher will still fail only at fire time — do not read this file's `[]`
+ *    as evidence that it is safe.
  */
 export function deriveEntryStepRequiredTriggerFields(
   definition: unknown,

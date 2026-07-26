@@ -112,6 +112,32 @@ function isInternalRefKind(kind: MailboxRef["kind"]): kind is DeepLinkKind {
 }
 
 /**
+ * Build a member's workbench mailbox address on the same domain as an owner's
+ * `usr_` address. A fan-out job knows each recipient's auth `refId` but not the
+ * deployment's mail domain; the firing member's own address is the only domain
+ * source that travels with a run, so it is the domain donor here. Accepts a
+ * refId with or without the `usr_` prefix.
+ */
+export function mailboxAddressForMember(
+  ownerUserAddress: string,
+  memberRefId: string,
+): string {
+  const at = ownerUserAddress.lastIndexOf("@");
+  if (at <= 0 || at === ownerUserAddress.length - 1) {
+    throw new Error(
+      `ownerUserAddress must be a usr_ mailbox, got: ${ownerUserAddress}`,
+    );
+  }
+  const refId = memberRefId.trim();
+  if (refId.length === 0) {
+    throw new Error("memberRefId is required");
+  }
+  const domain = ownerUserAddress.slice(at + 1);
+  const local = refId.startsWith("usr_") ? refId : `usr_${refId}`;
+  return `${local}@${domain}`;
+}
+
+/**
  * The target a "Related" ref opens. Internal kinds resolve through the
  * deepLink helper (relative for react-router, or absolute when `baseUrl` is
  * given); `linear`/`url` refs already carry a full URL, returned as-is.

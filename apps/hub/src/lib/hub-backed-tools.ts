@@ -14,6 +14,7 @@ import { VERCEL_DEPLOY_ARTIFACT_HUB_TOOLS } from "../tools/vercel-deploy-artifac
 import { TASK_HUB_TOOLS } from "../tools/task-tools";
 import { GRANOLA_CALL_HUB_TOOLS } from "../tools/granola-call-tools";
 import { GRANOLA_SPAWN_HUB_TOOLS } from "../tools/granola-spawn-runs";
+import { INBOX_DELIVER_BATCH_HUB_TOOLS } from "../tools/inbox-deliver-batch";
 import type { ContextToolEntry } from "./tool-registry";
 
 // The hub-backed tools served over the scoped `/api/internal/hub-tools/run`
@@ -39,4 +40,6 @@ export const HUB_BACKED_TOOLS: Record<string, ContextToolEntry> = {
   ...TASK_HUB_TOOLS,
   ...GRANOLA_CALL_HUB_TOOLS,
   ...GRANOLA_SPAWN_HUB_TOOLS,
+  // Multi-recipient artifact + mailbox fan-out (used by daily-linkedin and others)
+  ...INBOX_DELIVER_BATCH_HUB_TOOLS,
 };

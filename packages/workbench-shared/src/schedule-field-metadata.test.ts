@@ -169,8 +169,9 @@ describe("buildScheduleTriggerPayload", () => {
       { name: "topic", label: "Topic" },
       { name: "days", label: "Days", inputHint: "number", defaultValue: 30 },
     ];
-    expect(buildScheduleTriggerPayload(withDefault, { topic: "GTM" })).toEqual(
-      { topic: "GTM", days: 30 },
-    );
+    expect(buildScheduleTriggerPayload(withDefault, { topic: "GTM" })).toEqual({
+      topic: "GTM",
+      days: 30,
+    });
   });
 });

@@ -43,19 +43,25 @@ describe("every deployed workflow kind is schedulable (CL-4514)", () => {
     expect(kinds.has("attio-task-agent")).toBe(true);
     expect(kinds.has("granola-call")).toBe(true);
     expect(kinds.has("scrape-for-stories")).toBe(true);
+    expect(kinds.has("daily-linkedin")).toBe(true);
   });
 });
 
-// KNOWN GAP (tracked on a separate branch, land together): the entry-step
-// trigger-field derivation below only inspects a `kind: "step"` entry
-// carrying the `workbench.argMap` tag stamped by `deterministicToolStep` —
-// see the docstring on `deriveEntryStepRequiredTriggerFields`
-// (workflow-gate-info.ts). A native `action`-kind entry step whose selector
-// reads a required field straight off `trigger.payload` is invisible to this
-// derivation and returns `[]` uncritically, so it would trivially "pass" the
-// check below even if genuinely unschedulable. Closing that gap requires
-// walking the entry step's `input` selector directly; do not remove or
-// weaken the assertions below while that lands — extend them instead.
+// KNOWN GAP: the entry-step trigger-field derivation below reads
+// `deriveEntryStepRequiredTriggerFields` (workflow-gate-info.ts), which only
+// inspects a `kind: "step"` entry carrying the `workbench.argMap` tag stamped
+// by the retired `deterministicToolStep`. No committed def can carry that tag
+// anymore, so this derivation returns `[]` for every kind and the check below
+// passes vacuously on its own. Two things carry the real weight instead:
+//   - for native `action` steps, the independent selector walk in the last
+//     suite of this file, which re-derives required trigger fields from the
+//     raw selector tree;
+//   - for `agent` steps, NOTHING static can — an agent picks its tool
+//     arguments at run time (daily-linkedin's drafting step passes
+//     `userAddress` into `inbox_deliver_batch`, invisible to any walk), so
+//     their only cover is a registered trigger-payload enricher, asserted
+//     per-kind below.
+// Do not remove or weaken the assertions below — extend them instead.
 describe("declared intake fields + enrichers cover every entry step's required trigger fields", () => {
   it("every deployed kind satisfies isRoutineEligibleKind against the real embedded catalog", async () => {
     const [entryTriggerFieldsByKind, intakeFieldsByKind] = await Promise.all([
@@ -94,6 +100,20 @@ describe("declared intake fields + enrichers cover every entry step's required t
   it("heartbeat and prospect-engine rely on their registered trigger-payload enrichers", () => {
     expect(ENRICHED_TRIGGER_KINDS.has("heartbeat")).toBe(true);
     expect(ENRICHED_TRIGGER_KINDS.has("prospect-engine")).toBe(true);
+  });
+
+  // daily-linkedin (CL-4033) is the shape NO derivation in this file can see:
+  // its post-intake step is an `agent` step, so the trigger-payload fields it
+  // genuinely requires are chosen by the model at run time, not encoded in any
+  // selector or argMap. `deriveEntryStepRequiredTriggerFields` only reads a
+  // `kind: "step"` entry carrying the retired `workbench.argMap` tag, and the
+  // native-action selector walk further down only classifies `kind: "action"`
+  // steps — so both return nothing for this kind and it would "pass" whether or
+  // not it were deliverable. Its required `userAddress` is covered the only way
+  // that shape can be: a registered enricher stamping it on every fire. Losing
+  // that registration is silent everywhere else, so it is asserted here.
+  it("daily-linkedin relies on its registered enricher for the userAddress no static check can see", () => {
+    expect(ENRICHED_TRIGGER_KINDS.has("daily-linkedin")).toBe(true);
   });
 });
 
@@ -137,6 +157,17 @@ describe("declared intake fields cover the registered intake resume-payload sche
   // generic check above enforces — a registered schema that requires `topics`,
   // and a declared schedule field of that exact name — so dropping either side
   // fails here with a kind-specific message rather than only in the aggregate.
+  // daily-linkedin's recipient list is picked at intake and is REQUIRED — an
+  // empty selection means nobody, not everybody (CL-4429). Pinning the pairing
+  // catches a rename on either side.
+  it("sanity: daily-linkedin requires recipients and declares it as a schedule field", async () => {
+    expect(requiredIntakeSchemaKeys("daily-linkedin")).toEqual(["recipients"]);
+    const intakeFieldsByKind = await loadWorkflowIntakeFields();
+    expect(
+      (intakeFieldsByKind.get("daily-linkedin") ?? []).map((f) => f.name),
+    ).toEqual(["recipients"]);
+  });
+
   it("sanity: scrape-for-stories requires topics and declares it as a schedule field", async () => {
     expect(requiredIntakeSchemaKeys("scrape-for-stories")).toEqual(["topics"]);
     const intakeFieldsByKind = await loadWorkflowIntakeFields();
