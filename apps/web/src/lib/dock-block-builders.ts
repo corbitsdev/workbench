@@ -7,7 +7,7 @@ import {
 import type { StepUI } from "@workbench/shared";
 import { buildAbPresetBlocks } from "@workbench/ab-compare-presets/blocks";
 import { buildGammaBlocks } from "@workbench/workflow-gamma-presentation-creator/blocks";
-import { buildGtmScriptsBriefsBlocks } from "@workbench/workflow-gtm-scripts-briefs/blocks";
+import { STEP_UI as gtmScriptsBriefsStepUI } from "@workbench/workflow-gtm-scripts-briefs/browser";
 import { STEP_UI as attioTaskAgentStepUI } from "@workbench/workflow-attio-task-agent/browser";
 import { STEP_UI as last30daysStepUI } from "@workbench/workflow-last30days-research/browser";
 import { STEP_UI as sumbleAccountIntelStepUI } from "@workbench/workflow-sumble-account-intel/browser";
@@ -34,7 +34,6 @@ const builders: Record<string, DockBlockBuilder> = {
   "ab-compare-speed": buildAbPresetBlocks,
   "ab-compare-standard": buildAbPresetBlocks,
   "gamma-presentation-creator": buildGammaBlocks,
-  "gtm-scripts-briefs": buildGtmScriptsBriefsBlocks,
   "pain-point-collateral": buildPainPointCollateralBlocks,
   "multi-source-collateral": buildMultiSourceCollateralBlocks,
   "reddit-opportunity-scanner": buildRedditOpportunityScannerBlocks,
@@ -48,6 +47,7 @@ const builders: Record<string, DockBlockBuilder> = {
 // workflow shares.
 const stepUIMaps: Record<string, StepUI> = {
   "attio-task-agent": attioTaskAgentStepUI,
+  "gtm-scripts-briefs": gtmScriptsBriefsStepUI,
   "last30days-research": last30daysStepUI,
   "sumble-account-intel": sumbleAccountIntelStepUI,
   "competitor-analysis": competitorAnalysisStepUI,

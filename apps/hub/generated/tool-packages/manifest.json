@@ -218,7 +218,7 @@
   {
     "name": "@workbench/workflow-gtm-scripts-briefs",
     "version": "0.1.0",
-    "integrity": "sha512-+bYnswX1uQXCfYd9nx5W96D+MIsQntS/IR270UzfgSvtf3F9ndvvViMybk5fxUvc8ViDL1DHim5CMlHwCJ+jGQ==",
+    "integrity": "sha512-UjQNzr0ZSNJxtAOje1B7hcPgUGjIZCQcvWoCclgFkDyL7NVxkQ7rw3XmUatD7hd66uOBwRUlFPROyFwmL5NByA==",
     "tarballFilename": "@workbench-workflow-gtm-scripts-briefs-0.1.0.tgz"
   },
   {

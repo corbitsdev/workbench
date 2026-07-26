@@ -1,4 +1,32 @@
-import type { StepUI, StepUIInputField } from "@workbench/shared";
+// Workflow-local `STEP_UI` contract — a structural mirror of
+// `packages/workbench-shared/src/step-ui.ts`'s `StepUI`/`StepUIEntry` (types
+// only — no runtime import), so this workflow package carries no dependency
+// on `@workbench/shared` at runtime; the host-side derivation
+// (`blocksFromStepUI` in `@workbench/blocks`) reads this export by
+// convention (structural shape, not a nominal type import).
+export interface StepUIInputField {
+  kind: "text" | "textarea" | "number" | "select" | "multiSelect";
+  name: string;
+  label?: string;
+  placeholder?: string;
+  help?: string;
+  required?: boolean;
+  defaultValue?: string | number;
+  min?: number;
+  max?: number;
+  step?: number;
+}
+
+export interface StepUIEntry {
+  role?: "intake" | "review" | "persist" | "display";
+  /** Short human title shown in the dock's progress row / run timeline. */
+  title?: string;
+  prompt?: string;
+  submitLabel?: string;
+  input?: StepUIInputField[];
+}
+
+export type StepUI = Record<string, StepUIEntry>;
 
 // The intake gate's `awaitSignal` name (matches the step in index.ts).
 export const INTAKE_SIGNAL = "intake";
@@ -47,9 +75,13 @@ const INTAKE_FORM_FIELDS: readonly StepUIInputField[] = [
   },
 ];
 
-// Declarative step -> component mapping consumed by `blocksFromStepUI`
-// (`@workbench/blocks`) — the dock's `intake` form is rendered generically
-// from this map rather than a hand-written `blocks.ts` builder.
+// Declarative step -> component mapping consumed by the host's generic
+// `blocksFromStepUI` resolver — the dock's `intake` form is rendered
+// generically from this map rather than a hand-written `blocks.ts` builder,
+// and every other declared step gets a title for the dock's progress row /
+// run timeline (buildResearchSteps' own borrowed steps own their own titles
+// via `@workbench/workflow-last30days-research`'s STEP_UI — not repeated
+// here).
 export const STEP_UI: StepUI = {
   [INTAKE_SIGNAL]: {
     role: "intake",
@@ -58,6 +90,9 @@ export const STEP_UI: StepUI = {
     submitLabel: "Research and create deliverable",
     input: [...INTAKE_FORM_FIELDS],
   },
+  write: { title: "Write the deliverable" },
+  "persist-prepare": { title: "Shape the deliverable for saving" },
+  persist: { title: "Save to your workbench" },
 };
 
 // Schedule-field metadata (CL-3509/CL-3860): the first-intake form descriptor

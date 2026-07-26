@@ -5,9 +5,9 @@
   "main": "src/index.ts",
   "exports": {
     ".": "./src/index.ts",
-    "./blocks": {
-      "types": "./src/blocks.ts",
-      "default": "./src/blocks.ts"
+    "./browser": {
+      "types": "./src/step-ui.ts",
+      "default": "./src/step-ui.ts"
     }
   },
   "scripts": {
@@ -18,13 +18,11 @@
     "@intx/agent": "workspace:*",
     "@intx/types": "workspace:*",
     "@intx/workflow": "workspace:*",
-    "@workbench/agents": "workspace:*",
-    "@workbench/blocks": "workspace:*",
-    "@workbench/shared": "workspace:*",
     "@workbench/tool-manifest": "workspace:*",
     "@workbench/workflow-last30days-research": "workspace:*"
   },
   "devDependencies": {
+    "@workbench/shared": "workspace:*",
     "@workbench/test-utils": "workspace:*",
     "@types/bun": "latest",
     "typescript": "catalog:"

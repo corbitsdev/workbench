@@ -1,14 +1,18 @@
-import { action, awaitSignal, defineWorkflow } from "@intx/workflow";
-import {
-  agentStep,
-  canonicalizeStepToolName,
-  LLM_WRITER_MODEL,
-} from "@workbench/agents";
+import { action, awaitSignal, defineWorkflow, step } from "@intx/workflow";
+import { defineAgent } from "@intx/agent";
 import { buildResearchSteps } from "@workbench/workflow-last30days-research";
 import { buildScriptsBriefsSystemPrompt } from "./prompts";
 import { INTAKE_FIELDS, INTAKE_SIGNAL, STEP_UI } from "./step-ui";
 
+const WRITER_MODEL = "kimi-k2.6";
+const WRITER_PROVIDER = "openai-compatible";
 const WRITER_MAX_TOKENS = 16384;
+
+// Corbits terminology guidance every reasoning step's system prompt carries,
+// so the deliverable spells Corbits/Corbits.dev/Interchange/Faremeter
+// consistently regardless of how the source material spelled them.
+const CORBITS_VOCABULARY =
+  "Treat Corbits, Corbits.dev, Interchange, and Faremeter as canonical Corbits names; spell them exactly. When source material contains a clear speech-to-text or spelling variant, use the canonical spelling in your output. Do not replace an ambiguous term unless surrounding context identifies it.";
 
 export const label = "GTM Scripts & Briefs";
 export const description =
@@ -18,18 +22,15 @@ export const kind = "gtm-scripts-briefs";
 const ARTIFACT_KIND = "long-form-script-package";
 const JOB_LABEL = "GTM scripts and briefs";
 
-// Native `action` handler refs — the tool's canonical (factory-prefixed)
-// name, resolved via `canonicalizeStepToolName`'s build-time-checked
-// lookup, so a typo'd or manifest-drifted tool name fails the build instead
-// of deploying a step nothing can dispatch.
-export const PREPARE_PERSIST_HANDLER = canonicalizeStepToolName(
-  "gtm-scripts-briefs-prepare-persist",
-  "gtm_scripts_briefs_prepare_persist",
-);
-export const WRITE_ARTIFACT_HANDLER = canonicalizeStepToolName(
-  "gtm-scripts-briefs-persist-artifact",
-  "write_artifact",
-);
+// Native `action` handler refs — the tool's literal `<factoryId>:<bareName>`
+// name, checked against the committed tool manifest by
+// `packages/tool-manifest/src/resolvable-handlers.test.ts`, so a typo'd or
+// manifest-drifted handler string still fails the build rather than
+// deploying a step nothing can dispatch.
+export const PREPARE_PERSIST_HANDLER =
+  "@workbench/workflow-gtm-scripts-briefs/core:gtm_scripts_briefs_prepare_persist";
+export const WRITE_ARTIFACT_HANDLER =
+  "@workbench/tools-artifact/artifact:write_artifact";
 
 // Re-export the user-facing display flow so it travels with the workflow
 // package for the server catalog classifier and run panel.
@@ -52,12 +53,30 @@ export const workflow = defineWorkflow({
     // Reuse the proven current-story retrieval, grounding, and curation sequence.
     ...buildResearchSteps(),
 
-    write: agentStep({
-      id: "gtm-scripts-briefs-write",
-      title: "Write the deliverable",
-      systemPrompt: buildScriptsBriefsSystemPrompt(),
-      model: LLM_WRITER_MODEL,
-      maxTokens: WRITER_MAX_TOKENS,
+    // Native reasoning-with-tools step: a plain `step({ agent })` built from
+    // `defineAgent` on the heavier writer model. Its title lives in `STEP_UI`
+    // (dock rendering), not on an agent tag — this package carries no
+    // dispatch-time UI metadata.
+    write: step({
+      agent: defineAgent({
+        id: "gtm-scripts-briefs-write",
+        description: "Reasoning step: gtm-scripts-briefs-write",
+        systemPrompt: [
+          CORBITS_VOCABULARY,
+          buildScriptsBriefsSystemPrompt(),
+        ].join("\n\n"),
+        tools: [],
+        capabilities: [],
+        inference: {
+          sources: [
+            {
+              provider: WRITER_PROVIDER,
+              model: WRITER_MODEL,
+              parameters: { maxTokens: WRITER_MAX_TOKENS },
+            },
+          ],
+        },
+      }),
       input: {
         merge: [
           { from: "steps.intake.output" },
@@ -72,9 +91,9 @@ export const workflow = defineWorkflow({
     // and the writer's `reply`. Native selectors merge whole objects but
     // cannot build a nested object from mixed literal-and-dynamic per-key
     // values, so `gtm_scripts_briefs_prepare_persist`
-    // (`@workbench/workflow-gtm-scripts-briefs`) — a workflow-owned shaping
-    // tool mirroring exa-topic-watch's `exa_topic_watch_prepare_search` —
-    // does that one reshape, keeping the workflow self-contained.
+    // (`./tools.ts`) — a workflow-owned shaping tool mirroring
+    // exa-topic-watch's `exa_topic_watch_prepare_search` — does that one
+    // reshape, keeping the workflow self-contained.
     "persist-prepare": action({
       handler: PREPARE_PERSIST_HANDLER,
       input: {

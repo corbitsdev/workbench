@@ -625,10 +625,7 @@
               }
             ]
           },
-          "description": "Reasoning step: gtm-scripts-briefs-write",
-          "tags": {
-            "workbench.title": "Write the deliverable"
-          }
+          "description": "Reasoning step: gtm-scripts-briefs-write"
         },
         "drainBehavior": "cancel",
         "input": {

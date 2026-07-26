@@ -1,5 +1,4 @@
 import { describe, expect, test } from "bun:test";
-import { LLM_WRITER_MODEL } from "@workbench/agents";
 import { WORKFLOW_BRIEF_HANDLER } from "@workbench/workflow-last30days-research";
 import {
   DISPLAY_STEPS,
@@ -8,12 +7,6 @@ import {
   workflow,
   WRITE_ARTIFACT_HANDLER,
 } from "./index";
-
-// The retired `deterministic-tool` authoring kind's tag. Kept as a literal
-// (not an import from `@workbench/agents`, which no longer exports it) —
-// this test only asserts the tag is ABSENT from every native step, proving
-// no step regresses onto the deleted mechanism.
-const STEP_KIND_TAG = "workbench.stepKind";
 
 function actionPrimitive(id: string) {
   const primitive = workflow.steps[id];
@@ -69,8 +62,8 @@ describe("gtm-scripts-briefs workflow", () => {
     if (write === undefined || write.kind !== "step") {
       throw new Error("expected a write step");
     }
-    expect(write.agent.tags?.[STEP_KIND_TAG]).toBeUndefined();
-    expect(write.agent.inference.sources[0]?.model).toBe(LLM_WRITER_MODEL);
+    expect(write.agent.tags).toBeUndefined();
+    expect(write.agent.inference.sources[0]?.model).toBe("kimi-k2.6");
     expect(write.agent.inference.sources[0]?.parameters).toEqual({
       maxTokens: 16384,
     });
