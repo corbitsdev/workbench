@@ -66,6 +66,70 @@ describe("competitor_analysis_format_report_document", () => {
   });
 });
 
+describe("competitor_analysis_build_review_gate", () => {
+  test("builds a choice block embedding the decoded report's title/content", async () => {
+    const handler = fullTool("competitor_analysis_build_review_gate");
+    const reply = JSON.stringify({
+      title: "Acme — competitor analysis",
+      content: "## Subject\nAcme sells CRM.",
+      competitors: [],
+    });
+    const result = await handler(
+      {
+        id: "reviewGate",
+        name: "competitor_analysis_build_review_gate",
+        arguments: { reply },
+      },
+      SIGNAL,
+    );
+    if (typeof result.content === "string") {
+      throw new Error("expected object content");
+    }
+    expect(result.isError).toBeUndefined();
+    expect(result.content).toEqual({
+      kind: "choice",
+      prompt: "Acme — competitor analysis\n\n## Subject\nAcme sells CRM.",
+      options: [
+        { id: "approve", label: "Approve & save", payload: { approved: true } },
+        { id: "reject", label: "Reject", payload: { approved: false } },
+      ],
+    });
+  });
+
+  test("still renders the choice, never fails, when the reply is not decodable", async () => {
+    const handler = fullTool("competitor_analysis_build_review_gate");
+    const result = await handler(
+      {
+        id: "reviewGate",
+        name: "competitor_analysis_build_review_gate",
+        arguments: { reply: "not json" },
+      },
+      SIGNAL,
+    );
+    if (typeof result.content === "string") {
+      throw new Error("expected object content");
+    }
+    expect(result.isError).toBeUndefined();
+    const content = result.content as { kind: string; options: unknown[] };
+    expect(content.kind).toBe("choice");
+    expect(content.options.length).toBe(2);
+  });
+
+  test("returns isError when reply is missing", async () => {
+    const handler = fullTool("competitor_analysis_build_review_gate");
+    const result = await handler(
+      {
+        id: "reviewGate",
+        name: "competitor_analysis_build_review_gate",
+        arguments: {},
+      },
+      SIGNAL,
+    );
+    expect(result.isError).toBe(true);
+    expect(result.content).toBe("reply is required");
+  });
+});
+
 describe("tool-manifest completeness", () => {
   test("every registered tool name is declared in the hand-authored manifest", () => {
     const runtimeNames = createCompetitorAnalysisTools()

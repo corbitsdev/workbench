@@ -1,5 +1,5 @@
 {
-  "generatedAt": "6b1864791d7fe6537099cac3eb0b0fd57ce5130934ddd1c0fca58bdc5a6db945",
+  "generatedAt": "01c7b0f7d9bada63c9efd89f8d5450a5cb612f5929b8bc0f94d52c7b55faf0e2",
   "factories": [
     {
       "factoryId": "@workbench/tools-ab-compare/compose",
@@ -1435,10 +1435,12 @@
       "packageName": "@workbench/workflow-competitor-analysis",
       "providerName": null,
       "bareToolNames": [
+        "competitor_analysis_build_review_gate",
         "competitor_analysis_format_report_document"
       ],
       "sideEffects": {
-        "competitor_analysis_format_report_document": "read"
+        "competitor_analysis_format_report_document": "read",
+        "competitor_analysis_build_review_gate": "read"
       },
       "myraCatalog": null,
       "credentialCatalog": null

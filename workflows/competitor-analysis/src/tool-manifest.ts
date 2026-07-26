@@ -10,6 +10,9 @@ export const toolManifestFile = {
         competitor_analysis_format_report_document: {
           sideEffect: "read",
         },
+        competitor_analysis_build_review_gate: {
+          sideEffect: "read",
+        },
       },
       myraCatalog: null,
       credentialCatalog: null,

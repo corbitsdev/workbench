@@ -6,15 +6,9 @@ import {
   workflow,
   FIRECRAWL_SCRAPE_HANDLER,
   FORMAT_REPORT_DOCUMENT_HANDLER,
+  BUILD_REVIEW_GATE_HANDLER,
   WRITE_ARTIFACT_HANDLER,
 } from "./index";
-
-// The retired `deterministic-tool` authoring kind's tags. Kept as literals
-// (not an import from `@workbench/agents`, which no longer exports them) —
-// this test only asserts the tags are ABSENT from every native step, proving
-// no step regresses onto the deleted mechanism.
-const STEP_KIND_TAG = "workbench.stepKind";
-const STEP_TOOL_TAG = "workbench.tool";
 
 function stepPrimitive(id: string) {
   const primitive = workflow.steps[id];
@@ -50,6 +44,7 @@ describe("competitor-analysis workflow structure", () => {
       "profile",
       "discover",
       "synthesize",
+      "reviewGate",
       "review",
       "document",
       "packageArtifact",
@@ -81,18 +76,15 @@ describe("competitor-analysis workflow structure", () => {
     expect(scrape.after).toEqual(["intake"]);
   });
 
-  test("profile is a native reasoning step (agentStep) with a real prompt and no tools", () => {
+  test("profile is a native reasoning step with a real prompt and no tools", () => {
     const profile = stepPrimitive("profile");
-    expect(profile.agent.tags?.[STEP_KIND_TAG]).toBeUndefined();
-    expect(profile.agent.tags?.[STEP_TOOL_TAG]).toBeUndefined();
+    expect(profile.agent.capabilities).toEqual([]);
     expect(profile.agent.systemPrompt.length).toBeGreaterThan(0);
     expect(profile.agent.systemPrompt).toContain("discoveryQueries");
   });
 
   test("discover is a tool-using agent with Exa and Firecrawl capabilities", () => {
     const discover = stepPrimitive("discover");
-    // Tool-using ReAct step — not a native action / agentStep.
-    expect(discover.agent.tags?.[STEP_KIND_TAG]).toBeUndefined();
     expect(discover.agent.systemPrompt.length).toBeGreaterThan(0);
     expect(discover.agent.systemPrompt).toContain(
       "Corbits, Corbits.dev, Interchange, and Faremeter",
@@ -105,12 +97,27 @@ describe("competitor-analysis workflow structure", () => {
     expect(caps).not.toContain("artifact_create");
   });
 
-  test("synthesize is a native reasoning step (agentStep) with a real prompt and no tools", () => {
+  test("synthesize is a native reasoning step with a real prompt and no tools", () => {
     const synth = stepPrimitive("synthesize");
-    expect(synth.agent.tags?.[STEP_KIND_TAG]).toBeUndefined();
-    expect(synth.agent.tags?.[STEP_TOOL_TAG]).toBeUndefined();
+    expect(synth.agent.capabilities).toEqual([]);
     expect(synth.agent.systemPrompt.length).toBeGreaterThan(0);
     expect(synth.agent.systemPrompt).toContain("competitor");
+  });
+
+  test("reviewGate is a native action building the review choice from synthesize's reply", () => {
+    const reviewGate = actionPrimitive("reviewGate");
+    expect(reviewGate.handler).toBe(BUILD_REVIEW_GATE_HANDLER);
+    expect(BUILD_REVIEW_GATE_HANDLER).toBe(
+      "@workbench/workflow-competitor-analysis/core:competitor_analysis_build_review_gate",
+    );
+    expect(reviewGate.input).toEqual({
+      project: { from: "steps.synthesize.output" },
+      fields: ["reply"],
+    });
+    expect(reviewGate.effect).toEqual({
+      requires: [BUILD_REVIEW_GATE_HANDLER],
+    });
+    expect(reviewGate.after).toEqual(["synthesize"]);
   });
 
   test("document is a native action pairing intake's url and the synthesize agent's reply into { title, body }", () => {
@@ -151,10 +158,11 @@ describe("competitor-analysis workflow structure", () => {
     expect(stepPrimitive("profile").after).toEqual(["scrape"]);
     expect(stepPrimitive("discover").after).toEqual(["profile"]);
     expect(stepPrimitive("synthesize").after).toEqual(["discover"]);
+    expect(actionPrimitive("reviewGate").after).toEqual(["synthesize"]);
     const review = workflow.steps.review;
     if (!review || review.kind !== "awaitSignal")
       throw new Error("expected review awaitSignal");
-    expect(review.after).toEqual(["synthesize"]);
+    expect(review.after).toEqual(["reviewGate"]);
     expect(actionPrimitive("document").after).toEqual(["synthesize"]);
     expect(actionPrimitive("packageArtifact").after).toEqual([
       "document",

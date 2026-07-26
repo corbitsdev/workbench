@@ -1445,9 +1445,13 @@ export const COMMITTED_TOOL_MANIFEST_INDEX: unknown = {
       factoryId: "@workbench/workflow-competitor-analysis/core",
       packageName: "@workbench/workflow-competitor-analysis",
       providerName: null,
-      bareToolNames: ["competitor_analysis_format_report_document"],
+      bareToolNames: [
+        "competitor_analysis_build_review_gate",
+        "competitor_analysis_format_report_document",
+      ],
       sideEffects: {
         competitor_analysis_format_report_document: "read",
+        competitor_analysis_build_review_gate: "read",
       },
       myraCatalog: null,
       credentialCatalog: null,

@@ -26,6 +26,7 @@
       "label": "Report",
       "stepIds": [
         "synthesize",
+        "reviewGate",
         "review"
       ],
       "activityLabel": "Writing the competitor report"
@@ -207,13 +208,35 @@
           "discover"
         ]
       },
+      "reviewGate": {
+        "kind": "action",
+        "id": "reviewGate",
+        "handler": "@workbench/workflow-competitor-analysis/core:competitor_analysis_build_review_gate",
+        "drainBehavior": "cancel",
+        "input": {
+          "project": {
+            "from": "steps.synthesize.output"
+          },
+          "fields": [
+            "reply"
+          ]
+        },
+        "effect": {
+          "requires": [
+            "@workbench/workflow-competitor-analysis/core:competitor_analysis_build_review_gate"
+          ]
+        },
+        "after": [
+          "synthesize"
+        ]
+      },
       "review": {
         "kind": "awaitSignal",
         "id": "review",
         "name": "review",
         "drainBehavior": "wait",
         "after": [
-          "synthesize"
+          "reviewGate"
         ]
       },
       "document": {
@@ -278,6 +301,7 @@
       "profile",
       "discover",
       "synthesize",
+      "reviewGate",
       "review",
       "document",
       "packageArtifact"

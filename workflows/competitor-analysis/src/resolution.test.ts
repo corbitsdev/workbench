@@ -16,6 +16,9 @@ function actionInput(id: string) {
       `expected action primitive for "${id}", got ${primitive?.kind ?? "undefined"}`,
     );
   }
+  if (primitive.input === undefined) {
+    throw new Error(`expected "${id}" to declare an input selector`);
+  }
   return primitive.input;
 }
 
@@ -38,6 +41,19 @@ describe("competitor-analysis native action selector resolution", () => {
     // Extra intake fields ride along harmlessly — firecrawl_scrape's arktype
     // schema ignores keys it does not declare.
     expect(resolved.companyName).toBe("Acme");
+  });
+
+  test("reviewGate's input projects synthesize's `reply` verbatim as the tool's arg", () => {
+    const resolved = evaluateSelector(actionInput("reviewGate"), {
+      trigger: { payload: {} },
+      steps: {
+        synthesize: {
+          output: { reply: '{"title":"Acme — competitor analysis"}' },
+        },
+      },
+    } as never) as Record<string, unknown>;
+
+    expect(resolved.reply).toBe('{"title":"Acme — competitor analysis"}');
   });
 
   test("document's input merges intake's `url` and synthesize's `reply` — the tool's exact arg names, no rename", () => {

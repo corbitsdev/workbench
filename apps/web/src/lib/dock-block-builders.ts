@@ -11,10 +11,10 @@ import { buildGtmScriptsBriefsBlocks } from "@workbench/workflow-gtm-scripts-bri
 import { STEP_UI as attioTaskAgentStepUI } from "@workbench/workflow-attio-task-agent/browser";
 import { STEP_UI as last30daysStepUI } from "@workbench/workflow-last30days-research/browser";
 import { STEP_UI as sumbleAccountIntelStepUI } from "@workbench/workflow-sumble-account-intel/browser";
+import { STEP_UI as competitorAnalysisStepUI } from "@workbench/workflow-competitor-analysis/browser";
 import { buildPainPointCollateralBlocks } from "@workbench/workflow-pain-point-collateral/blocks";
 import { buildMultiSourceCollateralBlocks } from "@workbench/workflow-multi-source-collateral/blocks";
 import { buildRedditOpportunityScannerBlocks } from "@workbench/workflow-reddit-opportunity-scanner/blocks";
-import { buildCompetitorAnalysisBlocks } from "@workbench/workflow-competitor-analysis/blocks";
 
 // Per-kind dock block builders (CL-2683). A migrated workflow supplies its own
 // builder — deriving richer, kind-specific UIBlocks (results tables, typed
@@ -38,7 +38,6 @@ const builders: Record<string, DockBlockBuilder> = {
   "pain-point-collateral": buildPainPointCollateralBlocks,
   "multi-source-collateral": buildMultiSourceCollateralBlocks,
   "reddit-opportunity-scanner": buildRedditOpportunityScannerBlocks,
-  "competitor-analysis": buildCompetitorAnalysisBlocks,
 };
 
 // Per-kind declarative step -> component mappings. A workflow on this path
@@ -51,6 +50,7 @@ const stepUIMaps: Record<string, StepUI> = {
   "attio-task-agent": attioTaskAgentStepUI,
   "last30days-research": last30daysStepUI,
   "sumble-account-intel": sumbleAccountIntelStepUI,
+  "competitor-analysis": competitorAnalysisStepUI,
 };
 
 export function buildDockBlocks(

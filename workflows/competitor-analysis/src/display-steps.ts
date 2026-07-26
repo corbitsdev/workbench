@@ -1,8 +1,18 @@
-import type { DisplayStep } from "@workbench/ui";
+// Browser-safe user-facing step flow, consumed via the index re-export by the
+// server catalog classifier. Must stay free of server-only imports so the
+// hub's catalog build never pulls in @intx/agent.
+//
+// `DisplayStep`'s shape is duplicated locally (rather than imported from
+// `@workbench/ui`) so this package carries no `@workbench/ui` dependency — it
+// is structurally identical to `@workbench/ui`'s `DisplayStep`, which is all
+// the hub's catalog classifier needs.
+type DisplayStep = {
+  key: string;
+  label: string;
+  stepIds: readonly string[];
+  activityLabel?: string;
+};
 
-// Browser-safe user-facing step flow. Consumed by the client panel and, via the
-// index re-export, by the server catalog classifier. Must stay free of
-// server-only imports so the `/ui` browser chunk never pulls @intx/agent.
 export const DISPLAY_STEPS: DisplayStep[] = [
   { key: "company", label: "Company", stepIds: ["intake"] },
   {
@@ -14,7 +24,7 @@ export const DISPLAY_STEPS: DisplayStep[] = [
   {
     key: "report",
     label: "Report",
-    stepIds: ["synthesize", "review"],
+    stepIds: ["synthesize", "reviewGate", "review"],
     activityLabel: "Writing the competitor report",
   },
   {
