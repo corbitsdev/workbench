@@ -1,5 +1,5 @@
-import { action, awaitSignal, defineWorkflow } from "@intx/workflow";
-import { agentStep, canonicalizeStepToolName } from "@workbench/agents";
+import { action, awaitSignal, defineWorkflow, step } from "@intx/workflow";
+import { defineAgent } from "@intx/agent";
 
 export const label = "GitHub topic watch";
 export const description =
@@ -34,27 +34,29 @@ Write a concise markdown digest:
 
 No preamble. No tool calls. Markdown body only.`;
 
-// Native `action` handler refs — the tool's canonical (factory-prefixed)
-// name, resolved via the same build-time-checked lookup
-// `deterministicToolStep` uses, so a typo'd or manifest-drifted tool name
-// fails the build instead of deploying a step nothing can dispatch.
-export const GITHUB_TOPIC_WATCH_DOCUMENT_HANDLER = canonicalizeStepToolName(
-  "github-topic-watch-document",
-  "last30days_format_report_document",
-);
-export const WRITE_ARTIFACT_HANDLER = canonicalizeStepToolName(
-  "github-topic-watch-persist",
-  "write_artifact",
-);
+// Tag shared with every step class, naming the step in the catalog/run-UI
+// preview in place of the humanized step-map key.
+const STEP_TITLE_TAG = "workbench.title";
+
+// Corbits terminology guidance every reasoning step's system prompt carries,
+// so the digest agent spells Corbits/Corbits.dev/Interchange/Faremeter
+// consistently regardless of how the source material spelled them.
+const CORBITS_VOCABULARY =
+  "Treat Corbits, Corbits.dev, Interchange, and Faremeter as canonical Corbits names; spell them exactly. When source material contains a clear speech-to-text or spelling variant, use the canonical spelling in your output. Do not replace an ambiguous term unless surrounding context identifies it.";
+
+// Handler refs — the tool's canonical (factory-prefixed) runtime name. Each
+// literal is checked against the committed tool manifest by a repo-level test
+// (`packages/tool-manifest/src/resolvable-handlers.test.ts`), so a typo'd or
+// manifest-drifted handler string still fails the build rather than deploying
+// a step nothing can dispatch.
+export const GITHUB_TOPIC_WATCH_DOCUMENT_HANDLER =
+  "@workbench/tools-last30days/core:last30days_format_report_document";
+export const WRITE_ARTIFACT_HANDLER =
+  "@workbench/tools-artifact/artifact:write_artifact";
 export const GITHUB_TOPIC_WATCH_FORMAT_ACTIVITY_QUERY_HANDLER =
-  canonicalizeStepToolName(
-    "github-topic-watch-format-query",
-    "github_topic_watch_format_activity_query",
-  );
-export const GITHUB_ACTIVITY_HANDLER = canonicalizeStepToolName(
-  "github-topic-watch-fetch",
-  "github_activity",
-);
+  "@workbench/workflow-github-topic-watch/core:github_topic_watch_format_activity_query";
+export const GITHUB_ACTIVITY_HANDLER =
+  "@workbench/tools-github/github:github_activity";
 
 export const workflow = defineWorkflow({
   id: kind,
@@ -111,10 +113,20 @@ export const workflow = defineWorkflow({
       after: ["format-query"],
     }),
 
-    digest: agentStep({
-      id: "github-topic-watch-digest",
-      title: "Write the digest",
-      systemPrompt: DIGEST_SYSTEM_PROMPT,
+    // Native `step({ agent })`: a plain reasoning-with-tools step built from
+    // `defineAgent`, mirroring what `@workbench/agents`' `agentStep` sugar
+    // wraps — no per-step model preference here, so the step uses the
+    // deploy's default model.
+    digest: step({
+      agent: defineAgent({
+        id: "github-topic-watch-digest",
+        description: "Reasoning step: github-topic-watch-digest",
+        systemPrompt: [CORBITS_VOCABULARY, DIGEST_SYSTEM_PROMPT].join("\n\n"),
+        tools: [],
+        capabilities: [],
+        inference: { sources: [] },
+        tags: { [STEP_TITLE_TAG]: "Write the digest" },
+      }),
       // merge requires object operands — use fetch.output (content envelope),
       // not the content array itself.
       input: {

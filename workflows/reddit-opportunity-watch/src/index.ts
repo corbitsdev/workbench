@@ -1,5 +1,5 @@
-import { action, awaitSignal, defineWorkflow } from "@intx/workflow";
-import { agentStep, canonicalizeStepToolName } from "@workbench/agents";
+import { action, awaitSignal, defineWorkflow, step } from "@intx/workflow";
+import { defineAgent } from "@intx/agent";
 
 export const label = "Reddit opportunity watch";
 export const description =
@@ -46,21 +46,27 @@ export const INTAKE_FIELDS = [
   },
 ] as const;
 
-// Native `action` handler refs — same build-time-checked lookup
-// `deterministicToolStep` uses, so a typo'd or manifest-drifted tool name
-// fails the build instead of deploying a step nothing can dispatch.
-export const REDDIT_SUBREDDIT_SEARCH_HANDLER = canonicalizeStepToolName(
-  "reddit-opportunity-watch-fetch",
-  "reddit_subreddit_search",
-);
-export const WRITE_ARTIFACT_HANDLER = canonicalizeStepToolName(
-  "reddit-opportunity-watch-persist",
-  "write_artifact",
-);
-export const FORMAT_DIGEST_DOCUMENT_HANDLER = canonicalizeStepToolName(
-  "reddit-opportunity-watch-document",
-  "reddit_opportunity_watch_format_digest_document",
-);
+// Tag shared with every step class, naming the step in the catalog/run-UI
+// preview in place of the humanized step-map key.
+const STEP_TITLE_TAG = "workbench.title";
+
+// Corbits terminology guidance every reasoning step's system prompt carries,
+// so the digest agent spells Corbits/Corbits.dev/Interchange/Faremeter
+// consistently regardless of how the source material spelled them.
+const CORBITS_VOCABULARY =
+  "Treat Corbits, Corbits.dev, Interchange, and Faremeter as canonical Corbits names; spell them exactly. When source material contains a clear speech-to-text or spelling variant, use the canonical spelling in your output. Do not replace an ambiguous term unless surrounding context identifies it.";
+
+// Handler refs — the tool's canonical (factory-prefixed) runtime name. Each
+// literal is checked against the committed tool manifest by a repo-level test
+// (`packages/tool-manifest/src/resolvable-handlers.test.ts`), so a typo'd or
+// manifest-drifted handler string still fails the build rather than deploying
+// a step nothing can dispatch.
+export const REDDIT_SUBREDDIT_SEARCH_HANDLER =
+  "@workbench/tools-reddit/reddit:reddit_subreddit_search";
+export const WRITE_ARTIFACT_HANDLER =
+  "@workbench/tools-artifact/artifact:write_artifact";
+export const FORMAT_DIGEST_DOCUMENT_HANDLER =
+  "@workbench/workflow-reddit-opportunity-watch/core:reddit_opportunity_watch_format_digest_document";
 
 const DIGEST_SYSTEM_PROMPT = `You write short unattended Reddit opportunity digests for a scheduled watch.
 
@@ -97,10 +103,20 @@ export const workflow = defineWorkflow({
       after: ["intake"],
     }),
 
-    digest: agentStep({
-      id: "reddit-opportunity-watch-digest",
-      title: "Write the opportunity digest",
-      systemPrompt: DIGEST_SYSTEM_PROMPT,
+    // Native `step({ agent })`: a plain reasoning-with-tools step built from
+    // `defineAgent`, mirroring what `@workbench/agents`' `agentStep` sugar
+    // wraps — no per-step model preference here, so the step uses the
+    // deploy's default model.
+    digest: step({
+      agent: defineAgent({
+        id: "reddit-opportunity-watch-digest",
+        description: "Reasoning step: reddit-opportunity-watch-digest",
+        systemPrompt: [CORBITS_VOCABULARY, DIGEST_SYSTEM_PROMPT].join("\n\n"),
+        tools: [],
+        capabilities: [],
+        inference: { sources: [] },
+        tags: { [STEP_TITLE_TAG]: "Write the opportunity digest" },
+      }),
       // Merge whole step outputs (objects). `fetch.output.content` is an array
       // and cannot be a merge operand — it arrives nested under `content`.
       input: {
