@@ -4,9 +4,9 @@ export function sortFactoryManifests(
   factories: readonly ToolFactoryManifest[],
 ): ToolFactoryManifest[] {
   return [...factories].sort((a, b) => {
-    const byPackage = a.packageName.localeCompare(b.packageName);
+    const byPackage = a.packageName.localeCompare(b.packageName, "en");
     if (byPackage !== 0) return byPackage;
-    return a.factoryId.localeCompare(b.factoryId);
+    return a.factoryId.localeCompare(b.factoryId, "en");
   });
 }
 
