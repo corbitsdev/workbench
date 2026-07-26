@@ -90,6 +90,7 @@ COPY workflows/github-topic-watch/package.json workflows/github-topic-watch/
 COPY workflows/exa-topic-watch/package.json workflows/exa-topic-watch/
 COPY workflows/firecrawl-url-watch/package.json workflows/firecrawl-url-watch/
 COPY workflows/prospect-engine/package.json workflows/prospect-engine/
+COPY workflows/scrape-for-stories/package.json workflows/scrape-for-stories/
 COPY workflows/reddit-opportunity-watch/package.json workflows/reddit-opportunity-watch/
 COPY packages/tools-prospect-engine/package.json packages/tools-prospect-engine/
 COPY packages/tools-prospect-engine-slack-bridge/package.json packages/tools-prospect-engine-slack-bridge/

@@ -16,6 +16,7 @@ export * from "./mentions";
 export * from "./now-feed";
 export * from "./reddit-opportunity-scanner";
 export * from "./scheduled-trigger";
+export * from "./scrape-for-stories";
 export * from "./schedule-next-fire";
 export * from "./routine-eligible";
 export * from "./webhook-trigger";
@@ -644,7 +645,8 @@ export function buildScheduleTriggerPayload(
     // A member who never touches a defaulted field still submits its default
     // (CL-4538) — the schedule form pre-fills it visually, so the value it
     // fires with must match what the member saw, not silently drop it.
-    const v = blank && field.defaultValue !== undefined ? field.defaultValue : raw;
+    const v =
+      blank && field.defaultValue !== undefined ? field.defaultValue : raw;
     if (v === undefined || v === null) continue;
     if (typeof v === "string" && v.trim() === "") continue;
     payload[field.name] = v;

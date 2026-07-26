@@ -42,6 +42,7 @@ describe("every deployed workflow kind is schedulable (CL-4514)", () => {
     // set to compute.
     expect(kinds.has("attio-task-agent")).toBe(true);
     expect(kinds.has("granola-call")).toBe(true);
+    expect(kinds.has("scrape-for-stories")).toBe(true);
   });
 });
 
@@ -129,6 +130,19 @@ describe("declared intake fields cover the registered intake resume-payload sche
     expect(requiredIntakeSchemaKeys("gtm-scripts-briefs")).toEqual(
       expect.arrayContaining(["topic", "days"]),
     );
+  });
+
+  // scrape-for-stories (CL-4430) is fully unattended after intake: the schedule
+  // is the only thing that ever supplies `topics`. This pins the pairing the
+  // generic check above enforces — a registered schema that requires `topics`,
+  // and a declared schedule field of that exact name — so dropping either side
+  // fails here with a kind-specific message rather than only in the aggregate.
+  it("sanity: scrape-for-stories requires topics and declares it as a schedule field", async () => {
+    expect(requiredIntakeSchemaKeys("scrape-for-stories")).toEqual(["topics"]);
+    const intakeFieldsByKind = await loadWorkflowIntakeFields();
+    expect(
+      (intakeFieldsByKind.get("scrape-for-stories") ?? []).map((f) => f.name),
+    ).toEqual(["topics"]);
   });
 });
 

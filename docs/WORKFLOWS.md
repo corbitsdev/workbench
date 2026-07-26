@@ -269,17 +269,28 @@ notify, etc. Failure mail stays plain-language with breaker suppression.
 it is a hard server gate and stays. **Product eligibility** answers “should
 Workflows / Owner schedules offer this kind?” and is a separate opt-in list.
 
-- Source of truth: `ROUTINE_ELIGIBLE_KINDS` / `isRoutineEligibleKind` in
+- Source of truth: `isRoutineEligibleKind` in
   `packages/workbench-shared/src/routine-eligible.ts` (exported from
-  `@workbench/shared`). Symbol names keep the historical “routine” prefix;
-  member chrome says Workflows.
-- v1 kinds: `heartbeat`, `prospect-engine`, `last30days-research`.
-- Both gates apply at catalog (`attachable` = structural **and** product) and at
-  `POST /me/schedules` (400 with a product-specific message when structural-ok
-  but not allowlisted).
+  `@workbench/shared`). It is derived — declared intake fields plus registered
+  trigger-payload enrichers — not a hand-maintained kind list, and it is an
+  **authoring-time check** exercised by
+  `apps/hub/src/lib/routine-eligibility.integration.test.ts`, not a runtime gate
+  (CL-4514: every deployed workflow is schedulable). Symbol names keep the
+  historical “routine” prefix; member chrome says Workflows.
+- What a new schedulable kind owes: declare `INTAKE_FIELDS` covering every field
+  its entry needs, and register the matching `intake` resume-payload schema in
+  `apps/hub/src/workflow-executor/resume-payload-registry.ts` so a hollow
+  schedule payload is rejected at `/resume` rather than firing an empty run.
+- Unattended watch/research kinds today: `heartbeat`, `prospect-engine`,
+  `last30days-research`, `exa-topic-watch`, `firecrawl-url-watch`,
+  `github-topic-watch`, `reddit-opportunity-watch`, and `scrape-for-stories`
+  (CL-4430 weekly story-bucket producer — writes artifact kind `story-bucket`
+  under the fixed `sourceRef` `story-bucket-latest`, so each run updates one
+  shared row instead of stacking duplicates).
 - One-offs (smoke-test, gamma, deck builders, etc.) and mid-run human-gate kinds
-  (e.g. competitor-analysis) stay off the list. Granola call processing is a
-  work-unit / short-interval path, not a daily Workflows schedule.
+  (e.g. competitor-analysis) are still schedulable, but only finish unattended
+  if a person clears their gates. Granola call processing is a work-unit /
+  short-interval path, not a daily Workflows schedule.
 
 ### Workflows surface as UIBlocks in chat
 

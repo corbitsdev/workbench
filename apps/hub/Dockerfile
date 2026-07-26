@@ -95,6 +95,7 @@ COPY workflows/multi-source-collateral/package.json workflows/multi-source-colla
 COPY workflows/reddit-opportunity-scanner/package.json workflows/reddit-opportunity-scanner/
 COPY workflows/reddit-opportunity-watch/package.json workflows/reddit-opportunity-watch/
 COPY workflows/prospect-engine/package.json workflows/prospect-engine/
+COPY workflows/scrape-for-stories/package.json workflows/scrape-for-stories/
 COPY workflows/smoke-test/package.json workflows/smoke-test/
 COPY workflows/sumble-account-intel/package.json workflows/sumble-account-intel/
 COPY workflows/competitor-analysis/package.json workflows/competitor-analysis/

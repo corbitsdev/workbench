@@ -26,6 +26,7 @@ import {
   SumbleIntakePayloadSchema,
   SumbleReviewPayloadSchema,
   ProspectEngineIntakePayloadSchema,
+  ScrapeForStoriesIntakePayloadSchema,
   SyncApprovalPayloadSchema,
   TaskSelectionPayloadSchema,
 } from "@workbench/shared";
@@ -150,6 +151,14 @@ const RESUME_PAYLOAD_SCHEMAS: Record<string, Record<string, Type>> = {
   // optional verticals. Fire-time enrichment builds the full trigger payload.
   "prospect-engine": {
     intake: ProspectEngineIntakePayloadSchema,
+  },
+  // scrape-for-stories (CL-4430): the one `intake` gate is filled by the
+  // schedule, never by a person at run time, so REQUIRING at least one
+  // non-blank topic here is the only thing standing between a hollow schedule
+  // payload and a run that searches nothing and still persists a "thin week"
+  // story bucket for Daily LinkedIn to consume as truth.
+  "scrape-for-stories": {
+    intake: ScrapeForStoriesIntakePayloadSchema,
   },
   // Multi-gate scheduler integration fixture (CL-3528): intake then a post-intake
   // confirm gate with an empty payload — exercises scheduled Myra gate-drive.
