@@ -1,4 +1,4 @@
-import { WIRED_BRIEF_SOURCES } from "@workbench/shared";
+import { WIRED_BRIEF_SOURCES } from "./heartbeat-shared";
 
 /** The minimal shape the prompt builder needs per source — label for the
  * generated prose, key to name it in the "if skipped" rule. Matches

@@ -7,11 +7,11 @@
 // provider's env key as `requires` (see intake-tool.ts) and forwards `env`.
 
 import { createToolRunner, defineTool } from "@intx/agent";
-import { createHeartbeatTools } from "./tools";
 import {
   createHeartbeatIntakeSourceTool,
+  createHeartbeatTools,
   HEARTBEAT_INTAKE_SOURCE_ENV_KEYS,
-} from "./intake-tool";
+} from "./tools";
 
 export const heartbeat = defineTool({
   id: "@workbench/workflow-heartbeat/core",

@@ -7,10 +7,6 @@
     ".": {
       "types": "./src/index.ts",
       "default": "./src/index.ts"
-    },
-    "./ui": {
-      "types": "./src/ui.tsx",
-      "default": "./src/ui.tsx"
     }
   },
   "scripts": {
@@ -22,28 +18,18 @@
     "@intx/agent": "workspace:*",
     "@intx/types": "workspace:*",
     "@intx/workflow": "workspace:*",
-    "@workbench/agents": "workspace:*",
-    "@workbench/shared": "workspace:*",
     "@workbench/tool-credentials": "workspace:*",
     "@workbench/tool-manifest": "workspace:*",
     "@workbench/tools-attio": "workspace:*",
     "@workbench/tools-granola": "workspace:*",
     "@workbench/tools-linear": "workspace:*",
     "@workbench/tools-vercel": "workspace:*",
-    "@workbench/ui": "workspace:*",
-    "arktype": "catalog:",
-    "react": "^19.0.0"
+    "arktype": "catalog:"
   },
   "devDependencies": {
     "@workbench/test-utils": "workspace:*",
-    "@testing-library/react": "^16.3.2",
-    "@testing-library/user-event": "^14.6.1",
     "@types/bun": "latest",
-    "@types/react": "^19.0.0",
     "typescript": "catalog:"
-  },
-  "peerDependencies": {
-    "react": "*"
   },
   "interchange": {
     "tools": "./dist/interchange-tools.js",

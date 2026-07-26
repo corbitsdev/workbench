@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { buildMorningBriefSystemPrompt } from "./prompts";
-import { WIRED_BRIEF_SOURCES } from "@workbench/shared";
+import { WIRED_BRIEF_SOURCES } from "./heartbeat-shared";
 
 describe("buildMorningBriefSystemPrompt", () => {
   test("defaults to WIRED_BRIEF_SOURCES and names every source", () => {

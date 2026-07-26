@@ -1,11 +1,11 @@
-import { action, defineWorkflow } from "@intx/workflow";
+import { action, defineWorkflow, step } from "@intx/workflow";
 import type { ActionPrimitive } from "@intx/workflow";
-import { canonicalizeStepToolName, agentStep } from "@workbench/agents";
+import { defineAgent } from "@intx/agent";
 import {
   heartbeatIntakeStepKey,
   morningBriefArtifactKind,
   WIRED_BRIEF_SOURCES,
-} from "@workbench/shared";
+} from "./heartbeat-shared";
 export { heartbeatIntakeStepKey };
 import { buildMorningBriefSystemPrompt } from "./prompts";
 
@@ -14,42 +14,41 @@ export const description =
   "On a schedule, pull recent brief-source data (Granola calls today), synthesize a morning brief, mail it to the user, and save it as an artifact.";
 export const kind = "heartbeat";
 
-export { DISPLAY_STEPS } from "./display-steps";
+export { STEP_UI } from "./step-ui";
+
+// Tag shared with every step class, naming the step in the catalog/run-UI
+// preview in place of the humanized step-map key.
+const STEP_TITLE_TAG = "workbench.title";
+
+// Corbits terminology guidance the brief-writing step's system prompt
+// carries, so the brief spells Corbits/Corbits.dev/Interchange/Faremeter
+// consistently regardless of how the source material spelled them.
+const CORBITS_VOCABULARY =
+  "Treat Corbits, Corbits.dev, Interchange, and Faremeter as canonical Corbits names; spell them exactly. When source material contains a clear speech-to-text or spelling variant, use the canonical spelling in your output. Do not replace an ambiguous term unless surrounding context identifies it.";
 
 const MORNING_BRIEF_ARTIFACT_KIND = morningBriefArtifactKind();
 
-// Native `action` handler refs — the tool's canonical (factory-prefixed) name,
-// resolved via `canonicalizeStepToolName`'s build-time-checked lookup, so
-// a typo'd or manifest-drifted tool name fails the build instead of
-// deploying a step nothing can dispatch.
-export const HEARTBEAT_FORMAT_BRIEF_TITLE_HANDLER = canonicalizeStepToolName(
-  "heartbeat-title",
-  "heartbeat_format_brief_title",
-);
-export const HEARTBEAT_MERGE_BRIEF_SOURCES_HANDLER = canonicalizeStepToolName(
-  "heartbeat-merge-sources",
-  "heartbeat_merge_brief_sources",
-);
-export const HEARTBEAT_FORMAT_BRIEF_DOCUMENT_HANDLER = canonicalizeStepToolName(
-  "heartbeat-document",
-  "heartbeat_format_brief_document",
-);
-export const WRITE_ARTIFACT_HANDLER = canonicalizeStepToolName(
-  "heartbeat-persist",
-  "write_artifact",
-);
-export const HEARTBEAT_FORMAT_BRIEF_NOTIFY_HANDLER = canonicalizeStepToolName(
-  "heartbeat-notify-prep",
-  "heartbeat_format_brief_notify",
-);
-export const MAIL_SEND_HANDLER = canonicalizeStepToolName(
-  "heartbeat-notify",
-  "mail_send",
-);
-export const HEARTBEAT_INTAKE_SOURCE_HANDLER = canonicalizeStepToolName(
-  "heartbeat-intake-source",
-  "heartbeat_intake_source",
-);
+// Native `action` handler refs — each is the tool's canonical
+// `<factoryId>:<bareName>` name, checked against the committed tool manifest
+// by a repo-level test (`packages/tool-manifest/src/resolvable-handlers.
+// test.ts`), so a typo'd or manifest-drifted handler string still fails the
+// build rather than deploying a step nothing can dispatch.
+export const HEARTBEAT_FORMAT_BRIEF_TITLE_HANDLER =
+  "@workbench/workflow-heartbeat/core:heartbeat_format_brief_title";
+export const HEARTBEAT_MERGE_BRIEF_SOURCES_HANDLER =
+  "@workbench/tools-last30days/core:heartbeat_merge_brief_sources";
+export const HEARTBEAT_FORMAT_BRIEF_DOCUMENT_HANDLER =
+  "@workbench/workflow-heartbeat/core:heartbeat_format_brief_document";
+export const WRITE_ARTIFACT_HANDLER =
+  "@workbench/tools-artifact/artifact:write_artifact";
+export const HEARTBEAT_FORMAT_BRIEF_NOTIFY_HANDLER =
+  "@workbench/workflow-heartbeat/core:heartbeat_format_brief_notify";
+// Bare, unprefixed — the sidecar's local (non-package) mail runner
+// (`@intx/tools-mail`'s `TOOL_DEFINITIONS`) serves this directly; it carries
+// no factory id and never appears in the tool manifest.
+export const MAIL_SEND_HANDLER = "mail_send";
+export const HEARTBEAT_INTAKE_SOURCE_HANDLER =
+  "@workbench/workflow-heartbeat/core:heartbeat_intake_source";
 
 // -------------------------------------------------------------------------
 // Workflow definition — gate-free, unattended
@@ -61,7 +60,7 @@ export const HEARTBEAT_INTAKE_SOURCE_HANDLER = canonicalizeStepToolName(
 //                     { tool, enabledSources, createdAfter } (native primitive)
 //   merge-sources     action  heartbeat_merge_brief_sources
 //                      project every intake step → { sources: { … } } (native primitive)
-//   brief             agentStep    default model
+//   brief             step({ agent })    default model
 //                      merge(payload, merge-sources content)
 //   title             action  heartbeat_format_brief_title (native primitive)
 //   document          action  heartbeat_format_brief_document (native primitive)
@@ -74,7 +73,7 @@ export const HEARTBEAT_INTAKE_SOURCE_HANDLER = canonicalizeStepToolName(
 //   notify            action  mail_send   verbatim from notify-prep (native primitive)
 //
 // The intake steps are native `action` steps calling `heartbeat_intake_source`
-// (`./intake-tool.ts`) rather than the underlying per-source tool
+// (`./tools.ts`) rather than the underlying per-source tool
 // (`granola_list_notes` etc.) directly — `ActionPrimitive` has no `nonFatal`
 // field at all (`@intx/workflow`'s `primitives.ts`) and a thrown tool error in
 // an action's handler propagates through `ctx.perform`
@@ -85,14 +84,15 @@ export const HEARTBEAT_INTAKE_SOURCE_HANDLER = canonicalizeStepToolName(
 // and dispatches through `createToolRunner`, whose documented contract is
 // "must not throw" (`interchange/packages/agent/src/tool.ts`) — a missing
 // credential or source-side failure comes back as a completed `isError`
-// envelope, exactly the shape `mergeHeartbeatBriefSources` (`@workbench/shared`)
-// already parses per source, so the brief still degrades to a "not available"
-// note (see prompts.ts) with no `nonFatal` needed anywhere in this workflow.
+// envelope, exactly the shape `mergeHeartbeatBriefSources` (`./heartbeat-
+// shared`) already parses per source, so the brief still degrades to a "not
+// available" note (see prompts.ts) with no `nonFatal` needed anywhere in this
+// workflow.
 //
-// The intake steps are generated from `WIRED_BRIEF_SOURCES`
-// (`@workbench/shared`'s projection of `CREDENTIAL_PROVIDER_CATALOG` entries
-// tagged `briefSource.tool`) — adding a source is tagging its catalog entry
-// and registering its `create*Tools` builder in `intake-tool.ts`'s
+// The intake steps are generated from this package's own `WIRED_BRIEF_
+// SOURCES` (`./heartbeat-shared`, a static local list — no shared credential
+// catalog dependency) — adding a source is adding a row there and
+// registering its `create*Tools` builder in `tools.ts`'s
 // `SOURCE_TOOL_BUILDERS`, never editing this file. The generated graph is one
 // concurrent intake per `WIRED_BRIEF_SOURCES` entry, then merge-sources →
 // brief (see `index.test.ts`).
@@ -155,12 +155,22 @@ export const workflow = defineWorkflow({
       after: intakeStepIds,
     }),
 
-    // Synthesize the brief. Inline single-turn inference on the deploy default
+    // Synthesize the brief. Native `step({ agent })`: a plain reasoning-with-
+    // tools step built from `defineAgent`, inference on the deploy default
     // model (deepseek-v4-flash) — no per-step model preference declared.
-    brief: agentStep({
-      id: "heartbeat-brief",
-      title: "Write the brief",
-      systemPrompt: buildMorningBriefSystemPrompt(),
+    brief: step({
+      agent: defineAgent({
+        id: "heartbeat-brief",
+        description: "Reasoning step: heartbeat-brief",
+        systemPrompt: [
+          CORBITS_VOCABULARY,
+          buildMorningBriefSystemPrompt(),
+        ].join("\n\n"),
+        tools: [],
+        capabilities: [],
+        inference: { sources: [] },
+        tags: { [STEP_TITLE_TAG]: "Write the brief" },
+      }),
       input: {
         merge: [
           { from: "trigger.payload" },

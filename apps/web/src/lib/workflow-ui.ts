@@ -15,7 +15,6 @@ export type WorkflowUIModule = {
 const importers: Record<string, () => Promise<WorkflowUIModule>> = {
   "gamma-presentation-creator": () =>
     import("@workbench/workflow-gamma-presentation-creator/ui"),
-  heartbeat: () => import("@workbench/workflow-heartbeat/ui"),
   "pain-point-collateral": () =>
     import("@workbench/workflow-pain-point-collateral/ui"),
   "multi-source-collateral": () =>

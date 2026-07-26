@@ -224,7 +224,7 @@
   {
     "name": "@workbench/workflow-heartbeat",
     "version": "0.1.0",
-    "integrity": "sha512-tKwS+DCIk0dxItYLOTLcj0a4ZQc5sGX50muFWEUY+RK8awGYKBOHbPIrb8Z9h5lcQzUEpqHCTBsPTbMWY6K9bQ==",
+    "integrity": "sha512-aKaGQluq3hes+Fql/ZkzBKRKyXogmOtjb210FIh+kfHoJW5t0QYf7TzB1XRe5bUFOUEpvDWuW5X45z2lG2HLCQ==",
     "tarballFilename": "@workbench-workflow-heartbeat-0.1.0.tgz"
   },
   {

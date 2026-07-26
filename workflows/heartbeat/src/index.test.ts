@@ -3,8 +3,15 @@ import { runLocal } from "@intx/workflow/runlocal";
 import type { StepInvoker } from "@intx/workflow/runtime";
 import { evaluateSelector } from "@intx/workflow/runtime";
 import type { ActionHandler } from "@intx/workflow";
-import { mergeHeartbeatBriefSources } from "@workbench/shared";
-import { WIRED_BRIEF_SOURCES } from "@workbench/shared";
+import {
+  mergeHeartbeatBriefSources,
+  WIRED_BRIEF_SOURCES,
+} from "./heartbeat-shared";
+import {
+  assertGateStepsHaveStepUIEntry,
+  assertStepUIKeysMatchStepIds,
+  STEP_UI,
+} from "./step-ui";
 
 import {
   workflow,
@@ -18,12 +25,7 @@ import {
   HEARTBEAT_INTAKE_SOURCE_HANDLER,
 } from "./index";
 
-// The retired `deterministic-tool` authoring kind's tags. Kept as literals
-// (not an import from `@workbench/agents`, which no longer exports them) —
-// this test only asserts the tags are ABSENT from every native step, proving
-// no step regresses onto the deleted mechanism.
-const STEP_KIND_TAG = "workbench.stepKind";
-const STEP_TOOL_TAG = "workbench.tool";
+const STEP_TITLE_TAG = "workbench.title";
 
 // ---------------------------------------------------------------------------
 // Test helpers
@@ -322,15 +324,23 @@ describe("heartbeat native workflow", () => {
   // -------------------------------------------------------------------------
   // Inline-inference brief step (default model)
   // -------------------------------------------------------------------------
-  test("brief is a native reasoning step (agentStep) with a real prompt and the default model", () => {
+  test("brief is a native reasoning step (step({ agent })) with a real prompt and the default model", () => {
     const brief = stepPrimitive("brief");
-    expect(brief.agent.tags?.[STEP_KIND_TAG]).toBeUndefined();
-    expect(brief.agent.tags?.[STEP_TOOL_TAG]).toBeUndefined();
+    expect(brief.agent.tags?.[STEP_TITLE_TAG]).toBe("Write the brief");
     expect(brief.agent.systemPrompt.length).toBeGreaterThan(0);
     expect(brief.agent.capabilities).toEqual([]);
     // No per-step model preference declared → the deploy default model
     // (deepseek-v4-flash) is used, so no source is pinned on the definition.
     expect(brief.agent.inference.sources).toEqual([]);
+  });
+
+  test("STEP_UI declares an entry for every real step id, and heartbeat has no awaitSignal gate to require one", () => {
+    assertStepUIKeysMatchStepIds(STEP_UI, Object.keys(workflow.steps));
+    const gateStepIds = Object.entries(workflow.steps)
+      .filter(([, primitive]) => primitive.kind === "awaitSignal")
+      .map(([id]) => id);
+    expect(gateStepIds).toEqual([]);
+    assertGateStepsHaveStepUIEntry(STEP_UI, gateStepIds);
   });
 
   // -------------------------------------------------------------------------
